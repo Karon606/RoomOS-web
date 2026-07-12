@@ -33,6 +33,7 @@ export async function getTenants() {
         include: {
           room: { select: { id: true, roomNo: true, floor: true } },
           paymentRecords: {
+            where: { deletedAt: null },
             orderBy: { targetMonth: 'desc' },
             take: 12,
             select: {
@@ -970,6 +971,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
         include: {
           room: { select: { roomNo: true } },
           paymentRecords: {
+            where: { deletedAt: null },
             orderBy: { targetMonth: 'asc' },
             select: {
               targetMonth: true, expectedAmount: true, actualAmount: true,
@@ -1458,7 +1460,7 @@ export async function changeDueDay(
 
     if (adjustAmount !== 0) {
       const maxSeq = await prisma.paymentRecord.aggregate({
-        where: { leaseTermId, targetMonth },
+        where: { leaseTermId, targetMonth, deletedAt: undefined },
         _max: { seqNo: true },
       })
       const seqNo = (maxSeq._max.seqNo ?? 0) + 1

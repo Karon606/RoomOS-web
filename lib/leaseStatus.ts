@@ -15,7 +15,8 @@
 // 점진적 마이그레이션을 가정: 신규 코드는 이 모듈을 쓰고, 기존 코드는 같은 정책이 필요
 // 한 곳부터 차차 교체. 사이드이펙트 위험 때문에 일괄 교체는 하지 않음.
 
-import type { LeaseStatus, PrismaClient } from '@prisma/client'
+import type { LeaseStatus } from '@prisma/client'
+import type { PrismaDb } from '@/lib/prisma'
 
 /**
  * 매출/청구 인식 대상 lease.
@@ -49,14 +50,14 @@ export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
  * rentAmount 와 함께 반환되어 호출 측에서 Math.min(paid, rent) 과납 처리에 사용 가능.
  */
 export async function getCheckedOutLeasesWithRevenue(
-  prisma: PrismaClient,
+  prisma: PrismaDb,
   propertyId: string,
   targetMonth: string,
 ): Promise<{ id: string; rentAmount: number }[]> {
   return prisma.leaseTerm.findMany({
     where: {
       propertyId, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
-      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false } },
+      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false, deletedAt: null } },
     },
     select: { id: true, rentAmount: true },
   })
@@ -68,7 +69,7 @@ export async function getCheckedOutLeasesWithRevenue(
  * 실제 정산된 금액(일할 등)이 paymentRecord 에 들어 있으므로 그대로 사용.
  */
 export async function getCheckedOutRecognizedRevenue(
-  prisma: PrismaClient,
+  prisma: PrismaDb,
   propertyId: string,
   targetMonth: string,
 ): Promise<number> {

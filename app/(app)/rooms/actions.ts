@@ -726,7 +726,7 @@ export async function savePayment(data: {
     // (이 케이스는 원본 월이 이미 완납인 상태에서 추가 입력한 경우 — 다음 달로 이월)
     if (portion > 0 || (isOriginalMonth && remaining === 0)) {
       const seqNo = await prisma.paymentRecord.count({
-        where: { leaseTermId: data.leaseTermId, targetMonth: currentTm },
+        where: { leaseTermId: data.leaseTermId, targetMonth: currentTm, deletedAt: undefined },
       })
       const memo = isOriginalMonth
         ? (data.memo ?? null)
@@ -868,7 +868,7 @@ export async function savePrevOwnerSettle(
   })
   if (dup) return { ok: false, error: '이미 양도인 정산 처리된 달입니다.' }
 
-  const seqNo = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth } })
+  const seqNo = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth, deletedAt: undefined } })
   await prisma.paymentRecord.create({
     data: {
       leaseTermId, tenantId: lease.tenantId, propertyId,
@@ -951,7 +951,7 @@ export async function saveDepositPayment(data: {
   const propertyId = await getPropertyId()
 
   const existingCount = await prisma.paymentRecord.count({
-    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth },
+    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, deletedAt: undefined },
   })
 
   await prisma.paymentRecord.create({
@@ -1033,7 +1033,7 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
     : `${kst.year}-${String(kst.month).padStart(2, '0')}`
   const payDate = opts?.payDate ? new Date(opts.payDate) : new Date(kst.year, kst.month - 1, kst.day)
 
-  const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth } })
+  const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth, deletedAt: undefined } })
   await prisma.paymentRecord.create({
     data: {
       leaseTermId, tenantId: lease.tenantId, propertyId,
@@ -1119,7 +1119,7 @@ export async function updatePayment(
     const newTargetMonth = data.targetMonth && !record.isDeposit ? data.targetMonth : record.targetMonth
     const targetMonthChanged = newTargetMonth !== record.targetMonth
     const newSeqNo = targetMonthChanged
-      ? (await prisma.paymentRecord.count({ where: { leaseTermId: record.leaseTermId, targetMonth: newTargetMonth } })) + 1
+      ? (await prisma.paymentRecord.count({ where: { leaseTermId: record.leaseTermId, targetMonth: newTargetMonth, deletedAt: undefined } })) + 1
       : undefined
 
     await prisma.paymentRecord.update({
@@ -1159,8 +1159,35 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
 
-    await prisma.paymentRecord.delete({ where: { id: paymentId } })
+    // 소프트삭제 — 조회 익스텐션이 자동 제외. 재계산은 활성분만 보므로 미수·완납 자동 정정. 적용취소는 restorePayment.
+    await prisma.paymentRecord.update({ where: { id: paymentId }, data: { deletedAt: new Date() } })
 
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: record.leaseTermId },
+      select: { rentAmount: true },
+    })
+    if (lease) {
+      await recalculatePayments(record.leaseTermId, record.targetMonth,
+        await serverBillForMonth(record.leaseTermId, record.targetMonth, lease.rentAmount))
+    }
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 수납 기록 삭제 적용취소 — deletedAt 복원 후 재계산(미수·완납 원상 복구)
+export async function restorePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const record = await prisma.paymentRecord.findUnique({
+      where: { id: paymentId },
+      select: { leaseTermId: true, targetMonth: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    await prisma.paymentRecord.update({ where: { id: paymentId }, data: { deletedAt: null } })
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: record.leaseTermId },
       select: { rentAmount: true },
@@ -1400,6 +1427,7 @@ export async function getTenantDetail(tenantId: string) {
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
           room: { select: { id: true, roomNo: true } },
           paymentRecords: {
+            where: { deletedAt: null },
             select: { id: true, expectedAmount: true, actualAmount: true, isPaid: true, payDate: true, targetMonth: true },
             orderBy: { targetMonth: 'desc' },
             take: 24,

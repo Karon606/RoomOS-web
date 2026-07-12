@@ -542,7 +542,7 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
     where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
     select: {
       id: true, rentAmount: true, dueDay: true, moveInDate: true,
-      paymentRecords: { where: { isDeposit: false, isPrevOwner: false }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
+      paymentRecords: { where: { isDeposit: false, isPrevOwner: false, deletedAt: null }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
     },
   })
   let totalUnpaid = 0

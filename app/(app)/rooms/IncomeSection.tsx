@@ -7,7 +7,7 @@ import { useState, useTransition } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
-import { addExtraIncome, updateExtraIncome, deleteExtraIncome, type getExtraIncomes } from '@/app/(app)/finance/actions'
+import { addExtraIncome, updateExtraIncome, deleteExtraIncome, restoreExtraIncome, type getExtraIncomes } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -108,7 +108,12 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
     const msg = `${fmtDate(inc.date)} · ${fmtWon(inc.amount)} · ${inc.category}`
     if (!(await confirmDialog({ title: '이 수익 기록을 삭제할까요?', message: msg, level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
-      await deleteExtraIncome(inc.id); setDetailInc(null); router.refresh()
+      await deleteExtraIncome(inc.id)
+      setDetailInc(null)
+      pushToast('success', '수익 기록 삭제됨', {
+        action: { label: '적용취소', run: () => { void restoreExtraIncome(inc.id).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) } },
+      })
+      router.refresh()
     })
   }
 

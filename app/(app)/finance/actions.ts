@@ -1439,8 +1439,21 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
 
 export async function deleteExtraIncome(id: string) {
   await requireEdit()
-  await prisma.extraIncome.delete({ where: { id } })
+  // 소프트삭제 — 조회 익스텐션이 자동 제외(수익 합산·리포트에서 빠짐). 적용취소는 restoreExtraIncome.
+  await prisma.extraIncome.update({ where: { id }, data: { deletedAt: new Date() } })
   revalidatePath('/finance'); revalidatePath('/rooms')
+}
+
+export async function restoreExtraIncome(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await prisma.extraIncome.update({ where: { id }, data: { deletedAt: null } })
+    revalidatePath('/finance'); revalidatePath('/rooms')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // ── 자산 ─────────────────────────────────────────────────────────

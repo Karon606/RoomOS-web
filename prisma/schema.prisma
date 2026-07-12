@@ -620,6 +620,7 @@ model PaymentRecord {
   memo           String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  deletedAt      DateTime? // 소프트삭제 — null=활성. 조회는 prisma 소프트삭제 익스텐션이 자동 필터.
 
   leaseTermId String    @db.Uuid
   leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
@@ -745,6 +746,7 @@ model ExtraIncome {
   receiptUrl String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  deletedAt  DateTime? // 소프트삭제 — null=활성. 조회는 prisma 소프트삭제 익스텐션이 자동 필터.
 
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)

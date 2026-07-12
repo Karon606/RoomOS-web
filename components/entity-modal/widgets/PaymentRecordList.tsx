@@ -9,7 +9,7 @@ import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment,
+  getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
@@ -87,8 +87,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     startTransition(async () => {
       const release = trackSave()
       try {
-        await deletePayment(p.id)
-        pushToast('success', '수납 기록 삭제됨')
+        const res = await deletePayment(p.id)
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('success', '수납 기록 삭제됨', {
+          action: { label: '적용취소', run: () => { void restorePayment(p.id).then(r => { if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error) }) } },
+        })
         await reload()
         onChange?.()
       } catch (err) {

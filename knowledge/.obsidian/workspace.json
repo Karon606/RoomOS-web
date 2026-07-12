@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "INDEX.md",
+                "file": "design-audit-2026-07.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "INDEX"
+              "title": "design-audit-2026-07"
             }
           }
         ]
@@ -182,11 +182,21 @@
   },
   "active": "cb3624964be7cdf8",
   "lastOpenFiles": [
-    "domain-inventory.md",
-    "decisions.md",
-    "domain-billing.md",
+    "위키링크.md",
+    "refs/loop(검증 규칙).md",
+    "refs/CLAUDE(전역 행동지침).md",
+    "refs/AGENTS(프로젝트 규칙).md",
     "open-issues.md",
+    "refs/AGENTS(프로젝트 규칙).md.tmp",
+    "refs",
     "INDEX.md",
-    "domain-contracts.md"
+    "glossary.md",
+    "short-stay-policy.md",
+    "spec-model-design.md",
+    "react-select-dirty-race.md",
+    "domain-billing.md",
+    "domain-inventory.md",
+    "domain-contracts.md",
+    "decisions.md"
   ]
 }
