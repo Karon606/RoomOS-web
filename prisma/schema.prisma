@@ -1288,6 +1288,7 @@ model ContractFile {
   driveFileId  String                                       // Google Drive file ID
   fileName     String                                       // 표시용 파일명
   signedAt     DateTime           @default(now())            // 서명 일시 (사용자가 입력한 서명일 또는 업로드 시각)
+  deletedAt    DateTime?                                      // 소프트삭제 — null=활성, 값=삭제됨(적용취소). 조회는 deletedAt:null 필터.
   createdAt    DateTime           @default(now())
 
   tenantId     String   @db.Uuid
@@ -1310,6 +1311,7 @@ model ResidenceCertFile {
   driveFileId  String                            // Google Drive file ID
   fileName     String                            // 표시용 파일명
   issuedAt     DateTime @default(now())          // 작성(발급)일 — 사용자가 입력한 작성일
+  deletedAt    DateTime?                         // 소프트삭제 — null=활성, 값=삭제됨(적용취소).
   createdAt    DateTime @default(now())
 
   tenantId     String   @db.Uuid
@@ -1332,6 +1334,7 @@ model RentReceiptFile {
   driveFileId  String
   fileName     String
   issuedAt     DateTime @default(now())          // 발행일 — 사용자가 입력
+  deletedAt    DateTime?                         // 소프트삭제 — null=활성, 값=삭제됨(적용취소).
   createdAt    DateTime @default(now())
 
   tenantId     String   @db.Uuid

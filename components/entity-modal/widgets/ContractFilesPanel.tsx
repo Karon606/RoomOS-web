@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  getContractFiles, deleteContractFile,
+  getContractFiles, deleteContractFile, restoreContractFile,
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
@@ -50,12 +50,12 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
   }
 
   const handleDelete = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 계약서 파일을 삭제할까요?', message: 'Google Drive에서도 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: '이 계약서 파일을 삭제할까요?', message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
     const release = trackSave()
     try {
       const res = await deleteContractFile(id)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '삭제됨')
+      pushToast('success', '삭제됨', { action: { label: '적용취소', run: () => { void restoreContractFile(id).then(r => { if (r.ok) reload(); else pushToast('error', r.error) }) } } })
       await reload()
     } finally { release() }
   }

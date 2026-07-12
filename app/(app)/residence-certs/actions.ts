@@ -29,7 +29,7 @@ export type ResidenceCertListRow = {
 export async function getAllResidenceCertFiles(): Promise<ResidenceCertListRow[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.residenceCertFile.findMany({
-    where: { propertyId },
+    where: { propertyId, deletedAt: null },
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, fileName: true, issuedAt: true, driveFileId: true,
@@ -79,15 +79,33 @@ export async function deleteResidenceCertFile(id: string): Promise<{ ok: true } 
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { deleteFromDrive } = await import('@/lib/google-drive')
+    const { trashInDrive } = await import('@/lib/google-drive')
     const file = await prisma.residenceCertFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
     if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
-    try { await deleteFromDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 — DB 레코드는 삭제 */ }
-    await prisma.residenceCertFile.delete({ where: { id } })
+    // 소프트삭제 — Drive 휴지통 + deletedAt. 적용취소는 restoreResidenceCertFile.
+    try { await trashInDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 */ }
+    await prisma.residenceCertFile.update({ where: { id }, data: { deletedAt: new Date() } })
     revalidatePath('/residence-certs')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+export async function restoreResidenceCertFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const { untrashInDrive } = await import('@/lib/google-drive')
+    const file = await prisma.residenceCertFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
+    if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
+    try { await untrashInDrive(file.driveFileId) } catch { /* Drive 복구 실패 무시 */ }
+    await prisma.residenceCertFile.update({ where: { id }, data: { deletedAt: null } })
+    revalidatePath('/residence-certs')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '복구에 실패했습니다.' }
   }
 }

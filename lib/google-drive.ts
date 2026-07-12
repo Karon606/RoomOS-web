@@ -112,6 +112,17 @@ export async function deleteFromDrive(fileId: string): Promise<void> {
   await drive.files.delete({ fileId })
 }
 
+// 소프트삭제용 — 영구삭제 대신 Drive 휴지통으로(복구 가능). 적용취소 시 untrashInDrive로 되살림.
+export async function trashInDrive(fileId: string): Promise<void> {
+  const drive = getDriveClient()
+  await drive.files.update({ fileId, requestBody: { trashed: true } })
+}
+
+export async function untrashInDrive(fileId: string): Promise<void> {
+  const drive = getDriveClient()
+  await drive.files.update({ fileId, requestBody: { trashed: false } })
+}
+
 // 원본 파일 바이트 다운로드 (alt=media) — 썸네일이 아닌 원본(예: 투명 PNG 도장)을 그대로 받음.
 export async function downloadDriveBytes(fileId: string): Promise<Buffer> {
   const drive = getDriveClient()

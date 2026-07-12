@@ -24,9 +24,9 @@ export async function GET(req: Request) {
 
     // 이 영업장 소유의 서류인지 검증 (계약서·입실료확인서·실거주확인서)
     const owned =
-      (await prisma.contractFile.findFirst({ where: { driveFileId: id, propertyId }, select: { id: true } })) ||
-      (await prisma.rentReceiptFile.findFirst({ where: { driveFileId: id, propertyId }, select: { id: true } }).catch(() => null)) ||
-      (await prisma.residenceCertFile.findFirst({ where: { driveFileId: id, propertyId }, select: { id: true } }).catch(() => null))
+      (await prisma.contractFile.findFirst({ where: { driveFileId: id, propertyId, deletedAt: null }, select: { id: true } })) ||
+      (await prisma.rentReceiptFile.findFirst({ where: { driveFileId: id, propertyId, deletedAt: null }, select: { id: true } }).catch(() => null)) ||
+      (await prisma.residenceCertFile.findFirst({ where: { driveFileId: id, propertyId, deletedAt: null }, select: { id: true } }).catch(() => null))
     if (!owned) return NextResponse.json({ error: '서류를 찾을 수 없습니다.' }, { status: 404 })
 
     const bytes = await downloadDriveBytes(id)

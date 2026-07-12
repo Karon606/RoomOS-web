@@ -10,7 +10,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
-import { deleteContractFile } from '@/app/(app)/tenants/actions'
+import { deleteContractFile, restoreContractFile } from '@/app/(app)/tenants/actions'
 import type { ContractListRow } from './actions'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -55,13 +55,13 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
   }, [contracts, query, residency, source, sort])
 
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `${name}님의 이 계약서 파일을 삭제할까요?`, message: 'Google Drive 원본도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `${name}님의 이 계약서 파일을 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteContractFile(id)
       setDeletingId(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '계약서 삭제됨')
+      pushToast('success', '계약서 삭제됨', { action: { label: '적용취소', run: () => { void restoreContractFile(id).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) } } })
       router.refresh()
     })
   }

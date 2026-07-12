@@ -28,7 +28,7 @@ export type RentReceiptListRow = {
 export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.rentReceiptFile.findMany({
-    where: { propertyId },
+    where: { propertyId, deletedAt: null },
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, fileName: true, issuedAt: true, driveFileId: true,
@@ -73,15 +73,33 @@ export async function deleteRentReceiptFile(id: string): Promise<{ ok: true } | 
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { deleteFromDrive } = await import('@/lib/google-drive')
+    const { trashInDrive } = await import('@/lib/google-drive')
     const file = await prisma.rentReceiptFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
     if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
-    try { await deleteFromDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 */ }
-    await prisma.rentReceiptFile.delete({ where: { id } })
+    // 소프트삭제 — Drive 휴지통 + deletedAt. 적용취소는 restoreRentReceiptFile.
+    try { await trashInDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 */ }
+    await prisma.rentReceiptFile.update({ where: { id }, data: { deletedAt: new Date() } })
     revalidatePath('/rent-receipts')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+export async function restoreRentReceiptFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const { untrashInDrive } = await import('@/lib/google-drive')
+    const file = await prisma.rentReceiptFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
+    if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
+    try { await untrashInDrive(file.driveFileId) } catch { /* Drive 복구 실패 무시 */ }
+    await prisma.rentReceiptFile.update({ where: { id }, data: { deletedAt: null } })
+    revalidatePath('/rent-receipts')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '복구에 실패했습니다.' }
   }
 }

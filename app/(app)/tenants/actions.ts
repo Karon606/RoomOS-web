@@ -1892,7 +1892,7 @@ export type ContractFileRow = {
 export async function getContractFiles(tenantId: string): Promise<ContractFileRow[]> {
   const { propertyId } = await getPropertyId()
   const rows = await prisma.contractFile.findMany({
-    where: { tenantId, propertyId },
+    where: { tenantId, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
     select: { id: true, driveFileId: true, fileName: true, source: true, signedAt: true, createdAt: true },
   })
@@ -1906,16 +1906,34 @@ export async function deleteContractFile(id: string): Promise<{ ok: true } | { o
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    const { deleteFromDrive } = await import('@/lib/google-drive')
+    const { trashInDrive } = await import('@/lib/google-drive')
     const file = await prisma.contractFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
     if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
-    try { await deleteFromDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 — DB 레코드는 삭제 */ }
-    await prisma.contractFile.delete({ where: { id } })
+    // 소프트삭제 — Drive는 휴지통으로(복구 가능), DB는 deletedAt 표시. 적용취소는 restoreContractFile.
+    try { await trashInDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 */ }
+    await prisma.contractFile.update({ where: { id }, data: { deletedAt: new Date() } })
     revalidatePath('/tenants')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+export async function restoreContractFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const { untrashInDrive } = await import('@/lib/google-drive')
+    const file = await prisma.contractFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
+    if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
+    try { await untrashInDrive(file.driveFileId) } catch { /* Drive 복구 실패 무시 */ }
+    await prisma.contractFile.update({ where: { id }, data: { deletedAt: null } })
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '복구에 실패했습니다.' }
   }
 }
 
