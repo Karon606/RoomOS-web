@@ -1943,7 +1943,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
             예상 매출
-            <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
+            <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
@@ -1983,7 +1983,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             }}>
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
                 예상 순이익
-                <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
+                <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
                 <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
               </p>
               <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
@@ -2022,7 +2022,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             색(디자인 토큰): 고정(정액)=ink-2(임대료 등·못 줄임) · 고정(변동)=warm-mid(공과금 등·노력시 줄임) · 수시=coral(비고정·가장 줄이기 쉬움). */}
         <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            예상 지출 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
+            예상 지출 <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
@@ -2132,7 +2132,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <>
                         {/* 차원 칩 — 호실 카드 묶음 단위 선택 (순서대로 우선순위) */}
                         <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                          <span style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>묶음</span>
+                          <span style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>묶음</span>
                           {ROOM_DIMS.map(d => {
                             const idx = roomDims.indexOf(d.key)
                             const on = idx >= 0
@@ -2163,16 +2163,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                         {/* 범례 */}
                         <div className="flex gap-3.5 shrink-0 flex-wrap">
-                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--success-fg)' }} />납부완료
                           </div>
-                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--info-fg)' }} />납부예정
                           </div>
-                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--warning-fg)' }} />미납
                           </div>
-                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
                           </div>
                         </div>
@@ -2252,8 +2252,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   style={cellStyle}
                                 >
                                   <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(r.roomNo)}</span>
-                                  <span className="truncate w-full text-center" style={{ fontSize: '0.625rem', fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
-                                  {rentMan && <span style={{ fontSize: '0.625rem', fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                                  <span className="truncate w-full text-center" style={{ fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
+                                  {rentMan && <span style={{ fontSize: '0.65625rem', fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                                 </div>
                               )
                             }
@@ -2306,8 +2306,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               style={cellStyle}
                             >
                               <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(n.roomNo)}</span>
-                              <span className="truncate w-full text-center" style={{ fontSize: '0.625rem', fontWeight: 500 }}>{shortName}</span>
-                              {rentMan && <span style={{ fontSize: '0.625rem', fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                              <span className="truncate w-full text-center" style={{ fontSize: '0.65625rem', fontWeight: 500 }}>{shortName}</span>
+                              {rentMan && <span style={{ fontSize: '0.65625rem', fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                             </div>
                           )
                         })}
@@ -2324,7 +2324,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부일 전 인원 포함</span></h3>
+                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.65625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부일 전 인원 포함</span></h3>
                         <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (

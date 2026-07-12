@@ -25,8 +25,8 @@ export default function TrendChart({ mode, data }: { mode: 'area' | 'bar'; data:
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--ink) 8%, transparent)" vertical={false} />
-        <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-        <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
+        <XAxis dataKey="label" tick={{ fontSize: '0.65625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+        <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.65625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
         <Tooltip
           contentStyle={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', borderRadius: 8, fontSize: '0.75rem' }}
           formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
@@ -40,8 +40,8 @@ export default function TrendChart({ mode, data }: { mode: 'area' | 'bar'; data:
     <ResponsiveContainer width="100%" height={176}>
       <BarChart data={data} margin={{ top: 4, right: 8, left: 4, bottom: 0 }} barCategoryGap="28%">
         <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--ink) 8%, transparent)" vertical={false} />
-        <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-        <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
+        <XAxis dataKey="label" tick={{ fontSize: '0.65625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+        <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.65625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
         <Tooltip
           contentStyle={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', borderRadius: 8, fontSize: '0.75rem' }}
           formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
