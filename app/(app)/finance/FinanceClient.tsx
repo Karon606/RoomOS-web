@@ -1871,7 +1871,8 @@ export default function FinanceClient({
           confirmLabel: '기록 취소',
         })
       : await confirmDialog({
-          title: `이 지출(${fmtWon(exp.amount)})을 삭제할까요?`,
+          title: '이 지출을 삭제할까요?',
+          message: `${fmtDate(exp.date)} · ${fmtWon(exp.amount)} · ${exp.category}`,
           level: 'danger', confirmLabel: '삭제',
         })
     if (!ok) return

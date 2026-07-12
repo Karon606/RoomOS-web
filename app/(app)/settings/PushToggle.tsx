@@ -19,12 +19,14 @@ export function PushToggle() {
   const [supported, setSupported] = useState<boolean | null>(null)
   const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [perm, setPerm] = useState<NotificationPermission>('default')
   const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
   useEffect(() => {
     const ok = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
     setSupported(ok)
     if (!ok) return
+    setPerm(Notification.permission)
     navigator.serviceWorker.register('/sw.js')
       .then(reg => reg.pushManager.getSubscription())
       .then(sub => setEnabled(!!sub))
@@ -35,8 +37,12 @@ export function PushToggle() {
     if (!vapid) { pushToast('error', '알림 설정 키가 없습니다(VAPID).'); return }
     setBusy(true)
     try {
-      const perm = await Notification.requestPermission()
-      if (perm !== 'granted') { pushToast('error', '알림 권한이 거부되었습니다.'); return }
+      const result = await Notification.requestPermission()
+      setPerm(result)
+      if (result !== 'granted') {
+        pushToast('error', '알림 권한이 차단돼 있어요', { detail: '브라우저·기기 설정에서 이 사이트의 알림을 허용으로 바꾼 뒤 다시 시도해 주세요.' })
+        return
+      }
       const reg = await navigator.serviceWorker.register('/sw.js')
       await navigator.serviceWorker.ready
       const sub = await reg.pushManager.subscribe({
@@ -99,6 +105,13 @@ export function PushToggle() {
         )}
         {enabled && <span className="text-[0.6875rem] text-[var(--success-fg)] font-medium">● 이 기기 알림 켜짐</span>}
       </div>
+      {perm === 'denied' && !enabled && (
+        <p className="text-[0.65625rem] leading-relaxed rounded-lg px-3 py-2"
+          style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)', border: '1px solid var(--warning-ring)' }}>
+          알림이 차단된 상태예요. 아이폰은 설정 앱의 알림에서, 안드로이드와 PC는 브라우저 주소창의 자물쇠 아이콘에서
+          이 사이트 알림을 허용으로 바꾸면 켤 수 있어요.
+        </p>
+      )}
       <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
         납부 예정·퇴실 예정·재고 소진 등 대시보드 알림을 이 기기로 받습니다.
         iPhone은 <strong>홈 화면에 추가</strong>한 상태에서만 동작합니다 (iOS 16.4+).

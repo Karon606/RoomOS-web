@@ -350,8 +350,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     })
     if (!res.ok) {
       const t = await res.text()
-      pushToast('error', `PDF 생성 실패 (${res.status})`)
-      pushToast('error', `PDF 생성 실패 · ${t.slice(0, 200)}`)
+      pushToast('error', `PDF 생성 실패 (${res.status}) · ${t.slice(0, 200)}`)
       return null
     }
     return res.blob()
@@ -453,20 +452,21 @@ export default function ContractView({ data }: { data: ContractData }) {
               </button>
             )}
             {canShareFiles ? (
-              // 모바일 — 한 버튼(공유 시트에 프린트·파일 저장 모두 포함)
-              <button onClick={handleSharePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '인쇄 / PDF'}</button>
+              // 모바일 — 한 버튼(공유 시트에 프린트·파일 저장 모두 포함). Drive 보관이 아닌 임시 미리보기.
+              <button onClick={handleSharePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 (인쇄·PDF)'}</button>
             ) : (
-              // 데스크톱 — 인쇄(새 탭) / 저장(다운로드)
+              // 데스크톱 — 미리보기 인쇄(새 탭) / 미리보기 PDF(다운로드). 둘 다 Drive 보관은 아님.
               <>
-                <button onClick={handlePrint} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '인쇄'}</button>
-                <button onClick={handleSavePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : 'PDF 저장'}</button>
+                <button onClick={handlePrint} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 인쇄'}</button>
+                <button onClick={handleSavePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 PDF'}</button>
               </>
             )}
-            {/* 서명은 본문 하단 서명란을 직접 눌러서 — 계약서를 끝까지 본 뒤 서명하도록 유도(상단 즉시서명 버튼 제거) */}
-            {signatureDataUrl && (
-              <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
-                {contractSaving ? '저장 중… (5~15초)' : '계약서 저장'}
-              </button>
+            {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 저장 버튼은 항상 보이되 서명 전엔 비활성. */}
+            <button onClick={handleContractSave} disabled={contractSaving || !signatureDataUrl} className="toolbar-print">
+              {contractSaving ? '저장 중… (5~15초)' : '계약서 저장 (Drive 보관)'}
+            </button>
+            {!signatureDataUrl && (
+              <span className="toolbar-hint">서명을 받으면 저장할 수 있어요</span>
             )}
           </>
         )}
@@ -803,6 +803,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         .toolbar-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .toolbar-btn-warn { color: var(--warning-fg); border-color: var(--warning-ring); }
         .toolbar-status { font-size: 12px; color: var(--warning-fg); font-weight: 600; }
+        .toolbar-hint { font-size: 11px; color: var(--ink-m); }
         .toolbar-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
 
         /* paper-cage: 화면용 viewport-fit wrapper */

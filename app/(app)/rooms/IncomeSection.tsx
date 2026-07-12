@@ -5,6 +5,7 @@
 // 손익 합산(대시보드·리포트)은 기존 그대로 — 데이터·액션(finance/actions)은 이동하지 않고 화면만 이곳에.
 import { useState, useTransition } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
+import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { addExtraIncome, updateExtraIncome, deleteExtraIncome, type getExtraIncomes } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -104,10 +105,11 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
       } finally { release() }
     })
   }
-  const handleDeleteInc = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 수익 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+  const handleDeleteInc = async (inc: Income) => {
+    const msg = `${fmtDate(inc.date)} · ${fmtWon(inc.amount)} · ${inc.category}`
+    if (!(await confirmDialog({ title: '이 수익 기록을 삭제할까요?', message: msg, level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
-      await deleteExtraIncome(id); setDetailInc(null); router.refresh()
+      await deleteExtraIncome(inc.id); setDetailInc(null); router.refresh()
     })
   }
 
@@ -242,7 +244,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   {detailInc.memo && <DetailRow label="메모" value={detailInc.memo} />}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <Btn variant="danger" size="md" onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}>삭제</Btn>
+                  <Btn variant="danger" size="md" onClick={() => handleDeleteInc(detailInc)} disabled={isPending}>삭제</Btn>
                   <div className="flex-1" />
                   <Btn variant="primary" size="md" onClick={() => {
                     setDetailIncEdit(true)

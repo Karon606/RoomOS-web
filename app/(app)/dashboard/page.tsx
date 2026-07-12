@@ -1652,8 +1652,8 @@ export default async function DashboardPage({
   return (
     <div className="space-y-3.5">
 
-      {/* ── 평면 배치도 (도면 페이지에서 켠 경우에만 표시) ─── */}
-      {floorPlanData?.showOnDashboard && (() => {
+      {/* ── 평면 배치도 (켠 경우 표시. 한 번도 만든 적 없으면 발견용 빈 상태 CTA) ─── */}
+      {(floorPlanData == null || floorPlanData.showOnDashboard) && (() => {
         const rooms = dashboardData.rooms.map(r => ({ id: r.roomNo, roomNo: r.roomNo }))
         const roomStatuses: Record<string, { isVacant: boolean; tenantName?: string }> = {}
         dashboardData.rooms.forEach(r => {

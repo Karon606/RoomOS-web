@@ -81,12 +81,13 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     })
   }
 
-  const handleDelete = async (paymentId: string) => {
-    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+  const handleDelete = async (p: Record) => {
+    const parts = [fmtDate(p.payDate), fmtWon(p.actualAmount), p.isDeposit ? '보증금' : `귀속 ${Number(p.targetMonth.slice(5))}월`]
+    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', message: parts.join(' · '), level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {
-        await deletePayment(paymentId)
+        await deletePayment(p.id)
         pushToast('success', '수납 기록 삭제됨')
         await reload()
         onChange?.()
@@ -210,7 +211,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                     수정
                   </button>
-                  <button onClick={() => handleDelete(p.id)}
+                  <button onClick={() => handleDelete(p)}
                     className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                     삭제
                   </button>

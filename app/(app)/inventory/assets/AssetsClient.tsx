@@ -21,6 +21,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { Modal } from '@/components/ui/Modal'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SearchBar } from '@/components/ui/SearchBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
@@ -332,8 +333,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     setDetailItem(null)
     router.refresh()
   })
-  const runDeleteLog = (r: AssetAssignmentLogRow) => {
-    if (!window.confirm('이 이력 기록만 지웁니다 (배정 상태는 그대로). 지울까요?')) return
+  const runDeleteLog = async (r: AssetAssignmentLogRow) => {
+    if (!(await confirmDialog({ title: '이 이력 기록만 지울까요?', message: '배정 상태는 그대로 유지되고, 기록만 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await deleteAssignmentLog(r.id)
       if (!res.ok) { pushToast('error', res.error); return }

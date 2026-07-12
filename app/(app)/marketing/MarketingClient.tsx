@@ -82,7 +82,10 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
   if (!stats.publicSlug) {
     return (
       <div className="space-y-4">
-        <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+        <div>
+          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
+        </div>
         <div className="rounded-xl p-6 text-sm space-y-3"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
           <p className="font-semibold">공개 페이지 슬러그가 설정되지 않았어요.</p>
@@ -119,7 +122,8 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
     <div className="space-y-4" style={{ opacity: pending ? 0.6 : 1, transition: 'opacity 150ms' }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
+          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
           {stats.publicUrl && (
             <a href={stats.publicUrl} target="_blank" rel="noopener noreferrer"
               className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>

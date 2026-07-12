@@ -97,9 +97,13 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     } finally { setPreviewing(false) }
   }
 
+  const hasStamp = !!data.stampImageUrl
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
-    if (!(await confirmDialog({ title: '실거주 확인서를 발급할까요?', message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
+    const issueMsg = hasStamp
+      ? '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.'
+      : '영업장 도장이 등록되지 않아 도장 없이 발급됩니다. PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.'
+    if (!(await confirmDialog({ title: '실거주 확인서를 발급할까요?', message: issueMsg, confirmLabel: '발급' }))) return
     setIssuing(true)
     const release = trackSave()
     try {
@@ -152,6 +156,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
       </div>
 
       <p className="no-print rc-hint">원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요. 보이는 그대로 발급됩니다.</p>
+
+      {!hasStamp && (
+        <p className="no-print rc-warn">영업장 도장이 등록되지 않아 도장 없이 발급됩니다. 영업장 설정에서 도장을 등록하세요.</p>
+      )}
 
       <div className="rc-cage" style={{ width: RC_PAGE.w * scale, height: RC_PAGE.h * scale }}>
         <div className="rc-page" style={{ width: RC_PAGE.w, height: RC_PAGE.h, transform: `scale(${scale})` }}>
@@ -228,6 +236,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .rc-btn-secondary:disabled { opacity: 0.6; }
         .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: var(--ink-m); margin: 0 0 12px; }
+        .rc-warn { width: min(595px, 100% - 24px); font-size: 12px; color: var(--warning-fg); background: var(--warning-bg); border: 1px solid var(--warning-ring); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; line-height: 1.5; }
 
         .rc-cage { margin: 0 auto; position: relative; }
         .rc-page {

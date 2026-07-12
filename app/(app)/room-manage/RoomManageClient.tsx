@@ -388,6 +388,7 @@ export default function RoomManageClient({
       try {
         const res = await addRoom(formData)
         if (!res.ok) { pushToast('error', res.error); return }
+        let failedPhotos = 0
         for (const { file } of addPhotoPreviews) {
           try {
             const session = await createPhotoUploadSession({
@@ -397,17 +398,18 @@ export default function RoomManageClient({
               fileSize: file.size,
               origin: window.location.origin,
             })
-            if (!session.ok) { setError(session.error); continue }
+            if (!session.ok) { failedPhotos++; continue }
             const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, () => {})
             await finalizeRoomPhoto({ roomId: res.id, driveFileId, fileName: file.name })
           } catch (err) {
             console.error('[handleAdd photo]', err)
-            // 일부 사진 실패해도 나머지/호실 자체는 유지
+            failedPhotos++   // 일부 사진 실패해도 나머지/호실 자체는 유지, 실패 장수는 아래서 안내
           }
         }
         closeAddModal()
         router.refresh()
         pushToast('success', '호실 추가됨')
+        if (failedPhotos > 0) pushToast('info', `사진 ${failedPhotos}장은 업로드하지 못했어요. 호실 수정에서 다시 추가해 주세요.`)
       } finally { release() }
     })
   }

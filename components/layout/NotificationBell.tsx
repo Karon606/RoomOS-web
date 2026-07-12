@@ -45,7 +45,7 @@ function hrefOf(a: AlertItem): string | null {
 export default function NotificationBell({ currentPropertyId }: { currentPropertyId: string | null }) {
   const [open, setOpen]       = useState(false)
   const [items, setItems]     = useState<AlertItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [readMap, setReadMap] = useState<Record<string, string>>({})
   const ref     = useRef<HTMLDivElement>(null)
   const router  = useRouter()
@@ -53,15 +53,23 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
 
   useEffect(() => { setReadMap(loadReadMap()) }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // skeleton=true 일 때만 로딩 표시 — 백그라운드 새로고침은 뱃지 숫자를 흔들지 않는다.
+  const load = useCallback(async (skeleton: boolean) => {
+    if (skeleton) setLoading(true)
     try { setItems(await getMyAlerts()) }
     catch { /* 무음 — 알림은 보조 정보 */ }
-    finally { setLoading(false) }
+    finally { if (skeleton) setLoading(false) }
   }, [])
 
-  // 마운트·영업장 전환·페이지 이동 시 새로고침 (작업 후 즉시 반영)
-  useEffect(() => { load() }, [load, currentPropertyId, pathname])
+  // 마운트·영업장 전환 시에만 조용히 새로고침 (페이지 이동마다 재조회하던 뱃지 깜빡임 제거)
+  useEffect(() => { load(false) }, [load, currentPropertyId])
+
+  // 종을 열 때 최신화 — 목록이 이미 있으면 스켈레톤 없이 조용히 교체
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    if (next) load(items.length === 0)
+  }
 
   // 바깥 클릭 닫기
   useEffect(() => {
@@ -104,7 +112,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={toggle}
         className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset relative"
         style={{ color: 'var(--warm-mid)' }}
         aria-label={count > 0 ? `알림 ${count}건` : '알림'}
@@ -127,15 +135,19 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
       {open && (
         <div className="absolute right-0 top-12 w-80 max-w-[90vw] rounded-xl shadow-lift z-[var(--z-dropdown)] overflow-hidden"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <div className="px-3.5 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--warm-border)' }}>
-            <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>
-            <span className="block text-[0.65625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>푸시와 같은 핵심 알림만 — 전체 일정·소식은 홈 화면 알림에 있어요</span>
-            {count > 0 && (
-              <button onClick={() => markRead(visible.map(a => a.id))}
-                className="text-[0.6875rem] font-medium hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30" style={{ color: 'var(--warm-muted)' }}>
-                모두 확인 ({count})
-              </button>
-            )}
+          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid var(--warm-border)' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>
+              {count > 0 && (
+                <button onClick={() => markRead(visible.map(a => a.id))}
+                  className="text-[0.6875rem] font-medium hover:underline shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30" style={{ color: 'var(--warm-muted)' }}>
+                  모두 확인 ({count})
+                </button>
+              )}
+            </div>
+            <p className="mt-0.5 text-[0.625rem] leading-snug" style={{ color: 'var(--warm-muted)' }}>
+              푸시와 같은 핵심 알림만 표시돼요. 전체 일정과 소식은 홈 화면 알림에서 볼 수 있어요.
+            </p>
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto">

@@ -284,10 +284,10 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
               {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
             </p>
-            <div className="flex gap-1.5 pt-1 flex-wrap">
+            <div className="flex gap-2 pt-1 flex-wrap">
               {/* 지출 등록 — expense 추론이면 기본, inventory 면 보조 */}
               <button onClick={() => onStartEdit('expense')} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
+                className="inline-flex items-center text-[0.6875rem] px-2.5 min-h-[44px] rounded-lg font-medium"
                 style={{
                   background: aiSuggestsInventory ? 'var(--cream)' : 'var(--coral)',
                   color: aiSuggestsInventory ? 'var(--warm-dark)' : 'var(--on-solid)',
@@ -297,7 +297,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               </button>
               {/* 재고 등록 — inventory 추론이면 기본, expense 면 보조 */}
               <button onClick={() => onStartEdit('inventory')} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
+                className="inline-flex items-center text-[0.6875rem] px-2.5 min-h-[44px] rounded-lg font-medium"
                 style={{
                   background: aiSuggestsInventory ? 'var(--success-solid)' : 'var(--cream)',
                   color: aiSuggestsInventory ? 'var(--on-solid)' : 'var(--warm-dark)',
@@ -306,7 +306,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 재고 등록
               </button>
               <button onClick={onRejected} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] font-medium">
+                className="inline-flex items-center text-[0.6875rem] px-2.5 min-h-[44px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] font-medium">
                 거절
               </button>
             </div>

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
 import { Btn } from '@/components/ui/Btn'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import {
   createSurvey,
@@ -441,18 +442,22 @@ function NaverSearchPanel({
   const [results, setResults] = useState<NaverItem[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [error, setError] = useState('')
 
   const search = useCallback(async () => {
     if (!query.trim()) return
     setLoading(true)
+    setError('')
     try {
       const res = await fetch(`/api/naver-places?query=${encodeURIComponent(query)}`)
+      if (!res.ok) throw new Error(String(res.status))
       const json = await res.json() as { items: NaverItem[] }
       setResults(json.items ?? [])
       setSearched(true)
     } catch {
       setResults([])
-      setSearched(true)
+      setSearched(false)
+      setError('검색 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
     } finally {
       setLoading(false)
     }
@@ -491,7 +496,12 @@ function NaverSearchPanel({
           {loading ? '검색 중…' : '검색'}
         </Btn>
       </div>
-      {searched && results.length === 0 && (
+      {error && (
+        <div className="rounded-xl" style={{ padding: '10px 14px', background: 'var(--danger-bg)', color: 'var(--danger-fg)', fontSize: '0.8125rem', border: '1px solid var(--danger-ring)' }}>
+          {error}
+        </div>
+      )}
+      {!error && searched && results.length === 0 && (
         <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)', textAlign: 'center', padding: '8px 0' }}>
           결과 없음 (네이버 API 키 미설정 시 결과가 빈 상태로 반환됩니다)
         </p>
@@ -557,6 +567,14 @@ export default function MarketClient({
   const [aiResult, setAiResult] = useState<string>(activeSurvey?.aiResult ?? '')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
+  const [aiElapsed, setAiElapsed] = useState(0)   // ID-34 진행 표시 — 경과 초
+
+  useEffect(() => {
+    if (!aiLoading) { setAiElapsed(0); return }
+    const t0 = Date.now()
+    const id = setInterval(() => setAiElapsed(Math.floor((Date.now() - t0) / 1000)), 500)
+    return () => clearInterval(id)
+  }, [aiLoading])
 
   // History selected
   const [historySelected, setHistorySelected] = useState<Survey | null>(null)
@@ -841,14 +859,15 @@ export default function MarketClient({
         <div className="flex flex-col gap-4">
           {/* No survey yet */}
           {!activeSurvey && (
-            <div style={{ ...card, textAlign: 'center', padding: 40 }}>
-              <p style={{ color: 'var(--warm-muted)', marginBottom: 16 }}>
-                진행 중인 조사가 없습니다.
-              </p>
-              <Btn onClick={handleNewSurvey} disabled={isPending} variant="primary">
-                새 조사 시작
-              </Btn>
-            </div>
+            <EmptyState
+              title="아직 진행한 시세 조사가 없어요"
+              description="주변 경쟁 고시원의 방 가격을 등록하면 AI가 내 방과 비교해 권장 단가를 제안합니다. 새 조사를 시작해 경쟁업체부터 추가해 보세요."
+              action={
+                <Btn onClick={handleNewSurvey} disabled={isPending} variant="primary">
+                  새 조사 시작
+                </Btn>
+              }
+            />
           )}
 
           {activeSurvey && (
@@ -1085,6 +1104,28 @@ export default function MarketClient({
                 >
                   {aiLoading ? 'AI 분석 중…' : 'AI 분석 실행'}
                 </Btn>
+
+                {aiLoading && (
+                  <div
+                    className="rounded-xl"
+                    style={{
+                      marginTop: 12,
+                      padding: '12px 14px',
+                      background: 'var(--canvas)',
+                      border: '1px solid var(--warm-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                    }}
+                  >
+                    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                      <path d="M12 3a9 9 0 1 0 9 9" />
+                    </svg>
+                    <span style={{ fontSize: '0.8125rem', color: 'var(--warm-mid)' }}>
+                      AI가 경쟁업체 가격과 비교하고 있어요... {aiElapsed}초
+                    </span>
+                  </div>
+                )}
 
                 {aiError && (
                   <div

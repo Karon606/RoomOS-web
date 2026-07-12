@@ -370,6 +370,7 @@ export default function TenantClient({
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
   const [payHistory, setPayHistory] = useState<PayRecord[]>([])
+  const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
@@ -719,13 +720,14 @@ export default function TenantClient({
     setIsDepositMode(false)
     setShowPayForm(false)
     setError('')
+    setDistNotice(null)
     const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     setPayHistory(records as PayRecord[])
     setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
   const closePayModal = () => {
-    setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
+    setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError(''); setDistNotice(null)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
   }
@@ -762,14 +764,16 @@ export default function TenantClient({
             payMethod,
             memo,
           })
-          if (result.allocations.length > 0) {
-            const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
-            if (otherMonths.length > 0) {
-              const summary = otherMonths
-                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
-                .join(', ')
-              pushToast('info', `자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
-            }
+          const otherMonths = result.allocations.length > 0
+            ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)
+            : []
+          if (otherMonths.length > 0) {
+            const summary = otherMonths
+              .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
+              .join(', ')
+            setDistNotice(`이번 입력은 ${summary}으로 나뉘어 반영되었습니다. 미수가 가장 오래된 월부터 충당됩니다.`)
+          } else {
+            setDistNotice(null)
           }
         }
         setShowPayForm(false)
@@ -1229,6 +1233,12 @@ export default function TenantClient({
                     <span className="text-[var(--warm-border)]">·</span>
                     <span className="text-[var(--warm-muted)]">납부일</span>
                     <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
+                    {lease && (
+                      <button type="button" onClick={e => { e.stopPropagation(); openPayModal(tenant, lease) }}
+                        className="ml-auto shrink-0 inline-flex items-center justify-center min-h-[44px] -my-2 px-3 text-xs font-semibold text-[var(--coral)]">
+                        수납
+                      </button>
+                    )}
                   </div>
                 )}
                 {/* 보증금 · 거주기간 */}
@@ -1377,8 +1387,13 @@ export default function TenantClient({
                           return (
                             <td key={c.key}
                               onClick={e => { e.stopPropagation(); if (lease) openPayModal(tenant, lease) }}
-                              className={`${tdBase} text-sm text-[var(--warm-dark)] cursor-pointer hover:text-[var(--coral)] transition-colors`}>
-                              <span className="block truncate">{lease ? <MoneyDisplay amount={lease.rentAmount} /> : '—'}</span>
+                              className={`${tdBase} text-sm text-[var(--warm-dark)] transition-colors ${lease ? 'cursor-pointer hover:text-[var(--coral)]' : ''}`}>
+                              {lease ? (
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <span className="truncate underline decoration-dotted decoration-[var(--coral)]/50 underline-offset-2"><MoneyDisplay amount={lease.rentAmount} /></span>
+                                  <span className="shrink-0 text-[0.625rem] font-medium text-[var(--coral)]">수납</span>
+                                </span>
+                              ) : <span className="block truncate">—</span>}
                             </td>
                           )
                         case 'dueDay':
@@ -1567,6 +1582,13 @@ export default function TenantClient({
                       </div>
                     )}
 
+                    {/* 자동 분배 요약 — 저장 후 모달 안에 지속 표시(닫을 때까지). 여러 달에 걸쳐 충당·이월된 내역 확인용 */}
+                    {distNotice && (
+                      <div className="flex items-start gap-2 bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2.5">
+                        <p className="text-xs font-medium text-[var(--info-fg)] leading-relaxed">{distNotice}</p>
+                      </div>
+                    )}
+
                     {/* 납입일 변경 조정 내역 */}
                     {adjRecords.length > 0 && (
                       <div className="space-y-2">
@@ -1729,14 +1751,14 @@ export default function TenantClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
-                                <div className="flex gap-1.5 ml-1">
+                                <div className="flex gap-2 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
+                                    className="text-[0.65625rem] font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border transition-colors"
                                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
-                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
+                                    className="text-xs font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                                     삭제
                                   </button>
                                 </div>
@@ -2461,7 +2483,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
       <FormSection title="기본 정보">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" />
+          <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
           <Field label="영어이름" name="englishName" defaultValue={tenant?.englishName ?? ''} placeholder="Hong Gildong" />
         </div>
         <div className="grid grid-cols-3 gap-3">

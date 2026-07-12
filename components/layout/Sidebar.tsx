@@ -7,6 +7,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { signOut } from '@/app/property-select/actions'
 import { type AppUser } from '@/components/layout/Header'
+import { useTheme } from '@/components/theme/ThemeProvider'
 
 // ── SVG Icons — Stayeum Design Guide v2 (Lucide style)
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
@@ -174,7 +175,7 @@ function NavContent({
 
   return (
     <>
-      {/* Logo */}
+      {/* Logo — 클릭 시 홈(대시보드)으로 (월 컨텍스트 유지) */}
       <div
         className="flex items-center shrink-0"
         style={{
@@ -183,14 +184,21 @@ function NavContent({
           borderBottom: '1px solid var(--warm-border)',
         }}
       >
-        {drawer ? (
-          <LogoFull />
-        ) : (
-          <>
-            <div className="hidden lg:flex px-5"><LogoFull /></div>
-            <div className="flex lg:hidden w-full justify-center"><LogoMark /></div>
-          </>
-        )}
+        <Link
+          href={month ? `/dashboard?month=${month}` : '/dashboard'}
+          onClick={onClose}
+          aria-label="홈으로"
+          className="flex items-center w-full rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        >
+          {drawer ? (
+            <LogoFull />
+          ) : (
+            <>
+              <div className="hidden lg:flex px-5"><LogoFull /></div>
+              <div className="flex lg:hidden w-full justify-center"><LogoMark /></div>
+            </>
+          )}
+        </Link>
       </div>
 
       {/* Nav groups */}
@@ -338,11 +346,15 @@ function MobileMenu({
   pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; onClose?: () => void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
+  const { isDark, setMode } = useTheme()              // 다크/라이트 빠른 전환(도구 타일)
   return (
     <div className="fixed inset-0 z-[var(--z-drawer)] flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
       {/* 헤더: 로고 + 닫기 */}
       <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
-        <LogoFull />
+        <Link href={month ? `/dashboard?month=${month}` : '/dashboard'} onClick={onClose} aria-label="홈으로"
+          className="rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset">
+          <LogoFull />
+        </Link>
         <button onClick={onClose} aria-label="닫기"
           className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
           style={{ color: 'var(--warm-mid)' }}>
@@ -387,6 +399,17 @@ function MobileMenu({
               style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
               <svg {...ico} width={19} height={19}><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7.5h7"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 15.5h.01M12 15.5h.01M15.5 15.5h.01"/></svg>
               <span className="text-[0.6875rem] font-medium leading-tight">단기 요금 계산</span>
+            </button>
+            {/* 다크/라이트 즉시 전환 — 명시적 light/dark 만 순환(system·time 사용자 설정 덮어쓰지 않음) */}
+            <button type="button" onClick={() => setMode(isDark ? 'light' : 'dark')}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
+              style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+              {isDark ? (
+                <svg {...ico} width={19} height={19}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+              ) : (
+                <svg {...ico} width={19} height={19}><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+              )}
+              <span className="text-[0.6875rem] font-medium leading-tight">{isDark ? '라이트 모드' : '다크 모드'}</span>
             </button>
           </div>
         </div>

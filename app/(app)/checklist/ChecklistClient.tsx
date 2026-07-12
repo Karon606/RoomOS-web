@@ -83,6 +83,15 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
 
   const refresh = () => router.refresh()
 
+  // 카드에서 1탭 점검 완료 — 메모 없이 바로 기록(메모·이력은 '이력·메모' 버튼으로)
+  const handleQuickDone = (row: ChecklistRow) => {
+    startTransition(async () => {
+      const res = await withSave(() => markChecklistDone({ id: row.id, memo: '' }), { success: '점검 완료로 기록했습니다' })
+      if (!res.ok) return
+      refresh()
+    })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -98,11 +107,21 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
 
       {/* 점검 필요 섹션 */}
       <Section title={`점검 필요 ${due.length}건`} hint="예정일 N일 이내 또는 지남">
-        {due.length === 0 ? (
+        {rows.length === 0 ? (
+          <EmptyState
+            title="아직 체크리스트가 없습니다"
+            description="쌀·김치 잔량, 청소, 소모품 같은 반복 점검 항목을 추가해 보세요."
+            action={
+              <Btn variant="primary" size="sm" onClick={() => { setMode('create'); setError('') }}>
+                + 항목 추가
+              </Btn>
+            }
+          />
+        ) : due.length === 0 ? (
           <EmptyState title="현재 점검이 필요한 항목이 없습니다" />
         ) : (
           <div className="space-y-2">
-            {due.map(r => <Card key={r.id} row={r} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {due.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
           </div>
         )}
       </Section>
@@ -110,7 +129,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {ok.length > 0 && (
         <Section title={`여유 ${ok.length}건`}>
           <div className="space-y-2">
-            {ok.map(r => <Card key={r.id} row={r} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
+            {ok.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
           </div>
         </Section>
       )}
@@ -118,7 +137,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {archive.length > 0 && (
         <Section title={`비활성 ${archive.length}건`}>
           <div className="space-y-2">
-            {archive.map(r => <Card key={r.id} row={r} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} muted />)}
+            {archive.map(r => <Card key={r.id} row={r} isPending={isPending} onQuickDone={() => handleQuickDone(r)} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} muted />)}
           </div>
         </Section>
       )}
@@ -218,7 +237,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 
 // ── 카드
-function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
+function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: ChecklistRow; isPending: boolean; onQuickDone: () => void; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
   const chip = dueChip(row)
   return (
     <div className={`bg-[var(--cream)] border rounded-xl px-4 py-3 ${muted ? 'opacity-60' : ''}`}
@@ -251,10 +270,15 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
         </div>
       </div>
       <div className="flex gap-2 mt-3">
-        <button onClick={onCheck}
-          className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80"
+        <button onClick={onQuickDone} disabled={isPending}
+          className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
           style={{ background: 'var(--coral)' }}>
           점검 완료 기록
+        </button>
+        <button onClick={onCheck}
+          className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"
+          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+          이력·메모
         </button>
         <button onClick={onEdit}
           className="px-3 py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70"

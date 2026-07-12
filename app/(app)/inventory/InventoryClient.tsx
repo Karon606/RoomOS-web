@@ -149,6 +149,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [openMenu, setOpenMenu]           = useState<'input' | 'manage' | null>(null)   // 헤더 그룹 버튼(입력·점검 / 관리·설정)
   const [showLocations, setShowLocations] = useState(false)
   const [detailId, setDetailId]           = useState<string | null>(null)
+  // 상세 진입 시 시작 모드 — 기본은 보기, '다음 품목' 이어가기로 열면 점검 폼부터(아이템별 연속 점검)
+  const [detailInitialMode, setDetailInitialMode] = useState<'view' | 'check'>('view')
+  const openDetail = (id: string, m: 'view' | 'check' = 'view') => { setDetailInitialMode(m); setDetailId(id) }
   const [error, setError]                 = useState('')
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
@@ -346,11 +349,12 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
                   <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
                     <button type="button" onClick={() => { setOpenMenu(null); setShowLocations(true) }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">위치 관리</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">위치 관리<span className="block text-[0.65625rem] text-[var(--warm-muted)]">창고·주방 등 보관 위치 추가·수정</span></button>
                     <button type="button" onClick={() => { setOpenMenu(null); setShowCatSettings(true) }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">카테고리 설정</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">카테고리 설정<span className="block text-[0.65625rem] text-[var(--warm-muted)]">표시 이름·순서·소속 지출 카테고리</span></button>
+                    <div className="my-1 border-t border-[var(--warm-border)]" />
                     <button type="button" onClick={() => { setOpenMenu(null); setShowExcluded(true) }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}<span className="block text-[0.65625rem] text-[var(--warm-muted)]">당분간 안 쓰는 품목 보관·복구</span></button>
                     <button type="button" onClick={() => { setOpenMenu(null); setShowMergeRules(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">병합 적용취소·규칙<span className="block text-[0.65625rem] text-[var(--warm-muted)]">갈라진 품목명 통일 관리</span></button>
                   </div>
@@ -435,13 +439,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             </button>
                           )}
                         </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
+                        <div className="flex shrink-0 items-center gap-2">
                           <button type="button" onClick={() => setPendMerge({ label: g.label, category: g.category })}
-                            className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                             합치기
                           </button>
                           <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
-                            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
+                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
                             {receivingKey === g.key ? '처리 중' : '수령 확인'}
                           </button>
                         </div>
@@ -489,7 +493,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   selectMode={selectMode}
                   isSelected={selected.has(r.id)}
                   hasDraft={draftIds.has(r.id)}
-                  onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
+                  onOpen={() => selectMode ? toggleSelect(r.id) : openDetail(r.id)}
                   onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelect(r.id) } : undefined}
                   onArchive={async () => {
                     if (!(await confirmDialog({ title: `'${r.label}' 품목을 숨길까요?`, message: '카드 목록에서 사라집니다. 점검·구매·지출 기록은 모두 보존되며, 헤더의 "숨김 품목"에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
@@ -552,16 +556,26 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           onConfirm={sheet.onConfirm} pending={isPending} />
       )}
 
-      {detailId && (
-        <DetailModal
-          row={rows.find(r => r.id === detailId) ?? null}
-          onClose={() => setDetailId(null)}
-          onChange={() => { router.refresh(); refreshDrafts() }}
-          onDraftChange={refreshDrafts}
-          targetMonth={targetMonth}
-          onChangeMonth={changeMonth}
-        />
-      )}
+      {detailId && (() => {
+        // 아이템별 연속 점검 — 현재 보이는(검색·탭 스코프) 목록 순서에서 다음 품목 id
+        const navRows = grouped.flatMap(g => g.rows)
+        const curIdx = navRows.findIndex(r => r.id === detailId)
+        const nextId = curIdx >= 0 && curIdx < navRows.length - 1 ? navRows[curIdx + 1].id : null
+        return (
+          <DetailModal
+            key={detailId}
+            row={rows.find(r => r.id === detailId) ?? null}
+            initialMode={detailInitialMode}
+            nextId={nextId}
+            onGoToItem={id => openDetail(id, 'check')}
+            onClose={() => setDetailId(null)}
+            onChange={() => { router.refresh(); refreshDrafts() }}
+            onDraftChange={refreshDrafts}
+            targetMonth={targetMonth}
+            onChangeMonth={changeMonth}
+          />
+        )
+      })()}
     </div>
   )
 }
@@ -750,7 +764,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           qtyUnit:  qtyUnit  || null,
           memo:     memo     || null,
         })
-        if (!res.ok) { pushToast('error', res.error); return }
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
         onDone()
         pushToast('success', '품목 추가됨')
       } finally { release() }
@@ -808,16 +822,17 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   )
 }
 
-function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth }: {
+function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth, initialMode = 'view', nextId = null, onGoToItem }: {
   row: InventoryRow | null; onClose: () => void; onChange: () => void; onDraftChange?: () => void
   targetMonth: string; onChangeMonth: (delta: number) => void
+  initialMode?: 'view' | 'check'; nextId?: string | null; onGoToItem?: (id: string) => void
 }) {
   if (!row) return null
   const trackedItemId = row.id
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [monthlyInflow, setMonthlyInflow] = useState<MonthlyInflowRow[]>([])
-  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings' | 'reconcile'>('view')
+  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings' | 'reconcile'>(initialMode)
   const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
@@ -933,7 +948,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} onDraftChange={onDraftChange} />
+        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => {
+          setMode('view'); reload(); onChange()
+          pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
+            ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
+            : undefined)
+        }} onDraftChange={onDraftChange} />
       ) : mode === 'reconcile' ? (
         <TimelineReconcileForm
           item={data.item}

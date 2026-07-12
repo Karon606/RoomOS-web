@@ -84,7 +84,17 @@ export function DiscountWidget({ leaseTermId, onChange }: {
               <option value="percent">퍼센트(%)</option>
             </select>
             <div className="flex-1">
-              <MoneyInput value={value} onChange={setValue} placeholder={type === 'percent' ? '예: 10' : '예: 50000'} />
+              {type === 'percent' ? (
+                <div className="relative">
+                  <input type="text" inputMode="numeric" value={value ? String(value) : ''}
+                    onChange={e => setValue(Number(e.target.value.replace(/[^0-9]/g, '')) || 0)}
+                    placeholder="예: 10"
+                    className="mono tnum w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 pr-8 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-muted)] pointer-events-none">%</span>
+                </div>
+              ) : (
+                <MoneyInput value={value} onChange={setValue} placeholder="예: 50000" />
+              )}
             </div>
           </div>
           <select value={scope} onChange={e => setScope(e.target.value as 'permanent' | 'temporary')}

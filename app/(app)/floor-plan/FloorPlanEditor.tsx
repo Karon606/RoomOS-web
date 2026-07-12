@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
@@ -10,7 +11,7 @@ import {
 } from './actions'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { Modal } from '@/components/ui/Modal'
+import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 
 // ── 상수 ─────────────────────────────────────────────────────
@@ -529,6 +530,9 @@ export default function FloorPlanEditor({
   // ── AI 임포트 ─────────────────────────────────────────────
   const [aiImportOpen, setAiImportOpen]       = useState(false)
 
+  // ── 층 이름 변경(정본 Modal — window.prompt 대체) ─────────
+  const [renameTarget, setRenameTarget]       = useState<{ id: string; value: string } | null>(null)
+
   // ── 대시보드 표시 토글 ────────────────────────────────────
   const [showOnDashboard, setShowOnDashboard] = useState(initialData?.showOnDashboard ?? false)
   const [dashToggling, setDashToggling]       = useState(false)
@@ -593,6 +597,50 @@ export default function FloorPlanEditor({
   useEffect(() => { elementsRef.current = elements },        [elements])
   useEffect(() => { selectedIdsRef.current = selectedIds },  [selectedIds])
   useEffect(() => { clipboardRef.current = clipboard },      [clipboard])
+
+  // ── 미저장 변경 가드(ID-28) ──────────────────────────────
+  // 마지막 저장 시점 스냅샷과 현재(모든 층 요소)를 비교해 dirty 판정.
+  // 편집 중 탭 이동·새로고침 시 확인을 거치고, 저장 직후엔 경고가 안 뜨게 한다.
+  const router = useRouter()
+  const savedSnapshotRef = useRef<string>('')
+  const dirtyRef = useRef(false)
+  const serializeFloors = useCallback(() => JSON.stringify(
+    floors.map(f => ({
+      id: f.id, label: f.label,
+      elements: f.id === activeFloorId ? elementsRef.current : (floorElementsRef.current.get(f.id) ?? []),
+    })),
+  ), [floors, activeFloorId])
+  // 최초 마운트 시 저장 스냅샷 확정(다른 층 요소가 ref 에 채워진 뒤).
+  useEffect(() => { savedSnapshotRef.current = serializeFloors() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { dirtyRef.current = serializeFloors() !== savedSnapshotRef.current }, [elements, floors, activeFloorId, serializeFloors])
+  // 새로고침·탭 닫기 방어
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+  // 앱 내 라우팅 이탈(하단 탭·링크) 방어 — 링크 클릭을 가로채 확인 후 이동
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!dirtyRef.current) return
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const a = (e.target as HTMLElement).closest('a')
+      if (!a) return
+      const href = a.getAttribute('href')
+      if (!href || href.startsWith('#') || href.startsWith('http') || a.target === '_blank') return
+      e.preventDefault()
+      e.stopPropagation()
+      void confirmDialog({ title: '저장하지 않은 변경이 있어요', message: '나가면 배치 변경이 사라집니다.', confirmLabel: '나가기', level: 'danger' }).then(ok => {
+        if (ok) { dirtyRef.current = false; router.push(href) }
+      })
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
+  }, [router])
 
   // ── Konva 내부 ref ────────────────────────────────────────
   const nodeRefs           = useRef<Map<string, any>>(new Map())
@@ -680,11 +728,17 @@ export default function FloorPlanEditor({
 
   const renameFloor = useCallback((id: string) => {
     const current = floors.find(f => f.id === id)?.label ?? ''
-    const name = window.prompt('층 이름 변경', current)
-    if (name !== null && name.trim()) {
-      setFloors(prev => prev.map(f => f.id === id ? { ...f, label: name.trim() } : f))
-    }
+    setRenameTarget({ id, value: current })
   }, [floors])
+  const commitRename = useCallback(() => {
+    setRenameTarget(t => {
+      if (t) {
+        const name = t.value.trim()
+        if (name) setFloors(prev => prev.map(f => f.id === t.id ? { ...f, label: name } : f))
+      }
+      return null
+    })
+  }, [])
 
   // ── 키보드 단축키 ─────────────────────────────────────────
   useEffect(() => {
@@ -935,8 +989,12 @@ export default function FloorPlanEditor({
     }))
     const res = await saveFloorPlan({ floors: allFloors })
     setSaving(false)
+    if (res.ok) {
+      savedSnapshotRef.current = serializeFloors()
+      dirtyRef.current = false
+    }
     if (res.ok) pushToast('success', '도면 저장됨', {
-      action: { label: '적용취소', run: () => { void swapFloorPlanWithPrev().then(r => { if (r.ok) { pushToast('info', '직전 저장본으로 되돌렸습니다 — 화면에 반영하려면 새로고침하세요 (다시 누르면 재적용)') } else pushToast('error', r.error) }) } },
+      action: { label: '적용취소', run: () => { void swapFloorPlanWithPrev().then(r => { if (r.ok) { pushToast('info', '직전 저장본으로 되돌렸습니다. 화면에 반영하려면 새로고침하세요 (다시 누르면 재적용).') } else pushToast('error', r.error) }) } },
     })
     else pushToast('error', res.error)
   }
@@ -1472,6 +1530,28 @@ export default function FloorPlanEditor({
       {/* 다각형 메뉴 외부 클릭 닫기 */}
       {showPolyMenu && (
         <div className="fixed inset-0 z-20" onClick={() => setShowPolyMenu(false)} />
+      )}
+
+      {/* 층 이름 변경: 정본 Modal (window.prompt 대체) */}
+      {renameTarget && (
+        <Modal open onClose={() => setRenameTarget(null)} width="xs" title="층 이름 변경"
+          footer={
+            <ModalFooterActions onCancel={() => setRenameTarget(null)}>
+              <Btn variant="primary" size="sm" onClick={commitRename}>변경</Btn>
+            </ModalFooterActions>
+          }>
+          <div className="p-5">
+            <input
+              type="text"
+              autoFocus
+              value={renameTarget.value}
+              onChange={e => setRenameTarget(t => t ? { ...t, value: e.target.value } : t)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitRename() } }}
+              placeholder="층 이름"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+            />
+          </div>
+        </Modal>
       )}
     </div>
   )

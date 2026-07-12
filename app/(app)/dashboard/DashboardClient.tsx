@@ -6,6 +6,7 @@ import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
 import { getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
@@ -198,16 +199,7 @@ function CheckoutRefundModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>
               환불 금액 (최대 {fmtWon(maxRefund)})
             </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={refund.toLocaleString()}
-              onChange={e => {
-                const n = Number(e.target.value.replace(/[^0-9]/g, ''))
-                setRefund(isNaN(n) ? 0 : n)
-              }}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
-            />
+            <MoneyInput value={refund} onChange={setRefund} placeholder="0원" />
             {exceedsMax && (
               <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
             )}
@@ -423,7 +415,6 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
   const [memo, setMemo]           = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError]         = useState('')
-  const [done, setDone]           = useState(false)
 
   const handleSubmit = () => {
     if (!alert.recurringExpenseId) return
@@ -435,22 +426,18 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
         payMethod: payMethod || undefined,
         memo: memo || undefined,
       })
-      if (res.ok) { setDone(true); setTimeout(onDone, 800) }
+      // 다른 저장 흐름과 동일하게 즉시 닫고 토스트로 확인 (인위적 지연·완료 화면 제거)
+      if (res.ok) { pushToast('success', '지출이 기록되었습니다'); onDone() }
       else setError(res.error)
     })
   }
 
   // v2.0 §12 dirty — 제안값에서 바뀌었거나 추가 입력이 있으면 닫기 확인
-  const dirty = !done && (amount !== suggestedAmount || detail !== '' || memo !== '')
+  const dirty = amount !== suggestedAmount || detail !== '' || memo !== ''
 
   return (
     <Modal open onClose={onClose} width="sm" title="지출 등록" dirty={dirty}>
-        {done ? (
-          <div className="px-5 py-10 text-center">
-            <p className="text-sm font-semibold text-[var(--success-fg)]">지출이 기록되었습니다</p>
-          </div>
-        ) : (
-          <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-4 space-y-3">
             {/* 날짜 + 금액 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -523,8 +510,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                 {pending ? '저장 중…' : '저장'}
               </Btn>
             </div>
-          </div>
-        )}
+        </div>
     </Modal>
   )
 }
@@ -1099,7 +1085,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
       <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>Gemini AI 재무 분석</h3>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>이달 재무 분석</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{targetMonth} 운영 데이터 기반 AI 분석</p>
           </div>
           <Btn variant="primary" size="md" onClick={handleAnalyze} disabled={isLoading}>
@@ -1114,17 +1100,22 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         {isLoading && !aiText && (
           <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--coral)' }}>
             <span className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-            Gemini가 재무 데이터를 분석하고 있습니다…
+            이달 재무 현황을 분석하고 있어요
           </div>
         )}
-        {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
+        {error && (
+          <div className="py-4 text-center space-y-3">
+            <p className="text-[var(--danger-fg)] text-sm">{error}</p>
+            <Btn variant="secondary" size="sm" onClick={handleAnalyze} disabled={isLoading}>다시 분석하기</Btn>
+          </div>
+        )}
         {aiText && (
           <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid color-mix(in srgb, var(--coral) 20%, transparent)' }}>
             <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>
               {aiText}
               {isLoading && <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />}
             </div>
-            {!isLoading && <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>↻ 다시 분석</button>}
+            {!isLoading && <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>다시 분석</button>}
           </div>
         )}
       </div>
@@ -1608,9 +1599,9 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
       </div>
       <div className="flex items-center gap-2">
         <span className={`text-sm font-semibold ${amountColor}`}>{fmtWon(p.actualAmount)}</span>
-        <div className="flex gap-1.5 ml-1">
-          <button onClick={() => onEdit(p)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
-          <button onClick={() => onDelete(p.id)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
+        <div className="flex gap-2 ml-1">
+          <button onClick={() => onEdit(p)} className="inline-flex items-center text-xs font-medium px-2.5 min-h-[44px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
+          <button onClick={() => onDelete(p.id)} className="inline-flex items-center text-xs font-medium px-2.5 min-h-[44px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
         </div>
       </div>
     </div>
@@ -2391,7 +2382,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지) */}
                                 <button type="button"
                                   onClick={() => setSmsTarget({ leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue })}
-                                  className="min-h-[30px] inline-flex items-center text-[0.65625rem] px-2 py-0.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+                                  className="min-h-[44px] inline-flex items-center text-[0.65625rem] px-2.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
                                   안내문자
                                 </button>
                               </div>

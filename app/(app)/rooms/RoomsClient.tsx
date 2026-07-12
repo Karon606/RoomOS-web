@@ -113,6 +113,11 @@ const DEFAULT_VACANT_VIS = Object.fromEntries(
 ) as Record<VacantColKey, boolean>
 
 const COL_WIDTHS_KEY = 'stayeum_rooms_col_widths'
+const FILTER_KEY   = 'stayeum_rooms_filter'
+const SORTKEY_KEY  = 'stayeum_rooms_sortkey'
+const SORTDIR_KEY  = 'stayeum_rooms_sortdir'
+const FILTER_VALUES = ['all', 'unpaid', 'checkout', 'awaiting', 'paid', 'adjusted', 'vacant'] as const
+type RoomFilter = typeof FILTER_VALUES[number]
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   roomNo: 80, tenantName: 140,
@@ -195,6 +200,7 @@ function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
 type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
              | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status' | 'dueDay'
 type SortDir = 'asc' | 'desc'
+const SORTKEY_VALUES: SortKey[] = ['roomNo', 'type', 'windowType', 'tenantName', 'contact', 'depositAmount', 'expected', 'totalPaid', 'balance', 'status', 'dueDay']
 
 function getDueSortValue(room: RoomStatus, targetMonth: string): number {
   const info = getEffectiveDueInfo(room, targetMonth)
@@ -245,14 +251,26 @@ export default function RoomsClient({
   const entityModal = useEntityModal()
   // 수납 / 부가수익 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익)
   const [viewTab, setViewTab] = useState<'rooms' | 'income'>(initialTab ?? 'rooms')
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted' | 'vacant'>('all')
+  const [filter, setFilter] = useState<RoomFilter>(() => {
+    if (typeof window === 'undefined') return 'all'
+    const v = localStorage.getItem(FILTER_KEY)
+    return v && (FILTER_VALUES as readonly string[]).includes(v) ? v as RoomFilter : 'all'
+  })
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
   const [vacantSortDir, setVacantSortDir] = useState<SortDir>('asc')
-  const [sortKey, setSortKey] = useState<SortKey>('status')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    if (typeof window === 'undefined') return 'status'
+    const v = localStorage.getItem(SORTKEY_KEY)
+    return v && SORTKEY_VALUES.includes(v as SortKey) ? v as SortKey : 'status'
+  })
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    if (typeof window === 'undefined') return 'desc'
+    const v = localStorage.getItem(SORTDIR_KEY)
+    return v === 'asc' || v === 'desc' ? v : 'desc'
+  })
   const [search, setSearch] = useUrlState('q', '')
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
@@ -303,6 +321,11 @@ export default function RoomsClient({
   }, [])
 
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
+
+  // 필터·정렬을 localStorage에 유지 (화면 이탈·재마운트 후에도 작업 맥락 보존)
+  useEffect(() => { try { localStorage.setItem(FILTER_KEY, filter) } catch {} }, [filter])
+  useEffect(() => { try { localStorage.setItem(SORTKEY_KEY, sortKey) } catch {} }, [sortKey])
+  useEffect(() => { try { localStorage.setItem(SORTDIR_KEY, sortDir) } catch {} }, [sortDir])
 
   const startResize = useCallback((col: string, startX: number) => {
     const startW = colWidthsRef.current[col] ?? 100

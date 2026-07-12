@@ -64,6 +64,7 @@ export default function RequestsClient({
 
   const [resolvingId,   setResolvingId]   = useState<string | null>(null)
   const [resolvingMemo, setResolvingMemo] = useState('')
+  const [busyId,        setBusyId]        = useState<string | null>(null)   // 행별 처리 중 (전역 잠금 방지)
 
   // 등록 폼 상태
   const [showAddForm,   setShowAddForm]   = useState(false)
@@ -95,21 +96,40 @@ export default function RequestsClient({
   const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
 
   const handleResolve = (id: string, memo: string) => {
+    setBusyId(id)
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await resolveTenantRequest(id, memo)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '완료로 처리됨')
+        // 적용취소(기존 unresolve 재사용) + 과거 월 조회 중이면 증발 안내
+        const opts: { action: { label: string; run: () => void }; detail?: string } = {
+          action: { label: '적용취소', run: () => unresolveTenantRequest(id).then(() => router.refresh()) },
+        }
+        if (targetMonth !== kstMonthOf(new Date())) opts.detail = '처리됨은 이번 달에서 볼 수 있어요.'
+        pushToast('success', '완료로 처리했습니다', opts)
         setResolvingId(null)
         setResolvingMemo('')
         router.refresh()
-      } finally { release() }
+      } finally { release(); setBusyId(null) }
+    })
+  }
+
+  const handleUnresolve = (id: string) => {
+    setBusyId(id)
+    startTransition(async () => {
+      try {
+        const res = await unresolveTenantRequest(id)
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('info', '완료를 해제했습니다 (미완료로 복귀)')
+        router.refresh()
+      } finally { setBusyId(null) }
     })
   }
 
   const handleDelete = async (id: string) => {
     if (!(await confirmDialog({ title: '이 요청을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+    setBusyId(id)
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -117,7 +137,7 @@ export default function RequestsClient({
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '삭제됨')
         router.refresh()
-      } finally { release() }
+      } finally { release(); setBusyId(null) }
     })
   }
 
@@ -389,14 +409,9 @@ export default function RequestsClient({
                     <span className="text-[0.65625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
                   )}
                   {resolved && (
-                    <button type="button" disabled={pending}
-                      onClick={() => startTransition(async () => {
-                        const res = await unresolveTenantRequest(r.id)
-                        if (!res.ok) { pushToast('error', res.error); return }
-                        pushToast('info', '완료를 해제했습니다 (미완료로 복귀)')
-                        router.refresh()
-                      })}
-                      className="min-h-[26px] inline-flex items-center text-[0.65625rem] px-1.5 py-0.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">완료 해제</button>
+                    <button type="button" disabled={busyId === r.id}
+                      onClick={() => handleUnresolve(r.id)}
+                      className="min-h-[40px] inline-flex items-center text-xs px-2.5 py-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] disabled:opacity-50 transition-colors">완료 해제</button>
                   )}
                 </div>
 
@@ -426,33 +441,40 @@ export default function RequestsClient({
                       <div className="flex gap-2">
                         <button
                           onClick={() => { setResolvingId(null); setResolvingMemo('') }}
-                          disabled={pending}
+                          disabled={busyId === r.id}
                           className="flex-1 py-1.5 text-xs font-medium rounded-md bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)] disabled:opacity-50"
                         >
                           취소
                         </button>
                         <button
                           onClick={() => handleResolve(r.id, resolvingMemo)}
-                          disabled={pending}
+                          disabled={busyId === r.id}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--on-solid)] disabled:opacity-50"
                         >
-                          {pending ? '저장 중…' : '완료로 저장'}
+                          {busyId === r.id ? '저장 중…' : '완료로 저장'}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 mt-3 items-center">
                       <button
-                        onClick={() => { setResolvingId(r.id); setResolvingMemo('') }}
-                        disabled={pending}
+                        onClick={() => handleResolve(r.id, '')}
+                        disabled={busyId === r.id}
                         className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-50 inline-flex items-center gap-1"
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>완료로 처리
                       </button>
                       <button
+                        onClick={() => { setResolvingId(r.id); setResolvingMemo('') }}
+                        disabled={busyId === r.id}
+                        className="text-xs px-2 py-1.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-50"
+                      >
+                        메모 추가
+                      </button>
+                      <button
                         onClick={() => handleDelete(r.id)}
-                        disabled={pending}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] border border-[var(--danger-ring)] hover:bg-[var(--danger-bg)] disabled:opacity-50"
+                        disabled={busyId === r.id}
+                        className="ml-auto px-3 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] border border-[var(--danger-ring)] hover:bg-[var(--danger-bg)] disabled:opacity-50"
                       >
                         삭제
                       </button>
@@ -462,7 +484,7 @@ export default function RequestsClient({
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => handleDelete(r.id)}
-                      disabled={pending}
+                      disabled={busyId === r.id}
                       className="px-3 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] border border-[var(--danger-ring)] hover:bg-[var(--danger-bg)] disabled:opacity-50"
                     >
                       삭제

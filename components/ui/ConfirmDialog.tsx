@@ -54,6 +54,7 @@ export function alertDialog(title: string, message?: string): Promise<void> {
 export function ConfirmHost() {
   const [pending, setPending] = useState<Pending | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     listener = setPending
@@ -61,9 +62,10 @@ export function ConfirmHost() {
     return () => { listener = null }
   }, [])
 
-  // 초기 포커스 = 취소 버튼 (오조작 방지, v2.0 §14)
+  // 초기 포커스 = 취소 버튼 (오조작 방지, v2.0 §14). 취소 버튼이 없는 안내 다이얼로그(alertDialog)는
+  // 확인 버튼에 포커스해 Enter 로 바로 닫히게 한다.
   useEffect(() => {
-    if (pending) cancelRef.current?.focus()
+    if (pending) (cancelRef.current ?? confirmRef.current)?.focus()
   }, [pending])
 
   // Esc = 취소 (전 단계 허용, v2.0 §14)
@@ -163,7 +165,7 @@ export function ConfirmHost() {
               {opts.altLabel}
             </button>
           )}
-          <button type="button" onClick={() => done('confirm')}
+          <button ref={confirmRef} type="button" onClick={() => done('confirm')}
             className={`h-10 px-4 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
               isDanger ? 'bg-[var(--tc)] hover:bg-[var(--tc-d)]' : 'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)]'
             }`}>

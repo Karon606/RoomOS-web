@@ -20,11 +20,17 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
   const [rentStr, setRentStr] = useState('')
   const [inDate, setInDate] = useState('')
   const [outDate, setOutDate] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setRoomId(''); setRentStr(''); setInDate(kstYmdStr()); setOutDate('')
-    getRoomsForQuote().then(setData).catch(() => setData(null))
+    setLoadFailed(false); setLoading(true)
+    getRoomsForQuote()
+      .then(setData)
+      .catch(() => { setData(null); setLoadFailed(true) })
+      .finally(() => setLoading(false))
   }, [open])
 
   const rooms = data?.rooms
@@ -40,18 +46,21 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
       <div className="p-5 space-y-3">
         <label className="block">
           <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">호실 (선택 시 월세 자동)</span>
-          <select value={roomId}
+          <select value={roomId} disabled={loading}
             onChange={e => {
               setRoomId(e.target.value)
               const r = rooms?.find(x => x.id === e.target.value)
               if (r) setRentStr(r.baseRent ? r.baseRent.toLocaleString() : '')
             }}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-            <option value="">직접 입력</option>
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-60">
+            <option value="">{loading ? '호실 불러오는 중...' : '직접 입력'}</option>
             {(rooms ?? []).map(r => (
               <option key={r.id} value={r.id}>{r.roomNo}호 · {fmtWon(r.baseRent)}{r.occupied ? ' (사용중)' : ''}</option>
             ))}
           </select>
+          {loadFailed && (
+            <span className="block text-xs text-[var(--danger-fg)] mt-1">호실 목록을 불러오지 못했어요. 월 이용료를 직접 입력해 주세요.</span>
+          )}
         </label>
         <label className="block">
           <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">월 이용료 *</span>
@@ -73,8 +82,14 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
           </label>
         </div>
 
-        {rent > 0 && inDate && outDate && !quote && !short && (
-          <p className="text-xs text-[var(--danger-fg)]">퇴실일이 입실일보다 빠릅니다.</p>
+        {!short && !quote && (
+          rent === 0 ? (
+            <p className="text-xs text-[var(--warm-muted)]">월 이용료를 입력해 주세요.</p>
+          ) : !(inDate && outDate) ? (
+            <p className="text-xs text-[var(--warm-muted)]">입실일과 퇴실일을 모두 입력하면 요금이 계산됩니다.</p>
+          ) : (
+            <p className="text-xs text-[var(--danger-fg)]">퇴실일이 입실일보다 빠릅니다.</p>
+          )
         )}
         {short && data && (
           <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-4 space-y-2">
