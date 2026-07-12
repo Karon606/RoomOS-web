@@ -270,6 +270,7 @@ export default function RoomsClient({
     return v && (FILTER_VALUES as readonly string[]).includes(v) ? v as RoomFilter : 'all'
   })
   const [floorFilter, setFloorFilter] = useState('')
+  const [showFilters, setShowFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
@@ -650,8 +651,34 @@ export default function RoomsClient({
         </div>
       </div>
 
-      {/* 검색창 — v2.0 §23 공용 SearchBar */}
-      <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" />
+      {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴 */}
+      <div className="flex gap-2">
+        <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" className="flex-1" />
+        {allFloors.length > 1 && (
+          <button type="button" onClick={() => setShowFilters(v => !v)}
+            className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              showFilters || floorFilter
+                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
+                : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+            }`}>
+            필터{floorFilter ? ' 1' : ''}
+          </button>
+        )}
+      </div>
+
+      {/* 접이식 필터 패널 */}
+      {showFilters && allFloors.length > 1 && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
+          <div className="space-y-1 max-w-[12rem]">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+            <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+              <option value="">전체 층</option>
+              {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* 빠른 필터 + 열 설정 */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -671,19 +698,6 @@ export default function RoomsClient({
             { value: 'vacant',   label: `공실 ${vacants.length}실` },
           ]}
         />
-        {allFloors.length > 1 && (
-          <select
-            value={floorFilter}
-            onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
-              ${floorFilter
-                ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
-                : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
-          >
-            <option value="">전체 층</option>
-            {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
-          </select>
-        )}
 
         {/* 공실 표시 · 열 설정 — flex-wrap 새 줄로 떨어져도 항상 우측 정렬되도록 ml-auto 그룹.
             (모바일에서 새 줄에 떨어졌을 때 부모가 좌측 끝에 정렬되어 드롭다운이 화면 왼쪽으로

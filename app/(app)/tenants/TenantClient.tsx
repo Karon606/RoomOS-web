@@ -358,6 +358,7 @@ export default function TenantClient({
     : statusFilter === 'past' ? 'past'
     : 'residents'
   const [floorFilter, setFloorFilter]   = useState('')
+  const [showFilters, setShowFilters]   = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
@@ -954,8 +955,34 @@ export default function TenantClient({
         )}
       </div>
 
-      {/* 검색 — v2.0 §23 공용 SearchBar (모바일 포함 항상 노출) */}
-      <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" />
+      {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴 */}
+      <div className="flex gap-2">
+        <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" className="flex-1" />
+        {allFloors.length > 1 && (
+          <button type="button" onClick={() => setShowFilters(v => !v)}
+            className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              showFilters || floorFilter
+                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
+                : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+            }`}>
+            필터{floorFilter ? ' 1' : ''}
+          </button>
+        )}
+      </div>
+
+      {/* 접이식 필터 패널 */}
+      {showFilters && allFloors.length > 1 && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
+          <div className="space-y-1 max-w-[12rem]">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+            <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+              <option value="">전체 층</option>
+              {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* 상태 필터 — v2.0 §23 단일 SegmentedControl(탭+하위 2단계를 생애주기 한 줄로 평탄화) */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -976,20 +1003,6 @@ export default function TenantClient({
             { value: 'all',              label: `전체 ${countAll}` },
           ]}
         />
-
-        {allFloors.length > 1 && (
-          <select
-            value={floorFilter}
-            onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
-              ${floorFilter
-                ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
-                : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
-          >
-            <option value="">전체 층</option>
-            {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
-          </select>
-        )}
 
         {/* 구분선 */}
         <div className="flex-1" />
