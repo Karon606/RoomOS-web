@@ -229,7 +229,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   onStartRecord: (alert: AlertItem) => void
 }) {
   const router = useRouter()
-  const initial = alert.text.slice(0, 1)
   const avatarBg = hexToRgba(alert.dotColor, 0.15)
   const isRecurring = !!alert.recurringExpenseId
   const reservationDueLeaseId = alert.reservationDueLeaseId
@@ -285,9 +284,9 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     <Modal open onClose={onClose} width="sm"
       title={
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
-            style={{ background: avatarBg, fontSize: '0.875rem', color: alert.dotColor }}>
-            {initial}
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: avatarBg, color: alert.dotColor }}>
+            <CategoryGlyph category={alert.category} size={18} />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
@@ -530,6 +529,34 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   inventory: { label: '재고 부족',    color: 'var(--viz-4)' },
   other:     { label: '기타',         color: 'var(--ink-m)' },
 }
+
+// 알림 카테고리별 stroke 선 아이콘 — AlertRow·AlertDetailModal 공용(색은 currentColor로 dotColor 상속).
+// 이름 첫 글자(성) 대신 유형을 형태로 표시. 색 충돌(success·inspect·info 각 2종)을 형태로 이중 부호화.
+// 앱 (i)/KPI ? 아이콘과 동일 톤(viewBox 24·stroke·화살촉 없음). 전 path 24그리드 4~20 안전영역(14px 뭉갬 방지).
+const CATEGORY_GLYPH_PATHS: Record<AlertCat, React.ReactNode> = {
+  unpaid:    (<><rect x="5.5" y="8.5" width="13" height="7" rx="1.5" /><path d="M7.5 14.5 16.5 9.5" /></>),
+  upcoming:  (<><rect x="5.5" y="6.5" width="13" height="12" rx="2" /><path d="M5.5 10.5h13" /><path d="M9 5v2.5M15 5v2.5" /></>),
+  moveout:   (<><rect x="8" y="5" width="8" height="14" rx="1" /><path d="M13.5 11.5v3" /></>),
+  movein:    (<><circle cx="12" cy="8" r="3" /><path d="M5.5 19a6.5 6.5 0 0 1 13 0" /></>),
+  tour:      (<><path d="M12 19c3.3-4 5-6.7 5-9a5 5 0 1 0-10 0c0 2.3 1.7 5 5 9z" /><circle cx="12" cy="10" r="1.8" /></>),
+  contact:   (<path d="M16.5 14.2l-1.4 1.4a1 1 0 0 1-1.1.2 12.5 12.5 0 0 1-5.8-5.8 1 1 0 0 1 .2-1.1l1.4-1.4a1 1 0 0 0 .2-1L9.3 5.6A1 1 0 0 0 8.4 5H6.2A1.2 1.2 0 0 0 5 6.3 13 13 0 0 0 17.7 19a1.2 1.2 0 0 0 1.3-1.2v-2.2a1 1 0 0 0-.6-.9l-1.9-.8a1 1 0 0 0-1 .1z" />),
+  wish:      (<path d="M12 5.2 13.98 9.25 18.47 9.9 15.24 13.05 16 17.5 12 15.4 8 17.5 8.76 13.05 5.53 9.9 10.02 9.25Z" />),
+  request:   (<><rect x="5" y="5" width="14" height="10" rx="3" /><path d="M9.5 15v3l3.2-3" /></>),
+  recurring: (<><circle cx="12" cy="12" r="7" /><path d="M12 8v4l3.2 1.9" /></>),
+  inventory: (<><rect x="6" y="8" width="12" height="10" rx="1" /><path d="M6 11h12" /><path d="M12 11v7" /></>),
+  other:     (<><path d="M12 5a5 5 0 0 0-5 5c0 5-2 6-2 6h14s-2-1-2-6a5 5 0 0 0-5-5z" /><path d="M10.5 18a1.6 1.6 0 0 0 3 0" /></>),
+}
+
+function CategoryGlyph({ category, size }: { category?: AlertItem['category']; size: number }) {
+  const glyph = CATEGORY_GLYPH_PATHS[(category ?? 'other') as AlertCat] ?? CATEGORY_GLYPH_PATHS.other
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {glyph}
+    </svg>
+  )
+}
+
 const COLLAPSE_THRESHOLD = 3   // (예정 그룹) 이 개수 이하만 기본 펼침
 
 // timeLabel 에서 긴급도(D-N)를 도출 — 경과=음수, 오늘/임박/필요=0, N일 남음=양수, 날짜없음=큰값(긴급 아님).
@@ -551,9 +578,9 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
     >
       <div className="flex items-center gap-3 px-5 py-3"
         style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-          style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: '0.6875rem', color: item.dotColor }}>
-          {item.text.slice(0, 1)}
+        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: hexToRgba(item.dotColor, 0.12), color: item.dotColor }}>
+          <CategoryGlyph category={item.category} size={14} />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
@@ -1490,7 +1517,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               </div>
               {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                지금까지 기록 기준 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 이달 지출의 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>가 기록됨
+                장부 순이익 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 반영 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>
               </p>
             </div>
           )
