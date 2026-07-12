@@ -1130,7 +1130,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: 'var(--success-fg)' }} />
                     </div>
-                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-32 text-right shrink-0 tabular-nums">
                       {Math.round(r.purchaseQty * 100) / 100}{u} · {fmtWon(r.purchaseAmount)}
                     </span>
                   </div>
@@ -1141,7 +1141,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, additionPct)}%`, background: 'var(--inspect-fg)' }} />
                     </div>
-                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-32 text-right shrink-0 tabular-nums">
                       {Math.round(r.additionQty * 100) / 100}{u}
                     </span>
                   </div>

@@ -2155,7 +2155,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   fontWeight: on ? 600 : 500,
                                 }}>
                                 {on && roomDims.length > 1 && (
-                                  <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[0.65625rem] font-bold"
+                                  <span className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[0.65625rem] font-bold"
                                     style={{ background: 'rgba(255,255,255,0.25)' }}>
                                     {idx + 1}
                                   </span>

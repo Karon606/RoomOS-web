@@ -2086,7 +2086,7 @@ export default function FinanceClient({
                     <span className="text-xs font-medium text-[var(--warm-dark)] num shrink-0">
                       {fmtWon(amt)}
                     </span>
-                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] w-7 text-right shrink-0">{pct}%</span>
                   </div>
                 )
               })}
