@@ -1,7 +1,8 @@
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
+import { isInternalPath } from '@/lib/auth/returnTo'
 import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
@@ -25,7 +26,12 @@ export default async function AppLayout({
   // (Supabase가 비대칭 JWT 서명키를 쓰면 로컬 검증 → 네트워크 호출 없음)
   const { data } = await supabase.auth.getClaims()
   const claims = data?.claims
-  if (!claims) redirect('/login')
+  if (!claims) {
+    // 세션 만료 시 원래 보던 화면으로 복귀 — proxy 가 실은 x-pathname 을 returnTo 로.
+    // isInternalPath 로 정제해 오픈 리다이렉트 차단, 로그인 후 proxy 가 returnTo 로 보냄.
+    const path = (await headers()).get('x-pathname')
+    redirect(isInternalPath(path) ? `/login?returnTo=${encodeURIComponent(path)}` : '/login')
+  }
 
   // ── 베타 접근 게이팅 ── 승인된 사용자(또는 슈퍼관리자)만 앱 진입.
   // 미승인/거절은 /pending 으로. (슈퍼관리자는 status 무관 통과 — env 또는 DB)

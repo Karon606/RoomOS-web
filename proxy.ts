@@ -3,7 +3,12 @@ import { createServerClient } from '@supabase/ssr'
 import { isInternalPath } from '@/lib/auth/returnTo'
 
 export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  // 서버 컴포넌트((app)/layout)가 현재 경로를 읽어 세션 만료 시 딥링크 복귀(returnTo)에 쓰도록
+  // 요청 헤더에 실어 전달. set()이라 클라이언트가 보낸 위조 x-pathname 은 덮어써서 무시된다.
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', request.nextUrl.pathname + request.nextUrl.search)
+
+  let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +22,7 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           )
-          supabaseResponse = NextResponse.next({ request })
+          supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
