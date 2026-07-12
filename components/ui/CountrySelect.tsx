@@ -292,7 +292,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)] transition-colors"
+        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
       >
         {selected ? (
           <>
@@ -302,7 +302,9 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
         ) : (
           <span className="text-[var(--warm-muted)] flex-1">{placeholder}</span>
         )}
-        <span className="text-[var(--warm-muted)] text-xs">{open ? '▲' : '▼'}</span>
+        <span className="text-[var(--warm-muted)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
+        </span>
       </button>
 
       {/* 드롭다운 */}
@@ -316,8 +318,8 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="국가 검색..."
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)]"
+              placeholder="국가 검색…"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
             />
           </div>
 

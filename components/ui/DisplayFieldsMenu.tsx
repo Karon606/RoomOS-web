@@ -81,7 +81,7 @@ export function DisplayFieldsMenu({
         type="button"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-xl text-sm font-medium bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors"
+        className="flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h16" />

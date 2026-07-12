@@ -37,8 +37,8 @@ export default function AppShell({
       {isAdminView && (
         <Link href="/admin"
           className="fixed top-0 inset-x-0 z-[70] flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--ink-2)', color: 'var(--sand)', letterSpacing: '0.02em' }}>
-          <span style={{ opacity: 0.7 }}>←</span>
+          style={{ background: 'var(--pill-bg)', color: 'var(--on-solid)', letterSpacing: '0.02em' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ opacity: 0.7 }}><path d="M15 18l-6-6 6-6"/></svg>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
             <path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/>
           </svg>

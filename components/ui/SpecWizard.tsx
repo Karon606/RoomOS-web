@@ -94,16 +94,16 @@ export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = f
         {/* 단계 표시 */}
         <p className="text-[0.6875rem] text-[var(--warm-muted)]">
           <span className={step === 0 ? 'font-bold text-[var(--coral)]' : ''}>1 포장형태</span>
-          <span className="mx-1.5">→</span>
+          <svg className="mx-1.5 inline align-middle" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg>
           <span className={step === 1 ? 'font-bold text-[var(--coral)]' : ''}>2 규격</span>
-          {!unitsOnly && (<><span className="mx-1.5">→</span><span className={step === 2 ? 'font-bold text-[var(--coral)]' : ''}>3 수량</span></>)}
+          {!unitsOnly && (<><svg className="mx-1.5 inline align-middle" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg><span className={step === 2 ? 'font-bold text-[var(--coral)]' : ''}>3 수량</span></>)}
         </p>
 
         {step === 0 && (
           <div className="space-y-3">
             {GROUPS.map(g => (
               <div key={g.id}>
-                <p className="text-xs font-semibold text-[var(--warm-dark)]">{g.label} <span className="font-normal text-[var(--warm-muted)]">— {g.hint}</span></p>
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{g.label} <span className="font-normal text-[var(--warm-muted)]">· {g.hint}</span></p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {g.units.length > 0 ? g.units.map(u => (
                     <button key={u} type="button" className={chip(false)} onClick={() => pickUnit(g, u)}>{u}</button>

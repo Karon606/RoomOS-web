@@ -481,9 +481,9 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <a key={i} href={body.trim() ? smsHref(list) : undefined} onClick={() => body.trim() && logBatch(i, list)}
               aria-disabled={!body.trim()}
               className={[
-                'flex items-center justify-center h-10 px-4 rounded-xl text-sm font-semibold transition-opacity',
+                'flex items-center justify-center h-10 px-4 rounded-lg text-sm font-semibold transition-opacity',
                 body.trim()
-                  ? 'bg-[var(--coral)] text-white hover:opacity-90'
+                  ? 'bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90'
                   : 'bg-[var(--cream-soft)] text-[var(--warm-muted)] pointer-events-none',
               ].join(' ')}>
               문자앱으로 보내기{batches.length > 1 ? ` (${i + 1}/${batches.length} · ${list.length}명)` : ` (${list.length}명)`}

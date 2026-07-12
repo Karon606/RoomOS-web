@@ -46,7 +46,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
               const r = rooms?.find(x => x.id === e.target.value)
               if (r) setRentStr(r.baseRent ? r.baseRent.toLocaleString() : '')
             }}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
             <option value="">직접 입력</option>
             {(rooms ?? []).map(r => (
               <option key={r.id} value={r.id}>{r.roomNo}호 · {fmtWon(r.baseRent)}{r.occupied ? ' (사용중)' : ''}</option>

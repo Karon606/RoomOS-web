@@ -82,7 +82,7 @@ export function SplashScreen({ immediate = false }: {
             color: 'var(--ink-s, #7A6553)',
             animation: 'sy-sp-caption 400ms ease forwards',
           }}>
-            연결이 느립니다 — 계속 시도 중입니다
+            연결이 느립니다. 계속 시도 중입니다
           </p>
         )}
         {phase === 'stalled' && (

@@ -350,7 +350,7 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
       </div>
       <div className="flex gap-3 mt-6">
         <button type="button" onClick={onCancel}
-          className="px-6 py-2.5 rounded-xl bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors">
+          className="px-6 py-2.5 rounded-lg bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors">
           취소
         </button>
         <Btn variant="primary" size="md" onClick={handleConfirm} disabled={processing}>

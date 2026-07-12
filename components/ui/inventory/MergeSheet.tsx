@@ -45,7 +45,7 @@ export function MergeSheet({
         {/* 대상 선택 — 남을(대표) 카드 */}
         <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">합칠 대상 (남을 품목)</label>
         <select value={destId} onChange={e => setDestId(e.target.value)} disabled={pending}
-          className="mt-1.5 h-11 w-full rounded-[10px] border-[1.5px] border-[var(--warm-border)] bg-[var(--canvas)] px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+          className="mt-1.5 h-11 w-full rounded-sm border-[1.5px] border-[var(--warm-border)] bg-[var(--canvas)] px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
           <option value="">대표(남을 품목) 선택…</option>
           {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
@@ -69,9 +69,9 @@ export function MergeSheet({
 
         <div className="mt-4 flex gap-2">
           <button type="button" onClick={onClose} disabled={pending}
-            className="h-[46px] flex-1 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--cream-2)] disabled:opacity-50">취소</button>
+            className="h-[46px] flex-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--cream-2)] disabled:opacity-50">취소</button>
           <button type="button" onClick={() => dest && onConfirm(dest.id)} disabled={pending || !dest}
-            className="h-[46px] flex-[1.6] rounded-xl bg-[var(--coral)] text-sm font-semibold text-white transition-colors hover:bg-[var(--coral-dark)] disabled:opacity-50">
+            className="h-[46px] flex-[1.6] rounded-lg bg-[var(--coral)] text-sm font-semibold text-[var(--on-solid)] transition-colors hover:bg-[var(--coral-dark)] disabled:opacity-50">
             {pending ? '합치는 중…' : confirmLabel}
           </button>
         </div>

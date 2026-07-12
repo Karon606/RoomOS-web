@@ -7,7 +7,7 @@ type Size = 'sm' | 'md' | 'lg'
 
 // Brand Guide v1.1 버튼 변형
 const VARIANT_CLS: Record<Variant, string> = {
-  primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-white border border-transparent',
+  primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-[var(--on-solid)] border border-transparent',
   secondary: 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
   danger:    'bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 text-[var(--coral-dark)] border border-[var(--coral)]/25',
   ghost:     'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)] border border-transparent',

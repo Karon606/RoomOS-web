@@ -183,9 +183,9 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
     >
       <button
         onClick={e => { e.stopPropagation(); handleClose() }}
-        className="absolute top-4 right-4 z-10 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
+        className="absolute top-4 right-4 z-10 text-white/80 hover:text-white w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
         aria-label="닫기"
-      >✕</button>
+      ><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg></button>
 
       {photos[index]?.driveFileId && (
         <a

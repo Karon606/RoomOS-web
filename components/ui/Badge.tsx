@@ -14,9 +14,9 @@ type Tone = SemanticTone | PaleTone | LegacyTone
 
 // Brand Guide v1.1 솔리드 톤 — 강조용. mono uppercase 권장
 const SOLID_CLS: Record<SemanticTone, string> = {
-  success: 'bg-[var(--viz-3)] text-white',   // Warm Olive (= #7A9A52, 다크 미재정의 → 양쪽 동일)
-  warn:    'bg-[var(--honey)] text-[var(--ink)]',
-  danger:  'bg-[var(--persimmon)] text-white',
+  success: 'bg-[var(--success-solid)] text-[var(--on-solid)]',   // v2.0 §04 — 시맨틱 솔리드(#4E6834), viz·순백 대신
+  warn:    'bg-[var(--warning-solid)] text-[var(--on-solid)]',    // v2.0 §04 — 시맨틱 솔리드(#8B5E0A), honey 새 hue 대신
+  danger:  'bg-[var(--persimmon)] text-[var(--on-solid)]',
   neutral: 'bg-[var(--cream-3)] text-[var(--ink-3)]',
 }
 

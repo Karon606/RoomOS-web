@@ -82,7 +82,7 @@ export function RoomCard({
       onPointerUp={lpClear}
       onPointerLeave={lpClear}
       onContextMenu={onLongPress ? e => e.preventDefault() : undefined}
-      className={`relative rounded-2xl border transition-colors ${onClick ? 'cursor-pointer active:brightness-[0.97]' : ''} ${onLongPress ? 'select-none' : ''} ${className ?? ''}`}
+      className={`relative rounded-xl border transition-colors ${onClick ? 'cursor-pointer active:brightness-[0.97]' : ''} ${onLongPress ? 'select-none' : ''} ${className ?? ''}`}
       style={style}
     >
       {children}

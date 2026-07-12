@@ -123,12 +123,12 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             ) : (
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowEntryForm(true)}
-                  className="flex-1 py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                  className="flex-1 py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
                   + 수납 등록
                 </button>
                 <button type="button" onClick={() => setMode('full')}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
-                  더 보기 ▾
+                  더 보기 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="inline-block align-middle" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
                 </button>
               </div>
             )
@@ -138,7 +138,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           {!canEdit && (
             <button type="button" onClick={() => setMode('full')}
               className="w-full py-1.5 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
-              더 보기 ▾
+              더 보기 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="inline-block align-middle" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>
           )}
         </>
@@ -148,7 +148,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         <>
           <button type="button" onClick={() => setMode('summary')}
             className="w-full py-1.5 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
-            요약으로 돌아가기 ▲
+            요약으로 돌아가기 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="inline-block align-middle" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
           </button>
 
           {/* 납부 내역 — 편집·삭제 (이번 달 기준) */}
@@ -161,7 +161,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           {canEdit && settlement.leaseTermId && settlement.tenantId && (
             !showEntryForm ? (
               <button type="button" onClick={() => setShowEntryForm(true)}
-                className="w-full py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                className="w-full py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
                 + 수납 등록
               </button>
             ) : (

@@ -62,7 +62,7 @@ export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
       <div className="space-y-2.5">
         <p className="text-sm text-[var(--warm-dark)]">
           입주 희망 <span className="font-semibold">{fmtMD(lease.moveInDate)}</span>
-          <span className="text-[var(--warm-muted)]"> → </span>
+          <span className="text-[var(--warm-muted)]"> ~ </span>
           퇴실 <span className="font-semibold">{fmtMD(lease.expectedMoveOut)}</span>
           {days != null && data && (() => {
             const s = calcShortStay(data.shortStay, 100, days)

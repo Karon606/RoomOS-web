@@ -72,8 +72,10 @@ export function InventoryCard({
           {selectable && (
             <span className={[
               'mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border text-[0.6875rem] transition-colors',
-              selected ? 'border-[var(--coral)] bg-[var(--coral)] text-white' : 'border-[var(--warm-border)] text-transparent',
-            ].join(' ')} aria-hidden>✓</span>
+              selected ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] text-transparent',
+            ].join(' ')} aria-hidden>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L19 7" /></svg>
+            </span>
           )}
           <div className="min-w-0 flex-1">
             <p className="flex flex-wrap items-center gap-1.5 text-[0.90625rem] font-semibold tracking-[-0.015em] text-[var(--warm-dark)]">

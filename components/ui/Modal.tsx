@@ -138,7 +138,7 @@ export function Modal({
                 type="button"
                 onClick={() => setPeek(true)}
                 className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
-                title="살짝 보기 — 입력 유지한 채 다른 페이지 확인"
+                title="살짝 보기 · 입력 유지한 채 다른 페이지 확인"
               ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.6"/></svg></button>
             )}
             <button

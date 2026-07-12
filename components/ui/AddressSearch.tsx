@@ -39,7 +39,7 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid var(--warm-border)',
   color: 'var(--warm-dark)',
 }
-const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors'
+const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]'
 
 export function AddressSearch({
   label,

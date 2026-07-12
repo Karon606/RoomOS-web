@@ -168,7 +168,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       <div className="flex flex-wrap gap-2 py-2">
         {transitions.map(def => {
           const cls = def.tone === 'primary'
-            ? 'bg-[var(--coral)] text-white hover:opacity-90'
+            ? 'bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90'
             : def.tone === 'danger'
             ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]'
             : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
@@ -256,7 +256,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               </p>
               <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
                 · <b>예</b> · 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
-                · <b>아니오</b> — 퇴실 예정일만 저장(이번 달 풀 청구 유지).
+                · <b>아니오</b> · 퇴실 예정일만 저장(이번 달 풀 청구 유지).
               </p>
             </div>
       </Modal>

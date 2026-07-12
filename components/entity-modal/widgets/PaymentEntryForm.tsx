@@ -174,18 +174,18 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
             <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-              <option value="auto">자동 — 오래 밀린 달부터 채움</option>
+              <option value="auto">자동 · 오래 밀린 달부터 채움</option>
               {tmOptions.map(o => {
                 const [y, m] = o.month.split('-')
                 const tag = o.status === 'paid' ? '완납'
                   : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
                   : o.status === 'future' ? '향후' : '미수'
-                return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 — {tag}</option>
+                return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
               })}
             </select>
             {forcedTm !== 'auto' && (
               <p className="text-[0.625rem] text-[var(--warning-fg)] leading-relaxed">
-                직접 선택 — 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
+                직접 선택 · 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
               </p>
             )}
           </div>
@@ -195,7 +195,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
         <div className="space-y-1">
           <label className="text-xs text-[var(--warm-muted)]">날짜</label>
           <DatePicker value={payDateVal} onChange={setPayDateVal}
-            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-[var(--warm-muted)]">금액</label>
@@ -246,7 +246,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
               </p>
             ) : (
               <p className="text-xs text-[var(--warm-muted)]">
-                보증금만 수납 (이용료 포함하려면 금액을 늘리세요 — 초과분은 {`${Number(targetMonth.slice(0, 4))}년 ${Number(targetMonth.slice(5, 7))}월`} 이용료로 처리)
+                보증금만 수납 (이용료 포함하려면 금액을 늘리세요 · 초과분은 {`${Number(targetMonth.slice(0, 4))}년 ${Number(targetMonth.slice(5, 7))}월`} 이용료로 처리)
               </p>
             )
           )}
@@ -289,7 +289,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
       </div>
       {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
       <div className="flex gap-2">

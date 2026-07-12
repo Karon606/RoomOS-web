@@ -71,7 +71,7 @@ export function IntlPhoneInput({
         <select
           value={country}
           onChange={e => setCountry(e.target.value)}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)] shrink-0 max-w-[44%]"
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] shrink-0 max-w-[44%]"
         >
           {COUNTRIES.map(c => (
             <option key={c.code} value={c.code}>
@@ -92,7 +92,7 @@ export function IntlPhoneInput({
           value={display}
           onChange={handleChange}
           placeholder={placeholder}
-          className={className ?? 'flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)] transition-colors'}
+          className={className ?? 'flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors'}
         />
       </div>
       {callingCode && (

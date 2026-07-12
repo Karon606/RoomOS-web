@@ -87,7 +87,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
           <div className="flex gap-2 justify-end">
             <Btn variant="secondary" size="md" onClick={onClose}>취소</Btn>
             <Btn variant="primary" size="md" onClick={() => { setConfirmedAt(new Date().toISOString()); setStep('compose') }}>
-              입금내역 확인했어요 — 문자 작성
+              입금내역 확인했어요 · 문자 작성
             </Btn>
           </div>
         }>
@@ -114,7 +114,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
           {ctx?.ok && ctx.phone && body.trim() ? (
             <a href={smsHref(ctx.phone)} onClick={onSend}
-              className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-[var(--coral)] text-white text-sm font-semibold hover:opacity-90 transition-opacity">
+              className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold hover:opacity-90 transition-opacity">
               문자앱으로 보내기
             </a>
           ) : (

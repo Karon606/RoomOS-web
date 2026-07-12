@@ -67,7 +67,7 @@ export default function Header({
         <div ref={propRef} className="relative min-w-0">
           <button
             onClick={() => setPropOpen(v => !v)}
-            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-xl transition-colors hover:bg-[var(--canvas)]"
+            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
             aria-label="영업장 선택"
             aria-expanded={propOpen}
           >
@@ -96,7 +96,7 @@ export default function Header({
                   const active = p.id === (currentProperty?.id ?? '')
                   return (
                     <button key={p.id} type="button" onClick={() => onSelectProperty(p.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
                       style={{ color: 'var(--warm-dark)', background: active ? 'color-mix(in srgb, var(--coral) 6%, transparent)' : undefined }}>
                       {p.appLogoUrl && (
                         <img src={p.appLogoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0"

@@ -120,7 +120,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 <div className="space-y-1">
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
                   <DatePicker value={editDate} onChange={setEditDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -158,7 +158,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                       const tag = o.status === 'paid' ? '완납'
                         : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
                         : o.status === 'future' ? '향후' : '미수'
-                      return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 — {tag}</option>
+                      return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 · {tag}</option>
                     })}
                   </select>
                 </div>

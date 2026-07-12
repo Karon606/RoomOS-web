@@ -164,7 +164,7 @@ export function ConfirmHost() {
             </button>
           )}
           <button type="button" onClick={() => done('confirm')}
-            className={`h-10 px-4 rounded-lg text-sm font-semibold text-white transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
+            className={`h-10 px-4 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
               isDanger ? 'bg-[var(--tc)] hover:bg-[var(--tc-d)]' : 'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)]'
             }`}>
             {opts.confirmLabel ?? (isDanger ? '삭제' : '저장')}

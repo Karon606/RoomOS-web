@@ -148,8 +148,8 @@ export default function SaveFeedback() {
               )}
               {t.kind === 'error' && (
                 <button type="button" onClick={() => remove(t.id)} aria-label="닫기"
-                  className="shrink-0 -my-1 -mr-2 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 text-[15px] leading-none">
-                  ✕
+                  className="shrink-0 -my-1 -mr-2 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6 6 18M6 6l12 12"/></svg>
                 </button>
               )}
             </div>

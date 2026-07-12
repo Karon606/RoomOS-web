@@ -109,14 +109,16 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)] transition-colors"
+        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
       >
         {selected ? (
           <span className="text-[var(--warm-dark)] flex-1">{selected}</span>
         ) : (
           <span className="text-[var(--warm-muted)] flex-1">{placeholder}</span>
         )}
-        <span className="text-[var(--warm-muted)] text-xs">{open ? '▲' : '▼'}</span>
+        <span className="text-[var(--warm-muted)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
+        </span>
       </button>
 
       {/* 드롭다운 */}
@@ -132,8 +134,8 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="검색..."
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)]"
+              placeholder="검색…"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
             />
           </div>
 
@@ -182,13 +184,13 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
                 onChange={e => setNewJob(e.target.value)}
                 onKeyDown={handleAddKeyDown}
                 placeholder="직업 입력 후 Enter"
-                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)]"
+                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
               />
               <button
                 type="button"
                 onClick={addCustomJob}
                 disabled={!newJob.trim()}
-                className="px-3 py-1.5 bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-white text-xs rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                className="px-3 py-1.5 bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-[var(--on-solid)] text-xs rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               >
                 추가
               </button>

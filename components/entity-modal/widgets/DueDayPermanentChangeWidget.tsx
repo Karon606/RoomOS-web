@@ -67,7 +67,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
     <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
       <div className="space-y-2.5">
         <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
-          납입일 영구 변경 — {targetMonth} 기준 일할 정산
+          납입일 영구 변경 · {targetMonth} 기준 일할 정산
         </p>
         <div className="flex items-end gap-3">
           <div className="flex-1 space-y-1">

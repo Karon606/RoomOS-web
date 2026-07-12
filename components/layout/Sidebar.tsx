@@ -168,8 +168,8 @@ function NavContent({
   const drawer = variant === 'drawer'
   // 계정 행(영업장 관리·로그아웃)도 nav 링크와 동일한 반응형 패턴
   const acctRow = drawer
-    ? 'flex items-center gap-2.5 px-5 py-3 min-h-[44px] w-full text-left transition-colors'
-    : 'flex items-center gap-0 py-3 justify-center min-h-[44px] w-full text-left transition-colors lg:gap-2.5 lg:px-5 lg:justify-start'
+    ? 'flex items-center gap-2.5 px-5 py-3 min-h-[44px] w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset'
+    : 'flex items-center gap-0 py-3 justify-center min-h-[44px] w-full text-left transition-colors lg:gap-2.5 lg:px-5 lg:justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset'
   const acctLabel = `text-[0.8125rem] ${drawer ? 'block' : 'hidden lg:block'}`
 
   return (
@@ -255,7 +255,7 @@ function NavContent({
           {user.user_metadata?.avatar_url ? (
             <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full shrink-0" />
           ) : (
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-[var(--on-solid)] shrink-0"
                  style={{ background: 'var(--coral)' }}>
               {user.email?.[0]?.toUpperCase()}
             </div>
@@ -344,7 +344,7 @@ function MobileMenu({
       <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
         <LogoFull />
         <button onClick={onClose} aria-label="닫기"
-          className="w-11 h-11 -mr-2 flex items-center justify-center rounded-xl transition-colors hover:bg-[var(--canvas)]"
+          className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
           style={{ color: 'var(--warm-mid)' }}>
           <svg {...ico} width={22} height={22}><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
@@ -399,7 +399,7 @@ function MobileMenu({
           {user.user_metadata?.avatar_url ? (
             <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full shrink-0" />
           ) : (
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0" style={{ background: 'var(--coral)' }}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-[var(--on-solid)] shrink-0" style={{ background: 'var(--coral)' }}>
               {user.email?.[0]?.toUpperCase()}
             </div>
           )}
@@ -426,7 +426,7 @@ function MobileMenu({
       </div>
       {/* 하단 전폭 닫기 — 모바일 엄지 동선. '전체' 탭을 눌렀던 자리를 다시 눌러도 안전하게 닫힘(로그아웃 오탭 방지) */}
       <button type="button" onClick={onClose}
-        className="mt-1 w-full safe-b rounded-t-xl border-t border-[var(--warm-border)] py-3 text-sm font-semibold text-[var(--warm-mid)] transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)]">
+        className="mt-1 w-full safe-b rounded-t-xl border-t border-[var(--warm-border)] py-3 text-sm font-semibold text-[var(--warm-mid)] transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset">
         메뉴 닫기
       </button>
     </div>

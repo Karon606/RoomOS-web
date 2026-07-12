@@ -145,7 +145,7 @@ export default function ErrorReportButton() {
         className={`fixed z-[var(--z-toast,9999)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'bottom-4 right-4'}`}
         style={{
           background: 'var(--coral)',
-          color: '#fff',
+          color: 'var(--on-solid)',
           touchAction: 'none',
           userSelect: 'none',
           WebkitUserSelect: 'none',

@@ -45,7 +45,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
           전체 수납 내역
           {data && <span className="ml-1 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{data.count}건 · 합계 {fmtWon(data.total)}</span>}
         </span>
-        <span className="text-[var(--warm-muted)] text-xs">{open ? '▲' : '▾'}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-[var(--warm-muted)] transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
 
       {open && (

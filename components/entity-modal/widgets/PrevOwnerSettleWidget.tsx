@@ -83,7 +83,7 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
       </div>
       <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
         <span className="font-medium">메뉴 모드</span>: 자동(인수월·다음달만)·항상 표시·숨김 · 언제든 변경 가능.<br />
-        <span className="font-medium">양도인 정산 버튼</span>을 누르면 이 달 임대료를 현 소유주 미납·매출 집계에서 제외 — 계약당 한 번만 처리 가능 (되돌리려면 해당 기록 삭제).
+        <span className="font-medium">양도인 정산 버튼</span>을 누르면 이 달 임대료를 현 소유주 미납·매출 집계에서 제외 · 계약당 한 번만 처리 가능 (되돌리려면 해당 기록 삭제).
       </p>
     </div>
   )

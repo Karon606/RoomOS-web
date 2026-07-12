@@ -135,13 +135,13 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
       </div>
       <div className="mt-3 space-y-2">
         <button type="button" onClick={handleAnalyze} disabled={pending}
-          className="w-full py-2 text-xs font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-60">
+          className="w-full py-2 text-xs font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-60">
           {pending ? 'AI 분석 중…' : aiText ? '다시 분석' : 'AI로 수납 패턴 분석'}
         </button>
         {pending && (
           <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--coral)] animate-bounce" />
-            AI가 수납 패턴을 분석하고 있습니다...
+            AI가 수납 패턴을 분석하고 있습니다…
           </div>
         )}
         {aiText && !pending && (

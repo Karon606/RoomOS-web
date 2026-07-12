@@ -106,7 +106,7 @@ export function DatePicker({
       <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={() => setOpen(false)} />
 
       <div
-        className="fixed z-[calc(var(--z-lightbox)+1)] rounded-2xl shadow-lift select-none"
+        className="fixed z-[calc(var(--z-lightbox)+1)] rounded-xl shadow-lift select-none"
         style={{
           top: pos.top, left: pos.left, width: pos.width,
           background: 'var(--cream)',
@@ -121,7 +121,7 @@ export function DatePicker({
           <>
             {/* 헤더: ◀ [年] [月] ▶ */}
             <div className="flex items-center gap-1 mb-2">
-              <button onClick={prevMonth} className={navBtn.base} style={navBtn.style}>◀</button>
+              <button onClick={prevMonth} aria-label="이전 달" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg></button>
               <div className="flex-1 flex items-center justify-center gap-1">
                 <button
                   onClick={() => { setYearBase(Math.floor(viewYear / 12) * 12); setView('year') }}
@@ -142,7 +142,7 @@ export function DatePicker({
                   {KO_MONTHS[viewMonth]}
                 </button>
               </div>
-              <button onClick={nextMonth} className={navBtn.base} style={navBtn.style}>▶</button>
+              <button onClick={nextMonth} aria-label="다음 달" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg></button>
             </div>
 
             {/* 요일 헤더 */}
@@ -173,7 +173,7 @@ export function DatePicker({
                     onClick={() => handleDayClick(day)}
                     className="h-8 w-full flex items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
                     style={isSelected
-                      ? { background: 'var(--coral)', color: '#fff' }
+                      ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isToday
                         ? { background: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--coral)', fontWeight: 700 }
                         : { color: dow === 0 ? 'var(--danger-fg)' : dow === 6 ? 'var(--info-fg)' : 'var(--warm-dark)' }
@@ -207,7 +207,7 @@ export function DatePicker({
         {view === 'month' && (
           <>
             <div className="flex items-center gap-1 mb-3">
-              <button onClick={() => setViewYear(y => y - 1)} className={navBtn.base} style={navBtn.style}>◀</button>
+              <button onClick={() => setViewYear(y => y - 1)} aria-label="이전 해" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg></button>
               <button
                 onClick={() => { setYearBase(Math.floor(viewYear / 12) * 12); setView('year') }}
                 className="flex-1 text-sm font-semibold py-0.5 rounded-lg transition-colors text-center"
@@ -217,7 +217,7 @@ export function DatePicker({
               >
                 {viewYear}년
               </button>
-              <button onClick={() => setViewYear(y => y + 1)} className={navBtn.base} style={navBtn.style}>▶</button>
+              <button onClick={() => setViewYear(y => y + 1)} aria-label="다음 해" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg></button>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {KO_MONTHS.map((label, i) => {
@@ -236,9 +236,9 @@ export function DatePicker({
                         setView('day')
                       }
                     }}
-                    className="py-2 text-xs rounded-xl transition-colors font-medium"
+                    className="py-2 text-xs rounded-lg transition-colors font-medium"
                     style={isSelected
-                      ? { background: 'var(--coral)', color: '#fff' }
+                      ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isCurrent
                         ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
                         : { color: 'var(--warm-mid)' }}>
@@ -275,11 +275,11 @@ export function DatePicker({
         {view === 'year' && (
           <>
             <div className="flex items-center gap-1 mb-3">
-              <button onClick={() => setYearBase(b => b - 12)} className={navBtn.base} style={navBtn.style}>◀</button>
+              <button onClick={() => setYearBase(b => b - 12)} aria-label="이전 범위" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg></button>
               <div className="flex-1 text-center text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>
                 {yearBase} – {yearBase + 11}
               </div>
-              <button onClick={() => setYearBase(b => b + 12)} className={navBtn.base} style={navBtn.style}>▶</button>
+              <button onClick={() => setYearBase(b => b + 12)} aria-label="다음 범위" className={navBtn.base} style={navBtn.style}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 18l6-6-6-6" /></svg></button>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {Array.from({ length: 12 }).map((_, i) => {
@@ -289,9 +289,9 @@ export function DatePicker({
                 return (
                   <button key={yr}
                     onClick={() => { setViewYear(yr); setView('month') }}
-                    className="py-2 text-xs rounded-xl transition-colors font-medium"
+                    className="py-2 text-xs rounded-lg transition-colors font-medium"
                     style={isSelected
-                      ? { background: 'var(--coral)', color: '#fff' }
+                      ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                       : isViewYear
                         ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
                         : { color: 'var(--warm-mid)' }}>

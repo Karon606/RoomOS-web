@@ -32,8 +32,10 @@ export function SearchBar({
       {value && (
         <button
           type="button" onClick={() => onChange('')} aria-label="검색어 지우기"
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-base leading-none"
-        >×</button>
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
       )}
     </div>
   )

@@ -260,12 +260,12 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: 'var(--cream)', color: kindInfo.color, border: `1px solid ${kindInfo.color}40` }}>
+            style={{ background: 'var(--cream)', color: kindInfo.color, border: `1px solid color-mix(in srgb, ${kindInfo.color} 25%, transparent)` }}>
             {kindInfo.label}
           </span>
           {editingMode && (
             <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
-              style={{ background: isInventory ? 'var(--success-bg)' : 'var(--coral)20', color: isInventory ? 'var(--success-fg)' : 'var(--coral)' }}>
+              style={{ background: isInventory ? 'var(--success-bg)' : 'color-mix(in srgb, var(--coral) 12.5%, transparent)', color: isInventory ? 'var(--success-fg)' : 'var(--coral)' }}>
               {isInventory ? '재고 등록 중' : '지출 등록 중'}
             </span>
           )}
@@ -290,7 +290,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
                 style={{
                   background: aiSuggestsInventory ? 'var(--cream)' : 'var(--coral)',
-                  color: aiSuggestsInventory ? 'var(--warm-dark)' : '#fff',
+                  color: aiSuggestsInventory ? 'var(--warm-dark)' : 'var(--on-solid)',
                   border: aiSuggestsInventory ? '1px solid var(--warm-border)' : 'none',
                 }}>
                 지출 등록
@@ -300,7 +300,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
                 style={{
                   background: aiSuggestsInventory ? 'var(--success-solid)' : 'var(--cream)',
-                  color: aiSuggestsInventory ? 'var(--cream)' : 'var(--warm-dark)',
+                  color: aiSuggestsInventory ? 'var(--on-solid)' : 'var(--warm-dark)',
                   border: aiSuggestsInventory ? 'none' : '1px solid var(--warm-border)',
                 }}>
                 재고 등록
@@ -375,7 +375,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               <div>
                 <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>날짜 *</label>
                 <DatePicker value={date} onChange={setDate}
-                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)]" />
+                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
               </div>
               <div>
                 <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>

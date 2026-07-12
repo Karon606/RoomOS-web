@@ -65,12 +65,12 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
             <div className="min-w-0">
               <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
               <DatePicker value={newReqDate} onChange={setNewReqDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
             </div>
             <div className="min-w-0">
               <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
               <DatePicker value={newTargetDate} onChange={setNewTargetDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
             </div>
           </div>
           <Btn onClick={handleCreate} disabled={pending || !newContent.trim()} variant="primary" size="md" fullWidth>
@@ -116,7 +116,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
             <button onClick={() => setShowHistory(v => !v)}
               className="text-xs font-medium flex items-center gap-1"
               style={{ color: 'var(--warm-muted)' }}>
-              처리된 이력 {resolved.length}건 {showHistory ? '▲' : '▼'}
+              처리된 이력 {resolved.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showHistory ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>
             {showHistory && (
               <div className="mt-2 space-y-2">

@@ -356,7 +356,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                 시스템 계약서 새로 출력
               </Btn>
               <p className="text-[0.6875rem] text-center text-[var(--warm-muted)] mt-1">
-                표준 양식 — 서명 받기 포함
+                표준 양식 · 서명 받기 포함
               </p>
             </div>
             <button type="button" onClick={() => setPrintChoice(null)}

@@ -151,12 +151,12 @@ export function CheckoutProrationWidget({
     <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
       <div className="space-y-2.5">
         <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
-          퇴실 정산 — 일할 청구
+          퇴실 정산 · 일할 청구
         </p>
         <div className="space-y-1.5">
           <label className="text-xs text-[var(--warm-muted)]">퇴실 예정일</label>
           <DatePicker value={date} onChange={handleDate}
-            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)]" />
+            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)]" />
           <p className="text-[0.625rem] text-[var(--warm-muted)]">
             납부일 {currentDueDay ? (currentDueDay.includes('말') ? '말일' : `${currentDueDay}일`) : '—'} 부터 퇴실일까지(양끝 포함) 일수만큼 청구합니다.
           </p>
@@ -182,7 +182,7 @@ export function CheckoutProrationWidget({
                   <button key={m} type="button" onClick={() => handleMode(m)}
                     className="flex-1 text-[0.6875rem] px-2 py-1.5 rounded-lg border transition-colors"
                     style={refundMode === m
-                      ? { background: 'var(--coral)', color: '#fff', borderColor: 'var(--coral)' }
+                      ? { background: 'var(--coral)', color: 'var(--on-solid)', borderColor: 'var(--coral)' }
                       : { background: 'var(--canvas)', color: 'var(--warm-mid)', borderColor: 'var(--warm-border)' }}>
                     {lbl}
                   </button>
@@ -195,7 +195,7 @@ export function CheckoutProrationWidget({
               </p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} — 필요시 수정)</span></label>
+              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
               <div className="flex items-center gap-1.5">
                 <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
                   onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}

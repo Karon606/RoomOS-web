@@ -48,7 +48,7 @@ export function PillButton({
       className={[
         'h-9 shrink-0 whitespace-nowrap rounded-[9px] px-3 text-sm font-semibold transition-colors disabled:opacity-50',
         primary
-          ? 'bg-[var(--coral)] text-white hover:bg-[var(--coral-dark)]'
+          ? 'bg-[var(--coral)] text-[var(--on-solid)] hover:bg-[var(--coral-dark)]'
           : 'bg-white/[0.13] text-white hover:bg-white/20',
       ].join(' ')}>
       {children}
