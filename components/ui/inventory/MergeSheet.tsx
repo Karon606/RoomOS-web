@@ -45,7 +45,7 @@ export function MergeSheet({
         {/* 대상 선택 — 남을(대표) 카드 */}
         <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">합칠 대상 (남을 품목)</label>
         <select value={destId} onChange={e => setDestId(e.target.value)} disabled={pending}
-          className="mt-1.5 h-11 w-full rounded-sm border-[1.5px] border-[var(--warm-border)] bg-[var(--canvas)] px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+          className="mt-1.5 h-11 w-full rounded-lg border-[1.5px] border-[var(--warm-border)] bg-[var(--canvas)] px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
           <option value="">대표(남을 품목) 선택…</option>
           {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
