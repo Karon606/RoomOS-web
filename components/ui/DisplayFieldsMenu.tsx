@@ -92,7 +92,7 @@ export function DisplayFieldsMenu({
         {label}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 z-50 min-w-[184px] max-h-[70vh] overflow-y-auto bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2">
+        <div className="absolute right-0 mt-2 z-[var(--z-dropdown)] min-w-[184px] max-h-[70vh] overflow-y-auto bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2">
           {sections ? sections.map((s, si) => (
             <div key={s.heading} className={si > 0 ? 'mt-1.5 pt-1.5 border-t border-[var(--warm-border)]/60' : ''}>
               <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{s.heading}</p>

@@ -40,9 +40,11 @@
   --sand:         #f2d9b8;   /* Sand — 웜 페일 배경 */
   --sand-2:       #f5e5cc;   /* Sand light */
 
-  /* Honey — 경고·하이라이트 only (1% 미만 사용) */
-  --honey:        #f5b800;
-  --sun:          #f5b800;   /* alias → honey */
+  /* Honey — v2.0 §04: amber는 단일 --warning-*로 통일(새 hue 금지).
+     기존 사용처(수령 대기·보정·미수령·hub 등 attention 표시)를 유지한 채 경고 계열로 재지정.
+     양 모드 자동 대응(--warning-fg는 html.dark에서 밝아짐). */
+  --honey:        var(--warning-fg);
+  --sun:          var(--warning-fg);   /* alias → warning */
 
   /* Motion — Duration 토큰 (transition에 var(--dur-*) 로 참조) */
   --dur-fast:     100ms;     /* 아이콘 hover, 컬러 스위치 */
@@ -343,7 +345,7 @@ body {
 
 /* M7 가이드: shadow는 모달·드롭다운·팝오버에만 사용. 단일 shadow-lift 토큰으로 통일.
    카드/입력/디바이더는 shadow 미사용 — border 1px solid var(--cream-3)로 처리. */
-.shadow-lift { box-shadow: 0 8px 24px -12px rgba(40, 20, 10, 0.18); }
+.shadow-lift { box-shadow: 0 16px 48px -16px rgba(61, 36, 24, 0.22); }   /* v2.0 §07 정본 값 */
 
 /* ── M7 다크모드 — html.dark 가 토글 ──────────────────────────────
    가이드: 잉크↔크림 한 쌍만 반전. persimmon은 라이트/다크 동일 hex.
@@ -459,7 +461,7 @@ html.dark {
 
 html.dark body { color: var(--ink-2); background: var(--cream-2); }
 /* shadow도 다크에서 더 진하게 */
-html.dark .shadow-lift { box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5); }
+html.dark .shadow-lift { box-shadow: 0 16px 48px -16px rgba(0, 0, 0, 0.55); }
 
 /* prefers-color-scheme: dark + theme=system 인 경우 ThemeProvider가 .dark 추가하므로
    여기선 별도 미디어 쿼리 안 씀 (자바스크립트로 통제). */

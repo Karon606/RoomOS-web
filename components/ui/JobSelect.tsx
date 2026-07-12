@@ -124,7 +124,7 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
       {/* 드롭다운 */}
       {open && (
         <div
-          className="absolute z-50 mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
+          className="absolute z-[var(--z-dropdown)] mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
           style={{ maxHeight: '280px' }}
         >
           {/* 검색창 */}

@@ -46,7 +46,8 @@
 :root {
   --tc:#A03C2E; --tc-d:#7C2D26; --tc-s:#B85042;
   --camel:#C8A07D; --sand:#F2D9B8; --sand-s:#F5E5CC;
-  --cream:#FBF6EF; --cream-2:#F5EDE0; --page:#E8DDD0;
+  --cream:#FBF6EF; --cream-soft:#F5EDE0; --cream-2 = --page = --canvas:#E8DDD0;
+  (2026-07-12 정정, 코드가 진실: #F5EDE0은 --cream-soft, --cream-2는 --page/--canvas와 동일한 #E8DDD0. 이전 표기 '--cream-2:#F5EDE0'은 --cream-soft를 가리킨 오기. 본문의 'hover/입력/헤더 --cream-2'는 코드 토큰 그대로 #E8DDD0 계열로 해석한다.)
   --ink:#3D2418; --ink-s:#7A6553; --ink-m:#A89380;
   --success:#4E6834; --success-bg:rgba(85,108,58,.10);
   --overdue:var(--tc); --overdue-bg:rgba(160,60,46,.18);

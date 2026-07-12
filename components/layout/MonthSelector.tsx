@@ -171,7 +171,7 @@ function MonthPicker({
   return (
     /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */
     <div
-      className="absolute top-11 right-0 rounded-xl shadow-lift p-4 w-72 max-w-[88vw] z-50"
+      className="absolute top-11 right-0 rounded-xl shadow-lift p-4 w-72 max-w-[88vw] z-[var(--z-dropdown)]"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >

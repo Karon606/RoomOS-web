@@ -309,7 +309,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
 
       {/* 드롭다운 */}
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
+        <div className="absolute z-[var(--z-dropdown)] mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
           style={{ maxHeight: '280px' }}>
           {/* 검색창 */}
           <div className="px-3 pt-2.5 pb-2 border-b border-[var(--warm-border)] shrink-0">
