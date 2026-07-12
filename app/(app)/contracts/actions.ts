@@ -17,6 +17,7 @@ export type ContractListRow = {
   source: 'GENERATED' | 'UPLOADED'
   signedAt: Date
   viewUrl: string
+  driveFileId: string
   tenantId: string
   tenantName: string
   roomNo: string | null
@@ -63,6 +64,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       source: r.source as 'GENERATED' | 'UPLOADED',
       signedAt: r.signedAt,
       viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
+      driveFileId: r.driveFileId,
       tenantId: r.tenant.id,
       tenantName: r.tenant.name,
       roomNo: lease?.room?.roomNo ?? null,

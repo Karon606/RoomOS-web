@@ -343,15 +343,33 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
+  // 공용 자재 토글 적용취소 — 반대 값으로 되돌림(setCommonAsset 토글, 미배정 카드 전용이라 배정 상태 손실 없음)
+  const undoCommon = (ids: string[], value: boolean) => startTransition(async () => {
+    const res = await setCommonAsset(ids, value)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '되돌렸습니다')
+    router.refresh()
+  })
+
   // 공용 자재 표시/해제
   const markCommon = (it: AssetItem, value: boolean) => {
     startTransition(async () => {
       const res = await setCommonAsset(it.ids, value)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', value ? '공용 자재로 표시됨' : '공용 자재 해제됨')
+      pushToast('success', value ? '공용 자재로 표시됨' : '공용 자재 해제됨', {
+        action: { label: '적용취소', run: () => undoCommon(it.ids, !value) },
+      })
       router.refresh()
     })
   }
+
+  // 수령 완료 적용취소 — 수령 대기로 정확 역연산(setAssetReceived 토글 false). 전량 수령에만 제공.
+  const undoReceive = (ids: string[]) => startTransition(async () => {
+    const res = await setAssetReceived(ids, false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
+    router.refresh()
+  })
 
   // 수령 상태 토글 (수령 완료 / 수령 대기로). qty 지정 시 부분 수령(행 분할).
   const markReceived = (it: AssetItem, value: boolean, qty?: number) => {
@@ -359,23 +377,38 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       const res = await setAssetReceived(it.ids, value, qty ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
       setRcvAsk(null)
+      // 부분 수령(행 분할)이면 it.ids가 잔여분을 가리켜 단일 역연산이 불가 → 적용취소 미제공.
+      // 전량 수령(qty 미지정 또는 전체 이상)만 setAssetReceived(ids,false)로 정확히 되돌린다.
+      const isPartial = value && qty != null && it.qtyValue != null && qty < it.qtyValue
       pushToast('success', !value ? '수령 대기로 변경됨'
-        : qty != null && it.qtyValue != null && qty < it.qtyValue
-          ? `${fmtQty(qty)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${fmtQty(it.qtyValue - qty)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
-          : '수령 완료')
+        : isPartial
+          ? `${fmtQty(qty!)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${fmtQty(it.qtyValue! - qty!)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
+          : '수령 완료',
+        value && !isPartial ? { action: { label: '수령 취소', run: () => undoReceive(it.ids) } } : undefined)
       router.refresh()
     })
   }
 
   // 배정일 입력·수정 — 방/공용부에 배정된 비품 묶음의 배정일을 저장(빈 값=미상). 상세에서만 노출.
+  // 배정일 적용취소 — 이전 배정일로 되돌림(setAssetAssignedAt 단순 필드 복원, 재고 이동 무관)
+  const undoAssignedAt = (ids: string[], itId: string, prev: string | null) => startTransition(async () => {
+    const res = await setAssetAssignedAt(ids, prev)
+    if (!res.ok) { pushToast('error', res.error); return }
+    setDetailItem(d => d && d.id === itId ? { ...d, assignedAt: prev } : d)
+    pushToast('info', '배정일을 되돌렸습니다')
+    router.refresh()
+  })
   const saveAssignedAt = (it: AssetItem, v: string) => {
     const next = v || null
-    if (next === (it.assignedAt ?? null)) return
+    const prev = it.assignedAt ?? null
+    if (next === prev) return
     startTransition(async () => {
       const res = await setAssetAssignedAt(it.ids, next)
       if (!res.ok) { pushToast('error', res.error); return }
       setDetailItem(d => d && d.id === it.id ? { ...d, assignedAt: next } : d)
-      pushToast('success', next ? '배정일을 저장했습니다' : '배정일을 비웠습니다')
+      pushToast('success', next ? '배정일을 저장했습니다' : '배정일을 비웠습니다', {
+        action: { label: '적용취소', run: () => undoAssignedAt(it.ids, it.id, prev) },
+      })
       router.refresh()
     })
   }

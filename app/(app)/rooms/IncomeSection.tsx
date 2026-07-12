@@ -18,13 +18,12 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
+import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 
 const fmtRoomNo = (no: string | null | undefined) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
 export type Income = Awaited<ReturnType<typeof getExtraIncomes>>[number]
 export type LeaseOption = { leaseTermId: string; tenantName: string; roomNo: string | null }
-
-const PAY_METHODS_INC = ['계좌이체', '현금', '보유 보증금', '기타']
 
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
@@ -130,7 +129,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         <select value={incFilter.method} onChange={e => setIncFilter(f => ({ ...f, method: e.target.value }))}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
           <option value="all">입금수단 (전체)</option>
-          {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
+          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <select value={incFilter.category} onChange={e => setIncFilter(f => ({ ...f, category: e.target.value }))}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
@@ -293,7 +292,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                     <select name="payMethod" value={editIncMethod}
                       onChange={e => setEditIncMethod(e.target.value)}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
+                      {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -352,7 +351,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   <select name="payMethod" value={addIncMethod}
                     onChange={e => setAddIncMethod(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">

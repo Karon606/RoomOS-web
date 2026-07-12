@@ -195,6 +195,19 @@ function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
   return 'paid'
 }
 
+// 미납 미수액 — 이번 달 미수(이월 미수 + 당월 미수). 카드 잔액 표시와 동일한 계산을 공용화(표시·복사용, §4 재계산 없음).
+function getTotalUnpaid(room: RoomStatus): number {
+  const carryUnpaid = room.carryOver < 0 ? -room.carryOver : 0
+  const viewUnpaid  = (!room.isPaid && room.carryOver === 0 && !room.nextDueDate && room.balance < 0)
+    ? -room.balance : 0
+  return carryUnpaid + viewUnpaid
+}
+
+// 독촉 문구 — 미납 방/세입자/대상월/미수액을 채운 표준 안내. 멀티테넌트 공용(지점·세입자 하드코딩 금지).
+function buildReminderText(room: RoomStatus, targetMonth: string, unpaid: number): string {
+  return `안녕하세요. ${room.roomNo}호 ${room.tenantName ?? ''}님, ${Number(targetMonth.slice(5))}월분 이용료 ${fmtWon(unpaid)}이 아직 확인되지 않았습니다. 확인 부탁드립니다.`
+}
+
 // ── 정렬 ─────────────────────────────────────────────────────────
 
 type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
@@ -422,6 +435,16 @@ export default function RoomsClient({
       roomId: room.roomId,
       tenantId: room.tenantId ?? undefined,
     })
+  }
+
+  // 미납 방 독촉 문구 복사 — 표준 안내를 클립보드로. 자동 발송·결제 연계 아님, UI 편의만.
+  const copyReminder = async (room: RoomStatus, unpaid: number) => {
+    try {
+      await navigator.clipboard.writeText(buildReminderText(room, targetMonth, unpaid))
+      pushToast('success', '독촉 문구를 복사했습니다')
+    } catch {
+      pushToast('error', '독촉 문구 복사에 실패했습니다')
+    }
   }
 
   // 일괄 수납 — 선택된 호실 중 '대상'만, 이번 달 미수 합계
@@ -727,6 +750,7 @@ export default function RoomsClient({
         {displayed.map(room => {
           const dueInfo = !room.isPaid ? getEffectiveDueInfo(room, targetMonth) : null
           const tone = roomStatusTone(room, targetMonth)
+          const totalUnpaid = getTotalUnpaid(room)
           return (
             <RoomCard key={room.roomId}
               kind="neutral"
@@ -855,6 +879,15 @@ export default function RoomsClient({
                   </span>
                 )}
               </div>
+              {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
+              {!selectMode && totalUnpaid > 0 && (
+                <div className="mt-2.5 flex justify-end">
+                  <Btn variant="ghost" size="sm"
+                    onClick={e => { e.stopPropagation(); copyReminder(room, totalUnpaid) }}>
+                    독촉 문구 복사
+                  </Btn>
+                </div>
+              )}
             </RoomCard>
           )
         })}
@@ -892,6 +925,7 @@ export default function RoomsClient({
             <tbody>
               {displayed.map(room => {
                 const tone = roomStatusTone(room, targetMonth)
+                const totalUnpaid = getTotalUnpaid(room)
                 return (
                 <tr key={room.roomId}
                   onClick={
@@ -1031,6 +1065,13 @@ export default function RoomsClient({
                           }
                           return <StatusBadge tone="paid" sub={lateSub}>완납</StatusBadge>
                         })()}
+                        {/* 미납 방 보조 액션 — 독촉 문구 복사 (수납 등록 동선과 분리, 미납일 때만) */}
+                        {!selectMode && totalUnpaid > 0 && (
+                          <Btn variant="ghost" size="sm"
+                            onClick={e => { e.stopPropagation(); copyReminder(room, totalUnpaid) }}>
+                            독촉 문구 복사
+                          </Btn>
+                        )}
                       </div>
                     </td>
                   )}

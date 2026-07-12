@@ -15,6 +15,8 @@ import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 
 type Room = {
   leaseTermId: string
@@ -29,6 +31,9 @@ type Room = {
 
 // 초과 납부분을 '기타 수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
 const EXTRA_INCOME_CATEGORY = '기타 임대수입'
+
+// 자릿수 오입력(0 하나 더) 방지 — 추천액의 이 배수 이상이면 제출 전 확인. 저장 로직은 불변.
+const SUSPICIOUS_MULTIPLIER = 5
 
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
@@ -88,10 +93,20 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
     return () => { active = false }
   }, [room.leaseTermId, targetMonth])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!room.tenantId) { setError('입주자 정보가 없습니다.'); return }
     setError('')
+    // 자릿수 오입력 확인 — 보증금/청소비 합산은 정상적으로 커지므로 제외. 기준값(추천액) 없으면 생략.
+    if (!isDepositMode && !isCleaningFeeMode && suggestedAmount > 0 && payAmount >= suggestedAmount * SUSPICIOUS_MULTIPLIER) {
+      const ok = await confirmDialog({
+        title: '입력하신 금액이 예상보다 큽니다.',
+        message: `${fmtWon(payAmount)}이 맞나요? 0을 하나 더 누르지 않았는지 확인하세요.`,
+        level: 'caution',
+        confirmLabel: '이대로 수납',
+      })
+      if (!ok) return
+    }
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -280,10 +295,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
         <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
         <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-          <option value="계좌이체">계좌이체</option>
-          <option value="현금">현금</option>
-          <option value="신용카드">신용카드</option>
-          <option value="기타">기타</option>
+          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
       <div className="space-y-1">
