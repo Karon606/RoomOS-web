@@ -1805,7 +1805,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     projectedRevenue: { title: '예상 매출', body: '이번 달 입주자 전원이 납부를 마쳤을 때의 매출입니다. 퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다. 막대는 지금까지 실제 수납된 금액의 달성률입니다.' },
     projectedNetProfit: { title: '예상 순이익', body: '예상 매출에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다. 막대는 예상 지출 중 실제로 확정된 비율. 다 채워질수록 전망이 정확해집니다.' },
     overdue: { title: '누적 미납', body: '납부일이 지났는데 아직 받지 못한 금액의 합계입니다. 지난달 이전에 밀린 금액(이월 미수)도 포함됩니다. 카드를 누르면 수납 관리로 이동합니다.' },
-    expectedExpense: { title: '예상 지출', body: '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다. 막대 색은 줄일 수 있는 정도 순입니다: 고정(정액), 고정(변동), 수시.' },
+    expectedExpense: { title: '예상 지출', body: '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다. 막대 색은 줄일 수 있는 정도 순입니다. 고정(정액)은 매달 같은 금액, 고정(변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.' },
   }
   // viewMonth가 현재이면 "오늘 기준", 그 외(과거/미래)는 "○월 말일 기준"
   const isViewingRealMonth = targetMonth === kstMonthStr()
@@ -1935,8 +1935,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <p className="p-5 text-sm leading-relaxed text-[var(--warm-dark)]">{kpiHelp?.body}</p>
       </Modal>
 
-      {/* ── KPI 카드 (v2.0 §24 반응형: 모바일 2 → sm 3 → lg 4) ──────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+      {/* ── KPI 카드 (v2.0 §24 반응형: 모바일 1 → sm 3 → lg 4 — 모바일 1열 정본, 반폭 과밀 해소) ──────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
 
         {/* Row 2 Left: 예상 매출 + 달성도 — 고시원 특성상 유지되면 매출이 거의 안 늘어 '현재까지'보다
             '예상 매출 대비 성과(수납 달성도)'가 유효. 예상엔 퇴실예정(일할/0)·신규 예약확정(전액) 반영됨. */}
@@ -2039,10 +2039,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {t.variable  > 0 && <div style={{ width: `${(t.variable  / tot) * 100}%`, background: 'var(--warm-mid)' }} />}
                   {t.savable   > 0 && <div style={{ width: `${(t.savable   / tot) * 100}%`, background: 'var(--coral)' }} />}
                 </div>
-                {/* v2.0 §24 — 보조 1줄(통제가능성 막대 범례). 현재까지·전월/전년 추세는 지출/기타수익으로 이동 */}
-                <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
+                {/* v2.0 §24 — 보조 1줄(통제가능성 막대 범례). 정액/변동/수시 정의 설명은 (i) 도움말로 이관해 카드는 1줄 유지. 폰트 §05 최소 10.5px */}
+                <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
                   <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
-                  <span style={{ display: 'block' }}>정액=매달 같은 금액 · 변동=매달 다른 고정비 · 수시=그때그때 쓰는 돈</span>
                 </p>
               </>
             )

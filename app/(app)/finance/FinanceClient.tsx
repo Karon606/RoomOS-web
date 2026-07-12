@@ -2023,16 +2023,17 @@ export default function FinanceClient({
                       <MoneyDisplay amount={recRecordedTotal} />
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1">
+                  {/* 예정 행: 반폭 열에서 라벨+뱃지가 금액과 겹쳐 줄바꿈되던 문제 — 뱃지를 라벨 아래 줄로 분리(윗줄은 라벨↔금액만) */}
+                  <div className="text-xs space-y-0.5">
+                    <div className="flex items-center justify-between">
                       <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
-                      {recPendingTotal > 0 && (
-                        <Badge tone="pale-amber">{recUnrecordedCount}건 미기록</Badge>
-                      )}
+                      <span className="text-[var(--warning-fg)] font-medium num">
+                        <MoneyDisplay amount={recPendingTotal} />
+                      </span>
                     </div>
-                    <span className="text-[var(--warning-fg)] font-medium num">
-                      <MoneyDisplay amount={recPendingTotal} />
-                    </span>
+                    {recPendingTotal > 0 && (
+                      <div><Badge tone="pale-amber">{recUnrecordedCount}건 미기록</Badge></div>
+                    )}
                   </div>
                 </>
               )}
