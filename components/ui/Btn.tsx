@@ -2,16 +2,18 @@
 
 import React from 'react'
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'subtle'
+type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'subtle' | 'success' | 'warning'
 type Size = 'sm' | 'md' | 'lg'
 
-// Brand Guide v1.1 버튼 변형
+// v2.0 §10 버튼 변형. success·warning은 의미색 솔리드(긍정 결제·조정 액션) — 2026-07-12 등재.
 const VARIANT_CLS: Record<Variant, string> = {
   primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-[var(--on-solid)] border border-transparent',
   secondary: 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
   danger:    'bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 text-[var(--coral-dark)] border border-[var(--coral)]/25',
   ghost:     'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)] border border-transparent',
   subtle:    'bg-[var(--sand)]/40 hover:bg-[var(--sand-2)] text-[var(--warm-mid)] border border-[var(--camel)]/40',
+  success:   'bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] border border-transparent',
+  warning:   'bg-[var(--warning-solid)] hover:opacity-90 text-[var(--on-solid)] border border-transparent',
 }
 
 // 터치 타겟 최소 44px (Brand Guide v1.2 · HIG). 크기 차이는 패딩·글자크기로 표현.

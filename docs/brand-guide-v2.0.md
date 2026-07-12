@@ -144,7 +144,7 @@
 
 ## §10 버튼 · Btn
 
-- variant: primary(--tc → --tc-d, cream 글자) · secondary(--cream-2 → --sand, 다크 hover는 #332619) · danger(--danger-bg → --danger-ring, --danger-fg 글자 · soft) · ghost(투명 → --cream-2) · subtle(--cream-2, 텍스트만 진해짐).
+- variant: primary(--tc → --tc-d, cream 글자) · secondary(--cream-2 → --sand, 다크 hover는 #332619) · danger(--danger-bg → --danger-ring, --danger-fg 글자 · soft) · ghost(투명 → --cream-2) · subtle(--cream-2, 텍스트만 진해짐) · success(--success-solid, --on-solid 글자, hover opacity-90) · warning(--warning-solid, --on-solid 글자, hover opacity-90). success·warning은 의미색 솔리드 액션(긍정 결제·조정) 정본화 — 2026-07-12 등재.
 - size: sm 36px r8 / md 40px r10 / lg 44px r10. 터치 타겟 44px.
 - 제출 중: 버튼 내 스피너 14px stroke 2.5 회전 0.8s + 라벨 "저장 중…", disabled + 폼 잠금, 너비 고정.
 - 확인 라벨은 항상 동사("저장"·"전환"·"영구 삭제"), "확인"·"예" 금지. raw button 직접 작성 금지 (439곳 점진 교체).
