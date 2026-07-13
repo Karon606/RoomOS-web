@@ -69,10 +69,14 @@ export default function AppShell({
 
         {/* NavigationProvider: 페이지 안 MonthSelector 등이 전환 transition을 공유.
             전환 중 표시는 라우트 세그먼트 loading.tsx(본문 스켈레톤)가 담당 — v2.0 §21 ③ */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 app-main relative">
+        <main className="flex-1 overflow-y-auto app-main relative">
           {/* 과거월 표시는 페이지 상단 MonthSelector 가 겸함(amber+'지난달'+오늘) — 별도 배너 제거(중복). */}
           <NavigationProvider startNavigation={startNavigation}>
-            {children}
+            {/* 상단·좌우 패딩은 스크롤 내용 안쪽 래퍼로 — 컨테이너 자체 패딩이면 그 띠 사이로 콘텐츠가
+                비쳐 지나가 sticky 검색줄 위에 글자가 겹침(운영자 신고 2026-07-13). 하단 패딩은 app-main이 담당. */}
+            <div className="px-4 pt-4 md:px-6 md:pt-6">
+              {children}
+            </div>
           </NavigationProvider>
         </main>
       </div>
