@@ -630,7 +630,12 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[var(--coral)] flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
+                  {/* 품명 수정 가능 — 영수증 OCR이 뽑은 긴 쇼핑몰 품명을 등록 상태에서 바로 다듬게(운영자 지시 2026-07-13).
+                      규격·수량은 아래 입력 행이 담당하므로 제목은 라벨만. */}
+                  <input type="text" value={it.label}
+                    onChange={e => patchItem(idx, { label: e.target.value })}
+                    aria-label="품명 수정" placeholder="품명"
+                    className="flex-1 min-w-0 bg-transparent text-xs font-medium text-[var(--coral)] outline-none border-b border-dashed border-[var(--coral)]/30 focus:border-[var(--coral)] transition-colors px-0 py-0.5" />
                   <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
                 {it.setHint && !(Number(it.specValue) > 1) && (
@@ -3174,8 +3179,11 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
+                    {/* 카테고리 변경 시 품목 유지 — 저장하면 품목째 새 카테고리로 이동(운영자 지시 2026-07-13).
+                        서버(updateExpense)가 제출 카테고리로 품목 행을 저장하고 수령 상태도 보존한다.
+                        재고 추적 카테고리 밖으로 옮기면 그 품목은 재고 인식에서 빠진다(카테고리 기준 인식). */}
                     <select name="category" value={editExpCategory}
-                      onChange={e => { setEditExpCategory(e.target.value); setEditItems([]) }}
+                      onChange={e => setEditExpCategory(e.target.value)}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
