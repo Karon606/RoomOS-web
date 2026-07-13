@@ -2164,7 +2164,7 @@ export default function FinanceClient({
             const selCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
             return (
               <>
-                <div className="flex gap-2">
+                <div className="flex gap-2 sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
                   <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" className="flex-1" />
                   <button type="button" onClick={() => setShowExpFilters(v => !v)}
                     className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${

@@ -568,7 +568,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           </Btn>
         </div>
         )}
-        {!isEmpty && <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />}
+        {!isEmpty && (
+          <div className="sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
+            <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />
+          </div>
+        )}
       </div>
 
       {isEmpty ? (

@@ -559,8 +559,8 @@ export default function RoomManageClient({
         )}
       </div>
 
-      {/* 검색바 + 필터 토글 — v2.0 §23 공용 SearchBar */}
-      <div className="flex gap-2">
+      {/* 검색바 + 필터 토글 — v2.0 §23 공용 SearchBar. 스크롤 시 상단 고정 */}
+      <div className="flex gap-2 sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="호실 번호, 입주자 이름, 방 타입 검색" className="flex-1" />
         <button
           type="button"

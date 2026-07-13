@@ -1011,8 +1011,8 @@ export default function TenantClient({
         )}
       </div>
 
-      {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴 */}
-      <div className="flex gap-2">
+      {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 스크롤 시 상단 고정(운영자 지시 2026-07-13) */}
+      <div className="flex gap-2 sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" className="flex-1" />
         <button type="button" onClick={() => setShowFilters(v => !v)}
           className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${

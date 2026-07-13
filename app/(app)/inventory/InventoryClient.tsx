@@ -368,7 +368,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       </div>
 
       {/* v2.0 §23 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}
+      <div className="sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
       <SearchBar value={search} onChange={setSearch} placeholder="품목명, 카테고리, 메모 검색" />
+      </div>
 
       {/* 검색 무결과 — v2.0 §23 분기 (현재 탭 스코프 기준) */}
       {q && rows.length > 0 && grouped.every(g => g.rows.length === 0) && outOfScopeCount === 0 && (
