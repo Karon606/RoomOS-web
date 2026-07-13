@@ -2520,6 +2520,8 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
   // 임시저장(드래프트) — 아이템별 점검은 locationId null. 폼을 열면 직전 임시저장값을 복원.
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [draftPending, setDraftPending] = useState(false)
+  // 임시저장 상태 칩(§12 정본) — 저장 시점 스냅샷과 현재 입력을 비교해 '저장 후 수정됨'을 표시(불안 해소).
+  const draftSavedSnapRef = useRef<string | null>(null)
   useEffect(() => {
     let active = true
     getItemDrafts(item.id).then(drafts => {
@@ -2572,6 +2574,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
     setError('')
     const savedAt = Date.now()
     setDraftPending(true)
+    const snapAtSave = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched })
     saveStockCheckDraft({
       trackedItemId: item.id, locationId: null,
       data: { date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched, savedAt },
@@ -2579,6 +2582,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
       setDraftPending(false)
       if (!res.ok) { pushToast('error', res.error); return }
       setDraftSavedAt(savedAt)
+      draftSavedSnapRef.current = snapAtSave
       pushToast('success', '임시저장됨')
       onDraftChange?.()
     })
@@ -2588,6 +2592,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
     // cross-mode 공유 — 이 품목의 모든 드래프트(아이템별+위치별) 정리
     deleteItemDrafts(item.id).then(() => {
       setDraftSavedAt(null)
+      draftSavedSnapRef.current = null
       pushToast('success', '임시저장 비움')
       onDraftChange?.()
     })
@@ -2881,13 +2886,30 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
           계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (보충 완료 후 점검 권장)
         </span>
       </label>
-      {draftSavedAt && (
-        <div className="flex items-center justify-between gap-2 text-[0.65625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-          <span>이어서 점검 중 · 임시저장 {fmtTime(new Date(draftSavedAt))}</span>
-          <button type="button" onClick={handleClearDraft}
-            className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline shrink-0">비우기</button>
-        </div>
-      )}
+      {(draftPending || draftSavedAt) && (() => {
+        // §12 임시저장 칩 정본 — 저장 중(카멜) / 임시저장됨 시각(성공 점) / 저장 후 수정됨(뮤트)
+        const curSnap = JSON.stringify({ date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched })
+        const dirtySinceSave = !draftPending && draftSavedAt != null && draftSavedSnapRef.current != null && draftSavedSnapRef.current !== curSnap
+        const restoredOnly = draftSavedAt != null && draftSavedSnapRef.current == null
+        if (restoredOnly && draftSavedAt) draftSavedSnapRef.current = curSnap   // 폼 열며 복원된 드래프트를 기준 스냅샷으로
+        const dotColor = draftPending ? 'var(--camel)' : dirtySinceSave ? 'var(--warm-muted)' : 'var(--success)'
+        const textColor = draftPending ? 'var(--camel)' : dirtySinceSave ? 'var(--warm-muted)' : 'var(--success-fg)'
+        const label = draftPending ? '저장 중…'
+          : dirtySinceSave ? `임시저장 후 수정됨 (저장본 ${fmtTime(new Date(draftSavedAt!))})`
+          : `임시저장됨 ${fmtTime(new Date(draftSavedAt!))}`
+        return (
+          <div className="flex items-center justify-between gap-2 text-[0.65625rem] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--cream-2)' }}>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+              <span className="truncate" style={{ color: textColor }}>{label}</span>
+            </span>
+            {!draftPending && draftSavedAt && (
+              <button type="button" onClick={handleClearDraft}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline shrink-0">비우기</button>
+            )}
+          </div>
+        )
+      })()}
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
@@ -3070,6 +3092,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const [date, setDate] = useState(kstYmdStr())
   const [pending, setPending] = useState(false)
   const [draftPending, setDraftPending] = useState(false)
+  const [locDraftSavedAt, setLocDraftSavedAt] = useState<number | null>(null)   // 임시저장 상태 칩(§12)
+  const locDraftSnapRef = useRef<string | null>(null)
   const [error, setError] = useState('')
   const [mergeChoice, setMergeChoice] = useState<'merge' | 'new' | null>(null)
   const [confirmItems, setConfirmItems] = useState<InventoryRow[]>([])
@@ -3220,6 +3244,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           data: { before: beforeStr, after: afterStr, date, savedAt: Date.now() },
         })
       }))
+      setLocDraftSavedAt(Date.now())
+      locDraftSnapRef.current = JSON.stringify({ locId, date, rows: locItems.map(r => computeRow(r)) })
       pushToast('success', `${dirty.length}품목 임시저장됨`)
       onDraftChange?.()
     } catch {
@@ -3386,6 +3412,24 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             </div>
           </div>
         )}
+        {(draftPending || locDraftSavedAt) && (() => {
+          // §12 임시저장 칩 정본 — 아이템별 점검 폼과 동일 3상태
+          const curSnap = JSON.stringify({ locId, date, rows: locItems.map(r => computeRow(r)) })
+          const dirtySinceSave = !draftPending && locDraftSavedAt != null && locDraftSnapRef.current != null && locDraftSnapRef.current !== curSnap
+          const dotColor = draftPending ? 'var(--camel)' : dirtySinceSave ? 'var(--warm-muted)' : 'var(--success)'
+          const textColor = draftPending ? 'var(--camel)' : dirtySinceSave ? 'var(--warm-muted)' : 'var(--success-fg)'
+          const label = draftPending ? '저장 중…'
+            : dirtySinceSave ? `임시저장 후 수정됨 (저장본 ${fmtTime(new Date(locDraftSavedAt!))})`
+            : `임시저장됨 ${fmtTime(new Date(locDraftSavedAt!))}`
+          return (
+            <div className="px-5 pb-1 shrink-0">
+              <div className="flex items-center gap-1.5 text-[0.65625rem] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--cream-2)' }}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+                <span style={{ color: textColor }}>{label}</span>
+              </div>
+            </div>
+          )
+        })()}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
           {!inline && <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>}
           <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || locItems.length === 0}>
