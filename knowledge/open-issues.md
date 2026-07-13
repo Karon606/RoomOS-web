@@ -21,3 +21,10 @@
 ## 디자인 가이드 v2.0 미해소 2건 — 해소 완료 (운영자 결정 2026-07-11)
 - InventoryCard radius: 14px(r-xl) 정규화 확정, 코드 반영(7149469).
 - 테이블 내부 z 리터럴: v2.0 §08에 지역 예외 조항 명문화, 코드 불변.
+
+## 2026-07-13 오류신고 파생 백로그
+- 날짜 표기 KST 정합(fmtDate) — 전 페이지 타임스탬프가 KST 기준으로 정정됨(자정 전후 하루 차 보이는 건 올바른 값). 배포 시점 운영자 공유 필요.
+- /inventory React #418(hydration text mismatch) — 재현 후 근원 확정 필요(단위 신고와 무관 판정).
+- StockCheck @db.Date 절단 — KST 저녁 수령 건 자동 점검 날짜가 전날로 저장(§4 인접, 저장 시 KST 절단 필요).
+- 기존 결함 기록: updateExpense propertyId 미스코프, captureItemSpecOptions 중복 호출(무해).
+- 검색 1.5차: 요청·서류 그룹 + 최근 검색 고도화. v2 후보: 수납 월·금액 검색, pg_trgm.
