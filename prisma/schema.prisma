@@ -620,6 +620,7 @@ model PaymentRecord {
   memo           String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  cashReceiptIssuedAt DateTime?   // 현금영수증 발행 시각 — 발행 표시 메타데이터(충당·잔액 수식 비관여, 오류신고 2bd8befa)
   deletedAt      DateTime? // 소프트삭제 — null=활성. 조회는 prisma 소프트삭제 익스텐션이 자동 필터.
 
   leaseTermId String    @db.Uuid

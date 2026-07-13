@@ -797,6 +797,7 @@ export default function TenantClient({
     const fd = new FormData(e.currentTarget)
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
+    const cashReceiptIssued = fd.get('cashReceipt') === 'on'   // 현금영수증 발행 표시(오류신고 2bd8befa)
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -811,6 +812,7 @@ export default function TenantClient({
             payDate:       payDateVal,
             payMethod,
             memo:          memo || undefined,
+            cashReceiptIssued,
           })
         } else {
           const result = await savePayment({
@@ -822,6 +824,7 @@ export default function TenantClient({
             payDate:        payDateVal,
             payMethod,
             memo,
+            cashReceiptIssued,
           })
           const otherMonths = result.allocations.length > 0
             ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)
@@ -2163,6 +2166,10 @@ export default function TenantClient({
                         <option value="기타">기타</option>
                       </select>
                     </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" name="cashReceipt" className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                      <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
+                    </label>
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">메모</label>
                       <input type="text" name="memo" placeholder="메모 (선택)"

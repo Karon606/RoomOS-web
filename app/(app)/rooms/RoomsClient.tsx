@@ -48,6 +48,7 @@ type RoomStatus = {
   dueDay: string | null
   currentPaid: number
   carryOver: number
+  cashReceiptIssued?: boolean   // 이달 현금영수증 발행분 존재(표시 메타)
   totalPaid: number
   balance: number
   isPaid: boolean
@@ -75,7 +76,7 @@ type RoomStatus = {
 
 // ── 열 설정 ──────────────────────────────────────────────────────
 
-type ColKey = 'type' | 'windowType' | 'contact' | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'dueDay' | 'status'
+type ColKey = 'type' | 'windowType' | 'contact' | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'dueDay' | 'cashReceipt' | 'status'
 
 // defaultOn — 데스크탑 표 + 모바일 카드 공통 정책. 모바일 카드에서 항상 보이던 '타입'을
 // colVis 토글 대상에 편입하면서 default true 로 변경 (회귀 방지, 2026-06-01).
@@ -88,6 +89,7 @@ const COL_DEFS: { key: ColKey; label: string; defaultOn: boolean }[] = [
   { key: 'totalPaid',     label: '총납부액', defaultOn: true  },
   { key: 'balance',       label: '잔액',     defaultOn: true  },
   { key: 'dueDay',        label: '납부일',   defaultOn: true  },
+  { key: 'cashReceipt',   label: '현금영수증', defaultOn: false },
   { key: 'status',        label: '수납 상태', defaultOn: true  },
 ]
 
@@ -213,9 +215,9 @@ function buildReminderText(room: RoomStatus, targetMonth: string, unpaid: number
 // ── 정렬 ─────────────────────────────────────────────────────────
 
 type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
-             | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status' | 'dueDay'
+             | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status' | 'dueDay' | 'cashReceipt'
 type SortDir = 'asc' | 'desc'
-const SORTKEY_VALUES: SortKey[] = ['roomNo', 'type', 'windowType', 'tenantName', 'contact', 'depositAmount', 'expected', 'totalPaid', 'balance', 'status', 'dueDay']
+const SORTKEY_VALUES: SortKey[] = ['roomNo', 'type', 'windowType', 'tenantName', 'contact', 'depositAmount', 'expected', 'totalPaid', 'balance', 'status', 'dueDay', 'cashReceipt']
 
 function getDueSortValue(room: RoomStatus, targetMonth: string): number {
   const info = getEffectiveDueInfo(room, targetMonth)
@@ -246,6 +248,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
     case 'balance':       return room.balance
     case 'status':        return getDueSortValue(room, targetMonth)
     case 'dueDay':        return getEffectiveDueDayNum(room, targetMonth)
+    case 'cashReceipt':   return room.cashReceiptIssued ? 0 : 1   // 발행 먼저
     default:              return ''
   }
 }
@@ -932,6 +935,9 @@ export default function RoomsClient({
                     {room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`}
                   </span>
                 )}
+                {colVis.cashReceipt && room.cashReceiptIssued && (
+                  <span className="text-[var(--success-fg)]">현금영수증 발행</span>
+                )}
                 {colVis.depositAmount && room.depositAmount > 0 && (
                   <span className="text-[var(--warm-muted)]">
                     보증금 <MoneyDisplay amount={room.depositAmount} />
@@ -984,6 +990,7 @@ export default function RoomsClient({
                 {colVis.totalPaid     && <SortTh label="총납부액"  sk="totalPaid" />}
                 {colVis.balance       && <SortTh label="잔액"      sk="balance" />}
                 {colVis.dueDay        && <SortTh label="납부일"    sk="dueDay" />}
+                {colVis.cashReceipt   && <SortTh label="현금영수증" sk="cashReceipt" />}
                 {colVis.status        && <SortTh label="수납 상태" sk="status" />}
               </tr>
             </thead>
@@ -1081,6 +1088,14 @@ export default function RoomsClient({
                       {room.dueDay
                         ? room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`
                         : '—'}
+                    </td>
+                  )}
+
+                  {colVis.cashReceipt && (
+                    <td className="px-4 py-4 text-center text-sm whitespace-nowrap">
+                      {room.cashReceiptIssued
+                        ? <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5">발행</span>
+                        : <span className="text-[var(--warm-muted)]">—</span>}
                     </td>
                   )}
 

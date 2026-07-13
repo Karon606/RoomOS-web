@@ -28,6 +28,7 @@ type RoomRow = {
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
+  cashReceiptIssued?: boolean   // 이달(viewMonth) 이용료 record 중 현금영수증 발행분 존재 — 표시 메타(오류신고 2bd8befa)
   firstUnpaidMonth: string | null
   isReservationConfirmed: boolean   // RESERVED + reservationConfirmedAt != null
   // 지연납부 — 이 viewMonth 귀속분이 모두 dueDay 이후에 입금된 경우 가장 늦은 payDate ('YYYY-MM-DD')
@@ -249,6 +250,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const prevOwnerMonths = new Set(allLeaseRecords.filter(p => p.isPrevOwner).map(p => p.targetMonth))
     // 양도인 몫 (payDate < cutoffDate) + 양도인 정산 record — 현 원장 계산에서 제외
     const postCutoffRecords = allLeaseRecords.filter(p => !p.isPrevOwner && (!cutoffDate || new Date(p.payDate) >= cutoffDate))
+    // 이달 현금영수증 발행 여부 — viewMonth 귀속 이용료 record에 발행 스탬프가 하나라도 있으면(표시 전용)
+    const cashReceiptIssuedThisMonth = postCutoffRecords.some(p => p.targetMonth === targetMonth && !!p.cashReceiptIssuedAt)
 
     // [저장 청구액 우선] 과거월 청구는 그 달 record에 락인된 expectedAmount를 사용.
     // 월세가 바뀌어도(거주→비거주 등) 과거가 현재 요율로 소급 재계산되지 않게 함.
@@ -467,7 +470,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         status: lease.status, expected: rowExpected, dueDay: effectiveDueDay,
         currentPaid: 0, carryOver: displayCarryOver,
         totalPaid: 0, balance: cumulativeBalance,
-        isPaid,
+        isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth: true, baseRent: room.baseRent,
         prevTenantName, prevContact,
@@ -495,7 +498,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected: rowExpected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       currentPaid: realCurrentPaid, carryOver: displayCarryOver,
-      totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid,
+      totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
       leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
       prevTenantName, prevContact,
@@ -678,6 +681,8 @@ export async function savePayment(data: {
   memo?:       string
   // 사용자가 귀속월을 명시한 경우 — FIFO 우회. 해당 월부터 분배 시작 (과납분은 다음달로 이월)
   forcedTargetMonth?: string
+  // 현금영수증 발행 표시(메타데이터, 충당·잔액 수식 비관여) — 원본 월 record에만 스탬프
+  cashReceiptIssued?: boolean
 }): Promise<SavePaymentResult> {
   await requireEdit()
   const propertyId = await getPropertyId()
@@ -745,6 +750,7 @@ export async function savePayment(data: {
           seqNo:          seqNo + 1,
           isPaid:         false,
           carryOver:      0,
+          cashReceiptIssuedAt: (data.cashReceiptIssued && isOriginalMonth && portion > 0) ? new Date() : null,
         },
       })
       touchedMonths.push(currentTm)
@@ -946,6 +952,7 @@ export async function saveDepositPayment(data: {
   payDate:     string
   payMethod:   string
   memo?:       string
+  cashReceiptIssued?: boolean   // 현금영수증 발행 표시 — 보증금·초과분 record 모두(한 결제 단위)
 }) {
   await requireEdit()
   const propertyId = await getPropertyId()
@@ -969,6 +976,7 @@ export async function saveDepositPayment(data: {
       isPaid:         false,
       isDeposit:      true,
       carryOver:      0,
+      cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
     },
   })
 
@@ -990,6 +998,7 @@ export async function saveDepositPayment(data: {
         seqNo:          existingCount + 2,
         isPaid:         false,
         carryOver:      0,
+        cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
       },
     })
   }
@@ -1091,13 +1100,13 @@ async function recalculatePayments(
 // 수납 기록 수정
 export async function updatePayment(
   paymentId: string,
-  data: { actualAmount: number; payDate: string; payMethod: string; memo?: string; targetMonth?: string }
+  data: { actualAmount: number; payDate: string; payMethod: string; memo?: string; targetMonth?: string; cashReceiptIssued?: boolean }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const record = await prisma.paymentRecord.findUnique({
       where: { id: paymentId },
-      select: { leaseTermId: true, targetMonth: true, isDeposit: true },
+      select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
 
@@ -1130,6 +1139,9 @@ export async function updatePayment(
         payMethod:    data.payMethod,
         memo:         data.memo || null,
         ...(targetMonthChanged ? { targetMonth: newTargetMonth, seqNo: newSeqNo } : {}),
+        // 현금영수증 — undefined면 미변경(기존 호출이 스탬프를 지우지 않게, 영향검증 필수).
+        // 켤 때 기존 발행 시각은 보존(감사 흔적), 끌 때만 null.
+        ...(data.cashReceiptIssued === undefined ? {} : { cashReceiptIssuedAt: data.cashReceiptIssued ? (record.cashReceiptIssuedAt ?? new Date()) : null }),
       },
     })
 

@@ -69,6 +69,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   const [excessAsIncome, setExcessAsIncome] = useState(false)
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
+  const [cashReceiptIssued, setCashReceiptIssued] = useState(false)   // 현금영수증 발행 표시(메타데이터, 오류신고 2bd8befa)
   const [memo, setMemo] = useState<string>('')
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
@@ -121,6 +122,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             payDate:       payDateVal,
             payMethod,
             memo:          isCleaningFeeMode ? (memo || '청소비') : (memo || undefined),
+            cashReceiptIssued,
           })
         } else {
           // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
@@ -140,6 +142,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             payMethod,
             memo:           rentMemo,
             forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
+            cashReceiptIssued,
           })
           if (useIncome) {
             const fd = new FormData()
@@ -298,6 +301,11 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)}
+          className="w-3.5 h-3.5 accent-[var(--coral)]" />
+        <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
+      </label>
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"

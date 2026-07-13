@@ -42,6 +42,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   const [editPayMethod, setEditPayMethod] = useState<string>('')
   const [editMemo, setEditMemo]           = useState<string>('')
   const [editTargetMonth, setEditTargetMonth] = useState<string>('')
+  const [editCashReceipt, setEditCashReceipt] = useState(false)   // 현금영수증 발행 표시(오류신고 2bd8befa)
 
   const reload = async () => {
     const { records, acquisitionDate } = await getPaymentsByLease(leaseTermId, targetMonth)
@@ -59,6 +60,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     setEditPayMethod(p.payMethod ?? '')
     setEditMemo(p.memo ?? '')
     setEditTargetMonth(p.targetMonth)
+    setEditCashReceipt(!!p.cashReceiptIssuedAt)
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
@@ -73,6 +75,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
         targetMonth:  editTargetMonth || undefined,
+        cashReceiptIssued: editCashReceipt,
       }), { success: '수납 기록 수정됨' })
       if (!res.ok) return
       await reload()
@@ -167,6 +170,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   </select>
                 </div>
               )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={editCashReceipt} onChange={e => setEditCashReceipt(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                <span className="text-[0.65625rem] text-[var(--warm-dark)]">현금영수증 발행함</span>
+              </label>
               <div className="flex gap-2 justify-end">
                 <Btn variant="secondary" size="sm" onClick={() => setEditingId(null)}>취소</Btn>
                 <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={pending}>저장</Btn>
@@ -205,6 +213,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     {p.targetMonth > targetMonth && ' (선납)'}
                   </span>
                 )}
+                {p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>}
                 {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
               </div>
               {canEdit && (
