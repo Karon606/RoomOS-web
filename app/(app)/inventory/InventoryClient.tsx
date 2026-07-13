@@ -400,8 +400,10 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
           // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
           const usesSpec = (trackUnit: string, specValue: number | null) => trackUnit !== 'qty' && !!specValue && specValue > 0
-          const specQtyOf = (qtyValue: number, specValue: number | null, trackUnit: string) =>
-            Math.round((usesSpec(trackUnit, specValue) ? qtyValue * (specValue as number) : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
+          // 구매 규격단위(L 등)를 품목 단위(ml 등)로 환산 — 서버 잔량 수학(overview sumPurchases)과 동일.
+          // 환산 누락 시 2.1L×2가 '4.2ml'로 표기되던 버그(오류신고 75dd05f7).
+          const specQtyOf = (qtyValue: number, specValue: number | null, fromUnit: string | null, toUnit: string | null, trackUnit: string) =>
+            Math.round((usesSpec(trackUnit, specValue) ? qtyValue * (convertSpecValue(specValue, fromUnit, toUnit) ?? (specValue as number)) : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
           // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
           const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
           for (const f of flat) {
@@ -420,7 +422,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               <ul className="space-y-1.5">
                 {groups.map(g => {
                   // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
-                  const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit), 0) * 1000) / 1000
+                  const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
                   const unit = g.trackUnit === 'qty' ? (g.qtyUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
                   const boxUnit = g.items[0].p.qtyUnit
@@ -457,7 +459,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
                           {g.items.map(f => {
                             const fd = new Date(f.p.date)
-                            const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit)
+                            const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
                             const su = g.trackUnit === 'qty' ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
                             const qstr = f.p.qtyValue
                               ? (usesSpec(g.trackUnit, f.p.specValue) && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
