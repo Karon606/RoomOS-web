@@ -512,7 +512,7 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
         detail: buildAssetDetail({ ...e, qtyValue: need }),
         vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
         receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
-        itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText,
+        itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
         qtyValue: need, qtyUnit: e.qtyUnit,
         receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
         allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,

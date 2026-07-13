@@ -71,6 +71,7 @@ type Expense = {
   breakdownJson: string | null   // #1 관리비 묶음 세부 내역
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
+  specText: string | null; unitBasis: string | null   // 서술형 규격·단가 기준 — 수정 프리필 보존용
   qtyValue: number | null; qtyUnit: string | null
   orderId: string | null; isShipping: boolean
   allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
@@ -474,7 +475,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   function updateItemQty(idx: number, raw: string) {
     const qtyValue = raw.replace(/[^0-9.]/g, '')
     const it = items[idx]
-    const q = (Number(qtyValue) || 1) * specMul(it)
+    // basis 인지 — 개당(qty) 기준이면 규격을 곱지 않음(baseQtyOf·updateItemSpec과 동일 규칙)
+    const q = (Number(qtyValue) || 1) * (basisOf(it) === 'spec' ? specMul(it) : 1)
     if (it.unitPrice != null) patchItem(idx, { qtyValue, amount: Math.round(it.unitPrice * q) })
     else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
     else patchItem(idx, { qtyValue })
@@ -494,6 +496,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const next: 'spec' | 'qty' = basisOf(it) === 'spec' ? 'qty' : 'spec'
     const q = (Number(it.qtyValue) || 1) * (next === 'spec' ? specMul(it) : 1)
     patchItem(idx, { unitBasis: next, unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice })
+  }
+  // 규격을 서술형(4x30mm 등)으로 능동 전환 — 이때만 숫자 규격을 비움(DB 공존 행은 자동삭제 금지, 영향검증 필수1).
+  // 서술 규격은 계산 비관여 → 개당(qty) 기준 전환, 금액 유지·단가 재계산(피커 confirmAdd와 동일 규칙).
+  function convertItemToTextSpec(idx: number) {
+    const it = items[idx]
+    const q = Number(it.qtyValue) || 1
+    patchItem(idx, { specText: it.specText ?? '', specValue: '', specUnit: '', unitBasis: 'qty', unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice })
   }
   // 방별 분배 — 켜면 한 줄(방 미지정+전체수량) 생성, 끄면 제거(방 분배 없음)
   function toggleAlloc(idx: number) {
@@ -528,7 +537,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           <input type="checkbox" checked={specTextMode}
             onChange={e => { setSpecTextMode(e.target.checked); if (e.target.checked) { setNoSpec(false); setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } else setSpecText('') }}
             className="w-3 h-3 accent-[var(--coral)]" />
-          세부스펙 (색상·사이즈 등)
+          규격 직접 입력 (직경x길이·색상·사이즈 등)
         </label>
         <button type="button" onClick={() => setWizardOpen(true)}
           className="text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">
@@ -540,7 +549,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
         {specTextMode && (
         <div className="space-y-1">
-          <label className="text-[0.65625rem] text-[var(--warm-muted)]">세부스펙 <span className="font-normal">(단가와 무관한 구분 정보 · 색상·사이즈·치수)</span></label>
+          <label className="text-[0.65625rem] text-[var(--warm-muted)]">규격·세부스펙 <span className="font-normal">(직경x길이 등 치수 · 색상·사이즈, 단가 계산과 무관)</span></label>
           {(prevUnits?.specOptions?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1">
               {prevUnits!.specOptions.map(o => (
@@ -554,7 +563,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               ))}
             </div>
           )}
-          <input type="text" placeholder="예: 폭 183cm · 두께 1.8T, 싱글/그레이" value={specText}
+          <input type="text" placeholder="예: 4x30mm · 폭 183cm, 싱글/그레이" value={specText}
             onChange={e => setSpecText(e.target.value)} className={textCls} />
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">새로 입력한 세부스펙은 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.</p>
         </div>
@@ -666,10 +675,18 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         {it.qtyUnit && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{it.qtyUnit}</span>}
                       </div>
                     </label>
-                    {/* 규격 — 수정 가능. 단가는 규격(기준단위) 1개당. 총 기준수량 = 수량 × 규격 */}
+                    {/* 규격 — 수정 가능. 서술형(specText) 전용 행은 숫자 셀 숨김, DB 공존 행은 병기(숫자 자동삭제 금지).
+                        라벨 탭 = 서술형 규격(4x30mm 등)으로 전환(단가 라벨의 점선 전환 문법과 동일). */}
+                    {(it.specText == null || it.specValue) && (<>
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] pb-1.5">×</span>
                     <label className="flex flex-col gap-0.5">
-                      <span className="text-[0.65625rem] text-[var(--warm-muted)]">규격</span>
+                      {it.specText == null ? (
+                        <button type="button" onClick={() => convertItemToTextSpec(idx)}
+                          title="규격을 직접 입력(직경x길이 등 치수)으로 전환"
+                          className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 text-left">규격</button>
+                      ) : (
+                        <span className="text-[0.65625rem] text-[var(--warm-muted)]">규격</span>
+                      )}
                       <div className="flex items-center gap-0.5">
                         <input type="text" inputMode="decimal" value={it.specValue}
                           onChange={e => updateItemSpec(idx, e.target.value)} placeholder="—"
@@ -677,6 +694,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         {it.specUnit && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{it.specUnit}</span>}
                       </div>
                     </label>
+                    </>)}
                     <span className="text-[0.65625rem] text-[var(--warm-muted)] pb-1.5">×</span>
                     <label className="flex flex-col gap-0.5">
                       <button type="button" onClick={() => toggleItemBasis(idx)} title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
@@ -700,6 +718,17 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         <span className="text-[0.65625rem] text-[var(--warm-muted)]">원</span>
                       </div>
                     </label>
+                  </div>
+                )}
+                {allowMulti && it.specText != null && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">규격(직접)</span>
+                    <input type="text" value={it.specText}
+                      onChange={e => patchItem(idx, { specText: e.target.value })}
+                      placeholder="예: 4x30mm"
+                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                    <button type="button" onClick={() => patchItem(idx, { specText: undefined })}
+                      className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">숫자 규격으로</button>
                   </div>
                 )}
                 {allowMulti && rooms.length > 0 && (
@@ -3109,12 +3138,15 @@ export default function FinanceClient({
                       label: detailExp.itemLabel,
                       specValue: detailExp.specValue?.toString() ?? '',
                       specUnit:  detailExp.specUnit ?? '',
+                      // 서술형 규격·단가 기준 복원 — 누락 시 수정 저장에서 specText가 소실되던 버그(오류신고 5f44f5df)
+                      specText:  detailExp.specText ?? undefined,
+                      unitBasis: detailExp.unitBasis === 'qty' ? 'qty' : detailExp.unitBasis === 'spec' ? 'spec' : undefined,
                       // 수량 미입력 항목은 자동 1개로 (confirmAdd 와 동일 규칙) — 재저장 시 "x 1개" 일관 표기
                       qtyValue:  detailExp.qtyValue != null ? detailExp.qtyValue.toString() : '1',
                       qtyUnit:   detailExp.qtyValue != null ? (detailExp.qtyUnit ?? '') : (detailExp.qtyUnit ?? '개'),
                       amount:    baseAmount,
-                      // 단가 복원 — (금액−배송비)÷기준수량(수량×규격). 규격 반영(40개입 3박스 → ÷120) 해야 표시(÷개)와 일관. 저장엔 단가 없음.
-                      unitPrice: Math.round(baseAmount / ((Number(detailExp.qtyValue) || 1) * (Number(detailExp.specValue) || 1))),
+                      // 단가 복원 — (금액−배송비)÷기준수량. 개당(qty) 기준이면 규격 나눗셈 제외(basis 인지).
+                      unitPrice: Math.round(baseAmount / ((Number(detailExp.qtyValue) || 1) * (detailExp.unitBasis === 'qty' ? 1 : (Number(detailExp.specValue) || 1)))),
                     }] : [])
                     setEditExpAmount(baseAmount)
                     setEditExpDetail((detailExp.detail ?? '').replace(/\s*·?\s*배송비\s*[\d,]+원/, '').trim())
@@ -3293,6 +3325,8 @@ export default function FinanceClient({
                           <input type="hidden" name="itemLabel" value={editItems[0].label} />
                           <input type="hidden" name="specValue" value={editItems[0].specValue} />
                           <input type="hidden" name="specUnit"  value={editItems[0].specUnit} />
+                          <input type="hidden" name="specText"  value={editItems[0].specText ?? ''} />
+                          <input type="hidden" name="unitBasis" value={editItems[0].unitBasis ?? ''} />
                           <input type="hidden" name="qtyValue"  value={editItems[0].qtyValue} />
                           <input type="hidden" name="qtyUnit"   value={editItems[0].qtyUnit} />
                         </>

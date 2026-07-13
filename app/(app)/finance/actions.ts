@@ -756,6 +756,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const qtyUnit   = formData.get('qtyUnit') as string
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
+    const specTextRaw  = formData.get('specText') as string
+    const unitBasisRaw = formData.get('unitBasis') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨 (addExpense 와 동일)
     const shippingIncluded = parseAmount(formData.get('shippingIncluded')) || 0
@@ -870,6 +872,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
           },
         })] : []),
       ])
+      await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
       revalidatePath('/finance')
       return { ok: true }
     }
@@ -895,9 +898,16 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         ...(formData.has('qtyUnit') ? { qtyUnit: qtyUnit || null } : {}),
         ...(formData.has('specValue') ? { specValue: specValueRaw ? parseFloat(specValueRaw) : null } : {}),
         ...(formData.has('qtyValue') ? { qtyValue: qtyValueRaw ? parseFloat(qtyValueRaw) : null } : {}),
+        // 서술형 규격·단가 기준 — 미전송 편집(카테고리만 수정 등)에선 기존 값 보존(위 5필드와 동일 가드)
+        ...(formData.has('specText') ? { specText: specTextRaw || null } : {}),
+        ...(formData.has('unitBasis') ? { unitBasis: unitBasisRaw === 'spec' || unitBasisRaw === 'qty' ? unitBasisRaw : null } : {}),
         ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
       },
     })
+    // 세부스펙 적립 — 수정 저장으로 들어온 서술형 규격도 품목 사전에 upsert(best-effort)
+    if (formData.has('specText') && specTextRaw && itemLabel) {
+      await captureItemSpecOptions(propertyId, [{ label: itemLabel, specText: specTextRaw }]).catch(() => {})
+    }
     // 추적 소모품(부식·소모품·폐기물)의 품목명을 바꾸면 재고 카드·형제 지출까지 함께 변경(진짜 이름변경).
     // 카테고리가 그대로일 때만. 전파 실패는 지출 저장을 막지 않음(재고관리에서 수동 정리 가능).
     if (itemLabel && existing?.itemLabel && existing.category === category && itemLabel !== existing.itemLabel) {
