@@ -11,6 +11,7 @@ import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
@@ -175,6 +176,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   onApproved: () => void
   onRejected: () => void
 }) {
+  const router = useRouter()   // 지출 등록 — 정식 지출 폼 딥링크 이동용
   const kindInfo = KIND_LABEL[row.inferredKind ?? 'unknown'] ?? KIND_LABEL.unknown
   const isInventory = editingMode === 'inventory'
   const aiSuggestsInventory = row.inferredKind === 'inventory'
@@ -289,8 +291,9 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
             </p>
             <div className="flex gap-2 pt-1 flex-wrap">
-              {/* 지출 등록 — expense 추론이면 기본, inventory 면 보조 */}
-              <button onClick={() => onStartEdit('expense')} disabled={pending}
+              {/* 지출 등록 — 정식 지출 등록 폼(정밀 OCR·다품목·규격 완전체)으로 이동해 일원화(오류신고 bb7b7cb4).
+                  저장 성공 시 이 대기 항목은 자동 마감. AI 인식이 1회 더 실행됨(운영자 수용). */}
+              <button onClick={() => router.push(`/finance?pendingReceipt=${row.id}`)} disabled={pending}
                 className="inline-flex items-center text-[0.6875rem] px-2.5 min-h-[44px] rounded-lg font-medium"
                 style={{
                   background: aiSuggestsInventory ? 'var(--cream)' : 'var(--coral)',

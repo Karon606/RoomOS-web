@@ -25,6 +25,7 @@ import {
 import { includeExpenseInInventory, syncTrackedItemCategory } from '@/app/(app)/inventory/actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
+import { getPendingReceiptImage, finalizePendingReceipt } from '@/app/(app)/dashboard/pendingReceipt'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
@@ -1436,7 +1437,7 @@ export default function FinanceClient({
   }
 
   // OCR 채우기 + 첨부 (코어 — cropped 직접 받음, 지출 등록 폼 전용)
-  const ocrCropped = async (cropped: { dataUrl: string; base64: string }) => {
+  const ocrCropped = async (cropped: { dataUrl: string; base64: string }, opts?: { skipUpload?: boolean }) => {
     setScanOcrPending(true)
     setScanOcrError('')
     try {
@@ -1492,7 +1493,7 @@ export default function FinanceClient({
           if (d.totalAmount) setAddExpAmount(d.totalAmount)
         }
       }
-      await uploadCropped(cropped)
+      if (!opts?.skipUpload) await uploadCropped(cropped)   // 홈 큐 딥링크는 기존 이미지 재사용(재업로드 방지)
     } finally { setScanOcrPending(false) }
   }
 
@@ -1544,6 +1545,24 @@ export default function FinanceClient({
     if (!gq) return
     if (globalSeedParams.get('month')) setExpListSearch(gq)
     else { setExpSearchQ(gq); setShowExpSearch(true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
+  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }
+  // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
+  // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
+  const pendingSeedRef = useRef<string | null>(null)
+  useEffect(() => {
+    const pid = globalSeedParams.get('pendingReceipt')
+    if (!pid || pendingSeedRef.current) return
+    pendingSeedRef.current = pid
+    ;(async () => {
+      openAddExpense()
+      const res = await getPendingReceiptImage(pid)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setAddReceiptUrl(res.imageUrl)
+      await ocrCropped({ dataUrl: `data:${res.mime};base64,${res.base64}`, base64: res.base64 }, { skipUpload: true })
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
@@ -1860,6 +1879,7 @@ export default function FinanceClient({
         const res = await addExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
         setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -2291,7 +2311,7 @@ export default function FinanceClient({
                 과거 내역 검색
               </Btn>
               {canEditUi && (
-              <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+              <Btn variant="primary" size="md" onClick={openAddExpense}>
                 + 지출 등록
               </Btn>
               )}

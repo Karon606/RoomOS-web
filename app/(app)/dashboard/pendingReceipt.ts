@@ -6,12 +6,13 @@
 // 3) 대시보드에서 사용자가 검토 → 승인(Expense 등록) 또는 거절
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { requireEdit } from '@/lib/role'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
-import { uploadToDrive } from '@/lib/google-drive'
+import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
@@ -309,6 +310,38 @@ export async function approvePendingReceipt(
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+// 홈 큐 영수증을 지출 등록 폼의 정식 OCR로 넘기기 위한 원본 이미지(오류신고 bb7b7cb4).
+// 영업장 스코프 + 편집 권한 필수 — 누락 시 타 영업장 영수증 열람 경로가 됨(영향검증 필수1).
+export async function getPendingReceiptImage(id: string): Promise<{ ok: true; base64: string; mime: string; imageUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.pendingReceipt.findFirst({
+      where: { id, propertyId, status: 'pending' },
+      select: { driveFileId: true, imageUrl: true },
+    })
+    if (!row?.driveFileId) return { ok: false, error: '대기 항목을 찾을 수 없습니다.' }
+    const buf = await downloadDriveBytes(row.driveFileId)
+    return { ok: true, base64: buf.toString('base64'), mime: 'image/jpeg', imageUrl: row.imageUrl }
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? '이미지를 불러오지 못했습니다.' }
+  }
+}
+
+// 지출 등록 폼 저장 성공 후 대기 항목 마감 — status 조건부 updateMany(중복 등록 방어, 영향검증 필수2)
+export async function finalizePendingReceipt(id: string): Promise<{ ok: boolean }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const r = await prisma.pendingReceipt.updateMany({
+      where: { id, propertyId, status: 'pending' },
+      data: { status: 'approved', reviewedAt: new Date() },
+    })
+    revalidatePath('/dashboard')
+    return { ok: r.count > 0 }
+  } catch { return { ok: false } }
 }
 
 export async function rejectPendingReceipt(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
