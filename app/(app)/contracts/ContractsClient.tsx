@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -25,7 +25,9 @@ const isDeparted = (status: string | null) => status === 'CHECKED_OUT' || status
 export default function ContractsClient({ contracts }: { contracts: ContractListRow[] }) {
   const router = useRouter()
   const entityModal = useEntityModal()
-  const [query, setQuery] = useState('')
+  const searchParams = useSearchParams()
+  // 전역 통합 검색 ?q= 딥링크 시딩
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
   const [residency, setResidency] = useState<'current' | 'departed' | 'all'>('current')
   const [source, setSource] = useState<'all' | 'GENERATED' | 'UPLOADED'>('all')
   const [sort, setSort] = useState<'latest' | 'tenant'>('latest')

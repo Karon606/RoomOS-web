@@ -17,6 +17,8 @@ const GROUP_ICON: Record<SearchGroupType, ReactNode> = {
   tenant:  (<><circle cx="12" cy="8" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></>),
   expense: (<><path d="M7 3.5 4 6.5l3 3" /><path d="M4 6.5h10.5A5.5 5.5 0 0 1 20 12" /><path d="M17 20.5l3-3-3-3" /><path d="M20 17.5H9.5A5.5 5.5 0 0 1 4 12" /></>),
   item:    (<><rect x="3.5" y="9.5" width="8" height="7.5" rx="1.2" /><rect x="12.5" y="9.5" width="8" height="7.5" rx="1.2" /><rect x="8" y="3.5" width="8" height="6" rx="1.2" /></>),
+  request: (<><rect x="4" y="4" width="16" height="12" rx="3" /><path d="M9 16v3.5L12.5 16" /></>),
+  doc:     (<><path d="M7 3.5h7l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" /><path d="M14 3.5V8h4.5" /><path d="M9.5 13h5M9.5 16.5h5" /></>),
 }
 const BADGE_STYLE: Record<string, { bg: string; fg: string }> = {
   success: { bg: 'var(--success-bg)', fg: 'var(--success-fg)' },

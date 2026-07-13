@@ -3,7 +3,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   resolveTenantRequest,
   unresolveTenantRequest,
@@ -61,7 +61,9 @@ export default function RequestsClient({
   const [filterStatus,   setFilterStatus]   = useState<'all' | 'unresolved' | 'resolved'>('unresolved')
   const [filterCategory, setFilterCategory] = useState<'all' | Category>('all')
   const [filterUrgent,   setFilterUrgent]   = useState(false)
-  const [search,         setSearch]         = useState('')
+  const searchParams = useSearchParams()
+  // 전역 통합 검색 ?q= 딥링크 시딩
+  const [search,         setSearch]         = useState(() => searchParams.get('q') ?? '')
 
   const [resolvingId,   setResolvingId]   = useState<string | null>(null)
   const [resolvingMemo, setResolvingMemo] = useState('')

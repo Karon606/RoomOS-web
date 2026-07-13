@@ -4,7 +4,7 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { pushToast } from '@/lib/saveStatus'
@@ -21,7 +21,9 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
   const router = useRouter()
   const entityModal = useEntityModal()
   const [tenantQuery, setTenantQuery] = useState('')
-  const [fileQuery, setFileQuery] = useState('')
+  const searchParams = useSearchParams()
+  // 전역 통합 검색 ?q= 딥링크 시딩(발급 이력 파일 검색)
+  const [fileQuery, setFileQuery] = useState(() => searchParams.get('q') ?? '')
   const [fileStatus, setFileStatus] = useState('')
   const [pending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)

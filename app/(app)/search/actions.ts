@@ -9,7 +9,7 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 
-export type SearchGroupType = 'tenant' | 'room' | 'expense' | 'item'
+export type SearchGroupType = 'tenant' | 'room' | 'expense' | 'item' | 'request' | 'doc'
 export type SearchBadgeTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 export type SearchHit = {
   group: SearchGroupType
@@ -49,7 +49,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   const enc = encodeURIComponent(q)
 
   // ── 병렬 조회 — 숫자 질의는 호실+전화 2쿼리로 축소(최빈 시나리오 최소 비용) ──
-  const [textTenants, phoneTenantIds, rooms, expenses, items] = await Promise.all([
+  const [textTenants, phoneTenantIds, rooms, expenses, items, requests, contractFiles, rentReceiptFiles, residenceCertFiles] = await Promise.all([
     // 입주자 텍스트 매칭(이름·영문명·국적·직업) — 텍스트 질의에서만
     !isDigits
       ? prisma.tenant.findMany({
@@ -128,6 +128,43 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
           select: { id: true, label: true, category: true, reorderMemo: true },
         })
       : Promise.resolve([]),
+    // 요청·컴플레인 — 텍스트 질의, 소프트삭제 제외, 미처리 우선(1.5차)
+    !isDigits
+      ? prisma.tenantRequest.findMany({
+          where: {
+            propertyId, deletedAt: null,
+            OR: [
+              { content: { contains: q, mode: 'insensitive' } },
+              { commonPlace: { contains: q, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: [{ resolvedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }],
+          take: 6,
+          select: { id: true, content: true, commonPlace: true, resolvedAt: true, requestDate: true, tenant: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    // 서류 3종 — 파일명 매칭, 소프트삭제 제외(1.5차)
+    !isDigits
+      ? prisma.contractFile.findMany({
+          where: { propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
+          orderBy: { signedAt: 'desc' }, take: 3,
+          select: { id: true, fileName: true, signedAt: true, tenant: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    !isDigits
+      ? prisma.rentReceiptFile.findMany({
+          where: { propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
+          orderBy: { issuedAt: 'desc' }, take: 3,
+          select: { id: true, fileName: true, issuedAt: true, tenant: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    !isDigits
+      ? prisma.residenceCertFile.findMany({
+          where: { propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
+          orderBy: { issuedAt: 'desc' }, take: 3,
+          select: { id: true, fileName: true, issuedAt: true, tenant: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
   ])
 
   // 전화 매칭 입주자 상세 조회 + 텍스트 매칭과 병합·dedupe
@@ -203,17 +240,43 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     action: { type: 'href', href: `/inventory?q=${encodeURIComponent(i.label)}` },
   }))
 
+  const requestHits: SearchHit[] = requests.slice(0, TAKE_SHOW).map(r => ({
+    group: 'request', id: r.id,
+    title: r.content.length > 80 ? `${r.content.slice(0, 80)}…` : r.content,
+    right: null,
+    badge: r.resolvedAt ? { label: '처리됨', tone: 'neutral' } : { label: '미처리', tone: 'warning' },
+    caption: [r.tenant?.name ?? r.commonPlace ?? '공용', fmtDateDot(r.requestDate)].filter(Boolean).join(' · ') || null,
+    action: { type: 'href', href: `/requests?q=${enc}` },
+  }))
+
+  // 서류 — 3모델 병합 후 최신순, 종류 라벨로 구분. 착지는 종류별 페이지에 파일명 시딩.
+  const docsMerged = [
+    ...contractFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.signedAt, tenantName: f.tenant.name, kindLabel: '계약서', page: '/contracts' })),
+    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '입실료 확인서', page: '/rent-receipts' })),
+    ...residenceCertFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '실거주 확인서', page: '/residence-certs' })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime())
+  const docHits: SearchHit[] = docsMerged.slice(0, TAKE_SHOW).map(d => ({
+    group: 'doc', id: d.id,
+    title: d.fileName,
+    right: d.kindLabel,
+    badge: null,
+    caption: [d.tenantName, fmtDateDot(d.date)].filter(Boolean).join(' · ') || null,
+    action: { type: 'href', href: `${d.page}?q=${encodeURIComponent(d.fileName)}` },
+  }))
+
   const groupDefs: Record<SearchGroupType, SearchGroup> = {
     tenant:  { type: 'tenant',  label: '입주자', hits: tenantHits,  hasMore: allTenants.length > TAKE_SHOW, moreHref: `/tenants?q=${enc}` },
     room:    { type: 'room',    label: '호실',   hits: roomHits,    hasMore: rooms.length > TAKE_SHOW,      moreHref: `/room-manage?q=${enc}` },
     expense: { type: 'expense', label: '지출',   hits: expenseHits, hasMore: expenses.length > TAKE_SHOW,   moreHref: `/finance?q=${enc}` },
     item:    { type: 'item',    label: '재고',   hits: itemHits,    hasMore: items.length > TAKE_SHOW,      moreHref: `/inventory?q=${enc}` },
+    request: { type: 'request', label: '요청',   hits: requestHits, hasMore: requests.length > TAKE_SHOW,   moreHref: `/requests?q=${enc}` },
+    doc:     { type: 'doc',     label: '서류',   hits: docHits,     hasMore: docsMerged.length > TAKE_SHOW,  moreHref: `/contracts?q=${enc}` },
   }
   // 그룹 순서 — kind는 순서만 조정(자동 라우팅 없음). 텍스트 질의는 품목 원장(재고)을 거래(지출)보다 앞에.
   const order: SearchGroupType[] =
-    kind === 'room' ? ['room', 'tenant', 'expense', 'item']
-    : kind === 'phone' ? ['tenant', 'room', 'expense', 'item']
-    : ['tenant', 'room', 'item', 'expense']
+    kind === 'room' ? ['room', 'tenant', 'expense', 'item', 'request', 'doc']
+    : kind === 'phone' ? ['tenant', 'room', 'expense', 'item', 'request', 'doc']
+    : ['tenant', 'room', 'item', 'expense', 'request', 'doc']
 
   return { queryKind: kind, groups: order.map(k => groupDefs[k]).filter(g => g.hits.length > 0) }
 }
