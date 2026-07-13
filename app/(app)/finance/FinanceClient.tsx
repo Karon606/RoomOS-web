@@ -631,11 +631,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
                   {/* 품명 수정 가능 — 영수증 OCR이 뽑은 긴 쇼핑몰 품명을 등록 상태에서 바로 다듬게(운영자 지시 2026-07-13).
-                      규격·수량은 아래 입력 행이 담당하므로 제목은 라벨만. */}
+                      스타일은 이 카드의 조밀 입력 문법(smallNum: cream bg+coral/30 보더)과 동일 — 형제 입력(수량·규격·단가)과 한 문법. */}
                   <input type="text" value={it.label}
                     onChange={e => patchItem(idx, { label: e.target.value })}
                     aria-label="품명 수정" placeholder="품명"
-                    className="flex-1 min-w-0 bg-transparent text-xs font-medium text-[var(--coral)] outline-none border-b border-dashed border-[var(--coral)]/30 focus:border-[var(--coral)] transition-colors px-0 py-0.5" />
+                    className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs font-medium text-[var(--coral)] outline-none focus:border-[var(--coral)] transition-colors" />
                   <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
                 {it.setHint && !(Number(it.specValue) > 1) && (
