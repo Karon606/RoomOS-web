@@ -161,7 +161,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     typeof window !== 'undefined' && localStorage.getItem('stayeum-inventory-view') === 'location' ? 'location' : 'item'
   )
   // v2.0 §23 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
-  const [search, setSearch] = useState('')
+  // 초기값은 전역 통합 검색의 ?q= 딥링크 시딩(있을 때만).
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
   const q = search.trim().toLowerCase()
   const visibleRows = q
     ? rows.filter(r => r.label.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || (r.memo ?? '').toLowerCase().includes(q))

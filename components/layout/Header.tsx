@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { pushToast } from '@/lib/saveStatus'
+import { openGlobalSearch } from '@/lib/globalSearch'
 import NotificationBell from '@/components/layout/NotificationBell'
 
 // 레이아웃이 getClaims()로 넘기는 최소 사용자 정보 (Header에서 쓰는 필드만)
@@ -123,8 +124,15 @@ export default function Header({
         </div>
       </div>
 
-      {/* ── 우: 알림 ── (프로필/계정은 전체 메뉴로 이동) */}
+      {/* ── 우: 검색·알림 ── (프로필/계정은 전체 메뉴로 이동) */}
       <div className="flex items-center gap-0.5 shrink-0">
+        <button type="button" onClick={openGlobalSearch} aria-label="통합 검색"
+          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--warm-dark)' }}>
+            <circle cx="11" cy="11" r="7" /><path d="M16 16 L21 21" />
+          </svg>
+        </button>
         <NotificationBell currentPropertyId={currentPropertyId} />
       </div>
     </header>

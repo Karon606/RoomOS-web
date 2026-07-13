@@ -23,7 +23,7 @@ import {
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
 import { includeExpenseInInventory, syncTrackedItemCategory } from '@/app/(app)/inventory/actions'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -1503,6 +1503,15 @@ export default function FinanceClient({
   const [expSearchQ, setExpSearchQ] = useState('')
   const [expSearchResults, setExpSearchResults] = useState<ExpenseSearchResult[]>([])
   const [expSearching, setExpSearching] = useState(false)
+  // 전역 통합 검색 ?q= 시딩 — month 동반(개별 히트)이면 이번 달 인라인 검색, q만(그룹 더 보기)이면 전 기간 검색 패널
+  const globalSeedParams = useSearchParams()
+  useEffect(() => {
+    const gq = globalSeedParams.get('q')
+    if (!gq) return
+    if (globalSeedParams.get('month')) setExpListSearch(gq)
+    else { setExpSearchQ(gq); setShowExpSearch(true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
   const [showRecMgmt, setShowRecMgmt]   = useState(false)
   const [recMgmtDirty, setRecMgmtDirty] = useState(false)   // v2.0 §12 — 고정지출 폼 입력 보호

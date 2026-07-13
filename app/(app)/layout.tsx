@@ -13,6 +13,7 @@ import NewVersionNotice from '@/components/NewVersionNotice'
 import BreadcrumbTracker from '@/components/BreadcrumbTracker'
 import ErrorReportButton from '@/components/ErrorReportButton'
 import { isSuperAdminEmail } from '@/lib/auth/access'
+import { GlobalSearchHost } from '@/components/search/GlobalSearchHost'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
 export default async function AppLayout({
@@ -109,6 +110,8 @@ export default async function AppLayout({
         <RoleProvider role={access?.role ?? 'OWNER'}>
           {children}
         </RoleProvider>
+        {/* 전역 통합 검색 — Prism(entityModal) 착지를 위해 Provider 안쪽에 마운트 */}
+        <GlobalSearchHost propertyId={currentPropertyId} />
       </EntityModalProvider>
       <ErrorReportButton />
     </AppShell>
