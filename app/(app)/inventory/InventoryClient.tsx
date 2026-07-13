@@ -49,6 +49,7 @@ import {
   getStockAsOf,
   deleteStockCheck,
   deleteStockAddition,
+  createStockDisposal, deleteStockDisposal, undoDeleteStockDisposal,
   updateStockAddition,
   updateExpenseFromInventory,
   excludeExpenseFromInventory,
@@ -837,7 +838,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [monthlyInflow, setMonthlyInflow] = useState<MonthlyInflowRow[]>([])
-  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings' | 'reconcile'>(initialMode)
+  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'disposal' | 'settings' | 'reconcile'>(initialMode)
   const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
@@ -918,6 +919,21 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
+  const handleDeleteDisposal = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 폐기 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+    setLoadingId(id)
+    const release = trackSave()
+    deleteStockDisposal(id).then(res => {
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '폐기 기록 삭제됨', {
+        action: { label: '적용취소', run: () => { void undoDeleteStockDisposal(res.undo).then(r => {
+          if (r.ok) { pushToast('info', '폐기 기록을 복원했습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+      }) }).finally(release) }
+      else { setLoadingId(null); pushToast('error', res.error); release() }
+    }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
+  }
+
   const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number) => {
     setLoadingId(expenseId)
     const release = trackSave()
@@ -946,6 +962,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 (차이 소모 제외)</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setMode('disposal')}>폐기</Btn>
           <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
         </div>
       ) : undefined}
@@ -953,7 +970,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => {
+        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
           setMode('view'); reload(); onChange()
           pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
             ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
@@ -967,6 +984,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+      ) : mode === 'disposal' ? (
+        <DisposalForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
         <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : (
@@ -1054,6 +1073,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     if (entryMonth(e) >= targetMonth) return s
                     if (e.type === 'addition')
                       return effMs(e) > carryBoundary ? s + e.addedQty : s
+                    if (e.type === 'disposal')
+                      return effMs(e) > carryBoundary ? s - e.disposedQty : s
                     if (e.type === 'purchase' && e.receivedAt && effMs(e) > carryBoundary) {
                       const spec = (carryUseSpec && e.specValue && e.specValue > 0)
                         ? (convertSpecValue(e.specValue, e.specUnit, data.item.specUnit) ?? e.specValue) : null
@@ -1080,7 +1101,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     <p className="text-sm text-[var(--warm-muted)] text-center py-6">이 달 기록이 없습니다.</p>
                   ) : (
                     <ul className="space-y-1.5">
-                      {monthEntries.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                      {monthEntries.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                       {carry && (
                         <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2">
                           <div className="min-w-0">
@@ -1420,11 +1441,12 @@ function MergeSection({ currentId, currentLabel, onDone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onConfirmReceipt, onChanged, loadingId }: {
+function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
   entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
+  onDeleteDisposal: (id: string) => void
   onConfirmReceipt?: (id: string, locationId?: string, qty?: number) => void
   onChanged: () => void
   loadingId: string | null
@@ -1618,6 +1640,29 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
             </div>
           </div>
         )}
+      </li>
+    )
+  }
+
+  // ── 폐기 (StockDisposal) — 표시 + 삭제(undo는 부모 핸들러)
+  if (entry.type === 'disposal') {
+    return (
+      <li className="flex items-center justify-between gap-2 border border-[var(--danger-ring)]/40 rounded-xl px-3 py-2" style={{ background: 'var(--danger-bg)' }}>
+        <div className="min-w-0 flex items-center gap-2">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger-fg)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          <div className="min-w-0">
+            <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>
+              {fmtDate(entry.date)} · 폐기{entry.reason ? ` (${entry.reason})` : ''}
+              {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
+            </p>
+            <p className="text-sm font-medium" style={{ color: 'var(--danger-fg)' }}>− {fmtQty(entry.disposedQty, stockUnit)}</p>
+            {entry.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button type="button" disabled={pending} onClick={() => onDeleteDisposal(entry.id)}
+            className="text-xs text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
+        </div>
       </li>
     )
   }
@@ -2426,10 +2471,11 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }: {
+function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
+  onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
 }) {
   const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
   const hasLocations = item.locations.length > 0
@@ -2671,6 +2717,15 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
           ? '각 위치의 보충 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 자동으로 옮겨진 것으로 차감됩니다. (새로 산 게 아니라 창고→위치 이동)'
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
       </p>
+      {/* 폐기 바로가기 — 점검을 먼저 저장하면 폐기분이 소모로 잡히므로 순서를 안내(오류신고 a1e048e8) */}
+      {onGoDisposal && !restockMode && (
+        <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
+          <p className="text-[0.65625rem]" style={{ color: 'var(--warning-fg)' }}>버리거나 상해서 줄어든 양이 있나요? 점검 저장 전에 폐기를 먼저 기록해야 소모량이 정확합니다.</p>
+          <button type="button" onClick={onGoDisposal}
+            className="shrink-0 text-[0.65625rem] font-semibold px-2 py-1 rounded-md border transition-colors"
+            style={{ borderColor: 'var(--warning-ring)', color: 'var(--warning-fg)' }}>폐기 기록</button>
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
         <DatePicker value={date} onChange={setDate}
@@ -3808,6 +3863,89 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
       )}
       <p className="text-[0.65625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
     </div>
+  )
+}
+
+// ── 폐기 기록 폼 — 무상 입수의 거울(유출). 서버가 잔량 초과·이후 점검 존재를 거부(이중 차감 방지).
+function DisposalForm({ item, onCancel, onDone }: {
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  onCancel: () => void; onDone: () => void
+}) {
+  const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const [date, setDate] = useState(kstYmdStr())
+  const [qtyStr, setQtyStr] = useState('')
+  const [reason, setReason] = useState('상함·부패')
+  const [memo, setMemo] = useState('')
+  const defaultLocId = item.locations.length === 1 ? item.locations[0].id : ''
+  const [storageLocationId, setStorageLocationId] = useState<string>(defaultLocId)
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    const qty = Number(qtyStr) || 0
+    if (qty <= 0) { setError('폐기 수량은 0보다 커야 합니다.'); return }
+    startTransition(async () => {
+      const res = await createStockDisposal({
+        trackedItemId: item.id, date, disposedQty: qty, reason, memo: memo || undefined,
+        storageLocationId: storageLocationId || null,
+      })
+      if (!res.ok) { setError(res.error); return }
+      pushToast('success', '폐기를 기록했습니다')
+      onDone()
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+      <p className="text-xs text-[var(--warm-muted)]">상하거나 버려서 줄어든 양을 기록합니다. 소모량 계산에서 분리되어 소진 예측이 왜곡되지 않습니다. 점검 저장 전에 먼저 기록하세요.</p>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">폐기일 *</label>
+        <DatePicker value={date} onChange={setDate}
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">폐기 수량 *</label>
+        <div className="flex gap-1.5 items-center">
+          <input type="text" inputMode="decimal" value={qtyStr}
+            onChange={e => setQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
+            placeholder="0"
+            className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          <span className="text-xs text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">사유</label>
+        <select value={reason} onChange={e => setReason(e.target.value)}
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+          <option value="상함·부패">상함·부패</option>
+          <option value="유통기한">유통기한 경과</option>
+          <option value="파손">파손</option>
+          <option value="기타">기타</option>
+        </select>
+      </div>
+      {item.locations.length > 0 && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">위치 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+          <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+            <option value="">위치 없음 (전체에서 차감)</option>
+            {item.locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+      )}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+      </div>
+      {error && <p className="text-sm text-[var(--danger-fg)]">{error}</p>}
+      <div className="flex gap-2 pt-1">
+        <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={onCancel} disabled={pending}>취소</Btn>
+        <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={pending}>{pending ? '저장 중…' : '폐기 기록'}</Btn>
+      </div>
+    </form>
   )
 }
 

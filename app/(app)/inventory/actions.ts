@@ -131,7 +131,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   })
   if (!item) return null
 
-  const [checks, additions, purchases] = await Promise.all([
+  const [checks, additions, disposals, purchases] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -143,6 +143,11 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       },
     }),
     prisma.stockAddition.findMany({
+      where: { trackedItemId },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      include: { storageLocation: { select: { id: true, name: true } } },
+    }),
+    prisma.stockDisposal.findMany({
       where: { trackedItemId },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       include: { storageLocation: { select: { id: true, name: true } } },
@@ -180,6 +185,12 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       storageLocationId: a.storageLocationId,
       storageLocationName: a.storageLocation?.name ?? null,
     })),
+    ...disposals.map(d => ({
+      type: 'disposal' as const,
+      id: d.id, date: d.date, createdAt: d.createdAt, disposedQty: d.disposedQty, reason: d.reason, memo: d.memo,
+      storageLocationId: d.storageLocationId,
+      storageLocationName: d.storageLocation?.name ?? null,
+    })),
     // 수량 미입력 구매도 타임라인에 포함(qtyValue 0 으로) — 입고 수학엔 0 기여라 무해, 수령 확인 진입점은 보존
     ...purchases.map(p => ({
       type: 'purchase' as const,
@@ -212,7 +223,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     const at = effTime(a).getTime(), bt = effTime(b).getTime()
     if (at !== bt) return bt - at
     // 같은 시각 동률 — 점검(수령 자동반영 결과)이 구매(수령) 위에 (수령→점검 순서의 결과를 먼저).
-    const typeRank = (e: TimelineEntry) => e.type === 'check' ? 0 : e.type === 'addition' ? 1 : 2
+    const typeRank = (e: TimelineEntry) => e.type === 'check' ? 0 : e.type === 'addition' ? 1 : e.type === 'disposal' ? 2 : 3
     return typeRank(a) - typeRank(b)
   })
 
@@ -359,7 +370,8 @@ export async function changeTrackedItemUnit(id: string, newUnit: string): Promis
 
     const checkIds = (await prisma.stockCheck.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(c => c.id)
     const additionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(a => a.id)
-    await scaleStockValues(checkIds, additionIds, factor)
+    const disposalIds = (await prisma.stockDisposal.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(d => d.id)
+    await scaleStockValues(checkIds, additionIds, disposalIds, factor)
     await prisma.trackedItem.update({ where: { id }, data: { specUnit: canonicalUnit(target) ?? target } })
 
     // 규격 단위가 비어 있는 과거 영수증 — 계산 시점 자동 환산이 불가능해(어느 단위인지 모름)
@@ -406,7 +418,7 @@ export async function getSameCategoryItems(excludeId: string): Promise<{ id: str
 // 저장된 점검 잔량·위치별 잔량·무상입수량에 배율(factor)을 곱한다.
 //  단위 변경(L→ml) 또는 단위 다른 품목 병합 시, 품목 단위로 통일하기 위해 사용.
 //  checkIds/additionIds 로 범위를 한정(병합 시 '이전된 것만' 환산, target 기존값 보호).
-async function scaleStockValues(checkIds: string[], additionIds: string[], factor: number): Promise<void> {
+async function scaleStockValues(checkIds: string[], additionIds: string[], disposalIds: string[], factor: number): Promise<void> {
   if (factor === 1 || !isFinite(factor) || factor <= 0) return
   for (const id of checkIds) {
     const c = await prisma.stockCheck.findUnique({ where: { id }, select: { remainingQty: true } })
@@ -431,6 +443,10 @@ async function scaleStockValues(checkIds: string[], additionIds: string[], facto
   for (const id of additionIds) {
     const a = await prisma.stockAddition.findUnique({ where: { id }, select: { addedQty: true } })
     if (a) await prisma.stockAddition.update({ where: { id }, data: { addedQty: a.addedQty * factor } })
+  }
+  for (const id of disposalIds) {
+    const d = await prisma.stockDisposal.findUnique({ where: { id }, select: { disposedQty: true } })
+    if (d) await prisma.stockDisposal.update({ where: { id }, data: { disposedQty: d.disposedQty * factor } })
   }
 }
 
@@ -478,6 +494,7 @@ export async function mergeTrackedItems(
     const movedExpenseIds = (await prisma.expense.findMany({ where: matchSourceExpenses, select: { id: true } })).map(e => e.id)
     const movedCheckIds   = (await prisma.stockCheck.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(c => c.id)
     const movedAdditionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(a => a.id)
+    const movedDisposalIds = (await prisma.stockDisposal.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(d => d.id)
     const targetQtyUnitBefore = target.qtyUnit
 
     const expRes = await prisma.expense.updateMany({
@@ -495,11 +512,15 @@ export async function mergeTrackedItems(
         where: { trackedItemId: sourceId },
         data: { trackedItemId: targetId },
       }),
+      prisma.stockDisposal.updateMany({
+        where: { trackedItemId: sourceId },
+        data: { trackedItemId: targetId },
+      }),
     ])
 
     // 2.5) 단위가 다른 품목 병합이면 이전된 점검·입수값을 target 단위로 환산(L→ml 등)
     if (mergeFactor !== 1) {
-      await scaleStockValues(movedCheckIds, movedAdditionIds, mergeFactor)
+      await scaleStockValues(movedCheckIds, movedAdditionIds, movedDisposalIds, mergeFactor)
     }
 
     // 3) target 옵션 보정 — looseMatch면 qtyUnit null로 (다양한 포장 합산용)
@@ -546,7 +567,7 @@ export async function mergeTrackedItems(
               alertThresholdDays: source.alertThresholdDays, reorderMemo: source.reorderMemo,
               purchaseUrl: source.purchaseUrl, memo: source.memo,
             },
-            movedExpenseIds, movedCheckIds, movedAdditionIds, targetQtyUnitBefore,
+            movedExpenseIds, movedCheckIds, movedAdditionIds, movedDisposalIds, targetQtyUnitBefore,
             unitFactor: mergeFactor,
           },
         },
@@ -660,17 +681,24 @@ async function additionsSinceCheckByLocation(
   propertyId: string,
 ): Promise<Map<string, number>> {
   if (!last) return new Map()
-  const adds = await prisma.stockAddition.findMany({
-    where: {
-      trackedItemId,
-      OR: [
-        { date: { gt: last.date } },
-        { AND: [{ date: { equals: last.date } }, { createdAt: { gt: last.createdAt } }] },
-      ],
-    },
-    select: { addedQty: true, storageLocationId: true },
-  })
-  if (adds.length === 0) return new Map()
+  const boundary = {
+    OR: [
+      { date: { gt: last.date } },
+      { AND: [{ date: { equals: last.date } }, { createdAt: { gt: last.createdAt } }] },
+    ],
+  }
+  // 폐기(StockDisposal)는 음수 순유입 — 입수와 동일 경계·허브 폴백(오류신고 a1e048e8).
+  const [adds, disposals] = await Promise.all([
+    prisma.stockAddition.findMany({
+      where: { trackedItemId, ...boundary },
+      select: { addedQty: true, storageLocationId: true },
+    }),
+    prisma.stockDisposal.findMany({
+      where: { trackedItemId, ...boundary },
+      select: { disposedQty: true, storageLocationId: true },
+    }),
+  ])
+  if (adds.length === 0 && disposals.length === 0) return new Map()
   let hub = hubLocationId
   if (!hub) {
     const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
@@ -681,6 +709,11 @@ async function additionsSinceCheckByLocation(
     const loc = a.storageLocationId ?? hub
     if (!loc) continue
     map.set(loc, (map.get(loc) ?? 0) + a.addedQty)
+  }
+  for (const d of disposals) {
+    const loc = d.storageLocationId ?? hub
+    if (!loc) continue
+    map.set(loc, (map.get(loc) ?? 0) - d.disposedQty)
   }
   return map
 }
@@ -725,8 +758,9 @@ export async function createStockCheck(data: {
       const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
       for (const [loc, q] of addMap) {
         const row = base.find(b => b.locationId === loc)
-        if (row) row.qty += q
-        else base.push({ locationId: loc, qty: q })
+        // 폐기 반영으로 순변동이 음수일 수 있음 — 0 클램프(생성 시 잔량 초과 폐기는 이미 거부됨)
+        if (row) row.qty = Math.max(0, row.qty + q)
+        else if (q > 0) base.push({ locationId: loc, qty: q })
       }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
     }
@@ -744,10 +778,10 @@ export async function createStockCheck(data: {
         const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
         const carryOver = lastCheck.locationBreakdown
           .filter(lb => !inputLocIds.has(lb.storageLocationId))
-          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: lb.remainingQty + (addMap.get(lb.storageLocationId) ?? 0) }))
+          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: Math.max(0, lb.remainingQty + (addMap.get(lb.storageLocationId) ?? 0)) }))
         // 직전 점검에 없던 위치로 입수가 들어온 경우 — 실측에도 없으면 이월 항목으로 추가
         for (const [loc, q] of addMap) {
-          if (!inputLocIds.has(loc) && !carryOver.some(co => co.storageLocationId === loc)) {
+          if (q > 0 && !inputLocIds.has(loc) && !carryOver.some(co => co.storageLocationId === loc)) {
             carryOver.push({ storageLocationId: loc, qty: q })
           }
         }
@@ -1221,6 +1255,108 @@ export async function updateStockAddition(id: string, data: {
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── StockDisposal CRUD — 폐기 이벤트(유출), StockAddition 미러 (오류신고 a1e048e8)
+export async function createStockDisposal(data: {
+  trackedItemId: string; date: string; disposedQty: number; reason?: string; memo?: string
+  storageLocationId?: string | null
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    if (data.disposedQty <= 0) return { ok: false, error: '폐기 수량은 0보다 커야 합니다.' }
+    if (data.storageLocationId) {
+      const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
+      if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+    }
+    // 이중 차감 방어(영향검증 필수2) — 폐기일 이후(당일 포함) 점검이 이미 있으면 그 점검이
+    // 폐기 후 잔량을 반영했을 가능성이 높아 별도 기록 시 이중 차감된다. 순서를 강제(폐기 먼저).
+    const laterCheck = await prisma.stockCheck.findFirst({
+      where: { trackedItemId: data.trackedItemId, date: { gte: new Date(data.date) } },
+      select: { id: true },
+    })
+    if (laterCheck) {
+      return { ok: false, error: '폐기일 이후(당일 포함) 점검이 이미 있습니다. 그 점검이 폐기 후 잔량을 반영했다면 이중 차감되므로, 점검 전에 폐기를 먼저 기록하거나 폐기일을 점검 이후로 입력하세요.' }
+    }
+    // 잔량 초과 거부(영향검증 필수3 — 음수 클램프 도달 자체를 차단)
+    const asOf = await getStockAsOf(data.trackedItemId, data.date)
+    if (asOf) {
+      if (data.disposedQty > asOf.total + 0.001) {
+        return { ok: false, error: `폐기 수량이 현재 잔량(${Math.round(asOf.total * 100) / 100})을 초과합니다.` }
+      }
+      if (data.storageLocationId) {
+        const locQty = asOf.byLoc.find(l => l.locationId === data.storageLocationId)?.qty ?? 0
+        if (data.disposedQty > locQty + 0.001) {
+          return { ok: false, error: `폐기 수량이 해당 위치 잔량(${Math.round(locQty * 100) / 100})을 초과합니다. 위치를 확인하거나 위치 없이 기록하세요.` }
+        }
+      }
+    }
+    const r = await prisma.stockDisposal.create({
+      data: {
+        trackedItemId: data.trackedItemId,
+        date: new Date(data.date),
+        disposedQty: data.disposedQty,
+        reason: data.reason || null,
+        memo: data.memo || null,
+        storageLocationId: data.storageLocationId || null,
+      },
+    })
+    revalidatePath('/inventory')
+    return { ok: true, id: r.id }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export type StockDisposalUndo = {
+  id: string; trackedItemId: string; date: string; disposedQty: number
+  reason: string | null; memo: string | null; storageLocationId: string | null
+}
+
+export async function deleteStockDisposal(id: string): Promise<{ ok: true; undo: StockDisposalUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const d = await prisma.stockDisposal.findUnique({ where: { id }, include: { trackedItem: true } })
+    if (!d || d.trackedItem.propertyId !== propertyId) return { ok: false, error: '폐기 기록을 찾을 수 없습니다.' }
+    const undo: StockDisposalUndo = {
+      id: d.id, trackedItemId: d.trackedItemId, date: d.date.toISOString(),
+      disposedQty: d.disposedQty, reason: d.reason, memo: d.memo, storageLocationId: d.storageLocationId,
+    }
+    await prisma.stockDisposal.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 폐기 삭제 적용취소 — 스냅샷 재생성 (입수 undo 패턴 미러)
+export async function undoDeleteStockDisposal(undo: StockDisposalUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const exists = await prisma.stockDisposal.findUnique({ where: { id: undo.id }, select: { id: true } })
+    if (exists) return { ok: true }
+    await prisma.stockDisposal.create({
+      data: {
+        id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
+        disposedQty: undo.disposedQty, reason: undo.reason, memo: undo.memo, storageLocationId: undo.storageLocationId,
+      },
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
   }
 }
 
@@ -1707,6 +1843,7 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
         await scaleStockValues(
           Array.isArray(p.movedCheckIds) ? p.movedCheckIds : [],
           Array.isArray(p.movedAdditionIds) ? p.movedAdditionIds : [],
+          Array.isArray(p.movedDisposalIds) ? p.movedDisposalIds : [],
           1 / mf,
         )
       }
@@ -1715,6 +1852,9 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       }
       if (Array.isArray(p.movedAdditionIds) && p.movedAdditionIds.length > 0) {
         await prisma.stockAddition.updateMany({ where: { id: { in: p.movedAdditionIds } }, data: { trackedItemId: sourceId } })
+      }
+      if (Array.isArray(p.movedDisposalIds) && p.movedDisposalIds.length > 0) {
+        await prisma.stockDisposal.updateMany({ where: { id: { in: p.movedDisposalIds } }, data: { trackedItemId: sourceId } })
       }
       // 3) 대상 카드 qtyUnit 원복 (looseMatch 로 null 됐던 경우)
       if (p.targetQtyUnitBefore != null) {
@@ -1984,6 +2124,12 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         if (prevByLoc.size === 0 && lastCheck && lastCheck.remainingQty > 0) {
           prevByLoc.set(effectiveLocationId, lastCheck.remainingQty)
         }
+        // 직전 점검 이후 입수·폐기 순변동을 baseline에 반영 — baseline 복사가 폐기를 되살리고
+        // 그 사이 입수를 가짜 소모로 만들던 결함 보완(영향검증 필수1, 쌀 사건 계열).
+        const netMap = await additionsSinceCheckByLocation(item.id, lastCheck, item.hubLocationId, propertyId)
+        for (const [locId, q] of netMap) {
+          prevByLoc.set(locId, Math.max(0, (prevByLoc.get(locId) ?? 0) + q))
+        }
         const prevAtTarget = prevByLoc.get(effectiveLocationId) ?? 0
         const newAtTarget = prevAtTarget + receivedQty
         // 다른 위치는 이전 값 유지, 대상 위치만 +receivedQty
@@ -2145,11 +2291,17 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
     if (!(useSpec && p.specValue && p.specValue > 0)) return s + q
     return s + q * (convertSpecValue(p.specValue, p.specUnit, it.specUnit) ?? p.specValue)
   }, 0)
-  const addAgg = await prisma.stockAddition.aggregate({
-    where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
-    _sum: { addedQty: true },
-  })
-  const expectedTotal = baseTotal + purchaseTotal + (addAgg._sum.addedQty ?? 0)
+  const [addAgg, dispAgg] = await Promise.all([
+    prisma.stockAddition.aggregate({
+      where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
+      _sum: { addedQty: true },
+    }),
+    prisma.stockDisposal.aggregate({
+      where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
+      _sum: { disposedQty: true },
+    }),
+  ])
+  const expectedTotal = baseTotal + purchaseTotal + (addAgg._sum.addedQty ?? 0) - (dispAgg._sum.disposedQty ?? 0)
 
   const baseByLoc = new Map((baseline?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty]))
   // 품목별 허브 — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
@@ -2286,13 +2438,14 @@ export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true }
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    const [expCount, checkCount, addCount] = await Promise.all([
+    const [expCount, checkCount, addCount, dispCount] = await Promise.all([
       prisma.expense.count({ where: { propertyId, category: it.category, itemLabel: it.label } }),
       prisma.stockCheck.count({ where: { trackedItemId: id } }),
       prisma.stockAddition.count({ where: { trackedItemId: id } }),
+      prisma.stockDisposal.count({ where: { trackedItemId: id } }),
     ])
-    if (expCount + checkCount + addCount > 0) {
-      return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${expCount}·점검 ${checkCount}·입수 ${addCount}건). 대신 '숨김'을 사용하세요.` }
+    if (expCount + checkCount + addCount + dispCount > 0) {
+      return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${expCount}·점검 ${checkCount}·입수 ${addCount}·폐기 ${dispCount}건). 대신 '숨김'을 사용하세요.` }
     }
     await prisma.trackedItem.delete({ where: { id } })
     revalidatePath('/inventory')

@@ -1089,7 +1089,7 @@ export async function exportAllData(): Promise<string> {
   await requireOwner()
   const propertyId = await getPropertyId()
 
-  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests] = await Promise.all([
+  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests, storageLocations, trackedItems, stockChecks, stockAdditions, stockDisposals] = await Promise.all([
     prisma.property.findUnique({ where: { id: propertyId } }),
     prisma.room.findMany({ where: { propertyId }, include: { photos: true } }),
     prisma.tenant.findMany({ where: { propertyId } }),
@@ -1102,6 +1102,12 @@ export async function exportAllData(): Promise<string> {
     prisma.tenantContact.findMany({ where: { tenant: { propertyId } } }),
     prisma.tenantStatusLog.findMany({ where: { propertyId } }),
     prisma.tenantRequest.findMany({ where: { propertyId, deletedAt: null } }),
+    // 재고 도메인 — 백업에 통째로 빠져 있던 공백 보완(복원 시 재고 데이터 전손 방지, 2026-07-13)
+    prisma.storageLocation.findMany({ where: { propertyId } }),
+    prisma.trackedItem.findMany({ where: { propertyId } }),
+    prisma.stockCheck.findMany({ where: { trackedItem: { propertyId } }, include: { locationBreakdown: true } }),
+    prisma.stockAddition.findMany({ where: { trackedItem: { propertyId } } }),
+    prisma.stockDisposal.findMany({ where: { trackedItem: { propertyId } } }),
   ])
 
   return JSON.stringify({
@@ -1120,6 +1126,11 @@ export async function exportAllData(): Promise<string> {
     recurringExpenses,
     tenantStatusLogs,
     tenantRequests,
+    storageLocations,
+    trackedItems,
+    stockChecks,
+    stockAdditions,
+    stockDisposals,
   }, null, 2)
 }
 

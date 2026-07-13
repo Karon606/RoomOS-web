@@ -78,6 +78,32 @@ async function sumAdditions(
   return r._sum.addedQty ?? 0
 }
 
+// 폐기 합(유출) — sumAdditions와 동일한 date·createdAt 경계 규칙(오류신고 a1e048e8).
+// 소모 = (기준잔량 + 유입 − 폐기) − 실측잔량 으로, 폐기가 소모·소진임박 예측에서 분리된다.
+async function sumDisposals(
+  trackedItemId: string, from: Date | null, to: Date | null,
+  fromCreatedAt?: Date | null,
+): Promise<number> {
+  const conditions: any[] = [
+    { trackedItemId },
+    ...(to ? [{ date: { lte: to } }] : []),
+  ]
+  if (from != null) {
+    if (fromCreatedAt != null) {
+      conditions.push({
+        OR: [
+          { date: { gt: from } },
+          { AND: [{ date: { equals: from } }, { createdAt: { gt: fromCreatedAt } }] },
+        ],
+      })
+    } else {
+      conditions.push({ date: { gt: from } })
+    }
+  }
+  const r = await prisma.stockDisposal.aggregate({ where: { AND: conditions }, _sum: { disposedQty: true } })
+  return r._sum.disposedQty ?? 0
+}
+
 // ── 추적 품목 목록 + 계산된 지표
 export async function computeInventoryOverview(propertyId: string): Promise<InventoryRow[]> {
   // 서로 독립 조회 — 동시 실행(계산·값 불변, 왕복 직렬만 제거)
@@ -208,11 +234,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     if (last) {
       // 승인일(receivedAt) 기준: 점검 기록이 생성된 이후 승인된 구매만 반영
       // → 구매일이 과거여도 승인 전에 실사한 재고 수량이 currentStock에 포함되지 않도록 방지
-      const [incomingPurchases, incomingAdditions] = await Promise.all([
+      const [incomingPurchases, incomingAdditions, incomingDisposals] = await Promise.all([
         sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit),
         sumAdditions(it.id, last.date, today, last.createdAt),
+        sumDisposals(it.id, last.date, today, last.createdAt),
       ])
-      currentStock = last.remainingQty + incomingPurchases + incomingAdditions
+      currentStock = last.remainingQty + incomingPurchases + incomingAdditions - incomingDisposals
     }
 
     let lastPeriodConsumption: number | null = null
@@ -225,11 +252,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
       //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
       //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
-      const [purchases, additions] = await Promise.all([
+      const [purchases, additions, disposals] = await Promise.all([
         sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit),
         sumAdditions(it.id, effTime(prev), effTime(last)),
+        sumDisposals(it.id, effTime(prev), effTime(last)),
       ])
-      lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
+      lastPeriodConsumption = (prev.remainingQty + purchases + additions - disposals) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
     } else if (last && !prev) {
       // 점검 1회만 있는 경우: 최초 승인 구매일을 기준점으로 소모량 추정
@@ -246,11 +274,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       })
       if (firstPurchase?.receivedAt) {
         // 최초 구매 승인 ~ 실사 사이의 총 입수량
-        const [totalPurchases, totalAdditions] = await Promise.all([
+        const [totalPurchases, totalAdditions, totalDisposals] = await Promise.all([
           sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit),
           sumAdditions(it.id, null, last.date),
+          sumDisposals(it.id, null, last.date),
         ])
-        const consumed = totalPurchases + totalAdditions - last.remainingQty
+        const consumed = totalPurchases + totalAdditions - totalDisposals - last.remainingQty
         const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
         // 최소 관측 7일 — 구매 직후 점검 1회로는 소모율 신뢰 불가(구매 당일 500ml 사용이
         // '하루 0.5L 소모'로 일반화돼 D-3 소진임박 오탐 나던 리클린 사례). 7일 전엔 추정 보류.
@@ -344,11 +373,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
     // 구간 간 의존 없음 → 동시 조회, 합산은 원래 순서대로(결과 동일).
     const intervalConsumed = await Promise.all(intervalPairs.map(async ({ prev, curr }) => {
-      const [purchases, additions] = await Promise.all([
+      const [purchases, additions, disposals] = await Promise.all([
         sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit),
         sumAdditions(it.id, effTime(prev), effTime(curr)),
+        sumDisposals(it.id, effTime(prev), effTime(curr)),
       ])
-      return { curr, consumed: (prev.remainingQty + purchases + additions) - curr.remainingQty }
+      return { curr, consumed: (prev.remainingQty + purchases + additions - disposals) - curr.remainingQty }
     }))
     for (const { curr, consumed } of intervalConsumed) {
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`

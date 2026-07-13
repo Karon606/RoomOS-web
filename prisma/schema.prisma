@@ -1019,6 +1019,7 @@ model TrackedItem {
 
   stockChecks  StockCheck[]
   additions    StockAddition[]
+  disposals    StockDisposal[]
   locations    TrackedItemLocation[]
   checkDrafts  StockCheckDraft[]
 
@@ -1180,6 +1181,7 @@ model StorageLocation {
   receivedExpenses    Expense[]            @relation("ExpenseReceivedLocation")
   assignedExpenses    Expense[]            @relation("ExpenseAssignedLocation")
   stockAdditions      StockAddition[]
+  stockDisposals      StockDisposal[]
 
   @@unique([propertyId, name])
   @@index([propertyId, sortOrder])
@@ -1237,6 +1239,23 @@ model StockAddition {
 
   @@index([trackedItemId, date])
   @@map("stock_additions")
+}
+
+// 폐기 이벤트 — StockAddition(유입)의 거울(유출). 소비량 역산에서 폐기를 소모와 분리(오류신고 a1e048e8).
+model StockDisposal {
+  id                String           @id @default(uuid()) @db.Uuid
+  trackedItemId     String           @db.Uuid
+  trackedItem       TrackedItem      @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  date              DateTime         @db.Date
+  disposedQty       Float            // qtyUnit 기준 수량
+  reason            String?          // 상함·유통기한·파손·기타
+  memo              String?
+  storageLocationId String?          @db.Uuid  // 폐기가 발생한 위치(선택)
+  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now())
+
+  @@index([trackedItemId, date])
+  @@map("stock_disposals")
 }
 
 // ============================================================
