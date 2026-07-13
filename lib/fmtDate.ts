@@ -4,29 +4,34 @@
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토']
 
-const toDate = (d: Date | string | null | undefined): Date | null => {
+// KST 고정 — 서버(UTC)와 클라이언트(KST)가 같은 문자열을 그리도록. 로컬 시간대 기반이면
+// 자정 전후 타임스탬프가 서버·클라에서 하루 다르게 렌더되어 하이드레이션 불일치(#418 계열)와
+// 날짜 표기 흔들림이 생긴다. +9h 시프트 후 UTC 게터 사용(@db.Date 자정 저장 값은 날짜 불변).
+const KST_MS = 9 * 3600000
+
+const toKstDate = (d: Date | string | null | undefined): Date | null => {
   if (!d) return null
   const dt = new Date(d)
-  return isNaN(dt.getTime()) ? null : dt
+  return isNaN(dt.getTime()) ? null : new Date(dt.getTime() + KST_MS)
 }
 
-/** 목록·표용 — '2026.07.10' */
+/** 목록·표용 — '2026.07.10' (KST 기준) */
 export function fmtDateDot(d: Date | string | null | undefined): string {
-  const dt = toDate(d)
+  const dt = toKstDate(d)
   if (!dt) return '—'
-  return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')}`
+  return `${dt.getUTCFullYear()}.${String(dt.getUTCMonth() + 1).padStart(2, '0')}.${String(dt.getUTCDate()).padStart(2, '0')}`
 }
 
-/** 문장·상세용 — '2026년 7월 10일 (금)' */
+/** 문장·상세용 — '2026년 7월 10일 (금)' (KST 기준) */
 export function fmtDateKor(d: Date | string | null | undefined): string {
-  const dt = toDate(d)
+  const dt = toKstDate(d)
   if (!dt) return '—'
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
+  return `${dt.getUTCFullYear()}년 ${dt.getUTCMonth() + 1}월 ${dt.getUTCDate()}일 (${DAYS[dt.getUTCDay()]})`
 }
 
-/** 짧은 인라인용 — '7/10' */
+/** 짧은 인라인용 — '7/10' (KST 기준) */
 export function fmtMD(d: Date | string | null | undefined): string {
-  const dt = toDate(d)
+  const dt = toKstDate(d)
   if (!dt) return '—'
-  return `${dt.getMonth() + 1}/${dt.getDate()}`
+  return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
 }
