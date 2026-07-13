@@ -18,8 +18,10 @@ export function normalizeSearchQuery(raw: string): NormalizedQuery {
   const q = raw.trim().slice(0, 64)
   const qDigits = q.replace(/\D/g, '')
   const roomCore = q.replace(/호$/, '')
-  const digitsOnly = /^\d+$/.test(roomCore) && roomCore.length > 0
+  // 구분자(하이픈·공백·괄호·점)만 섞인 숫자도 숫자 질의로 — '010-9218-7935' 붙여넣기 대응
+  const stripped = roomCore.replace(/[\s().-]/g, '')
+  const digitsOnly = /^\d+$/.test(stripped) && stripped.length > 0
   const kind: SearchQueryKind = digitsOnly ? (qDigits.length >= 5 ? 'phone' : 'room') : 'text'
-  const valid = digitsOnly ? q.length >= 1 : q.length >= 2
+  const valid = digitsOnly ? qDigits.length >= 1 : q.length >= 2
   return { q, qDigits, roomCore, kind, valid }
 }
