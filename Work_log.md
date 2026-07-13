@@ -1,7 +1,22 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-07-12
+마지막 업데이트: 2026-07-13
 브랜치: main
+
+## 2026-07-13 — CF-13 수납 일원화 + 알림 아이콘 + 검색·필터 전면 통일·확충
+- CF-13 (A) 홈 수납 모달 구조 분리(f9730a6, DashboardClient 2559→2034줄) → (B) 미수납·납입완료·알림 진입을 전부 정본 Prism 수납(entityModal 'payment')으로 일원화, 자체 DashboardTenantModal 제거(01890da). 홈에 귀속월 지정·초과분 기타수익·청소비·자릿수 가드·삭제 적용취소가 정본으로 붙음. 부수 해소: 비거주자 수납 열람 불가 버그(옛 모달이 NON_RESIDENT 미조회, 415호 사례로 운영자 확인).
+- 수납 모달 설명 간소화(6c2593b): 잔액·이월액 괄호 설명과 양도인·메뉴모드 prose를 (i) InfoHint로 이관(z 380 추가). KPI 도움말 4종 문단 줄바꿈(d70c312).
+- 알림 리딩 슬롯: 이름 첫 글자(성) → CategoryGlyph 카테고리 선 아이콘 10종+폴백(c43e8e3). 디자인 패널 2라운드(4관점→실 SVG→14px 적대검증). 색은 dotColor 상속. 예상 순이익 캡션 '장부 순이익 +N · 지출 반영 N%'로 축약(형제 매출 카드 문법 대칭).
+- 검색+필터 정본(§23 호실관리) 전면 정합: 확인서 2종 발급 이력에 상태 세그먼트 신설(67997a5), 계약서·요청 세그먼트 건수 표기(4907099), 재무 지출 셀렉트 혼재 줄→필터 토글+접이식 패널+합계·버튼 분리(c70fd27), 입주자·수납에 검색창 옆 필터 토글(5d6ee94).
+- 필터 패널 확충(3cd06b6, 전문가 패널 4관점+적대검증 스펙): 입주자(층·국적·성별·납부일 구간·거주기간 구간·월 이용료 범위, 탭 게이팅), 수납(층·납부일·이용료, override 반영·공실 숨김), 재무(호실·구분(고정/일반)·금액 범위 추가, 예정 고정지출 행 일관 전파, 초기화가 검색어 안 지움). 레인지는 슬라이더 대신 구간 select+MoneyInput 듀얼(정본 선례). lib/dueDayBucket.ts 신설('30'/'말'=말일 통일, 17케이스 테스트 통과).
+- 진행 중: 전역 통합 검색(옴니서치) 설계 패널 — 결과 유형별 그룹핑·entityModal 착지 방향, 스펙 검토 후 구현 예정.
+- 남은 것: 지출 삭제 undo(주문 연쇄), 재고 부분수령·수량조절 원복(ID-01/02), 인앱 네비 후 인트로 로고(§21 게이트 임계값), 알림 › 긴급도 배지 승격(선택).
+
+## 2026-07-12 (7) — MF-3b 결제 소프트삭제 + 모바일 정합 + SH-3 인증
+- MF-3b(e1d0704): PaymentRecord·ExtraIncome 소프트삭제+적용취소. lib/prisma.ts $extends 익스텐션이 6개 READ_OP에 deletedAt:null 자동주입(where에 deletedAt 명시 시 opt-out), 중첩 paymentRecords 5곳 수동 필터, seqNo 채번 6곳은 deletedAt:undefined로 삭제행 포함(유니크 충돌 P2002 방지 — 검증 에이전트가 배포 전 적발). 지출은 주문 연쇄로 하드삭제 유지. 상세: knowledge/soft-delete-pattern.md.
+- 모바일 과밀(0abcb92): KPI 그리드 모바일 2열→1열(§24 정본), 예상 지출 카드 보조 1줄화(설명은 (i)), 지출 고정지출(예정) 미기록 뱃지 줄분리. §05 inline 폰트 17곳 상향(5e370dd). 대시보드 호실·상태별·성별 %를 DistList 괄호 형식으로 통일 + 상태별 범례 비거주자 누락 수정(중앙 43 정합, f4f2ade).
+- SH-3: returnTo 오픈 리다이렉트 방어(lib/auth/returnTo.ts, 소비 5곳, b320158) + 세션만료 딥링크 복귀(proxy x-pathname → layout returnTo, 6619af1). 발견: 미들웨어는 proxy.ts(lib/supabase/middleware.ts는 죽은 코드), 인증 가드는 (app)/layout. 상세: knowledge/auth-flow.md.
+- 입주자 검색에 전화번호(숫자 정규화) 추가(8fb9830).
 
 ## 2026-07-12 (6) — 2차 Phase 4-B 일부 + 웹사이트 개편 배포
 - 웹사이트(public/members/thestayjegi/index.html, stayeum.com 라이브): 객실 영문 표기 프리미엄 개편 — Mini Room→Single Room, Inner→En-suite (Hallway Window), Window→En-suite (Sunlit Window), 헤드라인 From Single Room to Premium, 설명·갤러리 영문 일관화. 한국어·구조·class/id 보존(data-en만). nav 투명(초록/히어로) 상태에 다크 스크림 바 추가 — 초록 배경 겹침 해소. 커밋 c6410a5. (개편 사본 03-원본-사이트-사본은 저장소 밖, 별도 반영됨.)
