@@ -1268,7 +1268,9 @@ export default function FinanceClient({
   const finColWidthsRef                 = useRef<Record<string, number>>(DEFAULT_FIN_WIDTHS)
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
-  const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
+  const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all', roomId: 'all', kind: 'all' })
+  const [expAmountMin, setExpAmountMin] = useState<number | undefined>(undefined)
+  const [expAmountMax, setExpAmountMax] = useState<number | undefined>(undefined)
   const [showExpFilters, setShowExpFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
@@ -1719,6 +1721,12 @@ export default function FinanceClient({
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
     if (expFilter.category !== 'all' && e.category  !== expFilter.category) return false
     if (expFilter.finance  !== 'all' && e.financialAccountId !== expFilter.finance) return false
+    // 패널 확장 필터 — 호실('none'=미지정)·구분(고정/일반)·금액 범위
+    if (expFilter.roomId !== 'all' && (expFilter.roomId === 'none' ? !!e.roomId : e.roomId !== expFilter.roomId)) return false
+    if (expFilter.kind === 'recurring' && !e.recurringExpenseId) return false
+    if (expFilter.kind === 'normal' && e.recurringExpenseId) return false
+    if (expAmountMin != null && e.amount < expAmountMin) return false
+    if (expAmountMax != null && e.amount > expAmountMax) return false
     if (expListSearch.trim()) {
       const q   = expListSearch.trim().toLowerCase()
       const hay = `${e.detail ?? ''} ${e.vendor ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
@@ -2136,7 +2144,15 @@ export default function FinanceClient({
         <div className="space-y-4">
           {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
           {(() => {
-            const expFilterCount = [expFilter.method, expFilter.category, expFilter.finance].filter(v => v !== 'all').length
+            const expFilterCount =
+              [expFilter.method, expFilter.category, expFilter.finance, expFilter.roomId, expFilter.kind].filter(v => v !== 'all').length +
+              (expAmountMin != null || expAmountMax != null ? 1 : 0)
+            // 초기화는 패널 필터만 — 검색어는 유지(정본 호실관리와 동일 규칙)
+            const resetExpFilters = () => {
+              setExpFilter({ method: 'all', category: 'all', finance: 'all', roomId: 'all', kind: 'all' })
+              setExpAmountMin(undefined); setExpAmountMax(undefined)
+            }
+            const selCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
             return (
               <>
                 <div className="flex gap-2">
@@ -2150,28 +2166,64 @@ export default function FinanceClient({
                     필터{expFilterCount > 0 ? ` ${expFilterCount}` : ''}
                   </button>
                 </div>
-                {/* 접이식 필터 패널 */}
+                {/* 접이식 필터 패널 — §23 정본 문법(grid-cols-2·label 12px) */}
                 {showExpFilters && (
-                  <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 flex flex-wrap items-center gap-2">
-                    <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-                      <option value="all">결제수단 (전체)</option>
-                      {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-                      <option value="all">카테고리 (전체)</option>
-                      {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    {financialAccounts.length > 0 && (
-                      <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-                        <option value="all">금융사 (전체)</option>
-                        {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
-                      </select>
-                    )}
-                    <button onClick={() => { setExpFilter({ method: 'all', category: 'all', finance: 'all' }); setExpListSearch('') }}
-                      className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
+                  <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
+                        <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))} className={selCls}>
+                          <option value="all">전체</option>
+                          {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
+                        <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))} className={selCls}>
+                          <option value="all">전체</option>
+                          {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      {financialAccounts.length > 0 && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-[var(--warm-mid)]">금융사</label>
+                          <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))} className={selCls}>
+                            <option value="all">전체</option>
+                            {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {rooms.length > 0 && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-[var(--warm-mid)]">호실</label>
+                          <select value={expFilter.roomId} onChange={e => setExpFilter(f => ({ ...f, roomId: e.target.value }))} className={selCls}>
+                            <option value="all">전체</option>
+                            <option value="none">미지정</option>
+                            {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">구분</label>
+                        <select value={expFilter.kind} onChange={e => setExpFilter(f => ({ ...f, kind: e.target.value }))} className={selCls}>
+                          <option value="all">전체</option>
+                          <option value="recurring">고정 지출</option>
+                          <option value="normal">일반 지출</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">금액 범위 (원)</label>
+                      <div className="flex items-center gap-2">
+                        <MoneyInput value={expAmountMin} onChange={v => setExpAmountMin(v && v > 0 ? v : undefined)} placeholder="최소" />
+                        <span className="text-[var(--warm-muted)] text-sm">~</span>
+                        <MoneyInput value={expAmountMax} onChange={v => setExpAmountMax(v && v > 0 ? v : undefined)} placeholder="최대" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Btn type="button" variant="secondary" size="sm" className="flex-1" onClick={resetExpFilters}>초기화</Btn>
+                      <Btn type="button" variant="primary" size="sm" className="flex-1" onClick={() => setShowExpFilters(false)}>닫기</Btn>
+                    </div>
                   </div>
                 )}
               </>
@@ -2249,7 +2301,13 @@ export default function FinanceClient({
             const unconfirmedRecsFiltered = activeRecs.filter(r =>
               !r.recordedExpenseId &&
               (expFilter.category === 'all' || r.category === expFilter.category) &&
-              (expFilter.method === 'all' || r.payMethod === expFilter.method)
+              (expFilter.method === 'all' || r.payMethod === expFilter.method) &&
+              // 패널 확장 필터도 일관 전파 — 목록과 예정 행이 어긋나지 않게.
+              // 고정지출엔 방이 없어 특정 호실 선택 시 숨김('미지정'은 방 없음이므로 표시), '일반 지출'만 보기 시 숨김.
+              (expFilter.roomId === 'all' || expFilter.roomId === 'none') &&
+              expFilter.kind !== 'normal' &&
+              (expAmountMin == null || (r.pendingAmount ?? r.historicalAvg ?? r.amount) >= expAmountMin) &&
+              (expAmountMax == null || (r.pendingAmount ?? r.historicalAvg ?? r.amount) <= expAmountMax)
             )
 
             // D-3 이내(과거 도래 포함)만 보기 옵션 적용

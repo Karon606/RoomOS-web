@@ -21,6 +21,8 @@ import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { MoneyInput } from '@/components/ui/MoneyInput'
+import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -271,6 +273,10 @@ export default function RoomsClient({
   })
   const [floorFilter, setFloorFilter] = useState('')
   const [showFilters, setShowFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
+  // 패널 필터 — 순수 표시 필터. 세션 한정(localStorage 비영속)
+  const [dueDayFilter, setDueDayFilter]   = useState<'' | DueDayBucket>('')
+  const [rentMinFilter, setRentMinFilter] = useState<number | undefined>(undefined)
+  const [rentMaxFilter, setRentMaxFilter] = useState<number | undefined>(undefined)
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
@@ -382,8 +388,27 @@ export default function RoomsClient({
   // 이 달(targetMonth)에 납부일 임시 조정이 적용된 호실
   const isAdjustedRoom = (r: RoomStatus) =>
     !!r.overrideDueDay && r.overrideDueDayMonth === targetMonth
+
+  // 패널 필터 게이팅 — 공실 보기(localStorage 복원으로 첫 마운트부터 가능)에선 납부일·월 이용료가
+  // 무의미하므로 렌더·계수에서 제외. 렌더·적용·계수·리셋이 같은 판정을 공유(유령 필터 방지).
+  const panelPayFiltersValid = filter !== 'vacant'
+  // 유효 납부일(override 반영, getEffectiveDueDayNum과 동일 우선순위) 문자열 — 버킷 매칭용
+  const effectiveDueDayStr = (r: RoomStatus): string | null =>
+    (r.overrideDueDayMonth === targetMonth && r.overrideDueDay) ? r.overrideDueDay : r.dueDay
+  const activeFilterCount =
+    (floorFilter ? 1 : 0) +
+    (panelPayFiltersValid && dueDayFilter ? 1 : 0) +
+    (panelPayFiltersValid && (rentMinFilter != null || rentMaxFilter != null) ? 1 : 0)
+  const resetFilters = () => {
+    setFloorFilter(''); setDueDayFilter(''); setRentMinFilter(undefined); setRentMaxFilter(undefined)
+  }
+
   const filtered = occupied.filter(r => {
     if (floorFilter && getRoomFloor(r) !== floorFilter) return false
+    // 패널 필터 — 월 이용료는 expected(그 달 청구액·일할 반영) 기준, 표시·합계와 동일 기준
+    if (dueDayFilter && dueDayBucketOf(effectiveDueDayStr(r), targetMonth) !== dueDayFilter) return false
+    if (rentMinFilter != null && r.expected < rentMinFilter) return false
+    if (rentMaxFilter != null && r.expected > rentMaxFilter) return false
     if (filter === 'unpaid')   return !r.isPaid
     if (filter === 'checkout') return isCheckoutRoom(r)
     if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
@@ -654,28 +679,54 @@ export default function RoomsClient({
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴 */}
       <div className="flex gap-2">
         <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" className="flex-1" />
-        {allFloors.length > 1 && (
-          <button type="button" onClick={() => setShowFilters(v => !v)}
-            className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              showFilters || floorFilter
-                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-                : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
-            }`}>
-            필터{floorFilter ? ' 1' : ''}
-          </button>
-        )}
+        <button type="button" onClick={() => setShowFilters(v => !v)}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            showFilters || activeFilterCount > 0
+              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
+              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+          }`}>
+          필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+        </button>
       </div>
 
-      {/* 접이식 필터 패널 */}
-      {showFilters && allFloors.length > 1 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
-          <div className="space-y-1 max-w-[12rem]">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
-            <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-              <option value="">전체 층</option>
-              {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
-            </select>
+      {/* 접이식 필터 패널 — §23 정본 문법. 납부일·월 이용료는 공실 보기에서 숨김 */}
+      {showFilters && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {allFloors.length > 1 && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+                <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체 층</option>
+                  {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+                </select>
+              </div>
+            )}
+            {panelPayFiltersValid && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
+                <select value={dueDayFilter} onChange={e => setDueDayFilter(e.target.value as '' | DueDayBucket)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  {DUE_DAY_BUCKET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+          {panelPayFiltersValid && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
+              <div className="flex items-center gap-2">
+                <MoneyInput value={rentMinFilter} onChange={v => setRentMinFilter(v && v > 0 ? v : undefined)} placeholder="최소" />
+                <span className="text-[var(--warm-muted)] text-sm">~</span>
+                <MoneyInput value={rentMaxFilter} onChange={v => setRentMaxFilter(v && v > 0 ? v : undefined)} placeholder="최대" />
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Btn type="button" variant="secondary" size="sm" className="flex-1" onClick={resetFilters}>초기화</Btn>
+            <Btn type="button" variant="primary" size="sm" className="flex-1" onClick={() => setShowFilters(false)}>닫기</Btn>
           </div>
         </div>
       )}

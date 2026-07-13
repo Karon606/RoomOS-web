@@ -22,6 +22,7 @@ import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
@@ -359,6 +360,13 @@ export default function TenantClient({
     : 'residents'
   const [floorFilter, setFloorFilter]   = useState('')
   const [showFilters, setShowFilters]   = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
+  // 필터 패널 조건들 — 순수 표시 필터(서버 로직 불변). 탭별 유효성은 아래 게이팅 상수가 단일 판정.
+  const [natFilter, setNatFilter]           = useState('')
+  const [genderFilter, setGenderFilter]     = useState('')
+  const [dueDayFilter, setDueDayFilter]     = useState<'' | DueDayBucket>('')
+  const [stayFilter, setStayFilter]         = useState('')   // lt1 | m1_6 | m6_12 | y1_2 | y2p
+  const [rentMinFilter, setRentMinFilter]   = useState<number | undefined>(undefined)
+  const [rentMaxFilter, setRentMaxFilter]   = useState<number | undefined>(undefined)
   const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
@@ -478,6 +486,36 @@ export default function TenantClient({
 
   // ── 필터 ────────────────────────────────────────────────────────
 
+  // 패널 필터 게이팅 — 납부일·거주기간은 해당 탭에서만 유효. 렌더·적용·계수·리셋이 이 판정을 공유(유령 필터 방지).
+  const dueDayFilterValid = cat === 'residents'
+  const stayFilterValid   = cat === 'residents' || cat === 'past'
+  // 옵션은 전체 집합 기준 파생(하드코딩 금지 — 존재하는 값만)
+  const natOptions    = [...new Set(initialTenants.map(t => t.nationality).filter((v): v is string => !!v))].sort()
+  const genderOptions = [...new Set(initialTenants.map(t => t.gender).filter(Boolean))]
+  // 거주기간(개월) — 표시 로직(calcStayPeriod)과 동일식·동일 종점(moveOutDate ?? today, SSR 안전)
+  const stayMonthsOf = (t: Tenant): number | null => {
+    const l = t.leaseTerms[0]
+    if (!l?.moveInDate) return null
+    const start = new Date(l.moveInDate)
+    const end   = l.moveOutDate ? new Date(l.moveOutDate) : new Date(today)
+    return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
+  }
+  const matchStayBucket = (m: number): boolean =>
+    stayFilter === 'lt1'   ? m < 1 :
+    stayFilter === 'm1_6'  ? m >= 1 && m < 6 :
+    stayFilter === 'm6_12' ? m >= 6 && m < 12 :
+    stayFilter === 'y1_2'  ? m >= 12 && m < 24 :
+    stayFilter === 'y2p'   ? m >= 24 : true
+  const activeFilterCount =
+    (floorFilter ? 1 : 0) + (natFilter ? 1 : 0) + (genderFilter ? 1 : 0) +
+    (dueDayFilterValid && dueDayFilter ? 1 : 0) +
+    (stayFilterValid && stayFilter ? 1 : 0) +
+    (rentMinFilter != null || rentMaxFilter != null ? 1 : 0)
+  const resetFilters = () => {
+    setFloorFilter(''); setNatFilter(''); setGenderFilter(''); setDueDayFilter(''); setStayFilter('')
+    setRentMinFilter(undefined); setRentMaxFilter(undefined)
+  }
+
   const filtered = initialTenants.filter(t => {
     const status = t.leaseTerms[0]?.status ?? ''
 
@@ -496,6 +534,24 @@ export default function TenantClient({
 
     // 층 필터
     if (floorFilter && getTenantFloor(t) !== floorFilter) return false
+
+    // 패널 필터 — 매칭 불가 값(계약·입주일 없음 등)은 필터 설정 시 제외(정본 면적 필터와 동일 규칙)
+    if (natFilter && t.nationality !== natFilter) return false
+    if (genderFilter && t.gender !== genderFilter) return false
+    if (dueDayFilterValid && dueDayFilter) {
+      // 날짜형(일회성 지정)은 월 컨텍스트가 없어 제외 — 정기 납부일만 매칭
+      if (dueDayBucketOf(t.leaseTerms[0]?.dueDay) !== dueDayFilter) return false
+    }
+    if (stayFilterValid && stayFilter) {
+      const m = stayMonthsOf(t)
+      if (m == null || !matchStayBucket(m)) return false
+    }
+    if (rentMinFilter != null || rentMaxFilter != null) {
+      const rent = t.leaseTerms[0]?.rentAmount
+      if (rent == null) return false
+      if (rentMinFilter != null && rent < rentMinFilter) return false
+      if (rentMaxFilter != null && rent > rentMaxFilter) return false
+    }
 
     // 검색
     if (!search.trim()) return true
@@ -958,28 +1014,86 @@ export default function TenantClient({
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴 */}
       <div className="flex gap-2">
         <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" className="flex-1" />
-        {allFloors.length > 1 && (
-          <button type="button" onClick={() => setShowFilters(v => !v)}
-            className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              showFilters || floorFilter
-                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-                : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
-            }`}>
-            필터{floorFilter ? ' 1' : ''}
-          </button>
-        )}
+        <button type="button" onClick={() => setShowFilters(v => !v)}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            showFilters || activeFilterCount > 0
+              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
+              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+          }`}>
+          필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+        </button>
       </div>
 
-      {/* 접이식 필터 패널 */}
-      {showFilters && allFloors.length > 1 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
-          <div className="space-y-1 max-w-[12rem]">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
-            <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-              <option value="">전체 층</option>
-              {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
-            </select>
+      {/* 접이식 필터 패널 — §23 정본 문법(grid-cols-2·label 12px). 납부일·거주기간은 유효 탭에서만 렌더 */}
+      {showFilters && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {allFloors.length > 1 && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+                <select value={floorFilter} onChange={e => setFloorFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체 층</option>
+                  {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+                </select>
+              </div>
+            )}
+            {natOptions.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
+                <select value={natFilter} onChange={e => setNatFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  {natOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            )}
+            {genderOptions.length > 1 && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">성별</label>
+                <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  {genderOptions.map(g => <option key={g} value={g}>{GENDER_LABEL[g] ?? g}</option>)}
+                </select>
+              </div>
+            )}
+            {dueDayFilterValid && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
+                <select value={dueDayFilter} onChange={e => setDueDayFilter(e.target.value as '' | DueDayBucket)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  {DUE_DAY_BUCKET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+            {stayFilterValid && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">거주기간</label>
+                <select value={stayFilter} onChange={e => setStayFilter(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="">전체</option>
+                  <option value="lt1">1개월 미만</option>
+                  <option value="m1_6">1~6개월</option>
+                  <option value="m6_12">6개월~1년</option>
+                  <option value="y1_2">1~2년</option>
+                  <option value="y2p">2년 이상</option>
+                </select>
+              </div>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
+            <div className="flex items-center gap-2">
+              <MoneyInput value={rentMinFilter} onChange={v => setRentMinFilter(v && v > 0 ? v : undefined)} placeholder="최소" />
+              <span className="text-[var(--warm-muted)] text-sm">~</span>
+              <MoneyInput value={rentMaxFilter} onChange={v => setRentMaxFilter(v && v > 0 ? v : undefined)} placeholder="최대" />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Btn type="button" variant="secondary" size="sm" className="flex-1" onClick={resetFilters}>초기화</Btn>
+            <Btn type="button" variant="primary" size="sm" className="flex-1" onClick={() => setShowFilters(false)}>닫기</Btn>
           </div>
         </div>
       )}
