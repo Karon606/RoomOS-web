@@ -120,7 +120,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                                 ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
                                 : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
                             }`}>
-                            {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 발행'}
+                            {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
                           </button>
                         ) : (
                           r.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>

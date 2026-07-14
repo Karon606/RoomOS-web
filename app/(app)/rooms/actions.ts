@@ -10,6 +10,7 @@ import { requireEdit } from '@/lib/role'
 import { kstYmd } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
+import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 
 async function getPropertyId() {
@@ -1213,7 +1214,8 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
   let cashReceiptSum = 0, cashReceiptCount = 0, cardSum = 0, cardCount = 0
   for (const r of rows) {
     if (r.cashReceiptIssuedAt) { cashReceiptSum += r.actualAmount; cashReceiptCount += 1 }
-    if (r.payMethod === '신용카드') { cardSum += r.actualAmount; cardCount += 1 }
+    // 카드 계열(신용카드·결제선생) 동일 취급 — 운영자 지시 2026-07-14
+    if (r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod)) { cardSum += r.actualAmount; cardCount += 1 }
   }
   return { cashReceiptSum, cashReceiptCount, cardSum, cardCount }
 }

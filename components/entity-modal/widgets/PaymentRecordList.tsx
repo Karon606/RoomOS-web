@@ -151,12 +151,13 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부방법</p>
                   <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
+                    {!['계좌이체', '현금', '신용카드', '결제선생', '기타'].includes(editPayMethod) && editPayMethod && (
                       <option value={editPayMethod}>{editPayMethod}</option>
                     )}
                     <option value="계좌이체">계좌이체</option>
                     <option value="현금">현금</option>
                     <option value="신용카드">신용카드</option>
+                    <option value="결제선생">결제선생</option>
                     <option value="기타">기타</option>
                   </select>
                 </div>
@@ -237,7 +238,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                         ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
                         : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
                     }`}>
-                    {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 발행'}
+                    {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
                   </button>
                 ) : (
                   p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>

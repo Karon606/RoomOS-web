@@ -9,6 +9,7 @@
 - 오류신고 93f5d103(3826577, 경량): 위치별 점검 진입 전 임시저장 위치 안내 — getDraftLocationSummary(cross-mode 병합) + §12 칩 문법 행, 누르면 그 위치로 이동해 이어서 입력.
 - 오류신고 c0936f89(2d20541, 표준 트랙): 현금영수증 가시성 4건 — setCashReceiptIssued 원터치 토글(수식 비경유·정확 시각 복원 undo), PaymentRecordList·PaymentBody 2상태 칩, getMonthPaymentAggregates(납부일 기준 발행·카드 합계, 양도인 컷오프 제외) 수납 스트립 표시 + InfoHint, 수납 기본 월 KST 고정, TenantClient 발행 칩 + 납부방법 자유입력 select 통일. 카드결제 데이터는 기존 payMethod로 충분(스키마 신설 불필요 확정).
 - 부수: check-error-reports done/dismiss 8자 접두어 지원(0a04ccc). open-issues에 FIFO 스탬프 유실 등 파생 백로그 4건 등재. 오류신고 open 0건.
+- 현금영수증 후속(운영자 피드백): 결제선생 수단 신설 + 카드 계열 집계 통합(CARD_LIKE_METHODS, 수납 폼·편집·일괄·계약 기본값 전 표면), 수납 리스트 현금영수증 컬럼 기본 표시, 미발행 칩 라벨 '현금영수증 미발행'으로 명확화(발행 완료로 오독 방지).
 
 ## 2026-07-14 — 검색 1.5차 + KST 정합 + 임시저장 칩
 - 전역 검색 1.5차(e54eec0): 요청(내용·공용부, 미처리 우선, 상태 뱃지)·서류 3종(파일명, 종류 라벨, 최신순 병합) 그룹 추가. 텍스트 질의 전용(숫자 질의 비용 불변). 착지 4페이지 ?q= 시딩.

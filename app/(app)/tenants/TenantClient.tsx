@@ -1853,12 +1853,13 @@ export default function TenantClient({
                                     {/* 자유 입력이던 것을 정본 select로 통일 — '카드' 등 변형 표기가 카드 수납 합계에서 누락되는 것 방지(적대검증 필수) */}
                                     <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                                      {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
+                                      {!['계좌이체', '현금', '신용카드', '결제선생', '기타'].includes(editPayMethod) && editPayMethod && (
                                         <option value={editPayMethod}>{editPayMethod}</option>
                                       )}
                                       <option value="계좌이체">계좌이체</option>
                                       <option value="현금">현금</option>
                                       <option value="신용카드">신용카드</option>
+                                      <option value="결제선생">결제선생</option>
                                       <option value="기타">기타</option>
                                     </select>
                                   </div>
@@ -2174,6 +2175,7 @@ export default function TenantClient({
                         <option value="계좌이체">계좌이체</option>
                         <option value="현금">현금</option>
                         <option value="신용카드">신용카드</option>
+                        <option value="결제선생">결제선생</option>
                         <option value="기타">기타</option>
                       </select>
                     </div>
@@ -3046,6 +3048,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="">미선택</option>
             <option value="계좌이체">계좌이체</option>
             <option value="신용카드">신용카드</option>
+            <option value="결제선생">결제선생</option>
             <option value="현금">현금</option>
           </SelectField>
         </div>

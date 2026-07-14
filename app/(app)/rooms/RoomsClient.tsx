@@ -89,7 +89,7 @@ const COL_DEFS: { key: ColKey; label: string; defaultOn: boolean }[] = [
   { key: 'totalPaid',     label: '총납부액', defaultOn: true  },
   { key: 'balance',       label: '잔액',     defaultOn: true  },
   { key: 'dueDay',        label: '납부일',   defaultOn: true  },
-  { key: 'cashReceipt',   label: '현금영수증', defaultOn: false },
+  { key: 'cashReceipt',   label: '현금영수증', defaultOn: true },   // 리스트에서 발행 여부 바로 확인(운영자 지시 2026-07-14)
   { key: 'status',        label: '수납 상태', defaultOn: true  },
 ]
 
@@ -686,7 +686,7 @@ export default function RoomsClient({
             {' · '}카드 수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cardSum)}</span>
             <span className="num"> ({payAggregates.cardCount}건)</span>
             <InfoHint title="현금영수증·카드 합계">
-              <span className="block">이 달에 결제된(납부일 기준) 수납의 합계입니다. 보증금 결제도 포함되며, 위의 청구액은 귀속월 기준이라 서로 다를 수 있습니다.</span>
+              <span className="block">이 달에 결제된(납부일 기준) 수납의 합계입니다. 카드 수납에는 신용카드와 결제선생 결제가 함께 잡힙니다. 보증금 결제도 포함되며, 위의 청구액은 귀속월 기준이라 서로 다를 수 있습니다.</span>
               <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식된 경우 현금영수증 합계에는 원래 달 몫만 잡힙니다. 발행 표시가 빠진 기록은 납부 내역의 현금영수증 칩으로 바로잡을 수 있습니다.</span>
             </InfoHint>
           </p>
@@ -950,7 +950,7 @@ export default function RoomsClient({
                   </span>
                 )}
                 {colVis.cashReceipt && room.cashReceiptIssued && (
-                  <span className="text-[var(--success-fg)]">현금영수증 발행</span>
+                  <span className="text-[var(--success-fg)]">현금영수증</span>
                 )}
                 {colVis.depositAmount && room.depositAmount > 0 && (
                   <span className="text-[var(--warm-muted)]">
@@ -1326,6 +1326,7 @@ export default function RoomsClient({
                 { value: '계좌이체', label: '계좌이체' },
                 { value: '현금',     label: '현금' },
                 { value: '신용카드', label: '신용카드' },
+                { value: '결제선생', label: '결제선생' },
               ]}
             />
           </div>
