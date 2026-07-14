@@ -95,20 +95,20 @@ export default function MonthSelector() {
   return (
     // 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
     <div
-      className="flex items-center rounded-xl shrink-0 self-start overflow-hidden transition-colors"
+      className="flex items-stretch min-h-[44px] rounded-lg shrink-0 self-start overflow-hidden transition-colors"
       style={isCurrent
         ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
         : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }}
     >
       <button
         onClick={() => changeMonth(-1)}
-        className="w-9 h-9 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-9 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
         style={{ color: 'var(--warm-mid)' }}
         aria-label="이전 달"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <div ref={pickerRef} className="relative">
+      <div ref={pickerRef} className="relative flex">
         <div
           onClick={() => setShowPicker(v => !v)}
           className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap flex items-center gap-1.5"
@@ -134,7 +134,7 @@ export default function MonthSelector() {
       <button
         onClick={() => changeMonth(1)}
         disabled={atCurrentMonth}
-        className="w-9 h-9 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-9 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
         style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
         aria-label="다음 달"
       >
@@ -143,7 +143,7 @@ export default function MonthSelector() {
       {!isCurrent && (
         <button
           onClick={jumpToday}
-          className="h-9 px-2.5 flex items-center text-xs font-bold transition-colors border-l focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/40 focus-visible:ring-inset"
+          className="px-2.5 flex items-center text-xs font-bold transition-colors border-l focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/40 focus-visible:ring-inset"
           style={{ color: 'var(--on-solid)', background: 'var(--persimmon)', borderColor: 'var(--persimmon)' }}
           aria-label="이번 달로"
         >
@@ -171,7 +171,7 @@ function MonthPicker({
   return (
     /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */
     <div
-      className="absolute top-11 right-0 rounded-xl shadow-lift p-4 w-72 max-w-[88vw] z-[var(--z-dropdown)]"
+      className="absolute top-full mt-1.5 right-0 rounded-xl shadow-lift p-4 w-72 max-w-[88vw] z-[var(--z-dropdown)]"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >
