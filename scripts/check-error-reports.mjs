@@ -12,8 +12,16 @@ const [, , cmd, id] = process.argv
 
 if (cmd === 'done' || cmd === 'dismiss') {
   if (!id) { console.error('id 필요'); process.exit(1) }
-  await prisma.errorReport.update({ where: { id }, data: { status: cmd === 'done' ? 'done' : 'dismissed' } })
-  console.log(`✅ ${id.slice(0, 8)} → ${cmd === 'done' ? 'done' : 'dismissed'}`)
+  // 목록이 8자 접두어로 표시되므로 접두어도 받는다 — 유일 매칭일 때만 갱신
+  const candidates = await prisma.errorReport.findMany({ where: { status: 'open' }, select: { id: true } })
+  const matched = candidates.filter(r => r.id.startsWith(id))
+  if (matched.length !== 1) {
+    console.error(matched.length === 0 ? `open 상태에서 '${id}'로 시작하는 신고 없음` : `'${id}' 접두어가 ${matched.length}건과 일치 — 더 길게 입력`)
+    await prisma.$disconnect()
+    process.exit(1)
+  }
+  await prisma.errorReport.update({ where: { id: matched[0].id }, data: { status: cmd === 'done' ? 'done' : 'dismissed' } })
+  console.log(`${matched[0].id.slice(0, 8)} → ${cmd === 'done' ? 'done' : 'dismissed'}`)
   await prisma.$disconnect()
   process.exit(0)
 }
