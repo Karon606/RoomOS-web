@@ -256,13 +256,14 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth, myRole, incomes, incomeCategories, initialTab,
+  roomStatus, targetMonth, myRole, incomes, incomeCategories, payAggregates, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
   myRole: string
   incomes: Income[]
   incomeCategories: string[]
+  payAggregates: { cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }
   initialTab?: 'rooms' | 'income'
 }) {
   const searchParams = useSearchParams()
@@ -677,6 +678,19 @@ export default function RoomsClient({
         <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
           <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(100, collectPct)}%`, background: 'var(--success-fg)' }} />
         </div>
+        {/* 현금영수증·카드 합계 — 이 달에 결제된(납부일 기준) 금액, 세무 대사용(오류신고 c0936f89) */}
+        {(payAggregates.cashReceiptSum !== 0 || payAggregates.cardSum !== 0) && (
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+            현금영수증 발행 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cashReceiptSum)}</span>
+            <span className="num"> ({payAggregates.cashReceiptCount}건)</span>
+            {' · '}카드 수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cardSum)}</span>
+            <span className="num"> ({payAggregates.cardCount}건)</span>
+            <InfoHint title="현금영수증·카드 합계">
+              <span className="block">이 달에 결제된(납부일 기준) 수납의 합계입니다. 보증금 결제도 포함되며, 위의 청구액은 귀속월 기준이라 서로 다를 수 있습니다.</span>
+              <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식된 경우 현금영수증 합계에는 원래 달 몫만 잡힙니다. 발행 표시가 빠진 기록은 납부 내역의 현금영수증 칩으로 바로잡을 수 있습니다.</span>
+            </InfoHint>
+          </p>
+        )}
       </div>
 
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 스크롤 시 상단 고정 */}

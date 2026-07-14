@@ -11,7 +11,8 @@ import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
 import { useRouter } from 'next/navigation'
-import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
+import { getLeaseSettlementInfo, getPaymentsByLease, setCashReceiptIssued } from '@/app/(app)/rooms/actions'
+import { pushToast } from '@/lib/saveStatus'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
@@ -55,6 +56,21 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // router.refresh() 가 없으면 셸 닫고 페이지로 돌아갔을 때 카드가 여전히 미납으로 보임.
   const refresh = () => startTransition(() => { setReloadKey(k => k + 1); router.refresh() })
 
+  // 현금영수증 원터치 토글 — summary에서 바로, 수정 폼 진입 불필요(오류신고 c0936f89). PaymentRecordList와 동일 문법.
+  const handleToggleCashReceipt = (r: NonNullable<Records>[number]) => {
+    startTransition(async () => {
+      const next = !r.cashReceiptIssuedAt
+      const res = await setCashReceiptIssued(r.id, next)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', next ? '현금영수증 발행으로 표시했습니다' : '현금영수증 발행 표시를 해제했습니다', {
+        action: { label: '적용취소', run: () => { void setCashReceiptIssued(r.id, res.prevIssuedAt != null, res.prevIssuedAt).then(u => {
+          if (u.ok) refresh(); else pushToast('error', u.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      })
+      refresh()
+    })
+  }
+
   if (!settlement) return <SkeletonRows rows={5} className="py-4" />
 
   return (
@@ -89,13 +105,28 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                   const t = new Date(r.payDate)
                   const payDateStr = `${t.getMonth() + 1}.${t.getDate()}`
                   return (
-                    <li key={r.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-                      <span className="text-[var(--warm-mid)]">
-                        {payDateStr}
-                        {r.isDeposit && <span className="ml-1.5 text-[0.65625rem] text-[var(--coral)]">보증금</span>}
-                        {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
+                    <li key={r.id} className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+                      <span className="text-[var(--warm-mid)] min-w-0 flex items-center gap-1.5 flex-wrap">
+                        <span>
+                          {payDateStr}
+                          {r.isDeposit && <span className="ml-1.5 text-[0.65625rem] text-[var(--coral)]">보증금</span>}
+                          {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
+                        </span>
+                        {/* 현금영수증 원터치 칩 — 수정 폼 없이 발행 표시(오류신고 c0936f89) */}
+                        {canEdit ? (
+                          <button type="button" onClick={() => handleToggleCashReceipt(r)}
+                            className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap transition-colors ${
+                              r.cashReceiptIssuedAt
+                                ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
+                                : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
+                            }`}>
+                            {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 발행'}
+                          </button>
+                        ) : (
+                          r.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
+                        )}
                       </span>
-                      <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>
+                      <span className="font-semibold text-[var(--warm-dark)] whitespace-nowrap">{fmtWon(r.actualAmount)}</span>
                     </li>
                   )
                 })}

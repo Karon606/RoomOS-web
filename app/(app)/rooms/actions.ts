@@ -1161,6 +1161,63 @@ export async function updatePayment(
   }
 }
 
+// 현금영수증 발행 원터치 토글 — cashReceiptIssuedAt 메타데이터만 갱신(충당·잔액 수식 비관여).
+// updatePayment(재계산·인플레이션 가드 경유)를 태우지 않는 전용 경로(오류신고 c0936f89, 표준 트랙 2026-07-14).
+// restoreIssuedAt — 적용취소용: 원래 발행 시각 그대로 복원(감사 흔적 보존). 미지정 켬은 기존 시각 보존, 없으면 지금.
+// 소프트삭제 record는 findFirst 자동 필터로 걸러져 유령 수정이 성립하지 않는다(적대검증 필수 1).
+export async function setCashReceiptIssued(
+  paymentId: string, issued: boolean, restoreIssuedAt?: string | null,
+): Promise<{ ok: true; prevIssuedAt: string | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId },
+      select: { cashReceiptIssuedAt: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    const next = !issued ? null
+      : restoreIssuedAt != null ? new Date(restoreIssuedAt)
+      : (record.cashReceiptIssuedAt ?? new Date())
+    await prisma.paymentRecord.update({ where: { id: paymentId }, data: { cashReceiptIssuedAt: next } })
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true, prevIssuedAt: record.cashReceiptIssuedAt ? record.cashReceiptIssuedAt.toISOString() : null }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 월 수납 집계 — 현금영수증 발행 합계·카드 수납 합계(표시 전용, 결제 수식 비관여. 오류신고 c0936f89).
+// 기준: payDate가 그 달(현금주의, 보증금 포함) + 양도인 정산·컷오프 이전 제외(getRoomPaymentStatus와 동일 규칙).
+// 주의: where에 deletedAt 키를 넣지 말 것 — 소프트삭제 익스텐션 opt-out이 오발동한다(적대검증 필수 3).
+export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }> {
+  const propertyId = await getPropertyId()
+  const [y, m] = targetMonth.split('-').map(Number)
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+  })
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  // payDate는 UTC 자정(@db.Date) 저장 — 월 경계도 명시적 UTC로 구성(적대검증 필수 3)
+  const from = new Date(Date.UTC(y, m - 1, 1))
+  const to = new Date(Date.UTC(y, m, 1))
+  const rows = await prisma.paymentRecord.findMany({
+    where: {
+      propertyId,
+      isPrevOwner: false,
+      payDate: { gte: cutoff && cutoff > from ? cutoff : from, lt: to },   // 컷오프 이전 = 양도인 몫(적대검증 필수 2)
+    },
+    select: { actualAmount: true, cashReceiptIssuedAt: true, payMethod: true },
+  })
+  let cashReceiptSum = 0, cashReceiptCount = 0, cardSum = 0, cardCount = 0
+  for (const r of rows) {
+    if (r.cashReceiptIssuedAt) { cashReceiptSum += r.actualAmount; cashReceiptCount += 1 }
+    if (r.payMethod === '신용카드') { cardSum += r.actualAmount; cardCount += 1 }
+  }
+  return { cashReceiptSum, cashReceiptCount, cardSum, cardCount }
+}
+
 // 수납 기록 삭제
 export async function deletePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

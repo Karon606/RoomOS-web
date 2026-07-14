@@ -67,6 +67,7 @@ type PayRecord = {
   id: string; seqNo: number; payDate: Date; targetMonth: string
   actualAmount: number; payMethod: string | null; memo: string | null; isPaid: boolean
   isDeposit: boolean
+  cashReceiptIssuedAt?: Date | string | null   // 발행 칩 표시(오류신고 c0936f89)
 }
 
 type LeaseTerm = {
@@ -1801,6 +1802,7 @@ export default function TenantClient({
                                 <p className="text-xs text-[var(--deposit-fg)]">
                                   {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
                                   <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>
+                                  {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
@@ -1848,9 +1850,17 @@ export default function TenantClient({
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
                                     <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
-                                    <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                                      placeholder="계좌이체, 현금…"
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                    {/* 자유 입력이던 것을 정본 select로 통일 — '카드' 등 변형 표기가 카드 수납 합계에서 누락되는 것 방지(적대검증 필수) */}
+                                    <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                                      {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
+                                        <option value={editPayMethod}>{editPayMethod}</option>
+                                      )}
+                                      <option value="계좌이체">계좌이체</option>
+                                      <option value="현금">현금</option>
+                                      <option value="신용카드">신용카드</option>
+                                      <option value="기타">기타</option>
+                                    </select>
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>메모</p>
@@ -1870,6 +1880,7 @@ export default function TenantClient({
                               <div>
                                 <p className={`text-xs ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
+                                  {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
                                   {prevOwner && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
                                     <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">

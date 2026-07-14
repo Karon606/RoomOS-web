@@ -9,7 +9,7 @@ import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment,
+  getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment, setCashReceiptIssued,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
@@ -100,6 +100,22 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
       } catch (err) {
         pushToast('error', (err as Error).message ?? '삭제 실패')
       } finally { release() }
+    })
+  }
+
+  // 현금영수증 원터치 토글 — 수정 폼에 들어가지 않고 발행 표시(오류신고 c0936f89). 적용취소는 원래 시각 복원.
+  const handleToggleCashReceipt = (p: Record) => {
+    startTransition(async () => {
+      const next = !p.cashReceiptIssuedAt
+      const res = await setCashReceiptIssued(p.id, next)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', next ? '현금영수증 발행으로 표시했습니다' : '현금영수증 발행 표시를 해제했습니다', {
+        action: { label: '적용취소', run: () => { void setCashReceiptIssued(p.id, res.prevIssuedAt != null, res.prevIssuedAt).then(r => {
+          if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      })
+      await reload()
+      onChange?.()
     })
   }
 
@@ -213,7 +229,19 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     {p.targetMonth > targetMonth && ' (선납)'}
                   </span>
                 )}
-                {p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>}
+                {/* 현금영수증 — 편집 가능하면 원터치 토글 칩(미발행도 어포던스), 아니면 발행 시에만 표시 */}
+                {canEdit ? (
+                  <button type="button" disabled={pending} onClick={() => handleToggleCashReceipt(p)}
+                    className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap transition-colors disabled:opacity-50 ${
+                      p.cashReceiptIssuedAt
+                        ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
+                        : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
+                    }`}>
+                    {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 발행'}
+                  </button>
+                ) : (
+                  p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
+                )}
                 {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
               </div>
               {canEdit && (

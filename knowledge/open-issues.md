@@ -28,3 +28,9 @@
 - StockCheck @db.Date 절단 — KST 저녁 수령 건 자동 점검 날짜가 전날로 저장(§4 인접, 저장 시 KST 절단 필요).
 - 기존 결함 기록: updateExpense propertyId 미스코프, captureItemSpecOptions 중복 호출(무해).
 - 검색 1.5차: 요청·서류 그룹 + 최근 검색 고도화. v2 후보: 수납 월·금액 검색, pg_trgm.
+
+## 2026-07-14 오류신고·§4 파생 백로그
+- savePayment FIFO 스탬프 유실: forcedTargetMonth가 이미 완납월이면 portion=0이라 현금영수증 체크가 무기록(적대검증 v-3). 현재는 스트립 InfoHint 고지 + 원터치 토글로 사후 보정. 근본 수정(이월 첫 record 스탬프)은 결제 인접이라 별도 §4 건.
+- updatePayment propertyId 미검증(rooms/actions.ts findUnique만) — 신규 setCashReceiptIssued는 검증하나 기존 액션은 미보강(멀티테넌트).
+- deleteExpense의 import replace 경로(app/api/import/route.ts)는 여전히 하드삭제·주문 정리 미호출(기존 결함, undo 범위 밖).
+- receivedAt 편집 경로: updateExpenseFromInventory에서 receivedAt null → 재설정 시 자동 점검 미재생성(재고 과소, §4 설계 중 발견).
