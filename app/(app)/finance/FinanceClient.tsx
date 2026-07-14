@@ -6,7 +6,7 @@ import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
+  addExpense, updateExpense, deleteExpense, undoDeleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
@@ -1951,8 +1951,15 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        await deleteExpense(exp.id); setDetailExp(null); router.refresh()
-        pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨')
+        const res = await deleteExpense(exp.id)
+        if (!res.ok) { pushToast('error', res.error); return }
+        setDetailExp(null); router.refresh()
+        pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨', {
+          action: { label: '적용취소', run: () => { void undoDeleteExpense(res.undo).then(r => {
+            if (r.ok) { pushToast('info', isFixed ? '이번 달 기록을 복원했습니다' : '지출을 복원했습니다'); router.refresh() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+        })
       } finally { release() }
     })
   }

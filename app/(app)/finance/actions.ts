@@ -13,7 +13,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive } from '@/lib/google-drive'
-import type { SettleStatus } from '@prisma/client'
+import type { Prisma, SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
@@ -923,30 +923,144 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
   }
 }
 
-export async function deleteExpense(id: string) {
-  await requireEdit()
-  const target = await prisma.expense.findUnique({ where: { id }, select: { orderId: true } })
-  await prisma.expense.delete({ where: { id } })
-  // 주문 묶음 고아 정리 — 품목을 다 지워 배송비 라인만 남으면 배송비·주문도 정리,
-  // 행이 하나만 남으면 묶음 의미가 없으므로 연결 해제 후 빈 주문 삭제.
-  if (target?.orderId) await cleanupOrderIfOrphan(target.orderId)
-  revalidatePath('/finance')
+// 지출 삭제 적용취소 페이로드 — 삭제 직전 전체 스냅샷(§4 설계+적대검증 2026-07-14).
+// 클라이언트가 토스트 수명 동안만 보유(StockCheckUndo 선례). 새로고침 후에는 복구 불가.
+export type ExpenseDeleteUndo = {
+  expense: Record<string, unknown>          // 삭제된 행 전체(id·createdAt 포함 재생성)
+  order: Record<string, unknown> | null     // 소속 주문 전체 — 정리 여부와 무관하게 항상 캡처(그 사이 병합·해제가 주문을 지울 수 있음)
+  shippingRows: Record<string, unknown>[]   // 주문 정리로 함께 지워진 배송비 라인들
+  freedSiblingIds: string[]                 // 주문 정리로 orderId가 해제된 형제 지출 id
+  stockCheckIds: string[]                   // SetNull된 수령 자동 점검 — 복원 시 재링크
+  reserveTxIds: string[]                    // SetNull된 예비비 정산 — 복원 시 재링크
 }
 
-// 주문에 비배송 품목이 없으면 배송비 라인+주문 삭제, 1개 행만 남으면 연결 해제 후 주문 삭제.
-async function cleanupOrderIfOrphan(orderId: string) {
-  const rows = await prisma.expense.findMany({
-    where: { orderId },
-    select: { id: true, isShipping: true },
-  })
-  const items = rows.filter(r => !r.isShipping)
-  if (items.length === 0) {
-    // 배송비만 남음 — 배송비 라인과 주문 모두 정리
-    await prisma.expense.deleteMany({ where: { orderId, isShipping: true } })
-    await prisma.expenseOrder.delete({ where: { id: orderId } }).catch(() => {})
-  } else if (rows.length === 1) {
-    await prisma.expense.updateMany({ where: { orderId }, data: { orderId: null } })
-    await prisma.expenseOrder.delete({ where: { id: orderId } }).catch(() => {})
+export async function deleteExpense(id: string): Promise<{ ok: true; undo: ExpenseDeleteUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()   // 영업장 스코프 — 기존 누락 보강(멀티테넌트, §4 2026-07-14)
+    const undo = await prisma.$transaction(async tx => {
+      const target = await tx.expense.findFirst({ where: { id, propertyId } })
+      if (!target) throw new Error('지출을 찾을 수 없습니다.')
+      const order = target.orderId ? await tx.expenseOrder.findFirst({ where: { id: target.orderId } }) : null
+      const [checks, reserves] = await Promise.all([
+        tx.stockCheck.findMany({ where: { sourceExpenseId: id }, select: { id: true } }),
+        tx.reserveTransaction.findMany({ where: { expenseId: id }, select: { id: true } }),
+      ])
+      let shippingRows: Record<string, unknown>[] = []
+      let freedSiblingIds: string[] = []
+      await tx.expense.delete({ where: { id } })
+      // 주문 묶음 고아 정리 — 품목을 다 지워 배송비 라인만 남으면 배송비·주문도 정리,
+      // 행이 하나만 남으면 묶음 의미가 없으므로 연결 해제 후 빈 주문 삭제.
+      // (cleanupOrderIfOrphan과 동일 분기 — 스냅샷과 함께 한 트랜잭션으로 수행)
+      if (target.orderId) {
+        const rows = await tx.expense.findMany({ where: { orderId: target.orderId }, select: { id: true, isShipping: true } })
+        const items = rows.filter(r => !r.isShipping)
+        if (items.length === 0) {
+          shippingRows = await tx.expense.findMany({ where: { orderId: target.orderId, isShipping: true } })
+          await tx.expense.deleteMany({ where: { orderId: target.orderId, isShipping: true } })
+          await tx.expenseOrder.deleteMany({ where: { id: target.orderId } })
+        } else if (rows.length === 1) {
+          freedSiblingIds = rows.map(r => r.id)
+          await tx.expense.updateMany({ where: { orderId: target.orderId }, data: { orderId: null } })
+          await tx.expenseOrder.deleteMany({ where: { id: target.orderId } })
+        }
+      }
+      return {
+        expense: target as unknown as Record<string, unknown>,
+        order: order as unknown as Record<string, unknown> | null,
+        shippingRows, freedSiblingIds,
+        stockCheckIds: checks.map(c => c.id),
+        reserveTxIds: reserves.map(r => r.id),
+      }
+    })
+    revalidatePath('/finance')
+    if (undo.stockCheckIds.length > 0) revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+// 지출 삭제 적용취소 — 스냅샷으로 주문·지출·배송비 라인을 재생성하고 링크를 재연결.
+// 적대검증 필수 4건 반영: 주문 항상 스냅샷 복원, 사라진 부모 FK null 강등,
+// 형제 orderId 조건부 복원, 고정지출 재기록 후 복원 시 이중 집계 차단.
+export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    type ExpenseRowSnap = Prisma.ExpenseUncheckedCreateInput & { id: string; updatedAt?: string | Date }
+    const data = { ...undo.expense } as ExpenseRowSnap
+    delete data.updatedAt   // @updatedAt은 재생성 시 자동
+    if (data.propertyId !== propertyId) return { ok: false, error: '다른 영업장의 기록입니다.' }
+    // 멱등 — 이미 복원돼 있으면 성공
+    if (await prisma.expense.findFirst({ where: { id: data.id }, select: { id: true } })) return { ok: true }
+    // 고정지출 이중 기록 차단 — 삭제로 '기록 대기'가 된 사이 같은 달을 다시 기록했으면 복원 거부
+    if (data.recurringExpenseId) {
+      const dt = new Date(data.date)
+      const from = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1))
+      const to = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1))
+      const dup = await prisma.expense.findFirst({
+        where: { propertyId, recurringExpenseId: data.recurringExpenseId, date: { gte: from, lt: to } },
+        select: { id: true },
+      })
+      if (dup) return { ok: false, error: '그 사이 같은 달 고정지출이 다시 기록되어 복원하면 중복됩니다. 기존 기록을 확인해 주세요.' }
+    }
+    // 옵셔널 FK 부모 소실 시 null 강등 — 부재 부모로 create가 통째로 실패하는 것을 막는다
+    const fkFinders = {
+      recurringExpenseId: (fk: string) => prisma.recurringExpense.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      financialAccountId: (fk: string) => prisma.financialAccount.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      roomId: (fk: string) => prisma.room.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      receivedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+      assignedLocationId: (fk: string) => prisma.storageLocation.findFirst({ where: { id: fk, propertyId }, select: { id: true } }),
+    } as const
+    for (const key of Object.keys(fkFinders) as (keyof typeof fkFinders)[]) {
+      const fk = data[key]
+      if (fk && !(await fkFinders[key](fk))) data[key] = null
+    }
+    const orderSnap = undo.order as (Prisma.ExpenseOrderUncheckedCreateInput & { id: string; updatedAt?: string | Date }) | null
+    await prisma.$transaction(async tx => {
+      // 주문 복원 — 삭제됐으면 스냅샷으로 재생성, 스냅샷이 없거나 다른 주문이면 orderId 강등
+      if (data.orderId) {
+        const oe = await tx.expenseOrder.findFirst({ where: { id: data.orderId }, select: { id: true } })
+        if (!oe) {
+          if (orderSnap && orderSnap.id === data.orderId && orderSnap.propertyId === propertyId) {
+            const snap = { ...orderSnap }
+            delete snap.updatedAt
+            await tx.expenseOrder.create({ data: snap })
+          } else data.orderId = null
+        }
+      }
+      await tx.expense.create({ data })
+      // 주문 정리로 함께 지워진 배송비 라인 복원(이미 있으면 건너뜀)
+      for (const s of undo.shippingRows) {
+        const row = { ...s } as ExpenseRowSnap
+        delete row.updatedAt
+        if (await tx.expense.findFirst({ where: { id: row.id }, select: { id: true } })) continue
+        if (row.orderId && !(await tx.expenseOrder.findFirst({ where: { id: row.orderId }, select: { id: true } }))) row.orderId = null
+        await tx.expense.create({ data: row })
+      }
+      // 형제 orderId 조건부 복원 — 그 사이 다른 주문에 묶였으면 그 병합을 존중(orderId null인 것만)
+      if (undo.freedSiblingIds.length > 0 && data.orderId) {
+        await tx.expense.updateMany({
+          where: { id: { in: undo.freedSiblingIds }, propertyId, orderId: null },
+          data: { orderId: data.orderId },
+        })
+      }
+      // 수령 자동 점검·예비비 정산 재링크 — 그 사이 지워진 행은 no-op
+      if (undo.stockCheckIds.length > 0) {
+        await tx.stockCheck.updateMany({ where: { id: { in: undo.stockCheckIds } }, data: { sourceExpenseId: data.id } })
+      }
+      if (undo.reserveTxIds.length > 0) {
+        await tx.reserveTransaction.updateMany({ where: { id: { in: undo.reserveTxIds } }, data: { expenseId: data.id } })
+      }
+    })
+    revalidatePath('/finance')
+    if (undo.stockCheckIds.length > 0) revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
   }
 }
 

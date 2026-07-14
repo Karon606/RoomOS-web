@@ -6,7 +6,7 @@
 - 요청(TenantRequest) — 9f06ddd, 레퍼런스 구현.
 - 문서(ContractFile·ResidenceCertFile·RentReceiptFile) — 7f28666. Drive는 영구삭제 대신 휴지통(`trashInDrive`), 복구는 `untrashInDrive`.
 - 결제(PaymentRecord·ExtraIncome) — e1d0704(MF-3b). 아래 함정 참고.
-- **지출(Expense)은 제외** — 삭제 시 주문·배송비 연쇄정리(`cleanupOrderIfOrphan`)가 얽혀 원복이 복잡. 하드삭제 유지.
+- **지출(Expense)은 소프트삭제 대신 스냅샷 재생성 undo** — 2026-07-14(§4 승인). 삭제 연쇄(주문 고아 정리·배송비 라인·형제 orderId 해제·StockCheck/ReserveTransaction SetNull)가 유한해 `deleteExpense`가 삭제 직전 전체 스냅샷(`ExpenseDeleteUndo`)을 반환하고 `undoDeleteExpense`가 재생성·재링크한다. 토스트 수명 동안만 복구 가능(수납의 영구 소프트삭제와 보증 수준이 다름). 가드: 주문 스냅샷 상시 캡처, 사라진 부모 FK null 강등, 형제 orderId는 null인 것만 복원, 고정지출 재기록 후 복원 거부(이중 집계 차단). Expense를 소프트삭제로 전환하지 않는 이유: 최다 집계 모델(17개 파일 조회)이라 읽기 의미 전역 변경의 회귀 위험이 스냅샷 방식보다 큼.
 
 ## 2단계 마이그레이션 (운영 DB)
 `prisma migrate` 안 씀(마이그레이션 폴더 없음, datasource엔 provider만). raw SQL 수동.
