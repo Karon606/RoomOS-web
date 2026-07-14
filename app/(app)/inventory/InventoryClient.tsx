@@ -78,7 +78,7 @@ import {
   unmergeTrackedItem,
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
-  undoConfirmReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock,
+  undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
@@ -938,7 +938,13 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     setLoadingId(expenseId)
     const release = trackSave()
     confirmReceipt(expenseId, locationId, qty).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }).finally(release) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료', {
+        // 부분 수령이면 분할 원복(undoPartialReceipt), 전량이면 기존 수령 취소 — 상세 모달 경로 undo 공백 해소(§4 2026-07-14)
+        action: { label: '수령 취소', run: () => { void (res.undo ? undoPartialReceipt(res.undo) : undoConfirmReceipt(expenseId)).then(r => {
+          if (r.ok) { pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '수령 취소 중 통신 오류가 발생했습니다')) } },
+      }) }).finally(release) }
       else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }

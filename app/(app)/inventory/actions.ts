@@ -2030,7 +2030,7 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 // 결과: 수령 확인 직후 재고 점검을 열면 해당 위치 잔량이 0이 아니라 수령된 만큼으로 prefill됨 (#3)
 // receiveQty — 부분 수령(분할 배송): 전체 중 일부만 도착 시 그 수량만 수령 처리.
 // 지출 행을 [수령분]+[대기 잔여]로 분할(금액 비례, allocationGroupId로 지출목록 한 줄 유지 — 배정 분할과 동일 선례).
-export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number): Promise<{ ok: true; undo?: PartialReceiptUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2043,11 +2043,14 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
 
     // 부분 수령 — 요청 수량이 전체 미만이면 행 분할 후, 수령 분할행에 대해 아래 기존 흐름을 그대로 태운다
     // (자동 점검·허브 배치가 수령 수량만 반영됨). 잔여 행은 수령 대기 유지.
+    let partialUndo: PartialReceiptUndo | null = null
     if (receiveQty != null && expense.qtyValue && receiveQty > 0 && receiveQty < expense.qtyValue) {
       const eq = expense.qtyValue
       const recvAmount = Math.round(expense.amount * (receiveQty / eq))
       const remainQty = Math.round((eq - receiveQty) * 1000) / 1000
       const groupId = expense.allocationGroupId ?? randomUUID()
+      // 적용취소용 분할 직전 스냅샷 — 복원은 산술 재합산이 아니라 이 값 그대로(반올림 잔차·detail 재구성 방지)
+      const prevSnap = { qtyValue: eq, amount: expense.amount, detail: expense.detail, allocationGroupId: expense.allocationGroupId }
       const qtyPart = (q: number) => expense!.specValue != null
         ? `[${expense!.itemLabel}] ${expense!.specValue}${expense!.specUnit ?? ''} x ${q}${expense!.qtyUnit ?? '개'}`
         : `[${expense!.itemLabel}] x ${q}${expense!.qtyUnit ?? '개'}`
@@ -2069,6 +2072,18 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         } }),
       ])
       expense = created
+      partialUndo = {
+        receivedId: created.id,
+        remainderId: expenseId,
+        trackedItemId: null,
+        receivedAtMs: 0,
+        prev: prevSnap,
+        expect: {
+          remainQty, remainAmount: prevSnap.amount - recvAmount,
+          recvQty: receiveQty, recvAmount, groupId,
+          roomId: created.roomId, assignedLocationId: created.assignedLocationId, isCommonAsset: created.isCommonAsset,
+        },
+      }
     }
 
     const receivedAt = new Date()
@@ -2148,7 +2163,9 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
           date: receivedAt,
           remainingQty: totalQty,
           memo: `[수령 자동] +${receivedQty}${unit}`,
-          sourceExpenseId: expenseId,
+          // 부분 수령 분할 시 expense는 수령 분할행으로 재대입됨 — 원본(잔여) 행 id(expenseId)를 쓰면
+          // 잔여 행 수령 취소가 이 점검까지 지워 장부가 조용히 준다(P0, §4 적대검증 2026-07-14 확인).
+          sourceExpenseId: expense.id,
           locationBreakdown: {
             create: allLocs.filter(l => l.qty > 0).map(l => ({
               storageLocationId: l.storageLocationId,
@@ -2167,11 +2184,92 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       ...(autoCheck ? [prisma.stockCheck.create({ data: autoCheck })] : []),
     ])
 
+    if (partialUndo) {
+      partialUndo.receivedAtMs = receivedAt.getTime()
+      partialUndo.trackedItemId = item?.id ?? null
+    }
+
     revalidatePath('/inventory')
-    return { ok: true }
+    return partialUndo ? { ok: true, undo: partialUndo } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 부분 수령 적용취소 토큰 — 분할 직전 원본 스냅샷(prev)과 분할 직후 기대 상태(expect).
+// 클라이언트가 토스트 수명 동안만 보유(StockCheckUndo·AssetAssignUndo 선례).
+export type PartialReceiptUndo = {
+  receivedId: string      // 수령 분할행(삭제 대상)
+  remainderId: string     // 원본(잔여) 행(복원 대상)
+  trackedItemId: string | null
+  receivedAtMs: number
+  prev: { qtyValue: number; amount: number; detail: string | null; allocationGroupId: string | null }
+  expect: {
+    remainQty: number; remainAmount: number
+    recvQty: number; recvAmount: number
+    groupId: string
+    roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean
+  }
+}
+
+// 부분 수령 적용취소 — 수령 분할행과 자동 점검을 지우고 원본 행을 분할 직전 상태로 복원.
+// 그 사이 후속 기록(점검·재수령·자산 배정·행 수정)이 끼면 장부 왜곡을 막기 위해 거부한다(§4 설계+적대검증 2026-07-14).
+export async function undoPartialReceipt(undo: PartialReceiptUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const [recv, remain] = await Promise.all([
+      prisma.expense.findFirst({ where: { id: undo.receivedId, propertyId } }),
+      prisma.expense.findFirst({ where: { id: undo.remainderId, propertyId } }),
+    ])
+    if (!remain) return { ok: false, error: '원본 지출을 찾을 수 없습니다.' }
+    if (!recv) {
+      // 수령 행이 이미 없는 경우: 원본이 분할 전 상태면 이미 되돌려진 것(멱등 ok),
+      // 분할 상태 그대로면 다른 경로로 삭제된 것 — 조용한 '복원됨' 거짓 신호를 막는다(적대검증 권고 3).
+      const restored = !remain.receivedAt && remain.qtyValue === undo.prev.qtyValue && remain.amount === undo.prev.amount
+      return restored ? { ok: true } : { ok: false, error: '수령 분할행이 이미 삭제되어 되돌릴 수 없습니다. 지출 내역을 확인해 주세요.' }
+    }
+    // 가드 1 — 수령 행이 그 사이 변형(자산 배정·이동·분할·수정)됐으면 거부(적대검증 필수 1)
+    if (!recv.receivedAt || recv.qtyValue !== undo.expect.recvQty || recv.amount !== undo.expect.recvAmount
+      || recv.allocationGroupId !== undo.expect.groupId || recv.roomId !== undo.expect.roomId
+      || recv.assignedLocationId !== undo.expect.assignedLocationId || recv.isCommonAsset !== undo.expect.isCommonAsset) {
+      return { ok: false, error: '수령 이후 이 지출이 수정되어 되돌릴 수 없습니다.' }
+    }
+    // 가드 2 — 잔여 행이 그 사이 재수령·재분할·수정됐으면 거부
+    if (remain.receivedAt || remain.qtyValue !== undo.expect.remainQty || remain.amount !== undo.expect.remainAmount
+      || remain.allocationGroupId !== undo.expect.groupId) {
+      return { ok: false, error: '잔여 수량이 이미 수령되었거나 수정되어 되돌릴 수 없습니다.' }
+    }
+    // 가드 3 — 수령 이후 다른 점검(수동·타 수령 자동)이 있으면 거부. 이후 점검은 수령분을 실측에
+    // 이미 반영했으므로 여기서 빼면 이중 계상된다. StockCheck.date는 @db.Date 절삭이라 같은 날
+    // 우회가 가능해 createdAt(실시각) 기준으로 판정한다(적대검증 필수 2).
+    if (undo.trackedItemId) {
+      const later = await prisma.stockCheck.findFirst({
+        where: {
+          trackedItemId: undo.trackedItemId,
+          createdAt: { gt: new Date(undo.receivedAtMs) },
+          OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: undo.receivedId } }],
+        },
+        select: { id: true },
+      })
+      if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
+    }
+    await prisma.$transaction(async tx => {
+      await tx.stockCheck.deleteMany({ where: { sourceExpenseId: undo.receivedId } })
+      await tx.expense.delete({ where: { id: undo.receivedId } })
+      // 기대값 포함 조건부 복원(CAS) — 가드 조회와 커밋 사이의 경합 봉합(적대검증 권고 4)
+      const r = await tx.expense.updateMany({
+        where: { id: undo.remainderId, propertyId, receivedAt: null, qtyValue: undo.expect.remainQty, amount: undo.expect.remainAmount },
+        data: { qtyValue: undo.prev.qtyValue, amount: undo.prev.amount, detail: undo.prev.detail, allocationGroupId: undo.prev.allocationGroupId },
+      })
+      if (r.count !== 1) throw new Error('되돌리는 사이 잔여 지출이 변경되었습니다. 새로고침 후 다시 확인해 주세요.')
+    })
+    revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }
 
@@ -2485,6 +2583,23 @@ export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true 
     const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, receivedAt: true } })
     if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
     if (!exp.receivedAt) return { ok: true }
+    // 자동 점검 이후 다른 점검이 있으면 거부 — 이후 점검이 수령분을 실측에 이미 반영했으므로
+    // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
+    const autoChecks = await prisma.stockCheck.findMany({
+      where: { sourceExpenseId: expenseId },
+      select: { trackedItemId: true, createdAt: true },
+    })
+    if (autoChecks.length > 0) {
+      const later = await prisma.stockCheck.findFirst({
+        where: {
+          trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
+          createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
+          OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
+        },
+        select: { id: true },
+      })
+      if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
+    }
     await prisma.$transaction([
       prisma.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } }),
       prisma.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } }),
