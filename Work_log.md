@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-07-14
 브랜치: main
 
+## 2026-07-14 (2) — §4 undo 2건 + 오류신고 2건 (승인 후 일괄 처리)
+- 재고 부분수령 원복(23a6325, §4 표준 트랙): confirmReceipt 분할 시 스냅샷 undo 토큰 반환 + undoPartialReceipt(가드 3종: 수령 행 변형·잔여 행 변형·후행 점검 createdAt 기준 거부, CAS 복원). undoConfirmReceipt에도 후행 점검 가드 통일. **P0 동시 수정**: 자동 점검 sourceExpenseId가 잔여 행을 가리키던 링크를 수령 분할행으로 — 잔여분 수령 취소가 수령분 점검까지 지우던 경로 차단(운영 DB 소급 0건 확인, 일회성 스크립트 불필요).
+- 지출 삭제 적용취소(62cbb9f, §4 표준 트랙): 하드삭제 유지 + 삭제 직전 전체 스냅샷(ExpenseDeleteUndo) 재생성 방식. 적대검증 필수 4건 반영(주문 상시 스냅샷·부모 FK null 강등·형제 orderId 조건부 복원·고정지출 이중 기록 차단). deleteExpense 영업장 스코프 보강. 토스트 수명 한정 복구(수납의 영구 소프트삭제와 보증 다름). soft-delete-pattern.md 갱신.
+- 오류신고 93f5d103(3826577, 경량): 위치별 점검 진입 전 임시저장 위치 안내 — getDraftLocationSummary(cross-mode 병합) + §12 칩 문법 행, 누르면 그 위치로 이동해 이어서 입력.
+- 오류신고 c0936f89(2d20541, 표준 트랙): 현금영수증 가시성 4건 — setCashReceiptIssued 원터치 토글(수식 비경유·정확 시각 복원 undo), PaymentRecordList·PaymentBody 2상태 칩, getMonthPaymentAggregates(납부일 기준 발행·카드 합계, 양도인 컷오프 제외) 수납 스트립 표시 + InfoHint, 수납 기본 월 KST 고정, TenantClient 발행 칩 + 납부방법 자유입력 select 통일. 카드결제 데이터는 기존 payMethod로 충분(스키마 신설 불필요 확정).
+- 부수: check-error-reports done/dismiss 8자 접두어 지원(0a04ccc). open-issues에 FIFO 스탬프 유실 등 파생 백로그 4건 등재. 오류신고 open 0건.
+
 ## 2026-07-14 — 검색 1.5차 + KST 정합 + 임시저장 칩
 - 전역 검색 1.5차(e54eec0): 요청(내용·공용부, 미처리 우선, 상태 뱃지)·서류 3종(파일명, 종류 라벨, 최신순 병합) 그룹 추가. 텍스트 질의 전용(숫자 질의 비용 불변). 착지 4페이지 ?q= 시딩.
 - 날짜 표기 KST 고정(3e83ec6): fmtDate 3함수 +9h 시프트+UTC 게터 — 서버(UTC)·클라 하루 어긋남과 하이드레이션 불일치(#418 계열 유력 원인) 해소. @db.Date 값 날짜 불변 테스트 통과. 자정 전후 건 표기가 하루 달라 보이면 그게 올바른 값.
