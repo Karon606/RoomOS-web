@@ -1135,6 +1135,33 @@ export async function getLocationDrafts(
   }))
 }
 
+// 임시저장이 있는 위치 요약 — 위치 선택 전에 어느 위치에 임시저장이 있는지 안내(오류신고 93f5d103).
+// 위치별 드래프트 + 아이템별 드래프트(locationId null)의 위치별 값을 함께 센다(getLocationDrafts와 동일 기준).
+export async function getDraftLocationSummary(): Promise<{ locationId: string; itemCount: number; latestSavedAt: number | null }[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.stockCheckDraft.findMany({
+    where: { trackedItem: { propertyId } },
+    select: { trackedItemId: true, locationId: true, data: true },
+  })
+  const byLoc = new Map<string, { items: Set<string>; latest: number }>()
+  const add = (locId: string, itemId: string, savedAt: number) => {
+    const cur = byLoc.get(locId) ?? { items: new Set<string>(), latest: 0 }
+    cur.items.add(itemId)
+    if (savedAt > cur.latest) cur.latest = savedAt
+    byLoc.set(locId, cur)
+  }
+  for (const r of rows) {
+    const d = r.data as { savedAt?: number; beforeQtys?: Record<string, string>; afterQtys?: Record<string, string> } | null
+    const savedAt = typeof d?.savedAt === 'number' ? d.savedAt : 0
+    if (r.locationId) { add(r.locationId, r.trackedItemId, savedAt); continue }
+    for (const locId of new Set([...Object.keys(d?.beforeQtys ?? {}), ...Object.keys(d?.afterQtys ?? {})])) {
+      if ((d?.beforeQtys?.[locId] ?? '') === '' && (d?.afterQtys?.[locId] ?? '') === '') continue
+      add(locId, r.trackedItemId, savedAt)
+    }
+  }
+  return [...byLoc.entries()].map(([locationId, v]) => ({ locationId, itemCount: v.items.size, latestSavedAt: v.latest || null }))
+}
+
 // 드래프트가 하나라도 있는 품목 ID 목록 — 목록 '점검 진행 중' 배지용
 export async function getDraftItemIds(): Promise<string[]> {
   const propertyId = await getPropertyId()

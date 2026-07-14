@@ -70,6 +70,7 @@ import {
   deleteItemDrafts,
   getItemDrafts,
   getLocationDrafts,
+  getDraftLocationSummary,
   getDraftItemIds,
   applyMergeDecision,
   getMergeRules,
@@ -3103,11 +3104,15 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const [error, setError] = useState('')
   const [mergeChoice, setMergeChoice] = useState<'merge' | 'new' | null>(null)
   const [confirmItems, setConfirmItems] = useState<InventoryRow[]>([])
+  // 위치 선택 전 임시저장 안내 — 어느 위치에 임시저장이 있는지 표시(오류신고 93f5d103)
+  const [draftLocs, setDraftLocs] = useState<{ locationId: string; itemCount: number; latestSavedAt: number | null }[]>([])
   // 더블클릭/중복 제출 동기 차단 — setPending 은 리렌더 후에야 버튼을 disabled 하므로,
   // 그 사이 두 번째 클릭이 doSave 에 재진입해 보충(허브 차감)이 2번 적용되던 심각한 버그 방지.
   const savingRef = useRef(false)
 
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
+  // 위치 미선택 상태로 돌아올 때마다 갱신 — 임시저장 직후 재진입도 최신으로
+  useEffect(() => { if (!locId) getDraftLocationSummary().then(setDraftLocs).catch(() => {}) }, [locId])
 
   const selectedLoc = locs.find(l => l.id === locId) ?? null
 
@@ -3313,7 +3318,33 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
 
         <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto px-5 py-3 space-y-3'}>
           {!locId ? (
-            <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 해당 위치에 보관된 품목이 표시됩니다.</p>
+            <>
+              {draftLocs.length > 0 && (
+                // 임시저장 위치 안내 — §12 칩 문법(성공 점 + 시각), 누르면 그 위치로 이동해 이어서 입력
+                <div className="space-y-1.5">
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">임시저장된 점검이 있습니다. 선택하면 이어서 입력합니다.</p>
+                  {draftLocs.map(d => {
+                    const loc = locs.find(l => l.id === d.locationId)
+                    if (!loc) return null
+                    return (
+                      <button key={d.locationId} type="button" onClick={() => setLocId(d.locationId)}
+                        className="w-full flex items-center justify-between gap-2 text-[0.65625rem] rounded-lg px-2.5 py-2 border border-[var(--warm-border)] hover:border-[var(--coral)] transition-colors"
+                        style={{ background: 'var(--cream-2)' }}>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--success)' }} />
+                          <span className="truncate text-xs font-medium text-[var(--warm-dark)]">{loc.name}</span>
+                          <span className="text-[var(--warm-muted)] shrink-0">{d.itemCount}품목</span>
+                        </span>
+                        <span className="shrink-0" style={{ color: 'var(--success-fg)' }}>
+                          {d.latestSavedAt ? `임시저장 ${fmtTime(new Date(d.latestSavedAt))}` : '임시저장됨'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 해당 위치에 보관된 품목이 표시됩니다.</p>
+            </>
           ) : locItems.length === 0 ? (
             <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치에 배정된 품목이 없습니다.</p>
           ) : (
