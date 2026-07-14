@@ -1063,7 +1063,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     .filter(r => !r.isPending && !r.recordedExpenseId)
     .reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
   const projectedRevenue = totalExpected + extraRevenue
-  expectedExpense = totalExpense + projectedRecurringExpense
+  // 과거 조회월은 미기록 고정지출 추정을 가산하지 않는다 — 실제 지출만 반영해 결산보고서와 정합.
+  // 현재·미래 월만 추정 가산. 월 비교는 KST 기준(realTodayMonthStr = kstMonthStr()) 문자열 비교.
+  const isPastMonth = targetMonth < realTodayMonthStr
+  expectedExpense = isPastMonth ? totalExpense : totalExpense + projectedRecurringExpense
   const projectedNetProfit = projectedRevenue - expectedExpense
   // 지출 통제가능성 3단계 (홈 월지출 위젯) — 노력으로 줄일 수 있는 정도 순:
   //   ① 불변 고정(월임대료 등 isVariable=false) — 못 줄임
