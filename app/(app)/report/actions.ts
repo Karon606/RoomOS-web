@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
+import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 
 async function getPropertyId() {
@@ -58,14 +59,18 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const cutoffRaw = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
 
-  // 발생주의 매출 — targetMonth 기준 (payDate는 양도인 cutoff 판정용)
+  // 발생주의 매출 + 누적 미수 공용 결제 조회 — 그 해 12월까지 전 기간(targetMonth <= 마지막 월).
+  // 미수는 전년부터 거주한 lease 의 기수납까지 반영해야 하므로 그 해 월만이 아닌 전 기간을 가져온다.
+  // (payDate 는 양도인 cutoff 판정용) deletedAt 은 소프트삭제 익스텐션이 top-level 조회에 자동 주입 —
+  // where 에 deletedAt 키를 넣지 말 것(넣으면 자동 필터가 꺼짐), include/select 중첩도 피한다.
+  const lastMonth = months[months.length - 1]
   const payments = await prisma.paymentRecord.findMany({
     where: {
       propertyId,
       isDeposit: false,
-      targetMonth: { in: months },
+      targetMonth: { lte: lastMonth },
     },
-    select: { targetMonth: true, actualAmount: true, leaseTermId: true, payDate: true, isPrevOwner: true },
+    select: { targetMonth: true, actualAmount: true, expectedAmount: true, leaseTermId: true, payDate: true, isPrevOwner: true },
   })
 
   // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 양도인 몫이므로 청구·매출 제외
@@ -75,12 +80,27 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
   }
 
-  // lease별 임대료 맵 — 매출 계산 시 임대료 상한 적용 (선납 과입금분 매출 미포함)
-  const allLeases = await prisma.leaseTerm.findMany({
-    where: { propertyId },
-    select: { id: true, rentAmount: true },
+  // 청구 대상 lease — 미수(5종 상태) 계산용. billForLeaseMonth 인자(일할·락인·할인·예약 인상)를 함께 조회.
+  const leases = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId,
+      status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CHECKED_OUT'] },
+      rentAmount: { gt: 0 },
+    },
+    select: {
+      id: true, status: true, rentAmount: true, dueDay: true,
+      moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+      overrideDueDay: true, overrideDueDayMonth: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+    },
   })
-  const rentMap = new Map(allLeases.map(l => [l.id, l.rentAmount]))
+
+  // 매출 인식 lease 범위 — BILLABLE(ACTIVE/CHECKOUT_PENDING/NON_RESIDENT) + CHECKED_OUT.
+  // RESERVED(선수납)·CANCELLED(취소 계약 수취액)는 매출에서 제외 (dashboard 와 통일).
+  const revenueStatuses = new Set<string>([...BILLABLE_STATUSES, 'CHECKED_OUT'])
+  const rentMap = new Map(leases.filter(l => revenueStatuses.has(l.status)).map(l => [l.id, l.rentAmount]))
 
   // 월별 × lease별 받은 금액 (양도인 cutoff 이전 record 제외)
   const receivedByMonthLease: Record<string, Record<string, number>> = {}
@@ -129,27 +149,13 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     extraByMonth[m] = (extraByMonth[m] ?? 0) + i.amount
   }
 
-  // 청구 가능 lease 정보
-  const leases = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId,
-      status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CHECKED_OUT'] },
-      rentAmount: { gt: 0 },
-    },
-    select: {
-      id: true, rentAmount: true, dueDay: true,
-      moveInDate: true, expectedMoveOut: true, moveOutDate: true,
-      overrideDueDay: true, overrideDueDayMonth: true,
-    },
-  })
-
   // 월말 시점 누적 미수 계산
   const cutoffMonthStr = cutoffDate
     ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
     : null
   const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
 
-  // 월말 누적 미수 계산용 — viewMonth 이하 targetMonth로 인식된 매출 lease별 누적
+  // 월말 누적 미수 계산용 — viewMonth 이하 targetMonth로 인식된 실수납 lease별 누적 (전 기간).
   const receivedByLeaseUntilMonth: Record<string, Record<string, number>> = {}
   for (const m of months) receivedByLeaseUntilMonth[m] = {}
   for (const p of payments) {
@@ -160,6 +166,26 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
         receivedByLeaseUntilMonth[m][p.leaseTermId] = (receivedByLeaseUntilMonth[m][p.leaseTermId] ?? 0) + p.actualAmount
       }
     }
+  }
+
+  // 인수월에 사용자(인수 후)가 실수납한 금액 lease별 합 — 양도인 자동 처리 판정용 (dashboard 와 통일).
+  const opPaidInCutoffMonthByLease: Record<string, number> = {}
+  if (cutoffMonthStr && cutoffDate) {
+    for (const p of payments) {
+      if (p.isPrevOwner) continue
+      if (p.targetMonth !== cutoffMonthStr) continue
+      if (new Date(p.payDate) < cutoffDate) continue
+      opPaidInCutoffMonthByLease[p.leaseTermId] = (opPaidInCutoffMonthByLease[p.leaseTermId] ?? 0) + p.actualAmount
+    }
+  }
+
+  // [저장 청구액 우선] 락인 맵 — (lease, month)별 record 최대 expectedAmount. 월세 변경 과거 소급 방지.
+  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
+  for (const p of payments) {
+    if (p.isPrevOwner) continue
+    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
+    const cur = m.get(p.targetMonth) ?? 0
+    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
   }
 
   const monthRange = (from: string, to: string): string[] => {
@@ -173,6 +199,12 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     }
     return out
   }
+
+  // 특정 월의 dueDay(override 적용) — dashboard effectiveDueDayForMonth 와 동일 규칙.
+  const effectiveDueDayForMonth = (
+    l: { dueDay: string | null; overrideDueDay: string | null; overrideDueDayMonth: string | null },
+    monthStr: string,
+  ): string | null => (l.overrideDueDay && l.overrideDueDayMonth === monthStr ? l.overrideDueDay : l.dueDay)
 
   const todayMonth = kstMonthStr()
 
@@ -197,23 +229,25 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
         ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
         : null
 
-      const effDueDay = (l.overrideDueDayMonth === firstMonth && l.overrideDueDay)
-        ? l.overrideDueDay
-        : l.dueDay
-      const dueDayNum = parseInt(effDueDay ?? '99')
-      const acqMonthDueBeforeCutoff =
-        !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
+      // 인수월 양도인 자동 처리 — dueDay < cutoffDay 이면서 그 달 사용자 실수납이 0건일 때만 (dashboard 통일).
+      const effDueDay = effectiveDueDayForMonth(l, firstMonth)
+      const dueDayNum = effDueDay ? (effDueDay.includes('말') ? 31 : parseInt(effDueDay, 10)) : NaN
+      const opPaidInCutoff = opPaidInCutoffMonthByLease[l.id] ?? 0
+      const acqMonthAutoPaid =
+        !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay && opPaidInCutoff === 0)
 
-      const ms = monthRange(firstMonth, month)
       const lPrevOwnerMonths = prevOwnerMonthsByLease[l.id]
-      let billable = 0
-      for (const mn of ms) {
-        if (mn === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
+      const lockedMap = lockedExpectedByLeaseMonth[l.id]
+      // 청구 규칙(일할→락인→할인·예약 인상)은 lib/billing 공용 — dashboard·rooms·unpaid.ts 와 동일.
+      let expected = 0
+      for (const mn of monthRange(firstMonth, month)) {
+        if (mn === cutoffMonthStr && acqMonthAutoPaid) continue
         if (lPrevOwnerMonths?.has(mn)) continue
         if (moveOutMonth && mn > moveOutMonth) continue
-        billable++
+        // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0.
+        if (isCheckoutNoBillingMonth(l.expectedMoveOut, mn, resolveDueDateForMonth(effectiveDueDayForMonth(l, mn), mn))) continue
+        expected += billForLeaseMonth(l, mn, lockedMap?.get(mn) ?? null)
       }
-      const expected = billable * l.rentAmount
       const received = receivedByLeaseUntilMonth[month][l.id] ?? 0
       total += Math.max(0, expected - received)
     }

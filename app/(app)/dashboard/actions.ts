@@ -29,8 +29,8 @@ async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date
   return Promise.all([
     prisma.paymentRecord.findMany({
       where: months
-        ? { propertyId, targetMonth: { in: months }, isDeposit: false, ...acqFilter }
-        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false },
+        ? { propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false, ...acqFilter }
+        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false },
       select: { targetMonth: true, payDate: true, actualAmount: true },
     }),
     prisma.expense.findMany({
@@ -151,7 +151,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 연간: 연도별 전체 ────────────────────────────────────────
   if (range === 'annual') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])
@@ -171,7 +171,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 전체: 모든 월 ────────────────────────────────────────────
   if (range === 'all') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])
