@@ -198,7 +198,7 @@ export default function RequestsClient({
         </div>
         <div className="shrink-0"><MonthSelector /></div>
       </div>
-      <div className="flex items-center gap-2 sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
+      <div className="flex items-center gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
         <Btn variant="primary" size="md" className="shrink-0" onClick={() => { setAddDirty(false); setShowAddForm(true) }}>
           + 요청 등록

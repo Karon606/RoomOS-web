@@ -72,7 +72,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">발급된 PDF는 연결된 Google Drive에 저장됩니다</p>
-        <div className="sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
+        <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         </div>
         {tenants.length === 0 ? (
@@ -99,7 +99,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
         {files.length > 0 && (
-          <div className="sticky top-0 z-10 -my-2 py-2 bg-[var(--canvas)]">
+          <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
             <SearchBar value={fileQuery} onChange={setFileQuery} placeholder="이름·호실·파일명 검색" />
           </div>
         )}
