@@ -102,7 +102,7 @@ export default function MonthSelector() {
     >
       <button
         onClick={() => changeMonth(-1)}
-        className="w-9 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-11 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
         style={{ color: 'var(--warm-mid)' }}
         aria-label="이전 달"
       >
@@ -134,7 +134,7 @@ export default function MonthSelector() {
       <button
         onClick={() => changeMonth(1)}
         disabled={atCurrentMonth}
-        className="w-9 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-11 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
         style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
         aria-label="다음 달"
       >
