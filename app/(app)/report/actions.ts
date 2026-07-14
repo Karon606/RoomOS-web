@@ -18,6 +18,7 @@ async function getPropertyId() {
 
 export type MonthlyRow = {
   month: string         // "YYYY-MM"
+  billedAmount: number  // 그 달 발생 청구액 (미수 루프와 동일 스코프, billForLeaseMonth 합)
   revenue: number       // 발생주의 매출 (paymentRecord.actualAmount, targetMonth = 해당 월)
   extraIncome: number   // 기타수익 (date 기준)
   expense: number       // 지출 (date 기준)
@@ -28,6 +29,7 @@ export type MonthlyRow = {
 export type AnnualSummary = {
   year: string
   rows: MonthlyRow[]
+  totalBilled: number
   totalRevenue: number
   totalExtraIncome: number
   totalExpense: number
@@ -209,13 +211,16 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const todayMonth = kstMonthStr()
 
   const unpaidByMonth: Record<string, number> = {}
+  const billedByMonth: Record<string, number> = {}
   for (const month of months) {
     // 아직 도래하지 않은 미래 월은 청구 자체가 발생 X → 미수 0
     if (month > todayMonth) {
       unpaidByMonth[month] = 0
+      billedByMonth[month] = 0
       continue
     }
     let total = 0
+    let monthBilled = 0
     for (const l of leases) {
       const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
       const leaseStartMonth = lMoveIn
@@ -246,12 +251,15 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
         if (moveOutMonth && mn > moveOutMonth) continue
         // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0.
         if (isCheckoutNoBillingMonth(l.expectedMoveOut, mn, resolveDueDateForMonth(effectiveDueDayForMonth(l, mn), mn))) continue
-        expected += billForLeaseMonth(l, mn, lockedMap?.get(mn) ?? null)
+        const bill = billForLeaseMonth(l, mn, lockedMap?.get(mn) ?? null)
+        expected += bill
+        if (mn === month) monthBilled += bill   // 그 달 발생 청구액 — 미수와 동일 스코프
       }
       const received = receivedByLeaseUntilMonth[month][l.id] ?? 0
       total += Math.max(0, expected - received)
     }
     unpaidByMonth[month] = total
+    billedByMonth[month] = monthBilled
   }
 
   const rows: MonthlyRow[] = months.map(m => {
@@ -260,6 +268,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     const expense = expenseByMonth[m] ?? 0
     return {
       month: m,
+      billedAmount: billedByMonth[m] ?? 0,
       revenue,
       extraIncome,
       expense,
@@ -302,6 +311,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   return {
     year,
     rows,
+    totalBilled: rows.reduce((s, r) => s + r.billedAmount, 0),
     totalRevenue: rows.reduce((s, r) => s + r.revenue, 0),
     totalExtraIncome: rows.reduce((s, r) => s + r.extraIncome, 0),
     totalExpense: rows.reduce((s, r) => s + r.expense, 0),
