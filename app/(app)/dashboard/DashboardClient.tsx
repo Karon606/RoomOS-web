@@ -517,7 +517,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
 const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
-  unpaid:    { label: '누적 미납',    color: 'var(--tc)' },
+  unpaid:    { label: '누적 미납 (현 입주자)', color: 'var(--tc)' },
   contact:   { label: '연락할 때',    color: 'var(--coral)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
@@ -855,7 +855,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
             { label: '기타수익', value: data.extraRevenue, color: 'var(--viz-4)' },
             { label: '지출',     value: data.totalExpense, color: 'var(--tc)' },
-            { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
+            { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
             // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
               sub: `실수납 ${fmtKorMoney(data.depositRecorded)} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
@@ -880,9 +880,12 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
       {/* ── 추이 ── */}
       <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
+            <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{isAreaRange ? '납부일 기준' : '귀속월 기준'}</span>
+          </div>
           <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />수입</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />수입 (수납 기준)</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--ink-m)' }} />지출</span>
           </div>
         </div>
@@ -1326,24 +1329,28 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [kpiHelp, setKpiHelp] = useState<{ title: string; body: string[] } | null>(null)
   // body는 문단 배열 — 도움말 모달에서 줄바꿈으로 가독성 확보(운영자 지시 2026-07-13)
   const KPI_HELP = {
-    projectedRevenue: { title: '예상 매출', body: [
-      '이번 달 입주자 전원이 납부를 마쳤을 때의 매출입니다.',
+    projectedRevenue: { title: '예상 수입', body: [
+      '이번 달 입주자 전원이 납부를 마쳤을 때의 수입입니다.',
       '퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다.',
       '막대는 지금까지 실제 수납된 금액의 달성률입니다.',
+      '아직 받지 않은 금액과 기타수익도 포함됩니다.',
+      '결산 보고서의 수납액은 실제 받은 돈만 집계하므로 이 값보다 작을 수 있습니다.',
     ] },
-    projectedNetProfit: { title: '예상 순이익', body: [
-      '예상 매출에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다.',
+    projectedNetProfit: { title: '예상 운영이익', body: [
+      '예상 수입에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다.',
       '막대는 예상 지출 중 실제로 확정된 비율입니다. 다 채워질수록 전망이 정확해집니다.',
     ] },
-    overdue: { title: '누적 미납', body: [
+    overdue: { title: '누적 미납 (현 입주자)', body: [
       '납부일이 지났는데 아직 받지 못한 금액의 합계입니다.',
       '지난달 이전에 밀린 금액(이월 미수)도 포함됩니다.',
       '카드를 누르면 수납 관리로 이동합니다.',
+      '퇴실한 입주자의 남은 미납은 여기 포함되지 않습니다. 전체 채권은 결산 보고서의 월말 미수 잔액에서 확인하실 수 있습니다.',
     ] },
     expectedExpense: { title: '예상 지출', body: [
       '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다.',
       '막대 색은 줄일 수 있는 정도 순입니다.',
       '고정(정액)은 매달 같은 금액, 고정(변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.',
+      '이번 달에는 아직 기록하지 않은 고정지출 예상치가 더해지고, 지난 달을 조회할 때는 기록된 지출만 집계합니다.',
     ] },
   }
   // viewMonth가 현재이면 "오늘 기준", 그 외(과거/미래)는 "○월 말일 기준"
@@ -1351,6 +1358,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const basisLabel = isViewingRealMonth
     ? '오늘 기준'
     : `${Number(targetMonth.slice(5))}월 말일 기준`
+  // KPI 카드 캡션 — 현재 월은 '(이번 달)', 과거 월 조회 시 '(N월 마감)'
+  const monthCaption = isViewingRealMonth
+    ? '(이번 달)'
+    : `(${Number(targetMonth.slice(5))}월 마감)`
   const [tab, setTab]                             = useState<Tab>('overview')
   // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 고객·수납은 비활성으로 통일)
   const entityModal = useEntityModal()
@@ -1482,8 +1493,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             '예상 매출 대비 성과(수납 달성도)'가 유효. 예상엔 퇴실예정(일할/0)·신규 예약확정(전액) 반영됨. */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
-            예상 매출
-            <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
+            예상 수입
+            <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>{monthCaption}</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
@@ -1522,8 +1533,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               boxShadow: 'inset 3px 0 0 var(--np-tip), inset 0 0 0 1px var(--np-card-bd)',
             }}>
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
-                예상 순이익
-                <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
+                예상 운영이익
+                <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>{monthCaption}</span>
                 <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
               </p>
               <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
@@ -1546,7 +1557,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px',
             boxShadow: data.overdueAmount > 0 ? 'inset 3px 0 0 var(--danger-fg)' : undefined }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            누적 미납
+            누적 미납 (현 입주자)
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.overdue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--tc)' : 'var(--ink-2)' }}>
@@ -1562,7 +1573,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             색(디자인 토큰): 고정(정액)=ink-2(임대료 등·못 줄임) · 고정(변동)=warm-mid(공과금 등·노력시 줄임) · 수시=coral(비고정·가장 줄이기 쉬움). */}
         <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            예상 지출 <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
+            예상 지출 <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>{monthCaption}</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>

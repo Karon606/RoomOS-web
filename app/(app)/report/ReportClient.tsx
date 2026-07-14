@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, type ReactNode } from 'react'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { ViewTabs } from '@/components/ui/ViewTabs'
@@ -8,7 +8,9 @@ import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
 import { analyzePropertyWithGemini } from './actions'
 import { Btn } from '@/components/ui/Btn'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { fmtDateKor } from '@/lib/fmtDate'
 
 const fmt = (n: number) => n === 0 ? '—' : fmtWon(n)   // 0 특례만 로컬, 표기는 정본(감사 B4)
 const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
@@ -40,7 +42,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
   })
 
   const handleExportCSV = () => {
-    const header = ['월', '매출', '전년 매출', '증감', '기타수익', '지출', '순이익', '월말 미수']
+    const header = ['월', '수납액', '전년 수납액', '증감', '기타수익', '지출', '운영이익', '월말 미수 잔액']
     const lines: string[][] = [header]
     for (const r of summary.rows) {
       const prev = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
@@ -88,11 +90,16 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
           }</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             {tab === 'past'
-              ? '발생주의(매출 인식 월) 기준 연간 손익·미수 현황'
+              ? '귀속월 기준 연간 수납·지출·미수 현황'
               : tab === 'forecast'
-              ? '향후 6개월 예상 매출·지출·순이익 · 호실 점유 일정 + 전년 동월/3개월 평균 기반'
+              ? '향후 6개월 예상 청구액·지출·운영이익 · 호실 점유 일정 + 전년 동월/3개월 평균 기반'
               : 'Gemini AI가 점유율·미수·회전율·지출 구조를 분석해 영업장 단위 진단·개선 제안을 제공합니다.'}
           </p>
+          {tab === 'past' && (
+            <p className="hidden print:block text-[0.6875rem] text-[var(--warm-muted)] mt-1">
+              대상 연도 {summary.year}년 · 출력일 <span suppressHydrationWarning>{fmtDateKor(new Date())}</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {tab === 'past' && (
@@ -133,13 +140,15 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       {tab === 'past' && <>
       {/* 합계 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <SummaryCard label="총 매출" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]" />
+        <SummaryCard label="총 수납액" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]"
+          hint={<InfoHint title="총 수납액">실제로 입금된 이용료를 입금일이 아니라 그 돈이 어느 달 몫인지(귀속월) 기준으로 모은 금액입니다. 아직 받지 못한 이용료는 포함되지 않으므로, 받을 예정 금액까지 포함하는 홈의 예상 수입보다 작을 수 있습니다.</InfoHint>} />
         <SummaryCard label="기타 수익" value={fmt(summary.totalExtraIncome)} />
         <SummaryCard label="총 지출" value={fmt(summary.totalExpense)} />
         <SummaryCard
-          label="순이익"
+          label="운영이익"
           value={(summary.totalProfit >= 0 ? '+' : '-') + fmt(Math.abs(summary.totalProfit)).replace('원', '원')}
           accent={summary.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}
+          hint={<InfoHint title="운영이익">수납액과 기타수익에서 기록된 지출을 뺀 금액입니다. 감가상각비, 대출이자, 세금을 반영하기 전이므로 회계상 당기순이익과는 다릅니다.</InfoHint>}
         />
       </div>
 
@@ -206,17 +215,17 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 <span className={`text-sm font-semibold ${
                   r.profit > 0 ? 'text-[var(--success-fg)]' : r.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                 }`}>
-                  순이익 {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
+                  운영이익 {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)]">{fmt(r.revenue)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">수납액</span><span className="text-[var(--warm-dark)]">{fmt(r.revenue)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.extraIncome)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expense)}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-[var(--warning-fg)]">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수 잔액</span><span className="text-[var(--warning-fg)]">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
                 {summary.prevYear && (
                   <div className="col-span-2 flex justify-between pt-1 border-t border-[var(--warm-border)]/40">
-                    <span className="text-[var(--warm-muted)]">전년 매출</span>
+                    <span className="text-[var(--warm-muted)]">전년 수납액</span>
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
                       {prevRow && r.revenue > 0 && delta !== 0 && (
@@ -255,15 +264,15 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             </span>
           </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalRevenue)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">수납액</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalRevenue)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수 잔액</span><span className="text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</span></div>
             {summary.prevYear && summary.prevYear.totalRevenue > 0 && (() => {
               const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
               return (
                 <div className="col-span-2 flex justify-between pt-1 border-t border-[var(--warm-border)]/40">
-                  <span className="text-[var(--warm-muted)]">전년 매출</span>
+                  <span className="text-[var(--warm-muted)]">전년 수납액</span>
                   <span className="flex items-center gap-1.5">
                     <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
                     {totalDelta !== 0 && (
@@ -286,12 +295,12 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
               <tr className="text-left text-xs text-[var(--warm-muted)]">
                 <th className="px-4 py-3 font-medium">월</th>
-                <th className="px-4 py-3 font-medium text-right">매출</th>
-                {summary.prevYear && <th className="px-4 py-3 font-medium text-right">전년 매출 (Δ)</th>}
+                <th className="px-4 py-3 font-medium text-right">수납액</th>
+                {summary.prevYear && <th className="px-4 py-3 font-medium text-right">전년 수납액 (Δ)</th>}
                 <th className="px-4 py-3 font-medium text-right">기타수익</th>
                 <th className="px-4 py-3 font-medium text-right">지출</th>
-                <th className="px-4 py-3 font-medium text-right">순이익</th>
-                <th className="px-4 py-3 font-medium text-right">월말 미수</th>
+                <th className="px-4 py-3 font-medium text-right">운영이익</th>
+                <th className="px-4 py-3 font-medium text-right">월말 미수 잔액</th>
                 <th className="px-4 py-3 font-medium">시각화</th>
               </tr>
             </thead>
@@ -376,10 +385,15 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         </div>
       </div>
 
-      <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-        매출은 임대 서비스가 제공된 월(targetMonth) 기준으로 인식됩니다. 입금 지연이 있어도 매출은 발생월에 잡히며,
-        '월말 미수'는 그 월말 시점까지 회수되지 않은 채권 누적액입니다.
-      </p>
+      <div className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-1.5">
+        <p className="font-semibold text-[var(--warm-mid)]">산정 기준</p>
+        <ul className="space-y-1 list-disc pl-4">
+          <li>수납액. 받은 이용료를 해당 월 몫(귀속월)으로 배부하며 월 이용료를 상한으로 합니다. 보증금과 양도인 정산분은 제외합니다.</li>
+          <li>월말 미수 잔액. 그 월말까지 받았어야 할 이용료 중 아직 회수되지 않은 채권 잔액입니다. 청구액은 할인과 일할계산을 반영합니다.</li>
+          <li>운영이익. 세금, 감가상각비, 대출이자 반영 전 금액입니다.</li>
+          <li>보증금. 돌려드릴 돈이므로 수익에 포함하지 않습니다. 취소된 계약의 수취액은 수납액에 포함하지 않으며 부가수익으로 등록해 관리합니다.</li>
+        </ul>
+      </div>
       </>}
     </div>
   )
@@ -389,10 +403,10 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <SummaryCard label="6개월 예상 매출" value={fmt(forecast.totalRevenue)} accent="text-[var(--coral)]" />
+        <SummaryCard label="6개월 예상 청구액" value={fmt(forecast.totalRevenue)} accent="text-[var(--coral)]" />
         <SummaryCard label="6개월 예상 지출" value={fmt(forecast.totalExpense)} />
         <SummaryCard
-          label="6개월 예상 순이익"
+          label="6개월 예상 운영이익"
           value={(forecast.totalProfit >= 0 ? '+' : '-') + Math.abs(forecast.totalProfit).toLocaleString() + '원'}
           accent={forecast.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}
         />
@@ -410,7 +424,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 매출</span><span className="text-[var(--warm-dark)]">{fmt(r.expectedRevenue)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 청구액</span><span className="text-[var(--warm-dark)]">{fmt(r.expectedRevenue)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타 수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExpense)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">점유/공실</span><span className="text-[var(--warm-dark)]">{r.occupiedRooms} / {r.occupiedRooms + r.vacantRooms}</span></div>
@@ -426,10 +440,10 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
               <tr className="text-left text-xs text-[var(--warm-muted)]">
                 <th className="px-4 py-3 font-medium">월</th>
-                <th className="px-4 py-3 font-medium text-right">예상 매출</th>
+                <th className="px-4 py-3 font-medium text-right">예상 청구액</th>
                 <th className="px-4 py-3 font-medium text-right">기타 수익</th>
                 <th className="px-4 py-3 font-medium text-right">예상 지출</th>
-                <th className="px-4 py-3 font-medium text-right">예상 순이익</th>
+                <th className="px-4 py-3 font-medium text-right">예상 운영이익</th>
                 <th className="px-4 py-3 font-medium text-right">점유/공실</th>
               </tr>
             </thead>
@@ -455,17 +469,18 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
         </div>
       </div>
       <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-        예상 매출 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타 수익 = 전년 동월 실적,
+        예상 청구액 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타 수익 = 전년 동월 실적,
         없으면 최근 3개월 평균. 입주 예정·퇴실 예정 일정도 반영되며, 미확정 변수가 많을수록 실제 결과와 차이가 날 수 있습니다.
+        여기의 예상 청구액은 이용료만 집계하며, 홈의 예상 수입은 기타수익을 포함합니다.
       </p>
     </div>
   )
 }
 
-function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
+function SummaryCard({ label, value, accent, hint }: { label: string; value: string; accent?: string; hint?: ReactNode }) {
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
-      <p className="text-xs text-[var(--warm-muted)]">{label}</p>
+      <p className="text-xs text-[var(--warm-muted)]">{label}{hint}</p>
       <p className={`text-base font-bold mt-1 ${accent ?? 'text-[var(--warm-dark)]'}`}>{value}</p>
     </div>
   )
