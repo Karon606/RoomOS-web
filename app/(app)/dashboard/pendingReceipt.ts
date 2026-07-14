@@ -10,6 +10,7 @@ import { requireEdit } from '@/lib/role'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
+import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
@@ -50,6 +51,9 @@ async function analyzeImage(imageBase64: string, mimeType: string): Promise<Gemi
   if (!ai.ok) throw new Error(ai.error)
   const apiKey = ai.apiKey
 
+  // 카테고리 후보는 영업장 설정에서(커스텀 카테고리 지원, 멀티테넌트). 보증금 반환은 사진 분류 대상이 아니라 제외.
+  const catList = (await getExpenseCategories()).filter(c => c !== '보증금 반환').join('|')
+
   const prompt = `이 사진이 무엇인지 판단하고 핵심 정보를 JSON 으로만 응답하세요.
 
 분류 (kind):
@@ -63,7 +67,7 @@ JSON 스키마:
   "vendor": "상호명 또는 브랜드 (있으면)",
   "date": "YYYY-MM-DD (영수증 결제일, 있으면)",
   "amount": 12345,                            // 정수 원 (영수증 합계, 있으면)
-  "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료",  // 영수증·재고 모두 적합한 1개
+  "category": "${catList}",  // 영수증·재고 모두 적합한 1개
   "notes": "한 줄 요약 (예: '롯데마트 라면+세제 32,500원' 또는 '4층 주방 라면 6봉지')",
 
   // ↓ kind='inventory' 일 때만 채움 (영수증이어도 단일 품목이면 채워도 OK)

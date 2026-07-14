@@ -16,6 +16,7 @@ import { uploadToDrive } from '@/lib/google-drive'
 import type { Prisma, SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
+import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 
 async function getPropertyId() {
@@ -382,6 +383,9 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 - ${vocab.join('\n- ')}`
     } catch { /* 사전 조회 실패해도 OCR 자체는 정상 동작 */ }
 
+    // 카테고리 후보는 영업장 설정에서 — 기본 13종을 하드코딩하면 커스텀 카테고리가 OCR 분류에서 배제된다(멀티테넌트, 운영자 승인 2026-07-14)
+    const ocrCategories = (await getExpenseCategories()).join('|')
+
     const prompt = `이 영수증 이미지를 분석해 다음 JSON 스키마로만 응답하세요. 다른 설명, 마크다운, 코드 블록 없이 순수 JSON만 출력:
 
 {
@@ -389,7 +393,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
   "vendor": "상호명",              // 안 보이면 생략
   "totalAmount": 12345,           // 최종 결제 금액 = 부가세 포함 (정수, 원). '합계/총액/결제금액/받을금액/승인금액' 값. '공급가액/과세금액'을 쓰지 말 것
   "orderNo": "1234567890",        // 쇼핑몰 주문번호(쿠팡 등). 영수증/주문서에 '주문번호'가 보이면. 없으면 생략
-  "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료|보증금 반환",  // 가장 적합한 1개. 애매하면 생략
+  "category": "${ocrCategories}",  // 가장 적합한 1개. 애매하면 생략
   "items": [
     {
       "label": "품목명",
