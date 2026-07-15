@@ -159,9 +159,15 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [selected, setSelected]           = useState<Set<string>>(new Set())
   const [showBatchLoc, setShowBatchLoc]     = useState(false)
   // 점검 진입 방식 — 'item'(품목별 목록) / 'location'(위치별 일괄). 마지막 선택 기억.
-  const [viewMode, setViewMode] = useState<'item' | 'location'>(() =>
-    typeof window !== 'undefined' && localStorage.getItem('stayeum-inventory-view') === 'location' ? 'location' : 'item'
-  )
+  // 초기값은 서버와 동일하게 'item' 고정, 저장된 선택은 마운트 후 복원 — useState에서 localStorage를
+  // 읽으면 서버 HTML(item)과 클라 첫 렌더(location)가 어긋나 하이드레이션 #418(오류신고 5489fac1).
+  const [viewMode, setViewMode] = useState<'item' | 'location'>('item')
+  useEffect(() => {
+    const v = localStorage.getItem('stayeum-inventory-view')
+    // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (v === 'location') setViewMode('location')
+  }, [])
   // v2.0 §23 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
   // 초기값은 전역 통합 검색의 ?q= 딥링크 시딩(있을 때만).
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
@@ -267,10 +273,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     rows: visibleRows.filter(r => r.category === cat),
   }))
   // 카테고리 상단 탭 — 비품·자재 대분류와 같은 문법(운영자 요청 2026-07-10). 마지막 선택 기억, 검색 중엔 전체.
-  const [catTab, setCatTab] = useState<string>(() => {
-    if (typeof window === 'undefined') return '__all__'
-    try { return localStorage.getItem('stayeum-inventory-cat') ?? '__all__' } catch { return '__all__' }
-  })
+  // 초기값 '__all__' 고정 + 마운트 후 복원 — viewMode와 동일한 하이드레이션 #418 방지 패턴.
+  const [catTab, setCatTab] = useState<string>('__all__')
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('stayeum-inventory-cat')
+      // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (v) setCatTab(v)
+    } catch { /* 무시 */ }
+  }, [])
   const pickCatTab = (v: string) => {
     setCatTab(v)
     try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
@@ -999,6 +1011,18 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       ) : (
         <>
           <div className="px-5 sm:px-6 pt-3">
+            {/* view 모드 본문 최상단 — 마지막 점검 기록 시각(점검일과 다른 날이면 병기) */}
+            {row.lastCheckCreatedAt && (() => {
+              const created = new Date(row.lastCheckCreatedAt)
+              const sameDay = row.lastCheckDate ? isSameKstDay(new Date(row.lastCheckDate), created) : true
+              return (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-2">
+                  {sameDay
+                    ? <>마지막 점검 {fmtDate(row.lastCheckDate)} <span className="tabular-nums">{fmtTime(created)}</span></>
+                    : <>마지막 점검 {fmtDate(row.lastCheckDate)} · {fmtDate(created)} <span className="tabular-nums">{fmtTime(created)}</span> 기록</>}
+                </p>
+              )
+            })()}
             <SegmentedControl
               size="sm"
               ariaLabel="품목 상세 탭"
@@ -3349,7 +3373,17 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           ) : locItems.length === 0 ? (
             <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치에 배정된 품목이 없습니다.</p>
           ) : (
-            locItems.map(r => {
+            <>
+              {/* 이 위치 품목들의 마지막 점검 기록 시각 중 최댓값 */}
+              {(() => {
+                const times = locItems
+                  .map(r => r.lastCheckCreatedAt ? new Date(r.lastCheckCreatedAt).getTime() : null)
+                  .filter((t): t is number => t != null)
+                if (times.length === 0) return null
+                const latest = new Date(Math.max(...times))
+                return <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">이 위치 최근 점검 {fmtDate(latest)} <span className="tabular-nums">{fmtTime(latest)}</span></p>
+              })()}
+              {locItems.map(r => {
               const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
               const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
               const { beforeStr, afterStr, restocked } = computeRow(r)
@@ -3426,7 +3460,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                   )}
                 </div>
               )
-            })
+            })}
+            </>
           )}
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         </div>
