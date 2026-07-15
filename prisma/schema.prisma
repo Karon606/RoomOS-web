@@ -156,6 +156,9 @@ model Property {
   // null = 정책 미사용(기본). 예: {"enabled":true,"unitDays":7,"minUnits":1,"thresholdDays":30,"multiplier":1.5,"cleaningFee":20000}
   shortStayPolicy  Json?
   bankAccount      String?   // 입금 계좌번호 (월세 영수증 납부방법에 자동 반영). 예 "○○은행 123-456 (예금주)"
+  // 예약금 처리 영업장 기본값 — 'deposit'(보증금 대체)|'prepaid'(이용료 선납)|'none'(안 받음). null=deposit 해석.
+  // 예약 폼 프리셋일 뿐 강제 아님(예약별 LeaseTerm.reservationDepositMode로 오버라이드).
+  reservationDepositMode String?
   contactLeadDays  Int       @default(14)  // 잠재고객 연락 알림 — 입주 희망일 며칠 전부터(운영자별 기준, 기본 14)
   // 퇴실 환불 규정 (영업장별) — 조기 퇴실 시 환불액 산정. 비면 위약금/고정 1일당 없음.
   refundPenaltyWithinDays Int?     // 입주 후 N일 이내 퇴실 시 위약금 적용 (null/0 = 위약금 없음)
@@ -521,6 +524,9 @@ model LeaseTerm {
   inquiryAt          DateTime?          // 입실 문의 일시 (예약자 순번 기준)
   reservationConfirmedAt DateTime?      // 예약 확정 일시 (RESERVED → 확정 단계 진입 시점). null이면 일반 예약, non-null이면 예약 확정
   isShortTerm        Boolean            @default(false)  // 단기 희망. true면 폼 자동입력(room.baseRent, defaultDeposit/cleaningFee) 건너뛰고 수동 입력 강제
+  // 이 예약의 예약금 처리 모드 — 'deposit'|'prepaid'|'none'. null=영업장 기본값(Property.reservationDepositMode) 상속.
+  // record(isDeposit)로 추론하지 않고 영속 — 선납 환불(record 소프트삭제) 후에도 '안 받음'과 구분(적대검증 발견 4).
+  reservationDepositMode String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
