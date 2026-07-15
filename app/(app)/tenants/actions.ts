@@ -276,7 +276,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const cleaningFee        = Number(formData.get('cleaningFee')) || 0
   const dueDay             = formData.get('dueDay') as string
   const moveInDate         = formData.get('moveInDate') as string
-  const expectedMoveOut    = formData.get('expectedMoveOut') as string
+  const expectedMoveOut    = formData.get('expectedMoveOut') as string | null   // null = 폼에 필드 없음(보존, tourDate/inquiryAt 관행)
   const contactAlertDate   = formData.get('contactAlertDate') as string | null
   const paymentTiming      = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const payMethod          = formData.get('payMethod') as string
@@ -322,7 +322,10 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   // 퇴실 일할 정산 일관 유지 — 편집 폼 경로도 전환 버튼(applyStatusTransition)과 동일 정책.
   // 정산이 적용된 상태에서 퇴실일만 바꾸면 옛 날짜 기준 일할이 잔존하던 문제의 수정.
   const prevMoveOutIso = currentLease.expectedMoveOut ? new Date(currentLease.expectedMoveOut).toISOString().slice(0, 10) : null
-  const newMoveOutIso  = expectedMoveOut || null
+  // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
+  // 기존값을 '변경 없음'으로 간주해 정산 재계산·초기화가 헛트리거되지 않게 한다.
+  const moveOutFieldPresent = expectedMoveOut !== null
+  const newMoveOutIso  = moveOutFieldPresent ? (expectedMoveOut || null) : prevMoveOutIso
   let prorationPatch: Record<string, unknown> = {}
   let prorationNotice: string | null = null
   if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING' && currentLease.checkoutProratedAmount != null) {
@@ -455,9 +458,11 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       cleaningFee,
       dueDay: dueDay || null,
       moveInDate: moveInDate ? new Date(moveInDate) : null,
-      expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+      // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
+      // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
+      ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
       // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
-      ...(((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
+      ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
       // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
@@ -576,6 +581,8 @@ export async function recordDepositReturn(params: {
   tenantName: string
   reason?: string
   memo?: string
+  // 신고 9b974be0: 부가수익 detail 문구 분기. 기본은 퇴실, 'reservationCancel'은 예약 취소 몰취.
+  context?: 'checkout' | 'reservationCancel'
 }): Promise<{ ok: true; refundId: string; extraIncomeId: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -622,7 +629,9 @@ export async function recordDepositReturn(params: {
           date:      refundDate,
           amount:    withheld,
           category:  '보증금',
-          detail:    `${params.tenantName} 퇴실 · 보증금 미반환분`,
+          detail:    params.context === 'reservationCancel'
+            ? `${params.tenantName} 예약 취소 · 예약금 몰취`
+            : `${params.tenantName} 퇴실 · 보증금 미반환분`,
           payMethod: '보유 보증금',
           // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
           tenantId:    params.tenantId,
@@ -655,6 +664,18 @@ export async function undoDepositReturn(refundId: string, extraIncomeId: string 
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+// 신고 9b974be0: 실수납 보증금 합 조회(읽기 전용) — 예약 취소 시 반환·몰취 기준 금액.
+// 계약 보증금(lease.depositAmount)이 아니라 실제 받은 예약금(PaymentRecord isDeposit=true 실수납 합)이
+// 기준이어야 유령 매출이 안 잡힌다. 소프트삭제는 aggregate 확장으로 자동 필터(where에 deletedAt 금지).
+export async function getReceivedDepositTotal(leaseTermId: string): Promise<number> {
+  const { propertyId } = await getPropertyId()
+  const agg = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId, propertyId, isDeposit: true },
+    _sum: { actualAmount: true },
+  })
+  return agg._sum.actualAmount ?? 0
 }
 
 // 퇴실 처리 + 보증금 환불 한 번에
@@ -892,6 +913,14 @@ export async function applyStatusTransition(input: {
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
+    // 신고 9b974be0: 예약 확정 시 월 이용료·입주 희망일 필수(서버 방어). 확정 호출은 값을 새로 넘기지 않고
+    // 기존 lease 값으로 확정하므로 lease 쪽 값을 검증한다.
+    if (input.reservationConfirmedAt) {
+      const rentOk    = input.rentAmount != null ? input.rentAmount > 0 : lease.rentAmount > 0
+      const moveInOk  = input.moveInDate ? true : lease.moveInDate != null
+      if (!rentOk || !moveInOk) return { ok: false, error: '예약 확정에는 월 이용료와 입주 희망일이 필요합니다.' }
+    }
+
     const data: Record<string, unknown> = { status: input.toStatus as LeaseStatus }
     if (input.moveInDate !== undefined)             data.moveInDate = input.moveInDate ? new Date(input.moveInDate) : null
     if (input.expectedMoveOut !== undefined)        data.expectedMoveOut = input.expectedMoveOut ? new Date(input.expectedMoveOut) : null
@@ -899,8 +928,10 @@ export async function applyStatusTransition(input: {
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
     let notice: string | null = null
-    // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 + 퇴실 일할 정산(+롤백 스냅샷) 정리
-    if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined) {
+    // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 + 퇴실 일할 정산(+롤백 스냅샷) 정리.
+    // 신고 aae0ab38: CHECKOUT_PENDING발 복귀일 때만 초기화 — RESERVED발 입실 처리에서는
+    // 단기 예약자가 미리 넣은 퇴실 예정일·정산이 지워지지 않도록 보존한다.
+    if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined && lease.status === 'CHECKOUT_PENDING') {
       data.expectedMoveOut = null
       data.checkoutProratedAmount = null
       data.checkoutProratedMonth = null
@@ -935,16 +966,21 @@ export async function applyStatusTransition(input: {
       }
     }
 
-    await prisma.tenantStatusLog.create({
-      data: {
-        tenantId: input.tenantId,
-        leaseTermId: input.leaseTermId,
-        propertyId,
-        fromStatus: lease.status,
-        toStatus: input.toStatus as LeaseStatus,
-        changedById: user.sub,
-      },
-    })
+    // 신고 9b974be0: 예약 확정·해제(RESERVED→RESERVED)는 상태 변화가 아니므로 이력 미기록.
+    // 확정 시각은 reservationConfirmedAt 컬럼 자체가 기록한다(이력 오염 방지).
+    const isReservationToggle = input.toStatus === lease.status && input.reservationConfirmedAt !== undefined
+    if (!isReservationToggle) {
+      await prisma.tenantStatusLog.create({
+        data: {
+          tenantId: input.tenantId,
+          leaseTermId: input.leaseTermId,
+          propertyId,
+          fromStatus: lease.status,
+          toStatus: input.toStatus as LeaseStatus,
+          changedById: user.sub,
+        },
+      })
+    }
 
     revalidatePath('/tenants')
     revalidatePath('/dashboard')

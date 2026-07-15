@@ -51,6 +51,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
             dueDay: lease.dueDay,
+            reservationConfirmedAt: lease.reservationConfirmedAt, roomId: lease.room?.id ?? null,
           }}
           tenantId={tenant.id}
           tenantName={tenant.name}

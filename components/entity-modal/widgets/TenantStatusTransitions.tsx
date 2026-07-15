@@ -6,11 +6,12 @@
 
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
-import { applyStatusTransition, recordDepositReturn } from '@/app/(app)/tenants/actions'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
+import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -26,8 +27,10 @@ type TransitionDef = {
   withDeposit?: boolean
   tone?: 'primary' | 'secondary' | 'danger'
   confirm?: string
+  // 신고 9b974be0: 예약 확정/해제 — 상태는 그대로(RESERVED) 두고 reservationConfirmedAt만 토글
+  kind?: 'confirm' | 'unconfirm'
 }
-function transitionsFor(status: string): TransitionDef[] {
+function transitionsFor(status: string, confirmed = false): TransitionDef[] {
   switch (status) {
     case 'WAITING_TOUR': return [
       { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
@@ -39,6 +42,9 @@ function transitionsFor(status: string): TransitionDef[] {
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'RESERVED': return [
+      confirmed
+        ? { key: 'unconfirm', label: '확정 해제', toStatus: 'RESERVED', tone: 'secondary', kind: 'unconfirm' }
+        : { key: 'confirm',   label: '예약 확정', toStatus: 'RESERVED', tone: 'primary',   kind: 'confirm' },
       { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
@@ -67,9 +73,12 @@ type Lease = {
   expectedMoveOut: Date | string | null
   rentAmount: number
   dueDay: string | null
+  reservationConfirmedAt: Date | string | null
+  roomId: string | null
 }
 
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number } | null
+// resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합)
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -89,10 +98,51 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
 
-  const transitions = transitionsFor(lease.status)
+  const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt)
   if (transitions.length === 0) return null
 
   const handleClick = async (def: TransitionDef) => {
+    // 신고 9b974be0: 예약 확정 — 이용료·입주 희망일 필수(클라 선검증), 호실 미지정은 허용하되 확인 단계에 문구 표시.
+    if (def.kind === 'confirm') {
+      const missing: string[] = []
+      if (!lease.rentAmount)  missing.push('월 이용료')
+      if (!lease.moveInDate)  missing.push('입주 희망일')
+      if (missing.length > 0) {
+        await alertDialog(
+          `${tenantName}님 · 예약 확정 불가`,
+          `예약 확정에는 ${missing.join('·')}이 필요합니다. 고객 정보 수정에서 입력한 뒤 다시 확정해 주세요.`,
+        )
+        return
+      }
+      const ok = await confirmDialog({
+        title: `${tenantName}님 · 예약을 확정할까요?`,
+        message: lease.roomId ? undefined : '호실 미지정 상태로 확정합니다. 이후 호실을 지정할 수 있습니다.',
+        confirmLabel: '예약 확정',
+      })
+      if (!ok) return
+      runTransition(def, { reservationConfirmedAt: kstYmdStr() })
+      return
+    }
+    // 신고 9b974be0: 확정 해제(적용취소 원칙)
+    if (def.kind === 'unconfirm') {
+      const ok = await confirmDialog({
+        title: `${tenantName}님 · 예약 확정을 해제할까요?`,
+        confirmLabel: '확정 해제',
+      })
+      if (!ok) return
+      runTransition(def, { reservationConfirmedAt: null })
+      return
+    }
+    // 신고 9b974be0: 예약 취소 시 실수납 예약금이 있으면 반환·몰취 미니폼(퇴실 미니폼 패턴 재사용).
+    if (def.key === 'cancel' && lease.status === 'RESERVED') {
+      const received = await getReceivedDepositTotal(lease.id)
+      if (received > 0) {
+        setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
+        setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
+        return
+      }
+      // 실수납 예약금 없음 — 아래 기존 확인 흐름으로.
+    }
     if (!def.field) {
       if (def.confirm) {
         const ok = await confirmDialog({
@@ -119,18 +169,22 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
 
   const runTransition = (
     def: TransitionDef,
-    fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number } | undefined,
+    fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number; reservationConfirmedAt?: string | null } | undefined,
   ) => {
     startTransition(async () => {
       const release = trackSave()
       try {
         // 보증금이 있으면 환불 0(=환불 안 함)이어도 기록 — 미반환분이 보증금 수익으로 잡히도록.
-        if (def.withDeposit && lease.depositAmount > 0 && transRefund != null) {
+        // 신고 9b974be0: 예약 취소(resvCancel)는 기준 금액이 계약 보증금이 아니라 실수납 예약금 합.
+        const depoBase = active?.resvCancel ? active.depositAmount : lease.depositAmount
+        const withDeposit = def.withDeposit === true || active?.resvCancel === true
+        if (withDeposit && depoBase > 0 && transRefund != null) {
           const r = await recordDepositReturn({
-            leaseTermId: lease.id, tenantId, depositAmount: lease.depositAmount,
+            leaseTermId: lease.id, tenantId, depositAmount: depoBase,
             returnedAmount: transRefund,
             date: fields?.moveOutDate || kstYmdStr(),
             tenantName,
+            ...(active?.resvCancel ? { context: 'reservationCancel' as const } : {}),
           })
           if (!r.ok) { pushToast('error', r.error); return }
         }
@@ -155,7 +209,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
 
   const submit = () => {
     if (!active) return
-    const fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number } = {}
+    const fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number; reservationConfirmedAt?: string | null } = {}
     if (active.def.field === 'moveInDate')      fields.moveInDate = transDate
     if (active.def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
     if (active.def.field === 'moveOutDate')     fields.moveOutDate = transDate
@@ -173,6 +227,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
           </Btn>
         ))}
       </div>
+
+      {/* 신고 9b974be0: 확정된 예약은 확정일 표시 */}
+      {lease.status === 'RESERVED' && lease.reservationConfirmedAt && (
+        <p className="-mt-1 pb-1 text-[0.6875rem] text-[var(--warm-muted)]">예약 확정일 {fmtDate(lease.reservationConfirmedAt)}</p>
+      )}
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
@@ -199,11 +258,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   <MoneyInput value={transRent} onChange={setTransRent} placeholder="0원" />
                 </div>
               )}
-              {active.def.withDeposit && active.depositAmount > 0 && (
+              {(active.def.withDeposit || active.resvCancel) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {fmtWon(active.depositAmount)})</span>
+                      {active.resvCancel ? '예약금 환불액' : '보증금 환불액'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancel ? '받은 예약금' : '보증금'} {fmtWon(active.depositAmount)})</span>
                     </label>
                     <button type="button" onClick={() => setTransRefund(0)}
                       className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
@@ -211,13 +270,15 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                           ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
                           : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
                       }`}>
-                      환불 안 함
+                      {active.resvCancel ? '전액 몰취' : '환불 안 함'}
                     </button>
                   </div>
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     {active.cleaningFee > 0 && <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </>}
-                    일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.
+                    {active.resvCancel
+                      ? <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘전액 몰취’를 누르세요. 환불하지 않은 금액은 예약금 몰취로 기록됩니다.</>
+                      : <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
                   </p>
                 </div>
               )}
