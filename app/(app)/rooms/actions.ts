@@ -958,6 +958,16 @@ export async function saveDepositPayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
 
+  // 예약금 부분 수납 대응 (오류신고 9b974be0·63bf23bc): 실제 받은 금액을 계약 보증금 상한으로 기록.
+  // 예: 계약 보증금 30만에 예약금 10만만 받으면 보증금 record 는 10만으로 남는다(초과분은 아래 이용료 분리).
+  const depositActual = Math.min(data.totalPaid, data.depositAmount)
+  // RESERVED(예약) 단계 수납이면 기본 메모를 '예약금'으로 — leaseTermId 로 status 만 조회.
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: data.leaseTermId, propertyId },
+    select: { status: true },
+  })
+  const defaultDepositMemo = lease?.status === 'RESERVED' ? '예약금' : '보증금'
+
   const existingCount = await prisma.paymentRecord.count({
     where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, deletedAt: undefined },
   })
@@ -969,10 +979,10 @@ export async function saveDepositPayment(data: {
       propertyId,
       targetMonth:    data.targetMonth,
       expectedAmount: data.depositAmount,
-      actualAmount:   data.depositAmount,
+      actualAmount:   depositActual,
       payDate:        new Date(data.payDate),
       payMethod:      data.payMethod,
-      memo:           data.memo ?? '보증금',
+      memo:           data.memo ?? defaultDepositMemo,
       seqNo:          existingCount + 1,
       isPaid:         false,
       isDeposit:      true,
@@ -1492,6 +1502,8 @@ export async function getTenantDetail(tenantId: string) {
           rentAmount: true, depositAmount: true, cleaningFee: true,
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
+          reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
+
           contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용
           registrationStatus: true, payMethod: true, cashReceipt: true,
           property: { select: { contactLeadDays: true } },

@@ -93,6 +93,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
     _sum: { actualAmount: true },
   })
+  // 예약 확정 전(RESERVED) 실수납 예약금 — 계약 보증금 총액엔 미포함이나 이미 받은 현금이라
+  // 실수납·총액 양쪽에 동일 가산해 재무 요약과 정합(입주 전이므로 아직 안 받은 예약 보증금은 제외).
+  const pReservedDepositReceivedAgg = prisma.paymentRecord.aggregate({
+    where: { propertyId, isDeposit: true, leaseTerm: { status: 'RESERVED' } },
+    _sum: { actualAmount: true },
+  })
   const pReservedLeases = prisma.leaseTerm.findMany({
     where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
     select: {
@@ -131,7 +137,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedLeases, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedDepositReceivedAgg, pReservedLeases, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -446,11 +452,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const extraRevenue = incomes.reduce((s, i) => s + i.amount, 0)
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
-  const totalDeposit = depositAgg._sum.depositAmount ?? 0
+  // RESERVED 실수납 예약금 — 총액·실수납 양쪽에 같은 값을 더해 미기록분(차이)은 불변으로 유지.
+  const reservedDepositReceived = (await pReservedDepositReceivedAgg)._sum.actualAmount ?? 0
+  const totalDeposit = (depositAgg._sum.depositAmount ?? 0) + reservedDepositReceived
   // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 미기록(전 원장 등 기록 없이 계약상만).
   // 총액(totalDeposit, 계약 기준)은 유지하고 아래에 분해만 표기 → 전 원장 보증금 누락 위험 없음.
   const depositRecordedAgg = await pDepositRecordedAgg
-  const depositRecorded = depositRecordedAgg._sum.actualAmount ?? 0
+  const depositRecorded = (depositRecordedAgg._sum.actualAmount ?? 0) + reservedDepositReceived
   const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded)
 
   // 예상 매출/순이익은 unpaidLeasesRaw 루프(line ~832) 안에서 projectedThisMonthByLease

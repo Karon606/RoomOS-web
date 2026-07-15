@@ -77,9 +77,27 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
     <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
   )
 
+  // 예약 단계 예약금 현황 (오류신고 63bf23bc) — 실수납 합은 records 의 isDeposit 합산(추가 조회 없음).
+  // 보증금은 임대료 수식과 분리가 정본이라 잔액에 섞지 않고 이 줄로만 안내.
+  const depositReceived = (records ?? []).filter(r => r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
+
   return (
     <div className="space-y-3">
       <PaymentSummaryCards settlement={settlement} month={month} />
+
+      {settlement.status === 'RESERVED' && (
+        settlement.depositAmount > 0 ? (
+          <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
+            <span className="text-[var(--coral)] font-semibold">예약금(보증금) 수납</span>
+            <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositReceived)}</span>
+            <span className="text-[var(--warm-muted)]"> / 계약 보증금 {fmtWon(settlement.depositAmount)}</span>
+          </p>
+        ) : (
+          <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">
+            계약 보증금이 입력되지 않았습니다. 고객 정보 수정에서 보증금을 입력하면 예약금을 받을 수 있습니다.
+          </p>
+        )
+      )}
 
       <div>
         <Row k="월 이용료" v={fmtWon(settlement.expected)} />
