@@ -2246,3 +2246,11 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 컨텍스트가 차오르면 /compact 또는 새 세션으로.
 - rewind는 코드를 되돌리니 신중하게 — 컨텍스트 줄이는 용도로 쓰지 말 것.
 - 배포: main push → Vercel 자동 배포. 일시 빌드 실패 시 재배포(`vercel redeploy <url>`)로 대개 복구.
+
+## 2026-07-16 — 예약금 처리 옵션 3모드 (표준 트랙, §4)
+- 운영자 요구: 예약금 개념이 영업장·상황마다 다름(보증금 대체·이용료 선납·안 받음·금액 자유). 멀티테넌트 옵션으로 일반화(특정 영업장 하드코딩 금지 원칙).
+- 설계+적대검증(wf_301344ee) 후 구현+실디프 재검증. 검증 6수정 반영.
+- 스키마(비파괴 2단계): Property·LeaseTerm reservationDepositMode nullable, 운영 DB 선적용(마이그레이션 스크립트) 후 schema 반영. null=deposit 안전 해석.
+- 구현(8477f6f): 3모드(deposit 현행/prepaid=savePayment forcedTargetMonth isDeposit=false 신규수식0/none). saveReservationDeposit 진입점, ReservationDepositForm. 입주월 재앵커 3지점. 취소 모드분기(prepaid 실수납 기준 몰취=위약금, record 소프트삭제+ExtraIncome 트랜잭션+undo). 트렌드 매출 2곳 RESERVED·CANCELLED 가드(CHECKED_OUT 유지). 영업장 기본모드 설정.
+- 무회귀 확인: deposit/none 무변경, 선납이 메인매출·결산·미수엔 RESERVED 제외로 안 잡히고 입주 후 정상 인식, 트렌드 CHECKED_OUT 보존, 소프트삭제 규칙 준수, undo 대칭.
+- 잔여 리스크(희소): 예약 단계 2개월+ 선납 상태에서 입주월 이동 시 재앵커가 월 분산을 합침(실용례=한달 일부 선납이라 도달 난망, 금액 총액 보존). 결정: 위약금 분류·선납 트렌드 이연은 무회귀 기준 기본값(뒤집기 쉬움).
