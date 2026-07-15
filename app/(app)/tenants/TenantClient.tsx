@@ -139,8 +139,22 @@ function loadColWidths(): Record<string, number> | null {
 
 // ── 상수 ─────────────────────────────────────────────────────────
 
-// 상태 칩 — 예외 상태는 StatusBadge, 정상 상태는 조용한 텍스트 (상세·표 컨텍스트용)
-function StatusChip({ status }: { status: string }) {
+// 예약 입주 임박 보조 문구 — today(서버 KST)로 계산해 하이드레이션 안전(#418).
+function reservedMoveInSub(moveInDate: string | Date | null | undefined, today?: string): string | undefined {
+  const dd = fmtDDay(moveInDate, today)   // '3일 후' | '오늘' | 'n일 초과' | null
+  if (!dd) return undefined
+  return dd === '오늘' ? '오늘 입주' : dd.endsWith('초과') ? `입주 예정일 ${dd}` : `${dd} 입주`
+}
+
+// 상태 칩 — 예외 상태는 StatusBadge, 정상 상태는 조용한 텍스트 (상세·표 컨텍스트용).
+// 예약은 확정 여부를 라벨로 구분('예약'/'예약 확정') — 호실 관리(RoomsClient) 정본과 동일 문법.
+// 별도 success 칩(완납 색과 충돌)을 쓰지 않는다(디자인 패널 2026-07-15).
+function StatusChip({ status, confirmed, moveInDate, today }: {
+  status: string; confirmed?: boolean; moveInDate?: string | Date | null; today?: string
+}) {
+  if (status === 'RESERVED') {
+    return <StatusBadge tone="movein" sub={reservedMoveInSub(moveInDate, today)}>{confirmed ? '예약 확정' : '예약'}</StatusBadge>
+  }
   const ex = statusException(status)
   if (ex) return <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge>
   return <span className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</span>
@@ -579,6 +593,16 @@ export default function TenantClient({
   }
   const sorted = [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
+
+    // 예약 필터에서는 확정자를 위로, 그 안에서 입주 임박순(운영자 요청). 세그먼트는 안 쪼갬(§23).
+    if (statusFilter === 'RESERVED') {
+      const ac = a.leaseTerms[0]?.reservationConfirmedAt ? 0 : 1
+      const bc = b.leaseTerms[0]?.reservationConfirmedAt ? 0 : 1
+      if (ac !== bc) return ac - bc
+      const am = a.leaseTerms[0]?.moveInDate ? new Date(a.leaseTerms[0].moveInDate).getTime() : Infinity
+      const bm = b.leaseTerms[0]?.moveInDate ? new Date(b.leaseTerms[0].moveInDate).getTime() : Infinity
+      return am - bm
+    }
 
     // 호실순: 미배정자(호실 없음)는 항상 하단, 미배정 내에서는 inquiryAt asc 고정
     if (sortKey === 'roomNo') {
@@ -1351,10 +1375,8 @@ export default function TenantClient({
                     })()}
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
-                  {(() => { const ex = statusException(status); return ex && <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge> })()}
-                  {/* 예약 확정자 구분 — 예약금까지 받은 단계라 일반 예약과 다름(운영자 요청 2026-07-15) */}
-                  {status === 'RESERVED' && lease?.reservationConfirmedAt && (
-                    <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">확정</span>
+                  {(status === 'RESERVED' || statusException(status)) && (
+                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} />
                   )}
                 </div>
                 {/* 연락처 — 탭하면 바로 전화 */}
@@ -1381,11 +1403,13 @@ export default function TenantClient({
                 {/* 보증금 · 거주기간 */}
                 {cardFields.deposit && ((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
                   const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
+                  // 확정 예약자는 받은 돈이 예약금(보증금 선수납)이라 라벨을 '예약금'으로 명시(운영자 요청 2026-07-15)
+                  const isConfirmedReservation = lease?.status === 'RESERVED' && !!lease.reservationConfirmedAt
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
                       {(lease?.depositAmount ?? 0) > 0 && (
                         <>
-                          <span className="text-[var(--warm-muted)]">보증금</span>
+                          <span className="text-[var(--warm-muted)]">{isConfirmedReservation ? '예약금' : '보증금'}</span>
                           <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease!.depositAmount} /></span>
                         </>
                       )}
@@ -1547,7 +1571,7 @@ export default function TenantClient({
                           return (
                             <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
-                                <span className="self-start"><StatusChip status={status} /></span>
+                                <span className="self-start"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} /></span>
                                 {ddLabel && <span className={`text-xs font-medium pl-1 whitespace-nowrap ${ddColor}`}>{ddLabel}</span>}
                               </div>
                             </td>
