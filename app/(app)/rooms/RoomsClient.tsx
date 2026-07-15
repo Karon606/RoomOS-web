@@ -270,11 +270,12 @@ export default function RoomsClient({
   const entityModal = useEntityModal()
   // 수납 / 부가수익 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익)
   const [viewTab, setViewTab] = useState<'rooms' | 'income'>(initialTab ?? 'rooms')
-  const [filter, setFilter] = useState<RoomFilter>(() => {
-    if (typeof window === 'undefined') return 'all'
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [filter, setFilter] = useState<RoomFilter>('all')
+  useEffect(() => {
     const v = localStorage.getItem(FILTER_KEY)
-    return v && (FILTER_VALUES as readonly string[]).includes(v) ? v as RoomFilter : 'all'
-  })
+    if (v && (FILTER_VALUES as readonly string[]).includes(v)) setFilter(v as RoomFilter)
+  }, [])
   const [floorFilter, setFloorFilter] = useState('')
   const [showFilters, setShowFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   // 패널 필터 — 순수 표시 필터. 세션 한정(localStorage 비영속)
@@ -285,16 +286,15 @@ export default function RoomsClient({
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
   const [vacantSortDir, setVacantSortDir] = useState<SortDir>('asc')
-  const [sortKey, setSortKey] = useState<SortKey>(() => {
-    if (typeof window === 'undefined') return 'status'
-    const v = localStorage.getItem(SORTKEY_KEY)
-    return v && SORTKEY_VALUES.includes(v as SortKey) ? v as SortKey : 'status'
-  })
-  const [sortDir, setSortDir] = useState<SortDir>(() => {
-    if (typeof window === 'undefined') return 'desc'
-    const v = localStorage.getItem(SORTDIR_KEY)
-    return v === 'asc' || v === 'desc' ? v : 'desc'
-  })
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [sortKey, setSortKey] = useState<SortKey>('status')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  useEffect(() => {
+    const k = localStorage.getItem(SORTKEY_KEY)
+    if (k && SORTKEY_VALUES.includes(k as SortKey)) setSortKey(k as SortKey)
+    const d = localStorage.getItem(SORTDIR_KEY)
+    if (d === 'asc' || d === 'desc') setSortDir(d)
+  }, [])
   const [search, setSearch] = useUrlState('q', '')
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)

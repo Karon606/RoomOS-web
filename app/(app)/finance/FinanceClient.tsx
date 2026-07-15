@@ -1309,10 +1309,12 @@ export default function FinanceClient({
   const [showExpFilters, setShowExpFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
-  const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
-    if (typeof window === 'undefined') return 'soon'
-    return (localStorage.getItem('stayeum-rec-visibility') as 'all' | 'soon') ?? 'soon'
-  })
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>('soon')
+  useEffect(() => {
+    const v = localStorage.getItem('stayeum-rec-visibility')
+    if (v === 'all' || v === 'soon') setRecVisibility(v)
+  }, [])
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.setItem('stayeum-rec-visibility', recVisibility)
   }, [recVisibility])
@@ -1325,8 +1327,11 @@ export default function FinanceClient({
   // 방별 분배 묶음 펼침 — 멤버 행 목록(각 방별 금액). null 이면 닫힘.
   const [groupDetail, setGroupDetail]     = useState<Expense[] | null>(null)
   // 지출내역 보기 — '아이템별'(기본) / '주문별'(같은 주문 묶음 + 배송비 포함, 쇼핑몰 주문내역처럼). 선택 기억.
-  const [expView, setExpView] = useState<'item' | 'order'>(() =>
-    typeof window !== 'undefined' && localStorage.getItem('stayeum-finance-expview') === 'order' ? 'order' : 'item')
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [expView, setExpView] = useState<'item' | 'order'>('item')
+  useEffect(() => {
+    if (localStorage.getItem('stayeum-finance-expview') === 'order') setExpView('order')
+  }, [])
   const changeExpView = (v: 'item' | 'order') => { setExpView(v); if (typeof window !== 'undefined') localStorage.setItem('stayeum-finance-expview', v) }
 
   // 다중선택 묶기 — 카드 꾹 누르면 선택 모드 진입, 탭으로 추가 선택, 하단 바에서 '한 주문으로 묶기'

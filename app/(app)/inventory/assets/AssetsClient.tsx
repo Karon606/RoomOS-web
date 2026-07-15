@@ -67,19 +67,21 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기(MergeSheet). 카드별 '합치기'도 병행.
   const [mergeMode, setMergeMode] = useState(false)
   // 대분류 — 미배정(여분)·공용 자재·방·공용부 세 그룹 중 하나만 표시(운영자 요청 2026-07-08). 마지막 선택 유지.
-  const [group, setGroup] = useState<'unassigned' | 'common' | 'placed'>(() => {
-    if (typeof window === 'undefined') return 'unassigned'
-    try { const g = localStorage.getItem('stayeum-assets-group'); return g === 'common' || g === 'placed' ? g : 'unassigned' } catch { return 'unassigned' }
-  })
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [group, setGroup] = useState<'unassigned' | 'common' | 'placed'>('unassigned')
+  useEffect(() => {
+    try { const g = localStorage.getItem('stayeum-assets-group'); if (g === 'common' || g === 'placed') setGroup(g) } catch { /* 무시 */ }
+  }, [])
   const pickGroup = (g: 'unassigned' | 'common' | 'placed') => {
     setGroup(g)
     try { localStorage.setItem('stayeum-assets-group', g) } catch { /* 무시 */ }
   }
   // 섹션 접기 — 기본 닫힘(스크롤 부담 완화, 운영자 요청 2026-07-08). 연 섹션은 닫기 전까지 기기에 유지.
-  const [openSecs, setOpenSecs] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set()
-    try { return new Set(JSON.parse(localStorage.getItem('stayeum-assets-open-sections') ?? '[]') as string[]) } catch { return new Set() }
-  })
+  // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
+  const [openSecs, setOpenSecs] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    try { setOpenSecs(new Set(JSON.parse(localStorage.getItem('stayeum-assets-open-sections') ?? '[]') as string[])) } catch { /* 무시 */ }
+  }, [])
   const toggleSec = (k: string) => setOpenSecs(prev => {
     const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k)
     try { localStorage.setItem('stayeum-assets-open-sections', JSON.stringify([...n])) } catch { /* 저장 실패 무시 */ }
