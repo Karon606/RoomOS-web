@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
-import { recordDepositReceived } from '@/app/(app)/rooms/actions'
+import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
@@ -678,6 +678,101 @@ export async function getReceivedDepositTotal(leaseTermId: string): Promise<numb
   return agg._sum.actualAmount ?? 0
 }
 
+// prepaid 모드 예약 취소 기준액 — 그 lease의 이용료 선납 실수납 합(isDeposit=false).
+// 계약 보증금이 아니라 실제 받은 선납이 반환·몰취 기준. 소프트삭제는 aggregate 확장이 자동 필터(where에 deletedAt 금지).
+export async function getReservedPrepaidTotal(leaseTermId: string): Promise<number> {
+  const { propertyId } = await getPropertyId()
+  const agg = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId, propertyId, isDeposit: false },
+    _sum: { actualAmount: true },
+  })
+  return agg._sum.actualAmount ?? 0
+}
+
+// prepaid 모드 예약 취소 — 이용료 선납 반환/몰취.
+//   반환: 선납 record 전량 소프트삭제(매출 자동 소멸).
+//   몰취: 소프트삭제 + 몰취분을 ExtraIncome(category '위약금')로 재인식.
+// record 소프트삭제와 ExtraIncome 생성을 한 트랜잭션으로 강제해 이중 계상을 차단한다.
+export async function recordReservationPrepaidCancel(params: {
+  leaseTermId: string
+  tenantId: string
+  refundAmount: number
+  date: string
+  tenantName: string
+}): Promise<{ ok: true; recordIds: string[]; extraIncomeId: string | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
+
+    const records = await prisma.paymentRecord.findMany({
+      where: { leaseTermId: params.leaseTermId, propertyId, isDeposit: false },
+      select: { id: true, actualAmount: true },
+    })
+    const total = records.reduce((s, r) => s + r.actualAmount, 0)
+    const returned = Math.max(0, Math.min(params.refundAmount, total))
+    const withheld = Math.max(0, total - returned)
+    const recordIds = records.map(r => r.id)
+    const forfeitDate = new Date(params.date)
+    const deletedAt = new Date()
+
+    // 몰취분이 있으면 '위약금' 카테고리 보장(없으면 추가) — 트랜잭션 밖 선처리.
+    if (withheld > 0) {
+      const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { incomeCategories: true } })
+      const raw = property?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
+      const cats = raw.split(',').map(s => s.trim()).filter(Boolean)
+      if (!cats.includes('위약금')) {
+        await prisma.property.update({ where: { id: propertyId }, data: { incomeCategories: [...cats, '위약금'].join(',') } })
+      }
+    }
+
+    const extraIncomeId = await prisma.$transaction(async tx => {
+      if (recordIds.length > 0) {
+        await tx.paymentRecord.updateMany({ where: { id: { in: recordIds } }, data: { deletedAt } })
+      }
+      if (withheld > 0) {
+        const inc = await tx.extraIncome.create({
+          data: {
+            propertyId,
+            date:      forfeitDate,
+            amount:    withheld,
+            category:  '위약금',
+            detail:    `${params.tenantName} 예약 취소 · 이용료 선납 위약금`,
+            payMethod: '예약금 몰취',
+            tenantId:    params.tenantId,
+            leaseTermId: params.leaseTermId,
+          },
+        })
+        return inc.id as string
+      }
+      return null
+    })
+
+    revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
+    return { ok: true, recordIds, extraIncomeId }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// prepaid 예약 취소 적용취소 — 소프트삭제한 선납 record 복원 + 몰취 부가수입 삭제(대칭).
+export async function undoReservationPrepaidCancel(recordIds: string[], extraIncomeId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    await prisma.$transaction([
+      ...(recordIds.length > 0 ? [prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })] : []),
+      ...(extraIncomeId ? [prisma.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })] : []),
+    ])
+    revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 퇴실 처리 + 보증금 환불 한 번에
 export async function checkoutWithDepositRefund(params: {
   leaseTermId: string
@@ -731,6 +826,9 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
     where: { id: leaseTermId },
     data: { status: 'ACTIVE' },
   })
+
+  // 입주월 재앵커 — prepaid 예약금이 실제 입주월과 다른 달에 걸려 있으면 이동(deposit/none은 no-op).
+  if (lease.status === 'RESERVED') await reanchorReservationPrepaid(leaseTermId)
 
   if (lease.roomId) {
     await prisma.room.update({
@@ -799,6 +897,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       where: { id: leaseTermId },
       data: { status: 'ACTIVE' },
     })
+
+    // 입주월 재앵커 — prepaid 예약금을 실제 입주월로(deposit/none은 no-op).
+    await reanchorReservationPrepaid(leaseTermId)
 
     await prisma.room.update({
       where: { id: lease.roomId },
@@ -950,6 +1051,10 @@ export async function applyStatusTransition(input: {
     }
 
     await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+
+    // 입주월 재앵커 — 예약(RESERVED)에서 입실 처리(ACTIVE)로 넘어갈 때 prepaid 예약금을 실제 입주월로 이동.
+    // moveInDate가 폼에서 갱신됐을 수 있어 lease.update 후에 실행(deposit/none은 no-op).
+    if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE') await reanchorReservationPrepaid(input.leaseTermId)
 
     // 호실 공실 처리
     const vac = roomVacantForStatus(input.toStatus)

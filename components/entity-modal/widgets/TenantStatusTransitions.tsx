@@ -7,7 +7,8 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal } from '@/app/(app)/tenants/actions'
+import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal,
+  getReservedPrepaidTotal, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
@@ -75,10 +76,13 @@ type Lease = {
   dueDay: string | null
   reservationConfirmedAt: Date | string | null
   roomId: string | null
+  // 예약금 처리 모드 해석값 — 예약 취소 반환/몰취 경로 분기('deposit'|'prepaid'|'none')
+  reservationDepositMode: string
 }
 
-// resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합)
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean } | null
+// resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
+// resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -134,14 +138,26 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       return
     }
     // 신고 9b974be0: 예약 취소 시 실수납 예약금이 있으면 반환·몰취 미니폼(퇴실 미니폼 패턴 재사용).
+    // 예약금 모드별 분기 — deposit: 보증금 반환/몰취, prepaid: 이용료 선납 반환/몰취, none: 대상 없음.
     if (def.key === 'cancel' && lease.status === 'RESERVED') {
-      const received = await getReceivedDepositTotal(lease.id)
-      if (received > 0) {
-        setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
-        setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
-        return
+      if (lease.reservationDepositMode === 'prepaid') {
+        const received = await getReservedPrepaidTotal(lease.id)
+        if (received > 0) {
+          setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
+          setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancelPrepaid: true })
+          return
+        }
+        // 선납 실수납 없음 — 아래 기존 확인 흐름으로.
+      } else if (lease.reservationDepositMode !== 'none') {
+        const received = await getReceivedDepositTotal(lease.id)
+        if (received > 0) {
+          setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
+          setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
+          return
+        }
+        // 실수납 예약금 없음 — 아래 기존 확인 흐름으로.
       }
-      // 실수납 예약금 없음 — 아래 기존 확인 흐름으로.
+      // none 모드 또는 받은 금액 없음 — 아래 기존 확인 흐름으로.
     }
     if (!def.field) {
       if (def.confirm) {
@@ -174,6 +190,28 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     startTransition(async () => {
       const release = trackSave()
       try {
+        // prepaid 예약 취소 — 이용료 선납 반환(record 소프트삭제)·몰취(위약금). undo 대칭.
+        if (active?.resvCancelPrepaid && transRefund != null) {
+          const r = await recordReservationPrepaidCancel({
+            leaseTermId: lease.id, tenantId, refundAmount: transRefund,
+            date: kstYmdStr(), tenantName,
+          })
+          if (!r.ok) { pushToast('error', r.error); return }
+          const res = await applyStatusTransition({
+            leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
+          })
+          if (!res.ok) { pushToast('error', res.error); return }
+          const { recordIds, extraIncomeId } = r
+          pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
+            action: { label: '취소 되돌리기', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId).then(u => {
+              if (u.ok) { pushToast('info', '예약 선납 반환/몰취를 되돌렸습니다 (상태는 유지 — 필요 시 상태 변경으로 복구)'); onChange?.() }
+              else pushToast('error', u.error)
+            }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+          })
+          setActive(null)
+          onChange?.()
+          return
+        }
         // 보증금이 있으면 환불 0(=환불 안 함)이어도 기록 — 미반환분이 보증금 수익으로 잡히도록.
         // 신고 9b974be0: 예약 취소(resvCancel)는 기준 금액이 계약 보증금이 아니라 실수납 예약금 합.
         const depoBase = active?.resvCancel ? active.depositAmount : lease.depositAmount
@@ -258,11 +296,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   <MoneyInput value={transRent} onChange={setTransRent} placeholder="0원" />
                 </div>
               )}
-              {(active.def.withDeposit || active.resvCancel) && active.depositAmount > 0 && (
+              {(active.def.withDeposit || active.resvCancel || active.resvCancelPrepaid) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      {active.resvCancel ? '예약금 환불액' : '보증금 환불액'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancel ? '받은 예약금' : '보증금'} {fmtWon(active.depositAmount)})</span>
+                      {active.resvCancelPrepaid ? '선납 환불액' : active.resvCancel ? '예약금 환불액' : '보증금 환불액'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancelPrepaid ? '받은 선납금' : active.resvCancel ? '받은 예약금' : '보증금'} {fmtWon(active.depositAmount)})</span>
                     </label>
                     <button type="button" onClick={() => setTransRefund(0)}
                       className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
@@ -270,13 +308,15 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                           ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
                           : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
                       }`}>
-                      {active.resvCancel ? '전액 몰취' : '환불 안 함'}
+                      {(active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '환불 안 함'}
                     </button>
                   </div>
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     {active.cleaningFee > 0 && <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </>}
-                    {active.resvCancel
+                    {active.resvCancelPrepaid
+                      ? <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘전액 몰취’를 누르세요. 환불하지 않은 금액은 위약금으로 기록됩니다.</>
+                      : active.resvCancel
                       ? <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘전액 몰취’를 누르세요. 환불하지 않은 금액은 예약금 몰취로 기록됩니다.</>
                       : <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
                   </p>

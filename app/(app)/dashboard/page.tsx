@@ -242,6 +242,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         targetMonth: { in: last6Months },
         isDeposit: false,
         isPrevOwner: false,
+        // RESERVED 선납·취소분 제외(조기 매출 차단). CHECKED_OUT는 유지 — dashboard/actions fetchRangeData와 동일 규칙.
+        leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } },
         ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
       },
       select: { targetMonth: true, actualAmount: true },

@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
+import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -14,6 +15,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -78,6 +80,7 @@ type LeaseTerm = {
   expectedMoveOut: string | Date | null; contactAlertDate?: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
   reservationConfirmedAt: string | Date | null
   isShortTerm: boolean
+  reservationDepositMode?: string | null
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
@@ -302,7 +305,7 @@ function loadColVis(): Record<ColKey, boolean> | null {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────
 
 export default function TenantClient({
-  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, myRole,
+  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole,
 }: {
   initialTenants: Tenant[]
   rooms: Room[]
@@ -311,6 +314,7 @@ export default function TenantClient({
   defaultDeposit: number | null
   contactLeadDays?: number
   defaultCleaningFee: number | null
+  propertyReservationDepositMode?: string | null   // 영업장 예약금 기본 모드 — 예약자 라벨/폼 기본값
   myRole: string
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
@@ -1405,15 +1409,21 @@ export default function TenantClient({
                   const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
                   // 확정 예약자는 받은 돈이 예약금(보증금 선수납)이라 라벨을 '예약금'으로 명시(운영자 요청 2026-07-15)
                   const isConfirmedReservation = lease?.status === 'RESERVED' && !!lease.reservationConfirmedAt
+                  // 예약자는 예약금 모드에 따라 라벨 분기 — prepaid: 선납, none: 표시 안 함, 그 외: 예약금.
+                  const resvMode = lease?.status === 'RESERVED'
+                    ? resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm)
+                    : null
+                  const showDeposit = (lease?.depositAmount ?? 0) > 0 && resvMode !== 'none'
+                  const depositLabel = resvMode === 'prepaid' ? '이용료 선납' : isConfirmedReservation ? '예약금' : '보증금'
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
-                      {(lease?.depositAmount ?? 0) > 0 && (
+                      {showDeposit && (
                         <>
-                          <span className="text-[var(--warm-muted)]">{isConfirmedReservation ? '예약금' : '보증금'}</span>
+                          <span className="text-[var(--warm-muted)]">{depositLabel}</span>
                           <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease!.depositAmount} /></span>
                         </>
                       )}
-                      {(lease?.depositAmount ?? 0) > 0 && lease?.moveInDate && (
+                      {showDeposit && lease?.moveInDate && (
                         <span className="text-[var(--warm-border)]">·</span>
                       )}
                       {lease?.moveInDate && (
@@ -2146,8 +2156,31 @@ export default function TenantClient({
                 </>
               )}
 
+              {/* ── 예약자 수납 — 예약금 모드(3택) 정본 폼 재사용 ── */}
+              {showPayForm && lease.status === 'RESERVED' && (
+                <div className="flex-1 overflow-y-auto p-6">
+                  <PaymentEntryForm
+                    room={{
+                      leaseTermId: lease.id,
+                      tenantId: tenant.id,
+                      expected: lease.rentAmount,
+                      balance: 0,
+                      depositAmount: lease.depositAmount,
+                      cleaningFee: lease.cleaningFee,
+                      moveInDate: lease.moveInDate ? kstYmdStr(new Date(lease.moveInDate)) : null,
+                      roomNo: lease.room?.roomNo ?? null,
+                      status: 'RESERVED',
+                      reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm),
+                    }}
+                    targetMonth={targetMonth}
+                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records as PayRecord[]); refresh() }}
+                    onCancel={() => setShowPayForm(false)}
+                  />
+                </div>
+              )}
+
               {/* ── 수납 등록 폼 ── */}
-              {showPayForm && (
+              {showPayForm && lease.status !== 'RESERVED' && (
                 <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-6 space-y-3">
                     {!isDepositMode && (

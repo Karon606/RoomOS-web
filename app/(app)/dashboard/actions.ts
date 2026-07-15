@@ -28,9 +28,10 @@ async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date
   const acqFilter = acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}
   return Promise.all([
     prisma.paymentRecord.findMany({
+      // RESERVED 선납·취소분은 트렌드 매출에서 제외(조기 매출 노출 차단). CHECKED_OUT는 유지(단기·중도퇴실 매출 보존).
       where: months
-        ? { propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false, ...acqFilter }
-        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false },
+        ? { propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...acqFilter }
+        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } } },
       select: { targetMonth: true, payDate: true, actualAmount: true },
     }),
     prisma.expense.findMany({

@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
-  savePayment, saveDepositPayment, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
+  savePayment, saveDepositPayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -27,6 +27,8 @@ type Room = {
   cleaningFee: number
   moveInDate: string | null
   roomNo?: string | null   // 과납분 기타수익 기록 시 내역 표기용
+  status?: string | null   // RESERVED면 예약금(모드 3택) 폼으로 분기
+  reservationDepositMode?: string | null   // 예약금 처리 모드 기본값('deposit'|'prepaid'|'none')
 }
 
 // 초과 납부분을 '기타 수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
@@ -41,6 +43,19 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   room: Room
   targetMonth: string
   /** 저장 성공 후 호출 — 부모가 settlement/records 재조회. */
+  onSaved?: () => void
+  onCancel?: () => void
+}) {
+  // 예약(RESERVED) 단계는 예약금 모드(보증금 대체·이용료 선납·안 받음) 전용 폼으로 분기.
+  if (room.status === 'RESERVED') {
+    return <ReservationDepositForm room={room} onSaved={onSaved} onCancel={onCancel} />
+  }
+  return <PaymentEntryFormInner room={room} targetMonth={targetMonth} onSaved={onSaved} onCancel={onCancel} />
+}
+
+function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
+  room: Room
+  targetMonth: string
   onSaved?: () => void
   onCancel?: () => void
 }) {
@@ -316,6 +331,131 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
         {onCancel && <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>}
         <Btn type="submit" variant="primary" disabled={pending || !(payAmount > 0)} fullWidth>
           {pending ? '저장 중…' : '저장'}
+        </Btn>
+      </div>
+    </form>
+  )
+}
+
+// 예약금 수납 폼 — 모드 3택(보증금 대체·이용료 선납·안 받음) + 금액 자유 입력.
+// 저장은 saveReservationDeposit 진입점으로 위임(모드 인지 분기·모드 영속). 신규 결제 수식 없음.
+type ResvMode = 'deposit' | 'prepaid' | 'none'
+const RESV_MODE_LABEL: Record<ResvMode, string> = {
+  deposit: '보증금 대체',
+  prepaid: '이용료 선납',
+  none:    '안 받음',
+}
+
+function ReservationDepositForm({ room, onSaved, onCancel }: {
+  room: Room
+  onSaved?: () => void
+  onCancel?: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const initial = (['deposit', 'prepaid', 'none'] as const).includes(room.reservationDepositMode as ResvMode)
+    ? (room.reservationDepositMode as ResvMode) : 'deposit'
+  const [mode, setMode] = useState<ResvMode>(initial)
+  const defaultAmount = (m: ResvMode) => m === 'prepaid' ? (room.expected || 0) : m === 'deposit' ? (room.depositAmount || 0) : 0
+  const [amount, setAmount] = useState<number>(defaultAmount(initial))
+  const [payDateVal, setPayDateVal] = useState<string>(room.moveInDate ?? kstYmdStr())
+  const [payMethod, setPayMethod] = useState<string>('계좌이체')
+  const [cashReceiptIssued, setCashReceiptIssued] = useState(false)
+  const [memo, setMemo] = useState<string>('')
+  const [error, setError] = useState<string>('')
+
+  const changeMode = (m: ResvMode) => { setMode(m); setAmount(defaultAmount(m)) }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!room.tenantId) { setError('입주자 정보가 없습니다.'); return }
+    setError('')
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await saveReservationDeposit({
+          leaseTermId: room.leaseTermId,
+          tenantId:    room.tenantId!,
+          mode,
+          amount:      mode === 'none' ? 0 : amount,
+          payDate:     payDateVal,
+          payMethod,
+          memo:        memo || undefined,
+          cashReceiptIssued,
+        })
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        pushToast('success',
+          mode === 'none' ? '예약금 없이 예약으로 저장했습니다'
+          : mode === 'prepaid' ? '이용료 선납으로 수납했습니다'
+          : '예약금(보증금)으로 수납했습니다')
+        onSaved?.()
+      } catch (err) {
+        const msg = (err as Error).message ?? '저장 실패'
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 border-t border-[var(--warm-border)] pt-3 mt-1">
+      <p className="text-xs font-semibold text-[var(--coral)]">예약금 수납</p>
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--warm-muted)]">처리 방식</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {(['deposit', 'prepaid', 'none'] as const).map(m => (
+            <button key={m} type="button" onClick={() => changeMode(m)}
+              className={`text-xs font-medium rounded-lg px-2 py-2 border transition-colors ${
+                mode === m
+                  ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
+                  : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
+              }`}>
+              {RESV_MODE_LABEL[m]}
+            </button>
+          ))}
+        </div>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+          {mode === 'deposit' ? '받은 예약금을 보증금으로 기록합니다.'
+            : mode === 'prepaid' ? '받은 금액을 입주월 이용료로 충당합니다(선납).'
+            : '예약금 없이 예약만 저장합니다.'}
+        </p>
+      </div>
+
+      {mode !== 'none' && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+              <DatePicker value={payDateVal} onChange={setPayDateVal}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">금액</label>
+              <MoneyInput value={amount} onChange={setAmount} placeholder="0원" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
+            <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)}
+              className="w-3.5 h-3.5 accent-[var(--coral)]" />
+            <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
+          </label>
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--warm-muted)]">메모</label>
+            <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+          </div>
+        </>
+      )}
+      {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
+      <div className="flex gap-2">
+        {onCancel && <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>}
+        <Btn type="submit" variant="primary" disabled={pending || (mode !== 'none' && !(amount > 0))} fullWidth>
+          {pending ? '저장 중…' : mode === 'none' ? '예약금 없이 저장' : '저장'}
         </Btn>
       </div>
     </form>

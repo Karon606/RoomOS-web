@@ -12,6 +12,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -44,6 +45,8 @@ type RoomRow = {
   // 퇴실 일할 정산 — 설정 시 그 달(checkoutProratedMonth) 청구를 checkoutProratedAmount 로 덮어씀
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
+  // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
+  reservationDepositMode?: string | null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -62,7 +65,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   const [property, rooms, activeLeases, prevLeases, allRecordsThruMonth] = await Promise.all([
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+      select: { acquisitionDate: true, prevOwnerCutoffDate: true, reservationDepositMode: true },
     }),
     prisma.room.findMany({
       where: { propertyId },
@@ -187,6 +190,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+        reservationDepositMode: resolveReservationDepositMode(
+          lease.reservationDepositMode, property?.reservationDepositMode, lease.isShortTerm,
+        ),
       }
     }
 
@@ -1021,6 +1027,115 @@ export async function saveDepositPayment(data: {
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
 }
 
+// 예약금 수납 진입점 — 모드 인지. 기존 결제 엔진(saveDepositPayment·savePayment) 재사용, 신규 수식 0.
+//   deposit: 현행 보증금 대체 그대로(isDeposit=true).
+//   prepaid: savePayment(forcedTargetMonth=입주 예정월, isDeposit=false)로 첫 청구월 이용료 선납.
+//            expectedAmount는 savePayment가 서버 재계산하므로 클라 값을 신뢰하지 않는다(0 전달).
+//   none: record 생성 안 함(모드만 저장).
+// 어느 모드로 받았는지 수납 시점에 LeaseTerm.reservationDepositMode로 확정 저장.
+export async function saveReservationDeposit(data: {
+  leaseTermId: string
+  tenantId:    string
+  mode:        'deposit' | 'prepaid' | 'none'
+  amount:      number
+  payDate:     string
+  payMethod:   string
+  memo?:       string
+  cashReceiptIssued?: boolean
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: data.leaseTermId, propertyId },
+      select: { depositAmount: true, rentAmount: true, moveInDate: true },
+    })
+    if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
+
+    // 수납 시점에 모드 확정 — 이후 선납 환불(record 소프트삭제) 뒤에도 '안 받음'과 구분 가능.
+    await prisma.leaseTerm.update({
+      where: { id: data.leaseTermId },
+      data: { reservationDepositMode: data.mode },
+    })
+
+    // 입주 예정월(첫 청구월) = moveInDate의 YYYY-MM, 미설정이면 현재 KST 월.
+    const kst = kstYmd()
+    const firstMonth = lease.moveInDate
+      ? `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
+      : `${kst.year}-${String(kst.month).padStart(2, '0')}`
+
+    if (data.mode === 'deposit') {
+      await saveDepositPayment({
+        leaseTermId:   data.leaseTermId,
+        tenantId:      data.tenantId,
+        targetMonth:   firstMonth,
+        depositAmount: lease.depositAmount,
+        rentAmount:    lease.rentAmount,
+        totalPaid:     data.amount,
+        payDate:       data.payDate,
+        payMethod:     data.payMethod,
+        memo:          data.memo,
+        cashReceiptIssued: data.cashReceiptIssued,
+      })
+    } else if (data.mode === 'prepaid') {
+      await savePayment({
+        leaseTermId:    data.leaseTermId,
+        tenantId:       data.tenantId,
+        targetMonth:    firstMonth,
+        expectedAmount: 0,   // 서버 재계산 — 클라 값 미신뢰
+        actualAmount:   data.amount,
+        payDate:        data.payDate,
+        payMethod:      data.payMethod,
+        memo:           data.memo,
+        forcedTargetMonth: firstMonth,
+        cashReceiptIssued: data.cashReceiptIssued,
+      })
+    }
+    // none: 수납 없음 — 모드만 저장.
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 입주월 재앵커 — 예약 확정/입실 처리 시 실제 입주월이 선납 record의 targetMonth와 다르면 이동.
+// prepaid 모드만 대상(deposit/none은 no-op). 결제 저장은 기존 recalculatePayments 재사용, 신규 수식 없음.
+// RESERVED 단계엔 isDeposit=false record가 예약 선납분뿐이라 전량 재앵커가 안전.
+export async function reanchorReservationPrepaid(leaseTermId: string): Promise<void> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    select: { reservationDepositMode: true, moveInDate: true, rentAmount: true },
+  })
+  if (!lease || lease.reservationDepositMode !== 'prepaid' || !lease.moveInDate) return
+  const newMonth = `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
+
+  // 익스텐션이 소프트삭제분 자동 제외. 양도인 record는 대상 아님.
+  const records = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, isDeposit: false, isPrevOwner: false },
+    select: { id: true, targetMonth: true },
+  })
+  const stale = records.filter(r => r.targetMonth !== newMonth)
+  if (stale.length === 0) return
+
+  const oldMonths = new Set(stale.map(r => r.targetMonth))
+  let seqBase = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth: newMonth, deletedAt: undefined } })
+  for (const r of stale) {
+    seqBase += 1
+    await prisma.paymentRecord.update({ where: { id: r.id }, data: { targetMonth: newMonth, seqNo: seqBase } })
+  }
+
+  // 이동 후 양쪽 월 재계산(그 달 서버 권위 청구액 기준).
+  await recalculatePayments(leaseTermId, newMonth, await serverBillForMonth(leaseTermId, newMonth, lease.rentAmount))
+  for (const m of oldMonths) {
+    await recalculatePayments(leaseTermId, m, await serverBillForMonth(leaseTermId, m, lease.rentAmount))
+  }
+  revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+}
+
 // 보증금 '받음(실수납)' 기록 — 전 원장 등으로 이미 받았으나 입금기록이 없는 보증금을
 // 계약상 금액 기준으로 실수납 record(isDeposit=true)로 남긴다.
 // finance 보증금 요약의 '받음으로 기록' 버튼, 입주자/예약 폼의 '수납 완료' 체크에서 호출.
@@ -1506,7 +1621,8 @@ export async function getTenantDetail(tenantId: string) {
 
           contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용
           registrationStatus: true, payMethod: true, cashReceipt: true,
-          property: { select: { contactLeadDays: true } },
+          reservationDepositMode: true,   // 예약금 모드 — 예약 취소 반환/몰취 경로 분기용
+          property: { select: { contactLeadDays: true, reservationDepositMode: true } },
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
           room: { select: { id: true, roomNo: true } },
           paymentRecords: {
@@ -1570,6 +1686,12 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
   if (!lease) return null
   if (!['CHECKED_OUT', 'CANCELLED', 'RESERVED'].includes(lease.status)) return null
 
+  // 예약금 모드 해석 — 영업장 기본값 상속. 호실 미지정 예약자(roomId null)도 모드 인지 표시·수납을 위해.
+  const settleProp = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { reservationDepositMode: true },
+  })
+
   return {
     roomId: lease.roomId ?? '',
     roomNo: lease.room?.roomNo ?? '',
@@ -1610,6 +1732,9 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     nextDueDate: null,
     nextDueAmount: 0,
     expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,
+    reservationDepositMode: resolveReservationDepositMode(
+      lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
+    ),
   }
 }
 

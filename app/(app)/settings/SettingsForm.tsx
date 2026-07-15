@@ -68,6 +68,7 @@ type Property = {
   defaultDeposit: number | null
   defaultCleaningFee: number | null
   defaultAreaM2: number | null
+  reservationDepositMode: string | null
   bankAccount: string | null
   contactLeadDays?: number | null
   refundClauseInContract: boolean
@@ -756,6 +757,16 @@ export default function SettingsForm({
                 <label className="text-xs font-medium text-[var(--warm-mid)]">기본 청소비</label>
                 <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
+              <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다.</p>
+              <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                <option value="deposit">보증금 대체 · 받은 예약금을 보증금으로</option>
+                <option value="prepaid">이용료 선납 · 입주월 이용료로 충당</option>
+                <option value="none">안 받음 · 예약금 없이 예약</option>
+              </select>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>

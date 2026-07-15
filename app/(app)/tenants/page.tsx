@@ -34,6 +34,7 @@ export default async function TenantsPage({
       defaultDeposit={settings?.defaultDeposit ?? null}
       defaultCleaningFee={settings?.defaultCleaningFee ?? null}
       contactLeadDays={settings?.contactLeadDays ?? 14}
+      propertyReservationDepositMode={settings?.reservationDepositMode ?? null}
       myRole={myRole}
     />
   )

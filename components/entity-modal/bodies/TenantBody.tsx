@@ -21,6 +21,7 @@ import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
 import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
 import { Section } from '../widgets/Section'
+import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 
 type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
@@ -52,6 +53,9 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
             dueDay: lease.dueDay,
             reservationConfirmedAt: lease.reservationConfirmedAt, roomId: lease.room?.id ?? null,
+            reservationDepositMode: resolveReservationDepositMode(
+              lease.reservationDepositMode, lease.property?.reservationDepositMode, lease.isShortTerm,
+            ),
           }}
           tenantId={tenant.id}
           tenantName={tenant.name}

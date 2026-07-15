@@ -84,6 +84,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       defaultDeposit: true,
       defaultCleaningFee: true,
       defaultAreaM2: true,
+      reservationDepositMode: true,
       bankAccount: true,
       contactLeadDays: true,
       refundClauseInContract: true,
@@ -538,6 +539,11 @@ export async function updatePropertySettings(formData: FormData) {
   const defaultDeposit    = formData.get('defaultDeposit')
   const defaultCleaningFee = formData.get('defaultCleaningFee')
   const defaultAreaM2     = formData.get('defaultAreaM2')
+  // 예약금 기본 처리 모드 — 'deposit'(보증금 대체)|'prepaid'(이용료 선납)|'none'(안 받음). 미허용값은 무시.
+  const reservationDepositModeRaw = formData.get('reservationDepositMode') as string | null
+  const reservationDepositMode = ['deposit', 'prepaid', 'none'].includes(reservationDepositModeRaw ?? '')
+    ? reservationDepositModeRaw
+    : 'deposit'
   const bankAccount       = formData.get('bankAccount') as string
   const contactLeadDaysRaw = formData.get('contactLeadDays')
   // 퇴실 환불 규정의 위약금율·기간·1일당·청소비 차감은 법적으로 임의 설정 불가 → 입력 제거(컬럼은 보존, 미사용).
@@ -563,6 +569,7 @@ export async function updatePropertySettings(formData: FormData) {
       defaultDeposit:   defaultDeposit   ? Number(String(defaultDeposit).replace(/[^0-9]/g, ''))   : null,
       defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
       defaultAreaM2:    defaultAreaM2 && String(defaultAreaM2).trim() ? Number(String(defaultAreaM2).replace(/[^0-9.]/g, '')) || null : null,
+      reservationDepositMode,
       bankAccount:      bankAccount?.trim() || null,
       contactLeadDays:  Math.min(90, Math.max(1, Number(String(contactLeadDaysRaw ?? '').replace(/[^0-9]/g, '')) || 14)),
       refundClauseInContract,
