@@ -38,7 +38,8 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   openCheckoutProration?: boolean
 }) {
   const router = useRouter()
-  const [settlement, setSettlement] = useState<Settlement | null>(null)
+  // undefined=로딩, null=조회 결과 없음(호실 미지정 등 열 수 없는 상태), 값=정상 (오류신고 890bb698)
+  const [settlement, setSettlement] = useState<Settlement | null | undefined>(undefined)
   const [records, setRecords] = useState<Records | null>(null)
   const [mode, setMode] = useState<'summary' | 'full'>(openCheckoutProration ? 'full' : 'summary')
   const [showEntryForm, setShowEntryForm] = useState(false)
@@ -71,7 +72,10 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
     })
   }
 
-  if (!settlement) return <SkeletonRows rows={5} className="py-4" />
+  if (settlement === undefined) return <SkeletonRows rows={5} className="py-4" />
+  if (settlement === null) return (
+    <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+  )
 
   return (
     <div className="space-y-3">

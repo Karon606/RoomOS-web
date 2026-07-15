@@ -1541,10 +1541,11 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
   const found = allRows.find(r => r.leaseTermId === leaseTermId)
   if (found) return found
 
-  // 활성 lease가 아니면 (CHECKED_OUT / CANCELLED) — 퇴실자의 과거 수납 내역 조회용 fallback.
-  // getRoomPaymentStatus는 활성 lease만 가져오므로 여기서 직접 lease 정보를 구성한다.
-  // 입력·할인·납부일 위젯이 의존하는 필드는 모두 채우되, 새로운 수납이 의미 없는 상태이므로
-  // expected/balance/firstUnpaidMonth 등은 0/false/null로 둔다.
+  // getRoomPaymentStatus 행에 없는 lease 조회용 fallback — 퇴실자(CHECKED_OUT/CANCELLED)의
+  // 과거 수납 내역, 그리고 호실 미지정 예약자(RESERVED, roomId null)의 프리즘(오류신고 890bb698).
+  // 호실 단위 flatMap이라 roomId null lease는 행이 없어 여기서 직접 lease 정보를 구성한다.
+  // 입력·할인·납부일 위젯이 의존하는 필드(depositAmount·cleaningFee·moveInDate 등)는 모두 채우되,
+  // 이 함수는 읽기 전용 조회이므로 expected/balance/firstUnpaidMonth 등은 0/false/null로 둔다.
   const propertyId = await getPropertyId()
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: leaseTermId, propertyId },
@@ -1555,7 +1556,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     },
   })
   if (!lease) return null
-  if (!['CHECKED_OUT', 'CANCELLED'].includes(lease.status)) return null
+  if (!['CHECKED_OUT', 'CANCELLED', 'RESERVED'].includes(lease.status)) return null
 
   return {
     roomId: lease.roomId ?? '',
