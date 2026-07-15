@@ -2882,8 +2882,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                 </div>
-                {/* 문의 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장 — 거주 단계는 기존 퇴실일 필드 사용 */}
-                {roomIsOptional && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
+                {/* 문의·예약 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장 — 거주 단계(showExitDate)는 기존 필드 사용.
+                    roomIsOptional 게이트면 '예약 확정'자가 제외되어 입력해도 저장이 안 됐다(운영자 신고 2026-07-15) */}
+                {!showExitDate && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
                 {!selectedRoomId ? (
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
                 ) : short && days != null ? (
