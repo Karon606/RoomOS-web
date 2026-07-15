@@ -150,11 +150,12 @@ type Row = {
 }
 
 // 공개페이지 섹션 id → 표시 이름 (index.html 의 <section id> 와 일치)
+// video 는 개편 전(2026-07-07 이전) 기록용, tour 는 개편 후 현행 id — 같은 투어 영상 섹션.
 const SECTION_LABEL: Record<string, string> = {
   top: '첫 화면(소개)', rooms: '객실·가격', amenities: '편의시설',
-  video: '투어 영상', gallery: '갤러리', location: '위치·약도', contact: '문의',
+  video: '투어 영상', tour: '투어 영상', gallery: '갤러리', location: '위치·약도', contact: '문의',
 }
-const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'gallery', 'location', 'contact']
+const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'tour', 'gallery', 'location', 'contact']
 
 function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label: string; views: number; visitors: number }[] {
   type Acc = { label: string; views: number; visitors: Set<string> }
