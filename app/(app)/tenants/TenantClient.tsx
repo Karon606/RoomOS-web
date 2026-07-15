@@ -1352,6 +1352,10 @@ export default function TenantClient({
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
                   {(() => { const ex = statusException(status); return ex && <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge> })()}
+                  {/* 예약 확정자 구분 — 예약금까지 받은 단계라 일반 예약과 다름(운영자 요청 2026-07-15) */}
+                  {status === 'RESERVED' && lease?.reservationConfirmedAt && (
+                    <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">확정</span>
+                  )}
                 </div>
                 {/* 연락처 — 탭하면 바로 전화 */}
                 {cardFields.contact && primary && (
