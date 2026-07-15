@@ -864,7 +864,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   ])
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [transferOpen, setTransferOpen] = useState(false)   // 품목별 재고 옮기기(신고 0d911b19)
+  const [transferOpen, setTransferOpen] = useState(false)   // 품목별 위치 이동(신고 0d911b19, 명칭 97839062)
 
   const handleDeleteItem = async () => {
     if (!(await confirmDialog({ title: '이 품목을 삭제할까요?', message: '지출·점검·입수 기록이 하나도 없는 품목만 삭제됩니다(잘못 생성된 품목 정리용). 기록이 있으면 숨김을 사용하세요.', level: 'danger', confirmLabel: '삭제' }))) return
@@ -965,8 +965,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
           <Btn variant="secondary" size="sm" onClick={handleDeleteItem} disabled={pending}>삭제</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
+          {/* 위치 이동은 관리 그룹으로 — 점검 무리 옆에 두면 품목 점검 중 오클릭(오류신고 97839062) */}
+          <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>위치 이동</Btn>
           <div className="flex-1" />
-          <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 (차이 소모 제외)</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('disposal')}>폐기</Btn>
@@ -1134,7 +1135,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           </div>
         </>
       )}
-      {/* 품목별 재고 옮기기 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 옮기기와 동일 컴포넌트 */}
+      {/* 품목별 위치 이동 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 이동과 동일 컴포넌트 */}
       {transferOpen && (
         <TransferStockModal rows={[row]} initialItemId={row.id}
           onClose={() => setTransferOpen(false)}
@@ -2995,7 +2996,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
   }
 
   return (
-    <Modal open onClose={onClose} title="재고 옮기기" width="sm"
+    <Modal open onClose={onClose} title="위치 이동" width="sm"
       subtitle="위치에서 위치로 옮기거나 두 위치를 통째로 맞바꿉니다. 총 재고는 변하지 않아요.">
       <div className="p-5 space-y-4">
         <div className="space-y-1.5">
@@ -3308,7 +3309,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           </div>
           {/* 위치 간 이동 — 점검(허브 자동 차감)과 별개의 명시적 이동·맞바꿈 */}
           <div className="flex justify-end">
-            <Btn type="button" variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
+            <Btn type="button" variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>위치 이동</Btn>
           </div>
         </div>
         {transferOpen && (
