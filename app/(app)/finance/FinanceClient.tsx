@@ -3419,6 +3419,12 @@ export default function FinanceClient({
                           <option value="">선택 안함</option>
                           {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
                         </select>
+                        {/* 등록 폼과 동일한 상태 인지형 안내(오류신고 ad4256b0) */}
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                          {editItems.length > 0
+                            ? <>여러 방에 나눠 배정하려면 위 품목 카드에서 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜세요.</>
+                            : <>여러 방에 나눠 배정하려면 먼저 <strong className="text-[var(--warm-mid)]">품목 선택</strong>에서 품목을 추가한 뒤, 품목 카드의 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜세요.</>}
+                        </p>
                       </div>
                     )
                   )}
@@ -3701,7 +3707,12 @@ export default function FinanceClient({
                         <option value="">선택 안함</option>
                         {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
                       </select>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">여러 방에 나눠 배정하려면 항목에서 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜세요.</p>
+                      {/* 안내는 화면 상태에 맞게 — 품목이 없으면 켤 토글 자체가 없어 길을 잘못 안내(오류신고 ad4256b0) */}
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                        {addItems.length > 0
+                          ? <>여러 방에 나눠 배정하려면 위 품목 카드에서 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜세요.</>
+                          : <>여러 방에 나눠 배정하려면 먼저 <strong className="text-[var(--warm-mid)]">품목 선택</strong>에서 품목을 추가한 뒤, 품목 카드의 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜세요.</>}
+                      </p>
                     </div>
                   )
                 )}
