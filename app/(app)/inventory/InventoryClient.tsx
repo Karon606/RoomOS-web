@@ -710,48 +710,63 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           최근 {row.lastPeriodDays}일 동안 {fmtQty(row.lastPeriodConsumption, stockUnit)} 소모 · 최근 점검 {fmtDate(row.lastCheckDate)}
         </p>
       )}
-      {/* 월별 사용량 — 최근 6개월 막대 (사용량 0인 달은 빈 막대로 표시) */}
-      {row.monthlyConsumption && row.monthlyConsumption.some(m => m.qty > 0) && (
+      {/* 월별 사용량 — 최근 6개월 막대. 세 상태를 구분한다:
+          미관측(null, 그 달엔 점검 없음) = 막대 없음 / 실사용 0 = 시리즈색 2px 실선 / 진행 중(이번 달) = --inspect 틴트(가이드 §04).
+          종전엔 셋이 전부 회색 12% 막대라 '조금 썼다'로 읽혀 편차 오해의 근원이었음(2026-07-17 운영자 의문). */}
+      {row.monthlyConsumption && row.monthlyConsumption.some(m => (m.qty ?? 0) > 0) && (
         <div className="pt-1.5 border-t border-[var(--warm-border)]/60">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">월별 사용량 (최근 6개월)</span>
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">
-              합계 {fmtQty(row.monthlyConsumption.reduce((s, m) => s + m.qty, 0), stockUnit)}
+              합계 {fmtQty(row.monthlyConsumption.reduce((s, m) => s + (m.qty ?? 0), 0), stockUnit)}
             </span>
           </div>
           {(() => {
-            const max = Math.max(...row.monthlyConsumption.map(m => m.qty), 1)
+            const max = Math.max(...row.monthlyConsumption.map(m => m.qty ?? 0), 1)
             // 사용자 피드백 2026-06-01: '월별' 인데 합계만 보이면 의미 없음 → 각 월 숫자 노출.
             const fmtBarQty = (q: number): string => {
-              if (q === 0) return ''
               // 1000 이상이면 'k' 축약 (예: 6270 → 6.3k)
               if (q >= 1000) return (q / 1000).toFixed(q >= 10000 ? 0 : 1) + 'k'
               if (q >= 100) return Math.round(q).toString()
               return q % 1 === 0 ? q.toString() : q.toFixed(1)
             }
+            const lastIdx = row.monthlyConsumption.length - 1
             return (
               <div className="flex items-end gap-1">
-                {row.monthlyConsumption.map(m => {
-                  // 0 인 달도 시각적으로 자리를 차지하도록 최소 높이 12% placeholder.
-                  const h = m.qty > 0 ? Math.max(12, Math.round((m.qty / max) * 100)) : 12
+                {row.monthlyConsumption.map((m, i) => {
+                  // 이번 달 판정은 시계가 아니라 '마지막 슬롯'(구조적) — 클라 new Date()로 월을 비교하면
+                  // 브라우저 TZ 에 따라 월 경계에서 어긋난다(서버가 kstDay 를 쓰는 이유와 동일).
+                  const isCurrent = i === lastIdx
                   const monthNum = Number(m.month.slice(5))
+                  const tip = m.qty == null
+                    ? `${monthNum}월 · 점검 기록 없음`
+                    : `${monthNum}월 · ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '사용 없음'}${isCurrent ? ' (진행 중)' : ''}`
                   return (
                     <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
-                      {/* 막대 위 숫자 — 0 이면 '·' 로 시각적 placeholder */}
                       <span className="text-[0.65625rem] font-medium leading-none tabular-nums"
-                        style={{ color: m.qty > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>
-                        {m.qty > 0 ? fmtBarQty(m.qty) : '·'}
+                        style={{ color: m.qty == null ? 'var(--warm-muted)' : 'var(--coral)' }}>
+                        {m.qty == null ? '·' : fmtBarQty(m.qty)}
                       </span>
-                      <div className="w-full flex items-end" style={{ height: '24px' }}>
-                        <div className="w-full rounded-sm transition-[width]"
-                          title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '기록 없음'}`}
-                          style={{
-                            height: `${h}%`,
-                            background: m.qty > 0 ? 'var(--coral)' : 'var(--warm-border)',
-                            opacity: m.qty > 0 ? 0.75 : 0.4,
-                          }} />
+                      {/* 진행 중인 달은 트랙 전체에 --inspect-bg — 만월과 나란히 놓여 급감으로 오독되는 것 방지 */}
+                      <div className="w-full flex items-end rounded-sm" title={tip}
+                        style={{ height: '24px', background: isCurrent ? 'var(--inspect-bg)' : undefined }}>
+                        {m.qty != null && (
+                          // 실사용 0 은 2px 실선 — 시리즈색을 유지해야 '0 도 데이터' 로 읽힌다.
+                          // 미관측은 막대를 아예 그리지 않는다(회색 막대는 소량 사용으로 오독됨).
+                          <div className="w-full rounded-sm"
+                            style={{
+                              height: m.qty > 0 ? `${Math.max(12, Math.round((m.qty / max) * 100))}%` : '2px',
+                              background: 'var(--coral)',
+                              opacity: 0.75,
+                            }} />
+                        )}
                       </div>
-                      <span className="text-[0.65625rem] text-[var(--warm-muted)] leading-none">{monthNum}</span>
+                      <span className="text-[0.65625rem] leading-none"
+                        style={{
+                          color: isCurrent ? 'var(--inspect-fg)' : 'var(--warm-muted)',
+                          fontWeight: isCurrent ? 500 : undefined,
+                          opacity: m.qty == null ? 0.6 : undefined,
+                        }}>{monthNum}</span>
                     </div>
                   )
                 })}

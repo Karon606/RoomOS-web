@@ -419,21 +419,26 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     }
 
     // 월별 사용량 — 최근 6개월. 연속 점검 사이 소모량을 늦은 쪽 월에 귀속.
-    // 6개월 슬롯 미리 생성(0 으로) → 실제 데이터 있는 월만 덮어쓰기 → UI 가 막대 그릴 때 빈 월도 표시.
-    const monthlyMap: Record<string, number> = {}
+    // 6개월 슬롯을 null(미관측) 로 미리 생성 → 구간이 귀속된 월만 숫자로 승격.
+    // ⚠️ null(그 달엔 점검 자체가 없음) 과 0(점검했는데 안 씀) 은 다른 상태다. 종전엔 둘 다 0 이라
+    //   추적 시작 전 달이 '사용량 0' 으로 그려져 편차가 커 보였음 (2026-07-17 운영자 의문).
+    //   avgDaily 의 0/null 관례(constants.ts)와 동일하게 맞춘다.
+    const monthlyMap: Record<string, number | null> = {}
     const now = new Date()
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      monthlyMap[key] = 0
+      monthlyMap[key] = null
     }
     // 구간 시리즈(itemChecks·intervalConsumed)는 위 평균 소모율 계산과 공유 — 여기선 월별 귀속만.
     for (const { curr, consumed } of intervalConsumed) {
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
-      if (key in monthlyMap) monthlyMap[key] += consumed
+      if (key in monthlyMap) monthlyMap[key] = (monthlyMap[key] ?? 0) + consumed
     }
     // 월 단위 음수(그 달 입고가 사용량보다 많아 순증한 경우)는 사용량 0 으로 클램프 — '사용량' 은 음수일 수 없음.
-    const monthlyConsumption = Object.entries(monthlyMap).map(([month, qty]) => ({ month, qty: qty > 0 ? qty : 0 }))
+    // 단 미관측(null)은 클램프 대상이 아니다 — 0 으로 내리면 '안 씀' 과 다시 뭉개진다.
+    const monthlyConsumption = Object.entries(monthlyMap)
+      .map(([month, qty]) => ({ month, qty: qty == null ? null : Math.max(0, qty) }))
 
     // isHub 는 '이 품목의 허브' — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
     const locations: StorageLocationItem[] = allItemLocations

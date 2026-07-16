@@ -63,7 +63,9 @@ export type InventoryRow = {
   pendingPurchases: PendingPurchase[]  // 수령 대기 중인 구매 내역
   locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록
   lastCheckLocationBreakdown: LocationQtyEntry[]  // 최신 실사의 위치별 잔량
-  monthlyConsumption: { month: string; qty: number }[]  // 최근 6개월 사용량 (YYYY-MM 오래된→최신)
+  // 최근 6개월 사용량 (YYYY-MM 오래된 것부터, 마지막 슬롯 = 진행 중인 이번 달).
+  // qty: 0 = 점검했으나 안 씀, null = 그 달엔 점검 자체가 없음(미관측). 둘을 뭉개면 추적 시작 전 달이 '사용량 0' 으로 보인다.
+  monthlyConsumption: { month: string; qty: number | null }[]
 }
 
 export type PricePoint = {
