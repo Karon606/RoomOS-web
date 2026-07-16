@@ -6,7 +6,8 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { requireEdit } from '@/lib/role'
+import { requireEdit, getMyRole } from '@/lib/role'
+import { canReadScope } from '@/lib/auth/routeScope'
 import { kstYmd } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -1665,6 +1666,8 @@ export async function getTenantQuickInfo(tenantId: string) {
 
 // 단일 lease의 그 달 RoomRow (수납 상태) — 입주자 페이지에서 인라인 표시용
 export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: string): Promise<RoomRow | null> {
+  // 금액 읽기 차단(제한 스태프) — 수납 정보면 진입 자체 차단(엔티티 모달 결제 탭도 클라에서 숨김).
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const allRows = await getRoomPaymentStatus(targetMonth)
   const found = allRows.find(r => r.leaseTermId === leaseTermId)
   if (found) return found
@@ -1843,6 +1846,8 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
 }
 
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
+  // 금액 읽기 차단(제한 스태프) — 납부 내역 진입 자체 차단.
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const propertyId = await getPropertyId()
   // 납부 내역은 payDate 기준 — viewMonth 안에 입금된 모든 record (targetMonth 무관)
   const [y, m] = targetMonth.split('-').map(Number)

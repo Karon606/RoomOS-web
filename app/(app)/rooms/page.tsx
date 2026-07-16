@@ -2,6 +2,7 @@ import { getRoomPaymentStatus, getMonthPaymentAggregates } from './actions'
 import { getExtraIncomes } from '@/app/(app)/finance/actions'
 import { getIncomeCategories, getMyRole } from '@/app/(app)/settings/actions'
 import { kstMonthStr } from '@/lib/kstDate'
+import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import RoomsClient from './RoomsClient'
 
 export default async function RoomsPage({
@@ -9,6 +10,7 @@ export default async function RoomsPage({
 }: {
   searchParams: Promise<{ month?: string; tab?: string }>
 }) {
+  await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { month, tab } = await searchParams
   // 기본 월은 KST 기준 — 서버 로컬(new Date, Vercel=UTC)이면 매월 1일 00:00-09:00 KST에 전월로 잡힘(적대검증 필수 4)
   const targetMonth = month ?? kstMonthStr()

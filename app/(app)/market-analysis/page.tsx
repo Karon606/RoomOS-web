@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
 import MarketClient from './MarketClient'
 import { getRoomTypeOptions, getWindowTypeOptions, getRoomDirectionOptions } from '@/app/(app)/settings/actions'
+import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 
 export default async function MarketAnalysisPage() {
+  await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { propertyId } = await requirePropertyAccess()
 
   const [property, surveys, roomTypes, windowTypes, directions] = await Promise.all([

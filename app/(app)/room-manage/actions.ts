@@ -7,6 +7,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
+import { canReadScope } from '@/lib/auth/routeScope'
 import {
   createDriveResumableSession,
   setDrivePublicReadable,
@@ -15,14 +16,14 @@ import {
 } from '@/lib/google-drive'
 
 async function getPropertyId() {
-  const { userId, propertyId } = await requirePropertyAccess()
-  return { user: { sub: userId }, propertyId }
+  const { userId, propertyId, role } = await requirePropertyAccess()
+  return { user: { sub: userId }, propertyId, role }
 }
 
 // 호실 목록 조회
 export async function getRooms() {
-  const { propertyId } = await getPropertyId()
-  return prisma.room.findMany({
+  const { propertyId, role } = await getPropertyId()
+  const rooms = await prisma.room.findMany({
     where: { propertyId },
     include: {
       photos: { orderBy: { sortOrder: 'asc' } },
@@ -43,6 +44,16 @@ export async function getRooms() {
     },
     orderBy: { roomNo: 'asc' },
   })
+
+  // 금액 읽기 차단(제한 스태프) — 기준·예정·비거주 이용료를 응답에서 제거. 조회 전용, 결제 수식 무관.
+  if (!canReadScope(role, 'money')) {
+    for (const r of rooms) {
+      ;(r as { baseRent: number | null }).baseRent = null
+      ;(r as { scheduledRent: number | null }).scheduledRent = null
+      ;(r as { nonResidentRent: number | null }).nonResidentRent = null
+    }
+  }
+  return rooms
 }
 
 // 호실 추가

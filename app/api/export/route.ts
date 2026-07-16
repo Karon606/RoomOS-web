@@ -1,4 +1,5 @@
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
+import { canReadScope } from '@/lib/auth/routeScope'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -63,6 +64,8 @@ export async function GET(request: NextRequest) {
 
   const access = await getPropertyAccess()
   if (!access) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // 금액 읽기 차단(제한 스태프) — 엑셀은 금액 시트 다수라 내보내기 전면 차단.
+  if (!canReadScope(access.role, 'money')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const propertyId = access.propertyId
 
   const { searchParams } = new URL(request.url)

@@ -15,6 +15,7 @@ import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } f
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
+import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1647,6 +1648,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
+  await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { propertyId } = await requirePropertyAccess()
 
   const { month } = await searchParams

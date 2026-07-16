@@ -9,21 +9,22 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
+import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 
 async function getPropertyId() {
-  const { userId, propertyId } = await requirePropertyAccess()
-  return { user: { sub: userId }, propertyId }
+  const { userId, propertyId, role } = await requirePropertyAccess()
+  return { user: { sub: userId }, propertyId, role }
 }
 
 // 입주자 목록 조회
 export async function getTenants() {
-  const { propertyId } = await getPropertyId()
+  const { propertyId, role } = await getPropertyId()
 
-  return prisma.tenant.findMany({
+  const tenants = await prisma.tenant.findMany({
     where: { propertyId },
     include: {
       contacts: true,
@@ -47,6 +48,17 @@ export async function getTenants() {
     },
     orderBy: { createdAt: 'desc' },
   })
+
+  // 금액 읽기 차단(제한 스태프) — 응답 payload에서 이용료·보증금 제거. 조회 전용 경로라 결제 수식 무관.
+  if (!canReadScope(role, 'money')) {
+    for (const t of tenants) {
+      for (const lt of t.leaseTerms) {
+        ;(lt as { rentAmount: number | null }).rentAmount = null
+        ;(lt as { depositAmount: number | null }).depositAmount = null
+      }
+    }
+  }
+  return tenants
 }
 
 // 호실 목록 (입주자 등록/수정 시 선택용)

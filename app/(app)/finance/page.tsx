@@ -1,6 +1,7 @@
 import { getExpenses, getExtraIncomes, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger, getTrackedCategories, getLastPayDefaults } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
+import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 
 // 'income'(부가 수익)은 2026-07-02 수납관리(/rooms?tab=income)로 이동 — 여기선 더 이상 유효 탭 아님.
 type FinTab = 'expense' | 'assets' | 'deposit' | 'reserve'
@@ -10,6 +11,7 @@ export default async function FinancePage({
 }: {
   searchParams: Promise<{ month?: string; tab?: string }>
 }) {
+  await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { month, tab } = await searchParams
   const initialTab: FinTab | undefined =
     tab === 'expense' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'

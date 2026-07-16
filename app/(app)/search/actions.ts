@@ -4,6 +4,7 @@
 
 import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { canReadScope } from '@/lib/auth/routeScope'
 import { normalizeSearchQuery, type SearchQueryKind } from '@/lib/searchQuery'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -41,7 +42,8 @@ const STATUS_WEIGHT: Record<string, number> = {
 const TAKE_SHOW = 5
 
 export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult> {
-  const { propertyId } = await requirePropertyAccess()
+  const { propertyId, role } = await requirePropertyAccess()
+  const hideMoney = !canReadScope(role, 'money')   // 제한 스태프 — 지출 그룹·금액 인라인 제거
   const { q, qDigits, roomCore, kind, valid } = normalizeSearchQuery(rawQuery)
   if (!valid) return { queryKind: kind, groups: [] }
 
@@ -215,11 +217,12 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     title: fmtRoomNo(r.roomNo) ?? r.roomNo,
     right: r.isVacant ? '공실' : (r.leaseTerms[0]?.tenant.name ?? null),
     badge: null,
-    caption: [r.floor ? `${r.floor}층` : null, r.type, r.baseRent > 0 ? fmtWon(r.baseRent) : null].filter(Boolean).join(' · ') || null,
+    caption: [r.floor ? `${r.floor}층` : null, r.type, (!hideMoney && r.baseRent > 0) ? fmtWon(r.baseRent) : null].filter(Boolean).join(' · ') || null,
     action: { type: 'modal', kind: 'room', roomId: r.id },
   }))
 
-  const expenseHits: SearchHit[] = expenses.slice(0, TAKE_SHOW).map(e => {
+  // 지출 그룹은 금액 차단 시 전면 제외(빈 그룹은 하단 filter가 제거)
+  const expenseHits: SearchHit[] = hideMoney ? [] : expenses.slice(0, TAKE_SHOW).map(e => {
     const month = `${e.date.getFullYear()}-${String(e.date.getMonth() + 1).padStart(2, '0')}`
     return {
       group: 'expense', id: e.id,
