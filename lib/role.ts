@@ -1,6 +1,8 @@
 import { requirePropertyAccess } from './auth/propertyAccess'
+import { canEditScope, type WriteScope } from './auth/routeScope'
 
 export type { Role } from './role-types'
+export type { WriteScope } from './auth/routeScope'
 export { ROLE_LABEL } from './role-types'
 import type { Role } from './role-types'
 
@@ -24,6 +26,15 @@ export async function requireEdit(): Promise<Role> {
   const role = await getMyRole()
   if (!canEdit(role)) throw new Error('수정 권한이 없습니다.')
   return role
+}
+
+// 스코프별 쓰기 — 전면 쓰기(canEdit)가 아니어도 특정 스코프만 쓰기를 허용(제한 스태프 재고).
+// canEdit(OWNER|MANAGER)는 무조건 통과, 그 외는 canEditScope 보유 역할만. requireEdit·requireOwner 무변경.
+export async function requireScopeEdit(scope: WriteScope): Promise<Role> {
+  const role = await getMyRole()
+  if (canEdit(role)) return role
+  if (canEditScope(role, scope)) return role
+  throw new Error('수정 권한이 없습니다.')
 }
 
 export async function requireOwner(): Promise<Role> {

@@ -21,6 +21,7 @@ enum UserRole {
   OWNER
   MANAGER
   STAFF
+  LIMITED_STAFF   // 제한 스태프 — 재고 입력 담당, 금액·매출 은닉(오류신고 65992b0a)
 }
 
 // 앱 전체 접근 상태 (베타 게이팅) — 영업장 역할(UserRole)과 별개
