@@ -384,6 +384,11 @@ export default function SettingsForm({
   }
 
   const handleRoleChange = async (userId: string, role: Role) => {
+    // 금액 가시성을 낮추는 변경(→ 제한 스태프)은 되돌릴 수 없는 인상이 아니므로 확인만 — 오조작 방지
+    const prevRole = members.find(m => m.userId === userId)?.role
+    if (role === 'LIMITED_STAFF' && prevRole !== 'LIMITED_STAFF') {
+      if (!(await confirmDialog({ title: '이 멤버는 앞으로 금액·매출을 볼 수 없게 됩니다. 계속할까요?', level: 'caution', confirmLabel: '계속' }))) return
+    }
     const result = await updateMemberRole(userId, role)
     if (!result.ok) { showToast(result.error); return }
     setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role, roleLabel: ROLE_LABEL[role] } : m))
@@ -1337,6 +1342,7 @@ export default function SettingsForm({
                           style={{ color: 'var(--warm-dark)' }}>
                           <option value="MANAGER">관리자</option>
                           <option value="STAFF">스태프</option>
+                          <option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김</option>
                         </select>
                         <Btn type="button" variant="primary" size="sm" onClick={() => handleApproveJoin(req.id, req.role)}>승인</Btn>
                         <Btn type="button" variant="secondary" size="sm" onClick={() => handleRejectJoin(req.id)}>거절</Btn>
@@ -1372,6 +1378,7 @@ export default function SettingsForm({
                       <option value="OWNER">소유자</option>
                       <option value="MANAGER">관리자</option>
                       <option value="STAFF">스태프</option>
+                      <option value="LIMITED_STAFF">제한 스태프 · 재고 입력 담당, 금액 숨김</option>
                     </select>
                   ) : (
                     <span className={`text-xs px-2 py-1 rounded-lg font-medium
@@ -1429,7 +1436,8 @@ export default function SettingsForm({
             <div className="space-y-2">
               {([['소유자', '모든 기능 + 멤버 관리'],
                  ['관리자', '등록·수정·삭제 가능, 멤버 관리 불가'],
-                 ['스태프', '조회만 가능']] as const).map(([label, desc]) => (
+                 ['스태프', '조회만 가능'],
+                 ['제한 스태프', '재고 관리를 직접 입력·수정할 수 있고, 입주자·호실 현황은 보되 보증금·이용료·미납 등 금액과 매출·지출·정산·보고서·서류는 보이지 않습니다.']] as const).map(([label, desc]) => (
                 <div key={label} className="flex gap-3 text-xs">
                   <span className="text-[var(--warm-dark)] w-14 shrink-0">{label}</span>
                   <span className="text-[var(--warm-muted)]">{desc}</span>

@@ -108,6 +108,7 @@ export default async function AppLayout({
       currentPropertyId={currentPropertyId}
       isSuperAdmin={isSuperAdmin}
       isAdminView={isAdminView}
+      role={access?.role ?? 'OWNER'}
     >
       <ClearAppBadge />
       <PeekFrameGuard />

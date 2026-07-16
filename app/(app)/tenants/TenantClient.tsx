@@ -46,6 +46,7 @@ import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
+import { useCanReadScope } from '@/components/RoleContext'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -318,6 +319,11 @@ export default function TenantClient({
   myRole: string
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
+  const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 금액 컬럼·필드·정렬·필터를 집합에서 제외
+  // 카드 표시 항목 — 금액 차단 시 '월이용료·납부일' 제거, '보증금·거주기간'은 거주기간만
+  const tenantCardFields: FieldDef[] = hideMoney
+    ? [{ key: 'contact', label: '연락처' }, { key: 'deposit', label: '거주기간' }]
+    : TENANT_CARD_FIELDS
   const router = useRouter()
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
@@ -499,8 +505,10 @@ export default function TenantClient({
     document.addEventListener('mouseup', onUp)
   }, [])
 
+  // 제한 스태프는 금액 컬럼 자체를 집합에서 제외(마스킹 아님 — 흔적 없이 제거)
+  const MONEY_COLS: readonly string[] = ['depositAmount', 'rentAmount']
   const visibleCols = COL_DEFS.filter(
-    c => (c.tabs as readonly string[]).includes(cat) && colVis[c.key]
+    c => (c.tabs as readonly string[]).includes(cat) && colVis[c.key] && !(hideMoney && MONEY_COLS.includes(c.key))
   )
 
   // ── 필터 ────────────────────────────────────────────────────────
@@ -1115,14 +1123,16 @@ export default function TenantClient({
               </div>
             )}
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
-            <div className="flex items-center gap-2">
-              <MoneyInput value={rentMinFilter} onChange={v => setRentMinFilter(v && v > 0 ? v : undefined)} placeholder="최소" />
-              <span className="text-[var(--warm-muted)] text-sm">~</span>
-              <MoneyInput value={rentMaxFilter} onChange={v => setRentMaxFilter(v && v > 0 ? v : undefined)} placeholder="최대" />
+          {!hideMoney && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
+              <div className="flex items-center gap-2">
+                <MoneyInput value={rentMinFilter} onChange={v => setRentMinFilter(v && v > 0 ? v : undefined)} placeholder="최소" />
+                <span className="text-[var(--warm-muted)] text-sm">~</span>
+                <MoneyInput value={rentMaxFilter} onChange={v => setRentMaxFilter(v && v > 0 ? v : undefined)} placeholder="최대" />
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex gap-2 pt-1">
             <Btn type="button" variant="secondary" size="sm" className="flex-1" onClick={resetFilters}>초기화</Btn>
             <Btn type="button" variant="primary" size="sm" className="flex-1" onClick={() => setShowFilters(false)}>닫기</Btn>
@@ -1156,7 +1166,7 @@ export default function TenantClient({
         {/* 표시 항목 — 데스크탑 표 열. v2.0 §23 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
         <DisplayFieldsMenu
           className="hidden sm:block"
-          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat))}
+          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat) && !(hideMoney && MONEY_COLS.includes(c.key)))}
           visible={colVis as Record<string, boolean>}
           onToggle={k => updateColVis(k as ColKey, !colVis[k as ColKey])}
           heading="표에 표시할 항목"
@@ -1177,14 +1187,16 @@ export default function TenantClient({
             { value: 'status',        label: '상태' },
             { value: 'roomNo',        label: '호실순' },
             { value: 'name',          label: '이름' },
-            { value: 'rentAmount',    label: '이용료' },
-            { value: 'depositAmount', label: '보증금' },
+            ...(hideMoney ? [] : [
+              { value: 'rentAmount' as const,    label: '이용료' },
+              { value: 'depositAmount' as const, label: '보증금' },
+            ]),
             { value: 'dueDay',        label: '납부일' },
             { value: 'stayPeriod',    label: '거주기간' },
             { value: 'moveInDate',    label: '입실일' },
           ]}
         />
-        <DisplayFieldsMenu fields={TENANT_CARD_FIELDS} visible={cardFields} onToggle={toggleCardField} />
+        <DisplayFieldsMenu fields={tenantCardFields} visible={cardFields} onToggle={toggleCardField} />
       </div>
 
       {/* 에러 */}
@@ -1389,7 +1401,7 @@ export default function TenantClient({
                     className="text-xs text-[var(--coral)] mb-2 inline-block hover:underline underline-offset-2">{formatPhone(primary.contactValue)}</a>
                 )}
                 {/* 이용료 · 납부일 */}
-                {cardFields.payment && (
+                {!hideMoney && cardFields.payment && (
                   <div className="flex items-center gap-2 text-xs flex-wrap">
                     <span className="text-[var(--warm-muted)]">월이용료</span>
                     <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
@@ -1413,7 +1425,7 @@ export default function TenantClient({
                   const resvMode = lease?.status === 'RESERVED'
                     ? resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm)
                     : null
-                  const showDeposit = (lease?.depositAmount ?? 0) > 0 && resvMode !== 'none'
+                  const showDeposit = !hideMoney && (lease?.depositAmount ?? 0) > 0 && resvMode !== 'none'
                   const depositLabel = resvMode === 'prepaid' ? '이용료 선납' : isConfirmedReservation ? '예약금' : '보증금'
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">

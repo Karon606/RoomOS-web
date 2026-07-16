@@ -8,6 +8,8 @@ import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { signOut } from '@/app/property-select/actions'
 import { type AppUser } from '@/components/layout/Header'
 import { useTheme } from '@/components/theme/ThemeProvider'
+import type { Role } from '@/lib/role-types'
+import { roleHome } from '@/lib/auth/routeScope'
 
 // ── SVG Icons — Stayeum Design Guide v2 (Lucide style)
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
@@ -139,6 +141,28 @@ const NAV_GROUPS = [
   },
 ]
 
+// 제한 스태프 전용 내비 — 재고 쓰기 + 입주자·호실 조회 + 요청. 그 외 전부 은닉(65992b0a).
+const LIMITED_STAFF_NAV_GROUPS = [
+  {
+    label: '업무',
+    items: [
+      { href: '/inventory',   label: '재고 관리',   Icon: IcoInventory },
+      { href: '/room-manage', label: '호실 관리',   Icon: IcoRooms },
+      { href: '/tenants',     label: '입주자 관리', Icon: IcoTenants },
+    ],
+  },
+  {
+    label: '운영',
+    items: [
+      { href: '/requests', label: '요청·컴플레인', Icon: IcoRequests },
+    ],
+  },
+]
+
+function navGroupsFor(role: Role) {
+  return role === 'LIMITED_STAFF' ? LIMITED_STAFF_NAV_GROUPS : NAV_GROUPS
+}
+
 // ── Logo variants ──────────────────────────────────────────────────
 // 가이드 § 01 WORDMARK: 통합 워드마크 (마크+텍스트 일체) 사용
 function LogoFull() {
@@ -157,6 +181,7 @@ function NavContent({
   month,
   user,
   isSuperAdmin,
+  role,
   onClose,
 }: {
   variant: 'sidebar' | 'drawer'
@@ -164,9 +189,12 @@ function NavContent({
   month: string | null
   user: AppUser
   isSuperAdmin?: boolean
+  role: Role
   onClose?: () => void
 }) {
   const drawer = variant === 'drawer'
+  const navGroups = navGroupsFor(role)
+  const homeHref = roleHome(role)   // 로고 클릭 목적지 — 제한 스태프는 /inventory
   // 계정 행(영업장 관리·로그아웃)도 nav 링크와 동일한 반응형 패턴
   const acctRow = drawer
     ? 'flex items-center gap-2.5 px-5 py-3 min-h-[44px] w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset'
@@ -185,7 +213,7 @@ function NavContent({
         }}
       >
         <Link
-          href={month ? `/dashboard?month=${month}` : '/dashboard'}
+          href={month ? `${homeHref}?month=${month}` : homeHref}
           onClick={onClose}
           aria-label="홈으로"
           className="flex items-center w-full rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
@@ -203,7 +231,7 @@ function NavContent({
 
       {/* Nav groups */}
       <nav className="flex-1 overflow-y-auto py-1">
-        {NAV_GROUPS.map(group => (
+        {navGroups.map(group => (
           <div key={group.label}>
             {/* Group label — HIG 최소 11pt */}
             <div
@@ -303,11 +331,13 @@ function NavContent({
 export default function Sidebar({
   user,
   isSuperAdmin = false,
+  role = 'OWNER',
   isOpen = false,
   onClose,
 }: {
   user: AppUser
   isSuperAdmin?: boolean
+  role?: Role
   isOpen?: boolean
   onClose?: () => void
 }) {
@@ -328,12 +358,12 @@ export default function Sidebar({
         className="hidden md:flex md:w-16 lg:w-[220px] flex-col shrink-0"
         style={style}
       >
-        <NavContent variant="sidebar" pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} />
+        <NavContent variant="sidebar" pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} role={role} />
       </aside>
 
       {/* ── 모바일: 전체화면 메뉴 (배경 페이지가 의미 없으므로 풀스크린 + 그리드로 한 화면에) ── */}
       {isOpen && (
-        <MobileMenu pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} onClose={onClose} />
+        <MobileMenu pathname={pathname} month={month} user={user} isSuperAdmin={isSuperAdmin} role={role} onClose={onClose} />
       )}
     </>
   )
@@ -341,17 +371,20 @@ export default function Sidebar({
 
 // ── 모바일 전체화면 메뉴 — 모든 메뉴를 스크롤 없이 한 화면에 (그리드 타일) ──
 function MobileMenu({
-  pathname, month, user, isSuperAdmin, onClose,
+  pathname, month, user, isSuperAdmin, role, onClose,
 }: {
-  pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; onClose?: () => void
+  pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; role: Role; onClose?: () => void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
   const { isDark, setMode } = useTheme()              // 다크/라이트 빠른 전환(도구 타일)
+  const navGroups = navGroupsFor(role)
+  const homeHref = roleHome(role)                     // 로고 목적지 — 제한 스태프는 /inventory
+  const isLimited = role === 'LIMITED_STAFF'          // 도구(단기 요금 계산 등) 숨김
   return (
     <div className="fixed inset-0 z-[var(--z-drawer)] flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
       {/* 헤더: 로고 + 닫기 */}
       <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
-        <Link href={month ? `/dashboard?month=${month}` : '/dashboard'} onClick={onClose} aria-label="홈으로"
+        <Link href={month ? `${homeHref}?month=${month}` : homeHref} onClick={onClose} aria-label="홈으로"
           className="rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset">
           <LogoFull />
         </Link>
@@ -364,7 +397,7 @@ function MobileMenu({
 
       {/* 메뉴 그리드 — 그룹별 라벨 + 3열 타일. 한 화면에 다 들어오게 컴팩트하게. */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        {NAV_GROUPS.map(group => (
+        {navGroups.map(group => (
           <div key={group.label} className="mb-1.5">
             <div className="px-1.5 pt-2 pb-1 text-[0.65625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
               {group.label}
@@ -388,18 +421,20 @@ function MobileMenu({
           </div>
         ))}
 
-        {/* 도구 — 페이지 이동 없는 즉시 도구(요금 계산: 홈 헤더와 동일 모달) */}
+        {/* 도구 — 페이지 이동 없는 즉시 도구(요금 계산·테마). 단기 요금 계산은 제한 스태프에게 무의미하므로 숨김 */}
         <div className="mb-1.5">
           <div className="px-1.5 pt-2 pb-1 text-[0.65625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
             도구
           </div>
           <div className="grid grid-cols-3 gap-1.5">
+            {!isLimited && (
             <button type="button" onClick={() => setQuoteOpen(true)}
               className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
               style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
               <svg {...ico} width={19} height={19}><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7.5h7"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 15.5h.01M12 15.5h.01M15.5 15.5h.01"/></svg>
               <span className="text-[0.6875rem] font-medium leading-tight">단기 요금 계산</span>
             </button>
+            )}
             {/* 다크/라이트 즉시 전환 — 명시적 light/dark 만 순환(system·time 사용자 설정 덮어쓰지 않음) */}
             <button type="button" onClick={() => setMode(isDark ? 'light' : 'dark')}
               className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"

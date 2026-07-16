@@ -10,6 +10,7 @@
 
 import { useEntityModal } from './EntityModal'
 import { ViewTabs } from '@/components/ui/ViewTabs'
+import { useCanReadScope } from '@/components/RoleContext'
 
 export type PrismCurrent = 'room' | 'tenant' | 'payment'
 export type PrismLinks = {
@@ -24,6 +25,7 @@ export function PrismNavBar({ current, links, onSelect }: {
   onSelect?: (kind: PrismCurrent) => void
 }) {
   const entityModal = useEntityModal()
+  const canSeeMoney = useCanReadScope('money')   // 제한 스태프는 수납 정보 탭 미표시(서버는 A-5에서 이미 차단)
 
   const handle = (kind: PrismCurrent) => {
     if (onSelect) { onSelect(kind); return }
@@ -36,7 +38,7 @@ export function PrismNavBar({ current, links, onSelect }: {
   const items: { kind: PrismCurrent; label: string; enabled: boolean }[] = [
     { kind: 'room',    label: '호실 정보', enabled: !!links.roomId },
     { kind: 'tenant',  label: '고객 정보', enabled: !!links.tenantId },
-    { kind: 'payment', label: '수납 정보', enabled: !!links.leaseTermId },
+    ...(canSeeMoney ? [{ kind: 'payment' as const, label: '수납 정보', enabled: !!links.leaseTermId }] : []),
   ]
 
   return (

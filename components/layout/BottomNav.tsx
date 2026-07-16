@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import type { Role } from '@/lib/role-types'
 
 const ico = {
   viewBox: '0 0 24 24',
@@ -49,16 +50,28 @@ const NAV_ITEMS = [
   },
 ]
 
-// '전체' 탭에서 활성으로 보일 경로 — 핵심 4개에 없는 메뉴들
-const PRIMARY_HREFS = new Set(NAV_ITEMS.map(i => i.href))
+// 제한 스태프 하단탭 — 재고를 첫 탭으로, 홈·수납·지출 제외(65992b0a).
+const LIMITED_STAFF_NAV_ITEMS = [
+  NAV_ITEMS.find(i => i.href === '/inventory')!,
+  NAV_ITEMS.find(i => i.href === '/room-manage')!,
+  NAV_ITEMS.find(i => i.href === '/tenants')!,
+  {
+    href: '/requests',
+    label: '요청',
+    Icon: () => <svg {...ico}><path d="M5 5.5h14A1.5 1.5 0 0 1 20.5 7v8A1.5 1.5 0 0 1 19 16.5H10l-4 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M8.5 11h7"/></svg>,
+  },
+]
 
-export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
+export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?: () => void; role?: Role }) {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
   const month = searchParams.get('month')
-  // 현재 경로가 핵심 4개가 아니면 '전체'를 활성 표시 (해당 메뉴가 전체 안에 있으므로)
-  const menuActive = !PRIMARY_HREFS.has(pathname)
+  const navItems = role === 'LIMITED_STAFF' ? LIMITED_STAFF_NAV_ITEMS : NAV_ITEMS
+  // '전체' 탭에서 활성으로 보일 경로 — 핵심 탭에 없는 메뉴들
+  const primaryHrefs = new Set(navItems.map(i => i.href))
+  // 현재 경로가 핵심 탭이 아니면 '전체'를 활성 표시 (해당 메뉴가 전체 안에 있으므로)
+  const menuActive = !primaryHrefs.has(pathname)
   // 클릭 즉시 시각 피드백 — Next.js 라우팅이 비동기라 사용자가 누른 직후 아무 반응이 없어
   // 여러 번 누르게 되는 문제 해결 (사용자 피드백 2026-06-01).
   const [pendingHref, setPendingHref] = useState<string | null>(null)
@@ -78,11 +91,11 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
 
   // 슬라이딩 인디케이터(v2.0 §29) — 탭 7개 균등 폭이라 활성 인덱스 × (100/7)% 로 이동.
   // 누르는 즉시(pending) 인디케이터가 먼저 움직여 라우팅 지연 동안에도 반응이 보인다.
-  const TAB_COUNT = NAV_ITEMS.length + 1
-  const pendingIdx = pendingHref ? NAV_ITEMS.findIndex(i => i.href === pendingHref) : -1
+  const TAB_COUNT = navItems.length + 1
+  const pendingIdx = pendingHref ? navItems.findIndex(i => i.href === pendingHref) : -1
   const activeIdx = pendingIdx >= 0 ? pendingIdx
     : menuActive ? TAB_COUNT - 1
-    : NAV_ITEMS.findIndex(i => i.href === pathname)
+    : navItems.findIndex(i => i.href === pathname)
 
   return (
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
@@ -96,7 +109,7 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
           className="absolute top-0 h-[2px] rounded-full bg-[var(--coral)] motion-safe:transition-[left] motion-safe:duration-200 motion-safe:ease-out"
           style={{ left: `calc(${activeIdx} * 100% / ${TAB_COUNT} + 100% / ${TAB_COUNT} / 4)`, width: `calc(100% / ${TAB_COUNT} / 2)` }} />
       )}
-      {NAV_ITEMS.map(({ href, label, Icon }) => {
+      {navItems.map(({ href, label, Icon }) => {
         const isActive = pathname === href
         const isPending = pendingHref === href
         const showHighlight = isActive || isPending

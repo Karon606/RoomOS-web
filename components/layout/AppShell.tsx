@@ -9,6 +9,7 @@ import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
 import MonthSync from '@/components/layout/MonthSync'
 import { NavigationProvider } from '@/components/layout/NavigationContext'
+import type { Role } from '@/lib/role-types'
 
 // §18.1 (v1.3.1): 셸이 살아있는 라우트 전환은 본문 스켈레톤만 — 브랜드 로더 오버레이는
 // 스켈레톤과 이중 발동이라 폐지. 브랜드 로더는 셸 없는 구간(콜드 부트·로그아웃)에서만(SplashScreen).
@@ -19,6 +20,7 @@ export default function AppShell({
   currentPropertyId,
   isSuperAdmin = false,
   isAdminView = false,
+  role = 'OWNER',
   children,
 }: {
   user: AppUser
@@ -26,6 +28,7 @@ export default function AppShell({
   currentPropertyId: string | null
   isSuperAdmin?: boolean
   isAdminView?: boolean
+  role?: Role
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -45,7 +48,7 @@ export default function AppShell({
           스테이음 관리자 뷰 · 클릭해서 관리자 페이지로 돌아가기
         </Link>
       )}
-      <Sidebar user={user} isSuperAdmin={isSuperAdmin} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar user={user} isSuperAdmin={isSuperAdmin} role={role} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
@@ -82,7 +85,7 @@ export default function AppShell({
       </div>
 
       {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바. '전체' 탭이 Sidebar 드로어(전체 메뉴)를 연다. */}
-      <BottomNav onMenuOpen={() => setSidebarOpen(true)} />
+      <BottomNav onMenuOpen={() => setSidebarOpen(true)} role={role} />
 
       {/* 글로벌 저장 진행 표시 + 토스트 + 확인 다이얼로그(v2.0 §14) */}
       <SaveFeedback />

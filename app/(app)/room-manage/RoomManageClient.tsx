@@ -9,7 +9,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { useCanEdit } from '@/components/RoleContext'
+import { useCanEdit, useCanReadScope } from '@/components/RoleContext'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -154,6 +154,9 @@ export default function RoomManageClient({
   directions: string[]
 }) {
   const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
+  const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 이용료·예정 이용료 표시 제거(서버 A-2에서 null)
+  // 카드 표시 항목 — 금액 차단 시 '예정 이용료' 필드 제외
+  const cardFieldDefs: FieldDef[] = hideMoney ? RM_CARD_FIELDS.filter(f => f.key !== 'scheduled') : RM_CARD_FIELDS
   // #12: initialRooms를 useState로 캡처하면 router.refresh() 후에도 갱신 안 됨(즉시 적용·편집 미반영).
   //      prop을 직접 사용 → revalidatePath+router.refresh 페어로 즉시 반영. (feedback_auto_refresh)
   const rooms = initialRooms
@@ -679,22 +682,24 @@ export default function RoomManageClient({
               </select>
             </div>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
-            <div className="flex items-center gap-2">
-              <MoneyInput
-                value={filterRentMin}
-                onChange={v => setFilterRentMin(v && v > 0 ? v : undefined)}
-                placeholder="최소"
-              />
-              <span className="text-[var(--warm-muted)] text-sm">~</span>
-              <MoneyInput
-                value={filterRentMax}
-                onChange={v => setFilterRentMax(v && v > 0 ? v : undefined)}
-                placeholder="최대"
-              />
+          {!hideMoney && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
+              <div className="flex items-center gap-2">
+                <MoneyInput
+                  value={filterRentMin}
+                  onChange={v => setFilterRentMin(v && v > 0 ? v : undefined)}
+                  placeholder="최소"
+                />
+                <span className="text-[var(--warm-muted)] text-sm">~</span>
+                <MoneyInput
+                  value={filterRentMax}
+                  onChange={v => setFilterRentMax(v && v > 0 ? v : undefined)}
+                  placeholder="최대"
+                />
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex gap-2 pt-1">
             <Btn
               type="button"
@@ -729,10 +734,10 @@ export default function RoomManageClient({
           options={[
             { value: 'roomNo',   label: '호실순' },
             { value: 'vacancy',  label: '공실' },
-            { value: 'baseRent', label: '이용료' },
+            ...(hideMoney ? [] : [{ value: 'baseRent' as const, label: '이용료' }]),
           ]}
         />
-        <DisplayFieldsMenu fields={RM_CARD_FIELDS} visible={cardFields} onToggle={toggleCardField} />
+        <DisplayFieldsMenu fields={cardFieldDefs} visible={cardFields} onToggle={toggleCardField} />
       </div>
 
       {/* 에러 */}
@@ -804,8 +809,10 @@ export default function RoomManageClient({
                         )}
                       </div>
                     )}
-                    <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
-                    {cardFields.scheduled && room.scheduledRent != null && (
+                    {!hideMoney && (
+                      <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
+                    )}
+                    {!hideMoney && cardFields.scheduled && room.scheduledRent != null && (
                       <p className="text-xs text-[var(--warm-mid)]">
                         → <MoneyDisplay amount={room.scheduledRent} />
                         {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}

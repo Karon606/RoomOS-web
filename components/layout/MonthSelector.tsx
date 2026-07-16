@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
+import { useMyRole } from '@/components/RoleContext'
 
 const MONTH_KEY = 'stayeum_selected_month'
 
@@ -29,6 +30,7 @@ function relMonthLabel(view: string, today: string): string | null {
  * 자정 롤오버 등 보이지 않는 자동 새로고침은 MonthSync(셸 상주)가 담당한다.
  */
 export default function MonthSelector() {
+  const role = useMyRole()   // 제한 스태프는 월 컨텍스트가 무의미(재고·조회 화면) — 아래에서 숨김
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -91,6 +93,8 @@ export default function MonthSelector() {
   const isCurrent = localMonth === todayMonth
   const rel = relMonthLabel(localMonth, todayMonth)
   const jumpToday = () => { setLocalMonth(todayMonth); localMonthRef.current = todayMonth; if (debounceRef.current) clearTimeout(debounceRef.current); applyMonth(todayMonth) }
+
+  if (role === 'LIMITED_STAFF') return null   // 모든 훅 호출 뒤 조건부 렌더(rules-of-hooks 준수)
 
   return (
     // 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
