@@ -2260,3 +2260,12 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 오류신고 86f1418e(20c5041): 비품·자재 카드 제목에 규격 병기(AssetItem specValue/specUnit 노출). done.
 - 오류신고 0443289d(20c5041): 서비스(무형)는 수령 개념 없어 수령 대기 분류·수령 버튼 제거(서버 pending 제외 + UI 숨김, 배정된 서비스만 조회 유입이라 안전). done.
 - 대기: 오류신고 65992b0a(제한 스태프 역할 — 메뉴 자체 숨김, §4 권한) 표준 트랙 설계 필요.
+
+## 2026-07-17 — 제한 스태프 역할 1단계 (표준 트랙, §4 권한)
+- 오류신고 65992b0a: 재고 담당 스태프에게 매출·금액을 존재조차 모르게. 전문가 설계+보안 적대검증(뒷문 5개)+스코프 쓰기·마스킹 보강 후 구현. 결정: 홈→재고 대체, 입주자·호실 금액 숨김·조회 전용, 재고 전체 쓰기, 서류·시세·방문분석·설정 은닉, 신규 입주자 입력은 2단계.
+- 기반: UserRole enum LIMITED_STAFF 가산 마이그레이션(운영 DB). lib/auth/routeScope.ts 순수 리졸버(canEditScope 재고쓰기·canReadScope 금액·canAccessRoute 화이트리스트·roleHome). requireScopeEdit(canEdit 전면쓰기는 그대로+스코프 추가), requireRouteAccess, useCanEditScope/useCanReadScope/useMyRole.
+- 쓰기: 재고 액션 2파일 상단 shim(requireEdit→requireScopeEdit inventory, 호출부 56곳 무변경). OWNER/MANAGER·STAFF 무변경, 권한상승 없음.
+- 뒷문 차단(load-bearing): getTenants·getRooms 서버 redact(금액 payload null), export API 403, globalSearch 지출그룹·이용료 제외, getLeaseSettlementInfo·getPaymentsByLease throw. 민감 page 11곳 requireRouteAccess + layout 라우트 가드.
+- 클라: 제한 스태프 전용 내비(재고·호실·입주자·요청, 로고·하단탭·월선택기 재구성), 금액 컬럼 흔적없이 제거, 결제탭 숨김, 부여 UI(설정 옵션+확인).
+- 검증: 리졸버 진리표(제한 스태프만 금액X·차단라우트X) + 실데이터 payload 검증(LIMITED_STAFF 이용료·보증금·baseRent 전부 null, OWNER는 정상). 결제 수식 무접점.
+- 2단계(백로그): 신규 입주자 기본정보 입력 허용, 사용자별 스코프 컬럼(writeScopes)으로 세분화.
