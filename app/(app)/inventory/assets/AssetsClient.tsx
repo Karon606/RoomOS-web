@@ -423,7 +423,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         onToggleSelect={() => toggleMergeSel(it.id)}
         onClick={() => setDetailItem(it)}
         onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
-        title={it.itemLabel}
+        title={(() => {
+          // 제품명 뒤에 규격 병기 — 같은 이름 다른 규격(고압호스 60cm/40cm)을 상세 진입 없이 구분(오류신고 86f1418e).
+          const spec = it.specText || (it.specValue != null ? `${fmtQty(it.specValue)}${it.specUnit ?? ''}` : '')
+          return spec ? <>{it.itemLabel} <span className="font-normal text-[var(--warm-muted)]">{spec}</span></> : it.itemLabel
+        })()}
         badges={<>
           {it.isService && <span className="inline-flex items-center rounded-full bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.65625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
           {it.amount === 0 && <Badge tone="pale-blue">무상</Badge>}
@@ -474,10 +478,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
-                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                  수령대기로
-                </button>
+                {/* 서비스(무형)는 수령 개념이 없어 '수령대기로' 미표시(오류신고 0443289d) */}
+                {!it.isService && (
+                  <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    수령대기로
+                  </button>
+                )}
                 {!placed && (
                   <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
                     className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">

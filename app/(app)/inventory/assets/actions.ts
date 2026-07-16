@@ -35,6 +35,8 @@ export type AssetItem = {
   itemLabel: string
   detail: string | null         // 합계 수량으로 재구성
   specText: string | null       // 서술형 규격(카드 구분·검색용)
+  specValue: number | null      // 숫자 규격값(60 등) — 카드 제목 규격 병기용(오류신고 86f1418e)
+  specUnit: string | null       // 규격 단위(cm 등)
   amount: number                // 합계 금액
   qtyValue: number | null       // 합계 수량
   qtyUnit: string | null
@@ -89,7 +91,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
     const rep = rows[0]
     out.push({
       id: rep.id, ids: rows.map(r => r.id), count: rows.length, date,
-      itemLabel: rep.itemLabel, specText: g.specText,
+      itemLabel: rep.itemLabel, specText: g.specText, specValue: g.spec, specUnit: g.specUnit,
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
@@ -148,7 +150,8 @@ export async function getDurableItems(): Promise<AssetsData> {
   const commonRaw: RawAsset[] = []
   const unassignedRaw: RawAsset[] = []
   for (const r of raws) {
-    if (!r.received) pendingRaw.push(r)              // 수령 대기 — 배정 전, 최우선 분리
+    // 서비스(무형·시공비)는 '수령' 개념이 없으므로 수령 대기로 보내지 않고 바로 배정 대상으로(오류신고 0443289d).
+    if (!r.received && !r.isService) pendingRaw.push(r)   // 수령 대기 — 배정 전, 최우선 분리(물품만)
     else if (r.roomId && r.roomNo) (roomBuckets.get(r.roomId) ?? roomBuckets.set(r.roomId, []).get(r.roomId)!).push(r)
     else if (r.locationId && r.locationName) (locBuckets.get(r.locationId) ?? locBuckets.set(r.locationId, []).get(r.locationId)!).push(r)
     else if (r.isCommon) commonRaw.push(r)
