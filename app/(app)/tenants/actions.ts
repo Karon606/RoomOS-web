@@ -609,17 +609,19 @@ export async function recordDepositReturn(params: {
 
     let extraIncomeId: string | null = null
     if (withheld > 0) {
-      // 보증금 카테고리 보장 — 없으면 추가
+      // 몰취 성격에 따라 카테고리 — 예약 취소 몰취는 위약금(익금), 퇴실 미반환분은 보증금 계정.
+      // 세무 자료에서 반환의무 있는 예수보증금(부채)과 실현 위약금 수익이 섞이지 않게(회계 패널 권고).
+      const forfeitCategory = params.context === 'reservationCancel' ? '위약금' : '보증금'
       const property = await prisma.property.findUnique({
         where: { id: propertyId },
         select: { incomeCategories: true },
       })
       const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
       const cats = raw.split(',').map((s: string) => s.trim()).filter(Boolean)
-      if (!cats.includes('보증금')) {
+      if (!cats.includes(forfeitCategory)) {
         await prisma.property.update({
           where: { id: propertyId },
-          data: { incomeCategories: [...cats, '보증금'].join(',') } as any,
+          data: { incomeCategories: [...cats, forfeitCategory].join(',') } as any,
         })
       }
 
@@ -628,7 +630,7 @@ export async function recordDepositReturn(params: {
           propertyId,
           date:      refundDate,
           amount:    withheld,
-          category:  '보증금',
+          category:  forfeitCategory,
           detail:    params.context === 'reservationCancel'
             ? `${params.tenantName} 예약 취소 · 예약금 몰취`
             : `${params.tenantName} 퇴실 · 보증금 미반환분`,

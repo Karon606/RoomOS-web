@@ -99,7 +99,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           </p>
         ) : settlement.depositAmount > 0 ? (
           <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-            <span className="text-[var(--coral)] font-semibold">예약금(보증금) 수납</span>
+            <span className="text-[var(--coral)] font-semibold">보증금 대체</span>
             <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositReceived)}</span>
             <span className="text-[var(--warm-muted)]"> / 계약 보증금 {fmtWon(settlement.depositAmount)}</span>
           </p>

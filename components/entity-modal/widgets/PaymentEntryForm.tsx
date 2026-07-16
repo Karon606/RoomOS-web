@@ -386,7 +386,7 @@ function ReservationDepositForm({ room, onSaved, onCancel }: {
         pushToast('success',
           mode === 'none' ? '예약금 없이 예약으로 저장했습니다'
           : mode === 'prepaid' ? '이용료 선납으로 수납했습니다'
-          : '예약금(보증금)으로 수납했습니다')
+          : '보증금 대체로 수납했습니다')
         onSaved?.()
       } catch (err) {
         const msg = (err as Error).message ?? '저장 실패'
