@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
@@ -987,6 +988,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
         </div>
       ) : undefined}
     >
+      {/* 렌더 오류가 모달을 조용히 닫던 문제 방지 — 안내+자취 기록(오류신고 0861b35f). resetKey=mode로 모드 전환 시 재시도 */}
+      <ErrorBoundary label="재고 상세" resetKey={mode}>
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
@@ -1165,6 +1168,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           onClose={() => setTransferOpen(false)}
           onDone={() => { setTransferOpen(false); reload(); onChange() }} />
       )}
+      </ErrorBoundary>
     </Modal>
   )
 }
