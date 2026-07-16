@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies, headers } from 'next/headers'
 import { isInternalPath } from '@/lib/auth/returnTo'
+import { canAccessRoute, roleHome } from '@/lib/auth/routeScope'
 import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
@@ -89,6 +90,13 @@ export default async function AppLayout({
   }
   // 역할 컨텍스트용 — 현재 영업장에서의 내 역할(멤버 아니면 null → OWNER 폴백, 슈퍼관리자 뷰 포함)
   const access = await getPropertyAccess()
+
+  // 제한 스태프 라우트 가드 — 허용 밖 경로(직접 URL·새로고침·외부 링크) 진입 시 조용히 역할 홈으로(뒷문 차단, 65992b0a).
+  // 레이아웃은 전체 로드에서만 재실행되므로 클라 내비 방어는 각 민감 page.tsx의 requireRouteAccess가 담당.
+  if (access?.role) {
+    const curPath = (await headers()).get('x-pathname')?.split('?')[0] ?? ''
+    if (curPath && !canAccessRoute(access.role, curPath)) redirect(roleHome(access.role))
+  }
 
   // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
   const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)

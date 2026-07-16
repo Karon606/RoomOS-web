@@ -8,7 +8,9 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { randomUUID } from 'crypto'
 import { Prisma } from '@prisma/client'
-import { requireEdit } from '@/lib/role'
+// 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
+import { requireScopeEdit } from '@/lib/role'
+const requireEdit = () => requireScopeEdit('inventory')
 import { getTrackedCategories } from '../categoryConfig'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")

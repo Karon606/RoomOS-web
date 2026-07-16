@@ -24,7 +24,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { useCanEdit } from '@/components/RoleContext'
+import { useCanEditScope } from '@/components/RoleContext'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -130,7 +130,7 @@ const isSameKstDay = (a: Date, b: Date) => {
 }
 
 export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
-  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
+  const canEditUi = useCanEditScope('inventory')   // 재고 편집 — OWNER·MANAGER + 제한 스태프(재고 쓰기). 서버가 최종 방어
   // 재고 카테고리(cat) → 표시 별칭(alias) 맵 + 카테고리 cat 목록(순서 보존)
   const aliasOf = (cat: string) => categories.find(c => c.cat === cat)?.alias ?? cat
   const trackedCats = categories.map(c => c.cat)

@@ -7,7 +7,9 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { requireEdit } from '@/lib/role'
+// 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
+import { requireScopeEdit } from '@/lib/role'
+const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
