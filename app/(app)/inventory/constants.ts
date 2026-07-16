@@ -53,7 +53,8 @@ export type InventoryRow = {
   lastCheckCreatedAt: Date | null
   lastRemainingQty: number | null
   currentStock: number | null
-  avgDaily: number | null
+  avgDaily: number | null       // 최근 30일 합산 기준 일 평균 소모. 0 = 관측했으나 안 씀, null = 추정 불가
+  avgDailyBasisDays: number | null  // avgDaily 를 낸 실제 관측 일수 — 창 경계 구간을 통째로 포함해 30 을 넘을 수 있음
   daysUntilEmpty: number | null
   lastPeriodConsumption: number | null
   lastPeriodDays: number | null

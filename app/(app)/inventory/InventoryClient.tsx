@@ -643,6 +643,10 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgDaily != null ? fmtQty(row.avgDaily, stockUnit) : '—'}
           </p>
+          {/* 기준 일수 부기 — 아래 '최근 N일 동안 X 소모'(마지막 점검 구간)와 범위가 달라, 없으면 서로 어긋나 보임 */}
+          {row.avgDailyBasisDays != null && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">최근 {row.avgDailyBasisDays}일 기준</p>
+          )}
         </div>
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">소진 예상</p>

@@ -5,24 +5,29 @@ import { computeInventoryOverview } from '../app/(app)/inventory/overview'
 import prisma from '../lib/prisma'
 
 async function main() {
-  const prop = await prisma.property.findFirst({ select: { id: true, name: true } })
-  if (!prop) { console.error('NO PROPERTY'); process.exit(1) }
+  // 전 영업장 순회 — 멀티테넌트 회귀는 첫 영업장 하나로 증명되지 않음(적대검증 지적).
+  const props = await prisma.property.findMany({ select: { id: true, name: true }, orderBy: { createdAt: 'asc' } })
+  if (props.length === 0) { console.error('NO PROPERTY'); process.exit(1) }
   const t0 = Date.now()
-  const rows = await computeInventoryOverview(prop.id)
-  const ms = Date.now() - t0
-  for (const r of rows) {
-    console.log([
-      r.label, r.category, r.trackUnit, r.specUnit ?? '', r.qtyUnit ?? '',
-      r.currentStock, r.avgDaily?.toFixed(6) ?? '', r.daysUntilEmpty,
-      r.lastPeriodConsumption, r.lastPeriodDays,
-      r.avgUnitPrice?.toFixed(4) ?? '', r.lastUnitPrice?.toFixed(4) ?? '',
-      JSON.stringify(r.monthlyConsumption),
-      r.pendingPurchases.length,
-      JSON.stringify(r.locations.map(l => l.id)),
-      JSON.stringify(r.lastCheckLocationBreakdown),
-    ].join('|'))
+  let total = 0
+  for (const prop of props) {
+    const rows = await computeInventoryOverview(prop.id)
+    total += rows.length
+    for (const r of rows) {
+      console.log([
+        prop.name,
+        r.label, r.category, r.trackUnit, r.specUnit ?? '', r.qtyUnit ?? '',
+        r.currentStock, r.avgDaily?.toFixed(6) ?? '', r.avgDailyBasisDays, r.daysUntilEmpty,
+        r.lastPeriodConsumption, r.lastPeriodDays,
+        r.avgUnitPrice?.toFixed(4) ?? '', r.lastUnitPrice?.toFixed(4) ?? '',
+        JSON.stringify(r.monthlyConsumption),
+        r.pendingPurchases.length,
+        JSON.stringify(r.locations.map(l => l.id)),
+        JSON.stringify(r.lastCheckLocationBreakdown),
+      ].join('|'))
+    }
   }
-  console.error(`TIME ${ms}ms rows=${rows.length}`)
+  console.error(`TIME ${Date.now() - t0}ms rows=${total} props=${props.length}`)
   await prisma.$disconnect()
 }
 main()

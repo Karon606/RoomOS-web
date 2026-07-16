@@ -290,11 +290,84 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       }
     }
 
+    // ── 구간 시리즈(최근 7개월) — 평균 소모율 추정과 월별 사용량이 공유한다(조회 1회).
+    // 같은 날 dedup — 같은 날 두 점검 사이의 큰 잔량 jump 가 가짜 소모로 누적되던 문제 fix.
+    const itemChecks = dedupSameDay(allChecksForUsage.filter(c => c.trackedItemId === it.id))
+    // ⚠️ 구간별 consumed 를 '음수면 건너뛰기' 하지 않고 부호 그대로 쓴다(telescoping).
+    //   입고(구매 receivedAt / 무상입수)로 재고가 점프한 구간은 음수(−)가 되는데, 그 입고분이
+    //   타이밍 차로 인접 구간에 +로 더해짐. 음수 구간을 건너뛰면 입고분이 상쇄되지 않아
+    //   '입고 = 가짜 사용량' 으로 부풀려졌음 (예: 주방세제 5월 6270→9740, 라면 입고 160 이 165 소모로 둔갑).
+    //   부호 그대로 합산하면 같은 입고의 +/− 가 상쇄되어 물리적 정답(시작잔량+입고−끝잔량)에 수렴.
+    //   부수효과: 백필된 잘못된 점검값도 인접 두 구간에서 +/− 로 상쇄되어 면역 (2026-06-01 사용자 보고).
+    // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
+    // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
+    const intervalPairs: { prev: (typeof itemChecks)[number]; curr: (typeof itemChecks)[number] }[] = []
+    for (let i = 1; i < itemChecks.length; i++) {
+      if (itemChecks[i].isReconcile) continue
+      intervalPairs.push({ prev: itemChecks[i - 1], curr: itemChecks[i] })
+    }
+    // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
+    // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
+    // 구간 간 의존 없음 → 동시 조회, 합산은 원래 순서대로(결과 동일).
+    const intervalConsumed = await Promise.all(intervalPairs.map(async ({ prev, curr }) => {
+      const [purchases, additions, disposals] = await Promise.all([
+        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit),
+        sumAdditions(it.id, effTime(prev), effTime(curr)),
+        sumDisposals(it.id, effTime(prev), effTime(curr)),
+      ])
+      return {
+        curr,
+        consumed: (prev.remainingQty + purchases + additions - disposals) - curr.remainingQty,
+        // 구간 일수를 구간에 동봉 — 보정 구간을 소모에서 빼면 분모에서도 같이 빠져야 하므로.
+        // date 는 @db.Date(그 날의 UTC 자정)라 이 나눗셈은 반올림 오차 없는 정수.
+        days: Math.max(1, Math.round((curr.date.getTime() - prev.date.getTime()) / 86400000)),
+      }
+    }))
+
+    // ── 평균 소모율 — 최근 30일 '합산' 기준 (단일 구간 추정 폐기, 2026-07-17).
+    // 종전엔 마지막 두 점검 사이 한 구간만으로 냈다. 점검 간격이 1~3일이라 표본이 1개뿐이었고,
+    // 그 구간이 우연히 크면 과대(라면 8/일, 실제 약 5 → 임박 오탐), 작으면 과소(쌀 0.5/일, 실제 약 3
+    // → 소진 175일로 표시), 0이면 추정 자체가 사라져 무알림(김치·수세미·물티슈)이었다.
+    // 즉 성실하게 자주 점검할수록 구간이 짧아져 알림이 나빠지는 구조였음.
+    // 창 '합산'인 이유: 구간별 값을 개별 표본으로 다루는 방식(중앙값·EWMA)은 위 telescoping 상쇄가
+    // 일어나지 않아 입고 타이밍 오차(+X 구간 / −X 구간)가 표본에 영구히 남는다.
+    const WINDOW_DAYS = 30   // 14일은 느린 품목에서 여전히 0, 60일 이상은 입주 인원 변동 반영이 느림.
+    const MIN_OBS_DAYS = 7   // 구매 직후 점검 1회로 D-3 오탐 나던 리클린 사례 방어(위 폴백 규칙과 동일 취지).
+    // 컷오프는 KST 달력일 기준 — date 가 @db.Date(그 날의 UTC 자정)이므로 표현을 맞춘다.
+    // 서버 로컬(new Date + setHours)로 잡으면 배포 TZ(Vercel=UTC)에 따라 창이 하루 흔들림.
+    const windowCutoff = Date.parse(`${kstDay(new Date())}T00:00:00Z`) - WINDOW_DAYS * 86400000
+    // 분모는 달력 span 이 아니라 '포함된 구간 일수의 합' — 보정 구간을 소모에서 빼면서 그 일수를
+    // 분모에 남기면 소모율이 과소평가되어 알림이 사라진다. consumed 와 항상 같은 구간 집합 위에서 계산.
+    // 창 경계를 걸친 구간은 통째로 포함(소모를 일별로 쪼개는 건 없는 정보를 지어내는 것) →
+    // 실제 관측일수가 30을 넘을 수 있어 화면엔 명목 30이 아닌 avgDailyBasisDays 를 쓴다.
+    const rateOver = (cutoffMs: number) => intervalConsumed
+      .filter(iv => iv.curr.date.getTime() >= cutoffMs)
+      .reduce((acc, iv) => ({
+        observedDays: acc.observedDays + iv.days,
+        consumed: acc.consumed + iv.consumed,   // 부호 그대로(telescoping)
+      }), { observedDays: 0, consumed: 0 })
+    // 창 확장 트리거는 '관측일수 부족' 뿐 — '소모량이 적어서' 넓히면 결과에 조건부인 정지규칙이라
+    // 추정이 체계적으로 과대편향된다.
+    let obs = rateOver(windowCutoff)
+    if (obs.observedDays < MIN_OBS_DAYS) obs = rateOver(0)   // 조회 한계(최근 7개월)까지 확장
+
     let avgDaily: number | null = null
-    if (lastPeriodConsumption != null && lastPeriodDays && lastPeriodDays > 0 && lastPeriodConsumption > 0) {
+    let avgDailyBasisDays: number | null = null
+    if (obs.observedDays >= MIN_OBS_DAYS) {
+      // 창 총합이 음수면 장부 모순(입고 누락·위치별 보충 시 수량 손실 등, knowledge/domain-inventory.md).
+      // 0 으로 누르면 '관측했는데 안 씀'과 구분이 안 되므로 추정 불가(null)로 남긴다.
+      if (obs.consumed >= 0) {
+        avgDaily = obs.consumed / obs.observedDays   // 0 = '관측 결과 안 씀' (알림 없음이 정상)
+        avgDailyBasisDays = obs.observedDays
+      }
+    } else if (last && !prev && lastPeriodConsumption != null && lastPeriodDays) {
+      // 점검이 1회뿐이라 구간이 아예 없는 경우만 최초구매 기준 폴백(위) 사용.
+      // 점검 2회 이상이나 전부 7개월 이전인 품목은 avgDaily 소실 — 의도된 변경(낡은 데이터로 알림 금지).
       avgDaily = lastPeriodConsumption / lastPeriodDays
+      avgDailyBasisDays = lastPeriodDays
     }
 
+    // avgDaily 0(안 씀) / null(추정 불가) 은 여기서 걸러져 daysUntilEmpty 가 null → 알림 없음.
     const daysUntilEmpty = (currentStock != null && avgDaily && avgDaily > 0)
       ? Math.floor(currentStock / avgDaily)
       : null
@@ -354,32 +427,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       monthlyMap[key] = 0
     }
-    // 같은 날 dedup — 같은 날 두 점검 사이의 큰 잔량 jump 가 가짜 소모로 누적되던 문제 fix.
-    const itemChecks = dedupSameDay(allChecksForUsage.filter(c => c.trackedItemId === it.id))
-    // ⚠️ 구간별 consumed 를 '음수면 건너뛰기' 하지 않고 부호 그대로 월별 합산(telescoping).
-    //   입고(구매 receivedAt / 무상입수)로 재고가 점프한 구간은 음수(−)가 되는데, 그 입고분이
-    //   타이밍 차로 인접 구간에 +로 더해짐. 음수 구간을 건너뛰면 입고분이 상쇄되지 않아
-    //   '입고 = 가짜 사용량' 으로 부풀려졌음 (예: 주방세제 5월 6270→9740, 라면 입고 160 이 165 소모로 둔갑).
-    //   부호 그대로 합산하면 같은 입고의 +/− 가 같은 달 안에서 상쇄되어 물리적 정답(시작잔량+입고−월말잔량)에 수렴.
-    //   부수효과: 백필된 잘못된 점검값도 인접 두 구간에서 +/− 로 상쇄되어 면역 (2026-06-01 사용자 보고).
-    // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
-    // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
-    const intervalPairs: { prev: (typeof itemChecks)[number]; curr: (typeof itemChecks)[number] }[] = []
-    for (let i = 1; i < itemChecks.length; i++) {
-      if (itemChecks[i].isReconcile) continue
-      intervalPairs.push({ prev: itemChecks[i - 1], curr: itemChecks[i] })
-    }
-    // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
-    // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
-    // 구간 간 의존 없음 → 동시 조회, 합산은 원래 순서대로(결과 동일).
-    const intervalConsumed = await Promise.all(intervalPairs.map(async ({ prev, curr }) => {
-      const [purchases, additions, disposals] = await Promise.all([
-        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit),
-        sumAdditions(it.id, effTime(prev), effTime(curr)),
-        sumDisposals(it.id, effTime(prev), effTime(curr)),
-      ])
-      return { curr, consumed: (prev.remainingQty + purchases + additions - disposals) - curr.remainingQty }
-    }))
+    // 구간 시리즈(itemChecks·intervalConsumed)는 위 평균 소모율 계산과 공유 — 여기선 월별 귀속만.
     for (const { curr, consumed } of intervalConsumed) {
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
       if (key in monthlyMap) monthlyMap[key] += consumed
@@ -430,6 +478,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       lastRemainingQty: last?.remainingQty ?? null,
       currentStock,
       avgDaily,
+      avgDailyBasisDays,
       daysUntilEmpty,
       lastPeriodConsumption,
       lastPeriodDays,
