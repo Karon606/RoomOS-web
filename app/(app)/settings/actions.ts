@@ -1096,7 +1096,7 @@ export async function exportAllData(): Promise<string> {
   await requireOwner()
   const propertyId = await getPropertyId()
 
-  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests, storageLocations, trackedItems, stockChecks, stockAdditions, stockDisposals] = await Promise.all([
+  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests, storageLocations, trackedItems, trackedItemLocations, stockChecks, stockAdditions, stockDisposals] = await Promise.all([
     prisma.property.findUnique({ where: { id: propertyId } }),
     prisma.room.findMany({ where: { propertyId }, include: { photos: true } }),
     prisma.tenant.findMany({ where: { propertyId } }),
@@ -1112,6 +1112,8 @@ export async function exportAllData(): Promise<string> {
     // 재고 도메인 — 백업에 통째로 빠져 있던 공백 보완(복원 시 재고 데이터 전손 방지, 2026-07-13)
     prisma.storageLocation.findMany({ where: { propertyId } }),
     prisma.trackedItem.findMany({ where: { propertyId } }),
+    // 품목-위치 링크 — closedAt(위치 숨김)이 이 테이블에만 저장되므로 빠지면 복원 불가 데이터가 된다(2026-07-18 보완)
+    prisma.trackedItemLocation.findMany({ where: { trackedItem: { propertyId } } }),
     prisma.stockCheck.findMany({ where: { trackedItem: { propertyId } }, include: { locationBreakdown: true } }),
     prisma.stockAddition.findMany({ where: { trackedItem: { propertyId } } }),
     prisma.stockDisposal.findMany({ where: { trackedItem: { propertyId } } }),
@@ -1135,6 +1137,7 @@ export async function exportAllData(): Promise<string> {
     tenantRequests,
     storageLocations,
     trackedItems,
+    trackedItemLocations,
     stockChecks,
     stockAdditions,
     stockDisposals,
