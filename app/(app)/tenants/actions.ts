@@ -125,6 +125,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
   const visitRoute          = formData.get('visitRoute') as string
   const tourDate            = formData.get('tourDate') as string
+  const tourTime            = formData.get('tourTime') as string   // 'HH:MM' 또는 ''
   const inquiryAt           = formData.get('inquiryAt') as string
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
@@ -208,6 +209,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
           contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
           tourDate: tourDate ? new Date(tourDate) : null,
+          tourTime: tourDate && tourTime ? tourTime : null,   // 날짜 없으면 시간도 무의미
           inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
           reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
           isShortTerm,
@@ -300,6 +302,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string | null   // null = 폼에 필드 없음(보존)
+  const tourTime           = formData.get('tourTime') as string | null   // null = 폼에 필드 없음(보존)
   const inquiryAt          = formData.get('inquiryAt') as string | null  // null = 폼에 필드 없음(보존)
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
@@ -479,6 +482,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
       ...(tourDate === null ? {} : { tourDate: tourDate ? new Date(tourDate) : null }),
+      ...(tourTime === null && tourDate === null ? {} : { tourTime: (tourDate ?? '') && (tourTime ?? '') ? tourTime : null }),
       ...(inquiryAt === null ? {} : { inquiryAt: inquiryAt ? new Date(inquiryAt) : null }),
       reservationConfirmedAt: isReservedConfirmed
         ? (currentLease.reservationConfirmedAt ?? new Date())

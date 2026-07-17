@@ -76,6 +76,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       'END:VEVENT',
     )
   }
+  // 시각 지정 이벤트(1시간짜리) — KST "HH:MM" 을 UTC 로 환산해 Z 표기. 알림은 시작 1시간 전.
+  // 구글은 구독 캘린더 알람을 무시하지만 애플은 지원(위 종일 이벤트 9시 알림과 같은 정책).
+  const evTimed = (uid: string, y: number, m: number, d: number, hhmm: string, summary: string, desc: string) => {
+    const [hh, mi] = hhmm.split(':').map(Number)
+    const startUtc = new Date(Date.UTC(y, m - 1, d, hh - 9, mi))          // KST-9h = UTC
+    const endUtc = new Date(startUtc.getTime() + 3600000)
+    const z = (dt: Date) => `${dt.getUTCFullYear()}${String(dt.getUTCMonth() + 1).padStart(2, '0')}${String(dt.getUTCDate()).padStart(2, '0')}T${String(dt.getUTCHours()).padStart(2, '0')}${String(dt.getUTCMinutes()).padStart(2, '0')}00Z`
+    lines.push(
+      'BEGIN:VEVENT', `UID:${uid}@stayeum`, `DTSTAMP:${dtstamp}`,
+      `DTSTART:${z(startUtc)}`, `DTEND:${z(endUtc)}`,
+      `SUMMARY:${esc(summary)}`, ...(desc ? [`DESCRIPTION:${esc(desc)}`] : []),
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(summary)}`, 'TRIGGER:-PT1H', 'END:VALARM',
+      'END:VEVENT',
+    )
+  }
 
   for (const l of leases) {
     const room = fmtRoom(l.room?.roomNo)
@@ -119,6 +134,23 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         }
       }
     }
+  }
+
+  // 투어 예정 — 오늘(KST) 이후 투어 일정. 시간이 있으면 시각 지정(1시간 전 알림), 없으면 종일(9시 알림).
+  // (운영자 요청 86ceb645 — 투어 예정시간 입력 + 캘린더 연동)
+  const todayKstUtc = new Date(Date.UTC(ty, tm - 1, now.getUTCDate()))
+  const tourLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId: property.id, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, tourDate: { not: null, gte: todayKstUtc } },
+    select: { id: true, tourDate: true, tourTime: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } },
+  })
+  for (const l of tourLeases) {
+    if (!l.tourDate) continue
+    const who = [fmtRoom(l.room?.roomNo), l.tenant.name].filter(Boolean).join(' ')
+    const td = new Date(l.tourDate)
+    const y = td.getUTCFullYear(), m = td.getUTCMonth() + 1, d = td.getUTCDate()   // @db.Date = 그 날짜의 UTC 자정
+    const summary = `${who} 투어${l.isShortTerm ? ' (단기)' : ''}`
+    if (l.tourTime && /^\d{2}:\d{2}$/.test(l.tourTime)) evTimed(`tour-${l.id}`, y, m, d, l.tourTime, summary, '투어 예정')
+    else ev(`tour-${l.id}`, y, m, d, summary, '투어 예정 (시간 미정)')
   }
 
   // 잠재고객 연락 알림일 — 문의·투어·미확정 예약, 입주 희망일이 아직 안 지난 건

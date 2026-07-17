@@ -78,7 +78,7 @@ type LeaseTerm = {
   cleaningFee: number; dueDay: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | Date | null; moveOutDate: string | Date | null
-  expectedMoveOut: string | Date | null; contactAlertDate?: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
+  expectedMoveOut: string | Date | null; contactAlertDate?: string | Date | null; tourDate: string | Date | null; tourTime?: string | null; inquiryAt: string | Date | null
   reservationConfirmedAt: string | Date | null
   isShortTerm: boolean
   reservationDepositMode?: string | null
@@ -262,7 +262,7 @@ function fmtDDay(date: string | Date | null | undefined, today?: string): string
 function getScheduledDate(lease: LeaseTerm | undefined): { date: string | Date | null; label: string } | null {
   if (!lease) return null
   if (lease.status === 'WAITING_TOUR' && lease.tourDate)
-    return { date: lease.tourDate, label: '투어' }
+    return { date: lease.tourDate, label: lease.tourTime ? `투어 ${lease.tourTime}` : '투어' }
   if (['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(lease.status) && lease.moveInDate)
     return { date: lease.moveInDate, label: '입주희망' }
   if ((lease.status === 'CHECKOUT_PENDING' || lease.status === 'ACTIVE') && lease.expectedMoveOut)
@@ -2565,6 +2565,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
+  const [tourTimeVal, setTourTimeVal] = useState(lease?.tourTime ?? '')   // 투어 예정 시각(HH:MM, 선택) — 캘린더 연동에 반영
   const initialInquiry = splitDateTime(lease?.inquiryAt)
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
@@ -2853,13 +2854,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               {statusVal === 'WAITING_TOUR' ? '투어 예정일' : '투어 날짜'}
               {statusVal !== 'WAITING_TOUR' && <span className="font-normal opacity-60"> (예정 또는 다녀간 날, 선택)</span>}
             </label>
-            <DatePicker
-              name="tourDate"
-              value={tourDateVal}
-              onChange={setTourDateVal}
-              placeholder={statusVal === 'WAITING_TOUR' ? '투어 예정일 선택' : '투어 날짜 선택 (선택)'}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-            />
+            <div className="flex gap-2">
+              <DatePicker
+                name="tourDate"
+                value={tourDateVal}
+                onChange={setTourDateVal}
+                placeholder={statusVal === 'WAITING_TOUR' ? '투어 예정일 선택' : '투어 날짜 선택 (선택)'}
+                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+              />
+              {/* 시간(선택) — 입력하면 구독 캘린더에 시각 지정 이벤트로 나가고 1시간 전 알림이 붙는다 */}
+              <input type="time" name="tourTime" value={tourTimeVal} onChange={e => setTourTimeVal(e.target.value)}
+                disabled={!tourDateVal} aria-label="투어 예정 시간"
+                className="w-[110px] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors disabled:opacity-40" />
+            </div>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">시간까지 넣으면 캘린더 연동에 그 시각으로 등록되고 1시간 전에 알림이 갑니다. 비우면 종일 일정으로 나갑니다.</p>
           </div>
         )}
         {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
