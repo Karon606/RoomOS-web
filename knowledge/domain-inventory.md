@@ -20,6 +20,18 @@
 ## 잔량 계산 모델 (overview.ts)
 `currentStock = 마지막 점검 remainingQty + (점검 이후 수령 구매·무상입수)`. 같은 날 중복 점검은 최신만 채택(dedupSameDay). 입고 귀속은 `receivedAt`(수령일) 기준.
 
+## 위치 숨김 = (품목,위치) 쌍의 closedAt (2026-07-18, 1b93ce7·c04ad4b·f2cb21c·17aebf8)
+품목별로 보관위치를 화면에서 가리는 기능(운영자 명명 '숨김', c8912381 종결). `TrackedItemLocation.closedAt`(null=표시).
+- **표시 술어는 서버 한 곳**(overview): `closedAt != null` 이고 현재 잔량 `< 0.001` 이면 `InventoryRow.hiddenLocationIds` 에 담는다. 표시 소비자는 멤버십으로만 거른다. **`locations` 는 절대 필터하지 않는다** — 필터하면 '위치 안 쓰는 품목' 분기(`locations.length===0`)가 오발동해 보정 저장이 breakdown 없는 점검을 만든다.
+- **자동 치유**: 숨긴 위치에 어떤 경로로든 재고가 들어오면 잔량>0 이 되어 다시 보인다(실증됨). 재고가 조용히 사라지는 경로가 구조적으로 없다. 그래서 8개 백도어 경로에 가드를 흩뿌리지 않아도 된다.
+- **음수는 0 취급(숨김)**. `Math.abs` 금지 — 표시가 이미 음수를 0 클램프하므로 절댓값 판정이면 잔량 -5 위치가 "0kg 인데 영원히 안 사라지는 칩"이 된다. ε=0.001(기존 관용 오차와 동일).
+- **잔량 소스 = (B) 계열**(마지막 점검 breakdown + 이후 입수·폐기 위치별). lastCheck 단독 금지 — 위치 미지정 입수가 breakdown 에 안 잡혀 "총량엔 있는데 어느 칩에도 없는 재고"가 된다. overview 는 배치 3쿼리로 N+1 없이 계산.
+- **`setItemLocations` = 3-way diff** (deleteMany 전체교체 금지 — closedAt 소실 + 재고 든 위치 무단 제거). 빠진 id: 재고 있으면 거부 / 비고 이력 없으면 삭제 / 비고 이력 있으면 숨김. 실효 허브가 빠지면 거부. 사후조건 P: 링크>0 이면 열린 링크 최소 1개. `batchSetItemLocations` 는 **가산 전용(union)** — 배치 모달이 빈 Set 에서 시작해 '교체' 개념이 성립 안 함.
+- **reopen(다시 표시) vs undoClose(적용취소)는 다르다**: reopen 은 이관 점검 유지, undoClose 는 이관 점검 삭제+허브 원복. UI 의 '다시 표시'는 reopen. **reopen 후 클라 selected 에도 즉시 반영해야 한다** — state 는 refresh 로 재초기화되지 않아, 안 넣으면 다음 저장 때 조용히 재숨김(17aebf8).
+- **허브는 숨길 수 없다**(setItemLocations 거부). 잔량 있는 위치 숨김+이관+허브 승격은 `closeItemLocation` 서버액션에 구현돼 있으나 **현재 UI 미연결(데드코드)** — 필요해지면 UI 만 얹으면 된다. 빈 위치 숨김(실사용 케이스)은 선택 해제+저장으로 동작.
+- 병합은 source 링크의 closedAt 을 전파(target 우선), unmerge 는 3세대 payload 하위호환(gen0 없음/gen1 ids/gen2 {id,closedAt}).
+- 점검·보정 폼은 숨긴 위치를 여전히 0 입력행으로 보여준다(후속 개선 후보) — 데이터는 무해(0 저장=유지, 양수 저장=자동 재표시).
+
 ## 불변식: 재고가 들어간 위치엔 반드시 링크가 있다 (2026-07-17, 67ccfa3·06585a5)
 **모든 (품목 T, 위치 L)에 대해, T 의 재고가 지금 L 에 들어가 있다면 `TrackedItemLocation(T,L)` 이 존재한다.** 현재시제 판정 기준 = T 의 마지막 점검 `StockCheckLocation` 중 `remainingQty > 0` 인 행.
 - **왜 치명적인가**: 위치별 재고확인 탭(`InventoryClient.tsx` `row.locations.some(...)`)과 보정 폼이 **링크로 필터**한다. 링크 없는 위치의 재고는 화면에서 통째로 사라진다(오류신고 601303c5 — 김치 20kg 중 15kg). 총량에는 잡히는데 위치 어디에도 안 보인다.
