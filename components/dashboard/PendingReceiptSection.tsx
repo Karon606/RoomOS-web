@@ -16,6 +16,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   uploadPendingReceipt, getPendingReceipts, approvePendingReceipt, rejectPendingReceipt, checkSetHint,
+  retryPendingReceiptAnalyze,
   type PendingReceiptRow,
 } from '@/app/(app)/dashboard/pendingReceipt'
 import { Btn } from '@/components/ui/Btn'
@@ -134,6 +135,7 @@ export function PendingReceiptSection() {
             onStartEdit={(mode) => setEditing({ id: r.id, mode })}
             onCancelEdit={() => setEditing(null)}
             onApproved={async () => { setEditing(null); await reload() }}
+            onRetried={async () => { await reload() }}
             onRejected={async () => {
               if (!(await confirmDialog({ level: 'danger', title: '이 영수증을 거절할까요?', message: '첨부 사진과 자동 분류가 사라집니다.', confirmLabel: '거절' }))) return
               startTransition(async () => {
@@ -166,7 +168,7 @@ export function PendingReceiptSection() {
   )
 }
 
-function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRejected, EXPENSE_CATEGORIES = FALLBACK_EXPENSE_CATEGORIES, INVENTORY_CATEGORIES = FALLBACK_INVENTORY_CATEGORIES }: {
+function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRetried, onRejected, EXPENSE_CATEGORIES = FALLBACK_EXPENSE_CATEGORIES, INVENTORY_CATEGORIES = FALLBACK_INVENTORY_CATEGORIES }: {
   EXPENSE_CATEGORIES?: string[]
   INVENTORY_CATEGORIES?: string[]
   row: PendingReceiptRow
@@ -174,6 +176,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   onStartEdit: (mode: EditMode) => void
   onCancelEdit: () => void
   onApproved: () => void
+  onRetried: () => void
   onRejected: () => void
 }) {
   const router = useRouter()   // 지출 등록 — 정식 지출 폼 딥링크 이동용
@@ -200,7 +203,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const [specUnit, setSpecUnit] = useState(row.specUnit ?? '')
   const [qtyValue, setQtyValue] = useState(row.qtyValue ?? '')
   const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
-  const [specText, setSpecText] = useState('')
+  const [specText, setSpecText] = useState(row.specText ?? '')
   const [wizOpen, setWizOpen] = useState(false)
   // 세트 상품 의심(주문 1=실물 N) — 폼 열릴 때 1회 감지, 승인 전 "1세트에 몇 개?" 확인(운영자 2026-07-06)
   const [setHint, setSetHint] = useState<Awaited<ReturnType<typeof checkSetHint>>>(null)
@@ -226,6 +229,14 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const applyWizard = (r: SpecWizardResult) => {
     setSpecValue(r.specValue); setSpecUnit(r.specUnit); setSpecText(r.specText)
     if (r.qtyValue) setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
+  }
+
+  const handleRetry = () => {
+    startTransition(async () => {
+      const res = await retryPendingReceiptAnalyze(row.id)
+      if (res.ok) { pushToast('success', '다시 인식했습니다'); onRetried() }
+      else pushToast('error', res.error)
+    })
   }
 
   const handleApprove = () => {
@@ -278,19 +289,33 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
           <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{fmtAgo(row.createdAt)}</span>
         </div>
 
+        {!editingMode && row.errorMsg && (
+          <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>인식 실패 · {row.errorMsg}</p>
+        )}
         {!editingMode && (
           <>
-            <p className="text-sm" style={{ color: 'var(--warm-dark)' }}>
-              {row.itemLabel ?? row.notes ?? row.inferredVendor ?? '(AI 분류 정보 없음)'}
-            </p>
-            <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>
-              {row.inferredDate ?? '—'}
-              {row.inferredAmount != null && <> · <span className="font-semibold">{fmtWon(row.inferredAmount)}</span></>}
-              {row.inferredCategory && <> · {row.inferredCategory}</>}
-              {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
-              {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
-            </p>
+            {!row.errorMsg && (
+              <>
+                <p className="text-sm" style={{ color: 'var(--warm-dark)' }}>
+                  {row.itemLabel ?? row.notes ?? row.inferredVendor ?? '(AI 분류 정보 없음)'}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>
+                  {row.inferredDate ?? '—'}
+                  {row.inferredAmount != null && <> · <span className="font-semibold">{fmtWon(row.inferredAmount)}</span></>}
+                  {row.inferredCategory && <> · {row.inferredCategory}</>}
+                  {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
+                  {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
+                </p>
+              </>
+            )}
             <div className="flex gap-2 pt-1 flex-wrap">
+              {row.errorMsg && (
+                <button onClick={handleRetry} disabled={pending}
+                  className="inline-flex items-center text-[0.6875rem] px-2.5 min-h-[44px] rounded-lg font-medium"
+                  style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
+                  {pending ? '인식 중…' : '다시 인식'}
+                </button>
+              )}
               {/* 지출 등록 — 정식 지출 등록 폼(정밀 OCR·다품목·규격 완전체)으로 이동해 일원화(오류신고 bb7b7cb4).
                   저장 성공 시 이 대기 항목은 자동 마감. AI 인식이 1회 더 실행됨(운영자 수용). */}
               <button onClick={() => router.push(`/finance?pendingReceipt=${row.id}`)} disabled={pending}

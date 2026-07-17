@@ -13,6 +13,7 @@ import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
+import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -30,7 +31,8 @@ async function getPropertyId(): Promise<string> {
   return propertyId
 }
 
-// Gemini 분류·추출 — '이게 뭐다' 판단 + 가능한 필드 추출.
+// Gemini 분류·추출 결과. 지출 등록의 정밀 OCR(lib/receiptOcr)과 동일 스키마 + kind 분류.
+// items[] 전체를 보존해 딥링크 지출 폼이 재-OCR 없이 프리필. inferred* 요약은 items[0] 기준.
 type GeminiResult = {
   kind: 'expense' | 'inventory' | 'unknown'
   vendor?: string
@@ -38,12 +40,17 @@ type GeminiResult = {
   amount?: number
   category?: string
   notes?: string
-  // 재고용 필드 (kind='inventory' 일 때 유의미)
+  // 재고용 요약 필드 (items[0] 기준)
   itemLabel?: string
+  rawItemLabel?: string   // 별칭 적용 전 원문 — 승인 시 재학습 판단용
   specValue?: string
   specUnit?: string
   qtyValue?: string
   qtyUnit?: string
+  orderNo?: string
+  items?: ReceiptOcrItem[]        // 정밀 라인아이템 — 딥링크 폼 프리필용
+  _meta?: { mime?: string }       // 원본 업로드 mime (재-OCR·다운로드 시 실제 값 사용)
+  _error?: string                 // 인식 실패 사유 (사용자용 한 줄) — 카드가 '인식 실패' 표시
 }
 
 async function analyzeImage(imageBase64: string, mimeType: string): Promise<GeminiResult> {
@@ -54,67 +61,48 @@ async function analyzeImage(imageBase64: string, mimeType: string): Promise<Gemi
   // 카테고리 후보는 영업장 설정에서(커스텀 카테고리 지원, 멀티테넌트). 보증금 반환은 사진 분류 대상이 아니라 제외.
   const catList = (await getExpenseCategories()).filter(c => c !== '보증금 반환').join('|')
 
-  const prompt = `이 사진이 무엇인지 판단하고 핵심 정보를 JSON 으로만 응답하세요.
-
-분류 (kind):
-- "expense": 영수증·계산서·결제내역 사진 → 지출 등록 후보
-- "inventory": 재고·물품 사진(라면/세제/소모품 등) → 재고 항목 등록/보충 후보
-- "unknown": 위 둘 다 아님
-
-JSON 스키마:
-{
-  "kind": "expense" | "inventory" | "unknown",
-  "vendor": "상호명 또는 브랜드 (있으면)",
-  "date": "YYYY-MM-DD (영수증 결제일, 있으면)",
-  "amount": 12345,                            // 정수 원 (영수증 합계, 있으면)
-  "category": "${catList}",  // 영수증·재고 모두 적합한 1개
-  "notes": "한 줄 요약 (예: '롯데마트 라면+세제 32,500원' 또는 '4층 주방 라면 6봉지')",
-
-  // ↓ kind='inventory' 일 때만 채움 (영수증이어도 단일 품목이면 채워도 OK)
-  "itemLabel": "품목명 (예: '신라면', '세탁세제', '두루마리 휴지')",
-  "specValue": "300",                         // 용량/규격 숫자 (선택)
-  "specUnit":  "ml",                          // 용량 단위 (ml/L/g/kg/장/매 등, 선택)
-  "qtyValue":  "6",                           // 개수 (선택)
-  "qtyUnit":   "봉지"                          // 개수 단위 (봉지/개/팩/박스 등, 선택)
+  // 지출 등록과 동일한 정밀 프롬프트 + kind 분류(withKind). maxOutputTokens 도 동일 수준(1500). 호출은 1회.
+  const prompt = buildReceiptOcrPrompt({ categories: catList, withKind: true })
+  const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 1500 })
+  if (!fetched.ok) throw new Error(`Gemini ${fetched.status}: ${fetched.errorText}`)
+  const parsedRes = parseReceiptOcrText(fetched.text, { withKind: true })
+  if (!parsedRes.ok) throw new Error(parsedRes.error)
+  const d = parsedRes.data
+  const first = d.items[0]
+  return {
+    kind: d.kind ?? (d.items.length > 0 ? 'expense' : 'unknown'),
+    vendor: d.vendor,
+    date: d.date,
+    amount: d.totalAmount != null ? Math.round(d.totalAmount) : undefined,
+    category: d.category,
+    notes: d.notes,
+    itemLabel: first?.label,
+    specValue: first?.specValue,
+    specUnit:  first?.specUnit,
+    qtyValue:  first?.qtyValue,
+    qtyUnit:   first?.qtyUnit,
+    orderNo: d.orderNo,
+    items: d.items,
+  }
 }
 
-응답은 순수 JSON 만. 마크다운·코드블록 X.`
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
-          ],
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800, responseMimeType: 'application/json' },
-      }),
+// 학습된 별칭 적용 — itemLabel(요약)·items[0] 를 선호명으로 치환하고 원문 보존(다음 인식부터 자동 치환).
+// 지출 등록 OCR 과 동일 학습 경로(lib/itemNameAlias). best-effort.
+async function applyLearnedItemAlias(propertyId: string, inferred: GeminiResult): Promise<GeminiResult> {
+  if (!inferred.itemLabel) return inferred
+  try {
+    const alias = await prisma.itemNameAlias.findUnique({
+      where: { propertyId_aliasKey: { propertyId, aliasKey: normalizeItemName(inferred.itemLabel) } },
+      select: { preferredLabel: true },
+    })
+    if (alias && alias.preferredLabel !== inferred.itemLabel) {
+      const raw = inferred.itemLabel
+      const items = inferred.items?.map((it, i) =>
+        i === 0 ? { ...it, rawLabel: it.rawLabel ?? it.label, label: alias.preferredLabel } : it)
+      return { ...inferred, rawItemLabel: raw, itemLabel: alias.preferredLabel, items }
     }
-  )
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 120)}`)
-  const json = await res.json()
-  const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-  if (!text) throw new Error('AI 응답 비어있음')
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-  const parsed = JSON.parse(cleaned)
-  return {
-    kind: ['expense', 'inventory', 'unknown'].includes(parsed.kind) ? parsed.kind : 'unknown',
-    vendor: typeof parsed.vendor === 'string' ? parsed.vendor : undefined,
-    date: typeof parsed.date === 'string' ? parsed.date : undefined,
-    amount: typeof parsed.amount === 'number' ? Math.round(parsed.amount) : undefined,
-    category: typeof parsed.category === 'string' ? parsed.category : undefined,
-    notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
-    itemLabel: typeof parsed.itemLabel === 'string' ? parsed.itemLabel : undefined,
-    specValue: parsed.specValue != null ? String(parsed.specValue) : undefined,
-    specUnit:  typeof parsed.specUnit  === 'string' ? parsed.specUnit  : undefined,
-    qtyValue:  parsed.qtyValue != null ? String(parsed.qtyValue) : undefined,
-    qtyUnit:   typeof parsed.qtyUnit   === 'string' ? parsed.qtyUnit   : undefined,
-  }
+  } catch { /* 별칭 미적용이어도 진행 */ }
+  return inferred
 }
 
 // 사진 업로드 → Drive 보관 + AI 분류 → pending row.
@@ -134,28 +122,18 @@ export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: tr
     // 1) Drive 보관 (썸네일 URL 즉시 표시)
     const { fileId, thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type)
 
-    // 2) AI 분류·추출 (실패해도 row 적재는 진행 — 사용자가 수동 처리 가능)
-    let inferred: GeminiResult | null = null
+    // 2) AI 분류·추출 (실패해도 row 적재는 진행 — 사용자가 수동 처리 가능).
+    //    실패를 삼키지 말고 _error 로 남겨 카드가 '인식 실패'를 보이고 [다시 인식]을 띄우게 한다.
+    let inferred: GeminiResult
     try {
       inferred = await analyzeImage(buffer.toString('base64'), file.type)
     } catch {
-      inferred = { kind: 'unknown' }
+      inferred = { kind: 'unknown', _error: '영수증을 자동 인식하지 못했습니다. 다시 인식하거나 직접 입력해 주세요.' }
     }
+    inferred._meta = { mime: file.type }   // 실제 업로드 mime — HEIC/PNG 재-OCR·다운로드 시 사용
 
     // 2.5) 학습된 별칭 적용 — 과거에 사용자가 고쳐 확정한 품목명이 있으면 추론 결과를 선호명으로 치환.
-    //      지출 등록 OCR 과 동일 학습 경로(lib/itemNameAlias). 원문은 rawItemLabel 로 보존(승인 시 재학습 판단용).
-    if (inferred?.itemLabel) {
-      try {
-        const alias = await prisma.itemNameAlias.findUnique({
-          where: { propertyId_aliasKey: { propertyId, aliasKey: normalizeItemName(inferred.itemLabel) } },
-          select: { preferredLabel: true },
-        })
-        if (alias && alias.preferredLabel !== inferred.itemLabel) {
-          ;(inferred as GeminiResult & { rawItemLabel?: string }).rawItemLabel = inferred.itemLabel
-          inferred = { ...inferred, itemLabel: alias.preferredLabel }
-        }
-      } catch { /* 별칭 미적용이어도 업로드는 정상 */ }
-    }
+    inferred = await applyLearnedItemAlias(propertyId, inferred)
 
     // 3) row 적재
     const row = await prisma.pendingReceipt.create({
@@ -194,8 +172,10 @@ export type PendingReceiptRow = {
   rawItemLabel: string | null   // OCR 원문 품명 — 세트 의심 감지('N개입' 표기) 근거용
   specValue: string | null
   specUnit:  string | null
+  specText:  string | null   // 서술형 규격(색상·사이즈 등) — 재고 등록 인라인 프리필용
   qtyValue:  string | null
   qtyUnit:   string | null
+  errorMsg:  string | null   // AI 인식 실패 사유(있으면 카드가 '인식 실패' + [다시 인식])
   createdAt: Date
 }
 export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[]> {
@@ -213,7 +193,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
       },
     })
     return rows.map(r => {
-      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string } | null) ?? null
+      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string; _error?: string; items?: { specText?: string }[] } | null) ?? null
       return {
         id: r.id,
         imageUrl: r.imageUrl,
@@ -227,8 +207,10 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
         rawItemLabel: parsed?.rawItemLabel ?? null,
         specValue: parsed?.specValue ?? null,
         specUnit:  parsed?.specUnit  ?? null,
+        specText:  parsed?.items?.[0]?.specText ?? null,
         qtyValue:  parsed?.qtyValue  ?? null,
         qtyUnit:   parsed?.qtyUnit   ?? null,
+        errorMsg:  parsed?._error    ?? null,
         createdAt: r.createdAt,
       }
     })
@@ -330,19 +312,70 @@ export async function approvePendingReceipt(
 
 // 홈 큐 영수증을 지출 등록 폼의 정식 OCR로 넘기기 위한 원본 이미지(오류신고 bb7b7cb4).
 // 영업장 스코프 + 편집 권한 필수 — 누락 시 타 영업장 영수증 열람 경로가 됨(영향검증 필수1).
-export async function getPendingReceiptImage(id: string): Promise<{ ok: true; base64: string; mime: string; imageUrl: string } | { ok: false; error: string }> {
+// ocr: 업로드 시 저장된 정밀 인식 결과 — 딥링크 지출 폼이 재-OCR 없이 프리필(호출 1회 절약).
+//      items 가 비면(구 데이터·인식 실패) 클라이언트가 기존 재-OCR 폴백을 쓴다.
+export async function getPendingReceiptImage(id: string): Promise<{ ok: true; base64: string; mime: string; imageUrl: string; ocr: ReceiptOcrResult; ocrError: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const row = await prisma.pendingReceipt.findFirst({
       where: { id, propertyId, status: 'pending' },
-      select: { driveFileId: true, imageUrl: true },
+      select: { driveFileId: true, imageUrl: true, parsedJson: true },
     })
     if (!row?.driveFileId) return { ok: false, error: '대기 항목을 찾을 수 없습니다.' }
+    const parsed = (row.parsedJson as GeminiResult | null) ?? null
+    const mime = parsed?._meta?.mime ?? 'image/jpeg'
     const buf = await downloadDriveBytes(row.driveFileId)
-    return { ok: true, base64: buf.toString('base64'), mime: 'image/jpeg', imageUrl: row.imageUrl }
+    const ocr: ReceiptOcrResult = {
+      date: parsed?.date,
+      vendor: parsed?.vendor,
+      totalAmount: parsed?.amount,
+      category: parsed?.category,
+      orderNo: parsed?.orderNo,
+      items: parsed?.items ?? [],
+    }
+    return { ok: true, base64: buf.toString('base64'), mime, imageUrl: row.imageUrl, ocr, ocrError: parsed?._error ?? null }
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? '이미지를 불러오지 못했습니다.' }
+  }
+}
+
+// 저장된 이미지로 AI 인식 재실행 후 row 갱신 — 카드 [다시 인식] 버튼(사용자 명시 클릭이라 호출 1회 허용).
+// 편집 권한 + 영업장 스코프 필수(타 영업장 영수증 조작 차단).
+export async function retryPendingReceiptAnalyze(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.pendingReceipt.findFirst({
+      where: { id, propertyId, status: 'pending' },
+      select: { driveFileId: true, parsedJson: true },
+    })
+    if (!row?.driveFileId) return { ok: false, error: '대기 항목을 찾을 수 없습니다.' }
+    const mime = (row.parsedJson as GeminiResult | null)?._meta?.mime ?? 'image/jpeg'
+    const buf = await downloadDriveBytes(row.driveFileId)
+    let inferred: GeminiResult
+    try {
+      inferred = await analyzeImage(buf.toString('base64'), mime)
+    } catch {
+      return { ok: false, error: '다시 인식하지 못했습니다. 잠시 후 다시 시도해 주세요.' }
+    }
+    inferred._meta = { mime }
+    inferred = await applyLearnedItemAlias(propertyId, inferred)
+    await prisma.pendingReceipt.update({
+      where: { id },
+      data: {
+        inferredKind: inferred.kind,
+        inferredVendor: inferred.vendor ?? null,
+        inferredDate: inferred.date ?? null,
+        inferredAmount: inferred.amount ?? null,
+        inferredCategory: inferred.category ?? null,
+        parsedJson: inferred as unknown as object,
+      },
+    })
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? '오류가 발생했습니다.' }
   }
 }
 

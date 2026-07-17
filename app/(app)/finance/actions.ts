@@ -3,7 +3,7 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
-import { computeSetHint, type SetHint } from '@/lib/setHint'
+import { computeSetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
@@ -18,6 +18,7 @@ import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
+import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -333,22 +334,8 @@ async function genOrderCode(propertyId: string): Promise<string> {
 // normalizeItemName·별칭 upsert 는 lib/itemNameAlias 로 이동(홈 찍어올리기 승인과 학습 경로 공유)
 
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
-export type ReceiptOcrItem = {
-  label: string
-  rawLabel?: string   // 별칭 적용 전 원문(사용자 수정 학습 캡처용)
-  specValue?: string; specUnit?: string
-  qtyValue?: string;  qtyUnit?: string
-  amount: number
-  setHint?: SetHint   // 세트 상품 의심(주문 1=실물 N) — 클라이언트가 "1세트에 몇 개?" 되묻기용
-}
-export type ReceiptOcrResult = {
-  date?: string         // YYYY-MM-DD
-  vendor?: string
-  totalAmount?: number
-  items: ReceiptOcrItem[]
-  category?: string     // AI 추천 카테고리 (보수적)
-  orderNo?: string      // 쇼핑몰 주문번호(쿠팡 등) — 보이면 추출
-}
+// 정밀 프롬프트·응답 파싱·타입은 lib/receiptOcr 로 공유(홈 찍어올리기와 동일 인식). 여기선 vocab·별칭·setHint 결합.
+export type { ReceiptOcrItem, ReceiptOcrResult } from '@/lib/receiptOcr'
 
 export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
   try {
@@ -386,78 +373,13 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
     // 카테고리 후보는 영업장 설정에서 — 기본 13종을 하드코딩하면 커스텀 카테고리가 OCR 분류에서 배제된다(멀티테넌트, 운영자 승인 2026-07-14)
     const ocrCategories = (await getExpenseCategories()).join('|')
 
-    const prompt = `이 영수증 이미지를 분석해 다음 JSON 스키마로만 응답하세요. 다른 설명, 마크다운, 코드 블록 없이 순수 JSON만 출력:
+    const prompt = buildReceiptOcrPrompt({ categories: ocrCategories, vocabBlock })
 
-{
-  "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
-  "vendor": "상호명",              // 안 보이면 생략
-  "totalAmount": 12345,           // 최종 결제 금액 = 부가세 포함 (정수, 원). '합계/총액/결제금액/받을금액/승인금액' 값. '공급가액/과세금액'을 쓰지 말 것
-  "orderNo": "1234567890",        // 쇼핑몰 주문번호(쿠팡 등). 영수증/주문서에 '주문번호'가 보이면. 없으면 생략
-  "category": "${ocrCategories}",  // 가장 적합한 1개. 애매하면 생략
-  "items": [
-    {
-      "label": "품목명",
-      "specValue": "300",         // 용량/규격 숫자 (선택)
-      "specUnit": "ml",           // 용량 단위 (선택)
-      "qtyValue": "2",            // 개수 (선택)
-      "qtyUnit": "개",             // 개수 단위 (선택)
-      "amount": 5000              // 이 품목 가격 (정수)
-    }
-  ]
-}
-
-규칙:
-- totalAmount는 반드시 부가세 포함 최종 결제 금액. 공급가액(과세금액)·부가세가 따로 표시된 영수증이면 그 합(=합계/총액)을 쓰고, 공급가액만 넣지 마세요
-- items의 amount도 부가세 포함 가격으로. 품목이 부가세 별도 단가로 표시돼 있으면 부가세를 각 품목에 비례 배분해 포함시키고, items 합계가 totalAmount와 일치하게 하세요
-- 부가세/할인/포인트 등 메타 행 자체는 items에 넣지 마세요
-- 한국어 영수증 우선. 가격은 숫자만 (콤마 제거)
-- 영수증으로 보이지 않는 이미지면: { "items": [] } 만 반환${vocabBlock}`
-
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
-            ],
-          }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 1500, responseMimeType: 'application/json' },
-        }),
-      }
-    )
-
-    if (!res.ok) {
-      const errTxt = await res.text()
-      return { ok: false, error: `Gemini API 오류 (${res.status}): ${errTxt.slice(0, 200)}` }
-    }
-    const json = await res.json()
-    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-    if (!text) return { ok: false, error: 'AI 응답이 비어있습니다.' }
-
-    // JSON 파싱 (간혹 코드블록으로 감싸서 오는 경우 대비)
-    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-    let parsed: any
-    try {
-      parsed = JSON.parse(cleaned)
-    } catch {
-      return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' }
-    }
-
-    const items: ReceiptOcrItem[] = Array.isArray(parsed.items) ? parsed.items
-      .filter((it: any) => it && typeof it.label === 'string' && it.label.trim())
-      .map((it: any) => ({
-        label: String(it.label).trim(),
-        specValue: it.specValue ? String(it.specValue) : undefined,
-        specUnit:  it.specUnit  ? String(it.specUnit)  : undefined,
-        qtyValue:  it.qtyValue  ? String(it.qtyValue)  : undefined,
-        qtyUnit:   it.qtyUnit   ? String(it.qtyUnit)   : undefined,
-        amount:    Number(it.amount) || 0,
-      }))
-    : []
+    const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 1500 })
+    if (!fetched.ok) return { ok: false, error: `Gemini API 오류 (${fetched.status}): ${fetched.errorText}` }
+    const parsedRes = parseReceiptOcrText(fetched.text)
+    if (!parsedRes.ok) return { ok: false, error: parsedRes.error }
+    const data = parsedRes.data
 
     // 학습된 별칭 적용 — 정규화 원문이 별칭에 있으면 선호명으로 치환(원문은 rawLabel 로 보존해 저장 시 재학습 판단).
     let aliasMap = new Map<string, string>()
@@ -465,7 +387,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
       const aliasRows = await prisma.itemNameAlias.findMany({ where: { propertyId: ocrPropertyId }, select: { aliasKey: true, preferredLabel: true } })
       aliasMap = new Map(aliasRows.map(a => [a.aliasKey, a.preferredLabel]))
     } catch { /* 별칭 테이블 미적용(SQL 전)이어도 OCR 자체는 정상 동작 */ }
-    const aliasedItems: ReceiptOcrItem[] = items.map(it => {
+    const aliasedItems: ReceiptOcrItem[] = data.items.map(it => {
       const pref = aliasMap.get(normalizeItemName(it.label))
       return { ...it, rawLabel: it.label, label: pref ?? it.label }
     })
@@ -479,14 +401,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 
     return {
       ok: true,
-      data: {
-        date:        typeof parsed.date === 'string' ? parsed.date : undefined,
-        vendor:      typeof parsed.vendor === 'string' ? parsed.vendor : undefined,
-        totalAmount: typeof parsed.totalAmount === 'number' ? parsed.totalAmount : undefined,
-        category:    typeof parsed.category === 'string' ? parsed.category : undefined,
-        orderNo:     typeof parsed.orderNo === 'string' && parsed.orderNo.trim() ? parsed.orderNo.trim() : undefined,
-        items: aliasedItems,
-      },
+      data: { ...data, items: aliasedItems },
     }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

@@ -18,6 +18,7 @@ import {
   type RecurringExpenseWithStatus,
   type ExpenseSearchResult,
 } from './actions'
+import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
@@ -1398,6 +1399,7 @@ export default function FinanceClient({
   const [scanCropped, setScanCropped]         = useState<{ dataUrl: string; base64: string } | null>(null)
   const [scanOcrPending, setScanOcrPending]   = useState(false)
   const [scanOcrError, setScanOcrError]       = useState('')
+  const [addSeedNotice, setAddSeedNotice]     = useState('')   // 홈 딥링크에서 품목을 못 읽었을 때 폼에 보이는 안내(스캔 게이트 밖)
   const scanTargetRef                         = useRef<'add' | 'edit'>('add')
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
@@ -1442,64 +1444,84 @@ export default function FinanceClient({
   }
 
   // OCR 채우기 + 첨부 (코어 — cropped 직접 받음, 지출 등록 폼 전용)
-  const ocrCropped = async (cropped: { dataUrl: string; base64: string }, opts?: { skipUpload?: boolean }) => {
+  // OCR 결과를 지출 폼에 적용 — 자동 입력(ocrCropped)과 홈 딥링크(저장된 결과)가 공유하는 단일 경로.
+  const applyReceiptOcrToForm = async (d: ReceiptOcrResult) => {
+    if (d.date) setAddExpDate(d.date)
+    if (d.vendor) setAddExpVendor(d.vendor)
+    if (d.orderNo) setAddExtOrderNo(d.orderNo)
+    if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
+    if (d.items.length > 0) {
+      // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
+      // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
+      // 그 외 차이(할인·배송비 등)는 건드리지 않음.
+      let ocrItems = d.items
+      const itemsSum = ocrItems.reduce((s, it) => s + it.amount, 0)
+      if (d.totalAmount && itemsSum > 0 && itemsSum < d.totalAmount) {
+        const ratio = d.totalAmount / itemsSum
+        if (ratio > 1.07 && ratio < 1.13) {
+          let acc = 0
+          ocrItems = ocrItems.map((it, i) => {
+            const amt = i === ocrItems.length - 1 ? d.totalAmount! - acc : Math.round(it.amount * ratio)
+            acc += amt
+            return { ...it, amount: amt }
+          })
+        }
+      }
+      // 인식 직후 유사 품목 확인(오류신고 a3a4bac7) — 과거에 쓰던 비슷한 품목명이 있으면
+      // 그 이름으로 등록할지 물어봄(수동 추가의 confirmAdd와 동일 규칙). 승인 시 ocrRaw(원문)가
+      // 남아 별칭 학습 → 다음 영수증부턴 자동 치환.
+      const renamed: typeof ocrItems = []
+      for (const it of ocrItems) {
+        const similar = findSimilarItemName(it.label, detailSuggestions)
+        if (similar && similar !== it.label) {
+          const useExisting = await confirmDialog({
+            title: '비슷한 품목이 있어요',
+            message: `영수증의 '${it.label}'. 이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' · '${it.label}' 그대로 등록)`,
+            confirmLabel: `'${similar}'로`,
+            cancelLabel: '새 품목으로',
+          })
+          renamed.push(useExisting ? { ...it, rawLabel: it.rawLabel ?? it.label, label: similar } : it)
+        } else renamed.push(it)
+      }
+      ocrItems = renamed
+      // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
+      // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
+      // specText(색상·사이즈 등 서술형 규격)가 있으면 처음부터 텍스트 규격 모드로 열림(숫자 규격 비움·개당 단가).
+      setAddItems(ocrItems.map(it => {
+        const hasTextSpec = !!(it.specText && it.specText.trim())
+        return {
+          label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
+          specValue: hasTextSpec ? '' : (it.specValue ?? ''),
+          specUnit:  hasTextSpec ? '' : (it.specUnit ?? ''),
+          specText:  hasTextSpec ? it.specText!.trim() : undefined,
+          unitBasis: hasTextSpec ? 'qty' as const : undefined,
+          qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '',
+          amount: it.amount,
+          unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined,
+        }
+      }))
+      setAddExpAmount(ocrItems.reduce((s, it) => s + it.amount, 0))
+    } else {
+      setAddItems([])
+      if (d.totalAmount) setAddExpAmount(d.totalAmount)
+    }
+  }
+
+  const ocrCropped = async (cropped: { dataUrl: string; base64: string }, opts?: { skipUpload?: boolean }): Promise<{ itemCount: number; error: string | null }> => {
     setScanOcrPending(true)
     setScanOcrError('')
+    let outcome: { itemCount: number; error: string | null } = { itemCount: 0, error: null }
     try {
       const res = await analyzeReceiptWithGemini(cropped.base64, 'image/jpeg')
-      if (!res.ok) { setScanOcrError(res.error) }
+      if (!res.ok) { setScanOcrError(res.error); outcome = { itemCount: 0, error: res.error } }
       else {
         void notifyAiQuota()
-        const d = res.data
-        if (d.date) setAddExpDate(d.date)
-        if (d.vendor) setAddExpVendor(d.vendor)
-        if (d.orderNo) setAddExtOrderNo(d.orderNo)
-        if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
-        if (d.items.length > 0) {
-          // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
-          // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
-          // 그 외 차이(할인·배송비 등)는 건드리지 않음.
-          let ocrItems = d.items
-          const itemsSum = ocrItems.reduce((s, it) => s + it.amount, 0)
-          if (d.totalAmount && itemsSum > 0 && itemsSum < d.totalAmount) {
-            const ratio = d.totalAmount / itemsSum
-            if (ratio > 1.07 && ratio < 1.13) {
-              let acc = 0
-              ocrItems = ocrItems.map((it, i) => {
-                const amt = i === ocrItems.length - 1 ? d.totalAmount! - acc : Math.round(it.amount * ratio)
-                acc += amt
-                return { ...it, amount: amt }
-              })
-            }
-          }
-          // 인식 직후 유사 품목 확인(오류신고 a3a4bac7) — 과거에 쓰던 비슷한 품목명이 있으면
-          // 그 이름으로 등록할지 물어봄(수동 추가의 confirmAdd와 동일 규칙). 승인 시 ocrRaw(원문)가
-          // 남아 별칭 학습 → 다음 영수증부턴 자동 치환.
-          const renamed: typeof ocrItems = []
-          for (const it of ocrItems) {
-            const similar = findSimilarItemName(it.label, detailSuggestions)
-            if (similar && similar !== it.label) {
-              const useExisting = await confirmDialog({
-                title: '비슷한 품목이 있어요',
-                message: `영수증의 '${it.label}'. 이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' · '${it.label}' 그대로 등록)`,
-                confirmLabel: `'${similar}'로`,
-                cancelLabel: '새 품목으로',
-              })
-              renamed.push(useExisting ? { ...it, rawLabel: it.rawLabel ?? it.label, label: similar } : it)
-            } else renamed.push(it)
-          }
-          ocrItems = renamed
-          // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
-          // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
-          setAddItems(ocrItems.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined })))
-          setAddExpAmount(ocrItems.reduce((s, it) => s + it.amount, 0))
-        } else {
-          setAddItems([])
-          if (d.totalAmount) setAddExpAmount(d.totalAmount)
-        }
+        await applyReceiptOcrToForm(res.data)
+        outcome = { itemCount: res.data.items.length, error: null }
       }
       if (!opts?.skipUpload) await uploadCropped(cropped)   // 홈 큐 딥링크는 기존 이미지 재사용(재업로드 방지)
     } finally { setScanOcrPending(false) }
+    return outcome
   }
 
   // 스캔(크롭) 완료 → 지출 등록 폼이면 '분석할까요?' 팝업으로 자동 분석/첨부 분기.
@@ -1553,7 +1575,7 @@ export default function FinanceClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
-  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }
+  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -1566,7 +1588,17 @@ export default function FinanceClient({
       const res = await getPendingReceiptImage(pid)
       if (!res.ok) { pushToast('error', res.error); return }
       setAddReceiptUrl(res.imageUrl)
-      await ocrCropped({ dataUrl: `data:${res.mime};base64,${res.base64}`, base64: res.base64 }, { skipUpload: true })
+      // 저장된 정밀 인식 결과가 있으면 재-OCR 없이 프리필(호출 1회 절약).
+      if (res.ocr.items.length > 0) {
+        await applyReceiptOcrToForm(res.ocr)
+      } else {
+        // 구 데이터·인식 실패 — 기존 재-OCR 폴백. 그래도 품목을 못 읽으면 폼에 안내 표시.
+        const r = await ocrCropped({ dataUrl: `data:${res.mime};base64,${res.base64}`, base64: res.base64 }, { skipUpload: true })
+        if (r.itemCount === 0) {
+          const reason = r.error ?? res.ocrError
+          setAddSeedNotice('영수증에서 품목을 읽지 못했습니다. 직접 입력해 주세요.' + (reason ? ` (${reason})` : ''))
+        }
+      }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -3750,6 +3782,7 @@ export default function FinanceClient({
                         onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'add'); e.target.value = '' } }} />
                     </label>
                   )}
+                  {addSeedNotice && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{addSeedNotice}</p>}
                 </div>
                 {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
