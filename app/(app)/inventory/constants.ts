@@ -61,7 +61,10 @@ export type InventoryRow = {
   avgUnitPrice: number | null   // 최근 12개월 구매 평균 단가 (원/qtyUnit)
   lastUnitPrice: number | null  // 가장 최근 구매의 단가
   pendingPurchases: PendingPurchase[]  // 수령 대기 중인 구매 내역
-  locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록
+  locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록(원본 — 절대 필터 안 함, closedAt 실림)
+  // 숨긴 위치(closedAt != null) 중 현재 잔량이 비어(< 0.001) 화면에서 가릴 위치 id. 히스토리 소비자는 무시.
+  // 표시 소비자는 이 집합 멤버십으로만 거른다 — 술어(ε·잔량 소스)를 서버 한 곳에 모으기 위함.
+  hiddenLocationIds: string[]
   lastCheckLocationBreakdown: LocationQtyEntry[]  // 최신 실사의 위치별 잔량
   // 최근 6개월 사용량 (YYYY-MM 오래된 것부터, 마지막 슬롯 = 진행 중인 이번 달).
   // qty: 0 = 점검했으나 안 씀, null = 그 달엔 점검 자체가 없음(미관측). 둘을 뭉개면 추적 시작 전 달이 '사용량 0' 으로 보인다.
@@ -88,6 +91,9 @@ export type StorageLocationItem = {
   name: string
   sortOrder: number
   isHub: boolean
+  // null/미정의 = 표시(열림). 값 = 이 품목에서 이 위치를 숨긴 시점.
+  // 영업장 위치 목록(getStorageLocations)에선 항상 미정의 — 숨김은 (품목,위치) 쌍의 속성이라 영업장 위치엔 없다.
+  closedAt?: string | null
 }
 
 export type LocationQtyEntry = {

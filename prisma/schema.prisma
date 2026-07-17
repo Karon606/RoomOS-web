@@ -1205,6 +1205,10 @@ model StorageLocation {
 model TrackedItemLocation {
   trackedItemId     String @db.Uuid
   storageLocationId String @db.Uuid
+  // null = 표시(열림). 값 = 이 품목에서 이 위치를 숨긴 시점.
+  // 숨김은 (품목,위치) 쌍의 속성 — StorageLocation 은 영업장 공용이라 안 지운다.
+  // 표시 술어: closedAt != null 이고 그 위치의 현재 잔량이 비었으면(< 0.001) 화면에서 가린다(재고 들어오면 자동 재표시).
+  closedAt          DateTime?
 
   trackedItem     TrackedItem     @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
   storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)

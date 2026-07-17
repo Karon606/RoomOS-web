@@ -104,6 +104,23 @@ async function sumDisposals(
   return r._sum.disposedQty ?? 0
 }
 
+// 이 품목의 '기본 배치 위치'(허브) — 순수(쿼리 0). actions.ts resolveItemHubLocationId 의 복제.
+// ⚠️ 두 정의가 갈리면 위치 미지정 입수 귀속이 화면과 서버에서 달라진다. 검증에서 전 품목 대조로 일치를 증명한다.
+// openIds = 열린 링크만(숨긴 위치는 미지정 입수 귀속처가 될 수 없다). sortedLocations = sortOrder 오름차순.
+// 우선순위: hubLocationId(열림) → 영업장 기본 허브(열림) → sortOrder 첫 열린 링크.
+function resolveHubSync(
+  hubLocationId: string | null,
+  openIds: string[],
+  sortedLocations: { id: string }[],
+  defaultHubId: string | null,
+): string | null {
+  if (openIds.length === 0) return null
+  const open = new Set(openIds)
+  if (hubLocationId && open.has(hubLocationId)) return hubLocationId
+  if (defaultHubId && open.has(defaultHubId)) return defaultHubId
+  return sortedLocations.find(l => open.has(l.id))?.id ?? null
+}
+
 // ── 추적 품목 목록 + 계산된 지표
 export async function computeInventoryOverview(propertyId: string): Promise<InventoryRow[]> {
   // 서로 독립 조회 — 동시 실행(계산·값 불변, 왕복 직렬만 제거)
@@ -174,15 +191,16 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   const monthsAgo7 = new Date()
   monthsAgo7.setMonth(monthsAgo7.getMonth() - 7)
   monthsAgo7.setDate(1); monthsAgo7.setHours(0, 0, 0, 0)
-  const [allChecksForUsage, allItemLocations, allPending] = await Promise.all([
+  const itemIds = items.map(i => i.id)
+  const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, defaultHub] = await Promise.all([
     prisma.stockCheck.findMany({
-      where: { trackedItemId: { in: items.map(i => i.id) }, date: { gte: monthsAgo7 } },
+      where: { trackedItemId: { in: itemIds }, date: { gte: monthsAgo7 } },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true, isReconcile: true },
     }),
-    // 위치 정보 일괄 조회 — 루프 내 N+1 방지
+    // 위치 정보 일괄 조회 — 루프 내 N+1 방지. closedAt 실어 숨김 판정에 사용.
     prisma.trackedItemLocation.findMany({
-      where: { trackedItemId: { in: items.map(i => i.id) } },
+      where: { trackedItemId: { in: itemIds } },
       include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
     }),
     // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
@@ -199,7 +217,23 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     }),
+    // 숨김 판정용 배치 입수·폐기 — 마지막 점검 이후 위치별 잔량 변화를 N+1 없이 계산.
+    // currentLocationBreakdown(actions.ts)의 (B) 계열과 동일 규칙: base=마지막 점검 breakdown + 이후 입수·폐기(위치별).
+    prisma.stockAddition.findMany({
+      where: { trackedItemId: { in: itemIds } },
+      select: { trackedItemId: true, storageLocationId: true, addedQty: true, date: true, createdAt: true },
+    }),
+    prisma.stockDisposal.findMany({
+      where: { trackedItemId: { in: itemIds } },
+      select: { trackedItemId: true, storageLocationId: true, disposedQty: true, date: true, createdAt: true },
+    }),
+    prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } }),
   ])
+  const addsByItem = new Map<string, typeof allAdditions>()
+  for (const a of allAdditions) { const arr = addsByItem.get(a.trackedItemId) ?? []; arr.push(a); addsByItem.set(a.trackedItemId, arr) }
+  const dispByItem = new Map<string, typeof allDisposals>()
+  for (const d of allDisposals) { const arr = dispByItem.get(d.trackedItemId) ?? []; arr.push(d); dispByItem.set(d.trackedItemId, arr) }
+  const defaultHubId = defaultHub?.id ?? null
 
   const today = new Date()
   today.setHours(23, 59, 59, 999)
@@ -441,10 +475,42 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       .map(([month, qty]) => ({ month, qty: qty == null ? null : Math.max(0, qty) }))
 
     // isHub 는 '이 품목의 허브' — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
-    const locations: StorageLocationItem[] = allItemLocations
-      .filter(l => l.trackedItemId === it.id)
-      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub }))
+    const itemLinks = allItemLocations.filter(l => l.trackedItemId === it.id)
+    const locations: StorageLocationItem[] = itemLinks
+      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub, closedAt: l.closedAt ? l.closedAt.toISOString() : null }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+
+    // 숨김 판정 — 숨긴(closedAt) 위치 중 현재 잔량이 비어 있으면(< 0.001) 화면에서 가린다.
+    // 잔량 소스는 (B) 계열: 마지막 점검 breakdown + 그 이후 입수·폐기(위치별). currentLocationBreakdown 과 동일.
+    // 재고가 들어오면(어느 경로든) 잔량이 살아나 자동으로 다시 보인다 — 조용히 사라지지 않는다.
+    let hiddenLocationIds: string[] = []
+    const closedIds = itemLinks.filter(l => l.closedAt != null).map(l => l.storageLocation.id)
+    if (closedIds.length > 0) {
+      // 잔량 계산 — 열린 링크만으로 허브 폴백 해석(숨긴 위치는 미지정 입수 귀속처가 될 수 없다, F3).
+      const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
+      const hubId = resolveHubSync(it.hubLocationId, openLinkIds, locations, defaultHubId)
+      const cur = new Map<string, number>()
+      for (const lb of last?.locationBreakdown ?? []) cur.set(lb.storageLocationId, lb.remainingQty)
+      if (last) {
+        const afterLast = (x: { date: Date; createdAt: Date }) =>
+          x.date.getTime() > last.date.getTime() ||
+          (x.date.getTime() === last.date.getTime() && x.createdAt.getTime() > last.createdAt.getTime())
+        for (const a of addsByItem.get(it.id) ?? []) {
+          if (!afterLast(a)) continue
+          const loc = a.storageLocationId ?? hubId
+          if (!loc) continue
+          cur.set(loc, (cur.get(loc) ?? 0) + a.addedQty)
+        }
+        for (const d of dispByItem.get(it.id) ?? []) {
+          if (!afterLast(d)) continue
+          const loc = d.storageLocationId ?? hubId
+          if (!loc) continue
+          cur.set(loc, (cur.get(loc) ?? 0) - d.disposedQty)
+        }
+      }
+      // 음수는 0 취급(숨김) — 표시 파이프라인이 이미 음수를 0 클램프하므로, 노출하면 "0kg인데 안 사라지는 칩"이 된다.
+      hiddenLocationIds = closedIds.filter(id => (cur.get(id) ?? 0) < 0.001)
+    }
 
     const pendingPurchases: PendingPurchase[] = allPending
       .filter(p =>
@@ -491,6 +557,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       lastUnitPrice,
       pendingPurchases,
       locations,
+      hiddenLocationIds,
       lastCheckLocationBreakdown: (last?.locationBreakdown ?? []).map(lb => ({
         locationId: lb.storageLocationId,
         locationName: lb.storageLocation.name,

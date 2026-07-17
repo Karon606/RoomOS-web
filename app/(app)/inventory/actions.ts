@@ -705,10 +705,12 @@ async function resolveItemHubLocationId(
   propertyId: string,
   linkedIds?: Set<string>,   // 호출부가 이미 갖고 있으면 재조회 생략
 ): Promise<string | null> {
+  // 숨긴 위치(closedAt != null)는 허브 후보에서 제외 — 미지정 입수가 숨긴 위치로 귀속되면 안 된다(2단계 F3).
+  // 호출부가 linkedIds 를 넘길 땐 열린 링크만 담아야 한다(confirmReceipt 등).
   let ids = linkedIds
   if (!ids) {
     const links = await prisma.trackedItemLocation.findMany({
-      where: { trackedItemId },
+      where: { trackedItemId, closedAt: null },
       select: { storageLocationId: true },
       orderBy: { storageLocation: { sortOrder: 'asc' } },
     })
@@ -720,7 +722,7 @@ async function resolveItemHubLocationId(
   if (def && ids.has(def.id)) return def.id
   // 첫 링크 — sortOrder 로 결정화(비결정적 '첫 위치' 방지)
   const first = await prisma.trackedItemLocation.findFirst({
-    where: { trackedItemId },
+    where: { trackedItemId, closedAt: null },
     select: { storageLocationId: true },
     orderBy: { storageLocation: { sortOrder: 'asc' } },
   })
@@ -2155,7 +2157,8 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         select: {
           id: true, trackUnit: true, specUnit: true, qtyUnit: true, hubLocationId: true,
           // sortOrder 정렬 — '첫 위치' 폴백을 결정화(getStockAsOf 와 동일 기준)
-          locations: { select: { storageLocationId: true }, orderBy: { storageLocation: { sortOrder: 'asc' } } },
+          // 열린 링크만 — 숨긴 위치는 자동 배치·지정 위치 후보가 될 수 없다(2단계 F3)
+          locations: { where: { closedAt: null }, select: { storageLocationId: true }, orderBy: { storageLocation: { sortOrder: 'asc' } } },
         },
       })
     }
