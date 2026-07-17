@@ -406,12 +406,23 @@ export default function SettingsForm({
   const [joinCode, setJoinCode] = useState<string | null>(initialJoinCode ?? null)
   const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>(initialJoinRequests ?? [])
 
+  // 왕복 중 버튼을 잠근다 — regenerateJoinCode 는 부를 때마다 새 난수 코드를 쓰는 비멱등 액션이고,
+  // 최초 발급(joinCode 없음)은 confirmDialog 도 안 거쳐 클릭 후 아무 표시가 없었다.
+  // 연타하면 코드가 N번 덮어써지고, 커밋 순서와 응답 도착 순서가 어긋나면 화면 코드와 DB 코드가 달라진다.
+  // 그러면 운영자는 화면 코드를 스태프에게 주는데 스태프는 '잘못된 코드'를 받고, 양쪽 다 오류가 안 뜬다.
+  const [joinBusy, setJoinBusy] = useState(false)
   const handleRegenJoinCode = async () => {
+    if (joinBusy) return
     if (joinCode && !(await confirmDialog({ title: '새 참여 코드를 발급할까요?', message: '기존 코드는 더 이상 사용할 수 없습니다.', level: 'caution', confirmLabel: '재발급' }))) return
-    const res = await regenerateJoinCode()
-    if (!res.ok) { showToast(res.error); return }
-    setJoinCode(res.code)
-    showToast('참여 코드 발급됨')
+    setJoinBusy(true)
+    try {
+      const res = await regenerateJoinCode()
+      if (!res.ok) { showToast(res.error); return }
+      setJoinCode(res.code)
+      showToast('참여 코드 발급됨')
+    } finally {
+      setJoinBusy(false)
+    }
   }
 
   const handleCopyJoinCode = async () => {
@@ -1319,10 +1330,10 @@ export default function SettingsForm({
                       {joinCode}
                     </code>
                     <Btn type="button" variant="secondary" size="sm" onClick={handleCopyJoinCode}>복사</Btn>
-                    <Btn type="button" variant="secondary" size="sm" onClick={handleRegenJoinCode}>재발급</Btn>
+                    <Btn type="button" variant="secondary" size="sm" onClick={handleRegenJoinCode} disabled={joinBusy}>{joinBusy ? '발급 중…' : '재발급'}</Btn>
                   </>
                 ) : (
-                  <Btn type="button" variant="primary" size="md" onClick={handleRegenJoinCode}>참여 코드 발급</Btn>
+                  <Btn type="button" variant="primary" size="md" onClick={handleRegenJoinCode} disabled={joinBusy}>{joinBusy ? '발급 중…' : '참여 코드 발급'}</Btn>
                 )}
               </div>
             </div>
