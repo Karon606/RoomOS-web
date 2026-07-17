@@ -214,11 +214,16 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
               detail: buildAssetDetail({ ...e, qtyValue: need }),
               vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
               receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
-              itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit,
+              // ⚠️ 집계 키(aggregateAssets)에 쓰이는 필드는 하나도 빠뜨리면 안 된다 — 빠지면 수령분이
+              //   별도 카드로 갈라진다. specText 누락이 2026-07-08 '카드가 둘로 갈라져 보임' 사건이었고,
+              //   isCommonAsset 은 @default(false) 라 공용 자재를 부분 수령하면 공용 표시를 잃었다.
+              //   unitBasis(단가 기준)·assignedAt(배정일)도 원본에서 이어받는다. buildSplitOps 와 동일 목록.
+              itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
               qtyValue: need, qtyUnit: e.qtyUnit,
               receivedAt: now, excludeFromInventory: e.excludeFromInventory,
               allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
               propertyId, roomId: e.roomId, assignedLocationId: e.assignedLocationId,
+              isCommonAsset: e.isCommonAsset, assignedAt: e.assignedAt,
               financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
             } }))
             need = 0
@@ -454,16 +459,23 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
   return { kind: 'none', label: '미배정' }
 }
 
+// 이력·조회의 규격 식별자 — aggregateAssets 의 집계 키(위 81행) 중 규격 부분과 같은 3종.
+// 라벨만으로 기록·조회하면 색상·사이즈가 다른 카드끼리 이력이 섞인다(오류신고 5853a0ff).
+type SpecKey = { specValue: number | null; specUnit: string | null; specText: string | null }
+const specOf = (r: SpecKey): SpecKey => ({ specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, specText: r.specText ?? null })
+// 규격 미상 = 컬럼 추가 전 기록 중 백필 불가였던 것(그 라벨에 규격이 2종 이상이라 어느 쪽인지 알 수 없음).
+const specUnknown = (r: SpecKey) => r.specValue == null && r.specUnit == null && r.specText == null
+
 // 배정 변경 이력 기록 — 테이블 미적용(SQL 전)이면 조용히 무시(앱 정상 동작)
 async function logAssignment(
-  propertyId: string, itemLabel: string | null,
+  propertyId: string, itemLabel: string | null, spec: SpecKey,
   from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
   assignedAt?: Date | null,   // 운영자 지정 배정일 — 이력 표시는 이 값 우선(없으면 기록 시각)
 ) {
   if (from.kind === to.kind && from.label === to.label) return   // 변화 없음
   try {
     await prisma.assetAssignmentLog.create({
-      data: { propertyId, itemLabel, fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt: assignedAt ?? null },
+      data: { propertyId, itemLabel, ...specOf(spec), fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt: assignedAt ?? null },
     })
   } catch { /* asset_assignment_log 미적용 — 무시 */ }
 }
@@ -472,14 +484,25 @@ async function logAssignment(
 const kstYmd = (d: Date) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 
 // 비품 한 품목의 배정 변경 이력(최근순). 테이블 미적용 시 빈 배열.
-export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; assignedAt: string | null; createdAt: string }
-export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAssignmentLogRow[]> {
+// specUnknown = true 면 규격 미상 이력 — 그 라벨 전 카드에 보이므로 UI 가 '규격 미상' 으로 표시하고 되돌리기를 막는다.
+export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; assignedAt: string | null; createdAt: string; specUnknown: boolean }
+export async function getAssetAssignmentLog(itemLabel: string, spec?: SpecKey): Promise<AssetAssignmentLogRow[]> {
   try {
     const propertyId = await getPropertyId()
+    const s = spec ? specOf(spec) : null
     const rows = await prisma.assetAssignmentLog.findMany({
-      where: { propertyId, itemLabel }, orderBy: { createdAt: 'desc' }, take: 30,
+      where: {
+        propertyId, itemLabel,
+        // 규격이 일치하는 이력 + 규격 미상 이력(백필 불가분 — 기록 보존 위해 계속 노출).
+        // spec 미지정 호출(구 시그니처)은 종전대로 라벨 전체.
+        ...(s ? { OR: [s, { specValue: null, specUnit: null, specText: null }] } : {}),
+      },
+      orderBy: { createdAt: 'desc' }, take: 30,
     })
-    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null, createdAt: kstYmd(r.createdAt) }))
+    // '규격 미상' = 이 카드는 규격이 있는데 이력엔 없는 경우뿐. 규격 자체가 없는 품목(대다수)의
+    // 이력은 all-null 이 정상값이므로 미상이 아니다 — 여기서 갈라야 되돌리기가 헛되이 막히지 않는다.
+    const cardHasSpec = !!s && !specUnknown(s)
+    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null, createdAt: kstYmd(r.createdAt), specUnknown: cardHasSpec && specUnknown(r) }))
   } catch { return [] }
 }
 
@@ -553,7 +576,7 @@ export async function assignAggregateToTarget(
     const { ops, movedQty, touchedGroups } = buildSplitOps(exps, propertyId, { ...tData, isCommonAsset: false, assignedAt: assignedAtVal }, qty)
     await prisma.$transaction(ops)
     if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
-    await logAssignment(propertyId, rep0.itemLabel, fromState,
+    await logAssignment(propertyId, rep0.itemLabel, rep0, fromState,
       isNone ? { kind: 'none', label: '미배정' } : await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty, assignedAtVal)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
@@ -593,9 +616,13 @@ export async function revertAssignmentLog(logId: string): Promise<{ ok: true } |
     if ('error' in to) return { ok: false, error: to.error }
     const from = await resolvePlace(propertyId, log.fromKind, log.fromLabel)
     if ('error' in from) return { ok: false, error: from.error }
-    // 지금 '간 곳(to)'에 남아 있는 같은 품목 행에서 그만큼 되가져온다
+    // 지금 '간 곳(to)'에 남아 있는 같은 품목 행에서 그만큼 되가져온다.
+    // ⚠️ 규격까지 일치해야 한다 — 종전엔 (라벨, 위치)로만 찾아 같은 방의 다른 색상·사이즈 행이
+    //   끌려나올 수 있었다(오류신고 5853a0ff 조사 중 발견. 표시 오염이 아니라 데이터 오염).
+    //   규격 미상 이력(백필 불가분)은 all-null 로 필터되어 규격 없는 행만 건드리므로 교차 오염이 없고,
+    //   규격 있는 품목이면 매칭 0건이라 아래 '되돌릴 수량 없음' 안내로 빠진다(삭제만 가능).
     const exps = await prisma.expense.findMany({ where: {
-      propertyId, itemLabel: log.itemLabel,
+      propertyId, itemLabel: log.itemLabel, ...specOf(log),
       roomId: to.roomId, assignedLocationId: to.locationId,
       ...(to.roomId || to.locationId ? {} : { isCommonAsset: to.isCommon }),
     } })

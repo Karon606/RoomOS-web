@@ -273,6 +273,12 @@ model AssetAssignmentLog {
   propertyId  String   @db.Uuid
   property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   itemLabel   String?  // 당시 품목명(이력 조회 키)
+  // 당시 규격 — 카드 식별은 (라벨 + 규격)이라 라벨만으로 조회하면 색상·사이즈가 다른 카드끼리 이력이 섞인다(5853a0ff).
+  // 셋 다 null = '규격 미상'(컬럼 추가 전 기록 중 라벨에 규격이 2종 이상이라 백필 불가였던 것) —
+  // 조회에선 그 라벨 전 카드에 보이되(기록 보존) 되돌리기는 막는다(어느 규격 행을 되돌릴지 알 수 없으므로).
+  specValue   Float?
+  specUnit    String?
+  specText    String?
   fromKind    String   // none | room | location | common
   fromLabel   String?  // 당시 표시명(방번호·공용부명)
   toKind      String

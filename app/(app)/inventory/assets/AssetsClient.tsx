@@ -113,7 +113,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   useEffect(() => {
     if (!detailItem) { setLogRows([]); return }
     let alive = true
-    getAssetAssignmentLog(detailItem.itemLabel).then(r => { if (alive) setLogRows(r) }).catch(() => {})
+    // 규격까지 넘긴다 — 라벨만으로 조회하면 색상·사이즈가 다른 카드끼리 이력이 섞인다(오류신고 5853a0ff)
+    getAssetAssignmentLog(detailItem.itemLabel, detailItem).then(r => { if (alive) setLogRows(r) }).catch(() => {})
     return () => { alive = false }
     // data 도 의존성에 포함 — 상세를 유지한 채 옮기면(연속 배정) 이력도 따라 갱신돼야 한다(운영자 신고 2026-07-09)
   }, [detailItem, data])
@@ -943,11 +944,17 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   <ul className="space-y-1">
                     {logRows.map(r => (
                       <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="min-w-0 truncate text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}</span>
+                        <span className="min-w-0 truncate text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}
+                          {/* 규격 미상 = 규격 기록 전에 남은 이력. 어느 규격의 이동인지 알 수 없어 이 라벨의 모든 카드에 보인다(기록 보존). */}
+                          {r.specUnknown && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">· 규격 미상</span>}
+                        </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{(r.assignedAt ?? r.createdAt).slice(2)}</span>
+                          {/* 규격 미상 이력은 되돌릴 행을 특정할 수 없다 — 지우기만 제공(서버도 규격 필터로 이중 차단) */}
+                          {!r.specUnknown && (
                           <button type="button" onClick={() => runRevertLog(r)} disabled={pending}
                             className="min-h-[30px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">되돌리기</button>
+                          )}
                           <button type="button" onClick={() => runDeleteLog(r)} disabled={pending}
                             className="min-h-[30px] inline-flex items-center px-1 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">지우기</button>
                         </span>
