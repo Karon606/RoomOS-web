@@ -3980,6 +3980,9 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
     const res = await reopenItemLocation(trackedItemId, id)
     setPending(false)
     if (!res.ok) { pushToast('error', res.error); return }
+    // selected 에도 즉시 반영 — state 는 최초 1회만 초기화되고 refresh 로 재초기화되지 않으므로,
+    // 안 넣으면 되살린 위치가 다음 '위치 저장' 때 missing 으로 분류돼 조용히 재숨김된다(적대검증 지적).
+    setSelected(prev => new Set(prev).add(id))
     pushToast('success', '위치를 다시 표시했습니다')
     router.refresh()
   }
