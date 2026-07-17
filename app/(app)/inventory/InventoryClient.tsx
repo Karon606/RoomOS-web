@@ -1019,7 +1019,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
+        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
           setMode('view'); reload(); onChange()
           pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
             ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
@@ -1028,6 +1028,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       ) : mode === 'reconcile' ? (
         <TimelineReconcileForm
           item={data.item}
+          hiddenLocationIds={row.hiddenLocationIds}
           existingCheckDays={Array.from(new Set(data.timeline.filter(e => e.type === 'check').map(e => new Date(new Date(e.date).getTime() + 9 * 3600000).toISOString().slice(0, 10))))}
           onCancel={() => setMode('view')}
           onDone={() => { setMode('view'); reload(); onChange() }} />
@@ -1789,16 +1790,21 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 // ── 타임라인 보정 끼워넣기 (v2) — 품목 상세에서 특정 과거/현재 시점에 보정 점검 삽입.
 //    날짜를 고르면 그 시점 '예상 재고'(직전 점검+그 사이 입고)를 위치별로 보여주고, 실측 입력 → 차이 표시.
 //    isReconcile 점검으로 저장(saveFullReconcile 단일 품목) → 그 구간 차이는 사용량에 안 잡힘.
-function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone }: {
+function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds, onCancel, onDone }: {
   item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   existingCheckDays?: string[]   // 이미 점검이 있는 날짜(KST, YYYY-MM-DD) — 같은 날 중복 보정 가드용
+  hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력·합계에서 제외(카드 칩과 동일 기준)
   onCancel: () => void
   onDone: () => void
 }) {
   const NO_LOC = '__total__'
+  // 숨긴 위치 제외 — 잔량 ≈0 이라 합계는 ε 안에서 동일. 보정 저장의 breakdown 에서도 빠지지만
+  // 0 행이 빠지는 것뿐이라 총량·hidden 판정 모두 불변(빠진 위치는 0 으로 읽힘).
+  const tlHidden = new Set(hiddenLocationIds ?? [])
+  const tlLocations = item.locations.filter(l => !tlHidden.has(l.id))
   const r2 = (x: number) => Math.round(x * 100) / 100
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
-  const hasLoc = item.locations.length > 0
+  const hasLoc = tlLocations.length > 0
   const unit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
   const [date, setDate] = useState(todayKst)
   const [memo, setMemo] = useState('')
@@ -1817,7 +1823,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
         const byLoc: Record<string, number> = {}
         for (const l of res.byLoc) byLoc[l.locationId] = l.qty
         setExpected({ total: res.total, byLoc })
-        setActuals(Object.fromEntries(item.locations.map(l => [l.id, String(byLoc[l.id] ?? 0)])))
+        setActuals(Object.fromEntries(tlLocations.map(l => [l.id, String(byLoc[l.id] ?? 0)])))
       } else {
         setExpected({ total: res.total, byLoc: {} })
         setActuals({ [NO_LOC]: String(res.total) })
@@ -1828,7 +1834,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
   }, [date, item.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const actualTotal = hasLoc
-    ? item.locations.reduce((s, l) => s + Number(actuals[l.id] || '0'), 0)
+    ? tlLocations.reduce((s, l) => s + Number(actuals[l.id] || '0'), 0)
     : Number(actuals[NO_LOC] || '0')
   const expectedTotal = expected?.total ?? 0
   const diff = r2(actualTotal - expectedTotal)
@@ -1844,7 +1850,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
     }
     setPending(true); setError('')
     const items = hasLoc
-      ? [{ trackedItemId: item.id, locationQtys: item.locations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined }]
+      ? [{ trackedItemId: item.id, locationQtys: tlLocations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined }]
       : [{ trackedItemId: item.id, remainingQty: Number(actuals[NO_LOC] || '0'), memo: memo || undefined }]
     const res = await saveFullReconcile({ date, items })
     setPending(false)
@@ -1879,7 +1885,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
           </div>
           {hasLoc ? (
             <div className="grid grid-cols-2 gap-1.5">
-              {item.locations.map(l => (
+              {tlLocations.map(l => (
                 <div key={l.id}>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">
                     {l.name}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
@@ -2026,6 +2032,8 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   const [dirty, setDirty] = useState(false)   // v2.0 §12 — 입력 시작 후 닫기 보호
   const NO_LOC = '__total__'
   const r2 = (x: number) => Math.round(x * 100) / 100
+  // 숨긴 위치 제외한 표시 위치 — 렌더·합계·저장에만 쓰고, '위치 안 쓰는 품목' 분기(r.locations.length===0)는 원본 유지
+  const vLocs = (r: InventoryRow) => { const h = new Set(r.hiddenLocationIds); return r.locations.filter(l => !h.has(l.id)) }
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
   const [date, setDate] = useState(todayKst)
   const [restockDone, setRestockDone] = useState(false)
@@ -2039,11 +2047,11 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
     const total = r.currentStock ?? r.lastRemainingQty ?? 0
     if (r.locations.length === 0) return { byLoc: {}, total }
     const byLoc: Record<string, number> = {}
-    for (const l of r.locations) byLoc[l.id] = r.lastCheckLocationBreakdown.find(b => b.locationId === l.id)?.qty ?? 0
+    for (const l of vLocs(r)) byLoc[l.id] = r.lastCheckLocationBreakdown.find(b => b.locationId === l.id)?.qty ?? 0
     const lastSum = Object.values(byLoc).reduce((s, v) => s + v, 0)
     const sinceDelta = total - lastSum
     if (Math.abs(sinceDelta) > 0.001) {
-      const hub = r.locations.find(l => l.isHub) ?? r.locations[0]
+      const hub = vLocs(r).find(l => l.isHub) ?? vLocs(r)[0]
       byLoc[hub.id] = Math.max(0, (byLoc[hub.id] ?? 0) + sinceDelta)
     }
     return { byLoc, total }
@@ -2055,7 +2063,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
       const exp = expectedFor(r)
       init[r.id] = r.locations.length === 0
         ? { [NO_LOC]: String(r2(exp.total)) }
-        : Object.fromEntries(r.locations.map(l => [l.id, String(r2(exp.byLoc[l.id] ?? 0))]))
+        : Object.fromEntries(vLocs(r).map(l => [l.id, String(r2(exp.byLoc[l.id] ?? 0))]))
     }
     return init
   })
@@ -2066,7 +2074,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   const actualTotalOf = (r: InventoryRow) =>
     r.locations.length === 0
       ? Number(actuals[r.id]?.[NO_LOC] || '0')
-      : r.locations.reduce((s, l) => s + Number(actuals[r.id]?.[l.id] || '0'), 0)
+      : vLocs(r).reduce((s, l) => s + Number(actuals[r.id]?.[l.id] || '0'), 0)
 
   // 차이 있는 품목만 저장 대상
   const changed = rows.filter(r => Math.abs(actualTotalOf(r) - (r.currentStock ?? r.lastRemainingQty ?? 0)) > 0.001)
@@ -2078,7 +2086,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
     setPending(true); setError('')
     const items = changed.map(r => r.locations.length === 0
       ? { trackedItemId: r.id, remainingQty: Number(actuals[r.id]?.[NO_LOC] || '0') }
-      : { trackedItemId: r.id, locationQtys: r.locations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[r.id]?.[l.id] || '0') })) })
+      : { trackedItemId: r.id, locationQtys: vLocs(r).map(l => ({ storageLocationId: l.id, qty: Number(actuals[r.id]?.[l.id] || '0') })) })
     const res = await saveFullReconcile({ date, items })
     setPending(false)
     if (!res.ok) { setError(res.error); return }
@@ -2129,7 +2137,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">
-                          {r.locations.map(l => (
+                          {vLocs(r).map(l => (
                             <div key={l.id}>
                               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.name}{l.isHub ? ' (창고)' : ''}</p>
                               <input type="text" inputMode="decimal" disabled={!restockDone}
@@ -2534,14 +2542,19 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, onGoDisposal }: {
+function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
+  hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력 행에서 제외. 카드 칩과 동일 기준(운영자 지적 2026-07-18)
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
   onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
 }) {
   const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
-  const hasLocations = item.locations.length > 0
+  // 숨긴 위치는 점검 입력에서도 가린다 — 서버 carryOver 가 미입력 위치의 직전값(0)을 이월하므로 데이터 무손실.
+  // 숨겼지만 재고가 든 위치는 hiddenLocationIds 에 없어(자동 치유) 계속 입력 행에 남는다.
+  const hiddenLoc = new Set(hiddenLocationIds ?? [])
+  const chkLocations = item.locations.filter(l => !hiddenLoc.has(l.id))
+  const hasLocations = chkLocations.length > 0
   const [date, setDate] = useState(kstYmdStr())
 
   // 이전 점검의 위치별 수량 맵 + 그때 보충한 양(restockedQty) 맵 — 참고줄에 계속 표시
@@ -2550,7 +2563,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
   const hasPrev = lastCheckBreakdown.length > 0
 
   // 첫 허브 위치 (다중 허브면 첫 번째 — 보충량 자동 차감 대상)
-  const hubLoc = item.locations.find(l => l.isHub)
+  const hubLoc = chkLocations.find(l => l.isHub)
   const hubPrev = hubLoc ? (prevMap[hubLoc.id] ?? 0) : 0
 
   // 보충 모드: 이전 점검이 있을 때만. 첫 점검은 단순 잔량 입력.
@@ -2558,7 +2571,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
 
   // 단순 모드 — 위치별 잔량 1칸 (첫 점검 또는 위치 없음)
   const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(item.locations.map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']))
+    () => Object.fromEntries(chkLocations.map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']))
   )
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
@@ -2608,7 +2621,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
       // 두 모드(아이템별/위치별)에서 임시저장한 값이 폼에 함께 반영되도록.
       const beforeOv: Record<string, string> = { ...(main?.beforeQtys ?? {}) }
       const afterOv:  Record<string, string> = { ...(main?.afterQtys ?? {}) }
-      const hubIds = new Set(item.locations.filter(l => l.isHub).map(l => l.id))
+      const hubIds = new Set(chkLocations.filter(l => l.isHub).map(l => l.id))
       let hubTouched = !!main?.hubTouched
       let latestSavedAt = mainSavedAt
       for (const dr of drafts) {
@@ -2665,13 +2678,13 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
     setLocationQtys(prev => ({ ...prev, [id]: val.replace(/[^0-9.]/g, '') }))
     setTouched(prev => new Set([...prev, id]))
   }
-  const confirmAll = () => setTouched(new Set(item.locations.map(l => l.id)))
+  const confirmAll = () => setTouched(new Set(chkLocations.map(l => l.id)))
 
   // 비허브 위치들의 보충량 합계 — 행별 restocked 와 동일한 null-처리.
   // (빈칸은 0이 아니라 null 로 봐서, 전·후 모두 입력됐을 때만 보충으로 계산.
   //  이렇게 해야 사용자가 "보충 전"을 비웠을 때 허브가 과차감되지 않음.)
   const restockSum = restockMode
-    ? item.locations
+    ? chkLocations
         .filter(l => !l.isHub)
         .reduce((s, l) => {
           const beforeStr = beforeQtys[l.id] ?? ''
@@ -2691,7 +2704,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
   const buildLocationData = (): { storageLocationId: string; qty: number; restockedQty?: number; entered: boolean }[] => {
     if (!hasLocations) return []
     if (restockMode) {
-      return item.locations.map(l => {
+      return chkLocations.map(l => {
         if (l.isHub) {
           const userVal = afterQtys[l.id]
           const finalQty = (hubTouched && userVal !== undefined && userVal !== '') ? Number(userVal) : hubAutoAfter
@@ -2713,7 +2726,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
       })
     }
     // 단순 모드 — 첫 점검
-    return item.locations.map(l => ({
+    return chkLocations.map(l => ({
       storageLocationId: l.id,
       qty: Number(locationQtys[l.id]) || 0,
       entered: String(locationQtys[l.id] ?? '').trim() !== '',
@@ -2723,7 +2736,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
   const computed = restockMode
     ? buildLocationData().reduce((s, lq) => s + lq.qty, 0)
     : (hasLocations
-        ? item.locations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
+        ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
         : 0)
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -2803,7 +2816,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
       {hasLocations && restockMode ? (
         <div className="space-y-2.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
-          {item.locations.map(loc => {
+          {chkLocations.map(loc => {
             const prevQty = prevMap[loc.id]
             if (loc.isHub) {
               // 허브 행 — 후 자동 prefill
@@ -2893,14 +2906,14 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange, 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
-            {hasPrev && touched.size < item.locations.length && (
+            {hasPrev && touched.size < chkLocations.length && (
               <button type="button" onClick={confirmAll}
                 className="text-[0.65625rem] text-[var(--coral)] hover:underline">
                 모두 이전 수량으로 확인
               </button>
             )}
           </div>
-          {item.locations.map(loc => {
+          {chkLocations.map(loc => {
             const isTouched = touched.has(loc.id)
             const isPrefilled = !isTouched && prevMap[loc.id] != null
             return (
@@ -3174,7 +3187,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const selectedLoc = locs.find(l => l.id === locId) ?? null
 
   const locItems = locId
-    ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
+    ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId) && !r.hiddenLocationIds.includes(locId))
     : []
 
   // 위치별 "보충 전" + "보충 후" — 비허브 위치는 두 칸, 허브 위치는 후만 의미 있음
