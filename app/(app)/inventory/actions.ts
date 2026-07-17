@@ -498,6 +498,15 @@ export async function mergeTrackedItems(
     const movedAdditionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(a => a.id)
     const movedDisposalIds = (await prisma.stockDisposal.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(d => d.id)
     const targetQtyUnitBefore = target.qtyUnit
+    // 위치 링크 — source 것을 target 에 합쳐야 한다(아래 2.6). source 는 마지막에 delete 되고
+    // 링크는 cascade 로 사라지므로, 안 옮기면 이전된 점검의 breakdown 이 통째로 orphan 이 된다.
+    // targetLocationIdsBefore = 합집합이 '새로 더한' 링크만 정확히 되돌리기 위한 기준선(undo).
+    const sourceLocationIds = (await prisma.trackedItemLocation.findMany({
+      where: { trackedItemId: sourceId }, select: { storageLocationId: true },
+    })).map(l => l.storageLocationId)
+    const targetLocationIdsBefore = (await prisma.trackedItemLocation.findMany({
+      where: { trackedItemId: targetId }, select: { storageLocationId: true },
+    })).map(l => l.storageLocationId)
 
     const expRes = await prisma.expense.updateMany({
       where: matchSourceExpenses,
@@ -519,6 +528,16 @@ export async function mergeTrackedItems(
         data: { trackedItemId: targetId },
       }),
     ])
+
+    // 2.6) 위치 링크 합집합 — 두 카드의 재고가 한 카드가 됐으니 소재도 합집합이 맞다.
+    //   source 우선이면 target 자기 재고가 숨고, target 우선이면 옮겨온 breakdown 이 통째로 orphan 이 된다.
+    //   반드시 source delete(아래) 전에. cascade 로 링크가 사라지면 복구 근거가 없다.
+    if (sourceLocationIds.length > 0) {
+      await prisma.trackedItemLocation.createMany({
+        data: sourceLocationIds.map(storageLocationId => ({ trackedItemId: targetId, storageLocationId })),
+        skipDuplicates: true,
+      })
+    }
 
     // 2.5) 단위가 다른 품목 병합이면 이전된 점검·입수값을 target 단위로 환산(L→ml 등)
     if (mergeFactor !== 1) {
@@ -570,6 +589,7 @@ export async function mergeTrackedItems(
               purchaseUrl: source.purchaseUrl, memo: source.memo,
             },
             movedExpenseIds, movedCheckIds, movedAdditionIds, movedDisposalIds, targetQtyUnitBefore,
+            sourceLocationIds, targetLocationIdsBefore,
             unitFactor: mergeFactor,
           },
         },
@@ -674,8 +694,41 @@ function applyTransfers(lqs: LocQty[]): LocQty[] {
 // 직전 점검 이후 들어온 입수(StockAddition, 무상 입수 등)를 위치별로 합산.
 // 위치별/부분 점검의 carry-over 가 직전 점검 값을 그대로 복사하면 그 사이 입수분이
 // 새 기준선에서 증발하고 사용량 계산에선 가짜 소모로 둔갑한다(2026-06-11 쌀 +30kg 사례).
+// 이 품목의 '기본 배치 위치' — 반드시 이 품목에 링크된 위치 중에서 고른다.
+// 종전 폴백은 `hubLocationId ?? 영업장 기본 허브(isHub)` 였는데, isHub 는 영업장 기본값이지
+// 품목별 선언이 아니다. 링크 안 된 위치를 고르면 그 수량이 위치별 화면·보정 폼에서 증발한다
+// (orphan — 601303c5 김치와 같은 클래스). 링크 집합 밖이면 다음 후보로 넘어간다.
+// 폴백 허브에 링크를 만들어주는 방식은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
+async function resolveItemHubLocationId(
+  trackedItemId: string,
+  hubLocationId: string | null,
+  propertyId: string,
+  linkedIds?: Set<string>,   // 호출부가 이미 갖고 있으면 재조회 생략
+): Promise<string | null> {
+  let ids = linkedIds
+  if (!ids) {
+    const links = await prisma.trackedItemLocation.findMany({
+      where: { trackedItemId },
+      select: { storageLocationId: true },
+      orderBy: { storageLocation: { sortOrder: 'asc' } },
+    })
+    ids = new Set(links.map(l => l.storageLocationId))
+  }
+  if (ids.size === 0) return null
+  if (hubLocationId && ids.has(hubLocationId)) return hubLocationId
+  const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
+  if (def && ids.has(def.id)) return def.id
+  // 첫 링크 — sortOrder 로 결정화(비결정적 '첫 위치' 방지)
+  const first = await prisma.trackedItemLocation.findFirst({
+    where: { trackedItemId },
+    select: { storageLocationId: true },
+    orderBy: { storageLocation: { sortOrder: 'asc' } },
+  })
+  return first?.storageLocationId ?? null
+}
+
 // 경계는 overview 현재고 계산(sumAdditions(last.date,…,last.createdAt))과 동일 —
-// 화면 잔량과 점검 base 가 같은 입수를 본다. 위치 미지정 입수는 품목 허브(폴백: 영업장 기본 허브)로.
+// 화면 잔량과 점검 base 가 같은 입수를 본다. 위치 미지정 입수는 품목 허브(반드시 링크된 위치)로.
 async function additionsSinceCheckByLocation(
   trackedItemId: string,
   last: { date: Date; createdAt: Date } | null,
@@ -701,11 +754,9 @@ async function additionsSinceCheckByLocation(
     }),
   ])
   if (adds.length === 0 && disposals.length === 0) return new Map()
-  let hub = hubLocationId
-  if (!hub) {
-    const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
-    hub = def?.id ?? null
-  }
+  // 위치 미지정 입수·폐기가 하나도 없으면 허브 해석 자체가 불필요 — 쿼리 0 유지
+  const needsHub = adds.some(a => !a.storageLocationId) || disposals.some(d => !d.storageLocationId)
+  const hub = needsHub ? await resolveItemHubLocationId(trackedItemId, hubLocationId, propertyId) : null
   const map = new Map<string, number>()
   for (const a of adds) {
     const loc = a.storageLocationId ?? hub
@@ -1862,6 +1913,15 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
         })
         sourceId = created.id
       }
+      // 1.5) source 카드 위치 링크 복원 — 병합 때 source delete 로 cascade 소멸했던 것.
+      //   안 하면 되살아난 카드의 점검 breakdown 이 전부 orphan(위치별 화면에서 증발)이 된다.
+      //   Array.isArray 가드 = 이 필드 추가 전 병합 레코드 하위호환(조용히 건너뜀).
+      if (Array.isArray(p.sourceLocationIds) && p.sourceLocationIds.length > 0) {
+        await prisma.trackedItemLocation.createMany({
+          data: (p.sourceLocationIds as string[]).map(storageLocationId => ({ trackedItemId: sourceId, storageLocationId })),
+          skipDuplicates: true,
+        })
+      }
       // 2) 지출 라벨 원복 + 점검·입수 이전 원복
       if (Array.isArray(p.movedExpenseIds) && p.movedExpenseIds.length > 0) {
         await prisma.expense.updateMany({ where: { id: { in: p.movedExpenseIds }, propertyId }, data: { itemLabel: s.label } })
@@ -1888,6 +1948,17 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       // 3) 대상 카드 qtyUnit 원복 (looseMatch 로 null 됐던 경우)
       if (p.targetQtyUnitBefore != null) {
         await prisma.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
+      }
+      // 3.5) 합집합이 target 에 '새로 더한' 링크만 제거 — 원래 target 것이었던 링크는 보존.
+      //   targetLocationIdsBefore 없이 sourceLocationIds 만으로 지우면 target 원래 링크까지 날아간다.
+      if (Array.isArray(p.sourceLocationIds) && Array.isArray(p.targetLocationIdsBefore)) {
+        const before = new Set<string>(p.targetLocationIdsBefore as string[])
+        const added = (p.sourceLocationIds as string[]).filter(id => !before.has(id))
+        if (added.length > 0) {
+          await prisma.trackedItemLocation.deleteMany({
+            where: { trackedItemId: undo.targetItemId, storageLocationId: { in: added } },
+          })
+        }
       }
       // 4) LINK 규칙 제거
       await prisma.trackedItemMergeRule.deleteMany({
@@ -2070,6 +2141,32 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     // 중복 제출 가드와 같은 취지). 수령 취소(undo)는 receivedAt을 null로 되돌리므로 재수령은 정상 동작.
     if (expense.receivedAt) return { ok: true }
 
+    // 품목 조회 — 위치 미지정으로 수령해도 허브(기본 창고)에 자동 배치해 잔량에서 누락되지 않게 한다.
+    // (위치별 점검이 '어느 위치에도 배치 안 된 입고분'을 못 세어 통째로 증발하던 버그 방지 —
+    //  라면 120개 케이스. 쌀은 수령 시 창고를 지정해 자동 배치돼 정상이었음.)
+    // (propertyId,category,label) 유니크 — 라벨로 유일 품목을 찾는다.
+    // ⚠️ 아래 부분수령 분할보다 먼저 한다 — 위치 검증이 거부될 때 쪼개진 지출 행만 남으면 안 된다.
+    //   분할은 category·itemLabel 을 보존하고 qtyValue 도 >0 로 남으므로 조회 결과는 분할 전후 동일.
+    type RcvItem = { id: string; trackUnit: string; specUnit: string | null; qtyUnit: string | null; hubLocationId: string | null; locations: { storageLocationId: string }[] }
+    let item: RcvItem | null = null
+    if (expense.qtyValue && expense.qtyValue > 0 && expense.itemLabel) {
+      item = await prisma.trackedItem.findFirst({
+        where: { propertyId, category: expense.category, label: expense.itemLabel, isArchived: false },
+        select: {
+          id: true, trackUnit: true, specUnit: true, qtyUnit: true, hubLocationId: true,
+          // sortOrder 정렬 — '첫 위치' 폴백을 결정화(getStockAsOf 와 동일 기준)
+          locations: { select: { storageLocationId: true }, orderBy: { storageLocation: { sortOrder: 'asc' } } },
+        },
+      })
+    }
+    const linkedIds = new Set(item?.locations.map(l => l.storageLocationId) ?? [])
+    // 지정 위치가 이 품목 것이 아니면 거부 — 스테일 화면이 방금 해제된 위치를 찍는 경우.
+    // 링크 없는 위치에 넣으면 그 수량이 위치별 화면·보정 폼에서 안 보인다(orphan, 601303c5 김치와 같은 클래스).
+    // (item 이 null 이면 링크 개념이 없고 자동 점검도 안 만들므로 종전 동작 유지)
+    if (locationId && item && !linkedIds.has(locationId)) {
+      return { ok: false, error: '이 품목의 보관 위치가 아닙니다. 화면을 새로고침한 뒤 다시 선택해 주세요.' }
+    }
+
     // 부분 수령 — 요청 수량이 전체 미만이면 행 분할 후, 수령 분할행에 대해 아래 기존 흐름을 그대로 태운다
     // (자동 점검·허브 배치가 수령 수량만 반영됨). 잔여 행은 수령 대기 유지.
     let partialUndo: PartialReceiptUndo | null = null
@@ -2117,30 +2214,13 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
 
     const receivedAt = new Date()
 
-    // 품목 조회 — 위치 미지정으로 수령해도 허브(기본 창고)에 자동 배치해 잔량에서 누락되지 않게 한다.
-    // (위치별 점검이 '어느 위치에도 배치 안 된 입고분'을 못 세어 통째로 증발하던 버그 방지 —
-    //  라면 120개 케이스. 쌀은 수령 시 창고를 지정해 자동 배치돼 정상이었음.)
-    // (propertyId,category,label) 유니크 — 라벨로 유일 품목을 찾는다.
-    type RcvItem = { id: string; trackUnit: string; specUnit: string | null; qtyUnit: string | null; hubLocationId: string | null; locations: { storageLocationId: string }[] }
-    let item: RcvItem | null = null
-    if (expense.qtyValue && expense.qtyValue > 0 && expense.itemLabel) {
-      item = await prisma.trackedItem.findFirst({
-        where: { propertyId, category: expense.category, label: expense.itemLabel, isArchived: false },
-        select: {
-          id: true, trackUnit: true, specUnit: true, qtyUnit: true, hubLocationId: true,
-          locations: { select: { storageLocationId: true } },
-        },
-      })
-    }
-
     // 배치 위치 결정: 지정 위치 → 품목 허브 → 영업장 기본 허브 → 첫 배치 위치.
+    // 단 어느 단계든 '이 품목에 링크된 위치'여야 한다(resolveItemHubLocationId 가 보장) —
+    // 종전 폴백은 영업장 기본 허브(isHub)를 무검사로 썼는데, isHub 는 영업장 기본값이지 품목별 선언이 아니다.
     // 위치를 쓰는 품목인데 미지정으로 받으면 '허브(창고)에 들어간 것'으로 본다(현실: 받으면 일단 창고).
     let effectiveLocationId: string | null = locationId ?? null
     if (!effectiveLocationId && item && item.locations.length > 0) {
-      effectiveLocationId =
-        item.hubLocationId
-        ?? (await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } }))?.id
-        ?? item.locations[0].storageLocationId
+      effectiveLocationId = await resolveItemHubLocationId(item.id, item.hubLocationId, propertyId, linkedIds)
     }
 
     // 배치 위치 + 수량이 있으면 자동 점검 생성(해당 위치 잔량에 수령량 가산). 위치 없는 단일 버킷
@@ -2540,15 +2620,27 @@ export async function transferLocationStock(data: {
 
     const entries = [...breakdown.entries()].filter(([, q]) => q > 0 || true)   // 0 도 기록(이월 명시)
     const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
-    const created = await prisma.stockCheck.create({
-      data: {
-        trackedItemId: data.trackedItemId,
-        date: new Date(),
-        remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
-        memo,
-        locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
-      },
-    })
+    // 도착지 링크를 같은 트랜잭션에서 보장 — 종전엔 점검만 만들어, 링크 없는 위치로 옮기면
+    // 그 수량이 위치별 화면(row.locations 필터)·보정 폼에서 통째로 안 보였다(오류신고 601303c5, 김치 15kg).
+    // 이동 대상은 영업장 전체 위치(getItemLocationStock)라 미링크 위치 선택이 정상 경로다.
+    // createMany+skipDuplicates = 단일 INSERT ON CONFLICT DO NOTHING — 동시 호출에도 안전(upsert 는 P2002 경합).
+    // 출발지 링크는 잔량 0 이 돼도 유지한다 — 0 도 breakdown 에 남겨 '어디서 빠졌는지'를 보존한다.
+    //   비워진 위치를 떼는 것은 위치 닫기(2단계)의 일.
+    const [, created] = await prisma.$transaction([
+      prisma.trackedItemLocation.createMany({
+        data: [{ trackedItemId: data.trackedItemId, storageLocationId: data.toLocationId }],
+        skipDuplicates: true,
+      }),
+      prisma.stockCheck.create({
+        data: {
+          trackedItemId: data.trackedItemId,
+          date: new Date(),
+          remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
+          memo,
+          locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
+        },
+      }),
+    ])
     revalidatePath('/inventory')
     return { ok: true, checkId: created.id }
   } catch (err) {
