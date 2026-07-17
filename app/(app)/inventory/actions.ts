@@ -2092,12 +2092,31 @@ export async function updateStorageLocation(id: string, name: string): Promise<{
   }
 }
 
-export async function deleteStorageLocation(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 삭제 정책(운영자 확정 2026-07-18): 이력·연결이 전혀 없는 위치(실수 생성)는 바로 삭제.
+// 데이터가 있으면 구체적 결과를 경고하고, 그래도 원하면 강제 삭제 허용.
+// ⚠️ 강제 삭제의 실제 결과: 위치별 점검 이력(StockCheckLocation)이 cascade 로 지워지고,
+//   총량(StockCheck.remainingQty)은 저장값이라 당장은 안 변하지만 다음 위치별 점검이
+//   살아남은 내역의 합으로 총량을 재계산하면서 그때 수량이 깎인다(지연 발화).
+//   일상적 정리는 삭제가 아니라 품목별 '숨김'을 쓴다.
+export type LocationDeleteImpact = { checkRows: number; linkedItems: number; addRows: number; dispRows: number }
+export async function deleteStorageLocation(id: string, force = false): Promise<
+  { ok: true } | { ok: false; error: string; impact?: LocationDeleteImpact }
+> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
     if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    const [checkRows, linkedItems, addRows, dispRows] = await Promise.all([
+      prisma.stockCheckLocation.count({ where: { storageLocationId: id } }),
+      prisma.trackedItemLocation.count({ where: { storageLocationId: id } }),
+      prisma.stockAddition.count({ where: { storageLocationId: id } }),
+      prisma.stockDisposal.count({ where: { storageLocationId: id } }),
+    ])
+    const hasData = checkRows + linkedItems + addRows + dispRows > 0
+    if (hasData && !force) {
+      return { ok: false, error: '이 위치에는 기록이 있습니다.', impact: { checkRows, linkedItems, addRows, dispRows } }
+    }
     await prisma.storageLocation.delete({ where: { id } })
     revalidatePath('/inventory')
     return { ok: true }

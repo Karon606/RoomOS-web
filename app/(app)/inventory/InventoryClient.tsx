@@ -3869,12 +3869,32 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     setEditId(null); reload()
   }
 
+  // 삭제 정책(운영자 확정 2026-07-18): 기록 없는 위치(실수 생성)는 확인 1회로 삭제.
+  // 기록이 있으면 서버가 impact 를 돌려주고, 실제 결과(이력 삭제·추후 총량 감소)를 명시한
+  // 두 번째 확인을 통과해야 강제 삭제. 일상적 정리는 품목별 '숨김' 안내.
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `'${name}' 위치를 삭제할까요?`, message: '이 위치가 할당된 품목에서도 자동으로 제거됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `'${name}' 위치를 삭제할까요?`, message: '기록이 있는 위치면 삭제 전에 한 번 더 확인합니다.', level: 'caution', confirmLabel: '삭제' }))) return
     setPending(true)
     const res = await deleteStorageLocation(id)
     setPending(false)
-    if (!res.ok) { setError(res.error); return }
+    if (res.ok) { reload(); return }
+    if (!res.impact) { setError(res.error); return }
+    const { checkRows, linkedItems, addRows, dispRows } = res.impact
+    const parts = [
+      checkRows > 0 ? `위치별 점검 기록 ${checkRows}건이 함께 삭제됩니다` : null,
+      linkedItems > 0 ? `${linkedItems}개 품목의 위치 연결이 풀립니다` : null,
+      addRows + dispRows > 0 ? `입수·폐기 기록 ${addRows + dispRows}건에서 위치 표시가 사라집니다` : null,
+    ].filter(Boolean).join('. ')
+    const go = await confirmDialog({
+      title: `'${name}' 위치에 기록이 있습니다`,
+      message: `${parts}. 지워진 점검 내역만큼 다음 위치별 점검에서 총량이 줄어들 수 있습니다. 지난 기록을 남기려면 삭제 대신 품목별 '숨김'을 쓰세요. 그래도 삭제할까요?`,
+      level: 'danger', confirmLabel: '그래도 삭제',
+    })
+    if (!go) return
+    setPending(true)
+    const res2 = await deleteStorageLocation(id, true)
+    setPending(false)
+    if (!res2.ok) { setError(res2.error); return }
     reload()
   }
 
