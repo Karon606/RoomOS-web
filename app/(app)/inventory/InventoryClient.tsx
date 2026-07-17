@@ -1078,7 +1078,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                       <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setHubOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
                         <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">보충 시 차감할 창고(허브) 위치</p>
-                        {row.locations.map(l => (
+                        {/* 숨긴 위치는 허브 후보에서 제외 — 서버(setItemHub)도 거부하지만 애초에 안 보여준다 */}
+                        {row.locations.filter(l => l.closedAt == null).map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
                             className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
                             {l.name}{l.isHub && <span className="text-[var(--honey)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 현재</span>}

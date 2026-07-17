@@ -2588,9 +2588,10 @@ export async function setItemHub(trackedItemId: string, locationId: string | nul
     const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { id: true } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (locationId) {
-      // 이 품목에 연결된 위치만 허브로 지정 가능
-      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId, storageLocationId: locationId } })
-      if (!link) return { ok: false, error: '이 품목의 보관 위치 중에서만 창고를 지정할 수 있습니다.' }
+      // 이 품목에 연결된 '열린' 위치만 허브로 지정 가능 — 숨긴 위치를 허브로 두면 보충 차감이
+      // 잔량 0 인 숨긴 허브에서 0 클램프되어 총량이 부풀어난다(숨김 뒷문, Fable 검증 B2).
+      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId, storageLocationId: locationId, closedAt: null } })
+      if (!link) return { ok: false, error: '이 품목의 표시 중인 보관 위치에서만 창고를 지정할 수 있습니다.' }
     }
     await prisma.trackedItem.update({ where: { id: trackedItemId }, data: { hubLocationId: locationId } })
     revalidatePath('/inventory')
@@ -2820,11 +2821,18 @@ export async function undoCloseItemLocation(undo: CloseLocationUndo): Promise<{ 
     const propertyId = await getPropertyId()
     const item = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } })
     if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    // undo 페이로드는 클라이언트가 보내는 값 — 각 필드를 이 품목 스코프로 검증한다(Fable 검증 B1).
+    // hubLocationIdBefore 는 null 이거나 이 품목의 링크여야 한다(조작 호출로 타 영업장 위치를 허브로 박는 것 방지).
+    if (undo.hubChanged && undo.hubLocationIdBefore) {
+      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId: undo.trackedItemId, storageLocationId: undo.hubLocationIdBefore } })
+      if (!link) return { ok: false, error: '적용취소 정보가 유효하지 않습니다.' }
+    }
     const ops: Prisma.PrismaPromise<unknown>[] = [
       prisma.trackedItemLocation.updateMany({ where: { trackedItemId: undo.trackedItemId, storageLocationId: undo.storageLocationId }, data: { closedAt: null } }),
     ]
     // deleteMany — 운영자가 그 사이 타임라인에서 이관 점검을 직접 지웠어도 통과(delete 는 P2025 로 전체 롤백).
-    if (undo.transferCheckId) ops.push(prisma.stockCheck.deleteMany({ where: { id: undo.transferCheckId } }))
+    // trackedItemId 조건 = 소유 검증(위에서 품목이 이 영업장 것임을 확인했으므로 임의 점검 id 삭제 불가).
+    if (undo.transferCheckId) ops.push(prisma.stockCheck.deleteMany({ where: { id: undo.transferCheckId, trackedItemId: undo.trackedItemId } }))
     if (undo.hubChanged) ops.push(prisma.trackedItem.update({ where: { id: undo.trackedItemId }, data: { hubLocationId: undo.hubLocationIdBefore } }))
     await prisma.$transaction(ops)
     revalidatePath('/inventory')
