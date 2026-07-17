@@ -338,9 +338,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             value={viewMode} onChange={changeView}
             options={[{ value: 'item', label: '아이템별' }, { value: 'location', label: '위치별' }]} />
         </div>
-        {viewMode === 'item' && (
-          <div className="flex gap-2 flex-wrap items-center">
-            {canEditUi && (
+        {/* 툴바는 보기 전환과 무관하게 항상 노출 — 형제(지출 아이템별·주문별)와 동일 문법.
+            종전엔 viewMode==='item' 이 툴바 행 전체를 감싸 위치별에서 통째로 사라졌고(오류신고 2e82ab7b),
+            viewMode 가 localStorage 로 복원되므로 위치별로 마지막에 본 사용자는 액션이 0개인 페이지로 진입했다.
+            오클릭(97839062)은 여기 해당 없음 — 그 처방은 '제거'가 아니라 '점검 zone 밖으로 분리'였고,
+            이 툴바는 sticky 검색창 위 페이지 크롬이라 카운팅 중엔 스크롤 아웃된다. */}
+        <div className="flex gap-2 flex-wrap items-center">
+            {/* '선택'만 아이템별 전용 — 위치별엔 선택할 카드가 없고 changeView 가 exitSelectMode 를 호출해 무반응이 된다 */}
+            {viewMode === 'item' && canEditUi && (
             <Btn variant="secondary" size="md" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? '선택 취소' : '선택'}
             </Btn>
@@ -378,8 +383,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               )}
             </div>
             <Btn variant="primary" size="md" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* v2.0 §23 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}

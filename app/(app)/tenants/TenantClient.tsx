@@ -2587,9 +2587,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
     setSelectedRoomId(roomId)
-    if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기
+    if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기(수동 입력값이라 해제해도 보존)
     const room = rooms.find(r => r.id === roomId)
-    if (!room) return
+    // 호실을 '호실 선택'(빈 값)으로 되돌리면 자동으로 채웠던 이용료도 함께 비운다 —
+    // 종전엔 여기서 그냥 return 이라 직전 호실의 이용료가 남았음(오류신고 d3bd5717).
+    if (!room) { setRentAmount(undefined); return }
     const isNR = statusVal === 'NON_RESIDENT'
     setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
   }
