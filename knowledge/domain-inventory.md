@@ -20,6 +20,18 @@
 ## 잔량 계산 모델 (overview.ts)
 `currentStock = 마지막 점검 remainingQty + (점검 이후 수령 구매·무상입수)`. 같은 날 중복 점검은 최신만 채택(dedupSameDay). 입고 귀속은 `receivedAt`(수령일) 기준.
 
+## 불변식: 재고가 들어간 위치엔 반드시 링크가 있다 (2026-07-17, 67ccfa3·06585a5)
+**모든 (품목 T, 위치 L)에 대해, T 의 재고가 지금 L 에 들어가 있다면 `TrackedItemLocation(T,L)` 이 존재한다.** 현재시제 판정 기준 = T 의 마지막 점검 `StockCheckLocation` 중 `remainingQty > 0` 인 행.
+- **왜 치명적인가**: 위치별 재고확인 탭(`InventoryClient.tsx` `row.locations.some(...)`)과 보정 폼이 **링크로 필터**한다. 링크 없는 위치의 재고는 화면에서 통째로 사라진다(오류신고 601303c5 — 김치 20kg 중 15kg). 총량에는 잡히는데 위치 어디에도 안 보인다.
+- **더 나쁜 것**: 타임라인 보정 폼이 예상 20 / 실측 5 라는 **가짜 차이 −15 를 보여주고**, 운영자가 그걸 옳게 정정하면 총량이 5 로 박혀 15kg 이 조용히 사라진다. `isReconcile` 이 분실·오차로 흡수해 경고도 없다. 화면이 거짓을 보여주고 그 거짓을 고치면 데이터가 깨지는 구조라 더 악질이다.
+  - 주의: 재고 카드에서 여는 보정(`expectedFor`)은 차액을 허브에 얹어 diff 0 이라 안전. **두 보정 화면의 동작이 다르다.**
+- **쓰기 계약**: 어떤 코드도 링크 없이 `StockCheckLocation` 행을 쓰지 않는다. 쓰려면 같은 트랜잭션에서 링크를 먼저 만든다.
+- **막은 생성기 4개**: (1) `transferLocationStock` — 점검만 만들고 링크 미생성. 이동 대상은 영업장 전체 위치(`getItemLocationStock`)라 미링크 선택이 정상 경로이고, 김치 orphan 의 유일한 출처였다. **양쪽(from·to) 링크한다** — 맞바꿈은 재고를 양쪽에 넣으므로 도착지만 링크하면 출발지에 새 orphan 이 생긴다(06585a5, 적대검증 지적). (2)(3) `confirmReceipt` 폴백·지정위치 — 영업장 기본 허브(`isHub`)를 무검사로 썼다. **`isHub` 는 영업장 기본값이지 품목별 선언이 아니다.** (4) `additionsSinceCheckByLocation` — 같은 깨진 체인. (5) `mergeTrackedItems` — 링크를 안 옮기고 source delete 로 cascade 소멸시켜 이전된 breakdown 을 전부 orphan 으로 만들었다. 합집합 병합 + undo payload 에 `sourceLocationIds`·`targetLocationIdsBefore`.
+- **정본 리졸버 `resolveItemHubLocationId`** — 위치 미지정 배치는 반드시 **링크된 위치 중에서** 고른다(hubLocationId 우선 → 영업장 isHub 가 링크됐을 때만 → sortOrder 첫 링크 → null). 폴백 허브에 링크를 만들어주는 안은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
+- **아직 안 막은 생성기 2개(2단계)**: `setItemLocations`·`batchSetItemLocations` 가 재고 유무를 안 보고 링크를 `deleteMany` 한다. **품목 설정에서 재고 든 위치 체크를 풀고 저장하면 그 수량이 즉시 증발한다.** 옮기기가 잔량 0 출발지 링크까지 보존하는 것과 정면 비대칭. 고치려면 "재고 있는 위치를 떼면 어떻게 되나"를 정해야 하므로 위치 닫기(2단계) 계약에 묶는다. 영업장 소속 검증 공백도 같이.
+- **백필**: `scripts/backfill-orphan-item-locations.mjs` (드라이런 기본, `--apply`, 멱등). 대상 = 마지막 점검 breakdown 중 잔량>0 + 링크 없음. 전 이력이 아니라 **현재시제**로 좁힌다 — 과거 0 행까지 링크하면 의도적으로 해제했던 위치가 부활한다. 2026-07-17 실행 = 김치 2행.
+- **검증**: orphan 4소스(StockCheckLocation·StockAddition·StockDisposal·Expense.receivedLocationId) 전부 0행 + 전 품목 `total == byLoc 합`. 커밋 메시지 참조.
+
 ## 평균 소모율 = 최근 30일 '합산' (2026-07-17, eaa6726)
 `avgDaily = 최근 30일 구간 consumed 합 / 그 구간들의 days 합`. `daysUntilEmpty = floor(currentStock / avgDaily)`이고 이게 알림(`dashboard/alerts.ts` lowstock)의 유일한 입력.
 - **단일 구간 추정은 폐기됐다**(종전: 마지막 두 점검 차이). 점검 간격이 1~3일이라 표본이 1개뿐 → 그 구간이 크면 과대(라면 8/일, 실제 4.1 → 임박 오탐), 작으면 과소(쌀 0.5/일, 실제 3.45 → 소진 175일로 표시), **0이면 추정이 사라져 무알림**(김치·수세미·물티슈·핸드워시). 자주 점검할수록 알림이 나빠지는 구조였다.
