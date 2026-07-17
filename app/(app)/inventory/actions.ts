@@ -1996,6 +1996,29 @@ export async function getStorageLocations(): Promise<StorageLocationItem[]> {
   return locs
 }
 
+// 보관위치 순서 재정렬 — 드래그 정렬(운영자 요청 a5e258c3). 전체 id 배열을 받아 인덱스대로 sortOrder 를 다시 쓴다.
+// 전체 배열 방식 = 설정의 reorderOptions 와 동일 문법. 부분 배열이면 빠진 위치의 상대 순서가 흔들리므로 거부.
+export async function reorderStorageLocations(ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (ids.length === 0) return { ok: false, error: '정렬할 위치가 없습니다.' }
+    if (new Set(ids).size !== ids.length) return { ok: false, error: '중복된 위치가 있습니다.' }
+    // 소유 검증 + 전체성 검증 — 이 영업장의 위치 전부가 정확히 한 번씩 와야 한다
+    const total = await prisma.storageLocation.count({ where: { propertyId } })
+    const owned = await prisma.storageLocation.count({ where: { id: { in: ids }, propertyId } })
+    if (owned !== ids.length || total !== ids.length) return { ok: false, error: '위치 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    await prisma.$transaction(ids.map((id, i) =>
+      prisma.storageLocation.update({ where: { id }, data: { sortOrder: i } })
+    ))
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '순서 저장에 실패했습니다.' }
+  }
+}
+
 // 허브(창고) 단일 전환 — 선택한 위치를 허브로, 나머지는 모두 해제 (한 영업장 1개 허브 보장).
 export async function setStorageHub(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

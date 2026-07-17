@@ -58,7 +58,7 @@ import {
   seedTrackedItemsFromExpenses,
   confirmReceipt,
   confirmAllPending,
-  getStorageLocations,
+  getStorageLocations, reorderStorageLocations,
   createStorageLocation,
   updateStorageLocation,
   deleteStorageLocation,
@@ -3783,9 +3783,59 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   const [editName, setEditName] = useState('')
   const [pending, setPending]   = useState(false)
   const [error, setError]       = useState('')
+  // 드래그 정렬(운영자 요청 a5e258c3) — 가시 핸들을 잡아 끄는 방식. 핸들이 보이므로 롱프레스 전용 진입이
+  // 아니고(§27.3 정신 유지), pointer capture 라 마우스·터치 동일 코드. 놓는 순간 서버에 전체 순서 저장.
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const orderChanged = useRef(false)
+  const locsRef = useRef(locs)
+  useEffect(() => { locsRef.current = locs }, [locs])   // 렌더 중 ref 접근 금지(react-compiler) — effect 로 동기화
 
   const reload = () => getStorageLocations().then(setLocs)
   useEffect(() => { reload() }, [])
+
+  const onHandleDown = (idx: number) => (e: React.PointerEvent) => {
+    if (pending) return
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    orderChanged.current = false
+    setDragIdx(idx)
+  }
+  const onHandleMove = (e: React.PointerEvent) => {
+    if (dragIdx == null || !listRef.current) return
+    const items = Array.from(listRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    // 포인터가 올라간 행을 찾는다. 목록 위/아래로 벗어나면 양 끝으로 클램프.
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragIdx) return
+    setLocs(prev => {
+      const next = [...prev]
+      const [moved] = next.splice(dragIdx, 1)
+      next.splice(over, 0, moved)
+      return next
+    })
+    setDragIdx(over)
+    orderChanged.current = true
+  }
+  const onHandleUp = async () => {
+    if (dragIdx == null) return
+    setDragIdx(null)
+    if (!orderChanged.current) return
+    orderChanged.current = false
+    setPending(true)
+    const res = await reorderStorageLocations(locsRef.current.map(l => l.id))
+    setPending(false)
+    if (!res.ok) { pushToast('error', res.error); reload(); return }
+    pushToast('success', '위치 순서 저장됨')
+  }
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -3822,9 +3872,18 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
         {locs.length === 0 && !pending && (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
         )}
-        <ul className="space-y-1.5">
-          {locs.map(loc => (
-            <li key={loc.id} className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
+        <ul ref={listRef} className="space-y-1.5">
+          {locs.map((loc, idx) => (
+            <li key={loc.id} className={`flex items-center gap-2 bg-[var(--canvas)] border rounded-xl px-3 py-2 ${dragIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]/60'}`}>
+              {/* 드래그 핸들 — 가시 어포던스. touch-action:none 으로 드래그 중 모달 스크롤과 충돌 방지 */}
+              <button type="button" aria-label={`${loc.name} 순서 이동`} disabled={pending}
+                onPointerDown={onHandleDown(idx)} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+                className="shrink-0 px-0.5 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing disabled:opacity-40"
+                style={{ touchAction: 'none' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+              </button>
               {editId === loc.id ? (
                 <>
                   <input
