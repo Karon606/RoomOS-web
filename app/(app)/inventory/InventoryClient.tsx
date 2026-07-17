@@ -65,6 +65,7 @@ import {
   toggleStorageLocationHub,
   setItemHub,
   setItemLocations,
+  reopenItemLocation,
   batchSetItemLocations,
   saveStockCheckDraft,
   deleteStockCheckDraft,
@@ -613,6 +614,8 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
   const stockUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
   const priceUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
+  // 숨긴(비어 있는) 위치는 화면에서 가린다 — 서버가 계산한 hiddenLocationIds 멤버십으로만 거른다(2단계).
+  const hidden = new Set(row.hiddenLocationIds)
   return (
     <InvCard
       selectable={selectMode} selected={isSelected}
@@ -698,12 +701,12 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       {row.locations.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {row.lastCheckLocationBreakdown.length > 0
-            ? row.lastCheckLocationBreakdown.map(lb => (
+            ? row.lastCheckLocationBreakdown.filter(lb => !hidden.has(lb.locationId)).map(lb => (
                 <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                   {lb.locationName} {fmtQty(lb.qty, stockUnit)}
                 </span>
               ))
-            : row.locations.map(loc => (
+            : row.locations.filter(loc => !hidden.has(loc.id)).map(loc => (
                 <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
               ))
           }
@@ -3079,7 +3082,8 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">3. 어디로 옮길까요?</label>
               <div className="flex flex-wrap gap-1.5">
-                {locStock.filter(l => l.id !== fromId).map(l => (
+                {/* 숨긴 위치는 목적지에서 제외 — 숨긴 곳으로 재고를 넣게 두면 안 된다(2단계). 출발지는 재고 있으면 보여야 함(무필터). */}
+                {locStock.filter(l => l.id !== fromId && !l.closed).map(l => (
                   <button key={l.id} type="button" className={chip(toId === l.id)}
                     onClick={() => setToId(l.id)}>
                     {l.name}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
@@ -3897,19 +3901,19 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
     const res = await batchSetItemLocations(selectedIds, Array.from(chosen))
     setPending(false)
     if (!res.ok) { setError(res.error); return }
-    pushToast('success', `${res.count}개 품목에 위치 할당 완료`)
+    pushToast('success', `${res.count}개 품목에 위치 추가 완료`)
     onDone()
   }
 
   return (
-    <Modal open onClose={onClose} title="위치 일괄 할당" subtitle={`${selectedIds.length}개 품목에 동일 위치를 적용합니다`} width="sm">
+    <Modal open onClose={onClose} title="위치 일괄 추가" subtitle={`${selectedIds.length}개 품목에 동일 위치를 추가합니다`} width="sm">
       <div className="px-5 sm:px-6 py-4 space-y-3">
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {allLocs.length === 0 ? (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다. 먼저 "위치 관리"에서 추가하세요.</p>
         ) : (
           <>
-            <p className="text-xs text-[var(--warm-muted)]">선택된 위치로 교체합니다. 기존 위치는 모두 제거됩니다.</p>
+            <p className="text-xs text-[var(--warm-muted)]">선택한 위치를 추가합니다. 기존 위치는 유지됩니다.</p>
             <div className="flex flex-wrap gap-2">
               {allLocs.map(loc => (
                 <button key={loc.id} type="button" onClick={() => toggle(loc.id)}
@@ -3938,8 +3942,12 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
 function LocationAssignSection({ trackedItemId, initialLocations }: {
   trackedItemId: string; initialLocations: StorageLocationItem[]
 }) {
+  const router = useRouter()
+  // 3-상태: 열린 링크(선택 토글) / 숨긴 링크(다시 표시) / 미연결(선택 토글). closedAt 으로 구분.
+  const openIds = initialLocations.filter(l => l.closedAt == null).map(l => l.id)
+  const closedLocs = initialLocations.filter(l => l.closedAt != null)
   const [allLocs, setAllLocs]     = useState<StorageLocationItem[]>([])
-  const [selected, setSelected]   = useState<Set<string>>(new Set(initialLocations.map(l => l.id)))
+  const [selected, setSelected]   = useState<Set<string>>(new Set(openIds))   // 열린 것만
   const [pending, setPending]     = useState(false)
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState('')
@@ -3947,6 +3955,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
   useEffect(() => { getStorageLocations().then(setAllLocs) }, [])
 
   if (allLocs.length === 0) return null
+  const closedIds = new Set(closedLocs.map(l => l.id))
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -3963,13 +3972,22 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
     setPending(false)
     if (!res.ok) { setError(res.error); return }
     setSaved(true)
+    router.refresh()   // 빈 위치 숨김(3-way diff)이 반영되도록
   }
 
-  // 선택한 보관 위치가 처음 상태와 달라졌는지 — 달라졌으면 '위치 저장'을 강조
-  const initialIds = initialLocations.map(l => l.id)
+  const reopen = async (id: string) => {
+    setPending(true); setError('')
+    const res = await reopenItemLocation(trackedItemId, id)
+    setPending(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', '위치를 다시 표시했습니다')
+    router.refresh()
+  }
+
+  // 열린 초기 상태와 달라졌는지 — 숨긴 위치는 비교에서 제외(다시 표시는 별도 버튼)
   const dirty =
-    initialIds.length !== selected.size ||
-    initialIds.some(id => !selected.has(id))
+    openIds.length !== selected.size ||
+    openIds.some(id => !selected.has(id))
 
   return (
     <div className="space-y-2 pt-2 border-t border-[var(--warm-border)]/60">
@@ -3978,7 +3996,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
         {saved && <span className="text-[0.65625rem] text-[var(--success-fg)]">저장됨</span>}
       </div>
       <div className="flex flex-wrap gap-2">
-        {allLocs.map(loc => (
+        {allLocs.filter(loc => !closedIds.has(loc.id)).map(loc => (
           <button
             key={loc.id}
             type="button"
@@ -4005,7 +4023,19 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
           변경한 보관 위치는 위치 저장 버튼을 눌러야 반영됩니다.
         </p>
       )}
-      <p className="text-[0.65625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
+      {closedLocs.length > 0 && (
+        <div className="pt-1.5 border-t border-[var(--warm-border)]/40 space-y-1">
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">숨긴 위치</p>
+          {closedLocs.map(loc => (
+            <div key={loc.id} className="flex items-center justify-between gap-2">
+              <span className="text-xs text-[var(--warm-muted)]">{loc.name}</span>
+              <button type="button" onClick={() => reopen(loc.id)} disabled={pending}
+                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">다시 표시</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-[0.65625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다. 비어 있는 위치는 선택을 해제하면 화면에서 숨겨지고, 지난 기록은 그대로 남습니다.</p>
     </div>
   )
 }
