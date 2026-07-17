@@ -376,7 +376,7 @@ function MobileMenu({
   pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; role: Role; onClose?: () => void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
-  const { isDark, setMode } = useTheme()              // 다크/라이트 빠른 전환(도구 타일)
+  const { isDark, toggleQuick } = useTheme()          // 다크/라이트 빠른 전환 — '시스템 따라'면 임시 전환(다음 시스템 변화에 자동 복귀)
   const navGroups = navGroupsFor(role)
   const homeHref = roleHome(role)                     // 로고 목적지 — 제한 스태프는 /inventory
   const isLimited = role === 'LIMITED_STAFF'          // 도구(단기 요금 계산 등) 숨김
@@ -436,7 +436,7 @@ function MobileMenu({
             </button>
             )}
             {/* 다크/라이트 즉시 전환 — 명시적 light/dark 만 순환(system·time 사용자 설정 덮어쓰지 않음) */}
-            <button type="button" onClick={() => setMode(isDark ? 'light' : 'dark')}
+            <button type="button" onClick={toggleQuick}
               className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
               style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
               {isDark ? (
