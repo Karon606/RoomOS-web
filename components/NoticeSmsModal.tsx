@@ -13,9 +13,9 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, switchAiModelForQuota, getAiModelRestorePrompt, resolveAiModelRestore, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
+import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, saveNoticeTemplateAuto, switchAiModelForQuota, getAiModelRestorePrompt, resolveAiModelRestore, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { getSmsTemplates, saveSmsTemplate, type SmsTemplateRow } from '@/app/(app)/settings/actions'
+import { getSmsTemplates, type SmsTemplateRow } from '@/app/(app)/settings/actions'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성' }
@@ -83,6 +83,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [body, setBody] = useState('')
   const [prevDraft, setPrevDraft] = useState<string | null>(null)   // AI 다듬기 전 원문(원래대로 복귀용)
   const [aiPending, setAiPending] = useState(false)
+  const [tplSaving, setTplSaving] = useState(false)   // 이름을 서버(AI)가 짓느라 잠깐 걸림 — 중복 클릭 차단
   const [loggedBatches, setLoggedBatches] = useState<Set<number>>(new Set())
   const [draftRestored, setDraftRestored] = useState(false)   // 복원 후에만 드래프트 저장 활성(기본 상태 오염 방지용 아님 — 저장은 항상, 안내만)
 
@@ -273,17 +274,20 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // 이름은 서버가 짓는다 — 본인 API 키가 있으면 AI 가 본문에서 주제를, 없으면 날짜+시간.
+  // 종전엔 여기서 `공지 ${월}/${일}` 로 지어 같은 날 저장하면 전부 동명이라 드롭다운에서 구분이 안 됐다.
   const saveAsTemplate = () => {
     const text = body.trim()
     if (!text) { pushToast('error', '저장할 내용을 먼저 입력하세요'); return }
-    const name = `공지 ${new Date().getMonth() + 1}/${new Date().getDate()}`
-    saveSmsTemplate({ name, body: text, kind: 'notice' })
+    setTplSaving(true)
+    saveNoticeTemplateAuto(text)
       .then(r => {
         if (!r.ok) { pushToast('error', r.error); return }
-        pushToast('success', `'${name}' 템플릿으로 저장했습니다`)
+        pushToast('success', `'${r.name}' 템플릿으로 저장했습니다`)
         getSmsTemplates('notice').then(setTemplates).catch(() => { /* 목록 갱신 실패는 무시 */ })
       })
       .catch(() => pushToast('error', '템플릿 저장에 실패했습니다'))
+      .finally(() => setTplSaving(false))
   }
 
   const valueChip = (active: boolean) => [
@@ -478,9 +482,9 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums shrink-0">{body.trim().length}자</span>
         </div>
         <div className="flex items-center justify-between">
-          <button type="button" onClick={saveAsTemplate}
-            className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2">
-            이 내용을 템플릿으로 저장
+          <button type="button" onClick={saveAsTemplate} disabled={tplSaving}
+            className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2 disabled:opacity-40">
+            {tplSaving ? '저장 중…' : '이 내용을 템플릿으로 저장'}
           </button>
         </div>
         <div className="space-y-1.5">

@@ -205,6 +205,77 @@ ${src}`
   }
 }
 
+// ── 공지 템플릿 자동 이름 (운영자 요청 2026-07-17) ────────────────────
+// 종전 이름은 클라에서 `공지 ${월}/${일}` 로 지어 같은 날 여러 번 저장하면 전부 동명이었다
+// (실데이터: '공지 7/17' 4건). 발송 드롭다운은 이름만 보여줘 구분이 불가능했다.
+//
+// 이름 규칙: 본인 API 키가 있으면 AI 가 본문에서 주제를 뽑고, 없으면 날짜+시간.
+//  공용 키는 월 10회(FREE_MONTHLY_AI_LIMIT)뿐이고 그건 '다듬기'라는 본체 기능용이다.
+//  장식인 제목에 그 예산의 10% 를 태우지 않는다. AI 가 실패해도 날짜+시간으로 떨어져 저장은 항상 성공한다.
+function fallbackTemplateName(): string {
+  const kst = new Date(Date.now() + 9 * 3600_000)   // 서버는 UTC(Vercel) — 반드시 KST 로 지어야 한다
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return `공지 ${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${p2(kst.getUTCHours())}:${p2(kst.getUTCMinutes())}`
+}
+
+async function suggestNoticeTitle(body: string, propertyId: string): Promise<string> {
+  try {
+    // 본인 키 확인 — consumeGeminiAccess 를 쓰면 공용 키일 때 카운트가 올라가므로 여기선 직접 본다.
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { owner: { select: { geminiApiKey: true, geminiModel: true } } } })
+    const own = p?.owner?.geminiApiKey?.trim()
+    if (!own) return fallbackTemplateName()
+    const model = p?.owner?.geminiModel?.trim() || 'gemini-2.5-flash'
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${own}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `아래 공지 문자의 주제를 나타내는 짧은 제목을 지어라.
+
+규칙:
+- 한글 15자 이내 명사구. 문장으로 쓰지 않는다.
+- 본문에 있는 내용만 쓴다. 없는 정보는 지어내지 않는다.
+- 영업장 이름·대괄호·따옴표·이모지·느낌표를 넣지 않는다.
+- 제목만 출력한다(설명 금지).
+
+예: "수도 점검 안내", "엘리베이터 정기 검사", "분리수거 요일 변경"
+
+공지 본문:
+${body.trim()}` }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 } },
+        }),
+      }
+    )
+    if (!res.ok) return fallbackTemplateName()
+    const json = await res.json()
+    const raw: string = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
+    // 한 줄로 정리 + 모델이 붙일 수 있는 따옴표·대괄호 제거. 비거나 너무 길면 폴백.
+    const name = raw.split('\n')[0].replace(/^["'“”[\]]+|["'“”[\]]+$/g, '').trim()
+    if (!name || name.length > 24) return fallbackTemplateName()
+    return name
+  } catch {
+    return fallbackTemplateName()   // 제목은 장식 — 어떤 실패도 저장을 막지 않는다
+  }
+}
+
+// 공지 본문을 템플릿으로 저장 — 이름은 위 규칙으로 서버가 짓는다.
+export async function saveNoticeTemplateAuto(body: string): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const text = body.trim()
+    if (!text) return { ok: false, error: '저장할 내용을 먼저 입력하세요.' }
+    const name = await suggestNoticeTitle(text, propertyId)
+    const last = await prisma.smsTemplate.findFirst({ where: { propertyId, kind: 'notice' }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    await prisma.smsTemplate.create({ data: { propertyId, name, body: text, kind: 'notice', sortOrder: (last?.sortOrder ?? -1) + 1 } })
+    return { ok: true, name }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '템플릿 저장에 실패했습니다.' }
+  }
+}
+
 // ── 모델 한도 전환·복귀 (운영자 설계 2026-07-11) ─────────────────────
 // pro 무료 한도 도달 시 그 자리에서 flash 전환을 승인받아 적용하고, 무료 한도가
 // 초기화되는 시각(구글 기준 태평양시 자정)이 지나면 원래 모델 복귀를 제안한다.
