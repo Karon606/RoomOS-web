@@ -30,7 +30,7 @@ import {
   getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
   getAiSettings, saveAiSettings,
 } from './actions'
-import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
+import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
@@ -416,7 +416,8 @@ export default function SettingsForm({
     if (joinCode && !(await confirmDialog({ title: '새 참여 코드를 발급할까요?', message: '기존 코드는 더 이상 사용할 수 없습니다.', level: 'caution', confirmLabel: '재발급' }))) return
     setJoinBusy(true)
     try {
-      const res = await regenerateJoinCode()
+      // 최초 발급은 멱등 경로로 — 뚫려도 코드가 안 바뀐다. 재발급은 새 코드가 나오는 게 정상(위 확인창이 앞을 막음).
+      const res = joinCode ? await regenerateJoinCode() : await getOrCreateJoinCode()
       if (!res.ok) { showToast(res.error); return }
       setJoinCode(res.code)
       showToast('참여 코드 발급됨')

@@ -42,6 +42,18 @@ export async function getJoinCode(): Promise<string | null> {
   return p?.joinCode ?? null
 }
 
+// 최초 발급 — 이미 코드가 있으면 그대로 반환한다(멱등). 연타로 코드가 계속 바뀌어
+// 화면 코드와 DB 코드가 갈리던 문제 방지(getOrCreateCalendarToken 과 같은 문법).
+// '재발급'(기존 코드 무효화)은 의도적 행위이므로 아래 regenerateJoinCode 로 분리 — 그쪽은
+// 매번 새 코드가 나오는 게 정상이고 확인 다이얼로그가 앞을 막는다.
+export async function getOrCreateJoinCode(): Promise<{ ok: true; code: string } | { ok: false; error: string }> {
+  await requireOwner()
+  const propertyId = await getPropertyId()
+  const cur = await prisma.property.findUnique({ where: { id: propertyId }, select: { joinCode: true } })
+  if (cur?.joinCode) return { ok: true, code: cur.joinCode }
+  return regenerateJoinCode()
+}
+
 export async function regenerateJoinCode(): Promise<{ ok: true; code: string } | { ok: false; error: string }> {
   await requireOwner()
   const propertyId = await getPropertyId()

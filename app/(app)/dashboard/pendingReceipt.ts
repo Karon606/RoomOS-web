@@ -283,30 +283,42 @@ export async function approvePendingReceipt(
     // 재고 카드 자동 생성 — 승인 즉시 재고에 잡히게(신고 269baf9f)
     if (final.itemLabel) await seedTrackedItemsFromExpenses([final.itemLabel]).catch(() => {})
 
-    const exp = await prisma.expense.create({
-      data: {
-        propertyId,
-        date: new Date(final.date),
-        amount: final.amount,
-        category: final.category,
-        vendor: final.vendor ?? null,
-        memo: final.memo ?? null,
-        payMethod: '계좌이체',
-        receiptUrl: row.imageUrl,
-        settleStatus: 'SETTLED',
-        itemLabel: final.itemLabel || null,
-        specUnit:  final.specUnit  || null,
-        qtyUnit:   final.qtyUnit   || null,
-        specValue: final.specValue ? parseFloat(final.specValue) : null,
-        specText:  final.specText?.trim() || null,
-        qtyValue:  final.qtyValue  ? parseFloat(final.qtyValue)  : null,
-      },
-      select: { id: true },
+    // ⚠️ 상태 전이를 조건부로 '선점'한 뒤 지출을 만든다.
+    //   종전엔 위 findFirst 로 pending 을 확인하고 그 뒤에 expense.create 를 해서, 동시 요청 2건이
+    //   모두 검사를 통과한 뒤 지출을 2건 만들 수 있었다(TOCTOU). 그 달 지출이 이중 계상된다.
+    //   조건부 updateMany 가 행 잠금을 잡아 직렬화하므로 뒤늦은 요청은 count 0 으로 걸러진다.
+    //   같은 파일 finalizePendingReceipt 가 이미 쓰는 문법('중복 등록 방어')과 통일 — 승인만 빠져 있었다.
+    //   한 트랜잭션이라 지출 생성이 실패하면 상태 전이도 함께 롤백된다('승인됐는데 지출 없음' 방지).
+    const exp = await prisma.$transaction(async tx => {
+      const claim = await tx.pendingReceipt.updateMany({
+        where: { id, propertyId, status: 'pending' },
+        data: { status: 'approved', reviewedAt: new Date() },
+      })
+      if (claim.count === 0) return null   // 다른 요청이 이미 선점 — 아무것도 만들지 않는다
+      const e = await tx.expense.create({
+        data: {
+          propertyId,
+          date: new Date(final.date),
+          amount: final.amount,
+          category: final.category,
+          vendor: final.vendor ?? null,
+          memo: final.memo ?? null,
+          payMethod: '계좌이체',
+          receiptUrl: row.imageUrl,
+          settleStatus: 'SETTLED',
+          itemLabel: final.itemLabel || null,
+          specUnit:  final.specUnit  || null,
+          qtyUnit:   final.qtyUnit   || null,
+          specValue: final.specValue ? parseFloat(final.specValue) : null,
+          specText:  final.specText?.trim() || null,
+          qtyValue:  final.qtyValue  ? parseFloat(final.qtyValue)  : null,
+        },
+        select: { id: true },
+      })
+      await tx.pendingReceipt.update({ where: { id }, data: { linkedExpenseId: e.id } })
+      return e
     })
-    await prisma.pendingReceipt.update({
-      where: { id },
-      data: { status: 'approved', reviewedAt: new Date(), linkedExpenseId: exp.id },
-    })
+    if (!exp) return { ok: false, error: '이미 처리된 영수증입니다.' }
     revalidatePath('/dashboard')
     revalidatePath('/finance')
     revalidatePath('/inventory')
