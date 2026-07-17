@@ -28,9 +28,10 @@
 - **잔량 소스 = (B) 계열**(마지막 점검 breakdown + 이후 입수·폐기 위치별). lastCheck 단독 금지 — 위치 미지정 입수가 breakdown 에 안 잡혀 "총량엔 있는데 어느 칩에도 없는 재고"가 된다. overview 는 배치 3쿼리로 N+1 없이 계산.
 - **`setItemLocations` = 3-way diff** (deleteMany 전체교체 금지 — closedAt 소실 + 재고 든 위치 무단 제거). 빠진 id: 재고 있으면 거부 / 비고 이력 없으면 삭제 / 비고 이력 있으면 숨김. 실효 허브가 빠지면 거부. 사후조건 P: 링크>0 이면 열린 링크 최소 1개. `batchSetItemLocations` 는 **가산 전용(union)** — 배치 모달이 빈 Set 에서 시작해 '교체' 개념이 성립 안 함.
 - **reopen(다시 표시) vs undoClose(적용취소)는 다르다**: reopen 은 이관 점검 유지, undoClose 는 이관 점검 삭제+허브 원복. UI 의 '다시 표시'는 reopen. **reopen 후 클라 selected 에도 즉시 반영해야 한다** — state 는 refresh 로 재초기화되지 않아, 안 넣으면 다음 저장 때 조용히 재숨김(17aebf8).
-- **허브는 숨길 수 없다**(setItemLocations 거부). 잔량 있는 위치 숨김+이관+허브 승격은 `closeItemLocation` 서버액션에 구현돼 있으나 **현재 UI 미연결(데드코드)** — 필요해지면 UI 만 얹으면 된다. 빈 위치 숨김(실사용 케이스)은 선택 해제+저장으로 동작.
+- **허브 불변식은 양방향이다**: 허브는 숨길 수 없고(setItemLocations 거부), **숨긴 위치는 허브가 될 수 없다**(setItemHub 가 closedAt:null 만 허용 + 드롭다운 제외, b92c3cb — 한쪽만 막으면 역순 우회 뒷문이 생긴다). 잔량 있는 위치 숨김+이관+허브 승격은 `closeItemLocation` 서버액션에 구현돼 있으나 **현재 UI 미연결(데드코드)** — 필요해지면 UI 만 얹으면 된다. 빈 위치 숨김(실사용 케이스)은 선택 해제+저장으로 동작.
 - 병합은 source 링크의 closedAt 을 전파(target 우선), unmerge 는 3세대 payload 하위호환(gen0 없음/gen1 ids/gen2 {id,closedAt}).
 - 점검·보정 폼은 숨긴 위치를 여전히 0 입력행으로 보여준다(후속 개선 후보) — 데이터는 무해(0 저장=유지, 양수 저장=자동 재표시).
+- 후속 2건(b92c3cb 등록): exportAllData 백업에 trackedItemLocation(closedAt 포함) 누락 / reopen 이 0행 갱신에도 성공 토스트(동시성 한정, 무해). undo 페이로드는 클라이언트발 값 — **각 필드를 품목 스코프로 검증**할 것(B1 선례).
 
 ## 불변식: 재고가 들어간 위치엔 반드시 링크가 있다 (2026-07-17, 67ccfa3·06585a5)
 **모든 (품목 T, 위치 L)에 대해, T 의 재고가 지금 L 에 들어가 있다면 `TrackedItemLocation(T,L)` 이 존재한다.** 현재시제 판정 기준 = T 의 마지막 점검 `StockCheckLocation` 중 `remainingQty > 0` 인 행.
