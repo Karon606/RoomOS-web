@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 // 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
@@ -501,9 +502,10 @@ export async function mergeTrackedItems(
     // 위치 링크 — source 것을 target 에 합쳐야 한다(아래 2.6). source 는 마지막에 delete 되고
     // 링크는 cascade 로 사라지므로, 안 옮기면 이전된 점검의 breakdown 이 통째로 orphan 이 된다.
     // targetLocationIdsBefore = 합집합이 '새로 더한' 링크만 정확히 되돌리기 위한 기준선(undo).
-    const sourceLocationIds = (await prisma.trackedItemLocation.findMany({
-      where: { trackedItemId: sourceId }, select: { storageLocationId: true },
-    })).map(l => l.storageLocationId)
+    // closedAt 도 옮긴다 — source 에서 숨긴 위치가 target 에서 열림으로 부활하면 0kg 칩이 다시 뜬다(2단계 F5).
+    const sourceLocations = (await prisma.trackedItemLocation.findMany({
+      where: { trackedItemId: sourceId }, select: { storageLocationId: true, closedAt: true },
+    })).map(l => ({ storageLocationId: l.storageLocationId, closedAt: l.closedAt ? l.closedAt.toISOString() : null }))
     const targetLocationIdsBefore = (await prisma.trackedItemLocation.findMany({
       where: { trackedItemId: targetId }, select: { storageLocationId: true },
     })).map(l => l.storageLocationId)
@@ -532,9 +534,10 @@ export async function mergeTrackedItems(
     // 2.6) 위치 링크 합집합 — 두 카드의 재고가 한 카드가 됐으니 소재도 합집합이 맞다.
     //   source 우선이면 target 자기 재고가 숨고, target 우선이면 옮겨온 breakdown 이 통째로 orphan 이 된다.
     //   반드시 source delete(아래) 전에. cascade 로 링크가 사라지면 복구 근거가 없다.
-    if (sourceLocationIds.length > 0) {
+    //   양쪽에 있는 링크는 target 값 유지(skipDuplicates) — 병합은 target 카드로 합치는 것이라 target 의사 우선.
+    if (sourceLocations.length > 0) {
       await prisma.trackedItemLocation.createMany({
-        data: sourceLocationIds.map(storageLocationId => ({ trackedItemId: targetId, storageLocationId })),
+        data: sourceLocations.map(l => ({ trackedItemId: targetId, storageLocationId: l.storageLocationId, closedAt: l.closedAt ? new Date(l.closedAt) : null })),
         skipDuplicates: true,
       })
     }
@@ -589,7 +592,7 @@ export async function mergeTrackedItems(
               purchaseUrl: source.purchaseUrl, memo: source.memo,
             },
             movedExpenseIds, movedCheckIds, movedAdditionIds, movedDisposalIds, targetQtyUnitBefore,
-            sourceLocationIds, targetLocationIdsBefore,
+            sourceLocations, targetLocationIdsBefore,
             unitFactor: mergeFactor,
           },
         },
@@ -1917,10 +1920,14 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       }
       // 1.5) source 카드 위치 링크 복원 — 병합 때 source delete 로 cascade 소멸했던 것.
       //   안 하면 되살아난 카드의 점검 breakdown 이 전부 orphan(위치별 화면에서 증발)이 된다.
-      //   Array.isArray 가드 = 이 필드 추가 전 병합 레코드 하위호환(조용히 건너뜀).
-      if (Array.isArray(p.sourceLocationIds) && p.sourceLocationIds.length > 0) {
+      //   3세대 하위호환: gen-2 sourceLocations{id,closedAt} / gen-1 sourceLocationIds[] / gen-0 없음(조용히 건너뜀).
+      const srcLocs: { storageLocationId: string; closedAt: string | null }[] =
+        Array.isArray(p.sourceLocations) ? (p.sourceLocations as { storageLocationId: string; closedAt: string | null }[])
+        : Array.isArray(p.sourceLocationIds) ? (p.sourceLocationIds as string[]).map(id => ({ storageLocationId: id, closedAt: null }))
+        : []
+      if (srcLocs.length > 0) {
         await prisma.trackedItemLocation.createMany({
-          data: (p.sourceLocationIds as string[]).map(storageLocationId => ({ trackedItemId: sourceId, storageLocationId })),
+          data: srcLocs.map(l => ({ trackedItemId: sourceId, storageLocationId: l.storageLocationId, closedAt: l.closedAt ? new Date(l.closedAt) : null })),
           skipDuplicates: true,
         })
       }
@@ -1952,10 +1959,10 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
         await prisma.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
       }
       // 3.5) 합집합이 target 에 '새로 더한' 링크만 제거 — 원래 target 것이었던 링크는 보존.
-      //   targetLocationIdsBefore 없이 sourceLocationIds 만으로 지우면 target 원래 링크까지 날아간다.
-      if (Array.isArray(p.sourceLocationIds) && Array.isArray(p.targetLocationIdsBefore)) {
+      //   targetLocationIdsBefore 없이 sourceLocations 만으로 지우면 target 원래 링크까지 날아간다.
+      if (srcLocs.length > 0 && Array.isArray(p.targetLocationIdsBefore)) {
         const before = new Set<string>(p.targetLocationIdsBefore as string[])
-        const added = (p.sourceLocationIds as string[]).filter(id => !before.has(id))
+        const added = srcLocs.map(l => l.storageLocationId).filter(id => !before.has(id))
         if (added.length > 0) {
           await prisma.trackedItemLocation.deleteMany({
             where: { trackedItemId: undo.targetItemId, storageLocationId: { in: added } },
@@ -2084,14 +2091,57 @@ export async function setItemLocations(trackedItemId: string, locationIds: strin
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    // 전체 교체: 기존 삭제 후 재생성
-    await prisma.trackedItemLocation.deleteMany({ where: { trackedItemId } })
-    if (locationIds.length > 0) {
-      await prisma.trackedItemLocation.createMany({
-        data: locationIds.map(storageLocationId => ({ trackedItemId, storageLocationId })),
-        skipDuplicates: true,
-      })
+    // 3-way diff — deleteMany 전체교체는 (a) closedAt 소실 (b) 재고 든 위치 링크 무단 제거의 2중 orphan 생성기였다(2단계 F1).
+    // 빠진 id: 재고 있으면 거부 / 비었고 이력 없으면 삭제 / 비었고 이력 있으면 숨김(closedAt).
+    // 선택 id: 미링크면 생성 / 숨김이면 다시 표시(closedAt=null) / 열림이면 무변경.
+    const selected = locationIds.length > 0
+      ? await prisma.storageLocation.findMany({ where: { id: { in: locationIds }, propertyId }, select: { id: true } })
+      : []
+    const selectedIds = new Set(selected.map(l => l.id))
+    if (selectedIds.size !== locationIds.length) return { ok: false, error: '일부 위치를 찾을 수 없습니다.' }
+
+    const links = await prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true } })
+    const missing = links.filter(l => !selectedIds.has(l.storageLocationId))
+
+    // 실효 허브가 빠진 id 에 있으면 거부 — 허브 승격은 숨김(closeItemLocation)의 책임이다.
+    const openIds = new Set(links.filter(l => l.closedAt == null).map(l => l.storageLocationId))
+    const effHub = await resolveItemHubLocationId(trackedItemId, it.hubLocationId, propertyId, openIds)
+    const breakdown = await currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId)
+    const locName = async (id: string) => (await prisma.storageLocation.findUnique({ where: { id }, select: { name: true } }))?.name ?? '해당 위치'
+
+    // 이력 있는 빠진 위치 판별(숨김 대상). 이력 없으면 삭제.
+    const histRows = missing.length > 0
+      ? await prisma.stockCheckLocation.findMany({
+          where: { stockCheck: { trackedItemId }, storageLocationId: { in: missing.map(m => m.storageLocationId) } },
+          select: { storageLocationId: true }, distinct: ['storageLocationId'],
+        })
+      : []
+    const hasHistory = new Set(histRows.map(r => r.storageLocationId))
+
+    const toClose: string[] = [], toDelete: string[] = []
+    for (const m of missing) {
+      const qty = Math.max(0, breakdown.get(m.storageLocationId) ?? 0)
+      if (qty >= 0.001) return { ok: false, error: `${await locName(m.storageLocationId)}에 재고가 남아 있어 뗄 수 없습니다. 위치 숨김에서 옮길 곳을 정해주세요.` }
+      if (m.storageLocationId === effHub) return { ok: false, error: `${await locName(m.storageLocationId)}은 이 품목의 창고입니다. 위치 숨김에서 옮길 곳을 정해주세요.` }
+      if (hasHistory.has(m.storageLocationId)) toClose.push(m.storageLocationId)
+      else toDelete.push(m.storageLocationId)
     }
+
+    // 사후조건 P — 결과 링크가 있으면 열린 링크가 최소 1개.
+    // 선택된 id 는 전부 열림으로 끝나므로(생성·다시표시·유지), selected 가 비었는데 숨김으로 남는 링크가 있으면 위반.
+    // (링크 0 은 허용 — '위치 안 쓰는 품목'으로 돌아갈 수 있다.)
+    if (selectedIds.size === 0 && (links.length - toDelete.length) > 0) {
+      return { ok: false, error: '마지막 남은 보관 위치는 뗄 수 없습니다.' }
+    }
+
+    const newIds = [...selectedIds].filter(id => !links.some(l => l.storageLocationId === id))
+    const reopenIds = links.filter(l => l.closedAt != null && selectedIds.has(l.storageLocationId)).map(l => l.storageLocationId)
+    const ops: Prisma.PrismaPromise<unknown>[] = []
+    if (newIds.length > 0) ops.push(prisma.trackedItemLocation.createMany({ data: newIds.map(storageLocationId => ({ trackedItemId, storageLocationId })), skipDuplicates: true }))
+    if (reopenIds.length > 0) ops.push(prisma.trackedItemLocation.updateMany({ where: { trackedItemId, storageLocationId: { in: reopenIds } }, data: { closedAt: null } }))
+    if (toClose.length > 0) ops.push(prisma.trackedItemLocation.updateMany({ where: { trackedItemId, storageLocationId: { in: toClose } }, data: { closedAt: new Date() } }))
+    if (toDelete.length > 0) ops.push(prisma.trackedItemLocation.deleteMany({ where: { trackedItemId, storageLocationId: { in: toDelete } } }))
+    if (ops.length > 0) await prisma.$transaction(ops)
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
@@ -2109,16 +2159,20 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
     // 권한 확인
     const count = await prisma.trackedItem.count({ where: { id: { in: trackedItemIds }, propertyId } })
     if (count !== trackedItemIds.length) return { ok: false, error: '일부 품목을 찾을 수 없습니다.' }
+    if (locationIds.length === 0) return { ok: false, error: '추가할 위치를 선택하세요.' }
+    // 위치 소유 검증
+    const locCount = await prisma.storageLocation.count({ where: { id: { in: locationIds }, propertyId } })
+    if (locCount !== locationIds.length) return { ok: false, error: '일부 위치를 찾을 수 없습니다.' }
 
-    await prisma.trackedItemLocation.deleteMany({ where: { trackedItemId: { in: trackedItemIds } } })
-    if (locationIds.length > 0) {
-      await prisma.trackedItemLocation.createMany({
-        data: trackedItemIds.flatMap(trackedItemId =>
-          locationIds.map(storageLocationId => ({ trackedItemId, storageLocationId }))
-        ),
-        skipDuplicates: true,
-      })
-    }
+    // 가산 전용(union) — 종전 deleteMany 전체교체는 빈 선택 적용 시 전 품목 링크·closedAt 을 통째로 날렸다(2단계 F7).
+    // BatchLocationModal 은 현재 상태를 안 읽고 빈 Set 으로 시작하므로 '교체' 개념이 성립하지 않는다.
+    // skipDuplicates 가 기존 링크의 closedAt 을 보존한다 — 배치 추가가 숨긴 위치를 조용히 되살리지 않는다. 제거는 품목별 숨김으로.
+    await prisma.trackedItemLocation.createMany({
+      data: trackedItemIds.flatMap(trackedItemId =>
+        locationIds.map(storageLocationId => ({ trackedItemId, storageLocationId }))
+      ),
+      skipDuplicates: true,
+    })
     revalidatePath('/inventory')
     return { ok: true, count: trackedItemIds.length }
   } catch (err) {
@@ -2552,7 +2606,7 @@ export async function setItemHub(trackedItemId: string, locationId: string | nul
 // 허브 자동 차감(점검 폼)과 별개의 명시적 이동. 총량 불변 점검을 만들어 기록하므로
 // 소모량 통계에 영향이 없다(§4 — 이동은 소모가 아님). 기존 점검·허브 UX 는 불변.
 
-export type ItemLocationStock = { id: string; name: string; isHub: boolean; qty: number }
+export type ItemLocationStock = { id: string; name: string; isHub: boolean; qty: number; closed: boolean }
 
 // 품목의 위치별 현재 수량 — 직전 점검 breakdown + 이후 입수분(점검 base 계산과 동일 규칙)
 async function currentLocationBreakdown(trackedItemId: string, propertyId: string, hubLocationId: string | null) {
@@ -2568,16 +2622,33 @@ async function currentLocationBreakdown(trackedItemId: string, propertyId: strin
   return base
 }
 
+// 이동/숨김 이관 점검의 StockCheck.create data — breakdown 전체(0 포함)를 담아 새 baseline 을 만든다.
+// ⚠️ 부분 breakdown 을 만들면 total != byLoc 합 불변식이 깨진다. transferLocationStock·closeItemLocation 공유.
+function transferCheckCreateData(trackedItemId: string, breakdown: Map<string, number>, memo: string) {
+  const entries = [...breakdown.entries()]
+  const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
+  return {
+    trackedItemId,
+    date: new Date(),
+    remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
+    memo,
+    locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
+  }
+}
+
 export async function getItemLocationStock(trackedItemId: string): Promise<{ ok: true; locations: ItemLocationStock[] } | { ok: false; error: string }> {
   try {
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { hubLocationId: true } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    const [allLocs, breakdown] = await Promise.all([
+    const [allLocs, breakdown, links] = await Promise.all([
       prisma.storageLocation.findMany({ where: { propertyId }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, isHub: true } }),
       currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId),
+      prisma.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true, closedAt: true } }),
     ])
-    return { ok: true, locations: allLocs.map(l => ({ ...l, qty: Math.max(0, breakdown.get(l.id) ?? 0) })) }
+    // closed = 이 품목에서 숨긴 위치. 이동 모달에서 목적지 후보 제외에 쓴다(출발지는 재고 있으면 보여야 함).
+    const closedIds = new Set(links.filter(l => l.closedAt != null).map(l => l.storageLocationId))
+    return { ok: true, locations: allLocs.map(l => ({ ...l, qty: Math.max(0, breakdown.get(l.id) ?? 0), closed: closedIds.has(l.id) })) }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2621,8 +2692,6 @@ export async function transferLocationStock(data: {
       memo = `이동: ${fromLoc.name} → ${toLoc.name} ${move}`
     }
 
-    const entries = [...breakdown.entries()].filter(([, q]) => q > 0 || true)   // 0 도 기록(이월 명시)
-    const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
     // 이 이동이 재고를 넣는 위치는 전부 같은 트랜잭션에서 링크를 보장한다 — 종전엔 점검만 만들어,
     // 링크 없는 위치로 옮기면 그 수량이 위치별 화면(row.locations 필터)·보정 폼에서 통째로 안 보였다
     // (오류신고 601303c5, 김치 15kg). 이동 대상은 영업장 전체 위치(getItemLocationStock)라 미링크 선택이 정상 경로다.
@@ -2640,21 +2709,129 @@ export async function transferLocationStock(data: {
         ],
         skipDuplicates: true,
       }),
-      prisma.stockCheck.create({
-        data: {
-          trackedItemId: data.trackedItemId,
-          date: new Date(),
-          remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
-          memo,
-          locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
-        },
-      }),
+      prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo) }),
     ])
     revalidatePath('/inventory')
     return { ok: true, checkId: created.id }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '이동에 실패했습니다.' }
+  }
+}
+
+// ── 보관위치 숨김(2단계) ─────────────────────────────────────────────
+// 품목별로 특정 위치를 화면에서 가린다. StorageLocation 은 영업장 공용이라 안 지운다 — closedAt 만 세운다.
+// 표시 술어는 overview: closedAt != null 이고 현재 잔량 < 0.001. 재고가 들어오면 자동으로 다시 보인다.
+export type CloseLocationUndo = {
+  trackedItemId: string
+  storageLocationId: string
+  transferCheckId: string | null      // 이관 점검 id(잔량 0이면 null). 적용취소 시 이 점검을 지운다
+  hubLocationIdBefore: string | null  // 승격 전 hubLocationId
+  hubChanged: boolean
+}
+
+export async function closeItemLocation(data: {
+  trackedItemId: string
+  storageLocationId: string
+  moveToLocationId?: string
+}): Promise<{ ok: true; undo: CloseLocationUndo | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const item = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId }, select: { id: true, hubLocationId: true } })
+    if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const links = await prisma.trackedItemLocation.findMany({
+      where: { trackedItemId: data.trackedItemId },
+      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+      orderBy: { storageLocation: { sortOrder: 'asc' } },
+    })
+    const target = links.find(l => l.storageLocationId === data.storageLocationId)
+    if (!target) return { ok: false, error: '이 품목의 보관 위치가 아닙니다.' }
+    if (target.closedAt != null) return { ok: true, undo: null }   // 멱등 — 이미 숨김
+    const openLinks = links.filter(l => l.closedAt == null)
+    if (openLinks.length <= 1) return { ok: false, error: '마지막 남은 보관 위치는 숨길 수 없습니다.' }
+
+    // 잔량 — (B) 계열. 잔량 있으면 옮길 위치 필수(증발 금지).
+    const breakdown = await currentLocationBreakdown(data.trackedItemId, propertyId, item.hubLocationId)
+    const qty = Math.max(0, breakdown.get(data.storageLocationId) ?? 0)
+    let dest: (typeof links)[number] | undefined
+    if (qty >= 0.001) {
+      if (!data.moveToLocationId) return { ok: false, error: `${target.storageLocation.name}에 남은 재고가 있습니다. 옮길 위치를 선택해주세요.` }
+      if (data.moveToLocationId === data.storageLocationId) return { ok: false, error: '같은 위치로는 옮길 수 없습니다.' }
+      dest = links.find(l => l.storageLocationId === data.moveToLocationId && l.closedAt == null)
+      if (!dest) return { ok: false, error: '옮길 위치를 찾을 수 없습니다.' }
+    }
+
+    // 실효 허브를 숨기면 승격 — hubLocationId 를 실제로 갱신(폴백에 기대지 않음, 3정의 일치 보장).
+    const openIds = new Set(openLinks.map(l => l.storageLocationId))
+    const effHub = await resolveItemHubLocationId(data.trackedItemId, item.hubLocationId, propertyId, openIds)
+    const promote = effHub === data.storageLocationId
+    let newHub: string | null = null
+    if (promote) {
+      const remainOpen = new Set(openLinks.filter(l => l.storageLocationId !== data.storageLocationId).map(l => l.storageLocationId))
+      newHub = data.moveToLocationId ?? await resolveItemHubLocationId(data.trackedItemId, null, propertyId, remainOpen)
+      if (!newHub) return { ok: false, error: '창고로 쓸 다른 위치가 없습니다.' }
+    }
+
+    // 이관 점검 — 잔량 있을 때만. breakdown 전체를 담아 새 baseline(from=0, to+=qty).
+    let transferCheckId: string | null = null
+    const ops: Prisma.PrismaPromise<unknown>[] = []
+    if (qty >= 0.001 && dest) {
+      breakdown.set(data.storageLocationId, 0)
+      breakdown.set(data.moveToLocationId!, (breakdown.get(data.moveToLocationId!) ?? 0) + qty)
+      const memo = `위치 숨김: ${target.storageLocation.name}에서 ${dest.storageLocation.name}로 ${qty} 이관`
+      const check = await prisma.stockCheck.create({ data: transferCheckCreateData(data.trackedItemId, breakdown, memo), select: { id: true } })
+      transferCheckId = check.id
+    }
+    ops.push(prisma.trackedItemLocation.update({
+      where: { trackedItemId_storageLocationId: { trackedItemId: data.trackedItemId, storageLocationId: data.storageLocationId } },
+      data: { closedAt: new Date() },
+    }))
+    if (promote && newHub) ops.push(prisma.trackedItem.update({ where: { id: data.trackedItemId }, data: { hubLocationId: newHub } }))
+    await prisma.$transaction(ops)
+    revalidatePath('/inventory')
+    return { ok: true, undo: { trackedItemId: data.trackedItemId, storageLocationId: data.storageLocationId, transferCheckId, hubLocationIdBefore: item.hubLocationId, hubChanged: promote } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '위치 숨김에 실패했습니다.' }
+  }
+}
+
+// 다시 표시 — 나중에 이 위치를 다시 쓴다. 이관 점검은 유지(재고는 실제로 옮겨졌고 그게 사실).
+export async function reopenItemLocation(trackedItemId: string, storageLocationId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { id: true } })
+    if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    await prisma.trackedItemLocation.updateMany({ where: { trackedItemId, storageLocationId }, data: { closedAt: null } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '다시 표시에 실패했습니다.' }
+  }
+}
+
+// 숨김 적용취소 — 방금 한 숨김이 실수였다. 이관 점검을 지우고 허브를 원복한다(다시 표시와 다르다).
+export async function undoCloseItemLocation(undo: CloseLocationUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const item = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId }, select: { id: true } })
+    if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const ops: Prisma.PrismaPromise<unknown>[] = [
+      prisma.trackedItemLocation.updateMany({ where: { trackedItemId: undo.trackedItemId, storageLocationId: undo.storageLocationId }, data: { closedAt: null } }),
+    ]
+    // deleteMany — 운영자가 그 사이 타임라인에서 이관 점검을 직접 지웠어도 통과(delete 는 P2025 로 전체 롤백).
+    if (undo.transferCheckId) ops.push(prisma.stockCheck.deleteMany({ where: { id: undo.transferCheckId } }))
+    if (undo.hubChanged) ops.push(prisma.trackedItem.update({ where: { id: undo.trackedItemId }, data: { hubLocationId: undo.hubLocationIdBefore } }))
+    await prisma.$transaction(ops)
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
   }
 }
 
