@@ -128,7 +128,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     getTrackedCategories(propertyId),
     prisma.trackedItem.findMany({
     where: { propertyId, isArchived: false },
-    orderBy: [{ category: 'asc' }, { label: 'asc' }],
+    // 사용자 지정 순서(드래그, a5e258c3) 우선 — 미지정(null) 품목은 뒤에서 가나다순
+    orderBy: [{ category: 'asc' }, { sortOrder: { sort: 'asc', nulls: 'last' } }, { label: 'asc' }],
     include: {
       // 같은 날 여러 번 점검한 경우 dedup 을 위해 take 를 늘려 가져온다 (가장 늦은 점검만 유효).
       // dedup 후 last/prev 추출 — 라면 5/12 같이 같은 날 두 번 점검이 큰 사용량 jump 로

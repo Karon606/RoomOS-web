@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -1859,6 +1859,55 @@ function OptionSection({
     onReorder(next)
   }
 
+  // 드래그 순서 변경(운영자 요청 a5e258c3) — ▲▼와 병존. 보관 위치 관리 모달과 동일 구조.
+  // 드래그 중엔 dragOrder(로컬 스냅샷)로만 표시하고, 놓는 순간 한 번만 onReorder(=reorderOptions) 저장.
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null)
+  const dragOrderRef = useRef<string[] | null>(null)
+  useEffect(() => { dragOrderRef.current = dragOrder }, [dragOrder])   // 렌더 중 ref 접근 금지
+  const orderChanged = useRef(false)
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const displayItems = dragOrder ?? items
+  const onHandleDown = (idx: number) => (e: React.PointerEvent) => {
+    if (!onReorder) return
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    orderChanged.current = false
+    setDragOrder(items)
+    setDragIdx(idx)
+  }
+  const onHandleMove = (e: React.PointerEvent) => {
+    if (dragIdx == null || !listRef.current) return
+    const els = Array.from(listRef.current.children) as HTMLElement[]
+    if (els.length === 0) return
+    let over = -1
+    if (e.clientY < els[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > els[els.length - 1].getBoundingClientRect().bottom) over = els.length - 1
+    else {
+      for (let i = 0; i < els.length; i++) {
+        const r = els[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragIdx) return
+    setDragOrder(prev => {
+      const base = prev ?? items
+      const next = [...base]
+      const [moved] = next.splice(dragIdx, 1)
+      next.splice(over, 0, moved)
+      return next
+    })
+    setDragIdx(over)
+    orderChanged.current = true
+  }
+  const onHandleUp = () => {
+    if (dragIdx == null) return
+    const finalOrder = dragOrderRef.current
+    setDragIdx(null)
+    setDragOrder(null)
+    if (orderChanged.current && finalOrder && onReorder) { orderChanged.current = false; onReorder(finalOrder) }
+  }
+
   const startEdit = (item: string) => {
     setEditingItem(item)
     setEditingValue(item)
@@ -1884,12 +1933,23 @@ function OptionSection({
       </div>
       {description && <p className="text-xs text-[var(--warm-muted)] mb-4">{description}</p>}
       {!description && <div className="mb-4" />}
-      <div className="space-y-2 mb-4">
+      <div ref={listRef} className="space-y-2 mb-4">
         {items.length === 0 && (
           <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
         )}
-        {items.map((item, idx) => (
-          <div key={`${item}-${idx}`} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
+        {displayItems.map((item, idx) => (
+          // key는 값 자체(고유) — 드래그 재정렬 시 요소 identity 보존(포인터 캡처 유지). idx 포함 시 remount로 캡처 끊김.
+          <div key={item} className={`flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
+            {onReorder && editingItem !== item && (
+              <button type="button" aria-label={`${getLabel(item)} 순서 이동`}
+                onPointerDown={onHandleDown(idx)} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+                className="shrink-0 px-0.5 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing"
+                style={{ touchAction: 'none' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+              </button>
+            )}
             {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button

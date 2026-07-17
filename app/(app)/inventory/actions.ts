@@ -2019,6 +2019,26 @@ export async function reorderStorageLocations(ids: string[]): Promise<{ ok: true
   }
 }
 
+// 품목 순서 재정렬(카테고리 내) — 드래그(운영자 요청 a5e258c3 2단계). 그 카테고리의 전체 id 배열을
+// 받아 인덱스대로 sortOrder 기록. 부분 배열이면 미포함 품목과의 상대 순서가 흔들리므로 전체성 검증.
+export async function reorderTrackedItems(category: string, ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (ids.length === 0) return { ok: false, error: '정렬할 품목이 없습니다.' }
+    if (new Set(ids).size !== ids.length) return { ok: false, error: '중복된 품목이 있습니다.' }
+    const total = await prisma.trackedItem.count({ where: { propertyId, category, isArchived: false } })
+    const owned = await prisma.trackedItem.count({ where: { id: { in: ids }, propertyId, category, isArchived: false } })
+    if (owned !== ids.length || total !== ids.length) return { ok: false, error: '품목 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    await prisma.$transaction(ids.map((id, i) => prisma.trackedItem.update({ where: { id }, data: { sortOrder: i } })))
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '순서 저장에 실패했습니다.' }
+  }
+}
+
 // 허브(창고) 단일 전환 — 선택한 위치를 허브로, 나머지는 모두 해제 (한 영업장 1개 허브 보장).
 export async function setStorageHub(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

@@ -43,6 +43,7 @@ import {
   getArchivedTrackedItems,
   unarchiveTrackedItem,
   mergeTrackedItems,
+  reorderTrackedItems,
   createStockCheck,
   createStockAddition,
   updateStockCheck,
@@ -84,6 +85,9 @@ import {
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
+
+// 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
+const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
 
 // v2.0 §04 — 카테고리 마커 색은 viz 팔레트 토큰만(새 hue 금지·v2.0 §04). 틴트 bg는 color-mix 10%.
 const vizTint = (v: string): { bg: string; fg: string } =>
@@ -267,13 +271,29 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     })
   }
 
+  // 품목 카드 드래그 정렬(운영자 요청 a5e258c3 2단계) — 보관 위치 관리 모달과 동일한 가시 핸들 방식.
+  // 그룹(카테고리) 안에서만 이동. 놓는 순간 그 카테고리 전체 순서를 서버 저장(reorderTrackedItems).
+  // itemOrder = 카테고리별 낙관적 id 순서(드래그 중·저장 성공 후 유지, 실패 시 원복). 검색 중엔 부분 배열
+  // 저장 방지를 위해 핸들 자체를 숨긴다(canDragItems).
+  const canDragItems = canEditUi && !selectMode && !q
+  const [itemOrder, setItemOrder] = useState<Record<string, string[]>>({})
+  const [dragCat, setDragCat] = useState<string | null>(null)
+  const [dragItemIdx, setDragItemIdx] = useState<number | null>(null)
+  const itemOrderRef = useRef(itemOrder)
+  useEffect(() => { itemOrderRef.current = itemOrder }, [itemOrder])   // 렌더 중 ref 접근 금지(react-compiler)
+  const itemOrderChanged = useRef(false)
+  const dragListElRef = useRef<HTMLElement | null>(null)
   // 카테고리별 그룹 — 설정된 카테고리 순서 + 표시 별칭. 설정 밖 카테고리(과거 등록분)는 뒤에 자체 표시.
   const extraCats = Array.from(new Set(rows.map(r => r.category))).filter(c => !trackedCats.includes(c))
-  const groupedAll = [...trackedCats, ...extraCats].map(cat => ({
-    cat,
-    alias: aliasOf(cat),
-    rows: visibleRows.filter(r => r.category === cat),
-  }))
+  const groupedAll = [...trackedCats, ...extraCats].map(cat => {
+    const catRows = visibleRows.filter(r => r.category === cat)
+    const ord = itemOrder[cat]
+    // 낙관적 순서 override 적용 — override에 없는 id(다른 새로고침으로 새로 들어온 품목)는 뒤로.
+    const sorted = ord
+      ? [...catRows].sort((a, b) => rankInOrder(ord, a.id) - rankInOrder(ord, b.id))
+      : catRows
+    return { cat, alias: aliasOf(cat), rows: sorted }
+  })
   // 카테고리 상단 탭 — 비품·자재 대분류와 같은 문법(운영자 요청 2026-07-10). 마지막 선택 기억, 검색 중엔 전체.
   // 초기값 '__all__' 고정 + 마운트 후 복원 — viewMode와 동일한 하이드레이션 #418 방지 패턴.
   const [catTab, setCatTab] = useState<string>('__all__')
@@ -295,6 +315,64 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const outOfScopeCount = searching && catTab !== '__all__'
     ? visibleRows.filter(r => r.category !== catTab).length
     : 0
+
+  // 카드 드래그 핸들러 — 위치 관리 모달과 동일 구조(pointer capture → 이동 중 자리 교체 → 놓을 때 저장).
+  // 카드는 그리드(최대 3열)라 단일 열 목록과 달리 x·y 모두로 대상 카드를 판정, 목록 위/아래는 y로 클램프.
+  const onItemHandleDown = (cat: string, idx: number, baseIds: string[]) => (e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()   // 카드 본문 롱프레스·클릭 제스처와 분리
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    dragListElRef.current = (e.currentTarget as HTMLElement).closest('[data-item-drag-list]') as HTMLElement | null
+    itemOrderChanged.current = false
+    setItemOrder(prev => prev[cat] ? prev : { ...prev, [cat]: baseIds })
+    setDragCat(cat)
+    setDragItemIdx(idx)
+  }
+  const onItemHandleMove = (e: React.PointerEvent) => {
+    if (dragCat == null || dragItemIdx == null || !dragListElRef.current) return
+    const items = Array.from(dragListElRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragItemIdx) return
+    const cat = dragCat
+    setItemOrder(prev => {
+      const cur = prev[cat]
+      if (!cur) return prev
+      const next = [...cur]
+      const [moved] = next.splice(dragItemIdx, 1)
+      next.splice(over, 0, moved)
+      return { ...prev, [cat]: next }
+    })
+    setDragItemIdx(over)
+    itemOrderChanged.current = true
+  }
+  const onItemHandleUp = async () => {
+    if (dragCat == null) return
+    const cat = dragCat
+    setDragCat(null)
+    setDragItemIdx(null)
+    if (!itemOrderChanged.current) return
+    itemOrderChanged.current = false
+    const ids = itemOrderRef.current[cat]
+    if (!ids) return
+    const res = await reorderTrackedItems(cat, ids)
+    if (!res.ok) {
+      pushToast('error', res.error)
+      setItemOrder(prev => { const n = { ...prev }; delete n[cat]; return n })
+      router.refresh()
+      return
+    }
+    pushToast('success', '품목 순서 저장됨')
+  }
+
   // 수령 대기 합치기 — OCR 풀네임 품목을 기존 품목으로(별칭 학습 → 다음 영수증부터 자동 치환)
   const [pendMerge, setPendMerge] = useState<{ label: string; category: string } | null>(null)
   const runPendMerge = (destId: string) => {
@@ -510,14 +588,29 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         {grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {g.rows.map(r => (
+            <div data-item-drag-list className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {g.rows.map((r, idx) => (
                 <InventoryCard
                   key={r.id}
                   row={r}
                   selectMode={selectMode}
                   isSelected={selected.has(r.id)}
                   hasDraft={draftIds.has(r.id)}
+                  dragging={dragCat === g.cat && dragItemIdx === idx}
+                  dragHandle={canDragItems ? (
+                    <button type="button" aria-label={`${r.label} 순서 이동`}
+                      onClick={e => e.stopPropagation()}
+                      onPointerDown={onItemHandleDown(g.cat, idx, g.rows.map(x => x.id))}
+                      onPointerMove={onItemHandleMove}
+                      onPointerUp={onItemHandleUp}
+                      onPointerCancel={onItemHandleUp}
+                      className="mt-0.5 shrink-0 -ml-0.5 px-0.5 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing"
+                      style={{ touchAction: 'none' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" />
+                      </svg>
+                    </button>
+                  ) : undefined}
                   onOpen={() => selectMode ? toggleSelect(r.id) : openDetail(r.id)}
                   onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelect(r.id) } : undefined}
                   onArchive={async () => {
@@ -605,7 +698,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   )
 }
 
-function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft, onLongPress }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean; onLongPress?: () => void }) {
+function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft, onLongPress, dragHandle, dragging }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean; onLongPress?: () => void; dragHandle?: React.ReactNode; dragging?: boolean }) {
   const [open, setOpen] = useState(false)   // 지표·추이 펼치기
   const tint = tintOf(row.category)
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
@@ -620,6 +713,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
     <InvCard
       selectable={selectMode} selected={isSelected}
       onToggleSelect={onOpen} onClick={onOpen} onLongPress={onLongPress} attn={lowStock}
+      dragHandle={dragHandle} dragging={dragging}
       title={row.label}
       badges={<>
         {hasDraft && <Badge tone="inspect">점검 중</Badge>}
@@ -1951,6 +2045,34 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
     if (j < 0 || j >= prev.length) return prev
     const next = [...prev]; [next[i], next[j]] = [next[j], next[i]]; return next
   })
+  // 드래그 순서 변경(운영자 요청 a5e258c3) — ▲▼와 병존. 로컬 순서만 바꾸고 '저장' 시 setInventoryCategories로 확정.
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const catListRef = useRef<HTMLDivElement | null>(null)
+  const onCatDown = (idx: number) => (e: React.PointerEvent) => {
+    if (pending) return
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    setDragIdx(idx)
+  }
+  const onCatMove = (e: React.PointerEvent) => {
+    if (dragIdx == null || !catListRef.current) return
+    const items = Array.from(catListRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragIdx) return
+    setEntries(prev => { const next = [...prev]; const [m] = next.splice(dragIdx, 1); next.splice(over, 0, m); return next })
+    setDragIdx(over)
+    setDirty(true)
+  }
+  const onCatUp = () => setDragIdx(null)
   const add = (cat: string) => setEntries(prev => [...prev, { cat, alias: suggestInventoryAlias(cat) }])
   const remove = (cat: string) => setEntries(prev => prev.filter(e => e.cat !== cat))
   const setAlias = (cat: string, alias: string) => setEntries(prev => prev.map(e => e.cat === cat ? { ...e, alias } : e))
@@ -1982,8 +2104,17 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           <div className="space-y-2">
             <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">표시 중인 카테고리 (위에서부터 표시 순서)</p>
+            <div ref={catListRef} className="space-y-2">
             {entries.map((e, i) => (
-              <div key={e.cat} className="flex items-center gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-2.5 py-2">
+              <div key={e.cat} className={`flex items-center gap-2 rounded-xl border bg-[var(--canvas)] px-2.5 py-2 ${dragIdx === i ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                <button type="button" aria-label={`${e.cat} 순서 이동`} disabled={pending}
+                  onPointerDown={onCatDown(i)} onPointerMove={onCatMove} onPointerUp={onCatUp} onPointerCancel={onCatUp}
+                  className="shrink-0 p-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing disabled:opacity-30"
+                  style={{ touchAction: 'none' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                    <line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" />
+                  </svg>
+                </button>
                 <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tintOf(e.cat).fg }} />
                 <div className="flex flex-col shrink-0 w-20">
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">지출명</span>
@@ -2001,6 +2132,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
                 </div>
               </div>
             ))}
+            </div>
           </div>
 
           {available.length > 0 && (
