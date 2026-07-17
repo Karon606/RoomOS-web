@@ -2620,15 +2620,21 @@ export async function transferLocationStock(data: {
 
     const entries = [...breakdown.entries()].filter(([, q]) => q > 0 || true)   // 0 도 기록(이월 명시)
     const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
-    // 도착지 링크를 같은 트랜잭션에서 보장 — 종전엔 점검만 만들어, 링크 없는 위치로 옮기면
-    // 그 수량이 위치별 화면(row.locations 필터)·보정 폼에서 통째로 안 보였다(오류신고 601303c5, 김치 15kg).
-    // 이동 대상은 영업장 전체 위치(getItemLocationStock)라 미링크 위치 선택이 정상 경로다.
-    // createMany+skipDuplicates = 단일 INSERT ON CONFLICT DO NOTHING — 동시 호출에도 안전(upsert 는 P2002 경합).
-    // 출발지 링크는 잔량 0 이 돼도 유지한다 — 0 도 breakdown 에 남겨 '어디서 빠졌는지'를 보존한다.
+    // 이 이동이 재고를 넣는 위치는 전부 같은 트랜잭션에서 링크를 보장한다 — 종전엔 점검만 만들어,
+    // 링크 없는 위치로 옮기면 그 수량이 위치별 화면(row.locations 필터)·보정 폼에서 통째로 안 보였다
+    // (오류신고 601303c5, 김치 15kg). 이동 대상은 영업장 전체 위치(getItemLocationStock)라 미링크 선택이 정상 경로다.
+    // ⚠️ 양쪽 모두 링크한다. 맞바꿈은 재고를 양쪽에 넣으므로 도착지만 링크하면
+    //   '잔량 0 인 미링크 위치와 맞바꾸기'가 출발지에 새 orphan 을 만든다(fromQty 0 + toQty>0 이면 from 이 toQty 를 받음).
+    //   일반 이동은 fromQty>0 이 강제되어 불변식상 출발지가 이미 링크돼 있으므로 no-op 이다.
+    //   출발지 링크는 잔량 0 이 돼도 유지한다 — 0 도 breakdown 에 남겨 '어디서 빠졌는지'를 보존한다.
     //   비워진 위치를 떼는 것은 위치 닫기(2단계)의 일.
+    // createMany+skipDuplicates = 단일 INSERT ON CONFLICT DO NOTHING — 동시 호출에도 안전(upsert 는 P2002 경합).
     const [, created] = await prisma.$transaction([
       prisma.trackedItemLocation.createMany({
-        data: [{ trackedItemId: data.trackedItemId, storageLocationId: data.toLocationId }],
+        data: [
+          { trackedItemId: data.trackedItemId, storageLocationId: data.toLocationId },
+          { trackedItemId: data.trackedItemId, storageLocationId: data.fromLocationId },
+        ],
         skipDuplicates: true,
       }),
       prisma.stockCheck.create({
