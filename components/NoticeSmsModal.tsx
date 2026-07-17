@@ -6,6 +6,7 @@
 // 예: '4층·5층 + 외창' = 4층이거나 5층이면서 외창인 사람. 실제 발송은 폰 문자앱에서 완료(이력은 '발송 시도').
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -438,7 +439,13 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
         )}
         {templates.length > 0 && (
           <label className="block">
-            <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">공지 템플릿</span>
+            {/* 관리(수정·삭제)는 설정에 있다 — 저장을 여기서 하니 지우는 길도 여기서 보여야 찾는다(운영자 신고 2026-07-17).
+                네이티브 select 라 옵션별 삭제 버튼을 못 달고, 발송 흐름 한복판에 파괴적 동작을 두면 오클릭이 난다. */}
+            <span className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-xs font-medium text-[var(--warm-mid)]">공지 템플릿</span>
+              <Link href="/settings" onClick={onClose}
+                className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">설정에서 관리 ›</Link>
+            </span>
             <select defaultValue=""
               onChange={e => { const t = templates.find(x => x.id === e.target.value); if (t) { setPrevDraft(null); setBody(t.body) } }}
               className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">

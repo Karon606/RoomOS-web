@@ -920,7 +920,25 @@ export default function SettingsForm({
 
         {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
         {isOwner && <ShortStayPolicyCard />}
-        <SmsTemplateCard />
+        <SmsTemplateCard
+          kind="unpaid"
+          title="미납 안내 문자 템플릿"
+          description={<>홈 &lsquo;누적 미납&rsquo;의 [안내문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
+            {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}'}</span></>}
+          emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] {'{이름}'}님, {'{호수}'}호 월 이용료 {'{미납금액}'}원의 납기일({'{납기일}'})이 지났습니다. 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;</>}
+          namePlaceholder="예: 1차 안내"
+          bodyLabel="문자 내용 (변수 그대로 적으면 보낼 때 치환)"
+        />
+        {/* 단체 공지는 배치 전체가 한 본문을 공유해 개인별 치환이 구조적으로 없다 —
+            가이드 §29(개인화 불가 맥락에서 변수 표기 노출 금지)에 따라 안내에 {'{이름}'} 같은 표기를 쓰지 않는다. */}
+        <SmsTemplateCard
+          kind="notice"
+          title="단체 공지 문자 템플릿"
+          description="고객 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
+          emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] 7월 15일(수) 오전 10시부터 12시까지 전 층 수도 점검이 있습니다. 이용에 참고 부탁드립니다.&rdquo;</>}
+          namePlaceholder="예: 수도 점검 공지"
+          bodyLabel="문자 내용"
+        />
         <AiSettingsCard />
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
@@ -2121,19 +2139,29 @@ function AiSettingsCard() {
   )
 }
 
-// 미납 안내 문자 템플릿 카드 — 대시보드 '누적 미납'의 [안내문자]가 이 템플릿을 사용
-// (/docs/stayeum_payment_spec.md Phase 1). 변수는 발송 시점에 자동 치환.
-function SmsTemplateCard() {
+// 문자 템플릿 카드 — kind 로 두 종류를 같은 컴포넌트가 관리(OptionSection 재사용 문법과 동일).
+//  'unpaid' 미납 안내: 대시보드 '누적 미납'의 [안내문자]가 사용. 변수는 발송 시점에 자동 치환.
+//  'notice' 단체 공지: 고객 관리 [단체 공지]가 사용. 배치 전체가 한 본문을 공유해 치환이 구조적으로 없다.
+// 종전엔 'unpaid' 하드코딩이라 공지 템플릿은 목록조차 없어 수정도 삭제도 불가능했다(운영자 신고 2026-07-17).
+function SmsTemplateCard({ kind, title, description, emptyExample, namePlaceholder, bodyLabel }: {
+  kind: 'unpaid' | 'notice'
+  title: string
+  description: React.ReactNode
+  emptyExample: React.ReactNode
+  namePlaceholder: string
+  bodyLabel: string
+}) {
   const [list, setList] = useState<SmsTemplateRow[] | null>(null)
   const [edit, setEdit] = useState<{ id?: string; name: string; body: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { getSmsTemplates().then(setList).catch(() => setList([])) }, [])
+  useEffect(() => { getSmsTemplates(kind).then(setList).catch(() => setList([])) }, [kind])
 
-  const reload = () => getSmsTemplates().then(setList).catch(() => {})
+  const reload = () => getSmsTemplates(kind).then(setList).catch(() => {})
   const save = async () => {
     if (!edit) return
     setBusy(true)
-    const res = await saveSmsTemplate(edit)
+    // kind 는 신규 생성에만 반영된다(서버는 id 있으면 name·body 만 update). 넘겨도 수정 경로엔 무해.
+    const res = await saveSmsTemplate({ ...edit, kind })
     setBusy(false)
     if (!res.ok) { pushToast('error', res.error); return }
     pushToast('success', '템플릿 저장됨')
@@ -2152,18 +2180,15 @@ function SmsTemplateCard() {
 
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
-      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미납 안내 문자 템플릿</h2>
-      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-        홈 &lsquo;누적 미납&rsquo;의 [안내문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
-        {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}'}</span>
-      </p>
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">{title}</h2>
+      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">{description}</p>
       {!list ? (
         <SkeletonRows rows={3} />
       ) : (
         <div className="space-y-2.5">
           {list.length === 0 && !edit && (
             <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5">
-              아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] {'{이름}'}님, {'{호수}'}호 월 이용료 {'{미납금액}'}원의 납기일({'{납기일}'})이 지났습니다. 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;
+              {emptyExample}
             </p>
           )}
           <ul className="space-y-1.5">
@@ -2184,11 +2209,11 @@ function SmsTemplateCard() {
             <div className="space-y-2 rounded-xl border border-[var(--coral)]/40 bg-[var(--canvas)]/50 p-3">
               <label className="block">
                 <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">템플릿 이름</span>
-                <input value={edit.name} disabled={busy} placeholder="예: 1차 안내"
+                <input value={edit.name} disabled={busy} placeholder={namePlaceholder}
                   onChange={e => setEdit(v => v ? { ...v, name: e.target.value } : v)} className={inputCls} />
               </label>
               <label className="block">
-                <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">문자 내용 (변수 그대로 적으면 보낼 때 치환)</span>
+                <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">{bodyLabel}</span>
                 <textarea value={edit.body} disabled={busy} rows={5}
                   onChange={e => setEdit(v => v ? { ...v, body: e.target.value } : v)}
                   className={`${inputCls} leading-relaxed`} />
