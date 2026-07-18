@@ -62,31 +62,27 @@ export async function issueContractShareLink(tenantId: string): Promise<
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
     const propertyName = property?.name ?? ''
 
-    // 활성 링크 재사용 — 같은 계약(leaseTermId) 대상만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
-    const existing = await prisma.contractShareLink.findFirst({
-      where: {
-        tenantId, propertyId, leaseTermId: snapshot.lease.id,
-        closedAt: null, lockedAt: null, expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (existing) {
-      return { ok: true, link: serializeLink(existing, await buildShareUrl(existing.token)), phone: snapshot.tenant.primaryPhone, propertyName }
-    }
-
-    const token = randomBytes(32).toString('base64url')
-    const created = await prisma.contractShareLink.create({
-      data: {
-        token,
-        propertyId,
-        tenantId,
-        leaseTermId: snapshot.lease.id,
-        templateSnapshot: snapshot as unknown as object,
-        expiresAt: new Date(Date.now() + SHARE_TTL_MS),
-        createdBy: userId,
-      },
-    })
-    return { ok: true, link: serializeLink(created, await buildShareUrl(token)), phone: snapshot.tenant.primaryPhone, propertyName }
+    // 활성 링크 재사용(getOrCreate) — 같은 계약(leaseTermId)만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
+    // Serializable 트랜잭션으로 find+create 를 묶는다 — 발급 연타 시 둘 다 '없음'을 보고 활성 링크가
+    // 2개 생기던 경합 차단(적대검증 P2). 부분 유니크 제약은 자연 만료 후 재발급을 막아 부적합.
+    const leaseTermId = snapshot.lease.id
+    const link = await prisma.$transaction(async tx => {
+      const existing = await tx.contractShareLink.findFirst({
+        where: { tenantId, propertyId, leaseTermId, closedAt: null, lockedAt: null, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (existing) return existing
+      return tx.contractShareLink.create({
+        data: {
+          token: randomBytes(32).toString('base64url'),
+          propertyId, tenantId, leaseTermId,
+          templateSnapshot: snapshot as unknown as object,
+          expiresAt: new Date(Date.now() + SHARE_TTL_MS),
+          createdBy: userId,
+        },
+      })
+    }, { isolationLevel: 'Serializable' })
+    return { ok: true, link: serializeLink(link, await buildShareUrl(link.token)), phone: snapshot.tenant.primaryPhone, propertyName }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '링크 발급에 실패했습니다.' }
@@ -99,6 +95,9 @@ export async function getContractShareState(tenantId: string): Promise<
   | { ok: false; error: string }
 > {
   try {
+    // requireEdit — 링크 상태 조회가 토큰(URL)과 주 연락처를 반환하므로 발급 권한과 동일 게이트.
+    // 일반 멤버(제한 스태프 포함)가 토큰을 얻어 /sign 스냅샷의 금액을 열람하는 우회 차단(적대검증 P2).
+    await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const [link, tenant, property] = await Promise.all([
       prisma.contractShareLink.findFirst({

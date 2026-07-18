@@ -31,16 +31,24 @@ export async function verifyShareBirthdate(
     const input = typeof ymd === 'string' ? ymd.trim() : ''
 
     if (!expected || expected !== input) {
-      const updated = await prisma.contractShareLink.update({
-        where: { id: link.id },
+      // 원자적 조건부 증가 — birthdateAttempts < MAX 인 행만 갱신(적대검증 P1: read-then-increment 경합으로
+      // 동시 요청이 잠금 전에 5회를 넘겨 전수 대입하던 창을 없앤다). 갱신행 0 = 이미 한도 도달 = 잠금.
+      const bumped = await prisma.contractShareLink.updateMany({
+        where: { id: link.id, birthdateAttempts: { lt: MAX_ATTEMPTS } },
         data: { birthdateAttempts: { increment: 1 } },
-        select: { birthdateAttempts: true },
       })
-      if (updated.birthdateAttempts >= MAX_ATTEMPTS) {
-        await prisma.contractShareLink.update({ where: { id: link.id }, data: { lockedAt: new Date() } })
+      if (bumped.count === 0) {
+        // 이 시도로 한도에 처음 닿았거나 이미 초과 — lockedAt 을 멱등 세팅(아직 null 인 것만)
+        await prisma.contractShareLink.updateMany({ where: { id: link.id, lockedAt: null }, data: { lockedAt: new Date() } })
         return { ok: false, error: '입력 오류가 5회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.' }
       }
-      return { ok: false, error: `생년월일이 일치하지 않습니다. 남은 시도 ${MAX_ATTEMPTS - updated.birthdateAttempts}회.` }
+      const cur = await prisma.contractShareLink.findUnique({ where: { id: link.id }, select: { birthdateAttempts: true } })
+      const used = cur?.birthdateAttempts ?? MAX_ATTEMPTS
+      if (used >= MAX_ATTEMPTS) {
+        await prisma.contractShareLink.updateMany({ where: { id: link.id, lockedAt: null }, data: { lockedAt: new Date() } })
+        return { ok: false, error: '입력 오류가 5회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.' }
+      }
+      return { ok: false, error: `생년월일이 일치하지 않습니다. 남은 시도 ${MAX_ATTEMPTS - used}회.` }
     }
 
     // 통과 — httpOnly HMAC 쿠키 발급. 유지시간 = min(2시간, 링크 남은 TTL)
@@ -75,6 +83,17 @@ export async function submitRemoteSignature(
     if (target !== 'contract' && target !== 'disposal') return { ok: false, error: '잘못된 요청입니다.' }
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
       return { ok: false, error: '서명 이미지가 올바르지 않습니다.' }
+    }
+    // 서명 이미지 크기 상한(적대검증 P2) — 세션 보유자가 최대 10MB 임의 문자열을 저장·PDF 에 투입하는 것 차단.
+    // 손글씨 서명은 수백 KB 이내라 1MB 여유 상한. base64 는 원본의 약 1.37배.
+    if (dataUrl.length > 1_400_000) return { ok: false, error: '서명 이미지가 너무 큽니다. 다시 서명해 주세요.' }
+
+    // 잔여 소지품 동의서 서명은 그 영업장이 동의서를 켠 경우에만(적대검증 P2 — 서버 검사).
+    // UI 는 이미 enabled 일 때만 패드를 그리지만, 액션 직접 호출로 비활성 영업장에 데이터가 쌓이는 것 차단.
+    if (target === 'disposal') {
+      const prop = await prisma.property.findUnique({ where: { id: link.propertyId }, select: { disposalConsentTemplate: true } })
+      const dc = prop?.disposalConsentTemplate as { enabled?: boolean } | null
+      if (!dc?.enabled) return { ok: false, error: '이 영업장은 잔여 소지품 동의서를 사용하지 않습니다.' }
     }
 
     const now = new Date()
