@@ -1467,8 +1467,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
       {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
       <div className="flex justify-end items-center gap-2">
-        {/* 영수증 촬영 — 찍어올리기 대기 큐 제거 후 단일 진입점(2026-07-19 운영자 승인). 정식 지출 폼 OCR로 직행 */}
-        <Btn type="button" variant="secondary" size="md" onClick={() => router.push('/finance?scan=1')}>영수증 촬영</Btn>
         <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>단기 요금 계산</Btn>
         <MonthSelector />
       </div>
