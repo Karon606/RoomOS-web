@@ -506,7 +506,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         // 순서 편집 모드 — 카테고리 그룹별 컴팩트 1열 행. 행 전체를 잡아 끌어 그룹 안에서 순서 변경.
         // 탭·검색 없이 전 그룹을 그대로 펼쳐 각 그룹이 항상 전체 품목이라 부분 저장이 원천 불가.
         <>
-        <p className="text-xs text-[var(--warm-muted)]">행을 잡아 끌어 순서를 바꿉니다. 완료를 누르면 편집이 끝납니다.</p>
+        <p className="text-xs text-[var(--warm-muted)]">오른쪽 손잡이를 잡아 끌어 순서를 바꿉니다. 완료를 누르면 편집이 끝납니다.</p>
         {groupedAll.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
@@ -514,18 +514,23 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               {g.rows.map((r, idx) => {
                 const unit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
                 return (
+                  {/* 드래그는 오른쪽 핸들 버튼에서만 — 행 몸통에 걸면 스크롤하려는 터치가 순서를 바꿔버린다(운영자 실사용 지적 2026-07-18).
+                      핸들 히트 영역은 44pt(가이드 §09) — 이전 라운드의 '작아서 겨냥해야 하는 핸들' 문제는 크기로 해소. */}
                   <div key={r.id}
-                    onPointerDown={onItemHandleDown(g.cat, idx, g.rows.map(x => x.id))}
-                    onPointerMove={onItemHandleMove}
-                    onPointerUp={onItemHandleUp}
-                    onPointerCancel={onItemHandleUp}
-                    style={{ touchAction: 'none' }}
-                    className={`flex items-center gap-2.5 min-h-[44px] rounded-xl border bg-[var(--cream)] px-3.5 py-2 cursor-grab active:cursor-grabbing ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                    className={`flex items-center gap-1.5 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-3.5 pr-1 py-1 ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--warm-dark)]">{r.label}</span>
                     <span className="shrink-0 mono tnum text-[0.71875rem] text-[var(--warm-muted)]">{fmtQty(r.currentStock, unit)}</span>
-                    <svg className="shrink-0 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
-                    </svg>
+                    <button type="button" aria-label={`${r.label} 순서 이동`}
+                      onPointerDown={onItemHandleDown(g.cat, idx, g.rows.map(x => x.id))}
+                      onPointerMove={onItemHandleMove}
+                      onPointerUp={onItemHandleUp}
+                      onPointerCancel={onItemHandleUp}
+                      style={{ touchAction: 'none' }}
+                      className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                        <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                      </svg>
+                    </button>
                   </div>
                 )
               })}
