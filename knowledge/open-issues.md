@@ -34,3 +34,8 @@
 - updatePayment propertyId 미검증(rooms/actions.ts findUnique만) — 신규 setCashReceiptIssued는 검증하나 기존 액션은 미보강(멀티테넌트).
 - deleteExpense의 import replace 경로(app/api/import/route.ts)는 여전히 하드삭제·주문 정리 미호출(기존 결함, undo 범위 밖).
 - receivedAt 편집 경로: updateExpenseFromInventory에서 receivedAt null → 재설정 시 자동 점검 미재생성(재고 과소, §4 설계 중 발견).
+
+## 재고 품목 정렬 프리셋 (2026-07-18 운영자 메모, 보류)
+순서 편집 모드(수동 드래그)를 만들고 **사용해 본 뒤 필요하면** 진행. 후보: 재고수량순·재고추가순·가나다순 등 여러 정렬 기준 선택.
+- '재고 적은 순'은 당장은 불필요 판정 — 품목별로 기준 수량이 달라 절대량 비교가 의미 없음(운영자).
+- 진행 시 참고: 정렬 기준은 표시 전용이어야 하며 수동 sortOrder(2026-07-18 도입)와 공존 설계 필요.
