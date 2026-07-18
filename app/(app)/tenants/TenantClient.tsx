@@ -2640,7 +2640,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   }
   const [dueDayRaw, setDueDayRaw] = useState(initDueDay().raw)
   const [dueDayDisp, setDueDayDisp] = useState(initDueDay().disp)
-  const [moveInDateVal, setMoveInDateVal] = useState(toDateInput(lease?.moveInDate))
+  // 신규 등록은 입주일 기본값을 오늘로 프리필(청구 상태 저장 시 필수 — 미납 오탐 방지). 편집은 기존값 유지.
+  const [moveInDateVal, setMoveInDateVal] = useState(tenant ? toDateInput(lease?.moveInDate) : toDateInput(new Date()))
 
   const applyDueDay = (input: string) => {
     const t = input.trim()

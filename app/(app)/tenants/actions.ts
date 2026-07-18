@@ -140,6 +140,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
     if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
   }
+  // 청구 발생 상태(unpaid.ts unpaidLeasesRaw 필터와 동일: ACTIVE·CHECKOUT_PENDING·NON_RESIDENT + rentAmount>0)로
+  // 저장할 땐 입주일 필수. 비우면 leaseStartMonth가 인수 컷오프월로 앵커되어 과거월이 한꺼번에 미납으로 잡힌다.
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status) && rentAmount > 0 && !moveInDate) {
+    return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
+  }
 
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
   const existingLeases = roomId ? await prisma.leaseTerm.findMany({
@@ -316,6 +321,11 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     // 잠시 '미지정'으로 파킹했다가 서로의 방으로 재지정하기 위함(새 기능 없이). 신규 등록(addTenant)은 그대로 필수.
     if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
     if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
+  }
+  // 청구 발생 상태(unpaid.ts unpaidLeasesRaw 필터와 동일: ACTIVE·CHECKOUT_PENDING·NON_RESIDENT + rentAmount>0)로
+  // 저장/전환할 땐 입주일 필수. 비우면 leaseStartMonth가 인수 컷오프월로 앵커되어 과거월이 미납으로 잡힌다.
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status) && rentAmount > 0 && !moveInDate) {
+    return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
   }
 
   const currentLease = await prisma.leaseTerm.findUnique({
@@ -884,6 +894,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       where: { id: leaseTermId },
       select: {
         id: true, status: true, tenantId: true, roomId: true, reservationConfirmedAt: true,
+        rentAmount: true, moveInDate: true,
         room: { select: { id: true, roomNo: true, isVacant: true } },
       },
     })
@@ -892,6 +903,12 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       return { ok: false, error: '예약 확정 상태가 아닙니다.' }
     }
     if (!lease.roomId || !lease.room) return { ok: false, error: '확정된 호실 정보가 없습니다.' }
+
+    // 백스톱 — ACTIVE(청구 상태)로 확정하는데 rentAmount>0 이면서 moveInDate가 비면 거부.
+    // "확정예약은 moveInDate 있다"는 불변식에만 의존하지 않고 최종 저장값을 직접 검증한다.
+    if (lease.rentAmount > 0 && !lease.moveInDate) {
+      return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
+    }
 
     // 호실이 공실이 아니면 차단 (다른 거주자가 있는지 확인 — 본인 lease 제외)
     if (!lease.room.isVacant) {
@@ -1038,6 +1055,16 @@ export async function applyStatusTransition(input: {
       const rentOk    = input.rentAmount != null ? input.rentAmount > 0 : lease.rentAmount > 0
       const moveInOk  = input.moveInDate ? true : lease.moveInDate != null
       if (!rentOk || !moveInOk) return { ok: false, error: '예약 확정에는 월 이용료와 입주 희망일이 필요합니다.' }
+    }
+
+    // 백스톱 — 최종 저장값 기준으로 청구 상태(ACTIVE·CHECKOUT_PENDING·NON_RESIDENT) + rentAmount>0 인데
+    // moveInDate가 비면 거부(addTenant/updateTenant 가드와 동일 정책). 무료방 등록 후 상태전환에서 유료·비거주로
+    // 넘겨 입주일 없는 청구 계약이 생기면 unpaid.ts가 인수월~오늘 전월을 미납으로 오탐한다.
+    const finalStatus     = input.toStatus
+    const finalRentAmount = input.rentAmount ?? lease.rentAmount
+    const finalMoveInDate = input.moveInDate ?? lease.moveInDate
+    if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(finalStatus) && finalRentAmount > 0 && !finalMoveInDate) {
+      return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
     }
 
     const data: Record<string, unknown> = { status: input.toStatus as LeaseStatus }
