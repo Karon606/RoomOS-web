@@ -80,6 +80,10 @@ function IcoRequests() {
 function IcoFloorPlan() {
   return <svg {...ico}><path d="M3.5 6.2 9 4l6 2.2 5.5-2.2v13.8L15 20l-6-2.2L3.5 20z"/><path d="M9 4v13.8"/><path d="M15 6.2V20"/></svg>
 }
+// 찍어 올리기 — 카메라 (Lab 실험 기능)
+function IcoSnap() {
+  return <svg {...ico}><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.5-2.5h5L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></svg>
+}
 // 환경설정 — Cog
 function IcoSettings() {
   return <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6"/></svg>
@@ -131,6 +135,8 @@ const NAV_GROUPS = [
     items: [
       { href: '/floor-plan', label: '도면', Icon: IcoFloorPlan },
       { href: '/checklist', label: '체크리스트', Icon: IcoChecklist },
+      // 찍어 올리기 — 대시보드에서 Lab 으로 이전(실험 기능, 운영자 지시 2026-07-19)
+      { href: '/snap-upload', label: '찍어 올리기', Icon: IcoSnap },
     ],
   },
   {

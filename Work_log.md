@@ -2363,3 +2363,8 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 8dba0177: 대표 이미지 = 첫 장(photos[0]) 규칙 유지, 스키마 무변경. reorderRoomPhotos(전체 배열 + 집합 일치 검증 + 트랜잭션, reorderAssetItems 문법). UI = 비품 '순서 편집' 정본 이식(1열 행 + 우측 44pt 손잡이 드래그, 낙관 반영·실패 원복) + 라이트박스 '대표로 설정'(맨 앞 이동 + 적용취소 토스트) + 그리드 첫 장 '대표' 배지.
 - 보안 보강(운영자 승인, 병합): 사진 액션 3종(createPhotoUploadSession·finalizeRoomPhoto·deleteRoomPhoto) 영업장 스코프 검증 추가, pendingReceipt 업로드·승인·거절 requireEdit 추가(같은 파일 retry·finalize와 동일 기준).
 - 검증: tsc 소스 오류 0, 린트 신규 지적은 새 액션의 기존 파일 관용구(`err as any`) 1건뿐. 실데이터 sortOrder 분포 확인(동순위 없음, 0..n-1 재기록과 호환).
+
+## 2026-07-19 (2) — 찍어 올리기 스테이음 Lab 이전 (운영자 지시)
+- 운영자 원비전 확인: 뭘 찍든 인지·처리(예: 찬장 라면 사진에서 개수 세어 재고 반영). 솔직 평가 = 현행 AI로 개수 인식 신뢰도 부족(가림·적층 오차), 자동 반영 무리 → 운영자 지시대로 홈에서 빼고 Lab 보존, 아이디어 확정 시 재개.
+- app/(app)/snap-upload/page.tsx 신설(requireRouteAccess 가드, 제한 스태프는 화이트리스트 기본 차단으로 자동 미노출), 사이드바 '스테이음 Lab' 그룹에 '찍어 올리기' 항목 추가(IcoSnap 카메라). PendingReceiptSection 재마운트라 코드 이동 없음.
+- 홈 '영수증 촬영' 버튼(지출 폼 직행)은 유지 — Lab 이전 대상은 AI 분류 대기 큐.

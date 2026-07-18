@@ -1477,8 +1477,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
 
-      {/* 찍어 올리기 · 등록 대기 큐는 2026-07-19 휴면 처리 — 실사용 7주 2건, 지출 폼 OCR로 일원화.
-          부활 시 components/dashboard/PendingReceiptSection 재마운트(서버 액션·데이터 보존됨). */}
+      {/* 찍어 올리기 · 등록 대기 큐는 홈에서 제외 — 스테이음 Lab(/snap-upload)으로 이전(운영자 지시 2026-07-19).
+          원래 비전(물건 사진 개수 인식 → 재고 반영)은 신뢰도 부족으로 보류, 아이디어 확정 시 Lab에서 재개. */}
 
       {/* KPI 용어 한 줄 설명 — 라벨 옆 ? 탭(모바일 title 힌트 대체, 사용성 감사 F3) */}
       <Modal open={!!kpiHelp} onClose={() => setKpiHelp(null)} title={kpiHelp?.title} width="xs">
