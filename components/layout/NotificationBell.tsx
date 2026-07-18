@@ -20,6 +20,7 @@ const DOT: Record<AlertCategory, string> = {
   tour:     'var(--viz-2)',
   lowstock: 'var(--viz-4)',
   receipt:  'var(--ink-m)',
+  signed:   'var(--success)',
 }
 
 const READ_KEY = 'stayeum_alert_read'

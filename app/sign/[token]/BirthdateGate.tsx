@@ -45,7 +45,7 @@ export default function BirthdateGate({ token }: { token: string }) {
             value={value}
             onChange={e => setValue(e.target.value)}
             required
-            style={{ display: 'block', width: '100%', marginTop: 6, padding: '10px 12px', fontSize: 15, border: '1px solid #D8CFC4', borderRadius: 10, background: '#fff', color: '#1F1A17', boxSizing: 'border-box' }}
+            style={{ display: 'block', width: '100%', minWidth: 0, marginTop: 6, padding: '10px 12px', fontSize: 15, border: '1px solid #D8CFC4', borderRadius: 10, background: '#fff', color: '#1F1A17', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' }}
           />
         </label>
         {error && (

@@ -15,7 +15,7 @@ import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
 
-export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact'
+export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed'
 
 export type AlertItem = {
   id: string            // 목록 key (고유)
@@ -35,7 +35,7 @@ export type AlertItem = {
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
   unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
-  contact: '연락할 때',
+  contact: '연락할 때', signed: '서명 완료',
 }
 
 // 금액 표기는 정본 fmtWon 사용(감사 B4)
@@ -49,7 +49,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const trackedCats = await getTrackedCategories(propertyId)
   const contactLeadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
 
-  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases] = await Promise.all([
+  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
     // 퇴실 — 당일 + 경과(미처리) + 단기 자동 전환 D-1(내일): 처리 전까지 지속(운영자 확정 2026-07-11)
@@ -89,6 +89,21 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
         ],
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
+    }),
+    // 원격 서명 완료 — 서명 수신(signedAt) 후 정식 계약서(GENERATED)가 아직 발급되지 않은 링크. 발급 시 자동 소멸.
+    // closedAt: null — 운영자가 서명된 링크를 닫으면(계약 무산) 알림도 해소.
+    prisma.contractShareLink.findMany({
+      where: { propertyId, signedAt: { not: null }, closedAt: null },
+      select: {
+        id: true, tenantId: true, leaseTermId: true, signedAt: true,
+        leaseTerm: { select: { room: { select: { id: true, roomNo: true } } } },
+        tenant: { select: { id: true, name: true } },
+      },
+    }),
+    // 해소 판정용 — 발급된 정식 계약서(GENERATED, 미삭제). 같은 계약(leaseTermId)의 서명 이후 발급본이 있으면 제외.
+    prisma.contractFile.findMany({
+      where: { propertyId, source: 'GENERATED', deletedAt: null },
+      select: { leaseTermId: true, createdAt: true },
     }),
   ])
 
@@ -190,16 +205,39 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     })
   }
 
+  // 원격 서명 완료 — 서명본 수신 후 정식 계약서 발급 전. 발급(GENERATED)되면 소멸, 파일 삭제 시 재출현.
+  const genFilesByLease = new Map<string, Date[]>()
+  for (const f of generatedFiles) {
+    if (!f.leaseTermId) continue   // 특정 계약에 귀속되지 않은 발급본은 서명 링크 해소 근거로 쓰지 않음
+    const arr = genFilesByLease.get(f.leaseTermId) ?? []
+    arr.push(f.createdAt)
+    genFilesByLease.set(f.leaseTermId, arr)
+  }
+  for (const link of signedLinks) {
+    if (!link.signedAt) continue
+    // 같은 계약(leaseTermId)의 서명 이후 발급본만 해소 인정 — 같은 입주자의 다른 계약 발급본이 오해소하지 않게
+    const resolved = (genFilesByLease.get(link.leaseTermId) ?? []).some(c => c.getTime() >= link.signedAt!.getTime())
+    if (resolved) continue
+    items.push({
+      id: `signed-${link.id}`, category: 'signed',
+      title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
+      subtitle: '원격 서명 완료 · 계약서 발급 필요',
+      tenantId: link.tenant.id, leaseTermId: link.leaseTermId,
+      roomId: link.leaseTerm.room?.id ?? null, roomNo: link.leaseTerm.room?.roomNo, tenantName: link.tenant.name,
+      urgency: 820,
+    })
+  }
+
   items.sort((a, b) => b.urgency - a.urgency)
   return items
 }
 
 /** cron 메시지용 — 카테고리별 건수 + 합계. computeAlerts 와 같은 소스라 종 뱃지와 일치. */
 export function summarizeAlerts(items: AlertItem[]): { total: number; parts: string[]; byCategory: Record<AlertCategory, number> } {
-  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0 } as Record<AlertCategory, number>
+  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, signed: 0 } as Record<AlertCategory, number>
   for (const it of items) byCategory[it.category]++
-  // 푸시 메시지 순서: 미납 → 퇴실 → 투어 → 입주 → 재고 → 수령
-  const order: AlertCategory[] = ['unpaid', 'checkout', 'tour', 'movein', 'lowstock', 'receipt']
+  // 푸시 메시지 순서: 미납 → 퇴실 → 서명 완료 → 투어 → 입주 → 재고 → 수령
+  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'tour', 'movein', 'lowstock', 'receipt']
   const parts = order.filter(c => byCategory[c] > 0).map(c => `${CATEGORY_LABEL[c]} ${byCategory[c]}`)
   return { total: items.length, parts, byCategory }
 }
