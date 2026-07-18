@@ -513,9 +513,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <div data-item-drag-list className="space-y-1.5">
               {g.rows.map((r, idx) => {
                 const unit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+                // 드래그는 오른쪽 핸들 버튼에서만 — 행 몸통에 걸면 스크롤하려는 터치가 순서를 바꿔버린다(운영자 실사용 지적 2026-07-18).
+                // 핸들 히트 영역은 44pt(가이드 §09) — 이전 라운드의 '작아서 겨냥해야 하는 핸들' 문제는 크기로 해소.
                 return (
-                  {/* 드래그는 오른쪽 핸들 버튼에서만 — 행 몸통에 걸면 스크롤하려는 터치가 순서를 바꿔버린다(운영자 실사용 지적 2026-07-18).
-                      핸들 히트 영역은 44pt(가이드 §09) — 이전 라운드의 '작아서 겨냥해야 하는 핸들' 문제는 크기로 해소. */}
                   <div key={r.id}
                     className={`flex items-center gap-1.5 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-3.5 pr-1 py-1 ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--warm-dark)]">{r.label}</span>
