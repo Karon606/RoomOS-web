@@ -1576,6 +1576,15 @@ export default function FinanceClient({
   }, [])
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
+  // 홈 '영수증 촬영' 딥링크(?scan=1) — 대시보드 찍어올리기 큐 휴면 후 단일 진입점(2026-07-19).
+  // 지출 폼을 바로 열어 '영수증 첨부 · 자동 입력'으로 이어지게 한다.
+  const scanSeedRef = useRef(false)
+  useEffect(() => {
+    if (globalSeedParams.get('scan') !== '1' || scanSeedRef.current) return
+    scanSeedRef.current = true
+    openAddExpense()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)

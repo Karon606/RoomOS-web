@@ -2355,3 +2355,11 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 수정: 단일 경로 specText 저장 + 폼 hidden specText 추가 + 단일 경로도 captureItemSpecOptions(칩 사전 적립). 데이터 보정: 해당 행 specText='싱글/스카이블루'(detail 원문 그대로, 되돌리기=null 복원) + 칩 사전 upsert.
 - 부수 정리(승인): 다품목 경로의 captureItemSpecOptions·seedTrackedItemsFromExpenses 중복 2회 호출 제거.
 - 잔여 관찰: 단일 경로는 unitBasis도 저장 안 함(다품목은 저장) — 증상 미보고라 미수정, 재발 시 같은 패턴.
+
+## 2026-07-19 — 오류신고 5단계 프로세스 1회차: 찍어올리기 방향 결정 + 호실 사진 순서 (전문가 패널 4인)
+- 처리 신고 2건: 구두(찍어올리기 "?" 404 + 자동등록 아님) / 8dba0177(호실 메인이미지·사진 순서 기능 부재). 패널 = UX/UI, 디자인가이드 웹디자이너, 백엔드, 프로덕트 전략가. 계획 보고 후 운영자 승인 3건(제거안·신고2안·보안 병합) 획득, 승인 전 코드 수정 0.
+- 찍어올리기 "?"/404 원인: 7/17 권한 감사 스크립트가 남긴 imageUrl="TMP-AUDIT-DELETE-ME" 테스트 잔재 행(driveFileId·parsedJson 공백). rejected 처리(undo=pending 복귀 1줄). 교훈: 감사·테스트 스크립트가 프로덕션 테이블에 쓰면 트랜잭션 롤백 또는 즉시 삭제를 스크립트 안에 포함할 것.
+- 찍어올리기 방향(운영자 승인, 제거안): 실사용 7주 성공 2건·unknown 50%로 자동 등록 근거 부족. 대시보드 대기 큐 섹션 휴면(마운트만 제거, PendingReceiptSection·서버 액션·데이터 보존), 툴바에 '영수증 촬영' 버튼 신설 → /finance?scan=1 딥링크가 지출 폼 즉시 오픈. 부활 조건: 다직원 검토함 수요.
+- 8dba0177: 대표 이미지 = 첫 장(photos[0]) 규칙 유지, 스키마 무변경. reorderRoomPhotos(전체 배열 + 집합 일치 검증 + 트랜잭션, reorderAssetItems 문법). UI = 비품 '순서 편집' 정본 이식(1열 행 + 우측 44pt 손잡이 드래그, 낙관 반영·실패 원복) + 라이트박스 '대표로 설정'(맨 앞 이동 + 적용취소 토스트) + 그리드 첫 장 '대표' 배지.
+- 보안 보강(운영자 승인, 병합): 사진 액션 3종(createPhotoUploadSession·finalizeRoomPhoto·deleteRoomPhoto) 영업장 스코프 검증 추가, pendingReceipt 업로드·승인·거절 requireEdit 추가(같은 파일 retry·finalize와 동일 기준).
+- 검증: tsc 소스 오류 0, 린트 신규 지적은 새 액션의 기존 파일 관용구(`err as any`) 1건뿐. 실데이터 sortOrder 분포 확인(동순위 없음, 0..n-1 재기록과 호환).

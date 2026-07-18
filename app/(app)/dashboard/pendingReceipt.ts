@@ -108,6 +108,7 @@ async function applyLearnedItemAlias(propertyId: string, inferred: GeminiResult)
 // 사진 업로드 → Drive 보관 + AI 분류 → pending row.
 export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
+    await requireEdit()   // 권한 비대칭 보강(2026-07-19 패널 검증) — 같은 파일 retry·finalize와 동일 기준
     const userId = await getUserId()
     const propertyId = await getPropertyId()
     const file = formData.get('image') as File
@@ -244,7 +245,7 @@ export async function approvePendingReceipt(
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await getUserId()
+    await requireEdit()   // 권한 비대칭 보강(2026-07-19 패널 검증) — 승인 = 지출 생성이라 편집 권한 필수
     const propertyId = await getPropertyId()
     if (!final.date || final.amount == null || !final.category) {
       return { ok: false, error: '날짜·금액·카테고리는 필수입니다.' }
@@ -395,7 +396,7 @@ export async function finalizePendingReceipt(id: string): Promise<{ ok: boolean 
 
 export async function rejectPendingReceipt(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await getUserId()
+    await requireEdit()   // 권한 비대칭 보강(2026-07-19 패널 검증)
     const propertyId = await getPropertyId()
     await prisma.pendingReceipt.updateMany({
       where: { id, propertyId, status: 'pending' },

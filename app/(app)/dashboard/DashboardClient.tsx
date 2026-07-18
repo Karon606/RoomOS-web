@@ -14,7 +14,6 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
-import { PendingReceiptSection } from '@/components/dashboard/PendingReceiptSection'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import nextDynamic from 'next/dynamic'
@@ -1468,6 +1467,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
       {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
       <div className="flex justify-end items-center gap-2">
+        {/* 영수증 촬영 — 찍어올리기 대기 큐 제거 후 단일 진입점(2026-07-19 운영자 승인). 정식 지출 폼 OCR로 직행 */}
+        <Btn type="button" variant="secondary" size="md" onClick={() => router.push('/finance?scan=1')}>영수증 촬영</Btn>
         <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>단기 요금 계산</Btn>
         <MonthSelector />
       </div>
@@ -1476,8 +1477,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
 
-      {/* ── 찍어 올리기 + 등록 대기 (영수증/물품 AI 분류) ─────────────────────────── */}
-      <PendingReceiptSection />
+      {/* 찍어 올리기 · 등록 대기 큐는 2026-07-19 휴면 처리 — 실사용 7주 2건, 지출 폼 OCR로 일원화.
+          부활 시 components/dashboard/PendingReceiptSection 재마운트(서버 액션·데이터 보존됨). */}
 
       {/* KPI 용어 한 줄 설명 — 라벨 옆 ? 탭(모바일 title 힌트 대체, 사용성 감사 F3) */}
       <Modal open={!!kpiHelp} onClose={() => setKpiHelp(null)} title={kpiHelp?.title} width="xs">
