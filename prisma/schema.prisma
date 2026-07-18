@@ -205,6 +205,7 @@ model Property {
   depositRefunds      DepositRefund[]
   contractFiles       ContractFile[]
   contractShareLinks  ContractShareLink[]
+  assetItemOrders     AssetItemOrder[]
   residenceCertFiles  ResidenceCertFile[]
   rentReceiptFiles    RentReceiptFile[]
   itemNameAliases     ItemNameAlias[]
@@ -1549,4 +1550,19 @@ model ErrorReport {
 
   @@index([status, createdAt])
   @@map("error_reports")
+}
+
+// 비품 품목 표시 순서 — (propertyId, category, itemLabel) 별 사용자 지정 순서(순서 편집, 계산 무관)
+model AssetItemOrder {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category   String
+  itemLabel  String
+  sortOrder  Int
+  createdAt  DateTime @default(now())
+
+  @@unique([propertyId, category, itemLabel])
+  @@index([propertyId, category])
+  @@map("asset_item_order")
 }

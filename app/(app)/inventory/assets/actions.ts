@@ -74,8 +74,27 @@ type RawAsset = {
   isService: boolean               // 서비스·무형(시공비 등) — 방별 비용에 포함, 카드에 칩 표시
 }
 
-// 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
-function aggregateAssets(list: RawAsset[]): AssetItem[] {
+// 비품·자재 Expense 필터 — 소모품(추적)·배송비 제외, 서비스·무형은 배정된 것만.
+// getDurableItems 와 reorderAssetItems(품목 순서 전체성 검증)가 같은 모집단을 봐야 해 한 곳으로 묶는다.
+function durableExpenseWhere(propertyId: string, trackedCats: string[]): Prisma.ExpenseWhereInput {
+  return {
+    propertyId,
+    itemLabel: { not: null },
+    isShipping: false,
+    category: { notIn: trackedCats },
+    // 물품(내구재)은 전부, 서비스·무형은 방/공용부에 귀속된 것만(방별 투자 비용 복원, 신고 54fb838b)
+    OR: [
+      { excludeFromInventory: false },
+      { excludeFromInventory: true, roomId: { not: null } },
+      { excludeFromInventory: true, assignedLocationId: { not: null } },
+    ],
+  }
+}
+
+// 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계.
+// orderMap = (category␟itemLabel) → sortOrder(순서 편집). 1차 키 = 품목 순서(있으면 오름차순),
+// 그다음 기존 구매일 최신순. 같은 라벨의 여러 규격·위치 카드는 같은 sortOrder 라 그 안에서 기존 순서.
+function aggregateAssets(list: RawAsset[], orderMap?: Map<string, number>): AssetItem[] {
   const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
   for (const r of list) {
     const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : ''].join('␟')
@@ -102,7 +121,12 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
-  return out.sort((a, b) => b.date.localeCompare(a.date))
+  const orderRank = (i: AssetItem) => orderMap?.get(`${i.category}␟${i.itemLabel}`) ?? Number.MAX_SAFE_INTEGER
+  return out.sort((a, b) => {
+    const ra = orderRank(a), rb = orderRank(b)
+    if (ra !== rb) return ra - rb
+    return b.date.localeCompare(a.date)
+  })
 }
 
 // 비품·자재 = 품목으로 입력된 지출 중 소모품(재고 추적 카테고리)·배송비를 제외한 내구재.
@@ -112,18 +136,7 @@ export async function getDurableItems(): Promise<AssetsData> {
   const trackedCats = await getTrackedCategories(propertyId)
 
   const rows = await prisma.expense.findMany({
-    where: {
-      propertyId,
-      itemLabel: { not: null },
-      isShipping: false,
-      category: { notIn: trackedCats },
-      // 물품(내구재)은 전부, 서비스·무형은 방/공용부에 귀속된 것만(방별 투자 비용 복원, 신고 54fb838b)
-      OR: [
-        { excludeFromInventory: false },
-        { excludeFromInventory: true, roomId: { not: null } },
-        { excludeFromInventory: true, assignedLocationId: { not: null } },
-      ],
-    },
+    where: durableExpenseWhere(propertyId, trackedCats),
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, date: true, itemLabel: true, amount: true,
@@ -160,24 +173,60 @@ export async function getDurableItems(): Promise<AssetsData> {
     else unassignedRaw.push(r)
   }
 
+  // 품목 종류 순서(순서 편집) — 모든 그룹 공통 적용(전역 품목 순서라 일관)
+  const orderRows = await prisma.assetItemOrder.findMany({ where: { propertyId }, select: { category: true, itemLabel: true, sortOrder: true } })
+  const orderMap = new Map(orderRows.map(o => [`${o.category}␟${o.itemLabel}`, o.sortOrder]))
+
   const rooms = [...roomBuckets.entries()].map(([roomId, list]) => {
-    const items = aggregateAssets(list)
+    const items = aggregateAssets(list, orderMap)
     return { roomId, roomNo: list[0].roomNo!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
   const locations = [...locBuckets.entries()].map(([locationId, list]) => {
-    const items = aggregateAssets(list)
+    const items = aggregateAssets(list, orderMap)
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
-  const pending = aggregateAssets(pendingRaw)
-  const common = aggregateAssets(commonRaw)
-  const unassigned = aggregateAssets(unassignedRaw)
+  const pending = aggregateAssets(pendingRaw, orderMap)
+  const common = aggregateAssets(commonRaw, orderMap)
+  const unassigned = aggregateAssets(unassignedRaw, orderMap)
   return {
     pending, pendingTotal: pending.reduce((s, i) => s + i.amount, 0),
     rooms, locations,
     common, commonTotal: common.reduce((s, i) => s + i.amount, 0),
     unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0),
+  }
+}
+
+// 비품 품목 종류 순서 재정렬 — 순서 편집(운영자 확정). 그 category 의 전체 품목 라벨 배열을
+// 받아 인덱스대로 AssetItemOrder(propertyId+category+itemLabel) upsert. 부분 배열이면 미포함
+// 라벨과의 상대 순서가 흔들리므로 전체성 검증(reorderTrackedItems 와 동일 방어). 표시 전용 — 금액·배정 무접점.
+export async function reorderAssetItems(category: string, itemLabels: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (itemLabels.length === 0) return { ok: false, error: '정렬할 품목이 없습니다.' }
+    if (new Set(itemLabels).size !== itemLabels.length) return { ok: false, error: '중복된 품목이 있습니다.' }
+    const trackedCats = await getTrackedCategories(propertyId)
+    const rows = await prisma.expense.findMany({
+      where: { ...durableExpenseWhere(propertyId, trackedCats), category },
+      select: { itemLabel: true },
+    })
+    const current = new Set(rows.map(r => r.itemLabel).filter((x): x is string => !!x))
+    if (current.size !== itemLabels.length || !itemLabels.every(l => current.has(l)))
+      return { ok: false, error: '품목 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    await prisma.$transaction(itemLabels.map((itemLabel, i) =>
+      prisma.assetItemOrder.upsert({
+        where: { propertyId_category_itemLabel: { propertyId, category, itemLabel } },
+        create: { propertyId, category, itemLabel, sortOrder: i },
+        update: { sortOrder: i },
+      })
+    ))
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '순서 저장에 실패했습니다.' }
   }
 }
 

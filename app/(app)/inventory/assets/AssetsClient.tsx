@@ -4,7 +4,7 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition, useMemo, useEffect, type ReactNode } from 'react'
+import { useState, useTransition, useMemo, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ViewTabs } from '@/components/ui/ViewTabs'
@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, reorderAssetItems, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -41,6 +41,7 @@ const CoralTag = ({ children }: { children: ReactNode }) => (
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
+const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
 
 type Target = { kind: 'room' | 'location'; id: string }
 
@@ -128,6 +129,91 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
   const assetCats = useMemo(() => [...new Set(allItems.map(it => it.category).filter(Boolean))].sort(), [allItems])
   const assetLabels = useMemo(() => [...new Set(allItems.map(it => it.itemLabel).filter(Boolean))].sort(), [allItems])
+
+  // 품목 종류 순서 편집 — 소모품(InventoryClient) 정본을 본뜬 패턴. category 별 유일 품목 라벨을
+  // 한 목록으로(그룹 무관, 전역 순서) 오른쪽 44pt 손잡이로만 드래그. 놓으면 그 category 전체 라벨
+  // 순서를 서버 저장(낙관적, 실패 시 원복+토스트). 규격이 다른 같은 라벨은 한 행(순서는 라벨 단위).
+  const [orderEditMode, setOrderEditMode] = useState(false)
+  const [labelOrder, setLabelOrder] = useState<Record<string, string[]>>({})
+  const [dragCat, setDragCat] = useState<string | null>(null)
+  const [dragItemIdx, setDragItemIdx] = useState<number | null>(null)
+  const labelOrderRef = useRef(labelOrder)
+  useEffect(() => { labelOrderRef.current = labelOrder }, [labelOrder])   // 렌더 중 ref 접근 금지(react-compiler)
+  const labelOrderChanged = useRef(false)
+  const dragListElRef = useRef<HTMLElement | null>(null)
+  // category → { spec 대표 } 라벨별 대표 규격(첫 카드 기준, 표시용)
+  const orderGroups = useMemo(() => {
+    const m = new Map<string, { labels: string[]; specOf: Map<string, string> }>()
+    for (const it of allItems) {
+      if (!it.itemLabel || !it.category) continue
+      const g = m.get(it.category) ?? { labels: [], specOf: new Map<string, string>() }
+      if (!g.labels.includes(it.itemLabel)) {
+        g.labels.push(it.itemLabel)
+        const spec = it.specText || (it.specValue != null ? `${fmtQty(it.specValue)}${it.specUnit ?? ''}` : '')
+        if (spec) g.specOf.set(it.itemLabel, spec)
+      }
+      m.set(it.category, g)
+    }
+    return [...m.entries()].map(([cat, g]) => {
+      const ord = labelOrder[cat]
+      const labels = ord ? [...g.labels].sort((a, b) => rankInOrder(ord, a) - rankInOrder(ord, b)) : g.labels
+      return { cat, labels, specOf: g.specOf }
+    })
+  }, [allItems, labelOrder])
+  const enterOrderEdit = () => { setSearch(''); exitMerge(); setOrderEditMode(true) }
+  const onItemHandleDown = (cat: string, idx: number, baseLabels: string[]) => (e: ReactPointerEvent) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    dragListElRef.current = (e.currentTarget as HTMLElement).closest('[data-item-drag-list]') as HTMLElement | null
+    labelOrderChanged.current = false
+    setLabelOrder(prev => prev[cat] ? prev : { ...prev, [cat]: baseLabels })
+    setDragCat(cat)
+    setDragItemIdx(idx)
+  }
+  const onItemHandleMove = (e: ReactPointerEvent) => {
+    if (dragCat == null || dragItemIdx == null || !dragListElRef.current) return
+    const items = Array.from(dragListElRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragItemIdx) return
+    const cat = dragCat
+    setLabelOrder(prev => {
+      const cur = prev[cat]
+      if (!cur) return prev
+      const next = [...cur]
+      const [moved] = next.splice(dragItemIdx, 1)
+      next.splice(over, 0, moved)
+      return { ...prev, [cat]: next }
+    })
+    setDragItemIdx(over)
+    labelOrderChanged.current = true
+  }
+  const onItemHandleUp = async () => {
+    if (dragCat == null) return
+    const cat = dragCat
+    setDragCat(null)
+    setDragItemIdx(null)
+    if (!labelOrderChanged.current) return
+    labelOrderChanged.current = false
+    const labels = labelOrderRef.current[cat]
+    if (!labels) return
+    const res = await reorderAssetItems(cat, labels)
+    if (!res.ok) {
+      pushToast('error', res.error)
+      setLabelOrder(prev => { const n = { ...prev }; delete n[cat]; return n })
+      router.refresh()
+      return
+    }
+    pushToast('success', '품목 순서 저장됨')
+  }
 
   // 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록
   const [freeForm, setFreeForm] = useState<null | { label: string; cat: string; spec: string; specUnit: string; specText: string; qty: string; qtyUnit: string }>(null)
@@ -567,18 +653,26 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </div>
         {canEditUi && (
         <div className="flex gap-2 flex-wrap items-center">
+          {orderEditMode ? (
+            <Btn variant="primary" size="md" onClick={() => setOrderEditMode(false)}>완료</Btn>
+          ) : (
+          <>
           {!isEmpty && (
             <Btn variant="secondary" size="md" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
               {mergeMode ? '선택 취소' : '선택'}
             </Btn>
           )}
+          {/* 순서 편집 — 진입 시 검색 초기화·선택 해제(부분 목록 저장 방지). 품목 있을 때만 */}
+          {!isEmpty && <Btn variant="secondary" size="md" onClick={enterOrderEdit}>순서 편집</Btn>}
           <Btn variant="primary" size="md"
             onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', specText: '', qty: '1', qtyUnit: '개' })}>
             + 무상 입수
           </Btn>
+          </>
+          )}
         </div>
         )}
-        {!isEmpty && (
+        {!isEmpty && !orderEditMode && (
           <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
             <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />
           </div>
@@ -590,6 +684,42 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           title="비품·자재 내역이 아직 없습니다"
           description="지출 등록에서 품목으로 입력한 내구재(소모품 외 카테고리)가 여기에 모입니다."
         />
+      ) : orderEditMode ? (
+        // 순서 편집 모드 — category 별 유일 품목 라벨을 컴팩트 1열 행으로. 오른쪽 44pt 손잡이로만 드래그.
+        // 대분류(미배정/공용/방)·검색은 감춰 각 category 가 항상 전체 라벨이라 부분 저장이 원천 불가.
+        <>
+        <p className="text-xs text-[var(--warm-muted)]">오른쪽 손잡이를 잡아 끌어 순서를 바꿉니다. 완료를 누르면 편집이 끝납니다.</p>
+        {orderGroups.map(g => g.labels.length > 0 && (
+          <section key={g.cat} className="space-y-2">
+            <SectionHeader name={g.cat} count={`${g.labels.length}품목`} />
+            <div data-item-drag-list className="space-y-1.5">
+              {g.labels.map((label, idx) => {
+                const spec = g.specOf.get(label)
+                return (
+                  <div key={label}
+                    className={`flex items-center gap-1.5 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-3.5 pr-1 py-1 ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--warm-dark)]">{label}
+                      {spec && <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{spec}</span>}
+                    </span>
+                    {/* 드래그는 오른쪽 44pt 손잡이 버튼에서만 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버린다 */}
+                    <button type="button" aria-label={`${label} 순서 이동`}
+                      onPointerDown={onItemHandleDown(g.cat, idx, g.labels)}
+                      onPointerMove={onItemHandleMove}
+                      onPointerUp={onItemHandleUp}
+                      onPointerCancel={onItemHandleUp}
+                      style={{ touchAction: 'none' }}
+                      className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                        <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        ))}
+        </>
       ) : (
         <>
           {/* 대분류 — 미배정(여분) · 공용 자재 · 방·공용부 (검색 중엔 전체 통합 검색이라 숨김) */}
