@@ -19,7 +19,8 @@
 - 이 가드는 **(app) 그룹에만** 적용. 공용/입주자 페이지는 그룹 밖이라 무관.
 
 ## 공용(인증 불필요) 라우트
-`/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/contract/[tenantId]` · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
+`/login` · `/callback`(OAuth) · `/reset-password`(이메일 링크) · 입주자용 `/sign/[token]`(계약서 원격 서명 — 토큰+생년월일+HMAC 쿠키가 자격, 2026-07-18 신설) · `/rent-receipt/[tenantId]` · `/residence-cert/[tenantId]`. 이들에 인증 게이팅 넣으면 입주자가 서명·열람 못 함 — proxy 전역 게이팅 금지.
+정정(2026-07-18): `/contract/[tenantId]` 는 공용이 아니라 **운영자 인증 필요**(getContractData 가 requirePropertyAccess 경유). 입주자 원격 서명은 `/sign/[token]` 이 담당.
 
 ## returnTo 오픈 리다이렉트 방어
 `lib/auth/returnTo.ts` — `isInternalPath`(안전 판정)·`safeReturnTo`(위반 시 /property-select). '/' 단일 슬래시 내부 경로만 허용, 절대 URL·'//'·'/\\'·제어문자 차단. 소비 지점 전부 경유: proxy.ts·(app)/layout.tsx·callback/route.ts·EmailLoginForm·LoginButton(OAuth redirectTo는 encodeURIComponent).

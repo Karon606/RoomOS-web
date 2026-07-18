@@ -6,143 +6,22 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 import { requireEdit } from '@/lib/role'
-import {
-  type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
-  DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
-} from '@/lib/contract'
+import { type ContractTemplate } from '@/lib/contract'
+import { buildContractData } from '@/lib/contractData'
 
-const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
-
-export type ContractData = {
-  template: ContractTemplate           // 입실자 오버라이드 우선, 없으면 영업장 공통
-  hasOverride: boolean                 // 오버라이드 사용 여부 — '원본으로' 버튼 활성화 판단용
-  businessInfo: BusinessInfo
-  phone: string | null                 // 영업장 전화 — v2.0 §26 헤더/푸터 메타
-  stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
-  logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
-  refundClauseInContract: boolean      // 계약서에 환불 조항(공정위 고정 문구) 자동 표시 여부
-  disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서 (계약서와 함께 출력)
-  tenant: {
-    id: string
-    name: string
-    birthdate: string | null   // YYYY-MM-DD
-    gender: string             // '남' | '여' | ''
-    job: string | null
-    smoking: boolean             // 흡연 여부 — 계약서 흡연란 기본값 (고객관리에서 설정)
-    primaryPhone: string | null
-    emergencyContacts: Array<{ name: string; phone: string; relation: string | null }>
-  }
-  lease: {
-    id: string
-    moveInDate: string | null
-    expectedMoveOut: string | null
-    rentAmount: number
-    depositAmount: number
-    cleaningFee: number
-    dueDay: string | null               // 매월 납부일 ('14' | '말' 등)
-    roomNo: string | null
-    registrationStatus: '신고' | '미신고' | '면제'
-    signatureImageUrl: string | null   // #8 이전에 받은 앱서명(dataURL) — 출력 시 재표시
-    disposalSignatureImageUrl: string | null   // 동의서 별도 서명(dataURL) — 출력 시 재표시
-  } | null
-}
+// ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
+// 기존 소비처(ContractView 등)의 import 경로 유지를 위해 타입만 재수출.
+export type { ContractData } from '@/lib/contractData'
 
 async function requireAuthAndProperty() {
   const { userId, propertyId } = await requirePropertyAccess()
   return { userId, propertyId }
 }
 
-const GENDER_LABEL: Record<string, string> = {
-  MALE: '남', FEMALE: '여', UNKNOWN: '',
-}
-const REGISTRATION_LABEL: Record<string, '신고' | '미신고' | '면제'> = {
-  REGISTERED: '신고', NOT_REPORTED: '미신고', EXEMPTED: '면제',
-}
-
-export async function getContractData(tenantId: string): Promise<ContractData | null> {
+export async function getContractData(tenantId: string) {
   const { propertyId } = await requireAuthAndProperty()
-
-  const [tenant, property] = await Promise.all([
-    prisma.tenant.findFirst({
-      where: { id: tenantId, propertyId },
-      include: {
-        contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
-        leaseTerms: {
-          // 퇴실 예정(CHECKOUT_PENDING)도 아직 거주 중 → 계약서·동의서 호실 등 채워지도록 포함
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-          orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
-          include: { room: { select: { roomNo: true } } },
-        },
-      },
-    }),
-    prisma.property.findUnique({
-      where: { id: propertyId },
-      select: {
-        contractTemplate: true, businessInfo: true,
-        stampDriveFileId: true, logoDriveFileId: true,
-        phone: true,
-        refundClauseInContract: true, disposalConsentTemplate: true,
-      },
-    }),
-  ])
-
-  if (!tenant) return null
-
-  const lease = tenant.leaseTerms[0] ?? null
-  const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
-                       ?? tenant.contacts.find(c => !c.isEmergency)
-  const emergencyContacts = tenant.contacts
-    .filter(c => c.isEmergency)
-    .map(c => ({
-      name: '', // TenantContact에 별도 이름 없음 — 사용자가 출력 페이지에서 직접 보강
-      phone: c.contactValue,
-      relation: c.emergencyRelation ?? null,
-    }))
-
-  // 영업장 공통 템플릿
-  const baseTemplate = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
-  // 입실자별 오버라이드 (있으면 그것을 우선 사용)
-  const override = lease?.contractOverride as ContractTemplate | null | undefined
-  const template = override ?? baseTemplate
-
-  return {
-    template,
-    hasOverride: !!override,
-    businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
-    phone: property?.phone ?? null,
-    // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
-    stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
-    // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
-    logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
-    refundClauseInContract: property?.refundClauseInContract ?? true,
-    disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
-    tenant: {
-      id: tenant.id,
-      name: tenant.name,
-      birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
-      gender: GENDER_LABEL[tenant.gender] ?? '',
-      job: tenant.job,
-      smoking: (tenant as { smoking?: boolean }).smoking ?? false,
-      primaryPhone: primaryContact?.contactValue ?? null,
-      emergencyContacts,
-    },
-    lease: lease ? {
-      id: lease.id,
-      moveInDate: lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null,
-      expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
-      rentAmount: lease.rentAmount,
-      depositAmount: lease.depositAmount,
-      cleaningFee: lease.cleaningFee,
-      dueDay: lease.dueDay,
-      roomNo: lease.room?.roomNo ?? null,
-      registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
-      signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
-      disposalSignatureImageUrl: (lease as { disposalSignatureImageUrl?: string | null }).disposalSignatureImageUrl ?? null,
-    } : null,
-  }
+  return buildContractData(tenantId, propertyId)
 }
 
 // ── 입실자별 본문 오버라이드 저장/리셋 ─────────────────────────────

@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
+import { submitRemoteSignature } from '@/app/sign/[token]/actions'
+import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -23,7 +25,10 @@ function renderClauseItem(text: string): React.ReactNode {
   return parts.map((p, i) => (i % 2 === 1 ? <span key={i} className="hl">{p}</span> : p))
 }
 
-export default function ContractView({ data }: { data: ContractData }) {
+// mode 미지정이면 100% 기존 운영자 경로. 'remote'면 입주자 원격 서명 화면 —
+// 편집·인쇄·저장 등 운영 기능을 숨기고, 서명 제출은 submitRemoteSignature(공개 액션)로 보낸다.
+export default function ContractView({ data, mode, shareToken }: { data: ContractData; mode?: 'remote'; shareToken?: string }) {
+  const remote = mode === 'remote'
   const router = useRouter()
   const today = kstYmdStr()
   const [signDate, setSignDate]       = useState(today)
@@ -256,14 +261,33 @@ export default function ContractView({ data }: { data: ContractData }) {
     }
   }, [signOpen])
 
-  // 모달 "확인" — 서명만 화면 상태에 반영. PDF 저장은 별도 버튼에서.
-  const handleSignConfirm = () => {
+  // 모달 "확인" — 운영자 경로: 서명만 화면 상태에 반영(PDF 저장은 별도 버튼).
+  // 원격(remote): submitRemoteSignature 로 즉시 서버 저장(LeaseTerm 서명 필드 + 링크 서명시각).
+  const [remoteSubmitting, setRemoteSubmitting] = useState(false)
+  const handleSignConfirm = async () => {
     const pad = sigPadRef.current
     if (!pad || pad.isEmpty()) {
       pushToast('error', '서명을 입력해주세요.')
       return
     }
     const url = pad.toDataURL('image/png')
+    if (remote) {
+      if (!shareToken || remoteSubmitting) return
+      setRemoteSubmitting(true)
+      const release = trackSave()
+      try {
+        const res = await submitRemoteSignature(shareToken, signTarget, url)
+        if (!res.ok) { pushToast('error', res.error); return }
+        setSignOpen(false)
+        if (signTarget === 'disposal') setDisposalSignatureDataUrl(url)
+        else setSignatureDataUrl(url)
+        pushToast('success', signTarget === 'disposal' ? '동의서 서명이 저장되었습니다' : '서명이 저장되었습니다')
+      } finally {
+        release()
+        setRemoteSubmitting(false)
+      }
+      return
+    }
     setSignOpen(false)
     if (signTarget === 'disposal') {
       setDisposalSignatureDataUrl(url)
@@ -281,6 +305,18 @@ export default function ContractView({ data }: { data: ContractData }) {
       pushToast('error', '먼저 서명을 받아주세요.')
       return
     }
+    // 원격 서명 이후 계약 내용이 바뀌었으면 경고 — 발급 자체는 실시간 데이터로 진행(경고만)
+    try {
+      const drift = await checkContractShareDrift(data.tenant.id)
+      if (drift.ok && drift.drift) {
+        if (!(await confirmDialog({
+          title: '서명 당시와 계약 내용이 다릅니다',
+          message: '원격 서명 링크 발급 이후 임대료, 보증금, 입주일, 호실 또는 계약서 본문이 변경되었습니다. 그래도 현재 내용으로 발급할까요?',
+          level: 'caution',
+          confirmLabel: '그래도 발급',
+        }))) return
+      }
+    } catch { /* 비교 실패는 발급을 막지 않는다 — 경고만 생략 */ }
     if (!(await confirmDialog({ title: '이 계약서를 PDF로 저장할까요?', message: "도장·로고·서명이 합성된 PDF가 Google Drive에 업로드되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '저장' }))) return
     setContractSaving(true)
     const release = trackSave()
@@ -432,7 +468,16 @@ export default function ContractView({ data }: { data: ContractData }) {
 
   return (
     <div className="contract-shell">
-      {/* 화면 전용 툴바 — 인쇄 시 숨김 */}
+      {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}
+      {remote ? (
+        <div className="no-print toolbar">
+          <span className="toolbar-status" style={{ color: 'var(--ink-s)' }}>
+            {signatureDataUrl
+              ? '서명이 저장되었습니다. 이 링크는 확인용으로 다시 열 수 있습니다.'
+              : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
+          </span>
+        </div>
+      ) : (
       <div className="no-print toolbar">
         <Link href={`/tenants?tenantId=${data.tenant.id}`} className="toolbar-link">‹ 입실자 정보</Link>
         <div className="toolbar-spacer" />
@@ -485,6 +530,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           <span className="toolbar-badge">개별 수정본</span>
         )}
       </div>
+      )}
 
       {/* 인쇄 영역. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
       <div
@@ -530,12 +576,18 @@ export default function ContractView({ data }: { data: ContractData }) {
             <tr>
               <th>흡연 여부<span className="en">Smoking</span></th>
               <td>
-                <select className="no-print smoke-select" value={smoking} onChange={e => handleSmokingChange(e.target.value)}
-                  style={{ font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' }}>
-                  <option value="비흡연">비흡연</option>
-                  <option value="흡연">흡연</option>
-                </select>
-                <span className="only-print">{smoking}</span>
+                {remote ? (
+                  <span>{smoking}</span>
+                ) : (
+                  <>
+                    <select className="no-print smoke-select" value={smoking} onChange={e => handleSmokingChange(e.target.value)}
+                      style={{ font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' }}>
+                      <option value="비흡연">비흡연</option>
+                      <option value="흡연">흡연</option>
+                    </select>
+                    <span className="only-print">{smoking}</span>
+                  </>
+                )}
               </td>
               <th>전입신고<span className="en">Resident Reg.</span></th><td>{data.lease?.registrationStatus ?? '미신고'}</td>
             </tr>
@@ -560,12 +612,18 @@ export default function ContractView({ data }: { data: ContractData }) {
             <tr>
               <th>비상 연락망<span className="en">Emergency Contact</span></th>
               <td>
-                <span className="emerg-input no-print">
-                  <input type="text" value={emergencyContactText}
-                    onChange={e => setEmergencyContactText(e.target.value)}
-                    placeholder={view.emergencyContactNote || '이름 / 전화번호 / 관계'} />
-                </span>
-                <span className="only-print">{emergencyContactText}</span>
+                {remote ? (
+                  <span>{emergencyContactText}</span>
+                ) : (
+                  <>
+                    <span className="emerg-input no-print">
+                      <input type="text" value={emergencyContactText}
+                        onChange={e => setEmergencyContactText(e.target.value)}
+                        placeholder={view.emergencyContactNote || '이름 / 전화번호 / 관계'} />
+                    </span>
+                    <span className="only-print">{emergencyContactText}</span>
+                  </>
+                )}
               </td>
             </tr>
           </tbody>
@@ -630,17 +688,25 @@ export default function ContractView({ data }: { data: ContractData }) {
               <div className="sign-role">임차인 (입주자)</div>
               <div className="sign-line">
                 <span className="lbl">성명</span>
-                <span className="signame-input no-print">
-                  <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
-                </span>
-                <span className="val only-print">{signatureName}</span>
+                {remote ? (
+                  <span className="val">{signatureName}</span>
+                ) : (
+                  <>
+                    <span className="signame-input no-print">
+                      <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
+                    </span>
+                    <span className="val only-print">{signatureName}</span>
+                  </>
+                )}
                 <span className="seal-wrap">
                   {signatureDataUrl ? (
                     <>
                       <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => openSign('contract')} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
-                      <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                      </button>
+                      {!remote && (
+                        <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                        </button>
+                      )}
                     </>
                   ) : (
                     <>
@@ -713,9 +779,11 @@ export default function ContractView({ data }: { data: ContractData }) {
               {disposalSignatureDataUrl ? (
                 <>
                   <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={() => openSign('disposal')} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
-                  <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                  </button>
+                  {!remote && (
+                    <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -740,7 +808,11 @@ export default function ContractView({ data }: { data: ContractData }) {
             <div className="sig-head">
               <div>
                 <div className="sig-title">{signTarget === 'disposal' ? '동의서 서명' : '입실자 서명'}</div>
-                <div className="sig-sub">아래 영역에 서명해주세요. 확인을 누르면 {signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (PDF 저장은 다음 단계).</div>
+                <div className="sig-sub">
+                  {remote
+                    ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'} 서명이 저장됩니다.`
+                    : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (PDF 저장은 다음 단계).`}
+                </div>
               </div>
               <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -758,8 +830,8 @@ export default function ContractView({ data }: { data: ContractData }) {
               <button onClick={() => setSignOpen(false)} className="toolbar-btn-secondary">
                 취소
               </button>
-              <button onClick={handleSignConfirm} className="toolbar-print">
-                확인
+              <button onClick={handleSignConfirm} disabled={remoteSubmitting} className="toolbar-print">
+                {remoteSubmitting ? '저장 중…' : '확인'}
               </button>
             </div>
           </div>
