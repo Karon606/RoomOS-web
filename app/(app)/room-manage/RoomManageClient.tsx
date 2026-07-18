@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -321,6 +321,7 @@ export default function RoomManageClient({
     entityModal.close()
     setEditRoom(room)
     setEditPhotos(room.photos)
+    setPhotoOrderMode(false)
     setEditFloorVal(room.floor ?? '')
     setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
     setNrEnabled(room.nonResidentRent != null)
@@ -493,6 +494,93 @@ export default function RoomManageClient({
     const res = await deleteRoomPhoto(photoId)
     if (!res.ok) { setError(res.error); return }
     setEditPhotos(prev => prev.filter(p => p.id !== photoId))
+  }
+
+  // 사진 순서 편집(오류신고 8dba0177) — 비품 '순서 편집' 정본 패턴(1열 행 + 오른쪽 44pt 손잡이 드래그) 이식.
+  // 대표 이미지 = 첫 장(photos[0]) 규칙이라 별도 대표 필드 없이 순서 저장 하나로 처리.
+  const [photoOrderMode, setPhotoOrderMode] = useState(false)
+  const [dragPhotoIdx, setDragPhotoIdx] = useState<number | null>(null)
+  const photoOrderChanged = useRef(false)
+  const photoDragListRef = useRef<HTMLElement | null>(null)
+  const editPhotosRef = useRef(editPhotos)
+  useEffect(() => { editPhotosRef.current = editPhotos }, [editPhotos])   // 렌더 중 ref 접근 금지(react-compiler)
+  const dragStartPhotosRef = useRef<Photo[]>([])   // 드래그 시작 시점 순서 — 저장 실패 원복용
+
+  const savePhotoOrder = async (next: Photo[], prev: Photo[], successMsg: string) => {
+    if (!editRoom) return
+    setEditPhotos(next)   // 낙관적 반영, 실패 시 원복
+    const res = await reorderRoomPhotos(editRoom.id, next.map(p => p.id))
+    if (!res.ok) {
+      setEditPhotos(prev)
+      pushToast('error', res.error)
+      return
+    }
+    router.refresh()   // 호실 카드 대표 썸네일(photos[0]) 즉시 동기화
+    pushToast('success', successMsg, {
+      action: { label: '적용취소', run: () => {
+        void reorderRoomPhotos(editRoom.id, prev.map(p => p.id)).then(r => {
+          if (r.ok) { setEditPhotos(prev); router.refresh(); pushToast('info', '사진 순서를 되돌렸습니다') }
+          else pushToast('error', r.error)
+        })
+      } },
+    })
+  }
+
+  // 라이트박스 '대표로 설정' — 해당 사진을 맨 앞으로 이동
+  const handleSetMainPhoto = async (photo: Photo) => {
+    const prev = editPhotosRef.current
+    if (prev[0]?.id === photo.id) return
+    setViewPhoto(null)
+    await savePhotoOrder([photo, ...prev.filter(p => p.id !== photo.id)], prev, '대표 이미지로 설정됨')
+  }
+
+  const onPhotoHandleDown = (idx: number) => (e: React.PointerEvent) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    photoDragListRef.current = (e.currentTarget as HTMLElement).closest('[data-photo-drag-list]') as HTMLElement | null
+    photoOrderChanged.current = false
+    dragStartPhotosRef.current = editPhotosRef.current
+    setDragPhotoIdx(idx)
+  }
+  const onPhotoHandleMove = (e: React.PointerEvent) => {
+    if (dragPhotoIdx == null || !photoDragListRef.current) return
+    const items = Array.from(photoDragListRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragPhotoIdx) return
+    setEditPhotos(prevP => {
+      const next = [...prevP]
+      const [moved] = next.splice(dragPhotoIdx, 1)
+      next.splice(over, 0, moved)
+      return next
+    })
+    setDragPhotoIdx(over)
+    photoOrderChanged.current = true
+  }
+  const onPhotoHandleUp = async () => {
+    if (dragPhotoIdx == null) return
+    setDragPhotoIdx(null)
+    if (!photoOrderChanged.current) return
+    photoOrderChanged.current = false
+    const prev = dragStartPhotosRef.current
+    const next = editPhotosRef.current
+    if (!editRoom || prev.map(p => p.id).join() === next.map(p => p.id).join()) return
+    const res = await reorderRoomPhotos(editRoom.id, next.map(p => p.id))
+    if (!res.ok) {
+      setEditPhotos(prev)
+      pushToast('error', res.error)
+      return
+    }
+    router.refresh()
+    pushToast('success', '사진 순서 저장됨')
   }
 
   const TypeSection = ({ defaultValue }: { defaultValue?: string }) => (
@@ -1091,21 +1179,64 @@ export default function RoomManageClient({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">사진</label>
-                <button type="button" onClick={() => photoInputRef.current?.click()}
-                  disabled={photoUploading}
-                  className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
-                  {photoUploading ? '업로드 중…' : '+ 사진 추가'}
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* 순서 편집(오류신고 8dba0177) — 첫 번째 사진이 호실 카드 대표. 헤더 형제('+ 사진 추가')와 같은 텍스트 버튼 문법 */}
+                  {editPhotos.length >= 2 && (
+                    <button type="button" onClick={() => setPhotoOrderMode(v => !v)}
+                      className="text-xs text-[var(--coral)] transition-colors">
+                      {photoOrderMode ? '완료' : '순서 편집'}
+                    </button>
+                  )}
+                  {!photoOrderMode && (
+                    <button type="button" onClick={() => photoInputRef.current?.click()}
+                      disabled={photoUploading}
+                      className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
+                      {photoUploading ? '업로드 중…' : '+ 사진 추가'}
+                    </button>
+                  )}
+                </div>
                 <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
                   onChange={handlePhotoUpload} />
               </div>
-              {editPhotos.length > 0 ? (
+              {photoOrderMode ? (
+                <>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">오른쪽 손잡이를 잡아 끌어 순서를 바꿉니다. 첫 번째 사진이 호실 카드의 대표 이미지가 됩니다.</p>
+                  <div data-photo-drag-list className="space-y-1.5">
+                    {editPhotos.map((photo, idx) => (
+                      <div key={photo.id}
+                        className={`flex items-center gap-2 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-1.5 pr-1 py-1 ${dragPhotoIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                        <img src={photo.storageUrl} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                        {idx === 0 && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold">대표</span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-xs text-[var(--warm-dark)]">{photo.fileName ?? '사진'}</span>
+                        {/* 드래그는 오른쪽 44pt 손잡이에서만 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버림(비품 정본과 동일) */}
+                        <button type="button" aria-label={`${photo.fileName ?? '사진'} 순서 이동`}
+                          onPointerDown={onPhotoHandleDown(idx)}
+                          onPointerMove={onPhotoHandleMove}
+                          onPointerUp={onPhotoHandleUp}
+                          onPointerCancel={onPhotoHandleUp}
+                          style={{ touchAction: 'none' }}
+                          className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                            <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : editPhotos.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
-                  {editPhotos.map(photo => (
+                  {editPhotos.map((photo, idx) => (
                     <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={photo.storageUrl} alt={photo.fileName ?? ''}
                         onClick={() => setViewPhoto(photo)}
                         className="w-full h-full object-cover cursor-zoom-in" />
+                      {/* 대표 배지 — 첫 장 = 호실 카드 썸네일. 삭제(우상)·360°(좌하)와 자리 안 겹침 */}
+                      {idx === 0 && editPhotos.length > 1 && (
+                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold pointer-events-none">대표</span>
+                      )}
                       {looksLike360(photo.fileName) && (
                         <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
                       )}
@@ -1155,9 +1286,12 @@ export default function RoomManageClient({
         </Modal>
       )}
 
-      {/* 큰 사진 / 360 뷰어 lightbox */}
+      {/* 큰 사진 / 360 뷰어 lightbox — 대표가 아닌 사진이면 '대표로 설정' 제공(오류신고 8dba0177) */}
       {viewPhoto && (
-        <PhotoLightbox photo={viewPhoto} onClose={() => setViewPhoto(null)} />
+        <PhotoLightbox photo={viewPhoto} onClose={() => setViewPhoto(null)}
+          onSetMain={editPhotos.length > 1 && editPhotos[0]?.id !== viewPhoto.id
+            ? () => { void handleSetMainPhoto(viewPhoto) }
+            : undefined} />
       )}
 
     </div>
@@ -1165,7 +1299,8 @@ export default function RoomManageClient({
 }
 
 // 사진 lightbox — 큰 사진 + 360 뷰어. 360 판정: 파일명 단서(기본) + 2:1 종횡비 자동 감지 + 수동 토글.
-function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
+// onSetMain: 편집 모달에서 열렸고 대표(첫 장)가 아닐 때만 전달됨 — '대표로 설정' 버튼 노출.
+function PhotoLightbox({ photo, onClose, onSetMain }: { photo: Photo; onClose: () => void; onSetMain?: () => void }) {
   const hiRes = photo.driveFileId ? driveImageUrl(photo.driveFileId, 2048) : photo.storageUrl
   const [is360, setIs360] = useState(looksLike360(photo.fileName))
   // 360 전환 버튼은 360 가능 사진일 때만 노출 — 파일명 단서 또는 2:1(equirectangular) 비율 감지 시.
@@ -1192,6 +1327,12 @@ function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }
       <div className="flex items-center justify-between gap-2 px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
         <span className="text-white/80 text-sm font-medium truncate">{photo.fileName ?? '사진'}{is360 && ' · 360°'}</span>
         <div className="flex items-center gap-2 shrink-0">
+          {onSetMain && (
+            <button type="button" onClick={onSetMain}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors">
+              대표로 설정
+            </button>
+          )}
           {canBe360 && (
             <button type="button" onClick={() => { manualRef.current = true; setIs360(v => !v) }}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors">

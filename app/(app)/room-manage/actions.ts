@@ -268,6 +268,10 @@ export async function createPhotoUploadSession(input: {
   try {
     await requireEdit()
     if (!input.roomId) return { ok: false, error: '호실 정보가 없습니다.' }
+    // 영업장 스코프 — 없으면 타 영업장 roomId로 업로드 가능(격리가 UUID 비밀성에 의존, 신고 8dba0177 패널 검증)
+    const { propertyId } = await getPropertyId()
+    const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true } })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
     if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
     if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
     if (input.fileSize > MAX_PHOTO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_PHOTO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
@@ -298,6 +302,10 @@ export async function finalizeRoomPhoto(input: {
   try {
     await requireEdit()
     if (!input.driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    // 영업장 스코프 — 타 영업장 호실에 사진 행 삽입 차단(신고 8dba0177 패널 검증)
+    const { propertyId } = await getPropertyId()
+    const room = await prisma.room.findFirst({ where: { id: input.roomId, propertyId }, select: { id: true } })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
 
     // 링크 있는 사람 누구나 열람 가능하도록 권한 설정
     await setDrivePublicReadable(input.driveFileId)
@@ -342,7 +350,9 @@ export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | {
   try {
     await requireEdit()
 
-    const photo = await prisma.roomPhoto.findUnique({ where: { id: photoId } })
+    // 영업장 스코프 — 타 영업장 사진 id로 삭제 차단(신고 8dba0177 패널 검증)
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.roomPhoto.findFirst({ where: { id: photoId, room: { propertyId } } })
     if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
 
     if (photo.driveFileId) {
@@ -351,6 +361,33 @@ export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | {
 
     await prisma.roomPhoto.delete({ where: { id: photoId } })
     revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 호실 사진 순서 저장 (오류신고 8dba0177) — 편집 UI가 최종 배열(photoIds, 표시 순서대로)을 넘기면 인덱스대로 sortOrder 재기록.
+// 대표 이미지 = 첫 장(photos[0]) 규칙이라 '대표로 설정'도 이 액션(맨 앞 이동 배열)으로 처리된다.
+// 부분 배열은 미포함 사진과의 상대 순서가 흔들리므로 전체 집합 일치일 때만 저장(reorderAssetItems와 동일 문법).
+export async function reorderRoomPhotos(roomId: string, photoIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const room = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { id: true } })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    if (photoIds.length === 0) return { ok: false, error: '정렬할 사진이 없습니다.' }
+    if (new Set(photoIds).size !== photoIds.length) return { ok: false, error: '중복된 사진이 있습니다.' }
+    const rows = await prisma.roomPhoto.findMany({ where: { roomId }, select: { id: true } })
+    const current = new Set(rows.map(r => r.id))
+    if (current.size !== photoIds.length || !photoIds.every(id => current.has(id)))
+      return { ok: false, error: '사진 목록이 바뀌었습니다. 새로고침 후 다시 시도해 주세요.' }
+    await prisma.$transaction(photoIds.map((id, i) =>
+      prisma.roomPhoto.update({ where: { id }, data: { sortOrder: i } })
+    ))
+    revalidatePath('/room-manage')
+    revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
