@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -1859,6 +1859,47 @@ function OptionSection({
     onReorder(next)
   }
 
+  // 핸들 드래그(운영자 요청 2026-07-18 — 호실설정·수익지출에도 순서 편집 적용).
+  // 드래그는 오른쪽 44pt 핸들 버튼에서만 시작 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버린다(재고 순서 편집에서 확인된 교훈).
+  // 드래그 중엔 로컬 순서(dragOrder)로 표시하고, 놓을 때 한 번만 onReorder(화살표와 같은 저장 경로).
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null)
+  const optListRef = useRef<HTMLDivElement | null>(null)
+  const dragChanged = useRef(false)
+  const onHandleDown = (idx: number) => (e: React.PointerEvent) => {
+    if (!onReorder) return
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    dragChanged.current = false
+    setDragOrder([...items])
+    setDragIdx(idx)
+  }
+  const onHandleMove = (e: React.PointerEvent) => {
+    if (dragIdx == null || !optListRef.current || !dragOrder) return
+    const rows = Array.from(optListRef.current.children) as HTMLElement[]
+    if (rows.length === 0) return
+    let over = -1
+    if (e.clientY < rows[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > rows[rows.length - 1].getBoundingClientRect().bottom) over = rows.length - 1
+    else for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break } }
+    if (over < 0 || over === dragIdx) return
+    setDragOrder(prev => {
+      if (!prev) return prev
+      const next = [...prev]
+      const [m] = next.splice(dragIdx, 1)
+      next.splice(over, 0, m)
+      return next
+    })
+    setDragIdx(over)
+    dragChanged.current = true
+  }
+  const onHandleUp = () => {
+    if (dragIdx == null) return
+    const finalOrder = dragOrder
+    setDragIdx(null); setDragOrder(null)
+    if (dragChanged.current && finalOrder && onReorder) { dragChanged.current = false; onReorder(finalOrder) }
+  }
+
   const startEdit = (item: string) => {
     setEditingItem(item)
     setEditingValue(item)
@@ -1884,13 +1925,13 @@ function OptionSection({
       </div>
       {description && <p className="text-xs text-[var(--warm-muted)] mb-4">{description}</p>}
       {!description && <div className="mb-4" />}
-      <div className="space-y-2 mb-4">
+      <div ref={optListRef} className="space-y-2 mb-4">
         {items.length === 0 && (
           <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
         )}
-        {items.map((item, idx) => (
+        {(dragOrder ?? items).map((item, idx) => (
           // key는 값 자체(고유) — 재정렬 시 요소 identity 보존.
-          <div key={item} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
+          <div key={item} className={`flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2 ${dragIdx === idx ? 'border border-[var(--coral)] shadow-lift select-none' : ''}`}>
             {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button
@@ -1927,6 +1968,16 @@ function OptionSection({
             ) : (
               <>
                 <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+                {onReorder && (
+                  <button type="button" aria-label={`${getLabel(item)} 순서 이동`}
+                    onPointerDown={onHandleDown(idx)} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}
+                    style={{ touchAction: 'none' }}
+                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                    </svg>
+                  </button>
+                )}
                 {onRename && (
                   <button onClick={() => startEdit(item)}
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
