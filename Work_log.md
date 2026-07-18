@@ -3,6 +3,16 @@
 마지막 업데이트: 2026-07-17
 브랜치: main
 
+## 2026-07-18 (3) — 계약서 원격 서명 링크 (48989a9·8882215, cb45950e 종결)
+
+운영자 요청: 입주자에게 문자로 계약서 링크를 보내 원격 확인·서명. 다관점 패널(보안·계약 도메인·UX) 설계 → 운영자 승인(스냅샷 고정) → 구현 위임 → 검토·커밋 → 보안 적대검증 → P1·P2 차단.
+
+**구조**: contract_share_links 테이블(비파괴), randomBytes(32) 토큰, 24h TTL, templateSnapshot 고정(발급 시점 계약 내용). /sign/[token] 공용 라우트(AppShell 밖, noindex). 생년월일 게이트(ISO slice 비교, 5회 잠금, httpOnly HMAC 쿠키 min(2h,TTL)). ContractView mode='remote'(운영자 컨트롤 전부 숨김, 서명 패드만, 전용 submitRemoteSignature 로 LeaseTerm 서명 필드만 갱신 — /api/contract/generate 무접촉). 운영자 PDF 발급 시 스냅샷 드리프트 경고. getContractData 조립부를 lib/contractData 로 추출(발급·운영자 경로 공유).
+
+**적대검증(보안)**: P0 없음. P1 = 생년월일 5회 잠금 read-then-increment 경합(동시 요청 전수 대입) → 원자적 조건부 updateMany. P2 4건 = 서명 크기 상한(1.4MB)·동의서 enabled 서버 검사·getContractShareState requireEdit 승격·발급 getOrCreate Serializable. 통과: 인증 우회·크로스 테넌트·게이트 전 유출·쿠키 위조·운영자 경로 회귀 전부 clean.
+
+**미처리 오류신고 0건 도달** — 오늘 들어온 계약서까지 전건 종결.
+
 ## 2026-07-18 (2) — 결정 반영 일괄 배포 + 드래그 정렬 종결
 
 운영자 결정 4건 반영: 위치 삭제 2단계 확인(0e84edc, 기록 있으면 impact 명시 후 강제 삭제) / 테마 빠른 전환을 임시 전환으로(d1611ff, 기저 변화 시 자동 복귀, FOUC 스크립트 동기화) / 백업에 trackedItemLocations 추가(0e03fd6) / 홈 영수증 인식 격상(3b3e2ef).
