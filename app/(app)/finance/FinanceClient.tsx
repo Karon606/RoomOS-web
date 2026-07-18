@@ -3679,6 +3679,8 @@ export default function FinanceClient({
                         <input type="hidden" name="itemLabel" value={addItems[0].label} />
                         <input type="hidden" name="specValue" value={addItems[0].specValue} />
                         <input type="hidden" name="specUnit"  value={addItems[0].specUnit} />
+                        {/* 서술형 규격 — 빠지면 단일 품목만 색상·사이즈 유실(오류신고 48376868) */}
+                        <input type="hidden" name="specText"  value={addItems[0].specText ?? ''} />
                         <input type="hidden" name="qtyValue"  value={addItems[0].qtyValue} />
                         <input type="hidden" name="qtyUnit"   value={addItems[0].qtyUnit} />
                       </>

@@ -449,6 +449,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const specUnit  = formData.get('specUnit') as string
     const qtyUnit   = formData.get('qtyUnit') as string
     const specValueRaw = formData.get('specValue') as string
+    const specTextRaw  = formData.get('specText') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 품명 학습용 — itemsJson 품목 전체(단일/다품목 무관). 저장 후 ocrRaw≠label 인 것만 별칭 upsert.
@@ -590,9 +591,6 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       }))
       await prisma.$transaction(ops)
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
-    await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
-      // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
-      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
       await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
@@ -609,6 +607,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         specUnit:           specUnit || null,
         qtyUnit:            qtyUnit || null,
         specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
+        // 서술형 규격(색상·사이즈) — 다품목 경로만 저장하고 단일 품목은 유실되던 버그(오류신고 48376868)
+        specText:           specTextRaw || null,
         qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
       },
     })
@@ -616,6 +616,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     if (shippingCreate) ops.push(shippingCreate)
     await prisma.$transaction(ops)
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
+    await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
     if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel]).catch(() => {})
