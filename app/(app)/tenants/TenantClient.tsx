@@ -2641,6 +2641,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
+  // 문의/투어 예정 = 같은 WAITING_TOUR의 표시 구분(파생) — select 옵션 분리용 UI 상태(운영자 승인 2026-07-19).
+  // 투어일이 있으면 '투어 예정' 강제('문의' 옵션 비활성), 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
+  const [uiWaitingKind, setUiWaitingKind] = useState<'INQUIRY' | 'TOUR'>(lease?.tourDate ? 'TOUR' : 'INQUIRY')
+  // 지난 투어일 판정 기준(KST) — 폼은 모달로 클라이언트에서만 마운트되므로 렌더 시 계산 안전
+  const [formToday] = useState(() => kstYmdStr())
   const [tourTimeVal, setTourTimeVal] = useState(lease?.tourTime ?? '')   // 투어 예정 시각(HH:MM, 선택) — 캘린더 연동에 반영
   const initialInquiry = splitDateTime(lease?.inquiryAt)
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
@@ -2860,12 +2865,22 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {/* 상태 — controlled: 호실 선택 가능 여부 및 퇴실일 표시 결정 */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">상태</label>
-            {/* 생애주기 순 optgroup — 상태 정의 혼란 해소(e1b81629). 값은 불변, 순서·묶음만 재배열 */}
-            <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
+            {/* 생애주기 순 optgroup — 상태 정의 혼란 해소(e1b81629). 저장 값은 hidden input(항상 enum)이 담당하고,
+                select는 '문의'(UI 전용 값 INQUIRY, 저장 시 WAITING_TOUR)를 포함한 표시 컨트롤(운영자 승인 2026-07-19) */}
+            <input type="hidden" name="status" value={statusVal} />
+            <select
+              value={statusVal !== 'WAITING_TOUR' ? statusVal : (!tourDateVal && uiWaitingKind === 'INQUIRY' ? 'INQUIRY' : 'WAITING_TOUR')}
+              onChange={e => {
+                const v = e.target.value
+                if (v === 'INQUIRY')           { setStatusVal('WAITING_TOUR'); setUiWaitingKind('INQUIRY') }
+                else if (v === 'WAITING_TOUR') { setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') }
+                else                           setStatusVal(v)
+              }}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <optgroup label="문의·예약">
-                {/* '문의'는 별도 상태값이 아니라 이 상태에서 투어일을 비운 경우의 파생 표시 — 옵션 라벨로 진입점 노출(운영자 지적 2026-07-19) */}
-                <option value="WAITING_TOUR">문의·투어 예정</option>
+                {/* 투어일이 있으면 '문의' 선택 불가 — 문의로 두려면 투어일을 먼저 비운다(자동으로 문의 복귀) */}
+                <option value="INQUIRY" disabled={!!tourDateVal}>문의</option>
+                <option value="WAITING_TOUR">투어 예정</option>
                 <option value="TOUR_DONE">투어 완료</option>
                 <option value="RESERVED">입실 예약</option>
               </optgroup>
@@ -2880,11 +2895,29 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </optgroup>
             </select>
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
-            {statusVal === 'WAITING_TOUR' && (
-              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">연락 온 손님은 여기로 · 투어일을 넣으면 &lsquo;투어 예정&rsquo;, 비우면 &lsquo;문의&rsquo;로 표시됩니다</p>
+            {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">문의 = 연락만 받은 상태 · 투어일을 잡으면 &lsquo;투어 예정&rsquo;으로 바뀝니다</p>
+            )}
+            {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'TOUR' && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어일을 넣어야 &lsquo;투어 예정&rsquo;으로 표시됩니다 · 비워 두면 &lsquo;문의&rsquo;</p>
+            )}
+            {statusVal === 'WAITING_TOUR' && !!tourDateVal && tourDateVal >= formToday && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 예정 = 보러 오기로 한 상태</p>
+            )}
+            {/* 폼을 다시 열었더니 투어일이 이미 지난 경우 — 자동 변경 금지, 제안만(전문가 패널 합의) */}
+            {statusVal === 'WAITING_TOUR' && !!tourDateVal && tourDateVal < formToday && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+                투어일이 지났습니다 ·{' '}
+                <button type="button" onClick={() => setStatusVal('TOUR_DONE')}
+                  className="underline text-[var(--coral)] font-medium">투어 완료로 변경</button>
+              </p>
             )}
             {statusVal === 'TOUR_DONE' && (
-              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 완료 = 둘러보고 간 뒤 결정을 기다리는 상태</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+                {tourDateVal && tourDateVal > formToday
+                  ? <>투어 날짜가 미래입니다 · 아직 안 다녀갔다면 &lsquo;투어 예정&rsquo;을 선택하세요</>
+                  : <>투어 완료 = 둘러보고 간 뒤 결정을 기다리는 상태</>}
+              </p>
             )}
             {statusVal === 'NON_RESIDENT' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">비거주자 = 방에 살지는 않지만 계약·요금이 있는 경우 (창고·사무실 임대 등)</p>
@@ -2952,7 +2985,26 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               <DatePicker
                 name="tourDate"
                 value={tourDateVal}
-                onChange={setTourDateVal}
+                onChange={date => {
+                  // 자동 전환은 문의·투어 예정(WAITING_TOUR)에서 사용자가 날짜를 편집한 직후에만.
+                  // 예약·취소·완료 상태의 투어일은 이력 기록이라 상태를 건드리지 않는다(전문가 패널 합의).
+                  setTourDateVal(date)
+                  if (statusVal !== 'WAITING_TOUR') return
+                  if (!date) { setUiWaitingKind('INQUIRY'); return }
+                  if (date < kstYmdStr()) {
+                    // a안(운영자 확정): 지난 날짜는 확인창으로 제안 — 무단 자동 전환 금지
+                    void confirmDialog({
+                      title: '투어일이 지난 날짜입니다',
+                      message: '이미 다녀간 투어라면 상태를 투어 완료로 바꾸는 것을 권합니다.',
+                      confirmLabel: '투어 완료로 변경', cancelLabel: '투어 예정 유지',
+                    }).then(toDone => {
+                      setUiWaitingKind('TOUR')
+                      if (toDone) setStatusVal('TOUR_DONE')
+                    })
+                    return
+                  }
+                  setUiWaitingKind('TOUR')   // 오늘·미래 날짜 = 아직 안 다녀온 투어
+                }}
                 placeholder={statusVal === 'WAITING_TOUR' ? '투어 예정일 선택' : '투어 날짜 선택 (선택)'}
                 className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
               />
