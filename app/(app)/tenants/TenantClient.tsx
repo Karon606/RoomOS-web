@@ -181,7 +181,20 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 
 // v2.0 §23 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
 // '거주중(living)' = ACTIVE+CHECKOUT_PENDING — 퇴실 예정도 아직 사는 사람이라 거주중에 포함(기본값).
-type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'RESERVED' | 'TOUR' | 'CANCELLED' | 'past' | 'all'
+// 'inquiry' = 잠재고객 퍼널 통합(문의~예약 확정) — 구 '예약'/'투어' 분리 세그먼트 통합(e1b81629).
+// 하위 단계는 2차 sm 세그먼트(InquiryStage)로 구분 — 요청관리 2단 필터 정본 문법.
+type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'inquiry' | 'CANCELLED' | 'past' | 'all'
+type InquiryStage = '' | 'INQUIRY' | 'TOUR' | 'RESERVED' | 'CONFIRMED'
+
+// 잠재고객 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
+// 투어 = 투어 예정(WAITING_TOUR+투어일) + 투어 완료(TOUR_DONE).
+function inquiryStageOf(lease: { status: string; tourDate?: string | Date | null; reservationConfirmedAt?: string | Date | null } | undefined): Exclude<InquiryStage, ''> | null {
+  if (!lease) return null
+  if (lease.status === 'RESERVED')     return lease.reservationConfirmedAt ? 'CONFIRMED' : 'RESERVED'
+  if (lease.status === 'TOUR_DONE')    return 'TOUR'
+  if (lease.status === 'WAITING_TOUR') return lease.tourDate ? 'TOUR' : 'INQUIRY'
+  return null
+}
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -379,8 +392,11 @@ export default function TenantClient({
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('living')   // 기본 = 거주중(퇴실예정 포함)
+  // 문의·예약 그룹 내 단계 필터 — 그룹 세그먼트 선택 시에만 노출, 그룹 이탈 시 초기화
+  const [inquiryStage, setInquiryStage] = useState<InquiryStage>('')
+  const changeStatusFilter = (v: StatusFilter) => { setStatusFilter(v); setInquiryStage('') }
   const cat: 'residents' | 'inquiry' | 'dropped' | 'past' =
-    statusFilter === 'RESERVED' || statusFilter === 'TOUR' ? 'inquiry'
+    statusFilter === 'inquiry' ? 'inquiry'
     : statusFilter === 'CANCELLED' ? 'dropped'
     : statusFilter === 'past' ? 'past'
     : 'residents'
@@ -553,11 +569,11 @@ export default function TenantClient({
     const isDropped  = status === 'CANCELLED'
     const isPast     = !isResident && !isInquiry && !isDropped   // 퇴실·종료
     const matchStatus =
-      statusFilter === 'all'    ? true :
-      statusFilter === 'living' ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
-      statusFilter === 'TOUR'   ? ['WAITING_TOUR', 'TOUR_DONE'].includes(status) :
-      statusFilter === 'past'   ? isPast :
-      status === statusFilter   // CHECKOUT_PENDING/NON_RESIDENT/RESERVED/CANCELLED
+      statusFilter === 'all'     ? true :
+      statusFilter === 'living'  ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
+      statusFilter === 'inquiry' ? isInquiry && (!inquiryStage || inquiryStageOf(t.leaseTerms[0]) === inquiryStage) :
+      statusFilter === 'past'    ? isPast :
+      status === statusFilter    // CHECKOUT_PENDING/NON_RESIDENT/CANCELLED
     if (!matchStatus) return false
 
     // 층 필터
@@ -611,14 +627,22 @@ export default function TenantClient({
   const sorted = [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
 
-    // 예약 필터에서는 확정자를 위로, 그 안에서 입주 임박순(운영자 요청). 세그먼트는 안 쪼갬(§23).
-    if (statusFilter === 'RESERVED') {
-      const ac = a.leaseTerms[0]?.reservationConfirmedAt ? 0 : 1
-      const bc = b.leaseTerms[0]?.reservationConfirmedAt ? 0 : 1
-      if (ac !== bc) return ac - bc
-      const am = a.leaseTerms[0]?.moveInDate ? new Date(a.leaseTerms[0].moveInDate).getTime() : Infinity
-      const bm = b.leaseTerms[0]?.moveInDate ? new Date(b.leaseTerms[0].moveInDate).getTime() : Infinity
-      return am - bm
+    // 문의·예약 그룹은 퍼널 역순(입주 임박순) 고정 — 확정 → 입실 예약 → 투어 → 문의(e1b81629).
+    // 구 예약 세그먼트의 '확정자 위로 + 입주 임박순'(운영자 요청)의 상위 호환. 세그먼트는 안 쪼갬(§23).
+    if (statusFilter === 'inquiry') {
+      const STAGE_RANK: Record<string, number> = { CONFIRMED: 0, RESERVED: 1, TOUR: 2, INQUIRY: 3 }
+      const la = a.leaseTerms[0], lb = b.leaseTerms[0]
+      const sa = STAGE_RANK[inquiryStageOf(la) ?? 'INQUIRY']
+      const sb = STAGE_RANK[inquiryStageOf(lb) ?? 'INQUIRY']
+      if (sa !== sb) return sa - sb
+      // 단계 내: 확정·예약은 입주 임박순, 투어는 투어일 임박순, 동률·문의는 문의 오래된 순
+      const dateOf = (l: LeaseTerm | undefined, rank: number): number => {
+        const d = rank <= 1 ? l?.moveInDate : rank === 2 ? l?.tourDate : null
+        return d ? new Date(d).getTime() : Infinity
+      }
+      const da = dateOf(la, sa), db = dateOf(lb, sb)
+      if (da !== db) return da - db
+      return inquiryTime(a) - inquiryTime(b)
     }
 
     // 호실순: 미배정자(호실 없음)는 항상 하단, 미배정 내에서는 inquiryAt asc 고정
@@ -1014,10 +1038,12 @@ export default function TenantClient({
   const countCheckout  = cntBy(s => s === 'CHECKOUT_PENDING')
   const countLiving    = cntBy(s => ['ACTIVE', 'CHECKOUT_PENDING'].includes(s))   // 거주중 = 거주중+퇴실예정
   const countNonRes    = cntBy(s => s === 'NON_RESIDENT')
-  const countReserved  = cntBy(s => s === 'RESERVED')
-  const countTour      = cntBy(s => ['WAITING_TOUR', 'TOUR_DONE'].includes(s))
+  const countInquiry   = cntBy(s => ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(s))   // 문의·예약 그룹 = 잠재고객 총량
   const countCancelled = cntBy(s => s === 'CANCELLED')
-  const countPast      = countAll - countLiving - countNonRes - countReserved - countTour - countCancelled
+  const countPast      = countAll - countLiving - countNonRes - countInquiry - countCancelled
+  // 퍼널 단계별 카운트 — 2차 필터 라벨용(파생 단계는 status만으론 못 세서 lease 기준)
+  const cntStage = (st: Exclude<InquiryStage, ''>) => initialTenants.filter(t => inquiryStageOf(t.leaseTerms[0]) === st).length
+  const stageCounts = { INQUIRY: cntStage('INQUIRY'), TOUR: cntStage('TOUR'), RESERVED: cntStage('RESERVED'), CONFIRMED: cntStage('CONFIRMED') }
 
   // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
   function getTenantFloor(t: typeof initialTenants[0]) {
@@ -1152,13 +1178,12 @@ export default function TenantClient({
           scroll
           ariaLabel="고객 상태 필터"
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={changeStatusFilter}
           options={[
             { value: 'living',           label: `거주중 ${countLiving} (퇴실예정 포함)` },
             { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
             { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
-            { value: 'RESERVED',         label: `예약 ${countReserved}` },
-            { value: 'TOUR',             label: `투어 ${countTour}` },
+            { value: 'inquiry',          label: `문의·예약 ${countInquiry}` },
             { value: 'CANCELLED',        label: `입실 취소 ${countCancelled}` },
             { value: 'past',             label: `퇴실 ${countPast}` },
             { value: 'all',              label: `전체 ${countAll}` },
@@ -1177,6 +1202,28 @@ export default function TenantClient({
           heading="표에 표시할 항목"
         />
       </div>
+
+      {/* 문의·예약 단계 2차 필터 — 요청관리 2단 필터 정본 문법(sm 세그먼트, e1b81629).
+          그룹 선택 시에만 노출, 개별 카드 단계는 배지가 구분 */}
+      {statusFilter === 'inquiry' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-[var(--warm-muted)]">단계</span>
+          <SegmentedControl
+            size="sm"
+            scroll
+            ariaLabel="문의·예약 단계 필터"
+            value={inquiryStage}
+            onChange={setInquiryStage}
+            options={[
+              { value: '',          label: `전체 ${countInquiry}` },
+              { value: 'INQUIRY',   label: `문의 ${stageCounts.INQUIRY}` },
+              { value: 'TOUR',      label: `투어 ${stageCounts.TOUR}` },
+              { value: 'RESERVED',  label: `입실 예약 ${stageCounts.RESERVED}` },
+              { value: 'CONFIRMED', label: `예약 확정 ${stageCounts.CONFIRMED}` },
+            ]}
+          />
+        </div>
+      )}
 
       {/* 모바일 검색바는 상단 공용 SearchBar(전 사이즈)로 통일 — 중복 제거 */}
 
@@ -2789,23 +2836,39 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {/* 상태 — controlled: 호실 선택 가능 여부 및 퇴실일 표시 결정 */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">상태</label>
+            {/* 생애주기 순 optgroup — 상태 정의 혼란 해소(e1b81629). 값은 불변, 순서·묶음만 재배열 */}
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-              <option value="ACTIVE">거주중</option>
-              <option value="CHECKOUT_PENDING">퇴실 예정</option>
-              <option value="CHECKED_OUT">퇴실</option>
-              <option value="NON_RESIDENT">비거주자</option>
-              <option value="WAITING_TOUR">투어 대기</option>
-              <option value="TOUR_DONE">투어 완료</option>
-              <option value="RESERVED">예약</option>
-              <option value="CANCELLED">입실 취소</option>
+              <optgroup label="문의·예약">
+                <option value="WAITING_TOUR">투어 예정</option>
+                <option value="TOUR_DONE">투어 완료</option>
+                <option value="RESERVED">입실 예약</option>
+              </optgroup>
+              <optgroup label="거주">
+                <option value="ACTIVE">거주중</option>
+                <option value="CHECKOUT_PENDING">퇴실 예정</option>
+                <option value="NON_RESIDENT">비거주자</option>
+              </optgroup>
+              <optgroup label="종료">
+                <option value="CHECKED_OUT">퇴실</option>
+                <option value="CANCELLED">입실 취소</option>
+              </optgroup>
             </select>
-            {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5) */}
+            {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
+            {statusVal === 'WAITING_TOUR' && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 예정 = 보러 오기로 한 상태 · 투어일을 비우면 &lsquo;문의&rsquo;(연락만 받은 상태)로 표시됩니다</p>
+            )}
+            {statusVal === 'TOUR_DONE' && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 완료 = 둘러보고 간 뒤 결정을 기다리는 상태</p>
+            )}
             {statusVal === 'NON_RESIDENT' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">비거주자 = 방에 살지는 않지만 계약·요금이 있는 경우 (창고·사무실 임대 등)</p>
             )}
             {statusVal === 'RESERVED' && (
-              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">예약 = 입주 의사만 받은 상태 · 아래 &lsquo;예약 확정&rsquo;을 체크하면 방을 실제로 잡아둡니다</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">입실 예약 = 입주 의사만 받은 상태 · 아래 &lsquo;예약 확정&rsquo;을 체크하면 방을 실제로 잡아둡니다</p>
+            )}
+            {statusVal === 'CANCELLED' && (
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">입실 취소 = 문의·투어·예약이 더 진행되지 않은 경우 (기록은 보존됩니다)</p>
             )}
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>
@@ -3422,16 +3485,23 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">상태 (계약 전체 적용)</label>
+            {/* 편집 폼과 동일한 생애주기 optgroup·라벨(e1b81629) */}
             <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}>
               <option value="">미변경</option>
-              <option value="ACTIVE">거주중</option>
-              <option value="CHECKOUT_PENDING">퇴실 예정</option>
-              <option value="CHECKED_OUT">퇴실</option>
-              <option value="NON_RESIDENT">비거주자</option>
-              <option value="WAITING_TOUR">투어 대기</option>
-              <option value="TOUR_DONE">투어 완료</option>
-              <option value="RESERVED">예약</option>
-              <option value="CANCELLED">입실 취소</option>
+              <optgroup label="문의·예약">
+                <option value="WAITING_TOUR">투어 예정</option>
+                <option value="TOUR_DONE">투어 완료</option>
+                <option value="RESERVED">입실 예약</option>
+              </optgroup>
+              <optgroup label="거주">
+                <option value="ACTIVE">거주중</option>
+                <option value="CHECKOUT_PENDING">퇴실 예정</option>
+                <option value="NON_RESIDENT">비거주자</option>
+              </optgroup>
+              <optgroup label="종료">
+                <option value="CHECKED_OUT">퇴실</option>
+                <option value="CANCELLED">입실 취소</option>
+              </optgroup>
             </select>
           </div>
         </div>
