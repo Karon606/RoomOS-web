@@ -35,11 +35,11 @@ function transitionsFor(status: string, confirmed = false): TransitionDef[] {
   switch (status) {
     case 'WAITING_TOUR': return [
       { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
-      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
+      { key: 'reserve',  label: '입실 예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'TOUR_DONE': return [
-      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
+      { key: 'reserve',  label: '입실 예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'RESERVED': return [

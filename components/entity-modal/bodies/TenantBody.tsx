@@ -43,7 +43,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   return (
     <div className="space-y-5">
       {/* 상태 칩 — 헤더 제목 옆에 두지 않고 본문 최상단에 (셸 제목은 호실·이름) */}
-      {status && <StatusInline status={status} />}
+      {status && <StatusInline status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate} />}
 
       {/* 상태 전환 (다음 단계 버튼) — 가능한 전환이 없으면 자동 숨김 */}
       {lease && (
@@ -89,10 +89,11 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   )
 }
 
-function StatusInline({ status }: { status: string }) {
-  const ex = statusException(status)
+// 파생 라벨(문의/입실 예약/예약 확정)은 목록 StatusChip과 동일 규칙 — e1b81629 용어 재정의
+function StatusInline({ status, confirmed, hasTourDate }: { status: string; confirmed?: boolean; hasTourDate?: boolean }) {
+  const ex = statusException(status, { hasTourDate })
   return ex
-    ? <div><StatusBadge tone={ex.tone}>{ex.label}</StatusBadge></div>
+    ? <div><StatusBadge tone={ex.tone}>{status === 'RESERVED' && confirmed ? '예약 확정' : ex.label}</StatusBadge></div>
     : <div className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</div>
 }
 

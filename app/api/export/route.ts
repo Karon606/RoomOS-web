@@ -23,8 +23,9 @@ const GENDER_LABEL: Record<string, string> = {
   MALE: '남', FEMALE: '여', OTHER: '기타', UNKNOWN: '',
 }
 const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: '거주중', RESERVED: '입실예정', CHECKOUT_PENDING: '퇴실예정',
-  CHECKED_OUT: '퇴실', CANCELLED: '취소', NON_RESIDENT: '비거주',
+  ACTIVE: '거주중', RESERVED: '입실예약', CHECKOUT_PENDING: '퇴실예정',
+  CHECKED_OUT: '퇴실', CANCELLED: '입실취소', NON_RESIDENT: '비거주',
+  WAITING_TOUR: '투어예정', TOUR_DONE: '투어완료',
 }
 const WINDOW_LABEL: Record<string, string> = {
   OUTER: '외창', INNER: '내창',

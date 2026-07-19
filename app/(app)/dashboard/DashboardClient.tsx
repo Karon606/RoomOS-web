@@ -97,9 +97,9 @@ const DASH_DIR_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
   SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
 }
-// RESERVED 라벨 '예약' 통일 — 수납·호실관리·고객관리·lib/statusColors 와 동일 용어
+// RESERVED 라벨 '입실 예약' 통일 — 수납·호실관리·고객관리·lib/statusColors 와 동일 용어 (e1b81629)
 const DASH_STATUS_LABEL: Record<string, string> = {
-  ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
+  ACTIVE: '거주중', RESERVED: '입실 예약', CHECKOUT_PENDING: '퇴실 예정',
 }
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
@@ -521,7 +521,7 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },
-  tour:      { label: '투어 예정',    color: 'var(--ink)' },
+  tour:      { label: '문의·투어',    color: 'var(--ink)' },
   wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
   request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
   recurring: { label: '고정 지출',    color: 'var(--viz-2)' },
@@ -985,10 +985,11 @@ function TenantsTab({ data }: { data: DashboardData }) {
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label={`전체 입주자 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
         <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
-        <StatCard label="예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
+        <StatCard label="입실 예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
         <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
         <StatCard label="비거주자"  value={`${data.statusCounts.nonResident}명`} sub=""  colorStyle={{ color: STATUS_COLORS.nonResident }} />
-        <StatCard label="투어 대기" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: 'var(--ink)' }} />
+        {/* WAITING_TOUR 전체 카운트 — 투어일 없는 '문의'도 포함하므로 '문의·투어'(e1b81629) */}
+        <StatCard label="문의·투어" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: 'var(--ink)' }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1022,7 +1023,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {[
                 { label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active },
-                { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved },
+                { label: '입실 예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved },
                 { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout },
                 // 도넛엔 비거주자 슬라이스가 있는데 범례에 빠져 중앙 합계(statusTotal)와 안 맞아 보이던 문제 — 있을 때만 추가
                 ...(data.statusCounts.nonResident > 0 ? [{ label: '비거주자', count: data.statusCounts.nonResident, color: STATUS_COLORS.nonResident }] : []),
@@ -1186,7 +1187,7 @@ type TenantQuickInfo = Awaited<ReturnType<typeof getTenantQuickInfo>>
 
 const GENDER_LABEL_KO: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
 const CONTACT_LABEL: Record<string, string> = { PHONE: '전화', EMAIL: '이메일', KAKAO: '카카오', OTHER: '기타' }
-const LEASE_STATUS_LABEL: Record<string, string> = { ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정' }
+const LEASE_STATUS_LABEL: Record<string, string> = { ACTIVE: '거주중', RESERVED: '입실 예약', CHECKOUT_PENDING: '퇴실 예정' }
 
 function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
   const [info, setInfo] = useState<TenantQuickInfo>(null)

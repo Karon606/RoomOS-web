@@ -5,13 +5,15 @@
 import type { CardKind } from '@/components/ui/RoomCard'
 import type { BadgeTone } from '@/components/ui/StatusBadge'
 
-/** 상태값 → 한국어 라벨 */
+/** 상태값 → 한국어 라벨 (오류신고 e1b81629 용어 재정의 — knowledge/glossary '예약 용어' 참조).
+ *  '예약'은 방(입실) 예약에만 쓴다 — 투어 쪽은 '투어 예정'으로 분리해 이중 의미 제거.
+ *  WAITING_TOUR는 tourDate 없으면 화면상 '문의'로 파생 표시(enum 신설 없음) — statusException(opts) 사용. */
 export const STATUS_LABEL: Record<string, string> = {
   ACTIVE:           '거주중',
-  RESERVED:         '예약',
+  RESERVED:         '입실 예약',
   CHECKOUT_PENDING: '퇴실 예정',
   CHECKED_OUT:      '퇴실',
-  WAITING_TOUR:     '투어 대기',
+  WAITING_TOUR:     '투어 예정',
   TOUR_DONE:        '투어 완료',
   CANCELLED:        '입실 취소',
   NON_RESIDENT:     '비거주자',
@@ -34,14 +36,16 @@ export function leaseCardKind(status: string | null | undefined): CardKind {
 }
 
 /** 입주자/계약 상태 → 예외 뱃지 (정상 상태는 null — 카드 베이스만으로 표현).
- *  거주중·퇴실·입실취소는 뱃지 없음. 진행 단계/전환 상태만 뱃지. */
+ *  거주중·퇴실·입실취소는 뱃지 없음. 진행 단계/전환 상태만 뱃지.
+ *  hasTourDate === false 인 WAITING_TOUR는 '문의'(투어일 미지정 = 연락만 받은 상태) — 톤은 동일 neutral 계열. */
 export function statusException(
   status: string | null | undefined,
+  opts?: { hasTourDate?: boolean },
 ): { tone: BadgeTone; label: string } | null {
   switch (status) {
     case 'CHECKOUT_PENDING': return { tone: 'exit',   label: '퇴실 예정' }
-    case 'RESERVED':         return { tone: 'movein', label: '예약' }
-    case 'WAITING_TOUR':     return { tone: 'info',   label: '투어 대기' }
+    case 'RESERVED':         return { tone: 'movein', label: '입실 예약' }
+    case 'WAITING_TOUR':     return { tone: 'info',   label: opts?.hasTourDate === false ? '문의' : '투어 예정' }
     case 'TOUR_DONE':        return { tone: 'info',   label: '투어 완료' }
     default:                 return null
   }

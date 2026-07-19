@@ -873,7 +873,7 @@ export default function RoomsClient({
                       const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                       sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`
                     }
-                    return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '예약'}</StatusBadge>
+                    return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                   })() : (() => {
                     const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
                     // 퇴실 예정 배지는 expectedMoveOut이 viewMonth 안(또는 그 이전)일 때만 표시
@@ -1123,7 +1123,7 @@ export default function RoomsClient({
                             const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                             sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `${Math.abs(days)}일 경과`
                           }
-                          return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '예약'}</StatusBadge>
+                          return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
                         })() : (() => {
                           const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
                           const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null

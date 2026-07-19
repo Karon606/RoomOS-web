@@ -202,7 +202,13 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
       group: 'tenant', id: t.id,
       title: t.englishName?.toLowerCase().includes(lq) ? `${t.name} (${t.englishName})` : t.name,
       right: null,
-      badge: status ? { label: STATUS_LABEL[status] ?? status, tone: STATUS_TONE[status] ?? 'neutral' } : null,
+      // 파생 라벨 — 목록 StatusChip과 동일 규칙(문의/입실 예약/예약 확정, e1b81629)
+      badge: status ? {
+        label: status === 'RESERVED' && lease?.reservationConfirmedAt ? '예약 확정'
+          : status === 'WAITING_TOUR' && !lease?.tourDate ? '문의'
+          : STATUS_LABEL[status] ?? status,
+        tone: STATUS_TONE[status] ?? 'neutral',
+      } : null,
       caption: [fmtRoomNo(lease?.room?.roomNo) ?? '방 미배정', reason].filter(Boolean).join(' · ') || null,
       action: { type: 'modal', kind: 'tenant', tenantId: t.id },
     }
@@ -289,6 +295,7 @@ const tenantSelect = {
   contacts: { select: { contactValue: true }, take: 3 },
   leaseTerms: {
     orderBy: { createdAt: 'desc' as const }, take: 1,
-    select: { status: true, room: { select: { roomNo: true } } },
+    // tourDate·reservationConfirmedAt — 파생 라벨(문의/예약 확정) 분기용 (e1b81629)
+    select: { status: true, tourDate: true, reservationConfirmedAt: true, room: { select: { roomNo: true } } },
   },
 }

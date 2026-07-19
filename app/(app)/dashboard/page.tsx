@@ -1199,13 +1199,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
     alertItems.push({
       category:  'movein',
-      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망${isConfirmed ? ' (예약 확정)' : ' (예약)'}`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망${isConfirmed ? ' (예약 확정)' : ' (입실 예약)'}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  isConfirmed ? 'var(--success-fg)' : 'var(--info-fg)',
       timeLabel: dayLabel(days),
       tenantId:  l.tenant.id,
       detail:    fmtKorDate(l.moveInDate)
-        ? `입주 희망일: ${fmtKorDate(l.moveInDate)}${isConfirmed ? ' · 예약 확정' : ' · 입주 미확정 (예약 단계)'}`
+        ? `입주 희망일: ${fmtKorDate(l.moveInDate)}${isConfirmed ? ' · 예약 확정' : ' · 입주 미확정 (입실 예약 단계)'}`
         : undefined,
       exactDate: fmtShortDate(l.moveInDate),
     })
@@ -1248,15 +1248,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   for (const l of waitingTourLeases) {
+    // 투어일 없는 WAITING_TOUR = '문의'(연락만 받은 상태) — 파생 라벨 규칙(e1b81629)
     const timeLabel = l.tourDate ? dayLabel(daysUntil(l.tourDate)) : '일정 미정'
     alertItems.push({
       category:  'tour',
-      text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} 투어 예정`,
+      text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} ${l.tourDate ? '투어 예정' : '문의'}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--deposit-fg)',
       timeLabel,
       tenantId:  l.tenant.id,
-      detail:    l.tourDate ? `투어 예정일: ${fmtKorDate(l.tourDate)}` : '투어 일정 미정',
+      detail:    l.tourDate ? `투어 예정일: ${fmtKorDate(l.tourDate)}` : '문의 단계 (투어일 미지정)',
       exactDate: fmtShortDate(l.tourDate),
     })
   }

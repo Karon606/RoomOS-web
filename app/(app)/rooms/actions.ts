@@ -1618,6 +1618,7 @@ export async function getTenantDetail(tenantId: string) {
           rentAmount: true, depositAmount: true, cleaningFee: true,
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
+          tourDate: true,   // e1b81629: 투어일 유무로 '문의'/'투어 예정' 파생 라벨 분기
           reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
 
           contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용

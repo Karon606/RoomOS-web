@@ -151,15 +151,16 @@ function reservedMoveInSub(moveInDate: string | Date | null | undefined, today?:
 }
 
 // 상태 칩 — 예외 상태는 StatusBadge, 정상 상태는 조용한 텍스트 (상세·표 컨텍스트용).
-// 예약은 확정 여부를 라벨로 구분('예약'/'예약 확정') — 호실 관리(RoomsClient) 정본과 동일 문법.
+// 예약은 확정 여부를 라벨로 구분('입실 예약'/'예약 확정') — 호실 관리(RoomsClient) 정본과 동일 문법.
+// 투어일 없는 WAITING_TOUR는 '문의'로 파생 표시(e1b81629 용어 재정의 — enum 신설 없음).
 // 별도 success 칩(완납 색과 충돌)을 쓰지 않는다(디자인 패널 2026-07-15).
-function StatusChip({ status, confirmed, moveInDate, today }: {
-  status: string; confirmed?: boolean; moveInDate?: string | Date | null; today?: string
+function StatusChip({ status, confirmed, moveInDate, today, hasTourDate }: {
+  status: string; confirmed?: boolean; moveInDate?: string | Date | null; today?: string; hasTourDate?: boolean
 }) {
   if (status === 'RESERVED') {
-    return <StatusBadge tone="movein" sub={reservedMoveInSub(moveInDate, today)}>{confirmed ? '예약 확정' : '예약'}</StatusBadge>
+    return <StatusBadge tone="movein" sub={reservedMoveInSub(moveInDate, today)}>{confirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
   }
-  const ex = statusException(status)
+  const ex = statusException(status, { hasTourDate })
   if (ex) return <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge>
   return <span className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</span>
 }
@@ -588,7 +589,11 @@ export default function TenantClient({
       t.name.toLowerCase().includes(q) ||
       (t.englishName?.toLowerCase().includes(q) ?? false) ||
       (t.leaseTerms[0]?.room?.roomNo ?? '').includes(q) ||
-      (STATUS_LABEL[status] ?? '').includes(q) ||
+      // 상태 검색은 화면에 보이는 파생 라벨 기준('문의'·'예약 확정' 포함) — 칩 표시와 동일 규칙
+      ((status === 'RESERVED'
+        ? (t.leaseTerms[0]?.reservationConfirmedAt ? '예약 확정' : '입실 예약')
+        : statusException(status, { hasTourDate: !!t.leaseTerms[0]?.tourDate })?.label ?? STATUS_LABEL[status] ?? ''
+      ).includes(q)) ||
       (t.nationality?.toLowerCase().includes(q) ?? false) ||
       (t.job?.toLowerCase().includes(q) ?? false) ||
       (qDigits.length >= 2 && t.contacts.some(c => c.contactValue.replace(/[^0-9]/g, '').includes(qDigits)))
@@ -1154,7 +1159,7 @@ export default function TenantClient({
             { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
             { value: 'RESERVED',         label: `예약 ${countReserved}` },
             { value: 'TOUR',             label: `투어 ${countTour}` },
-            { value: 'CANCELLED',        label: `입실취소 ${countCancelled}` },
+            { value: 'CANCELLED',        label: `입실 취소 ${countCancelled}` },
             { value: 'past',             label: `퇴실 ${countPast}` },
             { value: 'all',              label: `전체 ${countAll}` },
           ]}
@@ -1392,7 +1397,7 @@ export default function TenantClient({
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
                   {(status === 'RESERVED' || statusException(status)) && (
-                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} />
+                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} hasTourDate={!!lease?.tourDate} />
                   )}
                 </div>
                 {/* 연락처 — 탭하면 바로 전화 */}
@@ -1593,7 +1598,7 @@ export default function TenantClient({
                           return (
                             <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
-                                <span className="self-start"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} /></span>
+                                <span className="self-start"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate} /></span>
                                 {ddLabel && <span className={`text-xs font-medium pl-1 whitespace-nowrap ${ddColor}`}>{ddLabel}</span>}
                               </div>
                             </td>
