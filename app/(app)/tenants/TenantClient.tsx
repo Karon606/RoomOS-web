@@ -2864,7 +2864,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <optgroup label="문의·예약">
-                <option value="WAITING_TOUR">투어 예정</option>
+                {/* '문의'는 별도 상태값이 아니라 이 상태에서 투어일을 비운 경우의 파생 표시 — 옵션 라벨로 진입점 노출(운영자 지적 2026-07-19) */}
+                <option value="WAITING_TOUR">문의·투어 예정</option>
                 <option value="TOUR_DONE">투어 완료</option>
                 <option value="RESERVED">입실 예약</option>
               </optgroup>
@@ -2880,7 +2881,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </select>
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
             {statusVal === 'WAITING_TOUR' && (
-              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 예정 = 보러 오기로 한 상태 · 투어일을 비우면 &lsquo;문의&rsquo;(연락만 받은 상태)로 표시됩니다</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">연락 온 손님은 여기로 · 투어일을 넣으면 &lsquo;투어 예정&rsquo;, 비우면 &lsquo;문의&rsquo;로 표시됩니다</p>
             )}
             {statusVal === 'TOUR_DONE' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">투어 완료 = 둘러보고 간 뒤 결정을 기다리는 상태</p>
@@ -3513,7 +3514,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}>
               <option value="">미변경</option>
               <optgroup label="문의·예약">
-                <option value="WAITING_TOUR">투어 예정</option>
+                <option value="WAITING_TOUR">문의·투어 예정</option>
                 <option value="TOUR_DONE">투어 완료</option>
                 <option value="RESERVED">입실 예약</option>
               </optgroup>
