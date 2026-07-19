@@ -95,8 +95,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   for (const l of leases) {
     const room = fmtRoom(l.room?.roomNo)
     const who = [room, l.tenant.name].filter(Boolean).join(' ')
-    // 퇴실 예정일
-    if (l.status === 'CHECKOUT_PENDING' && l.expectedMoveOut) {
+    // 퇴실 예정일 — 단기는 ACTIVE에도 발행(연장으로 거주중 복귀 시 D-1 자동 전환 전까지
+    // 새 퇴실일이 외부 캘린더에서 사라지는 공백 방지, 2026-07-20)
+    if ((l.status === 'CHECKOUT_PENDING' || (l.status === 'ACTIVE' && l.isShortTerm)) && l.expectedMoveOut) {
       const mo = new Date(l.expectedMoveOut)
       ev(`checkout-${l.id}`, mo.getFullYear(), mo.getMonth() + 1, mo.getDate(), `${who} 퇴실 예정`, '')
     }

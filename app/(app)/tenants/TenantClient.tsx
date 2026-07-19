@@ -5,7 +5,8 @@ import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { getRoomsForQuote, undoBatchUpdateTenants } from './actions'
+import { getRoomsForQuote, undoBatchUpdateTenants, previewShortStayExtension } from './actions'
+import { ShortStayExtensionModal } from '@/components/entity-modal/widgets/ShortStayExtensionModal'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
@@ -342,7 +343,7 @@ function loadColVis(): Record<ColKey, boolean> | null {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────
 
 export default function TenantClient({
-  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole,
+  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole, shortStayUnitDays = 7,
 }: {
   initialTenants: Tenant[]
   rooms: Room[]
@@ -353,6 +354,7 @@ export default function TenantClient({
   defaultCleaningFee: number | null
   propertyReservationDepositMode?: string | null   // 영업장 예약금 기본 모드 — 예약자 라벨/폼 기본값
   myRole: string
+  shortStayUnitDays?: number   // 단기 계약 단위 일수(영업장 정책) — 카드 '(N주)' 표기용
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 금액 컬럼·필드·정렬·필터를 집합에서 제외
@@ -784,7 +786,29 @@ export default function TenantClient({
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
+      void maybeSuggestShortStayRecalc(fd)
     })
+  }
+
+  // 단기 퇴실일을 폼에서 늘려 저장한 경우 — 요금은 자동 재계산되지 않으므로
+  // 누적 요금과의 차액이 있으면 연장 모달(재계산 정리)을 제안한다(적대검증 폼 경로 반영, 2026-07-20).
+  const [shortRecalc, setShortRecalc] = useState<{ leaseTermId: string; tenantId: string; tenantName: string; out: string } | null>(null)
+  const maybeSuggestShortStayRecalc = async (fd: FormData) => {
+    if (fd.get('isShortTerm') !== 'true') return
+    const prevOut = (fd.get('prevExpectedMoveOut') as string | null) ?? ''
+    const newOut = (fd.get('expectedMoveOut') as string | null) ?? ''
+    const leaseTermId = fd.get('leaseTermId') as string | null
+    const tenantId = fd.get('tenantId') as string | null
+    if (!leaseTermId || !tenantId || !newOut || newOut === prevOut) return
+    if (prevOut && newOut < prevOut) return   // 단축은 범위 밖(환불 정책 별도)
+    const p = await previewShortStayExtension(leaseTermId, newOut).catch(() => null)
+    if (!p || !p.ok || p.diff <= 0) return
+    const go = await confirmDialog({
+      title: '이용료를 재계산할까요?',
+      message: `단기 퇴실일이 바뀌었지만 이용료는 자동으로 바뀌지 않습니다. 누적 요금 기준 추가 납부 ${fmtWon(p.diff)}이 계산됩니다.`,
+      confirmLabel: '재계산 정리', cancelLabel: '나중에',
+    })
+    if (go) setShortRecalc({ leaseTermId, tenantId, tenantName: (fd.get('name') as string) || '입주자', out: newOut })
   }
 
   // 단기 연장 정리 — 퇴실 예정 상태 그대로 퇴실일만 미래로 바꾸면 거주중 복귀를 확인(자동 전환 연장 흐름, 2026-07-11)
@@ -1369,6 +1393,13 @@ export default function TenantClient({
         )
       })()}
 
+      {/* 단기 재계산 정리 모달 — 수정 폼에서 퇴실일만 늘려 저장한 뒤의 후속 제안 경로 */}
+      {shortRecalc && (
+        <ShortStayExtensionModal open onClose={() => setShortRecalc(null)}
+          leaseTermId={shortRecalc.leaseTermId} tenantId={shortRecalc.tenantId} tenantName={shortRecalc.tenantName}
+          currentOut={shortRecalc.out} initialOut={shortRecalc.out} onDone={refresh} />
+      )}
+
       {/* 가격 변동 적용 확인 모달 */}
       {rentChangeModal && (() => {
         const diff = rentChangeModal.scheduledRent - rentChangeModal.baseRent
@@ -1481,6 +1512,19 @@ export default function TenantClient({
                   <div className="flex items-center gap-2 text-xs flex-wrap">
                     <span className="text-[var(--warm-muted)]">{lease?.isShortTerm ? '이용료' : '월이용료'}</span>
                     <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
+                    {/* 단기 계약 단위 — 연장 시 몇 주째인지 한눈에(정책 unitDays 기준, 날짜 결측 시 생략) */}
+                    {lease?.isShortTerm && (() => {
+                      const din = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
+                      const dout = lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10)
+                        : lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null
+                      const days = din && dout ? stayDaysOf(din, dout) : null
+                      if (days == null) return null
+                      return (
+                        <span className="text-[0.65625rem] text-[var(--warm-muted)]">
+                          ({shortStayUnitDays === 7 ? `${Math.ceil(days / shortStayUnitDays)}주` : `${days}일`})
+                        </span>
+                      )
+                    })()}
                     {lease?.isShortTerm ? (
                       lease.cleaningFee > 0 && (
                         <>

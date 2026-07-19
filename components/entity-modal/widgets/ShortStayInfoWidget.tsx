@@ -6,15 +6,29 @@
 // 계산은 홈 '단기 요금 계산'과 동일(calcShortStay) — 금액이 항상 일치.
 
 import { useEffect, useState } from 'react'
-import { getRoomsForQuote } from '@/app/(app)/tenants/actions'
+import { getRoomsForQuote, undoShortStayExtension } from '@/app/(app)/tenants/actions'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { fmtWon } from '@/lib/fmtMoney'
+import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { pushToast } from '@/lib/saveStatus'
 import { Section } from './Section'
+import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 
 type LeaseLite = {
+  id: string
+  status: string
   moveInDate: Date | string | null
   expectedMoveOut: Date | string | null
   wishRooms: string | null
+  shortStayExtensions?: unknown
+}
+
+// 연장 이력 스냅샷 중 위젯이 읽는 필드만(서버 ShortStayExtensionSnapshot 부분집합).
+type ShortExt = {
+  prevRentAmount: number; newRentAmount: number
+  prevExpectedMoveOut: string | null; newExpectedMoveOut: string
+  undoneAt: string | null
 }
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
@@ -30,9 +44,31 @@ const fmtMD = (d: Date | string | null) => {
   return `${dt.getMonth() + 1}/${dt.getDate()}`
 }
 
-export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
+export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
+  lease: LeaseLite
+  tenantId: string
+  tenantName: string
+  onChange?: () => void
+}) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
   useEffect(() => { getRoomsForQuote().then(setData).catch(() => setData(null)) }, [])
+
+  // 연장 진입점(거주 중·퇴실 예정) + 마지막 미취소 연장 이력(상시 적용취소 진입점, v2.0 §16).
+  const [extOpen, setExtOpen] = useState(false)
+  const [undoing, setUndoing] = useState(false)
+  const canExtend = lease.status === 'ACTIVE' || lease.status === 'CHECKOUT_PENDING'
+  const exts = Array.isArray(lease.shortStayExtensions) ? (lease.shortStayExtensions as ShortExt[]) : []
+  const lastActive = [...exts].reverse().find(e => e.undoneAt === null) ?? null
+
+  const handleUndo = async () => {
+    const ok = await confirmDialog({ title: '연장을 적용취소할까요?', confirmLabel: '적용취소', level: 'caution' })
+    if (!ok) return
+    setUndoing(true)
+    const r = await undoShortStayExtension(lease.id)
+    setUndoing(false)
+    if (r.ok) { pushToast('info', '연장이 취소되었습니다.'); onChange?.() }
+    else pushToast('error', r.error)
+  }
 
   const days = lease.moveInDate && lease.expectedMoveOut
     ? stayDaysOf(toYmd(lease.moveInDate), toYmd(lease.expectedMoveOut))
@@ -58,6 +94,7 @@ export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
   const wishCount = (lease.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean).length
 
   return (
+    <>
     <Section title="단기 입실 정보">
       <div className="space-y-2.5">
         <p className="text-sm text-[var(--warm-dark)]">
@@ -97,7 +134,36 @@ export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
             </ul>
           </div>
         )}
+
+        {/* 연장 이력 줄 + 상시 적용취소 진입점, 그리고 연장 버튼(거주 중·퇴실 예정) */}
+        {(canExtend || lastActive) && (
+          <div className="mt-1 pt-3 border-t border-[var(--warm-border)] space-y-2">
+            {lastActive && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-[var(--warm-mid)]">
+                  연장: <span className="text-[var(--warm-dark)]">{fmtMD(lastActive.prevExpectedMoveOut)} → {fmtMD(lastActive.newExpectedMoveOut)}</span>
+                  <span className="text-[var(--warm-muted)]"> · 추가 </span>
+                  <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(lastActive.newRentAmount - lastActive.prevRentAmount)}</span>
+                </p>
+                <button type="button" onClick={handleUndo} disabled={undoing}
+                  className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+                  {undoing ? '취소 중…' : '적용취소'}
+                </button>
+              </div>
+            )}
+            {canExtend && (
+              <Btn variant="subtle" size="sm" onClick={() => setExtOpen(true)} className="font-semibold">단기 연장</Btn>
+            )}
+          </div>
+        )}
       </div>
     </Section>
+
+    {extOpen && (
+      <ShortStayExtensionModal open onClose={() => setExtOpen(false)}
+        leaseTermId={lease.id} tenantId={tenantId} tenantName={tenantName}
+        currentOut={toYmd(lease.expectedMoveOut) || null} onDone={onChange} />
+    )}
+    </>
   )
 }

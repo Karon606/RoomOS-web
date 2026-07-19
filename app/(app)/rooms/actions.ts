@@ -1620,6 +1620,7 @@ export async function getTenantDetail(tenantId: string) {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         select: {
           id: true, status: true, isShortTerm: true,
+          shortStayExtensions: true,   // 단기 연장 이력 — 위젯의 연장 이력 줄·적용취소 진입점용
           rentAmount: true, depositAmount: true, cleaningFee: true,
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,

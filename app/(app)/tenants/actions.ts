@@ -2369,7 +2369,9 @@ async function loadExtensionQuote(propertyId: string, leaseTermId: string, newOu
 
   const moveInYmd = ymdOf(lease.moveInDate)!
   const currentOutYmd = ymdOf(lease.expectedMoveOut)
-  if (currentOutYmd && newOutYmd <= currentOutYmd) return fail('연장은 현 퇴실 예정일 이후 날짜만 선택할 수 있습니다.')
+  // 같은 날짜는 허용 — 수정 폼에서 퇴실일만 먼저 저장한 뒤 "재계산 정리"로 들어오는 경로
+  // (요금은 그대로인데 기간만 늘어난 상태를 누적 요금으로 맞춘다). 과거로 당기는 건 단축이라 범위 밖.
+  if (currentOutYmd && newOutYmd < currentOutYmd) return fail('연장은 현 퇴실 예정일 이후 날짜만 선택할 수 있습니다.')
   if (!currentOutYmd && newOutYmd <= moveInYmd) return fail('퇴실일은 입주일 이후여야 합니다.')
 
   const policy = parseShortStayPolicy(lease.property.shortStayPolicy)

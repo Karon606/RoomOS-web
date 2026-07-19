@@ -51,7 +51,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           lease={{
             id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
-            dueDay: lease.dueDay,
+            dueDay: lease.dueDay, isShortTerm: lease.isShortTerm,
             reservationConfirmedAt: lease.reservationConfirmedAt, roomId: lease.room?.id ?? null,
             reservationDepositMode: resolveReservationDepositMode(
               lease.reservationDepositMode, lease.property?.reservationDepositMode, lease.isShortTerm,
@@ -67,7 +67,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantContactInfo contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
       {/* 단기 희망 고객 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
-      {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} />}
+      {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} tenantId={tenant.id} tenantName={tenant.name} onChange={refresh} />}
       {lease && <TenantAdditionalInfo lease={lease} />}
 
       {tenant.memo && (

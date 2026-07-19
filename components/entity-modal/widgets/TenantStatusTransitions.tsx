@@ -18,6 +18,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
+import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 
 type TransitionDef = {
   key: string
@@ -74,6 +75,7 @@ type Lease = {
   expectedMoveOut: Date | string | null
   rentAmount: number
   dueDay: string | null
+  isShortTerm: boolean
   reservationConfirmedAt: Date | string | null
   roomId: string | null
   // 예약금 처리 모드 해석값 — 예약 취소 반환/몰취 경로 분기('deposit'|'prepaid'|'none')
@@ -102,11 +104,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
+  const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt)
   if (transitions.length === 0) return null
 
   const handleClick = async (def: TransitionDef) => {
+    // 단기 lease의 퇴실일 변경 — 날짜만 바꾸는 우회를 막고 누적 요금을 재계산하는 연장 모달로 보낸다. 장기는 기존 미니폼.
+    if (def.key === 'changeMoveOut' && lease.isShortTerm) { setShortExtOpen(true); return }
     // 신고 9b974be0: 예약 확정 — 이용료·입주 희망일 필수(클라 선검증), 호실 미지정은 허용하되 확인 단계에 문구 표시.
     if (def.kind === 'confirm') {
       const missing: string[] = []
@@ -383,6 +388,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               </p>
             </div>
       </Modal>
+      )}
+
+      {/* 단기 연장 모달 — 퇴실일 변경 진입을 재계산 흐름으로 대체(뒷문 차단) */}
+      {shortExtOpen && (
+        <ShortStayExtensionModal open onClose={() => setShortExtOpen(false)}
+          leaseTermId={lease.id} tenantId={tenantId} tenantName={tenantName}
+          currentOut={toDateInput(lease.expectedMoveOut) || null} onDone={onChange} />
       )}
     </>
   )
