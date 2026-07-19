@@ -187,5 +187,21 @@ const RENT = 300000
     { rentAmount: 470000, moveInDate: '2026-07-20' }, '2026-08', null), 470000)
 }
 
+// ── 단기 연장 누적 재계산 — 경로 독립 (운영자 승인 2026-07-20)
+// 추가 납부 = calcShortStay(전체 기간).baseAmount - 기존 rentAmount. 텔레스코핑이라
+// 1주씩 여러 번 연장해도, 한 번에 연장해도 같은 퇴실일이면 총액이 같아야 한다.
+{
+  const P = { ...SHORT_STAY_DEFAULTS, enabled: true }
+  const R = 470000   // 김민정 520호 실측 기준
+  const w1 = calcShortStay(P, R, 7)!.baseAmount    // 1주
+  const w2 = calcShortStay(P, R, 14)!.baseAmount   // 2주
+  const w3 = calcShortStay(P, R, 21)!.baseAmount   // 3주(1개월 상한)
+  eq('연장: 김민정 1주/2주/3주 사용료', [w1, w2, w3], [157000, 329000, 470000])
+  eq('연장: 1주→2주 차액', w2 - w1, 172000)
+  eq('연장: 2주→3주 차액', w3 - w2, 141000)
+  eq('연장: 경로 독립(1주씩 두 번 = 한 번에 3주)', (w2 - w1) + (w3 - w2), w3 - w1)
+  eq('연장: 30일 초과는 정책 밖(월 전환)', calcShortStay(P, R, 31), null)
+}
+
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

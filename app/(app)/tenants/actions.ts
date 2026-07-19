@@ -13,7 +13,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
-import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
+import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -2311,6 +2311,281 @@ export async function getRoomsForQuote(): Promise<{
   return {
     rooms: rooms.map(r => ({ id: r.id, roomNo: r.roomNo, baseRent: r.baseRent, type: r.type, windowType: r.windowType, tier: r.tier, occupied: r.leaseTerms.length > 0 })),
     shortStay: parseShortStayPolicy(prop?.shortStayPolicy),
+  }
+}
+
+// ── 단기 연장 (운영자 승인 2026-07-20) ─────────────────────────────────────
+// 규칙(knowledge/short-stay-policy.md): 누적 재계산 — 최초 입주일~새 퇴실일 전체를 calcShortStay로
+// 재계산하고 추가 납부 = 새 사용료 - 기존 rentAmount. 청소비는 입실 1회(연장 미청구).
+// 30일(thresholdDays) 초과는 단기 정책 밖 → 월 계약 전환 안내(여기서는 거부).
+// 금액은 반드시 서버가 정책·DB에서 재산출 — 클라 값 신뢰 금지(락인 expectedAmount가 영구 청구 기준).
+
+type ShortStayExtensionSnapshot = {
+  at: string
+  prevRentAmount: number
+  newRentAmount: number
+  prevExpectedMoveOut: string | null
+  newExpectedMoveOut: string
+  prevStatus: string
+  prevAutoCheckoutAt: string | null
+  prevProration: { amount: number | null; month: string | null; undo: unknown } | null
+  markerRecordId: string
+  undoneAt: string | null
+}
+
+export type ShortStayExtensionPreview =
+  | {
+      ok: true
+      tenantName: string; roomNo: string | null
+      moveInDate: string; currentOut: string | null
+      currentRent: number; cleaningFee: number
+      newOut: string; stayDays: number; units: number; contractDays: number
+      newRent: number; diff: number
+      cappedAtMonth: boolean; roundedUp: boolean
+      thresholdDays: number
+    }
+  | { ok: false; error: string; overThreshold?: boolean }
+
+// 연장 대상 lease 로드 + 새 퇴실일 기준 누적 견적 — preview·extend 공용(단일 계산 경로)
+async function loadExtensionQuote(propertyId: string, leaseTermId: string, newOutYmd: string) {
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    select: {
+      id: true, status: true, isShortTerm: true, rentAmount: true, cleaningFee: true,
+      moveInDate: true, expectedMoveOut: true, autoCheckoutAt: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
+      shortStayExtensions: true, tenantId: true,
+      tenant: { select: { name: true } },
+      room: { select: { roomNo: true, baseRent: true } },
+      property: { select: { shortStayPolicy: true } },
+    },
+  })
+  const fail = (error: string, overThreshold?: boolean) => ({ ok: false as const, error, overThreshold })
+  if (!lease) return fail('계약을 찾을 수 없습니다.')
+  if (!lease.isShortTerm) return fail('단기 계약이 아닙니다.')
+  if (!['ACTIVE', 'CHECKOUT_PENDING'].includes(lease.status)) return fail('거주 중(또는 퇴실 예정) 상태에서만 연장할 수 있습니다.')
+  if (!lease.moveInDate) return fail('입주일이 없어 누적 요금을 계산할 수 없습니다.')
+  if (!lease.room) return fail('호실이 배정되지 않아 표준가를 찾을 수 없습니다.')
+
+  const moveInYmd = ymdOf(lease.moveInDate)!
+  const currentOutYmd = ymdOf(lease.expectedMoveOut)
+  if (currentOutYmd && newOutYmd <= currentOutYmd) return fail('연장은 현 퇴실 예정일 이후 날짜만 선택할 수 있습니다.')
+  if (!currentOutYmd && newOutYmd <= moveInYmd) return fail('퇴실일은 입주일 이후여야 합니다.')
+
+  const policy = parseShortStayPolicy(lease.property.shortStayPolicy)
+  if (!policy.enabled) return fail('이 영업장은 단기 입실 정책이 꺼져 있습니다. 설정에서 먼저 켜 주세요.')
+  const stayDays = stayDaysOf(moveInYmd, newOutYmd)
+  if (stayDays == null) return fail('날짜가 올바르지 않습니다.')
+  const quote = calcShortStay(policy, lease.room.baseRent, stayDays)
+  if (!quote) return fail(`단기 정책 범위(${policy.thresholdDays}일)를 넘습니다. 월 계약으로 전환해 주세요.`, true)
+
+  return { ok: true as const, lease, policy, quote, moveInYmd, currentOutYmd, stayDays }
+}
+
+export async function previewShortStayExtension(leaseTermId: string, newOutYmd: string): Promise<ShortStayExtensionPreview> {
+  const { propertyId } = await getPropertyId()
+  const r = await loadExtensionQuote(propertyId, leaseTermId, newOutYmd)
+  if (!r.ok) return { ok: false, error: r.error, overThreshold: r.overThreshold }
+  const { lease, quote, moveInYmd, currentOutYmd } = r
+  return {
+    ok: true,
+    tenantName: lease.tenant.name, roomNo: lease.room?.roomNo ?? null,
+    moveInDate: moveInYmd, currentOut: currentOutYmd,
+    currentRent: lease.rentAmount, cleaningFee: lease.cleaningFee,
+    newOut: newOutYmd, stayDays: r.stayDays, units: quote.units, contractDays: quote.contractDays,
+    newRent: quote.baseAmount, diff: quote.baseAmount - lease.rentAmount,
+    cappedAtMonth: quote.cappedAtMonth, roundedUp: quote.roundedUp,
+    thresholdDays: r.policy.thresholdDays,
+  }
+}
+
+/**
+ * 단기 연장 확정 — 한 트랜잭션으로:
+ * rentAmount(새 누적 사용료)·expectedMoveOut 갱신, ACTIVE 복귀, autoCheckoutAt 리셋(새 D-1 재무장),
+ * 퇴실 일할 필드 클리어(일할이 락인보다 우선이라 남으면 연장 청구가 무시됨 — 적대검증 P0-1),
+ * 입주월 마커 record(expectedAmount=새 누적)로 청구 락 인상, isPaid 재계산, 이력 스냅샷 적립.
+ * expectedCurrentOutYmd는 클라가 본 현 퇴실일 — 조건부 선점(updateMany)의 멱등 토큰(이중 제출·동시 수정 방어).
+ */
+export async function extendShortStay(
+  leaseTermId: string,
+  newOutYmd: string,
+  expectedCurrentOutYmd: string | null,
+): Promise<{ ok: true; diff: number; newRent: number; inMonth: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { user, propertyId } = await getPropertyId()
+    const r = await loadExtensionQuote(propertyId, leaseTermId, newOutYmd)
+    if (!r.ok) return { ok: false, error: r.error }
+    const { lease, quote, moveInYmd, currentOutYmd } = r
+
+    if (currentOutYmd !== expectedCurrentOutYmd) return { ok: false, error: '다른 곳에서 계약이 수정되었습니다. 새로고침 후 다시 시도해 주세요.' }
+    if (quote.baseAmount <= lease.rentAmount) {
+      return { ok: false, error: '새 누적 요금이 기존 이용료 이하입니다. 수동 협의 금액이면 수정 폼에서 직접 조정해 주세요.' }
+    }
+
+    const inMonth = moveInYmd.slice(0, 7)
+    const nowIso = new Date().toISOString()
+
+    await prisma.$transaction(async tx => {
+      // 마커 record — 입주월 앵커(예약 선납 reanchor와 동일 관례). 청구 락을 새 누적으로 인상.
+      // seqNo는 소프트삭제분 포함 count(@@unique 충돌 방지 — savePayment 관례).
+      const seqNo = await tx.paymentRecord.count({
+        where: { leaseTermId, targetMonth: inMonth, deletedAt: undefined },
+      })
+      const marker = await tx.paymentRecord.create({
+        data: {
+          leaseTermId, tenantId: lease.tenantId, propertyId,
+          targetMonth: inMonth,
+          expectedAmount: quote.baseAmount,
+          actualAmount: 0,
+          payDate: new Date(),
+          seqNo: seqNo + 1,
+          isPaid: false, carryOver: 0,
+          memo: `[단기연장] ${quote.units}주 · ${lease.rentAmount.toLocaleString()}→${quote.baseAmount.toLocaleString()} · 퇴실 ${currentOutYmd ?? '미정'}→${newOutYmd}`,
+        },
+      })
+
+      const snapshot: ShortStayExtensionSnapshot = {
+        at: nowIso,
+        prevRentAmount: lease.rentAmount, newRentAmount: quote.baseAmount,
+        prevExpectedMoveOut: currentOutYmd, newExpectedMoveOut: newOutYmd,
+        prevStatus: lease.status,
+        prevAutoCheckoutAt: lease.autoCheckoutAt ? lease.autoCheckoutAt.toISOString() : null,
+        prevProration: (lease.checkoutProratedAmount != null || lease.checkoutProratedMonth != null || lease.checkoutProrationUndo != null)
+          ? { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth, undo: lease.checkoutProrationUndo }
+          : null,
+        markerRecordId: marker.id,
+        undoneAt: null,
+      }
+      const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
+
+      // 조건부 선점 — 읽은 시점의 퇴실일·상태 그대로일 때만 갱신(크론·동시 조작·이중 제출 차단)
+      const updated = await tx.leaseTerm.updateMany({
+        where: {
+          id: leaseTermId, propertyId, isShortTerm: true,
+          status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
+          expectedMoveOut: lease.expectedMoveOut,
+          rentAmount: lease.rentAmount,
+        },
+        data: {
+          rentAmount: quote.baseAmount,
+          expectedMoveOut: new Date(newOutYmd),   // 'YYYY-MM-DD' → UTC 자정, @db.Date 절삭(기존 저장 관행)
+          status: 'ACTIVE',
+          autoCheckoutAt: null,   // 새 퇴실일 D-1에 크론 재무장
+          checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull,
+          shortStayExtensions: [...prevList, snapshot] as Prisma.InputJsonValue,
+        },
+      })
+      if (updated.count !== 1) throw new Error('CONFLICT')
+
+      if (lease.status === 'CHECKOUT_PENDING') {
+        await tx.tenantStatusLog.create({
+          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE', changedById: user.sub, reason: '단기 연장' },
+        })
+      }
+
+      // 입주월 isPaid 재계산 — 청구가 새 누적으로 올라 기존 완납 record가 미완납이 될 수 있음
+      const records = await tx.paymentRecord.findMany({
+        where: { leaseTermId, targetMonth: inMonth, isDeposit: false },
+        orderBy: { payDate: 'asc' },
+      })
+      let cumulative = 0
+      for (const rec of records) {
+        cumulative += rec.actualAmount
+        await tx.paymentRecord.update({ where: { id: rec.id }, data: { isPaid: cumulative >= quote.baseAmount } })
+      }
+    })
+
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+    return { ok: true, diff: quote.baseAmount - lease.rentAmount, newRent: quote.baseAmount, inMonth }
+  } catch (err) {
+    if ((err as Error).message === 'CONFLICT') return { ok: false, error: '다른 곳에서 계약이 수정되었습니다. 새로고침 후 다시 시도해 주세요.' }
+    return { ok: false, error: (err as Error).message ?? '연장 처리 중 오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 단기 연장 적용취소 — 마지막 미취소 스냅샷으로 원복(v2.0 §16).
+ * 가드: 연장 이후 계약이 또 수정됐거나, 입주월 이용료 수납 합이 이전 누적을 초과하면 차단.
+ * 원복: lease 필드 복원 + 마커 소프트삭제 + 연장 이후 생성 record의 락(expectedAmount) 되쓰기 + isPaid 재계산.
+ * (마커만 지우면 차액 수납·0원 record가 새 누적을 락으로 물고 남는다 — 적대검증 P1-1)
+ */
+export async function undoShortStayExtension(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { user, propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: {
+        id: true, status: true, rentAmount: true, expectedMoveOut: true, tenantId: true,
+        moveInDate: true, shortStayExtensions: true,
+      },
+    })
+    if (!lease || !lease.moveInDate) return { ok: false, error: '계약을 찾을 수 없습니다.' }
+    const list = (Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
+    const idx = list.map(e => e.undoneAt).lastIndexOf(null)
+    if (idx < 0) return { ok: false, error: '되돌릴 연장이 없습니다.' }
+    const entry = list[idx]
+
+    if (lease.rentAmount !== entry.newRentAmount || ymdOf(lease.expectedMoveOut) !== entry.newExpectedMoveOut) {
+      return { ok: false, error: '연장 이후 계약이 수정되어 적용취소할 수 없습니다. 수정 폼에서 직접 되돌려 주세요.' }
+    }
+    const inMonth = ymdOf(lease.moveInDate)!.slice(0, 7)
+    const paidAgg = await prisma.paymentRecord.aggregate({
+      where: { leaseTermId, targetMonth: inMonth, isDeposit: false },
+      _sum: { actualAmount: true },
+    })
+    if ((paidAgg._sum.actualAmount ?? 0) > entry.prevRentAmount) {
+      return { ok: false, error: '연장 차액 수납이 이미 기록되어 적용취소할 수 없습니다. 수납 기록을 먼저 삭제해 주세요.' }
+    }
+
+    await prisma.$transaction(async tx => {
+      const updated = await tx.leaseTerm.updateMany({
+        where: { id: leaseTermId, propertyId, rentAmount: entry.newRentAmount },
+        data: {
+          rentAmount: entry.prevRentAmount,
+          expectedMoveOut: entry.prevExpectedMoveOut ? new Date(entry.prevExpectedMoveOut) : null,
+          status: entry.prevStatus as LeaseStatus,
+          autoCheckoutAt: entry.prevAutoCheckoutAt ? new Date(entry.prevAutoCheckoutAt) : null,
+          checkoutProratedAmount: entry.prevProration?.amount ?? null,
+          checkoutProratedMonth: entry.prevProration?.month ?? null,
+          checkoutProrationUndo: (entry.prevProration?.undo ?? Prisma.DbNull) as Prisma.InputJsonValue,
+          shortStayExtensions: list.map((e, i) => i === idx ? { ...e, undoneAt: new Date().toISOString() } : e) as Prisma.InputJsonValue[],
+        },
+      })
+      if (updated.count !== 1) throw new Error('CONFLICT')
+
+      // 마커 소프트삭제 + 연장 시점 이후 생성된 입주월 record의 락 되쓰기(이전 누적으로)
+      await tx.paymentRecord.updateMany({
+        where: { id: entry.markerRecordId, leaseTermId },
+        data: { deletedAt: new Date() },
+      })
+      await tx.paymentRecord.updateMany({
+        where: { leaseTermId, targetMonth: inMonth, isDeposit: false, createdAt: { gte: new Date(entry.at) }, expectedAmount: { gt: entry.prevRentAmount } },
+        data: { expectedAmount: entry.prevRentAmount },
+      })
+      if (lease.status !== entry.prevStatus) {
+        await tx.tenantStatusLog.create({
+          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: lease.status as LeaseStatus, toStatus: entry.prevStatus as LeaseStatus, changedById: user.sub, reason: '단기 연장 적용취소' },
+        })
+      }
+      // isPaid 재계산 — 이전 누적 기준
+      const records = await tx.paymentRecord.findMany({
+        where: { leaseTermId, targetMonth: inMonth, isDeposit: false },
+        orderBy: { payDate: 'asc' },
+      })
+      let cumulative = 0
+      for (const rec of records) {
+        cumulative += rec.actualAmount
+        await tx.paymentRecord.update({ where: { id: rec.id }, data: { isPaid: cumulative >= entry.prevRentAmount } })
+      }
+    })
+
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+    return { ok: true }
+  } catch (err) {
+    if ((err as Error).message === 'CONFLICT') return { ok: false, error: '다른 곳에서 계약이 수정되었습니다. 새로고침 후 다시 시도해 주세요.' }
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 
