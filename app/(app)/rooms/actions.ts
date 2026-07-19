@@ -736,7 +736,11 @@ export async function savePayment(data: {
       : data.expectedAmount
     monthBillByTm[currentTm] = monthBill
     const remainingThisMon = Math.max(0, monthBill - alreadyPaid)
-    const portion          = Math.min(remaining, remainingThisMon)
+    // 단기는 입주월 외 청구 0(billForLeaseMonth 단기 규칙)이라 과납을 다음 달로 이월할 곳이 없다.
+    // 청소비를 사용료와 합쳐 입금하는 실관행(파트쿨리나 사례)에서 잔액이 어느 record에도 못 남고
+    // 증발하는 것을 막기 위해, 입력월에서 남는 금액을 전부 흡수해 과납(+잔액)으로 보이게 한다.
+    const shortAbsorb = !!billingLease?.isShortTerm && !!billingLease?.moveInDate && isOriginalMonth
+    const portion          = shortAbsorb ? remaining : Math.min(remaining, remainingThisMon)
 
     // portion이 0이어도 원본 월에 한 번은 record를 남겨야 0원 입력이 흔적 남음
     // (이 케이스는 원본 월이 이미 완납인 상태에서 추가 입력한 경우 — 다음 달로 이월)
