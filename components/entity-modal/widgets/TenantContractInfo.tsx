@@ -6,6 +6,7 @@ import { Section, Grid, Item } from './Section'
 
 type Lease = {
   status: string
+  isShortTerm?: boolean   // 단기 — rentAmount가 월액이 아니라 체류 전체 사용료
   rentAmount: number
   depositAmount: number
   cleaningFee: number
@@ -66,7 +67,7 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
     <Section title="계약 정보">
       <Grid>
         {/* 좌우상하 순서: 금액류 → 납부방식·문의 일시 → 입주 희망일·퇴실 예정일(나란히) → 연락 알림일 (운영자 확정 2026-07-10) */}
-        <Item label="월 이용료" value={<MoneyDisplay amount={lease.rentAmount} />} />
+        <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<MoneyDisplay amount={lease.rentAmount} />} />
         <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />
         <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />
         <Item label="납부일"   value={fmtDueDay(lease.dueDay)} />

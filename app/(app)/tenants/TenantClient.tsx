@@ -116,7 +116,7 @@ const COL_DEFS = [
   { key: 'contact',       label: '연락처',   defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
   { key: 'payMethod',     label: '결제수단', defaultOn: false, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
   { key: 'depositAmount', label: '보증금',   defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
-  { key: 'rentAmount',    label: '월 이용료', defaultOn: true, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'rentAmount',    label: '이용료', defaultOn: true, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
   { key: 'dueDay',        label: '납부일',   defaultOn: true,  tabs: ['residents'] },
   { key: 'stayPeriod',    label: '거주기간', defaultOn: true,  tabs: ['residents', 'past'] },
   { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
@@ -190,7 +190,7 @@ function cancelStageText(lease: LeaseTerm | undefined): string | undefined {
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실·이름·상태는 항상 표시)
 const TENANT_CARD_FIELDS: FieldDef[] = [
   { key: 'contact', label: '연락처' },
-  { key: 'payment', label: '월이용료·납부일' },
+  { key: 'payment', label: '이용료·납부일' },
   { key: 'deposit', label: '보증금·거주기간' },
 ]
 const REG_LABEL: Record<string, string> = {
@@ -356,7 +356,7 @@ export default function TenantClient({
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 금액 컬럼·필드·정렬·필터를 집합에서 제외
-  // 카드 표시 항목 — 금액 차단 시 '월이용료·납부일' 제거, '보증금·거주기간'은 거주기간만
+  // 카드 표시 항목 — 금액 차단 시 '이용료·납부일' 제거, '보증금·거주기간'은 거주기간만
   const tenantCardFields: FieldDef[] = hideMoney
     ? [{ key: 'contact', label: '연락처' }, { key: 'deposit', label: '거주기간' }]
     : TENANT_CARD_FIELDS
@@ -1475,14 +1475,27 @@ export default function TenantClient({
                   <a href={`tel:${primary.contactValue.replace(/[^0-9+]/g, '')}`} onClick={e => e.stopPropagation()}
                     className="text-xs text-[var(--coral)] mb-2 inline-block hover:underline underline-offset-2">{formatPhone(primary.contactValue)}</a>
                 )}
-                {/* 이용료 · 납부일 */}
+                {/* 이용료 · 납부일 — 단기는 rentAmount가 체류 전체 사용료라 라벨 '이용료',
+                    매월 반복 납부 개념이 없어 납부일 대신 청소비 병기(신고 64bebb05, 운영자 승인 2026-07-20) */}
                 {!hideMoney && cardFields.payment && (
                   <div className="flex items-center gap-2 text-xs flex-wrap">
-                    <span className="text-[var(--warm-muted)]">월이용료</span>
+                    <span className="text-[var(--warm-muted)]">{lease?.isShortTerm ? '이용료' : '월이용료'}</span>
                     <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
-                    <span className="text-[var(--warm-border)]">·</span>
-                    <span className="text-[var(--warm-muted)]">납부일</span>
-                    <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
+                    {lease?.isShortTerm ? (
+                      lease.cleaningFee > 0 && (
+                        <>
+                          <span className="text-[var(--warm-border)]">·</span>
+                          <span className="text-[var(--warm-muted)]">청소비</span>
+                          <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease.cleaningFee} /></span>
+                        </>
+                      )
+                    ) : (
+                      <>
+                        <span className="text-[var(--warm-border)]">·</span>
+                        <span className="text-[var(--warm-muted)]">납부일</span>
+                        <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
+                      </>
+                    )}
                     {lease && (
                       <button type="button" onClick={e => { e.stopPropagation(); openPayModal(tenant, lease) }}
                         className="ml-auto shrink-0 inline-flex items-center justify-center min-h-[44px] -my-2 px-3 text-xs font-semibold text-[var(--coral)]">
@@ -1649,6 +1662,9 @@ export default function TenantClient({
                               {lease ? (
                                 <span className="flex items-center gap-1.5 min-w-0">
                                   <span className="truncate underline decoration-dotted decoration-[var(--coral)]/50 underline-offset-2"><MoneyDisplay amount={lease.rentAmount} /></span>
+                                  {lease.isShortTerm && lease.cleaningFee > 0 && (
+                                    <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">청소비 <MoneyDisplay amount={lease.cleaningFee} /></span>
+                                  )}
                                   <span className="shrink-0 text-[0.625rem] font-medium text-[var(--coral)]">수납</span>
                                 </span>
                               ) : <span className="block truncate">—</span>}
@@ -3175,7 +3191,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">
-                  {hasNRRate ? '비거주 이용료' : '월 이용료'}
+                  {hasNRRate ? '비거주 이용료' : isShortTerm ? '이용료' : '월 이용료'}
                 </label>
                 {hasNRRate && (
                   <Badge tone="pale-blue">비거주 전용</Badge>

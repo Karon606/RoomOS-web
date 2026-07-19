@@ -56,12 +56,13 @@ export async function getTenants() {
     orderBy: { createdAt: 'desc' },
   })
 
-  // 금액 읽기 차단(제한 스태프) — 응답 payload에서 이용료·보증금 제거. 조회 전용 경로라 결제 수식 무관.
+  // 금액 읽기 차단(제한 스태프) — 응답 payload에서 이용료·보증금·청소비 제거. 조회 전용 경로라 결제 수식 무관.
   if (!canReadScope(role, 'money')) {
     for (const t of tenants) {
       for (const lt of t.leaseTerms) {
         ;(lt as { rentAmount: number | null }).rentAmount = null
         ;(lt as { depositAmount: number | null }).depositAmount = null
+        ;(lt as { cleaningFee: number | null }).cleaningFee = null
       }
     }
   }
