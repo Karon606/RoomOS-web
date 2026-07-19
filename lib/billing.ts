@@ -12,6 +12,11 @@ export type BillingLeaseFields = {
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
   discounts?: RentDiscountInput[] | null
+  // 단기 입주월 단일 청구 — 단기는 rentAmount가 월액이 아니라 체류 전체 사용료라
+  // 월 루프가 달마다 fallback을 물면 이중 청구가 된다(운영자 승인 2026-07-20).
+  // 둘 다 제공될 때만 발동 — 미제공 호출부는 기존 동작(회귀 0).
+  isShortTerm?: boolean
+  moveInDate?: Date | string | null
   // 예약 인상(미래월 미리 반영) — 인상 적용월 이상의 달은 scheduledRent 로 청구한다.
   // "7/1부 인상"은 곧 "7월 이용료부터" 라서, 적용일 전에 7월분을 미리 납부해도 인상가가 맞다.
   // 둘 중 한 형태로 제공: 평탄화된 scheduledRent/rentUpdateMonth, 또는 room 객체(스케줄러가 baseRent로
@@ -36,6 +41,12 @@ export function billForLeaseMonth(
 ): number {
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
   if (locked && locked > 0) return locked
+  // 단기 입주월 단일 청구 — 일할·락인은 위에서 이미 존중(record 있는 달의 과거 결산 불변),
+  // record 없는 달의 fallback만 차단해 월 경계를 넘는 단기의 이중 청구를 막는다.
+  if (l.isShortTerm && l.moveInDate) {
+    const inMonth = monthOfDate(l.moveInDate)
+    if (inMonth && mon !== inMonth) return 0
+  }
   return discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
 }
 

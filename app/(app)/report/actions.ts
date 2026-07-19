@@ -8,7 +8,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
-import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 
 async function getPropertyId() {
@@ -90,7 +90,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
       rentAmount: { gt: 0 },
     },
     select: {
-      id: true, status: true, rentAmount: true, dueDay: true,
+      id: true, status: true, rentAmount: true, isShortTerm: true, dueDay: true,
       moveInDate: true, expectedMoveOut: true, moveOutDate: true,
       overrideDueDay: true, overrideDueDayMonth: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
@@ -365,7 +365,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: BILLABLE_STATUSES }, rentAmount: { gt: 0 } },
       select: {
-        id: true, status: true, rentAmount: true,
+        id: true, status: true, rentAmount: true, isShortTerm: true,
         moveInDate: true, expectedMoveOut: true, moveOutDate: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
@@ -473,6 +473,9 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
         : (lease.moveOutDate ? new Date(lease.moveOutDate) : null)
       if (moveIn && moveIn > monthEnd) continue        // 아직 미입주
       if (moveOut && moveOut < monthStart) continue     // 이미 퇴실
+      // 단기는 입주월 1회 인식 — rentAmount가 체류 전체 사용료라 월 반복 합산 금지(lib/billing 단기 규칙과 동일)
+      const shortInMonth = lease.isShortTerm ? monthOfDate(lease.moveInDate) : null
+      if (shortInMonth && shortInMonth !== month) continue
       revenue += discountedRent(lease.discounts, month, lease.rentAmount)
     }
     // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가

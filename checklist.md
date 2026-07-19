@@ -1,17 +1,26 @@
-# 체크리스트 — 오류신고 64bebb05 (단기 '월이용료' 용어 + 청소비 미표시)
+# 체크리스트 — 단기 연장 기능 (2026-07-20 운영자 Go)
 
-운영자 승인: 라벨 '이용료', 단기 카드의 납부일 슬롯을 청소비로 대체.
+승인 사항: 엔진 산식 유지(1주 157,000), LeaseTerm.shortStayExtensions Json 컬럼, billForLeaseMonth 단기 입주월 단일 청구(락인보다 뒤), 월 전환 자동화·단축 환불 범위 제외.
 
-- [x] TenantClient COL_DEFS 라벨 '월 이용료' → '이용료' (key·정렬 불변)
-- [x] TenantClient 카드 표시 항목 설정 라벨 '월이용료·납부일' → '이용료·납부일'
-- [x] 모바일 카드: 단기일 때 '이용료 금액 · 청소비 금액' (납부일 제거), 장기는 기존 그대로
-- [x] 데스크탑 테이블 rentAmount 셀: 단기 행에 보조 표기 '청소비 금액'
-- [x] 등록/수정 폼 금액 라벨: 비거주 이용료 / 이용료(단기) / 월 이용료 3분기
-- [x] TenantContractInfo: Lease 타입에 isShortTerm 추가 + 라벨 분기('이용료'/'월 이용료')
-- [x] getTenants 금액 마스킹에 cleaningFee 추가 (제한 스태프 정합)
-- [x] 타입체크 통과 (소스 오류 0, .next 잔존 오류는 iCloud 중복 파일 기인·기존)
-- [x] lint 수정 전후 diff 0 (기존 오류만 존재)
-- [x] 금전 회귀 테스트 51/51 통과 (scripts/test-money.ts)
-- [x] 실데이터 케이스 확인: 단기 김민정(rent 157,000·clean 20,000) 렌더 분기 데이터 존재 확인
-- [x] loop.md 증거 보고서 제출
-- [ ] 커밋·푸시 + 오류신고 done 처리 + Work_log 갱신
+## 1단계 — 선행 결제 수정 (직접 작업, 결제 로직)
+- [ ] billForLeaseMonth: 단기는 입주월 외 fallback 청구 차단(일할·락인은 유지 — 과거 결산 불변)
+- [ ] 호출부 select에 isShortTerm·moveInDate 확대(rooms 2곳, unpaid, dashboard, report, findFirstUnpaidMonth)
+- [ ] report 예측 매출 루프(rentAmount 직접 합산) 단기 보정
+- [ ] CSV 월간 시트(export route) 단기 보정
+- [ ] scripts/test-money.ts에 단기 월경계 케이스 고정
+- [ ] 파트쿨리나 422호 moveOut null 정리(상태 로그 근거로, 근거 없으면 보류 보고)
+- [ ] 테스트·타입·lint 통과 후 커밋
+
+## 2단계 — 연장 서버 액션 + undo
+- [ ] prisma: LeaseTerm.shortStayExtensions Json? 컬럼(비파괴 ALTER)
+- [ ] previewShortStayExtension / extendShortStay(조건부 updateMany 선점, 일할 필드 클리어, 마커 record, recalculatePayments, 한 tx)
+- [ ] undoShortStayExtension(스냅샷 원복, 연장 이후 record exp 되쓰기, 가드)
+- [ ] test-money에 연장 차액·경로 독립 케이스 고정
+- [ ] 커밋
+
+## 3단계 — 연장 모달 + 진입점 + 표기
+- [ ] 연장 모달(Modal+dirty, SegmentedControl+DatePicker, StayQuoteModal 행 분리 문법, 확정 버튼 금액)
+- [ ] 진입점: 상세 단기 영역 버튼 / CHECKOUT_PENDING '퇴실일 변경' 라우팅 / D-1 알림(재조회) / 수정 폼 저장 후 제안
+- [ ] 확정 후 3택(지금 수납 프리필 / 문자 NoticeSmsModal / 나중에) + 토스트·상시 undo
+- [ ] 카드 '(N주)' 표기, 상세 연장 이력 줄, 캘린더 ACTIVE 단기 VEVENT
+- [ ] loop.md 증거 보고 + 커밋 + Work_log·knowledge 적립

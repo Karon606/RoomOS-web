@@ -70,6 +70,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·dashboard page 와 동일)
         checkoutProratedAmount: true,
         checkoutProratedMonth: true,
+        isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing) — moveInDate와 함께 판정
         // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영

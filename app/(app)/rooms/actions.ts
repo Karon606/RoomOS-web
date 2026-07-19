@@ -275,6 +275,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
         { rentAmount: lease.rentAmount, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
+          isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate,   // 단기 입주월 단일 청구
           room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate } },
         ms,
         lockedExpectedByMonth.get(ms) ?? null,
@@ -582,6 +583,7 @@ async function findFirstUnpaidMonth(
       moveInDate: true,
       dueDay: true,
       rentAmount: true,
+      isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
       expectedMoveOut: true,
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
@@ -702,6 +704,7 @@ export async function savePayment(data: {
     where: { id: data.leaseTermId },
     select: {
       rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영)
       room: { select: { scheduledRent: true, rentUpdateDate: true } },
@@ -802,6 +805,7 @@ export async function getTargetMonthOptions(
     select: {
       moveInDate: true,
       rentAmount: true,
+      isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
       expectedMoveOut: true,
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
@@ -1189,6 +1193,7 @@ async function serverBillForMonth(leaseTermId: string, mon: string, fallback: nu
     where: { id: leaseTermId },
     select: {
       rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
     },

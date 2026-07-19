@@ -14,6 +14,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
+import { billForLeaseMonth } from '../lib/billing'
 
 let pass = 0
 let fail = 0
@@ -168,6 +169,22 @@ const RENT = 300000
   // JSON 방어 파싱 — 이상값은 기본값으로
   eq('단기: 정책 파싱 방어', parseShortStayPolicy({ enabled: true, multiplier: 99, cleaningFee: -5 }),
     { ...SHORT_STAY_DEFAULTS, enabled: true })
+}
+
+// ── billForLeaseMonth 단기 입주월 단일 청구 ── (운영자 승인 2026-07-20)
+// 단기 rentAmount = 체류 전체 사용료. 월 루프가 입주월 밖에서 fallback을 물면 이중 청구.
+// 락인·일할은 규칙보다 우선(기존 record 있는 달의 과거 결산 불변).
+{
+  const shortLease = { rentAmount: 329000, isShortTerm: true, moveInDate: '2026-07-20' }
+  eq('청구: 단기 입주월 = 전액', billForLeaseMonth(shortLease, '2026-07', null), 329000)
+  eq('청구: 단기 비입주월 record 없음 = 0', billForLeaseMonth(shortLease, '2026-08', null), 0)
+  eq('청구: 단기 비입주월 락인은 유지(결산 불변)', billForLeaseMonth(shortLease, '2026-08', 157000), 157000)
+  eq('청구: 단기 일할 정산은 규칙보다 우선', billForLeaseMonth(
+    { ...shortLease, checkoutProratedAmount: 50000, checkoutProratedMonth: '2026-08' }, '2026-08', null), 50000)
+  eq('청구: 단기인데 입주일 없으면 기존 동작(방어)', billForLeaseMonth(
+    { rentAmount: 329000, isShortTerm: true, moveInDate: null }, '2026-08', null), 329000)
+  eq('청구: 장기는 규칙 미적용(회귀 0)', billForLeaseMonth(
+    { rentAmount: 470000, moveInDate: '2026-07-20' }, '2026-08', null), 470000)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

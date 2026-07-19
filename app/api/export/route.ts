@@ -136,8 +136,14 @@ export async function GET(request: NextRequest) {
         prevPaidThisMonth = preAcqPaid >= l.rentAmount || dueDayBeforeCutoff
       }
 
-      const balance = prevPaidThisMonth ? 0 : totalPaid - l.rentAmount
-      const isPaid  = prevPaidThisMonth || totalPaid >= l.rentAmount
+      // 단기는 입주월 1회 청구 — 다른 달 시트에선 청구 0 (lib/billing 단기 규칙과 동일).
+      // '이용료' 컬럼은 가져오기 매칭 키(rentAmount 대조)라 값을 바꾸지 않고 잔액·상태만 보정.
+      const shortInMonth = l.isShortTerm && l.moveInDate
+        ? `${new Date(l.moveInDate).getFullYear()}-${String(new Date(l.moveInDate).getMonth() + 1).padStart(2, '0')}`
+        : null
+      const monthBill = shortInMonth && shortInMonth !== targetMonth ? 0 : l.rentAmount
+      const balance = prevPaidThisMonth ? 0 : totalPaid - monthBill
+      const isPaid  = prevPaidThisMonth || totalPaid >= monthBill
 
       return {
         '호실':        l.room?.roomNo ?? '',

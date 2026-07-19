@@ -103,7 +103,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const pReservedLeases = prisma.leaseTerm.findMany({
     where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
     select: {
-      id: true, rentAmount: true, moveInDate: true, expectedMoveOut: true,
+      id: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
@@ -179,7 +179,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
-      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true } } },
+      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -371,6 +371,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·unpaid.ts 와 동일)
         checkoutProratedAmount: true,
         checkoutProratedMonth: true,
+        isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing) — moveInDate와 함께 판정
         // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
