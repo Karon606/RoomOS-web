@@ -9,3 +9,4 @@
 - **수령확정(confirmReceipt)** — 구매를 재고 입고로 확정. receivedAt 설정 + 허브 배치 + 자동 점검.
 - **양도인(prevOwner)** — 영업장 인수 전 점유자 몫. 인수일(acquisitionDate)·cutoff로 분리.
 - **CHECKOUT_PENDING / RESERVED / ACTIVE / NON_RESIDENT** — lease 상태. 거주성·청구 대상 판정에 사용.
+- **고객 퍼널 용어 (e1b81629 재정의, 2026-07-19)** — 문의 = WAITING_TOUR+투어일 없음(파생 표시, enum 아님) / 투어 예정 = WAITING_TOUR+투어일 있음 / 투어 완료 = TOUR_DONE / 입실 예약 = RESERVED 미확정 / 예약 확정 = RESERVED+reservationConfirmedAt / 입실 취소 = CANCELLED(문의~거주 전 단계 이탈 포괄, 단계·사유는 TenantStatusLog fromStatus·reason으로 파생). '예약' 어휘는 방(입실) 예약 전용 — 투어 쪽 라벨에서 제거. 라벨 정본 lib/statusColors.ts. [[decisions]]
