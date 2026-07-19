@@ -171,6 +171,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     allHistoricalPayments,
     reserveTxnsRaw,
     allMonthPayments,
+    tourDoneCount,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
@@ -427,6 +428,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, targetMonth, isDeposit: false, isPrevOwner: false },
       select: { leaseTermId: true, actualAmount: true },
     }),
+    // '문의·투어' StatCard 집계용 — 라벨에 걸맞게 투어 완료도 포함(e1b81629 후속, 운영자 승인)
+    prisma.leaseTerm.count({ where: { propertyId, status: 'TOUR_DONE' } }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -1623,7 +1626,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     vacantRooms,
     occupiedRooms: totalRooms - vacantRooms,
     onboarding,
-    statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount, waitingTour: waitingTourLeases.length },
+    statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount, waitingTour: waitingTourLeases.length + tourDoneCount },
     totalTenants:    activeTenants.length,
     genderDist:      toDistribution(genderMap),
     nationalityDist: toDistribution(nationalityMap),
