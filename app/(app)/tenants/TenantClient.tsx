@@ -88,6 +88,8 @@ type LeaseTerm = {
   wishRooms: string | null; wishConditions: string | null; keepAlertAfterInquiry: boolean; visitRoute: string | null
   room: { id: string; roomNo: string; floor: string | null } | null
   paymentRecords: PaymentRecord[]
+  // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
+  statusLogs?: { fromStatus: string; reason: string | null }[]
 }
 
 type Tenant = {
@@ -154,15 +156,35 @@ function reservedMoveInSub(moveInDate: string | Date | null | undefined, today?:
 // 예약은 확정 여부를 라벨로 구분('입실 예약'/'예약 확정') — 호실 관리(RoomsClient) 정본과 동일 문법.
 // 투어일 없는 WAITING_TOUR는 '문의'로 파생 표시(e1b81629 용어 재정의 — enum 신설 없음).
 // 별도 success 칩(완납 색과 충돌)을 쓰지 않는다(디자인 패널 2026-07-15).
-function StatusChip({ status, confirmed, moveInDate, today, hasTourDate }: {
-  status: string; confirmed?: boolean; moveInDate?: string | Date | null; today?: string; hasTourDate?: boolean
+function StatusChip({ status, confirmed, moveInDate, today, hasTourDate, quietSub }: {
+  status: string; confirmed?: boolean; moveInDate?: string | Date | null; today?: string; hasTourDate?: boolean; quietSub?: string
 }) {
   if (status === 'RESERVED') {
     return <StatusBadge tone="movein" sub={reservedMoveInSub(moveInDate, today)}>{confirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
   }
   const ex = statusException(status, { hasTourDate })
   if (ex) return <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge>
-  return <span className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</span>
+  return (
+    <span className="text-xs font-medium text-[var(--warm-mid)]">
+      {STATUS_LABEL[status] ?? status}
+      {quietSub && <span className="font-normal text-[var(--warm-muted)]"> · {quietSub}</span>}
+    </span>
+  )
+}
+
+// 취소 단계 부제 — 어느 단계에서 이탈했는지 이력(fromStatus)으로 파생 + 기록된 사유(e1b81629).
+// 이력이 없으면(구 데이터·생성 직후 취소) 부제 없음.
+function cancelStageText(lease: LeaseTerm | undefined): string | undefined {
+  const log = lease?.statusLogs?.[0]
+  if (!log) return undefined
+  const stage =
+    log.fromStatus === 'RESERVED'     ? '예약 취소'
+    : log.fromStatus === 'TOUR_DONE'  ? '투어 후 취소'
+    : log.fromStatus === 'WAITING_TOUR' ? (lease?.tourDate ? '투어 전 취소' : '문의 취소')
+    : ['ACTIVE', 'CHECKOUT_PENDING'].includes(log.fromStatus) ? '거주 중 취소'
+    : undefined
+  if (stage && log.reason) return `${stage} · ${log.reason}`
+  return stage ?? log.reason ?? undefined
 }
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실·이름·상태는 항상 표시)
@@ -1444,7 +1466,8 @@ export default function TenantClient({
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
                   {(status === 'RESERVED' || statusException(status)) && (
-                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} hasTourDate={!!lease?.tourDate} />
+                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} hasTourDate={!!lease?.tourDate}
+                      quietSub={status === 'CANCELLED' ? cancelStageText(lease) : undefined} />
                   )}
                 </div>
                 {/* 연락처 — 탭하면 바로 전화 */}
@@ -1645,7 +1668,8 @@ export default function TenantClient({
                           return (
                             <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
-                                <span className="self-start"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate} /></span>
+                                <span className="self-start"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} hasTourDate={!!lease?.tourDate}
+                                  quietSub={status === 'CANCELLED' ? cancelStageText(lease) : undefined} /></span>
                                 {ddLabel && <span className={`text-xs font-medium pl-1 whitespace-nowrap ${ddColor}`}>{ddLabel}</span>}
                               </div>
                             </td>

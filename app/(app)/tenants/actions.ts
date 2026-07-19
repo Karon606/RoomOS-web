@@ -33,6 +33,13 @@ export async function getTenants() {
         take: 1,
         include: {
           room: { select: { id: true, roomNo: true, floor: true } },
+          // 취소 단계 부제(어느 단계에서 취소됐나) — 최근 CANCELLED 전이의 fromStatus·사유(e1b81629)
+          statusLogs: {
+            where: { toStatus: 'CANCELLED' },
+            orderBy: { changedAt: 'desc' },
+            take: 1,
+            select: { fromStatus: true, reason: true },
+          },
           paymentRecords: {
             where: { deletedAt: null },
             orderBy: { targetMonth: 'desc' },
@@ -1035,6 +1042,7 @@ export async function applyStatusTransition(input: {
   moveOutDate?: string | null
   reservationConfirmedAt?: string | null
   rentAmount?: number | null
+  reason?: string | null   // 전이 사유(선택) — 취소 사유 수집(e1b81629), TenantStatusLog.reason에 기록
 }): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1127,6 +1135,7 @@ export async function applyStatusTransition(input: {
           propertyId,
           fromStatus: lease.status,
           toStatus: input.toStatus as LeaseStatus,
+          reason: input.reason || null,
           changedById: user.sub,
         },
       })
