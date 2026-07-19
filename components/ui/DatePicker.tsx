@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { kstYmdStr } from '@/lib/kstDate'
 
 type ViewMode = 'day' | 'month' | 'year'
 
@@ -34,7 +35,8 @@ export function DatePicker({
   })
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const todayStr   = new Date().toISOString().slice(0, 10)
+  // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19)
+  const todayStr   = kstYmdStr()
 
   // 외부에서 value가 바뀌면 뷰 동기화
   useEffect(() => {
