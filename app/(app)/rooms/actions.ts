@@ -1803,7 +1803,7 @@ export async function getRoomDetail(roomId: string) {
   const lease = room.leaseTerms[0]
   let status: { label: string; badge: { tone: 'movein' | 'exit'; label: string } | null }
   if (!lease)                              status = { label: '공실',     badge: null }
-  else if (lease.status === 'RESERVED')         status = { label: '예약',     badge: { tone: 'movein', label: '입실 예정' } }
+  else if (lease.status === 'RESERVED')         status = { label: '입실 예약', badge: { tone: 'movein', label: '입실 예약' } }
   else if (lease.status === 'CHECKOUT_PENDING') status = { label: '퇴실 예정', badge: { tone: 'exit',   label: '퇴실 예정' } }
   else                                          status = { label: '거주중',   badge: null }
   return { ...room, status }

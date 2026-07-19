@@ -83,8 +83,8 @@ function getRoomStatus(r: Room): RoomStatus {
       ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
       : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
   if (lease.status === 'RESERVED')
-    // 라벨 '예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (화면마다 '입실 예정/예약' 혼용 제거)
-    return { label: '예약', kind: 'vacant', badge: { tone: 'movein', label: '예약' } }
+    // 라벨 '입실 예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (e1b81629 재정의)
+    return { label: '입실 예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예약' } }
   if (lease.status === 'CHECKOUT_PENDING')
     return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
   return { label: '거주중', kind: 'resident', badge: null }
@@ -102,7 +102,7 @@ function roomStatusKey(r: Room): RoomStatusKey {
 }
 const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
   { key: 'vacant', label: '공실' },
-  { key: 'reserved', label: '예약' },
+  { key: 'reserved', label: '입실 예약' },
   { key: 'active', label: '거주중' },
   { key: 'checkout', label: '퇴실 예정' },
 ]
