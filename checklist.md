@@ -25,7 +25,9 @@
 - [x] 카드 (N주) 표기, 상세 연장 이력 줄, 캘린더 ACTIVE 단기 VEVENT
 - [x] loop.md 증거 보고 + 커밋 + Work_log·knowledge 적립
 
-## 운영자 실행 대기 (권한 차단으로 보류)
-- [ ] `node --env-file=.env.local scripts/migrate-short-stay-extensions.mjs` 실행(컬럼 추가) — 완료 후 푸시 가능
-- [ ] 파트쿨리나 422호 moveOutDate 정리(2026-05-26, 상태 로그 근거)
-- [ ] 2c14220·d6b06dd 푸시(마이그레이션 적용 확인 후)
+## 마감 (2026-07-20)
+- [x] 마이그레이션 실행(운영자) — shortStayExtensions jsonb 컬럼 확인됨
+- [x] 파트쿨리나 422호 moveOutDate 정리(2026-05-26, scripts/fix-partkulina-moveout.mjs, 1건)
+- [x] 푸시·배포 — 717455d까지 4커밋, Vercel 프로덕션 READY(www.stayeum.com)
+- [x] 김민정 실데이터 수치 검증(읽기 전용) — 2주 329,000/차액 172,000, 3주 470,000 상한, 30일 초과 월 전환 안내
+- [x] 후속 발견 수정: 단기 과납 잔액 입력월 흡수(717455d) — 청소비 합산 입금 시 기록 증발 방지

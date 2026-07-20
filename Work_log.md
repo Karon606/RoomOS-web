@@ -11,9 +11,9 @@
 
 **3커밋**: (1) 81dc967 billForLeaseMonth 단기 입주월 단일 청구(월 넘김 이중 청구 근본 수정, 호출부 9곳+report 예측 루프+CSV 보정, test-money 6케이스) — 푸시됨. (2) 2c14220 서버 액션 3종(preview/extend/undo)+shortStayExtensions Json 스키마. (3) d6b06dd 연장 모달·진입점 3곳·카드 (N주) 표기·캘린더 ACTIVE 단기 VEVENT. **(2)(3)은 로컬 보류 — DB 마이그레이션이 권한 차단으로 미적용, 운영자 실행 후 푸시.**
 
-**운영자 실행 대기 2건**: `node --env-file=.env.local scripts/migrate-short-stay-extensions.mjs`(컬럼 추가), 파트쿨리나 422호 moveOutDate 정리(상태 로그 5/26 근거 — CHECKED_OUT인데 null이라 연결산 미수 무한 증가 중).
+**종결**: 운영자가 마이그레이션 실행(컬럼 확인됨) 후 717455d까지 푸시, Vercel 프로덕션 READY. 파트쿨리나 moveOutDate=5/26 정리(1건, fix-partkulina-moveout.mjs). 배포 사이 공백에서 발견한 구멍 1건 즉시 수정(717455d — 단기 입주월 단일 청구 후 과납 이월이 갈 달을 잃어 기록 없이 증발 가능, 입력월 흡수로 봉합). 김민정 실데이터 수치 검증: 2주 329,000(차액 172,000), 3주 470,000 상한(차액 313,000), 30일 초과 월 전환 안내.
 
-검증: tsc 소스 0, 신규 파일 lint 0, test-money 62/62. 실기기 연장 시나리오 검증은 마이그레이션 적용 후.
+검증: tsc 소스 0, 신규 파일 lint 0, test-money 62/62(단기 청구 6 + 연장 경로 독립 5 신규).
 
 ## 2026-07-20 — 단기 이용료 라벨·청소비 표시 (오류신고 64bebb05 종결)
 
