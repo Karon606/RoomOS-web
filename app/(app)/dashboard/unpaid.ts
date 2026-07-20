@@ -31,6 +31,7 @@ export type UnpaidLease = {
   tenantName: string
   tenantId: string
   leaseId: string
+  isShortTerm: boolean   // 단기 — 미납 알림 문구가 '월이용료' 대신 '이용료'를 쓴다(운영자 지시 2026-07-20)
   daysOverdue: number | null
   unpaidAmount: number   // 도래·미회수 portion
   monthsOverdue: number
@@ -333,6 +334,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         tenantName: l.tenant.name,
         tenantId: l.tenant.id,
         leaseId: l.id,
+        isShortTerm: l.isShortTerm,
         daysOverdue,
         unpaidAmount: overduePortion,
         monthsOverdue,

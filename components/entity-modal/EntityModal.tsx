@@ -132,7 +132,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
       if (res.ok && res.undo) {
         const u = res.undo
         pushToast('info', '잘못 적용했다면 되돌릴 수 있어요', {
-          action: { label: '적용취소', run: () => { void undoApplyScheduledRent(u).then(r => { if (r.ok) pushToast('info', '예정 가격 적용을 취소하고 원래 월세로 복원했습니다'); else pushToast('error', r.error) }) } },
+          action: { label: '적용취소', run: () => { void undoApplyScheduledRent(u).then(r => { if (r.ok) pushToast('info', '예정 가격 적용을 취소하고 원래 월 이용료로 복원했습니다'); else pushToast('error', r.error) }) } },
         })
       }
       if (res.ok) router.refresh()

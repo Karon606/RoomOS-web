@@ -21,7 +21,7 @@ export type AlertItem = {
   id: string            // 목록 key (고유)
   category: AlertCategory
   title: string         // 예: "201호 홍길동", "쌀"
-  subtitle: string      // 예: "월세 35만원 미납 · 5일 경과"
+  subtitle: string      // 예: "월이용료 35만원 미납 · 5일 경과" (단기는 "이용료 …")
   tenantId?: string     // 있으면 클릭 시 EntityModal(고객 뷰) 열기
   href?: string         // tenantId 없으면 이 경로로 이동 (재고·수령)
   urgency: number       // 정렬용 (높을수록 급함)
@@ -120,7 +120,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `unpaid-${l.leaseId}`,
       category: 'unpaid',
       title: roomName(l.roomNo, l.tenantName),
-      subtitle: [`월세 ${fmtWon(l.unpaidAmount)} 미납`, overdueLabel].filter(Boolean).join(' · '),
+      subtitle: [`${l.isShortTerm ? '이용료' : '월이용료'} ${fmtWon(l.unpaidAmount)} 미납`, overdueLabel].filter(Boolean).join(' · '),   // 단기는 월 단위가 아니라 '이용료'(운영자 지시 2026-07-20)
       tenantId: l.tenantId,
       leaseTermId: l.leaseId,
       roomId: l.roomId,

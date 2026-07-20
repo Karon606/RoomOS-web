@@ -1297,7 +1297,7 @@ JSON 스키마 (모든 필드 선택. 추출 못 한 건 생략):
   "emergencyPhone": "010-...",
   "emergencyRelation": "부/모/형제/친구 등",
   "roomNo": "402호 (호실 번호)",
-  "rentAmount": 370000,       // 정수 원 (월세/월 이용료)
+  "rentAmount": 370000,       // 정수 원 (월 이용료)
   "depositAmount": 1000000,   // 정수 원 (보증금)
   "cleaningFee": 50000,       // 정수 원 (청소비)
   "dueDay": "25" | "말일",    // 납부일

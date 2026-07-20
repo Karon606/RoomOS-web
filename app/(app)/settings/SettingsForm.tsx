@@ -2380,9 +2380,9 @@ function ShortStayPolicyCard() {
                 </label>
               </div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-                계산: 거주일을 계약 단위로 올림 → 계약일수 × 배율 = 청구 일수(1개월 30일 상한) → 월세의 일할을 절삭 단위로 반올림 + 청소비.
+                계산: 거주일을 계약 단위로 올림 → 계약일수 × 배율 = 청구 일수(1개월 30일 상한) → 월 이용료의 일할을 절삭 단위로 반올림 + 청소비.
                 보증금은 요금에 포함되지 않는 별도 예치금이며 일반 입주자처럼 퇴실 때 환불합니다(0이면 없음).
-                {preview && ` 예: 월세 60만 기준 최소 계약(${p.unitDays * p.minUnits}일) = ${preview.total.toLocaleString()}원`}
+                {preview && ` 예: 월 이용료 60만 기준 최소 계약(${p.unitDays * p.minUnits}일) = ${preview.total.toLocaleString()}원`}
               </p>
             </>
           )}

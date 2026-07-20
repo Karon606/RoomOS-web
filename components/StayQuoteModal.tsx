@@ -45,7 +45,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
       subtitle="등록 없이 기간별 요금을 미리 계산합니다 · 실제 정산(일할)과 동일 규칙">
       <div className="p-5 space-y-3">
         <label className="block">
-          <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">호실 (선택 시 월세 자동)</span>
+          <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">호실 (선택 시 월 이용료 자동)</span>
           <select value={roomId} disabled={loading}
             onChange={e => {
               setRoomId(e.target.value)
