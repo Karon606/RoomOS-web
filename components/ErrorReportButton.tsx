@@ -36,7 +36,12 @@ export default function ErrorReportButton() {
   const clamp = (p: { x: number; y: number }) => {
     if (typeof window === 'undefined') return p
     const maxX = window.innerWidth - BTN_SIZE - EDGE
-    const maxY = window.innerHeight - BTN_SIZE - EDGE
+    // 하단 내비게이션 영역 제외 — 버튼(z 380)이 탭 바(z 100) 위에 얹혀 터치를 삼키던 문제(신고 63101912).
+    // 저장된 옛 위치도 로드 시 이 clamp를 거치므로 자동 교정된다. 데스크톱은 내비가 없어(height 0) 제외 없음.
+    const nav = document.querySelector('[data-bottom-nav]')
+    const navRect = nav?.getBoundingClientRect()
+    const navReserve = navRect && navRect.height > 0 ? Math.max(0, window.innerHeight - navRect.top) : 0
+    const maxY = window.innerHeight - BTN_SIZE - EDGE - navReserve
     return { x: Math.max(EDGE, Math.min(p.x, maxX)), y: Math.max(EDGE, Math.min(p.y, maxY)) }
   }
 
@@ -142,7 +147,7 @@ export default function ErrorReportButton() {
         onContextMenu={e => e.preventDefault()}
         aria-label="오류 신고 (길게 눌러 위치 이동)"
         title="오류 신고. 길게 눌러 끌면 위치를 옮길 수 있어요"
-        className={`fixed z-[var(--z-toast,9999)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'bottom-4 right-4'}`}
+        className={`fixed z-[var(--z-report)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'right-4'}`}
         style={{
           background: 'var(--coral)',
           color: 'var(--on-solid)',
@@ -150,7 +155,8 @@ export default function ErrorReportButton() {
           userSelect: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
-          ...(pos ? { left: pos.x, top: pos.y } : {}),
+          // 기본 위치 — 토스트와 같은 회피 계산식(모바일 4.5rem = 하단 내비 위, 데스크톱 24px)
+          ...(pos ? { left: pos.x, top: pos.y } : { bottom: 'calc(var(--toast-offset-bottom, 24px) + env(safe-area-inset-bottom))' }),
         }}
       >
         {/* 버그/경고 아이콘 */}

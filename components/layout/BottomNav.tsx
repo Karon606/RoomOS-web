@@ -101,6 +101,7 @@ export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?:
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
     <nav
       data-peek-hide
+      data-bottom-nav
       className="fixed bottom-0 left-0 right-0 z-[var(--z-sticky)] md:hidden flex safe-b"
       style={{ background: 'var(--cream)', borderTop: '1px solid var(--warm-border)' }}
     >
