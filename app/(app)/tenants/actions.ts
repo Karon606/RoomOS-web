@@ -341,7 +341,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     select: {
       roomId: true, status: true, reservationConfirmedAt: true,
       // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
-      expectedMoveOut: true, dueDay: true, moveInDate: true,
+      expectedMoveOut: true, moveOutDate: true, dueDay: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
@@ -494,6 +494,13 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
       ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
+      // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
+      // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
+      // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
+      // 퇴실을 되돌리면(CHECKED_OUT에서 다른 상태로) 퇴실일도 함께 비운다.
+      ...(status === 'CHECKED_OUT'
+        ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
+        : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
       // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
       ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
@@ -1080,6 +1087,11 @@ export async function applyStatusTransition(input: {
     if (input.moveInDate !== undefined)             data.moveInDate = input.moveInDate ? new Date(input.moveInDate) : null
     if (input.expectedMoveOut !== undefined)        data.expectedMoveOut = input.expectedMoveOut ? new Date(input.expectedMoveOut) : null
     if (input.moveOutDate !== undefined)            data.moveOutDate = input.moveOutDate ? new Date(input.moveOutDate) : null
+    // 퇴실 확정인데 퇴실일 미전달이면 서버가 보정 — 예정일 우선, 없으면 오늘.
+    // 'CHECKED_OUT인데 퇴실일 없음' 오염의 원천 차단(운영자 지적 2026-07-20, 데이터 땜빵 금지)
+    if (input.toStatus === 'CHECKED_OUT' && input.moveOutDate === undefined) {
+      data.moveOutDate = lease.expectedMoveOut ?? new Date()
+    }
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
     let notice: string | null = null
