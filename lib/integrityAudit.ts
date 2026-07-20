@@ -4,6 +4,7 @@
 // 재적재하지 않는다 — done 처리 후 재발하면 다시 적재(해결 실패 감지).
 import { Prisma } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
+import { billForLeaseMonth } from '@/lib/billing'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
 
@@ -63,6 +64,41 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
     note: `${l.tenant.name}: 단기 거주중인데 퇴실 예정일이 없습니다. 자동 퇴실 전환·캘린더·연장이 동작하지 않으니 퇴실일을 입력해 주세요.`,
     tenantId: l.tenantId, propertyId: l.propertyId,
   })
+
+  // 규칙 5 — 할인 미반영 락인 (403호 패턴, 신고 70cde9d6: 납부 후 등록한 할인이 락인에 무효화돼 미납 과대 표시)
+  // 원금 그대로 락인된 달만 검출 — 협의 락인(원금과 다른 금액)·일할 권위 월·단기는 제외.
+  // 할인 등록 이전의 종결 월 소음 방지를 위해 가장 이른 할인 등록월부터만 본다.
+  const discountedLeases = await prisma.leaseTerm.findMany({
+    where: { isShortTerm: false, discounts: { some: {} } },
+    select: {
+      id: true, tenantId: true, propertyId: true, rentAmount: true, checkoutProratedMonth: true,
+      tenant: { select: { name: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true, createdAt: true } },
+    },
+  })
+  for (const l of discountedLeases) {
+    const earliest = l.discounts.reduce<Date | null>((m, d) => (!m || d.createdAt < m ? d.createdAt : m), null)
+    if (!earliest) continue
+    const fromMon = `${earliest.getFullYear()}-${String(earliest.getMonth() + 1).padStart(2, '0')}`
+    const recs = await prisma.paymentRecord.findMany({
+      where: { leaseTermId: l.id, isDeposit: false, isPrevOwner: false, targetMonth: { gte: fromMon } },
+      select: { targetMonth: true, expectedAmount: true },
+    })
+    const byMon = new Map<string, number>()
+    for (const r of recs) byMon.set(r.targetMonth, Math.max(byMon.get(r.targetMonth) ?? 0, r.expectedAmount))
+    for (const [mon, lockedMax] of byMon) {
+      if (l.checkoutProratedMonth === mon) continue
+      const base = billForLeaseMonth({ rentAmount: l.rentAmount, room: l.room }, mon, null)
+      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, discounts: l.discounts, room: l.room }, mon, null)
+      if (disc >= base || lockedMax !== base) continue
+      violations.push({
+        signature: `[정합] discount-locked-expected · ${l.id} · ${mon}`,
+        note: `${l.tenant.name}: ${mon} 청구가 할인 미반영 원금 ${lockedMax.toLocaleString()}원으로 잠겨 있습니다. 할인가 ${disc.toLocaleString()}원 기준으로 미납이 ${(lockedMax - disc).toLocaleString()}원 부풀려 표시됩니다.`,
+        tenantId: l.tenantId, propertyId: l.propertyId,
+      })
+    }
+  }
 
   // 적재 — 같은 서명의 open(아직 처리 전)·dismissed(운영자가 무시 선택) 신고가 있으면 건너뛴다.
   let created = 0

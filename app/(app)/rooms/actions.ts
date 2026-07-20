@@ -1918,6 +1918,45 @@ export async function getRentDiscounts(leaseTermId: string): Promise<RentDiscoun
   return rows
 }
 
+// 할인 변경 → 락인 record 정합 되쓰기 (신고 70cde9d6 근본 수정, 운영자 승인 2026-07-20)
+// 부분 납부로 그 달 청구액이 record에 락인된 뒤 할인을 등록·삭제하면, 락인이 할인 fallback을 이겨
+// 미납이 원금 기준으로 계속 표시됐다. 할인 변경 시 "변경 전 기준값 그대로 락인된" 현재월 이후
+// record만 새 기준값으로 되쓰고 완납을 재계산한다. 협의 락인(기준값과 다른 금액)·일할 월·단기는 불변.
+async function rewriteLockedExpectedForDiscountChange(
+  leaseTermId: string,
+  prevDiscounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[],
+  nextDiscounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[],
+) {
+  const lease = await prisma.leaseTerm.findUnique({
+    where: { id: leaseTermId },
+    select: {
+      isShortTerm: true, rentAmount: true, checkoutProratedMonth: true,
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+    },
+  })
+  if (!lease || lease.isShortTerm) return
+  const k = kstYmd()
+  const nowMon = `${k.year}-${String(k.month).padStart(2, '0')}`
+  const recs = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, isDeposit: false, isPrevOwner: false, targetMonth: { gte: nowMon } },
+    select: { id: true, targetMonth: true, expectedAmount: true },
+  })
+  const months = [...new Set(recs.map(r => r.targetMonth))]
+  for (const mon of months) {
+    if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
+    const base = { rentAmount: lease.rentAmount, room: lease.room }
+    const before = billForLeaseMonth({ ...base, discounts: prevDiscounts }, mon, null)
+    const after  = billForLeaseMonth({ ...base, discounts: nextDiscounts }, mon, null)
+    if (before === after) continue
+    const monthRecs = recs.filter(r => r.targetMonth === mon)
+    const lockedMax = monthRecs.reduce((mx, r) => Math.max(mx, r.expectedAmount), 0)
+    if (lockedMax !== before) continue   // 협의 락인 등 기준값과 다른 금액 — 손대지 않음
+    const targets = monthRecs.filter(r => r.expectedAmount === lockedMax).map(r => r.id)
+    await prisma.paymentRecord.updateMany({ where: { id: { in: targets } }, data: { expectedAmount: after } })
+    await recalculatePayments(leaseTermId, mon, after)
+  }
+}
+
 export async function addRentDiscount(data: {
   leaseTermId: string
   discountType: 'amount' | 'percent'
@@ -1930,13 +1969,16 @@ export async function addRentDiscount(data: {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    // 본인 영업장 lease 확인
-    const lease = await prisma.leaseTerm.findFirst({ where: { id: data.leaseTermId, propertyId }, select: { id: true } })
+    // 본인 영업장 lease 확인 — 기존 할인 목록은 락인 되쓰기의 '변경 전 기준' 계산용
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: data.leaseTermId, propertyId },
+      select: { id: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+    })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     if (!(data.value > 0)) return { ok: false, error: '할인 값은 0보다 커야 합니다.' }
     if (data.discountType === 'percent' && data.value > 100) return { ok: false, error: '퍼센트 할인은 100%를 넘을 수 없습니다.' }
     if (data.scope === 'temporary' && !data.startMonth) return { ok: false, error: '일시 할인은 시작 월이 필요합니다.' }
-    await prisma.rentDiscount.create({
+    const created = await prisma.rentDiscount.create({
       data: {
         leaseTermId:  data.leaseTermId,
         discountType: data.discountType,
@@ -1947,8 +1989,14 @@ export async function addRentDiscount(data: {
         memo:         data.memo ?? null,
       },
     })
+    // 락인 record 정합 — 등록된 할인이 이미 수납이 있는 달에도 즉시 반영되게(신고 70cde9d6)
+    await rewriteLockedExpectedForDiscountChange(data.leaseTermId, lease.discounts, [...lease.discounts, {
+      discountType: created.discountType, value: created.value, scope: created.scope, startMonth: created.startMonth, endMonth: created.endMonth,
+    }])
     revalidatePath('/rooms')
     revalidatePath('/dashboard')
+    revalidatePath('/tenants')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1961,11 +2009,23 @@ export async function deleteRentDiscount(id: string): Promise<{ ok: true } | { o
     await requireEdit()
     const propertyId = await getPropertyId()
     // 본인 영업장 할인만 삭제 (lease→property 확인)
-    const d = await prisma.rentDiscount.findUnique({ where: { id }, select: { leaseTerm: { select: { propertyId: true } } } })
+    const d = await prisma.rentDiscount.findUnique({
+      where: { id },
+      select: {
+        leaseTermId: true,
+        leaseTerm: { select: { propertyId: true, discounts: { select: { id: true, discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } } },
+      },
+    })
     if (!d || d.leaseTerm.propertyId !== propertyId) return { ok: false, error: '할인을 찾을 수 없습니다.' }
     await prisma.rentDiscount.delete({ where: { id } })
+    // 락인 record 정합 — 삭제 대칭: 구 할인가로 락인된 미결 월을 새 기준값으로 되쓰기(신고 70cde9d6)
+    const prev = d.leaseTerm.discounts.map(({ id: _id, ...rest }) => rest)
+    const next = d.leaseTerm.discounts.filter(x => x.id !== id).map(({ id: _id, ...rest }) => rest)
+    await rewriteLockedExpectedForDiscountChange(d.leaseTermId, prev, next)
     revalidatePath('/rooms')
     revalidatePath('/dashboard')
+    revalidatePath('/tenants')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
