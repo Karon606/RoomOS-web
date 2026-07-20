@@ -91,13 +91,21 @@ export async function fetchGeminiOcr(params: {
             { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
           ],
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens, responseMimeType: 'application/json' },
+        // thinkingBudget 0 — 2.5-flash는 기본으로 사고 토큰이 maxOutputTokens를 잠식해 JSON이 잘린다
+        // (신고 4b1f59e2 재현: 1500 중 사고가 1439 소모, 답변 45토큰에서 절단). noticeSms.ts와 동일 패턴.
+        generationConfig: { temperature: 0.1, maxOutputTokens, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
       }),
     }
   )
   if (!res.ok) return { ok: false, status: res.status, errorText: (await res.text()).slice(0, 200) }
   const json = await res.json()
-  const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  const parts: { text?: string }[] = json.candidates?.[0]?.content?.parts ?? []
+  const text: string = parts.map(p => p.text ?? '').join('')
+  // 길이 제한 절단은 파싱 실패와 다른 문제 — 정확한 안내를 위해 구분(신고 4b1f59e2)
+  if (json.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+    console.error('[receiptOcr] MAX_TOKENS 절단', { len: text.length })
+    return { ok: false, status: 200, errorText: '인식 결과가 잘렸습니다. 다시 시도하거나 영수증을 나눠 촬영해 주세요.' }
+  }
   return { ok: true, text }
 }
 
@@ -109,7 +117,9 @@ export function parseReceiptOcrText(text: string, opts?: { withKind?: boolean })
   try {
     parsed = JSON.parse(cleaned)
   } catch {
-    return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' }
+    // 원문은 서버 로그로만 — 사용자 화면에 잘린 JSON 조각을 노출하지 않는다(패널 판정, 신고 4b1f59e2)
+    console.error('[receiptOcr] JSON 파싱 실패', { head: cleaned.slice(0, 200) })
+    return { ok: false, error: '인식 결과를 읽지 못했습니다. 다시 시도해 주세요.' }
   }
   const rawItems = Array.isArray(parsed.items) ? parsed.items : []
   const items: ReceiptOcrItem[] = rawItems

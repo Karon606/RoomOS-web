@@ -63,7 +63,7 @@ async function analyzeImage(imageBase64: string, mimeType: string): Promise<Gemi
 
   // 지출 등록과 동일한 정밀 프롬프트 + kind 분류(withKind). maxOutputTokens 도 동일 수준(1500). 호출은 1회.
   const prompt = buildReceiptOcrPrompt({ categories: catList, withKind: true })
-  const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 1500 })
+  const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 4096 })
   if (!fetched.ok) throw new Error(`Gemini ${fetched.status}: ${fetched.errorText}`)
   const parsedRes = parseReceiptOcrText(fetched.text, { withKind: true })
   if (!parsedRes.ok) throw new Error(parsedRes.error)

@@ -1323,7 +1323,7 @@ JSON 스키마 (모든 필드 선택. 추출 못 한 건 생략):
               { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
             ],
           }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 1200, responseMimeType: 'application/json' },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1200, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },   // 사고 토큰 잠식 방지(신고 4b1f59e2 계열)
         }),
       }
     )
@@ -1413,7 +1413,7 @@ JSON 스키마 (모든 필드 선택, 추출 못 한 건 생략):
               { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
             ],
           }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 600, responseMimeType: 'application/json' },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 600, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },   // 사고 토큰 잠식 방지(신고 4b1f59e2 계열)
         }),
       }
     )

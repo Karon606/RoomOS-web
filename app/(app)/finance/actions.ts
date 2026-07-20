@@ -375,8 +375,12 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 
     const prompt = buildReceiptOcrPrompt({ categories: ocrCategories, vocabBlock })
 
-    const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 1500 })
-    if (!fetched.ok) return { ok: false, error: `Gemini API 오류 (${fetched.status}): ${fetched.errorText}` }
+    const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 4096 })
+    if (!fetched.ok) {
+      if (fetched.status === 200) return { ok: false, error: fetched.errorText }   // 절단 안내(fetchGeminiOcr가 문구 생성)
+      console.error('[receiptOcr] API 오류', fetched.status, fetched.errorText)
+      return { ok: false, error: `인식 서비스 연결에 실패했습니다. 잠시 후 다시 시도해 주세요. (오류 ${fetched.status})` }
+    }
     const parsedRes = parseReceiptOcrText(fetched.text)
     if (!parsedRes.ok) return { ok: false, error: parsedRes.error }
     const data = parsedRes.data
@@ -1244,7 +1248,7 @@ export async function clusterItemNamesWithAI(): Promise<{ ok: true; clusters: It
 ${names.map(n => `- ${n}`).join('\n')}`
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json' } }),
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } }),   // 사고 토큰 잠식 방지(신고 4b1f59e2 계열)
     })
     if (!res.ok) return { ok: false, error: `AI 오류 (${res.status})` }
     const json = await res.json()
