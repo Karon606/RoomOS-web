@@ -742,7 +742,7 @@ export default function TenantClient({
     const depositAmount = Number(fd.get('depositAmount')) || 0
     const cleaningFee   = Number(fd.get('cleaningFee')) || 0
     const leaseTermId   = (fd.get('leaseTermId') as string) || ''
-    const tenantId      = (fd.get('id') as string) || ''
+    const tenantId      = (fd.get('tenantId') as string) || ''   // 폼 hidden은 tenantId — 'id'로 읽어 빈 값이 넘어가던 잠복 버그(운영자 신고 2026-07-20)
     // 환불 가능 max = 보증금 - 청소비 (default도 동일)
     const maxRefund = Math.max(0, depositAmount - cleaningFee)
     setDepositReturnAmt(maxRefund)
