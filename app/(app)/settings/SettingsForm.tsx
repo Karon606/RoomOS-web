@@ -67,6 +67,7 @@ type Property = {
   prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
   defaultCleaningFee: number | null
+  refundPenaltyPct?: number | null   // 중도퇴실 위약금 기본값(%) — 공정위 10% 캡
   defaultAreaM2: number | null
   reservationDepositMode: string | null
   bankAccount: string | null
@@ -784,6 +785,17 @@ export default function SettingsForm({
                 <option value="prepaid">이용료 선납 · 입주월 이용료로 충당</option>
                 <option value="none">안 받음 · 예약금 없이 예약</option>
               </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">중도퇴실 위약금 기본값</label>
+              <p className="text-xs text-[var(--warm-muted)]">중도퇴실 환불 시 총 결제금액에서 공제하는 위약금율입니다. 공정위 기준(10%)을 넘길 수 없고, 퇴실 처리 때 사람별로 이 값 이하로 조정할 수 있습니다.</p>
+              <div className="relative w-32">
+                <input type="text" inputMode="numeric" name="refundPenaltyPct"
+                  defaultValue={property?.refundPenaltyPct ?? 10}
+                  autoComplete="off"
+                  className="w-full px-3 py-2.5 pr-8 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">%</span>
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>

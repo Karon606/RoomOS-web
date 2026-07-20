@@ -109,18 +109,26 @@ export function shouldOfferCheckoutProration(
 
 // ── 퇴실 환불 계산 (공정거래위원회 기준 + 모드 선택) ───────────────────────
 // 환불액 = 총 결제금액 − 사용분(1일요금 × 실제 이용일수) − 위약금. 1일요금 = 월 이용료 ÷ 30.
-//  · legal(법정/공정위): 위약금 = 총 결제금액 × 10%. 원칙(납부일에 총액 납부 후 정산)대로 처리.
+//  · legal(법정/공정위): 위약금 = 총 결제금액 × 위약금율. 원칙(납부일에 총액 납부 후 정산)대로 처리.
 //  · goodwill(선의/일할): 위약금 0 — 사용분만 청구하고 나머지를 환불(기존 봐주기 동작).
 // companyKeeps(퇴실월 회사 귀속 = 적용 금액) = 사용분 + 위약금. refund = max(0, 선납액 − companyKeeps).
-// (위약금율 10%·계산식은 법적으로 고정 — 임의 설정 불가)
+// 위약금율은 공정위 기준 10%가 상한 캡 — 그 이하로만 조정 가능(영업장 기본값 설정 + 퇴실 시 사람별 입력,
+// 운영자 결정 2026-07-20). 계산식 자체(총 결제금액 기준)는 고정.
 export type RefundMode = 'legal' | 'goodwill'
 export const LEGAL_PENALTY_PCT = 10
+
+// 위약금율 정규화 — 0~10 정수 클램프(상한 = 공정위 10%). null·비수치는 상한값.
+export function clampPenaltyPct(pct: number | null | undefined): number {
+  if (pct == null || !Number.isFinite(pct)) return LEGAL_PENALTY_PCT
+  return Math.min(LEGAL_PENALTY_PCT, Math.max(0, Math.round(pct)))
+}
 export type CheckoutRefundResult = {
   mode: RefundMode
+  penaltyPct: number        // 적용 위약금율(0~10) — goodwill은 항상 0
   daysUsed: number          // 사용일수 (납부일~퇴실일, 양끝 포함)
   dailyRate: number         // 1일요금 = 월 이용료 ÷ 30
   usedAmount: number        // 사용분 = daysUsed × dailyRate
-  penalty: number           // legal: 선납액 × 10%, goodwill: 0
+  penalty: number           // legal: 선납액 × 위약금율, goodwill: 0
   companyKeeps: number      // 사용분 + 위약금 (= 퇴실월 적용 금액)
   refund: number            // max(0, 선납액 − companyKeeps)
 }
@@ -129,15 +137,17 @@ export function calcCheckoutRefund(input: {
   monthlyRent: number        // 월 이용료 (1일요금 = ÷30)
   daysUsed: number           // 실제 이용일수
   mode: RefundMode
+  penaltyPct?: number | null // 위약금율(%) — 미지정 시 공정위 상한 10. 0~10 클램프, goodwill이면 무시
 }): CheckoutRefundResult {
   const { prepaidAmount, monthlyRent, daysUsed, mode } = input
+  const pct = mode === 'legal' ? clampPenaltyPct(input.penaltyPct) : 0
   const dailyRate = Math.round(monthlyRent / PRORATE_BASE_DAYS)   // 표시용 1일요금
   // 사용분은 일할 청구(calcCheckoutProration.amount)와 동일하게 floor → '적용 금액'이 매출과 일치
   const usedAmount = Math.floor((monthlyRent * Math.max(0, daysUsed)) / PRORATE_BASE_DAYS)
-  const penalty = mode === 'legal' ? Math.round((Math.max(0, prepaidAmount) * LEGAL_PENALTY_PCT) / 100) : 0
+  const penalty = pct > 0 ? Math.round((Math.max(0, prepaidAmount) * pct) / 100) : 0
   const companyKeeps = usedAmount + penalty
   const refund = Math.max(0, prepaidAmount - companyKeeps)
-  return { mode, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund }
+  return { mode, penaltyPct: pct, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund }
 }
 
 // ── 단기 입실 요금 시뮬레이션 (2026-07-05, 운영자 요청) ─────────────────────

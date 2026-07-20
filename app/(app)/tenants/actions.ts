@@ -12,7 +12,7 @@ import { requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
-import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
+import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
 
 async function getPropertyId() {
@@ -1843,24 +1843,31 @@ function prorationDataForChange(
 // 퇴실 환불 미리보기 — 환경설정 '퇴실 환불 규정'으로 환불액 내역 산출(읽기전용 표시용).
 // 선납액 = 퇴실 달에 낸 금액(보증금·양도인 제외). 사용일수 = 일할 daysUsed(퇴실일<납부일이면 0).
 export type CheckoutRefundPreview =
-  | { ok: true; refund: CheckoutRefundResult; prepaidAmount: number }
+  | { ok: true; refund: CheckoutRefundResult; prepaidAmount: number; defaultPenaltyPct: number }
   | { ok: false; error: string }
 
 export async function previewCheckoutRefund(
   leaseTermId: string,
   expectedMoveOut: string,  // 'YYYY-MM-DD'
   mode: RefundMode = 'legal',
+  penaltyPct?: number | null,  // 사람별 위약금율(%) — 미지정 시 영업장 기본값, 서버에서 0~10 캡
 ): Promise<CheckoutRefundPreview> {
   try {
     const { propertyId } = await getPropertyId()
-    const lease = await prisma.leaseTerm.findFirst({
-      where: { id: leaseTermId, propertyId },
-      select: {
-        dueDay: true, rentAmount: true, moveInDate: true,
-        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      },
-    })
+    const [lease, prop] = await Promise.all([
+      prisma.leaseTerm.findFirst({
+        where: { id: leaseTermId, propertyId },
+        select: {
+          dueDay: true, rentAmount: true, moveInDate: true,
+          discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+        },
+      }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { refundPenaltyPct: true } }),
+    ])
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 영업장 기본 위약금율(공정위 10% 캡) — 사람별 입력이 있으면 그 값을, 없으면 기본값을 캡 안에서 적용
+    const defaultPenaltyPct = clampPenaltyPct(prop?.refundPenaltyPct)
+    const effectivePct = clampPenaltyPct(penaltyPct ?? defaultPenaltyPct)
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const paidAgg = await prisma.paymentRecord.aggregate({
@@ -1870,8 +1877,8 @@ export async function previewCheckoutRefund(
     const prepaidAmount = Math.max(0, paidAgg._sum.actualAmount ?? 0)
     const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     const daysUsed = prorate ? prorate.daysUsed : 0   // 퇴실일 < 납부일이면 그 기간 미사용 = 0
-    const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode })
-    return { ok: true, refund, prepaidAmount }
+    const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct })
+    return { ok: true, refund, prepaidAmount, defaultPenaltyPct }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

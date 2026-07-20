@@ -76,10 +76,11 @@ const RENT = 300000
   eq('팝업: 입주 달 퇴실 보정 전파 → true', shouldOfferCheckoutProration(RENT, '1', '2026-06-27', '2026-06-20', '2026-06-20'), true)
 }
 
-// ── calcCheckoutRefund ── 환불 = 선납 − 사용분 − 위약금(법정 10% | 선의 0)
+// ── calcCheckoutRefund ── 환불 = 선납 − 사용분 − 위약금(법정 0~10% 조정, 상한 캡 | 선의 0)
+// 위약금율 조정 가능(공정위 10% 캡)은 운영자 결정 2026-07-20 — 기대값 변경 승인분.
 {
   eq('환불(법정): 30만 선납, 10일 사용', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal' }), {
-    mode: 'legal', daysUsed: 10, dailyRate: 10000, usedAmount: 100000, penalty: 30000, companyKeeps: 130000, refund: 170000,
+    mode: 'legal', penaltyPct: 10, daysUsed: 10, dailyRate: 10000, usedAmount: 100000, penalty: 30000, companyKeeps: 130000, refund: 170000,
   })
   eq('환불(선의): 위약금 0', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill' }).refund, 200000)
   eq('환불: 음수 방지(선납 < 사용분)', calcCheckoutRefund({ prepaidAmount: 50000, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill' }).refund, 0)
@@ -87,6 +88,16 @@ const RENT = 300000
   const pro = calcCheckoutProration(RENT, '1', '2026-06-10')
   const ref = calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: pro!.daysUsed, mode: 'legal' })
   eq('환불: 사용분 = 일할 청구액 (정합)', ref.usedAmount, pro!.amount)
+  // 위약금율 조정 — 5%면 절반, 0%면 선의와 동일, 10 초과·음수·비수치는 캡으로 클램프
+  eq('환불: 위약금 5%', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 5 }).penalty, 15000)
+  eq('환불: 위약금 0% = 선의와 동일', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 0 }).refund, 200000)
+  eq('환불: 15%는 10%로 캡', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 15 }).penalty, 30000)
+  eq('환불: 음수·비수치는 상한값', [
+    calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: -3 }).penalty,
+    calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: NaN }).penalty,
+  ], [0, 30000])
+  // 선의 모드는 penaltyPct를 무시(항상 0)
+  eq('환불: 선의는 위약금율 무시', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill', penaltyPct: 10 }).penalty, 0)
 }
 
 // ── calcStayQuote ── 회차(입주일 기준 월 단위, 말일 클램프) + 마지막 부분 일할

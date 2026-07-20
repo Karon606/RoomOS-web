@@ -83,6 +83,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       prevOwnerCutoffDate: true,
       defaultDeposit: true,
       defaultCleaningFee: true,
+      refundPenaltyPct: true,   // 중도퇴실 위약금 기본값(%) — 공정위 10% 캡(운영자 결정 2026-07-20)
       defaultAreaM2: true,
       reservationDepositMode: true,
       bankAccount: true,
@@ -546,7 +547,12 @@ export async function updatePropertySettings(formData: FormData) {
     : 'deposit'
   const bankAccount       = formData.get('bankAccount') as string
   const contactLeadDaysRaw = formData.get('contactLeadDays')
-  // 퇴실 환불 규정의 위약금율·기간·1일당·청소비 차감은 법적으로 임의 설정 불가 → 입력 제거(컬럼은 보존, 미사용).
+  // 퇴실 환불 규정: 기간·1일당·청소비 차감은 여전히 미사용(법정 산식 고정).
+  // 위약금율만 부활 — 공정위 기준(10%)을 상한 캡으로 두고 그 이하로만 설정 가능(운영자 결정 2026-07-20).
+  const refundPenaltyPctRaw = formData.get('refundPenaltyPct')
+  const refundPenaltyPct = refundPenaltyPctRaw != null && String(refundPenaltyPctRaw).trim() !== ''
+    ? Math.min(10, Math.max(0, Number(String(refundPenaltyPctRaw).replace(/[^0-9]/g, '')) || 0))
+    : null
   const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
   // 잔여 소지품 임의처분 동의서
   const disposalEnabled = formData.get('disposalEnabled') === '1'
@@ -572,6 +578,7 @@ export async function updatePropertySettings(formData: FormData) {
       reservationDepositMode,
       bankAccount:      bankAccount?.trim() || null,
       contactLeadDays:  Math.min(90, Math.max(1, Number(String(contactLeadDaysRaw ?? '').replace(/[^0-9]/g, '')) || 14)),
+      refundPenaltyPct,
       refundClauseInContract,
       disposalConsentTemplate: {
         enabled: disposalEnabled,

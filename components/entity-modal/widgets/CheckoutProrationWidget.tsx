@@ -44,24 +44,29 @@ export function CheckoutProrationWidget({
   const [calcErr, setCalcErr] = useState<string | null>(null)
   const [amountInput, setAmountInput] = useState('')   // 적용 금액(퇴실월 회사 귀속) — 모드별 기본, 운영자가 수정 가능
   const [refund, setRefund] = useState<{ refund: CheckoutRefundResult; prepaidAmount: number } | null>(null)
-  // 환불 모드: 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만, 위약금 없음). 기본=법정.
+  // 환불 모드: 법정(공정위: 위약금 + 잔여 환불) / 선의(일할만, 위약금 없음). 기본=법정.
   const [refundMode, setRefundMode] = useState<RefundMode>('legal')
+  // 사람별 위약금율(%) — 빈 값이면 영업장 기본값. 공정위 10% 캡(운영자 결정 2026-07-20), 서버가 재클램프.
+  const [penaltyPctInput, setPenaltyPctInput] = useState('')
+  const [defaultPenaltyPct, setDefaultPenaltyPct] = useState(LEGAL_PENALTY_PCT)
 
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
-  // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액 + 모드별 환불)
-  const handleDate = (v: string, mode: RefundMode = refundMode) => {
+  // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액 + 모드·위약금율별 환불)
+  const handleDate = (v: string, mode: RefundMode = refundMode, pctStr: string = penaltyPctInput) => {
     setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null)
     if (!v || v.length < 10) return
+    const pctNum = pctStr.trim() === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(pctStr, 10) || 0))
     startTransition(async () => {
       const [res, refRes] = await Promise.all([
         previewCheckoutProration(leaseTermId, v),
-        previewCheckoutRefund(leaseTermId, v, mode),
+        previewCheckoutRefund(leaseTermId, v, mode, pctNum),
       ])
       if (res.ok) { setCalc(res.calc); setCalcErr(null) }
       else { setCalc(null); setCalcErr(res.error) }
       if (refRes.ok) {
         setRefund({ refund: refRes.refund, prepaidAmount: refRes.prepaidAmount })
+        setDefaultPenaltyPct(refRes.defaultPenaltyPct)
         // 적용 금액 = 회사 귀속(사용분 + 위약금). 선납 없으면 일할 청구액.
         setAmountInput(String(refRes.prepaidAmount > 0 ? refRes.refund.companyKeeps : (res.ok ? res.calc.amount : refRes.refund.usedAmount)))
       } else if (res.ok) {
@@ -74,6 +79,13 @@ export function CheckoutProrationWidget({
   const handleMode = (mode: RefundMode) => {
     setRefundMode(mode)
     if (date && date.length >= 10) handleDate(date, mode)
+  }
+
+  // 위약금율 입력 — 숫자만, 두 자리까지. 값이 바뀌면 같은 퇴실일로 재계산.
+  const handlePct = (raw: string) => {
+    const clean = raw.replace(/[^0-9]/g, '').slice(0, 2)
+    setPenaltyPctInput(clean)
+    if (date && date.length >= 10) handleDate(date, refundMode, clean)
   }
 
   // autoOpen — 진입 직후 1회: 폼 펼치고 저장된 퇴실일로 미리보기 자동 실행
@@ -190,9 +202,22 @@ export function CheckoutProrationWidget({
               />
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                 {refundMode === 'legal'
-                  ? `원칙(공정위). 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`
+                  ? '원칙(공정위). 위약금을 제하고 남은 일수를 환불합니다.'
                   : '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
               </p>
+              {/* 사람별 위약금율 — 영업장 기본값 이하가 아니라 공정위 캡(10%) 이하에서 자유 조정(운영자 결정 2026-07-20) */}
+              {refundMode === 'legal' && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <label className="text-[0.6875rem] text-[var(--warm-mid)] shrink-0">위약금율</label>
+                  <div className="relative w-20">
+                    <input type="text" inputMode="numeric" value={penaltyPctInput} placeholder={String(defaultPenaltyPct)}
+                      onChange={e => handlePct(e.target.value)}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 pr-7 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--warm-muted)] pointer-events-none">%</span>
+                  </div>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 {defaultPenaltyPct}% · 최대 {LEGAL_PENALTY_PCT}%</span>
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.65625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
@@ -212,7 +237,7 @@ export function CheckoutProrationWidget({
 
         {refund && refund.prepaidAmount > 0 && (() => {
           const applied = amountInput ? (parseInt(amountInput.replace(/[^0-9]/g, ''), 10) || 0) : refund.refund.companyKeeps
-          const penalty = refundMode === 'legal' ? Math.round(refund.prepaidAmount * LEGAL_PENALTY_PCT / 100) : 0
+          const penalty = refund.refund.penalty   // 서버 계산값(적용 위약금율 반영)
           const refundAmt = Math.max(0, refund.prepaidAmount - applied)
           return (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
@@ -220,7 +245,7 @@ export function CheckoutProrationWidget({
               <div className="space-y-0.5 text-[var(--warm-muted)]">
                 <div className="flex justify-between"><span>총 결제금액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
                 <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
-                {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {LEGAL_PENALTY_PCT}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
+                {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {refund.refund.penaltyPct}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
               </div>
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
