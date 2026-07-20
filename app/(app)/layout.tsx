@@ -9,6 +9,7 @@ import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
 import PeekFrameGuard from '@/components/PeekFrameGuard'
+import ViewportOffsetGuard from '@/components/layout/ViewportOffsetGuard'
 import { RoleProvider } from '@/components/RoleContext'
 import NewVersionNotice from '@/components/NewVersionNotice'
 import BreadcrumbTracker from '@/components/BreadcrumbTracker'
@@ -112,6 +113,7 @@ export default async function AppLayout({
     >
       <ClearAppBadge />
       <PeekFrameGuard />
+      <ViewportOffsetGuard />
       <NewVersionNotice />
       <BreadcrumbTracker />
       <EntityModalProvider>
