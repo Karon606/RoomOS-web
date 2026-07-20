@@ -3525,7 +3525,7 @@ function DateFieldInner({ name, defaultValue, placeholder }: { name: string; def
   const [val, setVal] = useState(defaultValue ?? '')
   return (
     <DatePicker name={name} value={val} onChange={setVal} placeholder={placeholder ?? '날짜 선택'}
-      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-0" />
   )
 }
 
@@ -3538,7 +3538,7 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
       {type === 'date'
         ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} />
         : <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
       }
     </div>
   )
@@ -3551,7 +3551,7 @@ function SelectField({ label, name, children, defaultValue, required }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <select name={name} defaultValue={defaultValue} required={required}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0">
         {children}
       </select>
     </div>

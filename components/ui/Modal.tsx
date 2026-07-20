@@ -18,6 +18,35 @@ const WIDTH_CLS: Record<Width, string> = {
 let modalSeq = 0
 const escStack: number[] = []
 
+// 배경 스크롤 잠금 — iOS에서 가상 키보드가 배경을 밀어 올린 채 복원하지 않으면 화면에 보이는
+// 위치와 터치 히트 판정이 세션 내내 어긋난다(신고 6c196aeb: 생년월일 탭이 국적을 염).
+// 모달이 하나라도 열려 있는 동안 body를 고정하고, 마지막 모달이 닫힐 때 스크롤 위치를 복원한다.
+let lockCount = 0
+let savedScrollY = 0
+function lockBodyScroll() {
+  if (typeof document === 'undefined') return
+  if (lockCount++ > 0) return
+  savedScrollY = window.scrollY
+  const b = document.body
+  b.style.position = 'fixed'
+  b.style.top = `-${savedScrollY}px`
+  b.style.left = '0'
+  b.style.right = '0'
+  b.style.width = '100%'
+}
+function unlockBodyScroll() {
+  if (typeof document === 'undefined') return
+  lockCount = Math.max(0, lockCount - 1)
+  if (lockCount > 0) return
+  const b = document.body
+  b.style.position = ''
+  b.style.top = ''
+  b.style.left = ''
+  b.style.right = ''
+  b.style.width = ''
+  window.scrollTo(0, savedScrollY)
+}
+
 export function Modal({
   open,
   onClose,
@@ -72,6 +101,13 @@ export function Modal({
     }
     onClose()
   }, [onClose])
+  // 열림 중 배경 스크롤 잠금(중첩 카운팅) — 닫힐 때 마지막 모달이면 스크롤 원위치 복원
+  React.useEffect(() => {
+    if (!open) return
+    lockBodyScroll()
+    return () => unlockBodyScroll()
+  }, [open])
+
   // Esc 로 닫기 — 배경 클릭과 동일하게 동작(키보드 기대 일관성).
   // 겹친 모달에서는 최상단 것만 닫히도록 전역 스택으로 판별.
   React.useEffect(() => {

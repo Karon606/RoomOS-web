@@ -258,9 +258,15 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // 열릴 때 검색창 포커스
+  // 열릴 때 검색창 포커스 — 데스크톱(정밀 포인터)에서만.
+  // 터치 기기에서 자동 포커스하면 가상 키보드가 목록을 밀어 올려 탭 좌표가 어긋난다
+  // (신고 6c196aeb: 대한민국을 눌렀는데 한두 행 아래 나라가 선택됨). 검색이 필요하면 직접 탭.
   useEffect(() => {
-    if (open) { setQuery(''); setTimeout(() => inputRef.current?.focus(), 50) }
+    if (!open) return
+    setQuery('')
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
   }, [open])
 
   // 바깥 클릭 닫기
@@ -292,7 +298,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
+        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
       >
         {selected ? (
           <>
