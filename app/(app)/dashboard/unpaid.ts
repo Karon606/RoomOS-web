@@ -12,7 +12,7 @@
 
 import prisma from '@/lib/prisma'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
-import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
 
 function monthRange(startMonth: string, endMonth: string): string[] {
   const result: string[] = []
@@ -285,7 +285,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       if (moveOutMonth && mon > moveOutMonth) continue
       // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 그 기간 미사용 = 청구 0
       // (rooms checkoutNoBilling 과 동일 규칙, lib/billing 공용. 수납 페이지=완납인데 푸시=미납 방지)
-      if (isCheckoutNoBillingMonth(l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
+      if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
       billableMonthList.push(mon)
     }
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·dashboard page 와 동일

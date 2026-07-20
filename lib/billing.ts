@@ -92,3 +92,17 @@ export function isCheckoutNoBillingMonth(
   if (monthOfDate(expectedMoveOut) !== mon) return false
   return new Date(expectedMoveOut).getTime() <= dueDate.getTime()
 }
+
+// 무청구 판정 + 일할 권위 — 그 달에 확정 정산액(checkoutProrated: 일할 또는 사용분+위약금)이 있으면
+// 그 값이 청구 권위(billForLeaseMonth 우선순위 ①)이므로 무청구를 적용하지 않는다.
+// 퇴실일 = 납부일 같은 날(경계일) 케이스에서 무청구 스킵이 정산액을 덮어 과납이 허수로 잡히던 문제 방지
+// (중도퇴실 환불 통합, 운영자 승인 2026-07-20). 호출부는 기존 isCheckoutNoBillingMonth 대신 이걸 쓴다.
+export function isCheckoutNoBillingMonthFor(
+  l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth'>,
+  expectedMoveOut: Date | string | null | undefined,
+  mon: string,
+  dueDate: Date | null,
+): boolean {
+  if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
+  return isCheckoutNoBillingMonth(expectedMoveOut, mon, dueDate)
+}

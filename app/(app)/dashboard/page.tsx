@@ -11,7 +11,7 @@ import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
-import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -732,7 +732,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const billThisMonth  = (l: typeof activeLeases[number]) => {
     if (prevOwnerMonthsByLease[l.id]?.has(targetMonth)) return 0
     const dueRaw = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay) ? l.overrideDueDay : l.dueDay
-    if (isCheckoutNoBillingMonth(l.expectedMoveOut, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
+    if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
     return billForLeaseMonth(l, targetMonth, lockedExpectedByLeaseMonth[l.id]?.get(targetMonth) ?? null)
   }
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
@@ -1022,7 +1022,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0 (rooms·unpaid.ts 와 동일, lib/billing 공용)
-      if (isCheckoutNoBillingMonth(l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
+      if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
       billableMonthList.push(mon)
     }
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·unpaid.ts 와 동일

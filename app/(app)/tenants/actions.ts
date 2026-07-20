@@ -1794,6 +1794,12 @@ function prorationDataForChange(
   newExpectedMoveOut: string | null,   // 'YYYY-MM-DD' | null
   autoApply: boolean,                  // 미적용 상태에서도 자동 적용(퇴실 예정 전환·편집)일 때 true
 ): { data: Record<string, unknown>; notice: string | null } {
+  // 환불 확정(finalizeRentRefund) 이후에는 그 달 청구가 회사 귀속액으로 고정된 상태 —
+  // 날짜 변경 재계산이 이 확정을 덮으면 record와 청구가 어긋난다(적대검증 P0). 보존하고 손대지 않는다.
+  const undoObj = lease.checkoutProrationUndo
+  if (undoObj && typeof undoObj === 'object' && 'refund' in (undoObj as Record<string, unknown>)) {
+    return { data: {}, notice: '이용료 환불이 확정된 계약이라 일할 정산을 재계산하지 않았습니다. 변경하려면 환불 적용취소 후 진행해 주세요.' }
+  }
   const wasApplied = lease.checkoutProratedAmount != null
   // 퇴실 예정 해제 — 적용분 있으면 정산도 함께 해제
   if (!newExpectedMoveOut) {
@@ -1843,7 +1849,11 @@ function prorationDataForChange(
 // 퇴실 환불 미리보기 — 환경설정 '퇴실 환불 규정'으로 환불액 내역 산출(읽기전용 표시용).
 // 선납액 = 퇴실 달에 낸 금액(보증금·양도인 제외). 사용일수 = 일할 daysUsed(퇴실일<납부일이면 0).
 export type CheckoutRefundPreview =
-  | { ok: true; refund: CheckoutRefundResult; prepaidAmount: number; defaultPenaltyPct: number }
+  | {
+      ok: true; refund: CheckoutRefundResult; prepaidAmount: number; defaultPenaltyPct: number
+      // 퇴실 정산 위젯이 먼저 확정한 그 달 청구액 — 있으면 환불 창은 재계산 대신 이 값을 이어받는다(이중 수정 방지)
+      appliedProration: number | null
+    }
   | { ok: false; error: string }
 
 export async function previewCheckoutRefund(
@@ -1859,6 +1869,7 @@ export async function previewCheckoutRefund(
         where: { id: leaseTermId, propertyId },
         select: {
           dueDay: true, rentAmount: true, moveInDate: true,
+          checkoutProratedAmount: true, checkoutProratedMonth: true,
           discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         },
       }),
@@ -1878,10 +1889,156 @@ export async function previewCheckoutRefund(
     const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     const daysUsed = prorate ? prorate.daysUsed : 0   // 퇴실일 < 납부일이면 그 기간 미사용 = 0
     const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct })
-    return { ok: true, refund, prepaidAmount, defaultPenaltyPct }
+    const appliedProration = (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === moveOutMonth)
+      ? lease.checkoutProratedAmount : null
+    return { ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 중도퇴실 이용료 환불 확정 (운영자 승인 2026-07-20) ────────────────────
+// 퇴실월 이용료 record를 회사 귀속액(선납 − 환불액) 1건으로 재기록해 매출에서 환불분을 뺀다.
+// 원 record는 소프트삭제(복원 가능), 그 달 청구는 checkoutProrated(청구 우선순위 ①)로 회사 귀속액에 고정.
+// 반환된 id들로 클라 토스트의 적용취소(undoRentRefund)가 원복한다(보증금 반환 undo와 같은 패턴).
+export type RentRefundResult =
+  | { ok: true; refunded: number; companyKeeps: number }
+  | { ok: false; error: string }
+
+// 환불 스냅샷 — checkoutProrationUndo JSON 안에 refund 키로 영속(적대검증 P1-2·P2).
+// id를 클라가 들고 다니지 않아 새로고침 후에도 적용취소 가능하고 위조도 차단된다.
+type RentRefundSnapshot = {
+  at: string
+  month: string
+  refunded: number
+  prepaid: number
+  newRecordId: string | null
+  deletedRecordIds: string[]
+  prevProration: { amount: number | null; month: string | null }
+}
+
+export async function finalizeRentRefund(input: {
+  leaseTermId: string
+  moveOutYmd: string        // 'YYYY-MM-DD'
+  rentRefundAmount: number  // 운영자 확정 이용료 환불액
+}): Promise<RentRefundResult> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: input.leaseTermId, propertyId },
+      select: { tenantId: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 단기는 주 단위 계약이라 일할 환불 정책 밖(운영자 결정 2026-07-20 범위 제외) — 수납 기록에서 직접 조정
+    if (lease.isShortTerm) return { ok: false, error: '단기 계약의 이용료 환불은 수납 기록에서 직접 조정해 주세요(주 단위 계약이라 일할 환불 정책 밖).' }
+    const mon = input.moveOutYmd.slice(0, 7)
+    const records = await prisma.paymentRecord.findMany({
+      where: { leaseTermId: input.leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
+      orderBy: { payDate: 'asc' },
+      select: { id: true, actualAmount: true, payDate: true, memo: true },
+    })
+    // 멱등 가드 — 이미 이 달을 환불 재기록했으면 이중 환불 차단(적대검증 P2)
+    if (records.some(r => r.memo?.startsWith('[중도퇴실 환불]'))) {
+      return { ok: false, error: '이미 환불 처리된 달입니다. 되돌리려면 환불 적용취소 후 다시 진행해 주세요.' }
+    }
+    const prepaid = records.reduce((s, r) => s + r.actualAmount, 0)
+    const refundAmt = Math.round(input.rentRefundAmount)
+    if (!Number.isFinite(refundAmt) || refundAmt <= 0) return { ok: false, error: '환불 금액이 올바르지 않습니다.' }
+    if (refundAmt > prepaid) return { ok: false, error: `환불 금액이 그 기간 수납액(${prepaid.toLocaleString()}원)을 넘을 수 없습니다.` }
+    const companyKeeps = prepaid - refundAmt
+    const ids = records.map(r => r.id)
+    const firstPayDate = records[0]?.payDate ?? new Date()
+
+    await prisma.$transaction(async tx => {
+      const del = await tx.paymentRecord.updateMany({
+        where: { id: { in: ids }, leaseTermId: input.leaseTermId },
+        data: { deletedAt: new Date() },
+      })
+      if (del.count !== ids.length) throw new Error('CONFLICT')
+      let newRecordId: string | null = null
+      if (companyKeeps > 0) {
+        const seqNo = await tx.paymentRecord.count({
+          where: { leaseTermId: input.leaseTermId, targetMonth: mon, deletedAt: undefined },
+        })
+        const created = await tx.paymentRecord.create({
+          data: {
+            leaseTermId: input.leaseTermId, tenantId: lease.tenantId, propertyId,
+            targetMonth: mon, expectedAmount: companyKeeps, actualAmount: companyKeeps,
+            payDate: firstPayDate, seqNo: seqNo + 1, isPaid: true, carryOver: 0,
+            memo: `[중도퇴실 환불] 환불 ${refundAmt.toLocaleString()}원 · 원 수납 ${prepaid.toLocaleString()}원 · 청구 확정 ${companyKeeps.toLocaleString()}원`,
+          },
+        })
+        newRecordId = created.id
+      }
+      const snapshot: RentRefundSnapshot = {
+        at: new Date().toISOString(), month: mon, refunded: refundAmt, prepaid,
+        newRecordId, deletedRecordIds: ids,
+        prevProration: { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth },
+      }
+      const undoBase = (lease.checkoutProrationUndo && typeof lease.checkoutProrationUndo === 'object')
+        ? lease.checkoutProrationUndo as Record<string, unknown> : {}
+      // 그 달 청구를 회사 귀속액으로 고정(0도 유효 — 전액 환불이면 청구 0) — 발생주의 매출·미수와 record가 일치.
+      // 스냅샷은 checkoutProrationUndo.refund 에 영속 — updateTenant 재계산이 이 키를 보고 보존한다(P0 방어 2중).
+      await tx.leaseTerm.updateMany({
+        where: { id: input.leaseTermId, propertyId },
+        data: {
+          checkoutProratedAmount: companyKeeps, checkoutProratedMonth: mon,
+          checkoutProrationUndo: { ...undoBase, refund: snapshot } as Prisma.InputJsonValue,
+        },
+      })
+    })
+
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
+    return { ok: true, refunded: refundAmt, companyKeeps }
+  } catch (err) {
+    if ((err as Error).message === 'CONFLICT') return { ok: false, error: '수납 기록이 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도해 주세요.' }
+    return { ok: false, error: (err as Error).message ?? '환불 처리 중 오류가 발생했습니다.' }
+  }
+}
+
+// 이용료 환불 적용취소 — DB에 영속된 스냅샷 기준으로 원 record 복원 + 재기록 소프트삭제 + 일할 필드 원복.
+// 클라 전달값을 신뢰하지 않는다(적대검증 P2 — id 위조·다른 사유 삭제분 복원 차단).
+export async function undoRentRefund(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { checkoutProrationUndo: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    const undoObj = (lease.checkoutProrationUndo && typeof lease.checkoutProrationUndo === 'object')
+      ? lease.checkoutProrationUndo as Record<string, unknown> : null
+    const snap = undoObj?.refund as RentRefundSnapshot | undefined
+    if (!snap || !Array.isArray(snap.deletedRecordIds)) return { ok: false, error: '되돌릴 환불 기록이 없습니다.' }
+
+    await prisma.$transaction(async tx => {
+      if (snap.deletedRecordIds.length > 0) {
+        await tx.paymentRecord.updateMany({
+          where: { id: { in: snap.deletedRecordIds }, leaseTermId },
+          data: { deletedAt: null },
+        })
+      }
+      if (snap.newRecordId) {
+        await tx.paymentRecord.updateMany({ where: { id: snap.newRecordId, leaseTermId }, data: { deletedAt: new Date() } })
+      }
+      const rest = { ...undoObj }
+      delete rest.refund
+      await tx.leaseTerm.updateMany({
+        where: { id: leaseTermId, propertyId },
+        data: {
+          checkoutProratedAmount: snap.prevProration?.amount ?? null,
+          checkoutProratedMonth: snap.prevProration?.month ?? null,
+          checkoutProrationUndo: (Object.keys(rest).length > 0 ? rest : Prisma.DbNull) as Prisma.InputJsonValue,
+        },
+      })
+    })
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }
 }
 
@@ -1969,6 +2126,13 @@ export async function clearCheckoutProration(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    // 환불 확정(finalizeRentRefund) 상태 — 일할 해제가 환불 스냅샷을 지우고 청구·record 정합을 깬다.
+    // 되돌리려면 환불 적용취소(undoRentRefund)를 먼저(적대검증 P0 연쇄 방어).
+    const undoRaw = lease.checkoutProrationUndo
+    if (undoRaw && typeof undoRaw === 'object' && 'refund' in (undoRaw as Record<string, unknown>)) {
+      return { ok: false, error: '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.' }
+    }
 
     const undo = lease.checkoutProrationUndo as CheckoutProrationUndo | null
     // 적용 이후 수동 수정(퇴실일 변경 등) 감지 — 스냅샷 복원이 그 수정을 덮어쓰지 않게,

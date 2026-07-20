@@ -11,9 +11,10 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
-  batchUpdateTenants,
+  batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
   type ContractFileRow,
 } from './actions'
+import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
@@ -413,6 +414,11 @@ export default function TenantClient({
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositRefundDirty, setDepositRefundDirty] = useState(false)   // 환불 창 dirty — 금액·날짜를 만졌을 때만 닫기 확인(§12)
+  // 이용료 환불(통합 환불 창, 운영자 승인 2026-07-20) — 계산은 서버 미리보기, 최종 금액은 운영자 확정
+  const [rentRefundPreview, setRentRefundPreview] = useState<{ prepaidAmount: number; refund: CheckoutRefundResult; defaultPenaltyPct: number; appliedProration: number | null } | null>(null)
+  const [rentRefundAmt, setRentRefundAmt] = useState(0)
+  const [rentPenaltyPctInput, setRentPenaltyPctInput] = useState('')   // 빈 값 = 영업장 기본 위약금율
+  const [rentMoveOutYmd, setRentMoveOutYmd] = useState('')
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
@@ -742,7 +748,35 @@ export default function TenantClient({
     setDepositReturnAmt(maxRefund)
     setDepositReturnDate(kstYmdStr())
     setDepositRefundDirty(false)
+    // 이용료 환불 미리보기 — 퇴실월 선납이 있으면 통합 환불 창에 이용료 섹션 표시
+    const moveOutYmd = (((fd.get('expectedMoveOut') as string) || '').slice(0, 10)) || kstYmdStr()
+    setRentMoveOutYmd(moveOutYmd)
+    setRentRefundPreview(null); setRentRefundAmt(0); setRentPenaltyPctInput('')
+    if (leaseTermId) {
+      void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', null).then(r => {
+        if (r.ok && r.prepaidAmount > 0) {
+          setRentRefundPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
+          // 퇴실 정산이 먼저 적용돼 있으면 그 확정값을 이어받는다(이중 수정 방지) — 환불 기본값 = 결제액 − 확정 청구
+          setRentRefundAmt(r.appliedProration != null ? Math.max(0, r.prepaidAmount - r.appliedProration) : r.refund.refund)
+        }
+      }).catch(() => {})
+    }
     setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId })
+  }
+
+  // 위약금율 입력(0~10, 빈 값 = 영업장 기본) — 서버 재계산 후 환불 기본값 갱신. 캡은 서버가 재클램프.
+  const handleRentPct = (raw: string) => {
+    const clean = raw.replace(/[^0-9]/g, '').slice(0, 2)
+    setRentPenaltyPctInput(clean); setDepositRefundDirty(true)
+    const m = depositRefundModal
+    if (!m?.leaseTermId || !rentMoveOutYmd) return
+    const pctNum = clean === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(clean, 10) || 0))
+    void previewCheckoutRefund(m.leaseTermId, rentMoveOutYmd, 'legal', pctNum).then(r => {
+      if (r.ok && r.prepaidAmount > 0) {
+        setRentRefundPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
+        if (r.appliedProration == null) setRentRefundAmt(r.refund.refund)
+      }
+    }).catch(() => {})
   }
 
   // 거주중→공실 변경 시 호실에 예정 가격이 있으면 가격 변동 팝업 표시
@@ -856,12 +890,35 @@ export default function TenantClient({
   }
 
 
-  const handleDepositRefundConfirm = () => {
+  const handleDepositRefundConfirm = async () => {
     if (!depositRefundModal) return
     const { fd, tenantName, depositAmount, fromDetail, leaseTermId, tenantId } = depositRefundModal
+    const rp = rentRefundPreview
+    // 전액 환불(사용분·위약금까지 반환)은 명시적 확인(§14) — 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다
+    if (rp && rentRefundAmt > 0 && rentRefundAmt >= rp.prepaidAmount) {
+      const okAll = await confirmDialog({
+        title: '이용료를 전액 환불할까요?',
+        message: `사용분까지 모두 돌려주는 금액입니다. 총 환불액 ${fmtWon(rentRefundAmt + depositReturnAmt)}.`,
+        confirmLabel: '전액 환불', cancelLabel: '다시 확인',
+      })
+      if (!okAll) return
+    }
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 순서 중요(적대검증 P0): updateTenant(퇴실 저장·일할 재계산)를 먼저, 환불 확정을 나중에 —
+        // 반대로 하면 updateTenant의 일할 재계산이 환불 확정 청구액을 덮어쓴다.
+        const updateRes = await updateTenant(fd)
+        if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
+        if (updateRes.notice) pushToast('info', updateRes.notice)
+        // 이용료 환불 — 퇴실월 수납 record를 회사 귀속액으로 재기록(매출에서 환불분 제외, 원 기록 소프트삭제 보존)
+        let rentRefunded = false
+        if (rp && rentRefundAmt > 0) {
+          const rr = await finalizeRentRefund({ leaseTermId, moveOutYmd: rentMoveOutYmd, rentRefundAmount: rentRefundAmt })
+          if (rr.ok) rentRefunded = true
+          else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
+          else { setError(rr.error); pushToast('error', rr.error); return }
+        }
         const refundRes = await recordDepositReturn({
           leaseTermId,
           tenantId,
@@ -871,16 +928,27 @@ export default function TenantClient({
           tenantName,
         })
         if (!refundRes.ok) { setError(refundRes.error); pushToast('error', refundRes.error); return }
-        const updateRes = await updateTenant(fd)
-        if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
-        if (updateRes.notice) pushToast('info', updateRes.notice)
         setDepositRefundModal(null)
         if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
         else setEditTenant(null)
         refresh()
         const { refundId, extraIncomeId } = refundRes
-        pushToast('success', '보증금 환불 + 퇴실 처리됨', {
-          action: { label: '반환기록 취소', run: () => { void undoDepositReturn(refundId, extraIncomeId).then(r => { if (r.ok) { pushToast('info', '보증금 반환 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() } else pushToast('error', r.error) }) } },
+        const totalRefunded = (rp ? rentRefundAmt : 0) + depositReturnAmt
+        pushToast('success', `환불 + 퇴실 처리됨 · 총 ${fmtWon(totalRefunded)}`, {
+          action: {
+            label: '환불기록 취소',
+            run: () => {
+              void (async () => {
+                if (rentRefunded) {
+                  const ru = await undoRentRefund(leaseTermId)   // 스냅샷은 서버에 영속 — id 전달 불필요
+                  if (!ru.ok) { pushToast('error', ru.error); return }
+                }
+                const r = await undoDepositReturn(refundId, extraIncomeId)
+                if (r.ok) { pushToast('info', '환불 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }
+                else pushToast('error', r.error)
+              })()
+            },
+          },
         })
       } finally { release() }
     })
@@ -1314,48 +1382,122 @@ export default function TenantClient({
         const maxRefund = Math.max(0, dep - fee)
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
+        const rp = rentRefundPreview
+        const rentLocked = rp?.appliedProration != null   // 퇴실 정산 위젯이 먼저 확정 — 창에서 재계산 금지
+        const rentCalcDefault = rp ? (rentLocked ? Math.max(0, rp.prepaidAmount - (rp.appliedProration ?? 0)) : rp.refund.refund) : 0
+        const rentDiff = rp ? rentRefundAmt - rentCalcDefault : 0
+        const rentExceeds = !!rp && rentRefundAmt > rp.prepaidAmount
+        const totalRefund = (rp ? rentRefundAmt : 0) + depositReturnAmt
         // z 280 — 상세 경유 '고객 정보 수정' 창이 260이라 같은 층이면 이 창이 뒤에 깔려
         // 저장을 눌러도 아무 일도 없는 것처럼 보였다(운영자 신고 2026-07-20). 가격 변동 확인창과 동일 층.
         // dirty는 금액·날짜를 실제로 만졌을 때만(§12) — 종전 하드코딩은 그냥 닫아도 확인을 물었다.
         return (
           <Modal open z={280} width="sm" dirty={depositRefundDirty}
             onClose={() => setDepositRefundModal(null)}
-            title="보증금 환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
+            title="환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
 
               <div className="px-5 py-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
-                    <p className="text-[var(--warm-muted)]">보증금</p>
-                    <p className="text-sm font-semibold mt-0.5 text-[var(--warm-dark)]">{fmtWon(dep)}</p>
+                {/* 이용료 정산 — 퇴실월 선납이 있을 때만. 계산은 참고 표시, 최종 금액은 운영자 확정(승인 2026-07-20).
+                    차감 행은 라벨 앞 −(U+2212) 세로 수식 문법 — 퇴실 정산 위젯 환불 미리보기와 동일. */}
+                {rp && (
+                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-[var(--warm-mid)]">이용료 정산</span>
+                      <span className="tabular-nums text-[var(--warm-dark)]">결제액 {fmtWon(rp.prepaidAmount)}</span>
+                    </div>
+                    {rentLocked ? (
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+                        퇴실 정산 적용됨 · 이달 청구 {fmtWon(rp.appliedProration ?? 0)} · 변경은 상세의 퇴실 정산에서.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-[var(--warm-muted)]">− 사용분 ({rp.refund.daysUsed}일 × {fmtWon(rp.refund.dailyRate)})</span>
+                          <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(rp.refund.usedAmount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[var(--warm-muted)] flex items-center gap-1">
+                            − 위약금 (결제액의
+                            <input type="text" inputMode="numeric" value={rentPenaltyPctInput} placeholder={String(rp.defaultPenaltyPct)}
+                              onChange={e => handleRentPct(e.target.value)}
+                              className="w-11 bg-[var(--surface)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                            %)
+                          </span>
+                          <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(rp.refund.penalty)}</span>
+                        </div>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">위약금율 기본 {rp.defaultPenaltyPct}% · 최대 {LEGAL_PENALTY_PCT}% (공정위 기준)</p>
+                      </>
+                    )}
+                    <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">이용료 환불액</label>
+                      <MoneyInput value={rentRefundAmt} onChange={v => { setRentRefundAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">계산값 {fmtWon(rentCalcDefault)} · 필요시 수정</p>
+                      {rentExceeds && (
+                        <p className="text-[0.6875rem] text-[var(--danger-fg)]">결제액 {fmtWon(rp.prepaidAmount)}을 초과할 수 없습니다.</p>
+                      )}
+                      {!rentExceeds && rentDiff > 0 && (
+                        <p className="text-[0.6875rem] text-[var(--warning-fg)]">계산값보다 {fmtWon(rentDiff)} 많습니다.</p>
+                      )}
+                      {!rentExceeds && rentDiff < 0 && (
+                        <p className="text-[0.6875rem] text-[var(--warm-muted)]">계산값보다 {fmtWon(-rentDiff)} 적습니다. 차액은 회사 귀속으로 기록됩니다.</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
-                    <p className="text-[var(--warm-muted)]">청소비 차감</p>
-                    <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
-                      {fee > 0 ? `−${fmtWon(fee)}` : '없음'}
-                    </p>
+                )}
+
+                {/* 보증금 — 이용료 섹션과 같은 카드·행 문법 */}
+                <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-[var(--warm-mid)]">보증금</span>
+                    <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(dep)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--warm-muted)]">− 청소비</span>
+                    <span className={`tabular-nums ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>{fee > 0 ? fmtWon(fee) : '없음'}</span>
+                  </div>
+                  <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">보증금 환불액 (최대 {fmtWon(maxRefund)})</label>
+                      {/* 퇴실 전이 미니폼과 동일한 빠른 버튼 — 두 경로의 문법 통일(신규유저 감사) */}
+                      <button type="button" onClick={() => { setDepositReturnAmt(0); setDepositRefundDirty(true) }}
+                        className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
+                          depositReturnAmt === 0
+                            ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
+                            : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
+                        }`}>
+                        환불 안 함
+                      </button>
+                    </div>
+                    <MoneyInput value={depositReturnAmt} onChange={v => { setDepositReturnAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
+                    {exceedsMax && (
+                      <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      환불 금액 (최대 {fmtWon(maxRefund)})
-                    </label>
-                    {/* 퇴실 전이 미니폼과 동일한 빠른 버튼 — 두 경로의 문법 통일(신규유저 감사) */}
-                    <button type="button" onClick={() => { setDepositReturnAmt(0); setDepositRefundDirty(true) }}
-                      className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
-                        depositReturnAmt === 0
-                          ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
-                          : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
-                      }`}>
-                      환불 안 함
-                    </button>
-                  </div>
-                  <MoneyInput value={depositReturnAmt} onChange={v => { setDepositReturnAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 자동 기록됩니다.</p>
-                  {exceedsMax && (
-                    <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
+                {/* 합계 — 자동 합산 읽기전용(§12). 총 환불액만 bold·success 강조 */}
+                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
+                  {rp && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--warm-muted)]">이용료 환불</span>
+                      <span className="font-medium tabular-nums">{fmtWon(rentRefundAmt)}</span>
+                    </div>
                   )}
+                  <div className="flex justify-between">
+                    <span className="text-[var(--warm-muted)]">보증금 환불</span>
+                    <span className="font-medium tabular-nums">{fmtWon(depositReturnAmt)}</span>
+                  </div>
+                  {unreturned > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--warm-muted)]">부가수익 귀속 (보증금)</span>
+                      <span className="font-medium tabular-nums">{fmtWon(unreturned)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t pt-1" style={{ borderColor: 'var(--warm-border)' }}>
+                    <span className="font-semibold">총 환불액</span>
+                    <span className="font-bold tabular-nums text-[var(--success-fg)]">{fmtWon(totalRefund)}</span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1364,22 +1506,7 @@ export default function TenantClient({
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
 
-                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
-                  <div className="flex justify-between">
-                    <span className="text-[var(--warm-muted)]">환불</span>
-                    <span className="font-medium">{fmtWon(depositReturnAmt)}</span>
-                  </div>
-                  {unreturned > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-[var(--warm-muted)]">부가수익 귀속 (보증금)</span>
-                      <span className="font-medium">{fmtWon(unreturned)}</span>
-                    </div>
-                  )}
-                  <p className="text-[0.65625rem] pt-1 text-[var(--warm-muted)]">
-                    미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
-                  </p>
-                </div>
-
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">이 창의 퇴실 처리를 눌러야 퇴실이 저장됩니다.</p>
                 {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
 
@@ -1388,7 +1515,7 @@ export default function TenantClient({
                   className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-[var(--warm-border)] text-[var(--warm-mid)] hover:opacity-70 transition-opacity disabled:opacity-50">
                   취소
                 </button>
-                <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
+                <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax || rentExceeds}
                   className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
                   style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>
                   {isPending ? '처리 중…' : '퇴실 처리'}

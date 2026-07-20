@@ -7,7 +7,10 @@
 import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
-import { analyzeTenantWithGemini } from '@/app/(app)/tenants/actions'
+import { analyzeTenantWithGemini, undoRentRefund } from '@/app/(app)/tenants/actions'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { pushToast } from '@/lib/saveStatus'
+import { fmtWon } from '@/lib/fmtMoney'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Btn } from '@/components/ui/Btn'
@@ -66,6 +69,13 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
+      {/* 중도퇴실 환불 확정 — 상시 적용취소 진입점(§16, 토스트가 사라져도 여기서 항상 가능) */}
+      {lease && (() => {
+        const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
+        const snap = undoObj?.refund
+        if (!snap) return null
+        return <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />
+      })()}
       {/* 단기 희망 고객 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
       {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} tenantId={tenant.id} tenantName={tenant.name} onChange={refresh} />}
       {lease && <TenantAdditionalInfo lease={lease} />}
@@ -85,6 +95,37 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && lease.paymentRecords.length > 0 && (
         <PaymentSummaryWithAI tenantId={tenant.id} lease={lease} />
       )}
+    </div>
+  )
+}
+
+// 중도퇴실 환불 확정 표시 + 상시 적용취소 — 스냅샷은 서버(checkoutProrationUndo.refund)에 영속
+function RentRefundUndoRow({ leaseTermId, refunded, month, onDone }: {
+  leaseTermId: string; refunded: number; month: string; onDone: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const handleUndo = async () => {
+    const ok = await confirmDialog({
+      title: '이용료 환불을 적용취소할까요?',
+      message: '원래 수납 기록을 복원하고 청구를 환불 전 상태로 되돌립니다.',
+      confirmLabel: '적용취소',
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const r = await undoRentRefund(leaseTermId)
+      if (r.ok) { pushToast('info', '이용료 환불을 적용취소했습니다.'); onDone() }
+      else pushToast('error', r.error)
+    })
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+      <p className="text-[var(--warm-mid)]">
+        중도퇴실 환불 확정 · {Number(month.slice(5, 7))}월 이용료 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(refunded)}</span> 환불
+      </p>
+      <button type="button" onClick={handleUndo} disabled={pending}
+        className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+        {pending ? '취소 중…' : '적용취소'}
+      </button>
     </div>
   )
 }

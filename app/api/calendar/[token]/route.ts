@@ -2,7 +2,7 @@
 // 토큰만으로 접근(공개) — 캘린더 앱은 쿠키 없이 가져가므로 비밀 토큰이 보안.
 import prisma from '@/lib/prisma'
 import { discountedRent } from '@/lib/rentDiscount'
-import { isCheckoutNoBillingMonth } from '@/lib/billing'
+import { isCheckoutNoBillingMonthFor } from '@/lib/billing'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -119,7 +119,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const lastDay = new Date(y, m, 0).getDate()
         const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
         // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)
-        if (isCheckoutNoBillingMonth(l.expectedMoveOut, monthStr, new Date(y, m - 1, day))) continue
+        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr, new Date(y, m - 1, day))) continue
         // 청구액 = 그 달에 적용된 퇴실 일할 정산 > 할인 반영 이용료 (알림·예상매출과 동일 규칙)
         const amount = (l.checkoutProratedAmount != null && l.checkoutProratedMonth === monthStr)
           ? l.checkoutProratedAmount

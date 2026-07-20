@@ -250,7 +250,7 @@ export function CheckoutProrationWidget({
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
               </div>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">참고용. 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">참고용. 퇴실 처리 때 뜨는 환불 창이 이 확정값을 이어받습니다.</p>
             </div>
           )
         })()}

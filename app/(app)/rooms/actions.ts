@@ -12,7 +12,7 @@ import { kstYmd } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 
 async function getPropertyId() {
@@ -343,7 +343,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // dashboard·unpaid.ts 와 동일 규칙(날짜 기준, 상태 무관).
     const skipByMoveOut = (ms: string): boolean =>
       isAfterMoveOutMonth(lease.expectedMoveOut, ms)
-      || isCheckoutNoBillingMonth(lease.expectedMoveOut, ms, effDueDateForMonth(ms))
+      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth }, lease.expectedMoveOut, ms, effDueDateForMonth(ms))
 
     let pastBillable = 0
     let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
@@ -639,7 +639,7 @@ async function findFirstUnpaidMonth(
 
     // 퇴실예정월 초과·퇴실월 무청구(납부일 이전 퇴실) — 미수월 후보에서 제외 (lib/billing 공용 규칙)
     if (isAfterMoveOutMonth(lease.expectedMoveOut, ms)
-        || isCheckoutNoBillingMonth(lease.expectedMoveOut, ms, resolveDueDateForMonth(lease.dueDay, ms))) {
+        || isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms, resolveDueDateForMonth(lease.dueDay, ms))) {
       cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue
     }
 
@@ -1625,6 +1625,7 @@ export async function getTenantDetail(tenantId: string) {
         select: {
           id: true, status: true, isShortTerm: true,
           shortStayExtensions: true,   // 단기 연장 이력 — 위젯의 연장 이력 줄·적용취소 진입점용
+          checkoutProrationUndo: true, // 중도퇴실 환불 스냅샷(refund 키) — 상세의 상시 적용취소 진입점용(§16)
           rentAmount: true, depositAmount: true, cleaningFee: true,
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,

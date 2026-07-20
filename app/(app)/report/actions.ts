@@ -8,7 +8,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
-import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 
 async function getPropertyId() {
@@ -250,7 +250,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
         if (lPrevOwnerMonths?.has(mn)) continue
         if (moveOutMonth && mn > moveOutMonth) continue
         // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0.
-        if (isCheckoutNoBillingMonth(l.expectedMoveOut, mn, resolveDueDateForMonth(effectiveDueDayForMonth(l, mn), mn))) continue
+        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, mn, resolveDueDateForMonth(effectiveDueDayForMonth(l, mn), mn))) continue
         const bill = billForLeaseMonth(l, mn, lockedMap?.get(mn) ?? null)
         expected += bill
         if (mn === month) monthBilled += bill   // 그 달 발생 청구액 — 미수와 동일 스코프
