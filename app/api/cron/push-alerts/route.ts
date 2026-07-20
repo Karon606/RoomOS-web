@@ -11,6 +11,7 @@ import webpush from 'web-push'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
 import { kstYmd } from '@/lib/kstDate'
+import { runIntegrityAudit } from '@/lib/integrityAudit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -47,6 +48,10 @@ export async function GET(req: Request) {
     },
     data: { status: 'CHECKOUT_PENDING', autoCheckoutAt: new Date() },
   })
+
+  // 데이터 정합 감사(운영자 오더 2026-07-20, 땜빵 금지) — 위반을 오류신고로 자동 적재.
+  // 실패해도 푸시 발송은 계속(감사는 부가 기능).
+  const audit = await runIntegrityAudit(prisma).catch(() => null)
 
   const subs = await prisma.pushSubscription.findMany()
   const byUser = new Map<string, typeof subs>()
@@ -111,5 +116,5 @@ export async function GET(req: Request) {
     } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
   }
 
-  return NextResponse.json({ ok: true, autoCheckout: autoFlipped.count, usersNotified, sent })
+  return NextResponse.json({ ok: true, autoCheckout: autoFlipped.count, usersNotified, sent, integrity: audit })
 }
