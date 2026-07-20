@@ -412,6 +412,7 @@ export default function TenantClient({
   const [error, setError]               = useState('')
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
+  const [depositRefundDirty, setDepositRefundDirty] = useState(false)   // 환불 창 dirty — 금액·날짜를 만졌을 때만 닫기 확인(§12)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
@@ -740,6 +741,7 @@ export default function TenantClient({
     const maxRefund = Math.max(0, depositAmount - cleaningFee)
     setDepositReturnAmt(maxRefund)
     setDepositReturnDate(kstYmdStr())
+    setDepositRefundDirty(false)
     setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId })
   }
 
@@ -1312,8 +1314,11 @@ export default function TenantClient({
         const maxRefund = Math.max(0, dep - fee)
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
+        // z 280 — 상세 경유 '고객 정보 수정' 창이 260이라 같은 층이면 이 창이 뒤에 깔려
+        // 저장을 눌러도 아무 일도 없는 것처럼 보였다(운영자 신고 2026-07-20). 가격 변동 확인창과 동일 층.
+        // dirty는 금액·날짜를 실제로 만졌을 때만(§12) — 종전 하드코딩은 그냥 닫아도 확인을 물었다.
         return (
-          <Modal open z={260} width="sm" dirty
+          <Modal open z={280} width="sm" dirty={depositRefundDirty}
             onClose={() => setDepositRefundModal(null)}
             title="보증금 환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
 
@@ -1337,7 +1342,7 @@ export default function TenantClient({
                       환불 금액 (최대 {fmtWon(maxRefund)})
                     </label>
                     {/* 퇴실 전이 미니폼과 동일한 빠른 버튼 — 두 경로의 문법 통일(신규유저 감사) */}
-                    <button type="button" onClick={() => setDepositReturnAmt(0)}
+                    <button type="button" onClick={() => { setDepositReturnAmt(0); setDepositRefundDirty(true) }}
                       className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
                         depositReturnAmt === 0
                           ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
@@ -1346,7 +1351,7 @@ export default function TenantClient({
                       환불 안 함
                     </button>
                   </div>
-                  <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
+                  <MoneyInput value={depositReturnAmt} onChange={v => { setDepositReturnAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 자동 기록됩니다.</p>
                   {exceedsMax && (
                     <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
@@ -1355,7 +1360,7 @@ export default function TenantClient({
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
-                  <DatePicker value={depositReturnDate} onChange={setDepositReturnDate}
+                  <DatePicker value={depositReturnDate} onChange={v => { setDepositReturnDate(v); setDepositRefundDirty(true) }}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
 
