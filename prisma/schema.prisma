@@ -1563,10 +1563,13 @@ model AssetItemOrder {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   category   String
   itemLabel  String
+  // 규격 식별자 직렬화(specValue␟specUnit␟specText, SpecKey 3종과 동일 정체성) — '' = 라벨(품목) 순서 행.
+  // 라벨 내 규격(색상 등) 간 순서 편집용 2계층(운영자 승인 2026-07-20, 신고 1b8e7030). null 대신 '' 센티널(unique 정합).
+  specKey    String   @default("")
   sortOrder  Int
   createdAt  DateTime @default(now())
 
-  @@unique([propertyId, category, itemLabel])
+  @@unique([propertyId, category, itemLabel, specKey])
   @@index([propertyId, category])
   @@map("asset_item_order")
 }

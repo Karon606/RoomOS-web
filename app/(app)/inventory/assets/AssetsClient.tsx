@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, reorderAssetItems, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -42,6 +42,12 @@ import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
+// 규격 표기 — 카드 제목과 같은 문구(specText 우선, 없으면 값+단위)
+const specDisp = (it: { specText: string | null; specValue: number | null; specUnit: string | null }) =>
+  it.specText || (it.specValue != null ? `${fmtQty(it.specValue)}${it.specUnit ?? ''}` : '')
+// 규격 식별자 직렬화 — 서버 serializeSpecKey 와 동일(specValue␟specUnit␟specText). 규격 순서 편집 키.
+const serializeSpecKey = (it: { specValue: number | null; specUnit: string | null; specText: string | null }) =>
+  [it.specValue ?? '', it.specUnit ?? '', it.specText ?? ''].join('␟')
 
 type Target = { kind: 'room' | 'location'; id: string }
 
@@ -141,25 +147,43 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   useEffect(() => { labelOrderRef.current = labelOrder }, [labelOrder])   // 렌더 중 ref 접근 금지(react-compiler)
   const labelOrderChanged = useRef(false)
   const dragListElRef = useRef<HTMLElement | null>(null)
-  // category → { spec 대표 } 라벨별 대표 규격(첫 카드 기준, 표시용)
+  // 규격(색상 등) 순서 편집 — 2계층의 규격 계층. 라벨 안에서만 드래그. key = 'category␟itemLabel'.
+  const [specOrder, setSpecOrder] = useState<Record<string, string[]>>({})
+  const [dragSpecKey, setDragSpecKey] = useState<string | null>(null)   // 'category␟itemLabel'
+  const [dragSpecIdx, setDragSpecIdx] = useState<number | null>(null)
+  const specOrderRef = useRef(specOrder)
+  useEffect(() => { specOrderRef.current = specOrder }, [specOrder])
+  const specOrderChanged = useRef(false)
+  const specDragListElRef = useRef<HTMLElement | null>(null)
+  // category → 라벨(순서 유지)별 규격 목록. 규격 = serializeSpecKey 로 묶고 표기·카드 수를 담는다.
   const orderGroups = useMemo(() => {
-    const m = new Map<string, { labels: string[]; specOf: Map<string, string> }>()
+    const cats = new Map<string, Map<string, Map<string, { disp: string; count: number }>>>()
     for (const it of allItems) {
       if (!it.itemLabel || !it.category) continue
-      const g = m.get(it.category) ?? { labels: [], specOf: new Map<string, string>() }
-      if (!g.labels.includes(it.itemLabel)) {
-        g.labels.push(it.itemLabel)
-        const spec = it.specText || (it.specValue != null ? `${fmtQty(it.specValue)}${it.specUnit ?? ''}` : '')
-        if (spec) g.specOf.set(it.itemLabel, spec)
-      }
-      m.set(it.category, g)
+      const labels = cats.get(it.category) ?? new Map<string, Map<string, { disp: string; count: number }>>()
+      const specs = labels.get(it.itemLabel) ?? new Map<string, { disp: string; count: number }>()
+      const sk = serializeSpecKey(it)
+      const e = specs.get(sk) ?? { disp: specDisp(it), count: 0 }
+      e.count += 1
+      specs.set(sk, e)
+      labels.set(it.itemLabel, specs)
+      cats.set(it.category, labels)
     }
-    return [...m.entries()].map(([cat, g]) => {
+    return [...cats.entries()].map(([cat, labelsMap]) => {
+      const baseLabels = [...labelsMap.keys()]
       const ord = labelOrder[cat]
-      const labels = ord ? [...g.labels].sort((a, b) => rankInOrder(ord, a) - rankInOrder(ord, b)) : g.labels
-      return { cat, labels, specOf: g.specOf }
+      const labelOrd = ord ? [...baseLabels].sort((a, b) => rankInOrder(ord, a) - rankInOrder(ord, b)) : baseLabels
+      const labels = labelOrd.map(label => {
+        const specsMap = labelsMap.get(label)!
+        const baseSpecs = [...specsMap.keys()]
+        const sord = specOrder[`${cat}␟${label}`]
+        const specKeys = sord ? [...baseSpecs].sort((a, b) => rankInOrder(sord, a) - rankInOrder(sord, b)) : baseSpecs
+        const specs = specKeys.map(sk => ({ specKey: sk, disp: specsMap.get(sk)!.disp, count: specsMap.get(sk)!.count }))
+        return { label, specs }
+      })
+      return { cat, labels }
     })
-  }, [allItems, labelOrder])
+  }, [allItems, labelOrder, specOrder])
   const enterOrderEdit = () => { setSearch(''); exitMerge(); setOrderEditMode(true) }
   const onItemHandleDown = (cat: string, idx: number, baseLabels: string[]) => (e: ReactPointerEvent) => {
     e.preventDefault()
@@ -213,6 +237,63 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       return
     }
     pushToast('success', '품목 순서 저장됨')
+  }
+
+  // 규격 순서 드래그 — 라벨 손잡이와 같은 문법(오른쪽 44pt 손잡이에서만, 몸통은 스크롤). 그 라벨 안에서만 이동.
+  const onSpecHandleDown = (cat: string, label: string, idx: number, baseSpecKeys: string[]) => (e: ReactPointerEvent) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    specDragListElRef.current = (e.currentTarget as HTMLElement).closest('[data-spec-drag-list]') as HTMLElement | null
+    specOrderChanged.current = false
+    const k = `${cat}␟${label}`
+    setSpecOrder(prev => prev[k] ? prev : { ...prev, [k]: baseSpecKeys })
+    setDragSpecKey(k)
+    setDragSpecIdx(idx)
+  }
+  const onSpecHandleMove = (e: ReactPointerEvent) => {
+    if (dragSpecKey == null || dragSpecIdx == null || !specDragListElRef.current) return
+    const items = Array.from(specDragListElRef.current.children) as HTMLElement[]
+    if (items.length === 0) return
+    let over = -1
+    if (e.clientY < items[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > items[items.length - 1].getBoundingClientRect().bottom) over = items.length - 1
+    else {
+      for (let i = 0; i < items.length; i++) {
+        const r = items[i].getBoundingClientRect()
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break }
+      }
+    }
+    if (over < 0 || over === dragSpecIdx) return
+    const k = dragSpecKey
+    setSpecOrder(prev => {
+      const cur = prev[k]
+      if (!cur) return prev
+      const next = [...cur]
+      const [moved] = next.splice(dragSpecIdx, 1)
+      next.splice(over, 0, moved)
+      return { ...prev, [k]: next }
+    })
+    setDragSpecIdx(over)
+    specOrderChanged.current = true
+  }
+  const onSpecHandleUp = async () => {
+    if (dragSpecKey == null) return
+    const k = dragSpecKey
+    setDragSpecKey(null)
+    setDragSpecIdx(null)
+    if (!specOrderChanged.current) return
+    specOrderChanged.current = false
+    const specKeys = specOrderRef.current[k]
+    if (!specKeys) return
+    const [cat, label] = k.split('␟')
+    const res = await reorderAssetSpecs(cat, label, specKeys)
+    if (!res.ok) {
+      pushToast('error', res.error)
+      setSpecOrder(prev => { const n = { ...prev }; delete n[k]; return n })
+      router.refresh()
+      return
+    }
+    pushToast('success', '규격 순서 저장됨')
   }
 
   // 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록
@@ -689,30 +770,62 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         // 대분류(미배정/공용/방)·검색은 감춰 각 category 가 항상 전체 라벨이라 부분 저장이 원천 불가.
         <>
         <p className="text-xs text-[var(--warm-muted)]">오른쪽 손잡이를 잡아 끌어 순서를 바꿉니다. 완료를 누르면 편집이 끝납니다.</p>
+        <p className="text-xs text-[var(--warm-muted)]">품목 순서는 품목 이름 단위이고, 규격이 여러 개인 품목은 그 아래 규격(색상) 순서도 바꿀 수 있습니다.</p>
         {orderGroups.map(g => g.labels.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <SectionHeader name={g.cat} count={`${g.labels.length}품목`} />
             <div data-item-drag-list className="space-y-1.5">
-              {g.labels.map((label, idx) => {
-                const spec = g.specOf.get(label)
+              {g.labels.map((le, idx) => {
+                const multi = le.specs.length >= 2
+                const single = le.specs.length === 1 ? le.specs[0].disp : ''
+                const lk = `${g.cat}␟${le.label}`
                 return (
-                  <div key={label}
-                    className={`flex items-center gap-1.5 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-3.5 pr-1 py-1 ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--warm-dark)]">{label}
-                      {spec && <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{spec}</span>}
-                    </span>
-                    {/* 드래그는 오른쪽 44pt 손잡이 버튼에서만 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버린다 */}
-                    <button type="button" aria-label={`${label} 순서 이동`}
-                      onPointerDown={onItemHandleDown(g.cat, idx, g.labels)}
-                      onPointerMove={onItemHandleMove}
-                      onPointerUp={onItemHandleUp}
-                      onPointerCancel={onItemHandleUp}
-                      style={{ touchAction: 'none' }}
-                      className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                        <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
-                      </svg>
-                    </button>
+                  // 라벨 블록(래퍼) — 라벨 드래그는 이 래퍼 단위(자식 = 라벨 수), 규격 서브행은 안쪽 별도 리스트.
+                  <div key={le.label}>
+                    <div
+                      className={`flex items-center gap-1.5 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-3.5 pr-1 py-1 ${dragCat === g.cat && dragItemIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--warm-dark)]">{le.label}
+                        {/* 규격 2종 이상이면 규격 수를 병기(첫 카드 규격 대신), 1종이면 그 규격 표기 유지 */}
+                        {multi
+                          ? <span className="ml-1.5 shrink-0 mono tnum font-normal text-[var(--warm-muted)]">규격 {le.specs.length}종</span>
+                          : single && <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{single}</span>}
+                      </span>
+                      {/* 드래그는 오른쪽 44pt 손잡이 버튼에서만 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버린다 */}
+                      <button type="button" aria-label={`${le.label} 순서 이동`}
+                        onPointerDown={onItemHandleDown(g.cat, idx, g.labels.map(x => x.label))}
+                        onPointerMove={onItemHandleMove}
+                        onPointerUp={onItemHandleUp}
+                        onPointerCancel={onItemHandleUp}
+                        style={{ touchAction: 'none' }}
+                        className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                          <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                        </svg>
+                      </button>
+                    </div>
+                    {/* 규격 서브행 — 규격 2종 이상 라벨만. 그 라벨 안에서만 드래그(라벨 손잡이와 동일 문법) */}
+                    {multi && (
+                      <div data-spec-drag-list className="mt-1.5 space-y-1.5 pl-5">
+                        {le.specs.map((se, sidx) => (
+                          <div key={se.specKey}
+                            className={`flex items-center gap-1.5 min-h-[40px] rounded-lg border bg-[var(--canvas)] pl-3 pr-1 py-1 ${dragSpecKey === lk && dragSpecIdx === sidx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
+                            <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-[var(--warm-dark)]">{se.disp || '규격 없음'}</span>
+                            <span className="shrink-0 mono tnum text-[0.6875rem] text-[var(--warm-muted)]">카드 {se.count}</span>
+                            <button type="button" aria-label={`${se.disp || '규격 없음'} 순서 이동`}
+                              onPointerDown={onSpecHandleDown(g.cat, le.label, sidx, le.specs.map(x => x.specKey))}
+                              onPointerMove={onSpecHandleMove}
+                              onPointerUp={onSpecHandleUp}
+                              onPointerCancel={onSpecHandleUp}
+                              style={{ touchAction: 'none' }}
+                              className="shrink-0 flex items-center justify-center w-11 h-11 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                                <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

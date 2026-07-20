@@ -91,10 +91,18 @@ function durableExpenseWhere(propertyId: string, trackedCats: string[]): Prisma.
   }
 }
 
+// 규격 식별자 직렬화 — 라벨 내 규격(색상 등) 순서 편집 키(specValue␟specUnit␟specText, SpecKey 3종과 동일 정체성).
+// 전부 null이면 '␟␟'라 라벨 행 센티널 ''과 겹치지 않는다.
+const serializeSpecKey = (s: SpecKey): string => [s.specValue ?? '', s.specUnit ?? '', s.specText ?? ''].join('␟')
+
+// 순서 편집 맵 — 2계층. label = (category␟itemLabel)→라벨 rank, spec = (category␟itemLabel␟specKey)→규격 rank,
+// labelMaxSpec = (category␟itemLabel)→그 라벨 규격 rank 최대값(규격 rank 없는 카드의 라벨 내 맨 뒤 폴백용).
+type AssetOrderMaps = { label: Map<string, number>; spec: Map<string, number>; labelMaxSpec: Map<string, number> }
+
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계.
-// orderMap = (category␟itemLabel) → sortOrder(순서 편집). 1차 키 = 품목 순서(있으면 오름차순),
-// 그다음 기존 구매일 최신순. 같은 라벨의 여러 규격·위치 카드는 같은 sortOrder 라 그 안에서 기존 순서.
-function aggregateAssets(list: RawAsset[], orderMap?: Map<string, number>): AssetItem[] {
+// 정렬 3단 — ① 라벨 rank(품목 순서, 있으면 오름차순) ② 규격 rank(라벨 안 색상·규격 순서) ③ 기존 구매일 최신순.
+// 규격 rank 없는 카드는 그 라벨 내 맨 뒤(전역 MAX로 빠지면 라벨 rank 동률 시 라벨 그룹이 깨진다).
+function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): AssetItem[] {
   const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
   for (const r of list) {
     const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : ''].join('␟')
@@ -121,10 +129,19 @@ function aggregateAssets(list: RawAsset[], orderMap?: Map<string, number>): Asse
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
-  const orderRank = (i: AssetItem) => orderMap?.get(`${i.category}␟${i.itemLabel}`) ?? Number.MAX_SAFE_INTEGER
+  const labelRank = (i: AssetItem) => orderMaps?.label.get(`${i.category}␟${i.itemLabel}`) ?? Number.MAX_SAFE_INTEGER
+  const specRank = (i: AssetItem) => {
+    if (!orderMaps) return 0
+    const lk = `${i.category}␟${i.itemLabel}`
+    const r = orderMaps.spec.get(`${lk}␟${serializeSpecKey(i)}`)
+    if (r != null) return r
+    return (orderMaps.labelMaxSpec.get(lk) ?? -1) + 1   // 규격 rank 없는 카드는 그 라벨 내 맨 뒤
+  }
   return out.sort((a, b) => {
-    const ra = orderRank(a), rb = orderRank(b)
-    if (ra !== rb) return ra - rb
+    const la = labelRank(a), lb = labelRank(b)
+    if (la !== lb) return la - lb
+    const sa = specRank(a), sb = specRank(b)
+    if (sa !== sb) return sa - sb
     return b.date.localeCompare(a.date)
   })
 }
@@ -173,23 +190,35 @@ export async function getDurableItems(): Promise<AssetsData> {
     else unassignedRaw.push(r)
   }
 
-  // 품목 종류 순서(순서 편집) — 모든 그룹 공통 적용(전역 품목 순서라 일관)
-  const orderRows = await prisma.assetItemOrder.findMany({ where: { propertyId }, select: { category: true, itemLabel: true, sortOrder: true } })
-  const orderMap = new Map(orderRows.map(o => [`${o.category}␟${o.itemLabel}`, o.sortOrder]))
+  // 품목 종류 순서(순서 편집) — 모든 그룹 공통 적용(전역 품목 순서라 일관).
+  // specKey '' 행 = 라벨(품목) 순서, specKey 있는 행 = 그 라벨 안 규격(색상) 순서(2계층).
+  const orderRows = await prisma.assetItemOrder.findMany({ where: { propertyId }, select: { category: true, itemLabel: true, specKey: true, sortOrder: true } })
+  const labelMap = new Map<string, number>()
+  const specMap = new Map<string, number>()
+  const labelMaxSpec = new Map<string, number>()
+  for (const o of orderRows) {
+    const lk = `${o.category}␟${o.itemLabel}`
+    if (o.specKey === '') { labelMap.set(lk, o.sortOrder) }
+    else {
+      specMap.set(`${lk}␟${o.specKey}`, o.sortOrder)
+      labelMaxSpec.set(lk, Math.max(labelMaxSpec.get(lk) ?? -1, o.sortOrder))
+    }
+  }
+  const orderMaps: AssetOrderMaps = { label: labelMap, spec: specMap, labelMaxSpec }
 
   const rooms = [...roomBuckets.entries()].map(([roomId, list]) => {
-    const items = aggregateAssets(list, orderMap)
+    const items = aggregateAssets(list, orderMaps)
     return { roomId, roomNo: list[0].roomNo!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
   const locations = [...locBuckets.entries()].map(([locationId, list]) => {
-    const items = aggregateAssets(list, orderMap)
+    const items = aggregateAssets(list, orderMaps)
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
-  const pending = aggregateAssets(pendingRaw, orderMap)
-  const common = aggregateAssets(commonRaw, orderMap)
-  const unassigned = aggregateAssets(unassignedRaw, orderMap)
+  const pending = aggregateAssets(pendingRaw, orderMaps)
+  const common = aggregateAssets(commonRaw, orderMaps)
+  const unassigned = aggregateAssets(unassignedRaw, orderMaps)
   return {
     pending, pendingTotal: pending.reduce((s, i) => s + i.amount, 0),
     rooms, locations,
@@ -217,8 +246,41 @@ export async function reorderAssetItems(category: string, itemLabels: string[]):
       return { ok: false, error: '품목 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
     await prisma.$transaction(itemLabels.map((itemLabel, i) =>
       prisma.assetItemOrder.upsert({
-        where: { propertyId_category_itemLabel: { propertyId, category, itemLabel } },
-        create: { propertyId, category, itemLabel, sortOrder: i },
+        // specKey '' = 라벨(품목) 순서 행. 규격 순서 행(specKey 있음)과 unique 로 분리된다.
+        where: { propertyId_category_itemLabel_specKey: { propertyId, category, itemLabel, specKey: '' } },
+        create: { propertyId, category, itemLabel, specKey: '', sortOrder: i },
+        update: { sortOrder: i },
+      })
+    ))
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '순서 저장에 실패했습니다.' }
+  }
+}
+
+// 한 품목(category+itemLabel) 안 규격(색상 등) 순서 재정렬 — 2계층 순서 편집의 규격 계층(운영자 승인, 신고 1b8e7030).
+// reorderAssetItems 와 같은 권한·전체성 방어. 그 라벨의 durableExpenseWhere 모집단에서 distinct 규격(serializeSpecKey)을
+// 뽑아 전달 배열과 집합 일치를 검증(부분·중복·빈 거부)하고, (propertyId+category+itemLabel+specKey) upsert. 표시 전용 — 금액·배정 무접점.
+export async function reorderAssetSpecs(category: string, itemLabel: string, specKeys: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (specKeys.length === 0) return { ok: false, error: '정렬할 규격이 없습니다.' }
+    if (new Set(specKeys).size !== specKeys.length) return { ok: false, error: '중복된 규격이 있습니다.' }
+    const trackedCats = await getTrackedCategories(propertyId)
+    const rows = await prisma.expense.findMany({
+      where: { ...durableExpenseWhere(propertyId, trackedCats), category, itemLabel },
+      select: { specValue: true, specUnit: true, specText: true },
+    })
+    const current = new Set(rows.map(serializeSpecKey))
+    if (current.size !== specKeys.length || !specKeys.every(k => current.has(k)))
+      return { ok: false, error: '규격 목록이 최신이 아닙니다. 새로고침 후 다시 시도해주세요.' }
+    await prisma.$transaction(specKeys.map((specKey, i) =>
+      prisma.assetItemOrder.upsert({
+        where: { propertyId_category_itemLabel_specKey: { propertyId, category, itemLabel, specKey } },
+        create: { propertyId, category, itemLabel, specKey, sortOrder: i },
         update: { sortOrder: i },
       })
     ))
