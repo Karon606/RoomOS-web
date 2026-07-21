@@ -1789,8 +1789,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               const isAwaiting = r.isVacant ? (nonResItem?.payStatus === 'awaiting') : (!isUnpaid && awaitingRooms.has(r.roomNo))
                               const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
                               const nameParts = r.tenantName?.split(' ') ?? []
+                              // 집계 제외 방(창고·사무실)은 '공실'이 아니라 비거주 점유자 이름으로(신고 9d844226 잔여)
+                              const nrName = r.nonResidentName?.split(' ')[1] ?? r.nonResidentName ?? '비거주'
                               const displayName = r.isVacant
-                                ? (hasNonResident ? '공실 (비거주자)' : '공실')
+                                ? (r.vacancyExcluded ? nrName : hasNonResident ? '공실 (비거주자)' : '공실')
                                 : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
                               const cellStyle = (r.isVacant && !hasNonResident)
                                 ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }

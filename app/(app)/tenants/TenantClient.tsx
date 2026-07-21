@@ -55,7 +55,7 @@ const fmtRoomNo = (no: string | null | undefined) =>
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; nonResidentVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -2555,7 +2555,7 @@ export default function TenantClient({
             title={`${fmtRoomNo(room?.roomNo)} 정보`} bodyClassName="p-6 space-y-3">
               {room ? (
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.isVacant ? '공실' : '거주중'}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.currentLeaseStatus === 'NON_RESIDENT' && !room.nonResidentVacant ? '비거주 점유' : room.isVacant ? '공실' : '거주중'}</span></div>
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>
                 </div>
               ) : (
@@ -2751,7 +2751,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             <option value="">호실 선택… {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
             {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
               <option key={r.id} value={r.roomNo}>
-                {fmtRoomNo(r.roomNo)}{r.isVacant ? ' (공실)' : ''}
+                {fmtRoomNo(r.roomNo)}{r.isVacant && !(r.currentLeaseStatus === 'NON_RESIDENT' && !r.nonResidentVacant) ? ' (공실)' : ''}
               </option>
             ))}
           </select>
