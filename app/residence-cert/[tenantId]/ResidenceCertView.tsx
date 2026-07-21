@@ -9,6 +9,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
+import { shareOrDownloadFile } from '@/lib/shareFile'
 
 const fmtDot = (d: string) => {
   if (!d) return ''
@@ -98,6 +99,25 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     } finally { setPreviewing(false) }
   }
 
+  // 현재 입력값 그대로 PDF 로 '보내기'(공유 시트, 미지원·제스처 만료 시 다운로드 폴백) — preview PDF 사용.
+  const [sharing, setSharing] = useState(false)
+  const handleShare = async () => {
+    if (sharing) return
+    setSharing(true)
+    try {
+      const res = await fetch('/api/residence-cert/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload(), preview: true }),
+      })
+      if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+      const blob = await res.blob()
+      const result = await shareOrDownloadFile(blob, `${data.tenantName}_실거주확인서.pdf`, 'application/pdf')
+      if (result === 'downloaded') pushToast('info', '공유 시트를 열 수 없어 파일을 내려받았습니다. 파일 앱의 Download 에서 확인하세요.')
+    } catch (e) {
+      pushToast('error', (e as Error).message ?? '보내기에 실패했습니다.')
+    } finally { setSharing(false) }
+  }
+
   const hasStamp = !!data.stampImageUrl
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
@@ -150,6 +170,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <button onClick={reset} className="rc-btn-secondary">자동값으로</button>
         <button onClick={handlePrint} disabled={previewing} className="rc-btn-secondary">
           {previewing ? '여는 중…' : '미리보기·인쇄'}
+        </button>
+        <button onClick={handleShare} disabled={sharing} className="rc-btn-secondary">
+          {sharing ? '여는 중…' : '보내기'}
         </button>
         {/* 현재 입력값 그대로 PNG 저장(공유 시트로 사진첩 저장, 신고 dc56f953) — preview PDF 를 래스터화 */}
         <SaveDocImageButton fileName={`${data.tenantName}_실거주확인서`} className="rc-btn-secondary"

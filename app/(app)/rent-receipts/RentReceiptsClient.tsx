@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
@@ -12,10 +12,24 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteRentReceiptFile, restoreRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Btn } from '@/components/ui/Btn'
+import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
+import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
+import { useLongPress } from '@/lib/useLongPress'
+import { canShareFiles } from '@/lib/shareFile'
+import { prewarmPdfToPng } from '@/lib/pdfToPng'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
+
+const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
+const fetchDocBytes = (driveFileId: string) => async () => {
+  const res = await fetch(`/api/doc-file?id=${encodeURIComponent(driveFileId)}`)
+  if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+  return res.arrayBuffer()
+}
 
 export default function RentReceiptsClient({ files, tenants }: { files: RentReceiptListRow[]; tenants: IssuableTenant[] }) {
   const router = useRouter()
@@ -27,6 +41,27 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
   const [fileStatus, setFileStatus] = useState('')
   const [pending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // 다중 '보내기' 선택 모드 — 읽기 액션이라 STAFF 도 가능(canEdit 에 묶지 않음).
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [canShare, setCanShare] = useState(false)
+  // 마운트 후 1회 판정 — SSR 은 기기 공유 지원 여부를 알 수 없어 의도된 setState(연쇄 렌더 아님)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setCanShare(canShareFiles()) }, [])
+  const longPress = useLongPress()
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else {
+      if (next.size >= MAX_SHARE) { pushToast('info', `한 번에 최대 ${MAX_SHARE}건까지 보낼 수 있습니다.`); return prev }
+      next.add(id)
+    }
+    return next
+  })
+  const enterSelectMode = () => { prewarmPdfToPng(); setSelectMode(true) }
+  const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
   // 발급 이력 상태 필터 옵션 — 실제 존재하는 입주자 상태만
   const statusCounts = useMemo(() => {
@@ -60,6 +95,18 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       router.refresh()
     })
   }
+
+  // 선택 항목을 표시 순서대로 — 첨부 순서·파일명 충돌 판정에 그대로 쓰인다.
+  const shareEntries: DocShareEntry[] = fileRows
+    .filter(c => selected.has(c.id))
+    .map(c => ({
+      id: c.driveFileId,
+      personName: c.tenantName,
+      docLabel: '입실료납부확인서',
+      dateStr: fmtDate(c.issuedAt),
+      fetchBytes: fetchDocBytes(c.driveFileId),
+    }))
+  const share = useDocShare(shareEntries, 'png')
 
   return (
     <div className="space-y-5">
@@ -97,7 +144,16 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
+          {/* 다중 '보내기' 선택 — 파일 공유 지원 기기에서만 노출 */}
+          {canShare && files.length > 0 && (
+            <Btn type="button" variant="secondary" size="sm"
+              onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}>
+              {selectMode ? '선택 취소' : '선택'}
+            </Btn>
+          )}
+        </div>
         {files.length > 0 && (
           <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
             <SearchBar value={fileQuery} onChange={setFileQuery} placeholder="이름·호실·파일명 검색" />
@@ -123,36 +179,84 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
           />
         ) : (
           <ul className="space-y-2">
-            {fileRows.map(c => (
-              <li key={c.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3.5 flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button type="button" onClick={() => entityModal.open({ kind: 'tenant', tenantId: c.tenantId })}
-                      className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
-                      {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}
-                    </button>
-                    {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
+            {fileRows.map(c => {
+              const sel = selected.has(c.id)
+              return (
+              <li key={c.id}
+                onClick={selectMode ? () => toggleSelect(c.id) : undefined}
+                {...(!selectMode ? longPress(() => { enterSelectMode(); toggleSelect(c.id) }) : {})}
+                className={[
+                  'bg-[var(--cream)] border rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 transition-colors',
+                  selectMode ? 'cursor-pointer select-none' : '',
+                  selectMode && sel ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
+                ].join(' ')}>
+                <div className="min-w-0 flex-1 flex items-start gap-2.5">
+                  {/* 선택 모드 좌측 체크박스 — §22 InventoryCard 정본(22px r7) */}
+                  {selectMode && (
+                    <span className={[
+                      'mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border transition-colors',
+                      sel ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] text-transparent',
+                    ].join(' ')} aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L19 7" /></svg>
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {selectMode ? (
+                        <span className="text-sm font-semibold text-[var(--warm-dark)]">{c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}</span>
+                      ) : (
+                        <button type="button" onClick={() => entityModal.open({ kind: 'tenant', tenantId: c.tenantId })}
+                          className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+                          {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}
+                        </button>
+                      )}
+                      {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
+                    </div>
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
                   </div>
-                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
+                {!selectMode && (
+                <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
+                  {/* 보내기 = 단건 공유(다운로드 폴백 있음). 파일 공유 지원 기기에서만 노출 */}
+                  {canShare && (
+                    <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_입실료확인서.pdf`} label="보내기"
+                      className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
+                  )}
+                  {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장(실거주확인서와 동일 문법) */}
+                  <SaveDocImageButton fileName={`${c.tenantName}_입실료납부확인서`}
+                    getPdfBytes={fetchDocBytes(c.driveFileId)}
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">보기</a>
-                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_입실료확인서.pdf`}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">Drive 보기</a>
                   <Link href={`/rent-receipt/${c.tenantId}`}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">재발급</Link>
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">재발급</Link>
                   <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
-                    className="px-2 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
+                    className="min-h-[44px] inline-flex items-center justify-center px-2.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
                     {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
                   </button>
                 </div>
+                )}
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </section>
+
+      {/* 다중 '보내기' 하단 바 — §22 SelectionPillBar 셸(DocMultiShareBar) */}
+      {selectMode && selected.size > 0 && (
+        <DocMultiShareBar
+          count={selected.size}
+          done={share.done}
+          failedCount={share.failedCount}
+          mode="png"
+          sendLabel="사진 보내기"
+          onSend={share.send}
+          onClose={exitSelectMode}
+        />
+      )}
     </div>
   )
 }
