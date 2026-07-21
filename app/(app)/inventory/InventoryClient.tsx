@@ -21,7 +21,7 @@ import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeShe
 import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
-import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
+import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useCanEditScope } from '@/components/RoleContext'
@@ -545,11 +545,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           if (flat.length === 0) return null
           // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
           // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
-          const usesSpec = (trackUnit: string, specValue: number | null) => trackUnit !== 'qty' && !!specValue && specValue > 0
           // 구매 규격단위(L 등)를 품목 단위(ml 등)로 환산 — 서버 잔량 수학(overview sumPurchases)과 동일.
-          // 환산 누락 시 2.1L×2가 '4.2ml'로 표기되던 버그(오류신고 75dd05f7).
-          const specQtyOf = (qtyValue: number, specValue: number | null, fromUnit: string | null, toUnit: string | null, trackUnit: string) =>
-            Math.round((usesSpec(trackUnit, specValue) ? qtyValue * (convertSpecValue(specValue, fromUnit, toUnit) ?? (specValue as number)) : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
+          // 환산 누락 시 2.1L×2가 '4.2ml'로 표기되던 버그(오류신고 75dd05f7). 차원 불일치면 null(specMultiplier 정본).
+          const specOf = (trackUnit: string, specValue: number | null, fromUnit: string | null, toUnit: string | null) =>
+            trackUnit !== 'qty' ? specMultiplier(specValue, fromUnit, toUnit) : null
+          const specQtyOf = (qtyValue: number, specValue: number | null, fromUnit: string | null, toUnit: string | null, trackUnit: string) => {
+            const spec = specOf(trackUnit, specValue, fromUnit, toUnit)
+            return Math.round((spec != null ? qtyValue * spec : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
+          }
           // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
           const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
           for (const f of flat) {
@@ -572,7 +575,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   const unit = g.trackUnit === 'qty' ? (g.qtyUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
                   const boxUnit = g.items[0].p.qtyUnit
-                  const specApplied = g.items.some(f => usesSpec(g.trackUnit, f.p.specValue))
+                  const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
                   const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
                   const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
                   const ld = new Date(latest)
@@ -584,6 +587,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         <div className="min-w-0 flex-1">
                           <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${qtyLabel}` : ''}</p>
                           <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
+                          {g.trackUnit !== 'qty' && g.items.some(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit)) && (
+                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">규격 단위가 품목 단위와 달라 수량 기준으로 집계</p>
+                          )}
                           {g.items.length > 1 && (
                             <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">
                               구매 {g.items.length}건 합산 {expanded ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
@@ -608,7 +614,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
                             const su = g.trackUnit === 'qty' ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
                             const qstr = f.p.qtyValue
-                              ? (usesSpec(g.trackUnit, f.p.specValue) && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
+                              ? (specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
                               : ''
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
@@ -1265,8 +1271,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     if (e.type === 'disposal')
                       return effMs(e) > carryBoundary ? s - e.disposedQty : s
                     if (e.type === 'purchase' && e.receivedAt && effMs(e) > carryBoundary) {
-                      const spec = (carryUseSpec && e.specValue && e.specValue > 0)
-                        ? (convertSpecValue(e.specValue, e.specUnit, data.item.specUnit) ?? e.specValue) : null
+                      const spec = carryUseSpec ? specMultiplier(e.specValue, e.specUnit, data.item.specUnit) : null
                       return s + (spec != null ? e.qtyValue * spec : e.qtyValue)
                     }
                     return s
@@ -1728,10 +1733,11 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
     const isPendingReceipt = entry.receivedAt === null
     const hasSpec = entry.specValue != null && entry.specValue > 0 && entry.specUnit
     const useSpec = trackUnit !== 'qty' && hasSpec
-    // 영수증 규격단위(entry.specUnit)가 품목 단위(stockUnit)와 다르면 품목 단위로 환산해 입고량 표시(L→ml 등)
-    const convSpec = useSpec ? (convertSpecValue(entry.specValue ?? 0, entry.specUnit, stockUnit) ?? (entry.specValue ?? 0)) : 0
-    const baseQty = useSpec ? entry.qtyValue * convSpec : entry.qtyValue
-    const baseUnit = useSpec ? stockUnit : entry.qtyUnit
+    // 영수증 규격단위(entry.specUnit)가 품목 단위(stockUnit)와 다르면 품목 단위로 환산해 입고량 표시(L→ml 등).
+    // 차원 불일치(120g vs 개)면 곱하지 않고 수량 그대로(specMultiplier 정본, 오류신고 0d6242f0).
+    const convSpec = useSpec ? specMultiplier(entry.specValue, entry.specUnit, stockUnit) : null
+    const baseQty = convSpec != null ? entry.qtyValue * convSpec : entry.qtyValue
+    const baseUnit = convSpec != null ? stockUnit : entry.qtyUnit
     const packLabel = hasSpec ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}` : null
 
     if (editing) {

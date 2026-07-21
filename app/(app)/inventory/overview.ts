@@ -3,7 +3,7 @@
 import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
-import { convertSpecValue } from '@/lib/units'
+import { specMultiplier } from '@/lib/units'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -41,13 +41,12 @@ async function sumPurchases(
     return r._sum.qtyValue ?? 0
   }
   // 규격 환산: qtyValue × specValue. specValue 없으면 qtyValue 그대로.
-  //   specUnit≠품목단위면 품목 단위로 환산(L→ml 등).
+  //   specUnit≠품목단위면 품목 단위로 환산(L→ml 등). 차원 불일치(120g vs 개)면 qtyValue 만(specMultiplier 정본).
   const rows = await prisma.expense.findMany({ where, select: { qtyValue: true, specValue: true, specUnit: true } })
   return rows.reduce((s, r) => {
     const q = r.qtyValue ?? 0
-    if (!(r.specValue && r.specValue > 0)) return s + q
-    const spec = convertSpecValue(r.specValue, r.specUnit, itemUnit) ?? r.specValue
-    return s + q * spec
+    const spec = specMultiplier(r.specValue, r.specUnit, itemUnit)
+    return spec != null ? s + q * spec : s + q
   }, 0)
 }
 
@@ -435,8 +434,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       // specUnit≠품목단위면 품목 단위로 환산해 단가 기준(base)을 통일(L→ml 등)
       const specBase = (p: { qtyValue: number | null; specValue: number | null; specUnit: string | null }) => {
         const qty = p.qtyValue ?? 0
-        if (!(useSpec && p.specValue && p.specValue > 0)) return qty
-        return qty * (convertSpecValue(p.specValue, p.specUnit, it.specUnit) ?? p.specValue)
+        if (!useSpec) return qty
+        const spec = specMultiplier(p.specValue, p.specUnit, it.specUnit)
+        return spec != null ? qty * spec : qty
       }
       let totalAmt = 0
       let totalBase = 0

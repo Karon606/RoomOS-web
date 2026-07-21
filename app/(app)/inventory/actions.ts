@@ -15,7 +15,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
 import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
-import { convertSpecValue, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
+import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -64,8 +64,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
     const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const r = upsert(m)
     const q = p.qtyValue ?? 0
-    const spec = useSpec && p.specValue && p.specValue > 0
-      ? (convertSpecValue(p.specValue, p.specUnit, item.specUnit) ?? p.specValue) : null
+    const spec = useSpec ? specMultiplier(p.specValue, p.specUnit, item.specUnit) : null
     const contrib = spec != null ? q * spec : q
     r.purchaseQty    += contrib
     r.purchaseAmount += p.amount
@@ -105,8 +104,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
     .filter(r => r.qtyValue && r.qtyValue > 0)
     .map(r => {
       const qty = r.qtyValue ?? 0
-      const spec = useSpec && r.specValue && r.specValue > 0
-        ? (convertSpecValue(r.specValue, r.specUnit, item.specUnit) ?? r.specValue) : null
+      const spec = useSpec ? specMultiplier(r.specValue, r.specUnit, item.specUnit) : null
       const base = spec != null ? qty * spec : qty
       return {
         date: r.date,
@@ -2348,9 +2346,10 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     // 잔량에는 안 잡힌' 상태(장부 과소)가 되던 문제 방지.
     let autoCheck: Parameters<typeof prisma.stockCheck.create>[0]['data'] | null = null
     if (effectiveLocationId && item && expense.qtyValue && expense.qtyValue > 0) {
-      // 규격 추적이면 영수증 규격값을 품목 단위로 환산(L→ml 등) 후 입수량 산출
-      const spec = item.trackUnit === 'spec' && expense.specValue
-        ? (convertSpecValue(expense.specValue, expense.specUnit, item.specUnit) ?? expense.specValue)
+      // 규격 추적이면 영수증 규격값을 품목 단위로 환산(L→ml 등) 후 입수량 산출.
+      // 차원 불일치(120g x 100개 등)면 specMultiplier 가 null → qtyValue 그대로(오류신고 0d6242f0).
+      const spec = item.trackUnit === 'spec'
+        ? specMultiplier(expense.specValue, expense.specUnit, item.specUnit)
         : null
       const receivedQty = spec != null ? expense.qtyValue * spec : expense.qtyValue
 
@@ -2614,8 +2613,9 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   })
   const purchaseTotal = purchases.reduce((s, p) => {
     const q = p.qtyValue ?? 0
-    if (!(useSpec && p.specValue && p.specValue > 0)) return s + q
-    return s + q * (convertSpecValue(p.specValue, p.specUnit, it.specUnit) ?? p.specValue)
+    if (!useSpec) return s + q
+    const spec = specMultiplier(p.specValue, p.specUnit, it.specUnit)
+    return spec != null ? s + q * spec : s + q
   }, 0)
   const [addAgg, dispAgg] = await Promise.all([
     prisma.stockAddition.aggregate({

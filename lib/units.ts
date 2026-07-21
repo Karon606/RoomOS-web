@@ -100,21 +100,36 @@ export function needsConversion(from: string | null | undefined, to: string | nu
   return convertUnit(1, from, to) != null
 }
 
-// 계산용 — specValue 를 품목 단위(toUnit)로 환산. 환산 불가/단위 없음이면 원값 유지(폴백).
-//   기존 데이터(specUnit=null) 나 호환 안 되는 단위는 지금까지처럼 raw 로 합산 → 회귀 0.
-export function convertSpecValue(
-  specValue: number | null | undefined,
-  fromUnit: string | null | undefined,
-  toUnit: string | null | undefined,
-): number | null | undefined {
-  if (specValue == null) return specValue
-  const c = convertUnit(specValue, fromUnit, toUnit)
-  return c == null ? specValue : c
-}
-
 // 단위 변경(L→ml 등) 시 저장값에 곱할 배율. from→to 환산 불가면 null.
 export function unitFactor(from: string | null | undefined, to: string | null | undefined): number | null {
   return convertUnit(1, from, to)
+}
+
+// 규격 배수 정본 — qtyValue 에 곱할 규격값을 정한다. 곱하면 안 되는 경우 null.
+//   · 품목 단위로 환산 가능(동일 표기 포함) → 환산값 (기존과 동일).
+//   · specUnit 없음/미상('개'·'롤' 같은 비물리 표기) → 원값 그대로 (구식 데이터 폴백, 기존과 동일).
+//   · specUnit 이 알려진 물리 단위인데 품목 단위와 차원이 다르면(예: 규격 120g, 품목 단위 '개')
+//     그 규격은 개당 중량·용량 같은 속성이지 포장 입수량이 아니다 → null, 호출부는 qtyValue 만 쓴다.
+//     "120g x 100개"가 100×120=12,000개로 계산되던 버그(오류신고 0d6242f0)의 근본 수정.
+//   서버·클라이언트의 모든 규격 곱셈은 반드시 이 함수를 거칠 것(convertUnit 직접 곱셈 금지).
+export function specMultiplier(
+  specValue: number | null | undefined,
+  specUnit: string | null | undefined,
+  itemUnit: string | null | undefined,
+): number | null {
+  if (specValue == null || !(specValue > 0)) return null
+  const converted = convertUnit(specValue, specUnit, itemUnit)
+  if (converted != null) return converted
+  if (isConvertibleUnit(specUnit) && canonicalUnit(itemUnit) != null) return null
+  return specValue
+}
+
+// 규격 단위 차원 불일치 여부 — 수령·저장 단계 경고 표시와 감사 스크립트용.
+export function isSpecDimensionMismatch(
+  specUnit: string | null | undefined,
+  itemUnit: string | null | undefined,
+): boolean {
+  return isConvertibleUnit(specUnit) && canonicalUnit(itemUnit) != null && convertUnit(1, specUnit, itemUnit) == null
 }
 
 // 주어진 단위와 같은 차원의 단위 목록(자기 자신 제외) — 단위 변경 드롭다운용.
