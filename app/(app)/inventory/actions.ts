@@ -2934,13 +2934,35 @@ export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true }
 
 // ── 지출 카테고리 수정 → 재고 품목 카테고리 동기화(운영자 확인 후 호출, 2026-07-10)
 //    같은 라벨 품목이 대상 카테고리에 이미 있으면 꼬임 방지를 위해 거부(병합은 재고 관리에서).
-export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean } | { ok: false; error: string }> {
+//    대상이 비추적 카테고리(수선유지비 등)면 카드를 옮기지 않는다 — 옮기면 소모품 화면에 좀비 카드로 남고
+//    비품·자재 화면과 이중 표시된다(서빙집게·집게보관통·의자 사건, 운영자 승인 2026-07-22).
+//    이 경우 재고 기록 없으면 카드 삭제, 있으면 숨김(isArchived) 처리하고 결과를 알린다.
+export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean; retired?: 'deleted' | 'archived' } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!label.trim() || fromCategory === toCategory) return { ok: true, moved: false }
     const item = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: fromCategory } })
     if (!item) return { ok: true, moved: false }
+
+    const trackedCats = await getTrackedCategories(propertyId)
+    if (!trackedCats.includes(toCategory)) {
+      // 비추적행 — 재고 카드는 정리하고, 물건 자체는 비품·자재 화면(지출 기반)이 이어받는다.
+      const [checkCount, addCount, dispCount] = await Promise.all([
+        prisma.stockCheck.count({ where: { trackedItemId: item.id } }),
+        prisma.stockAddition.count({ where: { trackedItemId: item.id } }),
+        prisma.stockDisposal.count({ where: { trackedItemId: item.id } }),
+      ])
+      if (checkCount + addCount + dispCount === 0) {
+        await prisma.trackedItem.delete({ where: { id: item.id } })
+        revalidatePath('/inventory'); revalidatePath('/finance')
+        return { ok: true, moved: false, retired: 'deleted' }
+      }
+      await prisma.trackedItem.update({ where: { id: item.id }, data: { isArchived: true } })
+      revalidatePath('/inventory'); revalidatePath('/finance')
+      return { ok: true, moved: false, retired: 'archived' }
+    }
+
     const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: toCategory }, select: { id: true } })
     if (clash) return { ok: false, error: `'${toCategory}'에 같은 이름의 품목이 이미 있습니다. 재고 관리에서 병합해 주세요.` }
     await prisma.trackedItem.update({ where: { id: item.id }, data: { category: toCategory } })

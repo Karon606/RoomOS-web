@@ -1948,6 +1948,8 @@ export default function FinanceClient({
               const sync = await syncTrackedItemCategory(label, detailExp.category, newCat)
               if (!sync.ok) pushToast('error', sync.error)
               else if (sync.moved) pushToast('success', `재고 품목을 '${newCat}'(으)로 옮겼습니다`)
+              // 비추적 카테고리행 — 카드를 옮기는 대신 정리(좀비 카드·이중 표시 방지, 2026-07-22)
+              else if (sync.retired) pushToast('info', `'${newCat}'는 재고 추적 카테고리가 아니라 소모품 카드를 정리했습니다. 이 품목은 비품·자재에서 관리됩니다.`)
             }
           }
         }

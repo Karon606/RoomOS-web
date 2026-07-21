@@ -349,24 +349,36 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
     // 이 사업장 품목 사전 — 과거 입력(사용자가 수정해 확정한 최종명)과 관행 단위를 프롬프트에 제공해
     // 인식 결과가 운영자가 쓰는 이름·단위로 수렴하게 함(수정할수록 정확해지는 튜닝 루프 — 오류신고 4e2ffe04).
     // 품목명 치환은 별칭 학습(itemNameAlias)이 정확 일치를 담당하고, 이 사전은 근사 표기를 흡수한다.
+    // 재고 추적품목 라벨을 항상 앞에 — 최근 지출만 쓰면 오래 안 산 품목이 컷에 밀려 AI가 존재를 모르고
+    // 상표명으로 새 품목을 제안한다(모나리자 키친타올 사건, 운영자 보고 2026-07-21).
     let vocabBlock = ''
     try {
-      const rows = await prisma.expense.findMany({
-        where: { propertyId: ocrPropertyId, itemLabel: { not: null } },
-        select: { itemLabel: true, specUnit: true, qtyUnit: true },
-        orderBy: { createdAt: 'desc' },
-        take: 300,
-      })
+      const [tracked, rows] = await Promise.all([
+        prisma.trackedItem.findMany({
+          where: { propertyId: ocrPropertyId, isArchived: false },
+          select: { label: true, specUnit: true, qtyUnit: true },
+        }),
+        prisma.expense.findMany({
+          where: { propertyId: ocrPropertyId, itemLabel: { not: null } },
+          select: { itemLabel: true, specUnit: true, qtyUnit: true },
+          orderBy: { createdAt: 'desc' },
+          take: 300,
+        }),
+      ])
       const seen = new Map<string, { spec: string | null; qty: string | null }>()
+      for (const t of tracked) {
+        const k = t.label.trim()
+        if (k && !seen.has(k)) seen.set(k, { spec: t.specUnit, qty: t.qtyUnit })
+      }
       for (const r of rows) {
         const k = (r.itemLabel ?? '').trim()
         if (k && !seen.has(k)) seen.set(k, { spec: r.specUnit, qty: r.qtyUnit })
       }
-      const vocab = [...seen.entries()].slice(0, 40).map(([label, u]) =>
+      const vocab = [...seen.entries()].slice(0, Math.max(60, tracked.length)).map(([label, u]) =>
         `${label}${u.spec || u.qty ? ` (규격단위 ${u.spec ?? '—'} · 수량단위 ${u.qty ?? '—'})` : ''}`)
       if (vocab.length) vocabBlock = `
 
-이 사업장에서 쓰는 품목명·단위 목록 (인식한 품목이 이 중 하나와 같은 물건이면 반드시 이 이름과 단위 표기를 그대로 쓰세요):
+이 사업장에서 쓰는 품목명·단위 목록 (인식한 품목이 이 중 하나와 같은 물건이면, 상표명·표기가 달라도 반드시 이 이름과 단위 표기를 그대로 쓰세요. 예: '모나리자 키친타올'도 목록에 '키친타월 (롤타입)'이 있으면 그 이름으로):
 - ${vocab.join('\n- ')}`
     } catch { /* 사전 조회 실패해도 OCR 자체는 정상 동작 */ }
 

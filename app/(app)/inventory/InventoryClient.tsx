@@ -653,6 +653,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         {grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
+            {/* 설정 밖 카테고리 경고 — 조용히 일반 그룹처럼 그리면 오분류 원인을 알 수 없다(서빙집게 사건 2026-07-22).
+                정상 상태에선 이 그룹 자체가 없어야 하며, 지출 카테고리 정정 시 카드가 자동 정리된다. */}
+            {!trackedCats.includes(g.cat) && (
+              <p className="text-[0.65625rem] text-[var(--warning-fg)]">이 카테고리는 재고 추적 대상이 아닙니다. 지출 카테고리를 확인하거나 카드에서 숨김 처리하세요.</p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {g.rows.map(r => (
                 <InventoryCard
