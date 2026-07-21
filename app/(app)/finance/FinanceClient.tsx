@@ -4371,6 +4371,11 @@ function DepositTab({ summary, ledger, totalBalance }: {
       </div>
 
       {sub === 'tenant' && (
+        <>
+        {/* 용어 안내(신고 249b5652) — '계약상 보증금'이 실제 입금과 별개의 약정액임을 상시 노출. 툴팁 정본이 없어 캡션 문법 사용 */}
+        {summary.some(d => d.hasNoInRecord) && (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약상 보증금은 계약서에 약정한 금액으로 실제 입금 기록과 별개입니다. 입금 기록이 없는 계약은 약정액 기준으로 잔고를 계산합니다.</p>
+        )}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {summary.length === 0 ? (
             <EmptyState title="보증금 거래 이력이 있는 입주자가 없습니다." className="border-0 bg-transparent" />
@@ -4420,6 +4425,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
             </ul>
           )}
         </div>
+        </>
       )}
 
       {sub === 'ledger' && (
