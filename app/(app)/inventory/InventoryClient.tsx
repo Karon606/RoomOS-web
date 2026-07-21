@@ -283,6 +283,21 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   useEffect(() => { itemOrderRef.current = itemOrder }, [itemOrder])   // 렌더 중 ref 접근 금지(react-compiler)
   const itemOrderChanged = useRef(false)
   const dragListElRef = useRef<HTMLElement | null>(null)
+  // 정렬 프리셋(표시 전용, 운영자 메모 2026-07-18 → 승인 2026-07-22) — 수동 순서가 기본,
+  // 가나다·최근 추가는 화면 정렬만 바꾸고 수동 sortOrder 는 보존. 순서 편집 모드는 항상 수동 기준.
+  const [sortPreset, setSortPreset] = useState<'manual' | 'name' | 'newest'>('manual')
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('stayeum-inventory-sort')
+      // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (v === 'name' || v === 'newest') setSortPreset(v)
+    } catch { /* 무시 */ }
+  }, [])
+  const pickSortPreset = (v: 'manual' | 'name' | 'newest') => {
+    setSortPreset(v)
+    try { localStorage.setItem('stayeum-inventory-sort', v) } catch { /* 무시 */ }
+  }
   // 카테고리별 그룹 — 설정된 카테고리 순서 + 표시 별칭. 설정 밖 카테고리(과거 등록분)는 뒤에 자체 표시.
   const extraCats = Array.from(new Set(rows.map(r => r.category))).filter(c => !trackedCats.includes(c))
   const groupedAll = [...trackedCats, ...extraCats].map(cat => {
@@ -313,21 +328,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const pickCatTab = (v: string) => {
     setCatTab(v)
     try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
-  }
-  // 정렬 프리셋(표시 전용, 운영자 메모 2026-07-18 → 승인 2026-07-22) — 수동 순서가 기본,
-  // 가나다·최근 추가는 화면 정렬만 바꾸고 수동 sortOrder 는 보존. 순서 편집 모드는 항상 수동 기준.
-  const [sortPreset, setSortPreset] = useState<'manual' | 'name' | 'newest'>('manual')
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem('stayeum-inventory-sort')
-      // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (v === 'name' || v === 'newest') setSortPreset(v)
-    } catch { /* 무시 */ }
-  }, [])
-  const pickSortPreset = (v: 'manual' | 'name' | 'newest') => {
-    setSortPreset(v)
-    try { localStorage.setItem('stayeum-inventory-sort', v) } catch { /* 무시 */ }
   }
   const searching = search.trim().length > 0
   // v2.0 §27 — 검색은 현재 탭 스코프 안에서. 스코프 밖 일치는 아래 힌트 한 줄로 안내(자동 해제 금지).
