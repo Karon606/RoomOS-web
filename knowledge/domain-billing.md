@@ -39,3 +39,9 @@
 - `discountedRent` = `lib/rentDiscount.ts`(단위테스트됨). 월별 할인 적용.
 - 퇴실월 무청구: `isCheckoutNoBillingMonth`(퇴실일 ≤ 그 달 납부일이면 0).
 - 발생주의(귀속월=targetMonth) 모델. 선납·이월 처리. 용어 [[glossary]].
+
+## 퇴실 보증금 정산 경로와 감사 (2026-07-21, 신고 249b5652)
+퇴실 경로 3개 모두 보증금 정산을 강제한다 — (1) 상태전환 위젯 환불 미니폼, (2) 대시보드 알림 checkoutWithDepositRefund, (3) 입주자 수정 폼(상태 드롭다운 퇴실)은 저장 시 환불 모달 강제(proceedAfterRentDecision, 7/20 봉합: tenantId 필드명 오타 773b990 + z 충돌 d5cf060).
+- '계약상 보증금' = LeaseTerm.depositAmount(약정액, 실입금과 별개). 입금 기록 없으면 약정액으로 잔고 폴백. 재무 보증금 탭에 InfoHint(?) 설명.
+- 미반환분은 recordDepositReturn이 부가수익 category '보증금'(예약 취소 몰취는 '위약금')으로 자동 생성.
+- 감사: `node --env-file=.env.local scripts/check-deposit-settlement.mjs` — CHECKED_OUT+보증금>0+DepositRefund 0건 나열. 7/20 이전 버그 창구 피해 3건 중 임형진은 백필(backfill-lim-deposit.mjs), 비쉬 간바트·윤정승은 운영자 확인 대기.
