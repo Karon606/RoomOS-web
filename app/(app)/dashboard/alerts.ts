@@ -184,7 +184,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
   // 재고 소진 임박 — daysUntilEmpty 가 작을수록 급함
   for (const r of inventory) {
-    if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.alertThresholdDays) continue
+    if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.effectiveAlertDays) continue
     items.push({
       id: `lowstock-${r.id}`, category: 'lowstock',
       title: r.label,

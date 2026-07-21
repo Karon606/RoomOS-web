@@ -423,9 +423,20 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         receivedAt: { not: null },
         excludeFromInventory: false,
       },
-      select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
+      select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true },
       orderBy: { date: 'desc' },
     })
+
+    // 실효 알림 임계값(신고 edffb4a7) — 재주문 리드타임(주문일→수령일)을 반영해 알림이 주문 여유를 갖게.
+    // 리드타임 = 최근 수령 구매 최대 6건의 (receivedAt − date) 일수 중앙값(0~30일 클램프), 없으면 미반영.
+    // 실효 = max(품목 설정 D-N, 리드타임 + 여유 2일). 설정값(alertThresholdDays)은 원값 그대로 보존 — 설정 폼 표시용.
+    const leadSamples = recentPurchases.slice(0, 6)
+      .map(p => p.receivedAt ? Math.round((p.receivedAt.getTime() - p.date.getTime()) / 86400000) : null)
+      .filter((d): d is number => d != null && d >= 0 && d <= 30)
+      .sort((a, b) => a - b)
+    const leadDays = leadSamples.length > 0 ? leadSamples[Math.floor(leadSamples.length / 2)] : null
+    const effectiveAlertDays = Math.max(it.alertThresholdDays, leadDays != null ? leadDays + 2 : 0)
+
     let avgUnitPrice: number | null = null
     let lastUnitPrice: number | null = null
     if (recentPurchases.length > 0) {
@@ -539,6 +550,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       specUnit: it.specUnit,
       qtyUnit: it.qtyUnit,
       alertThresholdDays: it.alertThresholdDays,
+      effectiveAlertDays,
       reorderMemo: it.reorderMemo,
       purchaseUrl: it.purchaseUrl,
       memo: it.memo,

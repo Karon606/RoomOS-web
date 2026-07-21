@@ -632,6 +632,17 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             </section>
           )
         })()}
+        {/* 소진 임박 요약 — §18 Status Row 정본(좌 3px 팁 + danger-bg), 0건이면 미표시(신고 edffb4a7).
+            임박 카드의 자동 재정렬 대신 요약 행으로 부상 — 사용자 지정 순서 보존 */}
+        {(() => {
+          const lowCount = visibleRows.filter(r => r.daysUntilEmpty != null && r.daysUntilEmpty <= r.effectiveAlertDays).length
+          return lowCount > 0 ? (
+            <div className="rounded-lg border-l-[3px] px-3.5 py-2.5 text-xs font-medium"
+              style={{ borderLeftColor: 'var(--danger-fg)', background: 'var(--danger-bg)', color: 'var(--danger-fg)' }}>
+              소진 임박 {lowCount}건
+            </div>
+          ) : null
+        })()}
         {!searching && (
           <SegmentedControl ariaLabel="소모품 카테고리" size="md" scroll value={groupedAll.some(g => g.cat === catTab) ? catTab : '__all__'} onChange={pickCatTab}
             options={[
@@ -740,7 +751,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft, onLongPress }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean; onLongPress?: () => void }) {
   const [open, setOpen] = useState(false)   // 지표·추이 펼치기
   const tint = tintOf(row.category)
-  const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
+  const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.effectiveAlertDays
   // 당분간 사용 안 함 후보: 현재 잔량 0 + 수령 대기 0 + 점검 기록 있음(신규는 제외)
   const suggestHide = !selectMode && row.currentStock === 0 && row.pendingPurchases.length === 0 && row.lastCheckDate != null
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
@@ -761,7 +772,10 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       meta={<span style={{ color: tint?.fg }}>{row.category}</span>}
       value={fmtQty(row.currentStock, stockUnit)}
       valueDanger={lowStock}
-      valueSub={row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}` : undefined}
+      // 예측 불가를 침묵시키지 않는다(신고 edffb4a7) — 왜 알림이 없는지 접힌 카드에서도 보이게
+      valueSub={row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}`
+        : row.avgDaily === 0 ? '최근 사용 없음'
+        : '소진 예측 준비 중 · 점검 데이터 부족'}
       expanded={open}
       actions={<>
         <button type="button" onClick={() => setOpen(v => !v)}
@@ -790,8 +804,12 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">소진 예상</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
-            {row.daysUntilEmpty != null ? `${row.daysUntilEmpty}일` : '—'}
-            <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">/ 알림 D-{row.alertThresholdDays}</span>
+            {row.daysUntilEmpty != null ? `${row.daysUntilEmpty}일` : row.avgDaily === 0 ? '최근 사용 없음' : '추정 불가 · 점검 부족'}
+            <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">/ 알림 D-{row.effectiveAlertDays}</span>
+          </p>
+          {/* 리드타임 반영으로 설정값과 다를 수 있음 + 설정 발견 가능성(3뎁스 보완) */}
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
+            {row.effectiveAlertDays !== row.alertThresholdDays ? `설정 D-${row.alertThresholdDays} + 배송 기간 반영 · ` : ''}설정에서 변경
           </p>
         </div>
         <div>
