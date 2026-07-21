@@ -93,17 +93,22 @@ export function shouldOfferCheckoutProration(
 ): boolean {
   const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut, moveInYmd)
   if (!calc || calc.reduction <= 0 || calc.daysUsed >= PRORATE_BASE_DAYS) return false
+  return isMoveOutNear(expectedMoveOut, todayYmd)
+}
+
+// 퇴실일이 '오늘+1달' 이내인가(과거 포함 — 늦은 정산 케이스). 달력 기준, 일 클램프.
+// 정산 팝업(shouldOfferCheckoutProration)과 자동적용 안내 문구가 같은 기준을 공유하는 정본 —
+// 두 달 뒤 퇴실 저장에도 환불·추가납부 금액 안내가 즉시 뜨던 문제(신고 0df59b92)의 단일 게이트.
+export function isMoveOutNear(expectedMoveOut: string, todayYmd: string): boolean {
   const tp = todayYmd.split('-').map(Number)
   if (tp.length !== 3 || tp.some(n => isNaN(n))) return false
   const [ty, tm, td] = tp
-  // 오늘 + 1 달 (달력 기준, 일 클램프) = 팝업을 띄우는 상한 날짜
   const y2 = tm === 12 ? ty + 1 : ty
   const m2 = tm === 12 ? 1 : tm + 1            // 1-based 다음 달
   const lastDay = new Date(y2, m2, 0).getDate() // m2 의 말일
   const limit = new Date(y2, m2 - 1, Math.min(td, lastDay))
   const mo = new Date(expectedMoveOut + 'T00:00:00')
   if (isNaN(mo.getTime())) return false
-  // 퇴실일이 '오늘+1달' 이내(과거 포함 — 늦은 정산 케이스). 그보다 먼 미래면 묻지 않음.
   return mo.getTime() <= limit.getTime()
 }
 

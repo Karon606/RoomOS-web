@@ -12,7 +12,8 @@ import { requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
-import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
+import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
+import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
 
 async function getPropertyId() {
@@ -1852,9 +1853,14 @@ function prorationDataForChange(
       checkoutProratedMonth: calc.moveOutMonth,
       checkoutProrationUndo: undo,
     },
-    notice: wasApplied
-      ? `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 · ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`
-      : `퇴실 일할 정산을 자동 적용했습니다. ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원. (금액 조정은 '퇴실 정산'에서)`,
+    // 퇴실이 먼 미래(오늘+1달 초과)면 금액·환불 프레임 없이 사실 안내만 — 두 달 뒤 정산 금액이
+    // 지금 행동이 필요한 것처럼 읽히던 문제(신고 0df59b92). 근접 기준은 정산 팝업과 동일(isMoveOutNear 정본).
+    // 적용 자체는 시점 무관 즉시 — 선납 추천액(billForLeaseMonth)이 이 값을 쓰므로 미루면 과납이 생긴다.
+    notice: isMoveOutNear(newExpectedMoveOut, kstYmdStr())
+      ? (wasApplied
+        ? `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 · ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`
+        : `퇴실 일할 정산을 자동 적용했습니다. ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원. (금액 조정은 '퇴실 정산'에서)`)
+      : `${Number(calc.moveOutMonth.slice(5))}월 이용료가 퇴실일 기준 ${calc.daysUsed}일치로 자동 청구될 예정입니다. 지금 처리할 일은 없습니다.`,
   }
 }
 
