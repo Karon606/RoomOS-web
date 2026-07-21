@@ -12,6 +12,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteResidenceCertFile, restoreResidenceCertFile, type ResidenceCertListRow, type IssuableTenant } from './actions'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
@@ -150,6 +151,14 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     보기
                   </a>
                   <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_실거주확인서.pdf`}
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
+                  {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장 요청(신고 dc56f953) */}
+                  <SaveDocImageButton fileName={`${c.tenantName}_실거주확인서`}
+                    getPdfBytes={async () => {
+                      const res = await fetch(`/api/doc-file?id=${encodeURIComponent(c.driveFileId)}`)
+                      if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+                      return res.arrayBuffer()
+                    }}
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <Link href={`/residence-cert/${c.tenantId}`}
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">

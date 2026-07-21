@@ -8,6 +8,7 @@ import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenc
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 
 const fmtDot = (d: string) => {
   if (!d) return ''
@@ -150,6 +151,16 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <button onClick={handlePrint} disabled={previewing} className="rc-btn-secondary">
           {previewing ? '여는 중…' : '미리보기·인쇄'}
         </button>
+        {/* 현재 입력값 그대로 PNG 저장(공유 시트로 사진첩 저장, 신고 dc56f953) — preview PDF 를 래스터화 */}
+        <SaveDocImageButton fileName={`${data.tenantName}_실거주확인서`} className="rc-btn-secondary"
+          getPdfBytes={async () => {
+            const res = await fetch('/api/residence-cert/generate', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payload(), preview: true }),
+            })
+            if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+            return res.arrayBuffer()
+          }} />
         <button onClick={handleIssue} disabled={issuing} className="rc-issue">
           {issuing ? '발급 중…' : '발급 (PDF 저장)'}
         </button>
