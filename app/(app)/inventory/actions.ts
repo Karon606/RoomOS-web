@@ -957,7 +957,8 @@ export async function updateStockCheck(id: string, data: {
       if (cur && cur.remainingQty === data.locationPatch.afterQty && (cur.restockedQty ?? 0) === data.locationPatch.restockedQty) {
         return { ok: true }
       }
-      const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+      // restockedQty 포함 — 같은 날 연속 위치 점검 머지가 앞 위치의 보충 +N 마커를 지우던 버그(신고 8319ba10)
+      const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty, restockedQty: lb.restockedQty }))
       // 이 점검 생성 이후 들어온 입수분을 base 에 반영 (createStockCheck 와 동일 규칙)
       const addMap = await additionsSinceCheckByLocation(c.trackedItemId, c, c.trackedItem.hubLocationId, propertyId)
       for (const [loc, q] of addMap) {

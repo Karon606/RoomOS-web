@@ -2462,3 +2462,8 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - edffb4a7 "키친타월 거의 없는데 알림 없어": 버그 아님 — 잔량 3롤·0.47롤/일=소진 6일 > 기본 D-3. A+B+C 운영자 승인 후 실행. A=키친타월 D-7 설정, B=실효 임계값(리드타임 중앙값+2일, overview 단일 지점), C=예측 불가 이유 캡션·설정 안내·소진 임박 N건 요약 행(§18). 실측: 리드타임 [0,1,3] 중앙값 1, 실효 7, 알림 뜸. done 처리.
 - 보증금 정산 누락 잔여 2건(비쉬 간바트 502호·윤정승 422호): 운영자 확인 "당시 청소비 개념 없어 5만원 전액 반환" — 반환 5만·미반환 0 백필(backfill-returned-deposits.mjs, 실수납은 기존 기록 유지). check-deposit-settlement 누락 0건.
 - 신규 접수 8319ba10(키친타월 5층 +1 표기 없음) — 전문가 조사 중, 승인 대기.
+
+## 2026-07-21 (3) — 신고 8319ba10 위치점검 머지 보충 마커 유실
+- 증상: 7/20 키친타월 5층 1→2(+1 보충)가 타임라인에 +1 미표기. 원인: 같은 날 연속 위치 점검 머지(updateStockCheck)가 base 를 qty 만으로 재구성해 앞 위치의 restockedQty 마커를 지움(마지막 점검 위치 것만 생존). 수량 장부는 정확.
+- 수정: stockCheckMerge base 타입에 restockedQty 추가 + applyLocationCheck 비점검 위치 마커 이월 + updateStockCheck base 에 마커 포함. createStockCheck 쪽은 그대로(전날 마커 이월 방지). 단위 검증 PASS(5층 보존·4층 기록·허브 0·재적용 안전).
+- 데이터 정정 1행(운영자 승인): stock_check_locations 46313747 restockedQty null→1 (undo = null 원복). 과거 다른 유실분은 역산 불가라 소급 안 함.
