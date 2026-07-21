@@ -16,6 +16,7 @@ import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
+import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -147,6 +148,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     incomes,
     totalRooms,
     vacantRooms,
+    excludedRooms,
     depositAgg,
     expByCategory,
     moveInLeases,
@@ -195,7 +197,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, date: { gte: startDate, lte: endDate } },
     }),
     prisma.room.count({ where: { propertyId } }),
-    prisma.room.count({ where: { propertyId, isVacant: true } }),
+    // 공실 = isVacant 이면서 '집계 제외'(창고·사무실, lib/vacancy 정본) 아님 — 호실관리 공실 수와 정합(신고 9d844226)
+    prisma.room.count({ where: { propertyId, isVacant: true, NOT: vacancyExcludedWhere } }),
+    prisma.room.count({ where: { propertyId, isVacant: true, ...vacancyExcludedWhere } }),
     prisma.leaseTerm.aggregate({
       // 보유 보증금 = 실제 거주 중(입주 완료)인 계약만. RESERVED(입실 전)는 보증금 입력만 했을 뿐
       // 아직 받은 게 아니므로 제외(입주하면 ACTIVE 로 바뀌며 자동 포함). 사용자 보고 2026-06-05.
@@ -272,10 +276,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // 희망 이동 호실용 공실 목록 (조건 매칭에 type/windowType/direction/baseRent 사용)
     prisma.room.findMany({
-      // 비거주 점유 중 + '공실 표시 안 함' 방(창고·사무실)은 이동 후보에서 제외 (2026-07-06)
+      // 비거주 점유 중 + '공실 표시 안 함' 방(창고·사무실)은 이동 후보에서 제외 (2026-07-06, lib/vacancy 정본)
       where: {
         propertyId, isVacant: true,
-        NOT: { nonResidentVacant: false, leaseTerms: { some: { status: 'NON_RESIDENT' } } },
+        NOT: vacancyExcludedWhere,
       },
       select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true },
     }),
@@ -303,6 +307,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         id: true,
         roomNo: true,
         isVacant: true,
+        nonResidentVacant: true,
         type: true,
         tier: true,
         floor: true,
@@ -927,6 +932,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     id:            r.id,
     roomNo:        r.roomNo,
     isVacant:      r.isVacant,
+    // 집계 제외(창고·사무실) — 배치도 등에서 공실로 칠하지 않기 위한 파생값(lib/vacancy 정본)
+    vacancyExcluded: isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT')),
     type:          r.type,
     tier:          r.tier as string | null,
     floor:         r.floor as string | null,
@@ -1625,7 +1632,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     trend,
     totalRooms,
     vacantRooms,
-    occupiedRooms: totalRooms - vacantRooms,
+    excludedRooms,
+    // 입실 = 전체 − 공실 − 집계 제외 — 제외분(창고·사무실)이 입실로 부풀지 않게(운영자 결정 2026-07-21)
+    occupiedRooms: totalRooms - vacantRooms - excludedRooms,
     onboarding,
     statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount, waitingTour: waitingTourLeases.length + tourDoneCount },
     totalTenants:    activeTenants.length,
@@ -1677,7 +1686,8 @@ export default async function DashboardPage({
         const rooms = dashboardData.rooms.map(r => ({ id: r.roomNo, roomNo: r.roomNo }))
         const roomStatuses: Record<string, { isVacant: boolean; tenantName?: string }> = {}
         dashboardData.rooms.forEach(r => {
-          roomStatuses[r.roomNo] = { isVacant: r.isVacant, tenantName: r.tenantName ?? undefined }
+          // 집계 제외 방(창고·사무실)은 배치도에서도 공실로 칠하지 않는다(신고 9d844226)
+          roomStatuses[r.roomNo] = { isVacant: r.isVacant && !r.vacancyExcluded, tenantName: r.tenantName ?? undefined }
         })
         return (
           <FloorPlanWidget

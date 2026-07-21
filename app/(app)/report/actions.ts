@@ -10,6 +10,7 @@ import { kstMonthStr } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
+import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 
 async function getPropertyId() {
   const { userId, propertyId } = await requirePropertyAccess()
@@ -448,13 +449,15 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     !acquisitionMonthStr || m >= acquisitionMonthStr
 
   // 호실 점유 수 카운트용 — UI 표시에만 사용. 매출 계산은 lease 기반(아래).
+  // NON_RESIDENT 포함 조회 — 집계 제외 방(창고·사무실) 판정용(lib/vacancy 정본, 신고 9d844226)
   const allRoomsForCount = await prisma.room.findMany({
     where: { propertyId },
     select: {
       id: true,
+      nonResidentVacant: true,
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
-        select: { moveInDate: true, expectedMoveOut: true, moveOutDate: true },
+        where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+        select: { status: true, moveInDate: true, expectedMoveOut: true, moveOutDate: true },
       },
     },
   })
@@ -481,11 +484,13 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가
     revenue += await getCheckedOutRecognizedRevenue(prisma, propertyId, month)
 
-    // 호실 점유 수 — UI 표시용
+    // 호실 점유 수 — UI 표시용. 집계 제외 방(창고·사무실)은 점유에도 공실에도 안 넣음
     let occupied = 0
     let vacant = 0
     for (const room of allRoomsForCount) {
+      if (isVacancyExcluded(room, room.leaseTerms.some(l => l.status === 'NON_RESIDENT'))) continue
       const has = room.leaseTerms.some(l => {
+        if (l.status === 'NON_RESIDENT') return false
         const moveIn = l.moveInDate ? new Date(l.moveInDate) : null
         const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut)
           : (l.moveOutDate ? new Date(l.moveOutDate) : null)
@@ -554,13 +559,14 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
   const now = new Date()
   const asOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  // 점유율
-  const [totalRooms, occupiedRooms, vacantRooms] = await Promise.all([
+  // 점유율 — 공실·분모에서 집계 제외(창고·사무실, lib/vacancy 정본) 반영. 대시보드 KPI 와 동일 정의(신고 9d844226)
+  const [totalRooms, occupiedRooms, vacantRooms, excludedRooms] = await Promise.all([
     prisma.room.count({ where: { propertyId } }),
     prisma.room.count({ where: { propertyId, isVacant: false } }),
-    prisma.room.count({ where: { propertyId, isVacant: true } }),
+    prisma.room.count({ where: { propertyId, isVacant: true, NOT: vacancyExcludedWhere } }),
+    prisma.room.count({ where: { propertyId, isVacant: true, ...vacancyExcludedWhere } }),
   ])
-  const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0
+  const occupancyRate = totalRooms - excludedRooms > 0 ? occupiedRooms / (totalRooms - excludedRooms) : 0
 
   // 미수율 (최근 12개월)
   const oneYearAgo = new Date(now); oneYearAgo.setMonth(oneYearAgo.getMonth() - 12)
@@ -689,10 +695,10 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
     where: { propertyId, status: 'RESERVED', reservationConfirmedAt: { not: null } },
   })
 
-  // 30일 이상 공실인 호실
+  // 30일 이상 공실인 호실 — 집계 제외 방(창고·사무실)은 대상 아님
   const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30)
   const longVacantRooms = await prisma.room.findMany({
-    where: { propertyId, isVacant: true },
+    where: { propertyId, isVacant: true, NOT: vacancyExcludedWhere },
     select: {
       roomNo: true,
       leaseTerms: {

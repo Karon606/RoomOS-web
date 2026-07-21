@@ -73,13 +73,14 @@ export type DashboardData = {
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
   vacantRooms:       number
+  excludedRooms:     number   // 공실 집계 제외(창고·사무실, lib/vacancy 정본) — 공실에도 입실에도 안 넣음
   occupiedRooms:     number
   statusCounts:      { active: number; reserved: number; checkout: number; nonResident: number; waitingTour: number }
   totalTenants:      number
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { id: string; roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
@@ -969,7 +970,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 // ── 입주자 탭 ───────────────────────────────────────────────────
 
 function TenantsTab({ data }: { data: DashboardData }) {
-  const occupancyRate = data.totalRooms > 0 ? Math.round((data.occupiedRooms / data.totalRooms) * 100) : 0
+  // 입주율 분모 = 전체 − 집계 제외(창고·사무실) — 거주중%+공실%=100 유지(신고 9d844226)
+  const countedRooms = data.totalRooms - data.excludedRooms
+  const occupancyRate = countedRooms > 0 ? Math.round((data.occupiedRooms / countedRooms) * 100) : 0
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
   const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--persimmon)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
   const statusSegments = [
@@ -1000,7 +1003,8 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {[
                 { label: '거주중', val: `${data.occupiedRooms}실`, pct: occupancyRate, dot: 'var(--persimmon)' },
-                { label: '공실', val: `${data.vacantRooms}실`, pct: data.totalRooms > 0 ? Math.round((data.vacantRooms / data.totalRooms) * 100) : 0, dot: 'var(--cream-3)' },
+                { label: '공실', val: `${data.vacantRooms}실`, pct: countedRooms > 0 ? Math.round((data.vacantRooms / countedRooms) * 100) : 0, dot: 'var(--cream-3)' },
+                ...(data.excludedRooms > 0 ? [{ label: '집계 제외', val: `${data.excludedRooms}실`, pct: null as number | null, dot: '' }] : []),
                 { label: '전체', val: `${data.totalRooms}실`, pct: null, dot: '' },
               ].map(r => (
                 <div key={r.label} className="flex items-center gap-2">
@@ -1642,6 +1646,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           </p>
           <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
             공실 <em style={{ fontStyle: 'normal', color: 'var(--vacant-num)' }}>{data.vacantRooms}개</em>
+            {/* 집계 제외(창고·사무실) 안내 — 제외 방이 있을 때만(신고 9d844226, 문구 운영자 선택) */}
+            {data.excludedRooms > 0 && <> · 집계 제외 {data.excludedRooms}실</>}
           </p>
         </Link>
       </div>

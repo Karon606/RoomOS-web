@@ -617,9 +617,12 @@ export default function RoomManageClient({
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
           {(() => {
-            const occupied = rooms.filter(r => r.leaseTerms[0]?.status === 'ACTIVE' || r.leaseTerms[0]?.status === 'CHECKOUT_PENDING').length
-            const reserved = rooms.filter(r => r.leaseTerms[0]?.status === 'RESERVED').length
-            const vacant   = rooms.filter(r => r.leaseTerms.length === 0).length
+            // 헤더 카운트 = 상태 필터 칩과 같은 분기(roomStatusKey) — 두 숫자가 갈라지던 자기모순 제거(신고 9d844226).
+            // 비거주 점유 방은 nonResidentVacant 에 따라 공실 또는 점유로 분류된다.
+            const keys = rooms.map(roomStatusKey)
+            const occupied = keys.filter(k => k === 'active' || k === 'checkout').length
+            const reserved = keys.filter(k => k === 'reserved').length
+            const vacant   = keys.filter(k => k === 'vacant').length
             return (
               <p className="text-sm text-[var(--warm-muted)] mt-0.5">
                 전체 {rooms.length}실
@@ -1171,7 +1174,7 @@ export default function RoomManageClient({
                 <input type="checkbox" defaultChecked={!editRoom.nonResidentVacant}
                   onChange={e => { const h = e.currentTarget.form?.elements.namedItem('nonResidentVacant') as HTMLInputElement | null; if (h) h.value = e.currentTarget.checked ? '0' : '1' }}
                   className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                비거주 점유 시 공실로 표시하지 않음 <span className="text-[var(--warm-muted)]">(창고·사무실 등)</span>
+                비거주 점유 시 공실 집계에서 제외 <span className="text-[var(--warm-muted)]">(창고·사무실 등, 홈·리포트 공실 수에서 빠짐)</span>
               </label>
               <input type="hidden" name="nonResidentVacant" defaultValue={editRoom.nonResidentVacant ? '1' : '0'} />
             </div>
