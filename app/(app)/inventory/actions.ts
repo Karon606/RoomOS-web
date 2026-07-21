@@ -964,7 +964,7 @@ export async function updateStockCheck(id: string, data: {
       for (const [loc, q] of addMap) {
         const row = base.find(b => b.locationId === loc)
         if (row) row.qty += q
-        else base.push({ locationId: loc, qty: q })
+        else base.push({ locationId: loc, qty: q, restockedQty: null })
       }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
     }
