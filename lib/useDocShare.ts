@@ -22,6 +22,8 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
   const queueRef = useRef<DocShareQueue | null>(null)
   if (!queueRef.current) queueRef.current = new DocShareQueue()
   const queue = queueRef.current
+  // 연속 거부 카운트 — 재탭(신선한 제스처)마저 거부되면 실질 공유 불가 기기(주로 PC)로 판정, 무한 안내 방지
+  const retryCount = useRef(0)
 
   const [, setTick] = useState(0)
   const onChange = useCallback(() => setTick(n => n + 1), [])
@@ -72,8 +74,14 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
 
     const result = await shareFiles(files)
     // 'shared'·'cancelled' 은 무반응(정상). 'retry' 는 재탭 유도, 'unsupported' 는 안내.
-    if (result === 'retry') pushToast('info', '다시 한 번 눌러 주세요.')
-    else if (result === 'unsupported') pushToast('error', '이 기기에서는 파일 공유를 지원하지 않습니다.')
+    if (result === 'retry') {
+      retryCount.current += 1
+      if (retryCount.current >= 2) pushToast('error', '이 기기에서는 공유 시트를 열 수 없습니다. 휴대폰에서 이용해 주세요.')
+      else pushToast('info', '다시 한 번 눌러 주세요.')
+    } else {
+      retryCount.current = 0
+      if (result === 'unsupported') pushToast('error', '이 기기에서는 파일 공유를 지원하지 않습니다.')
+    }
   }, [mode, queue, onChange, toItems])
 
   return { done: st.done, failedCount: st.failed.length, totalBytes, send }

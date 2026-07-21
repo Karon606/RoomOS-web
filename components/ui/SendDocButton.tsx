@@ -33,6 +33,7 @@ export function SendDocButton({ getPdfBytes, fileName, label = '보내기', clas
   const handleSend = async () => {
     // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다
     void ensurePng().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
+    const wasRetry = retryFormat.current != null
     const format = retryFormat.current ?? await choiceDialog({
       title: '어떤 형식으로 보낼까요?',
       message: '문자메시지는 사진이 가장 확실합니다. PDF는 일부 휴대폰·문자 앱에서 첨부 전송이 안 될 수 있습니다.',
@@ -50,7 +51,12 @@ export function SendDocButton({ getPdfBytes, fileName, label = '보내기', clas
       if (canShareFiles()) {
         const result = await shareFiles([new File([blob], name, { type: mime })])
         // 제스처 만료 — 캐시·형식이 준비돼 있어 재탭은 선택창 없이 즉시 시트가 열린다. 다운로드로 새지 않는다(운영자 혼란 보고).
-        if (result === 'retry') { retryFormat.current = format; pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.') }
+        // 단, 재탭(신선한 제스처 + 캐시 준비)마저 거부되면 이 기기는 실질 공유 불가(주로 PC 브라우저의
+        // 지원 사칭) — 안내가 무한 반복되지 않게 다운로드로 확정 폴백(운영자 PC 확인 2026-07-22).
+        if (result === 'retry') {
+          if (wasRetry) await fallbackDownload(blob, name, mime)
+          else { retryFormat.current = format; pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.') }
+        }
         else if (result === 'unsupported') await fallbackDownload(blob, name, mime)
       } else {
         await fallbackDownload(blob, name, mime)
