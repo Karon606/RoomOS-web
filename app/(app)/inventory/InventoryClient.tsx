@@ -769,11 +769,15 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       selectable={selectMode} selected={isSelected}
       onToggleSelect={onOpen} onClick={onOpen} onLongPress={onLongPress} attn={lowStock}
       title={row.label}
-      badges={<>
-        {hasDraft && <Badge tone="inspect">점검 중</Badge>}
-        {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
-        {row.pendingPurchases.length > 0 && <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령 대기</Badge>}
-      </>}
+      badges={(() => {
+        // §11 병렬 최대 2개 — 3개 조건이 겹치면 2개 + "+N" 뉴트럴(운영자 승인 2026-07-22)
+        const list = [
+          hasDraft && <Badge key="draft" tone="inspect">점검 중</Badge>,
+          lowStock && <Badge key="low" tone="danger" mono>소진 임박</Badge>,
+          row.pendingPurchases.length > 0 && <Badge key="pend" tone="warn" mono>{row.pendingPurchases.length}건 수령 대기</Badge>,
+        ].filter(Boolean)
+        return <>{list.slice(0, 2)}{list.length > 2 && <Badge tone="neutral">+{list.length - 2}</Badge>}</>
+      })()}
       meta={<span style={{ color: tint?.fg }}>{row.category}</span>}
       value={fmtQty(row.currentStock, stockUnit)}
       valueDanger={lowStock}
