@@ -1240,8 +1240,10 @@ export async function updatePayment(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const record = await prisma.paymentRecord.findUnique({
-      where: { id: paymentId },
+    // 영업장 스코프 검증(감사 잔여, 2026-07-22) — 타 영업장 record id로 수정 불가(멀티테넌트)
+    const propertyId = await getPropertyId()
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId },
       select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
@@ -1359,8 +1361,10 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
 export async function deletePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const record = await prisma.paymentRecord.findUnique({
-      where: { id: paymentId },
+    // 영업장 스코프 검증(감사 잔여, 2026-07-22)
+    const propertyId = await getPropertyId()
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId },
       select: { leaseTermId: true, targetMonth: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
@@ -1388,8 +1392,10 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
 export async function restorePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const record = await prisma.paymentRecord.findUnique({
-      where: { id: paymentId },
+    // 영업장 스코프 검증(감사 잔여, 2026-07-22). deletedAt: undefined = 소프트삭제분 포함 조회(복구 대상)
+    const propertyId = await getPropertyId()
+    const record = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId, propertyId, deletedAt: undefined },
       select: { leaseTermId: true, targetMonth: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }

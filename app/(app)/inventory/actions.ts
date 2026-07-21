@@ -1456,6 +1456,9 @@ export async function updateExpenseFromInventory(id: string, data: {
     const newReceivedAt = data.receivedAt !== undefined
       ? (data.receivedAt ? new Date(data.receivedAt) : null)
       : undefined
+    // 수령 대기(null)였던 행에 수령일을 다시 넣는 경우 — 자동 점검이 없으므로 단순 날짜 저장이 아니라
+    // 정본 수령 경로(confirmReceipt)로 재생성해야 잔량·위치 배치에 반영된다(감사 잔여: 미재생성 → 재고 과소, 2026-07-22)
+    const resurrect = e.receivedAt === null && newReceivedAt != null
     await prisma.expense.update({
       where: { id },
       data: {
@@ -1463,12 +1466,18 @@ export async function updateExpenseFromInventory(id: string, data: {
         ...(data.amount !== undefined ? { amount: data.amount } : {}),
         ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
-        ...(newReceivedAt !== undefined ? { receivedAt: newReceivedAt } : {}),
+        ...(newReceivedAt !== undefined && !resurrect ? { receivedAt: newReceivedAt } : {}),
       },
     })
 
     // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화 / null로 가면 삭제.
-    if (newReceivedAt !== undefined) {
+    if (resurrect) {
+      const rc = await confirmReceipt(id)
+      if (!rc.ok) return rc
+      // confirmReceipt는 수령 시각을 지금으로 찍으므로 사용자가 고른 날짜로 동기화
+      await prisma.expense.update({ where: { id }, data: { receivedAt: newReceivedAt } })
+      await prisma.stockCheck.updateMany({ where: { sourceExpenseId: id }, data: { date: newReceivedAt } })
+    } else if (newReceivedAt !== undefined) {
       if (newReceivedAt === null) {
         // 수령 대기로 되돌림 → 자동 점검 제거 (잔량 계산에서 이 수령분이 빠지도록)
         await prisma.stockCheck.deleteMany({ where: { sourceExpenseId: id } })

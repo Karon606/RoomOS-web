@@ -1,4 +1,5 @@
 import { canEdit } from '@/lib/role'
+import { deleteExpense } from '@/app/(app)/finance/actions'
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -315,7 +316,10 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
       if (existing) {
         const resolution = resolutions[`expense:${existing.id}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
-        await prisma.expense.delete({ where: { id: existing.id } })
+        // 정본 삭제 경로 재사용(감사 잔여, 2026-07-22) — 직접 delete는 주문 묶음 고아·수령 자동점검
+        // 정리를 건너뛰어 배송비 라인·빈 주문이 남았다. deleteExpense가 스코프 검증·정리를 일괄 수행.
+        const del = await deleteExpense(existing.id)
+        if (!del.ok) { result.errors.push(`${category} ${amount}: 기존 항목 교체 실패(${del.error})`); continue }
       }
 
       const payMethod = str(row['결제수단']) || '계좌이체'
