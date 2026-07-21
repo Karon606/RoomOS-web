@@ -45,3 +45,6 @@
 - '계약상 보증금' = LeaseTerm.depositAmount(약정액, 실입금과 별개). 입금 기록 없으면 약정액으로 잔고 폴백. 재무 보증금 탭에 InfoHint(?) 설명.
 - 미반환분은 recordDepositReturn이 부가수익 category '보증금'(예약 취소 몰취는 '위약금')으로 자동 생성.
 - 감사: `node --env-file=.env.local scripts/check-deposit-settlement.mjs` — CHECKED_OUT+보증금>0+DepositRefund 0건 나열. 7/20 이전 버그 창구 피해 3건 중 임형진은 백필(backfill-lim-deposit.mjs), 비쉬 간바트·윤정승은 운영자 확인 대기.
+
+## 퇴실 일할 자동적용의 안내 게이트 (2026-07-21, 신고 0df59b92)
+자동적용(데이터)은 퇴실 예정 저장 즉시 — billForLeaseMonth 가 이 값을 선납 추천액으로 쓰므로 미루면 과납이 생긴다. **안내 문구만** `isMoveOutNear`(lib/prorate 정본, 오늘+1달·과거 포함) 게이트로 분기: 근접이면 금액 포함 현행, 먼 미래면 "N월 이용료가 일할 청구 예정, 지금 처리할 일 없음" 사실 안내. 정산 팝업(shouldOfferCheckoutProration)과 같은 게이트를 공유한다 — 근접 판정 로직을 새로 만들지 말 것.

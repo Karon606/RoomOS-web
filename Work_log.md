@@ -2467,3 +2467,9 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 증상: 7/20 키친타월 5층 1→2(+1 보충)가 타임라인에 +1 미표기. 원인: 같은 날 연속 위치 점검 머지(updateStockCheck)가 base 를 qty 만으로 재구성해 앞 위치의 restockedQty 마커를 지움(마지막 점검 위치 것만 생존). 수량 장부는 정확.
 - 수정: stockCheckMerge base 타입에 restockedQty 추가 + applyLocationCheck 비점검 위치 마커 이월 + updateStockCheck base 에 마커 포함. createStockCheck 쪽은 그대로(전날 마커 이월 방지). 단위 검증 PASS(5층 보존·4층 기록·허브 0·재적용 안전).
 - 데이터 정정 1행(운영자 승인): stock_check_locations 46313747 restockedQty null→1 (undo = null 원복). 과거 다른 유실분은 역산 불가라 소급 안 함.
+
+## 2026-07-21 (4) — 신고 0df59b92 정산 안내 타이밍 + 공유 폴백 클래스 봉합 (e86cf4a, f3dbf6d)
+- 0df59b92 민경진 513호: 원인 = 일할 자동적용 토스트에 시점 게이트 없음(팝업엔 1달 게이트 있음). isMoveOutNear 정본 추출로 팝업·토스트 단일 게이트, 먼 미래는 금액 없는 사실 안내. 적용 자체는 즉시 유지(8월말 선납 추천액 정확성). 금전 회귀 67/67. done.
+- 갤럭시 사진 저장 첫 탭 실패(운영자 구두): 원인 = 탭 후 pdfjs 로딩 지연으로 공유 시트 제스처 허용 시간 만료(NotAllowedError). shareOrDownloadFile 정본 신설(공유·사진 저장 버튼 공통) + NotAllowedError 다운로드 폴백 + pdfjs 마운트 선로딩.
+- 운영자 원칙 지시(자동메모리 fix-the-class-not-the-case 저장): 오류 수정은 케이스 정정이 아니라 클래스 봉합 — 같은 패턴 전수 수정·정본 수렴·재발 감지 세트.
+- 대기: PDF 휴대폰 파일 저장 편의(내려받기 버튼 추가 안1 vs 공유 취소 시 안내 안2) 운영자 선택.
