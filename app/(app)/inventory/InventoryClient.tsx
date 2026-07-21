@@ -3974,6 +3974,49 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
     pushToast('success', '위치 순서 저장됨')
   }
 
+  // 손잡이 드래그 — 설정 옵션 리스트·순서 편집 모드와 동일 문법(오른쪽 44pt 핸들, 놓을 때 1회 저장).
+  // ▲▼만 있어 다른 순서 편집 표면과 어긋나던 것 통일(운영자 지적 2026-07-22). ▲▼는 보조로 유지(설정 리스트와 동일).
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const locListRef = useRef<HTMLUListElement | null>(null)
+  const locsRef = useRef(locs)
+  useEffect(() => { locsRef.current = locs }, [locs])
+  const dragChanged = useRef(false)
+  const onLocHandleDown = (idx: number) => (e: React.PointerEvent) => {
+    e.preventDefault()
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    dragChanged.current = false
+    setDragIdx(idx)
+  }
+  const onLocHandleMove = (e: React.PointerEvent) => {
+    if (dragIdx == null || !locListRef.current) return
+    const rows = Array.from(locListRef.current.children) as HTMLElement[]
+    if (rows.length === 0) return
+    let over = -1
+    if (e.clientY < rows[0].getBoundingClientRect().top) over = 0
+    else if (e.clientY > rows[rows.length - 1].getBoundingClientRect().bottom) over = rows.length - 1
+    else for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (e.clientY >= r.top && e.clientY <= r.bottom) { over = i; break } }
+    if (over < 0 || over === dragIdx) return
+    setLocs(prev => {
+      const next = [...prev]
+      const [m] = next.splice(dragIdx, 1)
+      next.splice(over, 0, m)
+      return next
+    })
+    setDragIdx(over)
+    dragChanged.current = true
+  }
+  const onLocHandleUp = async () => {
+    if (dragIdx == null) return
+    setDragIdx(null)
+    if (!dragChanged.current) return
+    dragChanged.current = false
+    setPending(true)
+    const res = await reorderStorageLocations(locsRef.current.map(l => l.id))
+    setPending(false)
+    if (!res.ok) { pushToast('error', res.error); reload(); return }
+    pushToast('success', '위치 순서 저장됨')
+  }
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newName.trim()) return
@@ -4029,9 +4072,9 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
         {locs.length === 0 && !pending && (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
         )}
-        <ul className="space-y-1.5">
+        <ul ref={locListRef} className="space-y-1.5">
           {locs.map((loc, idx) => (
-            <li key={loc.id} className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
+            <li key={loc.id} className={`flex items-center gap-2 bg-[var(--canvas)] border rounded-xl px-3 py-2 ${dragIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]/60'}`}>
               {editId !== loc.id && (
                 <div className="flex flex-col gap-0.5 shrink-0">
                   <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0 || pending} aria-label="위로 이동"
@@ -4060,6 +4103,15 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
               ) : (
                 <>
                   <span className="flex-1 text-sm text-[var(--warm-dark)]">{loc.name}</span>
+                  {/* 오른쪽 44pt 드래그 손잡이 — 설정 옵션 리스트와 동일 문법 */}
+                  <button type="button" aria-label={`${loc.name} 순서 이동`}
+                    onPointerDown={onLocHandleDown(idx)} onPointerMove={onLocHandleMove} onPointerUp={onLocHandleUp} onPointerCancel={onLocHandleUp}
+                    style={{ touchAction: 'none' }}
+                    className="shrink-0 flex items-center justify-center w-11 h-11 -my-1 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] cursor-grab active:cursor-grabbing">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     title={loc.isHub ? '기본 창고 해제' : '기본 창고로 지정 (품목별로 지정 안 한 경우의 기본값)'}
