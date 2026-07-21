@@ -145,16 +145,17 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                           {r.isDeposit && <span className="ml-1.5 text-[0.65625rem] text-[var(--coral)]">보증금</span>}
                           {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
                         </span>
-                        {/* 현금영수증 원터치 칩 — 수정 폼 없이 발행 표시(오류신고 c0936f89) */}
+                        {/* 현금영수증 원터치 — 수정 폼 없이 발행 표시(오류신고 c0936f89).
+                            배지 옷을 입어 눌리는 걸 몰랐던 문제(신고 241c02ea)로 체크박스 정본(수납 폼과 동일 문법)으로 교체.
+                            즉시 저장 + 적용취소 토스트 동작은 그대로, 히트영역만 44px(-my-2 확장 문법). */}
                         {canEdit ? (
-                          <button type="button" onClick={() => handleToggleCashReceipt(r)}
-                            className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap transition-colors ${
-                              r.cashReceiptIssuedAt
-                                ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
-                                : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
-                            }`}>
-                            {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
-                          </button>
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px]">
+                            <input type="checkbox" checked={!!r.cashReceiptIssuedAt} onChange={() => handleToggleCashReceipt(r)}
+                              className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                            <span className={`text-[0.65625rem] font-semibold ${r.cashReceiptIssuedAt ? 'text-[var(--success-fg)]' : 'text-[var(--warm-muted)]'}`}>
+                              {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
+                            </span>
+                          </label>
                         ) : (
                           r.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
                         )}

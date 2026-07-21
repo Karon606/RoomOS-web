@@ -230,16 +230,17 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     {p.targetMonth > targetMonth && ' (선납)'}
                   </span>
                 )}
-                {/* 현금영수증 — 편집 가능하면 원터치 토글 칩(미발행도 어포던스), 아니면 발행 시에만 표시 */}
+                {/* 현금영수증 — 편집 가능하면 원터치 체크박스, 아니면 발행 시에만 배지.
+                    배지 모양 버튼이라 눌리는 걸 몰랐던 문제(신고 241c02ea)로 수납 폼 체크박스 정본 문법으로 교체.
+                    즉시 저장 + 적용취소 토스트 동작 유지, 히트영역 44px(-my-2 확장 문법). */}
                 {canEdit ? (
-                  <button type="button" disabled={pending} onClick={() => handleToggleCashReceipt(p)}
-                    className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap transition-colors disabled:opacity-50 ${
-                      p.cashReceiptIssuedAt
-                        ? 'bg-[var(--success-bg)] text-[var(--success-fg)]'
-                        : 'border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:border-[var(--warm-mid)]'
-                    }`}>
-                    {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
-                  </button>
+                  <label className={`inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px] ${pending ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <input type="checkbox" checked={!!p.cashReceiptIssuedAt} disabled={pending} onChange={() => handleToggleCashReceipt(p)}
+                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                    <span className={`text-[0.65625rem] font-semibold ${p.cashReceiptIssuedAt ? 'text-[var(--success-fg)]' : 'text-[var(--warm-muted)]'}`}>
+                      {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
+                    </span>
+                  </label>
                 ) : (
                   p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
                 )}
