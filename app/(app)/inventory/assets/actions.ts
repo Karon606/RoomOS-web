@@ -211,10 +211,16 @@ export async function getDurableItems(): Promise<AssetsData> {
     return { roomId, roomNo: list[0].roomNo!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
+  // 공용부 그룹 순서 = 보관 위치 관리에서 정한 sortOrder(순서 편집 반영, 운영자 지적 2026-07-22).
+  // 종전 이름 가나다순은 위치 순서를 바꿔도 비품 화면이 안 따라오는 어긋남이 있었다. 미등록 위치는 이름순 폴백.
+  const locRankRows = await prisma.storageLocation.findMany({ where: { propertyId }, select: { id: true, sortOrder: true } })
+  const locRank = new Map(locRankRows.map(l => [l.id, l.sortOrder]))
   const locations = [...locBuckets.entries()].map(([locationId, list]) => {
     const items = aggregateAssets(list, orderMaps)
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
-  }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
+  }).sort((a, b) =>
+    (locRank.get(a.locationId) ?? Number.MAX_SAFE_INTEGER) - (locRank.get(b.locationId) ?? Number.MAX_SAFE_INTEGER)
+    || a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
   const pending = aggregateAssets(pendingRaw, orderMaps)
   const common = aggregateAssets(commonRaw, orderMaps)
