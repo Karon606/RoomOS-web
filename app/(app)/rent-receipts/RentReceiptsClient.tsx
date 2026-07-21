@@ -11,7 +11,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteRentReceiptFile, restoreRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
-import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -219,9 +219,9 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
                 {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
                 {!selectMode && (
                 <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
-                  {/* 보내기 = 단건 공유(다운로드 폴백 있음). 파일 공유 지원 기기에서만 노출 */}
+                  {/* 보내기 = 사진/PDF 형식 선택 후 공유(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22) */}
                   {canShare && (
-                    <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_입실료확인서.pdf`} label="보내기"
+                    <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_입실료납부확인서`}
                       className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   )}
                   {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장(실거주확인서와 동일 문법) */}
