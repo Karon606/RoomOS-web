@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -4371,11 +4372,6 @@ function DepositTab({ summary, ledger, totalBalance }: {
       </div>
 
       {sub === 'tenant' && (
-        <>
-        {/* 용어 안내(신고 249b5652) — '계약상 보증금'이 실제 입금과 별개의 약정액임을 상시 노출. 툴팁 정본이 없어 캡션 문법 사용 */}
-        {summary.some(d => d.hasNoInRecord) && (
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약상 보증금은 계약서에 약정한 금액으로 실제 입금 기록과 별개입니다. 입금 기록이 없는 계약은 약정액 기준으로 잔고를 계산합니다.</p>
-        )}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {summary.length === 0 ? (
             <EmptyState title="보증금 거래 이력이 있는 입주자가 없습니다." className="border-0 bg-transparent" />
@@ -4396,7 +4392,11 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     </div>
                     <p className="text-xs text-[var(--warm-muted)]">
                       {d.hasNoInRecord
-                        ? `계약상 보증금 ${fmtWon(d.contractDeposit)}`
+                        ? <>계약상 보증금 {fmtWon(d.contractDeposit)}
+                            {/* 용어 설명(신고 249b5652) — ? 문법은 InfoHint 정본 */}
+                            <InfoHint title="계약상 보증금">
+                              계약서에 약정한 보증금 금액으로, 실제 입금 기록과는 별개입니다. 입금 기록이 없는 계약은 이 약정액을 기준으로 잔고를 계산합니다. 실제로 받았다면 옆의 받음으로 기록 버튼으로 실수납을 남기세요.
+                            </InfoHint></>
                         : `입금 ${fmtWon(d.totalIn)}`}
                       {d.totalReturned > 0 && ` · 반환 ${fmtWon(d.totalReturned)}`}
                       {d.totalWithheld > 0 && ` · 미반환 ${fmtWon(d.totalWithheld)}`}
@@ -4425,7 +4425,6 @@ function DepositTab({ summary, ledger, totalBalance }: {
             </ul>
           )}
         </div>
-        </>
       )}
 
       {sub === 'ledger' && (
