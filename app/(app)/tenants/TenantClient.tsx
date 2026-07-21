@@ -3679,6 +3679,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
   const [depositAmount, setDepositAmount] = useState<number | undefined>(undefined)
   const [dueDay, setDueDay]           = useState('')
   const [status, setStatus]           = useState('')
+  const [exitDate, setExitDate]       = useState('')   // 퇴실 예정일 — 퇴실 예정 선택 시에만 노출(신고 204522b7)
 
   const [pending, setPending] = useState(false)
   const [error, setError]     = useState('')
@@ -3690,6 +3691,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     if (depositAmount != null) data.depositAmount = depositAmount
     if (dueDay.trim()) data.dueDay = dueDay.trim()
     if (status)      data.status   = status
+    if (status === 'CHECKOUT_PENDING' && exitDate) data.expectedMoveOut = exitDate
 
     if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
 
@@ -3773,6 +3775,15 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
               </optgroup>
             </select>
           </div>
+
+          {/* 퇴실 예정 선택 시에만 — 단건 폼 showExitDate 문법 이식(신고 204522b7). 빈 값 = 날짜 미변경 */}
+          {status === 'CHECKOUT_PENDING' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 예정일 (계약 전체 적용)</label>
+              <DatePicker value={exitDate} onChange={setExitDate} placeholder="미변경" className={inputCls} />
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">입력하면 선택한 {selectedIds.length}명 모두 같은 날짜로 저장됩니다. 기존 개별 날짜도 덮어씁니다. 일할 정산은 각 고객 카드에서 개별 진행하세요.</p>
+            </div>
+          )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0">
           <Btn type="button" variant="secondary" size="md" onClick={onClose} className="flex-1">

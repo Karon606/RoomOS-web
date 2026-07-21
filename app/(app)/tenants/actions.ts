@@ -2410,6 +2410,8 @@ export async function batchUpdateTenants(
     depositAmount?: number
     dueDay?: string | null
     status?: string
+    // 퇴실 예정일(YYYY-MM-DD) — status 가 CHECKOUT_PENDING 일 때만 유효(신고 204522b7). 빈 값 = 미변경.
+    expectedMoveOut?: string
   },
 ): Promise<{ ok: true; tenantCount: number; leaseCount: number; undo: BatchTenantsUndo } | { ok: false; error: string }> {
   try {
@@ -2425,6 +2427,11 @@ export async function batchUpdateTenants(
     if ('depositAmount' in data && data.depositAmount != null) leaseFields.depositAmount = data.depositAmount
     if ('dueDay' in data) leaseFields.dueDay = data.dueDay
     if ('status' in data && data.status) leaseFields.status = data.status
+    // 퇴실 예정일 — 퇴실 예정 전환과 함께일 때만. 단건 경로(updateTenant)와 동일하게 단기 자동 전환 기록 리셋(재무장)
+    if (data.status === 'CHECKOUT_PENDING' && data.expectedMoveOut) {
+      leaseFields.expectedMoveOut = new Date(data.expectedMoveOut)
+      leaseFields.autoCheckoutAt = null
+    }
 
     let tenantCount = 0
     let leaseCount = 0
@@ -2451,7 +2458,7 @@ export async function batchUpdateTenants(
           tenantId: { in: tenantIds },
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
-        select: { id: true, depositAmount: true, dueDay: true, status: true },
+        select: { id: true, depositAmount: true, dueDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true },
       })
       undo.leases = before.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(leaseFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
       const r = await prisma.leaseTerm.updateMany({
