@@ -8,6 +8,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
+import { SendDocButton } from '@/components/ui/SendDocButton'
 
 type Fields = {
   name: string; room: string; period: string; targetMonth: string
@@ -144,6 +145,17 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
             {previewing ? '여는 중…' : '미리보기·인쇄'}
           </Btn>
+          {/* 발급 직후 전송 동선 — 실거주확인서 발급 화면과 동일 클래스(사진/PDF 형식 선택, 운영자 확인 2026-07-22) */}
+          <SendDocButton fileName={`${data.name}_입실료납부확인서`}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 font-medium transition-colors bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)] px-4 py-2.5 text-sm min-h-[44px] rounded-lg disabled:opacity-50"
+            getPdfBytes={async () => {
+              const res = await fetch('/api/rent-receipt/generate', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload(), preview: true }),
+              })
+              if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+              return res.arrayBuffer()
+            }} />
           <Btn variant="primary" className="flex-1" onClick={handleIssue} disabled={issuing}>
             {issuing ? '발급 중…' : '발급 (PDF 저장)'}
           </Btn>
