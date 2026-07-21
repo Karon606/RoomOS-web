@@ -672,7 +672,12 @@ export default function RoomsClient({
             </InfoHint>
           </p>
           {maxSum > expectedSum && (
-            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {fmtWon(maxSum)}</span>
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {fmtWon(maxSum)}
+              {/* 단기·할인 계약이 공실 기준가를 대체하면 값이 내려가는 위화감 방지(운영자 질문 2026-07-22) */}
+              <InfoHint title="만실 시">
+                현재 계약들의 이 달 청구액에 공실만 기준 임대료로 채워 더한 참고치입니다. 단기·할인 계약은 실제 계약가로 계산되므로, 기준가보다 싼 계약이 공실을 채우면 이 값은 내려갑니다. 만실 시에서 예상을 뺀 값이 이 달 공실 손실입니다.
+              </InfoHint>
+            </span>
           )}
         </div>
         <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
