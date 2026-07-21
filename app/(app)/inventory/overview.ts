@@ -551,6 +551,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       qtyUnit: it.qtyUnit,
       alertThresholdDays: it.alertThresholdDays,
       effectiveAlertDays,
+      createdAt: it.createdAt.toISOString(),
       reorderMemo: it.reorderMemo,
       purchaseUrl: it.purchaseUrl,
       memo: it.memo,

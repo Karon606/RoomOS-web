@@ -154,7 +154,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   }
   const [isPending, startTransition] = useTransition()
   const [showAdd, setShowAdd]             = useState(false)
-  const [openMenu, setOpenMenu]           = useState<'input' | 'manage' | null>(null)   // 헤더 그룹 버튼(입력·점검 / 관리·설정)
+  const [openMenu, setOpenMenu]           = useState<'input' | 'manage' | 'sort' | null>(null)   // 헤더 그룹 버튼(입력·점검 / 관리·설정 / 정렬)
   const [showLocations, setShowLocations] = useState(false)
   const [detailId, setDetailId]           = useState<string | null>(null)
   // 상세 진입 시 시작 모드 — 기본은 보기, '다음 품목' 이어가기로 열면 점검 폼부터(아이템별 연속 점검)
@@ -289,7 +289,12 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     const catRows = visibleRows.filter(r => r.category === cat)
     const ord = itemOrder[cat]
     // 낙관적 순서 override 적용 — override에 없는 id(다른 새로고침으로 새로 들어온 품목)는 뒤로.
-    const sorted = ord
+    // 정렬 프리셋은 표시 전용 — 순서 편집 모드에선 무시하고 항상 수동 순서를 보여준다(편집 대상과 화면 일치).
+    const sorted = !orderEditMode && sortPreset === 'name'
+      ? [...catRows].sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+      : !orderEditMode && sortPreset === 'newest'
+      ? [...catRows].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      : ord
       ? [...catRows].sort((a, b) => rankInOrder(ord, a.id) - rankInOrder(ord, b.id))
       : catRows
     return { cat, alias: aliasOf(cat), rows: sorted }
@@ -308,6 +313,21 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const pickCatTab = (v: string) => {
     setCatTab(v)
     try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
+  }
+  // 정렬 프리셋(표시 전용, 운영자 메모 2026-07-18 → 승인 2026-07-22) — 수동 순서가 기본,
+  // 가나다·최근 추가는 화면 정렬만 바꾸고 수동 sortOrder 는 보존. 순서 편집 모드는 항상 수동 기준.
+  const [sortPreset, setSortPreset] = useState<'manual' | 'name' | 'newest'>('manual')
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('stayeum-inventory-sort')
+      // 마운트 후 1회 복원 — 하이드레이션 정합을 위한 의도된 setState(연쇄 렌더 아님)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (v === 'name' || v === 'newest') setSortPreset(v)
+    } catch { /* 무시 */ }
+  }, [])
+  const pickSortPreset = (v: 'manual' | 'name' | 'newest') => {
+    setSortPreset(v)
+    try { localStorage.setItem('stayeum-inventory-sort', v) } catch { /* 무시 */ }
   }
   const searching = search.trim().length > 0
   // v2.0 §27 — 검색은 현재 탭 스코프 안에서. 스코프 밖 일치는 아래 힌트 한 줄로 안내(자동 해제 금지).
@@ -436,6 +456,27 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             {viewMode === 'item' && canEditUi && rows.length > 0 && (
             <Btn variant="secondary" size="md" onClick={() => { setSearch(''); exitSelectMode(); setOrderEditMode(true) }}>순서 편집</Btn>
             )}
+            {/* 정렬 프리셋 — 표시 순서만 전환(수동 순서 보존). 기능군 버튼+하위 메뉴 문법 */}
+            <div className="relative">
+              <Btn variant="secondary" size="md" onClick={() => setOpenMenu(v => v === 'sort' ? null : 'sort')}>정렬{sortPreset === 'name' ? ': 가나다' : sortPreset === 'newest' ? ': 최근 추가' : ''}</Btn>
+              {openMenu === 'sort' && (
+                <>
+                  <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
+                  <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
+                    {([
+                      { v: 'manual' as const, label: '수동 순서 (기본)', desc: '순서 편집에서 정한 순서' },
+                      { v: 'name' as const, label: '가나다순', desc: '품목 이름순 표시' },
+                      { v: 'newest' as const, label: '최근 추가순', desc: '새로 만든 품목이 위로' },
+                    ]).map(o => (
+                      <button key={o.v} type="button" onClick={() => { setOpenMenu(null); pickSortPreset(o.v) }}
+                        className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--canvas)] ${sortPreset === o.v ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-dark)]'}`}>
+                        {o.label}<span className="block text-[0.65625rem] font-normal text-[var(--warm-muted)]">{o.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             {/* 성격별 그룹 버튼 — 잡동사니 더보기 대신 기능군마다 버튼 + 하위 메뉴(운영자 지시 2026-07-06) */}
             <div className="relative">
               <Btn variant="secondary" size="md" onClick={() => setOpenMenu(v => v === 'input' ? null : 'input')}>입력·점검</Btn>

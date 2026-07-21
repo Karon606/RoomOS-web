@@ -45,6 +45,7 @@ export type InventoryRow = {
   alertThresholdDays: number
   // 실효 알림 임계값 = max(설정 D-N, 재주문 리드타임 + 2일) — 판정·표시는 이 값, 설정 폼은 원값(신고 edffb4a7)
   effectiveAlertDays: number
+  createdAt: string            // 품목 생성일 ISO — 정렬 프리셋 '최근 추가순'용
   reorderMemo: string | null
   purchaseUrl: string | null       // 구매 링크 (쿠팡·아마존 등)
   memo: string | null              // 재고 파악 기준 등 자유 메모
