@@ -45,6 +45,7 @@ import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { formatBizNoInput } from '@/lib/bizNo'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
@@ -66,7 +67,7 @@ type FAcc = { brand: string; alias: string | null }
 
 type Expense = {
   id: string; date: Date; amount: number; category: string
-  detail: string | null; vendor: string | null; memo: string | null; payMethod: string | null
+  detail: string | null; vendor: string | null; vendorBizNo: string | null; memo: string | null; payMethod: string | null
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
@@ -1404,6 +1405,7 @@ export default function FinanceClient({
   const userPickedCategoryRef = useRef(false)
   // 영수증 스캔 (공통)
   const [addExpVendor, setAddExpVendor]       = useState('')
+  const [addExpBizNo, setAddExpBizNo]         = useState('')   // 구매처 사업자등록번호 — 입력 중 자동 하이픈 포맷
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
   const [addExpDetail, setAddExpDetail]       = useState('')
   const [addHasShipping, setAddHasShipping]   = useState(false)              // 배송비 포함 여부 (기본 무료, 총액 합산형)
@@ -1466,6 +1468,7 @@ export default function FinanceClient({
   const applyReceiptOcrToForm = async (d: ReceiptOcrResult) => {
     if (d.date) setAddExpDate(d.date)
     if (d.vendor) setAddExpVendor(d.vendor)
+    if (d.vendorBizNo) setAddExpBizNo(formatBizNoInput(d.vendorBizNo))
     if (d.orderNo) setAddExtOrderNo(d.orderNo)
     if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
     if (d.items.length > 0) {
@@ -1644,7 +1647,7 @@ export default function FinanceClient({
     setShowExpExcel(false)
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
-  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
+  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -2017,6 +2020,8 @@ export default function FinanceClient({
         setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
         pushToast('success', '지출 등록됨')
+        // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
+        if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
       } finally { release() }
     })
   }
@@ -2073,6 +2078,8 @@ export default function FinanceClient({
         }
         setDetailExp(null); setDetailExpEdit(false); setEditShipSeparate(false); router.refresh()
         pushToast('success', '지출 수정됨')
+        // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
+        if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
       } finally { release() }
     })
   }
@@ -3326,6 +3333,7 @@ export default function FinanceClient({
                   <DetailRow label="날짜"        value={fmtDate(detailExp.date)} />
                   <DetailRow label="카테고리"    value={detailExp.category} />
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
+                  {detailExp.vendorBizNo && <DetailRow label="사업자등록번호" value={detailExp.vendorBizNo} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
                   <DetailRow label="금액"        value={<span className="text-[var(--danger-fg)] font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
                   {/* #1 관리비 묶음: 세부 내역(breakdownJson)이 있으면 펼쳐 표시 */}
@@ -3513,6 +3521,13 @@ export default function FinanceClient({
                     <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소" list="edit-exp-vendors"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     <datalist id="edit-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">사업자등록번호 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+                    {/* 구매처와 동일하게 비제어(defaultValue) — 입력 중 하이픈은 DOM 값을 직접 다시 포맷(저장 시 서버가 재정규화) */}
+                    <input type="text" name="vendorBizNo" inputMode="numeric" defaultValue={formatBizNoInput(detailExp.vendorBizNo ?? '')}
+                      onChange={e => { e.currentTarget.value = formatBizNoInput(e.currentTarget.value) }} placeholder="000-00-00000"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                   </div>
                   {(
                     <div className="space-y-1.5">
@@ -3823,6 +3838,11 @@ export default function FinanceClient({
                   <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소" list="add-exp-vendors"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">사업자등록번호 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+                  <input type="text" name="vendorBizNo" inputMode="numeric" value={addExpBizNo} onChange={e => setAddExpBizNo(formatBizNoInput(e.target.value))} placeholder="000-00-00000"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                 </div>
                 {/* #1 쇼핑몰 주문번호 — 영수증 OCR로 자동입력되며 수동 수정 가능. 진위확인·재주문 참조용(보조). */}
                 {!addIsService && (

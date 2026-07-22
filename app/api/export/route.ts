@@ -60,6 +60,7 @@ type ExpenseRow = {
   category: string
   detail: string | null
   vendor: string | null
+  vendorBizNo: string | null
   amount: number
   payMethod: string | null
   financeName: string | null
@@ -73,6 +74,7 @@ function mapExpenseRow(e: ExpenseRow) {
     '카테고리':  e.category,
     '세부항목':  e.detail ?? '',
     '구매처':    e.vendor ?? '',
+    '사업자등록번호': e.vendorBizNo ?? '',
     '금액':      e.amount,
     '결제수단':  e.payMethod ?? '',
     '카드/계좌': e.financeName || fmtAccount(e.financialAccount),

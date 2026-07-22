@@ -21,6 +21,7 @@ import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { normalizeBizNo } from '@/lib/bizNo'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -484,7 +485,23 @@ async function captureItemSpecOptions(propertyId: string, items: ItemPick[]): Pr
   }
 }
 
-export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+// 사업자등록번호 소급 보정 — 같은 구매처의 과거 지출 중 번호가 비어(NULL) 있는 행에만 이 번호를 채운다.
+// 항목 신설로 과거 누락분을 새 인식이 들어올 때마다 소급 보정 — 과거 이력이 정리되면 제거 가능(운영자 2026-07-23).
+// 이미 다른 번호가 있는 행은 덮어쓰지 않는다(NULL 만 채움 — 잘못된 전파 방지). best-effort(실패해도 저장은 유지).
+async function backfillVendorBizNo(propertyId: string, vendor: string | null, bizNo: string | null): Promise<number> {
+  if (!vendor || !bizNo) return 0
+  try {
+    const r = await prisma.expense.updateMany({
+      where: { propertyId, vendor, vendorBizNo: null },
+      data: { vendorBizNo: bizNo },
+    })
+    return r.count
+  } catch {
+    return 0
+  }
+}
+
+export async function addExpense(formData: FormData): Promise<{ ok: true; backfilled?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -493,6 +510,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const category  = formData.get('category') as string
     const detail    = formData.get('detail') as string
     const vendor    = formData.get('vendor') as string
+    const vendorBizNo = normalizeBizNo(formData.get('vendorBizNo') as string)   // 빈 값·잘못된 길이면 null
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
@@ -580,6 +598,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       date:               new Date(date),
       category,
       vendor:             vendor || null,
+      vendorBizNo:        vendorBizNo,
       memo:               memo || null,
       payMethod:          payMethod || '계좌이체',
       financialAccountId: financialAccountId || null,
@@ -605,6 +624,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
             amount:             orderShipping,
             detail:             `배송비${orderShippingType ? ` (${orderShippingType})` : ''}`,
             vendor:             vendor || null,
+            vendorBizNo:        vendorBizNo,
             memo:               orderShippingMemo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -648,8 +668,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
       await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
+      const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
-      return { ok: true }
+      return { ok: true, backfilled }
     }
 
     const singleCreate = prisma.expense.create({
@@ -674,8 +695,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
     if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel]).catch(() => {})
+    const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, backfilled }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -709,7 +731,7 @@ async function propagateItemLabelRename(
   return true
 }
 
-export async function updateExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function updateExpense(formData: FormData): Promise<{ ok: true; backfilled?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -719,6 +741,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const category  = formData.get('category') as string
     const detail    = formData.get('detail') as string
     const vendor    = formData.get('vendor') as string
+    const vendorBizNo = normalizeBizNo(formData.get('vendorBizNo') as string)   // 빈 값·잘못된 길이면 null
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
@@ -783,6 +806,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             category,
             detail:    detailOf(firstRow),
             vendor:             vendor || null,
+            vendorBizNo:        vendorBizNo,
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -809,6 +833,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             category,
             detail:    detailOf(r),
             vendor:             vendor || null,
+            vendorBizNo:        vendorBizNo,
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
@@ -837,6 +862,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             category,
             detail:             '배송비',
             vendor:             vendor || null,
+            vendorBizNo:        vendorBizNo,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
             financeName:        financeName || null,
@@ -847,8 +873,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         })] : []),
       ])
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
+      const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
-      return { ok: true }
+      return { ok: true, backfilled }
     }
 
     await prisma.expense.update({
@@ -858,6 +885,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         amount, category,
         detail:             detail || null,
         vendor:             vendor || null,
+        vendorBizNo:        vendorBizNo,
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
@@ -889,8 +917,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         if (await propagateItemLabelRename(propertyId, category, existing.itemLabel, itemLabel)) revalidatePath('/inventory')
       } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
     }
+    const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, backfilled }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
