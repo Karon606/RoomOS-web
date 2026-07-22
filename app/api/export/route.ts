@@ -75,6 +75,7 @@ function mapExpenseRow(e: ExpenseRow) {
     '날짜':      fmtDate(e.date),
     '카테고리':  e.category,
     '세부항목':  e.detail ?? '',
+    '구매처':    e.vendor ?? '',
     '금액':      e.amount,
     '결제수단':  e.payMethod ?? '',
     '카드/계좌': e.financeName || fmtAccount(e.financialAccount),
