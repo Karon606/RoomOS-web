@@ -671,6 +671,7 @@ model Expense {
   category     String
   detail       String?
   vendor       String?
+  vendorBizNo  String?      // 구매처 사업자등록번호(000-00-00000) — 영수증 인식·수기 입력, 동일 구매처 과거 행 보정 전파(운영자 요청 2026-07-23)
   memo         String?
   payMethod    String?
   settleStatus  SettleStatus @default(SETTLED)
