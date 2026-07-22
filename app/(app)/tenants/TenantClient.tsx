@@ -1903,7 +1903,7 @@ export default function TenantClient({
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
-                  <TenantForm rooms={rooms} tenant={t} error={error} contactLeadDays={contactLeadDays} />
+                  <TenantForm rooms={rooms} tenant={t} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" onClick={closeEdit} className="flex-1">취소</Btn>
@@ -1964,7 +1964,7 @@ export default function TenantClient({
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
-              <TenantForm rooms={rooms} tenant={editTenant} error={error} contactLeadDays={contactLeadDays} />
+              <TenantForm rooms={rooms} tenant={editTenant} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
                   className="flex-1">
@@ -2831,6 +2831,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(본국 연락처 숨김)
+  const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
@@ -2892,17 +2893,28 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 단기 희망(isShortTerm)도 모두 수기 입력 → 자동입력 제외
   const NO_AUTOFILL_STATUSES = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED', 'NON_RESIDENT']
   const isNoAutoFill = (s: string, shortTerm: boolean) => shortTerm || NO_AUTOFILL_STATUSES.includes(s)
+  // 저장값이 0(미입력)이면 계약 단계에서 기본값 프리필 — LeaseTerm.depositAmount 는 @default(0) non-null 이라
+  // '미입력'과 '0원'이 같은 값이다. 이미 입력된 값(계약자)은 유지, 리드·단기는 프리필 제외.
+  // 계약서 발급 전 빈 보증금·청소비에 환경설정 기본값을 채운다(운영자 승인 2026-07-23, 이상경 418호 건).
+  const pickAutoFill = (saved: number | undefined, dflt: number | null | undefined, s: string, shortTerm: boolean): number | undefined => {
+    if (saved && saved > 0) return saved
+    if (isNoAutoFill(s, shortTerm)) return undefined
+    return dflt ?? undefined
+  }
   const [depositAmountVal, setDepositAmountVal] = useState<number | undefined>(
-    lease?.depositAmount ?? (isNoAutoFill(statusVal, isShortTerm) ? undefined : (defaultDeposit ?? undefined))
+    pickAutoFill(lease?.depositAmount, defaultDeposit, statusVal, isShortTerm)
   )
   const [cleaningFeeVal, setCleaningFeeVal] = useState<number | undefined>(
-    lease?.cleaningFee ?? (isNoAutoFill(statusVal, isShortTerm) ? undefined : (defaultCleaningFee ?? undefined))
+    pickAutoFill(lease?.cleaningFee, defaultCleaningFee, statusVal, isShortTerm)
   )
   // status 또는 단기 토글 변경 시 default 재적용
   useEffect(() => {
-    setDepositAmountVal(isNoAutoFill(statusVal, isShortTerm) ? (lease?.depositAmount ?? undefined) : (lease?.depositAmount ?? defaultDeposit ?? undefined))
-    setCleaningFeeVal(isNoAutoFill(statusVal, isShortTerm) ? (lease?.cleaningFee ?? undefined) : (lease?.cleaningFee ?? defaultCleaningFee ?? undefined))
+    setDepositAmountVal(pickAutoFill(lease?.depositAmount, defaultDeposit, statusVal, isShortTerm))
+    setCleaningFeeVal(pickAutoFill(lease?.cleaningFee, defaultCleaningFee, statusVal, isShortTerm))
   }, [statusVal, isShortTerm]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 저장값 없이 환경설정 기본값이 프리필된 상태인지 — 무보증(0원) 계약이 조용히 덮이지 않도록 안내 캡션용(패널 지적)
+  const isAutoFilled = (val: number | undefined, saved: number | undefined, dflt: number | null | undefined) =>
+    !isNoAutoFill(statusVal, isShortTerm) && !(saved && saved > 0) && (dflt ?? 0) > 0 && val === dflt
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
@@ -2940,6 +2952,18 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
     const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
     applyDueDay(day >= lastDay ? '말일' : String(day))
   }
+
+  // 신규 등록: 입주일 기준으로 납부일 자동 파생. 입주일 onChange 도 파생하지만 입주일을 손대지 않으면
+  // 납부일이 빈 채로 저장되던 문제(운영자 요청 2026-07-23). 상태 전환(리드→거주 등) 시에도 재파생해
+  // '리드로 등록 후 거주로 바꾸면 빈 납부일' 흐름까지 봉합(패널 지적). 기존 lease.dueDay 는 안 덮음.
+  useEffect(() => {
+    if (!tenant && !dueDayRaw && moveInDateVal && !roomIsOptional) {
+      const d = new Date(moveInDateVal)
+      const day = d.getDate()
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+      applyDueDay(day >= lastDay ? '말일' : String(day))
+    }
+  }, [statusVal, roomIsOptional]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const showExitDate = ['CHECKOUT_PENDING', 'CHECKED_OUT'].includes(statusVal)
   const moveInLabel = roomIsOptional ? '입주희망일' : '입주일'
@@ -3017,16 +3041,18 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
       <FormSection title="연락처">
         <div className="grid grid-cols-3 gap-2">
-          <SelectField label="연락 수단" name="contactType" defaultValue={primary?.contactType ?? 'PHONE'}>
-            <option value="PHONE">전화</option>
+          <SelectField label="연락 수단" name="contactType" value={contactTypeVal} onChange={setContactTypeVal}>
+            <option value="PHONE">휴대전화</option>
+            <option value="LANDLINE">일반전화</option>
             <option value="KAKAO">카카오</option>
             <option value="WECHAT">위챗</option>
             <option value="LINE">라인</option>
             <option value="TELEGRAM">텔레그램</option>
+            <option value="FACEBOOK">페이스북</option>
           </SelectField>
           <div className="col-span-2 space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
-            <PhoneInput name="contactValue" defaultValue={primary?.contactValue ?? ''} />
+            <ContactValueInput name="contactValue" defaultValue={primary?.contactValue ?? ''} contactType={contactTypeVal} />
           </div>
         </div>
         <Field label="이메일" name="email" type="email" defaultValue={tenant?.email ?? ''} placeholder="example@email.com" />
@@ -3391,6 +3417,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             onChange={setDepositAmountVal}
             placeholder="0원"
           />
+          {isAutoFilled(depositAmountVal, lease?.depositAmount, defaultDeposit) && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본값을 불러왔습니다. 무보증이면 0으로 지우세요.</p>
+          )}
           {(depositAmountVal ?? 0) > 0 && (
             <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
               <input type="checkbox" name="depositReceived" value="1" className="w-3.5 h-3.5 accent-[var(--coral)]" />
@@ -3408,6 +3437,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               onChange={setCleaningFeeVal}
               placeholder="0원"
             />
+            {isAutoFilled(cleaningFeeVal, lease?.cleaningFee, defaultCleaningFee) && (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본값을 불러왔습니다. 없으면 0으로 지우세요.</p>
+            )}
           </div>
           {!roomIsOptional && (
             <div className="space-y-1.5">
@@ -3453,6 +3485,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               placeholder="15일, 말일 등"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
             />
+            {!tenant && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
           </div>
           {showExitDate && (
             <Field label="퇴실일" name="expectedMoveOut" type="date" defaultValue={toDateInput(lease?.expectedMoveOut)} />
@@ -3522,6 +3555,35 @@ function FormSection({ title, children }: { title: string; children: React.React
   )
 }
 
+// 연락수단별 연락처 입력 예시(placeholder). 전화계열은 자동 하이픈, 메신저는 아이디 그대로.
+const CONTACT_PLACEHOLDER: Record<string, string> = {
+  PHONE: '010-0000-0000',
+  LANDLINE: '02-0000-0000',
+  KAKAO: '카카오톡 ID',
+  WECHAT: '위챗 ID',
+  LINE: '라인 ID',
+  TELEGRAM: '@텔레그램 아이디',
+  FACEBOOK: 'facebook.com/프로필 또는 ID',
+}
+
+// 연락처 입력 — 연락수단(contactType)에 따라 전화계열이면 자동 하이픈 포맷, 메신저면 아이디 원문.
+// 전환 시 기존 값은 재포맷하지 않고 보존한다(전에는 마운트 이펙트가 하이픈·문자 든 메신저 ID를
+// 조용히 훼손했다 — 전문가 패널 지적). 초기값만 현재 타입에 맞춰 표시하고, 이후 입력부터 새 포맷 적용.
+function ContactValueInput({ name, defaultValue, contactType }: { name: string; defaultValue?: string; contactType: string }) {
+  const isPhone = contactType === 'PHONE' || contactType === 'LANDLINE'
+  const [value, setValue] = useState(defaultValue ? (isPhone ? formatPhone(defaultValue) : defaultValue) : '')
+  return (
+    <input
+      type={isPhone ? 'tel' : 'text'}
+      name={name}
+      value={value}
+      onChange={e => setValue(isPhone ? formatPhone(e.target.value) : e.target.value)}
+      placeholder={CONTACT_PLACEHOLDER[contactType] ?? ''}
+      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
+    />
+  )
+}
+
 function DateFieldInner({ name, defaultValue, placeholder }: { name: string; defaultValue?: string; placeholder?: string }) {
   const [val, setVal] = useState(defaultValue ?? '')
   return (
@@ -3548,13 +3610,17 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
   )
 }
 
-function SelectField({ label, name, children, defaultValue, required }: {
-  label: string; name: string; children: React.ReactNode; defaultValue?: string; required?: boolean
+// value/onChange 를 주면 controlled, 아니면 defaultValue uncontrolled (배타 사용).
+function SelectField({ label, name, children, defaultValue, value, onChange, required }: {
+  label: string; name: string; children: React.ReactNode
+  defaultValue?: string; value?: string; onChange?: (v: string) => void; required?: boolean
 }) {
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
-      <select name={name} defaultValue={defaultValue} required={required}
+      <select name={name}
+        {...(value === undefined ? { defaultValue } : { value, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => onChange?.(e.target.value) })}
+        required={required}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0">
         {children}
       </select>

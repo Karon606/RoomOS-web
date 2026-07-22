@@ -184,7 +184,7 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
                 onChange={e => setNewJob(e.target.value)}
                 onKeyDown={handleAddKeyDown}
                 placeholder="직업 입력 후 Enter"
-                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
+                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
               />
               <button
                 type="button"
