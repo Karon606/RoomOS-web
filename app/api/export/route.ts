@@ -63,6 +63,7 @@ type ExpenseRow = {
   date: Date | null
   category: string
   detail: string | null
+  vendor: string | null
   amount: number
   payMethod: string | null
   financeName: string | null
