@@ -1577,6 +1577,10 @@ export default function FinanceClient({
   const [recError, setRecError]         = useState('')
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
+  // ── 지출 엑셀 내려받기 모달 (기간·시트 구분 선택) ────────────
+  const [showExpExcel, setShowExpExcel] = useState(false)
+  const [expExcelPeriod, setExpExcelPeriod] = useState<'month' | 'all'>('month')
+  const [expExcelGroup, setExpExcelGroup] = useState<'method' | 'account' | 'month'>('method')
   // ── 과거 구매내역 검색 모달 (전 기간) ────────────────────────
   const [showExpSearch, setShowExpSearch] = useState(false)
   const [expSearchQ, setExpSearchQ] = useState('')
@@ -1591,17 +1595,13 @@ export default function FinanceClient({
     else { setExpSearchQ(gq); setShowExpSearch(true) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // 지출 엑셀 내려받기 — 결제수단별 시트(계좌이체·신용카드·기타). 이번 달(현재 보고 있는 월) / 전체 기간 분기.
-  const handleExpenseExcel = async () => {
-    const choice = await choiceDialog({
-      title: '지출 엑셀 내려받기',
-      message: '결제수단별 시트(계좌이체·신용카드·기타)로 나눠 내려받습니다.',
-      confirmLabel: '이번 달',
-      altLabel: '전체 기간',
-      cancelLabel: '취소',
-    })
-    if (choice === 'confirm') window.location.href = `/api/export?only=expenses&month=${targetMonth}`
-    else if (choice === 'alt') window.location.href = '/api/export?only=expenses'
+  // 지출 엑셀 내려받기 — 기간(이번 달/전체)·시트 구분(결제수단별/카드·계좌별/월별)을 모달에서 선택.
+  const handleExpenseExcel = () => { setExpExcelPeriod('month'); setExpExcelGroup('method'); setShowExpExcel(true) }
+  const downloadExpenseExcel = () => {
+    const params = new URLSearchParams({ only: 'expenses', group: expExcelGroup })
+    if (expExcelPeriod === 'month') params.set('month', targetMonth)
+    window.location.href = `/api/export?${params.toString()}`
+    setShowExpExcel(false)
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
@@ -3155,6 +3155,55 @@ export default function FinanceClient({
               ))}
             </ul>
             <p className="px-6 pb-4 text-[0.65625rem] text-[var(--warm-muted)]">각 방 항목을 누르면 개별 수정·삭제할 수 있습니다.</p>
+        </Modal>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          모달: 지출 엑셀 내려받기 (기간·시트 구분 선택)
+      ══════════════════════════════════════════════════════════ */}
+      {showExpExcel && (
+        <Modal open onClose={() => setShowExpExcel(false)} width="sm"
+          title="지출 엑셀 내려받기"
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <Btn variant="secondary" size="md" onClick={() => setShowExpExcel(false)}>취소</Btn>
+              <Btn variant="primary" size="md" onClick={downloadExpenseExcel}>내려받기</Btn>
+            </div>
+          }>
+          <div className="p-6 space-y-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">기간</label>
+              <div>
+                <SegmentedControl
+                  size="md" ariaLabel="기간"
+                  value={expExcelPeriod} onChange={setExpExcelPeriod}
+                  options={[
+                    { value: 'month', label: '이번 달' },
+                    { value: 'all', label: '전체 기간' },
+                  ]}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">시트 구분</label>
+              <div>
+                <SegmentedControl
+                  size="md" ariaLabel="시트 구분"
+                  value={expExcelGroup} onChange={setExpExcelGroup}
+                  options={[
+                    { value: 'method', label: '결제수단별' },
+                    { value: 'account', label: '카드·계좌별' },
+                    { value: 'month', label: '월별' },
+                  ]}
+                />
+              </div>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                {expExcelGroup === 'method' ? '계좌이체·신용카드·기타 3시트'
+                  : expExcelGroup === 'account' ? '등록된 카드·계좌마다 시트 1장'
+                  : '월마다 시트 1장'}
+              </p>
+            </div>
+          </div>
         </Modal>
       )}
 

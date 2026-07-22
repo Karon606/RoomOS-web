@@ -103,6 +103,36 @@ function buildExpenseSheet(rows: ExpenseRow[]): XLSX.WorkSheet {
   return ws
 }
 
+// 지출 카드·계좌별 그룹 키 — '카드/계좌' 열과 동일 표시값(financeName || 계좌표시), 없으면 결제수단명, 그것도 없으면 '미지정'.
+function expenseAccountKey(e: ExpenseRow): string {
+  const name = e.financeName || fmtAccount(e.financialAccount)
+  if (name) return name
+  if (e.payMethod) return e.payMethod
+  return '미지정'
+}
+
+// 지출 월별 그룹 키 — 날짜 기준 'YYYY-MM'.
+function expenseMonthKey(d: Date | null): string {
+  if (!d) return '날짜없음'
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// 엑셀 시트명 제약 준수 — 금지문자(\ / ? * [ ] :) 제거, 31자 이내, 빈 값은 '미지정'.
+function sanitizeSheetName(raw: string): string {
+  const cleaned = raw.replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31).trim()
+  return cleaned || '미지정'
+}
+
+// 시트명 중복 방지 — 이미 쓴 이름이면 숫자 접미(-2, -3 …), 31자 넘지 않게 잘라 붙인다.
+function uniqueSheetName(base: string, used: Set<string>): string {
+  if (!used.has(base)) { used.add(base); return base }
+  for (let i = 2; ; i++) {
+    const suffix = `-${i}`
+    const name = base.slice(0, 31 - suffix.length) + suffix
+    if (!used.has(name)) { used.add(name); return name }
+  }
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -116,9 +146,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
 
-  // ── 지출 전용 내보내기(결제수단별 시트) — 인증·권한 가드 통과 후에만 분기 ──
+  // ── 지출 전용 내보내기 — 시트 구분(결제수단별/카드·계좌별/월별). 인증·권한 가드 통과 후에만 분기 ──
   if (searchParams.get('only') === 'expenses') {
     const monthParam = searchParams.get('month')   // 없으면 전체 기간
+    const groupParam = (searchParams.get('group') ?? 'method') as 'method' | 'account' | 'month'
     let expDateRange: { gte: Date; lte: Date } | undefined
     if (monthParam) {
       const [ey, em] = monthParam.split('-').map(Number)
@@ -129,17 +160,51 @@ export async function GET(request: NextRequest) {
       include: { financialAccount: { select: { brand: true, alias: true } } },
       orderBy: { date: 'asc' },
     })
-    const groups: Record<'계좌이체' | '신용카드' | '기타', ExpenseRow[]> = {
-      계좌이체: [], 신용카드: [], 기타: [],
-    }
-    for (const e of expenses) groups[classifyExpensePayMethod(e.payMethod)].push(e)
 
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['계좌이체']), '지출-계좌이체')
-    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['신용카드']), '지출-신용카드')
-    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['기타']),   '지출-기타')
 
-    const filename = monthParam ? `지출내역_${monthParam}.xlsx` : '지출내역_전체.xlsx'
+    if (groupParam === 'account') {
+      // 카드·계좌별 — 표시값으로 묶고, 금액 합 내림차순으로 시트 배치. 시트명은 sanitize + 중복 접미.
+      const buckets = new Map<string, ExpenseRow[]>()
+      for (const e of expenses) {
+        const key = expenseAccountKey(e)
+        const arr = buckets.get(key); if (arr) arr.push(e); else buckets.set(key, [e])
+      }
+      const ordered = [...buckets.entries()].sort(
+        (a, b) => b[1].reduce((s, e) => s + e.amount, 0) - a[1].reduce((s, e) => s + e.amount, 0),
+      )
+      const used = new Set<string>()
+      for (const [key, rows] of ordered) {
+        XLSX.utils.book_append_sheet(wb, buildExpenseSheet(rows), uniqueSheetName(sanitizeSheetName(key), used))
+      }
+      // 0건이면 시트가 없어 빈 워크북 쓰기가 실패 — 헤더+합계 0 시트 1장 보장.
+      if (ordered.length === 0) XLSX.utils.book_append_sheet(wb, buildExpenseSheet([]), '지출')
+    } else if (groupParam === 'month') {
+      // 월별 — 'YYYY-MM' 키로 묶고 오름차순 배치. month 파라미터와 조합되면 그 달 1시트만 나온다(정상).
+      const buckets = new Map<string, ExpenseRow[]>()
+      for (const e of expenses) {
+        const key = expenseMonthKey(e.date)
+        const arr = buckets.get(key); if (arr) arr.push(e); else buckets.set(key, [e])
+      }
+      const ordered = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      for (const [key, rows] of ordered) {
+        XLSX.utils.book_append_sheet(wb, buildExpenseSheet(rows), key)
+      }
+      if (ordered.length === 0) XLSX.utils.book_append_sheet(wb, buildExpenseSheet([]), '지출')
+    } else {
+      // 결제수단별(기본) — 계좌이체·신용카드·기타 3시트(현행 동작 유지).
+      const groups: Record<'계좌이체' | '신용카드' | '기타', ExpenseRow[]> = {
+        계좌이체: [], 신용카드: [], 기타: [],
+      }
+      for (const e of expenses) groups[classifyExpensePayMethod(e.payMethod)].push(e)
+      XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['계좌이체']), '지출-계좌이체')
+      XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['신용카드']), '지출-신용카드')
+      XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['기타']),   '지출-기타')
+    }
+
+    const periodLabel = monthParam ?? '전체'
+    const groupLabel = groupParam === 'account' ? '카드계좌별' : groupParam === 'month' ? '월별' : '결제수단별'
+    const filename = `지출내역_${periodLabel}_${groupLabel}.xlsx`
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
     return new NextResponse(buf, {
       headers: {
