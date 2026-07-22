@@ -10,6 +10,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { deleteResidenceCertFile, restoreResidenceCertFile, type ResidenceCertListRow, type IssuableTenant } from './actions'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
@@ -117,7 +118,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">실거주 확인서
-          <InfoHint title="실거주 확인서란?">거주중 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
+          <InfoHint title="실거주 확인서란?">거주중·퇴실 예정·비거주 계약의 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
         </h1>
       </div>
 
@@ -138,8 +139,13 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                 <Link
                   href={`/residence-cert/${t.tenantId}`}
                   className="flex items-center justify-between gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 hover:border-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
-                  <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
-                    {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
+                  <span className="min-w-0 flex items-center gap-1.5">
+                    <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
+                      {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
+                    </span>
+                    {/* 상태 배지 — 비거주·퇴실 예정만(신고 ace54135). 정본 StatusBadge, /rooms 선례와 동일 톤 */}
+                    {t.status === 'NON_RESIDENT' && <StatusBadge tone="info" className="shrink-0">비거주</StatusBadge>}
+                    {t.status === 'CHECKOUT_PENDING' && <StatusBadge tone="exit" className="shrink-0">퇴실 예정</StatusBadge>}
                   </span>
                   <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
                 </Link>

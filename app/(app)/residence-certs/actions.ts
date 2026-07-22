@@ -50,26 +50,33 @@ export async function getAllResidenceCertFiles(): Promise<ResidenceCertListRow[]
   }))
 }
 
-export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: string | null }
+export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: string | null; status: string }
 
-// 발급 대상 — 현재 거주중(ACTIVE) 입실자. 호실 오름차순.
+// 발급 대상 — 거주중(ACTIVE)·퇴실 예정(CHECKOUT_PENDING)·비거주(NON_RESIDENT) 입실자. 호실 오름차순.
+// 비거주 등록자도 실거주확인서 발급이 필요하고(신고 ace54135), 퇴실 예정자는 아직 거주 중이라 포함한다(운영자 승인 2026-07-22).
+// 발급 목록 노출은 공실 집계(lib/vacancy)와 무관하다.
 export async function getIssuableTenants(): Promise<IssuableTenant[]> {
   const propertyId = await getPropertyId()
   const leases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: 'ACTIVE' },
+    where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     orderBy: [{ moveInDate: 'desc' }],
     select: {
+      status: true,
       tenant: { select: { id: true, name: true } },
       room: { select: { roomNo: true } },
     },
   })
-  // 입실자 중복 제거(여러 ACTIVE lease 가능성 대비) — 첫 항목 유지
+  // 입실자 중복 제거(여러 lease 가능성 대비) — 발급 상세(getResidenceCertData)와 동일하게
+  // 실거주 계약 우선(ACTIVE > CHECKOUT_PENDING > NON_RESIDENT). 거주·비거주 계약을 동시에 가진
+  // 입실자의 배지가 '비거주'로 잘못 붙지 않게 한다.
+  const PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, NON_RESIDENT: 2 }
+  const ranked = [...leases].sort((a, b) => (PRIORITY[a.status] ?? 99) - (PRIORITY[b.status] ?? 99))
   const seen = new Set<string>()
   const out: IssuableTenant[] = []
-  for (const l of leases) {
+  for (const l of ranked) {
     if (seen.has(l.tenant.id)) continue
     seen.add(l.tenant.id)
-    out.push({ tenantId: l.tenant.id, tenantName: l.tenant.name, roomNo: l.room?.roomNo ?? null })
+    out.push({ tenantId: l.tenant.id, tenantName: l.tenant.name, roomNo: l.room?.roomNo ?? null, status: l.status })
   }
   out.sort((a, b) => (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko', { numeric: true }) || a.tenantName.localeCompare(b.tenantName, 'ko'))
   return out

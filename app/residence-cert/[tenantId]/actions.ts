@@ -60,10 +60,12 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
       where: { id: tenantId, propertyId },
       include: {
         contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+        // 비거주 등록자·퇴실 예정자도 발급 대상(신고 ace54135). 같은 입주자가 거주·비거주 계약을
+        // 같은 방에 동시 보유할 수 있어 단순 take 1 이 아니라 조회 후 JS 에서 우선순위로 고른다.
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
+          take: 10,
         },
       },
     }),
@@ -78,7 +80,11 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
 
   if (!tenant) return null
 
-  const lease = tenant.leaseTerms[0] ?? null
+  // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
+  // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨).
+  const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
+  const lease = [...tenant.leaseTerms]
+    .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
