@@ -8,6 +8,7 @@ import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, undoDeleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
+  batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
@@ -1357,6 +1358,7 @@ export default function FinanceClient({
   // 다중선택 묶기 — 카드 꾹 누르면 선택 모드 진입, 탭으로 추가 선택, 하단 바에서 '한 주문으로 묶기'
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set())
+  const [showBatchEdit, setShowBatchEdit] = useState(false)   // 지출 일괄 편집 모달
   // 정본 useLongPress 로 통일(신고 2fdbffcb) — 수제 구현은 onPointerMove 에서 즉시 취소라
   // 터치의 미세 떨림에도 발화가 안 됐다(10px 슬롭 없음). 훅이 발화 후 click 도 캡처에서 삼킨다.
   const pressExp = useLongPress()
@@ -4526,10 +4528,26 @@ export default function FinanceClient({
     {/* 다중선택 묶기 — 하단 액션 바 */}
     {mergeMode && (
       <SelectionPillBar count={mergeSel.size} unit="건" onClose={exitMergeMode}>
-        <PillButton primary disabled={isPending || mergeSel.size < 2} onClick={handleMergeSelected}>
+        <PillButton primary disabled={mergeSel.size < 1} onClick={() => setShowBatchEdit(true)}>
+          일괄 편집
+        </PillButton>
+        <PillButton disabled={isPending || mergeSel.size < 2} onClick={handleMergeSelected}>
           한 주문으로 묶기
         </PillButton>
       </SelectionPillBar>
+    )}
+
+    {/* 지출 일괄 편집 모달 */}
+    {showBatchEdit && (
+      <BatchEditExpensesModal
+        selectedIds={[...mergeSel]}
+        selected={expenses.filter(e => mergeSel.has(e.id)).map(e => ({ settleStatus: e.settleStatus, payMethod: e.payMethod, recurringExpenseId: e.recurringExpenseId }))}
+        expenseCategories={expenseCategories}
+        paymentMethods={effectivePaymentMethods}
+        financialAccounts={financialAccounts}
+        onClose={() => setShowBatchEdit(false)}
+        onDone={() => { setShowBatchEdit(false); exitMergeMode(); router.refresh() }}
+      />
     )}
 
     {/* 영수증 스캔 모달 (전체화면) */}
@@ -4537,6 +4555,161 @@ export default function FinanceClient({
       <ReceiptScanModal bitmap={scanBitmap} onConfirm={handleScanConfirm} onCancel={handleScanCancel} />
     )}
     </>
+  )
+}
+
+// ── 지출 일괄 편집 모달 ────────────────────────────────────────────
+// 선택한 지출들의 공통 필드를 한 번에 수정. 전 필드 '미변경' 기본, 채운 항목만 전송(BatchEditTenantsModal 문법 이식).
+function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paymentMethods, financialAccounts, onClose, onDone }: {
+  selectedIds: string[]
+  selected: { settleStatus: string; payMethod: string | null; recurringExpenseId: string | null }[]
+  expenseCategories: string[]
+  paymentMethods: string[]
+  financialAccounts: FinancialAccount[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [date, setDate]         = useState('')
+  const [category, setCategory] = useState('')
+  const [payMethod, setPayMethod] = useState('')
+  const [accId, setAccId]       = useState('')
+  const [accNm, setAccNm]       = useState('')
+  const [detail, setDetail]     = useState('')
+  const [memo, setMemo]         = useState('')
+  const [pending, setPending]   = useState(false)
+  const [error, setError]       = useState('')
+  const [dirty, setDirty]       = useState(false)   // v2.0 §12
+
+  const cardAccounts    = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
+  const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
+  const prepaidAccounts = financialAccounts.filter(a => a.type === 'PREPAID')
+  const pickAcc = (id: string) => { setAccId(id); const found = financialAccounts.find(a => a.id === id); setAccNm(found ? accName(found) : '') }
+
+  // 위험 조합 인라인 경고 — 클라 선택 집합에서 건수 계산
+  const settledCardCount = selected.filter(s => s.settleStatus === 'SETTLED' && (s.payMethod === '신용카드' || s.payMethod === '체크카드')).length
+  const recurringCount   = selected.filter(s => !!s.recurringExpenseId).length
+
+  // 변경 요약 1줄 — 채운 필드만
+  const summarySegs: string[] = []
+  if (date) summarySegs.push(`날짜가 ${date}로`)
+  if (category) summarySegs.push(`카테고리가 ${category}로`)
+  if (payMethod) summarySegs.push(`결제수단이 ${payMethod}${accNm ? `(${accNm})` : ''}로`)
+  if (detail.trim()) summarySegs.push(`세부항목이 '${detail.trim()}'로`)
+  if (memo.trim()) summarySegs.push('메모가')
+
+  const handleApply = async () => {
+    const data: Parameters<typeof batchUpdateExpenses>[1] = {}
+    if (date) data.date = date
+    if (category) data.category = category
+    if (payMethod) { data.payMethod = payMethod; data.financialAccountId = accId || null; data.financeName = accNm || null }
+    if (detail.trim()) data.detail = detail.trim()
+    if (memo.trim()) data.memo = memo.trim()
+
+    if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
+
+    setPending(true); setError('')
+    const res = await batchUpdateExpenses(selectedIds, data)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    const u: BatchExpensesUndo = res.undo
+    const skipMsg = res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : ''
+    pushToast('success', `지출 ${res.updated}건 업데이트 완료${skipMsg}`, {
+      action: { label: '적용취소', run: () => { void undoBatchUpdateExpenses(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다'); else pushToast('error', r.error) }) } },
+    })
+    onDone()
+  }
+
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <Modal open onClose={onClose} width="md" dirty={dirty}
+      title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
+      <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
+        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
+
+        {/* 위험 조합 경고 */}
+        {payMethod && settledCardCount > 0 && (
+          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">정산완료된 카드 지출 {settledCardCount}건이 포함되어 있습니다. 결제수단을 변경하면 정산 상태가 다시 계산됩니다.</p>
+        )}
+        {date && recurringCount > 0 && (
+          <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-3 py-2">고정지출에서 기록된 지출 {recurringCount}건은 날짜 변경에서 제외됩니다.</p>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">날짜</label>
+          <DatePicker value={date} onChange={setDate} placeholder="미변경" className={inputCls} />
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">다른 달로 변경하면 이 달 목록에서는 보이지 않습니다.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
+          <select value={category} onChange={e => setCategory(e.target.value)} className={inputCls}>
+            <option value="">미변경</option>
+            {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
+          <select value={payMethod} onChange={e => { setPayMethod(e.target.value); setAccId(''); setAccNm('') }} className={inputCls}>
+            <option value="">미변경</option>
+            {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        {payMethod === '계좌이체' && bankAccounts.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
+            <select value={accId} onChange={e => pickAcc(e.target.value)} className={inputCls}>
+              <option value="">선택 안함</option>
+              {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+            </select>
+          </div>
+        )}
+        {(payMethod === '신용카드' || payMethod === '체크카드') && cardAccounts.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">카드 선택</label>
+            <select value={accId} onChange={e => pickAcc(e.target.value)} className={inputCls}>
+              <option value="">선택 안함</option>
+              {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+            </select>
+          </div>
+        )}
+        {prepaidAccounts.length > 0 && prepaidAccounts.some(a => payMethod === a.brand || payMethod === accName(a)) && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택</label>
+            <select value={accId} onChange={e => pickAcc(e.target.value)} className={inputCls}>
+              <option value="">선택 안함</option>
+              {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">세부항목</label>
+          <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="미변경" className={inputCls} />
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">품목이 등록된 지출은 품목 정보가 우선되어 변경되지 않습니다.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+          <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="미변경" className={inputCls} />
+        </div>
+      </div>
+      {summarySegs.length > 0 && (
+        <div className="px-6 pb-2">
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">적용 시 {selectedIds.length}건의 {summarySegs.join(', ')} 변경됩니다.</p>
+        </div>
+      )}
+      <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0">
+        <Btn type="button" variant="secondary" size="md" onClick={onClose} className="flex-1">
+          취소
+        </Btn>
+        <Btn type="button" variant="primary" size="md" onClick={handleApply} disabled={pending}
+          className="flex-1 font-semibold">
+          {pending ? '적용 중…' : '적용'}
+        </Btn>
+      </div>
+    </Modal>
   )
 }
 

@@ -926,6 +926,143 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
   }
 }
 
+// ── 지출 일괄 편집 — 여러 지출의 공통 필드를 한 번에 수정(적용취소 포함)
+// 스킵 규칙: 배송비 라인(전 필드) / 날짜 변경 시 고정지출 기록 / 카테고리·세부항목 변경 시 품목 등록 지출.
+// settleStatus 는 updateExpense 규칙 그대로 행별 재계산(신용카드=UNSETTLED, 그 외 SETTLED).
+export type BatchExpensesUndo = {
+  rows: { id: string; fields: Record<string, unknown> }[]
+}
+
+export async function batchUpdateExpenses(
+  expenseIds: string[],
+  data: {
+    payMethod?: string
+    financialAccountId?: string | null
+    financeName?: string | null
+    date?: string
+    category?: string
+    detail?: string | null
+    memo?: string | null
+  },
+): Promise<{ ok: true; updated: number; skipped: { reason: string; count: number }[]; undo: BatchExpensesUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (expenseIds.length === 0) return { ok: false, error: '선택된 지출이 없습니다.' }
+
+    const wantsPayMethod = data.payMethod != null && data.payMethod !== ''
+    const changingDate   = data.date != null && data.date !== ''
+    const changingCategory = data.category != null && data.category !== ''
+    const changingDetail = 'detail' in data
+    const changingMemo   = 'memo' in data
+    const changingCatOrDetail = changingCategory || changingDetail
+
+    if (!wantsPayMethod && !changingDate && !changingCategory && !changingDetail && !changingMemo) {
+      return { ok: false, error: '변경할 항목이 없습니다.' }
+    }
+    // 결제수단 변경 시 계좌·카드(선불) 정보 동반 필수 — 미지정이면 stale 계좌가 남는다
+    if (wantsPayMethod && (!('financialAccountId' in data) || !('financeName' in data))) {
+      return { ok: false, error: '결제수단을 변경하려면 계좌·카드 정보가 함께 필요합니다.' }
+    }
+
+    // 대상 스냅샷 겸 스킵 판정 — 변경 필드 원값도 함께 캡처(적용취소용)
+    const targets = await prisma.expense.findMany({
+      where: { id: { in: expenseIds }, propertyId },
+      select: {
+        id: true, isShipping: true, settleStatus: true, itemLabel: true,
+        recurringExpenseId: true, category: true,
+        payMethod: true, financialAccountId: true, financeName: true,
+        date: true, detail: true, memo: true,
+      },
+    })
+
+    const skippedCounts: Record<string, number> = {}
+    const bump = (reason: string) => { skippedCounts[reason] = (skippedCounts[reason] ?? 0) + 1 }
+
+    const eligible: typeof targets = []
+    for (const t of targets) {
+      if (t.isShipping) { bump('배송비 지출'); continue }
+      if (changingDate && t.recurringExpenseId) { bump('고정지출 기록'); continue }
+      if (changingCatOrDetail && t.itemLabel) { bump('품목 등록 지출'); continue }
+      eligible.push(t)
+    }
+
+    // 되돌리기 스냅샷 — 덮어쓰기 전 원값(정산완료 이력 왕복 보존: settleStatus 필수 포함)
+    const undo: BatchExpensesUndo = { rows: [] }
+    for (const t of eligible) {
+      const fields: Record<string, unknown> = {}
+      if (wantsPayMethod) {
+        fields.payMethod = t.payMethod
+        fields.financialAccountId = t.financialAccountId
+        fields.financeName = t.financeName
+        fields.settleStatus = t.settleStatus
+      }
+      if (changingDate) fields.date = t.date
+      if (changingCategory) fields.category = t.category
+      if (changingDetail) fields.detail = t.detail
+      if (changingMemo) fields.memo = t.memo
+      undo.rows.push({ id: t.id, fields })
+    }
+
+    // 결제수단 외 공통 필드 — 적격 행 전체에 동일 적용
+    const commonData: Record<string, unknown> = {}
+    if (changingDate) commonData.date = new Date(data.date as string)
+    if (changingCategory) commonData.category = data.category
+    if (changingDetail) commonData.detail = data.detail || null
+    if (changingMemo) commonData.memo = data.memo || null
+
+    if (eligible.length > 0) {
+      const ops: Prisma.PrismaPromise<unknown>[] = []
+      if (wantsPayMethod) {
+        // settleStatus 행별 재계산 후 갈래별 updateMany — payMethod 가 균일하므로 실제론 한 갈래
+        const byStatus = new Map<SettleStatus, string[]>()
+        for (const t of eligible) {
+          const s: SettleStatus = data.payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+          const arr = byStatus.get(s) ?? []; arr.push(t.id); byStatus.set(s, arr)
+        }
+        for (const [s, ids] of byStatus) {
+          ops.push(prisma.expense.updateMany({
+            where: { id: { in: ids }, propertyId },
+            data: { ...commonData, payMethod: data.payMethod, financialAccountId: data.financialAccountId ?? null, financeName: data.financeName ?? null, settleStatus: s },
+          }))
+        }
+      } else {
+        ops.push(prisma.expense.updateMany({
+          where: { id: { in: eligible.map(e => e.id) }, propertyId },
+          data: commonData,
+        }))
+      }
+      await prisma.$transaction(ops)
+    }
+
+    revalidatePath('/finance')
+    if (changingCategory) revalidatePath('/inventory')
+    return {
+      ok: true,
+      updated: eligible.length,
+      skipped: Object.entries(skippedCounts).map(([reason, count]) => ({ reason, count })),
+      undo,
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 지출 일괄 편집 적용취소 — 행별 원값 복원(batchUpdateTenants/undoBatchUpdateTenants 패턴)
+export async function undoBatchUpdateExpenses(u: BatchExpensesUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.$transaction(u.rows.map(x => prisma.expense.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })))
+    revalidatePath('/finance'); revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+  }
+}
+
 // 지출 삭제 적용취소 페이로드 — 삭제 직전 전체 스냅샷(§4 설계+적대검증 2026-07-14).
 // 클라이언트가 토스트 수명 동안만 보유(StockCheckUndo 선례). 새로고침 후에는 복구 불가.
 export type ExpenseDeleteUndo = {
