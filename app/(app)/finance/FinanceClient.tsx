@@ -47,7 +47,7 @@ import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -1580,7 +1580,10 @@ export default function FinanceClient({
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
   const [showExpExcel, setShowExpExcel] = useState(false)
-  const [expExcelMonth, setExpExcelMonth] = useState<string>('all')   // 'all'=전체 기간, 그 외 'YYYY-MM'
+  // 기간 = 금융앱식 빠른 선택(오늘 기준 최근 N개월) + 전체 + 직접 지정. 기본 1개월.
+  const [expExcelPeriod, setExpExcelPeriod] = useState<'1m' | '3m' | '6m' | 'all' | 'custom'>('1m')
+  const [expExcelFrom, setExpExcelFrom] = useState<string>('')   // 직접 지정 시작일 'YYYY-MM-DD'
+  const [expExcelTo, setExpExcelTo] = useState<string>('')       // 직접 지정 종료일 'YYYY-MM-DD'
   const [expExcelGroup, setExpExcelGroup] = useState<'method' | 'account' | 'month'>('method')
   // 모달 열 때 1회 로드하는 옵션(지출 있는 월·카드계좌별 집계)과 카드계좌 선택 상태
   const [expExcelOpts, setExpExcelOpts] = useState<{ months: string[]; accounts: { key: string; count: number; sum: number }[] } | null>(null)
@@ -1603,22 +1606,34 @@ export default function FinanceClient({
   // 지출 엑셀 내려받기 — 기간(전체/월 선택)·시트 구분·카드계좌 필터를 모달에서 선택. 옵션은 열 때 1회 로드.
   const handleExpenseExcel = () => {
     setExpExcelGroup('method')
-    setExpExcelMonth('all')
+    setExpExcelPeriod('1m')
+    // 직접 지정 기본값 = 이번 달 1일 ~ 오늘(월 단위 선택을 빠르게). KST 기준.
+    setExpExcelFrom(`${kstMonthStr()}-01`)
+    setExpExcelTo(kstYmdStr())
     setExpExcelOpts(null)
     setExpExcelAccSel(new Set())
     setShowExpExcel(true)
     setExpExcelOptLoading(true)
     getExpenseExportOptions().then(opts => {
       setExpExcelOpts(opts)
-      // 기본 기간 = 현재 보고 있는 달(목록에 있으면), 없으면 전체 기간. 카드계좌는 기본 전체 체크.
-      setExpExcelMonth(opts.months.includes(targetMonth) ? targetMonth : 'all')
+      // 카드계좌는 기본 전체 체크.
       setExpExcelAccSel(new Set(opts.accounts.map(a => a.key)))
     }).catch(() => setExpExcelOpts({ months: [], accounts: [] }))
       .finally(() => setExpExcelOptLoading(false))
   }
+  // 선택 기간 → from/to('YYYY-MM-DD'). 전체는 null(파라미터 생략).
+  const expExcelRange = (): { from: string; to: string } | null => {
+    if (expExcelPeriod === 'all') return null
+    if (expExcelPeriod === 'custom') return { from: expExcelFrom, to: expExcelTo }
+    const n = expExcelPeriod === '1m' ? 1 : expExcelPeriod === '3m' ? 3 : 6
+    return { from: kstMonthsAgoStr(n), to: kstYmdStr() }
+  }
+  // 직접 지정에서 시작일이 종료일보다 늦으면 내려받기 비활성.
+  const expExcelRangeInvalid = expExcelPeriod === 'custom' && !!expExcelFrom && !!expExcelTo && expExcelFrom > expExcelTo
   const downloadExpenseExcel = () => {
     const params = new URLSearchParams({ only: 'expenses', group: expExcelGroup })
-    if (expExcelMonth !== 'all') params.set('month', expExcelMonth)
+    const range = expExcelRange()
+    if (range) { params.set('from', range.from); params.set('to', range.to) }
     // 카드·계좌 필터 — 전부 선택이면 생략(=필터 없음), 일부만이면 선택 키를 encodeURIComponent 해 쉼표로 묶어 전달.
     const allKeys = expExcelOpts?.accounts.map(a => a.key) ?? []
     const selectedAll = allKeys.length > 0 && expExcelAccSel.size === allKeys.length
@@ -3196,21 +3211,43 @@ export default function FinanceClient({
           footer={
             <div className="flex items-center justify-end gap-2">
               <Btn variant="secondary" size="md" onClick={() => setShowExpExcel(false)}>취소</Btn>
-              <Btn variant="primary" size="md" onClick={downloadExpenseExcel} disabled={expExcelOptLoading || noneSelected}>내려받기</Btn>
+              <Btn variant="primary" size="md" onClick={downloadExpenseExcel} disabled={expExcelOptLoading || noneSelected || expExcelRangeInvalid}>내려받기</Btn>
             </div>
           }>
           <div className="p-6 space-y-5">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기간</label>
-              {expExcelOptLoading ? (
-                <div className="h-[38px] rounded-sm bg-[var(--cream)] animate-pulse" />
-              ) : (
-                <select
-                  value={expExcelMonth} onChange={e => setExpExcelMonth(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                  <option value="all">전체 기간</option>
-                  {expExcelOpts?.months.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+              <div>
+                <SegmentedControl
+                  size="sm" scroll ariaLabel="기간"
+                  value={expExcelPeriod} onChange={setExpExcelPeriod}
+                  options={[
+                    { value: '1m', label: '1개월' },
+                    { value: '3m', label: '3개월' },
+                    { value: '6m', label: '6개월' },
+                    { value: 'all', label: '전체' },
+                    { value: 'custom', label: '직접 지정' },
+                  ]}
+                />
+              </div>
+              {expExcelPeriod === 'custom' && (
+                <div className="pt-1 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[0.65625rem] text-[var(--warm-muted)]">시작일</label>
+                      <DatePicker value={expExcelFrom} onChange={setExpExcelFrom}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[0.65625rem] text-[var(--warm-muted)]">종료일</label>
+                      <DatePicker value={expExcelTo} onChange={setExpExcelTo}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                    </div>
+                  </div>
+                  {expExcelRangeInvalid && (
+                    <p className="text-[0.65625rem] text-[var(--coral)]">시작일이 종료일보다 늦습니다</p>
+                  )}
+                </div>
               )}
             </div>
             <div className="space-y-1.5">

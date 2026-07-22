@@ -138,10 +138,17 @@ export async function GET(request: NextRequest) {
 
   // ── 지출 전용 내보내기 — 시트 구분(결제수단별/카드·계좌별/월별). 인증·권한 가드 통과 후에만 분기 ──
   if (searchParams.get('only') === 'expenses') {
-    const monthParam = searchParams.get('month')   // 없으면 전체 기간
+    const monthParam = searchParams.get('month')   // 하위 호환 — from/to가 있으면 무시
+    const fromParam = searchParams.get('from')      // 'YYYY-MM-DD', KST 로컬 파싱
+    const toParam = searchParams.get('to')          // 'YYYY-MM-DD', KST 로컬 파싱
     const groupParam = (searchParams.get('group') ?? 'method') as 'method' | 'account' | 'month'
     let expDateRange: { gte: Date; lte: Date } | undefined
-    if (monthParam) {
+    if (fromParam && toParam) {
+      // 직접 지정·빠른 선택 — from 00:00 ~ to 23:59:59 (기존 month 파싱과 동일한 로컬 new Date 문법).
+      const [fy, fm, fd] = fromParam.split('-').map(Number)
+      const [ty, tm, td] = toParam.split('-').map(Number)
+      expDateRange = { gte: new Date(fy, fm - 1, fd), lte: new Date(ty, tm - 1, td, 23, 59, 59) }
+    } else if (monthParam) {
       const [ey, em] = monthParam.split('-').map(Number)
       expDateRange = { gte: new Date(ey, em - 1, 1), lte: new Date(ey, em, 0, 23, 59, 59) }
     }
@@ -201,7 +208,7 @@ export async function GET(request: NextRequest) {
       XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['기타']),   '지출-기타')
     }
 
-    const periodLabel = monthParam ?? '전체'
+    const periodLabel = (fromParam && toParam) ? `${fromParam}~${toParam}` : monthParam ?? '전체'
     const groupLabel = groupParam === 'account' ? '카드계좌별' : groupParam === 'month' ? '월별' : '결제수단별'
     // 계좌 필터 표시 — 없으면 생략, 1개면 그 이름(sanitize), 2개 이상이면 'N곳'.
     let accountSuffix = ''

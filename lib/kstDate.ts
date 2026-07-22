@@ -27,3 +27,15 @@ export function kstYmdStr(d: Date = new Date()): string {
   const { year, month, day } = kstYmd(d)
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
+
+// KST 기준 base(기본 오늘)에서 n개월 전 날짜를 "YYYY-MM-DD"로.
+// 대상 월에 그 '일'이 없으면 말일로 맞춘다(금융앱 관례, 예: 5/31의 1개월 전 → 4/30).
+export function kstMonthsAgoStr(n: number, base: Date = new Date()): string {
+  const { year, month, day } = kstYmd(base)   // month는 1-based
+  const targetIdx = (month - 1) - n           // 0-based 월 인덱스에서 차감
+  const ty = year + Math.floor(targetIdx / 12)
+  const tm = ((targetIdx % 12) + 12) % 12      // 0-based, 음수 정규화
+  const lastDay = new Date(ty, tm + 1, 0).getDate()
+  const d = Math.min(day, lastDay)
+  return `${ty}-${String(tm + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
