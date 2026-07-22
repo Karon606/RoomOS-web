@@ -8,7 +8,7 @@ import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, undoDeleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
-  batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo,
+  batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
@@ -46,7 +46,7 @@ import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
-import { formatBizNoInput } from '@/lib/bizNo'
+import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
@@ -4576,9 +4576,30 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
   const [accNm, setAccNm]       = useState('')
   const [detail, setDetail]     = useState('')
   const [memo, setMemo]         = useState('')
+  const [vendor, setVendor]     = useState('')
+  const [bizNo, setBizNo]       = useState('')      // 표시용(하이픈 포함) — 전송 시 정규화
   const [pending, setPending]   = useState(false)
   const [error, setError]       = useState('')
   const [dirty, setDirty]       = useState(false)   // v2.0 §12
+
+  // 구매처↔사업자번호 자동연동 맵(마운트 1회 로드). 로딩 전엔 연동만 비활성, 입력은 가능.
+  const [vendorMap, setVendorMap] = useState<{ vendorToBiz: Record<string, string>; bizToVendor: Record<string, string> } | null>(null)
+  useEffect(() => { void getVendorBizMap().then(setVendorMap).catch(() => {}) }, [])
+
+  // 구매처 입력 → 사업자번호 칸이 비었을 때만 매핑된 번호 자동 세팅(수동 입력한 번호는 덮지 않음, 패널 지적)
+  const onVendorChange = (v: string) => {
+    setVendor(v)
+    const biz = vendorMap?.vendorToBiz[v.trim()]
+    if (biz && !bizNo.trim()) setBizNo(formatBizNoInput(biz))
+  }
+  // 사업자번호 입력 → 10자리 완성 & 구매처 칸이 비었을 때만 매핑된 구매처 자동 세팅
+  const onBizNoChange = (raw: string) => {
+    const formatted = formatBizNoInput(raw)
+    setBizNo(formatted)
+    const norm = normalizeBizNo(formatted)
+    const v = norm ? vendorMap?.bizToVendor[norm] : undefined
+    if (v && !vendor.trim()) setVendor(v)
+  }
 
   const cardAccounts    = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
   const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
@@ -4593,6 +4614,8 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
   const summarySegs: string[] = []
   if (date) summarySegs.push(`날짜가 ${date}로`)
   if (category) summarySegs.push(`카테고리가 ${category}로`)
+  if (vendor.trim()) summarySegs.push(`구매처가 '${vendor.trim()}'로`)
+  if (normalizeBizNo(bizNo)) summarySegs.push(`사업자번호가 ${normalizeBizNo(bizNo)}로`)
   if (payMethod) summarySegs.push(`결제수단이 ${payMethod}${accNm ? `(${accNm})` : ''}로`)
   if (detail.trim()) summarySegs.push(`세부항목이 '${detail.trim()}'로`)
   if (memo.trim()) summarySegs.push('메모가')
@@ -4601,6 +4624,9 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
     const data: Parameters<typeof batchUpdateExpenses>[1] = {}
     if (date) data.date = date
     if (category) data.category = category
+    if (vendor.trim()) data.vendor = vendor.trim()
+    // 사업자번호는 10자리 완성분만 전송('미변경' 유지). 자동연동된 값도 함께 전송된다.
+    if (normalizeBizNo(bizNo)) data.vendorBizNo = normalizeBizNo(bizNo)
     if (payMethod) { data.payMethod = payMethod; data.financialAccountId = accId || null; data.financeName = accNm || null }
     if (detail.trim()) data.detail = detail.trim()
     if (memo.trim()) data.memo = memo.trim()
@@ -4647,6 +4673,17 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
             <option value="">미변경</option>
             {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
+          <input type="text" value={vendor} onChange={e => onVendorChange(e.target.value)} placeholder="미변경" className={inputCls} />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">사업자등록번호</label>
+          <input type="text" inputMode="numeric" value={bizNo} onChange={e => onBizNoChange(e.target.value)} placeholder="미변경" className={inputCls} />
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">구매처와 사업자번호는 서로 연동됩니다. 빈 칸일 때 일치하는 최근 거래가 있으면 자동으로 채워집니다.</p>
         </div>
 
         <div className="space-y-1.5">

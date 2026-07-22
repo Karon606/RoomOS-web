@@ -943,6 +943,8 @@ export async function batchUpdateExpenses(
     category?: string
     detail?: string | null
     memo?: string | null
+    vendor?: string
+    vendorBizNo?: string | null
   },
 ): Promise<{ ok: true; updated: number; skipped: { reason: string; count: number }[]; undo: BatchExpensesUndo } | { ok: false; error: string }> {
   try {
@@ -955,9 +957,11 @@ export async function batchUpdateExpenses(
     const changingCategory = data.category != null && data.category !== ''
     const changingDetail = 'detail' in data
     const changingMemo   = 'memo' in data
+    const changingVendor = 'vendor' in data
+    const changingBizNo  = 'vendorBizNo' in data
     const changingCatOrDetail = changingCategory || changingDetail
 
-    if (!wantsPayMethod && !changingDate && !changingCategory && !changingDetail && !changingMemo) {
+    if (!wantsPayMethod && !changingDate && !changingCategory && !changingDetail && !changingMemo && !changingVendor && !changingBizNo) {
       return { ok: false, error: '변경할 항목이 없습니다.' }
     }
     // 결제수단 변경 시 계좌·카드(선불) 정보 동반 필수 — 미지정이면 stale 계좌가 남는다
@@ -973,6 +977,7 @@ export async function batchUpdateExpenses(
         recurringExpenseId: true, category: true,
         payMethod: true, financialAccountId: true, financeName: true,
         date: true, detail: true, memo: true,
+        vendor: true, vendorBizNo: true,
       },
     })
 
@@ -1001,6 +1006,8 @@ export async function batchUpdateExpenses(
       if (changingCategory) fields.category = t.category
       if (changingDetail) fields.detail = t.detail
       if (changingMemo) fields.memo = t.memo
+      if (changingVendor) fields.vendor = t.vendor
+      if (changingBizNo) fields.vendorBizNo = t.vendorBizNo
       undo.rows.push({ id: t.id, fields })
     }
 
@@ -1010,6 +1017,9 @@ export async function batchUpdateExpenses(
     if (changingCategory) commonData.category = data.category
     if (changingDetail) commonData.detail = data.detail || null
     if (changingMemo) commonData.memo = data.memo || null
+    // 구매처·사업자번호 — 선택된 지출만 갱신(backfill 미호출: 같은 구매처의 다른 지출까지 덮으면 안 됨).
+    if (changingVendor) commonData.vendor = data.vendor?.trim() || null
+    if (changingBizNo) commonData.vendorBizNo = normalizeBizNo(data.vendorBizNo ?? null)
 
     if (eligible.length > 0) {
       const ops: Prisma.PrismaPromise<unknown>[] = []
@@ -1061,6 +1071,28 @@ export async function undoBatchUpdateExpenses(u: BatchExpensesUndo): Promise<{ o
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
+}
+
+// 구매처↔사업자번호 매핑 — 일괄편집 자동연동용. 번호가 있는 지출을 최근순으로 훑어
+// 구매처별 최근 번호, 번호별 최근 구매처를 각 1개씩 뽑는다(수백 건 규모, 전체 로드 1회).
+export async function getVendorBizMap(): Promise<{ vendorToBiz: Record<string, string>; bizToVendor: Record<string, string> }> {
+  const { propertyId, role } = await requirePropertyAccess()
+  if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, vendorBizNo: { not: null } },
+    select: { vendor: true, vendorBizNo: true },
+    orderBy: { date: 'desc' },
+  })
+  const vendorToBiz: Record<string, string> = {}
+  const bizToVendor: Record<string, string> = {}
+  for (const r of rows) {
+    const v = r.vendor?.trim()
+    const b = r.vendorBizNo?.trim()
+    if (!v || !b) continue
+    if (!(v in vendorToBiz)) vendorToBiz[v] = b   // 최근순 조회라 첫 등장이 최신
+    if (!(b in bizToVendor)) bizToVendor[b] = v
+  }
+  return { vendorToBiz, bizToVendor }
 }
 
 // 지출 삭제 적용취소 페이로드 — 삭제 직전 전체 스냅샷(§4 설계+적대검증 2026-07-14).
