@@ -101,7 +101,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — v2.0 §22 MergeSheet 단일 통일(카드별·선택 공용)
-  const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
+  const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string) => void } | null>(null)
   // 비품 상세 풀화면 — v2.0 §22 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
@@ -340,16 +340,26 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       exitMerge(); router.refresh()
     })
   }
+  // 세트 구조 판정 — 세트당 구성수(specValue)를 개수로 환산할 대상(qtyUnit '세트' 또는 규격 '개' & N>1)
+  const isSetStructured = (it: AssetItem) => it.qtyUnit === '세트' || (it.specUnit === '개' && (it.specValue ?? 0) > 1)
+  // 세트→개수 합치기 안내 — 개수 단위 카드로 합치면 1세트=N개로 환산됨(파괴 방지 인지, 신고 91b812ce)
+  const setNoteFor = (it: AssetItem): ReactNode => {
+    if (!isSetStructured(it) || !it.specValue) return undefined
+    const converted = (it.qtyValue ?? 0) * it.specValue
+    return `1세트=${it.specValue}개. 개수 단위 카드로 합치면 ${converted}개로 변환해 합칩니다.`
+  }
   // 카드별 합치기 — 이 카드를 같은 구역·분류 다른 카드(대표)로 통일
   const openCardMerge = (it: AssetItem, siblings: AssetItem[]) => setSheet({
     sourceLabel: it.detail || it.itemLabel,
     targets: siblings.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    note: setNoteFor(it),
     onConfirm: destId => runCombine(destId, it.ids, siblings.find(s => s.id === destId)?.itemLabel ?? ''),
   })
   // 선택 합치기 — 고른 비품들을 대표로 통일
   const openSelectionMerge = () => setSheet({
     sourceLabel: `선택 ${selItems.length}개`,
     targets: selItems.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    note: selItems.some(isSetStructured) ? '세트 구조 품목이 포함돼 있어요. 개수 단위 카드로 합치면 1세트=구성수만큼 개수로 변환해 합칩니다.' : undefined,
     onConfirm: destId => runCombine(destId, selItems.filter(s => s.id !== destId).flatMap(s => s.ids), selItems.find(s => s.id === destId)?.itemLabel ?? ''),
   })
   // 같은 구역·분류의 다른 카드(합치기 대상 후보)
@@ -943,7 +953,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       {/* 합치기 — v2.0 §22 MergeSheet 단일(카드별·선택 공용). 방향 고지 + 적용취소는 환경설정 '품명 병합' */}
       {sheet && (
         <MergeSheet open onClose={() => setSheet(null)}
-          sourceLabel={sheet.sourceLabel} targets={sheet.targets}
+          sourceLabel={sheet.sourceLabel} targets={sheet.targets} note={sheet.note}
           description="대표(남을 품목) 기준으로 이름·사양이 통일돼 한 카드가 됩니다. 적용취소는 환경설정 ‘품명 병합’."
           onConfirm={sheet.onConfirm} pending={pending} />
       )}

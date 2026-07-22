@@ -153,6 +153,18 @@ export type ItemPickState = {
   allocations?: { roomId: string; qty: string }[]
 }
 
+// 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
+// 세트 확인 칩(applySetHint)과 저장 게이트(confirmDurableSetItems)가 같은 규칙을 쓰도록 한 곳에 둔다.
+export function durableSetCountPatch(it: ItemPickState, count: number): Partial<ItemPickState> {
+  const newQty = (Number(it.qtyValue) || 1) * count
+  return {
+    qtyValue: String(newQty), qtyUnit: '개',
+    specValue: '', specUnit: '', unitBasis: 'qty',
+    unitPrice: it.amount != null ? Math.round(it.amount / newQty) : it.unitPrice,
+    setHint: undefined,
+  }
+}
+
 export function fmtItemDetail(d: ItemPickState): string {
   const spec = d.specText ? d.specText : d.specValue ? `${d.specValue}${d.specUnit}` : ''
   const qty  = d.qtyValue  ? `${d.qtyValue}${d.qtyUnit}`  : ''
@@ -260,7 +272,7 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
   return best?.name ?? null
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false, isDurable = false }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
@@ -268,6 +280,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
   detailSuggestions?: string[]               // 과거 품목명 자동완성(구매처와 동일 방식)
   isService?: boolean                        // 서비스·무형 — 추천이 서비스 이력으로 분리(신고 99c30054)
+  isDurable?: boolean                        // 내구재(비품·자재) — 세트 승인 시 규격 흡수 대신 개수 환산(신고 91b812ce)
 }) {
   // 품목 빠른 선택 — 유형(물품/서비스)→카테고리 계층 추천, 부족분은 상위 단계로 보충해 항상 10개(신고 6b79c725).
   const [presets, setPresets] = useState<string[]>(isService ? [] : (ITEM_PRESETS[category] ?? []))
@@ -440,11 +453,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     onChange(items.filter((_, i) => i !== idx))
   }
 
-  // 세트 의심 확인 — "1세트 = N개" 승인 시 규격으로 흡수(품명 분리 금지 원칙), 개당 단가로 전환
+  // 세트 의심 확인 — "1세트 = N개" 승인.
+  // 소모품: 규격으로 흡수(specValue=N, 재고 수학=규격 곱 의존). 내구재(비품): qtyValue가 곧 개수·방배정 단위라
+  // 규격 흡수가 부적합 → 개수 환산(qty×N개, 규격 비움, unitBasis 'qty'). 둘 다 총액 불변·개당 단가로 전환.
   function applySetHint(idx: number) {
     const it = items[idx]; const h = it.setHint
     if (!h) return
     const qty = Number(it.qtyValue) || 1
+    if (isDurable) { patchItem(idx, durableSetCountPatch(it, h.count)); return }
     patchItem(idx, {
       specValue: String(h.count), specUnit: '개',
       qtyUnit: !it.qtyUnit || it.qtyUnit === '개' ? '세트' : it.qtyUnit,
@@ -659,7 +675,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     </span>
                     <button type="button" onClick={() => applySetHint(idx)}
                       className="px-2 py-1 text-[0.65625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
-                      네, {it.setHint.count}개입{it.setHint.perPiece > 0 ? ` (개당 ${fmtWon(it.setHint.perPiece)})` : ''}
+                      네, {it.setHint.count}개{isDurable ? '' : '입'}{it.setHint.perPiece > 0 ? ` (개당 ${fmtWon(it.setHint.perPiece)})` : ''}
                     </button>
                     <button type="button" onClick={() => patchItem(idx, { setHint: undefined })}
                       className="px-2 py-1 text-[0.65625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
@@ -1883,6 +1899,30 @@ export default function FinanceClient({
     setReceiptUploading(false)
   }
 
+  // 내구재 세트 확인(저장 게이트, 신고 91b812ce) — 칩에서 미승인·미거절인 채 남은 비품 세트 항목을
+  // 등록·수정 저장 전 1회 확답받는다. 반환: undefined=대상 없음(원본 유지)·null=취소(저장 중단)·배열=결정 완료.
+  async function confirmDurableSetItems(items: ItemPickState[]): Promise<ItemPickState[] | null | undefined> {
+    const hasPending = items.some(it => it.setHint && !(Number(it.specValue) > 1))
+    if (!hasPending) return undefined
+    const out = [...items]
+    for (let i = 0; i < out.length; i++) {
+      const it = out[i]; const h = it.setHint
+      if (!h || Number(it.specValue) > 1) continue
+      const newQty = (Number(it.qtyValue) || 1) * h.count
+      const perPiece = it.amount != null ? Math.round(it.amount / newQty) : (h.perPiece || 0)
+      const choice = await choiceDialog({
+        title: `${it.label} 세트 확인`,
+        message: `${h.count}개 1세트 상품으로 보입니다. ${newQty}개로 등록할까요? 개당 단가는 금액을 ${newQty}로 나눠 ${fmtWon(perPiece)}으로 계산됩니다.`,
+        confirmLabel: `${newQty}개로 등록`,
+        altLabel: '1개 그대로',
+        cancelLabel: '취소',
+      })
+      if (choice === null) return null   // 취소 → 저장 중단(무변경)
+      out[i] = choice === 'confirm' ? { ...it, ...durableSetCountPatch(it, h.count) } : { ...it, setHint: undefined }
+    }
+    return out
+  }
+
   const handleAddExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     // 물품 구매는 품목 필수. 서비스·무형도 세부 항목(품목 모듈)으로 내역을 쪼개야 방별 투자금이 추적됨.
@@ -1899,6 +1939,12 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 내구재 세트 확인 — 미승인 setHint가 남은 비품 항목은 개수 환산 여부를 등록 전 확답(신고 91b812ce)
+        if (addIsDurable) {
+          const converted = await confirmDurableSetItems(addItems)
+          if (converted === null) return   // 취소 → 저장 중단
+          if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+        }
         // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
         // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.
         const extNo = ((fd.get('externalOrderNo') as string) || '').trim()
@@ -1933,6 +1979,12 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 내구재 세트 확인 — 미승인 setHint가 남은 비품 항목은 개수 환산 여부를 저장 전 확답(신고 91b812ce)
+        if (editIsDurable) {
+          const converted = await confirmDurableSetItems(editItems)
+          if (converted === null) return   // 취소 → 저장 중단
+          if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+        }
         const res = await updateExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
         // 카테고리 변경 + 품목 있음 → 재고 품목도 같이 옮길지 확인(종량제봉투 꼬임 재발 방지, 운영자 요청 2026-07-10)
@@ -3303,6 +3355,7 @@ export default function FinanceClient({
                         rooms={editIsDurable ? [] : rooms}
                         detailSuggestions={detailSuggestions}
                         isService={!!detailExp?.excludeFromInventory}
+                        isDurable={editIsDurable}
                       />
                       {editIsDurable && (
                         <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
@@ -3612,7 +3665,7 @@ export default function FinanceClient({
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{addIsService ? '세부 항목' : '품목 선택'}{addIsService && DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) ? '' : ' *'} <span className="text-[var(--warm-muted)] font-normal">{addIsService ? '(시공·작업별로 금액을 쪼개세요)' : '(여러 품목 추가 가능)'}</span></label>
-                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} />
+                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} isDurable={addIsDurable} />
                   {addIsDurable && (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   )}

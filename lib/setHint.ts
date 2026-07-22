@@ -17,14 +17,16 @@ export type SetHint = {
   histUnit?: number    // (price 근거) 과거 개당 단가
 }
 
-const LABEL_COUNT_RE = /(\d{1,3})\s*(?:개입|입|매입|pcs|ea)\b|[xX×]\s*(\d{1,3})\b/i
+// 한글 접미사 뒤 \b 는 JS 에서 동작하지 않아(한글=비단어문자, 경계 미형성) "3개입"을 못 잡던 버그 —
+// 한글 갈래는 뒤에 한글이 더 붙지 않는지 부정 전방탐색으로 판정(신고 91b812ce 검증 중 발견, 2026-07-22).
+const LABEL_COUNT_RE = /(\d{1,3})\s*(?:개입|매입|입)(?![가-힣])|(\d{1,3})\s*(?:pcs|ea)\b|[xX×]\s*(\d{1,3})\b/i
 
 export function countFromLabel(...labels: (string | null | undefined)[]): number | null {
   for (const l of labels) {
     if (!l) continue
     const m = l.match(LABEL_COUNT_RE)
     if (m) {
-      const n = parseInt(m[1] ?? m[2], 10)
+      const n = parseInt(m[1] ?? m[2] ?? m[3], 10)
       if (n >= 2 && n <= 200) return n
     }
   }

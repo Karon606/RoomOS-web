@@ -1359,13 +1359,14 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
     const aff = run.affected as {
       expenses?: { id: string; oldLabel: string }[]
       tracked?: { id: string; oldLabel: string }[]
-      assets?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldQtyUnit: string | null; oldDetail: string | null }[]
+      assets?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldSpecText?: string | null; oldQtyValue?: number | null; oldQtyUnit: string | null; oldDetail: string | null }[]
     } | null
     await prisma.$transaction(async (tx) => {
       for (const e of aff?.expenses ?? []) { try { await tx.expense.update({ where: { id: e.id }, data: { itemLabel: e.oldLabel } }) } catch { /* 삭제된 행 무시 */ } }
       for (const t of aff?.tracked ?? []) { try { await tx.trackedItem.update({ where: { id: t.id }, data: { label: t.oldLabel } }) } catch { /* skip */ } }
-      // 비품 합치기(combineAssets) 원복 — 이름·사양·단위·detail 통째 복구
-      for (const a of aff?.assets ?? []) { try { await tx.expense.update({ where: { id: a.id }, data: { itemLabel: a.oldLabel, specValue: a.oldSpecValue, specUnit: a.oldSpecUnit, qtyUnit: a.oldQtyUnit, detail: a.oldDetail } }) } catch { /* skip */ } }
+      // 비품 합치기(combineAssets) 원복 — 이름·사양·단위·detail 통째 복구.
+      // specText·qtyValue 는 신규 이력에만 있는 필드(하위호환) — 있을 때만 원복(옛 이력은 종전대로).
+      for (const a of aff?.assets ?? []) { try { await tx.expense.update({ where: { id: a.id }, data: { itemLabel: a.oldLabel, specValue: a.oldSpecValue, specUnit: a.oldSpecUnit, qtyUnit: a.oldQtyUnit, detail: a.oldDetail, ...(a.oldSpecText !== undefined ? { specText: a.oldSpecText } : {}), ...(a.oldQtyValue !== undefined ? { qtyValue: a.oldQtyValue } : {}) } }) } catch { /* skip */ } }
       if (run.newAliasKeys.length) await tx.itemNameAlias.deleteMany({ where: { propertyId, aliasKey: { in: run.newAliasKeys } } })
       await tx.itemNameMergeRun.update({ where: { id: run.id }, data: { undoneAt: new Date() } })
     })

@@ -220,8 +220,19 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // 내구재(비품) = 재고 추적 카테고리가 아닌 것. 세트 승인 시 규격 흡수 대신 개수 환산(신고 91b812ce).
+  // 참고: 이 화면의 setHint 칩은 재고(소모품) 모드에서만 뜨므로 실제로는 추적 카테고리 → durable 분기는 방어적.
+  const isDurableCat = !INVENTORY_CATEGORIES.includes(category)
   const applySetHint = () => {
     if (!setHint) return
+    if (isDurableCat) {
+      // 내구재: qtyValue×N개, 규격 비움(specText 유지). 개수가 곧 방배정 단위.
+      setQtyValue(String((Number(qtyValue) || 1) * setHint.count)); setQtyUnit('개')
+      setSpecValue(''); setSpecUnit('')
+      setSetHint(null)
+      return
+    }
+    // 소모품: 규격 흡수(현행 — 재고 수학=규격 곱 의존).
     setSpecValue(String(setHint.count)); setSpecUnit('개')
     if (!qtyUnit.trim() || qtyUnit === '개') setQtyUnit('세트')
     setSetHint(null)
@@ -391,7 +402,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                     </span>
                     <button type="button" onClick={applySetHint}
                       className="px-2 py-1 text-[0.65625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
-                      네, {setHint.count}개입{setHint.perPiece > 0 ? ` (개당 ${setHint.perPiece.toLocaleString()}원)` : ''}
+                      네, {setHint.count}개{isDurableCat ? '' : '입'}{setHint.perPiece > 0 ? ` (개당 ${setHint.perPiece.toLocaleString()}원)` : ''}
                     </button>
                     <button type="button" onClick={() => setSetHint(null)}
                       className="px-2 py-1 text-[0.65625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">

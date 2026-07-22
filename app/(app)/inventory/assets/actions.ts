@@ -475,25 +475,35 @@ export async function combineAssets(
     const propertyId = await getPropertyId()
     const dest = await prisma.expense.findFirst({
       where: { id: destExpenseId, propertyId },
-      select: { itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
+      select: { itemLabel: true, specValue: true, specUnit: true, specText: true, qtyUnit: true },
     })
     if (!dest) return { ok: false, error: '대상 품목을 찾을 수 없습니다.' }
     const srcIds = [...new Set(srcExpenseIds)].filter(id => id !== destExpenseId)
     if (!srcIds.length) return { ok: false, error: '합칠 항목이 없습니다.' }
     const srcs = await prisma.expense.findMany({
       where: { id: { in: srcIds }, propertyId },
-      select: { id: true, itemLabel: true, specValue: true, specUnit: true, qtyValue: true, qtyUnit: true, detail: true },
+      select: { id: true, itemLabel: true, specValue: true, specUnit: true, specText: true, qtyValue: true, qtyUnit: true, detail: true },
     })
     if (!srcs.length) return { ok: false, error: '합칠 항목을 찾을 수 없습니다.' }
+
+    // 세트 파괴 방지 — src가 세트 구조(qtyUnit '세트' 또는 specUnit '개' & specValue>1)인데
+    // dest가 개수 단위('개' 또는 규격 없음)면, 세트당 구성수(src.specValue)를 수량에 곱해 개수로 환산.
+    // 총액(amount)은 건드리지 않는다(단가는 파생 계산이라 자동 정합).
+    const destPerPiece = dest.qtyUnit === '개' || dest.specValue == null
+    const convertedQty = (s: { qtyUnit: string | null; specUnit: string | null; specValue: number | null; qtyValue: number | null }): number | null => {
+      const srcIsSet = s.qtyUnit === '세트' || (s.specUnit === '개' && (s.specValue ?? 0) > 1)
+      return (srcIsSet && destPerPiece && s.specValue && s.qtyValue != null) ? s.qtyValue * s.specValue : s.qtyValue
+    }
 
     let runId = ''
     await prisma.$transaction(async (tx) => {
       for (const e of srcs) {
+        const newQty = convertedQty(e)
         await tx.expense.update({
           where: { id: e.id },
           data: {
-            itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, qtyUnit: dest.qtyUnit,
-            detail: buildAssetDetail({ itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, qtyValue: e.qtyValue, qtyUnit: dest.qtyUnit }),
+            itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, specText: dest.specText ?? null, qtyUnit: dest.qtyUnit, qtyValue: newQty,
+            detail: buildAssetDetail({ itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, specText: dest.specText, qtyValue: newQty, qtyUnit: dest.qtyUnit }),
           },
         })
       }
@@ -501,7 +511,7 @@ export async function combineAssets(
       const run = await tx.itemNameMergeRun.create({
         data: {
           propertyId, canonical: dest.itemLabel ?? '', memberCount: oldLabels.length || srcs.length, newAliasKeys: [],
-          affected: { assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })) },
+          affected: { assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldSpecText: s.specText, oldQtyValue: s.qtyValue, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })) },
         },
       })
       runId = run.id

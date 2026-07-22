@@ -9,7 +9,7 @@ export type MergeTarget = { id: string; label: string }
 
 export function MergeSheet({
   open, onClose, sourceLabel, targets,
-  title = '합치기', description, confirmLabel = '합치기',
+  title = '합치기', description, note, confirmLabel = '합치기',
   onConfirm, pending = false, z = 200,
 }: {
   open: boolean
@@ -18,6 +18,7 @@ export function MergeSheet({
   targets: MergeTarget[]       // 남을(대표) 후보
   title?: string
   description?: React.ReactNode
+  note?: React.ReactNode       // 세트→개수 환산 등 추가 안내(강조 톤)
   confirmLabel?: string
   onConfirm: (destId: string) => void
   pending?: boolean
@@ -41,6 +42,9 @@ export function MergeSheet({
         <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[var(--warm-mid)]/40" />
         <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
         {description && <p className="mt-1 text-[0.78125rem] leading-relaxed text-[var(--warm-mid)]">{description}</p>}
+        {note && (
+          <p className="mt-2 rounded-lg border border-[var(--coral)]/30 bg-[var(--coral-pale)] px-3 py-2 text-[0.75rem] leading-relaxed text-[var(--warm-dark)]">{note}</p>
+        )}
 
         {/* 대상 선택 — 남을(대표) 카드 */}
         <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">합칠 대상 (남을 품목)</label>
