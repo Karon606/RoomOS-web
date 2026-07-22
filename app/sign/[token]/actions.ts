@@ -5,6 +5,7 @@
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
+import { notifyPropertyOperators } from '@/lib/pushSend'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
 const INACTIVE_MSG = '링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.'
@@ -110,5 +111,42 @@ export async function submitRemoteSignature(
     return { ok: true }
   } catch {
     return { ok: false, error: '서명 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
+  }
+}
+
+// 원격 서명 최종 제출 — 확인 팝업을 거친 뒤 호출된다. 링크를 닫아(closedAt) 재접속 시
+// 계약서가 다시 열리지 않게 하고(page.tsx 가 signedAt+closedAt 을 '제출 완료'로 안내),
+// 이 영업장 운영자에게 웹푸시를 발송한다(발송 실패는 제출을 막지 않음 — best-effort).
+export async function finalizeRemoteSubmission(
+  token: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const link = await getActiveLink(token)
+    if (!link) return { ok: false, error: INACTIVE_MSG }
+
+    const cookieStore = await cookies()
+    if (!cookieStore.get(shareCookieName(link.id))) {
+      return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
+    }
+    // 계약서 서명이 이미 저장돼 있어야 제출 가능(동의서 유무는 클라이언트 canSubmit 가 게이트).
+    if (!link.signedAt) return { ok: false, error: '먼저 서명을 완료해 주세요.' }
+
+    // 제출 확정 — 링크 닫기(재접속 차단). 서명본은 LeaseTerm 에 이미 영속돼 운영자 화면에서 조회된다.
+    await prisma.contractShareLink.update({ where: { id: link.id }, data: { closedAt: new Date() } })
+
+    // 운영자 웹푸시(best-effort) — 실패해도 제출은 성공 처리
+    const tenant = await prisma.tenant.findUnique({ where: { id: link.tenantId }, select: { name: true } })
+    const name = tenant?.name || '입주자'
+    await notifyPropertyOperators(link.propertyId, {
+      source: 'contract-signed',
+      title: '계약서 서명 제출',
+      body: `${name}님이 입실 계약서에 서명했습니다.`,
+      url: '/contracts',
+      tag: 'stayeum-contract-signed',
+    })
+
+    return { ok: true }
+  } catch {
+    return { ok: false, error: '제출에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
   }
 }

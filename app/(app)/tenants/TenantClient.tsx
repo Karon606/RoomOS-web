@@ -26,6 +26,7 @@ import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import BirthdateInput from '@/components/ui/BirthdateInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
@@ -2986,7 +2987,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           <Field label="영어이름" name="englishName" defaultValue={tenant?.englishName ?? ''} placeholder="Hong Gildong" />
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="생년월일" name="birthdate" type="date" defaultValue={toDateInput(tenant?.birthdate)} />
+          <Field label="생년월일" name="birthdate" type="birthdate" defaultValue={toDateInput(tenant?.birthdate)} />
           <SelectField label="성별" name="gender" defaultValue={tenant?.gender}>
             <option value="UNKNOWN">미기재</option>
             <option value="MALE">남성</option>
@@ -3537,6 +3538,9 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       {type === 'date'
         ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} />
+        : type === 'birthdate'
+        ? <BirthdateInput name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
         : <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
       }

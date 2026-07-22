@@ -5,20 +5,24 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { verifyShareBirthdate } from './actions'
+import { formatBirthdateDigits, digitsToIso, isValidBirthdate } from '@/lib/birthdate'
 
 export default function BirthdateGate({ token }: { token: string }) {
   const router = useRouter()
+  // 화면에는 점 포맷("1970.09.28")을 보여주고, 서버에는 ISO("1970-09-28")를 보낸다.
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const valid = isValidBirthdate(value)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (pending || !value) return
+    const iso = digitsToIso(value)
+    if (pending || !iso) return
     setPending(true)
     setError(null)
     try {
-      const res = await verifyShareBirthdate(token, value)
+      const res = await verifyShareBirthdate(token, iso)
       if (res.ok) {
         router.refresh()   // 쿠키 반영 후 서버가 계약서 화면을 렌더 — pending 유지로 재제출 방지
         return
@@ -41,9 +45,12 @@ export default function BirthdateGate({ token }: { token: string }) {
         <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1F1A17', marginBottom: 6 }}>
           생년월일
           <input
-            type="date"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
             value={value}
-            onChange={e => setValue(e.target.value)}
+            onChange={e => setValue(formatBirthdateDigits(e.target.value))}
+            placeholder="예: 19700928"
             required
             style={{ display: 'block', width: '100%', minWidth: 0, marginTop: 6, padding: '10px 12px', fontSize: 15, border: '1px solid #D8CFC4', borderRadius: 10, background: '#fff', color: '#1F1A17', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' }}
           />
@@ -53,8 +60,8 @@ export default function BirthdateGate({ token }: { token: string }) {
         )}
         <button
           type="submit"
-          disabled={pending || !value}
-          style={{ width: '100%', marginTop: 16, padding: '11px 0', fontSize: 14, fontWeight: 600, color: '#fff', background: '#A03C2E', border: 0, borderRadius: 10, cursor: 'pointer', opacity: pending || !value ? 0.6 : 1 }}
+          disabled={pending || !valid}
+          style={{ width: '100%', marginTop: 16, padding: '11px 0', fontSize: 14, fontWeight: 600, color: '#fff', background: '#A03C2E', border: 0, borderRadius: 10, cursor: 'pointer', opacity: pending || !valid ? 0.6 : 1 }}
         >
           {pending ? '확인 중…' : '확인'}
         </button>

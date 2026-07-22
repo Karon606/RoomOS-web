@@ -15,6 +15,13 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
+import { digitsToIso } from '@/lib/birthdate'
+
+// 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
+function birthdateToDate(raw: string): Date | null {
+  const iso = digitsToIso(raw)
+  return iso ? new Date(iso) : null
+}
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -203,7 +210,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       name: name.trim(),
       englishName: englishName || null,
       email: email || null,
-      birthdate: birthdate ? new Date(birthdate) : null,
+      birthdate: birthdateToDate(birthdate),
       isBasicRecipient,
       smoking,
       memo: memo || null,
@@ -394,7 +401,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       name: name.trim(),
       englishName: englishName || null,
       email: email || null,
-      birthdate: birthdate ? new Date(birthdate) : null,
+      birthdate: birthdateToDate(birthdate),
       isBasicRecipient,
       smoking,
       memo: memo || null,

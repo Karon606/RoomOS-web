@@ -7,11 +7,11 @@
 // 인증: Vercel Cron 은 Authorization: Bearer <CRON_SECRET> 헤더 전송. 수동 테스트는 ?secret= 도 허용.
 
 import { NextResponse } from 'next/server'
-import webpush from 'web-push'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
 import { kstYmd } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
+import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -26,14 +26,9 @@ export async function GET(req: Request) {
   const authorized = !!cronSecret && (auth === `Bearer ${cronSecret}` || secret === cronSecret)
   if (!authorized) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
-  if (!process.env.VAPID_PRIVATE_KEY || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+  if (!ensureWebPushConfigured()) {
     return NextResponse.json({ ok: false, error: 'VAPID not configured' }, { status: 500 })
   }
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:no-reply@stayeum.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY,
-  )
 
   // 단기 자동 퇴실 예정 전환(운영자 승인 2026-07-11) — KST 기준 내일(놓친 경우 당일 포함)이
   // 퇴실일인 단기 거주중 계약을 '퇴실 예정'으로. autoCheckoutAt 기록으로 재전환 방지
@@ -85,18 +80,9 @@ export async function GET(req: Request) {
       tag: 'stayeum-daily',
     })
 
-    let userSent = false
-    let userSuccess = 0
-    await Promise.all(userSubs.map(async (s) => {
-      try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
-        sent++; userSent = true; userSuccess++
-      } catch (e: unknown) {
-        const code = (e as { statusCode?: number })?.statusCode
-        if (code === 410 || code === 404) await prisma.pushSubscription.deleteMany({ where: { endpoint: s.endpoint } })
-      }
-    }))
-    if (userSent) usersNotified++
+    const userSuccess = await sendToSubscriptions(userSubs, payload)
+    sent += userSuccess
+    if (userSuccess > 0) usersNotified++
 
     // 발송 내역 기록 — 시도/성공 카운트와 함께
     try {

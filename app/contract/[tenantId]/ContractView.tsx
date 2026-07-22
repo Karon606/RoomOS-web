@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
-import { submitRemoteSignature } from '@/app/sign/[token]/actions'
+import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -264,9 +264,15 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
   // 모달 "확인" — 운영자 경로: 서명만 화면 상태에 반영(PDF 저장은 별도 버튼).
   // 원격(remote): submitRemoteSignature 로 즉시 서버 저장(LeaseTerm 서명 필드 + 링크 서명시각).
   const [remoteSubmitting, setRemoteSubmitting] = useState(false)
-  // 원격 '완료(제출)' 단계 — 서명은 이미 즉시 저장(서버)돼 있고, 이 버튼은 명시적 완료 화면 전환.
-  // 로컬 state 라 새로고침 시 초기화되지만, page.tsx 가 저장된 서명을 다시 불러오므로 서명본은 유지된다.
+  // 원격 '완료(제출)' 단계 — 서명은 이미 즉시 저장(서버)돼 있고, 이 단계에서 링크를 닫고(서버) 완료 화면으로 전환한다.
   const [submitted, setSubmitted] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
+  // 제출 완료 시 창 닫기 시도 — 스크립트로 못 닫는 브라우저가 많으므로(완료 화면이 본체) 시도만 한다.
+  useEffect(() => {
+    if (!(remote && submitted)) return
+    const t = setTimeout(() => { try { window.close() } catch { /* 닫히지 않아도 완료 화면 유지 */ } }, 900)
+    return () => clearTimeout(t)
+  }, [remote, submitted])
   const handleSignConfirm = async () => {
     const pad = sigPadRef.current
     if (!pad || pad.isEmpty()) {
@@ -301,16 +307,27 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
     }
   }
 
-  // 원격 '저장 및 보내기' — 서명 완료를 명시적으로 확정하고 완료 화면으로 전환.
-  // 서명 저장은 이미 끝났으므로 서버 추가 호출 없음. 관리자 알림은 링크 signedAt(서명 시 기록)으로 뜬다.
+  // 원격 '제출' — 확인 팝업 후 서버에서 링크를 닫고(재접속 차단) 운영자에게 푸시 발송, 완료 화면으로 전환.
+  // 서명 저장은 서명 시점에 이미 끝났고, 이 단계는 최종 확정이다.
   const canSubmit = !!signatureDataUrl && (!data.disposalConsent.enabled || !!disposalSignatureDataUrl)
   const handleRemoteSubmit = async () => {
+    if (finalizing) return
     if (!(await confirmDialog({
-      title: '서명한 내용을 보낼까요?',
-      message: '관리자에게 서명 완료를 알립니다. 보낸 뒤에도 이 링크에서 다시 확인할 수 있어요.',
-      confirmLabel: '보내기',
+      title: '계약서를 제출할까요?',
+      message: '제출 후에는 수정할 수 없습니다.',
+      confirmLabel: '제출',
     }))) return
-    setSubmitted(true)
+    if (!shareToken) return
+    setFinalizing(true)
+    const release = trackSave()
+    try {
+      const res = await finalizeRemoteSubmission(shareToken)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setSubmitted(true)
+    } finally {
+      release()
+      setFinalizing(false)
+    }
   }
 
   // 툴바 "계약서 저장" — PDF 생성 + Drive 업로드 + 입실자 정보로 이동
@@ -481,32 +498,38 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
   const view = editing ? draft : data.template
 
+  // 원격 제출 완료 — 계약서 대신 완료 안내 전면 표시(sign 페이지 독립 스타일과 동일 톤). 창 닫기는 위 effect 가 시도.
+  if (remote && submitted) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: '32px 24px', boxShadow: '0 4px 24px -6px rgba(61,36,24,.28)', boxSizing: 'border-box', textAlign: 'center' }}>
+          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: '#F1E6DA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A03C2E" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8 }}>계약서가 제출되었습니다</div>
+          <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>이 창은 닫으셔도 됩니다.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="contract-shell">
       {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}
       {remote ? (
         <div className="no-print toolbar">
-          {submitted ? (
-            <div className="remote-done">
-              <div className="remote-done-title">서명이 접수되었습니다</div>
-              <p className="remote-done-body">관리자에게 전달되었습니다. 이 링크로 서명 내용을 다시 볼 수 있어요.</p>
-            </div>
-          ) : (
-            <>
-              <span className="toolbar-status" style={{ color: 'var(--ink-s)', fontWeight: 400 }}>
-                {canSubmit
-                  ? '서명을 확인한 뒤 아래 버튼으로 관리자에게 보내세요.'
-                  : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
-              </span>
-              <div className="toolbar-spacer" />
-              {!canSubmit && (
-                <span className="toolbar-hint">서명을 완료하면 보낼 수 있어요.</span>
-              )}
-              <button onClick={handleRemoteSubmit} disabled={!canSubmit} className="toolbar-print remote-submit">
-                저장 및 보내기
-              </button>
-            </>
+          <span className="toolbar-status" style={{ color: 'var(--ink-s)', fontWeight: 400 }}>
+            {canSubmit
+              ? '서명을 확인한 뒤 아래 버튼으로 제출해 주세요.'
+              : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
+          </span>
+          <div className="toolbar-spacer" />
+          {!canSubmit && (
+            <span className="toolbar-hint">서명을 완료하면 제출할 수 있어요.</span>
           )}
+          <button onClick={handleRemoteSubmit} disabled={!canSubmit || finalizing} className="toolbar-print remote-submit">
+            {finalizing ? '제출 중…' : '제출하기'}
+          </button>
         </div>
       ) : (
       <div className="no-print toolbar">
@@ -908,12 +931,8 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         .toolbar-status { font-size: 12px; color: var(--warning-fg); font-weight: 600; }
         .toolbar-hint { font-size: 11px; color: var(--ink-m); }
         .toolbar-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
-        /* 원격 '저장 및 보내기' — 44pt 터치타깃 */
+        /* 원격 '제출하기' — 44pt 터치타깃 */
         .remote-submit { min-height: 44px; padding: 10px 20px; font-size: 14px; }
-        /* 원격 완료 화면 — 서명 접수 안내(서명본은 아래에 그대로 표시) */
-        .remote-done { width: 100%; text-align: center; padding: 2px 4px; }
-        .remote-done-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
-        .remote-done-body { font-size: 13px; color: var(--ink-s); line-height: 1.6; margin: 0; }
 
         /* paper-cage: 화면용 viewport-fit wrapper */
         .paper-cage {

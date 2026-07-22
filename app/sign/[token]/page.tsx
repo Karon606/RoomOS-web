@@ -23,6 +23,23 @@ function InactiveNotice() {
   )
 }
 
+// 제출 완료(서명 후 링크 닫힘) — 재접속 시 계약서 대신 이 안내만 보인다.
+function SubmittedNotice() {
+  return (
+    <div style={{ minHeight: '100vh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: '32px 24px', boxShadow: '0 4px 24px -6px rgba(61,36,24,.28)', boxSizing: 'border-box', textAlign: 'center' }}>
+        <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: '#F1E6DA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A03C2E" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8 }}>계약서가 제출되었습니다</div>
+        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>
+          이미 제출이 완료되어 더 이상 열 수 없습니다. 이 창은 닫으셔도 됩니다.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default async function SignPage({
   params,
 }: {
@@ -30,7 +47,10 @@ export default async function SignPage({
 }) {
   const { token } = await params
   const link = await prisma.contractShareLink.findUnique({ where: { token } })
-  if (!link || link.closedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
+  if (!link) return <InactiveNotice />
+  // 제출 확정으로 닫힌 링크(서명 완료 후) — 일반 만료 안내 대신 '제출 완료' 안내
+  if (link.signedAt && link.closedAt) return <SubmittedNotice />
+  if (link.closedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
 
   const cookieStore = await cookies()
   if (!cookieStore.get(shareCookieName(link.id))) return <BirthdateGate token={token} />
