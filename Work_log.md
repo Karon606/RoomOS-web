@@ -2496,3 +2496,8 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - 원인: 발급 목록 쿼리 ACTIVE 단일 + 발급 화면 계약 조회 ACTIVE·RESERVED 뿐 — 비거주자 원천 배제. 표시/숨김은 /tenants '비거주자' 세그먼트로 기존 충족(운영자 위치 확인). 공실 접점 없음 실데이터 검증(표시·발급 노출은 집계 비관여, nonResidentVacant 가 단독 결정).
 - 수정(패널 2팀 설계·운영자 승인, 구현 Opus 위임·선임 검증): 발급 대상 ACTIVE+CHECKOUT_PENDING+NON_RESIDENT, 카드 StatusBadge(비거주 info·퇴실 예정 exit), 발급 화면 계약 조회 확장 + 실거주 우선 선택(목록 dedup 동일 우선순위 — 검증에서 보강), InfoHint 문구. done.
 - 단체 공지 문자 20명 분할 질의: sms: 링크 길이 제한(침묵 절단 방지) 설명, 대안(배치 상향 실측 / 발송 API 연동 Phase 2급) 제시 — 운영자 결정 대기.
+
+## 2026-07-22 (5) — 신고 91b812ce 수전 세트 3개→1개 (d9de3cd, 3d1cf21)
+- 원인: 등록 시점엔 setHint 정상(1세트·규격 3개·97,500원). 비품 합치기(combineAssets)가 규격을 dest 값으로 덮어쓰며 구성 3개 파괴 → 1개. 구조 결함 2겹 = 확답 비강제 + 세트 저장 방식(규격 흡수)이 비품(수량 기준)에 부적합.
+- 정정: 수전 행 3개·개당 32,500(총액 불변), specText '2홀 무광' 제거(운영자 지시 — 기존 카드 완전 통합), MergeRun 모순 방지 undoneAt(fix-faucet-set.mjs, 멱등·스냅샷).
+- 근본(패널 2팀 설계, Opus 구현·선임 검증): 내구재 세트 승인=개수 환산 정본(durableSetCountPatch), 저장 게이트 choiceDialog 확답, combineAssets 세트 환산 가드+specText 복사+undo 원값 기록, setHint 한글 \b 정규식 버그(3개입 미감지, 검증 중 발견) 수정. done.
