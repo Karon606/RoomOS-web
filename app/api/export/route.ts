@@ -58,6 +58,51 @@ function autoWidth(ws: XLSX.WorkSheet) {
   ws['!cols'] = widths.map(w => ({ wch: w }))
 }
 
+// 지출 시트 1행 매핑 — 전체 워크북 '지출' 시트와 지출 전용 내보내기가 공유(중복 제거).
+type ExpenseRow = {
+  date: Date | null
+  category: string
+  detail: string | null
+  amount: number
+  payMethod: string | null
+  financeName: string | null
+  financialAccount: { brand: string; alias: string | null } | null
+  settleStatus: string
+  memo: string | null
+}
+function mapExpenseRow(e: ExpenseRow) {
+  return {
+    '날짜':      fmtDate(e.date),
+    '카테고리':  e.category,
+    '세부항목':  e.detail ?? '',
+    '금액':      e.amount,
+    '결제수단':  e.payMethod ?? '',
+    '카드/계좌': e.financeName || fmtAccount(e.financialAccount),
+    '정산여부':  SETTLE_LABEL[e.settleStatus] ?? '',
+    '메모':      e.memo ?? '',
+  }
+}
+
+// 지출 전용 내보내기 결제수단 분류 — '계좌이체'·'신용카드' 외(현금·서울페이·결제선생·null 등)는 모두 '기타'.
+function classifyExpensePayMethod(payMethod: string | null): '계좌이체' | '신용카드' | '기타' {
+  if (payMethod === '계좌이체') return '계좌이체'
+  if (payMethod === '신용카드') return '신용카드'
+  return '기타'
+}
+
+// 지출 시트 1장 생성 — 데이터 행 + 마지막 합계 행. 0건이어도 헤더+합계 0으로 생성(시트 누락 방지).
+function buildExpenseSheet(rows: ExpenseRow[]): XLSX.WorkSheet {
+  const data: Record<string, string | number>[] = rows.map(mapExpenseRow)
+  const total = rows.reduce((s, e) => s + e.amount, 0)
+  data.push({
+    '날짜': '합계', '카테고리': '', '세부항목': '', '금액': total,
+    '결제수단': '', '카드/계좌': '', '정산여부': '', '메모': '',
+  })
+  const ws = XLSX.utils.json_to_sheet(data)
+  autoWidth(ws)
+  return ws
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -70,6 +115,40 @@ export async function GET(request: NextRequest) {
   const propertyId = access.propertyId
 
   const { searchParams } = new URL(request.url)
+
+  // ── 지출 전용 내보내기(결제수단별 시트) — 인증·권한 가드 통과 후에만 분기 ──
+  if (searchParams.get('only') === 'expenses') {
+    const monthParam = searchParams.get('month')   // 없으면 전체 기간
+    let expDateRange: { gte: Date; lte: Date } | undefined
+    if (monthParam) {
+      const [ey, em] = monthParam.split('-').map(Number)
+      expDateRange = { gte: new Date(ey, em - 1, 1), lte: new Date(ey, em, 0, 23, 59, 59) }
+    }
+    const expenses = await prisma.expense.findMany({
+      where: { propertyId, ...(expDateRange ? { date: expDateRange } : {}) },
+      include: { financialAccount: { select: { brand: true, alias: true } } },
+      orderBy: { date: 'asc' },
+    })
+    const groups: Record<'계좌이체' | '신용카드' | '기타', ExpenseRow[]> = {
+      계좌이체: [], 신용카드: [], 기타: [],
+    }
+    for (const e of expenses) groups[classifyExpensePayMethod(e.payMethod)].push(e)
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['계좌이체']), '지출-계좌이체')
+    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['신용카드']), '지출-신용카드')
+    XLSX.utils.book_append_sheet(wb, buildExpenseSheet(groups['기타']),   '지출-기타')
+
+    const filename = monthParam ? `지출내역_${monthParam}.xlsx` : '지출내역_전체.xlsx'
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    return new NextResponse(buf, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      },
+    })
+  }
+
   const targetMonth = searchParams.get('month') ??
     `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const scope = (searchParams.get('scope') ?? 'month') as 'month' | 'year' | 'all'
@@ -340,16 +419,7 @@ export async function GET(request: NextRequest) {
     include: { financialAccount: { select: { brand: true, alias: true } } },
     orderBy: { date: 'asc' },
   })
-  const expenseSheet = expenses.map(e => ({
-    '날짜':      fmtDate(e.date),
-    '카테고리':  e.category,
-    '세부항목':  e.detail ?? '',
-    '금액':      e.amount,
-    '결제수단':  e.payMethod ?? '',
-    '카드/계좌': e.financeName || fmtAccount(e.financialAccount),
-    '정산여부':  SETTLE_LABEL[e.settleStatus] ?? '',
-    '메모':      e.memo ?? '',
-  }))
+  const expenseSheet = expenses.map(mapExpenseRow)
 
   // ── 기타수익 ────────────────────────────────────────────────────
   const incomes = await prisma.extraIncome.findMany({

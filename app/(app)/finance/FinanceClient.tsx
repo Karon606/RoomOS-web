@@ -1591,6 +1591,18 @@ export default function FinanceClient({
     else { setExpSearchQ(gq); setShowExpSearch(true) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // 지출 엑셀 내려받기 — 결제수단별 시트(계좌이체·신용카드·기타). 이번 달(현재 보고 있는 월) / 전체 기간 분기.
+  const handleExpenseExcel = async () => {
+    const choice = await choiceDialog({
+      title: '지출 엑셀 내려받기',
+      message: '결제수단별 시트(계좌이체·신용카드·기타)로 나눠 내려받습니다.',
+      confirmLabel: '이번 달',
+      altLabel: '전체 기간',
+      cancelLabel: '취소',
+    })
+    if (choice === 'confirm') window.location.href = `/api/export?only=expenses&month=${targetMonth}`
+    else if (choice === 'alt') window.location.href = '/api/export?only=expenses'
+  }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
   const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
@@ -2408,6 +2420,9 @@ export default function FinanceClient({
               </Btn>
               <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
                 과거 내역 검색
+              </Btn>
+              <Btn variant="secondary" size="md" onClick={handleExpenseExcel}>
+                지출 엑셀
               </Btn>
               {canEditUi && (
               <Btn variant="primary" size="md" onClick={openAddExpense}>
