@@ -49,8 +49,8 @@ export default async function SignPage({
   const link = await prisma.contractShareLink.findUnique({ where: { token } })
   if (!link) return <InactiveNotice />
   // 제출 확정으로 닫힌 링크(서명 완료 후) — 일반 만료 안내 대신 '제출 완료' 안내
-  if (link.signedAt && link.closedAt) return <SubmittedNotice />
-  if (link.closedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
+  if (link.signedAt && (link.submittedAt || link.closedAt)) return <SubmittedNotice />
+  if (link.closedAt || link.submittedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
 
   const cookieStore = await cookies()
   if (!cookieStore.get(shareCookieName(link.id))) return <BirthdateGate token={token} />

@@ -14,7 +14,8 @@ const MAX_ATTEMPTS = 5
 async function getActiveLink(token: string) {
   if (typeof token !== 'string' || !token) return null
   const link = await prisma.contractShareLink.findUnique({ where: { token } })
-  if (!link || link.closedAt || link.lockedAt || link.expiresAt <= new Date()) return null
+  // submittedAt = 원격 제출 확정 — 재접속·재서명 차단(closedAt 무산 닫기와 구분, 운영자 승인 2026-07-23)
+  if (!link || link.closedAt || link.submittedAt || link.lockedAt || link.expiresAt <= new Date()) return null
   return link
 }
 
@@ -114,9 +115,10 @@ export async function submitRemoteSignature(
   }
 }
 
-// 원격 서명 최종 제출 — 확인 팝업을 거친 뒤 호출된다. 링크를 닫아(closedAt) 재접속 시
-// 계약서가 다시 열리지 않게 하고(page.tsx 가 signedAt+closedAt 을 '제출 완료'로 안내),
-// 이 영업장 운영자에게 웹푸시를 발송한다(발송 실패는 제출을 막지 않음 — best-effort).
+// 원격 서명 최종 제출 — 확인 팝업을 거친 뒤 호출된다. submittedAt 을 찍어 재접속 시 계약서가
+// 다시 열리지 않게 하고(page.tsx 가 '제출 완료'로 안내), 운영자에게 웹푸시를 발송한다(best-effort).
+// closedAt 이 아니라 submittedAt 을 쓰는 이유 — 종 알림의 '정식 계약서 발급' 리마인더는 closedAt: null
+// 조건이라, 제출로 closedAt 을 찍으면 발급 전 리마인더가 사라진다(운영자 결정: 발급 전까지 유지, 2026-07-23).
 export async function finalizeRemoteSubmission(
   token: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -131,8 +133,8 @@ export async function finalizeRemoteSubmission(
     // 계약서 서명이 이미 저장돼 있어야 제출 가능(동의서 유무는 클라이언트 canSubmit 가 게이트).
     if (!link.signedAt) return { ok: false, error: '먼저 서명을 완료해 주세요.' }
 
-    // 제출 확정 — 링크 닫기(재접속 차단). 서명본은 LeaseTerm 에 이미 영속돼 운영자 화면에서 조회된다.
-    await prisma.contractShareLink.update({ where: { id: link.id }, data: { closedAt: new Date() } })
+    // 제출 확정 — submittedAt 잠금(재접속 차단). 서명본은 LeaseTerm 에 이미 영속돼 운영자 화면에서 조회된다.
+    await prisma.contractShareLink.update({ where: { id: link.id }, data: { submittedAt: new Date() } })
 
     // 운영자 웹푸시(best-effort) — 실패해도 제출은 성공 처리
     const tenant = await prisma.tenant.findUnique({ where: { id: link.tenantId }, select: { name: true } })

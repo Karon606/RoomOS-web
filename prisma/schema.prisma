@@ -1363,6 +1363,7 @@ model ContractShareLink {
   templateSnapshot  Json      // 발급 시점 ContractData 전체 — 원격 화면은 이 스냅샷만 렌더
   expiresAt         DateTime
   closedAt          DateTime? // 운영자 링크 닫기 (만료 전 reopen 가능)
+  submittedAt       DateTime? // 원격 제출 확정(자동 잠금) — closedAt(무산 닫기)과 구분해 '정식 계약서 발급' 리마인더가 발급 전까지 유지되게(운영자 승인 2026-07-23)
   signedAt          DateTime? // 원격 계약서 서명 수신 시각
   disposalSignedAt  DateTime? // 원격 동의서(잔여 소지품) 서명 수신 시각
   birthdateAttempts Int       @default(0)
