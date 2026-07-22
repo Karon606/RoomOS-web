@@ -1,6 +1,8 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { canReadScope } from '@/lib/auth/routeScope'
+import { expenseAccountKey } from '@/lib/expenseExport'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { computeSetHint } from '@/lib/setHint'
@@ -49,6 +51,42 @@ export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ c
   const map: Record<string, number> = {}
   for (const r of rows) map[r.category] = (map[r.category] ?? 0) + r.amount
   return Object.entries(map).map(([category, total]) => ({ category, total }))
+}
+
+// 지출 엑셀 내보내기 모달용 옵션 — 지출이 있는 월(YYYY-MM 내림차순)과 카드·계좌별 건수·금액 합(금액 내림차순).
+// 읽기 전용. 금액 정보를 담으므로 money 읽기 게이트(제한 스태프 차단). 그룹 키는 API 엑셀과 같은 공용 함수를 쓴다.
+export async function getExpenseExportOptions(): Promise<{
+  months: string[]
+  accounts: { key: string; count: number; sum: number }[]
+}> {
+  const { propertyId, role } = await requirePropertyAccess()
+  if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
+  const rows = await prisma.expense.findMany({
+    where: { propertyId },
+    select: {
+      date: true, amount: true, payMethod: true, financeName: true,
+      financialAccount: { select: { brand: true, alias: true } },
+    },
+  })
+  // 월 목록 — 지출이 존재하는 YYYY-MM(로컬 기준, API expenseMonthKey 와 동일 산식) 내림차순.
+  const monthSet = new Set<string>()
+  for (const r of rows) {
+    monthSet.add(`${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}`)
+  }
+  const months = [...monthSet].sort((a, b) => (a < b ? 1 : -1))
+  // 카드·계좌 키별 건수·금액 합 — 금액 합 내림차순(엑셀 시트 배치 순서와 통일).
+  const acc = new Map<string, { count: number; sum: number }>()
+  for (const r of rows) {
+    const key = expenseAccountKey(r)
+    const cur = acc.get(key) ?? { count: 0, sum: 0 }
+    cur.count += 1
+    cur.sum += r.amount
+    acc.set(key, cur)
+  }
+  const accounts = [...acc.entries()]
+    .map(([key, v]) => ({ key, count: v.count, sum: v.sum }))
+    .sort((a, b) => b.sum - a.sum)
+  return { months, accounts }
 }
 
 export async function getRoomList() {

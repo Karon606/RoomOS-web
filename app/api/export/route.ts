@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
+import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return ''
@@ -12,11 +13,6 @@ function fmtDate(d: Date | null | undefined): string {
     timeZone: 'Asia/Seoul',
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).replace(/\. /g, '-').replace('.', '')
-}
-
-function fmtAccount(acc: { brand: string; alias: string | null } | null | undefined): string {
-  if (!acc) return ''
-  return acc.alias ? `${acc.brand}(${acc.alias})` : acc.brand
 }
 
 const GENDER_LABEL: Record<string, string> = {
@@ -105,14 +101,6 @@ function buildExpenseSheet(rows: ExpenseRow[]): XLSX.WorkSheet {
   return ws
 }
 
-// 지출 카드·계좌별 그룹 키 — '카드/계좌' 열과 동일 표시값(financeName || 계좌표시), 없으면 결제수단명, 그것도 없으면 '미지정'.
-function expenseAccountKey(e: ExpenseRow): string {
-  const name = e.financeName || fmtAccount(e.financialAccount)
-  if (name) return name
-  if (e.payMethod) return e.payMethod
-  return '미지정'
-}
-
 // 지출 월별 그룹 키 — 날짜 기준 'YYYY-MM'.
 function expenseMonthKey(d: Date | null): string {
   if (!d) return '날짜없음'
@@ -157,11 +145,20 @@ export async function GET(request: NextRequest) {
       const [ey, em] = monthParam.split('-').map(Number)
       expDateRange = { gte: new Date(ey, em - 1, 1), lte: new Date(ey, em, 0, 23, 59, 59) }
     }
-    const expenses = await prisma.expense.findMany({
+    // 카드·계좌 필터 — 쉼표 구분 accountKey 목록(각 값 encodeURIComponent). 있으면 공용 accountKey(시트 그룹핑과 동일 정의)로 걸러낸다.
+    const accountsParam = searchParams.get('accounts')
+    const wantedAccounts = accountsParam
+      ? new Set(accountsParam.split(',').map(s => decodeURIComponent(s)))
+      : null
+
+    const allExpenses = await prisma.expense.findMany({
       where: { propertyId, ...(expDateRange ? { date: expDateRange } : {}) },
       include: { financialAccount: { select: { brand: true, alias: true } } },
       orderBy: { date: 'asc' },
     })
+    const expenses = wantedAccounts
+      ? allExpenses.filter(e => wantedAccounts.has(expenseAccountKey(e)))
+      : allExpenses
 
     const wb = XLSX.utils.book_new()
 
@@ -206,7 +203,13 @@ export async function GET(request: NextRequest) {
 
     const periodLabel = monthParam ?? '전체'
     const groupLabel = groupParam === 'account' ? '카드계좌별' : groupParam === 'month' ? '월별' : '결제수단별'
-    const filename = `지출내역_${periodLabel}_${groupLabel}.xlsx`
+    // 계좌 필터 표시 — 없으면 생략, 1개면 그 이름(sanitize), 2개 이상이면 'N곳'.
+    let accountSuffix = ''
+    if (wantedAccounts && wantedAccounts.size > 0) {
+      const names = [...wantedAccounts]
+      accountSuffix = names.length === 1 ? `_${sanitizeSheetName(names[0])}` : `_${names.length}곳`
+    }
+    const filename = `지출내역_${periodLabel}_${groupLabel}${accountSuffix}.xlsx`
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
     return new NextResponse(buf, {
       headers: {

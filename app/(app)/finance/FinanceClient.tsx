@@ -16,6 +16,7 @@ import {
   setRecurringPendingAmount, clearRecurringPendingAmount,
   getVendorUsage, renameVendor,
   searchExpenses,
+  getExpenseExportOptions,
   type RecurringExpenseWithStatus,
   type ExpenseSearchResult,
 } from './actions'
@@ -1577,10 +1578,14 @@ export default function FinanceClient({
   const [recError, setRecError]         = useState('')
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
-  // ── 지출 엑셀 내려받기 모달 (기간·시트 구분 선택) ────────────
+  // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
   const [showExpExcel, setShowExpExcel] = useState(false)
-  const [expExcelPeriod, setExpExcelPeriod] = useState<'month' | 'all'>('month')
+  const [expExcelMonth, setExpExcelMonth] = useState<string>('all')   // 'all'=전체 기간, 그 외 'YYYY-MM'
   const [expExcelGroup, setExpExcelGroup] = useState<'method' | 'account' | 'month'>('method')
+  // 모달 열 때 1회 로드하는 옵션(지출 있는 월·카드계좌별 집계)과 카드계좌 선택 상태
+  const [expExcelOpts, setExpExcelOpts] = useState<{ months: string[]; accounts: { key: string; count: number; sum: number }[] } | null>(null)
+  const [expExcelOptLoading, setExpExcelOptLoading] = useState(false)
+  const [expExcelAccSel, setExpExcelAccSel] = useState<Set<string>>(new Set())
   // ── 과거 구매내역 검색 모달 (전 기간) ────────────────────────
   const [showExpSearch, setShowExpSearch] = useState(false)
   const [expSearchQ, setExpSearchQ] = useState('')
@@ -1595,11 +1600,31 @@ export default function FinanceClient({
     else { setExpSearchQ(gq); setShowExpSearch(true) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // 지출 엑셀 내려받기 — 기간(이번 달/전체)·시트 구분(결제수단별/카드·계좌별/월별)을 모달에서 선택.
-  const handleExpenseExcel = () => { setExpExcelPeriod('month'); setExpExcelGroup('method'); setShowExpExcel(true) }
+  // 지출 엑셀 내려받기 — 기간(전체/월 선택)·시트 구분·카드계좌 필터를 모달에서 선택. 옵션은 열 때 1회 로드.
+  const handleExpenseExcel = () => {
+    setExpExcelGroup('method')
+    setExpExcelMonth('all')
+    setExpExcelOpts(null)
+    setExpExcelAccSel(new Set())
+    setShowExpExcel(true)
+    setExpExcelOptLoading(true)
+    getExpenseExportOptions().then(opts => {
+      setExpExcelOpts(opts)
+      // 기본 기간 = 현재 보고 있는 달(목록에 있으면), 없으면 전체 기간. 카드계좌는 기본 전체 체크.
+      setExpExcelMonth(opts.months.includes(targetMonth) ? targetMonth : 'all')
+      setExpExcelAccSel(new Set(opts.accounts.map(a => a.key)))
+    }).catch(() => setExpExcelOpts({ months: [], accounts: [] }))
+      .finally(() => setExpExcelOptLoading(false))
+  }
   const downloadExpenseExcel = () => {
     const params = new URLSearchParams({ only: 'expenses', group: expExcelGroup })
-    if (expExcelPeriod === 'month') params.set('month', targetMonth)
+    if (expExcelMonth !== 'all') params.set('month', expExcelMonth)
+    // 카드·계좌 필터 — 전부 선택이면 생략(=필터 없음), 일부만이면 선택 키를 encodeURIComponent 해 쉼표로 묶어 전달.
+    const allKeys = expExcelOpts?.accounts.map(a => a.key) ?? []
+    const selectedAll = allKeys.length > 0 && expExcelAccSel.size === allKeys.length
+    if (!selectedAll && expExcelAccSel.size > 0) {
+      params.set('accounts', [...expExcelAccSel].map(k => encodeURIComponent(k)).join(','))
+    }
     window.location.href = `/api/export?${params.toString()}`
     setShowExpExcel(false)
   }
@@ -3161,28 +3186,32 @@ export default function FinanceClient({
       {/* ══════════════════════════════════════════════════════════
           모달: 지출 엑셀 내려받기 (기간·시트 구분 선택)
       ══════════════════════════════════════════════════════════ */}
-      {showExpExcel && (
+      {showExpExcel && (() => {
+        const accCount = expExcelOpts?.accounts.length ?? 0
+        const noneSelected = accCount > 0 && expExcelAccSel.size === 0
+        const allSelected = accCount > 0 && expExcelAccSel.size === accCount
+        return (
         <Modal open onClose={() => setShowExpExcel(false)} width="sm"
           title="지출 엑셀 내려받기"
           footer={
             <div className="flex items-center justify-end gap-2">
               <Btn variant="secondary" size="md" onClick={() => setShowExpExcel(false)}>취소</Btn>
-              <Btn variant="primary" size="md" onClick={downloadExpenseExcel}>내려받기</Btn>
+              <Btn variant="primary" size="md" onClick={downloadExpenseExcel} disabled={expExcelOptLoading || noneSelected}>내려받기</Btn>
             </div>
           }>
           <div className="p-6 space-y-5">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기간</label>
-              <div>
-                <SegmentedControl
-                  size="md" ariaLabel="기간"
-                  value={expExcelPeriod} onChange={setExpExcelPeriod}
-                  options={[
-                    { value: 'month', label: '이번 달' },
-                    { value: 'all', label: '전체 기간' },
-                  ]}
-                />
-              </div>
+              {expExcelOptLoading ? (
+                <div className="h-[38px] rounded-sm bg-[var(--cream)] animate-pulse" />
+              ) : (
+                <select
+                  value={expExcelMonth} onChange={e => setExpExcelMonth(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                  <option value="all">전체 기간</option>
+                  {expExcelOpts?.months.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">시트 구분</label>
@@ -3203,9 +3232,48 @@ export default function FinanceClient({
                   : '월마다 시트 1장'}
               </p>
             </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">카드·계좌</label>
+                {!expExcelOptLoading && accCount > 0 && (
+                  <button type="button"
+                    onClick={() => setExpExcelAccSel(allSelected ? new Set() : new Set(expExcelOpts!.accounts.map(a => a.key)))}
+                    className="text-[0.65625rem] text-[var(--coral)] hover:underline">
+                    {allSelected ? '전체 해제' : '전체 선택'}
+                  </button>
+                )}
+              </div>
+              {expExcelOptLoading ? (
+                <div className="space-y-1.5">
+                  {[0, 1, 2].map(i => <div key={i} className="h-8 rounded-sm bg-[var(--cream)] animate-pulse" />)}
+                </div>
+              ) : accCount === 0 ? (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 내역이 없습니다.</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-0.5 border border-[var(--warm-border)] rounded-sm p-2">
+                  {expExcelOpts!.accounts.map(a => (
+                    <label key={a.key} className="flex items-center gap-2 px-1 py-1 cursor-pointer">
+                      <input type="checkbox" checked={expExcelAccSel.has(a.key)}
+                        onChange={() => setExpExcelAccSel(prev => {
+                          const n = new Set(prev)
+                          if (n.has(a.key)) n.delete(a.key); else n.add(a.key)
+                          return n
+                        })}
+                        className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
+                      <span className="text-sm text-[var(--warm-dark)] truncate flex-1">{a.key}</span>
+                      <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">{a.count}건 · {fmtWon(a.sum)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {noneSelected && (
+                <p className="text-[0.65625rem] text-[var(--coral)]">카드·계좌를 하나 이상 선택하세요</p>
+              )}
+            </div>
           </div>
         </Modal>
-      )}
+        )
+      })()}
 
       {/* ══════════════════════════════════════════════════════════
           모달: 지출 상세 / 수정
