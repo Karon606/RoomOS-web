@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import type { DashboardData } from './DashboardClient'
+import { computeUnpaidStatus } from './unpaid'
 
 // ── 추이 차트 ────────────────────────────────────────────────────
 
@@ -324,6 +325,27 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '조회에 실패했습니다.' }
+  }
+}
+
+// 특정 입주자 1명의 미납 독촉 대상 — 정본 computeUnpaidStatus 를 tenantId 로 필터(계산 로직 복제 금지).
+// 납부일 경과 미납(daysOverdue>=1 · unpaidAmount>0)이 아니면 null → 고객 상세 독촉 버튼 미노출.
+// 반환 구조는 UnpaidSmsModal 의 UnpaidSmsTarget 과 동일(그대로 넘겨 재사용).
+export type TenantUnpaidTarget = {
+  leaseId: string; tenantId: string; tenantName: string; roomNo: string
+  unpaidAmount: number; daysOverdue: number | null
+}
+export async function getTenantUnpaidTarget(tenantId: string): Promise<TenantUnpaidTarget | null> {
+  try {
+    const access = await getPropertyAccess()
+    if (!access) return null
+    const { unpaidLeases } = await computeUnpaidStatus(access.propertyId)
+    const l = unpaidLeases.find(x => x.tenantId === tenantId && x.unpaidAmount > 0 && (x.daysOverdue ?? -1) >= 1)
+    if (!l) return null
+    return { leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return null
   }
 }
 

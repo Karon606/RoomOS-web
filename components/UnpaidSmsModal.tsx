@@ -20,7 +20,8 @@ export type UnpaidSmsTarget = {
   daysOverdue: number | null
 }
 
-export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; onClose: () => void }) {
+// z — 다른 모달(고객 상세 entity-modal z=280 등) 위에 겹쳐 띄울 때. 대시보드는 기본 200.
+export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSmsTarget; onClose: () => void; z?: 200 | 260 | 280 }) {
   const [step, setStep] = useState<'confirm' | 'compose'>('confirm')
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null)
   const [ctx, setCtx] = useState<UnpaidSmsContext | null>(null)
@@ -82,7 +83,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
 
   if (step === 'confirm') {
     return (
-      <Modal open onClose={onClose} title="보내기 전에 확인해 주세요" width="xs"
+      <Modal open onClose={onClose} title="보내기 전에 확인해 주세요" width="xs" z={z}
         footer={
           <div className="flex gap-2 justify-end">
             <Btn variant="secondary" size="md" onClick={onClose}>취소</Btn>
@@ -107,7 +108,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
   }
 
   return (
-    <Modal open onClose={onClose} title="미납 안내 문자" width="sm"
+    <Modal open onClose={onClose} title="미납 안내 문자" width="sm" z={z}
       subtitle="변수가 채워진 본문을 확인하고 문자앱으로 보냅니다 · 여기 기록은 '발송 시도'입니다"
       footer={
         <div className="flex items-center gap-2 justify-end">
