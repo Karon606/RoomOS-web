@@ -3,6 +3,17 @@
 마지막 업데이트: 2026-07-23
 브랜치: main
 
+## 2026-07-23 (4) — 오류신고 3건 + 청소비 표기 (fb00112a·089f0f17·962c65d2)
+
+조사(Explore 2인)→원문표시·분류→운영자 승인→전문가 패널(문자 컴포즈 모달)→구현. 4건 배포.
+
+- **① 단기 예약자 예상요금 청소비 표기**: ShortStayInfoWidget이 total(월세일할+청소비)을 보여주던 것을 baseAmount(월세분)만 표시, 청소비·보증금은 별도 표기. 계산·정책 불변(운영자 지적, 조사가 놓쳤던 단기 위젯).
+- **② fb00112a 오류신고 입력창**: textarea에 autoComplete off·spellCheck 등 추가(iOS 주소 자동완성 대신 맞춤법). (a) 흔들어서 실행취소는 iOS 시스템 기능이라 웹 제어 불가 — 운영자 안내.
+- **③ 962c65d2 고객정보 문자 컴포즈 모달**: 빈 sms: 버튼을 템플릿 선택·직접작성+AI다듬기 모달로. 부품 재사용(SmsTemplate kind 'personal' 신설, polishNoticeText, Property.bankAccount). 신규 TenantSmsModal·lib/smsHref. 기존 UnpaidSms/NoticeSms 무변경.
+- **④ 089f0f17 호실 요금 자동제안**: 방 타입·등급·창문 선택 시 같은 조건 기존 방 baseRent 최빈값 제안(수동 수정 유지). 별도 요금표 신설 안 함(조사 정정: '방 컨디션별 예상 요금'은 요금표가 아니라 방별 baseRent 그룹핑). select controlled 전환, onChange 구동으로 첫 마운트 스킵.
+
+주의: ③④ 병렬 위임 중 한 에이전트가 git stash로 워킹트리 조작 + iCloud revert 오실레이션 — 무손실 복원 확인 후 통합 tsc/build 재검증하고 커밋. 향후 위임 시 git stash 금지 지시 필요.
+
 ## 2026-07-23 (3) — 재고 보충 시 허브 부족 감지 + 이동 유도 팝업 (신고 f37a93cc)
 
 '쌀 사건' 클래스 봉합. 허브(창고) 잔량보다 많이 보충하면 조용히 0 클램프하던 것을, 서버가 감지해 HUB_SHORT 반환 → 팝업으로 (1)다른 위치→허브 이동 (2)허브 실측 (3)그냥 진행. 장부<실물 오탐 대비 실측 유도.
