@@ -3,6 +3,14 @@
 마지막 업데이트: 2026-07-23
 브랜치: main
 
+## 2026-07-23 (3) — 재고 보충 시 허브 부족 감지 + 이동 유도 팝업 (신고 f37a93cc)
+
+'쌀 사건' 클래스 봉합. 허브(창고) 잔량보다 많이 보충하면 조용히 0 클램프하던 것을, 서버가 감지해 HUB_SHORT 반환 → 팝업으로 (1)다른 위치→허브 이동 (2)허브 실측 (3)그냥 진행. 장부<실물 오탐 대비 실측 유도.
+
+과정: 조사(Explore)→내 판단·개략설계 보고→운영자 승인→전문가 패널 3인(재고 도메인·UX·디자인) 설계 확정(스코프: 서버 게이트 두 경로 / 전용 목록 팝업, 운영자 택)→Opus 구현→적대 회귀검증 2회. 치명 3건 봉합: ①경로 B 유령재고(재시도가 이동 출처를 절대 locationQtys에서 제거 안 함 → excludeLocationIds로 제외) ②updateStockCheck 경로 B 게이트 누락(수정 경로 쌀 재발) ③onClampSave 강행저장 excludeLocationIds 누락(유령재고 하위클래스). 총량보존·거짓부족방지·허브식별일치 대수 검증.
+
+핵심: detectHubShort(stockCheckMerge), 서버 단일 게이트(create·update 경로 A/B), allowHubClamp 하위호환, HubShortDialog(원탭 이동·통합 undo LIFO). transferLocationStock·getItemLocationStock 재사용(신규 모델 없음). knowledge/domain-inventory.md 쌀 사건 섹션에 봉합 적립.
+
 ## 2026-07-23 (2) — 입주자 폼 6개 개선 + 지출 일괄편집 구매처 연동 (전문가 패널 반영)
 
 운영자 UI 개선 요청 6건 + 지출 일괄편집 확장 1건. 조사(Explore 2인)→계획 보고→승인→구현→UX/디자인/프론트 패널 3인 검토→지적 반영→커밋.

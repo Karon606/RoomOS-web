@@ -14,6 +14,12 @@
 ## 허브 차감 클램프는 조용히 삼킨다 (2026-07-10 쌀 사건)
 위치별 점검의 보충이 허브 장부 잔량보다 크면 `Math.max(0, 허브 − 보충)`으로 0 클램프되고 **부족분은 어디에도 기록되지 않는다**. 장부 허브가 실물보다 적으면(실측이 오래됨) 보충 한 번에 총량이 급락해 소진임박 오탐 — 쌀: 창고 장부 20에서 5층 보충 +20 → 창고 0, 총량 28.5(실물 ~68). 허브(창고)도 주기적으로 실측해야 하는 이유.
 
+**봉합(2026-07-23, 신고 f37a93cc)**: 조용한 클램프 대신 서버가 감지해 막는다. `detectHubShort`(lib/stockCheckMerge)가 `restockedQty > 허브 base`면 `HUB_SHORT` 반환 → 클라 `HubShortDialog`가 (1)다른 위치→허브 이동 (2)허브 실측 유도 (3)그냥 진행(`allowHubClamp:true`)을 묻는다. 오탐(장부<실물) 대비로 실측을 권함. 요점:
+- **서버 단일 게이트**가 정본 — 두 보충 경로를 모두 커버해야 한다. 경로 A(`locationPatch`, 위치 패널)는 서버 base에서, 경로 B(`locationQtys` 마커, CheckForm)는 마커 합 vs 서버 재구성 허브(직전점검 허브+`additionsSinceCheckByLocation`)로 감지. `updateStockCheck`(CheckEditForm 수정)에도 경로 B 게이트 필수 — 빠지면 수정 경로로 쌀 재발(클래스 반만 닫힘).
+- **경로 B 재시도는 이동 출처 위치를 `locationQtys`에서 제외**해야 유령 재고(총량 과다)가 안 생긴다. 절대값을 그대로 재전송하면 이동으로 깎인 출처가 carryOver 제외로 stale 복원돼 이중 계상. 이동/강행 저장 **두 재시도 경로 모두** `excludeLocationIds`를 넘겨야 함(한쪽만 넘기면 강행 저장으로 재발).
+- **판정 허브 = 클라 차감 허브**여야 한다. 클라가 `restockHubLocationId`(isHub 위치)를 넘겨 서버 검출(`resolveItemHubLocationId` 폴백)과 일치시킴 — 어긋나면 거짓 음/양성.
+- 이동은 `transferLocationStock`(shortfall만), undo는 이동+보충 두 checkId LIFO `deleteStockCheck`.
+
 ## 위치별 점검 더블클릭 방지
 저장 중복 제출 차단: 클라 동기 가드(`savingRef`/`submittingRef`) + 서버 멱등(같은 patch면 재적용 안 함). `locationPatch`는 상대 차감(허브 −보충)이라 재적용 시 허브 2배 차감되던 버그.
 
