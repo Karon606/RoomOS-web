@@ -140,6 +140,29 @@ function deriveFloor(roomNo: string): string {
   return ''
 }
 
+// 같은 (타입·등급·창문) 조합의 기존 방 baseRent 최빈값을 제안한다. 빈 필드는 매칭에서 제외하고,
+// 최소 한 필드는 선택돼야 하며 매칭되는 방이 없으면 null(제안하지 않음).
+function suggestBaseRent(rooms: Room[], type: string, tier: string, windowType: string): number | null {
+  if (!type && !tier && !windowType) return null
+  const matched = rooms.filter(r => {
+    if (type && r.type !== type) return false
+    if (tier && r.tier !== tier) return false
+    if (windowType && r.windowType !== windowType) return false
+    return r.baseRent > 0
+  })
+  if (matched.length === 0) return null
+  // 최빈값 — baseRent 값별 빈도 집계 후 최다 빈도(동률이면 먼저 만난 값)
+  const counts = new Map<number, number>()
+  let best = 0
+  let bestCount = 0
+  for (const r of matched) {
+    const c = (counts.get(r.baseRent) ?? 0) + 1
+    counts.set(r.baseRent, c)
+    if (c > bestCount) { bestCount = c; best = r.baseRent }
+  }
+  return best
+}
+
 export default function RoomManageClient({
   initialRooms,
   roomTypes,
@@ -232,6 +255,20 @@ export default function RoomManageClient({
   // 비거주 이용료 상태 — 등록 모달
   const [addNrEnabled, setAddNrEnabled]   = useState(false)
   const [addNrDateVal, setAddNrDateVal]   = useState('')
+
+  // 방 컨디션(타입·등급·창문) + 기본 이용료 controlled 상태 — 조합 선택 시 baseRent 자동제안(신고 089f0f17).
+  // 등록 모달
+  const [addType, setAddType]             = useState('')
+  const [addTier, setAddTier]             = useState('')
+  const [addWindowType, setAddWindowType] = useState('')
+  const [addBaseRent, setAddBaseRent]     = useState(0)
+  const [addRentSuggested, setAddRentSuggested] = useState(false)
+  // 수정 모달
+  const [editType, setEditType]             = useState('')
+  const [editTier, setEditTier]             = useState('')
+  const [editWindowType, setEditWindowType] = useState('')
+  const [editBaseRent, setEditBaseRent]     = useState(0)
+  const [editRentSuggested, setEditRentSuggested] = useState(false)
 
   // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
   // handledOpenRef: 같은 요청은 1회만 처리 — initialRooms 갱신(저장 후 refresh)마다
@@ -326,6 +363,12 @@ export default function RoomManageClient({
     setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
     setNrEnabled(room.nonResidentRent != null)
     setNrDateVal(room.nonResidentRentDate ? new Date(room.nonResidentRentDate).toISOString().slice(0, 10) : '')
+    // 방 컨디션·이용료 controlled 초기화 — 최초 로드는 기존 값 그대로, 자동제안은 이후 select 변경부터.
+    setEditType(room.type ?? '')
+    setEditTier(room.tier ?? '')
+    setEditWindowType(room.windowType ?? '')
+    setEditBaseRent(room.baseRent)
+    setEditRentSuggested(false)
     setError('')
   }
 
@@ -359,8 +402,24 @@ export default function RoomManageClient({
     setAddNrDateVal('')
     setAddRoomNoVal('')
     setAddFloorVal('')
+    setAddType('')
+    setAddTier('')
+    setAddWindowType('')
+    setAddBaseRent(0)
+    setAddRentSuggested(false)
     setShowAddModal(false)
     setError('')
+  }
+
+  // 방 컨디션 select 를 바꿀 때 같은 조합 기존 방들의 baseRent 최빈값을 제안(신고 089f0f17).
+  // 매칭 방이 없으면 기존 값 유지. 사용자가 이용료를 직접 고치면 제안 표시는 해제한다.
+  const suggestAdd = (type: string, tier: string, windowType: string) => {
+    const s = suggestBaseRent(rooms, type, tier, windowType)
+    if (s != null) { setAddBaseRent(s); setAddRentSuggested(true) }
+  }
+  const suggestEdit = (type: string, tier: string, windowType: string) => {
+    const s = suggestBaseRent(rooms, type, tier, windowType)
+    if (s != null) { setEditBaseRent(s); setEditRentSuggested(true) }
   }
 
   const MAX_PHOTOS = 10
@@ -583,10 +642,10 @@ export default function RoomManageClient({
     pushToast('success', '사진 순서 저장됨')
   }
 
-  const TypeSection = ({ defaultValue }: { defaultValue?: string }) => (
+  const TypeSection = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
-      <select name="type" defaultValue={defaultValue ?? ''}
+      <select name="type" value={value} onChange={e => onChange(e.target.value)}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -595,10 +654,10 @@ export default function RoomManageClient({
     </div>
   )
 
-  const TierSection = ({ defaultValue }: { defaultValue?: string }) => (
+  const TierSection = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">등급</label>
-      <select name="tier" defaultValue={defaultValue ?? ''}
+      <select name="tier" value={value} onChange={e => onChange(e.target.value)}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {tiers.map(t => <option key={t} value={t}>{t}</option>)}
@@ -983,11 +1042,14 @@ export default function RoomManageClient({
                 />
               </div>
             </div>
-            <TypeSection />
-            <TierSection />
+            <TypeSection value={addType} onChange={v => { setAddType(v); suggestAdd(v, addTier, addWindowType) }} />
+            <TierSection value={addTier} onChange={v => { setAddTier(v); suggestAdd(addType, v, addWindowType) }} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
-              <MoneyInput name="baseRent" placeholder="0원" />
+              <MoneyInput name="baseRent" value={addBaseRent} onChange={v => { setAddBaseRent(v); setAddRentSuggested(false) }} placeholder="0원" />
+              {addRentSuggested && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">같은 조건 방 기준 기본값입니다. 방마다 다르면 수정하세요.</p>
+              )}
             </div>
 
             {/* 비거주 이용료 설정 */}
@@ -1027,6 +1089,7 @@ export default function RoomManageClient({
 
             <div className="grid grid-cols-2 gap-3">
               <SelectField label="창문 타입" name="windowType" options={windowTypeOptions}
+                value={addWindowType} onChange={v => { setAddWindowType(v); suggestAdd(addType, addTier, v) }}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
               <SelectField label="방향" name="direction" options={directionOptions}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
@@ -1100,11 +1163,14 @@ export default function RoomManageClient({
                 />
               </div>
             </div>
-            <TypeSection defaultValue={editRoom.type ?? ''} />
-            <TierSection defaultValue={editRoom.tier ?? ''} />
+            <TypeSection value={editType} onChange={v => { setEditType(v); suggestEdit(v, editTier, editWindowType) }} />
+            <TierSection value={editTier} onChange={v => { setEditTier(v); suggestEdit(editType, v, editWindowType) }} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
-              <MoneyInput name="baseRent" defaultValue={editRoom.baseRent} />
+              <MoneyInput name="baseRent" value={editBaseRent} onChange={v => { setEditBaseRent(v); setEditRentSuggested(false) }} />
+              {editRentSuggested && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">같은 조건 방 기준 기본값입니다. 방마다 다르면 수정하세요.</p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1154,7 +1220,8 @@ export default function RoomManageClient({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions} defaultValue={editRoom.windowType ?? ''}
+              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions}
+                value={editWindowType} onChange={v => { setEditWindowType(v); suggestEdit(editType, editTier, v) }}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
               <SelectField label="방향" name="direction" options={directionOptions} defaultValue={editRoom.direction ?? ''}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
@@ -1663,13 +1730,16 @@ function Field({ label, name, placeholder, defaultValue }: {
   )
 }
 
-function SelectField({ label, name, options, defaultValue, hint }: {
+function SelectField({ label, name, options, defaultValue, hint, value, onChange }: {
   label: string; name: string; options: { value: string; label: string }[]; defaultValue?: string; hint?: string
+  value?: string; onChange?: (v: string) => void   // 넘기면 controlled(자동제안 연동), 없으면 기존 uncontrolled
 }) {
+  const controlled = onChange !== undefined
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
-      <select name={name} defaultValue={defaultValue ?? ''}
+      <select name={name}
+        {...(controlled ? { value, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => onChange(e.target.value) } : { defaultValue: defaultValue ?? '' })}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
