@@ -176,6 +176,12 @@ export default function ErrorReportButton() {
             onChange={e => setNote(e.target.value)}
             rows={4}
             autoFocus
+            // iOS QuickType 의 주소·연락처 자동완성 대신 맞춤법 교정을 유도(운영자 요청). autoComplete off 로
+            // 폼 자동완성을 끄고 spellCheck/autoCorrect 로 교정 활성 — 단 iOS 연락처 제안 완전 차단은 보장 안 됨.
+            autoComplete="off"
+            autoCorrect="on"
+            autoCapitalize="sentences"
+            spellCheck={true}
             placeholder="예: 수납 저장을 눌렀더니 금액이 0으로 바뀌었어요"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none"
           />
