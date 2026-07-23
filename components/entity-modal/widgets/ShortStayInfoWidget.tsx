@@ -116,7 +116,13 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
           <div>
             <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">
               {wishCount > 0 ? '희망 방 기준 예상 요금' : '방 컨디션별 예상 요금'}
-              <span className="ml-1 font-normal text-[var(--warm-muted)]">(청소비 포함{data.shortStay.deposit > 0 ? ` · 보증금 ${fmtWon(data.shortStay.deposit)} 별도` : ''})</span>
+              {(() => {
+                // 표시 금액은 월세 일할분(baseAmount)만 — 청소비·보증금은 별도로 안내(운영자 지적 2026-07-23).
+                const parts: string[] = []
+                if (data.shortStay.cleaningFee > 0) parts.push(`청소비 ${fmtWon(data.shortStay.cleaningFee)} 별도`)
+                if (data.shortStay.deposit > 0) parts.push(`보증금 ${fmtWon(data.shortStay.deposit)} 별도`)
+                return parts.length > 0 ? <span className="ml-1 font-normal text-[var(--warm-muted)]">({parts.join(' · ')})</span> : null
+              })()}
             </p>
             <ul className="space-y-1">
               {groups.map(g => {
@@ -126,7 +132,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
                     <span className="min-w-0 truncate text-[var(--warm-mid)]">
                       {g.label} <span className="text-[var(--warm-muted)]">{manCompact(g.rent)}{wishCount > 0 ? ` · ${g.roomNos.join(', ')}호` : ''}</span>
                     </span>
-                    <span className="shrink-0 tabular-nums font-semibold text-[var(--warm-dark)]">{q ? fmtWon(q.total) : '기간 초과(월 단위)'}</span>
+                    <span className="shrink-0 tabular-nums font-semibold text-[var(--warm-dark)]">{q ? fmtWon(q.baseAmount) : '기간 초과(월 단위)'}</span>
                   </li>
                 )
               })}
