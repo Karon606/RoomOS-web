@@ -43,3 +43,26 @@ export function applyLocationCheck(base: LocBreakdown[], patch: LocCheckPatch): 
 export function totalQty(locs: { qty: number }[]): number {
   return locs.reduce((s, l) => s + l.qty, 0)
 }
+
+// 허브 부족 감지(순수) — 비허브 보충량이 허브 잔량을 넘어 조용히 0 클램프될 상황을 잡아낸다(쌀 사건).
+// applyLocationCheck 의 자동 차감 조건(비허브·보충>0·허브 지정)과 정확히 같은 게이트에서만 판정한다.
+// others 는 base 에서 허브·점검 위치를 뺀 잔량 보유 위치(이동 출처 후보). 이름은 서버가 채운다.
+export type HubShort = {
+  code: 'HUB_SHORT'
+  hubLocationId: string
+  hubQty: number
+  shortfall: number
+  others: { locationId: string; qty: number }[]
+}
+const HUB_SHORT_EPS = 1e-6
+export function detectHubShort(base: LocBreakdown[], patch: LocCheckPatch, allowHubClamp?: boolean): HubShort | null {
+  if (allowHubClamp) return null
+  const isHubChecked = patch.hubLocationId != null && patch.checkedLocationId === patch.hubLocationId
+  if (isHubChecked || !patch.hubLocationId || !(patch.restockedQty > 0)) return null
+  const hubQty = base.find(lb => lb.locationId === patch.hubLocationId)?.qty ?? 0
+  if (patch.restockedQty <= hubQty + HUB_SHORT_EPS) return null
+  const others = base
+    .filter(lb => lb.locationId !== patch.hubLocationId && lb.locationId !== patch.checkedLocationId && lb.qty > 0)
+    .map(lb => ({ locationId: lb.locationId, qty: lb.qty }))
+  return { code: 'HUB_SHORT', hubLocationId: patch.hubLocationId, hubQty, shortfall: patch.restockedQty - hubQty, others }
+}

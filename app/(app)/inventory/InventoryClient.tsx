@@ -82,7 +82,7 @@ import {
   unmergeTrackedItem,
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
-  undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock,
+  undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
@@ -115,6 +115,20 @@ const fmtQty = (val: number | null, unit: string | null) => {
   if (val == null) return '—'
   const rounded = Math.round(val * 100) / 100
   return `${rounded}${unit ?? ''}`
+}
+
+// 품목 행의 표시 단위 — 추적 단위(spec/qty)에 맞춰. TransferStockModal 과 동일 규칙.
+const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? '개') : (r.specUnit ?? r.qtyUnit ?? '개')
+
+// 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
+type HubShortPending = {
+  trackedItemId: string
+  itemLabel: string       // 다품목 큐에서 어느 품목인지 표시(비면 숨김)
+  unit: string | null
+  info: HubShortResponse
+  // allowHubClamp:true 면 강행 저장, 아니면 이동으로 허브를 채운 뒤 재저장. 성공 시 새 점검 id 반환.
+  // excludeLocationIds — 경로 B 에서 이동 출처 위치를 절대 locationQtys 에서 제거해 유령 재고(총량 과다) 방지.
+  retry: (opts: { allowHubClamp?: boolean; excludeLocationIds?: string[] }) => Promise<{ ok: true; id: string } | { ok: false; error: string } | HubShortResponse>
 }
 
 
@@ -2375,7 +2389,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   stockUnit: string | null
   itemLocations: StorageLocationItem[]
   onCancel: () => void
-  onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number; restockedQty?: number }[] }) => Promise<void>
+  onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number; restockedQty?: number }[]; restockHubLocationId?: string }) => Promise<void>
   pending: boolean
   error: string
 }) {
@@ -2453,6 +2467,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
     if (hasLocations) {
       onSave({
         date, memo: memo || null,
+        // 클라가 차감한 허브를 서버 검출과 일치시켜 조용한 클램프를 정확히 감지(권장 수정).
+        restockHubLocationId: hubLoc?.id,
         locationQtys: locationSources
           // 허브 + 원래 점검에 있던 위치 + 사용자가 값을 입력한 위치만 저장.
           // (새로 표시된 위치를 안 건드렸으면 0으로 끼워넣지 않음 — breakdown 오염 방지)
@@ -2794,6 +2810,8 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
   const [error, setError] = useState('')
   // 더블클릭 중복 제출 동기 차단 — isPending(useTransition)은 리렌더 후 반영이라 그 전 재진입 방지.
   const submittingRef = useRef(false)
+  // 허브 부족 감지 시 이동 유도 팝업(단일 품목)
+  const [hubShort, setHubShort] = useState<HubShortPending | null>(null)
 
   // 임시저장(드래프트) — 아이템별 점검은 locationId null. 폼을 열면 직전 임시저장값을 복원.
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
@@ -2973,17 +2991,31 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
     if (total < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
 
     submittingRef.current = true
+    // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존(2026-06-01 사용량 왜곡 버그 fix).
+    // restockHubLocationId — 클라가 실제 차감한 허브를 서버 검출과 일치시켜 오탐/미탐 방지.
+    const saveArgs = {
+      trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
+      locationQtys: locationData, carryOverFromLastCheck: true, isReconcile: reconcileMode,
+      restockHubLocationId: hubLoc?.id,
+    }
     startTransition(async () => {
       try {
-        const res = await createStockCheck({
-          trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
-          locationQtys: locationData,
-          // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존
-          // (2026-06-01 사용량 왜곡 버그 fix).
-          carryOverFromLastCheck: true,
-          isReconcile: reconcileMode,
-        })
-        if (!res.ok) { setError(res.error); return }
+        const res = await createStockCheck(saveArgs)
+        if (!res.ok) {
+          if ('code' in res && res.code === 'HUB_SHORT') {
+            // 허브 부족 — 이동 유도 팝업으로 넘긴다. 재저장 시 이동 출처 위치는 locationQtys 에서 제거(유령 재고 방지).
+            setHubShort({
+              trackedItemId: item.id, itemLabel: '', unit: stockUnit, info: res,
+              retry: (o) => {
+                const exclude = new Set(o.excludeLocationIds ?? [])
+                const locationQtys = saveArgs.locationQtys.filter(lq => !exclude.has(lq.storageLocationId))
+                return createStockCheck({ ...saveArgs, locationQtys, allowHubClamp: o.allowHubClamp })
+              },
+            })
+            return
+          }
+          setError(res.error); return
+        }
         await deleteItemDrafts(item.id)
         onDraftChange?.()
         onDone()
@@ -3198,6 +3230,11 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
+      {hubShort && (
+        <HubShortDialog key={hubShort.trackedItemId} pending={hubShort}
+          onResolved={() => { setHubShort(null); void deleteItemDrafts(item.id).then(() => { onDraftChange?.(); onDone() }) }}
+          onExit={(reason) => { setHubShort(null); if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.') }} />
+      )}
     </form>
   )
 }
@@ -3362,6 +3399,183 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
   )
 }
 
+// 허브(창고) 부족 유도 팝업 — 보충량이 창고 잔량을 넘을 때 (1)다른 위치에서 창고로 이동 (2)창고 실측 (3)그냥 저장 중 고르게 한다.
+// 부모 점검 모달 트리 안에 중첩(고정 오버레이 z-confirm). 이동/재저장/적용취소를 스스로 오케스트레이션한다.
+function HubShortDialog({ pending, onResolved, onExit }: {
+  pending: HubShortPending
+  onResolved: () => void                          // 이 품목 저장 완료 — 다음(큐)로
+  onExit: (reason: 'back' | 'reconcile') => void  // 보충으로 돌아가기 / 창고 재고 확인 (무저장)
+}) {
+  const { info, unit, trackedItemId, itemLabel } = pending
+  const hubId = info.hubLocationId
+  const [hubQty, setHubQty] = useState(info.hubQty)
+  const [shortfall, setShortfall] = useState(info.shortfall)
+  const [othersInfo, setOthersInfo] = useState(info.others)  // 서버가 준 유효 출처(허브·보충대상 제외). 부분이동 후 갱신.
+  const [locs, setLocs] = useState<ItemLocationStock[] | null>(null)
+  const [fromId, setFromId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const actingRef = useRef(false)                 // 연타 이중 이동 차단(transfer 는 멱등 가드 없음)
+  const transferChecksRef = useRef<string[]>([])  // 부분 이동 누적 checkId(적용취소 LIFO 용)
+  const movedFromIdsRef = useRef<string[]>([])    // 이동 출처 위치 id — 재저장 시 locationQtys 에서 제거(유령 재고 방지)
+
+  const loadLocs = async () => { const r = await getItemLocationStock(trackedItemId); if (r.ok) setLocs(r.locations) }
+  useEffect(() => { void loadLocs() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 출처 후보 — 서버가 허브·보충대상을 뺀 목록(othersInfo)에 있는 것만, 숨김·잔량0 제외, 라이브 수량으로.
+  const allowedIds = new Set(othersInfo.map(o => o.locationId))
+  const donors = (locs ?? []).filter(l => l.id !== hubId && l.qty > 0 && !l.closed && allowedIds.has(l.id))
+  const fromLoc = donors.find(l => l.id === fromId) ?? null
+  const moveQty = fromLoc ? Math.min(shortfall, fromLoc.qty) : 0
+
+  const undoTransfersOnly = async () => {
+    for (const id of [...transferChecksRef.current].reverse()) { await deleteStockCheck(id) }
+    transferChecksRef.current = []; movedFromIdsRef.current = []
+  }
+
+  const onMoveFill = async () => {
+    if (actingRef.current || !fromLoc || moveQty <= 0) return
+    actingRef.current = true; setBusy(true)
+    try {
+      const tr = await transferLocationStock({ trackedItemId, fromLocationId: fromLoc.id, toLocationId: hubId, qty: moveQty })
+      if (!tr.ok) { pushToast('error', tr.error); return }
+      transferChecksRef.current.push(tr.checkId)
+      if (!movedFromIdsRef.current.includes(fromLoc.id)) movedFromIdsRef.current.push(fromLoc.id)
+      // 이동 출처를 재전송 locationQtys 에서 제거 — 서버 carryOver 가 이동 후 baseline 으로 이월(유령 재고 방지).
+      const res = await pending.retry({ excludeLocationIds: movedFromIdsRef.current })
+      if ('code' in res && res.code === 'HUB_SHORT') {
+        // 아직 부족 — 표시·유효 출처·목록 갱신 후 다이얼로그 유지
+        setHubQty(res.hubQty); setShortfall(res.shortfall); setOthersInfo(res.others); setFromId('')
+        await loadLocs()
+        pushToast('info', `아직 ${fmtQty(res.shortfall, unit)} 부족합니다`)
+        return
+      }
+      if (!res.ok) {
+        // 이동은 됐는데 보충 저장 실패 — 이동만 즉시 적용취소 노출
+        pushToast('error', res.error ?? '저장 중 오류가 발생했습니다', {
+          action: { label: '이동 적용취소', run: () => { void undoTransfersOnly() } },
+        })
+        return
+      }
+      // 성공 — 이동 + 보충 통합 적용취소(LIFO: 보충 먼저, 이동 나중)
+      const restockId = res.id
+      const moves = [...transferChecksRef.current]
+      pushToast('success', '옮기고 보충 완료', {
+        action: {
+          label: '적용취소', run: () => { void (async () => {
+            for (const id of [restockId, ...[...moves].reverse()]) {
+              const d = await deleteStockCheck(id)
+              if (!d.ok) { pushToast('error', d.error); return }
+            }
+            pushToast('info', '옮기고 보충을 적용취소했습니다')
+          })() },
+        },
+      })
+      onResolved()
+    } finally { actingRef.current = false; setBusy(false) }
+  }
+
+  const onClampSave = async () => {
+    if (actingRef.current) return
+    actingRef.current = true; setBusy(true)
+    try {
+      // 부분이동 후 강행 저장에서도 이동 출처는 제외해야 유령 재고가 안 생긴다(onMoveFill 과 대칭 — 재검증 지적).
+      const res = await pending.retry({ allowHubClamp: true, excludeLocationIds: movedFromIdsRef.current })
+      if (!res.ok) { pushToast('error', res.error ?? '저장 중 오류가 발생했습니다'); return }
+      const restockId = res.id
+      pushToast('success', '부족한 채로 저장했습니다', {
+        action: { label: '적용취소', run: () => { void deleteStockCheck(restockId).then(d => { if (d.ok) pushToast('info', '저장을 적용취소했습니다'); else pushToast('error', d.error) }) } },
+      })
+      onResolved()
+    } finally { actingRef.current = false; setBusy(false) }
+  }
+
+  // 나가기(무저장) — 부분 이동이 이미 커밋돼 있으면(보충 미완) 그 이동을 적용취소할 토스트를 노출한다.
+  // 총량은 보존되지만 사용자가 인지 못한 채 이동만 남는 것을 막는다(사용자 원칙: 모든 적용엔 취소).
+  const handleExit = (reason: 'back' | 'reconcile') => {
+    if (busy) return
+    const moves = [...transferChecksRef.current]
+    if (moves.length > 0) {
+      pushToast('info', '옮긴 재고는 창고에 남아 있습니다', {
+        action: { label: '이동 적용취소', run: () => { void (async () => {
+          for (const id of [...moves].reverse()) { const d = await deleteStockCheck(id); if (!d.ok) { pushToast('error', d.error); return } }
+          pushToast('info', '위치 이동을 적용취소했습니다')
+        })() } },
+      })
+    }
+    onExit(reason)
+  }
+
+  const chip = (on: boolean) =>
+    `min-h-[40px] px-3 rounded-lg border text-sm font-medium transition-colors ${
+      on ? 'bg-[var(--persimmon)] border-[var(--persimmon)] text-[var(--on-solid)]'
+         : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--persimmon)]'}`
+
+  return (
+    <div className="fixed inset-0 z-[var(--z-confirm)] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={() => handleExit('back')}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-[var(--warm-border)] shrink-0 flex items-start gap-2.5">
+          <svg className="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">창고(허브) 재고가 보충량보다 {fmtQty(shortfall, unit)} 부족합니다</h2>
+            {itemLabel && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{itemLabel}</p>}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <p className="text-xs text-[var(--warm-mid)]">
+            창고(허브) 현재 {fmtQty(hubQty, unit)} · 이번 보충 {fmtQty(hubQty + shortfall, unit)}
+          </p>
+          <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
+            창고 장부가 실물과 다를 수 있어요. 실제 재고가 더 많다면 먼저 확인해 맞춰주세요.
+          </p>
+
+          <div className="space-y-1.5">
+            <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">재고가 있는 다른 위치</p>
+            {locs == null ? (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">불러오는 중…</p>
+            ) : donors.length === 0 ? (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">옮겨올 재고가 있는 위치가 없습니다.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {donors.map(l => (
+                  <button key={l.id} type="button" className={chip(fromId === l.id)} onClick={() => setFromId(l.id)} disabled={busy}>
+                    {l.name} · {fmtQty(l.qty, unit)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {fromLoc && moveQty > 0 && (
+              <p className="text-[0.65625rem] text-[var(--warm-mid)]">
+                {fromLoc.name}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 보충을 마칩니다
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-[var(--warm-border)] shrink-0 space-y-2">
+          <div className="flex gap-2">
+            <Btn type="button" variant="ghost" size="md" className="flex-1" autoFocus onClick={() => handleExit('back')} disabled={busy}>보충으로 돌아가기</Btn>
+            <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => handleExit('reconcile')} disabled={busy}>창고 재고 확인</Btn>
+          </div>
+          <Btn type="button" variant="primary" size="md" fullWidth onClick={() => void onMoveFill()} disabled={busy || !fromLoc || moveQty <= 0}>
+            {busy ? '처리 중…' : '옮겨서 채우기'}
+          </Btn>
+          <div className="flex justify-center">
+            <button type="button" onClick={() => void onClampSave()} disabled={busy}
+              className="text-[0.6875rem] text-[var(--warm-muted)] underline underline-offset-2 hover:text-[var(--warm-mid)] disabled:opacity-50 py-1">
+              부족한 채로 저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
   rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
@@ -3381,6 +3595,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   // 더블클릭/중복 제출 동기 차단 — setPending 은 리렌더 후에야 버튼을 disabled 하므로,
   // 그 사이 두 번째 클릭이 doSave 에 재진입해 보충(허브 차감)이 2번 적용되던 심각한 버그 방지.
   const savingRef = useRef(false)
+  // 허브 부족 감지 시 처리 대기 품목 큐(품목별). 큐가 비면 저장을 최종 마감한다.
+  const [hubShortQueue, setHubShortQueue] = useState<HubShortPending[]>([])
 
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
   // 위치 미선택 상태로 돌아올 때마다 갱신 — 임시저장 직후 재진입도 최신으로
@@ -3450,37 +3666,56 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     setPending(true); setError('')
     const locName = selectedLoc?.name ?? ''
     const now = Date.now()
+
+    // 한 품목의 이 위치 점검을 서버에 저장하는 클로저 — 허브 부족 재시도(이동 후/강행)에서도 재사용.
+    // forceNew: 팝업 경유 재저장은 항상 새 점검으로 만든다(이동 점검과 함께 적용취소 LIFO 가 깔끔해짐).
+    const saveItem = (r: InventoryRow, opts?: { allowHubClamp?: boolean; forceNew?: boolean }) => {
+      const { finalN, restocked } = computeRow(r)
+      // #3 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
+      //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
+      const hubLoc = r.locations.find(l => l.isHub)
+      const locationPatch = {
+        checkedLocationId: locId!,
+        afterQty: finalN ?? 0,
+        restockedQty: restocked,
+        hubLocationId: hubLoc?.id ?? null,
+      }
+      // 6h 이내 같은 날 기존 점검 존재 → 자동 머지. 과거 날짜 백필은 머지 안 함(고른 날짜 무시 방지).
+      const dateIsToday = date === kstYmdStr()
+      const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
+      const within6h = r.lastCheckCreatedAt && (now - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
+      const shouldMerge = !opts?.forceNew && dateIsToday && (forceMerge || (sameDay && within6h))
+      if (shouldMerge && r.lastCheckId) {
+        return updateStockCheck(r.lastCheckId, { locationPatch, allowHubClamp: opts?.allowHubClamp })
+      }
+      return createStockCheck({
+        trackedItemId: r.id, date, remainingQty: 0, locationPatch,
+        memo: `위치별 점검 (${locName})`, allowHubClamp: opts?.allowHubClamp,
+      })
+    }
+
     try {
-      await Promise.all(toSave.map(r => {
-        const { finalN, restocked } = computeRow(r)
-        // #3 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
-        //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
-        const hubLoc = r.locations.find(l => l.isHub)
-        const locationPatch = {
-          checkedLocationId: locId!,
-          afterQty: finalN ?? 0,
-          restockedQty: restocked,
-          hubLocationId: hubLoc?.id ?? null,
+      const results = await Promise.all(toSave.map(async r => ({ r, res: await saveItem(r) })))
+      const savedOk: InventoryRow[] = []
+      const shorts: HubShortPending[] = []
+      for (const { r, res } of results) {
+        if (res.ok) { savedOk.push(r); continue }
+        if ('code' in res && res.code === 'HUB_SHORT') {
+          shorts.push({
+            trackedItemId: r.id, itemLabel: r.label, unit: rowUnit(r), info: res,
+            // forceNew 라 항상 createStockCheck 경로(새 점검, id 반환) — 적용취소가 깔끔.
+            retry: async (o) => {
+              const rr = await saveItem(r, { forceNew: true, allowHubClamp: o.allowHubClamp })
+              return rr as { ok: true; id: string } | { ok: false; error: string } | HubShortResponse
+            },
+          })
+        } else {
+          setError(res.error ?? '저장 중 오류가 발생했습니다.')
         }
-
-        // 6h 이내 같은 날 기존 점검 존재 → 자동 머지.
-        // 단, 사용자가 점검일을 과거 날짜로 고른 경우(백필)는 머지하지 않음 —
-        // 오늘 점검에 합쳐지면 고른 날짜가 무시되던 문제.
-        const dateIsToday = date === kstYmdStr()
-        const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
-        const within6h = r.lastCheckCreatedAt && (now - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
-        const shouldMerge = dateIsToday && (forceMerge || (sameDay && within6h))
-
-        if (shouldMerge && r.lastCheckId) {
-          return updateStockCheck(r.lastCheckId, { locationPatch })
-        }
-        return createStockCheck({
-          trackedItemId: r.id, date, remainingQty: 0, locationPatch,
-          memo: `위치별 점검 (${locName})`,
-        })
-      }))
-      // 점검 확정된 품목의 이 위치 드래프트 정리
-      await Promise.all(toSave.map(r => deleteStockCheckDraft(r.id, locId)))
+      }
+      // 정상 저장된 품목의 이 위치 드래프트만 정리(부족 품목은 처리 후 정리)
+      await Promise.all(savedOk.map(r => deleteStockCheckDraft(r.id, locId)))
+      if (shorts.length > 0) { setHubShortQueue(shorts); return }  // 팝업이 이어받음(모달 유지)
       onDraftChange?.()
       onDone()
       onClose()   // #4: 위치별 최종 저장 후 점검 창(위치 패널) 닫기
@@ -3490,6 +3725,21 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
       setPending(false)
       savingRef.current = false
     }
+  }
+
+  // 팝업이 한 품목을 처리(저장)했을 때 — 드래프트 정리 후 큐를 한 칸 당기고, 비면 최종 마감.
+  const onHubShortResolved = async () => {
+    const cur = hubShortQueue[0]
+    if (cur) await deleteStockCheckDraft(cur.trackedItemId, locId)
+    const rest = hubShortQueue.slice(1)
+    setHubShortQueue(rest)
+    if (rest.length === 0) { onDraftChange?.(); onDone(); onClose() }
+  }
+  // 보충으로 돌아가기 / 창고 재고 확인 — 남은 큐 전체 중단(무저장), 폼으로 복귀(모달 유지).
+  const onHubShortExit = (reason: 'back' | 'reconcile') => {
+    setHubShortQueue([])
+    onDone()   // 이미 저장된 정상 품목 반영
+    if (reason === 'reconcile') pushToast('info', '창고(허브)의 실제 재고를 세어 창고 위치부터 맞춰 주세요.')
   }
 
   const handleSave = async () => {
@@ -3586,6 +3836,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
         {transferOpen && (
           <TransferStockModal rows={rows} onClose={() => setTransferOpen(false)}
             onDone={() => { setTransferOpen(false); onDone() }} />
+        )}
+        {hubShortQueue.length > 0 && (
+          <HubShortDialog key={hubShortQueue[0].trackedItemId} pending={hubShortQueue[0]}
+            onResolved={() => { void onHubShortResolved() }} onExit={onHubShortExit} />
         )}
 
         <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto px-5 py-3 space-y-3'}>

@@ -14,7 +14,7 @@ const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
-import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
+import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
 async function getPropertyId() {
@@ -679,6 +679,30 @@ type LocQty = {
   fromLocationId?: string
 }
 
+// 허브 부족 감지 응답 — 보충량이 허브(창고) 잔량을 넘으면 저장하지 않고 이 값을 돌려준다.
+// 클라는 code 로 분기해 이동 유도 팝업을 띄운다. error 는 팝업을 모르는 호출부용 폴백 문구.
+export type HubShortResponse = {
+  ok: false
+  code: 'HUB_SHORT'
+  trackedItemId: string
+  hubLocationId: string
+  hubQty: number
+  shortfall: number
+  others: { locationId: string; name: string; qty: number }[]
+  error: string
+}
+
+// detectHubShort 의 others(id·qty)에 위치 이름을 채워 팝업 목록에 쓰게 한다.
+async function withOtherNames(propertyId: string, others: { locationId: string; qty: number }[]): Promise<{ locationId: string; name: string; qty: number }[]> {
+  if (others.length === 0) return []
+  const locs = await prisma.storageLocation.findMany({
+    where: { propertyId, id: { in: others.map(o => o.locationId) } },
+    select: { id: true, name: true },
+  })
+  const nameOf = new Map(locs.map(l => [l.id, l.name]))
+  return others.map(o => ({ locationId: o.locationId, name: nameOf.get(o.locationId) ?? '알 수 없는 위치', qty: o.qty }))
+}
+
 // (레거시) 명시적 위치 간 이동 보정 — fromHubQty 선언이 있으면 같은 점검 안에서 출처 수량 차감.
 // 신규 UI는 사용하지 않지만 기존 데이터·기존 화면 호환을 위해 유지.
 function applyTransfers(lqs: LocQty[]): LocQty[] {
@@ -785,7 +809,11 @@ export async function createStockCheck(data: {
   carryOverFromLastCheck?: boolean
   // 이 점검을 '전체 보정'으로 표시 — 직전 구간의 차이를 사용량으로 잡지 않음(분실·오차 흡수).
   isReconcile?: boolean
-}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  // 보충량이 허브 잔량을 넘을 때: 기본(false)은 HUB_SHORT 로 막아 팝업 유도, true 는 기존 0 클램프 허용('그냥 진행').
+  allowHubClamp?: boolean
+  // 경로 B — 클라(CheckForm)가 실제로 차감한 허브 위치 id. 검출 허브와 차감 허브를 일치시켜 오탐/미탐 방지.
+  restockHubLocationId?: string
+}): Promise<{ ok: true; id: string } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -818,7 +846,53 @@ export async function createStockCheck(data: {
         if (row) row.qty = Math.max(0, row.qty + q)
         else if (q > 0) base.push({ locationId: loc, qty: q })
       }
+      // 허브 부족 게이트 — 조용한 0 클램프 대신 팝업 유도(allowHubClamp 면 통과).
+      const short = detectHubShort(base, data.locationPatch, data.allowHubClamp)
+      if (short) {
+        return {
+          ok: false, code: 'HUB_SHORT', trackedItemId: data.trackedItemId,
+          hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
+          others: await withOtherNames(propertyId, short.others),
+          error: '창고(허브) 재고가 보충량보다 부족합니다.',
+        }
+      }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
+    }
+    // 경로 B — 품목 점검 폼(CheckForm)이 보낸 절대 위치수량. restockedQty 마커 합을 서버가 구한 허브 잔량과 대조.
+    // (클라가 이미 허브를 차감해 보냈으므로 그 값을 믿지 않고, 경로 A 와 같은 base 규칙으로 서버가 다시 판정.)
+    if (!data.locationPatch && !data.allowHubClamp && data.locationQtys && data.locationQtys.length > 0) {
+      // 보충 마커가 하나라도 있을 때만 허브 해석(비보충 점검은 추가 쿼리 0)
+      const markerSum = data.locationQtys.reduce((s, lq) => s + (lq.restockedQty ?? 0), 0)
+      // 클라가 실제 차감한 허브를 우선 사용(검출·차감 일치). 없으면 품목 허브로 폴백.
+      const hubLocationId = markerSum > 0 ? (data.restockHubLocationId ?? await resolveItemHubLocationId(data.trackedItemId, it.hubLocationId, propertyId)) : null
+      if (hubLocationId) {
+        const restockSum = data.locationQtys
+          .filter(lq => lq.storageLocationId !== hubLocationId)
+          .reduce((s, lq) => s + (lq.restockedQty ?? 0), 0)
+        if (restockSum > 0) {
+          const lastCheck = await prisma.stockCheck.findFirst({
+            where: { trackedItemId: data.trackedItemId },
+            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+            include: { locationBreakdown: true },
+          })
+          const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
+          const hubQty = Math.max(0, (lastCheck?.locationBreakdown.find(b => b.storageLocationId === hubLocationId)?.remainingQty ?? 0) + (addMap.get(hubLocationId) ?? 0))
+          if (restockSum > hubQty + 1e-6) {
+            // 이동 출처 후보 — 현재 위치별 잔량에서 허브·보충 대상 위치 제외.
+            const restockedIds = new Set(data.locationQtys.filter(lq => (lq.restockedQty ?? 0) > 0).map(lq => lq.storageLocationId))
+            const cur = await currentLocationBreakdown(data.trackedItemId, propertyId, it.hubLocationId)
+            const others = [...cur.entries()]
+              .filter(([id, q]) => id !== hubLocationId && !restockedIds.has(id) && q > 0)
+              .map(([id, q]) => ({ locationId: id, qty: q }))
+            return {
+              ok: false, code: 'HUB_SHORT', trackedItemId: data.trackedItemId,
+              hubLocationId, hubQty, shortfall: restockSum - hubQty,
+              others: await withOtherNames(propertyId, others),
+              error: '창고(허브) 재고가 보충량보다 부족합니다.',
+            }
+          }
+        }
+      }
     }
     let effectiveLocationQtys = patchedQtys ?? data.locationQtys
     // #4 carryOver — locationQtys 가 일부 위치만 담고 있으면 나머지는 직전 점검에서 보존.
@@ -941,7 +1015,11 @@ export async function updateStockCheck(id: string, data: {
   locationQtys?: LocQty[]
   // #3 위치별 점검 머지 — 서버가 이 점검의 현재 위치별 잔량을 base로 적용(stale 방지) + 시각 갱신.
   locationPatch?: LocCheckPatch
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 보충량이 허브 잔량을 넘을 때: 기본(false)은 HUB_SHORT 로 막고, true 는 기존 0 클램프 허용('그냥 진행').
+  allowHubClamp?: boolean
+  // 경로 B — 클라(CheckEditForm)가 실제로 차감한 허브 위치 id. 검출·차감 허브 일치용.
+  restockHubLocationId?: string
+}): Promise<{ ok: true } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -966,7 +1044,47 @@ export async function updateStockCheck(id: string, data: {
         if (row) row.qty += q
         else base.push({ locationId: loc, qty: q, restockedQty: null })
       }
+      // 허브 부족 게이트 — createStockCheck 와 동일(allowHubClamp 면 통과).
+      const short = detectHubShort(base, data.locationPatch, data.allowHubClamp)
+      if (short) {
+        return {
+          ok: false, code: 'HUB_SHORT', trackedItemId: c.trackedItemId,
+          hubLocationId: short.hubLocationId, hubQty: short.hubQty, shortfall: short.shortfall,
+          others: await withOtherNames(propertyId, short.others),
+          error: '창고(허브) 재고가 보충량보다 부족합니다.',
+        }
+      }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
+    }
+    // 경로 B — 기존 점검 수정(CheckEditForm)이 보낸 절대 위치수량. 조용한 0 클램프만 명확한 에러로 차단.
+    // 이 흐름엔 이동 유도 팝업을 붙이지 않는다(과거 점검 수정에 부자연).
+    if (!data.locationPatch && !data.allowHubClamp && data.locationQtys && data.locationQtys.length > 0) {
+      const markerSum = data.locationQtys.reduce((s, lq) => s + (lq.restockedQty ?? 0), 0)
+      const hubLocationId = markerSum > 0 ? (data.restockHubLocationId ?? await resolveItemHubLocationId(c.trackedItemId, c.trackedItem.hubLocationId, propertyId)) : null
+      if (hubLocationId) {
+        const restockSum = data.locationQtys
+          .filter(lq => lq.storageLocationId !== hubLocationId)
+          .reduce((s, lq) => s + (lq.restockedQty ?? 0), 0)
+        if (restockSum > 0) {
+          // 판정 base = 보충 전 허브 = 저장 허브 잔량 + 이 점검의 원래 보충합(클라 CheckEditForm 의 hubBefore 와 동일).
+          // 저장값(보충 후)만 쓰면 정상 보충을 다시 저장할 때 거짓 부족이 난다(원래 보충분 이중 차감).
+          const originalRestockSum = c.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
+          const hubStored = c.locationBreakdown.find(b => b.storageLocationId === hubLocationId)?.remainingQty ?? 0
+          const hubQty = hubStored + originalRestockSum
+          if (restockSum > hubQty + 1e-6) {
+            const restockedIds = new Set(data.locationQtys.filter(lq => (lq.restockedQty ?? 0) > 0).map(lq => lq.storageLocationId))
+            const others = c.locationBreakdown
+              .filter(lb => lb.storageLocationId !== hubLocationId && !restockedIds.has(lb.storageLocationId) && lb.remainingQty > 0)
+              .map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+            return {
+              ok: false, code: 'HUB_SHORT', trackedItemId: c.trackedItemId,
+              hubLocationId, hubQty, shortfall: restockSum - hubQty,
+              others: await withOtherNames(propertyId, others),
+              error: '보충량이 창고(허브) 재고를 초과합니다. 창고를 먼저 채우거나 실측해 주세요.',
+            }
+          }
+        }
+      }
     }
     const effectiveLocationQtys = patchedQtys ?? data.locationQtys
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
