@@ -67,7 +67,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       )}
 
       <TenantBasicInfo tenant={tenant} />
-      <TenantContactInfo contacts={tenant.contacts} email={tenant.email} />
+      <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
       {/* 중도퇴실 환불 확정 — 상시 적용취소 진입점(§16, 토스트가 사라져도 여기서 항상 가능) */}
       {lease && (() => {

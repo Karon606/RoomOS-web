@@ -963,6 +963,15 @@ export default function SettingsForm({
           namePlaceholder="예: 수도 점검 공지"
           bodyLabel="문자 내용"
         />
+        <SmsTemplateCard
+          kind="personal"
+          title="고객 문자 템플릿"
+          description={<>고객 상세의 [문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
+            {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {계좌번호}'}</span></>}
+          emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] {'{이름}'}님, 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;</>}
+          namePlaceholder="예: 계좌 안내"
+          bodyLabel="문자 내용 (변수 그대로 적으면 보낼 때 치환)"
+        />
         <AiSettingsCard />
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
@@ -2220,7 +2229,7 @@ function AiSettingsCard() {
 //  'notice' 단체 공지: 고객 관리 [단체 공지]가 사용. 배치 전체가 한 본문을 공유해 치환이 구조적으로 없다.
 // 종전엔 'unpaid' 하드코딩이라 공지 템플릿은 목록조차 없어 수정도 삭제도 불가능했다(운영자 신고 2026-07-17).
 function SmsTemplateCard({ kind, title, description, emptyExample, namePlaceholder, bodyLabel }: {
-  kind: 'unpaid' | 'notice'
+  kind: 'unpaid' | 'notice' | 'personal'
   title: string
   description: React.ReactNode
   emptyExample: React.ReactNode

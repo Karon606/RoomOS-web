@@ -1288,7 +1288,7 @@ export async function saveAiSettings(input: { apiKey?: string | null; model?: st
 // ============================================================
 export type SmsTemplateRow = { id: string; name: string; body: string; sortOrder: number }
 
-export async function getSmsTemplates(kind: 'unpaid' | 'notice' = 'unpaid'): Promise<SmsTemplateRow[]> {
+export async function getSmsTemplates(kind: 'unpaid' | 'notice' | 'personal' = 'unpaid'): Promise<SmsTemplateRow[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.smsTemplate.findMany({
     where: { propertyId, kind }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -1297,7 +1297,7 @@ export async function getSmsTemplates(kind: 'unpaid' | 'notice' = 'unpaid'): Pro
   return rows
 }
 
-export async function saveSmsTemplate(input: { id?: string; name: string; body: string; kind?: 'unpaid' | 'notice' }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+export async function saveSmsTemplate(input: { id?: string; name: string; body: string; kind?: 'unpaid' | 'notice' | 'personal' }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()

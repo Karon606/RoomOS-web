@@ -327,6 +327,81 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
   }
 }
 
+// ============================================================
+// 고객 문자(개인) 발송 플로우 — 고객 상세의 '문자' 버튼(신고 962c65d2)
+//   미납 흐름과 달리 청구 정보 없이 이름·호수·계좌번호 3종만 치환. 실제 발송은 폰 문자앱.
+// ============================================================
+export type PersonalSmsContext = {
+  ok: true
+  phone: string | null          // 없으면 발송 불가 안내
+  tenantName: string
+  roomNo: string                // 현재/최근 방 배정 (없으면 '')
+  bankAccount: string           // 환경설정 입금 계좌 (없으면 '')
+  templates: { id: string; name: string; body: string }[]
+} | { ok: false; error: string }
+
+export async function getPersonalSmsContext(tenantId: string): Promise<PersonalSmsContext> {
+  try {
+    const access = await getPropertyAccess()
+    if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
+    const propertyId = access.propertyId
+    const tenant = await prisma.tenant.findFirst({
+      where: { id: tenantId, propertyId },
+      select: {
+        name: true,
+        contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 },
+        leaseTerms: {
+          where: { roomId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { room: { select: { roomNo: true } } },
+        },
+      },
+    })
+    if (!tenant) return { ok: false, error: '고객 정보를 찾을 수 없습니다.' }
+    const [prop, templates] = await Promise.all([
+      prisma.property.findUnique({ where: { id: propertyId }, select: { bankAccount: true } }),
+      prisma.smsTemplate.findMany({ where: { propertyId, kind: 'personal' }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, body: true } }),
+    ])
+    return {
+      ok: true,
+      phone: tenant.contacts[0]?.contactValue?.trim() || null,
+      tenantName: tenant.name,
+      roomNo: tenant.leaseTerms[0]?.room?.roomNo ?? '',
+      bankAccount: prop?.bankAccount ?? '',
+      templates,
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '조회에 실패했습니다.' }
+  }
+}
+
+// 고객 문자 발송 시도 기록 — 1행(kind: 'personal'). 실제 발송은 폰 문자앱에서 완료된다.
+export async function logPersonalSmsAttempt(input: {
+  tenantId: string
+  renderedBody: string
+  templateId?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const access = await getPropertyAccess()
+    if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
+    if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    await prisma.smsLog.create({ data: {
+      propertyId: access.propertyId,
+      tenantId: input.tenantId,
+      templateId: input.templateId ?? null,
+      renderedBody: input.renderedBody,
+      sentVia: 'manual_sms',
+      kind: 'personal',
+    } })
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '이력 기록에 실패했습니다.' }
+  }
+}
+
 export async function logSmsAttempt(input: {
   tenantId: string; leaseTermId: string | null; templateId: string | null
   renderedBody: string; overdueAmount: number | null; overdueDays: number | null
