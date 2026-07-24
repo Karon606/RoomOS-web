@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // /marketing 페이지용 — 영업장 publicSlug 의 페이지뷰를 범위·세분도별로 집계.
 // 범위 선택 시 클라가 같은 액션을 다시 호출 → 새 통계 받아 차트·표 재렌더.
@@ -20,6 +21,10 @@ export type MarketingBucket = 'hour' | 'day' | 'month'
 export type MarketingStats = {
   range: MarketingRange
   bucket: MarketingBucket
+  // 실제 조회창 (KST 'YYYY-MM-DD', 양끝 포함) — 프리셋일 때도 서버가 되돌려준다.
+  // 클라가 날짜 산수를 복제하지 않게 하려는 것 (캡션·픽커 시딩의 단일 진실).
+  rangeFrom: string
+  rangeTo: string
   publicSlug: string | null
   publicUrl: string | null
   // 범위와 무관한 4종 누적 카드 (참고용 — 항상 today/7d/30d/all-time)
@@ -37,8 +42,9 @@ export type MarketingStats = {
   // 섹션별 평균 체류시간 — 페이지 어느 영역에 오래 머물렀나
   sections: { id: string; name: string; avgMs: number; sampleCount: number }[]
   sectionSampleCount: number   // 섹션 데이터가 있는 세션 수
-  // 트렌드 (자동 세분도)
-  trend: { label: string; views: number; visitors: number }[]
+  // 트렌드 (자동 세분도) — date 는 드릴다운용 원본 키(day='YYYY-MM-DD', month='YYYY-MM', hour=null).
+  // 라벨은 표시 전용이라 파싱하지 않는다(연말연시에 연도가 유실됨).
+  trend: { label: string; date: string | null; views: number; visitors: number }[]
   // 유입 출처 Top (범위 내, 호스트 기준)
   referrers: { host: string; count: number; percent: number }[]
   // 채널 카테고리 (검색/소셜/직접/기타)
@@ -58,8 +64,6 @@ export type MarketingStats = {
   // 지역 (국가 / 도시) — city 에 상위 지역(시·도) 병행 표기
   countries: { country: string; count: number; percent: number }[]
   cities: { city: string; region: string | null; country: string | null; count: number }[]
-  // 선택된 특정 날짜 (YYYY-MM-DD KST) — 프리셋 범위면 null
-  customDate: string | null
   // 언어 Top
   languages: { language: string; count: number }[]
   // 화면 해상도 Top
@@ -90,6 +94,21 @@ function rangeStart(range: MarketingRange): { start: Date; bucket: MarketingBuck
       return { start: new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth() - 11, 1) - KST_OFFSET), bucket: 'month' }
     }
   }
+}
+
+const p2 = (n: number) => String(n).padStart(2, '0')
+// 'YYYY-MM-DD'(KST) → 그 날 KST 0시의 실제 UTC 시각
+const kstMidnight = (ymd: string) => new Date(`${ymd}T00:00:00+09:00`)
+// 양끝 포함 일수
+function spanDays(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1
+}
+// 임의 기간의 버킷 자동 선택 — 1일=시간별 · 2~92일=일별 · 93일 이상=월별.
+// (프리셋은 rangeStart()가 정한 버킷을 그대로 쓴다 — 기존 동작 보존)
+function bucketForSpan(days: number): MarketingBucket {
+  if (days <= 1) return 'hour'
+  if (days <= 92) return 'day'
+  return 'month'
 }
 
 // 한국 시·도명 표준화 → 한국어.
@@ -157,14 +176,15 @@ const SECTION_LABEL: Record<string, string> = {
 }
 const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'tour', 'gallery', 'location', 'contact']
 
-function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label: string; views: number; visitors: number }[] {
-  type Acc = { label: string; views: number; visitors: Set<string> }
+// end = 마지막 버킷이 속한 날의 KST 0시(포함). 프리셋이면 오늘, 임의 기간이면 종료일 —
+// 이걸 인자로 받지 않고 new Date()를 쓰면 7/1~7/9 조회에 오늘까지 빈 막대가 붙는다.
+function buildTrend(rows: Row[], start: Date, end: Date, bucket: MarketingBucket): { label: string; date: string | null; views: number; visitors: number }[] {
+  type Acc = { label: string; date: string | null; views: number; visitors: Set<string> }
   const buckets: Acc[] = []
-  const now = new Date()
 
   if (bucket === 'hour') {
-    // 오늘 0-23시
-    for (let h = 0; h < 24; h++) buckets.push({ label: `${h}시`, views: 0, visitors: new Set() })
+    // 하루 0-23시
+    for (let h = 0; h < 24; h++) buckets.push({ label: `${h}시`, date: null, views: 0, visitors: new Set() })
     for (const r of rows) {
       const kst = toKst(r.occurredAt)
       const h = kst.getUTCHours()
@@ -176,12 +196,16 @@ function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label:
   } else if (bucket === 'day') {
     const startKst = toKst(start)
     const startD = Date.UTC(startKst.getUTCFullYear(), startKst.getUTCMonth(), startKst.getUTCDate())
-    const todayKst = toKst(now)
-    const todayD = Date.UTC(todayKst.getUTCFullYear(), todayKst.getUTCMonth(), todayKst.getUTCDate())
-    const days = Math.floor((todayD - startD) / (24 * 60 * 60 * 1000)) + 1
+    const endKst = toKst(end)
+    const endD = Date.UTC(endKst.getUTCFullYear(), endKst.getUTCMonth(), endKst.getUTCDate())
+    const days = Math.floor((endD - startD) / (24 * 60 * 60 * 1000)) + 1
     for (let i = 0; i < days; i++) {
       const d = new Date(startD + i * 24 * 60 * 60 * 1000)
-      buckets.push({ label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`, views: 0, visitors: new Set() })
+      buckets.push({
+        label: `${d.getUTCMonth() + 1}/${d.getUTCDate()}`,
+        date: `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`,
+        views: 0, visitors: new Set(),
+      })
     }
     for (const r of rows) {
       const kst = toKst(r.occurredAt)
@@ -193,14 +217,20 @@ function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label:
       }
     }
   } else {
-    // month: 12 개월
+    // month: start~end 개월 (1y 프리셋이면 12개월 — 기존과 동일)
     const startKst = toKst(start)
     const baseY = startKst.getUTCFullYear()
     const baseM = startKst.getUTCMonth()
-    for (let i = 0; i < 12; i++) {
+    const endKst = toKst(end)
+    const months = (endKst.getUTCFullYear() - baseY) * 12 + (endKst.getUTCMonth() - baseM) + 1
+    for (let i = 0; i < months; i++) {
       const y = baseY + Math.floor((baseM + i) / 12)
       const m = ((baseM + i) % 12 + 12) % 12
-      buckets.push({ label: `${m + 1}월${y !== baseY && m === 0 ? ` ${y}` : ''}`, views: 0, visitors: new Set() })
+      buckets.push({
+        label: `${m + 1}월${y !== baseY && m === 0 ? ` ${y}` : ''}`,
+        date: `${y}-${p2(m + 1)}`,
+        views: 0, visitors: new Set(),
+      })
     }
     for (const r of rows) {
       const kst = toKst(r.occurredAt)
@@ -213,12 +243,15 @@ function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label:
       }
     }
   }
-  return buckets.map(b => ({ label: b.label, views: b.views, visitors: b.visitors.size }))
+  return buckets.map(b => ({ label: b.label, date: b.date, views: b.views, visitors: b.visitors.size }))
 }
 
+// range 는 '직접 지정을 풀면 돌아갈 프리셋'. from·to 가 둘 다 유효하면 그 임의 기간으로 조회한다.
+// (MarketingRange 유니온에 'custom'을 넣지 않는 이유 — rangeStart()의 exhaustive switch 보존)
 export async function getMarketingStats(
   range: MarketingRange = '30d',
-  customDate: string | null = null,
+  from: string | null = null,
+  to: string | null = null,
 ): Promise<MarketingStats> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
@@ -228,23 +261,32 @@ export async function getMarketingStats(
   const slug = property?.publicSlug?.trim() || null
   const publicUrl = slug ? `https://www.stayeum.com/members/${slug}/` : null
 
-  // 특정 날짜(YYYY-MM-DD, KST 하루) 선택 시 → 그 날 0~24시(시간별). 아니면 프리셋 범위.
-  const validCustom = customDate && /^\d{4}-\d{2}-\d{2}$/.test(customDate) ? customDate : null
+  // 임의 기간(from~to, KST 양끝 포함)이 유효하면 그 창, 아니면 프리셋 범위.
+  const YMD = /^\d{4}-\d{2}-\d{2}$/
+  const vFrom = from && YMD.test(from) ? from : null
+  const vTo = to && YMD.test(to) ? to : null
+  const custom = vFrom && vTo && vFrom <= vTo ? { from: vFrom, to: vTo } : null
+
   let start: Date
-  let end: Date | null = null
+  let end: Date | null = null   // 배타적 상한 — 프리셋은 열린 끝(현행 유지)
+  let lastDay: Date             // 마지막 버킷이 속한 날의 KST 0시(포함)
   let bucket: MarketingBucket
-  if (validCustom) {
-    start = new Date(`${validCustom}T00:00:00+09:00`)
-    end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
-    bucket = 'hour'
+  if (custom) {
+    start = kstMidnight(custom.from)
+    lastDay = kstMidnight(custom.to)
+    end = new Date(lastDay.getTime() + 24 * 60 * 60 * 1000)
+    bucket = bucketForSpan(spanDays(custom.from, custom.to))
   } else {
     const r = rangeStart(range)
     start = r.start; bucket = r.bucket
+    lastDay = kstStartOfTodayUtc()
   }
+  const rangeFrom = kstYmdStr(start)
+  const rangeTo = kstYmdStr(lastDay)
 
   if (!slug) {
     return {
-      range, bucket, publicSlug: null, publicUrl: null,
+      range, bucket, rangeFrom, rangeTo, publicSlug: null, publicUrl: null,
       totals: { today: 0, week: 0, month: 0, allTime: 0 },
       rangeViews: 0, rangeVisitors: 0,
       engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, bounceRatePct: 0 },
@@ -254,7 +296,7 @@ export async function getMarketingStats(
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
       deviceTypes: [], oses: [], browsers: [],
       countries: [], cities: [], languages: [], resolutions: [],
-      customDate: validCustom, botCount: 0,
+      botCount: 0,
     }
   }
 
@@ -288,7 +330,7 @@ export async function getMarketingStats(
   ])
 
   // 트렌드
-  const trend = buildTrend(inRange, start, bucket)
+  const trend = buildTrend(inRange, start, lastDay, bucket)
 
   // 범위 내 총뷰·유니크 방문자
   const rangeViews = inRange.length
@@ -473,12 +515,12 @@ export async function getMarketingStats(
     .sort((a, b) => b.avgMs - a.avgMs)
 
   return {
-    range, bucket, publicSlug: slug, publicUrl,
+    range, bucket, rangeFrom, rangeTo, publicSlug: slug, publicUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
     rangeViews, rangeVisitors, engagement, sections, sectionSampleCount,
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
-    customDate: validCustom, botCount,
+    botCount,
   }
 }
