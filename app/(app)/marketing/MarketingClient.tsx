@@ -130,7 +130,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
           <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
         </div>
         <div className="rounded-xl p-6 text-sm space-y-3"
@@ -203,7 +203,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
       `}</style>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
           <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
           {stats.publicUrl && (
             <a href={stats.publicUrl} target="_blank" rel="noopener noreferrer"
@@ -534,7 +534,8 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         </div>
       </div>
 
-      {/* 시간대(0-23) */}
+      {/* 시간대(0-23) — 하루만 조회하면 위 추이가 이미 시간별이라 같은 차트가 된다. 그때는 숨긴다. */}
+      {stats.bucket !== 'hour' && (
       <div className="rounded-xl p-4"
         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
@@ -567,6 +568,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           <span>23시</span>
         </div>
       </div>
+      )}
 
       {/* UTM 캠페인 */}
       <div className="rounded-xl p-4"

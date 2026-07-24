@@ -83,9 +83,10 @@ export default function SaveFeedback() {
 
   return (
     <>
-      {/* 상단 진행 바 — 갱신 중 표시(v2.0 §17). 콘텐츠는 그대로 둔다 */}
+      {/* 상단 진행 바 — 갱신 중 표시(v2.0 §17). 콘텐츠는 그대로 둔다.
+          저장뿐 아니라 조회(방문 분석 기간 변경 등)에도 쓰이므로 aria-label 은 중립 문구 */}
       {pending > 0 && (
-        <div aria-label="저장 중" className="fixed top-0 left-0 right-0 z-[var(--z-toast)] pointer-events-none"
+        <div aria-label="처리 중" className="fixed top-0 left-0 right-0 z-[var(--z-toast)] pointer-events-none"
           style={{ height: 'var(--progress-h)' }}>
           <div className="h-full" style={{
             background: 'var(--progress-color)',
