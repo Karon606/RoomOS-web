@@ -2889,9 +2889,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal) || (statusVal === 'RESERVED' && reservationConfirmed)
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
 
-  // 보증금/청소비 자동 입력 제외 상태 (계약/납입 단계 이전 — 잘못 저장 방지)
-  // 단기 희망(isShortTerm)도 모두 수기 입력 → 자동입력 제외
-  const NO_AUTOFILL_STATUSES = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED', 'NON_RESIDENT']
+  // 보증금/청소비 자동 입력 제외 상태 — 취소(이탈)·비거주자(요금 개념이 다름)만.
+  // 투어예정·투어완료·예약은 계약 준비 단계라 기본값을 채운다(신고 2555362e, 운영자 승인 2026-07-24).
+  // 방 선택 시 월이용료는 이미 상태 무관으로 채워지는데 보증금·청소비만 빈칸이던 어긋남을 없앤다.
+  // 안전 근거: 청구·미납(unpaid.ts)·대시보드 보증금은 거주 상태 계약만 보므로 리드에 값이 있어도 영향 없음.
+  // 단기 희망(isShortTerm)은 계속 제외 — 단기는 환경설정이 아니라 단기 정책값(shortStay)에서 와야 금액이 맞다.
+  const NO_AUTOFILL_STATUSES = ['CANCELLED', 'NON_RESIDENT']
   const isNoAutoFill = (s: string, shortTerm: boolean) => shortTerm || NO_AUTOFILL_STATUSES.includes(s)
   // 저장값이 0(미입력)이면 계약 단계에서 기본값 프리필 — LeaseTerm.depositAmount 는 @default(0) non-null 이라
   // '미입력'과 '0원'이 같은 값이다. 이미 입력된 값(계약자)은 유지, 리드·단기는 프리필 제외.

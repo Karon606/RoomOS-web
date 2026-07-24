@@ -2321,6 +2321,9 @@ export type DepositPerTenant = {
   hasNoInRecord: boolean   // 입금 거래 기록 없이 계약상 보증금만 있는 경우
 }
 
+// 리드 단계 계약 — 보증금 탭에서 '계약상 약정액만' 있는 건을 숨기는 기준(실입금·환불이 있으면 상태 무관 노출).
+const LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED']
+
 // 모든 입주자별 보증금 잔고/내역 — 잔고 큰 순으로 정렬
 export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
   const propertyId = await getPropertyId()
@@ -2383,6 +2386,10 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
     })
     // 입금 흔적 또는 환불 흔적 또는 계약상 보증금이 있는 케이스 모두 노출
     .filter(d => d.totalIn > 0 || d.totalReturned > 0 || d.totalWithheld > 0 || d.contractDeposit > 0)
+    // 리드(투어·예약·취소)는 '계약상 약정액만' 있으면 뺀다 — 입주자 폼 자동 프리필로 생긴 약정액이
+    // 보증금 탭 목록 노이즈와 '입금 기록' 오조작을 부르던 문제(운영자 승인 2026-07-24).
+    // 예약금을 실제로 받은 건(입금·환불 기록 있음)은 상태와 무관하게 계속 보인다.
+    .filter(d => !(LEAD_STATUSES.includes(d.status) && d.totalIn === 0 && d.totalReturned === 0 && d.totalWithheld === 0))
     .sort((a, b) => b.balance - a.balance || a.tenantName.localeCompare(b.tenantName))
 }
 
