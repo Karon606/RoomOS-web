@@ -228,6 +228,13 @@ function toDateInput(d: string | Date | null | undefined): string {
   return kstYmdStr(new Date(d))
 }
 
+// 'HH:mm' → '오후 6:40' (안내 문구용 12시간 표기)
+function fmtHM12(hm: string): string {
+  const [h, m] = hm.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hm
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`
+}
+
 // 일시값을 날짜('YYYY-MM-DD') + 시각('HH:mm')으로 분리
 function splitDateTime(d: string | Date | null | undefined): { date: string; time: string } {
   if (!d) return { date: '', time: '' }
@@ -2843,6 +2850,13 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const initialInquiry = splitDateTime(lease?.inquiryAt)
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
+  // 투어 시각 — 값은 name 으로 제출되고 여기 state 는 '문의 이후' 검증에만 쓴다.
+  // value 로 묶지 않는다(묶으면 미완성 입력이 '' 로 덮여 오전/오후를 못 넣는다).
+  const [tourTimeVal, setTourTimeVal] = useState(lease?.tourTime ?? '')
+  // 투어는 문의보다 앞설 수 없다 — 같은 날일 때만 문의 시각을 하한으로 건다(다른 날이면 제약 없음).
+  const tourMinTime = tourDateVal && inquiryDateVal && tourDateVal === inquiryDateVal && inquiryTimeVal
+    ? inquiryTimeVal : undefined
+  const tourTimeTooEarly = !!tourMinTime && !!tourTimeVal && tourTimeVal < tourMinTime
   // 문의 시각 입력은 uncontrolled(defaultValue+ref) — controlled 면 미완성 입력이 '' 로 덮여 오전/오후를 못 넣는다.
   // state 는 inquiryAt 조합에만 쓰고, 자동 채움 시 DOM 값도 ref 로 함께 세팅한다.
   const inquiryTimeRef = useRef<HTMLInputElement>(null)
@@ -3239,12 +3253,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               {/* 시간(선택) — 입력하면 구독 캘린더에 시각 지정 이벤트로 나가고 1시간 전 알림이 붙는다 */}
               {/* uncontrolled(defaultValue) — time 입력은 값이 미완성이면 빈 문자열을 돌려준다. controlled 로 두면
                   시(7)를 치는 순간 value 가 '' 로 덮여 오전/오후 자리까지 가지 못하고 계속 리셋된다(신고 2026-07-24).
-                  이 값은 name 으로만 제출되고 다른 로직이 읽지 않아 React 가 붙들 이유가 없다. */}
+                  onChange 는 검증용 state 갱신에만 쓰고 value 로는 묶지 않는다.
+                  min — 같은 날이면 문의 시각 이후만 허용(투어는 문의 뒤에 온다, 운영자 요청 2026-07-24). */}
               <input type="time" name="tourTime" defaultValue={lease?.tourTime ?? ''}
+                onChange={e => setTourTimeVal(e.target.value)}
+                min={tourMinTime}
                 disabled={!tourDateVal} aria-label="투어 예정 시간"
                 className="w-[110px] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors disabled:opacity-40" />
             </div>
-            <p className="text-[0.65625rem] text-[var(--warm-muted)]">시간까지 넣으면 캘린더 연동에 그 시각으로 등록되고 1시간 전에 알림이 갑니다. 비우면 종일 일정으로 나갑니다.</p>
+            {tourTimeTooEarly ? (
+              <p className="text-[0.65625rem] text-[var(--danger-fg)]">투어 시간은 입실 문의 시각({fmtHM12(tourMinTime!)}) 이후로 넣어 주세요.</p>
+            ) : (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">시간까지 넣으면 캘린더 연동에 그 시각으로 등록되고 1시간 전에 알림이 갑니다. 비우면 종일 일정으로 나갑니다.</p>
+            )}
           </div>
         )}
         {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
