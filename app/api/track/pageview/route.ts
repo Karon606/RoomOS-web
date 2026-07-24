@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null) as
       | {
+          id?: string
           slug?: string; path?: string; referrer?: string
           utmSource?: string; utmMedium?: string; utmCampaign?: string
           screenWidth?: number; screenHeight?: number
@@ -59,6 +60,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
     const slug = body.slug.trim().slice(0, 64)
+    // 클라가 만든 id(crypto.randomUUID) — 입장 응답을 기다리지 않고 closeup 이 같은 id 를 쓰게 해서
+    // 'pv_id 응답 전 이탈' 결측(빠른 이탈자가 통째로 유실되던 것)을 없앤다(전문가 지적). uuid 형식만 수용.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const clientId = typeof body.id === 'string' && UUID_RE.test(body.id) ? body.id : null
     const path = trim(body.path) ?? `/members/${slug}/`
     const referrer = trim(body.referrer)
     const referrerHost = extractHost(referrer)
@@ -94,6 +99,7 @@ export async function POST(req: NextRequest) {
 
     const created = await prisma.pageView.create({
       data: {
+        ...(clientId && { id: clientId }),
         slug,
         path,
         referrer,

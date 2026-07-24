@@ -23,10 +23,22 @@
 
     var qs = new URLSearchParams(window.location.search);
 
-    // 입장 시점에 1차 페이지뷰 기록 (id 반환받아 closeup 업데이트에 사용)
-    var pv_id = null;
+    // pv_id 를 클라가 만든다 — 입장 응답을 기다리지 않아, 응답 전 이탈한 빠른 방문도 closeup 이 같은 id 로
+    // 기록된다(예전엔 응답 전 이탈이 통째로 유실됐다). randomUUID 없으면 폴백 생성.
+    var pv_id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8; return v.toString(16);
+        });
     var startedAt = Date.now();
     var maxScrollPct = 0;
+
+    // 활성 체류(백그라운드 제외) — visible 인 동안만 누적. durationMs(벽시계)의 방치탭 오염을 뺀 값.
+    var activeMs = 0;
+    var activeSince = document.visibilityState === 'visible' ? Date.now() : null;
+    // 스크롤 마일스톤 — 25/50/75/100% 처음 도달 시각(입장 후 ms). 섹션 높이에 안 휘둘리는 독립 축.
+    var milestones = {};
+    // CTA 클릭 로그 — closeup 에도 이중으로 실어 즉시 전송이 유실돼도 남게 한다.
+    var ctaLog = [];
 
     function getScrollPct() {
       var doc = document.documentElement;
@@ -39,6 +51,7 @@
     }
 
     var payload = {
+      id: pv_id,
       slug: SLUG,
       path: window.location.pathname,
       referrer: document.referrer || null,
@@ -53,15 +66,13 @@
       language: navigator.language || null,
     };
 
-    // 1) 입장 기록 (fetch 로 id 받기)
+    // 1) 입장 기록 — id 는 클라가 이미 만들었으므로 응답을 기다릴 필요가 없다(keepalive 로 이탈 중에도 발송).
     fetch('/api/track/pageview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       keepalive: true,
-    }).then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(data){ if (data && data.id) pv_id = data.id; })
-      .catch(function(){});
+    }).catch(function(){});
 
     // 2) 스크롤 추적
     var ticking = false;
@@ -71,6 +82,9 @@
       requestAnimationFrame(function(){
         var p = getScrollPct();
         if (p > maxScrollPct) maxScrollPct = p;
+        // 마일스톤 — 각 깊이에 처음 도달한 시각(입장 후 ms)만 기록
+        var ms = [25, 50, 75, 100];
+        for (var i = 0; i < ms.length; i++) { if (p >= ms[i] && !milestones[ms[i]]) milestones[ms[i]] = Date.now() - startedAt; }
         ticking = false;
       });
     }
@@ -101,14 +115,32 @@
       if (best) sectionTimes[best] = (sectionTimes[best] || 0) + dt;
     }, 1000);
 
-    // 3) 페이지 닫을 때 closeup (체류시간 + 최대 스크롤 + 섹션별 체류) — sendBeacon 으로 안전 전송
+    // 2c) CTA 클릭(전화·문자) — 캡처 단계로 기본동작(다이얼러 전환) 전에 잡아 즉시 전송. 전환의 직접 신호.
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      var a = (t && t.closest) ? t.closest('a[href^="tel:"], a[href^="sms:"]') : null;
+      if (!a) return;
+      var href = a.getAttribute('href') || '';
+      var kind = href.indexOf('tel:') === 0 ? 'tel' : 'sms';
+      var host = a.closest ? a.closest('section[id]') : null;
+      var section = host ? host.id : null;
+      var tMs = Date.now() - startedAt;
+      ctaLog.push({ kind: kind, section: section, tMs: tMs });
+      var body = JSON.stringify({ id: pv_id, kind: kind, section: section, tMs: tMs });
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/track/cta', new Blob([body], { type: 'application/json' }));
+      else { try { fetch('/api/track/cta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }); } catch (_) {} }
+    }, true);
+
+    // 3) 페이지 닫을 때 closeup (체류·활성시간·스크롤·섹션·마일스톤) — sendBeacon 으로 안전 전송
     function sendCloseup() {
-      if (!pv_id) return;
+      var curActive = activeMs + (activeSince != null ? Date.now() - activeSince : 0);
       var data = {
         id: pv_id,
         durationMs: Date.now() - startedAt,
+        activeMs: curActive,
         scrollDepthPct: getScrollPct() > maxScrollPct ? getScrollPct() : maxScrollPct,
         sectionDwellMs: sectionTimes,
+        scrollMilestones: milestones,
       };
       var url = '/api/track/closeup';
       var json = JSON.stringify(data);
@@ -119,9 +151,15 @@
         try { fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true }); } catch(e){}
       }
     }
-    // visibilitychange(hidden)는 모바일 백그라운드 전환에도 발동 — 더 안정적
+    // visibilitychange(hidden)는 모바일 백그라운드 전환에도 발동 — 더 안정적.
+    // 동시에 활성 체류 구간을 누적/재개해 activeMs 를 만든다(백그라운드 시간 제외).
     document.addEventListener('visibilitychange', function(){
-      if (document.visibilityState === 'hidden') sendCloseup();
+      if (document.visibilityState === 'hidden') {
+        if (activeSince != null) { activeMs += Date.now() - activeSince; activeSince = null; }
+        sendCloseup();
+      } else {
+        activeSince = Date.now();
+      }
     });
     window.addEventListener('pagehide', sendCloseup);
     window.addEventListener('beforeunload', sendCloseup);
