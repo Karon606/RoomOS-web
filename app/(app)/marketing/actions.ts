@@ -176,6 +176,30 @@ const SECTION_LABEL: Record<string, string> = {
 }
 const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'tour', 'gallery', 'location', 'contact']
 
+// 섹션 id별 누적을 '표시 라벨' 기준으로 합산 — SECTION_LABEL 이 video·tour 를 둘 다 '투어 영상'으로
+// 매핑하므로 합치지 않으면 같은 이름이 두 줄로 나온다(요약 카드·방문 상세 공통).
+// 반환 순서는 SECTION_ORDER(문서 순서), 라벨은 그 라벨이 처음 등장한 위치에 자리잡는다.
+type SectionAgg = { key: string; name: string; totalMs: number; count: number }
+function mergeSectionsByLabel(per: Map<string, { totalMs: number; count: number }>): SectionAgg[] {
+  const out: SectionAgg[] = []
+  const byLabel = new Map<string, SectionAgg>()
+  for (const id of SECTION_ORDER) {
+    const v = per.get(id)
+    if (!v || v.totalMs <= 0) continue
+    const name = SECTION_LABEL[id] ?? id
+    const hit = byLabel.get(name)
+    if (hit) { hit.totalMs += v.totalMs; hit.count += v.count; continue }
+    const agg: SectionAgg = { key: id, name, totalMs: v.totalMs, count: v.count }
+    byLabel.set(name, agg)
+    out.push(agg)
+  }
+  return out
+}
+
+// 채널 카테고리·디바이스 표시명 — 요약 집계와 방문 기록 목록이 같은 이름을 쓰도록 모듈 스코프에 둔다.
+const CHANNEL_LABEL: Record<string, string> = { search: '검색', social: '소셜', direct: '직접', other: '기타' }
+const DT_LABEL: Record<string, string> = { mobile: '모바일', tablet: '태블릿', desktop: '데스크탑' }
+
 // end = 마지막 버킷이 속한 날의 KST 0시(포함). 프리셋이면 오늘, 임의 기간이면 종료일 —
 // 이걸 인자로 받지 않고 new Date()를 쓰면 7/1~7/9 조회에 오늘까지 빈 막대가 붙는다.
 function buildTrend(rows: Row[], start: Date, end: Date, bucket: MarketingBucket): { label: string; date: string | null; views: number; visitors: number }[] {
@@ -378,7 +402,6 @@ export async function getMarketingStats(
     chMap.set(c, (chMap.get(c) ?? 0) + 1)
   }
   const chTotal = Array.from(chMap.values()).reduce((s, v) => s + v, 0) || 1
-  const CHANNEL_LABEL: Record<string, string> = { search: '검색', social: '소셜', direct: '직접', other: '기타' }
   const channels = Array.from(chMap.entries())
     .map(([k, count]) => ({ category: CHANNEL_LABEL[k] ?? k, count, percent: Math.round((count / chTotal) * 100) }))
     .sort((a, b) => b.count - a.count)
@@ -404,7 +427,6 @@ export async function getMarketingStats(
     dtMap.set(t, (dtMap.get(t) ?? 0) + 1)
   }
   const dtTotal = Array.from(dtMap.values()).reduce((s, v) => s + v, 0) || 1
-  const DT_LABEL: Record<string, string> = { mobile: '모바일', tablet: '태블릿', desktop: '데스크탑' }
   const deviceTypes = Array.from(dtMap.entries())
     .map(([t, count]) => ({ type: DT_LABEL[t] ?? t, count, percent: Math.round((count / dtTotal) * 100) }))
     .sort((a, b) => b.count - a.count)
@@ -504,13 +526,15 @@ export async function getMarketingStats(
     }
     if (any) sectionSampleCount++
   }
-  const sections = SECTION_ORDER
-    .filter(id => secCount.has(id))
-    .map(id => ({
-      id,
-      name: SECTION_LABEL[id] ?? id,
-      avgMs: Math.round((secTotal.get(id) ?? 0) / (secCount.get(id) ?? 1)),
-      sampleCount: secCount.get(id) ?? 0,
+  // 라벨이 같은 섹션(video·tour = 투어 영상)은 합산 후 평균 — 안 그러면 같은 이름이 두 줄로 나온다
+  const secPer = new Map<string, { totalMs: number; count: number }>()
+  for (const [id, total] of secTotal) secPer.set(id, { totalMs: total, count: secCount.get(id) ?? 0 })
+  const sections = mergeSectionsByLabel(secPer)
+    .map(a => ({
+      id: a.key,
+      name: a.name,
+      avgMs: Math.round(a.totalMs / (a.count || 1)),
+      sampleCount: a.count,
     }))
     .sort((a, b) => b.avgMs - a.avgMs)
 
@@ -522,5 +546,195 @@ export async function getMarketingStats(
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
     botCount,
+  }
+}
+
+// ── 방문 기록 목록 ──────────────────────────────────────────────
+// PageView 1행 = 페이지뷰 1건(세션 아님 — 같은 사람이 다시 들어오면 2행).
+// getMarketingStats 와 분리한 이유: 요약 응답에 행을 실으면 요약만 보는 대부분의 조회에서 페이로드가 커진다.
+
+export type VisitCursor = { at: string; id: string }
+
+export type VisitSession = {
+  id: string
+  cursorAt: string            // 커서용 ISO — 표시에는 쓰지 않는다
+  timeLabel: string           // '19:42' (KST)
+  dateLabel: string           // '7/23' (KST)
+  dateTimeLabel: string       // '2026-07-23 19:42:07' (KST)
+  visitNo: number | null      // 조회창 안에서 2건 이상인 방문자만 (1회차는 null)
+  durationMs: number | null
+  scrollDepthPct: number | null
+  sections: { name: string; ms: number }[]   // 라벨 합산·문서 순서, 값 0 은 제외
+  sourceLabel: string         // 유입 — '네이버'·'검색'·'직접' 등
+  referrerHost: string | null
+  campaign: string | null     // 'source · medium · campaign'
+  regionLabel: string | null
+  ipMasked: string | null     // 끝자리 가림 (null = 기록 없음)
+  ip: string | null           // 원본 — 상세에서 '전체 보기' 를 눌렀을 때만 표시
+  deviceLabel: string
+  osLabel: string | null
+  browserLabel: string | null
+  screenLabel: string | null
+  viewportLabel: string | null
+  language: string | null
+  visitorHash: string | null
+  userAgent: string | null
+}
+
+export type VisitSessionsPage = {
+  rows: VisitSession[]
+  nextCursor: VisitCursor | null
+  hasMore: boolean
+}
+
+// 'use server' 파일은 async 함수만 export 할 수 있어 상수는 모듈 내부에 둔다
+// (누적 상한 500 은 표시 판단이라 클라 쪽 VISIT_MAX_ROWS 가 갖는다).
+const VISIT_PAGE_SIZE = 50
+
+// IP 가림 — IPv4 는 마지막 옥텟, IPv6 는 앞 4그룹만 남긴다.
+function maskIp(ip: string | null): string | null {
+  if (!ip) return null
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return ip.replace(/\.\d{1,3}$/, '.***')
+  if (ip.includes(':')) {
+    const g = ip.split(':')
+    return g.length > 4 ? `${g.slice(0, 4).join(':')}:****` : '****'
+  }
+  return '***'
+}
+
+// 방문 1건의 sectionDwellMs(JSON) → 라벨 합산·문서 순서 목록
+function visitSections(sd: unknown): { name: string; ms: number }[] {
+  if (!sd || typeof sd !== 'object' || Array.isArray(sd)) return []
+  const per = new Map<string, { totalMs: number; count: number }>()
+  for (const [id, v] of Object.entries(sd as Record<string, unknown>)) {
+    const ms = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(ms) || ms <= 0) continue
+    per.set(id, { totalMs: Math.round(ms), count: 1 })
+  }
+  return mergeSectionsByLabel(per).map(a => ({ name: a.name, ms: a.totalMs }))
+}
+
+// 조회창은 요약(getMarketingStats)이 되돌려준 rangeFrom·rangeTo 를 그대로 받는다 — 두 화면이 같은 창을 본다.
+// 봇 제외는 고정(필터로 노출하지 않음). 커서는 (occurredAt, id) 복합 키셋 — offset 페이징을 쓰지 않는다.
+export async function getVisitSessions(
+  from: string,
+  to: string,
+  cursor: VisitCursor | null = null,
+): Promise<VisitSessionsPage> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { publicSlug: true },
+  })
+  const slug = property?.publicSlug?.trim() || null
+
+  const YMD = /^\d{4}-\d{2}-\d{2}$/
+  if (!slug || !YMD.test(from) || !YMD.test(to) || from > to) {
+    return { rows: [], nextCursor: null, hasMore: false }
+  }
+
+  const start = kstMidnight(from)
+  const end = new Date(kstMidnight(to).getTime() + 24 * 60 * 60 * 1000)
+  const base = { slug, isBot: false, occurredAt: { gte: start, lt: end } }
+  // 키셋 커서 — 같은 시각이 여러 건일 수 있어 id 로 한 번 더 끊는다(내림차순이라 lt)
+  const cursorAt = cursor ? new Date(cursor.at) : null
+  const where = cursorAt
+    ? {
+        AND: [
+          base,
+          { OR: [{ occurredAt: { lt: cursorAt } }, { occurredAt: cursorAt, id: { lt: cursor!.id } }] },
+        ],
+      }
+    : base
+
+  // 1건 더 읽어 다음 페이지 유무만 판정하고 버린다
+  const raw = await prisma.pageView.findMany({
+    where,
+    orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+    take: VISIT_PAGE_SIZE + 1,
+    select: {
+      id: true, occurredAt: true,
+      durationMs: true, scrollDepthPct: true, sectionDwellMs: true,
+      referrerHost: true, searchEngine: true, referrerCategory: true,
+      utmSource: true, utmMedium: true, utmCampaign: true,
+      country: true, region: true, city: true,
+      os: true, osVersion: true, browser: true, browserVersion: true,
+      deviceType: true, isMobile: true,
+      screenWidth: true, screenHeight: true, viewportWidth: true, viewportHeight: true,
+      language: true, visitorHash: true, ip: true, userAgent: true,
+    },
+  })
+  const hasMore = raw.length > VISIT_PAGE_SIZE
+  const page = hasMore ? raw.slice(0, VISIT_PAGE_SIZE) : raw
+
+  // 회차 — 이 페이지에 등장한 방문자만 조회창 전체에서 오름차순으로 세어 순번을 매긴다.
+  // (visitorHash 는 날짜|IP|UA|slug 해시라 날짜 경계에서 바뀐다 — 회차는 같은 날 안에서만 이어진다)
+  const hashes = Array.from(new Set(page.map(r => r.visitorHash).filter((h): h is string => !!h)))
+  const seqById = new Map<string, number>()
+  const totalByHash = new Map<string, number>()
+  if (hashes.length > 0) {
+    const sameVisitor = await prisma.pageView.findMany({
+      where: { ...base, visitorHash: { in: hashes } },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, visitorHash: true },
+    })
+    for (const r of sameVisitor) {
+      if (!r.visitorHash) continue
+      const n = (totalByHash.get(r.visitorHash) ?? 0) + 1
+      totalByHash.set(r.visitorHash, n)
+      seqById.set(r.id, n)
+    }
+  }
+
+  const rows: VisitSession[] = page.map(r => {
+    const k = toKst(r.occurredAt)
+    const y = k.getUTCFullYear(), mo = k.getUTCMonth() + 1, d = k.getUTCDate()
+    const hh = k.getUTCHours(), mi = k.getUTCMinutes(), ss = k.getUTCSeconds()
+
+    const channel = CHANNEL_LABEL[r.referrerCategory ?? ''] ?? (r.referrerHost ? '기타' : '직접')
+    const city = krPlaceToKo(r.country, r.city)
+    const region = regionDisplay(r.country, r.region)
+    const place = [region, city && city !== region ? city : null].filter(Boolean).join(' ')
+    const foreign = r.country && r.country.toUpperCase() !== 'KR' ? r.country : null
+    const regionLabel = place ? (foreign ? `${place} (${foreign})` : place) : (r.country || null)
+
+    const campaign = r.utmSource || r.utmMedium || r.utmCampaign
+      ? [r.utmSource, r.utmMedium, r.utmCampaign].filter(Boolean).join(' · ')
+      : null
+
+    const multi = r.visitorHash ? (totalByHash.get(r.visitorHash) ?? 0) >= 2 : false
+
+    return {
+      id: r.id,
+      cursorAt: r.occurredAt.toISOString(),
+      timeLabel: `${p2(hh)}:${p2(mi)}`,
+      dateLabel: `${mo}/${d}`,
+      dateTimeLabel: `${y}-${p2(mo)}-${p2(d)} ${p2(hh)}:${p2(mi)}:${p2(ss)}`,
+      visitNo: multi ? seqById.get(r.id) ?? null : null,
+      durationMs: r.durationMs,
+      scrollDepthPct: r.scrollDepthPct,
+      sections: visitSections(r.sectionDwellMs),
+      sourceLabel: r.searchEngine || channel,
+      referrerHost: r.referrerHost,
+      campaign,
+      regionLabel,
+      ipMasked: maskIp(r.ip),
+      ip: r.ip,
+      deviceLabel: DT_LABEL[r.deviceType ?? ''] ?? (r.isMobile ? '모바일' : '데스크탑'),
+      osLabel: r.os ? (r.osVersion ? `${r.os} ${r.osVersion}` : r.os) : null,
+      browserLabel: r.browser ? (r.browserVersion ? `${r.browser} ${r.browserVersion}` : r.browser) : null,
+      screenLabel: r.screenWidth && r.screenHeight ? `${r.screenWidth} × ${r.screenHeight}` : null,
+      viewportLabel: r.viewportWidth && r.viewportHeight ? `${r.viewportWidth} × ${r.viewportHeight}` : null,
+      language: r.language,
+      visitorHash: r.visitorHash,
+      userAgent: r.userAgent,
+    }
+  })
+
+  const last = page[page.length - 1]
+  return {
+    rows,
+    nextCursor: hasMore && last ? { at: last.occurredAt.toISOString(), id: last.id } : null,
+    hasMore,
   }
 }

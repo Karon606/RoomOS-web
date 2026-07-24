@@ -2,14 +2,33 @@
 
 import Link from 'next/link'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { ViewTabs } from '@/components/ui/ViewTabs'
+import { InfoHint } from '@/components/ui/InfoHint'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave } from '@/lib/saveStatus'
-import { getMarketingStats, type MarketingStats, type MarketingRange, type MarketingBucket } from './actions'
+import {
+  getMarketingStats, getVisitSessions,
+  type MarketingStats, type MarketingRange, type MarketingBucket,
+  type VisitCursor, type VisitSession,
+} from './actions'
+
+// 방문 기록 누적 상한 — 이 이상은 더보기 대신 '기간을 좁혀 주세요' 캡션
+const VISIT_MAX_ROWS = 500
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
+
+// 체류 시간 표기 — 요약·방문 기록 공통
+const fmtDuration = (ms: number) => {
+  if (ms < 1000) return `${ms}ms`
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}초`
+  const m = Math.floor(s / 60); const rs = s % 60
+  return rs === 0 ? `${m}분` : `${m}분 ${rs}초`
+}
 
 // 작은 막대 패널 공통 컴포넌트 — 채널·디바이스·OS·브라우저·국가 등에서 재사용
 function BarPanel({
@@ -47,6 +66,134 @@ function BarPanel({
   )
 }
 
+// 방문 상세의 키-값 한 칸 — 라벨 10.5px / 값 11.5px
+function Field({ label, value, num, hint, extra }: {
+  label: string
+  value: string
+  num?: boolean
+  hint?: ReactNode
+  extra?: ReactNode
+}) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{label}{hint}</span>
+      <span className={`block text-[0.71875rem] truncate ${num ? 'num' : ''}`} style={{ color: 'var(--warm-dark)' }} title={value}>
+        {value}{extra}
+      </span>
+    </div>
+  )
+}
+
+// 방문 기록 한 줄 — 접힘(시각·유입·회차 / 체류·스크롤) + 펼침 상세(섹션 막대·키값·UA)
+function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
+  v: VisitSession
+  showDate: boolean          // 여러 날 조회면 '7/23 19:42', 하루면 '19:42'
+  open: boolean
+  onToggle: () => void
+  ipOpen: boolean
+  onToggleIp: () => void
+}) {
+  const meta = [v.regionLabel, v.deviceLabel, v.browserLabel].filter(Boolean).join(' · ')
+  const secMax = v.sections.length > 0 ? Math.max(...v.sections.map(s => s.ms)) : 0
+  const topIdx = v.sections.findIndex(s => s.ms === secMax)
+
+  // 체류가 안 잡힌 방문(페이지를 닫을 때 수집되므로 30% 가까이 비어 있다)은 우측을 '-' 한 글자로
+  const right = v.durationMs == null
+    ? <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>-</span>
+    : (
+      <>
+        <span className="num text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{fmtDuration(v.durationMs)}</span>
+        {v.scrollDepthPct != null && (
+          <span className="num text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{v.scrollDepthPct}%</span>
+        )}
+      </>
+    )
+
+  return (
+    <li>
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        className="w-full text-left px-3 py-2.5">
+        <span className="flex items-center gap-2">
+          <span className="num text-xs w-[82px] shrink-0" style={{ color: 'var(--warm-mid)' }}>
+            {showDate ? `${v.dateLabel} ${v.timeLabel}` : v.timeLabel}
+          </span>
+          <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full shrink-0 truncate max-w-[7rem]"
+            style={{ background: 'var(--cream-soft)', color: 'var(--warm-mid)' }}>{v.sourceLabel}</span>
+          {v.visitNo != null && v.visitNo >= 2 && (
+            <span className="num text-[0.65625rem] px-1.5 py-0.5 rounded-full shrink-0"
+              style={{ background: 'var(--coral-pale)', color: 'var(--tc-text)' }}>{v.visitNo}회차</span>
+          )}
+          {meta && (
+            <span className="hidden sm:block text-[0.65625rem] truncate flex-1 min-w-0" style={{ color: 'var(--warm-muted)' }}>{meta}</span>
+          )}
+          <span className="flex items-baseline gap-1.5 shrink-0 ml-auto sm:ml-0">{right}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+            className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--warm-muted)' }} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </span>
+        {meta && (
+          <span className="sm:hidden block text-[0.65625rem] truncate mt-1" style={{ color: 'var(--warm-muted)' }}>{meta}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+          {/* 카드 안 중첩 패널은 --cream-soft — --canvas 는 다크에서 순흑 구멍이 된다 */}
+          <div className="rounded-lg p-3 space-y-3" style={{ background: 'var(--cream-soft)' }}>
+            {v.sections.length > 0 && (
+              <ul className="space-y-1.5">
+                {v.sections.map((s, i) => (
+                  <li key={s.name}>
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="text-[0.65625rem] truncate" style={{ color: 'var(--warm-dark)' }}>{s.name}</span>
+                      <span className="num text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmtDuration(s.ms)}</span>
+                    </div>
+                    <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--warm-border)' }}>
+                      <div className="h-full rounded-full"
+                        style={{ width: `${secMax > 0 ? (s.ms / secMax) * 100 : 0}%`, background: i === topIdx ? 'var(--persimmon)' : 'var(--camel)' }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
+              <Field label="방문 시각" value={v.dateTimeLabel} num />
+              <Field label="체류 시간" value={v.durationMs == null ? '측정 안 됨' : fmtDuration(v.durationMs)} num={v.durationMs != null} />
+              <Field label="스크롤 깊이" value={v.scrollDepthPct == null ? '측정 안 됨' : `${v.scrollDepthPct}%`} num={v.scrollDepthPct != null} />
+              <Field label="유입" value={v.sourceLabel} />
+              <Field label="유입 호스트" value={v.referrerHost ?? '없음'} />
+              {v.campaign && <Field label="캠페인" value={v.campaign} />}
+              <Field label="지역" value={v.regionLabel ?? '미상'} />
+              <Field label="IP" num={v.ipMasked != null}
+                hint={<InfoHint title="IP 기록">IP 기록이 켜지기 전 방문과 90일이 지난 방문은 기록 없음으로 표시됩니다. 기본은 끝자리를 가려 표시합니다.</InfoHint>}
+                value={v.ipMasked == null ? '기록 없음' : (ipOpen ? (v.ip ?? v.ipMasked) : v.ipMasked)}
+                extra={v.ipMasked != null && (
+                  <button type="button" onClick={onToggleIp}
+                    className="ml-1.5 text-[0.65625rem] hover:opacity-70 transition-opacity"
+                    style={{ color: 'var(--tc-text)' }}>{ipOpen ? '가리기' : '전체 보기'}</button>
+                )} />
+              <Field label="기기" value={v.deviceLabel} />
+              <Field label="OS" value={v.osLabel ?? '미상'} />
+              <Field label="브라우저" value={v.browserLabel ?? '미상'} />
+              <Field label="화면" value={v.screenLabel ?? '미상'} num={v.screenLabel != null} />
+              <Field label="브라우저 창" value={v.viewportLabel ?? '미상'} num={v.viewportLabel != null} />
+              <Field label="언어" value={v.language ?? '미상'} num={v.language != null} />
+              <Field label="방문자 ID" value={v.visitorHash ? `${v.visitorHash.slice(0, 8)}…` : '없음'} num={!!v.visitorHash} />
+            </div>
+
+            {v.userAgent && (
+              <div className="min-w-0">
+                <span className="block text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>User-Agent</span>
+                <span className="block text-[0.65625rem] break-all line-clamp-2" style={{ color: 'var(--warm-muted)' }} title={v.userAgent}>{v.userAgent}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
+
 // 세그먼트 값 — 프리셋 5종 + 임의 기간('custom').
 // 'custom'은 MarketingRange 유니온에 넣지 않는다(서버 rangeStart()의 exhaustive switch 보존).
 type SegKey = MarketingRange | 'custom'
@@ -81,18 +228,74 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
   const [selHour, setSelHour] = useState<number | null>(null)
   const [, startTransition] = useTransition()
 
+  // 방문 기록 탭 — 요약과 분리해서 받는다(탭을 안 열면 호출 비용 0).
+  // visits === null = 아직 안 받음(탭 첫 진입·기간 변경 직후)
+  const [tab, setTab] = useState<'summary' | 'visits'>('summary')
+  const [visits, setVisits] = useState<VisitSession[] | null>(null)
+  const [visitCursor, setVisitCursor] = useState<VisitCursor | null>(null)
+  const [visitHasMore, setVisitHasMore] = useState(false)
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set())   // 다중 펼침
+  const [ipIds, setIpIds] = useState<Set<string>>(new Set())       // IP 원본을 편 행 (행별, 전역 스위치 아님)
+  const visitReq = useRef(0)   // 기간 변경과 더보기가 겹칠 때 늦게 온 응답이 목록을 덮어쓰지 않게
+
   const isCustom = customFrom != null
   const reversed = !!customFrom && !!customTo && customFrom > customTo
+
+  // 방문 기록 1페이지 — 조회창은 요약이 되돌려준 rangeFrom·rangeTo 를 그대로 쓴다
+  const fetchVisitsFirst = async (from: string, to: string) => {
+    const my = ++visitReq.current
+    const page = await getVisitSessions(from, to, null)
+    if (visitReq.current !== my) return
+    setVisits(page.rows); setVisitCursor(page.nextCursor); setVisitHasMore(page.hasMore)
+  }
+
+  const resetVisits = () => {
+    visitReq.current++
+    setVisits(null); setVisitCursor(null); setVisitHasMore(false)
+    setOpenIds(new Set()); setIpIds(new Set())
+  }
 
   // 조회 — 진행 표시는 전역 상단 진행 바(v2.0 §17) 재사용
   const query = (r: MarketingRange, from: string | null, to: string | null) => {
     setSelTrend(null); setSelHour(null)
+    resetVisits()
     const release = trackSave()
     startTransition(async () => {
       try { setStats(await getMarketingStats(r, from, to)) }
       finally { release() }
     })
   }
+
+  // 방문 기록은 "탭이 열려 있는데 아직 안 받았을 때"만 받는다.
+  // 이벤트에서 직접 부르지 않는 이유 — 기간 변경 중(요약 응답 대기)에 탭을 넘기면
+  // 옛 조회창으로 목록을 받아버린다. 조회창을 의존성에 두면 항상 최신 창으로 맞춰진다.
+  useEffect(() => {
+    if (tab !== 'visits' || visits !== null) return
+    void fetchVisitsFirst(stats.rangeFrom, stats.rangeTo)
+  }, [tab, visits, stats.rangeFrom, stats.rangeTo])
+
+  const handleTab = (id: string) => setTab(id === 'visits' ? 'visits' : 'summary')
+
+  const loadMoreVisits = () => {
+    if (!visitCursor) return
+    const my = ++visitReq.current
+    const release = trackSave()
+    startTransition(async () => {
+      try {
+        const page = await getVisitSessions(stats.rangeFrom, stats.rangeTo, visitCursor)
+        if (visitReq.current !== my) return
+        setVisits(prev => [...(prev ?? []), ...page.rows])
+        setVisitCursor(page.nextCursor); setVisitHasMore(page.hasMore)
+      } finally { release() }
+    })
+  }
+
+  const toggleVisit = (id: string) => setOpenIds(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
+  const toggleIp = (id: string) => setIpIds(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
 
   // 프리셋 범위 선택 — 직접 지정 해제
   const handleRange = (r: MarketingRange) => {
@@ -184,14 +387,6 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
     return null
   })()
 
-  const fmtDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`
-    const s = Math.round(ms / 1000)
-    if (s < 60) return `${s}초`
-    const m = Math.floor(s / 60); const rs = s % 60
-    return rs === 0 ? `${m}분` : `${m}분 ${rs}초`
-  }
-
   return (
     <div className="space-y-4">
       {/* 막대 hover·선택 단서는 막대(3~4px)가 아니라 열 전체 배경 밴드로 — focus 링도 offset 0 */}
@@ -255,346 +450,396 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         )}
       </div>
 
-      {/* 누적 4 카드 (범위 무관, 참고용) */}
-      <div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { label: '오늘',    v: stats.totals.today },
-            { label: '최근 7일', v: stats.totals.week },
-            { label: '최근 30일',v: stats.totals.month },
-            { label: '누적',    v: stats.totals.allTime },
-          ].map((c, i) => (
-            <div key={i} className="rounded-xl p-4"
-              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-              <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>{c.label}</p>
-              <p className="text-lg font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmt(c.v)}</p>
-            </div>
-          ))}
-        </div>
-        <p className="text-[11px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>이 4개는 선택한 기간과 무관한 누적 수치입니다.</p>
-      </div>
+      {/* 요약 / 방문 기록 — 기간 컨트롤은 탭 밖 공통이라 탭을 넘겨도 조회창이 유지된다 */}
+      <ViewTabs ariaLabel="방문 분석 탭" activeId={tab} onChange={handleTab}
+        tabs={[
+          { id: 'summary', label: '요약' },
+          { id: 'visits',  label: '방문 기록' },
+        ]} />
 
-      {/* 범위 내 강조 카드 (총뷰 + 유니크 방문자) */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl p-4"
-          style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
-          <p className="text-[11px] opacity-80">선택 범위 페이지뷰</p>
-          <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
-        </div>
-        {/* v2.0 §28: --ink-2 배경은 다크에서 크림으로 뒤집혀 밝은 글자 대비 붕괴 →
-            페어 토큰 --np-card-bg(라이트 ink·다크 d-card, 양 모드 어두움)로 sand 글자 가독성 유지 */}
-        <div className="rounded-xl p-4"
-          style={{ background: 'var(--np-card-bg)', color: 'var(--sand)' }}>
-          <p className="text-[11px] opacity-80">유니크 방문자 (추정)</p>
-          <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeVisitors)}</p>
-        </div>
-      </div>
-
-      {/* 트렌드 차트 (자동 세분도) */}
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-          추이 <span className="num" style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>({rangeTitle} · {granularity})</span>
-        </p>
-        {stats.trend.length === 0 || stats.rangeViews === 0 ? (
-          <p className="text-xs text-center py-6" style={{ color: 'var(--warm-muted)' }}>이 기간에 방문 기록이 없습니다.</p>
-        ) : (
-          <>
-            {/* 선택 막대 상세 (모바일 탭 대응 — 데스크탑 hover 도 유지).
-                버튼 유무로 높이가 튀지 않게 줄 높이를 항상 확보한다. */}
-            <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[44px]">
-              <p className="text-[11px] min-w-0" style={{ color: 'var(--warm-mid)' }}>
-                {selBar
-                  ? <><strong style={{ color: 'var(--warm-dark)' }}>{selBar.label}</strong> · {fmt(selBar.views)}뷰 · {fmt(selBar.visitors)}명</>
-                  : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
-              </p>
-              {drill && (
-                <Btn size="sm" variant="secondary" className="shrink-0"
-                  onClick={() => drillTo(drill.from, drill.to)}>
-                  {drill.label}
-                </Btn>
-              )}
-            </div>
-            <div className="flex items-end gap-[3px] h-28">
-              {stats.trend.map((d, i) => {
-                const h = (d.views / trendMax) * 100
-                const sel = selTrend === i
-                return (
-                  <button key={i} type="button" onClick={() => setSelTrend(sel ? null : i)}
-                    data-sel={sel ? '1' : '0'}
-                    className="mk-bar flex-1 h-full flex flex-col justify-end items-center cursor-pointer"
-                    title={`${d.label}: ${d.views}뷰 · ${d.visitors}명`}>
-                    <div className="w-full rounded-t-sm transition-opacity"
-                      style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)', opacity: selTrend == null || sel ? 1 : 0.4 }} />
-                  </button>
-                )
-              })}
-            </div>
-            <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
-              <span>{stats.trend[0]?.label}</span>
-              {stats.trend.length > 2 && (
-                <span>{stats.trend[Math.floor(stats.trend.length / 2)]?.label}</span>
-              )}
-              <span>{stats.trend[stats.trend.length - 1]?.label}</span>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 참여도 (평균 체류·스크롤·이탈률) */}
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-          참여도 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.engagement.sampleCount)}건)</span>
-        </p>
-        {stats.engagement.sampleCount === 0 ? (
-          <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
-            {isCustom
-              ? '이 기간에 측정 데이터 없음'
-              : '아직 측정 데이터 없음 (페이지를 닫을 때 수집되므로 첫 방문 후 5초 정도 뒤 새로고침 시 반영)'}
-          </p>
-        ) : (
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
-              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmtDuration(stats.engagement.avgDurationMs)}</p>
-            </div>
-            <div>
-              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 스크롤</p>
-              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.avgScrollPct}%</p>
-            </div>
-            <div>
-              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[0.65625rem]">(5초↓)</span></p>
-              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.bounceRatePct}%</p>
-            </div>
+      {tab === 'summary' && (<>
+        {/* 누적 4 카드 (범위 무관, 참고용) */}
+        <div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: '오늘',    v: stats.totals.today },
+              { label: '최근 7일', v: stats.totals.week },
+              { label: '최근 30일',v: stats.totals.month },
+              { label: '누적',    v: stats.totals.allTime },
+            ].map((c, i) => (
+              <div key={i} className="rounded-xl p-4"
+                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>{c.label}</p>
+                <p className="text-lg font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmt(c.v)}</p>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+          <p className="text-[11px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>이 4개는 선택한 기간과 무관한 누적 수치입니다.</p>
+        </div>
 
-      {/* 섹션별 체류시간 — 페이지 어느 영역에 오래 머물렀나 */}
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
-          섹션별 평균 체류시간 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(영역별, 샘플 {fmt(stats.sectionSampleCount)}건)</span>
-        </p>
-        <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자가 페이지의 어느 부분에서 더 오래 머물렀는지 · 화면 중앙에 머문 시간 기준</p>
-        {stats.sections.length === 0 ? (
-          <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
-            {isCustom
-              ? '이 기간에 측정 데이터 없음'
-              : '아직 측정 데이터 없음 (공개 페이지 방문이 쌓이면 영역별로 표시됩니다)'}
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {(() => {
-              const secMax = Math.max(1, ...stats.sections.map(s => s.avgMs))
-              return stats.sections.map((s, i) => (
-                <li key={s.id}>
-                  <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="text-xs truncate" style={{ color: i === 0 ? 'var(--tc-text)' : 'var(--warm-dark)', fontWeight: i === 0 ? 600 : 400 }}>
-                      {s.name}{i === 0 && <span className="text-[0.65625rem] font-normal"> · 최다 체류</span>}
-                    </span>
-                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
-                      {fmtDuration(s.avgMs)} · {fmt(s.sampleCount)}명
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${(s.avgMs / secMax) * 100}%`, background: i === 0 ? 'var(--persimmon)' : 'var(--camel)' }} />
-                  </div>
-                </li>
-              ))
-            })()}
-          </ul>
-        )}
-      </div>
+        {/* 범위 내 강조 카드 (총뷰 + 유니크 방문자) */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
+            <p className="text-[11px] opacity-80">선택 범위 페이지뷰</p>
+            <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
+          </div>
+          {/* v2.0 §28: --ink-2 배경은 다크에서 크림으로 뒤집혀 밝은 글자 대비 붕괴 →
+              페어 토큰 --np-card-bg(라이트 ink·다크 d-card, 양 모드 어두움)로 sand 글자 가독성 유지 */}
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--np-card-bg)', color: 'var(--sand)' }}>
+            <p className="text-[11px] opacity-80">유니크 방문자 (추정)</p>
+            <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeVisitors)}</p>
+          </div>
+        </div>
 
-      {/* 채널 카테고리 + 디바이스 종류 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <BarPanel title="채널" rows={stats.channels.map(c => ({ label: c.category, count: c.count, percent: c.percent }))}
-          color="var(--persimmon)" emptyText={emptyTxt} />
-        <BarPanel title="디바이스 종류" rows={stats.deviceTypes.map(d => ({ label: d.type, count: d.count, percent: d.percent }))}
-          color="var(--camel)" emptyText={emptyTxt} />
-      </div>
-
-      {/* 검색엔진·소셜 분류된 이름 + 유입 호스트 Top */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* 트렌드 차트 (자동 세분도) */}
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>검색엔진 · 소셜</p>
-          {stats.namedSources.length === 0 ? (
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+            추이 <span className="num" style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>({rangeTitle} · {granularity})</span>
+          </p>
+          {stats.trend.length === 0 || stats.rangeViews === 0 ? (
+            <p className="text-xs text-center py-6" style={{ color: 'var(--warm-muted)' }}>이 기간에 방문 기록이 없습니다.</p>
+          ) : (
+            <>
+              {/* 선택 막대 상세 (모바일 탭 대응 — 데스크탑 hover 도 유지).
+                  버튼 유무로 높이가 튀지 않게 줄 높이를 항상 확보한다. */}
+              <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[44px]">
+                <p className="text-[11px] min-w-0" style={{ color: 'var(--warm-mid)' }}>
+                  {selBar
+                    ? <><strong style={{ color: 'var(--warm-dark)' }}>{selBar.label}</strong> · {fmt(selBar.views)}뷰 · {fmt(selBar.visitors)}명</>
+                    : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
+                </p>
+                {drill && (
+                  <Btn size="sm" variant="secondary" className="shrink-0"
+                    onClick={() => drillTo(drill.from, drill.to)}>
+                    {drill.label}
+                  </Btn>
+                )}
+              </div>
+              <div className="flex items-end gap-[3px] h-28">
+                {stats.trend.map((d, i) => {
+                  const h = (d.views / trendMax) * 100
+                  const sel = selTrend === i
+                  return (
+                    <button key={i} type="button" onClick={() => setSelTrend(sel ? null : i)}
+                      data-sel={sel ? '1' : '0'}
+                      className="mk-bar flex-1 h-full flex flex-col justify-end items-center cursor-pointer"
+                      title={`${d.label}: ${d.views}뷰 · ${d.visitors}명`}>
+                      <div className="w-full rounded-t-sm transition-opacity"
+                        style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)', opacity: selTrend == null || sel ? 1 : 0.4 }} />
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
+                <span>{stats.trend[0]?.label}</span>
+                {stats.trend.length > 2 && (
+                  <span>{stats.trend[Math.floor(stats.trend.length / 2)]?.label}</span>
+                )}
+                <span>{stats.trend[stats.trend.length - 1]?.label}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* 참여도 (평균 체류·스크롤·이탈률) */}
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+            참여도 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.engagement.sampleCount)}건)</span>
+          </p>
+          {stats.engagement.sampleCount === 0 ? (
             <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
-              {isCustom ? '이 기간에 분류된 유입 없음' : '아직 분류된 유입 없음'}
+              {isCustom
+                ? '이 기간에 측정 데이터 없음'
+                : '아직 측정 데이터 없음 (페이지를 닫을 때 수집되므로 첫 방문 후 5초 정도 뒤 새로고침 시 반영)'}
             </p>
           ) : (
-            <ul className="space-y-1">
-              {stats.namedSources.map((s, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
-                    {s.name} <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>({s.category})</span>
-                  </span>
-                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(s.count)}건</span>
-                </li>
-              ))}
-            </ul>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmtDuration(stats.engagement.avgDurationMs)}</p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 스크롤</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.avgScrollPct}%</p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[0.65625rem]">(5초↓)</span></p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.bounceRatePct}%</p>
+              </div>
+            </div>
           )}
         </div>
 
+        {/* 섹션별 체류시간 — 페이지 어느 영역에 오래 머물렀나 */}
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>유입 호스트 Top 8</p>
-          {stats.referrers.length === 0 ? (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
+            섹션별 평균 체류시간 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(영역별, 샘플 {fmt(stats.sectionSampleCount)}건)</span>
+          </p>
+          <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자가 페이지의 어느 부분에서 더 오래 머물렀는지 · 화면 중앙에 머문 시간 기준</p>
+          {stats.sections.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+              {isCustom
+                ? '이 기간에 측정 데이터 없음'
+                : '아직 측정 데이터 없음 (공개 페이지 방문이 쌓이면 영역별로 표시됩니다)'}
+            </p>
           ) : (
             <ul className="space-y-1.5">
-              {stats.referrers.map((r, i) => (
-                <li key={i}>
-                  <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>{r.host}</span>
-                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
-                      {fmt(r.count)} · {r.percent}%
-                    </span>
-                  </div>
-                  <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${r.percent}%`, background: 'var(--persimmon)' }} />
-                  </div>
-                </li>
-              ))}
+              {(() => {
+                const secMax = Math.max(1, ...stats.sections.map(s => s.avgMs))
+                return stats.sections.map((s, i) => (
+                  <li key={s.id}>
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="text-xs truncate" style={{ color: i === 0 ? 'var(--tc-text)' : 'var(--warm-dark)', fontWeight: i === 0 ? 600 : 400 }}>
+                        {s.name}{i === 0 && <span className="text-[0.65625rem] font-normal"> · 최다 체류</span>}
+                      </span>
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                        {fmtDuration(s.avgMs)} · {fmt(s.sampleCount)}명
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${(s.avgMs / secMax) * 100}%`, background: i === 0 ? 'var(--persimmon)' : 'var(--camel)' }} />
+                    </div>
+                  </li>
+                ))
+              })()}
             </ul>
           )}
         </div>
-      </div>
 
-      {/* 지역 (국가 + 도시) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <BarPanel title="국가 Top" rows={stats.countries.map(c => ({ label: c.country, count: c.count, percent: c.percent }))}
-          color="var(--persimmon)" emptyText={emptyTxt} />
+        {/* 채널 카테고리 + 디바이스 종류 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <BarPanel title="채널" rows={stats.channels.map(c => ({ label: c.category, count: c.count, percent: c.percent }))}
+            color="var(--persimmon)" emptyText={emptyTxt} />
+          <BarPanel title="디바이스 종류" rows={stats.deviceTypes.map(d => ({ label: d.type, count: d.count, percent: d.percent }))}
+            color="var(--camel)" emptyText={emptyTxt} />
+        </div>
+
+        {/* 검색엔진·소셜 분류된 이름 + 유입 호스트 Top */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>검색엔진 · 소셜</p>
+            {stats.namedSources.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+                {isCustom ? '이 기간에 분류된 유입 없음' : '아직 분류된 유입 없음'}
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {stats.namedSources.map((s, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
+                      {s.name} <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>({s.category})</span>
+                    </span>
+                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(s.count)}건</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>유입 호스트 Top 8</p>
+            {stats.referrers.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {stats.referrers.map((r, i) => (
+                  <li key={i}>
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>{r.host}</span>
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                        {fmt(r.count)} · {r.percent}%
+                      </span>
+                    </div>
+                    <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${r.percent}%`, background: 'var(--persimmon)' }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* 지역 (국가 + 도시) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <BarPanel title="국가 Top" rows={stats.countries.map(c => ({ label: c.country, count: c.count, percent: c.percent }))}
+            color="var(--persimmon)" emptyText={emptyTxt} />
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>도시 Top 12</p>
+            {stats.cities.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+            ) : (
+              <ul className="space-y-1">
+                {stats.cities.map((c, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
+                      {c.city}
+                      {c.region && <span className="text-[11px]" style={{ color: 'var(--warm-mid)' }}> · {c.region}</span>}
+                      {c.country && <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}> ({c.country})</span>}
+                    </span>
+                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* OS + 브라우저 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <BarPanel title="OS Top" rows={stats.oses.map(o => ({ label: o.os, count: o.count, percent: o.percent }))}
+            color="var(--camel)" emptyText={emptyTxt} />
+          <BarPanel title="브라우저 Top" rows={stats.browsers.map(b => ({ label: b.browser, count: b.count, percent: b.percent }))}
+            color="var(--persimmon)" emptyText={emptyTxt} />
+        </div>
+
+        {/* 언어 + 화면 해상도 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>언어</p>
+            {stats.languages.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+            ) : (
+              <ul className="space-y-1">
+                {stats.languages.map((l, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
+                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(l.count)}건</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>화면 해상도</p>
+            {stats.resolutions.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+            ) : (
+              <ul className="space-y-1">
+                {stats.resolutions.map((r, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{r.res}</span>
+                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(r.count)}건</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* 시간대(0-23) — 하루만 조회하면 위 추이가 이미 시간별이라 같은 차트가 된다. 그때는 숨긴다. */}
+        {stats.bucket !== 'hour' && (
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>도시 Top 12</p>
-          {stats.cities.length === 0 ? (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+            시간대 분포 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(KST 0-23시 누적)</span>
+          </p>
+          <p className="text-[11px] mb-1.5 h-4" style={{ color: 'var(--warm-mid)' }}>
+            {selHour != null && stats.hourly[selHour]
+              ? <><strong style={{ color: 'var(--warm-dark)' }}>{stats.hourly[selHour].hour}시</strong> · {fmt(stats.hourly[selHour].count)}뷰</>
+              : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
+          </p>
+          <div className="flex items-end gap-[2px] h-20">
+            {stats.hourly.map((h, i) => {
+              const height = (h.count / hourMax) * 100
+              const sel = selHour === i
+              return (
+                <button key={i} type="button" onClick={() => setSelHour(sel ? null : i)}
+                  data-sel={sel ? '1' : '0'}
+                  className="mk-bar flex-1 h-full flex flex-col justify-end cursor-pointer" title={`${h.hour}시: ${h.count}뷰`}>
+                  <div className="w-full rounded-t-sm transition-opacity"
+                    style={{ height: `${Math.max(2, height)}%`, background: 'var(--camel)', opacity: selHour == null || sel ? 1 : 0.4 }} />
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
+            <span>0시</span>
+            <span>6시</span>
+            <span>12시</span>
+            <span>18시</span>
+            <span>23시</span>
+          </div>
+        </div>
+        )}
+
+        {/* UTM 캠페인 */}
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+            UTM 캠페인 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(?utm_source=... 가 있을 때만)</span>
+          </p>
+          {stats.campaigns.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+              {isCustom ? '이 기간에 UTM 파라미터가 붙은 방문이 없어요' : 'UTM 파라미터가 붙은 방문이 아직 없어요'}
+            </p>
           ) : (
-            <ul className="space-y-1">
-              {stats.cities.map((c, i) => (
+            <ul className="space-y-1.5">
+              {stats.campaigns.map((c, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
                   <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
-                    {c.city}
-                    {c.region && <span className="text-[11px]" style={{ color: 'var(--warm-mid)' }}> · {c.region}</span>}
-                    {c.country && <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}> ({c.country})</span>}
+                    <strong>{c.source}</strong> · {c.medium}{c.campaign !== '-' && ` · ${c.campaign}`}
                   </span>
-                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
+                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                    {fmt(c.count)}건
+                  </span>
                 </li>
               ))}
             </ul>
           )}
         </div>
-      </div>
+      </>)}
 
-      {/* OS + 브라우저 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <BarPanel title="OS Top" rows={stats.oses.map(o => ({ label: o.os, count: o.count, percent: o.percent }))}
-          color="var(--camel)" emptyText={emptyTxt} />
-        <BarPanel title="브라우저 Top" rows={stats.browsers.map(b => ({ label: b.browser, count: b.count, percent: b.percent }))}
-          color="var(--persimmon)" emptyText={emptyTxt} />
-      </div>
-
-      {/* 언어 + 화면 해상도 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="rounded-xl p-4"
-          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>언어</p>
-          {stats.languages.length === 0 ? (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
-          ) : (
-            <ul className="space-y-1">
-              {stats.languages.map((l, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
-                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(l.count)}건</span>
-                </li>
-              ))}
-            </ul>
-          )}
+      {tab === 'visits' && (
+        <div className="space-y-2">
+          <div className="flex items-center flex-wrap text-[11px]" style={{ color: 'var(--warm-muted)' }}>
+            <span>총 {fmt(stats.rangeViews)}건 · 최근 순{stats.botCount > 0 ? ` · 봇 ${fmt(stats.botCount)}건 제외` : ''}</span>
+            <InfoHint title="같은 방문자 판정">방문자 구분은 날짜별로 새로 계산됩니다. 하루가 지나면 같은 사람도 다른 방문자로 잡히므로, 회차는 같은 날 안에서만 이어집니다.</InfoHint>
+          </div>
+          <div className="rounded-xl overflow-hidden"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            {visits === null ? (
+              <div className="p-4"><SkeletonRows rows={5} /></div>
+            ) : visits.length === 0 ? (
+              <p className="text-xs text-center py-6" style={{ color: 'var(--warm-muted)' }}>
+                {isCustom ? '이 기간에 방문 기록이 없습니다' : '아직 방문 기록이 없습니다'}
+              </p>
+            ) : (
+              <>
+                <ul className="divide-y divide-[var(--warm-border)]">
+                  {visits.map(v => (
+                    <VisitRow key={v.id} v={v} showDate={rf !== rt}
+                      open={openIds.has(v.id)} onToggle={() => toggleVisit(v.id)}
+                      ipOpen={ipIds.has(v.id)} onToggleIp={() => toggleIp(v.id)} />
+                  ))}
+                </ul>
+                {visits.length >= VISIT_MAX_ROWS ? (
+                  <p className="w-full text-center py-2 text-[0.6875rem]"
+                    style={{ color: 'var(--warm-muted)', borderTop: '1px solid var(--warm-border)' }}>
+                    {fmt(VISIT_MAX_ROWS)}건까지 표시합니다. 더 보려면 기간을 좁혀 주세요.
+                  </p>
+                ) : visitHasMore ? (
+                  <button type="button" onClick={loadMoreVisits}
+                    className="w-full text-center py-2 text-[0.6875rem] font-medium hover:opacity-70 transition-opacity"
+                    style={{ color: 'var(--warm-mid)', borderTop: '1px solid var(--warm-border)' }}>
+                    + {fmt(Math.max(1, Math.min(stats.rangeViews, VISIT_MAX_ROWS) - visits.length))}건 더 보기
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
-        <div className="rounded-xl p-4"
-          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>화면 해상도</p>
-          {stats.resolutions.length === 0 ? (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
-          ) : (
-            <ul className="space-y-1">
-              {stats.resolutions.map((r, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{r.res}</span>
-                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(r.count)}건</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      {/* 시간대(0-23) — 하루만 조회하면 위 추이가 이미 시간별이라 같은 차트가 된다. 그때는 숨긴다. */}
-      {stats.bucket !== 'hour' && (
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-          시간대 분포 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(KST 0-23시 누적)</span>
-        </p>
-        <p className="text-[11px] mb-1.5 h-4" style={{ color: 'var(--warm-mid)' }}>
-          {selHour != null && stats.hourly[selHour]
-            ? <><strong style={{ color: 'var(--warm-dark)' }}>{stats.hourly[selHour].hour}시</strong> · {fmt(stats.hourly[selHour].count)}뷰</>
-            : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
-        </p>
-        <div className="flex items-end gap-[2px] h-20">
-          {stats.hourly.map((h, i) => {
-            const height = (h.count / hourMax) * 100
-            const sel = selHour === i
-            return (
-              <button key={i} type="button" onClick={() => setSelHour(sel ? null : i)}
-                data-sel={sel ? '1' : '0'}
-                className="mk-bar flex-1 h-full flex flex-col justify-end cursor-pointer" title={`${h.hour}시: ${h.count}뷰`}>
-                <div className="w-full rounded-t-sm transition-opacity"
-                  style={{ height: `${Math.max(2, height)}%`, background: 'var(--camel)', opacity: selHour == null || sel ? 1 : 0.4 }} />
-              </button>
-            )
-          })}
-        </div>
-        <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
-          <span>0시</span>
-          <span>6시</span>
-          <span>12시</span>
-          <span>18시</span>
-          <span>23시</span>
-        </div>
-      </div>
       )}
-
-      {/* UTM 캠페인 */}
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-          UTM 캠페인 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(?utm_source=... 가 있을 때만)</span>
-        </p>
-        {stats.campaigns.length === 0 ? (
-          <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
-            {isCustom ? '이 기간에 UTM 파라미터가 붙은 방문이 없어요' : 'UTM 파라미터가 붙은 방문이 아직 없어요'}
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {stats.campaigns.map((c, i) => (
-              <li key={i} className="flex items-baseline justify-between gap-2">
-                <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
-                  <strong>{c.source}</strong> · {c.medium}{c.campaign !== '-' && ` · ${c.campaign}`}
-                </span>
-                <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
-                  {fmt(c.count)}건
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   )
 }
