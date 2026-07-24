@@ -102,5 +102,17 @@ export async function GET(req: Request) {
     } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
   }
 
-  return NextResponse.json({ ok: true, autoCheckout: autoFlipped.count, usersNotified, sent, integrity: audit })
+  // 방문 기록 IP 보관 기간 정리 — 90일 지난 행은 ip 만 비운다(운영자 결정 2026-07-24).
+  // 방문 기록·통계는 그대로 남고 개인 식별 정보만 사라진다. 실패해도 크론 본래 일(알림)에는 영향 없음.
+  let ipPurged = 0
+  try {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+    const purged = await prisma.pageView.updateMany({
+      where: { occurredAt: { lt: cutoff }, ip: { not: null } },
+      data: { ip: null },
+    })
+    ipPurged = purged.count
+  } catch { /* IP 정리 실패는 알림 발송과 무관 */ }
+
+  return NextResponse.json({ ok: true, autoCheckout: autoFlipped.count, usersNotified, sent, integrity: audit, ipPurged })
 }

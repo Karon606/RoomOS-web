@@ -119,6 +119,8 @@ export async function POST(req: NextRequest) {
         userAgent: trim(ua),
         isMobile,
         visitorHash: vh,
+        // 방문 기록 상세 조회용. 90일 지나면 크론이 비운다(개인정보 보관 기간, 운영자 결정 2026-07-24).
+        ip,
         isBot,
       },
       select: { id: true },

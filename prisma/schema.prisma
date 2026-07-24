@@ -1532,6 +1532,10 @@ model PageView {
   // 익명 식별자 (방문자 추정용)
   visitorHash  String?
 
+  // 접속 IP — 방문 기록 상세에서만 조회한다(목록 select 에서 제외). 개인정보라 90일 지난 행은
+  // 크론이 null 로 비운다(방문 기록·통계는 남고 IP 만 사라짐, 운영자 결정 2026-07-24).
+  ip           String?
+
   // 봇 필터링 신호
   isBot        Boolean  @default(false)
 
