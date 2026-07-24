@@ -2840,10 +2840,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [uiWaitingKind, setUiWaitingKind] = useState<'INQUIRY' | 'TOUR'>(lease?.tourDate ? 'TOUR' : 'INQUIRY')
   // 지난 투어일 판정 기준(KST) — 폼은 모달로 클라이언트에서만 마운트되므로 렌더 시 계산 안전
   const [formToday] = useState(() => kstYmdStr())
-  const [tourTimeVal, setTourTimeVal] = useState(lease?.tourTime ?? '')   // 투어 예정 시각(HH:MM, 선택) — 캘린더 연동에 반영
   const initialInquiry = splitDateTime(lease?.inquiryAt)
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
+  // 문의 시각 입력은 uncontrolled(defaultValue+ref) — controlled 면 미완성 입력이 '' 로 덮여 오전/오후를 못 넣는다.
+  // state 는 inquiryAt 조합에만 쓰고, 자동 채움 시 DOM 값도 ref 로 함께 세팅한다.
+  const inquiryTimeRef = useRef<HTMLInputElement>(null)
   const [reservationConfirmed, setReservationConfirmed] = useState(!!lease?.reservationConfirmedAt)
   const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
   // 단기 요금 자동 계산 — 홈 '단기 요금 계산'과 동일 로직(calcShortStay), 운영자 요청 2026-07-09
@@ -3176,9 +3178,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     setInquiryDateVal(date)
                     // 날짜 선택 시 시간이 비어있으면 현재 시각을 디폴트로 자동 입력
                     // (브라우저 native time input의 placeholder는 실제 값이 아니라 사용자 혼동 방지용)
-                    if (date && !inquiryTimeVal) {
+                    // uncontrolled 이므로 DOM 값도 함께 세팅해야 화면에 반영된다.
+                    if (date && !inquiryTimeRef.current?.value) {
                       const now = new Date()
-                      setInquiryTimeVal(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+                      const t = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                      if (inquiryTimeRef.current) inquiryTimeRef.current.value = t
+                      setInquiryTimeVal(t)
                     }
                   }}
                   placeholder="문의 날짜 선택"
@@ -3186,8 +3191,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 />
               </div>
               <input
+                ref={inquiryTimeRef}
                 type="time"
-                value={inquiryTimeVal}
+                defaultValue={initialInquiry.time}
                 onChange={e => setInquiryTimeVal(e.target.value)}
                 disabled={!inquiryDateVal}
                 className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
@@ -3231,7 +3237,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
               />
               {/* 시간(선택) — 입력하면 구독 캘린더에 시각 지정 이벤트로 나가고 1시간 전 알림이 붙는다 */}
-              <input type="time" name="tourTime" value={tourTimeVal} onChange={e => setTourTimeVal(e.target.value)}
+              {/* uncontrolled(defaultValue) — time 입력은 값이 미완성이면 빈 문자열을 돌려준다. controlled 로 두면
+                  시(7)를 치는 순간 value 가 '' 로 덮여 오전/오후 자리까지 가지 못하고 계속 리셋된다(신고 2026-07-24).
+                  이 값은 name 으로만 제출되고 다른 로직이 읽지 않아 React 가 붙들 이유가 없다. */}
+              <input type="time" name="tourTime" defaultValue={lease?.tourTime ?? ''}
                 disabled={!tourDateVal} aria-label="투어 예정 시간"
                 className="w-[110px] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors disabled:opacity-40" />
             </div>
