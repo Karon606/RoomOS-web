@@ -43,11 +43,15 @@
 
         var box = card.querySelector('.room-photo');
         if (!box) return;
-        var img = document.createElement('img');
-        img.src = thumb;
-        img.alt = '';
-        img.loading = 'lazy';
-        box.appendChild(img);
+        // 발행 스크립트가 대표 썸네일을 이미 심어뒀으면(페이지와 함께 로드된 img) 재사용 — 중복 삽입·깜빡임 방지.
+        // 없으면(미발행 폴백) 여기서 생성. 어느 경우든 시트에는 API 로 받은 전체 사진을 쓴다.
+        if (!box.querySelector('img')) {
+          var img = document.createElement('img');
+          img.src = thumb;
+          img.alt = '';
+          img.loading = 'lazy';
+          box.appendChild(img);
+        }
         box.hidden = false;
 
         var open = function () { sheet.open(card, rooms); };
