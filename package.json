@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/check-public-tracking.mjs && prisma generate && next build",
+    "build": "node scripts/check-public-tracking.mjs && prisma generate && node scripts/publish-gallery-thumbs.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate"

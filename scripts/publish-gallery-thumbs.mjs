@@ -8,14 +8,19 @@ import { readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
-const SLUG = process.argv[2] || 'thestayjegi'
+const ARG_SLUG = process.argv[2]   // 지정하면 그 영업장만, 없으면 공개 slug 전체(빌드 시 사용)
 
 // lib/google-drive.buildDriveThumbnailUrl 과 동일 규약(CORS 안전 썸네일)
 function driveThumb(fileId, px) { return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${px}` }
 
-async function main() {
-  const property = await prisma.property.findUnique({ where: { publicSlug: SLUG }, select: { id: true } })
-  if (!property) { console.log('영업장 없음:', SLUG); return }
+async function publishOne(slug) {
+  const property = await prisma.property.findUnique({ where: { publicSlug: slug }, select: { id: true } })
+  if (!property) { console.log('영업장 없음:', slug); return }
+
+  const htmlPath = path.join(process.cwd(), 'public/members', slug, 'index.html')
+  let html
+  try { html = readFileSync(htmlPath, 'utf8') }
+  catch { console.log('공개 페이지 파일 없음, 건너뜀:', slug); return }   // 정적 페이지 없는 영업장은 skip
 
   const rooms = await prisma.room.findMany({
     where: { propertyId: property.id, showOnSite: true, photos: { some: { showOnSite: true } } },
@@ -35,9 +40,6 @@ async function main() {
     byRent.set(room.baseRent, firstFlat.driveFileId ? driveThumb(firstFlat.driveFileId, 400) : firstFlat.storageUrl)
   }
 
-  const htmlPath = path.join(process.cwd(), 'public/members', SLUG, 'index.html')
-  let html = readFileSync(htmlPath, 'utf8')
-
   // 각 room-card[data-rent] 의 room-photo 박스를 대표 img 로 치환(대표 없으면 hidden 유지 = _gallery.js 가 처리)
   let injected = 0
   html = html.replace(
@@ -52,7 +54,20 @@ async function main() {
   )
 
   writeFileSync(htmlPath, html)
-  console.log(`대표 썸네일 주입 완료: ${injected}개 등급 (${SLUG})`)
+  console.log(`대표 썸네일 주입: ${injected}개 등급 (${slug})`)
+}
+
+async function main() {
+  const slugs = ARG_SLUG
+    ? [ARG_SLUG]
+    : (await prisma.property.findMany({ where: { publicSlug: { not: null } }, select: { publicSlug: true } })).map(p => p.publicSlug).filter(Boolean)
+  for (const slug of slugs) await publishOne(slug)
   await prisma.$disconnect()
 }
-main()
+
+// 빌드 파이프라인에서 호출되므로, DB 접속 실패 등은 빌드를 깨지 않고 경고만 남기고 통과한다.
+main().catch(async (e) => {
+  console.warn('[publish-gallery-thumbs] 건너뜀(빌드는 계속):', e?.message ?? e)
+  try { await prisma.$disconnect() } catch { /* 무시 */ }
+  process.exit(0)
+})

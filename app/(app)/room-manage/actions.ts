@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
+import { triggerRedeploy } from '@/lib/redeployHook'
 import {
   createDriveResumableSession,
   setDrivePublicReadable,
@@ -409,6 +410,13 @@ export async function setRoomPhotoShowOnSite(photoId: string, show: boolean): Pr
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+// 소개 페이지 대표 썸네일 재배포 요청 — 사진을 여러 개 바꾼 뒤 편집 모달을 닫을 때 한 번 호출(변경 묶어 1회).
+// Vercel 은 런타임에 정적 HTML 을 못 고쳐, 재배포 빌드에서 대표 썸네일이 최신화된다. 훅 미설정이면 무동작.
+export async function requestGalleryRedeploy(): Promise<{ ok: true }> {
+  try { await requireEdit(); await triggerRedeploy() } catch { /* 트리거 실패는 무시(다음 배포 때 반영) */ }
+  return { ok: true }
 }
 
 // 사진의 360 지정 토글 — 파일명 자동판정이 놓친 360 파노라마를 운영자가 직접 표시. 저장하면 공개 웹(평면

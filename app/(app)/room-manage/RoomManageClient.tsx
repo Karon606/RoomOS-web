@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -322,6 +322,7 @@ export default function RoomManageClient({
   const [viewPhoto, setViewPhoto]             = useState<Photo | null>(null)  // 큰 사진/360 뷰어 lightbox
   const [showOnSiteVal, setShowOnSiteVal]     = useState(false)               // 소개 페이지 공개 토글(즉시 반영, 폼 submit 무관)
   const [showOnSitePending, setShowOnSitePending] = useState(false)
+  const [photosDirty, setPhotosDirty]         = useState(false)               // 편집 세션 중 사진 변경 여부 — 모달 닫을 때 재배포 1회 트리거용
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
@@ -418,6 +419,8 @@ export default function RoomManageClient({
   }
 
   const closeEdit = () => {
+    // 이 세션에 사진(공개·360·순서·삭제·추가·방공개)을 바꿨으면 소개 페이지 대표 썸네일 재배포를 한 번 트리거
+    if (photosDirty) { void requestGalleryRedeploy(); setPhotosDirty(false) }
     setEditRoom(null)
     setEditPhotos([])
     setEditFloorVal('')
@@ -576,6 +579,7 @@ export default function RoomManageClient({
           })
           if (!fin.ok) { setError(fin.error); break }
           setEditPhotos(prev => [...prev, { id: fin.id, driveFileId: fin.driveFileId, storageUrl: fin.storageUrl, fileName: fin.fileName }])
+          setPhotosDirty(true)
         } catch (err) {
           console.error('[handlePhotoUpload]', err)
           setError(`업로드 중 오류: ${(err as Error).message ?? '알 수 없는 오류'}`)
@@ -594,6 +598,7 @@ export default function RoomManageClient({
     const res = await deleteRoomPhoto(photoId)
     if (!res.ok) { setError(res.error); return }
     setEditPhotos(prev => prev.filter(p => p.id !== photoId))
+    setPhotosDirty(true)
   }
 
   // 사진 단위 공개 토글 — 낙관적 갱신 후 실패 시 원복. 대표(공개·비360 첫 장)는 자동 재계산돼 카드 썸네일도 바뀐다.
@@ -605,6 +610,7 @@ export default function RoomManageClient({
       pushToast('error', res.error)
       return
     }
+    setPhotosDirty(true)
     router.refresh()   // 카드 대표 썸네일(공개 첫 장) 동기화
   }
 
@@ -617,6 +623,7 @@ export default function RoomManageClient({
       pushToast('error', res.error)
       return false
     }
+    setPhotosDirty(true)
     pushToast('success', next ? '360 사진으로 지정했어요' : '360 지정을 해제했어요')
     router.refresh()
     return true
@@ -631,6 +638,7 @@ export default function RoomManageClient({
     const res = await setRoomShowOnSite(editRoom.id, next)
     setShowOnSitePending(false)
     if (!res.ok) { setShowOnSiteVal(!next); pushToast('error', res.error); return }
+    setPhotosDirty(true)
     pushToast('success', next ? '소개 페이지에 공개했어요' : '소개 페이지에서 내렸어요')
     router.refresh()
   }
@@ -654,6 +662,7 @@ export default function RoomManageClient({
       pushToast('error', res.error)
       return
     }
+    setPhotosDirty(true)
     router.refresh()   // 호실 카드 대표 썸네일(photos[0]) 즉시 동기화
     pushToast('success', successMsg, {
       action: { label: '적용취소', run: () => {
