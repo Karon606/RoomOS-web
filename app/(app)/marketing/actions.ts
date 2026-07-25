@@ -565,6 +565,11 @@ export type VisitSession = {
   durationMs: number | null
   scrollDepthPct: number | null
   sections: { name: string; ms: number }[]   // 라벨 합산·문서 순서, 값 0 은 제외
+  // 갤러리(방 사진) 열람 — 등급(요금)별로 본 사진 수·확대 수·깊이·사진별 체류. 방문 시점 기준 사진 순번.
+  gallery: {
+    rentLabel: string; n: number; seenCount: number; zoomedCount: number; maxDepth: number
+    photos: { idx: number; ms: number; zoomed: boolean }[]
+  }[]
   sourceLabel: string         // 유입 — '네이버'·'검색'·'직접' 등
   referrerHost: string | null
   campaign: string | null     // 'source · medium · campaign'
@@ -600,6 +605,34 @@ function maskIp(ip: string | null): string | null {
     return g.length > 4 ? `${g.slice(0, 4).join(':')}:****` : '****'
   }
   return '***'
+}
+
+// 방문 1건의 galleryViews(JSON) → 등급별 열람 요약. dwell 큰 사진부터, 확대(zoomed) 여부 병기.
+function visitGallery(gv: unknown): VisitSession['gallery'] {
+  if (!Array.isArray(gv)) return []
+  const out: VisitSession['gallery'] = []
+  for (const item of gv) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    const rent = Number(o.rent)
+    if (!Number.isFinite(rent)) continue
+    const n = Number(o.n) || 0
+    const seen = Array.isArray(o.seen) ? o.seen.map(Number).filter(Number.isFinite) : []
+    const zoomedArr = Array.isArray(o.zoomed) ? o.zoomed.map(Number).filter(Number.isFinite) : []
+    const zoomedSet = new Set<number>(zoomedArr)
+    const maxDepth = Number(o.maxDepth) || 0
+    const dwell = (o.dwell && typeof o.dwell === 'object' && !Array.isArray(o.dwell)) ? o.dwell as Record<string, unknown> : {}
+    const photos = Object.entries(dwell)
+      .map(([k, v]) => ({ idx: Number(k), ms: Number(v) || 0, zoomed: zoomedSet.has(Number(k)) }))
+      .filter(p => Number.isFinite(p.idx) && p.ms > 0)
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 30)
+    out.push({
+      rentLabel: rent >= 10000 ? `월 ${Math.round(rent / 10000)}만원` : `${rent.toLocaleString()}원`,
+      n, seenCount: seen.length, zoomedCount: zoomedArr.length, maxDepth, photos,
+    })
+  }
+  return out
 }
 
 // 방문 1건의 sectionDwellMs(JSON) → 라벨 합산·문서 순서 목록
@@ -654,7 +687,7 @@ export async function getVisitSessions(
     take: VISIT_PAGE_SIZE + 1,
     select: {
       id: true, occurredAt: true,
-      durationMs: true, scrollDepthPct: true, sectionDwellMs: true,
+      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, galleryViews: true,
       referrerHost: true, searchEngine: true, referrerCategory: true,
       utmSource: true, utmMedium: true, utmCampaign: true,
       country: true, region: true, city: true,
@@ -714,6 +747,7 @@ export async function getVisitSessions(
       durationMs: r.durationMs,
       scrollDepthPct: r.scrollDepthPct,
       sections: visitSections(r.sectionDwellMs),
+      gallery: visitGallery(r.galleryViews),
       sourceLabel: r.searchEngine || channel,
       referrerHost: r.referrerHost,
       campaign,

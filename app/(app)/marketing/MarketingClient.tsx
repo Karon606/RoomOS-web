@@ -156,6 +156,34 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
               </ul>
             )}
 
+            {v.gallery.length > 0 && (
+              <div className="space-y-2">
+                <span className="block text-[0.65625rem] font-medium" style={{ color: 'var(--warm-dark)' }}>방 사진 열람</span>
+                {v.gallery.map((g, gi) => (
+                  <div key={gi} className="rounded-lg p-2" style={{ background: 'var(--cream)' }}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[0.65625rem]" style={{ color: 'var(--warm-dark)' }}>{g.rentLabel}</span>
+                      <span className="num text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                        {g.seenCount}/{g.n}장 봄{g.zoomedCount > 0 ? ` · 확대 ${g.zoomedCount}장` : ''} · 최대 {g.maxDepth + 1}번째
+                      </span>
+                    </div>
+                    {g.photos.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {g.photos.map(p => (
+                          <li key={p.idx} className="flex items-baseline justify-between gap-2">
+                            <span className="text-[0.65625rem]" style={{ color: p.zoomed ? 'var(--persimmon)' : 'var(--warm-mid)' }}>
+                              {p.idx + 1}번째 사진{p.zoomed ? ' · 확대함' : ''}
+                            </span>
+                            <span className="num text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmtDuration(p.ms)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
               <Field label="방문 시각" value={v.dateTimeLabel} num />
               <Field label="체류 시간" value={v.durationMs == null ? '측정 안 됨' : fmtDuration(v.durationMs)} num={v.durationMs != null} />
