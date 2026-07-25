@@ -47,6 +47,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
+import { getNextBusinessDay } from '@/lib/krHolidays'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
@@ -2626,10 +2627,16 @@ export default function FinanceClient({
                 kind: 'recurring' as const,
                 rec: r,
                 // 납부일이 그 달 일수를 넘으면(예: 31일/말일 + 30일 달) 말일로 클램프 — 'YYYY-MM-31' invalid date 방지
+                // 자동이체는 실제 이체일(주말·공휴일이면 다음 영업일)로 표시 — 대시보드 알림과 동일 규칙(lib/krHolidays)
                 dateStr: (() => {
                   const [ty, tm] = targetMonth.split('-').map(Number)
                   const lastDay = new Date(ty, tm, 0).getDate()
-                  return `${targetMonth}-${String(Math.min(r.dueDay, lastDay)).padStart(2, '0')}`
+                  const day = Math.min(r.dueDay, lastDay)
+                  if (r.isAutoDebit) {
+                    const eff = getNextBusinessDay(new Date(ty, tm - 1, day))
+                    return `${eff.getFullYear()}-${String(eff.getMonth() + 1).padStart(2, '0')}-${String(eff.getDate()).padStart(2, '0')}`
+                  }
+                  return `${targetMonth}-${String(day).padStart(2, '0')}`
                 })(),
               })),
             ].sort((a, b) => {
