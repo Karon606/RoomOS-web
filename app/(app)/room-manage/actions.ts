@@ -710,3 +710,213 @@ export async function undoBatchUpdateRooms(u: BatchRoomsUndo): Promise<{ ok: tru
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }
+
+// ============================================================
+// 공용·외관 사진 (PropertyPhoto) — 방이 아닌 영업장에 묶인 소개 페이지 사진. 방 사진 액션과 평행 구조.
+// ============================================================
+
+// 기본 카테고리 세트 — 카테고리가 하나도 없을 때 자동 생성(멀티테넌트 lazy seed). 이후 운영자가 추가·이름변경·순서·삭제.
+const DEFAULT_PHOTO_CATEGORIES = ['외관', '현관/로비', '복도', '주방/세탁', '샤워/화장실']
+
+// 카테고리 + 사진 조회. 없으면 기본 세트를 만든 뒤 반환.
+export async function getPropertyPhotoData() {
+  await requireEdit()
+  const { propertyId } = await getPropertyId()
+  const query = () => prisma.propertyPhotoCategory.findMany({
+    where: { propertyId },
+    orderBy: { sortOrder: 'asc' },
+    include: { photos: { orderBy: { sortOrder: 'asc' } } },
+  })
+  let categories = await query()
+  if (categories.length === 0) {
+    await prisma.propertyPhotoCategory.createMany({
+      data: DEFAULT_PHOTO_CATEGORIES.map((name, i) => ({ name, sortOrder: i, propertyId })),
+    })
+    categories = await query()
+  }
+  return categories
+}
+
+export async function createPhotoCategory(name: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const trimmed = name.trim()
+    if (!trimmed) return { ok: false, error: '카테고리 이름을 입력하세요.' }
+    const last = await prisma.propertyPhotoCategory.findFirst({ where: { propertyId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    const cat = await prisma.propertyPhotoCategory.create({ data: { name: trimmed, sortOrder: (last?.sortOrder ?? -1) + 1, propertyId } })
+    revalidatePath('/room-manage')
+    return { ok: true, id: cat.id }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function renamePhotoCategory(id: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const trimmed = name.trim()
+    if (!trimmed) return { ok: false, error: '카테고리 이름을 입력하세요.' }
+    const r = await prisma.propertyPhotoCategory.updateMany({ where: { id, propertyId }, data: { name: trimmed } })
+    if (r.count === 0) return { ok: false, error: '카테고리를 찾을 수 없습니다.' }
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function reorderPhotoCategories(ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const rows = await prisma.propertyPhotoCategory.findMany({ where: { propertyId }, select: { id: true } })
+    const own = new Set(rows.map(r => r.id))
+    if (ids.length !== rows.length || !ids.every(id => own.has(id))) return { ok: false, error: '카테고리 목록이 일치하지 않습니다.' }
+    await prisma.$transaction(ids.map((id, i) => prisma.propertyPhotoCategory.update({ where: { id }, data: { sortOrder: i } })))
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 카테고리 삭제 — 속한 사진의 Drive 파일을 정리한 뒤 삭제(사진 행은 FK CASCADE). 사진이 있으면 클라에서 확인받는다.
+export async function deletePhotoCategory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const cat = await prisma.propertyPhotoCategory.findFirst({ where: { id, propertyId }, select: { id: true, photos: { select: { driveFileId: true } } } })
+    if (!cat) return { ok: false, error: '카테고리를 찾을 수 없습니다.' }
+    await Promise.allSettled(cat.photos.filter(p => p.driveFileId).map(p => deleteFromDrive(p.driveFileId!)))
+    await prisma.propertyPhotoCategory.delete({ where: { id } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function createPropertyPhotoUploadSession(input: {
+  categoryId: string; fileName: string; mimeType: string; fileSize: number; origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const cat = await prisma.propertyPhotoCategory.findFirst({ where: { id: input.categoryId, propertyId }, select: { id: true } })
+    if (!cat) return { ok: false, error: '카테고리를 찾을 수 없습니다.' }
+    if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_PHOTO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_PHOTO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const ext = input.fileName.split('.').pop() ?? 'jpg'
+    const uniqueName = `prop_${input.categoryId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const uploadUrl = await createDriveResumableSession({ fileName: uniqueName, mimeType: input.mimeType, fileSize: input.fileSize, origin: input.origin })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    console.error('[createPropertyPhotoUploadSession] failed:', err)
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizePropertyPhoto(input: {
+  categoryId: string; driveFileId: string; fileName: string
+}): Promise<{ ok: true; id: string; driveFileId: string; storageUrl: string; fileName: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!input.driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const { propertyId } = await getPropertyId()
+    const cat = await prisma.propertyPhotoCategory.findFirst({ where: { id: input.categoryId, propertyId }, select: { id: true } })
+    if (!cat) return { ok: false, error: '카테고리를 찾을 수 없습니다.' }
+    await setDrivePublicReadable(input.driveFileId)
+    const last = await prisma.propertyPhoto.findFirst({ where: { categoryId: input.categoryId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    const photo = await prisma.propertyPhoto.create({
+      data: {
+        storageUrl: buildDriveThumbnailUrl(input.driveFileId, 400),
+        driveFileId: input.driveFileId,
+        fileName: input.fileName,
+        sortOrder: (last?.sortOrder ?? 0) + 1,
+        is360: looksLike360(input.fileName),
+        categoryId: input.categoryId,
+        propertyId,
+      },
+    })
+    revalidatePath('/room-manage')
+    return { ok: true, id: photo.id, driveFileId: photo.driveFileId!, storageUrl: photo.storageUrl, fileName: photo.fileName ?? input.fileName }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    console.error('[finalizePropertyPhoto] failed:', err)
+    if (input.driveFileId) { try { await deleteFromDrive(input.driveFileId) } catch { /* 정리 실패 무시 */ } }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function deletePropertyPhoto(photoId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.propertyPhoto.findFirst({ where: { id: photoId, propertyId } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
+    if (photo.driveFileId) { try { await deleteFromDrive(photo.driveFileId) } catch { /* 정리 실패 무시 */ } }
+    await prisma.propertyPhoto.delete({ where: { id: photoId } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function reorderPropertyPhotos(categoryId: string, photoIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const cat = await prisma.propertyPhotoCategory.findFirst({ where: { id: categoryId, propertyId }, select: { id: true } })
+    if (!cat) return { ok: false, error: '카테고리를 찾을 수 없습니다.' }
+    const rows = await prisma.propertyPhoto.findMany({ where: { categoryId }, select: { id: true } })
+    const own = new Set(rows.map(r => r.id))
+    if (photoIds.length !== rows.length || !photoIds.every(id => own.has(id))) return { ok: false, error: '사진 목록이 일치하지 않습니다.' }
+    await prisma.$transaction(photoIds.map((id, i) => prisma.propertyPhoto.update({ where: { id }, data: { sortOrder: i } })))
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function setPropertyPhotoShowOnSite(photoId: string, show: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.propertyPhoto.findFirst({ where: { id: photoId, propertyId }, select: { id: true } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
+    await prisma.propertyPhoto.update({ where: { id: photoId }, data: { showOnSite: show } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function setPropertyPhotoIs360(photoId: string, is360: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.propertyPhoto.findFirst({ where: { id: photoId, propertyId }, select: { id: true } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
+    await prisma.propertyPhoto.update({ where: { id: photoId }, data: { is360 } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
