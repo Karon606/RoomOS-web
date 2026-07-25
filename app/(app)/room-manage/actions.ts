@@ -368,6 +368,27 @@ export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | {
   }
 }
 
+// 공개 소개 페이지 갤러리에 이 방 사진을 노출할지 토글 — 켤 땐 사진이 최소 1장 있어야 한다.
+// 공실 여부와 독립(운영자가 직접 켠다). 되돌리기는 반대 값으로 다시 호출.
+export async function setRoomShowOnSite(roomId: string, show: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const room = await prisma.room.findFirst({
+      where: { id: roomId, propertyId },
+      select: { id: true, _count: { select: { photos: true } } },
+    })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    if (show && room._count.photos === 0) return { ok: false, error: '등록된 사진이 없어요. 사진을 먼저 올린 뒤 공개할 수 있습니다.' }
+    await prisma.room.update({ where: { id: roomId }, data: { showOnSite: show } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 호실 사진 순서 저장 (오류신고 8dba0177) — 편집 UI가 최종 배열(photoIds, 표시 순서대로)을 넘기면 인덱스대로 sortOrder 재기록.
 // 대표 이미지 = 첫 장(photos[0]) 규칙이라 '대표로 설정'도 이 액션(맨 앞 이동 배열)으로 처리된다.
 // 부분 배열은 미포함 사진과의 상대 순서가 흔들리므로 전체 집합 일치일 때만 저장(reorderAssetItems와 동일 문법).

@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -49,6 +49,7 @@ type Room = {
   nonResidentRentDate: Date | string | null
   memo: string | null
   isVacant: boolean
+  showOnSite: boolean            // 소개 페이지 갤러리 공개 여부(운영자 토글, 사진 있을 때만)
   noMoveInReport: boolean        // 전입신고 불가 방 — 카드 배지 + 등록 경고(2026-07-06)
   nonResidentVacant: boolean     // 비거주 점유 시 공실로 표시할지 (false = 창고·사무실)
   floor: string | null
@@ -291,6 +292,8 @@ export default function RoomManageClient({
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
   const [viewPhoto, setViewPhoto]             = useState<Photo | null>(null)  // 큰 사진/360 뷰어 lightbox
+  const [showOnSiteVal, setShowOnSiteVal]     = useState(false)               // 소개 페이지 공개 토글(즉시 반영, 폼 submit 무관)
+  const [showOnSitePending, setShowOnSitePending] = useState(false)
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
@@ -358,6 +361,7 @@ export default function RoomManageClient({
     entityModal.close()
     setEditRoom(room)
     setEditPhotos(room.photos)
+    setShowOnSiteVal(room.showOnSite)
     setPhotoOrderMode(false)
     setEditFloorVal(room.floor ?? '')
     setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
@@ -553,6 +557,19 @@ export default function RoomManageClient({
     const res = await deleteRoomPhoto(photoId)
     if (!res.ok) { setError(res.error); return }
     setEditPhotos(prev => prev.filter(p => p.id !== photoId))
+  }
+
+  // 소개 페이지 공개 토글 — 즉시 반영(폼 저장과 무관), 낙관적 갱신 후 실패 시 원복. 되돌리기는 다시 끄면 된다.
+  const handleToggleShowOnSite = async () => {
+    if (!editRoom || showOnSitePending) return
+    const next = !showOnSiteVal
+    setShowOnSitePending(true)
+    setShowOnSiteVal(next)
+    const res = await setRoomShowOnSite(editRoom.id, next)
+    setShowOnSitePending(false)
+    if (!res.ok) { setShowOnSiteVal(!next); pushToast('error', res.error); return }
+    pushToast('success', next ? '소개 페이지에 공개했어요' : '소개 페이지에서 내렸어요')
+    router.refresh()
   }
 
   // 사진 순서 편집(오류신고 8dba0177) — 비품 '순서 편집' 정본 패턴(1열 행 + 오른쪽 44pt 손잡이 드래그) 이식.
@@ -1342,6 +1359,14 @@ export default function RoomManageClient({
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">
                   업로드 중 ({photoProgress.current}/{photoProgress.total}) · {photoProgress.percent}%
                 </p>
+              )}
+              {/* 소개 페이지 공개 토글 — 사진이 있을 때만. 공실 여부와 무관하게 운영자가 직접 켜고 끈다. */}
+              {editPhotos.length > 0 && (
+                <label className={`flex items-center gap-2 pt-1.5 text-xs text-[var(--warm-dark)] ${showOnSitePending ? 'opacity-50' : 'cursor-pointer'}`}>
+                  <input type="checkbox" checked={showOnSiteVal} onChange={handleToggleShowOnSite} disabled={showOnSitePending}
+                    className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                  이 방 사진을 소개 페이지에 공개 <span className="text-[var(--warm-muted)]">(공실과 무관하게 직접 켜고 끕니다)</span>
+                </label>
               )}
             </div>
 
