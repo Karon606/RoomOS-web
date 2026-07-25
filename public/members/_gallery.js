@@ -148,7 +148,9 @@
         var idx = 0;
         rooms.forEach(function (room) {
           var hasPhotos = room.photos && room.photos.length;
-          var hasPano = room.pano && room.pano.url;
+          // 360 여러 장 지원 — panos 배열 우선, 없으면 pano(구 응답) 하위호환
+          var panos = (room.panos && room.panos.length) ? room.panos : (room.pano && room.pano.url ? [room.pano] : []);
+          var hasPano = panos.length > 0;
           if (!hasPhotos && !hasPano) return;   // 공개 사진도 360 도 없는 방은 제외
           var section = document.createElement('div');
           section.className = 'gsheet-room';
@@ -161,10 +163,11 @@
             var panoBtn = document.createElement('button');
             panoBtn.type = 'button';
             panoBtn.className = 'gsheet-360-btn';
-            panoBtn.innerHTML = PANO_ICON + '<span>360° 둘러보기</span>';
-            (function (url, roomNo) {
-              panoBtn.addEventListener('click', function () { openPano(url, roomNo); });
-            })(room.pano.url, room.roomNo);
+            var countTxt = panos.length > 1 ? (' ' + panos.length + '곳') : '';   // 여러 곳일 때만 개수 표시
+            panoBtn.innerHTML = PANO_ICON + '<span>360° 둘러보기' + countTxt + '</span>';
+            (function (list) {
+              panoBtn.addEventListener('click', function () { openPano(list); });
+            })(panos);
             label.appendChild(panoBtn);
           }
           section.appendChild(label);
@@ -205,8 +208,9 @@
       }
 
       // ---------- 360 파노라마 오버레이 (pannellum) ----------
-      // 시트 위에 뜨는 전체화면 레이어. 열 때 뷰어 생성, 닫을 때 destroy(리소스 누수·중복 방지).
-      var panoOverlay = null, panoViewer = null;
+      // 시트 위에 뜨는 전체화면 레이어. 방에 360이 여러 장이면 하단 썸네일 스트립으로 전환.
+      // pannellum 단일 뷰어는 URL 교체 API가 없어 전환마다 destroy→새로 생성한다(상태 리셋·누수 방지).
+      var panoOverlay = null, panoViewer = null, panoList = [], panoIdx = 0;
       function buildPanoOverlay() {
         var o = document.createElement('div');
         o.className = 'gpano';
@@ -215,33 +219,66 @@
           '<button type="button" class="gpano-close" data-panoclose aria-label="360 닫기">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
           '</button>' +
+          '<div class="gpano-count"></div>' +
           '<div class="gpano-stage"></div>' +
-          '<div class="gpano-hint">' + PANO_ICON + '<span>드래그하여 360°로 둘러보세요</span></div>';
+          '<div class="gpano-hint">' + PANO_ICON + '<span>드래그하여 360°로 둘러보세요</span></div>' +
+          '<div class="gpano-strip"></div>';
         el.appendChild(o);
         o.addEventListener('click', function (e) {
           if (e.target.closest && e.target.closest('[data-panoclose]')) closePano();
         });
         return o;
       }
-      function openPano(url) {
-        if (!panoOverlay) panoOverlay = buildPanoOverlay();
+      // i번째 파노라마 표시 — 이전 뷰어를 destroy 하고 빈 host 에 새로 생성(canvas 잔재·누수 제거).
+      function showPano(i) {
+        if (!panoList[i]) return;
+        panoIdx = i;
+        if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
         var stage = panoOverlay.querySelector('.gpano-stage');
         stage.innerHTML = '';
         var host = document.createElement('div');
         host.style.width = '100%';
         host.style.height = '100%';
         stage.appendChild(host);
-        panoOverlay.hidden = false;
         if (typeof pannellum !== 'undefined') {
           panoViewer = pannellum.viewer(host, {
-            type: 'equirectangular', panorama: url, autoLoad: true, autoRotate: -2,
+            type: 'equirectangular', panorama: panoList[i].url, autoLoad: true, autoRotate: -2,
             showZoomCtrl: false, showFullscreenCtrl: false, compass: false, hfov: 100,
           });
         }
+        // 카운터·스트립 활성 갱신
+        var count = panoOverlay.querySelector('.gpano-count');
+        count.textContent = panoList.length > 1 ? (i + 1) + ' / ' + panoList.length : '';
+        var thumbs = panoOverlay.querySelectorAll('.gpano-strip button');
+        for (var t = 0; t < thumbs.length; t++) thumbs[t].classList.toggle('on', t === i);
+      }
+      function openPano(list) {
+        if (!panoOverlay) panoOverlay = buildPanoOverlay();
+        panoList = list || [];
+        if (!panoList.length) return;
+        // 스트립 — 2장 이상일 때만. 썸네일 탭으로 전환(파노라마 드래그와 안 겹치게 stopPropagation)
+        var strip = panoOverlay.querySelector('.gpano-strip');
+        strip.innerHTML = '';
+        strip.hidden = panoList.length < 2;
+        if (panoList.length > 1) {
+          panoList.forEach(function (p, i) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.style.backgroundImage = 'url("' + (p.thumb || p.url) + '")';
+            b.addEventListener('click', function (e) { e.stopPropagation(); showPano(i); });
+            strip.appendChild(b);
+          });
+        }
+        // 여러 장이면 스트립이 안내 역할 — 좌하단 드래그 힌트는 숨겨 겹침을 피한다
+        var hint = panoOverlay.querySelector('.gpano-hint');
+        if (hint) hint.hidden = panoList.length > 1;
+        panoOverlay.hidden = false;
+        showPano(0);
       }
       function closePano() {
         if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
         if (panoOverlay) panoOverlay.hidden = true;
+        panoList = [];
       }
 
       // ---------- 라이트박스 (사진 전체화면 확대 + 좌우 스와이프) ----------

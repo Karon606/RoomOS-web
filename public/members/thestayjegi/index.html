@@ -286,6 +286,28 @@ section { padding: 130px 0; }
   padding: 8px 16px; border-radius: 18px; letter-spacing: 0.02em;
 }
 .gpano-hint svg { width: 14px; height: 14px; }
+.gpano-hint[hidden] { display: none; }
+/* 여러 360 전환 — 상단 카운터 + 하단 썸네일 스트립(탭 전환) */
+.gpano-count {
+  position: absolute; top: 18px; left: 0; right: 0; z-index: 11;
+  text-align: center; pointer-events: none;
+  color: rgba(232, 222, 201, 0.8); font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em;
+}
+.gpano-strip {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 11;
+  display: flex; gap: 8px; justify-content: center; flex-wrap: nowrap;
+  overflow-x: auto; padding: 18px 16px; scrollbar-width: none;
+  background: linear-gradient(to top, rgba(10, 20, 16, 0.78), transparent);
+}
+.gpano-strip::-webkit-scrollbar { display: none; }
+.gpano-strip[hidden] { display: none; }
+.gpano-strip button {
+  flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
+  border-radius: 8px; border: 1px solid transparent;
+  background-size: cover; background-position: center;
+  opacity: 0.55; cursor: pointer; transition: opacity 0.2s ease, border-color 0.2s ease;
+}
+.gpano-strip button.on { opacity: 1; border-color: var(--cream); }
 /* ---------- 사진 라이트박스 (전체화면 확대 + 좌우 스와이프) ---------- */
 .glightbox { position: absolute; inset: 0; z-index: 20; background: rgba(10, 20, 16, 0.96); display: flex; flex-direction: column; }
 .glightbox[hidden] { display: none; }

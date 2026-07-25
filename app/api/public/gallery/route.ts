@@ -9,7 +9,8 @@ import { buildDriveImageUrl, buildDriveThumbnailUrl } from '@/lib/google-drive'
 // 대표 썸네일은 별도 컬럼 없이 '공개·비360 중 첫 장'으로 계산(rooms[0].photos[0]).
 
 type GalleryPhoto = { url: string; thumb: string }
-type GalleryRoom = { roomNo: string; photos: GalleryPhoto[]; pano: GalleryPhoto | null }
+// panos = 방의 360 전부(여러 위치). pano 는 첫 장(구 소비 코드 하위호환용).
+type GalleryRoom = { roomNo: string; photos: GalleryPhoto[]; panos: GalleryPhoto[]; pano: GalleryPhoto | null }
 type GalleryGroup = { rent: number; rooms: GalleryRoom[] }
 
 export async function GET(req: NextRequest) {
@@ -40,18 +41,18 @@ export async function GET(req: NextRequest) {
   const byRent = new Map<number, GalleryRoom[]>()
   for (const room of rooms) {
     const photos: GalleryPhoto[] = []
-    let pano: GalleryPhoto | null = null
+    const panos: GalleryPhoto[] = []
     for (const p of room.photos) {
       const url = p.driveFileId ? buildDriveImageUrl(p.driveFileId, 1600) : p.storageUrl
       const thumb = p.driveFileId ? buildDriveThumbnailUrl(p.driveFileId, 400) : p.storageUrl
-      if (p.is360) { if (!pano) pano = { url, thumb } }
+      if (p.is360) panos.push({ url, thumb })   // 360 은 전부 수집(sortOrder 순)
       else photos.push({ url, thumb })
     }
-    // 공개 평면사진도 pano 도 없으면(이론상 위 where 로 걸러짐) 방을 넣지 않음
-    if (!photos.length && !pano) continue
+    // 공개 평면사진도 360 도 없으면(이론상 위 where 로 걸러짐) 방을 넣지 않음
+    if (!photos.length && !panos.length) continue
     let list = byRent.get(room.baseRent)
     if (!list) { list = []; byRent.set(room.baseRent, list) }
-    list.push({ roomNo: room.roomNo, photos, pano })
+    list.push({ roomNo: room.roomNo, photos, panos, pano: panos[0] ?? null })
   }
 
   const groups: GalleryGroup[] = [...byRent.entries()].map(([rent, rms]) => ({ rent, rooms: rms }))
