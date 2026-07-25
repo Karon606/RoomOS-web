@@ -429,10 +429,14 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
           <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
           {stats.publicUrl && (
-            <a href={stats.publicUrl} target="_blank" rel="noopener noreferrer"
-              className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>
-              {stats.publicUrl} ↗
-            </a>
+            <>
+              {/* 운영자 전용 화면의 링크라 nolog=1 을 붙여 클릭 시 내 방문이 기록에서 제외되게 한다(그 브라우저 계속 유지) */}
+              <a href={`${stats.publicUrl}?nolog=1`} target="_blank" rel="noopener noreferrer"
+                className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>
+                {stats.publicUrl} ↗
+              </a>
+              <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>이 링크로 열면 내 방문은 기록에 남지 않아요.</p>
+            </>
           )}
         </div>
         {stats.botCount > 0 && (
