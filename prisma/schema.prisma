@@ -216,6 +216,8 @@ model Property {
   smsTemplates        SmsTemplate[]
   smsLogs             SmsLog[]
   aiUsages            AiUsage[]
+  photoCategories     PropertyPhotoCategory[]
+  propertyPhotos      PropertyPhoto[]
 
   @@map("properties")
 }
@@ -429,6 +431,39 @@ model RoomPhoto {
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@map("room_photos")
+}
+
+// 공용·외관 사진 카테고리 (기본 세트 + 운영자 추가·수정·순서, 2026-07-25). 방이 아닌 영업장에 묶임
+model PropertyPhotoCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  photos     PropertyPhoto[]
+
+  @@map("property_photo_categories")
+}
+
+// 공용·외관 사진 — RoomPhoto 와 동일 필드(공개 토글·순서·360·Drive) + 카테고리. 방 대신 영업장 소속
+model PropertyPhoto {
+  id          String   @id @default(uuid()) @db.Uuid
+  driveFileId String?  // Google Drive 파일 ID
+  storageUrl  String   // 표시용 URL
+  fileName    String?
+  sortOrder   Int      @default(0)
+  showOnSite  Boolean  @default(true)
+  is360       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  categoryId String @db.Uuid
+  category   PropertyPhotoCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  propertyId String @db.Uuid   // 조회 편의(카테고리 경유 없이 영업장 단위 필터)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_photos")
 }
 
 // ============================================================
