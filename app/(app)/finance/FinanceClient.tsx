@@ -154,7 +154,7 @@ export type ItemPickState = {
   // 규격이 치수(cm 등)면 규격당 단가가 무의미해 개당 기준 입력 지원(오류신고 4e2ffe04). 생략=spec(현행).
   unitBasis?: 'spec' | 'qty'
   // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
-  allocations?: { roomId: string; qty: string }[]
+  allocations?: { roomId: string; qty: string; locked?: boolean }[]
 }
 
 // 내구재(비품) 세트 개수 환산 patch — qty×N개, 규격 비움, unitBasis 'qty', 개당 단가(총액 불변).
@@ -500,9 +500,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const it = items[idx]
     // basis 인지 — 개당(qty) 기준이면 규격을 곱지 않음(baseQtyOf·updateItemSpec과 동일 규칙)
     const q = (Number(qtyValue) || 1) * (basisOf(it) === 'spec' ? specMul(it) : 1)
-    if (it.unitPrice != null) patchItem(idx, { qtyValue, amount: Math.round(it.unitPrice * q) })
-    else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
-    else patchItem(idx, { qtyValue })
+    // 방별 분배가 켜져 있으면 잠기지 않은 방에 새 전체수량을 다시 균등 분배
+    const allocPatch = it.allocations ? { allocations: redistributeAllocs(it.allocations, qtyValue) } : {}
+    if (it.unitPrice != null) patchItem(idx, { qtyValue, amount: Math.round(it.unitPrice * q), ...allocPatch })
+    else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined, ...allocPatch })
+    else patchItem(idx, { qtyValue, ...allocPatch })
   }
   // 규격(개입수 등) 변경 → 규격 오타 정정은 보통 결제 '금액'이 정답이므로 금액 고정·단가 재계산
   function updateItemSpec(idx: number, raw: string) {
@@ -527,13 +529,68 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const q = Number(it.qtyValue) || 1
     patchItem(idx, { specText: it.specText ?? '', specValue: '', specUnit: '', unitBasis: 'qty', unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice })
   }
-  // 방별 분배 — 켜면 한 줄(방 미지정+전체수량) 생성, 끄면 제거(방 분배 없음)
+  // 전체 수량(qtyValue)을 '잠기지 않은' 방들에 정수 최소단위로 균등 분배(앞 방부터 1씩). 잠긴 방 수량은 보존.
+  // 정수 단위로 계산해 Σ(방 수량)==전체 를 오차 0 으로 보장(부동소수 누적 회피). 소수는 최대 2자리.
+  type Alloc = { roomId: string; qty: string; locked?: boolean }
+  function redistributeAllocs(allocs: Alloc[], totalStr: string): Alloc[] {
+    const dpRaw = String(totalStr).split('.')[1]?.length ?? 0
+    const dp = Math.min(dpRaw, 2)
+    const scale = Math.pow(10, dp)
+    const T = Math.round((Number(totalStr) || 0) * scale)
+    let locked = 0
+    for (const a of allocs) if (a.locked) locked += Math.round((Number(a.qty) || 0) * scale)
+    const free = allocs.filter(a => !a.locked)
+    const k = free.length
+    if (k === 0) return allocs   // 전부 잠김 → 손대지 않음
+    const rem = Math.max(0, T - locked)   // 잠긴 합이 전체를 넘으면 나머지 방은 0(초과 경고는 요약에서)
+    const base = Math.floor(rem / k)
+    const extra = rem - base * k
+    let i = 0
+    return allocs.map(a => {
+      if (a.locked) return a
+      const v = (base + (i < extra ? 1 : 0)) / scale
+      i++
+      return { ...a, qty: String(Math.round(v * 100) / 100) }
+    })
+  }
+  // 방별 분배 — 켜면 전체 수량이 한 방(첫 방)에 균등 배정된 상태로 시작, 끄면 제거(방 분배 없음)
   function toggleAlloc(idx: number) {
     const it = items[idx]
-    patchItem(idx, it.allocations ? { allocations: undefined } : { allocations: [{ roomId: '', qty: it.qtyValue || '1' }] })
+    if (it.allocations) { patchItem(idx, { allocations: undefined }); return }
+    patchItem(idx, { allocations: redistributeAllocs([{ roomId: '', qty: '', locked: false }], it.qtyValue || '1') })
   }
-  function setAllocs(idx: number, allocs: { roomId: string; qty: string }[]) {
+  function setAllocs(idx: number, allocs: Alloc[]) {
     patchItem(idx, { allocations: allocs })
+  }
+  // 방 추가 — 새 방을 넣고 잠기지 않은 방들에 전체 수량을 다시 균등 분배(빈칸 안 생김).
+  function addAllocRoom(idx: number) {
+    const it = items[idx]
+    setAllocs(idx, redistributeAllocs([...(it.allocations ?? []), { roomId: '', qty: '', locked: false }], it.qtyValue || '0'))
+  }
+  // 방 삭제 — 남은 잠기지 않은 방들이 흡수하도록 재분배.
+  function removeAllocRoom(idx: number, ai: number) {
+    const it = items[idx]
+    setAllocs(idx, redistributeAllocs((it.allocations ?? []).filter((_, i) => i !== ai), it.qtyValue || '0'))
+  }
+  // 방 선택(어느 방인지)만 변경 — 수량은 건드리지 않음(재분배 안 함).
+  function editAllocRoom(idx: number, ai: number, roomId: string) {
+    const it = items[idx]
+    setAllocs(idx, (it.allocations ?? []).map((x, i) => i === ai ? { ...x, roomId } : x))
+  }
+  // 특정 방 수량 직접 입력 — 그 방을 '잠금'으로 표시(이후 자동 재분배가 이 방을 건드리지 않음).
+  function editAllocQty(idx: number, ai: number, qty: string) {
+    const it = items[idx]
+    setAllocs(idx, (it.allocations ?? []).map((x, i) => i === ai ? { ...x, qty, locked: true } : x))
+  }
+  // 개별 방 되돌리기 — 잠금 해제 후 재분배(그 방이 다시 자동값으로).
+  function resetAllocRoom(idx: number, ai: number) {
+    const it = items[idx]
+    setAllocs(idx, redistributeAllocs((it.allocations ?? []).map((x, i) => i === ai ? { ...x, locked: false } : x), it.qtyValue || '0'))
+  }
+  // 전체 균등으로 되돌리기 — 모든 잠금 해제 후 재분배.
+  function resetAllocAll(idx: number) {
+    const it = items[idx]
+    setAllocs(idx, redistributeAllocs((it.allocations ?? []).map(x => ({ ...x, locked: false })), it.qtyValue || '0'))
   }
 
   const totalItemAmount = items.reduce((s, it) => s + (it.amount ?? 0), 0)
@@ -658,6 +715,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             const qtyN = Number(it.qtyValue) || 0
             const allocRemain = Math.round((qtyN - allocSum) * 100) / 100   // 미지정(예비) 나머지
             const allocOver = !!it.allocations && qtyN > 0 && allocSum - qtyN > 0.001   // 초과 배정만 오류
+            const hasManual = (it.allocations ?? []).some(a => a.locked)   // 손으로 고친 방이 하나라도 있나
             const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
@@ -765,24 +823,35 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         {it.allocations.map((a, ai) => (
                           <div key={ai} className="flex items-center gap-1.5">
                             <select value={a.roomId}
-                              onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, roomId: e.target.value } : x))}
+                              onChange={e => editAllocRoom(idx, ai, e.target.value)}
                               className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] outline-none">
                               <option value="">방 선택…</option>
                               {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
                             </select>
+                            {/* 자동 분배값은 흐린 글씨, 직접 고친 값은 진한 글씨 — 손댄 방은 되돌리기 아이콘으로 구분(색 의존 회피) */}
                             <input type="text" inputMode="decimal" value={a.qty} placeholder="수량"
-                              onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x))}
-                              className={`w-14 ${smallNum}`} />
-                            <button type="button" onClick={() => setAllocs(idx, it.allocations!.filter((_, i) => i !== ai))}
+                              aria-label={a.locked ? '직접 입력한 수량' : '자동 분배된 수량'}
+                              onChange={e => editAllocQty(idx, ai, e.target.value.replace(/[^0-9.]/g, ''))}
+                              className={`w-14 ${smallNum} ${a.locked ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-muted)]'}`} />
+                            {a.locked && (
+                              <button type="button" onClick={() => resetAllocRoom(idx, ai)}
+                                title="자동 분배로 되돌리기" aria-label="이 방 자동 분배로 되돌리기"
+                                className="text-[var(--warm-muted)] hover:text-[var(--coral)] shrink-0"><svg className="inline-block align-middle" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 1-.9 5.2"/></svg></button>
+                            )}
+                            <button type="button" onClick={() => removeAllocRoom(idx, ai)} aria-label="이 방 삭제"
                               className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                           </div>
                         ))}
-                        <div className="flex items-center justify-between">
-                          <button type="button" onClick={() => setAllocs(idx, [...it.allocations!, { roomId: '', qty: '' }])}
-                            className="text-[0.65625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
-                          <span className={`text-[0.65625rem] ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
-                            방 배정 {allocSum} / 전체 {it.qtyValue || 0}
-                            {allocOver ? ' · 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미배정` : ''}
+                        <div className="flex items-center justify-between gap-2">
+                          <button type="button" onClick={() => addAllocRoom(idx)}
+                            className="text-[0.65625rem] text-[var(--coral)] hover:underline shrink-0">+ 방 추가</button>
+                          <span className={`text-[0.65625rem] text-right ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
+                            {hasManual && (
+                              <button type="button" onClick={() => resetAllocAll(idx)}
+                                className="text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] mr-1.5">균등으로 되돌리기</button>
+                            )}
+                            {hasManual ? '직접 배분' : '자동 균등'} · {allocSum} / {it.qtyValue || 0}
+                            {allocOver ? ' · 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain} 미배정` : ''}
                           </span>
                         </div>
                       </div>

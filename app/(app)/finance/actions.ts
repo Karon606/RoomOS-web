@@ -311,7 +311,7 @@ type ItemPick = {
   qtyValue?: string;  qtyUnit?: string
   amount?: number
   // 방별 분배 (선택) — 있으면 이 품목을 방별 행으로 분할(금액은 수량 비례, 마지막 행이 잔여 흡수)
-  allocations?: { roomId: string; qty: string }[]
+  allocations?: { roomId: string; qty: string; locked?: boolean }[]
 }
 
 // 품목 목록 → 실제 지출 행으로 확장. 방별 분배(allocations)가 있으면 방별로 쪼개고,
