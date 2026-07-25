@@ -112,24 +112,26 @@ export default function PropertyPhotosManager({ onClose }: { onClose: () => void
   }
 
   return (
-    <Modal open title="공용·외관 사진" subtitle="카테고리별로 공용공간·외관 사진을 올리고 공개를 정합니다" onClose={onClose}>
-      <div className="space-y-5">
+    <Modal open title="공용·외관 사진" subtitle="카테고리별로 공용공간·외관 사진을 올리고 공개를 정합니다" onClose={onClose} bodyClassName="px-5 sm:px-6 py-4">
+      <div className="space-y-3">
         {cats === null ? (
           <p className="text-sm text-[var(--warm-muted)]">불러오는 중…</p>
         ) : (
           <>
             {cats.map(cat => (
-              <div key={cat.id} className="space-y-2">
+              <div key={cat.id} className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
                 <div className="flex items-center gap-2">
+                  {/* 이름 편집 — 평소 투명, hover·focus 시 배경으로 '탭하면 입력'을 드러낸다(밑줄만은 편집 신호가 약함) */}
                   <input defaultValue={cat.name} onBlur={e => renameCategory(cat.id, e.target.value)}
-                    aria-label="카테고리 이름"
-                    className="flex-1 min-w-0 bg-transparent border-b border-[var(--warm-border)] px-1 py-1 text-sm font-semibold text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    aria-label="카테고리 이름" placeholder="카테고리 이름"
+                    className="flex-1 min-w-0 rounded-md px-2 py-1 text-sm font-semibold text-[var(--warm-dark)] bg-transparent border border-transparent hover:bg-[var(--cream)] focus:bg-[var(--cream)] focus:border-[var(--coral)] outline-none transition-colors" />
                   <button type="button" onClick={() => fileRefs.current[cat.id]?.click()} disabled={uploadingCat === cat.id}
-                    className="text-xs text-[var(--coral)] shrink-0 disabled:opacity-50">
+                    className="text-xs text-[var(--coral)] shrink-0 px-2 py-1 disabled:opacity-50">
                     {uploadingCat === cat.id ? '업로드 중…' : '+ 사진'}
                   </button>
+                  {/* 파괴적 액션 — 주 액션에서 gap 만큼 떼고, 32px hit area + hover 시에만 위험색 */}
                   <button type="button" onClick={() => removeCategory(cat.id, cat.photos.length > 0)} aria-label="카테고리 삭제"
-                    className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] shrink-0"><XIcon /></button>
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ml-1 text-[var(--warm-muted)] hover:text-[var(--danger-fg)] hover:bg-[var(--cream)] transition-colors"><XIcon /></button>
                   <input ref={el => { fileRefs.current[cat.id] = el }} type="file" accept="image/*" multiple className="hidden"
                     onChange={e => { void handleUpload(cat.id, e.target.files); e.target.value = '' }} />
                 </div>
