@@ -421,6 +421,8 @@ model RoomPhoto {
   storageUrl   String   // 표시용 URL (Drive 썸네일 또는 구 Supabase URL)
   fileName     String?
   sortOrder    Int      @default(0)
+  showOnSite   Boolean  @default(true)   // 공개 소개 페이지 노출 여부(사진 단위, 2026-07-25). 대표=공개 첫 장(자동)
+  is360        Boolean  @default(false)  // 360 파노라마 사진 — 평면 목록에서 빼고 '360으로 보기'로만. 업로드 시 판정 저장
   createdAt    DateTime @default(now())
 
   roomId String @db.Uuid

@@ -14,6 +14,7 @@ import {
   buildDriveThumbnailUrl,
   deleteFromDrive,
 } from '@/lib/google-drive'
+import { looksLike360 } from '@/lib/driveImage'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -323,6 +324,8 @@ export async function finalizeRoomPhoto(input: {
         driveFileId: input.driveFileId,
         fileName: input.fileName,
         sortOrder: (lastPhoto?.sortOrder ?? 0) + 1,
+        // 파일명으로 360 판정을 값으로 굳힌다 — 하드코딩 360 부채 재발 방지(공개 API 가 매번 재파싱 안 하게)
+        is360: looksLike360(input.fileName),
       },
     })
 
