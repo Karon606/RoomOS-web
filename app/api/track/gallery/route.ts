@@ -12,7 +12,8 @@ function safeInt(v: unknown, max: number): number | null {
   return Math.floor(n)
 }
 
-// [{ rent, n, seen:[idx], maxDepth, dwell:{idx:ms} }] — 등급 최대 12개, 사진 인덱스 0~99.
+// [{ rent, n, seen:[idx], maxDepth, dwell:{idx:ms}, zoomed:[idx] }] — 등급 최대 12개, 사진 인덱스 0~99.
+// zoomed = 라이트박스로 전체화면 확대해 본 사진 인덱스(단순 스크롤 노출보다 강한 관심 신호).
 function safeViews(v: unknown): unknown[] | null {
   if (!Array.isArray(v)) return null
   const out: unknown[] = []
@@ -24,6 +25,7 @@ function safeViews(v: unknown): unknown[] | null {
     const n = safeInt(o.n, 100)
     if (rent === null || n === null) continue
     const seen = Array.isArray(o.seen) ? o.seen.map(x => safeInt(x, 99)).filter((x): x is number => x !== null).slice(0, 100) : []
+    const zoomed = Array.isArray(o.zoomed) ? o.zoomed.map(x => safeInt(x, 99)).filter((x): x is number => x !== null).slice(0, 100) : []
     const maxDepth = safeInt(o.maxDepth, 99)
     const dwell: Record<string, number> = {}
     if (o.dwell && typeof o.dwell === 'object' && !Array.isArray(o.dwell)) {
@@ -36,7 +38,7 @@ function safeViews(v: unknown): unknown[] | null {
         dwell[k] = ms; c++
       }
     }
-    out.push({ rent, n, seen, maxDepth: maxDepth ?? 0, dwell })
+    out.push({ rent, n, seen, maxDepth: maxDepth ?? 0, dwell, zoomed })
   }
   return out.length > 0 ? out : null
 }

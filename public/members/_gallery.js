@@ -117,7 +117,7 @@
         var out = [];
         for (var rent in galleryByRent) {
           var s = galleryByRent[rent];
-          out.push({ rent: parseInt(rent, 10), n: s.n, seen: Object.keys(s.seen).map(Number), maxDepth: s.maxDepth, dwell: s.dwell });
+          out.push({ rent: parseInt(rent, 10), n: s.n, seen: Object.keys(s.seen).map(Number), maxDepth: s.maxDepth, dwell: s.dwell, zoomed: Object.keys(s.zoomed).map(Number) });
         }
         return out;
       }
@@ -140,7 +140,7 @@
         // 계측 세션 시작 — 이 등급(rent) 통계를 누적. 같은 등급 재방문이면 기존 통계 이어받기.
         curRent = parseInt(card.getAttribute('data-rent'), 10);
         var totalPhotos = rooms.reduce(function (a, r) { return a + (r.photos ? r.photos.length : 0); }, 0);
-        if (!galleryByRent[curRent]) galleryByRent[curRent] = { n: totalPhotos, seen: {}, maxDepth: 0, dwell: {} };
+        if (!galleryByRent[curRent]) galleryByRent[curRent] = { n: totalPhotos, seen: {}, maxDepth: 0, dwell: {}, zoomed: {} };
         curStat = galleryByRent[curRent];
         visibleSince = {};
 
@@ -171,7 +171,9 @@
           if (hasPhotos) {
             var row = document.createElement('div');
             row.className = 'gsheet-row';
-            room.photos.forEach(function (p) {
+            var roomPhotos = room.photos;
+            var roomBaseGlobal = idx;   // 이 방 첫 사진의 등급 연속 idx — 라이트박스 확대 계측용
+            room.photos.forEach(function (p, localI) {
               var fig = document.createElement('figure');
               fig.className = 'gsheet-slide';
               fig.setAttribute('data-idx', idx);
@@ -179,6 +181,10 @@
               im.src = p.url;
               im.alt = '';
               im.loading = 'lazy';
+              im.style.cursor = 'zoom-in';
+              (function (li, base) {
+                im.addEventListener('click', function () { openLightbox(roomPhotos, li, base); });
+              })(localI, roomBaseGlobal);
               fig.appendChild(im);
               row.appendChild(fig);
               if (io) io.observe(fig);
@@ -238,8 +244,70 @@
         if (panoOverlay) panoOverlay.hidden = true;
       }
 
+      // ---------- 라이트박스 (사진 전체화면 확대 + 좌우 스와이프) ----------
+      // 시트 슬라이드를 탭하면 전체화면으로. 확대해서 본 사진은 zoomed 신호로 계측(관심 강함).
+      var lightbox = null, lbTrack = null, lbCounter = null, lbBase = 0, lbTotal = 0;
+      function markZoom(localIdx) {
+        if (curStat) curStat.zoomed[lbBase + localIdx] = true;   // 등급 연속 idx 기준
+      }
+      function updateLbCounter() {
+        if (!lbTotal) return;
+        var c = lbTrack.scrollLeft + lbTrack.clientWidth / 2;
+        var slides = lbTrack.children, best = 0, bestDist = Infinity;
+        for (var i = 0; i < slides.length; i++) {
+          var s = slides[i];
+          var center = s.offsetLeft + s.offsetWidth / 2;
+          var d = Math.abs(center - c);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+        lbCounter.textContent = (best + 1) + ' / ' + lbTotal;
+        markZoom(best);
+      }
+      function buildLightbox() {
+        var o = document.createElement('div');
+        o.className = 'glightbox';
+        o.hidden = true;
+        o.innerHTML =
+          '<button type="button" class="glightbox-close" data-lbclose aria-label="닫기">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
+          '</button>' +
+          '<div class="glightbox-track"></div>' +
+          '<div class="glightbox-counter"></div>';
+        el.appendChild(o);
+        lbTrack = o.querySelector('.glightbox-track');
+        lbCounter = o.querySelector('.glightbox-counter');
+        o.addEventListener('click', function (e) {
+          if (e.target.closest && e.target.closest('[data-lbclose]')) { closeLightbox(); return; }
+          if (e.target === o || e.target === lbTrack) closeLightbox();   // 이미지 밖 클릭도 닫기
+        });
+        lbTrack.addEventListener('scroll', function () { window.requestAnimationFrame(updateLbCounter); }, { passive: true });
+        return o;
+      }
+      function openLightbox(photos, startLocal, baseGlobal) {
+        if (!lightbox) lightbox = buildLightbox();
+        lbBase = baseGlobal; lbTotal = photos.length;
+        lbTrack.innerHTML = '';
+        photos.forEach(function (p) {
+          var fig = document.createElement('figure');
+          fig.className = 'glightbox-slide';
+          var im = document.createElement('img');
+          im.src = p.url; im.alt = '';
+          fig.appendChild(im);
+          lbTrack.appendChild(fig);
+        });
+        lightbox.hidden = false;
+        window.requestAnimationFrame(function () {
+          var target = lbTrack.children[startLocal];
+          if (target) lbTrack.scrollLeft = target.offsetLeft - (lbTrack.clientWidth - target.offsetWidth) / 2;
+          lbCounter.textContent = (startLocal + 1) + ' / ' + lbTotal;
+          markZoom(startLocal);
+        });
+      }
+      function closeLightbox() { if (lightbox) lightbox.hidden = true; }
+
       function closeDom() {
         if (!isOpen) return;
+        closeLightbox();           // 열려 있던 라이트박스도 정리
         closePano();               // 열려 있던 360 오버레이도 함께 정리
         flushVisible();            // 남은 슬라이드 체류 마감
         if (io) io.disconnect();   // 이 시트의 슬라이드 관찰 해제(다음 열기 때 새로 observe)
@@ -268,8 +336,9 @@
       });
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
-        if (panoOverlay && !panoOverlay.hidden) { closePano(); return; }  // 360 이 열려 있으면 그것부터 닫기
-        if (isOpen) requestClose();
+        if (lightbox && !lightbox.hidden) { closeLightbox(); return; }   // 라이트박스 먼저
+        if (panoOverlay && !panoOverlay.hidden) { closePano(); return; } // 그다음 360
+        if (isOpen) requestClose();                                      // 마지막으로 시트
       });
 
       return {
