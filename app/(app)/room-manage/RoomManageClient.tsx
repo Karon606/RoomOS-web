@@ -26,11 +26,15 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
+import dynamic from 'next/dynamic'
+
+// 공용·외관 사진 관리 모달 — 지연 로드로 순환 import 회피(이 파일이 PhotoLightbox 를 export, 그쪽이 이 파일을 다시 참조)
+const PropertyPhotosManager = dynamic(() => import('./PropertyPhotosManager'), { ssr: false })
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
 
-type Photo = {
+export type Photo = {
   id: string
   driveFileId: string | null
   storageUrl: string
@@ -323,6 +327,7 @@ export default function RoomManageClient({
   const [showOnSiteVal, setShowOnSiteVal]     = useState(false)               // 소개 페이지 공개 토글(즉시 반영, 폼 submit 무관)
   const [showOnSitePending, setShowOnSitePending] = useState(false)
   const [photosDirty, setPhotosDirty]         = useState(false)               // 편집 세션 중 사진 변경 여부 — 모달 닫을 때 재배포 1회 트리거용
+  const [showPropPhotos, setShowPropPhotos]   = useState(false)               // 공용·외관 사진 관리 모달
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
@@ -791,6 +796,9 @@ export default function RoomManageClient({
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
         {canEditUi && (
         <div className="flex items-center gap-2">
+          <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
+            공용·외관 사진
+          </Btn>
           <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
             {selectMode ? '선택 취소' : '선택'}
           </Btn>
@@ -1496,13 +1504,15 @@ export default function RoomManageClient({
           onToggle360={next => handleTogglePhotoIs360(viewPhoto.id, next)} />
       )}
 
+      {showPropPhotos && <PropertyPhotosManager onClose={() => setShowPropPhotos(false)} />}
+
     </div>
   )
 }
 
 // 사진 lightbox — 큰 사진 + 360 뷰어. 360 판정: 파일명 단서(기본) + 2:1 종횡비 자동 감지 + 수동 토글.
 // onSetMain: 편집 모달에서 열렸고 대표(첫 장)가 아닐 때만 전달됨 — '대표로 설정' 버튼 노출.
-function PhotoLightbox({ photo, onClose, onSetMain, onToggle360 }: { photo: Photo; onClose: () => void; onSetMain?: () => void; onToggle360?: (next: boolean) => Promise<boolean> }) {
+export function PhotoLightbox({ photo, onClose, onSetMain, onToggle360 }: { photo: Photo; onClose: () => void; onSetMain?: () => void; onToggle360?: (next: boolean) => Promise<boolean> }) {
   const hiRes = photo.driveFileId ? driveImageUrl(photo.driveFileId, 2048) : photo.storageUrl
   // 저장된 지정(is360) 우선, 없으면 파일명 추정. 뷰·저장 공통 상태 — 토글이 곧 DB 저장이다.
   const [is360, setIs360] = useState(photo.is360 ?? looksLike360(photo.fileName))
@@ -1650,7 +1660,7 @@ function ZoomableImage({ src, alt, onImgLoad }: {
 }
 
 // Drive resumable upload — XHR로 진행률 추적 + Drive에 직접 PUT
-function uploadFileToDriveSession(
+export function uploadFileToDriveSession(
   uploadUrl: string,
   file: File,
   onProgress: (percent: number) => void,
