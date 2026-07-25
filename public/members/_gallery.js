@@ -6,6 +6,9 @@
     var SLUG = m ? m[1] : null;
     if (!SLUG) return;
 
+    // 360 버튼·힌트 아이콘(둘러보기 회전) — 기존 pano-hint 와 같은 모양으로 이질감 없게.
+    var PANO_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12 Q3 8 12 8 Q21 8 21 12 Q21 16 12 16 Q7.5 16 5 14.5"></path><path d="M5 18 L4.6 14.2 L8.4 14.8"></path></svg>';
+
     fetch('/api/public/gallery?slug=' + encodeURIComponent(SLUG))
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
@@ -141,32 +144,48 @@
         curStat = galleryByRent[curRent];
         visibleSince = {};
 
-        // 방별 행 — [408호 라벨] + 가로 캐러셀. idx 는 방을 가로질러 연속.
+        // 방별 행 — [408호 라벨 + 360버튼] + 가로 캐러셀. idx 는 방을 가로질러 연속.
         var idx = 0;
         rooms.forEach(function (room) {
-          if (!room.photos || !room.photos.length) return;   // 공개 평면사진 없는 방은 이 목록에서 제외(360 은 ③에서)
+          var hasPhotos = room.photos && room.photos.length;
+          var hasPano = room.pano && room.pano.url;
+          if (!hasPhotos && !hasPano) return;   // 공개 사진도 360 도 없는 방은 제외
           var section = document.createElement('div');
           section.className = 'gsheet-room';
           var label = document.createElement('div');
           label.className = 'gsheet-room-label';
-          label.textContent = room.roomNo + '호';
+          var labelText = document.createElement('span');
+          labelText.textContent = room.roomNo + '호';
+          label.appendChild(labelText);
+          if (hasPano) {
+            var panoBtn = document.createElement('button');
+            panoBtn.type = 'button';
+            panoBtn.className = 'gsheet-360-btn';
+            panoBtn.innerHTML = PANO_ICON + '<span>360° 둘러보기</span>';
+            (function (url, roomNo) {
+              panoBtn.addEventListener('click', function () { openPano(url, roomNo); });
+            })(room.pano.url, room.roomNo);
+            label.appendChild(panoBtn);
+          }
           section.appendChild(label);
-          var row = document.createElement('div');
-          row.className = 'gsheet-row';
-          room.photos.forEach(function (p) {
-            var fig = document.createElement('figure');
-            fig.className = 'gsheet-slide';
-            fig.setAttribute('data-idx', idx);
-            var im = document.createElement('img');
-            im.src = p.url;
-            im.alt = '';
-            im.loading = 'lazy';
-            fig.appendChild(im);
-            row.appendChild(fig);
-            if (io) io.observe(fig);
-            idx++;
-          });
-          section.appendChild(row);
+          if (hasPhotos) {
+            var row = document.createElement('div');
+            row.className = 'gsheet-row';
+            room.photos.forEach(function (p) {
+              var fig = document.createElement('figure');
+              fig.className = 'gsheet-slide';
+              fig.setAttribute('data-idx', idx);
+              var im = document.createElement('img');
+              im.src = p.url;
+              im.alt = '';
+              im.loading = 'lazy';
+              fig.appendChild(im);
+              row.appendChild(fig);
+              if (io) io.observe(fig);
+              idx++;
+            });
+            section.appendChild(row);
+          }
           bodyEl.appendChild(section);
         });
 
@@ -179,8 +198,49 @@
         isOpen = true;
       }
 
+      // ---------- 360 파노라마 오버레이 (pannellum) ----------
+      // 시트 위에 뜨는 전체화면 레이어. 열 때 뷰어 생성, 닫을 때 destroy(리소스 누수·중복 방지).
+      var panoOverlay = null, panoViewer = null;
+      function buildPanoOverlay() {
+        var o = document.createElement('div');
+        o.className = 'gpano';
+        o.hidden = true;
+        o.innerHTML =
+          '<button type="button" class="gpano-close" data-panoclose aria-label="360 닫기">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
+          '</button>' +
+          '<div class="gpano-stage"></div>' +
+          '<div class="gpano-hint">' + PANO_ICON + '<span>드래그하여 360°로 둘러보세요</span></div>';
+        el.appendChild(o);
+        o.addEventListener('click', function (e) {
+          if (e.target.closest && e.target.closest('[data-panoclose]')) closePano();
+        });
+        return o;
+      }
+      function openPano(url) {
+        if (!panoOverlay) panoOverlay = buildPanoOverlay();
+        var stage = panoOverlay.querySelector('.gpano-stage');
+        stage.innerHTML = '';
+        var host = document.createElement('div');
+        host.style.width = '100%';
+        host.style.height = '100%';
+        stage.appendChild(host);
+        panoOverlay.hidden = false;
+        if (typeof pannellum !== 'undefined') {
+          panoViewer = pannellum.viewer(host, {
+            type: 'equirectangular', panorama: url, autoLoad: true, autoRotate: -2,
+            showZoomCtrl: false, showFullscreenCtrl: false, compass: false, hfov: 100,
+          });
+        }
+      }
+      function closePano() {
+        if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
+        if (panoOverlay) panoOverlay.hidden = true;
+      }
+
       function closeDom() {
         if (!isOpen) return;
+        closePano();               // 열려 있던 360 오버레이도 함께 정리
         flushVisible();            // 남은 슬라이드 체류 마감
         if (io) io.disconnect();   // 이 시트의 슬라이드 관찰 해제(다음 열기 때 새로 observe)
         isOpen = false;
@@ -207,7 +267,9 @@
         if (e.target.closest && e.target.closest('[data-close]')) requestClose();
       });
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && isOpen) requestClose();
+        if (e.key !== 'Escape') return;
+        if (panoOverlay && !panoOverlay.hidden) { closePano(); return; }  // 360 이 열려 있으면 그것부터 닫기
+        if (isOpen) requestClose();
       });
 
       return {
