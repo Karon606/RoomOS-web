@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -606,6 +606,20 @@ export default function RoomManageClient({
       return
     }
     router.refresh()   // 카드 대표 썸네일(공개 첫 장) 동기화
+  }
+
+  // 사진 360 지정 토글(뷰어에서 호출) — 저장하면 공개 웹·그리드 배지·대표 계산에 반영. 실패 시 false 반환 → 뷰어 로컬 원복.
+  const handleTogglePhotoIs360 = async (photoId: string, next: boolean): Promise<boolean> => {
+    setEditPhotos(prev => prev.map(p => p.id === photoId ? { ...p, is360: next } : p))
+    const res = await setRoomPhotoIs360(photoId, next)
+    if (!res.ok) {
+      setEditPhotos(prev => prev.map(p => p.id === photoId ? { ...p, is360: !next } : p))
+      pushToast('error', res.error)
+      return false
+    }
+    pushToast('success', next ? '360 사진으로 지정했어요' : '360 지정을 해제했어요')
+    router.refresh()
+    return true
   }
 
   // 소개 페이지 공개 토글 — 즉시 반영(폼 저장과 무관), 낙관적 갱신 후 실패 시 원복. 되돌리기는 다시 끄면 된다.
@@ -1469,7 +1483,8 @@ export default function RoomManageClient({
         <PhotoLightbox photo={viewPhoto} onClose={() => setViewPhoto(null)}
           onSetMain={editPhotos.length > 1 && editPhotos[0]?.id !== viewPhoto.id
             ? () => { void handleSetMainPhoto(viewPhoto) }
-            : undefined} />
+            : undefined}
+          onToggle360={next => handleTogglePhotoIs360(viewPhoto.id, next)} />
       )}
 
     </div>
@@ -1478,13 +1493,12 @@ export default function RoomManageClient({
 
 // 사진 lightbox — 큰 사진 + 360 뷰어. 360 판정: 파일명 단서(기본) + 2:1 종횡비 자동 감지 + 수동 토글.
 // onSetMain: 편집 모달에서 열렸고 대표(첫 장)가 아닐 때만 전달됨 — '대표로 설정' 버튼 노출.
-function PhotoLightbox({ photo, onClose, onSetMain }: { photo: Photo; onClose: () => void; onSetMain?: () => void }) {
+function PhotoLightbox({ photo, onClose, onSetMain, onToggle360 }: { photo: Photo; onClose: () => void; onSetMain?: () => void; onToggle360?: (next: boolean) => Promise<boolean> }) {
   const hiRes = photo.driveFileId ? driveImageUrl(photo.driveFileId, 2048) : photo.storageUrl
-  const [is360, setIs360] = useState(looksLike360(photo.fileName))
-  // 360 전환 버튼은 360 가능 사진일 때만 노출 — 파일명 단서 또는 2:1(equirectangular) 비율 감지 시.
-  const [ratioIs360, setRatioIs360] = useState(false)
-  const canBe360 = looksLike360(photo.fileName) || ratioIs360
-  const manualRef = useRef(false)
+  // 저장된 지정(is360) 우선, 없으면 파일명 추정. 뷰·저장 공통 상태 — 토글이 곧 DB 저장이다.
+  const [is360, setIs360] = useState(photo.is360 ?? looksLike360(photo.fileName))
+  const [ratioIs360, setRatioIs360] = useState(false)   // 2:1 감지 — '360일 수 있음' 힌트로만(자동 저장 안 함)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -1495,28 +1509,36 @@ function PhotoLightbox({ photo, onClose, onSetMain }: { photo: Photo; onClose: (
   const handleImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
     const ratio = img.naturalWidth / img.naturalHeight
-    const is2to1 = ratio >= 1.9 && ratio <= 2.1
-    setRatioIs360(is2to1)
-    if (is2to1 && !manualRef.current) setIs360(true)  // 2:1 → 360 자동 전환
+    setRatioIs360(ratio >= 1.9 && ratio <= 2.1)   // 힌트만 — 저장은 사용자 토글로
+  }
+
+  // 360 지정 토글 — 뷰 전환 + DB 저장(공개 웹·그리드·대표 계산 반영). 저장 실패 시 뷰 원복.
+  const toggle360 = async () => {
+    const next = !is360
+    setIs360(next)
+    if (onToggle360) {
+      setSaving(true)
+      const ok = await onToggle360(next)
+      setSaving(false)
+      if (!ok) setIs360(!next)
+    }
   }
 
   return (
     <div className="fixed inset-0 z-[var(--z-lightbox)] bg-black/90 flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between gap-2 px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
-        <span className="text-white/80 text-sm font-medium truncate">{photo.fileName ?? '사진'}{is360 && ' · 360°'}</span>
+        <span className="text-white/80 text-sm font-medium truncate">{photo.fileName ?? '사진'}{is360 ? ' · 360°' : (ratioIs360 ? ' · 360일 수 있어요' : '')}</span>
         <div className="flex items-center gap-2 shrink-0">
-          {onSetMain && (
+          {onSetMain && !is360 && (
             <button type="button" onClick={onSetMain}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors">
               대표로 설정
             </button>
           )}
-          {canBe360 && (
-            <button type="button" onClick={() => { manualRef.current = true; setIs360(v => !v) }}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors">
-              {is360 ? '일반 사진으로 보기' : '360°로 보기'}
-            </button>
-          )}
+          <button type="button" onClick={toggle360} disabled={saving}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${is360 ? 'bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90' : 'bg-white/15 text-white hover:bg-white/25'}`}>
+            {saving ? '저장 중…' : (is360 ? '360 지정 해제' : '360으로 지정')}
+          </button>
           <button type="button" onClick={onClose} aria-label="닫기"
             className="w-8 h-8 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
         </div>

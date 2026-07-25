@@ -411,6 +411,23 @@ export async function setRoomPhotoShowOnSite(photoId: string, show: boolean): Pr
   }
 }
 
+// 사진의 360 지정 토글 — 파일명 자동판정이 놓친 360 파노라마를 운영자가 직접 표시. 저장하면 공개 웹(평면
+// 목록에서 빠지고 360 버튼)·호실관리 뷰어·카드 대표 계산(360 제외)에 모두 반영된다.
+export async function setRoomPhotoIs360(photoId: string, is360: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.roomPhoto.findFirst({ where: { id: photoId, room: { propertyId } }, select: { id: true } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
+    await prisma.roomPhoto.update({ where: { id: photoId }, data: { is360 } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 호실 사진 순서 저장 (오류신고 8dba0177) — 편집 UI가 최종 배열(photoIds, 표시 순서대로)을 넘기면 인덱스대로 sortOrder 재기록.
 // 대표 이미지 = 첫 장(photos[0]) 규칙이라 '대표로 설정'도 이 액션(맨 앞 이동 배열)으로 처리된다.
 // 부분 배열은 미포함 사진과의 상대 순서가 흔들리므로 전체 집합 일치일 때만 저장(reorderAssetItems와 동일 문법).
