@@ -288,16 +288,6 @@ section { padding: 130px 0; }
   padding: 8px 16px; border-radius: 18px; letter-spacing: 0.02em;
 }
 .pnlm-container { background: var(--forest-darker) !important; }
-.gallery-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 18px; }
-.gallery-item {
-  position: relative; border-radius: var(--radius-md); overflow: hidden;
-  aspect-ratio: 4 / 3; cursor: zoom-in; background: var(--ivory-soft);
-}
-.gallery-item img {
-  width: 100%; height: 100%; object-fit: cover;
-  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.gallery-item:hover img { transform: scale(1.045); }
 .gallery-tag {
   position: absolute; left: 16px; bottom: 14px;
   background: rgba(16, 32, 26, 0.55); backdrop-filter: blur(8px);
@@ -305,21 +295,76 @@ section { padding: 130px 0; }
   padding: 7px 15px; border-radius: 16px; letter-spacing: 0.02em;
 }
 
-/* lightbox */
-.lightbox {
-  position: fixed; inset: 0; z-index: 200; background: rgba(12, 20, 16, 0.92);
-  display: flex; align-items: center; justify-content: center; padding: 5vw;
-  opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+/* ---------- Room card photo thumbnail (동적 갤러리) ---------- */
+.room-photo {
+  position: relative; margin-bottom: 24px; border-radius: 16px;
+  overflow: hidden; aspect-ratio: 4 / 3; cursor: pointer;
+  background: var(--ivory-soft); box-shadow: 0 0 0 1px var(--line);
 }
-.lightbox.open { opacity: 1; pointer-events: auto; }
-.lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; }
-.lightbox-close {
-  position: absolute; top: 24px; right: 24px; width: 44px; height: 44px;
+.room-photo img {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.room-card:hover .room-photo img { transform: scale(1.045); }
+.room-card.featured .room-photo { background: var(--forest-darker); box-shadow: 0 0 0 1px var(--line-cream); }
+
+/* ---------- Grade photo sheet (바텀 시트 캐러셀) ---------- */
+.gsheet {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.gsheet[hidden] { display: none; }
+.gsheet-backdrop {
+  position: absolute; inset: 0; background: rgba(16, 32, 26, 0.55);
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.gsheet.in .gsheet-backdrop { opacity: 1; }
+.gsheet-panel {
+  position: relative; height: 100%;
+  background: var(--forest); color: var(--cream);
+  display: flex; flex-direction: column;
+  transform: translateY(100%); transition: transform 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.gsheet.in .gsheet-panel { transform: none; }
+.gsheet-head {
+  flex-shrink: 0; display: flex; align-items: center; gap: 16px;
+  padding: 20px 22px 14px;
+}
+.gsheet-title {
+  font-family: var(--serif-kr); font-weight: 400; font-size: 20px;
+  letter-spacing: -0.01em; color: var(--cream);
+}
+.gsheet-close {
+  margin-left: auto; flex-shrink: 0; width: 44px; height: 44px;
   border-radius: 50%; border: 1px solid rgba(232, 222, 201, 0.3);
   background: transparent; color: var(--cream); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-.lightbox-close svg { width: 16px; height: 16px; }
+.gsheet-close svg { width: 16px; height: 16px; }
+.gsheet-track {
+  flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 14px;
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+  padding: 0 9vw; -webkit-overflow-scrolling: touch;
+}
+.gsheet-track::-webkit-scrollbar { display: none; }
+.gsheet-slide {
+  flex: 0 0 82%; scroll-snap-align: center; position: relative;
+}
+.gsheet-slide img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: var(--radius-md); box-shadow: 0 0 0 1px var(--line-cream);
+  background: var(--forest-darker);
+}
+.gsheet-counter {
+  flex-shrink: 0; text-align: center; padding: 16px 0 22px;
+  font-size: 13px; font-weight: 500; letter-spacing: 0.06em;
+  color: rgba(232, 222, 201, 0.72);
+}
+@media (max-width: 720px) {
+  .gsheet-slide { flex-basis: 84%; }
+  .gsheet-track { padding: 0 7vw; }
+}
 
 /* ---------- Location ---------- */
 #location { background: var(--ivory-soft); }
@@ -411,7 +456,6 @@ footer {
   .lang-toggle { height: 32px; }
   .lang-toggle button { padding: 0 10px; font-size: 11px; }
   .amenities-grid { grid-template-columns: 1fr; }
-  .gallery-grid { grid-template-columns: 1fr; }
   .room-card { flex-basis: 280px; }
   .rooms-track { padding-left: 24px; padding-right: 24px; }
   .hero-lockup { width: 170px; }
@@ -493,7 +537,8 @@ footer {
     </div>
 
     <div class="rooms-track" id="roomsTrack">
-      <article class="room-card reveal">
+      <article class="room-card reveal" data-rent="350000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">Single Room</div>
         <h3 class="room-name" data-en="Single Room">미니룸형</h3>
         <div class="room-price"><strong>35</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -501,7 +546,8 @@ footer {
         <p class="room-desc" data-en="Full access to The Stay's pristine shared facilities at the most reasonable price. A neat, sufficient environment for single living.">합리적인 가격으로 더스테이의 쾌적한 시설을 이용할 수 있는 가성비 객실. 단정한 구성으로 1인 거주에 충분한 환경을 제공합니다.</p>
       </article>
 
-      <article class="room-card reveal d1">
+      <article class="room-card reveal d1" data-rent="390000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Value (Hallway Window)</div>
         <h3 class="room-name" data-en="En-suite Value &middot; Hallway Window">원룸 내창 &middot; 실속형</h3>
         <div class="room-price"><strong>39</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -509,7 +555,8 @@ footer {
         <p class="room-desc" data-en="The Single Room's reasonable price — plus a private bathroom and shower. The most practical choice, with everything you truly need.">미니룸의 합리적인 가격은 그대로 두고, 개별 화장실과 샤워시설까지 더한 가장 실속 있는 선택. 꼭 필요한 것만 알차게 담았습니다.</p>
       </article>
 
-      <article class="room-card reveal d2">
+      <article class="room-card reveal d2" data-rent="420000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Standard (Hallway Window)</div>
         <h3 class="room-name" data-en="En-suite Standard &middot; Hallway Window">원룸 내창 &middot; 스탠다드</h3>
         <div class="room-price"><strong>42</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -517,7 +564,8 @@ footer {
         <p class="room-desc" data-en="A full-size studio with private bathroom and shower. The hallway-window layout keeps the price reasonable while giving you more room to breathe.">일반적인 원룸 사이즈에 개별 화장실과 샤워시설을 완비한 객실. 내창 구조로 합리적인 가격을 유지하면서 한층 여유로운 공간을 누립니다.</p>
       </article>
 
-      <article class="room-card reveal d3">
+      <article class="room-card reveal d3" data-rent="440000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Value (Sunlit Window)</div>
         <h3 class="room-name" data-en="En-suite Value &middot; Sunlit Window">원룸 외창 &middot; 실속형</h3>
         <div class="room-price"><strong>44</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -525,7 +573,8 @@ footer {
         <p class="room-desc" data-en="Bright natural light and fresh ventilation from a sunlit window, at a friendlier price. Private bathroom and shower included.">외창의 환한 채광과 시원한 환기를 더 합리적인 가격에 누리는 객실. 개별 화장실·샤워까지 갖춰 1인 거주에 부족함이 없습니다.</p>
       </article>
 
-      <article class="room-card featured">
+      <article class="room-card featured" data-rent="470000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Standard (Sunlit Window)</div>
         <h3 class="room-name" data-en="En-suite Standard &middot; Sunlit Window">원룸 외창 &middot; 스탠다드</h3>
         <div class="room-price"><strong>47</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -534,7 +583,8 @@ footer {
         <div class="room-badge" data-en="MOST POPULAR">가장 인기 있는 객실</div>
       </article>
 
-      <article class="room-card">
+      <article class="room-card" data-rent="500000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Premium I (Sunlit Window)</div>
         <h3 class="room-name" data-en="En-suite Premium I &middot; Sunlit Window">원룸 외창 &middot; 프리미엄 I</h3>
         <div class="room-price"><strong>50</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -542,7 +592,8 @@ footer {
         <p class="room-desc" data-en="Noticeably more generous than the sunlit-window standard. Easy circulation and ample storage elevate your everyday living.">외창 스탠다드보다 한층 넉넉한 사이즈의 객실. 여유로운 동선과 충분한 수납으로 한 단계 위의 품격 있는 일상을 누립니다.</p>
       </article>
 
-      <article class="room-card">
+      <article class="room-card" data-rent="550000">
+        <div class="room-photo" hidden></div>
         <div class="room-tier">En-suite Premium II (Sunlit Window)</div>
         <h3 class="room-name" data-en="En-suite Premium II &middot; Sunlit Window">원룸 외창 &middot; 프리미엄 II</h3>
         <div class="room-price"><strong>55</strong><span data-en="&times;10,000 KRW / mo">만원 / 월</span></div>
@@ -608,8 +659,8 @@ footer {
 <!-- ================= GALLERY ================= -->
 <section id="gallery" data-screen-label="Gallery">
   <div class="wrap">
-    <div class="eyebrow reveal">Gallery &middot; 360&deg; View</div>
-    <h2 class="headline reveal d1"><span data-en="See the space you'll live in,">머무는 공간을</span> <span data-en="<em>up close</em>."><em>가까이</em>에서.</span></h2>
+    <div class="eyebrow reveal">360&deg; View</div>
+    <h2 class="headline reveal d1"><span data-en="Look around the space,">공간을 직접</span> <span data-en="in <em>360 degrees</em>."><em>360도</em>로 둘러보세요.</span></h2>
 
     <div class="pano-tabs reveal d2" role="tablist" aria-label="360도 객실 뷰">
       <button type="button" class="on" data-pano="pano418" data-en="Room 418 &middot; Premium I">418호 &middot; 외창 프리미엄 I</button>
@@ -623,25 +674,6 @@ footer {
       <div class="pano-hint">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12 Q3 8 12 8 Q21 8 21 12 Q21 16 12 16 Q7.5 16 5 14.5"></path><path d="M5 18 L4.6 14.2 L8.4 14.8"></path></svg>
         <span data-en="Drag to look around 360&deg;">드래그하여 360&deg;로 둘러보세요</span>
-      </div>
-    </div>
-
-    <div class="gallery-grid">
-      <div class="gallery-item reveal" data-full="/members/thestayjegi/images/IMG_8941.JPG">
-        <img src="/members/thestayjegi/images/IMG_8941.JPG" alt="401호 객실 — 원룸 외창/프리미엄 II" loading="lazy">
-        <span class="gallery-tag" data-en="Room 401 &middot; Premium II">401호 &middot; 외창 프리미엄 II</span>
-      </div>
-      <div class="gallery-item reveal d1" data-full="/members/thestayjegi/images/room-418.jpg">
-        <img src="/members/thestayjegi/images/room-418.jpg" alt="418호 객실 — 원룸 외창/프리미엄 I" loading="lazy">
-        <span class="gallery-tag" data-en="Room 418 &middot; Premium I">418호 &middot; 외창 프리미엄 I</span>
-      </div>
-      <div class="gallery-item reveal" data-full="/members/thestayjegi/images/room-408.jpg">
-        <img src="/members/thestayjegi/images/room-408.jpg" alt="408호 객실 — 원룸 외창/스탠다드" loading="lazy">
-        <span class="gallery-tag" data-en="Room 408 &middot; Standard">408호 &middot; 외창 스탠다드</span>
-      </div>
-      <div class="gallery-item reveal d1" data-full="/members/thestayjegi/images/IMG_8936.JPG">
-        <img src="/members/thestayjegi/images/IMG_8936.JPG" alt="422호 객실 — 원룸 내창/스탠다드" loading="lazy">
-        <span class="gallery-tag" data-en="Room 422 &middot; Hallway Standard">422호 &middot; 내창 스탠다드</span>
       </div>
     </div>
   </div>
@@ -777,14 +809,6 @@ footer {
   </a>
 </div>
 
-<!-- ================= LIGHTBOX ================= -->
-<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
-  <button class="lightbox-close" id="lightboxClose" aria-label="닫기">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>
-  </button>
-  <img id="lightboxImg" alt="">
-</div>
-
 <script>
 (function () {
   'use strict';
@@ -860,25 +884,6 @@ footer {
   var stage = document.getElementById('panoStage');
   if (stage) panoIO.observe(stage);
 
-  /* ---------- Lightbox ---------- */
-  var lb = document.getElementById('lightbox');
-  var lbImg = document.getElementById('lightboxImg');
-  document.querySelectorAll('.gallery-item').forEach(function (item) {
-    item.addEventListener('click', function () {
-      lbImg.src = item.getAttribute('data-full');
-      lbImg.alt = item.querySelector('img').alt;
-      lb.classList.add('open');
-      lb.setAttribute('aria-hidden', 'false');
-    });
-  });
-  function closeLb() {
-    lb.classList.remove('open');
-    lb.setAttribute('aria-hidden', 'true');
-  }
-  document.getElementById('lightboxClose').addEventListener('click', closeLb);
-  lb.addEventListener('click', function (e) { if (e.target === lb) closeLb(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLb(); });
-
   /* ---------- Language toggle (KO <-> EN) ---------- */
   var LS_KEY = 'tsj-lang';
   var nodes = [];
@@ -903,5 +908,7 @@ footer {
 </script>
 <!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 트래픽 분석 -->
 <script src="/members/_track.js" data-sections="top,rooms,amenities,tour,gallery,location,contact" defer></script>
+<!-- 동적 갤러리 — 호실 관리에서 '사이트 공개' 켠 방 사진을 등급 카드 시트로 노출 -->
+<script src="/members/_gallery.js" defer></script>
 </body>
 </html>
