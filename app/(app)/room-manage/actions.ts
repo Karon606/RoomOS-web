@@ -382,6 +382,7 @@ export async function setRoomShowOnSite(roomId: string, show: boolean): Promise<
     if (show && room._count.photos === 0) return { ok: false, error: '등록된 사진이 없어요. 사진을 먼저 올린 뒤 공개할 수 있습니다.' }
     await prisma.room.update({ where: { id: roomId }, data: { showOnSite: show } })
     revalidatePath('/room-manage')
+    revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

@@ -174,6 +174,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     reserveTxnsRaw,
     allMonthPayments,
     tourDoneCount,
+    publishCandidateRooms,
+    unpublishCandidateRooms,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
@@ -436,6 +438,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // '문의·투어' StatCard 집계용 — 라벨에 걸맞게 투어 완료도 포함(e1b81629 후속, 운영자 승인)
     prisma.leaseTerm.count({ where: { propertyId, status: 'TOUR_DONE' } }),
+    // 소개 페이지 공개 후보 — 공실이고 사진 있는데 아직 미공개인 방
+    prisma.room.findMany({
+      where: { propertyId, isVacant: true, showOnSite: false, photos: { some: {} } },
+      select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
+      orderBy: { roomNo: 'asc' },
+    }),
+    // 소개 페이지 철회 후보 — 입주 중인데 아직 공개 상태인 방(창고·사무실 등 비거주 점유는 제외)
+    prisma.room.findMany({
+      where: { propertyId, isVacant: false, showOnSite: true, NOT: vacancyExcludedWhere },
+      select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
+      orderBy: { roomNo: 'asc' },
+    }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -1650,6 +1664,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidRoomNosForView,
     awaitingRoomNosForView,
     nonResidentItems,
+    publishCandidates: publishCandidateRooms.map(r => ({
+      id: r.id, roomNo: r.roomNo, tier: r.tier, baseRent: r.baseRent, thumbUrl: r.photos[0]?.storageUrl ?? null,
+    })),
+    unpublishCandidates: unpublishCandidateRooms.map(r => ({
+      id: r.id, roomNo: r.roomNo, tier: r.tier, baseRent: r.baseRent, thumbUrl: r.photos[0]?.storageUrl ?? null,
+    })),
   }
 
   return dashboardData
