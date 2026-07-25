@@ -5,6 +5,7 @@ import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -35,6 +36,31 @@ type Photo = {
   storageUrl: string
   fileName: string | null
 }
+
+// 사진 평균 밝기(0~255) — 어두운 사진 재촬영 경고용(막지 않고 안내만). 48x48 축소로 빠르게, 실패 시 255(경고 안 함).
+async function avgBrightness(file: File): Promise<number> {
+  if (!file.type.startsWith('image/')) return 255
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas')
+        const w = (c.width = 48), h = (c.height = 48)
+        const ctx = c.getContext('2d')
+        if (!ctx) { resolve(255); return }
+        ctx.drawImage(img, 0, 0, w, h)
+        const d = ctx.getImageData(0, 0, w, h).data
+        let sum = 0
+        for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+        resolve(sum / (w * h))
+      } catch { resolve(255) } finally { URL.revokeObjectURL(url) }
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(255) }
+    img.src = url
+  })
+}
+const DARK_THRESHOLD = 70   // 평균 밝기 이 미만이면 어둡다고 경고
 
 type Room = {
   id: string
@@ -433,7 +459,13 @@ export default function RoomManageClient({
     const files = Array.from(e.target.files)
     const remaining = MAX_PHOTOS - addPhotoPreviews.length
     if (remaining <= 0) { setError(`사진은 최대 ${MAX_PHOTOS}장까지 추가할 수 있습니다.`); e.target.value = ''; return }
-    const newPreviews = files.slice(0, remaining).map(file => ({
+    const picked = files.slice(0, remaining)
+    // 어두운 사진 경고(막지 않고 안내만)
+    void Promise.all(picked.map(avgBrightness)).then(bs => {
+      const dark = bs.filter(b => b < DARK_THRESHOLD).length
+      if (dark > 0) pushToast('info', `사진 ${dark}장이 어두워요. 형광등과 자연광을 섞지 말고 밝은 낮에 다시 찍으면 더 좋습니다`)
+    })
+    const newPreviews = picked.map(file => ({
       file, previewUrl: URL.createObjectURL(file),
     }))
     setAddPhotoPreviews(prev => [...prev, ...newPreviews])
@@ -510,6 +542,9 @@ export default function RoomManageClient({
       e.target.value = ''; return
     }
     const toUpload = files.slice(0, MAX_PHOTOS - editPhotos.length)
+    // 어두운 사진 경고 — 막지 않고 안내만(사진 전문가: 밝기는 재촬영 유도, 최종 판단은 사람).
+    const darkCount = (await Promise.all(toUpload.map(avgBrightness))).filter(b => b < DARK_THRESHOLD).length
+    if (darkCount > 0) pushToast('info', `사진 ${darkCount}장이 어두워요. 형광등과 자연광을 섞지 말고 밝은 낮에 다시 찍으면 더 좋습니다`)
     setPhotoUploading(true); setError('')
     try {
       for (let i = 0; i < toUpload.length; i++) {
@@ -1362,11 +1397,23 @@ export default function RoomManageClient({
               )}
               {/* 소개 페이지 공개 토글 — 사진이 있을 때만. 공실 여부와 무관하게 운영자가 직접 켜고 끈다. */}
               {editPhotos.length > 0 && (
-                <label className={`flex items-center gap-2 pt-1.5 text-xs text-[var(--warm-dark)] ${showOnSitePending ? 'opacity-50' : 'cursor-pointer'}`}>
-                  <input type="checkbox" checked={showOnSiteVal} onChange={handleToggleShowOnSite} disabled={showOnSitePending}
-                    className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                  이 방 사진을 소개 페이지에 공개 <span className="text-[var(--warm-muted)]">(공실과 무관하게 직접 켜고 끕니다)</span>
-                </label>
+                <div className="flex items-center gap-1.5 pt-1.5">
+                  <label className={`flex items-center gap-2 text-xs text-[var(--warm-dark)] ${showOnSitePending ? 'opacity-50' : 'cursor-pointer'}`}>
+                    <input type="checkbox" checked={showOnSiteVal} onChange={handleToggleShowOnSite} disabled={showOnSitePending}
+                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                    이 방 사진을 소개 페이지에 공개 <span className="text-[var(--warm-muted)]">(공실과 무관하게 직접 켜고 끕니다)</span>
+                  </label>
+                  <InfoHint title="공개 전 확인">
+                    <span className="whitespace-pre-line">
+                      {'공개하기 전에 이 다섯 가지를 확인해 주세요.\n\n'}
+                      {'1. 폰 밝기를 절반으로 낮춰도 방 구석이 보이나요.\n'}
+                      {'2. 흰 벽이나 침구가 초록·파랑으로 보이지 않나요.\n'}
+                      {'3. 사람, 거울에 비친 촬영자, 남의 물건이 없나요.\n'}
+                      {'4. 문틀·창틀 세로선이 반듯한가요.\n'}
+                      {'5. 방문한 사람이 사진과 다르다고 할 요소가 없나요.'}
+                    </span>
+                  </InfoHint>
+                </div>
               )}
             </div>
 
