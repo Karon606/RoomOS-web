@@ -29,6 +29,7 @@
       : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
           var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8; return v.toString(16);
         });
+    window.__stayeumPv = pv_id;   // 갤러리 스크립트(_gallery.js)가 같은 방문에 이벤트를 붙일 수 있게 노출
     var startedAt = Date.now();
     var maxScrollPct = 0;
 

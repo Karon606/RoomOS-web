@@ -74,6 +74,53 @@
       var isOpen = false;
       var total = 0;
 
+      // ── 사진별 계측 — 등급(rent)별로 노출 인덱스·최대 깊이·체류를 모아 페이지 종료 시 한 번 전송.
+      var galleryByRent = {};        // rent → { n, seen:{idx:true}, maxDepth, dwell:{idx:ms} }
+      var curRent = null, curStat = null;
+      var visibleSince = {};         // idx → ts (현재 화면에 50%+ 보이는 슬라이드)
+      var io = ('IntersectionObserver' in window) ? new IntersectionObserver(function (entries) {
+        var now = Date.now();
+        entries.forEach(function (en) {
+          var idx = parseInt(en.target.getAttribute('data-idx'), 10);
+          if (en.isIntersecting && en.intersectionRatio >= 0.5) {
+            if (visibleSince[idx] == null) visibleSince[idx] = now;
+            if (curStat && idx > curStat.maxDepth) curStat.maxDepth = idx;
+          } else if (visibleSince[idx] != null) {
+            accrue(idx, now - visibleSince[idx]); visibleSince[idx] = null;
+          }
+        });
+      }, { root: trackEl, threshold: [0, 0.5, 1] }) : null;
+
+      function accrue(idx, ms) {
+        if (!curStat || ms <= 0) return;
+        curStat.dwell[idx] = (curStat.dwell[idx] || 0) + ms;
+        if (curStat.dwell[idx] >= 1000) curStat.seen[idx] = true;   // 1초+ 노출을 '봤다'로
+      }
+      function flushVisible() {   // 화면에 남아있던 슬라이드 체류 마감(시트 닫기·페이지 종료 시)
+        var now = Date.now();
+        for (var k in visibleSince) { if (visibleSince[k] != null) { accrue(parseInt(k, 10), now - visibleSince[k]); visibleSince[k] = null; } }
+      }
+      function collectViews() {
+        flushVisible();
+        var out = [];
+        for (var rent in galleryByRent) {
+          var s = galleryByRent[rent];
+          out.push({ rent: parseInt(rent, 10), n: s.n, seen: Object.keys(s.seen).map(Number), maxDepth: s.maxDepth, dwell: s.dwell });
+        }
+        return out;
+      }
+      function sendViews() {
+        var id = window.__stayeumPv;
+        if (!id) return;
+        var views = collectViews();
+        if (!views.length) return;
+        var body = JSON.stringify({ id: id, views: views });
+        if (navigator.sendBeacon) navigator.sendBeacon('/api/track/gallery', new Blob([body], { type: 'application/json' }));
+        else { try { fetch('/api/track/gallery', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }); } catch (_) {} }
+      }
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') sendViews(); });
+      window.addEventListener('pagehide', sendViews);
+
       function updateCounter() {
         if (!total) return;
         var c = trackEl.scrollLeft + trackEl.clientWidth / 2;
@@ -97,9 +144,15 @@
         total = photos.length;
         trackEl.innerHTML = '';
         trackEl.scrollLeft = 0;
-        photos.forEach(function (p) {
+        // 계측 세션 시작 — 이 등급(rent) 통계를 누적. 같은 등급 재방문이면 기존 통계 이어받기.
+        curRent = parseInt(card.getAttribute('data-rent'), 10);
+        if (!galleryByRent[curRent]) galleryByRent[curRent] = { n: total, seen: {}, maxDepth: 0, dwell: {} };
+        curStat = galleryByRent[curRent];
+        visibleSince = {};
+        photos.forEach(function (p, i) {
           var fig = document.createElement('figure');
           fig.className = 'gsheet-slide';
+          fig.setAttribute('data-idx', i);
           var im = document.createElement('img');
           im.src = p.url;
           im.alt = '';
@@ -112,6 +165,7 @@
             fig.appendChild(tag);
           }
           trackEl.appendChild(fig);
+          if (io) io.observe(fig);
         });
         counterEl.textContent = '1 / ' + total;
 
@@ -126,6 +180,8 @@
 
       function closeDom() {
         if (!isOpen) return;
+        flushVisible();            // 남은 슬라이드 체류 마감
+        if (io) io.disconnect();   // 이 시트의 슬라이드 관찰 해제(다음 열기 때 새로 observe)
         isOpen = false;
         el.classList.remove('in');
         document.body.style.overflow = '';
