@@ -393,6 +393,24 @@ export async function setRoomShowOnSite(roomId: string, show: boolean): Promise<
   }
 }
 
+// 사진 단위 공개 토글 — 방 공개가 켜졌을 때 이 사진을 소개 페이지에 노출할지. 대표(카드 썸네일·공개 첫 장)는
+// 별도 필드 없이 '공개·비360 첫 장'으로 계산되므로 이 토글 하나로 대표 자동 승격까지 처리된다.
+export async function setRoomPhotoShowOnSite(photoId: string, show: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const photo = await prisma.roomPhoto.findFirst({ where: { id: photoId, room: { propertyId } }, select: { id: true } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
+    await prisma.roomPhoto.update({ where: { id: photoId }, data: { showOnSite: show } })
+    revalidatePath('/room-manage')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 호실 사진 순서 저장 (오류신고 8dba0177) — 편집 UI가 최종 배열(photoIds, 표시 순서대로)을 넘기면 인덱스대로 sortOrder 재기록.
 // 대표 이미지 = 첫 장(photos[0]) 규칙이라 '대표로 설정'도 이 액션(맨 앞 이동 배열)으로 처리된다.
 // 부분 배열은 미포함 사진과의 상대 순서가 흔들리므로 전체 집합 일치일 때만 저장(reorderAssetItems와 동일 문법).

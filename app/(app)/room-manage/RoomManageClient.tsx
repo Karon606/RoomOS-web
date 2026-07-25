@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -35,6 +35,8 @@ type Photo = {
   driveFileId: string | null
   storageUrl: string
   fileName: string | null
+  showOnSite?: boolean   // 사진 단위 공개 여부(방 공개가 켜졌을 때 노출 대상). 기본 공개
+  is360?: boolean        // 360 파노라마 — 대표(카드 썸네일) 후보에서 제외
 }
 
 // 사진 평균 밝기(0~255) — 어두운 사진 재촬영 경고용(막지 않고 안내만). 48x48 축소로 빠르게, 실패 시 255(경고 안 함).
@@ -592,6 +594,18 @@ export default function RoomManageClient({
     const res = await deleteRoomPhoto(photoId)
     if (!res.ok) { setError(res.error); return }
     setEditPhotos(prev => prev.filter(p => p.id !== photoId))
+  }
+
+  // 사진 단위 공개 토글 — 낙관적 갱신 후 실패 시 원복. 대표(공개·비360 첫 장)는 자동 재계산돼 카드 썸네일도 바뀐다.
+  const handleTogglePhotoShow = async (photoId: string, next: boolean) => {
+    setEditPhotos(prev => prev.map(p => p.id === photoId ? { ...p, showOnSite: next } : p))
+    const res = await setRoomPhotoShowOnSite(photoId, next)
+    if (!res.ok) {
+      setEditPhotos(prev => prev.map(p => p.id === photoId ? { ...p, showOnSite: !next } : p))
+      pushToast('error', res.error)
+      return
+    }
+    router.refresh()   // 카드 대표 썸네일(공개 첫 장) 동기화
   }
 
   // 소개 페이지 공개 토글 — 즉시 반영(폼 저장과 무관), 낙관적 갱신 후 실패 시 원복. 되돌리기는 다시 끄면 된다.
@@ -1348,26 +1362,44 @@ export default function RoomManageClient({
                     ))}
                   </div>
                 </>
-              ) : editPhotos.length > 0 ? (
+              ) : editPhotos.length > 0 ? (() => {
+                // 대표 = 공개(showOnSite)·비360 중 첫 장. 비공개로 내리면 자동으로 다음 공개 사진이 대표가 된다.
+                const mainId = editPhotos.find(p => (p.showOnSite ?? true) && !(p.is360 ?? looksLike360(p.fileName)))?.id
+                return (
                 <div className="grid grid-cols-3 gap-2">
-                  {editPhotos.map((photo, idx) => (
+                  {editPhotos.map((photo) => {
+                    const shown = photo.showOnSite ?? true
+                    const photoIs360 = photo.is360 ?? looksLike360(photo.fileName)
+                    return (
                     <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={photo.storageUrl} alt={photo.fileName ?? ''}
                         onClick={() => setViewPhoto(photo)}
-                        className="w-full h-full object-cover cursor-zoom-in" />
-                      {/* 대표 배지 — 첫 장 = 호실 카드 썸네일. 삭제(우상)·360°(좌하)와 자리 안 겹침 */}
-                      {idx === 0 && editPhotos.length > 1 && (
+                        className={`w-full h-full object-cover cursor-zoom-in transition-opacity ${shown ? '' : 'opacity-40'}`} />
+                      {/* 대표 배지 — 공개·비360 첫 장 = 호실 카드 썸네일. 삭제(우상)·360°(좌하)·공개토글(우하)과 자리 안 겹침 */}
+                      {photo.id === mainId && editPhotos.length > 1 && (
                         <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold pointer-events-none">대표</span>
                       )}
-                      {looksLike360(photo.fileName) && (
+                      {photoIs360 && (
                         <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
                       )}
+                      {/* 공개/비공개 토글 — 눈 아이콘. 비공개면 눈 감김 + 사진 흐리게(dim). 방 공개가 켜졌을 때 노출 대상 */}
+                      <button type="button" onClick={() => handleTogglePhotoShow(photo.id, !shown)}
+                        aria-label={shown ? '소개 페이지에서 숨기기' : '소개 페이지에 표시'}
+                        title={shown ? '공개 중 · 눌러서 숨김' : '숨김 · 눌러서 공개'}
+                        className={`absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${shown ? 'bg-[var(--coral)]/85 text-[var(--on-solid)]' : 'bg-black/60 text-white/80'}`}>
+                        {shown ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        ) : (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a15 15 0 0 1-3.3 3.9M6.1 6.1A15 15 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 4-.9M3 3l18 18"/></svg>
+                        )}
+                      </button>
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)} aria-label="사진 삭제"
                         className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-white transition-colors flex items-center justify-center">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                       </button>
                     </div>
-                  ))}
+                    )
+                  })}
                   {photoUploading && (
                     <div className="aspect-square rounded-lg bg-[var(--canvas)] flex flex-col items-center justify-center gap-1">
                       <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
@@ -1377,7 +1409,8 @@ export default function RoomManageClient({
                     </div>
                   )}
                 </div>
-              ) : (
+                )
+              })() : (
                 <div onClick={() => photoInputRef.current?.click()}
                   className="h-20 border border-dashed border-[var(--warm-border)] rounded-xl flex items-center justify-center cursor-pointer hover:border-[var(--warm-border)] transition-colors">
                   {photoUploading
@@ -1414,6 +1447,9 @@ export default function RoomManageClient({
                     </span>
                   </InfoHint>
                 </div>
+              )}
+              {editPhotos.length > 1 && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">사진마다 눈 아이콘으로 공개·숨김을 정할 수 있어요. 공개 중 첫 사진이 대표(호실 카드 썸네일)가 됩니다.</p>
               )}
             </div>
 
