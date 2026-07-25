@@ -8,6 +8,15 @@
     var SLUG = m ? m[1] : null;
     if (!SLUG) return;  // members 경로가 아니면 트래킹하지 않음
 
+    // 본인(운영자) 제외 — 주소 뒤에 ?nolog=1 을 붙여 한 번 열면 그 브라우저는 이후 계속 제외(localStorage 기억).
+    // ?nolog=0 으로 해제. 여기서 return 하면 pageview·closeup·cta·갤러리 계측(pv 의존)이 전부 차단된다.
+    try {
+      var flag = new URLSearchParams(window.location.search).get('nolog');
+      if (flag === '1') localStorage.setItem('stayeumNoLog', '1');
+      else if (flag === '0') localStorage.removeItem('stayeumNoLog');
+      if (localStorage.getItem('stayeumNoLog') === '1') return;
+    } catch (e) { /* localStorage 막힌 브라우저는 그냥 정상 트래킹 */ }
+
     // 섹션 목록 — 우선 <script data-sections="..."> 로 페이지가 명시한 값 사용,
     // 없으면 최상위 <section id="..."> 요소에서 자동 파생.
     var SECTIONS;
