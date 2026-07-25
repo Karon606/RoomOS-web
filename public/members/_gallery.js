@@ -121,7 +121,7 @@
         var out = [];
         for (var rent in galleryByRent) {
           var s = galleryByRent[rent];
-          out.push({ rent: parseInt(rent, 10), n: s.n, seen: Object.keys(s.seen).map(Number), maxDepth: s.maxDepth, dwell: s.dwell, zoomed: Object.keys(s.zoomed).map(Number) });
+          out.push({ rent: parseInt(rent, 10), n: s.n, seen: Object.keys(s.seen).map(Number), maxDepth: s.maxDepth, dwell: s.dwell, zoomed: Object.keys(s.zoomed).map(Number), rooms: s.rooms || [] });
         }
         return out;
       }
@@ -144,12 +144,14 @@
         // 계측 세션 시작 — 이 등급(rent) 통계를 누적. 같은 등급 재방문이면 기존 통계 이어받기.
         curRent = parseInt(card.getAttribute('data-rent'), 10);
         var totalPhotos = rooms.reduce(function (a, r) { return a + (r.photos ? r.photos.length : 0); }, 0);
-        if (!galleryByRent[curRent]) galleryByRent[curRent] = { n: totalPhotos, seen: {}, maxDepth: 0, dwell: {}, zoomed: {} };
+        if (!galleryByRent[curRent]) galleryByRent[curRent] = { n: totalPhotos, seen: {}, maxDepth: 0, dwell: {}, zoomed: {}, rooms: [] };
         curStat = galleryByRent[curRent];
         visibleSince = {};
 
         // 방별 행 — [408호 라벨 + 360버튼] + 가로 캐러셀. idx 는 방을 가로질러 연속.
+        // roomsMeta = 공개 사진 있는 방의 [roomNo, 사진수] 순서 — 분석에서 idx 를 '몇 호 몇 번째'로 풀 때 쓴다.
         var idx = 0;
+        var roomsMeta = [];
         rooms.forEach(function (room) {
           var hasPhotos = room.photos && room.photos.length;
           // 360 여러 장 지원 — panos 배열 우선, 없으면 pano(구 응답) 하위호환
@@ -176,6 +178,7 @@
           }
           section.appendChild(label);
           if (hasPhotos) {
+            roomsMeta.push({ roomNo: room.roomNo, count: room.photos.length });   // 방 경계 기록(공개 사진 있는 방만)
             var row = document.createElement('div');
             row.className = 'gsheet-row';
             var roomPhotos = room.photos;
@@ -201,6 +204,7 @@
           }
           bodyEl.appendChild(section);
         });
+        curStat.rooms = roomsMeta;   // 방 경계 저장(재열람 시 구성 동일하게 갱신)
 
         el.hidden = false;
         document.body.style.overflow = 'hidden';

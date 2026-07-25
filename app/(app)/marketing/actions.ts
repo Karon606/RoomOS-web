@@ -568,7 +568,7 @@ export type VisitSession = {
   // 갤러리(방 사진) 열람 — 등급(요금)별로 본 사진 수·확대 수·깊이·사진별 체류. 방문 시점 기준 사진 순번.
   gallery: {
     rentLabel: string; n: number; seenCount: number; zoomedCount: number; maxDepth: number
-    photos: { idx: number; ms: number; zoomed: boolean }[]
+    photos: { idx: number; ms: number; zoomed: boolean; roomNo: string | null; seq: number | null }[]
   }[]
   sourceLabel: string         // 유입 — '네이버'·'검색'·'직접' 등
   referrerHost: string | null
@@ -622,8 +622,24 @@ function visitGallery(gv: unknown): VisitSession['gallery'] {
     const zoomedSet = new Set<number>(zoomedArr)
     const maxDepth = Number(o.maxDepth) || 0
     const dwell = (o.dwell && typeof o.dwell === 'object' && !Array.isArray(o.dwell)) ? o.dwell as Record<string, unknown> : {}
+    // 방 경계 [{roomNo, count}] — 등급 연속 idx 를 '몇 호 몇 번째'로 환산(없으면 과거 방문이라 번호만)
+    const roomsArr = Array.isArray(o.rooms) ? (o.rooms as unknown[]).filter((r): r is Record<string, unknown> => !!r && typeof r === 'object') : []
+    const locate = (idx: number): { roomNo: string; seq: number } | null => {
+      let acc = 0
+      for (const r of roomsArr) {
+        const cnt = Number(r.count) || 0
+        const rn = typeof r.roomNo === 'string' ? r.roomNo : null
+        if (idx < acc + cnt) return rn ? { roomNo: rn, seq: idx - acc + 1 } : null
+        acc += cnt
+      }
+      return null
+    }
     const photos = Object.entries(dwell)
-      .map(([k, v]) => ({ idx: Number(k), ms: Number(v) || 0, zoomed: zoomedSet.has(Number(k)) }))
+      .map(([k, v]) => {
+        const idx = Number(k)
+        const loc = locate(idx)
+        return { idx, ms: Number(v) || 0, zoomed: zoomedSet.has(idx), roomNo: loc?.roomNo ?? null, seq: loc?.seq ?? null }
+      })
       .filter(p => Number.isFinite(p.idx) && p.ms > 0)
       .sort((a, b) => b.ms - a.ms)
       .slice(0, 30)

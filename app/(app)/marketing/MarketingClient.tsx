@@ -172,7 +172,7 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
                         {g.photos.map(p => (
                           <li key={p.idx} className="flex items-baseline justify-between gap-2">
                             <span className="text-[0.65625rem]" style={{ color: p.zoomed ? 'var(--persimmon)' : 'var(--warm-mid)' }}>
-                              {p.idx + 1}번째 사진{p.zoomed ? ' · 확대함' : ''}
+                              {p.roomNo ? `${p.roomNo}호 ${p.seq}번째 사진` : `${p.idx + 1}번째 사진`}{p.zoomed ? ' · 확대함' : ''}
                             </span>
                             <span className="num text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmtDuration(p.ms)}</span>
                           </li>

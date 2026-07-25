@@ -26,6 +26,14 @@ function safeViews(v: unknown): unknown[] | null {
     if (rent === null || n === null) continue
     const seen = Array.isArray(o.seen) ? o.seen.map(x => safeInt(x, 99)).filter((x): x is number => x !== null).slice(0, 100) : []
     const zoomed = Array.isArray(o.zoomed) ? o.zoomed.map(x => safeInt(x, 99)).filter((x): x is number => x !== null).slice(0, 100) : []
+    // 방 경계 — [{roomNo, count}] 순서대로. 등급 연속 idx 를 '몇 호 몇 번째'로 풀기 위한 정보.
+    const rooms = Array.isArray(o.rooms) ? o.rooms.slice(0, 30).map(r => {
+      if (!r || typeof r !== 'object') return null
+      const rr = r as Record<string, unknown>
+      const roomNo = typeof rr.roomNo === 'string' && rr.roomNo ? rr.roomNo.slice(0, 20) : null
+      const count = safeInt(rr.count, 100)
+      return roomNo && count !== null ? { roomNo, count } : null
+    }).filter((x): x is { roomNo: string; count: number } => x !== null) : []
     const maxDepth = safeInt(o.maxDepth, 99)
     const dwell: Record<string, number> = {}
     if (o.dwell && typeof o.dwell === 'object' && !Array.isArray(o.dwell)) {
