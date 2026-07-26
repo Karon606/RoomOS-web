@@ -4,7 +4,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
-import prisma from '@/lib/prisma'
+import prisma, { type PrismaDb } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
@@ -275,7 +275,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
 }
 
 // 입주자 수정
-export async function updateTenant(formData: FormData): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+// shortSync — 단기 청구 락을 함께 올린 경우의 결과(클라 토스트의 적용취소 액션·요약 문구용)
+export async function updateTenant(formData: FormData): Promise<
+  | { ok: true; notice?: string; shortSync?: { leaseTermId: string; diff: number; newRent: number } }
+  | { ok: false; error: string }
+> {
   try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
@@ -351,6 +355,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
       expectedMoveOut: true, moveOutDate: true, dueDay: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
+      // 단기 청구 동기화(syncShortStayCharge) 입력 — 조건부 선점 기준값·이력 스냅샷용
+      autoCheckoutAt: true, shortStayExtensions: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
   })
@@ -489,61 +495,116 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     await prisma.tenantContact.delete({ where: { id: existingHome.id } })
   }
 
-  // 신고 d3ea25f0: 단기 입주자의 퇴실일을 폼에서 '늘리면' 요금·퇴실일을 여기서 바로 저장하지 않는다.
-  // (요금까지 새 값으로 저장하면 이어지는 재계산 확인창의 차액이 0이 되어 청구가 안 걸린다.)
-  // 퇴실일은 정상 저장한다 — 운영자가 바꾼 날짜가 안 남으면 그게 더 큰 혼란(2026-07-26 운영자 지적).
-  // 요금·청구는 저장 후 확인창 [재계산 정리] → extendShortStay 가 차액을 계산해 반영한다(같은 날짜여도 허용).
-  const shortExtendViaForm =
-    currentLease.isShortTerm && status !== 'CHECKED_OUT' && currentLease.expectedMoveOut != null && moveOutFieldPresent &&
-    !!expectedMoveOut && new Date(expectedMoveOut).getTime() > currentLease.expectedMoveOut.getTime()
+  // 신고 d3ea25f0 근본 수정: 단기 청구 동기화 판정은 '날짜'가 아니라 '청구 락'이 기준이다.
+  // 입주월 record 의 최대 expectedAmount(락)가 이미 잡혀 있으면 rentAmount 만 올려도 잔액이 안 변한다
+  // (lib/billing.ts billForLeaseMonth 우선순위 ② 락). 목표 이용료가 락보다 크면 마커 record 로
+  // 락 자체를 올려야 추가 청구가 실제로 생긴다 — 그 일을 아래 같은 트랜잭션에서 함께 처리한다.
+  // 폼 금액이 DB 값과 다르면 운영자 의도 금액(수동), 같으면 날짜만 바꾼 흐름이라 정책가로 자동 재계산.
+  const shortMoveInYmd = moveInDate || ymdOf(currentLease.moveInDate)
+  let shortPlan: {
+    targetRent: number; currentLock: number; moveInYmd: string; newOutYmd: string
+    units: number; manual: boolean
+  } | null = null
+  let shortNotice: string | null = null
+  const shortDatesChanged = newMoveOutIso !== prevMoveOutIso || rentAmount !== currentLease.rentAmount
+  if (isShortTerm && !['CHECKED_OUT', 'CANCELLED'].includes(status) && shortMoveInYmd && newMoveOutIso) {
+    const [prop, room] = await Promise.all([
+      prisma.property.findUnique({ where: { id: propertyId }, select: { shortStayPolicy: true } }),
+      // 견적의 표준가는 저장 후 호실(newRoomId) 기준 — 호실 변경과 기간 변경을 같이 저장해도 금액이 맞는다.
+      newRoomId ? prisma.room.findUnique({ where: { id: newRoomId }, select: { baseRent: true } }) : Promise.resolve(null),
+    ])
+    const policy = parseShortStayPolicy(prop?.shortStayPolicy)
+    const days = stayDaysOf(shortMoveInYmd, newMoveOutIso)
+    // quote 가 null 이면 정책 밖(30일 초과 등) — 동기화는 건너뛰고 날짜만 저장한다.
+    const quote = policy.enabled && room && days != null ? calcShortStay(policy, room.baseRent, days) : null
+    if (quote) {
+      const manual = rentAmount !== currentLease.rentAmount
+      const targetRent = manual ? rentAmount : quote.baseAmount
+      const inMonth = shortMoveInYmd.slice(0, 7)
+      const lockAgg = await prisma.paymentRecord.aggregate({
+        where: { leaseTermId, targetMonth: inMonth, isDeposit: false, deletedAt: null },
+        _max: { expectedAmount: true },
+      })
+      const currentLock = lockAgg._max.expectedAmount ?? 0
+      // 보조 가드 — 마지막 미취소 스냅샷이 같은 (금액, 퇴실일)이면 이미 반영된 저장(이중 제출)
+      const snaps = (Array.isArray(currentLease.shortStayExtensions) ? currentLease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
+      const lastSnap = snaps.filter(s => s && !s.undoneAt).at(-1) ?? null
+      const already = !!lastSnap && lastSnap.newRentAmount === targetRent && lastSnap.newExpectedMoveOut === newMoveOutIso
+      // 단축(targetRent <= 락)은 동기화 안 함 — 환불 정책이 별도라 요금은 자동 조정하지 않는다.
+      if (targetRent > currentLock && !already) {
+        shortPlan = { targetRent, currentLock, moveInYmd: shortMoveInYmd, newOutYmd: newMoveOutIso, units: quote.units, manual }
+      } else if (targetRent < currentLock && shortDatesChanged) {
+        shortNotice = `날짜는 저장했지만 이미 청구된 ${currentLock.toLocaleString()}원보다 적어 요금은 자동 조정되지 않습니다. 환불이 필요하면 수납에서 처리해 주세요.`
+      }
+    } else if (policy.enabled && days != null && days > policy.thresholdDays && shortDatesChanged) {
+      // 정책 범위 밖 — 날짜는 저장하되 요금은 손대지 않고 월 계약 전환을 안내한다.
+      shortNotice = `체류 ${days}일은 단기 정책 범위(${policy.thresholdDays}일)를 넘어 요금이 자동 계산되지 않습니다. 월 계약으로 전환해 주세요.`
+    }
+  }
 
-  // 계약 수정
-  await prisma.leaseTerm.update({
-    where: { id: leaseTermId },
-    data: {
-      status,
-      // 단기 연장(폼)이면 요금 기존값 유지 — 재계산은 확인창→extendShortStay 가 전담(어긋남 방지)
-      rentAmount: shortExtendViaForm ? currentLease.rentAmount : rentAmount,
-      depositAmount,
-      cleaningFee,
-      dueDay: dueDay || null,
-      moveInDate: moveInDate ? new Date(moveInDate) : null,
-      // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
-      // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
-      ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
-      // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
-      // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
-      // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
-      // 퇴실을 되돌리면(CHECKED_OUT에서 다른 상태로) 퇴실일도 함께 비운다.
-      ...(status === 'CHECKED_OUT'
-        ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
-        : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
-      // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
-      ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
-      contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
-      // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
-      // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
-      ...(tourDate === null ? {} : { tourDate: tourDate ? new Date(tourDate) : null }),
-      ...(tourTime === null && tourDate === null ? {} : { tourTime: (tourDate ?? '') && (tourTime ?? '') ? tourTime : null }),
-      ...(inquiryAt === null ? {} : { inquiryAt: inquiryAt ? new Date(inquiryAt) : null }),
-      reservationConfirmedAt: isReservedConfirmed
-        ? (currentLease.reservationConfirmedAt ?? new Date())
-        : null,
-      isShortTerm,
-      paymentTiming,
-      roomId: newRoomId ?? null,
-      payMethod: payMethod || null,
-      cashReceipt: cashReceipt || null,
-      registrationStatus,
-      contractUrl: contractUrl || null,
-      // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
-      wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
-      wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
-      keepAlertAfterInquiry,
-      visitRoute: visitRoute || null,
-      // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등)
-      ...prorationPatch,
-    },
+  // 계약 수정 — 단기 동기화가 있으면 같은 트랜잭션에서 청구 락까지 함께 올린다(부분 반영 방지).
+  await prisma.$transaction(async tx => {
+    if (shortPlan) {
+      await syncShortStayCharge(tx, {
+        lease: { ...currentLease, id: leaseTermId, tenantId },
+        propertyId,
+        targetRent: shortPlan.targetRent,
+        moveInYmd: shortPlan.moveInYmd,
+        newOutYmd: shortPlan.newOutYmd,
+        units: shortPlan.units,
+        nextStatus: status,
+        source: 'form',
+        manual: shortPlan.manual,
+      })
+    }
+    await tx.leaseTerm.update({
+      where: { id: leaseTermId },
+      data: {
+        status,
+        // 단기 동기화 시엔 목표 이용료 — 위 마커가 올린 청구 락과 같은 값이어야 잔액이 맞는다.
+        rentAmount: shortPlan ? shortPlan.targetRent : rentAmount,
+        depositAmount,
+        cleaningFee,
+        dueDay: dueDay || null,
+        moveInDate: moveInDate ? new Date(moveInDate) : null,
+        // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
+        // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
+        ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
+        // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
+        // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
+        // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
+        // 퇴실을 되돌리면(CHECKED_OUT에서 다른 상태로) 퇴실일도 함께 비운다.
+        ...(status === 'CHECKED_OUT'
+          ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
+          : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
+        // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
+        ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
+        contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
+        // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
+        // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
+        ...(tourDate === null ? {} : { tourDate: tourDate ? new Date(tourDate) : null }),
+        ...(tourTime === null && tourDate === null ? {} : { tourTime: (tourDate ?? '') && (tourTime ?? '') ? tourTime : null }),
+        ...(inquiryAt === null ? {} : { inquiryAt: inquiryAt ? new Date(inquiryAt) : null }),
+        reservationConfirmedAt: isReservedConfirmed
+          ? (currentLease.reservationConfirmedAt ?? new Date())
+          : null,
+        isShortTerm,
+        paymentTiming,
+        roomId: newRoomId ?? null,
+        payMethod: payMethod || null,
+        cashReceipt: cashReceipt || null,
+        registrationStatus,
+        contractUrl: contractUrl || null,
+        // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
+        wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
+        wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
+        keepAlertAfterInquiry,
+        visitRoute: visitRoute || null,
+        // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등).
+        // 단기 동기화 시엔 건너뛴다 — 일할이 락보다 우선이라 남으면 방금 올린 연장 청구가 통째로 무시된다.
+        ...(shortPlan ? {} : prorationPatch),
+      },
+    })
   })
 
   // 호실 공실 상태 업데이트 (NON_RESIDENT는 isVacant에 영향 없음)
@@ -618,9 +679,15 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
   revalidatePath('/room-manage')
-  return prorationNotice ? { ok: true, notice: prorationNotice } : { ok: true }
+  return {
+    ok: true,
+    // 단기 동기화가 일할 패치를 건너뛰었으면 일할 안내는 사실과 달라 내보내지 않는다.
+    ...(!shortPlan && (shortNotice ?? prorationNotice) ? { notice: (shortNotice ?? prorationNotice)! } : {}),
+    ...(shortPlan ? { shortSync: { leaseTermId, diff: shortPlan.targetRent - shortPlan.currentLock, newRent: shortPlan.targetRent } } : {}),
+  }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if ((err as Error).message === 'CONFLICT') return { ok: false, error: '다른 곳에서 계약이 수정되었습니다. 새로고침 후 다시 시도해 주세요.' }
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -2545,6 +2612,110 @@ type ShortStayExtensionSnapshot = {
   undoneAt: string | null
 }
 
+// 트랜잭션 클라이언트 — lib/prisma 의 익스텐션(소프트삭제 자동필터)이 적용된 타입이라야 tx 안에서도 규칙이 같다.
+type ShortStayTx = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+
+// 동기화 대상 lease — 값은 전부 '쓰기 전에 읽은' 시점의 것이어야 한다.
+// 조건부 선점(where)의 기준이자 적용취소 스냅샷의 prev 값으로 함께 쓰이기 때문.
+type ShortStayChargeLease = {
+  id: string; tenantId: string
+  status: LeaseStatus; isShortTerm: boolean
+  rentAmount: number; expectedMoveOut: Date | null; autoCheckoutAt: Date | null
+  checkoutProratedAmount: number | null; checkoutProratedMonth: string | null; checkoutProrationUndo: Prisma.JsonValue
+  shortStayExtensions: Prisma.JsonValue
+}
+
+/**
+ * 단기 청구 동기화 — 수정 폼(updateTenant)과 연장 모달(extendShortStay)의 단일 계산 경로.
+ * 입주월 마커 record 로 청구 락(그 달 최대 expectedAmount)을 targetRent 로 올리고,
+ * lease 필드·이력 스냅샷·isPaid 를 같은 트랜잭션에서 함께 맞춘다.
+ * 락을 올리지 않으면 rentAmount 만 바꿔도 잔액이 그대로다(lib/billing.ts 우선순위 ② 락).
+ * 호출부는 반드시 트랜잭션 안에서 부르고, lease 는 쓰기 전에 읽은 값을 그대로 넘긴다.
+ */
+async function syncShortStayCharge(
+  tx: ShortStayTx,
+  p: {
+    lease: ShortStayChargeLease
+    propertyId: string
+    targetRent: number
+    moveInYmd: string
+    newOutYmd: string
+    units: number
+    nextStatus: LeaseStatus
+    source: 'form' | 'modal'
+    manual?: boolean       // 폼 경로에서 운영자가 직접 넣은 금액을 락으로 쓴 경우
+  },
+): Promise<{ inMonth: string }> {
+  const { lease, propertyId, targetRent, moveInYmd, newOutYmd, units, nextStatus, source } = p
+  const inMonth = moveInYmd.slice(0, 7)
+  const prevOutYmd = ymdOf(lease.expectedMoveOut)
+
+  // 마커 record — 입주월 앵커(예약 선납 reanchor와 동일 관례). 청구 락을 새 누적으로 인상.
+  // seqNo는 소프트삭제분 포함 count(@@unique 충돌 방지 — savePayment 관례).
+  const seqNo = await tx.paymentRecord.count({
+    where: { leaseTermId: lease.id, targetMonth: inMonth, deletedAt: undefined },
+  })
+  const tag = source === 'form' ? (p.manual ? '[단기연장 폼·수동]' : '[단기연장 폼]') : '[단기연장]'
+  const marker = await tx.paymentRecord.create({
+    data: {
+      leaseTermId: lease.id, tenantId: lease.tenantId, propertyId,
+      targetMonth: inMonth,
+      expectedAmount: targetRent,
+      actualAmount: 0,
+      payDate: new Date(),
+      seqNo: seqNo + 1,
+      isPaid: false, carryOver: 0,
+      memo: `${tag} ${units}주 · ${lease.rentAmount.toLocaleString()}→${targetRent.toLocaleString()} · 퇴실 ${prevOutYmd ?? '미정'}→${newOutYmd}`,
+    },
+  })
+
+  const snapshot: ShortStayExtensionSnapshot = {
+    at: new Date().toISOString(),
+    prevRentAmount: lease.rentAmount, newRentAmount: targetRent,
+    prevExpectedMoveOut: prevOutYmd, newExpectedMoveOut: newOutYmd,
+    prevStatus: lease.status,
+    prevAutoCheckoutAt: lease.autoCheckoutAt ? lease.autoCheckoutAt.toISOString() : null,
+    prevProration: (lease.checkoutProratedAmount != null || lease.checkoutProratedMonth != null || lease.checkoutProrationUndo != null)
+      ? { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth, undo: lease.checkoutProrationUndo }
+      : null,
+    markerRecordId: marker.id,
+    undoneAt: null,
+  }
+  const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
+
+  // 조건부 선점 — 읽은 시점의 상태·퇴실일·요금 그대로일 때만 갱신(크론·동시 조작·이중 제출 차단)
+  const updated = await tx.leaseTerm.updateMany({
+    where: {
+      id: lease.id, propertyId,
+      isShortTerm: lease.isShortTerm,
+      status: lease.status,
+      expectedMoveOut: lease.expectedMoveOut,
+      rentAmount: lease.rentAmount,
+    },
+    data: {
+      rentAmount: targetRent,
+      expectedMoveOut: new Date(newOutYmd),   // 'YYYY-MM-DD' → UTC 자정, @db.Date 절삭(기존 저장 관행)
+      status: nextStatus,
+      autoCheckoutAt: null,   // 새 퇴실일 D-1에 크론 재무장
+      checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull,
+      shortStayExtensions: [...prevList, snapshot] as Prisma.InputJsonValue,
+    },
+  })
+  if (updated.count !== 1) throw new Error('CONFLICT')
+
+  // 입주월 isPaid 재계산 — 청구가 새 누적으로 올라 기존 완납 record가 미완납이 될 수 있음
+  const records = await tx.paymentRecord.findMany({
+    where: { leaseTermId: lease.id, targetMonth: inMonth, isDeposit: false },
+    orderBy: { payDate: 'asc' },
+  })
+  let cumulative = 0
+  for (const rec of records) {
+    cumulative += rec.actualAmount
+    await tx.paymentRecord.update({ where: { id: rec.id }, data: { isPaid: cumulative >= targetRent } })
+  }
+  return { inMonth }
+}
+
 export type ShortStayExtensionPreview =
   | {
       ok: true
@@ -2638,75 +2809,21 @@ export async function extendShortStay(
     }
 
     const inMonth = moveInYmd.slice(0, 7)
-    const nowIso = new Date().toISOString()
 
     await prisma.$transaction(async tx => {
-      // 마커 record — 입주월 앵커(예약 선납 reanchor와 동일 관례). 청구 락을 새 누적으로 인상.
-      // seqNo는 소프트삭제분 포함 count(@@unique 충돌 방지 — savePayment 관례).
-      const seqNo = await tx.paymentRecord.count({
-        where: { leaseTermId, targetMonth: inMonth, deletedAt: undefined },
+      await syncShortStayCharge(tx, {
+        lease, propertyId,
+        targetRent: quote.baseAmount,
+        moveInYmd, newOutYmd,
+        units: quote.units,
+        nextStatus: 'ACTIVE',
+        source: 'modal',
       })
-      const marker = await tx.paymentRecord.create({
-        data: {
-          leaseTermId, tenantId: lease.tenantId, propertyId,
-          targetMonth: inMonth,
-          expectedAmount: quote.baseAmount,
-          actualAmount: 0,
-          payDate: new Date(),
-          seqNo: seqNo + 1,
-          isPaid: false, carryOver: 0,
-          memo: `[단기연장] ${quote.units}주 · ${lease.rentAmount.toLocaleString()}→${quote.baseAmount.toLocaleString()} · 퇴실 ${currentOutYmd ?? '미정'}→${newOutYmd}`,
-        },
-      })
-
-      const snapshot: ShortStayExtensionSnapshot = {
-        at: nowIso,
-        prevRentAmount: lease.rentAmount, newRentAmount: quote.baseAmount,
-        prevExpectedMoveOut: currentOutYmd, newExpectedMoveOut: newOutYmd,
-        prevStatus: lease.status,
-        prevAutoCheckoutAt: lease.autoCheckoutAt ? lease.autoCheckoutAt.toISOString() : null,
-        prevProration: (lease.checkoutProratedAmount != null || lease.checkoutProratedMonth != null || lease.checkoutProrationUndo != null)
-          ? { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth, undo: lease.checkoutProrationUndo }
-          : null,
-        markerRecordId: marker.id,
-        undoneAt: null,
-      }
-      const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
-
-      // 조건부 선점 — 읽은 시점의 퇴실일·상태 그대로일 때만 갱신(크론·동시 조작·이중 제출 차단)
-      const updated = await tx.leaseTerm.updateMany({
-        where: {
-          id: leaseTermId, propertyId, isShortTerm: true,
-          status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
-          expectedMoveOut: lease.expectedMoveOut,
-          rentAmount: lease.rentAmount,
-        },
-        data: {
-          rentAmount: quote.baseAmount,
-          expectedMoveOut: new Date(newOutYmd),   // 'YYYY-MM-DD' → UTC 자정, @db.Date 절삭(기존 저장 관행)
-          status: 'ACTIVE',
-          autoCheckoutAt: null,   // 새 퇴실일 D-1에 크론 재무장
-          checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull,
-          shortStayExtensions: [...prevList, snapshot] as Prisma.InputJsonValue,
-        },
-      })
-      if (updated.count !== 1) throw new Error('CONFLICT')
 
       if (lease.status === 'CHECKOUT_PENDING') {
         await tx.tenantStatusLog.create({
           data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE', changedById: user.sub, reason: '단기 연장' },
         })
-      }
-
-      // 입주월 isPaid 재계산 — 청구가 새 누적으로 올라 기존 완납 record가 미완납이 될 수 있음
-      const records = await tx.paymentRecord.findMany({
-        where: { leaseTermId, targetMonth: inMonth, isDeposit: false },
-        orderBy: { payDate: 'asc' },
-      })
-      let cumulative = 0
-      for (const rec of records) {
-        cumulative += rec.actualAmount
-        await tx.paymentRecord.update({ where: { id: rec.id }, data: { isPaid: cumulative >= quote.baseAmount } })
       }
     })
 

@@ -5,8 +5,7 @@ import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { getRoomsForQuote, undoBatchUpdateTenants, previewShortStayExtension } from './actions'
-import { ShortStayExtensionModal } from '@/components/entity-modal/widgets/ShortStayExtensionModal'
+import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
@@ -827,32 +826,26 @@ export default function TenantClient({
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (res.notice) pushToast('info', res.notice)
+      // 단기 청구가 함께 올라간 저장 — 결과를 알리고 되돌릴 길을 같이 준다(적용취소 원칙).
+      if (res.shortSync) {
+        const { leaseTermId, diff, newRent } = res.shortSync
+        pushToast('success', `단기 이용료 ${fmtWon(newRent)}로 청구 반영됨 · 추가 청구 ${fmtWon(diff)}`, {
+          detail: '적용취소하면 이용료·퇴실일만 되돌립니다.',
+          action: {
+            label: '적용취소',
+            run: () => {
+              void undoShortStayExtension(leaseTermId).then(r => {
+                if (r.ok) { pushToast('info', '단기 청구 반영을 적용취소했습니다'); refresh() }
+                else pushToast('error', r.error)
+              })
+            },
+          },
+        })
+      }
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
-      void maybeSuggestShortStayRecalc(fd)
     })
-  }
-
-  // 단기 퇴실일을 폼에서 늘려 저장한 경우 — 요금은 자동 재계산되지 않으므로
-  // 누적 요금과의 차액이 있으면 연장 모달(재계산 정리)을 제안한다(적대검증 폼 경로 반영, 2026-07-20).
-  const [shortRecalc, setShortRecalc] = useState<{ leaseTermId: string; tenantId: string; tenantName: string; out: string } | null>(null)
-  const maybeSuggestShortStayRecalc = async (fd: FormData) => {
-    if (fd.get('isShortTerm') !== 'true') return
-    const prevOut = (fd.get('prevExpectedMoveOut') as string | null) ?? ''
-    const newOut = (fd.get('expectedMoveOut') as string | null) ?? ''
-    const leaseTermId = fd.get('leaseTermId') as string | null
-    const tenantId = fd.get('tenantId') as string | null
-    if (!leaseTermId || !tenantId || !newOut || newOut === prevOut) return
-    if (prevOut && newOut < prevOut) return   // 단축은 범위 밖(환불 정책 별도)
-    const p = await previewShortStayExtension(leaseTermId, newOut).catch(() => null)
-    if (!p || !p.ok || p.diff <= 0) return
-    const go = await confirmDialog({
-      title: '이용료를 재계산할까요?',
-      message: `단기 퇴실일이 바뀌었지만 이용료는 자동으로 바뀌지 않습니다. 누적 요금 기준 추가 납부 ${fmtWon(p.diff)}이 계산됩니다.`,
-      confirmLabel: '재계산 정리', cancelLabel: '나중에',
-    })
-    if (go) setShortRecalc({ leaseTermId, tenantId, tenantName: (fd.get('name') as string) || '입주자', out: newOut })
   }
 
   // 단기 연장 정리 — 퇴실 예정 상태 그대로 퇴실일만 미래로 바꾸면 거주중 복귀를 확인(자동 전환 연장 흐름, 2026-07-11)
@@ -1532,13 +1525,6 @@ export default function TenantClient({
           </Modal>
         )
       })()}
-
-      {/* 단기 재계산 정리 모달 — 수정 폼에서 퇴실일만 늘려 저장한 뒤의 후속 제안 경로 */}
-      {shortRecalc && (
-        <ShortStayExtensionModal open onClose={() => setShortRecalc(null)}
-          leaseTermId={shortRecalc.leaseTermId} tenantId={shortRecalc.tenantId} tenantName={shortRecalc.tenantName}
-          currentOut={shortRecalc.out} initialOut={shortRecalc.out} onDone={refresh} />
-      )}
 
       {/* 가격 변동 적용 확인 모달 */}
       {rentChangeModal && (() => {
@@ -3574,6 +3560,29 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
+
+      {/* 저장하면 실제로 걸릴 추가 청구 한 줄 요약 — 서버가 쓰는 calcShortStay 와 같은 규칙을 폼 값으로 돌린 것.
+          단기는 rentAmount 가 체류 전체 사용료라 '이미 청구'는 저장돼 있는 이용료와 같다(서버 왕복 없음). */}
+      {lease && isShortTerm && typeof lease.rentAmount === 'number' && (() => {
+        const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
+          ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
+        const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
+        const short = shortQuoteData && baseRent > 0 && days != null
+          ? calcShortStay(shortQuoteData.shortStay, baseRent, days) : null
+        if (!short || days == null) return null
+        // 폼 금액을 건드렸으면 그 값이 목표, 아니면 정책 재계산가 — 서버 판정과 같은 규칙
+        const target = (rentAmount ?? 0) !== lease.rentAmount ? (rentAmount ?? 0) : short.baseAmount
+        const extra = target - lease.rentAmount
+        if (extra <= 0) return null
+        const prevOut = toDateInput(lease.expectedMoveOut)
+        const md = (ymd: string) => { const [, m, d] = ymd.split('-'); return `${Number(m)}/${Number(d)}` }
+        return (
+          <p className="rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-dark)]">
+            {prevOut && prevOut !== shortOut && <>퇴실일 {md(prevOut)} → {md(shortOut)} · </>}
+            {days}일({short.units}주) {fmtWon(target)} · 이미 청구 {fmtWon(lease.rentAmount)} · <span className="font-bold">추가 청구 {fmtWon(extra)}</span>
+          </p>
+        )
+      })()}
 
       {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
     </>
