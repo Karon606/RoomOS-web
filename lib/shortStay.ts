@@ -82,7 +82,9 @@ export function calcShortStay(policy: ShortStayPolicy, monthlyRent: number, stay
   const rawUnits = Math.ceil(stayDays / policy.unitDays)
   const units = Math.max(policy.minUnits, rawUnits)
   const contractDays = units * policy.unitDays
-  const rawBilled = Math.floor(contractDays * policy.multiplier)
+  // 청구일수 내림 제거(2026-07-26 운영자 결정) — floor 를 계약일수에 한 번만 적용하면 첫 주(10.5→10)만 깎여
+  // 둘째 주 추가금이 첫 주보다 비싸지는 역전이 생겼다. 소수 청구일(10.5·21·31.5)을 그대로 두면 주당 균등해 역전이 없다.
+  const rawBilled = contractDays * policy.multiplier
   const billedDays = Math.min(rawBilled, PRORATE_BASE_DAYS)
   // 원단위 절삭 — 일할 원값을 roundTo(기본 1,000원) 단위로 반올림 (운영자 기준 2026-07-06)
   const roundTo = Math.max(1, policy.roundTo)

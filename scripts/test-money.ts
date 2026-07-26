@@ -150,10 +150,10 @@ const RENT = 300000
 // ── calcShortStay ── 단기 입실 정책(제기역점 기준: 주 단위 × 1.5, 1개월 상한, 청소비 2만)
 {
   const P = { ...SHORT_STAY_DEFAULTS, enabled: true }   // 기본값 = 제기역점 수치
-  // 1주 = 계약 7일 × 1.5 = 10일치(버림) + 청소비 → "최소 10일 금액 + 2만"(운영자 기준 문장 그대로)
+  // 1주 = 계약 7일 × 1.5 = 10.5일치(내림 제거 2026-07-26 — 첫 주만 깎여 역전되던 문제 해소) + 청소비
   eq('단기: 1주', calcShortStay(P, RENT, 7), {
-    stayDays: 7, units: 1, contractDays: 7, billedDays: 10, baseAmount: 100000,
-    cleaningFee: 20000, total: 120000, deposit: 0, cappedAtMonth: false, roundedUp: false,   // deposit: 단기 보증금(환불성) 추가 2026-07-09
+    stayDays: 7, units: 1, contractDays: 7, billedDays: 10.5, baseAmount: 105000,
+    cleaningFee: 20000, total: 125000, deposit: 0, cappedAtMonth: false, roundedUp: false,   // deposit: 단기 보증금(환불성) 추가 2026-07-09
   })
   // 2주 = 21일치 ("3주 비용")
   eq('단기: 2주 = 3주분', [calcShortStay(P, RENT, 14)?.billedDays, calcShortStay(P, RENT, 14)?.total], [21, 230000])
@@ -165,7 +165,7 @@ const RENT = 300000
   eq('단기: 10일 → 2주 계약 올림', [d10?.units, d10?.contractDays, d10?.billedDays, d10?.roundedUp], [2, 14, 21, true])
   // 3일 요청 → 최소 1주
   const d3 = calcShortStay(P, RENT, 3)
-  eq('단기: 3일 → 최소 1주', [d3?.contractDays, d3?.billedDays, d3?.roundedUp], [7, 10, true])
+  eq('단기: 3일 → 최소 1주', [d3?.contractDays, d3?.billedDays, d3?.roundedUp], [7, 10.5, true])
   // 상한 초과(31일) → null = 기존 월 견적으로
   eq('단기: 31일은 정책 밖 → null', calcShortStay(P, RENT, 31), null)
   // 비활성 → null
@@ -174,9 +174,9 @@ const RENT = 300000
   eq('단기: 6/20~6/26 = 7일', stayDaysOf('2026-06-20', '2026-06-26'), 7)
   eq('단기: 역순 → null', stayDaysOf('2026-06-20', '2026-06-19'), null)
   // 원단위 절삭 — 천원 기준 반올림 (월세 55만 1주 = 183,333 → 183,000 / 32.5만 2주 = 227,500 → 228,000)
-  eq('단기: 천원 반올림(내림 방향)', calcShortStay(P, 550000, 7)?.baseAmount, 183000)
+  eq('단기: 천원 반올림(내림 방향)', calcShortStay(P, 550000, 7)?.baseAmount, 193000)
   eq('단기: 천원 반올림(올림 방향)', calcShortStay(P, 325000, 14)?.baseAmount, 228000)
-  eq('단기: 절삭 없음(roundTo 1)', calcShortStay({ ...P, roundTo: 1 }, 550000, 7)?.baseAmount, 183333)
+  eq('단기: 절삭 없음(roundTo 1)', calcShortStay({ ...P, roundTo: 1 }, 550000, 7)?.baseAmount, 192500)
   // JSON 방어 파싱 — 이상값은 기본값으로
   eq('단기: 정책 파싱 방어', parseShortStayPolicy({ enabled: true, multiplier: 99, cleaningFee: -5 }),
     { ...SHORT_STAY_DEFAULTS, enabled: true })
@@ -207,8 +207,9 @@ const RENT = 300000
   const w1 = calcShortStay(P, R, 7)!.baseAmount    // 1주
   const w2 = calcShortStay(P, R, 14)!.baseAmount   // 2주
   const w3 = calcShortStay(P, R, 21)!.baseAmount   // 3주(1개월 상한)
-  eq('연장: 김민정 1주/2주/3주 사용료', [w1, w2, w3], [157000, 329000, 470000])
-  eq('연장: 1주→2주 차액', w2 - w1, 172000)
+  // 내림 제거(2026-07-26): 1주 = 10.5일치 = 164,500 → 천원 반올림 165,000. 2주·3주는 정수 일수라 불변.
+  eq('연장: 김민정 1주/2주/3주 사용료', [w1, w2, w3], [165000, 329000, 470000])
+  eq('연장: 1주→2주 차액', w2 - w1, 164000)
   eq('연장: 2주→3주 차액', w3 - w2, 141000)
   eq('연장: 경로 독립(1주씩 두 번 = 한 번에 3주)', (w2 - w1) + (w3 - w2), w3 - w1)
   eq('연장: 30일 초과는 정책 밖(월 전환)', calcShortStay(P, R, 31), null)
