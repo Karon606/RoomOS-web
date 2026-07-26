@@ -15,7 +15,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
-import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, type LockRewrite } from '@/lib/shortStayLock'
+import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -501,18 +501,28 @@ export async function updateTenant(formData: FormData): Promise<
   // (lib/billing.ts billForLeaseMonth 우선순위 ② 락). 목표 이용료가 락보다 크면 마커 record 로
   // 락 자체를 올려야 추가 청구가 실제로 생긴다 — 그 일을 아래 같은 트랜잭션에서 함께 처리한다.
   // 폼 금액이 DB 값과 다르면 운영자 의도 금액(수동), 같으면 날짜만 바꾼 흐름이라 정책가로 자동 재계산.
-  const shortMoveInYmd = moveInDate || ymdOf(currentLease.moveInDate)
+  const prevMoveInYmd = ymdOf(currentLease.moveInDate)
+  const shortMoveInYmd = moveInDate || prevMoveInYmd
   let shortPlan: {
     targetRent: number; currentLock: number; moveInYmd: string; newOutYmd: string
     units: number; manual: boolean; kind: 'increase' | 'decrease'
   } | null = null
   let shortNotice: string | null = null
-  const shortDatesChanged = newMoveOutIso !== prevMoveOutIso || rentAmount !== currentLease.rentAmount
+  // 원인 게이트(회계 확정 2026-07-26) — 정책가를 정하는 넷(퇴실일·이용료·호실·입주일)이 실제로 바뀌었을 때만
+  // 동기화한다. 연락처만 고친 저장으로 협의가가 정책가로 증액·감액되던 것이 근거 없는 매출 정정이었다.
+  const shortBasisChanged = shortStayBasisChanged(
+    { moveOutIso: prevMoveOutIso, rentAmount: currentLease.rentAmount, roomId: prevRoomId, moveInYmd: prevMoveInYmd },
+    { moveOutIso: newMoveOutIso,  rentAmount,                          roomId: newRoomId,  moveInYmd: shortMoveInYmd },
+  )
   if (isShortTerm && !['CHECKED_OUT', 'CANCELLED'].includes(status) && shortMoveInYmd && newMoveOutIso) {
-    const [prop, room] = await Promise.all([
+    const [prop, room, prevRoom] = await Promise.all([
       prisma.property.findUnique({ where: { id: propertyId }, select: { shortStayPolicy: true } }),
       // 견적의 표준가는 저장 후 호실(newRoomId) 기준 — 호실 변경과 기간 변경을 같이 저장해도 금액이 맞는다.
       newRoomId ? prisma.room.findUnique({ where: { id: newRoomId }, select: { baseRent: true } }) : Promise.resolve(null),
+      // 직전 정책가 판정용 — 호실이 바뀐 저장에서는 옛 호실 표준가라야 '협의가였는지'가 맞는다.
+      prevRoomId && prevRoomId !== newRoomId
+        ? prisma.room.findUnique({ where: { id: prevRoomId }, select: { baseRent: true } })
+        : Promise.resolve(null),
     ])
     const policy = parseShortStayPolicy(prop?.shortStayPolicy)
     const days = stayDaysOf(shortMoveInYmd, newMoveOutIso)
@@ -539,13 +549,24 @@ export async function updateTenant(formData: FormData): Promise<
       const snaps = (Array.isArray(currentLease.shortStayExtensions) ? currentLease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
       const lastSnap = snaps.filter(s => s && !s.undoneAt).at(-1) ?? null
       const already = !!lastSnap && lastSnap.newRentAmount === newTarget && lastSnap.newExpectedMoveOut === newMoveOutIso
-      if (kind && !already) {
+      if (kind && !already && shortBasisChanged) {
         shortPlan = { targetRent: newTarget, currentLock, moveInYmd: shortMoveInYmd, newOutYmd: newMoveOutIso, units: quote.units, manual, kind }
-        if (newTarget > targetRent) {
-          shortNotice = `정책가 ${targetRent.toLocaleString()}원이지만 이미 ${paidSum.toLocaleString()}원을 받아 청구는 ${newTarget.toLocaleString()}원(완납)까지만 조정했습니다. 차액 ${(paidSum - targetRent).toLocaleString()}원 환불은 수납에서 처리해 주세요.`
+        const notices: string[] = []
+        // 협의가가 정책 누적가로 바뀌는 경우 — 비례 조정 없이 재계산하되 반드시 고지한다.
+        // 직전 정책가는 '직전 기간 · 직전 호실' 기준이라야 협의가였는지 판정이 맞는다.
+        if (!manual) {
+          const prevDays = prevMoveInYmd && prevMoveOutIso ? stayDaysOf(prevMoveInYmd, prevMoveOutIso) : null
+          const prevBaseRent = (prevRoom ?? room)?.baseRent ?? null
+          const prevQuote = prevBaseRent != null && prevDays != null ? calcShortStay(policy, prevBaseRent, prevDays) : null
+          const n = negotiatedRecalcNotice(currentLease.rentAmount, prevQuote?.baseAmount ?? null, targetRent)
+          if (n) notices.push(n)
         }
+        if (newTarget > targetRent) {
+          notices.push(`정책가 ${targetRent.toLocaleString()}원이지만 이미 ${paidSum.toLocaleString()}원을 받아 청구는 ${newTarget.toLocaleString()}원(완납)까지만 조정했습니다. 차액 ${(paidSum - targetRent).toLocaleString()}원 환불은 수납에서 처리해 주세요.`)
+        }
+        shortNotice = notices.length > 0 ? notices.join(' ') : null
       }
-    } else if (policy.enabled && days != null && days > policy.thresholdDays && shortDatesChanged) {
+    } else if (policy.enabled && days != null && days > policy.thresholdDays && shortBasisChanged) {
       // 정책 범위 밖 — 날짜는 저장하되 요금은 손대지 않고 월 계약 전환을 안내한다.
       shortNotice = `체류 ${days}일은 단기 정책 범위(${policy.thresholdDays}일)를 넘어 요금이 자동 계산되지 않습니다. 월 계약으로 전환해 주세요.`
     }
@@ -2625,6 +2646,9 @@ type ShortStayExtensionSnapshot = {
   // 아래 둘은 감액 도입(2026-07-26) 이후 스냅샷에만 있다 — 구 스냅샷은 undefined(연장으로 간주 + 휴리스틱 복원).
   kind?: 'increase' | 'decrease'
   lockRewrites?: LockRewrite[]   // 되쓰기 전 원값 — 적용취소의 정확 복원 근거
+  // 운영자가 폼에서 직접 넣은 금액(협의가)을 락으로 쓴 저장인지. 협의가 이력을 영속 기록한다
+  // (I8' — 마지막 저장이 manual 이면 그 금액이 새 기준선). 구 스냅샷은 undefined.
+  manual?: boolean
 }
 
 // 트랜잭션 클라이언트 — lib/prisma 의 익스텐션(소프트삭제 자동필터)이 적용된 타입이라야 tx 안에서도 규칙이 같다.
@@ -2716,6 +2740,7 @@ async function syncShortStayCharge(
     undoneAt: null,
     kind,
     lockRewrites,   // increase 도 빈 배열로 기록해 구조를 통일한다
+    manual: !!p.manual,
   }
   const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
 

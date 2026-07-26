@@ -15,7 +15,7 @@ import {
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { billForLeaseMonth } from '../lib/billing'
-import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor } from '../lib/shortStayLock'
+import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
 let pass = 0
 let fail = 0
@@ -202,6 +202,8 @@ const RENT = 300000
 // ── 단기 연장 누적 재계산 — 경로 독립 (운영자 승인 2026-07-20)
 // 추가 납부 = calcShortStay(전체 기간).baseAmount - 기존 rentAmount. 텔레스코핑이라
 // 1주씩 여러 번 연장해도, 한 번에 연장해도 같은 퇴실일이면 총액이 같아야 한다.
+// I8'(회계 확정 2026-07-26): 경로 독립은 정책가 경로에서만 성립한다. 마지막 저장이 manual(협의가)이면
+// 그 금액이 새 기준선이 되고, 원인 사실이 바뀔 때까지 재계산하지 않는다(아래 게이트 케이스).
 {
   const P = { ...SHORT_STAY_DEFAULTS, enabled: true }
   const R = 470000   // 김민정 520호 실측 기준
@@ -287,6 +289,47 @@ const RENT = 300000
 
   // 목표와 현 락이 같으면 조정하지 않는다(마커 남발 방지 — 이중 제출 가드와 별개의 1차 방어)
   eq('락: 변동 없으면 kind null', lockAdjustKind(shortStayLockTarget(329000, 0), 329000), null)
+
+  // ⑤ 원인 게이트 — 협의가 350,000 계약(회계 확정 2026-07-26, I8')
+  // 정책가는 1주 165,000 인데 운영자가 협의로 350,000 을 잡아 둔 계약. 연락처만 고친 저장에서
+  // 정책가로 되돌아가면 근거 없는 매출 정정이다 — 원인 사실 넷이 그대로면 동기화 자체를 하지 않는다.
+  {
+    const NEGOTIATED = 350000
+    const basis = { moveOutIso: '2026-08-01', rentAmount: NEGOTIATED, roomId: 'r520', moveInYmd: '2026-07-26' }
+    const prevPolicy = calcShortStay(P, R, stayDaysOf(basis.moveInYmd, basis.moveOutIso)!)!.baseAmount   // 7일 = 1주
+    eq('게이트: 협의가는 정책가(165,000)와 다르다', [prevPolicy, NEGOTIATED !== prevPolicy], [165000, true])
+
+    // 1) 원인 무변경 저장(연락처만 수정) — 마커 0건, 락 350,000 유지
+    {
+      const recs: Rec[] = [{ id: 'r1', expectedAmount: NEGOTIATED, actualAmount: 0 }]
+      const before = recs.length
+      const changed = shortStayBasisChanged(basis, { ...basis })
+      if (changed) applyAdjust(recs, prevPolicy)
+      eq('게이트①: 원인 무변경이면 동기화 미실행', changed, false)
+      eq('게이트①: 마커 record 0건', recs.length - before, 0)
+      eq('게이트①: 락 350,000 유지', lockNow(recs), NEGOTIATED)
+    }
+
+    // 2) 퇴실일 1주 연장(8/1 → 8/8) — 원인 변경이라 정책 누적가로 재계산 + 협의가 재계산 고지
+    {
+      const next = { ...basis, moveOutIso: '2026-08-08' }
+      const newPolicy = calcShortStay(P, R, stayDaysOf(next.moveInYmd, next.moveOutIso)!)!.baseAmount   // 14일 = 2주
+      const recs: Rec[] = [{ id: 'r1', expectedAmount: NEGOTIATED, actualAmount: 0 }]
+      const changed = shortStayBasisChanged(basis, next)
+      const adj = changed ? applyAdjust(recs, newPolicy) : null
+      eq('게이트②: 퇴실일 연장은 원인 변경', changed, true)
+      eq('게이트②: 정책 누적가 329,000 으로 재계산', [adj?.newTarget, lockNow(recs)], [329000, 329000])
+      const notice = negotiatedRecalcNotice(NEGOTIATED, prevPolicy, newPolicy)
+      eq('게이트②: 협의가 재계산 고지 존재', [
+        notice !== null,
+        notice?.includes('기존 협의 이용료 350,000원') ?? false,
+        notice?.includes('정책 누적가 329,000원') ?? false,
+        notice?.includes('협의가를 유지하려면') ?? false,
+      ], [true, true, true, true])
+      // 협의가가 아니었으면(직전 이용료 = 직전 정책가) 고지 없음 — 오탐 방지
+      eq('게이트②: 정책가 계약은 고지 없음', negotiatedRecalcNotice(prevPolicy, prevPolicy, newPolicy), null)
+    }
+  }
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
