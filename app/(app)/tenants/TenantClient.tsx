@@ -3363,7 +3363,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                 </div>
-                {/* 문의·예약 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장 — 거주 단계(showExitDate)는 기존 필드 사용.
+                {/* 문의·예약 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장. 거주 단계(showExitDate)는
+                    아래 '퇴실일' 필드가 같은 shortOut 을 쓰므로 name="expectedMoveOut" 은 항상 정확히 하나만 전송된다.
                     roomIsOptional 게이트면 '예약 확정'자가 제외되어 입력해도 저장이 안 됐다(운영자 신고 2026-07-15) */}
                 {!showExitDate && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
                 {!selectedRoomId ? (
@@ -3521,7 +3522,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             {!tenant && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
           </div>
           {showExitDate && (
-            <Field label="퇴실일" name="expectedMoveOut" type="date" defaultValue={toDateInput(lease?.expectedMoveOut)} />
+            // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
+            // 어느 쪽을 고쳐도 같은 값이 저장되고 미리보기 금액도 따라온다(운영자 신고 2026-07-26).
+            <Field label="퇴실일" name="expectedMoveOut" type="date" value={shortOut} onChange={setShortOut} />
           )}
         </div>
       </FormSection>
@@ -3617,22 +3620,26 @@ function ContactValueInput({ name, defaultValue, contactType }: { name: string; 
   )
 }
 
-function DateFieldInner({ name, defaultValue, placeholder }: { name: string; defaultValue?: string; placeholder?: string }) {
+// value/onChange 를 주면 controlled, 아니면 defaultValue 로 자체 state 보유 (배타 사용).
+function DateFieldInner({ name, defaultValue, placeholder, value, onChange }: {
+  name: string; defaultValue?: string; placeholder?: string; value?: string; onChange?: (v: string) => void
+}) {
   const [val, setVal] = useState(defaultValue ?? '')
   return (
-    <DatePicker name={name} value={val} onChange={setVal} placeholder={placeholder ?? '날짜 선택'}
+    <DatePicker name={name} value={value ?? val} onChange={onChange ?? setVal} placeholder={placeholder ?? '날짜 선택'}
       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-0" />
   )
 }
 
-function Field({ label, name, type = 'text', placeholder, defaultValue, required }: {
+function Field({ label, name, type = 'text', placeholder, defaultValue, required, value, onChange }: {
   label: string; name: string; type?: string; placeholder?: string; defaultValue?: string; required?: boolean
+  value?: string; onChange?: (v: string) => void   // type="date" 에서만 지원(controlled)
 }) {
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       {type === 'date'
-        ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} />
+        ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} value={value} onChange={onChange} />
         : type === 'birthdate'
         ? <BirthdateInput name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
