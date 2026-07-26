@@ -24,10 +24,13 @@ type LeaseLite = {
   shortStayExtensions?: unknown
 }
 
-// 연장 이력 스냅샷 중 위젯이 읽는 필드만(서버 ShortStayExtensionSnapshot 부분집합).
+// 청구 이력 스냅샷 중 위젯이 읽는 필드만(서버 ShortStayExtensionSnapshot 부분집합).
+// 사람이 읽는 이력은 이 스냅샷이 정본 — 전표(payment_records)는 감사 추적용으로 DB에만 남는다.
 type ShortExt = {
+  at?: string
   prevRentAmount: number; newRentAmount: number
   prevExpectedMoveOut: string | null; newExpectedMoveOut: string
+  kind?: 'increase' | 'decrease'   // 구 스냅샷엔 없음(연장으로 간주)
   undoneAt: string | null
 }
 
@@ -60,13 +63,15 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
   const exts = Array.isArray(lease.shortStayExtensions) ? (lease.shortStayExtensions as ShortExt[]) : []
   const lastActive = [...exts].reverse().find(e => e.undoneAt === null) ?? null
 
+  const lastLabel = lastActive?.kind === 'decrease' ? '감액' : '연장'
+
   const handleUndo = async () => {
-    const ok = await confirmDialog({ title: '연장을 적용취소할까요?', confirmLabel: '적용취소', level: 'caution' })
+    const ok = await confirmDialog({ title: `${lastLabel}을 적용취소할까요?`, confirmLabel: '적용취소', level: 'caution' })
     if (!ok) return
     setUndoing(true)
     const r = await undoShortStayExtension(lease.id)
     setUndoing(false)
-    if (r.ok) { pushToast('info', '연장이 취소되었습니다.'); onChange?.() }
+    if (r.ok) { pushToast('info', `${lastLabel}이 취소되었습니다.`); onChange?.() }
     else pushToast('error', r.error)
   }
 
@@ -141,20 +146,34 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
           </div>
         )}
 
-        {/* 연장 이력 줄 + 상시 적용취소 진입점, 그리고 연장 버튼(거주 중·퇴실 예정) */}
-        {(canExtend || lastActive) && (
+        {/* 청구 이력(연장·감액 전체, 시간순) + 상시 적용취소 진입점, 그리고 연장 버튼(거주 중·퇴실 예정).
+            취소분은 취소선으로 남긴다 — 이력은 append-only 스택이고 적용취소는 마지막 미취소 항목만(LIFO). */}
+        {(canExtend || exts.length > 0) && (
           <div className="mt-1 pt-3 border-t border-[var(--warm-border)] space-y-2">
-            {lastActive && (
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-[var(--warm-mid)]">
-                  연장: <span className="text-[var(--warm-dark)]">{fmtMD(lastActive.prevExpectedMoveOut)} → {fmtMD(lastActive.newExpectedMoveOut)}</span>
-                  <span className="text-[var(--warm-muted)]"> · 추가 </span>
-                  <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(lastActive.newRentAmount - lastActive.prevRentAmount)}</span>
-                </p>
-                <button type="button" onClick={handleUndo} disabled={undoing}
-                  className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
-                  {undoing ? '취소 중…' : '적용취소'}
-                </button>
+            {exts.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-[var(--warm-mid)]">청구 이력</p>
+                <ul className="space-y-1">
+                  {exts.map((e, i) => {
+                    const undone = !!e.undoneAt
+                    return (
+                      <li key={`${e.at ?? i}-${i}`} className="flex items-center justify-between gap-2">
+                        <p className={`min-w-0 text-xs ${undone ? 'text-[var(--warm-muted)] line-through' : 'text-[var(--warm-mid)]'}`}>
+                          {fmtMD(e.at ?? null)}
+                          <span className="text-[var(--warm-muted)]"> · </span>
+                          <span className="tabular-nums">{e.prevRentAmount.toLocaleString()} → <span className={undone ? '' : 'text-[var(--warm-dark)]'}>{e.newRentAmount.toLocaleString()}</span></span>
+                          <span className="text-[var(--warm-muted)]"> (퇴실 {fmtMD(e.prevExpectedMoveOut)}→{fmtMD(e.newExpectedMoveOut)})</span>
+                        </p>
+                        {e === lastActive && (
+                          <button type="button" onClick={handleUndo} disabled={undoing}
+                            className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+                            {undoing ? '취소 중…' : '적용취소'}
+                          </button>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             )}
             {canExtend && (

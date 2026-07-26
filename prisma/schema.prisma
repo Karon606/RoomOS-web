@@ -675,6 +675,7 @@ model PaymentRecord {
   isPaid         Boolean  @default(false)
   isDeposit      Boolean  @default(false)
   isPrevOwner    Boolean  @default(false)  // 양도인 정산 — 이 달은 양도인이 받음 (현 소유주 장부·미납 제외)
+  isBillingAdjust Boolean @default(false)  // 청구 조정 전표(단기 연장·감액 마커) — 수납이 아니라 청구 락 조정용. 표시·수납 집계에서 제외, 청구 락(_max expectedAmount)에는 반드시 포함.
   paymentConfirmedAt DateTime?  // 입금 확인 처리 시각 (Phase 2 CODEF 자동확인 대비 — /docs/stayeum_payment_spec.md)
   paymentConfirmedBy String?    // 'manual' | 'codef_auto'
   bankTxRef          String?    // Phase 2: CODEF 거래내역 매칭 키(중복 처리 방지)

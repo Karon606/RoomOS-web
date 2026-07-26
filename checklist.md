@@ -31,3 +31,16 @@
 - [x] 푸시·배포 — 717455d까지 4커밋, Vercel 프로덕션 READY(www.stayeum.com)
 - [x] 김민정 실데이터 수치 검증(읽기 전용) — 2주 329,000/차액 172,000, 3주 470,000 상한, 30일 초과 월 전환 안내
 - [x] 후속 발견 수정: 단기 과납 잔액 입력월 흡수(717455d) — 청소비 합산 입금 시 기록 증발 방지
+
+## 4단계 — 청구 조정 전표 + 단축 감액 (2026-07-26 회계·UX 오더)
+- [x] PaymentRecord.isBillingAdjust 컬럼 + 운영 DB ALTER·백필(migrate_billing_adjust.sql, 마커 2건 true)
+- [x] syncShortStayCharge: kind(increase/decrease), 마커 isBillingAdjust=true, 감액 되쓰기 + lockRewrites 스냅샷
+- [x] updateTenant: newTarget = max(정책·수동가, paidSum), '안내만' 분기 삭제, 하한 도달 시 환불 안내 notice
+- [x] 조건 통일: lockAgg·paidSum·undo 가드 모두 isDeposit:false·isPrevOwner:false·deletedAt:null
+- [x] undo: lockRewrites 정확 복원(구 스냅샷만 휴리스틱), 문구 연장/감액 분기
+- [x] 표시 제외 전수: PaymentBody·PaymentRecordList·PaymentHistoryAll(getAllPaymentsByLease)·TenantClient 수납 모달·/api/export 행·대시보드 납입완료 피드·캘린더 납입 판정·발생주의 점검·lastPayDate/latePaidAt
+- [x] 락 계산은 무필터 유지(updateTenant lockAgg·serverBillForMonth·getTargetMonthOptions·getRoomPaymentStatus)
+- [x] UX: 월 이용료 '연장 반영' 배지 + 보조 줄(최초→현재, N회 펼침), 잔액 근거 줄, ShortStayInfoWidget '청구 이력'(취소분 취소선)
+- [x] test-money 락 조정 케이스 4종(①329,000 ②400,000 하한 ③undo 470,000 ④경로 독립) — 76/76
+- [x] tsc·프로덕션 빌드·신규 린트 0 확인 (커밋은 운영자 지시로 보류)
+- [ ] 김민정 520호 잔존 락(470,000 vs rentAmount 329,000) 정리 — 다음 저장 시 자동 감액되나, 선제 백필은 운영자 승인 대상

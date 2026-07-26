@@ -48,6 +48,27 @@ type RoomRow = {
   checkoutProratedMonth?: string | null
   // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
   reservationDepositMode?: string | null
+  // 청구 조정 이력(단기 연장·감액) — 미취소 스냅샷만 시간순. 월 이용료 보조 줄·배지 표시 전용(계산 비관여).
+  billingAdjusts?: BillingAdjustEntry[]
+}
+
+// 월 이용료가 왜 그 값인지 한 줄로 보여주기 위한 표시 메타 (LeaseTerm.shortStayExtensions 스냅샷의 부분집합)
+export type BillingAdjustEntry = {
+  at: string          // ISO — 조정 시각
+  prev: number        // 조정 전 이용료
+  next: number        // 조정 후 이용료
+  kind: 'increase' | 'decrease'
+}
+
+// 미취소 스냅샷만 시간순 — 구 스냅샷은 kind 가 없어 연장으로 본다.
+function billingAdjustsOf(raw: unknown): BillingAdjustEntry[] {
+  if (!Array.isArray(raw)) return []
+  const out: BillingAdjustEntry[] = []
+  for (const e of raw as { at?: string; prevRentAmount?: number; newRentAmount?: number; kind?: string; undoneAt?: string | null }[]) {
+    if (!e || e.undoneAt || typeof e.prevRentAmount !== 'number' || typeof e.newRentAmount !== 'number') continue
+    out.push({ at: e.at ?? '', prev: e.prevRentAmount, next: e.newRentAmount, kind: e.kind === 'decrease' ? 'decrease' : 'increase' })
+  }
+  return out
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -443,7 +464,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       const dueDate = new Date(yyyy, mm - 1, Math.min(dueDay, new Date(yyyy, mm, 0).getDate()))
       dueDate.setHours(23, 59, 59, 999)
       const lateRecords = postCutoffRecords
-        .filter(p => p.targetMonth === targetMonth && new Date(p.payDate) > dueDate)
+        .filter(p => !p.isBillingAdjust && p.targetMonth === targetMonth && new Date(p.payDate) > dueDate)
         .map(p => new Date(p.payDate))
       if (lateRecords.length > 0) {
         const latest = new Date(Math.max(...lateRecords.map(d => d.getTime())))
@@ -451,10 +472,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // 실제 최근 납부일 — 현 원장(postCutoff) record 중 가장 늦은 payDate
+    // 실제 최근 납부일 — 현 원장(postCutoff) record 중 가장 늦은 payDate.
+    // 청구 조정 전표(payDate=조작 시각)는 납부가 아니라 제외 — 위 지연납부 판정도 동일(락 계산에는 그대로 포함).
     const lastPayDate: string | null = (() => {
-      if (postCutoffRecords.length === 0) return null
-      const latest = new Date(Math.max(...postCutoffRecords.map(p => new Date(p.payDate).getTime())))
+      const paidRecords = postCutoffRecords.filter(p => !p.isBillingAdjust)
+      if (paidRecords.length === 0) return null
+      const latest = new Date(Math.max(...paidRecords.map(p => new Date(p.payDate).getTime())))
       return `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}-${String(latest.getDate()).padStart(2, '0')}`
     })()
 
@@ -496,6 +519,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
         checkoutProratedAmount: proratedAmt ?? null,
         checkoutProratedMonth: proratedMonth ?? null,
+        billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
       }
     }
 
@@ -524,6 +548,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       checkoutProratedAmount: proratedAmt ?? null,
       checkoutProratedMonth: proratedMonth ?? null,
+      billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
     }
   }
 
@@ -1756,6 +1781,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     reservationDepositMode: resolveReservationDepositMode(
       lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
     ),
+    billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
   }
 }
 
@@ -1892,10 +1918,11 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
 }
 
 // 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
+// 청구 조정 전표(isBillingAdjust)는 수납이 아니라 청구 락 조정용이라 행·합계·건수 모두에서 제외.
 export async function getAllPaymentsByLease(leaseTermId: string) {
   const propertyId = await getPropertyId()
   const records = await prisma.paymentRecord.findMany({
-    where: { leaseTermId, propertyId },
+    where: { leaseTermId, propertyId, isBillingAdjust: false },
     orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
     select: {
       id: true, payDate: true, targetMonth: true, seqNo: true,

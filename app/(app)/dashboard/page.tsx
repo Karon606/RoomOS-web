@@ -329,7 +329,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       orderBy: { roomNo: 'asc' },
     }),
     // 최근 수납 내역 (활동 피드용) — viewMonth 안에 payDate가 있는 record
-    // [납입일변경] 메모 record(일할 차액)는 물리적 납입이 아니므로 제외
+    // [납입일변경] 메모 record(일할 차액)·청구 조정 전표(단기 연장·감액 마커)는 물리적 납입이 아니므로 제외
     (() => {
       const [vy, vm] = targetMonth.split('-').map(Number)
       const monthStart = new Date(vy, vm - 1, 1)
@@ -341,6 +341,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
           propertyId,
           isDeposit: false,
           isPrevOwner: false,
+          isBillingAdjust: false,
           NOT: { memo: { contains: '[납입일변경]' } },
           OR: [
             { payDate: { gte: monthStart, lte: monthEnd } },

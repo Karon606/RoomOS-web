@@ -826,10 +826,11 @@ export default function TenantClient({
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (res.notice) pushToast('info', res.notice)
-      // 단기 청구가 함께 올라간 저장 — 결과를 알리고 되돌릴 길을 같이 준다(적용취소 원칙).
+      // 단기 청구가 함께 조정된 저장 — 결과를 알리고 되돌릴 길을 같이 준다(적용취소 원칙).
       if (res.shortSync) {
-        const { leaseTermId, diff, newRent } = res.shortSync
-        pushToast('success', `단기 이용료 ${fmtWon(newRent)}로 청구 반영됨 · 추가 청구 ${fmtWon(diff)}`, {
+        const { leaseTermId, diff, newRent, kind } = res.shortSync
+        const diffLabel = kind === 'decrease' ? `청구 감액 ${fmtWon(Math.abs(diff))}` : `추가 청구 ${fmtWon(diff)}`
+        pushToast('success', `단기 이용료 ${fmtWon(newRent)}로 청구 반영됨 · ${diffLabel}`, {
           detail: '적용취소하면 이용료·퇴실일만 되돌립니다.',
           action: {
             label: '적용취소',
@@ -964,7 +965,8 @@ export default function TenantClient({
     setError('')
     setDistNotice(null)
     const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
-    setPayHistory(records as PayRecord[])
+    // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 그리지 않는다.
+    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
     setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
@@ -1023,7 +1025,7 @@ export default function TenantClient({
         }
         setShowPayForm(false)
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
         refresh()
         pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
@@ -1040,7 +1042,7 @@ export default function TenantClient({
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
       }
       refresh()
     })
@@ -1066,7 +1068,7 @@ export default function TenantClient({
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
         const { records, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
         setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       }
       setEditingPayId(null)
@@ -2447,7 +2449,7 @@ export default function TenantClient({
                       reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm),
                     }}
                     targetMonth={targetMonth}
-                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records as PayRecord[]); refresh() }}
+                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); refresh() }}
                     onCancel={() => setShowPayForm(false)}
                   />
                 </div>

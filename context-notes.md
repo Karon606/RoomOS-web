@@ -37,3 +37,13 @@
 
 ## 운영자 결정 대기
 (1) 엔진 산식 확인(1주 157,000 vs 기억식 176,250), (2) LeaseTerm.shortStayExtensions Json 컬럼(스키마), (3) billForLeaseMonth 단기 규칙(결제 로직), (4) 월 전환 자동화·단축 환불은 범위 제외 동의.
+
+## 청구 조정 전표·단축 감액 (2026-07-26 회계·UX 오더 구현)
+- 마커 식별은 컬럼(isBillingAdjust)으로만. memo 는 updatePayment 로 편집 가능해 파싱 금지 — 태그는 사람 읽기용 보조.
+- 전표는 '수납 아님, 청구 락 조정임'. 그래서 표시·수납 집계에서는 빼고 청구 락(_max expectedAmount)에서는 절대 빼지 않는다. 이 두 줄이 이 기능의 전부다.
+- 감액이 마커만으로 안 되는 이유: 락이 '그 달 최대'라 큰 값을 물고 있는 record 가 남으면 그대로다. 그래서 되쓰기 + 원값 스냅샷(lockRewrites)이 세트.
+- 하한 = 이미 받은 금액(paidSum). 잔액 0(완납)에서 멈추고 그 아래는 환불 영역 — 자동으로 내리지 않고 안내만 한다. manual 입력에도 예외 없음.
+- paidSum 은 isDeposit=false 라 청소비 record 가 보증금으로 기록되면 안 섞이고, 이용료로 기록되면 섞인다. 이는 잔액 계산(receivedThisMonth)과 같은 정의라 의도적으로 일치시킨 것.
+- 순수함수는 lib/shortStayLock.ts 로 분리 — 서버와 scripts/test-money.ts 가 같은 함수를 쓴다(DB 없이 락 시나리오 고정 가능).
+- 표시 메타는 RoomRow.billingAdjusts(미취소 스냅샷 요약). 추가 쿼리 없이 이미 읽은 lease.shortStayExtensions 에서 파생. 단기는 입주월 1회 청구라 그 달에서만 보조 줄·배지를 그린다.
+- 남은 판단거리: 날짜·금액을 안 바꾼 저장에서도 정책가가 락보다 낮으면 감액이 돈다(오더의 규칙 그대로). 운영자가 수동으로 정책가보다 높게 잡아 둔 단기 계약은 무관한 저장에서 정책가로 내려갈 수 있다 — 게이트가 필요하면 shortDatesChanged 조건 한 줄.

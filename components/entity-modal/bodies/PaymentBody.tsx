@@ -43,6 +43,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   const [records, setRecords] = useState<Records | null>(null)
   const [mode, setMode] = useState<'summary' | 'full'>(openCheckoutProration ? 'full' : 'summary')
   const [showEntryForm, setShowEntryForm] = useState(false)
+  const [adjOpen, setAdjOpen] = useState(false)   // 청구 조정 이력 펼침(접힘이 기본)
   const [reloadKey, setReloadKey] = useState(0)
   const [, startTransition] = useTransition()
 
@@ -77,12 +78,19 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
     <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
   )
 
+  // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 행으로 그리지 않는다.
+  // getPaymentsByLease 는 payDate 월 기준이라 전표가 입주월이 아닌 달에도 섞여 들어온다(마커 payDate=조작 시각).
+  const payRecords = (records ?? []).filter(r => !r.isBillingAdjust)
   // 예약 단계 예약금 현황 (오류신고 63bf23bc) — 실수납 합은 records 의 isDeposit 합산(추가 조회 없음).
   // 보증금은 임대료 수식과 분리가 정본이라 잔액에 섞지 않고 이 줄로만 안내.
-  const depositReceived = (records ?? []).filter(r => r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
+  const depositReceived = payRecords.filter(r => r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
   // prepaid 모드 선납 실수납 합 — isDeposit=false record 합산(입주월 이용료 충당 예정분).
-  const prepaidReceived = (records ?? []).filter(r => !r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
+  const prepaidReceived = payRecords.filter(r => !r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
   const resvMode = settlement.reservationDepositMode ?? 'deposit'
+
+  // 청구 조정 이력 — 단기는 입주월 1회 청구라 그 달에서만 보조 줄·배지를 보여준다.
+  const adjusts = (settlement.moveInDate?.slice(0, 7) === month ? settlement.billingAdjusts : null) ?? []
+  const adjFirst = adjusts[0], adjLast = adjusts[adjusts.length - 1]
 
   return (
     <div className="space-y-3">
@@ -110,8 +118,44 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         )
       )}
 
+      {/* 잔액 근거 한 줄 — 3카드는 그대로 두고 '왜 그 잔액인지'만 덧붙인다(운영자 혼란 방지). */}
+      {settlement.expected > 0 && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] -mt-1">
+          청구 {settlement.expected.toLocaleString()} − 납부 {settlement.totalPaid.toLocaleString()}
+        </p>
+      )}
+
       <div>
-        <Row k="월 이용료" v={fmtWon(settlement.expected)} />
+        <Row
+          k="월 이용료"
+          v={adjusts.length > 0 ? (
+            <>
+              {fmtWon(settlement.expected)}
+              <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--cream-2)] text-[var(--warm-mid)] rounded px-1.5 py-0.5 align-middle whitespace-nowrap">
+                {adjLast.kind === 'decrease' ? '감액 반영' : '연장 반영'}
+              </span>
+            </>
+          ) : fmtWon(settlement.expected)}
+          sub={adjusts.length > 0 ? (
+            <div className="mt-0.5">
+              {/* 보조 줄 — 최초값과 현재값만. 여러 번이면 눌러 펴서 최신순 전체(접힘이 기본). */}
+              <button type="button" disabled={adjusts.length < 2} onClick={() => setAdjOpen(o => !o)}
+                className="text-left text-[0.65625rem] text-[var(--warm-muted)] disabled:cursor-default">
+                {fmtAdjDate(adjLast.at)} {adjLast.kind === 'decrease' ? '감액' : '연장'} 반영 · {adjFirst.prev.toLocaleString()} → <span className="text-[var(--warm-dark)]">{adjLast.next.toLocaleString()}</span>
+                {adjusts.length > 1 && <> · {adjustCountLabel(adjusts)} {adjOpen ? '접기' : '보기'}</>}
+              </button>
+              {adjOpen && adjusts.length > 1 && (
+                <ul className="mt-0.5 space-y-0.5">
+                  {[...adjusts].reverse().map((a, i) => (
+                    <li key={`${a.at}-${i}`} className="text-[0.65625rem] text-[var(--warm-muted)]">
+                      {fmtAdjDate(a.at)} · {a.prev.toLocaleString()} → <span className="text-[var(--warm-dark)]">{a.next.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : undefined}
+        />
         {settlement.dueDay && (() => {
           // 임시 조정 활성(이 달) — settlement.dueDay는 override 반영값이라 '매월'로 쓰면 오해(오류신고 7c8c5fcd).
           const ovrActive = !!settlement.overrideDueDay && settlement.overrideDueDayMonth === month
@@ -130,11 +174,11 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
             {records === null ? (
               <SkeletonRows rows={2} className="py-1" />
-            ) : records.length === 0 ? (
+            ) : payRecords.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
             ) : (
               <ul className="space-y-1">
-                {records.map(r => {
+                {payRecords.map(r => {
                   const t = new Date(r.payDate)
                   const payDateStr = `${t.getMonth() + 1}.${t.getDate()}`
                   return (
@@ -300,11 +344,27 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   )
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function Row({ k, v, sub }: { k: string; v: React.ReactNode; sub?: React.ReactNode }) {
   return (
-    <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50 last:border-0">
-      <span className="text-xs text-[var(--warm-muted)]">{k}</span>
-      <span className="text-sm text-[var(--warm-dark)]">{v}</span>
+    <div className="py-1.5 border-b border-[var(--warm-border)]/50 last:border-0">
+      <div className="flex justify-between">
+        <span className="text-xs text-[var(--warm-muted)]">{k}</span>
+        <span className="text-sm text-[var(--warm-dark)]">{v}</span>
+      </div>
+      {sub}
     </div>
   )
+}
+
+// 청구 조정 시각 '7.26'
+function fmtAdjDate(iso: string): string {
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}.${d.getDate()}`
+}
+
+// '연장 2회' — 연장·감액이 섞이면 '조정 N회'
+function adjustCountLabel(list: { kind: 'increase' | 'decrease' }[]): string {
+  const kinds = new Set(list.map(a => a.kind))
+  const word = kinds.size > 1 ? '조정' : list[0].kind === 'decrease' ? '감액' : '연장'
+  return `${word} ${list.length}회`
 }

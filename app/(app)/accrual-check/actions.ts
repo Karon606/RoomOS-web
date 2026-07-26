@@ -52,7 +52,8 @@ export async function analyzePaymentTargetMonth(): Promise<{
   const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
 
   const records = await prisma.paymentRecord.findMany({
-    where: { propertyId, isDeposit: false },
+    // 청구 조정 전표(단기 연장·감액 마커)는 납부 record 가 아니라 귀속월 점검 대상이 아니다(오탐 방지).
+    where: { propertyId, isDeposit: false, isBillingAdjust: false },
     select: {
       id: true, payDate: true, targetMonth: true, actualAmount: true,
       seqNo: true, payMethod: true, memo: true, isDeposit: true,

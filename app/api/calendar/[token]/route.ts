@@ -46,7 +46,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   const monthStrs: string[] = []
   for (let i = 0; i < 6; i++) { let y = ty, m = tm + i; while (m > 12) { m -= 12; y += 1 } monthStrs.push(`${y}-${String(m).padStart(2, '0')}`) }
   const pays = await prisma.paymentRecord.findMany({
-    where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false },
+    // 청구 조정 전표(payDate=조작 시각, 실입금 아님)는 '납입완료' 판정·표시 날짜에서 제외
+    where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false, isBillingAdjust: false },
     select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
   })
   const paidMap = new Map<string, { sum: number; lastPay: Date }>()

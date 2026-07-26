@@ -320,9 +320,12 @@ export async function GET(request: NextRequest) {
       }
     })
   } else {
+    // 청구 조정 전표(isBillingAdjust)는 납부 행이 아니라 청구 락 조정용이라 행 나열에서 제외
+    // (수납 합계는 actualAmount=0 이라 영향 없음).
     const allPayments = await prisma.paymentRecord.findMany({
       where: {
         propertyId,
+        isBillingAdjust: false,
         ...(scope === 'year' ? { targetMonth: { startsWith: `${yyyy}-` } } : {}),
       },
       include: {

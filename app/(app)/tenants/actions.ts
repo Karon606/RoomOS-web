@@ -15,6 +15,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
+import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -275,9 +276,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
 }
 
 // 입주자 수정
-// shortSync — 단기 청구 락을 함께 올린 경우의 결과(클라 토스트의 적용취소 액션·요약 문구용)
+// shortSync — 단기 청구 락을 함께 조정한 경우의 결과(클라 토스트의 적용취소 액션·요약 문구용)
 export async function updateTenant(formData: FormData): Promise<
-  | { ok: true; notice?: string; shortSync?: { leaseTermId: string; diff: number; newRent: number } }
+  | { ok: true; notice?: string; shortSync?: { leaseTermId: string; diff: number; newRent: number; kind: 'increase' | 'decrease' } }
   | { ok: false; error: string }
 > {
   try {
@@ -503,7 +504,7 @@ export async function updateTenant(formData: FormData): Promise<
   const shortMoveInYmd = moveInDate || ymdOf(currentLease.moveInDate)
   let shortPlan: {
     targetRent: number; currentLock: number; moveInYmd: string; newOutYmd: string
-    units: number; manual: boolean
+    units: number; manual: boolean; kind: 'increase' | 'decrease'
   } | null = null
   let shortNotice: string | null = null
   const shortDatesChanged = newMoveOutIso !== prevMoveOutIso || rentAmount !== currentLease.rentAmount
@@ -521,20 +522,28 @@ export async function updateTenant(formData: FormData): Promise<
       const manual = rentAmount !== currentLease.rentAmount
       const targetRent = manual ? rentAmount : quote.baseAmount
       const inMonth = shortMoveInYmd.slice(0, 7)
-      const lockAgg = await prisma.paymentRecord.aggregate({
-        where: { leaseTermId, targetMonth: inMonth, isDeposit: false, deletedAt: null },
-        _max: { expectedAmount: true },
-      })
+      // 락 집계와 수납 합계는 같은 범위여야 한다 — 보증금·양도인·소프트삭제 제외로 통일
+      // (한쪽만 다르면 감액 하한이 어긋난다. isPrevOwner 누락 수정 2026-07-26).
+      const scope = { leaseTermId, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null }
+      const [lockAgg, paidAgg] = await Promise.all([
+        prisma.paymentRecord.aggregate({ where: scope, _max: { expectedAmount: true } }),
+        prisma.paymentRecord.aggregate({ where: scope, _sum: { actualAmount: true } }),
+      ])
       const currentLock = lockAgg._max.expectedAmount ?? 0
+      const paidSum = paidAgg._sum.actualAmount ?? 0
+      // 단축(감액)도 '청구 정정'이라 자동 처리한다(운영자 확정 2026-07-26). 다만 이미 받은 금액
+      // 아래로는 내리지 않는다 — 잔액 0(완납)에서 멈추고, 그 아래 차액은 환불 영역이라 수납에서 처리.
+      const newTarget = shortStayLockTarget(targetRent, paidSum)
+      const kind = lockAdjustKind(newTarget, currentLock)
       // 보조 가드 — 마지막 미취소 스냅샷이 같은 (금액, 퇴실일)이면 이미 반영된 저장(이중 제출)
       const snaps = (Array.isArray(currentLease.shortStayExtensions) ? currentLease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
       const lastSnap = snaps.filter(s => s && !s.undoneAt).at(-1) ?? null
-      const already = !!lastSnap && lastSnap.newRentAmount === targetRent && lastSnap.newExpectedMoveOut === newMoveOutIso
-      // 단축(targetRent <= 락)은 동기화 안 함 — 환불 정책이 별도라 요금은 자동 조정하지 않는다.
-      if (targetRent > currentLock && !already) {
-        shortPlan = { targetRent, currentLock, moveInYmd: shortMoveInYmd, newOutYmd: newMoveOutIso, units: quote.units, manual }
-      } else if (targetRent < currentLock && shortDatesChanged) {
-        shortNotice = `날짜는 저장했지만 이미 청구된 ${currentLock.toLocaleString()}원보다 적어 요금은 자동 조정되지 않습니다. 환불이 필요하면 수납에서 처리해 주세요.`
+      const already = !!lastSnap && lastSnap.newRentAmount === newTarget && lastSnap.newExpectedMoveOut === newMoveOutIso
+      if (kind && !already) {
+        shortPlan = { targetRent: newTarget, currentLock, moveInYmd: shortMoveInYmd, newOutYmd: newMoveOutIso, units: quote.units, manual, kind }
+        if (newTarget > targetRent) {
+          shortNotice = `정책가 ${targetRent.toLocaleString()}원이지만 이미 ${paidSum.toLocaleString()}원을 받아 청구는 ${newTarget.toLocaleString()}원(완납)까지만 조정했습니다. 차액 ${(paidSum - targetRent).toLocaleString()}원 환불은 수납에서 처리해 주세요.`
+        }
       }
     } else if (policy.enabled && days != null && days > policy.thresholdDays && shortDatesChanged) {
       // 정책 범위 밖 — 날짜는 저장하되 요금은 손대지 않고 월 계약 전환을 안내한다.
@@ -554,6 +563,7 @@ export async function updateTenant(formData: FormData): Promise<
         units: shortPlan.units,
         nextStatus: status,
         source: 'form',
+        kind: shortPlan.kind,
         manual: shortPlan.manual,
       })
     }
@@ -679,11 +689,13 @@ export async function updateTenant(formData: FormData): Promise<
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
   revalidatePath('/room-manage')
+  // 단기 동기화가 일할 패치를 건너뛰었으면 일할 안내는 사실과 달라 내보내지 않는다.
+  // 단, 감액 하한(이미 받은 금액에서 멈춤) 안내는 동기화와 함께 나가야 하는 사실이라 유지.
+  const finalNotice = shortPlan ? shortNotice : (shortNotice ?? prorationNotice)
   return {
     ok: true,
-    // 단기 동기화가 일할 패치를 건너뛰었으면 일할 안내는 사실과 달라 내보내지 않는다.
-    ...(!shortPlan && (shortNotice ?? prorationNotice) ? { notice: (shortNotice ?? prorationNotice)! } : {}),
-    ...(shortPlan ? { shortSync: { leaseTermId, diff: shortPlan.targetRent - shortPlan.currentLock, newRent: shortPlan.targetRent } } : {}),
+    ...(finalNotice ? { notice: finalNotice } : {}),
+    ...(shortPlan ? { shortSync: { leaseTermId, diff: shortPlan.targetRent - shortPlan.currentLock, newRent: shortPlan.targetRent, kind: shortPlan.kind } } : {}),
   }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2610,6 +2622,9 @@ type ShortStayExtensionSnapshot = {
   prevProration: { amount: number | null; month: string | null; undo: unknown } | null
   markerRecordId: string
   undoneAt: string | null
+  // 아래 둘은 감액 도입(2026-07-26) 이후 스냅샷에만 있다 — 구 스냅샷은 undefined(연장으로 간주 + 휴리스틱 복원).
+  kind?: 'increase' | 'decrease'
+  lockRewrites?: LockRewrite[]   // 되쓰기 전 원값 — 적용취소의 정확 복원 근거
 }
 
 // 트랜잭션 클라이언트 — lib/prisma 의 익스텐션(소프트삭제 자동필터)이 적용된 타입이라야 tx 안에서도 규칙이 같다.
@@ -2627,9 +2642,10 @@ type ShortStayChargeLease = {
 
 /**
  * 단기 청구 동기화 — 수정 폼(updateTenant)과 연장 모달(extendShortStay)의 단일 계산 경로.
- * 입주월 마커 record 로 청구 락(그 달 최대 expectedAmount)을 targetRent 로 올리고,
+ * 입주월 마커 record(청구 조정 전표)로 청구 락(그 달 최대 expectedAmount)을 targetRent 로 맞추고,
  * lease 필드·이력 스냅샷·isPaid 를 같은 트랜잭션에서 함께 맞춘다.
- * 락을 올리지 않으면 rentAmount 만 바꿔도 잔액이 그대로다(lib/billing.ts 우선순위 ② 락).
+ * 락을 조정하지 않으면 rentAmount 만 바꿔도 잔액이 그대로다(lib/billing.ts 우선순위 ② 락).
+ * kind='decrease' 는 마커만으로 내려가지 않는다 — 락이 '최대'라 큰 값을 물고 있는 record 를 함께 되쓴다.
  * 호출부는 반드시 트랜잭션 안에서 부르고, lease 는 쓰기 전에 읽은 값을 그대로 넘긴다.
  */
 async function syncShortStayCharge(
@@ -2643,19 +2659,22 @@ async function syncShortStayCharge(
     units: number
     nextStatus: LeaseStatus
     source: 'form' | 'modal'
+    kind: 'increase' | 'decrease'
     manual?: boolean       // 폼 경로에서 운영자가 직접 넣은 금액을 락으로 쓴 경우
   },
 ): Promise<{ inMonth: string }> {
-  const { lease, propertyId, targetRent, moveInYmd, newOutYmd, units, nextStatus, source } = p
+  const { lease, propertyId, targetRent, moveInYmd, newOutYmd, units, nextStatus, source, kind } = p
   const inMonth = moveInYmd.slice(0, 7)
   const prevOutYmd = ymdOf(lease.expectedMoveOut)
 
-  // 마커 record — 입주월 앵커(예약 선납 reanchor와 동일 관례). 청구 락을 새 누적으로 인상.
+  // 마커 record — 입주월 앵커(예약 선납 reanchor와 동일 관례). 청구 락을 새 누적으로 맞춤.
+  // 수납이 아니라 청구 조정 전표라 isBillingAdjust=true·payMethod 없음(표시·수납 집계에서 제외).
   // seqNo는 소프트삭제분 포함 count(@@unique 충돌 방지 — savePayment 관례).
   const seqNo = await tx.paymentRecord.count({
     where: { leaseTermId: lease.id, targetMonth: inMonth, deletedAt: undefined },
   })
-  const tag = source === 'form' ? (p.manual ? '[단기연장 폼·수동]' : '[단기연장 폼]') : '[단기연장]'
+  const base = kind === 'decrease' ? '단기감액' : '단기연장'
+  const tag = source === 'form' ? (p.manual ? `[${base} 폼·수동]` : `[${base} 폼]`) : `[${base}]`
   const marker = await tx.paymentRecord.create({
     data: {
       leaseTermId: lease.id, tenantId: lease.tenantId, propertyId,
@@ -2665,9 +2684,24 @@ async function syncShortStayCharge(
       payDate: new Date(),
       seqNo: seqNo + 1,
       isPaid: false, carryOver: 0,
+      isBillingAdjust: true,
       memo: `${tag} ${units}주 · ${lease.rentAmount.toLocaleString()}→${targetRent.toLocaleString()} · 퇴실 ${prevOutYmd ?? '미정'}→${newOutYmd}`,
     },
   })
+
+  // 감액 되쓰기 — 새 목표보다 큰 락을 물고 있는 활성 record 를 전부 새 목표로 내린다.
+  // 되쓰기 '전' 원값을 스냅샷에 남겨야 적용취소가 휴리스틱 없이 정확히 복원된다.
+  let lockRewrites: LockRewrite[] = []
+  if (kind === 'decrease') {
+    const actives = await tx.paymentRecord.findMany({
+      where: { leaseTermId: lease.id, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null },
+      select: { id: true, expectedAmount: true },
+    })
+    lockRewrites = lockRewritesFor(actives, targetRent)
+    for (const w of lockRewrites) {
+      await tx.paymentRecord.update({ where: { id: w.recordId }, data: { expectedAmount: targetRent } })
+    }
+  }
 
   const snapshot: ShortStayExtensionSnapshot = {
     at: new Date().toISOString(),
@@ -2680,6 +2714,8 @@ async function syncShortStayCharge(
       : null,
     markerRecordId: marker.id,
     undoneAt: null,
+    kind,
+    lockRewrites,   // increase 도 빈 배열로 기록해 구조를 통일한다
   }
   const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
 
@@ -2818,6 +2854,7 @@ export async function extendShortStay(
         units: quote.units,
         nextStatus: 'ACTIVE',
         source: 'modal',
+        kind: 'increase',   // 모달은 연장 전용(loadExtensionQuote 가 과거 날짜를 거부) — 감액은 수정 폼 경로
       })
 
       if (lease.status === 'CHECKOUT_PENDING') {
@@ -2836,10 +2873,11 @@ export async function extendShortStay(
 }
 
 /**
- * 단기 연장 적용취소 — 마지막 미취소 스냅샷으로 원복(v2.0 §16).
- * 가드: 연장 이후 계약이 또 수정됐거나, 입주월 이용료 수납 합이 이전 누적을 초과하면 차단.
- * 원복: lease 필드 복원 + 마커 소프트삭제 + 연장 이후 생성 record의 락(expectedAmount) 되쓰기 + isPaid 재계산.
+ * 단기 청구 조정 적용취소(연장·감액 공용) — 마지막 미취소 스냅샷으로 원복(v2.0 §16).
+ * 가드: 조정 이후 계약이 또 수정됐거나, 입주월 이용료 수납 합이 이전 누적을 초과하면 차단.
+ * 원복: lease 필드 복원 + 마커 소프트삭제 + 락(expectedAmount) 되쓰기 + isPaid 재계산.
  * (마커만 지우면 차액 수납·0원 record가 새 누적을 락으로 물고 남는다 — 적대검증 P1-1)
+ * 되쓰기는 스냅샷 lockRewrites 로 정확 복원. 구 스냅샷(lockRewrites 없음)만 종전 휴리스틱으로 처리.
  */
 export async function undoShortStayExtension(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -2855,19 +2893,22 @@ export async function undoShortStayExtension(leaseTermId: string): Promise<{ ok:
     if (!lease || !lease.moveInDate) return { ok: false, error: '계약을 찾을 수 없습니다.' }
     const list = (Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
     const idx = list.map(e => e.undoneAt).lastIndexOf(null)
-    if (idx < 0) return { ok: false, error: '되돌릴 연장이 없습니다.' }
+    if (idx < 0) return { ok: false, error: '되돌릴 청구 조정이 없습니다.' }
     const entry = list[idx]
+    // 구 스냅샷(kind 없음)은 연장 — 문구만 갈린다.
+    const label = entry.kind === 'decrease' ? '감액' : '연장'
 
     if (lease.rentAmount !== entry.newRentAmount || ymdOf(lease.expectedMoveOut) !== entry.newExpectedMoveOut) {
-      return { ok: false, error: '연장 이후 계약이 수정되어 적용취소할 수 없습니다. 수정 폼에서 직접 되돌려 주세요.' }
+      return { ok: false, error: `${label} 이후 계약이 수정되어 적용취소할 수 없습니다. 수정 폼에서 직접 되돌려 주세요.` }
     }
     const inMonth = ymdOf(lease.moveInDate)!.slice(0, 7)
+    // 락 집계와 같은 범위(보증금·양도인·소프트삭제 제외)로 통일 — 조정 판정과 어긋나지 않게.
     const paidAgg = await prisma.paymentRecord.aggregate({
-      where: { leaseTermId, targetMonth: inMonth, isDeposit: false },
+      where: { leaseTermId, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null },
       _sum: { actualAmount: true },
     })
     if ((paidAgg._sum.actualAmount ?? 0) > entry.prevRentAmount) {
-      return { ok: false, error: '연장 차액 수납이 이미 기록되어 적용취소할 수 없습니다. 수납 기록을 먼저 삭제해 주세요.' }
+      return { ok: false, error: '이전 청구액을 넘는 수납이 이미 기록되어 적용취소할 수 없습니다. 수납 기록을 먼저 삭제해 주세요.' }
     }
 
     await prisma.$transaction(async tx => {
@@ -2886,18 +2927,29 @@ export async function undoShortStayExtension(leaseTermId: string): Promise<{ ok:
       })
       if (updated.count !== 1) throw new Error('CONFLICT')
 
-      // 마커 소프트삭제 + 연장 시점 이후 생성된 입주월 record의 락 되쓰기(이전 누적으로)
+      // 마커 소프트삭제 + 락 되쓰기 복원
       await tx.paymentRecord.updateMany({
         where: { id: entry.markerRecordId, leaseTermId },
         data: { deletedAt: new Date() },
       })
-      await tx.paymentRecord.updateMany({
-        where: { leaseTermId, targetMonth: inMonth, isDeposit: false, createdAt: { gte: new Date(entry.at) }, expectedAmount: { gt: entry.prevRentAmount } },
-        data: { expectedAmount: entry.prevRentAmount },
-      })
+      if (entry.lockRewrites) {
+        // 감액 때 내려썼던 record 를 원값으로 정확 복원(빈 배열이면 되쓸 것이 없던 연장).
+        for (const w of entry.lockRewrites) {
+          await tx.paymentRecord.updateMany({
+            where: { id: w.recordId, leaseTermId },
+            data: { expectedAmount: w.prevExpectedAmount },
+          })
+        }
+      } else {
+        // 구 스냅샷 호환 — lockRewrites 가 없던 시절(연장 전용)의 휴리스틱.
+        await tx.paymentRecord.updateMany({
+          where: { leaseTermId, targetMonth: inMonth, isDeposit: false, createdAt: { gte: new Date(entry.at) }, expectedAmount: { gt: entry.prevRentAmount } },
+          data: { expectedAmount: entry.prevRentAmount },
+        })
+      }
       if (lease.status !== entry.prevStatus) {
         await tx.tenantStatusLog.create({
-          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: lease.status as LeaseStatus, toStatus: entry.prevStatus as LeaseStatus, changedById: user.sub, reason: '단기 연장 적용취소' },
+          data: { tenantId: lease.tenantId, leaseTermId, propertyId, fromStatus: lease.status as LeaseStatus, toStatus: entry.prevStatus as LeaseStatus, changedById: user.sub, reason: `단기 ${label} 적용취소` },
         })
       }
       // isPaid 재계산 — 이전 누적 기준

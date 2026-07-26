@@ -46,7 +46,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
 
   const reload = async () => {
     const { records, acquisitionDate } = await getPaymentsByLease(leaseTermId, targetMonth)
-    setRecords(records)
+    // 청구 조정 전표(단기 연장·감액 마커)는 편집·삭제 대상이 아니다 — 목록에서 제외(회차 번호도 세지 않음).
+    // 조회가 payDate 월 기준이라 전표는 입주월이 아닌 달에도 섞여 들어온다(마커 payDate=조작 시각).
+    setRecords(records.filter(r => !r.isBillingAdjust))
     setAcqDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
   useEffect(() => { reload() /* eslint-disable-next-line */ }, [leaseTermId, targetMonth, reloadSignal])

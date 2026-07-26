@@ -15,6 +15,7 @@ import {
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { billForLeaseMonth } from '../lib/billing'
+import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor } from '../lib/shortStayLock'
 
 let pass = 0
 let fail = 0
@@ -213,6 +214,79 @@ const RENT = 300000
   eq('연장: 2주→3주 차액', w3 - w2, 141000)
   eq('연장: 경로 독립(1주씩 두 번 = 한 번에 3주)', (w2 - w1) + (w3 - w2), w3 - w1)
   eq('연장: 30일 초과는 정책 밖(월 전환)', calcShortStay(P, R, 31), null)
+}
+
+// ── 단기 청구 락 조정(연장·감액) — 운영자 확정 2026-07-26
+// 락은 '그 달 최대 expectedAmount'라 마커를 얹기만 해서는 내려가지 않는다.
+// 감액은 되쓰기(lockRewrites)까지 해야 내려가고, 적용취소는 그 원값으로 정확히 복원된다.
+// 아래 시뮬레이터는 서버 syncShortStayCharge / undoShortStayExtension 과 같은 순서·같은 순수함수를 쓴다.
+{
+  const P = { ...SHORT_STAY_DEFAULTS, enabled: true }
+  const R = 470000   // 김민정 520호 실측 기준(방 표준가)
+
+  type Rec = { id: string; expectedAmount: number; actualAmount: number; deleted?: boolean }
+  type Snap = { markerId: string; lockRewrites: { recordId: string; prevExpectedAmount: number }[] } | null
+  const active = (recs: Rec[]) => recs.filter(r => !r.deleted)
+  const paidSumOf = (recs: Rec[]) => active(recs).reduce((s, r) => s + r.actualAmount, 0)
+  const lockNow = (recs: Rec[]) => lockOf(active(recs))
+
+  // 서버 syncShortStayCharge 순서: 목표 산출 → 마커 생성 → (감액이면) 큰 락 되쓰기 + 원값 스냅샷
+  const applyAdjust = (recs: Rec[], targetRent: number): { kind: 'increase' | 'decrease' | null; newTarget: number; snap: Snap } => {
+    const newTarget = shortStayLockTarget(targetRent, paidSumOf(recs))
+    const kind = lockAdjustKind(newTarget, lockNow(recs))
+    if (!kind) return { kind, newTarget, snap: null }
+    const marker: Rec = { id: `m${recs.length + 1}`, expectedAmount: newTarget, actualAmount: 0 }
+    recs.push(marker)
+    const lockRewrites = kind === 'decrease' ? lockRewritesFor(active(recs), newTarget) : []
+    for (const w of lockRewrites) recs.find(r => r.id === w.recordId)!.expectedAmount = newTarget
+    return { kind, newTarget, snap: { markerId: marker.id, lockRewrites } }
+  }
+  // 서버 undoShortStayExtension: 마커 소프트삭제 + lockRewrites 원값 복원
+  const undoAdjust = (recs: Rec[], snap: Snap) => {
+    if (!snap) return
+    recs.find(r => r.id === snap.markerId)!.deleted = true
+    for (const w of snap.lockRewrites) recs.find(r => r.id === w.recordId)!.expectedAmount = w.prevExpectedAmount
+  }
+
+  const w1 = calcShortStay(P, R, 7)!.baseAmount    // 1주 165,000 (입주 7/26 ~ 8/1)
+  const w2 = calcShortStay(P, R, 8)!.baseAmount    // 8일 → 2주 계약 329,000 (~ 8/2)
+  const w3 = calcShortStay(P, R, 15)!.baseAmount   // 15일 → 3주 계약, 1개월 상한 470,000 (~ 8/9)
+  eq('락: 기준 견적(1주/8일/15일)', [w1, w2, w3], [165000, 329000, 470000])
+
+  // ① 1주 → 8/9 연장 → 8/2 단축: 최종 락 329,000 (감액 자동 처리 — 잔액 -313,000 재발 방지)
+  {
+    const recs: Rec[] = [{ id: 'r1', expectedAmount: w1, actualAmount: 0 }]
+    const up = applyAdjust(recs, w3)
+    eq('락①: 연장은 increase', [up.kind, lockNow(recs)], ['increase', 470000])
+    const down = applyAdjust(recs, w2)
+    eq('락①: 단축은 decrease, 최종 락 329,000', [down.kind, lockNow(recs)], ['decrease', 329000])
+
+    // ③ ①의 단축 적용취소 → 락 470,000 복원
+    undoAdjust(recs, down.snap)
+    eq('락③: 감액 적용취소 후 락 470,000', lockNow(recs), 470000)
+  }
+
+  // ② 납부 400,000이 있으면 단축해도 받은 금액에서 멈춘다(잔액 0·완납). 차액은 환불 영역.
+  {
+    const recs: Rec[] = [{ id: 'r1', expectedAmount: w1, actualAmount: 400000 }]
+    applyAdjust(recs, w3)
+    const down = applyAdjust(recs, w2)
+    eq('락②: 납부 400,000이면 락도 400,000', [down.kind, down.newTarget, lockNow(recs)], ['decrease', 400000, 400000])
+    eq('락②: 환불 안내 차액', 400000 - w2, 71000)
+  }
+
+  // ④ 경로 독립 — 1주씩 세 번 연장이나 한 번에 3주나 최종 락이 같다
+  {
+    const stepwise: Rec[] = [{ id: 'r1', expectedAmount: w1, actualAmount: 0 }]
+    for (const t of [calcShortStay(P, R, 7)!.baseAmount, calcShortStay(P, R, 14)!.baseAmount, calcShortStay(P, R, 21)!.baseAmount]) applyAdjust(stepwise, t)
+    const oneShot: Rec[] = [{ id: 'r1', expectedAmount: w1, actualAmount: 0 }]
+    applyAdjust(oneShot, calcShortStay(P, R, 21)!.baseAmount)
+    eq('락④: 경로 독립(1주씩 3회 = 3주 1회)', lockNow(stepwise), lockNow(oneShot))
+    eq('락④: 최종 락 = 3주 누적가', lockNow(oneShot), 470000)
+  }
+
+  // 목표와 현 락이 같으면 조정하지 않는다(마커 남발 방지 — 이중 제출 가드와 별개의 1차 방어)
+  eq('락: 변동 없으면 kind null', lockAdjustKind(shortStayLockTarget(329000, 0), 329000), null)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
