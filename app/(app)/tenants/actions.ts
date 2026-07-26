@@ -490,8 +490,9 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   }
 
   // 신고 d3ea25f0: 단기 입주자의 퇴실일을 폼에서 '늘리면' 요금·퇴실일을 여기서 바로 저장하지 않는다.
-  // (저장해 버리면 이어지는 재계산 확인창의 차액이 0이 되어 청구가 안 걸린다.) 대신 저장 후 클라가 확인창을
-  // 띄우고 [적용] 시 extendShortStay 가 퇴실일·요금·청구를 한 번에 반영한다. '나중에'면 아무것도 안 바뀌어 안전.
+  // (요금까지 새 값으로 저장하면 이어지는 재계산 확인창의 차액이 0이 되어 청구가 안 걸린다.)
+  // 퇴실일은 정상 저장한다 — 운영자가 바꾼 날짜가 안 남으면 그게 더 큰 혼란(2026-07-26 운영자 지적).
+  // 요금·청구는 저장 후 확인창 [재계산 정리] → extendShortStay 가 차액을 계산해 반영한다(같은 날짜여도 허용).
   const shortExtendViaForm =
     currentLease.isShortTerm && status !== 'CHECKED_OUT' && currentLease.expectedMoveOut != null && moveOutFieldPresent &&
     !!expectedMoveOut && new Date(expectedMoveOut).getTime() > currentLease.expectedMoveOut.getTime()
@@ -509,7 +510,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
-      ...(moveOutFieldPresent && !shortExtendViaForm ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
+      ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
       // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
       // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
       // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
@@ -518,7 +519,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
         ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
         : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
       // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
-      ...(moveOutFieldPresent && !shortExtendViaForm && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
+      ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
       // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
