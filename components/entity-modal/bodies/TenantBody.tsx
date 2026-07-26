@@ -165,18 +165,18 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
 
   return (
     <Section title="수납 분석">
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center min-w-0">
           <p className="text-xs text-[var(--warm-muted)] mb-1">납부월</p>
-          <p className="text-lg font-bold text-[var(--success-fg)]">{paidMonths}개월</p>
+          <p className="text-base font-bold text-[var(--success-fg)] whitespace-nowrap">{paidMonths}개월</p>
         </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center min-w-0">
           <p className="text-xs text-[var(--warm-muted)] mb-1">총 납부액</p>
-          <p className="text-lg font-bold text-[var(--warm-dark)]"><MoneyDisplay amount={totalPaid} /></p>
+          <p className="text-base font-bold text-[var(--warm-dark)] whitespace-nowrap"><MoneyDisplay amount={totalPaid} /></p>
         </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center min-w-0">
           <p className="text-xs text-[var(--warm-muted)] mb-1">미납액</p>
-          <p className={`text-lg font-bold ${unpaid > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-dark)]'}`}>
+          <p className={`text-base font-bold whitespace-nowrap ${unpaid > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-dark)]'}`}>
             <MoneyDisplay amount={unpaid} />
           </p>
         </div>
