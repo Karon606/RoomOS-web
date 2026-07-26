@@ -3521,19 +3521,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             {!tenant && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
           </div>
           {showExitDate && (
-            lease?.isShortTerm ? (
-              // 단기 입주자의 퇴실일은 폼에서 못 바꾼다(신고 d3ea25f0) — 연장은 상세 '퇴실일 변경'(요금 자동 재계산·차액청구)으로.
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-[var(--warm-dark)]">퇴실일</label>
-                <div className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-muted)]">
-                  {lease.expectedMoveOut ? toDateInput(lease.expectedMoveOut) : '미정'}
-                </div>
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">단기 입주자는 여기서 퇴실일을 바꿀 수 없어요. 상세의 &lsquo;퇴실일 변경&rsquo;에서 연장하면 늘어난 기간으로 요금이 다시 계산되고 차액이 추가 청구됩니다.</p>
-                <input type="hidden" name="expectedMoveOut" value={toDateInput(lease.expectedMoveOut) || ''} />
-              </div>
-            ) : (
-              <Field label="퇴실일" name="expectedMoveOut" type="date" defaultValue={toDateInput(lease?.expectedMoveOut)} />
-            )
+            <Field label="퇴실일" name="expectedMoveOut" type="date" defaultValue={toDateInput(lease?.expectedMoveOut)} />
           )}
         </div>
       </FormSection>
