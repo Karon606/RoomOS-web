@@ -1783,15 +1783,20 @@ export default function TenantClient({
                 const status  = lease?.status ?? ''
                 const sched   = getScheduledDate(lease)
                 const tipTone = leaseTipTone(status)
+                // 고정(sticky) 열은 가로 스크롤 대비 불투명 배경이 필요해 행(tr)의 반투명 hover·선택 배경이 가려진다.
+                // 같은 결과색을 color-mix 로 직접 재현해 호실·이름 열도 함께 하이라이트되게 한다.
+                const stickyRowBg = selectMode && selectedIds.has(tenant.id)
+                  ? 'bg-[color-mix(in_srgb,var(--coral)_5%,var(--cream))]'
+                  : 'bg-[var(--cream)] group-hover:bg-[color-mix(in_srgb,var(--canvas)_40%,var(--cream))]'
 
                 return (
                   <tr key={tenant.id}
                     onClick={() => selectMode ? toggleSelectTenant(tenant.id) : openTenantPrism(tenant)}
                     {...press(!selectMode ? () => { setSelectMode(true); toggleSelectTenant(tenant.id) } : undefined)}
-                    className={`border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
+                    className={`group border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
-                    <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"
+                    <td className={`sticky left-0 z-20 px-4 py-3 text-sm font-semibold overflow-hidden transition-colors ${stickyRowBg}`}
                       style={{ maxWidth: colWidths.roomNo, borderLeft: tipTone ? `3px solid ${statusTipColor(tipTone)}` : undefined }}
                       onClick={e => { e.stopPropagation(); if (lease?.room?.id) setRoomDetailId(lease.room.id) }}>
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
@@ -1799,7 +1804,7 @@ export default function TenantClient({
                       </span>
                     </td>
                     {/* sticky — 이름 */}
-                    <td className="sticky z-20 bg-[var(--cream)] px-4 py-3 overflow-hidden"
+                    <td className={`sticky z-20 px-4 py-3 overflow-hidden transition-colors ${stickyRowBg}`}
                       style={{ left: colWidths.roomNo, maxWidth: colWidths.name }}>
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant.name}</p>
                     </td>
@@ -3563,7 +3568,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
 
-      {/* 저장하면 실제로 걸릴 추가 청구 한 줄 요약 — 서버가 쓰는 calcShortStay 와 같은 규칙을 폼 값으로 돌린 것.
+      {/* 저장하면 실제로 걸릴 추가 청구·청구 감액 한 줄 요약 — 서버가 쓰는 calcShortStay 와 같은 규칙을 폼 값으로 돌린 것.
           단기는 rentAmount 가 체류 전체 사용료라 '이미 청구'는 저장돼 있는 이용료와 같다(서버 왕복 없음). */}
       {lease && isShortTerm && typeof lease.rentAmount === 'number' && (() => {
         const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
@@ -3575,13 +3580,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         // 폼 금액을 건드렸으면 그 값이 목표, 아니면 정책 재계산가 — 서버 판정과 같은 규칙
         const target = (rentAmount ?? 0) !== lease.rentAmount ? (rentAmount ?? 0) : short.baseAmount
         const extra = target - lease.rentAmount
-        if (extra <= 0) return null
+        // 양방향 동기화라 감액도 예고한다(변화 없을 때만 숨김).
+        if (extra === 0) return null
         const prevOut = toDateInput(lease.expectedMoveOut)
         const md = (ymd: string) => { const [, m, d] = ymd.split('-'); return `${Number(m)}/${Number(d)}` }
         return (
           <p className="rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-dark)]">
             {prevOut && prevOut !== shortOut && <>퇴실일 {md(prevOut)} → {md(shortOut)} · </>}
-            {days}일({short.units}주) {fmtWon(target)} · 이미 청구 {fmtWon(lease.rentAmount)} · <span className="font-bold">추가 청구 {fmtWon(extra)}</span>
+            {days}일({short.units}주) {fmtWon(target)} · 이미 청구 {fmtWon(lease.rentAmount)} · <span className="font-bold">{extra > 0 ? `추가 청구 ${fmtWon(extra)}` : `청구 감액 ${fmtWon(-extra)}`}</span>
           </p>
         )
       })()}

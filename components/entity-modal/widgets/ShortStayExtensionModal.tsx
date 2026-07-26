@@ -30,7 +30,7 @@ function fmtMD(ymd: string | null): string {
 }
 
 export function ShortStayExtensionModal({
-  open, onClose, leaseTermId, tenantId, tenantName, currentOut, initialOut, onDone,
+  open, onClose, leaseTermId, tenantId, tenantName, currentOut, onDone,
 }: {
   open: boolean
   onClose: () => void
@@ -38,13 +38,12 @@ export function ShortStayExtensionModal({
   tenantId: string
   tenantName: string
   currentOut: string | null
-  initialOut?: string   // 열자마자 이 날짜로 재견적(직접 선택 프리필) — 수정 폼 저장 후 "재계산 정리" 경로
   onDone?: () => void
 }) {
   const entityModal = useEntityModal()
-  // 호출부가 조건부 마운트하므로 초기값이 곧 열림 시점 상태 — initialOut이 있으면 그 날짜로 바로 재견적(재계산 정리 경로).
-  const [seg, setSeg] = useState<Seg>(initialOut ? 'custom' : currentOut ? 'w1' : 'custom')
-  const [customOut, setCustomOut] = useState(initialOut ?? '')
+  // 호출부가 조건부 마운트하므로 초기값이 곧 열림 시점 상태 — 현재 퇴실일이 있으면 +1주가 기본.
+  const [seg, setSeg] = useState<Seg>(currentOut ? 'w1' : 'custom')
+  const [customOut, setCustomOut] = useState('')
   const [interacted, setInteracted] = useState(false)
   // 재견적 결과는 요청한 날짜와 함께 보관 — 로딩은 "현재 날짜의 결과가 아직 없음"으로 파생(경합도 자연 해소).
   const [preview, setPreview] = useState<{ forOut: string; res: Preview } | null>(null)
@@ -162,6 +161,8 @@ export function ShortStayExtensionModal({
                   placeholder="새 퇴실일"
                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] w-full" />
               )}
+              {/* 이 창은 연장 전용(minDate=현재 퇴실일) — 앞당기기 경로를 명시해 라벨과 동작의 불일치를 메운다. */}
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">앞당기기는 정보 수정의 퇴실일에서 바꿔주세요.</p>
             </div>
 
             {/* c/d. 재계산 블록 또는 경고 */}

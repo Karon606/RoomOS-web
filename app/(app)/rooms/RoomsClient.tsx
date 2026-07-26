@@ -1017,6 +1017,14 @@ export default function RoomsClient({
               {displayed.map(room => {
                 const tone = roomStatusTone(room, targetMonth)
                 const totalUnpaid = getTotalUnpaid(room)
+                // 고정(sticky) 열은 가로 스크롤 대비 불투명 배경이 필요해 행의 반투명 hover·선택 배경이 가려진다.
+                // 같은 결과색을 color-mix 로 재현해 호실·입주자 열도 함께 하이라이트되게 한다(행이 hover 대상일 때만).
+                const rowHoverable = !(room.isFutureMonth || (selectMode && !isBatchEligible(room)))
+                const stickyRowBg = selectMode && selectedIds.has(room.roomId)
+                  ? 'bg-[color-mix(in_srgb,var(--coral)_5%,var(--cream))]'
+                  : rowHoverable
+                    ? 'bg-[var(--cream)] group-hover:bg-[color-mix(in_srgb,var(--canvas)_40%,var(--cream))]'
+                    : 'bg-[var(--cream)]'
                 return (
                 <tr key={room.roomId}
                   onClick={
@@ -1028,12 +1036,12 @@ export default function RoomsClient({
                     setSelectMode(true)
                     if (isBatchEligible(room)) toggleSelect(room.roomId)
                   } : undefined)}
-                  className={`border-b border-[var(--warm-border)]/50 transition-colors
+                  className={`group border-b border-[var(--warm-border)]/50 transition-colors
                     ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}
                     ${selectMode && selectedIds.has(room.roomId) ? 'bg-[var(--coral)]/5' : ''}`}>
 
                   {/* sticky — 호실 (식별자 v2.0 §23: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
-                  <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 bg-[var(--cream)] ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
+                  <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 transition-colors ${stickyRowBg} ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="flex items-center gap-2 min-w-0">
                       {selectMode && isBatchEligible(room) && (
@@ -1045,7 +1053,7 @@ export default function RoomsClient({
                     </span>
                   </td>
                   {/* sticky — 입주자 */}
-                  <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"
+                  <td className={`px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 transition-colors ${stickyRowBg}`}
                     style={{ left: colWidths.roomNo, width: colWidths.tenantName, minWidth: colWidths.tenantName, maxWidth: colWidths.tenantName }}>
                     <span className="truncate block">{room.tenantName}</span>
                   </td>

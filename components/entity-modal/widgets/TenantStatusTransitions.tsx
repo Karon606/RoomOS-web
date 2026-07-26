@@ -32,7 +32,8 @@ type TransitionDef = {
   // 신고 9b974be0: 예약 확정/해제 — 상태는 그대로(RESERVED) 두고 reservationConfirmedAt만 토글
   kind?: 'confirm' | 'unconfirm'
 }
-function transitionsFor(status: string, confirmed = false): TransitionDef[] {
+// isShortTerm: 단기는 '퇴실일 변경'이 아니라 연장 모달로 라우팅되므로 라벨도 그 창 이름('단기 연장')으로 맞춘다.
+function transitionsFor(status: string, confirmed = false, isShortTerm = false): TransitionDef[] {
   switch (status) {
     case 'WAITING_TOUR': return [
       { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
@@ -56,7 +57,7 @@ function transitionsFor(status: string, confirmed = false): TransitionDef[] {
     ]
     case 'CHECKOUT_PENDING': return [
       { key: 'checkout',       label: '퇴실 처리',    toStatus: 'CHECKED_OUT', field: 'moveOutDate', fieldLabel: '퇴실일', withDeposit: true, tone: 'primary' },
-      { key: 'changeMoveOut',  label: '퇴실일 변경',  toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'secondary' },
+      { key: 'changeMoveOut',  label: isShortTerm ? '단기 연장' : '퇴실일 변경',  toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'secondary' },
       { key: 'cancelCheckout', label: '퇴실예정 취소', toStatus: 'ACTIVE', tone: 'secondary', confirm: '거주중으로 되돌릴까요?' },
     ]
     case 'NON_RESIDENT': return [
@@ -106,7 +107,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
   const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
 
-  const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt)
+  const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
   if (transitions.length === 0) return null
 
   const handleClick = async (def: TransitionDef) => {
