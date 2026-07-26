@@ -35,22 +35,22 @@ async function main() {
     if (!quote) continue
 
     const inMonth = moveInYmd.slice(0, 7)
-    // 저장된 이용료가 정책가와 다르면 운영자 협의가 — 그 값을 존중(배포 로직과 동일 규칙)
-    const targetRent = l.rentAmount > quote.baseAmount ? l.rentAmount : quote.baseAmount
-    const agg = await prisma.paymentRecord.aggregate({
-      _max: { expectedAmount: true },
-      where: { leaseTermId: l.id, targetMonth: inMonth, isDeposit: false, deletedAt: null },
-    })
+    const where = { leaseTermId: l.id, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null }
+    const agg = await prisma.paymentRecord.aggregate({ _max: { expectedAmount: true }, where })
     const lock = agg._max.expectedAmount ?? 0
-    if (targetRent <= lock) continue   // 이미 정합
-
-    const paid = await prisma.paymentRecord.aggregate({
-      _sum: { actualAmount: true },
-      where: { leaseTermId: l.id, targetMonth: inMonth, isDeposit: false, deletedAt: null },
-    })
+    const paid = await prisma.paymentRecord.aggregate({ _sum: { actualAmount: true }, where })
     const paidSum = paid._sum.actualAmount ?? 0
-    console.log(`${l.room.roomNo}호 ${l.tenant.name}: 락 ${lock.toLocaleString()} → ${targetRent.toLocaleString()} (납부 ${paidSum.toLocaleString()} · 잔액 ${(targetRent - paidSum).toLocaleString()})`)
+
+    // 저장된 이용료가 정책가보다 크면 운영자 협의가 — 그 값을 존중(배포 로직과 동일 규칙).
+    // 하한은 납부합 — 이미 받은 돈 아래로는 내리지 않는다(그 아래는 환불 영역, 사람이 결정).
+    const base = l.rentAmount > quote.baseAmount ? l.rentAmount : quote.baseAmount
+    const newTarget = Math.max(base, paidSum)
+    if (newTarget === lock) continue   // 이미 정합
+    const kind = newTarget > lock ? 'increase' : 'decrease'
+
+    console.log(`${l.room.roomNo}호 ${l.tenant.name}: 락 ${lock.toLocaleString()} → ${newTarget.toLocaleString()} (${kind === 'increase' ? '증액' : '감액'} · 납부 ${paidSum.toLocaleString()} · 잔액 ${(newTarget - paidSum).toLocaleString()})`)
     if (!APPLY) continue
+    const targetRent = newTarget
 
     await prisma.$transaction(async tx => {
       const seqNo = await tx.paymentRecord.count({ where: { leaseTermId: l.id, targetMonth: inMonth } })
@@ -58,10 +58,22 @@ async function main() {
         data: {
           leaseTermId: l.id, tenantId: l.tenantId, propertyId: l.propertyId, targetMonth: inMonth,
           expectedAmount: targetRent, actualAmount: 0, payDate: new Date(), seqNo: seqNo + 1,
-          isPaid: false, carryOver: 0,
-          memo: `[단기연장 백필] ${quote.units}주 · ${lock.toLocaleString()}→${targetRent.toLocaleString()} · 퇴실 ${outYmd}`,
+          isPaid: false, carryOver: 0, isBillingAdjust: true,
+          memo: `[${kind === 'increase' ? '단기연장' : '단기감액'} 백필] ${quote.units}주 · ${lock.toLocaleString()}→${targetRent.toLocaleString()} · 퇴실 ${outYmd}`,
         },
       })
+      // 락은 max 라 마커 추가만으로는 못 내려간다 — 감액이면 초과 record 를 되쓰고 원값을 스냅샷에 남긴다(undo 복원용)
+      const lockRewrites = []
+      if (kind === 'decrease') {
+        const over = await tx.paymentRecord.findMany({
+          where: { leaseTermId: l.id, targetMonth: inMonth, isDeposit: false, deletedAt: null, expectedAmount: { gt: targetRent }, id: { not: marker.id } },
+          select: { id: true, expectedAmount: true },
+        })
+        for (const r of over) {
+          lockRewrites.push({ recordId: r.id, prevExpectedAmount: r.expectedAmount })
+          await tx.paymentRecord.update({ where: { id: r.id }, data: { expectedAmount: targetRent } })
+        }
+      }
       const prev = Array.isArray(l.shortStayExtensions) ? l.shortStayExtensions : []
       await tx.leaseTerm.update({
         where: { id: l.id },
@@ -74,6 +86,7 @@ async function main() {
             prevStatus: l.status,
             prevAutoCheckoutAt: l.autoCheckoutAt ? l.autoCheckoutAt.toISOString() : null,
             prevProration: null, markerRecordId: marker.id, undoneAt: null,
+            lockRewrites, manual: l.rentAmount > quote.baseAmount,
           }],
         },
       })
