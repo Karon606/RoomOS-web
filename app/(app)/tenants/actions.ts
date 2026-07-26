@@ -348,6 +348,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     where: { id: leaseTermId },
     select: {
       roomId: true, status: true, reservationConfirmedAt: true,
+      rentAmount: true,   // 단기 퇴실일 잠금 시 요금 기존값 유지용(신고 d3ea25f0)
       // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
       expectedMoveOut: true, moveOutDate: true, dueDay: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
@@ -489,19 +490,28 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     await prisma.tenantContact.delete({ where: { id: existingHome.id } })
   }
 
+  // 신고 d3ea25f0: 단기 입주자의 퇴실일은 폼에서 못 바꾼다 — 연장은 요금 재계산·차액청구가 붙는 전용 흐름
+  // (상세 '퇴실일 변경' → ShortStayExtensionModal → extendShortStay)으로만 처리한다. 폼이 이미 설정된 퇴실일을
+  // 다르게 바꾸려 하면 무시하고 안내(퇴실 확정·최초 설정·비단기는 정상). expectedMoveOut 과 rentAmount 가 어긋나
+  // 수납이 옛 요금에 머무는 것을 원천 차단한다.
+  const shortMoveOutLocked =
+    isShortTerm && status !== 'CHECKED_OUT' && currentLease.expectedMoveOut != null && moveOutFieldPresent &&
+    ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== currentLease.expectedMoveOut.getTime())
+
   // 계약 수정
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
     data: {
       status,
-      rentAmount,
+      // 단기 퇴실일이 폼에서 잠기면 요금도 기존값 유지(퇴실일↔요금 어긋남 방지). 연장은 전용 흐름에서 재계산.
+      rentAmount: shortMoveOutLocked ? currentLease.rentAmount : rentAmount,
       depositAmount,
       cleaningFee,
       dueDay: dueDay || null,
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
-      ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
+      ...(moveOutFieldPresent && !shortMoveOutLocked ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
       // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
       // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
       // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
@@ -510,7 +520,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
         ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
         : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
       // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
-      ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
+      ...(moveOutFieldPresent && !shortMoveOutLocked && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
       // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
@@ -609,7 +619,11 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
   revalidatePath('/room-manage')
-  return prorationNotice ? { ok: true, notice: prorationNotice } : { ok: true }
+  // 단기 퇴실일이 폼에서 잠겼으면 그 안내를 우선한다(연장은 전용 흐름으로 유도)
+  const finalNotice = shortMoveOutLocked
+    ? '단기 입주자의 퇴실일은 여기서 바꿀 수 없어요. 연장은 입주자 상세의 [퇴실일 변경]에서 하면 요금이 자동으로 다시 계산됩니다.'
+    : prorationNotice
+  return finalNotice ? { ok: true, notice: finalNotice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
