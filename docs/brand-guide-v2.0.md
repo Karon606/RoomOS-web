@@ -172,6 +172,7 @@
 
 - width xs·sm·md·lg. backdrop rgba 검정 70%(모드 불변). radius r-2xl 18. max-height 90vh 내부 스크롤. ESC·backdrop 닫기(§12 dirty 정책 우선). z --z-modal 300, 중첩 +10. 그림자 0 16px 48px −16px rgba(61,36,24,.24). 푸터 취소 좌·확인 우. 등장 .anim-overlay-in + .anim-panel-in.
 - 아키텍처: 복잡한 다중탭 엔터티 상세(수납·입주자 통합) = 전역 Prism 셸(EntityModal) · 단순 추가/수정 폼 = 페이지 Modal. 수제 모달 금지 (17개 파일 흡수 대상).
+- 본문 여백: 기본 px-5 sm:px-6 py-4 (헤더·푸터와 동일 정합, Modal 기본값). children 최상단 래퍼에 별도 패딩 금지(이중 여백). 표가 모달 폭을 꽉 채우거나 children 이 폭 전체 구분선·액션 바를 직접 구성하는 풀블리드만 bodyClassName='' 을 명시하고 사유 주석을 남긴다.
 
 ## §14 확인 다이얼로그 · ConfirmDialog
 

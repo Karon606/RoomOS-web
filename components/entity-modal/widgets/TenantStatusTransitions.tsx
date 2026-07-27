@@ -302,7 +302,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : '확인'}</Btn>
             </div>
           }>
-            <div className="px-5 py-4 space-y-3">
+            <div className="space-y-3">
               {/* e1b81629: 입실 취소 미니폼 — 반환·몰취 대상 없으면 확인 문구, 사유는 선택 입력 */}
               {active.def.key === 'cancel' && active.depositAmount === 0 && (
                 <p className="text-sm text-[var(--warm-dark)] leading-relaxed">입실 취소로 변경할까요? 문의·투어·예약 기록은 보존됩니다.</p>
@@ -382,7 +382,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               </Btn>
             </div>
           }>
-            <div className="px-5 py-4 space-y-2">
+            <div className="space-y-2">
               <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
                 퇴실 예정일이 납입일과 가깝습니다. 선납 기준 <b>일할로 퇴실 정산</b>을 하시겠어요?
               </p>

@@ -1032,7 +1032,9 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   }
 
   return (
-    <Modal open onClose={onClose} title="추적 품목 추가" width="md">
+    <Modal open onClose={onClose} title="추적 품목 추가" width="md"
+      // 풀블리드 — 폼 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+      bodyClassName="">
       <SpecWizard open={unitWizOpen} onClose={() => setUnitWizOpen(false)} onComplete={applyUnitWizard}
         itemLabel={label || undefined} unitsOnly z={260} />
       <form onSubmit={handleSubmit} id="add-tracked-item-form" className="px-5 sm:px-6 py-4 space-y-3">
@@ -1213,6 +1215,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       width="lg"
       title={data?.item.label ?? row.label}
       subtitle={data?.item.category ?? row.category}
+      // 풀블리드 — 모드(점검·보정·설정 등)마다 다른 하위 폼이 자기 여백과 폭 전체 구분선을 직접 갖는다.
+      bodyClassName=""
       footer={isViewMode ? (
         <div className="flex items-center gap-2 flex-wrap">
           <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
@@ -2190,7 +2194,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
             {pending ? '저장 중…' : '저장'}
           </Btn>
       </div>}
-      bodyClassName="px-4 py-3">
+      bodyClassName="px-5 sm:px-6 py-4">
       {/* v2.0 §12 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
       <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
@@ -2322,7 +2326,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
             </Btn>
           </div>
       </div>}
-      bodyClassName="px-4 py-3">
+      bodyClassName="px-5 sm:px-6 py-4">
       {/* v2.0 §12 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
       <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
@@ -3305,7 +3309,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
   return (
     <Modal open onClose={onClose} title="위치 이동" width="sm"
       subtitle="위치에서 위치로 옮기거나 두 위치를 통째로 맞바꿉니다. 총 재고는 변하지 않아요.">
-      <div className="p-5 space-y-4">
+      <div className="space-y-4">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">1. 무엇을 옮길까요?</label>
           <select value={itemId} onChange={e => pickItem(e.target.value)}
@@ -4067,7 +4071,7 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
           <Btn variant="primary" onClick={apply} disabled={pending} fullWidth>{pending ? '처리 중…' : '적용'}</Btn>
         </div>
       }>
-      <div className="px-5 sm:px-6 py-4 space-y-4">
+      <div className="space-y-4">
         {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
         {decisions.map((d, i) => (
           <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-3 last:border-0">
@@ -4139,7 +4143,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} width="md" title="병합 적용취소·규칙"
       subtitle="잘못 합친 품목 되돌리기 · 자동등록 추천(연결)·거절(다시 안 물어봄) 관리">
-      <div className="px-5 sm:px-6 py-4 space-y-4">
+      <div className="space-y-4">
         {loading ? <Loading /> : isEmpty ? (
           <EmptyState title="병합 기록이 없습니다"
             description="품목을 병합하거나, 자동등록 확인에서 '새 품목으로'를 고르면 여기에 기록이 쌓입니다." />
@@ -4361,7 +4365,9 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 / 4층 주방 / 손님실 등 보관 장소를 등록하세요" width="sm">
+    <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 / 4층 주방 / 손님실 등 보관 장소를 등록하세요" width="sm"
+      // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+      bodyClassName="">
       <div className="px-5 sm:px-6 py-4 space-y-4">
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {locs.length === 0 && !pending && (
@@ -4473,7 +4479,9 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
   }
 
   return (
-    <Modal open onClose={onClose} title="위치 일괄 추가" subtitle={`${selectedIds.length}개 품목에 동일 위치를 추가합니다`} width="sm">
+    <Modal open onClose={onClose} title="위치 일괄 추가" subtitle={`${selectedIds.length}개 품목에 동일 위치를 추가합니다`} width="sm"
+      // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+      bodyClassName="">
       <div className="px-5 sm:px-6 py-4 space-y-3">
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {allLocs.length === 0 ? (

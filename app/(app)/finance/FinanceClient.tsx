@@ -986,7 +986,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
     <Modal open onClose={onClose} title="구매처 관리"
       subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
-      <div className="px-5 py-3 space-y-1.5" onInput={() => requestAnimationFrame(() => setDirty(true))}>
+      <div className="space-y-1.5" onInput={() => requestAnimationFrame(() => setDirty(true))}>
           {rows === null ? (
             <SkeletonRows rows={4} className="py-2" />
           ) : rows.length === 0 ? (
@@ -3242,6 +3242,8 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {groupDetail && (
         <Modal open onClose={() => setGroupDetail(null)} width="sm"
+          // 풀블리드 — 목록과 하단 각주가 각자 여백을 갖는 구조라 기본 패딩을 쓰면 이중 여백이 된다.
+          bodyClassName=""
           title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
           subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
           <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
@@ -3279,7 +3281,7 @@ export default function FinanceClient({
               <Btn variant="primary" size="md" onClick={downloadExpenseExcel} disabled={expExcelOptLoading || noneSelected || expExcelRangeInvalid}>내려받기</Btn>
             </div>
           }>
-          <div className="p-6 space-y-5">
+          <div className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기간</label>
               <div>
@@ -3383,6 +3385,8 @@ export default function FinanceClient({
       {detailExp && (
         <Modal open width="sm" dirty={detailExpEdit && expEditDirty}
           onClose={() => { setDetailExp(null); setDetailExpEdit(false); setExpEditDirty(false) }}
+          // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+          bodyClassName=""
           title={detailExpEdit ? '지출 수정' : '지출 상세'}>
 
             {!detailExpEdit ? (
@@ -3825,6 +3829,8 @@ export default function FinanceClient({
       {showAddExp && (
         <Modal open width="sm" dirty={addExpDirty}
           onClose={() => { setShowAddExp(false); setAddExpDirty(false) }}
+          // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 의 form 이 직접 구성한다.
+          bodyClassName=""
           title="지출 등록">
             {/* dirty 의 onInput 은 rAF 지연 필수 — 셀렉트의 input·change 사이에 리렌더가 끼면
                 React 가 컨트롤드 값(옛 상태)으로 DOM 을 복원해 change 가 옛 값을 들고 온다(첫 변경 유실, 신고 6f264a8f).
@@ -4111,7 +4117,7 @@ export default function FinanceClient({
     {/* ── 과거 구매내역 검색 모달 (전 기간) ───────────────────────── */}
     <Modal open={showExpSearch} onClose={() => setShowExpSearch(false)} title="과거 구매내역 검색" width="lg"
       subtitle="품목명·세부내역·판매처·메모·카테고리로 전 기간 검색">
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <SearchBar value={expSearchQ} onChange={setExpSearchQ} placeholder="예: 코발트 드릴비트, 쿠팡, 휴지" />
         {(() => {
           const q = expSearchQ.trim()
@@ -4195,7 +4201,7 @@ export default function FinanceClient({
       <Modal open width="lg" dirty={showRecMgmtForm && recMgmtDirty}
         onClose={() => { setShowRecMgmt(false); setShowRecMgmtForm(false); setRecMgmtDirty(false) }}
         title="고정 지출 관리" subtitle="매월 반복 지출 항목을 추가·수정·삭제합니다."
-        bodyClassName="p-5">
+        bodyClassName="px-5 sm:px-6 py-4">
           <div className="space-y-4" onInput={() => setRecMgmtDirty(true)} onChange={() => setRecMgmtDirty(true)}>
             {/* 추가/수정 폼 */}
             {showRecMgmtForm ? (
@@ -4539,6 +4545,8 @@ function BatchEditExpensesModal({ selectedIds, selected, expenseCategories, paym
 
   return (
     <Modal open onClose={onClose} width="md" dirty={dirty}
+      // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+      bodyClassName=""
       title="지출 일괄 편집" subtitle={`${selectedIds.length}건 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
         {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}

@@ -255,7 +255,7 @@ function CompetitorModal({
           </div>
         </div>
       }>
-        <div className="flex flex-col gap-4" style={{ padding: 20 }}>
+        <div className="flex flex-col gap-4">
           <div>
             <label className={labelCls}>업체명 *</label>
             <input

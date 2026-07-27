@@ -227,7 +227,7 @@ export default function ErrorReportButton() {
 
       <Modal open={open} onClose={closeModal} title="오류·개선 신고" subtitle="문제도, 개선 아이디어도 좋아요."
         z={380} dirty={!!note.trim() || images.length > 0}>   {/* 프리즘(z 320) 등 어떤 화면 위에서도 최상단(신고 e781fcdf) + 작성 중 보호 */}
-        <div className="p-4 space-y-3">
+        <div className="space-y-3">
           <p className="text-xs text-[var(--warm-muted)]">
             현재 화면과 직전 동작 자취가 자동으로 함께 전송됩니다. 어떤 동작에서 문제가 생겼는지 적어주시면 더 빨리 고칠 수 있어요.
           </p>

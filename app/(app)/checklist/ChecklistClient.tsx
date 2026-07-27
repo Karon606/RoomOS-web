@@ -339,7 +339,7 @@ function FormModal({
           </Btn>
         </div>
       }>
-        <div className="px-5 py-4 space-y-3">
+        <div className="space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>제목 *</label>
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -442,7 +442,7 @@ function CheckModal({
           </Btn>
         </div>
       }>
-        <div className="px-5 py-4 space-y-3">
+        <div className="space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>점검 메모 (선택)</label>
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}

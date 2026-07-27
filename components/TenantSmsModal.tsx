@@ -101,7 +101,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
           )}
         </div>
       }>
-      <div className="px-5 sm:px-6 py-4 space-y-3">
+      <div className="space-y-3">
         {!ctx ? (
           <SkeletonRows rows={3} />
         ) : !ctx.ok ? (

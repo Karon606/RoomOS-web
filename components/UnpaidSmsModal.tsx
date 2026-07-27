@@ -92,7 +92,7 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
             </Btn>
           </div>
         }>
-        <div className="px-5 sm:px-6 py-4 space-y-2">
+        <div className="space-y-2">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">은행 입금내역을 확인하셨나요?</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
             미처 확인하지 못한 입금이 있을 수 있습니다. 통장 입금내역을 먼저 확인한 뒤 안내 문자를 보내 주세요.
@@ -123,7 +123,7 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
           )}
         </div>
       }>
-      <div className="px-5 sm:px-6 py-4 space-y-3">
+      <div className="space-y-3">
         {!ctx ? (
           <SkeletonRows rows={3} />
         ) : !ctx.ok ? (

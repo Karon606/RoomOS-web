@@ -1012,7 +1012,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             </div>
           }
         >
-          <div className="space-y-3 px-5 sm:px-6 py-4">
+          <div className="space-y-3">
             {/* 품목명 — 일부 입력 시 기존 비품명 추천(datalist) */}
             <label className="block">
               <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">품목명</span>
@@ -1078,7 +1078,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         const sibs = allItems.filter(s => s.id !== it.id && s.category === it.category)
         return (
           <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md">
-            <div className="space-y-4 p-5">
+            <div className="space-y-4">
               <div>
                 <p className="text-sm text-[var(--warm-dark)]">{it.detail || it.itemLabel}</p>
                 <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
@@ -1255,7 +1255,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </Btn>
               </div>
             }>
-            <div className="space-y-3 px-5 sm:px-6 py-4">
+            <div className="space-y-3">
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어디로 옮길까요?</span>
                 <select value={move.to} disabled={pending}

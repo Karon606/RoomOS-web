@@ -314,7 +314,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         }>
-        <div className="px-5 sm:px-6 py-4 space-y-3">
+        <div className="space-y-3">
           {loadError ? (
             <p className="text-xs text-[var(--danger-fg)]">{loadError}</p>
           ) : !targets ? (
@@ -434,7 +434,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
         </div>
       }>
-      <div className="px-5 sm:px-6 py-4 space-y-3">
+      <div className="space-y-3">
         {draftRestored && (
           <p className="flex items-center justify-between text-xs rounded-lg px-3 py-2 bg-[var(--info-bg)] text-[var(--info-fg)]">
             <span>작성하던 내용을 복원했습니다. 이미 보낸 묶음은 '기록됨'으로 표시됩니다.</span>

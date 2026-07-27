@@ -120,7 +120,7 @@ export function ShortStayExtensionModal({
           </Btn>
         )
       }>
-      <div className="px-5 py-4 space-y-4">
+      <div className="space-y-4">
         {done ? (
           <div className="space-y-1.5">
             <p className="text-sm font-semibold text-[var(--warm-dark)]">연장 완료.</p>

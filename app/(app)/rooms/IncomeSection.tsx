@@ -233,6 +233,8 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
       {/* 상세/수정 모달 — v2.0 §23 공용 Modal. dirty 시 v2.0 §12 정책은 Modal 내장. */}
       {detailInc && (
         <Modal open onClose={() => { setDetailInc(null); setDetailIncEdit(false); setEditDirty(false) }}
+          // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+          bodyClassName=""
           title={detailIncEdit ? '수익 수정' : '수익 상세'} width="sm" dirty={detailIncEdit && editDirty}>
 
             {!detailIncEdit ? (
@@ -320,7 +322,9 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
 
       {/* 등록 모달 — v2.0 §23 공용 Modal */}
       {showAddInc && (
-        <Modal open onClose={() => { setShowAddInc(false); setAddDirty(false) }} title="부가 수익 등록" width="sm" dirty={addDirty}>
+        <Modal open onClose={() => { setShowAddInc(false); setAddDirty(false) }} title="부가 수익 등록" width="sm" dirty={addDirty}
+          // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 의 form 이 직접 구성한다.
+          bodyClassName="">
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden"
               onInput={() => setAddDirty(true)} onChange={() => setAddDirty(true)}>
               <div className="flex-1 overflow-y-auto p-6 space-y-4">

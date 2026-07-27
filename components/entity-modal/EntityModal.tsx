@@ -319,7 +319,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
         </div>
       }
     >
-      <div className="px-5 sm:px-6 py-4">
+      <div>
         {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
             강조는 MonthSelector 알약 자체(과거면 amber)로 충분 — 별도 박스로 감싸면 '네모 안 네모'라 과함. */}
         {kind === 'payment' && hasPay && (

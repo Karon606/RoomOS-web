@@ -75,7 +75,7 @@ export function RecurringExpenseRecordModal({
       title="지출 기록" subtitle={rec.title}>
       <div onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
         {/* 폼 */}
-        <div className="p-5 space-y-3">
+        <div className="space-y-3">
           {items.length > 0 ? (
             <>
               <div className="space-y-1.5">

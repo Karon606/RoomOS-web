@@ -181,7 +181,7 @@ function CheckoutRefundModal({
           </button>
         </div>
       }>
-        <div className="px-5 py-4 space-y-3">
+        <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>보증금</p>
@@ -289,6 +289,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
   return (
     <Modal open onClose={onClose} width="sm"
+      // 풀블리드 — 본문이 섹션마다 자체 여백과 폭 전체 구분선을 갖는 구조라 기본 패딩을 쓰면 구분선이 안쪽으로 밀린다.
+      bodyClassName=""
       title={
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
@@ -1113,9 +1115,9 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
         {loading ? (
           <Loading />
         ) : !info ? (
-          <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
+          <div className="py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
         ) : (
-          <div className="px-5 py-4 space-y-2 text-sm">
+          <div className="space-y-2 text-sm">
             {/* 기본 정보 */}
             <p className="text-[0.65625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">기본 정보</p>
             {info.gender && (
@@ -1417,7 +1419,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
       {/* KPI 용어 한 줄 설명 — 라벨 옆 ? 탭(모바일 title 힌트 대체, 사용성 감사 F3) */}
       <Modal open={!!kpiHelp} onClose={() => setKpiHelp(null)} title={kpiHelp?.title} width="xs">
-        <div className="p-5 text-sm leading-relaxed text-[var(--warm-dark)] space-y-2">
+        <div className="text-sm leading-relaxed text-[var(--warm-dark)] space-y-2">
           {kpiHelp?.body.map((line, i) => <p key={i}>{line}</p>)}
         </div>
       </Modal>

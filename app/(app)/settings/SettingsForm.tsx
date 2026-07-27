@@ -2469,7 +2469,7 @@ function DangerZone({ propertyId, propertyName }: { propertyId: string; property
       </div>
 
       <Modal open={delOpen} onClose={() => setDelOpen(false)} title="영업장 영구 삭제" width="sm" dirty={!!confirmName}>
-        <div className="p-5 space-y-3">
+        <div className="space-y-3">
           <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
             <strong className="text-[var(--danger-fg)]">되돌릴 수 없습니다.</strong> 아래 데이터가 모두 영구 삭제됩니다.
           </p>

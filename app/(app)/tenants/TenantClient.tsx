@@ -1409,6 +1409,8 @@ export default function TenantClient({
         return (
           <Modal open z={280} width="sm" dirty={depositRefundDirty}
             onClose={() => setDepositRefundModal(null)}
+            // 풀블리드 — 본문과 하단 버튼 행이 각자 여백을 갖는 구조라 기본 패딩을 쓰면 이중 여백이 된다.
+            bodyClassName=""
             title="환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
 
               <div className="px-5 py-4 space-y-3">
@@ -1547,7 +1549,7 @@ export default function TenantClient({
         const dirColor = diff > 0 ? 'text-[var(--danger-fg)]' : diff < 0 ? 'text-[var(--success-fg)]' : 'text-[var(--warm-dark)]'
         return (
           <Modal open z={280} width="sm" onClose={() => setRentChangeModal(null)}
-            title="가격 변동 적용" bodyClassName="p-6 space-y-4">
+            title="가격 변동 적용" bodyClassName="px-5 sm:px-6 py-4 space-y-4">
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{fmtRoomNo(rentChangeModal.roomNo)}</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
               </p>
@@ -1909,6 +1911,8 @@ export default function TenantClient({
         return (
           <Modal open z={260} width="lg" dirty={detailEditDirty}
             onClose={() => { setDetailEditDirty(false); closeEdit() }}
+            // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 의 form 이 직접 구성한다.
+            bodyClassName=""
             title={`고객 정보 수정 · ${t.name}`}>
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
                 onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
@@ -1950,7 +1954,7 @@ export default function TenantClient({
       {showAdd && (
         <Modal open width="lg" dirty={addTenantDirty}
           onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="입주자 등록">
-            <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4"
+            <form onSubmit={handleAdd} className="overflow-y-auto space-y-4"
               onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
@@ -1972,7 +1976,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={editTenantDirty}
           onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
           title={`수정 · ${editTenant.name}`}>
-            <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4"
+            <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto space-y-4"
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
@@ -2009,6 +2013,8 @@ export default function TenantClient({
         }
         return (
           <Modal open width="md" onClose={closePayModal} dirty={showPayForm}
+            // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+            bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
             subtitle={`${targetMonth} · 예정 ${fmtWon(lease.rentAmount)}`}>
 
@@ -2565,7 +2571,7 @@ export default function TenantClient({
         const room = rooms.find(r => r.id === roomDetailId)
         return (
           <Modal open width="sm" onClose={() => setRoomDetailId(null)}
-            title={`${fmtRoomNo(room?.roomNo)} 정보`} bodyClassName="p-6 space-y-3">
+            title={`${fmtRoomNo(room?.roomNo)} 정보`} bodyClassName="px-5 sm:px-6 py-4 space-y-3">
               {room ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.currentLeaseStatus === 'NON_RESIDENT' && !room.nonResidentVacant ? '비거주 점유' : room.isVacant ? '공실' : '거주중'}</span></div>
@@ -3872,6 +3878,8 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
 
   return (
     <Modal open onClose={onClose} width="md" dirty={dirty}
+      // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
+      bodyClassName=""
       title="고객 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}

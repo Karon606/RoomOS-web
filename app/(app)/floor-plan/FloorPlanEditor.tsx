@@ -417,7 +417,7 @@ function AiImportModal({
     <Modal open onClose={onCancel} width="sm" title="AI 도면 인식"
       // 인식 결과(preview)가 있으면 배경클릭 오조작으로 분석 결과가 날아가지 않게
       dirty={!!preview || pending}>
-      <div className="p-6 pt-4 space-y-4">
+      <div className="space-y-4">
         <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
           평면도 사진을 업로드하면 AI가 방, 복도, 계단 등을 자동으로 인식하여 추가합니다.
         </p>
@@ -1540,7 +1540,7 @@ export default function FloorPlanEditor({
               <Btn variant="primary" size="sm" onClick={commitRename}>변경</Btn>
             </ModalFooterActions>
           }>
-          <div className="p-5">
+          <div>
             <input
               type="text"
               autoFocus

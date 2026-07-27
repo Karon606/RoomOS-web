@@ -18,7 +18,7 @@ export function InfoHint({ title, children, z }: {
         className="ml-1.5 inline-flex items-center justify-center align-[-2px]"
         style={{ color: 'inherit', opacity: 0.55 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
       <Modal open={open} onClose={() => setOpen(false)} title={title} width="xs" z={z}>
-        <div className="p-5 text-sm leading-relaxed text-[var(--warm-dark)]">{children}</div>
+        <div className="text-sm leading-relaxed text-[var(--warm-dark)]">{children}</div>
       </Modal>
     </>
   )

@@ -259,6 +259,8 @@ export default function DataButtons() {
       <Modal open onClose={close} width="lg"
         // 처리 방법을 하나라도 직접 고른 뒤에는 v2.0 §12 dirty — 배경클릭 오조작으로 분석 결과 유실 방지
         dirty={Object.keys(resolutions).length > 0}
+        // 풀블리드 — 안내 배너와 충돌 목록이 각자 여백을 갖는 구조라 기본 패딩을 쓰면 이중 여백이 된다.
+        bodyClassName=""
         title={hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
         subtitle={[
           summaryParts.length > 0 ? summaryParts.join(' · ') : null,
@@ -331,7 +333,7 @@ export default function DataButtons() {
 
     return (
       <Modal open onClose={close} width="sm" title="가져오기 완료">
-        <div className="p-6 pt-4 space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2">
             {Object.entries(results).map(([sheet, r]) => (
               <div key={sheet} className="flex items-center justify-between text-sm">
@@ -401,7 +403,7 @@ export default function DataButtons() {
               <Btn variant="primary" size="md" className="flex-1" onClick={doExport}>내보내기</Btn>
             </div>
           }>
-            <div className="px-6 py-4">
+            <div>
               <div className="space-y-2">
                 {([
                   { value: 'month', label: '해당 월',   desc: `${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 데이터` },

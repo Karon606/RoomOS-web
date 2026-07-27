@@ -33,7 +33,8 @@ export function Modal({
   headerExtra,
   footer,
   children,
-  bodyClassName = '',
+  // 기본 = 헤더 정합 패딩(px-5 sm:px-6 py-4). 풀블리드가 필요하면 bodyClassName='' 을 명시하고 사유 주석을 남긴다.
+  bodyClassName = 'px-5 sm:px-6 py-4',
   z = 200,
   dirty = false,
 }: {
