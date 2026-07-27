@@ -2066,19 +2066,28 @@ export async function deleteRentDiscount(id: string): Promise<{ ok: true } | { o
   }
 }
 // 이 방에 배정된 지출(누적) — 방 상세 'ㅇ방 지출' 섹션용.
+// 표시일 = 배정일(assignedAt) 우선, 없으면 구매일(date) 폴백 — "이 방에 언제 들어왔나" 기준(2026-07-28 전문가 오더).
 export async function getRoomExpenses(roomId: string): Promise<{
   total: number
-  items: { id: string; date: string; category: string; amount: number; vendor: string | null; memo: string | null; detail: string | null; itemLabel: string | null }[]
+  items: { id: string; date: string; purchaseDate: string | null; category: string; amount: number; vendor: string | null; memo: string | null; detail: string | null; itemLabel: string | null }[]
 }> {
   const propertyId = await getPropertyId()
   const rows = await prisma.expense.findMany({
     where: { propertyId, roomId },
-    orderBy: { date: 'desc' },
-    select: { id: true, date: true, category: true, amount: true, vendor: true, memo: true, detail: true, itemLabel: true },
+    select: { id: true, date: true, assignedAt: true, category: true, amount: true, vendor: true, memo: true, detail: true, itemLabel: true },
   })
+  const items = rows.map(r => {
+    const purchase = r.date.toISOString().slice(0, 10)
+    const display = r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : purchase
+    return {
+      id: r.id, date: display,
+      purchaseDate: display !== purchase ? purchase : null,   // 배정일과 다를 때만 구매일 병기
+      category: r.category, amount: r.amount, vendor: r.vendor, memo: r.memo, detail: r.detail, itemLabel: r.itemLabel,
+    }
+  }).sort((a, b) => b.date.localeCompare(a.date))
   return {
-    total: rows.reduce((s, r) => s + r.amount, 0),
-    items: rows.map(r => ({ id: r.id, date: r.date.toISOString().slice(0, 10), category: r.category, amount: r.amount, vendor: r.vendor, memo: r.memo, detail: r.detail, itemLabel: r.itemLabel })),
+    total: items.reduce((s, r) => s + r.amount, 0),
+    items,
   }
 }
 

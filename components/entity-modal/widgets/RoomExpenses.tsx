@@ -33,7 +33,8 @@ export function RoomExpenses({ roomId }: { roomId: string }) {
           {data.items.map(it => {
             // 품목명 우선 표시 — detail('[슬라이드바 거치대] x 1개') 또는 itemLabel, 없으면 카테고리.
             const name = it.detail || it.itemLabel || it.category
-            const sub = [(it.detail || it.itemLabel) ? it.category : null, it.vendor, it.memo].filter(Boolean).join(' · ')
+            // 날짜열은 배정일(없으면 구매일) — 배정일과 구매일이 다른 행만 sub 끝에 구매일 병기
+            const sub = [(it.detail || it.itemLabel) ? it.category : null, it.vendor, it.memo, it.purchaseDate ? `구매 ${it.purchaseDate.slice(5)}` : null].filter(Boolean).join(' · ')
             return (
               <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem]">
                 <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{it.date.slice(5)}</span>
