@@ -2083,6 +2083,83 @@ export async function getRoomExpenses(roomId: string): Promise<{
 }
 
 
+// 이 방의 거주 이력 — RoomStay 구간(endDate null = 현재) + 그 구간의 입주자명. 최신 구간이 위.
+export async function getRoomStayHistory(roomId: string): Promise<{
+  items: { id: string; tenantName: string; startDate: string | null; endDate: string | null }[]
+}> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.roomStay.findMany({
+    where: { propertyId, roomId },
+    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, startDate: true, endDate: true,
+      leaseTerm: { select: { tenant: { select: { name: true } } } },
+    },
+  })
+  return {
+    items: rows.map(r => ({
+      id: r.id,
+      tenantName: r.leaseTerm?.tenant?.name ?? '—',
+      startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,
+      endDate: r.endDate ? r.endDate.toISOString().slice(0, 10) : null,
+    })),
+  }
+}
+
+
+// 이 방에 접수된 요청 — 등록 시점 호실번호(roomNoSnapshot)가 이 방 번호와 같은 건.
+// 이사·퇴실로 입주자가 바뀌어도 '당시 이 방의 요청'이 그대로 남는다. 호실 번호는 서버에서 조회.
+export async function getRoomRequests(roomId: string): Promise<{
+  items: { id: string; content: string; requestDate: string; resolvedAt: string | null; isUrgent: boolean; tenantName: string | null }[]
+}> {
+  const propertyId = await getPropertyId()
+  const room = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { roomNo: true } })
+  if (!room) return { items: [] }
+  const rows = await prisma.tenantRequest.findMany({
+    where: { propertyId, deletedAt: null, roomNoSnapshot: room.roomNo },
+    orderBy: [{ requestDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, content: true, requestDate: true, resolvedAt: true, isUrgent: true,
+      tenant: { select: { name: true } },
+    },
+  })
+  return {
+    items: rows.map(r => ({
+      id: r.id,
+      content: r.content,
+      requestDate: r.requestDate.toISOString().slice(0, 10),
+      resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+      isUrgent: r.isUrgent,
+      tenantName: r.tenant?.name ?? null,
+    })),
+  }
+}
+
+
+// 이 입주자의 이사 이력 — 이 사람의 계약들이 거쳐간 RoomStay 구간 + 호실 번호. 최신 구간이 위.
+export async function getTenantMoveHistory(tenantId: string): Promise<{
+  items: { id: string; roomNo: string; startDate: string | null; endDate: string | null }[]
+}> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.roomStay.findMany({
+    where: { propertyId, leaseTerm: { tenantId } },
+    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, startDate: true, endDate: true,
+      room: { select: { roomNo: true } },
+    },
+  })
+  return {
+    items: rows.map(r => ({
+      id: r.id,
+      roomNo: r.room.roomNo,
+      startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,
+      endDate: r.endDate ? r.endDate.toISOString().slice(0, 10) : null,
+    })),
+  }
+}
+
+
 // 고객별 최근 결제수단 — 수납 폼 프리필용(운영자 요청 2026-07-06).
 // 특정 고객은 카드/현금을 고정적으로 쓰므로 '기기에서 마지막으로 쓴 방식'(전역)이 아니라
 // 그 고객의 직전 기록을 따른다. 기록이 없으면 null(호출부가 기기 최근 → 계좌이체 순 폴백).

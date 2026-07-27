@@ -12,6 +12,8 @@ import { RoomBasicInfo } from '../widgets/RoomBasicInfo'
 import { RoomSpatialInfo } from '../widgets/RoomSpatialInfo'
 import { MemoSection } from '../widgets/MemoSection'
 import { RoomExpenses } from '../widgets/RoomExpenses'
+import { RoomStayHistory } from '../widgets/RoomStayHistory'
+import { RoomRequests } from '../widgets/RoomRequests'
 
 type RoomDetail = NonNullable<Awaited<ReturnType<typeof getRoomDetail>>>
 
@@ -39,6 +41,10 @@ export function RoomBody({ roomId, onApplyScheduledNow }: {
       <MemoSection memo={room.memo} />
       <div className="mt-2.5" />
       <RoomExpenses roomId={roomId} />
+      <div className="mt-2.5" />
+      <RoomStayHistory roomId={roomId} />
+      <div className="mt-2.5" />
+      <RoomRequests roomId={roomId} />
     </>
   )
 }

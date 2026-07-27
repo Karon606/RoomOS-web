@@ -23,6 +23,7 @@ import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
 import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
+import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 
@@ -69,6 +70,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
+      {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
+      <TenantMoveHistory tenantId={tenant.id} />
       {/* 중도퇴실 환불 확정 — 상시 적용취소 진입점(§16, 토스트가 사라져도 여기서 항상 가능) */}
       {lease && (() => {
         const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
