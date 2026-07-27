@@ -32,12 +32,25 @@
 
     var qs = new URLSearchParams(window.location.search);
 
+    // UUID 생성 — pv_id(방문 1건)와 vid(익명 방문자 ID)가 공용. randomUUID 없으면 폴백 생성.
+    function genUuid() {
+      return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8; return v.toString(16);
+          });
+    }
+
+    // 익명 방문자 ID — localStorage 영속. 같은 브라우저면 날짜·IP(모바일 이동)가 바뀌어도 같은 방문자로
+    // 이어진다(재방문 회차 과소집계 해소). storage 막힌 브라우저는 null → 서버가 기존 방식으로 폴백.
+    var VID = null;
+    try {
+      VID = localStorage.getItem('stayeumVid');
+      if (!VID) { VID = genUuid(); localStorage.setItem('stayeumVid', VID); }
+    } catch (e) { VID = null; }
+
     // pv_id 를 클라가 만든다 — 입장 응답을 기다리지 않아, 응답 전 이탈한 빠른 방문도 closeup 이 같은 id 로
-    // 기록된다(예전엔 응답 전 이탈이 통째로 유실됐다). randomUUID 없으면 폴백 생성.
-    var pv_id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
-      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-          var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8; return v.toString(16);
-        });
+    // 기록된다(예전엔 응답 전 이탈이 통째로 유실됐다).
+    var pv_id = genUuid();
     window.__stayeumPv = pv_id;   // 갤러리 스크립트(_gallery.js)가 같은 방문에 이벤트를 붙일 수 있게 노출
     var startedAt = Date.now();
     var maxScrollPct = 0;
@@ -62,6 +75,7 @@
 
     var payload = {
       id: pv_id,
+      vid: VID,
       slug: SLUG,
       path: window.location.pathname,
       referrer: document.referrer || null,

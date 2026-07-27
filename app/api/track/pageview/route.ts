@@ -37,6 +37,12 @@ function visitorHash(ip: string | null, ua: string | null, slug: string): string
   return createHash('sha256').update(`${today}|${ip ?? ''}|${ua ?? ''}|${slug}`).digest('hex').slice(0, 16)
 }
 
+// 익명 방문자 ID(vid) 기반 안정 해시 — 날짜·IP 무관이라 같은 브라우저면 계속 같은 방문자로 이어진다.
+// DB 에는 원본 vid 가 아닌 해시만 저장(16자 hex, 기존 visitorHash 컬럼·표기 그대로 재사용).
+function stableVisitorHash(vid: string, slug: string): string {
+  return createHash('sha256').update(`v1|${vid}|${slug}`).digest('hex').slice(0, 16)
+}
+
 // 안전 정수 변환 (음수·NaN·과대값 제거)
 function safeInt(v: unknown, max = 10000): number | null {
   const n = typeof v === 'number' ? v : Number(v)
@@ -49,6 +55,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null) as
       | {
           id?: string
+          vid?: string
           slug?: string; path?: string; referrer?: string
           utmSource?: string; utmMedium?: string; utmCampaign?: string
           screenWidth?: number; screenHeight?: number
@@ -64,6 +71,8 @@ export async function POST(req: NextRequest) {
     // 'pv_id 응답 전 이탈' 결측(빠른 이탈자가 통째로 유실되던 것)을 없앤다(전문가 지적). uuid 형식만 수용.
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     const clientId = typeof body.id === 'string' && UUID_RE.test(body.id) ? body.id : null
+    // 익명 방문자 ID(localStorage 영속) — 있으면 IP·날짜와 무관한 안정 해시로 같은 사람을 이어준다(모바일 IP 변동 과소집계 해소)
+    const vid = typeof body.vid === 'string' && UUID_RE.test(body.vid) ? body.vid.toLowerCase() : null
     const path = trim(body.path) ?? `/members/${slug}/`
     const referrer = trim(body.referrer)
     const referrerHost = extractHost(referrer)
@@ -89,7 +98,7 @@ export async function POST(req: NextRequest) {
     const uaInfo = parseUA(ua)
     const isMobile = uaInfo.deviceType === 'mobile'
     const refInfo = categorizeReferrer(referrerHost)
-    const vh = visitorHash(ip, ua, slug)
+    const vh = vid ? stableVisitorHash(vid, slug) : visitorHash(ip, ua, slug)
 
     // 도시 정확도 보정 — 봇이 아니면 ipinfo 로 조회(한국 IP 도시 오판정 보정).
     // 실패/타임아웃이면 Vercel 헤더값을 그대로 사용(geo 가 기록을 막지 않게).

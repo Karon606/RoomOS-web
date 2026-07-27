@@ -717,7 +717,8 @@ export async function getVisitSessions(
   const page = hasMore ? raw.slice(0, VISIT_PAGE_SIZE) : raw
 
   // 회차 — 이 페이지에 등장한 방문자만 조회창 전체에서 오름차순으로 세어 순번을 매긴다.
-  // (visitorHash 는 날짜|IP|UA|slug 해시라 날짜 경계에서 바뀐다 — 회차는 같은 날 안에서만 이어진다)
+  // (visitorHash: 익명 방문자 ID(vid, localStorage) 기반 안정 해시가 기본 — 날짜·IP 무관하게 이어진다.
+  //  vid 없는 방문(storage 차단·구 데이터)은 날짜|IP|UA|slug 해시 폴백이라 그 건들만 날짜 경계에서 끊긴다. 2026-07-27)
   const hashes = Array.from(new Set(page.map(r => r.visitorHash).filter((h): h is string => !!h)))
   const seqById = new Map<string, number>()
   const totalByHash = new Map<string, number>()
