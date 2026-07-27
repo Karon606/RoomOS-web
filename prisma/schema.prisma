@@ -1605,6 +1605,7 @@ model ErrorReport {
   breadcrumbs Json?                              // 최근 동작 자취(이동·에러)
   errorText   String?                            // 자동 캡처된 에러 메시지
   userNote    String?                            // 사용자 설명
+  imageFileIds Json?                             // 첨부 캡처 이미지 Drive 파일 ID 배열(최대 3장, 2026-07-27)
   status      String   @default("open")          // open | done | dismissed
 
   @@index([status, createdAt])

@@ -1,10 +1,11 @@
 'use client'
 
-// 전역 '오류신고' 플로팅 버튼 — 오류 발생 즉시 눌러 직전 동작 자취 + 메모를 신고.
+// 전역 '오류·개선 신고' 플로팅 버튼 — 문제나 개선 아이디어를 직전 동작 자취 + 메모 + 사진으로 신고.
 // 위치 이동: 꾹 누른 뒤(롱프레스) 끌면 원하는 곳으로 옮길 수 있고, 그 위치가 저장됨(모바일서 다른 UI 가림 방지).
 // 짧게 탭 = 신고창 열기. (탭/이동 구분: 350ms 이상 누르면 이동 모드)
 import { useState, useRef, useEffect } from 'react'
-import { submitErrorReport } from '@/app/(app)/errorReports'
+import { submitErrorReport, createErrorReportImageSession } from '@/app/(app)/errorReports'
+import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { getCrumbs, lastError } from '@/lib/errorBreadcrumbs'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
@@ -15,11 +16,17 @@ const BTN_SIZE = 48          // w-12 h-12
 const EDGE = 8               // 화면 가장자리 최소 여백
 const LONG_PRESS_MS = 350    // 이 시간 이상 누르면 '이동 모드'
 const MOVE_CANCEL = 8        // 이동 모드 진입 전 이만큼 움직이면(스크롤 등) 취소
+const MAX_IMAGES = 3         // 첨부 사진 최대 장수
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024   // 장당 10MB
 
 export default function ErrorReportButton() {
   const [open, setOpen] = useState(false)
   const [note, setNote] = useState('')
   const [pending, setPending] = useState(false)
+  // 첨부 사진 — 업로드는 '신고 보내기' 시점에 수행(선택 시점 업로드는 취소 시 고아 파일이 남는다)
+  const [images, setImages] = useState<{ file: File; url: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imagesRef = useRef<{ file: File; url: string }[]>([])
   const [snapshot, setSnapshot] = useState<{ url: string; err: string | null; crumbs: { t: string; type: string; detail: string }[] }>({ url: '', err: null, crumbs: [] })
 
   // 이동(드래그) 상태 — pos=null 이면 기본 위치(우하단). 저장된 위치 있으면 그 좌표 사용.
@@ -58,6 +65,10 @@ export default function ErrorReportButton() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  // 미리보기 objectURL 정리 — 언마운트 시 남은 것 일괄 해제(선택 취소·삭제 때는 개별 해제)
+  useEffect(() => { imagesRef.current = images }, [images])
+  useEffect(() => () => { imagesRef.current.forEach(im => URL.revokeObjectURL(im.url)) }, [])
 
   const clearTimer = () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null } }
 
@@ -115,20 +126,69 @@ export default function ErrorReportButton() {
       crumbs: getCrumbs(),
     })
     setNote('')
+    clearImages()
     setOpen(true)
   }
+
+  const clearImages = () => setImages(prev => { prev.forEach(im => URL.revokeObjectURL(im.url)); return [] })
+
+  const closeModal = () => { clearImages(); setOpen(false) }
+
+  const onPickImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? [])
+    e.target.value = ''   // 같은 파일 재선택도 change 가 발생하도록
+    if (picked.length === 0) return
+    const added: { file: File; url: string }[] = []
+    let overSize = 0
+    let overCount = false
+    for (const f of picked) {
+      if (images.length + added.length >= MAX_IMAGES) { overCount = true; break }
+      if (f.size > MAX_IMAGE_BYTES) { overSize++; continue }
+      added.push({ file: f, url: URL.createObjectURL(f) })
+    }
+    if (added.length > 0) setImages(prev => [...prev, ...added])
+    if (overSize > 0) pushToast('info', `사진 ${overSize}장은 10MB를 넘어 제외했어요.`)
+    if (overCount) pushToast('info', `사진은 최대 ${MAX_IMAGES}장까지 첨부할 수 있어요.`)
+  }
+
+  const removeImage = (idx: number) => setImages(prev => {
+    const target = prev[idx]
+    if (target) URL.revokeObjectURL(target.url)
+    return prev.filter((_, i) => i !== idx)
+  })
 
   const submit = async () => {
     setPending(true)
     try {
+      // 첨부 업로드 — 일부 실패해도 신고 자체는 저장한다(성공한 사진만 첨부).
+      const imageFileIds: string[] = []
+      let failedImages = 0
+      for (const im of images) {
+        try {
+          const session = await createErrorReportImageSession({
+            fileName: im.file.name,
+            mimeType: im.file.type || 'application/octet-stream',
+            fileSize: im.file.size,
+            origin: window.location.origin,
+          })
+          if (!session.ok) { failedImages++; continue }
+          imageFileIds.push(await uploadFileToDriveSession(session.uploadUrl, im.file))
+        } catch { failedImages++ }
+      }
+
       const res = await submitErrorReport({
         url: snapshot.url,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
         breadcrumbs: snapshot.crumbs,
         errorText: snapshot.err ?? undefined,
         userNote: note || undefined,
+        imageFileIds: imageFileIds.length > 0 ? imageFileIds : undefined,
       })
-      if (res.ok) { pushToast('success', '오류가 신고되었습니다. 확인 후 처리할게요.'); setOpen(false) }
+      if (res.ok) {
+        pushToast('success', '신고가 접수되었습니다. 확인 후 처리할게요.')
+        if (failedImages > 0) pushToast('info', `사진 ${failedImages}장은 업로드하지 못했어요.`)
+        closeModal()
+      }
       else pushToast('error', res.error)
     } finally { setPending(false) }
   }
@@ -145,8 +205,8 @@ export default function ErrorReportButton() {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onContextMenu={e => e.preventDefault()}
-        aria-label="오류 신고 (길게 눌러 위치 이동)"
-        title="오류 신고. 길게 눌러 끌면 위치를 옮길 수 있어요"
+        aria-label="오류·개선 신고 (길게 눌러 위치 이동)"
+        title="오류·개선 신고. 길게 눌러 끌면 위치를 옮길 수 있어요"
         className={`fixed z-[var(--z-report)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'right-4'}`}
         style={{
           background: 'var(--coral)',
@@ -165,8 +225,8 @@ export default function ErrorReportButton() {
         </svg>
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="오류 신고" subtitle="방금 발생한 문제를 바로 신고하세요"
-        z={380} dirty={!!note.trim()}>   {/* 프리즘(z 320) 등 어떤 화면 위에서도 최상단(신고 e781fcdf) + 작성 중 보호 */}
+      <Modal open={open} onClose={closeModal} title="오류·개선 신고" subtitle="문제도, 개선 아이디어도 좋아요."
+        z={380} dirty={!!note.trim() || images.length > 0}>   {/* 프리즘(z 320) 등 어떤 화면 위에서도 최상단(신고 e781fcdf) + 작성 중 보호 */}
         <div className="p-4 space-y-3">
           <p className="text-xs text-[var(--warm-muted)]">
             현재 화면과 직전 동작 자취가 자동으로 함께 전송됩니다. 어떤 동작에서 문제가 생겼는지 적어주시면 더 빨리 고칠 수 있어요.
@@ -182,9 +242,41 @@ export default function ErrorReportButton() {
             autoCorrect="on"
             autoCapitalize="sentences"
             spellCheck={true}
-            placeholder="예: 수납 저장을 눌렀더니 금액이 0으로 바뀌었어요"
+            placeholder="예: 수납 저장을 눌렀더니 금액이 0으로 바뀌었어요. 예: 입주자 목록에서 방 번호로 바로 찾을 수 있으면 좋겠어요."
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none"
           />
+
+          {/* 사진 첨부 — 선택 사항이라 빈 드롭존 없이 텍스트 버튼만 상시 노출 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-[var(--warm-mid)]">사진 첨부 (선택)</span>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-xs text-[var(--coral)]">
+                + 사진 선택
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={onPickImages} className="hidden" />
+            {images.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {images.map((im, i) => (
+                  <div key={im.url} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={im.url} alt="" className="w-full h-full object-cover" />
+                    {/* 모바일 사용이 많아 삭제 버튼은 상시 노출(hover 로 숨기지 않음) */}
+                    <button
+                      type="button"
+                      onClick={() => removeImage(i)}
+                      aria-label="사진 삭제"
+                      className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white flex items-center justify-center"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* 자동 캡처 맥락 미리보기 */}
           <details className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">
@@ -202,7 +294,7 @@ export default function ErrorReportButton() {
           </details>
 
           <div className="flex gap-2 pt-1">
-            <Btn type="button" variant="secondary" onClick={() => setOpen(false)} fullWidth>취소</Btn>
+            <Btn type="button" variant="secondary" onClick={closeModal} fullWidth>취소</Btn>
             <Btn type="button" variant="primary" onClick={submit} disabled={pending} fullWidth>
               {pending ? '신고 중…' : '신고 보내기'}
             </Btn>

@@ -40,6 +40,10 @@ if (open.length === 0) {
     console.log(`   화면: ${r.url ?? '—'}`)
     if (r.errorText) console.log(`   에러: ${r.errorText}`)
     if (r.userNote) console.log(`   메모: ${r.userNote}`)
+    if (Array.isArray(r.imageFileIds) && r.imageFileIds.length > 0) {
+      console.log(`   첨부: ${r.imageFileIds.length}장`)
+      for (const id of r.imageFileIds) console.log(`     https://drive.google.com/file/d/${id}/view`)
+    }
     if (Array.isArray(r.breadcrumbs)) {
       const tail = r.breadcrumbs.slice(-6).map(c => `[${c.type}]${c.detail}`).join(' → ')
       console.log(`   자취: ${tail}`)
