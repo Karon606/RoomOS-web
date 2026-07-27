@@ -32,7 +32,8 @@ import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExp
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { setRoomShowOnSite } from '@/app/(app)/room-manage/actions'
-import { kstMonthStr } from '@/lib/kstDate'
+import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
@@ -154,17 +155,20 @@ function CheckoutRefundModal({
   cleaningFee: number
   pending: boolean
   onClose: () => void
-  onConfirm: (refundAmount: number) => void
+  onConfirm: (refundAmount: number, moveOutDate: string) => void
 }) {
   // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
   const [refund, setRefund] = useState(maxRefund)
+  // 실제 퇴실일 — 정본 미니폼(상태 전환 위젯)과 같은 규칙: 기본 오늘, 뒤늦은 처리만 고친다(2026-07-28 오더).
+  const [moveOutDate, setMoveOutDate] = useState(kstYmdStr())
   const unreturned = depositAmount - refund
   const exceedsMax = refund > maxRefund
 
   return (
-    <Modal open onClose={onClose} z={260} width="sm" title="보증금 환불" subtitle={`${tenantName}님 퇴실 정산`}
-      dirty={refund !== maxRefund}
+    <Modal open onClose={onClose} z={260} width="sm"
+      title={depositAmount > 0 ? '보증금 환불' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
+      dirty={refund !== maxRefund || moveOutDate !== kstYmdStr()}
       footer={
         <div className="flex gap-2">
           <button onClick={onClose} disabled={pending}
@@ -173,8 +177,8 @@ function CheckoutRefundModal({
             취소
           </button>
           <button
-            onClick={() => onConfirm(refund)}
-            disabled={pending || exceedsMax}
+            onClick={() => onConfirm(refund, moveOutDate)}
+            disabled={pending || exceedsMax || !moveOutDate}
             className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
             {pending ? '처리 중…' : '퇴실 처리'}
@@ -182,6 +186,13 @@ function CheckoutRefundModal({
         </div>
       }>
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>퇴실일</label>
+            <DatePicker value={moveOutDate} onChange={setMoveOutDate}
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          </div>
+
+          {depositAmount > 0 && (<>
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>보증금</p>
@@ -222,6 +233,11 @@ function CheckoutRefundModal({
               미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
             </p>
           </div>
+          </>)}
+
+          {depositAmount === 0 && (
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>호실이 공실로 전환됩니다.</p>
+          )}
         </div>
     </Modal>
   )
@@ -257,30 +273,23 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     onClose()
   }
 
-  const handleCheckout = async () => {
+  // 퇴실은 보증금 유무와 무관하게 항상 미니폼(퇴실일 입력)으로 — 날짜 없는 즉시 처리 직행 폐기(2026-07-28 오더).
+  const handleCheckout = () => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
-    // 보증금이 있으면 환불 모달 띄우기
-    if (moveOutDeposit > 0) {
-      setRefundModalOpen(true)
-      return
-    }
-    // 보증금 없는 경우 바로 처리
-    if (!(await confirmDialog({ title: '퇴실 처리할까요?', message: '호실이 공실로 전환됩니다.', level: 'caution', confirmLabel: '퇴실 처리' }))) return
-    setConfirmPending(true); setConfirmError('')
-    const res = await checkoutTenant(moveOutLeaseId, alert.tenantId)
-    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
-    router.refresh()
-    onClose()
+    setRefundModalOpen(true)
   }
 
-  const handleRefundConfirm = async (refundAmount: number) => {
+  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string) => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
     setConfirmPending(true); setConfirmError('')
-    const res = await checkoutWithDepositRefund({
-      leaseTermId:  moveOutLeaseId,
-      tenantId:     alert.tenantId,
-      refundAmount,
-    })
+    const res = moveOutDeposit > 0
+      ? await checkoutWithDepositRefund({
+          leaseTermId:  moveOutLeaseId,
+          tenantId:     alert.tenantId,
+          refundAmount,
+          moveOutDate,
+        })
+      : await checkoutTenant(moveOutLeaseId, alert.tenantId, moveOutDate)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     setRefundModalOpen(false)
     router.refresh()

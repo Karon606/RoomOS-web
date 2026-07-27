@@ -332,6 +332,7 @@ export async function updateTenant(formData: FormData): Promise<
   const dueDay             = formData.get('dueDay') as string
   const moveInDate         = formData.get('moveInDate') as string
   const expectedMoveOut    = formData.get('expectedMoveOut') as string | null   // null = 폼에 필드 없음(보존, tourDate/inquiryAt 관행)
+  const actualMoveOut      = formData.get('actualMoveOut') as string | null     // 실제 퇴실일 — 퇴실 상태에서만 렌더(사후 정정 포함)
   const contactAlertDate   = formData.get('contactAlertDate') as string | null
   const paymentTiming      = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const payMethod          = formData.get('payMethod') as string
@@ -616,12 +617,12 @@ export async function updateTenant(formData: FormData): Promise<
         // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
         // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
         ...(moveOutFieldPresent ? { expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null } : {}),
-        // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 퇴실일 우선, 없으면 기존 값, 그마저 없으면 오늘.
-        // 종전엔 폼 경로가 moveOutDate를 아예 안 써 'CHECKED_OUT인데 퇴실일 없음' 오염이 재생산됐다
-        // (파트쿨리나·임형진, 운영자 지적 2026-07-20 — 데이터 땜빵 금지, 생성 경로 근본 수정).
+        // 퇴실 확정 시 실제 퇴실일(moveOutDate) 기록 — 폼의 '실제 퇴실일' 필드 우선, 없으면 기존 값, 그마저 없으면 오늘.
+        // 예정일 복사는 중단 — 계약상 21일이어도 19일에 일찍 나가면 그날이 기록이어야 한다(2026-07-28 오더).
+        // 'CHECKED_OUT인데 퇴실일 없음' 오염 차단(2026-07-20)은 폴백으로 유지.
         // 퇴실을 되돌리면(CHECKED_OUT에서 다른 상태로) 퇴실일도 함께 비운다.
         ...(status === 'CHECKED_OUT'
-          ? { moveOutDate: (moveOutFieldPresent && expectedMoveOut) ? new Date(expectedMoveOut) : (currentLease.moveOutDate ?? new Date()) }
+          ? { moveOutDate: actualMoveOut ? new Date(actualMoveOut) : (currentLease.moveOutDate ?? new Date()) }
           : prevStatus === 'CHECKED_OUT' ? { moveOutDate: null } : {}),
         // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
         ...(moveOutFieldPresent && ((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
@@ -973,6 +974,7 @@ export async function checkoutWithDepositRefund(params: {
   leaseTermId: string
   tenantId: string
   refundAmount: number
+  moveOutDate?: string   // 실제 퇴실일 — 환불 기록 날짜도 같은 날로 맞춘다(정본 미니폼과 동일 규칙)
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -982,12 +984,13 @@ export async function checkoutWithDepositRefund(params: {
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
-    const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId)
+    const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId, params.moveOutDate)
     if (!checkoutRes.ok) return checkoutRes
 
     if (lease.depositAmount > 0) {
       const today = new Date()
-      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const dateStr = params.moveOutDate
+        || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
       const refundRes = await recordDepositReturn({
         leaseTermId:    params.leaseTermId,
         tenantId:       params.tenantId,
@@ -1137,7 +1140,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
 }
 
 // 퇴실 처리
-export async function checkoutTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function checkoutTenant(leaseTermId: string, tenantId: string, moveOutDate?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
@@ -1148,9 +1151,10 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string): Pro
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
+  // moveOutDate = 실제 퇴실일(호출부 입력, 기본 오늘). 예정일 복사 금지 — 계약상 예정일과 실제 퇴실은 다르다(2026-07-28 오더).
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
-    data: { status: 'CHECKED_OUT', moveOutDate: new Date() },
+    data: { status: 'CHECKED_OUT', moveOutDate: moveOutDate ? new Date(moveOutDate) : new Date() },
   })
 
   // [Trigger A] 퇴실 완료 시 예약된 가격이 있으면 baseRent에 적용하고 예약 필드 초기화
@@ -1248,10 +1252,10 @@ export async function applyStatusTransition(input: {
     if (input.moveInDate !== undefined)             data.moveInDate = input.moveInDate ? new Date(input.moveInDate) : null
     if (input.expectedMoveOut !== undefined)        data.expectedMoveOut = input.expectedMoveOut ? new Date(input.expectedMoveOut) : null
     if (input.moveOutDate !== undefined)            data.moveOutDate = input.moveOutDate ? new Date(input.moveOutDate) : null
-    // 퇴실 확정인데 퇴실일 미전달이면 서버가 보정 — 예정일 우선, 없으면 오늘.
-    // 'CHECKED_OUT인데 퇴실일 없음' 오염의 원천 차단(운영자 지적 2026-07-20, 데이터 땜빵 금지)
+    // 퇴실 확정인데 퇴실일 미전달이면 오늘로 보정 — 'CHECKED_OUT인데 퇴실일 없음' 오염 차단(2026-07-20).
+    // 예정일 복사는 중단 — moveOutDate 는 실제 퇴실일이고 계약 예정일과 다를 수 있다(2026-07-28 오더).
     if (input.toStatus === 'CHECKED_OUT' && input.moveOutDate === undefined) {
-      data.moveOutDate = lease.expectedMoveOut ?? new Date()
+      data.moveOutDate = new Date()
     }
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount

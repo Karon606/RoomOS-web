@@ -8,7 +8,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireEdit, getMyRole } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
-import { kstYmd } from '@/lib/kstDate'
+import { kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -2098,7 +2098,8 @@ export async function getRoomStayHistory(roomId: string): Promise<{
 }> {
   const propertyId = await getPropertyId()
   const rows = await prisma.roomStay.findMany({
-    where: { propertyId, roomId },
+    // 표시 게이트 — 거주 이력은 실입주 기록만. 문의·투어·예약 단계 lease 의 구간은 데이터 게이트와 별개로 이중 방어(2026-07-28 오더).
+    where: { propertyId, roomId, leaseTerm: { status: { notIn: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] } } },
     orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, startDate: true, endDate: true,
@@ -2106,7 +2107,8 @@ export async function getRoomStayHistory(roomId: string): Promise<{
     },
   })
   return {
-    items: rows.map(r => ({
+    // 시작일이 아직 오지 않은 열린 구간(입주 예정)은 '현재'로 오독되므로 제외.
+    items: rows.filter(r => !(r.endDate === null && r.startDate && r.startDate.toISOString().slice(0, 10) > kstYmdStr())).map(r => ({
       id: r.id,
       tenantName: r.leaseTerm?.tenant?.name ?? '—',
       startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,
@@ -2151,7 +2153,8 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
 }> {
   const propertyId = await getPropertyId()
   const rows = await prisma.roomStay.findMany({
-    where: { propertyId, leaseTerm: { tenantId } },
+    // 표시 게이트 — 호실 거주 이력과 동일 기준(실입주 구간만, 2026-07-28 오더).
+    where: { propertyId, leaseTerm: { tenantId, status: { notIn: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] } } },
     orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, startDate: true, endDate: true,
@@ -2159,7 +2162,8 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
     },
   })
   return {
-    items: rows.map(r => ({
+    // 시작일 미도래 열린 구간(입주 예정) 제외 — 호실 거주 이력과 동일 규칙.
+    items: rows.filter(r => !(r.endDate === null && r.startDate && r.startDate.toISOString().slice(0, 10) > kstYmdStr())).map(r => ({
       id: r.id,
       roomNo: r.room.roomNo,
       startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,

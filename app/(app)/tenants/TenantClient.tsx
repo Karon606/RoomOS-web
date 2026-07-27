@@ -2855,6 +2855,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
+  const [actualOut, setActualOut]   = useState(toDateInput(lease?.moveOutDate))   // 실제 퇴실일 — 퇴실 상태에서만 렌더
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
   // 문의/투어 예정 = 같은 WAITING_TOUR의 표시 구분(파생) — select 옵션 분리용 UI 상태(운영자 승인 2026-07-19).
   // 투어일이 있으면 '투어 예정' 강제('문의' 옵션 비활성), 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
@@ -3555,7 +3556,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {showExitDate && (
             // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
             // 어느 쪽을 고쳐도 같은 값이 저장되고 미리보기 금액도 따라온다(운영자 신고 2026-07-26).
-            <Field label="퇴실일" name="expectedMoveOut" type="date" value={shortOut} onChange={setShortOut} />
+            // 퇴실 확정 상태에선 '실제 퇴실일'과 쌍이라 계약상 예정일임을 라벨로 구분한다(2026-07-28 오더).
+            <Field label={statusVal === 'CHECKED_OUT' ? '퇴실 예정일 (계약상)' : '퇴실일'} name="expectedMoveOut" type="date" value={shortOut} onChange={setShortOut} />
+          )}
+          {statusVal === 'CHECKED_OUT' && (
+            // 실제 퇴실일 — 계약상 21일이어도 19일에 일찍 나가면 그날. 퇴실 상태에서만 노출(사후 정정용).
+            <Field label="실제 퇴실일" name="actualMoveOut" type="date" value={actualOut || shortOut || kstYmdStr()} onChange={setActualOut} />
           )}
         </div>
       </FormSection>

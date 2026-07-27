@@ -12,6 +12,10 @@ export type RoomStayDb = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$t
 // 종료 상태 — 이 상태로 넘어가면 열린 구간을 마감한다(백필 스크립트의 OPEN_STATUSES 와 여집합).
 const TERMINAL_STATUSES = ['CHECKED_OUT', 'CANCELLED']
 
+// 열린 구간 자격 — RoomStay 는 "실제 점유" 이력이므로 이 3상태만 구간을 만든다(아키텍트 오더 2026-07-28).
+// 예약(RESERVED)·문의·투어는 점유가 아니라 제외 — 입실 처리(ACTIVE 전환)가 ensureOpenStay 를 부르므로 손실 없음.
+export const STAY_ELIGIBLE_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT']
+
 export function isStayTerminalStatus(status: string): boolean {
   return TERMINAL_STATUSES.includes(status)
 }
@@ -37,9 +41,11 @@ async function openStayOf(db: RoomStayDb, leaseTermId: string) {
 export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promise<void> {
   const lease = await db.leaseTerm.findUnique({
     where: { id: leaseTermId },
-    select: { roomId: true, propertyId: true, moveInDate: true },
+    select: { roomId: true, propertyId: true, moveInDate: true, status: true },
   })
   if (!lease?.roomId) return
+  // 자격 게이트 — 예약·문의·투어 등 비점유 상태는 구간을 만들지 않는다(박의균 신고, 클래스 봉합).
+  if (!STAY_ELIGIBLE_STATUSES.includes(lease.status)) return
   const open = await openStayOf(db, leaseTermId)
   if (open?.roomId === lease.roomId) return
   if (open) {
@@ -125,11 +131,30 @@ export async function syncRoomStayOnSave(
   const prevTerminal = isStayTerminalStatus(p.prevStatus)
   const nextTerminal = isStayTerminalStatus(p.nextStatus)
   if (nextTerminal) {
-    if (!prevTerminal) await closeStay(db, leaseTermId, p.at)
+    if (!prevTerminal) { await closeStay(db, leaseTermId, p.at); return }
+    // 종료 상태 유지 중 저장 — 퇴실일 사후 정정이 이력 종료일에도 따라가게 마지막 구간을 갱신한다.
+    const lease = await db.leaseTerm.findUnique({ where: { id: leaseTermId }, select: { moveOutDate: true } })
+    if (!lease?.moveOutDate) return
+    const last = await db.roomStay.findFirst({
+      where: { leaseTermId, endDate: { not: null } },
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+      select: { id: true, endDate: true },
+    })
+    if (last && last.endDate?.getTime() !== lease.moveOutDate.getTime()) {
+      await db.roomStay.update({ where: { id: last.id }, data: { endDate: lease.moveOutDate } })
+    }
+    return
+  }
+  // 자격 게이트 — 종료도 자격도 아닌 상태(예약으로 되돌리기, 입실 취소 undo 등)면 미점유 열린 구간을 지운다.
+  if (!STAY_ELIGIBLE_STATUSES.includes(p.nextStatus)) {
+    await db.roomStay.deleteMany({ where: { leaseTermId, endDate: null } })
     return
   }
   if (prevTerminal) await reopenStay(db, leaseTermId)
   if (p.prevRoomId !== p.nextRoomId) {
     await recordRoomChange(db, leaseTermId, p.prevRoomId, p.nextRoomId, p.at)
   }
+  // 자격 상태로의 저장은 열린 구간을 보장 — 게이트 도입으로 예약 단계엔 구간이 없으므로,
+  // 폼 경로의 예약 → 입실 전환도 여기서 구간이 생긴다(멱등, 같은 호실이면 no-op).
+  await ensureOpenStay(db, leaseTermId)
 }
