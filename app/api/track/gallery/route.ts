@@ -46,7 +46,8 @@ function safeViews(v: unknown): unknown[] | null {
         dwell[k] = ms; c++
       }
     }
-    out.push({ rent, n, seen, maxDepth: maxDepth ?? 0, dwell, zoomed })
+    // rooms 를 저장 객체에 반드시 포함 — 검증만 하고 누락해 '몇 호 몇 번째' 환산이 안 되던 버그(신고 55861e63)
+    out.push({ rent, n, seen, maxDepth: maxDepth ?? 0, dwell, zoomed, rooms })
   }
   return out.length > 0 ? out : null
 }
