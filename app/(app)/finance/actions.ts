@@ -182,7 +182,8 @@ export async function getUnsettledExpenses() {
         select: {
           id: true, brand: true, alias: true,
           cutOffDay: true, payDay: true,
-          linkedAccount: { select: { brand: true, alias: true } },
+          // identifier = 출금계좌 계좌번호. 카드 정산 화면에서 이체용으로 복사한다.
+          linkedAccount: { select: { id: true, brand: true, alias: true, identifier: true } },
         },
       },
     },
@@ -212,7 +213,7 @@ export async function getSettledCardExpenses(targetMonth?: string) {
         select: {
           id: true, brand: true, alias: true,
           cutOffDay: true, payDay: true,
-          linkedAccount: { select: { brand: true, alias: true } },
+          linkedAccount: { select: { id: true, brand: true, alias: true, identifier: true } },
         },
       },
     },

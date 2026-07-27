@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import MonthSelector from '@/components/layout/MonthSelector'
+import { pushToast } from '@/lib/saveStatus'
 
 type UnsettledExpense = {
   id: string; date: Date; amount: number; category: string
@@ -22,16 +23,22 @@ type UnsettledExpense = {
   financialAccount: {
     id: string; brand: string; alias: string | null
     cutOffDay: number | null; payDay: number | null
-    linkedAccount: { brand: string; alias: string | null } | null
+    linkedAccount: { id: string; brand: string; alias: string | null; identifier: string | null } | null
   } | null
 }
 
 type SettleGroup = {
   accountId: string; accountName: string; billMonth: string
   billingPeriodStr: string; linkedAccountName: string | null
+  linkedAccountId: string | null; linkedAccountNo: string | null
   payDayStr: string; items: UnsettledExpense[]; total: number
   isFinalized: boolean
   actualPayStr: string | null   // 결제일이 주말·공휴일이면 다음 영업일(실제이체) — 이동 없으면 null
+}
+
+// 출금계좌별 이체 준비 행 — 확정 청구분을 실제 돈이 빠져나갈 계좌 기준으로 합산한다.
+type PrepRow = {
+  key: string; accountName: string; accountNo: string | null; total: number
 }
 
 function accName(a: { brand: string; alias: string | null } | null) {
@@ -87,13 +94,32 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
         ? new Date(billY, billM - 1, cutOff, 23, 59, 59, 999)
         : new Date(billY, billM, 0, 23, 59, 59, 999)
       const isFinalized = now > closeDate.getTime()
-      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0, isFinalized, actualPayStr })
+      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, linkedAccountId: acc?.linkedAccount?.id ?? null, linkedAccountNo: acc?.linkedAccount?.identifier ?? null, payDayStr, items: [], total: 0, isFinalized, actualPayStr })
     }
     const g = map.get(key)!
     g.items.push(exp)
     g.total += exp.amount
   })
   return Array.from(map.values()).sort((a, b) => a.billMonth.localeCompare(b.billMonth))
+}
+
+// 확정 그룹을 출금계좌별로 합산 — 카드가 여러 장이어도 실제 이체는 계좌 단위로 한 번이면 된다.
+// 출금계좌가 연결되지 않은 그룹은 '출금계좌 미지정' 한 행으로 모은다.
+function buildPrepRows(finalized: SettleGroup[]): PrepRow[] {
+  const map = new Map<string, PrepRow>()
+  finalized.forEach(g => {
+    const key = g.linkedAccountId ?? 'none'
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        accountName: g.linkedAccountName ?? '출금계좌 미지정',
+        accountNo: g.linkedAccountId ? g.linkedAccountNo : null,
+        total: 0,
+      })
+    }
+    map.get(key)!.total += g.total
+  })
+  return Array.from(map.values())
 }
 
 export default function CardSettlementClient({
@@ -112,11 +138,24 @@ export default function CardSettlementClient({
   const monthLabel = `${Number(targetMonth.slice(5))}월`
   const finalizedG = settleGroups.filter(g => g.isFinalized)
   const pendingG   = settleGroups.filter(g => !g.isFinalized)
+  const prepRows   = buildPrepRows(finalizedG)
 
   const handleSettle = async (ids: string[], name: string, billMonth: string) => {
     if (!(await confirmDialog({ title: `'${name}' ${billMonth} 청구분 ${ids.length}건을 정산 완료로 처리할까요?`, confirmLabel: '정산 완료' }))) return
     startTransition(async () => { await settleCardExpenses(ids); router.refresh() })
   }
+
+  const copy = async (text: string, message: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      pushToast('success', message)
+    } catch {
+      pushToast('error', '복사에 실패했습니다. 길게 눌러 직접 복사해 주세요.')
+    }
+  }
+  // 이체 금액란에 그대로 붙여넣도록 쉼표 없이 숫자만 복사한다.
+  const copyAmount = (amount: number) => copy(String(amount), '금액 복사됨. 은행 앱에서 붙여넣으세요.')
+  const copyAccountNo = (no: string) => copy(no, '계좌번호 복사됨.')
 
   const settleCard = (g: SettleGroup) => (
     <div key={`${g.accountId}__${g.billMonth}`} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
@@ -142,8 +181,17 @@ export default function CardSettlementClient({
         <span className="text-xs text-[var(--warm-mid)] font-medium">
           {g.billMonth.replace('-', '년 ')}월 청구 {g.isFinalized ? '총액(확정)' : '예정액'}
         </span>
-        <span className="text-xl font-bold text-[var(--danger-fg)] num">
-          {fmtWon(g.total)}
+        <span className="inline-flex items-baseline gap-1">
+          <span className="text-xl font-bold text-[var(--danger-fg)] num">
+            {fmtWon(g.total)}
+          </span>
+          {/* 확정 청구분만 복사 제공 — 예정 그룹은 마감 전이라 금액이 더 늘 수 있다. */}
+          {g.isFinalized && (
+            <button type="button" onClick={() => copyAmount(g.total)} aria-label="청구액 복사"
+              className="shrink-0 self-center inline-flex items-center justify-center w-11 h-11 -my-2 -mr-3 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+            </button>
+          )}
         </span>
       </div>
       <div className="max-h-40 overflow-y-auto space-y-1.5">
@@ -184,6 +232,40 @@ export default function CardSettlementClient({
         </div>
         <MonthSelector />
       </div>
+
+      {/* 입금 준비 — 확정 청구분이 있을 때만. 은행 앱을 열어 이체하는 순간에 필요한 계좌번호·금액을 바로 복사한다. */}
+      {prepRows.length > 0 && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">출금계좌별 준비 금액</h2>
+          <p className="text-xs text-[var(--warm-muted)]">확정된 청구분을 출금계좌별로 합산했습니다. 복사해서 은행 앱에 붙여넣으세요.</p>
+          <div className="mt-2">
+            {prepRows.map((r, i) => (
+              <div key={r.key}
+                className={`flex items-center justify-between gap-2 py-2.5${i < prepRows.length - 1 ? ' border-b border-[var(--warm-border)]/50' : ''}`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[var(--warm-dark)] truncate">{r.accountName}</p>
+                  {r.accountNo && (
+                    <p className="text-xs text-[var(--warm-muted)] truncate">{r.accountNo}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-base font-bold text-[var(--danger-fg)] num">{fmtWon(r.total)}</span>
+                  {r.accountNo && (
+                    <button type="button" onClick={() => copyAccountNo(r.accountNo!)}
+                      className="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                      계좌 복사
+                    </button>
+                  )}
+                  <button type="button" onClick={() => copyAmount(r.total)}
+                    className="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                    금액 복사
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미정산 신용카드 대금 합산</h2>
