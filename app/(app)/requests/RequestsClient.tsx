@@ -24,11 +24,12 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import MonthSelector from '@/components/layout/MonthSelector'
+import { REQUEST_CATEGORIES } from '@/lib/requestCategories'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
 
-const CATEGORIES = ['시설', '소음', '청결', '편의', '기타'] as const
+const CATEGORIES = REQUEST_CATEGORIES
 type Category = (typeof CATEGORIES)[number]
 
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
