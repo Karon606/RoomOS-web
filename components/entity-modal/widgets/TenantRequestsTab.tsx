@@ -14,6 +14,7 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { Section } from './Section'
+import CategorySelect from '@/components/ui/CategorySelect'
 
 type Request = Awaited<ReturnType<typeof getTenantRequests>>['requests'][number]
 
@@ -84,11 +85,10 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
           <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <div className="min-w-0">
               <label className="block text-[0.65625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>카테고리</label>
-              <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                <option value="">카테고리 없음</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <CategorySelect
+                value={newCategory} onChange={setNewCategory}
+                options={categories} emptyLabel="카테고리 없음" showAddHint closeIconSize={12}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
             </div>
             <div className="min-w-0 flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer">

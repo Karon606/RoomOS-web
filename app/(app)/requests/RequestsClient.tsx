@@ -22,6 +22,7 @@ import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
+import CategorySelect from '@/components/ui/CategorySelect'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -336,14 +337,11 @@ export default function RequestsClient({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">카테고리</label>
-              <select
-                value={addCategory}
-                onChange={e => setAddCategory(e.target.value)}
+              <CategorySelect
+                value={addCategory} onChange={setAddCategory}
+                options={formCategoryOptions} emptyLabel="카테고리 없음" showAddHint
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
-              >
-                <option value="">카테고리 없음</option>
-                {formCategoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">요청일</label>

@@ -22,6 +22,7 @@ import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { normalizeBizNo } from '@/lib/bizNo'
+import { resolveCategoryForSave } from '@/lib/categoryInput'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -502,13 +503,28 @@ async function backfillVendorBizNo(propertyId: string, vendor: string | null, bi
   }
 }
 
+// 폼에서 직접 입력한 지출 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
+// 신규면 Property.expenseCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
+async function resolveExpenseCategoryForSave(propertyId: string, raw: string | null | undefined): Promise<string | null> {
+  const list = await getExpenseCategories()
+  const { value, nextList } = resolveCategoryForSave(list, raw)
+  if (nextList) {
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { expenseCategories: nextList.join(',') } as any,
+    })
+    revalidatePath('/settings')
+  }
+  return value
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true; backfilled?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
-    const category  = formData.get('category') as string
+    const categoryRaw = formData.get('category') as string
     const detail    = formData.get('detail') as string
     const vendor    = formData.get('vendor') as string
     const vendorBizNo = normalizeBizNo(formData.get('vendorBizNo') as string)   // 빈 값·잘못된 길이면 null
@@ -543,7 +559,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     // (이전엔 이 필드가 없어 '품목 2개+ + 배송비 포함' 조합이 합계 불일치로 항상 저장 실패)
     const shippingIncluded  = parseAmount(formData.get('shippingIncluded')) || 0
 
-    if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
+    if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
     // 다중 품목/방별 분배: itemsJson 파싱해 N개 행으로 분할.
     // 품목 2개 이상이거나, 한 품목이라도 방별 분배(allocations)가 있으면 분할 경로.
@@ -739,7 +757,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const id        = formData.get('id') as string
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
-    const category  = formData.get('category') as string
+    const categoryRaw = formData.get('category') as string
     const detail    = formData.get('detail') as string
     const vendor    = formData.get('vendor') as string
     const vendorBizNo = normalizeBizNo(formData.get('vendorBizNo') as string)   // 빈 값·잘못된 길이면 null
@@ -761,7 +779,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const shippingIncluded = parseAmount(formData.get('shippingIncluded')) || 0
     const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외 (수정 시 보존, 새 분할 행에도 전파)
 
-    if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    if (!date || !amount || !categoryRaw) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+    const category = await resolveExpenseCategoryForSave(propertyId, categoryRaw)
+    if (!category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
     const existing = await prisma.expense.findUnique({
       where: { id },

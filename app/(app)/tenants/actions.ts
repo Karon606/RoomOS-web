@@ -18,6 +18,7 @@ import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy }
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { parseRequestCategories } from '@/lib/requestCategories'
+import { resolveCategoryForSave } from '@/lib/categoryInput'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -1671,6 +1672,25 @@ export async function getAllRequestsForProperty() {
   })
 }
 
+// 폼에서 직접 입력한 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
+// 신규면 Property.requestCategories 끝에 덧붙인다. 저장을 취소하면 목록에도 아무것도 안 남는다.
+async function resolveRequestCategoryForSave(propertyId: string, raw: string | null | undefined): Promise<string | null> {
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { requestCategories: true } as any,
+  })
+  const list = parseRequestCategories((property as any)?.requestCategories)
+  const { value, nextList } = resolveCategoryForSave(list, raw)
+  if (nextList) {
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { requestCategories: nextList.join(',') } as any,
+    })
+    revalidatePath('/settings')
+  }
+  return value
+}
+
 export async function createTenantRequest(data: {
   tenantId?: string | null
   content: string
@@ -1684,6 +1704,7 @@ export async function createTenantRequest(data: {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
+    const category = await resolveRequestCategoryForSave(propertyId, data.category)
     await prisma.tenantRequest.create({
       data: {
         tenantId:    data.tenantId ?? null,
@@ -1691,7 +1712,7 @@ export async function createTenantRequest(data: {
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
-        category:    data.category?.trim() || null,
+        category,
         isUrgent:    data.isUrgent ?? false,
         commonPlace: data.commonPlace?.trim() || null,
       },
@@ -1742,6 +1763,7 @@ export async function updateTenantRequest(id: string, data: {
     })
     if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
 
+    const category = await resolveRequestCategoryForSave(propertyId, data.category)
     await prisma.tenantRequest.update({
       where: { id },
       data: {
@@ -1749,7 +1771,7 @@ export async function updateTenantRequest(id: string, data: {
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
-        category:    data.category?.trim() || null,
+        category,
         isUrgent:    data.isUrgent ?? false,
         commonPlace: data.commonPlace?.trim() || null,
       },

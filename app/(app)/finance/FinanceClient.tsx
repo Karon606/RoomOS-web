@@ -41,6 +41,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -201,45 +202,19 @@ function roomsLabel(rows: { room: { roomNo: string } | null; qtyValue?: number |
   return parts.join('·')
 }
 
+// 단위 콤보 — 공용 CategorySelect 를 기존 단위 입력 문법(--cream·px-2 py-1.5 text-xs)으로 감싼 래퍼
 function UnitCombobox({ value, onChange, options, placeholder }: {
   value: string; onChange: (v: string) => void
   options: string[]; placeholder?: string
 }) {
-  const [customMode, setCustomMode] = useState(false)
-  const isInOptions = value === '' || options.includes(value)
-  // 외부 value가 옵션에 없으면 자동으로 custom 모드 (수동 입력값)
-  const showCustom = customMode || (!isInOptions && value !== '')
-
-  if (showCustom) {
-    return (
-      <div className="flex flex-1 min-w-0 gap-1">
-        <input
-          type="text" value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder={placeholder ?? '단위'}
-          className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
-          autoFocus
-        />
-        <button type="button" onClick={() => { setCustomMode(false); onChange('') }}
-          className="px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-      </div>
-    )
-  }
-
   return (
-    <select
-      value={value}
-      onChange={e => {
-        const v = e.target.value
-        if (v === '__custom__') { setCustomMode(true); onChange('') }
-        else onChange(v)
-      }}
-      className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
-    >
-      <option value="">{placeholder ?? '단위'}</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__custom__">기타(직접 입력)</option>
-    </select>
+    <CategorySelect
+      value={value} onChange={onChange} options={options}
+      wrapperClassName="flex-1 min-w-0"
+      className="w-full min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+      emptyLabel={placeholder ?? '단위'}
+      placeholder={placeholder ?? '단위'}
+    />
   )
 }
 
@@ -3572,11 +3547,10 @@ export default function FinanceClient({
                     {/* 카테고리 변경 시 품목 유지 — 저장하면 품목째 새 카테고리로 이동(운영자 지시 2026-07-13).
                         서버(updateExpense)가 제출 카테고리로 품목 행을 저장하고 수령 상태도 보존한다.
                         재고 추적 카테고리 밖으로 옮기면 그 품목은 재고 인식에서 빠진다(카테고리 기준 인식). */}
-                    <select name="category" value={editExpCategory}
-                      onChange={e => setEditExpCategory(e.target.value)}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <CategorySelect
+                      name="category" value={editExpCategory} onChange={setEditExpCategory}
+                      options={expenseCategories} showAddHint
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
@@ -3891,11 +3865,11 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category" value={addExpCategory}
-                    onChange={e => { userPickedCategoryRef.current = true; setAddExpCategory(e.target.value) }}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <CategorySelect
+                    name="category" value={addExpCategory}
+                    onChange={v => { userPickedCategoryRef.current = true; setAddExpCategory(v) }}
+                    options={expenseCategories} showAddHint
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
