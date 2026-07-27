@@ -10,6 +10,7 @@ import {
   deleteTenantRequest,
   restoreTenantRequest,
   createTenantRequest,
+  updateTenantRequest,
   getActiveTenantsForRequests,
   type getAllRequestsForProperty,
 } from '@/app/(app)/tenants/actions'
@@ -71,8 +72,9 @@ export default function RequestsClient({
   const [resolvingMemo, setResolvingMemo] = useState('')
   const [busyId,        setBusyId]        = useState<string | null>(null)   // 행별 처리 중 (전역 잠금 방지)
 
-  // 등록 폼 상태
+  // 등록 폼 상태 — editingId 가 있으면 같은 폼이 수정 모드로 동작한다.
   const [showAddForm,   setShowAddForm]   = useState(false)
+  const [editingId,     setEditingId]     = useState<string | null>(null)
   const [addDirty,      setAddDirty]      = useState(false)   // v2.0 §12 — 등록 폼 입력 보호
   const [addSubject,    setAddSubject]    = useState<'common' | string>('common') // 'common' or tenantId
   const [addCommonPlace, setAddCommonPlace] = useState('')
@@ -178,31 +180,69 @@ export default function RequestsClient({
     })
   }
 
-  const handleAdd = () => {
+  const resetForm = () => {
+    setEditingId(null)
+    setAddDirty(false)
+    setAddSubject('common')
+    setAddCommonPlace('')
+    setAddContent('')
+    setAddCategory('')
+    setAddUrgent(false)
+    setAddReqDate(kstYmdStr())
+    setAddTargetDate('')
+  }
+
+  // 수정 진입 — 같은 모달에 기존 값을 프리필한다.
+  const openEdit = (r: Request) => {
+    setEditingId(r.id)
+    setAddDirty(false)
+    setAddSubject(r.tenantId ?? 'common')
+    setAddCommonPlace(r.commonPlace ?? '')
+    setAddContent(r.content)
+    setAddCategory(r.category ?? '')
+    setAddUrgent(r.isUrgent)
+    setAddReqDate(kstYmdStr(new Date(r.requestDate)))
+    setAddTargetDate(r.targetDate ? kstYmdStr(new Date(r.targetDate)) : '')
+    setShowAddForm(true)
+  }
+
+  const handleSave = () => {
     if (!addContent.trim()) { pushToast('error', '내용을 입력해주세요.'); return }
+    const payload = {
+      tenantId:    addSubject === 'common' ? null : addSubject,
+      content:     addContent,
+      requestDate: addReqDate,
+      targetDate:  addTargetDate || null,
+      category:    addCategory || null,
+      isUrgent:    addUrgent,
+      commonPlace: addSubject === 'common' ? (addCommonPlace || null) : null,
+    }
+    const targetId = editingId
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await createTenantRequest({
-          tenantId:    addSubject === 'common' ? null : addSubject,
-          content:     addContent,
-          requestDate: addReqDate,
-          targetDate:  addTargetDate || null,
-          category:    addCategory || null,
-          isUrgent:    addUrgent,
-          commonPlace: addSubject === 'common' ? (addCommonPlace || null) : null,
-        })
-        if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '요청 등록됨')
+        if (targetId) {
+          const res = await updateTenantRequest(targetId, payload)
+          if (!res.ok) { pushToast('error', res.error); return }
+          // 적용취소 — 서버가 돌려준 이전 값 스냅샷으로 같은 액션을 다시 호출해 원복.
+          const prev = res.prev
+          pushToast('success', '요청 수정됨', {
+            action: {
+              label: '적용취소',
+              run: () => { void updateTenantRequest(targetId, prev).then(r => {
+                if (!r.ok) { pushToast('error', r.error); return }
+                pushToast('info', '수정을 되돌렸습니다')
+                router.refresh()
+              }) },
+            },
+          })
+        } else {
+          const res = await createTenantRequest(payload)
+          if (!res.ok) { pushToast('error', res.error); return }
+          pushToast('success', '요청 등록됨')
+        }
         setShowAddForm(false)
-        setAddDirty(false)
-        setAddSubject('common')
-        setAddCommonPlace('')
-        setAddContent('')
-        setAddCategory('')
-        setAddUrgent(false)
-        setAddReqDate(kstYmdStr())
-        setAddTargetDate('')
+        resetForm()
         router.refresh()
       } finally { release() }
     })
@@ -230,14 +270,14 @@ export default function RequestsClient({
       </div>
       <div className="flex items-center gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
-        <Btn variant="primary" size="md" className="shrink-0" onClick={() => { setAddDirty(false); setShowAddForm(true) }}>
+        <Btn variant="primary" size="md" className="shrink-0" onClick={() => { resetForm(); setShowAddForm(true) }}>
           + 요청 등록
         </Btn>
       </div>
 
-      {/* 등록 폼 — v2.0 §23 페이지 Modal (지출·고객 등록과 동일 흐름) */}
+      {/* 등록·수정 폼 — v2.0 §23 페이지 Modal (지출·고객 등록과 동일 흐름) */}
       <Modal open={showAddForm} onClose={() => { setShowAddForm(false); setAddDirty(false) }}
-        title="새 요청 등록" width="md" dirty={addDirty}>
+        title={editingId ? '요청 수정' : '새 요청 등록'} width="md" dirty={addDirty}>
         <form className="space-y-3" onSubmit={e => e.preventDefault()}
           onInput={() => requestAnimationFrame(() => setAddDirty(true))} onChange={() => setAddDirty(true)}>
 
@@ -340,7 +380,7 @@ export default function RequestsClient({
               variant="primary"
               size="md"
               className="flex-1 font-semibold"
-              onClick={handleAdd}
+              onClick={handleSave}
               disabled={pending || !addContent.trim()}
             >
               {pending ? '저장 중…' : '저장'}
@@ -457,6 +497,11 @@ export default function RequestsClient({
                       onClick={() => handleUnresolve(r.id)}
                       className="min-h-[40px] inline-flex items-center text-xs px-2.5 py-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] disabled:opacity-50 transition-colors">완료 해제</button>
                   )}
+                  {resolved && (
+                    <button type="button" disabled={busyId === r.id}
+                      onClick={() => openEdit(r)}
+                      className="min-h-[40px] inline-flex items-center text-xs px-2.5 py-1.5 rounded-md text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] disabled:opacity-50 transition-colors">수정</button>
+                  )}
                 </div>
 
                 {/* 내용 */}
@@ -514,6 +559,13 @@ export default function RequestsClient({
                         className="text-xs px-2 py-1.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-50"
                       >
                         메모 추가
+                      </button>
+                      <button
+                        onClick={() => openEdit(r)}
+                        disabled={busyId === r.id}
+                        className="text-xs px-2 py-1.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-50"
+                      >
+                        수정
                       </button>
                       <button
                         onClick={() => handleDelete(r.id)}

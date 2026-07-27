@@ -1697,6 +1697,75 @@ export async function createTenantRequest(data: {
   }
 }
 
+// 요청 수정 — 완료 관련 필드(resolvedAt·resolutionMemo)는 기존 완료 흐름 전용이라 여기서 다루지 않는다.
+// 성공 시 이전 값 스냅샷을 돌려주어 적용취소(같은 액션 재호출)로 원복할 수 있게 한다.
+export type TenantRequestSnapshot = {
+  tenantId: string | null
+  commonPlace: string | null
+  category: string | null
+  isUrgent: boolean
+  requestDate: string
+  targetDate: string | null
+  content: string
+}
+
+export async function updateTenantRequest(id: string, data: {
+  tenantId?: string | null
+  content: string
+  requestDate: string
+  targetDate: string | null
+  category?: string | null
+  isUrgent?: boolean
+  commonPlace?: string | null
+}): Promise<{ ok: true; prev: TenantRequestSnapshot } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
+
+    // propertyId 스코프 — 다른 영업장 요청은 조회 자체가 안 되므로 수정도 불가.
+    const before = await prisma.tenantRequest.findFirst({
+      where: { id, propertyId, deletedAt: null },
+      select: {
+        tenantId: true, commonPlace: true, category: true,
+        isUrgent: true, requestDate: true, targetDate: true, content: true,
+      },
+    })
+    if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
+
+    await prisma.tenantRequest.update({
+      where: { id },
+      data: {
+        tenantId:    data.tenantId ?? null,
+        content:     data.content.trim(),
+        requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
+        targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
+        category:    data.category?.trim() || null,
+        isUrgent:    data.isUrgent ?? false,
+        commonPlace: data.commonPlace?.trim() || null,
+      },
+    })
+    revalidatePath('/tenants')
+    revalidatePath('/requests')
+    revalidatePath('/dashboard')
+    return {
+      ok: true,
+      prev: {
+        tenantId:    before.tenantId,
+        commonPlace: before.commonPlace,
+        category:    before.category,
+        isUrgent:    before.isUrgent,
+        requestDate: kstYmdStr(before.requestDate),
+        targetDate:  before.targetDate ? kstYmdStr(before.targetDate) : null,
+        content:     before.content,
+      },
+    }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function getActiveTenantsForRequests() {
   const { propertyId } = await getPropertyId()
   return prisma.tenant.findMany({
