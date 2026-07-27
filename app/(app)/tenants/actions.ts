@@ -691,6 +691,8 @@ export async function updateTenant(formData: FormData): Promise<
   }
 
   if (status !== prevStatus) {
+    // 수정 폼 경로의 입실 취소도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27)
+    const cancelReason = status === 'CANCELLED' ? ((formData.get('cancelReason') as string | null)?.trim() || null) : null
     await prisma.tenantStatusLog.create({
       data: {
         tenantId,
@@ -699,6 +701,7 @@ export async function updateTenant(formData: FormData): Promise<
         fromStatus: prevStatus,
         toStatus:   status,
         changedById: user.sub,
+        ...(cancelReason ? { reason: cancelReason } : {}),
       },
     })
   }

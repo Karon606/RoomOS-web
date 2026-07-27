@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
+import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -2841,6 +2842,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
 
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
+  // 수정 폼에서 입실 취소로 바꿀 때도 사유를 받는다 — 상태전환 미니폼과 같은 선택지(운영자 지시 2026-07-27)
+  const [cancelReasonVal, setCancelReasonVal] = useState('')
+  const [cancelReasonEtc, setCancelReasonEtc] = useState('')
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(본국 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
@@ -3136,6 +3140,23 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <option value="CANCELLED">입실 취소</option>
               </optgroup>
             </select>
+            {/* 입실 취소로 바꾸는 저장 — 상태전환 미니폼과 동일한 사유 수집(수정 폼 경로 누락 봉합, 2026-07-27) */}
+            {statusVal === 'CANCELLED' && lease?.status !== 'CANCELLED' && (
+              <div className="mt-2 space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">취소 사유 <span className="font-normal opacity-60">(선택)</span></label>
+                <select value={cancelReasonVal} onChange={e => setCancelReasonVal(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">기록 안 함</option>
+                  {CANCEL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                {cancelReasonVal === '기타' && (
+                  <input type="text" value={cancelReasonEtc} onChange={e => setCancelReasonEtc(e.target.value)}
+                    placeholder="사유를 직접 입력하세요"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                )}
+                <input type="hidden" name="cancelReason" value={buildCancelReason(cancelReasonVal, cancelReasonEtc)} />
+              </div>
+            )}
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
             {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">문의 = 연락만 받은 상태 · 투어일을 잡으면 &lsquo;투어 예정&rsquo;으로 바뀝니다</p>

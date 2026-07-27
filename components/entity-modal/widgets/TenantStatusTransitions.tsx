@@ -15,6 +15,7 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
+import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
@@ -103,6 +104,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
+  const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
   const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
@@ -151,7 +153,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         const received = await getReservedPrepaidTotal(lease.id)
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
-          setTransReason('')
+          setTransReason(''); setTransReasonEtc('')
           setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancelPrepaid: true })
           return
         }
@@ -160,7 +162,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         const received = await getReceivedDepositTotal(lease.id)
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
-          setTransReason('')
+          setTransReason(''); setTransReasonEtc('')
           setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
           return
         }
@@ -171,7 +173,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     // e1b81629: 입실 취소는 확인창 대신 미니폼 — 취소 사유(선택)를 함께 수집해 이력에 남긴다.
     if (def.key === 'cancel') {
       setTransRefund(undefined)
-      setTransReason('')
+      setTransReason(''); setTransReasonEtc('')
       setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: 0, cleaningFee: 0 })
       return
     }
@@ -215,7 +217,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
           if (!r.ok) { pushToast('error', r.error); return }
           const res = await applyStatusTransition({
             leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-            ...(transReason ? { reason: transReason } : {}),
+            ...(buildCancelReason(transReason, transReasonEtc) ? { reason: buildCancelReason(transReason, transReasonEtc) } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { recordIds, extraIncomeId } = r
@@ -245,7 +247,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         }
         const res = await applyStatusTransition({
           leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-          ...(def.key === 'cancel' && transReason ? { reason: transReason } : {}),
+          ...(def.key === 'cancel' && buildCancelReason(transReason, transReasonEtc) ? { reason: buildCancelReason(transReason, transReasonEtc) } : {}),
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
@@ -291,7 +293,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== ''}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== ''}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -311,12 +313,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   <select value={transReason} onChange={e => setTransReason(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     <option value="">기록 안 함</option>
-                    <option value="변심">변심</option>
-                    <option value="다른 곳으로 결정">다른 곳으로 결정</option>
-                    <option value="연락 두절">연락 두절</option>
-                    <option value="일정 변경">일정 변경</option>
-                    <option value="기타">기타</option>
+                    {CANCEL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
+                  {transReason === '기타' && (
+                    <input type="text" value={transReasonEtc} onChange={e => setTransReasonEtc(e.target.value)}
+                      placeholder="사유를 직접 입력하세요"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  )}
                 </div>
               )}
               {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(active.def.field ?? '') && (
