@@ -97,9 +97,10 @@ export default function RequestsClient({
   const [addTargetDate, setAddTargetDate] = useState('')
 
   // 상태·월 스코프까지만 적용한 모집단 — 카테고리 칩 건수의 기준(카테고리 필터 적용 전).
+  // 월 스코프는 요청일(requestDate) 기준 — 과거 달로 넘기면 그 달에 등록된 요청들이 보인다(운영자 결정 2026-07-27,
+  // 종전 '미처리는 월 무관·처리됨만 해결월' 규칙 대체. 미처리도 이번 달로 돌아오면 보이므로 유실 없음).
   const scoped = useMemo(() => initialRequests.filter(r => {
-    // 월 스코프: 처리됨(resolved)은 그 달에 해결된 것만. 미처리(open)는 월 무관 항상 노출(활성 큐 — 놓치지 않게).
-    if (r.resolvedAt && kstMonthOf(r.resolvedAt) !== targetMonth) return false
+    if (kstMonthOf(r.requestDate) !== targetMonth) return false
     if (filterStatus === 'unresolved' && r.resolvedAt) return false
     if (filterStatus === 'resolved'   && !r.resolvedAt) return false
     return true
@@ -134,10 +135,11 @@ export default function RequestsClient({
     addCategory && !categories.includes(addCategory) ? [...categories, addCategory] : categories
   ), [categories, addCategory])
 
-  const unresolvedCount = initialRequests.filter(r => !r.resolvedAt).length
-  const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
-  // 처리됨은 그 달에 해결된 것만(월 스코프) — 세그먼트 건수도 동일 기준
-  const resolvedCount   = initialRequests.filter(r => r.resolvedAt && kstMonthOf(r.resolvedAt) === targetMonth).length
+  // 세그먼트 건수도 요청일 월 스코프와 동일 기준(전체 = 미처리 + 처리됨)
+  const monthScoped     = initialRequests.filter(r => kstMonthOf(r.requestDate) === targetMonth)
+  const unresolvedCount = monthScoped.filter(r => !r.resolvedAt).length
+  const urgentCount     = monthScoped.filter(r => !r.resolvedAt && r.isUrgent).length
+  const resolvedCount   = monthScoped.filter(r => r.resolvedAt).length
 
   // 빈 상태에서 되돌릴 수 있는 필터(카테고리·긴급만·검색어) — 상태 세그먼트는 기본 큐라 초기화 대상이 아니다.
   const hasResettableFilter = filterCategory !== 'all' || filterUrgent || !!search.trim()
@@ -157,11 +159,10 @@ export default function RequestsClient({
       try {
         const res = await resolveTenantRequest(id, memo)
         if (!res.ok) { pushToast('error', res.error); return }
-        // 적용취소(기존 unresolve 재사용) + 과거 월 조회 중이면 증발 안내
+        // 적용취소(기존 unresolve 재사용) — 월 스코프가 요청일 기준이라 처리해도 그 달 화면에 그대로 남는다
         const opts: { action: { label: string; run: () => void }; detail?: string } = {
           action: { label: '적용취소', run: () => unresolveTenantRequest(id).then(r => { if (!r.ok) { pushToast('error', r.error); return } router.refresh() }) },
         }
-        if (targetMonth !== kstMonthOf(new Date())) opts.detail = '처리됨은 이번 달에서 볼 수 있어요.'
         pushToast('success', '완료로 처리했습니다', opts)
         setResolvingId(null)
         setResolvingMemo('')
@@ -273,15 +274,15 @@ export default function RequestsClient({
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">요청 · 컴플레인</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-            미처리 {unresolvedCount}건<span className="text-[var(--warm-muted)]"> (월 무관 전체)</span>
+            <span className="text-[var(--warm-mid)]">{Number(targetMonth.slice(5))}월 요청</span> 기준
+            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+            미처리 {unresolvedCount}건
             {urgentCount > 0 && (
               <>
                 <span className="mx-1.5 text-[var(--warm-border)]">·</span>
                 <span className="text-[var(--coral)] font-semibold">긴급 {urgentCount}건</span>
               </>
             )}
-            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-            처리됨은 <span className="text-[var(--warm-mid)]">{Number(targetMonth.slice(5))}월 해결분</span>
           </p>
         </div>
         <div className="shrink-0"><MonthSelector /></div>
