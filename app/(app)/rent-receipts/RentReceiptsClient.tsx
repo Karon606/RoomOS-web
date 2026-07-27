@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { InfoHint } from '@/components/ui/InfoHint'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -31,7 +32,9 @@ const fetchDocBytes = (driveFileId: string) => async () => {
   return res.arrayBuffer()
 }
 
-export default function RentReceiptsClient({ files, tenants }: { files: RentReceiptListRow[]; tenants: IssuableTenant[] }) {
+export default function RentReceiptsClient({ files, tenants, month }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string }) {
+  // 선택한 달을 발급 화면으로 넘겨 그 달 주기로 자동값이 채워지게 한다(이번 달이면 쿼리 없음).
+  const monthQuery = month ? `?month=${month}` : ''
   const router = useRouter()
   const entityModal = useEntityModal()
   const [tenantQuery, setTenantQuery] = useState('')
@@ -110,10 +113,13 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서
-          <InfoHint title="납부 확인서란?">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
-        </h1>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서
+            <InfoHint title="납부 확인서란?">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다. 위에서 선택한 달로 발급 대상월이 잡힙니다.</InfoHint>
+          </h1>
+        </div>
+        <MonthSelector />
       </div>
 
       <section className="space-y-2">
@@ -130,7 +136,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {tenantRows.map(t => (
               <li key={t.tenantId}>
-                <Link href={`/rent-receipt/${t.tenantId}`}
+                <Link href={`/rent-receipt/${t.tenantId}${monthQuery}`}
                   className="flex items-center justify-between gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 hover:border-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
                   <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
                     {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}

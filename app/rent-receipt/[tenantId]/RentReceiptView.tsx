@@ -15,6 +15,36 @@ type Fields = {
   amount: string; payDate: string; payMethod: string; note: string; recipientName: string
 }
 
+const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
+
+// 모듈 레벨 — 렌더 본문 안에서 정의하면 입력 한 글자마다 컴포넌트 identity 가 바뀌어
+// input 이 unmount/remount 되고 모바일 키보드가 닫힌다(운영자 신고 2026-07-27).
+function Field({ label, value, onChange, placeholder }: {
+  label: string
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  placeholder?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+      <input type="text" value={value} onChange={onChange} placeholder={placeholder} className={inputCls} />
+    </div>
+  )
+}
+
+// 보고 있는 대상월이 '이번 달'과 얼마나 떨어졌는지 (MonthSelector 와 동일 규칙). 같으면 null.
+function relMonthLabel(view: string, today: string): string | null {
+  if (view === today) return null
+  const [vy, vm] = view.split('-').map(Number)
+  const [ty, tm] = today.split('-').map(Number)
+  const diff = (ty - vy) * 12 + (tm - vm)   // +면 과거
+  if (diff === 1) return '지난달'
+  if (diff > 1) return `${diff}개월 전`
+  if (diff === -1) return '다음달'
+  return `${-diff}개월 후`
+}
+
 function buildInitial(data: RentReceiptData): Fields {
   return {
     name: data.name,
@@ -36,6 +66,20 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate } })
+
+  // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
+  // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
+  const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data), issueDate: kstYmdStr() }))
+  const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
+  const rel = relMonthLabel(data.anchorMonth, data.todayMonth)
+  const atCurrentMonth = data.anchorMonth >= data.todayMonth
+  const stepMonth = async (delta: number) => {
+    if (delta > 0 && atCurrentMonth) return
+    if (dirty && !(await confirmDialog({ title: '대상월을 옮길까요?', message: '작성 중인 내용이 초기화됩니다.', confirmLabel: '옮기기', level: 'caution' }))) return
+    const [ay, am] = data.anchorMonth.split('-').map(Number)
+    const d = new Date(ay, am - 1 + delta, 1)
+    router.replace(`/rent-receipt/${data.tenantId}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
 
   const reset = async () => {
     if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라집니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
@@ -96,14 +140,6 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     } finally { release(); setIssuing(false) }
   }
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
-  const Field = ({ label, k, placeholder }: { label: string; k: keyof Fields; placeholder?: string }) => (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
-      <input type="text" value={f[k]} onChange={set(k)} placeholder={placeholder} className={inputCls} />
-    </div>
-  )
-
   // 100dvh + 하단 safe-area — 모바일에서 브라우저 하단 바·홈 인디케이터에 발급 버튼이 잘리던 문제(운영자 신고 2026-07-10)
   return (
     <div className="min-h-dvh bg-[var(--canvas)] flex flex-col items-center px-4 pt-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
@@ -118,26 +154,60 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>
         </div>
 
+        {/* 발급 대상월 — 이번 달이 아니면 '눈에 띄게'(MonthSelector 와 동일한 감색 셸·상대월 배지). 발행일은 항상 오늘. */}
+        <div
+          className="flex items-stretch min-h-[44px] rounded-lg overflow-hidden transition-colors"
+          style={rel
+            ? { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }
+            : { background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
+        >
+          <button
+            onClick={() => void stepMonth(-1)}
+            className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            style={{ color: 'var(--warm-mid)' }}
+            aria-label="이전 달"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 text-sm font-semibold text-center" style={{ color: 'var(--warm-dark)' }}>
+            <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>발급 대상월</span>
+            <span className="truncate">{data.targetMonth}</span>
+            {rel && (
+              <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0"
+                style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
+            )}
+          </div>
+          <button
+            onClick={() => void stepMonth(1)}
+            disabled={atCurrentMonth}
+            className="w-11 shrink-0 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
+            aria-label="다음 달"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="수령인 (입주자)" k="name" placeholder="홍길동" />
-            <Field label="호실" k="room" placeholder="501호" />
+            <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동" />
+            <Field label="호실" value={f.room} onChange={set('room')} placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026.06.05 ~ 2026.07.04" />
-            <Field label="납부 대상월" k="targetMonth" placeholder="2026년 6월분" />
+            <Field label="거주 기간 (1달 선납)" value={f.period} onChange={set('period')} placeholder="2026.06.05 ~ 2026.07.04" />
+            <Field label="납부 대상월" value={f.targetMonth} onChange={set('targetMonth')} placeholder="2026년 6월분" />
           </div>
-          <Field label="금액 (월 이용료, 원)" k="amount" placeholder="390,000" />
+          <Field label="금액 (월 이용료, 원)" value={f.amount} onChange={set('amount')} placeholder="390,000" />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="납부일" k="payDate" placeholder="2026년 6월 16일" />
-            <Field label="납부방법" k="payMethod" placeholder="계좌이체 · 계좌번호 / 현금" />
+            <Field label="납부일" value={f.payDate} onChange={set('payDate')} placeholder="2026년 6월 16일" />
+            <Field label="납부방법" value={f.payMethod} onChange={set('payMethod')} placeholder="계좌이체 · 계좌번호 / 현금" />
           </div>
-          <Field label="비고" k="note" placeholder="다음 납부 예정일 …" />
-          <Field label="임대인 대표 (수령인)" k="recipientName" placeholder="예: 홍길동" />
+          <Field label="비고" value={f.note} onChange={set('note')} placeholder="다음 납부 예정일 …" />
+          <Field label="임대인 대표 (수령인)" value={f.recipientName} onChange={set('recipientName')} placeholder="예: 홍길동" />
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 

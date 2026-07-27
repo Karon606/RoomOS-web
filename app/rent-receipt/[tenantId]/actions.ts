@@ -19,20 +19,25 @@ export type RentReceiptData = {
   payMethod: string       // 납부방법 (계좌이체 · 계좌번호 / 현금)
   note: string            // 비고 (기본: 다음 납부 예정일)
   recipientName: string   // 임대인 대표 성명
+  anchorMonth: string     // 대상 주기 시작월 'YYYY-MM' (발급 화면 월 스테퍼 기준)
+  todayMonth: string      // 이번 달 'YYYY-MM' (KST) — 과거 월 배지·미래 월 차단 판정용
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
 const kor = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return `${y}년 ${m}월 ${d}일` }
 
 // 월세 1달 선납 주기 — 납부일(dueDay) 기준(없으면 입주일의 일). 예) dueDay 5 → 6/5~7/4.
-function rentCyclePeriod(dueDay: string | null, moveIn: Date | null): { start: string; end: string } {
+// anchorMonth('YYYY-MM')를 주면 그 달의 dueDay 를 주기 시작으로 잡는다(과거 달 발급). 없으면 오늘 기준 현재 주기.
+function rentCyclePeriod(dueDay: string | null, moveIn: Date | null, anchorMonth?: string | null): { start: string; end: string } {
   let day = parseInt((dueDay ?? '').replace(/[^0-9]/g, ''), 10)
   if (!Number.isFinite(day) || day < 1 || day > 31) day = moveIn ? new Date(moveIn).getUTCDate() : 1
   const now = new Date(Date.now() + 9 * 3600 * 1000) // KST
   const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate()
   const daysIn = (yy: number, mm: number) => new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate()
+  const anchor = /^\d{4}-\d{2}$/.test(anchorMonth ?? '') ? (anchorMonth as string).split('-').map(Number) : null
   let sy = y, sm = m
-  if (d < Math.min(day, daysIn(y, m))) { sm = m - 1; if (sm < 0) { sm = 11; sy = y - 1 } }
+  if (anchor) { sy = anchor[0]; sm = anchor[1] - 1 }
+  else if (d < Math.min(day, daysIn(y, m))) { sm = m - 1; if (sm < 0) { sm = 11; sy = y - 1 } }
   const start = new Date(Date.UTC(sy, sm, Math.min(day, daysIn(sy, sm))))
   let ny = sy, nm = sm + 1; if (nm > 11) { nm = 0; ny = sy + 1 }
   const nextStart = new Date(Date.UTC(ny, nm, Math.min(day, daysIn(ny, nm))))
@@ -50,7 +55,8 @@ async function requireAuthAndProperty() {
 
 const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? `${v.trim()}호` : v) : ''
 
-export async function getRentReceiptData(tenantId: string): Promise<RentReceiptData | null> {
+// month('YYYY-MM')를 주면 그 달 주기로 자동값을 채운다(과거 달 발급). 미지정이면 현재 주기 — 기존 재발급 링크 무회귀.
+export async function getRentReceiptData(tenantId: string, month?: string): Promise<RentReceiptData | null> {
   const { propertyId } = await requireAuthAndProperty()
 
   const [tenant, property] = await Promise.all([
@@ -75,10 +81,14 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
 
   const lease = tenant.leaseTerms[0] ?? null
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
-  const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null)
+  const anchorMonth = /^\d{4}-\d{2}$/.test(month ?? '') ? (month as string) : null
+  const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null, anchorMonth)
   const nextDue = dotPad(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
   const [cy, cm] = cycle.start.split('-').map(Number)
   const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+  const todayMonth = todayKst.slice(0, 7)
+  // 납부일 기본값 — 과거 월 발급이면 그 주기 시작일, 이번 달(또는 월 미지정)이면 오늘.
+  const payDate = anchorMonth && anchorMonth < todayMonth ? cycle.start : todayKst
 
   return {
     tenantId: tenant.id,
@@ -88,9 +98,11 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
     period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
     targetMonth: `${cy}년 ${cm}월분`,
     amount: lease?.rentAmount ?? 0,
-    payDate: kor(todayKst),
+    payDate: kor(payDate),
     payMethod: property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금',
     note: `다음 납부 예정일 ${nextDue}`,
     recipientName: biz.ceoName ?? '',
+    anchorMonth: cycle.start.slice(0, 7),
+    todayMonth,
   }
 }
