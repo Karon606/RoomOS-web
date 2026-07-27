@@ -16,6 +16,7 @@ import {
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
+  getRequestCategories, addRequestCategory, deleteRequestCategory,
   reorderOptions, renameOption, resetOptionsToDefault,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
@@ -533,6 +534,34 @@ export default function SettingsForm({
     setPayMethods(await resetOptionsToDefault('paymentMethods'))
   }
 
+  // ── 요청·컴플레인 카테고리 ───────────────────────────────────────
+  const [requestCategs, setRequestCategs] = useState<string[]>([])
+  const [newRequestCateg, setNewRequestCateg] = useState('')
+  useEffect(() => { getRequestCategories().then(setRequestCategs).catch(console.error) }, [])
+  const handleAddRequestCateg = async () => {
+    const v = newRequestCateg.trim(); if (!v) return
+    await addRequestCategory(v)
+    setRequestCategs(prev => [...prev, v]); setNewRequestCateg('')
+  }
+  const handleDeleteRequestCateg = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    await deleteRequestCategory(name)
+    setRequestCategs(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderRequestCategs = async (items: string[]) => {
+    setRequestCategs(items)
+    await reorderOptions('requestCategories', items)
+  }
+  const handleRenameRequestCateg = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('requestCategories', oldVal, newVal.trim())
+    setRequestCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
+  const handleResetRequestCategs = async () => {
+    if (!(await confirmDialog({ title: '요청 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    setRequestCategs(await resetOptionsToDefault('requestCategories'))
+  }
+
   // ── 고정 지출 ────────────────────────────────────────────────────
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
@@ -887,6 +916,24 @@ export default function SettingsForm({
               {isPending ? '저장 중…' : '저장'}
             </Btn>
           </form>
+        </div>
+
+        {/* 요청 카테고리 — 액션마다 즉시 저장(위 폼의 저장 버튼과 무관) */}
+        <div className="mt-4">
+          <OptionSection
+            title="요청 카테고리 관리"
+            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
+            items={requestCategs}
+            getLabel={v => v}
+            newValue={newRequestCateg}
+            onNewValueChange={setNewRequestCateg}
+            onAdd={handleAddRequestCateg}
+            onDelete={handleDeleteRequestCateg}
+            onReorder={handleReorderRequestCategs}
+            onRename={handleRenameRequestCateg}
+            onReset={handleResetRequestCategs}
+            placeholder="예: 인터넷, 주차, 택배…"
+          />
         </div>
         </>
       )}

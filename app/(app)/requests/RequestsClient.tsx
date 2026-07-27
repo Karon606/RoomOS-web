@@ -25,14 +25,11 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import MonthSelector from '@/components/layout/MonthSelector'
-import { REQUEST_CATEGORIES } from '@/lib/requestCategories'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
 
-const CATEGORIES = REQUEST_CATEGORIES
-type Category = (typeof CATEGORIES)[number]
-
+// 기본 5종만 고정색 — 운영자가 추가한 이름이나 목록에서 지워진 값은 아래 NEUTRAL_COLOR(기타와 동일 톤).
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
   시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]',  ring: 'ring-[var(--warning-ring)]'  },
   소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
@@ -40,6 +37,8 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
   편의: { bg: 'bg-[var(--deposit-bg)]', fg: 'text-[var(--deposit-fg)]', ring: 'ring-[var(--deposit-ring)]' },
   기타: { bg: 'bg-[var(--neutral-bg)]',  fg: 'text-[var(--neutral-fg)]',  ring: 'ring-[var(--neutral-ring)]'  },
 }
+
+const NEUTRAL_COLOR = CATEGORY_COLORS['기타']
 
 
 // 타임스탬프의 KST 월(YYYY-MM) — 월 경계는 한국시간 기준.
@@ -52,17 +51,29 @@ export default function RequestsClient({
   initialRequests,
   activeTenants,
   targetMonth,
+  categories,
 }: {
   initialRequests: Request[]
   activeTenants: ActiveTenant[]
   targetMonth: string
+  /** 설정 > 요청 카테고리 관리의 저장 순서 목록 */
+  categories: string[]
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
+  // 목록에서 지워졌지만 데이터에는 남은 값(고아) — 표시·필터·집계에서 빠지면 그 요청이 조용히 증발한다.
+  const orphanCategories = useMemo(() => {
+    const seen: string[] = []
+    for (const r of initialRequests) {
+      if (r.category && !categories.includes(r.category) && !seen.includes(r.category)) seen.push(r.category)
+    }
+    return seen
+  }, [initialRequests, categories])
+
   const [filterStatus,   setFilterStatus]   = useState<'all' | 'unresolved' | 'resolved'>('unresolved')
-  // 'uncategorized' = 카테고리 미지정(null/빈값) 요청 — '기타'는 명시 저장값만 담는다.
-  const [filterCategory, setFilterCategory] = useState<'all' | Category | 'uncategorized'>('all')
+  // 'uncategorized' = 카테고리 미지정(null/빈값) 요청 — '기타'·고아 값은 명시 저장값만 담는다.
+  const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterUrgent,   setFilterUrgent]   = useState(false)
   const searchParams = useSearchParams()
   // 전역 통합 검색 ?q= 딥링크 시딩
@@ -108,13 +119,19 @@ export default function RequestsClient({
   // 카테고리 칩 건수 — 0건도 숨기지 않고 그대로 노출(전체 = 각 칩의 합).
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { uncategorized: 0 }
-    for (const c of CATEGORIES) counts[c] = 0
+    for (const c of categories) counts[c] = 0
+    for (const c of orphanCategories) counts[c] = 0
     for (const r of scoped) {
       if (!r.category) counts.uncategorized += 1
       else if (counts[r.category] !== undefined) counts[r.category] += 1
     }
     return counts
-  }, [scoped])
+  }, [scoped, categories, orphanCategories])
+
+  // 등록·수정 폼의 select 목록 — 목록에서 지워진 값이 달린 요청을 수정으로 열면 그 값도 붙인다(안 그러면 저장 시 유실).
+  const formCategoryOptions = useMemo(() => (
+    addCategory && !categories.includes(addCategory) ? [...categories, addCategory] : categories
+  ), [categories, addCategory])
 
   const unresolvedCount = initialRequests.filter(r => !r.resolvedAt).length
   const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
@@ -325,7 +342,7 @@ export default function RequestsClient({
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
               >
                 <option value="">카테고리 없음</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {formCategoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -413,9 +430,10 @@ export default function RequestsClient({
           value={filterCategory}
           onChange={setFilterCategory}
           options={[
-            { value: 'all' as const, label: `전체 ${scoped.length}` },
-            ...CATEGORIES.map(cat => ({ value: cat, label: `${cat} ${categoryCounts[cat]}` })),
-            { value: 'uncategorized' as const, label: `미분류 ${categoryCounts.uncategorized}` },
+            { value: 'all', label: `전체 ${scoped.length}` },
+            ...categories.map(cat => ({ value: cat, label: `${cat} ${categoryCounts[cat]}` })),
+            ...orphanCategories.map(cat => ({ value: cat, label: `${cat} ${categoryCounts[cat]}` })),
+            { value: 'uncategorized', label: `미분류 ${categoryCounts.uncategorized}` },
           ]}
         />
 
@@ -449,7 +467,8 @@ export default function RequestsClient({
       ) : (
         <ul className="space-y-2">
           {filtered.map(r => {
-            const c        = r.category ? CATEGORY_COLORS[r.category] : null
+            // 기본 5종 밖(운영자 추가·삭제된 값)이어도 배지는 항상 렌더 — neutral 톤으로 떨어뜨린다.
+            const c        = r.category ? (CATEGORY_COLORS[r.category] ?? NEUTRAL_COLOR) : null
             const roomNo   = r.tenant?.leaseTerms[0]?.room?.roomNo
             const resolved = !!r.resolvedAt
             const isCommon = !r.tenantId

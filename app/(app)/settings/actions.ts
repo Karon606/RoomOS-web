@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, buildDriveThumbnailUrl,
 } from '@/lib/google-drive'
@@ -334,9 +335,45 @@ export async function deleteExpenseCategory(name: string) {
   revalidatePath('/settings')
 }
 
+// ── 요청·컴플레인 카테고리 ────────────────────────────────────────
+
+export const getRequestCategories = cache(async function getRequestCategories(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { requestCategories: true } as any,
+  })
+  return parseRequestCategories((property as any)?.requestCategories)
+})
+
+export async function addRequestCategory(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRequestCategories()
+  if (current.includes(name)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { requestCategories: [...current, name].join(',') } as any,
+  })
+  revalidatePath('/requests')
+  revalidatePath('/settings')
+}
+
+export async function deleteRequestCategory(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRequestCategories()
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { requestCategories: current.filter(t => t !== name).join(',') } as any,
+  })
+  revalidatePath('/requests')
+  revalidatePath('/settings')
+}
+
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
+type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories'
 
 const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   roomTypeOptions:   '원룸,미니룸',
@@ -346,6 +383,7 @@ const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   incomeCategories:  '건조기,세탁기,자판기,이자수익,기타',
   expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환',
   paymentMethods:    '계좌이체,신용카드,체크카드,현금,네이버페이,카카오페이,토스,쿠팡캐시,서울페이,제로페이,페이코,SSG머니',
+  requestCategories: REQUEST_CATEGORIES.join(','),
 }
 
 export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
@@ -359,6 +397,7 @@ export async function resetOptionsToDefault(field: ReorderableField): Promise<st
   revalidatePath('/settings')
   if (['incomeCategories', 'expenseCategories', 'paymentMethods'].includes(field)) revalidatePath('/finance')
   if (['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions'].includes(field)) revalidatePath('/room-manage')
+  if (field === 'requestCategories') revalidatePath('/requests')
   return defaultVal.split(',').map(s => s.trim()).filter(Boolean)
 }
 
@@ -376,6 +415,7 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
   if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
     revalidatePath('/room-manage')
   }
+  if (field === 'requestCategories') revalidatePath('/requests')
 }
 
 export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<void> {
@@ -385,7 +425,11 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
     where: { id: propertyId },
     select: { [field]: true } as any,
   })
-  const current: string[] = ((property as any)?.[field] ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  // 요청 카테고리는 미저장(빈 값)이 곧 기본 5종 — 그대로 split 하면 첫 이름변경에서 목록이 통째로 날아간다.
+  const stored = (property as any)?.[field]
+  const current: string[] = field === 'requestCategories'
+    ? parseRequestCategories(stored)
+    : (stored ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)
   const updated = current.map(v => v === oldValue ? newValue : v).join(',')
   await prisma.property.update({
     where: { id: propertyId },
@@ -398,6 +442,7 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
   if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
     revalidatePath('/room-manage')
   }
+  if (field === 'requestCategories') revalidatePath('/requests')
 }
 
 // ── 결제 수단 ─────────────────────────────────────────────────────

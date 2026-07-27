@@ -17,6 +17,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
+import { parseRequestCategories } from '@/lib/requestCategories'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -1624,17 +1625,25 @@ export async function deleteTenant(tenantId: string, opts?: { force?: boolean })
 
 // ── 입주자 요청사항 ──────────────────────────────────────────────
 
+// 요청 목록 + 영업장의 요청 카테고리 목록을 한 번에 — 위젯이 자체 fetch 라 왕복을 늘리지 않으려고 같이 실어 보낸다.
 export async function getTenantRequests(tenantId: string) {
-  await getPropertyId()
-  return prisma.tenantRequest.findMany({
-    where: { tenantId, deletedAt: null },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true, content: true, requestDate: true,
-      targetDate: true, resolvedAt: true, createdAt: true,
-      tenant: { select: { name: true } },
-    },
-  })
+  const { propertyId } = await getPropertyId()
+  const [requests, property] = await Promise.all([
+    prisma.tenantRequest.findMany({
+      where: { tenantId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, content: true, requestDate: true,
+        targetDate: true, resolvedAt: true, createdAt: true,
+        tenant: { select: { name: true } },
+      },
+    }),
+    prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { requestCategories: true } as any,
+    }),
+  ])
+  return { requests, categories: parseRequestCategories((property as any)?.requestCategories) }
 }
 
 export async function getAllRequestsForProperty() {

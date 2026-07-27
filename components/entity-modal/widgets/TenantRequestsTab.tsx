@@ -13,14 +13,15 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
-import { REQUEST_CATEGORIES } from '@/lib/requestCategories'
 import { Section } from './Section'
 
-type Request = Awaited<ReturnType<typeof getTenantRequests>>[number]
+type Request = Awaited<ReturnType<typeof getTenantRequests>>['requests'][number]
 
 
 export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [requests, setRequests] = useState<Request[] | null>(null)
+  // 카테고리 목록은 설정에서 관리 — 요청 목록과 같은 왕복으로 실려 온다.
+  const [categories, setCategories] = useState<string[]>([])
   const [pending, startTransition] = useTransition()
 
   const [newContent, setNewContent] = useState('')
@@ -31,7 +32,10 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [newUrgent, setNewUrgent] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
-  const reload = async () => { setRequests(await getTenantRequests(tenantId)) }
+  const reload = async () => {
+    const res = await getTenantRequests(tenantId)
+    setRequests(res.requests); setCategories(res.categories)
+  }
   useEffect(() => { reload() /* eslint-disable-next-line */ }, [tenantId])
 
   const handleCreate = () => {
@@ -83,7 +87,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
               <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                 <option value="">카테고리 없음</option>
-                {REQUEST_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="min-w-0 flex items-end pb-2">

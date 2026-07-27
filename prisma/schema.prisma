@@ -146,6 +146,7 @@ model Property {
   directionOptions   String?   // 방향 목록 (콤마 구분, 예: "북향,동향,남향,서향")
   incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
   expenseCategories  String?   // 지출 카테고리 (콤마 구분)
+  requestCategories  String?   // 요청·컴플레인 카테고리 (콤마 구분, 비면 기본 5종 — 2026-07-27)
   // 재고관리에 추적·표시할 카테고리 설정 (JSON: [{"cat":"부식비","alias":"식료품"},...]).
   // cat = 지출 카테고리(expenseCategories 중), alias = 재고관리 표시명. 순서 = 표시 순서.
   // null 이면 기본값(부식비→식료품·소모품비→소모품·폐기물 처리비→폐기물 처리용품).
