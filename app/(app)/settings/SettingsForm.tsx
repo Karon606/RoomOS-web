@@ -17,7 +17,7 @@ import {
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   getRequestCategories, addRequestCategory, deleteRequestCategory,
-  reorderOptions, renameOption, resetOptionsToDefault,
+  reorderOptions, renameOption, countRenameTargets, resetOptionsToDefault,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
   exportAllData,
@@ -215,6 +215,33 @@ export default function SettingsForm({
     setTimeout(() => setToast(''), 3000)
   }
 
+  // 옵션 이름 변경 공통 흐름 — 같은 값을 쓰는 기존 데이터도 함께 바뀌므로, 대상이 있으면 건수를 먼저 고지한다.
+  const runRename = async (
+    field: Parameters<typeof renameOption>[0],
+    oldVal: string,
+    rawNew: string,
+    setItems: (updater: (prev: string[]) => string[]) => void,
+  ) => {
+    const newVal = rawNew.trim()
+    if (!newVal || newVal === oldVal) return
+    const targets = await countRenameTargets(field, oldVal)
+    if (targets > 0) {
+      const ok = await confirmDialog({
+        title: `'${oldVal}'을(를) '${newVal}'(으)로 바꿀까요?`,
+        message: `기존 데이터 ${targets}건도 함께 변경됩니다.`,
+        level: 'caution',
+        confirmLabel: '변경',
+      })
+      if (!ok) return
+    }
+    const res = await renameOption(field, oldVal, newVal)
+    if (!res.ok) { pushToast('error', res.error); return }
+    setItems(prev => prev.map(v => v === oldVal ? newVal : v))
+    pushToast('success', '이름이 변경되었습니다', res.updated > 0
+      ? { detail: '되돌리려면 이름을 다시 바꾸면 데이터도 함께 돌아옵니다.' }
+      : undefined)
+  }
+
   const handleSubmit = async (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
@@ -271,9 +298,7 @@ export default function SettingsForm({
     await reorderOptions('roomTypeOptions', items)
   }
   const handleRenameRoomType = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('roomTypeOptions', oldVal, newVal.trim())
-    setRoomTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('roomTypeOptions', oldVal, newVal, setRoomTypes)
   }
   const handleResetRoomTypes = async () => {
     if (!(await confirmDialog({ title: '방타입을 기본값(원룸, 미니룸)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -301,9 +326,7 @@ export default function SettingsForm({
     await reorderOptions('roomTierOptions', items)
   }
   const handleRenameRoomTier = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('roomTierOptions', oldVal, newVal.trim())
-    setRoomTiers(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('roomTierOptions', oldVal, newVal, setRoomTiers)
   }
   const handleResetRoomTiers = async () => {
     if (!(await confirmDialog({ title: '등급을 기본값(스탠다드, 실속형)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -331,9 +354,7 @@ export default function SettingsForm({
     await reorderOptions('windowTypeOptions', items)
   }
   const handleRenameWindowType = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('windowTypeOptions', oldVal, newVal.trim())
-    setWindowTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('windowTypeOptions', oldVal, newVal, setWindowTypes)
   }
   const handleResetWindowTypes = async () => {
     if (!(await confirmDialog({ title: '창문 유형을 기본값(외창, 내창)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -361,9 +382,7 @@ export default function SettingsForm({
     await reorderOptions('directionOptions', items)
   }
   const handleRenameDirection = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('directionOptions', oldVal, newVal.trim())
-    setDirections(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('directionOptions', oldVal, newVal, setDirections)
   }
   const handleResetDirections = async () => {
     if (!(await confirmDialog({ title: '방향을 기본값(북향~북서향 8방위)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -469,9 +488,7 @@ export default function SettingsForm({
     await reorderOptions('incomeCategories', items)
   }
   const handleRenameIncomeCateg = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('incomeCategories', oldVal, newVal.trim())
-    setIncomeCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('incomeCategories', oldVal, newVal, setIncomeCategs)
   }
   const handleResetIncomeCategs = async () => {
     if (!(await confirmDialog({ title: '부가수익 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -497,9 +514,7 @@ export default function SettingsForm({
     await reorderOptions('expenseCategories', items)
   }
   const handleRenameExpenseCateg = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('expenseCategories', oldVal, newVal.trim())
-    setExpenseCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('expenseCategories', oldVal, newVal, setExpenseCategs)
   }
   const handleResetExpenseCategs = async () => {
     if (!(await confirmDialog({ title: '지출 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -525,9 +540,7 @@ export default function SettingsForm({
     await reorderOptions('paymentMethods', items)
   }
   const handleRenamePayMethod = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('paymentMethods', oldVal, newVal.trim())
-    setPayMethods(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('paymentMethods', oldVal, newVal, setPayMethods)
   }
   const handleResetPayMethods = async () => {
     if (!(await confirmDialog({ title: '결제 수단을 기본값(계좌이체, 신용카드, 체크카드, 현금)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
@@ -553,9 +566,7 @@ export default function SettingsForm({
     await reorderOptions('requestCategories', items)
   }
   const handleRenameRequestCateg = async (oldVal: string, newVal: string) => {
-    if (!newVal.trim() || newVal === oldVal) return
-    await renameOption('requestCategories', oldVal, newVal.trim())
-    setRequestCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+    await runRename('requestCategories', oldVal, newVal, setRequestCategs)
   }
   const handleResetRequestCategs = async () => {
     if (!(await confirmDialog({ title: '요청 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return

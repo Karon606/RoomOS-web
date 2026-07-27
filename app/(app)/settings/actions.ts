@@ -418,7 +418,98 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
   if (field === 'requestCategories') revalidatePath('/requests')
 }
 
-export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<void> {
+// ── 옵션 이름 변경 ────────────────────────────────────────────────
+// 옵션 값은 데이터 행에 문자열 그대로 박혀 있다. 목록만 고치면 기존 행은 옛 이름으로 남아 고아가 되므로,
+// 이름을 바꾸면 그 값을 쓰는 행도 함께 갱신한다(운영자 오더 2026-07-27).
+// 여기엔 updateMany 가능한 평면 컬럼만 — JSON 문자열(wishConditions·inventoryCategories)은 아래에서 따로 처리.
+const RENAME_CASCADE: Record<ReorderableField, { model: string; column: string }[]> = {
+  requestCategories: [
+    { model: 'tenantRequest', column: 'category' },
+  ],
+  expenseCategories: [
+    { model: 'expense', column: 'category' },
+    { model: 'recurringExpense', column: 'category' },
+    { model: 'trackedItem', column: 'category' },
+    { model: 'trackedItemMergeRule', column: 'category' },
+    { model: 'assetItemOrder', column: 'category' },
+  ],
+  incomeCategories: [
+    { model: 'extraIncome', column: 'category' },
+  ],
+  paymentMethods: [
+    { model: 'expense', column: 'payMethod' },
+    { model: 'extraIncome', column: 'payMethod' },
+    { model: 'paymentRecord', column: 'payMethod' },
+    { model: 'recurringExpense', column: 'payMethod' },
+    { model: 'leaseTerm', column: 'payMethod' },
+  ],
+  roomTypeOptions:   [{ model: 'room', column: 'type' }],
+  roomTierOptions:   [{ model: 'room', column: 'tier' }],
+  windowTypeOptions: [{ model: 'room', column: 'windowType' }],
+  directionOptions:  [{ model: 'room', column: 'direction' }],
+}
+
+// LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.
+const RENAME_WISH_KEY: Partial<Record<ReorderableField, 'type' | 'windowType' | 'direction'>> = {
+  roomTypeOptions:   'type',
+  windowTypeOptions: 'windowType',
+  directionOptions:  'direction',
+}
+
+// 소프트삭제 모델 — 삭제된 행의 payMethod 도 과거 표기라 함께 갱신한다.
+// updateMany 는 익스텐션 필터 대상이 아니라 삭제분까지 바꾸므로, count 에도 deletedAt 을 명시해 필터를 끈다(건수 일치).
+const RENAME_SOFT_DELETE_MODELS = new Set(['paymentRecord', 'extraIncome'])
+
+function renameWhere(model: string, column: string, propertyId: string, oldValue: string) {
+  const where: Record<string, unknown> = { propertyId, [column]: oldValue }
+  if (RENAME_SOFT_DELETE_MODELS.has(model)) where.deletedAt = undefined
+  return where
+}
+
+// contains 로 1차로 걸러온 행 중, 해당 키 값이 정확히 oldValue 인 행만.
+function pickWishRows(rows: { id: string; wishConditions: string | null }[], key: string, oldValue: string) {
+  return rows.filter(r => {
+    try { return (JSON.parse(r.wishConditions ?? '{}') as Record<string, unknown>)[key] === oldValue } catch { return false }
+  })
+}
+
+// inventoryCategories(JSON [{cat, alias}]) 의 cat 만 교체 — 바꿀 게 없으면 null(표시명 alias 는 사용자 설정이라 그대로).
+function renameInventoryCategories(raw: string | null, oldValue: string, newValue: string): string | null {
+  if (!raw) return null
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return null
+    if (!arr.some((e: any) => e?.cat === oldValue)) return null
+    return JSON.stringify(arr.map((e: any) => (e?.cat === oldValue ? { ...e, cat: newValue } : e)))
+  } catch { return null }
+}
+
+// 이름 변경 시 함께 바뀔 데이터 건수 — 사전 고지용(읽기 전용).
+export async function countRenameTargets(field: ReorderableField, oldValue: string): Promise<number> {
+  const propertyId = await getPropertyId()
+  let total = 0
+  for (const t of RENAME_CASCADE[field]) {
+    total += await (prisma as any)[t.model].count({ where: renameWhere(t.model, t.column, propertyId, oldValue) })
+  }
+  const wishKey = RENAME_WISH_KEY[field]
+  if (wishKey) {
+    const rows = await prisma.leaseTerm.findMany({
+      where: { propertyId, wishConditions: { contains: oldValue } },
+      select: { id: true, wishConditions: true },
+    })
+    total += pickWishRows(rows, wishKey, oldValue).length
+  }
+  if (field === 'expenseCategories') {
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { inventoryCategories: true } })
+    // 존재 여부만 확인 — 같은 값으로 교체를 시도해 매칭되면 non-null.
+    if (renameInventoryCategories(p?.inventoryCategories ?? null, oldValue, oldValue)) total += 1
+  }
+  return total
+}
+
+export type RenameOptionResult = { ok: true; updated: number } | { ok: false; error: string }
+
+export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<RenameOptionResult> {
   await requireEdit()
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
@@ -430,11 +521,49 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
   const current: string[] = field === 'requestCategories'
     ? parseRequestCategories(stored)
     : (stored ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  if (newValue === oldValue) return { ok: true, updated: 0 }
+  if (!current.includes(oldValue)) return { ok: true, updated: 0 }
+  if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }
+
   const updated = current.map(v => v === oldValue ? newValue : v).join(',')
-  await prisma.property.update({
-    where: { id: propertyId },
-    data: { [field]: updated } as any,
+  const wishKey = RENAME_WISH_KEY[field]
+  // 목록 갱신과 데이터 갱신은 한 트랜잭션 — 중간에 끊기면 라벨이 갈린다.
+  const changed = await prisma.$transaction(async (tx) => {
+    let n = 0
+    await tx.property.update({
+      where: { id: propertyId },
+      data: { [field]: updated } as any,
+    })
+    for (const t of RENAME_CASCADE[field]) {
+      const res = await (tx as any)[t.model].updateMany({
+        where: renameWhere(t.model, t.column, propertyId, oldValue),
+        data: { [t.column]: newValue },
+      })
+      n += res.count
+    }
+    if (wishKey) {
+      const rows = await tx.leaseTerm.findMany({
+        where: { propertyId, wishConditions: { contains: oldValue } },
+        select: { id: true, wishConditions: true },
+      })
+      for (const r of pickWishRows(rows, wishKey, oldValue)) {
+        const cond = JSON.parse(r.wishConditions ?? '{}') as Record<string, unknown>
+        cond[wishKey] = newValue
+        await tx.leaseTerm.update({ where: { id: r.id }, data: { wishConditions: JSON.stringify(cond) } })
+        n += 1
+      }
+    }
+    if (field === 'expenseCategories') {
+      const p = await tx.property.findUnique({ where: { id: propertyId }, select: { inventoryCategories: true } })
+      const nextInv = renameInventoryCategories(p?.inventoryCategories ?? null, oldValue, newValue)
+      if (nextInv) {
+        await tx.property.update({ where: { id: propertyId }, data: { inventoryCategories: nextInv } })
+        n += 1
+      }
+    }
+    return n
   })
+
   revalidatePath('/settings')
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
@@ -443,6 +572,11 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
     revalidatePath('/room-manage')
   }
   if (field === 'requestCategories') revalidatePath('/requests')
+  // 데이터까지 바뀌었으니 그 값을 보여주는 화면도 함께 무효화.
+  if (field === 'expenseCategories') revalidatePath('/inventory')
+  if (field === 'paymentMethods') revalidatePath('/tenants')
+  if (RENAME_CASCADE[field].some(t => t.model === 'room')) revalidatePath('/rooms')
+  return { ok: true, updated: changed }
 }
 
 // ── 결제 수단 ─────────────────────────────────────────────────────
