@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
+import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -182,6 +183,8 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               where: { id: activeLease.id },
               data: { status: 'CHECKED_OUT', moveOutDate: new Date() },
             })
+            // 거주 구간 이력 — 보관 처리(퇴실 확정)면 열린 구간을 퇴실일로 마감(추가 write).
+            await closeStay(prisma, activeLease.id)
             if (activeLease.room?.id) {
               await prisma.room.update({
                 where: { id: activeLease.room.id },
@@ -288,6 +291,14 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
     })
     if (['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)) {
       await prisma.room.update({ where: { id: room.id }, data: { isVacant: false } })
+    }
+    // 거주 구간 이력 — 임포트로 만든 계약도 열린 구간을 남긴다(종료 상태면 바로 마감, 추가 write).
+    const newLease = await prisma.leaseTerm.findFirst({
+      where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
+    })
+    if (newLease) {
+      await ensureOpenStay(prisma, newLease.id)
+      if (isStayTerminalStatus(status)) await closeStay(prisma, newLease.id)
     }
   }
 

@@ -19,6 +19,7 @@ import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisCha
 import { digitsToIso } from '@/lib/birthdate'
 import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
+import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } from '@/lib/roomStay'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -263,6 +264,15 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   await prisma.tenantStatusLog.create({
     data: { tenantId: tenant.id, fromStatus: 'RESERVED', toStatus: status, propertyId },
   })
+
+  // 거주 구간 이력 — 호실이 있으면 열린 구간을 만든다(파생 기록, 추가 write). 종료 상태로 만든 계약은 바로 마감.
+  const newLease = await prisma.leaseTerm.findFirst({
+    where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
+  })
+  if (newLease) {
+    await ensureOpenStay(prisma, newLease.id)
+    if (isStayTerminalStatus(status)) await closeStay(prisma, newLease.id)
+  }
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
   if (depositReceived && depositAmount > 0) {
@@ -641,6 +651,12 @@ export async function updateTenant(formData: FormData): Promise<
         ...(shortPlan ? {} : prorationPatch),
       },
     })
+    // 거주 구간 이력 — 호실 변경·종료 전환을 파생 테이블에 기록(추가 write, 위 저장 분기와 무관).
+    // 계약 저장 뒤라야 마감일이 방금 확정된 moveOutDate 를 읽는다.
+    await syncRoomStayOnSave(tx, leaseTermId, {
+      prevRoomId, nextRoomId: newRoomId ?? null,
+      prevStatus, nextStatus: status,
+    })
   })
 
   // 호실 공실 상태 업데이트 (NON_RESIDENT는 isVacant에 영향 없음)
@@ -1016,6 +1032,9 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
     })
   }
 
+  // 거주 구간 이력 — 입실 처리 시 열린 구간 보장(이미 있으면 no-op, 추가 write).
+  await ensureOpenStay(prisma, leaseTermId)
+
   await prisma.tenantStatusLog.create({
     data: {
       tenantId,
@@ -1092,6 +1111,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       data: { isVacant: false },
     })
 
+    // 거주 구간 이력 — 예약 확정 입실도 열린 구간 보장(이미 있으면 no-op, 추가 write).
+    await ensureOpenStay(prisma, leaseTermId)
+
     await prisma.tenantStatusLog.create({
       data: {
         tenantId:    lease.tenantId,
@@ -1149,6 +1171,9 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string): Pro
       },
     })
   }
+
+  // 거주 구간 이력 — 퇴실 확정이면 열린 구간을 퇴실일로 마감(추가 write).
+  await closeStay(prisma, leaseTermId)
 
   await prisma.tenantStatusLog.create({
     data: {
@@ -1253,6 +1278,13 @@ export async function applyStatusTransition(input: {
     }
 
     await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+
+    // 거주 구간 이력 — 퇴실·입실취소는 마감, 종료에서 복귀하면 재개방, 입실 처리는 열린 구간 보장(추가 write).
+    await syncRoomStayOnSave(prisma, input.leaseTermId, {
+      prevRoomId: lease.roomId, nextRoomId: lease.roomId,
+      prevStatus: lease.status, nextStatus: input.toStatus,
+    })
+    if (input.toStatus === 'ACTIVE') await ensureOpenStay(prisma, input.leaseTermId)
 
     // 입주월 재앵커 — 예약(RESERVED)에서 입실 처리(ACTIVE)로 넘어갈 때 prepaid 예약금을 실제 입주월로 이동.
     // moveInDate가 폼에서 갱신됐을 수 있어 lease.update 후에 실행(deposit/none은 no-op).
@@ -2355,6 +2387,11 @@ export async function setCheckoutProration(
         checkoutProrationUndo: undo,
       },
     })
+    // 거주 구간 이력 — 종료 상태에서 퇴실 예정으로 되돌아오는 경우의 재개방(그 외에는 no-op, 추가 write).
+    await syncRoomStayOnSave(prisma, leaseTermId, {
+      prevRoomId: null, nextRoomId: null,
+      prevStatus: lease.status, nextStatus: 'CHECKOUT_PENDING',
+    })
     // 상태 전환 로그 — ACTIVE→CHECKOUT_PENDING 등 변경 시에만 남김
     if (lease.status !== 'CHECKOUT_PENDING') {
       await prisma.tenantStatusLog.create({
@@ -2423,6 +2460,11 @@ export async function clearCheckoutProration(
           checkoutProratedMonth: undo.prevMonth,
           checkoutProrationUndo: Prisma.DbNull,
         },
+      })
+      // 거주 구간 이력 — 복원된 상태가 종료 상태면 마감(그 외에는 no-op, 추가 write).
+      await syncRoomStayOnSave(prisma, leaseTermId, {
+        prevRoomId: null, nextRoomId: null,
+        prevStatus: lease.status, nextStatus: undo.prevStatus,
       })
       // 상태가 실제로 되돌아가면 전환 로그 남김 (예: CHECKOUT_PENDING → ACTIVE)
       if (undo.prevStatus !== lease.status) {
@@ -2502,6 +2544,8 @@ export async function autoTransitionReserved() {
       if (lease.roomId) {
         await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
       }
+      // 거주 구간 이력 — 자동 입실도 열린 구간 보장(이미 있으면 no-op, 추가 write).
+      await ensureOpenStay(prisma, lease.id)
       await prisma.tenantStatusLog.create({
         data: { tenantId: lease.tenantId, leaseTermId: lease.id, propertyId, fromStatus: 'RESERVED', toStatus: 'ACTIVE' },
       })
@@ -2724,6 +2768,17 @@ export async function batchUpdateTenants(
         data: leaseFields,
       })
       leaseCount = r.count
+
+      // 거주 구간 이력 — 일괄 전환이 종료 상태를 넘나들 때만 마감·재개방(호실은 안 바뀜, 추가 write).
+      if (typeof leaseFields.status === 'string') {
+        const nextStatus = leaseFields.status as string
+        for (const b of before) {
+          await syncRoomStayOnSave(prisma, b.id, {
+            prevRoomId: null, nextRoomId: null,
+            prevStatus: b.status, nextStatus,
+          })
+        }
+      }
     }
 
     if (tenantCount === 0 && leaseCount === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
@@ -3141,10 +3196,26 @@ export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok:
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
+    // 거주 구간 이력 — 되돌릴 상태를 복원 전에 읽어 둔다(복원 뒤에는 직전 상태를 알 수 없다).
+    const stayUndo = u.leases
+      .map(x => ({ id: x.id, status: (x.fields as Record<string, unknown>).status }))
+      .filter((x): x is { id: string; status: string } => typeof x.status === 'string')
+    const stayBefore = stayUndo.length > 0
+      ? await prisma.leaseTerm.findMany({ where: { id: { in: stayUndo.map(x => x.id) }, propertyId }, select: { id: true, status: true } })
+      : []
     await prisma.$transaction([
       ...u.tenants.map(x => prisma.tenant.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })),
       ...u.leases.map(x => prisma.leaseTerm.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })),
     ])
+    // 일괄 전환으로 마감·재개방된 구간도 함께 되돌린다(추가 write).
+    for (const b of stayBefore) {
+      const restored = stayUndo.find(x => x.id === b.id)
+      if (!restored) continue
+      await syncRoomStayOnSave(prisma, b.id, {
+        prevRoomId: null, nextRoomId: null,
+        prevStatus: b.status, nextStatus: restored.status,
+      })
+    }
     revalidatePath('/tenants'); revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
