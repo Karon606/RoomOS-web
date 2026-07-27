@@ -3,7 +3,8 @@
 // 카드 정산 — '지출/기타수익'에서 분리한 독립 화면.
 // 미정산 신용카드 대금을 카드·청구월별로 묶어 '확정(마감)'과 '예정(진행 중)'으로 구분 표시 + 정산 처리.
 import { InfoHint } from '@/components/ui/InfoHint'
-import { fmtMD } from '@/lib/fmtDate'
+import { fmtMD, fmtMonthDayKor } from '@/lib/fmtDate'
+import { getNextBusinessDay } from '@/lib/krHolidays'
 import { useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
@@ -30,6 +31,7 @@ type SettleGroup = {
   billingPeriodStr: string; linkedAccountName: string | null
   payDayStr: string; items: UnsettledExpense[]; total: number
   isFinalized: boolean
+  actualPayStr: string | null   // 결제일이 주말·공휴일이면 다음 영업일(실제이체) — 이동 없으면 null
 }
 
 function accName(a: { brand: string; alias: string | null } | null) {
@@ -74,12 +76,18 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
       const periodStr = `${prevY}년 ${prevM}월 ${startDay}일 ~ ${billY}년 ${billM}월 ${endDayStr}`
       const linked = acc?.linkedAccount ? accName(acc.linkedAccount) : null
       const payDayStr = acc?.payDay ? displayDay(acc.payDay) : '미지정'
+      // 실제이체일 — 청구월의 명목 결제일(말일·짧은 달 클램프)이 주말·공휴일이면 다음 영업일(고정지출과 동일 규칙)
+      const lastDay = new Date(billY, billM, 0).getDate()
+      const nominalDay = acc?.payDay ? Math.min(acc.payDay >= 31 ? lastDay : acc.payDay, lastDay) : null
+      const nominal = nominalDay ? new Date(billY, billM - 1, nominalDay) : null
+      const effective = nominal ? getNextBusinessDay(nominal) : null
+      const actualPayStr = nominal && effective && effective.getTime() !== nominal.getTime() ? fmtMonthDayKor(effective) : null
       // 청구 마감일(그 청구월의 cutOff, 없으면 말일)이 지났으면 '확정', 아니면 '예정(진행 중)'.
       const closeDate = (cutOff && cutOff < 31)
         ? new Date(billY, billM - 1, cutOff, 23, 59, 59, 999)
         : new Date(billY, billM, 0, 23, 59, 59, 999)
       const isFinalized = now > closeDate.getTime()
-      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0, isFinalized })
+      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0, isFinalized, actualPayStr })
     }
     const g = map.get(key)!
     g.items.push(exp)
@@ -124,6 +132,10 @@ export default function CardSettlementClient({
         <div>청구기간: {g.billingPeriodStr}</div>
         {g.linkedAccountName && (
           <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
+        )}
+        {/* 결제일이 주말·공휴일이면 실제 이체일 안내 — 고정지출의 '실제이체' 어휘·문법과 동일. 이동 없으면 미표시 */}
+        {g.actualPayStr && (
+          <div>실제이체: <span className="text-[var(--warm-dark)]">{g.actualPayStr}</span></div>
         )}
       </div>
       <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">

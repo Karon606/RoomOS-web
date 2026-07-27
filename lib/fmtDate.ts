@@ -35,3 +35,10 @@ export function fmtMD(d: Date | string | null | undefined): string {
   if (!dt) return '—'
   return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
 }
+
+/** 월·일 문장용 — '7월 29일' (KST 기준). 대시보드 '실제이체' 표기와 동일 문법(카드정산 공유) */
+export function fmtMonthDayKor(d: Date | string | null | undefined): string {
+  const dt = toKstDate(d)
+  if (!dt) return '—'
+  return `${dt.getUTCMonth() + 1}월 ${dt.getUTCDate()}일`
+}
