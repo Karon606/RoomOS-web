@@ -92,6 +92,8 @@ type LeaseTerm = {
   paymentRecords: PaymentRecord[]
   // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
   statusLogs?: { fromStatus: string; reason: string | null }[]
+  // 보증금 환불 이력 건수 — 퇴실 재저장 시 환불 모달 재노출 차단용(13438ec9)
+  _count?: { depositRefunds: number }
 }
 
 type Tenant = {
@@ -814,11 +816,17 @@ export default function TenantClient({
     }
   }
 
+  // 이미 보증금 환불이 기록된 계약인지 — 목록에 실려 온 _count 로 판정(추가 왕복 없음)
+  const hasDepositRefund = (leaseTermId: string) =>
+    !!leaseTermId && initialTenants.some(t =>
+      t.leaseTerms.some(lt => lt.id === leaseTermId && (lt._count?.depositRefunds ?? 0) > 0))
+
   // 보증금 환불 또는 즉시 업데이트로 진행 (가격 모달 처리 이후 호출)
   const proceedAfterRentDecision = (fd: FormData, fromDetail: boolean) => {
     const status        = fd.get('status') as string
     const depositAmount = Number(fd.get('depositAmount')) || 0
-    if (status === 'CHECKED_OUT' && depositAmount > 0) {
+    // 환불이 이미 있으면 모달을 열지 않는다 — 퇴실 상태 재저장이 환불을 또 만들던 중복(13438ec9)
+    if (status === 'CHECKED_OUT' && depositAmount > 0 && !hasDepositRefund((fd.get('leaseTermId') as string) || '')) {
       openDepositRefundModal(fd, fromDetail)
       return
     }
@@ -894,7 +902,7 @@ export default function TenantClient({
 
   const handleDepositRefundConfirm = async () => {
     if (!depositRefundModal) return
-    const { fd, tenantName, depositAmount, fromDetail, leaseTermId, tenantId } = depositRefundModal
+    const { fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId } = depositRefundModal
     const rp = rentRefundPreview
     // 전액 환불(사용분·위약금까지 반환)은 명시적 확인(§14) — 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다
     if (rp && rentRefundAmt > 0 && rentRefundAmt >= rp.prepaidAmount) {
@@ -921,6 +929,8 @@ export default function TenantClient({
           else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
           else { setError(rr.error); pushToast('error', rr.error); return }
         }
+        // 차감액이 청소비와 정확히 같으면 사유를 '청소비'로 남긴다 — 부가수익 표기도 사유를 따라간다(13438ec9)
+        const withheld = Math.max(0, depositAmount - depositReturnAmt)
         const refundRes = await recordDepositReturn({
           leaseTermId,
           tenantId,
@@ -928,6 +938,7 @@ export default function TenantClient({
           returnedAmount: depositReturnAmt,
           date: depositReturnDate,
           tenantName,
+          ...(cleaningFee > 0 && withheld === cleaningFee ? { reason: '청소비' } : {}),
         })
         if (!refundRes.ok) { setError(refundRes.error); pushToast('error', refundRes.error); return }
         setDepositRefundModal(null)

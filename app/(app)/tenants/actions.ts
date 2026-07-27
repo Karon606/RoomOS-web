@@ -42,6 +42,8 @@ export async function getTenants() {
         take: 1,
         include: {
           room: { select: { id: true, roomNo: true, floor: true } },
+          // 환불 이력 유무 — 퇴실 재저장 시 환불 모달 재노출(중복 저장)을 막는 판정용(신고 13438ec9). 추가 왕복 없음.
+          _count: { select: { depositRefunds: true } },
           // 취소 단계 부제(어느 단계에서 취소됐나) — 최근 CANCELLED 전이의 fromStatus·사유(e1b81629)
           statusLogs: {
             where: { toStatus: 'CANCELLED' },
@@ -747,6 +749,14 @@ export async function recordDepositReturn(params: {
     const { propertyId } = await getPropertyId()
     if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
 
+    // 멱등 가드 — 같은 계약에 환불 이력이 이미 있으면 새로 만들지 않는다.
+    // 퇴실 상태 재저장마다 (DepositRefund + ExtraIncome) 쌍이 새로 생겨 중복되던 문제(신고 13438ec9).
+    const existingRefund = await prisma.depositRefund.findFirst({
+      where: { leaseTermId: params.leaseTermId, propertyId },
+      select: { id: true },
+    })
+    if (existingRefund) return { ok: false, error: '이미 보증금 환불이 처리된 계약입니다. 수정하려면 기존 환불을 먼저 취소해 주세요.' }
+
     const returned  = Math.max(0, Math.min(params.returnedAmount, params.depositAmount))
     const withheld  = Math.max(0, params.depositAmount - returned)
     const refundDate = new Date(params.date)
@@ -789,9 +799,12 @@ export async function recordDepositReturn(params: {
           date:      refundDate,
           amount:    withheld,
           category:  forfeitCategory,
+          // 사유를 아는 케이스만 그 이름으로 표기 — 사유 미상까지 청소비로 단정하지 않는다(신고 13438ec9).
           detail:    params.context === 'reservationCancel'
             ? `${params.tenantName} 예약 취소 · 예약금 몰취`
-            : `${params.tenantName} 퇴실 · 보증금 미반환분`,
+            : params.reason === '청소비'
+              ? `${params.tenantName} 퇴실 · 청소비`
+              : `${params.tenantName} 퇴실 · 보증금 미반환분`,
           payMethod: '보유 보증금',
           // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
           tenantId:    params.tenantId,
