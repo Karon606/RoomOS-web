@@ -219,6 +219,7 @@ model Property {
   aiUsages            AiUsage[]
   photoCategories     PropertyPhotoCategory[]
   propertyPhotos      PropertyPhoto[]
+  roomStays           RoomStay[]
 
   @@map("properties")
 }
@@ -409,6 +410,7 @@ model Room {
   photos     RoomPhoto[]
   leaseTerms LeaseTerm[]
   expenses   Expense[]
+  roomStays  RoomStay[]
 
   @@unique([propertyId, roomNo])
   @@map("rooms")
@@ -605,9 +607,31 @@ model LeaseTerm {
   rentReceiptFiles   RentReceiptFile[]
   discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
   extraIncomes   ExtraIncome[]
+  roomStays      RoomStay[]       // 거주 구간 이력(파생 — 현재 방의 진실은 roomId, 2026-07-28)
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
+}
+
+// 거주 구간 이력 — 이사·퇴실에도 '어느 방에 언제부터 언제까지'가 남는 파생 테이블(아키텍트 설계 2026-07-28).
+// 현재 방의 진실은 계속 LeaseTerm.roomId(청구·재고 로직 무접촉). 기록 지점: 입주 생성·호실 변경·퇴실 확정.
+// LeaseTerm.roomId 와 열린 구간(endDate null)의 드리프트는 감지 스크립트로 봉합.
+model RoomStay {
+  id          String    @id @default(uuid()) @db.Uuid
+  startDate   DateTime? @db.Date   // 구간 시작(입주일 또는 이사일)
+  endDate     DateTime? @db.Date   // 구간 끝(이사·퇴실일). null = 현재 구간
+  createdAt   DateTime  @default(now())
+
+  leaseTermId String    @db.Uuid
+  leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+  roomId      String    @db.Uuid
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  propertyId  String    @db.Uuid
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, startDate])
+  @@index([leaseTermId])
+  @@map("room_stays")
 }
 
 // #14 월세 할인 — 입주자(계약)별, 여러 개 중첩 가능.
