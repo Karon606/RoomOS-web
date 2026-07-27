@@ -14,13 +14,13 @@ import {
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
-  setRecurringPendingAmount, clearRecurringPendingAmount,
   getVendorUsage, renameVendor,
   searchExpenses,
   getExpenseExportOptions,
   type RecurringExpenseWithStatus,
   type ExpenseSearchResult,
 } from './actions'
+import { RecurringExpenseRecordModal, accName, effectivePayMethods } from './RecurringExpenseRecordModal'
 import type { ReceiptOcrResult } from '@/lib/receiptOcr'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
@@ -1294,11 +1294,6 @@ function toDateInput(d: Date | string | null | undefined) {
 }
 
 
-function accName(a: FAcc | { brand: string; alias: string | null } | null) {
-  if (!a) return ''
-  return a.alias ? `${a.brand} (${a.alias})` : a.brand
-}
-
 function displayDay(day: number | null) {
   if (!day || day >= 31) return '말일'
   return `${day}일`
@@ -1641,16 +1636,8 @@ export default function FinanceClient({
   // ── 수익 탭 상태 ─────────────────────────────────────────────
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
+  // 기록 폼의 프리필·입력 상태는 공용 RecurringExpenseRecordModal 내부에 있다(대시보드와 동일 폼).
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
-  const [recRecDirty, setRecRecDirty] = useState(false)   // v2.0 §12 — 지출 기록 폼 입력 보호
-  const [recRecAmount, setRecRecAmount] = useState(0)
-  // #1 관리비 묶음: 기록 시 세부항목별 금액(변동은 편집). 비어있으면 단일 금액 모드.
-  const [recRecItems, setRecRecItems]   = useState<{ name: string; amount: number; isVariable: boolean }[]>([])
-  const [recRecDate, setRecRecDate]     = useState('')
-  const [recRecMemo, setRecRecMemo]     = useState('')
-  const [recRecPayMethod, setRecRecPayMethod] = useState('')
-  const [recRecAccId, setRecRecAccId]   = useState('')
-  const [recError, setRecError]         = useState('')
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
@@ -1930,15 +1917,8 @@ export default function FinanceClient({
   const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
   const prepaidAccounts = financialAccounts.filter(a => a.type === 'PREPAID')
 
-  // 등록된 선불 계정 브랜드를 결제수단 목록에 자동 병합
-  const effectivePaymentMethods = (() => {
-    const methods = [...paymentMethods]
-    for (const acc of prepaidAccounts) {
-      const name = acc.brand ?? accName(acc)
-      if (name && !methods.includes(name)) methods.push(name)
-    }
-    return methods
-  })()
+  // 등록된 선불 계정 브랜드를 결제수단 목록에 자동 병합 (정본은 RecurringExpenseRecordModal 과 공유)
+  const effectivePaymentMethods = effectivePayMethods(paymentMethods, financialAccounts)
 
   // 과거 구매내역 검색 — 입력 디바운스 300ms 후 전 기간 검색(서버). 모달 닫히면 검색 안 함.
   useEffect(() => {
@@ -2847,7 +2827,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecDirty(false); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => setRecordingRec(r)}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -2966,7 +2946,7 @@ export default function FinanceClient({
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
-                              onClick={() => { setRecordingRec(r); setRecRecDirty(false); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => setRecordingRec(r)}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -4426,179 +4406,13 @@ export default function FinanceClient({
     )}
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
-      <Modal open width="sm" dirty={recRecDirty}
-        onClose={() => { setRecordingRec(null); setRecError(''); setRecRecDirty(false) }}
-        title="지출 기록" subtitle={recordingRec.title}>
-        <div onInput={() => setRecRecDirty(true)} onChange={() => setRecRecDirty(true)}>
-          {/* 폼 */}
-          <div className="p-5 space-y-3">
-            {recRecItems.length > 0 ? (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                  <DatePicker value={recRecDate} onChange={setRecRecDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                </div>
-                {/* #1 관리비 세부항목 — 변동 항목만 편집, 고정은 표시. 합계 자동. */}
-                <div className="space-y-1.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3">
-                  <p className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">세부항목 ({recRecItems.length})</p>
-                  {recRecItems.map((it, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="text-xs text-[var(--warm-dark)] flex-1 truncate">
-                        {it.name}
-                        {it.isVariable
-                          ? <Badge tone="pale-amber" className="ml-1">변동</Badge>
-                          : <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">고정</span>}
-                      </span>
-                      {it.isVariable ? (
-                        <div className="w-28">
-                          <MoneyInput value={it.amount} onChange={v => {
-                            setRecRecItems(prev => {
-                              const next = prev.map((p, j) => j === i ? { ...p, amount: v } : p)
-                              setRecRecAmount(next.reduce((s, p) => s + p.amount, 0))
-                              return next
-                            })
-                          }} placeholder="0원" />
-                        </div>
-                      ) : (
-                        <span className="text-xs num text-[var(--warm-dark)] w-28 text-right pr-1">{fmtWon(it.amount)}</span>
-                      )}
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
-                    <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
-                    <span className="text-sm font-bold num text-[var(--coral)]">{fmtWon(recRecAmount)}</span>
-                  </div>
-                </div>
-              </>
-            ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                <DatePicker value={recRecDate} onChange={setRecRecDate}
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">
-                  금액
-                  {recordingRec.historicalAvg && (
-                    <span className="ml-1 text-[var(--info-fg)] text-[0.65625rem]">평균 {fmtWon(recordingRec.historicalAvg)}</span>
-                  )}
-                </label>
-                <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
-              </div>
-            </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
-                <select value={recRecPayMethod} onChange={e => { setRecRecPayMethod(e.target.value); setRecRecAccId('') }}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                  {!effectivePaymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">메모</label>
-                <input type="text" value={recRecMemo} onChange={e => setRecRecMemo(e.target.value)}
-                  placeholder="선택 입력"
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-              </div>
-            </div>
-            {recRecPayMethod === '계좌이체' && bankAccounts.length > 0 && (
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">출금 계좌</label>
-                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="">선택 안함</option>
-                  {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
-                </select>
-              </div>
-            )}
-            {(recRecPayMethod === '신용카드' || recRecPayMethod === '체크카드') && cardAccounts.length > 0 && (
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">카드 선택</label>
-                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="">선택 안함</option>
-                  {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
-                </select>
-              </div>
-            )}
-            {prepaidAccounts.length > 0 && prepaidAccounts.some(a => recRecPayMethod === a.brand || recRecPayMethod === accName(a)) && (
-              <div className="space-y-1">
-                <label className="text-xs text-[var(--warm-muted)]">선불 계정</label>
-                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="">선택 안함</option>
-                  {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
-                </select>
-              </div>
-            )}
-            {recError && <p className="text-[var(--danger-fg)] text-xs">{recError}</p>}
-            {recordingRec.pendingAmount != null && (
-              <p className="text-[0.65625rem] text-[var(--warm-muted)] -mt-1">
-                예약된 금액 {fmtWon(recordingRec.pendingAmount)}이 자동 입력되었습니다.
-                <button type="button"
-                  onClick={() => {
-                    startTransition(async () => {
-                      await clearRecurringPendingAmount({ recurringExpenseId: recordingRec.id })
-                      setRecordingRec(null); router.refresh()
-                    })
-                  }}
-                  className="ml-1 underline text-[var(--coral)]">예약 취소</button>
-              </p>
-            )}
-            <div className="flex flex-col gap-2 pt-1">
-              <div className="flex gap-2">
-                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setRecordingRec(null); setRecError('') }}>취소</Btn>
-                <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold"
-                  disabled={isPending || !recRecDate || recRecAmount <= 0}
-                  onClick={() => {
-                    setRecError('')
-                    startTransition(async () => {
-                      const res = await recordRecurringExpense({
-                        recurringExpenseId: recordingRec.id,
-                        amount: recRecAmount,
-                        date: recRecDate,
-                        payMethod: recRecPayMethod || undefined,
-                        financialAccountId: recRecAccId || undefined,
-                        memo: recRecMemo || undefined,
-                        breakdown: recRecItems.length > 0 ? recRecItems : undefined,
-                      })
-                      if (!res.ok) { setRecError(res.error); return }
-                      setRecordingRec(null)
-                      router.refresh()
-                    })
-                  }}>
-                  {isPending ? '기록 중…' : '지출로 기록 (납부 완료)'}
-                </Btn>
-              </div>
-              {/* 금액만 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음(정산 안 함). */}
-              <button type="button"
-                disabled={isPending || recRecAmount <= 0}
-                onClick={() => {
-                  setRecError('')
-                  startTransition(async () => {
-                    const res = await setRecurringPendingAmount({
-                      recurringExpenseId: recordingRec.id,
-                      amount: recRecAmount,
-                    })
-                    if (!res.ok) { setRecError(res.error); return }
-                    setRecordingRec(null)
-                    router.refresh()
-                  })
-                }}
-                className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-lg hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
-                금액만 저장 (아직 납부 전)
-              </button>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)] text-center leading-relaxed">
-                ‘지출로 기록’은 바로 정산 처리돼요. 금액만 미리 적어둘 땐 아래 버튼을 쓰세요.
-              </p>
-            </div>
-          </div>
-        </div>
-      </Modal>
+      <RecurringExpenseRecordModal
+        rec={recordingRec}
+        financialAccounts={financialAccounts}
+        paymentMethods={paymentMethods}
+        onClose={() => setRecordingRec(null)}
+        onDone={() => { setRecordingRec(null); router.refresh(); pushToast('success', '지출이 기록되었습니다') }}
+      />
     )}
 
     {/* 다중선택 묶기 — 하단 액션 바 */}
