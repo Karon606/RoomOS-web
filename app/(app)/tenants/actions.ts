@@ -18,6 +18,7 @@ import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy }
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { parseRequestCategories } from '@/lib/requestCategories'
+import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -1656,7 +1657,7 @@ export async function getAllRequestsForProperty() {
       id: true, content: true, requestDate: true,
       targetDate: true, resolvedAt: true, resolutionMemo: true,
       category: true, isUrgent: true, createdAt: true,
-      tenantId: true, commonPlace: true,
+      tenantId: true, commonPlace: true, roomNoSnapshot: true,
       tenant: {
         select: {
           id: true, name: true,
@@ -1705,6 +1706,8 @@ export async function createTenantRequest(data: {
     const { propertyId } = await getPropertyId()
     if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
     const category = await resolveRequestCategoryForSave(propertyId, data.category)
+    // 등록 시점 호실을 고정 — 이사·퇴실 뒤에도 '당시 호실'로 남는다(공용부는 null).
+    const roomNoSnapshot = await getRoomNoSnapshot(data.tenantId)
     await prisma.tenantRequest.create({
       data: {
         tenantId:    data.tenantId ?? null,
@@ -1715,6 +1718,7 @@ export async function createTenantRequest(data: {
         category,
         isUrgent:    data.isUrgent ?? false,
         commonPlace: data.commonPlace?.trim() || null,
+        roomNoSnapshot,
       },
     })
     revalidatePath('/tenants')
@@ -1737,6 +1741,7 @@ export type TenantRequestSnapshot = {
   requestDate: string
   targetDate: string | null
   content: string
+  roomNoSnapshot: string | null
 }
 
 export async function updateTenantRequest(id: string, data: {
@@ -1747,6 +1752,8 @@ export async function updateTenantRequest(id: string, data: {
   category?: string | null
   isUrgent?: boolean
   commonPlace?: string | null
+  /** 적용취소 전용 — 값이 있으면 그대로 원복하고 재파생하지 않는다. */
+  roomNoSnapshot?: string | null
 }): Promise<{ ok: true; prev: TenantRequestSnapshot } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1759,21 +1766,30 @@ export async function updateTenantRequest(id: string, data: {
       select: {
         tenantId: true, commonPlace: true, category: true,
         isUrgent: true, requestDate: true, targetDate: true, content: true,
+        roomNoSnapshot: true,
       },
     })
     if (!before) return { ok: false, error: '요청을 찾을 수 없습니다.' }
 
     const category = await resolveRequestCategoryForSave(propertyId, data.category)
+    // 호실 스냅샷은 대상(입주자)이 실제로 바뀔 때만 다시 뽑는다 — 요청일 소급 변경에는 불변.
+    // 적용취소로 값이 넘어오면 재파생 없이 그 값 그대로 원복한다.
+    const nextTenantId = data.tenantId ?? null
+    const roomNoSnapshot =
+      data.roomNoSnapshot !== undefined ? data.roomNoSnapshot
+      : nextTenantId !== before.tenantId ? await getRoomNoSnapshot(nextTenantId)
+      : undefined
     await prisma.tenantRequest.update({
       where: { id },
       data: {
-        tenantId:    data.tenantId ?? null,
+        tenantId:    nextTenantId,
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
         category,
         isUrgent:    data.isUrgent ?? false,
         commonPlace: data.commonPlace?.trim() || null,
+        ...(roomNoSnapshot !== undefined ? { roomNoSnapshot } : {}),
       },
     })
     revalidatePath('/tenants')
@@ -1789,6 +1805,7 @@ export async function updateTenantRequest(id: string, data: {
         requestDate: kstYmdStr(before.requestDate),
         targetDate:  before.targetDate ? kstYmdStr(before.targetDate) : null,
         content:     before.content,
+        roomNoSnapshot: before.roomNoSnapshot,
       },
     }
   } catch (err) {

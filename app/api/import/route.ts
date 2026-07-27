@@ -4,6 +4,7 @@ import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -409,6 +410,7 @@ async function importRequests(rows: Record<string, unknown>[], propertyId: strin
           requestDate: date,
           targetDate:  parseDate(row['처리예정일']),
           resolvedAt,
+          roomNoSnapshot: await getRoomNoSnapshot(tenant.id),
         },
       })
       result.imported++

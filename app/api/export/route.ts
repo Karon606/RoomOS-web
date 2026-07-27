@@ -488,7 +488,8 @@ export async function GET(request: NextRequest) {
   const requestSheet = requests.map(r => ({
     '작성일':     fmtDate(r.requestDate),
     '입주자명':   r.tenant?.name ?? '공용',
-    '호실':       r.tenant?.leaseTerms[0]?.room?.roomNo ?? '',
+    // 등록 시점 스냅샷 우선 — 없으면(구 데이터) 현행 호실로 폴백.
+    '호실':       r.roomNoSnapshot ?? r.tenant?.leaseTerms[0]?.room?.roomNo ?? '',
     '내용':       r.content,
     '처리예정일': fmtDate(r.targetDate),
     '해결일':     fmtDate(r.resolvedAt),

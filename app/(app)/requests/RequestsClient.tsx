@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { Fragment, useState, useTransition, useMemo } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -17,6 +17,7 @@ import {
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SortSelect } from '@/components/ui/SortSelect'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
@@ -40,6 +41,9 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
 }
 
 const NEUTRAL_COLOR = CATEGORY_COLORS['기타']
+
+// 정렬 기준 — 처리일은 미처리 그룹에 값이 없으니 요청일로 폴백한다.
+type SortKey = 'requestDate' | 'resolvedAt'
 
 
 // 타임스탬프의 KST 월(YYYY-MM) — 월 경계는 한국시간 기준.
@@ -72,7 +76,10 @@ export default function RequestsClient({
     return seen
   }, [initialRequests, categories])
 
-  const [filterStatus,   setFilterStatus]   = useState<'all' | 'unresolved' | 'resolved'>('unresolved')
+  // 기본은 전체 — 미처리·처리됨을 한 화면에서 보되 미처리 그룹을 항상 위로 올린다(운영자 결정 2026-07-27).
+  const [filterStatus,   setFilterStatus]   = useState<'all' | 'unresolved' | 'resolved'>('all')
+  const [sortKey,        setSortKey]        = useState<SortKey>('requestDate')
+  const [sortDir,        setSortDir]        = useState<'asc' | 'desc'>('desc')
   // 'uncategorized' = 카테고리 미지정(null/빈값) 요청 — '기타'·고아 값은 명시 저장값만 담는다.
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterUrgent,   setFilterUrgent]   = useState(false)
@@ -117,6 +124,27 @@ export default function RequestsClient({
     }
     return true
   }), [scoped, filterCategory, filterUrgent, search])
+
+  // 표시 직전 정렬 — 미처리 그룹이 항상 위, 미처리끼리는 긴급 고정 상단, 그 다음이 선택 정렬키.
+  // 동률은 등록 역순(createdAt 내림차순).
+  const sorted = useMemo(() => {
+    const sign = sortDir === 'asc' ? 1 : -1
+    const keyOf = (r: Request) => new Date(sortKey === 'resolvedAt' ? (r.resolvedAt ?? r.requestDate) : r.requestDate).getTime()
+    return [...filtered].sort((a, b) => {
+      const ga = a.resolvedAt ? 1 : 0, gb = b.resolvedAt ? 1 : 0
+      if (ga !== gb) return ga - gb
+      if (!a.resolvedAt) {
+        const ua = a.isUrgent ? 0 : 1, ub = b.isUrgent ? 0 : 1
+        if (ua !== ub) return ua - ub
+      }
+      const d = (keyOf(a) - keyOf(b)) * sign
+      if (d !== 0) return d
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  }, [filtered, sortKey, sortDir])
+
+  // 전체 보기의 '처리됨 N건' 소제목 건수 — 지금 화면에 실제로 깔린 처리 건만 센다.
+  const resolvedInView = useMemo(() => sorted.filter(r => r.resolvedAt).length, [sorted])
 
   // 카테고리 칩 건수 — 0건도 숨기지 않고 그대로 노출(전체 = 각 칩의 합).
   const categoryCounts = useMemo(() => {
@@ -413,8 +441,8 @@ export default function RequestsClient({
           value={filterStatus}
           onChange={setFilterStatus}
           options={[
-            { value: 'unresolved', label: `미처리 ${unresolvedCount}` },
             { value: 'all',        label: `전체 ${unresolvedCount + resolvedCount}` },
+            { value: 'unresolved', label: `미처리 ${unresolvedCount}` },
             { value: 'resolved',   label: `처리됨 ${resolvedCount}` },
           ]}
         />
@@ -449,6 +477,20 @@ export default function RequestsClient({
         >
           긴급만 {urgentCount}
         </button>
+
+        <span className="w-px self-stretch bg-[var(--warm-border)] mx-1 ml-auto" />
+
+        <SortSelect<SortKey>
+          ariaLabel="요청 정렬 기준"
+          value={sortKey}
+          dir={sortDir}
+          onChange={setSortKey}
+          onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+          options={[
+            { value: 'requestDate', label: '요청일' },
+            { value: 'resolvedAt',  label: '처리일' },
+          ]}
+        />
       </div>
 
       {/* 리스트 */}
@@ -465,15 +507,27 @@ export default function RequestsClient({
         />
       ) : (
         <ul className="space-y-2">
-          {filtered.map(r => {
+          {sorted.map((r, i) => {
             // 기본 5종 밖(운영자 추가·삭제된 값)이어도 배지는 항상 렌더 — neutral 톤으로 떨어뜨린다.
             const c        = r.category ? (CATEGORY_COLORS[r.category] ?? NEUTRAL_COLOR) : null
             const roomNo   = r.tenant?.leaseTerms[0]?.room?.roomNo
+            // 등록 당시 호실 스냅샷 우선 — 없으면(구 데이터) 현행 호실로 폴백.
+            // 스냅샷이 현재 호실과 다르거나 퇴실이면 '당시' 를 붙여 그때의 호실임을 밝힌다.
+            const shownRoom = r.roomNoSnapshot ?? roomNo
+            const pastRoom  = !!r.roomNoSnapshot && r.roomNoSnapshot !== roomNo
             const resolved = !!r.resolvedAt
             const isCommon = !r.tenantId
+            // 전체 보기에서 처리 구간이 시작되는 첫 카드 앞에만 소제목을 깐다(미처리 구간엔 라벨 없음).
+            const startsResolved = filterStatus === 'all' && resolved && (i === 0 || !sorted[i - 1].resolvedAt)
             return (
+              <Fragment key={r.id}>
+              {startsResolved && (
+                <li className="flex items-center gap-2 pt-1">
+                  <span className="text-[0.65625rem] font-medium text-[var(--warm-muted)]">처리됨 {resolvedInView}건</span>
+                  <span className="flex-1 h-px bg-[var(--warm-border)]" />
+                </li>
+              )}
               <li
-                key={r.id}
                 className={`rounded-xl p-4 border border-[var(--warm-border)] ${
                   resolved ? 'opacity-60 bg-[var(--canvas)]' : 'bg-[var(--cream)]'
                 }`}
@@ -500,7 +554,7 @@ export default function RequestsClient({
                       href={`/tenants?tenantId=${r.tenantId}&tab=requests`}
                       className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)]"
                     >
-                      {r.tenant?.name ?? '입주자 미상'}{roomNo && ` · ${roomNo}호`}
+                      {r.tenant?.name ?? '입주자 미상'}{shownRoom && ` · ${pastRoom ? '당시 ' : ''}${shownRoom}호`}
                     </Link>
                   )}
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
@@ -606,6 +660,7 @@ export default function RequestsClient({
                   </div>
                 )}
               </li>
+              </Fragment>
             )
           })}
         </ul>
