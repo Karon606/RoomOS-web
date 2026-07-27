@@ -265,7 +265,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   // 서류 — 3모델 병합 후 최신순, 종류 라벨로 구분. 착지는 종류별 페이지에 파일명 시딩.
   const docsMerged = [
     ...contractFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.signedAt, tenantName: f.tenant.name, kindLabel: '계약서', page: '/contracts' })),
-    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '입실료 확인서', page: '/rent-receipts' })),
+    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '입실료 납부 확인서', page: '/rent-receipts' })),
     ...residenceCertFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '실거주 확인서', page: '/residence-certs' })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime())
   const docHits: SearchHit[] = docsMerged.slice(0, TAKE_SHOW).map(d => ({

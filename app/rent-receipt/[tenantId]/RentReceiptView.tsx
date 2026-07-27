@@ -161,6 +161,8 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             ? { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }
             : { background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
         >
+          {/* 단기는 입주월 단일 청구라 월 이동이 무의미 — 스테퍼 숨김(회계 오더 2026-07-27) */}
+          {!data.isShortTerm && (
           <button
             onClick={() => void stepMonth(-1)}
             className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
@@ -169,6 +171,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6"/></svg>
           </button>
+          )}
           <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 text-sm font-semibold text-center" style={{ color: 'var(--warm-dark)' }}>
             <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>발급 대상월</span>
             <span className="truncate">{data.targetMonth}</span>
@@ -177,6 +180,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
                 style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
             )}
           </div>
+          {!data.isShortTerm && (
           <button
             onClick={() => void stepMonth(1)}
             disabled={atCurrentMonth}
@@ -186,7 +190,17 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6"/></svg>
           </button>
+          )}
         </div>
+
+        {/* 수납 대조 경고 — 화면 전용(인쇄물 미출력). 발급은 막지 않는다(자동값은 초기값일 뿐, 회계 오더). */}
+        {data.warning && (
+          <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>
+            {data.warning === 'noRecord'
+              ? '이 달 수납 기록이 없어 금액을 0원으로 두었습니다. 실제 받은 내역이 있으면 직접 입력해 주세요.'
+              : '실입금이 청구액보다 적습니다. 확인서에는 받은 금액 그대로 표기됩니다.'}
+          </p>
+        )}
 
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <div className="space-y-1">

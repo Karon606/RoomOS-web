@@ -21,6 +21,9 @@ export type RentReceiptData = {
   recipientName: string   // 임대인 대표 성명
   anchorMonth: string     // 대상 주기 시작월 'YYYY-MM' (발급 화면 월 스테퍼 기준)
   todayMonth: string      // 이번 달 'YYYY-MM' (KST) — 과거 월 배지·미래 월 차단 판정용
+  isShortTerm: boolean    // 단기 입주자 — 입주월 단일 청구라 월 스테퍼 숨김(회계 오더 2026-07-27)
+  // 화면 전용 경고(인쇄물 미출력) — noRecord: 그 달 수납 기록 없음(0원), partial: 실입금이 청구액보다 부족
+  warning: 'noRecord' | 'partial' | null
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
@@ -81,14 +84,59 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
 
   const lease = tenant.leaseTerms[0] ?? null
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
-  const anchorMonth = /^\d{4}-\d{2}$/.test(month ?? '') ? (month as string) : null
+  const isShortTerm = !!lease?.isShortTerm
+  // 단기는 입주월 단일 청구 — anchor 를 입주월로 고정(스테퍼도 화면에서 숨김, 회계 오더 2026-07-27)
+  const requestedMonth = /^\d{4}-\d{2}$/.test(month ?? '') ? (month as string) : null
+  const anchorMonth = isShortTerm && lease?.moveInDate
+    ? new Date(lease.moveInDate).toISOString().slice(0, 7)
+    : requestedMonth
   const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null, anchorMonth)
   const nextDue = dotPad(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
   const [cy, cm] = cycle.start.split('-').map(Number)
   const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
   const todayMonth = todayKst.slice(0, 7)
-  // 납부일 기본값 — 과거 월 발급이면 그 주기 시작일, 이번 달(또는 월 미지정)이면 오늘.
-  const payDate = anchorMonth && anchorMonth < todayMonth ? cycle.start : todayKst
+  const viewMonth = cycle.start.slice(0, 7)
+
+  // 납부 확인서의 정본은 실입금(회계 오더 2026-07-27) — 그 귀속월(targetMonth=주기 시작월)의 수납 기록.
+  // 보증금·양도인 몫·청구 조정 전표 제외. 소프트삭제는 prisma 확장이 자동 필터(where 에 deletedAt 금지).
+  let paidSum = 0
+  let lastRec: { payDate: Date; payMethod: string | null } | null = null
+  let lockMax = 0
+  if (lease) {
+    const recs = await prisma.paymentRecord.findMany({
+      where: { leaseTermId: lease.id, targetMonth: viewMonth, isDeposit: false, isPrevOwner: false },
+      select: { actualAmount: true, expectedAmount: true, payDate: true, payMethod: true, isBillingAdjust: true },
+      orderBy: { payDate: 'asc' },
+    })
+    for (const r of recs) {
+      lockMax = Math.max(lockMax, r.expectedAmount)   // 청구 락(조정 전표 포함) — 부분 납부 판정용
+      if (r.isBillingAdjust) continue                 // 조정 전표는 실입금 아님
+      if (r.actualAmount > 0) { paidSum += r.actualAmount; lastRec = { payDate: r.payDate, payMethod: r.payMethod } }
+    }
+  }
+
+  const defaultPayMethod = property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금'
+  const isPastMonth = viewMonth < todayMonth
+  let amount: number
+  let payDateYmd: string
+  let payMethod = defaultPayMethod
+  let warning: 'noRecord' | 'partial' | null = null
+  if (paidSum > 0 && lastRec) {
+    // 실입금이 있으면 과거·이번 달 공통으로 실입금 합 + 최종 입금일 + 그 record 의 납부방법
+    amount = paidSum
+    payDateYmd = new Date(lastRec.payDate.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    payMethod = lastRec.payMethod ?? defaultPayMethod
+    if (lockMax > 0 && paidSum < lockMax) warning = 'partial'
+  } else if (isPastMonth) {
+    // 기록 없는 과거 달 — 계약액 자동기입은 허위 서류가 된다. 0원 + 경고(발급 차단은 안 함, 수동 입력 허용)
+    amount = 0
+    payDateYmd = cycle.start
+    warning = 'noRecord'
+  } else {
+    // 이번 달인데 아직 기록 없음 — '방금 받은 돈' 발급 흐름의 초기값(현행 유지, 경고 없음)
+    amount = lease?.rentAmount ?? 0
+    payDateYmd = todayKst
+  }
 
   return {
     tenantId: tenant.id,
@@ -97,12 +145,14 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
     room: fmtRoom(lease?.room?.roomNo),
     period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
     targetMonth: `${cy}년 ${cm}월분`,
-    amount: lease?.rentAmount ?? 0,
-    payDate: kor(payDate),
-    payMethod: property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금',
+    amount,
+    payDate: kor(payDateYmd),
+    payMethod,
     note: `다음 납부 예정일 ${nextDue}`,
     recipientName: biz.ceoName ?? '',
-    anchorMonth: cycle.start.slice(0, 7),
+    anchorMonth: viewMonth,
     todayMonth,
+    isShortTerm,
+    warning,
   }
 }

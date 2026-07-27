@@ -287,7 +287,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
               {links?.tenantId && (
                 <button type="button" onClick={handleRentReceipt}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                  입실료 확인서
+                  입실료 납부 확인서
                 </button>
               )}
               <div className="flex-1" />
