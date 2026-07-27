@@ -59,7 +59,8 @@ export default function RequestsClient({
   const [pending, startTransition] = useTransition()
 
   const [filterStatus,   setFilterStatus]   = useState<'all' | 'unresolved' | 'resolved'>('unresolved')
-  const [filterCategory, setFilterCategory] = useState<'all' | Category>('all')
+  // 'uncategorized' = 카테고리 미지정(null/빈값) 요청 — '기타'는 명시 저장값만 담는다.
+  const [filterCategory, setFilterCategory] = useState<'all' | Category | 'uncategorized'>('all')
   const [filterUrgent,   setFilterUrgent]   = useState(false)
   const searchParams = useSearchParams()
   // 전역 통합 검색 ?q= 딥링크 시딩
@@ -80,12 +81,18 @@ export default function RequestsClient({
   const [addReqDate,    setAddReqDate]   = useState(kstYmdStr())
   const [addTargetDate, setAddTargetDate] = useState('')
 
-  const filtered = useMemo(() => initialRequests.filter(r => {
+  // 상태·월 스코프까지만 적용한 모집단 — 카테고리 칩 건수의 기준(카테고리 필터 적용 전).
+  const scoped = useMemo(() => initialRequests.filter(r => {
     // 월 스코프: 처리됨(resolved)은 그 달에 해결된 것만. 미처리(open)는 월 무관 항상 노출(활성 큐 — 놓치지 않게).
     if (r.resolvedAt && kstMonthOf(r.resolvedAt) !== targetMonth) return false
     if (filterStatus === 'unresolved' && r.resolvedAt) return false
     if (filterStatus === 'resolved'   && !r.resolvedAt) return false
-    if (filterCategory !== 'all' && r.category !== filterCategory) return false
+    return true
+  }), [initialRequests, filterStatus, targetMonth])
+
+  const filtered = useMemo(() => scoped.filter(r => {
+    if (filterCategory === 'uncategorized') { if (r.category) return false }
+    else if (filterCategory !== 'all' && r.category !== filterCategory) return false
     if (filterUrgent && !r.isUrgent) return false
     if (search.trim()) {
       const q   = search.trim().toLowerCase()
@@ -93,12 +100,34 @@ export default function RequestsClient({
       if (!hay.includes(q)) return false
     }
     return true
-  }), [initialRequests, filterStatus, filterCategory, filterUrgent, search, targetMonth])
+  }), [scoped, filterCategory, filterUrgent, search])
+
+  // 카테고리 칩 건수 — 0건도 숨기지 않고 그대로 노출(전체 = 각 칩의 합).
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { uncategorized: 0 }
+    for (const c of CATEGORIES) counts[c] = 0
+    for (const r of scoped) {
+      if (!r.category) counts.uncategorized += 1
+      else if (counts[r.category] !== undefined) counts[r.category] += 1
+    }
+    return counts
+  }, [scoped])
 
   const unresolvedCount = initialRequests.filter(r => !r.resolvedAt).length
   const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
   // 처리됨은 그 달에 해결된 것만(월 스코프) — 세그먼트 건수도 동일 기준
   const resolvedCount   = initialRequests.filter(r => r.resolvedAt && kstMonthOf(r.resolvedAt) === targetMonth).length
+
+  // 빈 상태에서 되돌릴 수 있는 필터(카테고리·긴급만·검색어) — 상태 세그먼트는 기본 큐라 초기화 대상이 아니다.
+  const hasResettableFilter = filterCategory !== 'all' || filterUrgent || !!search.trim()
+  const activeFilterSummary = [
+    filterStatus === 'unresolved' ? '미처리' : filterStatus === 'resolved' ? '처리됨' : null,
+    filterCategory === 'all' ? null : filterCategory === 'uncategorized' ? '미분류' : filterCategory,
+    filterUrgent ? '긴급만' : null,
+    search.trim() ? `검색 "${search.trim()}"` : null,
+  ].filter(Boolean).join(' · ')
+
+  const resetFilters = () => { setFilterCategory('all'); setFilterUrgent(false); setSearch('') }
 
   const handleResolve = (id: string, memo: string) => {
     setBusyId(id)
@@ -343,8 +372,9 @@ export default function RequestsClient({
           value={filterCategory}
           onChange={setFilterCategory}
           options={[
-            { value: 'all' as const, label: '전체' },
-            ...CATEGORIES.map(cat => ({ value: cat, label: cat })),
+            { value: 'all' as const, label: `전체 ${scoped.length}` },
+            ...CATEGORIES.map(cat => ({ value: cat, label: `${cat} ${categoryCounts[cat]}` })),
+            { value: 'uncategorized' as const, label: `미분류 ${categoryCounts.uncategorized}` },
           ]}
         />
 
@@ -352,13 +382,14 @@ export default function RequestsClient({
 
         <button
           onClick={() => setFilterUrgent(v => !v)}
-          className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
+          aria-pressed={filterUrgent}
+          className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
             filterUrgent
               ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-              : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
+              : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
-          긴급만
+          긴급만 {urgentCount}
         </button>
       </div>
 
@@ -367,7 +398,12 @@ export default function RequestsClient({
         <EmptyState
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5 H20 M4 12 H20 M4 19 H14" /></svg>}
           title={search.trim() ? '검색 결과가 없습니다' : '조건에 맞는 요청이 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '필터를 바꾸거나 새 요청을 등록해 보세요.'}
+          description={hasResettableFilter
+            ? `적용 중인 필터: ${activeFilterSummary}`
+            : (search.trim() ? '다른 검색어로 시도해 보세요.' : '필터를 바꾸거나 새 요청을 등록해 보세요.')}
+          action={hasResettableFilter
+            ? <Btn variant="secondary" size="sm" onClick={resetFilters}>필터 초기화</Btn>
+            : undefined}
         />
       ) : (
         <ul className="space-y-2">
