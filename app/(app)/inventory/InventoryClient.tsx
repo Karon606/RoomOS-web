@@ -1296,7 +1296,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     <>
                       <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setHubOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
-                        <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">보충 시 차감할 창고(허브) 위치</p>
+                        <p className="px-3 py-1 text-[0.65625rem] text-[var(--warm-muted)]">채울 때 차감할 창고(허브) 위치</p>
                         {/* 숨긴 위치는 허브 후보에서 제외 — 서버(setItemHub)도 거부하지만 애초에 안 보여준다 */}
                         {row.locations.filter(l => l.closedAt == null).map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
@@ -1774,7 +1774,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
                   return (
                     <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                       {lb.locationName} {fmtQty(lb.qty, stockUnit)}
-                      {restocked > 0 && <span className="ml-1 text-[var(--coral)]">+{Math.round(restocked * 100) / 100}</span>}
+                      {restocked > 0 && <span className="ml-1 text-[var(--coral)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>}
                     </span>
                   )
                 })}
@@ -2441,16 +2441,11 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
-  // 생성 폼(CheckForm)과 동일한 null-처리 — 빈칸은 0이 아니라 null.
-  // 전·후 모두 입력된 위치만 보충으로 계산해야, '보충 전'을 비워둔 위치가
-  // (후 − 0 = 후 전체)로 잡혀 창고가 전액 차감되는 사고가 없다.
-  const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) => {
-    const bStr = beforeQtys[l.id] ?? ''
-    const aStr = afterQtys[l.id] ?? ''
-    const b = bStr === '' ? null : Number(bStr)
-    const a = aStr === '' ? null : Number(aStr)
-    return s + ((b !== null && a !== null && a > b) ? a - b : 0)
-  }, 0)
+  // calcLocMove 단일 규칙(생성 폼과 동일). 단 기준선은 '그 점검의 원래 채우기 전'(역산값) —
+  // 현재 잔량을 기준으로 쓰면 과거 점검 수정이 오늘 값으로 오염된다(전문가 오더 2026-07-28).
+  const origBefore = (id: string) => initial[id] ? Number(initial[id].before) : null
+  const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) =>
+    s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', origBefore(l.id)).restocked, 0)
 
   // 창고(허브) 행 — '이전 잔량'은 저장된 창고 잔량 + 이 점검의 원래 보충합계로 역산(편집 무관 상수).
   // '자동 차감 후' = 이전 잔량 − (현재 편집 중인) 보충합계. 사용자가 직접 보정 안 했으면 이 값으로 저장.
@@ -2481,12 +2476,10 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
             || (afterQtys[l.id] ?? '') !== '' || (beforeQtys[l.id] ?? '') !== '')
           .map(l => {
             if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
-            const before = Number(beforeQtys[l.id] || '0')
-            const after = Number(afterQtys[l.id] || '0')
-            // 보충 전이 빈칸이면 보충 없음(잔량만 기록) — restockSum 과 동일한 null-규칙
-            const restocked = (beforeQtys[l.id] ?? '') !== '' && after > before ? after - before : 0
+            // calcLocMove 단일 규칙 — 화면 restockSum 과 같은 계산이라야 저장 후 숫자가 안 튄다
+            const { restocked } = calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', origBefore(l.id))
             return {
-              storageLocationId: l.id, qty: after,
+              storageLocationId: l.id, qty: Number(afterQtys[l.id] || '0'),
               ...(restocked > 0 ? { restockedQty: restocked } : {}),
             }
           }),
@@ -2514,7 +2507,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
       </div>
       {hasLocations && (
         <div className="space-y-2">
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">위치별 보충 전 → 보충 후{stockUnit ? ` (${stockUnit})` : ''}</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">위치별 채우기 전 → 채운 후{stockUnit ? ` (${stockUnit})` : ''}</p>
           {locationSources.map(l => {
             // 창고(허브) 행 — 보충 입력 없이 '이전 → 자동 차감 후' 자동계산
             if (l.isHub) {
@@ -2540,12 +2533,10 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                 </div>
               )
             }
-            // 비허브 위치 행 — 보충 전 → 보충 후 (차이만큼 창고에서 이동)
+            // 비허브 위치 행 — 채우기 전 → 채운 후 (차이만큼 창고에서 이동). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[l.id] ?? ''
             const afterStr  = afterQtys[l.id] ?? ''
-            const b = beforeStr === '' ? null : Number(beforeStr)
-            const a = afterStr === '' ? null : Number(afterStr)
-            const restocked = (b !== null && a !== null && a > b) ? a - b : 0
+            const { restocked } = calcLocMove(beforeStr, afterStr, origBefore(l.id))
             return (
               <div key={l.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
@@ -2554,23 +2545,23 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                     <button type="button"
                       onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
                       className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                      보충 없음
+                      옮김 없음
                     </button>
                     {restocked > 0 && (
-                      <span className="text-[0.65625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
+                      <span className="text-[0.65625rem] text-[var(--coral)]">창고에서 +{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>
                     )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -2583,7 +2574,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
           <div className="flex justify-between text-[0.65625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1">
             {restockSum > 0
               ? <span className="text-[var(--warm-mid)]">창고 → 이동 합계 <strong className="text-[var(--coral)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
-              : <span className="text-[var(--warm-muted)]">보충 없음</span>}
+              : <span className="text-[var(--warm-muted)]">옮김 없음</span>}
             <span className="text-[var(--warm-mid)]">잔량 <strong className="text-[var(--coral)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
           </div>
         </div>
@@ -2764,6 +2755,20 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
+// 창고에서 옮김(구 '보충') 계산 단일 규칙 — 화면 합계·배지·저장·수정 폼이 전부 이 함수를 쓴다(운영자 승인 2026-07-28).
+// '채운 후'만 입력해도 기준선(채우기 전 입력 ?? 직전 잔량)에서 늘어난 만큼 창고에서 옮긴 것으로 계산해 허브를 차감한다.
+// 종전엔 화면(전·후 모두 입력 요구)과 저장(직전 잔량 폴백)의 규칙이 갈라져, 후만 입력하면 허브 미차감으로
+// 총량이 부푸는 유령 재고 위험이 있었다(김치 20kg 후속 신고). 음수(후 < 기준)는 0 클램프 — 허브 환입 금지.
+function calcLocMove(beforeStr: string, afterStr: string, baseline: number | null): {
+  beforeN: number | null; afterN: number | null; restocked: number
+} {
+  const beforeN = beforeStr === '' ? null : Number(beforeStr)
+  const afterN  = afterStr === '' ? null : Number(afterStr)
+  const base = beforeN ?? baseline
+  const restocked = (base !== null && afterN !== null && afterN > base) ? afterN - base : 0
+  return { beforeN, afterN, restocked }
+}
+
 function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
@@ -2904,19 +2909,12 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
   }
   const confirmAll = () => setTouched(new Set(chkLocations.map(l => l.id)))
 
-  // 비허브 위치들의 보충량 합계 — 행별 restocked 와 동일한 null-처리.
-  // (빈칸은 0이 아니라 null 로 봐서, 전·후 모두 입력됐을 때만 보충으로 계산.
-  //  이렇게 해야 사용자가 "보충 전"을 비웠을 때 허브가 과차감되지 않음.)
+  // 비허브 위치들의 옮김량 합계 — calcLocMove 단일 규칙(저장 buildLocationData 와 동일).
+  // 기준선(직전 잔량 = 현재 잔량 기준선)이 신뢰 가능해져 후만 입력해도 화면·허브 차감이 즉시 반영된다.
   const restockSum = restockMode
     ? chkLocations
         .filter(l => !l.isHub)
-        .reduce((s, l) => {
-          const beforeStr = beforeQtys[l.id] ?? ''
-          const afterStr  = afterQtys[l.id] ?? ''
-          const beforeN = beforeStr === '' ? null : Number(beforeStr)
-          const afterN  = afterStr === '' ? null : Number(afterStr)
-          return s + ((beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : 0)
-        }, 0)
+        .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', prevMap[l.id] ?? null).restocked, 0)
     : 0
 
   // 허브의 "보충 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
@@ -2937,16 +2935,11 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         }
         const beforeStr = beforeQtys[l.id] ?? ''
         const afterStr  = afterQtys[l.id] ?? ''
-        const beforeN = beforeStr === '' ? null : Number(beforeStr)
-        const afterN  = afterStr  === '' ? null : Number(afterStr)
-        // 전·후 모두 입력 → 보충량 = max(0, 후-전)
-        // 전만 입력 → 보충 없이 잔량 = 전
-        // 후만 입력(현재 잔량 비움) → 직전 잔량을 기준으로 보충량 산출(허브 미차감·총량 변동 방지)
-        // 모두 비움 → qty=0 (entered=false → 저장 제외, carryOver 보존)
-        const restockBase = beforeN ?? (prevMap[l.id] ?? null)
+        // 전·후 모두 입력 → 옮김량 = max(0, 후-전) / 전만 입력 → 옮김 없이 잔량 = 전
+        // 후만 입력 → 직전 잔량 기준으로 옮김량 산출 / 모두 비움 → entered=false(저장 제외, carryOver 보존)
+        const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr, prevMap[l.id] ?? null)
         const finalQty = afterN ?? beforeN ?? 0
-        const restocked = (restockBase !== null && afterN !== null && afterN > restockBase) ? afterN - restockBase : undefined
-        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked, entered: beforeStr !== '' || afterStr !== '' }
+        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked > 0 ? restocked : undefined, entered: beforeStr !== '' || afterStr !== '' }
       })
     }
     // 단순 모드 — 첫 점검
@@ -2957,8 +2950,10 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
     }))
   }
 
+  // 미입력 위치는 저장 시 carryOver 로 직전 값이 보존되므로, 화면 합계도 직전 잔량으로 세어야
+  // '점검 후 잔량'이 저장 결과와 일치한다(예: 안 건드린 5층 상단 1kg 이 0 으로 빠지면 합계가 준다).
   const computed = restockMode
-    ? buildLocationData().reduce((s, lq) => s + lq.qty, 0)
+    ? buildLocationData().reduce((s, lq) => s + (lq.entered ? lq.qty : (prevMap[lq.storageLocationId] ?? 0)), 0)
     : (hasLocations
         ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
         : 0)
@@ -3033,7 +3028,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
-          ? '각 위치의 보충 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 자동으로 옮겨진 것으로 차감됩니다. (새로 산 게 아니라 창고→위치 이동)'
+          ? '각 위치의 채우기 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 옮겨진 것으로 자동 차감됩니다. (새 입수 기록이 아니라 창고→위치 이동)'
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
       </p>
       {/* 폐기 바로가기 — 점검을 먼저 저장하면 폐기분이 소모로 잡히므로 순서를 안내(오류신고 a1e048e8) */}
@@ -3074,18 +3069,16 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                       className={`w-20 ${inputCls}`} />
                     <span className="text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
                     {restockSum > 0 && (
-                      <span className="ml-auto text-[0.65625rem] text-[var(--persimmon-d)] shrink-0">-{Math.round(restockSum * 100) / 100} 차감</span>
+                      <span className="ml-auto text-[0.65625rem] text-[var(--persimmon-d)] shrink-0">-{Math.round(restockSum * 100) / 100}{stockUnit ?? ''} 차감</span>
                     )}
                   </div>
                 </div>
               )
             }
-            // 비허브 위치 행 — 전 → 후 (grid 2cols, 라벨은 input 위)
+            // 비허브 위치 행 — 전 → 후 (grid 2cols, 라벨은 input 위). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[loc.id] ?? ''
             const afterStr  = afterQtys[loc.id] ?? ''
-            const beforeN = beforeStr === '' ? null : Number(beforeStr)
-            const afterN  = afterStr === '' ? null : Number(afterStr)
-            const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : 0
+            const { restocked } = calcLocMove(beforeStr, afterStr, prevMap[loc.id] ?? null)
             const lastRestocked = prevRestockedMap[loc.id]
             return (
               <div key={loc.id} className="space-y-1">
@@ -3096,20 +3089,20 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                 {(prevQty !== undefined || lastRestocked != null || restocked > 0) && (
                   <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                     {prevQty !== undefined && <span className="text-[var(--warm-mid)]">직전 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prevQty}{stockUnit ?? ''}</strong></span>}
-                    {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 지난 보충 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                    {restocked > 0 && <span className="text-[var(--coral)] ml-auto">이번 보충 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 지난 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {restocked > 0 && <span className="text-[var(--coral)] ml-auto">창고에서 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
                     <input type="text" inputMode="decimal" placeholder="—"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -3128,7 +3121,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                       }
                     }}
                     className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                    보충 없음
+                    옮김 없음
                   </button>
                 </div>
               </div>
@@ -3197,7 +3190,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         <input type="checkbox" checked={reconcileMode} onChange={e => setReconcileMode(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
         <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
           <strong className="text-[var(--warm-dark)]">전체 보정으로 기록</strong>. 실제 수량과 차이를 사용량으로 잡지 않습니다.<br />
-          계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (보충 완료 후 점검 권장)
+          계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (채움 완료 후 점검 권장)
         </span>
       </label>
       {(draftPending || draftSavedAt) && (() => {
@@ -3463,14 +3456,14 @@ function HubShortDialog({ pending, onResolved, onExit }: {
       // 성공 — 이동 + 보충 통합 적용취소(LIFO: 보충 먼저, 이동 나중)
       const restockId = res.id
       const moves = [...transferChecksRef.current]
-      pushToast('success', '옮기고 보충 완료', {
+      pushToast('success', '옮기고 채움 완료', {
         action: {
           label: '적용취소', run: () => { void (async () => {
             for (const id of [restockId, ...[...moves].reverse()]) {
               const d = await deleteStockCheck(id)
               if (!d.ok) { pushToast('error', d.error); return }
             }
-            pushToast('info', '옮기고 보충을 적용취소했습니다')
+            pushToast('info', '옮기고 채움을 적용취소했습니다')
           })() },
         },
       })
@@ -3524,14 +3517,14 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
           </svg>
           <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[var(--warm-dark)]">창고(허브) 재고가 보충량보다 {fmtQty(shortfall, unit)} 부족합니다</h2>
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">창고(허브) 재고가 옮김량보다 {fmtQty(shortfall, unit)} 부족합니다</h2>
             {itemLabel && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{itemLabel}</p>}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           <p className="text-xs text-[var(--warm-mid)]">
-            창고(허브) 현재 {fmtQty(hubQty, unit)} · 이번 보충 {fmtQty(hubQty + shortfall, unit)}
+            창고(허브) 현재 {fmtQty(hubQty, unit)} · 이번 옮김 {fmtQty(hubQty + shortfall, unit)}
           </p>
           <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
             창고 장부가 실물과 다를 수 있어요. 실제 재고가 더 많다면 먼저 확인해 맞춰주세요.
@@ -3554,7 +3547,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
             )}
             {fromLoc && moveQty > 0 && (
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">
-                {fromLoc.name}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 보충을 마칩니다
+                {fromLoc.name}에서 창고로 {fmtQty(moveQty, unit)}를 옮기고 채움을 마칩니다
               </p>
             )}
           </div>
@@ -3562,7 +3555,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
 
         <div className="px-5 py-4 border-t border-[var(--warm-border)] shrink-0 space-y-2">
           <div className="flex gap-2">
-            <Btn type="button" variant="ghost" size="md" className="flex-1" autoFocus onClick={() => handleExit('back')} disabled={busy}>보충으로 돌아가기</Btn>
+            <Btn type="button" variant="ghost" size="md" className="flex-1" autoFocus onClick={() => handleExit('back')} disabled={busy}>입력으로 돌아가기</Btn>
             <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => handleExit('reconcile')} disabled={busy}>창고 재고 확인</Btn>
           </div>
           <Btn type="button" variant="primary" size="md" fullWidth onClick={() => void onMoveFill()} disabled={busy || !fromLoc || moveQty <= 0}>
@@ -3645,14 +3638,11 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const computeRow = (r: InventoryRow) => {
     const beforeStr = beforeQtys[r.id] ?? ''
     const afterStr  = afterQtys[r.id] ?? ''
-    const b = beforeStr === '' ? null : Number(beforeStr)
-    const a = afterStr  === '' ? null : Number(afterStr)
-    // 최종 잔량 = 보충 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
-    const finalN = a ?? b
-    // 보충량: 보충 후만 입력하고 현재 잔량을 비웠다면 직전 잔량을 기준으로 삼아 허브 미차감 방지
-    const restockBase = b ?? (r.currentLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
-    const restocked = (restockBase !== null && a !== null && a > restockBase) ? a - restockBase : 0
-    return { beforeStr, afterStr, beforeN: b, afterN: a, finalN, restocked }
+    // calcLocMove 단일 규칙 — 채운 후만 입력하면 직전 잔량 기준으로 옮김량 산출(허브 미차감 방지)
+    const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr, r.currentLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
+    // 최종 잔량 = 채운 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
+    const finalN = afterN ?? beforeN
+    return { beforeStr, afterStr, beforeN, afterN, finalN, restocked }
   }
 
   const isItemDirty = (r: InventoryRow) => {
@@ -3809,7 +3799,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
-              보충 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. (이 위치가 허브인 품목은 현재 잔량만 입력)
+              채우기 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. (이 위치가 허브인 품목은 현재 잔량만 입력)
             </p>
           </div>
           {!inline && (
@@ -3906,8 +3896,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                   {(prev != null || (restocked > 0 && !rowIsHub)) && (
                     <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                       {prev != null && <span className="text-[var(--warm-mid)]">직전 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
-                      {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 지난 보충 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
-                      {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 보충 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 지난 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">창고에서 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     </div>
                   )}
                   {rowIsHub ? (
@@ -3932,14 +3922,14 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택) */}
                       <div className="grid grid-cols-2 gap-1.5">
                         <div>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
                           <input type="text" inputMode="decimal" placeholder="0"
                             value={beforeStr}
                             onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                             className={qtyInputCls} />
                         </div>
                         <div>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
                           <input type="text" inputMode="decimal" placeholder="—"
                             value={afterStr}
                             onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -3958,7 +3948,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                             }
                           }}
                           className="text-[0.65625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                          보충 없음
+                          옮김 없음
                         </button>
                       </div>
                     </>
@@ -3974,7 +3964,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
         {locId && locItems.length > 0 && totalRestock > 0 && (
           <div className="border-t border-[var(--coral)]/20 bg-[var(--coral)]/5 px-5 py-2 shrink-0">
             <p className="text-[0.6875rem] text-[var(--warm-mid)]">
-              보충한 만큼 각 품목의 창고(허브) 잔량에서 자동 차감됩니다.
+              채운 만큼 각 품목의 창고(허브) 잔량에서 자동 차감됩니다.
             </p>
           </div>
         )}
