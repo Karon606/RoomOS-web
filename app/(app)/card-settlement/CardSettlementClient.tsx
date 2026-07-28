@@ -103,6 +103,19 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
   return Array.from(map.values()).sort((a, b) => a.billMonth.localeCompare(b.billMonth))
 }
 
+// 결제월별 소그룹 — 섹션 헤더에 '7월 결제'처럼 구체 월을 앞세우기 위해.
+// 결제일(payDay)은 그 청구월 안에 있으므로 결제월 = billMonth 이다(buildSettleGroups 의 nominal 계산과 동일 전제).
+function groupByBillMonth(groups: SettleGroup[]) {
+  const map = new Map<string, SettleGroup[]>()
+  groups.forEach(g => {
+    if (!map.has(g.billMonth)) map.set(g.billMonth, [])
+    map.get(g.billMonth)!.push(g)
+  })
+  return Array.from(map.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([billMonth, list]) => ({ billMonth, monthLabel: `${Number(billMonth.slice(5))}월`, list }))
+}
+
 // 확정 그룹을 출금계좌별로 합산 — 카드가 여러 장이어도 실제 이체는 계좌 단위로 한 번이면 된다.
 // 출금계좌가 연결되지 않은 그룹은 '출금계좌 미지정' 한 행으로 모은다.
 function buildPrepRows(finalized: SettleGroup[]): PrepRow[] {
@@ -159,66 +172,77 @@ export default function CardSettlementClient({
 
   const settleCard = (g: SettleGroup) => (
     <div key={`${g.accountId}__${g.billMonth}`} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
-        {g.payDayStr !== '미지정' && (
-          <Badge tone="pale-amber" className="shrink-0">
-            결제일: {g.payDayStr}
-          </Badge>
-        )}
-      </div>
-      <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
-        <div>청구기간: {g.billingPeriodStr}</div>
-        {g.linkedAccountName && (
-          <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
-        )}
-        {/* 결제일이 주말·공휴일이면 실제 이체일 안내 — 고정지출의 '실제이체' 어휘·문법과 동일. 이동 없으면 미표시 */}
-        {g.actualPayStr && (
-          <div>실제이체: <span className="text-[var(--warm-dark)]">{g.actualPayStr}</span></div>
-        )}
-      </div>
-      <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">
-        <span className="text-xs text-[var(--warm-mid)] font-medium">
-          {g.billMonth.replace('-', '년 ')}월 청구 {g.isFinalized ? '총액(확정)' : '예정액'}
-        </span>
-        <span className="inline-flex items-baseline gap-1">
-          <span className="text-xl font-bold text-[var(--danger-fg)] num">
-            {fmtWon(g.total)}
+      {/* 상세는 열어볼 때만 — 카드 안 중첩 스크롤 대신 네이티브 펼치기(§22 '가벼운 합산은 카드 내 펼치기') */}
+      <details className="group">
+        <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[0.90625rem] font-semibold text-[var(--warm-dark)] tracking-[-0.015em]">{g.accountName}</span>
+              <Badge tone={g.isFinalized ? 'pale-red' : 'pale-amber'} className="shrink-0">
+                {g.isFinalized ? '확정' : '예정'}
+              </Badge>
+            </span>
+            <span className="block mt-1 text-[0.71875rem] text-[var(--warm-mid)] truncate">
+              {g.linkedAccountName ? `출금계좌 ${g.linkedAccountName}` : '출금계좌 미지정'}
+            </span>
           </span>
-          {/* 확정 청구분만 복사 제공 — 예정 그룹은 마감 전이라 금액이 더 늘 수 있다. */}
-          {g.isFinalized && (
-            <button type="button" onClick={() => copyAmount(g.total)} aria-label="청구액 복사"
-              className="shrink-0 self-center inline-flex items-center justify-center w-11 h-11 -my-2 -mr-3 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-            </button>
-          )}
-        </span>
-      </div>
-      <div className="max-h-40 overflow-y-auto space-y-1.5">
-        {g.items.map(item => (
-          <div key={item.id} className="flex items-center justify-between text-xs gap-2">
-            <span className="text-[var(--warm-mid)] min-w-0 truncate">
-              {fmtMD(item.date)}
-              &nbsp;
-              <span className="text-[var(--warm-muted)]">{item.category}</span>
-              {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
+          <span className="shrink-0 flex flex-col items-end gap-1">
+            <span className="text-xl font-bold text-[var(--danger-fg)] num leading-none">
+              {fmtWon(g.total)}
             </span>
-            <span className="text-[var(--warm-dark)] font-medium num shrink-0">
-              {fmtWon(item.amount)}
+            <span className="inline-flex items-center gap-1 text-[0.71875rem] text-[var(--warm-muted)]">
+              내역 {g.items.length}건
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </span>
+          </span>
+        </summary>
+        <div className="mt-3 border-t border-[var(--warm-border)] pt-3 space-y-3">
+          <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
+            <div>청구기간: {g.billingPeriodStr}</div>
+            {g.payDayStr !== '미지정' && (
+              <div>결제일: <span className="text-[var(--warm-dark)]">{g.payDayStr}</span></div>
+            )}
+            {/* 결제일이 주말·공휴일이면 실제 이체일 안내 — 고정지출의 '실제이체' 어휘·문법과 동일. 이동 없으면 미표시 */}
+            {g.actualPayStr && (
+              <div>실제이체: <span className="text-[var(--warm-dark)]">{g.actualPayStr}</span></div>
+            )}
           </div>
-        ))}
+          <div className="space-y-1.5">
+            {g.items.map(item => (
+              <div key={item.id} className="flex items-center justify-between text-xs gap-2">
+                <span className="text-[var(--warm-mid)] min-w-0 truncate">
+                  {fmtMD(item.date)}
+                  &nbsp;
+                  <span className="text-[var(--warm-muted)]">{item.category}</span>
+                  {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
+                </span>
+                <span className="text-[var(--warm-dark)] font-medium num shrink-0">
+                  {fmtWon(item.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </details>
+      {/* 액션은 접힘과 무관하게 상시 노출 (§27.1) */}
+      <div className="flex items-center gap-2">
+        {g.accountId && g.accountId !== 'unknown' ? (
+          <Btn
+            variant={g.isFinalized ? 'primary' : 'secondary'} size="md" className="flex-1"
+            onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
+            disabled={isPending}>
+            {g.isFinalized ? '출금 확인 (정산 완료 처리)' : '미리 정산 처리'}
+          </Btn>
+        ) : (
+          <p className="flex-1 text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
+        )}
+        {/* 확정 청구분만 복사 제공 — 예정 그룹은 마감 전이라 금액이 더 늘 수 있다. */}
+        {g.isFinalized && (
+          <Btn variant="secondary" size="sm" className="shrink-0" onClick={() => copyAmount(g.total)}>
+            금액 복사
+          </Btn>
+        )}
       </div>
-      {g.accountId && g.accountId !== 'unknown' ? (
-        <Btn
-          variant={g.isFinalized ? 'primary' : 'secondary'} size="md" fullWidth
-          onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
-          disabled={isPending}>
-          {g.isFinalized ? '출금 확인 (정산 완료 처리)' : '미리 정산 처리'}
-        </Btn>
-      ) : (
-        <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
-      )}
     </div>
   )
 
@@ -275,31 +299,36 @@ export default function CardSettlementClient({
           <EmptyState title="미정산 건이 없습니다" />
         ) : (
           <div className="space-y-6">
-            {/* 확정 청구분 — 마감돼 금액이 고정된 출금 대상 */}
-            {finalizedG.length > 0 && (
-              <div className="space-y-3">
+            {/* 확정 청구분 — 마감돼 금액이 고정된 출금 대상. 결제월이 섞이면 월별로 나눠 헤더에 월을 앞세운다. */}
+            {finalizedG.length > 0 && groupByBillMonth(finalizedG).map(m => (
+              <div key={`fin-${m.billMonth}`} className="space-y-3">
                 <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-[var(--warm-dark)]">{m.monthLabel} 결제</span>
                   <Badge tone="pale-red">확정</Badge>
-                  <span className="text-sm font-semibold text-[var(--warm-dark)]">청구 마감 · 출금 대상</span>
-                  <span className="text-xs text-[var(--warm-muted)]">{finalizedG.length}건</span>
+                  <span className="text-xs text-[var(--warm-muted)]">{m.list.length}건</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {finalizedG.map(settleCard)}
+                  {m.list.map(settleCard)}
                 </div>
               </div>
-            )}
+            ))}
             {/* 예정 청구분 — 아직 마감 전이라 금액이 더 늘 수 있음 */}
             {pendingG.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge tone="pale-amber">예정</Badge>
-                  <span className="text-sm font-semibold text-[var(--warm-dark)]">진행 중 · 마감 전</span>
-                  <span className="text-xs text-[var(--warm-muted)]">{pendingG.length}건</span>
-                </div>
-                <p className="text-xs text-[var(--warm-muted)]">아직 청구 마감 전이라 결제일까지 금액이 더 늘 수 있어요.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {pendingG.map(settleCard)}
-                </div>
+              <div className="space-y-6">
+                {groupByBillMonth(pendingG).map((m, gi) => (
+                  <div key={`pen-${m.billMonth}`} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[var(--warm-dark)]">{m.monthLabel} 결제 예정</span>
+                      <Badge tone="pale-amber">마감 전</Badge>
+                      <span className="text-xs text-[var(--warm-muted)]">{m.list.length}건</span>
+                    </div>
+                    {/* 안내는 첫 월 헤더 아래 한 번만 — 헤더 위에 두면 고아 캡션으로 보인다(디자이너 검수) */}
+                    {gi === 0 && <p className="text-xs text-[var(--warm-muted)]">아직 청구 마감 전이라 결제일까지 금액이 더 늘 수 있어요.</p>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {m.list.map(settleCard)}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -308,7 +337,9 @@ export default function CardSettlementClient({
 
       {/* 정산 완료 내역 — 선택한 달 청구분 */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
-        <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 <span className="text-[var(--warm-muted)] font-normal">· {monthLabel} 청구분</span></h3>
+        <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 <span className="text-[var(--warm-muted)] font-normal">· {monthLabel} 청구분</span>
+          <InfoHint title="정산 완료 내역">정산 완료 내역은 선택한 달 기준입니다.</InfoHint>
+        </h3>
         {settledGroups.length === 0 ? (
           <EmptyState title={`${monthLabel} 청구분 정산 완료 내역이 없습니다`} />
         ) : (
@@ -316,23 +347,40 @@ export default function CardSettlementClient({
             {settledGroups.map(g => (
               <div key={`${g.accountId}__${g.billMonth}`}
                 className="bg-[var(--canvas)]/60 border border-[var(--warm-border)] rounded-xl p-4 space-y-3 opacity-70">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
-                    <Badge tone="pale-green">정산완료</Badge>
-                  </div>
-                  <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
-                </div>
-                <div className="space-y-1">
-                  {g.items.map(item => (
-                    <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
-                      <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
-                      <span>{fmtWon(item.amount)}</span>
+                {/* 미정산 카드와 같은 펼치기 문법 — 상세는 열어볼 때만 */}
+                <details className="group">
+                  <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[0.90625rem] font-semibold text-[var(--warm-dark)] tracking-[-0.015em]">{g.accountName}</span>
+                        <Badge tone="pale-green" className="shrink-0">정산완료</Badge>
+                      </span>
+                      <span className="block mt-1 text-[0.71875rem] text-[var(--warm-mid)] truncate">
+                        {g.linkedAccountName ? `출금계좌 ${g.linkedAccountName}` : '출금계좌 미지정'}
+                      </span>
+                    </span>
+                    <span className="shrink-0 flex flex-col items-end gap-1">
+                      <span className="text-base font-bold text-[var(--warm-dark)] num leading-none">{fmtWon(g.total)}</span>
+                      <span className="inline-flex items-center gap-1 text-[0.71875rem] text-[var(--warm-muted)]">
+                        내역 {g.items.length}건
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="mt-3 border-t border-[var(--warm-border)] pt-3 space-y-3">
+                    <div className="text-xs text-[var(--warm-mid)]">청구기간: {g.billingPeriodStr}</div>
+                    <div className="space-y-1">
+                      {g.items.map(item => (
+                        <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
+                          <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
+                          <span>{fmtWon(item.amount)}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between pt-1 border-t border-[var(--warm-border)]">
-                  <span className="text-sm font-bold text-[var(--warm-dark)]">{fmtWon(g.total)}</span>
+                  </div>
+                </details>
+                {/* 액션은 접힘과 무관하게 상시 노출 (§27.1) */}
+                <div className="flex items-center justify-end">
                   <button
                     onClick={async () => {
                       if (!(await confirmDialog({ title: `'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소할까요?`, confirmLabel: '전체 취소' }))) return
