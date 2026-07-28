@@ -492,37 +492,47 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub, closedAt: l.closedAt ? l.closedAt.toISOString() : null }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
-    // 숨김 판정 — 숨긴(closedAt) 위치 중 현재 잔량이 비어 있으면(< 0.001) 화면에서 가린다.
-    // 잔량 소스는 (B) 계열: 마지막 점검 breakdown + 그 이후 입수·폐기(위치별). currentLocationBreakdown 과 동일.
-    // 재고가 들어오면(어느 경로든) 잔량이 살아나 자동으로 다시 보인다 — 조용히 사라지지 않는다.
-    let hiddenLocationIds: string[] = []
-    const closedIds = itemLinks.filter(l => l.closedAt != null).map(l => l.storageLocation.id)
-    if (closedIds.length > 0) {
-      // 잔량 계산 — 열린 링크만으로 허브 폴백 해석(숨긴 위치는 미지정 입수 귀속처가 될 수 없다, F3).
-      const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
-      const hubId = resolveHubSync(it.hubLocationId, openLinkIds, locations, defaultHubId)
-      const cur = new Map<string, number>()
-      for (const lb of last?.locationBreakdown ?? []) cur.set(lb.storageLocationId, lb.remainingQty)
-      if (last) {
-        const afterLast = (x: { date: Date; createdAt: Date }) =>
-          x.date.getTime() > last.date.getTime() ||
-          (x.date.getTime() === last.date.getTime() && x.createdAt.getTime() > last.createdAt.getTime())
-        for (const a of addsByItem.get(it.id) ?? []) {
-          if (!afterLast(a)) continue
-          const loc = a.storageLocationId ?? hubId
-          if (!loc) continue
-          cur.set(loc, (cur.get(loc) ?? 0) + a.addedQty)
-        }
-        for (const d of dispByItem.get(it.id) ?? []) {
-          if (!afterLast(d)) continue
-          const loc = d.storageLocationId ?? hubId
-          if (!loc) continue
-          cur.set(loc, (cur.get(loc) ?? 0) - d.disposedQty)
-        }
+    // 위치별 현재 잔량 (B 계열) — 마지막 점검 breakdown + 그 이후 입수·폐기(위치별).
+    // actions.ts currentLocationBreakdown 정본과 동일 규칙(경계 date+createdAt, 미지정분은 허브 귀속,
+    // 허브 폴백은 열린 링크만 — 숨긴 위치는 미지정 입수 귀속처가 될 수 없다, F3).
+    // 종전엔 숨김 판정용으로만 계산해 화면(위치 칩·점검 폼 기준선)이 점검 시점 값에 머물렀다 —
+    // 입수 직후 위치 잔량이 0 으로 보이던 신고 e48ca8ac(김치 20kg)의 원인. 전 품목 산출로 승격.
+    const openLinkIds = itemLinks.filter(l => l.closedAt == null).map(l => l.storageLocation.id)
+    const hubId = resolveHubSync(it.hubLocationId, openLinkIds, locations, defaultHubId)
+    const cur = new Map<string, number>()
+    for (const lb of last?.locationBreakdown ?? []) cur.set(lb.storageLocationId, lb.remainingQty)
+    if (last) {
+      const afterLast = (x: { date: Date; createdAt: Date }) =>
+        x.date.getTime() > last.date.getTime() ||
+        (x.date.getTime() === last.date.getTime() && x.createdAt.getTime() > last.createdAt.getTime())
+      for (const a of addsByItem.get(it.id) ?? []) {
+        if (!afterLast(a)) continue
+        const loc = a.storageLocationId ?? hubId
+        if (!loc) continue
+        cur.set(loc, (cur.get(loc) ?? 0) + a.addedQty)
       }
-      // 음수는 0 취급(숨김) — 표시 파이프라인이 이미 음수를 0 클램프하므로, 노출하면 "0kg인데 안 사라지는 칩"이 된다.
-      hiddenLocationIds = closedIds.filter(id => (cur.get(id) ?? 0) < 0.001)
+      for (const d of dispByItem.get(it.id) ?? []) {
+        if (!afterLast(d)) continue
+        const loc = d.storageLocationId ?? hubId
+        if (!loc) continue
+        cur.set(loc, (cur.get(loc) ?? 0) - d.disposedQty)
+      }
     }
+    // 위치 순서는 sortOrder(locations 정렬) 우선, 링크 밖 위치(과거 점검 잔재)는 뒤에. 음수는 0 클램프(표시 관례).
+    const locNameOf = (id: string) =>
+      locations.find(l => l.id === id)?.name
+      ?? last?.locationBreakdown.find(lb => lb.storageLocationId === id)?.storageLocation.name
+      ?? ''
+    const currentLocationBreakdown: LocationQtyEntry[] = [
+      ...locations.filter(l => cur.has(l.id)).map(l => l.id),
+      ...[...cur.keys()].filter(id => !locations.some(l => l.id === id)),
+    ].map(id => ({ locationId: id, locationName: locNameOf(id), qty: Math.max(0, cur.get(id) ?? 0) }))
+
+    // 숨김 판정 — 숨긴(closedAt) 위치 중 현재 잔량이 비어 있으면(< 0.001) 화면에서 가린다.
+    // 재고가 들어오면(어느 경로든) 잔량이 살아나 자동으로 다시 보인다 — 조용히 사라지지 않는다.
+    // 음수는 0 취급(숨김) — 노출하면 "0kg인데 안 사라지는 칩"이 된다.
+    const closedIds = itemLinks.filter(l => l.closedAt != null).map(l => l.storageLocation.id)
+    const hiddenLocationIds: string[] = closedIds.filter(id => (cur.get(id) ?? 0) < 0.001)
 
     const pendingPurchases: PendingPurchase[] = allPending
       .filter(p =>
@@ -572,6 +582,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       pendingPurchases,
       locations,
       hiddenLocationIds,
+      currentLocationBreakdown,
       lastCheckLocationBreakdown: (last?.locationBreakdown ?? []).map(lb => ({
         locationId: lb.storageLocationId,
         locationName: lb.storageLocation.name,

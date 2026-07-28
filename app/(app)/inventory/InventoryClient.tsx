@@ -914,8 +914,8 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       )}
       {row.locations.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {row.lastCheckLocationBreakdown.length > 0
-            ? row.lastCheckLocationBreakdown.filter(lb => !hidden.has(lb.locationId)).map(lb => (
+          {row.currentLocationBreakdown.length > 0
+            ? row.currentLocationBreakdown.filter(lb => !hidden.has(lb.locationId)).map(lb => (
                 <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                   {lb.locationName} {fmtQty(lb.qty, stockUnit)}
                 </span>
@@ -1237,7 +1237,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
+        <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
           setMode('view'); reload(); onChange()
           pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
             ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
@@ -2267,7 +2267,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
     const total = r.currentStock ?? r.lastRemainingQty ?? 0
     if (r.locations.length === 0) return { byLoc: {}, total }
     const byLoc: Record<string, number> = {}
-    for (const l of vLocs(r)) byLoc[l.id] = r.lastCheckLocationBreakdown.find(b => b.locationId === l.id)?.qty ?? 0
+    for (const l of vLocs(r)) byLoc[l.id] = r.currentLocationBreakdown.find(b => b.locationId === l.id)?.qty ?? 0
     const lastSum = Object.values(byLoc).reduce((s, v) => s + v, 0)
     const sinceDelta = total - lastSum
     if (Math.abs(sinceDelta) > 0.001) {
@@ -3650,7 +3650,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     // 최종 잔량 = 보충 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
     const finalN = a ?? b
     // 보충량: 보충 후만 입력하고 현재 잔량을 비웠다면 직전 잔량을 기준으로 삼아 허브 미차감 방지
-    const restockBase = b ?? (r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
+    const restockBase = b ?? (r.currentLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
     const restocked = (restockBase !== null && a !== null && a > restockBase) ? a - restockBase : 0
     return { beforeStr, afterStr, beforeN: b, afterN: a, finalN, restocked }
   }
@@ -3890,7 +3890,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               })()}
               {locItems.map(r => {
               const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
-              const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
+              const prev = r.currentLocationBreakdown.find(lb => lb.locationId === locId)
               const { beforeStr, afterStr, restocked } = computeRow(r)
               // 선택한 위치가 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
               const rowIsHub = r.locations.find(l => l.id === locId)?.isHub ?? false

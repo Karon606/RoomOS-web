@@ -69,6 +69,9 @@ export type InventoryRow = {
   // 표시 소비자는 이 집합 멤버십으로만 거른다 — 술어(ε·잔량 소스)를 서버 한 곳에 모으기 위함.
   hiddenLocationIds: string[]
   lastCheckLocationBreakdown: LocationQtyEntry[]  // 최신 실사의 위치별 잔량
+  // 위치별 '현재' 잔량 = 최신 실사 + 이후 입수·폐기(허브 귀속, 음수 0 클램프). 화면 기준선은 이걸 쓴다 —
+  // 점검 시점 값(lastCheck...)을 기준선으로 쓰면 입수 직후 재고가 0 으로 보인다(신고 e48ca8ac 김치 20kg).
+  currentLocationBreakdown: LocationQtyEntry[]
   // 최근 6개월 사용량 (YYYY-MM 오래된 것부터, 마지막 슬롯 = 진행 중인 이번 달).
   // qty: 0 = 점검했으나 안 씀, null = 그 달엔 점검 자체가 없음(미관측). 둘을 뭉개면 추적 시작 전 달이 '사용량 0' 으로 보인다.
   monthlyConsumption: { month: string; qty: number | null }[]
