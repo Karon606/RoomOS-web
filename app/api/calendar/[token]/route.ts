@@ -138,15 +138,29 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     }
   }
 
-  // 투어 예정 — 오늘(KST) 이후 투어 일정. 시간이 있으면 시각 지정(1시간 전 알림), 없으면 종일(9시 알림).
-  // (운영자 요청 86ceb645 — 투어 예정시간 입력 + 캘린더 연동)
+  // 투어 일정 — 시간이 있으면 시각 지정(1시간 전 알림), 없으면 종일(9시 알림). (운영자 요청 86ceb645)
+  // 지난 투어는 상태 불문 보존 — 거주중·입실취소로 바뀌어도 "누가 언제 왔다"가 캘린더에 남는다(운영자 요청 2026-07-28).
+  // 유일한 제외는 '투어 전 취소'(하려다 안 한 투어). 미래 투어는 현행대로 진행 단계(문의·투어·예약)만 —
+  // 취소된 고객의 미래 투어가 예정처럼 뜨지 않게. 기록을 지우는 정본 경로는 폼에서 투어일 비우기.
   const todayKstUtc = new Date(Date.UTC(ty, tm - 1, now.getUTCDate()))
   const tourLeases = await prisma.leaseTerm.findMany({
-    where: { propertyId: property.id, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, tourDate: { not: null, gte: todayKstUtc } },
-    select: { id: true, tourDate: true, tourTime: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } },
+    where: {
+      propertyId: property.id, tourDate: { not: null },
+      OR: [
+        { status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, tourDate: { gte: todayKstUtc } },
+        { tourDate: { lt: todayKstUtc } },
+      ],
+    },
+    select: {
+      id: true, status: true, tourDate: true, tourTime: true, isShortTerm: true,
+      room: { select: { roomNo: true } }, tenant: { select: { name: true } },
+      // '투어 전 취소' 판정 — 최근 CANCELLED 전이의 fromStatus (TenantClient 188행과 동일 정본 패턴)
+      statusLogs: { where: { toStatus: 'CANCELLED' }, orderBy: { changedAt: 'desc' }, take: 1, select: { fromStatus: true } },
+    },
   })
   for (const l of tourLeases) {
     if (!l.tourDate) continue
+    if (l.status === 'CANCELLED' && l.statusLogs[0]?.fromStatus === 'WAITING_TOUR') continue   // 투어 전 취소 — 안 한 투어는 제외
     const who = [fmtRoom(l.room?.roomNo), l.tenant.name].filter(Boolean).join(' ')
     const td = new Date(l.tourDate)
     const y = td.getUTCFullYear(), m = td.getUTCMonth() + 1, d = td.getUTCDate()   // @db.Date = 그 날짜의 UTC 자정
