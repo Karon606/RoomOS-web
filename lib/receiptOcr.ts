@@ -22,6 +22,8 @@ export type ReceiptOcrResult = {
   items: ReceiptOcrItem[]
   category?: string     // AI 추천 카테고리 (보수적)
   orderNo?: string      // 쇼핑몰 주문번호(쿠팡 등) — 보이면 추출
+  cardName?: string     // 카드사·결제수단명 표기(예: '현대카드') — 안 보이면 undefined
+  cardLast4?: string    // 마스킹 카드번호에서 보이는 끝 4자리 — 4자리 숫자 아니면 undefined
   kind?: 'expense' | 'inventory' | 'unknown'   // 홈 격상 경로에서만 요청(withKind)
   notes?: string        // 한 줄 요약 — 홈 카드 표시용(withKind)
 }
@@ -50,6 +52,8 @@ ${kindLines}  "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
   "vendorBizNo": "123-45-67890",  // 사업자등록번호(사업자번호·등록번호 표기). 안 보이면 생략
   "totalAmount": 12345,           // 최종 결제 금액 = 부가세 포함 (정수, 원). '합계/총액/결제금액/받을금액/승인금액' 값. '공급가액/과세금액'을 쓰지 말 것
   "orderNo": "1234567890",        // 쇼핑몰 주문번호(쿠팡 등). 영수증/주문서에 '주문번호'가 보이면. 없으면 생략
+  "cardName": "현대카드",          // 결제에 쓰인 카드사·결제수단명 표기 그대로(예: '현대카드', 'BC카드'). 안 보이면 생략
+  "cardLast4": "1234",            // 마스킹된 카드번호에서 보이는 끝 4자리 숫자만(예: 1234-56**-****-7890 이면 "7890"). 안 보이면 생략
   "category": "${categories}",  // 가장 적합한 1개. 애매하면 생략
   "items": [
     {
@@ -152,6 +156,9 @@ export function parseReceiptOcrText(text: string, opts?: { withKind?: boolean })
       totalAmount: typeof parsed.totalAmount === 'number' ? parsed.totalAmount : undefined,
       category:    typeof parsed.category === 'string' ? parsed.category : undefined,
       orderNo:     typeof parsed.orderNo === 'string' && parsed.orderNo.trim() ? parsed.orderNo.trim() : undefined,
+      cardName:    typeof parsed.cardName === 'string' && parsed.cardName.trim() ? parsed.cardName.trim() : undefined,
+      // 끝 4자리만 신뢰 — 마스킹 별표·하이픈이 섞여 오면 버린다
+      cardLast4:   typeof parsed.cardLast4 === 'string' && /^\d{4}$/.test(parsed.cardLast4.trim()) ? parsed.cardLast4.trim() : undefined,
       notes:       typeof parsed.notes === 'string' && parsed.notes.trim() ? parsed.notes.trim() : undefined,
       kind,
       items,

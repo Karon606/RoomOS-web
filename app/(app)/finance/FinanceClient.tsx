@@ -1513,6 +1513,27 @@ export default function FinanceClient({
     if (d.vendorBizNo) setAddExpBizNo(formatBizNoInput(d.vendorBizNo))
     if (d.orderNo) setAddExtOrderNo(d.orderNo)
     if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
+    // 영수증에 보이는 카드사·마스킹 번호로 결제수단 매칭 — 카드형 계좌만, 후보가 딱 1건일 때만 채운다.
+    // 복수·0건이면 손대지 않음(오매칭 방지 — 기존 lastPayDefaults 값 유지).
+    const ocrCardName = d.cardName ? d.cardName.replace(/\s/g, '') : ''
+    const byLast4 = d.cardLast4
+      ? cardAccounts.filter(a => (a.identifier ?? '').replace(/\D/g, '').slice(-4) === d.cardLast4)
+      : []
+    const byBrand = ocrCardName
+      ? cardAccounts.filter(a => {
+          const brand = a.brand.replace(/\s/g, '')
+          return !!brand && (brand === ocrCardName || ocrCardName.includes(brand))
+        })
+      : []
+    const matchedCard = byLast4.length === 1 ? byLast4[0]
+      : byLast4.length === 0 && byBrand.length === 1 ? byBrand[0]
+      : null
+    if (matchedCard) {
+      const cardMethod = matchedCard.type === 'CREDIT_CARD' ? '신용카드' : '체크카드'
+      if (effectivePaymentMethods.includes(cardMethod)) setAddExpMethod(cardMethod)
+      setAddExpAccId(matchedCard.id)
+      setAddExpAccName(accName(matchedCard))
+    }
     if (d.items.length > 0) {
       // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
       // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
