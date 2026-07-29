@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma'
 import { discountedRent } from '@/lib/rentDiscount'
 import { isCheckoutNoBillingMonthFor } from '@/lib/billing'
+import { shouldShowTourEvent } from '@/lib/tourFeed'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -139,18 +140,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   }
 
   // 투어 일정 — 시간이 있으면 시각 지정(1시간 전 알림), 없으면 종일(9시 알림). (운영자 요청 86ceb645)
-  // 지난 투어는 상태 불문 보존 — 거주중·입실취소로 바뀌어도 "누가 언제 왔다"가 캘린더에 남는다(운영자 요청 2026-07-28).
-  // 유일한 제외는 '투어 전 취소'(하려다 안 한 투어). 미래 투어는 현행대로 진행 단계(문의·투어·예약)만 —
-  // 취소된 고객의 미래 투어가 예정처럼 뜨지 않게. 기록을 지우는 정본 경로는 폼에서 투어일 비우기.
+  // 표시 판정은 lib/tourFeed.ts shouldShowTourEvent 정본 — 제외 목록 방식이라 날짜 갈래 경계 구멍이 없다
+  // (신고 ba74b5cd: 당일 투어 + 당일 거주중 전환이 종전 OR 두 갈래 사이 틈에 떨어져 소실).
+  // 기록을 지우는 정본 경로는 폼에서 투어일 비우기.
   const todayKstUtc = new Date(Date.UTC(ty, tm - 1, now.getUTCDate()))
+  const todayYmd = todayKstUtc.toISOString().slice(0, 10)
   const tourLeases = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId: property.id, tourDate: { not: null },
-      OR: [
-        { status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, tourDate: { gte: todayKstUtc } },
-        { tourDate: { lt: todayKstUtc } },
-      ],
-    },
+    where: { propertyId: property.id, tourDate: { not: null } },
     select: {
       id: true, status: true, tourDate: true, tourTime: true, isShortTerm: true,
       room: { select: { roomNo: true } }, tenant: { select: { name: true } },
@@ -160,7 +156,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   })
   for (const l of tourLeases) {
     if (!l.tourDate) continue
-    if (l.status === 'CANCELLED' && l.statusLogs[0]?.fromStatus === 'WAITING_TOUR') continue   // 투어 전 취소 — 안 한 투어는 제외
+    if (!shouldShowTourEvent({
+      status: l.status,
+      tourYmd: l.tourDate.toISOString().slice(0, 10),
+      lastCancelFrom: l.statusLogs[0]?.fromStatus ?? null,
+      todayYmd,
+    })) continue
     const who = [fmtRoom(l.room?.roomNo), l.tenant.name].filter(Boolean).join(' ')
     const td = new Date(l.tourDate)
     const y = td.getUTCFullYear(), m = td.getUTCMonth() + 1, d = td.getUTCDate()   // @db.Date = 그 날짜의 UTC 자정
