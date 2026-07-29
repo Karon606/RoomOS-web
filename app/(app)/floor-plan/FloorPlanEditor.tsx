@@ -335,7 +335,7 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
           ×
         </button>
       </div>
-      <div className="overflow-y-auto flex-1">{children}</div>
+      <div className="overflow-y-auto overscroll-contain flex-1">{children}</div>
     </div>
   )
 }
@@ -445,7 +445,7 @@ function AiImportModal({
         ) : (
           <>
             <p className="text-xs text-[var(--warm-muted)]">{preview.length}개 요소를 인식했습니다.</p>
-            <ul className="text-xs text-[var(--warm-dark)] space-y-1 max-h-44 overflow-y-auto border border-[var(--warm-border)] rounded-lg p-2">
+            <ul className="text-xs text-[var(--warm-dark)] space-y-1 max-h-44 overflow-y-auto overscroll-contain border border-[var(--warm-border)] rounded-lg p-2">
               {preview.map((el, i) => (
                 <li key={i} className="flex items-center gap-2">
                   <span className="text-[var(--warm-muted)] w-12 shrink-0">{TYPE_LABEL[el.type]}</span>

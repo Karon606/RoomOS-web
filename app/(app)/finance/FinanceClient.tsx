@@ -3242,7 +3242,7 @@ export default function FinanceClient({
           bodyClassName=""
           title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
           subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
-          <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
+          <ul className="overflow-y-auto overscroll-contain px-4 py-3 space-y-1.5">
               {groupDetail.map(r => (
                 <li key={r.id}>
                   <button type="button"
@@ -3350,7 +3350,7 @@ export default function FinanceClient({
               ) : accCount === 0 ? (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 내역이 없습니다.</p>
               ) : (
-                <div className="max-h-48 overflow-y-auto space-y-0.5 border border-[var(--warm-border)] rounded-sm p-2">
+                <div className="max-h-48 overflow-y-auto overscroll-contain space-y-0.5 border border-[var(--warm-border)] rounded-sm p-2">
                   {expExcelOpts!.accounts.map(a => (
                     <label key={a.key} className="flex items-center gap-2 px-1 py-1 cursor-pointer">
                       <input type="checkbox" checked={expExcelAccSel.has(a.key)}
@@ -3387,7 +3387,7 @@ export default function FinanceClient({
 
             {!detailExpEdit ? (
               <>
-                <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-3">
                   <DetailRow label="날짜"        value={fmtDate(detailExp.date)} />
                   <DetailRow label="카테고리"    value={detailExp.category} />
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
@@ -3529,7 +3529,7 @@ export default function FinanceClient({
                 <input type="hidden" name="financeName" value={editExpAccName} />
                 <input type="hidden" name="roomId" value={editItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : editExpRoomId} />
                 <input type="hidden" name="excludeFromInventory" value={detailExp.excludeFromInventory ? '1' : ''} />
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
@@ -3651,7 +3651,7 @@ export default function FinanceClient({
                           return (
                             <div className="space-y-1">
                               <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
-                              <div className="space-y-1 max-h-28 overflow-auto">
+                              <div className="space-y-1 max-h-28 overflow-auto overscroll-contain">
                                 {sibs.map(s => (
                                   <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-[var(--cream)]">
                                     <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
@@ -3836,7 +3836,7 @@ export default function FinanceClient({
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={(addIsDurable || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
               <input type="hidden" name="excludeFromInventory" value={addIsService ? '1' : ''} />
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>

@@ -61,6 +61,23 @@ export function Modal({
   React.useEffect(() => {
     try { setFramed(window.self !== window.top) } catch { setFramed(true) }
   }, [])
+  // 가상 키보드 대응 — 키보드가 열리면 실제 보이는 높이(visualViewport)는 줄지만 100dvh 는 그대로라
+  // 본문 하단(메모 등)이 키보드에 가리고 스크롤이 튕긴다. 실제 높이를 CSS 변수로만 반영하고
+  // maxHeight 계산식에 끼워 넣는다(height 로 고정하지 않음 — 작은 모달이 늘어난다).
+  // body 고정은 하지 않는다(위 주석의 신고 d4cf82d5 회귀). visualViewport 미지원이면 100dvh 폴백 그대로.
+  const [vvHeight, setVvHeight] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    if (!open) return
+    const vv = window.visualViewport
+    if (!vv) return
+    const sync = () => setVvHeight(vv.height)
+    sync()
+    vv.addEventListener('resize', sync)
+    return () => {
+      vv.removeEventListener('resize', sync)
+      setVvHeight(null)
+    }
+  }, [open])
   const dirtyRef = React.useRef(dirty)
   dirtyRef.current = dirty
   const askingRef = React.useRef(false)
@@ -117,7 +134,11 @@ export function Modal({
       <div
         className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col anim-panel-in`}
         // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 는 안 풀려 헤더가 잘림)
-        style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)' }}
+        // --modal-vvh 는 키보드가 열렸을 때의 실제 보이는 높이. 미설정이면 100dvh 폴백.
+        style={{
+          '--modal-vvh': vvHeight != null ? `${vvHeight}px` : undefined,
+          maxHeight: 'calc(var(--modal-vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
+        } as React.CSSProperties}
         onClick={e => e.stopPropagation()}
       >
         {(title || onBack) && (
@@ -155,7 +176,7 @@ export function Modal({
             ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
         )}
-        <div className={`flex-1 overflow-y-auto ${bodyClassName}`}>
+        <div className={`flex-1 overflow-y-auto overscroll-contain ${bodyClassName}`}>
           {children}
         </div>
         {footer && (

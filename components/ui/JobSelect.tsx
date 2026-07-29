@@ -140,7 +140,7 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
           </div>
 
           {/* 직업 목록 */}
-          <div className="overflow-y-auto flex-1">
+          <div className="overflow-y-auto overscroll-contain flex-1">
             {/* 선택 안 함 — 맨 위 정식 항목(하단 초기화 링크는 발견 안 되던 문제, 신고 5ce9d3f8) */}
             {selected && !query && (
               <button type="button" onClick={() => { setSelected(''); setOpen(false) }}

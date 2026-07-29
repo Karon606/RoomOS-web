@@ -1918,7 +1918,7 @@ export default function TenantClient({
                 onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
-                <div className="overflow-y-auto p-6 space-y-4 flex-1">
+                <div className="overflow-y-auto overscroll-contain p-6 space-y-4 flex-1">
                   <TenantForm rooms={rooms} tenant={t} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
@@ -1954,7 +1954,7 @@ export default function TenantClient({
       {showAdd && (
         <Modal open width="lg" dirty={addTenantDirty}
           onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="입주자 등록">
-            <form onSubmit={handleAdd} className="overflow-y-auto space-y-4"
+            <form onSubmit={handleAdd} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
@@ -1976,7 +1976,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={editTenantDirty}
           onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
           title={`수정 · ${editTenant.name}`}>
-            <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto space-y-4"
+            <form key={editTenant.id} onSubmit={handleUpdate} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
@@ -2021,7 +2021,7 @@ export default function TenantClient({
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
                 <>
-                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                  <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-5">
                     {/* 요약 */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
@@ -2457,7 +2457,7 @@ export default function TenantClient({
 
               {/* ── 예약자 수납 — 예약금 모드(3택) 정본 폼 재사용 ── */}
               {showPayForm && lease.status === 'RESERVED' && (
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto overscroll-contain p-6">
                   <PaymentEntryForm
                     room={{
                       leaseTermId: lease.id,
@@ -2481,7 +2481,7 @@ export default function TenantClient({
               {/* ── 수납 등록 폼 ── */}
               {showPayForm && lease.status !== 'RESERVED' && (
                 <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
-                  <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                  <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-3">
                     {!isDepositMode && (
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                         미수가 있는 가장 오래된 월부터 자동으로 충당됩니다 (발생주의). 입력 금액이 한 달 이용료를 초과하면 다음 달로 이월됩니다.

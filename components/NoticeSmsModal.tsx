@@ -400,7 +400,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                   조건이 여러 개면 모두 만족하는 사람에게만 보냅니다.
                 </p>
               )}
-              <ul className="max-h-60 overflow-y-auto divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
+              <ul className="max-h-60 overflow-y-auto overscroll-contain divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
                 {shownTargets.map(t => (
                   <li key={t.leaseTermId}>
                     <label className={`flex items-center gap-2.5 px-3 py-2 text-sm ${t.phone ? 'cursor-pointer' : 'opacity-45'}`}>

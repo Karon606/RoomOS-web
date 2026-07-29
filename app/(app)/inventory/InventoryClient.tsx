@@ -1584,7 +1584,7 @@ function SettingsForm({ row, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
         <input type="text" value={labelEdit} onChange={e => setLabelEdit(e.target.value)}
@@ -2077,7 +2077,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
   }
 
   return (
-    <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
       <div>
         <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
@@ -3025,7 +3025,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
           ? '각 위치의 채우기 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 옮겨진 것으로 자동 차감됩니다. (새 입수 기록이 아니라 창고→위치 이동)'
@@ -3522,7 +3522,7 @@ function HubShortDialog({ pending, onResolved, onExit }: {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-3">
           <p className="text-xs text-[var(--warm-mid)]">
             창고(허브) 현재 {fmtQty(hubQty, unit)} · 이번 옮김 {fmtQty(hubQty + shortfall, unit)}
           </p>
@@ -3836,7 +3836,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             onResolved={() => { void onHubShortResolved() }} onExit={onHubShortExit} />
         )}
 
-        <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto px-5 py-3 space-y-3'}>
+        <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto overscroll-contain px-5 py-3 space-y-3'}>
           {!locId ? (
             <>
               {draftLocs.length > 0 && (
@@ -4216,7 +4216,7 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
       ) : items.length === 0 ? (
         <p className="text-sm text-[var(--warm-muted)] text-center py-8">숨겨진 품목이 없습니다.</p>
       ) : (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
+        <div className="space-y-2 max-h-96 overflow-y-auto overscroll-contain">
           {items.map(it => (
             <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
               <div className="min-w-0">
@@ -4640,7 +4640,7 @@ function DisposalForm({ item, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
       <p className="text-xs text-[var(--warm-muted)]">상하거나 버려서 줄어든 양을 기록합니다. 소모량 계산에서 분리되어 소진 예측이 왜곡되지 않습니다. 점검 저장 전에 먼저 기록하세요.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기일 *</label>
@@ -4732,7 +4732,7 @@ function AdditionForm({ item, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
       <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 수령, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>

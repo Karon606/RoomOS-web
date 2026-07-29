@@ -330,7 +330,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
           </div>
 
           {/* 국가 목록 */}
-          <div className="overflow-y-auto flex-1">
+          <div className="overflow-y-auto overscroll-contain flex-1">
             {filteredPinned.length > 0 && (
               <>
                 <p className="px-3 pt-2 pb-1 text-xs text-[var(--warm-muted)] font-semibold uppercase tracking-wider">자주 사용</p>
