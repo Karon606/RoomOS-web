@@ -290,7 +290,12 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         setSignOpen(false)
         if (signTarget === 'disposal') setDisposalSignatureDataUrl(url)
         else setSignatureDataUrl(url)
-        pushToast('success', signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다')
+        // 서명이 2개인 경우 첫 서명 직후엔 '무엇이 남았는지'를 토스트로 명시 (§15 가운뎃점 부연)
+        const otherSigned = signTarget === 'disposal' ? !!signatureDataUrl : !!disposalSignatureDataUrl
+        const remaining = data.disposalConsent.enabled && !otherSigned
+        pushToast('success', remaining
+          ? (signTarget === 'disposal' ? '동의서 서명 저장됨 · 계약서 서명이 남았습니다' : '계약서 서명 저장됨 · 동의서 서명이 남았습니다')
+          : (signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다'))
       } finally {
         release()
         setRemoteSubmitting(false)
@@ -498,6 +503,18 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
   const view = editing ? draft : data.template
 
+  // 인플로우 제출 CTA — 마지막 서명이 끝나면 각 서명란 바로 아래(문서 흐름 안)에 노출한다.
+  // 이 화면은 핀치줌이 열려 있어(layout.tsx viewport) fixed·sticky 는 확대 시 시야 밖으로 밀린다.
+  // 방금 서명한 자리에서 바로 보이도록 계약서·동의서 두 문서 아래 모두 같은 블록을 둔다.
+  const inflowSubmitCta = remote && canSubmit ? (
+    <div className="no-print remote-cta">
+      <span className="remote-cta-text">모든 서명이 완료됐습니다</span>
+      <button onClick={handleRemoteSubmit} disabled={finalizing} className="toolbar-print remote-submit">
+        {finalizing ? '제출 중…' : '제출하기'}
+      </button>
+    </div>
+  ) : null
+
   // 원격 제출 완료 — 계약서 대신 완료 안내 전면 표시(sign 페이지 독립 스타일과 동일 톤). 창 닫기는 위 effect 가 시도.
   if (remote && submitted) {
     return (
@@ -514,13 +531,13 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
   }
 
   return (
-    <div className="contract-shell">
+    <div className={`contract-shell${remote && canSubmit ? ' has-pill' : ''}`}>
       {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}
       {remote ? (
         <div className="no-print toolbar">
           <span className="toolbar-status" style={{ color: 'var(--ink-s)', fontWeight: 400 }}>
             {canSubmit
-              ? '서명을 확인한 뒤 아래 버튼으로 제출해 주세요.'
+              ? '서명이 모두 저장되었습니다. 아래 버튼으로 제출해 주세요.'
               : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
           </span>
           <div className="toolbar-spacer" />
@@ -803,6 +820,8 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         </div>
       </main>
       </div>
+      {/* 계약서 서명란 아래 제출 CTA */}
+      {inflowSubmitCta}
       {data.disposalConsent.enabled && (
       <div
         className="paper-cage disposal-cage"
@@ -853,6 +872,20 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
           <div className="dc-to">{biz.name || ''} 대표 귀하</div>
         </main>
       </div>
+      )}
+      {/* 처분 동의서 서명란 아래 제출 CTA (어느 쪽을 마지막에 서명하든 그 자리에서 보이게) */}
+      {data.disposalConsent.enabled && inflowSubmitCta}
+
+      {/* 하단 알약 — 비줌 상태 보조. 서명 오버레이(z 100) 열림 중엔 숨긴다(알약 z 120이 더 위). */}
+      {remote && canSubmit && !signOpen && (
+        <div className="no-print remote-pill anim-panel-in">
+          <div className="remote-pill-inner">
+            <span className="remote-pill-text">모든 서명이 완료됐습니다</span>
+            <button onClick={handleRemoteSubmit} disabled={finalizing} className="toolbar-print remote-submit">
+              {finalizing ? '제출 중…' : '제출하기'}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
@@ -909,6 +942,8 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
           align-items: center;
           padding: 16px 0 40px;
         }
+        /* 하단 알약 상주 중 마지막 콘텐츠가 가리지 않도록 여유 (알약 높이 64 + 하단 16 + 간격 16) */
+        .contract-shell.has-pill { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
         /* 툴바 — 화면 전용 */
         .toolbar {
@@ -933,6 +968,37 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         .toolbar-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
         /* 원격 '제출하기' — 44pt 터치타깃 */
         .remote-submit { min-height: 44px; padding: 10px 20px; font-size: 14px; }
+
+        /* 인플로우 제출 CTA — 서명란 바로 아래(문서 흐름 안). 핀치줌 확대 상태에서도 함께 확대돼 보인다. */
+        .remote-cta {
+          width: min(210mm, 100% - 24px);
+          margin: 12px auto 0;
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap;
+          padding: 12px 14px;
+          background: var(--cream);
+          border: 1px solid var(--cream-3); border-radius: 10px;
+        }
+        .remote-cta-text { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+        /* 하단 알약 — §22 SelectionPillBar 의 셸 문법(다크 표면·r15·부유 그림자·z-pill)만 차용한 별도 마크업.
+           이 페이지는 AppShell 밖이라 하단 내비 오프셋 없이 bottom 16px 기준. */
+        .remote-pill {
+          position: fixed; left: 0; right: 0;
+          bottom: calc(16px + env(safe-area-inset-bottom));
+          z-index: var(--z-pill);
+          display: flex; justify-content: center;
+          pointer-events: none;
+        }
+        .remote-pill-inner {
+          pointer-events: auto;
+          display: flex; align-items: center; gap: 12px;
+          max-width: calc(100vw - 28px); margin: 0 14px;
+          padding: 10px 14px;
+          background: var(--pill-bg); border-radius: 15px;
+          box-shadow: 0 16px 48px -16px rgba(61,36,24,.22);
+        }
+        .remote-pill-text { font-size: 13px; font-weight: 600; color: var(--on-solid); }
 
         /* paper-cage: 화면용 viewport-fit wrapper */
         .paper-cage {
