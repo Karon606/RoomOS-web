@@ -15,6 +15,15 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
+
+// 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
+// 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
+const DUE_PENDING_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED']
+// 입주일 기준 납부일 파생 — 30일 이상이면 '말일'(등록 폼 applyDueDay 와 동일 규칙)
+function dueDayFromMoveIn(moveIn: Date): string {
+  const day = moveIn.getUTCDate()
+  return day >= 30 ? '말일' : String(day)
+}
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { parseRequestCategories } from '@/lib/requestCategories'
@@ -232,7 +241,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           rentAmount,
           depositAmount,
           cleaningFee,
-          dueDay: dueDay || null,
+          dueDay: DUE_PENDING_STATUSES.includes(status) ? null : (dueDay || null),
           moveInDate: moveInDate ? new Date(moveInDate) : null,
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
           contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
@@ -616,7 +625,9 @@ export async function updateTenant(formData: FormData): Promise<
         rentAmount: shortPlan ? shortPlan.targetRent : rentAmount,
         depositAmount,
         cleaningFee,
-        dueDay: dueDay || null,
+        // 거주 전 상태는 납부일 강제 비움. 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
+        dueDay: DUE_PENDING_STATUSES.includes(status) ? null
+          : (dueDay || (DUE_PENDING_STATUSES.includes(prevStatus) && moveInDate ? dueDayFromMoveIn(new Date(moveInDate)) : null)),
         moveInDate: moveInDate ? new Date(moveInDate) : null,
         // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
         // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
@@ -1020,13 +1031,14 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
 
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
-    select: { roomId: true, status: true },
+    select: { roomId: true, status: true, dueDay: true, moveInDate: true },
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
-    data: { status: 'ACTIVE' },
+    // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
+    data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) },
   })
 
   // 입주월 재앵커 — prepaid 예약금이 실제 입주월과 다른 달에 걸려 있으면 이동(deposit/none은 no-op).
@@ -1071,7 +1083,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       where: { id: leaseTermId },
       select: {
         id: true, status: true, tenantId: true, roomId: true, reservationConfirmedAt: true,
-        rentAmount: true, moveInDate: true,
+        rentAmount: true, moveInDate: true, dueDay: true,
         room: { select: { id: true, roomNo: true, isVacant: true } },
       },
     })
@@ -1107,7 +1119,8 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
 
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
-      data: { status: 'ACTIVE' },
+      // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
+      data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) },
     })
 
     // 입주월 재앵커 — prepaid 예약금을 실제 입주월로(deposit/none은 no-op).
@@ -1263,6 +1276,10 @@ export async function applyStatusTransition(input: {
     }
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
+    // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생 — 거주 전 단계는 납부일을 비워두므로(2026-07-30) 진입 시 채운다
+    if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(input.toStatus) && !lease.dueDay && finalMoveInDate) {
+      data.dueDay = dueDayFromMoveIn(new Date(finalMoveInDate))
+    }
     let notice: string | null = null
     // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 + 퇴실 일할 정산(+롤백 스냅샷) 정리.
     // 신고 aae0ab38: CHECKOUT_PENDING발 복귀일 때만 초기화 — RESERVED발 입실 처리에서는
@@ -2543,12 +2560,13 @@ export async function autoTransitionReserved() {
 
     const dueLeases = await prisma.leaseTerm.findMany({
       where: { propertyId, status: 'RESERVED', moveInDate: { lte: today } },
-      select: { id: true, roomId: true, tenantId: true },
+      select: { id: true, roomId: true, tenantId: true, dueDay: true, moveInDate: true },
     })
     if (dueLeases.length === 0) return
 
     for (const lease of dueLeases) {
-      await prisma.leaseTerm.update({ where: { id: lease.id }, data: { status: 'ACTIVE' } })
+      // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
+      await prisma.leaseTerm.update({ where: { id: lease.id }, data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) } })
       if (lease.roomId) {
         await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
       }

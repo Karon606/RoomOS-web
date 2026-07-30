@@ -58,7 +58,8 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
         <Item label={lease.isShortTerm ? '이용료' : '월 이용료'} value={<MoneyDisplay amount={lease.rentAmount} />} />
         <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />
         <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />
-        <Item label="납부일"   value={fmtDueDay(lease.dueDay)} />
+        {/* 거주 전 상태는 납부일 항목 숨김 — 아직 정해지지 않은 값(운영자 지적 2026-07-30) */}
+        {!isPending && <Item label="납부일" value={fmtDueDay(lease.dueDay)} />}
         <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
         {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt
           ? <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />

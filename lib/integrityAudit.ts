@@ -22,6 +22,18 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
     tenantId: l.tenantId, propertyId: l.propertyId,
   })
 
+  // 규칙 1-b — 거주 전 상태인데 납부일이 남아 있음 (등록 폼 파생 잔존 패턴, 운영자 지적 2026-07-30:
+  // 문의·예약 건에 '말일' 등이 박혀 확정 전 거짓 정보로 보임. 서버가 pending 저장 시 비우므로 재발 = 새 오염 경로)
+  const pendingWithDueDay = await prisma.leaseTerm.findMany({
+    where: { status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] }, dueDay: { not: null } },
+    select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, tenant: { select: { name: true } } },
+  })
+  for (const l of pendingWithDueDay) violations.push({
+    signature: `[정합] pending-has-dueday · ${l.id}`,
+    note: `${l.tenant.name}: 거주 전 상태(${l.status})인데 납부일('${l.dueDay}')이 남아 있습니다. 입실 전에는 납부일이 없어야 합니다.`,
+    tenantId: l.tenantId, propertyId: l.propertyId,
+  })
+
   // 규칙 2 — 일할 정산 잔존인데 그 달 수납 기록 0건 (조원섭 패턴: 받기로 한 금액이 미수인 채 종결)
   const prorated = await prisma.leaseTerm.findMany({
     where: { status: 'CHECKED_OUT', checkoutProratedMonth: { not: null }, checkoutProratedAmount: { gt: 0 } },

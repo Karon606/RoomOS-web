@@ -1665,13 +1665,14 @@ export default function TenantClient({
                           <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease.cleaningFee} /></span>
                         </>
                       )
-                    ) : (
+                    ) : !['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease?.status ?? '') ? (
+                      // 거주 전 상태는 납부일 표시 안 함 — 아직 정해지지 않은 값(운영자 지적 2026-07-30, 단기 문법과 동일)
                       <>
                         <span className="text-[var(--warm-border)]">·</span>
                         <span className="text-[var(--warm-muted)]">납부일</span>
                         <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
                       </>
-                    )}
+                    ) : null}
                     {lease && (
                       <button type="button" onClick={e => { e.stopPropagation(); openPayModal(tenant, lease) }}
                         className="ml-auto shrink-0 inline-flex items-center justify-center min-h-[44px] -my-2 px-3 text-xs font-semibold text-[var(--coral)]">
@@ -2980,8 +2981,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 신규 등록: 입주일 기준으로 납부일 자동 파생. 입주일 onChange 도 파생하지만 입주일을 손대지 않으면
   // 납부일이 빈 채로 저장되던 문제(운영자 요청 2026-07-23). 상태 전환(리드→거주 등) 시에도 재파생해
   // '리드로 등록 후 거주로 바꾸면 빈 납부일' 흐름까지 봉합(패널 지적). 기존 lease.dueDay 는 안 덮음.
+  // 거주 전(문의·투어·예약·취소) 상태 — 납부일이 무의미해 필드를 숨기고 파생도 막는다(운영자 지적 2026-07-30).
+  // 서버(addTenant·updateTenant)도 같은 기준으로 비우는 이중 방어. 청구 상태 진입 시 서버가 입주일 기준 재파생.
+  const duePending = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal)
   useEffect(() => {
-    if (!tenant && !dueDayRaw && moveInDateVal && !roomIsOptional) {
+    if (!tenant && !dueDayRaw && moveInDateVal && !roomIsOptional && !duePending) {
       const d = new Date(moveInDateVal)
       const day = d.getDate()
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
@@ -3521,7 +3525,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         </div>
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
+          {/* 거주 전 상태는 납부일 숨김(단기 문법과 동일) — 서버도 같은 기준으로 비운다 */}
+          {!duePending && <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
             <input type="hidden" name="dueDay" value={dueDayRaw} />
             <input
@@ -3543,7 +3548,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
             />
             {!tenant && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
-          </div>
+          </div>}
           {showExitDate && (
             // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
             // 어느 쪽을 고쳐도 같은 값이 저장되고 미리보기 금액도 따라온다(운영자 신고 2026-07-26).
