@@ -37,6 +37,21 @@
   --serif-en: 'Cormorant Garamond', serif;
   --serif-kr: 'Noto Serif KR', serif;
   --sans: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+  /* 프로모션 팝업 전용 파생값 — 디자인 핸드오프 README 5장, 전부 위 브랜드 토큰에서 유도 */
+  --kakao-yellow: #FEE500;
+  --kakao-ink: #3C1E1E;
+  --scrim: rgba(16, 30, 24, 0.5);
+  --panel: var(--ivory);
+  --table-bg: #FFFFFF;
+  --eyebrow-gold: #8A7B5C;
+  --band-tint: rgba(35, 57, 46, 0.042);
+  --rule-soft: rgba(27, 38, 32, 0.05);
+  --rule-band: rgba(27, 38, 32, 0.14);
+  --chip-bg: rgba(35, 57, 46, 0.08);
+  --ghost-border: rgba(24, 42, 33, 0.28);
+  --ghost-hover-bg: rgba(24, 42, 33, 0.04);
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+  --enter-duration: 200ms;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -528,6 +543,119 @@ footer {
   .rooms-track { padding-left: 24px; padding-right: 24px; }
   .hero-lockup { width: 170px; }
 }
+
+/* ============================================================
+   8월 프로모션 팝업 — 디자인 핸드오프(README) 수치 그대로.
+   모바일(≤640px) 하단 시트 / 데스크톱(≥641px) 중앙 모달. 전면 팝업 금지.
+   ============================================================ */
+.promo { position: fixed; inset: 0; z-index: 900; }
+.promo[hidden] { display: none; }
+.promo-scrim { position: absolute; inset: 0; background: var(--scrim); animation: promoScrimIn var(--enter-duration) ease both; }
+.promo-panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: 85svh; display: flex; flex-direction: column;
+  background: var(--panel);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -26px 60px -22px rgba(16, 30, 24, 0.5);
+  overflow: hidden;
+  animation: promoSheetUp var(--enter-duration) var(--ease-out-quint) both;
+}
+@keyframes promoSheetUp { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes promoScrimIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .promo-panel, .promo-scrim { animation: none; } }
+
+.promo-head { position: relative; flex-shrink: 0; background: var(--forest); padding: 14px 20px 20px; }
+.promo-grab { width: 38px; height: 4px; border-radius: 2px; background: rgba(232, 222, 201, 0.32); margin: 0 auto 14px; }
+.promo-close {
+  position: absolute; top: 8px; right: 6px; width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; cursor: pointer; color: rgba(232, 222, 201, 0.72);
+}
+.promo-close:hover { color: var(--cream); }
+.promo-close svg { width: 17px; height: 17px; }
+.promo-badge {
+  display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 12px 6px;
+  border: 1px solid rgba(232, 222, 201, 0.3); border-radius: 999px; color: rgba(232, 222, 201, 0.78);
+}
+.promo-badge .en { font-family: var(--serif-en); font-style: italic; font-size: 15px; letter-spacing: 0.05em; }
+.promo-badge .dot { font-size: 10px; opacity: 0.55; }
+.promo-badge .ko { font-size: 11.5px; font-weight: 500; letter-spacing: 0.06em; }
+.promo-headline { margin-top: 13px; font-family: var(--serif-kr); font-weight: 400; font-size: 27px; line-height: 1.35; letter-spacing: -0.02em; color: var(--ivory); }
+.promo-headline em { font-style: normal; border-bottom: 1px solid rgba(232, 222, 201, 0.38); padding-bottom: 2px; }
+.promo-sub { margin-top: 11px; font-size: 12.5px; line-height: 1.7; color: rgba(232, 222, 201, 0.68); text-wrap: pretty; }
+
+.promo-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px calc(18px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
+.promo-body > * { flex-shrink: 0; }
+
+.rate-card { background: var(--table-bg); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.rate-head, .rate-row { display: flex; align-items: center; gap: 8px; padding: 0 13px; }
+.rate-head { height: 27px; background: rgba(35, 57, 46, 0.035); border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--eyebrow-gold); }
+.rate-head .c-now { color: var(--forest); }
+.rate-row { height: 30px; }
+.c-name { flex: 1; min-width: 0; }
+.c-was { width: 58px; text-align: right; }
+.c-now { width: 74px; text-align: right; }
+.c-chip { width: 34px; display: flex; justify-content: flex-end; }
+.rate-row .c-name { font-size: 12.5px; font-weight: 500; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rate-row .c-was { font-size: 11px; font-weight: 400; color: rgba(85, 100, 91, 0.72); text-decoration: line-through; text-decoration-thickness: 1px; font-variant-numeric: tabular-nums; }
+.rate-row .c-now { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; color: var(--forest); font-variant-numeric: tabular-nums; }
+.rate-chip { display: inline-flex; align-items: center; justify-content: center; height: 17px; padding: 0 6px; border-radius: 9px; background: var(--chip-bg); color: var(--forest); font-size: 9.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rate-row { border-bottom: 1px solid var(--rule-soft); }
+.rate-row[data-band="a"], .rate-row[data-band="c"] { background: var(--band-tint); }
+.rate-row[data-band="b"] { background: transparent; }
+.rate-row[data-band-end] { border-bottom-color: var(--rule-band); }
+.rate-row:last-child { border-bottom: 0; }
+
+.promo-terms { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.promo-terms li { display: flex; gap: 8px; align-items: flex-start; list-style: none; }
+.promo-terms li::before { content: ''; flex-shrink: 0; width: 3px; height: 3px; border-radius: 50%; background: rgba(35, 57, 46, 0.45); margin-top: 8px; }
+.promo-terms p { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); text-wrap: pretty; }
+
+.promo-actions { margin-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+.btn-kakao {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px; border-radius: 24px; background: var(--kakao-yellow); color: var(--kakao-ink);
+  font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; border: 0; cursor: pointer; font-family: var(--sans);
+}
+.btn-kakao:hover { background: #F5DD00; color: var(--kakao-ink); }
+.btn-kakao svg { width: 17px; height: 17px; flex-shrink: 0; }
+.btn-ghost {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 44px; border-radius: 22px; border: 1px solid var(--ghost-border); background: transparent;
+  color: var(--forest-deep); font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: var(--sans);
+}
+.btn-ghost:hover { border-color: var(--forest-deep); background: var(--ghost-hover-bg); color: var(--forest-deep); }
+.promo-dismiss { margin-top: 8px; height: 34px; border: 0; background: transparent; cursor: pointer; color: rgba(85, 100, 91, 0.8); font-family: var(--sans); font-size: 12px; font-weight: 500; letter-spacing: 0.01em; }
+.promo-dismiss:hover { color: var(--forest); }
+
+@media (min-width: 641px) {
+  .promo { display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
+  .promo[hidden] { display: none; }
+  .promo-panel { position: relative; left: auto; right: auto; bottom: auto; width: 420px; max-width: 100%; max-height: 86svh; border-radius: var(--radius-lg); box-shadow: 0 44px 90px -34px rgba(0, 0, 0, 0.55); }
+  .promo-grab { display: none; }
+  .promo-head { padding: 26px 24px 22px; }
+  .promo-close { top: 9px; right: 9px; }
+  .promo-badge .en { font-size: 15.5px; }
+  .promo-headline { margin-top: 14px; font-size: 29px; }
+  .promo-sub { margin-top: 12px; font-size: 13px; }
+  .promo-body { padding: 18px 24px 20px; }
+  .rate-head, .rate-row { gap: 9px; padding: 0 14px; }
+  .rate-head { height: 28px; }
+  .rate-row { height: 31px; }
+  .c-was { width: 60px; }
+  .c-now { width: 78px; }
+  .c-chip { width: 36px; }
+  .rate-row .c-name { font-size: 13px; }
+  .rate-row .c-was { font-size: 11.5px; }
+  .rate-row .c-now { font-size: 14px; }
+  .rate-chip { height: 18px; padding: 0 7px; font-size: 10px; }
+  .promo-terms { margin-top: 15px; }
+  .promo-actions { margin-top: 18px; gap: 10px; }
+  .btn-kakao { font-size: 15px; }
+  .btn-kakao svg { width: 18px; height: 18px; }
+  .btn-ghost { font-size: 14px; }
+  .promo-dismiss { margin-top: 9px; font-size: 12.5px; }
+}
 </style>
 </head>
 <body>
@@ -927,6 +1055,139 @@ footer {
     else if (pref.indexOf('ja') === 0) setLang('ja');
     else if (pref && pref.indexOf('ko') !== 0) setLang('en');
   })();
+})();
+</script>
+<!-- 8월 프로모션 팝업 — 디자인 핸드오프 확정본. 문구는 확정 한국어(EN/ZH/JA 번역 확정 시 4벌 규칙으로 추가).
+     노출: 첫 진입 1.2초 후, '오늘 하루 보지 않기'는 당일 억제, 2026-08-31 이후 자동 비노출(날짜 게이트). -->
+<div class="promo" id="promo" role="dialog" aria-modal="true" aria-labelledby="promo-title" hidden>
+  <div class="promo-scrim" data-close></div>
+  <div class="promo-panel">
+    <div class="promo-head">
+      <div class="promo-grab" aria-hidden="true"></div>
+      <button type="button" class="promo-close" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+      <div class="promo-badge">
+        <span class="en">AUGUST OFFER</span>
+        <span class="dot" aria-hidden="true">·</span>
+        <span class="ko">8월 입실 한정</span>
+      </div>
+      <h2 class="promo-headline" id="promo-title">8월 입주, <em>세 달의 혜택</em></h2>
+      <p class="promo-sub">8월에 입주하시면 전 객실 첫 3개월(8월~10월) 월 이용료를 최대 3만원 할인해 드립니다.</p>
+    </div>
+    <div class="promo-body">
+      <div class="rate-card" role="table" aria-label="8월 입주 할인 요금표">
+        <div class="rate-head" role="row">
+          <span class="c-name" role="columnheader">객실명</span>
+          <span class="c-was" role="columnheader">정상가</span>
+          <span class="c-now" role="columnheader">8~10월 이용료</span>
+          <span class="c-chip" role="presentation"></span>
+        </div>
+        <div class="rate-row" data-band="a" role="row">
+          <span class="c-name" role="cell">원룸 외창 · 프리미엄 II</span>
+          <span class="c-was" role="cell">월 55만원</span>
+          <span class="c-now" role="cell">월 52만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="a" role="row">
+          <span class="c-name" role="cell">원룸 외창 · 프리미엄 I</span>
+          <span class="c-was" role="cell">월 50만원</span>
+          <span class="c-now" role="cell">월 47만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="a" data-band-end role="row">
+          <span class="c-name" role="cell">원룸 외창 · 스탠다드</span>
+          <span class="c-was" role="cell">월 47만원</span>
+          <span class="c-now" role="cell">월 44만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="b" role="row">
+          <span class="c-name" role="cell">원룸 외창 · 실속형</span>
+          <span class="c-was" role="cell">월 44만원</span>
+          <span class="c-now" role="cell">월 42만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−2만</span></span>
+        </div>
+        <div class="rate-row" data-band="b" data-band-end role="row">
+          <span class="c-name" role="cell">원룸 내창 · 스탠다드</span>
+          <span class="c-was" role="cell">월 42만원</span>
+          <span class="c-now" role="cell">월 40만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−2만</span></span>
+        </div>
+        <div class="rate-row" data-band="c" role="row">
+          <span class="c-name" role="cell">원룸 내창 · 실속형</span>
+          <span class="c-was" role="cell">월 39만원</span>
+          <span class="c-now" role="cell">월 38만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−1만</span></span>
+        </div>
+        <div class="rate-row" data-band="c" role="row">
+          <span class="c-name" role="cell">미니룸형</span>
+          <span class="c-was" role="cell">월 35만원</span>
+          <span class="c-now" role="cell">월 34만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip">−1만</span></span>
+        </div>
+      </div>
+      <ul class="promo-terms">
+        <li><p>8월 입주 계약(1개월 이상 거주)에 한해 적용됩니다.</p></li>
+        <li><p>할인가는 8월부터 10월까지 적용되며 11월 이용료부터 정상가로 돌아갑니다.</p></li>
+      </ul>
+      <div class="promo-actions">
+        <a class="btn-kakao" href="https://open.kakao.com/o/s9QRRKqi" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.83 1.86 5.31 4.65 6.74-.2.73-.73 2.67-.84 3.08-.13.51.19.5.4.36.16-.11 2.61-1.77 3.67-2.49.7.1 1.42.15 2.12.15 5.52 0 10-3.58 10-8s-4.48-8-10-8z"></path></svg>
+          <span>입주 상담하기</span>
+        </a>
+        <a class="btn-ghost" href="#rooms" data-close>객실 둘러보기</a>
+      </div>
+      <button type="button" class="promo-dismiss" id="promoDismiss">오늘 하루 보지 않기</button>
+    </div>
+  </div>
+</div>
+<script>
+/* 프로모션 팝업 노출 규칙 — 키에 프로모션 버전(2026_08)이 있어 다음 프로모션은 새 키로 자동 재노출.
+   X·스크림·Esc·객실 둘러보기 = 세션 내 닫기(재방문 시 재노출), 오늘 하루 보지 않기 = 당일 억제. */
+(function () {
+  var KEY = 'tsj_promo_2026_08_hidden_until';
+  var END = '2026-08-31';   /* 날짜 게이트 — 9/1(KST)부터 자동 비노출 */
+  var promo = document.getElementById('promo');
+  if (!promo) return;
+
+  function kstToday() {
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  }
+  function shouldShow() {
+    if (kstToday() > END) return false;
+    try { return localStorage.getItem(KEY) !== kstToday(); } catch (err) { return true; }
+  }
+  function open() {
+    promo.hidden = false;
+    document.body.style.overflow = 'hidden';
+    var x = promo.querySelector('.promo-close');
+    if (x) x.focus();
+  }
+  function close() {
+    promo.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  promo.addEventListener('click', function (e) {
+    if (e.target.closest('[data-close]')) close();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (promo.hidden) return;
+    if (e.key === 'Escape') { close(); return; }
+    /* 포커스 트랩 — aria-modal 준수: Tab 이 배경으로 새지 않게 패널 내에서 순환 */
+    if (e.key !== 'Tab') return;
+    var els = promo.querySelectorAll('button, a[href]');
+    if (!els.length) return;
+    var first = els[0], last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  document.getElementById('promoDismiss').addEventListener('click', function () {
+    try { localStorage.setItem(KEY, kstToday()); } catch (err) {}
+    close();
+  });
+
+  if (shouldShow()) setTimeout(open, 1200);   /* 첫 페인트(히어로 인상) 후 등장 */
 })();
 </script>
 <!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 트래픽 분석 -->
