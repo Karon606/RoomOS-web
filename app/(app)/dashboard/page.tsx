@@ -11,6 +11,7 @@ import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
+import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
@@ -168,8 +169,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidLeasesRaw,
     tenantRequestsRaw,
     waitingTourLeases,
-    recurringExpenses,
-    recurringExpensesThisMonth,
     allHistoricalPayments,
     reserveTxnsRaw,
     allMonthPayments,
@@ -405,20 +404,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { tourDate: { sort: 'asc', nulls: 'last' } },
     }),
-    // 고정 지출 목록
-    prisma.recurringExpense.findMany({
-      where: { propertyId, isActive: true },
-      orderBy: { dueDay: 'asc' },
-    }),
-    // 이달 고정 지출 기록 여부
-    prisma.expense.findMany({
-      where: {
-        propertyId,
-        recurringExpenseId: { not: null },
-        date: { gte: startDate, lte: endDate },
-      },
-      select: { recurringExpenseId: true },
-    }),
+    // (고정 지출 목록·이달 기록 여부는 getRecurringExpensesWithStatus 가 같은 조건으로 조회 — 중복 쿼리 제거)
     // 누적 미납 계산용 — 발생주의: targetMonth가 오늘 월 이하인 record만 매출 인식
     // (미래 targetMonth로 저장된 선납 record는 아직 매출 인식 X)
     prisma.paymentRecord.findMany({
@@ -510,45 +496,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const reserveMonthly = { deposit: reserveMonthlyDeposit, withdraw: reserveMonthlyWithdraw }
 
   // ── 예상 지출 계산 ────────────────────────────────────────────
-  // 변동 항목의 과거 기록 배치 조회 (전년 동월 우선, 없으면 과거 평균)
-  const variableRecIds = recurringExpenses.filter(re => (re as any).isVariable).map(re => re.id)
-  const priorYearStart = new Date(year - 1, month - 1, 1)
-  const priorYearEnd   = new Date(year - 1, month, 0)
-  const [variablePastExpenses, nonRecurringPast] = await Promise.all([
-    variableRecIds.length > 0
-      ? prisma.expense.findMany({
-          where: { propertyId, recurringExpenseId: { in: variableRecIds }, date: { lt: startDate } },
-          select: { recurringExpenseId: true, amount: true, date: true },
-        })
-      : Promise.resolve([]),
-    prisma.expense.aggregate({
-      where: { propertyId, recurringExpenseId: null, date: { gte: new Date(year, month - 4, 1), lt: startDate } },
-      _sum: { amount: true },
-    }),
-  ])
-
-  // 전년 동월 합계 / 전체 과거 합계·건수
-  const priorYearSumMap: Record<string, number> = {}
-  const varSumMap: Record<string, number> = {}
-  const varCntMap: Record<string, number> = {}
-  for (const e of variablePastExpenses) {
-    const id = e.recurringExpenseId!
-    varSumMap[id] = (varSumMap[id] ?? 0) + e.amount
-    varCntMap[id] = (varCntMap[id] ?? 0) + 1
-    const d = new Date(e.date)
-    if (d >= priorYearStart && d <= priorYearEnd) {
-      priorYearSumMap[id] = (priorYearSumMap[id] ?? 0) + e.amount
-    }
-  }
-  // 변동 항목 예측: 전년 동월 > 과거 평균(2건 이상) > baseline(re.amount)
-  const variableAvgMap: Record<string, number> = {}
-  for (const id of variableRecIds) {
-    if (priorYearSumMap[id] !== undefined) {
-      variableAvgMap[id] = priorYearSumMap[id]
-    } else if ((varCntMap[id] ?? 0) >= 2) {
-      variableAvgMap[id] = Math.round(varSumMap[id] / varCntMap[id])
-    }
-  }
+  // 고정지출 추정액은 정본식(lib/recurringEstimate) 하나만 쓴다 — 여기서 따로 추정하지 않는다.
+  const nonRecurringPast = await prisma.expense.aggregate({
+    where: { propertyId, recurringExpenseId: null, date: { gte: new Date(year, month - 4, 1), lt: startDate } },
+    _sum: { amount: true },
+  })
 
   const hasExpenseHistory = (nonRecurringPast._sum.amount ?? 0) > 0
   // 예상 지출 — 사용자 정의(2026-05-31): 실제 발생 지출 + 이번 달 미발생 고정지출.
@@ -1098,7 +1050,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const recurringWithStatus = await pRecurringWithStatus
   const projectedRecurringExpense = recurringWithStatus
     .filter(r => !r.isPending && !r.recordedExpenseId)
-    .reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
+    .reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const projectedRevenue = totalExpected + extraRevenue
   // 과거 조회월은 미기록 고정지출 추정을 가산하지 않는다 — 실제 지출만 반영해 결산보고서와 정합.
   // 현재·미래 월만 추정 가산. 월 비교는 KST 기준(realTodayMonthStr = kstMonthStr()) 문자열 비교.
@@ -1109,10 +1061,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //   ① 불변 고정(월임대료 등 isVariable=false) — 못 줄임
   //   ② 변동 고정(전기·수도 등 isVariable=true) — 노력하면 줄임
   //   ③ 세이브 가능(비고정 지출) = 예상 지출 − 고정 합 — 가장 줄이기 쉬움
-  const recMonthAmt = (r: { pendingAmount: number | null; historicalAvg: number | null; amount: number }) =>
-    r.pendingAmount ?? r.historicalAvg ?? r.amount
-  const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
-  const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
+  const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
+  const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
   // 지난달·전년동월 지출(실제 합계) — 예상 지출이 더/덜 쓰는지 비교용 (trend는 6개월뿐이라 전년동월은 별도 집계)
   const [lastMonthExpAgg, lastYearExpAgg] = await pLastExpAggs
@@ -1506,14 +1456,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 자동이체 실제 이체일 — 주말·공휴일 회피 (lib/krHolidays에서 동적 조회)
   const getEffectiveTransferDate = getNextBusinessDay
 
-  const recordedRecurringIds = new Set(
-    recurringExpensesThisMonth.map(e => e.recurringExpenseId).filter(Boolean)
-  )
-  for (const re of recurringExpenses) {
-    if (recordedRecurringIds.has(re.id)) continue
-    // activeSince 필터
-    const activeSince = (re as any).activeSince as Date | null
-    if (activeSince && new Date(activeSince) > endDate) continue
+  // 금액은 재무 탭·예상지출과 같은 정본 추정액(effectiveRecurringAmount)을 쓴다 — 기본액을 그대로 쓰면
+  // 예약금액·과거평균이 반영된 실제 금액과 알림이 어긋난다(2026-07-30 신고).
+  for (const re of recurringWithStatus) {
+    if (re.recordedExpenseId) continue
+    if (re.isPending) continue
 
     const [y, m] = targetMonth.split('-').map(Number)
     const nominalDate = new Date(y, m - 1, Math.min(re.dueDay, new Date(y, m, 0).getDate()))
@@ -1526,6 +1473,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const shiftedNote = re.isAutoDebit && effectiveDate.getTime() !== nominalDate.getTime()
       ? ` (실제이체 ${fmtShortDate(effectiveDate)})`
       : ''
+    // 금액 출처 라벨 — 재무 탭 표기와 동일 어휘('예약금액'·'예상치'). 기본액이면 라벨 없이 금액만.
+    const expectedAmt = effectiveRecurringAmount(re)
+    const amountLabel = recurringAmountLabel(re)
     alertItems.push({
       category:            'recurring',
       text:                `고정 지출: ${re.title}`,
@@ -1533,14 +1483,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       dotColor:            'var(--info-fg)',
       timeLabel:           dayLabel(daysLeft),
       exactDate:           fmtShortDate(effectiveDate),
-      detail:              `${fmtWon(re.amount)} · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
+      detail:              `${fmtWon(expectedAmt)}${amountLabel ? ` · ${amountLabel}` : ''} · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
-      recurringAmount:       re.amount,
+      recurringAmount:       expectedAmt,
       recurringDueDate:      effectiveDate.toISOString().slice(0, 10),
       recurringCategory:     re.category,
       recurringPayMethod:    re.payMethod ?? undefined,
-      recurringIsVariable:   (re as any).isVariable as boolean,
-      recurringHistoricalAvg: variableAvgMap[re.id],
+      recurringIsVariable:   re.isVariable,
     })
   }
 

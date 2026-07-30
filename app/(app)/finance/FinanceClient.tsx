@@ -49,6 +49,7 @@ import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { getNextBusinessDay } from '@/lib/krHolidays'
+import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
@@ -2215,7 +2216,7 @@ export default function FinanceClient({
   // ── 상단 요약 위젯 계산 ──────────────────────────────────────
   const normalExpTotal   = expenses.filter(e => !e.recurringExpenseId).reduce((s, e) => s + e.amount, 0)
   const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
-  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
+  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
   const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
 
@@ -2578,8 +2579,8 @@ export default function FinanceClient({
               // 고정지출엔 방이 없어 특정 호실 선택 시 숨김('미지정'은 방 없음이므로 표시), '일반 지출'만 보기 시 숨김.
               (expFilter.roomId === 'all' || expFilter.roomId === 'none') &&
               expFilter.kind !== 'normal' &&
-              (expAmountMin == null || (r.pendingAmount ?? r.historicalAvg ?? r.amount) >= expAmountMin) &&
-              (expAmountMax == null || (r.pendingAmount ?? r.historicalAvg ?? r.amount) <= expAmountMax)
+              (expAmountMin == null || effectiveRecurringAmount(r) >= expAmountMin) &&
+              (expAmountMax == null || effectiveRecurringAmount(r) <= expAmountMax)
             )
 
             // D-3 이내(과거 도래 포함)만 보기 옵션 적용
@@ -2596,7 +2597,7 @@ export default function FinanceClient({
             const hiddenRecs = recVisibility === 'soon'
               ? unconfirmedRecsFiltered.filter(r => !isSoon(r.dueDay))
               : []
-            const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
+            const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + effectiveRecurringAmount(r), 0)
 
             type ListItem =
               | { kind: 'expense'; exp: Expense; dateStr: string; groupRows?: Expense[]; groupKind?: 'room' | 'order' }
@@ -2819,7 +2820,7 @@ export default function FinanceClient({
                       }
                       // 미확인 고정 지출 카드
                       const r = item.rec
-                      const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
+                      const expectedAmt = effectiveRecurringAmount(r)
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
@@ -2938,7 +2939,7 @@ export default function FinanceClient({
                           // 미확인 고정 지출 행
                           const r = item.rec
                           // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
-                      const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
+                      const expectedAmt = effectiveRecurringAmount(r)
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr

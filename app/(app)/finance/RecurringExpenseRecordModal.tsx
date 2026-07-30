@@ -10,6 +10,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
+import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
   type RecurringExpenseWithStatus,
@@ -55,7 +56,7 @@ export function RecurringExpenseRecordModal({
   // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액. 세부항목이 있으면 그 합이 우선.
   const [amount, setAmount] = useState(() => {
     const sum = rec.items.reduce((s, it) => s + it.amount, 0)
-    return sum > 0 ? sum : (rec.pendingAmount ?? rec.historicalAvg ?? rec.amount)
+    return sum > 0 ? sum : effectiveRecurringAmount(rec)
   })
   const [date, setDate]           = useState(() => kstYmdStr())
   const [memo, setMemo]           = useState(rec.memo ?? '')
