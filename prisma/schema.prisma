@@ -1598,6 +1598,9 @@ model PageView {
   // 갤러리 시트 열람 — 등급별 [{ rent, n(사진수), seen[](노출 인덱스), maxDepth, dwell{idx:ms} }].
   // 어떤 등급의 몇 번째 사진을 오래 봤나(전문가: 사진별 도달률·스와이프 깊이·체류가 진짜 신호). 2026-07-25
   galleryViews  Json?
+  // 프로모션 팝업 열람 — { shownAtMs, dwellMs, close:'x'|'scrim'|'esc'|'today'|'cta_kakao'|'cta_rooms'|'leave', ctas:[{kind,tMs}], suppressed? }.
+  // 얼마나 자세히 봤나 = 체류 + 닫기 방식 + CTA(분석 전문가 오더, 운영자 승인 2026-07-30). suppressed = 당일 억제로 미노출.
+  popupView     Json?
 
   // 클라이언트 (원본 보존용 — 디버그)
   userAgent    String?

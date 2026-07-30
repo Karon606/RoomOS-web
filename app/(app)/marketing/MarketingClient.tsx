@@ -188,6 +188,10 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
               <Field label="방문 시각" value={v.dateTimeLabel} num />
               <Field label="체류 시간" value={v.durationMs == null ? '측정 안 됨' : fmtDuration(v.durationMs)} num={v.durationMs != null} />
               <Field label="스크롤 깊이" value={v.scrollDepthPct == null ? '측정 안 됨' : `${v.scrollDepthPct}%`} num={v.scrollDepthPct != null} />
+              {v.popup && (
+                <Field label="프로모션 팝업" num
+                  value={`${fmtDuration(v.popup.dwellMs)}${v.popup.closeLabel ? ` · ${v.popup.closeLabel}` : ''}`} />
+              )}
               <Field label="유입" value={v.sourceLabel} />
               <Field label="유입 호스트" value={v.referrerHost ?? '없음'} />
               {v.campaign && <Field label="캠페인" value={v.campaign} />}
@@ -642,6 +646,51 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             </ul>
           )}
         </div>
+
+        {/* 프로모션 팝업 — 팝업 기록이 있는 방문이 하나도 없으면(기능 도입 전 기간 등) 카드째 감춘다.
+            닫기 방식은 정본 BarPanel 을 그대로 쓴다 — 카드 안에 겹쳐 넣으면 cream 위 cream 이라 옆 칸으로 뺐다. */}
+        {stats.popup.sampleCount > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
+              프로모션 팝업 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.popup.sampleCount)}건)</span>
+            </p>
+            <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>
+              공개 페이지에 뜬 팝업의 노출·체류·전환 · &lsquo;오늘 하루 보지 않기&rsquo;로 안 뜬 방문은 노출에서 제외
+            </p>
+            <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>노출 수</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmt(stats.popup.shownCount)}</p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>노출률</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.popup.shownRatePct}%</p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmtDuration(stats.popup.avgDwellMs)}</p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>카카오 상담 전환</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>
+                  {stats.popup.cta.kakaoPct}% <span className="text-[0.65625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>{fmt(stats.popup.cta.kakaoCount)}건</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>객실 둘러보기 전환</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>
+                  {stats.popup.cta.roomsPct}% <span className="text-[0.65625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>{fmt(stats.popup.cta.roomsCount)}건</span>
+                </p>
+              </div>
+            </div>
+          </div>
+          <BarPanel title="팝업 닫기 방식"
+            rows={stats.popup.closes.map(c => ({ label: c.label, count: c.count, percent: c.percent }))}
+            color="var(--camel)" emptyText={emptyTxt} />
+        </div>
+        )}
 
         {/* 채널 카테고리 + 디바이스 종류 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

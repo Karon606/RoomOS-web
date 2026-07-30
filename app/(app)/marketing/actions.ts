@@ -42,6 +42,16 @@ export type MarketingStats = {
   // 섹션별 평균 체류시간 — 페이지 어느 영역에 오래 머물렀나
   sections: { id: string; name: string; avgMs: number; sampleCount: number }[]
   sectionSampleCount: number   // 섹션 데이터가 있는 세션 수
+  // 프로모션 팝업 — popupView 가 기록된 방문만.
+  // suppressed=true 는 '오늘 하루 보지 않기' 상태라 뜨지 않은 방문 → 노출로 세지 않는다(분모에는 남는다).
+  popup: {
+    sampleCount: number    // popupView 가 있는 행 수 (0 이면 화면에서 카드째 감춘다)
+    shownCount: number     // 실제 노출 수 (suppressed 제외)
+    shownRatePct: number   // 노출률 — 범위 내 비봇 방문 대비
+    avgDwellMs: number     // 노출 행 평균 체류
+    closes: { key: string; label: string; count: number; percent: number }[]
+    cta: { kakaoCount: number; kakaoPct: number; roomsCount: number; roomsPct: number }
+  }
   // 트렌드 (자동 세분도) — date 는 드릴다운용 원본 키(day='YYYY-MM-DD', month='YYYY-MM', hour=null).
   // 라벨은 표시 전용이라 파싱하지 않는다(연말연시에 연도가 유실됨).
   trend: { label: string; date: string | null; views: number; visitors: number }[]
@@ -166,6 +176,7 @@ type Row = {
   durationMs: number | null
   scrollDepthPct: number | null
   sectionDwellMs: unknown
+  popupView: unknown
 }
 
 // 공개페이지 섹션 id → 표시 이름 (index.html 의 <section id> 와 일치)
@@ -199,6 +210,36 @@ function mergeSectionsByLabel(per: Map<string, { totalMs: number; count: number 
 // 채널 카테고리·디바이스 표시명 — 요약 집계와 방문 기록 목록이 같은 이름을 쓰도록 모듈 스코프에 둔다.
 const CHANNEL_LABEL: Record<string, string> = { search: '검색', social: '소셜', direct: '직접', other: '기타' }
 const DT_LABEL: Record<string, string> = { mobile: '모바일', tablet: '태블릿', desktop: '데스크탑' }
+
+// 프로모션 팝업 닫기 방식 — 기록 키 → 표시 라벨. 표시 순서도 이 배열이 정본(요약 카드·방문 상세 공통).
+const POPUP_CLOSE_ORDER = ['x', 'scrim', 'esc', 'today', 'cta_kakao', 'cta_rooms', 'leave']
+const POPUP_CLOSE_LABEL: Record<string, string> = {
+  x: 'X 닫기', scrim: '배경 닫기', esc: 'Esc', today: '오늘 하루 보지 않기',
+  cta_kakao: '카카오 상담', cta_rooms: '객실 둘러보기', leave: '열람 중 이탈',
+}
+
+// PageView.popupView(JSON) → 집계용 정규화. 형태가 아니면 null(= 팝업 기록 없는 방문).
+type PopupRec = { dwellMs: number; close: string | null; ctaKakao: boolean; ctaRooms: boolean; suppressed: boolean }
+function parsePopup(pv: unknown): PopupRec | null {
+  if (!pv || typeof pv !== 'object' || Array.isArray(pv)) return null
+  const o = pv as Record<string, unknown>
+  const dwell = Number(o.dwellMs)
+  const kinds = new Set<string>()
+  if (Array.isArray(o.ctas)) {
+    for (const c of o.ctas) {
+      if (!c || typeof c !== 'object') continue
+      const kind = (c as Record<string, unknown>).kind
+      if (typeof kind === 'string') kinds.add(kind)
+    }
+  }
+  return {
+    dwellMs: Number.isFinite(dwell) && dwell > 0 ? Math.round(dwell) : 0,
+    close: typeof o.close === 'string' ? o.close : null,
+    ctaKakao: kinds.has('kakao'),
+    ctaRooms: kinds.has('rooms'),
+    suppressed: o.suppressed === true,
+  }
+}
 
 // end = 마지막 버킷이 속한 날의 KST 0시(포함). 프리셋이면 오늘, 임의 기간이면 종료일 —
 // 이걸 인자로 받지 않고 new Date()를 쓰면 7/1~7/9 조회에 오늘까지 빈 막대가 붙는다.
@@ -315,6 +356,10 @@ export async function getMarketingStats(
       rangeViews: 0, rangeVisitors: 0,
       engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, bounceRatePct: 0 },
       sections: [], sectionSampleCount: 0,
+      popup: {
+        sampleCount: 0, shownCount: 0, shownRatePct: 0, avgDwellMs: 0, closes: [],
+        cta: { kakaoCount: 0, kakaoPct: 0, roomsCount: 0, roomsPct: 0 },
+      },
       trend: [],
       referrers: [], channels: [], namedSources: [], campaigns: [],
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
@@ -336,7 +381,7 @@ export async function getMarketingStats(
       country: true, region: true, city: true,
       os: true, browser: true, deviceType: true,
       language: true, screenWidth: true, screenHeight: true,
-      durationMs: true, scrollDepthPct: true, sectionDwellMs: true,
+      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, popupView: true,
     },
   })
 
@@ -538,10 +583,52 @@ export async function getMarketingStats(
     }))
     .sort((a, b) => b.avgMs - a.avgMs)
 
+  // 프로모션 팝업 — popupView 가 있는 행만. suppressed 는 '오늘 하루 보지 않기'라 뜨지 않은 방문이므로
+  // 노출(분자)에서는 빼되 노출률 분모(범위 내 비봇 방문 = rangeViews)에는 그대로 남는다.
+  let popupSampleCount = 0
+  let popupShownCount = 0
+  let popupDwellTotal = 0
+  let ctaKakaoCount = 0
+  let ctaRoomsCount = 0
+  const closeMap = new Map<string, number>()
+  for (const r of inRange) {
+    const p = parsePopup(r.popupView)
+    if (!p) continue
+    popupSampleCount++
+    if (p.suppressed) continue
+    popupShownCount++
+    popupDwellTotal += p.dwellMs
+    if (p.close) closeMap.set(p.close, (closeMap.get(p.close) ?? 0) + 1)
+    if (p.ctaKakao) ctaKakaoCount++
+    if (p.ctaRooms) ctaRoomsCount++
+  }
+  const shownDiv = popupShownCount || 1
+  // 순서는 POPUP_CLOSE_ORDER 고정 — 기록에 없던 키(스키마 확장분)는 뒤에 원본 키로 붙인다
+  const closeKeys = [
+    ...POPUP_CLOSE_ORDER.filter(k => closeMap.has(k)),
+    ...Array.from(closeMap.keys()).filter(k => !POPUP_CLOSE_ORDER.includes(k)),
+  ]
+  const popup = {
+    sampleCount: popupSampleCount,
+    shownCount: popupShownCount,
+    shownRatePct: rangeViews > 0 ? Math.round((popupShownCount / rangeViews) * 100) : 0,
+    avgDwellMs: popupShownCount > 0 ? Math.round(popupDwellTotal / popupShownCount) : 0,
+    closes: closeKeys.map(key => {
+      const count = closeMap.get(key) ?? 0
+      return { key, label: POPUP_CLOSE_LABEL[key] ?? key, count, percent: Math.round((count / shownDiv) * 100) }
+    }),
+    cta: {
+      kakaoCount: ctaKakaoCount,
+      kakaoPct: Math.round((ctaKakaoCount / shownDiv) * 100),
+      roomsCount: ctaRoomsCount,
+      roomsPct: Math.round((ctaRoomsCount / shownDiv) * 100),
+    },
+  }
+
   return {
     range, bucket, rangeFrom, rangeTo, publicSlug: slug, publicUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
-    rangeViews, rangeVisitors, engagement, sections, sectionSampleCount,
+    rangeViews, rangeVisitors, engagement, sections, sectionSampleCount, popup,
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
@@ -570,6 +657,8 @@ export type VisitSession = {
     rentLabel: string; n: number; seenCount: number; zoomedCount: number; maxDepth: number
     photos: { idx: number; ms: number; zoomed: boolean; roomNo: string | null; seq: number | null }[]
   }[]
+  // 프로모션 팝업 — 이 방문에 노출된 경우만. 미노출('오늘 하루 보지 않기')·기록 없음은 null.
+  popup: { dwellMs: number; closeLabel: string | null } | null
   sourceLabel: string         // 유입 — '네이버'·'검색'·'직접' 등
   referrerHost: string | null
   campaign: string | null     // 'source · medium · campaign'
@@ -663,6 +752,13 @@ function visitSections(sd: unknown): { name: string; ms: number }[] {
   return mergeSectionsByLabel(per).map(a => ({ name: a.name, ms: a.totalMs }))
 }
 
+// 방문 1건의 popupView(JSON) → 상세 한 줄용 요약. 미노출(suppressed)·기록 없음은 null.
+function visitPopup(pv: unknown): VisitSession['popup'] {
+  const p = parsePopup(pv)
+  if (!p || p.suppressed) return null
+  return { dwellMs: p.dwellMs, closeLabel: p.close ? (POPUP_CLOSE_LABEL[p.close] ?? p.close) : null }
+}
+
 // 조회창은 요약(getMarketingStats)이 되돌려준 rangeFrom·rangeTo 를 그대로 받는다 — 두 화면이 같은 창을 본다.
 // 봇 제외는 고정(필터로 노출하지 않음). 커서는 (occurredAt, id) 복합 키셋 — offset 페이징을 쓰지 않는다.
 export async function getVisitSessions(
@@ -703,7 +799,7 @@ export async function getVisitSessions(
     take: VISIT_PAGE_SIZE + 1,
     select: {
       id: true, occurredAt: true,
-      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, galleryViews: true,
+      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, galleryViews: true, popupView: true,
       referrerHost: true, searchEngine: true, referrerCategory: true,
       utmSource: true, utmMedium: true, utmCampaign: true,
       country: true, region: true, city: true,
@@ -765,6 +861,7 @@ export async function getVisitSessions(
       scrollDepthPct: r.scrollDepthPct,
       sections: visitSections(r.sectionDwellMs),
       gallery: visitGallery(r.galleryViews),
+      popup: visitPopup(r.popupView),
       sourceLabel: r.searchEngine || channel,
       referrerHost: r.referrerHost,
       campaign,
