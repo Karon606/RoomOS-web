@@ -573,8 +573,18 @@ footer {
 }
 .promo-close:hover { color: var(--cream); }
 .promo-close svg { width: 17px; height: 17px; }
+.promo-lang {
+  position: absolute; top: 10px; left: 14px;
+  display: inline-flex; align-items: center; height: 26px;
+  border: 1px solid rgba(232, 222, 201, 0.35); border-radius: 13px; overflow: hidden;
+}
+.promo-lang button {
+  height: 100%; padding: 0 7px; border: 0; background: transparent;
+  color: rgba(232, 222, 201, 0.6); font-family: var(--sans); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.promo-lang button.on { background: var(--cream); color: var(--forest-deep); }
 .promo-badge {
-  display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 12px 6px;
+  display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 12px 6px; margin-top: 6px;
   border: 1px solid rgba(232, 222, 201, 0.3); border-radius: 999px; color: rgba(232, 222, 201, 0.78);
 }
 .promo-badge .en { font-family: var(--serif-en); font-style: italic; font-size: 15px; letter-spacing: 0.05em; }
@@ -635,6 +645,8 @@ footer {
   .promo-grab { display: none; }
   .promo-head { padding: 26px 24px 22px; }
   .promo-close { top: 9px; right: 9px; }
+  .promo-lang { top: 14px; left: 18px; }
+  .promo-badge { margin-top: 20px; }
   .promo-badge .en { font-size: 15.5px; }
   .promo-headline { margin-top: 14px; font-size: 29px; }
   .promo-sub { margin-top: 12px; font-size: 13px; }
@@ -989,6 +1001,12 @@ footer {
   <div class="promo-scrim" data-close></div>
   <div class="promo-panel">
     <div class="promo-head">
+      <div class="promo-lang" role="group" aria-label="언어 선택 · Language">
+        <button type="button" data-lang="ko">KO</button>
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="zh">ZH</button>
+        <button type="button" data-lang="ja">JA</button>
+      </div>
       <div class="promo-grab" aria-hidden="true"></div>
       <button type="button" class="promo-close" data-close aria-label="닫기">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -1122,12 +1140,37 @@ footer {
     } catch (err) {}
     return true;
   }
+  /* 팝업 내 언어 전환 — 네비 토글 프록시 클릭(동작·저장 동일), 팝업 쪽 on 표시만 자체 동기화.
+     팝업이 떠 있는 동안 네비가 스크림 뒤라 접근 불가한 문제의 해소(운영자 요청 2026-07-30). */
+  var langWrap = promo.querySelector('.promo-lang');
+  var LANG_DOC = { 'ko': 'ko', 'en': 'en', 'zh-Hant': 'zh', 'ja': 'ja' };
+  function syncPromoLang() {
+    if (!langWrap) return;
+    var cur = LANG_DOC[document.documentElement.lang] || 'ko';
+    langWrap.querySelectorAll('button[data-lang]').forEach(function (b) {
+      var on = b.getAttribute('data-lang') === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  if (langWrap) {
+    langWrap.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-lang]');
+      if (!b) return;
+      var code = b.getAttribute('data-lang');
+      var nav = document.getElementById('lang' + code.charAt(0).toUpperCase() + code.slice(1));
+      if (nav) nav.click();
+      syncPromoLang();
+    });
+  }
+
   function open() {
     promo.hidden = false;
     document.body.style.overflow = 'hidden';
     track.shown = true;
     track.shownAtMs = nowMs();
     track.activeSince = nowMs();
+    syncPromoLang();
     var x = promo.querySelector('.promo-close');
     if (x) x.focus();
   }
