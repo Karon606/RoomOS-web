@@ -983,6 +983,193 @@ footer {
   </a>
 </div>
 
+<!-- 8월 프로모션 팝업 — 디자인 핸드오프 확정본. 문구는 확정 한국어(EN/ZH/JA 번역 확정 시 4벌 규칙으로 추가).
+     노출: 첫 진입 1.2초 후, '오늘 하루 보지 않기'는 당일 억제, 2026-08-31 이후 자동 비노출(날짜 게이트). -->
+<div class="promo" id="promo" role="dialog" aria-modal="true" aria-labelledby="promo-title" hidden>
+  <div class="promo-scrim" data-close></div>
+  <div class="promo-panel">
+    <div class="promo-head">
+      <div class="promo-grab" aria-hidden="true"></div>
+      <button type="button" class="promo-close" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+      </button>
+      <div class="promo-badge">
+        <span class="en">AUGUST OFFER</span>
+        <span class="dot" aria-hidden="true">·</span>
+        <span class="ko" data-en="August move-ins only" data-zh="8月入住限定" data-ja="8月ご入居限定">8월 입실 한정</span>
+      </div>
+      <h2 class="promo-headline" id="promo-title" data-en="Move in this August, <em>three months of savings</em>" data-zh="8月入住，享<em>三個月優惠</em>" data-ja="8月のご入居で、<em>3か月の特典</em>を">8월 입주, <em>세 달의 혜택</em></h2>
+      <p class="promo-sub" data-en="Move in during August and get up to ₩30,000 off the monthly rate for your first three months (Aug–Oct), on all rooms." data-zh="8月入住，全房型前3個月（8月～10月）月費最高優惠3萬韓元。" data-ja="8月にご入居いただくと、全室を対象に最初の3か月（8月～10月）の月額料金を最大3万ウォン割引いたします。">8월에 입주하시면 전 객실 첫 3개월(8월~10월) 월 이용료를 최대 3만원 할인해 드립니다.</p>
+    </div>
+    <div class="promo-body">
+      <div class="rate-card" role="table" aria-label="8월 입주 할인 요금표">
+        <div class="rate-head" role="row">
+          <span class="c-name" role="columnheader" data-en="Room" data-zh="房型" data-ja="お部屋">객실명</span>
+          <span class="c-was" role="columnheader" data-en="Regular" data-zh="原價" data-ja="通常料金">정상가</span>
+          <span class="c-now" role="columnheader" data-en="Aug–Oct" data-zh="8～10月費用" data-ja="8～10月料金">8~10월 이용료</span>
+          <span class="c-chip" role="presentation"></span>
+        </div>
+        <div class="rate-row" data-band="a" role="row">
+          <span class="c-name" role="cell" data-en="Sunlit · Premium II" data-zh="套房外窗 · 頂級 II" data-ja="外窓 · プレミアム II">원룸 외창 · 프리미엄 II</span>
+          <span class="c-was" role="cell" data-en="₩550,000" data-zh="55萬/月" data-ja="55万/月">월 55만원</span>
+          <span class="c-now" role="cell" data-en="₩520,000" data-zh="52萬/月" data-ja="52万/月">월 52만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩30K" data-zh="−3萬" data-ja="−3万">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="a" role="row">
+          <span class="c-name" role="cell" data-en="Sunlit · Premium I" data-zh="套房外窗 · 頂級 I" data-ja="外窓 · プレミアム I">원룸 외창 · 프리미엄 I</span>
+          <span class="c-was" role="cell" data-en="₩500,000" data-zh="50萬/月" data-ja="50万/月">월 50만원</span>
+          <span class="c-now" role="cell" data-en="₩470,000" data-zh="47萬/月" data-ja="47万/月">월 47만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩30K" data-zh="−3萬" data-ja="−3万">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="a" data-band-end role="row">
+          <span class="c-name" role="cell" data-en="Sunlit · Standard" data-zh="套房外窗 · 標準型" data-ja="外窓 · スタンダード">원룸 외창 · 스탠다드</span>
+          <span class="c-was" role="cell" data-en="₩470,000" data-zh="47萬/月" data-ja="47万/月">월 47만원</span>
+          <span class="c-now" role="cell" data-en="₩440,000" data-zh="44萬/月" data-ja="44万/月">월 44만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩30K" data-zh="−3萬" data-ja="−3万">−3만</span></span>
+        </div>
+        <div class="rate-row" data-band="b" role="row">
+          <span class="c-name" role="cell" data-en="Sunlit · Value" data-zh="套房外窗 · 實惠型" data-ja="外窓 · バリュー">원룸 외창 · 실속형</span>
+          <span class="c-was" role="cell" data-en="₩440,000" data-zh="44萬/月" data-ja="44万/月">월 44만원</span>
+          <span class="c-now" role="cell" data-en="₩420,000" data-zh="42萬/月" data-ja="42万/月">월 42만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩20K" data-zh="−2萬" data-ja="−2万">−2만</span></span>
+        </div>
+        <div class="rate-row" data-band="b" data-band-end role="row">
+          <span class="c-name" role="cell" data-en="Hallway · Standard" data-zh="套房內窗 · 標準型" data-ja="内窓 · スタンダード">원룸 내창 · 스탠다드</span>
+          <span class="c-was" role="cell" data-en="₩420,000" data-zh="42萬/月" data-ja="42万/月">월 42만원</span>
+          <span class="c-now" role="cell" data-en="₩400,000" data-zh="40萬/月" data-ja="40万/月">월 40만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩20K" data-zh="−2萬" data-ja="−2万">−2만</span></span>
+        </div>
+        <div class="rate-row" data-band="c" role="row">
+          <span class="c-name" role="cell" data-en="Hallway · Value" data-zh="套房內窗 · 實惠型" data-ja="内窓 · バリュー">원룸 내창 · 실속형</span>
+          <span class="c-was" role="cell" data-en="₩390,000" data-zh="39萬/月" data-ja="39万/月">월 39만원</span>
+          <span class="c-now" role="cell" data-en="₩380,000" data-zh="38萬/月" data-ja="38万/月">월 38만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩10K" data-zh="−1萬" data-ja="−1万">−1만</span></span>
+        </div>
+        <div class="rate-row" data-band="c" role="row">
+          <span class="c-name" role="cell" data-en="Single Room" data-zh="迷你房型" data-ja="ミニルーム">미니룸형</span>
+          <span class="c-was" role="cell" data-en="₩350,000" data-zh="35萬/月" data-ja="35万/月">월 35만원</span>
+          <span class="c-now" role="cell" data-en="₩340,000" data-zh="34萬/月" data-ja="34万/月">월 34만원</span>
+          <span class="c-chip" role="cell"><span class="rate-chip" data-en="−₩10K" data-zh="−1萬" data-ja="−1万">−1만</span></span>
+        </div>
+      </div>
+      <ul class="promo-terms">
+        <li><p data-en="Applies only to August move-in contracts (minimum one-month stay)." data-zh="僅適用於8月入住之合約（居住1個月以上）。" data-ja="8月ご入居の契約（1か月以上の居住）に限り適用されます。">8월 입주 계약(1개월 이상 거주)에 한해 적용됩니다.</p></li>
+        <li><p data-en="Discounted rates apply from August through October. Regular rates apply from November onward." data-zh="優惠價適用於8月至10月，11月起月費恢復原價。" data-ja="割引料金は8月から10月まで適用され、11月分の料金からは通常料金となります。">할인가는 8월부터 10월까지 적용되며 11월 이용료부터 정상가로 돌아갑니다.</p></li>
+      </ul>
+      <div class="promo-actions">
+        <a class="btn-kakao" href="https://open.kakao.com/o/s9QRRKqi" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.83 1.86 5.31 4.65 6.74-.2.73-.73 2.67-.84 3.08-.13.51.19.5.4.36.16-.11 2.61-1.77 3.67-2.49.7.1 1.42.15 2.12.15 5.52 0 10-3.58 10-8s-4.48-8-10-8z"></path></svg>
+          <span data-en="Book a Consultation" data-zh="預約入住諮詢" data-ja="入居のご相談">입주 상담하기</span>
+        </a>
+        <a class="btn-ghost" href="#rooms" data-close data-en="View Rooms" data-zh="查看房型" data-ja="お部屋を見る">객실 둘러보기</a>
+      </div>
+      <button type="button" class="promo-dismiss" id="promoDismiss" data-en="Don&#39;t show again today" data-zh="今日不再顯示" data-ja="本日は表示しない">오늘 하루 보지 않기</button>
+    </div>
+  </div>
+</div>
+<script>
+/* 프로모션 팝업 노출 규칙 — 키에 프로모션 버전(2026_08)이 있어 다음 프로모션은 새 키로 자동 재노출.
+   X·스크림·Esc·객실 둘러보기 = 세션 내 닫기(재방문 시 재노출), 오늘 하루 보지 않기 = 당일 억제. */
+(function () {
+  var KEY = 'tsj_promo_2026_08_hidden_until';
+  var END = '2026-08-31';   /* 날짜 게이트 — 9/1(KST)부터 자동 비노출 */
+  var promo = document.getElementById('promo');
+  if (!promo) return;
+
+  /* 열람 트래킹 — 체류(활성)·닫기 방식·CTA 시점. pv_id(_track.js)가 있을 때만 전송(운영자 제외 자동 상속).
+     닫힘·카카오 클릭·이탈 시 덮어쓰기 전송(갤러리 트래킹과 동일 패턴). 언어·기기는 PageView 행에 이미 있음. */
+  var track = { shownAtMs: 0, activeMs: 0, activeSince: 0, ctas: [], closeReason: null, shown: false };
+  function nowMs() { return Math.round(performance.now()); }
+  function dwellMs() {
+    var t = track.activeMs;
+    if (track.activeSince > 0 && !document.hidden) t += nowMs() - track.activeSince;
+    return Math.max(0, Math.round(t));
+  }
+  function sendTrack(view) {
+    var pv = window.__stayeumPv;
+    if (!pv || !navigator.sendBeacon) return;
+    try {
+      navigator.sendBeacon('/api/track/popup', new Blob([JSON.stringify({ id: pv, view: view })], { type: 'application/json' }));
+    } catch (err) {}
+  }
+  function flush(reason) {
+    if (!track.shown) return;
+    if (reason) track.closeReason = reason;
+    var d = dwellMs();
+    /* 시계 동결 — 닫힌 뒤 페이지에 더 머물다 떠나도 체류가 부풀지 않게 */
+    track.activeMs = d; track.activeSince = 0;
+    sendTrack({ shownAtMs: track.shownAtMs, dwellMs: d, close: track.closeReason || 'leave', ctas: track.ctas });
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!track.shown || track.closeReason) return;
+    if (document.hidden) { track.activeMs += nowMs() - track.activeSince; track.activeSince = 0; }
+    else { track.activeSince = nowMs(); }
+  });
+  window.addEventListener('pagehide', function () {
+    /* 팝업을 연 채(또는 카카오로 이동해) 떠남 — 마지막 상태 전송. suppressed 는 미노출 방문 기록 */
+    if (track.shown) flush(track.closeReason);
+    else if (suppressedVisit) sendTrack({ suppressed: true });
+  });
+
+  function kstToday() {
+    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  }
+  var suppressedVisit = false;
+  function shouldShow() {
+    if (kstToday() > END) return false;
+    try {
+      if (localStorage.getItem(KEY) === kstToday()) { suppressedVisit = true; return false; }
+    } catch (err) {}
+    return true;
+  }
+  function open() {
+    promo.hidden = false;
+    document.body.style.overflow = 'hidden';
+    track.shown = true;
+    track.shownAtMs = nowMs();
+    track.activeSince = nowMs();
+    var x = promo.querySelector('.promo-close');
+    if (x) x.focus();
+  }
+  function close(reason) {
+    promo.hidden = true;
+    document.body.style.overflow = '';
+    flush(reason || 'x');
+  }
+
+  promo.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.closest('.btn-ghost')) { track.ctas.push({ kind: 'rooms', tMs: dwellMs() }); close('cta_rooms'); return; }
+    if (t.closest('.btn-kakao')) {
+      /* 카카오는 새 탭 — 팝업은 유지하되 즉시 전송(카카오 앱 전환으로 이탈해도 기록 보존) */
+      track.ctas.push({ kind: 'kakao', tMs: dwellMs() });
+      track.closeReason = 'cta_kakao';
+      flush(null);
+      return;
+    }
+    if (t.closest('.promo-close')) { close('x'); return; }
+    if (t.closest('.promo-scrim')) { close('scrim'); return; }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (promo.hidden) return;
+    if (e.key === 'Escape') { close('esc'); return; }
+    /* 포커스 트랩 — aria-modal 준수: Tab 이 배경으로 새지 않게 패널 내에서 순환 */
+    if (e.key !== 'Tab') return;
+    var els = promo.querySelectorAll('button, a[href]');
+    if (!els.length) return;
+    var first = els[0], last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  document.getElementById('promoDismiss').addEventListener('click', function () {
+    try { localStorage.setItem(KEY, kstToday()); } catch (err) {}
+    close('today');
+  });
+
+  if (shouldShow()) setTimeout(open, 1200);   /* 첫 페인트(히어로 인상) 후 등장 */
+})();
+</script>
+
 <script>
 (function () {
   'use strict';
@@ -1055,139 +1242,6 @@ footer {
     else if (pref.indexOf('ja') === 0) setLang('ja');
     else if (pref && pref.indexOf('ko') !== 0) setLang('en');
   })();
-})();
-</script>
-<!-- 8월 프로모션 팝업 — 디자인 핸드오프 확정본. 문구는 확정 한국어(EN/ZH/JA 번역 확정 시 4벌 규칙으로 추가).
-     노출: 첫 진입 1.2초 후, '오늘 하루 보지 않기'는 당일 억제, 2026-08-31 이후 자동 비노출(날짜 게이트). -->
-<div class="promo" id="promo" role="dialog" aria-modal="true" aria-labelledby="promo-title" hidden>
-  <div class="promo-scrim" data-close></div>
-  <div class="promo-panel">
-    <div class="promo-head">
-      <div class="promo-grab" aria-hidden="true"></div>
-      <button type="button" class="promo-close" data-close aria-label="닫기">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
-      </button>
-      <div class="promo-badge">
-        <span class="en">AUGUST OFFER</span>
-        <span class="dot" aria-hidden="true">·</span>
-        <span class="ko">8월 입실 한정</span>
-      </div>
-      <h2 class="promo-headline" id="promo-title">8월 입주, <em>세 달의 혜택</em></h2>
-      <p class="promo-sub">8월에 입주하시면 전 객실 첫 3개월(8월~10월) 월 이용료를 최대 3만원 할인해 드립니다.</p>
-    </div>
-    <div class="promo-body">
-      <div class="rate-card" role="table" aria-label="8월 입주 할인 요금표">
-        <div class="rate-head" role="row">
-          <span class="c-name" role="columnheader">객실명</span>
-          <span class="c-was" role="columnheader">정상가</span>
-          <span class="c-now" role="columnheader">8~10월 이용료</span>
-          <span class="c-chip" role="presentation"></span>
-        </div>
-        <div class="rate-row" data-band="a" role="row">
-          <span class="c-name" role="cell">원룸 외창 · 프리미엄 II</span>
-          <span class="c-was" role="cell">월 55만원</span>
-          <span class="c-now" role="cell">월 52만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
-        </div>
-        <div class="rate-row" data-band="a" role="row">
-          <span class="c-name" role="cell">원룸 외창 · 프리미엄 I</span>
-          <span class="c-was" role="cell">월 50만원</span>
-          <span class="c-now" role="cell">월 47만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
-        </div>
-        <div class="rate-row" data-band="a" data-band-end role="row">
-          <span class="c-name" role="cell">원룸 외창 · 스탠다드</span>
-          <span class="c-was" role="cell">월 47만원</span>
-          <span class="c-now" role="cell">월 44만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−3만</span></span>
-        </div>
-        <div class="rate-row" data-band="b" role="row">
-          <span class="c-name" role="cell">원룸 외창 · 실속형</span>
-          <span class="c-was" role="cell">월 44만원</span>
-          <span class="c-now" role="cell">월 42만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−2만</span></span>
-        </div>
-        <div class="rate-row" data-band="b" data-band-end role="row">
-          <span class="c-name" role="cell">원룸 내창 · 스탠다드</span>
-          <span class="c-was" role="cell">월 42만원</span>
-          <span class="c-now" role="cell">월 40만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−2만</span></span>
-        </div>
-        <div class="rate-row" data-band="c" role="row">
-          <span class="c-name" role="cell">원룸 내창 · 실속형</span>
-          <span class="c-was" role="cell">월 39만원</span>
-          <span class="c-now" role="cell">월 38만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−1만</span></span>
-        </div>
-        <div class="rate-row" data-band="c" role="row">
-          <span class="c-name" role="cell">미니룸형</span>
-          <span class="c-was" role="cell">월 35만원</span>
-          <span class="c-now" role="cell">월 34만원</span>
-          <span class="c-chip" role="cell"><span class="rate-chip">−1만</span></span>
-        </div>
-      </div>
-      <ul class="promo-terms">
-        <li><p>8월 입주 계약(1개월 이상 거주)에 한해 적용됩니다.</p></li>
-        <li><p>할인가는 8월부터 10월까지 적용되며 11월 이용료부터 정상가로 돌아갑니다.</p></li>
-      </ul>
-      <div class="promo-actions">
-        <a class="btn-kakao" href="https://open.kakao.com/o/s9QRRKqi" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.83 1.86 5.31 4.65 6.74-.2.73-.73 2.67-.84 3.08-.13.51.19.5.4.36.16-.11 2.61-1.77 3.67-2.49.7.1 1.42.15 2.12.15 5.52 0 10-3.58 10-8s-4.48-8-10-8z"></path></svg>
-          <span>입주 상담하기</span>
-        </a>
-        <a class="btn-ghost" href="#rooms" data-close>객실 둘러보기</a>
-      </div>
-      <button type="button" class="promo-dismiss" id="promoDismiss">오늘 하루 보지 않기</button>
-    </div>
-  </div>
-</div>
-<script>
-/* 프로모션 팝업 노출 규칙 — 키에 프로모션 버전(2026_08)이 있어 다음 프로모션은 새 키로 자동 재노출.
-   X·스크림·Esc·객실 둘러보기 = 세션 내 닫기(재방문 시 재노출), 오늘 하루 보지 않기 = 당일 억제. */
-(function () {
-  var KEY = 'tsj_promo_2026_08_hidden_until';
-  var END = '2026-08-31';   /* 날짜 게이트 — 9/1(KST)부터 자동 비노출 */
-  var promo = document.getElementById('promo');
-  if (!promo) return;
-
-  function kstToday() {
-    return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  }
-  function shouldShow() {
-    if (kstToday() > END) return false;
-    try { return localStorage.getItem(KEY) !== kstToday(); } catch (err) { return true; }
-  }
-  function open() {
-    promo.hidden = false;
-    document.body.style.overflow = 'hidden';
-    var x = promo.querySelector('.promo-close');
-    if (x) x.focus();
-  }
-  function close() {
-    promo.hidden = true;
-    document.body.style.overflow = '';
-  }
-
-  promo.addEventListener('click', function (e) {
-    if (e.target.closest('[data-close]')) close();
-  });
-  document.addEventListener('keydown', function (e) {
-    if (promo.hidden) return;
-    if (e.key === 'Escape') { close(); return; }
-    /* 포커스 트랩 — aria-modal 준수: Tab 이 배경으로 새지 않게 패널 내에서 순환 */
-    if (e.key !== 'Tab') return;
-    var els = promo.querySelectorAll('button, a[href]');
-    if (!els.length) return;
-    var first = els[0], last = els[els.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  });
-  document.getElementById('promoDismiss').addEventListener('click', function () {
-    try { localStorage.setItem(KEY, kstToday()); } catch (err) {}
-    close();
-  });
-
-  if (shouldShow()) setTimeout(open, 1200);   /* 첫 페인트(히어로 인상) 후 등장 */
 })();
 </script>
 <!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 트래픽 분석 -->
