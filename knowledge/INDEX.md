@@ -18,6 +18,7 @@
 
 ## 운영 지식
 - [[decisions]] — 주요 의사결정 로그(왜 그렇게 했나)
+- [[mobile-scroll-viewport]] — 모바일 스크롤·뷰포트 함정(overscroll-contain 은 진짜 스크롤러에만, iOS/Android 키보드·핀치줌 차이, 두 엔진 실기 검증 규칙)
 - [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등)
 - [[open-issues]] — 미해결·후속 작업
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)

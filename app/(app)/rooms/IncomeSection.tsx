@@ -239,7 +239,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
 
             {!detailIncEdit ? (
               <>
-                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-3">
+                <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   <DetailRow label="날짜"      value={fmtDate(detailInc.date)} />
                   <DetailRow label="카테고리"  value={detailInc.category} />
                   {tenantLabel(detailInc) && <DetailRow label="입주자" value={tenantLabel(detailInc)} />}
@@ -266,7 +266,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 onInput={() => setEditDirty(true)} onChange={() => setEditDirty(true)}>
                 <input type="hidden" name="id" value={detailInc.id} />
                 <input type="hidden" name="financialAccountId" value={detailInc.financialAccountId ?? ''} />
-                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
@@ -327,7 +327,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
           bodyClassName="">
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden"
               onInput={() => setAddDirty(true)} onChange={() => setAddDirty(true)}>
-              <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>

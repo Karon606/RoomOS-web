@@ -1584,7 +1584,7 @@ function SettingsForm({ row, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
         <input type="text" value={labelEdit} onChange={e => setLabelEdit(e.target.value)}
@@ -2077,7 +2077,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
   }
 
   return (
-    <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+    <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <div>
         <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
@@ -3025,7 +3025,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
           ? '각 위치의 채우기 전·후 수량을 입력하면, 늘어난 만큼 창고(허브)에서 옮겨진 것으로 자동 차감됩니다. (새 입수 기록이 아니라 창고→위치 이동)'
@@ -4640,7 +4640,7 @@ function DisposalForm({ item, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">상하거나 버려서 줄어든 양을 기록합니다. 소모량 계산에서 분리되어 소진 예측이 왜곡되지 않습니다. 점검 저장 전에 먼저 기록하세요.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기일 *</label>
@@ -4732,7 +4732,7 @@ function AdditionForm({ item, onCancel, onDone }: {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">지출 외에 들어온 양 (무상 수령, 기증, 이월 등)을 기록합니다. 소모량 계산에 합산됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>

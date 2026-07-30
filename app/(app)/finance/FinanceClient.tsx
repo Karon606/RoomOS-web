@@ -3242,7 +3242,7 @@ export default function FinanceClient({
           bodyClassName=""
           title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
           subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
-          <ul className="overflow-y-auto overscroll-contain px-4 py-3 space-y-1.5">
+          <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
               {groupDetail.map(r => (
                 <li key={r.id}>
                   <button type="button"
@@ -3387,7 +3387,7 @@ export default function FinanceClient({
 
             {!detailExpEdit ? (
               <>
-                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-3">
+                <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   <DetailRow label="날짜"        value={fmtDate(detailExp.date)} />
                   <DetailRow label="카테고리"    value={detailExp.category} />
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
@@ -3529,7 +3529,7 @@ export default function FinanceClient({
                 <input type="hidden" name="financeName" value={editExpAccName} />
                 <input type="hidden" name="roomId" value={editItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : editExpRoomId} />
                 <input type="hidden" name="excludeFromInventory" value={detailExp.excludeFromInventory ? '1' : ''} />
-                <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
@@ -3836,7 +3836,7 @@ export default function FinanceClient({
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={(addIsDurable || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
               <input type="hidden" name="excludeFromInventory" value={addIsService ? '1' : ''} />
-              <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>

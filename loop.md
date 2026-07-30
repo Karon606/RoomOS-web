@@ -11,6 +11,7 @@
 - **핵심 운영 로직:** 입실자 계약 기간 처리, 결제일 기준 임대료 일할 계산 로직, 방 상태 변경 등이 에러 없이 정상 동작하는가.
 - **금전 계산 회귀:** 일할·환불·단기 견적·할인 등 돈 계산(lib/prorate·lib/rentDiscount)이나 그 호출부를 건드렸다면 `npx tsx scripts/test-money.ts` 전 케이스 통과 필수. 기대값 변경은 규칙 변경이므로 4번(운영자 승인) 대상.
 - **UI/UX 정합(상용화 기준):** UI를 신설·변경했다면 ① 정본 공용 컴포넌트(Btn·Modal·SearchBar·SegmentedControl·ViewTabs·SelectionPillBar·MergeSheet·EmptyState·SpecWizard·ConfirmDialog) 재사용 확인 ② 같은 행동을 하는 형제 페이지와 동일 문법인지 전수 대조(선택=꾹/버튼+알약바, 합치기=MergeSheet, 등록=Modal+dirty, 검색=상시 SearchBar, 월전환=우측) ③ docs/brand-guide-v2.0.md(통합 정본) 해당 § 확인 — 코드 주석의 구§는 v2.0 부록 A 매핑표로 추적. **새 인터랙션 패턴 도입은 4번(인간 호출) 대상 — 가이드 등재 없이 임의 신설 금지.** 레이아웃 변경은 모바일 폭 시각 확인.
+- **모바일 엔진 이원 검증:** 스크롤·뷰포트·소프트 키보드 접점(overflow, overscroll-behavior, visualViewport, dvh, fixed/sticky)을 변경했다면 iOS Safari 와 Android Chrome 두 엔진에서 실기 확인 필수 — 엔진별 래치·뷰포트 동작이 달라 한쪽만 확인하면 반대쪽이 먹통이 될 수 있다(신고 d8554128, knowledge/mobile-scroll-viewport.md). 운영자 실기 확인이 필요하면 배포 후 확인 요청을 보고에 명시.
 
 ## 2. 측정 기준 (객관적 지표)
 숫자와 로그로 측정할 수 있는 아래 기준들을 확인해라.
