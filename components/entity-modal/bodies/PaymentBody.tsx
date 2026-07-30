@@ -41,6 +41,8 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // undefined=로딩, null=조회 결과 없음(호실 미지정 등 열 수 없는 상태), 값=정상 (오류신고 890bb698)
   const [settlement, setSettlement] = useState<Settlement | null | undefined>(undefined)
   const [records, setRecords] = useState<Records | null>(null)
+  // lease 전체 보증금 실수납 합(조회월 무관) — 예약금 현황 줄·수납 폼 프리필 기준(신고 50a2a69b)
+  const [depositPaidTotal, setDepositPaidTotal] = useState(0)
   const [mode, setMode] = useState<'summary' | 'full'>(openCheckoutProration ? 'full' : 'summary')
   const [showEntryForm, setShowEntryForm] = useState(false)
   const [adjOpen, setAdjOpen] = useState(false)   // 청구 조정 이력 펼침(접힘이 기본)
@@ -50,7 +52,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   useEffect(() => {
     let active = true
     getLeaseSettlementInfo(leaseTermId, month).then(d => { if (active) setSettlement(d) })
-    getPaymentsByLease(leaseTermId, month).then(d => { if (active) setRecords(d.records) }).catch(() => { if (active) setRecords([]) })
+    getPaymentsByLease(leaseTermId, month)
+      .then(d => { if (active) { setRecords(d.records); setDepositPaidTotal(d.depositPaidTotal) } })
+      .catch(() => { if (active) setRecords([]) })
     return () => { active = false }
   }, [leaseTermId, month, reloadKey])
 
@@ -81,11 +85,11 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 행으로 그리지 않는다.
   // getPaymentsByLease 는 payDate 월 기준이라 전표가 입주월이 아닌 달에도 섞여 들어온다(마커 payDate=조작 시각).
   const payRecords = (records ?? []).filter(r => !r.isBillingAdjust)
-  // 예약 단계 예약금 현황 (오류신고 63bf23bc) — 실수납 합은 records 의 isDeposit 합산(추가 조회 없음).
+  // 예약 단계 예약금 현황 (오류신고 63bf23bc) — 실수납 합은 조회월 무관 lease 전체 기준(신고 50a2a69b).
   // 보증금은 임대료 수식과 분리가 정본이라 잔액에 섞지 않고 이 줄로만 안내.
-  const depositReceived = payRecords.filter(r => r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
-  // prepaid 모드 선납 실수납 합 — isDeposit=false record 합산(입주월 이용료 충당 예정분).
-  const prepaidReceived = payRecords.filter(r => !r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
+  // prepaid 모드 선납 실수납 합 — 서버 reservationPaid 우선, 없으면 이 달 record 합산으로 폴백.
+  const prepaidReceived = settlement.reservationPaid?.prepaid
+    ?? payRecords.filter(r => !r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
   const resvMode = settlement.reservationDepositMode ?? 'deposit'
 
   // 청구 조정 이력 — 단기는 입주월 1회 청구라 그 달에서만 보조 줄·배지를 보여준다.
@@ -108,7 +112,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         ) : settlement.depositAmount > 0 ? (
           <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
             <span className="text-[var(--coral)] font-semibold">보증금 대체</span>
-            <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositReceived)}</span>
+            <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositPaidTotal)}</span>
             <span className="text-[var(--warm-muted)]"> / 계약 보증금 {fmtWon(settlement.depositAmount)}</span>
           </p>
         ) : (
@@ -118,8 +122,21 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         )
       )}
 
-      {/* 잔액 근거 한 줄 — 3카드는 그대로 두고 '왜 그 잔액인지'만 덧붙인다(운영자 혼란 방지). */}
-      {settlement.expected > 0 && (
+      {/* 입주 시 낼 금액 — 할인 반영 이용료에서 선납분을 뺀 값(예약 단계 운영자 질문 1순위). */}
+      {settlement.status === 'RESERVED' && settlement.expected > 0 && (
+        <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
+          <span className="text-[var(--coral)] font-semibold">입주 시 납부 예정</span>
+          <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(Math.max(0, settlement.expected - prepaidReceived))}</span>
+          {prepaidReceived > 0 && (
+            <span className="text-[var(--warm-muted)]"> (이용료 {fmtWon(settlement.expected)} − 선납 {fmtWon(prepaidReceived)})</span>
+          )}
+        </p>
+      )}
+
+      {/* 잔액 근거 한 줄 — 3카드는 그대로 두고 '왜 그 잔액인지'만 덧붙인다(운영자 혼란 방지).
+          예약(RESERVED)은 totalPaid 0 고정이라 이 줄이 위 카드(예약금 포함 수납)와 모순돼 보임 —
+          '입주 시 납부 예정' 요약 줄이 근거를 대신하므로 숨긴다(신고 50a2a69b 잔여 정합). */}
+      {settlement.expected > 0 && settlement.status !== 'RESERVED' && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] -mt-1">
           청구 {settlement.expected.toLocaleString()} − 납부 {settlement.totalPaid.toLocaleString()}
         </p>
@@ -228,6 +245,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                   status: settlement.status,
                   reservationDepositMode: settlement.reservationDepositMode,
                 }}
+                depositPaidTotal={depositPaidTotal}
                 targetMonth={month}
                 onSaved={() => { setShowEntryForm(false); refresh() }}
                 onCancel={() => setShowEntryForm(false)}
@@ -288,6 +306,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                   status: settlement.status,
                   reservationDepositMode: settlement.reservationDepositMode,
                 }}
+                depositPaidTotal={depositPaidTotal}
                 targetMonth={month}
                 onSaved={() => { setShowEntryForm(false); refresh() }}
                 onCancel={() => setShowEntryForm(false)}

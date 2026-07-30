@@ -17,7 +17,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
@@ -105,6 +105,9 @@ type Tenant = {
   nationality: string | null; gender: string; job: string | null
   isBasicRecipient: boolean; smoking: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
 }
+
+// 수납 모달의 청구·잔액 정본(서버 계산 — 할인·인상·예약 실수납 반영)
+type PaySettlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>>
 
 type SortKey =
   | 'roomNo' | 'name' | 'status' | 'rentAmount' | 'depositAmount'
@@ -454,6 +457,8 @@ export default function TenantClient({
   const [payHistory, setPayHistory] = useState<PayRecord[]>([])
   const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
+  // 수납 모달 청구·잔액 정본 — 클라 재계산(할인·인상 미반영) 대신 서버 settlement 사용(신고 50a2a69b)
+  const [paySettlement, setPaySettlement] = useState<PaySettlement | null>(null)
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
@@ -966,14 +971,26 @@ export default function TenantClient({
     setShowPayForm(false)
     setError('')
     setDistNotice(null)
+    setPaySettlement(null)
     const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 그리지 않는다.
     setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
     setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
+  // 청구·잔액 정본 재조회 — 모달 열림·저장/수정/삭제(payHistory 갱신) 때마다 서버 값으로 맞춘다.
+  const payLeaseId = payTarget?.lease.id ?? null
+  useEffect(() => {
+    if (!payLeaseId) { setPaySettlement(null); return }
+    let active = true
+    getLeaseSettlementInfo(payLeaseId, targetMonth)
+      .then(d => { if (active) setPaySettlement(d) })
+      .catch(() => { if (active) setPaySettlement(null) })
+    return () => { active = false }
+  }, [payLeaseId, targetMonth, payHistory])
+
   const closePayModal = () => {
-    setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError(''); setDistNotice(null)
+    setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(null)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
   }
@@ -1996,7 +2013,12 @@ export default function TenantClient({
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
         const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
-        const balance = regularPaid + adjNet - lease.rentAmount
+        // 청구·잔액은 서버 정본 — 클라에서 lease.rentAmount(원가)로 빼면 할인·인상이 빠진다(신고 50a2a69b).
+        const expected = paySettlement?.expected ?? lease.rentAmount
+        const balance = paySettlement?.balance ?? null
+        // 예약 단계는 잔액이 0으로 잠겨 있어 '입주 시 낼 금액'(할인 반영 이용료 − 선납)으로 대신 보여준다.
+        const resvPaid = lease.status === 'RESERVED' ? (paySettlement?.reservationPaid ?? null) : null
+        const resvDue = resvPaid ? Math.max(0, expected - resvPaid.prepaid) : 0
         const DAYS = ['일', '월', '화', '수', '목', '금', '토']
         const fmtPayDate = (d: Date | string) => {
           const dt = new Date(d)
@@ -2007,7 +2029,7 @@ export default function TenantClient({
             // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
             bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
-            subtitle={`${targetMonth} · 예정 ${fmtWon(lease.rentAmount)}`}>
+            subtitle={`${targetMonth} · 예정 ${fmtWon(expected)}`}>
 
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
@@ -2017,7 +2039,15 @@ export default function TenantClient({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                         <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-                        <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={regularPaid} /></p>
+                        {/* 예약자는 조회월 무관 실수납 합(예약금+선납) — 프리즘 카드와 동일 숫자(신고 50a2a69b 잔여 정합) */}
+                        <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">
+                          <MoneyDisplay amount={lease.status === 'RESERVED' && paySettlement?.reservationPaid
+                            ? paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid
+                            : regularPaid} />
+                        </p>
+                        {lease.status === 'RESERVED' && paySettlement?.reservationPaid && (paySettlement.reservationPaid.deposit > 0 || paySettlement.reservationPaid.prepaid > 0) && (
+                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 포함</p>
+                        )}
                         {adjNet !== 0 && (
                           <p className="text-[0.65625rem] mt-0.5 font-medium"
                             style={{ color: adjNet > 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
@@ -2026,14 +2056,21 @@ export default function TenantClient({
                         )}
                       </div>
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                        <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-                        <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
-                          {balance > 0
-                            ? <MoneyDisplay amount={balance} prefix="+" />
-                            : balance < 0
-                              ? <MoneyDisplay amount={Math.abs(balance)} prefix="-" />
-                              : '0원'}
-                        </p>
+                        <p className="text-xs text-[var(--warm-muted)] leading-tight">{resvPaid ? '입주 시 납부 예정' : '잔액'}</p>
+                        {resvPaid ? (
+                          // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
+                          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+                        ) : balance === null ? (
+                          <p className="text-sm font-bold mt-0.5 text-[var(--warm-muted)]">—</p>
+                        ) : (
+                          <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
+                            {balance > 0
+                              ? <MoneyDisplay amount={balance} prefix="+" />
+                              : balance < 0
+                                ? <MoneyDisplay amount={Math.abs(balance)} prefix="-" />
+                                : '0원'}
+                          </p>
+                        )}
                       </div>
                     </div>
                     {prevOwnerPaid > 0 && (
@@ -2450,10 +2487,11 @@ export default function TenantClient({
               {showPayForm && lease.status === 'RESERVED' && (
                 <div className="flex-1 overflow-y-auto p-6">
                   <PaymentEntryForm
+                    depositPaidTotal={paySettlement?.reservationPaid?.deposit ?? 0}
                     room={{
                       leaseTermId: lease.id,
                       tenantId: tenant.id,
-                      expected: lease.rentAmount,
+                      expected,
                       balance: 0,
                       depositAmount: lease.depositAmount,
                       cleaningFee: lease.cleaningFee,

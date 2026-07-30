@@ -39,16 +39,18 @@ const SUSPICIOUS_MULTIPLIER = 5
 
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
-export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
+export function PaymentEntryForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
   room: Room
   targetMonth: string
+  /** lease 전체 보증금 실수납 합(조회월 무관) — 예약금 폼의 잔여 프리필·기수납 안내용. */
+  depositPaidTotal?: number
   /** 저장 성공 후 호출 — 부모가 settlement/records 재조회. */
   onSaved?: () => void
   onCancel?: () => void
 }) {
   // 예약(RESERVED) 단계는 예약금 모드(보증금 대체·이용료 선납·안 받음) 전용 폼으로 분기.
   if (room.status === 'RESERVED') {
-    return <ReservationDepositForm room={room} onSaved={onSaved} onCancel={onCancel} />
+    return <ReservationDepositForm room={room} targetMonth={targetMonth} depositPaidTotal={depositPaidTotal ?? 0} onSaved={onSaved} onCancel={onCancel} />
   }
   return <PaymentEntryFormInner room={room} targetMonth={targetMonth} onSaved={onSaved} onCancel={onCancel} />
 }
@@ -346,8 +348,13 @@ const RESV_MODE_LABEL: Record<ResvMode, string> = {
   none:    '안 받음',
 }
 
-function ReservationDepositForm({ room, onSaved, onCancel }: {
+// 'YYYY-MM-DD' → '8/17' (토스트 수납일 표기)
+const payDateLabel = (ymd: string) => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`
+
+function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
   room: Room
+  targetMonth: string
+  depositPaidTotal: number
   onSaved?: () => void
   onCancel?: () => void
 }) {
@@ -355,9 +362,12 @@ function ReservationDepositForm({ room, onSaved, onCancel }: {
   const initial = (['deposit', 'prepaid', 'none'] as const).includes(room.reservationDepositMode as ResvMode)
     ? (room.reservationDepositMode as ResvMode) : 'deposit'
   const [mode, setMode] = useState<ResvMode>(initial)
-  const defaultAmount = (m: ResvMode) => m === 'prepaid' ? (room.expected || 0) : m === 'deposit' ? (room.depositAmount || 0) : 0
+  // 보증금 대체 프리필은 '남은 금액' — 전액 프리필이 기수납분을 못 보고 중복 수납을 유발했다(신고 50a2a69b).
+  const depositRemain = Math.max(0, (room.depositAmount || 0) - depositPaidTotal)
+  const defaultAmount = (m: ResvMode) => m === 'prepaid' ? (room.expected || 0) : m === 'deposit' ? depositRemain : 0
   const [amount, setAmount] = useState<number>(defaultAmount(initial))
-  const [payDateVal, setPayDateVal] = useState<string>(room.moveInDate ?? kstYmdStr())
+  // 수납일 정본은 '받은 날'(오늘) — 입주 희망일 프리필은 조회월 밖으로 기록을 밀어 0원으로 보이게 했다.
+  const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false)
   const [memo, setMemo] = useState<string>('')
@@ -383,10 +393,15 @@ function ReservationDepositForm({ room, onSaved, onCancel }: {
           cashReceiptIssued,
         })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        pushToast('success',
-          mode === 'none' ? '예약금 없이 예약으로 저장했습니다'
-          : mode === 'prepaid' ? '이용료 선납으로 수납했습니다'
-          : '보증금 대체로 수납했습니다')
+        if (mode === 'none') {
+          pushToast('success', '예약금 없이 예약으로 저장했습니다')
+        } else {
+          // 금액·수납일 항상 명시 — '반응 없음'으로 오인한 재시도가 중복 수납을 만들었다(신고 50a2a69b).
+          pushToast('success', `예약금 ${fmtWon(amount)} 수납 기록됨 · 수납일 ${payDateLabel(payDateVal)}`)
+          if (payDateVal.slice(0, 7) !== targetMonth) {
+            pushToast('info', `지금 보는 ${Number(targetMonth.slice(5, 7))}월 내역에는 표시되지 않습니다`)
+          }
+        }
         onSaved?.()
       } catch (err) {
         const msg = (err as Error).message ?? '저장 실패'
@@ -432,6 +447,11 @@ function ReservationDepositForm({ room, onSaved, onCancel }: {
               <MoneyInput value={amount} onChange={setAmount} placeholder="0원" />
             </div>
           </div>
+          {mode === 'deposit' && depositPaidTotal > 0 && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+              이미 받은 {fmtWon(depositPaidTotal)} / 계약 보증금 {fmtWon(room.depositAmount)}
+            </p>
+          )}
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
             <select value={payMethod} onChange={e => setPayMethod(e.target.value)}

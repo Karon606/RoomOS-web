@@ -4,11 +4,21 @@
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { InfoHint } from '@/components/ui/InfoHint'
 
-type Settlement = { totalPaid: number; balance: number; carryOver: number }
+type Settlement = {
+  totalPaid: number; balance: number; carryOver: number
+  // 예약(RESERVED) 표시 정본(신고 50a2a69b) — 실수납은 조회월 무관 reservationPaid, 잔액 대신 '입주 시 납부 예정'.
+  status?: string | null
+  expected?: number
+  reservationPaid?: { deposit: number; prepaid: number } | null
+}
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 
 export function PaymentSummaryCards({ settlement, month }: { settlement: Settlement; month?: string }) {
+  // 예약 단계는 청구·잔액이 0으로 잠겨 있어(미납 집계 제외 정본) 실수납·입주 시 낼 금액을 따로 보여준다.
+  const resv = settlement.status === 'RESERVED' ? (settlement.reservationPaid ?? null) : null
+  const resvPaid = resv ? resv.deposit + resv.prepaid : 0
+  const resvDue = resv ? Math.max(0, (settlement.expected ?? 0) - resv.prepaid) : 0
   return (
     <div className="space-y-2">
       {/* 카드 라벨은 간결하게, 용어 설명은 (i)로 이관(운영자 지시 2026-07-13) */}
@@ -27,13 +37,19 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={settlement.totalPaid} /></p>
+          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={resv ? resvPaid : settlement.totalPaid} /></p>
+          {resv && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">예약금 포함</p>}
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-          <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
-            {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `−${fmtWon(Math.abs(settlement.balance))}` : '0원'}
-          </p>
+          <p className="text-xs text-[var(--warm-muted)] leading-tight">{resv ? '입주 시 납부 예정' : '잔액'}</p>
+          {resv ? (
+            // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
+            <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+          ) : (
+            <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
+              {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `−${fmtWon(Math.abs(settlement.balance))}` : '0원'}
+            </p>
+          )}
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)]">이월액</p>
