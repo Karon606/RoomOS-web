@@ -78,6 +78,10 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
   const days = lease.moveInDate && lease.expectedMoveOut
     ? stayDaysOf(toYmd(lease.moveInDate), toYmd(lease.expectedMoveOut))
     : null
+  // 달력 기준 1개월 판정용 날짜쌍 — 31일 달 걸침도 단기 요금이 계산되게(신고 f9803357)
+  const leaseDates = lease.moveInDate && lease.expectedMoveOut
+    ? { moveInYmd: toYmd(lease.moveInDate), moveOutYmd: toYmd(lease.expectedMoveOut) }
+    : undefined
 
   // 방 컨디션 그룹 — 타입·창문·가격이 같으면 한 줄(영업장별로 방마다 가격이 달라도 전부 드러남)
   const groups = (() => {
@@ -107,7 +111,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
           <span className="text-[var(--warm-muted)]"> ~ </span>
           퇴실 <span className="font-semibold">{fmtMD(lease.expectedMoveOut)}</span>
           {days != null && data && (() => {
-            const s = calcShortStay(data.shortStay, 100, days)
+            const s = calcShortStay(data.shortStay, 100, days, leaseDates)
             return (
               <span className="text-xs text-[var(--warm-mid)]"> · {days}일{s ? ` (${s.units}${data.shortStay.unitDays === 7 ? '주' : `×${data.shortStay.unitDays}일`} 계약)` : ''}</span>
             )
@@ -131,7 +135,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
             </p>
             <ul className="space-y-1">
               {groups.map(g => {
-                const q = calcShortStay(data.shortStay, g.rent, days)
+                const q = calcShortStay(data.shortStay, g.rent, days, leaseDates)
                 return (
                   <li key={`${g.label}|${g.rent}`} className="flex items-baseline justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate text-[var(--warm-mid)]">

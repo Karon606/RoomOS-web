@@ -70,14 +70,34 @@ export function stayDaysOf(moveInYmd: string, moveOutYmd: string): number | null
 }
 
 /**
+ * 달력 기준 1개월 이내 판정 — 퇴실일이 (입주일 + 1개월[말일 클램프] − 1일) 이내면 참.
+ * 31일 달을 걸친 정확히 1달력월(예: 8/21~9/20, 7/1~7/31)은 일수가 31이어도 "한 달"이다
+ * (신고 f9803357, 운영자 정의 2026-07-30). 회차식(lib/prorate addMonthsClamped)과 동일 규칙 —
+ * 1/31 입주는 다음 회차가 2/28(클램프)이라 한 달 상한이 2/27이 된다.
+ */
+export function isWithinOneCalendarMonth(moveInYmd: string, moveOutYmd: string): boolean {
+  const a = dayOf(moveInYmd), b = dayOf(moveOutYmd)
+  if (a == null || b == null || b < a) return false
+  const [y, m, d] = moveInYmd.split('-').map(Number)
+  const lastOfNextMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()   // 다음 달 말일
+  const nextCycleStart = Date.UTC(y, m, Math.min(d, lastOfNextMonth)) / 86400000
+  return b <= nextCycleStart - 1
+}
+
+/**
  * 단기 정책 요금. 정책 비활성이거나 거주일수가 적용 상한을 넘으면 null —
  * 그 경우 호출부는 기존 월 단위 견적(calcStayQuote)을 쓴다.
  */
-export function calcShortStay(policy: ShortStayPolicy, monthlyRent: number, stayDays: number): ShortStayQuote | null {
+export function calcShortStay(
+  policy: ShortStayPolicy, monthlyRent: number, stayDays: number,
+  // 날짜쌍이 있으면 달력 기준 1개월 이내를 일수 상한과 함께 인정 — 31일 달 걸침이 "한 달 초과"로 거부되지 않게(신고 f9803357).
+  dates?: { moveInYmd: string; moveOutYmd: string },
+): ShortStayQuote | null {
   if (!policy.enabled) return null
   if (!monthlyRent || monthlyRent <= 0) return null
   if (!Number.isFinite(stayDays) || stayDays < 1) return null
-  if (stayDays > policy.thresholdDays) return null
+  const withinCalendarMonth = dates ? isWithinOneCalendarMonth(dates.moveInYmd, dates.moveOutYmd) : false
+  if (stayDays > policy.thresholdDays && !withinCalendarMonth) return null
 
   const rawUnits = Math.ceil(stayDays / policy.unitDays)
   const units = Math.max(policy.minUnits, rawUnits)

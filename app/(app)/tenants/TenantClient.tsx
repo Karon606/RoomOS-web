@@ -3,7 +3,8 @@
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
-import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
+import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
+import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
@@ -273,24 +274,13 @@ function fmtDueDay(dueDay: string | null | undefined): string {
   return `매월 ${dueDay}일`
 }
 
+// 거주기간 표시 — lib/stayPeriod 정본(달력 기준 만 개월, 신고 f9803357) 위임
 function calcStayPeriod(
   moveInDate: string | Date | null | undefined,
   endDate?: string | Date | null,
   today?: string,            // 'YYYY-MM-DD'(서버 KST 기준) — SSR/클라 동일값으로 하이드레이션 불일치(#418) 방지
 ): string {
-  if (!moveInDate) return '—'
-  const start  = new Date(moveInDate)
-  const end    = endDate ? new Date(endDate) : (today ? new Date(today) : new Date())
-  const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
-  if (months < 1) {
-    const days = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000))
-    return `${days}일`
-  }
-  const years = Math.floor(months / 12)
-  const rem   = months % 12
-  if (years > 0 && rem > 0) return `${years}년 ${rem}개월`
-  if (years > 0) return `${years}년`
-  return `${months}개월`
+  return fmtStayPeriod(moveInDate, endDate, today)
 }
 
 function fmtDDay(date: string | Date | null | undefined, today?: string): string | null {
@@ -583,7 +573,7 @@ export default function TenantClient({
     if (!l?.moveInDate) return null
     const start = new Date(l.moveInDate)
     const end   = l.moveOutDate ? new Date(l.moveOutDate) : new Date(today)
-    return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
+    return calendarMonthsBetween(start, end)
   }
   const matchStayBucket = (m: number): boolean =>
     stayFilter === 'lt1'   ? m < 1 :
@@ -3379,7 +3369,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
             const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
             const short = shortQuoteData && baseRent > 0 && days != null
-              ? calcShortStay(shortQuoteData.shortStay, baseRent, days) : null
+              ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInDateVal, moveOutYmd: shortOut }) : null
             return (
               <div className="pl-6 pt-1 space-y-2">
                 <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
@@ -3415,8 +3405,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     </button>
                     <span className="ml-2 text-[0.65625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
                   </div>
-                ) : days != null && shortQuoteData && days > shortQuoteData.shortStay.thresholdDays ? (
-                  <p className="text-[0.65625rem] text-[var(--warning-fg)]">단기 정책 범위({shortQuoteData.shortStay.thresholdDays}일)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
+                ) : days != null && shortQuoteData && days > shortQuoteData.shortStay.thresholdDays
+                    && !(moveInDateVal && shortOut && isWithinOneCalendarMonth(moveInDateVal, shortOut)) ? (
+                  <p className="text-[0.65625rem] text-[var(--warning-fg)]">단기 범위(입실일부터 한 달)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
                 ) : (
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">입실일과 퇴실일을 고르면 요금이 자동 계산됩니다</p>
                 )}
@@ -3619,7 +3610,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
         const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
         const short = shortQuoteData && baseRent > 0 && days != null
-          ? calcShortStay(shortQuoteData.shortStay, baseRent, days) : null
+          ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInDateVal, moveOutYmd: shortOut }) : null
         if (!short || days == null) return null
         // 폼 금액을 건드렸으면 그 값이 목표, 아니면 정책 재계산가 — 서버 판정과 같은 규칙
         const target = (rentAmount ?? 0) !== lease.rentAmount ? (rentAmount ?? 0) : short.baseAmount

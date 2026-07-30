@@ -37,7 +37,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
   const rent = Number(rentStr.replace(/[^0-9]/g, '')) || 0
   // 단기 정책 우선 — 적용 범위(1달 이내 등) 안이면 주 단위 정책 요금, 밖이면 기존 월 단위+일할 견적
   const stayDays = inDate && outDate ? stayDaysOf(inDate, outDate) : null
-  const short = data && rent > 0 && stayDays != null ? calcShortStay(data.shortStay, rent, stayDays) : null
+  const short = data && rent > 0 && stayDays != null && inDate && outDate ? calcShortStay(data.shortStay, rent, stayDays, { moveInYmd: inDate, moveOutYmd: outDate }) : null
   const quote = !short && rent > 0 && inDate && outDate ? calcStayQuote(rent, inDate, outDate) : null
 
   return (

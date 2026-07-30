@@ -14,7 +14,7 @@ import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/r
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr } from '@/lib/kstDate'
-import { parseShortStayPolicy, calcShortStay, stayDaysOf, type ShortStayPolicy } from '@/lib/shortStay'
+import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { parseRequestCategories } from '@/lib/requestCategories'
@@ -543,7 +543,9 @@ export async function updateTenant(formData: FormData): Promise<
     const policy = parseShortStayPolicy(prop?.shortStayPolicy)
     const days = stayDaysOf(shortMoveInYmd, newMoveOutIso)
     // quote 가 null 이면 정책 밖(30일 초과 등) — 동기화는 건너뛰고 날짜만 저장한다.
-    const quote = policy.enabled && room && days != null ? calcShortStay(policy, room.baseRent, days) : null
+    const quote = policy.enabled && room && days != null
+      ? calcShortStay(policy, room.baseRent, days, { moveInYmd: shortMoveInYmd, moveOutYmd: newMoveOutIso })
+      : null
     if (quote) {
       const manual = rentAmount !== currentLease.rentAmount
       const targetRent = manual ? rentAmount : quote.baseAmount
@@ -582,9 +584,11 @@ export async function updateTenant(formData: FormData): Promise<
         }
         shortNotice = notices.length > 0 ? notices.join(' ') : null
       }
-    } else if (policy.enabled && days != null && days > policy.thresholdDays && shortBasisChanged) {
+    } else if (policy.enabled && days != null && days > policy.thresholdDays && shortBasisChanged
+        && !(shortMoveInYmd && newMoveOutIso && isWithinOneCalendarMonth(shortMoveInYmd, newMoveOutIso))) {
       // 정책 범위 밖 — 날짜는 저장하되 요금은 손대지 않고 월 계약 전환을 안내한다.
-      shortNotice = `체류 ${days}일은 단기 정책 범위(${policy.thresholdDays}일)를 넘어 요금이 자동 계산되지 않습니다. 월 계약으로 전환해 주세요.`
+      // 달력 기준 1개월 이내(31일 달 걸침)는 정책 안이므로 제외 — 일수 숫자 언급도 제거(웹디자이너 오더 2026-07-30).
+      shortNotice = '체류 기간이 단기 범위(입실일부터 한 달)를 넘어 요금이 자동 계산되지 않습니다. 월 계약으로 전환해 주세요.'
     }
   }
 
@@ -3014,8 +3018,8 @@ async function loadExtensionQuote(propertyId: string, leaseTermId: string, newOu
   if (!policy.enabled) return fail('이 영업장은 단기 입실 정책이 꺼져 있습니다. 설정에서 먼저 켜 주세요.')
   const stayDays = stayDaysOf(moveInYmd, newOutYmd)
   if (stayDays == null) return fail('날짜가 올바르지 않습니다.')
-  const quote = calcShortStay(policy, lease.room.baseRent, stayDays)
-  if (!quote) return fail(`단기 정책 범위(${policy.thresholdDays}일)를 넘습니다. 월 계약으로 전환해 주세요.`, true)
+  const quote = calcShortStay(policy, lease.room.baseRent, stayDays, { moveInYmd, moveOutYmd: newOutYmd })
+  if (!quote) return fail('단기 범위(입실일부터 한 달)를 넘습니다. 월 계약으로 전환해 주세요.', true)
 
   return { ok: true as const, lease, policy, quote, moveInYmd, currentOutYmd, stayDays }
 }

@@ -3,6 +3,7 @@
 
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Section, Grid, Item } from './Section'
+import { fmtStayPeriod } from '@/lib/stayPeriod'
 
 type Lease = {
   status: string
@@ -45,21 +46,8 @@ const fmtDueDay = (dueDay: string | null) => {
   if (dueDay.includes('말')) return '매월 말일'
   return `매월 ${dueDay}일`
 }
-const calcStayPeriod = (moveIn: Date | string | null, end?: Date | string | null) => {
-  if (!moveIn) return '—'
-  const start = new Date(moveIn)
-  const finish = end ? new Date(end) : new Date()
-  const months = (finish.getFullYear() - start.getFullYear()) * 12 + (finish.getMonth() - start.getMonth())
-  if (months < 1) {
-    const days = Math.max(0, Math.floor((finish.getTime() - start.getTime()) / 86400000))
-    return `${days}일`
-  }
-  const years = Math.floor(months / 12)
-  const rem = months % 12
-  if (years > 0 && rem > 0) return `${years}년 ${rem}개월`
-  if (years > 0) return `${years}년`
-  return `${months}개월`
-}
+// 거주기간 표시 — lib/stayPeriod 정본(달력 기준 만 개월, 신고 f9803357) 위임
+const calcStayPeriod = (moveIn: Date | string | null, end?: Date | string | null) => fmtStayPeriod(moveIn, end)
 
 export function TenantContractInfo({ lease }: { lease: Lease }) {
   const isPending = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)

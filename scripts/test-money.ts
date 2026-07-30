@@ -13,7 +13,7 @@ import {
   calcStayQuote,
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
-import { calcShortStay, parseShortStayPolicy, stayDaysOf, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
+import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { billForLeaseMonth } from '../lib/billing'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
@@ -167,8 +167,22 @@ const RENT = 300000
   // 3일 요청 → 최소 1주
   const d3 = calcShortStay(P, RENT, 3)
   eq('단기: 3일 → 최소 1주', [d3?.contractDays, d3?.billedDays, d3?.roundedUp], [7, 10.5, true])
-  // 상한 초과(31일) → null = 기존 월 견적으로
-  eq('단기: 31일은 정책 밖 → null', calcShortStay(P, RENT, 31), null)
+  // 달력 기준 개정(운영자 승인 2026-07-30, 신고 f9803357) — 31일 달을 걸친 정확히 1달력월은 "한 달"로 인정.
+  // 날짜쌍 없이 일수만 넘기는 호출은 종전대로 30일 상한(합성 일수 프리뷰 등).
+  eq('단기: 31일 + 날짜 없음 → null (일수 상한 유지)', calcShortStay(P, RENT, 31), null)
+  const m0701 = calcShortStay(P, RENT, 31, { moveInYmd: '2026-07-01', moveOutYmd: '2026-07-31' })
+  eq('단기: 7/1~7/31(31일, 달력 1개월) → 인정·월세 상한', [m0701 != null, m0701?.billedDays, m0701?.total], [true, 30, 320000])
+  const m0821 = calcShortStay(P, RENT, stayDaysOf('2026-08-21', '2026-09-20') ?? 0, { moveInYmd: '2026-08-21', moveOutYmd: '2026-09-20' })
+  eq('단기: 8/21~9/20(31일 걸침, 랑스에듀 케이스) → 인정', m0821 != null, true)
+  eq('단기: 8/21~9/21(1개월+1일) → null', calcShortStay(P, RENT, 32, { moveInYmd: '2026-08-21', moveOutYmd: '2026-09-21' }), null)
+  // 달력 1개월 판정 경계 — 30일 달·2월·말일 클램프(1/31 입주는 다음 회차 2/28이라 상한 2/27)
+  eq('달력월: 2/1~2/28 인정', isWithinOneCalendarMonth('2026-02-01', '2026-02-28'), true)
+  eq('달력월: 4/1~4/30 인정', isWithinOneCalendarMonth('2026-04-01', '2026-04-30'), true)
+  eq('달력월: 4/1~5/1 초과', isWithinOneCalendarMonth('2026-04-01', '2026-05-01'), false)
+  eq('달력월: 1/31~2/27 인정(클램프)', isWithinOneCalendarMonth('2026-01-31', '2026-02-27'), true)
+  eq('달력월: 1/31~2/28 초과', isWithinOneCalendarMonth('2026-01-31', '2026-02-28'), false)
+  eq('달력월: 7/29~8/28 인정', isWithinOneCalendarMonth('2026-07-29', '2026-08-28'), true)
+  eq('달력월: 7/29~8/29 초과', isWithinOneCalendarMonth('2026-07-29', '2026-08-29'), false)
   // 비활성 → null
   eq('단기: 비활성 → null', calcShortStay(SHORT_STAY_DEFAULTS, RENT, 7), null)
   // 날짜 → 일수 (양끝 포함)
