@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { discountedRent } from '@/lib/rentDiscount'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -70,7 +71,7 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
           where: { status: { in: ['ACTIVE', 'RESERVED'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
-          include: { room: { select: { roomNo: true } } },
+          include: { room: { select: { roomNo: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
         },
       },
     }),
@@ -133,8 +134,9 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
     payDateYmd = cycle.start
     warning = 'noRecord'
   } else {
-    // 이번 달인데 아직 기록 없음 — '방금 받은 돈' 발급 흐름의 초기값(현행 유지, 경고 없음)
-    amount = lease?.rentAmount ?? 0
+    // 이번 달인데 아직 기록 없음 — '방금 받은 돈' 발급 흐름의 초기값. 할인 반영 청구액이 정직한 기본값
+    // (원가 직표시 금지 — 크리티컬 신고 50a2a69b 정본 수렴)
+    amount = lease ? discountedRent(lease.discounts ?? [], viewMonth, lease.rentAmount) : 0
     payDateYmd = todayKst
   }
 

@@ -368,7 +368,9 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       select: {
         id: true, status: true, rentAmount: true, isShortTerm: true,
         moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+        checkoutProratedAmount: true, checkoutProratedMonth: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+        room: { select: { scheduledRent: true, rentUpdateDate: true } },
       },
     }),
     prisma.property.findUnique({
@@ -479,7 +481,17 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       // 단기는 입주월 1회 인식 — rentAmount가 체류 전체 사용료라 월 반복 합산 금지(lib/billing 단기 규칙과 동일)
       const shortInMonth = lease.isShortTerm ? monthOfDate(lease.moveInDate) : null
       if (shortInMonth && shortInMonth !== month) continue
-      revenue += discountedRent(lease.discounts, month, lease.rentAmount)
+      // 정본 수렴(크리티컬 신고 50a2a69b 후속) — 퇴실 일할 확정월은 일할액, 예약 인상은 적용월부터
+      // scheduledRent 기준, 그 위에 할인. 원가 직산입 금지(buildLeaseRow 와 동일 규칙).
+      const leaseRoom = lease.room
+      const rentUpdMon = leaseRoom?.rentUpdateDate ? monthOfDate(leaseRoom.rentUpdateDate) : null
+      const revBase = (leaseRoom != null && leaseRoom.scheduledRent != null && leaseRoom.scheduledRent > 0
+          && rentUpdMon != null && month >= rentUpdMon)
+        ? leaseRoom.scheduledRent
+        : lease.rentAmount
+      revenue += (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === month)
+        ? lease.checkoutProratedAmount
+        : discountedRent(lease.discounts, month, revBase)
     }
     // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가
     revenue += await getCheckedOutRecognizedRevenue(prisma, propertyId, month)

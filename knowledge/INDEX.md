@@ -19,6 +19,7 @@
 ## 운영 지식
 - [[decisions]] — 주요 의사결정 로그(왜 그렇게 했나)
 - [[mobile-scroll-viewport]] — 모바일 스크롤·뷰포트 함정(overscroll-contain 은 진짜 스크롤러에만, iOS/Android 키보드·핀치줌 차이, 두 엔진 실기 검증 규칙)
+- [[money-display-feedback]] — 돈 표시·저장 피드백 정본(표시 정본 수렴·원가 직표시 금지, 받은 돈은 조회월 무관 표시, 저장 피드백 3종·수납일 기본값 오늘, 크리티컬 신고 50a2a69b)
 - [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등)
 - [[open-issues]] — 미해결·후속 작업
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)

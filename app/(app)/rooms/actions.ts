@@ -48,6 +48,8 @@ type RoomRow = {
   checkoutProratedMonth?: string | null
   // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
   reservationDepositMode?: string | null
+  // 예약(RESERVED) 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 비예약 행은 null.
+  reservationPaid?: { deposit: number; prepaid: number } | null
   // 청구 조정 이력(단기 연장·감액) — 미취소 스냅샷만 시간순. 월 이용료 보조 줄·배지 표시 전용(계산 비관여).
   billingAdjusts?: BillingAdjustEntry[]
 }
@@ -132,6 +134,22 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       },
     }),
   ])
+  // 예약(RESERVED) lease 실수납 합 — 예약 단계 표시는 조회월 필터를 타지 않는다(신고 50a2a69b:
+  // 예약금이 입주월(8월) 날짜로 저장되면 7월 화면에서 0원으로 보여 재시도 → 중복 수납 유발).
+  const reservedIds = activeLeases.filter(le => le.status === 'RESERVED').map(le => le.id)
+  const reservedPaidRows = reservedIds.length > 0 ? await prisma.paymentRecord.groupBy({
+    by: ['leaseTermId', 'isDeposit'],
+    where: { leaseTermId: { in: reservedIds }, deletedAt: null },
+    _sum: { actualAmount: true },
+  }) : []
+  const reservedPaidMap = new Map<string, { deposit: number; prepaid: number }>()
+  for (const g of reservedPaidRows) {
+    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0 }
+    if (g.isDeposit) cur.deposit += g._sum.actualAmount ?? 0
+    else cur.prepaid += g._sum.actualAmount ?? 0
+    reservedPaidMap.set(g.leaseTermId, cur)
+  }
+
   const acquisitionDate = property?.acquisitionDate ?? null
   // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
@@ -189,15 +207,23 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 호실 행은 정상 노출하되 expected/balance 0, isPaid=true로 미납 카운터에서 빠지게 함.
     // moveInDate · isReservationConfirmed는 유지 → UI에서 '예약 확정 / 입주 예정 D-N' 라벨 분기 표시.
     if (lease.status === 'RESERVED') {
+      // 표시 정본 수렴(신고 50a2a69b) — 청구 예정액은 입주월 기준 할인·예약 인상 반영(원가 직표시 금지).
+      // balance·totalPaid 0 + isPaid true 는 유지(예약은 미납·수금 집계 제외 정본) — 실수납은 reservationPaid 로 노출.
+      const moveInMonth = moveInDate ? moveInDate.slice(0, 7) : targetMonth
+      const reservedBase = (room.scheduledRent != null && room.scheduledRent > 0 && rentUpdMonth && moveInMonth >= rentUpdMonth)
+        ? room.scheduledRent
+        : lease.rentAmount
+      const reservedExpected = discountedRent(leaseDiscounts, moveInMonth, reservedBase)
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
-        status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
+        status: 'RESERVED', expected: reservedExpected, dueDay: lease.dueDay,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
+        reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0 },
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
         prevTenantName, prevContact,
@@ -1099,6 +1125,16 @@ export async function saveReservationDeposit(data: {
       : `${kst.year}-${String(kst.month).padStart(2, '0')}`
 
     if (data.mode === 'deposit') {
+      // 중복 수납 가드 — 이미 계약 보증금만큼 받았으면 추가 저장 차단(반응 없음으로 오인한 재시도가
+      // 5만원 2건 중복을 만든 사고, 신고 50a2a69b). 초과 수납은 기존 내역 확인으로 유도.
+      const dupCheck = await prisma.paymentRecord.aggregate({
+        where: { leaseTermId: data.leaseTermId, isDeposit: true, deletedAt: null },
+        _sum: { actualAmount: true },
+      })
+      const alreadyPaid = dupCheck._sum.actualAmount ?? 0
+      if (lease.depositAmount > 0 && alreadyPaid >= lease.depositAmount) {
+        return { ok: false, error: `이미 계약 보증금 ${lease.depositAmount.toLocaleString()}원만큼 수납되어 있습니다 (기수납 ${alreadyPaid.toLocaleString()}원). 수납 내역을 확인해 주세요.` }
+      }
       await saveDepositPayment({
         leaseTermId:   data.leaseTermId,
         tenantId:      data.tenantId,
@@ -1738,6 +1774,26 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     select: { reservationDepositMode: true },
   })
 
+  // RESERVED fallback 도 표시 정본 수렴(신고 50a2a69b) — 입주월 기준 할인 반영 + 조회월 무관 실수납 합.
+  let fbExpected = 0
+  let fbReservationPaid: { deposit: number; prepaid: number } | null = null
+  if (lease.status === 'RESERVED') {
+    const fbMoveInMonth = lease.moveInDate
+      ? new Date(lease.moveInDate).toISOString().slice(0, 7)
+      : targetMonth
+    fbExpected = discountedRent(lease.discounts ?? [], fbMoveInMonth, lease.rentAmount)
+    const sums = await prisma.paymentRecord.groupBy({
+      by: ['isDeposit'],
+      where: { leaseTermId: lease.id, deletedAt: null },
+      _sum: { actualAmount: true },
+    })
+    fbReservationPaid = { deposit: 0, prepaid: 0 }
+    for (const g of sums) {
+      if (g.isDeposit) fbReservationPaid.deposit += g._sum.actualAmount ?? 0
+      else fbReservationPaid.prepaid += g._sum.actualAmount ?? 0
+    }
+  }
+
   return {
     roomId: lease.roomId ?? '',
     roomNo: lease.room?.roomNo ?? '',
@@ -1751,7 +1807,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     tenantName: lease.tenant.name,
     contact: lease.tenant.contacts[0]?.contactValue ?? null,
     status: lease.status,
-    expected: 0,
+    expected: fbExpected,
     dueDay: lease.dueDay,
     currentPaid: 0,
     carryOver: 0,
@@ -1781,6 +1837,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     reservationDepositMode: resolveReservationDepositMode(
       lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
     ),
+    reservationPaid: fbReservationPaid,
     billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
   }
 }
@@ -1914,7 +1971,12 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
     }),
   ])
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
-  return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null }
+  // 보증금 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 현황 줄·수납 모달 표시용.
+  const depositAgg = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId, isDeposit: true, deletedAt: null },
+    _sum: { actualAmount: true },
+  })
+  return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0 }
 }
 
 // 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
@@ -1968,10 +2030,10 @@ async function rewriteLockedExpectedForDiscountChange(
     },
   })
   if (!lease || lease.isShortTerm) return
-  const k = kstYmd()
-  const nowMon = `${k.year}-${String(k.month).padStart(2, '0')}`
+  // 월 하한 제거(크리티컬 신고 50a2a69b 후속) — 입주월이 이미 지난 예약 선납 락도 되쓰기 대상.
+  // 안전장치는 아래 '기준값 그대로 락인된 record만' 조건이 담당(협의 락인·일할 월·단기는 여전히 불변).
   const recs = await prisma.paymentRecord.findMany({
-    where: { leaseTermId, isDeposit: false, isPrevOwner: false, targetMonth: { gte: nowMon } },
+    where: { leaseTermId, isDeposit: false, isPrevOwner: false, deletedAt: null },
     select: { id: true, targetMonth: true, expectedAmount: true },
   })
   const months = [...new Set(recs.map(r => r.targetMonth))]

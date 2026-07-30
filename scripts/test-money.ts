@@ -141,6 +141,14 @@ const RENT = 300000
   eq('할인: 기간 내 적용', discountedRent([{ discountType: 'amount', value: 50000, scope: 'temporary', startMonth: '2026-06', endMonth: '2026-08' }], '2026-07', base), 250000)
   eq('할인: 기간 밖 미적용', discountedRent([{ discountType: 'amount', value: 50000, scope: 'temporary', startMonth: '2026-06', endMonth: '2026-08' }], '2026-09', base), base)
   eq('할인: 시작만 있으면 무기한', discountedRent([{ discountType: 'amount', value: 50000, scope: 'temporary', startMonth: '2026-06', endMonth: null }], '2027-01', base), 250000)
+  // 크리티컬 신고 50a2a69b 불변식 — 예약 표시액은 입주월 기준 할인 반영(Jihan 케이스: 44만·2만 할인·입주 8월)
+  const jihanDc = [{ discountType: 'amount', value: 20000, scope: 'temporary', startMonth: '2026-08', endMonth: '2026-10' }]
+  eq('예약 표시: 입주월(8월) 할인 반영 42만', discountedRent(jihanDc, '2026-08', 440000), 420000)
+  eq('예약 표시: 할인 종료 후(11월) 정상가 복귀', discountedRent(jihanDc, '2026-11', 440000), 440000)
+  // 락 우선순위 문서화 — 락인된 달은 할인 fallback 을 이긴다(그래서 할인 변경 시 락 되쓰기가 필요)
+  eq('청구: 락인은 할인 fallback 보다 우선', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', 440000), 440000)
+  eq('청구: 락 되쓰기 후 할인가 반영', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', 420000), 420000)
+  eq('청구: 락 없으면 할인 fallback', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', null), 420000)
   eq('할인: 합산 캡(음수 청구 방지)', discountedRent([
     { discountType: 'amount', value: 200000, scope: 'permanent' },
     { discountType: 'amount', value: 200000, scope: 'permanent' },
