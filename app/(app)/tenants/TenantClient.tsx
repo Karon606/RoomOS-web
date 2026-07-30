@@ -2046,7 +2046,7 @@ export default function TenantClient({
                             : regularPaid} />
                         </p>
                         {lease.status === 'RESERVED' && paySettlement?.reservationPaid && (paySettlement.reservationPaid.deposit > 0 || paySettlement.reservationPaid.prepaid > 0) && (
-                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 포함</p>
+                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 {fmtWon(paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid)} 포함</p>
                         )}
                         {adjNet !== 0 && (
                           <p className="text-[0.65625rem] mt-0.5 font-medium"
@@ -2059,7 +2059,12 @@ export default function TenantClient({
                         <p className="text-xs text-[var(--warm-muted)] leading-tight">{resvPaid ? '입주 시 납부 예정' : '잔액'}</p>
                         {resvPaid ? (
                           // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
-                          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+                          <>
+                            <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+                            {paySettlement?.moveInDate && targetMonth < paySettlement.moveInDate.slice(0, 7) && (
+                              <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">이번 달 청구 없음 · {Number(paySettlement.moveInDate.slice(5, 7))}월 입주 예정</p>
+                            )}
+                          </>
                         ) : balance === null ? (
                           <p className="text-sm font-bold mt-0.5 text-[var(--warm-muted)]">—</p>
                         ) : (

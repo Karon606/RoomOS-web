@@ -110,10 +110,14 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>
           </p>
         ) : settlement.depositAmount > 0 ? (
-          <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-            <span className="text-[var(--coral)] font-semibold">보증금 대체</span>
+          // deposit 카멜 틴트 승격 + 완납 배지 — 보증금이 들어왔다는 사실이 한눈에(운영자 지적 2026-07-30)
+          <p className="text-xs bg-[var(--deposit-bg)] border border-[var(--deposit-ring)] rounded-lg px-3 py-2">
+            <span className="text-[var(--deposit-fg)] font-semibold">보증금 대체</span>
             <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositPaidTotal)}</span>
             <span className="text-[var(--warm-muted)]"> / 계약 보증금 {fmtWon(settlement.depositAmount)}</span>
+            {depositPaidTotal >= settlement.depositAmount && depositPaidTotal > 0 && (
+              <span className="ml-1.5 inline-block text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] font-medium">수납 완료</span>
+            )}
           </p>
         ) : (
           <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">
@@ -122,6 +126,10 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         )
       )}
 
+      {/* 입주월 전 조회 — 예정액이 이번 달 청구로 오독되지 않게 맥락 명시(운영자 지적 2026-07-30) */}
+      {settlement.status === 'RESERVED' && settlement.moveInDate && month < settlement.moveInDate.slice(0, 7) && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)]">이번 달 청구 없음 · {Number(settlement.moveInDate.slice(5, 7))}월 입주 예정</p>
+      )}
       {/* 입주 시 낼 금액 — 할인 반영 이용료에서 선납분을 뺀 값(예약 단계 운영자 질문 1순위). */}
       {settlement.status === 'RESERVED' && settlement.expected > 0 && (
         <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">

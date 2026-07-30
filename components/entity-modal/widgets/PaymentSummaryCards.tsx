@@ -10,6 +10,7 @@ type Settlement = {
   status?: string | null
   expected?: number
   reservationPaid?: { deposit: number; prepaid: number } | null
+  moveInDate?: string | null
 }
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
@@ -19,6 +20,9 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
   const resv = settlement.status === 'RESERVED' ? (settlement.reservationPaid ?? null) : null
   const resvPaid = resv ? resv.deposit + resv.prepaid : 0
   const resvDue = resv ? Math.max(0, (settlement.expected ?? 0) - resv.prepaid) : 0
+  // 입주월 전 조회 — '이번 달 청구 없음' 맥락(예정액이 이번 달 청구로 오독되지 않게, 운영자 지적 2026-07-30)
+  const moveInMonth = settlement.moveInDate ? settlement.moveInDate.slice(0, 7) : null
+  const beforeMoveIn = !!(resv && month && moveInMonth && month < moveInMonth)
   return (
     <div className="space-y-2">
       {/* 카드 라벨은 간결하게, 용어 설명은 (i)로 이관(운영자 지시 2026-07-13) */}
@@ -38,13 +42,18 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
           <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={resv ? resvPaid : settlement.totalPaid} /></p>
-          {resv && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">예약금 포함</p>}
+          {resv && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">예약금 {fmtWon(resvPaid)} 포함</p>}
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)] leading-tight">{resv ? '입주 시 납부 예정' : '잔액'}</p>
           {resv ? (
             // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
-            <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+            <>
+              <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+              {beforeMoveIn && moveInMonth && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">이번 달 청구 없음 · {Number(moveInMonth.slice(5))}월 입주 예정</p>
+              )}
+            </>
           ) : (
             <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
               {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `−${fmtWon(Math.abs(settlement.balance))}` : '0원'}
