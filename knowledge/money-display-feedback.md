@@ -8,7 +8,9 @@
 - 청구·잔액·예정액을 화면에 내보내는 모든 경로는 정본 계산(lib/billing billForLeaseMonth, lib/rentDiscount discountedRent)을 탄다. **원가(lease.rentAmount) 직표시 금지.** 클라이언트 재계산 금지 — 서버 settlement 값을 소비한다.
 - 예약(RESERVED) 단계도 예외가 아니다: 청구 예정액 = 입주월 기준 할인·예약 인상 반영, 실수납은 `RoomRow.reservationPaid`(조회월 무관 lease 전체 합)로 노출. 단 balance·totalPaid 0 + isPaid true 는 유지(예약은 미납·수금 집계에서 제외하는 정본 — rooms 스트립·배치 문자 회귀 방지).
 - **받은 돈은 사실이고, 사실은 조회월과 무관하게 보여야 한다**(운영자 정의). 보증금·예약 선납 합계는 월 필터를 타지 않는다(getPaymentsByLease.depositPaidTotal).
-- 감지망: `scripts/verify-money-consistency.mjs` — 원가 직표시 소스 패턴·중복 수납·할인 미반영 락을 상시 탐지. test-money 에 락 vs 할인 우선순위·예약 표시 불변식 케이스 고정.
+- RESERVED 행의 expected 는 **표시용**이다 — 화면 집계(수납 스트립 청구·수납 합산)에 섞으면 잔액 0 특성 때문에 청구·수납이 함께 부풀려진다(신고 78ea0c3d: 호실 배정 순간 +890,000 유령 수납). 스트립 정본: 청구·수납은 RESERVED 제외, 만실 시 참고치엔 예약 방 baseRent 포함. 예약 확정자의 그 달 전액은 홈 예상 매출에만 가산(2026-06-20 결정).
+- 홈 예상 수입 = 수납 관리 청구 합 + 예약 확정 전액 + 퇴실 완료자 귀속 인식분 + 기타수익 — 두 화면 차이는 설계이며 양쪽 도움말이 교차 설명한다(7월 실측: 16,739,000 = 16,089,000 + 470,000 + 110,000 + 70,000).
+- 감지망: `scripts/verify-money-consistency.mjs` — 원가 직표시 소스 패턴·중복 수납·할인 미반영 락·스트립 RESERVED 혼입을 상시 탐지. test-money 에 락 vs 할인 우선순위·예약 표시 불변식 케이스 고정.
 
 ## 2. 돈 저장 피드백 정본
 

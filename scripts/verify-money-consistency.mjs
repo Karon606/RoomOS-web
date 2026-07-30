@@ -20,6 +20,14 @@ const entryForm = readFileSync('components/entity-modal/widgets/PaymentEntryForm
 if (/payDate[^\n]*moveInDate/.test(entryForm)) {
   violations.push('[소스] PaymentEntryForm 수납일 기본값이 입주일 파생으로 회귀 의심 — 수납일 정본은 오늘(받은 날)')
 }
+// 수납 스트립 RESERVED 혼입 가드(신고 78ea0c3d) — 예약 행 expected는 표시용이라 스트립 청구·수납 합산에서 제외돼야 한다.
+const roomsClient = readFileSync('app/(app)/rooms/RoomsClient.tsx', 'utf8')
+if (!roomsClient.includes("occupied.filter(r => r.status !== 'RESERVED')")) {
+  violations.push('[소스] RoomsClient 스트립의 RESERVED 제외 필터(billableRows)가 사라짐 — 예약 전액이 청구·수납에 혼입되는 회귀')
+}
+if (/expectedSum\s*=\s*occupied\.reduce/.test(roomsClient)) {
+  violations.push('[소스] RoomsClient expectedSum 이 occupied 직접 합산으로 회귀 — RESERVED 행 혼입(청구·수납 부풀림)')
+}
 
 // ── 데이터 대조 ────────────────────────────────────────────
 // 간이 할인 계산 — lib/rentDiscount 규칙(amount/percent, permanent/temporary 월 범위, 0 하한)과 동일

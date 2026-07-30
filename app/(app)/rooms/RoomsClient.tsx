@@ -614,11 +614,16 @@ export default function RoomsClient({
 
   // ── 상단 수납 진행 스트립 (표시 전용 — 서버가 계산한 행 값을 그대로 합산, §4 재계산 없음) ──
   // 예상 = 이 화면 행들의 그 달 청구액 합(Σ expected) → 공실 제외·무청구 퇴실월 0원·퇴실 일할이 자동 반영.
+  //   단 RESERVED 행 제외 — 예약 확정자의 그 달 전액은 홈 예상 매출에만 가산(아래 InfoHint 정본).
+  //   예약 행 expected는 표시용 청구 예정액이고 잔액 0이라, 합산하면 청구·수납이 함께 부풀려진다(신고 78ea0c3d).
   // 수납 = 예상 − 이번 달 미수(행별 balance<0, 이월 미수와 구분되도록 expected로 캡).
-  // 만실 시 = 예상 + 공실들의 기준 임대료(baseRent) — 점유 손실 참고치.
-  const expectedSum  = occupied.reduce((s, r) => s + r.expected, 0)
-  const collectedSum = occupied.reduce((s, r) => s + (r.expected - Math.min(r.expected, Math.max(0, -r.balance))), 0)
+  // 만실 시 = 예상 + 공실·예약 방의 기준 임대료(baseRent) — 점유 손실 참고치(예약 방은 이 달 청구가 없어도 만실 기준엔 포함).
+  const billableRows = occupied.filter(r => r.status !== 'RESERVED')
+  const reservedRows = occupied.filter(r => r.status === 'RESERVED')
+  const expectedSum  = billableRows.reduce((s, r) => s + r.expected, 0)
+  const collectedSum = billableRows.reduce((s, r) => s + (r.expected - Math.min(r.expected, Math.max(0, -r.balance))), 0)
   const maxSum       = expectedSum + vacants.reduce((s, r) => s + (r.baseRent || 0), 0)
+                                   + reservedRows.reduce((s, r) => s + (r.baseRent || 0), 0)
   const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
   const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
 
