@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { discountedRent } from '@/lib/rentDiscount'
 import { isCheckoutNoBillingMonthFor } from '@/lib/billing'
 import { shouldShowTourEvent } from '@/lib/tourFeed'
+import { dueDateForMonth, isDeferredForMonth, resolveDueRaw } from '@/lib/dueDate'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
       id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true, isShortTerm: true, moveInDate: true,
+      // 납부일 임시조정 — 없으면 미뤄둔 날짜가 피드에 반영되지 않는다(신고 998bff27)
+      overrideDueDay: true, overrideDueDayMonth: true, overrideDueDayReason: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       room: { select: { roomNo: true } },
       tenant: { select: { name: true } },
@@ -44,8 +47,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   // 구독 캘린더는 피드를 주기적으로 다시 가져가므로, 납입되는 순간부터 예정 이벤트는 자동으로 사라진다.
   const now = new Date(Date.now() + 9 * 3600000) // KST
   const ty = now.getUTCFullYear(), tm = now.getUTCMonth() + 1
+  // 지난달부터 — 납부일을 이번 달 이후로 미뤄둔 지난달 청구가 달이 바뀌는 순간 사라지지 않도록(신고 998bff27).
+  // 지난달분은 아래 루프에서 '유예로 이번 달 이후에 걸린 건'만 이벤트로 나간다(과거 미납 전량 노출 아님).
   const monthStrs: string[] = []
-  for (let i = 0; i < 6; i++) { let y = ty, m = tm + i; while (m > 12) { m -= 12; y += 1 } monthStrs.push(`${y}-${String(m).padStart(2, '0')}`) }
+  for (let i = -1; i < 6; i++) { let y = ty, m = tm + i; while (m > 12) { m -= 12; y += 1 }; while (m < 1) { m += 12; y -= 1 } monthStrs.push(`${y}-${String(m).padStart(2, '0')}`) }
   const pays = await prisma.paymentRecord.findMany({
     // 청구 조정 전표(payDate=조작 시각, 실입금 아님)는 '납입완료' 판정·표시 날짜에서 제외
     where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false, isBillingAdjust: false },
@@ -106,11 +111,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     // 납부 예정일 — 이번 달부터 6개월. 퇴실 달 이후는 제외.
     if (l.rentAmount > 0 && l.dueDay) {
       const moMonth = l.expectedMoveOut ? (() => { const d = new Date(l.expectedMoveOut); return d.getFullYear() * 100 + d.getMonth() + 1 })() : null
-      for (let i = 0; i < 6; i++) {
+      // i = -1 은 지난달 — 납부일을 이번 달 이후로 미뤄둔 건만 통과시킨다(아래 skipPast).
+      const thisMonthStart = new Date(ty, tm - 1, 1)
+      for (let i = -1; i < 6; i++) {
         let y = ty, m = tm + i
         while (m > 12) { m -= 12; y += 1 }
+        while (m < 1) { m += 12; y -= 1 }
         if (moMonth && y * 100 + m > moMonth) break
         const monthStr = `${y}-${String(m).padStart(2, '0')}`
+        if (i < 0) {
+          // 지난달: 조정된 납부일이 이번 달 1일 이후에 걸린 경우에만 남긴다
+          const moved = l.overrideDueDayMonth === monthStr ? dueDateForMonth(l, monthStr) : null
+          if (!moved || moved < thisMonthStart) continue
+        }
         // 단기 입주자 — 1개월 미만 거주라 매월 반복 일정 무의미(운영자 지시 2026-07-10).
         // 입주한 달만 표시하고, 퇴실 처리(status 변경)되면 피드에서 자동 소멸.
         if (l.isShortTerm) {
@@ -118,10 +131,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
           const miMonth = mi ? `${mi.getFullYear()}-${String(mi.getMonth() + 1).padStart(2, '0')}` : null
           if (!miMonth || monthStr !== miMonth) continue
         }
-        const lastDay = new Date(y, m, 0).getDate()
-        const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
+        // 납부일 — 정본(lib/dueDate)이 3포맷·임시조정을 함께 푼다. 미뤄졌으면 미뤄진 날짜가 나온다.
+        const dueDate = dueDateForMonth(l, monthStr)
+        if (!dueDate) continue
+        const dy = dueDate.getFullYear(), dm = dueDate.getMonth() + 1, day = dueDate.getDate()
         // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)
-        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr, new Date(y, m - 1, day))) continue
+        if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr, dueDate)) continue
         // 청구액 = 그 달에 적용된 퇴실 일할 정산 > 할인 반영 이용료 (알림·예상매출과 동일 규칙)
         const amount = (l.checkoutProratedAmount != null && l.checkoutProratedMonth === monthStr)
           ? l.checkoutProratedAmount
@@ -132,8 +147,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
           // 이미 납입 완료 — 예정 이벤트 대신 실제 입금일에 완료 표시(다음 동기화 때 예정은 사라짐)
           const pd = paid.lastPay
           ev(`rent-paid-${l.id}-${monthStr}`, pd.getFullYear(), pd.getMonth() + 1, pd.getDate(), `${who} 납입완료`, `이용료 ${manWon(amount)} 입금 확인`)
+        } else if (isDeferredForMonth(l, monthStr)) {
+          // 미뤄둔 건 — 같은 달에 두 건이 나란히 뜰 수 있으므로 귀속월과 사유를 문구로 승격.
+          // DTSTART 는 조정된 날짜(dy/dm), UID 는 귀속월 유지라 구독 캘린더가 같은 이벤트를 옮긴다.
+          const orig = resolveDueRaw(l.dueDay, y, m)
+          const from = orig ? `${orig.getMonth() + 1}월 ${orig.getDate()}일` : null
+          const desc = ['납부 예정일', from ? `${from}에서 ${dm}월 ${day}일로 조정` : null, l.overrideDueDayReason]
+            .filter(Boolean).join(' · ')
+          ev(`rent-${l.id}-${monthStr}`, dy, dm, day, `${who} ${m}월분 이용료 ${manWon(amount)}`, desc)
         } else {
-          ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
+          ev(`rent-${l.id}-${monthStr}`, dy, dm, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
         }
       }
     }
