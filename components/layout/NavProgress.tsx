@@ -10,7 +10,10 @@ export default function NavProgress() {
       height="3px"
       color="var(--tc, #A03C2E)"
       options={{ showSpinner: false }}
-      shallowRouting
+      // 같은 주소의 쿼리 변경(월 전환·탭·필터)도 표시한다 — 기본값(true)이면 그 구간은
+      // 스켈레톤도 진행바도 없는 완전 무표시가 된다(F페이즈). 진행바가 0~300ms 즉시 층을 맡는다.
+      disableSameURL={false}
+      shallowRouting={false}
     />
   )
 }

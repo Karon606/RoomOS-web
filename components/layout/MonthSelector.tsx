@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
 import { useMyRole } from '@/components/RoleContext'
@@ -40,6 +40,7 @@ export default function MonthSelector() {
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef   = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isPending, startLocal] = useTransition()
 
   const searchParamsMonth = searchParams.get('month') ?? todayMonth
   // localMonth: ◀/▶ 클릭 시 URL 반영(디바운스 350ms) 전까지 즉시 보여주는 낙관적 표시값.
@@ -68,13 +69,15 @@ export default function MonthSelector() {
     return () => document.removeEventListener('mousedown', handle)
   }, [showPicker])
 
+  // 전환 자체는 트랜지션으로 둔다(월만 바뀌는 화면에서 스켈레톤으로 전체를 지우면 비교하던 이전 값까지 사라진다).
+  // 대신 isPending 을 이 컨트롤에 묶어 '눌렸고 진행 중'을 표시한다 — 셸의 공용 트랜지션은
+  // isPending 을 버려서 클릭 후 아무 표시도 없는 구간이 있었다(F페이즈).
   const applyMonth = (m: string) => {
     localStorage.setItem(MONTH_KEY, m)
     const params = new URLSearchParams(searchParams.toString())
     params.set('month', m)
     const navigate = () => router.push(`${pathname}?${params.toString()}`)
-    if (startNavigation) startNavigation(navigate)
-    else navigate()
+    startLocal(() => { if (startNavigation) startNavigation(navigate); else navigate() })
   }
 
   const changeMonth = (delta: number) => {
@@ -100,9 +103,15 @@ export default function MonthSelector() {
     // 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
     <div
       className="flex items-stretch min-h-[44px] rounded-lg shrink-0 self-start overflow-hidden transition-colors"
-      style={isCurrent
-        ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
-        : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }}
+      aria-busy={isPending}
+      style={{
+        ...(isCurrent
+          ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
+          : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }),
+        // 진행 중 표시 — 앱 전반의 disabled:opacity 문법과 같은 결
+        opacity: isPending ? 0.55 : 1,
+        transition: 'opacity var(--dur-base)',
+      }}
     >
       <button
         onClick={() => changeMonth(-1)}

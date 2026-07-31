@@ -2,9 +2,11 @@
 // 동적 라우트라 loading.tsx 가 있어야 부분 프리페치 + 전환 즉시 응답이 됨(탭 렉 해결).
 // 실제 화면과 같은 골격(탭 → 월셀렉터 → 제목 → 버튼 줄 → 검색)으로 자리를 잡아
 // 로딩→로디드 전환 시 레이아웃 점프가 없게 한다. 패딩은 AppShell 것만 사용(이중 패딩 금지).
+// delayed-fallback: 300ms 안에 끝나는 전환은 스켈레톤을 띄우지 않는다 — 그 구간은 상단 진행바가 맡는다.
+// 전 라우트 동일 규칙(F페이즈). 화면마다 다르면 "같은 링크인데 어떨 땐 뜨고 어떨 땐 안 뜬다"로 체감된다.
 export default function Loading() {
   return (
-    <div className="space-y-4">
+    <div className="delayed-fallback space-y-4">
       {/* v2.0 §25 탭 모형 — ViewTabs와 동일 치수 + 아랫줄 우측 월셀렉터 자리(v2.0 §25 고정 2줄) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
         <div className="inline-flex rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold">

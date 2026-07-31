@@ -44,13 +44,22 @@ export default function Header({
   }, [propOpen])
 
   // 영업장 전환 — 권한은 selectProperty가 재확인. 전환 후 대시보드로(타 영업장 딥링크 깨짐 방지).
+  // 서버 응답을 기다리는 동안 아무 표시가 없어 '안 눌렸다'로 읽히던 구간을 컨트롤 자체 진행 표시로 덮는다(F페이즈).
+  const [switching, setSwitching] = useState(false)
   const onSelectProperty = (id: string) => {
     setPropOpen(false)
-    if (id === currentPropertyId) return
+    if (id === currentPropertyId || switching) return
     const run = async () => {
-      const res = await selectProperty(id)
-      if (res.ok) { router.push('/dashboard'); router.refresh() }
-      else pushToast('error', res.error)
+      setSwitching(true)
+      try {
+        const res = await selectProperty(id)
+        if (res.ok) { router.push('/dashboard'); router.refresh() }
+        else { pushToast('error', res.error); setSwitching(false) }
+      } catch (e) {
+        pushToast('error', (e as Error).message ?? '영업장 전환에 실패했습니다.')
+        setSwitching(false)
+      }
+      // 성공 시엔 라우트가 바뀌며 언마운트되므로 해제하지 않는다(깜빡임 방지)
     }
     if (startNavigation) startNavigation(run)
     else run()
@@ -68,7 +77,9 @@ export default function Header({
         <div ref={propRef} className="relative min-w-0">
           <button
             onClick={() => setPropOpen(v => !v)}
-            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            disabled={switching}
+            aria-busy={switching}
+            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset disabled:opacity-55"
             aria-label="영업장 선택"
             aria-expanded={propOpen}
           >
