@@ -90,7 +90,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
-    // 원격 서명 완료 — 서명 수신(signedAt) 후 정식 계약서(GENERATED)가 아직 발급되지 않은 링크. 발급 시 자동 소멸.
+    // 원격 서명 완료 — 서명 수신(signedAt) 후 정식 계약서가 아직 없는 링크. 발급본·스캔본이 생기면 자동 소멸.
     // closedAt: null — 운영자가 서명된 링크를 닫으면(계약 무산) 알림도 해소.
     prisma.contractShareLink.findMany({
       where: { propertyId, signedAt: { not: null }, closedAt: null },
@@ -100,9 +100,13 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
         tenant: { select: { id: true, name: true } },
       },
     }),
-    // 해소 판정용 — 발급된 정식 계약서(GENERATED, 미삭제). 같은 계약(leaseTermId)의 서명 이후 발급본이 있으면 제외.
+    // 해소 판정용 — 그 계약의 정식 계약서(미삭제). 같은 계약(leaseTermId)의 서명 이후 파일이 있으면 제외.
+    // UPLOADED(스캔 본 첨부)도 인정한다 — 종이로 출력·서명한 계약서도 정식 계약서이고, 스캔해 첨부하면
+    // 시스템에 사본이 남아 목적(보관)을 달성한다. GENERATED 만 인정하면 종이 계약 운영에서 알림이
+    // 영원히 안 꺼진다(운영자 질의 2026-08-01). 단순 출력만 하고 첨부하지 않으면 알림은 유지된다 —
+    // 사본이 없는 상태를 알려 주는 것이 이 알림의 목적이다.
     prisma.contractFile.findMany({
-      where: { propertyId, source: 'GENERATED', deletedAt: null },
+      where: { propertyId, source: { in: ['GENERATED', 'UPLOADED'] }, deletedAt: null },
       select: { leaseTermId: true, createdAt: true },
     }),
   ])
@@ -205,7 +209,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     })
   }
 
-  // 원격 서명 완료 — 서명본 수신 후 정식 계약서 발급 전. 발급(GENERATED)되면 소멸, 파일 삭제 시 재출현.
+  // 원격 서명 완료 — 서명본 수신 후 정식 계약서가 아직 없는 상태. 발급본·스캔본이 생기면 소멸, 파일 삭제 시 재출현.
   const genFilesByLease = new Map<string, Date[]>()
   for (const f of generatedFiles) {
     if (!f.leaseTermId) continue   // 특정 계약에 귀속되지 않은 발급본은 서명 링크 해소 근거로 쓰지 않음

@@ -10,6 +10,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, usePathname } from 'next/navigation'
 import { getMyAlerts } from '@/app/(app)/dashboard/alertActions'
 import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
+import { useNavRouter } from '@/lib/useNavRouter'
 
 // 카테고리별 점 색 (대시보드 알림 톤과 맞춤)
 const DOT: Record<AlertCategory, string> = {
@@ -49,7 +50,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
   const [loading, setLoading] = useState(false)
   const [readMap, setReadMap] = useState<Record<string, string>>({})
   const ref     = useRef<HTMLDivElement>(null)
-  const router  = useRouter()
+  const router  = useNavRouter()   // 이동에 진행바 동반(F페이즈)
   const pathname = usePathname()
 
   useEffect(() => { setReadMap(loadReadMap()) }, [])

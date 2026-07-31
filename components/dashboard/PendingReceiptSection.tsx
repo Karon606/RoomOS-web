@@ -26,6 +26,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
+import { useNavRouter } from '@/lib/useNavRouter'
 
 // 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
 const FALLBACK_EXPENSE_CATEGORIES = [
@@ -179,7 +180,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   onRetried: () => void
   onRejected: () => void
 }) {
-  const router = useRouter()   // 지출 등록 — 정식 지출 폼 딥링크 이동용
+  const router = useNavRouter()   // 지출 등록 — 정식 지출 폼 딥링크 이동용   // 이동에 진행바 동반(F페이즈)
   const kindInfo = KIND_LABEL[row.inferredKind ?? 'unknown'] ?? KIND_LABEL.unknown
   const isInventory = editingMode === 'inventory'
   const aiSuggestsInventory = row.inferredKind === 'inventory'

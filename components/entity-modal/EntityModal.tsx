@@ -22,6 +22,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
 import { PaymentBody } from './bodies/PaymentBody'
+import { useNavRouter } from '@/lib/useNavRouter'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
@@ -100,6 +101,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   kind: EntityKind; links: Links; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void; onClose: () => void
 }) {
   const router = useRouter()
+  // 페이지 이동 전용 — refresh(7곳)까지 진행바를 태우면 모달 안 저장마다 막대가 떠 소음이 된다
+  const navRouter = useNavRouter()
   const searchParams = useSearchParams()
   const month = searchParams.get('month') || kstMonthStr()
   const isPastMonth = month < kstMonthStr()   // 프리즘이 과거 월을 보고 있으면 강조
@@ -170,7 +173,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // 수정은 페이지 종속 편집 폼이 있는 /room-manage 로 위임 (Phase 2.5 에서 위젯 편집 모드로 대체 예정).
   const handleEditRoom = () => {
     if (!links?.roomId) return
-    router.push(`/room-manage?roomId=${links.roomId}&edit=1`)
+    navRouter.push(`/room-manage?roomId=${links.roomId}&edit=1`)
     onClose()
   }
 
@@ -206,7 +209,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   }
   const handleEditTenant = () => {
     if (!links?.tenantId) return
-    router.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
+    navRouter.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
     onClose()
   }
   // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (3-옵션, choiceDialog §27).
@@ -235,13 +238,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleResidenceCert = () => {
     if (!links?.tenantId) return
-    router.push(`/residence-cert/${links.tenantId}`)
+    navRouter.push(`/residence-cert/${links.tenantId}`)
     onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent') => {
     if (!links?.tenantId) return
-    router.push(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
+    navRouter.push(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
     onClose()
   }
 

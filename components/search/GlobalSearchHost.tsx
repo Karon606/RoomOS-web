@@ -10,6 +10,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { bindGlobalSearch, getRecentSearches, addRecentSearch, clearRecentSearches } from '@/lib/globalSearch'
 import { normalizeSearchQuery } from '@/lib/searchQuery'
 import { globalSearch, type GlobalSearchResult, type SearchHit, type SearchGroupType } from '@/app/(app)/search/actions'
+import { useNavRouter } from '@/lib/useNavRouter'
 
 // 그룹 아이콘 — 하단 네비(BottomNav)와 동일 모티프 재사용(익숙한 형태로 유형 식별)
 const GROUP_ICON: Record<SearchGroupType, ReactNode> = {
@@ -32,7 +33,7 @@ const BADGE_STYLE: Record<string, { bg: string; fg: string }> = {
 const cache = new Map<string, GlobalSearchResult>()
 
 export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) {
-  const router = useRouter()
+  const router = useNavRouter()   // 이동에 진행바 동반(F페이즈)
   const entityModal = useEntityModal()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')

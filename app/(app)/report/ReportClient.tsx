@@ -12,12 +12,13 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtDateKor } from '@/lib/fmtDate'
 import { kstMonthStr } from '@/lib/kstDate'
+import { useNavRouter } from '@/lib/useNavRouter'
 
 const fmt = (n: number) => n === 0 ? '—' : fmtWon(n)   // 0 특례만 로컬, 표기는 정본(감사 B4)
 const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
 
 export default function ReportClient({ summary, years, forecast }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary }) {
-  const router = useRouter()
+  const router = useNavRouter()   // 이동에 진행바 동반(F페이즈)
   const [tab, setTab] = useState<'past' | 'forecast' | 'ai'>('past')
   const handleYear = (y: string) => router.push(`/report?year=${y}`)
 
