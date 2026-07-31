@@ -414,6 +414,7 @@ export async function updateTenant(formData: FormData): Promise<
         expectedMoveOut: currentLease.expectedMoveOut,
         rentAmount,
         moveInDate: moveInDate ? moveInDate : currentLease.moveInDate,   // 폼 입력 우선(같이 바뀔 수 있음)
+        isShortTerm,
         checkoutProratedAmount: currentLease.checkoutProratedAmount,
         checkoutProratedMonth: currentLease.checkoutProratedMonth,
         checkoutProrationUndo: currentLease.checkoutProrationUndo,
@@ -1241,7 +1242,7 @@ export async function applyStatusTransition(input: {
       where: { id: input.leaseTermId },
       select: {
         roomId: true, status: true, dueDay: true, rentAmount: true, moveInDate: true,
-        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
+        expectedMoveOut: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
@@ -1941,7 +1942,7 @@ export async function changeDueDay(
       select: {
         dueDay: true, rentAmount: true, tenantId: true, status: true, moveInDate: true,
         // 퇴실 일할 정산 재계산용 — 납부일이 바뀌면 일할 기간(납부일~퇴실일)도 달라짐
-        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
+        expectedMoveOut: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
@@ -2107,6 +2108,7 @@ function prorationDataForChange(
     checkoutProratedAmount: number | null
     checkoutProratedMonth: string | null
     checkoutProrationUndo: unknown
+    isShortTerm: boolean
     discounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[]
   },
   newDueDay: string | null,
@@ -2115,6 +2117,16 @@ function prorationDataForChange(
 ): { data: Record<string, unknown>; notice: string | null } {
   // 환불 확정(finalizeRentRefund) 이후에는 그 달 청구가 회사 귀속액으로 고정된 상태 —
   // 날짜 변경 재계산이 이 확정을 덮으면 record와 청구가 어긋난다(적대검증 P0). 보존하고 손대지 않는다.
+  // 단기(주 단위 정액)는 일할 대상이 아니다 — 이미 그 기간 전액을 받았는데 퇴실월 일할을 얹으면
+  // 이중 청구가 된다(520호 김민정: 2주 329,000 완납 + 8월 21,933 중복). 환불 쪽에는 같은 차단이
+  // 이미 있었는데(finalizeRentRefund) 적용 쪽에만 빠져 있었다.
+  if (lease.isShortTerm) {
+    if (lease.checkoutProratedAmount == null && lease.checkoutProratedMonth == null) return { data: {}, notice: null }
+    return {
+      data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
+      notice: '단기 계약은 주 단위 정액이라 퇴실 일할 정산 대상이 아닙니다. 적용돼 있던 일할을 해제했습니다.',
+    }
+  }
   const undoObj = lease.checkoutProrationUndo
   if (undoObj && typeof undoObj === 'object' && 'refund' in (undoObj as Record<string, unknown>)) {
     return { data: {}, notice: '이용료 환불이 확정된 계약이라 일할 정산을 재계산하지 않았습니다. 변경하려면 환불 적용취소 후 진행해 주세요.' }

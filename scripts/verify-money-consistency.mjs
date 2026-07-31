@@ -21,6 +21,12 @@ if (/payDate[^\n]*moveInDate/.test(entryForm)) {
   violations.push('[소스] PaymentEntryForm 수납일 기본값이 입주일 파생으로 회귀 의심 — 수납일 정본은 오늘(받은 날)')
 }
 // 수납 스트립 RESERVED 혼입 가드(신고 78ea0c3d) — 예약 행 expected는 표시용이라 스트립 청구·수납 합산에서 제외돼야 한다.
+// 단기 일할 가드(신고 2026-08-01) — 단기는 주 단위 정액이라 퇴실 일할 대상이 아니다.
+const tenantsActions = readFileSync('app/(app)/tenants/actions.ts', 'utf8')
+if (!tenantsActions.includes('if (lease.isShortTerm) {')) {
+  violations.push('[소스] tenants/actions prorationDataForChange 의 단기 제외 가드가 사라짐 — 단기에 퇴실 일할이 붙어 이중 청구된다')
+}
+
 const roomsClient = readFileSync('app/(app)/rooms/RoomsClient.tsx', 'utf8')
 if (!roomsClient.includes("occupied.filter(r => r.status !== 'RESERVED')")) {
   violations.push('[소스] RoomsClient 스트립의 RESERVED 제외 필터(billableRows)가 사라짐 — 예약 전액이 청구·수납에 혼입되는 회귀')
@@ -81,6 +87,15 @@ const futurePays = await prisma.paymentRecord.findMany({
 })
 for (const r of futurePays) {
   violations.push(`[데이터] ${r.leaseTerm?.tenant?.name ?? '?'}: 수납일 ${r.payDate.toISOString().slice(0, 10)} 이 미래 — 받은 날이 아닌 파생값 의심`)
+}
+
+// 4. 단기인데 퇴실 일할이 붙은 계약 — 그 기간 전액을 이미 받았는데 일할이 더해지면 이중 청구
+const shortProrated = await prisma.leaseTerm.findMany({
+  where: { isShortTerm: true, checkoutProratedAmount: { not: null } },
+  select: { checkoutProratedMonth: true, checkoutProratedAmount: true, tenant: { select: { name: true } } },
+})
+for (const l of shortProrated) {
+  violations.push(`[데이터] ${l.tenant.name}: 단기 계약에 퇴실 일할 ${l.checkoutProratedAmount?.toLocaleString()}원(${l.checkoutProratedMonth}) — 주 단위 정액이라 일할 대상 아님(이중 청구)`)
 }
 
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)

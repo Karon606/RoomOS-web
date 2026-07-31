@@ -21,16 +21,19 @@ import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
-function shareBadge(link: ContractShareLinkInfo): { label: string; active: boolean } {
-  if (link.lockedAt) return { label: '링크 잠김 (생년월일 5회 오류)', active: false }
-  if (link.closedAt) return { label: '링크 닫힘', active: false }
+// closable: 닫기(=서명 완료 알림 해제) 가능 여부. 만료·잠김이어도 닫혀 있지만 않으면 닫을 수 있어야 한다 —
+// 종전에는 active(만료 전)일 때만 닫기 버튼이 떠서, 만료된 링크는 '계약서 발급 필요' 알림을
+// 끌 방법이 사라졌다(503호 송호준: 서명 완료·링크 만료·발급 전 상태로 알림 영구 잔존).
+function shareBadge(link: ContractShareLinkInfo): { label: string; active: boolean; closable: boolean } {
+  if (link.lockedAt) return { label: '링크 잠김 (생년월일 5회 오류)', active: false, closable: !link.closedAt }
+  if (link.closedAt) return { label: '링크 닫힘', active: false, closable: false }
   const remainMs = new Date(link.expiresAt).getTime() - Date.now()
-  if (remainMs <= 0) return { label: '링크 만료', active: false }
+  if (remainMs <= 0) return { label: '링크 만료', active: false, closable: true }
   const remain = remainMs >= 60 * 60 * 1000
     ? `${Math.floor(remainMs / (60 * 60 * 1000))}시간 남음`
     : `${Math.max(1, Math.floor(remainMs / (60 * 1000)))}분 남음`
-  if (link.signedAt) return { label: `서명 완료 · ${remain}`, active: true }
-  return { label: `서명 대기 · ${remain}`, active: true }
+  if (link.signedAt) return { label: `서명 완료 · ${remain}`, active: true, closable: true }
+  return { label: `서명 대기 · ${remain}`, active: true, closable: true }
 }
 
 export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
@@ -79,7 +82,14 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
   const handleShareClose = async () => {
     const link = share?.link
     if (!link) return
-    if (!(await confirmDialog({ title: '이 서명 링크를 닫을까요?', message: '입주자가 더 이상 링크를 열 수 없게 됩니다. 만료 전에는 적용취소로 다시 열 수 있습니다.', level: 'caution', confirmLabel: '닫기' }))) return
+    const stillActive = new Date(link.expiresAt).getTime() > Date.now() && !link.lockedAt
+    if (!(await confirmDialog({
+      title: stillActive ? '이 서명 링크를 닫을까요?' : '이 건의 알림을 해제할까요?',
+      message: stillActive
+        ? '입주자가 더 이상 링크를 열 수 없게 됩니다. 만료 전에는 적용취소로 다시 열 수 있습니다.'
+        : '이미 만료된 링크라 입주자 접근에는 변화가 없습니다. 홈의 "원격 서명 완료 · 계약서 발급 필요" 알림만 사라집니다. 정식 계약서를 발급하면 이 알림은 자동으로 사라집니다.',
+      level: 'caution', confirmLabel: stillActive ? '닫기' : '알림 해제',
+    }))) return
     const release = trackSave()
     try {
       const res = await closeContractShareLink(link.id)
@@ -146,9 +156,9 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
           <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${badge.active ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
             {badge.label}
           </span>
-          {badge.active && (
+          {badge.closable && (
             <button type="button" onClick={handleShareClose} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
-              링크 닫기
+              {badge.active ? '링크 닫기' : '알림 해제'}
             </button>
           )}
         </div>

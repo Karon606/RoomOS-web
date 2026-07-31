@@ -184,6 +184,15 @@ function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<
   return getDueInfo(effectiveDay, dueMonth)
 }
 
+// 미납 배지 문구 — 납부일 당일은 아직 늦은 게 아니라 '납부일'로 표기한다(운영자 지시 2026-08-01).
+// 톤은 unpaid 를 유지한다 — 오늘 받아야 할 건이라 시야에서 사라지면 안 된다. 계산·집계는 손대지 않고 표시만 바꾼다.
+// days: 납부일로부터 경과일(0=오늘). 7일 초과면 연체.
+function unpaidBadgeLabel(days: number | null | undefined): '납부일' | '미납' | '연체' {
+  if (days == null) return '미납'
+  if (days === 0) return '납부일'
+  return days > 7 ? '연체' : '미납'
+}
+
 // 호실 수납 상태 → 배지/팁 톤. 수납(미납·연체)이 비거주보다 우선 —
 // 비거주여도 미납이면 미납/연체 색으로 표시(회색으로 묻히지 않도록).
 function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
@@ -892,13 +901,14 @@ export default function RoomsClient({
                       && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
                     // 미납 / 연체 — 7일 초과면 연체(Terracotta 솔리드), 그 외 미납(Amber)
                     if (!room.isPaid) {
-                      const overdueSub = dueInfo ? (dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`) : undefined
+                      // 라벨이 '납부일'이면 보조줄의 '오늘'은 중복이라 생략
+                      const overdueSub = dueInfo && dueInfo.days !== 0 ? `${dueInfo.days}일 초과` : undefined
                       // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
                       const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                       const sub = [overdueSub, exitSub].filter(Boolean).join(' · ') || undefined
                       const isOverdue = !!(dueInfo && dueInfo.days > 7)
                       return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}
-                        secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{isOverdue ? '연체' : '미납'}</StatusBadge>
+                        secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{unpaidBadgeLabel(dueInfo?.days)}</StatusBadge>
                     }
                     // 퇴실 예정 — Camel
                     if (showCheckout && room.expectedMoveOut) {
@@ -1149,13 +1159,13 @@ export default function RoomsClient({
                             && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
                           if (!room.isPaid) {
                             const info = getEffectiveDueInfo(room, targetMonth)
-                            const overdueSub = info ? (info.days === 0 ? '오늘' : `${info.days}일 초과`) : undefined
+                            const overdueSub = info && info.days !== 0 ? `${info.days}일 초과` : undefined
                             // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
                             const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                             const sub = [overdueSub, exitSub].filter(Boolean).join(' · ') || undefined
                             const isOverdue = !!(info && info.days > 7)
                             return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}
-                              secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{isOverdue ? '연체' : '미납'}</StatusBadge>
+                              secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{unpaidBadgeLabel(info?.days)}</StatusBadge>
                           }
                           if (showCheckout && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')
