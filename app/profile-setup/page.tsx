@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import ProfileSetupForm from './ProfileSetupForm'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 // Google OAuth 등 가입 시 정보 수집이 없었던 케이스용 후처리 페이지.
 // (app)/layout 이 (승인된 일반 사용자 + realName null + 스킵 쿠키 없음) 일 때 이리로 보냄.
@@ -19,8 +20,9 @@ export default async function ProfileSetupPage() {
   if (!user) redirect('/login')
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4"
+    <main className="min-h-dvh flex items-center justify-center p-4"
       style={{ background: 'var(--canvas)' }}>
+      <DocumentScroll />
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-3">
           <div className="flex justify-center"><StayeumWordmark height={32} /></div>

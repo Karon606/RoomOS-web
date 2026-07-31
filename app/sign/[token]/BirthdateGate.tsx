@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { verifyShareBirthdate } from './actions'
 import { formatBirthdateDigits, digitsToIso, isValidBirthdate } from '@/lib/birthdate'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 export default function BirthdateGate({ token }: { token: string }) {
   const router = useRouter()
@@ -36,7 +37,8 @@ export default function BirthdateGate({ token }: { token: string }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ minHeight: '100dvh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <DocumentScroll />
       <form onSubmit={submit} style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: '28px 24px', boxShadow: '0 4px 24px -6px rgba(61,36,24,.28)', boxSizing: 'border-box' }}>
         <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 6 }}>입실 계약서 확인</div>
         <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: '0 0 18px' }}>

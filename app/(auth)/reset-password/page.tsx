@@ -5,6 +5,7 @@ import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { Btn } from '@/components/ui/Btn'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 export default function ResetPasswordPage() {
   const [password, setPassword]     = useState('')
@@ -57,8 +58,9 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4"
+    <main className="min-h-dvh flex items-center justify-center p-4"
           style={{ background: 'var(--canvas)' }}>
+      <DocumentScroll />
       <div className="w-full max-w-sm space-y-8 px-2">
         <div className="text-center space-y-3">
           <StayeumWordmark height={36} />

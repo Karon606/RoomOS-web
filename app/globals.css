@@ -336,6 +336,16 @@ body {
   height: 100%;
 }
 
+/* AppShell 밖 단독 페이지의 문서 스크롤 — components/layout/DocumentScroll 이 마운트 중에만 부착.
+   위 html·body 잠금(iOS 헤더 보호)을 그 페이지에서만 풀어 콘텐츠가 뷰포트를 넘어도 끝까지 닿게 한다.
+   배경·여백은 건드리지 않는다(페이지별 토큰 유지). */
+html.doc-scroll,
+html.doc-scroll body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: auto;
+}
+
 /* M7: 숫자·KPI·메타용 헬퍼 클래스 */
 /* v1.3.2 §15 — 제품 UI 숫자 표준: 본문 폰트(Pretendard) + tabular numerals.
    .num 이 정식 명칭, .mono 는 기존 사용처 호환 alias (DM Mono 폐기). */

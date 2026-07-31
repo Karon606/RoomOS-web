@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getAccessContext } from '@/lib/auth/access'
 import { signOut } from '@/app/property-select/actions'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 // 베타 승인 대기 / 거절 안내. (app) 레이아웃 게이트가 미승인 사용자를 여기로 보냄.
 export default async function PendingPage() {
@@ -15,9 +16,10 @@ export default async function PendingPage() {
 
   return (
     <main
-      className="min-h-screen flex items-center justify-center p-4"
+      className="min-h-dvh flex items-center justify-center p-4"
       style={{ background: 'var(--canvas)' }}
     >
+      <DocumentScroll />
       <div className="w-full max-w-md space-y-6 text-center">
         <div className="flex justify-center">
           <StayeumWordmark height={32} />

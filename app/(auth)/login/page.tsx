@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import LoginButton from './LoginButton'
 import EmailLoginForm from './EmailLoginForm'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 function StayeumLogo() {
   return <StayeumWordmark height={36} />
@@ -20,8 +21,9 @@ export default async function LoginPage({
   const { returnTo, error, message } = await searchParams
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4"
+    <main className="min-h-dvh flex items-center justify-center p-4"
           style={{ background: 'var(--canvas)' }}>
+      <DocumentScroll />
       <div className="w-full max-w-sm space-y-8 px-2">
         <div className="text-center space-y-3">
           <StayeumLogo />

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import PropertyList from './PropertyList'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { getAccessContext } from '@/lib/auth/access'
+import DocumentScroll from '@/components/layout/DocumentScroll'
 
 function StayeumLogo() {
   return <StayeumWordmark height={36} />
@@ -20,8 +21,9 @@ export default async function PropertySelectPage() {
   if (ctx.isSuperAdmin && properties.length === 0) redirect('/admin')
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4"
+    <main className="min-h-dvh flex items-center justify-center p-4"
           style={{ background: 'var(--canvas)' }}>
+      <DocumentScroll />
       <div className="w-full max-w-lg space-y-6">
         <div className="text-center space-y-3">
           <StayeumLogo />
