@@ -27,6 +27,7 @@ export type RentReceiptData = {
   // 화면 전용 경고(인쇄물 미출력) — noRecord: 그 달 수납 기록 없음(0원), partial: 실입금이 청구액보다 부족
   warning: 'noRecord' | 'partial' | null
   kind: ReceiptKind       // 'deposit' 이면 보증금 영수증(월 개념 없음 — 스테퍼 숨김)
+  preResidence: boolean   // 입주 전 보증금(예약금 성격) — 거주 기간 비움 + 반환 조건 문구가 다르다
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
@@ -123,25 +124,34 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     }
     const contracted = lease?.depositAmount ?? 0
     const moveInYmd = lease?.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
+    // 아직 입주 전이면 거주한 적이 없으므로 거주 기간을 비운다(운영자 지적 2026-07-31).
+    // 보증금은 입주 전에 받는 돈이라 이 경우가 오히려 일반적이고, 살지도 않은 기간을 적으면 허위 기재다.
+    const notMovedIn = lease?.status === 'RESERVED' || (!!moveInYmd && moveInYmd > todayKst)
     return {
       tenantId: tenant.id,
       leaseTermId: lease?.id ?? null,
       name: tenant.name,
       room: fmtRoom(lease?.room?.roomNo),
-      period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
+      period: notMovedIn ? '' : `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
       targetMonth: moveInYmd ? kor(moveInYmd) : '',
       amount: paid,
       payDate: kor(last ? new Date(last.payDate.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10) : todayKst),
       payMethod: last?.payMethod ?? bank,
-      note: contracted > 0 && paid < contracted
-        ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 수령`
-        : '퇴실 시 미납금·손해배상액 공제 후 반환',
+      // 입주 전이면 예약금과 성격이 같다 — 입실 취소 시 반환되지 않는다는 점을 비고에 명시(운영자 지시)
+      note: notMovedIn
+        ? (contracted > 0 && paid < contracted
+            ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 · 입실 취소 시 반환되지 않습니다`
+            : '입주 전 예약금 · 입실 취소 시 반환되지 않습니다')
+        : (contracted > 0 && paid < contracted
+            ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 수령`
+            : '퇴실 시 미납금·손해배상액 공제 후 반환'),
       recipientName: biz.ceoName ?? '',
       anchorMonth: viewMonth,
       todayMonth,
       isShortTerm,
       warning: paid <= 0 ? 'noRecord' : (contracted > 0 && paid < contracted ? 'partial' : null),
       kind,
+      preResidence: notMovedIn,
     }
   }
 
@@ -204,5 +214,6 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     isShortTerm,
     warning,
     kind,
+    preResidence: false,
   }
 }

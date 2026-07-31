@@ -1481,6 +1481,7 @@ model RentReceiptFile {
   id           String   @id @default(uuid()) @db.Uuid
   driveFileId  String
   fileName     String
+  kind         String   @default("rent")         // 'rent'=입실료 납부 확인서 | 'deposit'=보증금 영수증 (같은 서식 가족)
   issuedAt     DateTime @default(now())          // 발행일 — 사용자가 입력
   deletedAt    DateTime?                         // 소프트삭제 — null=활성, 값=삭제됨(적용취소).
   createdAt    DateTime @default(now())

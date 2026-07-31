@@ -23,6 +23,7 @@ export type RentReceiptListRow = {
   tenantName: string
   roomNo: string | null
   status: string | null
+  kind: 'rent' | 'deposit'   // 서류 종류 — 파일명 접두 추론이 아닌 컬럼 정본
 }
 
 export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
@@ -31,7 +32,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     where: { propertyId, deletedAt: null },
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
-      id: true, fileName: true, issuedAt: true, driveFileId: true,
+      id: true, fileName: true, kind: true, issuedAt: true, driveFileId: true,
       tenant: { select: { id: true, name: true } },
       leaseTerm: { select: { status: true, room: { select: { roomNo: true } } } },
     },
@@ -46,6 +47,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     tenantName: r.tenant.name,
     roomNo: r.leaseTerm?.room?.roomNo ?? null,
     status: r.leaseTerm?.status ?? null,
+    kind: r.kind === 'deposit' ? 'deposit' as const : 'rent' as const,
   }))
 }
 

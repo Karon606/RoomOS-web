@@ -75,8 +75,9 @@ export async function POST(req: Request) {
     }
 
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
-    // 파일명 접두로 종류 구분 — 이력·검색·보내기에서 두 서류가 섞이지 않게(스키마 변경 없이)
-    const docPrefix = body.fields.kind === 'deposit' ? '보증금영수증' : '입실료납부확인서'
+    // 종류 — kind 컬럼이 분류 정본, 파일명 접두는 사람이 파일만 보고도 알아보게 하는 보조 표기
+    const receiptKind = body.fields.kind === 'deposit' ? 'deposit' : 'rent'
+    const docPrefix = receiptKind === 'deposit' ? '보증금영수증' : '입실료납부확인서'
     const fileName = `${docPrefix}_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
     const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')
 
@@ -87,6 +88,7 @@ export async function POST(req: Request) {
         leaseTermId,
         driveFileId: fileId,
         fileName,
+        kind: receiptKind,
         issuedAt: new Date(`${issueDate}T00:00:00`),
       },
       select: { id: true, driveFileId: true, fileName: true, issuedAt: true },

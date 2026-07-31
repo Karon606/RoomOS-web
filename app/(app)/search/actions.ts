@@ -158,7 +158,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
       ? prisma.rentReceiptFile.findMany({
           where: { propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
           orderBy: { issuedAt: 'desc' }, take: 3,
-          select: { id: true, fileName: true, issuedAt: true, tenant: { select: { name: true } } },
+          select: { id: true, fileName: true, kind: true, issuedAt: true, tenant: { select: { name: true } } },
         })
       : Promise.resolve([]),
     !isDigits
@@ -265,8 +265,8 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   // 서류 — 3모델 병합 후 최신순, 종류 라벨로 구분. 착지는 종류별 페이지에 파일명 시딩.
   const docsMerged = [
     ...contractFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.signedAt, tenantName: f.tenant.name, kindLabel: '계약서', page: '/contracts' })),
-    // 두 서류가 같은 모델을 쓰므로 파일명 접두로 종류를 표기한다(결과 목록의 구분력 유지)
-    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: f.fileName.startsWith('보증금영수증') ? '보증금 영수증' : '입실료 납부 확인서', page: '/rent-receipts' })),
+    // 두 서류가 같은 모델을 쓰므로 kind 컬럼으로 종류를 표기한다(결과 목록의 구분력 유지)
+    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: f.kind === 'deposit' ? '보증금 영수증' : '입실료 납부 확인서', page: '/rent-receipts' })),
     ...residenceCertFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '실거주 확인서', page: '/residence-certs' })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime())
   const docHits: SearchHit[] = docsMerged.slice(0, TAKE_SHOW).map(d => ({

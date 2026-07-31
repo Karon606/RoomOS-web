@@ -11,6 +11,7 @@
 // 항상 오늘 기준'(page.tsx realTodayMonthStr) 정책과 동일.
 
 import prisma from '@/lib/prisma'
+import { dueDayForCutoff } from '@/lib/dueDate'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
 
@@ -144,8 +145,8 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       const overrideForCutoff = (l.overrideDueDayMonth === cutoffMonthStr && l.overrideDueDay) ? l.overrideDueDay : null
       let dayNum: number | null = null
       if (overrideForCutoff) {
-        dayNum = overrideForCutoff.includes('말') ? 31 : parseInt(overrideForCutoff, 10)
-        if (isNaN(dayNum)) dayNum = null
+        // 전체 날짜형('YYYY-MM-DD')을 parseInt 하면 2026 이 나와 cutoff 비교가 뒤집힌다(lib/dueDate 정본)
+        dayNum = dueDayForCutoff(overrideForCutoff, cutoffMonthStr)
       } else {
         dayNum = getOriginalDueDay(l)
       }
@@ -266,8 +267,8 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
 
     let dueDayNum: number = NaN
     if (l.overrideDueDayMonth === firstMonth && l.overrideDueDay) {
-      const eff = l.overrideDueDay
-      dueDayNum = eff.includes('말') ? 31 : parseInt(eff, 10)
+      const d = dueDayForCutoff(l.overrideDueDay, firstMonth)
+      dueDayNum = d ?? NaN
     } else {
       const orig = getOriginalDueDay(l)
       if (orig != null) dueDayNum = orig

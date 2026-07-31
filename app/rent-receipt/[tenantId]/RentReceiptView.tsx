@@ -69,7 +69,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 서류 종류 — 보증금은 귀속 월이 없어 스테퍼를 숨기고 문구·라벨이 갈린다(신고 d68220bd)
   const isDeposit = data.kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
-  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind } })
+  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence } })
 
   // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
@@ -222,7 +222,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <Field label="호실" value={f.room} onChange={set('room')} placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label={isDeposit ? '거주 기간' : '거주 기간 (1달 선납)'} value={f.period} onChange={set('period')} placeholder="2026.06.05 ~ 2026.07.04" />
+            {/* 입주 전 보증금 영수증은 거주 기간이 비어 있다(살지 않은 기간을 적으면 허위 기재) */}
+            <Field label={isDeposit ? '거주 기간' : '거주 기간 (1달 선납)'} value={f.period} onChange={set('period')}
+              placeholder={isDeposit ? '입주 전이라 비워 둡니다' : '2026.06.05 ~ 2026.07.04'} />
             <Field label={isDeposit ? '입주 예정일' : '납부 대상월'} value={f.targetMonth} onChange={set('targetMonth')} placeholder={isDeposit ? '2026년 8월 17일' : '2026년 6월분'} />
           </div>
           <Field label={isDeposit ? '금액 (보증금, 원)' : '금액 (월 이용료, 원)'} value={f.amount} onChange={set('amount')} placeholder={isDeposit ? '500,000' : '390,000'} />
@@ -230,7 +232,10 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <Field label={isDeposit ? '수령일' : '납부일'} value={f.payDate} onChange={set('payDate')} placeholder="2026년 6월 16일" />
             <Field label={isDeposit ? '수령방법' : '납부방법'} value={f.payMethod} onChange={set('payMethod')} placeholder="계좌이체 · 계좌번호 / 현금" />
           </div>
-          <Field label="비고" value={f.note} onChange={set('note')} placeholder={isDeposit ? '퇴실 시 미납금·손해배상액 공제 후 반환' : '다음 납부 예정일 …'} />
+          <Field label="비고" value={f.note} onChange={set('note')}
+            placeholder={isDeposit
+              ? (data.preResidence ? '입주 전 예약금 · 입실 취소 시 반환되지 않습니다' : '퇴실 시 미납금·손해배상액 공제 후 반환')
+              : '다음 납부 예정일 …'} />
           <Field label="임대인 대표 (수령인)" value={f.recipientName} onChange={set('recipientName')} placeholder="예: 홍길동" />
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>

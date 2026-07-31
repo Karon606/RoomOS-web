@@ -29,7 +29,12 @@ export type RentReceiptFields = {
   note: string           // 비고
   recipientName: string  // 임대인 대표 성명
   kind?: ReceiptKind     // 미지정이면 'rent' — 기존 호출부 무회귀
+  preResidence?: boolean // 보증금인데 아직 입주 전 — 예약금 성격이라 반환 조건이 다르다
 }
+
+// 입주 전 보증금(=예약금) 안내 — 입실 취소 시 반환되지 않는다는 점이 핵심(운영자 지시 2026-07-31).
+// 한 줄을 넘기면 서명줄까지의 §26 최소 간격이 깨지므로 길이를 유지한다.
+const DEPOSIT_PRE_NOTICE = '본 영수증은 상기 보증금의 수령 사실을 확인하며, 입실 취소 시 반환되지 않습니다.'
 
 // 종류별 문구 — 표 4행 구조·좌표는 공유(행을 지우면 아래 금액 박스·표2 세로 리듬이 어긋난다).
 const COPY: Record<ReceiptKind, { title: string; row4: string; amountLabel: string; dateLabel: string; methodLabel: string; notice: string; signNote: string }> = {
@@ -147,6 +152,8 @@ export async function buildRentReceiptPdf(
 
   // ── 제목 (좌측) ──
   const copy = COPY[f.kind ?? 'rent']
+  const isDepositPre = f.kind === 'deposit' && !!f.preResidence
+  const noticeText = isDepositPre ? DEPOSIT_PRE_NOTICE : copy.notice
   let y = ruleY - 6 * MM - 12
   T(copy.title, L, y, 17, P_INK, true)
 
@@ -195,7 +202,7 @@ export async function buildRentReceiptPdf(
   ], boxBot - 4.5 * MM)
 
   // ── 안내 문구 ──
-  T(copy.notice, L, b2 - 6 * MM, 7.5, P_MUTED)
+  T(noticeText, L, b2 - 6 * MM, 7.5, P_MUTED)
 
   // ── 서명 · 도장 (하단 우측) ──
   const signLineY = 26 * MM

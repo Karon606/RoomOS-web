@@ -4,6 +4,7 @@ import { after } from 'next/server'
 import { fmtWon } from '@/lib/fmtMoney'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
+import { dueDayForCutoff } from '@/lib/dueDate'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
@@ -975,8 +976,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const lAny = l as any
     let dueDayNum: number = NaN
     if (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay) {
-      const eff = lAny.overrideDueDay as string
-      dueDayNum = eff.includes('말') ? 31 : parseInt(eff, 10)
+      const d = dueDayForCutoff(lAny.overrideDueDay as string, firstMonth)
+      dueDayNum = d ?? NaN
     } else {
       const orig = getOriginalDueDay(l)
       if (orig != null) dueDayNum = orig

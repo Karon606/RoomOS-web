@@ -5,6 +5,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import { dueDayForCutoff } from '@/lib/dueDate'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -237,7 +238,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
 
       // 인수월 양도인 자동 처리 — dueDay < cutoffDay 이면서 그 달 사용자 실수납이 0건일 때만 (dashboard 통일).
       const effDueDay = effectiveDueDayForMonth(l, firstMonth)
-      const dueDayNum = effDueDay ? (effDueDay.includes('말') ? 31 : parseInt(effDueDay, 10)) : NaN
+      const dueDayNum = dueDayForCutoff(effDueDay, firstMonth) ?? NaN
       const opPaidInCutoff = opPaidInCutoffMonthByLease[l.id] ?? 0
       const acqMonthAutoPaid =
         !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay && opPaidInCutoff === 0)

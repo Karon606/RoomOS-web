@@ -71,12 +71,8 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
   // 이력도 종류별로 갈린다 — 안 그러면 탭이 화면 절반에만 걸리는 반쪽 전환이 된다(디자이너 지적).
-  // RentReceiptFile 에 종류 컬럼이 없어 파일명 접두로 구분한다(발급 API 가 붙이는 정본 접두).
-  // 접두 도입 전 파일은 모두 입실료 확인서라 접두 없는 것도 입실료로 본다.
-  const kindFiles = useMemo(
-    () => files.filter(c => (c.fileName.startsWith('보증금영수증') ? 'deposit' : 'rent') === kind),
-    [files, kind],
-  )
+  // 분류 정본은 RentReceiptFile.kind 컬럼(기본 'rent' — 도입 전 발급분은 전부 입실료 확인서).
+  const kindFiles = useMemo(() => files.filter(c => c.kind === kind), [files, kind])
 
   // 발급 이력 상태 필터 옵션 — 실제 존재하는 입주자 상태만(현재 종류 안에서)
   const statusCounts = useMemo(() => {

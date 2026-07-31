@@ -1,6 +1,6 @@
 // 납부일 해석 정본(lib/dueDate) 회귀 테스트 — DB 불필요, 순수 함수 케이스 고정.
 // 전체 날짜형('YYYY-MM-DD')을 parseInt 로 읽어 연도(2026)가 날짜로 새는 클래스를 막는다(신고 998bff27).
-import { resolveDueRaw, effectiveDueRawForMonth, dueDateForMonth, overrideAbsDate, isDeferredForMonth } from '../lib/dueDate'
+import { resolveDueRaw, effectiveDueRawForMonth, dueDateForMonth, overrideAbsDate, isDeferredForMonth, dueDayForCutoff } from '../lib/dueDate'
 
 let pass = 0
 const fails: string[] = []
@@ -49,6 +49,18 @@ eq('같은 날로 조정하면 유예 아님', isDeferredForMonth(noop, '2026-07
 // ── 회귀 방어: 전체 날짜형을 숫자로 오독하지 않는가 ────────
 eq('parseInt 오독 방어(2026일 아님)', ymd(resolveDueRaw('2026-08-07', 2026, 8)) !== '2026-08-31', true)
 eq('연말 넘김 유예 12월->1월', ymd(dueDateForMonth({ dueDay: '말일', overrideDueDay: '2027-01-05', overrideDueDayMonth: '2026-12' }, '2026-12')), '2027-01-05')
+
+// ── cutoff 비교용 일자(인수 전 양도인 판정) ────────────────
+// 전체 날짜형을 parseInt 하면 2026 이 나와 'dueDay < cutoffDay' 비교가 조용히 뒤집힌다.
+eq('cutoff: 일자형 그대로', dueDayForCutoff('15', '2026-07'), 15)
+eq('cutoff: 말일 = 31', dueDayForCutoff('말일', '2026-07'), 31)
+eq('cutoff: 같은 달 전체 날짜형은 그 일자', dueDayForCutoff('2026-07-24', '2026-07'), 24)
+eq('cutoff: 다음 달로 밀리면 99(항상 cutoff 뒤)', dueDayForCutoff('2026-08-07', '2026-07'), 99)
+eq('cutoff: 이전 달이면 0(항상 cutoff 앞)', dueDayForCutoff('2026-06-28', '2026-07'), 0)
+eq('cutoff: 없으면 null', dueDayForCutoff(null, '2026-07'), null)
+eq('cutoff: parseInt 오독 방어(2026 아님)', dueDayForCutoff('2026-08-07', '2026-07') !== 2026, true)
+// 심원재 실사례 — 7월 cutoff 비교에서 8/7 유예가 '인수 전'으로 오판되지 않아야 한다
+eq('cutoff: 심원재 8/7 유예는 cutoff 앞이 아님', (dueDayForCutoff('2026-08-07', '2026-07') ?? 0) < 15, false)
 
 console.log(`\n납부일 해석 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

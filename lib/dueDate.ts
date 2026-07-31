@@ -49,6 +49,26 @@ export function overrideAbsDate(l: DueLease): Date | null {
   return resolveDueRaw(l.overrideDueDay, y, m)
 }
 
+/**
+ * 인수 cutoff 비교용 '그 달 안의 일자'. `dueDay < cutoffDay` 형태의 비교에 넣는 값이다.
+ * 전체 날짜형을 parseInt 로 읽으면 2026 이 나와 비교가 조용히 뒤집히므로 반드시 이 함수를 쓴다.
+ * 다른 달로 밀린 유예는 그 달 안에 일자가 없으므로 방향으로 접는다 — 이후 달이면 99(항상 cutoff 뒤),
+ * 이전 달이면 0(항상 cutoff 앞). 같은 달이면 그 일자.
+ */
+export function dueDayForCutoff(raw: string | null | undefined, monthStr: string): number | null {
+  if (!raw) return null
+  if (raw.includes('-')) {
+    const m = raw.slice(0, 7)
+    if (m > monthStr) return 99
+    if (m < monthStr) return 0
+    const d = Number(raw.slice(8, 10))
+    return Number.isFinite(d) && d > 0 ? d : null
+  }
+  if (raw.includes('말')) return 31
+  const n = parseInt(raw, 10)
+  return isNaN(n) ? null : n
+}
+
 /** 그 달 납부일이 임시조정으로 옮겨졌는가(원래 날짜와 다른가). 표시 문구 승격 판정용. */
 export function isDeferredForMonth(l: DueLease, monthStr: string): boolean {
   if (!l.overrideDueDay || l.overrideDueDayMonth !== monthStr) return false
