@@ -18,4 +18,35 @@ mirror() {
 mirror "$ROOT/AGENTS.md" "$REFS/AGENTS(프로젝트 규칙).md" "저장소 루트 AGENTS.md"
 mirror "$HOME/.claude/CLAUDE.md" "$REFS/CLAUDE(전역 행동지침).md" "~/.claude/CLAUDE.md"
 mirror "$ROOT/loop.md" "$REFS/loop(검증 규칙).md" "저장소 루트 loop.md"
+
+# ── 빠른 감지망 (DB 불필요, 합계 약 1.3초) ───────────────────────────────
+# 감지망은 만들어만 두면 안 돌아간다 — 그동안 사람이 매번 손으로 실행해야 잡혔다(F페이즈에서 확인).
+# 여기엔 DB·네트워크가 필요 없는 것만 둔다. DB 대조는 pre-push 로.
+# 급할 때: git commit --no-verify · 전체 건너뛰기: STAYEUM_SKIP_HOOKS=1
+if [ "$STAYEUM_SKIP_HOOKS" = "1" ]; then
+  echo "[감지망] STAYEUM_SKIP_HOOKS=1 — 건너뜀"
+  exit 0
+fi
+
+cd "$ROOT" || exit 0
+fail=0
+run() {
+  name="$1"; shift
+  out="$("$@" 2>&1)" || { echo "[감지망 실패] $name"; echo "$out" | tail -20; fail=1; }
+}
+run "금전 로직 회귀"      npx tsx scripts/test-money.ts
+run "납부일 해석"         npx tsx scripts/test-due-date.ts
+run "투어 피드 판정"      npx tsx scripts/test-tour-feed.ts
+run "생년월일 게이트"     npx tsx scripts/test-birthdate.ts
+run "단독 라우트 스크롤"  node scripts/check-standalone-scroll.mjs
+run "공개 페이지 트래킹"  node scripts/check-public-tracking.mjs
+
+if [ "$fail" = "1" ]; then
+  echo ""
+  echo "커밋을 중단했습니다. 위 감지망이 회귀를 잡았습니다."
+  echo "의도한 변경이라면 기대값을 먼저 고치세요(규칙 변경은 loop.md 4번 = 운영자 승인 대상)."
+  echo "정말 그대로 커밋하려면: git commit --no-verify"
+  exit 1
+fi
+echo "[감지망] 빠른 검사 6종 통과"
 exit 0

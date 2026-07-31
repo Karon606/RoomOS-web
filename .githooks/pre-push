@@ -1,0 +1,46 @@
+#!/bin/sh
+# 푸시 = 배포 직전 마지막 관문. 여기서 못 잡으면 운영에 나간다.
+# 커밋 훅(빠른 감지망)에 더해 타입체크와 DB 대조까지 돈다. 합계 약 9초.
+#   - iCloud 중복 파일 정리: 이 저장소는 iCloud Drive 위에 있어 .next 에 "파일 2.ts" 사본이 생기고
+#     그대로 두면 tsc 가 중복 식별자 오류로 실패한다(이번 세션에만 여러 번 겪음).
+#   - DB 대조: .env.local 이 없거나 네트워크가 끊기면 건너뛰되, 조용히 넘어가지 않고 경고한다.
+# 건너뛰기: git push --no-verify · 전체 건너뛰기: STAYEUM_SKIP_HOOKS=1
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 0
+
+if [ "$STAYEUM_SKIP_HOOKS" = "1" ]; then
+  echo "[배포 전 검사] STAYEUM_SKIP_HOOKS=1 — 건너뜀"
+  exit 0
+fi
+
+fail=0
+run() {
+  name="$1"; shift
+  out="$("$@" 2>&1)" || { echo "[검사 실패] $name"; echo "$out" | tail -25; fail=1; }
+}
+
+# 1) iCloud 중복 파일 정리 — 타입체크 오탐의 단골 원인
+find .next -name "* [0-9].*" -delete 2>/dev/null
+
+# 2) 타입체크
+run "타입체크(tsc)" npx tsc --noEmit
+
+# 3) DB 대조 감지망 — 자격증명·네트워크가 있을 때만
+if [ -f ".env.local" ]; then
+  run "돈 정합"          node --env-file=.env.local scripts/verify-money-consistency.mjs
+  run "고정지출 추정"    node --env-file=.env.local scripts/verify-recurring-estimate.mjs
+  run "재고 허브 드리프트" node --env-file=.env.local scripts/check-restock-hub-drift.mjs
+  run "거주 이력 드리프트" node --env-file=.env.local scripts/check-room-stay-drift.mjs
+else
+  echo "[배포 전 검사] .env.local 이 없어 DB 대조 4종을 건너뜁니다 — 배포 후 수동 확인 필요"
+fi
+
+if [ "$fail" = "1" ]; then
+  echo ""
+  echo "푸시를 중단했습니다. 이대로 배포하면 운영에 나갑니다."
+  echo "정말 푸시하려면: git push --no-verify"
+  exit 1
+fi
+echo "[배포 전 검사] 통과"
+exit 0

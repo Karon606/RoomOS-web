@@ -29,6 +29,39 @@ const B_MARKER = /<DocumentScroll\b|html\s*,\s*body[^}]*overflow-y:\s*auto/
 const FULL_HEIGHT = /min-h-(screen|dvh)|minHeight:\s*['"]100(vh|dvh)['"]/
 
 const violations = []
+
+// 0) 정본 컴포넌트 자체가 살아 있는지 — 마운트만 검사하면 알맹이가 빠져도 통과한다.
+//    (실제로 이 검사를 넣기 전, DocumentScroll 안의 클래스 토글을 지워도 감지망이 통과했다)
+try {
+  const docScroll = readFileSync('components/layout/DocumentScroll.tsx', 'utf8')
+  if (!/classList\.add\(['"]doc-scroll['"]\)/.test(docScroll)) {
+    violations.push('components/layout/DocumentScroll.tsx — doc-scroll 클래스 부착이 사라짐. 마운트해도 스크롤이 살아나지 않는다')
+  }
+  if (!/classList\.remove\(['"]doc-scroll['"]\)/.test(docScroll)) {
+    violations.push('components/layout/DocumentScroll.tsx — 언마운트 해제가 사라짐. 셸 페이지로 돌아가도 문서 스크롤이 남아 이중 스크롤이 된다')
+  }
+} catch {
+  violations.push('components/layout/DocumentScroll.tsx 를 읽을 수 없음 — 정본 컴포넌트가 사라졌다')
+}
+
+// 0b) 배경 잠금 정본 — 오버레이가 떠 있는 동안 뒤 페이지가 스크롤되지 않게 한다(F페이즈 회귀 봉합).
+try {
+  const lock = readFileSync('lib/scrollLock.ts', 'utf8')
+  if (!/doc-scroll-locked/.test(lock)) {
+    violations.push('lib/scrollLock.ts — doc-scroll-locked 토글이 사라짐. 문서 스크롤 페이지에서 모달 배경이 스크롤된다')
+  }
+  const modal = readFileSync('components/ui/Modal.tsx', 'utf8')
+  if (!/lockBackgroundScroll\(\)/.test(modal)) {   // import 만 남아도 통과하지 않게 '호출'을 본다
+    violations.push('components/ui/Modal.tsx — 배경 잠금 호출이 사라짐(회귀 전례: DocumentScroll 도입으로 전제가 깨진 건)')
+  }
+  const css = readFileSync('app/globals.css', 'utf8')
+  if (!/html\.doc-scroll\.doc-scroll-locked/.test(css)) {
+    violations.push('app/globals.css — doc-scroll-locked 잠금 규칙이 사라짐')
+  }
+} catch {
+  violations.push('배경 잠금 정본(lib/scrollLock.ts) 을 읽을 수 없음')
+}
+
 const pages = walk(APP).filter(p => /\/page\.tsx$/.test(p) && !EXCLUDED.some(re => re.test(p)))
 
 for (const page of pages) {
