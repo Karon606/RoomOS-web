@@ -69,6 +69,8 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 서류 종류 — 보증금은 귀속 월이 없어 스테퍼를 숨기고 문구·라벨이 갈린다(신고 d68220bd)
   const isDeposit = data.kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
+  // 목록 복귀 경로 — 종류를 유지한다. 안 붙이면 보증금으로 발급하고도 입실료 탭으로 떨어진다(운영자 지적).
+  const listHref = isDeposit ? '/rent-receipts?kind=deposit' : '/rent-receipts'
   const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence } })
 
   // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
@@ -137,7 +139,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
         pushToast('error', msg); return
       }
       pushToast('success', `${docLabel} 발급됨. 발급 이력으로 이동합니다`)
-      router.push('/rent-receipts')
+      router.push(listHref)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
       pushToast('error', msg)
@@ -151,7 +153,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       <DocumentScroll />
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">‹ {docLabel}</Link>
+          <Link href={listHref} className="text-sm text-[var(--coral)]">‹ {docLabel}</Link>
           <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)]">자동값으로</button>
         </div>
 

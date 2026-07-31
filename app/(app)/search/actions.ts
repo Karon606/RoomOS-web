@@ -266,7 +266,8 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   const docsMerged = [
     ...contractFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.signedAt, tenantName: f.tenant.name, kindLabel: '계약서', page: '/contracts' })),
     // 두 서류가 같은 모델을 쓰므로 kind 컬럼으로 종류를 표기한다(결과 목록의 구분력 유지)
-    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: f.kind === 'deposit' ? '보증금 영수증' : '입실료 납부 확인서', page: '/rent-receipts' })),
+    // page 에 종류를 실어야 착지 탭이 맞는다 — 안 그러면 보증금 영수증을 눌러도 입실료 탭에 떨어진다
+    ...rentReceiptFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: f.kind === 'deposit' ? '보증금 영수증' : '입실료 납부 확인서', page: f.kind === 'deposit' ? '/rent-receipts?kind=deposit' : '/rent-receipts' })),
     ...residenceCertFiles.map(f => ({ id: f.id, fileName: f.fileName, date: f.issuedAt, tenantName: f.tenant.name, kindLabel: '실거주 확인서', page: '/residence-certs' })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime())
   const docHits: SearchHit[] = docsMerged.slice(0, TAKE_SHOW).map(d => ({
@@ -275,7 +276,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     right: d.kindLabel,
     badge: null,
     caption: [d.tenantName, fmtDateDot(d.date)].filter(Boolean).join(' · ') || null,
-    action: { type: 'href', href: `${d.page}?q=${encodeURIComponent(d.fileName)}` },
+    action: { type: 'href', href: `${d.page}${d.page.includes('?') ? '&' : '?'}q=${encodeURIComponent(d.fileName)}` },
   }))
 
   const groupDefs: Record<SearchGroupType, SearchGroup> = {
