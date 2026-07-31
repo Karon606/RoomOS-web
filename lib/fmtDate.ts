@@ -15,6 +15,13 @@ const toKstDate = (d: Date | string | null | undefined): Date | null => {
   return isNaN(dt.getTime()) ? null : new Date(dt.getTime() + KST_MS)
 }
 
+/** 월 스코프용 — 'YYYY-MM' (KST 기준). 월 경계 판정은 반드시 이걸 쓴다(로컬 재정의 금지). */
+export function kstMonthOf(d: Date | string | null | undefined): string {
+  const dt = toKstDate(d)
+  if (!dt) return ''
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 /** 목록·표용 — '2026.07.10' (KST 기준) */
 export function fmtDateDot(d: Date | string | null | undefined): string {
   const dt = toKstDate(d)

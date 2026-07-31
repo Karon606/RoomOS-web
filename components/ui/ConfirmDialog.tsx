@@ -6,6 +6,7 @@
 // <ConfirmHost /> 를 셸(AppShell·admin layout)에 1회 마운트.
 
 import { useEffect, useRef, useState } from 'react'
+import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 
 export type ConfirmLevel = 'normal' | 'caution' | 'danger'
 
@@ -68,6 +69,13 @@ export function ConfirmHost() {
     if (pending) (cancelRef.current ?? confirmRef.current)?.focus()
   }, [pending])
 
+  // 배경 스크롤 잠금 — 문서 스크롤이 켜진 셸 밖 페이지에서만 실제 효과
+  useEffect(() => {
+    if (!pending) return
+    lockBackgroundScroll()
+    return () => unlockBackgroundScroll()
+  }, [pending])
+
   // Esc = 취소 (전 단계 허용, v2.0 §14)
   useEffect(() => {
     if (!pending) return
@@ -97,14 +105,19 @@ export function ConfirmHost() {
     >
       <div
         role="alertdialog" aria-modal="true" aria-label={opts.title}
-        className="bg-[var(--cream)] rounded-2xl shadow-lift w-full anim-panel-in"
+        className="bg-[var(--cream)] rounded-2xl shadow-lift w-full anim-panel-in flex flex-col"
         style={{
           maxWidth: isDanger && opts.impact?.length ? 'var(--confirm-w-impact)' : 'var(--confirm-w)',
           padding: 24,
+          // 폭은 고정인데 글자 크기 설정(최대 1.25배)에 따라 세로로만 자란다. 상한이 없으면
+          // 내용이 뷰포트를 넘는 순간 위아래가 동시에 잘리고 확인·취소 버튼에 닿을 수 없다(F페이즈).
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
           animation: 'confirm-in 200ms var(--ease-sharp)',
         }}
         onClick={e => e.stopPropagation()}
       >
+        {/* 본문만 스크롤 — 버튼줄은 아래 shrink-0 로 항상 보인다 */}
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
         <div className="flex items-start gap-2">
           {isCaution && (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5" aria-hidden="true">
@@ -147,8 +160,10 @@ export function ConfirmHost() {
           </p>
         )}
 
+        </div>
+
         {/* 버튼 — 취소 좌 · 확인 우, 높이 40px */}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-2 shrink-0">
           {opts.cancelLabel !== '' && (
             <button ref={cancelRef} type="button" onClick={() => done('cancel')}
               className={`h-10 px-4 rounded-lg text-sm font-medium transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${

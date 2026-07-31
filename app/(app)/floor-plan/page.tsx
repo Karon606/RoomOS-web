@@ -45,7 +45,8 @@ export default async function FloorPlanPage() {
   })
 
   return (
-    <div className="h-screen flex flex-col">
+    // h-screen(100vh)은 셸 크롬을 모르기 때문에 하단이 잘렸다 — 셸 본문 실효 높이로 교체(F페이즈)
+    <div className="flex flex-col" style={{ height: 'var(--shell-content-h)' }}>
       <FloorPlanEditor
         initialData={floorPlanData}
         rooms={rooms}

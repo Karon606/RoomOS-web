@@ -3,6 +3,7 @@
 import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
 import { PeekSheet } from './PeekSheet'
+import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -18,10 +19,10 @@ const WIDTH_CLS: Record<Width, string> = {
 let modalSeq = 0
 const escStack: number[] = []
 
-// (참고) 배경 스크롤 잠금은 넣지 않는다 — 이 앱은 셸이 h-dvh overflow-hidden 이고 본문은
-// app-main 내부 스크롤이라 body 는 원래 스크롤되지 않는다. body position:fixed 잠금을 넣었다가
-// iOS 에서 상·하단 바가 밀리는 회귀가 났다(신고 d4cf82d5). 키보드 잔존 오프셋(신고 6c196aeb)은
-// 전역 ViewportOffsetGuard 가 담당한다.
+// 배경 스크롤 잠금은 lib/scrollLock 이 담당한다. 셸 페이지는 html·body 가 이미 overflow:hidden 이라
+// 무동작이고, DocumentScroll 로 문서 스크롤을 켠 셸 밖 페이지에서만 실제로 잠긴다.
+// body position:fixed 잠금은 iOS 상·하단 바가 밀리는 회귀 전례가 있어 쓰지 않는다(신고 d4cf82d5).
+// 키보드 잔존 오프셋(신고 6c196aeb)은 전역 ViewportOffsetGuard 가 담당한다.
 
 export function Modal({
   open,
@@ -95,6 +96,13 @@ export function Modal({
     }
     onClose()
   }, [onClose])
+  // 배경 스크롤 잠금 — 문서 스크롤이 켜진 셸 밖 페이지에서만 실제 효과(셸 페이지는 무동작)
+  React.useEffect(() => {
+    if (!open) return
+    lockBackgroundScroll()
+    return () => unlockBackgroundScroll()
+  }, [open])
+
   // Esc 로 닫기 — 배경 클릭과 동일하게 동작(키보드 기대 일관성).
   // 겹친 모달에서는 최상단 것만 닫히도록 전역 스택으로 판별.
   React.useEffect(() => {

@@ -3,6 +3,7 @@
 import Script from 'next/script'
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from './Modal'
+import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 
 // 다음(카카오) 우편번호 서비스 — 무료, API 키 불필요
 const POSTCODE_SRC = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
@@ -75,9 +76,9 @@ export function AddressSearch({
   // 레이어가 열린 동안 배경 스크롤 잠금
   useEffect(() => {
     if (!open) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prev }
+    // body 만 잠그면 무효다 — 문서 스크롤 페이지의 실제 스크롤러는 html 이다(F페이즈).
+    lockBackgroundScroll()
+    return () => unlockBackgroundScroll()
   }, [open])
 
   return (

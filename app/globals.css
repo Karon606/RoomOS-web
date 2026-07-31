@@ -336,9 +336,26 @@ body {
   height: 100%;
 }
 
+/* 셸 본문(app-main)의 실효 높이 — 뷰포트에서 헤더(h-14/md:h-16)·상단 패딩(pt-4/md:pt-6)·
+   하단 패딩(4rem+safe / md:1.5rem)을 뺀 값. 화면을 꽉 채워야 하는 편집기류가 쓴다.
+   여기 말고 다른 곳에 100vh 를 직접 쓰면 셸 크롬만큼 아래가 잘린다(도면 편집기 사례). */
+:root {
+  --shell-content-h: calc(100dvh - 3.5rem - 1rem - (4rem + env(safe-area-inset-bottom, 0px)));
+}
+@media (min-width: 768px) {
+  :root { --shell-content-h: calc(100dvh - 4rem - 1.5rem - 1.5rem); }
+}
+
 /* AppShell 밖 단독 페이지의 문서 스크롤 — components/layout/DocumentScroll 이 마운트 중에만 부착.
    위 html·body 잠금(iOS 헤더 보호)을 그 페이지에서만 풀어 콘텐츠가 뷰포트를 넘어도 끝까지 닿게 한다.
    배경·여백은 건드리지 않는다(페이지별 토큰 유지). */
+/* 오버레이 열림 중 배경 잠금(lib/scrollLock) — height 는 건드리지 않아 스크롤 위치가 보존된다.
+   body position:fixed 잠금은 iOS 상·하단 바 회귀 전례(신고 d4cf82d5)가 있어 금지. */
+html.doc-scroll.doc-scroll-locked,
+html.doc-scroll.doc-scroll-locked body {
+  overflow: hidden;
+}
+
 html.doc-scroll,
 html.doc-scroll body {
   overflow-x: hidden;

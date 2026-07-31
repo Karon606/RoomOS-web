@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState, useTransition, useMemo } from 'react'
-import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, kstMonthOf } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -45,12 +45,6 @@ const NEUTRAL_COLOR = CATEGORY_COLORS['기타']
 // 정렬 기준 — 처리일은 미처리 그룹에 값이 없으니 요청일로 폴백한다.
 type SortKey = 'requestDate' | 'resolvedAt'
 
-
-// 타임스탬프의 KST 월(YYYY-MM) — 월 경계는 한국시간 기준.
-function kstMonthOf(d: Date | string): string {
-  const t = new Date(new Date(d).getTime() + 9 * 3600000)
-  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`
-}
 
 export default function RequestsClient({
   initialRequests,

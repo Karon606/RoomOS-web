@@ -8,7 +8,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { normalizeSearchQuery, type SearchQueryKind } from '@/lib/searchQuery'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateDot } from '@/lib/fmtDate'
+import { fmtDateDot, kstMonthOf } from '@/lib/fmtDate'
 import { isVacancyExcluded } from '@/lib/vacancy'
 
 export type SearchGroupType = 'tenant' | 'room' | 'expense' | 'item' | 'request' | 'doc'
@@ -259,7 +259,9 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     right: null,
     badge: r.resolvedAt ? { label: '처리됨', tone: 'neutral' } : { label: '미처리', tone: 'warning' },
     caption: [r.tenant?.name ?? r.commonPlace ?? '공용', fmtDateDot(r.requestDate)].filter(Boolean).join(' · ') || null,
-    action: { type: 'href', href: `/requests?q=${enc}` },
+    // 요청 화면은 요청일(requestDate) 기준 월 스코프라, 월을 안 실으면 지난달 요청은
+    // 착지 후 '조건에 맞는 요청이 없습니다'만 보인다(필터 초기화로도 안 나온다).
+    action: { type: 'href', href: `/requests?q=${enc}&month=${kstMonthOf(r.requestDate)}` },
   }))
 
   // 서류 — 3모델 병합 후 최신순, 종류 라벨로 구분. 착지는 종류별 페이지에 파일명 시딩.
@@ -284,7 +286,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     room:    { type: 'room',    label: '호실',   hits: roomHits,    hasMore: rooms.length > TAKE_SHOW,      moreHref: `/room-manage?q=${enc}` },
     expense: { type: 'expense', label: '지출',   hits: expenseHits, hasMore: expenses.length > TAKE_SHOW,   moreHref: `/finance?q=${enc}` },
     item:    { type: 'item',    label: '재고',   hits: itemHits,    hasMore: items.length > TAKE_SHOW,      moreHref: `/inventory?q=${enc}` },
-    request: { type: 'request', label: '요청',   hits: requestHits, hasMore: requests.length > TAKE_SHOW,   moreHref: `/requests?q=${enc}` },
+    request: { type: 'request', label: '요청',   hits: requestHits, hasMore: requests.length > TAKE_SHOW,   moreHref: `/requests?q=${enc}${requests[0] ? `&month=${kstMonthOf(requests[0].requestDate)}` : ''}` },
     doc:     { type: 'doc',     label: '서류',   hits: docHits,     hasMore: docsMerged.length > TAKE_SHOW,  moreHref: `/contracts?q=${enc}` },
   }
   // 그룹 순서 — kind는 순서만 조정(자동 라우팅 없음). 텍스트 질의는 품목 원장(재고)을 거래(지출)보다 앞에.
