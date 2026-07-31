@@ -120,7 +120,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/contracts',       label: '계약서',        Icon: IcoContract      },
       { href: '/residence-certs', label: '실거주 확인서', Icon: IcoResidenceCert },
-      { href: '/rent-receipts',   label: '입실료 납부 확인서', Icon: IcoReceipt    },
+      { href: '/rent-receipts',   label: '납부 확인서 · 영수증', Icon: IcoReceipt    },
     ],
   },
   {

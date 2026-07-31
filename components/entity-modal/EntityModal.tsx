@@ -238,10 +238,10 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     router.push(`/residence-cert/${links.tenantId}`)
     onClose()
   }
-  // 월세 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
-  const handleRentReceipt = () => {
+  // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
+  const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent') => {
     if (!links?.tenantId) return
-    router.push(`/rent-receipt/${links.tenantId}`)
+    router.push(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
     onClose()
   }
 
@@ -285,7 +285,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                 </button>
               )}
               {links?.tenantId && (
-                <button type="button" onClick={handleRentReceipt}
+                <button type="button" onClick={() => handleRentReceipt('rent')}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                   입실료 납부 확인서
                 </button>
@@ -296,12 +296,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
               </Btn>
             </div>
           )}
-          {/* 수납 관리(=payment 모달)에서도 입실료 납부 확인서 발급 진입 */}
+          {/* 수납 관리(=payment 모달)에서 서류 발급 진입 — 돈을 기록한 자리에서 바로 뽑는 동선(신고 d68220bd) */}
           {kind === 'payment' && links?.tenantId && (
-            <div className="flex justify-end">
-              <button type="button" onClick={handleRentReceipt}
+            <div className="flex flex-wrap gap-2 items-center">
+              <button type="button" onClick={() => handleRentReceipt('rent')}
                 className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                입실료 납부 확인서 발급
+                입실료 납부 확인서
+              </button>
+              <button type="button" onClick={() => handleRentReceipt('deposit')}
+                className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                보증금 영수증
               </button>
             </div>
           )}

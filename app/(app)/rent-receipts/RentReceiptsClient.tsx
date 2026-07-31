@@ -16,6 +16,7 @@ import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { Btn } from '@/components/ui/Btn'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
@@ -32,9 +33,12 @@ const fetchDocBytes = (driveFileId: string) => async () => {
   return res.arrayBuffer()
 }
 
-export default function RentReceiptsClient({ files, tenants, month }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string }) {
+export default function RentReceiptsClient({ files, tenants, month, kind = 'rent' }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string; kind?: 'rent' | 'deposit' }) {
+  // 서류 종류 — 보증금은 귀속 월이 없어 월 쿼리를 넘기지 않는다(신고 d68220bd)
+  const isDeposit = kind === 'deposit'
+  const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
   // 선택한 달을 발급 화면으로 넘겨 그 달 주기로 자동값이 채워지게 한다(이번 달이면 쿼리 없음).
-  const monthQuery = month ? `?month=${month}` : ''
+  const monthQuery = isDeposit ? '?kind=deposit' : (month ? `?month=${month}` : '')
   const router = useRouter()
   const entityModal = useEntityModal()
   const [tenantQuery, setTenantQuery] = useState('')
@@ -66,12 +70,20 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
   const enterSelectMode = () => { prewarmPdfToPng(); setSelectMode(true) }
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
-  // 발급 이력 상태 필터 옵션 — 실제 존재하는 입주자 상태만
+  // 이력도 종류별로 갈린다 — 안 그러면 탭이 화면 절반에만 걸리는 반쪽 전환이 된다(디자이너 지적).
+  // RentReceiptFile 에 종류 컬럼이 없어 파일명 접두로 구분한다(발급 API 가 붙이는 정본 접두).
+  // 접두 도입 전 파일은 모두 입실료 확인서라 접두 없는 것도 입실료로 본다.
+  const kindFiles = useMemo(
+    () => files.filter(c => (c.fileName.startsWith('보증금영수증') ? 'deposit' : 'rent') === kind),
+    [files, kind],
+  )
+
+  // 발급 이력 상태 필터 옵션 — 실제 존재하는 입주자 상태만(현재 종류 안에서)
   const statusCounts = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const c of files) if (c.status) m[c.status] = (m[c.status] ?? 0) + 1
+    for (const c of kindFiles) if (c.status) m[c.status] = (m[c.status] ?? 0) + 1
     return m
-  }, [files])
+  }, [kindFiles])
 
   const tenantRows = useMemo(() => {
     const q = tenantQuery.trim().toLowerCase()
@@ -81,20 +93,20 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
 
   const fileRows = useMemo(() => {
     const q = fileQuery.trim().toLowerCase()
-    return files.filter(c =>
+    return kindFiles.filter(c =>
       (!fileStatus || c.status === fileStatus) &&
       (!q || c.tenantName.toLowerCase().includes(q) || c.fileName.toLowerCase().includes(q) || (c.roomNo ?? '').toLowerCase().includes(q))
     )
-  }, [files, fileQuery, fileStatus])
+  }, [kindFiles, fileQuery, fileStatus])
 
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `${name}님의 이 입실료 납부 확인서를 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `${name}님의 이 ${docLabel}를 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteRentReceiptFile(id)
       setDeletingId(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '입실료 납부 확인서 삭제됨', { action: { label: '적용취소', run: () => { void restoreRentReceiptFile(id).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) } } })
+      pushToast('success', `${docLabel} 삭제됨`, { action: { label: '적용취소', run: () => { void restoreRentReceiptFile(id).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) } } })
       router.refresh()
     })
   }
@@ -105,7 +117,7 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
     .map(c => ({
       id: c.driveFileId,
       personName: c.tenantName,
-      docLabel: '입실료납부확인서',
+      docLabel: isDeposit ? '보증금영수증' : '입실료납부확인서',
       dateStr: fmtDate(c.issuedAt),
       fetchBytes: fetchDocBytes(c.driveFileId),
     }))
@@ -113,23 +125,39 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서
-            <InfoHint title="납부 확인서란?">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다. 위에서 선택한 달로 발급 대상월이 잡힙니다.</InfoHint>
+      {/* 헤더 — 제목+뷰탭 좌측, 월 선택 우측(수납 관리와 동일 문법 §25).
+          보증금은 귀속 월이 없어 월 선택을 비활성 자리표시로 둔다(사라지면 헤더가 출렁인다). */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">납부 확인서 · 영수증
+            <InfoHint title="어떤 서류인가요?">
+              입실료 납부 확인서는 거주중 입실자의 그 달 이용료 납부 사실을, 보증금 영수증은 계약 보증금의 수령 사실을 증명합니다.
+              입실자를 선택하면 이름·호실·거주기간·금액·수령인·도장이 자동으로 채워집니다.
+              금액은 실제 받은 기록에서 가져오므로, 받지 않은 돈이 서류에 적히지 않습니다.
+              발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.
+            </InfoHint>
           </h1>
+          <ViewTabs ariaLabel="서류 종류" activeId={kind} equal
+            tabs={[
+              { id: 'rent',    label: '입실료', href: '/rent-receipts' },
+              { id: 'deposit', label: '보증금', href: '/rent-receipts?kind=deposit' },
+            ]} />
         </div>
-        <MonthSelector />
+        {isDeposit
+          ? <span className="text-xs text-[var(--warm-muted)]">보증금은 월과 무관합니다</span>
+          : <MonthSelector />}
       </div>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">발급된 PDF는 연결된 Google Drive에 저장됩니다</p>
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 {docLabel} 발급</h2>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
+          {isDeposit ? '입주 예정자도 발급할 수 있습니다. 실제 받은 보증금이 채워집니다' : '발급된 PDF는 연결된 Google Drive에 저장됩니다'}
+        </p>
         <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         </div>
         {tenants.length === 0 ? (
-          <EmptyState title="거주중인 입실자가 없습니다" />
+          <EmptyState title={isDeposit ? '발급 대상 입실자가 없습니다' : '거주중인 입실자가 없습니다'} />
         ) : tenantRows.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] px-1 py-2">조건에 맞는 입실자가 없습니다.</p>
         ) : (
@@ -151,16 +179,16 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{kindFiles.length}건</span></h2>
           {/* 다중 '보내기' 선택 — 파일 공유 지원 기기에서만 노출 */}
-          {canShare && files.length > 0 && (
+          {canShare && kindFiles.length > 0 && (
             <Btn type="button" variant="secondary" size="sm"
               onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}>
               {selectMode ? '선택 취소' : '선택'}
             </Btn>
           )}
         </div>
-        {files.length > 0 && (
+        {kindFiles.length > 0 && (
           <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
             <SearchBar value={fileQuery} onChange={setFileQuery} placeholder="이름·호실·파일명 검색" />
           </div>
@@ -173,15 +201,15 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
             value={fileStatus}
             onChange={setFileStatus}
             options={[
-              { value: '', label: `전체 ${files.length}` },
+              { value: '', label: `전체 ${kindFiles.length}` },
               ...Object.keys(statusCounts).map(s => ({ value: s, label: `${STATUS_LABEL[s] ?? s} ${statusCounts[s]}` })),
             ]}
           />
         )}
         {fileRows.length === 0 ? (
           <EmptyState
-            title={files.length === 0 ? '발급한 확인서가 아직 없습니다' : '조건에 맞는 확인서가 없습니다'}
-            description={files.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
+            title={kindFiles.length === 0 ? `발급한 ${docLabel}가 아직 없습니다` : `조건에 맞는 ${docLabel}가 없습니다`}
+            description={kindFiles.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
           />
         ) : (
           <ul className="space-y-2">
@@ -227,11 +255,11 @@ export default function RentReceiptsClient({ files, tenants, month }: { files: R
                 <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
                   {/* 보내기 = 사진/PDF 형식 선택 후 공유(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22) */}
                   {canShare && (
-                    <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_입실료납부확인서`}
+                    <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
                       className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   )}
                   {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장(실거주확인서와 동일 문법) */}
-                  <SaveDocImageButton fileName={`${c.tenantName}_입실료납부확인서`}
+                  <SaveDocImageButton fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
                     getPdfBytes={fetchDocBytes(c.driveFileId)}
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"

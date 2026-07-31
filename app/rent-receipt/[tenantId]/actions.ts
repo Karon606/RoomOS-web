@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import type { ReceiptKind } from '@/lib/rentReceiptPdf'
 
 // 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
 export type RentReceiptData = {
@@ -25,6 +26,7 @@ export type RentReceiptData = {
   isShortTerm: boolean    // 단기 입주자 — 입주월 단일 청구라 월 스테퍼 숨김(회계 오더 2026-07-27)
   // 화면 전용 경고(인쇄물 미출력) — noRecord: 그 달 수납 기록 없음(0원), partial: 실입금이 청구액보다 부족
   warning: 'noRecord' | 'partial' | null
+  kind: ReceiptKind       // 'deposit' 이면 보증금 영수증(월 개념 없음 — 스테퍼 숨김)
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
@@ -60,7 +62,7 @@ async function requireAuthAndProperty() {
 const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? `${v.trim()}호` : v) : ''
 
 // month('YYYY-MM')를 주면 그 달 주기로 자동값을 채운다(과거 달 발급). 미지정이면 현재 주기 — 기존 재발급 링크 무회귀.
-export async function getRentReceiptData(tenantId: string, month?: string): Promise<RentReceiptData | null> {
+export async function getRentReceiptData(tenantId: string, month?: string, kind: ReceiptKind = 'rent'): Promise<RentReceiptData | null> {
   const { propertyId } = await requireAuthAndProperty()
 
   const [tenant, property] = await Promise.all([
@@ -97,6 +99,51 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
   const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
   const todayMonth = todayKst.slice(0, 7)
   const viewMonth = cycle.start.slice(0, 7)
+
+  // ── 보증금 영수증(kind='deposit') ─────────────────────────────────────
+  // 보증금은 귀속 월이 없는 1회성 수령이고 반환 예정 채무다. 따라서 월 필터를 타지 않고
+  // lease 전체의 isDeposit 실수납을 합산한다("받은 돈은 조회월과 무관" 정본).
+  // 약정액(lease.depositAmount)을 자동기입하지 않는 것은 이용료와 같은 규칙 — 안 받은 돈을 받았다고
+  // 적으면 허위 서류다. 부분 수령이면 화면 경고만 띄우고 발급 자체는 막지 않는다.
+  if (kind === 'deposit') {
+    const bank = property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금'
+    let paid = 0
+    let last: { payDate: Date; payMethod: string | null } | null = null
+    if (lease) {
+      const recs = await prisma.paymentRecord.findMany({
+        where: { leaseTermId: lease.id, isDeposit: true, isPrevOwner: false },
+        select: { actualAmount: true, payDate: true, payMethod: true },
+        orderBy: { payDate: 'asc' },
+      })
+      for (const r of recs) {
+        if (r.actualAmount <= 0) continue
+        paid += r.actualAmount
+        last = { payDate: r.payDate, payMethod: r.payMethod }
+      }
+    }
+    const contracted = lease?.depositAmount ?? 0
+    const moveInYmd = lease?.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
+    return {
+      tenantId: tenant.id,
+      leaseTermId: lease?.id ?? null,
+      name: tenant.name,
+      room: fmtRoom(lease?.room?.roomNo),
+      period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
+      targetMonth: moveInYmd ? kor(moveInYmd) : '',
+      amount: paid,
+      payDate: kor(last ? new Date(last.payDate.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10) : todayKst),
+      payMethod: last?.payMethod ?? bank,
+      note: contracted > 0 && paid < contracted
+        ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 수령`
+        : '퇴실 시 미납금·손해배상액 공제 후 반환',
+      recipientName: biz.ceoName ?? '',
+      anchorMonth: viewMonth,
+      todayMonth,
+      isShortTerm,
+      warning: paid <= 0 ? 'noRecord' : (contracted > 0 && paid < contracted ? 'partial' : null),
+      kind,
+    }
+  }
 
   // 납부 확인서의 정본은 실입금(회계 오더 2026-07-27) — 그 귀속월(targetMonth=주기 시작월)의 수납 기록.
   // 보증금·양도인 몫·청구 조정 전표 제외. 소프트삭제는 prisma 확장이 자동 필터(where 에 deletedAt 금지).
@@ -156,5 +203,6 @@ export async function getRentReceiptData(tenantId: string, month?: string): Prom
     todayMonth,
     isShortTerm,
     warning,
+    kind,
   }
 }

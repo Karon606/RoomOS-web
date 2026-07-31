@@ -51,10 +51,12 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
 
 export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: string | null }
 
-export async function getIssuableTenants(): Promise<IssuableTenant[]> {
+// kind='deposit' 이면 예약 확정(RESERVED)도 대상 — 보증금은 입주 전에 받고 그 자리에서 영수증을 준다.
+// 이용료 확인서는 기존대로 거주중만(입주 전엔 낼 이용료가 없다).
+export async function getIssuableTenants(kind: 'rent' | 'deposit' = 'rent'): Promise<IssuableTenant[]> {
   const propertyId = await getPropertyId()
   const leases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: 'ACTIVE' },
+    where: { propertyId, status: kind === 'deposit' ? { in: ['ACTIVE', 'RESERVED'] } : 'ACTIVE' },
     orderBy: [{ moveInDate: 'desc' }],
     select: { tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
   })

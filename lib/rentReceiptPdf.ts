@@ -13,17 +13,44 @@ import path from 'path'
 import { readFile } from 'fs/promises'
 import { getNanumGothic } from './residenceCertOverlay'
 
+// 서류 종류 — 레이아웃(§26 A5 규격·좌표)은 두 종류가 동일하고 라벨·문구만 갈린다.
+// 보증금은 귀속 월이 없고(1회성) 반환 예정 채무라 '납부'가 아닌 '수령' 어휘를 쓴다.
+export type ReceiptKind = 'rent' | 'deposit'
+
 export type RentReceiptFields = {
   issueDate: string      // YYYY-MM-DD (발행일)
   name: string           // 수령인(입주자) 성명
   room: string           // 호실
   period: string         // 거주 기간
-  targetMonth: string    // 납부 대상월
+  targetMonth: string    // 납부 대상월 (보증금이면 입주 예정일)
   amount: string         // 납부 금액 (숫자 위주 — ₩·한글 자동)
   payDate: string        // 납부일
   payMethod: string      // 납부방법
   note: string           // 비고
   recipientName: string  // 임대인 대표 성명
+  kind?: ReceiptKind     // 미지정이면 'rent' — 기존 호출부 무회귀
+}
+
+// 종류별 문구 — 표 4행 구조·좌표는 공유(행을 지우면 아래 금액 박스·표2 세로 리듬이 어긋난다).
+const COPY: Record<ReceiptKind, { title: string; row4: string; amountLabel: string; dateLabel: string; methodLabel: string; notice: string; signNote: string }> = {
+  rent: {
+    title: '입실료 납부 확인서',
+    row4: '납부 대상월',
+    amountLabel: '납부 금액',
+    dateLabel: '납 부 일',
+    methodLabel: '납부방법',
+    notice: '본 확인서는 상기 입실료의 납부 사실을 확인합니다. 발행번호로 진위 확인이 가능합니다.',
+    signNote: '위 입실료의 납부 사실을 확인함',
+  },
+  deposit: {
+    title: '보증금 영수증',
+    row4: '입주 예정일',
+    amountLabel: '보증금',
+    dateLabel: '수 령 일',
+    methodLabel: '수령방법',
+    notice: '본 영수증은 상기 보증금의 수령 사실을 확인하며, 퇴실 시 미납금·손해배상액을 공제한 잔액을 반환합니다.',
+    signNote: '위 보증금의 수령 사실을 확인함',
+  },
 }
 
 export type RentReceiptBrand = {
@@ -119,8 +146,9 @@ export async function buildRentReceiptPdf(
   page.drawRectangle({ x: L, y: ruleY, width: R - L, height: 1.6, color: P_TC })
 
   // ── 제목 (좌측) ──
+  const copy = COPY[f.kind ?? 'rent']
   let y = ruleY - 6 * MM - 12
-  T('입실료 납부 확인서', L, y, 17, P_INK, true)
+  T(copy.title, L, y, 17, P_INK, true)
 
   // ── 키-값 표 ──
   const labelW = 34 * MM, rowH = 8 * MM
@@ -148,30 +176,30 @@ export async function buildRentReceiptPdf(
     { label: '수령인 (입주자)', value: f.name },
     { label: '호    실', value: f.room },
     { label: '거주 기간', value: f.period },
-    { label: '납부 대상월', value: f.targetMonth },
+    { label: copy.row4, value: f.targetMonth },
   ], y)
 
   // ── 납부 금액 박스 ──
   const boxTop = b1 - 4.5 * MM, boxH = 14 * MM, boxBot = boxTop - boxH
   page.drawRectangle({ x: L, y: boxBot, width: R - L, height: boxH, color: P_AMOUNT_BG, borderColor: P_RULE_STRONG, borderWidth: 0.6 })
-  T('납부 금액', L + 5 * MM, boxBot + boxH / 2 - 3.5, 10, P_INK, true)
+  T(copy.amountLabel, L + 5 * MM, boxBot + boxH / 2 - 3.5, 10, P_INK, true)
   TR(amountFmt(f.amount), R - 5 * MM, boxBot + boxH / 2 + 1, 14, P_TC, true)
   const won = koreanWon(Number(onlyDigits(f.amount)))
   if (won) TR(won, R - 5 * MM, boxBot + boxH / 2 - 8, 8, P_MUTED)
 
   // ── 키-값 표 2 ──
   const b2 = drawKV([
-    { label: '납 부 일', value: f.payDate },
-    { label: '납부방법', value: f.payMethod },
+    { label: copy.dateLabel, value: f.payDate },
+    { label: copy.methodLabel, value: f.payMethod },
     { label: '비    고', value: f.note },
   ], boxBot - 4.5 * MM)
 
   // ── 안내 문구 ──
-  T('본 확인서는 상기 입실료의 납부 사실을 확인합니다. 발행번호로 진위 확인이 가능합니다.', L, b2 - 6 * MM, 7.5, P_MUTED)
+  T(copy.notice, L, b2 - 6 * MM, 7.5, P_MUTED)
 
   // ── 서명 · 도장 (하단 우측) ──
   const signLineY = 26 * MM
-  T('위 입실료의 납부 사실을 확인함', R - 84 * MM, signLineY + 11 * MM, 8, P_MUTED)
+  T(copy.signNote, R - 84 * MM, signLineY + 11 * MM, 8, P_MUTED)
   const sigText = `임대인  ${brand.businessName}  대표  ${f.recipientName}`
   if (stampBytes && stampBytes.length > 0) {
     const SEAL = SEAL_MM * MM, sealLeft = R - SEAL, sealCx = R - SEAL / 2

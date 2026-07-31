@@ -72,6 +72,17 @@ for (const l of leases) {
   }
 }
 
+// 3. 미래 수납일 — '받은 날'이 아직 오지 않았다면 입주일 등 파생값이 샌 것(수납일 기본값 회귀 흔적).
+//    월 필터 화면에서 사라져 보여 중복 수납을 부른다(신고 50a2a69b 의 직접 원인, 백필 후 감시).
+// (이 스크립트는 원시 클라이언트라 lib/prisma 의 소프트삭제 자동 필터가 없다 — deletedAt 명시 필수)
+const futurePays = await prisma.paymentRecord.findMany({
+  where: { deletedAt: null, payDate: { gt: new Date(Date.now() + 9 * 3600000) } },
+  select: { payDate: true, actualAmount: true, leaseTerm: { select: { tenant: { select: { name: true } } } } },
+})
+for (const r of futurePays) {
+  violations.push(`[데이터] ${r.leaseTerm?.tenant?.name ?? '?'}: 수납일 ${r.payDate.toISOString().slice(0, 10)} 이 미래 — 받은 날이 아닌 파생값 의심`)
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
