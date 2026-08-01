@@ -427,7 +427,7 @@ export async function updateTenant(formData: FormData): Promise<
         discounts: currentLease.discounts,
       },
       dueDay || null, newMoveOutIso,
-      status === 'CHECKOUT_PENDING',   // 퇴실 예정 상태로 저장할 때만 자동 적용
+      false,   // 자동 적용 안 함 — 아래 정책 주석 참조(2026-08-01)
     )
     prorationPatch = pr.data
     prorationNotice = pr.notice
@@ -1338,7 +1338,7 @@ export async function applyStatusTransition(input: {
       const pr = prorationDataForChange(
         { ...lease, rentAmount: input.rentAmount ?? lease.rentAmount },
         lease.dueDay, input.expectedMoveOut || null,
-        input.toStatus === 'CHECKOUT_PENDING',   // 퇴실 예정으로 전환할 때만 자동 적용
+        false,   // 자동 적용 안 함 — prorationDataForChange 의 정책 주석 참조(2026-08-01)
       )
       Object.assign(data, pr.data)
       notice = pr.notice
@@ -2154,8 +2154,22 @@ function prorationDataForChange(
   },
   newDueDay: string | null,
   newExpectedMoveOut: string | null,   // 'YYYY-MM-DD' | null
-  autoApply: boolean,                  // 미적용 상태에서도 자동 적용(퇴실 예정 전환·편집)일 때 true
+  autoApply: boolean,                  // 미적용 상태에서도 자동 적용할지. 2026-08-01 이후 호출부는 전부 false
 ): { data: Record<string, unknown>; notice: string | null } {
+  // 자동 적용 폐지(운영자 승인 2026-08-01, 퇴실 정산 구조 1항).
+  //
+  // 종전에는 퇴실 예정으로 전환하거나 예정일을 고치면 시스템이 말없이 그 달 청구를 일할로 덮어썼다.
+  // 예정일은 바뀐다(실측: 서민준 예정 6/13, 실제 6/16). 날짜가 바뀔 때마다 재계산이 돌고 그 재계산이
+  // 곧 무통보 덮어쓰기라, 퇴실 예정일이 두 달 뒤인데 금액부터 들이미는 문제가 됐다(신고 0df59b92).
+  //
+  // 새 정책: 돈이 실제로 움직이는 지점은 퇴실 처리다. 예정 단계에서는 묻기만 하고 청구는 그대로 둔다.
+  // 운영자 원문 — "미리 퇴실예정일을 미리 입력할거고 ... 실제 퇴실날짜에 처리하면서 다시 한번 더
+  // 환불할지 일할부과할지를 물어보게 하는게 좋을 것 같아"
+  //
+  // 이 인자를 지우지 않고 false 로 고정한 이유: 아래 분기들(환불 확정 보존·단기 차단·퇴실 예정 해제·
+  // 이미 적용된 건의 재계산)은 전부 살아 있어야 한다. 인자를 없애면 그 분기 구조까지 손대게 된다.
+  // 미적용 계약에 대해서만 no-op 이 되는 것이 정확히 의도한 변화다.
+  // 미리 확정하고 싶으면 CheckoutProrationWidget 의 수동 경로(setCheckoutProration)를 쓴다.
   // 환불 확정(finalizeRentRefund) 이후에는 그 달 청구가 회사 귀속액으로 고정된 상태 —
   // 날짜 변경 재계산이 이 확정을 덮으면 record와 청구가 어긋난다(적대검증 P0). 보존하고 손대지 않는다.
   // 단기(주 단위 정액)는 일할 대상이 아니다 — 이미 그 기간 전액을 받았는데 퇴실월 일할을 얹으면
