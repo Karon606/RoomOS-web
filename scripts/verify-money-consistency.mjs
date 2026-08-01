@@ -30,6 +30,15 @@ if (!tenantsActions.includes('if (lease.isShortTerm) {')) {
   violations.push('[소스] tenants/actions prorationDataForChange 의 단기 제외 가드가 사라짐 — 단기에 퇴실 일할이 붙어 이중 청구된다')
 }
 
+// 인상 예약 락 되쓰기 가드(A페이즈) — 없으면 이미 선납된 달의 락이 인상을 이겨 인상분이 영원히 미청구.
+if (!roomsActions.includes('export async function rewriteLockedExpectedForRentSchedule')) {
+  violations.push('[소스] rooms/actions 의 인상 예약 락 되쓰기(rewriteLockedExpectedForRentSchedule)가 사라짐 — 선납된 달의 인상분이 미청구로 남는다')
+}
+const roomManage = readFileSync('app/(app)/room-manage/actions.ts', 'utf8')
+if ((roomManage.match(/rewriteLockedExpectedForRentSchedule/g) ?? []).length < 2) {
+  violations.push('[소스] room-manage 의 인상 예약 되쓰기 호출이 빠짐 — 단건·일괄 두 경로 모두 걸려 있어야 한다')
+}
+
 const roomsClient = readFileSync('app/(app)/rooms/RoomsClient.tsx', 'utf8')
 if (!roomsClient.includes("occupied.filter(r => r.status !== 'RESERVED')")) {
   violations.push('[소스] RoomsClient 스트립의 RESERVED 제외 필터(billableRows)가 사라짐 — 예약 전액이 청구·수납에 혼입되는 회귀')

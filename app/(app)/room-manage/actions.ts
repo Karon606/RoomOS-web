@@ -159,7 +159,7 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   const nonResidentRentDateRaw = nrEnabled ? (formData.get('nonResidentRentDate') as string) : ''
   const nonResidentRentDate    = nonResidentRentDateRaw ? new Date(nonResidentRentDateRaw) : null
 
-  const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true } })
+  const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true } })
 
   await prisma.room.update({
     where: { id },
@@ -193,6 +193,18 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
       },
       data: { rentAmount: baseRent },
     })
+  }
+
+  // 인상 예약 변경 → 락인 되쓰기. 없으면 이미 선납된 달의 락이 인상을 이겨 인상분이 영원히 미청구로 남는다
+  // (할인에는 같은 장치가 이미 있다 — rewriteLockedExpectedForDiscountChange, 신고 70cde9d6).
+  if (prevRoom && (prevRoom.scheduledRent !== scheduledRent
+      || (prevRoom.rentUpdateDate?.getTime() ?? null) !== (rentUpdateDate?.getTime() ?? null))) {
+    const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/actions')
+    await rewriteLockedExpectedForRentSchedule(
+      id,
+      { scheduledRent: prevRoom.scheduledRent, rentUpdateDate: prevRoom.rentUpdateDate },
+      { scheduledRent, rentUpdateDate },
+    )
   }
 
   revalidatePath('/room-manage')
@@ -676,6 +688,26 @@ export async function batchUpdateRooms(
           where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         })
         skippedNegotiated += total - synced.count
+      }
+    }
+
+    // 인상 예약 일괄 변경 → 락인 되쓰기 (단건 경로와 동일 규칙). 한쪽만 걸면 다른 경로로 빠져나간다.
+    if ('scheduledRent' in data || 'rentUpdateDate' in data) {
+      const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/actions')
+      const nextSched = 'scheduledRent' in data ? (data.scheduledRent ?? null) : undefined
+      const nextDate = 'rentUpdateDate' in data ? ((data.rentUpdateDate as Date | null) ?? null) : undefined
+      for (const b of beforeRooms) {
+        const after = {
+          scheduledRent: nextSched !== undefined ? nextSched : b.scheduledRent,
+          rentUpdateDate: nextDate !== undefined ? nextDate : b.rentUpdateDate,
+        }
+        if (b.scheduledRent === after.scheduledRent
+            && (b.rentUpdateDate?.getTime() ?? null) === (after.rentUpdateDate?.getTime() ?? null)) continue
+        await rewriteLockedExpectedForRentSchedule(
+          b.id,
+          { scheduledRent: b.scheduledRent, rentUpdateDate: b.rentUpdateDate },
+          after,
+        )
       }
     }
 
