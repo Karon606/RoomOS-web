@@ -36,6 +36,7 @@ run() {
 }
 run "금전 로직 회귀"      npx tsx scripts/test-money.ts
 run "납부일 해석"         npx tsx scripts/test-due-date.ts
+run "퇴실 정산 기간"      npx tsx scripts/test-settlement-period.ts
 run "투어 피드 판정"      npx tsx scripts/test-tour-feed.ts
 run "생년월일 게이트"     npx tsx scripts/test-birthdate.ts
 run "단독 라우트 스크롤"  node scripts/check-standalone-scroll.mjs
@@ -48,5 +49,5 @@ if [ "$fail" = "1" ]; then
   echo "정말 그대로 커밋하려면: git commit --no-verify"
   exit 1
 fi
-echo "[감지망] 빠른 검사 6종 통과"
+echo "[감지망] 빠른 검사 7종 통과"
 exit 0
