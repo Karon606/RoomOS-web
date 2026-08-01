@@ -1180,7 +1180,7 @@ export async function reanchorReservationPrepaid(leaseTermId: string): Promise<v
     where: { id: leaseTermId, propertyId },
     select: { reservationDepositMode: true, moveInDate: true, rentAmount: true },
   })
-  if (!lease || lease.reservationDepositMode !== 'prepaid' || !lease.moveInDate) return
+  if (!lease || !lease.moveInDate) return
   const newMonth = `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
 
   // 익스텐션이 소프트삭제분 자동 제외. 양도인 record는 대상 아님.
@@ -1188,7 +1188,13 @@ export async function reanchorReservationPrepaid(leaseTermId: string): Promise<v
     where: { leaseTermId, isDeposit: false, isPrevOwner: false },
     select: { id: true, targetMonth: true },
   })
-  const stale = records.filter(r => r.targetMonth !== newMonth)
+  // 종전에는 reservationDepositMode 가 'prepaid' 일 때만 돌았다. 그런데 이 컬럼은
+  // saveReservationDeposit 을 거친 수납에서만 채워져, 기존 경로로 받은 선납은 null 로 남아
+  // 재앵커가 통째로 건너뛰어졌다(황인정 5만원이 입주 전월에 묶여 있던 사례, B페이즈).
+  // 모드와 무관하게 **입주월보다 앞선 달에 걸린 이용료 record 는 선납**이므로 입주월로 옮긴다.
+  // prepaid 모드는 종전처럼 앞뒤 상관없이 전부 모은다(그 모드의 정의가 '첫 달 이용료 선납'이라서).
+  const isPrepaid = lease.reservationDepositMode === 'prepaid'
+  const stale = records.filter(r => isPrepaid ? r.targetMonth !== newMonth : r.targetMonth < newMonth)
   if (stale.length === 0) return
 
   const oldMonths = new Set(stale.map(r => r.targetMonth))

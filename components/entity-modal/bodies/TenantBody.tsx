@@ -7,7 +7,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
-import { analyzeTenantWithGemini, undoRentRefund } from '@/app/(app)/tenants/actions'
+import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -31,12 +31,22 @@ type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
 export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
+  // 보증금 환불 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
+  // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
+  const [depoRefund, setDepoRefund] = useState<{ refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
     getTenantDetail(tenantId).then(d => { if (active && d) setTenant(d as TenantDetail) })
     return () => { active = false }
   }, [tenantId, reloadKey])
+  const leaseIdForRefund = tenant?.leaseTerms[0]?.id ?? null
+  useEffect(() => {
+    if (!leaseIdForRefund) { setDepoRefund(null); return }
+    let active = true
+    getDepositRefundForLease(leaseIdForRefund).then(r => { if (active) setDepoRefund(r) })
+    return () => { active = false }
+  }, [leaseIdForRefund, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
 
   if (!tenant) return <SkeletonRows rows={5} className="py-4" />
@@ -72,12 +82,18 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && <TenantContractInfo lease={lease} />}
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
       <TenantMoveHistory tenantId={tenant.id} />
-      {/* 중도퇴실 환불 확정 — 상시 적용취소 진입점(§16, 토스트가 사라져도 여기서 항상 가능) */}
+      {/* 환불 확정 적용취소 — 상시 진입점(§16, 토스트가 사라져도 여기서 항상 가능).
+          성격이 같은 두 행이라 한 래퍼로 묶는다(디자이너 패스). */}
       {lease && (() => {
         const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
         const snap = undoObj?.refund
-        if (!snap) return null
-        return <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />
+        if (!snap && !depoRefund) return null
+        return (
+          <div className="space-y-1.5">
+            {snap && <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />}
+            {depoRefund && <DepositRefundUndoRow info={depoRefund} onDone={refresh} />}
+          </div>
+        )
       })()}
       {/* 단기 희망 고객 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
       {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} tenantId={tenant.id} tenantName={tenant.name} onChange={refresh} />}
@@ -98,6 +114,45 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && lease.paymentRecords.length > 0 && (
         <PaymentSummaryWithAI tenantId={tenant.id} lease={lease} />
       )}
+    </div>
+  )
+}
+
+// 보증금 환불 확정 표시 + 상시 적용취소 — 기록이 있을 때만 나타난다(B페이즈).
+// 용어는 화면 표면 기준 '환불'로 통일한다(서버 함수명은 recordDepositReturn 이지만 사용자 문구는 환불).
+function DepositRefundUndoRow({ info, onDone }: {
+  info: { refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null }
+  onDone: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const allWithheld = info.returned === 0 && info.withheld > 0
+  const handleUndo = async () => {
+    const ok = await confirmDialog({
+      title: '보증금 환불 기록을 적용취소할까요?',
+      message: info.withheld > 0
+        ? `환불 ${fmtWon(info.returned)} · 미환불 ${fmtWon(info.withheld)} 기록을 지웁니다. 미환불분으로 잡힌 부가수익도 함께 사라집니다.`
+        : `환불 ${fmtWon(info.returned)} 기록을 지웁니다.`,
+      level: 'caution', confirmLabel: '적용취소',
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const r = await undoDepositReturn(info.refundId, info.extraIncomeId)
+      if (r.ok) { pushToast('info', '보증금 환불을 적용취소했습니다.'); onDone() }
+      else pushToast('error', r.error)
+    })
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+      <p className="text-[var(--warm-mid)]">
+        {allWithheld
+          ? <>보증금 전액 미환불 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>
+          : <>보증금 환불 확정 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.returned)}</span> 환불
+              {info.withheld > 0 && <> · 미환불 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>}</>}
+      </p>
+      <button type="button" onClick={handleUndo} disabled={pending}
+        className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+        {pending ? '취소 중…' : '적용취소'}
+      </button>
     </div>
   )
 }

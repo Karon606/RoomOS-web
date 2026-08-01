@@ -862,6 +862,32 @@ export async function recordDepositReturn(params: {
 }
 
 // 보증금 반환 기록 적용취소 — 반환 이력 + 미반환분 부가수입을 함께 삭제(감사 2026-07-10: 되돌리기 전무 보완)
+// 보증금 반환 기록 조회 — 상시 적용취소 진입점용(B페이즈).
+// 종전에는 undoDepositReturn 호출부가 토스트 액션 하나뿐이라, 토스트가 사라지면 되돌릴 방법이 없었다.
+// 그런데 recordDepositReturn 은 계약당 1건 멱등 가드가 있어, 잘못 기록하면 재퇴실까지 막혔다.
+export async function getDepositRefundForLease(leaseTermId: string): Promise<
+  { refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null } | null
+> {
+  const { propertyId } = await getPropertyId()
+  const r = await prisma.depositRefund.findFirst({
+    where: { leaseTermId, propertyId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, returnedAmount: true, withheldAmount: true, date: true },
+  })
+  if (!r) return null
+  // 몰취분 ExtraIncome 은 leaseTermId + '보유 보증금' 결제수단으로 식별(생성부와 동일 규약)
+  const inc = r.withheldAmount > 0
+    ? await prisma.extraIncome.findFirst({
+        where: { leaseTermId, propertyId, payMethod: '보유 보증금' },
+        orderBy: { createdAt: 'desc' }, select: { id: true },
+      })
+    : null
+  return {
+    refundId: r.id, returned: r.returnedAmount, withheld: r.withheldAmount,
+    date: r.date.toISOString().slice(0, 10), extraIncomeId: inc?.id ?? null,
+  }
+}
+
 export async function undoDepositReturn(refundId: string, extraIncomeId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
