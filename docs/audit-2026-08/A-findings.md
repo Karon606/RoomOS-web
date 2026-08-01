@@ -50,5 +50,46 @@
 4. G(effectiveBaseRent) — 돈이 실제 나가는 경로라 신중히
 5. E·F·H — 운영자 확인 선행
 
-## 2. A-2 / A-3 트랙
+## 2. A-2 트랙 — 월 귀속·경계 규칙 (전문가 조사)
+
+**한 줄 요약**: 정본 4종(billing·dueDate·prorate·rentDiscount)은 테스트로 방어돼 있고 규칙도 맞다.
+깨지는 곳은 전부 **정본을 안 타고 손으로 다시 짠 호출부**이고, 그 손계산이 빠뜨리는 건 거의 항상
+**락인 단계**와 **override 해석**이다. 게다가 월 마감 개념이 없어 오차가 지난 달로 소급 전파된다.
+
+### 위험 우선순위
+
+| 순위 | 항목 | 방향 | 위치 |
+|---|---|---|---|
+| P0 | 인상 예약 시 락인 되쓰기 부재 | 매출 과소·미수 누락 | room-manage/actions 142-180 (할인엔 rooms/actions 2020 이 있음) |
+| P0 | 리포트 **매출**이 락인 미적용(미수는 적용) | 같은 화면 안에서 불일치 | report/actions 485-495 vs 256 |
+| P0 | 연간·전체 트렌드에 RESERVED 미제외 | 미입주 선납의 조기 매출 인식 | dashboard/actions 156·176 (월별 34-35 는 제외함) |
+| P0 | 월 마감·소급 감지 전무 | 확정 신고분 소급 변동, 추적 불가 | 스키마에 마감 모델 없음 |
+| P1 | autoTransitionReserved 가 재앵커 미호출 | 귀속월 오류 | tenants/actions 2567-2591 (다른 3경로엔 있음) |
+| P1 | RESERVED 가 청구·미수엔 포함, 매출엔 제외 | 미수율 왜곡 | report/actions 91 vs 106 |
+| P1 | 퇴실 일할이 scheduledRent 미반영 | 일할 과소 | tenants/actions 2070·2147·2219·2400 |
+| P1 | 할인 변경이 과거월에 소급(무경고) | 확정 매출 사후 변동 | rooms/actions 2033 |
+| P2 | findFirstUnpaidMonth 가 override 무시 | 추천·표시 불일치 | rooms/actions 693 |
+| P2 | getTargetMonthOptions 무청구 판정 누락 | 0원 달에 청구 추천 | rooms/actions 909 |
+| P2 | 캘린더 금액이 인상·락인 미반영 | 외부 발신 문서 오금액 | api/calendar 143 |
+| P2 | dashboard cutoff parseInt 잔존 | 양도인 판정 오류 | dashboard/page 559 (같은 파일 979 는 봉합됨) |
+| P3 | override 단일 슬롯 덮어쓰기 | 조정 소실(경고 없음) | 스키마 overrideDueDay 1쌍 |
+| P3 | accrual-check 가 납부일 미고려 | 정상 유예를 이상으로 오분류 | accrual-check/actions 90-125 |
+
+### 이번 달 액션이 다른 달에 영향을 주는데 화면에 그 사실이 없는 자리 (운영자 최우선 관심)
+
+1. **할인 추가·삭제** → 과거 전월 청구·미수가 즉시 재계산. 안내 없음(DiscountWidget 124)
+2. **인상 예약 등록** → 다음 달부터 오르지만 **이미 선납된 달은 안 오름**(락인). 예외 표시 없음
+3. **납부일 임시조정** → 기존 다른 달 조정이 조용히 삭제됨(슬롯 1개). 경고 없음
+4. **납부일을 다음 달로 미룸** → 무청구 판정·경과일·인수 cutoff 가 함께 바뀌는데 위젯은 날짜만 표시
+5. **귀속월 이동** → 확인 문구가 "입금일·금액은 그대로"라며 **안심시키는 톤**. 지난 달 매출이 바뀐다는 말이 없음
+6. **일괄 귀속월 이동** → 몇 건이 어느 달로 가는지 미표시
+7. **과거 날짜 지출·부가수익 입력** → 지난 달 손익 변경. DatePicker minDate 없음, 서버 검증 없음
+8. **퇴실 예정일 저장** → 다음 달 일할 즉시 확정 저장(먼 미래는 게이트 있음 — 이건 일관)
+9. **수납 기록 삭제** → 어느 달 매출이 줄어드는지 미표시
+
+### 정본 복제 현황
+override 해석 로컬 복제 6개(overrideAbsDate ×2, effectiveDueDayForMonth ×3, resolveDueRaw ×1).
+게다가 `lib/billing.ts:68 resolveDueDateForMonth` 가 `lib/dueDate.ts` 와 **두 번째 정본**으로 병존.
+
+## 3. A-3 트랙
 조사 진행 중.
