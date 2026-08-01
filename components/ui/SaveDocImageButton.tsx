@@ -27,7 +27,7 @@ export function SaveDocImageButton({ getPdfBytes, fileName, label = '사진 저�
       const blob = await pdfToPngBlob(bytes)
       const name = fileName.toLowerCase().endsWith('.png') ? fileName : `${fileName}.png`
       const result = await shareOrDownloadFile(blob, name, 'image/png')
-      if (result === 'downloaded') pushToast('info', '공유 시트를 열 수 없어 이미지를 내려받았습니다. 갤러리 또는 파일 앱의 Download 에서 확인하세요.')
+      if (result === 'downloaded') pushToast('info', '이 기기에서는 사진첩에 바로 넣을 수 없어 파일로 저장했습니다. 갤러리 또는 파일 앱의 Download 에서 확인하세요.')
     } catch (e) {
       pushToast('error', (e as Error).message ?? '사진 저장에 실패했습니다.')
     } finally {
@@ -38,7 +38,7 @@ export function SaveDocImageButton({ getPdfBytes, fileName, label = '사진 저�
   return (
     <button type="button" onClick={handleSave} disabled={busy}
       className={className ?? 'text-[0.6875rem] text-[var(--coral)] hover:text-[var(--coral)] disabled:opacity-50'}>
-      {busy ? '변환 중…' : label}
+      {busy ? '준비 중…' : label}
     </button>
   )
 }

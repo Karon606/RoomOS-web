@@ -122,9 +122,9 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
         </h1>
       </div>
 
-      {/* 새 확인서 발급 — 거주중 입실자 선택 */}
+      {/* 새 확인서 작성 — 거주중 입실자 선택(발급은 작성 화면의 확정 버튼에서) */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 작성</h2>
         <div className="sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         </div>
@@ -245,11 +245,11 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    Drive 보기
+                    원본 보기
                   </a>
                   <Link href={`/residence-cert/${c.tenantId}`}
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    재발급
+                    다시 작성
                   </Link>
                   <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
                     className="min-h-[44px] inline-flex items-center justify-center px-2.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">

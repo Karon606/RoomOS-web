@@ -14,9 +14,9 @@ import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow, undoApplyScheduledRent } from '@/app/(app)/room-manage/actions'
-import { deleteTenant, getContractFiles } from '@/app/(app)/tenants/actions'
+import { deleteTenant } from '@/app/(app)/tenants/actions'
 import { withSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from './PrismNavBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { RoomBody } from './bodies/RoomBody'
@@ -212,29 +212,14 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     navRouter.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
     onClose()
   }
-  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (3-옵션, choiceDialog §27).
-  // 확인=스캔본 출력 · 제3동작(alt)=시스템 계약서 새로 출력 · 취소=무변경.
-  // 없으면 바로 시스템 계약서로 (기존 동작 유지).
-  const handlePrintContract = async () => {
-    if (!links?.tenantId) return
-    const systemUrl = `/contract/${links.tenantId}`
-    let files: Awaited<ReturnType<typeof getContractFiles>> = []
-    try { files = await getContractFiles(links.tenantId) } catch { /* 실패 시 시스템 계약서로 폴백 */ }
-    if (files.length === 0) {
-      window.open(systemUrl, '_blank')
-      return
-    }
-    // 가장 최근 스캔본 (목록의 첫 번째 — 액션이 signedAt desc 로 정렬)
-    const latest = files[0]
-    const choice = await choiceDialog({
-      title: '어떤 계약서를 출력할까요?',
-      message: `스캔본: ${latest.fileName ?? '스캔본'}\n시스템 계약서: 표준 양식 · 서명 받기 포함`,
-      confirmLabel: '스캔본 출력',
-      altLabel: '시스템 계약서 새로 출력',
-    })
-    if (choice === 'confirm') window.open(latest.viewUrl, '_blank')
-    else if (choice === 'alt') window.open(systemUrl, '_blank')
-  }
+  // 종전 '계약서 출력' 버튼(handlePrintContract)은 제거했다 — 2026-08-01 용어·접점 정리.
+  // 독자 기능이 0이었다. 파일이 없으면 /contract/[tenantId] 를 열었는데 그건 계약서 파일 섹션의
+  // '계약서 작성·서명'과 같고, 있으면 다이얼로그 뒤에서 같은 URL 또는 파일 행의 링크를 열었을 뿐이다.
+  // 게다가 files[0] 은 signedAt desc 첫 건이라 시스템 발급본일 수 있는데 무조건 '스캔본'이라 표기해
+  // 스캔본을 한 번도 올리지 않은 입실자에게도 '스캔본 출력'이 떴다(보관 35건 중 11건이 발급본).
+  // 하단 행이 스크롤 없이 닿는 이점은 계약서 파일 섹션을 계약 정보 바로 아래로 올려 대체한다.
+  // 이제 하단 행에는 부속 서류(실거주 확인서·입실료 납부 확인서)만 남는다.
+
   // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleResidenceCert = () => {
     if (!links?.tenantId) return
@@ -275,12 +260,6 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                 className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                 삭제
               </button>
-              {links?.tenantId && (
-                <button type="button" onClick={handlePrintContract}
-                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                  계약서 출력
-                </button>
-              )}
               {links?.tenantId && (
                 <button type="button" onClick={handleResidenceCert}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">

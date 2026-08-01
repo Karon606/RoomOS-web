@@ -259,11 +259,12 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                     getPdfBytes={fetchDocBytes(c.driveFileId)}
                     className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"
-                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">Drive 보기</a>
-                  {/* 재발급은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
-                      열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다) */}
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">원본 보기</a>
+                  {/* '다시 작성'은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
+                      열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다).
+                      종전 라벨 '재발급'은 아무것도 발급하지 않고 작성 화면만 열어 오해를 샀다(2026-08-01 용어 정리). */}
                   <Link href={`/rent-receipt/${c.tenantId}${c.kind === 'deposit' ? '?kind=deposit' : ''}`}
-                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">재발급</Link>
+                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">다시 작성</Link>
                   <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
                     className="min-h-[44px] inline-flex items-center justify-center px-2.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
                     {pending && deletingId === c.id ? '삭제 중…' : '삭제'}

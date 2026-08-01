@@ -347,7 +347,12 @@ export async function updateTenant(formData: FormData): Promise<
   const payMethod          = formData.get('payMethod') as string
   const cashReceipt        = formData.get('cashReceipt') as string
   const registrationStatus = (formData.get('registrationStatus') as RegistrationStatus) || 'NOT_REPORTED'
-  const contractUrl        = formData.get('contractUrl') as string
+  // 외부 계약서 링크 — 2026-08-01 수정 폼에서 입력 필드를 제거했다(DB 0건, 죽은 UI).
+  // 필드가 없으면 undefined 를 넣어 Prisma 가 그 컬럼을 건드리지 않게 한다. 무조건 `|| null` 로
+  // 쓰면 폼을 저장할 때마다 기존 값이 지워진다(지금은 0건이라 실해가 없지만 코드로는 파괴적 갱신).
+  const contractUrl        = formData.has('contractUrl')
+    ? ((formData.get('contractUrl') as string) || null)
+    : undefined
   const wishRooms          = formData.get('wishRooms') as string
   const wishConditions     = formData.get('wishConditions') as string
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
@@ -657,7 +662,7 @@ export async function updateTenant(formData: FormData): Promise<
         payMethod: payMethod || null,
         cashReceipt: cashReceipt || null,
         registrationStatus,
-        contractUrl: contractUrl || null,
+        contractUrl,
         // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
         wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
         wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),

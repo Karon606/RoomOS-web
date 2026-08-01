@@ -1,7 +1,14 @@
 'use client'
 
-// 계약서 파일 관리 — 출력/서명 받기 링크 + 스캔 본 업로드 + 목록 표시·삭제.
+// 계약서 파일 관리 — 작성·서명 진입 + 서명 요청 문자 + 스캔본 올리기 + 목록 표시·삭제.
 // TenantClient 에서 이주(2026-05-30): 셸의 고객 면과 페이지 자체 팝업 양쪽에서 재사용.
+//
+// 용어는 서류 정본 동사 5개를 따른다(2026-08-01 운영자 지적 후 정리).
+//   발급 = 공식본을 만들어 보관·이력에 남김 · 보내기 = 만들어진 서류를 입주자에게 전달
+//   저장 = 내 기기에 파일로 · 보기 = 열람만 · 작성 = 입력 화면 진입
+// 종전 '출력 / 서명 받기'는 인쇄를 하지 않아 오해를 샀고, '계약서 보내기'는 서류가 아니라 서명 요청
+// 링크가 나가는 동작이라 목적어를 붙여 '서명 요청 보내기'로 바꿨다. 스캔본 올리기는 앱 안으로 들어오는
+// 유일한 방향이라 다섯 동사 밖 예외로 둔다.
 
 import { useEffect, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -36,7 +43,14 @@ function shareBadge(link: ContractShareLinkInfo): { label: string; active: boole
   return { label: `서명 대기 · ${remain}`, active: true, closable: true }
 }
 
-export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
+// hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
+// 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
+// 배지와 닫기는 이 플래그와 무관하게 항상 렌더한다 — 알림 해제 경로가 사라지면 503호 건이 재발한다.
+export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false }: {
+  tenantId: string
+  tenantName: string
+  hideSignRequest?: boolean
+}) {
   const [files, setFiles]   = useState<ContractFileRow[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -64,7 +78,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
     window.location.href = isApple ? `sms://open?addresses=${num}&body=${enc}` : `sms:${num}?body=${enc}`
   }
 
-  // 보내기 — 활성 링크가 있으면 재사용(다시 보내기), 없으면 새로 발급 후 메시지 앱으로 이동
+  // 서명 요청 보내기 — 활성 링크가 있으면 재사용(다시 보내기), 없으면 새로 만든 뒤 메시지 앱으로 이동
   const handleShareSend = async () => {
     if (sharePending) return
     setSharePending(true)
@@ -114,7 +128,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
       const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
       const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name })
       if (!fin.ok) { pushToast('error', fin.error); return }
-      pushToast('success', '스캔 본 업로드됨')
+      pushToast('success', '스캔본 등록됨')
       await reload()
     } catch (err) {
       pushToast('error', (err as Error).message ?? '업로드 실패')
@@ -140,14 +154,16 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
       <div className="flex items-center gap-2 -mt-1 flex-wrap">
         <a href={`/contract/${tenantId}`} target="_blank" rel="noreferrer"
           className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-          출력 / 서명 받기
+          계약서 작성·서명
         </a>
-        <button type="button" onClick={handleShareSend} disabled={sharePending}
-          className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-60">
-          {sharePending ? '발급 중…' : badge?.active ? '다시 보내기' : '계약서 보내기'}
-        </button>
+        {!hideSignRequest && (
+          <button type="button" onClick={handleShareSend} disabled={sharePending}
+            className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-60">
+            {sharePending ? '준비 중…' : badge?.active ? '서명 요청 다시 보내기' : '서명 요청 보내기'}
+          </button>
+        )}
         <label className={`px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-          {uploading ? '업로드 중…' : '스캔 본 첨부'}
+          {uploading ? '올리는 중…' : '스캔본 올리기'}
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       </div>
@@ -165,7 +181,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
       )}
       {loading && <SkeletonRows rows={2} />}
       {!loading && files && files.length === 0 && (
-        <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 출력 페이지에서 서명을 받거나 스캔 본을 첨부하세요.</p>
+        <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.</p>
       )}
       {!loading && files && files.length > 0 && (
         <ul className="space-y-1.5">
@@ -180,7 +196,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
                   {tenantName} · {dateLabel}
                 </a>
-                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`} label="공유" />
+                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`} />
                 <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
                   삭제
                 </button>

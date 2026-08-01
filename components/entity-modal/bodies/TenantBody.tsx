@@ -80,6 +80,13 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
+      {/* 계약서 파일 — 계약 정보(조건) 바로 아래. 조건과 그 조건을 담은 서류가 한 쌍이고,
+          서명 완료·발급 전 상태에서 홈 알림을 끄러 들어왔을 때 발급 버튼에 스크롤 없이 닿아야 한다.
+          운영자 확정(2026-08-01). 종전에는 메모 아래였고, 그 때문에 모달 하단에 '계약서 출력'
+          버튼이 따로 있었다(중복 접점 — 함께 제거). */}
+      <Section title="계약서 파일">
+        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
+      </Section>
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
       <TenantMoveHistory tenantId={tenant.id} />
       {/* 환불 확정 적용취소 — 상시 진입점(§16, 토스트가 사라져도 여기서 항상 가능).
@@ -104,10 +111,6 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{tenant.memo}</p>
         </Section>
       )}
-
-      <Section title="계약서 파일">
-        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
-      </Section>
 
       <TenantRequestsTab tenantId={tenant.id} />
 

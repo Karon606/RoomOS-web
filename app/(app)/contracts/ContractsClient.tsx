@@ -219,14 +219,15 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
               {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
               {!selectMode && (
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* 보내기 = 단건 공유(다운로드 폴백 있음). 파일 공유 지원 기기에서만 노출 */}
+                {/* 보내기 = 단건 전달(다운로드 폴백 있음). 파일 전송 지원 기기에서만 노출.
+                    라벨은 ShareDocButton 기본값을 쓴다 — label prop 으로 덮으면 화면마다 이름이 갈린다. */}
                 {canShare && (
-                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서.pdf`} label="보내기"
+                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서.pdf`}
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                 )}
                 <a href={c.viewUrl} target="_blank" rel="noreferrer"
                   className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                  Drive 보기
+                  원본 보기
                 </a>
                 <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
                   className="px-2 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">

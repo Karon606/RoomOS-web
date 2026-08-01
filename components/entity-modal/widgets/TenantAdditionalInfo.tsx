@@ -50,12 +50,10 @@ export function TenantAdditionalInfo({ lease }: { lease: Lease }) {
         <Item label="현금영수증"     value={lease.cashReceipt ?? '—'} />
         <Item label="방문 경로"      value={lease.visitRoute ?? '—'} />
         <Item label="희망 이동 호실" value={wishDisplay(lease)} />
-        {lease.contractUrl && (
-          <Item label="계약서" value={
-            <a href={lease.contractUrl} target="_blank" rel="noopener noreferrer"
-              className="text-[var(--coral)] hover:text-[var(--coral)] text-xs">링크 열기 ↗</a>
-          } />
-        )}
+        {/* 레거시 '계약서 · 링크 열기'(lease.contractUrl) 제거 — 2026-08-01.
+            DB 실측 결과 값이 있는 계약이 0건이라 한 번도 그려진 적 없는 죽은 UI였고,
+            계약서 접점이 여러 군데로 흩어져 보이는 원인 중 하나였다(운영자 지적).
+            컬럼과 저장 액션은 그대로 두고 화면에서만 뺀다. 입력 필드도 함께 제거(TenantClient). */}
       </Grid>
     </Section>
   )

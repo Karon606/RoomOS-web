@@ -8,15 +8,12 @@ import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
-import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
-  getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
-  type ContractFileRow,
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
-import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
 import { savePayment, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
@@ -3652,15 +3649,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           allowConditions={true}
           isMove={statusVal === 'ACTIVE' || statusVal === 'NON_RESIDENT'}
         />
-        {/* 계약서 파일 — 기존 입주자 수정 시에만 표시. Prism 뷰어와 동일한 ContractFilesPanel.
-            (사용자 피드백 2026-06-01: 뷰어에는 첨부 UI 있지만 수정 폼에는 없어 헷갈림) */}
+        {/* 계약서 파일 — 기존 입주자 수정 시에만 표시. 이제 진짜로 뷰어와 같은 정본 컴포넌트를 쓴다
+            (사용자 피드백 2026-06-01: 뷰어에는 첨부 UI 있지만 수정 폼에는 없어 헷갈림).
+            수정 중에는 서명 요청만 감춘다 — 저장 전 옛 값으로 스냅샷이 굳는 것을 막기 위해. */}
         {tenant && (
           <div className="space-y-1.5">
             <label className="text-[0.6875rem] font-medium" style={{ color: 'var(--warm-mid)' }}>계약서 파일</label>
-            <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
+            <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} hideSignRequest />
           </div>
         )}
-        <Field label="외부 계약서 링크 (Google Drive·Dropbox 등, 선택)" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://…" />
+        {/* 외부 계약서 링크(contractUrl) 입력 제거 — 2026-08-01. DB 실측 0건이라 아무도 쓰지 않았고,
+            계약서 접점이 흩어져 보이는 원인이었다. 컬럼과 저장 액션은 유지(기존 값 보존). */}
       </FormSection>
 
       <FormSection title="메모">
@@ -3807,92 +3806,11 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-// ── 계약서 파일 패널 — 상세 모달 정보 탭에서 서명된 계약서 PDF / 스캔본 관리
-function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
-  const [files, setFiles]   = useState<ContractFileRow[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-
-  const reload = async () => {
-    setLoading(true)
-    try { setFiles(await getContractFiles(tenantId)) }
-    finally { setLoading(false) }
-  }
-  useEffect(() => { reload() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setUploading(true)
-    const release = trackSave()
-    try {
-      const session = await createContractScanUploadSession({
-        tenantId, fileName: file.name, mimeType: file.type || 'application/octet-stream', fileSize: file.size,
-        origin: window.location.origin,
-      })
-      if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
-      const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name })
-      if (!fin.ok) { pushToast('error', fin.error); return }
-      pushToast('success', '스캔 본 업로드됨')
-      await reload()
-    } catch (err) {
-      pushToast('error', (err as Error).message ?? '업로드 실패')
-    } finally { release(); setUploading(false) }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 계약서 파일을 삭제할까요?', message: 'Google Drive에서도 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
-    const release = trackSave()
-    try {
-      const res = await deleteContractFile(id)
-      if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '삭제됨')
-      await reload()
-    } finally { release() }
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 -mt-1">
-        <a href={`/contract/${tenantId}`} target="_blank" rel="noreferrer"
-          className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-          출력 / 서명 받기
-        </a>
-        <label className={`px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-          {uploading ? '업로드 중…' : '스캔 본 첨부'}
-          <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
-      </div>
-      {loading && <SkeletonRows rows={2} />}
-      {!loading && files && files.length === 0 && (
-        <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 출력 페이지에서 서명을 받거나 스캔 본을 첨부하세요.</p>
-      )}
-      {!loading && files && files.length > 0 && (
-        <ul className="space-y-1.5">
-          {files.map(f => {
-            const dt = new Date(f.signedAt)
-            const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
-            return (
-              <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
-                <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
-                  {f.source === 'GENERATED' ? '서명' : '스캔'}
-                </span>
-                <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
-                  {tenantName} · {dateLabel}
-                </a>
-                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
-                  삭제
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
+// 계약서 파일 패널의 로컬 복제본은 제거했다 — 2026-08-01 접점 정리.
+// 주석에는 'Prism 뷰어와 동일한 ContractFilesPanel' 이라 적혀 있었으나 사실이 아니었다.
+// 복제본에는 서명 요청 보내기·서명 링크 배지·보내기가 없었고, 삭제도 적용취소 없는 즉시 삭제였다.
+// 같은 이름의 화면이 두 벌이라 어디서 열었느냐에 따라 있는 버튼이 달랐던 것이 운영자 혼동의 주축이다.
+// 이제 components/entity-modal/widgets/ContractFilesPanel 정본 하나만 쓴다.
 
 // ── 입주자 일괄 편집 모달 ────────────────────────────────────────
 

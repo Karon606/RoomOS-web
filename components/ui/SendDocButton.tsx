@@ -70,13 +70,13 @@ export function SendDocButton({ getPdfBytes, fileName, label = '보내기', clas
 
   const fallbackDownload = async (blob: Blob, name: string, mime: string) => {
     const result = await shareOrDownloadFile(blob, name, mime)
-    if (result === 'downloaded') pushToast('info', '이 기기는 공유를 지원하지 않아 파일을 내려받았습니다.')
+    if (result === 'downloaded') pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.')
   }
 
   return (
     <button type="button" onClick={handleSend} disabled={busy}
       className={className ?? 'text-[0.6875rem] text-[var(--coral)] hover:text-[var(--coral)] disabled:opacity-50'}>
-      {busy ? '변환 중…' : label}
+      {busy ? '준비 중…' : label}
     </button>
   )
 }

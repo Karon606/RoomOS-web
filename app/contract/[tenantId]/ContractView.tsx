@@ -305,10 +305,10 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
     setSignOpen(false)
     if (signTarget === 'disposal') {
       setDisposalSignatureDataUrl(url)
-      pushToast('info', '동의서 서명 적용됨 · 확인 후 \'계약서 저장\' 을 눌러주세요')
+      pushToast('info', '동의서 서명 적용됨 · 확인 후 \'계약서 발급\' 을 눌러주세요')
     } else {
       setSignatureDataUrl(url)
-      pushToast('info', '서명 적용됨 · 확인 후 \'계약서 저장\' 을 눌러주세요')
+      pushToast('info', '서명 적용됨 · 확인 후 \'계약서 발급\' 을 눌러주세요')
     }
   }
 
@@ -354,7 +354,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         }))) return
       }
     } catch { /* 비교 실패는 발급을 막지 않는다 — 경고만 생략 */ }
-    if (!(await confirmDialog({ title: '이 계약서를 PDF로 저장할까요?', message: "도장·로고·서명이 합성된 PDF가 Google Drive에 업로드되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '저장' }))) return
+    if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
     setContractSaving(true)
     const release = trackSave()
     try {
@@ -379,7 +379,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
         pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
         return
       }
-      pushToast('success', '계약서 저장됨. 입실자 정보로 이동합니다')
+      pushToast('success', '계약서 발급됨. 입실자 정보로 이동합니다')
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
@@ -568,21 +568,22 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
               </button>
             )}
             {canShareFiles ? (
-              // 모바일 — 한 버튼(공유 시트에 프린트·파일 저장 모두 포함). Drive 보관이 아닌 임시 미리보기.
-              <button onClick={handleSharePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 (인쇄·PDF)'}</button>
+              // 모바일 — 한 버튼(시스템 시트에 프린트·파일 저장 모두 포함). 보관이 아닌 임시 미리보기.
+              <button onClick={handleSharePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : '미리보기·인쇄'}</button>
             ) : (
-              // 데스크톱 — 미리보기 인쇄(새 탭) / 미리보기 PDF(다운로드). 둘 다 Drive 보관은 아님.
+              // 데스크톱 — 미리보기·인쇄(새 탭) / PDF로 저장(다운로드). 둘 다 보관은 아님.
               <>
-                <button onClick={handlePrint} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 인쇄'}</button>
-                <button onClick={handleSavePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '생성 중…' : '미리보기 PDF'}</button>
+                <button onClick={handlePrint} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : '미리보기·인쇄'}</button>
+                <button onClick={handleSavePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : 'PDF로 저장'}</button>
               </>
             )}
-            {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 저장 버튼은 항상 보이되 서명 전엔 비활성. */}
+            {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 발급 버튼은 항상 보이되 서명 전엔 비활성.
+                '발급' = 공식본 생성 + 보관 + 이력. 확인서·영수증과 같은 동작이라 같은 동사를 쓴다(2026-08-01 용어 정리). */}
             <button onClick={handleContractSave} disabled={contractSaving || !signatureDataUrl} className="toolbar-print">
-              {contractSaving ? '저장 중… (5~15초)' : '계약서 저장 (Drive 보관)'}
+              {contractSaving ? '발급 중… (5~15초)' : '계약서 발급'}
             </button>
             {!signatureDataUrl && (
-              <span className="toolbar-hint">서명을 받으면 저장할 수 있어요</span>
+              <span className="toolbar-hint">서명을 받으면 발급할 수 있어요</span>
             )}
           </>
         )}
@@ -898,7 +899,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
                 <div className="sig-sub">
                   {remote
                     ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'} 서명이 적용됩니다.`
-                    : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (PDF 저장은 다음 단계).`}
+                    : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (발급은 다음 단계).`}
                 </div>
               </div>
               <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">
