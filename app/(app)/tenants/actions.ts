@@ -2513,6 +2513,14 @@ export async function setCheckoutProration(
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다. 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+
+    // 과거 회계월 보호 — 환불 확정과 같은 가드를 여기에도 건다(운영자 확정 2026-08-02).
+    // 이 함수가 쓰는 checkoutProratedAmount 는 락인 expectedAmount 보다 우선하므로(lib/billing),
+    // 가드가 환불 쪽에만 있으면 같은 위험이 이 문으로 그대로 들어온다. 3단계에서 정산월이
+    // 기간월로 바뀌면 이 함수는 일상적으로 과거 달에 쓰게 된다.
+    const settleProp = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true } })
+    const settleVerdict = checkSettlementMonth(calc.moveOutMonth, kstYmdStr().slice(0, 7), settleProp?.acquisitionDate ?? null)
+    if (!settleVerdict.ok) return { ok: false, error: settleVerdict.reason }
     // 수동 조정값이 있으면 그 값으로(0 이상 정수), 없으면 자동 일할액. undo 의 appliedAmount 도 이 값으로 기록.
     const finalAmount = (manualAmount != null && Number.isFinite(manualAmount) && manualAmount >= 0) ? Math.round(manualAmount) : calc.amount
 

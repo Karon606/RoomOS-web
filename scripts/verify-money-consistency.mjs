@@ -156,6 +156,11 @@ if (!/checkSettlementMonth\(/.test(tenantsActions)) {
 if (!/if \(!monthVerdict\.ok\) return/.test(tenantsActions)) {
   violations.push('[소스] 과거 회계월 가드가 호출만 되고 차단하지 않는다 — 판정 결과를 버리면 없는 것과 같다')
 }
+// 일할 저장(setCheckoutProration)에도 같은 가드 — 없으면 환불 쪽 가드가 이 문으로 우회된다.
+// checkoutProratedAmount 는 락인보다 우선하므로 여기가 곧 과거 달을 덮어쓰는 두 번째 통로다.
+if (!/if \(!settleVerdict\.ok\) return/.test(tenantsActions)) {
+  violations.push('[소스] setCheckoutProration 에 과거 회계월 가드가 없다 — 환불 쪽 가드가 우회된다')
+}
 
 const tenantClient = readFileSync('app/(app)/tenants/TenantClient.tsx', 'utf8')
 if (!tenantClient.includes('홈택스')) {
