@@ -14,6 +14,7 @@ import { kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
+import { isContractIssued } from '@/lib/contractIssue'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed'
 
@@ -210,18 +211,10 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   }
 
   // 원격 서명 완료 — 서명본 수신 후 정식 계약서가 아직 없는 상태. 발급본·스캔본이 생기면 소멸, 파일 삭제 시 재출현.
-  const genFilesByLease = new Map<string, Date[]>()
-  for (const f of generatedFiles) {
-    if (!f.leaseTermId) continue   // 특정 계약에 귀속되지 않은 발급본은 서명 링크 해소 근거로 쓰지 않음
-    const arr = genFilesByLease.get(f.leaseTermId) ?? []
-    arr.push(f.createdAt)
-    genFilesByLease.set(f.leaseTermId, arr)
-  }
+  // 판정은 lib/contractIssue 정본을 쓴다 — 계약서 파일 패널이 같은 규칙으로 '계약서 발급'을 주 동작으로 올린다.
   for (const link of signedLinks) {
     if (!link.signedAt) continue
-    // 같은 계약(leaseTermId)의 서명 이후 발급본만 해소 인정 — 같은 입주자의 다른 계약 발급본이 오해소하지 않게
-    const resolved = (genFilesByLease.get(link.leaseTermId) ?? []).some(c => c.getTime() >= link.signedAt!.getTime())
-    if (resolved) continue
+    if (isContractIssued(link.signedAt, link.leaseTermId, generatedFiles)) continue
     items.push({
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),

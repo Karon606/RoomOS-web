@@ -9,6 +9,7 @@ import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { buildContractData, type ContractData } from '@/lib/contractData'
+import { isContractIssued } from '@/lib/contractIssue'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -90,8 +91,11 @@ export async function issueContractShareLink(tenantId: string): Promise<
 }
 
 // 상태 조회 — 최신 링크 1건(상태 무관) + 문자 발송에 필요한 주 연락처·영업장명
+// needsIssue — 원격 서명은 받았는데 계약서 파일이 아직 없는 상태(홈 알림 '계약서 발급 필요'와 같은 판정).
+// 화면에서 다시 계산하지 않고 서버가 lib/contractIssue 정본으로 내려준다. 규칙을 두 곳에 두면
+// 홈 알림은 떠 있는데 패널은 아무 말도 안 하는 식으로 어긋난다.
 export async function getContractShareState(tenantId: string): Promise<
-  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string }
+  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean }
   | { ok: false; error: string }
 > {
   try {
@@ -113,11 +117,21 @@ export async function getContractShareState(tenantId: string): Promise<
     if (!tenant) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                          ?? tenant.contacts.find(c => !c.isEmergency)
+    // 서명이 들어온 링크에 대해서만 발급 여부를 따진다(그 외에는 물어볼 것이 없다)
+    let needsIssue = false
+    if (link?.signedAt && !link.closedAt) {
+      const files = await prisma.contractFile.findMany({
+        where: { propertyId, leaseTermId: link.leaseTermId, deletedAt: null },
+        select: { leaseTermId: true, createdAt: true },
+      })
+      needsIssue = !isContractIssued(link.signedAt, link.leaseTermId, files)
+    }
     return {
       ok: true,
       link: link ? serializeLink(link, await buildShareUrl(link.token)) : null,
       phone: primaryContact?.contactValue ?? null,
       propertyName: property?.name ?? '',
+      needsIssue,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

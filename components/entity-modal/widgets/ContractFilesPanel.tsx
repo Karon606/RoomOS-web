@@ -57,7 +57,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
-  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string } | null>(null)
+  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean } | null>(null)
   const [sharePending, setSharePending] = useState(false)
 
   const reload = async () => {
@@ -67,7 +67,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   }
   const reloadShare = async () => {
     const res = await getContractShareState(tenantId)
-    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName })
+    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue })
+    // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
+    else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false }); pushToast('error', res.error) }
   }
   useEffect(() => { reload(); reloadShare() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -94,17 +96,23 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     } finally { release(); setSharePending(false) }
   }
 
-  // 링크 닫기 — 적용취소(다시 열기)는 만료 전만 가능
+  // 링크 닫기 — 적용취소(다시 열기)는 만료 전만 가능.
+  // 문구는 '살아 있는 링크냐'가 아니라 '홈 알림이 실제로 떠 있느냐(needsIssue)'로 가른다.
+  // 종전에는 만료이기만 하면 '알림 해제'라고 하고 없는 알림이 사라진다고 단언했다 — 서명 없이
+  // 만료된 링크에는 그 알림이 애초에 없다(디자이너 지적 2026-08-01).
   const handleShareClose = async () => {
     const link = share?.link
     if (!link) return
+    const clearsAlert = share?.needsIssue === true
     const stillActive = new Date(link.expiresAt).getTime() > Date.now() && !link.lockedAt
     if (!(await confirmDialog({
-      title: stillActive ? '이 서명 링크를 닫을까요?' : '이 건의 알림을 해제할까요?',
-      message: stillActive
-        ? '입주자가 더 이상 링크를 열 수 없게 됩니다. 만료 전에는 적용취소로 다시 열 수 있습니다.'
-        : '이미 만료된 링크라 입주자 접근에는 변화가 없습니다. 홈의 "원격 서명 완료 · 계약서 발급 필요" 알림만 사라집니다. 정식 계약서를 발급하면 이 알림은 자동으로 사라집니다.',
-      level: 'caution', confirmLabel: stillActive ? '닫기' : '알림 해제',
+      title: clearsAlert ? '이 건의 알림을 해제할까요?' : '이 서명 링크를 닫을까요?',
+      message: clearsAlert
+        ? '홈의 "원격 서명 완료 · 계약서 발급 필요" 알림이 사라집니다. 계약서를 발급하거나 스캔본을 올리면 이 알림은 자동으로 사라집니다.'
+        : stillActive
+          ? '입주자가 더 이상 링크를 열 수 없게 됩니다. 만료 전에는 적용취소로 다시 열 수 있습니다.'
+          : '이미 만료된 링크라 입주자 접근에는 변화가 없습니다. 목록에서 이 링크 표시만 정리됩니다.',
+      level: 'caution', confirmLabel: clearsAlert ? '알림 해제' : '닫기',
     }))) return
     const release = trackSave()
     try {
@@ -151,21 +159,55 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const shareLink = share?.link ?? null
   const badge = shareLink ? shareBadge(shareLink) : null
 
+  // 계약서 진행 단계 — 지금 할 일 하나만 주 버튼으로. 로딩 중에는 판정하지 않는다(색이 튀지 않게).
+  //   S0 없음        : 계약서를 만드는 것부터
+  //   S1 서명 대기   : 입주자가 아직 안 눌렀다 — 다시 보내기가 다음 수. 만료·잠김도 같은 계열이다
+  //   S2 서명 받음   : 발급이 다음 수
+  //   S3 보관됨      : 목록이 주인공이라 주 버튼을 두지 않는다
+  //
+  // 라벨은 단계와 무관하게 '계약서 작성·서명' 으로 고정한다. S2 에서 '계약서 발급' 으로 바꿔봤다가
+  // 되돌렸다 — 그 링크는 입력 화면으로 가고 발급은 거기서 한 단계 더 들어가야 일어난다. 이 파일이
+  // 정한 동사 정의(작성 = 입력 화면 진입 / 발급 = 공식본 생성·보관)를 라벨이 스스로 어기는 셈이고,
+  // 누르면 발급될 줄 알았다가 폼이 나오는 배신이 된다. 단계 구분은 안내 문구가 한다(디자이너 패스).
+  const stage: { primary: 'write' | 'resend' | null; hint: string | null } = (() => {
+    // 조회 실패(share === null)여도 화면이 회색으로 굳지 않게 S0 으로 떨어뜨린다
+    if (loading) return { primary: null, hint: null }
+    if (share?.needsIssue) {
+      return { primary: 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
+    }
+    if ((files?.length ?? 0) > 0) return { primary: null, hint: null }
+    // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.
+    // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
+    if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
+      const hint = shareLink.lockedAt
+        ? '생년월일을 5번 틀려 링크가 잠겼습니다. 서명 요청을 다시 보내면 풀립니다.'
+        : new Date(shareLink.expiresAt).getTime() <= Date.now()
+          ? '서명 요청 링크가 만료됐습니다. 다시 보내 주세요.'
+          : '입주자가 아직 서명하지 않았습니다.'
+      // 수정 폼에는 서명 요청 버튼이 없어 안내가 막다른 길이 된다 — 그 경로에서는 문구를 걷는다
+      return hideSignRequest ? { primary: 'write', hint: null } : { primary: 'resend', hint }
+    }
+    return { primary: 'write', hint: null }
+  })()
+
   return (
     <div className="space-y-2">
-      {/* §22 — 액션 행에 solid 는 하나. 이 패널의 유일한 생산 동작인 '계약서 작성·서명'이 주 버튼이고
-          서명 요청은 대안 경로(secondary), 스캔본 올리기는 예외 보정(ghost)이다. 셋이 같은 무게로
-          서 있으면 어디서 시작하는지 화면이 알려주지 않는다(운영자가 헷갈린 자리). */}
+      {/* §22 — 액션 행에 solid 는 하나. 지금 상태에서 '다음에 할 일'만 주 버튼으로 올리고 나머지는 내린다.
+          상태와 무관하게 셋을 같은 무게로 세워두면 어디서 시작하는지 화면이 알려주지 않는다(운영자 지적).
+          단계별 안내 문구도 여기서 함께 정한다. */}
       <div className="flex items-center gap-2 -mt-1 flex-wrap">
-        <BtnLink href={`/contract/${tenantId}`} target="_blank" rel="noreferrer" variant="primary" size="sm">
+        <BtnLink href={`/contract/${tenantId}`} target="_blank" rel="noreferrer"
+          variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
           계약서 작성·서명
         </BtnLink>
         {!hideSignRequest && (
-          <Btn variant="secondary" size="sm" onClick={handleShareSend} disabled={sharePending}>
+          <Btn variant={stage.primary === 'resend' ? 'primary' : 'secondary'} size="sm"
+            onClick={handleShareSend} disabled={sharePending}>
             {sharePending ? '준비 중…' : badge?.active ? '서명 요청 다시 보내기' : '서명 요청 보내기'}
           </Btn>
         )}
-        {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다 */}
+        {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다.
+            스캔본 올리기도 홈 알림을 해소한다(종이 계약 운영) — 감추지 않는다. */}
         <label className={btnClass('ghost', 'sm', `cursor-pointer ${uploading ? 'opacity-60' : ''}`)}>
           {uploading ? '올리는 중…' : '스캔본 올리기'}
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
@@ -178,14 +220,18 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           </span>
           {badge.closable && (
             <button type="button" onClick={handleShareClose} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
-              {badge.active ? '링크 닫기' : '알림 해제'}
+              {share?.needsIssue ? '알림 해제' : '링크 닫기'}
             </button>
           )}
         </div>
       )}
+      {/* 안내는 액션 행 아래에 둔다 — 위에 두면 로딩 후 나타나면서 버튼 행이 통째로 밀린다(§17) */}
+      {stage.hint && <p className="text-xs text-[var(--warm-muted)]">{stage.hint}</p>}
       {loading && <SkeletonRows rows={2} />}
       {!loading && files && files.length === 0 && (
-        <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.</p>
+        <p className="text-xs text-[var(--warm-muted)]">
+          {stage.hint ? '등록된 계약서가 없습니다.' : '등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.'}
+        </p>
       )}
       {!loading && files && files.length > 0 && (
         <ul className="space-y-1.5">
