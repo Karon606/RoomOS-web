@@ -1411,9 +1411,13 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
   })
   let cashReceiptSum = 0, cashReceiptCount = 0, cardSum = 0, cardCount = 0
   for (const r of rows) {
-    if (r.cashReceiptIssuedAt) { cashReceiptSum += r.actualAmount; cashReceiptCount += 1 }
     // 카드 계열(신용카드·결제선생) 동일 취급 — 운영자 지시 2026-07-14
-    if (r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod)) { cardSum += r.actualAmount; cardCount += 1 }
+    const isCard = !!r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod)
+    // 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않는다(운영자 확인 2026-08-01:
+    // "카드결제했기 때문에 자동 발행이겠지"). 종전에는 두 if 가 배타가 아니라 카드 건에 현금영수증
+    // 체크가 있으면 같은 금액이 양쪽에 계상돼 세무 대사용 숫자가 틀어졌다(520호 172,000원).
+    if (isCard) { cardSum += r.actualAmount; cardCount += 1 }
+    else if (r.cashReceiptIssuedAt) { cashReceiptSum += r.actualAmount; cashReceiptCount += 1 }
   }
   return { cashReceiptSum, cashReceiptCount, cardSum, cardCount }
 }
@@ -1781,7 +1785,13 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     const fbMoveInMonth = lease.moveInDate
       ? new Date(lease.moveInDate).toISOString().slice(0, 7)
       : targetMonth
-    fbExpected = discountedRent(lease.discounts ?? [], fbMoveInMonth, lease.rentAmount)
+    // 정본 경로(위 RESERVED 분기)와 같은 규칙 — 예약 인상(room.scheduledRent)을 반영한다.
+    // 종전에는 원가만 써서, 인상 예약된 방의 예약자가 호실 배정 전후로 다른 금액을 보게 됐다.
+    const fbRentUpdMonth = lease.room?.rentUpdateDate ? monthOfDate(lease.room.rentUpdateDate) : null
+    const fbBase = (lease.room?.scheduledRent != null && lease.room.scheduledRent > 0 && fbRentUpdMonth && fbMoveInMonth >= fbRentUpdMonth)
+      ? lease.room.scheduledRent
+      : lease.rentAmount
+    fbExpected = discountedRent(lease.discounts ?? [], fbMoveInMonth, fbBase)
     const sums = await prisma.paymentRecord.groupBy({
       by: ['isDeposit'],
       where: { leaseTermId: lease.id, deletedAt: null },

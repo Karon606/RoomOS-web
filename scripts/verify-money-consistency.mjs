@@ -13,6 +13,9 @@ const roomsActions = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
 if (!roomsActions.includes('reservedExpected = discountedRent')) {
   violations.push('[소스] rooms/actions RESERVED 분기의 할인 반영(reservedExpected = discountedRent)이 사라짐 — 정본 수렴 회귀')
 }
+if (!roomsActions.includes('fbExpected = discountedRent(lease.discounts ?? [], fbMoveInMonth, fbBase)')) {
+  violations.push('[소스] rooms/actions RESERVED fallback(fbExpected) 이 예약 인상 반영을 잃음 — 호실 배정 전후로 금액이 달라진다')
+}
 if (roomsActions.includes('expected: lease.rentAmount')) {
   violations.push('[소스] rooms/actions 에 원가 직표시(expected: lease.rentAmount) 재등장 — 표시 정본 이탈')
 }
@@ -96,6 +99,12 @@ const shortProrated = await prisma.leaseTerm.findMany({
 })
 for (const l of shortProrated) {
   violations.push(`[데이터] ${l.tenant.name}: 단기 계약에 퇴실 일할 ${l.checkoutProratedAmount?.toLocaleString()}원(${l.checkoutProratedMonth}) — 주 단위 정액이라 일할 대상 아님(이중 청구)`)
+}
+
+// 5. 현금영수증 집계 배타 — 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않는다.
+//    두 if 가 배타가 아니면 같은 금액이 양쪽에 계상돼 세무 대사가 틀어진다(520호 172,000원 사례).
+if (!roomsActions.includes('else if (r.cashReceiptIssuedAt)')) {
+  violations.push('[소스] getMonthPaymentAggregates 의 현금영수증·카드 배타 처리가 사라짐 — 카드 건이 양쪽에 이중 계상된다')
 }
 
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)

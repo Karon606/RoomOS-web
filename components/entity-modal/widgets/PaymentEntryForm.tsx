@@ -17,6 +17,7 @@ import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
+import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 
 type Room = {
   leaseTermId: string
@@ -318,11 +319,19 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)}
-          className="w-3.5 h-3.5 accent-[var(--coral)]" />
-        <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
-      </label>
+      {/* 카드 계열은 매출전표가 증빙을 대신하므로 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
+          체크를 막지는 않되(예외 상황 여지) 사실을 알려 오입력을 줄인다. 집계에서는 카드가 우선한다. */}
+      {CARD_LIKE_METHODS.includes(payMethod) ? (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+          카드 결제는 매출전표가 증빙을 대신해 현금영수증 집계에 넣지 않습니다.
+        </p>
+      ) : (
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={cashReceiptIssued} onChange={e => setCashReceiptIssued(e.target.checked)}
+            className="w-3.5 h-3.5 accent-[var(--coral)]" />
+          <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
+        </label>
+      )}
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"

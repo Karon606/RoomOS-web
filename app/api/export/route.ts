@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
+import { billForLeaseMonth } from '@/lib/billing'
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return ''
@@ -252,7 +253,9 @@ export async function GET(request: NextRequest) {
       prisma.leaseTerm.findMany({
         where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         include: {
-          room: { select: { roomNo: true } },
+          // 잔액·상태를 청구 정본(billForLeaseMonth)으로 계산하기 위해 할인·예약 인상 필드까지 가져온다
+          room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } },
+          discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           tenant: {
             select: {
               name: true,
@@ -296,12 +299,15 @@ export async function GET(request: NextRequest) {
 
       // 단기는 입주월 1회 청구 — 다른 달 시트에선 청구 0 (lib/billing 단기 규칙과 동일).
       // '이용료' 컬럼은 가져오기 매칭 키(rentAmount 대조)라 값을 바꾸지 않고 잔액·상태만 보정.
-      const shortInMonth = l.isShortTerm && l.moveInDate
-        ? `${new Date(l.moveInDate).getFullYear()}-${String(new Date(l.moveInDate).getMonth() + 1).padStart(2, '0')}`
-        : null
-      const monthBill = shortInMonth && shortInMonth !== targetMonth ? 0 : l.rentAmount
-      const balance = prevPaidThisMonth ? 0 : totalPaid - monthBill
-      const isPaid  = prevPaidThisMonth || totalPaid >= monthBill
+      // 청구 정본 경유 — 종전에는 원가(rentAmount)를 직산해 할인·청구락·퇴실 일할·예약 인상이 전부 빠졌고,
+      // 그 결과 엑셀의 잔액·상태가 수납 화면과 다르게 나왔다(A페이즈). 락은 그 달 record 의 최대 expectedAmount.
+      const lockedForMonth = ps.reduce((m, p) => Math.max(m, p.expectedAmount), 0) || null
+      // 예약(RESERVED)은 아직 입주 전이라 미납·수금 집계에서 뺀다 — 화면과 동일 정본
+      // (balance 0 · isPaid true). 이 규칙 없이 청구만 정본화하면 예약자가 엑셀에서 미납으로 잡힌다.
+      const isReserved = l.status === 'RESERVED'
+      const monthBill = isReserved ? 0 : billForLeaseMonth(l as never, targetMonth, lockedForMonth)
+      const balance = (prevPaidThisMonth || isReserved) ? 0 : totalPaid - monthBill
+      const isPaid  = prevPaidThisMonth || isReserved || totalPaid >= monthBill
 
       return {
         '호실':        l.room?.roomNo ?? '',
