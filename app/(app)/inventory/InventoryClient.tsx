@@ -915,11 +915,16 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       {row.locations.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {row.currentLocationBreakdown.length > 0
-            ? row.currentLocationBreakdown.filter(lb => !hidden.has(lb.locationId)).map(lb => (
+            ? row.currentLocationBreakdown.filter(lb => !hidden.has(lb.locationId)).map(lb => {
+                // 어느 칩이 보충 재원(창고)인지 표식 — 잔량 자체는 이미 보이고 있었고 이름만 없었다.
+                // 품목마다 창고가 다르므로(hubLocationId) row.locations 의 isHub 로 판정한다.
+                const isHubChip = row.locations.find(l => l.id === lb.locationId)?.isHub ?? false
+                return (
                 <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
-                  {lb.locationName} {fmtQty(lb.qty, stockUnit)}
+                  {lb.locationName}{isHubChip ? ' (창고)' : ''} {fmtQty(lb.qty, stockUnit)}
                 </span>
-              ))
+                )
+              })
             : row.locations.filter(loc => !hidden.has(loc.id)).map(loc => (
                 <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
               ))
@@ -3884,6 +3889,11 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               const { beforeStr, afterStr, restocked } = computeRow(r)
               // 선택한 위치가 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
               const rowIsHub = r.locations.find(l => l.id === locId)?.isHub ?? false
+              // 이 품목의 창고와 그 잔량. isHub 위치가 없으면 추측하지 않고 표시를 생략한다(정본 규칙).
+              const hubLoc = r.locations.find(l => l.isHub)
+              const hubStock = hubLoc
+                ? { name: hubLoc.name, qty: r.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null }
+                : null
               return (
                 <div key={r.id} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
                   <div className="flex items-baseline justify-between gap-2">
@@ -3892,11 +3902,21 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <p className="text-[0.65625rem] text-[var(--warm-muted)]">{r.category}</p>
                     </div>
                   </div>
-                  {/* 참고줄 — 직전 잔량·지난 보충량 계속 표시 */}
-                  {(prev != null || (restocked > 0 && !rowIsHub)) && (
+                  {/* 참고줄 — 직전 잔량·지난 보충량·창고 잔량. 창고 잔량만 있어도 띄운다(보충 판단의 전제). */}
+                  {(prev != null || (restocked > 0 && !rowIsHub) || (!rowIsHub && !!hubStock)) && (
                     <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.65625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
                       {prev != null && <span className="text-[var(--warm-mid)]">직전 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
                       {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 지난 옮김 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      {/* 창고 잔량 — 지금까지는 저장을 눌러 부족 경고가 떠야 알 수 있었다(사후 차단).
+                          기록이 없으면 0이 아니라 '모름'이므로 숫자를 만들어내지 않는다. 품목마다 창고가 다르다. */}
+                      {!rowIsHub && hubStock && (
+                        <span className={hubStock.qty != null && restocked > hubStock.qty ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}>
+                          · {hubStock.name} 남음{' '}
+                          {hubStock.qty == null
+                            ? <strong className="text-[var(--warm-muted)]">점검 기록 없음</strong>
+                            : <strong className="tabular-nums">{Math.round(hubStock.qty * 100) / 100}{stockUnit ?? ''}</strong>}
+                        </span>
+                      )}
                       {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">창고에서 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
                     </div>
                   )}
