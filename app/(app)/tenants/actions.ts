@@ -30,6 +30,7 @@ import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } from '@/lib/roomStay'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
+import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -821,9 +822,18 @@ export async function recordDepositReturn(params: {
 
     let extraIncomeId: string | null = null
     if (withheld > 0) {
-      // 몰취 성격에 따라 카테고리 — 예약 취소 몰취는 위약금(익금), 퇴실 미반환분은 보증금 계정.
-      // 세무 자료에서 반환의무 있는 예수보증금(부채)과 실현 위약금 수익이 섞이지 않게(회계 패널 권고).
-      const forfeitCategory = params.context === 'reservationCancel' ? '위약금' : '보증금'
+      // 몰취 성격에 따라 카테고리 — 예약 취소 몰취는 위약금, 퇴실 미반환분은 보증금 몰취.
+      // 세무 자료에서 반환의무 있는 예수보증금(부채)과 실현 수익이 섞이지 않게(회계 패널 권고).
+      //
+      // '보증금' 이 아니라 '보증금 몰취' 인 이유(2026-08-01 회계 패널, 운영자 질의 후 개명):
+      // ExtraIncome 은 수익 계정인데 그 안에 '보증금' 이 있으면 세무 자료를 받는 쪽에서 보증금을
+      // '받은' 기록(부채 증가)으로 읽힌다. 실제로 수익 쪽에 '보증금 50,000' 이 서 있었다.
+      // 기존 4건과 영업장 카테고리 목록도 함께 개명했다(backfill-forfeit-category.mjs).
+      //
+      // 남은 과제: 미납 임대료를 보증금에서 충당한 분은 세법상 '임대수입' 이라 여기가 아니라
+      // 임대료 수납(PaymentRecord)으로 가야 한다. 지금은 미납이 있는 몰취 사례가 0건이라
+      // 오분류가 실제로 없지만, 퇴실 정산의 초과 부과가 도입되면 발생한다. 그때 분기한다.
+      const forfeitCategory = params.context === 'reservationCancel' ? PENALTY_CATEGORY : FORFEIT_CATEGORY
       const property = await prisma.property.findUnique({
         where: { id: propertyId },
         select: { incomeCategories: true },
@@ -964,8 +974,8 @@ export async function recordReservationPrepaidCancel(params: {
       const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { incomeCategories: true } })
       const raw = property?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
       const cats = raw.split(',').map(s => s.trim()).filter(Boolean)
-      if (!cats.includes('위약금')) {
-        await prisma.property.update({ where: { id: propertyId }, data: { incomeCategories: [...cats, '위약금'].join(',') } })
+      if (!cats.includes(PENALTY_CATEGORY)) {
+        await prisma.property.update({ where: { id: propertyId }, data: { incomeCategories: [...cats, PENALTY_CATEGORY].join(',') } })
       }
     }
 
@@ -979,7 +989,7 @@ export async function recordReservationPrepaidCancel(params: {
             propertyId,
             date:      forfeitDate,
             amount:    withheld,
-            category:  '위약금',
+            category:  PENALTY_CATEGORY,
             detail:    `${params.tenantName} 예약 취소 · 이용료 선납 위약금`,
             payMethod: '예약금 몰취',
             tenantId:    params.tenantId,

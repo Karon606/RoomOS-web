@@ -644,13 +644,23 @@ export default function RoomsClient({
   //   단 RESERVED 행 제외 — 예약 확정자의 그 달 전액은 홈 예상 매출에만 가산(아래 InfoHint 정본).
   //   예약 행 expected는 표시용 청구 예정액이고 잔액 0이라, 합산하면 청구·수납이 함께 부풀려진다(신고 78ea0c3d).
   // 수납 = 예상 − 이번 달 미수(행별 balance<0, 이월 미수와 구분되도록 expected로 캡).
-  // 만실 시 = 예상 + 공실·예약 방의 기준 임대료(baseRent) — 점유 손실 참고치(예약 방은 이 달 청구가 없어도 만실 기준엔 포함).
+  // 만실 기준 = 예상 + 공실·예약 방 + 청구 0원 점유 방의 기준 임대료(baseRent) — 아래 zeroBilledFill 주석 참조.
   const billableRows = occupied.filter(r => r.status !== 'RESERVED')
   const reservedRows = occupied.filter(r => r.status === 'RESERVED')
   const expectedSum  = billableRows.reduce((s, r) => s + r.expected, 0)
   const collectedSum = billableRows.reduce((s, r) => s + (r.expected - Math.min(r.expected, Math.max(0, -r.balance))), 0)
+  // 만실 기준 — 청구가 0원인 점유 방도 기준가로 채운다(운영자 질문 2026-08-01, 지표 패널 절충안).
+  // 종전에는 단기 비청구월·무청구 퇴실월의 방이 0원으로 들어가, 사람이 사는 방이 만실 계산에서
+  // 통째로 빠졌다(8월 503·520호 = 39실 중 37실짜리 만실, 749,000원 낙차). 공실이면 기준가로
+  // 채워지는데 단기가 들어차 있으면 오히려 0이 되는 역전이라 영업 판단이 거꾸로 잡힌다.
+  // NON_RESIDENT(창고·사무실)는 임대 수용력이 아니라 제외한다(lib/vacancy 집계 제외 정본, 신고 9d844226).
+  // expectedSum 에는 절대 넣지 않는다 — 넣으면 청구액과 수납률이 함께 부풀려진다(신고 78ea0c3d 클래스).
+  const zeroBilledFill = billableRows
+    .filter(r => r.expected === 0 && r.status !== 'NON_RESIDENT')
+    .reduce((s, r) => s + (r.baseRent || 0), 0)
   const maxSum       = expectedSum + vacants.reduce((s, r) => s + (r.baseRent || 0), 0)
                                    + reservedRows.reduce((s, r) => s + (r.baseRent || 0), 0)
+                                   + zeroBilledFill
   const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
   const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
 
@@ -704,10 +714,12 @@ export default function RoomsClient({
             </InfoHint>
           </p>
           {maxSum > expectedSum && (
-            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {fmtWon(maxSum)}
-              {/* 단기·할인 계약이 공실 기준가를 대체하면 값이 내려가는 위화감 방지(운영자 질문 2026-07-22) */}
-              <InfoHint title="만실 시">
-                현재 계약들의 이 달 청구액에 공실만 기준 임대료로 채워 더한 참고치입니다. 단기·할인 계약은 실제 계약가로 계산되므로, 기준가보다 싼 계약이 공실을 채우면 이 값은 내려갑니다. 만실 시에서 예상을 뺀 값이 이 달 공실 손실입니다.
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 기준 {fmtWon(maxSum)}
+              {/* '만실 시'에서 개명 — 예측이 아니라 정가 환산 기준선이라 '시'가 과한 약속이었다(2026-08-01).
+                  종전 안내는 차액을 '공실 손실'이라 단정했는데, 예약 방 기준가가 이미 섞여 있어 그때도 거짓이었다. */}
+              <InfoHint title="만실 기준">
+                <span className="block">모든 방이 기준 임대료로 정상 청구된다고 가정한 참고치입니다. 할인·일할 계약은 실제 계약가로 계산하고, 공실과 예약 방, 이번 달 청구가 없는 방(단기 선납분·무청구 퇴실월)은 기준 임대료로 채웁니다. 그래서 계약 구성이 바뀌면 달마다 값이 달라집니다.</span>
+                <span className="block mt-1.5">이 값에서 청구액을 뺀 차액에는 예약 방처럼 지금 팔 수 없는 방도 섞여 있습니다. 순수한 공실 손실은 아래 공실 머리글의 기준 임대료 합을 보세요.</span>
               </InfoHint>
             </span>
           )}
@@ -1228,7 +1240,13 @@ export default function RoomsClient({
       {vacants.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실</h2>
+            <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실
+              {/* 기준 임대료 합 — '만실 기준' 안내가 이 숫자를 가리킨다. 없으면 "직접 더하세요"가 된다(디자이너 지적).
+                  방별 월 이용료는 열 설정으로 감출 수 있어 개별 금액만으로는 대체되지 않는다. */}
+              <span className="ml-1.5 font-normal text-[0.6875rem] text-[var(--warm-muted)] num">
+                · 기준 임대료 합 {fmtWon(vacants.reduce((s, r) => s + (r.baseRent || 0), 0))}
+              </span>
+            </h2>
           </div>
 
           {/* 공실 — 모바일 카드 (열 설정으로 고른 정보를 칩으로, 최대 4개) */}

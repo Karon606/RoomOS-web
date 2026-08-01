@@ -116,6 +116,22 @@ if (!roomsActions.includes('else if (r.cashReceiptIssuedAt)')) {
   violations.push('[소스] getMonthPaymentAggregates 의 현금영수증·카드 배타 처리가 사라짐 — 카드 건이 양쪽에 이중 계상된다')
 }
 
+// 6. 보증금 몰취 수입의 카테고리 — 옛 이름 '보증금' 이 남으면 세무 자료에서 예수보증금(부채)으로
+//    읽힌다(회계 패널 2026-08-01). 코드는 lib/incomeCategories 정본을 쓰고 과거분은 백필했다.
+//    새로 생기면 여기서 잡는다(백필만 하고 감지가 없으면 또 갈린다).
+const legacyForfeit = await prisma.extraIncome.findMany({
+  where: { deletedAt: null, category: '보증금', payMethod: '보유 보증금' },
+  select: { date: true, amount: true, detail: true },
+})
+for (const r of legacyForfeit) {
+  violations.push(`[데이터] ${r.date.toISOString().slice(0, 10)} ${r.amount.toLocaleString()}원 — 몰취 수입 카테고리가 옛 이름 '보증금' (정본 '보증금 몰취'). ${r.detail ?? ''}`)
+}
+// import 만 남아도 통과하지 않게 '사용'을 본다 — 감지망이 통과만 하면 무력해진다(같은 실수 전례:
+// check-standalone-scroll 의 lockBackgroundScroll).
+if (!/:\s*FORFEIT_CATEGORY/.test(tenantsActions)) {
+  violations.push("[소스] 몰취 카테고리가 lib/incomeCategories 정본을 안 탄다 — 문자열이 흩어지면 개명 때 일부만 바뀐다")
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
