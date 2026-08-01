@@ -2355,12 +2355,12 @@ export async function finalizeRentRefund(input: {
     // 과거 회계월 보호 — 이미 신고를 마친 달을 조용히 뒤집지 않는다(lib/accountingGuard 정본).
     // 이 앱에는 월 마감·잠금 개념이 없고, 정산액이 락인 expectedAmount 보다 우선하므로
     // 여기가 유일한 방어선이다. 차단만 하면 운영자가 막히므로 사유에 대안을 함께 준다.
-    const todayMonth = kstYmdStr().slice(0, 7)
+    const todayYmd = kstYmdStr()   // 월이 아니라 날짜 — 5/31 같은 신고 기한 경계를 그으려면 필요하다
     const prop = await prisma.property.findUnique({
       where: { id: propertyId },
       select: { acquisitionDate: true },
     })
-    const monthVerdict = checkSettlementMonth(mon, todayMonth, prop?.acquisitionDate ?? null)
+    const monthVerdict = checkSettlementMonth(mon, todayYmd, prop?.acquisitionDate ?? null)
     if (!monthVerdict.ok) return { ok: false, error: monthVerdict.reason }
 
     const prepaid = records.reduce((s, r) => s + r.actualAmount, 0)
@@ -2519,7 +2519,7 @@ export async function setCheckoutProration(
     // 가드가 환불 쪽에만 있으면 같은 위험이 이 문으로 그대로 들어온다. 3단계에서 정산월이
     // 기간월로 바뀌면 이 함수는 일상적으로 과거 달에 쓰게 된다.
     const settleProp = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true } })
-    const settleVerdict = checkSettlementMonth(calc.moveOutMonth, kstYmdStr().slice(0, 7), settleProp?.acquisitionDate ?? null)
+    const settleVerdict = checkSettlementMonth(calc.moveOutMonth, kstYmdStr(), settleProp?.acquisitionDate ?? null)
     if (!settleVerdict.ok) return { ok: false, error: settleVerdict.reason }
     // 수동 조정값이 있으면 그 값으로(0 이상 정수), 없으면 자동 일할액. undo 의 appliedAmount 도 이 값으로 기록.
     const finalAmount = (manualAmount != null && Number.isFinite(manualAmount) && manualAmount >= 0) ? Math.round(manualAmount) : calc.amount
