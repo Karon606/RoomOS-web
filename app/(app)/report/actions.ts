@@ -117,13 +117,26 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     map[p.leaseTermId] = (map[p.leaseTermId] ?? 0) + p.actualAmount
   }
 
-  // 매출 = sum( min(받은 금액, 임대료) ) — dashboard와 동일 로직
+  // [저장 청구액 우선] 락인 맵 — (lease, month)별 record 최대 expectedAmount. 월세 변경 과거 소급 방지.
+  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
+  for (const p of payments) {
+    if (p.isPrevOwner) continue
+    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
+    const cur = m.get(p.targetMonth) ?? 0
+    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
+  }
+
+  // 매출 = sum( min(받은 금액, 그 달 청구액) ) — 캡은 원가가 아니라 청구 정본이어야 한다.
+  // 원가로 캡하면 할인 계약에 정가가 입금되거나 퇴실 일할월·인상 적용월에 매출이 과대/과소가 된다(A페이즈).
+  const leaseById = new Map(leases.map(l => [l.id, l]))
   const revenueByMonth: Record<string, number> = {}
   for (const m of months) {
     let total = 0
     for (const [leaseId, received] of Object.entries(receivedByMonthLease[m])) {
-      const rent = rentMap.get(leaseId) ?? 0
-      total += Math.min(received, rent)
+      if (!rentMap.has(leaseId)) continue          // 매출 인식 대상(RESERVED·CANCELLED 제외) 유지
+      const l = leaseById.get(leaseId)
+      const cap = l ? billForLeaseMonth(l as never, m, lockedExpectedByLeaseMonth[leaseId]?.get(m) ?? null) : 0
+      total += Math.min(received, cap)
     }
     revenueByMonth[m] = total
   }
@@ -183,14 +196,6 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     }
   }
 
-  // [저장 청구액 우선] 락인 맵 — (lease, month)별 record 최대 expectedAmount. 월세 변경 과거 소급 방지.
-  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
-  for (const p of payments) {
-    if (p.isPrevOwner) continue
-    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
-    const cur = m.get(p.targetMonth) ?? 0
-    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
-  }
 
   const monthRange = (from: string, to: string): string[] => {
     const out: string[] = []
@@ -484,15 +489,9 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       if (shortInMonth && shortInMonth !== month) continue
       // 정본 수렴(크리티컬 신고 50a2a69b 후속) — 퇴실 일할 확정월은 일할액, 예약 인상은 적용월부터
       // scheduledRent 기준, 그 위에 할인. 원가 직산입 금지(buildLeaseRow 와 동일 규칙).
-      const leaseRoom = lease.room
-      const rentUpdMon = leaseRoom?.rentUpdateDate ? monthOfDate(leaseRoom.rentUpdateDate) : null
-      const revBase = (leaseRoom != null && leaseRoom.scheduledRent != null && leaseRoom.scheduledRent > 0
-          && rentUpdMon != null && month >= rentUpdMon)
-        ? leaseRoom.scheduledRent
-        : lease.rentAmount
-      revenue += (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === month)
-        ? lease.checkoutProratedAmount
-        : discountedRent(lease.discounts, month, revBase)
+      // 정본 호출로 대체 — 종전에는 같은 규칙(일할·인상·할인)을 손으로 다시 짜 두 벌이 됐다.
+      // 미래월 예측이라 락은 넘기지 않는다(그 달 record 가 아직 없다).
+      revenue += billForLeaseMonth(lease as never, month, null)
     }
     // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가
     revenue += await getCheckedOutRecognizedRevenue(prisma, propertyId, month)

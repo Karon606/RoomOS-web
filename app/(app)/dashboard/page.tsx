@@ -190,7 +190,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
         ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
       },
-      select: { leaseTermId: true, actualAmount: true },
+      select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
     }),
     prisma.expense.findMany({
       where: { propertyId, date: { gte: startDate, lte: endDate } },
@@ -459,9 +459,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (!activeLeaseIds.has(p.leaseTermId)) continue
     paidByLease[p.leaseTermId] = (paidByLease[p.leaseTermId] ?? 0) + p.actualAmount
   }
+  // 캡은 원가가 아니라 그 달 청구액이어야 한다 — 원가로 캡하면 할인 계약에 정가가 입금되거나
+  // 퇴실 일할월·인상 적용월에 매출이 과대/과소가 되고, '예상매출 = 수납완료 + 수납예정' 등식이 깨진다(A페이즈).
+  const lockedThisMonth: Record<string, number> = {}
+  for (const p of payments) {
+    if (p.expectedAmount > (lockedThisMonth[p.leaseTermId] ?? 0)) lockedThisMonth[p.leaseTermId] = p.expectedAmount
+  }
+  const leaseByIdForCap = new Map(activeLeases.map(l => [l.id, l]))
   const paidRevenue = Object.entries(paidByLease).reduce((s, [id, paid]) => {
-    const rent = leaseRentMap.get(id) ?? 0
-    return s + Math.min(paid, rent)
+    const l = leaseByIdForCap.get(id)
+    const cap = l ? billForLeaseMonth(l as never, targetMonth, lockedThisMonth[id] ?? null) : (leaseRentMap.get(id) ?? 0)
+    return s + Math.min(paid, cap)
   }, 0)
   const extraRevenue = incomes.reduce((s, i) => s + i.amount, 0)
   const totalRevenue = paidRevenue + extraRevenue

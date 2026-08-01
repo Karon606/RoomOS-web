@@ -153,7 +153,9 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 연간: 연도별 전체 ────────────────────────────────────────
   if (range === 'annual') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
+      // RESERVED 선납·취소분 제외 — 월별(fetchRangeData)과 같은 규칙. 연간·전체만 필터가 빠져 있어
+      // 아직 입주도 안 한 예약자의 선납이 조기 매출로 잡혔다(A페이즈).
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])
@@ -173,7 +175,9 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 전체: 모든 월 ────────────────────────────────────────────
   if (range === 'all') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
+      // RESERVED 선납·취소분 제외 — 월별(fetchRangeData)과 같은 규칙. 연간·전체만 필터가 빠져 있어
+      // 아직 입주도 안 한 예약자의 선납이 조기 매출로 잡혔다(A페이즈).
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])
