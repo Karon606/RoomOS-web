@@ -11,9 +11,15 @@
 // 날짜는 전부 'YYYY-MM-DD' 문자열과 정수로만 다룬다. Date 객체를 섞으면 로컬 자정과 DB 의 UTC 자정이
 // 어긋나 하루가 밀린다(실제로 겪은 버그). 하루 빼기만 UTC 산술로 하고 곧바로 문자열로 되돌린다.
 
-import { effectiveDueRawForMonth, type DueLease } from './dueDate'
+import { PRORATE_BASE_DAYS } from './prorate'
 
-export type SettlementLease = DueLease & {
+// 납부일 임시조정(overrideDueDay)은 **일부러 보지 않는다** — 운영자 확정 2026-08-01.
+//   "납부일 유예는 납부 기한을 미루는거지... 기간 시작을 옮기면 공짜로 사는 기간이 생기잖아"
+// 유예는 '언제까지 내도 되는가'를 미룰 뿐 서비스 기간의 경계를 옮기지 않는다. 초판에서 lib/dueDate 의
+// effectiveDueRawForMonth 를 그대로 끌어 쓴 것이 오류였고, 그 결과 8월분을 9/3 까지 유예받은 사람이
+// 8/20 에 퇴실하면 정산월이 두 달 전으로 가고 기간이 45일(월세의 150%)이 됐다.
+export type SettlementLease = {
+  dueDay?: string | null
   moveInDate?: Date | string | null
 }
 
@@ -21,7 +27,8 @@ export type SettlementPeriod = {
   month: string      // 'YYYY-MM' — 정산 귀속월(기간 **시작**이 속한 달). 퇴실월과 다를 수 있다
   startYmd: string   // 기간 시작 (그 달 납부일. 입주월이면 입주일보다 앞설 수 없다)
   mustLeaveYmd: string // 기간 끝 = 다음 기간 시작 하루 전 = '퇴실해야 하는 날'
-  daysUsed: number   // startYmd~퇴실일 양끝 포함. 퇴실일이 기간 끝을 넘으면 기간 전체 일수
+  periodDays: number // 기간 전체 일수(28~32). 표시용 — 일할 분모가 아니다
+  daysUsed: number   // 일할에 쓰는 사용 일수. 1 이상 30 이하로 자른다(아래 주석)
   daysDiff: number   // 퇴실일 − 퇴실해야 하는 날. 음수 = 일찍 나감, 0 = 딱 맞음, 양수 = 초과
 }
 
@@ -50,12 +57,9 @@ export function asYmd(v: Date | string | null | undefined): string | null {
   return toYmd(v.getUTCFullYear(), v.getUTCMonth() + 1, v.getUTCDate())
 }
 
-/**
- * 그 달의 기간 시작일. 납부일 임시조정이 그 달에 걸려 있으면 조정값을 쓴다(lib/dueDate 정본 경유).
- * 임시조정이 전체 날짜형이면 그 날짜가 곧 기간 시작이다 — 월 경계를 넘긴 유예가 그렇게 저장된다.
- */
+/** 그 달의 기간 시작일. 계약의 원래 납부일만 본다 — 임시조정은 기한만 미룰 뿐 기간을 옮기지 않는다. */
 function periodStartYmd(lease: SettlementLease, y: number, m: number): string | null {
-  const raw = effectiveDueRawForMonth(lease, `${y}-${pad(m)}`)
+  const raw = lease.dueDay ?? null   // 임시조정은 보지 않는다(파일 상단 주석)
   if (!raw) return null
   if (raw.includes('-')) return raw.slice(0, 10)
   const last = lastDayOf(y, m)
@@ -103,11 +107,21 @@ export function settlementPeriodFor(
 
   const periodDays = diffDays(startYmd, mustLeave) + 1
   const rawUsed = diffDays(startYmd, moveOutYmd) + 1
+  // 퇴실일이 기간 시작보다 앞 — 입주일 보정이 시작을 올렸는데 퇴실일이 그보다 빠른 잘못된 입력이다
+  // (입주 5/20 인데 퇴실 5/10 등). 종전에는 daysUsed 0 인 멀쩡한 객체를 돌려줘서 잘못된 입력이
+  // 확정 데이터가 됐다. 기존 정본 calcCheckoutProration 과 같이 null 로 거른다.
+  if (rawUsed <= 0) return null
   return {
     month: `${sy}-${pad(sm)}`,
     startYmd,
     mustLeaveYmd: mustLeave,
-    daysUsed: Math.max(0, Math.min(rawUsed, periodDays)),
+    periodDays,
+    // 30 상한은 새로 정한 규칙이 아니라 **계약서 조항 그 자체**다.
+    //   "1일 이용요금은 월 이용료의 30분의 1로 합니다" — lib/contract.ts buildRefundClause(공정위 기준 고정 문구)
+    // 따라서 31일짜리 기간을 그대로 쓰면 우리 계약서를 우리가 어긴다(470,000 이 485,666 이 되는 식).
+    // 기존 정본 calcCheckoutProration 도 같은 이유로 30 에서 잘라왔다(lib/prorate.ts:76).
+    // 31일 달의 하루를 못 받는 것은 그 조항의 당연한 귀결이고, 운영자도 같은 판단이다(2026-08-01).
+    daysUsed: Math.max(1, Math.min(rawUsed, periodDays, PRORATE_BASE_DAYS)),
     daysDiff: diffDays(mustLeave, moveOutYmd),
   }
 }
