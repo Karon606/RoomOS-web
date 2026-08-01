@@ -111,6 +111,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     rentFee: d.lease ? d.lease.rentAmount.toLocaleString() : '',
     emergencyContact: d.emergencyContactText,
     환불규정: d.refundClauseInContract ? ' ' + buildRefundClause() : '',
+    // 기본 템플릿이 {{청소비}} 를 쓰는데 이 목록에 없어서 계약서에 '{{청소비}}' 가 그대로 인쇄됐다
+    // (renderContractText 는 매칭 없으면 원문을 남긴다). 2026-08-02 봉합.
+    청소비: cln > 0 ? `${cln.toLocaleString()}원` : '',
   }
 
   // 화면(ContractView)과 동일하게 명시적 2단(flex) — CSS 멀티컬럼은 인쇄에서 1단으로 흐름.
