@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
-  savePayment, saveDepositPayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
+  savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -129,17 +129,34 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     startTransition(async () => {
       const release = trackSave()
       try {
-        if (isDepositMode || isCleaningFeeMode) {
+        if (isCleaningFeeMode) {
+          // 청소비는 보증금이 아니다 — 돌려줄 의무가 없는 확정 대가라 받은 달 수익이다.
+          // 종전에는 saveDepositPayment 로 넘겨 isDeposit=true record 가 됐고, 그러면 매출에서
+          // 통째로 빠지면서 동시에 있지도 않은 보유 보증금으로 잡혔다(회계 패널 2026-08-02).
+          const res = await saveCleaningFeePayment({
+            leaseTermId: room.leaseTermId,
+            tenantId:    room.tenantId!,
+            targetMonth,
+            cleaningFee: room.cleaningFee,
+            rentAmount:  room.expected,
+            totalPaid:   payAmount,
+            payDate:     payDateVal,
+            payMethod,
+            memo:        memo || undefined,
+            cashReceiptIssued,
+          })
+          if (!res.ok) { pushToast('error', res.error); return }
+        } else if (isDepositMode) {
           await saveDepositPayment({
             leaseTermId:   room.leaseTermId,
             tenantId:      room.tenantId!,
             targetMonth,
-            depositAmount: isCleaningFeeMode ? room.cleaningFee : room.depositAmount,
+            depositAmount: room.depositAmount,
             rentAmount:    room.expected,
             totalPaid:     payAmount,
             payDate:       payDateVal,
             payMethod,
-            memo:          isCleaningFeeMode ? (memo || '청소비') : (memo || undefined),
+            memo:          memo || undefined,
             cashReceiptIssued,
           })
         } else {

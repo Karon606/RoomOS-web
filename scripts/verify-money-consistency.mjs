@@ -162,6 +162,27 @@ if (!tenantClient.includes('홈택스')) {
   violations.push('[소스] 환불 후 홈택스 안내 문구가 사라짐 — 앱과 국세청은 연동되지 않아 알려주는 것이 유일한 방어다')
 }
 
+// 9. 청소비가 보증금 record 로 들어가면 매출에서 빠지고 동시에 없는 보유 보증금으로 잡힌다.
+//    입실 청소비는 ExtraIncome('청소비')이 정본이다(회계 패널 2026-08-02).
+const cleaningAsDeposit = await prisma.paymentRecord.findMany({
+  where: { isDeposit: true, deletedAt: null },
+  select: {
+    actualAmount: true, targetMonth: true,
+    leaseTerm: { select: { depositAmount: true, cleaningFee: true, tenant: { select: { name: true } } } },
+  },
+})
+for (const r of cleaningAsDeposit) {
+  const l = r.leaseTerm
+  if (l.depositAmount === 0 && l.cleaningFee > 0 && r.actualAmount === l.cleaningFee) {
+    violations.push(`[데이터] ${l.tenant.name} ${r.targetMonth} ${r.actualAmount.toLocaleString()}원 — 청소비가 보증금 record 로 들어가 매출에서 빠졌다(정본: ExtraIncome '청소비')`)
+  }
+}
+// 화면 경로도 본다 — saveDepositPayment 로 되돌아가면 같은 사고가 재발한다
+const payForm = readFileSync('components/entity-modal/widgets/PaymentEntryForm.tsx', 'utf8')
+if (!/isCleaningFeeMode\)\s*\{[\s\S]{0,400}?saveCleaningFeePayment\(/.test(payForm)) {
+  violations.push("[소스] 청소비 수납이 saveCleaningFeePayment 정본을 안 탄다 — 보증금으로 저장되면 매출 누락 + 유령 보증금")
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)

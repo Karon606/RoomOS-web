@@ -14,6 +14,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -1085,6 +1086,87 @@ export async function saveDepositPayment(data: {
     await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount),
   )
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+}
+
+// 청소비 수납 — 입실 때 청소비를 **별도로** 받는 경우(주로 단기: 보증금 0 + 청소비 있음).
+//
+// 청소비는 보증금이 아니다. 돌려줄 의무가 없는 확정 대가라 **받은 달 수익**이다(회계 패널 2026-08-02).
+// 종전에는 saveDepositPayment 로 넘겨 isDeposit=true 인 record 를 만들었는데, 그러면
+//   · 매출 집계가 isDeposit 을 통째로 빼므로 받은 청소비가 매출에 안 잡히고
+//   · 홈의 '보유 보증금'(부채성 잔고)에는 잡힌다. 보증금이 0인 계약인데도.
+// 두 번 틀린 구조였다(단기 2건 40,000원 — 정다솜·김민정).
+//
+// ExtraIncome 은 이미 발생일(date) 기준으로 매출에 합산되므로 새 집계 로직이 필요 없다.
+// 초과분(이용료) 처리는 기존과 동일하게 record 로 남긴다.
+export async function saveCleaningFeePayment(data: {
+  leaseTermId: string
+  tenantId:    string
+  targetMonth: string
+  cleaningFee: number
+  rentAmount:  number
+  totalPaid:   number
+  payDate:     string
+  payMethod:   string
+  memo?:       string
+  cashReceiptIssued?: boolean
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const feeActual = Math.max(0, Math.min(data.totalPaid, data.cleaningFee))
+    if (feeActual <= 0) return { ok: false, error: '청소비 금액이 올바르지 않습니다.' }
+
+    // 영업장 수입 카테고리에 '청소비' 보장 — 없으면 재무 화면 필터에 안 뜬다
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId }, select: { incomeCategories: true },
+    })
+    const cats = (property?.incomeCategories ?? '').split(',').map(c => c.trim()).filter(Boolean)
+    if (!cats.includes(CLEANING_FEE_CATEGORY)) {
+      await prisma.property.update({
+        where: { id: propertyId },
+        data: { incomeCategories: [...cats, CLEANING_FEE_CATEGORY].join(',') },
+      })
+    }
+
+    const tenant = await prisma.tenant.findFirst({ where: { id: data.tenantId, propertyId }, select: { name: true } })
+    await prisma.extraIncome.create({
+      data: {
+        propertyId,
+        date:      new Date(data.payDate),
+        amount:    feeActual,
+        category:  CLEANING_FEE_CATEGORY,
+        detail:    `${tenant?.name ?? '입실자'} 입실 · 청소비${data.memo ? ` · ${data.memo}` : ''}`,
+        payMethod: data.payMethod,
+        tenantId:    data.tenantId,
+        leaseTermId: data.leaseTermId,
+      },
+    })
+
+    // 초과분은 이용료 record — 기존 경로와 동일한 락인 규칙
+    const excess = data.totalPaid - feeActual
+    if (excess > 0) {
+      const existingCount = await prisma.paymentRecord.count({
+        where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, deletedAt: undefined },
+      })
+      const monthBill = await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount)
+      await prisma.paymentRecord.create({
+        data: {
+          leaseTermId: data.leaseTermId, tenantId: data.tenantId, propertyId,
+          targetMonth: data.targetMonth,
+          expectedAmount: monthBill, actualAmount: excess,
+          payDate: new Date(data.payDate), payMethod: data.payMethod,
+          memo: null, seqNo: existingCount + 1, isPaid: false, carryOver: 0,
+          cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
+        },
+      })
+      await recalculatePayments(data.leaseTermId, data.targetMonth, monthBill)
+    }
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '청소비 수납 중 오류가 발생했습니다.' }
+  }
 }
 
 // 예약금 수납 진입점 — 모드 인지. 기존 결제 엔진(saveDepositPayment·savePayment) 재사용, 신규 수식 0.
