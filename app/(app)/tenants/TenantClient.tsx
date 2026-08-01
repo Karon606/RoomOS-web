@@ -945,6 +945,8 @@ export default function TenantClient({
         // 홈택스 조치 안내 — 앱과 국세청은 연동되지 않아 앱이 대신 취소해 줄 수 없다.
         // 확인창으로 막지 않는다(환불 확정은 이미 여러 단계를 거친 뒤라 습관적으로 넘기게 된다).
         // 앱이 하지 않은 일을 완료형으로 쓰지 않는다 — 취소는 운영자가 홈택스에서 한다.
+        // 지난 달 장부가 바뀌는 경우 먼저 알린다 — 이 앱엔 월 마감이 없어 조용히 바뀌면 아무도 모른다
+        if (taxNotice?.pastMonth) pushToast('info', taxNotice.pastMonth)
         if (taxNotice?.cashReceipt) {
           const { amount, ymd } = taxNotice.cashReceipt
           const full = taxNotice.companyKeeps === 0

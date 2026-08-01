@@ -10,7 +10,7 @@
 
 | 시점 | 무엇 | 시간 | 조건 |
 |---|---|---|---|
-| **커밋 전**(`.githooks/pre-commit`) | test-money · test-due-date · **test-settlement-period** · test-tour-feed · test-birthdate · check-standalone-scroll · check-public-tracking | 약 1.5초 | DB·네트워크 불필요 |
+| **커밋 전**(`.githooks/pre-commit`) | test-money · test-due-date · **test-settlement-period** · **test-accounting-guard** · test-tour-feed · test-birthdate · check-standalone-scroll · check-public-tracking | 약 1.7초 | DB·네트워크 불필요 |
 | **푸시 전**(`.githooks/pre-push`) | iCloud 중복 파일 정리 → `tsc --noEmit` → verify-money-consistency · verify-recurring-estimate · check-restock-hub-drift · check-room-stay-drift | 약 9초 | `.env.local` 있을 때만 DB 4종 |
 
 푸시가 곧 배포(Vercel)라 **마지막 관문은 pre-push**다. 커밋 훅은 자주 도니 DB를 태우지 않는다.
@@ -27,7 +27,8 @@ tsc 가 중복 식별자 오류로 실패한다. pre-push 가 먼저 지운다(`
 
 - **test-money**(99) 일할·환불·단기 견적·할인 등 금전 계산
 - **test-due-date**(33) 납부일 3포맷·임시조정·cutoff 비교
-- **test-settlement-period**(48) 퇴실 정산 기간·퇴실해야 하는 날(다음 납부일 −1일)·말일/짧은 달 클램프·연말 경계·입주월 보정·임시조정
+- **test-settlement-period**(57) 퇴실 정산 기간·퇴실해야 하는 날(다음 납부일 −1일)·말일/짧은 달 클램프·연말 경계·입주월 보정·임시조정 무시(유예는 기한만 미룬다)·30일 상한(계약서 조항)
+- **test-accounting-guard**(27) 과거 회계월 보호 — 전년도·인수 이전 차단, 같은 해 과거 달은 고지, 부가세 1기 경계
 - **test-tour-feed**(36) 투어 표시 판정 매트릭스
 - **test-birthdate**(27) 원격 서명 생년월일 게이트
 - **check-standalone-scroll** 셸 밖 라우트의 스크롤 계약(A/B) + **정본 컴포넌트 알맹이**

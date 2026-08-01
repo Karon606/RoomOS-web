@@ -32,6 +32,7 @@ import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } f
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { checkSettlementMonth } from '@/lib/accountingGuard'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -2300,6 +2301,7 @@ export async function previewCheckoutRefund(
 export type RentRefundTaxNotice = {
   cashReceipt?: { amount: number; ymd: string }   // 발행 표시가 있던 금액과 그 결제일
   card?: { amount: number }                       // 카드 계열로 받은 금액
+  pastMonth?: string                              // 지난 달 장부가 바뀐다는 고지(lib/accountingGuard)
   companyKeeps: number                            // 재발행이 필요할 때 쓸 확정액
 }
 
@@ -2350,6 +2352,17 @@ export async function finalizeRentRefund(input: {
     if (records.some(r => r.memo?.startsWith('[중도퇴실 환불]'))) {
       return { ok: false, error: '이미 환불 처리된 달입니다. 되돌리려면 환불 적용취소 후 다시 진행해 주세요.' }
     }
+    // 과거 회계월 보호 — 이미 신고를 마친 달을 조용히 뒤집지 않는다(lib/accountingGuard 정본).
+    // 이 앱에는 월 마감·잠금 개념이 없고, 정산액이 락인 expectedAmount 보다 우선하므로
+    // 여기가 유일한 방어선이다. 차단만 하면 운영자가 막히므로 사유에 대안을 함께 준다.
+    const todayMonth = kstYmdStr().slice(0, 7)
+    const prop = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { acquisitionDate: true },
+    })
+    const monthVerdict = checkSettlementMonth(mon, todayMonth, prop?.acquisitionDate ?? null)
+    if (!monthVerdict.ok) return { ok: false, error: monthVerdict.reason }
+
     const prepaid = records.reduce((s, r) => s + r.actualAmount, 0)
     const refundAmt = Math.round(input.rentRefundAmount)
     if (!Number.isFinite(refundAmt) || refundAmt <= 0) return { ok: false, error: '환불 금액이 올바르지 않습니다.' }
@@ -2414,9 +2427,10 @@ export async function finalizeRentRefund(input: {
       .filter(r => r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod))
       .reduce((sum, r) => sum + r.actualAmount, 0)
     const taxNotice: RentRefundTaxNotice | undefined =
-      (receiptRec || cardAmt > 0)
+      (receiptRec || cardAmt > 0 || monthVerdict.warning)
         ? {
             companyKeeps,
+            ...(monthVerdict.warning ? { pastMonth: monthVerdict.warning } : {}),
             ...(receiptRec ? { cashReceipt: {
               amount: records.filter(r => r.cashReceiptIssuedAt).reduce((sum, r) => sum + r.actualAmount, 0),
               ymd: receiptRec.payDate.toISOString().slice(0, 10),

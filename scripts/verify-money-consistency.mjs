@@ -149,6 +149,14 @@ if (/cashReceiptIssuedAt:\s*firstRecord\?\./.test(tenantsActions)) {
 if (!/return \{ ok: true[^}]*taxNotice/.test(tenantsActions)) {
   violations.push('[소스] finalizeRentRefund 가 taxNotice 를 반환하지 않는다 — 홈택스 조치 안내가 화면까지 못 간다')
 }
+// 8. 과거 회계월 보호 — 정산액이 락인보다 우선하고 이 앱엔 월 마감이 없어 여기가 유일한 방어선이다.
+if (!/checkSettlementMonth\(/.test(tenantsActions)) {
+  violations.push('[소스] finalizeRentRefund 에 과거 회계월 가드(checkSettlementMonth)가 없다 — 신고 끝난 달을 조용히 뒤집을 수 있다')
+}
+if (!/if \(!monthVerdict\.ok\) return/.test(tenantsActions)) {
+  violations.push('[소스] 과거 회계월 가드가 호출만 되고 차단하지 않는다 — 판정 결과를 버리면 없는 것과 같다')
+}
+
 const tenantClient = readFileSync('app/(app)/tenants/TenantClient.tsx', 'utf8')
 if (!tenantClient.includes('홈택스')) {
   violations.push('[소스] 환불 후 홈택스 안내 문구가 사라짐 — 앱과 국세청은 연동되지 않아 알려주는 것이 유일한 방어다')
