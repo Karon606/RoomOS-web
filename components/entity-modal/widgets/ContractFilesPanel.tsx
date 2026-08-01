@@ -23,7 +23,8 @@ import {
   type ContractShareLinkInfo,
 } from '@/app/(app)/tenants/contractShare'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SendDocButton } from '@/components/ui/SendDocButton'
+import { fetchDocBytes } from '@/lib/docBytes'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -249,7 +250,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   {tenantName} · {dateLabel}
                 </span>
                 <ViewDocButton driveFileId={f.driveFileId} />
-                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`}
+                <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
                   className={btnClass('secondary', 'sm')} />
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
                   className="text-[var(--danger-fg)]">

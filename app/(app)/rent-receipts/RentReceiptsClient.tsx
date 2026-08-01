@@ -19,6 +19,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { fetchDocBytes } from '@/lib/docBytes'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
@@ -28,12 +29,6 @@ import { prewarmPdfToPng } from '@/lib/pdfToPng'
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
-const fetchDocBytes = (driveFileId: string) => async () => {
-  const res = await fetch(`/api/doc-file?id=${encodeURIComponent(driveFileId)}`)
-  if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
-  return res.arrayBuffer()
-}
-
 export default function RentReceiptsClient({ files, tenants, month, kind = 'rent' }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string; kind?: 'rent' | 'deposit' }) {
   // 서류 종류 — 보증금은 귀속 월이 없어 월 쿼리를 넘기지 않는다(신고 d68220bd)
   const isDeposit = kind === 'deposit'

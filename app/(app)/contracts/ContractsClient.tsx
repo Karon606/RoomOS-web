@@ -5,6 +5,7 @@ import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { fetchDocBytes } from '@/lib/docBytes'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -13,7 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteContractFile, restoreContractFile } from '@/app/(app)/tenants/actions'
 import type { ContractListRow } from './actions'
-import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
@@ -23,12 +24,6 @@ import { canShareFiles } from '@/lib/shareFile'
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
-const fetchDocBytes = (driveFileId: string) => async () => {
-  const res = await fetch(`/api/doc-file?id=${encodeURIComponent(driveFileId)}`)
-  if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
-  return res.arrayBuffer()
-}
-
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }
 
 // 퇴실 그룹: 퇴실 완료 + 입실 취소. 연결 계약이 없는(status null) 파일은 거주중 쪽에 둔다.
@@ -47,8 +42,10 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // 다중 'PDF 보내기' 선택 모드 — 읽기 액션이라 STAFF 도 가능(canEdit 에 묶지 않음).
-  // 계약서는 PDF 원본으로만 전송한다. PNG 변환 절대 금지 — pdfToPng 는 1페이지만 그려
-  // 다페이지 계약서의 뒷장(환불조항·서명면)이 유실되기 때문(mode='pdf' 강제).
+  // 다건 전송은 PDF 원본으로만 한다(mode='pdf' 강제). 단건 '보내기'는 2026-08-01 부터 사진도
+  // 되지만(pdfToPngBlobs 로 전 페이지), 다건 큐(lib/docShareQueue)는 아직 1페이지 함수를 쓴다.
+  // 여기를 png 로 열려면 큐의 Map<string, Blob> 을 배열로 넓혀야 하고 그러면 영수증 다건 경로까지
+  // 건드린다. 그 전까지는 PDF 고정이 안전하다 — 뒷장(환불조항·서명면)이 유실되기 때문.
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [canShare, setCanShare] = useState(false)
@@ -171,7 +168,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
       {rows.length === 0 ? (
         <EmptyState
           title={contracts.length === 0 ? '계약서가 아직 없습니다' : '조건에 맞는 계약서가 없습니다'}
-          description={contracts.length === 0 ? '고객 상세에서 계약서를 서명·출력하거나 스캔본을 업로드하면 여기에 모입니다.' : '검색어나 필터를 조정해 보세요.'}
+          description={contracts.length === 0 ? '고객 정보에서 계약서를 작성해 서명받거나 스캔본을 올리면 여기에 모입니다.' : '검색어나 필터를 조정해 보세요.'}
         />
       ) : (
         <ul className="space-y-2">
@@ -225,7 +222,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
                 <ViewDocButton driveFileId={c.driveFileId} />
                 {/* 보내기는 조건 없이 띄운다 — 형제 2화면과 같게. canShare 로 숨기면 기기마다 행이 달라져
                     학습이 안 되고, 데스크톱에서도 다운로드 폴백과 안내 토스트가 있어 실패하지 않는다. */}
-                <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서.pdf`}
+                <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}
                   className={btnClass('secondary', 'sm')} />
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                   disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">

@@ -25,7 +25,7 @@ const SIZE_CLS: Record<Size, string> = {
 
 const BASE = 'inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
 
-// 버튼 클래스 단일 출처 — Btn 을 못 쓰는 자리(ShareDocButton 처럼 className 만 받는 정본 컴포넌트,
+// 버튼 클래스 단일 출처 — Btn 을 못 쓰는 자리(SendDocButton 처럼 className 만 받는 정본 컴포넌트,
 // 파일 input 을 감싸는 <label>)에서 §10 토큰을 손으로 베끼지 않게 한다. 손복사가 남으면 토큰을
 // 바꿀 때 그 자리만 뒤처진다(§10 "raw button 직접 작성 금지"의 실질 취지).
 export function btnClass(variant: Variant = 'primary', size: Size = 'md', extra = ''): string {
