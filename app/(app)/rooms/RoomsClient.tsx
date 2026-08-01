@@ -184,6 +184,24 @@ function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<
   return getDueInfo(effectiveDay, dueMonth)
 }
 
+// 납부일 셀 표기 — 임시조정이 그 달(미납월 우선)에 걸려 있으면 조정된 날짜를 보여준다.
+// 종전에는 다른 달로 미룬 조정(전체 날짜형)일 때 서버가 원래 dueDay 를 내려보내, 화면이 '매월 말일'로
+// 되돌아가 조정이 반영되지 않은 것처럼 보였다(405호 심원재, 운영자 지적 2026-08-01).
+// 표기 문법은 DueDayTempAdjustWidget 의 fmtOvr 와 같다.
+function dueDayCellText(room: RoomStatus, targetMonth: string): string | null {
+  const dueMonth = room.firstUnpaidMonth ?? targetMonth
+  const ovr = room.overrideDueDayMonth === dueMonth ? room.overrideDueDay : null
+  if (ovr) {
+    if (ovr.includes('-')) {
+      const d = new Date(ovr + 'T00:00:00')
+      return `${d.getMonth() + 1}월 ${d.getDate()}일 (조정)`
+    }
+    return ovr.includes('말') ? '말일 (조정)' : `${ovr}일 (조정)`
+  }
+  if (!room.dueDay) return null
+  return room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`
+}
+
 // 미납 배지 문구 — 납부일 당일은 아직 늦은 게 아니라 '납부일'로 표기한다(운영자 지시 2026-08-01).
 // 톤은 unpaid 를 유지한다 — 오늘 받아야 할 건이라 시야에서 사라지면 안 된다. 계산·집계는 손대지 않고 표시만 바꾼다.
 // days: 납부일로부터 경과일(0=오늘). 7일 초과면 연체.
@@ -964,9 +982,9 @@ export default function RoomsClient({
                   }
                   return null
                 })()}
-                {colVis.dueDay && room.dueDay && (
+                {colVis.dueDay && dueDayCellText(room, targetMonth) && (
                   <span className="text-[var(--warm-muted)]">
-                    {room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`}
+                    {dueDayCellText(room, targetMonth)}
                   </span>
                 )}
                 {colVis.cashReceipt && room.cashReceiptIssued && (
@@ -1127,9 +1145,7 @@ export default function RoomsClient({
 
                   {colVis.dueDay && (
                     <td className="px-4 py-4 text-sm text-[var(--warm-mid)] whitespace-nowrap">
-                      {room.dueDay
-                        ? room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`
-                        : '—'}
+                      {dueDayCellText(room, targetMonth) ?? '—'}
                     </td>
                   )}
 
