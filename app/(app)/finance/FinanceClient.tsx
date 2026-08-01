@@ -59,6 +59,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { MergeSheet } from '@/components/ui/inventory/MergeSheet'
 import { useLongPress } from '@/lib/useLongPress'
 import { ViewTabs } from '@/components/ui/ViewTabs'
+import { OtherMonthNotice } from '@/components/ui/OtherMonthNotice'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -3536,6 +3537,7 @@ export default function FinanceClient({
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <DatePicker name="date" value={editExpDate} onChange={setEditExpDate}
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                      <OtherMonthNotice date={editExpDate} />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -3843,6 +3845,7 @@ export default function FinanceClient({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <DatePicker name="date" value={addExpDate} onChange={setAddExpDate}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    <OtherMonthNotice date={addExpDate} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">

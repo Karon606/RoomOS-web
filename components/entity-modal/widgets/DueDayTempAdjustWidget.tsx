@@ -106,7 +106,12 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
       title: room.overrideDueDayMonth
         ? `${monthLabel(room.overrideDueDayMonth)}분 납부일 임시 조정을 삭제할까요?`
         : '납부일 임시 조정을 삭제할까요?',
-      level: 'danger',
+      message: room.overrideDueDayMonth && room.dueDay
+        ? `${monthLabel(room.overrideDueDayMonth)}분 납부일이 원래 ${fmtOvr(room.dueDay)}로 돌아갑니다. 그 달 연체 경과일도 다시 계산됩니다.`
+        : '납부일이 원래대로 돌아갑니다. 그 달 연체 경과일도 다시 계산됩니다.',
+      // caution — 원래 납부일로 되돌아가는 동작이라 danger 의 '되돌릴 수 없습니다'와 모순된다.
+      // 같은 위젯의 덮어쓰기(기존 조정 소멸)도 caution 이라 위계도 이쪽이 맞다(디자이너 패스).
+      level: 'caution',
       confirmLabel: '삭제',
     })
     if (!ok) return
@@ -122,8 +127,20 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
     })
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!dateInput) return
+    // 납부일 임시 조정은 계약당 1쌍만 저장된다(스키마) — 다른 달 조정을 새로 걸면 기존 조정이
+    // 경고 없이 사라졌다(A페이즈). 대상 월이 바뀔 때만 물어본다(같은 달 재조정은 과잉).
+    if (isActive && room.overrideDueDayMonth && room.overrideDueDayMonth !== overrideMonth) {
+      const prevMon = monthLabel(room.overrideDueDayMonth)
+      const backTo = room.dueDay ? `원래 ${fmtOvr(room.dueDay)}로` : '원래대로'
+      const ok = await confirmDialog({
+        title: `${prevMon}분 조정을 지우고 ${monthLabel(overrideMonth)}분으로 바꿀까요?`,
+        message: `납부일 임시 조정은 계약당 하나만 저장됩니다. 새로 저장하면 ${prevMon}분 조정(${fmtOvr(room.overrideDueDay)})이 사라지고 ${prevMon} 납부일은 ${backTo} 돌아갑니다.`,
+        level: 'caution', confirmLabel: `${monthLabel(overrideMonth)}분으로 바꾸기`,
+      })
+      if (!ok) return
+    }
     const selectedMonth = dateInput.slice(0, 7)
     // 선택 날짜가 대상 월과 같으면 일/말일, 다른 달이면 완전한 날짜로 저장.
     let val: string

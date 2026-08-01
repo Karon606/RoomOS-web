@@ -32,6 +32,10 @@ const CATEGORY_COLOR: Record<SuspectCategory, string> = {
   'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
 }
 
+// 월 표기 — 'YYYY-MM' 은 모바일에서 읽기 나쁘다. 확인창은 'N월분'으로 말한다.
+const monLabel = (m: string) => `${Number(m.split('-')[1])}월분`
+const monShort = (m: string) => `${Number(m.split('-')[1])}월`
+
 // 금액 표기는 정본 fmtWon 사용(감사 B4 — 로컬 재정의 금지)
 function fmtDueDay(d: string | null): string {
   if (!d) return '—'
@@ -53,9 +57,11 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
   const handleMove = async (record: SuspectRecord, newMonth: string) => {
     if (!newMonth) return
     if (!(await confirmDialog({
-      title: `귀속 월을 ${record.targetMonth} → ${newMonth} 로 변경할까요?`,
-      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtWon(record.actualAmount)}. 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
-      level: 'caution', confirmLabel: '변경',
+      // 종전 문구는 '입금일·금액은 그대로'만 말해 안심시켰다 — 정작 두 달의 매출·미납이 함께 바뀐다는
+      // 사실이 빠져 있었다(A페이즈, UX 라이터·웹디자이너 검토). 화살표는 가이드 금지라 문장으로 푼다.
+      title: `${record.roomNo ?? '?'}호 ${record.tenantName}님 수납을 ${monLabel(record.targetMonth)}에서 ${monLabel(newMonth)}으로 옮길까요?`,
+      message: `${record.payDate} 입금 ${fmtWon(record.actualAmount)}. 입금일과 금액은 그대로입니다.\n홈·리포트의 ${monShort(record.targetMonth)} 매출이 ${fmtWon(record.actualAmount)} 줄고 ${monShort(newMonth)} 매출이 그만큼 늘어납니다. 두 달의 미납도 함께 바뀝니다.\n실행 직후 뜨는 적용취소로 되돌릴 수 있습니다.`,
+      level: 'caution', confirmLabel: '옮기기',
     }))) return
 
     startTransition(async () => {
@@ -65,12 +71,12 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
         ...prev,
         suspects: prev.suspects.filter(s => s.id !== record.id),
       }))
+      // 확인창에서 적용취소를 약속했으므로 성공 토스트는 항상 띄운다 — 종전에는 undo 가 비면
+      // 토스트 자체가 안 떠 '저장됐는데 화면이 안 변하는' 상태가 됐다(디자이너 패스).
       const undo = res.undo
-      if (undo && undo.length > 0) {
-        pushToast('success', '귀속 월을 이동했습니다', {
-          action: { label: '적용취소', run: () => { void undoTargetMonthMoves(undo).then(r => { if (r.ok) { pushToast('info', '귀속 월 이동을 적용취소했습니다'); router.refresh() } else pushToast('error', r.error) }) } },
-        })
-      }
+      pushToast('success', '귀속 월을 이동했습니다', (undo && undo.length > 0)
+        ? { action: { label: '적용취소', run: () => { void undoTargetMonthMoves(undo).then(r => { if (r.ok) { pushToast('info', '귀속 월 이동을 적용취소했습니다'); router.refresh() } else pushToast('error', r.error) }) } } }
+        : undefined)
       router.refresh()
     })
   }
@@ -111,7 +117,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
         <h1 className="text-base font-bold text-[var(--warm-dark)]">발생주의 데이터 진단</h1>
         <p className="text-xs text-[var(--warm-mid)] leading-relaxed">
           각 수납 기록의 <span className="font-semibold">실제 입금일</span>과 <span className="font-semibold">귀속 월(어느 달 이용료로 잡혔는지)</span>을 비교합니다.
-          양도인 record(인수일 이전 입금)는 정상으로 분류되어 제외됩니다. 변경되는 것은 해당 기록의 <span className="font-semibold">귀속 월</span>뿐 — 입금일·금액·납부방식은 그대로 유지됩니다.
+          양도인 record(인수일 이전 입금)는 정상으로 분류되어 제외됩니다. 귀속 월만 바뀌고 입금일과 금액, 납부방식은 그대로입니다. 대신 옮기기 전후 <span className="font-semibold">두 달의 매출과 미납</span> 숫자가 함께 바뀝니다.
         </p>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--warm-mid)] pt-2">
           <span>전체: <span className="font-semibold text-[var(--warm-dark)]">{result.total}건</span></span>

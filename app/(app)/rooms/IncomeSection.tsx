@@ -19,6 +19,7 @@ import { Modal } from '@/components/ui/Modal'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
+import { OtherMonthNotice } from '@/components/ui/OtherMonthNotice'
 
 const fmtRoomNo = (no: string | null | undefined) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
@@ -272,6 +273,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <DatePicker name="date" value={editIncDate} onChange={setEditIncDate}
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                      <OtherMonthNotice date={editIncDate} />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -333,6 +335,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <DatePicker name="date" value={addIncDate} onChange={setAddIncDate}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    <OtherMonthNotice date={addIncDate} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>

@@ -48,8 +48,24 @@ export function DiscountWidget({ leaseTermId, onChange }: {
     })
   }
 
-  const handleDelete = async (id: string) => {
-    if (!(await confirmDialog({ level: 'danger', title: '이 할인을 삭제할까요?', message: '삭제하면 그 달 청구액(미수)이 다시 계산됩니다.', confirmLabel: '삭제' }))) return
+  // 영구(매월) 할인은 과거 달까지 소급 재계산된다(락 되쓰기에 월 하한이 없다) — 그 사실이
+  // 어디에도 없었다(A페이즈). 기간 할인은 폼에 기간이 보이므로 그 범위만 말한다.
+  const handleDelete = async (d: { id: string; scope: string; startMonth: string | null; endMonth: string | null }) => {
+    const isPermanent = d.scope === 'permanent'
+    const range = d.startMonth
+      ? (d.endMonth
+          ? `${Number(d.startMonth.split('-')[1])}월부터 ${Number(d.endMonth.split('-')[1])}월까지의`
+          : `${Number(d.startMonth.split('-')[1])}월분부터 모든 달의`)
+      : '적용된'
+    if (!(await confirmDialog({
+      level: 'danger', title: '이 할인을 삭제할까요?',
+      message: isPermanent
+        ? '이 할인이 적용된 모든 달의 청구액이 정가로 다시 계산됩니다. 이미 수납이 기록된 지난 달도 포함되어 그 달의 미수가 늘어날 수 있습니다.'
+        : `${range} 청구액이 정가로 다시 계산됩니다. 그 기간에 이미 수납이 기록돼 있으면 미수가 늘어날 수 있습니다.`,
+      irreversibleNote: '삭제한 할인은 다시 등록해야 되돌아갑니다.',
+      confirmLabel: '삭제',
+    }))) return
+    const id = d.id
     startTransition(async () => {
       const res = await withSave(() => deleteRentDiscount(id), { success: '할인 삭제됨' })
       if (!res.ok) return
@@ -73,7 +89,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
       {discs.map(d => (
         <div key={d.id} className="flex items-center gap-2 text-xs">
           <span className="flex-1 text-[var(--warm-dark)]">{discountLabel(d)}</span>
-          <button onClick={() => handleDelete(d.id)} disabled={pending}
+          <button onClick={() => handleDelete(d)} disabled={pending}
             className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors disabled:opacity-40">삭제</button>
         </div>
       ))}
@@ -125,7 +141,10 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>
             <Btn variant="success" size="sm" className="flex-1" onClick={handleAdd} disabled={pending || !(value > 0)}>적용</Btn>
           </div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+            할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.
+            {scope === 'permanent' && ' 영구(매월)를 고르면 지난 달 청구액도 함께 다시 계산됩니다.'}
+          </p>
         </div>
       )}
     </div>

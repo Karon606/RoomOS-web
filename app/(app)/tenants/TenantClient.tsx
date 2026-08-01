@@ -17,7 +17,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
@@ -1054,11 +1054,28 @@ export default function TenantClient({
     })
   }
 
-  const handleDeletePayRecord = async (paymentId: string) => {
-    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+  // 어느 달 매출이 얼마 바뀌는지 알려준다 — 종전에는 '이 수납 기록을 삭제할까요?' 한 줄뿐이었다(A페이즈).
+  // level 은 caution — 소프트삭제라 되살릴 수 있는데 danger 는 '되돌릴 수 없습니다'를 자동으로 붙여 거짓말이 된다.
+  // 같은 삭제인데 프리즘 경로(PaymentRecordList)에만 적용취소가 있던 불일치도 함께 봉합한다.
+  const handleDeletePayRecord = async (p: PayRecord) => {
+    const mon = Number(p.targetMonth.split('-')[1])
+    if (!(await confirmDialog({
+      title: p.isDeposit
+        ? `보증금 수납 ${p.actualAmount.toLocaleString()}원을 삭제할까요?`
+        : `${mon}월분 수납 ${p.actualAmount.toLocaleString()}원을 삭제할까요?`,
+      message: p.isDeposit
+        ? '보증금 잔액이 그만큼 줄어듭니다. 반환 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.'
+        : `${mon}월 매출이 ${p.actualAmount.toLocaleString()}원 줄고 그만큼 미수로 잡힙니다. 홈과 리포트의 ${mon}월 숫자도 함께 바뀝니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.`,
+      level: 'caution', confirmLabel: '삭제',
+    }))) return
+    const paymentId = p.id
     startTransition(async () => {
-      const res = await withSave(() => deletePayment(paymentId), { success: '수납 기록 삭제됨' })
+      // 적용취소는 토스트 액션으로 — 프리즘(PaymentRecordList)과 같은 패턴
+      const res = await withSave(() => deletePayment(paymentId), { success: '' })
       if (!res.ok) { setError(res.error); return }
+      pushToast('success', '수납 기록 삭제됨', {
+        action: { label: '적용취소', run: () => { void restorePayment(paymentId).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
+      })
       if (payTarget) {
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
@@ -2120,7 +2137,7 @@ export default function TenantClient({
                                   style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
                                   {isExtra ? '-' : '+'}{fmtWon(absAmt)}
                                 </span>
-                                <button onClick={() => handleDeletePayRecord(p.id)}
+                                <button onClick={() => handleDeletePayRecord(p)}
                                   className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
                               </div>
                             </div>
@@ -2182,7 +2199,7 @@ export default function TenantClient({
                                     className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
                                     수정
                                   </button>
-                                  <button onClick={() => handleDeletePayRecord(p.id)}
+                                  <button onClick={() => handleDeletePayRecord(p)}
                                     className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                                     삭제
                                   </button>
@@ -2271,7 +2288,7 @@ export default function TenantClient({
                                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                                     수정
                                   </button>
-                                  <button onClick={() => handleDeletePayRecord(p.id)}
+                                  <button onClick={() => handleDeletePayRecord(p)}
                                     className="text-xs font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                                     삭제
                                   </button>
