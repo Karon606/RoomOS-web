@@ -16,7 +16,8 @@ import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, btnClass } from '@/components/ui/Btn'
+import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
@@ -234,27 +235,24 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                 {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
                 {!selectMode && (
                 <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
-                  {/* 보내기 = 사진/PDF 형식 선택 후 공유(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22) */}
-                  {canShare && (
-                    <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_실거주확인서`}
-                      className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
-                  )}
+                  {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
+                      종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
+                  <ViewDocButton driveFileId={c.driveFileId} />
+                  {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
+                      조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
+                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_실거주확인서`}
+                    className={btnClass('secondary', 'sm')} />
                   {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장 요청(신고 dc56f953) */}
                   <SaveDocImageButton fileName={`${c.tenantName}_실거주확인서`}
                     getPdfBytes={fetchDocBytes(c.driveFileId)}
-                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
-                  <a href={c.viewUrl} target="_blank" rel="noreferrer"
-                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    원본 보기
-                  </a>
-                  <Link href={`/residence-cert/${c.tenantId}`}
-                    className="min-h-[44px] inline-flex items-center justify-center px-3 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                    className={btnClass('secondary', 'sm')} />
+                  <Link href={`/residence-cert/${c.tenantId}`} className={btnClass('secondary', 'sm')}>
                     다시 작성
                   </Link>
-                  <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
-                    className="min-h-[44px] inline-flex items-center justify-center px-2.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
+                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                    disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                     {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                  </button>
+                  </Btn>
                 </div>
                 )}
               </li>

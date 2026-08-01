@@ -24,6 +24,8 @@ import {
 } from '@/app/(app)/tenants/contractShare'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -151,18 +153,20 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
 
   return (
     <div className="space-y-2">
+      {/* §22 — 액션 행에 solid 는 하나. 이 패널의 유일한 생산 동작인 '계약서 작성·서명'이 주 버튼이고
+          서명 요청은 대안 경로(secondary), 스캔본 올리기는 예외 보정(ghost)이다. 셋이 같은 무게로
+          서 있으면 어디서 시작하는지 화면이 알려주지 않는다(운영자가 헷갈린 자리). */}
       <div className="flex items-center gap-2 -mt-1 flex-wrap">
-        <a href={`/contract/${tenantId}`} target="_blank" rel="noreferrer"
-          className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+        <BtnLink href={`/contract/${tenantId}`} target="_blank" rel="noreferrer" variant="primary" size="sm">
           계약서 작성·서명
-        </a>
+        </BtnLink>
         {!hideSignRequest && (
-          <button type="button" onClick={handleShareSend} disabled={sharePending}
-            className="px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-60">
+          <Btn variant="secondary" size="sm" onClick={handleShareSend} disabled={sharePending}>
             {sharePending ? '준비 중…' : badge?.active ? '서명 요청 다시 보내기' : '서명 요청 보내기'}
-          </button>
+          </Btn>
         )}
-        <label className={`px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
+        {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다 */}
+        <label className={btnClass('ghost', 'sm', `cursor-pointer ${uploading ? 'opacity-60' : ''}`)}>
           {uploading ? '올리는 중…' : '스캔본 올리기'}
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
@@ -189,17 +193,22 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
             const dt = new Date(f.signedAt)
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
             return (
-              <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
+              // 파일명은 더 이상 링크를 겸하지 않는다 — 링크처럼 보이지 않는 텍스트가 말없이 구글 드라이브로
+              // 나가던 구조가 '앱에서 인쇄가 안 된다'의 절반이었다. 열람은 '보기'가 전담한다(§22 solid 1개).
+              <li key={f.id} className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
                 <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
                   {f.source === 'GENERATED' ? '서명' : '스캔'}
                 </span>
-                <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
+                <span className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] truncate">
                   {tenantName} · {dateLabel}
-                </a>
-                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`} />
-                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
+                </span>
+                <ViewDocButton driveFileId={f.driveFileId} />
+                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`}
+                  className={btnClass('secondary', 'sm')} />
+                <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
+                  className="text-[var(--danger-fg)]">
                   삭제
-                </button>
+                </Btn>
               </li>
             )
           })}

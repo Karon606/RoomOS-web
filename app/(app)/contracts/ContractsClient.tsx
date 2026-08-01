@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, btnClass } from '@/components/ui/Btn'
+import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -219,20 +220,17 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
               {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
               {!selectMode && (
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* 보내기 = 단건 전달(다운로드 폴백 있음). 파일 전송 지원 기기에서만 노출.
-                    라벨은 ShareDocButton 기본값을 쓴다 — label prop 으로 덮으면 화면마다 이름이 갈린다. */}
-                {canShare && (
-                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서.pdf`}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
-                )}
-                <a href={c.viewUrl} target="_blank" rel="noreferrer"
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                  원본 보기
-                </a>
-                <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
-                  className="px-2 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
+                {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
+                    종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
+                <ViewDocButton driveFileId={c.driveFileId} />
+                {/* 보내기는 조건 없이 띄운다 — 형제 2화면과 같게. canShare 로 숨기면 기기마다 행이 달라져
+                    학습이 안 되고, 데스크톱에서도 다운로드 폴백과 안내 토스트가 있어 실패하지 않는다. */}
+                <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서.pdf`}
+                  className={btnClass('secondary', 'sm')} />
+                <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
+                  disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                   {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
-                </button>
+                </Btn>
               </div>
               )}
             </li>
