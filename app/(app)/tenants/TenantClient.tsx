@@ -11,6 +11,7 @@ import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
+  type RentRefundTaxNotice,
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
@@ -916,9 +917,10 @@ export default function TenantClient({
         if (updateRes.notice) pushToast('info', updateRes.notice)
         // 이용료 환불 — 퇴실월 수납 record를 회사 귀속액으로 재기록(매출에서 환불분 제외, 원 기록 소프트삭제 보존)
         let rentRefunded = false
+        let taxNotice: RentRefundTaxNotice | undefined
         if (rp && rentRefundAmt > 0) {
           const rr = await finalizeRentRefund({ leaseTermId, moveOutYmd: rentMoveOutYmd, rentRefundAmount: rentRefundAmt })
-          if (rr.ok) rentRefunded = true
+          if (rr.ok) { rentRefunded = true; taxNotice = rr.taxNotice }
           else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
           else { setError(rr.error); pushToast('error', rr.error); return }
         }
@@ -940,6 +942,19 @@ export default function TenantClient({
         refresh()
         const { refundId, extraIncomeId } = refundRes
         const totalRefunded = (rp ? rentRefundAmt : 0) + depositReturnAmt
+        // 홈택스 조치 안내 — 앱과 국세청은 연동되지 않아 앱이 대신 취소해 줄 수 없다.
+        // 확인창으로 막지 않는다(환불 확정은 이미 여러 단계를 거친 뒤라 습관적으로 넘기게 된다).
+        // 앱이 하지 않은 일을 완료형으로 쓰지 않는다 — 취소는 운영자가 홈택스에서 한다.
+        if (taxNotice?.cashReceipt) {
+          const { amount, ymd } = taxNotice.cashReceipt
+          const full = taxNotice.companyKeeps === 0
+          pushToast('info', full
+            ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${ymd} 발행 ${fmtWon(amount)}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
+            : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${ymd} 발행 ${fmtWon(amount)}을 취소하고 확정액 ${fmtWon(taxNotice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
+        }
+        if (taxNotice?.card) {
+          pushToast('info', `카드로 받은 ${fmtWon(taxNotice.card.amount)}입니다. 카드 승인을 취소하면 카드 매출 자료도 함께 줄지만, 승인을 두고 계좌로 돌려주면 카드 매출은 그대로 남습니다. 어느 쪽으로 처리하셨는지 확인해 주세요.`)
+        }
         pushToast('success', `환불 + 퇴실 처리됨 · 총 ${fmtWon(totalRefunded)}`, {
           action: {
             label: '환불기록 취소',

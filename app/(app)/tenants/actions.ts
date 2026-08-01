@@ -31,6 +31,7 @@ import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } from '@/lib/roomStay'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
+import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -2293,8 +2294,17 @@ export async function previewCheckoutRefund(
 // 퇴실월 이용료 record를 회사 귀속액(선납 − 환불액) 1건으로 재기록해 매출에서 환불분을 뺀다.
 // 원 record는 소프트삭제(복원 가능), 그 달 청구는 checkoutProrated(청구 우선순위 ①)로 회사 귀속액에 고정.
 // 반환된 id들로 클라 토스트의 적용취소(undoRentRefund)가 원복한다(보증금 반환 undo와 같은 패턴).
+// taxNotice — 환불 후 운영자가 **홈택스에서 따로 해야 하는 일**. 앱과 국세청은 연동되지 않으므로
+// 앱이 대신 취소해 줄 수 없고, 알려주는 것까지가 앱의 몫이다(운영자 확정 2026-08-01).
+//   "국세청이랑 이 앱은 연동이 안되니까 ... 홈택스에 취소하라고 알려주는 것 정도면 괜찮을 것 같은데"
+export type RentRefundTaxNotice = {
+  cashReceipt?: { amount: number; ymd: string }   // 발행 표시가 있던 금액과 그 결제일
+  card?: { amount: number }                       // 카드 계열로 받은 금액
+  companyKeeps: number                            // 재발행이 필요할 때 쓸 확정액
+}
+
 export type RentRefundResult =
-  | { ok: true; refunded: number; companyKeeps: number }
+  | { ok: true; refunded: number; companyKeeps: number; taxNotice?: RentRefundTaxNotice }
   | { ok: false; error: string }
 
 // 환불 스냅샷 — checkoutProrationUndo JSON 안에 refund 키로 영속(적대검증 P1-2·P2).
@@ -2328,7 +2338,13 @@ export async function finalizeRentRefund(input: {
     const records = await prisma.paymentRecord.findMany({
       where: { leaseTermId: input.leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
       orderBy: { payDate: 'asc' },
-      select: { id: true, actualAmount: true, payDate: true, memo: true },
+      // 증빙 메타를 함께 읽는다 — 재기록에 승계하지 않으면 그 결제일 달의 카드·현금영수증 합계에서
+      // 금액이 통째로 사라진다(519호 임형진 사례, knowledge/cash-receipt-refund.md).
+      select: {
+        id: true, actualAmount: true, payDate: true, memo: true,
+        payMethod: true, cashReceiptIssuedAt: true,
+        paymentConfirmedAt: true, paymentConfirmedBy: true, bankTxRef: true,
+      },
     })
     // 멱등 가드 — 이미 이 달을 환불 재기록했으면 이중 환불 차단(적대검증 P2)
     if (records.some(r => r.memo?.startsWith('[중도퇴실 환불]'))) {
@@ -2340,7 +2356,8 @@ export async function finalizeRentRefund(input: {
     if (refundAmt > prepaid) return { ok: false, error: `환불 금액이 그 기간 수납액(${prepaid.toLocaleString()}원)을 넘을 수 없습니다.` }
     const companyKeeps = prepaid - refundAmt
     const ids = records.map(r => r.id)
-    const firstPayDate = records[0]?.payDate ?? new Date()
+    const firstRecord = records[0]
+    const firstPayDate = firstRecord?.payDate ?? new Date()
 
     await prisma.$transaction(async tx => {
       const del = await tx.paymentRecord.updateMany({
@@ -2358,6 +2375,16 @@ export async function finalizeRentRefund(input: {
             leaseTermId: input.leaseTermId, tenantId: lease.tenantId, propertyId,
             targetMonth: mon, expectedAmount: companyKeeps, actualAmount: companyKeeps,
             payDate: firstPayDate, seqNo: seqNo + 1, isPaid: true, carryOver: 0,
+            // 결제수단·입금확인은 승계한다. 안 하면 payDate 월의 카드 합계에서 회사 귀속분까지 빠져
+            // 어느 집계에도 없는 유령이 된다.
+            payMethod: firstRecord?.payMethod ?? null,
+            paymentConfirmedAt: firstRecord?.paymentConfirmedAt ?? null,
+            paymentConfirmedBy: firstRecord?.paymentConfirmedBy ?? null,
+            bankTxRef: firstRecord?.bankTxRef ?? null,
+            // cashReceiptIssuedAt 은 **일부러 승계하지 않는다**(회계 패널 2026-08-01).
+            // 승계하면 앱 현금영수증 합계가 확정액으로 조용히 줄지만 홈택스에는 원 금액이 그대로 살아 있다.
+            // 화면상 아무 이상이 없어 보여 운영자가 취소·재발행을 안 해도 앱이 침묵한다.
+            // 표시를 지워 눈에 걸리게 하고, 재발행 후 수납 기록에서 다시 켜는 흐름이 맞다.
             memo: `[중도퇴실 환불] 환불 ${refundAmt.toLocaleString()}원 · 원 수납 ${prepaid.toLocaleString()}원 · 청구 확정 ${companyKeeps.toLocaleString()}원`,
           },
         })
@@ -2381,8 +2408,25 @@ export async function finalizeRentRefund(input: {
       })
     })
 
+    // 홈택스 조치 안내 — 해당할 때만 채운다. 없는데 매번 띄우면 진짜 경고도 안 읽힌다.
+    const receiptRec = records.find(r => r.cashReceiptIssuedAt)
+    const cardAmt = records
+      .filter(r => r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod))
+      .reduce((sum, r) => sum + r.actualAmount, 0)
+    const taxNotice: RentRefundTaxNotice | undefined =
+      (receiptRec || cardAmt > 0)
+        ? {
+            companyKeeps,
+            ...(receiptRec ? { cashReceipt: {
+              amount: records.filter(r => r.cashReceiptIssuedAt).reduce((sum, r) => sum + r.actualAmount, 0),
+              ymd: receiptRec.payDate.toISOString().slice(0, 10),
+            } } : {}),
+            ...(cardAmt > 0 ? { card: { amount: cardAmt } } : {}),
+          }
+        : undefined
+
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
-    return { ok: true, refunded: refundAmt, companyKeeps }
+    return { ok: true, refunded: refundAmt, companyKeeps, taxNotice }
   } catch (err) {
     if ((err as Error).message === 'CONFLICT') return { ok: false, error: '수납 기록이 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도해 주세요.' }
     return { ok: false, error: (err as Error).message ?? '환불 처리 중 오류가 발생했습니다.' }

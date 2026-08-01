@@ -132,6 +132,28 @@ if (!/:\s*FORFEIT_CATEGORY/.test(tenantsActions)) {
   violations.push("[소스] 몰취 카테고리가 lib/incomeCategories 정본을 안 탄다 — 문자열이 흩어지면 개명 때 일부만 바뀐다")
 }
 
+// 7. 환불 재기록의 증빙 메타 승계 — 빠지면 그 결제일 달의 카드·현금영수증 합계에서 금액이
+//    통째로 사라진다(519호 임형진 사례). 소스에서 승계 여부를 본다.
+for (const field of ['payMethod:', 'paymentConfirmedAt:', 'paymentConfirmedBy:', 'bankTxRef:']) {
+  const re = new RegExp(`${field}\\s*firstRecord\\?\\.`)
+  if (!re.test(tenantsActions)) {
+    violations.push(`[소스] finalizeRentRefund 재기록이 ${field.replace(':', '')} 를 승계하지 않는다 — 카드·현금영수증 합계에서 금액이 사라진다`)
+  }
+}
+// cashReceiptIssuedAt 은 반대로 **승계하면 안 된다** — 앱 숫자가 홈택스보다 앞서 나간다.
+if (/cashReceiptIssuedAt:\s*firstRecord\?\./.test(tenantsActions)) {
+  violations.push('[소스] finalizeRentRefund 가 cashReceiptIssuedAt 을 승계한다 — 홈택스에는 원 금액이 살아 있는데 앱만 줄어 조용히 어긋난다')
+}
+// 홈택스 안내 경로가 살아 있는지 — 타입 이름만 보면 다른 줄에 남은 참조로 통과한다(이번 세션 3번째
+// 반쪽 감지망). 서버가 '내려보내는지'와 화면이 '띄우는지'를 각각 본다.
+if (!/return \{ ok: true[^}]*taxNotice/.test(tenantsActions)) {
+  violations.push('[소스] finalizeRentRefund 가 taxNotice 를 반환하지 않는다 — 홈택스 조치 안내가 화면까지 못 간다')
+}
+const tenantClient = readFileSync('app/(app)/tenants/TenantClient.tsx', 'utf8')
+if (!tenantClient.includes('홈택스')) {
+  violations.push('[소스] 환불 후 홈택스 안내 문구가 사라짐 — 앱과 국세청은 연동되지 않아 알려주는 것이 유일한 방어다')
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
