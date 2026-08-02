@@ -862,7 +862,7 @@ export default function SettingsForm({
               <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
                 <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
                   className="w-4 h-4 accent-[var(--coral)]" />
-                계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>
+                계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(계약서 본문에 {'{{환불규정}}'} 자리표시자가 있을 때만 나옵니다. 조항을 직접 쓴 경우 이 설정은 영향이 없습니다)</span>
               </label>
             </div>
             <div className="space-y-1.5">

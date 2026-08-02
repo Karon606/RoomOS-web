@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, buildRefundClause, splitClauseColumns } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
@@ -111,9 +111,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     rentFee: d.lease ? d.lease.rentAmount.toLocaleString() : '',
     emergencyContact: d.emergencyContactText,
     환불규정: d.refundClauseInContract ? ' ' + buildRefundClause() : '',
-    // 기본 템플릿이 {{청소비}} 를 쓰는데 이 목록에 없어서 계약서에 '{{청소비}}' 가 그대로 인쇄됐다
-    // (renderContractText 는 매칭 없으면 원문을 남긴다). 2026-08-02 봉합.
-    청소비: cln > 0 ? `${cln.toLocaleString()}원` : '',
+    // 청소비 치환은 정본 하나로 — 화면과 인쇄가 각자 규칙을 갖던 것이 비문의 원인이었다(2026-08-03)
+    ...cleaningFeeVars(cln),
   }
 
   // 화면(ContractView)과 동일하게 명시적 2단(flex) — CSS 멀티컬럼은 인쇄에서 1단으로 흐름.

@@ -1,6 +1,8 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { getMyRole } from '@/lib/role'
+import { canReadScope } from '@/lib/auth/routeScope'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -20,6 +22,9 @@ async function requireAuthAndProperty() {
 }
 
 export async function getContractData(tenantId: string) {
+  // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
+  // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const { propertyId } = await requireAuthAndProperty()
   return buildContractData(tenantId, propertyId)
 }

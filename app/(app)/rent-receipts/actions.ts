@@ -58,7 +58,8 @@ export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: str
 export async function getIssuableTenants(kind: 'rent' | 'deposit' = 'rent'): Promise<IssuableTenant[]> {
   const propertyId = await getPropertyId()
   const leases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: kind === 'deposit' ? { in: ['ACTIVE', 'RESERVED'] } : 'ACTIVE' },
+    // 퇴실 예정자도 발급 대상이다 — 목록에 없으면 이름 검색조차 안 된다
+    where: { propertyId, status: kind === 'deposit' ? { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } : { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
     orderBy: [{ moveInDate: 'desc' }],
     select: { tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
   })

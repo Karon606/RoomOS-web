@@ -7,7 +7,7 @@ import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
-import { renderContractText, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -139,7 +139,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
     rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
     emergencyContact: emergencyContactText,
     환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause() : '',
-    청소비:            `${(data.lease?.cleaningFee ?? 0).toLocaleString()}원`,
+    ...cleaningFeeVars(data.lease?.cleaningFee),
   }), [data, smoking, emergencyContactText, roomNoLabel])
 
   // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)

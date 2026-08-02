@@ -44,7 +44,10 @@ const COPY: Record<ReceiptKind, { title: string; row4: string; amountLabel: stri
     amountLabel: '납부 금액',
     dateLabel: '납 부 일',
     methodLabel: '납부방법',
-    notice: '본 확인서는 상기 입실료의 납부 사실을 확인합니다. 발행번호로 진위 확인이 가능합니다.',
+    // '발행번호로 진위 확인이 가능합니다' 를 내렸다(2026-08-03). 번호가 DB 에 저장되지 않아
+    // 대조할 원장이 없다. 미리보기·보내기에도 같은 번호가 찍혀 소비되지 않은 채 밖으로 나간다.
+    // 원장화(receiptNo unique + 트랜잭션 채번)는 스키마 변경이라 별도 작업으로 뺐다.
+    notice: '본 확인서는 상기 입실료의 납부 사실을 확인합니다. 발행 내역은 사업자에게 문의해 주세요.',
     signNote: '위 입실료의 납부 사실을 확인함',
   },
   deposit: {

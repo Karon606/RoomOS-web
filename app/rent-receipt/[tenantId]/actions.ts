@@ -1,6 +1,8 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { getMyRole } from '@/lib/role'
+import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
@@ -64,6 +66,9 @@ const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? 
 
 // month('YYYY-MM')를 주면 그 달 주기로 자동값을 채운다(과거 달 발급). 미지정이면 현재 주기 — 기존 재발급 링크 무회귀.
 export async function getRentReceiptData(tenantId: string, month?: string, kind: ReceiptKind = 'rent'): Promise<RentReceiptData | null> {
+  // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
+  // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const { propertyId } = await requireAuthAndProperty()
 
   const [tenant, property] = await Promise.all([
@@ -71,7 +76,9 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       where: { id: tenantId, propertyId },
       include: {
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          // CHECKOUT_PENDING 누락 — 퇴실 예정자에게 확인서를 못 뗐다. 계약서(contractData)와
+          // 실거주확인서는 원래 포함한다. 실측 5명이 해당하고 507·509호는 이미 발급 이력이 있다.
+          where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
           include: { room: { select: { roomNo: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
