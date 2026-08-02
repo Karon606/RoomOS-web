@@ -1027,7 +1027,7 @@ export default function TenantClient({
       const release = trackSave()
       try {
         if (isDepositMode) {
-          await saveDepositPayment({
+          const depRes = await saveDepositPayment({
             leaseTermId:   payTarget.lease.id,
             tenantId:      payTarget.tenant.id,
             targetMonth,
@@ -1039,6 +1039,8 @@ export default function TenantClient({
             memo:          memo || undefined,
             cashReceiptIssued,
           })
+          // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
+          if (!depRes.ok) { pushToast('error', depRes.error); return }
         } else {
           const result = await savePayment({
             leaseTermId:    payTarget.lease.id,

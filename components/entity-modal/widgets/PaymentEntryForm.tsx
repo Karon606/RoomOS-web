@@ -147,7 +147,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           })
           if (!res.ok) { pushToast('error', res.error); return }
         } else if (isDepositMode) {
-          await saveDepositPayment({
+          const depRes = await saveDepositPayment({
             leaseTermId:   room.leaseTermId,
             tenantId:      room.tenantId!,
             targetMonth,
@@ -159,6 +159,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             memo:          memo || undefined,
             cashReceiptIssued,
           })
+          // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
+          if (!depRes.ok) { pushToast('error', depRes.error); return }
         } else {
           // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
           const useIncome = excessAsIncome && excess > 0

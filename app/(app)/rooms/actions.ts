@@ -1034,13 +1034,36 @@ export async function saveDepositPayment(data: {
   payMethod:   string
   memo?:       string
   cashReceiptIssued?: boolean   // 현금영수증 발행 표시 — 보증금·초과분 record 모두(한 결제 단위)
-}) {
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit()
   const propertyId = await getPropertyId()
 
   // 예약금 부분 수납 대응 (오류신고 9b974be0·63bf23bc): 실제 받은 금액을 계약 보증금 상한으로 기록.
   // 예: 계약 보증금 30만에 예약금 10만만 받으면 보증금 record 는 10만으로 남는다(초과분은 아래 이용료 분리).
   const depositActual = Math.min(data.totalPaid, data.depositAmount)
+
+  // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 사고를 막는다(신고 2026-08-02, 402호 황인정).
+  //
+  // 그 건은 이랬다. 7/15 에 예약금 50,000 을 일반 수납으로 기록해 뒀는데(예약금 전용 폼 도입 전),
+  // 오늘 입실 처리하며 총액 379,000 을 여기로 다시 넣었다. 결과적으로 같은 5만원이 두 번 잡혀
+  // 이용료가 5만원 과납이 되고 **8월 매출이 379,000 으로 5만원 과대**가 됐다(보증금은 매출이 아닌데 섞였다).
+  //
+  // 예약금 경로(saveReservationDeposit)에는 '보증금 합계가 계약 보증금 이상이면 차단'하는 가드가
+  // 이미 있는데, 그것만으로는 이 사고를 **못 잡는다** — 그때 보증금 record 는 0건이었고
+  // 중복된 5만원은 이용료 쪽에 있었다. 그래서 여기서는 **이용료 과납**을 본다.
+  const monthBillForGuard = await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount)
+  const already = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, isDeposit: false, isPrevOwner: false, deletedAt: null },
+    _sum: { actualAmount: true },
+  })
+  const alreadyRent = already._sum.actualAmount ?? 0
+  const incomingRent = Math.max(0, data.totalPaid - data.depositAmount)
+  if (monthBillForGuard > 0 && alreadyRent > 0 && alreadyRent + incomingRent > monthBillForGuard) {
+    return {
+      ok: false as const,
+      error: `이 달에 이미 ${alreadyRent.toLocaleString()}원이 수납돼 있습니다. 지금 입력한 금액까지 더하면 청구액 ${monthBillForGuard.toLocaleString()}원을 넘습니다. 수납 내역을 확인하고 차액만 입력해 주세요.`,
+    }
+  }
   // RESERVED(예약) 단계 수납이면 기본 메모를 '예약금'으로 — leaseTermId 로 status 만 조회.
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: data.leaseTermId, propertyId },
@@ -1099,6 +1122,7 @@ export async function saveDepositPayment(data: {
     await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount),
   )
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+  return { ok: true as const }
 }
 
 // 청소비 수납 — 입실 때 청소비를 **별도로** 받는 경우(주로 단기: 보증금 0 + 청소비 있음).
@@ -1230,7 +1254,7 @@ export async function saveReservationDeposit(data: {
       if (lease.depositAmount > 0 && alreadyPaid >= lease.depositAmount) {
         return { ok: false, error: `이미 계약 보증금 ${lease.depositAmount.toLocaleString()}원만큼 수납되어 있습니다 (기수납 ${alreadyPaid.toLocaleString()}원). 수납 내역을 확인해 주세요.` }
       }
-      await saveDepositPayment({
+      const dep = await saveDepositPayment({
         leaseTermId:   data.leaseTermId,
         tenantId:      data.tenantId,
         targetMonth:   firstMonth,
@@ -1242,6 +1266,7 @@ export async function saveReservationDeposit(data: {
         memo:          data.memo,
         cashReceiptIssued: data.cashReceiptIssued,
       })
+      if (!dep.ok) return { ok: false, error: dep.error }
     } else if (data.mode === 'prepaid') {
       await savePayment({
         leaseTermId:    data.leaseTermId,
