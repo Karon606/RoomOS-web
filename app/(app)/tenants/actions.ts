@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
+import { canTransition, transitionDeniedMessage } from '@/lib/leaseTransitions'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -787,6 +788,15 @@ export async function updateTenant(formData: FormData): Promise<
     }
   }
 
+  // 예약 -> 거주중 전환이면 예약 선납을 입주월로 재앵커한다.
+  //
+  // 호출부가 세 곳(moveInTenant·confirmReservationToActive·applyStatusTransition)인데
+  // **이 수정 폼 경로에만 없었다.** 폼 select 로 상태를 바꾸면 선납이 옛 달에 남아
+  // 입주월이 미납으로 뜬다. 같은 논리 전이인데 경로에 따라 돈 처리가 달랐다(B페이즈 조사).
+  if (prevStatus === 'RESERVED' && status === 'ACTIVE') {
+    await reanchorReservationPrepaid(leaseTermId)
+  }
+
   revalidatePath('/tenants')
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
@@ -1387,6 +1397,13 @@ export async function applyStatusTransition(input: {
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    // 전이표 검사 — 서버가 from/to 를 검증하지 않아 8x8 전부가 통과했다(B페이즈 조사).
+    // 상태를 바꾸는 경로가 넷(전환 버튼·수정 폼·홈 알림·cron)이라 경로마다 규칙이 갈렸다.
+    // 정본은 lib/leaseTransitions 하나다. 되돌리기는 운영상 필요해 막지 않는다 — 실측으로도 쓰인다.
+    if (!canTransition(lease.status, input.toStatus)) {
+      return { ok: false, error: transitionDeniedMessage(lease.status, input.toStatus) }
+    }
 
     // 신고 9b974be0: 예약 확정 시 월 이용료·입주 희망일 필수(서버 방어). 확정 호출은 값을 새로 넘기지 않고
     // 기존 lease 값으로 확정하므로 lease 쪽 값을 검증한다.

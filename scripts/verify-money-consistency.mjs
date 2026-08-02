@@ -305,6 +305,28 @@ for (const f of ['app/api/contract/generate/route.ts', 'app/api/rent-receipt/gen
   }
 }
 
+// 15. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
+//     경로마다 규칙이 갈렸다(B페이즈 조사 2026-08-03).
+if (!/canTransition\(lease\.status, input\.toStatus\)/.test(tenantsActions)) {
+  violations.push('[소스] applyStatusTransition 이 전이표를 검사하지 않는다 — 뜻이 안 서는 상태 변경이 그대로 저장된다')
+}
+// 예약 선납 재앵커 — 호출부 넷 중 하나라도 빠지면 그 경로만 돈 처리가 달라진다
+for (const fn of ['moveInTenant', 'confirmReservationToActive', 'applyStatusTransition', 'updateTenant']) {
+  const idx = tenantsActions.indexOf(`export async function ${fn}`)
+  if (idx < 0) continue
+  const end = tenantsActions.indexOf('\nexport async function', idx + 10)
+  const body = tenantsActions.slice(idx, end < 0 ? undefined : end)
+  if (!/reanchorReservationPrepaid/.test(body)) {
+    violations.push(`[소스] ${fn} 에 예약 선납 재앵커가 없다 — 이 경로로 예약->거주중 하면 선납이 옛 달에 남아 입주월이 미납으로 뜬다`)
+  }
+}
+// 실제로 발생한 전이를 전이표가 막으면 안 된다 — 쓰이는 흐름은 뜻이 성립하는 것이다
+const { canTransition } = await import('../lib/leaseTransitions.ts')
+const logs = await prisma.tenantStatusLog.findMany({ select: { fromStatus: true, toStatus: true } })
+const blockedKinds = new Set()
+for (const l of logs) if (!canTransition(l.fromStatus, l.toStatus)) blockedKinds.add(`${l.fromStatus}->${l.toStatus}`)
+for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전이 ${k} 를 전이표가 막는다 — 운영 흐름이 끊긴다`)
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
