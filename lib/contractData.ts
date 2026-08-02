@@ -2,7 +2,7 @@
 // 인증은 하지 않는다. 호출자가 검증된 propertyId 를 넘겨야 한다(운영자 경로 requirePropertyAccess 이후 호출).
 import 'server-only'
 import prisma from '@/lib/prisma'
-import { buildDriveThumbnailUrl } from '@/lib/google-drive'
+import { buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
@@ -102,7 +102,7 @@ export async function buildContractData(tenantId: string, propertyId: string): P
     businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
     phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
-    stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+    stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
     // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
     logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
     refundClauseInContract: property?.refundClauseInContract ?? true,

@@ -310,13 +310,10 @@ for (const f of ['app/api/contract/generate/route.ts', 'app/api/rent-receipt/gen
 //     권한만 붙어 있었다. 새 업로드 경로가 습관적으로 공개를 붙이는 것이 이 클래스의 재발 경로라
 //     **공개를 붙여도 되는 자리를 명단으로 못 박고, 명단 밖에서 쓰이면 위반으로 잡는다.**
 //     명단에 넣으려면 "공개 URL 을 화면이 실제로 쓰는가"에 답할 수 있어야 한다.
+// D6 이후 남은 것은 **진짜 공개 자산 둘뿐**이다. 영수증은 인증 프록시로, 도장은 data URI 로 옮겼다.
 const PUBLIC_OK = new Map([
-  ['app/(app)/settings/actions.ts',     3],  // 영업장 로고 · 앱 로고 (공개 갤러리·랜딩) + 도장
-  //   도장은 공개여도 되는 것이 아니다. 다만 /sign/[token] 이 비로그인 페이지라 인증 프록시로 못 옮긴다.
-  //   토큰 쿠키를 보는 전용 라우트가 필요해서 D6 로 미뤘다. 명단에 있는 것은 승인이 아니라 유예다.
+  ['app/(app)/settings/actions.ts',     2],  // 영업장 로고 · 앱 로고 (공개 갤러리·랜딩에서 쓴다)
   ['app/(app)/room-manage/actions.ts',  2],  // 호실 사진 (공개 갤러리에서 쓴다)
-  ['app/(app)/finance/actions.ts',      1],  // 지출 영수증 썸네일 (D6에서 인증 프록시로 옮길 예정)
-  ['app/(app)/dashboard/pendingReceipt.ts', 1],  // 대기 영수증 썸네일 (D6 대상)
 ])
 const grantRe = /setDrivePublicReadable\s*\(|publicRead:\s*true/g
 const scanDirs = ['app', 'lib', 'components']
@@ -342,6 +339,30 @@ if (grantRe.test(readFileSync('app/(app)/errorReports.ts', 'utf8'))) {
 }
 if (/drive\.google\.com\/file\//.test(readFileSync('scripts/check-error-reports.mjs', 'utf8'))) {
   violations.push('[소스] check-error-reports 가 첨부 공개 URL 을 출력한다 — 첨부는 비공개다')
+}
+
+// 15-2. 영수증·도장은 저장된 주소 자체가 공개 Drive URL 이면 안 된다 (D페이즈 2026-08-03).
+//       화면이 그 URL 을 직접 물고 있어서 권한만 걷으면 화면이 깨진다. 주소와 권한이 한 세트다.
+const financeSrc = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+const pendingSrc = readFileSync('app/(app)/dashboard/pendingReceipt.ts', 'utf8')
+for (const [name, src] of [['finance/actions', financeSrc], ['dashboard/pendingReceipt', pendingSrc]]) {
+  if (!/buildReceiptImageUrl\(/.test(src)) {
+    violations.push(`[소스] ${name} 이 영수증 주소를 buildReceiptImageUrl 로 만들지 않는다 — 공개 URL 이 다시 DB 에 쌓인다`)
+  }
+}
+const badExpense = await prisma.expense.count({
+  where: { OR: [{ receiptUrl: { contains: 'drive.google.com' } }, { receiptUrls: { contains: 'drive.google.com' } }] },
+})
+const badPending = await prisma.pendingReceipt.count({ where: { imageUrl: { contains: 'drive.google.com' } } })
+if (badExpense > 0) violations.push(`[데이터] 지출 ${badExpense}건의 영수증 주소가 공개 Drive URL 이다 — scripts/migrate-receipt-image-urls 로 이관하라`)
+if (badPending > 0) violations.push(`[데이터] 대기 영수증 ${badPending}건의 주소가 공개 Drive URL 이다 — 같은 스크립트로 이관하라`)
+
+// 도장은 URL 이 아니라 바이트를 심는다 — 비로그인 서명 페이지와 헤드리스 PDF 렌더까지 덮으려면 이 방식뿐이다
+for (const f of ['lib/contractData.ts', 'app/residence-cert/[tenantId]/actions.ts', 'app/api/contract/generate/route.ts', 'app/(app)/settings/actions.ts']) {
+  const src = readFileSync(f, 'utf8')
+  if (/stampDriveFileId, \d+\)/.test(src)) {
+    violations.push(`[소스] ${f} 가 도장을 공개 Drive 썸네일 URL 로 내보낸다 — 받아다 위조 서류에 얹을 수 있다`)
+  }
 }
 
 // 16. 무인증 라우트를 여는 비밀값은 CSPRNG 여야 한다 (D페이즈 2026-08-03).

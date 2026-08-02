@@ -146,6 +146,39 @@ export async function downloadDriveBytes(fileId: string): Promise<Buffer> {
   return Buffer.from(res.data as ArrayBuffer)
 }
 
+// 영수증 사진 열람 주소 — 공개 Drive URL 이 아니라 인증 프록시를 거친다(D페이즈 2026-08-03).
+// 저장 형태를 여기 한 곳에서 정한다. 업로드 경로가 둘(지출·대기)이라 각자 만들면 또 갈린다.
+export function buildReceiptImageUrl(fileId: string): string {
+  return `/api/receipt-image?id=${fileId}`
+}
+
+// 이미지 바이트의 매직 넘버로 mime 을 판정한다. Drive 메타 조회를 한 번 더 하지 않으려는 것.
+export function sniffImageMime(buf: Buffer): string {
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50) return 'image/png'
+  if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8) return 'image/jpeg'
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
+  if (buf.length >= 6 && buf.toString('ascii', 0, 3) === 'GIF') return 'image/gif'
+  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp') return 'image/heic'
+  return 'application/octet-stream'
+}
+
+// Drive 이미지를 data: URI 로 — 공개 권한 없이 어디서나 쓰기 위한 것 (D페이즈 2026-08-03).
+//
+// 도장이 이 함수의 이유다. 서류 PDF 는 잠갔는데 그 위에 찍히는 도장 원본은 공개 읽기라
+// 아무나 받아 위조 계약서에 얹을 수 있었다. 그런데 도장은 세 군데에서 쓰인다 —
+// 로그인 화면, **비로그인 서명 페이지(/sign/[token])**, 그리고 쿠키가 없는 헤드리스 크로미움 PDF 렌더.
+// 인증 프록시로는 뒤 둘을 못 덮는다. 바이트를 직접 심으면 셋 다 되고 Drive ID 자체가 HTML 에서 사라진다.
+export async function driveImageDataUrl(fileId: string): Promise<string | null> {
+  try {
+    const buf = await downloadDriveBytes(fileId)
+    const mime = sniffImageMime(buf)
+    if (!mime.startsWith('image/')) return null
+    return `data:${mime};base64,${buf.toString('base64')}`
+  } catch {
+    return null   // 도장을 못 읽어도 서류 발급 자체는 막지 않는다
+  }
+}
+
 // 이 앱이 올린 파일인지 확인 — 남의 Drive 파일 ID 를 우리 레코드로 편입하는 것을 막는다.
 //
 // finalizeContractScan·finalizeStamp 계열이 driveFileId 를 무검증으로 받아, 임의 ID 를 자기 영업장

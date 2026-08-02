@@ -7,7 +7,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { buildDriveThumbnailUrl } from '@/lib/google-drive'
+import { driveImageDataUrl } from '@/lib/google-drive'
 
 // 실거주 확인서 자동 채움 데이터.
 // 소재지·임차인 주소 = 영업장 주소 하나로 통일(호수 미부착 — 필요시 화면에서 수동 수정).
@@ -118,7 +118,7 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
     landlordAddress: biz.address ?? '',
     landlordIdNo: biz.registrationNo ?? '',
     landlordPhone: property?.phone ?? '',
-    stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+    stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
     submitTo: '서울특별시장 귀하',   // 현재 서식은 서울형 — 지자체별 양식이 달라 비서울은 발급 차단(운영자 정정 2026-07-10, 유추 금지)
     regionSupported: ((property?.address ?? '').trim() || (biz.address ?? '').trim()).startsWith('서울'),
     regionLabel: (((property?.address ?? '').trim() || (biz.address ?? '').trim()).split(' ')[0]) || '미상',

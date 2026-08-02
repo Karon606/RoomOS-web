@@ -14,7 +14,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { uploadToDrive } from '@/lib/google-drive'
+import { uploadToDrive, buildReceiptImageUrl } from '@/lib/google-drive'
 import type { Prisma, SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
@@ -231,8 +231,10 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
     const buffer = Buffer.from(await file.arrayBuffer())
     const ext = file.name.split('.').pop() ?? 'jpg'
     const fileName = `receipt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type, { publicRead: true })   // 썸네일을 화면에 직접 띄운다
-    return { ok: true, url: thumbnailUrl }
+    // 공개 권한을 붙이지 않는다 — 카드 전표·거래처 상호·사업자 정보가 담긴 사진이
+    // 링크만 알면 로그인 없이 무만료로 열렸다(D페이즈 2026-08-03). 열람은 인증 프록시로 간다.
+    const { fileId } = await uploadToDrive(buffer, fileName, file.type)
+    return { ok: true, url: buildReceiptImageUrl(fileId) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }

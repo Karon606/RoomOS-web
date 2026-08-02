@@ -5,7 +5,7 @@ import chromium from '@sparticuz/chromium'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
-import { uploadToDrive, buildDriveThumbnailUrl } from '@/lib/google-drive'
+import { uploadToDrive, buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
       phone: property?.phone ?? null,
       contractNo,
       logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
-      stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+      stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
       refundClauseInContract: property?.refundClauseInContract ?? true,
       disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
       disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,

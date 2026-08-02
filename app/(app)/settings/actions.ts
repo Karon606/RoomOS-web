@@ -15,7 +15,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import {
-  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl,
+  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
 } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
@@ -806,7 +806,7 @@ export async function getContractSettings(): Promise<ContractSettings> {
     template,
     businessInfo,
     stampDriveFileId,
-    stampThumbnailUrl: stampDriveFileId ? buildDriveThumbnailUrl(stampDriveFileId, 200) : null,
+    stampThumbnailUrl: stampDriveFileId ? await driveImageDataUrl(stampDriveFileId) : null,
   }
 }
 
@@ -885,7 +885,9 @@ export async function finalizeStamp(driveFileId: string): Promise<{ ok: true; th
     await requireEdit()
     if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
     const propertyId = await getPropertyId()
-    await setDrivePublicReadable(driveFileId)
+    // 도장에는 공개 읽기 권한을 붙이지 않는다(D페이즈 2026-08-03).
+    // 서류 PDF 는 잠갔는데 그 위에 찍히는 도장 원본이 공개라 아무나 받아 위조 서류에 얹을 수 있었다.
+    // 대신 driveImageDataUrl 로 바이트를 직접 심는다 — 비로그인 서명 페이지와 헤드리스 PDF 렌더까지 덮는다.
     // 기존 도장이 있으면 Drive에서 정리
     const prev = await prisma.property.findUnique({
       where: { id: propertyId },
@@ -901,7 +903,7 @@ export async function finalizeStamp(driveFileId: string): Promise<{ ok: true; th
       data: { stampDriveFileId: driveFileId },
     })
     revalidatePath('/settings')
-    return { ok: true, thumbnailUrl: buildDriveThumbnailUrl(driveFileId, 200) }
+    return { ok: true, thumbnailUrl: (await driveImageDataUrl(driveFileId)) ?? '' }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     if (driveFileId) {
