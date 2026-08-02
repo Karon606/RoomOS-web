@@ -78,7 +78,15 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data), issueDate: kstYmdStr() }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
   const rel = relMonthLabel(data.anchorMonth, data.todayMonth)
-  const atCurrentMonth = data.anchorMonth >= data.todayMonth
+  // 계약서 §1-3 이 "입실료는 매월 선납을 원칙으로 하며, 반드시 입실일 기준 전일까지 납부" 를 약정한다.
+  // 이번 달까지만 열어두면 선납을 받고도 그 달 확인서를 만들 수 없다(E페이즈 2026-08-03).
+  // 다음 달까지 한 칸 연다 — 그보다 먼 미래는 증빙할 사실이 없다.
+  const nextMonth = (() => {
+    const [y, m] = data.todayMonth.split('-').map(Number)
+    const d = new Date(y, m, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
+  const atCurrentMonth = data.anchorMonth >= nextMonth
   const stepMonth = async (delta: number) => {
     if (delta > 0 && atCurrentMonth) return
     if (dirty && !(await confirmDialog({ title: '대상월을 옮길까요?', message: '작성 중인 내용이 초기화됩니다.', confirmLabel: '옮기기', level: 'caution' }))) return

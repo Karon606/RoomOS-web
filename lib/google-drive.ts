@@ -8,7 +8,10 @@ function getOAuth2Client() {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN 환경 변수가 필요합니다.')
+    // 환경변수 이름을 사용자 토스트에 그대로 띄우지 않는다(knowledge/doc-vocabulary 와 충돌).
+    // 진단은 서버 로그로 남긴다.
+    console.error('[drive] 인증 설정 누락 — GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN 확인 필요')
+    throw new Error('파일 저장소 연결 설정이 완료되지 않았습니다. 관리자에게 문의해 주세요.')
   }
   const auth = new google.auth.OAuth2(clientId, clientSecret)
   auth.setCredentials({ refresh_token: refreshToken })

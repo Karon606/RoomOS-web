@@ -2,6 +2,7 @@
 // (app)/layout 하위가 아닌 위치에 두어 사이드바·하단 네비를 자동으로 제외.
 
 import type { Viewport } from 'next'
+import type { Metadata } from 'next'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 
@@ -17,6 +18,12 @@ export const viewport: Viewport = {
     { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
   viewportFit: 'cover',
+}
+
+// 서류 페이지는 검색엔진에 절대 노출 금지 — 성명·생년월일·금액·서명이 담긴다.
+// /sign 에만 있고 이 셋에는 빠져 있었다(E페이즈 2026-08-03).
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
 }
 
 export default function ContractLayout({ children }: { children: React.ReactNode }) {

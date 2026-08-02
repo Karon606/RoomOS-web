@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { normalizeBizNo } from '@/lib/bizNo'
 import { FREE_MONTHLY_AI_LIMIT } from '@/lib/geminiKey'
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
@@ -13,7 +14,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import {
-  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, buildDriveThumbnailUrl,
+  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl,
 } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
@@ -826,9 +827,15 @@ export async function saveBusinessInfo(info: BusinessInfo): Promise<{ ok: true }
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
+    // 사업자등록번호를 정규화한다 — 이 값은 계약서 헤더·푸터, 영수증 브랜드 줄,
+    // 실거주확인서의 임대인 식별번호에 전부 찍힌다. 거래처 번호에는 이미 쓰는 규칙인데
+    // 정작 우리 번호에는 안 쓰고 있었다(E페이즈 2026-08-03).
+    const raw = (info.registrationNo ?? '').trim()
+    const normalized = normalizeBizNo(raw)
+    if (raw && !normalized) return { ok: false, error: '사업자등록번호는 숫자 10자리여야 합니다.' }
     await prisma.property.update({
       where: { id: propertyId },
-      data: { businessInfo: info as unknown as object },
+      data: { businessInfo: { ...info, registrationNo: normalized ?? '' } as unknown as object },
     })
     revalidatePath('/settings')
     return { ok: true }
@@ -880,7 +887,9 @@ export async function finalizeStamp(driveFileId: string): Promise<{ ok: true; th
       select: { stampDriveFileId: true },
     })
     if (prev?.stampDriveFileId && prev.stampDriveFileId !== driveFileId) {
-      try { await deleteFromDrive(prev.stampDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+      // 영구 삭제가 아니라 휴지통으로 — 도장 원본은 사용자가 만든 유일본일 수 있는데 되돌릴 방법이 없었다.
+      // Drive 휴지통은 30일 유예를 준다(E페이즈 2026-08-03).
+      try { await trashInDrive(prev.stampDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
     }
     await prisma.property.update({
       where: { id: propertyId },
@@ -906,7 +915,7 @@ export async function deleteStamp(): Promise<{ ok: true } | { ok: false; error: 
       select: { stampDriveFileId: true },
     })
     if (prev?.stampDriveFileId) {
-      try { await deleteFromDrive(prev.stampDriveFileId) } catch { /* 무시 */ }
+      try { await trashInDrive(prev.stampDriveFileId) } catch { /* 무시 */ }
     }
     await prisma.property.update({
       where: { id: propertyId },
@@ -963,7 +972,7 @@ export async function finalizeLogo(driveFileId: string): Promise<{ ok: true; thu
       select: { logoDriveFileId: true },
     })
     if (prev?.logoDriveFileId && prev.logoDriveFileId !== driveFileId) {
-      try { await deleteFromDrive(prev.logoDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+      try { await trashInDrive(prev.logoDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
     }
     await prisma.property.update({
       where: { id: propertyId },
@@ -989,7 +998,7 @@ export async function deleteLogo(): Promise<{ ok: true } | { ok: false; error: s
       select: { logoDriveFileId: true },
     })
     if (prev?.logoDriveFileId) {
-      try { await deleteFromDrive(prev.logoDriveFileId) } catch { /* 무시 */ }
+      try { await trashInDrive(prev.logoDriveFileId) } catch { /* 무시 */ }
     }
     await prisma.property.update({
       where: { id: propertyId },

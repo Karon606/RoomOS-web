@@ -15,8 +15,18 @@ import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단�
 const PRETENDARD_URL = 'https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2'
 let pretendardCache: string | null = null
 
+// 로컬 폰트를 먼저 쓰고 CDN 은 폴백이다(E페이즈 2026-08-03).
+// 종전에는 jsdelivr 단일 의존이라 그쪽이 죽으면 계약서·실거주확인서 발급이 전면 중단됐다.
+// 영수증(rentReceiptPdf)은 원래 로컬 폰트 + 폴백 구조였다 — 세 서류의 규칙을 맞춘다.
 export async function getPretendardBase64(): Promise<string> {
   if (pretendardCache) return pretendardCache
+  try {
+    const { readFile } = await import('node:fs/promises')
+    const path = await import('node:path')
+    const buf = await readFile(path.join(process.cwd(), 'public', 'fonts', 'Pretendard-Regular.ttf'))
+    pretendardCache = Buffer.from(buf).toString('base64')
+    return pretendardCache
+  } catch { /* 로컬에 없으면 CDN 으로 */ }
   const res = await fetch(PRETENDARD_URL)
   if (!res.ok) throw new Error(`Pretendard 폰트 다운로드 실패 (${res.status})`)
   const buf = Buffer.from(await res.arrayBuffer())
