@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal,
+import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositBasisForLease,
   getReservedPrepaidTotal, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -88,7 +88,7 @@ type Lease = {
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -210,11 +210,19 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       depoBaseForForm = await getReceivedDepositTotal(lease.id)
       depoFromReceived = depoBaseForForm > 0
     }
-    // 기본 환불액 = 기준액 − 청소비(설정 시 자동 차감, 미설정이면 청소비 0 → 전액). 환불 안 함은 버튼으로.
-    setTransRefund(def.withDeposit ? Math.max(0, depoBaseForForm - (lease.cleaningFee || 0)) : undefined)
-    // 청소비만 떼는 정상 퇴실은 답이 정해져 있다. 앱이 아는 값을 매번 묻지 않는다(기본값이며 변경 가능).
-    if (def.withDeposit && (lease.cleaningFee || 0) > 0) setWithholdReason('청소비')
-    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: lease.cleaningFee || 0, depoFromReceived })
+    // 인수 전 입주자는 이전 원장 운영 원칙대로 키값 명목으로 돌려주지 않는다(운영자 확정 2026-08-02).
+    // 케이스가 아니라 클래스라 기본 선택으로 제안한다. 세그먼트라 한 번 눌러 되돌릴 수 있다.
+    const basis = def.withDeposit ? await getDepositBasisForLease(lease.id) : null
+    const carriedOver = basis?.source === 'carriedOver'
+    setTransRefund(def.withDeposit
+      ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - (lease.cleaningFee || 0)))
+      : undefined)
+    // 답이 정해진 경우는 미리 골라 둔다. 앱이 아는 값을 매번 묻지 않는다(모두 변경 가능).
+    if (def.withDeposit) {
+      if (carriedOver) setWithholdReason('키값')
+      else if ((lease.cleaningFee || 0) > 0) setWithholdReason('청소비')
+    }
+    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: lease.cleaningFee || 0, depoFromReceived, carriedOver })
   }
 
   const runTransition = (
@@ -404,6 +412,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                       ? <>반환하지 않은 금액은 위약금으로 기록됩니다.</>
                       : active.resvCancel
                       ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
+                      : active.carriedOver
+                      ? <>인수 전 입주자라 이전 원장 원칙대로 키값 명목 미환불이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>
                       : <>환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
                   </p>
                 </div>
