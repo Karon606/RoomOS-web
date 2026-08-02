@@ -2111,6 +2111,14 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
     const res = await saveFullReconcile({ date, items })
     setPending(false)
     if (!res.ok) { setError(res.error); return }
+    // 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데 되돌리기가 없었다.
+    pushToast('success', `재고 보정 ${res.count}건 저장됨`, {
+      action: { label: '적용취소', run: () => { void (async () => {
+        for (const cid of res.createdIds) { const r = await deleteStockCheck(cid); if (!r.ok) { pushToast('error', r.error); return } }
+        pushToast('info', '보정을 되돌렸습니다')
+        onDone()
+      })().catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+    })
     onDone()
   }
 
@@ -2217,6 +2225,9 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
     const res = await setInventoryCategories(entries.map(e => ({ cat: e.cat, alias: e.alias.trim() })))
     setPending(false)
     if (!res.ok) { setError(res.error); return }
+    // 카테고리를 빼면 그 품목들이 목록·수령 대기에서 사라진다. 데이터는 남지만 화면에서 증발하므로
+    // 무슨 일이 일어났는지 알린다(되돌리기는 같은 화면에서 다시 추가하면 된다).
+    pushToast('success', '재고 카테고리 저장됨', { detail: '뺀 카테고리의 품목은 목록에서 숨겨집니다. 데이터는 지워지지 않습니다.' })
     onDone()
   }
 
@@ -2348,6 +2359,14 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
     const res = await saveFullReconcile({ date, items })
     setPending(false)
     if (!res.ok) { setError(res.error); return }
+    // 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데 되돌리기가 없었다.
+    pushToast('success', `재고 보정 ${res.count}건 저장됨`, {
+      action: { label: '적용취소', run: () => { void (async () => {
+        for (const cid of res.createdIds) { const r = await deleteStockCheck(cid); if (!r.ok) { pushToast('error', r.error); return } }
+        pushToast('info', '보정을 되돌렸습니다')
+        onDone()
+      })().catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+    })
     onDone()
   }
 
@@ -4467,8 +4486,18 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                     type="button"
                     title={loc.isHub ? '기본 창고 해제' : '기본 창고로 지정 (품목별로 지정 안 한 경우의 기본값)'}
                     onClick={async () => {
+                      // 기본 창고를 바꾸면 품목별 창고를 지정 안 한 품목 전부의 미지정 입수 귀속처와
+                      // 보충 차감 대상이 한 번에 바뀐다. 확인도 되돌리기도 없었다(C페이즈 2026-08-03).
+                      if (!loc.isHub && !(await confirmDialog({
+                        title: `${loc.name}을(를) 기본 창고로 지정할까요?`,
+                        message: '품목별 창고를 지정하지 않은 품목은 앞으로 이 위치로 입수되고, 보충도 여기서 차감됩니다.\n같은 버튼을 다시 눌러 해제할 수 있습니다.',
+                        level: 'caution', confirmLabel: '기본 창고로',
+                      }))) return
                       setPending(true)
                       await toggleStorageLocationHub(loc.id, !loc.isHub)
+                      pushToast('success', loc.isHub ? '기본 창고 해제됨' : `${loc.name}이(가) 기본 창고가 되었습니다`, {
+                        action: { label: '적용취소', run: () => { void toggleStorageLocationHub(loc.id, loc.isHub).then(() => reload()) } },
+                      })
                       reload()
                       setPending(false)
                     }}

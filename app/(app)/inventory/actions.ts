@@ -983,16 +983,19 @@ export async function saveFullReconcile(data: {
     remainingQty?: number
     memo?: string | null
   }[]
-}): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  // createdIds — 적용취소용. 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데
+  // 되돌릴 방법이 없었다(C페이즈 조사 2026-08-03). 만든 점검 id 를 돌려주면 토스트에서 지울 수 있다.
+}): Promise<{ ok: true; count: number; createdIds: string[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    if (!data.items.length) return { ok: true, count: 0 }
+    if (!data.items.length) return { ok: true, count: 0, createdIds: [] }
     const ids = data.items.map(i => i.trackedItemId)
     const owned = await prisma.trackedItem.findMany({ where: { id: { in: ids }, propertyId }, select: { id: true } })
     const ownedSet = new Set(owned.map(o => o.id))
     const date = new Date(data.date)
     let count = 0
+    const createdIds: string[] = []
     await prisma.$transaction(async tx => {
       for (const item of data.items) {
         if (!ownedSet.has(item.trackedItemId)) continue
@@ -1001,7 +1004,8 @@ export async function saveFullReconcile(data: {
           ? item.locationQtys!.reduce((s, l) => s + l.qty, 0)
           : (item.remainingQty ?? 0)
         if (total < 0) continue
-        await tx.stockCheck.create({
+        const made = await tx.stockCheck.create({
+          select: { id: true },
           data: {
             trackedItemId: item.trackedItemId,
             date,
@@ -1018,11 +1022,12 @@ export async function saveFullReconcile(data: {
             } : {}),
           },
         })
+        createdIds.push(made.id)
         count++
       }
     })
     revalidatePath('/inventory')
-    return { ok: true, count }
+    return { ok: true, count, createdIds }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
