@@ -44,6 +44,22 @@ if (!/canReadScope\(await getMyRole\(\), 'money'\)/.test(assetsSrc)) {
   violations.push('비품·자재 조회에 금액 읽기 가드가 없다')
 }
 
+// 지출 삭제가 재고를 남기면 안 된다 — 잔량은 그대로인데 근거만 사라지고,
+// 그 구간이 음수가 되면 소진 알림이 조용히 사라진다.
+const finSrc = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+if (!/이미 재고에 반영된 구매입니다/.test(finSrc)) {
+  violations.push('deleteExpense 가 수령 완료 구매를 그대로 지운다 — 재고 근거가 사라지고 소진 알림이 조용히 멈춘다')
+}
+// 수령 일괄 확인이 정본(confirmReceipt)을 안 타면 자동 점검·게이트가 통째로 빠진다
+const invSrc = src.slice(src.indexOf('export async function confirmAllPending'))
+if (invSrc && !/confirmReceipt\(/.test(invSrc.slice(0, 1600))) {
+  violations.push('confirmAllPending 이 정본 confirmReceipt 를 안 탄다 — 자동 점검·배치·게이트가 빠진다')
+}
+// 위치 강제 삭제 후 점검 헤더 재계산
+if (!/const affected = await prisma\.stockCheckLocation\.findMany/.test(src)) {
+  violations.push('deleteStorageLocation 이 점검 헤더를 재계산하지 않는다 — 다음 위치별 점검에서 수량이 깎인다(지연 발화)')
+}
+
 console.log(`[재고 경계] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) process.exitCode = 1

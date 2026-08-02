@@ -1139,6 +1139,15 @@ export async function deleteExpense(id: string): Promise<{ ok: true; undo: Expen
         tx.stockCheck.findMany({ where: { sourceExpenseId: id }, select: { id: true } }),
         tx.reserveTransaction.findMany({ where: { expenseId: id }, select: { id: true } }),
       ])
+      // 이미 재고에 들어간 구매는 바로 못 지운다(C페이즈 조사 2026-08-03).
+      //
+      // 종전에는 지워도 자동 점검이 sourceExpenseId=null 로 남아 **잔량은 그대로인데 근거만 사라졌다.**
+      // 게다가 구간 소모 계산에서 그 입고가 빠져 해당 구간이 음수가 되고, 30일 창 합계가 음수면
+      // avgDaily 가 null 이 되어 **소진 알림이 조용히 사라진다.** 알림이 안 오는 건 화면에 흔적이 없어
+      // 아무도 못 알아챈다. 수령 취소를 먼저 하게 해 재고와 장부를 함께 되돌린다.
+      if (target.receivedAt && checks.length > 0) {
+        throw new Error('이미 재고에 반영된 구매입니다. 재고 화면에서 수령을 먼저 취소한 뒤 삭제해 주세요.')
+      }
       let shippingRows: Record<string, unknown>[] = []
       let freedSiblingIds: string[] = []
       await tx.expense.delete({ where: { id } })

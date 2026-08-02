@@ -2294,7 +2294,26 @@ export async function deleteStorageLocation(id: string, force = false): Promise<
     if (hasData && !force) {
       return { ok: false, error: '이 위치에는 기록이 있습니다.', impact: { checkRows, linkedItems, addRows, dispRows } }
     }
-    await prisma.storageLocation.delete({ where: { id } })
+    // 삭제 **직후 헤더를 재계산한다**(C페이즈 조사 2026-08-03).
+    //
+    // 종전에는 StockCheckLocation 만 cascade 로 지우고 StockCheck.remainingQty(헤더)는 그대로 뒀다.
+    // 헤더와 내역 합의 불변식이 깨진 채 남아 있다가, 다음 위치별 점검이 살아남은 내역 합으로
+    // 총량을 다시 쓰면서 **그때 수량이 깎인다.** 지연 발화라 원인을 찾기 어렵다.
+    // 지금 맞추면 어긋난 순간이 화면에 바로 드러난다.
+    const affected = await prisma.stockCheckLocation.findMany({
+      where: { storageLocationId: id }, select: { stockCheckId: true },
+    })
+    const checkIds = [...new Set(affected.map(a => a.stockCheckId))]
+    await prisma.$transaction(async tx => {
+      await tx.storageLocation.delete({ where: { id } })
+      for (const cid of checkIds) {
+        const rest = await tx.stockCheckLocation.findMany({ where: { stockCheckId: cid }, select: { remainingQty: true } })
+        // 내역이 하나도 안 남으면 헤더를 손대지 않는다 — 위치 없이 총량만 센 점검과 구분이 안 된다.
+        if (rest.length === 0) continue
+        const sum = rest.reduce((s2, r) => s2 + r.remainingQty, 0)
+        await tx.stockCheck.update({ where: { id: cid }, data: { remainingQty: Math.round(sum * 1000) / 1000 } })
+      }
+    })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
@@ -2659,25 +2678,38 @@ export async function undoPartialReceipt(undo: PartialReceiptUndo): Promise<{ ok
   }
 }
 
-// 품목에 속한 수령 대기 구매 전체 확인
+// 품목에 속한 수령 대기 구매 전체 확인 — **정본 confirmReceipt 를 건별로 태운다.**
+//
+// 종전에는 updateMany 로 receivedAt 만 찍었다. 자동 점검도, 배치 위치도, 재고 제외 필터도,
+// 용량 누락 게이트도 없었다. 그 경로로 들어온 수령분은 다음 위치별 점검의 carryOver 에서 증발한다.
+// 재고 제외 지출까지 수령 처리했다. UI 호출부는 없지만 서버 액션 엔드포인트는 살아 있었다
+// (C페이즈 조사 2026-08-03). 지우는 대신 정본 경로로 재구현한다 — 죽은 코드로 두면 다음에 누가 쓴다.
 export async function confirmAllPending(trackedItemId: string): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
     if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    const r = await prisma.expense.updateMany({
+    const pending = await prisma.expense.findMany({
       where: {
         propertyId,
         category: item.category,
         itemLabel: item.label,
         ...(item.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: item.qtyUnit }] } : {}),
         receivedAt: null,
+        excludeFromInventory: false,   // 재고 제외 지출을 수령 처리하던 구멍
       },
-      data: { receivedAt: new Date() },
+      orderBy: { date: 'asc' },
+      select: { id: true },
     })
+    let count = 0
+    for (const e of pending) {
+      const r = await confirmReceipt(e.id)
+      if (!r.ok) return { ok: false, error: `${count}건 처리 후 중단됐습니다. ${r.error}` }
+      count++
+    }
     revalidatePath('/inventory')
-    return { ok: true, count: r.count }
+    return { ok: true, count }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
