@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
-import { fmtWon } from '@/lib/fmtMoney'
+import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
@@ -2069,7 +2069,7 @@ export default function TenantClient({
             // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
             bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
-            subtitle={`${targetMonth} · 예정 ${fmtWon(expected)}`}>
+            subtitle={`${targetMonth} · ${paySettlement?.noBillReason ? '청구 없음' : `예정 ${fmtWon(expected)}`}`}>
 
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
@@ -2088,6 +2088,11 @@ export default function TenantClient({
                         {lease.status === 'RESERVED' && paySettlement?.reservationPaid && (paySettlement.reservationPaid.deposit > 0 || paySettlement.reservationPaid.prepaid > 0) && (
                           <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 {fmtWon(paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid)} 포함</p>
                         )}
+                        {paySettlement?.noBillReason && fmtNoBillCovered({ month: paySettlement.noBillCoveredMonth, date: paySettlement.noBillCoveredDate, amount: paySettlement.noBillCoveredAmount }) ? (
+                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">
+                            {fmtNoBillCovered({ month: paySettlement.noBillCoveredMonth, date: paySettlement.noBillCoveredDate, amount: paySettlement.noBillCoveredAmount })}
+                          </p>
+                        ) : null}
                         {adjNet !== 0 && (
                           <p className="text-[0.65625rem] mt-0.5 font-medium"
                             style={{ color: adjNet > 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
@@ -2096,7 +2101,7 @@ export default function TenantClient({
                         )}
                       </div>
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                        <p className="text-xs text-[var(--warm-muted)] leading-tight">{resvPaid ? '입주 시 납부 예정' : '잔액'}</p>
+                        <p className="text-xs text-[var(--warm-muted)] leading-tight">{resvPaid ? '입주 시 납부 예정' : paySettlement?.noBillReason ? '이 달 청구' : '잔액'}</p>
                         {resvPaid ? (
                           // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
                           <>
@@ -2104,6 +2109,19 @@ export default function TenantClient({
                             {paySettlement?.moveInDate && targetMonth < paySettlement.moveInDate.slice(0, 7) && (
                               <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">이번 달 청구 없음 · {Number(paySettlement.moveInDate.slice(5, 7))}월 입주 예정</p>
                             )}
+                          </>
+                        ) : paySettlement?.noBillReason ? (
+                          // 청구 없는 달 — 0원이 '안 냄'으로 읽히던 것을 사정대로(운영자 지적 2026-08-02).
+                          // 수납관리 뱃지·모달 3카드와 같은 말을 해야 화면끼리 어긋나지 않는다.
+                          <>
+                            <p className="text-sm font-bold mt-0.5 text-[var(--warm-muted)]">청구 없음</p>
+                            <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">
+                              {paySettlement.noBillReason === 'shortTermPrepaid'
+                                ? '입주월에 전액 납부'
+                                : paySettlement.expectedMoveOut
+                                  ? `${Number(paySettlement.expectedMoveOut.slice(5, 7))}/${Number(paySettlement.expectedMoveOut.slice(8))} 퇴실까지 납부됨`
+                                  : '퇴실일까지 납부됨'}
+                            </p>
                           </>
                         ) : balance === null ? (
                           <p className="text-sm font-bold mt-0.5 text-[var(--warm-muted)]">—</p>

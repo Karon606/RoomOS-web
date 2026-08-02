@@ -34,6 +34,7 @@ export type UnpaidLease = {
   leaseId: string
   isShortTerm: boolean   // 단기 — 미납 알림 문구가 '월이용료' 대신 '이용료'를 쓴다(운영자 지시 2026-07-20)
   daysOverdue: number | null
+  deferredDue: string | null   // 기한을 미뤄준 상태면 그 날짜('M/D'), 아니면 null
   unpaidAmount: number   // 도래·미회수 portion
   monthsOverdue: number
 }
@@ -176,6 +177,24 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     const day = l.overrideDueDay.includes('말') ? new Date(y, m, 0).getDate() : parseInt(l.overrideDueDay, 10)
     if (isNaN(day) || day < 1) return null
     return new Date(y, m - 1, day)
+  }
+
+  // 기한을 미뤄준 상태인가 — 맞으면 그 날짜를 'M/D' 로 준다.
+  // 수납관리 화면의 isDeferredNow 와 같은 규칙이다(그 달에 걸림 + 원래보다 뒤 + 아직 안 지남).
+  // 홈에서만 그냥 '미납'으로 남으면 수납관리에서 '납부 유예'로 본 것과 화면끼리 말이 어긋난다.
+  function deferredDueForMonth(
+    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    monthStr: string,
+  ): string | null {
+    if (!(l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr)) return null
+    const abs = overrideAbsDate(l)
+    if (!abs) return null
+    const { year: ty, month: tm, day: td } = kstYmd()
+    const days = Math.round((new Date(ty, tm - 1, td).getTime() - abs.getTime()) / 86400000)
+    if (days >= 0) return null                                   // 그 날짜도 지남 — 유예가 아니라 연체
+    const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
+    if (orig != null && days >= orig) return null                // 뒤로 미룬 경우만
+    return `${abs.getMonth() + 1}/${abs.getDate()}`
   }
 
   // 특정 미납 월의 경과일 — 납부일 유예 반영.
@@ -337,6 +356,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         leaseId: l.id,
         isShortTerm: l.isShortTerm,
         daysOverdue,
+        deferredDue: firstUnpaid ? deferredDueForMonth(l, firstUnpaid) : null,
         unpaidAmount: overduePortion,
         monthsOverdue,
       }

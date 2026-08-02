@@ -88,7 +88,7 @@ export type DashboardData = {
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
-  unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number; monthsOverdue: number }[]
+  unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; deferredDue?: string | null; unpaidAmount: number; monthsOverdue: number }[]
   unpaidRoomNosForView: string[]
   awaitingRoomNosForView: string[]
   // 소개 페이지 공개 후보 — 공실·사진 있고 미공개인 방
@@ -136,7 +136,11 @@ function hexToRgba(hex: string, alpha: number) {
 
 // ── 미수납 days 표시 ────────────────────────────────────────────
 
-function daysLabel(daysOverdue: number | null): { text: string; color: string } {
+// deferredDue 가 있으면 기한을 미뤄준 건이다. 수납관리는 이미 '납부 유예' 뱃지를 다는데
+// 여기서 'D-5' 로만 보이면 왜 안 급한지가 안 보인다 — 같은 사정은 같은 말로(2026-08-02).
+function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { text: string; color: string } {
+  // 칩이 이미 '납부 유예'라고 말하므로 여기서는 날짜만. 색도 칩과 같은 계열로 맞춘다.
+  if (deferredDue) return { text: `${deferredDue}까지${daysOverdue != null && daysOverdue < 0 ? ` · ${Math.abs(daysOverdue)}일 남음` : ''}`, color: 'var(--info-fg)' }
   if (daysOverdue == null) return { text: '—', color: 'var(--warm-muted)' }
   if (daysOverdue > 0)  return { text: `${daysOverdue}일 경과`, color: 'var(--tc)' }
   if (daysOverdue === 0) return { text: '오늘 납부일', color: 'var(--viz-4)' }
@@ -1842,7 +1846,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <>
                         <div>
                           {visibleUnpaid.map((l, i) => {
-                            const dl = daysLabel(l.daysOverdue)
+                            const dl = daysLabel(l.daysOverdue, l.deferredDue)
                             return (
                               <div
                                 key={i}
@@ -1861,7 +1865,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
                                     {/* v2.0 §24 — 1~6일 경과=미납(warning), 7일↑=연체 D+N(overdue). §03 OVERDUE=7일 초과 */}
-                                    {l.daysOverdue != null && l.daysOverdue >= 7 ? (
+                                    {/* 기한을 미뤄준 건은 수납관리가 '납부 유예'(await/Blue)로 부른다.
+                                        여기만 '납부일 전'(중립 회색)으로 남으면 한 사정을 두 화면이
+                                        다른 라벨·다른 색으로 부른다(웹디자이너 지적 2026-08-02). */}
+                                    {l.deferredDue ? (
+                                      <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-await-bg)', color: 'var(--badge-await-fg)' }}>
+                                        납부 유예
+                                      </span>
+                                    ) : l.daysOverdue != null && l.daysOverdue >= 7 ? (
                                       <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
                                         연체 D+{l.daysOverdue}
                                       </span>

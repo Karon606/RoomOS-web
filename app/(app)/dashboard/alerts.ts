@@ -118,9 +118,13 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
   // 미납 — 가장 급함. 경과 일수가 클수록 urgency↑
   for (const l of unpaidStatus.unpaidLeases) {
-    const overdueLabel = l.daysOverdue != null
-      ? (l.daysOverdue > 0 ? `${l.daysOverdue}일 경과` : l.daysOverdue === 0 ? '오늘 도래' : '')
-      : ''
+    // 기한을 미뤄준 건은 홈 위젯이 '납부 유예'라고 부른다. 같은 화면의 종 알림과 푸시가
+    // 그냥 '미납'이라고만 하면 유예해 준 사실이 알림에서만 사라진다(2026-08-02).
+    const overdueLabel = l.deferredDue
+      ? `유예 ${l.deferredDue}까지`
+      : l.daysOverdue != null
+        ? (l.daysOverdue > 0 ? `${l.daysOverdue}일 경과` : l.daysOverdue === 0 ? '오늘 도래' : '')
+        : ''
     items.push({
       id: `unpaid-${l.leaseId}`,
       category: 'unpaid',

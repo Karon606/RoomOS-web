@@ -48,6 +48,12 @@ type RoomRow = {
   // 퇴실 일할 정산 — 설정 시 그 달(checkoutProratedMonth) 청구를 checkoutProratedAmount 로 덮어씀
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
+  // 이 달에 청구가 없는 이유 — 0원을 '안 냄'이 아니라 '더 받을 게 없음'으로 읽히게 하는 표시 메타.
+  // 계산에는 관여하지 않는다(집계·정렬·필터 전부 무변경).
+  noBillReason?: 'shortTermPrepaid' | 'checkoutNoBilling' | null
+  noBillCoveredAmount?: number | null   // 그 달을 덮은 실수납 합
+  noBillCoveredDate?: string | null     // 그 돈을 받은 날 'YYYY-MM-DD'
+  noBillCoveredMonth?: string | null    // 그 돈의 귀속월 'YYYY-MM'
   // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
   reservationDepositMode?: string | null
   // 예약(RESERVED) 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 비예약 행은 null.
@@ -430,6 +436,46 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const rowExpected = ((targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || checkoutNoBilling) ? 0 : viewBill
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
 
+    // 이 달에 청구가 없는 이유 — 새 계산이 아니라 위에서 이미 나온 두 판정을 화면으로 꺼내는 것뿐이다.
+    // 운영자 지적 2026-08-02: "0원인데 완납이면 이상한데? 납부는 했잖아?" 실제로 돈은 이미 받았고
+    // 이 달에 더 받을 게 없는 상태인데, 화면은 0원 두 개만 보여줘 안 낸 사람처럼 읽혔다.
+    //   shortTermPrepaid  단기 — 입주월에 체류 전체 사용료를 한 번에 받는다(billForLeaseMonth 의 그 규칙)
+    //   checkoutNoBilling 퇴실월인데 퇴실일이 납부일보다 앞 — 그 기간 서비스를 안 쓰므로 청구 없음
+    // 인수 선납월·양도인 월은 여기서 다루지 않는다. 그 둘은 '내 장부에 없는 달'이라 사정이 다르다.
+    const shortTermPrepaid = !!lease.isShortTerm && !!lease.moveInDate
+      && monthOfDate(lease.moveInDate) !== targetMonth && viewBill === 0
+    const noBillReason: 'shortTermPrepaid' | 'checkoutNoBilling' | null =
+      isFutureMonth ? null : checkoutNoBilling ? 'checkoutNoBilling' : shortTermPrepaid ? 'shortTermPrepaid' : null
+    // 그 달을 덮은 실수납 합 — 단기는 입주월에 받은 돈, 무청구 퇴실월은 직전 달에 받은 돈.
+    // totalPaid 숫자 자체는 손대지 않는다(월 격리 값이라 엑셀·AI 등 소비처가 그 의미에 의존).
+    const noBillCoveredAmount: number | null = (() => {
+      if (!noBillReason) return null
+      const covered = noBillReason === 'shortTermPrepaid'
+        ? monthOfDate(lease.moveInDate)
+        : `${mm === 1 ? yyyy - 1 : yyyy}-${String(mm === 1 ? 12 : mm - 1).padStart(2, '0')}`
+      if (!covered) return null
+      const sum = postCutoffRecords
+        .filter(p => !p.isDeposit && p.targetMonth === covered)
+        .reduce((s, p) => s + p.actualAmount, 0)
+      return sum > 0 ? sum : null
+    })()
+    // 그 돈이 어느 달 몫인가 — '7월분 7/7 수납 470,000원'. 귀속월이 없으면 이번 달 수납으로 읽힌다.
+    const noBillCoveredMonth: string | null = !noBillReason ? null
+      : (noBillReason === 'shortTermPrepaid'
+          ? monthOfDate(lease.moveInDate)
+          : `${mm === 1 ? yyyy - 1 : yyyy}-${String(mm === 1 ? 12 : mm - 1).padStart(2, '0')}`)
+    // 그 돈을 받은 날 — 'M/D 수납 470,000원' 캡션용
+    const noBillCoveredDate: string | null = (() => {
+      if (noBillCoveredAmount == null) return null
+      const covered = noBillCoveredMonth
+      const dates = postCutoffRecords
+        .filter(p => !p.isDeposit && p.targetMonth === covered)
+        .map(p => new Date(p.payDate).getTime())
+      if (dates.length === 0) return null
+      const d = new Date(Math.max(...dates))
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    })()
+
     // 이월액 — 이전 달 누적 (양수=과거 선납, 음수=과거 미수). #14: 월별 할인 반영 합산.
     const billedBefore = billedBeforeSum
     const pastBalance = receivedBeforeMonth - billedBefore
@@ -547,6 +593,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
         checkoutProratedAmount: proratedAmt ?? null,
         checkoutProratedMonth: proratedMonth ?? null,
+        noBillReason: null, noBillCoveredAmount: null, noBillCoveredDate: null, noBillCoveredMonth: null,   // 미래월은 '아직 안 온 달'이라 무청구와 다르다
         billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
       }
     }
@@ -576,6 +623,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       checkoutProratedAmount: proratedAmt ?? null,
       checkoutProratedMonth: proratedMonth ?? null,
+      noBillReason, noBillCoveredAmount, noBillCoveredDate, noBillCoveredMonth,
       billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
     }
   }

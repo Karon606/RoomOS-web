@@ -26,3 +26,15 @@ export function fmtWon(n: number): string {
   const sign = r < 0 ? '−' : ''
   return sign + Math.abs(r).toLocaleString('ko-KR') + '원'
 }
+
+// 청구 없는 달의 '그 달을 덮은 수납' 캡션 — '7월분 7/7 수납 470,000원'.
+// 수납관리 카드·표, 수납 모달 3카드, 고객정보 요약 네 곳이 같은 문구를 써야 해서 여기로 모았다.
+// 귀속월을 반드시 앞에 붙인다. '총 수납 0원' 밑에 금액만 있으면 이번 달 수납으로 읽힌다.
+export function fmtNoBillCovered(
+  args: { month?: string | null; date?: string | null; amount?: number | null },
+): string | null {
+  if (!args.amount) return null
+  const mon = args.month ? `${Number(args.month.slice(5))}월분 ` : ''
+  if (!args.date) return `${mon}${fmtWon(args.amount)} 수납됨`
+  return `${mon}${Number(args.date.slice(5, 7))}/${Number(args.date.slice(8))} 수납 ${fmtWon(args.amount)}`
+}

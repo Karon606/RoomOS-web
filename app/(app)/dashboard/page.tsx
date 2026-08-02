@@ -654,6 +654,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return new Date(yy, mm - 1, day)
   }
 
+  // 기한을 미뤄준 상태인가 — 맞으면 그 날짜를 'M/D' 로 (unpaid.ts deferredDueForMonth 와 동일 규칙).
+  function deferredDueForMonth(
+    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    monthStr: string,
+  ): string | null {
+    if (!(l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr)) return null
+    const abs = overrideAbsDate(l)
+    if (!abs) return null
+    const { year: ty, month: tm, day: td } = kstYmd()
+    const days = Math.round((new Date(ty, tm - 1, td).getTime() - abs.getTime()) / 86400000)
+    if (days >= 0) return null                                   // 그 날짜도 지남 — 유예가 아니라 연체
+    const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
+    if (orig != null && days >= orig) return null                // 뒤로 미룬 경우만
+    return `${abs.getMonth() + 1}/${abs.getDate()}`
+  }
+
   // 특정 미납 월의 경과일 — 납부일 유예 반영 (unpaid.ts daysOverdueForMonth 와 동일 규칙).
   // override 가 이 월(또는 이후)에 걸려 있고 유예 날짜가 원래 납부일보다 늦으면 유예 날짜 기준.
   function daysOverdueForMonth(
@@ -1099,6 +1115,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:      l.tenant.id,
         leaseId:       l.id,
         daysOverdue,
+        deferredDue:   firstUnpaid ? deferredDueForMonth(l, firstUnpaid) : null,
         unpaidAmount:  unpaid,
         overduePortion,
         upcomingPortion,
