@@ -11,6 +11,8 @@ import { Prisma } from '@prisma/client'
 // 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
 import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
+import { canReadScope } from '@/lib/auth/routeScope'
+import { getMyRole } from '@/lib/role'
 import { getTrackedCategories } from '../categoryConfig'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
@@ -149,6 +151,9 @@ function aggregateAssets(list: RawAsset[], orderMaps?: AssetOrderMaps): AssetIte
 // 비품·자재 = 품목으로 입력된 지출 중 소모품(재고 추적 카테고리)·배송비를 제외한 내구재.
 // (의자·거치대·수선유지 자재 등) 방/공용부 배정 여부로 나눠서 보여준다. 동일 품목은 합쳐서 표시.
 export async function getDurableItems(): Promise<AssetsData> {
+  // 비품·자재는 금액이 본체다. 금액 읽기가 차단된 역할에게는 목록 자체를 주지 않는다
+  // (재고 소모품과 달리 잔량 같은 비금액 정보가 거의 없다). C페이즈 조사 2026-08-03.
+  if (!(await canReadScope(await getMyRole(), 'money'))) throw new Error('권한이 없습니다.')
   const propertyId = await getPropertyId()
   const trackedCats = await getTrackedCategories(propertyId)
 

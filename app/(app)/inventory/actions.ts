@@ -1,6 +1,8 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { canReadScope } from '@/lib/auth/routeScope'
+import { getMyRole } from '@/lib/role'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
@@ -22,13 +24,31 @@ async function getPropertyId() {
   return propertyId
 }
 
+// 금액 읽기 권한 — 재고 축 전체에 이 검사가 한 군데도 없었다(C페이즈 조사 2026-08-03).
+// LIMITED_STAFF 는 설계상 '재고 쓰기 허용, 금액 읽기 차단'인데 /inventory 가 라우트 화이트리스트에
+// 있어서 평균 단가·최근 단가·수령 대기 금액·월별 구매금액·단가 추이를 전부 봤다.
+// UI 만 가리면 서버 액션 호출로 뚫리므로 **서버에서 지운다**(운영자 지시 2026-08-03 — 모두 가림).
+export async function canSeeMoney(): Promise<boolean> {
+  return canReadScope(await getMyRole(), 'money')
+}
+
 // ── 추적 품목 목록 + 계산된 지표 (compute 는 overview.ts 로 분리 — Cron 등 재사용)
 export async function getInventoryOverview(): Promise<InventoryRow[]> {
-  return computeInventoryOverview(await getPropertyId())
+  const rows = await computeInventoryOverview(await getPropertyId())
+  if (await canSeeMoney()) return rows
+  // 금액 읽기 차단 역할에게는 **서버에서 지운다.** UI 만 가리면 액션 호출로 뚫린다.
+  // 잔량·소진 예측은 재고 업무에 필요하므로 남긴다 — 금액만 없앤다.
+  return rows.map(r => ({
+    ...r,
+    avgUnitPrice: null,
+    lastUnitPrice: null,
+    pendingPurchases: r.pendingPurchases.map(p => ({ ...p, amount: null })),
+  }))
 }
 
 // ── 월별 입수량 (구매 + 무상수령 합산, qtyValue 기준)
 export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyInflowRow[]> {
+  if (!(await canSeeMoney())) return []
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
   if (!item) return []
@@ -81,6 +101,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
 
 // ── 단가 추이 (구매 시점별 unit price) — 규격 기준 우선
 export async function getPriceHistory(trackedItemId: string): Promise<PricePoint[]> {
+  if (!(await canSeeMoney())) return []
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
   if (!item) return []
@@ -1475,14 +1496,24 @@ export async function createStockDisposal(data: {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
     }
-    // 이중 차감 방어(영향검증 필수2) — 폐기일 이후(당일 포함) 점검이 이미 있으면 그 점검이
-    // 폐기 후 잔량을 반영했을 가능성이 높아 별도 기록 시 이중 차감된다. 순서를 강제(폐기 먼저).
+    // 이중 차감 방어 — 폐기 후 잔량을 이미 반영한 점검이 있으면 별도 기록 시 두 번 빠진다.
+    //
+    // 종전 조건은 '폐기일 당일 포함 이후 점검이 하나라도 있으면 거부' 였다. 점검이 사실상 매일 있는
+    // 운영에서는 **오늘 폐기가 거의 항상 막힌다.** 실측 점검 533건 대비 폐기 기록 0건 — 기능이
+    // 사용 불능이었다(C페이즈 조사 2026-08-03). 게다가 화면 안내가 '폐기일을 점검 이후로 입력하세요'
+    // 라고 해서 미래 날짜 폐기를 권했는데 그건 회계적으로 틀린 안내다.
+    //
+    // 완화 — **폐기일 다음 날 이후**에 점검이 있을 때만 막는다. 그 점검은 폐기를 이미 반영했다고
+    // 봐야 한다. 같은 날 점검은 폐기 전에 셌을 수도 있어 운영자 판단에 맡긴다(순서 강제 대신).
+    const [y, m, d] = data.date.split('-').map(Number)
+    const dayAfter = new Date(Date.UTC(y, m - 1, d + 1))
     const laterCheck = await prisma.stockCheck.findFirst({
-      where: { trackedItemId: data.trackedItemId, date: { gte: new Date(data.date) } },
-      select: { id: true },
+      where: { trackedItemId: data.trackedItemId, date: { gte: dayAfter } },
+      orderBy: { date: 'asc' },
+      select: { date: true },
     })
     if (laterCheck) {
-      return { ok: false, error: '폐기일 이후(당일 포함) 점검이 이미 있습니다. 그 점검이 폐기 후 잔량을 반영했다면 이중 차감되므로, 점검 전에 폐기를 먼저 기록하거나 폐기일을 점검 이후로 입력하세요.' }
+      return { ok: false, error: `폐기일 다음 날 이후(${laterCheck.date.toISOString().slice(0, 10)})에 점검이 있습니다. 그 점검이 폐기 후 잔량을 이미 반영했다면 두 번 빠지므로, 그 점검을 수정하거나 폐기일을 다시 확인해 주세요.` }
     }
     // 잔량 초과 거부(영향검증 필수3 — 음수 클램프 도달 자체를 차단)
     const asOf = await getStockAsOf(data.trackedItemId, data.date)
@@ -2726,7 +2757,16 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true } } },
   })
+  // 구매 경계는 **점검이 만들어진 시각**(createdAt)이다. 점검 날짜(자정)를 쓰면 그 점검이
+  // 이미 반영한 같은 날 수령을 한 번 더 더한다. 정본은 overview.ts 의 currentStock 계산이고
+  // 거기는 처음부터 createdAt 을 쓴다 — 이 함수만 규칙이 달랐다(C페이즈 조사 2026-08-03).
+  //
+  // 실측 — 종량제쓰레기봉투 50L 실제 21매인데 보정 폼이 31매를 미리 채웠고, 리클린 1.5L 가 3.5L 였다.
+  // 그대로 저장하면 그 값이 새 기준선으로 박히고 차이가 소모로도 안 잡혀 오차가 장부에 영구 편입된다.
+  //
+  // 입수·폐기는 날짜(date) 단위로 기록되므로 baseDate 를 그대로 쓴다(원 규칙 유지).
   const baseDate = baseline?.date ?? null
+  const basePurchaseCutoff = baseline?.createdAt ?? null
   const baseTotal = baseline?.remainingQty ?? 0
 
   const purchases = await prisma.expense.findMany({
@@ -2734,7 +2774,7 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
       propertyId, category: it.category, itemLabel: it.label,
       // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산과 동일 규칙).
       ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
-      receivedAt: { not: null, ...(baseDate ? { gt: baseDate } : {}), lte: asOf },
+      receivedAt: { not: null, ...(basePurchaseCutoff ? { gt: basePurchaseCutoff } : {}), lte: asOf },
       excludeFromInventory: false,
     },
     select: { qtyValue: true, specValue: true, specUnit: true },

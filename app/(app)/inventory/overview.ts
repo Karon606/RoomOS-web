@@ -241,6 +241,15 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   // 규격 자동 반영(§4 — 비었을 때만, 덮어쓰지 않음): trackUnit≠'qty'인데 품목 규격(specUnit)이
   // 비어 있으면, 같은 품목의 '규격 있는 구매'에서 specUnit을 가져와 채운다. 라면 40개입×3박스가
   // 품목 규격 미설정으로 3(박스)으로 잡히던 문제 → 규격을 반영하면 qtyValue×specValue로 환산됨.
+  // 품목 단위 자동채움을 **DB 에 쓰지 않는다**(C페이즈 조사 2026-08-03).
+  //
+  // 종전에는 읽기 경로가 조용히 trackedItem.specUnit 을 갱신했다. 권한 검사도, 과거 이력 재환산도,
+  // 되돌리기도 없었다. 대시보드 렌더와 알림 cron 에서도 실행된다.
+  // 발화하면 과거 StockCheck.remainingQty(개 단위로 센 값)가 새 단위로 재해석되고
+  // 구매는 그 시점부터 규격배수가 곱해진다. 실측 발화 대기 3개, 그중 수세미는 점검 48건이다.
+  //
+  // 단위 변경의 정본은 changeTrackedItemUnit — scaleStockValues 로 이력을 배율 환산한다.
+  // 여기서는 **이번 계산에만** 쓰는 임시 추정치로 두고 저장하지 않는다.
   await Promise.all(items.map(async it => {
     if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) return
     const withSpec = await prisma.expense.findFirst({
@@ -248,10 +257,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       orderBy: { date: 'desc' },
       select: { specUnit: true },
     })
-    if (withSpec?.specUnit) {
-      await prisma.trackedItem.update({ where: { id: it.id }, data: { specUnit: withSpec.specUnit } })
-      it.specUnit = withSpec.specUnit   // 이번 계산에도 즉시 반영
-    }
+    if (withSpec?.specUnit) it.specUnit = withSpec.specUnit   // 메모리에만 — DB 쓰기 없음
   }))
 
   // 품목별 계산 병렬화 — 품목 간 공유 상태 없음(각자 자기 행만 만들어 반환), 순서는 map이 보존.

@@ -31,7 +31,8 @@ export type PendingPurchase = {
   specValue: number | null
   specUnit: string | null
   qtyUnit: string | null
-  amount: number
+  // null = 금액 읽기 차단 역할에게 서버가 지운 값(C페이즈 2026-08-03). 화면은 금액 자리를 비운다.
+  amount: number | null
   vendor: string | null
   memo: string | null
 }

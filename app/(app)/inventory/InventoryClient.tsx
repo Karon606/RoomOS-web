@@ -697,7 +697,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
                                 <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
-                                <span className="tabular-nums">{fmtWon((f.p.amount ?? 0))}</span>
+                                {/* 금액 읽기 차단 역할에게는 서버가 null 로 지운다 — 0원으로 그리면 거짓이다 */}
+                                <span className="tabular-nums">{f.p.amount == null ? '' : fmtWon(f.p.amount)}</span>
                               </li>
                             )
                           })}
