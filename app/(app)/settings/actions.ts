@@ -1,5 +1,6 @@
 'use server'
 
+import { randomBytes } from 'crypto'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { FREE_MONTHLY_AI_LIMIT } from '@/lib/geminiKey'
@@ -33,7 +34,11 @@ async function getPropertyIdWithUser() {
 }
 
 // ── 캘린더 구독(.ics) 토큰 ────────────────────────────────────────
-const genCalToken = () => `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+// 이 토큰 하나가 /api/calendar/[token] 을 **무인증으로** 연다. 전 입주자 실명·호실·월 이용료·
+// 퇴실 예정일·투어 일정·잠재고객 연락처가 ICS 로 나가고 만료도 없다. 사실상 영업장 명부 열쇠다.
+// Math.random 은 암호학적으로 안전하지 않고 Date.now 부분은 공개값이나 다름없었다(D페이즈 2026-08-03).
+// 같은 저장소의 서명 토큰(contractShare)은 처음부터 randomBytes(32) 다. 여기만 달랐다.
+const genCalToken = () => randomBytes(32).toString('base64url')
 
 // 구독 토큰 조회(없으면 생성). 구독 URL = {origin}/api/calendar/{token}
 export async function getOrCreateCalendarToken(): Promise<{ ok: true; token: string } | { ok: false; error: string }> {

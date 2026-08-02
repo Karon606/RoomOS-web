@@ -344,7 +344,21 @@ if (/drive\.google\.com\/file\//.test(readFileSync('scripts/check-error-reports.
   violations.push('[소스] check-error-reports 가 첨부 공개 URL 을 출력한다 — 첨부는 비공개다')
 }
 
-// 16. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
+// 16. 무인증 라우트를 여는 비밀값은 CSPRNG 여야 한다 (D페이즈 2026-08-03).
+//     calendarToken 이 Math.random 이었다. 이 토큰 하나가 전 입주자 명부를 무인증 ICS 로 연다.
+//     서명 토큰은 처음부터 randomBytes 였다 — 같은 성격의 값인데 규칙이 갈렸다.
+const settingsActions = readFileSync('app/(app)/settings/actions.ts', 'utf8')
+if (/genCalToken\s*=\s*\(\)\s*=>[^\n]*Math\.random/.test(settingsActions)) {
+  violations.push('[소스] genCalToken 이 Math.random 을 쓴다 — 이 토큰은 무인증으로 전 입주자 명부를 여는 값이다')
+}
+const weakTokens = await prisma.property.findMany({
+  where: { calendarToken: { not: null } }, select: { name: true, calendarToken: true },
+})
+for (const p of weakTokens) {
+  if (p.calendarToken.length < 43) violations.push(`[데이터] ${p.name} 의 캘린더 토큰이 약한 난수다(길이 ${p.calendarToken.length}) — scripts/rotate-calendar-tokens 로 재발급하라`)
+}
+
+// 17. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
 //     경로마다 규칙이 갈렸다(B페이즈 조사 2026-08-03).
 if (!/canTransition\(lease\.status, input\.toStatus\)/.test(tenantsActions)) {
   violations.push('[소스] applyStatusTransition 이 전이표를 검사하지 않는다 — 뜻이 안 서는 상태 변경이 그대로 저장된다')
