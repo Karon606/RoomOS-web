@@ -38,7 +38,11 @@ export async function POST(req: Request) {
 
     let stampBytes: Uint8Array | null = null
     if (property?.stampDriveFileId) {
-      try { stampBytes = new Uint8Array(await downloadDriveBytes(property.stampDriveFileId)) } catch { stampBytes = null }
+      // 인감 누락은 법적 서류에서 무효 주장의 빌미다. 조용히 삼키지 않는다(E페이즈 2026-08-03).
+      try { stampBytes = new Uint8Array(await downloadDriveBytes(property.stampDriveFileId)) } catch (e) {
+        console.error('[generate] 도장 내려받기 실패', e)
+        return NextResponse.json({ ok: false, error: '도장 이미지를 불러오지 못했습니다. 잠시 후 다시 시도하거나 설정에서 도장을 다시 등록해 주세요.' }, { status: 502 })
+      }
     }
     let logoBytes: Uint8Array | null = null
     if (property?.logoDriveFileId) {

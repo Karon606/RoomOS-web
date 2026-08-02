@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { billForLeaseMonth } from '@/lib/billing'
 import { getMyRole } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -81,7 +82,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
           where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
-          include: { room: { select: { roomNo: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+          include: { room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
         },
       },
     }),
@@ -198,9 +199,27 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     payDateYmd = cycle.start
     warning = 'noRecord'
   } else {
-    // 이번 달인데 아직 기록 없음 — '방금 받은 돈' 발급 흐름의 초기값. 할인 반영 청구액이 정직한 기본값
-    // (원가 직표시 금지 — 크리티컬 신고 50a2a69b 정본 수렴)
-    amount = lease ? discountedRent(lease.discounts ?? [], viewMonth, lease.rentAmount) : 0
+    // 이번 달인데 아직 기록 없음 — '방금 받은 돈' 발급 흐름의 초기값.
+    //
+    // 종전에는 discountedRent 만 불러서 **청구 정본을 안 탔다.** 그래서
+    //   락인 expectedAmount(협의가·청구 조정 전표) · 퇴실 일할 checkoutProratedAmount · 예약 인상 scheduledRent
+    // 셋이 전부 무시됐다. 퇴실 일할이 걸린 달이면 서민준 기준 80,000 이 400,000 으로 나온다.
+    // billForLeaseMonth 정본을 탄다(우선순위 일할 > 락인 > 예약 인상 > 할인). E페이즈 조사 2026-08-03.
+    amount = lease
+      ? billForLeaseMonth(
+          {
+            rentAmount: lease.rentAmount,
+            discounts: lease.discounts ?? [],
+            checkoutProratedAmount: lease.checkoutProratedAmount ?? null,
+            checkoutProratedMonth: lease.checkoutProratedMonth ?? null,
+            isShortTerm: lease.isShortTerm,
+            moveInDate: lease.moveInDate,
+            room: { scheduledRent: lease.room?.scheduledRent ?? null, rentUpdateDate: lease.room?.rentUpdateDate ?? null },
+          },
+          viewMonth,
+          lockMax > 0 ? lockMax : null,
+        )
+      : 0
     payDateYmd = todayKst
   }
 

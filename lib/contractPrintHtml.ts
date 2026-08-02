@@ -77,7 +77,10 @@ const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // 항목 글머리 '-'·'•'·'·' 제거 (CSS 글머리로 대체)
-const stripBullet = (s: string) => s.replace(/^\s*[-–•·]\s?/, '')
+// 글머리 제거 — 기호뿐 아니라 '1.' '가.' 같은 수동 번호도 벗긴다.
+// 저장된 템플릿 항목이 수동 번호를 포함하는데 CSS 가 앞에 '·' 를 또 붙여
+// 인쇄물이 '· 1. [중도 퇴실 정산] ...' 로 나왔다(E페이즈 조사 2026-08-03).
+const stripBullet = (s: string) => s.replace(/^\s*(?:[-–•·]\s?|\d+[.)]\s*|[가-힣][.)]\s+)/, '')
 // **강조** → terracotta hl (escape 후 적용)
 const highlight = (s: string) => escape(s).replace(/\*\*(.+?)\*\*/g, '<span class="hl">$1</span>')
 

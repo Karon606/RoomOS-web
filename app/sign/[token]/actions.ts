@@ -83,7 +83,9 @@ export async function submitRemoteSignature(
       return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
     }
     if (target !== 'contract' && target !== 'disposal') return { ok: false, error: '잘못된 요청입니다.' }
-    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+    // 'data:image/' 접두만 보면 data:image/svg+xml 이 통과해 서명란에 임의 벡터(위조 도장 등)를
+    // 심을 수 있다. 손글씨 서명 캔버스가 만드는 래스터 두 종만 허용한다(E페이즈 2026-08-03).
+    if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(dataUrl)) {
       return { ok: false, error: '서명 이미지가 올바르지 않습니다.' }
     }
     // 서명 이미지 크기 상한(적대검증 P2) — 세션 보유자가 최대 10MB 임의 문자열을 저장·PDF 에 투입하는 것 차단.
