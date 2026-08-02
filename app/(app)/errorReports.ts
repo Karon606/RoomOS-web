@@ -4,7 +4,7 @@ import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
-import { createDriveResumableSession, setDrivePublicReadable } from '@/lib/google-drive'
+import { createDriveResumableSession } from '@/lib/google-drive'
 
 const MAX_REPORT_IMAGES = 3
 const MAX_REPORT_IMAGE_BYTES = 10 * 1024 * 1024 // 10MB
@@ -59,11 +59,12 @@ export async function submitErrorReport(input: {
     // 신고 메타 propertyId 는 멤버십 검증된 값만 (무단 쿠키로 남의 영업장에 신고가 붙는 것 방지)
     const propertyId = (await getPropertyAccess())?.propertyId ?? null
 
-    // 업로드된 첨부는 열람 가능하도록 공개 읽기 권한 부여 — 일부 실패해도 신고 저장은 막지 않는다.
+    // 첨부에 공개 읽기 권한을 붙이지 않는다(D페이즈 2026-08-03).
+    // 신고 첨부는 대부분 앱 화면 스크린샷이라 다른 입주자의 성명·연락처·이용료·미납이 찍혀 있다.
+    // 그런데 공개가 필요한 소비처가 하나도 없었다 — 앱은 이 사진을 띄우지 않고,
+    // 유일한 열람 경로인 scripts/check-error-reports.mjs 는 서비스 계정으로 직접 내려받으면 된다.
+    // 서류 PDF 56건 사고(8918669)와 같은 클래스다. 권한만 남아 무만료로 열려 있었다.
     const imageFileIds = (input.imageFileIds ?? []).filter(id => typeof id === 'string' && id).slice(0, MAX_REPORT_IMAGES)
-    if (imageFileIds.length > 0) {
-      await Promise.allSettled(imageFileIds.map(id => setDrivePublicReadable(id)))
-    }
 
     await prisma.errorReport.create({
       data: {

@@ -7,8 +7,13 @@
 //   화면 어디에서도 공개 URL 을 쓰지 않는다(ViewDocButton 은 /api/doc-file 을 연다). 즉 권한만 남은 것이다.
 //   생성 경로는 코드로 막았다. 이 스크립트는 이미 붙은 권한을 걷어낸다.
 //
-// 대상 — ContractFile(스캔 업로드본 포함) · RentReceiptFile · ResidenceCertFile 전량.
-// 소프트삭제된 것도 포함한다(권한은 삭제와 무관하게 살아 있다).
+// 대상 — ContractFile(스캔 업로드본 포함) · RentReceiptFile · ResidenceCertFile ·
+//        ErrorReport.imageFileIds 전량. 소프트삭제된 것도 포함한다(권한은 삭제와 무관하게 살아 있다).
+//
+// 신고 첨부 추가 (D페이즈 2026-08-03)
+//   처음 만들 때 서류 3종만 훑어서 오류신고 첨부가 빠졌다. 같은 사고인데 한 곳을 안 봤다.
+//   신고 첨부도 공개가 필요한 소비처가 없어(앱이 안 띄운다) 권한만 남아 있었다.
+//   생성 경로는 errorReports.ts 에서 막았다.
 //
 // 실행:   npx tsx --env-file=.env.local scripts/revoke-doc-public-links.ts [--apply]
 import { PrismaClient } from '@prisma/client'
@@ -19,18 +24,21 @@ const apply = process.argv.includes('--apply')
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
-  const [contracts, receipts, certs] = await Promise.all([
+  const [contracts, receipts, certs, reports] = await Promise.all([
     prisma.contractFile.findMany({ select: { driveFileId: true, fileName: true, source: true } }),
     prisma.rentReceiptFile.findMany({ select: { driveFileId: true, fileName: true } }),
     prisma.residenceCertFile.findMany({ select: { driveFileId: true, fileName: true } }),
+    prisma.errorReport.findMany({ select: { id: true, imageFileIds: true } }),
   ])
   const all = [
     ...contracts.map(f => ({ ...f, kind: `계약서(${f.source})` })),
     ...receipts.map(f => ({ ...f, kind: '영수증' })),
     ...certs.map(f => ({ ...f, kind: '거주확인서' })),
+    ...reports.flatMap(r => (Array.isArray(r.imageFileIds) ? r.imageFileIds as string[] : [])
+      .map((driveFileId, i) => ({ driveFileId, fileName: `${r.id.slice(0, 8)} 첨부 ${i + 1}`, kind: '신고 첨부' }))),
   ].filter(f => f.driveFileId)
 
-  console.log(`서류 파일 ${all.length}건 확인\n`)
+  console.log(`대상 파일 ${all.length}건 확인\n`)
   if (!apply) { console.log('실제 회수: --apply'); await prisma.$disconnect(); return }
 
   let removed = 0, failed = 0

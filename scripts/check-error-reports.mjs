@@ -41,8 +41,10 @@ if (open.length === 0) {
     if (r.errorText) console.log(`   에러: ${r.errorText}`)
     if (r.userNote) console.log(`   메모: ${r.userNote}`)
     if (Array.isArray(r.imageFileIds) && r.imageFileIds.length > 0) {
+      // 공개 URL 을 찍지 않는다 — 첨부는 비공개다(D페이즈 2026-08-03).
+      // 열람은 아래 명령으로 서비스 계정 자격으로 내려받는다.
       console.log(`   첨부: ${r.imageFileIds.length}장`)
-      for (const id of r.imageFileIds) console.log(`     https://drive.google.com/file/d/${id}/view`)
+      console.log(`     npx tsx --env-file=.env.local scripts/fetch-error-report-images.ts ${r.id.slice(0, 8)}`)
     }
     if (Array.isArray(r.breadcrumbs)) {
       const tail = r.breadcrumbs.slice(-6).map(c => `[${c.type}]${c.detail}`).join(' → ')

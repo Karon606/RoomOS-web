@@ -1,7 +1,7 @@
 // 돈 표시·수납 정합 상시 감지 — 읽기 전용, 위반 시 exit 1 (크리티컬 신고 50a2a69b 재발 감지망).
 // 소스 가드: 표시 정본(billForLeaseMonth·discountedRent) 이탈 패턴이 코드에 되살아나는지.
 // 데이터 대조: 보증금 중복 수납, 할인 미반영 락(되쓰기 누락 의심)을 SELECT 로 탐지.
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -305,7 +305,46 @@ for (const f of ['app/api/contract/generate/route.ts', 'app/api/rent-receipt/gen
   }
 }
 
-// 15. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
+// 15. Drive 공개 읽기 권한 — 공개해도 되는 것만 공개한다(D페이즈 2026-08-03).
+//     서류 PDF 56건과 오류신고 첨부 16장이 같은 이유로 무만료 공개였다. 둘 다 앱이 안 쓰는데
+//     권한만 붙어 있었다. 새 업로드 경로가 습관적으로 공개를 붙이는 것이 이 클래스의 재발 경로라
+//     **공개를 붙여도 되는 자리를 명단으로 못 박고, 명단 밖에서 쓰이면 위반으로 잡는다.**
+//     명단에 넣으려면 "공개 URL 을 화면이 실제로 쓰는가"에 답할 수 있어야 한다.
+const PUBLIC_OK = new Map([
+  ['app/(app)/settings/actions.ts',     3],  // 영업장 로고 · 앱 로고 (공개 갤러리·랜딩) + 도장
+  //   도장은 공개여도 되는 것이 아니다. 다만 /sign/[token] 이 비로그인 페이지라 인증 프록시로 못 옮긴다.
+  //   토큰 쿠키를 보는 전용 라우트가 필요해서 D6 로 미뤘다. 명단에 있는 것은 승인이 아니라 유예다.
+  ['app/(app)/room-manage/actions.ts',  2],  // 호실 사진 (공개 갤러리에서 쓴다)
+  ['app/(app)/finance/actions.ts',      1],  // 지출 영수증 썸네일 (D6에서 인증 프록시로 옮길 예정)
+  ['app/(app)/dashboard/pendingReceipt.ts', 1],  // 대기 영수증 썸네일 (D6 대상)
+])
+const grantRe = /setDrivePublicReadable\s*\(|publicRead:\s*true/g
+const scanDirs = ['app', 'lib', 'components']
+const GRANT_IMPL = 'lib/google-drive.ts'  // 정의부. 호출부가 아니라 세지 않는다
+const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap(e => {
+  const full = `${d}/${e.name}`
+  return e.isDirectory() ? walk(full) : (/\.(ts|tsx)$/.test(e.name) ? [full] : [])
+})
+for (const file of scanDirs.flatMap(walk)) {
+  if (file === GRANT_IMPL) continue
+  const n = (readFileSync(file, 'utf8').match(grantRe) ?? []).length
+  if (n === 0) continue
+  const allowed = PUBLIC_OK.get(file) ?? 0
+  if (n > allowed) {
+    violations.push(allowed === 0
+      ? `[소스] ${file} 가 Drive 공개 읽기 권한을 붙인다 — 명단에 없는 자리다. 링크만 알면 로그인 없이 열린다`
+      : `[소스] ${file} 의 공개 권한 부여가 ${allowed}곳에서 ${n}곳으로 늘었다 — 새로 늘어난 자리가 공개여도 되는지 확인하라`)
+  }
+}
+// 신고 첨부는 절대 공개가 아니다 — 소비처가 스크립트뿐이라 예외가 성립하지 않는다
+if (grantRe.test(readFileSync('app/(app)/errorReports.ts', 'utf8'))) {
+  violations.push('[소스] errorReports 가 첨부에 공개 권한을 붙인다 — 첨부는 남의 입주자 정보가 찍힌 화면 사진이다')
+}
+if (/drive\.google\.com\/file\//.test(readFileSync('scripts/check-error-reports.mjs', 'utf8'))) {
+  violations.push('[소스] check-error-reports 가 첨부 공개 URL 을 출력한다 — 첨부는 비공개다')
+}
+
+// 16. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
 //     경로마다 규칙이 갈렸다(B페이즈 조사 2026-08-03).
 if (!/canTransition\(lease\.status, input\.toStatus\)/.test(tenantsActions)) {
   violations.push('[소스] applyStatusTransition 이 전이표를 검사하지 않는다 — 뜻이 안 서는 상태 변경이 그대로 저장된다')
