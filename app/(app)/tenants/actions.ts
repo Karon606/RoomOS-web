@@ -756,13 +756,37 @@ export async function updateTenant(formData: FormData): Promise<
     try { await recordDepositReceived(leaseTermId) } catch { /* 이미 기록됨 등은 무시 */ }
   }
 
+  // 단기에서 월 단위로 내려오면서 이용료가 바뀐 경우 — 락인된 청구액을 되쓴다(신고 2c6de978).
+  //
+  // 종전에는 단기 체크를 끄는 것이 전부였고, 그러면 2주 단가가 그대로 월세로 승격됐다.
+  // 게다가 rentAmount 만 바꿔도 화면이 하나도 안 바뀐다 — 청구 우선순위가
+  // '일할 > 락인 > 이용료' 라 이미 박힌 락인이 이용료를 이기기 때문이다.
+  // 520호 김민정이 그 사례다(월 계약인데 7·8월 청구가 계속 2주 단가 329,000).
+  //
+  // 되쓰기 범위는 **입주월 이후**로 한정한다. 그 이전 달은 양도인 구간이거나 이 계약의 것이 아니다.
+  // 협의 락인(기준값과 다른 금액)과 일할 정산월은 정본 함수가 알아서 건너뛴다.
+  let rentRewriteNotice: string | null = null
+  if (currentLease.isShortTerm && !isShortTerm && currentLease.rentAmount !== rentAmount) {
+    const fromMonth = moveInDate ? new Date(moveInDate).toISOString().slice(0, 7)
+      : (currentLease.moveInDate ? new Date(currentLease.moveInDate).toISOString().slice(0, 7) : null)
+    const { rewriteLockedExpectedForRentAmount } = await import('@/app/(app)/rooms/actions')
+    const res = await rewriteLockedExpectedForRentAmount(leaseTermId, currentLease.rentAmount, rentAmount, fromMonth)
+    if (res.changed.length > 0) {
+      const detail = res.changed
+        .map(c => `${Number(c.month.slice(5, 7))}월 ${c.before.toLocaleString()}→${c.after.toLocaleString()}원`)
+        .join(' · ')
+      rentRewriteNotice = `월 단위로 전환하면서 이미 청구된 달의 금액도 새 이용료로 맞췄습니다 (${detail}).`
+    }
+  }
+
   revalidatePath('/tenants')
   revalidatePath('/rooms')
   revalidatePath('/dashboard')
   revalidatePath('/room-manage')
   // 단기 동기화가 일할 패치를 건너뛰었으면 일할 안내는 사실과 달라 내보내지 않는다.
   // 단, 감액 하한(이미 받은 금액에서 멈춤) 안내는 동기화와 함께 나가야 하는 사실이라 유지.
-  const finalNotice = shortPlan ? shortNotice : (shortNotice ?? prorationNotice)
+  const baseNotice = shortPlan ? shortNotice : (shortNotice ?? prorationNotice)
+  const finalNotice = [baseNotice, rentRewriteNotice].filter(Boolean).join(' ') || null
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),

@@ -2207,6 +2207,58 @@ export async function rewriteLockedExpectedForRentSchedule(
   }
 }
 
+// 이용료(rentAmount) 자체가 바뀔 때 락인된 청구액을 되쓴다 — 2026-08-02.
+//
+// 왜 필요한가: 단기에서 월 단위로 내려올 때 rentAmount 만 바꾸면 화면이 하나도 안 바뀐다.
+// billForLeaseMonth 우선순위가 '일할 > 락인 > 이용료' 라 이미 박힌 락인이 이용료를 이긴다.
+// 520호 김민정이 그 사례다 — 월 계약으로 바꿨는데 2주 단가 329,000 이 락인으로 남아
+// 7월·8월 청구가 계속 329,000 이었다(신고 2c6de978).
+//
+// 안전장치는 형제 두 정본(rewriteLockedExpectedForDiscountChange·ForRentSchedule)과 같다.
+//   · 일할 정산이 걸린 달은 불변(그 달은 정산액이 청구 권위다)
+//   · **변경 전 기준값 그대로 락인된 record 만** 되쓴다. 협의 락인(기준가와 다른 금액)은 손대지 않는다
+//   · 되쓴 달마다 recalculatePayments 로 완납 여부를 다시 판정한다
+// fromMonth 를 주면 그 달 이후만 손댄다 — 입주월 이전이나 양도인 구간을 건드리지 않기 위해서다.
+export async function rewriteLockedExpectedForRentAmount(
+  leaseTermId: string,
+  prevRentAmount: number,
+  nextRentAmount: number,
+  fromMonth?: string | null,
+): Promise<{ changed: { month: string; before: number; after: number }[] }> {
+  const changed: { month: string; before: number; after: number }[] = []
+  if (prevRentAmount === nextRentAmount) return { changed }
+  const lease = await prisma.leaseTerm.findUnique({
+    where: { id: leaseTermId },
+    select: {
+      id: true, isShortTerm: true, checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+    },
+  })
+  if (!lease) return { changed }
+  const recs = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, isDeposit: false, isPrevOwner: false, deletedAt: null, isBillingAdjust: false },
+    select: { id: true, targetMonth: true, expectedAmount: true },
+  })
+  const months = [...new Set(recs.map(r => r.targetMonth))].sort()
+  for (const mon of months) {
+    if (fromMonth && mon < fromMonth) continue
+    if (lease.checkoutProratedMonth === mon) continue
+    const base = { discounts: lease.discounts, room: lease.room }
+    const before = billForLeaseMonth({ ...base, rentAmount: prevRentAmount }, mon, null)
+    const after  = billForLeaseMonth({ ...base, rentAmount: nextRentAmount }, mon, null)
+    if (before === after) continue
+    const monthRecs = recs.filter(r => r.targetMonth === mon)
+    const lockedMax = monthRecs.reduce((mx, r) => Math.max(mx, r.expectedAmount), 0)
+    if (lockedMax !== before) continue   // 협의 락인 등 기준값과 다른 금액 — 손대지 않음
+    const targets = monthRecs.filter(r => r.expectedAmount === lockedMax).map(r => r.id)
+    await prisma.paymentRecord.updateMany({ where: { id: { in: targets } }, data: { expectedAmount: after } })
+    await recalculatePayments(leaseTermId, mon, after)
+    changed.push({ month: mon, before, after })
+  }
+  return { changed }
+}
+
 export async function addRentDiscount(data: {
   leaseTermId: string
   discountType: 'amount' | 'percent'
