@@ -1405,6 +1405,9 @@ model ContractFile {
   source       ContractFileSource @default(GENERATED)
   driveFileId  String                                       // Google Drive file ID
   fileName     String                                       // 표시용 파일명
+  // 계약번호 YYYYMMDD-NNN — 영수증 발행번호와 같은 이유로 저장한다. 스캔 업로드본은 null 이다
+  // (종전에는 업로드본까지 세어 다음 앱 발급본의 번호가 건너뛰었다).
+  contractNo   String?
   signedAt     DateTime           @default(now())            // 서명 일시 (사용자가 입력한 서명일 또는 업로드 시각)
   deletedAt    DateTime?                                      // 소프트삭제 — null=활성, 값=삭제됨(적용취소). 조회는 deletedAt:null 필터.
   createdAt    DateTime           @default(now())
@@ -1418,6 +1421,7 @@ model ContractFile {
   propertyId   String   @db.Uuid
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
+  @@unique([propertyId, contractNo])
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("contract_files")
@@ -1482,6 +1486,10 @@ model RentReceiptFile {
   driveFileId  String
   fileName     String
   kind         String   @default("rent")         // 'rent'=입실료 납부 확인서 | 'deposit'=보증금 영수증 (같은 서식 가족)
+  // 발행번호 YYYYMMDD-NNN — 저장해야 원장이 된다. 종전에는 count+1 로 그 자리에서 만들어 PDF 에
+  // 그리기만 했고, 미리보기·보내기에도 같은 번호가 찍혀 소비되지 않은 채 종이로 나갔다.
+  // 그 뒤 실제 발급본이 같은 번호를 갖고, 동시 발급이면 경합도 났다(E페이즈 조사 2026-08-03).
+  receiptNo    String?
   issuedAt     DateTime @default(now())          // 발행일 — 사용자가 입력
   deletedAt    DateTime?                         // 소프트삭제 — null=활성, 값=삭제됨(적용취소).
   createdAt    DateTime @default(now())
@@ -1495,6 +1503,7 @@ model RentReceiptFile {
   propertyId   String   @db.Uuid
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
+  @@unique([propertyId, receiptNo])
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("rent_receipt_files")

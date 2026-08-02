@@ -38,7 +38,7 @@ function effectiveLease<T extends { status: string }>(leases: T[]): T | null {
 export async function getAllContractFiles(): Promise<ContractListRow[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.contractFile.findMany({
-    where: { propertyId, deletedAt: null },
+    where: { driveFileId: { not: '' }, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, fileName: true, source: true, signedAt: true, driveFileId: true,

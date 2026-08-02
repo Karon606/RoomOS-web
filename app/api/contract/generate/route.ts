@@ -91,9 +91,34 @@ export async function POST(req: Request) {
     const pretendardBase64 = await getPretendardBase64()
 
     // 계약번호 No. YYYYMMDD-NNN (영업장별 일련, v2.0 §26) — 입실료 납부확인서와 동일 패턴.
-    // 작성일(signDate) 기준 날짜 + 이번 영업장의 누적 계약서 건수+1.
-    const contractSeq = (await prisma.contractFile.count({ where: { propertyId } })) + 1
-    const contractNo = `${body.signDate.replace(/-/g, '')}-${String(contractSeq).padStart(3, '0')}`
+    //
+    // 미리보기에는 번호를 찍지 않는다. 종전에는 미리보기·보내기에도 같은 번호가 나가서 소비되지 않은 채
+    // 종이로 건네지고 그 뒤 실제 발급본이 같은 번호를 가졌다(E페이즈 조사 2026-08-03).
+    // 스캔 업로드본은 번호가 없다 — 종전에는 그것까지 세어 다음 앱 발급본의 번호가 건너뛰었다.
+    // 실제 채번은 아래 저장 트랜잭션 안에서 한다.
+    // 저장 발급이면 번호를 **먼저 예약**한다. PDF 렌더(puppeteer)가 무거워 트랜잭션 안에 둘 수 없으므로,
+    // 자리(레코드)를 먼저 잡아 유니크로 번호를 확보하고 업로드 후 파일 정보를 채운다.
+    // 실패하면 그 자리를 지운다 — 보상 삭제가 없어 주인 없는 행이 남던 문제도 함께 막는다.
+    let reserved: { id: string; no: string } | null = null
+    if (!body.preview) {
+      for (let attempt = 0; attempt < 5 && !reserved; attempt++) {
+        const issued = await prisma.contractFile.count({ where: { propertyId, contractNo: { not: null } } })
+        const no = `${body.signDate.replace(/-/g, '')}-${String(issued + 1 + attempt).padStart(3, '0')}`
+        try {
+          const row = await prisma.contractFile.create({
+            data: {
+              propertyId, tenantId: tenant.id, leaseTermId: lease?.id ?? null,
+              driveFileId: '', fileName: '', source: 'GENERATED', contractNo: no,
+              signedAt: new Date(`${body.signDate}T00:00:00`),
+            },
+            select: { id: true },
+          })
+          reserved = { id: row.id, no }
+        } catch { /* 유니크 충돌 — 다음 번호로 재시도 */ }
+      }
+      if (!reserved) return NextResponse.json({ ok: false, error: '계약번호 채번에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, { status: 409 })
+    }
+    const contractNo = reserved?.no ?? '미리보기'
 
     const printData: PrintContractData = {
       template,
@@ -214,21 +239,19 @@ export async function POST(req: Request) {
     // 2) Drive 업로드
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `계약서_${safeTenantName}_${body.signDate.replace(/-/g, '')}_${Date.now()}.pdf`
-    const { fileId } = await uploadToDrive(pdfBuffer, fileName, 'application/pdf')
-
-    // 3) ContractFile 레코드 생성
-    const record = await prisma.contractFile.create({
-      data: {
-        propertyId,
-        tenantId: tenant.id,
-        leaseTermId: lease?.id ?? null,
-        driveFileId: fileId,
-        fileName,
-        source: 'GENERATED',
-        signedAt: new Date(`${body.signDate}T00:00:00`),
-      },
-      select: { id: true, driveFileId: true, fileName: true, signedAt: true },
-    })
+    // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
+    let record
+    try {
+      const { fileId } = await uploadToDrive(pdfBuffer, fileName, 'application/pdf')
+      record = await prisma.contractFile.update({
+        where: { id: reserved!.id },
+        data: { driveFileId: fileId, fileName },
+        select: { id: true, driveFileId: true, fileName: true, signedAt: true, contractNo: true },
+      })
+    } catch (e) {
+      await prisma.contractFile.delete({ where: { id: reserved!.id } }).catch(() => {})
+      throw e
+    }
 
     // #8 서명 이미지를 lease에 영구 저장 — 다음에 계약서 출력 에디터를 열면 이 서명을 불러와 표시·재인쇄.
     // 서명 없이 생성한 경우(빈 값)는 기존 저장 서명을 지우지 않도록 유효 이미지일 때만 갱신.

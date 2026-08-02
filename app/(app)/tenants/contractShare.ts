@@ -127,7 +127,7 @@ export async function getContractShareState(tenantId: string): Promise<
     let needsIssue = false
     if (link?.signedAt && !link.closedAt) {
       const files = await prisma.contractFile.findMany({
-        where: { propertyId, leaseTermId: link.leaseTermId, deletedAt: null },
+        where: { driveFileId: { not: '' }, propertyId, leaseTermId: link.leaseTermId, deletedAt: null },
         select: { leaseTermId: true, createdAt: true },
       })
       needsIssue = !isContractIssued(link.signedAt, link.leaseTermId, files)

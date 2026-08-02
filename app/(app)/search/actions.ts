@@ -149,7 +149,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     // 서류 3종 — 파일명 매칭, 소프트삭제 제외(1.5차)
     !isDigits
       ? prisma.contractFile.findMany({
-          where: { propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
+          where: { driveFileId: { not: '' }, propertyId, deletedAt: null, fileName: { contains: q, mode: 'insensitive' } },
           orderBy: { signedAt: 'desc' }, take: 3,
           select: { id: true, fileName: true, signedAt: true, tenant: { select: { name: true } } },
         })

@@ -51,14 +51,15 @@ export async function POST(req: Request) {
     const bizLine1 = [biz.registrationNo ? `사업자등록번호 ${biz.registrationNo}` : null, biz.ceoName ? `대표 ${biz.ceoName}` : null].filter(Boolean).join(' · ')
     const bizLine2 = [biz.address, property?.phone ? `T. ${property.phone}` : null].filter(Boolean).join(' · ')
     const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
-    // 발행번호 = 발행일-발행순서 (영업장별 일련, v2.0 §26). count+1 = 이번 발급분.
-    const seq = (await prisma.rentReceiptFile.count({ where: { propertyId } })) + 1
-    const receiptNo = `${issueDate.replace(/-/g, '')}-${String(seq).padStart(3, '0')}`
-
-    const pdfBytes = await buildRentReceiptPdf(body.fields, { businessName, bizLine1, bizLine2, receiptNo }, logoBytes, stampBytes)
-
+    // 발행번호 = 발행일-발행순서 (영업장별 일련, v2.0 §26).
+    //
+    // **미리보기에는 번호를 찍지 않는다.** 종전에는 미리보기·보내기에도 같은 번호가 나가서
+    // 소비되지 않은 채 종이로 건네지고, 그 뒤 실제 발급본이 같은 번호를 가졌다(E페이즈 조사 2026-08-03).
+    // 실제 채번은 아래 저장 트랜잭션 안에서 한다 — 동시 발급 경합도 거기서 막는다.
     if (body.preview) {
-      return new NextResponse(Buffer.from(pdfBytes), {
+      const previewBytes = await buildRentReceiptPdf(
+        body.fields, { businessName, bizLine1, bizLine2, receiptNo: '미리보기' }, logoBytes, stampBytes)
+      return new NextResponse(Buffer.from(previewBytes), {
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',
@@ -79,20 +80,28 @@ export async function POST(req: Request) {
     const receiptKind = body.fields.kind === 'deposit' ? 'deposit' : 'rent'
     const docPrefix = receiptKind === 'deposit' ? '보증금영수증' : '입실료납부확인서'
     const fileName = `${docPrefix}_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
-    const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')
-
-    const record = await prisma.rentReceiptFile.create({
-      data: {
-        propertyId,
-        tenantId: tenant.id,
-        leaseTermId,
-        driveFileId: fileId,
-        fileName,
-        kind: receiptKind,
-        issuedAt: new Date(`${issueDate}T00:00:00`),
-      },
-      select: { id: true, driveFileId: true, fileName: true, issuedAt: true },
-    })
+    // 채번 + 저장을 한 트랜잭션으로 — 동시 발급 시 두 건이 같은 번호를 받던 경합을 막는다.
+    // (propertyId, receiptNo) 유니크가 DB 레벨 최종 방어선이다.
+    // 이 시점에는 아직 PDF 에 번호가 없으므로, 번호를 확정한 뒤 PDF 를 만들고 업로드한다.
+    const record = await prisma.$transaction(async tx => {
+      const issued = await tx.rentReceiptFile.count({ where: { propertyId, receiptNo: { not: null } } })
+      const receiptNo = `${issueDate.replace(/-/g, '')}-${String(issued + 1).padStart(3, '0')}`
+      const pdf = await buildRentReceiptPdf(body.fields, { businessName, bizLine1, bizLine2, receiptNo }, logoBytes, stampBytes)
+      const { fileId } = await uploadToDrive(Buffer.from(pdf), fileName, 'application/pdf')
+      return tx.rentReceiptFile.create({
+        data: {
+          propertyId,
+          tenantId: tenant.id,
+          leaseTermId,
+          driveFileId: fileId,
+          fileName,
+          kind: receiptKind,
+          receiptNo,
+          issuedAt: new Date(`${issueDate}T00:00:00`),
+        },
+        select: { id: true, driveFileId: true, fileName: true, issuedAt: true, receiptNo: true },
+      })
+    }, { timeout: 30_000 })
 
     return NextResponse.json({
       ok: true,

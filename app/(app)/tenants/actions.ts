@@ -2867,7 +2867,7 @@ export type ContractFileRow = {
 export async function getContractFiles(tenantId: string): Promise<ContractFileRow[]> {
   const { propertyId } = await getPropertyId()
   const rows = await prisma.contractFile.findMany({
-    where: { tenantId, propertyId, deletedAt: null },
+    where: { driveFileId: { not: '' }, tenantId, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
     select: { id: true, driveFileId: true, fileName: true, source: true, signedAt: true, createdAt: true },
   })

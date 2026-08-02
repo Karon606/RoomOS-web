@@ -107,7 +107,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     // 영원히 안 꺼진다(운영자 질의 2026-08-01). 단순 출력만 하고 첨부하지 않으면 알림은 유지된다 —
     // 사본이 없는 상태를 알려 주는 것이 이 알림의 목적이다.
     prisma.contractFile.findMany({
-      where: { propertyId, source: { in: ['GENERATED', 'UPLOADED'] }, deletedAt: null },
+      where: { driveFileId: { not: '' }, propertyId, source: { in: ['GENERATED', 'UPLOADED'] }, deletedAt: null },
       select: { leaseTermId: true, createdAt: true },
     }),
   ])

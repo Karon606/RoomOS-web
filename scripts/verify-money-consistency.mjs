@@ -274,6 +274,24 @@ for (const f of ['app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/
   }
 }
 
+// 13. 서류 발행번호 원장 — 번호가 저장되지 않으면 대조할 근거가 없다(E페이즈 2026-08-03).
+//     같은 영업장에서 번호가 겹치거나, 예약만 하고 업로드가 안 끝난 자리가 남으면 위반.
+const dupReceipt = await prisma.$queryRawUnsafe(
+  `SELECT "propertyId", "receiptNo", count(*)::int AS n FROM "rent_receipt_files"
+   WHERE "receiptNo" IS NOT NULL GROUP BY 1,2 HAVING count(*) > 1`)
+for (const r of dupReceipt) violations.push(`[데이터] 영수증 발행번호 중복 ${r.receiptNo} (${r.n}건)`)
+const dupContract = await prisma.$queryRawUnsafe(
+  `SELECT "propertyId", "contractNo", count(*)::int AS n FROM "contract_files"
+   WHERE "contractNo" IS NOT NULL GROUP BY 1,2 HAVING count(*) > 1`)
+for (const r of dupContract) violations.push(`[데이터] 계약번호 중복 ${r.contractNo} (${r.n}건)`)
+const stranded = await prisma.contractFile.count({ where: { driveFileId: '' } })
+if (stranded > 0) violations.push(`[데이터] 번호만 예약되고 파일이 안 붙은 계약서 ${stranded}건 — 발급 도중 실패한 흔적`)
+// 소스 가드 — count+1 로 그 자리에서 번호를 만들면 저장이 안 되고 미리보기에도 같은 번호가 나간다
+for (const f of ['app/api/rent-receipt/generate/route.ts', 'app/api/contract/generate/route.ts']) {
+  const src = readFileSync(f, 'utf8')
+  if (!/receiptNo|contractNo/.test(src)) violations.push(`[소스] ${f} 이 발행번호를 저장하지 않는다`)
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
