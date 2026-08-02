@@ -46,6 +46,7 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/lib/statusColors'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
+import { DepositStatusPanel } from '@/components/entity-modal/widgets/DepositStatusPanel'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
@@ -995,12 +996,21 @@ export default function TenantClient({
     setPaySettlement(null)
     const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 그리지 않는다.
-    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
     setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
   // 청구·잔액 정본 재조회 — 모달 열림·저장/수정/삭제(payHistory 갱신) 때마다 서버 값으로 맞춘다.
   const payLeaseId = payTarget?.lease.id ?? null
+  // 보증금 패널 재조회 신호 — 패널 밖(수납 폼·목록)에서 보증금이 바뀌었을 때 패널도 따라오게 한다.
+  const [payReloadKey, setPayReloadKey] = useState(0)
+  const reloadPay = async () => {
+    if (!payLeaseId) return
+    const { records } = await getPaymentsByLease(payLeaseId, targetMonth)
+    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+    setPayReloadKey(k => k + 1)
+    refresh()
+  }
   useEffect(() => {
     if (!payLeaseId) { setPaySettlement(null); return }
     let active = true
@@ -1067,7 +1077,7 @@ export default function TenantClient({
         }
         setShowPayForm(false)
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
         refresh()
         pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
@@ -1101,7 +1111,7 @@ export default function TenantClient({
       })
       if (payTarget) {
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
       }
       refresh()
     })
@@ -1127,7 +1137,7 @@ export default function TenantClient({
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
         const { records, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
         setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       }
       setEditingPayId(null)
@@ -2047,7 +2057,6 @@ export default function TenantClient({
       {payTarget && (() => {
         const { tenant, lease } = payTarget
         const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
-        const depositRecords = payHistory.filter(p => p.isDeposit)
         const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]') && !p.isDeposit)
         const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
@@ -2136,6 +2145,21 @@ export default function TenantClient({
                         )}
                       </div>
                     </div>
+                    {/* 보증금 — 계약 단위 정본. 종전 '보증금 수납 내역' 섹션은 조회월 목록을 걸러 만든 것이라
+                        결제일이 조회월 밖이면 아무 메시지 없이 사라졌다(운영자 지적 2026-08-02).
+                        수납 정보 모달과 같은 컴포넌트를 쓴다 — 두 화면이 갈렸던 이유가 각자 그렸기 때문이다. */}
+                    {payLeaseId && paySettlement && (
+                      <DepositStatusPanel
+                        leaseTermId={payLeaseId}
+                        status={paySettlement.status}
+                        depositAmount={paySettlement.depositAmount}
+                        cleaningFee={paySettlement.cleaningFee}
+                        reservationDepositMode={paySettlement.reservationDepositMode}
+                        reloadSignal={payReloadKey}
+                        onChanged={reloadPay}
+                      />
+                    )}
+
                     {prevOwnerPaid > 0 && (
                       <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
                         <p className="text-xs text-[var(--info-fg)]">양도인 귀속 (인수일 이전 납부)</p>
@@ -2180,71 +2204,6 @@ export default function TenantClient({
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p)}
                                   className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* 보증금 수납 내역 */}
-                    {depositRecords.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
-                        {depositRecords.map(p => {
-                          if (editingPayId === p.id) {
-                            return (
-                              <div key={p.id} className="rounded-xl border border-[var(--deposit-ring)] bg-[var(--deposit-bg)] px-3 py-2.5 space-y-2">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div className="space-y-1">
-                                    <p className="text-[0.65625rem] text-[var(--deposit-fg)]">금액</p>
-                                    <input type="text" inputMode="numeric"
-                                      value={editAmount.toLocaleString()}
-                                      onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <p className="text-[0.65625rem] text-[var(--deposit-fg)]">납부일</p>
-                                    <DatePicker value={editDate} onChange={setEditDate}
-                                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
-                                  </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <p className="text-[0.65625rem] text-[var(--deposit-fg)]">납부방법</p>
-                                  <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                                    placeholder="계좌이체, 현금…"
-                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                                </div>
-                                <div className="flex gap-2 justify-end">
-                                  <button onClick={() => setEditingPayId(null)}
-                                    className="text-xs text-[var(--deposit-fg)] hover:text-[var(--deposit-fg)] px-3 py-1.5 rounded-lg border border-[var(--deposit-ring)] transition-colors">취소</button>
-                                  <button onClick={handleSaveEdit} disabled={isPending}
-                                    className="text-xs bg-[var(--deposit-bg)] hover:bg-[var(--deposit-ring)] text-[var(--deposit-fg)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
-                                </div>
-                              </div>
-                            )
-                          }
-                          return (
-                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5 bg-[var(--deposit-bg)] border border-[var(--deposit-ring)]">
-                              <div>
-                                <p className="text-xs text-[var(--deposit-fg)]">
-                                  {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>
-                                  {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-[var(--deposit-fg)]">{fmtWon(p.actualAmount)}</span>
-                                <div className="flex gap-1.5 ml-1">
-                                  <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
-                                    수정
-                                  </button>
-                                  <button onClick={() => handleDeletePayRecord(p)}
-                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
-                                    삭제
-                                  </button>
-                                </div>
                               </div>
                             </div>
                           )
@@ -2564,7 +2523,7 @@ export default function TenantClient({
                       reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm),
                     }}
                     targetMonth={targetMonth}
-                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); refresh() }}
+                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}
                     onCancel={() => setShowPayForm(false)}
                   />
                 </div>

@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease, setCashReceiptIssued } from '@/app/(app)/rooms/actions'
 import { pushToast } from '@/lib/saveStatus'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
+import { DepositStatusPanel } from '../widgets/DepositStatusPanel'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
@@ -100,31 +101,27 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
     <div className="space-y-3">
       <PaymentSummaryCards settlement={settlement} month={month} />
 
-      {settlement.status === 'RESERVED' && (
-        resvMode === 'none' ? (
-          <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">예약금 없음</p>
-        ) : resvMode === 'prepaid' ? (
-          <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-            <span className="text-[var(--coral)] font-semibold">이용료 선납</span>
-            <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(prepaidReceived)}</span>
-            <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>
-          </p>
-        ) : settlement.depositAmount > 0 ? (
-          // deposit 카멜 틴트 승격 + 완납 배지 — 보증금이 들어왔다는 사실이 한눈에(운영자 지적 2026-07-30)
-          <p className="text-xs bg-[var(--deposit-bg)] border border-[var(--deposit-ring)] rounded-lg px-3 py-2">
-            <span className="text-[var(--deposit-fg)] font-semibold">보증금 대체</span>
-            <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(depositPaidTotal)}</span>
-            <span className="text-[var(--warm-muted)]"> / 계약 보증금 {fmtWon(settlement.depositAmount)}</span>
-            {depositPaidTotal >= settlement.depositAmount && depositPaidTotal > 0 && (
-              <span className="ml-1.5 inline-block text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] font-medium">수납 완료</span>
-            )}
-          </p>
-        ) : (
-          <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">
-            계약 보증금이 입력되지 않았습니다. 고객 정보 수정에서 보증금을 입력하면 예약금을 받을 수 있습니다.
-          </p>
-        )
-      )}
+      {/* 보증금 — 계약 단위. 조회월과 무관하다. RESERVED 전용이던 '보증금 대체' 줄을 여기로 흡수했다.
+          종전에는 입실 처리로 ACTIVE 가 되는 순간 그 줄이 사라져, 정작 퇴실 정산이 필요한 시점에
+          보증금이 화면에서 증발했다(운영자 지적 2026-08-02). */}
+      {settlement.status === 'RESERVED' && resvMode === 'none' ? (
+        <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">예약금 없음</p>
+      ) : settlement.status === 'RESERVED' && resvMode === 'prepaid' ? (
+        <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
+          <span className="text-[var(--coral)] font-semibold">이용료 선납</span>
+          <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(prepaidReceived)}</span>
+          <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>
+        </p>
+      ) : null}
+      <DepositStatusPanel
+        leaseTermId={leaseTermId}
+        status={settlement.status}
+        depositAmount={settlement.depositAmount}
+        cleaningFee={settlement.cleaningFee}
+        reservationDepositMode={resvMode}
+        reloadSignal={reloadKey}
+        onChanged={refresh}
+      />
 
       {/* 입주월 전 조회 — 예정액이 이번 달 청구로 오독되지 않게 맥락 명시(운영자 지적 2026-07-30) */}
       {settlement.status === 'RESERVED' && settlement.moveInDate && month < settlement.moveInDate.slice(0, 7) && (

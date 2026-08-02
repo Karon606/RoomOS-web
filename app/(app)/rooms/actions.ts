@@ -2163,6 +2163,38 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0 }
 }
 
+// 보증금 수납 내역 — 계약 단위. **조회월을 타지 않는다.**
+//
+// 왜 따로 두나. getPaymentsByLease 는 payDate 로 월 창을 자르는데(발생주의 전환 88f38cb),
+// 보증금은 입주할 때 한 번 받고 끝이라 그 달을 지나면 화면에서 통째로 사라진다.
+// 운영자 지적 2026-08-02 — "보증금을 언제 얼마 받았는지는 계속 유지되어야 나중에라도
+// 퇴실할 때 돌려줘야 하는지, 돌려준다면 얼마인지 확인할 수 있다."
+// knowledge/money-display-feedback §1 "받은 돈은 사실이고, 사실은 조회월과 무관하게 보여야 한다"의 구현이다.
+//
+// getAllPaymentsByLease 를 필터해 쓰지 않는 이유: 그쪽은 건수·합계를 운영자가 이미 신뢰하고 있어
+// 조용히 바뀌면 그게 새 신고가 된다. 여기서 별도 집합을 만들어 그 숫자를 동결한다.
+export async function getDepositPaymentsByLease(leaseTermId: string) {
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
+  const propertyId = await getPropertyId()
+  const [records, lease, property] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: { leaseTermId, propertyId, isDeposit: true, isBillingAdjust: false },
+      orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }],
+      select: {
+        id: true, payDate: true, targetMonth: true, actualAmount: true,
+        payMethod: true, memo: true, cashReceiptIssuedAt: true,
+      },
+    }),
+    prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { moveInDate: true } }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true, prevOwnerCutoffDate: true } }),
+  ])
+  // 인수 전 입주자는 보증금을 양도인이 받았다. 이 앱 원장에 영수 기록이 없는 게 정상이라
+  // '미수납'이라고 하면 거짓이다(실측 10건 중 9건이 이 경우). 계약 보증금은 인수 시 승계된 금액이다.
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const preAcquisition = !!(cutoff && lease?.moveInDate && new Date(lease.moveInDate) < cutoff)
+  return { records, paidTotal: records.reduce((s, r) => s + r.actualAmount, 0), preAcquisition }
+}
+
 // 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
 // 청구 조정 전표(isBillingAdjust)는 수납이 아니라 청구 락 조정용이라 행·합계·건수 모두에서 제외.
 export async function getAllPaymentsByLease(leaseTermId: string) {

@@ -6,7 +6,7 @@ import React from 'react'
 type SemanticTone = 'success' | 'warn' | 'danger' | 'neutral'
 // 페일 톤 (부드러운 라벨용 — 거주중·예약·요청 등 상태 표시)
 // inspect = v2.0 §04 in-progress(점검·처리 중) b-inspect — v2.0 §22 재고 카드 전용 과정 상태
-type PaleTone = 'pale-coral' | 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-red' | 'pale-teal' | 'pale-purple' | 'inspect'
+type PaleTone = 'pale-coral' | 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-red' | 'pale-teal' | 'pale-purple' | 'pale-neutral' | 'inspect'
 // 호환 alias (기존 코드)
 type LegacyTone = 'coral' | 'green' | 'amber' | 'blue' | 'red' | 'teal' | 'purple'
 
@@ -29,6 +29,8 @@ const PALE_CLS: Record<string, string> = {
   'pale-red':    'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'pale-teal':   'bg-[var(--reserve-bg)] text-[var(--reserve-fg)] ring-[var(--reserve-ring)]',
   'pale-purple': 'bg-[var(--deposit-bg)] text-[var(--deposit-fg)] ring-[var(--deposit-ring)]',
+  // neutral 틴트 — 솔리드 neutral 은 r-sm·mono·굵기가 달라 pale 형제와 모양이 어긋난다(디자이너 패스 2026-08-02)
+  'pale-neutral': 'bg-[var(--neutral-bg)] text-[var(--neutral-fg)] ring-[var(--neutral-ring)]',
   'inspect':     'bg-[var(--inspect-bg)] text-[var(--inspect-fg)] ring-[var(--inspect-ring)]',
   // legacy alias — 기존 코드 호환
   'coral':       'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',

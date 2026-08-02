@@ -248,7 +248,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 )}
                 {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
               </div>
-              {canEdit && (
+              {/* 보증금은 위 보증금 패널에서 관리한다. 여기에도 버튼을 두면 같은 record 에 편집 경로가 둘이 된다. */}
+              {canEdit && p.isDeposit && (
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">보증금은 맨 위 보증금 항목에서 수정합니다.</span>
+              )}
+              {canEdit && !p.isDeposit && (
                 <div className="flex gap-1.5">
                   <button onClick={() => startEdit(p)}
                     className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border transition-colors"

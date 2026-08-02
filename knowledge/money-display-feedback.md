@@ -8,6 +8,11 @@
 - 청구·잔액·예정액을 화면에 내보내는 모든 경로는 정본 계산(lib/billing billForLeaseMonth, lib/rentDiscount discountedRent)을 탄다. **원가(lease.rentAmount) 직표시 금지.** 클라이언트 재계산 금지 — 서버 settlement 값을 소비한다.
 - 예약(RESERVED) 단계도 예외가 아니다: 청구 예정액 = 입주월 기준 할인·예약 인상 반영, 실수납은 `RoomRow.reservationPaid`(조회월 무관 lease 전체 합)로 노출. 단 balance·totalPaid 0 + isPaid true 는 유지(예약은 미납·수금 집계에서 제외하는 정본 — rooms 스트립·배치 문자 회귀 방지).
 - **받은 돈은 사실이고, 사실은 조회월과 무관하게 보여야 한다**(운영자 정의). 보증금·예약 선납 합계는 월 필터를 타지 않는다(getPaymentsByLease.depositPaidTotal).
+- **보증금 표시 정본은 `DepositStatusPanel` 하나다**(2026-08-02). 수납 정보 모달과 고객정보가 각자 그려서 갈렸고,
+  둘 다 `getPaymentsByLease`(payDate 월 창)를 걸러 만들었기 때문에 보증금을 받은 달을 지나면 화면에서 사라졌다.
+  계약 단위 조회는 `getDepositPaymentsByLease`. 편집·삭제 접점도 이 패널 하나로 모았다(PaymentRecordList 의 보증금 행은 안내만).
+- **인수 전 입주자는 '미수납'이 아니다**. 보증금을 양도인이 받았고 인수 시 승계됐다. 실측 10건 중 9건이 이 경우였다.
+  서버가 입주일과 인수 컷오프를 비교해 `preAcquisition` 을 내려보낸다. 같은 이유로 투어 대기·취소 계약도 '미수납'이 아니다.
 - RESERVED 행의 expected 는 **표시용**이다 — 화면 집계(수납 스트립 청구·수납 합산)에 섞으면 잔액 0 특성 때문에 청구·수납이 함께 부풀려진다(신고 78ea0c3d: 호실 배정 순간 +890,000 유령 수납). 스트립 정본: 청구·수납은 RESERVED 제외, 만실 시 참고치엔 예약 방 baseRent 포함. 예약 확정자의 그 달 전액은 홈 예상 매출에만 가산(2026-06-20 결정).
 - 홈 예상 수입 = 수납 관리 청구 합 + 예약 확정 전액 + 퇴실 완료자 귀속 인식분 + 기타수익 — 두 화면 차이는 설계이며 양쪽 도움말이 교차 설명한다(7월 실측: 16,739,000 = 16,089,000 + 470,000 + 110,000 + 70,000).
 - 감지망: `scripts/verify-money-consistency.mjs` — 원가 직표시 소스 패턴·중복 수납·할인 미반영 락·스트립 RESERVED 혼입을 상시 탐지. test-money 에 락 vs 할인 우선순위·예약 표시 불변식 케이스 고정.
