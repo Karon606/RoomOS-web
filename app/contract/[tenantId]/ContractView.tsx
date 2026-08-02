@@ -27,7 +27,11 @@ function renderClauseItem(text: string): React.ReactNode {
 
 // mode 미지정이면 100% 기존 운영자 경로. 'remote'면 입주자 원격 서명 화면 —
 // 편집·인쇄·저장 등 운영 기능을 숨기고, 서명 제출은 submitRemoteSignature(공개 액션)로 보낸다.
-export default function ContractView({ data, mode, shareToken }: { data: ContractData; mode?: 'remote'; shareToken?: string }) {
+export default function ContractView({ data, mode, shareToken, signedSnapshot }: {
+  data: ContractData; mode?: 'remote'; shareToken?: string
+  /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
+  signedSnapshot?: boolean
+}) {
   const remote = mode === 'remote'
   const router = useRouter()
   const today = kstYmdStr()
@@ -532,6 +536,13 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
 
   return (
     <div className={`contract-shell${remote && canSubmit ? ' has-pill' : ''}`}>
+      {/* 서명본으로 열렸다는 사실을 밝힌다 — 현재 계약으로 오인하면 잘못된 계약서를 발급한다.
+          인쇄에는 안 나간다(계약서 본문이 아니라 운영자용 안내다). */}
+      {signedSnapshot && (
+        <div className="no-print" style={{ background: 'var(--info-bg)', border: '1px solid var(--info-ring)', borderRadius: 10, padding: '10px 12px', margin: '0 0 12px', fontSize: 12, color: 'var(--info-fg)', lineHeight: 1.6 }}>
+          입주자가 서명한 시점의 내용입니다. 지금 계약과 다를 수 있습니다. 바뀐 내용으로 받으려면 서명 요청을 다시 보내면 새 계약서가 따로 만들어집니다.
+        </div>
+      )}
       {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}
       {remote ? (
         <div className="no-print toolbar">

@@ -201,9 +201,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           상태와 무관하게 셋을 같은 무게로 세워두면 어디서 시작하는지 화면이 알려주지 않는다(운영자 지적).
           단계별 안내 문구도 여기서 함께 정한다. */}
       <div className="flex items-center gap-2 -mt-1 flex-wrap">
-        <BtnLink href={`/contract/${tenantId}`} target="_blank" rel="noreferrer"
+        {/* 원격 서명이 들어온 뒤에는 **그 시점 내용**으로 열어야 한다. 서명은 A 에 했는데
+            B 짜리 계약서가 나가면 그건 입주자가 서명한 문서가 아니다(2026-08-03).
+            바뀐 내용으로 받으려면 서명 요청을 다시 보내 새 링크·새 계약서를 만든다. */}
+        <BtnLink href={share?.link?.signedAt ? `/contract/${tenantId}?share=${share.link.id}` : `/contract/${tenantId}`}
+          target="_blank" rel="noreferrer"
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-          계약서 작성·서명
+          {share?.link?.signedAt ? '서명본 계약서 발급' : '계약서 작성·서명'}
         </BtnLink>
         {!hideSignRequest && (
           <Btn variant={stage.primary === 'resend' ? 'primary' : 'secondary'} size="sm"

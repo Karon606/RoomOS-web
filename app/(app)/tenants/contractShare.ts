@@ -190,11 +190,10 @@ export async function checkContractShareDrift(tenantId: string): Promise<
 > {
   try {
     const { propertyId } = await requirePropertyAccess()
+    // 만료 조건을 뺐다 — 만료된 링크의 차이가 아예 감지되지 않던 구멍(E페이즈 조사 2026-08-03).
+    // 실측 김민정 건이 서명 당시 157,000 인데 현재 470,000 이었고 링크가 만료돼 경고가 안 떴다.
     const link = await prisma.contractShareLink.findFirst({
-      where: {
-        tenantId, propertyId,
-        signedAt: { not: null }, closedAt: null, lockedAt: null, expiresAt: { gt: new Date() },
-      },
+      where: { tenantId, propertyId, signedAt: { not: null } },
       orderBy: { createdAt: 'desc' },
       select: { templateSnapshot: true },
     })
@@ -204,10 +203,14 @@ export async function checkContractShareDrift(tenantId: string): Promise<
     const snap = link.templateSnapshot as unknown as ContractData
     if (!current || !current.lease || !snap.lease) return { ok: true, drift: true }
 
+    // 계약서에 인쇄되는 필드를 다 본다. 종전에는 청소비·납부일·퇴실예정일이 빠져 있었다.
     const drift =
       snap.lease.rentAmount !== current.lease.rentAmount ||
       snap.lease.depositAmount !== current.lease.depositAmount ||
+      snap.lease.cleaningFee !== current.lease.cleaningFee ||
+      snap.lease.dueDay !== current.lease.dueDay ||
       snap.lease.moveInDate !== current.lease.moveInDate ||
+      snap.lease.expectedMoveOut !== current.lease.expectedMoveOut ||
       snap.lease.roomNo !== current.lease.roomNo ||
       JSON.stringify(snap.template) !== JSON.stringify(current.template)
     return { ok: true, drift }
@@ -215,4 +218,29 @@ export async function checkContractShareDrift(tenantId: string): Promise<
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '비교에 실패했습니다.' }
   }
+}
+
+
+// 서명본 스냅샷 조회 — 계약서를 **입주자가 서명한 시점의 내용**으로 발급하기 위한 경로.
+//
+// 종전에는 /sign 은 스냅샷을 보여주고 계약서 PDF 는 발급 시점 DB 로 다시 조립했다.
+// 그 사이 계약이 바뀌면 **서명은 A 에 했는데 B 짜리 계약서가 나간다.**
+// 실측 520호 김민정 — 1주일(157,000)에 서명했는데 그 뒤 1개월(470,000)로 전환됐다.
+// 운영자 확인 2026-08-03 — "1주일짜리는 그거대로 저장되고 1달짜리는 별개로 진행되는거지.
+// 즉 각각 남는 구조가 맞아". 서명본은 그 스냅샷으로 발급하고, 새 내용은 새 서명을 받는다.
+export async function getSignedSnapshot(tenantId: string, linkId: string): Promise<ContractData | null> {
+  await requireEdit()
+  const { propertyId } = await requirePropertyAccess()
+  const link = await prisma.contractShareLink.findFirst({
+    where: { id: linkId, tenantId, propertyId, signedAt: { not: null } },
+    select: { templateSnapshot: true, signedAt: true, disposalSignedAt: true, leaseTerm: { select: { signatureImageUrl: true, disposalSignatureImageUrl: true } } },
+  })
+  if (!link) return null
+  const snap = link.templateSnapshot as unknown as ContractData
+  // 서명 이미지는 스냅샷에 없다(서명은 그 뒤에 들어온다) — lease 에 저장된 원본을 얹는다
+  return {
+    ...snap,
+    signatureImageUrl: link.leaseTerm?.signatureImageUrl ?? null,
+    disposalSignatureImageUrl: link.leaseTerm?.disposalSignatureImageUrl ?? null,
+  } as ContractData
 }
