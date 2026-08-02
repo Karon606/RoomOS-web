@@ -36,6 +36,10 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 // 끌 방법이 사라졌다(503호 송호준: 서명 완료·링크 만료·발급 전 상태로 알림 영구 잔존).
 function shareBadge(link: ContractShareLinkInfo): { label: string; active: boolean; closable: boolean } {
   if (link.lockedAt) return { label: '링크 잠김 (생년월일 5회 오류)', active: false, closable: !link.closedAt }
+  // 제출 판정이 닫힘보다 먼저다. 제출은 서버가 이미 막는데(getActiveLink) 배지가 그걸 모르면
+  // 죽은 링크를 '서명 완료 · 남은 시간'으로 표시해 운영자가 살아 있는 줄 안다(2026-08-02 조사).
+  // 닫힘을 먼저 보면 제출 건이 그냥 '링크 닫힘'으로만 떠 정보가 줄어든다.
+  if (link.submittedAt) return { label: '제출 완료 · 링크 닫힘', active: false, closable: false }
   if (link.closedAt) return { label: '링크 닫힘', active: false, closable: false }
   const remainMs = new Date(link.expiresAt).getTime() - Date.now()
   if (remainMs <= 0) return { label: '링크 만료', active: false, closable: true }
@@ -76,7 +80,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
 
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
   const openSms = (url: string, phone: string, propertyName: string) => {
-    const body = `[${propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 링크는 24시간 뒤 만료됩니다. ${url}`
+    const body = `[${propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. ${url}`
     const num = phone.replace(/[^0-9+]/g, '')
     const enc = encodeURIComponent(body)
     const isApple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)

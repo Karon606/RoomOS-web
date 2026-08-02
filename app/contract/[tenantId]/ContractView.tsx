@@ -319,7 +319,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
     if (finalizing) return
     if (!(await confirmDialog({
       title: '계약서를 제출할까요?',
-      message: '제출 후에는 수정할 수 없습니다.',
+      message: '제출하면 이 링크는 닫힙니다. 다시 열거나 수정할 수 없습니다.\n서명을 고치려면 제출 전에 다시 서명해 주세요.',
       confirmLabel: '제출',
     }))) return
     if (!shareToken) return
@@ -524,7 +524,7 @@ export default function ContractView({ data, mode, shareToken }: { data: Contrac
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A03C2E" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8 }}>계약서가 제출되었습니다</div>
-          <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>이 창은 닫으셔도 됩니다.</p>
+          <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>이 링크는 닫혔습니다. 다시 열 수 없습니다.<br />이 창은 닫으셔도 됩니다.</p>
         </div>
       </div>
     )

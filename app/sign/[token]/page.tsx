@@ -51,8 +51,10 @@ export default async function SignPage({
   const { token } = await params
   const link = await prisma.contractShareLink.findUnique({ where: { token } })
   if (!link) return <InactiveNotice />
-  // 제출 확정으로 닫힌 링크(서명 완료 후) — 일반 만료 안내 대신 '제출 완료' 안내
-  if (link.signedAt && (link.submittedAt || link.closedAt)) return <SubmittedNotice />
+  // 제출 확정으로 닫힌 링크 — '제출 완료' 안내.
+  // 종전에는 `signedAt && (submittedAt || closedAt)` 이라, 서명만 하고 제출은 안 한 채 운영자가 닫은
+  // 링크에도 "제출이 완료되어"라고 말했다(실데이터 07-20 건이 그 상태였다). 제출 여부로만 가른다.
+  if (link.submittedAt) return <SubmittedNotice />
   if (link.closedAt || link.submittedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
 
   const cookieStore = await cookies()

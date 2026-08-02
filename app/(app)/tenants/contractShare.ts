@@ -21,6 +21,7 @@ export type ContractShareLinkInfo = {
   disposalSignedAt: string | null
   closedAt: string | null
   lockedAt: string | null
+  submittedAt: string | null   // 제출 확정 — 이후 링크는 서버가 막는다(getActiveLink)
 }
 
 // 요청 헤더로 현재 origin 조립 — 프록시 뒤(Vercel)에서는 x-forwarded-* 우선
@@ -33,7 +34,7 @@ async function buildShareUrl(token: string): Promise<string> {
 
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
-  disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null
+  disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
 }, url: string): ContractShareLinkInfo {
   return {
     id: link.id,
@@ -43,6 +44,8 @@ function serializeLink(link: {
     disposalSignedAt: link.disposalSignedAt ? link.disposalSignedAt.toISOString() : null,
     closedAt: link.closedAt ? link.closedAt.toISOString() : null,
     lockedAt: link.lockedAt ? link.lockedAt.toISOString() : null,
+    // 제출 시각을 안 내려보내서 운영자 배지가 죽은 링크를 '서명 완료 · 남은 시간'으로 표시했다
+    submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
   }
 }
 
@@ -69,7 +72,10 @@ export async function issueContractShareLink(tenantId: string): Promise<
     const leaseTermId = snapshot.lease.id
     const link = await prisma.$transaction(async tx => {
       const existing = await tx.contractShareLink.findFirst({
-        where: { tenantId, propertyId, leaseTermId, closedAt: null, lockedAt: null, expiresAt: { gt: new Date() } },
+        // submittedAt 이 빠져 있어, 제출 완료 후 24시간 안에 '서명 요청 다시 보내기'를 누르면
+        // 이미 죽은 URL 이 그대로 다시 발송됐다. 입주자는 '더 이상 열 수 없습니다'만 본다.
+        // 서버 게이트(getActiveLink)는 submittedAt 을 보는데 여기만 안 봤다(2026-08-02 조사).
+        where: { tenantId, propertyId, leaseTermId, closedAt: null, lockedAt: null, submittedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: 'desc' },
       })
       if (existing) return existing
