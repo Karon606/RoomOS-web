@@ -6,6 +6,44 @@
     var SLUG = m ? m[1] : null;
     if (!SLUG) return;
 
+    // 언어 — 페이지의 <html lang> 이 정본이다. 언어 전환 스크립트가 이 값을 바꾸므로
+    // 갤러리는 그 값만 읽으면 되고 전환 스크립트와 따로 연결할 필요가 없다.
+    // 이 파일이 만드는 UI 는 페이지 로드 뒤에 생기기 때문에 [data-en] 수집 대상이 아니었고,
+    // 그래서 4벌 규칙을 지키는 사이트에서 **사진 보는 동선만 한국어로 남아 있었다**(D페이즈 2026-08-03).
+    var LANG_OF = { 'ko': 'ko', 'en': 'en', 'zh': 'zh', 'zh-hant': 'zh', 'ja': 'ja' };
+    function lang() { return LANG_OF[(document.documentElement.lang || 'ko').toLowerCase()] || 'ko'; }
+    var STR = {
+      ko: { room: function (n) { return n + '호'; }, pano: '360도 둘러보기', panoN: function (n) { return '360도 둘러보기 ' + n + '곳'; },
+            panoHint: '드래그하여 360도로 둘러보세요', close: '닫기', closePano: '360도 보기 닫기',
+            openSheet: function (n) { return n + ' 객실 사진 보기'; },
+            photo: function (r, i, t) { return r + '호 객실 사진 ' + i + '/' + t; } },
+      en: { room: function (n) { return 'Room ' + n; }, pano: '360 tour', panoN: function (n) { return '360 tour (' + n + ')'; },
+            panoHint: 'Drag to look around in 360', close: 'Close', closePano: 'Close 360 view',
+            openSheet: function (n) { return 'View photos of ' + n; },
+            photo: function (r, i, t) { return 'Room ' + r + ' photo ' + i + ' of ' + t; } },
+      zh: { room: function (n) { return n + '號房'; }, pano: '360度環景', panoN: function (n) { return '360度環景 ' + n + '處'; },
+            panoHint: '拖曳即可360度環視', close: '關閉', closePano: '關閉360度環景',
+            openSheet: function (n) { return '查看' + n + '的房間照片'; },
+            photo: function (r, i, t) { return r + '號房照片 ' + i + '/' + t; } },
+      ja: { room: function (n) { return n + '号室'; }, pano: '360度ビュー', panoN: function (n) { return '360度ビュー ' + n + 'か所'; },
+            panoHint: 'ドラッグして360度見渡せます', close: '閉じる', closePano: '360度ビューを閉じる',
+            openSheet: function (n) { return n + 'の客室写真を見る'; },
+            photo: function (r, i, t) { return r + '号室の客室写真 ' + i + '/' + t; } },
+    };
+    function t() { return STR[lang()]; }
+    // 이미 만들어진 UI 를 언어 전환 때 다시 그리기 위한 훅 목록.
+    // <html lang> 변경을 관찰하므로 전환 스크립트를 고치지 않아도 따라온다.
+    var langHooks = [];
+    if (window.MutationObserver) {
+      new MutationObserver(function () { langHooks.forEach(function (fn) { try { fn(); } catch (_) {} }); })
+        .observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+    }
+    function iconEl() {
+      var w = document.createElement('span');
+      w.innerHTML = PANO_ICON;
+      return w.firstChild;
+    }
+
     // 360 버튼·힌트 아이콘(둘러보기 회전) — 기존 pano-hint 와 같은 모양으로 이질감 없게.
     var PANO_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 12 Q3 8 12 8 Q21 8 21 12 Q21 16 12 16 Q7.5 16 5 14.5"></path><path d="M5 18 L4.6 14.2 L8.4 14.8"></path></svg>';
 
@@ -45,10 +83,12 @@
         if (!box) return;
         // 발행 스크립트가 대표 썸네일을 이미 심어뒀으면(페이지와 함께 로드된 img) 재사용 — 중복 삽입·깜빡임 방지.
         // 없으면(미발행 폴백) 여기서 생성. 어느 경우든 시트에는 API 로 받은 전체 사진을 쓴다.
+        var nameEl = card.querySelector('.room-name');
+        var cardName = nameEl ? (nameEl.textContent || '').trim() : '';
         if (!box.querySelector('img')) {
           var img = document.createElement('img');
           img.src = thumb;
-          img.alt = '';
+          img.alt = '';                 // 카드 제목이 바로 옆에 있어 중복 낭독을 피한다(장식 취급)
           img.loading = 'lazy';
           box.appendChild(img);
         }
@@ -59,6 +99,19 @@
         card.style.cursor = 'pointer';
         card.addEventListener('click', function (e) {
           if (e.target.closest && e.target.closest('a')) return;  // 카드 내 링크는 그대로
+          open();
+        });
+        // 키보드로 열 수 있어야 한다 — 전에는 click 리스너뿐이라 키보드·스위치 사용자는
+        // 객실 사진과 360 투어에 **도달할 방법이 아예 없었다.**
+        // 카드 전체가 아니라 사진 상자에만 포커스를 준다(카드 안 링크와 탭 순서가 꼬이지 않게).
+        box.setAttribute('role', 'button');
+        box.setAttribute('tabindex', '0');
+        var syncBoxLabel = function () { box.setAttribute('aria-label', t().openSheet(cardName)); };
+        syncBoxLabel();
+        langHooks.push(syncBoxLabel);
+        box.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+          e.preventDefault();
           open();
         });
       });
@@ -76,13 +129,27 @@
         '<div class="gsheet-panel">' +
           '<div class="gsheet-head">' +
             '<div class="gsheet-title"></div>' +
-            '<button type="button" class="gsheet-close" data-close aria-label="닫기">' +
+            '<button type="button" class="gsheet-close" data-close>' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
             '</button>' +
           '</div>' +
           '<div class="gsheet-body"></div>' +
         '</div>';
       document.body.appendChild(el);
+
+      var closeBtn = el.querySelector('.gsheet-close');
+      var syncSheetLabel = function () { closeBtn.setAttribute('aria-label', t().close); };
+      syncSheetLabel(); langHooks.push(syncSheetLabel);
+
+      var lastFocus = null;
+      // 시트는 body 직속이라 형제 노드만 덮으면 배경 전체가 격리된다.
+      function setBackgroundInert(on) {
+        Array.prototype.forEach.call(document.body.children, function (n2) {
+          if (n2 === el) return;
+          if (on) { n2.setAttribute('inert', ''); n2.setAttribute('aria-hidden', 'true'); }
+          else { n2.removeAttribute('inert'); n2.removeAttribute('aria-hidden'); }
+        });
+      }
 
       var titleEl = el.querySelector('.gsheet-title');
       var bodyEl = el.querySelector('.gsheet-body');
@@ -163,14 +230,17 @@
           var label = document.createElement('div');
           label.className = 'gsheet-room-label';
           var labelText = document.createElement('span');
-          labelText.textContent = room.roomNo + '호';
+          labelText.textContent = t().room(room.roomNo);
           label.appendChild(labelText);
           if (hasPano) {
             var panoBtn = document.createElement('button');
             panoBtn.type = 'button';
             panoBtn.className = 'gsheet-360-btn';
-            var countTxt = panos.length > 1 ? (' ' + panos.length + '곳') : '';   // 여러 곳일 때만 개수 표시
-            panoBtn.innerHTML = PANO_ICON + '<span>360° 둘러보기' + countTxt + '</span>';
+            // 여러 곳일 때만 개수 표시
+            panoBtn.appendChild(iconEl());
+            var panoLabel = document.createElement('span');
+            panoLabel.textContent = panos.length > 1 ? t().panoN(panos.length) : t().pano;
+            panoBtn.appendChild(panoLabel);
             (function (list) {
               panoBtn.addEventListener('click', function () { openPano(list); });
             })(panos);
@@ -189,11 +259,11 @@
               fig.setAttribute('data-idx', idx);
               var im = document.createElement('img');
               im.src = p.url;
-              im.alt = '';
+              im.alt = t().photo(room.roomNo, localI + 1, roomPhotos.length);
               im.loading = 'lazy';
               im.style.cursor = 'zoom-in';
               (function (li, base) {
-                im.addEventListener('click', function () { openLightbox(roomPhotos, li, base); });
+                im.addEventListener('click', function () { openLightbox(roomPhotos, li, base, room.roomNo); });
               })(localI, roomBaseGlobal);
               fig.appendChild(im);
               row.appendChild(fig);
@@ -208,9 +278,17 @@
 
         el.hidden = false;
         document.body.style.overflow = 'hidden';
+        // 포커스 관리 — aria-modal 을 선언해놓고 초기 포커스·트랩·복원이 전부 없었다.
+        // 같은 페이지의 프로모션 팝업에는 제대로 들어가 있는데 갤러리만 빠져 있었다(D페이즈 2026-08-03).
+        // 배경을 inert 로 덮어 시트가 열린 채 Tab 이 뒤 페이지 링크로 새어나가지 않게 한다.
+        lastFocus = document.activeElement;
+        setBackgroundInert(true);
         // 다음 프레임에 transition 발동
         window.requestAnimationFrame(function () {
-          window.requestAnimationFrame(function () { el.classList.add('in'); });
+          window.requestAnimationFrame(function () {
+            el.classList.add('in');
+            try { closeBtn.focus(); } catch (_) {}
+          });
         });
         isOpen = true;
       }
@@ -224,14 +302,19 @@
         o.className = 'gpano';
         o.hidden = true;
         o.innerHTML =
-          '<button type="button" class="gpano-close" data-panoclose aria-label="360 닫기">' +
+          '<button type="button" class="gpano-close" data-panoclose>' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
           '</button>' +
           '<div class="gpano-count"></div>' +
           '<div class="gpano-stage"></div>' +
-          '<div class="gpano-hint">' + PANO_ICON + '<span>드래그하여 360°로 둘러보세요</span></div>' +
+          '<div class="gpano-hint">' + PANO_ICON + '<span class="gpano-hint-text"></span></div>' +
           '<div class="gpano-strip"></div>';
         el.appendChild(o);
+        var syncPanoText = function () {
+          o.querySelector('.gpano-close').setAttribute('aria-label', t().closePano);
+          o.querySelector('.gpano-hint-text').textContent = t().panoHint;
+        };
+        syncPanoText(); langHooks.push(syncPanoText);
         o.addEventListener('click', function (e) {
           if (e.target.closest && e.target.closest('[data-panoclose]')) closePano();
         });
@@ -281,6 +364,7 @@
         var hint = panoOverlay.querySelector('.gpano-hint');
         if (hint) hint.hidden = panoList.length > 1;
         panoOverlay.hidden = false;
+        try { panoOverlay.querySelector('.gpano-close').focus(); } catch (_) {}
         showPano(0);
       }
       function closePano() {
@@ -291,7 +375,7 @@
 
       // ---------- 라이트박스 (사진 전체화면 확대 + 좌우 스와이프) ----------
       // 시트 슬라이드를 탭하면 전체화면으로. 확대해서 본 사진은 zoomed 신호로 계측(관심 강함).
-      var lightbox = null, lbTrack = null, lbCounter = null, lbBase = 0, lbTotal = 0;
+      var lightbox = null, lbTrack = null, lbCounter = null, lbBase = 0, lbTotal = 0, lbRoomNo = '';
       function markZoom(localIdx) {
         if (curStat) curStat.zoomed[lbBase + localIdx] = true;   // 등급 연속 idx 기준
       }
@@ -313,7 +397,7 @@
         o.className = 'glightbox';
         o.hidden = true;
         o.innerHTML =
-          '<button type="button" class="glightbox-close" data-lbclose aria-label="닫기">' +
+          '<button type="button" class="glightbox-close" data-lbclose>' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"></line><line x1="20" y1="4" x2="4" y2="20"></line></svg>' +
           '</button>' +
           '<div class="glightbox-track"></div>' +
@@ -321,6 +405,8 @@
         el.appendChild(o);
         lbTrack = o.querySelector('.glightbox-track');
         lbCounter = o.querySelector('.glightbox-counter');
+        var syncLbLabel = function () { o.querySelector('.glightbox-close').setAttribute('aria-label', t().close); };
+        syncLbLabel(); langHooks.push(syncLbLabel);
         o.addEventListener('click', function (e) {
           if (e.target.closest && e.target.closest('[data-lbclose]')) { closeLightbox(); return; }
           if (e.target === o || e.target === lbTrack) closeLightbox();   // 이미지 밖 클릭도 닫기
@@ -328,19 +414,20 @@
         lbTrack.addEventListener('scroll', function () { window.requestAnimationFrame(updateLbCounter); }, { passive: true });
         return o;
       }
-      function openLightbox(photos, startLocal, baseGlobal) {
+      function openLightbox(photos, startLocal, baseGlobal, roomNo) {
         if (!lightbox) lightbox = buildLightbox();
-        lbBase = baseGlobal; lbTotal = photos.length;
+        lbBase = baseGlobal; lbTotal = photos.length; lbRoomNo = roomNo;
         lbTrack.innerHTML = '';
-        photos.forEach(function (p) {
+        photos.forEach(function (p, li) {
           var fig = document.createElement('figure');
           fig.className = 'glightbox-slide';
           var im = document.createElement('img');
-          im.src = p.url; im.alt = '';
+          im.src = p.url; im.alt = t().photo(lbRoomNo, li + 1, photos.length);
           fig.appendChild(im);
           lbTrack.appendChild(fig);
         });
         lightbox.hidden = false;
+        try { lightbox.querySelector('.glightbox-close').focus(); } catch (_) {}
         window.requestAnimationFrame(function () {
           var target = lbTrack.children[startLocal];
           if (target) lbTrack.scrollLeft = target.offsetLeft - (lbTrack.clientWidth - target.offsetWidth) / 2;
@@ -359,6 +446,9 @@
         isOpen = false;
         el.classList.remove('in');
         document.body.style.overflow = '';
+        setBackgroundInert(false);
+        if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (_) {} }
+        lastFocus = null;
         var done = function () {
           if (!isOpen) el.hidden = true;
           el.removeEventListener('transitionend', done);
@@ -378,6 +468,22 @@
 
       el.addEventListener('click', function (e) {
         if (e.target.closest && e.target.closest('[data-close]')) requestClose();
+      });
+      // Tab 순환 트랩 — 열려 있는 가장 위 레이어 안에서만 돈다.
+      var FOCUSABLE = 'a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])';
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Tab' || !isOpen) return;
+        var layer = (lightbox && !lightbox.hidden) ? lightbox
+                  : (panoOverlay && !panoOverlay.hidden) ? panoOverlay
+                  : el.querySelector('.gsheet-panel');
+        var items = Array.prototype.filter.call(layer.querySelectorAll(FOCUSABLE), function (n2) {
+          return n2.offsetWidth > 0 || n2.offsetHeight > 0;
+        });
+        if (!items.length) { e.preventDefault(); return; }
+        var first = items[0], last = items[items.length - 1];
+        if (!layer.contains(document.activeElement)) { e.preventDefault(); first.focus(); return; }
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       });
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;

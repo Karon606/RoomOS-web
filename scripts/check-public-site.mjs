@@ -71,6 +71,57 @@ for (const slug of readdirSync(ROOT, { withFileTypes: true }).filter(e => e.isDi
   }
 }
 
+// ── 동적 갤러리 (_gallery.js) — 페이지 로드 뒤에 만들어지는 UI 라 [data-en] 수집 대상이 아니다.
+//    그래서 4벌 규칙을 지키는 사이트에서 사진 보는 동선만 한국어로 남아 있었다.
+const gal = readFileSync(`${ROOT}/_gallery.js`, 'utf8')
+
+// 1. 언어 사전이 4벌이고 키 구성이 같아야 한다
+const dict = {}
+{
+  const block = (gal.match(/var STR = \{([\s\S]*?)\n {4}\};/) ?? [])[1] ?? ''
+  const lines = block.split('\n')
+  let cur = null, buf = []
+  const flush = () => { if (cur) dict[cur] = [...buf.join('\n').matchAll(/(\w+):\s*(?:function|')/g)].map(x => x[1]).sort().join(',') }
+  for (const line of lines) {
+    const head = line.match(/^ {6}(ko|en|zh|ja):\s*\{/)
+    if (head) { flush(); cur = head[1]; buf = [line.slice(line.indexOf('{') + 1)]; continue }
+    if (cur) buf.push(line)
+  }
+  flush()
+}
+for (const lang of ['ko', 'en', 'zh', 'ja']) {
+  if (!dict[lang]) violations.push(`_gallery.js: STR 사전에 ${lang} 이 없다 — 그 언어에서 갤러리만 한국어로 남는다`)
+}
+if (dict.ko && ['en', 'zh', 'ja'].some(l => dict[l] && dict[l] !== dict.ko)) {
+  violations.push('_gallery.js: STR 사전의 언어별 키 구성이 다르다 — 어떤 언어에서 문구 하나가 통째로 빠진다')
+}
+
+// 2. 사용자에게 보이는 자리에 한글이 박혀 있으면 안 된다 (사전 블록과 주석은 제외)
+const galBody = gal
+  .replace(/var STR = \{[\s\S]*?\n {4}\};/, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').map(l => l.replace(/(^|[^:'"])\/\/.*$/, '$1')).join('\n')
+for (const m of galBody.matchAll(/(['"])([^'"\n]*[가-힣][^'"\n]*)\1/g)) {
+  violations.push(`_gallery.js: 한글이 사전 밖에 박혀 있다 — "${m[2].slice(0, 40)}" (언어를 바꿔도 안 바뀐다)`)
+}
+
+// 3. 접근성 — 전에는 클릭 리스너뿐이라 키보드로 사진에 도달할 방법이 아예 없었고,
+//    aria-modal 을 선언해놓고 포커스 트랩·복원이 없어 Tab 이 배경으로 새어나갔다.
+for (const [needle, why] of [
+  ["box.setAttribute('role', 'button')", '사진 상자가 버튼으로 노출되지 않는다'],
+  ["box.addEventListener('keydown'", '키보드로 갤러리를 열 수 없다'],
+  ['setBackgroundInert', '시트가 열린 채 Tab 이 배경 링크로 새어나간다'],
+  ["e.key !== 'Tab'", '포커스 트랩이 없다'],
+  ['lastFocus = document.activeElement', '연 사람이 어디에 있었는지 기록하지 않는다'],
+  ['lastFocus.focus()', '닫은 뒤 포커스가 원래 자리로 안 돌아온다'],
+]) {
+  if (!gal.includes(needle)) violations.push(`_gallery.js: ${why} (${needle} 없음)`)
+}
+// 사진 alt 를 빈 문자열로 되돌리면 안 된다 — 이 사이트에서 정보량이 가장 큰 콘텐츠다
+if (/im\.alt\s*=\s*''/.test(gal)) {
+  violations.push('_gallery.js: 시트·라이트박스 사진 alt 가 빈 문자열이다 — 스크린리더에서 객실 사진이 통째로 사라진다')
+}
+
 if (violations.length === 0) {
   console.log('[공개 사이트] 위반 0건')
 } else {
