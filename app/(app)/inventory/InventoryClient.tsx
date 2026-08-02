@@ -148,6 +148,15 @@ const isSameKstDay = (a: Date, b: Date) => {
   return toKst(a) === toKst(b)
 }
 
+// 단가 표기 — ml·g 단위 품목은 1원 미만이라 정수 반올림하면 유효숫자가 통째로 사라진다.
+// 주방세제 실제 2.1486원/ml 가 '2원/ml' 로 떠 재고 평가가 6.9% 왜곡됐다(C페이즈 조사 2026-08-03).
+// 1원 미만은 소수 2자리까지 보여준다.
+function fmtUnitPrice(v: number): string {
+  if (v >= 100) return fmtWon(Math.round(v))
+  if (v >= 10) return `${(Math.round(v * 10) / 10).toLocaleString()}원`
+  return `${(Math.round(v * 100) / 100).toLocaleString()}원`
+}
+
 export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
   const canEditUi = useCanEditScope('inventory')   // 재고 편집 — OWNER·MANAGER + 제한 스태프(재고 쓰기). 서버가 최종 방어
   // 재고 카테고리(cat) → 표시 별칭(alias) 맵 + 카테고리 cat 목록(순서 보존)
@@ -904,12 +913,12 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">평균 단가</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgUnitPrice != null
-              ? `${fmtWon(Math.round(row.avgUnitPrice))}${priceUnit ? `/${priceUnit}` : ''}`
+              ? `${fmtUnitPrice(row.avgUnitPrice)}${priceUnit ? `/${priceUnit}` : ''}`
               : '—'}
           </p>
           {row.lastUnitPrice != null && row.lastUnitPrice !== row.avgUnitPrice && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
-              최근 {fmtWon(Math.round(row.lastUnitPrice))}{priceUnit ? `/${priceUnit}` : ''}
+              최근 {fmtUnitPrice(row.lastUnitPrice)}{priceUnit ? `/${priceUnit}` : ''}
             </p>
           )}
         </div>
@@ -3046,6 +3055,13 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         }
         await deleteItemDrafts(item.id)
         onDraftChange?.()
+        // 점검 저장에 적용취소가 없었다 — 삭제·입수·폐기·수령에는 다 있는데 **제일 자주 쓰는 저장**에만
+        // 없었다(C페이즈 조사 2026-08-03). 잘못 센 값이 기준선으로 박히면 되돌릴 방법이 없었다.
+        pushToast('success', '재고 점검 저장됨', {
+          action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
+            if (r.ok) { onDraftChange?.(); onDone() } else pushToast('error', r.error)
+          }) } },
+        })
         onDone()
       } finally { submittingRef.current = false }
     })

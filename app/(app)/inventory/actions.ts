@@ -3154,8 +3154,22 @@ export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true 
     // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
     const autoChecks = await prisma.stockCheck.findMany({
       where: { sourceExpenseId: expenseId },
-      select: { trackedItemId: true, createdAt: true },
+      select: {
+        id: true, trackedItemId: true, createdAt: true,
+        locationBreakdown: { select: { restockedQty: true } },
+      },
     })
+    // 자동 점검 안에 **운영자 실측이 머지된** 경우를 먼저 막는다(C페이즈 조사 2026-08-03).
+    //
+    // 위치별 점검 패널은 6시간 안 같은 날이면 마지막 점검에 합친다. 그 마지막 점검이 자동 수령 점검이면
+    // 운영자가 직접 센 값이 그 행 안으로 들어간다. 그 상태에서 수령 취소를 누르면 아래 deleteMany 가
+    // 행을 통째로 지워 **실측이 함께 사라진다.** 아래 '이후 점검' 가드는 같은 행이라 트립하지 않는다.
+    // 실측 2건이 이미 그 상태다(주방세제·김치 2026-07-14).
+    // 판정 신호는 보충 실측(restockedQty)이다. StockCheck 에는 updatedAt 이 없어 수정 시각으로는 못 가른다.
+    const merged = autoChecks.find(c => c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
+    if (merged) {
+      return { ok: false, error: '이 수령 기록에 직접 센 재고 점검이 함께 저장되어 있습니다. 되돌리면 그 실측까지 사라지므로 막았습니다. 재고 점검으로 잔량을 바로잡아 주세요.' }
+    }
     if (autoChecks.length > 0) {
       const later = await prisma.stockCheck.findFirst({
         where: {

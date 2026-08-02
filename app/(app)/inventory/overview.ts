@@ -475,16 +475,22 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // ⚠️ null(그 달엔 점검 자체가 없음) 과 0(점검했는데 안 씀) 은 다른 상태다. 종전엔 둘 다 0 이라
     //   추적 시작 전 달이 '사용량 0' 으로 그려져 편차가 커 보였음 (2026-07-17 운영자 의문).
     //   avgDaily 의 0/null 관례(constants.ts)와 동일하게 맞춘다.
+    // 슬롯·귀속 모두 **KST 기준**이다. 서버 로컬(배포는 UTC)로 만들면 KST 매월 1일 00:00~09:00 동안
+    // 이번 달 슬롯이 생성되지 않아 그 구간 소모가 `key in monthlyMap` 에서 통째로 탈락했다.
+    // 창 컷오프는 이미 KST 였는데 여기만 로컬이라 두 규칙이 섞여 있었다(C페이즈 조사 2026-08-03).
     const monthlyMap: Record<string, number | null> = {}
-    const now = new Date()
+    const kstKey = (d: Date) => {
+      const k = new Date(d.getTime() + 9 * 3600 * 1000)
+      return `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, '0')}`
+    }
+    const nowKst = new Date(Date.now() + 9 * 3600 * 1000)
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      monthlyMap[key] = null
+      const d = new Date(Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth() - i, 1))
+      monthlyMap[`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`] = null
     }
     // 구간 시리즈(itemChecks·intervalConsumed)는 위 평균 소모율 계산과 공유 — 여기선 월별 귀속만.
     for (const { curr, consumed } of intervalConsumed) {
-      const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
+      const key = kstKey(curr.date)
       if (key in monthlyMap) monthlyMap[key] = (monthlyMap[key] ?? 0) + consumed
     }
     // 월 단위 음수(그 달 입고가 사용량보다 많아 순증한 경우)는 사용량 0 으로 클램프 — '사용량' 은 음수일 수 없음.
