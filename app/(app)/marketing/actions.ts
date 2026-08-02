@@ -33,11 +33,21 @@ export type MarketingStats = {
   rangeViews: number      // 범위 내 총 페이지뷰
   rangeVisitors: number   // 범위 내 유니크 방문자(visitorHash 기준)
   // 참여도 (범위 내 평균, durationMs/scrollDepthPct 가 채워진 행만)
+  // 체류는 activeMs(방치탭 제외) 기준. 옛 기록은 durationMs 로 되돌린다.
   engagement: {
     avgDurationMs: number   // 평균 체류 시간
     avgScrollPct: number    // 평균 스크롤 깊이
-    sampleCount: number     // 측정된 샘플 수
+    sampleCount: number     // 측정된 샘플 수(두 모수 중 큰 쪽)
+    stayCount: number       // 체류가 기록된 방문 수
+    scrollCount: number     // 스크롤이 기록된 방문 수
     bounceRatePct: number   // 이탈률(체류 5초 미만)
+  }
+  // 본문 CTA 클릭 — 전화·카카오 상담·블로그. 팝업 안 클릭은 popup.cta 로 따로 센다(이중 계상 방지).
+  ctas: {
+    total: number         // 클릭 총 횟수
+    visitCount: number    // CTA 를 누른 방문 수
+    visitRatePct: number  // 방문 대비 비율
+    byKind: { kind: string; label: string; count: number }[]
   }
   // 섹션별 평균 체류시간 — 페이지 어느 영역에 오래 머물렀나
   sections: { id: string; name: string; avgMs: number; sampleCount: number }[]
@@ -174,6 +184,8 @@ type Row = {
   screenWidth: number | null
   screenHeight: number | null
   durationMs: number | null
+  activeMs: number | null
+  ctaClicks: unknown
   scrollDepthPct: number | null
   sectionDwellMs: unknown
   popupView: unknown
@@ -186,6 +198,10 @@ const SECTION_LABEL: Record<string, string> = {
   video: '투어 영상', tour: '투어 영상', gallery: '갤러리', location: '위치·약도', contact: '문의',
 }
 const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'tour', 'gallery', 'location', 'contact']
+
+// 본문 CTA 종류. sms 는 페이지에 링크가 없지만 옛 기록 호환을 위해 라벨을 둔다.
+const CTA_LABEL: Record<string, string> = { tel: '전화', kakao: '카카오 상담', blog: '블로그', sms: '문자' }
+const CTA_ORDER = ['tel', 'kakao', 'blog', 'sms']
 
 // 섹션 id별 누적을 '표시 라벨' 기준으로 합산 — SECTION_LABEL 이 video·tour 를 둘 다 '투어 영상'으로
 // 매핑하므로 합치지 않으면 같은 이름이 두 줄로 나온다(요약 카드·방문 상세 공통).
@@ -354,7 +370,8 @@ export async function getMarketingStats(
       range, bucket, rangeFrom, rangeTo, publicSlug: null, publicUrl: null,
       totals: { today: 0, week: 0, month: 0, allTime: 0 },
       rangeViews: 0, rangeVisitors: 0,
-      engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, bounceRatePct: 0 },
+      engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, stayCount: 0, scrollCount: 0, bounceRatePct: 0 },
+      ctas: { total: 0, visitCount: 0, visitRatePct: 0, byKind: [] },
       sections: [], sectionSampleCount: 0,
       popup: {
         sampleCount: 0, shownCount: 0, shownRatePct: 0, avgDwellMs: 0, closes: [],
@@ -381,7 +398,8 @@ export async function getMarketingStats(
       country: true, region: true, city: true,
       os: true, browser: true, deviceType: true,
       language: true, screenWidth: true, screenHeight: true,
-      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, popupView: true,
+      durationMs: true, activeMs: true, ctaClicks: true,
+      scrollDepthPct: true, sectionDwellMs: true, popupView: true,
     },
   })
 
@@ -541,17 +559,47 @@ export async function getMarketingStats(
     .sort((a, b) => b.count - a.count)
     .slice(0, 8)
 
-  // 참여도 — durationMs / scrollDepthPct 채워진 행만 평균
-  const dur = inRange.filter(r => r.durationMs !== null) as (Row & { durationMs: number })[]
+  // 참여도 — 체류는 activeMs(방치탭 제외) 가 정본이다.
+  // 스키마가 durationMs 를 '레거시', activeMs 를 '방치탭 오염을 뺀 값'이라고 적어뒀는데
+  // 화면은 계속 durationMs 를 읽고 있었다. 같은 '체류'를 두 규칙으로 저장해두고 틀린 쪽을 보여준 셈이다.
+  // activeMs 가 없는 옛 기록은 durationMs 로 되돌린다(도입 전 방문). (D페이즈 2026-08-03)
+  const stay = (r: Row) => r.activeMs ?? r.durationMs
+  const dur = inRange.filter(r => stay(r) !== null)
   const scr = inRange.filter(r => r.scrollDepthPct !== null) as (Row & { scrollDepthPct: number })[]
-  const avgDurationMs = dur.length > 0 ? Math.round(dur.reduce((s, r) => s + r.durationMs, 0) / dur.length) : 0
+  const avgDurationMs = dur.length > 0 ? Math.round(dur.reduce((s, r) => s + stay(r)!, 0) / dur.length) : 0
   const avgScrollPct  = scr.length > 0 ? Math.round(scr.reduce((s, r) => s + r.scrollDepthPct, 0) / scr.length) : 0
-  const bounces = dur.filter(r => r.durationMs < 5000).length
+  const bounces = dur.filter(r => stay(r)! < 5000).length
   const bounceRatePct = dur.length > 0 ? Math.round((bounces / dur.length) * 100) : 0
   const engagement = {
     avgDurationMs, avgScrollPct,
+    // 모수가 지표마다 다르다(체류 dur, 스크롤 scr). 하나로 합쳐 보여주면 어느 쪽 표본인지 알 수 없다.
     sampleCount: Math.max(dur.length, scr.length),
+    stayCount: dur.length,
+    scrollCount: scr.length,
     bounceRatePct,
+  }
+
+  // 본문 CTA 클릭 — 저장만 되고 읽는 곳이 저장소 어디에도 없었다.
+  // 전화 클릭이 DB 에는 쌓이는데 화면에는 0 으로 존재하지 않았고, 운영자가 보는 '전환'은
+  // 팝업 안 클릭 하나뿐이었다. (D페이즈 2026-08-03)
+  const ctaCount = new Map<string, number>()
+  let ctaRows = 0
+  for (const r of inRange) {
+    if (!Array.isArray(r.ctaClicks) || r.ctaClicks.length === 0) continue
+    ctaRows++
+    for (const c of r.ctaClicks as { kind?: unknown }[]) {
+      const kind = typeof c?.kind === 'string' ? c.kind : 'unknown'
+      ctaCount.set(kind, (ctaCount.get(kind) ?? 0) + 1)
+    }
+  }
+  const ctas = {
+    total: [...ctaCount.values()].reduce((a, b) => a + b, 0),
+    // 한 방문에서 여러 번 눌러도 '전환한 방문'은 하나다. 비율은 이 값으로 낸다.
+    visitCount: ctaRows,
+    visitRatePct: rangeViews > 0 ? Math.round((ctaRows / rangeViews) * 100) : 0,
+    byKind: CTA_ORDER.filter(k => ctaCount.has(k))
+      .concat([...ctaCount.keys()].filter(k => !CTA_ORDER.includes(k)))
+      .map(kind => ({ kind, label: CTA_LABEL[kind] ?? kind, count: ctaCount.get(kind) ?? 0 })),
   }
 
   // 섹션별 평균 체류시간 — sectionDwellMs(JSON { id: ms }) 가 있는 세션만 평균
@@ -611,7 +659,10 @@ export async function getMarketingStats(
   const popup = {
     sampleCount: popupSampleCount,
     shownCount: popupShownCount,
-    shownRatePct: rangeViews > 0 ? Math.round((popupShownCount / rangeViews) * 100) : 0,
+    // 분모는 popupSampleCount(팝업 로직이 실제로 돌아 기록을 남긴 방문)다.
+    // 전에는 rangeViews 였는데 여기에는 팝업 배포 전 방문, 날짜 게이트를 지난 뒤 방문,
+    // sendBeacon 미지원 방문이 섞여 있어 '샘플 N건'과 분모가 서로 달랐다(D페이즈 2026-08-03).
+    shownRatePct: popupSampleCount > 0 ? Math.round((popupShownCount / popupSampleCount) * 100) : 0,
     avgDwellMs: popupShownCount > 0 ? Math.round(popupDwellTotal / popupShownCount) : 0,
     closes: closeKeys.map(key => {
       const count = closeMap.get(key) ?? 0
@@ -628,7 +679,7 @@ export async function getMarketingStats(
   return {
     range, bucket, rangeFrom, rangeTo, publicSlug: slug, publicUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
-    rangeViews, rangeVisitors, engagement, sections, sectionSampleCount, popup,
+    rangeViews, rangeVisitors, engagement, ctas, sections, sectionSampleCount, popup,
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
@@ -799,7 +850,7 @@ export async function getVisitSessions(
     take: VISIT_PAGE_SIZE + 1,
     select: {
       id: true, occurredAt: true,
-      durationMs: true, scrollDepthPct: true, sectionDwellMs: true, galleryViews: true, popupView: true,
+      durationMs: true, activeMs: true, scrollDepthPct: true, sectionDwellMs: true, galleryViews: true, popupView: true,
       referrerHost: true, searchEngine: true, referrerCategory: true,
       utmSource: true, utmMedium: true, utmCampaign: true,
       country: true, region: true, city: true,
@@ -857,7 +908,8 @@ export async function getVisitSessions(
       dateLabel: `${mo}/${d}`,
       dateTimeLabel: `${y}-${p2(mo)}-${p2(d)} ${p2(hh)}:${p2(mi)}:${p2(ss)}`,
       visitNo: multi ? seqById.get(r.id) ?? null : null,
-      durationMs: r.durationMs,
+      // 요약 카드와 같은 정본(activeMs 우선). 상세와 요약이 다른 값을 보여주면 안 된다.
+      durationMs: r.activeMs ?? r.durationMs,
       scrollDepthPct: r.scrollDepthPct,
       sections: visitSections(r.sectionDwellMs),
       gallery: visitGallery(r.galleryViews),

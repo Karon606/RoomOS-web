@@ -437,7 +437,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               {/* 운영자 전용 화면의 링크라 nolog=1 을 붙여 클릭 시 내 방문이 기록에서 제외되게 한다(그 브라우저 계속 유지) */}
               <a href={`${stats.publicUrl}?nolog=1`} target="_blank" rel="noopener noreferrer"
                 className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>
-                {stats.publicUrl} ↗
+                {stats.publicUrl} ›
               </a>
               <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>이 링크로 열면 내 방문은 기록에 남지 않아요.</p>
             </>
@@ -584,7 +584,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-            참여도 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.engagement.sampleCount)}건)</span>
+            참여도 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(체류 {fmt(stats.engagement.stayCount)}건 · 스크롤 {fmt(stats.engagement.scrollCount)}건)</span>
           </p>
           {stats.engagement.sampleCount === 0 ? (
             <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
@@ -603,9 +603,42 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
                 <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.avgScrollPct}%</p>
               </div>
               <div>
-                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[0.65625rem]">(5초↓)</span></p>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[0.65625rem]">(5초 미만)</span></p>
                 <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.bounceRatePct}%</p>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* 본문 CTA 전환 — 전화·카카오 상담·블로그. 팝업 안 클릭은 아래 팝업 카드가 따로 센다 */}
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
+            본문 CTA 전환 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(누른 방문 {fmt(stats.ctas.visitCount)}건)</span>
+          </p>
+          <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>
+            페이지 본문과 우하단 버튼에서 전화·카카오 상담·블로그를 누른 횟수 · 팝업 안 클릭은 아래 팝업 카드에서 따로 셉니다
+          </p>
+          {stats.ctas.total === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+              {isCustom
+                ? '이 기간에 CTA 클릭 없음'
+                : '아직 CTA 클릭 없음 (전화·카카오 상담 버튼을 누르면 기록됩니다)'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+              <div>
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>전환율</p>
+                <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>
+                  {stats.ctas.visitRatePct}% <span className="text-[0.65625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>{fmt(stats.ctas.visitCount)}건</span>
+                </p>
+              </div>
+              {stats.ctas.byKind.map(c => (
+                <div key={c.kind}>
+                  <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{c.label}</p>
+                  <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmt(c.count)}</p>
+                </div>
+              ))}
             </div>
           )}
         </div>

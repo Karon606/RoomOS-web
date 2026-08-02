@@ -100,12 +100,6 @@ export async function POST(req: NextRequest) {
     const refInfo = categorizeReferrer(referrerHost)
     const vh = vid ? stableVisitorHash(vid, slug) : visitorHash(ip, ua, slug)
 
-    // 도시 정확도 보정 — 봇이 아니면 ipinfo 로 조회(한국 IP 도시 오판정 보정).
-    // 실패/타임아웃이면 Vercel 헤더값을 그대로 사용(geo 가 기록을 막지 않게).
-    const geo = isBot
-      ? { country, region, city }
-      : await lookupGeo(ip, { country, region, city })
-
     const created = await prisma.pageView.create({
       data: {
         ...(clientId && { id: clientId }),
@@ -118,9 +112,9 @@ export async function POST(req: NextRequest) {
         utmSource,
         utmMedium,
         utmCampaign,
-        country: geo.country,
-        region:  geo.region,
-        city:    geo.city,
+        country,
+        region,
+        city,
         os:             uaInfo.os,
         osVersion:      uaInfo.osVersion,
         browser:        uaInfo.browser,
@@ -140,6 +134,21 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true },
     })
+
+    // 도시 정확도 보정 — 봇이 아니면 ipinfo 로 조회(한국 IP 도시 오판정 보정).
+    // **행을 만든 뒤에 한다.** 전에는 이 조회(타임아웃 1.5초)를 create 앞에서 await 해서
+    // 방문 시작 1.5초 안에 도착한 closeup·cta·gallery·popup 이 대상 행을 못 찾고 조용히 버려졌다.
+    // 가장 빨리 떠난 사람일수록 기록이 안 남으니 이탈률이 과소, 평균 체류가 과대로 나왔다.
+    // 실패·타임아웃이면 Vercel 헤더값을 그대로 둔다(geo 가 기록을 막지 않게).
+    if (!isBot) {
+      const geo = await lookupGeo(ip, { country, region, city })
+      if (geo.country !== country || geo.region !== region || geo.city !== city) {
+        await prisma.pageView.update({
+          where: { id: created.id },
+          data: { country: geo.country, region: geo.region, city: geo.city },
+        }).catch(() => null)
+      }
+    }
 
     return NextResponse.json({ ok: true, id: created.id })
   } catch {

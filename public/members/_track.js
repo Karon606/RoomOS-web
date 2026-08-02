@@ -139,15 +139,30 @@
       if (best) sectionTimes[best] = (sectionTimes[best] || 0) + dt;
     }, 1000);
 
-    // 2c) CTA 클릭(전화·문자) — 캡처 단계로 기본동작(다이얼러 전환) 전에 잡아 즉시 전송. 전환의 직접 신호.
+    // 2c) CTA 클릭 — 캡처 단계로 기본동작(다이얼러·새 탭 전환) 전에 잡아 즉시 전송. 전환의 직접 신호.
+    //     전에는 tel/sms 만 잡았다. 그런데 페이지에 sms 링크는 하나도 없고, 정작 주력인
+    //     **카카오 상담 버튼 두 개(본문·우하단 플로터)가 통째로 안 잡혔다** — open.kakao.com 링크라서다.
+    //     팝업 안 카톡 클릭만 따로 세고 있어서 화면에는 팝업 밖 전환이 0으로 보였다(D페이즈 2026-08-03).
+    var CTA_SELECTOR = 'a[href^="tel:"], a[href^="sms:"], a[href*="open.kakao.com"], a[href*="pf.kakao.com"], a[href*="blog.naver.com"]';
+    function ctaKind(href) {
+      if (href.indexOf('tel:') === 0) return 'tel';
+      if (href.indexOf('sms:') === 0) return 'sms';
+      if (href.indexOf('blog.naver.com') >= 0) return 'blog';
+      return 'kakao';
+    }
     document.addEventListener('click', function (e) {
       var t = e.target;
-      var a = (t && t.closest) ? t.closest('a[href^="tel:"], a[href^="sms:"]') : null;
+      var a = (t && t.closest) ? t.closest(CTA_SELECTOR) : null;
       if (!a) return;
+      // 프로모션 팝업 안 버튼은 팝업이 자기 지표로 따로 센다. 여기서도 세면 같은 클릭이
+      // 두 카드에 각각 잡혀 운영자가 합산할 때 부풀어 오른다.
+      if (a.closest && a.closest('.promo')) return;
       var href = a.getAttribute('href') || '';
-      var kind = href.indexOf('tel:') === 0 ? 'tel' : 'sms';
+      var kind = ctaKind(href);
       var host = a.closest ? a.closest('section[id]') : null;
-      var section = host ? host.id : null;
+      // 어떤 section 에도 안 속한 것은 우하단 플로터다. 전에는 둘 다 section=null 이라
+      // '어느 위치에서 눌렀나'를 나중에 봐도 구분이 안 됐다.
+      var section = host ? host.id : (a.closest && a.closest('.floaters') ? 'floating' : null);
       var tMs = Date.now() - startedAt;
       ctaLog.push({ kind: kind, section: section, tMs: tMs });
       var body = JSON.stringify({ id: pv_id, kind: kind, section: section, tMs: tMs });

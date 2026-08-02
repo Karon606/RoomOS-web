@@ -122,6 +122,59 @@ if (/im\.alt\s*=\s*''/.test(gal)) {
   violations.push('_gallery.js: 시트·라이트박스 사진 alt 가 빈 문자열이다 — 스크린리더에서 객실 사진이 통째로 사라진다')
 }
 
+// ── 추적 정합 — 보내는 것 · 저장하는 것 · 보여주는 것이 어긋나면 지표가 조용히 틀린다.
+//    실제로 CTA 클릭이 DB 에는 쌓이는데 읽는 곳이 저장소 어디에도 없었고,
+//    activeMs 를 저장해두고 화면은 레거시인 durationMs 를 읽고 있었다. (D페이즈 2026-08-03)
+{
+  const track = readFileSync(`${ROOT}/_track.js`, 'utf8')
+  const mktActions = readFileSync('app/(app)/marketing/actions.ts', 'utf8')
+  const ctaRoute = readFileSync('app/api/track/cta/route.ts', 'utf8')
+  const pvRoute = readFileSync('app/api/track/pageview/route.ts', 'utf8')
+
+  // 1. pageview INSERT 이 geo 조회보다 **먼저** 일어나야 한다.
+  //    반대로 두면 조회(타임아웃 1.5초) 사이에 도착한 후속 이벤트가 대상 행을 못 찾고 버려진다.
+  //    가장 빨리 떠난 사람일수록 기록이 안 남아 이탈률이 과소, 평균 체류가 과대로 나온다.
+  if (pvRoute.indexOf('lookupGeo(ip') < pvRoute.indexOf('pageView.create')) {
+    violations.push('api/track/pageview: geo 조회가 create 앞에 있다 — 방문 시작 직후 이벤트가 조용히 유실된다')
+  }
+
+  // 2. 저장하는 CTA 종류와 보내는 CTA 종류가 같아야 한다
+  // 주석에도 같은 문자열이 나오므로 셀렉터 선언 줄만 본다(처음 파일 전체로 봤다가 못 잡았다)
+  const sel = (track.match(/var CTA_SELECTOR = '([^']*)'/) ?? [])[1] ?? ''
+  for (const need of ['tel:', 'open.kakao.com', 'blog.naver.com']) {
+    if (!sel.includes(need)) violations.push(`_track.js: CTA 셀렉터에 ${need} 가 없다 — 그 전환은 통째로 안 잡힌다`)
+  }
+  for (const kind of ['kakao', 'blog']) {
+    if (!ctaRoute.includes(`'${kind}'`)) violations.push(`api/track/cta: ${kind} 를 허용 종류에 안 넣었다 — unknown 으로 뭉개진다`)
+  }
+  // 팝업 안 클릭은 팝업이 따로 센다. 여기서도 세면 같은 클릭이 두 카드에 잡힌다.
+  if (!track.includes("a.closest('.promo')")) {
+    violations.push('_track.js: 팝업 안 CTA 를 제외하지 않는다 — 같은 클릭이 두 카드에 각각 잡혀 합산이 부풀어 오른다')
+  }
+
+  // 3. 저장하는 것은 반드시 읽혀야 한다 — 화면에 없으면 그 지표는 존재하지 않는 것과 같다
+  for (const [field, why] of [
+    ['r.ctaClicks', '본문 CTA 클릭이 DB 에만 쌓이고 화면에는 0 으로 보인다'],
+    ['r.activeMs ?? r.durationMs', '방치탭을 뺀 체류를 저장해두고 화면은 레거시 durationMs 를 읽는다'],
+  ]) {
+    if (!mktActions.includes(field)) violations.push(`marketing/actions: ${field} 를 읽지 않는다 — ${why}`)
+  }
+
+  // 4. 계측 대상으로 선언한 섹션이 실제로 있어야 한다
+  for (const slug of readdirSync(ROOT, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)) {
+    const file = `${ROOT}/${slug}/index.html`
+    if (!existsSync(file)) continue
+    const html = readFileSync(file, 'utf8')
+    const decl = (html.match(/data-sections="([^"]*)"/) ?? [])[1]
+    if (!decl) continue
+    for (const id of decl.split(',').map(x => x.trim()).filter(Boolean)) {
+      if (!html.includes(`id="${id}"`)) {
+        violations.push(`${slug}: 계측 대상으로 선언한 섹션 '${id}' 이 페이지에 없다 — 섹션별 체류 표에 영원히 안 뜬다`)
+      }
+    }
+  }
+}
+
 if (violations.length === 0) {
   console.log('[공개 사이트] 위반 0건')
 } else {
