@@ -6,6 +6,7 @@
 // 양도인 record 는 양도인 색 표시.
 
 import { useEffect, useState, useTransition } from 'react'
+import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -249,7 +250,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 {/* 현금영수증 — 편집 가능하면 원터치 체크박스, 아니면 발행 시에만 배지.
                     배지 모양 버튼이라 눌리는 걸 몰랐던 문제(신고 241c02ea)로 수납 폼 체크박스 정본 문법으로 교체.
                     즉시 저장 + 적용취소 토스트 동작 유지, 히트영역 44px(-my-2 확장 문법). */}
-                {canEdit ? (
+                {/* 카드 계열은 매출전표가 증빙이라 현금영수증 대상이 아니다. 집계에서도 빠지는데
+                    화면에만 칩이 뜨면 발행했다고 오인한다(수납 폼은 원래부터 감춘다). */}
+                {p.payMethod && CARD_LIKE_METHODS.includes(p.payMethod) ? (
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] whitespace-nowrap">카드 결제 · 매출전표</span>
+                ) : canEdit ? (
                   <label className={`inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px] ${pending ? 'opacity-50 pointer-events-none' : ''}`}>
                     <input type="checkbox" checked={!!p.cashReceiptIssuedAt} disabled={pending} onChange={() => handleToggleCashReceipt(p)}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />

@@ -865,7 +865,7 @@ export default function RoomsClient({
             <span className="num"> ({payAggregates.cardCount}건)</span>
             <InfoHint title="현금영수증·카드 합계">
               <span className="block">이 달에 결제된(납부일 기준) 수납의 합계입니다. 카드 수납에는 신용카드와 결제선생 결제가 함께 잡힙니다. 보증금 결제도 포함되며, 위의 청구액은 귀속월 기준이라 서로 다를 수 있습니다.</span>
-              <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식된 경우 현금영수증 합계에는 원래 달 몫만 잡힙니다. 발행 표시가 빠진 기록은 납부 내역의 현금영수증 칩으로 바로잡을 수 있습니다.</span>
+              <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식돼도 합계에는 결제 전액이 잡힙니다. 발행 표시를 켜고 끌 때도 그 결제의 모든 달이 함께 바뀝니다.</span>
             </InfoHint>
           </p>
         )}

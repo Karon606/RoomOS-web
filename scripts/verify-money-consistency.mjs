@@ -212,6 +212,43 @@ if (!/export function unpaidForLease/.test(billingSrc) || !/if \(r\.expectedAmou
   violations.push('[소스] lib/billing 의 unpaidForLease 최댓값 규칙이 사라졌다')
 }
 
+// 11. 현금영수증 스탬프는 **결제 단위**다. 한 결제가 여러 달로 쪼개졌는데 일부에만 찍히면
+//     합계(payDate 기준 record 합)가 실제 발행액과 어긋난다(2026-08-03 봉합).
+//     쪼개진 결제가 있는 것 자체는 정상이라 위반 조건은 '한 결제 안에서 갈림' 하나다.
+const crRecords = await prisma.paymentRecord.findMany({
+  where: { isBillingAdjust: false },
+  select: { id: true, leaseTermId: true, payDate: true, payMethod: true, createdAt: true,
+    actualAmount: true, cashReceiptIssuedAt: true, isDeposit: true,
+    leaseTerm: { select: { tenant: { select: { name: true } } } } },
+})
+const crGroups = new Map()
+for (const r of crRecords) {
+  // 생성시각 2초 버킷 — payDate 만으로 묶으면 같은 날 따로 입력한 별개 결제가 섞인다
+  const bucket = Math.floor(r.createdAt.getTime() / 2000)
+  const key = `${r.leaseTermId}|${r.payDate.toISOString().slice(0, 10)}|${r.payMethod ?? ''}|${bucket}`
+  if (!crGroups.has(key)) crGroups.set(key, [])
+  crGroups.get(key).push(r)
+}
+for (const [, g] of crGroups) {
+  if (g.length < 2) continue
+  const on = g.filter(r => r.cashReceiptIssuedAt).length
+  if (on > 0 && on < g.length) {
+    const missing = g.filter(r => !r.cashReceiptIssuedAt).reduce((s, r) => s + r.actualAmount, 0)
+    violations.push(`[데이터] ${g[0].leaseTerm.tenant.name} ${g[0].payDate.toISOString().slice(0, 10)} — 한 결제가 ${g.length}건으로 쪼개졌는데 ${on}건만 현금영수증 표시. 합계에서 ${missing.toLocaleString()}원 누락`)
+  }
+}
+// 카드 계열에 현금영수증 스탬프 — 매출전표가 증빙이라 대상이 아니다
+for (const r of crRecords) {
+  if (r.cashReceiptIssuedAt && r.payMethod && ['신용카드', '결제선생'].includes(r.payMethod)) {
+    violations.push(`[데이터] ${r.leaseTerm.tenant.name} ${r.payDate.toISOString().slice(0, 10)} ${r.payMethod} ${r.actualAmount.toLocaleString()}원 — 카드 결제에 현금영수증 표시가 켜져 있다(매출전표가 증빙)`)
+  }
+}
+// 소스 가드 — isOriginalMonth 로 되돌아가면 같은 사고가 재발한다
+const roomsSrcCr = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+if (/cashReceiptIssuedAt:\s*\(data\.cashReceiptIssued && isOriginalMonth/.test(roomsSrcCr)) {
+  violations.push('[소스] 현금영수증 스탬프가 첫 달 record 에만 찍힌다 — 쪼개진 결제는 합계에서 일부만 잡힌다')
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)

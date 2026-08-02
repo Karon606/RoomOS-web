@@ -792,7 +792,7 @@ export async function savePayment(data: {
   memo?:       string
   // 사용자가 귀속월을 명시한 경우 — FIFO 우회. 해당 월부터 분배 시작 (과납분은 다음달로 이월)
   forcedTargetMonth?: string
-  // 현금영수증 발행 표시(메타데이터, 충당·잔액 수식 비관여) — 원본 월 record에만 스탬프
+  // 현금영수증 발행 표시(메타데이터, 충당·잔액 수식 비관여) — 그 결제가 만든 record 전부에 스탬프
   cashReceiptIssued?: boolean
 }): Promise<SavePaymentResult> {
   await requireEdit()
@@ -880,7 +880,12 @@ export async function savePayment(data: {
           seqNo:          seqNo + 1,
           isPaid:         false,
           carryOver:      0,
-          cashReceiptIssuedAt: (data.cashReceiptIssued && isOriginalMonth && portion > 0) ? new Date() : null,
+          // 한 결제가 여러 달로 쪼개지면 **전부**에 찍는다(2026-08-03 봉합).
+          // 종전 isOriginalMonth 조건은 첫 달 record 에만 찍었는데, 합계는 결제일 기준으로
+          // record 별 금액을 더하므로 쪼개진 결제가 일부만 잡혔다. 앞 달이 이미 완납이라
+          // 첫 달 record 자체가 안 생기면 찍을 대상이 아예 없어 전액이 소실됐다.
+          // saveDepositPayment·saveCleaningFeePayment 는 원래부터 결제 단위로 찍는다 — 정본 수렴이다.
+          cashReceiptIssuedAt: (data.cashReceiptIssued && portion > 0) ? new Date() : null,
         },
       })
       touchedMonths.push(currentTm)
@@ -1575,13 +1580,32 @@ export async function setCashReceiptIssued(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true },
+      select: { cashReceiptIssuedAt: true, leaseTermId: true, payDate: true, payMethod: true, createdAt: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
-    const next = !issued ? null
-      : restoreIssuedAt != null ? new Date(restoreIssuedAt)
-      : (record.cashReceiptIssuedAt ?? new Date())
-    await prisma.paymentRecord.update({ where: { id: paymentId }, data: { cashReceiptIssuedAt: next } })
+    // 카드 계열은 매출전표가 증빙을 대신한다 — 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
+    // 수납 폼에는 이 가드가 있는데 토글에는 없어 카드 record 에도 켤 수 있었다.
+    if (issued && record.payMethod && CARD_LIKE_METHODS.includes(record.payMethod)) {
+      return { ok: false, error: '카드 결제는 매출전표가 증빙이라 현금영수증 표시 대상이 아닙니다.' }
+    }
+    // 한 결제가 여러 달로 쪼개져 저장됐으면 형제 record 도 함께 바꾼다. 한 줄만 켜면 합계가 절반만 잡힌다.
+    // 결제 식별은 (계약·결제일·수단·생성시각 2초 이내) — payDate 만으로 묶으면 같은 날 따로 입력한
+    // 별개 결제까지 섞인다(실측 421호 이종현 2일 차, 520호 김민정 4시간 차).
+    const siblings = await prisma.paymentRecord.findMany({
+      where: {
+        propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate,
+        payMethod: record.payMethod, isBillingAdjust: false,
+        createdAt: { gte: new Date(record.createdAt.getTime() - 2000), lte: new Date(record.createdAt.getTime() + 2000) },
+      },
+      select: { id: true, cashReceiptIssuedAt: true },
+    })
+    const targets = siblings.length > 0 ? siblings : [{ id: paymentId, cashReceiptIssuedAt: record.cashReceiptIssuedAt }]
+    for (const t of targets) {
+      const next = !issued ? null
+        : restoreIssuedAt != null ? new Date(restoreIssuedAt)
+        : (t.cashReceiptIssuedAt ?? new Date())
+      await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })
+    }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, prevIssuedAt: record.cashReceiptIssuedAt ? record.cashReceiptIssuedAt.toISOString() : null }
   } catch (err) {
