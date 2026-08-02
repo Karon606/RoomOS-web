@@ -15,6 +15,7 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { effectiveDueRawForMonth } from '@/lib/dueDate'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -865,6 +866,10 @@ export async function getTargetMonthOptions(
       expectedMoveOut: true,
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
+      // 무청구 퇴실월 판정용 — 그 달 만기를 알아야 한다(임시조정 포함)
+      dueDay: true,
+      overrideDueDay: true,
+      overrideDueDayMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
@@ -912,6 +917,14 @@ export async function getTargetMonthOptions(
     // 그 달 청구액 — 읽기 엔진 3곳·savePayment 과 동일한 단일 규칙(일할→락인→예약인상→할인).
     const locked = lockedByMonth[ms]
     const expected = billForLeaseMonth(lease, ms, locked && locked > 0 ? locked : null)
+    // 청구가 없는 달은 선택지에서 뺀다 — 무청구 퇴실월(퇴실일이 그 달 납부일 이전)과
+    // 단기 비청구월(입주월 외)이 여기 해당한다. 종전에는 무청구 퇴실월이 '미납 470,000원'
+    // 선택지로 떠서 청구가 0인 달에 수납을 넣도록 유도했다(운영자 지적 2026-08-02, A-findings P2).
+    // 판정은 읽기 화면과 같은 정본(lib/billing)을 쓴다 — 여기서 다시 짜면 또 갈린다.
+    const dueDateForMs = resolveDueDateForMonth(effectiveDueRawForMonth(lease, ms), ms)
+    if (isCheckoutNoBillingMonthFor(lease, lease.expectedMoveOut, ms, dueDateForMs) || expected <= 0) {
+      cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue
+    }
     let status: TargetMonthOption['status']
     if (ms > viewMonth) status = 'future'
     else if (paid >= expected) status = 'paid'
