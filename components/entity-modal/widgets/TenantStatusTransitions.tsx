@@ -16,6 +16,8 @@ import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
+import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
@@ -103,6 +105,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
+  // 미환불 사유 — 돈이 움직이는 결정이라 필수다(입실 취소 사유가 선택인 것과 다르다).
+  const [withholdReason, setWithholdReason] = useState('')
+  const [withholdEtc, setWithholdEtc] = useState('')
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
   const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
@@ -153,7 +158,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         const received = await getReservedPrepaidTotal(lease.id)
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
-          setTransReason(''); setTransReasonEtc('')
+          setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
           setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancelPrepaid: true })
           return
         }
@@ -162,7 +167,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         const received = await getReceivedDepositTotal(lease.id)
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
-          setTransReason(''); setTransReasonEtc('')
+          setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
           setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
           return
         }
@@ -173,7 +178,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     // e1b81629: 입실 취소는 확인창 대신 미니폼 — 취소 사유(선택)를 함께 수집해 이력에 남긴다.
     if (def.key === 'cancel') {
       setTransRefund(undefined)
-      setTransReason(''); setTransReasonEtc('')
+      setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
       setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: 0, cleaningFee: 0 })
       return
     }
@@ -207,6 +212,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     }
     // 기본 환불액 = 기준액 − 청소비(설정 시 자동 차감, 미설정이면 청소비 0 → 전액). 환불 안 함은 버튼으로.
     setTransRefund(def.withDeposit ? Math.max(0, depoBaseForForm - (lease.cleaningFee || 0)) : undefined)
+    // 청소비만 떼는 정상 퇴실은 답이 정해져 있다. 앱이 아는 값을 매번 묻지 않는다(기본값이며 변경 가능).
+    if (def.withDeposit && (lease.cleaningFee || 0) > 0) setWithholdReason('청소비')
     setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: lease.cleaningFee || 0, depoFromReceived })
   }
 
@@ -246,11 +253,26 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         const depoBase = active?.depositAmount ?? lease.depositAmount
         const withDeposit = def.withDeposit === true || active?.resvCancel === true
         if (withDeposit && depoBase > 0 && transRefund != null) {
+          const withheldNow = Math.max(0, depoBase - transRefund)
+          const needReason = def.withDeposit === true   // 퇴실 경로만. 예약 취소 몰취는 라벨에 사유가 들어 있다
+          const reason = buildWithholdReason(withholdReason, withholdEtc)
+          if (needReason && withheldNow > 0 && !reason) { pushToast('error', '미환불 사유를 선택해 주세요.'); return }
+          // 전액을 돌려주지 않는 결정만 되묻는다. 청소비만 떼는 정상 퇴실에는 마찰을 만들지 않는다.
+          // 이용료 전액 환불에는 이미 확인창이 있는데 몰취에는 없었다 — 방향이 반대였다.
+          if (needReason && transRefund === 0 && depoBase > 0) {
+            const mon = (fields?.moveOutDate || kstYmdStr()).slice(0, 7)
+            if (!(await confirmDialog({
+              title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
+              message: `${depoBase.toLocaleString()}원이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 부가수익(보증금)으로 기록됩니다.\n사유: ${reason}.`,
+              level: 'caution', confirmLabel: '전액 미환불로 처리',
+            }))) return
+          }
           const r = await recordDepositReturn({
             leaseTermId: lease.id, tenantId, depositAmount: depoBase,
             returnedAmount: transRefund,
             date: fields?.moveOutDate || kstYmdStr(),
             tenantName,
+            ...(reason ? { reason } : {}),
             ...(active?.resvCancel ? { context: 'reservationCancel' as const } : {}),
           })
           if (!r.ok) { pushToast('error', r.error); return }
@@ -303,7 +325,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== ''}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== '' || withholdReason !== '' || withholdEtc !== ''}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -347,27 +369,42 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               )}
               {(active.def.withDeposit || active.resvCancel || active.resvCancelPrepaid) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      {active.resvCancelPrepaid ? '선납 환불액' : active.resvCancel ? '예약금 환불액' : '보증금 환불액'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancelPrepaid ? '받은 선납금' : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
-                    </label>
-                    <button type="button" onClick={() => setTransRefund(0)}
-                      className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
-                        transRefund === 0
-                          ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
-                          : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
-                      }`}>
-                      {(active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '환불 안 함'}
-                    </button>
-                  </div>
+                  <label className="text-xs font-medium text-[var(--warm-mid)] block">
+                    {active.resvCancelPrepaid ? '선납 환불' : active.resvCancel ? '예약금 환불' : '보증금 환불'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancelPrepaid ? '받은 선납금' : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
+                  </label>
+                  {/* 종전에는 '환불 안 함'이 단방향 버튼이라 한 번 누르면 되돌아올 길이 금액 재입력뿐이었다.
+                      상호배타 선택은 SegmentedControl 정본을 쓴다(§10 raw button 금지·§12). */}
+                  <SegmentedControl size="sm" ariaLabel="보증금 환불 여부"
+                    value={transRefund === 0 ? 'none' : 'refund'}
+                    onChange={v => { if ((v === 'none') !== (transRefund === 0)) setTransRefund(v === 'none' ? 0 : Math.max(0, active.depositAmount - active.cleaningFee)) }}
+                    options={[
+                      { value: 'refund', label: (active.resvCancel || active.resvCancelPrepaid) ? '반환함' : '환불함' },
+                      { value: 'none', label: (active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '환불 안 함' },
+                    ]} />
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
+                  {/* 미환불이 있으면 사유를 받는다. 전액 환불이면 물을 것이 없다. */}
+                  {active.def.withDeposit === true && transRefund != null && active.depositAmount - transRefund > 0 && (
+                    <div className="space-y-1.5 pt-0.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">미환불 사유 <span className="font-normal opacity-60">(필수)</span></label>
+                      <select value={withholdReason} onChange={e => setWithholdReason(e.target.value)}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        <option value="">선택하세요</option>
+                        {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      {withholdReason === '기타' && (
+                        <input type="text" value={withholdEtc} onChange={e => setWithholdEtc(e.target.value)}
+                          placeholder="사유를 직접 입력하세요"
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                      )}
+                    </div>
+                  )}
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     {active.cleaningFee > 0 && <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </>}
                     {active.resvCancelPrepaid
-                      ? <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘전액 몰취’를 누르세요. 환불하지 않은 금액은 위약금으로 기록됩니다.</>
+                      ? <>반환하지 않은 금액은 위약금으로 기록됩니다.</>
                       : active.resvCancel
-                      ? <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘전액 몰취’를 누르세요. 환불하지 않은 금액은 예약금 몰취로 기록됩니다.</>
-                      : <>일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
+                      ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
+                      : <>환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
                   </p>
                 </div>
               )}

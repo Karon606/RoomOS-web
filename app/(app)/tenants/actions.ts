@@ -829,8 +829,24 @@ export async function recordDepositReturn(params: {
     })
     if (existingRefund) return { ok: false, error: '이미 보증금 환불이 처리된 계약입니다. 수정하려면 기존 환불을 먼저 취소해 주세요.' }
 
-    const returned  = Math.max(0, Math.min(params.returnedAmount, params.depositAmount))
-    const withheld  = Math.max(0, params.depositAmount - returned)
+    // 기준액은 **서버가 다시 계산한다.** 클라이언트가 보낸 값을 그대로 믿으면 폼 조작으로 매출을 만들 수 있고,
+    // 세 경로가 각자 계산하던 구조가 곧 위 유령 매출의 원인이었다.
+    // 예약 취소(선납 몰취)는 기준이 다르므로(이용료 선납 실수납) 넘어온 값을 그대로 쓴다.
+    const serverBasis = params.context === 'reservationCancel' ? null : await getDepositBasisForLease(params.leaseTermId)
+    // `basis || params.depositAmount` 로 두면 source==='none'(받은 적 없고 승계도 아님)일 때
+    // 클라이언트가 보낸 계약 보증금으로 되돌아가, 막으려던 유령 매출 경로가 그대로 열린다.
+    // 그 경우는 정산할 돈 자체가 없으므로 거절한다.
+    if (serverBasis && serverBasis.source === 'none') {
+      return { ok: false, error: '이 계약은 받은 보증금이 없어 환불·몰취를 기록할 수 없습니다. 보증금 수납을 먼저 등록해 주세요.' }
+    }
+    const basisAmount = serverBasis ? serverBasis.basis : params.depositAmount
+    const carriedOver = serverBasis?.source === 'carriedOver'
+    // 화면이 연 최대치와 서버 기준액이 다르면 조용히 깎지 않고 알린다(§27.2).
+    if (serverBasis && params.returnedAmount > basisAmount) {
+      return { ok: false, error: `환불 가능액은 ${basisAmount.toLocaleString()}원입니다. 이 계약에서 실제로 받은 보증금 기준입니다.` }
+    }
+    const returned  = Math.max(0, Math.min(params.returnedAmount, basisAmount))
+    const withheld  = Math.max(0, basisAmount - returned)
     const refundDate = new Date(params.date)
 
     // 환불 이력 — 반환·미반환 양쪽 합쳐 한 건으로 기록
@@ -881,11 +897,11 @@ export async function recordDepositReturn(params: {
           amount:    withheld,
           category:  forfeitCategory,
           // 사유를 아는 케이스만 그 이름으로 표기 — 사유 미상까지 청소비로 단정하지 않는다(신고 13438ec9).
+          // 승계분(이 앱에 입금 기록이 없는 보증금)은 그 사실을 남긴다. 세무 자료를 받는 쪽이
+          // '입금 기록 없는 매출'을 물어볼 때 답이 이 줄에 있어야 한다.
           detail:    params.context === 'reservationCancel'
             ? `${params.tenantName} 예약 취소 · 예약금 몰취`
-            : params.reason === '청소비'
-              ? `${params.tenantName} 퇴실 · 청소비`
-              : `${params.tenantName} 퇴실 · 보증금 미반환분`,
+            : `${params.tenantName} 퇴실 · ${(params.reason?.trim() || '보증금 미반환분').replace(/^기타 · /, '')}${carriedOver ? ' (인수 승계분)' : ''}`,
           payMethod: '보유 보증금',
           // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
           tenantId:    params.tenantId,
@@ -908,13 +924,13 @@ export async function recordDepositReturn(params: {
 // 종전에는 undoDepositReturn 호출부가 토스트 액션 하나뿐이라, 토스트가 사라지면 되돌릴 방법이 없었다.
 // 그런데 recordDepositReturn 은 계약당 1건 멱등 가드가 있어, 잘못 기록하면 재퇴실까지 막혔다.
 export async function getDepositRefundForLease(leaseTermId: string): Promise<
-  { refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null } | null
+  { refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null } | null
 > {
   const { propertyId } = await getPropertyId()
   const r = await prisma.depositRefund.findFirst({
     where: { leaseTermId, propertyId },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, returnedAmount: true, withheldAmount: true, date: true },
+    select: { id: true, returnedAmount: true, withheldAmount: true, date: true, reason: true },
   })
   if (!r) return null
   // 몰취분 ExtraIncome 은 leaseTermId + '보유 보증금' 결제수단으로 식별(생성부와 동일 규약)
@@ -925,7 +941,7 @@ export async function getDepositRefundForLease(leaseTermId: string): Promise<
       })
     : null
   return {
-    refundId: r.id, returned: r.returnedAmount, withheld: r.withheldAmount,
+    refundId: r.id, returned: r.returnedAmount, withheld: r.withheldAmount, reason: r.reason,
     date: r.date.toISOString().slice(0, 10), extraIncomeId: inc?.id ?? null,
   }
 }
@@ -949,6 +965,35 @@ export async function undoDepositReturn(refundId: string, extraIncomeId: string 
 // 신고 9b974be0: 실수납 보증금 합 조회(읽기 전용) — 예약 취소 시 반환·몰취 기준 금액.
 // 계약 보증금(lease.depositAmount)이 아니라 실제 받은 예약금(PaymentRecord isDeposit=true 실수납 합)이
 // 기준이어야 유령 매출이 안 잡힌다. 소프트삭제는 aggregate 확장으로 자동 필터(where에 deletedAt 금지).
+// 보증금 정산 기준액 정본 — 환불·몰취가 딛고 설 금액을 한 곳에서 정한다.
+//
+// 종전에는 세 경로가 각자 `lease.depositAmount` 를 기준으로 넘겼다. 그래서 **계약 300,000 인데
+// 실제로 200,000 만 받은 계약**에서 환불을 안 하면 몰취가 300,000 이 되어, 받은 적 없는 100,000 이
+// 기타수익으로 잡혔다. 지금 해당 데이터가 0건이라 안 터졌을 뿐 경로는 열려 있었다.
+//
+// 반대로 "항상 실수납 기준"도 틀리다. 인수 전 입주자는 보증금을 양도인이 받았고 인수 시 승계됐다.
+// 이 앱 원장에 입금이 없을 뿐 반환의무는 실재하므로 계약 보증금이 기준이어야 한다
+// (운영자 확인 2026-08-02 — 인수 정산에서 인계·차감을 받았다).
+export async function getDepositBasisForLease(leaseTermId: string): Promise<{
+  received: number; contract: number; preAcquisition: boolean; basis: number; source: 'received' | 'carriedOver' | 'none'
+}> {
+  const { propertyId } = await getPropertyId()
+  const [agg, lease, property] = await Promise.all([
+    prisma.paymentRecord.aggregate({
+      where: { leaseTermId, propertyId, isDeposit: true }, _sum: { actualAmount: true },
+    }),
+    prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { depositAmount: true, moveInDate: true } }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true, prevOwnerCutoffDate: true } }),
+  ])
+  const received = agg._sum.actualAmount ?? 0
+  const contract = lease?.depositAmount ?? 0
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const preAcquisition = !!(cutoff && lease?.moveInDate && new Date(lease.moveInDate) < cutoff)
+  if (received > 0) return { received, contract, preAcquisition, basis: received, source: 'received' }
+  if (preAcquisition && contract > 0) return { received, contract, preAcquisition, basis: contract, source: 'carriedOver' }
+  return { received, contract, preAcquisition, basis: 0, source: 'none' }
+}
+
 export async function getReceivedDepositTotal(leaseTermId: string): Promise<number> {
   const { propertyId } = await getPropertyId()
   const agg = await prisma.paymentRecord.aggregate({
@@ -1059,6 +1104,7 @@ export async function checkoutWithDepositRefund(params: {
   tenantId: string
   refundAmount: number
   moveOutDate?: string   // 실제 퇴실일 — 환불 기록 날짜도 같은 날로 맞춘다(정본 미니폼과 동일 규칙)
+  reason?: string        // 미환불 사유 — 종전에는 이 경로에 전달 수단이 없어 홈 퇴실은 사유가 항상 비었다
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1082,6 +1128,7 @@ export async function checkoutWithDepositRefund(params: {
         returnedAmount: Math.max(0, Math.min(params.refundAmount, lease.depositAmount)),
         date:           dateStr,
         tenantName:     lease.tenant.name,
+        ...(params.reason ? { reason: params.reason } : {}),
       })
       if (!refundRes.ok) return refundRes
     }

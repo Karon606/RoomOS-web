@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
-import { getDepositRefundForLease } from '@/app/(app)/tenants/actions'
+import { getDepositRefundForLease, undoDepositReturn } from '@/app/(app)/tenants/actions'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
@@ -82,7 +82,12 @@ export function DepositStatusPanel({
   //   판정 불가(계약액 미입력)  >  받을 단계 아님  >  환불 미처리  >  인수 승계  >  수납 상태
   // 종전에는 '환불 미처리'가 '계약액 미입력'과 '인수 승계'를 덮어, 한 패널이 세 가지 말을 동시에 했다.
   const badge: { tone: 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-neutral'; label: string } =
-    settled ? { tone: 'pale-green', label: '환불 완료' }
+    settled && refund ? (
+      refund.returned > 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '일부 환불' }
+      : refund.returned === 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '환불 안 함' }
+      : refund.returned === 0 && refund.withheld === 0 ? { tone: 'pale-neutral' as const, label: '정산 없음' }
+      : { tone: 'pale-green' as const, label: '환불 완료' }
+    )
     : noContractAmount ? { tone: 'pale-neutral', label: '계약액 미입력' }
     : paid === 0 && notYet ? { tone: 'pale-neutral', label: '수납 전' }
     : paid === 0 && status === 'CANCELLED' ? { tone: 'pale-neutral', label: '수납 없음' }
@@ -109,7 +114,7 @@ export function DepositStatusPanel({
   const remove = async (r: Rec) => {
     if (!(await confirmDialog({
       title: `보증금 수납 ${r.actualAmount.toLocaleString()}원을 삭제할까요?`,
-      message: '보증금 잔액이 그만큼 줄어듭니다. 반환 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.',
+      message: '보증금 잔액이 그만큼 줄어듭니다. 환불 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.',
       level: 'caution', confirmLabel: '삭제',
     }))) return
     startTransition(async () => {
@@ -119,6 +124,22 @@ export function DepositStatusPanel({
         action: { label: '적용취소', run: () => { void restorePayment(r.id).then(x => { if (x.ok) { void load(); onChanged?.() } else pushToast('error', x.error) }) } },
       })
       await load(); onChanged?.()
+    })
+  }
+
+  const undoRefund = async (r: NonNullable<Refund>) => {
+    const mon = `${Number(r.date.slice(0, 4))}년 ${Number(r.date.slice(5, 7))}월`
+    if (!(await confirmDialog({
+      title: '환불 기록을 적용취소할까요?',
+      message: r.withheld > 0
+        ? `미환불 ${fmtWon(r.withheld)}으로 잡힌 부가수익도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
+        : '환불 기록만 지웁니다. 퇴실 상태는 그대로 유지됩니다.',
+      level: 'caution', confirmLabel: '적용취소',
+    }))) return
+    startTransition(async () => {
+      const res = await withSave(() => undoDepositReturn(r.refundId, r.extraIncomeId), { success: '환불 기록을 지웠습니다' })
+      if (!res.ok) return
+      setRefund(null); await load(); onChanged?.()
     })
   }
 
@@ -164,9 +185,16 @@ export function DepositStatusPanel({
       {settled && refund && (
         <p className="text-xs text-[var(--warm-dark)] break-keep">
           환불 <span className="font-semibold num">{fmtWon(refund.returned)}</span>
-          {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미환불 {fmtWon(refund.withheld)}{cleaningFee > 0 && refund.withheld === cleaningFee ? ' (청소비)' : ''}</span>}
+          {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미환불 {fmtWon(refund.withheld)}{refund.reason ? ` (${refund.reason})` : ''}</span>}
           <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {refund.date.replaceAll('-', '.')} 처리</span>
         </p>
+      )}
+      {/* §16 상시 적용취소 진입점 — 토스트는 사라지고, 이 패널이 정본이 되었으니 여기가 '원위치'다. */}
+      {settled && refund && (
+        <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void undoRefund(refund) }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+          적용취소
+        </Btn>
       )}
       {unsettledExit && (
         <p className="text-xs text-[var(--warning-fg)] break-keep">퇴실했으나 환불 처리가 기록되지 않았습니다.</p>

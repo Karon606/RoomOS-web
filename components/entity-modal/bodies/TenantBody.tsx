@@ -33,7 +33,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
   // 보증금 환불 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
   // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
-  const [depoRefund, setDepoRefund] = useState<{ refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null } | null>(null)
+  const [depoRefund, setDepoRefund] = useState<{ refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
@@ -124,7 +124,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
 // 보증금 환불 확정 표시 + 상시 적용취소 — 기록이 있을 때만 나타난다(B페이즈).
 // 용어는 화면 표면 기준 '환불'로 통일한다(서버 함수명은 recordDepositReturn 이지만 사용자 문구는 환불).
 function DepositRefundUndoRow({ info, onDone }: {
-  info: { refundId: string; returned: number; withheld: number; date: string; extraIncomeId: string | null }
+  info: { refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null }
   onDone: () => void
 }) {
   const [pending, startTransition] = useTransition()
@@ -148,7 +148,7 @@ function DepositRefundUndoRow({ info, onDone }: {
     <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
       <p className="text-[var(--warm-mid)]">
         {allWithheld
-          ? <>보증금 전액 미환불 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>
+          ? <>보증금 전액 미환불 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span>{info.reason ? ` (${info.reason})` : ''}</>
           : <>보증금 환불 확정 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.returned)}</span> 환불
               {info.withheld > 0 && <> · 미환불 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>}</>}
       </p>

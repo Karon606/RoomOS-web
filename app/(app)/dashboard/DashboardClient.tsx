@@ -33,6 +33,7 @@ import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/f
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { setRoomShowOnSite } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
@@ -159,20 +160,24 @@ function CheckoutRefundModal({
   cleaningFee: number
   pending: boolean
   onClose: () => void
-  onConfirm: (refundAmount: number, moveOutDate: string) => void
+  onConfirm: (refundAmount: number, moveOutDate: string, reason: string) => void
 }) {
   // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
   const [refund, setRefund] = useState(maxRefund)
   // 실제 퇴실일 — 정본 미니폼(상태 전환 위젯)과 같은 규칙: 기본 오늘, 뒤늦은 처리만 고친다(2026-07-28 오더).
   const [moveOutDate, setMoveOutDate] = useState(kstYmdStr())
+  // 미환불 사유 — 종전에는 이 경로에 전달 수단 자체가 없어 홈에서 퇴실하면 사유가 항상 비었다.
+  const [reason, setReason] = useState(cleaningFee > 0 ? '청소비' : '')
+  const [formError, setFormError] = useState('')
+  const [reasonEtc, setReasonEtc] = useState('')
   const unreturned = depositAmount - refund
   const exceedsMax = refund > maxRefund
 
   return (
     <Modal open onClose={onClose} z={260} width="sm"
       title={depositAmount > 0 ? '보증금 환불' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
-      dirty={refund !== maxRefund || moveOutDate !== kstYmdStr()}
+      dirty={refund !== maxRefund || moveOutDate !== kstYmdStr() || reason !== '' || reasonEtc !== ''}
       footer={
         <div className="flex gap-2">
           <button onClick={onClose} disabled={pending}
@@ -181,7 +186,12 @@ function CheckoutRefundModal({
             취소
           </button>
           <button
-            onClick={() => onConfirm(refund, moveOutDate)}
+            onClick={() => {
+              const r = buildWithholdReason(reason, reasonEtc)
+              // 오류를 부모 상태에 넣으면 이 창(z=260) 아래 모달에 그려져 안 보인다. 여기서 인라인으로 띄운다.
+              if (depositAmount - refund > 0 && !r) { setFormError('미환불 사유를 선택해 주세요.'); return }
+              setFormError(''); onConfirm(refund, moveOutDate, r)
+            }}
             disabled={pending || exceedsMax || !moveOutDate}
             className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
@@ -213,12 +223,41 @@ function CheckoutRefundModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>
-              환불 금액 (최대 {fmtWon(maxRefund)})
+            <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>
+              보증금 환불 (최대 {fmtWon(maxRefund)})
             </label>
+            {/* 상태 전환 미니폼과 같은 세그먼트 문법. 이 경로에는 '환불 안 함' 선택지가 아예 없었다. */}
+            <div className="grid grid-cols-2 gap-1.5">
+              {([['refund', '환불함'], ['none', '환불 안 함']] as const).map(([k, label]) => {
+                const on = k === 'none' ? refund === 0 : refund !== 0
+                return (
+                  <button key={k} type="button" onClick={() => setRefund(k === 'none' ? 0 : maxRefund)}
+                    className={`min-h-[36px] text-xs font-medium rounded-lg border transition-colors ${
+                      on ? 'border-[var(--tc)] bg-[var(--cream)] text-[var(--warm-dark)]'
+                         : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
+                    }`}>{label}</button>
+                )
+              })}
+            </div>
             <MoneyInput value={refund} onChange={setRefund} placeholder="0원" />
             {exceedsMax && (
               <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
+            )}
+            {formError && <p className="text-[0.6875rem] text-[var(--danger-fg)]">{formError}</p>}
+            {unreturned > 0 && (
+              <div className="space-y-1.5 pt-0.5">
+                <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>미환불 사유 <span className="font-normal opacity-60">(필수)</span></label>
+                <select value={reason} onChange={e => setReason(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">선택하세요</option>
+                  {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                {reason === '기타' && (
+                  <input type="text" value={reasonEtc} onChange={e => setReasonEtc(e.target.value)}
+                    placeholder="사유를 직접 입력하세요"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                )}
+              </div>
             )}
           </div>
 
@@ -283,8 +322,12 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     setRefundModalOpen(true)
   }
 
-  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string) => {
+  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string) => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
+    // 미환불이 있는데 사유가 없으면 막는다 — 돈이 움직이는 결정이라 근거가 남아야 한다.
+    if (moveOutDeposit > 0 && moveOutDeposit - refundAmount > 0 && !reason) {
+      setConfirmError('미환불 사유를 선택해 주세요.'); return
+    }
     setConfirmPending(true); setConfirmError('')
     const res = moveOutDeposit > 0
       ? await checkoutWithDepositRefund({
@@ -292,6 +335,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           tenantId:     alert.tenantId,
           refundAmount,
           moveOutDate,
+          ...(reason ? { reason } : {}),
         })
       : await checkoutTenant(moveOutLeaseId, alert.tenantId, moveOutDate)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
