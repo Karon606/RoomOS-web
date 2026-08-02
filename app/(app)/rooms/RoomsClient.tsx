@@ -247,8 +247,51 @@ function getTotalUnpaid(room: RoomStatus): number {
 }
 
 // 독촉 문구 — 미납 방/세입자/대상월/미수액을 채운 표준 안내. 멀티테넌트 공용(지점·세입자 하드코딩 금지).
+// 납부 기한을 미뤄준 상태인가 — 유예 판정 정본.
+//
+// 뱃지·독촉·홈 위젯이 각자 판정하면 화면마다 다른 말을 한다. 한 곳에서만 정한다.
+// 조건 넷을 모두 만족해야 유예다.
+//   ① 임시조정이 그 미납월에 걸려 있다  ② 원래 납부일보다 **뒤로** 미룬 것이다
+//   ③ 그 날짜가 아직 안 지났다          ④ 아직 낼 게 남아 있다
+// ②가 없으면 앞당긴 조정까지 유예가 되고, ④가 없으면 이미 다 낸 사람에게 유예 표시가 샌다.
+function isDeferredNow(room: RoomStatus, targetMonth: string): boolean {
+  const dueMonth = room.firstUnpaidMonth ?? targetMonth
+  if (!room.overrideDueDay || room.overrideDueDayMonth !== dueMonth) return false
+  const eff = getDueInfo(room.overrideDueDay, dueMonth)
+  const base = getDueInfo(room.dueDay, dueMonth)
+  if (!eff || !base) return false
+  if (eff.overdue) return false                      // 조정일도 이미 지남 — 유예가 아니라 연체
+  const effSigned = eff.overdue ? eff.days : -eff.days
+  const baseSigned = base.overdue ? base.days : -base.days
+  return effSigned < baseSigned                       // 원래보다 뒤로 미룬 경우만
+}
+
+// 유예된 기한을 'M월 D일' 로 — 독촉 문구·보조 텍스트 공용
+function deferredDueLabel(room: RoomStatus, targetMonth: string): string | null {
+  const dueMonth = room.firstUnpaidMonth ?? targetMonth
+  const raw = room.overrideDueDayMonth === dueMonth ? room.overrideDueDay : null
+  if (!raw) return null
+  if (raw.includes('-')) {
+    const d = new Date(raw + 'T00:00:00')
+    return `${d.getMonth() + 1}월 ${d.getDate()}일`
+  }
+  const [y, m] = dueMonth.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  const day = raw.includes('말') ? last : Math.min(parseInt(raw, 10), last)
+  return `${m}월 ${day}일`
+}
+
+// 독촉 문구 — 기한을 미뤄준 사람에게 '확인되지 않았습니다'가 나가면 안 된다(운영자 지적 2026-08-02).
+// 405호는 8/7 까지 미뤄줬는데 8/2 에 독촉 문구가 복사됐다. 표시가 아니라 **실제 발송 사고**다.
+// 유예 중이면 독촉이 아니라 기한 안내로 문구를 바꾼다.
 function buildReminderText(room: RoomStatus, targetMonth: string, unpaid: number): string {
-  return `안녕하세요. ${room.roomNo}호 ${room.tenantName ?? ''}님, ${Number(targetMonth.slice(5))}월분 이용료 ${fmtWon(unpaid)}이 아직 확인되지 않았습니다. 확인 부탁드립니다.`
+  const monLabel = Number((room.firstUnpaidMonth ?? targetMonth).slice(5))
+  const head = `안녕하세요. ${room.roomNo}호 ${room.tenantName ?? ''}님,`
+  if (isDeferredNow(room, targetMonth)) {
+    const due = deferredDueLabel(room, targetMonth)
+    return `${head} ${monLabel}월분 이용료 ${fmtWon(unpaid)}은 ${due}까지 납부해 주시기로 했습니다. 기한 내 납부 부탁드립니다.`
+  }
+  return `${head} ${monLabel}월분 이용료 ${fmtWon(unpaid)}이 아직 확인되지 않았습니다. 확인 부탁드립니다.`
 }
 
 // ── 정렬 ─────────────────────────────────────────────────────────
