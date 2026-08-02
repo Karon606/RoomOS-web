@@ -751,8 +751,15 @@ export default function TenantClient({
     setDepositReturnAmt(maxRefund)
     setDepositReturnDate(kstYmdStr())
     setDepositRefundDirty(false)
-    // 이용료 환불 미리보기 — 퇴실월 선납이 있으면 통합 환불 창에 이용료 섹션 표시
-    const moveOutYmd = (((fd.get('expectedMoveOut') as string) || '').slice(0, 10)) || kstYmdStr()
+    // 이용료 환불 미리보기 — 그 기간 선납이 있으면 통합 환불 창에 이용료 섹션 표시.
+    //
+    // 기준일은 **실제 퇴실일**이다(운영자 확정 2026-08-02). 폼에 '실제 퇴실일'(actualMoveOut) 필드가
+    // 따로 있는데 종전에는 예정일(expectedMoveOut)로 계산해, 계약상 21일인데 19일에 나간 경우
+    // 이틀치가 어긋났다. 실제 퇴실일 기록 자체는 이미 그 필드를 쓰고 있었다(2026-07-28 오더).
+    // 그 필드는 퇴실 상태에서만 렌더되므로, 없으면 예정일로 폴백해 기존 동작을 유지한다.
+    const actualOutYmd = ((fd.get('actualMoveOut') as string) || '').slice(0, 10)
+    const expectedOutYmd = ((fd.get('expectedMoveOut') as string) || '').slice(0, 10)
+    const moveOutYmd = actualOutYmd || expectedOutYmd || kstYmdStr()
     setRentMoveOutYmd(moveOutYmd)
     setRentRefundPreview(null); setRentRefundAmt(0); setRentPenaltyPctInput('')
     if (leaseTermId) {

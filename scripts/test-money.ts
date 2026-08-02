@@ -35,6 +35,7 @@ const RENT = 300000
   const r = calcCheckoutProration(RENT, '1', '2026-06-27', '2026-06-20')
   eq('일할: 입주 달 퇴실(신고 6334bac4)', r, {
     daysUsed: 8, amount: 80000, fullAmount: RENT, reduction: 220000, moveOutMonth: '2026-06',
+    startYmd: '2026-06-20', mustLeaveYmd: '2026-06-30',
   })
   // 입주 달이 아니면 보정 없음 — 납부일부터
   eq('일할: 입주가 전 달이면 기존 동작(27일)', calcCheckoutProration(RENT, '1', '2026-06-27', '2026-05-20')?.daysUsed, 27)
@@ -43,9 +44,21 @@ const RENT = 300000
   // 문서화된 기본 예: 납부일 8일, 6/26 퇴실 → 8~26 = 19일
   eq('일할: 기본(8일 납부, 6/26 퇴실)', calcCheckoutProration(RENT, '8', '2026-06-26'), {
     daysUsed: 19, amount: 190000, fullAmount: RENT, reduction: 110000, moveOutMonth: '2026-06',
+    startYmd: '2026-06-08', mustLeaveYmd: '2026-07-07',
   })
   // 퇴실일 < 납부일 → 그 달 기간 미사용 = 청구 없음
-  eq('일할: 퇴실일이 납부일 이전이면 null', calcCheckoutProration(RENT, '15', '2026-06-10'), null)
+  // 2026-08-02 의미 변경. 종전에는 '퇴실일 < 그 달 납부일'이면 null 이었으나, 그건 기간을 퇴실월
+  // 안에서만 봤기 때문이다. 납부일 15일에 6/10 퇴실이면 실제로는 5월 기간(5/15~6/14) 안이고
+  // 26일을 쓴 것이다. 정산 귀속월은 2026-05.
+  {
+    const r = calcCheckoutProration(RENT, '15', '2026-06-10')
+    eq('일할: 퇴실일이 그 달 납부일 이전이면 전월 기간', r?.moveOutMonth, '2026-05')
+    eq('일할: 그 경우 기간 시작은 전월 납부일', r?.startYmd, '2026-05-15')
+    eq('일할: 그 경우 사용 일수', r?.daysUsed, 27)   // 5/15~6/10
+  }
+  // null 은 이제 '정산할 기간이 없다' — 퇴실일이 기간 시작보다 앞선 잘못된 입력일 때만
+  eq('일할: 퇴실일 < 입주일이면 null', calcCheckoutProration(RENT, '1', '2026-05-10', '2026-05-20'), null)
+  eq('일할: 납부일 없으면 null', calcCheckoutProration(RENT, null, '2026-06-10'), null)
   // '말' 납부 + 말일 퇴실 = 1일치
   eq("일할: '말' 납부, 6/30 퇴실 = 1일", calcCheckoutProration(RENT, '말', '2026-06-30')?.daysUsed, 1)
   // 31일 달의 1일 납부 → 31일 사용이라도 30일 클램프 = 전액

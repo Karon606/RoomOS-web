@@ -33,6 +33,7 @@ import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
+import { settlementPeriodFor } from '@/lib/settlementPeriod'
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -2109,15 +2110,42 @@ export async function previewCheckoutProration(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
-    const moveOutMonth = expectedMoveOut.slice(0, 7)
-    const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
-    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다. 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+    const sc = settlementCalcFor(lease, expectedMoveOut)
+    if (!sc) return { ok: false, error: '정산할 기간을 찾을 수 없습니다. 납부일이 없거나 퇴실일이 입주일보다 앞선 경우입니다.' }
+    const { calc } = sc
     return { ok: true, calc, currentDueDay: lease.dueDay }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+// ── 퇴실 정산 계산 묶음 (2026-08-02) ──────────────────────────────────────────
+// 정산은 '귀속월 산출 → 그 달 할인 반영 월세 → 일할' 순서로만 맞다. 네 곳(미리보기·저장·
+// 재계산·환불 미리보기)이 같은 순서를 반복하는데, 흩어두면 한 곳만 옛 순서로 남아 갈린다.
+// 실제로 종전에는 네 곳 모두 **퇴실월** 기준으로 할인을 잡아, 정산 기간이 전월인 경우
+// 다른 달의 할인가로 계산했다.
+type SettlementCalc = {
+  period: NonNullable<ReturnType<typeof settlementPeriodFor>>
+  monthlyRent: number
+  calc: NonNullable<ReturnType<typeof calcCheckoutProration>>
+}
+function settlementCalcFor(
+  lease: {
+    dueDay: string | null
+    moveInDate: Date | string | null
+    rentAmount: number
+    discounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[]
+  },
+  moveOutYmd: string,
+): SettlementCalc | null {
+  const period = settlementPeriodFor({ dueDay: lease.dueDay, moveInDate: lease.moveInDate }, moveOutYmd)
+  if (!period) return null
+  // 할인은 **정산 귀속월** 기준(운영자 확정 2026-08-02) — 기간이 5월분 서비스면 5월 할인을 쓴다
+  const monthlyRent = discountedRent(lease.discounts, period.month, lease.rentAmount)
+  const calc = calcCheckoutProration(monthlyRent, lease.dueDay, moveOutYmd, ymdOf(lease.moveInDate))
+  if (!calc) return null
+  return { period, monthlyRent, calc }
 }
 
 // 적용취소(롤백)용 직전 스냅샷 형태
@@ -2200,7 +2228,10 @@ function prorationDataForChange(
   // 미적용 + 자동적용 대상 아님(거주중 납입일 변경 등) → 손대지 않음
   if (!wasApplied && !autoApply) return { data: {}, notice: null }
 
-  const moveOutMonth = newExpectedMoveOut.slice(0, 7)
+  // 정산 귀속월 기준 — 할인도 그 달 것을 쓴다(운영자 확정 2026-08-02).
+  // 여기 lease 타입은 헬퍼(settlementCalcFor)와 달라 정본을 직접 부른다. 순서는 같아야 한다.
+  const period = settlementPeriodFor({ dueDay: newDueDay, moveInDate: lease.moveInDate }, newExpectedMoveOut)
+  const moveOutMonth = period ? period.month : newExpectedMoveOut.slice(0, 7)
   const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
   const calc = calcCheckoutProration(monthlyRent, newDueDay, newExpectedMoveOut, ymdOf(lease.moveInDate))
   if (!calc) {
@@ -2272,17 +2303,20 @@ export async function previewCheckoutRefund(
     // 영업장 기본 위약금율(공정위 10% 캡) — 사람별 입력이 있으면 그 값을, 없으면 기본값을 캡 안에서 적용
     const defaultPenaltyPct = clampPenaltyPct(prop?.refundPenaltyPct)
     const effectivePct = clampPenaltyPct(penaltyPct ?? defaultPenaltyPct)
-    const moveOutMonth = expectedMoveOut.slice(0, 7)
-    const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
+    // 기준월은 정산 귀속월이다. 선납액 집계·할인·일할·기존 적용분 비교가 **전부 같은 달**을 봐야 한다.
+    // 종전에는 넷 다 퇴실월이었고, 기준월만 옮기고 선납액 집계를 그대로 두면 prepaidAmount 가 0 이 되어
+    // 화면의 이용료 환불 섹션이 통째로 사라진다(적대 검증 지적 — 오류도 경고도 없는 형태).
+    const sc = settlementCalcFor(lease, expectedMoveOut)
+    const settleMonth = sc ? sc.period.month : expectedMoveOut.slice(0, 7)
+    const monthlyRent = sc ? sc.monthlyRent : discountedRent(lease.discounts, settleMonth, lease.rentAmount)
     const paidAgg = await prisma.paymentRecord.aggregate({
-      where: { leaseTermId, targetMonth: moveOutMonth, isDeposit: false, isPrevOwner: false },
+      where: { leaseTermId, targetMonth: settleMonth, isDeposit: false, isPrevOwner: false },
       _sum: { actualAmount: true },
     })
     const prepaidAmount = Math.max(0, paidAgg._sum.actualAmount ?? 0)
-    const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
-    const daysUsed = prorate ? prorate.daysUsed : 0   // 퇴실일 < 납부일이면 그 기간 미사용 = 0
+    const daysUsed = sc ? sc.calc.daysUsed : 0   // 정산할 기간이 없으면 미사용 = 0
     const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct })
-    const appliedProration = (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === moveOutMonth)
+    const appliedProration = (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === settleMonth)
       ? lease.checkoutProratedAmount : null
     return { ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration }
   } catch (err) {
@@ -2331,12 +2365,16 @@ export async function finalizeRentRefund(input: {
     const { propertyId } = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: input.leaseTermId, propertyId },
-      select: { tenantId: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true },
+      // dueDay·moveInDate — 정산 귀속월 산출에 필요(2026-08-02). 없으면 퇴실월로 폴백해 옛 동작이 된다.
+      select: { tenantId: true, isShortTerm: true, dueDay: true, moveInDate: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     // 단기는 주 단위 계약이라 일할 환불 정책 밖(운영자 결정 2026-07-20 범위 제외) — 수납 기록에서 직접 조정
     if (lease.isShortTerm) return { ok: false, error: '단기 계약의 이용료 환불은 수납 기록에서 직접 조정해 주세요(주 단위 계약이라 일할 환불 정책 밖).' }
-    const mon = input.moveOutYmd.slice(0, 7)
+    // 정산 귀속월 — 미리보기(previewCheckoutRefund)와 **같은 달**을 봐야 한다.
+    // 어긋나면 미리보기는 전월 선납으로 환불액을 계산하고 확정은 퇴실월 record 를 지운다.
+    const refundPeriod = settlementPeriodFor({ dueDay: lease.dueDay, moveInDate: lease.moveInDate }, input.moveOutYmd)
+    const mon = refundPeriod ? refundPeriod.month : input.moveOutYmd.slice(0, 7)
     const records = await prisma.paymentRecord.findMany({
       where: { leaseTermId: input.leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
       orderBy: { payDate: 'asc' },
@@ -2509,10 +2547,9 @@ export async function setCheckoutProration(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
-    const moveOutMonth = expectedMoveOut.slice(0, 7)
-    const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
-    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다. 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+    const sc = settlementCalcFor(lease, expectedMoveOut)
+    if (!sc) return { ok: false, error: '정산할 기간을 찾을 수 없습니다. 납부일이 없거나 퇴실일이 입주일보다 앞선 경우입니다.' }
+    const { calc } = sc
 
     // 과거 회계월 보호 — 환불 확정과 같은 가드를 여기에도 건다(운영자 확정 2026-08-02).
     // 이 함수가 쓰는 checkoutProratedAmount 는 락인 expectedAmount 보다 우선하므로(lib/billing),

@@ -1,6 +1,7 @@
 // 납입일 변경 일할 계산 — 한 달은 항상 30일로 고정 (실제 월 길이와 무관)
 // 고객관리(TenantClient)·수납관리(RoomsClient) 공용.
 export const PRORATE_BASE_DAYS = 30
+import { settlementPeriodFor } from './settlementPeriod'
 
 export type ProRataResult =
   | { days: 0; amount: 0; type: 'none' }
@@ -32,51 +33,49 @@ export function calcProRata(
 }
 
 // ── 퇴실 정산(일할) ──────────────────────────────────────────────────
-// 선납 모델: dueDay = 그 서비스 기간의 시작일. 퇴실일이 같은 달 dueDay 이후면
-// 그 마지막 기간을 (dueDay~퇴실일, 양끝 포함) 사용 일수만큼만 청구한다.
-// 예) 납부일 8일, 퇴실 6/26 → 8~26 = 19일치 = 월 × 19/30.
-// 퇴실일이 dueDay 이전이면 그 기간 자체를 안 쓰므로 null 반환(= 청구 0, rooms 의 checkoutNoBilling 영역).
+// 선납 모델: 그 서비스 기간의 시작일부터 퇴실일까지(양끝 포함) 사용 일수만큼만 청구한다.
+// 예) 납부일 8일, 퇴실 6/26 → 6/8~6/26 = 19일치 = 월 × 19/30.
+//
+// 2026-08-02 정산 기간 기반으로 교체. 종전에는 기간을 **퇴실월 안에서만** 잡아, 납부일 20일인 사람이
+// 9월 3일에 나가면 실제 기간(8/20~9/19)을 못 보고 9/20 부터로 잡아 통째로 어긋났다.
+// 이제 lib/settlementPeriod 의 settlementPeriodFor 가 기간·귀속월·사용 일수를 전부 정한다.
+// moveOutMonth 는 이름을 유지하되 의미가 **정산 귀속월**(기간 시작이 속한 달)로 바뀌었다 —
+// 호출부가 이 값을 checkoutProratedMonth 에 저장하므로 이름을 바꾸면 접점이 넓어져 유지한다.
+// null 은 여전히 '정산할 기간이 없다'는 뜻이나, 발동 조건이 '퇴실일 < 그 달 납부일'에서
+// '퇴실일 < 기간 시작(입주일 보정 포함)'으로 바뀌었다. 후자는 잘못된 입력일 때만 참이다.
 export type CheckoutProrationResult = {
   daysUsed: number       // 청구 일수 (퇴실일 - 납부일 + 1, 양끝 포함, 1~30 클램프)
   amount: number         // 일할 청구액 = floor(monthlyRent × daysUsed / 30)
   fullAmount: number     // 일할 전 한 달 청구액
   reduction: number      // 감액 = fullAmount - amount
-  moveOutMonth: string   // 'YYYY-MM' — 일할이 적용되는 퇴실 달
+  moveOutMonth: string   // 'YYYY-MM' — **정산 귀속월**(기간 시작이 속한 달). 퇴실월과 다를 수 있다
+  startYmd: string       // 기간 시작일 — 화면 안내 문구용
+  mustLeaveYmd: string   // 퇴실해야 하는 날(다음 기간 시작 −1일)
 }
 
 export function calcCheckoutProration(
   monthlyRent: number,
   dueDay: string | null,
   expectedMoveOut: string,   // 'YYYY-MM-DD'
-  moveInYmd?: string | null, // 'YYYY-MM-DD' — 입주 달에 퇴실하면 기간 시작을 입주일로 올림(신고 6334bac4)
+  moveInYmd?: string | null, // 'YYYY-MM-DD' — 입주 달 보정(기간 시작은 입주일보다 앞설 수 없다)
 ): CheckoutProrationResult | null {
   if (!monthlyRent || monthlyRent <= 0) return null
-  const parts = expectedMoveOut.split('-').map(Number)
-  if (parts.length !== 3 || parts.some(n => isNaN(n))) return null
-  const [y, m, d] = parts
-  const moveOutMonth = `${y}-${String(m).padStart(2, '0')}`
-  const daysInMonth = new Date(y, m, 0).getDate()
-  let startDay: number
-  if (!dueDay) startDay = 1
-  else if (dueDay.includes('말')) startDay = daysInMonth
-  else {
-    const n = parseInt(dueDay, 10)
-    startDay = isNaN(n) ? 1 : Math.min(Math.max(n, 1), daysInMonth)
+  // 기간·귀속월·사용 일수는 전부 정본이 정한다. 여기서 날짜 산술을 다시 하지 않는다 —
+  // 손으로 다시 짠 계산이 말일·짧은 달·연말 경계에서 갈리는 것이 이 코드베이스의 반복된 사고다.
+  const period = settlementPeriodFor({ dueDay, moveInDate: moveInYmd ?? null }, expectedMoveOut)
+  if (!period) return null
+  const amount = Math.floor((monthlyRent * period.daysUsed) / PRORATE_BASE_DAYS)
+  return {
+    daysUsed: period.daysUsed,
+    amount,
+    fullAmount: monthlyRent,
+    reduction: monthlyRent - amount,
+    moveOutMonth: period.month,
+    startYmd: period.startYmd,
+    mustLeaveYmd: period.mustLeaveYmd,
   }
-  // 입주한 그 달에 퇴실하는 중도퇴실 — 기간 시작은 입주일보다 앞설 수 없다.
-  // (납부일 1일 계약이 월 중 입주 후 그 달 퇴실하면 1일부터로 과다 청구되던 버그, 신고 6334bac4)
-  // 입주 달이 아니면 기존 동작 그대로(이미 그 달 기간을 납부일부터 사용).
-  if (moveInYmd && moveInYmd.slice(0, 7) === moveOutMonth) {
-    const mid = parseInt(moveInYmd.slice(8, 10), 10)
-    if (!isNaN(mid) && mid > startDay) startDay = mid
-  }
-  // 퇴실일이 기간 시작(dueDay/입주일)보다 빠르면 그 달 기간 미사용 → 일할 청구 없음
-  if (d < startDay) return null
-  const rawDays = d - startDay + 1
-  const daysUsed = Math.max(1, Math.min(rawDays, PRORATE_BASE_DAYS))
-  const amount = Math.floor((monthlyRent * daysUsed) / PRORATE_BASE_DAYS)
-  return { daysUsed, amount, fullAmount: monthlyRent, reduction: monthlyRent - amount, moveOutMonth }
 }
+
 
 // 고객관리에서 퇴실 예정일을 입력했을 때 '퇴실 정산?' 팝업을 띄울지 판정.
 // 조건: ① 일할이 실제로 의미 있음(부분 기간 — daysUsed<30, 감액>0) ② 근접 — 퇴실일이 '오늘 + 1달'(달력 기준) 이내.
