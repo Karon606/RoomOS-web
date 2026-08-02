@@ -240,6 +240,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       include: {
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true } },
+        // 입실 때 받은 청소비 — 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
+        extraIncomes: { where: { category: '청소비' }, select: { amount: true } },
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
@@ -1244,7 +1246,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate: fmtShortDate(l.expectedMoveOut),
       moveOutLeaseId: l.id,
       moveOutDepositAmount: l.depositAmount,
-      moveOutCleaningFee: l.cleaningFee,
+      // 입실 때 이미 받았으면 0 — 퇴실 환불창이 그만큼 또 빼지 않게 한다
+      moveOutCleaningFee: (l.extraIncomes ?? []).reduce((s2, e) => s2 + e.amount, 0) > 0 ? 0 : l.cleaningFee,
       moveOutTenantName: l.tenant.name,
     })
   }

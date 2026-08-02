@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositBasisForLease,
+import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositBasisForLease, getCleaningFeeReceivedForLease,
   getReservedPrepaidTotal, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -88,7 +88,7 @@ type Lease = {
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -214,15 +214,18 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     // 케이스가 아니라 클래스라 기본 선택으로 제안한다. 세그먼트라 한 번 눌러 되돌릴 수 있다.
     const basis = def.withDeposit ? await getDepositBasisForLease(lease.id) : null
     const carriedOver = basis?.source === 'carriedOver'
+    // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
+    const cleaningPaid = def.withDeposit ? await getCleaningFeeReceivedForLease(lease.id) : 0
+    const deductible = cleaningPaid > 0 ? 0 : (lease.cleaningFee || 0)
     setTransRefund(def.withDeposit
-      ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - (lease.cleaningFee || 0)))
+      ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - deductible))
       : undefined)
     // 답이 정해진 경우는 미리 골라 둔다. 앱이 아는 값을 매번 묻지 않는다(모두 변경 가능).
     if (def.withDeposit) {
       if (carriedOver) setWithholdReason('키값')
-      else if ((lease.cleaningFee || 0) > 0) setWithholdReason('청소비')
+      else if (deductible > 0) setWithholdReason('청소비')
     }
-    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: lease.cleaningFee || 0, depoFromReceived, carriedOver })
+    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid })
   }
 
   const runTransition = (
@@ -407,7 +410,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                     </div>
                   )}
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
-                    {active.cleaningFee > 0 && <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </>}
+                    {(active.cleaningPaid ?? 0) > 0
+                      ? <>청소비 {fmtWon(active.cleaningPaid ?? 0)}은 입실 때 이미 받아 공제하지 않습니다. </>
+                      : active.cleaningFee > 0 ? <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </> : null}
                     {active.resvCancelPrepaid
                       ? <>반환하지 않은 금액은 위약금으로 기록됩니다.</>
                       : active.resvCancel

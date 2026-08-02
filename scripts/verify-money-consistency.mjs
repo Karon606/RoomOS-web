@@ -249,6 +249,31 @@ if (/cashReceiptIssuedAt:\s*\(data\.cashReceiptIssued && isOriginalMonth/.test(r
   violations.push('[소스] 현금영수증 스탬프가 첫 달 record 에만 찍힌다 — 쪼개진 결제는 합계에서 일부만 잡힌다')
 }
 
+// 12. 청소비 이중 징수 — 계약서 §2-4 가 either/or 로 약정한다(입실 수납 또는 퇴실 공제).
+//     입실 때 받았는데 퇴실 정산에서 또 뗐으면 위반. 실측 김민정 건이 그 직전 상태였다(2026-08-03).
+const cfLeases = await prisma.leaseTerm.findMany({
+  select: { id: true, cleaningFee: true, tenant: { select: { name: true } }, room: { select: { roomNo: true } } },
+})
+for (const l of cfLeases) {
+  const paid = await prisma.extraIncome.aggregate({
+    where: { leaseTermId: l.id, category: '청소비' }, _sum: { amount: true },
+  })
+  const received = paid._sum.amount ?? 0
+  if (received <= 0) continue
+  const rf = await prisma.depositRefund.findFirst({
+    where: { leaseTermId: l.id }, select: { withheldAmount: true, reason: true },
+  })
+  if (rf && rf.reason === '청소비' && rf.withheldAmount > 0) {
+    violations.push(`[데이터] ${l.room?.roomNo ?? '-'}호 ${l.tenant.name} — 청소비를 입실 때 ${received.toLocaleString()}원 받고 퇴실에서 ${rf.withheldAmount.toLocaleString()}원 또 뗐다(계약서는 둘 중 하나만 약정)`)
+  }
+}
+// 소스 가드 — 퇴실 폼이 입실 수납 이력을 안 보면 같은 사고가 재발한다
+for (const f of ['app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/widgets/TenantStatusTransitions.tsx']) {
+  if (!readFileSync(f, 'utf8').includes('getCleaningFeeReceivedForLease')) {
+    violations.push(`[소스] ${f} 이 입실 청소비 수납 이력을 안 본다 — 퇴실에서 이중 공제된다`)
+  }
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)

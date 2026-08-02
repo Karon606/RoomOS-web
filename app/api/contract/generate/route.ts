@@ -239,15 +239,22 @@ export async function POST(req: Request) {
           data: { signatureImageUrl: body.signatureImageDataUrl },
         })
       }
-      // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 입실계약서 서명과 동일하게 시스템에 남도록.
+      // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 계약서 서명과 **같은 규칙**으로.
+      //
+      // 종전에는 이 한 줄만 무조건 덮어써서(`: null`), 원격 서명으로 받아둔 동의서 서명이 있는 상태에서
+      // 운영자가 동의서 서명 없이 계약서를 재발급하면 조용히 소실됐다. 되돌리기도 없었다.
+      // 발급된 PDF 자체는 ContractFile 로 남지만(그건 지워지지 않는다), lease 의 서명 원본이 사라져
+      // 다음 재발급부터는 서명 없는 계약서가 나온다. 유효한 이미지일 때만 갱신한다(2026-08-03).
       // 컬럼 미적용(마이그레이션 전) 환경에서도 PDF 생성·계약서 서명 저장이 깨지지 않게 best-effort.
-      try {
-        await prisma.leaseTerm.update({
-          where: { id: lease.id },
-          data: { disposalSignatureImageUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null },
-        })
-      } catch (e) {
-        console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)
+      if (body.disposalSignatureImageDataUrl?.startsWith('data:image/')) {
+        try {
+          await prisma.leaseTerm.update({
+            where: { id: lease.id },
+            data: { disposalSignatureImageUrl: body.disposalSignatureImageDataUrl },
+          })
+        } catch (e) {
+          console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)
+        }
       }
     }
 

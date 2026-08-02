@@ -9,7 +9,7 @@ import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
+import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getCleaningFeeReceivedForLease,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
   type RentRefundTaxNotice,
 } from './actions'
@@ -460,6 +460,8 @@ export default function TenantClient({
   const [payWindow, setPayWindow] = useState<PayRecord[]>([])
   // 미환불 사유 — 주 퇴실 경로다. 여기가 빠지면 같은 퇴실이 어느 버튼을 눌렀는지에 따라 다른 장부가 된다.
   const [depoWithholdReason, setDepoWithholdReason] = useState('')
+  // 입실 때 받은 청소비 — 0 초과면 퇴실 공제를 하지 않는다(계약서 §2-4 either/or)
+  const [depoCleaningPaid, setDepoCleaningPaid] = useState(0)
   const [depoWithholdEtc, setDepoWithholdEtc] = useState('')
   const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
@@ -748,17 +750,21 @@ export default function TenantClient({
     })
   }
 
-  const openDepositRefundModal = (fd: FormData, fromDetail: boolean) => {
+  const openDepositRefundModal = async (fd: FormData, fromDetail: boolean) => {
     const tenantName    = fd.get('name') as string || '입주자'
     const depositAmount = Number(fd.get('depositAmount')) || 0
     const cleaningFee   = Number(fd.get('cleaningFee')) || 0
     const leaseTermId   = (fd.get('leaseTermId') as string) || ''
     const tenantId      = (fd.get('tenantId') as string) || ''   // 폼 hidden은 tenantId — 'id'로 읽어 빈 값이 넘어가던 잠복 버그(운영자 신고 2026-07-20)
-    // 환불 가능 max = 보증금 - 청소비 (default도 동일)
-    const maxRefund = Math.max(0, depositAmount - cleaningFee)
+    // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다 — 계약서가 either/or 로 약정한다.
+    // 종전에는 둘 다 하는 것을 막지 않아 2만원을 두 번 받는 상태가 실제로 있었다(520호 김민정).
+    const cleaningPaid = leaseTermId ? await getCleaningFeeReceivedForLease(leaseTermId) : 0
+    const deductible = cleaningPaid > 0 ? 0 : cleaningFee
+    const maxRefund = Math.max(0, depositAmount - deductible)
     setDepositReturnAmt(maxRefund)
+    setDepoCleaningPaid(cleaningPaid)
     // 청소비만 떼는 정상 퇴실은 답이 정해져 있다 — 프리셀렉트(변경 가능)
-    setDepoWithholdReason(cleaningFee > 0 ? '청소비' : '')
+    setDepoWithholdReason(deductible > 0 ? '청소비' : '')
     setDepoWithholdEtc('')
     setDepositReturnDate(kstYmdStr())
     setDepositRefundDirty(false)
@@ -1549,7 +1555,9 @@ export default function TenantClient({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[var(--warm-muted)]">− 청소비</span>
-                    <span className={`tabular-nums ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>{fee > 0 ? fmtWon(fee) : '없음'}</span>
+                    <span className={`tabular-nums ${fee > 0 && depoCleaningPaid === 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
+                      {depoCleaningPaid > 0 ? '입실 때 받음 · 공제 안 함' : fee > 0 ? fmtWon(fee) : '없음'}
+                    </span>
                   </div>
                   <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">
                     <div className="flex items-center justify-between gap-2">

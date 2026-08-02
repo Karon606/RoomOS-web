@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
@@ -972,6 +973,23 @@ export async function undoDepositReturn(refundId: string, extraIncomeId: string 
 // 신고 9b974be0: 실수납 보증금 합 조회(읽기 전용) — 예약 취소 시 반환·몰취 기준 금액.
 // 계약 보증금(lease.depositAmount)이 아니라 실제 받은 예약금(PaymentRecord isDeposit=true 실수납 합)이
 // 기준이어야 유령 매출이 안 잡힌다. 소프트삭제는 aggregate 확장으로 자동 필터(where에 deletedAt 금지).
+// 입실 때 청소비를 이미 받았는가 — 퇴실 공제와 배타다.
+//
+// 계약서 §2-4 가 "보증금이 있는 경우 퇴실 정산 시 보증금에서 공제하고, 보증금이 없는 경우
+// 입실 시 이용료와 함께 받습니다" 로 either/or 를 약정하는데 시스템이 그걸 강제하지 않았다.
+// 입실 때 saveCleaningFeePayment 로 받아도 퇴실 환불 모달은 여전히 `보증금 − 청소비` 를 최대치로
+// 제시하고 사유 '청소비' 를 자동 선택했다. 실측 520호 김민정 1건이 이미 그 상태다
+// (입실 청소비 20,000 수령 + 보증금 50,000 + 청소비 필드 20,000, ACTIVE).
+// 퇴실하면 2만원을 두 번 받는다(E페이즈 조사 2026-08-03).
+export async function getCleaningFeeReceivedForLease(leaseTermId: string): Promise<number> {
+  const { propertyId } = await getPropertyId()
+  const agg = await prisma.extraIncome.aggregate({
+    where: { leaseTermId, propertyId, category: CLEANING_FEE_CATEGORY },
+    _sum: { amount: true },
+  })
+  return agg._sum.amount ?? 0
+}
+
 // 보증금 정산 기준액 정본 — 환불·몰취가 딛고 설 금액을 한 곳에서 정한다.
 //
 // 종전에는 세 경로가 각자 `lease.depositAmount` 를 기준으로 넘겼다. 그래서 **계약 300,000 인데
