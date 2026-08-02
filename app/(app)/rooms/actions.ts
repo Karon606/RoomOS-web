@@ -825,6 +825,9 @@ export async function savePayment(data: {
 
   // 안전장치: 무한루프 방지 — appConfig.FIFO_MAX_ALLOCATE_MONTHS (60개월 = 5년)
   let safety = FIFO_MAX_ALLOCATE_MONTHS
+  // 직전에 충당한 달과, 그 달에 이 결제가 실제로 기여했는지 — 자동 메모 문구 판정용(표시 전용, 수식 무관)
+  let prevTm = startTm
+  let prevFilled = false
   while (remaining > 0 && safety-- > 0) {
     const existing = await prisma.paymentRecord.findMany({
       where: { leaseTermId: data.leaseTermId, targetMonth: currentTm, isDeposit: false },
@@ -849,9 +852,20 @@ export async function savePayment(data: {
       const seqNo = await prisma.paymentRecord.count({
         where: { leaseTermId: data.leaseTermId, targetMonth: currentTm, deletedAt: undefined },
       })
+      // 자동 메모 — '과납 이월'은 이 경로에서 사실과 반대로 읽힌다(운영자 지적 2026-08-02).
+      // 넘어갈 달이 있으니 정의상 과납이 아니다. 남는 돈을 다음 달로 미는 것뿐이다.
+      // 사정은 둘이다. 실측 13건 중 앞 달 완납 10건 / 앞 달 채우고 남음 3건.
+      //
+      // 가리키는 달도 startTm 이 아니라 **직전 충당월**이어야 한다. 두 달 이상 건너뛰면
+      // 종전 문구는 엉뚱한 달을 가리켰다(421호 이종현 — 6월 record 에 "2026-04 과납 이월").
+      // 연도를 넣는 이유: 메모는 영구 기록이라 나중에 그 자체로 읽혀야 한다.
+      const prevY = Number(prevTm.slice(0, 4)), prevM = Number(prevTm.slice(5))
+      const carryMemo = prevFilled
+        ? `${prevY}년 ${prevM}월분 채우고 남은 금액`
+        : `${prevY}년 ${prevM}월분까지 완납 · 미리 낸 금액`
       const memo = isOriginalMonth
         ? (data.memo ?? null)
-        : `${startTm} 과납 이월${data.memo ? ` · ${data.memo}` : ''}`
+        : `${carryMemo}${data.memo ? ` · ${data.memo}` : ''}`
       await prisma.paymentRecord.create({
         data: {
           leaseTermId:    data.leaseTermId,
@@ -874,6 +888,8 @@ export async function savePayment(data: {
     }
 
     remaining -= portion
+    prevTm = currentTm
+    prevFilled = portion > 0
     isOriginalMonth = false
     if (remaining <= 0) break
 
