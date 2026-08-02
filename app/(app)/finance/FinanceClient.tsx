@@ -757,7 +757,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <label className="flex flex-col gap-0.5">
                       <button type="button" onClick={() => toggleItemBasis(idx)} title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
                         className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 text-left">
-                        단가/1{basisOf(it) === 'spec' && it.specValue ? (it.specUnit || '개') : (it.qtyUnit || '개')}<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
+                        단가/1{basisOf(it) === 'spec' && it.specValue ? (it.specUnit || '규격') : (it.qtyUnit || '개')}<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
                       </button>
                       <div className="flex items-center gap-0.5">
                         <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
@@ -1575,15 +1575,27 @@ export default function FinanceClient({
       // specText(색상·사이즈 등 서술형 규격)가 있으면 처음부터 텍스트 규격 모드로 열림(숫자 규격 비움·개당 단가).
       setAddItems(ocrItems.map(it => {
         const hasTextSpec = !!(it.specText && it.specText.trim())
+        // 서술 규격(애플민트향)이 있어도 **숫자 규격(2.1L)을 버리지 않는다** — 신고 1fd2e22b.
+        //
+        // 종전에는 서술 규격이 잡히면 specValue·specUnit 을 비웠다. 그 결과 두 가지가 한꺼번에 틀어졌다.
+        //   1) 단가가 금액 ÷ (수량 × 규격) 으로 계산돼 14,710 ÷ (4 × 2.1) = 1,751 원/개 로 표시됐다.
+        //      라벨은 '1개당'인데 분모는 리터였다. 항목을 터치하면 정본 산식(baseQtyOf)이 3,678 로 정정했다.
+        //   2) 2.1L 이 DB 에 저장되지 않아 재고가 수량 4 를 그대로 받아 '4ml' 로 찍혔다(실제 8,400ml).
+        //
+        // 폼 UI 는 원래부터 둘을 병기할 수 있다(위 규격 셀의 `it.specText == null || it.specValue` 조건).
+        // 저장 경로만 배타로 만들고 있었다. 단가 기준은 'qty'(완제품 1개당)로 두어 라벨과 값이 일치한다.
+        const basis = hasTextSpec ? ('qty' as const) : undefined
+        const specMulHere = (basis ?? 'spec') === 'spec' ? (Number(it.specValue) || 1) : 1
         return {
           label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
-          specValue: hasTextSpec ? '' : (it.specValue ?? ''),
-          specUnit:  hasTextSpec ? '' : (it.specUnit ?? ''),
+          specValue: it.specValue ?? '',
+          specUnit:  it.specUnit ?? '',
           specText:  hasTextSpec ? it.specText!.trim() : undefined,
-          unitBasis: hasTextSpec ? 'qty' as const : undefined,
+          unitBasis: basis,
           qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '',
           amount: it.amount,
-          unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined,
+          // 정본 baseQtyOf 와 같은 규칙 — 기준수량 = 수량 × (spec 기준일 때만 규격값)
+          unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * specMulHere)) : undefined,
         }
       }))
       setAddExpAmount(ocrItems.reduce((s, it) => s + it.amount, 0))

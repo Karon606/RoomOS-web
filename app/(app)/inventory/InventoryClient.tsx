@@ -226,6 +226,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const togglePendExpand = (key: string) => setPendExpanded(prev => {
     const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n
   })
+  // 용량을 모르는 채로 수령하면 재고에 총량이 아니라 **개수**가 들어간다(주방세제 8,400ml 대신 4).
+  // 잔량과 평균 단가가 한꺼번에 틀어지고 소진 예측이 무너진다. 차단이 아니라 되묻는다 —
+  // 장부와 실물이 어긋나는 상황은 상시 조건이라 막으면 운영이 멈춘다(HubShortDialog 와 같은 문법).
+  const confirmQuickReceive = async (key: string, expenseIds: string[], label: string, qtyText: string) => {
+    const ok = await confirmDialog({
+      title: '낱개 용량이 비어 있습니다. 그대로 수령할까요?',
+      message: `${label}의 낱개 용량을 몰라 재고에는 ${qtyText}로 들어갑니다.\n지출에서 용량을 넣으면 총량이 다시 계산됩니다.`,
+      level: 'caution', confirmLabel: '그대로 수령',
+    })
+    if (ok) handleQuickReceive(key, expenseIds)
+  }
+
   const handleQuickReceive = (key: string, expenseIds: string[]) => {
     setReceivingKey(key)
     const release = trackSave()
@@ -627,10 +639,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 {groups.map(g => {
                   // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
                   const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit), 0) * 1000) / 1000
-                  const unit = g.trackUnit === 'qty' ? (g.qtyUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
                   const boxUnit = g.items[0].p.qtyUnit
                   const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
+                  // 규격 환산이 안 되면 totalQty 는 **개수**다. 거기에 품목 규격 단위를 붙이면 '4ml' 같은
+                  // 거짓 숫자가 나온다(신고 1fd2e22b). 같은 상황에서 타임라인은 이미 구매 단위로 폴백한다.
+                  // 환산 실패는 값이 아니라 상태다 — 개수로 쓰고 '용량 미확인'을 옆에 붙인다.
+                  const specMissing = g.trackUnit !== 'qty' && !specApplied
+                  const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
                   const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
                   const ld = new Date(latest)
@@ -640,10 +656,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                     <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
                       <div className="flex items-baseline justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${qtyLabel}` : ''}</p>
+                          <p className="text-sm text-[var(--warm-dark)] truncate">
+                            {g.label}{totalQty ? ` · ${qtyLabel}` : ''}
+                            {specMissing && <span className="ml-1.5 text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 bg-[var(--warning-bg)] text-[var(--warning-fg)] whitespace-nowrap">용량 미확인</span>}
+                          </p>
                           <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
+                          {specMissing && (
+                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">낱개 용량을 몰라 개수로만 집계했습니다. 지출에서 용량을 넣으면 총량이 계산됩니다.</p>
+                          )}
                           {g.trackUnit !== 'qty' && g.items.some(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit)) && (
-                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">규격 단위가 품목 단위와 달라 수량 기준으로 집계</p>
+                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})가 품목 단위({g.specUnit})와 달라 개수로만 집계했습니다</p>
                           )}
                           {g.items.length > 1 && (
                             <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">
@@ -656,7 +678,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                             합치기
                           </button>
-                          <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
+                          <button type="button" onClick={() => { if (specMissing) { void confirmQuickReceive(g.key, ids, g.label, qtyLabel) } else handleQuickReceive(g.key, ids) }} disabled={receivingKey === g.key}
                             className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
                             {receivingKey === g.key ? '처리 중' : '수령 확인'}
                           </button>
@@ -667,9 +689,10 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           {g.items.map(f => {
                             const fd = new Date(f.p.date)
                             const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
-                            const su = g.trackUnit === 'qty' ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
+                            const conv = specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null
+                            const su = (g.trackUnit === 'qty' || !conv) ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
                             const qstr = f.p.qtyValue
-                              ? (specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
+                              ? (conv && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
                               : ''
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">

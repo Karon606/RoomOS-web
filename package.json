@@ -9,7 +9,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "verify:fast": "npx tsx scripts/test-money.ts && npx tsx scripts/test-due-date.ts && npx tsx scripts/test-tour-feed.ts && npx tsx scripts/test-birthdate.ts && node scripts/check-standalone-scroll.mjs && node scripts/check-public-tracking.mjs",
-    "verify:db": "node --env-file=.env.local scripts/verify-money-consistency.mjs && node --env-file=.env.local scripts/verify-recurring-estimate.mjs && node --env-file=.env.local scripts/check-restock-hub-drift.mjs && node --env-file=.env.local scripts/check-room-stay-drift.mjs",
+    "verify:db": "node --env-file=.env.local scripts/verify-money-consistency.mjs && node --env-file=.env.local scripts/verify-recurring-estimate.mjs && node --env-file=.env.local scripts/check-restock-hub-drift.mjs && node --env-file=.env.local scripts/check-room-stay-drift.mjs && npx tsx --env-file=.env.local scripts/check-spec-missing.ts",
     "verify": "npm run verify:fast && npm run verify:db"
   },
   "dependencies": {
