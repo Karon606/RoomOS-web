@@ -2167,10 +2167,36 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   const [y, m] = targetMonth.split('-').map(Number)
   const monthStart = new Date(y, m - 1, 1)
   const monthEnd = new Date(y, m, 0); monthEnd.setHours(23, 59, 59, 999)
-  const [records, property, lastWithMethod] = await Promise.all([
+  // 3개월 창 — 낸 달과 귀속월이 갈리는 수납을 한 화면에서 보기 위한 **표시 전용** 집합(신고 2c6de978).
+  //
+  // 축이 둘인 이유. payDate 만 보면 8월에 낸 7월분이 7월 화면에서 사라진다(김민정 건의 정확한 구조).
+  // targetMonth 축이 그 미래 결제일을 끌어오므로 미래 창을 따로 열 필요가 없다
+  // (시뮬레이션 — 과거3 단독 108건, 과거3+미래1 108건으로 동일).
+  //
+  // **records 는 절대 건드리지 않는다.** TenantClient 가 그 배열로 총 수납을 직접 계산하고
+  // PaymentBody 의 선납 폴백도 거기 걸려 있어, 범위를 넓히면 3개월치가 한 달 총 수납으로 표시된다.
+  // windowRecords 는 목록 렌더링 전용이며 어떤 합계에도 넣지 않는다(클라 재계산 금지 원칙).
+  const winStart = new Date(y, m - 3, 1)
+  const winMonths = [0, 1, 2].map(i => {
+    const d = new Date(y, m - 1 - i, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [records, windowRecords, property, lastWithMethod] = await Promise.all([
     prisma.paymentRecord.findMany({
       where: { leaseTermId, payDate: { gte: monthStart, lte: monthEnd } },
       orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }],
+    }),
+    prisma.paymentRecord.findMany({
+      where: {
+        leaseTermId,
+        // 보증금은 DepositStatusPanel 이 계약 단위로 맡는다(2026-08-02 정본). 여기서 또 그리면 중복이다.
+        isDeposit: false, isBillingAdjust: false,
+        OR: [
+          { payDate: { gte: winStart, lte: monthEnd } },
+          { targetMonth: { in: winMonths } },
+        ],
+      },
+      orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
     }),
     prisma.property.findUnique({
       where: { id: propertyId },
@@ -2189,7 +2215,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
     where: { leaseTermId, isDeposit: true, deletedAt: null },
     _sum: { actualAmount: true },
   })
-  return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0 }
+  return { records, windowRecords, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0 }
 }
 
 // 보증금 수납 내역 — 계약 단위. **조회월을 타지 않는다.**

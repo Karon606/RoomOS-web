@@ -454,6 +454,9 @@ export default function TenantClient({
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
   const [payHistory, setPayHistory] = useState<PayRecord[]>([])
+  // 목록 표시 전용 3개월 창 — 낸 달과 귀속월이 갈리는 건을 한 화면에서 본다(신고 2c6de978).
+  // **금액 계산에는 절대 쓰지 않는다.** 총 수납·이월은 payHistory(조회월) 기준을 유지한다.
+  const [payWindow, setPayWindow] = useState<PayRecord[]>([])
   const [distNotice, setDistNotice] = useState<string | null>(null)   // 자동 분배 요약 — 모달 내 지속 표시
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   // 수납 모달 청구·잔액 정본 — 클라 재계산(할인·인상 미반영) 대신 서버 settlement 사용(신고 50a2a69b)
@@ -994,9 +997,9 @@ export default function TenantClient({
     setError('')
     setDistNotice(null)
     setPaySettlement(null)
-    const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
+    const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 그리지 않는다.
-    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
+    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
     setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
@@ -1006,8 +1009,8 @@ export default function TenantClient({
   const [payReloadKey, setPayReloadKey] = useState(0)
   const reloadPay = async () => {
     if (!payLeaseId) return
-    const { records } = await getPaymentsByLease(payLeaseId, targetMonth)
-    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[])
+    const { records, windowRecords } = await getPaymentsByLease(payLeaseId, targetMonth)
+    setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[])
     setPayReloadKey(k => k + 1)
     refresh()
   }
@@ -1021,7 +1024,7 @@ export default function TenantClient({
   }, [payLeaseId, targetMonth, payHistory])
 
   const closePayModal = () => {
-    setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(null)
+    setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(null)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
   }
@@ -1076,8 +1079,8 @@ export default function TenantClient({
           }
         }
         setShowPayForm(false)
-        const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
+        const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
         refresh()
         pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
@@ -1110,8 +1113,8 @@ export default function TenantClient({
         action: { label: '적용취소', run: () => { void restorePayment(paymentId).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
       })
       if (payTarget) {
-        const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
+        const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
       }
       refresh()
     })
@@ -1136,8 +1139,8 @@ export default function TenantClient({
       }), { success: '수납 기록 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
-        const { records, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1)
+        const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)
         setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       }
       setEditingPayId(null)
@@ -2058,6 +2061,8 @@ export default function TenantClient({
         const { tenant, lease } = payTarget
         const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
         const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]') && !p.isDeposit)
+        // 목록에 그릴 집합 — 3개월 창. 위 regularRecords 는 금액 계산용이라 조회월 기준 그대로 둔다.
+        const regularWindow = payWindow.filter(p => !p.memo?.startsWith('[납입일변경]'))
         const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
@@ -2212,10 +2217,13 @@ export default function TenantClient({
                     )}
 
                     {/* 납부 내역 */}
-                    {regularRecords.length > 0 && (
+                    {regularWindow.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
-                        {regularRecords.map(p => {
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                          <p className="text-xs font-medium text-[var(--warm-mid)]">수납 내역</p>
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 3개월 · 입금일과 귀속월 모두</p>
+                        </div>
+                        {regularWindow.map(p => {
                           const prevOwner = isPreAcq(p)
                           if (editingPayId === p.id) {
                             return (
@@ -2270,18 +2278,29 @@ export default function TenantClient({
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {p.cashReceiptIssuedAt && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1 py-0.5 whitespace-nowrap">현금영수증</span>}
                                   {prevOwner && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
-                                  {!p.isDeposit && p.targetMonth !== targetMonth && (
-                                    <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">
-                                      {p.targetMonth < targetMonth
-                                        ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
-                                        : `${Number(p.targetMonth.slice(5))}월 선납`}
-                                    </span>
-                                  )}
+                                  {/* 몇 월분인지 항상 적는다(운영자 요청). 낸 달과 귀속월이 다를 때만 그 사실을 덧붙인다 —
+                                      '조회월과 다른가' 기준으로 두면 3개월 창에서 대부분 켜져 표식 구실을 못 한다. */}
+                                  {!p.isDeposit && (() => {
+                                    const paidMonth = new Date(p.payDate).toISOString().slice(0, 7)
+                                    const late = paidMonth > p.targetMonth, prepay = paidMonth < p.targetMonth
+                                    return (
+                                      <span className={`ml-1.5 text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
+                                        late ? 'bg-[var(--warning-bg)] text-[var(--warning-fg)]'
+                                        : prepay ? 'bg-[var(--info-bg)] text-[var(--info-fg)]'
+                                        : 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
+                                      }`}>
+                                        {Number(p.targetMonth.slice(5))}월분{late ? ' 지연' : prepay ? ' 선납' : ''}
+                                      </span>
+                                    )
+                                  })()}
                                 </p>
                                 {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
+                                {/* 이 화면에는 조회 월 선택 UI 가 없다. 다른 달 귀속 행의 편집을 막으면
+                                    방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
+                                    삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
                                 <div className="flex gap-2 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
                                     className="text-[0.65625rem] font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border transition-colors"
@@ -2300,8 +2319,8 @@ export default function TenantClient({
                       </div>
                     )}
 
-                    {payHistory.length === 0 && (
-                      <p className="text-sm text-[var(--warm-muted)] text-center py-4">이 달 수납 기록이 없습니다.</p>
+                    {regularWindow.length === 0 && (
+                      <p className="text-sm text-[var(--warm-muted)] text-center py-4">최근 3개월 수납 기록이 없습니다.</p>
                     )}
                   </div>
 
@@ -2523,7 +2542,7 @@ export default function TenantClient({
                       reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm),
                     }}
                     targetMonth={targetMonth}
-                    onSaved={async () => { setShowPayForm(false); const { records } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}
+                    onSaved={async () => { setShowPayForm(false); const { records, windowRecords } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}
                     onCancel={() => setShowPayForm(false)}
                   />
                 </div>

@@ -11,8 +11,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Btn } from '@/components/ui/Btn'
 import { useRouter } from 'next/navigation'
-import { getLeaseSettlementInfo, getPaymentsByLease, setCashReceiptIssued } from '@/app/(app)/rooms/actions'
-import { pushToast } from '@/lib/saveStatus'
+import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DepositStatusPanel } from '../widgets/DepositStatusPanel'
 import { DiscountWidget } from '../widgets/DiscountWidget'
@@ -62,21 +61,6 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // 셸 내부 settlement/records 재fetch + 페이지(서버 렌더링된 카드 리스트) 무효화.
   // router.refresh() 가 없으면 셸 닫고 페이지로 돌아갔을 때 카드가 여전히 미납으로 보임.
   const refresh = () => startTransition(() => { setReloadKey(k => k + 1); router.refresh() })
-
-  // 현금영수증 원터치 토글 — summary에서 바로, 수정 폼 진입 불필요(오류신고 c0936f89). PaymentRecordList와 동일 문법.
-  const handleToggleCashReceipt = (r: NonNullable<Records>[number]) => {
-    startTransition(async () => {
-      const next = !r.cashReceiptIssuedAt
-      const res = await setCashReceiptIssued(r.id, next)
-      if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', next ? '현금영수증 발행으로 표시했습니다' : '현금영수증 발행 표시를 해제했습니다', {
-        action: { label: '적용취소', run: () => { void setCashReceiptIssued(r.id, res.prevIssuedAt != null, res.prevIssuedAt).then(u => {
-          if (u.ok) refresh(); else pushToast('error', u.error)
-        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
-      })
-      refresh()
-    })
-  }
 
   if (settlement === undefined) return <SkeletonRows rows={5} className="py-4" />
   if (settlement === null) return (
@@ -191,47 +175,16 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
 
       {mode === 'summary' && (
         <>
-          {/* 이번 달 납부 내역 — 읽기. 편집은 full 모드. */}
+          {/* 수납 내역 — 최근 3개월. 낸 달과 귀속월이 갈리는 건을 한 화면에서 본다(신고 2c6de978).
+              운영자 원문 — "기존 납부금액은 7월이고 오늘 10만원 납부는 8월이어서 수납 내역이 한눈에 안보여."
+              요약에서는 현금영수증 원터치만 허용한다(신고 c0936f89). 금액·귀속월 수정은 '더 보기' 안에서 —
+              귀속월 변경은 두 달의 매출과 미납을 함께 바꾸는 조작이라 요약에서 열릴 일이 아니다. */}
           <div className="space-y-1">
-            <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
-            {records === null ? (
-              <SkeletonRows rows={2} className="py-1" />
-            ) : payRecords.length === 0 ? (
-              <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
-            ) : (
-              <ul className="space-y-1">
-                {payRecords.map(r => {
-                  const t = new Date(r.payDate)
-                  const payDateStr = `${t.getMonth() + 1}.${t.getDate()}`
-                  return (
-                    <li key={r.id} className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-                      <span className="text-[var(--warm-mid)] min-w-0 flex items-center gap-1.5 flex-wrap">
-                        <span>
-                          {payDateStr}
-                          {r.isDeposit && <span className="ml-1.5 text-[0.65625rem] text-[var(--coral)]">보증금</span>}
-                          {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
-                        </span>
-                        {/* 현금영수증 원터치 — 수정 폼 없이 발행 표시(오류신고 c0936f89).
-                            배지 옷을 입어 눌리는 걸 몰랐던 문제(신고 241c02ea)로 체크박스 정본(수납 폼과 동일 문법)으로 교체.
-                            즉시 저장 + 적용취소 토스트 동작은 그대로, 히트영역만 44px(-my-2 확장 문법). */}
-                        {canEdit ? (
-                          <label className="inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap -my-2 min-h-[44px]">
-                            <input type="checkbox" checked={!!r.cashReceiptIssuedAt} onChange={() => handleToggleCashReceipt(r)}
-                              className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                            <span className={`text-[0.65625rem] font-semibold ${r.cashReceiptIssuedAt ? 'text-[var(--success-fg)]' : 'text-[var(--warm-muted)]'}`}>
-                              {r.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
-                            </span>
-                          </label>
-                        ) : (
-                          r.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
-                        )}
-                      </span>
-                      <span className="font-semibold text-[var(--warm-dark)] whitespace-nowrap">{fmtWon(r.actualAmount)}</span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <p className="text-xs font-semibold text-[var(--warm-mid)]">수납 내역</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 3개월 · 입금일과 귀속월 모두</p>
+            </div>
+            <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} cashReceiptOnly onChange={refresh} scope="window" reloadSignal={reloadKey} />
           </div>
 
           {/* 수납 등록은 summary 에서도 직접 — 가장 잦은 작업이라 1탭으로. */}
@@ -285,8 +238,12 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             요약으로 돌아가기 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="inline-block align-middle" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
           </button>
 
-          {/* 납부 내역 — 편집·삭제 (이번 달 기준) */}
-          <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} reloadSignal={reloadKey} />
+          {/* 수납 내역 — 요약과 같은 3개월 범위. 두 모드가 다른 범위면 그게 새 혼란이다.
+              수정·삭제는 조회월 귀속 행에만 붙는다(그 밖은 'N월 화면에서 수정합니다' 안내). */}
+          <div className="space-y-1">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 3개월 · 입금일과 귀속월 모두</p>
+            <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} cashReceiptOnly onChange={refresh} scope="window" reloadSignal={reloadKey} />
+          </div>
 
           {/* 전체 수납 내역 — 모든 달(언제·얼마·귀속월·방식). 접기/펼치기. */}
           <PaymentHistoryAll leaseTermId={leaseTermId} reloadSignal={reloadKey} />
