@@ -231,7 +231,7 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
     const buffer = Buffer.from(await file.arrayBuffer())
     const ext = file.name.split('.').pop() ?? 'jpg'
     const fileName = `receipt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type)
+    const { thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type, { publicRead: true })   // 썸네일을 화면에 직접 띄운다
     return { ok: true, url: thumbnailUrl }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

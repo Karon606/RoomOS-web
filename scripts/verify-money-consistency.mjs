@@ -292,6 +292,19 @@ for (const f of ['app/api/rent-receipt/generate/route.ts', 'app/api/contract/gen
   if (!/receiptNo|contractNo/.test(src)) violations.push(`[소스] ${f} 이 발행번호를 저장하지 않는다`)
 }
 
+// 14. 서류 파일이 무인증 공개로 올라가면 안 된다(E페이즈 2026-08-03).
+//     uploadToDrive 가 기본으로 공개 권한을 붙여 계약서·영수증·거주확인서 56건이
+//     링크만 알면 로그인 없이 열렸다. 기본을 비공개로 바꿨고, 되돌아가면 여기서 잡는다.
+const driveSrc = readFileSync('lib/google-drive.ts', 'utf8')
+if (/const fileId = res\.data\.id!\s*\n\s*await setDrivePublicReadable\(fileId\)/.test(driveSrc)) {
+  violations.push('[소스] uploadToDrive 가 모든 업로드를 공개로 만든다 — 서류 PDF 가 무인증 링크로 열린다')
+}
+for (const f of ['app/api/contract/generate/route.ts', 'app/api/rent-receipt/generate/route.ts', 'app/api/residence-cert/generate/route.ts']) {
+  if (/uploadToDrive\([^)]*publicRead:\s*true/.test(readFileSync(f, 'utf8'))) {
+    violations.push(`[소스] ${f} 이 서류를 공개로 올린다 — 앱은 /api/doc-file 로만 연다`)
+  }
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)

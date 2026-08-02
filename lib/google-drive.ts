@@ -19,10 +19,20 @@ function getDriveClient() {
   return google.drive({ version: 'v3', auth: getOAuth2Client() })
 }
 
+// 업로드 — **기본은 비공개다.**
+//
+// 종전에는 여기서 무조건 setDrivePublicReadable 을 불러 올린 파일 전부가 anyone:reader 였다.
+// 그래서 계약서·영수증·거주확인서 PDF 56건이 링크만 알면 로그인 없이 열렸다.
+// 성명·생년월일·금액·서명 이미지·도장이 무인증·무만료 URL 로 노출된 상태였다(E페이즈 2026-08-03).
+// 앱 내부 열람은 /api/doc-file(로그인 + 영업장 소유 + 소프트삭제 검증)로 이미 잠겨 있어 공개가 필요 없다.
+//
+// publicRead 는 **썸네일을 img 태그로 직접 띄우는 경우에만** 켠다(도장·로고·호실 사진).
+// 그건 Drive 썸네일 URL 이 인증을 안 태우기 때문이고, 서류처럼 개인정보가 담긴 파일에는 쓰지 않는다.
 export async function uploadToDrive(
   buffer: Buffer,
   fileName: string,
   mimeType: string,
+  opts?: { publicRead?: boolean },
 ): Promise<{ fileId: string; thumbnailUrl: string }> {
   const drive = getDriveClient()
 
@@ -39,7 +49,7 @@ export async function uploadToDrive(
   })
 
   const fileId = res.data.id!
-  await setDrivePublicReadable(fileId)
+  if (opts?.publicRead) await setDrivePublicReadable(fileId)
   return { fileId, thumbnailUrl: buildDriveThumbnailUrl(fileId, 400) }
 }
 
@@ -131,4 +141,33 @@ export async function downloadDriveBytes(fileId: string): Promise<Buffer> {
     { responseType: 'arraybuffer' },
   )
   return Buffer.from(res.data as ArrayBuffer)
+}
+
+// 이 앱이 올린 파일인지 확인 — 남의 Drive 파일 ID 를 우리 레코드로 편입하는 것을 막는다.
+//
+// finalizeContractScan·finalizeStamp 계열이 driveFileId 를 무검증으로 받아, 임의 ID 를 자기 영업장
+// ContractFile 행으로 만들면 /api/doc-file 의 소유 검증(레코드 기준)을 통과했다(E페이즈 2026-08-03).
+// 우리 OAuth 자격으로 조회했을 때 소유자가 우리여야 한다.
+export async function isOwnedByApp(fileId: string): Promise<boolean> {
+  try {
+    const drive = getDriveClient()
+    const res = await drive.files.get({ fileId, fields: 'id, ownedByMe, trashed' })
+    return res.data.ownedByMe === true && res.data.trashed !== true
+  } catch {
+    return false
+  }
+}
+
+// 공개 권한 회수 — anyone 권한만 지운다(소유자·공유 권한은 건드리지 않는다).
+export async function revokeDrivePublicAccess(fileId: string): Promise<boolean> {
+  const drive = getDriveClient()
+  const list = await drive.permissions.list({ fileId, fields: 'permissions(id, type, role)' })
+  let removed = false
+  for (const perm of list.data.permissions ?? []) {
+    if (perm.type === 'anyone' && perm.id) {
+      await drive.permissions.delete({ fileId, permissionId: perm.id })
+      removed = true
+    }
+  }
+  return removed
 }

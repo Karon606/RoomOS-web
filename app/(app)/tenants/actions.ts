@@ -2952,7 +2952,7 @@ export async function finalizeContractScan(input: {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    const { setDrivePublicReadable, deleteFromDrive } = await import('@/lib/google-drive')
+    const { deleteFromDrive, isOwnedByApp } = await import('@/lib/google-drive')
     const tenant = await prisma.tenant.findFirst({
       where: { id: input.tenantId, propertyId },
       include: {
@@ -2968,7 +2968,12 @@ export async function finalizeContractScan(input: {
       try { await deleteFromDrive(input.driveFileId) } catch {}
       return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     }
-    await setDrivePublicReadable(input.driveFileId)
+    // 공개 권한을 주지 않는다 — 앱은 /api/doc-file(로그인·영업장 검증)로만 연다.
+    // 종전에는 anyone:reader 라서 링크만 알면 로그인 없이 성명·생년월일·서명이 보였다(E페이즈 2026-08-03).
+    // 이 앱이 올린 파일인지도 확인한다. 임의 ID 를 밀어 넣으면 남의 파일이 우리 레코드가 된다.
+    if (!(await isOwnedByApp(input.driveFileId))) {
+      return { ok: false, error: '업로드된 파일을 찾을 수 없습니다. 다시 시도해 주세요.' }
+    }
     const lease = tenant.leaseTerms[0] ?? null
     const created = await prisma.contractFile.create({
       data: {

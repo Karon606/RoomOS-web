@@ -121,7 +121,7 @@ export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: tr
     const fileName = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
 
     // 1) Drive 보관 (썸네일 URL 즉시 표시)
-    const { fileId, thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type)
+    const { fileId, thumbnailUrl } = await uploadToDrive(buffer, fileName, file.type, { publicRead: true })   // 썸네일을 화면에 직접 띄운다
 
     // 2) AI 분류·추출 (실패해도 row 적재는 진행 — 사용자가 수동 처리 가능).
     //    실패를 삼키지 말고 _error 로 남겨 카드가 '인식 실패'를 보이고 [다시 인식]을 띄우게 한다.
