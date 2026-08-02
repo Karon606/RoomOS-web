@@ -4,6 +4,7 @@
 // ① 의도한 규칙 변경인지 운영자 확인 → 기대값 갱신, ② 아니면 회귀이므로 코드 수정.
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
+import { unpaidForLease, billedForLease, type UnpaidRecord } from '@/lib/billing'
 import {
   PRORATE_BASE_DAYS,
   calcProRata,
@@ -365,6 +366,57 @@ const RENT = 300000
       eq('게이트②: 정책가 계약은 고지 없음', negotiatedRecalcNotice(prevPolicy, prevPolicy, newPolicy), null)
     }
   }
+}
+
+// ── 계약 누적 미납액 (신고 2026-08-02) ─────────────────────────────
+// 520호 김민정 미납액이 2,128,000 으로 떴다(실제 91,000). 청구액을 그 달 record 의 합으로 잡은 탓이다.
+// 이 계산이 화면 컴포넌트 안에 인라인으로 박혀 있어 테스트가 붙을 자리가 없었던 것이 뿌리다.
+{
+  const R = (targetMonth: string, expectedAmount: number, actualAmount: number, f: Partial<UnpaidRecord> = {}): UnpaidRecord =>
+    ({ targetMonth, expectedAmount, actualAmount, ...f })
+
+  // 한 달에 나눠 낸 경우 — 청구는 곱해지지 않는다. 실사례 516호 이동찬.
+  eq('미납: 분할 수납 2건은 완납', unpaidForLease([
+    R('2026-07', 350_000, 100_000),
+    R('2026-07', 350_000, 250_000),
+  ]), 0)
+  eq('미납: 분할 수납 청구 합계', billedForLease([
+    R('2026-07', 350_000, 100_000),
+    R('2026-07', 350_000, 250_000),
+  ]), 350_000)
+
+  // 청구 조정 전표 — 청구 최댓값에는 포함, 수납 합에서는 제외. 실사례 520호 김민정.
+  eq('미납: 전표 3장 + 분할 수납', unpaidForLease([
+    R('2026-07', 157_000, 157_000),
+    R('2026-07', 470_000, 0, { isBillingAdjust: true }),
+    R('2026-07', 470_000, 0, { isBillingAdjust: true }),
+    R('2026-07', 470_000, 0, { isBillingAdjust: true }),
+    R('2026-07', 470_000, 172_000),
+    R('2026-07', 470_000, 50_000),
+    R('2026-07', 50_000, 50_000, { isDeposit: true }),
+  ]), 91_000)
+
+  // 보증금은 월 청구와 축이 달라 따로 더한다
+  eq('미납: 보증금 미수', unpaidForLease([
+    R('2026-07', 470_000, 470_000),
+    R('2026-07', 50_000, 0, { isDeposit: true }),
+  ]), 50_000)
+
+  // 양도인 귀속분은 현 소유주 장부가 아니다
+  eq('미납: 양도인 record 제외', unpaidForLease([
+    R('2026-04', 470_000, 0, { isPrevOwner: true }),
+    R('2026-05', 470_000, 470_000),
+  ]), 0)
+
+  // 여러 달 누적
+  eq('미납: 두 달 누적', unpaidForLease([
+    R('2026-06', 470_000, 470_000),
+    R('2026-07', 470_000, 300_000),
+    R('2026-08', 470_000, 0),
+  ]), 640_000)
+
+  // 선납은 음수로 나온다 — 표시 규칙은 호출부가 정한다
+  eq('미납: 선납은 음수', unpaidForLease([R('2026-07', 470_000, 500_000)]), -30_000)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

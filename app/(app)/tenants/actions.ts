@@ -5,6 +5,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
+import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
@@ -71,10 +72,16 @@ export async function getTenants() {
           paymentRecords: {
             where: { deletedAt: null },
             orderBy: { targetMonth: 'desc' },
-            take: 12,
+            // 종전 take: 12 는 '최근 12개월' 의도였는데 실제로는 **record 12건**이라,
+            // 한 달에 나눠 낸 계약은 오래된 달이 잘려 미납액이 반대로 과소 계상된다.
+            // 김민정이 이미 7건이라 곧 발현한다. 달 기준으로 바꾼다.
+            take: 60,
             select: {
               id: true, targetMonth: true,
               expectedAmount: true, actualAmount: true,
+              // 미납액 정본(unpaidForLease)이 요구하는 플래그 — 종전엔 안 내려보내서
+              // 클라이언트가 거르고 싶어도 못 걸렀다(신고 2026-08-02).
+              isDeposit: true, isPrevOwner: true, isBillingAdjust: true,
               isPaid: true, payDate: true, payMethod: true, memo: true,
             },
           },
@@ -1492,6 +1499,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
             orderBy: { targetMonth: 'asc' },
             select: {
               targetMonth: true, expectedAmount: true, actualAmount: true,
+              isDeposit: true, isPrevOwner: true, isBillingAdjust: true,
               isPaid: true, payDate: true, payMethod: true,
             },
           },
@@ -1504,10 +1512,12 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
 
   const lease = tenant.leaseTerms[0]
   const payments = lease?.paymentRecords ?? []
-  const totalExpected = payments.reduce((s, p) => s + p.expectedAmount, 0)
-  const totalPaid     = payments.reduce((s, p) => s + p.actualAmount, 0)
+  // 청구·미납은 정본 규칙(월별 최댓값)으로 — 합으로 잡으면 나눠 낸 달이 곱해진다(신고 2026-08-02).
+  // AI 가 이 값으로 "회수 지연 심각" 같은 진단을 쓰므로 부풀린 값이 그대로 문장이 된다.
+  const totalExpected = billedForLease(payments)
+  const totalPaid     = payments.filter(p => !p.isBillingAdjust && !p.isPrevOwner).reduce((s, p) => s + p.actualAmount, 0)
   const paidCount     = payments.filter(p => p.isPaid).length
-  const unpaid        = totalExpected - totalPaid
+  const unpaid        = unpaidForLease(payments)
 
   const paymentLines = payments.map(p => {
     const diff = p.isPaid && p.payDate

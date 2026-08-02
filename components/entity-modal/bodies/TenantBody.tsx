@@ -5,6 +5,7 @@
 // 상태 전환 / 납입일 변경 / 편집 / 요청·컴플레인 CRUD 는 /tenants?tenantId=X 로 딥링크.
 
 import { useEffect, useState, useTransition } from 'react'
+import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease } from '@/app/(app)/tenants/actions'
@@ -201,12 +202,18 @@ function StatusInline({ status, confirmed, hasTourDate }: { status: string; conf
 
 function PaymentSummaryWithAI({ tenantId, lease }: {
   tenantId: string
-  lease: { paymentRecords: { expectedAmount: number; actualAmount: number; isPaid: boolean }[] }
+  lease: { paymentRecords: {
+    targetMonth: string; expectedAmount: number; actualAmount: number; isPaid: boolean
+    isDeposit?: boolean | null; isPrevOwner?: boolean | null; isBillingAdjust?: boolean | null
+  }[] }
 }) {
   const payments = lease.paymentRecords
-  const totalExpected = payments.reduce((s, p) => s + p.expectedAmount, 0)
-  const totalPaid     = payments.reduce((s, p) => s + p.actualAmount, 0)
-  const unpaid        = totalExpected - totalPaid
+  // 청구액은 그 달 record 의 **최댓값**이다. 합으로 잡으면 나눠 낸 달이 곱해져
+  // 완납인 사람이 미납으로 뜬다(신고 2026-08-02, 실측 11건 5,987,000원 부풀림).
+  // 규칙은 lib/billing 정본 하나로 — 이 화면이 자기 식을 갖고 있던 것이 뿌리였다.
+  const totalExpected = billedForLease(payments)
+  const totalPaid     = payments.filter(p => !p.isBillingAdjust && !p.isPrevOwner).reduce((s, p) => s + p.actualAmount, 0)
+  const unpaid        = unpaidForLease(payments)
   const paidMonths    = payments.filter(p => p.isPaid).length
 
   const [aiText, setAiText] = useState('')

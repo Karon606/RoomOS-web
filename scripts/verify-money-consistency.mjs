@@ -188,6 +188,30 @@ if (!/isCleaningFeeMode\)\s*\{[\s\S]{0,400}?saveCleaningFeePayment\(/.test(payFo
   violations.push("[소스] 청소비 수납이 saveCleaningFeePayment 정본을 안 탄다 — 보증금으로 저장되면 매출 누락 + 유령 보증금")
 }
 
+// 10. 계약 미납액은 그 달 record 의 **최댓값**으로 잡아야 한다. 합으로 잡으면 한 달에 나눠 낸
+//     사람이 전원 미납으로 뜬다(신고 2026-08-02, 실측 11건 5,987,000원 부풀림).
+//     데이터 대조는 그물이 못 된다 — 한 달에 여러 번 낸 계약이 있는 것 자체는 정상이라 늘 걸린다.
+//     감시해야 할 것은 **코드가 다시 자기 식을 쓰는 것**이다.
+const sumGuards = [
+  ['components/entity-modal/bodies/TenantBody.tsx', 'unpaidForLease'],
+  ['app/(app)/tenants/actions.ts', 'unpaidForLease'],
+  ['app/(app)/report/actions.ts', 'unpaidForLease'],
+]
+for (const [file, canon] of sumGuards) {
+  const src = readFileSync(file, 'utf8')
+  if (/reduce\(\([^)]*\)\s*=>\s*\w+\s*\+\s*\w+\.expectedAmount/.test(src)) {
+    violations.push(`[소스] ${file} 이 expectedAmount 를 합산한다 — 청구액은 그 달 최댓값이다(lib/billing ${canon})`)
+  }
+  if (!src.includes(canon)) {
+    violations.push(`[소스] ${file} 이 미납액 정본(${canon})을 안 쓴다`)
+  }
+}
+// 정본 함수 자체가 살아 있는지
+const billingSrc = readFileSync('lib/billing.ts', 'utf8')
+if (!/export function unpaidForLease/.test(billingSrc) || !/if \(r\.expectedAmount > cur\.billed\)/.test(billingSrc)) {
+  violations.push('[소스] lib/billing 의 unpaidForLease 최댓값 규칙이 사라졌다')
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)

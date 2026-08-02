@@ -106,3 +106,68 @@ export function isCheckoutNoBillingMonthFor(
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
   return isCheckoutNoBillingMonth(expectedMoveOut, mon, dueDate)
 }
+
+// ── 계약 누적 미납액 정본 ────────────────────────────────────────────
+//
+// 신고 2026-08-02 — 520호 김민정 미납액이 2,128,000 으로 떴다(실제 91,000).
+// 원인은 화면이 그 달 청구액을 **record 의 합**으로 잡은 것이다. 청구액은 그 달 record 의
+// **최댓값 하나**여야 한다(청구 락 규칙, prisma schema 의 isBillingAdjust 주석에 명문화).
+//
+// 한 달에 나눠 낸 사람은 record 가 늘고, 늘어난 만큼 청구가 곱해져 전원 미납으로 표시됐다.
+//   516호 이동찬 7월  [청구 350,000 수납 100,000] + [청구 350,000 수납 250,000]
+//     합 방식 700,000 − 350,000 = 350,000 (완납인데 미납)
+//     정본     350,000 − 350,000 = 0
+// 실측 11건 5,987,000원이 부풀려져 있었다.
+//
+// 합산 규칙이 화면 컴포넌트 안에 인라인으로 박혀 있어 테스트가 붙을 자리가 없었던 것이 뿌리다.
+// 정본을 여기 두고 네 곳(TenantBody·AI 프롬프트·리포트 미수율·리포트 누적 미수)이 전부 이걸 부른다.
+export type UnpaidRecord = {
+  targetMonth: string
+  expectedAmount: number
+  actualAmount: number
+  isDeposit?: boolean | null
+  isPrevOwner?: boolean | null
+  isBillingAdjust?: boolean | null
+}
+
+/**
+ * 계약 누적 미납액 = Σ월 [ 그 달 청구 최댓값 − 그 달 수납 합 ] + (보증금 청구 − 보증금 수납).
+ *
+ * - 청구 조정 전표(isBillingAdjust)는 **청구 최댓값 계산에는 포함**하고(락이 그 값으로 서 있다)
+ *   수납 합에서는 제외한다. 전표는 수납이 아니라 청구 락 마커다.
+ * - 양도인 귀속(isPrevOwner)은 현 소유주 장부가 아니라 통째로 제외한다(dashboard/unpaid.ts 와 같은 규칙).
+ * - 보증금은 월 청구와 축이 달라 따로 더한다.
+ * - 선납·과납으로 음수가 나올 수 있다. 호출부가 표시 규칙을 정한다(형제 화면은 0 초과일 때만 노출).
+ */
+export function unpaidForLease(records: UnpaidRecord[]): number {
+  const byMonth = new Map<string, { billed: number; paid: number }>()
+  let depositBilled = 0
+  let depositPaid = 0
+  for (const r of records) {
+    if (r.isDeposit) { depositBilled += r.expectedAmount; depositPaid += r.actualAmount; continue }
+    if (r.isPrevOwner) continue
+    const cur = byMonth.get(r.targetMonth) ?? { billed: 0, paid: 0 }
+    if (r.expectedAmount > cur.billed) cur.billed = r.expectedAmount
+    if (!r.isBillingAdjust) cur.paid += r.actualAmount
+    byMonth.set(r.targetMonth, cur)
+  }
+  let sum = depositBilled - depositPaid
+  for (const v of byMonth.values()) sum += v.billed - v.paid
+  return sum
+}
+
+/** 같은 규칙의 청구 합계 — 미수율 분모용. 전표·양도인 제외, 보증금 포함. */
+export function billedForLease(records: UnpaidRecord[]): number {
+  const byMonth = new Map<string, number>()
+  let deposit = 0
+  for (const r of records) {
+    if (r.isDeposit) { deposit += r.expectedAmount; continue }
+    if (r.isPrevOwner) continue
+    const cur = byMonth.get(r.targetMonth) ?? 0
+    if (r.expectedAmount > cur) byMonth.set(r.targetMonth, r.expectedAmount)
+    else byMonth.set(r.targetMonth, cur)
+  }
+  let sum = deposit
+  for (const v of byMonth.values()) sum += v
+  return sum
+}

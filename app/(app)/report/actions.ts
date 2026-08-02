@@ -5,6 +5,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import { unpaidForLease } from '@/lib/billing'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -590,13 +591,23 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
 
   const yearPayments = await prisma.paymentRecord.findMany({
     where: { propertyId, isDeposit: false, isPrevOwner: false, targetMonth: { in: trendMonths } },
-    select: { targetMonth: true, expectedAmount: true, actualAmount: true },
+    select: { leaseTermId: true, targetMonth: true, expectedAmount: true, actualAmount: true, isBillingAdjust: true },
   })
+  // 청구액은 (계약, 달)별 **최댓값**이다. 합으로 잡으면 한 달에 나눠 낸 계약이 곱해져
+  // 미수율이 부풀려진다(신고 2026-08-02 — 9.4% 로 뜨는데 실제 0.5%).
+  const expectedByLeaseMonth = new Map<string, number>()
   const expectedByMonth: Record<string, number> = {}
   const actualByMonth: Record<string, number> = {}
   for (const p of yearPayments) {
-    expectedByMonth[p.targetMonth] = (expectedByMonth[p.targetMonth] ?? 0) + p.expectedAmount
-    actualByMonth[p.targetMonth]   = (actualByMonth[p.targetMonth]   ?? 0) + p.actualAmount
+    const key = `${p.leaseTermId}|${p.targetMonth}`
+    const cur = expectedByLeaseMonth.get(key) ?? 0
+    if (p.expectedAmount > cur) expectedByLeaseMonth.set(key, p.expectedAmount)
+    // 청구 조정 전표는 수납이 아니라 청구 락 마커라 수납 합에서 뺀다
+    if (!p.isBillingAdjust) actualByMonth[p.targetMonth] = (actualByMonth[p.targetMonth] ?? 0) + p.actualAmount
+  }
+  for (const [key, amount] of expectedByLeaseMonth) {
+    const mon = key.split('|')[1]
+    expectedByMonth[mon] = (expectedByMonth[mon] ?? 0) + amount
   }
   const totalExpected = Object.values(expectedByMonth).reduce((s, v) => s + v, 0)
   const totalActual   = Object.values(actualByMonth).reduce((s, v) => s + v, 0)
@@ -607,16 +618,15 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
     where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
     select: {
       id: true, rentAmount: true, dueDay: true, moveInDate: true,
-      paymentRecords: { where: { isDeposit: false, isPrevOwner: false, deletedAt: null }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
+      paymentRecords: { where: { isDeposit: false, isPrevOwner: false, deletedAt: null }, select: { targetMonth: true, actualAmount: true, expectedAmount: true, isBillingAdjust: true } },
     },
   })
   let totalUnpaid = 0
   let overdueDaysAcc = 0
   let overdueLeaseCount = 0
   for (const l of activeLeases) {
-    const expected = l.paymentRecords.reduce((s, p) => s + p.expectedAmount, 0)
-    const paid     = l.paymentRecords.reduce((s, p) => s + p.actualAmount, 0)
-    const unpaid = expected - paid
+    // 정본 규칙 — 월별 최댓값. 아래 avgDaysOverdue(미납액 ÷ 월세 × 30)도 이 값을 입력으로 쓴다.
+    const unpaid = unpaidForLease(l.paymentRecords)
     if (unpaid > 0) {
       totalUnpaid += unpaid
       // 첫 미납월 추정 — 단순화: 미납액 / 월 이용료 * 30
