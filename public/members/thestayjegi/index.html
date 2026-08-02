@@ -8,8 +8,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Stay Jegi — 더스테이원룸텔 제기역점</title>
+<title>The Stay Jegi · 더스테이원룸텔 제기역점</title>
 <meta name="description" content="제기동역 도보 2분, 프리미엄 1인 주거 공간 더스테이원룸텔 제기역점. 신소방 안전시설과 철저한 위생 관리, 미니룸부터 프리미엄까지.">
+<link rel="canonical" href="https://www.stayeum.com/members/thestayjegi/">
+
+<!-- 공유 카드 — 이 사이트의 1차 전환 채널이 카카오톡이라 링크 미리보기가 곧 첫인상이다.
+     og 가 하나도 없어 썸네일 없는 맨 링크로 나가던 것을 채웠다(D페이즈 2026-08-03). -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="더스테이원룸텔 제기역점">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="더스테이원룸텔 제기역점">
+<meta property="og:description" content="제기동역 도보 2분, 프리미엄 1인 주거 공간. 신소방 안전시설과 주 3회 전문 청소, 미니룸부터 프리미엄까지.">
+<meta property="og:url" content="https://www.stayeum.com/members/thestayjegi/">
+<meta property="og:image" content="https://www.stayeum.com/members/thestayjegi/images/room-418.jpg">
+<meta property="og:image:width" content="2048">
+<meta property="og:image:height" content="1536">
+<meta property="og:image:alt" content="더스테이원룸텔 제기역점 객실 내부">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#23392E">
 
 <!-- 외부 의존: 폰트 + pannellum CDN만 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,7 +59,7 @@
   --scrim: rgba(16, 30, 24, 0.5);
   --panel: var(--ivory);
   --table-bg: #FFFFFF;
-  --eyebrow-gold: #8A7B5C;
+  --eyebrow-gold: #736648;  /* 3.87 -> 5.27 (요금표 헤더에 쓴다) */
   --band-tint: rgba(35, 57, 46, 0.042);
   --rule-soft: rgba(27, 38, 32, 0.05);
   --rule-band: rgba(27, 38, 32, 0.14);
@@ -116,6 +132,9 @@ a:hover { color: var(--forest); }
   color: rgba(232, 222, 201, 0.6); transition: all 0.25s ease;
 }
 .lang-toggle button.on { background: var(--cream); color: var(--forest-deep); }
+/* 히트 영역만 44px 로. 시각 높이는 그대로라 나브 레이아웃이 안 흔들린다 */
+.lang-toggle button { position: relative; }
+.lang-toggle button::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
 
 /* nav over light sections */
 .nav.solid { background: rgba(250, 247, 240, 0.82); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 1px 0 var(--line); }
@@ -125,7 +144,7 @@ a:hover { color: var(--forest); }
 .nav.solid .nav-links a:hover { color: var(--forest-deep); }
 .nav.solid .nav-cta { background: var(--forest-deep); color: var(--cream); }
 .nav.solid .lang-toggle { border-color: rgba(24, 42, 33, 0.25); }
-.nav.solid .lang-toggle button { color: rgba(24, 42, 33, 0.45); }
+.nav.solid .lang-toggle button { color: rgba(24, 42, 33, 0.65); }  /* 2.66 -> 4.69. 인터랙티브 컨트롤이다 */
 .nav.solid .lang-toggle button.on { background: var(--forest-deep); color: var(--cream); }
 
 /* ---------- Hero ---------- */
@@ -185,9 +204,9 @@ a:hover { color: var(--forest); }
 section { padding: 130px 0; }
 .eyebrow {
   font-size: 12px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase;
-  color: #8A7B5C; margin-bottom: 20px;
+  color: var(--eyebrow-gold); margin-bottom: 20px;  /* 3.87 -> 5.27 */
 }
-.dark .eyebrow { color: rgba(232, 222, 201, 0.5); }
+.dark .eyebrow { color: rgba(232, 222, 201, 0.65); }  /* 3.57 -> 4.89 */
 .headline {
   font-family: var(--serif-kr); font-weight: 400;
   font-size: clamp(30px, 4.3vw, 52px); line-height: 1.32; letter-spacing: -0.01em;
@@ -241,7 +260,7 @@ section { padding: 130px 0; }
   color: var(--forest-deep); letter-spacing: -0.02em;
 }
 .room-price span { font-size: 14px; color: var(--ink-soft); font-weight: 500; }
-.room-deposit { font-size: 12.5px; color: #9AA69E; }
+.room-deposit { font-size: 12.5px; color: #66746C; }  /* 2.36 -> 4.59. 보증금은 계약 조건이라 흐리면 안 된다 */
 .room-desc {
   margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line);
   font-size: 14px; line-height: 1.75; color: var(--ink-soft); text-wrap: pretty;
@@ -259,7 +278,7 @@ section { padding: 130px 0; }
 .room-card.featured .room-desc { border-color: var(--line-cream); }
 .room-card.featured .room-tier { color: rgba(232, 222, 201, 0.6); }
 .room-card.featured .room-badge { color: var(--cream); }
-.rooms-note { margin-top: 8px; font-size: 13.5px; color: #9AA69E; }
+.rooms-note { margin-top: 8px; font-size: 13.5px; color: #66746C; }  /* 2.36 -> 4.59 */
 
 /* ---------- Amenities ---------- */
 #amenities { background: var(--ivory-soft); }
@@ -467,7 +486,7 @@ section { padding: 130px 0; }
 .loc-step:last-child { border-bottom: 0; }
 .loc-num {
   font-family: var(--serif-en); font-size: 26px; font-weight: 500; line-height: 1.15;
-  color: #B4A379; flex-shrink: 0; width: 34px;
+  color: #8A7B5C; flex-shrink: 0; width: 34px;  /* 2.32 -> 3.87. 26px 큰 글자 기준 3대 1 */
 }
 .loc-step p { font-size: 15.5px; line-height: 1.65; padding-top: 2px; text-wrap: pretty; }
 .loc-step strong { font-weight: 700; color: var(--forest-deep); }
@@ -489,7 +508,7 @@ footer {
 .footer-lockup { width: 190px; margin: 0 auto 20px; color: var(--cream); }
 .footer-sub { margin-top: 0; font-size: 12.5px; color: rgba(232, 222, 201, 0.45); letter-spacing: 0.04em; }
 .footer-line { width: 40px; height: 1px; background: rgba(232, 222, 201, 0.25); margin: 30px auto; }
-.footer-legal { font-size: 12px; color: rgba(232, 222, 201, 0.35); line-height: 1.9; }
+.footer-legal { font-size: 12px; color: rgba(232, 222, 201, 0.6); line-height: 1.9; }  /* 2.69 -> 5.36. 주소·전화번호다 */
 
 /* ---------- Floating contact ---------- */
 .floaters { position: fixed; right: 22px; bottom: 22px; z-index: 90; display: flex; flex-direction: column; gap: 12px; }
@@ -532,12 +551,12 @@ footer {
   section { padding: 92px 0; }
   .nav-links { display: none; }
   .nav-inner { gap: 10px; padding: 0 14px; }
-  .nav-cta { margin-left: auto; height: 32px; padding: 0 14px; font-size: 12.5px; flex-shrink: 0; }
+  .nav-cta { margin-left: auto; height: 36px; padding: 0 14px; font-size: 12.5px; flex-shrink: 0; }
   .nav-logo { min-width: 0; }
   .nav-logo svg { width: 15px; height: 19.4px; flex-shrink: 0; }
   .nav-logo span { font-size: 10.5px; letter-spacing: 0.14em; }
   .lang-toggle { height: 32px; }
-  .lang-toggle button { padding: 0 6px; font-size: 11px; }
+  .lang-toggle button { padding: 0 9px; font-size: 11px; }
   .amenities-grid { grid-template-columns: 1fr; }
   .room-card { flex-basis: 280px; }
   .rooms-track { padding-left: 24px; padding-right: 24px; }
@@ -580,9 +599,11 @@ footer {
 }
 .promo-lang button {
   height: 100%; padding: 0 7px; border: 0; background: transparent;
-  color: rgba(232, 222, 201, 0.6); font-family: var(--sans); font-size: 11px; font-weight: 600; cursor: pointer;
+  color: rgba(232, 222, 201, 0.8); font-family: var(--sans); font-size: 11px; font-weight: 600; cursor: pointer;  /* 4.41 -> 6.56 */
 }
 .promo-lang button.on { background: var(--cream); color: var(--forest-deep); }
+.promo-lang button { position: relative; }
+.promo-lang button::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
 .promo-badge {
   display: inline-flex; align-items: baseline; gap: 7px; padding: 5px 12px 6px; margin-top: 6px;
   border: 1px solid rgba(232, 222, 201, 0.3); border-radius: 999px; color: rgba(232, 222, 201, 0.78);
@@ -607,7 +628,7 @@ footer {
 .c-now { width: 74px; text-align: right; }
 .c-chip { width: 34px; display: flex; justify-content: flex-end; }
 .rate-row .c-name { font-size: 12.5px; font-weight: 500; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rate-row .c-was { font-size: 11px; font-weight: 400; color: rgba(85, 100, 91, 0.72); text-decoration: line-through; text-decoration-thickness: 1px; font-variant-numeric: tabular-nums; }
+.rate-row .c-was { font-size: 11px; font-weight: 400; color: rgba(85, 100, 91, 0.9); text-decoration: line-through;  /* 3.34 -> 4.91 */ text-decoration-thickness: 1px; font-variant-numeric: tabular-nums; }
 .rate-row .c-now { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; color: var(--forest); font-variant-numeric: tabular-nums; }
 .rate-chip { display: inline-flex; align-items: center; justify-content: center; height: 17px; padding: 0 6px; border-radius: 9px; background: var(--chip-bg); color: var(--forest); font-size: 9.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate-row { border-bottom: 1px solid var(--rule-soft); }
@@ -629,13 +650,16 @@ footer {
 }
 .btn-kakao:hover { background: #F5DD00; color: var(--kakao-ink); }
 .btn-kakao svg { width: 17px; height: 17px; flex-shrink: 0; }
-.btn-ghost {
+/* 팝업 전용. 히어로의 .btn-ghost(크림 글자)와 이름이 같아 뒤에 온 이쪽이 이기면서
+   첫 화면 CTA '입주 상담하기'가 어두운 배경 위 딥 포레스트 글자로 렌더돼 사실상 안 보였다.
+   이름을 갈라 두 맥락이 서로를 덮지 않게 한다(D페이즈 2026-08-03). */
+.promo-btn-ghost {
   display: flex; align-items: center; justify-content: center;
   min-height: 44px; border-radius: 22px; border: 1px solid var(--ghost-border); background: transparent;
   color: var(--forest-deep); font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: var(--sans);
 }
-.btn-ghost:hover { border-color: var(--forest-deep); background: var(--ghost-hover-bg); color: var(--forest-deep); }
-.promo-dismiss { margin-top: 8px; height: 34px; border: 0; background: transparent; cursor: pointer; color: rgba(85, 100, 91, 0.8); font-family: var(--sans); font-size: 12px; font-weight: 500; letter-spacing: 0.01em; }
+.promo-btn-ghost:hover { border-color: var(--forest-deep); background: var(--ghost-hover-bg); color: var(--forest-deep); }
+.promo-dismiss { margin-top: 8px; height: 44px; border: 0; background: transparent; cursor: pointer; color: rgba(85, 100, 91, 0.9); font-family: var(--sans); font-size: 12px;  /* 3.78 -> 4.65 */ font-weight: 500; letter-spacing: 0.01em; }
 .promo-dismiss:hover { color: var(--forest); }
 
 @media (min-width: 641px) {
@@ -665,7 +689,7 @@ footer {
   .promo-actions { margin-top: 18px; gap: 10px; }
   .btn-kakao { font-size: 15px; }
   .btn-kakao svg { width: 18px; height: 18px; }
-  .btn-ghost { font-size: 14px; }
+  .promo-btn-ghost { font-size: 14px; }
   .promo-dismiss { margin-top: 9px; font-size: 12.5px; }
 }
 </style>
@@ -732,7 +756,7 @@ footer {
     <div class="rooms-head">
       <div>
         <div class="eyebrow reveal">Rooms &amp; Price</div>
-        <h2 class="headline reveal d1"><span data-en="From Single Room to Premium —" data-zh="從迷你房到頂級房型，" data-ja="ミニルームからプレミアムまで、">미니룸부터 프리미엄까지,</span><br><span data-en="one standard: <em>class</em>." data-zh="唯一標準，<em>質感</em>。" data-ja="基準はただひとつ、<em>上質な空間</em>。">한 가지 기준, <em>품격</em>.</span></h2>
+        <h2 class="headline reveal d1"><span data-en="From Single Room to Premium" data-zh="從迷你房到頂級房型，" data-ja="ミニルームからプレミアムまで、">미니룸부터 프리미엄까지,</span><br><span data-en="one standard: <em>class</em>." data-zh="唯一標準，<em>質感</em>。" data-ja="基準はただひとつ、<em>上質な空間</em>。">한 가지 기준, <em>품격</em>.</span></h2>
         <p class="rooms-note reveal d2" data-en="All rooms: ₩50,000 deposit (incl. ₩20,000 cleaning fee) · No management fee" data-zh="全房型適用 &middot; 保證金5萬韓元（含清潔費2萬韓元） &middot; 免管理費" data-ja="全室共通 &middot; 保証金5万ウォン（うち清掃費2万ウォン） &middot; 管理費なし">전 객실 공통 · 보증금 5만원 (청소비 2만원 포함) · 관리비 없음</p>
       </div>
       <div class="rooms-nav reveal d2">
@@ -761,7 +785,7 @@ footer {
         <h3 class="room-name" data-en="En-suite Value &middot; Hallway Window" data-zh="套房內窗 &middot; 實惠型" data-ja="ワンルーム内窓 &middot; バリュー">원룸 내창 &middot; 실속형</h3>
         <div class="room-price"><strong>39</strong><span data-en="&times;10,000 KRW / mo" data-zh="萬韓元 / 月" data-ja="万ウォン / 月">만원 / 월</span></div>
         <div class="room-deposit" data-en="Deposit ₩50,000 (incl. cleaning)" data-zh="保證金5萬韓元（含清潔費2萬韓元）" data-ja="保証金5万ウォン（うち清掃費2万ウォン）">보증금 5만원 (청소비 2만원 포함)</div>
-        <p class="room-desc" data-en="The Single Room's reasonable price — plus a private bathroom and shower. The most practical choice, with everything you truly need." data-zh="維持迷你房的實惠價格，再加上獨立衛浴與淋浴空間，是最超值的選擇。只保留真正需要的配備，樣樣到位。" data-ja="ミニルームのリーズナブルな価格はそのままに、専用トイレとシャワーまで備えた、最も実用的な選択です。本当に必要なものだけをしっかりと揃えました。">미니룸의 합리적인 가격은 그대로 두고, 개별 화장실과 샤워시설까지 더한 가장 실속 있는 선택. 꼭 필요한 것만 알차게 담았습니다.</p>
+        <p class="room-desc" data-en="The Single Room's reasonable price, plus a private bathroom and shower. The most practical choice, with everything you truly need." data-zh="維持迷你房的實惠價格，再加上獨立衛浴與淋浴空間，是最超值的選擇。只保留真正需要的配備，樣樣到位。" data-ja="ミニルームのリーズナブルな価格はそのままに、専用トイレとシャワーまで備えた、最も実用的な選択です。本当に必要なものだけをしっかりと揃えました。">미니룸의 합리적인 가격은 그대로 두고, 개별 화장실과 샤워시설까지 더한 가장 실속 있는 선택. 꼭 필요한 것만 알차게 담았습니다.</p>
       </article>
 
       <article class="room-card reveal d2" data-rent="420000">
@@ -828,17 +852,17 @@ footer {
       <div class="amenity reveal d1">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3 L20 6 V12 Q20 18 12 21 Q4 18 4 12 V6 Z"></path><path d="M9 12 L11 14 L15 10"></path></svg>
         <h3 data-en="Advanced Fire Safety" data-zh="符合最新消防法規的安全設施" data-ja="最新消防基準の万全な安全設備">신소방 완벽 안전시설</h3>
-        <p data-en="<strong>1.5m-wide corridors, sprinklers in every zone, and flame-retardant interior walls</strong> — built to the latest fire code." data-zh="採用<strong>1.5公尺寬走廊、全區自動撒水設備、耐燃材質內牆</strong>施工，無需擔心火災。" data-ja="<strong>幅1.5mのゆとりある廊下、全区域のスプリンクラー、難燃素材の内壁</strong>を採用し、火災の心配がありません。"><strong>1.5m 넓은 복도, 전 구역 스프링클러, 난연소재 내벽</strong> 시공으로 화재 걱정이 없습니다.</p>
+        <p data-en="<strong>1.5m-wide corridors, sprinklers in every zone, and flame-retardant interior walls</strong>, built to the latest fire code." data-zh="採用<strong>1.5公尺寬走廊、全區自動撒水設備、耐燃材質內牆</strong>施工，無需擔心火災。" data-ja="<strong>幅1.5mのゆとりある廊下、全区域のスプリンクラー、難燃素材の内壁</strong>を採用し、火災の心配がありません。"><strong>1.5m 넓은 복도, 전 구역 스프링클러, 난연소재 내벽</strong> 시공으로 화재 걱정이 없습니다.</p>
       </div>
       <div class="amenity reveal d2">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="8" width="18" height="13"></rect><line x1="3" y1="12" x2="21" y2="12"></line><line x1="12" y1="8" x2="12" y2="21"></line><path d="M7.5 8 Q5 8 5 5.5 Q5 3 7.5 3 Q9.5 3 12 8 Q14.5 3 16.5 3 Q19 3 19 5.5 Q19 8 16.5 8"></path></svg>
         <h3 data-en="Complimentary Essentials" data-zh="豐富的免費備品" data-ja="充実した無料アメニティ">풍성한 편의 제공</h3>
-        <p data-en="Korean rice, kimchi, ramyeon, detergent and more — <strong>always provided free</strong>, cutting your living costs." data-zh="韓國產白米、泡菜、泡麵、洗衣精等備品<strong>全年免費提供</strong>，替您節省生活開銷。" data-ja="韓国産のお米、キムチ、ラーメン、洗剤などの備品を<strong>常時無料でご提供</strong>し、生活費の節約をお手伝いします。">국내산 쌀, 김치, 라면, 세제 등 비품을 <strong>상시 무료로 제공</strong>하여 생활비를 절감해 드립니다.</p>
+        <p data-en="Korean rice, kimchi, ramyeon, detergent and more, <strong>always provided free</strong>, cutting your living costs." data-zh="韓國產白米、泡菜、泡麵、洗衣精等備品<strong>全年免費提供</strong>，替您節省生活開銷。" data-ja="韓国産のお米、キムチ、ラーメン、洗剤などの備品を<strong>常時無料でご提供</strong>し、生活費の節約をお手伝いします。">국내산 쌀, 김치, 라면, 세제 등 비품을 <strong>상시 무료로 제공</strong>하여 생활비를 절감해 드립니다.</p>
       </div>
       <div class="amenity reveal">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"><path d="M2 12 Q6 5 12 5 Q18 5 22 12 Q18 19 12 19 Q6 19 2 12 Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         <h3 data-en="Ironclad Security" data-zh="滴水不漏的保全系統" data-ja="万全のセキュリティ">철통 보안 시스템</h3>
-        <p data-en="<strong>24-hour CCTV recording</strong> and digital door locks on every room — safe and reassuring, for women too." data-zh="<strong>24小時監視器錄影</strong>與全房型電子門鎖，女性住戶也能安心生活。" data-ja="<strong>24時間の防犯カメラ録画</strong>と全室の電子ドアロックにより、女性の方も安心してお過ごしいただけます。"><strong>24시간 CCTV 녹화</strong> 및 전 객실 전자도어락 설치로 여성분들도 안심하고 생활 가능합니다.</p>
+        <p data-en="<strong>24-hour CCTV recording</strong> and digital door locks on every room, safe and reassuring for women too." data-zh="<strong>24小時監視器錄影</strong>與全房型電子門鎖，女性住戶也能安心生活。" data-ja="<strong>24時間の防犯カメラ録画</strong>と全室の電子ドアロックにより、女性の方も安心してお過ごしいただけます。"><strong>24시간 CCTV 녹화</strong> 및 전 객실 전자도어락 설치로 여성분들도 안심하고 생활 가능합니다.</p>
       </div>
       <div class="amenity reveal d1">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"><path d="M2 9 Q12 0 22 9"></path><path d="M5.5 12.5 Q12 6 18.5 12.5"></path><path d="M9 16 Q12 12.5 15 16"></path><circle cx="12" cy="19.5" r="1" fill="currentColor"></circle></svg>
@@ -858,7 +882,7 @@ footer {
 <section id="tour" class="dark" data-screen-label="Room Tour">
   <div class="wrap">
     <div class="eyebrow reveal">Room Tour</div>
-    <h2 class="headline reveal d1"><span data-en="Closer than being there —" data-zh="比親臨現場更貼近，" data-ja="実際に足を運ぶよりも、もっと近くで。">직접 보는 것보다 더 가깝게,</span><br><span data-en="the <em>facility film</em>." data-zh="設施介紹<em>影片</em>。" data-ja="施設紹介<em>動画</em>。">시설 소개 <em>영상</em>.</span></h2>
+    <h2 class="headline reveal d1"><span data-en="Closer than being there" data-zh="比親臨現場更貼近，" data-ja="実際に足を運ぶよりも、もっと近くで。">직접 보는 것보다 더 가깝게,</span><br><span data-en="the <em>facility film</em>." data-zh="設施介紹<em>影片</em>。" data-ja="施設紹介<em>動画</em>。">시설 소개 <em>영상</em>.</span></h2>
     <div class="tour-frame reveal d2">
       <iframe src="https://www.youtube.com/embed/yAyMLERUMMM?rel=0" title="The Stay Jegi Room Tour" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
     </div>
@@ -899,7 +923,7 @@ footer {
         </div>
         <div class="loc-step">
           <div class="loc-num">03</div>
-          <p data-en="Arrive at floors 4–5 of the <strong>'Imo-ne Jjukkumi'</strong> building." data-zh="抵達<strong>「임오네쭈꾸미」</strong>小章魚餐廳大樓的4、5樓" data-ja="<strong>「임오네쭈꾸미」</strong>イイダコ料理店の建物4&middot;5階に到着します。"><strong>'임오네쭈꾸미'</strong> 건물 4, 5층 도착</p>
+          <p data-en="Arrive at floors 4&middot;5 of the <strong>'Imo-ne Jjukkumi'</strong> building." data-zh="抵達<strong>「임오네쭈꾸미」</strong>小章魚餐廳大樓的4、5樓" data-ja="<strong>「임오네쭈꾸미」</strong>イイダコ料理店の建物4&middot;5階に到着します。"><strong>'임오네쭈꾸미'</strong> 건물 4, 5층 도착</p>
         </div>
       </div>
     </div>
@@ -907,17 +931,17 @@ footer {
     <!-- 버스 — 도보 3분 내 정류장 (출처: 공식 블로그 대중교통 분석) -->
     <div class="transit reveal">
       <div class="transit-title" data-en="10+ bus stops within a 3-minute walk" data-zh="步行3分鐘內就有10多處公車站牌" data-ja="徒歩3分圏内にバス停が10か所以上">도보 3분 안에 버스정류장 10여 곳</div>
-      <p class="transit-sub" data-en="Seoul Station, Jongno, Yeouido, Gangnam, Korea Univ. &mdash; one bus, no transfers." data-zh="首爾站&middot;鍾路&middot;汝矣島&middot;江南&middot;高麗大學，一班公車直達，免轉乘。" data-ja="ソウル駅&middot;鍾路&middot;汝矣島&middot;江南&middot;高麗大学まで、乗り換えなしのバス1本で行けます。">서울역&middot;종로&middot;여의도&middot;강남&middot;고려대까지, 환승 없이 버스 한 번에 닿습니다.</p>
+      <p class="transit-sub" data-en="Seoul Station, Jongno, Yeouido, Gangnam, Korea Univ. &middot; one bus, no transfers." data-zh="首爾站&middot;鍾路&middot;汝矣島&middot;江南&middot;高麗大學，一班公車直達，免轉乘。" data-ja="ソウル駅&middot;鍾路&middot;汝矣島&middot;江南&middot;高麗大学まで、乗り換えなしのバス1本で行けます。">서울역&middot;종로&middot;여의도&middot;강남&middot;고려대까지, 환승 없이 버스 한 번에 닿습니다.</p>
       <div class="transit-groups">
         <div class="transit-card">
-          <div class="transit-stop"><span data-en="Wangsan-ro BRT &middot; Yongdu-dong Sageori" data-zh="旺山路中央車道 &middot; 龍頭洞十字路口（中央）" data-ja="旺山路中央車線 &middot; 龍頭洞交差点（中央）">왕산로 중앙차로 &middot; 용두동사거리(중)</span><small data-en="Trunk lines crossing Seoul east&ndash;west" data-zh="貫穿首爾東西向的幹線 &middot; 步行3分鐘" data-ja="ソウルを東西に貫く幹線 &middot; 徒歩3分">서울 동서를 관통하는 간선 &middot; 도보 3분</small></div>
+          <div class="transit-stop"><span data-en="Wangsan-ro BRT &middot; Yongdu-dong Sageori" data-zh="旺山路中央車道 &middot; 龍頭洞十字路口（中央）" data-ja="旺山路中央車線 &middot; 龍頭洞交差点（中央）">왕산로 중앙차로 &middot; 용두동사거리(중)</span><small data-en="Trunk lines crossing Seoul east to west &middot; 3 min walk" data-zh="貫穿首爾東西向的幹線 &middot; 步行3分鐘" data-ja="ソウルを東西に貫く幹線 &middot; 徒歩3分">서울 동서를 관통하는 간선 &middot; 도보 3분</small></div>
           <div class="bus-badges">
             <span class="bus-badge trunk">105</span><span class="bus-badge trunk">201</span><span class="bus-badge trunk">260</span><span class="bus-badge trunk">261</span><span class="bus-badge trunk">262</span><span class="bus-badge trunk">270</span><span class="bus-badge trunk">271</span><span class="bus-badge trunk">272</span><span class="bus-badge trunk">420</span><span class="bus-badge trunk">421</span><span class="bus-badge trunk">720</span>
           </div>
           <p class="transit-note" data-en="To Seoul Stn. &middot; Jongno &middot; Yeouido &middot; Gangnam &middot; Sangam" data-zh="往首爾站 &middot; 鍾路 &middot; 汝矣島 &middot; 江南 &middot; 上岩方向" data-ja="ソウル駅 &middot; 鍾路 &middot; 汝矣島 &middot; 江南 &middot; 上岩方面">서울역 &middot; 종로 &middot; 여의도 &middot; 강남 &middot; 상암 방면</p>
         </div>
         <div class="transit-card">
-          <div class="transit-stop"><span data-en="Cheonggyecheon-ro &middot; Yongdu Market area" data-zh="清溪川路 &middot; 龍頭市場前 &middot; 首爾市東部醫院" data-ja="清渓川路 &middot; 龍頭市場前 &middot; ソウル市東部病院">청계천로 &middot; 용두시장앞 &middot; 서울시동부병원</span><small data-en="Branch lines to nearby districts &amp; campuses" data-zh="連接大學商圈與鄰近地區 &middot; 步行3分鐘" data-ja="大学街&middot;周辺地域へ接続 &middot; 徒歩3分">대학가&middot;인근 지역 연결 &middot; 도보 3분</small></div>
+          <div class="transit-stop"><span data-en="Cheonggyecheon-ro &middot; Yongdu Market area" data-zh="清溪川路 &middot; 龍頭市場前 &middot; 首爾市東部醫院" data-ja="清渓川路 &middot; 龍頭市場前 &middot; ソウル市東部病院">청계천로 &middot; 용두시장앞 &middot; 서울시동부병원</span><small data-en="Branch lines to nearby districts and campuses &middot; 3 min walk" data-zh="連接大學商圈與鄰近地區 &middot; 步行3分鐘" data-ja="大学街&middot;周辺地域へ接続 &middot; 徒歩3分">대학가&middot;인근 지역 연결 &middot; 도보 3분</small></div>
           <div class="bus-badges">
             <span class="bus-badge trunk">241</span><span class="bus-badge branch">1017</span><span class="bus-badge branch">1222</span><span class="bus-badge branch">1227</span><span class="bus-badge branch">2013</span><span class="bus-badge branch">2222</span>
           </div>
@@ -980,7 +1004,7 @@ footer {
   <div class="footer-sub">Premium One-Room Stay &middot; Seoul</div>
   <div class="footer-line"></div>
   <div class="footer-legal">
-    <span data-en="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4F–5F" data-zh="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5樓" data-ja="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5階（서울 동대문구 왕산로16길 9）">서울 동대문구 왕산로16길 9, 4~5층</span><br>
+    <span data-en="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4F&middot;5F" data-zh="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5樓" data-ja="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4&ndash;5階（서울 동대문구 왕산로16길 9）">서울 동대문구 왕산로16길 9, 4~5층</span><br>
     <span>010-9218-7935 &middot; KakaoTalk TheStayJegi &middot; <a href="https://blog.naver.com/thestayjegi" target="_blank" rel="noopener" style="color: inherit; text-decoration: underline; text-underline-offset: 3px;">blog.naver.com/thestayjegi</a></span>
   </div>
 </footer>
@@ -1017,14 +1041,14 @@ footer {
         <span class="ko" data-en="August move-ins only" data-zh="8月入住限定" data-ja="8月ご入居限定">8월 입실 한정</span>
       </div>
       <h2 class="promo-headline" id="promo-title" data-en="Move in this August, <em>three months of savings</em>" data-zh="8月入住，享<em>三個月優惠</em>" data-ja="8月のご入居で、<em>3か月の特典</em>を">8월 입주, <em>세 달의 혜택</em></h2>
-      <p class="promo-sub" data-en="Move in during August and get up to ₩30,000 off the monthly rate for your first three months (Aug–Oct), on all rooms." data-zh="8月入住，全房型前3個月（8月～10月）月費最高優惠3萬韓元。" data-ja="8月にご入居いただくと、全室を対象に最初の3か月（8月～10月）の月額料金を最大3万ウォン割引いたします。">8월에 입주하시면 전 객실 첫 3개월(8월~10월) 월 이용료를 최대 3만원 할인해 드립니다.</p>
+      <p class="promo-sub" data-en="Move in during August and get up to ₩30,000 off the monthly rate for your first three months (Aug to Oct), on all rooms." data-zh="8月入住，全房型前3個月（8月～10月）月費最高優惠3萬韓元。" data-ja="8月にご入居いただくと、全室を対象に最初の3か月（8月～10月）の月額料金を最大3万ウォン割引いたします。">8월에 입주하시면 전 객실 첫 3개월(8월~10월) 월 이용료를 최대 3만원 할인해 드립니다.</p>
     </div>
     <div class="promo-body">
       <div class="rate-card" role="table" aria-label="8월 입주 할인 요금표">
         <div class="rate-head" role="row">
           <span class="c-name" role="columnheader" data-en="Room" data-zh="房型" data-ja="お部屋">객실명</span>
           <span class="c-was" role="columnheader" data-en="Regular" data-zh="原價" data-ja="通常料金">정상가</span>
-          <span class="c-now" role="columnheader" data-en="Aug–Oct" data-zh="8～10月費用" data-ja="8～10月料金">8~10월 이용료</span>
+          <span class="c-now" role="columnheader" data-en="Aug to Oct" data-zh="8～10月費用" data-ja="8～10月料金">8~10월 이용료</span>
           <span class="c-chip" role="presentation"></span>
         </div>
         <div class="rate-row" data-band="a" role="row">
@@ -1079,7 +1103,7 @@ footer {
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.83 1.86 5.31 4.65 6.74-.2.73-.73 2.67-.84 3.08-.13.51.19.5.4.36.16-.11 2.61-1.77 3.67-2.49.7.1 1.42.15 2.12.15 5.52 0 10-3.58 10-8s-4.48-8-10-8z"></path></svg>
           <span data-en="Book a Consultation" data-zh="預約入住諮詢" data-ja="入居のご相談">입주 상담하기</span>
         </a>
-        <a class="btn-ghost" href="#rooms" data-close data-en="View Rooms" data-zh="查看房型" data-ja="お部屋を見る">객실 둘러보기</a>
+        <a class="promo-btn-ghost" href="#rooms" data-close data-en="View Rooms" data-zh="查看房型" data-ja="お部屋を見る">객실 둘러보기</a>
       </div>
       <button type="button" class="promo-dismiss" id="promoDismiss" data-en="Don&#39;t show again today" data-zh="今日不再顯示" data-ja="本日は表示しない">오늘 하루 보지 않기</button>
     </div>
@@ -1182,7 +1206,7 @@ footer {
 
   promo.addEventListener('click', function (e) {
     var t = e.target;
-    if (t.closest('.btn-ghost')) { track.ctas.push({ kind: 'rooms', tMs: dwellMs() }); close('cta_rooms'); return; }
+    if (t.closest('.promo-btn-ghost')) { track.ctas.push({ kind: 'rooms', tMs: dwellMs() }); close('cta_rooms'); return; }
     if (t.closest('.btn-kakao')) {
       /* 카카오는 새 탭 — 팝업은 유지하되 즉시 전송(카카오 앱 전환으로 이탈해도 기록 보존) */
       track.ctas.push({ kind: 'kakao', tMs: dwellMs() });
