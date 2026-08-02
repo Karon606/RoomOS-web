@@ -210,12 +210,16 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
           })
           const activeLease = existing.leaseTerms[0]
           if (activeLease && row['이용료']) {
+            // 시트에 칸이 **없으면 미변경**이다. parseNum 은 빈칸을 0 으로 환원하므로,
+            // 이용료 칸만 채운 시트를 올리면 기존 보증금·청소비가 0 으로 파괴적 갱신됐다(2026-08-02 조사).
+            // 계약서 URL 이 이미 formData.has() 로 같은 방어를 하고 있다. 그 문법에 맞춘다.
+            const has = (k: string) => k in row && String(row[k] ?? '').trim() !== ''
             await prisma.leaseTerm.update({
               where: { id: activeLease.id },
               data: {
                 rentAmount:    parseNum(row['이용료']),
-                depositAmount: parseNum(row['보증금']),
-                cleaningFee:   parseNum(row['청소비']),
+                ...(has('보증금') ? { depositAmount: parseNum(row['보증금']) } : {}),
+                ...(has('청소비') ? { cleaningFee:   parseNum(row['청소비']) } : {}),
                 dueDay:        str(row['납부일']) || null,
                 payMethod:     str(row['납부방법']) || null,
               },

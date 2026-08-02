@@ -1090,6 +1090,19 @@ export async function saveDepositPayment(data: {
   // 예: 계약 보증금 30만에 예약금 10만만 받으면 보증금 record 는 10만으로 남는다(초과분은 아래 이용료 분리).
   const depositActual = Math.min(data.totalPaid, data.depositAmount)
 
+  // 계약 보증금이 0이면 보증금 수납을 받지 않는다 (2026-08-02 조사).
+  //
+  // 종전에는 이 경우 depositActual 이 0 이 되어 보증금 record 가 0원으로 생기고,
+  // 받은 돈 전액이 아래 초과분 분기를 타 **이용료로** 넘어갔다. 즉 돌려줘야 할 예수금이 매출로 인식됐다.
+  // knowledge/cash-receipt-refund §"보증금은 애초에 매출이 아니다" 와 정면 충돌이라 케이스가 아니라 클래스다.
+  //
+  // 계약 보증금 0 은 대부분 '무보증'이 아니라 '미입력'이다(스키마가 Int @default(0) 이라 둘을 구분 못 한다).
+  // 실측 90건 중 54건이 0이고 이 영업장 표준은 5만원이다. 그래서 막고 입력을 유도하는 쪽이 맞다.
+  // 예약금 경로(saveReservationDeposit)의 중복 가드도 `depositAmount > 0` 조건이라 0 계약에서는 건너뛴다.
+  if (data.depositAmount <= 0) {
+    return { ok: false, error: '계약 보증금이 입력되지 않았습니다. 고객 정보 수정에서 보증금을 먼저 입력해 주세요.' }
+  }
+
   // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 사고를 막는다(신고 2026-08-02, 402호 황인정).
   //
   // 그 건은 이랬다. 7/15 에 예약금 50,000 을 일반 수납으로 기록해 뒀는데(예약금 전용 폼 도입 전),
@@ -2198,6 +2211,9 @@ export async function getDepositPaymentsByLease(leaseTermId: string) {
 // 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
 // 청구 조정 전표(isBillingAdjust)는 수납이 아니라 청구 락 조정용이라 행·합계·건수 모두에서 제외.
 export async function getAllPaymentsByLease(leaseTermId: string) {
+  // 형제 조회(getPaymentsByLease·getDepositPaymentsByLease·getLeaseSettlementInfo)에는 있는데
+  // 여기만 빠져 있었다. 금액 읽기가 차단된 스태프에게 계약 전체 수납액이 노출된다(2026-08-02 조사).
+  if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const propertyId = await getPropertyId()
   const records = await prisma.paymentRecord.findMany({
     where: { leaseTermId, propertyId, isBillingAdjust: false },
