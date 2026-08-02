@@ -28,6 +28,7 @@
 - [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어)
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)
 - [[regression-nets]] — 회귀 감지망 목록·자동 실행 배치(커밋 전 빠른 6종·푸시 전 타입체크+DB 4종)·훅 우회법
+- [[public-asset-exposure]] — Drive 공개 권한 판정 기준·열람 경로 세 가지·이관 순서(프록시→주소→회수)·명단형 감지망
 
 ## 핵심 파일 맵 (자주 건드리는 곳)
 - 빌링 엔진: `lib/billing.ts` `billForLeaseMonth`
