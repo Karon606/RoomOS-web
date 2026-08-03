@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { singleSmsHref } from '@/lib/smsHref'
+import { singleSmsHref, blockSmsIfStaging } from '@/lib/smsHref'
 import { polishNoticeText, switchAiModelForQuota } from '@/app/(app)/tenants/noticeSms'
 import { getPersonalSmsContext, logPersonalSmsAttempt, type PersonalSmsContext } from '@/app/(app)/dashboard/actions'
 
@@ -92,7 +92,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
         <div className="flex items-center gap-2 justify-end">
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
           {ctx?.ok && ctx.phone && body.trim() ? (
-            <a href={singleSmsHref(ctx.phone, body)} onClick={onSend}
+            <a href={singleSmsHref(ctx.phone, body)} onClick={e => { if (blockSmsIfStaging(e)) return; onSend() }}
               className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold hover:opacity-90 transition-opacity">
               문자앱으로 보내기
             </a>

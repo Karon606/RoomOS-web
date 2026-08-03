@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { getUnpaidSmsContext, logSmsAttempt, type UnpaidSmsContext } from '@/app/(app)/dashboard/actions'
+import { blockSmsIfStaging } from '@/lib/smsHref'
 
 export type UnpaidSmsTarget = {
   leaseId: string
@@ -114,7 +115,7 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
         <div className="flex items-center gap-2 justify-end">
           <Btn variant="secondary" size="md" onClick={onClose}>닫기</Btn>
           {ctx?.ok && ctx.phone && body.trim() ? (
-            <a href={smsHref(ctx.phone)} onClick={onSend}
+            <a href={smsHref(ctx.phone)} onClick={e => { if (blockSmsIfStaging(e)) return; onSend() }}
               className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold hover:opacity-90 transition-opacity">
               문자앱으로 보내기
             </a>

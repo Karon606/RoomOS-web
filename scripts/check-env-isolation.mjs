@@ -119,7 +119,28 @@ for (const f of SRC) {
   }
 }
 
-// ── 5. Drive 업로드 폴더 ──────────────────────────────────────
+// ── 5. 문자 문 ────────────────────────────────────────────────
+// 문자는 서버가 보내지 않지만, 테스트 DB 가 운영 복사본이라 진짜 입주자 번호가 채워진 채로
+// 메시지앱이 열린다. sms: 를 조립하는 파일은 반드시 가드를 거쳐야 한다.
+// 조립 지점이 넷인데 정본 헬퍼를 쓰는 건 하나뿐이라, 지금은 '가드 참조'로 본다.
+{
+  const SMS_CANON = 'lib/smsHref.ts'
+  const canon = read(SMS_CANON)
+  if (!canon || !/export function blockSmsIfStaging\(/.test(canon)) {
+    violations.push('[소스] blockSmsIfStaging 가드가 사라졌다 — 테스트 사이트에서 진짜 입주자 번호로 메시지앱이 열린다')
+  }
+  for (const f of SRC) {
+    if (f === SMS_CANON) continue
+    const s = stripComments(read(f) ?? '')
+    // 주석에 sms: 설명이 많은 파일들이라 문자열 리터럴 안의 조립만 본다
+    if (!/`sms:|`sms:\/\/|'sms:|"sms:/.test(s)) continue
+    if (!/blockSmsIfStaging\(/.test(s)) {
+      violations.push(`[소스] ${f} 가 가드 없이 sms: 링크를 만든다 — 테스트 사이트에서 실제 입주자 번호로 메시지앱이 열린다`)
+    }
+  }
+}
+
+// ── 6. Drive 업로드 폴더 ──────────────────────────────────────
 // 업로드 문이 parents 를 잃으면 에러가 아니라 드라이브 루트로 간다(조용한 실패).
 {
   const DRIVE_CANON = 'lib/google-drive.ts'

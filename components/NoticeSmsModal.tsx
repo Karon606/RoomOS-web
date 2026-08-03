@@ -16,6 +16,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, saveNoticeTemplateAuto, switchAiModelForQuota, getAiModelRestorePrompt, resolveAiModelRestore, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSmsTemplates, type SmsTemplateRow } from '@/app/(app)/settings/actions'
+import { blockSmsIfStaging } from '@/lib/smsHref'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성' }
@@ -489,7 +490,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="space-y-1.5">
           {batches.map((list, i) => (
-            <a key={i} href={body.trim() ? smsHref(list) : undefined} onClick={() => body.trim() && logBatch(i, list)}
+            <a key={i} href={body.trim() ? smsHref(list) : undefined} onClick={e => { if (blockSmsIfStaging(e)) return; if (body.trim()) logBatch(i, list) }}
               aria-disabled={!body.trim()}
               className={[
                 'flex items-center justify-center h-10 px-4 rounded-lg text-sm font-semibold transition-opacity',

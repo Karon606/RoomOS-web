@@ -11,8 +11,8 @@
 - [x] 테스트 사이트 배너 + `--sysbar-h` 높이 예약
 - [x] 감지망 `scripts/check-env-isolation.mjs` + `verify:fast` 배선
 - [x] 역주입으로 감지망 실동작 확인
-- [ ] 문자 버튼 잠금 4곳 (`sms:` 링크 조립 지점)
-- [ ] `lib/smsHref.ts` 정본으로 4곳 수렴 (지금은 1곳만 쓴다)
+- [x] 문자 버튼 잠금 4곳 — 클릭 직전 가로채기(`blockSmsIfStaging`). 화면 배치는 안 건드렸다
+- [ ] `lib/smsHref.ts` 정본으로 조립 로직 4곳 수렴 (지금은 가드만 공유하고 URL 조립은 각자 한다)
 
 ## 2단계 — Vercel 설정 (운영자)
 

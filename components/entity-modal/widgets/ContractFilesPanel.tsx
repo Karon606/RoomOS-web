@@ -29,6 +29,7 @@ import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { blockSmsIfStaging } from '@/lib/smsHref'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
 // closable: 닫기(=서명 완료 알림 해제) 가능 여부. 만료·잠김이어도 닫혀 있지만 않으면 닫을 수 있어야 한다 —
@@ -80,6 +81,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
 
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
   const openSms = (url: string, phone: string, propertyName: string) => {
+    if (blockSmsIfStaging()) return
     const body = `[${propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. ${url}`
     const num = phone.replace(/[^0-9+]/g, '')
     const enc = encodeURIComponent(body)
