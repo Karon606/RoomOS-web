@@ -7,6 +7,7 @@ import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { canTransition, transitionDeniedMessage } from '@/lib/leaseTransitions'
+import { reasonsForStatus } from '@/lib/statusReasons'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -64,12 +65,18 @@ export async function getTenants() {
           room: { select: { id: true, roomNo: true, floor: true } },
           // 환불 이력 유무 — 퇴실 재저장 시 환불 모달 재노출(중복 저장)을 막는 판정용(신고 13438ec9). 추가 왕복 없음.
           _count: { select: { depositRefunds: true } },
-          // 취소 단계 부제(어느 단계에서 취소됐나) — 최근 CANCELLED 전이의 fromStatus·사유(e1b81629)
+          // 취소 단계 부제(어느 단계에서 취소됐나) — 최근 CANCELLED 전이의 fromStatus·사유(e1b81629).
+          // 퇴실 사유도 같은 자리에서 가져온다(운영자 오더 2026-08-03) — 한 사람이 지금 취소이면서
+          // 동시에 퇴실일 수는 없으므로 최신 한 건이면 충분하다. 왕복이 늘지 않는다.
           statusLogs: {
-            where: { toStatus: 'CANCELLED' },
+            // CHECKOUT_PENDING 도 본다 — 퇴실 사유를 말하는 시점은 통보를 받는 '퇴실 예정'이지
+            // 확정 순간이 아니다. 여기를 빼면 가장 자연스러운 수집 지점의 값이 표·카드에서 사라진다.
+            // take 를 늘려 화면이 골라 쓴다 — 사유 있는 최신 한 건(표시)과 최신 CANCELLED(취소 단계)는
+            // 서로 다른 행일 수 있어서 한 건만 가져오면 둘 중 하나가 죽는다.
+            where: { toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } },
             orderBy: { changedAt: 'desc' },
-            take: 1,
-            select: { fromStatus: true, reason: true },
+            take: 5,
+            select: { fromStatus: true, toStatus: true, reason: true },
           },
           paymentRecords: {
             where: { deletedAt: null },
@@ -283,14 +290,21 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   }
   // NON_RESIDENT, WAITING_TOUR, TOUR_DONE는 isVacant에 영향 없음
 
-  await prisma.tenantStatusLog.create({
-    data: { tenantId: tenant.id, fromStatus: 'RESERVED', toStatus: status, propertyId },
-  })
-
   // 거주 구간 이력 — 호실이 있으면 열린 구간을 만든다(파생 기록, 추가 write). 종료 상태로 만든 계약은 바로 마감.
   const newLease = await prisma.leaseTerm.findFirst({
     where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
   })
+
+  // 등록 로그 — 신고 ad517231 조사에서 두 가지가 틀린 것이 드러났다.
+  //   1) fromStatus 에 'RESERVED' 를 **하드코딩**해서, 실제 생성 상태와 무관하게 거짓 전이를 썼다.
+  //      167건 중 44건이 그렇게 쌓였고, 어제 전이표를 넓힐 때 그 유령 데이터가 근거에 섞였다.
+  //   2) leaseTermId 를 안 채웠다. 계약 단위로 이력을 묶으면 이 사람들이 통째로 사라진다.
+  // 등록은 전이가 아니므로 from 과 to 를 같게 둔다(canTransition 은 from === to 를 항상 허용한다).
+  // 계약 조회를 이 아래로 미룰 필요가 없어 순서만 바꿔 leaseTermId 를 공짜로 채운다.
+  await prisma.tenantStatusLog.create({
+    data: { tenantId: tenant.id, leaseTermId: newLease?.id ?? null, fromStatus: status, toStatus: status, propertyId },
+  })
+
   if (newLease) {
     await ensureOpenStay(prisma, newLease.id)
     if (isStayTerminalStatus(status)) await closeStay(prisma, newLease.id)
@@ -745,8 +759,9 @@ export async function updateTenant(formData: FormData): Promise<
   }
 
   if (status !== prevStatus) {
-    // 수정 폼 경로의 입실 취소도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27)
-    const cancelReason = status === 'CANCELLED' ? ((formData.get('cancelReason') as string | null)?.trim() || null) : null
+    // 수정 폼 경로의 상태 전환도 사유를 이력에 남긴다(상태전환 미니폼과 동일, 2026-07-27).
+    // 어떤 전이에서 받을지는 statusReasons 정본이 정한다 — 입실 취소 + 퇴실 계열(2026-08-03).
+    const cancelReason = reasonsForStatus(status) ? ((formData.get('cancelReason') as string | null)?.trim() || null) : null
     await prisma.tenantStatusLog.create({
       data: {
         tenantId,

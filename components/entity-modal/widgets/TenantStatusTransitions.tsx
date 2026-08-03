@@ -15,7 +15,7 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
-import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
+import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -194,6 +194,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       runTransition(def, undefined)
       return
     }
+    // 사유 상태 초기화 — 앞서 연 미니폼의 선택이 남으면 다음 전이에 엉뚱한 사유가 붙는다.
+    // 종전에는 취소 분기에서만 비웠는데, 퇴실도 사유를 받게 되면서 이 경로에도 필요해졌다.
+    setTransReason(''); setTransReasonEtc('')
     setTransDate(
       def.field === 'expectedMoveOut' ? toDateInput(lease.expectedMoveOut)
       : def.field === 'moveOutDate'   ? kstYmdStr()
@@ -244,7 +247,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
           if (!r.ok) { pushToast('error', r.error); return }
           const res = await applyStatusTransition({
             leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-            ...(buildCancelReason(transReason, transReasonEtc) ? { reason: buildCancelReason(transReason, transReasonEtc) } : {}),
+            ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
           const { recordIds, extraIncomeId } = r
@@ -290,7 +293,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         }
         const res = await applyStatusTransition({
           leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-          ...(def.key === 'cancel' && buildCancelReason(transReason, transReasonEtc) ? { reason: buildCancelReason(transReason, transReasonEtc) } : {}),
+          // 사유를 받는 전이인지는 statusReasons 가 정한다 — 종전에는 여기서 def.key==='cancel' 로 따로 판정해
+          // 폼과 저장이 각자 조건을 들고 있었다. 퇴실 사유를 받기 시작하면 그대로 갈린다.
+          ...(reasonsForStatus(def.toStatus) && buildReason(transReason, transReasonEtc)
+            ? { reason: buildReason(transReason, transReasonEtc) } : {}),
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
@@ -350,21 +356,27 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               {active.def.key === 'cancel' && active.depositAmount === 0 && (
                 <p className="text-sm text-[var(--warm-dark)] leading-relaxed">입실 취소로 변경할까요? 문의·투어·예약 기록은 보존됩니다.</p>
               )}
-              {active.def.key === 'cancel' && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">취소 사유 <span className="font-normal opacity-60">(선택)</span></label>
-                  <select value={transReason} onChange={e => setTransReason(e.target.value)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    <option value="">기록 안 함</option>
-                    {CANCEL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  {transReason === '기타' && (
-                    <input type="text" value={transReasonEtc} onChange={e => setTransReasonEtc(e.target.value)}
-                      placeholder="사유를 직접 입력하세요"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                  )}
-                </div>
-              )}
+              {/* 사유 — 어떤 전이에서 받을지는 statusReasons 가 정한다(입실 취소·퇴실 계열).
+                  받는 곳과 나중에 고칠 수 있는 곳이 어긋나지 않게 판정을 한 곳에 뒀다. */}
+              {(() => {
+                const opts = reasonsForStatus(active.def.toStatus)
+                if (!opts) return null
+                return (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(active.def.toStatus)} <span className="font-normal opacity-60">(선택)</span></label>
+                    <select value={transReason} onChange={e => setTransReason(e.target.value)}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                      <option value="">기록 안 함</option>
+                      {opts.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    {transReason === '기타' && (
+                      <input type="text" value={transReasonEtc} onChange={e => setTransReasonEtc(e.target.value)}
+                        placeholder="사유를 직접 입력하세요"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    )}
+                  </div>
+                )
+              })()}
               {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(active.def.field ?? '') && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{active.def.fieldLabel}</label>

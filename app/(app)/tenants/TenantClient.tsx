@@ -5,7 +5,7 @@ import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
-import { CANCEL_REASONS, buildCancelReason } from '@/lib/cancelReasons'
+import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -93,7 +93,7 @@ type LeaseTerm = {
   room: { id: string; roomNo: string; floor: string | null } | null
   paymentRecords: PaymentRecord[]
   // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
-  statusLogs?: { fromStatus: string; reason: string | null }[]
+  statusLogs?: { fromStatus: string; toStatus: string; reason: string | null }[]
   // 보증금 환불 이력 건수 — 퇴실 재저장 시 환불 모달 재노출 차단용(13438ec9)
   _count?: { depositRefunds: number }
 }
@@ -131,6 +131,9 @@ const COL_DEFS = [
   { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
   { key: 'scheduledDate', label: '예정일',   defaultOn: false, tabs: ['residents'] },
   { key: 'moveOutDate',   label: '퇴실일',   defaultOn: true,  tabs: ['past'] },
+  // 사유 열 — 저장은 되는데 볼 곳이 없다는 신고(ad517231). 각 탭에서 뜻이 서는 쪽만 켠다.
+  { key: 'checkoutReason', label: '퇴실사유', defaultOn: true,  tabs: ['past'] },
+  { key: 'cancelReason',   label: '취소사유', defaultOn: true,  tabs: ['dropped'] },
 ] as const
 type ColKey = (typeof COL_DEFS)[number]['key']
 
@@ -142,6 +145,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   englishName: 120, nationality: 80, gender: 60, job: 100,
   contact: 130, payMethod: 90, depositAmount: 90, rentAmount: 100,
   dueDay: 90, stayPeriod: 90, status: 120, scheduledDate: 80, moveOutDate: 130,
+  checkoutReason: 140, cancelReason: 140,
 }
 
 function loadColWidths(): Record<string, number> | null {
@@ -183,8 +187,19 @@ function StatusChip({ status, confirmed, moveInDate, today, hasTourDate, quietSu
 
 // 취소 단계 부제 — 어느 단계에서 이탈했는지 이력(fromStatus)으로 파생 + 기록된 사유(e1b81629).
 // 이력이 없으면(구 데이터·생성 직후 취소) 부제 없음.
+// 종료 상태 — 사유를 보여줄 자격이 있는 상태. 표와 카드가 같은 목록을 본다.
+const ENDED_STATUSES = ['CANCELLED', 'CHECKED_OUT']
+
+// 이 계약의 종료 사유(입실 취소 또는 퇴실). 표·카드 캡션이 같은 값을 쓴다.
+// 사유가 적힌 최신 한 건을 고른다 — 퇴실 예정에서 적었든 퇴실 확정에서 적었든 같은 값으로 잡힌다.
+function endReasonText(lease: LeaseTerm | undefined): string | undefined {
+  return lease?.statusLogs?.find(l => l.reason)?.reason ?? undefined
+}
+
+// 취소 단계만 — 사유는 길이가 무제한이라 칩에 넣지 않는다(§20 1순위는 짧은 값 자리).
+// 종전에는 단계와 사유를 한 문자열로 붙여 120px 상태 열 안에서 다섯 줄로 접히고 잘렸다.
 function cancelStageText(lease: LeaseTerm | undefined): string | undefined {
-  const log = lease?.statusLogs?.[0]
+  const log = lease?.statusLogs?.find(l => l.toStatus === 'CANCELLED')
   if (!log) return undefined
   const stage =
     log.fromStatus === 'RESERVED'     ? '예약 취소'
@@ -192,8 +207,7 @@ function cancelStageText(lease: LeaseTerm | undefined): string | undefined {
     : log.fromStatus === 'WAITING_TOUR' ? (lease?.tourDate ? '투어 전 취소' : '문의 취소')
     : ['ACTIVE', 'CHECKOUT_PENDING'].includes(log.fromStatus) ? '거주 중 취소'
     : undefined
-  if (stage && log.reason) return `${stage} · ${log.reason}`
-  return stage ?? log.reason ?? undefined
+  return stage
 }
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실·이름·상태는 항상 표시)
@@ -1702,8 +1716,10 @@ export default function TenantClient({
                 className="p-4"
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
+                {/* CANCELLED 칩이 처음으로 보이게 되면서 우측 폭이 길어졌다. 가드가 없으면
+                    이름이 긴 고객에서 줄바꿈으로 행 높이가 늘어난다(§20). */}
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
                     {lease?.room?.roomNo ? (
                       <>
                         <span className="text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(lease.room.roomNo)}</span>
@@ -1734,13 +1750,23 @@ export default function TenantClient({
                         </span>
                       )
                     })()}
-                    <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
+                    <span className="min-w-0 truncate text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
-                  {(status === 'RESERVED' || statusException(status)) && (
-                    <StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} hasTourDate={!!lease?.tourDate}
-                      quietSub={status === 'CANCELLED' ? cancelStageText(lease) : undefined} />
+                  {/* CANCELLED 를 게이트에 더한다 — statusException('CANCELLED') 이 null 이라
+                      이 조건이 항상 false 였고, 바로 아래 quietSub 삼항식은 **실행되지 않는 죽은 코드**였다.
+                      모바일에서 취소 단계가 한 번도 보인 적이 없다(신고 ad517231). */}
+                  {(status === 'RESERVED' || status === 'CANCELLED' || statusException(status)) && (
+                    <span className="shrink-0"><StatusChip status={status} confirmed={!!lease?.reservationConfirmedAt} moveInDate={lease?.moveInDate} today={today} hasTourDate={!!lease?.tourDate}
+                      quietSub={status === 'CANCELLED' ? cancelStageText(lease) : undefined} /></span>
                   )}
                 </div>
+                {/* 종료 사유 캡션 — 입실 취소·퇴실 사유. 칩에는 단계까지만 넣고(짧은 값 자리)
+                    길이 제한이 없는 사유는 여기 한 줄로 내린다. 없으면 줄을 아예 안 그린다. */}
+                {endReasonText(lease) && ENDED_STATUSES.includes(status) && (
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-2 truncate">
+                    {status === 'CANCELLED' ? '취소 사유' : '퇴실 사유'}: {endReasonText(lease)}
+                  </p>
+                )}
                 {/* 연락처 — 탭하면 바로 전화 */}
                 {cardFields.contact && primary && (
                   <a href={`tel:${primary.contactValue.replace(/[^0-9+]/g, '')}`} onClick={e => e.stopPropagation()}
@@ -1989,6 +2015,12 @@ export default function TenantClient({
                           )
                         case 'moveOutDate':
                           return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{fmtDate(lease?.moveOutDate)}</span></td>
+                        case 'checkoutReason':
+                        case 'cancelReason':
+                          // 카드와 같은 상태 가드를 건다. past 탭에는 NON_RESIDENT 도 들어와서,
+                          // 가드가 없으면 '퇴실 사유' 열에 옛 입실 취소 사유가 찍힌다.
+                          // 표는 열 정렬이 있어 빈 값에 대시를 찍는다(카드는 줄을 아예 안 그린다 — 매체 차이).
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{ENDED_STATUSES.includes(status) ? (endReasonText(lease) ?? '—') : '—'}</span></td>
                         default: return null
                       }
                     })}
@@ -3258,23 +3290,29 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <option value="CANCELLED">입실 취소</option>
               </optgroup>
             </select>
-            {/* 입실 취소로 바꾸는 저장 — 상태전환 미니폼과 동일한 사유 수집(수정 폼 경로 누락 봉합, 2026-07-27) */}
-            {statusVal === 'CANCELLED' && lease?.status !== 'CANCELLED' && (
-              <div className="mt-2 space-y-1.5">
-                <label className="text-xs font-medium text-[var(--warm-mid)]">취소 사유 <span className="font-normal opacity-60">(선택)</span></label>
-                <select value={cancelReasonVal} onChange={e => setCancelReasonVal(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  <option value="">기록 안 함</option>
-                  {CANCEL_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                {cancelReasonVal === '기타' && (
-                  <input type="text" value={cancelReasonEtc} onChange={e => setCancelReasonEtc(e.target.value)}
-                    placeholder="사유를 직접 입력하세요"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                )}
-                <input type="hidden" name="cancelReason" value={buildCancelReason(cancelReasonVal, cancelReasonEtc)} />
-              </div>
-            )}
+            {/* 상태를 바꾸는 저장 — 상태전환 미니폼과 같은 사유 수집(수정 폼 경로 누락 봉합, 2026-07-27).
+                어떤 전이에서 받을지는 statusReasons 정본이 정한다. 입실 취소에 더해 퇴실 계열도 받는다
+                (운영자 오더 2026-08-03). 폼과 미니폼이 각자 조건을 들면 또 갈린다. */}
+            {(() => {
+              const opts = statusVal !== lease?.status ? reasonsForStatus(statusVal) : null
+              if (!opts) return null
+              return (
+                <div className="mt-2 space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">{reasonLabel(statusVal)} <span className="font-normal opacity-60">(선택)</span></label>
+                  <select value={cancelReasonVal} onChange={e => setCancelReasonVal(e.target.value)}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                    <option value="">기록 안 함</option>
+                    {opts.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  {cancelReasonVal === '기타' && (
+                    <input type="text" value={cancelReasonEtc} onChange={e => setCancelReasonEtc(e.target.value)}
+                      placeholder="사유를 직접 입력하세요"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  )}
+                  <input type="hidden" name="cancelReason" value={buildReason(cancelReasonVal, cancelReasonEtc)} />
+                </div>
+              )
+            })()}
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5, e1b81629로 전 단계 확장) */}
             {statusVal === 'WAITING_TOUR' && !tourDateVal && uiWaitingKind === 'INQUIRY' && (
               <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">문의 = 연락만 받은 상태 · 투어일을 잡으면 &lsquo;투어 예정&rsquo;으로 바뀝니다</p>

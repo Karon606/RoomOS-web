@@ -12,6 +12,7 @@ import { kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { reasonsForStatus } from '@/lib/statusReasons'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -1919,7 +1920,10 @@ export async function getTenantDetail(tenantId: string) {
         },
       },
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+        // CANCELLED 포함 (신고 ad517231). 종전에는 빠져 있어서 **취소된 고객을 상세로 열면
+        // lease 가 undefined 가 되고 계약 정보·상태 위젯·취소 사유가 통째로 안 그려졌다.**
+        // 운영자가 "볼 수 있는 곳이 없다"고 한 것이 과장이 아니라 정확한 서술이었다.
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CANCELLED'] } },
         select: {
           id: true, status: true, isShortTerm: true,
           shortStayExtensions: true,   // 단기 연장 이력 — 위젯의 연장 이력 줄·적용취소 진입점용
@@ -2625,6 +2629,82 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
       startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,
       endDate: r.endDate ? r.endDate.toISOString().slice(0, 10) : null,
     })),
+  }
+}
+
+
+// 이 입주자의 상태 이력 — TenantStatusLog 를 최신순으로. 신고 ad517231.
+//
+// 이 테이블은 167건이 쌓여 있는데 **읽는 화면이 하나도 없었다**(설정의 데이터 내보내기가 유일).
+// 취소 사유만 따로 꽂으면 같은 테이블의 나머지가 그대로 안 보이므로 이력 전체를 연다.
+//
+// tenantId 로 묶는다 — leaseTermId 가 없는 옛 로그가 44건 있어서(addTenant 가 안 채웠다)
+// 계약으로 묶으면 그 사람들 이력이 통째로 사라진다. 그 근원은 따로 고치고 백필한다.
+export async function getTenantStatusHistory(tenantId: string): Promise<{
+  items: { id: string; fromStatus: string; toStatus: string; reason: string | null; changedAt: string
+    isCreated: boolean; editable: boolean; canRecord: boolean }[]
+}> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.tenantStatusLog.findMany({
+    where: { propertyId, tenantId },
+    orderBy: { changedAt: 'desc' },
+    select: { id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true },
+  })
+  // 사유를 아직 안 적은 행이 여럿이면 '어디에 적어야 하나'가 화면에 안 나온다.
+  // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 고객이 11명이다.
+  // 기록 진입은 **가장 최근 종료 전이 한 행에만** 연다. 나머지는 이미 적힌 것만 읽고 고친다.
+  const latestEndId = rows.find(r => r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus))?.id ?? null
+  return {
+    items: rows.map(r => {
+      // 등록은 전이가 아니다. from === to 만으로는 부족하다 — 같은 상태로 재저장하면(퇴실 예정일만 변경)
+      // 사람이 만든 from === to 로그가 생긴다(실측 2건). 등록 로그는 changedById 가 비어 있다.
+      const isCreated = r.fromStatus === r.toStatus && r.changedById === null
+      // 사유를 받는 전이만 고칠 수 있다(입실 취소·퇴실). '단기 연장' 같은 시스템 라벨은 손대지 않는다 —
+      // 이 구분선이 있어야 '이력을 마음대로 고치는 앱'이 되지 않는다.
+      const editable = r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus) !== null
+      return {
+        id: r.id,
+        fromStatus: r.fromStatus,
+        toStatus: r.toStatus,
+        reason: r.reason,
+        changedAt: r.changedAt.toISOString(),
+        isCreated,
+        editable,
+        canRecord: editable && r.id === latestEndId,
+      }
+    }),
+  }
+}
+
+
+// 상태 이력의 사유를 고친다 (신고 ad517231 — "수정도 해야하는데").
+//
+// 감사 기록을 사후에 고치는 셈이라 경계선을 분명히 둔다.
+//   fromStatus·toStatus·changedAt·changedById 는 시스템이 관찰한 사실이라 **손대지 않는다.**
+//   reason 은 운영자가 붙인 주석이다. 주석 교정은 이력 위조가 아니다.
+// 그래서 사유를 받는 전이(입실 취소·퇴실)의 로그만 열어준다.
+// 이전 값을 돌려줘서 호출부가 적용취소를 걸 수 있게 한다(§16).
+export async function updateStatusLogReason(logId: string, reason: string | null): Promise<
+  { ok: true; prev: string | null } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.tenantStatusLog.findFirst({
+      where: { id: logId, propertyId },
+      select: { id: true, fromStatus: true, toStatus: true, reason: true },
+    })
+    if (!row) return { ok: false, error: '이력을 찾을 수 없습니다.' }
+    if (row.fromStatus === row.toStatus || !reasonsForStatus(row.toStatus)) {
+      return { ok: false, error: '이 이력은 사유를 기록하는 항목이 아닙니다.' }
+    }
+    const next = (reason ?? '').trim() || null
+    await prisma.tenantStatusLog.update({ where: { id: logId }, data: { reason: next } })
+    revalidatePath('/tenants')
+    return { ok: true, prev: row.reason }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 

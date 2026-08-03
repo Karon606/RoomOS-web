@@ -379,6 +379,65 @@ for (const p of weakTokens) {
   if (p.calendarToken.length < 43) violations.push(`[데이터] ${p.name} 의 캘린더 토큰이 약한 난수다(길이 ${p.calendarToken.length}) — scripts/rotate-calendar-tokens 로 재발급하라`)
 }
 
+// 16-2. 상태 이력은 쌓기만 하고 볼 수 없으면 안 된다 (신고 ad517231, 2026-08-03).
+//
+//   TenantStatusLog 에 167건이 쌓여 있는데 읽는 화면이 하나도 없었다(설정의 데이터 내보내기가 유일).
+//   더 나쁜 것은 목록에 표시 코드가 있긴 했는데 **죽어 있었다** — statusException('CANCELLED') 이 null 이라
+//   게이트가 항상 false 였고 그 안의 quietSub 삼항식은 한 번도 실행된 적이 없다.
+//   "코드가 있으니 된다"가 아니라 "그 코드에 도달하는가"를 봐야 한다.
+const roomsActionsSrc = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+const tenantBody = readFileSync('components/entity-modal/bodies/TenantBody.tsx', 'utf8')
+
+// 상세 모달이 취소 계약을 못 열면 그 사람의 이력·계약 정보가 통째로 안 그려진다
+const detailWhere = roomsActionsSrc.match(/leaseTerms:\s*\{[\s\S]{0,400}?status:\s*\{\s*in:\s*\[([^\]]*)\]/)
+if (detailWhere && !detailWhere[1].includes('CANCELLED')) {
+  violations.push("[소스] getTenantDetail 이 CANCELLED 계약을 제외한다 — 취소된 고객 상세가 통째로 빈다")
+}
+if (!/<TenantStatusHistory/.test(tenantBody)) {
+  violations.push('[소스] 고객 카드에 상태 이력 위젯이 없다 — 입실 취소·퇴실 사유를 볼 곳이 사라진다')
+}
+// 모바일 카드 게이트 — 여기가 죽으면 취소 단계가 화면에 영원히 안 뜬다.
+// 정규식으로 조건절을 잡으려다 statusException( 의 괄호에서 끊겨 못 잡았다(역주입에서 발견).
+// 게이트 시작점부터 <StatusChip 까지의 구간을 통째로 떠서 본다.
+{
+  const gateStart = tenantClient.indexOf("{(status === 'RESERVED'")
+  const chipAt = gateStart >= 0 ? tenantClient.indexOf('<StatusChip', gateStart) : -1
+  if (gateStart >= 0 && chipAt > gateStart) {
+    const gate = tenantClient.slice(gateStart, chipAt)
+    if (!gate.includes("status === 'CANCELLED'")) {
+      violations.push("[소스] 카드 StatusChip 게이트가 CANCELLED 를 막는다 — 그 안의 quietSub 는 실행되지 않는 죽은 코드가 된다")
+    }
+  }
+}
+// 사유를 받는 곳과 고칠 수 있는 곳이 한 정본을 봐야 한다
+for (const [file, src] of [['TenantStatusTransitions', readFileSync('components/entity-modal/widgets/TenantStatusTransitions.tsx', 'utf8')],
+                           ['TenantClient', tenantClient],
+                           ['tenants/actions', tenantsActions]]) {
+  if (!/reasonsForStatus\(/.test(src)) {
+    violations.push(`[소스] ${file} 이 사유 판정을 statusReasons 정본으로 하지 않는다 — 받는 곳과 고치는 곳이 갈린다`)
+  }
+}
+// 사유를 받는 전이와 목록이 가져오는 전이가 같아야 한다.
+// 디자이너 패스에서 잡힌 결함 — statusReasons 는 CHECKOUT_PENDING 에서도 사유를 받는데
+// 목록 쿼리는 CANCELLED·CHECKED_OUT 만 가져와서, 퇴실 예정에서 적은 사유가 표·카드에서 통째로 사라졌다.
+// 같은 사실이 상세(이력 위젯)에는 보이고 목록에는 안 보이는 모순 상태였다.
+{
+  const reasonBearing = ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT']
+  const m = tenantsActions.match(/statusLogs:\s*\{[\s\S]{0,600}?toStatus:\s*\{\s*in:\s*\[([^\]]*)\]/)
+  if (m) {
+    for (const st of reasonBearing) {
+      if (!m[1].includes(st)) {
+        violations.push(`[소스] getTenants 의 statusLogs 가 ${st} 를 안 가져온다 — 그 지점에서 적은 사유가 목록에서 사라진다`)
+      }
+    }
+  }
+}
+
+// 등록 로그는 전이가 아니다. leaseTermId 를 안 채우면 계약 단위 조회에서 사라지고,
+// fromStatus 를 지어내면 전이표 검증에 유령 데이터가 섞인다(실제로 44건이 그랬다).
+const orphanLogs = await prisma.tenantStatusLog.count({ where: { leaseTermId: null } })
+if (orphanLogs > 0) violations.push(`[데이터] 계약이 안 붙은 상태 로그 ${orphanLogs}건 — scripts/backfill-status-log-creation 로 정정하라`)
+
 // 17. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
 //     경로마다 규칙이 갈렸다(B페이즈 조사 2026-08-03).
 if (!/canTransition\(lease\.status, input\.toStatus\)/.test(tenantsActions)) {

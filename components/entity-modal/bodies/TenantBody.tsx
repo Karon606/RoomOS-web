@@ -25,6 +25,7 @@ import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
 import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
 import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
+import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 
@@ -90,6 +91,9 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       </Section>
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
       <TenantMoveHistory tenantId={tenant.id} />
+      {/* 상태 이력 — 언제 어디서 어디로 바뀌었나, 입실 취소·퇴실 사유(신고 ad517231).
+          이사 이력 바로 아래에 둔다. 둘 다 이력이고, 아래 적용취소 행보다 먼저 "무슨 일이 있었나"를 읽는다. */}
+      <TenantStatusHistory tenantId={tenant.id} />
       {/* 환불 확정 적용취소 — 상시 진입점(§16, 토스트가 사라져도 여기서 항상 가능).
           성격이 같은 두 행이라 한 래퍼로 묶는다(디자이너 패스). */}
       {lease && (() => {

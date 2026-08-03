@@ -44,3 +44,6 @@ next-env.d.ts
 RoomOS.zip
 client_secret_*.json
 roomos-*-*.json
+
+# 백필 원본 스냅샷 — 되돌리기용 로컬 파일(개인정보는 없지만 저장소에 둘 이유도 없다)
+scripts/.backfill-*.json
