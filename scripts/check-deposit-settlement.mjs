@@ -22,6 +22,8 @@ async function main() {
       console.log(`  ${l.tenant?.name ?? '?'} ${l.room?.roomNo ?? '?'}호 보증금 ${l.depositAmount.toLocaleString()}원 퇴실 ${l.moveOutDate?.toISOString().slice(0, 10) ?? '날짜 없음'} lease=${l.id.slice(0, 8)}`)
     }
     console.log('각 건은 실제 반환 여부를 확인 후 고객 카드(수정 폼 상태 변경 또는 재무 보증금 탭)에서 소급 기록할 것.')
+    // 실패로 알린다 — 출력만 하고 exit 0 이면 훅에 물려도 통과만 하는 그물이 된다(G-4 2026-08-03).
+    process.exitCode = 1
   }
   await prisma.$disconnect()
 }

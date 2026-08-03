@@ -13,7 +13,7 @@ async function main() {
     where: { isArchived: false, trackUnit: 'spec' },
     select: { id: true, propertyId: true, category: true, label: true, qtyUnit: true, specUnit: true },
   })
-  let bad = 0
+  let bad = 0, multiplied = 0
   for (const it of items) {
     const rows = await prisma.expense.findMany({
       where: {
@@ -28,12 +28,20 @@ async function main() {
       if (!isSpecDimensionMismatch(r.specUnit, it.specUnit)) continue
       bad++
       const mult = specMultiplier(r.specValue, r.specUnit, it.specUnit)
+      // 차원 불일치 자체는 정상이다 — '라면 120g x 100개'는 올바른 입력이다.
+      // 결함은 그 상태에서 **곱셈이 실제로 걸리는 것**이다(라면 100개가 12,000개가 됐던 신고 0d6242f0).
+      // 그래서 mult 가 나오는 행만 실패로 센다(G-4 2026-08-03).
+      if (mult != null) multiplied++
       console.log(`[${it.label} · ${it.category}] 품목단위=${it.specUnit} vs 규격=${r.specValue}${r.specUnit}`)
       console.log(`  expense=${r.id.slice(0, 8)} ${r.date.toISOString().slice(0, 10)} ${r.vendor ?? ''} qty=${r.qtyValue}${r.qtyUnit ?? ''} detail=${r.detail ?? ''}`)
       console.log(`  → 집계 기여: ${mult != null ? `${r.qtyValue} x ${mult}` : `${r.qtyValue} (규격 곱셈 안 함, 정상)`}`)
     }
   }
   console.log(bad === 0 ? '차원 불일치 없음 — 정상.' : `차원 불일치 구매 ${bad}건 — 위 행들은 qtyValue 기준으로 집계된다(자동 점검이 이미 곱셈으로 영속된 행이 있는지 StockCheck memo 확인 필요).`)
+  if (multiplied > 0) {
+    console.log(`\n차원이 다른데 규격 곱셈이 걸린 구매 ${multiplied}건 — 수량이 부풀어 집계된다.`)
+    process.exitCode = 1
+  }
   await prisma.$disconnect()
 }
 main()

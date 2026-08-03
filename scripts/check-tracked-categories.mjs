@@ -50,6 +50,8 @@ async function main() {
     }
   }
   console.log(bad === 0 ? '비추적 카테고리 활성 카드 없음 — 정상.' : `비추적 카테고리 활성 카드 ${bad}건${FIX ? ' 처리 시도 완료' : ' — 정리하려면 --fix'}`)
+  // 실패로 알린다(G-4 2026-08-03). --fix 로 정리한 실행은 이미 처리했으니 제외한다.
+  if (bad > 0 && !FIX) process.exitCode = 1
   await prisma.$disconnect()
 }
 main()

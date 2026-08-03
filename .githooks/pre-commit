@@ -29,26 +29,17 @@ if [ "$STAYEUM_SKIP_HOOKS" = "1" ]; then
 fi
 
 cd "$ROOT" || exit 0
-fail=0
-run() {
-  name="$1"; shift
-  out="$("$@" 2>&1)" || { echo "[감지망 실패] $name"; echo "$out" | tail -20; fail=1; }
-}
-run "금전 로직 회귀"      npx tsx scripts/test-money.ts
-run "납부일 해석"         npx tsx scripts/test-due-date.ts
-run "퇴실 정산 기간"      npx tsx scripts/test-settlement-period.ts
-run "과거 회계월 보호"    npx tsx scripts/test-accounting-guard.ts
-run "투어 피드 판정"      npx tsx scripts/test-tour-feed.ts
-run "생년월일 게이트"     npx tsx scripts/test-birthdate.ts
-run "단독 라우트 스크롤"  node scripts/check-standalone-scroll.mjs
-run "공개 페이지 트래킹"  node scripts/check-public-tracking.mjs
 
-if [ "$fail" = "1" ]; then
+# 목록은 package.json 의 verify:fast 가 정본이다 — 훅이 자기 목록을 따로 들면 갈린다.
+# 실제로 갈렸다(G-4 2026-08-03): 훅에만 있던 것 2종, verify:fast 에만 있던 것 1종.
+# 여기서 스크립트 이름을 나열하지 말 것.
+if ! out="$(npm run --silent verify:fast 2>&1)"; then
+  echo "$out" | tail -30
   echo ""
   echo "커밋을 중단했습니다. 위 감지망이 회귀를 잡았습니다."
   echo "의도한 변경이라면 기대값을 먼저 고치세요(규칙 변경은 loop.md 4번 = 운영자 승인 대상)."
   echo "정말 그대로 커밋하려면: git commit --no-verify"
   exit 1
 fi
-echo "[감지망] 빠른 검사 8종 통과"
+echo "[감지망] 빠른 검사 통과 (npm run verify:fast)"
 exit 0
