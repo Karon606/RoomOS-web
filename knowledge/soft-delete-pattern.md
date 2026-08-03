@@ -23,6 +23,12 @@ Prisma `$extends` query 익스텐션이 이 2모델의 6개 READ_OP(findMany·fi
 
 미수·완납·통계·리포트 잔액은 저장값 없이 PaymentRecord 조회 합산으로 파생 → 삭제분이 조회에서 빠지면 자동 정정. 삭제·복구 후 `recalculatePayments`가 활성분으로 isPaid 재계산.
 
+## undo 토스트의 함정 2가지 (2026-08-03)
+1. **액션 달린 토스트는 dedup 하면 안 된다.** `SaveFeedback`은 kind+message+detail이 같으면 새 토스트를 안 만들고 기존 것에 ×N만 붙이는데, 이때 `action`은 갱신되지 않는다. 수납처럼 문구가 같아지기 쉬운 화면에서 6초 안에 두 건을 넣고 적용취소를 누르면 **방금 것이 아니라 먼저 뜬 토스트의 대상**이 지워진다. 문구에 호실·금액을 넣는 건 케이스 패치다 — dedup 자체에서 `t.action`을 제외해야 클래스가 봉합된다.
+2. **한 결정이 두 테이블을 건드리면 undo도 한 덩어리여야 한다.** 과납 초과분을 기타수익으로 돌리면 PaymentRecord n건 + ExtraIncome 1건이 생긴다. 반쪽만 되돌리면 **안 되돌린 것보다 나쁘다** — 그 달이 미수로 뜨면서 초과분은 수익에 남고, 운영자가 미수를 보고 재입력하는 순간 이중계상이 된다. 정본은 쓰기 전에 양쪽 실재를 확인하고 `$transaction`으로 함께 넘기는 것(`undoOverpayExtraIncome`, `undoReservationPrepaidCancel`). 실패 응답에 '아직 아무것도 안 건드렸다'(`intact`)를 실어야 화면이 사용자에게 할 일을 정확히 말할 수 있다.
+
+생성 액션이 undo 대상 id를 안 돌려주면 undo를 못 만든다. `savePayment`는 `createdIds`를 돌려준다 — **`allocations`로 대신할 수 없다.** 0원 흔적 record는 거기 안 쌓여 고아로 남는다.
+
 ## 백업 export
 전체 백업(`exportAllData`)은 소프트삭제분을 **제외**한다(익스텐션 + tenantRequest 명시필터). import 쪽 deletedAt 복원이 없어 포함하면 복원 시 삭제행이 되살아나므로, 제외가 일관된 의도.
 
