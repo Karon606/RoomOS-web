@@ -160,6 +160,17 @@ if (/im\.alt\s*=\s*''/.test(gal)) {
     if (!mktActions.includes(field)) violations.push(`marketing/actions: ${field} 를 읽지 않는다 — ${why}`)
   }
 
+  // 3-2. 추적 엔드포인트는 아무나 무한히 호출할 수 있으면 안 된다 (D페이즈 잔여 2026-08-03).
+  //      slug 는 공개 URL 에 드러나 있어 누구나 안다. 화이트리스트와 레이트리밋이 없으면
+  //      지표 오염·저장공간 고갈·유료 geo API 소진이 동시에 가능하다.
+  for (const r of ['pageview', 'cta', 'closeup', 'gallery', 'popup']) {
+    const src = readFileSync(`app/api/track/${r}/route.ts`, 'utf8')
+    if (!/rateLimited\(/.test(src)) violations.push(`api/track/${r}: 레이트리밋이 없다 — 무한 호출로 DB·유료 API 를 태울 수 있다`)
+  }
+  if (!/isKnownSlug\(/.test(pvRoute)) {
+    violations.push('api/track/pageview: slug 화이트리스트가 없다 — 아무 문자열로도 방문 기록이 쌓인다')
+  }
+
   // 4. 계측 대상으로 선언한 섹션이 실제로 있어야 한다
   for (const slug of readdirSync(ROOT, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)) {
     const file = `${ROOT}/${slug}/index.html`

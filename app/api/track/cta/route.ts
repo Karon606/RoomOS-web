@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { rateLimited, clientIp } from '@/lib/tracking/guard'
 
 // 공개 랜딩 페이지 CTA 클릭 수집 — 전화·문자 링크를 눌렀을 때 sendBeacon 으로 즉시 기록.
 // 전환의 유일한 직접 신호(기존엔 tel/sms 클릭이 전혀 측정되지 않아 '연락처 도달'을 전환으로 오독했다).
@@ -12,6 +13,9 @@ const CTA_KINDS = new Set(['tel', 'sms', 'kakao', 'blog'])
 
 export async function POST(req: NextRequest) {
   try {
+    // 레이트리밋 — pageview 와 같은 창을 쓴다. 여기는 기존 행 갱신이라 slug 를 안 받지만,
+    // 무제한 호출 자체가 DB 왕복과 유료 자원을 태운다(D페이즈 잔여 2026-08-03).
+    if (rateLimited(clientIp(req))) return NextResponse.json({ ok: false }, { status: 429 })
     const body = await req.json().catch(() => null) as
       | { id?: string; kind?: string; section?: string; tMs?: number }
       | null

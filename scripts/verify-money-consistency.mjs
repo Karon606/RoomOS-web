@@ -379,6 +379,111 @@ for (const p of weakTokens) {
   if (p.calendarToken.length < 43) violations.push(`[데이터] ${p.name} 의 캘린더 토큰이 약한 난수다(길이 ${p.calendarToken.length}) — scripts/rotate-calendar-tokens 로 재발급하라`)
 }
 
+// 15-3. 크론의 상태 전이는 알림 설정에 종속되면 안 되고, 이력을 남겨야 한다 (2026-08-03).
+//   종전에는 단기 자동 퇴실 전환이 VAPID 검사 **아래**에 있어서 푸시 설정이 빠지면
+//   500 으로 빠져나가며 상태 전이까지 조용히 안 돌았다. 계약 상태가 알림 설정에 매달릴 이유가 없다.
+//   게다가 updateMany 로 한 번에 밀어서 이 전이만 TenantStatusLog 를 안 남겼다.
+{
+  const cron = readFileSync('app/api/cron/push-alerts/route.ts', 'utf8')
+  const vapidAt = cron.indexOf('ensureWebPushConfigured()')
+  const flipAt = cron.indexOf('autoCheckoutAt: new Date()')
+  if (vapidAt >= 0 && flipAt >= 0 && vapidAt < flipAt) {
+    violations.push('[소스] 크론의 단기 자동 전환이 VAPID 검사 아래에 있다 — 푸시 설정이 빠지면 상태 전이도 조용히 안 돈다')
+  }
+  if (!/tenantStatusLog\.create/.test(cron)) {
+    violations.push('[소스] 크론의 단기 자동 전환이 상태 이력을 안 남긴다 — 이 전이만 이력에서 사라진다')
+  }
+  if (!/canTransition\(/.test(cron)) {
+    violations.push('[소스] 크론의 단기 자동 전환이 전이표를 안 본다 — 사람이 하는 전환과 규칙이 갈린다')
+  }
+}
+
+// 15-4. 공실로 되돌릴 때 그 방의 다른 계약을 봐야 한다 (B페이즈).
+//   안 보면 한 방에 비거주자와 거주자가 공존할 때 한쪽 퇴실로 **거주자 있는 방이 공실**이 된다.
+if (!/roomStillOccupied\(/.test(tenantsActions)) {
+  violations.push('[소스] applyStatusTransition 이 다른 계약의 점유를 안 본다 — 거주자가 있는 방이 공실로 표시될 수 있다')
+}
+
+// 15-4b. 청구액을 내는 곳은 전부 billForLeaseMonth 정본을 쓴다 (A페이즈 P2, 2026-08-03).
+//   캘린더가 자기 규칙(일할 > 할인가)을 만들어 **예약 인상·락인·단기 이중청구 차단이 전부 빠져** 있었다.
+//   캘린더는 외부로 나가는 문서라 금액이 틀리면 그대로 상대방에게 간다.
+{
+  const cal = readFileSync('app/api/calendar/[token]/route.ts', 'utf8')
+  if (!/billForLeaseMonth\(/.test(cal)) {
+    violations.push('[소스] 캘린더가 billForLeaseMonth 정본을 안 쓴다 — 예약 인상·락인이 빠진 금액이 외부로 나간다')
+  }
+  if (!/lockedMap/.test(cal)) {
+    violations.push('[소스] 캘린더가 청구 락을 안 본다 — 확정된 과거 청구가 캘린더에서만 다른 금액으로 나간다')
+  }
+}
+
+// 15-5. 서류 문구 — 이 축만 상시 감지가 없었다(G-2 잔여, 2026-08-03).
+//
+//   계약서는 저장된 템플릿의 {{키}} 를 코드가 치환해 인쇄한다. 매칭이 없으면 renderContractText 가
+//   **원문을 그대로 남긴다** — 즉 `{{청소비}}` 같은 자리표시자가 실제 계약서에 찍혀 나간다.
+//   실제로 청소비 자리표시자 때문에 29건이 비문이 됐다(E페이즈).
+//   그리고 변수 표를 화면(ContractView)과 인쇄(contractPrintHtml)가 각자 만든다 — 갈리면
+//   같은 계약서가 화면과 종이에서 다르게 읽힌다. 그것이 그 비문의 원인이었다.
+{
+  const printSrc = readFileSync('lib/contractPrintHtml.ts', 'utf8')
+  const viewSrc = readFileSync('app/contract/[tenantId]/ContractView.tsx', 'utf8')
+  // 'const vars' 부터 객체 리터럴이 닫힐 때까지를 중괄호 깊이로 떠낸다.
+  // 처음엔 정규식으로 잡으려다 ContractView 의 useMemo<Record<string,string>> 제네릭에서 빗나가
+  // **null 을 돌려주고 대조 자체가 조용히 건너뛰어졌다**(역주입에서 발견). 깊이 추적이 안전하다.
+  const keysOf = (src) => {
+    const at = src.indexOf('const vars')
+    if (at < 0) return null
+    const open = src.indexOf('{', src.indexOf('=', at))
+    if (open < 0) return null
+    let lvl = 0, end = -1
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') lvl++
+      else if (src[i] === '}') { lvl--; if (lvl === 0) { end = i; break } }
+    }
+    if (end < 0) return null
+    const body = src.slice(open + 1, end)
+    const set = new Set()
+    for (const k of body.matchAll(/^\s*([\wㄱ-ㅎ가-힣]+)\s*:/gm)) set.add(k[1])
+    if (/cleaningFeeVars\(/.test(body)) for (const k of ['청소비', '청소비조항', '청소비공제']) set.add(k)
+    return set
+  }
+  const pk = keysOf(printSrc), vk = keysOf(viewSrc)
+  // 못 읽었으면 통과가 아니라 위반이다 — 조용히 건너뛰는 그물은 없는 것과 같다
+  if (!pk || !vk) violations.push('[소스] 계약서 변수 표를 읽지 못했다 — 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+  if (pk && vk) {
+    for (const k of pk) if (!vk.has(k)) violations.push(`[소스] 계약서 변수 '${k}' 가 인쇄에만 있다 — 화면과 종이가 다르게 읽힌다`)
+    for (const k of vk) if (!pk.has(k)) violations.push(`[소스] 계약서 변수 '${k}' 가 화면에만 있다 — 화면과 종이가 다르게 읽힌다`)
+  }
+  // 저장된 템플릿에 코드가 못 채우는 자리표시자가 있으면 그대로 인쇄된다
+  if (pk) {
+    const props = await prisma.property.findMany({ select: { name: true, contractTemplate: true } })
+    for (const prop of props) {
+      if (!prop.contractTemplate) continue
+      const used = new Set([...JSON.stringify(prop.contractTemplate).matchAll(/\{\{([^}\\"]+)\}\}/g)].map(m => m[1].trim()))
+      for (const k of used) {
+        if (!pk.has(k)) violations.push(`[데이터] ${prop.name} 계약서 템플릿의 '{{${k}}}' 를 코드가 못 채운다 — 자리표시자가 그대로 인쇄된다`)
+      }
+    }
+  }
+}
+
+// 16-1. 초과 납부 처리는 반드시 묻고 간다 (운영자 오더 2026-08-03).
+//   종전에는 폼 안 체크박스가 결정 지점이었다. 금액만 치고 저장을 누르면 초과 블록을 못 보고 지나가고,
+//   기타수익으로 잡혔어야 할 돈이 조용히 다음 달로 넘어간다. 결정을 확인창 한 자리로 올렸다.
+//   체크박스가 다시 생기면 결정 지점이 둘이 되고 두 곳의 기본값이 갈린다.
+// 파일 어디에 choiceDialog 가 있으면 통과하는 느슨한 검사였다 — 예약금 폼에 다른 용도로 하나 생기면
+// 초과분 처리가 사라져도 못 잡는다. excess 조건과 짝지어 본다.
+if (!/excess > 0\)[\s\S]{0,400}?choiceDialog\(/.test(payForm)) {
+  violations.push('[소스] PaymentEntryForm 이 초과분(excess) 처리를 확인창으로 묻지 않는다 — 기타수익이 조용히 이월로 처리된다')
+}
+// 자릿수 확인창을 다시 분리하면 확인창 두 개가 전환 표시 없이 연속으로 뜬다(연타가 돈 처리를 결정한다)
+if (/confirmDialog\(\{[\s\S]{0,200}?SUSPICIOUS|SUSPICIOUS_MULTIPLIER[\s\S]{0,300}?confirmDialog\(/.test(payForm)) {
+  violations.push('[소스] 자릿수 확인창이 초과분 확인창과 분리돼 있다 — 확인창 두 개가 연속으로 떠 오클릭이 돈 처리를 정한다')
+}
+if (/setExcessAsIncome|checked=\{excessAsIncome\}/.test(payForm)) {
+  violations.push('[소스] PaymentEntryForm 에 초과분 체크박스가 되살아났다 — 확인창과 결정 지점이 둘로 갈린다')
+}
+
 // 16-2. 상태 이력은 쌓기만 하고 볼 수 없으면 안 된다 (신고 ad517231, 2026-08-03).
 //
 //   TenantStatusLog 에 167건이 쌓여 있는데 읽는 화면이 하나도 없었다(설정의 데이터 내보내기가 유일).

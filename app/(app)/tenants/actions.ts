@@ -1387,6 +1387,22 @@ function roomVacantForStatus(status: string): boolean | null {
   return null  // WAITING_TOUR, TOUR_DONE — 호실 점유 변경 없음
 }
 
+// 이 방을 아직 점유하고 있는 다른 계약이 있는가.
+//
+// 공실로 되돌리기 전에 반드시 본다. 종전에는 그 방의 다른 lease 를 보지 않고 isVacant 를 덮어써서,
+// 한 방에 비거주자와 거주자가 공존하는 상황에서 한쪽이 퇴실하면
+// **거주자가 있는 방이 공실로 표시**됐다(B페이즈 조사, 실측 0건이지만 열린 경로다).
+async function roomStillOccupied(roomId: string, exceptLeaseId: string): Promise<boolean> {
+  const other = await prisma.leaseTerm.findFirst({
+    where: {
+      roomId, id: { not: exceptLeaseId },
+      status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] },
+    },
+    select: { id: true },
+  })
+  return !!other
+}
+
 // 명시적 상태 전환 — 상태 + 그 전환에 필요한 필드만 변경하고 호실 공실·이력 자동 처리.
 // 상세 모달의 전환 버튼(투어 완료/예약 전환/입실 처리/퇴실 예정/퇴실/비거주 전환 등)이 사용.
 export async function applyStatusTransition(input: {
@@ -1489,7 +1505,9 @@ export async function applyStatusTransition(input: {
     if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE') await reanchorReservationPrepaid(input.leaseTermId)
 
     // 호실 공실 처리
-    const vac = roomVacantForStatus(input.toStatus)
+    let vac = roomVacantForStatus(input.toStatus)
+    // 공실로 되돌리려는데 그 방을 아직 점유한 다른 계약이 있으면 덮지 않는다
+    if (vac === true && lease.roomId && await roomStillOccupied(lease.roomId, input.leaseTermId)) vac = null
     if (lease.roomId && vac !== null) {
       if (input.toStatus === 'CHECKED_OUT') {
         // 퇴실 완료 — 예약 가격 있으면 baseRent 적용 (checkoutTenant 와 동일)
@@ -2853,36 +2871,10 @@ export async function restoreTenantRequest(id: string): Promise<{ ok: true } | {
 }
 
 // 입실 예정 → 거주중 자동 전환 (입주일 도래 시)
-export async function autoTransitionReserved() {
-  try {
-    const { propertyId } = await getPropertyId()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const dueLeases = await prisma.leaseTerm.findMany({
-      where: { propertyId, status: 'RESERVED', moveInDate: { lte: today } },
-      select: { id: true, roomId: true, tenantId: true, dueDay: true, moveInDate: true },
-    })
-    if (dueLeases.length === 0) return
-
-    for (const lease of dueLeases) {
-      // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
-      await prisma.leaseTerm.update({ where: { id: lease.id }, data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) } })
-      if (lease.roomId) {
-        await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
-      }
-      // 거주 구간 이력 — 자동 입실도 열린 구간 보장(이미 있으면 no-op, 추가 write).
-      await ensureOpenStay(prisma, lease.id)
-      await prisma.tenantStatusLog.create({
-        data: { tenantId: lease.tenantId, leaseTermId: lease.id, propertyId, fromStatus: 'RESERVED', toStatus: 'ACTIVE' },
-      })
-    }
-    revalidatePath('/tenants')
-    revalidatePath('/rooms')
-  } catch {
-    // 페이지 로드 중 호출되므로 실패해도 무시
-  }
-}
+// autoTransitionReserved 는 제거했다 (2026-08-03).
+// 호출부를 b8fe79d 에서 의도적으로 뺐는데 함수만 남아 있었다. 예약->거주중 자동 전환은
+// 지금 홈 알림에서 운영자가 확인하고 넘기는 흐름이다. 죽은 채 남아 있으면 다음 세션이
+// '이미 자동으로 된다'고 오해한다.
 
 // ── 계약서 파일 (서명된 PDF / 스캔 본) ─────────────────────────────────
 

@@ -162,11 +162,14 @@ export function ConfirmHost() {
 
         </div>
 
-        {/* 버튼 — 취소 좌 · 확인 우, 높이 40px */}
-        <div className="mt-5 flex justify-end gap-2 shrink-0">
+        {/* 버튼 — 취소 좌 · 확인 우, 높이 40px.
+            flex-wrap 은 클래스 봉합이다. 폭 360px 고정에 좌우 패딩 48px 이라 3지선다에서
+            라벨 합이 312px 을 넘으면 글자가 버튼 밖으로 흘러나온다(360px 폰에서는 더 좁다).
+            글자 크기 확대 설정에서는 데스크탑에서도 깨진다. 라벨을 짧게 쓰는 것과 별개로 막아둔다. */}
+        <div className="mt-5 flex flex-wrap justify-end gap-2 shrink-0">
           {opts.cancelLabel !== '' && (
             <button ref={cancelRef} type="button" onClick={() => done('cancel')}
-              className={`h-10 px-4 rounded-lg text-sm font-medium transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
+              className={`h-10 px-4 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
                 level === 'normal'
                   ? 'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)]'
                   : 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]'
@@ -176,12 +179,12 @@ export function ConfirmHost() {
           )}
           {opts.altLabel && (
             <button type="button" onClick={() => done('alt')}
-              className="h-10 px-4 rounded-lg text-sm font-medium bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2">
+              className="h-10 px-4 rounded-lg text-sm font-medium whitespace-nowrap bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2">
               {opts.altLabel}
             </button>
           )}
           <button ref={confirmRef} type="button" onClick={() => done('confirm')}
-            className={`h-10 px-4 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
+            className={`h-10 px-4 rounded-lg text-sm font-semibold whitespace-nowrap text-[var(--on-solid)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
               isDanger ? 'bg-[var(--tc)] hover:bg-[var(--tc-d)]' : 'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)]'
             }`}>
             {opts.confirmLabel ?? (isDanger ? '삭제' : '저장')}

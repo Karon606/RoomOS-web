@@ -15,7 +15,7 @@ import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 
@@ -84,7 +84,6 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
   // 추천(이번에 낼 금액)보다 더 낸 초과분 — '이월' 또는 '기타 수익' 처리 대상
   const excess = Math.max(0, payAmount - suggestedAmount)
-  const [excessAsIncome, setExcessAsIncome] = useState(false)
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false)   // 현금영수증 발행 표시(메타데이터, 오류신고 2bd8befa)
@@ -117,14 +116,31 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     if (!room.tenantId) { setError('입주자 정보가 없습니다.'); return }
     setError('')
     // 자릿수 오입력 확인 — 보증금/청소비 합산은 정상적으로 커지므로 제외. 기준값(추천액) 없으면 생략.
-    if (!isDepositMode && !isCleaningFeeMode && suggestedAmount > 0 && payAmount >= suggestedAmount * SUSPICIOUS_MULTIPLIER) {
-      const ok = await confirmDialog({
-        title: '입력하신 금액이 예상보다 큽니다.',
-        message: `${fmtWon(payAmount)}이 맞나요? 0을 하나 더 누르지 않았는지 확인하세요.`,
-        level: 'caution',
-        confirmLabel: '이대로 수납',
+    // 초과분 처리 — 놓치기 쉬운 폼 안 체크박스를 확인창으로 올렸다(운영자 오더 2026-08-03).
+    // 금액만 치고 저장을 누르면 초과 블록을 못 보고 지나가는데, 그러면 기타수익으로 잡혔어야 할 돈이
+    // 조용히 다음 달로 넘어간다. 결정을 한 자리로 모아 반드시 거치게 한다.
+    // 기본(주 버튼)은 이월이다 — 선납 처리가 우선이라는 운영 원칙.
+    //
+    // 자릿수 확인창을 여기 합쳤다. 종전에는 따로 떠서 **큰 금액이면 확인창 두 개가 연속**으로 뜨는데,
+    // 다이얼로그가 DOM 을 유지한 채 내용만 바꿔서 전환 표시가 전혀 없었다. 연타 한 번이
+    // 초과분 처리 방식을 대신 결정하고, 그 결정에는 적용취소가 없다(디자이너 패스).
+    // 자릿수 의심 조건은 초과분 조건에 완전히 포섭되므로(5배 이상이면 초과분은 반드시 양수)
+    // 합쳐도 커버리지가 줄지 않는다.
+    let excessAsIncome = false
+    if (!isDepositMode && !isCleaningFeeMode && suggestedAmount > 0 && excess > 0) {
+      const suspicious = payAmount >= suggestedAmount * SUSPICIOUS_MULTIPLIER
+      const choice = await choiceDialog({
+        title: `${room.roomNo ? room.roomNo + ' ' : ''}초과분 ${fmtWon(excess)}을 어떻게 할까요?`,
+        // suggestedAmount 는 미수가 있으면 누적 미수 총액이라 '이용료'가 아니다. '청구액'으로 부른다.
+        message: (suspicious ? `${fmtWon(payAmount)}이 맞나요? 0을 하나 더 누르지 않았는지 확인하세요.\n\n` : '')
+          + `청구액 ${fmtWon(suggestedAmount)}보다 ${fmtWon(excess)} 더 받았습니다.\n이월하면 다음 달 이용료에 먼저 충당됩니다.`,
+        ...(suspicious ? { level: 'caution' as const } : {}),
+        confirmLabel: '이월',
+        altLabel: '기타수익',
+        cancelLabel: '취소',
       })
-      if (!ok) return
+      if (choice === null) return   // 취소는 무변경 — 저장 자체를 하지 않는다
+      excessAsIncome = choice === 'alt'
     }
     startTransition(async () => {
       const release = trackSave()
@@ -163,7 +179,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           if (!depRes.ok) { pushToast('error', depRes.error); return }
         } else {
           // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
-          const useIncome = excessAsIncome && excess > 0
+          const useIncome = excessAsIncome
           const rentPart = useIncome ? payAmount - excess : payAmount
           // 납부 내역에서도 보이도록 그 달 기록 메모에 초과분 표시(이용료 금액 자체는 정상가 유지 — 중복 매출 방지)
           const rentMemo = useIncome
@@ -204,10 +220,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         }
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
         pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨'
-          : (excessAsIncome && excess > 0) ? `이용료 ${fmtWon((payAmount - excess))} + 기타수익 ${fmtWon(excess)} 기록됨`
+          : excessAsIncome ? `이용료 ${fmtWon((payAmount - excess))} + 기타수익 ${fmtWon(excess)} 기록됨`
           : '월 이용료 수납됨')
         // 폼 리셋
-        setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo(''); setExcessAsIncome(false)
+        setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
         setPayDateVal(kstYmdStr())
         onSaved?.()
       } catch (err) {
@@ -258,14 +274,12 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         </div>
       </div>
 
-      {/* 초과 납부 처리 — 추천액보다 더 내면 '이월'(기본) 또는 '기타 수익'으로 확정 */}
+      {/* 초과 납부 안내 — 결정은 저장할 때 확인창에서 한 번만 묻는다.
+          종전에는 여기 체크박스가 결정 지점이었는데 금액만 치고 저장하면 그냥 지나쳤다. */}
       {!isDepositMode && !isCleaningFeeMode && excess > 0 && (
-        <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2.5 space-y-1.5">
-          <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{fmtWon(excess)}</span></p>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={excessAsIncome} onChange={e => setExcessAsIncome(e.target.checked)} className="rounded" />
-            <span className="text-xs text-[var(--warm-dark)]">기타 수익으로 처리 <span className="text-[var(--warm-muted)]">(체크 안 하면 다음 달로 이월)</span></span>
-          </label>
+        <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2.5">
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{fmtWon(excess)}</span>
+            <span className="text-[var(--warm-muted)]"> · 저장할 때 이월(기본)과 기타수익 중 고릅니다.</span></p>
         </div>
       )}
       {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}

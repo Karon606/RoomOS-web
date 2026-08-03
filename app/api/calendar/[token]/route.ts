@@ -1,8 +1,7 @@
 // 캘린더 구독(.ics) 피드 — 구글/애플/아웃룩에서 webcal 로 구독하면 납부예정·퇴실예정 자동 동기화(읽기전용).
 // 토큰만으로 접근(공개) — 캘린더 앱은 쿠키 없이 가져가므로 비밀 토큰이 보안.
 import prisma from '@/lib/prisma'
-import { discountedRent } from '@/lib/rentDiscount'
-import { isCheckoutNoBillingMonthFor } from '@/lib/billing'
+import { isCheckoutNoBillingMonthFor, billForLeaseMonth } from '@/lib/billing'
 import { shouldShowTourEvent } from '@/lib/tourFeed'
 import { dueDateForMonth, isDeferredForMonth, resolveDueRaw } from '@/lib/dueDate'
 
@@ -37,7 +36,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       // 납부일 임시조정 — 없으면 미뤄둔 날짜가 피드에 반영되지 않는다(신고 998bff27)
       overrideDueDay: true, overrideDueDayMonth: true, overrideDueDayReason: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
-      room: { select: { roomNo: true } },
+      // 예약 인상 — 인상 적용월 이상은 room.scheduledRent 로 청구한다(스케줄러가 baseRent 로
+      // 옮기기 전까지의 예약값). 캘린더가 이걸 안 봐서 외부로 나가는 일정에 인상 전 금액이 찍혔다(A페이즈 P2).
+      room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } },
       tenant: { select: { name: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
@@ -56,6 +57,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false, isBillingAdjust: false },
     select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
   })
+  // 청구 락 — 그 달 record 의 **최댓값**이 청구액이다(합계가 아니다).
+  // 조정 전표(isBillingAdjust)도 락 계산에는 들어간다 — 위 pays 는 표시·완납 판정용이라 제외하므로
+  // 락은 따로 조회한다. 이걸 안 보면 이미 확정된 과거 청구가 캘린더에서만 다른 금액으로 나간다.
+  const lockRows = await prisma.paymentRecord.findMany({
+    where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false },
+    select: { leaseTermId: true, targetMonth: true, expectedAmount: true },
+  })
+  const lockedMap = new Map<string, number>()
+  for (const r of lockRows) {
+    const k = `${r.leaseTermId}|${r.targetMonth}`
+    const cur = lockedMap.get(k) ?? 0
+    if (r.expectedAmount > cur) lockedMap.set(k, r.expectedAmount)
+  }
+
   const paidMap = new Map<string, { sum: number; lastPay: Date }>()
   for (const r of pays) {
     const k = `${r.leaseTermId}|${r.targetMonth}`
@@ -137,10 +152,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const dy = dueDate.getFullYear(), dm = dueDate.getMonth() + 1, day = dueDate.getDate()
         // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)
         if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, monthStr, dueDate)) continue
-        // 청구액 = 그 달에 적용된 퇴실 일할 정산 > 할인 반영 이용료 (알림·예상매출과 동일 규칙)
-        const amount = (l.checkoutProratedAmount != null && l.checkoutProratedMonth === monthStr)
-          ? l.checkoutProratedAmount
-          : discountedRent(l.discounts, monthStr, l.rentAmount)
+        // 청구액은 billForLeaseMonth 정본을 쓴다. 종전에는 여기서 자기 규칙(일할 > 할인가)을 만들어
+        // **예약 인상과 락인, 단기 이중청구 차단이 전부 빠져** 있었다(A페이즈 P2).
+        // 캘린더는 외부로 나가는 문서라 금액이 틀리면 그대로 상대방에게 간다.
+        const amount = billForLeaseMonth(l, monthStr, lockedMap.get(`${l.id}|${monthStr}`) ?? null)
         if (amount <= 0) continue
         const paid = paidMap.get(`${l.id}|${monthStr}`)
         if (paid && paid.sum >= amount) {

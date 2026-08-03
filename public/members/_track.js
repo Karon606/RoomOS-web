@@ -200,7 +200,10 @@
         activeSince = Date.now();
       }
     });
+    // pagehide 가 visibilitychange 로 못 잡는 나머지(탭 닫기·다른 페이지 이동)를 덮는다.
+    // beforeunload 는 걸지 않는다 — 리스너가 존재하는 것만으로 일부 브라우저가 bfcache 를 끈다.
+    // 이 사이트는 카카오 상담을 새 탭으로 열었다가 뒤로가기로 돌아오는 동선이 있어 체감된다.
+    // visibilitychange + pagehide 로 이미 커버되므로 중복이기도 하다(2026-08-03).
     window.addEventListener('pagehide', sendCloseup);
-    window.addEventListener('beforeunload', sendCloseup);
   } catch (e) { /* tracking 실패해도 페이지엔 영향 없게 */ }
 })();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { rateLimited, clientIp } from '@/lib/tracking/guard'
 
 // 공개 랜딩 페이지 갤러리 시트 열람 수집 — 어떤 등급 시트의 몇 번째 사진을 봤나(도달률·스와이프 깊이·체류).
 // _gallery.js 가 시트 닫힘/페이지 종료 시 pv_id 로 sendBeacon. PageView.galleryViews 에 저장(덮기).
@@ -54,6 +55,9 @@ function safeViews(v: unknown): unknown[] | null {
 
 export async function POST(req: NextRequest) {
   try {
+    // 레이트리밋 — pageview 와 같은 창을 쓴다. 여기는 기존 행 갱신이라 slug 를 안 받지만,
+    // 무제한 호출 자체가 DB 왕복과 유료 자원을 태운다(D페이즈 잔여 2026-08-03).
+    if (rateLimited(clientIp(req))) return NextResponse.json({ ok: false }, { status: 429 })
     const body = await req.json().catch(() => null) as { id?: string; views?: unknown } | null
     if (!body || typeof body.id !== 'string' || !body.id) {
       return NextResponse.json({ ok: false }, { status: 400 })

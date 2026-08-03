@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import prisma from '@/lib/prisma'
 import { parseUA, categorizeReferrer } from '@/lib/tracking/uaParse'
 import { lookupGeo } from '@/lib/tracking/geo'
+import { isKnownSlug, rateLimited, clientIp } from '@/lib/tracking/guard'
 
 // 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 클라이언트 스크립트에서 POST.
 // 익명 집계 위주(IP·UA는 해시 후 폐기). closeup(체류·스크롤)은 /api/track/closeup 으로.
@@ -67,6 +68,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
     const slug = body.slug.trim().slice(0, 64)
+    // 실존 영업장 slug 만 받는다. slug 는 공개 URL 에 드러나 있어 누구나 알지만,
+    // 화이트리스트가 없으면 아무 문자열로도 행이 쌓여 저장공간과 유료 geo 호출이 무한히 늘어난다.
+    if (!(await isKnownSlug(slug))) return NextResponse.json({ ok: false }, { status: 404 })
+    // IP 레이트리밋 — 무한 주입을 유한하게 만든다(완전 차단이 목적이 아니다, guard.ts 주석 참조)
+    if (rateLimited(clientIp(req))) return NextResponse.json({ ok: false }, { status: 429 })
     // 클라가 만든 id(crypto.randomUUID) — 입장 응답을 기다리지 않고 closeup 이 같은 id 를 쓰게 해서
     // 'pv_id 응답 전 이탈' 결측(빠른 이탈자가 통째로 유실되던 것)을 없앤다(전문가 지적). uuid 형식만 수용.
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

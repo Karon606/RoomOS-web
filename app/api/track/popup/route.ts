@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { rateLimited, clientIp } from '@/lib/tracking/guard'
 
 // 프로모션 팝업 열람 수집 — 얼마나 자세히 봤나(체류·닫기 방식·CTA). 팝업 인라인 스크립트가
 // 닫힘·이탈·카카오 클릭 시 pv_id 로 sendBeacon(덮어쓰기). PageView.popupView 에 저장(갤러리 트래킹과 동일 패턴).
@@ -37,6 +38,9 @@ function safeView(v: unknown): Record<string, unknown> | null {
 
 export async function POST(req: NextRequest) {
   try {
+    // 레이트리밋 — pageview 와 같은 창을 쓴다. 여기는 기존 행 갱신이라 slug 를 안 받지만,
+    // 무제한 호출 자체가 DB 왕복과 유료 자원을 태운다(D페이즈 잔여 2026-08-03).
+    if (rateLimited(clientIp(req))) return NextResponse.json({ ok: false }, { status: 429 })
     const body = await req.json().catch(() => null) as { id?: string; view?: unknown } | null
     if (!body || typeof body.id !== 'string' || !body.id) {
       return NextResponse.json({ ok: false }, { status: 400 })

@@ -12,6 +12,7 @@ import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dash
 import { kstYmd } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
 import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
+import { canTransition } from '@/lib/leaseTransitions'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -26,23 +27,48 @@ export async function GET(req: Request) {
   const authorized = !!cronSecret && (auth === `Bearer ${cronSecret}` || secret === cronSecret)
   if (!authorized) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
-  if (!ensureWebPushConfigured()) {
-    return NextResponse.json({ ok: false, error: 'VAPID not configured' }, { status: 500 })
-  }
-
   // 단기 자동 퇴실 예정 전환(운영자 승인 2026-07-11) — KST 기준 내일(놓친 경우 당일 포함)이
   // 퇴실일인 단기 거주중 계약을 '퇴실 예정'으로. autoCheckoutAt 기록으로 재전환 방지
   // (수동 복귀 존중), 퇴실일 변경 시 updateTenant 가 null 리셋해 재무장.
+  //
+  // **VAPID 검사보다 위에 둔다.** 종전에는 아래에 있어서 푸시 설정이 빠지면 500 으로 빠져나가며
+  // 상태 전이까지 조용히 안 돌았다. 계약 상태가 알림 설정에 종속될 이유가 없다.
+  //
+  // 그리고 updateMany 로 한 번에 밀지 않고 건별로 돌면서 **이력을 남긴다.** 종전에는 이 전이만
+  // TenantStatusLog 를 안 써서, 상태 이력에서 "언제 퇴실 예정이 됐나"가 사라졌다
+  // (고객 카드 상태 이력 위젯이 생기면서 이 구멍이 드러났다).
   const k = kstYmd()
   const kstToday = new Date(k.year, k.month - 1, k.day)
   const kstDayAfterTomorrow = new Date(kstToday.getTime() + 2 * 86400000)
-  const autoFlipped = await prisma.leaseTerm.updateMany({
+  const flipTargets = await prisma.leaseTerm.findMany({
     where: {
       status: 'ACTIVE', isShortTerm: true, autoCheckoutAt: null,
       expectedMoveOut: { gte: kstToday, lt: kstDayAfterTomorrow },
     },
-    data: { status: 'CHECKOUT_PENDING', autoCheckoutAt: new Date() },
+    select: { id: true, status: true, tenantId: true, propertyId: true },
   })
+  let flippedCount = 0
+  for (const lt of flipTargets) {
+    // 전이표를 통과하는 것만 — 사람이 하는 전환과 같은 규칙을 크론에도 건다
+    if (!canTransition(lt.status, 'CHECKOUT_PENDING')) continue
+    await prisma.leaseTerm.update({
+      where: { id: lt.id },
+      data: { status: 'CHECKOUT_PENDING', autoCheckoutAt: new Date() },
+    })
+    await prisma.tenantStatusLog.create({
+      data: {
+        tenantId: lt.tenantId, leaseTermId: lt.id, propertyId: lt.propertyId,
+        fromStatus: lt.status, toStatus: 'CHECKOUT_PENDING',
+        reason: '단기 자동 전환',   // changedById 가 없는 것이 '시스템이 했다'는 표시다
+      },
+    })
+    flippedCount++
+  }
+  const autoFlipped = { count: flippedCount }
+
+  if (!ensureWebPushConfigured()) {
+    return NextResponse.json({ ok: false, error: 'VAPID not configured', autoFlipped: flippedCount }, { status: 500 })
+  }
 
   // 데이터 정합 감사(운영자 오더 2026-07-20, 땜빵 금지) — 위반을 오류신고로 자동 적재.
   // 실패해도 푸시 발송은 계속(감사는 부가 기능).

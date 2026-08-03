@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { rateLimited, clientIp } from '@/lib/tracking/guard'
 
 // 페이지 닫힐 때 호출 — 체류 시간 + 최대 스크롤 깊이를 기존 PageView 행에 업데이트.
 // sendBeacon 으로 호출되므로 가벼운 응답.
@@ -39,6 +40,9 @@ function safeMilestones(v: unknown): Record<string, number> | null {
 
 export async function POST(req: NextRequest) {
   try {
+    // 레이트리밋 — pageview 와 같은 창을 쓴다. 여기는 기존 행 갱신이라 slug 를 안 받지만,
+    // 무제한 호출 자체가 DB 왕복과 유료 자원을 태운다(D페이즈 잔여 2026-08-03).
+    if (rateLimited(clientIp(req))) return NextResponse.json({ ok: false }, { status: 429 })
     const body = await req.json().catch(() => null) as
       | { id?: string; durationMs?: number; activeMs?: number; scrollDepthPct?: number; sectionDwellMs?: unknown; scrollMilestones?: unknown }
       | null

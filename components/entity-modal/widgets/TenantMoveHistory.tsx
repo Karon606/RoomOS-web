@@ -19,7 +19,11 @@ export function TenantMoveHistory({ tenantId }: { tenantId: string }) {
   const [showOlder, setShowOlder] = useState(false)
   useEffect(() => {
     let active = true
-    getTenantMoveHistory(tenantId).then(d => { if (active) setData(d) })
+    // 실패해도 스켈레톤이 영구 잔존하지 않게 빈 목록으로 떨어뜨린다(§27.2).
+    // 상태 이력 위젯을 만들면서 형제 둘도 같은 결함인 것이 드러나 함께 봉합했다(2026-08-03).
+    getTenantMoveHistory(tenantId)
+      .then(d => { if (active) setData(d) })
+      .catch(() => { if (active) setData({ items: [] }) })
     return () => { active = false }
   }, [tenantId])
 
