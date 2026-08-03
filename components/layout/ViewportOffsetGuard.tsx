@@ -37,8 +37,12 @@ const PENDING_TTL_MS = 600  // 키보드 리사이즈가 액세서리 바·본�
 // 그래서 모달 특례 코드가 필요 없다. window 는 절대 건드리지 않는다(B 패턴 페이지가 맨 위로 튄다).
 function scrollParent(el: Element): HTMLElement | null {
   for (let n = el.parentElement; n; n = n.parentElement) {
-    const oy = getComputedStyle(n).overflowY
-    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+    const cs = getComputedStyle(n)
+    // fixed 조상을 만나면 멈춘다. 그 위 스크롤러는 이 요소를 애초에 못 움직인다 —
+    // 모달 안에서 본문이 안 넘치면 배경(.app-main)을 잡아 배경만 스크롤되고 델타가 수렴하지 않았다.
+    // sticky 는 멈추지 않는다. 흐름 안에 있어 자기 스크롤러가 실제로 움직인다.
+    if (cs.position === 'fixed') return null
+    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && n.scrollHeight > n.clientHeight) return n
   }
   return null
 }
@@ -58,7 +62,11 @@ export default function ViewportOffsetGuard() {
     if (!vv) return
     const root = document.documentElement
 
-    // offsetTop 을 함께 빼야 한다 — iOS 가 visual viewport 를 팬한 만큼 과대 계산되는 것을 막는다
+    // **열림 판정과 겹침 크기는 서로 다른 숫자다.** 하나로 합치면 안 된다(신고 716e7b0c).
+    // 판정은 팬 불변이어야 한다 — offsetTop 을 빼면 iOS 가 밀수록 값이 줄어 0까지 떨어지고,
+    // 키보드가 떠 있는데도 '닫혔다'로 오판해 아래 복원이 팬을 되감는다. 화면이 툭 떨어진다.
+    const keyboardOpenNow = () => window.innerHeight - vv.height > KBD_OPEN_PX
+    // 겹침 크기는 반대다 — 팬한 만큼 실제로 덜 가리므로 offsetTop 을 뺀다.
     const overlapNow = () => Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)))
 
     const reveal = () => {
@@ -79,13 +87,18 @@ export default function ViewportOffsetGuard() {
     // 패딩이 실제로 반영된 다음 프레임에 잰다 — 그 전에는 스크롤 범위가 부족해 클램프된다
     const scheduleReveal = () => { if (pending.current) requestAnimationFrame(reveal) }
 
-    const sync = () => {
-      const overlap = overlapNow()
-      const keyboardOpen = overlap > KBD_OPEN_PX
-      root.style.setProperty(KBD_INSET, keyboardOpen ? `${overlap}px` : '0px')
-      if (keyboardOpen) { scheduleReveal(); return }
+    const restore = () => {
       if (window.scrollY !== 0 || vv.offsetTop > 0) window.scrollTo(0, 0)
     }
+    // 크기 갱신은 resize 에서만. 팬 프레임마다 다시 쓰면 scrollHeight 가 오르내리며
+    // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
+    const onResize = () => {
+      const open = keyboardOpenNow()
+      root.style.setProperty(KBD_INSET, open ? `${overlapNow()}px` : '0px')
+      if (open) { scheduleReveal(); return }
+      restore()
+    }
+    const onScroll = () => { if (!keyboardOpenNow()) restore() }
 
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
@@ -96,13 +109,13 @@ export default function ViewportOffsetGuard() {
     }
     const onFocusOut = () => { pending.current = null }
 
-    vv.addEventListener('resize', sync)
-    vv.addEventListener('scroll', sync)
+    vv.addEventListener('resize', onResize)
+    vv.addEventListener('scroll', onScroll)
     document.addEventListener('focusin', onFocusIn, true)
     document.addEventListener('focusout', onFocusOut, true)
     return () => {
-      vv.removeEventListener('resize', sync)
-      vv.removeEventListener('scroll', sync)
+      vv.removeEventListener('resize', onResize)
+      vv.removeEventListener('scroll', onScroll)
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('focusout', onFocusOut, true)
       root.style.removeProperty(KBD_INSET)

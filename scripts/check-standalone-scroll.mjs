@@ -85,6 +85,10 @@ try {
   if (!/addEventListener\(['"]focusin['"]/.test(guard)) {
     violations.push('components/layout/ViewportOffsetGuard.tsx — 포커스 구독이 사라짐. 키보드는 열리는데 가려진 칸으로 아무도 데려다주지 않는다')
   }
+  // fixed 조상에서 멈추지 않으면 모달 안에서 배경(.app-main)을 잡아 배경만 스크롤된다(신고 716e7b0c 조사)
+  if (!/position\s*===\s*['"]fixed['"]/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — 재노출이 fixed 조상에서 멈추지 않는다. 모달 안에서 창은 그대로 두고 배경만 스크롤된다')
+  }
   // 이름이 아니라 처방의 행위 자체를 본다 — 리네임에 안 죽는다
   if (!/\.scrollTop\s*\+?=/.test(guard)) {
     violations.push('components/layout/ViewportOffsetGuard.tsx — 재노출 스크롤 대입이 사라짐. 구독은 도는데 아무것도 스크롤하지 않는다')
