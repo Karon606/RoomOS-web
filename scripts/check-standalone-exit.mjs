@@ -73,6 +73,14 @@ try {
   if (!/<Link\s+href=\{back\.href\}/.test(viewer)) {
     violations.push('[소스] 서류 뷰어의 복귀 링크가 사라졌다 — 목적지는 앱 안인데 돌아갈 수단이 없다')
   }
+  // 인쇄는 공유 시트로 대신할 수 없다 — iOS 가 웹이 넘긴 파일에 프린트를 안 열어준다(실기 확인 2026-08-04)
+  if (!/window\.print\(\)/.test(viewer)) {
+    violations.push('[소스] 서류 뷰어에서 인쇄가 사라졌다 — 공유 시트 안 프린트는 iOS 에서 안 열려 대안이 없다')
+  }
+  const css = strip(readFileSync('app/globals.css', 'utf8'))
+  if (!/\.doc-viewer\s*\{[^}]*height:\s*auto/.test(css)) {
+    violations.push('[소스] 서류 뷰어 인쇄 CSS 가 사라졌다 — h-dvh 컨테이너를 그대로 인쇄해 첫 화면만 나온다')
+  }
 } catch {
   violations.push('[소스] 서류 보기 정본(ViewDocButton·DocViewer) 을 읽을 수 없다 — 사라졌다')
 }

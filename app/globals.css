@@ -572,6 +572,12 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 
   body { background: #fff !important; color: #3d2418 !important; }
   .no-print, nav, aside, header { display: none !important; }
+
+  /* 서류 뷰어 인쇄 — 컨테이너가 h-dvh + overflow-y-auto 라 그대로 인쇄하면 첫 화면만 나온다.
+     높이·넘침을 풀고 페이지마다 쪽을 나눈다. 화면용 라운드·그림자는 종이에 남기지 않는다(§26). */
+  .doc-viewer { height: auto !important; overflow: visible !important; padding: 0 !important; background: #FFFFFF !important; }
+  .doc-viewer img { width: 100% !important; border-radius: 0 !important; box-shadow: none !important; margin: 0 !important; break-after: page; }
+  .doc-viewer img:last-child { break-after: auto; }
   main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
 
   table { page-break-inside: auto; }

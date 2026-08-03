@@ -17,12 +17,16 @@
 // 스크롤 계약은 A(자체 스크롤러)다. 페이지를 세로로 쌓으므로 높이가 콘텐츠에서 나온다 —
 // iframe 때처럼 flex:1 로 뷰포트 잔여를 채우면 1장짜리는 늘어나고 2장짜리는 잘린다.
 //
-// 툴바에 액션을 얹지 않는다. 목록 행이 이미 보내기·삭제를 갖고 있고, '보기'는 서류 정본 동사 중
-// "아무것도 만들지 않는" 동사다(knowledge/doc-vocabulary.md).
+// 툴바에 액션은 [인쇄] 하나다(운영자 승인 2026-08-04, 동사 6번째로 등재).
+// 종전 사전은 "인쇄는 보내기의 공유 시트 안에 있다"고 정했는데, **실기에서 iOS 가 웹이 넘긴 파일에
+// 프린트를 안 열어주는 것이 확인됐다.** 대안이 죽었으므로 금지 근거도 같이 사라졌다.
+// 페이지가 우리 DOM 이라 window.print() 가 공유 시트를 안 거치고 바로 걸린다.
+// 발급·작성처럼 서류 상태를 바꾸는 동사는 여기 두지 않는다 — '보기'의 정의를 직접 깬다.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
+import { Btn } from '@/components/ui/Btn'
 
 // 어디서 왔는지는 **열거 키**로만 받는다. 경로를 받으면 오픈 리디렉트가 되고,
 // 라벨을 받으면 우리 크롬 안에 임의 문자열이 그려진다. 라벨은 각 목적지 h1 을 그대로 옮겼다.
@@ -72,7 +76,7 @@ export default function DocViewer({ fileId, from, tenantId }: {
   }, [fileId])
 
   return (
-    <div className="h-dvh overflow-y-auto" style={{
+    <div className="doc-viewer h-dvh overflow-y-auto" style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       background: 'var(--canvas)',
       padding: '16px 0 calc(16px + env(safe-area-inset-bottom, 0px))',
@@ -89,14 +93,16 @@ export default function DocViewer({ fileId, from, tenantId }: {
           color: 'var(--tc-text)', fontSize: 13, textDecoration: 'none',
           display: 'inline-flex', alignItems: 'center', minHeight: 44,
         }}>{'‹'} {back.label}</Link>
+        <Btn variant="primary" size="sm" style={{ marginLeft: 'auto' }}
+          disabled={!pages} onClick={() => window.print()}>인쇄</Btn>
       </div>
 
-      {/* 인쇄는 새 동사가 아니다 — 폰은 목록의 보내기가 여는 공유 시트 안에 프린터가 있고,
-          데스크톱은 이 화면을 그대로 인쇄하면 된다(툴바·안내는 no-print 로 빠진다). */}
-      <p className="no-print" style={{ width: RAIL, fontSize: 12, color: 'var(--ink-s)', margin: '0 0 12px' }}>
-        {pages && pages.length > 1 ? `${pages.length}장짜리 서류입니다. ` : ''}
-        인쇄하거나 파일로 저장하려면 목록에서 보내기를 누르세요.
-      </p>
+      {/* 장수만 알린다. 인쇄는 버튼이 실물로 서 있으니 경로 안내가 필요 없다. */}
+      {pages && pages.length > 1 && (
+        <p className="no-print" style={{ width: RAIL, fontSize: 12, color: 'var(--ink-s)', margin: '0 0 12px' }}>
+          {pages.length}장짜리 서류입니다. 아래로 넘기면 다음 장이 있습니다.
+        </p>
+      )}
 
       {error ? (
         // 실패를 흰 사각형으로 두지 않는다 — 이번 신고가 다른 얼굴로 돌아온다(§27.2)
