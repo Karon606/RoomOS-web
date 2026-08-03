@@ -1,27 +1,38 @@
-// 보관된 서류를 앱 안에서 여는 정본 버튼 — 브라우저 PDF 뷰어가 뜨고 거기서 인쇄·저장·확대가 된다.
+// 보관된 서류를 앱 안에서 여는 정본 버튼 — 앱 안 뷰어(/doc/[fileId])로 보낸다.
 //
-// 왜 필요한가: 종전에는 파일명이 구글 드라이브 링크를 겸해 앱 밖으로 나갔다. 데스크톱에서 '보내기'는
-// 공유 시트가 없어 다운로드로만 떨어지므로, 앱 안에 서류를 여는 길이 아예 없었다. 운영자가 계약서를
-// 프린터로 뽑지 못한 원인이다(2026-08-01 지적). 인쇄는 새 동사를 만들지 않고 뷰어 안에서 해결한다.
+// 종전에는 /api/doc-file 을 target="_blank" 로 열었다. 목적지가 순수 PDF 응답이라 우리 마크업이
+// 0바이트고, 돌아가기 버튼을 넣을 자리가 없었다. 복귀를 브라우저 크롬에 맡긴 설계인데
+// 홈화면 앱(standalone)에는 주소창도 뒤로가기도 없어 편도가 됐다(신고 f12c265b·083239c3).
+// **앱 안에서 이어서 할 동작은 앱 안 라우트로 보낸다. 새 탭으로 내보내지 않는다.**
 //
 // 라벨은 여기서만 정한다 — label prop 을 두지 않는다. 호출부가 이름을 덮어쓰던 구조가 '공유'와
 // '보내기'로 갈라지는 사고를 냈다(SendDocButton 주석 참조).
 //
 // /api/doc-file 은 Content-Disposition 을 붙이지 않아 브라우저가 인라인으로 렌더한다. attachment 를
 // 붙이면 '보기'가 조용히 '저장'이 되어 지금 문제가 그대로 재발하므로 그 헤더를 추가하지 말 것.
-// 권한은 이 라우트가 영업장 소유를 검증한다 — '보내기'와 같은 통로라 역할별 차이가 생기지 않는다.
+// 권한은 뷰어 라우트와 그 API 양쪽이 영업장 소유를 검증한다.
 
 import { BtnLink } from '@/components/ui/Btn'
 
-export function ViewDocButton({ driveFileId, className }: {
+// 복귀 목적지는 **열거 키**로만 받는다. 경로를 받으면 오픈 리디렉트가 되고,
+// 라벨을 받으면 크롬 안에 임의 문자열이 그려진다. 키 -> 라벨·경로 표는 뷰어가 들고 있다.
+export type DocViewerFrom = 'contracts' | 'rent-receipts' | 'residence-certs' | 'tenant'
+
+export function ViewDocButton({ driveFileId, from, tenantId, className }: {
   driveFileId: string
+  /** 어느 화면에서 열었는지 — 뷰어의 복귀 링크 문구가 이걸로 정해진다. 없으면 홈으로 돌아간다. */
+  from?: DocViewerFrom
+  /** from='tenant' 일 때 돌아갈 고객. */
+  tenantId?: string
   className?: string
 }) {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (from === 'tenant' && tenantId) q.set('tenantId', tenantId)
+  const qs = q.toString()
   return (
     <BtnLink
-      href={`/api/doc-file?id=${encodeURIComponent(driveFileId)}`}
-      target="_blank"
-      rel="noreferrer"
+      href={`/doc/${encodeURIComponent(driveFileId)}${qs ? `?${qs}` : ''}`}
       variant="primary"
       size="sm"
       className={className}

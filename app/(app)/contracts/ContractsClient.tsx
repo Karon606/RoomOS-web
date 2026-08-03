@@ -219,7 +219,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
                     종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
-                <ViewDocButton driveFileId={c.driveFileId} />
+                <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
                 {/* 보내기는 조건 없이 띄운다 — 형제 2화면과 같게. canShare 로 숨기면 기기마다 행이 달라져
                     학습이 안 되고, 데스크톱에서도 다운로드 폴백과 안내 토스트가 있어 실패하지 않는다. */}
                 <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}

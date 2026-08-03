@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ResidenceCertData } from './actions'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
+import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -74,9 +75,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   const handlePrint = async () => {
     if (previewing) return
     setPreviewing(true)
-    // 팝업 차단 회피: 비동기(fetch) 이후 window.open은 모바일 Safari에서 차단된다.
-    // 사용자 제스처 시점에 빈 새 탭을 먼저 열고, PDF 준비되면 그 탭에 주입한다.
-    const win = window.open('', '_blank')
+    // 터치 기기는 공유 시트로 넘긴다 — standalone 앱에서 새 탭은 돌아올 길이 없다(lib/docPreview).
+    // 데스크톱은 종전대로. 팝업 차단 회피: 제스처 시점에 빈 새 탭을 먼저 열고 준비되면 주입.
+    const useShare = canShareFiles()
+    const win = useShare ? null : window.open('', '_blank')
     try {
       const res = await fetch('/api/residence-cert/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -89,9 +91,13 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         pushToast('error', msg); return
       }
       const blob = await res.blob()
+      if (useShare && await sharePdfFile(blob, pdfFileName('실거주 확인서', data.tenantName, issueDate), '실거주 확인서')) return
       const url = URL.createObjectURL(blob)
       if (win) win.location.href = url
-      else window.open(url, '_blank')
+      else if (!window.open(url, '_blank')) {
+        // 공유가 안 되는 기기인데 새 탭도 막혔다 — 여기서 조용히 끝나면 화면 무반응이 된다
+        pushToast('error', '미리보기를 열지 못했습니다', { detail: '팝업 차단을 해제한 뒤 다시 시도해 주세요.' })
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
       win?.close()

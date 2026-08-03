@@ -206,8 +206,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         {/* 원격 서명이 들어온 뒤에는 **그 시점 내용**으로 열어야 한다. 서명은 A 에 했는데
             B 짜리 계약서가 나가면 그건 입주자가 서명한 문서가 아니다(2026-08-03).
             바뀐 내용으로 받으려면 서명 요청을 다시 보내 새 링크·새 계약서를 만든다. */}
+        {/* 새 창으로 열지 않는다 — 홈화면 앱(standalone)에는 주소창이 없어 돌아오면 앱 두 번째 사본이 된다.
+            계약서 작성 화면에는 자체 복귀 링크가 있다(ContractView 툴바). */}
         <BtnLink href={share?.link?.signedAt ? `/contract/${tenantId}?share=${share.link.id}` : `/contract/${tenantId}`}
-          target="_blank" rel="noreferrer"
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
           {share?.link?.signedAt ? '서명본 계약서 발급' : '계약서 작성·서명'}
         </BtnLink>
@@ -259,7 +260,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                 <span className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] truncate">
                   {tenantName} · {dateLabel}
                 </span>
-                <ViewDocButton driveFileId={f.driveFileId} />
+                <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
                 <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
                   className={btnClass('secondary', 'sm')} />
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}

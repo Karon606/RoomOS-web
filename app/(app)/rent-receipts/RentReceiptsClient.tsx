@@ -247,7 +247,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                 <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
                   {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
                       종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
-                  <ViewDocButton driveFileId={c.driveFileId} />
+                  <ViewDocButton driveFileId={c.driveFileId} from="rent-receipts" />
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
                   <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { RentReceiptData } from './actions'
+import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -105,8 +106,10 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const handlePreview = async () => {
     if (previewing) return
     setPreviewing(true)
-    // 팝업 차단 회피: 사용자 제스처 시점에 빈 새 탭을 먼저 열고 PDF 준비되면 주입(모바일 Safari 대응).
-    const win = window.open('', '_blank')
+    // 터치 기기는 공유 시트로 넘긴다 — standalone 앱에서 새 탭은 돌아올 길이 없다(lib/docPreview).
+    // 데스크톱은 종전대로. 팝업 차단 회피: 제스처 시점에 빈 새 탭을 먼저 열고 준비되면 주입.
+    const useShare = canShareFiles()
+    const win = useShare ? null : window.open('', '_blank')
     try {
       const res = await fetch('/api/rent-receipt/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -119,9 +122,13 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
         pushToast('error', msg); return
       }
       const blob = await res.blob()
+      if (useShare && await sharePdfFile(blob, pdfFileName(docLabel, data.name, issueDate), docLabel)) return
       const url = URL.createObjectURL(blob)
       if (win) win.location.href = url
-      else window.open(url, '_blank')
+      else if (!window.open(url, '_blank')) {
+        // 공유가 안 되는 기기인데 새 탭도 막혔다 — 여기서 조용히 끝나면 화면 무반응이 된다
+        pushToast('error', '미리보기를 열지 못했습니다', { detail: '팝업 차단을 해제한 뒤 다시 시도해 주세요.' })
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
       win?.close()

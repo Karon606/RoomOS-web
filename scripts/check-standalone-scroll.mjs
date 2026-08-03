@@ -26,7 +26,9 @@ const A_SHELL = /h-dvh|h-screen/
 const A_SCROLLER = /overflow-y-auto/
 const B_MARKER = /<DocumentScroll\b|html\s*,\s*body[^}]*overflow-y:\s*auto/
 // 뷰포트 높이를 하한으로 잡는 루트 컨테이너 — 넘치면 잘리는 후보
-const FULL_HEIGHT = /min-h-(screen|dvh)|minHeight:\s*['"]100(vh|dvh)['"]/
+// height 로 잡는 형태도 대상이다 — minHeight 만 보다가 인라인 height:'100dvh' 페이지를
+// '뷰포트를 안 채운다'로 건너뛰었다(서류 뷰어 신설 때 실측)
+const FULL_HEIGHT = /min-h-(screen|dvh)|h-dvh|h-screen|(min-h|min-height|height):\s*['"]?100(vh|dvh)['"]?/
 
 const violations = []
 
@@ -117,7 +119,12 @@ for (const page of pages) {
     const lay = join(cur, 'layout.tsx')
     try { statSync(lay); sources.push(lay) } catch { /* 없으면 건너뜀 */ }
   }
-  const texts = sources.map(f => readFileSync(f, 'utf8'))
+  // 주석을 지운 뒤 판정한다. 서류 뷰어를 만들며 "A 계약 — h-dvh 컨테이너 + overflow-y-auto" 라고
+  // **설명하는 주석** 때문에 선언을 지워도 통과했다(실측). 같은 함정이 open.kakao.com 에서도 났다.
+  // '://' 는 URL 이라 줄 주석으로 보지 않는다.
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (_, p) => p)
+  const texts = sources.map(f => strip(readFileSync(f, 'utf8')))
   const blob = texts.join('\n')
 
   const hasA = texts.some(t => A_SHELL.test(t) && A_SCROLLER.test(t))
