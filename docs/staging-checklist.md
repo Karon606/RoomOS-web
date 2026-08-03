@@ -20,6 +20,10 @@
 
 - [ ] Deployment Protection 비밀번호 잠금 — **반드시 Preview 한정**. All Deployments 로 걸면 운영 공개 사이트가 죽는다
 - [ ] 기존 환경변수 21종의 스코프 전수 점검 — "All Environments" 로 돼 있으면 프리뷰가 운영 값을 상속한다
+- [ ] **환경변수를 Sensitive 로 저장하지 않는다.** 2026-08-03 실측 — DB 비밀번호를 Sensitive 로 넣었더니
+  재배포를 세 번 해도 배포가 옛 값으로 붙었고, 화면상으로는 코드도 배포도 멀쩡해 보여 원인을 찾기 어려웠다.
+  런타임 오류는 `P1000 Authentication failed` 하나뿐이라 값이 안 넘어간 것인지 값이 틀린 것인지 구분이 안 된다.
+  Sensitive 를 끄자 즉시 정상화됐다. 덤으로 Development 범위 체크박스가 잠겨 보이는 것도 같이 풀렸다
 - [ ] `VERCEL_DEPLOY_HOOK_URL` 을 Preview 에서 **미설정**으로. 상속되면 스테이징에서 사진을 바꿀 때 운영이 재배포된다
 - [ ] `VAPID_PRIVATE_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` 를 Preview 에 **넣지 않는다**. 코드 가드 위의 두 번째 층
 - [ ] `GEMINI_API_KEY` · `NAVER_*` · `IPINFO_TOKEN` 은 Preview 에서 비운다 (같은 키를 쓰면 과금·쿼터가 새고 무료 한도를 갉아먹는다)
