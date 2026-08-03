@@ -61,7 +61,12 @@ export default function SaveFeedback() {
   useEffect(() => subscribeToast(t => {
     setToasts(prev => {
       // 동일 메시지 연속 발생 → 기존 토스트에 ×N 카운트 + 타이머 리셋 (v2.0 §15)
-      const dup = prev.find(x => x.kind === t.kind && x.message === t.message && x.detail === t.detail)
+      //
+      // 단, 적용취소 같은 액션을 단 토스트는 합치면 안 된다. 합쳐도 action 은 갱신되지 않아
+      // 버튼이 **먼저 뜬 토스트의 대상**을 계속 가리킨다. 문구가 같아지기 쉬운 수납에서
+      // 연달아 두 건을 넣고 적용취소를 누르면 방금 것이 아니라 앞엣것이 취소된다(2026-08-03).
+      const dup = t.action ? undefined
+        : prev.find(x => x.kind === t.kind && x.message === t.message && x.detail === t.detail && !x.action)
       if (dup) {
         const old = timers.current.get(dup.id)
         if (old) clearTimeout(old.handle)

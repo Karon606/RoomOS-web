@@ -1684,7 +1684,8 @@ export async function getExtraIncomes(targetMonth: string) {
   })
 }
 
-export async function addExtraIncome(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+// 생성된 id 를 돌려준다 — 과납 초과분을 기타수익으로 돌린 경우 토스트 적용취소가 되돌릴 대상이다(v2.0 §16).
+export async function addExtraIncome(formData: FormData): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1705,7 +1706,7 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true } |
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
-    await prisma.extraIncome.create({
+    const created = await prisma.extraIncome.create({
       data: {
         propertyId,
         date: new Date(date),
@@ -1718,7 +1719,7 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true } |
       },
     })
     revalidatePath('/finance'); revalidatePath('/rooms')
-    return { ok: true }
+    return { ok: true, id: created.id }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

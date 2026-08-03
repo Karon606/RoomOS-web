@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
-  savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
+  savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, undoOverpayExtraIncome, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -123,7 +123,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     //
     // 자릿수 확인창을 여기 합쳤다. 종전에는 따로 떠서 **큰 금액이면 확인창 두 개가 연속**으로 뜨는데,
     // 다이얼로그가 DOM 을 유지한 채 내용만 바꿔서 전환 표시가 전혀 없었다. 연타 한 번이
-    // 초과분 처리 방식을 대신 결정하고, 그 결정에는 적용취소가 없다(디자이너 패스).
+    // 초과분 처리 방식을 대신 결정한다(디자이너 패스). 그 결정은 아래 성공 토스트의
+    // 적용취소로 되돌린다 — undoOverpayExtraIncome 이 수납과 기타수익을 함께 지운다.
     // 자릿수 의심 조건은 초과분 조건에 완전히 포섭되므로(5배 이상이면 초과분은 반드시 양수)
     // 합쳐도 커버리지가 줄지 않는다.
     let excessAsIncome = false
@@ -142,6 +143,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       if (choice === null) return   // 취소는 무변경 — 저장 자체를 하지 않는다
       excessAsIncome = choice === 'alt'
     }
+    // 기타수익으로 돌린 경우의 적용취소 대상 — 수납 record 들과 기타수익 한 건을 함께 되돌린다.
+    let undo: { recordIds: string[]; extraIncomeId: string } | null = null
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -209,7 +212,16 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             if (payMethod) fd.set('payMethod', payMethod)
             if (memo) fd.set('memo', memo)
             const incRes = await addExtraIncome(fd)
-            if (!incRes.ok) pushToast('error', `기타수익 기록 실패: ${incRes.error} (이용료는 저장됨)`)
+            // 실패하면 여기서 끊는다. 종전에는 이 토스트를 띄우고도 아래 성공 토스트로 흘러가서,
+            // 기록되지 않은 기타수익을 '기록됨'이라고 말했다(전문가 패널 2026-08-03).
+            if (!incRes.ok) {
+              pushToast('error', '기타수익 기록에 실패했습니다', {
+                detail: `이용료 ${fmtWon(rentPart)}은 저장됨 · ${incRes.error}`,
+              })
+              onSaved?.()
+              return
+            }
+            undo = { recordIds: result.createdIds, extraIncomeId: incRes.id }
           } else if (result.allocations.length > 0) {
             const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             if (otherMonths.length > 0) {
@@ -219,9 +231,31 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           }
         }
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
-        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨'
-          : excessAsIncome ? `이용료 ${fmtWon((payAmount - excess))} + 기타수익 ${fmtWon(excess)} 기록됨`
-          : '월 이용료 수납됨')
+        if (undo) {
+          // 결과 1행 + 부가 사실 2행 — 형제 정본(RoomsClient 일괄 수납)과 같은 슬롯 문법.
+          // 한 줄에 금액 둘을 몰면 액션 버튼 폭(약 76px) 때문에 좁은 화면에서 접힌다.
+          const u: { recordIds: string[]; extraIncomeId: string } = undo
+          let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
+          pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}이용료 ${fmtWon(payAmount - excess)} 수납됨`, {
+            detail: `초과분 ${fmtWon(excess)}은 기타수익으로 기록`,
+            action: {
+              label: '적용취소',
+              run: () => {
+                if (undone) return
+                undone = true
+                void undoOverpayExtraIncome(u.recordIds, u.extraIncomeId).then(r => {
+                  if (r.ok) pushToast('info', '수납과 기타수익 기록을 취소했습니다')
+                  else pushToast('error', r.error, {
+                    detail: r.intact ? '수납과 기타수익 모두 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
+                  })
+                  onSaved?.()
+                }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
+              },
+            },
+          })
+        } else {
+          pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월 이용료 수납됨')
+        }
         // 폼 리셋
         setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
         setPayDateVal(kstYmdStr())

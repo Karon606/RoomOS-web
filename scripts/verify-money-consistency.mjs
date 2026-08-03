@@ -484,6 +484,84 @@ if (/setExcessAsIncome|checked=\{excessAsIncome\}/.test(payForm)) {
   violations.push('[소스] PaymentEntryForm 에 초과분 체크박스가 되살아났다 — 확인창과 결정 지점이 둘로 갈린다')
 }
 
+// 16-1b. 기타수익으로 돌린 초과분은 되돌릴 수 있어야 한다 (2026-08-03).
+//   16-1 이 만든 확인창은 한 번 누르면 서로 다른 두 테이블에 record 를 만든다. 손으로 되돌리려면
+//   수납 내역과 부가수익 탭을 각각 찾아가야 해서, 토스트 적용취소가 사실상 유일한 되돌리기다.
+//   반쪽만 되돌아가면 안 되돌린 것보다 나쁘다 — 그 달이 미수로 뜨면서 초과분은 수익에 남아,
+//   운영자가 미수를 보고 다시 수납을 넣는 순간 이중계상이 된다.
+{
+  // 'createdIds' 는 batchRecordRentPayment 에도 있어 파일 전체 검색은 변경 전에도 통과한다.
+  // savePayment 본문만 떠서 본다. 못 읽으면 통과가 아니라 위반이다.
+  const at  = roomsActions.indexOf('export async function savePayment')
+  const end = roomsActions.indexOf('\nexport ', at + 10)
+  if (at < 0 || end < 0) {
+    violations.push('[소스] savePayment 본문을 읽지 못했다 — 적용취소 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+  } else {
+    const body = roomsActions.slice(at, end)
+    if (!/=\s*await prisma\.paymentRecord\.create\(/.test(body) || !/createdIds\.push\(/.test(body)) {
+      violations.push('[소스] savePayment 이 만든 record id 를 모으지 않는다 — 적용취소가 지울 대상을 잃는다')
+    }
+    if (!/return \{[^}]*createdIds/.test(body)) {
+      violations.push('[소스] savePayment 반환에 createdIds 가 없다 — 화면이 되돌릴 id 를 못 받아 적용취소 버튼이 조용히 사라진다')
+    }
+    // 바로 아래 allocations.push 는 portion > 0 로 막혀 있다. 그 줄을 흉내 내 가드 안으로 들어가면
+    // 0원 흔적 record 가 적용취소 후에도 남는다.
+    //
+    // 거리로 근사하면 안 된다 — 가드를 씌워도 앞 줄과 몇 글자 떨어져 있지 않아 그대로 통과한다(실측).
+    // record 생성 블록을 열고 중괄호 깊이를 직접 세서, 수집이 그 블록 바로 아래(깊이 1)에 있고
+    // 한 줄 if 로도 감싸이지 않았는지 본다.
+    const blockOpen = body.indexOf('if (portion > 0 || (isOriginalMonth && remaining === 0)) {')
+    if (blockOpen < 0) {
+      violations.push('[소스] savePayment 의 record 생성 블록을 찾지 못했다 — 적용취소 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+    } else {
+      let depth = 0, at = -1
+      for (let i = body.indexOf('{', blockOpen); i < body.length; i++) {
+        if (body[i] === '{') depth++
+        else if (body[i] === '}') { depth--; if (depth === 0) break }
+        else if (depth === 1 && body.startsWith('createdIds.push(', i)) { at = i; break }
+      }
+      const line = at < 0 ? '' : body.slice(body.lastIndexOf('\n', at) + 1, at)
+      if (at < 0 || /\bif\s*\(/.test(line)) {
+        violations.push('[소스] savePayment 의 id 수집이 portion > 0 가드 안으로 들어갔다 — 0원 흔적 record 가 적용취소 후에 남는다')
+      }
+    }
+  }
+}
+if (!/export type SavePaymentResult = \{[\s\S]{0,600}?createdIds/.test(roomsActions)) {
+  violations.push('[소스] SavePaymentResult 에 createdIds 가 없다 — 되돌릴 id 를 담을 자리가 사라졌다')
+}
+{
+  const at  = financeSrc.indexOf('export async function addExtraIncome')
+  const end = financeSrc.indexOf('\nexport ', at + 10)
+  if (at < 0 || end < 0) {
+    violations.push('[소스] addExtraIncome 본문을 읽지 못했다 — 적용취소 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+  } else {
+    const body = financeSrc.slice(at, end)
+    if (!/=\s*await prisma\.extraIncome\.create\(/.test(body) || !/return \{ ok: true[^}]*id/.test(body)) {
+      violations.push('[소스] addExtraIncome 이 만든 id 를 돌려주지 않는다 — 적용취소가 이용료만 지우고 기타수익은 남긴다')
+    }
+  }
+}
+// 서버가 '내려보내는지'와 화면이 '띄우는지'를 각각 본다(반쪽 감지망 전례).
+// 낱말 '적용취소'는 이 파일 주석에도 나올 수 있으므로 호출 형태를 본다.
+if (!/action:\s*\{\s*label:\s*'적용취소'/.test(payForm)) {
+  violations.push('[소스] 과납 기타수익 성공 토스트에 적용취소가 없다 — 확인창 한 번으로 정해진 돈 처리를 되돌릴 길이 사라진다')
+}
+if (!/undoOverpayExtraIncome\(/.test(payForm)) {
+  violations.push('[소스] 과납 적용취소가 수납과 기타수익을 함께 되돌리지 않는다 — 반쪽만 지워지면 이중계상으로 이어진다')
+}
+// 기타수익 기록이 실패했는데 성공 토스트로 흘러가면, 없는 기타수익을 되돌리겠다고 약속하는 버튼이 뜬다
+if (!/if \(!incRes\.ok\)[\s\S]{0,300}?return/.test(payForm)) {
+  violations.push('[소스] 기타수익 기록이 실패해도 성공 토스트로 넘어간다 — 없는 기타수익을 되돌리겠다는 적용취소가 뜬다')
+}
+// 액션 토스트를 합치면 버튼이 먼저 뜬 토스트의 대상을 계속 가리킨다(연속 수납 시 앞엣것이 취소된다)
+{
+  const feedback = readFileSync('components/feedback/SaveFeedback.tsx', 'utf8')
+  if (!/const dup = t\.action \? undefined/.test(feedback)) {
+    violations.push('[소스] 액션 달린 토스트가 dedup 대상에 다시 포함됐다 — 적용취소가 방금 것이 아니라 앞 건을 되돌린다')
+  }
+}
+
 // 16-2. 상태 이력은 쌓기만 하고 볼 수 없으면 안 된다 (신고 ad517231, 2026-08-03).
 //
 //   TenantStatusLog 에 167건이 쌓여 있는데 읽는 화면이 하나도 없었다(설정의 데이터 내보내기가 유일).

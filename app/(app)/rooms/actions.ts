@@ -780,6 +780,10 @@ export type SavePaymentResult = {
   inputMonth: string                                       // 사용자가 입력 시점에 보던 viewMonth
   startMonth: string                                       // FIFO가 시작한 월 (가장 오래된 미수월)
   allocations: { targetMonth: string; amount: number }[]   // 각 월에 분배된 금액
+  // 이 결제가 만든 record id 전부 — 화면 토스트의 적용취소가 되돌릴 대상(v2.0 §16).
+  // allocations 로 대신할 수 없다. 그쪽은 portion > 0 일 때만 쌓이는데 record 는 0원 흔적으로도
+  // 생기므로(아래 isOriginalMonth && remaining === 0), allocations 기준으로 지우면 고아가 남는다.
+  createdIds: string[]
 }
 
 export async function savePayment(data: {
@@ -823,6 +827,7 @@ export async function savePayment(data: {
   const touchedMonths: string[] = []
   const monthBillByTm: Record<string, number> = {}
   const allocations: { targetMonth: string; amount: number }[] = []
+  const createdIds: string[] = []
 
   // 안전장치: 무한루프 방지 — appConfig.FIFO_MAX_ALLOCATE_MONTHS (60개월 = 5년)
   let safety = FIFO_MAX_ALLOCATE_MONTHS
@@ -867,7 +872,7 @@ export async function savePayment(data: {
       const memo = isOriginalMonth
         ? (data.memo ?? null)
         : `${carryMemo}${data.memo ? ` · ${data.memo}` : ''}`
-      await prisma.paymentRecord.create({
+      const created = await prisma.paymentRecord.create({
         data: {
           leaseTermId:    data.leaseTermId,
           tenantId:       data.tenantId,
@@ -890,6 +895,9 @@ export async function savePayment(data: {
         },
       })
       touchedMonths.push(currentTm)
+      // 적용취소 대상 수집 — 바로 아래 allocations.push 와 달리 portion 가드 밖이다.
+      // 0원 흔적 record 도 이 결제가 만든 것이라 되돌릴 때 같이 지워야 한다.
+      createdIds.push(created.id)
       if (portion > 0) allocations.push({ targetMonth: currentTm, amount: portion })
     }
 
@@ -911,7 +919,7 @@ export async function savePayment(data: {
   }
 
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-  return { inputMonth: data.targetMonth, startMonth: startTm, allocations }
+  return { inputMonth: data.targetMonth, startMonth: startTm, allocations, createdIds }
 }
 
 // 수납 등록 시 사용자가 명시 선택할 수 있는 귀속월 후보 — 전체 미수월 + viewMonth ± 향후 3개월
@@ -1796,6 +1804,57 @@ export async function batchDeletePayments(
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '일괄 취소 중 오류가 발생했습니다.' }
+  }
+}
+
+// 과납 초과분 기타수익 처리 적용취소 — 확인창 한 번이 만든 두 테이블 record 를 함께 되돌린다(v2.0 §16).
+//
+// 반쪽 취소를 만들면 안 되는 자리다. 수납만 지우면 그 달이 미수로 돌아가는데 초과분은 수익에 남는다.
+// 운영자가 그 미수를 보고 다시 수납을 넣는 순간 초과분이 이중계상된다 — 안 되돌린 것보다 나쁘다.
+// 그래서 쓰기 전에 둘 다 실재하는지 확인하고, 실제 삭제는 $transaction 으로 함께 넘긴다.
+// 문법은 undoReservationPrepaidCancel(tenants/actions.ts) 정본을 따른다.
+//
+// 소프트삭제다. 조회 익스텐션이 자동 제외하고, 필요하면 restorePayment·restoreExtraIncome 로 되살린다.
+// intact 는 '아직 아무것도 안 건드렸다'는 뜻이다. 실패 화면 문구가 갈리므로 서버가 알려줘야 한다 —
+// 그대로면 사용자가 할 일이 없고, 아니면 수납 내역을 직접 봐야 한다.
+export async function undoOverpayExtraIncome(
+  recordIds: string[],
+  extraIncomeId: string,
+): Promise<{ ok: true } | { ok: false; error: string; intact?: boolean }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!recordIds.length || !extraIncomeId) return { ok: false, error: '되돌릴 대상이 없습니다.', intact: true }
+
+    // 소속 월을 먼저 확보한다 — 삭제 후에는 익스텐션이 걸러서 못 읽는다.
+    // 이 조회들은 읽기라 자동 필터가 붙으므로, 이미 지워진 건은 여기서 걸러져 이중 취소도 막힌다.
+    const targets = await prisma.paymentRecord.findMany({
+      where: { id: { in: recordIds }, propertyId },
+      select: { leaseTermId: true, targetMonth: true },
+    })
+    if (targets.length !== recordIds.length) return { ok: false, error: '수납 기록을 찾을 수 없습니다.', intact: true }
+    const inc = await prisma.extraIncome.findFirst({ where: { id: extraIncomeId, propertyId }, select: { id: true } })
+    if (!inc) return { ok: false, error: '기타수익 기록을 찾을 수 없습니다.', intact: true }
+
+    const deletedAt = new Date()
+    await prisma.$transaction([
+      prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt } }),
+      prisma.extraIncome.updateMany({ where: { id: extraIncomeId, propertyId }, data: { deletedAt } }),
+    ])
+
+    // 미수·완납 재계산 — deletePayment 와 같은 규칙. 월별로 격리돼 순서 의존성이 없다.
+    const months = new Set(targets.map(t => `${t.leaseTermId}|${t.targetMonth}`))
+    for (const key of months) {
+      const [ltId, tm] = key.split('|')
+      const lease = await prisma.leaseTerm.findUnique({ where: { id: ltId }, select: { rentAmount: true } })
+      if (lease) await recalculatePayments(ltId, tm, await serverBillForMonth(ltId, tm, lease.rentAmount))
+    }
+
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리는 중 오류가 발생했습니다.' }
   }
 }
 
