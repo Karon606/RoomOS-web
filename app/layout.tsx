@@ -6,6 +6,8 @@ import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/Fo
 import NavProgress from '@/components/layout/NavProgress'
 import { AuthBackTrap } from '@/components/auth/AuthBackTrap'
 import { SplashHost } from '@/components/brand/SplashController'
+import { StagingBanner } from '@/components/layout/StagingBanner'
+import { isStagingEnv } from '@/lib/env'
 import { Analytics } from '@vercel/analytics/next'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
@@ -53,7 +55,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={plusJakarta.variable} suppressHydrationWarning>
+    // data-env 는 CSS 가 띠 높이(--sysbar-h)를 예약하는 근거다. 운영에서는 속성 자체가 없다.
+    <html lang="ko" className={plusJakarta.variable} data-env={isStagingEnv() ? 'staging' : undefined} suppressHydrationWarning>
       <head>
         {/* v2.0 §21 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
             다크는 CSS 미디어쿼리로 — JS 테마 감지 전 깜박임 원천 차단. */}
@@ -71,6 +74,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: fontSizeBootstrapScript }} />
       </head>
       <body>
+        <StagingBanner />
         <NavProgress />
         <AuthBackTrap />
         <SplashHost />

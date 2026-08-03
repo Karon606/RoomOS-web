@@ -1,17 +1,11 @@
 'use server'
 
-import webpush from 'web-push'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-
-function configureWebPush() {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:no-reply@stayeum.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!,
-  )
-}
+// 발송은 반드시 lib/pushSend 를 거친다. 이 파일이 web-push 를 직접 들고 있던 탓에
+// 테스트 사이트 차단이 테스트 푸시 버튼만 비껴갔다(2026-08-03).
+import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
 
 async function getUserId(): Promise<string> {
   const supabase = await createClient()
@@ -74,10 +68,7 @@ export async function deletePushSubscription(endpoint: string): Promise<{ ok: tr
 // 현재 사용자의 모든 기기로 테스트 푸시 발송 (만료 구독은 정리)
 export async function sendTestPush(): Promise<{ ok: true; sent: number } | { ok: false; error: string }> {
   try {
-    if (!process.env.VAPID_PRIVATE_KEY || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
-      return { ok: false, error: 'VAPID 키가 설정되지 않았습니다.' }
-    }
-    configureWebPush()
+    if (!ensureWebPushConfigured()) return { ok: false, error: 'VAPID 키가 설정되지 않았습니다.' }
     const userId = await getUserId()
     const subs = await prisma.pushSubscription.findMany({ where: { userId } })
     if (subs.length === 0) return { ok: false, error: '구독된 기기가 없습니다. 먼저 알림을 켜주세요.' }
@@ -88,17 +79,9 @@ export async function sendTestPush(): Promise<{ ok: true; sent: number } | { ok:
       badge: 1,
       tag: 'stayeum-test',
     })
-    let sent = 0
-    await Promise.all(subs.map(async (s) => {
-      try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
-        sent++
-      } catch (e: any) {
-        if (e?.statusCode === 410 || e?.statusCode === 404) {
-          await prisma.pushSubscription.deleteMany({ where: { endpoint: s.endpoint } })
-        }
-      }
-    }))
+    // 종전에는 여기서 webpush.sendNotification 을 직접 불러 만료 구독 정리까지 복제하고 있었다.
+    // 발송 문이 둘이면 테스트 사이트 차단이 이쪽만 비껴간다 — 정본으로 접는다(2026-08-03).
+    const sent = await sendToSubscriptions(subs, payload)
     // 발송 내역 기록 — 시도/성공 카운트
     try {
       await prisma.pushHistory.create({

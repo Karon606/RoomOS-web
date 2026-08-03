@@ -36,7 +36,9 @@ export default function AppShell({
   const [, startNavigation]  = useTransition()
 
   return (
-    <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
+    // 테스트 사이트 띠가 상단 --sysbar-h 를 차지하므로 셸이 그만큼 내려가고 줄어든다.
+    // 운영에서는 0px 이라 종전과 같다(marginTop 0, 높이 100dvh).
+    <div className="flex overflow-hidden" style={{ background: 'var(--canvas)', height: 'calc(100dvh - var(--sysbar-h))', marginTop: 'var(--sysbar-h)' }}>
       {isAdminView && (
         <Link href="/admin"
           className="fixed top-0 inset-x-0 z-[70] flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium hover:opacity-90 transition-opacity"

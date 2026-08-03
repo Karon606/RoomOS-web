@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // 루트 html/body가 overflow:hidden(iOS 헤더 보호용)이라 페이지 자체 스크롤 불가 →
   // (app) 셸과 같은 패턴: 전체 h-dvh + 헤더 shrink-0 + main 자체에 overflow-y-auto.
   return (
-    <div className="flex flex-col h-dvh" style={{ background: 'var(--canvas)' }}>
+    <div className="flex flex-col" style={{ background: 'var(--canvas)', height: 'calc(100dvh - var(--sysbar-h))', marginTop: 'var(--sysbar-h)' }}>
       <header
         className="shrink-0 border-b"
         style={{ background: 'var(--cream)', borderColor: 'var(--cream-3)' }}

@@ -191,6 +191,7 @@
   --z-lightbox: 360;    /* 라이트박스, 360뷰어 */
   --z-report: 380;      /* 오류신고 모달 — 프리즘·컨펌·라이트박스 위, 토스트 아래 (§12 등재 제안 중) */
   --z-toast: 400;
+  --z-sysbar: 450;      /* 테스트 사이트 띠 — 환경 표시라 모든 오버레이 위. pointer-events:none 이라 조작을 막지 않는다 */
   --z-loader: 500;      /* 브랜드 로더 — 최상위 */
 
   /* §9 확인 다이얼로그 */
@@ -340,10 +341,14 @@ body {
    하단 패딩(4rem+safe / md:1.5rem)을 뺀 값. 화면을 꽉 채워야 하는 편집기류가 쓴다.
    여기 말고 다른 곳에 100vh 를 직접 쓰면 셸 크롬만큼 아래가 잘린다(도면 편집기 사례). */
 :root {
-  --shell-content-h: calc(100dvh - 3.5rem - 1rem - (4rem + env(safe-area-inset-bottom, 0px)));
+  /* 테스트 사이트 띠가 예약하는 높이. 운영에서는 0px 이라 아래 계산이 종전 값 그대로다.
+     셸에 상시 크롬을 더하면 반드시 여기에 합산한다 — 안 하면 위 주석의 도면 편집기 사례가 재발한다. */
+  --sysbar-h: 0px;
+  --shell-content-h: calc(100dvh - var(--sysbar-h) - 3.5rem - 1rem - (4rem + env(safe-area-inset-bottom, 0px)));
 }
+:root[data-env='staging'] { --sysbar-h: 26px; }
 @media (min-width: 768px) {
-  :root { --shell-content-h: calc(100dvh - 4rem - 1.5rem - 1.5rem); }
+  :root { --shell-content-h: calc(100dvh - var(--sysbar-h) - 4rem - 1.5rem - 1.5rem); }
 }
 
 /* AppShell 밖 단독 페이지의 문서 스크롤 — components/layout/DocumentScroll 이 마운트 중에만 부착.

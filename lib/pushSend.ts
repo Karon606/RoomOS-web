@@ -3,6 +3,7 @@
 
 import webpush from 'web-push'
 import prisma from './prisma'
+import { isStagingEnv } from './env'
 
 // VAPID 키가 있으면 설정하고 true, 없으면 false. (호출부가 false 면 발송을 건너뛴다)
 export function ensureWebPushConfigured(): boolean {
@@ -19,6 +20,10 @@ type SubLike = { endpoint: string; p256dh: string; auth: string }
 
 // 구독 목록으로 payload(JSON 문자열) 발송. 만료(410/404) 구독은 정리하고, 성공한 기기 수를 반환.
 export async function sendToSubscriptions(subs: SubLike[], payload: string): Promise<number> {
+  // 테스트 사이트에서는 실제로 내보내지 않는다. 테스트 DB 는 운영 복사본이라 여기 endpoint 가
+  // 운영자 실기기 주소다 — 한 줄만 새도 진짜 알림이 도착한다.
+  // 가드는 반드시 이 함수 첫 문장이다. 호출부에 두면 새 호출부가 생겼을 때 뚫린다.
+  if (isStagingEnv()) return 0
   let success = 0
   await Promise.all(subs.map(async (s) => {
     try {
