@@ -88,20 +88,26 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
         footer={
           <div className="flex gap-2 justify-end">
             <Btn variant="secondary" size="md" onClick={onClose}>취소</Btn>
+            {/* 목적어가 '입금내역'이면 '입금내역(이) 확인됐어요'로 읽힌다 — 운영자 지적 2026-08-03.
+                '통장'은 확인의 대상이 될 수 없는 사물이라 그 오독 경로가 닫힌다.
+                '· 문자 작성'을 본문으로 내린 이유는 폭이다. 종전 라벨은 360px 기기에서 이미 두 줄로
+                접혔고(Btn 에 whitespace-nowrap 이 없다), 그러면 옆 취소 버튼까지 stretch 로 같이 늘어난다. */}
             <Btn variant="primary" size="md" onClick={() => { setConfirmedAt(new Date().toISOString()); setStep('compose') }}>
-              입금내역 확인했어요 · 문자 작성
+              통장 확인했어요
             </Btn>
           </div>
         }>
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-[var(--warm-dark)]">은행 입금내역을 확인하셨나요?</p>
+          {/* 질문의 목적어와 버튼의 목적어를 맞춘다 — 버튼만 읽어도 이 질문의 답이라는 게 확정된다.
+              종전에는 여기가 '은행', 아래 문장이 '통장'이라 한 화면에서 같은 대상을 두 이름으로 불렀다. */}
+          <p className="text-sm font-semibold text-[var(--warm-dark)]">통장 입금내역을 확인하셨나요?</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
-            미처 확인하지 못한 입금이 있을 수 있습니다. 통장 입금내역을 먼저 확인한 뒤 안내 문자를 보내 주세요.
+            미처 확인하지 못한 입금이 있을 수 있습니다. 지금 눌러도 문자는 나가지 않고, 다음 화면에서 내용을 보고 보냅니다.
           </p>
           <p className="text-xs text-[var(--warm-mid)]">
             대상: <span className="font-semibold text-[var(--warm-dark)]">{target.roomNo && /^\d+$/.test(target.roomNo) ? `${target.roomNo}호 ` : ''}{target.tenantName}</span>
             {' · '}미납 {target.unpaidAmount.toLocaleString('ko-KR')}원
-            {target.daysOverdue != null && target.daysOverdue > 0 ? ` · ${target.daysOverdue}일 경과` : ''}
+            {target.daysOverdue != null && target.daysOverdue > 0 ? ` · 납기 ${target.daysOverdue}일 경과` : ''}
           </p>
         </div>
       </Modal>
