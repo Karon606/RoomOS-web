@@ -79,6 +79,14 @@ try {
   if (!/setProperty\(KBD_INSET|setProperty\(['"]--kbd-inset['"]/.test(guard)) {
     violations.push('components/layout/ViewportOffsetGuard.tsx — --kbd-inset 대입이 사라짐. 구독은 도는데 값이 CSS 로 나가지 않아 화면은 그대로다')
   }
+  // 여유를 만드는 것과 그 자리로 데려가는 것은 다른 일이다. 구독과 실행을 따로 건다(신고 4555b1fd).
+  if (!/addEventListener\(['"]focusin['"]/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — 포커스 구독이 사라짐. 키보드는 열리는데 가려진 칸으로 아무도 데려다주지 않는다')
+  }
+  // 이름이 아니라 처방의 행위 자체를 본다 — 리네임에 안 죽는다
+  if (!/\.scrollTop\s*\+?=/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — 재노출 스크롤 대입이 사라짐. 구독은 도는데 아무것도 스크롤하지 않는다')
+  }
   const appLayout = readFileSync('app/(app)/layout.tsx', 'utf8')
   // 태그 닫힘까지 본다 — 접두만 보면 ViewportOffsetGuardX 로 개명해도 통과한다(역주입 실측)
   if (!/<ViewportOffsetGuard\s*\/?>/.test(appLayout)) {
