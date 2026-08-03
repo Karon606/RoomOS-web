@@ -2154,7 +2154,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">
                     {l.name}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
                   </p>
-                  <input type="text" inputMode="decimal" value={actuals[l.id] ?? ''}
+                  <input type="text" inputMode="decimal" autoComplete="off" value={actuals[l.id] ?? ''}
                     onChange={e => setActuals(p => ({ ...p, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                     className={`w-full ${inputCls}`} />
                 </div>
@@ -2163,7 +2163,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-xs text-[var(--warm-mid)]">실측 잔량</span>
-              <input type="text" inputMode="decimal" value={actuals[NO_LOC] ?? ''}
+              <input type="text" inputMode="decimal" autoComplete="off" value={actuals[NO_LOC] ?? ''}
                 onChange={e => setActuals(p => ({ ...p, [NO_LOC]: e.target.value.replace(/[^0-9.]/g, '') }))}
                 className={`flex-1 ${inputCls}`} />
               <span className="text-xs text-[var(--warm-muted)]">{unit ?? ''}</span>
@@ -2407,7 +2407,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
                       {r.locations.length === 0 ? (
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">실측</span>
-                          <input type="text" inputMode="decimal" disabled={!restockDone}
+                          <input type="text" inputMode="decimal" autoComplete="off" disabled={!restockDone}
                             value={actuals[r.id]?.[NO_LOC] ?? ''} onChange={e => setVal(r.id, NO_LOC, e.target.value)}
                             className={`w-24 ${inputCls}`} />
                           <span className="text-[0.65625rem] text-[var(--warm-muted)]">{unit ?? ''}</span>
@@ -2417,7 +2417,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
                           {vLocs(r).map(l => (
                             <div key={l.id}>
                               <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.name}{l.isHub ? ' (창고)' : ''}</p>
-                              <input type="text" inputMode="decimal" disabled={!restockDone}
+                              <input type="text" inputMode="decimal" autoComplete="off" disabled={!restockDone}
                                 value={actuals[r.id]?.[l.id] ?? ''} onChange={e => setVal(r.id, l.id, e.target.value)}
                                 className={`w-full ${inputCls}`} />
                             </div>
@@ -2578,7 +2578,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-[var(--warm-muted)] shrink-0">자동 차감 후</span>
-                    <input type="text" inputMode="decimal"
+                    <input type="text" inputMode="decimal" autoComplete="off"
                       value={displayAfter}
                       onChange={e => { setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }}
                       className={`w-20 ${inputCls}`} />
@@ -2612,14 +2612,14 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
-                    <input type="text" inputMode="decimal" placeholder="0"
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
-                    <input type="text" inputMode="decimal" placeholder="0"
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
@@ -3127,7 +3127,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-[var(--warm-muted)] shrink-0">자동 차감 후</span>
-                    <input type="text" inputMode="decimal"
+                    <input type="text" inputMode="decimal" autoComplete="off"
                       value={displayAfter}
                       onChange={e => { setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }}
                       className={`w-20 ${inputCls}`} />
@@ -3160,14 +3160,14 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
-                    <input type="text" inputMode="decimal" placeholder="0"
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                    <input type="text" inputMode="decimal" placeholder="—"
+                    <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
@@ -3216,7 +3216,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
                 <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.name}</span>
                 <div className="flex-1 relative">
                   <input
-                    type="text" inputMode="decimal"
+                    type="text" inputMode="decimal" autoComplete="off"
                     value={locationQtys[loc.id] ?? ''}
                     onChange={e => handleLocChange(loc.id, e.target.value)}
                     placeholder="0"
@@ -3239,7 +3239,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
       ) : (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">잔량 *{stockUnit ? ` (${stockUnit})` : ''}</label>
-          <input type="text" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
+          <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
@@ -3417,7 +3417,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">4. 얼마나 옮길까요?</label>
                 <div className="flex items-center gap-1.5">
-                  <input value={qtyStr} inputMode="decimal"
+                  <input value={qtyStr} inputMode="decimal" autoComplete="off"
                     onChange={e => setQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
                     placeholder={fmtQty(fromLoc.qty, null)}
                     className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
@@ -3983,7 +3983,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                     // 허브 위치 점검 — 잔량 1칸
                     <div className="flex items-center gap-1.5">
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
-                      <input type="text" inputMode="decimal" placeholder="0"
+                      <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                         value={afterStr}
                         onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                         className={qtyInputCls} />
@@ -4002,14 +4002,14 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <div className="grid grid-cols-2 gap-1.5">
                         <div>
                           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (채우기 전)</p>
-                          <input type="text" inputMode="decimal" placeholder="0"
+                          <input type="text" inputMode="decimal" autoComplete="off" placeholder="0"
                             value={beforeStr}
                             onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                             className={qtyInputCls} />
                         </div>
                         <div>
                           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">채운 후 <span className="text-[var(--warm-muted)]/70">(창고에서 옮긴 경우)</span></p>
-                          <input type="text" inputMode="decimal" placeholder="—"
+                          <input type="text" inputMode="decimal" autoComplete="off" placeholder="—"
                             value={afterStr}
                             onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                             className={qtyInputCls} />
@@ -4739,7 +4739,7 @@ function DisposalForm({ item, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">폐기 수량 *</label>
         <div className="flex gap-1.5 items-center">
-          <input type="text" inputMode="decimal" value={qtyStr}
+          <input type="text" inputMode="decimal" autoComplete="off" value={qtyStr}
             onChange={e => setQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
             className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
@@ -4834,7 +4834,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             <div className="space-y-1.5">
               <label className="text-[0.65625rem] text-[var(--warm-muted)]">규격</label>
               <div className="flex gap-1.5 items-center">
-                <input type="text" inputMode="decimal" value={specQty}
+                <input type="text" inputMode="decimal" autoComplete="off" value={specQty}
                   onChange={e => setSpecQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="0"
                   className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
@@ -4844,7 +4844,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             <div className="space-y-1.5">
               <label className="text-[0.65625rem] text-[var(--warm-muted)]">수량</label>
               <div className="flex gap-1.5 items-center">
-                <input type="text" inputMode="decimal" value={packQty}
+                <input type="text" inputMode="decimal" autoComplete="off" value={packQty}
                   onChange={e => setPackQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="1"
                   className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
@@ -4861,7 +4861,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       ) : (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">수량 *{item.qtyUnit ? ` (${item.qtyUnit})` : ''}</label>
-          <input type="text" inputMode="decimal" value={qtyOnly}
+          <input type="text" inputMode="decimal" autoComplete="off" value={qtyOnly}
             onChange={e => setQtyOnly(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />

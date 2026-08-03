@@ -515,14 +515,19 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 /* ── 모바일 하단 탭바 영역 확보 ──────────────────────────────────
    BottomNav 높이(≈60px) + iOS home indicator safe area를 합산해
    마지막 콘텐츠가 탭바 뒤에 가려지지 않도록 함.             */
+/* --kbd-inset 은 ViewportOffsetGuard 가 키보드 겹침만큼 넣는 값(기본 0px).
+   iOS 는 키보드가 떠도 dvh 를 안 줄여 셸에 스크롤 여유가 안 생긴다 — 하단 입력칸이
+   키보드 뒤에 깔린 채 손가락으로 꺼낼 수 없다(신고 e1df22e9). 여백으로 여유만 만든다.
+   **두 규칙 양쪽에 더해야 한다.** 한쪽만 더하면 그 화면 폭에서만 되살아난다.
+   요소 인라인 style 로 넣지 말 것 — md 분기(1.5rem)를 덮어써 데스크탑 여백이 바뀐다. */
 .app-main {
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + var(--kbd-inset, 0px));
   overscroll-behavior: none;
 }
 @media (min-width: 768px) {
   /* 태블릿/데스크탑: BottomNav 없으므로 p-6 하단 패딩과 동일 */
   .app-main {
-    padding-bottom: 1.5rem;
+    padding-bottom: calc(1.5rem + var(--kbd-inset, 0px));
   }
 }
 /* 모바일(< md)에서는 하단 탭바(BottomNav ≈60px)가 있어 토스트를 그 위로 띄운다.

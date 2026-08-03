@@ -62,6 +62,40 @@ try {
   violations.push('배경 잠금 정본(lib/scrollLock.ts) 을 읽을 수 없음')
 }
 
+// 0c) 셸 안 키보드 도달성 정본 (신고 e1df22e9·395652b3, 2026-08-04).
+//   iOS 는 키보드가 떠도 layout viewport(dvh)를 안 줄인다. 셸은 h-dvh 고정이라 스크롤 여유가
+//   1px 도 안 늘고, 하단 입력칸이 키보드 뒤에 깔린 채 손가락으로 꺼낼 수 없다.
+//   Modal 은 --modal-vvh 로 보정하는데 인라인 패널은 모달 껍데기를 벗어서 그 보정을 못 받았다.
+//
+//   "이 화면이 키보드에 가리나"는 정적으로 판정 불가다(JSX 서브트리 판정이고, 같은 노드가
+//   런타임 값에 따라 두 모양이 되는 경우가 실재한다 — inline 분기). 그래서 결함을 찾지 않고
+//   **고친 정본이 다시 사라지는지**를 지킨다. 0·0b 절과 같은 모양이다.
+try {
+  const guard = readFileSync('components/layout/ViewportOffsetGuard.tsx', 'utf8')
+  // 문자열 존재만 보면 이름만 바꿔도 통과한다 — 구독·대입을 호출 형태로 본다
+  if (!/addEventListener\(['"]resize['"]/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — visualViewport resize 구독이 사라짐. 키보드가 열려도 셸에 여유를 아무도 만들지 않는다')
+  }
+  if (!/setProperty\(KBD_INSET|setProperty\(['"]--kbd-inset['"]/.test(guard)) {
+    violations.push('components/layout/ViewportOffsetGuard.tsx — --kbd-inset 대입이 사라짐. 구독은 도는데 값이 CSS 로 나가지 않아 화면은 그대로다')
+  }
+  const appLayout = readFileSync('app/(app)/layout.tsx', 'utf8')
+  // 태그 닫힘까지 본다 — 접두만 보면 ViewportOffsetGuardX 로 개명해도 통과한다(역주입 실측)
+  if (!/<ViewportOffsetGuard\s*\/?>/.test(appLayout)) {
+    violations.push('app/(app)/layout.tsx — ViewportOffsetGuard 마운트가 사라짐. 가드가 살아 있어도 셸에 안 붙어 무동작이다')
+  }
+  // 두 규칙 양쪽에 있어야 한다. 한쪽만 남으면 그 화면 폭에서만 되살아난다.
+  const css = readFileSync('app/globals.css', 'utf8')
+  const appMainDecls = (css.match(/\.app-main\s*\{[^}]*padding-bottom:[^;]*;/g) ?? [])
+  if (appMainDecls.length < 2) {
+    violations.push('app/globals.css — .app-main 하단 패딩 선언을 다 찾지 못했다. 키보드 여유 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+  } else if (appMainDecls.some(d => !d.includes('var(--kbd-inset'))) {
+    violations.push('app/globals.css — .app-main 하단 패딩 중 --kbd-inset 을 안 더하는 선언이 있다. 그 화면 폭에서 키보드가 하단 입력칸을 덮는다')
+  }
+} catch {
+  violations.push('components/layout/ViewportOffsetGuard.tsx 를 읽을 수 없음 — 키보드 보정 정본이 사라졌다')
+}
+
 const pages = walk(APP).filter(p => /\/page\.tsx$/.test(p) && !EXCLUDED.some(re => re.test(p)))
 
 for (const page of pages) {
