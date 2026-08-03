@@ -17,7 +17,8 @@
 // 스크롤 계약은 A(자체 스크롤러)다. 페이지를 세로로 쌓으므로 높이가 콘텐츠에서 나온다 —
 // iframe 때처럼 flex:1 로 뷰포트 잔여를 채우면 1장짜리는 늘어나고 2장짜리는 잘린다.
 //
-// 툴바에 액션은 [인쇄] 하나다(운영자 승인 2026-08-04, 동사 6번째로 등재).
+// 하단 액션바 정본(§30) — [보내기] [사진 저장] [인쇄]. 상단은 길찾기만 둔다.
+// 인쇄는 운영자 승인으로 동사 6번째가 됐다(2026-08-04).
 // 종전 사전은 "인쇄는 보내기의 공유 시트 안에 있다"고 정했는데, **실기에서 iOS 가 웹이 넘긴 파일에
 // 프린트를 안 열어주는 것이 확인됐다.** 대안이 죽었으므로 금지 근거도 같이 사라졌다.
 // 페이지가 우리 DOM 이라 window.print() 가 공유 시트를 안 거치고 바로 걸린다.
@@ -26,7 +27,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, btnClass } from '@/components/ui/Btn'
+import { SendDocButton } from '@/components/ui/SendDocButton'
+import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
+import { fetchDocBytes } from '@/lib/docBytes'
 
 // 어디서 왔는지는 **열거 키**로만 받는다. 경로를 받으면 오픈 리디렉트가 되고,
 // 라벨을 받으면 우리 크롬 안에 임의 문자열이 그려진다. 라벨은 각 목적지 h1 을 그대로 옮겼다.
@@ -42,10 +46,11 @@ const HOME = { label: '홈', href: '/dashboard' }
 const VIEW_SCALE = 2
 const RAIL = 'min(210mm, 100% - 24px)'
 
-export default function DocViewer({ fileId, from, tenantId }: {
+export default function DocViewer({ fileId, from, tenantId, fileName }: {
   fileId: string
   from?: string
   tenantId?: string
+  fileName: string
 }) {
   const back = from === 'tenant' && tenantId
     ? { label: '입실자 정보', href: `/tenants?tenantId=${encodeURIComponent(tenantId)}` }
@@ -84,7 +89,7 @@ export default function DocViewer({ fileId, from, tenantId }: {
       <div data-peek-hide className="no-print" style={{
         width: RAIL, flex: 'none', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         padding: '10px 14px', background: 'var(--cream)',
-        border: '1px solid var(--cream-3)', borderRadius: 10, marginBottom: 10,
+        border: '1px solid var(--warm-border)', borderRadius: 10, marginBottom: 10,
         boxShadow: '0 4px 12px rgba(0,0,0,.06)',
       }}>
         {/* 히트 영역 44px — 형제 서류 화면의 복귀 링크는 패딩 없는 13px 라 히트가 약 18px 이다(§09 위반).
@@ -93,8 +98,6 @@ export default function DocViewer({ fileId, from, tenantId }: {
           color: 'var(--tc-text)', fontSize: 13, textDecoration: 'none',
           display: 'inline-flex', alignItems: 'center', minHeight: 44,
         }}>{'‹'} {back.label}</Link>
-        <Btn variant="primary" size="sm" style={{ marginLeft: 'auto' }}
-          disabled={!pages} onClick={() => window.print()}>인쇄</Btn>
       </div>
 
       {/* 장수만 알린다. 인쇄는 버튼이 실물로 서 있으니 경로 안내가 필요 없다. */}
@@ -122,6 +125,22 @@ export default function DocViewer({ fileId, from, tenantId }: {
             marginBottom: i === pages.length - 1 ? 0 : 12,
           }} />
         ))
+      )}
+
+      {/* 하단 액션바 — 문서 흐름 안에 둔다. sticky·fixed 는 핀치줌이 열린 화면에서 시야 밖으로 밀린다.
+          사진 저장은 계약서에서 보류한다 — pdfToPngBlob 이 1페이지만 그려 임의처분 동의서가 빠진다(3단계). */}
+      {pages && (
+        <div className="no-print" style={{
+          width: RAIL, flex: 'none', display: 'flex', gap: 8, marginTop: 12,
+        }}>
+          <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
+            className={`flex-1 ${btnClass('secondary', 'md')}`} />
+          {from !== 'contracts' && from !== 'tenant' && (
+            <SaveDocImageButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
+              className={`flex-1 ${btnClass('secondary', 'md')}`} />
+          )}
+          <Btn variant="primary" size="md" className="flex-1" onClick={() => window.print()}>인쇄</Btn>
+        </div>
       )}
     </div>
   )

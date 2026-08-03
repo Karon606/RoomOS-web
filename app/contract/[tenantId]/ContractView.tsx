@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
 import Link from 'next/link'
+import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
@@ -394,22 +395,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     }
   }
 
-  // ── 인쇄 / PDF ───────────────────────────────────────────────────────────
-  // 인쇄·저장 결과를 100% 동일하게 하기 위해 둘 다 '서버 PDF'(contractPrintHtml: 2단·여백·한장맞춤)를 쓴다.
-  // 과거 window.print(화면 직접 인쇄)는 브라우저가 배율·페이지나눔을 제어해 서버 PDF 와 페이지 수·레이아웃이
-  // 달라졌으므로 폐기. 전달 방식만 기기별로 분기(결과물은 동일):
-  //  - 모바일(터치): 네이티브 공유 시트(프린트·파일에 저장·메일이 모두 들어있음)
-  //  - 데스크톱: 새 탭에 PDF 열어 인쇄(Cmd+P) / 다운로드로 저장
-  const [exporting, setExporting] = useState(false)
-  const [canShareFiles, setCanShareFiles] = useState(false)
-  useEffect(() => {
-    try {
-      const touch = navigator.maxTouchPoints > 0 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-      setCanShareFiles(touch && typeof navigator.canShare === 'function' && typeof navigator.share === 'function')
-    } catch { /* noop */ }
-  }, [])
-
-  // 서버 PDF 한 부 생성 → Blob (실패 시 null + 토스트)
+  // ── 보내기용 PDF ─────────────────────────────────────────────────────────
+  // 결과물은 항상 '서버 PDF'(contractPrintHtml: 2단·여백·한장맞춤)다. 과거 window.print(화면 직접 인쇄)는
+  // 브라우저가 배율·페이지나눔을 제어해 서버 PDF 와 페이지 수가 달라져 폐기했다.
+  // 전달은 SendDocButton 정본이 맡는다 — 기기별로 버튼 수를 가르지 않는다(§30).
+  // 서버 PDF 한 부 생성 -> Blob (실패 시 null + 토스트)
   const fetchPreviewPdf = async (): Promise<Blob | null> => {
     const res = await fetch('/api/contract/generate', {
       method: 'POST',
@@ -432,76 +422,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     }
     return res.blob()
   }
-  const pdfFileName = () => `계약서_${(data.tenant.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}.pdf`
 
-  // 공유 시트로 PDF 전달(모바일) — 성공/취소 시 true, 미지원·실패 시 false(폴백 유도)
-  const sharePdf = async (blob: Blob, fname: string): Promise<boolean> => {
-    try {
-      const file = new File([blob], fname, { type: 'application/pdf' })
-      if (!navigator.canShare?.({ files: [file] })) return false
-      await navigator.share({ files: [file], title: '계약서' })
-      return true
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError') return true   // 사용자가 공유 취소 — 폴백 안 함
-      return false
-    }
-  }
+  const pdfFileName = () => `계약서_${(data.tenant.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}`
 
-  // 모바일 — 공유 시트(프린트·파일 저장 등 한 곳에)
-  const handleSharePdf = async () => {
-    setExporting(true)
-    try {
-      const blob = await fetchPreviewPdf()
-      if (!blob) return
-      const fname = pdfFileName()
-      if (await sharePdf(blob, fname)) return
-      // 공유 미지원 폴백 — 새 탭
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 180000)
-    } catch (err) {
-      pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  // 데스크톱 인쇄 — 새 탭에 PDF (Cmd+P / 뷰어 인쇄)
-  const handlePrint = async () => {
-    setExporting(true)
-    try {
-      const blob = await fetchPreviewPdf()
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      setTimeout(() => URL.revokeObjectURL(url), 180000)
-    } catch (err) {
-      pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  // 데스크톱 저장 — 파일 다운로드
-  const handleSavePdf = async () => {
-    setExporting(true)
-    try {
-      const blob = await fetchPreviewPdf()
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = pdfFileName()
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-      pushToast('success', 'PDF 다운로드됨. 파일에서 인쇄할 수 있어요')
-    } catch (err) {
-      pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
-    } finally {
-      setExporting(false)
-    }
+  const fetchPreviewPdfBytes = async (): Promise<ArrayBuffer> => {
+    const blob = await fetchPreviewPdf()
+    if (!blob) throw new Error('서류를 불러오지 못했습니다.')
+    return blob.arrayBuffer()
   }
 
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
@@ -578,20 +505,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                 공통 템플릿으로
               </button>
             )}
-            {canShareFiles ? (
-              // 모바일 — 한 버튼(시스템 시트에 프린트·파일 저장 모두 포함). 보관이 아닌 임시 미리보기.
-              <button onClick={handleSharePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : '미리보기·인쇄'}</button>
-            ) : (
-              // 데스크톱 — 미리보기·인쇄(새 탭) / PDF로 저장(다운로드). 둘 다 보관은 아님.
-              <>
-                <button onClick={handlePrint} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : '미리보기·인쇄'}</button>
-                <button onClick={handleSavePdf} disabled={exporting} className="toolbar-btn-secondary">{exporting ? '여는 중…' : 'PDF로 저장'}</button>
-              </>
-            )}
+            {/* 액션 집합 정본(§30) — [보내기] [발급]. 기기로 버튼 수를 가르지 않는다(사전 62행).
+                '미리보기·인쇄'와 'PDF로 저장'을 걷었다 — 사전에 없는 동사이고, 실제 동작이
+                공유 시트·새 탭이라 모바일에서 '인쇄'가 거짓이다(운영자 실기). 발급 전 확인은
+                이 화면이 종이 실물로 이미 하고, 인쇄는 뷰어 한 곳에만 있다.
+                사진 저장은 보류 — SaveDocImageButton 이 1페이지만 그려 임의처분 동의서가 빠진다(3단계). */}
+            <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()}
+              className="toolbar-btn-secondary" />
             {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 발급 버튼은 항상 보이되 서명 전엔 비활성.
                 '발급' = 공식본 생성 + 보관 + 이력. 확인서·영수증과 같은 동작이라 같은 동사를 쓴다(2026-08-01 용어 정리). */}
             <button onClick={handleContractSave} disabled={contractSaving || !signatureDataUrl} className="toolbar-print">
-              {contractSaving ? '발급 중… (5~15초)' : '계약서 발급'}
+              {contractSaving ? '발급 중… (5~15초)' : '발급'}
             </button>
             {!signatureDataUrl && (
               <span className="toolbar-hint">서명을 받으면 발급할 수 있어요</span>
@@ -967,7 +891,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
           margin-bottom: 14px; flex-wrap: wrap;
           box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .toolbar-link { color: var(--coral); font-size: 13px; text-decoration: none; }
+        .toolbar-link { color: var(--tc-text); display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; text-decoration: none; }
         .toolbar-spacer { flex: 1; }
         .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
         .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }

@@ -8,7 +8,8 @@ import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, btnClass } from '@/components/ui/Btn'
+import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import DocumentScroll from '@/components/layout/DocumentScroll'
 
@@ -136,6 +137,17 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     } finally { setPreviewing(false) }
   }
 
+  // 보내기·사진 저장이 공유하는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
+  const docFileName = `${data.name}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`
+  const previewBytes = async (): Promise<ArrayBuffer> => {
+    const res = await fetch('/api/rent-receipt/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload(), preview: true }),
+    })
+    if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
+    return res.arrayBuffer()
+  }
+
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
     if (!(await confirmDialog({ title: `${docLabel}를 발급할까요?`, message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
@@ -257,23 +269,18 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 
+        {/* 하단 액션바 정본(§30) — [보내기] [사진 저장] [목적 동사]. flex-1 균등, 접힘 금지.
+            '미리보기'는 이 화면에만 남는다 — 셋 중 유일하게 문서를 안 보여준다(3단계에서 인라인 미리보기로 대체). */}
         <div className="flex gap-2">
           <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
-            {previewing ? '여는 중…' : '미리보기·인쇄'}
+            {previewing ? '여는 중…' : '미리보기'}
           </Btn>
-          {/* 발급 직후 전송 동선 — 실거주확인서 발급 화면과 동일 클래스(사진/PDF 형식 선택, 운영자 확인 2026-07-22) */}
-          <SendDocButton fileName={`${data.name}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 font-medium transition-colors bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)] px-4 py-2.5 text-sm min-h-[44px] rounded-lg disabled:opacity-50"
-            getPdfBytes={async () => {
-              const res = await fetch('/api/rent-receipt/generate', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload(), preview: true }),
-              })
-              if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
-              return res.arrayBuffer()
-            }} />
+          <SendDocButton fileName={docFileName} className={`flex-1 ${btnClass('secondary', 'md')}`}
+            getPdfBytes={previewBytes} />
+          <SaveDocImageButton fileName={docFileName} className={`flex-1 ${btnClass('secondary', 'md')}`}
+            getPdfBytes={previewBytes} />
           <Btn variant="primary" className="flex-1" onClick={handleIssue} disabled={issuing}>
-            {issuing ? '발급 중…' : '발급 (PDF 저장)'}
+            {issuing ? '발급 중…' : '발급'}
           </Btn>
         </div>
       </div>

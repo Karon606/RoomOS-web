@@ -5,11 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ResidenceCertData } from './actions'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
-import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
+import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 
 const fmtDot = (d: string) => {
@@ -69,41 +69,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     pushToast('info', '자동값으로 되돌렸습니다')
   }
 
+  const docFileName = `${data.tenantName}_실거주확인서`
+
   const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate } })
 
-  const [previewing, setPreviewing] = useState(false)
-  const handlePrint = async () => {
-    if (previewing) return
-    setPreviewing(true)
-    // 터치 기기는 공유 시트로 넘긴다 — standalone 앱에서 새 탭은 돌아올 길이 없다(lib/docPreview).
-    // 데스크톱은 종전대로. 팝업 차단 회피: 제스처 시점에 빈 새 탭을 먼저 열고 준비되면 주입.
-    const useShare = canShareFiles()
-    const win = useShare ? null : window.open('', '_blank')
-    try {
-      const res = await fetch('/api/residence-cert/generate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload(), preview: true }),
-      })
-      if (!res.ok) {
-        win?.close()
-        let msg = `미리보기를 불러오지 못했습니다.`
-        try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* not json */ }
-        pushToast('error', msg); return
-      }
-      const blob = await res.blob()
-      if (useShare && await sharePdfFile(blob, pdfFileName('실거주 확인서', data.tenantName, issueDate), '실거주 확인서')) return
-      const url = URL.createObjectURL(blob)
-      if (win) win.location.href = url
-      else if (!window.open(url, '_blank')) {
-        // 공유가 안 되는 기기인데 새 탭도 막혔다 — 여기서 조용히 끝나면 화면 무반응이 된다
-        pushToast('error', '미리보기를 열지 못했습니다', { detail: '팝업 차단을 해제한 뒤 다시 시도해 주세요.' })
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    } catch (err) {
-      win?.close()
-      pushToast('error', (err as Error).message ?? '미리보기 생성에 실패했습니다.')
-    } finally { setPreviewing(false) }
-  }
 
   // 현재 입력값 그대로 '보내기' — 사진/PDF 형식 선택(SendDocButton 정본), preview PDF 바이트 사용.
   const fetchPreviewBytes = async () => {
@@ -164,24 +133,18 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
-        <button onClick={reset} className="rc-btn-secondary">자동값으로</button>
-        <button onClick={handlePrint} disabled={previewing} className="rc-btn-secondary">
-          {previewing ? '여는 중…' : '미리보기·인쇄'}
-        </button>
-        <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={`${data.tenantName}_실거주확인서`} className="rc-btn-secondary" />
+        {/* 액션 집합 정본(§30) — [보내기] [사진 저장] [발급]. '미리보기·인쇄'는 걷었다 —
+            사전에 없는 동사이고, 실제 동작이 인쇄가 아니라 공유 시트·새 탭이라 모바일에서 라벨이 거짓이다.
+            발급 전 확인은 이 화면이 이미 한다(양식 위 실입력). 인쇄는 뷰어 한 곳에만 있다.
+            2단계에서 이 툴바를 상단 크롬 + 하단 액션바로 나눈다. */}
+        <Btn variant="secondary" size="md" onClick={reset}>자동값으로</Btn>
+        <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={docFileName} className={btnClass('secondary', 'md')} />
         {/* 현재 입력값 그대로 PNG 저장(공유 시트로 사진첩 저장, 신고 dc56f953) — preview PDF 를 래스터화 */}
-        <SaveDocImageButton fileName={`${data.tenantName}_실거주확인서`} className="rc-btn-secondary"
-          getPdfBytes={async () => {
-            const res = await fetch('/api/residence-cert/generate', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...payload(), preview: true }),
-            })
-            if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
-            return res.arrayBuffer()
-          }} />
-        <button onClick={handleIssue} disabled={issuing} className="rc-issue">
-          {issuing ? '발급 중…' : '발급 (PDF 저장)'}
-        </button>
+        <SaveDocImageButton fileName={docFileName} className={btnClass('secondary', 'md')}
+          getPdfBytes={fetchPreviewBytes} />
+        <Btn variant="primary" size="md" onClick={handleIssue} disabled={issuing}>
+          {issuing ? '발급 중…' : '발급'}
+        </Btn>
       </div>
 
       <p className="no-print rc-hint">원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요. 보이는 그대로 발급됩니다.</p>
@@ -253,16 +216,16 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-toolbar {
           position: sticky; top: 8px; z-index: 5; width: min(595px, 100% - 24px);
           display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-          background: var(--cream); border: 1px solid var(--cream-3); border-radius: 10px; margin-bottom: 10px;
+          background: var(--cream); border: 1px solid var(--warm-border); border-radius: 10px; margin-bottom: 10px;
           flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .rc-link { color: var(--coral); font-size: 13px; text-decoration: none; }
+        .rc-link { color: var(--tc-text); font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
         .rc-spacer { flex: 1; }
         .rc-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
-        .rc-field input { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }
+        .rc-field input { padding: 4px 8px; border: 1px solid var(--warm-border); border-radius: 6px; font-size: 12px; }
         .rc-issue { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .rc-issue:disabled { opacity: 0.6; }
-        .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
+        .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--warm-border); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .rc-btn-secondary:disabled { opacity: 0.6; }
         .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: var(--ink-m); margin: 0 0 12px; }
         .rc-warn { width: min(595px, 100% - 24px); font-size: 12px; color: var(--warning-fg); background: var(--warning-bg); border: 1px solid var(--warning-ring); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; line-height: 1.5; }
