@@ -127,14 +127,23 @@ export async function completeCleaning(input: {
 
     await prisma.$transaction(async tx => {
       let expenseId = cur.expenseId
-      // 다시 완료 처리하면 앞서 만든 지출을 갈아치우지 않고 지운 뒤 새로 만든다.
-      // 남겨두면 같은 청소에 지출이 둘이 되어 비용이 이중 계상된다.
-      if (expenseId) {
-        // Expense 는 소프트삭제 칸이 없다(정본 deleteExpense 도 하드 삭제한다). 실제로 지운다.
-        await tx.expense.delete({ where: { id: expenseId } })
+      // 다시 완료 처리하면 **있는 지출을 고친다.** 지우고 새로 만들면 운영자가 지출 화면에서
+      // 손본 것(구매처·메모·영수증)이 통째로 사라지고 되돌릴 길이 없다. Expense 에는 소프트삭제 칸이 없다.
+      if (expenseId && cost > 0) {
+        await tx.expense.update({
+          where: { id: expenseId },
+          data: {
+            date: doneDate, amount: cost,
+            detail: `${cur.room.roomNo}호 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
+            vendor: input.performerName?.trim() || null,
+          },
+        })
+      } else if (expenseId && cost === 0) {
+        // 비용을 0으로 바꿨다. 지출을 지우지 않고 **연결만 끊는다** — 실제로 나간 돈일 수 있고,
+        // 지우는 판단은 지출 화면에서 운영자가 한다.
         expenseId = null
       }
-      if (cost > 0) {
+      if (!expenseId && cost > 0) {
         const e = await tx.expense.create({
           data: {
             propertyId, date: doneDate, amount: cost,
@@ -169,23 +178,21 @@ export async function completeCleaning(input: {
 }
 
 /** 완료·건너뜀을 예정으로 되돌린다. */
-export async function reopenCleaning(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKept: boolean } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true, expenseId: true } })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    // 지출도 함께 되돌린다. 반쪽만 되돌리면 청소는 예정인데 비용은 남는 유령 지출이 된다.
-    await prisma.$transaction(async tx => {
-      if (cur.expenseId) await tx.expense.delete({ where: { id: cur.expenseId } })
-      await tx.roomCleaning.update({
-        where: { id },
-        data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, expenseId: null, fromCleaningFund: false },
-      })
+    // **지출은 지우지 않는다.** 실제로 나간 돈이고, 청소 상태를 되돌린다고 그 돈이 안 나간 것이 되지 않는다.
+    // 연결만 끊고 지출은 그대로 둔다 — 지울지는 지출 화면에서 운영자가 정한다.
+    // 종전에는 여기서 하드 삭제했는데 Expense 에는 소프트삭제 칸이 없어 되돌릴 길이 없었다.
+    await prisma.roomCleaning.update({
+      where: { id },
+      data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, expenseId: null, fromCleaningFund: false },
     })
     revalidatePath('/room-manage')
-    revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, expenseKept: !!cur.expenseId }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }

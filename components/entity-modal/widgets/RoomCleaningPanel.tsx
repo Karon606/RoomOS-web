@@ -185,7 +185,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     </>
                   )}
                   {r.status !== 'PLANNED' && (
-                    <button type="button" disabled={pending} onClick={() => run(() => reopenCleaning(r.id), '예정으로 되돌렸습니다')}
+                    <button type="button" disabled={pending}
+                      onClick={() => run(() => reopenCleaning(r.id),
+                        r.cost ? '예정으로 되돌렸습니다 · 기록된 지출은 그대로 남습니다' : '예정으로 되돌렸습니다')}
                       className="text-xs text-[var(--coral)]">되돌리기</button>
                   )}
                   <button type="button" disabled={pending}

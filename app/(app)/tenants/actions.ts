@@ -57,6 +57,18 @@ async function getPropertyId() {
 // 한 곳만 넣으면 퇴실 경로에 따라 누락된다. 코드가 스스로 "동일"이라고 적어둔 그 중복이다.
 // 이미 열린 예정이 있으면 만들지 않는다. 되풀이 퇴실이나 상태 되돌리기로 같은 방에 예정이 쌓이면
 // '청소 필요' 숫자가 실제보다 커진다.
+// 퇴실을 되돌리면 자동으로 만든 청소 예정도 걷는다. 안 걷으면 거주 중인 방에 '청소 필요' 가 붙는다.
+// **자동으로 만든 것만** 지운다 — 운영자가 손으로 등록한 예정은 leaseTermId 가 없거나 사유가 다르고,
+// 그것까지 지우면 사람이 넣은 일정을 코드가 없앤 것이 된다.
+async function clearAutoCheckoutCleaning(propertyId: string, leaseTermId: string) {
+  try {
+    await prisma.roomCleaning.updateMany({
+      where: { propertyId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', deletedAt: null },
+      data: { deletedAt: new Date() },
+    })
+  } catch { /* 청소 이력은 상태 전이를 막지 않는다 */ }
+}
+
 async function ensureCheckoutCleaning(propertyId: string, roomId: string | null, leaseTermId: string) {
   if (!roomId) return
   try {
@@ -1540,6 +1552,8 @@ export async function applyStatusTransition(input: {
         })
         await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId)
       } else {
+        // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
+        await clearAutoCheckoutCleaning(propertyId, input.leaseTermId)
         await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
       }
     }
