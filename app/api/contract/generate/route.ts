@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { kstYmdStr } from '@/lib/kstDate'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
@@ -19,15 +20,25 @@ export const dynamic = 'force-dynamic'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
+// 캡처 시각은 클라이언트가 준다. 형식만 보고 값은 그대로 믿는다 — 미래 시각을 막을 근거가 없고
+// (기기 시계가 앞선 것뿐일 수 있다) 서명 후 계약일은 어차피 아래 resolveSignDates 가 서버에서 다시 정한다.
+function parseCapturedAt(v?: string): Date | null {
+  if (!v) return null
+  const t = Date.parse(v)
+  return Number.isFinite(t) ? new Date(t) : null
+}
+
 const GENDER_LABEL: Record<string, string> = { MALE: '남', FEMALE: '여', UNKNOWN: '' }
 const REGISTRATION_LABEL: Record<string, string> = { REGISTERED: '신고', NOT_REPORTED: '미신고', EXEMPTED: '면제' }
 
 type Body = {
   tenantId: string
-  signDate: string                  // YYYY-MM-DD
+  signDate: string                  // YYYY-MM-DD — 서명 전에만 신뢰한다. 서명 후에는 서버가 다시 확정한다(아래 resolveSignDates)
   signatureName: string
   signatureImageDataUrl: string     // base64 PNG dataURL
   disposalSignatureImageDataUrl?: string  // 잔여 소지품 임의처분 동의서 별도 서명 (선택)
+  signatureCapturedAt?: string      // 이번 화면에서 방금 받은 서명의 캡처 시각(ISO). 기존 서명 재사용이면 없다
+  disposalSignatureCapturedAt?: string
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
@@ -83,9 +94,31 @@ export async function POST(req: Request) {
     const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                          ?? tenant.contacts.find(c => !c.isEmergency)
 
-    // sign date 표시 형식: YYYY-MM-DD → YYYY년 M월 D일
-    const [y, m, dd] = body.signDate.split('-').map(Number)
-    const signDateLabel = Number.isFinite(y) ? `${y}년 ${m}월 ${dd}일` : body.signDate
+    // 계약일은 서버가 다시 정한다. 화면이 잠겨도 이 API 를 직접 부르면 아무 날짜나 들어오고,
+    // 그 값이 계약번호·파일명·보관 레코드까지 결정하기 때문이다.
+    // 서명이 있으면 서명 시각이 곧 계약일이고, 서명 전에만 화면이 보낸 값을 신뢰한다.
+    // 미리보기는 저장되는 것이 없으므로 화면 값을 그대로 쓴다 — 서명 전 날짜를 바꿔가며 확인하는 용도다.
+    let signDate = body.signDate
+    let disposalSignDate = body.signDate
+    if (!body.preview && lease?.id) {
+      const link = await prisma.contractShareLink.findFirst({
+        where: { leaseTermId: lease.id, signedAt: { not: null } },
+        orderBy: { signedAt: 'desc' },
+        select: { signedAt: true, disposalSignedAt: true },
+      })
+      const signedAt = link?.signedAt ?? lease.signatureSignedAt ?? null
+      const disposalAt = link?.disposalSignedAt ?? lease.disposalSignatureSignedAt ?? null
+      if (signedAt) signDate = kstYmdStr(signedAt)
+      disposalSignDate = disposalAt ? kstYmdStr(disposalAt) : signDate
+    }
+
+    // 표시 형식: YYYY-MM-DD → YYYY년 M월 D일
+    const ymdLabel = (v: string) => {
+      const [yy, mm, dd] = v.split('-').map(Number)
+      return Number.isFinite(yy) ? `${yy}년 ${mm}월 ${dd}일` : v
+    }
+    const signDateLabel = ymdLabel(signDate)
+    const disposalSignDateLabel = ymdLabel(disposalSignDate)
 
     // Pretendard variable woff2 base64 — 한글 폰트 보장 (모듈 캐시)
     const pretendardBase64 = await getPretendardBase64()
@@ -103,13 +136,13 @@ export async function POST(req: Request) {
     if (!body.preview) {
       for (let attempt = 0; attempt < 5 && !reserved; attempt++) {
         const issued = await prisma.contractFile.count({ where: { propertyId, contractNo: { not: null } } })
-        const no = `${body.signDate.replace(/-/g, '')}-${String(issued + 1 + attempt).padStart(3, '0')}`
+        const no = `${signDate.replace(/-/g, '')}-${String(issued + 1 + attempt).padStart(3, '0')}`
         try {
           const row = await prisma.contractFile.create({
             data: {
               propertyId, tenantId: tenant.id, leaseTermId: lease?.id ?? null,
               driveFileId: '', fileName: '', source: 'GENERATED', contractNo: no,
-              signedAt: new Date(`${body.signDate}T00:00:00`),
+              signedAt: new Date(`${signDate}T00:00:00`),
             },
             select: { id: true },
           })
@@ -151,6 +184,7 @@ export async function POST(req: Request) {
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
+      disposalSignDate: disposalSignDateLabel,
       signatureName: body.signatureName,
       signatureImageDataUrl: body.signatureImageDataUrl,
     }
@@ -238,7 +272,7 @@ export async function POST(req: Request) {
 
     // 2) Drive 업로드
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
-    const fileName = `계약서_${safeTenantName}_${body.signDate.replace(/-/g, '')}_${Date.now()}.pdf`
+    const fileName = `계약서_${safeTenantName}_${signDate.replace(/-/g, '')}_${Date.now()}.pdf`
     // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
     let record
     try {
@@ -257,9 +291,12 @@ export async function POST(req: Request) {
     // 서명 없이 생성한 경우(빈 값)는 기존 저장 서명을 지우지 않도록 유효 이미지일 때만 갱신.
     if (lease?.id) {
       if (body.signatureImageDataUrl?.startsWith('data:image/')) {
+        // 캡처 시각이 함께 왔을 때만 시각을 갱신한다. 기존 저장 서명을 재사용한 재발급이
+        // 과거 서명일을 오늘로 밀어버리면 안 된다 — 그게 이번 결함의 뿌리다.
+        const at = parseCapturedAt(body.signatureCapturedAt)
         await prisma.leaseTerm.update({
           where: { id: lease.id },
-          data: { signatureImageUrl: body.signatureImageDataUrl },
+          data: { signatureImageUrl: body.signatureImageDataUrl, ...(at ? { signatureSignedAt: at } : {}) },
         })
       }
       // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 계약서 서명과 **같은 규칙**으로.
@@ -273,7 +310,10 @@ export async function POST(req: Request) {
         try {
           await prisma.leaseTerm.update({
             where: { id: lease.id },
-            data: { disposalSignatureImageUrl: body.disposalSignatureImageDataUrl },
+            data: {
+              disposalSignatureImageUrl: body.disposalSignatureImageDataUrl,
+              ...(parseCapturedAt(body.disposalSignatureCapturedAt) ? { disposalSignatureSignedAt: parseCapturedAt(body.disposalSignatureCapturedAt)! } : {}),
+            },
           })
         } catch (e) {
           console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)

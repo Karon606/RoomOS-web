@@ -36,7 +36,16 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   const remote = mode === 'remote'
   const router = useRouter()
   const today = kstYmdStr()
-  const [signDate, setSignDate]       = useState(today)
+  // 계약일. 서명 전에는 오늘이 맞지만, 서명이 끝난 계약서는 **실제로 서명한 날**이어야 한다.
+  // 종전에는 무조건 오늘로 잡혀 발급이 하루라도 늦으면 종이에 엉뚱한 날이 찍혔다.
+  // 이 값 하나가 계약번호 앞자리·파일명·보관 레코드까지 결정한다(운영자 신고 2026-08-04).
+  const fixedSignDate = data.lease?.signatureSignedDate ?? null
+  const fixedDisposalSignDate = data.lease?.disposalSignatureSignedDate ?? null
+  const [signDate, setSignDate]       = useState(fixedSignDate ?? today)
+  // 이번 화면에서 방금 받은 서명의 캡처 시각. 기존 저장 서명을 그대로 쓰면 null 이고,
+  // 그때는 서버가 시각 컬럼을 안 건드린다 — 재발급이 과거 서명일을 오늘로 밀면 안 된다.
+  const [signatureCapturedAt, setSignatureCapturedAt] = useState<string | null>(null)
+  const [disposalSignatureCapturedAt, setDisposalSignatureCapturedAt] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState(data.tenant.name ?? '')
   const [smoking, setSmoking]         = useState(data.tenant.smoking ? '흡연' : '비흡연')
   // 계약서에서 흡연 여부를 바꾸면 입실자(고객정보)에 즉시 저장 — 출력용 일회성이 아니라 영구 반영
@@ -220,11 +229,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     }))
   }
 
-  // 서명일은 yyyy-MM-dd → "yyyy년 M월 d일"
-  const signDateLabel = (() => {
-    const [y, m, d] = signDate.split('-').map(Number)
-    return Number.isFinite(y) ? `${y}년 ${m}월 ${d}일` : signDate
-  })()
+  // 계약일이 확정됐는가 — 서명이 존재하면 확정이다. '제출까지'로 잡으면 결함이 안 닫힌다.
+  // 실측(2026-08-04)에서 서명만 하고 제출을 안 한 링크가 다섯 중 둘이었고 **그 둘 다 발급됐다.**
+  // 대면 서명에는 제출이라는 개념이 아예 없다.
+  const signDateLocked = !!fixedSignDate || !!signatureCapturedAt
+  const signDateEffective = fixedSignDate
+    ?? (signatureCapturedAt ? kstYmdStr(new Date(signatureCapturedAt)) : signDate)
+  const disposalDateEffective = fixedDisposalSignDate
+    ?? (disposalSignatureCapturedAt ? kstYmdStr(new Date(disposalSignatureCapturedAt)) : signDateEffective)
+
+  // yyyy-MM-dd → "yyyy년 M월 d일"
+  const ymdLabel = (v: string) => {
+    const [y, m, d] = v.split('-').map(Number)
+    return Number.isFinite(y) ? `${y}년 ${m}월 ${d}일` : v
+  }
+  const signDateLabel = ymdLabel(signDateEffective)
+  const disposalDateLabel = ymdLabel(disposalDateEffective)
 
   // ── 서명 패드 모달 ──────────────────────────────────────────────
   const [signOpen, setSignOpen]       = useState(false)
@@ -312,11 +332,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       return
     }
     setSignOpen(false)
+    const capturedAt = new Date().toISOString()
     if (signTarget === 'disposal') {
       setDisposalSignatureDataUrl(url)
+      setDisposalSignatureCapturedAt(capturedAt)
       pushToast('info', '동의서 서명 적용됨 · 확인 후 \'계약서 발급\' 을 눌러주세요')
     } else {
       setSignatureDataUrl(url)
+      setSignatureCapturedAt(capturedAt)
+      setSignDate(kstYmdStr(new Date(capturedAt)))
       pushToast('info', '서명 적용됨 · 확인 후 \'계약서 발급\' 을 눌러주세요')
     }
   }
@@ -375,6 +399,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
           signDate,
           signatureName,
           signatureImageDataUrl: signatureDataUrl,
+        signatureCapturedAt: signatureCapturedAt ?? undefined,
+        disposalSignatureCapturedAt: disposalSignatureCapturedAt ?? undefined,
           disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
           smoking,
           emergencyContactText,
@@ -413,6 +439,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         signDate,
         signatureName,
         signatureImageDataUrl: signatureDataUrl,
+        signatureCapturedAt: signatureCapturedAt ?? undefined,
+        disposalSignatureCapturedAt: disposalSignatureCapturedAt ?? undefined,
         disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
         smoking,
         emergencyContactText,
@@ -496,10 +524,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         <div className="toolbar-spacer" />
         {!editing && (
           <>
-            <label className="toolbar-field">
-              <span>서명일</span>
-              <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} />
-            </label>
+            {signDateLocked ? (
+              // 잠긴 값은 입력칸 모양을 벗는다. disabled input 은 눌러도 아무 일이 없고 이유도 안 말한다.
+              // 왜 잠겼는지는 눌렀을 때 말해준다 — 길 없이 막기만 하면 고장으로 읽힌다.
+              <button type="button" className="toolbar-locked" onClick={() => pushToast(
+                'info', '서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 재서명을 받아야 합니다')}>
+                <span>계약일</span>
+                <strong className="num">{signDateEffective}</strong>
+              </button>
+            ) : (
+              <label className="toolbar-field">
+                <span>계약일</span>
+                <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} />
+              </label>
+            )}
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
             <button onClick={() => setEditing(true)} className="toolbar-btn-secondary">
               본문 편집
@@ -563,7 +601,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               <div className="biz-meta">{bizMeta1}{bizMeta1 && bizMeta2 ? <br /> : null}{bizMeta2}</div>
             </div>
           </div>
-          <div className="issue">작성일 {signDateLabel}</div>
+          <div className="issue">계약일 {signDateLabel}</div>
         </div>
         <div className="tc-rule" />
 
@@ -784,7 +822,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               <p key={i} className="dc-p">{renderContractText(p, dcVars)}</p>
             ))}
           </div>
-          <div className="dc-date num">{signDateLabel}</div>
+          <div className="dc-date num">{disposalDateLabel}</div>
           <div className="dc-sign">
             <span className="dc-sign-lbl">동의자(입실자) 성명</span>
             <span className="dc-sign-line">{signatureName || data.tenant.name}</span>
@@ -901,6 +939,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .toolbar-spacer { flex: 1; }
         .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
         .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }
+        /* 잠긴 계약일 — 입력칸 모양을 벗는다(§12 '고칠 수 없는 값' 문법). 테두리 없음, 포커스 링 없음.
+           disabled input 으로 두면 눌러도 아무 일이 없고 화면이 이유를 안 말한다(§27.2). */
+        .toolbar-locked {
+          display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+          padding: 4px 10px; border: 0; border-radius: 6px; background: var(--sand-s);
+          font-size: 12px; color: var(--ink-s); cursor: pointer; text-align: left;
+        }
+        .toolbar-locked strong { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
         .toolbar-print { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .toolbar-print:disabled { opacity: 0.6; }
         .toolbar-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }

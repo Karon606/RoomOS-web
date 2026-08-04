@@ -1,6 +1,7 @@
 // 계약서 렌더 데이터(ContractData) 조립 공유 헬퍼 — 운영자 출력 페이지와 원격 서명 링크 발급(스냅샷)이 공용.
 // 인증은 하지 않는다. 호출자가 검증된 propertyId 를 넘겨야 한다(운영자 경로 requirePropertyAccess 이후 호출).
 import 'server-only'
+import { kstYmdStr } from '@/lib/kstDate'
 import prisma from '@/lib/prisma'
 import { buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
 import {
@@ -41,8 +42,13 @@ export type ContractData = {
     registrationStatus: '신고' | '미신고' | '면제'
     signatureImageUrl: string | null   // #8 이전에 받은 앱서명(dataURL) — 출력 시 재표시
     disposalSignatureImageUrl: string | null   // 동의서 별도 서명(dataURL) — 출력 시 재표시
+    // 그 서명을 받은 날(KST, YYYY-MM-DD). 있으면 계약일이 이 값으로 고정된다.
+    signatureSignedDate: string | null
+    disposalSignatureSignedDate: string | null
   } | null
 }
+
+const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
 
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남', FEMALE: '여', UNKNOWN: '',
@@ -129,6 +135,9 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
       signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
       disposalSignatureImageUrl: (lease as { disposalSignatureImageUrl?: string | null }).disposalSignatureImageUrl ?? null,
+      // KST 로 자르는 것은 서버 몫이다. 클라이언트가 UTC 로 자르면 자정 근처에서 하루 어긋난다.
+      signatureSignedDate: kstOrNull((lease as { signatureSignedAt?: Date | null }).signatureSignedAt),
+      disposalSignatureSignedDate: kstOrNull((lease as { disposalSignatureSignedAt?: Date | null }).disposalSignatureSignedAt),
     } : null,
   }
 }

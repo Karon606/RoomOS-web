@@ -104,7 +104,11 @@ export async function submitRemoteSignature(
     await prisma.$transaction([
       prisma.leaseTerm.update({
         where: { id: link.leaseTermId },
-        data: target === 'contract' ? { signatureImageUrl: dataUrl } : { disposalSignatureImageUrl: dataUrl },
+        // 시각도 함께 남긴다. 링크에만 있으면 대면 서명과 읽는 자리가 갈리고,
+        // 무엇보다 계약일을 정할 때 링크를 따로 찾아가야 한다. now 는 아래 링크 갱신과 같은 값이다.
+        data: target === 'contract'
+          ? { signatureImageUrl: dataUrl, signatureSignedAt: now }
+          : { disposalSignatureImageUrl: dataUrl, disposalSignatureSignedAt: now },
       }),
       prisma.contractShareLink.update({
         where: { id: link.id },

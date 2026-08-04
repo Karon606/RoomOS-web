@@ -66,7 +66,10 @@ export type PrintContractData = {
   // 사용자가 입력한 화면 상태
   smoking: string                 // '비흡연' | '흡연'
   emergencyContactText: string
-  signDate: string                // 'YYYY년 M월 D일'
+  signDate: string                // 'YYYY년 M월 D일' — 계약일(= 입주자가 서명한 날)
+  // 동의서는 별도 서명을 받는 별도 서류라 자기 서명 시각을 쓴다. 링크 TTL 이 24시간이라
+  // 자정을 넘겨 서명하면 계약서와 갈릴 수 있다. 안 넘어오면 signDate 로 폴백한다.
+  disposalSignDate?: string
   signatureName: string
   signatureImageDataUrl: string   // 'data:image/png;base64,...' — 입실자 손글씨
   pretendardBase64: string        // Pretendard variable woff2 base64 — 한글 렌더 보장
@@ -163,7 +166,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       </tbody></table>
       <div class="dc-sec-h">2. 동의 내용</div>
       <div class="dc-body">${dcBodyHtml}</div>
-      <div class="dc-date num">${escape(d.signDate)}</div>
+      <div class="dc-date num">${escape(d.disposalSignDate ?? d.signDate)}</div>
       <div class="dc-sign"><span class="dc-sign-lbl">동의자(입실자) 성명</span><span class="dc-sign-line">${escape(d.signatureName || d.tenant.name)}</span><span class="dc-sign-seal">${d.disposalSignatureImageDataUrl ? `<img class="dc-sign-img" src="${d.disposalSignatureImageDataUrl}" alt="서명" />` : '(서명 또는 인)'}</span></div>
       <div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>
       <div class="doc-footer">
@@ -293,7 +296,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       </div>
       <div class="issue">
         계약번호 <span class="num">No. ${escape(d.contractNo)}</span><br>
-        작성일 ${escape(d.signDate)}
+        계약일 ${escape(d.signDate)}
       </div>
     </div>
     <div class="tc-rule"></div>

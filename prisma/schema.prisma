@@ -567,6 +567,10 @@ model LeaseTerm {
   signatureImageUrl  String?
   // 잔여 소지품 임의처분 동의서 별도 서명(dataURL) — 입실계약서 서명과 독립 저장(에디터 재표시·재인쇄용).
   disposalSignatureImageUrl String?
+  // 그 서명 이미지를 받은 시각. 원격은 링크의 서명 시각과 같은 값, 대면은 서명 패드 확인 시각.
+  // 계약일이 이 값으로 고정된다 — 없으면 발급 때마다 '오늘'이 찍혀 실제 서명일과 갈린다.
+  signatureSignedAt         DateTime?
+  disposalSignatureSignedAt DateTime?
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지
