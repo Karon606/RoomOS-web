@@ -148,6 +148,9 @@ export type ItemPickState = {
   label: string
   ocrRaw?: string   // OCR 인식 원문 — 사용자가 이름을 바꿔 저장하면 별칭 학습(다음 영수증 자동 치환)
   setHint?: SetHint // 세트 상품 의심(주문 1=실물 N) — 행에 "1세트에 몇 개?" 확인 칩 표시, 저장 시 제거
+  // 손으로 고친 품명이 기존 품목과 비슷할 때 알릴 대상. 재고 귀속은 글자 완전일치라
+  // 한 글자만 달라도 그 구매가 어느 카드에도 안 붙는다(신고 78ff0e64).
+  labelSimilarTo?: string
   specValue: string; specUnit: string
   specText?: string   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여
   qtyValue: string; qtyUnit: string
@@ -699,12 +702,33 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                 <div className="flex items-center gap-2">
                   {/* 품명 수정 가능 — 영수증 OCR이 뽑은 긴 쇼핑몰 품명을 등록 상태에서 바로 다듬게(운영자 지시 2026-07-13).
                       스타일은 이 카드의 조밀 입력 문법(smallNum: cream bg+coral/30 보더)과 동일 — 형제 입력(수량·규격·단가)과 한 문법. */}
+                  {/* 손을 뗄 때 한 번만 비슷한 품명을 알린다. 타이핑 중에 물으면 글자마다 뜬다.
+                      이 경로에 가드가 없어서 봉투 사고가 났다 — '종량제쓰레기봉투 (50L)' 로 고친 순간
+                      기존 카드 '종량제쓰레기봉투 50L' 과 글자가 어긋나 재고에 안 붙었다(신고 78ff0e64).
+                      유사도 판정은 기존 그대로 둔다. 크기 표기까지 지우는 정규화를 쓰면
+                      50L 을 20L 로 합치라고 권하게 된다. */}
                   <input type="text" value={it.label}
                     onChange={e => patchItem(idx, { label: e.target.value })}
+                    onBlur={e => {
+                      const v = e.target.value.trim()
+                      const similar = v ? findSimilarItemName(v, detailSuggestions) : null
+                      patchItem(idx, { labelSimilarTo: similar && similar !== v ? similar : undefined })
+                    }}
                     aria-label="품명 수정" placeholder="품명"
                     className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs font-medium text-[var(--coral)] outline-none focus:border-[var(--coral)] transition-colors" />
                   <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
+                {it.labelSimilarTo && (
+                  <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--warning-bg)] ring-1 ring-[var(--warning-ring)] px-2 py-1.5">
+                    <span className="text-[0.65625rem] text-[var(--warning-fg)] flex-1 min-w-[8rem]">
+                      비슷한 품명이 이미 있어요 — <strong>{it.labelSimilarTo}</strong>. 같은 물건이면 이름을 맞춰야 재고에 함께 잡혀요.
+                    </span>
+                    <button type="button" onClick={() => patchItem(idx, { label: it.labelSimilarTo!, labelSimilarTo: undefined })}
+                      className="text-[0.65625rem] font-semibold text-[var(--warning-fg)] underline shrink-0">이 이름으로</button>
+                    <button type="button" onClick={() => patchItem(idx, { labelSimilarTo: undefined })}
+                      className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">그대로</button>
+                  </div>
+                )}
                 {it.setHint && !(Number(it.specValue) > 1) && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
                     <span className="text-[0.65625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
@@ -1443,6 +1467,7 @@ export default function FinanceClient({
   const [editExpRoomId, setEditExpRoomId]   = useState('')
   const [addReceiptUrl, setAddReceiptUrl]   = useState('')
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
+  // 수정 폼이 다른 지출로 바뀌면 로컬 미리보기는 버린다. 남기면 남의 영수증이 보인다.
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(expenseCategories[0] ?? '소모품비')
   // 신고 6f264a8f: 사용자가 카테고리를 직접 고른 뒤에는 어떤 자동 채움(OCR 등)도 덮지 않는다
@@ -1483,6 +1508,12 @@ export default function FinanceClient({
   const editIsDurable = editItems.length > 0 && !isTrackedCat(editExpCategory) && !detailExp?.excludeFromInventory
 
   // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
+  // 저장 전 미리보기는 **로컬 이미지**를 쓴다. 업로드가 돌려주는 주소는 로그인 검사를 거치는
+  // 프록시인데, 그 검사는 "이 파일을 참조하는 지출이 있는가" 를 본다. 아직 저장을 안 했으니
+  // 참조하는 행이 없고 404 가 난다 — 저장을 누르기 전까지 영수증이 항상 깨져 보였다(신고 9742f86f).
+  // 프록시에 임시 토큰을 발급하는 방향은 택하지 않는다. 인증 표면을 도로 넓히게 된다.
+  const [localReceiptPreview, setLocalReceiptPreview] = useState<{ add: string; edit: string }>({ add: '', edit: '' })
+
   const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
     if (!file.type.startsWith('image/')) {
       const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
@@ -1493,7 +1524,17 @@ export default function FinanceClient({
     // 기본값은 브라우저별로 다르다(Safari 적용 / Chrome 미적용). 'from-image' 로 명시적으로
     // EXIF 적용된 픽셀 데이터를 받아 화면 표시 ↔ bitmap 좌표 변환을 일관되게 한다.
     // 이 옵션이 없으면 핸들 좌표 → bitmap 좌표 매핑이 어긋나 확대경이 엉뚱한 영역을 보여줌.
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    // 못 여는 형식(HEIC 등)이면 throw 한다. 잡지 않으면 아무 메시지 없이 끝나고,
+    // 호출부의 e.target.value = '' 까지 못 가서 같은 파일 재선택도 막힌다.
+    // 홈 '찍어 올리기' 는 이미 원본 업로드로 폴백한다(PendingReceiptSection) — 같은 문법을 쓴다.
+    let bitmap: ImageBitmap
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    } catch {
+      const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+      await handleReceiptUpload(file, setter)
+      return
+    }
     scanTargetRef.current = target
     setScanCropped(null)
     setScanOcrError('')
@@ -1502,7 +1543,10 @@ export default function FinanceClient({
 
   // 크롭 결과를 스토리지에 업로드 (코어 — cropped 직접 받음)
   const uploadCropped = async (cropped: { dataUrl: string; base64: string }) => {
-    const setter = scanTargetRef.current === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+    const target = scanTargetRef.current === 'add' ? 'add' : 'edit'
+    const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+    // 업로드 주소는 저장 후에 쓰고, 지금 화면에는 방금 만든 이미지를 그대로 둔다
+    setLocalReceiptPreview(p => ({ ...p, [target]: cropped.dataUrl }))
     await handleReceiptUpload(dataUrlToFile(cropped.dataUrl, 'receipt.jpg'), setter)
     setScanCropped(null)
   }
@@ -3496,6 +3540,7 @@ export default function FinanceClient({
                     setEditExpAccName(detailExp.financeName ?? '')
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
+                    setLocalReceiptPreview(p => ({ ...p, edit: '' }))
                     setEditExpCategory(detailExp.category)
                     // '배송비 포함'(합산형)으로 등록된 지출 — detail 의 '배송비 N원' 표기에서 합산분 복원.
                     // 안 하면 수정 저장 시 배송비가 이중 합산되거나 표기가 사라지고 단가가 부풀던 문제.
@@ -3789,8 +3834,8 @@ export default function FinanceClient({
                       </div>
                     ) : editReceiptUrl ? (
                       <div className="relative">
-                        <img src={editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
-                        <button type="button" onClick={() => setEditReceiptUrl('')}
+                        <img src={localReceiptPreview.edit || editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                        <button type="button" onClick={() => { setEditReceiptUrl(''); setLocalReceiptPreview(p => ({ ...p, edit: '' })) }}
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                       </div>
                     ) : (
@@ -4093,8 +4138,8 @@ export default function FinanceClient({
                     </div>
                   ) : addReceiptUrl ? (
                     <div className="relative">
-                      <img src={addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
-                      <button type="button" onClick={() => setAddReceiptUrl('')}
+                      <img src={localReceiptPreview.add || addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                      <button type="button" onClick={() => { setAddReceiptUrl(''); setLocalReceiptPreview(p => ({ ...p, add: '' })) }}
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                     </div>
                   ) : (
@@ -4109,7 +4154,7 @@ export default function FinanceClient({
                 {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => setShowAddExp(false)}>취소</Btn>
+                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setShowAddExp(false); setLocalReceiptPreview(p => ({ ...p, add: '' })) }}>취소</Btn>
                 <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                   {isPending ? '저장 중…' : '저장'}
                 </Btn>

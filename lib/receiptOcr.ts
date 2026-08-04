@@ -100,7 +100,12 @@ export async function fetchGeminiOcr(params: {
   maxOutputTokens: number
 }): Promise<{ ok: true; text: string } | { ok: false; status: number; errorText: string }> {
   const { apiKey, imageBase64, mimeType, prompt, maxOutputTokens } = params
-  const res = await fetch(
+  // 타임아웃이 없으면 응답이 안 올 때 '분석 중…' 이 영원히 돈다. 사용자는 앱이 멈춘 것으로 읽는다.
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), 30_000)
+  let res: Response
+  try {
+    res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
@@ -116,8 +121,15 @@ export async function fetchGeminiOcr(params: {
         // (신고 4b1f59e2 재현: 1500 중 사고가 1439 소모, 답변 45토큰에서 절단). noticeSms.ts와 동일 패턴.
         generationConfig: { temperature: 0.1, maxOutputTokens, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
       }),
+      signal: ac.signal,
     }
-  )
+    )
+  } catch (e) {
+    const aborted = (e as Error)?.name === 'AbortError'
+    return { ok: false, status: 0, errorText: aborted ? '인식에 30초 넘게 걸려 중단했습니다. 다시 시도해 주세요.' : ((e as Error)?.message ?? '네트워크 오류').slice(0, 200) }
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) return { ok: false, status: res.status, errorText: (await res.text()).slice(0, 200) }
   const json = await res.json()
   const parts: { text?: string }[] = json.candidates?.[0]?.content?.parts ?? []
