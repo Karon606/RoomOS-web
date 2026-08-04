@@ -4,10 +4,12 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 // 서류 화면으로는 **전체 페이지 이동**으로 들어간다(next/link 아님).
-// 확대 허용은 라우트 layout 의 viewport 로 선언하는데, iOS 는 소프트 내비에서 viewport meta 교체를
-// 반영하지 않아 선언이 무동작이 된다. 계약서만 확대가 되던 이유가 그것이었다 — 그쪽 진입점만
-// 순수 a 태그였다. 서류 라우트는 (app) 밖이라 소프트 내비를 해도 셸을 통째로 다시 세우므로
-// 잃는 것이 사실상 없다.
+// 라우트 layout 의 확대 허용 viewport 가 새 문서 파싱 시점에 확실히 적용되게 하려는 것이다.
+// 서류 라우트는 (app) 밖이라 소프트 내비를 해도 셸을 통째로 다시 세우므로 잃는 것이 사실상 없다.
+//
+// 주의 — 이 선언이 확대를 주는 것은 데스크톱뿐이다. 아이폰 홈화면 앱은 선언을 존중하지만 표시 모드
+// 자체가 사용자 확대를 안 주고, 사파리·안드로이드는 접근성 때문에 확대 금지를 아예 무시해 원래 확대된다.
+// 확대의 정본은 뷰어(/doc)의 자체 확대다. knowledge/mobile-scroll-viewport.md 의 표시 모드 절 참조.
 import { useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'

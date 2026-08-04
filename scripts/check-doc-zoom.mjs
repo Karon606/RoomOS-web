@@ -6,11 +6,15 @@
 //      핀치로 2배 확대하면 절반이 되고 resize 가 뜬다. 그 값으로 배율을 다시 잡으니
 //      브라우저가 키운 만큼 종이가 작아져 **확대가 코드에 상쇄됐다.**
 //   2) 나머지 서류 셋은 라우트 viewport 선언 자체가 없어 루트의 userScalable:false 를 물려받았다.
-//      계약서만 되던 이유는 그 진입점만 순수 a 태그였기 때문이다 — iOS 는 소프트 내비에서
-//      viewport meta 교체를 반영하지 않아 선언이 있어도 무동작이 된다.
+//
+// **이 그물이 3축 전부 통과해도 아이폰 홈화면 앱에서는 확대가 없다.** 그 표시 모드는 viewport 선언을
+// 존중하지만 사용자 확대 자체를 주지 않는다(실기 확정 2026-08-04). 반대로 사파리·안드로이드 크롬은
+// 접근성 때문에 확대 금지를 무시해 선언과 무관하게 확대된다. 즉 이 축들은 데스크톱과 접근성의
+// 하한선을 지킬 뿐이고, 운영자 환경의 확대는 뷰어(/doc)의 자체 확대가 맡는다.
+// 초록불을 확대 문제 해결로 읽지 마라. knowledge/mobile-scroll-viewport.md 의 표시 모드 절을 볼 것.
 //
 // regression-nets.md 원칙대로 결함을 찾지 않고 **고친 정본이 다시 사라지는지**를 지킨다.
-// 실제로 확대되는지는 정적으로 판정할 수 없다. 그건 아이폰 실기가 맡는다(loop.md 1번).
+// 실제로 확대되는지는 정적으로 판정할 수 없다. 그건 실기가 맡는다(loop.md 1번).
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 
@@ -136,7 +140,7 @@ for (const f of navFiles) {
     const hit = ZOOM_PATHS.find(p => chunk.includes(p))
     if (!hit) continue
     const line = src.slice(0, m.index).split('\n').length
-    violations.push(`${f}:${line} 이 확대 허용 라우트(${hit})로 소프트 내비한다. iOS 가 viewport meta 교체를 반영하지 않아 확대가 무동작이 된다. 전체 페이지 이동(a 태그 또는 location.assign)으로 들어가야 한다`)
+    violations.push(`${f}:${line} 이 확대 허용 라우트(${hit})로 소프트 내비한다. 라우트 viewport 는 새 문서를 파싱할 때 확실히 적용되므로 전체 페이지 이동(a 태그 또는 location.assign)으로 들어가야 한다`)
   }
 }
 

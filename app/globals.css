@@ -575,7 +575,9 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 
   /* 서류 뷰어 인쇄 — 컨테이너가 h-dvh + overflow-y-auto 라 그대로 인쇄하면 첫 화면만 나온다.
      높이·넘침을 풀고 페이지마다 쪽을 나눈다. 화면용 라운드·그림자는 종이에 남기지 않는다(§26). */
-  .doc-viewer { height: auto !important; overflow: visible !important; padding: 0 !important; background: #FFFFFF !important; }
+  /* 화면 확대 배율은 종이에 따라가지 않는다 — 인쇄는 항상 실물 크기다.
+     인라인 커스텀 속성은 우선순위가 없어 여기 !important 가 이긴다. */
+  .doc-viewer { height: auto !important; overflow: visible !important; padding: 0 !important; background: #FFFFFF !important; --z: 1 !important; }
   .doc-viewer img { width: 100% !important; border-radius: 0 !important; box-shadow: none !important; margin: 0 !important; break-after: page; }
   .doc-viewer img:last-child { break-after: auto; }
   main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
