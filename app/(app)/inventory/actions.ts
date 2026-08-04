@@ -1691,6 +1691,22 @@ function normalizeLabel(s: string): string {
     .trim()
 }
 
+// 이름에 박힌 크기 표시. 봉투처럼 **크기가 곧 다른 물건**인 품목에서 이것이 다르면 같은 것이 아니다.
+// normalizeLabel 은 병합 후보를 넓게 찾으려고 숫자·단위를 지우는데, 그 공격성 때문에
+// "종량제쓰레기봉투 (50L)" 과 "종량제쓰레기봉투 (20L)" 이 같은 키가 됐고 앱이 둘 중 어디에 넣을지
+// 물었다. 물을 일이 아니다 — 이름에 50L 이라고 적혀 있다(운영자 지적 2026-08-05).
+// normalizeLabel 자체는 안 건드린다. 그 값이 병합 규칙(LINK·MUTE)의 키라 바꾸면 기존 규칙이 끊긴다.
+function sizeSignature(s: string): string {
+  const m = s.toLowerCase().match(/\d+(\.\d+)?\s*(l|ml|g|kg|cm|mm|m|인치)\b/g)
+  return m ? m.map(x => x.replace(/\s+/g, '')).sort().join(',') : ''
+}
+
+/** 크기가 둘 다 적혀 있고 서로 다르면 병합 후보가 아니다. 한쪽만 적혀 있으면 판단하지 않는다. */
+function sizeConflicts(a: string, b: string): boolean {
+  const sa = sizeSignature(a), sb = sizeSignature(b)
+  return !!sa && !!sb && sa !== sb
+}
+
 function deriveSubLabel(base: string, specValue: number | null, specUnit: string | null, qtyUnit: string | null): string {
   // 이미 라벨에 사이즈/타입이 있으면 그대로
   if (/\d+\s*(L|ml|g|kg|매|개|m)\b/.test(base) || /\([^)]+\)/.test(base)) return base
@@ -1841,11 +1857,13 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
         for (const it of (norm2items.get(key) ?? [])) {
           if (it.label === label) continue
           if (muteSet.has(`${key}|${it.id}`)) continue
+          if (sizeConflicts(label, it.label)) continue   // 50L 과 20L 은 다른 물건이다
           cand.set(it.id, { itemId: it.id, label: it.label })
         }
         for (const tid of (linkMap.get(key) ?? [])) {
           if (muteSet.has(`${key}|${tid}`)) continue
           const it = itemById.get(tid)
+          // 운영자가 직접 맺은 LINK 규칙은 크기가 달라도 존중한다. 사람이 정한 것을 코드가 뒤집지 않는다.
           if (it) cand.set(tid, { itemId: tid, label: it.label })
         }
         if (cand.size > 0) {

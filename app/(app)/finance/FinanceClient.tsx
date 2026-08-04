@@ -315,9 +315,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     if (basisTouched) return
     const u = specUnit.trim().toLowerCase()
     if (['cm', 'mm', 'm', '인치'].includes(u)) { setUnitBasis('qty'); return }
+    // 부피 규격 + 장수 단위 = 그 부피는 **물건의 크기 표시**다. 나눌 수 있는 양이 아니다.
+    // 종량제봉투 50L 20매에 25,000원이면 1매당 1,250원이지 리터당 25원이 아니다(운영자 지적 2026-08-05).
+    // 세제 1.5L 처럼 부피가 진짜 양인 경우는 수량 단위가 개·통·병이라 여기 안 걸린다.
+    if (['L', 'ml'].includes(u) && ['매', '장'].includes(qtyUnit)) { setUnitBasis('qty'); return }
     // 품목의 재고 추적 단위가 '수량'이면 개당 단가가 기본 — 봉투·장판 등(오류신고 c7cf6180)
     setUnitBasis(prevUnits?.trackUnit === 'qty' ? 'qty' : 'spec')
-  }, [specUnit, basisTouched, prevUnits])
+  }, [specUnit, qtyUnit, basisTouched, prevUnits])
 
   // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
   // 기준수량 = 수량 × (규격당 기준이면 규격). 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)

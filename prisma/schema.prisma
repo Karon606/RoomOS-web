@@ -221,6 +221,7 @@ model Property {
   propertyPhotos      PropertyPhoto[]
   roomStays           RoomStay[]
 
+  cleanings          RoomCleaning[]
   @@map("properties")
 }
 
@@ -411,9 +412,52 @@ model Room {
   leaseTerms LeaseTerm[]
   expenses   Expense[]
   roomStays  RoomStay[]
+  cleanings  RoomCleaning[]
 
   @@unique([propertyId, roomNo])
   @@map("rooms")
+}
+
+// 방 청소 이력 (2026-08-05, 신고 b21e4e98).
+//
+// "어떤 방이 언제 청소했고 청소를 안 했는지 헷갈린다" 가 신고 본문이다. 상태 관리 문제라
+// 회계에 접점이 없다. **이 모델은 돈을 만들지 않는다.** 돈은 기존 둘만 만든다 —
+// 받은 청소비는 ExtraIncome, 나간 비용은 Expense. 여기는 그 Expense 를 가리키기만 한다.
+// 금액을 복사해 두지 않는 이유는 사본이 갈리기 때문이다. 지출에서 금액을 고치면 여기가 안 따라온다.
+//
+// 기존 모델에 못 얹는 이유 — Expense 는 금액 0 을 거부해 직접 청소(비용 없음)를 못 담고,
+// Checklist 는 roomId 가 없고 주기 반복 전제라 건별 이력이 아니며, Room 에 플래그만 붙이면
+// "언제 누가 얼마에" 가 통째로 날아간다. LeaseTerm 에 매달면 입실 중 청소와 도배 후 청소를 못 담는다.
+model RoomCleaning {
+  id         String    @id @default(uuid()) @db.Uuid
+  propertyId String    @db.Uuid
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomId     String    @db.Uuid
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  // 어느 퇴실 건인지 — 퇴실 청소일 때만. 그 외(도배 후·입실 중 요청)는 null
+  leaseTermId String?  @db.Uuid
+  leaseTerm   LeaseTerm? @relation(fields: [leaseTermId], references: [id], onDelete: SetNull)
+
+  reason     String    @default("CHECKOUT")   // CHECKOUT | AFTER_WORK | DURING_STAY | OTHER
+  status     String    @default("PLANNED")    // PLANNED | DONE | SKIPPED
+  scheduledDate DateTime? @db.Date
+  doneDate      DateTime? @db.Date
+  performer     String?   // SELF | VENDOR | THIRD_PARTY
+  performerName String?   // 업체명·사람 이름 자유 입력. 청소 담당 계정이 앱에 없다
+  // 비용이 있으면 Expense 1건을 만들고 그 id 를 건다. 금액은 여기 복사하지 않는다(2단계)
+  expenseId  String?   @db.Uuid
+  // 그 비용을 받은 청소비에서 부담하는가 — **회계 처리가 아니라 표식이다.** 손익을 바꾸지 않는다(4단계)
+  fromCleaningFund Boolean @default(false)
+  memo       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  @@index([propertyId, status])
+  @@index([roomId, doneDate])
+  @@index([leaseTermId])
+  @@map("room_cleanings")
 }
 
 // ============================================================
@@ -577,6 +621,7 @@ model LeaseTerm {
   // 서명 원본이 앱 밖(종이 스캔·과거 발급본)이면 본문 대신 그 파일을 가리킨다(origin SCAN|LEGACY_PDF).
   // 뒤쪽은 앱이 모르는 본문을 주장하지 않기 위한 것이고, 그 계약은 새 앱 발급본을 만들지 못한다.
   signedContractSnapshot    Json?
+  cleanings                 RoomCleaning[]
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지
