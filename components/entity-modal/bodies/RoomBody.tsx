@@ -5,6 +5,7 @@
 // "데이터 조합으로 발현되는 뷰" 의 첫 사례.
 
 import { useEffect, useState } from 'react'
+import { RoomCleaningPanel } from '@/components/entity-modal/widgets/RoomCleaningPanel'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getRoomDetail } from '@/app/(app)/rooms/actions'
 import { PhotoStrip } from '../widgets/PhotoStrip'
@@ -43,6 +44,9 @@ export function RoomBody({ roomId, onApplyScheduledNow }: {
       <RoomExpenses roomId={roomId} />
       <div className="mt-2.5" />
       <RoomStayHistory roomId={roomId} />
+      <div className="mt-2.5" />
+      {/* 거주 이력 다음에 청소 이력 — 퇴실하면 청소한다는 순서 그대로다(신고 b21e4e98) */}
+      <RoomCleaningPanel roomId={roomId} />
       <div className="mt-2.5" />
       <RoomRequests roomId={roomId} />
     </>

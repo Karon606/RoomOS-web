@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect } from 'react'
+import { getOpenCleaningsByRoom } from './cleaningActions'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
@@ -333,6 +334,15 @@ export default function RoomManageClient({
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
 
   // 배치 선택
+  // 청소 예정이 남은 방 — "어떤 방이 청소 안 됐는지 헷갈린다"(신고 b21e4e98)에 한눈에 답한다.
+  // 상태 판정에 섞지 않는다. 청소는 거주 상태와 축이 다르고, 섞으면 getRoomStatus 한 함수가
+  // 두 가지 일을 하게 된다. 배지로만 얹고 필터는 별도 칩으로 둔다.
+  const [openCleanings, setOpenCleanings] = useState<Record<string, { scheduledDate: string | null }>>({})
+  // rooms 를 의존에 둔다. 청소 처리가 revalidatePath('/room-manage') 를 부르면 서버가 다시 그리고
+  // rooms 참조가 바뀌므로 배지가 따라온다. 빈 배열로 두면 모달에서 완료해도 카드가 그대로다.
+  useEffect(() => { void getOpenCleaningsByRoom().then(setOpenCleanings).catch(() => {}) }, [rooms])
+  const [cleaningOnly, setCleaningOnly] = useState(false)
+
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBatchEdit, setShowBatchEdit] = useState(false)
@@ -366,6 +376,7 @@ export default function RoomManageClient({
         if (!ok) return false
       }
       if (filterStatus && roomStatusKey(r) !== filterStatus) return false
+      if (cleaningOnly && !openCleanings[r.id]) return false
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
       if (filterType && r.type !== filterType) return false
       if (filterTier && r.tier !== filterTier) return false
@@ -945,6 +956,17 @@ export default function RoomManageClient({
         </div>
       )}
 
+      {/* 청소 필요만 — 상태 칩과 축이 달라 별도 토글이다. 상태 칩에 섞으면 '공실이면서 청소 필요'를 못 고른다. */}
+      {Object.keys(openCleanings).length > 0 && (
+        <button type="button" onClick={() => setCleaningOnly(v => !v)}
+          className="text-xs px-3 py-2 rounded-lg transition-colors"
+          style={cleaningOnly
+            ? { background: 'var(--coral)', color: 'var(--on-solid)', minHeight: 44 }
+            : { background: 'var(--warning-bg)', color: 'var(--warning-fg)', border: '1px solid var(--warning-ring)', minHeight: 44 }}>
+          청소 필요 <span className="num font-semibold">{Object.keys(openCleanings).length}</span>실{cleaningOnly ? ' · 전체 보기' : '만 보기'}
+        </button>
+      )}
+
       {/* 정렬 + 목록 조작 — wrap 필수. '선택'이 '선택 취소'로 늘거나 글씨 크기를 키우면 한 줄을 넘긴다. */}
       <div className="flex items-center gap-2 flex-wrap">
         <SortSelect
@@ -1015,6 +1037,7 @@ export default function RoomManageClient({
                     )}
                     {rs.badge && <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>}
                     {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
+                    {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
                   </div>
                   {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
                   <div className="space-y-0.5 pt-0.5">
