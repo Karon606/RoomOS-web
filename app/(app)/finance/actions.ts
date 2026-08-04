@@ -20,7 +20,7 @@ import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
-import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 
@@ -667,10 +667,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
           ...baseRow,
           roomId:    r.roomId,
           amount:    r.amount,
-          detail:    `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`,
+          detail:    `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${cleanUnit(r.it.specUnit) ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${cleanUnit(r.it.qtyUnit) ?? ''}` : ''}`,
           itemLabel: r.it.label,
-          specUnit:  r.it.specUnit || null,
-          qtyUnit:   r.it.qtyUnit  || null,
+          // 저장 직전에도 정화한다. OCR 만 막으면 수기 입력·다른 경로로 새 들어온다(클래스 봉합).
+          specUnit:  cleanUnit(r.it.specUnit) ?? null,
+          qtyUnit:   cleanUnit(r.it.qtyUnit)  ?? null,
           specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
           specText:  r.it.specText || null,
           unitBasis: r.it.unitBasis || null,

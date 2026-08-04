@@ -76,6 +76,7 @@ import {
   getDraftLocationSummary,
   getDraftItemIds,
   applyMergeDecision,
+  getPendingMergeDecisions,
   getMergeRules,
   deleteMergeRule,
   getMergeUndos,
@@ -222,6 +223,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
   // 병합 확인 — 자동등록 후 후보가 있는 항목들 / 병합 규칙 관리 모달
   const [mergeDecisions, setMergeDecisions] = useState<MergeDecision[]>([])
+  // 재고 카드에 못 붙은 채 대기 중인 구매. 저장 시 비슷한 이름이 있으면 확인 대기로 보류되는데,
+  // 그 보류를 보여주는 화면이 2026-07-09 이후로 없었다 — 구매가 조용히 사라져 되살릴 길이 없었다.
+  const [pendingMerges, setPendingMerges] = useState<MergeDecision[]>([])
+  const refreshPendingMerges = () => { void getPendingMergeDecisions().then(setPendingMerges).catch(() => {}) }
+  useEffect(() => { refreshPendingMerges() }, [])
   const [showMergeRules, setShowMergeRules] = useState(false)
   const [showReconcile, setShowReconcile]   = useState(false)
   const [showCatSettings, setShowCatSettings] = useState(false)
@@ -571,6 +577,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
       {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
+      {/* 재고에 못 붙은 구매 — 비슷한 이름의 카드가 있어 확인 대기로 보류된 것들이다.
+          알리지 않으면 구매가 저장은 됐는데 재고 축에는 없는 상태로 남아 아무도 모른다. */}
+      {pendingMerges.length > 0 && (
+        <button type="button" onClick={() => setMergeDecisions(pendingMerges)}
+          className="w-full text-left text-xs px-3 py-2.5 rounded-lg transition-colors"
+          style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)', minHeight: 44 }}>
+          재고에 못 붙은 구매 <span className="font-semibold num">{pendingMerges.length}</span>건 · 어느 품목에 넣을지 정해 주세요 ›
+        </button>
+      )}
+
       {viewMode === 'location' ? (
         <LocationBatchCheckModal inline rows={visibleRows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
       ) : rows.length === 0 ? (
@@ -776,7 +792,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         <MergeDecisionModal
           decisions={mergeDecisions}
           onClose={() => setMergeDecisions([])}
-          onDone={() => { setMergeDecisions([]); router.refresh() }}
+          onDone={() => { setMergeDecisions([]); refreshPendingMerges(); router.refresh() }}
         />
       )}
       {showMergeRules && <MergeRulesModal onClose={() => { setShowMergeRules(false); router.refresh() }} />}

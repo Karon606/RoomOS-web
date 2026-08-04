@@ -1706,7 +1706,9 @@ function deriveSubLabel(base: string, specValue: number | null, specUnit: string
 
 // onlyLabels: 지출 저장 직후 그 품목들만 증분 시드(자동 카드 생성, 신고 269baf9f).
 // 미지정 = 전체 스캔(재고 화면의 '과거 지출 일괄 불러오기' 버튼). 병합 규칙(LINK/MUTE)·중복 판정은 동일 경로.
-export async function seedTrackedItemsFromExpenses(onlyLabels?: string[]): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
+// opts.dryRun 이면 아무것도 쓰지 않고 **결정 대기 목록만** 돌려준다. 판정 규칙을 복제하지 않으려고
+// 같은 함수를 읽기 전용으로 돌린다 — 규칙이 두 벌이 되면 화면과 실제 동작이 갈린다.
+export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?: { dryRun?: boolean }): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1854,29 +1856,36 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[]): Promi
           })
           continue   // 사용자 결정 전까지 생성·마이그레이션 보류
         }
-        await prisma.trackedItem.create({
-          data: {
-            propertyId,
-            category: g.category,
-            label,
-            specUnit: g.specUnit,
-            qtyUnit: g.qtyUnit,
-            trackUnit: defaultTrackUnitForCategory(g.category),
-          },
-        })
+        if (!opts?.dryRun) {
+          await prisma.trackedItem.create({
+            data: {
+              propertyId,
+              category: g.category,
+              label,
+              specUnit: g.specUnit,
+              qtyUnit: g.qtyUnit,
+              trackUnit: defaultTrackUnitForCategory(g.category),
+            },
+          })
+        }
         created++
       }
       // 라벨이 변경된 그룹의 expense rows의 itemLabel을 새 라벨로 업데이트
       if (label !== g.baseLabel && g.expenseIds.length > 0) {
-        const r = await prisma.expense.updateMany({
-          where: { id: { in: g.expenseIds } },
-          data: { itemLabel: label },
-        })
-        migrated += r.count
+        if (opts?.dryRun) { migrated += g.expenseIds.length }
+        else {
+          const r = await prisma.expense.updateMany({
+            where: { id: { in: g.expenseIds } },
+            data: { itemLabel: label },
+          })
+          migrated += r.count
+        }
       }
     }
-    revalidatePath('/inventory')
-    revalidatePath('/finance')
+    if (!opts?.dryRun) {
+      revalidatePath('/inventory')
+      revalidatePath('/finance')
+    }
     return { ok: true, created, migrated, skippedArchived, decisions: pendingDecisions }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -3234,4 +3243,20 @@ export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true 
 export async function getTrackedCategoriesForClient(): Promise<string[]> {
   const propertyId = await getPropertyId()
   return getTrackedCategories(propertyId)
+}
+
+
+// 재고 카드에 못 붙은 채 대기 중인 구매 — 읽기 전용.
+//
+// 지출 저장은 새 품명이면 재고 카드를 자동 생성하는데, 비슷한 이름의 카드가 이미 있으면
+// **사용자 확인 대기로 보류**한다. 그런데 그 보류 결정을 받아 보여주는 화면이 2026-07-09 커밋
+// c8fa34a 이후로 하나도 없었다. 그 커밋이 '과거 지출 일괄 불러오기' 버튼을 걷으면서
+// setMergeDecisions 호출을 같이 지웠고, 대체된 자동 경로는 반환값을 통째로 버린다.
+//
+// 그 결과 종량제쓰레기봉투 20매 25,000원 구매가 저장은 됐는데 재고 축에는 존재하지 않는 상태로
+// 떨어졌고, 운영자가 어떤 화면에서도 되살릴 수 없었다(신고 78ff0e64).
+// 봉투류는 정규화가 크기 표기를 지워서 구조적으로 100% 이 함정에 걸린다.
+export async function getPendingMergeDecisions(): Promise<MergeDecision[]> {
+  const res = await seedTrackedItemsFromExpenses(undefined, { dryRun: true })
+  return res.ok ? res.decisions : []
 }

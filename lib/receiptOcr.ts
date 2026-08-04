@@ -4,6 +4,18 @@
 import type { SetHint } from '@/lib/setHint'
 import { normalizeBizNo } from '@/lib/bizNo'
 
+
+// 단위 칸에서 뜻 없는 표기를 버린다. 영수증의 단위 칸이 비어 있으면 줄표(—)나 기호가 들어 있는데,
+// AI 가 그것을 단위로 읽어 넘기고 앱이 검사 없이 그대로 적었다. 화면에 '20—' 이 뜨고,
+// 품목 카드의 단위와 안 맞으면 그 구매가 재고 매칭에서 통째로 탈락한다(신고 102d768f·c977db2a).
+// 화이트리스트로 막지 않는다 — 정당한 새 단위를 깎으면 운영자 입력을 앱이 지우는 것이다.
+// 버리는 조건은 좁게, **문자도 숫자도 하나 없는 문자열**만.
+const HAS_WORD = /[\p{L}\p{N}]/u
+export function cleanUnit(v: unknown): string | undefined {
+  if (v == null) return undefined
+  const t = String(v).trim()
+  return t && HAS_WORD.test(t) ? t : undefined
+}
 // 영수증 한 줄 품목. specText 는 색상·사이즈 등 서술형 규격(계산 비관여, 숫자 규격 specValue/specUnit 과 별개).
 export type ReceiptOcrItem = {
   label: string
@@ -136,10 +148,10 @@ export function parseReceiptOcrText(text: string, opts?: { withKind?: boolean })
     .map((it: Record<string, unknown>) => ({
       label: String(it.label).trim(),
       specValue: it.specValue ? String(it.specValue) : undefined,
-      specUnit:  it.specUnit  ? String(it.specUnit)  : undefined,
+      specUnit:  cleanUnit(it.specUnit),
       specText:  typeof it.specText === 'string' && it.specText.trim() ? it.specText.trim() : undefined,
       qtyValue:  it.qtyValue  ? String(it.qtyValue)  : undefined,
-      qtyUnit:   it.qtyUnit   ? String(it.qtyUnit)   : undefined,
+      qtyUnit:   cleanUnit(it.qtyUnit),
       amount:    Number(it.amount) || 0,
     }))
   const kindRaw = parsed.kind
