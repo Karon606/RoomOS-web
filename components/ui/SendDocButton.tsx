@@ -1,6 +1,9 @@
 'use client'
 
-// 서류 '보내기' — 사진(PNG)/PDF 형식 선택 후 전달(운영자 실기기 확인 2026-07-22:
+// 서류 '내보내기' — 사진(PNG)/PDF 형식을 고른 뒤 기기에 저장하거나 문자로 보낸다.
+// 이름이 '보내기'였을 때 운영자가 사진 저장 경로를 못 찾았다. 이 버튼은 문서를 앱 밖으로
+// 빼내는 모든 길의 입구이고, 종이 출력까지 여기로 들어올 수 있어야 해서 '내보내기'가 정본이다.
+// (운영자 실기기 확인 2026-07-22:
 // 일부 휴대폰 문자 앱은 PDF 첨부 전송이 안 됨 — 사진이 확실한 경로라 선택지를 제공한다).
 // 형식 선택은 choiceDialog 정본(§14 3지선다).
 // 제스처 만료 대책(첫 탭 실패 재발 방지): 버튼 탭 즉시 백그라운드로 fetch·변환을 시작해 선택창을 읽는
@@ -20,7 +23,7 @@ import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 
-export function SendDocButton({ getPdfBytes, fileName, label = '보내기', className }: {
+export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', className }: {
   getPdfBytes: () => Promise<ArrayBuffer>
   fileName: string   // 확장자 없이 — 형식에 따라 .png/.pdf 부여
   label?: string

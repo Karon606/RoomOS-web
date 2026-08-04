@@ -136,7 +136,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     } finally { setPreviewing(false) }
   }
 
-  // 저장 및 보내기가 쓰는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
+  // 내보내기가 쓰는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
   const docFileName = `${data.name}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`
   const previewBytes = async (): Promise<ArrayBuffer> => {
     const res = await fetch('/api/rent-receipt/generate', {

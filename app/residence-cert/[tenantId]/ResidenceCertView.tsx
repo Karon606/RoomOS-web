@@ -137,7 +137,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
-        {/* 사진 저장은 '저장 및 보내기'가 흡수했다(§30.4, 운영자 확정 6). 그쪽이 형식을 먼저 묻고
+        {/* 사진 저장은 '내보내기'가 흡수했다(§30.4, 운영자 확정 6). 그쪽이 형식을 먼저 묻고
             사진을 고르면 전 페이지를 그리므로 기능이 줄지 않고 다페이지 유실만 사라진다.
             1단계 다음 커밋에서 이 툴바를 상단 크롬 + 하단 액션바로 나눈다. */}
         <Btn variant="secondary" size="md" onClick={reset}>자동값으로</Btn>
