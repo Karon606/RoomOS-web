@@ -73,7 +73,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   useEffect(() => {
     const calc = () => {
       const SIDE_PADDING = 12
-      const available = window.innerWidth - SIDE_PADDING * 2
+      // 폭은 layout viewport 로 잰다. window.innerWidth 는 iOS 에서 **visual viewport** 폭이라
+      // 핀치로 2배 확대하면 값이 절반이 되고 resize 가 뜬다. 그 값으로 배율을 다시 잡으면
+      // 브라우저가 키운 만큼 종이가 작아져 **확대가 그대로 상쇄된다**(신고 답변 10, 재발).
+      // clientWidth 는 핀치에 안 흔들리고 회전·창 크기 변경에는 그대로 따라온다.
+      const available = document.documentElement.clientWidth - SIDE_PADDING * 2
       setScale(Math.min(1, available / PAPER_W_PX))
     }
     calc()
