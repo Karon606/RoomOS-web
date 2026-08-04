@@ -233,6 +233,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   // 실측(2026-08-04)에서 서명만 하고 제출을 안 한 링크가 다섯 중 둘이었고 **그 둘 다 발급됐다.**
   // 대면 서명에는 제출이라는 개념이 아예 없다.
   const signDateLocked = !!fixedSignDate || !!signatureCapturedAt
+  // 본문 편집 잠금 — 서명이 확정되면 조항을 못 고친다. 바꾸려면 재서명을 받는다(운영자 규칙 2026-08-04).
+  // **data.lease.signatureImageUrl 로 잡으면 안 된다.** 서명본 화면(?share=)의 lease 는
+  // 링크를 만든 시점의 스냅샷이라 그 칸이 항상 null 이고, 하필 가장 확실하게 서명이 끝난 화면이
+  // 안 잠긴다. signatureSignedDate 는 일반 경로와 서명본 경로 둘 다 채워진다.
+  // 서버가 준 값이라 서명란 X 버튼(로컬 state 만 지운다)으로도 안 풀린다.
+  // 잠금을 컬럼으로 저장하지 않는 이유 — 3단계 재서명이 서명 네 칸을 null 로 만들면 파생값이라
+  // 아무 추가 작업 없이 자동으로 풀린다. 저장하면 그 칸을 함께 지워야 하고 빠뜨리면 영원히 잠긴다.
+  const bodyLocked = !!fixedSignDate || !!signatureCapturedAt
+  const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.')
   const signDateEffective = fixedSignDate
     ?? (signatureCapturedAt ? kstYmdStr(new Date(signatureCapturedAt)) : signDate)
   const disposalDateEffective = fixedDisposalSignDate
@@ -539,11 +548,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               </label>
             )}
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
-            <button onClick={() => setEditing(true)} className="toolbar-btn-secondary">
+            {/* 잠겨도 버튼을 없애지 않는다. 없애면 왜 없는지 아무도 모르고 다음 세션이
+                '버튼이 사라졌다'를 새 결함으로 신고한다. 누르면 이유와 길을 말한다. */}
+            <button onClick={bodyLocked ? notifyBodyLocked : () => setEditing(true)}
+              className={`toolbar-btn-secondary${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
               본문 편집
             </button>
             {data.hasOverride && (
-              <button onClick={handleResetOverride} disabled={pending} className="toolbar-btn-secondary toolbar-btn-warn">
+              <button onClick={bodyLocked ? notifyBodyLocked : handleResetOverride} disabled={pending}
+                className={`toolbar-btn-secondary toolbar-btn-warn${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
                 공통 템플릿으로
               </button>
             )}
@@ -947,6 +960,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
           font-size: 12px; color: var(--ink-s); cursor: pointer; text-align: left;
         }
         .toolbar-locked strong { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+        /* 잠긴 동작 — 눌리기는 하되 실행되지 않고 이유를 말한다. disabled 로 두면 클릭이 안 잡혀
+           아무 반응이 없고, 화면은 왜 안 되는지 끝내 말하지 못한다(§27.2). */
+        .toolbar-btn-locked { opacity: 0.55; }
         .toolbar-print { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .toolbar-print:disabled { opacity: 0.6; }
         .toolbar-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
