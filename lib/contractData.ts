@@ -7,6 +7,7 @@ import { buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
+  resolveSignedBody,
 } from '@/lib/contract'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
@@ -104,23 +105,22 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       relation: c.emergencyRelation ?? null,
     }))
 
-  // 영업장 공통 템플릿
-  const baseTemplate = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
-  // 입실자별 오버라이드 (있으면 그것을 우선 사용)
+  // 본문 선택은 resolveSignedBody 한 곳이 정한다. 서명이 끝난 계약은 박제본을 읽으므로
+  // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 규칙을 여기서 복제하면 발급 API 와 갈린다.
+  const body = resolveSignedBody(lease, property)
   const override = lease?.contractOverride as ContractTemplate | null | undefined
-  const template = override ?? baseTemplate
 
   return {
-    template,
+    template: body.template,
     hasOverride: !!override,
-    businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
+    businessInfo: body.businessInfo ?? EMPTY_BUSINESS_INFO,
     phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
     stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
     // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
     logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
-    refundClauseInContract: property?.refundClauseInContract ?? true,
-    disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
+    refundClauseInContract: body.refundClauseInContract,
+    disposalConsent: resolveDisposalConsent(body.disposalConsent),
     tenant: {
       id: tenant.id,
       name: tenant.name,

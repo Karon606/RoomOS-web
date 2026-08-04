@@ -208,3 +208,76 @@ export function cleaningFeeVars(cleaningFee: number | null | undefined): {
     청소비공제: ` (보증금 내 청소비 ${won} 별도 공제)`,
   }
 }
+
+// ── 서명 시점 본문 격리 ──────────────────────────────────────────────
+//
+// 영업장 공통 계약서 본문을 고치면 **서명이 끝난 계약서 내용이 소급해서 바뀌었다.**
+// 실측(2026-08-04) — 원격 서명 5건 전부가 서명 당시와 본문이 달랐다. 2026-08-03 청소비 조항
+// 변수화가 원인이고, 서명 당시 없던 조항이 한 줄 늘어 있었다. 운영자 오더는 "절대로 바뀌면 안 된다" 다.
+//
+// 그래서 서명이 서버에 기록되는 그 트랜잭션에서 그때의 본문을 lease 에 박제하고, 이후 발급은
+// 그 박제본만 읽는다. 이 함수가 '무엇을 읽을지'를 정하는 **유일한 자리**다.
+// 화면·발급 API·감지망 셋이 같이 쓴다 — 규칙을 복제하면 그물과 코드가 따로 논다.
+
+export type SignedContractSnapshot = {
+  origin: 'REMOTE_LINK' | 'IN_PERSON' | 'SCAN' | 'LEGACY_PDF'
+  capturedAt: string
+  // 앱이 만든 본문을 서명받은 경우에만 있다
+  template?: ContractTemplate
+  refundClauseInContract?: boolean
+  disposalConsent?: unknown
+  businessInfo?: BusinessInfo
+  // 서명 원본이 앱 밖에 있는 경우 그 증거 파일
+  sourceContractFileId?: string
+}
+
+export type ResolvedBody = {
+  source: 'SNAPSHOT' | 'ARCHIVED' | 'LIVE'
+  template: ContractTemplate
+  refundClauseInContract: boolean
+  disposalConsent: unknown
+  businessInfo: BusinessInfo | null
+  /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
+  blockIssue: boolean
+}
+
+export function resolveSignedBody(
+  lease: { signedContractSnapshot?: unknown; contractOverride?: unknown } | null,
+  property: {
+    contractTemplate?: unknown
+    refundClauseInContract?: boolean | null
+    disposalConsentTemplate?: unknown
+    businessInfo?: unknown
+  } | null,
+): ResolvedBody {
+  const live = {
+    template: (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE,
+    refundClauseInContract: property?.refundClauseInContract ?? true,
+    disposalConsent: property?.disposalConsentTemplate ?? null,
+    businessInfo: (property?.businessInfo as BusinessInfo | null) ?? null,
+  }
+  const snap = lease?.signedContractSnapshot as SignedContractSnapshot | null | undefined
+
+  // 본문이 담긴 박제본 — 서명 당시 그대로 낸다. 공통 템플릿이 바뀌어도 여기는 안 움직인다.
+  if (snap?.template) {
+    return {
+      source: 'SNAPSHOT',
+      template: snap.template,
+      refundClauseInContract: snap.refundClauseInContract ?? live.refundClauseInContract,
+      disposalConsent: snap.disposalConsent ?? live.disposalConsent,
+      businessInfo: snap.businessInfo ?? live.businessInfo,
+      blockIssue: false,
+    }
+  }
+  // 본문 없는 박제본(종이 스캔·과거 발급본) — 앱은 그 본문을 모른다.
+  // 미리보기는 현재값으로 그리되 **새 발급본은 만들지 않는다.** 그 계약의 원본은 앱 밖에 있다.
+  if (snap) return { source: 'ARCHIVED', ...live, blockIssue: true }
+
+  // 박제본이 없으면 지금까지와 완전히 같다 — 개별 수정본 우선, 없으면 공통 템플릿.
+  return {
+    source: 'LIVE',
+    ...live,
+    template: (lease?.contractOverride as ContractTemplate | null) ?? live.template,
+    blockIssue: false,
+  }
+}

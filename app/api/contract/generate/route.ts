@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { kstYmdStr } from '@/lib/kstDate'
+import { resolveSignedBody } from '@/lib/contract'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
@@ -95,9 +96,10 @@ export async function POST(req: Request) {
     const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
     const lease = [...tenant.leaseTerms]
       .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
-    const baseTemplate = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
-    const override = lease?.contractOverride as ContractTemplate | null | undefined
-    const template = override ?? baseTemplate
+    // 본문 선택은 resolveSignedBody 한 곳이 정한다(lib/contract.ts). 서명이 끝난 계약은 박제본을 읽으므로
+    // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 화면(contractData)과 같은 함수를 쓴다.
+    const body_ = resolveSignedBody(lease, property)
+    const template = body_.template
 
     const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                          ?? tenant.contacts.find(c => !c.isEmergency)
@@ -140,6 +142,15 @@ export async function POST(req: Request) {
     // 저장 발급이면 번호를 **먼저 예약**한다. PDF 렌더(puppeteer)가 무거워 트랜잭션 안에 둘 수 없으므로,
     // 자리(레코드)를 먼저 잡아 유니크로 번호를 확보하고 업로드 후 파일 정보를 채운다.
     // 실패하면 그 자리를 지운다 — 보상 삭제가 없어 주인 없는 행이 남던 문제도 함께 막는다.
+    // 앱이 서명 시점 본문을 모르는 계약(종이 스캔·과거 발급본)은 새 발급본을 만들지 않는다.
+    // 미리보기는 막지 않는다 — 무엇이 보관돼 있는지 확인할 길은 있어야 한다.
+    if (body_.blockIssue && !body.preview) {
+      return NextResponse.json({
+        ok: false,
+        error: '이 계약은 서명 시점 본문 기록이 없습니다. 보관된 계약서를 열어 보시고, 새 계약서가 필요하면 재서명을 받아 주세요.',
+      }, { status: 409 })
+    }
+
     let reserved: { id: string; no: string } | null = null
     if (!body.preview) {
       for (let attempt = 0; attempt < 5 && !reserved; attempt++) {
@@ -163,13 +174,13 @@ export async function POST(req: Request) {
 
     const printData: PrintContractData = {
       template,
-      businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
+      businessInfo: body_.businessInfo ?? EMPTY_BUSINESS_INFO,
       phone: property?.phone ?? null,
       contractNo,
       logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
       stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
-      refundClauseInContract: property?.refundClauseInContract ?? true,
-      disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
+      refundClauseInContract: body_.refundClauseInContract,
+      disposalConsent: resolveDisposalConsent(body_.disposalConsent),
       disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,
       pretendardBase64,
       tenant: {
@@ -302,9 +313,23 @@ export async function POST(req: Request) {
         // 캡처 시각이 함께 왔을 때만 시각을 갱신한다. 기존 저장 서명을 재사용한 재발급이
         // 과거 서명일을 오늘로 밀어버리면 안 된다 — 그게 이번 결함의 뿌리다.
         const at = parseCapturedAt(body.signatureCapturedAt)
+        // 서명과 같은 update 문 안에서 그때의 본문을 박제한다. 값은 이 PDF 를 실제로 렌더할 때 쓴 것
+        // 그대로다 — DB 를 다시 읽으면 그 사이 바뀐 값이 들어와 종이와 기록이 갈린다.
+        // 이미 박제본이 있으면 덮지 않는다. 재발급이 첫 서명의 기록을 갈아치우면 격리가 무의미하다.
+        const needSnapshot = at && !lease.signedContractSnapshot
         await prisma.leaseTerm.update({
           where: { id: lease.id },
-          data: { signatureImageUrl: body.signatureImageDataUrl, ...(at ? { signatureSignedAt: at } : {}) },
+          data: {
+            signatureImageUrl: body.signatureImageDataUrl,
+            ...(at ? { signatureSignedAt: at } : {}),
+            ...(needSnapshot ? { signedContractSnapshot: {
+              origin: 'IN_PERSON', capturedAt: at.toISOString(),
+              template: template as unknown as object,
+              refundClauseInContract: printData.refundClauseInContract,
+              disposalConsent: printData.disposalConsent as unknown as object,
+              businessInfo: printData.businessInfo as unknown as object,
+            } } : {}),
+          },
         })
       }
       // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 계약서 서명과 **같은 규칙**으로.

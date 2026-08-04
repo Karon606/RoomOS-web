@@ -101,14 +101,31 @@ export async function submitRemoteSignature(
     }
 
     const now = new Date()
+    // 서명 시점 본문을 lease 에 박제한다. 근거는 링크의 스냅샷이다 — 입주자가 눈으로 읽고 손으로
+    // 서명한 것이 바로 그 JSON 이고(원격 화면은 DB 를 다시 안 읽는다), 다른 것을 담으면 근거가 약해진다.
+    // 첫 서명에서만 만든다. 계약서·동의서 중 어느 쪽이 먼저 와도 값은 같다.
+    const already = await prisma.leaseTerm.findUnique({
+      where: { id: link.leaseTermId }, select: { signedContractSnapshot: true },
+    })
+    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown } | null
+    const newSnapshot = already?.signedContractSnapshot || !snap?.template ? null : {
+      origin: 'REMOTE_LINK', capturedAt: now.toISOString(),
+      template: snap.template as object,
+      refundClauseInContract: snap.refundClauseInContract ?? true,
+      disposalConsent: (snap.disposalConsent ?? null) as object,
+      businessInfo: (snap.businessInfo ?? null) as object,
+    }
     await prisma.$transaction([
       prisma.leaseTerm.update({
         where: { id: link.leaseTermId },
         // 시각도 함께 남긴다. 링크에만 있으면 대면 서명과 읽는 자리가 갈리고,
         // 무엇보다 계약일을 정할 때 링크를 따로 찾아가야 한다. now 는 아래 링크 갱신과 같은 값이다.
-        data: target === 'contract'
-          ? { signatureImageUrl: dataUrl, signatureSignedAt: now }
-          : { disposalSignatureImageUrl: dataUrl, disposalSignatureSignedAt: now },
+        data: {
+          ...(target === 'contract'
+            ? { signatureImageUrl: dataUrl, signatureSignedAt: now }
+            : { disposalSignatureImageUrl: dataUrl, disposalSignatureSignedAt: now }),
+          ...(newSnapshot ? { signedContractSnapshot: newSnapshot } : {}),
+        },
       }),
       prisma.contractShareLink.update({
         where: { id: link.id },

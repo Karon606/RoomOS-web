@@ -17,6 +17,45 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
   const violations: string[] = []
 
+  // ── 축 G2·G3·G4 — 서명 시점 본문 격리 ────────────────────────────
+  // 공통 템플릿을 고쳐도 서명이 끝난 계약서가 안 바뀌어야 한다(운영자 오더 "절대로").
+  const leases = await prisma.leaseTerm.findMany({
+    select: {
+      id: true, signatureImageUrl: true, signatureSignedAt: true,
+      disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+      signedContractSnapshot: true, contractOverride: true,
+      tenant: { select: { name: true } },
+    },
+  })
+  const fileIds = new Set((await prisma.contractFile.findMany({
+    where: { deletedAt: null }, select: { id: true },
+  })).map(f => f.id))
+
+  for (const l of leases) {
+    const who = l.tenant?.name ?? '?'
+    const hasSig = !!(l.signatureImageUrl || l.signatureSignedAt || l.disposalSignatureImageUrl || l.disposalSignatureSignedAt)
+    const snap = l.signedContractSnapshot as { origin?: string; template?: unknown; sourceContractFileId?: string } | null
+
+    // G2 — 서명이 있으면 격리본이 반드시 있다. 없으면 그 계약은 다음 발급에서 현재 본문으로 나간다.
+    if (hasSig && !snap) {
+      violations.push(`${who} 의 서명에 본문 격리본이 없다 — 공통 템플릿이 바뀌면 재발급본이 서명 당시와 달라진다`)
+      continue
+    }
+    if (!snap) continue
+
+    // G3 — 본문 담은 격리본은 origin 과 template 이 짝이 맞아야 한다.
+    const bodyOrigins = ['REMOTE_LINK', 'IN_PERSON']
+    if (bodyOrigins.includes(snap.origin ?? '') && !snap.template) {
+      violations.push(`${who} 의 격리본이 ${snap.origin} 인데 본문이 없다 — 박제가 반쪽만 됐다`)
+    }
+    // G4 — 본문 없는 격리본은 가리키는 증거 파일이 실재해야 한다. 허공을 가리키면 증거가 없는 것이다.
+    if (!bodyOrigins.includes(snap.origin ?? '')) {
+      if (!snap.sourceContractFileId || !fileIds.has(snap.sourceContractFileId)) {
+        violations.push(`${who} 의 격리본이 가리키는 계약서 파일이 없다 — 서명 원본의 증거가 사라졌다`)
+      }
+    }
+  }
+
   const links = await prisma.contractShareLink.findMany({
     where: { NOT: { signedAt: null } },
     orderBy: { createdAt: 'desc' },
@@ -30,7 +69,6 @@ async function main() {
   // 한 lease 에 링크가 여럿이면 가장 최근 서명본이 기준이다
   const seen = new Set<string>()
   let checked = 0
-  let drifted = 0
   for (const k of links) {
     if (!k.leaseTermId || seen.has(k.leaseTermId)) continue
     seen.add(k.leaseTermId)
@@ -47,16 +85,11 @@ async function main() {
       violations.push(`${k.tenant?.name ?? '?'} 의 계약서 본문이 서명본과 다르다 — 서명 후 본문 편집이 일어났다`)
     }
 
-    // 현황 R1 — 서명본과 지금 실제로 발급될 본문이 다른가. 원인이 영업장 공통 템플릿이라
-    //   이번 잠금으로는 0 으로 못 만든다. 종료코드에 반영하지 않는다.
-    if (ov == null) drifted++   // override 가 없으면 공통 템플릿을 따라가므로 8/3 변경분이 그대로 반영된다
   }
 
   await prisma.$disconnect()
 
-  console.log(`[본문 잠금] 서명본 ${checked}건 검사 / 위반 ${violations.length}건`)
-  console.log(`  [현황] 서명본과 현재 본문이 갈릴 수 있는 건 ${drifted}건 (현재 기준선 5).`)
-  console.log('  원인은 환경설정의 영업장 공통 계약서 본문이고 이번 잠금 범위 밖이다. 게이트로 세지 않는다.')
+  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 / 위반 ${violations.length}건`)
   if (violations.length) {
     console.error(`\n[본문 잠금] 위반 ${violations.length}건`)
     for (const v of violations) console.error('  - ' + v)

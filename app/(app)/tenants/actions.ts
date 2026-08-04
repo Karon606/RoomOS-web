@@ -2981,10 +2981,12 @@ export async function finalizeContractScan(input: {
       where: { id: input.tenantId, propertyId },
       include: {
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          // 퇴실 예정·비거주도 살아 있는 계약이다. 여기가 서명 상태까지 좌우하게 됐으므로
+          // 계약서 화면·발급 API 와 같은 목록을 쓴다.
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
-          select: { id: true },
+          select: { id: true, signatureSignedAt: true, signedContractSnapshot: true },
         },
       },
     })
@@ -2999,17 +3001,37 @@ export async function finalizeContractScan(input: {
       return { ok: false, error: '업로드된 파일을 찾을 수 없습니다. 다시 시도해 주세요.' }
     }
     const lease = tenant.leaseTerms[0] ?? null
-    const created = await prisma.contractFile.create({
-      data: {
-        propertyId,
-        tenantId: tenant.id,
-        leaseTermId: lease?.id ?? null,
-        driveFileId: input.driveFileId,
-        fileName: input.fileName,
-        source: 'UPLOADED',
-        signedAt: input.signedAt ? new Date(`${input.signedAt}T00:00:00`) : new Date(),
-      },
-      select: { id: true },
+    const signedAt = input.signedAt ? new Date(`${input.signedAt}T00:00:00`) : new Date()
+    // 스캔본 업로드는 서명 완료로 친다(운영자 확정 2026-08-04). 종이에 서명이 있고 그 스캔이 원본이다.
+    // 다만 **서명 이미지는 만들지 않는다** — 서명은 종이에 있고 없는 것을 지어내지 않는다.
+    // 본문도 담지 않는다. 인쇄는 아무 기록을 안 남겨서 종이에 무엇이 인쇄됐는지 앱이 원리적으로 모른다.
+    // 대신 증거가 어디 있는지만 가리키고, 그 계약은 앱이 새 발급본을 만들지 못한다(resolveSignedBody).
+    const created = await prisma.$transaction(async tx => {
+      const file = await tx.contractFile.create({
+        data: {
+          propertyId,
+          tenantId: tenant.id,
+          leaseTermId: lease?.id ?? null,
+          driveFileId: input.driveFileId,
+          fileName: input.fileName,
+          source: 'UPLOADED',
+          signedAt,
+        },
+        select: { id: true },
+      })
+      // 이미 서명이 있는 계약에 스캔본을 덧붙이는 경우는 아무것도 덮지 않는다. 파일만 붙는다.
+      if (lease && !lease.signatureSignedAt && !lease.signedContractSnapshot) {
+        await tx.leaseTerm.update({
+          where: { id: lease.id },
+          data: {
+            signatureSignedAt: signedAt,
+            signedContractSnapshot: {
+              origin: 'SCAN', capturedAt: signedAt.toISOString(), sourceContractFileId: file.id,
+            },
+          },
+        })
+      }
+      return file
     })
     revalidatePath('/tenants')
     return { ok: true, id: created.id }
