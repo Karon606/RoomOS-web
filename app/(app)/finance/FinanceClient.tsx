@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
@@ -1513,6 +1514,8 @@ export default function FinanceClient({
   // 참조하는 행이 없고 404 가 난다 — 저장을 누르기 전까지 영수증이 항상 깨져 보였다(신고 9742f86f).
   // 프록시에 임시 토큰을 발급하는 방향은 택하지 않는다. 인증 표면을 도로 넓히게 된다.
   const [localReceiptPreview, setLocalReceiptPreview] = useState<{ add: string; edit: string }>({ add: '', edit: '' })
+  // 영수증 확대 — 앱 안에서 연다
+  const [lightbox, setLightbox] = useState('')
 
   const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
     if (!file.type.startsWith('image/')) {
@@ -3494,9 +3497,12 @@ export default function FinanceClient({
                   {detailExp.receiptUrl && (
                     <div className="pt-2">
                       <p className="text-xs text-[var(--warm-muted)] mb-1.5">영수증 <AiQuotaHint className="ml-1" /></p>
-                      <a href={detailExp.receiptUrl} target="_blank" rel="noopener noreferrer">
+                      {/* 새 탭으로 던지지 않는다. 목적지가 순수 이미지라 우리 마크업이 0바이트고,
+                          홈화면 앱에는 주소창도 뒤로가기도 없어 돌아올 수 없다(신고 9cf510fe).
+                          계약서 '보기'가 같은 사고를 냈고 앱 안 뷰어로 고쳤다 — 이건 그 클래스의 나머지다. */}
+                      <button type="button" onClick={() => setLightbox(detailExp.receiptUrl!)} className="block w-full">
                         <img src={detailExp.receiptUrl} className="rounded-xl border border-[var(--warm-border)] w-full max-h-48 object-contain" alt="영수증" />
-                      </a>
+                      </button>
                     </div>
                   )}
                   {/* 재고 계산 제외 상태 — 적용취소(다시 포함) 제공 */}
@@ -3881,6 +3887,7 @@ export default function FinanceClient({
       {/* ══════════════════════════════════════════════════════════
           모달: 지출 등록
       ══════════════════════════════════════════════════════════ */}
+      {lightbox && <ImageLightbox src={lightbox} alt="영수증" onClose={() => setLightbox('')} />}
       {showAddExp && (
         <Modal open width="sm" dirty={addExpDirty}
           onClose={() => { setShowAddExp(false); setAddExpDirty(false) }}

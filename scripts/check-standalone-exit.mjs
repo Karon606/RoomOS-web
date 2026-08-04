@@ -56,6 +56,17 @@ for (const f of files) {
     if (/href/.test(tag) && /[`"']\/[a-zA-Z]/.test(tag)) {
       const line = src.slice(0, m.index).split('\n').length
       violations.push(`[소스] ${f}:${line} 이 앱 내부 경로를 새 탭으로 연다 — 홈화면 앱에는 주소창이 없어 돌아올 수 없다`)
+      continue
+    }
+    // 주소가 변수여도 **이름으로 앱 자산임이 드러나면** 잡는다. 영수증을 새 탭으로 던져
+    // 돌아올 수 없던 신고(9cf510fe)가 정확히 이 형태였다 — href={detailExp.receiptUrl} 이라
+    // 리터럴 경로 검사를 그대로 통과했다. 이름 목록은 좁게 유지한다. 넓히면 외부 링크까지 잡는다.
+    // 외부 호스트가 태그 안에 보이면 정당한 이탈이다(구글 드라이브 원본 보기 등). 오탐을 만들지 않는다.
+    if (/https?:\/\//.test(tag)) continue
+    const varHint = tag.match(/href=\{[^}]*\b(receiptUrl|imageUrl|fileUrl|attachmentUrl|contractUrl)\b/)
+    if (varHint) {
+      const line = src.slice(0, m.index).split('\n').length
+      violations.push(`[소스] ${f}:${line} 이 앱 자산(${varHint[1]})을 새 탭으로 연다 — 홈화면 앱에는 주소창이 없어 돌아올 수 없다. 앱 안에서 열어야 한다`)
     }
   }
 }

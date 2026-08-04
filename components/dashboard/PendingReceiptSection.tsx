@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
+import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
@@ -180,6 +181,8 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   onRetried: () => void
   onRejected: () => void
 }) {
+  // 영수증 확대는 앱 안에서 연다. 새 탭은 홈화면 앱에서 편도가 된다.
+  const [lightbox, setLightbox] = useState('')
   const router = useNavRouter()   // 지출 등록 — 정식 지출 폼 딥링크 이동용   // 이동에 진행바 동반(F페이즈)
   const kindInfo = KIND_LABEL[row.inferredKind ?? 'unknown'] ?? KIND_LABEL.unknown
   const isInventory = editingMode === 'inventory'
@@ -282,10 +285,12 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
 
   return (
     <div className="rounded-xl p-3 flex gap-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+      {lightbox && <ImageLightbox src={lightbox} alt="영수증" onClose={() => setLightbox('')} />}
       {/* 썸네일 */}
-      <a href={row.imageUrl} target="_blank" rel="noreferrer" className="shrink-0">
+      {/* 새 탭으로 던지지 않는다. 홈화면 앱에는 주소창도 뒤로가기도 없어 돌아올 수 없다(신고 9cf510fe 와 같은 클래스) */}
+      <button type="button" onClick={() => setLightbox(row.imageUrl)} className="shrink-0">
         <img src={row.imageUrl} alt="" className="w-20 h-20 object-cover rounded-lg" />
-      </a>
+      </button>
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded"
