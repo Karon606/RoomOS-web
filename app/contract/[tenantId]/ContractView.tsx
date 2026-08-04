@@ -885,9 +885,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         /* 하단 알약 상주 중 마지막 콘텐츠가 가리지 않도록 여유 (알약 높이 64 + 하단 16 + 간격 16) */
         .contract-shell.has-pill { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
-        /* 툴바 — 화면 전용 */
+        /* 툴바 — 화면 전용. 문서 흐름 안에 둔다.
+           이 화면은 핀치줌이 열려 있어 sticky 는 확대 시 layout viewport 상단에 못 박힌 채
+           시야 밖으로 밀린다. 종이 가운데를 보는 동안 돌아가기·발급에 닿을 수 없다(신고 d9f93bdd).
+           같은 파일 :442 의 원격 서명 CTA 가 이미 그 이유로 흐름 안에 있는데 툴바만 남아 있었다. */
         .toolbar {
-          position: sticky; top: 8px; z-index: 5;
           width: min(210mm, 100% - 24px);
           display: flex; align-items: center; gap: 10px;
           padding: 10px 14px; background: var(--cream);

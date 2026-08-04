@@ -221,15 +221,17 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // 이제 하단 행에는 부속 서류(실거주 확인서·입실료 납부 확인서)만 남는다.
 
   // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
+  // 소프트 내비가 아니라 전체 페이지 이동이다. iOS 는 소프트 내비에서 viewport meta 교체를 반영하지
+  // 않아 서류 라우트의 확대 허용 선언이 무동작이 된다. 목적지가 (app) 밖이라 어차피 셸을 다시 세운다.
   const handleResidenceCert = () => {
     if (!links?.tenantId) return
-    navRouter.push(`/residence-cert/${links.tenantId}`)
+    window.location.assign(`/residence-cert/${links.tenantId}`)
     onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent') => {
     if (!links?.tenantId) return
-    navRouter.push(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
+    window.location.assign(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
     onClose()
   }
 

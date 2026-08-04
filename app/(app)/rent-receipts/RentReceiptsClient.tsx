@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { InfoHint } from '@/components/ui/InfoHint'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import Link from 'next/link'
+// 서류 화면으로는 **전체 페이지 이동**으로 들어간다(next/link 아님).
+// 확대 허용은 라우트 layout 의 viewport 로 선언하는데, iOS 는 소프트 내비에서 viewport meta 교체를
+// 반영하지 않아 선언이 무동작이 된다. 계약서만 확대가 되던 이유가 그것이었다 — 그쪽 진입점만
+// 순수 a 태그였다. 서류 라우트는 (app) 밖이라 소프트 내비를 해도 셸을 통째로 다시 세우므로
+// 잃는 것이 사실상 없다.
 import { useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -156,13 +160,13 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {tenantRows.map(t => (
               <li key={t.tenantId}>
-                <Link href={`/rent-receipt/${t.tenantId}${monthQuery}`}
+                <a href={`/rent-receipt/${t.tenantId}${monthQuery}`}
                   className="flex items-center justify-between gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 hover:border-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
                   <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
                     {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
                   </span>
                   <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
-                </Link>
+                </a>
               </li>
             ))}
           </ul>
@@ -259,8 +263,8 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   {/* '다시 작성'은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
                       열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다).
                       종전 라벨 '재발급'은 아무것도 발급하지 않고 작성 화면만 열어 오해를 샀다(2026-08-01 용어 정리). */}
-                  <Link href={`/rent-receipt/${c.tenantId}${c.kind === 'deposit' ? '?kind=deposit' : ''}`}
-                    className={btnClass('secondary', 'sm')}>다시 작성</Link>
+                  <a href={`/rent-receipt/${c.tenantId}${c.kind === 'deposit' ? '?kind=deposit' : ''}`}
+                    className={btnClass('secondary', 'sm')}>다시 작성</a>
                   <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                     disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                     {pending && deletingId === c.id ? '삭제 중…' : '삭제'}

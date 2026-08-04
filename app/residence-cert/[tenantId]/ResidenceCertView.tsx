@@ -53,10 +53,15 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF(p => ({ ...p, [k]: e.target.value }))
 
-  // 디자인 폭(595.3pt)을 viewport 에 맞춰 scale (최대 1.4배까지 확대해 가독성 확보)
+  // 디자인 폭(595.3pt)을 viewport 에 맞춰 scale.
+  // 상한 4/3 은 '종이가 실물 A4 폭을 넘지 않는다' 는 뜻이다 — 793.7(A4 를 CSS px 로) / 595.3(pt) = 4/3.
+  // 종전 1.4 는 실물의 1.05배였다. 계약서 상한 1 과 달라 보였지만 단위(px 대 pt)가 달랐을 뿐
+  // 실제 차이는 5% 였다. 근거 없는 상수를 없애고 두 화면이 같은 규칙을 쓰게 한다.
+  // 가독성은 상한이 아니라 핀치줌이 맡는다. 모바일에서는 어차피 상한 근처에도 못 간다.
   const [scale, setScale] = useState(1)
   useEffect(() => {
-    const calc = () => setScale(Math.min(1.4, (window.innerWidth - 24) / RC_PAGE.w))
+    // 폭은 layout viewport 로 잰다 — window.innerWidth 는 iOS 에서 핀치에 줄어들어 확대를 상쇄한다
+    const calc = () => setScale(Math.min(4 / 3, (document.documentElement.clientWidth - 24) / RC_PAGE.w))
     calc()
     window.addEventListener('resize', calc)
     window.addEventListener('orientationchange', calc)
@@ -213,8 +218,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         body { margin: 0; }
         .rc-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 16px 0 48px; }
 
+        /* 흐름 안에 둔다 — 핀치줌이 열린 화면에서 sticky 는 확대 시 시야 밖으로 밀린다(신고 d9f93bdd) */
         .rc-toolbar {
-          position: sticky; top: 8px; z-index: 5; width: min(595px, 100% - 24px);
+          width: min(595px, 100% - 24px);
           display: flex; align-items: center; gap: 10px; padding: 10px 14px;
           background: var(--cream); border: 1px solid var(--warm-border); border-radius: 10px; margin-bottom: 10px;
           flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
@@ -252,7 +258,22 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-stamp-cover { position: absolute; background: #fff; pointer-events: none; }
         .rc-stamp { position: absolute; object-fit: contain; pointer-events: none; }
 
-        @media print { .rc-shell { display: none !important; } }
+        /* 인쇄 — 종전에는 .rc-shell 을 통째로 display:none 해서 **백지가 나왔다**.
+           c0eb9c4(6/15)가 이 화면을 좌표 캔버스로 갈아엎으면서 이전 인쇄 오버라이드를 새 구조로
+           옮기지 못했다. 좌표 단위가 pt(595.3 x 841.9)라 그대로 인쇄하면 A4 의 75% 자리에 작게 찍힌다.
+           그 배율 문제를 푸는 대신 화면을 껐고, 인쇄 진입점이 없어 아무도 눈치채지 못했다.
+           96/72 = 4/3 이 pt 를 실물 A4 로 되돌리는 정확한 값이다. */
+        @media print {
+          @page { size: A4; margin: 0; }
+          .rc-shell { min-height: 0; padding: 0; display: block; }
+          /* 상자를 A4 로 못 박는다. 자동 높이로 두면 확대된 내용이 흐름 높이를 넘어 2장으로 갈린다 */
+          .rc-cage { width: 210mm !important; height: 297mm !important; }
+          .rc-page { transform: scale(${4 / 3}) !important; box-shadow: none; }
+          /* 양식·도장은 배경 이미지라 색 강제가 없으면 통째로 빠지고 타이핑한 값만 뜬다 — 백지의 두 번째 얼굴 */
+          .rc-bg, .rc-stamp, .rc-stamp-cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          /* 커서가 있던 칸만 노란 박스로 찍히는 것을 막는다 */
+          .rc-in:hover, .rc-in:focus { background: transparent !important; }
+        }
       `}</style>
     </div>
   )

@@ -3,7 +3,11 @@
 import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import Link from 'next/link'
+// 서류 화면으로는 **전체 페이지 이동**으로 들어간다(next/link 아님).
+// 확대 허용은 라우트 layout 의 viewport 로 선언하는데, iOS 는 소프트 내비에서 viewport meta 교체를
+// 반영하지 않아 선언이 무동작이 된다. 계약서만 확대가 되던 이유가 그것이었다 — 그쪽 진입점만
+// 순수 a 태그였다. 서류 라우트는 (app) 밖이라 소프트 내비를 해도 셸을 통째로 다시 세우므로
+// 잃는 것이 사실상 없다.
 import { useRouter, useSearchParams } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -132,7 +136,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {tenantRows.map(t => (
               <li key={t.tenantId}>
-                <Link
+                <a
                   href={`/residence-cert/${t.tenantId}`}
                   className="flex items-center justify-between gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 hover:border-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
                   <span className="min-w-0 flex items-center gap-1.5">
@@ -144,7 +148,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     {t.status === 'CHECKOUT_PENDING' && <StatusBadge tone="exit" className="shrink-0">퇴실 예정</StatusBadge>}
                   </span>
                   <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
-                </Link>
+                </a>
               </li>
             ))}
           </ul>
@@ -241,9 +245,9 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                   <SaveDocImageButton fileName={`${c.tenantName}_실거주확인서`}
                     getPdfBytes={fetchDocBytes(c.driveFileId)}
                     className={btnClass('secondary', 'sm')} />
-                  <Link href={`/residence-cert/${c.tenantId}`} className={btnClass('secondary', 'sm')}>
+                  <a href={`/residence-cert/${c.tenantId}`} className={btnClass('secondary', 'sm')}>
                     다시 작성
-                  </Link>
+                  </a>
                   <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                     disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                     {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
