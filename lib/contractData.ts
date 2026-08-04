@@ -64,10 +64,14 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       include: {
         contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
         leaseTerms: {
-          // 퇴실 예정(CHECKOUT_PENDING)도 아직 거주 중 → 계약서·동의서 호실 등 채워지도록 포함
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+          // 비거주 등록자·퇴실 예정자도 발급 대상이다. 비거주는 방에 살지 않을 뿐 임대료를 내는
+          // 계약이고(lib/leaseStatus.ts 의 BILLABLE_STATUSES), 돈을 받는 관계에는 근거 문서가 있어야 한다.
+          // 실거주 확인서는 신고 ace54135 로 이미 같은 판단을 받았는데 계약서만 안 따라왔다(케이스 정정의 재발).
+          // 같은 입주자가 거주·비거주 계약을 같은 방에 동시 보유할 수 있어(tenants/actions.ts 공존 허용)
+          // 단순 take 1 이 아니라 넉넉히 조회한 뒤 JS 에서 우선순위로 고른다.
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
+          take: 10,
           include: { room: { select: { roomNo: true } } },
         },
       },
@@ -85,7 +89,11 @@ export async function buildContractData(tenantId: string, propertyId: string): P
 
   if (!tenant) return null
 
-  const lease = tenant.leaseTerms[0] ?? null
+  // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
+  // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨). 실거주 확인서 정본과 같은 식이다.
+  const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
+  const lease = [...tenant.leaseTerms]
+    .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const emergencyContacts = tenant.contacts

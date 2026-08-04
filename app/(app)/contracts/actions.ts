@@ -25,7 +25,9 @@ export type ContractListRow = {
 }
 
 // 거주 중 성격의 lease 상태 — 이 중 하나라도 있으면 입주자는 '거주중'.
-const RESIDING_STATUSES = new Set(['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'])
+// 비거주도 넣는다. 방에 살지 않을 뿐 임대료를 내는 살아 있는 계약이라, 빼면 그 사람의 계약서 파일이
+// 퇴실자 쪽으로 분류되고 호실 폴백도 안 잡힌다.
+const RESIDING_STATUSES = new Set(['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'])
 
 // 입주자의 '대표 lease' — 거주성 lease가 있으면 그것, 없으면 최신(보통 퇴실/취소).
 // 계약서 파일이 lease에 연결돼 있지 않을 때(업로드 스캔본 등) 분류·호실 판정에 사용.

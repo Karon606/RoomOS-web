@@ -56,12 +56,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       else pushToast('error', res.error)
     })
   }
-  const [emergencyContactText, setEmergencyContactText] = useState(() => {
-    if (data.tenant.emergencyContacts.length === 0) return ''
-    return data.tenant.emergencyContacts
-      .map(c => [c.phone, c.relation].filter(Boolean).join(' / '))
-      .join(', ')
-  })
+  // 자동값의 정본. 복원 버튼이 이 함수를 다시 부르므로 초기화와 복원이 절대 갈리지 않는다.
+  const initialEmergencyText = () => data.tenant.emergencyContacts
+    .map(c => [c.phone, c.relation].filter(Boolean).join(' / '))
+    .join(', ')
+  const [emergencyContactText, setEmergencyContactText] = useState(initialEmergencyText)
 
   // 편집 모드 + 작업본 (저장 전까지 props.data.template과 분리)
   const [editing, setEditing] = useState(false)
@@ -241,6 +240,27 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   // 잠금을 컬럼으로 저장하지 않는 이유 — 3단계 재서명이 서명 네 칸을 null 로 만들면 파생값이라
   // 아무 추가 작업 없이 자동으로 풀린다. 저장하면 그 칸을 함께 지워야 하고 빠뜨리면 영원히 잠긴다.
   const bodyLocked = !!fixedSignDate || !!signatureCapturedAt
+  // 자동값 복원 — 손으로 고친 값을 버리고 입주자 상세정보에 들어 있는 값으로 되돌린다(§30.3, 운영자 확정).
+  // 서버를 부르지 않는다. 이 화면의 폼 값은 발급 전까지 어디에도 저장되지 않는다.
+  // 본문 조항은 대상이 아니다 — 그건 '공통 템플릿으로'가 따로 맡고, 서명 후에는 아예 잠긴다.
+  // 서명 이미지도 대상이 아니다. 복원이 서명을 지우면 그건 복원이 아니라 파기다.
+  const handleResetAuto = async () => {
+    if (!(await confirmDialog({
+      title: '자동값으로 되돌릴까요?',
+      message: '직접 수정한 내용이 모두 사라지고 입실자 정보에 저장된 값으로 복원됩니다.',
+      confirmLabel: '되돌리기', level: 'caution',
+    }))) return
+    setSignatureName(data.tenant.name ?? '')
+    setEmergencyContactText(initialEmergencyText())
+    // 계약일은 서명이 확정되면 사실의 기록이라 폼 값이 아니다. 건너뛰되 그 사실을 밝힌다.
+    if (signDateLocked) {
+      pushToast('info', '자동값으로 되돌렸습니다 · 계약일은 서명한 날로 고정되어 있어 그대로 둡니다')
+      return
+    }
+    setSignDate(today)
+    pushToast('info', '자동값으로 되돌렸습니다')
+  }
+
   const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.')
   const signDateEffective = fixedSignDate
     ?? (signatureCapturedAt ? kstYmdStr(new Date(signatureCapturedAt)) : signDate)
@@ -548,6 +568,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               </label>
             )}
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
+            <button onClick={handleResetAuto} className="toolbar-btn-secondary">
+              자동값 복원
+            </button>
             {/* 잠겨도 버튼을 없애지 않는다. 없애면 왜 없는지 아무도 모르고 다음 세션이
                 '버튼이 사라졌다'를 새 결함으로 신고한다. 누르면 이유와 길을 말한다. */}
             <button onClick={bodyLocked ? notifyBodyLocked : () => setEditing(true)}
