@@ -3,6 +3,8 @@
 // 서류 페이지는 검색엔진에 절대 노출 금지 — 성명·생년월일·금액·서명이 담긴다.
 // 형제 서류 화면 셋이 E페이즈에 같은 이유로 넣었고, 루트 레이아웃에는 robots 가 없어 상속받을 것이 없다.
 import type { Metadata, Viewport } from 'next'
+import { ConfirmHost } from '@/components/ui/ConfirmDialog'
+import SaveFeedback from '@/components/feedback/SaveFeedback'
 
 // 서류는 작은 글씨를 확대해 읽어야 한다. 루트 layout 의 userScalable:false / maximumScale:1 을
 // 이 라우트에서만 되돌린다. viewport 는 필드 단위 얕은 병합이라 여기서 안 적은 값은 루트가 그대로 남는다.
@@ -23,5 +25,15 @@ export const metadata: Metadata = {
 }
 
 export default function DocLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return (
+    <>
+      {children}
+      {/* AppShell 밖이므로 확인 다이얼로그·토스트 호스트를 직접 마운트한다.
+          이게 없으면 confirmDialog 가 큐에만 쌓이고 아무도 안 비워 **Promise 가 영원히 안 풀린다.**
+          뷰어의 [보내기]는 형식을 묻는 것으로 시작하므로 눌러도 아무 일이 안 일어났고,
+          pushToast 도 구독자가 0이라 실패 알림조차 안 떴다. 형제 서류 라우트 넷에는 다 있었다. */}
+      <ConfirmHost />
+      <SaveFeedback />
+    </>
+  )
 }

@@ -139,6 +139,39 @@ for (const page of pages) {
   violations.push(`${relative('.', page)} — 스크롤 선언 없음(A: 자체 스크롤러 / B: <DocumentScroll /> 중 하나 필요)`)
 }
 
+// 2) 셸 밖 라우트가 다이얼로그·토스트를 부르면서 호스트를 안 붙였는지 (뷰어 실측, 2026-08-04).
+//    confirmDialog 는 호스트가 없으면 큐에만 쌓이고 아무도 안 비워 **Promise 가 영원히 안 풀린다.**
+//    버튼은 눌러도 아무 일이 안 일어나고, pushToast 도 구독자가 0이라 실패 알림조차 안 뜬다.
+//    무증상이라 리뷰를 통과한다 — 서류 뷰어가 그렇게 신설된 지 사흘간 [보내기]가 죽어 있었다.
+//    AppShell 안은 셸이 호스트를 보증하므로 대상이 아니다(EXCLUDED 가 이미 걸러낸다).
+const CALLERS = /\bconfirmDialog\(|\bchoiceDialog\(|\balertDialog\(|\bpushToast\(|<SendDocButton\b|<SaveDocImageButton\b/
+for (const page of pages) {
+  const dir = dirname(page)
+  const own = walk(dir)
+  const layouts = []
+  let cur = dir
+  // 자기 디렉토리의 layout 도 포함한다 — 라우트 자신이 붙이는 경우가 정상 패턴이다
+  for (const f of own) if (/\/layout\.tsx$/.test(f)) layouts.push(f)
+  while (cur !== APP && cur !== '.') {
+    cur = dirname(cur)
+    const lay = join(cur, 'layout.tsx')
+    try { statSync(lay); layouts.push(lay) } catch { /* 없으면 건너뜀 */ }
+  }
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (_, p) => p)
+  // 호출 여부는 라우트 자기 소스에서만 본다. layout 까지 넣으면 호스트 마운트가 스스로를 근거로 만든다
+  const callsIn = own.filter(f => !/\/layout\.tsx$/.test(f)).map(f => strip(readFileSync(f, 'utf8')))
+  if (!callsIn.some(t => CALLERS.test(t))) continue
+  const layBlob = layouts.map(f => strip(readFileSync(f, 'utf8'))).join('\n')
+  // 태그 닫힘까지 본다 — 접두만 보면 ConfirmHostX 로 개명해도 통과한다
+  if (!/<ConfirmHost\s*\/?>/.test(layBlob)) {
+    violations.push(`${relative('.', page)} — 다이얼로그를 부르는데 <ConfirmHost /> 가 layout 사슬에 없음. 확인 창이 큐에만 쌓여 버튼이 무반응이 된다`)
+  }
+  if (!/<SaveFeedback\s*\/?>/.test(layBlob)) {
+    violations.push(`${relative('.', page)} — 토스트를 쓰는데 <SaveFeedback /> 가 layout 사슬에 없음. 성공·실패 알림이 조용히 버려진다`)
+  }
+}
+
 console.log(`\n[단독 라우트 스크롤] 검사 ${pages.length}개 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) {
