@@ -211,12 +211,11 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
         ...docShellVars,
       } as React.CSSProperties}
     >
-      {/* 확대하면 종이가 뷰포트보다 넓어진다. 트랙이 fit-content 여야 스크롤 범위가 실제로 늘어난다.
-          가운데 맞춤을 align-items 가 아니라 좌우 auto 여백으로 하는 이유 — flex 의 가운데 정렬은
-          남는 공간이 음수일 때 **왼쪽으로도 넘겨** 그 부분에 영영 못 닿게 한다(scrollLeft 가 음수가 못 된다).
-          auto 여백은 넘칠 때 0으로 접혀 왼쪽에 붙고, 안 넘칠 때만 가운데로 간다. 한 처방이 두 상태를 다 맞춘다. */}
-      <div style={{ minWidth: '100%', width: 'fit-content', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-        {/* 실행 동사는 상단이다(운영자 규칙 6 '미리보기 화면 상단 액션').
+      {/* 크롬과 안내는 **확대 트랙 밖**이다. 확대는 종이에만 적용된다.
+          트랙 안에 두면 배율만큼 넓어진 트랙 기준으로 가운데 정렬되어 화면 밖으로 밀린다 —
+          4배에서 366px 레일이면 크롬이 왼쪽에서 549px 지점에 놓여, 종이 왼쪽을 보며 위로 올라가면
+          손잡이가 아예 없다. 액션이 하단이던 동안에는 이 결함이 눈에 안 띄었을 뿐이다. */}
+      {/* 실행 동사는 상단이다(운영자 규칙 6 '미리보기 화면 상단 액션').
             흐름 안 하단바로 내렸더니 2장짜리 계약서에서는 종이를 다 지나쳐야 버튼이 나왔다 —
             읽는 화면일수록 문서가 길어서 하단은 사실상 닿지 않는 자리다(운영자 지적 2026-08-04). */}
         <div data-peek-hide className="no-print" style={docChromeStyle}>
@@ -237,6 +236,12 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
             {pages.length}장짜리 서류입니다. 아래로 넘기면 다음 장이 있습니다.
           </p>
         )}
+
+      {/* 확대하면 종이가 뷰포트보다 넓어진다. 트랙이 fit-content 여야 스크롤 범위가 실제로 늘어난다.
+          가운데 맞춤을 align-items 가 아니라 좌우 auto 여백으로 하는 이유 — flex 의 가운데 정렬은
+          남는 공간이 음수일 때 **왼쪽으로도 넘겨** 그 부분에 영영 못 닿게 한다(scrollLeft 가 음수가 못 된다).
+          auto 여백은 넘칠 때 0으로 접혀 왼쪽에 붙고, 안 넘칠 때만 가운데로 간다. 한 처방이 두 상태를 다 맞춘다. */}
+      <div style={{ minWidth: '100%', width: 'fit-content', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
 
         {error ? (
           // 실패를 흰 사각형으로 두지 않는다 — 이번 신고가 다른 얼굴로 돌아온다(§27.2)
