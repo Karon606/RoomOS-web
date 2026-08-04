@@ -36,7 +36,13 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [cost, setCost] = useState('')
   const [pending, startTransition] = useTransition()
 
-  const reload = () => { void getRoomCleanings(roomId).then(setRows).catch(() => setRows([])) }
+  const [loadFailed, setLoadFailed] = useState(false)
+  // 실패를 빈 목록으로 삼키지 않는다. 그러면 고장이 '기록 없음' 과 똑같이 보인다.
+  const reload = () => {
+    void getRoomCleanings(roomId)
+      .then(v => { setRows(v); setLoadFailed(false) })
+      .catch(() => { setRows([]); setLoadFailed(true) })
+  }
   useEffect(reload, [roomId])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = (fn: () => Promise<{ ok: true } | { ok: true; id: string } | { ok: false; error: string }>, okMsg: string) =>
@@ -93,6 +99,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
 
       {rows === null ? (
         <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+      ) : loadFailed ? (
+        <p className="text-xs text-[var(--danger-fg)]">청소 이력을 불러오지 못했습니다.</p>
       ) : rows.length === 0 ? (
         <p className="text-xs text-[var(--warm-muted)]">청소 기록이 없습니다.</p>
       ) : (

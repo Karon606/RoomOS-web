@@ -340,7 +340,14 @@ export default function RoomManageClient({
   const [openCleanings, setOpenCleanings] = useState<Record<string, { scheduledDate: string | null }>>({})
   // rooms 를 의존에 둔다. 청소 처리가 revalidatePath('/room-manage') 를 부르면 서버가 다시 그리고
   // rooms 참조가 바뀌므로 배지가 따라온다. 빈 배열로 두면 모달에서 완료해도 카드가 그대로다.
-  useEffect(() => { void getOpenCleaningsByRoom().then(setOpenCleanings).catch(() => {}) }, [rooms])
+  const [cleaningLoadFailed, setCleaningLoadFailed] = useState(false)
+  useEffect(() => {
+    // 실패를 삼키지 않는다. 이번 장애(2026-08-05) 때 서버 액션이 전부 죽었는데도 이 화면이 조용했던
+    // 이유가 빈 catch 였다. 고장과 '청소 예정 없음' 이 화면에서 구분돼야 한다.
+    void getOpenCleaningsByRoom()
+      .then(v => { setOpenCleanings(v); setCleaningLoadFailed(false) })
+      .catch(() => setCleaningLoadFailed(true))
+  }, [rooms])
   const [cleaningOnly, setCleaningOnly] = useState(false)
 
   const [selectMode, setSelectMode]   = useState(false)
@@ -954,6 +961,12 @@ export default function RoomManageClient({
             </Btn>
           </div>
         </div>
+      )}
+
+      {cleaningLoadFailed && (
+        <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'var(--danger-bg)', color: 'var(--danger-fg)' }}>
+          청소 상태를 불러오지 못했습니다. 새로고침해도 같으면 알려 주세요.
+        </p>
       )}
 
       {/* 청소 필요만 — 상태 칩과 축이 달라 별도 토글이다. 상태 칩에 섞으면 '공실이면서 청소 필요'를 못 고른다. */}
