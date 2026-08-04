@@ -22,9 +22,12 @@ export type ConfirmOptions = {
   // v2.0 §27 — 제3의 동작 버튼(choiceDialog 전용). 취소는 항상 무변경이어야 하므로
   // '취소에 실 동작을 싣던' 자리를 이 버튼이 대체한다.
   altLabel?: string
+  // 앞 단계로 되돌아가는 링크(순차 선택 2단계 이상에서만). 취소와 다르다 —
+  // 취소는 흐름 전체를 무변경으로 닫고, 이건 직전 물음으로 돌아간다. 잘못 골랐을 때의 길이다.
+  backLabel?: string
 }
 
-type ConfirmResult = 'confirm' | 'alt' | 'cancel'
+type ConfirmResult = 'confirm' | 'alt' | 'cancel' | 'back'
 type Pending = { opts: ConfirmOptions; resolve: (r: ConfirmResult) => void }
 
 let listener: ((p: Pending | null) => void) | null = null
@@ -43,7 +46,7 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
 }
 
 // v2.0 §27 3지선다 — 확인/제3 동작/취소. 취소·Esc·배경 클릭은 null(무변경).
-export function choiceDialog(opts: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | null> {
+export function choiceDialog(opts: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | 'back' | null> {
   return present(opts).then(r => (r === 'cancel' ? null : r))
 }
 
@@ -118,6 +121,13 @@ export function ConfirmHost() {
       >
         {/* 본문만 스크롤 — 버튼줄은 아래 shrink-0 로 항상 보인다 */}
         <div className="min-h-0 overflow-y-auto overscroll-contain">
+        {opts.backLabel && (
+          // 히트 44px(§09). 취소와 자리를 나눠 둔다 — 나란히 두면 '되돌아가기'가 '무변경 닫기'로 읽힌다.
+          <button type="button" onClick={() => done('back')}
+            className="-mt-1 mb-1 inline-flex items-center min-h-[44px] text-[13px] text-[var(--tc-text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 rounded">
+            {'‹'} {opts.backLabel}
+          </button>
+        )}
         <div className="flex items-start gap-2">
           {isCaution && (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5" aria-hidden="true">

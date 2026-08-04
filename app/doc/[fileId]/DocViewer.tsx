@@ -10,7 +10,7 @@
 // 왜 iframe 이 아니라 직접 그리는가(신고 56a0657b 실기)
 //   iframe 으로 물렸더니 아이폰에서 **확대되어 잘리고, 2페이지가 아예 안 보이고, 인쇄 진입도 없었다.**
 //   우리가 지정할 수 있는 것은 크기·테두리뿐이라 렌더러 내부에 개입할 표면이 없다.
-//   pdfjs-dist 는 이미 이 앱의 의존성이고(사진 저장·보내기가 쓴다) 전 페이지 순회 렌더도
+//   pdfjs-dist 는 이미 이 앱의 의존성이고(저장 및 보내기가 쓴다) 전 페이지 순회 렌더도
 //   lib/pdfToPng 에 이미 있다. 새 의존성 0, 새 개념 0으로 배율·페이지 수가 우리 손에 들어온다.
 //   그리고 페이지가 우리 DOM 이 되므로 데스크톱에서는 브라우저 인쇄가 그대로 걸린다.
 //
@@ -29,7 +29,8 @@
 // 스크롤 계약은 A(자체 스크롤러)다. 페이지를 세로로 쌓으므로 높이가 콘텐츠에서 나온다 —
 // iframe 때처럼 flex:1 로 뷰포트 잔여를 채우면 1장짜리는 늘어나고 2장짜리는 잘린다.
 //
-// 하단 액션바 정본 — [보내기] [사진 저장] [인쇄]. 셋 다 문서를 앱 밖으로 내보내는 동사다.
+// 하단 액션바 정본 — [저장 및 보내기] [인쇄]. 둘 다 문서를 앱 밖으로 내보내는 동사다.
+// 사진 저장은 '저장 및 보내기'가 흡수했다(§30.4) — 서류 종류로 버튼 수가 갈리던 마지막 자리였다.
 // 확대는 문서에 아무 일도 하지 않고 시야만 바꾸는 뷰 상태라 여기 섞지 않는다. 그리고 확대해서
 // 가운데를 읽는 동안 이 줄은 저 아래에 있다 — **확대 중에 화면에 없는 확대 컨트롤은 컨트롤이 아니다.**
 // 그래서 확대만 부유로 띄운다. 우리 확대는 종이만 키우므로 fixed 크롬이 확대에 안 끌려간다
@@ -44,13 +45,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
-import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import {
   DocBackLink, docActionBarStyle, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
 } from '@/components/doc/DocChrome'
 
-// 첫 화면용 배율 — 사진 저장(2.5)보다 한 단계 낮춘다. 다페이지 계약서에서 변환 시간이 줄어든다.
+// 첫 화면용 배율 — 저장 및 보내기의 사진(2.5)보다 한 단계 낮춘다. 다페이지 계약서에서 변환 시간이 줄어든다.
 const VIEW_SCALE = 2
 // 확대해서 읽기 시작하면 그때 다시 굽는다. 아이폰은 CSS 픽셀당 기기 픽셀이 3이라
 // 배율 2(약 144dpi)로는 2배만 키워도 글자가 뭉갠다. 3.5 는 약 252dpi 다.
@@ -257,10 +257,6 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
           <div className="no-print" style={docActionBarStyle}>
             <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
               className={`flex-1 ${btnClass('secondary', 'md')}`} />
-            {from !== 'contracts' && from !== 'tenant' && (
-              <SaveDocImageButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
-                className={`flex-1 ${btnClass('secondary', 'md')}`} />
-            )}
             <Btn variant="primary" size="md" className="flex-1" onClick={() => window.print()}>인쇄</Btn>
           </div>
         )}

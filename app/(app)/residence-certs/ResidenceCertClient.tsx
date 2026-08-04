@@ -19,7 +19,6 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { deleteResidenceCertFile, restoreResidenceCertFile, type ResidenceCertListRow, type IssuableTenant } from './actions'
 import { SendDocButton } from '@/components/ui/SendDocButton'
-import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Btn, btnClass } from '@/components/ui/Btn'
@@ -242,10 +241,6 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
                   <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_실거주확인서`}
-                    className={btnClass('secondary', 'sm')} />
-                  {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장 요청(신고 dc56f953) */}
-                  <SaveDocImageButton fileName={`${c.tenantName}_실거주확인서`}
-                    getPdfBytes={fetchDocBytes(c.driveFileId)}
                     className={btnClass('secondary', 'sm')} />
                   <a href={`/residence-cert/${c.tenantId}`} className={btnClass('secondary', 'sm')}>
                     다시 작성

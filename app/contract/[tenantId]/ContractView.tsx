@@ -513,7 +513,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                 '미리보기·인쇄'와 'PDF로 저장'을 걷었다 — 사전에 없는 동사이고, 실제 동작이
                 공유 시트·새 탭이라 모바일에서 '인쇄'가 거짓이다(운영자 실기). 발급 전 확인은
                 이 화면이 종이 실물로 이미 하고, 인쇄는 뷰어 한 곳에만 있다.
-                사진 저장은 보류 — SaveDocImageButton 이 1페이지만 그려 임의처분 동의서가 빠진다(3단계). */}
+                사진 저장은 '저장 및 보내기'가 흡수했다 — 그쪽은 전 페이지를 그려 임의처분 동의서가 안 빠진다. */}
             <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()}
               className="toolbar-btn-secondary" />
             {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 발급 버튼은 항상 보이되 서명 전엔 비활성.

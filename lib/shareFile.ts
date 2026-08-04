@@ -55,3 +55,19 @@ export function canShareFiles(): boolean {
     return nav.canShare({ files: [probe] })
   } catch { return false }
 }
+
+// iOS 는 다운로드가 '파일' 앱으로만 간다 — **JPG·PNG 라도 사진첩에 안 들어간다.**
+// 사진첩으로 가는 유일한 길이 공유 시트의 [이미지 저장]이다. 안드로이드는 다운로드가
+// Download 폴더로 가고 갤러리가 그 폴더를 훑으므로 그냥 받으면 된다.
+//
+// 이건 기능 탐지로 알 수 있는 API 가 없다. 스크롤·뷰포트를 UA 로 가르지 않는 원칙은 그대로고,
+// 여기는 '이 OS 에 그 저장 경로가 아예 없다'는 능력 차이라 탐지 대상 자체가 다르다.
+// 틀려도 손해가 작다 — 오탐이면 시트가 한 번 더 열릴 뿐 저장은 된다.
+export function photoSaveNeedsShareSheet(): boolean {
+  try {
+    const nav = navigator as Navigator & { maxTouchPoints?: number }
+    if (/iP(hone|ad|od)/.test(navigator.userAgent)) return true
+    // 아이패드는 iPadOS 13 부터 데스크톱 사파리로 위장한다 — 터치 개수로 가린다
+    return /Macintosh/.test(navigator.userAgent) && (nav.maxTouchPoints ?? 0) > 1
+  } catch { return false }
+}

@@ -19,7 +19,6 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteRentReceiptFile, restoreRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
 import { SendDocButton } from '@/components/ui/SendDocButton'
-import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ViewTabs } from '@/components/ui/ViewTabs'
@@ -257,10 +256,6 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
                   <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
-                    className={btnClass('secondary', 'sm')} />
-                  {/* 발급 PDF 를 그대로 PNG 화 — 사진첩 저장(실거주확인서와 동일 문법) */}
-                  <SaveDocImageButton fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
-                    getPdfBytes={fetchDocBytes(c.driveFileId)}
                     className={btnClass('secondary', 'sm')} />
                   {/* '다시 작성'은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
                       열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다).

@@ -22,7 +22,7 @@ export default async function DocPage({
   const propertyId = access.propertyId
 
   // /api/doc-file 과 같은 세 종류를 본다 — 한쪽만 늘어나면 '보기'가 열리는 서류와 뜨는 서류가 갈린다
-  // fileName 은 세 모델이 공통으로 갖는 표시용 이름이다 — 보내기·사진 저장의 파일명으로 그대로 쓴다.
+  // fileName 은 세 모델이 공통으로 갖는 표시용 이름이다 — 저장 및 보내기의 파일명으로 그대로 쓴다.
   // 화면 크롬에 그리지 않으므로 임의 문자열이 끼어들 자리가 없다.
   const owned =
     (await prisma.contractFile.findFirst({ where: { driveFileId: fileId, propertyId, deletedAt: null }, select: { fileName: true } })) ||

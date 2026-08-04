@@ -9,7 +9,6 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn, btnClass } from '@/components/ui/Btn'
-import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import DocumentScroll from '@/components/layout/DocumentScroll'
 
@@ -137,7 +136,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     } finally { setPreviewing(false) }
   }
 
-  // 보내기·사진 저장이 공유하는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
+  // 저장 및 보내기가 쓰는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
   const docFileName = `${data.name}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`
   const previewBytes = async (): Promise<ArrayBuffer> => {
     const res = await fetch('/api/rent-receipt/generate', {
@@ -269,15 +268,13 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 
-        {/* 하단 액션바 정본(§30) — [보내기] [사진 저장] [목적 동사]. flex-1 균등, 접힘 금지.
+        {/* 하단 액션바 정본(§30) — 보조 동사들 + 목적 동사. flex-1 균등, 접힘 금지.
             '미리보기'는 이 화면에만 남는다 — 셋 중 유일하게 문서를 안 보여준다(3단계에서 인라인 미리보기로 대체). */}
         <div className="flex gap-2">
           <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
             {previewing ? '여는 중…' : '미리보기'}
           </Btn>
           <SendDocButton fileName={docFileName} className={`flex-1 ${btnClass('secondary', 'md')}`}
-            getPdfBytes={previewBytes} />
-          <SaveDocImageButton fileName={docFileName} className={`flex-1 ${btnClass('secondary', 'md')}`}
             getPdfBytes={previewBytes} />
           <Btn variant="primary" className="flex-1" onClick={handleIssue} disabled={issuing}>
             {issuing ? '발급 중…' : '발급'}

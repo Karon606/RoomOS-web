@@ -8,7 +8,6 @@ import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenc
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 
@@ -138,15 +137,11 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
-        {/* 액션 집합 정본(§30) — [보내기] [사진 저장] [발급]. '미리보기·인쇄'는 걷었다 —
-            사전에 없는 동사이고, 실제 동작이 인쇄가 아니라 공유 시트·새 탭이라 모바일에서 라벨이 거짓이다.
-            발급 전 확인은 이 화면이 이미 한다(양식 위 실입력). 인쇄는 뷰어 한 곳에만 있다.
-            2단계에서 이 툴바를 상단 크롬 + 하단 액션바로 나눈다. */}
+        {/* 사진 저장은 '저장 및 보내기'가 흡수했다(§30.4, 운영자 확정 6). 그쪽이 형식을 먼저 묻고
+            사진을 고르면 전 페이지를 그리므로 기능이 줄지 않고 다페이지 유실만 사라진다.
+            1단계 다음 커밋에서 이 툴바를 상단 크롬 + 하단 액션바로 나눈다. */}
         <Btn variant="secondary" size="md" onClick={reset}>자동값으로</Btn>
         <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={docFileName} className={btnClass('secondary', 'md')} />
-        {/* 현재 입력값 그대로 PNG 저장(공유 시트로 사진첩 저장, 신고 dc56f953) — preview PDF 를 래스터화 */}
-        <SaveDocImageButton fileName={docFileName} className={btnClass('secondary', 'md')}
-          getPdfBytes={fetchPreviewBytes} />
         <Btn variant="primary" size="md" onClick={handleIssue} disabled={issuing}>
           {issuing ? '발급 중…' : '발급'}
         </Btn>

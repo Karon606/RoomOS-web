@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react'
 import { pushToast } from '@/lib/saveStatus'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
-import { shareFiles, canShareFiles, shareOrDownloadFile } from '@/lib/shareFile'
+import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 
 export function SendDocButton({ getPdfBytes, fileName, label = '보내기', className }: {
   getPdfBytes: () => Promise<ArrayBuffer>
@@ -29,41 +29,70 @@ export function SendDocButton({ getPdfBytes, fileName, label = '보내기', clas
   const [busy, setBusy] = useState(false)
   // 준비 캐시 — 첫 시도가 제스처 만료로 거부돼도 재탭이 즉시 성공하게 유지
   const cache = useRef<{ bytes?: Promise<ArrayBuffer>; pngs?: Promise<Blob[]> }>({})
-  // 재탭 대기 형식 — 만료 재시도 때 선택창을 다시 묻지 않고 바로 시트를 연다
-  const retryFormat = useRef<'confirm' | 'alt' | null>(null)
+  // 재탭 대기 선택 — 만료 재시도 때 선택창을 다시 묻지 않고 바로 시트를 연다
+  const retryPick = useRef<{ asPng: boolean; toPhone: boolean } | null>(null)
   useEffect(() => { prewarmPdfToPng() }, [])
 
   const ensureBytes = () => (cache.current.bytes ??= getPdfBytes().catch(e => { cache.current.bytes = undefined; throw e }))
   const ensurePngs = () => (cache.current.pngs ??= ensureBytes().then(b => pdfToPngBlobs(b)).catch(e => { cache.current.pngs = undefined; throw e }))
 
+  // 두 번 묻는다(§30.5). 형식을 먼저 정하고 그다음 어디로 보낼지 정한다.
+  // 두 물음을 하나로 합치면 선택지가 넷이 되어 다이얼로그가 못 담고, 무엇보다
+  // '사진으로 문자' 와 '사진으로 저장' 이 사용자 머릿속에서 다른 일인데 한 줄에 섞인다.
+  const ask = async (): Promise<{ asPng: boolean; toPhone: boolean } | null> => {
+    for (;;) {
+      const format = await choiceDialog({
+        title: '어떤 형식으로 만들까요?',
+        message: '문자메시지로 보낼 때는 사진이 가장 확실합니다. PDF는 일부 휴대폰·문자 앱에서 첨부가 안 될 수 있습니다. 서류가 여러 장이면 사진도 장수만큼 만들어집니다.',
+        confirmLabel: '사진으로',
+        altLabel: 'PDF로',
+      })
+      if (!format || format === 'back') return null
+      const dest = await choiceDialog({
+        title: '만든 서류를 어떻게 할까요?',
+        confirmLabel: '기기에 저장',
+        altLabel: '문자로 보내기',
+        // 형식을 잘못 골랐을 때 되짚을 길. 취소는 흐름 전체를 무변경으로 닫는 것이라 이것과 다르다.
+        backLabel: '형식 다시 고르기',
+      })
+      if (dest === 'back') continue
+      if (!dest) return null
+      return { asPng: format === 'confirm', toPhone: dest === 'alt' }
+    }
+  }
+
   const handleSend = async () => {
     // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다
     void ensurePngs().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
-    const wasRetry = retryFormat.current != null
-    const format = retryFormat.current ?? await choiceDialog({
-      title: '어떤 형식으로 보낼까요?',
-      message: '문자메시지는 사진이 가장 확실합니다. PDF는 일부 휴대폰·문자 앱에서 첨부 전송이 안 될 수 있습니다. 서류가 여러 장이면 사진도 장수만큼 함께 보냅니다.',
-      confirmLabel: '사진으로',
-      altLabel: 'PDF로',
-    })
-    retryFormat.current = null
-    if (!format) return
+    const wasRetry = retryPick.current != null
+    const pick = retryPick.current ?? await ask()
+    retryPick.current = null
+    if (!pick) return
+    const { asPng, toPhone } = pick
     setBusy(true)
     try {
-      const asPng = format === 'confirm'
       const blobs = asPng ? await ensurePngs() : [new Blob([await ensureBytes()], { type: 'application/pdf' })]
       const mime = asPng ? 'image/png' : 'application/pdf'
       const ext = asPng ? 'png' : 'pdf'
       // 1장이면 종전과 완전히 같은 파일명 — 영수증·확인서는 아무것도 달라지지 않는다
       const nameAt = (i: number) => blobs.length === 1 ? `${fileName}.${ext}` : `${fileName}_${i + 1}.${ext}`
+
+      // 기기에 저장 — 아이폰만 시트를 거친다. 다운로드가 '파일' 앱으로만 가서 사진첩에 못 넣기 때문이다.
+      // 그 경우 어느 항목을 눌러야 하는지 먼저 알려준다. 시트만 덜렁 열면 못 찾는다(운영자 실기).
+      if (!toPhone && !(asPng && photoSaveNeedsShareSheet() && canShareFiles())) {
+        await fallbackDownloadAll(blobs, nameAt, mime)
+        return
+      }
+      if (!toPhone) pushToast('info', '공유 창에서 [이미지 저장]을 누르면 사진첩에 들어갑니다.')
+
       if (canShareFiles()) {
         const result = await shareFiles(blobs.map((b, i) => new File([b], nameAt(i), { type: mime })))
-        // 제스처 만료 — 캐시·형식이 준비돼 있어 재탭은 선택창 없이 즉시 시트가 열린다. 다운로드로 새지 않는다(운영자 혼란 보고).
+        // 제스처 만료 — 캐시·선택이 준비돼 있어 재탭은 선택창 없이 즉시 시트가 열린다. 다운로드로 새지 않는다(운영자 혼란 보고).
         // 단, 재탭(신선한 제스처 + 캐시 준비)마저 거부되면 이 기기는 실질 공유 불가(주로 PC 브라우저의
         // 지원 사칭) — 안내가 무한 반복되지 않게 다운로드로 확정 폴백(운영자 PC 확인 2026-07-22).
         if (result === 'retry') {
           if (wasRetry) await fallbackDownloadAll(blobs, nameAt, mime)
-          else { retryFormat.current = format; pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.') }
+          else { retryPick.current = pick; pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.') }
         }
         else if (result === 'unsupported') await fallbackDownloadAll(blobs, nameAt, mime)
       } else {
