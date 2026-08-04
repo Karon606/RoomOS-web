@@ -11,6 +11,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, us
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { docFromQuery } from '@/lib/docNav'
+import { getContractShareState } from '@/app/(app)/tenants/contractShare'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
@@ -232,9 +233,18 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // 계약서 — 규칙 1·§30.10. 하단은 서류를 만들고 발급하러 가는 문이고,
   // 위쪽 '계약서 파일' 칸은 이미 있는 파일의 보관함이다. 이름으로 갈린다 —
   // 하단은 목적어 없는 '계약서', 파일 칸의 버튼에는 항상 '스캔본'이 붙는다.
-  const handleContract = () => {
+  const handleContract = async () => {
     if (!links?.tenantId) return
-    window.location.assign(`/contract/${links.tenantId}${docFromQuery('tenant', links.tenantId)}`)
+    // 서명이 들어온 계약은 **서명 시점 스냅샷**으로 연다. 그냥 열면 화면이 지금 DB 값을 보여주고,
+    // 거기서 발급을 누르면 입주자가 서명한 문서와 다른 계약서가 나간다.
+    // 계약서 파일 칸의 진입은 이미 이렇게 갈리는데 이 문만 안 갈려 있었다(2026-08-04 지적).
+    const tenantId = links.tenantId
+    let share = ''
+    try {
+      const res = await getContractShareState(tenantId)
+      if (res.ok && res.link?.signedAt) share = `&share=${encodeURIComponent(res.link.id)}`
+    } catch { /* 조회 실패는 무시 — 일반 진입으로 간다. 문이 막히는 것보다 낫다 */ }
+    window.location.assign(`/contract/${tenantId}${docFromQuery('tenant', tenantId)}${share}`)
     onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
@@ -267,27 +277,24 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
           )}
           {kind === 'tenant' && hasTenant && (
             <div className="flex flex-wrap gap-2 items-center">
-              <button type="button" onClick={handleDeleteTenant} disabled={isPending}
-                className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+              <Btn variant="ghost" size="md" onClick={handleDeleteTenant} disabled={isPending}
+                className="text-[var(--danger-fg)]">
                 삭제
-              </button>
+              </Btn>
               {links?.tenantId && (
-                <button type="button" onClick={handleContract}
-                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                <Btn variant="secondary" size="md" onClick={handleContract}>
                   계약서
-                </button>
+                </Btn>
               )}
               {links?.tenantId && (
-                <button type="button" onClick={handleResidenceCert}
-                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                <Btn variant="secondary" size="md" onClick={handleResidenceCert}>
                   실거주 확인서
-                </button>
+                </Btn>
               )}
               {links?.tenantId && (
-                <button type="button" onClick={() => handleRentReceipt('rent')}
-                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent')}>
                   입실료 납부 확인서
-                </button>
+                </Btn>
               )}
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
@@ -298,14 +305,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
           {/* 수납 관리(=payment 모달)에서 서류 발급 진입 — 돈을 기록한 자리에서 바로 뽑는 동선(신고 d68220bd) */}
           {kind === 'payment' && links?.tenantId && (
             <div className="flex flex-wrap gap-2 items-center">
-              <button type="button" onClick={() => handleRentReceipt('rent')}
-                className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent')}>
                 입실료 납부 확인서
-              </button>
-              <button type="button" onClick={() => handleRentReceipt('deposit')}
-                className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+              </Btn>
+              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('deposit')}>
                 보증금 영수증
-              </button>
+              </Btn>
             </div>
           )}
           {/* deepLink 행 — Phase 2.4a 에서 수납 딥링크 in-place 전환으로 대체됨. 다른 kind 에 필요시 부활. */}
