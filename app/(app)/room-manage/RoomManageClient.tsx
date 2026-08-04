@@ -765,42 +765,17 @@ export default function RoomManageClient({
   return (
     <div className="space-y-4">
 
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          {(() => {
-            // 헤더 카운트 = 상태 필터 칩과 같은 분기(roomStatusKey) — 두 숫자가 갈라지던 자기모순 제거(신고 9d844226).
-            // 비거주 점유 방은 nonResidentVacant 에 따라 공실 또는 점유로 분류된다.
-            const keys = rooms.map(roomStatusKey)
-            const occupied = keys.filter(k => k === 'active' || k === 'checkout').length
-            const reserved = keys.filter(k => k === 'reserved').length
-            const vacant   = keys.filter(k => k === 'vacant').length
-            return (
-              <p className="text-sm text-[var(--warm-muted)] mt-0.5">
-                전체 {rooms.length}실
-                <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-                거주중 {occupied}실
-                {reserved > 0 && (
-                  <>
-                    <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-                    예약 {reserved}실
-                  </>
-                )}
-                <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-                공실 {vacant}실
-              </p>
-            )
-          })()}
-        </div>
+      {/* 헤더 — flex-wrap 이 없으면 자식 여섯이 압축되며 버튼 안에서 글자가 쪼개진다.
+          목록 화면 일곱 중 여기만 wrap 이 없었다(운영자 신고 aea83d6b "상단 버튼이 너무 복잡해").
+          부제도 걷는다 — 바로 아래 상태 칩이 같은 값을 이미 말하고 있었고, 게다가 부제의 '거주중'은
+          퇴실 예정을 합쳐 39, 칩은 나눠서 36 이라 한 화면에 같은 이름의 숫자가 둘이었다. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
         {canEditUi && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
             공용·외관 사진
-          </Btn>
-          <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
-            {selectMode ? '선택 취소' : '선택'}
           </Btn>
           <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
             + 호실 등록
@@ -970,8 +945,8 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* 정렬 + 표시 항목 */}
-      <div className="flex items-center justify-between gap-2">
+      {/* 정렬 + 목록 조작 — wrap 필수. '선택'이 '선택 취소'로 늘거나 글씨 크기를 키우면 한 줄을 넘긴다. */}
+      <div className="flex items-center gap-2 flex-wrap">
         <SortSelect
           ariaLabel="호실 정렬 기준"
           value={sortKey}
@@ -984,7 +959,16 @@ export default function RoomManageClient({
             ...(hideMoney ? [] : [{ value: 'baseRent' as const, label: '이용료' }]),
           ]}
         />
-        <DisplayFieldsMenu fields={cardFieldDefs} visible={cardFields} onToggle={toggleCardField} />
+        <div className="ml-auto flex items-center gap-2">
+          {/* 선택은 목적 동사가 아니라 목록 조작이라 툴바 행에 선다. 형제(수납·재고)와 같은 자리다.
+              canEditUi 가드를 개별로 단다 — 헤더의 묶음 가드에서 빠져나왔으므로 안 달면 STAFF 에게 노출된다. */}
+          {canEditUi && (
+            <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
+              {selectMode ? '선택 취소' : '선택'}
+            </Btn>
+          )}
+          <DisplayFieldsMenu fields={cardFieldDefs} visible={cardFields} onToggle={toggleCardField} />
+        </div>
       </div>
 
       {/* 에러 */}

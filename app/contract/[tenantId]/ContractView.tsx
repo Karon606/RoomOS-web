@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
+import { issueContractShareLink } from '@/app/(app)/tenants/contractShare'
+import { blockSmsIfStaging } from '@/lib/smsHref'
 import Link from 'next/link'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
@@ -259,6 +261,30 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     }
     setSignDate(today)
     pushToast('info', '자동값으로 되돌렸습니다')
+  }
+
+  // 서명 요청 — 링크를 만들고 문자 앱으로 넘긴다. 규칙 4 가 "서명 요청·서명본 발급은 계약서 버튼으로
+  // 들어간 미리보기 상태에서 한다"고 정했다. 파일 칸에만 있던 것을 여기로 들여온다.
+  const [signReqPending, setSignReqPending] = useState(false)
+  const handleSignRequest = async () => {
+    if (signReqPending) return
+    setSignReqPending(true)
+    const release = trackSave()
+    try {
+      const res = await issueContractShareLink(data.tenant.id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      if (!res.phone) {
+        pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 고객 정보에서 연락처를 먼저 등록해 주세요.')
+        return
+      }
+      if (blockSmsIfStaging()) return
+      const body = `[${res.propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. ${res.link.url}`
+      const num = (res.phone ?? '').replace(/[^0-9+]/g, '')
+      const enc = encodeURIComponent(body)
+      // 애플은 sms://open?addresses= 형식이라야 본문이 실린다(NoticeSmsModal 과 같은 분기)
+      const isApple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
+      window.location.href = isApple ? `sms://open?addresses=${num}&body=${enc}` : `sms:${num}?body=${enc}`
+    } finally { release(); setSignReqPending(false) }
   }
 
   const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.')
@@ -590,13 +616,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                 사진 저장은 '내보내기'가 흡수했다 — 그쪽은 전 페이지를 그려 임의처분 동의서가 안 빠진다. */}
             <SendDocButton getPdfBytes={fetchPreviewPdfBytes} fileName={pdfFileName()}
               className="toolbar-btn-secondary" />
-            {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도). 발급 버튼은 항상 보이되 서명 전엔 비활성.
-                '발급' = 공식본 생성 + 보관 + 이력. 확인서·영수증과 같은 동작이라 같은 동사를 쓴다(2026-08-01 용어 정리). */}
-            <button onClick={handleContractSave} disabled={contractSaving || !signatureDataUrl} className="toolbar-print">
-              {contractSaving ? '발급 중… (5~15초)' : '발급'}
-            </button>
-            {!signatureDataUrl && (
-              <span className="toolbar-hint">서명을 받으면 발급할 수 있어요</span>
+            {/* 서명은 본문 하단 서명란을 직접 눌러서 진행(계약서를 끝까지 본 뒤 서명하도록 유도).
+                **서명 전에는 발급이 아예 없다**(운영자 규칙 6). 비활성으로 세워두면 눌러도 아무 일이
+                없고 화면은 왜 안 되는지 끝내 말하지 못한다. 그 자리는 [서명 요청]이 차지한다.
+                '발급' = 공식본 생성 + 보관 + 이력. 확인서·영수증과 같은 동작이라 같은 동사를 쓴다. */}
+            {signatureDataUrl ? (
+              <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
+                {contractSaving ? '발급 중… (5~15초)' : '발급'}
+              </button>
+            ) : (
+              <button onClick={handleSignRequest} disabled={signReqPending} className="toolbar-print">
+                {signReqPending ? '준비 중…' : '서명 요청'}
+              </button>
             )}
           </>
         )}
