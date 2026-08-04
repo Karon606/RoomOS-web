@@ -212,6 +212,37 @@ if (!/export function unpaidForLease/.test(billingSrc) || !/if \(r\.expectedAmou
   violations.push('[소스] lib/billing 의 unpaidForLease 최댓값 규칙이 사라졌다')
 }
 
+// 10b. **정본을 부르는 것만으로는 부족하다. 정본이 요구하는 것을 주는지도 봐야 한다.**
+//   세 플래그가 옵셔널이면 select 에서 빠뜨려도 컴파일이 통과하고, 그러면 보증금이 월세 record 로
+//   취급돼 미납액이 정확히 보증금만큼 어긋난다. 실제로 두 번 났다 — 2026-08-02 커밋이 형제 화면만
+//   고치고 getTenantDetail 을 빠뜨려 완납 8명이 -5만원으로, 진짜 미납 91,000 이 41,000 으로 떴다.
+//   1) 타입이 필수인가. 이게 주력 그물이다 — 필수면 안 실어 보내는 호출부가 전부 tsc 에서 죽는다.
+const unpaidType = billingSrc.match(/export type UnpaidRecord = \{[\s\S]*?\n\}/)
+if (!unpaidType) {
+  violations.push('[소스] lib/billing 의 UnpaidRecord 타입을 찾지 못했다. 대조가 건너뛰어졌다. 감지망을 고쳐야 한다')
+} else {
+  for (const f of ['isDeposit', 'isPrevOwner', 'isBillingAdjust']) {
+    if (new RegExp(f + '\\s*\\?').test(unpaidType[0])) {
+      violations.push(`[소스] UnpaidRecord 의 ${f} 가 옵셔널로 돌아갔다 — select 에서 빠뜨려도 컴파일이 통과해 미납액이 보증금만큼 어긋난다`)
+    }
+  }
+}
+//   2) 입주자 상세를 대는 쿼리가 세 플래그를 실어 보내는가. 파일 전체 검색은 안 된다 —
+//      주석에도 같은 낱말이 있다. paymentRecords select 블록만 잘라서 본다.
+{
+  const src = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+  const block = src.match(/paymentRecords:\s*\{[\s\S]*?select:\s*\{[\s\S]*?\}/)
+  if (!block) {
+    violations.push('[소스] rooms/actions.ts 의 paymentRecords select 블록을 찾지 못했다. 대조가 건너뛰어졌다')
+  } else {
+    for (const f of ['isDeposit', 'isPrevOwner', 'isBillingAdjust']) {
+      if (!new RegExp(f + '\\s*:\\s*true').test(block[0])) {
+        violations.push(`[소스] getTenantDetail 의 paymentRecords select 에 ${f} 가 없다 — 입주자 상세 미납액이 보증금만큼 어긋난다`)
+      }
+    }
+  }
+}
+
 // 11. 현금영수증 스탬프는 **결제 단위**다. 한 결제가 여러 달로 쪼개졌는데 일부에만 찍히면
 //     합계(payDate 기준 record 합)가 실제 발행액과 어긋난다(2026-08-03 봉합).
 //     쪼개진 결제가 있는 것 자체는 정상이라 위반 조건은 '한 결제 안에서 갈림' 하나다.

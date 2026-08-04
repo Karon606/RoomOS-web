@@ -2001,9 +2001,14 @@ export async function getTenantDetail(tenantId: string) {
           room: { select: { id: true, roomNo: true } },
           paymentRecords: {
             where: { deletedAt: null },
-            select: { id: true, expectedAmount: true, actualAmount: true, isPaid: true, payDate: true, targetMonth: true },
+            // 세 플래그가 없으면 보증금이 월세 record 로 취급돼 미납액이 5만원 어긋난다(lib/billing.ts UnpaidRecord).
+            // take 도 형제(tenants/actions.ts 60)와 맞춘다 — 건수를 개월수로 착각한 자리다.
+            select: {
+              id: true, expectedAmount: true, actualAmount: true, isPaid: true, payDate: true, targetMonth: true,
+              isDeposit: true, isPrevOwner: true, isBillingAdjust: true,
+            },
             orderBy: { targetMonth: 'desc' },
-            take: 24,
+            take: 60,
           },
         },
         orderBy: { createdAt: 'desc' },

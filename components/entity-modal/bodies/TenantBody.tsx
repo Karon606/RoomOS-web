@@ -206,9 +206,11 @@ function StatusInline({ status, confirmed, hasTourDate }: { status: string; conf
 
 function PaymentSummaryWithAI({ tenantId, lease }: {
   tenantId: string
+  // 세 플래그는 옵셔널이 아니다. 옵셔널이면 서버가 안 실어 보내도 컴파일이 통과하고,
+  // 그러면 보증금이 월세로 취급돼 완납이 -5만원으로 뜬다(2026-08-04 신고, 실측 8명).
   lease: { paymentRecords: {
     targetMonth: string; expectedAmount: number; actualAmount: number; isPaid: boolean
-    isDeposit?: boolean | null; isPrevOwner?: boolean | null; isBillingAdjust?: boolean | null
+    isDeposit: boolean | null; isPrevOwner: boolean | null; isBillingAdjust: boolean | null
   }[] }
 }) {
   const payments = lease.paymentRecords

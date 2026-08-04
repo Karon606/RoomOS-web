@@ -121,13 +121,17 @@ export function isCheckoutNoBillingMonthFor(
 //
 // 합산 규칙이 화면 컴포넌트 안에 인라인으로 박혀 있어 테스트가 붙을 자리가 없었던 것이 뿌리다.
 // 정본을 여기 두고 네 곳(TenantBody·AI 프롬프트·리포트 미수율·리포트 누적 미수)이 전부 이걸 부른다.
+// 세 플래그는 **필수**다. 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 그러면 보증금이
+// 월세 record 로 취급돼 미납액이 정확히 보증금만큼 어긋난다. 실제로 그렇게 두 번 났다
+// (2026-08-02 커밋이 형제 화면만 고치고 getTenantDetail 을 빠뜨려 완납 8명이 -5만원으로 떴다).
+// 이 타입이 곧 감지망이다 — 안 실어 보내는 호출부는 tsc 에서 죽는다.
 export type UnpaidRecord = {
   targetMonth: string
   expectedAmount: number
   actualAmount: number
-  isDeposit?: boolean | null
-  isPrevOwner?: boolean | null
-  isBillingAdjust?: boolean | null
+  isDeposit: boolean | null
+  isPrevOwner: boolean | null
+  isBillingAdjust: boolean | null
 }
 
 /**
