@@ -70,8 +70,14 @@ try {
     violations.push('[소스] ViewDocButton 에 target 이 되살아났다 — 앱 안 뷰어를 새 탭으로 열면 복귀 링크가 있어도 창이 갈린다')
   }
   const viewer = strip(readFileSync('app/doc/[fileId]/DocViewer.tsx', 'utf8'))
-  if (!/<Link\s+href=\{back\.href\}/.test(viewer)) {
+  // 복귀 링크는 §30.8 로 공용화됐다. 뷰어가 그것을 마운트하는지, 그 안에 실제 링크가 살아 있는지
+  // 둘 다 본다 — 마운트만 보면 알맹이가 빠져도 통과하고, 알맹이만 보면 안 붙여도 통과한다.
+  if (!/<DocBackLink\b/.test(viewer)) {
     violations.push('[소스] 서류 뷰어의 복귀 링크가 사라졌다 — 목적지는 앱 안인데 돌아갈 수단이 없다')
+  }
+  const chrome = strip(readFileSync('components/doc/DocChrome.tsx', 'utf8'))
+  if (!/<Link\s+href=\{back\.href\}/.test(chrome)) {
+    violations.push('[소스] DocBackLink 안의 복귀 링크가 사라졌다 — 서류 화면 넷이 한꺼번에 돌아갈 길을 잃는다')
   }
   // 인쇄는 공유 시트로 대신할 수 없다 — iOS 가 웹이 넘긴 파일에 프린트를 안 열어준다(실기 확인 2026-08-04)
   if (!/window\.print\(\)/.test(viewer)) {

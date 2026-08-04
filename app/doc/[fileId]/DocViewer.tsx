@@ -41,21 +41,14 @@
 // 발급·작성처럼 서류 상태를 바꾸는 동사는 여기 두지 않는다 — '보기'의 정의를 직접 깬다.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SaveDocImageButton } from '@/components/ui/SaveDocImageButton'
 import { fetchDocBytes } from '@/lib/docBytes'
-
-// 어디서 왔는지는 **열거 키**로만 받는다. 경로를 받으면 오픈 리디렉트가 되고,
-// 라벨을 받으면 우리 크롬 안에 임의 문자열이 그려진다. 라벨은 각 목적지 h1 을 그대로 옮겼다.
-const BACK: Record<string, { label: string; href: string }> = {
-  contracts:         { label: '계약서',              href: '/contracts' },
-  'rent-receipts':   { label: '납부 확인서 · 영수증', href: '/rent-receipts' },
-  'residence-certs': { label: '실거주 확인서',        href: '/residence-certs' },
-}
-const HOME = { label: '홈', href: '/dashboard' }
+import {
+  DocBackLink, docActionBarStyle, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
+} from '@/components/doc/DocChrome'
 
 // 첫 화면용 배율 — 사진 저장(2.5)보다 한 단계 낮춘다. 다페이지 계약서에서 변환 시간이 줄어든다.
 const VIEW_SCALE = 2
@@ -67,7 +60,6 @@ const HI_AT = 1.5
 const Z_MIN = 1
 const Z_MAX = 4
 const Z_STEPS = [1, 1.5, 2, 3, 4]
-const RAIL = 'min(210mm, 100vw - 24px)'
 
 const clampZ = (z: number) => Math.min(Z_MAX, Math.max(Z_MIN, z))
 
@@ -77,10 +69,6 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
   tenantId?: string
   fileName: string
 }) {
-  const back = from === 'tenant' && tenantId
-    ? { label: '입실자 정보', href: `/tenants?tenantId=${encodeURIComponent(tenantId)}` }
-    : (from ? BACK[from] : undefined) ?? HOME
-
   const [pages, setPages] = useState<string[] | null>(null)
   const [error, setError] = useState('')
   const [hiRes, setHiRes] = useState(false)
@@ -220,7 +208,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
         background: 'var(--canvas)',
         padding: '16px 0 calc(16px + env(safe-area-inset-bottom, 0px))',
         ['--z' as string]: '1',
-        ['--rail' as string]: RAIL,
+        ...docShellVars,
       } as React.CSSProperties}
     >
       {/* 확대하면 종이가 뷰포트보다 넓어진다. 트랙이 fit-content 여야 스크롤 범위가 실제로 늘어난다.
@@ -228,38 +216,27 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
           남는 공간이 음수일 때 **왼쪽으로도 넘겨** 그 부분에 영영 못 닿게 한다(scrollLeft 가 음수가 못 된다).
           auto 여백은 넘칠 때 0으로 접혀 왼쪽에 붙고, 안 넘칠 때만 가운데로 간다. 한 처방이 두 상태를 다 맞춘다. */}
       <div style={{ minWidth: '100%', width: 'fit-content', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-        <div data-peek-hide className="no-print" style={{
-          width: 'var(--rail)', marginInline: 'auto', flex: 'none',
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-          padding: '10px 14px', background: 'var(--cream)',
-          border: '1px solid var(--warm-border)', borderRadius: 10, marginBottom: 10,
-          boxShadow: '0 4px 12px rgba(0,0,0,.06)',
-        }}>
-          {/* 히트 영역 44px — 형제 서류 화면의 복귀 링크는 패딩 없는 13px 라 히트가 약 18px 이다(§09 위반).
-              새 화면에 그 위반을 복사하지 않는다. 보이는 크기는 13px 그대로 둔다. */}
-          <Link href={back.href} style={{
-            color: 'var(--tc-text)', fontSize: 13, textDecoration: 'none',
-            display: 'inline-flex', alignItems: 'center', minHeight: 44,
-          }}>{'‹'} {back.label}</Link>
+        <div data-peek-hide className="no-print" style={docChromeStyle}>
+          <DocBackLink from={from} tenantId={tenantId} />
         </div>
 
         {/* 장수만 알린다. 인쇄는 버튼이 실물로 서 있으니 경로 안내가 필요 없다. */}
         {pages && pages.length > 1 && (
-          <p className="no-print" style={{ width: 'var(--rail)', fontSize: 12, color: 'var(--ink-s)', margin: '0 auto 12px' }}>
+          <p className="no-print" style={docHintStyle}>
             {pages.length}장짜리 서류입니다. 아래로 넘기면 다음 장이 있습니다.
           </p>
         )}
 
         {error ? (
           // 실패를 흰 사각형으로 두지 않는다 — 이번 신고가 다른 얼굴로 돌아온다(§27.2)
-          <p style={{ width: 'var(--rail)', marginInline: 'auto', fontSize: 13, color: 'var(--danger-fg)' }}>{error}</p>
+          <p style={{ ...docRailStyle, fontSize: 13, color: 'var(--danger-fg)' }}>{error}</p>
         ) : !pages ? (
           <div className="animate-pulse" style={{
-            width: 'var(--rail)', marginInline: 'auto', aspectRatio: '210 / 297', flex: 'none', borderRadius: 10, background: 'var(--cream)',
+            ...docRailStyle, aspectRatio: '210 / 297', borderRadius: 10, background: 'var(--cream)',
           }} />
         ) : (
           <div ref={paperRef} onClick={onPaperClick} style={{
-            width: 'calc(var(--rail) * var(--z))', marginInline: 'auto', flex: 'none',
+            ...docRailStyle, width: 'calc(var(--rail) * var(--z))',
             display: 'flex', flexDirection: 'column',
           }}>
             {pages.map((src, i) => (
@@ -277,9 +254,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
 
         {/* 하단 액션바 — 문서 흐름 안에 둔다. */}
         {pages && (
-          <div className="no-print" style={{
-            width: 'var(--rail)', marginInline: 'auto', flex: 'none', display: 'flex', gap: 8, marginTop: 12,
-          }}>
+          <div className="no-print" style={docActionBarStyle}>
             <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
               className={`flex-1 ${btnClass('secondary', 'md')}`} />
             {from !== 'contracts' && from !== 'tenant' && (

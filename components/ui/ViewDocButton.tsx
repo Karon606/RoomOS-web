@@ -13,10 +13,11 @@
 // 권한은 뷰어 라우트와 그 API 양쪽이 영업장 소유를 검증한다.
 
 import { BtnLink } from '@/components/ui/Btn'
+import { type DocFrom, docFromQuery } from '@/lib/docNav'
 
 // 복귀 목적지는 **열거 키**로만 받는다. 경로를 받으면 오픈 리디렉트가 되고,
-// 라벨을 받으면 크롬 안에 임의 문자열이 그려진다. 키 -> 라벨·경로 표는 뷰어가 들고 있다.
-export type DocViewerFrom = 'contracts' | 'rent-receipts' | 'residence-certs' | 'tenant'
+// 라벨을 받으면 크롬 안에 임의 문자열이 그려진다. 키에서 라벨·경로로 옮기는 표는 lib/docNav 정본이다.
+export type DocViewerFrom = DocFrom
 
 export function ViewDocButton({ driveFileId, from, tenantId, className }: {
   driveFileId: string
@@ -26,13 +27,9 @@ export function ViewDocButton({ driveFileId, from, tenantId, className }: {
   tenantId?: string
   className?: string
 }) {
-  const q = new URLSearchParams()
-  if (from) q.set('from', from)
-  if (from === 'tenant' && tenantId) q.set('tenantId', tenantId)
-  const qs = q.toString()
   return (
     <BtnLink
-      href={`/doc/${encodeURIComponent(driveFileId)}${qs ? `?${qs}` : ''}`}
+      href={`/doc/${encodeURIComponent(driveFileId)}${docFromQuery(from, tenantId)}`}
       variant="primary"
       size="sm"
       className={className}
