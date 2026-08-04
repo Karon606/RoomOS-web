@@ -29,12 +29,12 @@
 // 스크롤 계약은 A(자체 스크롤러)다. 페이지를 세로로 쌓으므로 높이가 콘텐츠에서 나온다 —
 // iframe 때처럼 flex:1 로 뷰포트 잔여를 채우면 1장짜리는 늘어나고 2장짜리는 잘린다.
 //
-// 하단 액션바 정본 — [저장 및 보내기] [인쇄]. 둘 다 문서를 앱 밖으로 내보내는 동사다.
+// 액션 정본 — [저장 및 보내기] [인쇄]. 둘 다 문서를 앱 밖으로 내보내는 동사이고 **상단 크롬에 둔다**
+// (운영자 규칙 6). 하단으로 내렸더니 2장짜리 계약서에서 종이를 다 지나쳐야 나왔다.
 // 사진 저장은 '저장 및 보내기'가 흡수했다(§30.4) — 서류 종류로 버튼 수가 갈리던 마지막 자리였다.
-// 확대는 문서에 아무 일도 하지 않고 시야만 바꾸는 뷰 상태라 여기 섞지 않는다. 그리고 확대해서
-// 가운데를 읽는 동안 이 줄은 저 아래에 있다 — **확대 중에 화면에 없는 확대 컨트롤은 컨트롤이 아니다.**
-// 그래서 확대만 부유로 띄운다. 우리 확대는 종이만 키우므로 fixed 크롬이 확대에 안 끌려간다
-// (신고 d9f93bdd 의 'sticky 가 시야 밖으로 밀린다'는 브라우저 확대 이야기이고 여기엔 적용되지 않는다).
+// 확대는 문서에 아무 일도 하지 않고 시야만 바꾸는 뷰 상태라 여기 섞지 않는다. 확대해서 가운데를
+// 읽는 동안에도 닿아야 하므로 우하단 부유다. 우리 확대는 종이만 키우므로 fixed 크롬이 안 끌려간다
+// (신고 d9f93bdd 의 'sticky 가 시야 밖으로 밀린다'는 브라우저 확대 이야기라 여기엔 적용되지 않는다).
 //
 // 인쇄는 운영자 승인으로 동사 6번째가 됐다(2026-08-04). 종전 사전은 "인쇄는 보내기의 공유 시트 안에
 // 있다"고 정했는데, **실기에서 iOS 가 웹이 넘긴 파일에 프린트를 안 열어주는 것이 확인됐다.**
@@ -47,7 +47,7 @@ import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import {
-  DocBackLink, docActionBarStyle, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
+  DocBackLink, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
 } from '@/components/doc/DocChrome'
 
 // 첫 화면용 배율 — 저장 및 보내기의 사진(2.5)보다 한 단계 낮춘다. 다페이지 계약서에서 변환 시간이 줄어든다.
@@ -216,8 +216,19 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
           남는 공간이 음수일 때 **왼쪽으로도 넘겨** 그 부분에 영영 못 닿게 한다(scrollLeft 가 음수가 못 된다).
           auto 여백은 넘칠 때 0으로 접혀 왼쪽에 붙고, 안 넘칠 때만 가운데로 간다. 한 처방이 두 상태를 다 맞춘다. */}
       <div style={{ minWidth: '100%', width: 'fit-content', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        {/* 실행 동사는 상단이다(운영자 규칙 6 '미리보기 화면 상단 액션').
+            흐름 안 하단바로 내렸더니 2장짜리 계약서에서는 종이를 다 지나쳐야 버튼이 나왔다 —
+            읽는 화면일수록 문서가 길어서 하단은 사실상 닿지 않는 자리다(운영자 지적 2026-08-04). */}
         <div data-peek-hide className="no-print" style={docChromeStyle}>
           <DocBackLink from={from} tenantId={tenantId} />
+          <div style={{ flex: 1 }} />
+          {pages && (
+            <>
+              <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
+                label="저장 및 보내기" className={btnClass('secondary', 'md')} />
+              <Btn variant="primary" size="md" onClick={() => window.print()}>인쇄</Btn>
+            </>
+          )}
         </div>
 
         {/* 장수만 알린다. 인쇄는 버튼이 실물로 서 있으니 경로 안내가 필요 없다. */}
@@ -252,14 +263,6 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
           </div>
         )}
 
-        {/* 하단 액션바 — 문서 흐름 안에 둔다. */}
-        {pages && (
-          <div className="no-print" style={docActionBarStyle}>
-            <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
-              className={`flex-1 ${btnClass('secondary', 'md')}`} />
-            <Btn variant="primary" size="md" className="flex-1" onClick={() => window.print()}>인쇄</Btn>
-          </div>
-        )}
       </div>
 
       {/* 확대 컨트롤 — 확대해도 같이 커지면 안 되므로 변환 밖 부유다.

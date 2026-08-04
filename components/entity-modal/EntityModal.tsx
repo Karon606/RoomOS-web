@@ -10,6 +10,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
+import { docFromQuery } from '@/lib/docNav'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
@@ -225,13 +226,21 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // 목적지가 (app) 밖이라 어차피 셸을 다시 세우므로 잃는 것이 없다.
   const handleResidenceCert = () => {
     if (!links?.tenantId) return
-    window.location.assign(`/residence-cert/${links.tenantId}`)
+    window.location.assign(`/residence-cert/${links.tenantId}${docFromQuery('tenant', links.tenantId)}`)
+    onClose()
+  }
+  // 계약서 — 규칙 1·§30.10. 하단은 서류를 만들고 발급하러 가는 문이고,
+  // 위쪽 '계약서 파일' 칸은 이미 있는 파일의 보관함이다. 이름으로 갈린다 —
+  // 하단은 목적어 없는 '계약서', 파일 칸의 버튼에는 항상 '스캔본'이 붙는다.
+  const handleContract = () => {
+    if (!links?.tenantId) return
+    window.location.assign(`/contract/${links.tenantId}${docFromQuery('tenant', links.tenantId)}`)
     onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent') => {
     if (!links?.tenantId) return
-    window.location.assign(`/rent-receipt/${links.tenantId}${kindArg === 'deposit' ? '?kind=deposit' : ''}`)
+    window.location.assign(`/rent-receipt/${links.tenantId}?${kindArg === 'deposit' ? 'kind=deposit&' : ''}from=tenant&tenantId=${encodeURIComponent(links.tenantId)}`)
     onClose()
   }
 
@@ -262,6 +271,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                 className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                 삭제
               </button>
+              {links?.tenantId && (
+                <button type="button" onClick={handleContract}
+                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                  계약서
+                </button>
+              )}
               {links?.tenantId && (
                 <button type="button" onClick={handleResidenceCert}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
