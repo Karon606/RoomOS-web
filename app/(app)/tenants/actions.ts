@@ -51,6 +51,26 @@ async function getPropertyId() {
 }
 
 // 입주자 목록 조회
+
+// 퇴실하면 청소 예정을 자동으로 만든다(신고 b21e4e98 3단계).
+// 붙일 자리가 두 곳이다 — checkoutTenant(홈 알림 경로)와 applyStatusTransition(상태전환 위젯 경로).
+// 한 곳만 넣으면 퇴실 경로에 따라 누락된다. 코드가 스스로 "동일"이라고 적어둔 그 중복이다.
+// 이미 열린 예정이 있으면 만들지 않는다. 되풀이 퇴실이나 상태 되돌리기로 같은 방에 예정이 쌓이면
+// '청소 필요' 숫자가 실제보다 커진다.
+async function ensureCheckoutCleaning(propertyId: string, roomId: string | null, leaseTermId: string) {
+  if (!roomId) return
+  try {
+    const open = await prisma.roomCleaning.findFirst({
+      where: { roomId, propertyId, deletedAt: null, status: 'PLANNED' },
+      select: { id: true },
+    })
+    if (open) return
+    await prisma.roomCleaning.create({
+      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: new Date() },
+    })
+  } catch { /* 청소 이력은 퇴실을 막지 않는다 — 실패해도 퇴실 처리는 그대로 끝난다 */ }
+}
+
 export async function getTenants() {
   const { propertyId, role } = await getPropertyId()
 
@@ -1359,6 +1379,8 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
     })
   }
 
+  await ensureCheckoutCleaning(propertyId, lease.roomId, leaseTermId)
+
   // 거주 구간 이력 — 퇴실 확정이면 열린 구간을 퇴실일로 마감(추가 write).
   await closeStay(prisma, leaseTermId)
 
@@ -1516,6 +1538,7 @@ export async function applyStatusTransition(input: {
           where: { id: lease.roomId },
           data: { isVacant: true, ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }) },
         })
+        await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId)
       } else {
         await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
       }

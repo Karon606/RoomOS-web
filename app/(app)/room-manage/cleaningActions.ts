@@ -13,30 +13,12 @@ import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
-
-export type CleaningReason = 'CHECKOUT' | 'AFTER_WORK' | 'DURING_STAY' | 'OTHER'
-export type CleaningStatus = 'PLANNED' | 'DONE' | 'SKIPPED'
-export type CleaningPerformer = 'SELF' | 'VENDOR' | 'THIRD_PARTY'
-
-export const CLEANING_REASON_LABEL: Record<CleaningReason, string> = {
-  CHECKOUT: '퇴실 청소', AFTER_WORK: '공사·도배 후', DURING_STAY: '입실 중 요청', OTHER: '기타',
-}
-export const CLEANING_PERFORMER_LABEL: Record<CleaningPerformer, string> = {
-  SELF: '직접', VENDOR: '업체', THIRD_PARTY: '제3자',
-}
-
-export type CleaningRow = {
-  id: string
-  roomId: string
-  roomNo: string
-  reason: CleaningReason
-  status: CleaningStatus
-  scheduledDate: string | null
-  doneDate: string | null
-  performer: CleaningPerformer | null
-  performerName: string | null
-  memo: string | null
-}
+// 상수·타입은 별도 모듈에서 가져온다. 'use server' 파일은 async 함수만 내보낼 수 있어
+// 여기서 다시 export 하면 안 된다 — 재수출도 같은 규칙에 걸린다.
+import {
+  CLEANING_EXPENSE_CATEGORY,
+  type CleaningReason, type CleaningStatus, type CleaningPerformer, type CleaningRow,
+} from './cleaningConstants'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -48,15 +30,27 @@ export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
     orderBy: [{ doneDate: 'desc' }, { scheduledDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, roomId: true, reason: true, status: true, scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true, room: { select: { roomNo: true } },
+      performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true,
+      room: { select: { roomNo: true } },
     },
   })
+  const expIds = rows.map(r => r.expenseId).filter((v): v is string => !!v)
+  const exps = expIds.length
+    ? await prisma.expense.findMany({ where: { id: { in: expIds } }, select: { id: true, amount: true } })
+    : []
+  const amountByExpense = new Map(exps.map(e => [e.id, e.amount]))
+  const costById: Record<string, number> = {}
+  for (const r of rows) if (r.expenseId) costById[r.id] = amountByExpense.get(r.expenseId) ?? 0
+
   return rows.map(r => ({
     id: r.id, roomId: r.roomId, roomNo: r.room.roomNo,
     reason: r.reason as CleaningReason, status: r.status as CleaningStatus,
     scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
     performer: (r.performer as CleaningPerformer | null) ?? null,
     performerName: r.performerName, memo: r.memo,
+    // 금액은 지출에서 읽는다. 여기 복사해 두면 지출에서 고쳤을 때 갈린다.
+    cost: costById[r.id] ?? null,
+    fromCleaningFund: r.fromCleaningFund,
   }))
 }
 
@@ -101,28 +95,73 @@ export async function createCleaning(input: {
   }
 }
 
-/** 완료 처리. 되돌리면 예정으로 돌아간다 — 되돌리기가 없으면 오탭 한 번에 이력이 굳는다. */
+/**
+ * 완료 처리. 되돌리면 예정으로 돌아간다 — 되돌리기가 없으면 오탭 한 번에 이력이 굳는다.
+ *
+ * 비용이 있으면 그때 Expense 1건을 만들고 id 를 건다. **금액은 여기 복사하지 않는다.**
+ * 사본을 두면 지출에서 금액을 고쳤을 때 갈린다. 비용 0(직접 청소)이면 Expense 를 안 만든다 —
+ * 자기 노동은 비용이 아니고, 지출 정본이 금액 0 을 애초에 거부한다.
+ *
+ * fromCleaningFund 는 **회계 처리가 아니라 표식**이다. 어느 돈으로 냈는지를 적을 뿐 손익을 안 바꾼다.
+ * 예비비처럼 Expense 를 안 만드는 방식을 베끼면 실제로 나간 현금이 손익에서 사라진다 —
+ * 예비비는 자기자본 적립이라 그게 성립하지만 청소비는 **이미 수익으로 인식된 돈**이라 성립하지 않는다.
+ */
 export async function completeCleaning(input: {
   id: string
   doneDate: string
   performer: CleaningPerformer
   performerName?: string | null
+  cost?: number | null
+  fromCleaningFund?: boolean
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomCleaning.findFirst({ where: { id: input.id, propertyId, deletedAt: null }, select: { id: true } })
+    const cur = await prisma.roomCleaning.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: { id: true, roomId: true, expenseId: true, room: { select: { roomNo: true } } },
+    })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    await prisma.roomCleaning.update({
-      where: { id: input.id },
-      data: {
-        status: 'DONE',
-        doneDate: new Date(`${input.doneDate}T00:00:00`),
-        performer: input.performer,
-        performerName: input.performerName?.trim() || null,
-      },
+    const doneDate = new Date(`${input.doneDate}T00:00:00`)
+    const cost = Math.max(0, Math.round(input.cost ?? 0))
+
+    await prisma.$transaction(async tx => {
+      let expenseId = cur.expenseId
+      // 다시 완료 처리하면 앞서 만든 지출을 갈아치우지 않고 지운 뒤 새로 만든다.
+      // 남겨두면 같은 청소에 지출이 둘이 되어 비용이 이중 계상된다.
+      if (expenseId) {
+        // Expense 는 소프트삭제 칸이 없다(정본 deleteExpense 도 하드 삭제한다). 실제로 지운다.
+        await tx.expense.delete({ where: { id: expenseId } })
+        expenseId = null
+      }
+      if (cost > 0) {
+        const e = await tx.expense.create({
+          data: {
+            propertyId, date: doneDate, amount: cost,
+            category: CLEANING_EXPENSE_CATEGORY,
+            roomId: cur.roomId,
+            detail: `${cur.room.roomNo}호 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
+            vendor: input.performerName?.trim() || null,
+            // 서비스·무형이라 재고 계산에서 뺀다. 방에 귀속돼 있어 방별 비용 집계에는 들어간다.
+            excludeFromInventory: true,
+          },
+          select: { id: true },
+        })
+        expenseId = e.id
+      }
+      await tx.roomCleaning.update({
+        where: { id: input.id },
+        data: {
+          status: 'DONE', doneDate,
+          performer: input.performer,
+          performerName: input.performerName?.trim() || null,
+          expenseId,
+          fromCleaningFund: !!input.fromCleaningFund && cost > 0,
+        },
+      })
     })
     revalidatePath('/room-manage')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '처리에 실패했습니다.' }
@@ -134,13 +173,18 @@ export async function reopenCleaning(id: string): Promise<{ ok: true } | { ok: f
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
-    const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true } })
+    const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true, expenseId: true } })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    await prisma.roomCleaning.update({
-      where: { id },
-      data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null },
+    // 지출도 함께 되돌린다. 반쪽만 되돌리면 청소는 예정인데 비용은 남는 유령 지출이 된다.
+    await prisma.$transaction(async tx => {
+      if (cur.expenseId) await tx.expense.delete({ where: { id: cur.expenseId } })
+      await tx.roomCleaning.update({
+        where: { id },
+        data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, expenseId: null, fromCleaningFund: false },
+      })
     })
     revalidatePath('/room-manage')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }

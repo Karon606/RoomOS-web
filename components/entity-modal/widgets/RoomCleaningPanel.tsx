@@ -15,9 +15,11 @@ import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
   getRoomCleanings, createCleaning, completeCleaning, reopenCleaning, skipCleaning, deleteCleaning,
+} from '@/app/(app)/room-manage/cleaningActions'
+import {
   CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL,
   type CleaningRow, type CleaningReason, type CleaningPerformer,
-} from '@/app/(app)/room-manage/cleaningActions'
+} from '@/app/(app)/room-manage/cleaningConstants'
 
 const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
@@ -31,6 +33,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [doneFor, setDoneFor] = useState<string | null>(null)
   const [performer, setPerformer] = useState<CleaningPerformer>('SELF')
   const [performerName, setPerformerName] = useState('')
+  const [cost, setCost] = useState('')
   const [pending, startTransition] = useTransition()
 
   const reload = () => { void getRoomCleanings(roomId).then(setRows).catch(() => setRows([])) }
@@ -111,6 +114,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     {CLEANING_PERFORMER_LABEL[r.performer]}{r.performerName ? ` · ${r.performerName}` : ''}
                   </span>
                 )}
+                {r.cost != null && r.cost > 0 && (
+                  <span className="text-xs font-medium text-[var(--warm-dark)] num">{r.cost.toLocaleString()}원</span>
+                )}
               </div>
 
               {/* 완료 입력 — 그 줄에서 바로 받는다. 별도 모달을 띄우면 방 상세 위에 창이 또 쌓인다. */}
@@ -128,13 +134,29 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     ))}
                   </div>
                   {performer !== 'SELF' && (
-                    <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
-                      placeholder="업체·사람 이름 (선택)"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs" />
+                    <>
+                      <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
+                        placeholder="업체·사람 이름 (선택)"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs" />
+                      {/* 비용을 적으면 지출이 함께 만들어져 그 방 비용에 잡힌다. 비우면 지출을 안 만든다.
+                          직접 청소는 비용이 아니라 애초에 이 칸이 안 뜬다. */}
+                      <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+                        비용
+                        <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(e.target.value)}
+                          placeholder="0" min={0}
+                          className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
+                        원
+                      </label>
+                    </>
                   )}
                   <div className="flex gap-2">
                     <Btn variant="primary" size="sm" disabled={pending}
-                      onClick={() => { run(() => completeCleaning({ id: r.id, doneDate: kstYmdStr(), performer, performerName }), '청소 완료로 기록됨'); setDoneFor(null); setPerformerName('') }}>
+                      onClick={() => {
+                        const c = performer === 'SELF' ? 0 : Number(cost || 0)
+                        run(() => completeCleaning({ id: r.id, doneDate: kstYmdStr(), performer, performerName, cost: c }),
+                          c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨')
+                        setDoneFor(null); setPerformerName(''); setCost('')
+                      }}>
                       오늘 완료
                     </Btn>
                     <Btn variant="secondary" size="sm" onClick={() => setDoneFor(null)}>취소</Btn>
@@ -144,7 +166,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                 <div className="mt-1.5 flex gap-2 flex-wrap">
                   {r.status === 'PLANNED' && (
                     <>
-                      <button type="button" onClick={() => { setDoneFor(r.id); setPerformer('SELF'); setPerformerName('') }}
+                      <button type="button" onClick={() => { setDoneFor(r.id); setPerformer('SELF'); setPerformerName(''); setCost('') }}
                         className="text-xs text-[var(--coral)] font-medium">완료 처리</button>
                       <button type="button" disabled={pending}
                         onClick={async () => {
