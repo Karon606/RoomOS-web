@@ -8,7 +8,7 @@
 // 형식 선택은 choiceDialog 정본(§14 3지선다).
 // 제스처 만료 대책(첫 탭 실패 재발 방지): 버튼 탭 즉시 백그라운드로 fetch·변환을 시작해 선택창을 읽는
 // 동안 준비를 끝내고, 그래도 늦어 거부되면 다운로드로 새지 않고 재탭 안내(결과 캐시로 재탭은 즉시 성공).
-// 다운로드 폴백은 전달 자체를 못 하는 기기(데스크톱)에서만.
+// 다운로드는 '기기에 저장'(아이폰 계열 제외)과, 전달 자체를 못 하는 기기(데스크톱) 폴백에서만.
 //
 // 다페이지 지원(2026-08-01). 종전에는 계약서를 이 버튼에서 금지했다 — pdfToPng 가 1페이지만 그려
 // 뒷장이 유실됐기 때문이다. 제기역점은 임의처분 동의서가 켜져 있어 계약서가 실제로 2장이라
@@ -80,13 +80,19 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
       // 1장이면 종전과 완전히 같은 파일명 — 영수증·확인서는 아무것도 달라지지 않는다
       const nameAt = (i: number) => blobs.length === 1 ? `${fileName}.${ext}` : `${fileName}_${i + 1}.${ext}`
 
-      // 기기에 저장 — 아이폰만 시트를 거친다. 다운로드가 '파일' 앱으로만 가서 사진첩에 못 넣기 때문이다.
-      // 그 경우 어느 항목을 눌러야 하는지 먼저 알려준다. 시트만 덜렁 열면 못 찾는다(운영자 실기).
-      if (!toPhone && !(asPng && photoSaveNeedsShareSheet() && canShareFiles())) {
-        await fallbackDownloadAll(blobs, nameAt, mime)
+      // 기기에 저장 — 아이폰 계열만 시트를 거친다. 다운로드가 '파일' 앱으로만 가서 사진첩에 못 넣고,
+      // PDF 도 시트의 [파일에 저장]을 눌러야 원하는 곳에 들어가기 때문이다. 그 경우 어느 항목을 눌러야
+      // 하는지 먼저 알려준다. 시트만 덜렁 열면 못 찾는다(운영자 실기).
+      // 아이폰이 아니면 공유를 아예 시도하지 않고 바로 다운로드한다 — 갤럭시에서 '기기에 저장'이
+      // 공유 시트로 새던 것을 막는다(신고 5c99b5c8). 안드로이드는 a[download] 가 확실히 동작한다.
+      const saveViaSheet = photoSaveNeedsShareSheet() && canShareFiles()
+      if (!toPhone && !saveViaSheet) {
+        await fallbackDownloadAll(blobs, nameAt, mime, 'save')
         return
       }
-      if (!toPhone) pushToast('info', '공유 창에서 [이미지 저장]을 누르면 사진첩에 들어갑니다.')
+      if (!toPhone) pushToast('info', asPng
+        ? '공유 창에서 [이미지 저장]을 누르면 사진첩에 들어갑니다.'
+        : '공유 창이 열리면 [파일에 저장]을 눌러 주세요.')
 
       if (canShareFiles()) {
         const result = await shareFiles(blobs.map((b, i) => new File([b], nameAt(i), { type: mime })))
@@ -110,15 +116,16 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
 
   // 다운로드 폴백 — 여러 장이면 순차로. 연속 a.click() 은 브라우저가 두 번째부터 막을 수 있어
   // 한 장씩 사이를 띄운다(shareFile.ts 의 다중 공유 주석과 같은 사정).
-  const fallbackDownloadAll = async (blobs: Blob[], nameAt: (i: number) => string, mime: string) => {
+  // intent 'save' 는 사용자가 '기기에 저장'을 고른 것 — 공유를 시도하지 않고, 폴백 안내도 띄우지 않는다.
+  const fallbackDownloadAll = async (blobs: Blob[], nameAt: (i: number) => string, mime: string, intent: 'share' | 'save' = 'share') => {
     let downloaded = false
     for (let i = 0; i < blobs.length; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 300))
-      const result = await shareOrDownloadFile(blobs[i], nameAt(i), mime)
+      const result = await shareOrDownloadFile(blobs[i], nameAt(i), mime, intent)
       if (result === 'downloaded') downloaded = true
       if (result === 'cancelled') return
     }
-    if (downloaded) {
+    if (downloaded && intent === 'share') {
       pushToast('info', blobs.length > 1
         ? `이 기기에서는 바로 보낼 수 없어 ${blobs.length}장을 파일로 저장했습니다.`
         : '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.')

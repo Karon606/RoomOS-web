@@ -6,14 +6,17 @@ type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'subtle' | 'succes
 type Size = 'sm' | 'md' | 'lg'
 
 // v2.0 §10 버튼 변형. success·warning은 의미색 솔리드(긍정 결제·조정 액션) — 2026-07-12 등재.
+// 눌림(active)은 호버와 같은 토큰(--persimmon-d 주석 "호버·프레스") — Tailwind v4 가 hover: 를
+// @media (hover: hover) 로 감싸 터치 기기엔 호버가 아예 안 닿으므로, 색 피드백은 active 로 따로 준다.
+// enabled:active: 금지 — :enabled 가 <a> 에 안 맞아 BtnLink 눌림이 죽는다(디자이너 판정 2026-08-05).
 const VARIANT_CLS: Record<Variant, string> = {
-  primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-[var(--on-solid)] border border-transparent',
-  secondary: 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
-  danger:    'bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 text-[var(--coral-dark)] border border-[var(--coral)]/25',
-  ghost:     'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)] border border-transparent',
-  subtle:    'bg-[var(--sand)]/40 hover:bg-[var(--sand-2)] text-[var(--warm-mid)] border border-[var(--camel)]/40',
-  success:   'bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] border border-transparent',
-  warning:   'bg-[var(--warning-solid)] hover:opacity-90 text-[var(--on-solid)] border border-transparent',
+  primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] active:bg-[var(--persimmon-d)] text-[var(--on-solid)] border border-transparent',
+  secondary: 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] active:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
+  danger:    'bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 active:bg-[var(--coral)]/20 text-[var(--coral-dark)] border border-[var(--coral)]/25',
+  ghost:     'bg-transparent hover:bg-[var(--cream-soft)] active:bg-[var(--cream-soft)] text-[var(--warm-mid)] border border-transparent',
+  subtle:    'bg-[var(--sand)]/40 hover:bg-[var(--sand-2)] active:bg-[var(--sand-2)] text-[var(--warm-mid)] border border-[var(--camel)]/40',
+  success:   'bg-[var(--success-solid)] hover:opacity-90 active:opacity-90 text-[var(--on-solid)] border border-transparent',
+  warning:   'bg-[var(--warning-solid)] hover:opacity-90 active:opacity-90 text-[var(--on-solid)] border border-transparent',
 }
 
 // 터치 타겟 최소 44px (Brand Guide v1.2 · HIG). 크기 차이는 패딩·글자크기로 표현.
@@ -23,7 +26,7 @@ const SIZE_CLS: Record<Size, string> = {
   lg: 'px-5 py-3 text-base min-h-[44px] rounded-lg',
 }
 
-const BASE = 'inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
+const BASE = 'inline-flex items-center justify-center gap-1.5 font-medium transition-[color,background-color,border-color,opacity,transform] duration-[var(--dur-base)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
 
 // 버튼 클래스 단일 출처 — Btn 을 못 쓰는 자리(SendDocButton 처럼 className 만 받는 정본 컴포넌트,
 // 파일 input 을 감싸는 <label>)에서 §10 토큰을 손으로 베끼지 않게 한다. 손복사가 남으면 토큰을

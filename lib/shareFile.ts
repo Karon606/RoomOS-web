@@ -1,15 +1,22 @@
-// 파일 전달 정본(클라이언트 전용) — 공유 시트 우선, 안 되면 다운로드 폴백. 서류 버튼 전체가 공유.
+// 파일 전달 정본(클라이언트 전용) — 서류 '보내기'는 공유 시트 우선, 안 되면 다운로드 폴백.
+// '기기에 저장'은 intent: 'save' 로 공유를 건너뛰고 바로 다운로드한다.
 // 공유 시트는 사용자 탭 직후(transient activation)에만 열 수 있어, 탭 뒤 비동기 작업(다운로드·변환)이
 // 길어지면 NotAllowedError 로 거부된다 — 갤럭시 사진 저장 첫 탭 실패의 원인(운영자 보고 2026-07-21).
 // 그 경우 에러로 끝내지 않고 다운로드로 폴백한다(안드로이드는 Download 폴더가 갤러리·내 파일에 노출됨).
+//
+// intent — 'share' 는 종전대로 공유 시트 우선, 'save' 는 공유를 아예 시도하지 않고 바로 다운로드한다.
+// '기기에 저장'인데 공유 시트가 뜨는 것을 막는다(신고 5c99b5c8). 안드로이드는 a[download] 가 확실하다.
+//
+// 공유 payload 에 files 와 title/text 를 섞지 않는다 — 메시지 등 일부 타깃이 텍스트만 받고 파일을
+// 떨어뜨려 '파일 이름만 전송'되는 함정이 있다. 파일명은 File 객체의 name 으로 이미 전달된다.
 export async function shareOrDownloadFile(
-  blob: Blob, name: string, mime: string,
+  blob: Blob, name: string, mime: string, intent: 'share' | 'save' = 'share',
 ): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const file = new File([blob], name, { type: mime })
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
-  if (nav.canShare?.({ files: [file] }) && typeof nav.share === 'function') {
+  if (intent === 'share' && nav.canShare?.({ files: [file] }) && typeof nav.share === 'function') {
     try {
-      await nav.share({ files: [file], title: name })
+      await nav.share({ files: [file] })
       return 'shared'
     } catch (e) {
       const err = e as Error

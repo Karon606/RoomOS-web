@@ -17,11 +17,13 @@ export function canShareFiles(): boolean {
 }
 
 // 공유 시트로 PDF 전달 — 성공·사용자 취소면 true, 미지원·실패면 false(호출부가 새 탭으로 폴백)
-export async function sharePdfFile(blob: Blob, fileName: string, title: string): Promise<boolean> {
+// payload 에 files 와 title 을 섞지 않는다 — 메시지 등 일부 타깃이 텍스트만 받고 파일을 떨어뜨려
+// '파일 이름만 전송'된다(신고 5c99b5c8). 파일명은 File 객체의 name 으로 이미 전달된다.
+export async function sharePdfFile(blob: Blob, fileName: string): Promise<boolean> {
   try {
     const file = new File([blob], fileName, { type: 'application/pdf' })
     if (!navigator.canShare?.({ files: [file] })) return false
-    await navigator.share({ files: [file], title })
+    await navigator.share({ files: [file] })
     return true
   } catch (e) {
     // 사용자가 공유를 취소한 것은 실패가 아니다 — 여기서 새 탭으로 폴백하면 오히려 갇힌다

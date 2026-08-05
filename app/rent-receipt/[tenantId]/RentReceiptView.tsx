@@ -122,7 +122,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
         pushToast('error', msg); return
       }
       const blob = await res.blob()
-      if (useShare && await sharePdfFile(blob, pdfFileName(docLabel, data.name, issueDate), docLabel)) return
+      if (useShare && await sharePdfFile(blob, pdfFileName(docLabel, data.name, issueDate))) return
       const url = URL.createObjectURL(blob)
       if (win) win.location.href = url
       else if (!window.open(url, '_blank')) {
