@@ -15,7 +15,7 @@ import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
-import { computeInventoryOverview } from './overview'
+import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals } from './overview'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
@@ -2550,11 +2550,51 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
       effectiveLocationId = await resolveItemHubLocationId(item.id, item.hubLocationId, propertyId, linkedIds)
     }
 
-    // 배치 위치 + 수량이 있으면 자동 점검 생성(해당 위치 잔량에 수령량 가산). 위치 없는 단일 버킷
-    // 품목(locations 0개)은 자동 점검 없이 receivedAt 만 — 점검 시 총량을 직접 세므로 누락 없음.
+    // 배치 위치 + 수량이 있으면 자동 점검 생성(해당 위치 잔량에 수령량 가산).
     // receivedAt 갱신과 점검 생성은 아래에서 한 트랜잭션으로 커밋 — 중간 실패 시 '수령 확인은 됐는데
     // 잔량에는 안 잡힌' 상태(장부 과소)가 되던 문제 방지.
+    //
+    // **위치 없는 단일 버킷 품목(locations 0개)도 점검을 만든다(신고 408b4396).**
+    // 종전 주석은 "점검 시 총량을 직접 세므로 누락 없음" 이라 했지만, 점검을 한 번도 안 한 품목은
+    // 잔량이 영원히 null 이라 특수마대 5개를 수령 확인해도 화면에 아무것도 안 잡혔다.
+    // 실측으로 위치 0 카드 9장 중 8장이 "지출 1건·수령 완료·점검 0" 그 상태였다.
+    // 위치 내역 없이 총량만 가진 점검을 만든다 — 단일 버킷은 이미 정식 상태이고, 나중에 위치가 생기면
+    // 기존 전환 코드가 총량을 허브로 보존한다. 산식은 overview 의 정본 헬퍼를 그대로 쓴다(복제 금지).
     let autoCheck: Parameters<typeof prisma.stockCheck.create>[0]['data'] | null = null
+    if (!effectiveLocationId && item && item.locations.length === 0 && expense.qtyValue && expense.qtyValue > 0) {
+      const spec = item.trackUnit === 'spec'
+        ? specMultiplier(expense.specValue, expense.specUnit, item.specUnit)
+        : null
+      const receivedQty = spec != null ? expense.qtyValue * spec : expense.qtyValue
+      if (receivedQty > 0) {
+        const lastCheck = await prisma.stockCheck.findFirst({
+          where: { trackedItemId: item.id },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+          select: { remainingQty: true, date: true, createdAt: true },
+        })
+        const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
+        // 직전 점검이 있으면 그 값 + 이후 순변동. 없으면 **이전에 수령된 구매까지 포함**한다 —
+        // 안 하면 과거 수령분이 계속 유령으로 남는다. 이 시점 이 지출의 receivedAt 은 아직 null 이라
+        // 합산에 안 들어가고, 아래에서 receivedQty 로 한 번만 더해진다(이중 계상 없음).
+        // 소모 미반영으로 과대일 수 있으나 그건 수령 후 미점검 품목 전체가 공유하는 통상 가정이고
+        // 점검이 정정 수단이다. null 보다 정직하다.
+        const [purch, adds, disp] = await Promise.all([
+          sumPurchases(propertyId, expense.category, expense.itemLabel!, item.qtyUnit,
+            lastCheck?.createdAt ?? null, null, useSpec, item.specUnit),
+          sumAdditions(item.id, lastCheck?.date ?? null, null, lastCheck?.createdAt ?? null),
+          sumDisposals(item.id, lastCheck?.date ?? null, null, lastCheck?.createdAt ?? null),
+        ])
+        const totalQty = Math.max(0, (lastCheck?.remainingQty ?? 0) + purch + adds - disp) + receivedQty
+        const unit = item.trackUnit === 'spec' ? (item.specUnit ?? '') : (item.qtyUnit ?? '')
+        autoCheck = {
+          trackedItemId: item.id,
+          date: receivedAt,
+          remainingQty: totalQty,
+          memo: `[수령 자동] +${receivedQty}${unit}`,
+          sourceExpenseId: expense.id,   // 수령 취소가 이 점검을 함께 지운다(기존 undo 계약 그대로)
+        }
+      }
+    }
     if (effectiveLocationId && item && expense.qtyValue && expense.qtyValue > 0) {
       // 규격 추적이면 영수증 규격값을 품목 단위로 환산(L→ml 등) 후 입수량 산출.
       // 차원 불일치(120g x 100개 등)면 specMultiplier 가 null → qtyValue 그대로(오류신고 0d6242f0).

@@ -13,7 +13,7 @@ import { specMultiplier } from '@/lib/units'
 // 재고 반입 시점은 구매일(date)이 아닌 승인일(receivedAt)을 기준으로 한다.
 // → 구매는 과거에 했어도 승인(수령 확인)한 날짜가 실질적 재고 증가 시점이기 때문.
 // → afterReceivedAt: 이 시점 이후에 승인된 구매만 (gt). beforeReceivedAt: 이 시점 이전 (lte).
-async function sumPurchases(
+export async function sumPurchases(
   propertyId: string, category: string, label: string, qtyUnit: string | null,
   afterReceivedAt: Date | null,
   beforeReceivedAt: Date | null,
@@ -50,7 +50,7 @@ async function sumPurchases(
   }, 0)
 }
 
-async function sumAdditions(
+export async function sumAdditions(
   trackedItemId: string, from: Date | null, to: Date | null,
   fromCreatedAt?: Date | null,
 ): Promise<number> {
@@ -79,7 +79,7 @@ async function sumAdditions(
 
 // 폐기 합(유출) — sumAdditions와 동일한 date·createdAt 경계 규칙(오류신고 a1e048e8).
 // 소모 = (기준잔량 + 유입 − 폐기) − 실측잔량 으로, 폐기가 소모·소진임박 예측에서 분리된다.
-async function sumDisposals(
+export async function sumDisposals(
   trackedItemId: string, from: Date | null, to: Date | null,
   fromCreatedAt?: Date | null,
 ): Promise<number> {

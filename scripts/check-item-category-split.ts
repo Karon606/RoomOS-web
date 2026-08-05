@@ -77,15 +77,22 @@ async function main() {
       }
     }
 
-    // ── 축 3. 보관 위치가 없는 활성 카드(경고)
-    //    위치가 없으면 수령 확인을 눌러도 자동 점검이 안 생겨 **장부에 아무것도 안 들어간다.**
-    //    매트리스커버가 수령 확인은 찍혔는데 재고 0 이던 것이 이 상태다.
-    const withLoc = new Set((await prisma.trackedItemLocation.findMany({
-      select: { trackedItemId: true },
-    })).map(l => l.trackedItemId))
+    // ── 축 3. 수령된 구매는 있는데 점검이 전무한 카드(오류 게이트)
+    //    종전에는 위치 없는 카드가 수령 확인을 눌러도 자동 점검이 안 생겨 장부에 아무것도 안 들어갔다
+    //    (신고 408b4396, 특수마대 5개). confirmReceipt 가 무위치도 점검을 만들게 고쳤고 과거분은
+    //    백필로 앵커를 만들어 0건이 됐다. 이 축이 다시 1 이상이면 그 경로가 도로 새는 것이다.
     for (const c of cards) {
-      if (!withLoc.has(c.id)) {
-        warns.push(`[위치없음] "${c.label}" 에 보관 위치가 없다 — 수령 확인을 눌러도 재고에 안 들어간다`)
+      const received = await prisma.expense.findFirst({
+        where: {
+          propertyId: prop.id, category: c.category, itemLabel: c.label,
+          NOT: { receivedAt: null }, excludeFromInventory: false, isShipping: false,
+        },
+        select: { id: true },
+      })
+      if (!received) continue
+      const anyCheck = await prisma.stockCheck.findFirst({ where: { trackedItemId: c.id }, select: { id: true } })
+      if (!anyCheck) {
+        errors.push(`[유령수령] "${c.label}" 에 수령된 구매가 있는데 점검이 하나도 없다 — 잔량이 영원히 비어 보인다`)
       }
     }
   }
