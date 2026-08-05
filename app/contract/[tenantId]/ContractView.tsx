@@ -4,6 +4,9 @@ import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } 
 import { issueContractShareLink } from '@/app/(app)/tenants/contractShare'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 import Link from 'next/link'
+// 정적 import — 동적 import 시절에는 모듈이 도착하기 전에 그은 획이 조용히 버려졌다.
+// 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
+import SignaturePad from 'signature_pad'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
@@ -462,37 +465,44 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   // 저장된 동의서 서명(disposalSignatureImageUrl)이 있으면 불러와 표시(입실계약서 서명과 동일하게 영구 보존).
   const [disposalSignatureDataUrl, setDisposalSignatureDataUrl] = useState<string | null>(data.lease?.disposalSignatureImageUrl ?? null)
   const [signTarget, setSignTarget] = useState<'contract' | 'disposal'>('contract')
-  const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignOpen(true) }
+  // 패드 안에서 보여줄 오류 — 토스트는 layout viewport 하단 고정이라 핀치줌 확대 중에는
+  // 화면 밖으로 밀린다. 서명이 거부된 사실을 패드를 보는 눈이 그 자리에서 알아야 한다.
+  const [signError, setSignError] = useState<string | null>(null)
+  const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignError(null); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
-  const sigPadRef    = useRef<import('signature_pad').default | null>(null)
+  const sigPadRef    = useRef<SignaturePad | null>(null)
 
   // 패드 마운트 / 사이즈 (DPR 보정)
   useEffect(() => {
     if (!signOpen || !sigCanvasRef.current) return
-    let pad: import('signature_pad').default | null = null
     const canvas = sigCanvasRef.current
+    const pad = new SignaturePad(canvas, {
+      backgroundColor: 'rgba(255,255,255,0)',
+      penColor: '#1a1a1a',
+      minWidth: 0.7,
+      maxWidth: 2.4,
+    })
+    sigPadRef.current = pad
+    // canvas.width 재대입은 비트맵을 통째로 지운다. iOS 는 핀치줌·주소창 수축에도 resize 를 쏘므로
+    // (위 배율 계산 주석 참조) 그리던 서명이 손도 안 뗐는데 사라졌다. 목표 크기가 지금과 같으면
+    // 아무것도 하지 않고, 정말 변했을 때(회전 등)만 스트로크를 백업했다가 되돌린다 — 버리지 않는다.
     const setupCanvas = () => {
       const ratio = Math.max(window.devicePixelRatio || 1, 1)
-      canvas.width = canvas.offsetWidth * ratio
-      canvas.height = canvas.offsetHeight * ratio
+      const w = canvas.offsetWidth * ratio
+      const h = canvas.offsetHeight * ratio
+      if (canvas.width === w && canvas.height === h) return
+      const strokes = pad.toData()
+      canvas.width = w
+      canvas.height = h
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.scale(ratio, ratio)
-      pad?.clear()
+      pad.fromData(strokes)
     }
-    import('signature_pad').then(({ default: SignaturePad }) => {
-      pad = new SignaturePad(canvas, {
-        backgroundColor: 'rgba(255,255,255,0)',
-        penColor: '#1a1a1a',
-        minWidth: 0.7,
-        maxWidth: 2.4,
-      })
-      sigPadRef.current = pad
-      setupCanvas()
-    })
+    setupCanvas()
     window.addEventListener('resize', setupCanvas)
     return () => {
       window.removeEventListener('resize', setupCanvas)
-      pad?.off()
+      pad.off()
       sigPadRef.current = null
     }
   }, [signOpen])
@@ -512,9 +522,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   const handleSignConfirm = async () => {
     const pad = sigPadRef.current
     if (!pad || pad.isEmpty()) {
+      setSignError('서명을 입력해주세요.')
       pushToast('error', '서명을 입력해주세요.')
       return
     }
+    setSignError(null)
     const url = pad.toDataURL('image/png')
     if (remote) {
       if (!shareToken || remoteSubmitting) return
@@ -522,7 +534,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       const release = trackSave()
       try {
         const res = await submitRemoteSignature(shareToken, signTarget, url)
-        if (!res.ok) { pushToast('error', res.error); return }
+        if (!res.ok) { setSignError(res.error); pushToast('error', res.error); return }
         setSignOpen(false)
         if (signTarget === 'disposal') setDisposalSignatureDataUrl(url)
         else setSignatureDataUrl(url)
@@ -1131,9 +1143,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               </button>
             </div>
             <div className="sig-canvas-wrap">
-              <canvas ref={sigCanvasRef} className="sig-canvas" />
+              {/* 다시 긋기 시작하면 앞선 오류 문구는 낡은 정보다 */}
+              <canvas ref={sigCanvasRef} className="sig-canvas" onPointerDown={() => setSignError(null)} />
               <div className="sig-baseline" />
             </div>
+            {signError && <div className="sig-error" role="alert">{signError}</div>}
             <div className="sig-actions">
               <button onClick={() => sigPadRef.current?.clear()} className="toolbar-btn-secondary">
                 지우기
@@ -1376,6 +1390,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px; touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
         .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: 1px dashed #d6cdbb; pointer-events: none; }
+        .sig-error { font-size: 12px; line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-ring); border-radius: 8px; padding: 8px 10px; }
         .sig-actions { display: flex; align-items: center; gap: 8px; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
