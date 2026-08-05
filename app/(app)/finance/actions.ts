@@ -2651,3 +2651,20 @@ export async function getLabelCategoryHistory(labels: string[]): Promise<Record<
   }
   return out
 }
+
+
+// 용량(규격) 단위로 잔량을 세는 품목 — 지출 저장 직전 "용량 없이 저장할까요" 1회 확인용(신고 27f91356).
+// 운영자 제안 그대로다 — 상시 경고 대신 입력 시점에 한 번 묻고, 안 넣으면 그냥 통과한다.
+// 규격 단위가 실재하는 카드만 대상이다. 단위 없는 spec 카드는 수량 폴백으로 이미 맞게 집계된다.
+export async function getSpecTrackedInfo(labels: string[]): Promise<Record<string, { specUnit: string }>> {
+  const { propertyId } = await requirePropertyAccess()
+  const names = labels.map(l => l.trim()).filter(Boolean)
+  if (!names.length) return {}
+  const rows = await prisma.trackedItem.findMany({
+    where: { propertyId, label: { in: names }, isArchived: false, trackUnit: 'spec', NOT: { specUnit: null } },
+    select: { label: true, specUnit: true },
+  })
+  const out: Record<string, { specUnit: string }> = {}
+  for (const r of rows) if (r.specUnit && r.specUnit.trim()) out[r.label] = { specUnit: r.specUnit }
+  return out
+}

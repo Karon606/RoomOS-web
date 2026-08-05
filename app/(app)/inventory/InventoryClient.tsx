@@ -669,8 +669,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   const specApplied = g.items.some(f => specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null)
                   // 규격 환산이 안 되면 totalQty 는 **개수**다. 거기에 품목 규격 단위를 붙이면 '4ml' 같은
                   // 거짓 숫자가 나온다(신고 1fd2e22b). 같은 상황에서 타임라인은 이미 구매 단위로 폴백한다.
-                  // 환산 실패는 값이 아니라 상태다 — 개수로 쓰고 '용량 미확인'을 옆에 붙인다.
+                  //
+                  // 단 **차원 불일치는 부재가 아니다**(신고 27f91356, 라면). 120g 은 개당 중량 속성이고
+                  // 100개가 이미 완전한 개수라 집계에 부족한 것이 없다. 그런데 종전 판정이 둘을 뭉개서
+                  // "용량을 몰라 집계했다"는 거짓 경고 3중(배지·캡션·수령 확인창)이 떴고, 그 말대로
+                  // 뭔가 넣으면 오히려 곱셈 오염 위험이 생겼다. 진짜 부재(specValue 없음)만 잡는다.
                   const specMissing = g.trackUnit !== 'qty' && !specApplied
+                    && g.items.some(f => !isSpecDimensionMismatch(f.p.specUnit, g.specUnit))
                   const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
                   const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
@@ -683,14 +688,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         <div className="min-w-0 flex-1">
                           <p className="text-sm text-[var(--warm-dark)] truncate">
                             {g.label}{totalQty ? ` · ${qtyLabel}` : ''}
-                            {specMissing && <span className="ml-1.5 text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 bg-[var(--warning-bg)] text-[var(--warning-fg)] whitespace-nowrap">용량 미확인</span>}
+
                           </p>
                           <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
+                          {/* 경고색을 안 쓴다 — 경고색은 행동 필요 신호인데 여기서의 용량 입력은 선택이다.
+                              사실만 뉴트럴로 말한다(웹디자이너 판정, 신고 27f91356). */}
                           {specMissing && (
-                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">낱개 용량을 몰라 개수로만 집계했습니다. 지출에서 용량을 넣으면 총량이 계산됩니다.</p>
+                            <p className="text-[0.65625rem] text-[var(--warm-muted)]">낱개 용량 없이 개수로 집계했습니다. 지출에서 용량을 넣으면 총량으로 계산됩니다.</p>
                           )}
                           {g.trackUnit !== 'qty' && g.items.some(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit)) && (
-                            <p className="text-[0.65625rem] text-[var(--warning-fg)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})가 품목 단위({g.specUnit})와 달라 개수로만 집계했습니다</p>
+                            <p className="text-[0.65625rem] text-[var(--warm-muted)]">용량 단위({g.items.find(f => isSpecDimensionMismatch(f.p.specUnit, g.specUnit))?.p.specUnit})는 개당 속성이라 개수 기준으로 집계합니다</p>
                           )}
                           {g.items.length > 1 && (
                             <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.65625rem] text-[var(--coral)] hover:underline">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { getLabelCategoryHistory } from './actions'
+import { getLabelCategoryHistory, getSpecTrackedInfo } from './actions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -2153,6 +2153,24 @@ export default function FinanceClient({
               await getLabelCategoryHistory(addItems.map(it => it.label).filter(Boolean)).catch(() => ({}))
             const first = addItems.map(it => hist[it.label?.trim() ?? '']).find(Boolean)
             if (first) fd.set('category', first.category)
+          }
+        }
+        // 용량 단위로 잔량을 세는 품목인데 용량이 비었으면 한 번 묻는다(신고 27f91356, 운영자 제안).
+        // 막지 않는다 — 넣기 싫으면 그대로 저장하고, 그 구매는 개수로 집계된다.
+        {
+          const noSpec = addItems.filter(it => it.label?.trim() && !(Number(it.specValue) > 0))
+          if (noSpec.length) {
+            const info = await getSpecTrackedInfo(noSpec.map(it => it.label.trim())).catch(() => ({} as Record<string, { specUnit: string }>))
+            const hit = noSpec.find(it => info[it.label.trim()])
+            if (hit) {
+              const u = info[hit.label.trim()].specUnit
+              const ok = await confirmDialog({
+                title: `'${hit.label.trim()}' 용량 없이 저장할까요?`,
+                message: `이 품목은 ${u} 단위로 잔량을 셉니다. 용량이 없으면 이번 구매는 개수로만 집계됩니다. 저장한 뒤 지출에서 채울 수도 있습니다.`,
+                confirmLabel: '용량 없이 저장',
+              })
+              if (!ok) return
+            }
           }
         }
         // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
