@@ -9,12 +9,16 @@ import {
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
   resolveSignedBody,
 } from '@/lib/contract'
+import { contractLeaseFields, parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
 export type ContractData = {
   template: ContractTemplate           // 입실자 오버라이드 우선, 없으면 영업장 공통
   hasOverride: boolean                 // 오버라이드 사용 여부 — '원본으로' 버튼 활성화 판단용
+  // 표시값 오버라이드(금액·날짜·호실 등)를 쓰고 있는가 — 툴바 배지·자동값 복원 판단용.
+  // 본문 오버라이드(hasOverride)와 별개다. 이쪽은 조항이 아니라 정보 표의 값이다.
+  hasFieldOverrides: boolean
   businessInfo: BusinessInfo
   phone: string | null                 // 영업장 전화 — v2.0 §26 헤더/푸터 메타
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
@@ -54,10 +58,6 @@ const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남', FEMALE: '여', UNKNOWN: '',
 }
-const REGISTRATION_LABEL: Record<string, '신고' | '미신고' | '면제'> = {
-  REGISTERED: '신고', NOT_REPORTED: '미신고', EXEMPTED: '면제',
-}
-
 export async function buildContractData(tenantId: string, propertyId: string): Promise<ContractData | null> {
   const [tenant, property] = await Promise.all([
     prisma.tenant.findFirst({
@@ -109,10 +109,15 @@ export async function buildContractData(tenantId: string, propertyId: string): P
   // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 규칙을 여기서 복제하면 발급 API 와 갈린다.
   const body = resolveSignedBody(lease, property)
   const override = lease?.contractOverride as ContractTemplate | null | undefined
+  // 표시값은 오버라이드를 얹은 값 하나로만 내려간다. 화면·서명 링크 스냅샷·드리프트 비교·서명본이
+  // 전부 이 값을 쓰므로 종이와 기록이 갈릴 수 없다(lib/contractFieldOverrides 가 정본).
+  const fields = lease ? contractLeaseFields(lease) : null
+  const fieldOverrides = lease ? parseContractFieldOverrides(lease.contractFieldOverrides) : {}
 
   return {
     template: body.template,
     hasOverride: !!override,
+    hasFieldOverrides: Object.keys(fieldOverrides).length > 0,
     businessInfo: body.businessInfo ?? EMPTY_BUSINESS_INFO,
     phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
@@ -131,16 +136,9 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       primaryPhone: primaryContact?.contactValue ?? null,
       emergencyContacts,
     },
-    lease: lease ? {
+    lease: lease && fields ? {
       id: lease.id,
-      moveInDate: lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null,
-      expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
-      rentAmount: lease.rentAmount,
-      depositAmount: lease.depositAmount,
-      cleaningFee: lease.cleaningFee,
-      dueDay: lease.dueDay,
-      roomNo: lease.room?.roomNo ?? null,
-      registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
+      ...fields,
       signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
       disposalSignatureImageUrl: (lease as { disposalSignatureImageUrl?: string | null }).disposalSignatureImageUrl ?? null,
       // KST 로 자르는 것은 서버 몫이다. 클라이언트가 UTC 로 자르면 자정 근처에서 하루 어긋난다.

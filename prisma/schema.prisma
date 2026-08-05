@@ -607,6 +607,9 @@ model LeaseTerm {
   registrationStatus RegistrationStatus @default(NOT_REPORTED)
   contractUrl        String?
   contractOverride   Json?              // 입실자별 계약서 본문 덮어쓰기 (Property.contractTemplate 형식과 동일). null이면 영업장 공통 템플릿 사용
+  // 계약서 발급물 표시값 오버라이드 (sparse — 존재하는 키만 덮음, lib/contractFieldOverrides 가 정본).
+  // 수납·청구는 이 컬럼을 모른다. 계약서 렌더(화면·PDF·서명 링크 스냅샷) 전용 (운영자 승인 2026-08-05).
+  contractFieldOverrides Json?
   // #8 앱서명 재사용: 마지막으로 받은 서명 이미지(dataURL). 계약서 출력 에디터가 이 값을 불러와 표시·재인쇄.
   signatureImageUrl  String?
   // 잔여 소지품 임의처분 동의서 별도 서명(dataURL) — 입실계약서 서명과 독립 저장(에디터 재표시·재인쇄용).

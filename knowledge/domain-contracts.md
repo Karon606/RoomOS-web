@@ -40,3 +40,17 @@ PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초
 - 서명 없이도 생성 허용(서명란 '(서명)' 자리표시). 빈 서명은 저장된 서명 안 지움.
 - ⚠️ 이모지 금지(운영자 지시) — 버튼 라벨에 아이콘 문자 쓰지 말 것.
 - ⚠️ 화면 미리보기(ContractView @media screen)와 출력(contractPrintHtml)은 여전히 CSS 2벌이지만, **출력은 항상 contractPrintHtml 단일**이라 인쇄=저장=발급이 같음(미리보기만 근사).
+
+### 표시값 오버라이드 = 발급물 전용, 수납 무접점 (2026-08-05, 운영자 승인)
+관 제출용처럼 **실계약과 표기가 다른 계약서**가 필요할 때(홍은주 비거주 건), 실계약(LeaseTerm 원천 컬럼)은 그대로 두고 `LeaseTerm.contractFieldOverrides`(sparse Json)에 표시값만 저장한다. '조건부 할인은 계약서=정가, 수납만 할인' 규칙의 연장.
+- 정본은 `lib/contractFieldOverrides.ts`(파싱·검증·병합 한 벌). 소비처는 `buildContractData` 와 generate route 두 곳뿐 — **청구·수납 엔진은 이 컬럼을 모른다.**
+- 편집 대상 8필드: 입실료·보증금·청소비·입실일·퇴실예정일·매월 납부일·호실·전입신고 표기. **신원 4종(성명·연락처·생년월일·성별)은 고객정보가 정본이라 안 연다.**
+- UI 는 계약서 보기 정보 표 인라인 입력(§30 규칙 3). no-print 입력 + only-print 텍스트 쌍이라 종이엔 안 나간다. 서명 확정 후엔 bodyLocked 파생으로 함께 잠긴다.
+- 저장·본문편집·복귀 시 **미서명 활성 링크를 자동으로 닫는다**(낡은 스냅샷으로 서명받는 사고 봉합). 제출된 링크는 닫지 않는다 — 발급 리마인더가 closedAt:null 조건(2026-07-23 결정).
+- generate API body 로 금액을 받지 않는다 — 값은 DB 단일 출처(API 직접 호출로 임의 금액 발급 방지).
+- 감지망: check-contract-override-lock G5 축(서명 후 표시값 편집 대조).
+
+### 서명 지우기 = 서버 저장 서명도 X 버튼으로 (2026-08-05, 운영자 요청)
+원격 링크 서명은 **서명 순간 서버에 저장**된다(제출 전이라도). 잘못 서명하면 지울 길이 없었다(홍은주 동의서 사건). `clearContractSignature(leaseTermId, 'contract'|'disposal')` 가 해당 서명 두 칸을 지우고, **서명 네 칸이 전부 비면 signedContractSnapshot 도 함께 지운다**(생사 동일 원칙). 열린 링크(미제출)는 함께 닫는다 — 지운 서명의 출처가 열려 있으면 되살아난 것처럼 보인다.
+- ⚠️ Prisma 7 에서 Json 칸 비우기는 `Prisma.DbNull`. `{ set: null }` 은 컬럼에 문자 그대로 `{"set": null}` 값이 저장된다(실측). resetContractOverride 가 이 방식이어서 '공통 템플릿으로'가 본문을 그 객체로 만들 뻔했다 — 세 곳 모두 DbNull 로 통일(2026-08-05 봉합).
+- X 버튼은 서버 서명이 있으면 danger 확인창 후 삭제, 화면 임시 서명만 있으면 즉시 로컬 삭제. 삭제 시 capturedAt 로컬 상태도 함께 비운다(안 비우면 파생 잠금이 잠긴 채 남는다).

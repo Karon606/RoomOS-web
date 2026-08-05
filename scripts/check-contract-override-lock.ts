@@ -8,10 +8,20 @@
 // 임대료 변경·퇴실 정산에도 밀려서 근거가 못 된다(계약서 6/29 발급인데 값이 7/1 인 lease 가 실재한다).
 // 그래서 시각이 아니라 **결과**로 판정한다 — 서명본 스냅샷이 '그 사람이 서명한 본문'의 사본이므로,
 // 지금 override 가 그것과 다르다는 사실만으로 서명 후 변경이 증명된다. 순서를 몰라도 결론이 난다.
+//
+// 2026-08-05 에 표시값 오버라이드(contractFieldOverrides)가 들어왔다. 본문과 같은 클래스라
+// 같은 방식으로 지킨다 — 축 G5.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { contractLeaseFields, parseContractFieldOverrides } from '../lib/contractFieldOverrides'
 
 type Snapshot = { template?: unknown; lease?: unknown }
+
+const FIELD_LABEL: Record<string, string> = {
+  rentAmount: '입실료', depositAmount: '보증금', cleaningFee: '청소비',
+  moveInDate: '입실일', expectedMoveOut: '퇴실 예정일', dueDay: '매월 납부일',
+  roomNo: '호실', registrationStatus: '전입신고',
+}
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -62,16 +72,45 @@ async function main() {
     select: {
       leaseTermId: true, templateSnapshot: true,
       tenant: { select: { name: true } },
-      leaseTerm: { select: { contractOverride: true } },
+      leaseTerm: {
+        select: {
+          contractOverride: true, contractFieldOverrides: true,
+          moveInDate: true, expectedMoveOut: true, rentAmount: true, depositAmount: true,
+          cleaningFee: true, dueDay: true, registrationStatus: true,
+          room: { select: { roomNo: true } },
+        },
+      },
     },
   })
 
   // 한 lease 에 링크가 여럿이면 가장 최근 서명본이 기준이다
   const seen = new Set<string>()
   let checked = 0
+  let fieldChecked = 0
   for (const k of links) {
     if (!k.leaseTermId || seen.has(k.leaseTermId)) continue
     seen.add(k.leaseTermId)
+
+    // 축 G5 — 표시값 오버라이드가 서명본과 다르다.
+    //   오버라이드 **키가 있는 것만** 본다. 원천 컬럼(임대료 등)이 서명 뒤에 바뀐 것은
+    //   드리프트 경고(checkContractShareDrift)가 맡는 다른 사안이고, 이 축은 '표시값 편집'만 본다.
+    //   Json null 은 Prisma 필터로 가르기 까다로워 여기서 파싱으로 거른다.
+    const lt = k.leaseTerm
+    const snapLease = (k.templateSnapshot as Snapshot | null)?.lease as Record<string, unknown> | null | undefined
+    if (lt && snapLease) {
+      const ov = parseContractFieldOverrides(lt.contractFieldOverrides) as Record<string, unknown>
+      const ovKeys = Object.keys(ov)
+      if (ovKeys.length) {
+        fieldChecked++
+        const merged = contractLeaseFields(lt) as unknown as Record<string, unknown>
+        for (const key of ovKeys) {
+          if (merged[key] !== snapLease[key]) {
+            violations.push(`${k.tenant?.name ?? '?'} 의 계약서 ${FIELD_LABEL[key] ?? key} 표시값이 서명본과 다르다 — 서명 후 표시값 편집이 일어났다`)
+          }
+        }
+      }
+    }
+
     const snapTemplate = (k.templateSnapshot as Snapshot | null)?.template
     if (snapTemplate === undefined) continue
     checked++
@@ -89,11 +128,11 @@ async function main() {
 
   await prisma.$disconnect()
 
-  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 / 위반 ${violations.length}건`)
+  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 · 표시값 오버라이드 ${fieldChecked}건 대조 / 위반 ${violations.length}건`)
   if (violations.length) {
     console.error(`\n[본문 잠금] 위반 ${violations.length}건`)
     for (const v of violations) console.error('  - ' + v)
-    console.error('\n  서명이 완료된 계약서는 본문을 고칠 수 없다. 내용을 바꾸려면 재서명을 받는다.')
+    console.error('\n  서명이 완료된 계약서는 본문도 표시값도 고칠 수 없다. 내용을 바꾸려면 재서명을 받는다.')
     process.exit(1)
   }
 }

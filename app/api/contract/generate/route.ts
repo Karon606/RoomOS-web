@@ -12,6 +12,7 @@ import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } f
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
+import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 
 // puppeteer + chromium은 nodejs runtime 필수 (edge 불가).
 // Vercel: 메모리/콜드스타트 고려해 maxDuration 60s (Pro 기본 한도).
@@ -30,7 +31,6 @@ function parseCapturedAt(v?: string): Date | null {
 }
 
 const GENDER_LABEL: Record<string, string> = { MALE: '남', FEMALE: '여', UNKNOWN: '' }
-const REGISTRATION_LABEL: Record<string, string> = { REGISTERED: '신고', NOT_REPORTED: '미신고', EXEMPTED: '면제' }
 
 type Body = {
   tenantId: string
@@ -190,16 +190,9 @@ export async function POST(req: Request) {
         job: tenant.job,
         primaryPhone: primaryContact?.contactValue ?? null,
       },
-      lease: lease ? {
-        moveInDate: lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null,
-        expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
-        rentAmount: lease.rentAmount,
-        depositAmount: lease.depositAmount,
-        cleaningFee: lease.cleaningFee,
-        dueDay: lease.dueDay,
-        roomNo: lease.room?.roomNo ?? null,
-        registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
-      } : null,
+      // 표시값은 화면과 같은 함수로 조립한다(lib/contractFieldOverrides). 금액·날짜는 여전히 DB 가
+      // 단일 출처다 — 클라이언트가 보낸 금액을 믿으면 이 API 를 직접 불러 아무 금액이나 발급할 수 있다.
+      lease: lease ? contractLeaseFields(lease) : null,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,

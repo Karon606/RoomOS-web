@@ -7,7 +7,8 @@ import Link from 'next/link'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
-import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
+import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature } from './actions'
+import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
@@ -20,6 +21,34 @@ const fmtDate = (d: string | null) => {
   const [y, m, dd] = d.split('-')
   return `${y}.${m}.${dd}`
 }
+
+// ── 계약서 표시값(정보 표) 폼 ────────────────────────────────────────
+// 여덟 칸을 문자열 하나로 다룬다 — 입력 중간 상태(콤마·빈 칸)가 그대로 담겨야 하기 때문이다.
+type FieldForm = Record<ContractFieldOverrideKey, string>
+const AMOUNT_FIELDS: ContractFieldOverrideKey[] = ['rentAmount', 'depositAmount', 'cleaningFee']
+// 서버가 이미 오버라이드를 얹어 내려준 값 = 폼의 정본. 초기화와 재동기화가 갈릴 수 없다.
+const toFieldForm = (l: ContractData['lease']): FieldForm => ({
+  rentAmount: l ? l.rentAmount.toLocaleString() : '',
+  depositAmount: l ? l.depositAmount.toLocaleString() : '',
+  cleaningFee: l ? l.cleaningFee.toLocaleString() : '',
+  moveInDate: l?.moveInDate ?? '',
+  expectedMoveOut: l?.expectedMoveOut ?? '',
+  dueDay: l?.dueDay ?? '',
+  roomNo: l?.roomNo ?? '',
+  registrationStatus: l?.registrationStatus ?? '미신고',
+})
+const amtNum = (s: string) => {
+  const n = parseInt(s.replace(/[^0-9]/g, ''), 10)
+  return Number.isFinite(n) ? n : 0
+}
+const amtText = (s: string) => {
+  const d = s.replace(/[^0-9]/g, '')
+  return d ? parseInt(d, 10).toLocaleString() : ''
+}
+const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `매월 ${parseInt(v, 10)}일`) : '—')
+const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다.'
+// 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
+const CELL_SELECT_STYLE = { font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' } as const
 
 // 조항 항목 렌더 — 글머리('-'·'•'·'·') 제거 + **강조** → terracotta hl. (contractPrintHtml 와 동일 규칙)
 function renderClauseItem(text: string): React.ReactNode {
@@ -121,17 +150,27 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     return () => ro.disconnect()
   }, [editing, draft, data])
 
+  // ── 계약서 표시값 ────────────────────────────────────────────────
+  // 관 제출용처럼 실계약과 다른 계약서가 필요할 때 이 표의 값만 고친다. 저장은 LeaseTerm 의
+  // 별도 칸(contractFieldOverrides)으로 가고 **수납·청구는 이 값을 모른다.**
+  // props 가 갱신되면(저장 후 리프레시) 폼도 서버 값으로 되돌아온다 — 조항 draft 와 같은 문법.
+  const [fields, setFields] = useState<FieldForm>(() => toFieldForm(data.lease))
+  useEffect(() => { setFields(toFieldForm(data.lease)) }, [data.lease])
+  const fieldRent = amtNum(fields.rentAmount)
+  const fieldDeposit = amtNum(fields.depositAmount)
+  const fieldCleaning = amtNum(fields.cleaningFee)
+
   // 호실: 숫자만이면 '호' 자동 부착, 외수 문자가 섞이면 그대로
   const roomNoLabel = (() => {
-    const v = data.lease?.roomNo
+    const v = fields.roomNo
     if (!v) return ''
     return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
   })()
 
   // 보증금/청소비 동적 표기 (v2.0 §26 — 라벨 + 영문 + 값(청소비는 .sub))
   const { depositLabel, depositEn, depositNode } = (() => {
-    const dep = data.lease?.depositAmount ?? 0
-    const cln = data.lease?.cleaningFee ?? 0
+    const dep = data.lease ? fieldDeposit : 0
+    const cln = data.lease ? fieldCleaning : 0
     if (dep === 0 && cln > 0) return { depositLabel: '청소비', depositEn: 'Cleaning Fee', depositNode: `${cln.toLocaleString()}원` as React.ReactNode }
     if (dep > 0 && cln > 0)   return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: <>{dep.toLocaleString()}원<span className="sub"> (중 청소비 {cln.toLocaleString()}원)</span></> }
     if (dep > 0)              return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: `${dep.toLocaleString()}원` as React.ReactNode }
@@ -151,15 +190,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     job:              data.tenant.job ?? '',
     gender:           data.tenant.gender ?? '',
     smoking:          smoking,
-    deposit:          data.lease ? data.lease.depositAmount.toLocaleString() : '',
-    checkInDate:      fmtDate(data.lease?.moveInDate ?? null),
-    checkOutDate:     fmtDate(data.lease?.expectedMoveOut ?? null),
+    // 조항 변수는 정보 표와 같은 값을 봐야 한다 — 표에서 금액을 고쳤는데 본문 조항이 옛 금액을
+    // 그대로 말하면 한 장 안에서 두 금액이 싸운다.
+    deposit:          data.lease ? fieldDeposit.toLocaleString() : '',
+    checkInDate:      fmtDate(fields.moveInDate || null),
+    checkOutDate:     fmtDate(fields.expectedMoveOut || null),
     roomNo:           roomNoLabel,
-    rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
+    rentFee:          data.lease ? fieldRent.toLocaleString() : '',
     emergencyContact: emergencyContactText,
     환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause() : '',
-    ...cleaningFeeVars(data.lease?.cleaningFee),
-  }), [data, smoking, emergencyContactText, roomNoLabel])
+    ...cleaningFeeVars(data.lease ? fieldCleaning : undefined),
+  }), [data, smoking, emergencyContactText, roomNoLabel, fields, fieldRent, fieldDeposit, fieldCleaning])
 
   // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)
   const dcVars: Record<string, string> = {
@@ -179,7 +220,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       try {
         const res = await saveContractOverride(leaseId, draft)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '이 입실자 계약서로 저장됨')
+        pushToast('success', '이 입실자 계약서로 저장됨' + (res.closedLinks > 0 ? ' 보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : ''))
         setEditing(false)
         router.refresh()
       } finally { release() }
@@ -195,7 +236,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       try {
         const res = await resetContractOverride(leaseId)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '공통 템플릿으로 되돌림')
+        pushToast('success', '공통 템플릿으로 되돌림' + (res.closedLinks > 0 ? ' 보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : ''))
         setEditing(false)
         router.refresh()
       } finally { release() }
@@ -242,8 +283,42 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   // 잠금을 컬럼으로 저장하지 않는 이유 — 3단계 재서명이 서명 네 칸을 null 로 만들면 파생값이라
   // 아무 추가 작업 없이 자동으로 풀린다. 저장하면 그 칸을 함께 지워야 하고 빠뜨리면 영원히 잠긴다.
   const bodyLocked = !!fixedSignDate || !!signatureCapturedAt
+
+  // 정보 표 값 커밋 — 블러·선택 변경 시 즉시 저장한다. 표시값 전용 칸에만 쓰고,
+  // 임대료·보증금 같은 원천 값은 손대지 않는다(수납·청구와 무접점).
+  const notifyFieldsLocked = () => pushToast('info', FIELD_LOCK_MSG)
+  const commitField = (key: ContractFieldOverrideKey, raw: string) => {
+    const leaseId = data.lease?.id
+    if (!leaseId || remote || bodyLocked) return
+    const isAmount = AMOUNT_FIELDS.includes(key)
+    const next = isAmount ? amtText(raw) : raw.trim()
+    setFields(f => ({ ...f, [key]: next }))
+    // 서버가 내려준 값과 같으면 저장할 것이 없다. 매 블러마다 부르면 서명 링크가 애먼 이유로 닫힌다.
+    if (next === toFieldForm(data.lease)[key]) return
+    // 빈 값은 그 키만 지운다 = 그 칸만 자동값으로 복귀(필드 단위 적용취소).
+    const patch: ContractFieldOverridePatch = { [key]: next === '' ? null : (isAmount ? amtNum(next) : next) }
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await saveContractFieldOverride(leaseId, patch)
+        if (!res.ok) {
+          pushToast('error', res.error)
+          setFields(toFieldForm(data.lease))   // 저장 안 된 값이 화면에 남으면 저장된 줄 안다
+          return
+        }
+        pushToast('success', [
+          '계약서 표시값 저장됨. 수납과 청구에는 영향이 없습니다.',
+          key === 'registrationStatus' ? '표시만 바뀝니다. 실제 신고 상태는 입실자 정보에서 관리합니다.' : '',
+          res.closedLinks > 0 ? '보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : '',
+        ].filter(Boolean).join(' '))
+        router.refresh()
+      } finally { release() }
+    })
+  }
+
   // 자동값 복원 — 손으로 고친 값을 버리고 입주자 상세정보에 들어 있는 값으로 되돌린다(§30.3, 운영자 확정).
-  // 서버를 부르지 않는다. 이 화면의 폼 값은 발급 전까지 어디에도 저장되지 않는다.
+  // 표시값 오버라이드가 저장돼 있으면 그것도 함께 지운다 — 그 값만 남으면 '복원했는데 그대로'가 된다.
+  // 그 외 폼 값(성명·비상연락망·계약일)은 발급 전까지 어디에도 저장되지 않아 서버를 안 부른다.
   // 본문 조항은 대상이 아니다 — 그건 '공통 템플릿으로'가 따로 맡고, 서명 후에는 아예 잠긴다.
   // 서명 이미지도 대상이 아니다. 복원이 서명을 지우면 그건 복원이 아니라 파기다.
   const handleResetAuto = async () => {
@@ -254,13 +329,23 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     }))) return
     setSignatureName(data.tenant.name ?? '')
     setEmergencyContactText(initialEmergencyText())
+    let linkNote = ''
+    if (data.hasFieldOverrides && !bodyLocked && data.lease?.id) {
+      const release = trackSave()
+      try {
+        const res = await resetContractFieldOverrides(data.lease.id)
+        if (!res.ok) { pushToast('error', res.error); return }
+        if (res.closedLinks > 0) linkNote = ' 보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.'
+        router.refresh()
+      } finally { release() }
+    }
     // 계약일은 서명이 확정되면 사실의 기록이라 폼 값이 아니다. 건너뛰되 그 사실을 밝힌다.
     if (signDateLocked) {
-      pushToast('info', '자동값으로 되돌렸습니다 · 계약일은 서명한 날로 고정되어 있어 그대로 둡니다')
+      pushToast('info', '자동값으로 되돌렸습니다 · 계약일은 서명한 날로 고정되어 있어 그대로 둡니다' + linkNote)
       return
     }
     setSignDate(today)
-    pushToast('info', '자동값으로 되돌렸습니다')
+    pushToast('info', '자동값으로 되돌렸습니다' + linkNote)
   }
 
   // 서명 요청 — 링크를 만들고 문자 앱으로 넘긴다. 규칙 4 가 "서명 요청·서명본 발급은 계약서 버튼으로
@@ -288,6 +373,73 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   }
 
   const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.')
+
+  // 서명 지우기(X) — 서버에 저장된 서명이면 서버에서도 지운다.
+  // 종전에는 로컬 state 만 지워서 새로고침 한 번이면 잘못 받은 서명이 그대로 되살아났다.
+  // 캡처 시각도 함께 지운다. 이 값이 남으면 서명을 지운 뒤에도 계약일·본문이 잠긴 채 남는다.
+  const [sigClearing, setSigClearing] = useState(false)
+  const clearSignatureLocal = (target: 'contract' | 'disposal') => {
+    if (target === 'disposal') {
+      setDisposalSignatureDataUrl(null)
+      setDisposalSignatureCapturedAt(null)
+    } else {
+      setSignatureDataUrl(null)
+      setSignatureCapturedAt(null)
+    }
+  }
+  const handleClearSignature = async (target: 'contract' | 'disposal') => {
+    const leaseId = data.lease?.id
+    const stored = target === 'disposal' ? data.lease?.disposalSignatureImageUrl : data.lease?.signatureImageUrl
+    // 화면에서 방금 그린 서명은 어디에도 저장되지 않았다 — 물어볼 것 없이 바로 지운다.
+    if (!stored || !leaseId) { clearSignatureLocal(target); return }
+    if (sigClearing) return
+    if (!(await confirmDialog({
+      title: '저장된 서명을 지울까요?',
+      message: '저장된 서명이 삭제되고 재서명 전까지 발급할 수 없습니다. 원격으로 받은 서명이면 보냈던 링크도 닫힙니다.',
+      level: 'danger', confirmLabel: '지우기',
+    }))) return
+    setSigClearing(true)
+    const release = trackSave()
+    try {
+      const res = await clearContractSignature(leaseId, target)
+      if (!res.ok) { pushToast('error', res.error); return }
+      clearSignatureLocal(target)
+      pushToast('success', '서명을 지웠습니다.' + (res.closedLinks > 0 ? ' 보낸 서명 링크도 닫았습니다. 필요하면 서명 요청을 다시 보내 주세요.' : ''))
+      router.refresh()
+    } finally {
+      release()
+      setSigClearing(false)
+    }
+  }
+
+  // 정보 표 한 칸 — 원격은 텍스트 그대로, 서명 확정본은 텍스트에 이유만 달고,
+  // 그 외에는 입력칸(화면) + 텍스트(인쇄) 쌍이다. 인쇄에는 입력칸이 절대 나가지 않는다(§26).
+  const fieldCell = (printText: React.ReactNode, input: React.ReactNode) => {
+    if (remote) return <span>{printText}</span>
+    if (bodyLocked) return (
+      <>
+        <button type="button" className="no-print cell-locked" onClick={notifyFieldsLocked}>{printText}</button>
+        <span className="only-print">{printText}</span>
+      </>
+    )
+    return <>{input}<span className="only-print">{printText}</span></>
+  }
+  // 금액·텍스트 칸 공통 — 값은 폼에 담고 커밋(블러)에서 저장한다.
+  const fieldInput = (key: ContractFieldOverrideKey, label: string, opts?: { amount?: boolean; date?: boolean }) => (
+    <input
+      type={opts?.date ? 'date' : 'text'}
+      {...(opts?.amount ? { inputMode: 'numeric' as const } : {})}
+      className={`no-print field-input${opts?.amount ? ' amt' : ''}`}
+      aria-label={label}
+      value={fields[key]}
+      onChange={e => {
+        const v = e.target.value
+        setFields(f => ({ ...f, [key]: v }))
+        if (opts?.date) commitField(key, v)   // 날짜는 달력에서 고르는 순간이 곧 커밋이다
+      }}
+      {...(opts?.date ? {} : { onBlur: (e: React.FocusEvent<HTMLInputElement>) => commitField(key, e.target.value) })}
+    />
+  )
   const signDateEffective = fixedSignDate
     ?? (signatureCapturedAt ? kstYmdStr(new Date(signatureCapturedAt)) : signDate)
   const disposalDateEffective = fixedDisposalSignDate
@@ -645,6 +797,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         {data.hasOverride && !editing && (
           <span className="toolbar-badge">개별 수정본</span>
         )}
+        {data.hasFieldOverrides && !editing && (
+          <span className="toolbar-badge">표시값 수정</span>
+        )}
       </div>
       )}
 
@@ -705,19 +860,44 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                   </>
                 )}
               </td>
-              <th>전입신고<span className="en">Resident Reg.</span></th><td>{data.lease?.registrationStatus ?? '미신고'}</td>
+              <th>전입신고<span className="en">Resident Reg.</span></th>
+              <td>
+                {fieldCell(fields.registrationStatus, (
+                  <select className="no-print cell-select" aria-label="전입신고" style={CELL_SELECT_STYLE}
+                    value={fields.registrationStatus} onChange={e => commitField('registrationStatus', e.target.value)}>
+                    <option value="미신고">미신고</option>
+                    <option value="신고">신고</option>
+                    <option value="면제">면제</option>
+                  </select>
+                ))}
+              </td>
             </tr>
             <tr>
-              <th>호실<span className="en">Room Number</span></th><td className="num">{roomNoLabel}</td>
-              <th>입실일<span className="en">Check-in</span></th><td className="num">{fmtDate(data.lease?.moveInDate ?? null)}</td>
+              <th>호실<span className="en">Room Number</span></th>
+              <td className="num">{fieldCell(roomNoLabel, fieldInput('roomNo', '호실'))}</td>
+              <th>입실일<span className="en">Check-in</span></th>
+              <td className="num">{fieldCell(fmtDate(fields.moveInDate || null), fieldInput('moveInDate', '입실일', { date: true }))}</td>
             </tr>
             <tr>
-              <th>퇴실 예정일<span className="en">Check-out</span></th><td className="num">{fmtDate(data.lease?.expectedMoveOut ?? null) || '—'}</td>
-              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt">{depositNode}</td>
+              <th>퇴실 예정일<span className="en">Check-out</span></th>
+              <td className="num">{fieldCell(fmtDate(fields.expectedMoveOut || null) || '—', fieldInput('expectedMoveOut', '퇴실 예정일', { date: true }))}</td>
+              <th>{depositLabel}<span className="en">{depositEn}</span></th>
+              <td className="amt">
+                {fieldCell(depositNode, (
+                  <span className="no-print field-pair">
+                    <span className="field-pair-lbl">보증금</span>
+                    {fieldInput('depositAmount', '보증금', { amount: true })}
+                    <span className="field-pair-lbl">청소비</span>
+                    {fieldInput('cleaningFee', '청소비', { amount: true })}
+                  </span>
+                ))}
+              </td>
             </tr>
             <tr>
-              <th>입실료<span className="en">Rent / month</span></th><td className="amt">{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
-              <th>매월 납부일<span className="en">Payment Day</span></th><td className="num">{data.lease?.dueDay ? (data.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(data.lease.dueDay, 10)}일`) : '—'}</td>
+              <th>입실료<span className="en">Rent / month</span></th>
+              <td className="amt">{fieldCell(data.lease ? `${fieldRent.toLocaleString()}원` : '', fieldInput('rentAmount', '입실료', { amount: true }))}</td>
+              <th>매월 납부일<span className="en">Payment Day</span></th>
+              <td className="num">{fieldCell(dueDayLabel(fields.dueDay), fieldInput('dueDay', '매월 납부일'))}</td>
             </tr>
           </tbody>
         </table>
@@ -819,7 +999,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                     <>
                       <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => openSign('contract')} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
                       {!remote && (
-                        <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                        <button type="button" onClick={() => handleClearSignature('contract')} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
                         </button>
                       )}
@@ -898,7 +1078,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
                 <>
                   <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={() => openSign('disposal')} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
                   {!remote && (
-                    <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                    <button type="button" onClick={() => handleClearSignature('disposal')} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
                     </button>
                   )}
@@ -1108,6 +1288,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .contract-paper .emerg th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); }
         .contract-paper .emerg td { font-size: 9pt; padding: 2mm 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
         .contract-paper .emerg-input input { width: 100%; min-width: 60mm; padding: 1mm 2mm; font-size: 9pt; border: 1px dashed #b9ac9a; border-radius: 4px; background: #fff; color: var(--p-ink); font-family: inherit; }
+        /* 정보 표 입력칸 — 비상 연락망 입력(emerg-input)과 같은 문법(점선 테두리·흰 배경·상속 폰트).
+           칸 높이(7.4mm)를 넘기지 않도록 세로 패딩만 줄인다. 인쇄에는 no-print 로 절대 안 나간다. */
+        .contract-paper .field-input { width: 100%; padding: 0.4mm 1.5mm; font-size: 9pt; border: 1px dashed #b9ac9a; border-radius: 4px; background: #fff; color: var(--p-ink); font-family: inherit; box-sizing: border-box; }
+        .contract-paper .field-input.amt { font-weight: 700; color: var(--p-tc); font-variant-numeric: tabular-nums; }
+        .contract-paper .field-pair { display: flex; align-items: center; gap: 1.5mm; }
+        .contract-paper .field-pair-lbl { font-size: 7pt; color: var(--p-muted); font-weight: 400; white-space: nowrap; }
+        /* 서명이 끝나 못 고치는 칸 — 입력칸 모양을 벗고 값만 보인다(§12). 누르면 이유를 말한다. */
+        .contract-paper .cell-locked { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 
         /* 조항 — 2단 */
         .contract-paper .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
