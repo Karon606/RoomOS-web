@@ -2103,7 +2103,7 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
           data: {
             propertyId, category: s.category, label: s.label, specUnit: s.specUnit ?? null, qtyUnit: s.qtyUnit ?? null,
             trackUnit: s.trackUnit ?? 'spec', hubLocationId: s.hubLocationId ?? null,
-            alertThresholdDays: s.alertThresholdDays ?? 3, reorderMemo: s.reorderMemo ?? null,
+            alertThresholdDays: s.alertThresholdDays ?? 7, reorderMemo: s.reorderMemo ?? null,
             purchaseUrl: s.purchaseUrl ?? null, memo: s.memo ?? null,
           },
           select: { id: true },
