@@ -41,3 +41,17 @@ export async function getTrackedCategories(propertyId: string): Promise<string[]
 export function defaultTrackUnitForCategory(cat: string): 'spec' | 'qty' {
   return /폐기물|봉투|쓰레기/.test(cat) ? 'qty' : 'spec'
 }
+
+// 그 품목 이름이 지금까지 어느 카테고리로 등록됐는지. 비품·소모품을 가르는 축이 카테고리 하나라
+// 이력과 다른 카테고리로 저장하면 물건이 통째로 반대편으로 간다(신고 41728d75, 매트리스커버).
+// 판정은 이름 완전일치로만 한다 — 정규화는 병합 규칙의 키라 여기서 재사용하면 뜻이 섞인다.
+export async function topCategoryForLabel(propertyId: string, itemLabel: string): Promise<{ category: string; count: number } | null> {
+  const rows = await prisma.expense.groupBy({
+    by: ['category'],
+    where: { propertyId, itemLabel, isShipping: false },
+    _count: { _all: true },
+  })
+  if (!rows.length) return null
+  const top = rows.sort((a, b) => b._count._all - a._count._all)[0]
+  return { category: top.category, count: top._count._all }
+}

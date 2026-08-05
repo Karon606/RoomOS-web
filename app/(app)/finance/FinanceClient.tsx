@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { getLabelCategoryHistory } from './actions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -2091,6 +2092,30 @@ export default function FinanceClient({
     return out
   }
 
+  // 저장하려는 카테고리가 그 품목의 이력과 다르면 묻는다. 비품·소모품은 지출 카테고리 하나로
+  // 갈리므로 잘못 찍히면 물건이 통째로 반대편으로 간다 — 매트리스커버가 10건 비품이었는데
+  // 11번째만 소모품으로 갔다(신고 41728d75). 막지 않고 묻는다. 일부러 바꾸는 경우도 정당하다.
+  // 전 지출 334건으로 시뮬레이션했을 때 그 3건에서만 발동하고 오탐이 0이었다.
+  const confirmCategoryAgainstHistory = async (category: string, labels: string[]): Promise<'ok' | 'switch' | 'cancel'> => {
+    const names = labels.map(l => l.trim()).filter(Boolean)
+    if (!names.length) return 'ok'
+    let hist: Record<string, { category: string; count: number }> = {}
+    try { hist = await getLabelCategoryHistory(names) } catch { return 'ok' }   // 조회 실패가 저장을 막지 않는다
+    const conflict = names.map(n => ({ n, h: hist[n] })).find(x => x.h && x.h.category !== category)
+    if (!conflict?.h) return 'ok'
+    const res = await choiceDialog({
+      title: `'${conflict.n}' 을 ${category} 로 저장할까요?`,
+      message: `지금까지 이 품목은 ${conflict.h.category} 로 ${conflict.h.count}건 등록했습니다. `
+        + `카테고리가 달라지면 재고에 잡히는 쪽도 달라집니다.`,
+      confirmLabel: `${conflict.h.category} 로`,
+      altLabel: `${category} 로`,
+      level: 'caution',
+    })
+    if (res === 'confirm') return 'switch'
+    if (res === 'alt') return 'ok'
+    return 'cancel'
+  }
+
   const handleAddExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     // 물품 구매는 품목 필수. 서비스·무형도 세부 항목(품목 모듈)으로 내역을 쪼개야 방별 투자금이 추적됨.
@@ -2112,6 +2137,20 @@ export default function FinanceClient({
           const converted = await confirmDurableSetItems(addItems)
           if (converted === null) return   // 취소 → 저장 중단
           if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+        }
+        // 품목 이름의 카테고리 이력과 다르면 확답 — 비품·소모품이 카테고리 하나로 갈리기 때문이다
+        {
+          const decided = await confirmCategoryAgainstHistory(
+            (fd.get('category') as string) || addExpCategory,
+            addItems.map(it => it.label),
+          )
+          if (decided === 'cancel') return
+          if (decided === 'switch') {
+            const hist: Record<string, { category: string; count: number }> =
+              await getLabelCategoryHistory(addItems.map(it => it.label).filter(Boolean)).catch(() => ({}))
+            const first = addItems.map(it => hist[it.label?.trim() ?? '']).find(Boolean)
+            if (first) fd.set('category', first.category)
+          }
         }
         // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
         // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.

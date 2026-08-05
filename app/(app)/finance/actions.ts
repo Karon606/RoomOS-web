@@ -3,6 +3,7 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { expenseAccountKey } from '@/lib/expenseExport'
+import { topCategoryForLabel } from '@/app/(app)/inventory/categoryConfig'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { computeSetHint } from '@/lib/setHint'
@@ -2636,4 +2637,17 @@ export async function getLastPayDefaults(): Promise<{ payMethod: string | null; 
     select: { payMethod: true, financialAccountId: true, financeName: true },
   })
   return row ?? null
+}
+
+
+// 저장하려는 품목 이름이 지금까지 어느 카테고리로 등록됐는지 — 화면이 저장 직전에 묻기 위해 쓴다.
+// 비품·소모품은 지출 카테고리 하나로 갈리므로, 이력과 다른 값으로 저장하면 물건이 반대편으로 간다.
+export async function getLabelCategoryHistory(labels: string[]): Promise<Record<string, { category: string; count: number }>> {
+  const { propertyId } = await requirePropertyAccess()
+  const out: Record<string, { category: string; count: number }> = {}
+  for (const l of labels) {
+    const t = await topCategoryForLabel(propertyId, l)
+    if (t) out[l] = t
+  }
+  return out
 }
