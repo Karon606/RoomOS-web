@@ -62,21 +62,28 @@ export function Modal({
   React.useEffect(() => {
     try { setFramed(window.self !== window.top) } catch { setFramed(true) }
   }, [])
-  // 가상 키보드 대응 — 키보드가 열리면 실제 보이는 높이(visualViewport)는 줄지만 100dvh 는 그대로라
+  // 가상 키보드 대응. 키보드가 열리면 실제 보이는 높이(visualViewport)는 줄지만 100dvh 는 그대로라
   // 본문 하단(메모 등)이 키보드에 가리고 스크롤이 튕긴다. 실제 높이를 CSS 변수로만 반영하고
-  // maxHeight 계산식에 끼워 넣는다(height 로 고정하지 않음 — 작은 모달이 늘어난다).
+  // maxHeight 계산식에 끼워 넣는다(height 로 고정하지 않음. 작은 모달이 늘어난다).
   // body 고정은 하지 않는다(위 주석의 신고 d4cf82d5 회귀). visualViewport 미지원이면 100dvh 폴백 그대로.
-  const [vvHeight, setVvHeight] = React.useState<number | null>(null)
+  //
+  // 값을 setState 가 아니라 패널 style 에 명령형으로 기록한다(신고 d0833496). setState 로 반영하면
+  // 패널 축소가 resize 핸들러보다 늦은 별도 태스크에 떨어지는데, ViewportOffsetGuard 의 재노출 rAF 는
+  // 같은 rendering update 안에서 돌아 React flush 를 못 본다. 그러면 가드가 축소 전 기하를 읽어
+  // 스크롤러가 아직 안 넘친다고 판단해 무동작이거나 최대 scrollTop 에 클램프돼 과소 스크롤이 되고,
+  // 패딩(동기)과 축소(비동기)가 두 프레임으로 갈려 상단이 왕복하며 튄다. 명령형 기록은 resize
+  // 핸들러 안에서 끝나므로 같은 프레임에 축소된 기하가 확정되고 가드가 그것을 읽는다.
+  const panelRef = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     if (!open) return
     const vv = window.visualViewport
     if (!vv) return
-    const sync = () => setVvHeight(vv.height)
+    const sync = () => panelRef.current?.style.setProperty('--modal-vvh', `${vv.height}px`)
     sync()
     vv.addEventListener('resize', sync)
     return () => {
       vv.removeEventListener('resize', sync)
-      setVvHeight(null)
+      panelRef.current?.style.removeProperty('--modal-vvh')
     }
   }, [open])
   const dirtyRef = React.useRef(dirty)
@@ -146,11 +153,12 @@ export function Modal({
       onClick={dirty ? undefined : onClose}
     >
       <div
+        ref={panelRef}
         className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col anim-panel-in`}
         // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 는 안 풀려 헤더가 잘림)
-        // --modal-vvh 는 키보드가 열렸을 때의 실제 보이는 높이. 미설정이면 100dvh 폴백.
+        // --modal-vvh 는 키보드가 열렸을 때의 실제 보이는 높이. 위 이펙트가 명령형으로 기록한다.
+        // 미설정이면(visualViewport 없음·닫힘) 100dvh 폴백.
         style={{
-          '--modal-vvh': vvHeight != null ? `${vvHeight}px` : undefined,
           maxHeight: 'calc(var(--modal-vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
         } as React.CSSProperties}
         onClick={e => e.stopPropagation()}
