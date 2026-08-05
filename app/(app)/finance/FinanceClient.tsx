@@ -303,6 +303,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     setUnitBasis(r.unitBasis); setBasisTouched(true)
   }
 
+  // 프리셋·직접입력 패널이 열리면 그 자리로 맞춘다(신고 57e65e23). 버튼 줄이 목록 아래쪽에 있으면
+  // 패널이 스크롤러 밖에서 펼쳐져 무엇이 열렸는지 안 보인다. 두 패널은 배타 렌더라 ref 하나로 충분하다.
+  // behavior 는 기본(즉시). smooth 면 재노출 가드가 애니메이션 중간 기하를 읽는다.
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (activeLabel) panelRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [activeLabel])
+
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
   useEffect(() => {
     setActiveLabel(null)
@@ -896,7 +904,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       )}
 
       {activeLabel && activeLabel !== '__custom__' && (
-        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
+        <div ref={panelRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--warm-dark)]">
               {activeLabel}{fetching && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)]">단위 불러오는 중…</span>}
@@ -915,7 +923,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       )}
 
       {activeLabel === '__custom__' && (
-        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
+        <div ref={panelRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--warm-dark)]">직접 입력</span>
             <button type="button" onClick={() => setActiveLabel(null)}
