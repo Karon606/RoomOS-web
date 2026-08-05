@@ -20,7 +20,7 @@ import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCar
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
-import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
+import { kstYmdStr } from '@/lib/kstDate'
 import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -886,7 +886,14 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       value={fmtQty(row.currentStock, stockUnit)}
       valueDanger={lowStock}
       // 예측 불가를 침묵시키지 않는다(신고 edffb4a7) — 왜 알림이 없는지 접힌 카드에서도 보이게
-      valueSub={row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}`
+      //
+      // 잔량이 null 이면 값 자리에 '—' 가 뜬다. 그런데 이 앱에서 대시는 §06 상 **대상 없음**(공실)으로
+      // 학습된 기호라, 운영자가 배운 대로 읽으면 '재고 없음' 이 된다. 여기 뜻은 정반대다 —
+      // 대상은 있는데 **아직 세어보지 않아 모른다.** 0 과 모름을 뭉개지 말라는 것은 이 앱이 소모율과
+      // 월별 사용량에서 이미 정한 원칙인데(knowledge/domain-inventory.md) 잔량에만 적용된 적이 없었다.
+      // 값 자리에는 문자를 넣지 않는다 — §22 가 그 슬롯을 tnum 수치로 못 박아 카드 정렬이 흔들린다.
+      valueSub={row.currentStock == null ? '잔량 미확인 · 재고 점검을 한 번 하면 잡힙니다.'
+        : row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}`
         : row.avgDaily === 0 ? '최근 사용 없음'
         : '소진 예측 준비 중 · 점검 데이터 부족'}
       expanded={open}
@@ -1371,87 +1378,24 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
             {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
-            {tab === 'timeline' && (() => {
-              const nowMonth = kstMonthStr()
-              // 엔트리 월 — 점검·무상입수는 날짜, 구매는 수령확정(receivedAt) 기준. 미수령 구매는 현재 월로 이월.
-              const entryMonth = (e: TimelineEntry): string =>
-                e.type === 'purchase'
-                  ? (e.receivedAt ? kstMonthStr(new Date(e.receivedAt)) : nowMonth)
-                  : kstMonthStr(new Date(e.date))
-              const monthEntries = data.timeline.filter(e => entryMonth(e) === targetMonth)
-              // 이월분 — targetMonth 시작 이전 마지막 점검 잔량 + 그 점검 이후~월초 사이 입수(구매수령·무상).
-              // 점검은 실측 카운트라 그 시점까지의 입수·소모가 이미 반영됨 → 점검 이후 입수만 더함.
-              // (점검↔월초 사이 소모는 데이터로 알 수 없어 미반영 — 본질적 추정치.)
-              const priorChecks = data.timeline.filter(
-                (e): e is Extract<TimelineEntry, { type: 'check' }> =>
-                  e.type === 'check' && kstMonthStr(new Date(e.date)) < targetMonth,
-              )
-              const carry = priorChecks.length > 0
-                ? priorChecks.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a))
-                : null
-              // 점검 이후~월초 사이 입수 합(재고단위) — 점검의 '실제 시각'(effTime) 기준으로 '그 이후 수령'만 더한다.
-              // ⚠️ date(자정) 기준이면 같은 날 점검보다 '먼저' 수령한 구매도 자정보다 늦어 '점검 이후'로 잡혀 이중 계산됨
-              //   (예: 6/16 13:53 수령 → 14:08 점검=20 인데 이월분이 20+20=40). 서버 overview·타임라인 정렬과 동일한 effTime 사용.
-              const carryUseSpec = data.item.trackUnit !== 'qty' && !!(data.item.specUnit && data.item.specUnit.trim())
-              const KST = 9 * 3600000
-              const kstDayStr = (d: Date) => new Date(d.getTime() + KST).toISOString().slice(0, 10)
-              const kstMidnightMs = (d: Date) => Math.floor((d.getTime() + KST) / 86400000) * 86400000 - KST
-              const kstTodMs = (d: Date) => (d.getTime() + KST) % 86400000
-              const effMs = (e: TimelineEntry): number => {
-                if (e.type === 'purchase') return new Date(e.receivedAt ?? e.date).getTime()
-                const cr = new Date(e.createdAt), dt = new Date(e.date)
-                return kstDayStr(cr) === kstDayStr(dt) ? cr.getTime() : kstMidnightMs(dt) + kstTodMs(cr)
-              }
-              const carryBoundary = carry ? effMs(carry) : 0
-              const carryInflow = carry
-                ? data.timeline.reduce((s, e) => {
-                    if (entryMonth(e) >= targetMonth) return s
-                    if (e.type === 'addition')
-                      return effMs(e) > carryBoundary ? s + e.addedQty : s
-                    if (e.type === 'disposal')
-                      return effMs(e) > carryBoundary ? s - e.disposedQty : s
-                    if (e.type === 'purchase' && e.receivedAt && effMs(e) > carryBoundary) {
-                      const spec = carryUseSpec ? specMultiplier(e.specValue, e.specUnit, data.item.specUnit) : null
-                      return s + (spec != null ? e.qtyValue * spec : e.qtyValue)
-                    }
-                    return s
-                  }, 0)
-                : 0
-              const carryBase  = carry ? carry.remainingQty : 0
-              const carryTotal = carryBase + carryInflow
-              const r2 = (n: number) => Math.round(n * 100) / 100
-              const [yy, mm] = targetMonth.split('-')
-              return (
-                <div className="space-y-2">
-                  {/* 월 네비 — 전역 월(?month=)과 연동 */}
-                  <div className="flex items-center justify-between">
-                    <button type="button" onClick={() => onChangeMonth(-1)}
-                      className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors">‹</button>
-                    <span className="text-sm font-bold text-[var(--warm-dark)]">{yy}년 {Number(mm)}월</span>
-                    <button type="button" onClick={() => onChangeMonth(1)} disabled={targetMonth >= nowMonth}
-                      className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors disabled:opacity-30 disabled:hover:bg-transparent">›</button>
-                  </div>
-                  {monthEntries.length === 0 && !carry ? (
-                    <p className="text-sm text-[var(--warm-muted)] text-center py-6">이 달 기록이 없습니다.</p>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {monthEntries.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
-                      {carry && (
-                        <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2">
-                          <div className="min-w-0">
-                            <span className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">이월분 · {yy}.{mm}.01</span>
-                            {carryInflow > 0 && (
-                              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">점검 {r2(carryBase)} + 입수 {r2(carryInflow)}</p>
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-[var(--warm-mid)] shrink-0">잔량 {fmtQty(carryTotal, detailStockUnit)}</span>
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-              )
-            })()}
+            {tab === 'timeline' && (
+              // 이력은 자르지 않는다. 재고의 축은 '지금 잔량'과 '점검 사이 구간'이지 달력 월이 아니다 —
+              // 소모율은 최근 30일, 사용량은 오늘 기준 6개월이고 어느 것도 조회 월을 안 받는다.
+              // 종전에는 조회 월로 잘라 놓고, 그 앞의 마지막 점검을 '이월분'으로 합성해 메웠다.
+              // 그런데 그 보철은 **직전 점검이 있을 때만** 성립해서 점검이 0건인 품목에서는 무력했다.
+              // 그래서 목록은 "이 품목 있다"고 하는데 눌러 들어가면 "이 달 기록이 없습니다"가 떴다 —
+              // 데이터는 손에 다 있는데 화면이 감춘 것이다(운영자 지적 2026-08-05, 27개 중 12개가 그 상태).
+              // 전 이력이 이미 클라이언트에 있고 정렬도 끝나 있어 자르는 코드를 지우면 그만이다.
+              <div className="space-y-2">
+                {data.timeline.length === 0 ? (
+                  <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                  </ul>
+                )}
+              </div>
+            )}
             {tab === 'monthly' && (
               <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
             )}

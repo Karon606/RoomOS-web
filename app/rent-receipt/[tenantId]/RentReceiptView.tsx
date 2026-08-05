@@ -268,7 +268,10 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 
-        {/* 하단 액션바 정본(§30) — 보조 동사들 + 목적 동사. flex-1 균등, 접힘 금지.
+        {/* 실행 동사는 **상단**이 정본이다(운영자 4차 확정 2026-08-05, 규칙 6 원문 그대로).
+            이 화면만 아직 하단이고 골격 이동 단계에서 위로 옮긴다 — 지금 옮기면 접점이 넓어진다.
+            아래가 나쁜 이유는 열자마자 안 보이는 것이다. 2장짜리 계약서에서 운영자가 버튼을 못 찾았다.
+            보조 동사들 + 목적 동사. flex-1 균등, 접힘 금지.
             '미리보기'는 이 화면에만 남는다 — 셋 중 유일하게 문서를 안 보여준다(3단계에서 인라인 미리보기로 대체). */}
         <div className="flex gap-2">
           <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
