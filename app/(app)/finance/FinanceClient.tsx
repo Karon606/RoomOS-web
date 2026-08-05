@@ -718,7 +718,10 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     onBlur={e => {
                       const v = e.target.value.trim()
                       const similar = v ? findSimilarItemName(v, detailSuggestions) : null
-                      patchItem(idx, { labelSimilarTo: similar && similar !== v ? similar : undefined })
+                      const next = similar && similar !== v ? similar : undefined
+                      // 값이 그대로면 건드리지 않는다 — 이 폼은 blur 와 다음 탭 사이 리렌더에 민감한
+                      // 이력이 있다(신고 6f264a8f). 무조건 patchItem 하면 매 blur 마다 새 배열 리렌더다.
+                      if (next !== it.labelSimilarTo) patchItem(idx, { labelSimilarTo: next })
                     }}
                     aria-label="품명 수정" placeholder="품명"
                     className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs font-medium text-[var(--coral)] outline-none focus:border-[var(--coral)] transition-colors" />

@@ -31,7 +31,6 @@ import { useEffect, useRef } from 'react'
 const KBD_INSET = '--kbd-inset'
 const KBD_OPEN_PX = 60      // 이만큼 가려지면 키보드가 올라온 것으로 본다
 const REVEAL_GAP = 16       // 재노출 시 칸 아래로 남길 여백
-const PENDING_TTL_MS = 600  // 키보드 리사이즈가 액세서리 바·본체로 나뉘어 오므로 첫 이벤트만 보면 놓친다
 
 // 포커스 요소를 실제로 감싸는 스크롤러 — 모달 안이면 모달 본문이, 그 밖이면 .app-main 이 자연히 잡힌다.
 // 그래서 모달 특례 코드가 필요 없다. window 는 절대 건드리지 않는다(B 패턴 페이지가 맨 위로 튄다).
@@ -55,7 +54,7 @@ function isEditable(t: EventTarget | null): t is HTMLElement {
 }
 
 export default function ViewportOffsetGuard() {
-  const pending = useRef<{ el: HTMLElement; at: number } | null>(null)
+  const pending = useRef<{ el: HTMLElement } | null>(null)
 
   useEffect(() => {
     const vv = window.visualViewport
@@ -69,16 +68,28 @@ export default function ViewportOffsetGuard() {
     // 겹침 크기는 반대다 — 팬한 만큼 실제로 덜 가리므로 offsetTop 을 뺀다.
     const overlapNow = () => Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)))
 
+    // 원샷·TTL 을 걷고 **focusout 까지 유지, resize 마다 재시도**한다(신고 d0833496).
+    // iOS 키보드 리사이즈는 액세서리 바·본체로 나뉘어 오고, 모달의 자체 축소(--modal-vvh 반영)는
+    // React flush 라 첫 resize 뒤에 온다. 원샷은 마지막 기하를 못 보고 소진돼 버렸다.
+    // 스크롤 전쟁은 안 난다 — 재시도는 resize 에서만 하고(vv.scroll 에서는 안 한다),
+    // 양수 델타만 스크롤하므로 수렴형이다.
     const reveal = () => {
       const p = pending.current
-      pending.current = null   // 원샷 — vv.scroll 이 매 프레임 도는 동안 되돌려 스크롤하면 스크롤 전쟁이 난다
-      if (!p || Date.now() - p.at > PENDING_TTL_MS) return
-      if (!p.el.isConnected || document.activeElement !== p.el) return
+      if (!p) return
+      if (!p.el.isConnected || document.activeElement !== p.el) { pending.current = null; return }
       const box = scrollParent(p.el)
       if (!box) return
       // getBoundingClientRect 는 layout viewport 기준이라 보이는 하단선도 같은 프레임으로 환산한다.
       // vv.height 만 쓰면 팬된 만큼 틀린다.
-      const delta = p.el.getBoundingClientRect().bottom + REVEAL_GAP - (vv.offsetTop + vv.height)
+      //
+      // **하단선은 키보드 선과 스크롤러 자신의 잘린 하단 중 낮은 쪽이다(신고 d0833496).**
+      // 모달은 키보드가 열리면 스스로 줄어든다(--modal-vvh). 그러면 필드가 키보드 선보다 위인데도
+      // 줄어든 모달 하단 아래로 잘려 사각 띠에 숨는다. 키보드 선만 보면 '이미 보인다'로 오판해
+      // 스크롤을 안 했고, 운영자는 품명 칸을 탭했는데 폼 상단만 보게 됐다.
+      const kbLine = vv.offsetTop + vv.height
+      const boxLine = box.getBoundingClientRect().bottom
+      const visibleBottom = Math.min(kbLine, boxLine)
+      const delta = p.el.getBoundingClientRect().bottom + REVEAL_GAP - visibleBottom
       // 가려졌을 때만, 최소 델타만. 가운데 정렬로 과대 스크롤하면 칸 위의 라벨이 밀려 올라가
       // 무슨 칸인지 사라진다(위치별 점검은 라벨이 입력칸 위에 있는 2열 그리드다).
       if (delta > 0) box.scrollTop += delta
@@ -103,7 +114,7 @@ export default function ViewportOffsetGuard() {
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
-      pending.current = { el: e.target, at: Date.now() }
+      pending.current = { el: e.target }
       // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다
       if (overlapNow() > KBD_OPEN_PX) scheduleReveal()
     }
