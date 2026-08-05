@@ -131,9 +131,15 @@ export function Modal({
       className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center anim-overlay-in`}
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
+      //
+      // 하단은 키보드 겹침(--kbd-inset)까지 더한다(신고 e8a2c73e). items-center 는 layout viewport
+      // 전체의 세로 중앙이라, 키보드가 열려 패널이 --modal-vvh 로 줄면 줄어든 패널이 '키보드 뒤까지
+      // 포함한' 한가운데로 재정렬되며 통째로 내려앉았다. 패딩으로 정렬 기준을 보이는 띠로 옮긴다.
+      // --modal-vvh(maxHeight)와 짝이다. 하나는 "얼마나 클 수 있나", 하나는 "어디에 놓이나".
+      // 값은 ViewportOffsetGuard 가 채운다. 셸 밖 모달은 폴백 0px 이라 현행 그대로다.
       style={{
         paddingTop:    'max(1rem, env(safe-area-inset-top))',
-        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        paddingBottom: 'calc(max(1rem, env(safe-area-inset-bottom)) + var(--kbd-inset, 0px))',
         paddingLeft:   'max(1rem, env(safe-area-inset-left))',
         paddingRight:  'max(1rem, env(safe-area-inset-right))',
       }}

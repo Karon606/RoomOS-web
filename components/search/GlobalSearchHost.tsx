@@ -126,7 +126,10 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
   const blurInput = () => inputWrapRef.current?.querySelector('input')?.blur()
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)]">
+    // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 여기는 중앙 정렬이 아니라
+    // 모바일 풀스크린(h-full)이라 내려앉지는 않지만, 같은 패딩이 패널 높이를 보이는 띠로 맞춰
+    // 결과 목록의 끝이 키보드 뒤에 영영 남는 것을 막는다. md 이상은 --kbd-inset 이 0 이라 무변화.
+    <div className="fixed inset-0 z-[var(--z-modal)]" style={{ paddingBottom: 'var(--kbd-inset, 0px)' }}>
       {/* 배경 — 모바일은 풀스크린 캔버스, md 이상은 딤 배경 + 중앙 패널 */}
       <div className="absolute inset-0 md:bg-black/70 bg-[var(--canvas)]" onClick={close} aria-hidden="true" />
       <div

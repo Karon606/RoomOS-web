@@ -3540,7 +3540,10 @@ function HubShortDialog({ pending, onResolved, onExit }: {
          : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--persimmon)]'}`
 
   return (
-    <div className="fixed inset-0 z-[var(--z-confirm)] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4"
+    // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 모바일은 하단 시트라 시트를
+    // 키보드 위로 밀고, sm 이상은 중앙 정렬의 기준을 보이는 띠로 옮긴다. 인라인 style 로 넣으면
+    // sm:p-4 의 1rem 을 덮어써 데스크탑이 달라지므로 분기별 유틸리티로 쓴다.
+    <div className="fixed inset-0 z-[var(--z-confirm)] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[var(--kbd-inset,0px)] sm:pb-[calc(1rem+var(--kbd-inset,0px))]"
       onClick={() => handleExit('back')}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}>
@@ -3820,6 +3823,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   return (
     <div
       className={inline ? undefined : 'fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-end sm:items-center justify-center'}
+      // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 인라인 모드는 오버레이가
+      // 없으므로 붙이지 않는다. 그쪽 여유는 .app-main 의 --kbd-inset 패딩이 이미 맡는다.
+      style={inline ? undefined : { paddingBottom: 'var(--kbd-inset, 0px)' }}
       onClick={inline ? undefined : onClose}
     >
       <div

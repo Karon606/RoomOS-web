@@ -29,7 +29,10 @@ export function PeekSheet({ open, onClose }: { open: boolean; onClose: () => voi
   }
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col justify-end bg-black/45 anim-overlay-in" onClick={onClose}>
+    // 하단 시트라 패딩 합산은 시트를 키보드 위로 밀어 올린다(신고 e8a2c73e, 정본은 Modal).
+    // iframe 안 페이지에서 키보드가 열려도 시트 하단이 키보드 뒤로 들어가지 않는다.
+    <div className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col justify-end bg-black/45 anim-overlay-in"
+      style={{ paddingBottom: 'var(--kbd-inset, 0px)' }} onClick={onClose}>
       <div
         className="flex flex-col rounded-t-2xl border-t border-x border-[var(--warm-border)] bg-[var(--canvas)] shadow-lift anim-panel-in"
         style={{ height: 'min(78dvh, 100dvh - env(safe-area-inset-top) - 3rem)' }}

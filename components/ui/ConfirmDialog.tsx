@@ -102,7 +102,10 @@ export function ConfirmHost() {
   return (
     <div
       className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4 anim-overlay-in"
-      style={{ background: 'var(--confirm-backdrop)' }}
+      // 하단 패딩에 키보드 겹침을 더해 세로 중앙의 기준을 '키보드 위 보이는 띠'로 옮긴다
+      // (신고 e8a2c73e, 정본은 Modal). p-4 의 1rem 을 그대로 재현하므로 --kbd-inset 이 0 인
+      // 데스크탑에서는 계산 결과가 1rem 으로 같다.
+      style={{ background: 'var(--confirm-backdrop)', paddingBottom: 'calc(1rem + var(--kbd-inset, 0px))' }}
       // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (v2.0 §14)
       onClick={() => { if (level === 'normal') done('cancel') }}
     >

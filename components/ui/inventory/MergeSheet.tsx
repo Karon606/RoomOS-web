@@ -35,7 +35,10 @@ export function MergeSheet({
   const dest = targets.find(t => t.id === destId)
 
   return (
-    <div className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`} role="dialog" aria-modal="true">
+    // 하단 시트라 패딩 합산이 시트를 키보드(대상 선택 select 의 iOS 피커) 위로 밀어 올린다
+    // (신고 e8a2c73e, 정본은 Modal). 딤 배경은 absolute inset-0 이라 패딩과 무관하게 전면을 덮는다.
+    <div className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`}
+      style={{ paddingBottom: 'var(--kbd-inset, 0px)' }} role="dialog" aria-modal="true">
       <div className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose} />
       <div className={`relative w-full max-w-md rounded-t-[20px] bg-[var(--cream)] px-[18px] pb-5 pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}>
