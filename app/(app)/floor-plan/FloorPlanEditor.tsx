@@ -323,7 +323,9 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
 
   return (
     <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-lift"
-      style={{ background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
+      // 시트 안에 입력이 있어 layout viewport 하단 고정이면 iOS 키보드가 시트를 통째로 덮는다.
+      // 키보드 겹침만큼 띄운다(--kbd-inset). 데스크톱·안드로이드는 0px 이라 현행과 같은 픽셀이다.
+      style={{ bottom: 'var(--kbd-inset, 0px)', background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
       <div className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         <div className="w-10 h-1.5 rounded-full bg-[var(--warm-border)]" />
