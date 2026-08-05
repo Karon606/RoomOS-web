@@ -119,7 +119,8 @@ const fmtQty = (val: number | null, unit: string | null) => {
 }
 
 // 품목 행의 표시 단위 — 추적 단위(spec/qty)에 맞춰. TransferStockModal 과 동일 규칙.
-const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? '개') : (r.specUnit ?? r.qtyUnit ?? '개')
+// unitHint = 카드 단위가 비었을 때의 표시 폴백(구매 단위 전원일치일 때만 서버가 내림).
+const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint ?? '개') : (r.specUnit ?? r.qtyUnit ?? r.unitHint ?? '개')
 
 // 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
 type HubShortPending = {
@@ -604,7 +605,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
             <div data-item-drag-list className="space-y-1.5">
               {g.rows.map((r, idx) => {
-                const unit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+                const unit = r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint)
                 // 드래그는 오른쪽 핸들 버튼에서만 — 행 몸통에 걸면 스크롤하려는 터치가 순서를 바꿔버린다(운영자 실사용 지적 2026-07-18).
                 // 핸들 히트 영역은 44pt(가이드 §09) — 이전 라운드의 '작아서 겨냥해야 하는 핸들' 문제는 크기로 해소.
                 return (
@@ -871,8 +872,8 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   // 당분간 사용 안 함 후보: 현재 잔량 0 + 수령 대기 0 + 점검 기록 있음(신규는 제외)
   const suggestHide = !selectMode && row.currentStock === 0 && row.pendingPurchases.length === 0 && row.lastCheckDate != null
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
-  const stockUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
-  const priceUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
+  const stockUnit = row.trackUnit === 'qty' ? (row.qtyUnit ?? row.unitHint) : (row.specUnit ?? row.qtyUnit ?? row.unitHint)
+  const priceUnit = row.trackUnit === 'qty' ? (row.qtyUnit ?? row.unitHint) : (row.specUnit ?? row.qtyUnit ?? row.unitHint)
   // 숨긴(비어 있는) 위치는 화면에서 가린다 — 서버가 계산한 hiddenLocationIds 멤버십으로만 거른다(2단계).
   const hidden = new Set(row.hiddenLocationIds)
   return (
@@ -1273,7 +1274,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
-  const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)) : null
+  const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? (data.item.qtyUnit ?? data.item.unitHint) : (data.item.specUnit ?? data.item.qtyUnit ?? data.item.unitHint)) : null
   const isViewMode = mode === 'view' && !!data
 
   return (
@@ -1407,7 +1408,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
               <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
             )}
             {tab === 'price' && (
-              <PriceChart points={priceHistory} unitLabel={detailStockUnit} qtyUnit={data.item.qtyUnit} />
+              <PriceChart points={priceHistory} unitLabel={detailStockUnit} qtyUnit={data.item.qtyUnit ?? data.item.unitHint} />
             )}
           </div>
         </>
@@ -2014,7 +2015,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 //    날짜를 고르면 그 시점 '예상 재고'(직전 점검+그 사이 입고)를 위치별로 보여주고, 실측 입력 → 차이 표시.
 //    isReconcile 점검으로 저장(saveFullReconcile 단일 품목) → 그 구간 차이는 사용량에 안 잡힘.
 function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds, onCancel, onDone }: {
-  item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   existingCheckDays?: string[]   // 이미 점검이 있는 날짜(KST, YYYY-MM-DD) — 같은 날 중복 보정 가드용
   hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력·합계에서 제외(카드 칩과 동일 기준)
   onCancel: () => void
@@ -2028,7 +2029,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
   const r2 = (x: number) => Math.round(x * 100) / 100
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
   const hasLoc = tlLocations.length > 0
-  const unit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const unit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   const [date, setDate] = useState(todayKst)
   const [memo, setMemo] = useState('')
   const [expected, setExpected] = useState<{ total: number; byLoc: Record<string, number> } | null>(null)
@@ -2276,7 +2277,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
-  const unitOf = (r: InventoryRow) => (r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit))
+  const unitOf = (r: InventoryRow) => (r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint))
 
   // 예상 재고 — 위치별 프리필: 직전 점검 위치별 + (현재고 − 직전총합)을 허브에 가산해 합계가 현재고와 일치.
   const expectedFor = (r: InventoryRow): { byLoc: Record<string, number>; total: number } => {
@@ -2794,13 +2795,13 @@ function calcLocMove(beforeStr: string, afterStr: string, baseline: number | nul
 }
 
 function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDone, onDraftChange, onGoDisposal }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
   hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력 행에서 제외. 카드 칩과 동일 기준(운영자 지적 2026-07-18)
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
   onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
 }) {
-  const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const stockUnit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   // 숨긴 위치는 점검 입력에서도 가린다 — 서버 carryOver 가 미입력 위치의 직전값(0)을 이월하므로 데이터 무손실.
   // 숨겼지만 재고가 든 위치는 hiddenLocationIds 에 없어(자동 치유) 계속 입력 행에 남는다.
   const hiddenLoc = new Set(hiddenLocationIds ?? [])
@@ -3286,7 +3287,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
   const [busy, setBusy] = useState(false)
 
   const item = rows.find(r => r.id === itemId) ?? null
-  const unit = item ? (item.trackUnit === 'qty' ? (item.qtyUnit ?? '개') : (item.specUnit ?? item.qtyUnit ?? '개')) : '개'
+  const unit = item ? (item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint ?? '개') : (item.specUnit ?? item.qtyUnit ?? item.unitHint ?? '개')) : '개'
   const fromLoc = locStock?.find(l => l.id === fromId) ?? null
   const toLoc = locStock?.find(l => l.id === toId) ?? null
   const qty = Number(qtyStr) || 0
@@ -3910,7 +3911,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                 return <p className="text-[0.65625rem] text-[var(--warm-muted)] pb-1">이 위치 최근 점검 {fmtDate(latest)} <span className="tabular-nums">{fmtTime(latest)}</span></p>
               })()}
               {locItems.map(r => {
-              const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+              const stockUnit = r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint) : (r.specUnit ?? r.qtyUnit ?? r.unitHint)
               const prev = r.currentLocationBreakdown.find(lb => lb.locationId === locId)
               const { beforeStr, afterStr, restocked } = computeRow(r)
               // 선택한 위치가 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
@@ -4666,10 +4667,10 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
 
 // ── 폐기 기록 폼 — 무상 입수의 거울(유출). 서버가 잔량 초과·이후 점검 존재를 거부(이중 차감 방지).
 function DisposalForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
 }) {
-  const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const stockUnit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   const [date, setDate] = useState(kstYmdStr())
   const [qtyStr, setQtyStr] = useState('')
   const [reason, setReason] = useState('상함·부패')
@@ -4748,12 +4749,13 @@ function DisposalForm({ item, onCancel, onDone }: {
 }
 
 function AdditionForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
 }) {
   // trackUnit='qty': specUnit 있어도 매(qtyUnit) 단위로 단일 입력
   // trackUnit='spec' & specUnit 있음: 규격 × 수량 두 입력
   const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
+  const qtyUnitLabel = item.qtyUnit ?? item.unitHint   // 카드 단위가 비면 표시 폴백(unitHint)으로
   const [date, setDate]     = useState(kstYmdStr())
   const [specQty, setSpecQty] = useState('')   // 규격 (예: 20)
   const [packQty, setPackQty] = useState('1')  // 수량 (예: 1 포대)
@@ -4815,7 +4817,7 @@ function AdditionForm({ item, onCancel, onDone }: {
                   onChange={e => setPackQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="1"
                   className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.qtyUnit ?? '개'}</span>
+                <span className="text-xs text-[var(--warm-muted)] shrink-0">{qtyUnitLabel ?? '개'}</span>
               </div>
             </div>
           </div>
@@ -4827,7 +4829,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         </>
       ) : (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">수량 *{item.qtyUnit ? ` (${item.qtyUnit})` : ''}</label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">수량 *{qtyUnitLabel ? ` (${qtyUnitLabel})` : ''}</label>
           <input type="text" inputMode="decimal" autoComplete="off" value={qtyOnly}
             onChange={e => setQtyOnly(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"

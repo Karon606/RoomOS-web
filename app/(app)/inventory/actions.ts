@@ -15,7 +15,7 @@ import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
-import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals } from './overview'
+import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
@@ -138,7 +138,8 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
 export async function getInventoryDetail(trackedItemId: string): Promise<{
-  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }
+  // unitHint = 표시 전용 단위 폴백(overview.resolveUnitHint 정본) — 카드 qtyUnit 이 비었을 때만 쓰인다.
+  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }
   timeline: TimelineEntry[]
 } | null> {
   const propertyId = await getPropertyId()
@@ -153,7 +154,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   })
   if (!item) return null
 
-  const [checks, additions, disposals, purchases] = await Promise.all([
+  const [checks, additions, disposals, purchases, unitHint] = await Promise.all([
     prisma.stockCheck.findMany({
       where: { trackedItemId },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -186,6 +187,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true, receivedLocation: { select: { name: true } } },
     }),
+    // 목록(overview)과 같은 헬퍼 한 벌 — 카드와 상세의 단위 표시가 갈라지지 않게.
+    resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
   ])
 
   const timeline: TimelineEntry[] = [
@@ -252,7 +255,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   return {
     item: {
       id: item.id, category: item.category, label: item.label,
-      specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo,
+      specUnit: item.specUnit, qtyUnit: item.qtyUnit, unitHint, memo: item.memo,
       trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
       hubLocationId: item.hubLocationId,
       locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: item.hubLocationId ? l.storageLocation.id === item.hubLocationId : l.storageLocation.isHub })),

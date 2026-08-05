@@ -50,6 +50,33 @@ export async function sumPurchases(
   }, 0)
 }
 
+// ── 카드 단위 표시 폴백(unitHint) — 표시 전용. 카드(TrackedItem.qtyUnit)에는 절대 쓰지 않는다.
+// 카드 qtyUnit 이 null 인 것은 느슨 매칭(위 sumPurchases 주석)의 산물이라 정상 상태고, 그 결과
+// 잔량이 "300" 처럼 맨숫자로 표시된다. 그래서 잔량 산식에 실제로 들어간 구매들의 qtyUnit 을 모아
+// **전원일치**(비어 있지 않은 값이 모두 같음)일 때만 그 값을 힌트로 내린다.
+// 하나라도 다르거나(매 대 개 혼재) 전부 비어 있으면 null — 혼재에 아무 단위나 찍는 것보다 맨숫자가 정직하다.
+// 매칭 술어는 sumPurchases 와 동일(구간 경계만 없음) — 잔량에 기여한 구매 집합과 어긋나지 않게.
+export async function resolveUnitHint(
+  propertyId: string, category: string, label: string, qtyUnit: string | null,
+): Promise<string | null> {
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      category,
+      itemLabel: label,
+      receivedAt: { not: null },
+      excludeFromInventory: false,
+      ...(qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit }] } : {}),
+    },
+    select: { qtyUnit: true },
+    distinct: ['qtyUnit'],
+  })
+  const units = new Set(
+    rows.map(r => r.qtyUnit?.trim() ?? '').filter(u => u !== ''),
+  )
+  return units.size === 1 ? [...units][0] : null
+}
+
 export async function sumAdditions(
   trackedItemId: string, from: Date | null, to: Date | null,
   fromCreatedAt?: Date | null,
@@ -416,22 +443,26 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 예: 쌀 20kg × 1포대 60,000원 → 60,000 / (1 × 20) = 3,000원/kg
     //     물티슈 100매 × 2팩 10,000원 → 10,000 / (2 × 100) = 50원/매
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-    const recentPurchases = await prisma.expense.findMany({
-      where: {
-        propertyId,
-        category: it.category,
-        itemLabel: it.label,
-        // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(단가도 누락 없이 집계).
-        ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
-        date: { gte: oneYearAgo },
-        qtyValue: { gt: 0 },
-        amount: { gt: 0 },
-        receivedAt: { not: null },
-        excludeFromInventory: false,
-      },
-      select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true },
-      orderBy: { date: 'desc' },
-    })
+    // unitHint 는 단가와 무관하지만 같은 왕복에 태워 조회 지연을 늘리지 않는다.
+    const [recentPurchases, unitHint] = await Promise.all([
+      prisma.expense.findMany({
+        where: {
+          propertyId,
+          category: it.category,
+          itemLabel: it.label,
+          // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(단가도 누락 없이 집계).
+          ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
+          date: { gte: oneYearAgo },
+          qtyValue: { gt: 0 },
+          amount: { gt: 0 },
+          receivedAt: { not: null },
+          excludeFromInventory: false,
+        },
+        select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true, receivedAt: true },
+        orderBy: { date: 'desc' },
+      }),
+      resolveUnitHint(propertyId, it.category, it.label, it.qtyUnit),
+    ])
 
     // 실효 알림 임계값(신고 edffb4a7) — 재주문 리드타임(주문일→수령일)을 반영해 알림이 주문 여유를 갖게.
     // 리드타임 = 최근 수령 구매 최대 6건의 (receivedAt − date) 일수 중앙값(0~30일 클램프), 없으면 미반영.
@@ -571,6 +602,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       label: it.label,
       specUnit: it.specUnit,
       qtyUnit: it.qtyUnit,
+      unitHint,
       alertThresholdDays: it.alertThresholdDays,
       effectiveAlertDays,
       createdAt: it.createdAt.toISOString(),

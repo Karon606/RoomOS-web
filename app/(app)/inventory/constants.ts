@@ -43,6 +43,9 @@ export type InventoryRow = {
   label: string
   specUnit: string | null
   qtyUnit: string | null
+  // 표시 전용 단위 폴백 — 잔량 산식에 들어간 구매들의 qtyUnit 이 전원일치일 때만 그 값, 혼재·부재면 null.
+  // qtyUnit 이 비어도 잔량이 맨숫자로 보이지 않게 하는 힌트다. 카드 qtyUnit(느슨 매칭 상태)을 대체하지 않는다.
+  unitHint: string | null
   alertThresholdDays: number
   // 실효 알림 임계값 = max(설정 D-N, 재주문 리드타임 + 2일) — 판정·표시는 이 값, 설정 폼은 원값(신고 edffb4a7)
   effectiveAlertDays: number
