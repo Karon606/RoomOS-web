@@ -40,12 +40,21 @@
 // 있다"고 정했는데, **실기에서 iOS 가 웹이 넘긴 파일에 프린트를 안 열어주는 것이 확인됐다.**
 // 페이지가 우리 DOM 이라 window.print() 가 공유 시트를 안 거치고 바로 걸린다.
 // 발급·작성처럼 서류 상태를 바꾸는 동사는 여기 두지 않는다 — '보기'의 정의를 직접 깬다.
+//
+// **정정(신고 2523aa1e, 2026-08-05)** — 위 두 문장 중 뒷문장이 홈화면 앱에서 거짓이다.
+// 아이폰은 standalone 에서 window.print() 가 아무 일도 하지 않아 이 버튼이 죽어 있었다.
+// 그리고 "iOS 가 넘긴 파일에 프린트를 안 열어준다"는 8-04 관측도 원인이 달랐다 — 그때 공유되던
+// PDF 가 0바이트였고(pdf.js 버퍼 이관 결함, 8-05 봉합), 봉합 후에는 시트의 프린트가 실기로 동작한다.
+// 그래서 아이폰 홈화면 앱에서만 공유 시트로 우회한다. 나머지 환경은 window.print() 그대로다.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
+import { pushToast } from '@/lib/saveStatus'
+import { sharePdfFile } from '@/lib/docPreview'
+import { photoSaveNeedsShareSheet } from '@/lib/shareFile'
 import {
   DocBackLink, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
 } from '@/components/doc/DocChrome'
@@ -62,6 +71,16 @@ const Z_MAX = 4
 const Z_STEPS = [1, 1.5, 2, 3, 4]
 
 const clampZ = (z: number) => Math.min(Z_MAX, Math.max(Z_MIN, z))
+
+// 홈화면 앱(manifest display: standalone)인가. iOS 는 이 모드에서 window.print() 가 아무 일도
+// 하지 않는다 — 사파리와 달리 인쇄 UI 자체가 없다(신고 2523aa1e). display-mode 미디어 쿼리가
+// 정본이고, 구형 iOS 는 navigator.standalone 만 갖고 있어 둘을 함께 본다.
+function isStandaloneApp(): boolean {
+  try {
+    return window.matchMedia('(display-mode: standalone)').matches
+      || (navigator as { standalone?: boolean }).standalone === true
+  } catch { return false }
+}
 
 export default function DocViewer({ fileId, from, tenantId, fileName }: {
   fileId: string
@@ -188,6 +207,32 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
     lastTap.current = now
   }
 
+  // 인쇄 — 데스크톱·안드로이드·아이폰 사파리는 종전 그대로 window.print() 다. 페이지가 우리 DOM 이라
+  // 브라우저 인쇄가 그대로 걸린다. **아이폰 홈화면 앱만** 그 호출이 무동작이라(신고 2523aa1e)
+  // 공유 시트로 우회한다 — 시트 안 [프린트]가 실기로 확인된 유일한 인쇄 운반로다.
+  // 8-04 에 "시트가 프린트를 안 연다"고 적힌 관측은 당시 공유되던 PDF 가 0바이트였던 것이 원인이고
+  // (pdf.js 버퍼 이관 결함, 8-05 봉합) 봉합 후 시트의 프린트는 정상 동작한다.
+  //
+  // 바이트를 ref 에 캐시하는 이유 — 공유 시트는 탭 직후(transient activation)에만 열린다.
+  // 다운로드가 길어져 거부되면 안내만 하고, 재탭 때 캐시로 즉시 시트를 연다(SendDocButton 과 같은 처방).
+  const printBytes = useRef<Promise<ArrayBuffer> | null>(null)
+
+  const handlePrint = useCallback(async () => {
+    if (!photoSaveNeedsShareSheet() || !isStandaloneApp()) { window.print(); return }
+    pushToast('info', '공유 창이 열리면 [프린트]를 눌러 주세요.')
+    try {
+      printBytes.current ??= fetchDocBytes(fileId)()
+      const bytes = await printBytes.current
+      // 0바이트를 그대로 넘기면 상대가 못 여는 빈 PDF 가 조용히 나간다(신고 5c99b5c8 클래스)
+      if (bytes.byteLength === 0) throw new Error('서류 준비에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
+      const ok = await sharePdfFile(new Blob([bytes], { type: 'application/pdf' }), `${fileName}.pdf`)
+      if (!ok) pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.')
+    } catch (e) {
+      printBytes.current = null
+      pushToast('error', (e as Error).message || '서류를 불러오지 못했습니다.')
+    }
+  }, [fileId, fileName])
+
   const step = (dir: 1 | -1) => {
     const cur = zRef.current
     const next = dir === 1
@@ -225,7 +270,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
             <>
               <SendDocButton getPdfBytes={fetchDocBytes(fileId)} fileName={fileName}
                 className={btnClass('secondary', 'md')} />
-              <Btn variant="primary" size="md" onClick={() => window.print()}>인쇄</Btn>
+              <Btn variant="primary" size="md" onClick={() => { void handlePrint() }}>인쇄</Btn>
             </>
           )}
         </div>
