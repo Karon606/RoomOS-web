@@ -10,7 +10,10 @@ export function prewarmPdfToPng(): void {
 export async function pdfToPngBlob(pdfBytes: ArrayBuffer, scale = 2.5): Promise<Blob> {
   const pdfjs = await import('pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
-  const task = pdfjs.getDocument({ data: pdfBytes })
+  // 반드시 사본을 넘긴다. pdf.js 는 받은 버퍼를 워커로 이관(transfer)해 호출자 원본이 0바이트로
+  // 비워진다(detached). SendDocButton 이 같은 바이트를 PDF 파일로도 쓰므로 원본이 비면
+  // 0KB PDF 가 조용히 만들어진다(신고 5c99b5c8 실측 — 에어드랍까지 0바이트).
+  const task = pdfjs.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) })
   const doc = await task.promise
   try {
     const page = await doc.getPage(1)
@@ -41,7 +44,8 @@ export async function pdfToPngBlob(pdfBytes: ArrayBuffer, scale = 2.5): Promise<
 export async function pdfToPngBlobs(pdfBytes: ArrayBuffer, scale = 2.5): Promise<Blob[]> {
   const pdfjs = await import('pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
-  const task = pdfjs.getDocument({ data: pdfBytes })
+  // 사본 전달 — 위 pdfToPngBlob 과 같은 이유(pdf.js 의 버퍼 이관이 원본을 비운다).
+  const task = pdfjs.getDocument({ data: new Uint8Array(pdfBytes.slice(0)) })
   const doc = await task.promise
   try {
     const blobs: Blob[] = []

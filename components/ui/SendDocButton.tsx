@@ -23,6 +23,13 @@ import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 
+// 빈 바이트로 PDF 를 만들면 0KB 파일이 조용히 공유돼 상대가 못 여는 사고가 된다(신고 5c99b5c8 —
+// pdf.js 버퍼 이관이 원본을 비우던 것. 근본은 pdfToPng 사본 전달로 봉합, 이건 그 클래스의 재발 감지망).
+function pdfBlobOf(bytes: ArrayBuffer): Blob {
+  if (bytes.byteLength === 0) throw new Error('서류 준비에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
+  return new Blob([bytes], { type: 'application/pdf' })
+}
+
 export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', className }: {
   getPdfBytes: () => Promise<ArrayBuffer>
   fileName: string   // 확장자 없이 — 형식에 따라 .png/.pdf 부여
@@ -74,7 +81,7 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
     const { asPng, toPhone } = pick
     setBusy(true)
     try {
-      const blobs = asPng ? await ensurePngs() : [new Blob([await ensureBytes()], { type: 'application/pdf' })]
+      const blobs = asPng ? await ensurePngs() : [pdfBlobOf(await ensureBytes())]
       const mime = asPng ? 'image/png' : 'application/pdf'
       const ext = asPng ? 'png' : 'pdf'
       // 1장이면 종전과 완전히 같은 파일명 — 영수증·확인서는 아무것도 달라지지 않는다

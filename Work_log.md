@@ -2683,3 +2683,8 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - Btn 눌림 피드백(웹디자이너 판정): Tailwind v4 가 hover 를 @media(hover:hover) 로 감싸 터치 기기에서 Btn 시각 반응이 0 이었음 — active 에 호버와 같은 토큰 배경(--persimmon-d "호버·프레스" 성문) + BASE 에 active:scale-[0.98](가이드 §09 허용). enabled:active 금지(BtnLink 죽음), disabled 는 :active 미매치라 충돌 없음.
 - iOS standalone '파일에 저장'·프린트 무반응은 OS 제약 — 실기 확인 후 2차 처방(한계 안내·버튼 정리) 판단. 서류 화면 손수 버튼 눌림 부재 명단(계약서 툴바 3종·영수증 스테퍼·뷰어 줌 바)은 후속 판단용으로 적립.
 - 검증: tsc·verify:fast·build·eslint 통과. 신고는 운영자 실기 확인 후 닫음.
+
+## 2026-08-05 (7) — 0KB PDF 근본 원인 봉합 (신고 5c99b5c8 실기 후속, 운영자 에어드랍 실측)
+- 실기 결과 PDF 내보내기가 전부 0KB(에어드랍 실측 0바이트). 원인은 pdf.js 가 받은 버퍼를 워커로 이관하며 **호출자 원본을 비우는(detach)** 동작 — SendDocButton 이 탭 즉시 사진 변환을 선준비(ensurePngs)하므로, PDF 를 골랐을 땐 이미 비워진 캐시 바이트로 Blob 을 만들어 0KB 가 됐다. 사진만 되고 PDF 만 안 되던 것·"준비 중" 이 첫 탭에만 뜨던 것·메시지 전송 실패가 전부 이 하나로 설명.
+- 봉합: pdfToPng 두 함수가 **사본**(pdfBytes.slice)을 pdf.js 에 넘긴다(전 호출처 일괄 안전). 재발 감지: SendDocButton 이 빈 바이트로 PDF 를 만들려 하면 조용한 0KB 공유 대신 명시 오류.
+- 앞선 처방(title 제거·직다운로드)의 iOS 'OS 제약' 판정은 부분 재평가 — 0KB 파일이 원인이던 몫이 있어, 이번 봉합 후 실기 재확인 대상. 프로덕션 런타임 오류 0건 확인(서버 생성은 정상).
