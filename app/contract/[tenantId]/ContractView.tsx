@@ -471,6 +471,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignError(null); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<SignaturePad | null>(null)
+  // 핀치줌으로 확대한 상태에서도 패드가 보이는 화면(visual viewport) 안에 머물게 오버레이 기하를 직접 기입한다.
+  // 금지: 이 모달과 그 조상에 CSS transform 을 절대 걸지 말 것. signature_pad 는 clientX - rect.left 로
+  // 획 좌표를 잡는데, transform 이 끼면 그 계약이 깨져 획이 손끝에서 어긋난다.
+  // 기하 보정은 오직 style 의 top/left/width/height 직접 기입으로만 한다.
+  const sigOverlayRef = useRef<HTMLDivElement>(null)
 
   // 패드 마운트 / 사이즈 (DPR 보정)
   useEffect(() => {
@@ -498,9 +503,39 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       if (ctx) ctx.scale(ratio, ratio)
       pad.fromData(strokes)
     }
+    // 확대(핀치줌) 중에는 layout viewport 기준 fixed 가 화면 밖으로 밀린다. 오버레이 기하를
+    // visual viewport 로 직접 맞춘다 — React state 로 반영하면 팬 프레임마다 리렌더가 나므로 금지.
+    // padding 은 배율로 나눠 확대해도 시각 여백이 일정하게 보이도록 한다(vv 없으면 CSS inset:0 폴백).
+    const vv = window.visualViewport
+    const syncOverlay = () => {
+      const el = sigOverlayRef.current
+      if (!el || !vv) return
+      el.style.top    = `${vv.offsetTop}px`
+      el.style.left   = `${vv.offsetLeft}px`
+      el.style.width  = `${vv.width}px`
+      el.style.height = `${vv.height}px`
+      el.style.padding = `${16 / (vv.scale || 1)}px`
+    }
+    // 순서 고정: syncOverlay 다음 setupCanvas — setupCanvas 가 캔버스의 offsetWidth 를 읽는다.
+    syncOverlay()
     setupCanvas()
+    // vv 이벤트는 팬·핀치 동안 초당 수십 번 쏟아진다. rAF 로 프레임당 1회로 묶는다.
+    let vvRaf = 0
+    const onViewportChange = () => {
+      if (vvRaf) return
+      vvRaf = requestAnimationFrame(() => {
+        vvRaf = 0
+        syncOverlay()
+        setupCanvas()
+      })
+    }
+    vv?.addEventListener('resize', onViewportChange)
+    vv?.addEventListener('scroll', onViewportChange)
     window.addEventListener('resize', setupCanvas)
     return () => {
+      if (vvRaf) cancelAnimationFrame(vvRaf)
+      vv?.removeEventListener('resize', onViewportChange)
+      vv?.removeEventListener('scroll', onViewportChange)
       window.removeEventListener('resize', setupCanvas)
       pad.off()
       sigPadRef.current = null
@@ -1127,7 +1162,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
       {signOpen && (
-        <div className="sig-overlay no-print" onClick={() => setSignOpen(false)}>
+        <div ref={sigOverlayRef} className="sig-overlay no-print" onClick={() => setSignOpen(false)}>
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
@@ -1380,7 +1415,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .contract-paper .section-add-btn { width: 100%; padding: 8px; border: 1px dashed #a03c2e; color: #a03c2e; background: transparent; border-radius: 8px; font-size: 12px; cursor: pointer; }
 
         /* ── 서명 모달 ──────────────────────────────────────────── */
-        .sig-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        /* inset:0 은 visual viewport API 가 없을 때의 폴백. 있으면 JS 가 top/left/width/height 를 직접 기입하므로
+           padding 이 폭 밖으로 더해지지 않게 border-box 로 둔다. transform 은 금지(좌표 계약). */
+        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
         .sig-modal { width: 100%; max-width: 640px; background: var(--cream); border-radius: 18px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 14px; }
         .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
         .sig-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
