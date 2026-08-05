@@ -7,7 +7,8 @@
 // 일부 휴대폰 문자 앱은 PDF 첨부 전송이 안 됨 — 사진이 확실한 경로라 선택지를 제공한다).
 // 형식 선택은 choiceDialog 정본(§14 3지선다).
 // 제스처 만료 대책(첫 탭 실패 재발 방지): 버튼 탭 즉시 백그라운드로 fetch·변환을 시작해 선택창을 읽는
-// 동안 준비를 끝내고, 그래도 늦어 거부되면 다운로드로 새지 않고 재탭 안내(결과 캐시로 재탭은 즉시 성공).
+// 동안 준비를 끝내고, 그래도 늦어 거부되면 다운로드로 새지 않고 '공유 창 열기' 확인 창을 띄운다 —
+// 그 확인 탭이 곧 신선한 제스처라 같은 흐름 안에서 시트가 열린다(재탭 안내 토스트를 대체).
 // 다운로드는 '기기에 저장'(아이폰 계열 제외)과, 전달 자체를 못 하는 기기(데스크톱) 폴백에서만.
 //
 // 다페이지 지원(2026-08-01). 종전에는 계약서를 이 버튼에서 금지했다 — pdfToPng 가 1페이지만 그려
@@ -18,8 +19,8 @@
 // 분기가 그것을 보장한다. 번호 접미는 2장 이상일 때만 붙는다.
 
 import { useEffect, useRef, useState } from 'react'
-import { pushToast } from '@/lib/saveStatus'
-import { choiceDialog } from '@/components/ui/ConfirmDialog'
+import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
+import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 
@@ -37,10 +38,9 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
   className?: string
 }) {
   const [busy, setBusy] = useState(false)
-  // 준비 캐시 — 첫 시도가 제스처 만료로 거부돼도 재탭이 즉시 성공하게 유지
+  // 준비 캐시 — 선택창을 읽는 동안 시작해 둔 fetch·변환을 본 흐름과 재시도가 함께 쓴다.
+  // 탭 단위로만 유효하다(handleSend 진입에서 비운다) — 서명 전 서류가 다음 탭까지 살면 안 된다.
   const cache = useRef<{ bytes?: Promise<ArrayBuffer>; pngs?: Promise<Blob[]> }>({})
-  // 재탭 대기 선택 — 만료 재시도 때 선택창을 다시 묻지 않고 바로 시트를 연다
-  const retryPick = useRef<{ asPng: boolean; toPhone: boolean } | null>(null)
   useEffect(() => { prewarmPdfToPng() }, [])
 
   const ensureBytes = () => (cache.current.bytes ??= getPdfBytes().catch(e => { cache.current.bytes = undefined; throw e }))
@@ -58,8 +58,16 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
         altLabel: 'PDF로',
       })
       if (!format || format === 'back') return null
+      // 아이폰 계열에서 '기기에 저장'은 공유 창을 거친다. 시트만 덜렁 열면 어느 항목이 저장인지 못 찾으므로
+      // (운영자 실기) 고르기 전에 여기서 미리 알려준다 — 선택창은 사용자가 읽을 때까지 떠 있다.
+      const viaSheet = photoSaveNeedsShareSheet() && canShareFiles()
       const dest = await choiceDialog({
         title: '만든 서류를 어떻게 할까요?',
+        ...(viaSheet ? {
+          message: format === 'confirm'
+            ? '[기기에 저장]을 고르면 공유 창이 열립니다. 공유 창에서 [이미지 저장]을 누르면 사진첩에 저장됩니다.'
+            : '[기기에 저장]을 고르면 공유 창이 열립니다. 공유 창에서 [파일에 저장]을 누르면 원하는 위치에 저장됩니다.',
+        } : {}),
         confirmLabel: '기기에 저장',
         altLabel: '문자로 보내기',
         // 형식을 잘못 골랐을 때 되짚을 길. 취소는 흐름 전체를 무변경으로 닫는 것이라 이것과 다르다.
@@ -72,11 +80,12 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
   }
 
   const handleSend = async () => {
+    // 탭할 때마다 캐시를 버린다 — 앞선 탭에서 만든 '서명 전' PDF 가 남아 있으면 서명하고 다시 눌러도
+    // 옛 서류가 나간다. 선택창을 읽는 시간이 다시 받아오는 비용을 그대로 흡수한다.
+    cache.current = {}
     // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다
     void ensurePngs().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
-    const wasRetry = retryPick.current != null
-    const pick = retryPick.current ?? await ask()
-    retryPick.current = null
+    const pick = await ask()
     if (!pick) return
     const { asPng, toPhone } = pick
     setBusy(true)
@@ -88,8 +97,8 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
       const nameAt = (i: number) => blobs.length === 1 ? `${fileName}.${ext}` : `${fileName}_${i + 1}.${ext}`
 
       // 기기에 저장 — 아이폰 계열만 시트를 거친다. 다운로드가 '파일' 앱으로만 가서 사진첩에 못 넣고,
-      // PDF 도 시트의 [파일에 저장]을 눌러야 원하는 곳에 들어가기 때문이다. 그 경우 어느 항목을 눌러야
-      // 하는지 먼저 알려준다. 시트만 덜렁 열면 못 찾는다(운영자 실기).
+      // PDF 도 시트의 [파일에 저장]을 눌러야 원하는 곳에 들어가기 때문이다. 어느 항목을 눌러야 하는지는
+      // ask() 의 목적지 선택창 문구가 이미 알려줬다.
       // 아이폰이 아니면 공유를 아예 시도하지 않고 바로 다운로드한다 — 갤럭시에서 '기기에 저장'이
       // 공유 시트로 새던 것을 막는다(신고 5c99b5c8). 안드로이드는 a[download] 가 확실히 동작한다.
       const saveViaSheet = photoSaveNeedsShareSheet() && canShareFiles()
@@ -97,20 +106,26 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
         await fallbackDownloadAll(blobs, nameAt, mime, 'save')
         return
       }
-      if (!toPhone) pushToast('info', asPng
-        ? '공유 창에서 [이미지 저장]을 누르면 사진첩에 들어갑니다.'
-        : '공유 창이 열리면 [파일에 저장]을 눌러 주세요.')
 
       if (canShareFiles()) {
-        const result = await shareFiles(blobs.map((b, i) => new File([b], nameAt(i), { type: mime })))
-        // 제스처 만료 — 캐시·선택이 준비돼 있어 재탭은 선택창 없이 즉시 시트가 열린다. 다운로드로 새지 않는다(운영자 혼란 보고).
-        // 단, 재탭(신선한 제스처 + 캐시 준비)마저 거부되면 이 기기는 실질 공유 불가(주로 PC 브라우저의
-        // 지원 사칭) — 안내가 무한 반복되지 않게 다운로드로 확정 폴백(운영자 PC 확인 2026-07-22).
+        const files = blobs.map((b, i) => new File([b], nameAt(i), { type: mime }))
+        let result = await shareFiles(files)
         if (result === 'retry') {
-          if (wasRetry) await fallbackDownloadAll(blobs, nameAt, mime)
-          else { retryPick.current = pick; pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.') }
+          // 제스처 만료 — 준비가 시트를 여는 허용 시간을 넘겼다. 종전에는 '다시 한 번 눌러 주세요' 토스트였는데
+          // 왜 또 눌러야 하는지 설명이 없었고 읽기도 전에 사라졌다(운영자 신고). 확인 창은 사정을 말한 채
+          // 기다리고, 그 확인 탭이 곧 신선한 제스처라 준비된 파일로 시트가 바로 열린다.
+          if (!(await confirmDialog({
+            title: '서류가 준비되었습니다',
+            message: '서류를 준비하는 동안 공유 창을 여는 허용 시간이 지났습니다. 아래 버튼을 누르면 준비된 서류로 공유 창이 바로 열립니다.',
+            confirmLabel: '공유 창 열기',
+          }))) return
+          result = await shareFiles(files)
+          // 신선한 제스처 + 준비된 파일인데도 거부되면 이 기기는 실질 공유 불가(주로 PC 브라우저의 지원
+          // 사칭) — 안내가 무한 반복되지 않게 다운로드로 확정 폴백(운영자 PC 확인 2026-07-22).
+          if (result === 'retry' || result === 'unsupported') await fallbackDownloadAll(blobs, nameAt, mime)
+          return
         }
-        else if (result === 'unsupported') await fallbackDownloadAll(blobs, nameAt, mime)
+        if (result === 'unsupported') await fallbackDownloadAll(blobs, nameAt, mime)
       } else {
         await fallbackDownloadAll(blobs, nameAt, mime)
       }
@@ -133,9 +148,10 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
       if (result === 'cancelled') return
     }
     if (downloaded && intent === 'share') {
+      // 예상 밖의 결말이라 읽을 시간이 필요하다 — 짧은 지속시간으로는 눈에 담기 전에 사라진다.
       pushToast('info', blobs.length > 1
         ? `이 기기에서는 바로 보낼 수 없어 ${blobs.length}장을 파일로 저장했습니다.`
-        : '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.')
+        : '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
     }
   }
 
