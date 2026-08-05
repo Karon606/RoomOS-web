@@ -876,6 +876,11 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   const priceUnit = row.trackUnit === 'qty' ? (row.qtyUnit ?? row.unitHint) : (row.specUnit ?? row.qtyUnit ?? row.unitHint)
   // 숨긴(비어 있는) 위치는 화면에서 가린다 — 서버가 계산한 hiddenLocationIds 멤버십으로만 거른다(2단계).
   const hidden = new Set(row.hiddenLocationIds)
+  // 보충 재원(창고) 잔량 — 접힌 카드에서도 "채울 게 남았나"를 보이게. 서버·산식 무변경, 이미 내려온 값만 읽는다.
+  // 생략 조건: 허브 미지정 / 허브 잔량 모름 / 열린 비허브 위치 없음(창고 하나뿐이면 총량과 같아 군더더기).
+  const hubLoc = row.locations.find(l => l.isHub) ?? null
+  const hubQty = hubLoc ? row.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null : null
+  const showHub = hubLoc != null && hubQty != null && row.currentLocationBreakdown.some(lb => lb.locationId !== hubLoc.id && !hidden.has(lb.locationId))
   return (
     <InvCard
       selectable={selectMode} selected={isSelected}
@@ -900,10 +905,15 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       // 대상은 있는데 **아직 세어보지 않아 모른다.** 0 과 모름을 뭉개지 말라는 것은 이 앱이 소모율과
       // 월별 사용량에서 이미 정한 원칙인데(knowledge/domain-inventory.md) 잔량에만 적용된 적이 없었다.
       // 값 자리에는 문자를 넣지 않는다 — §22 가 그 슬롯을 tnum 수치로 못 박아 카드 정렬이 흔들린다.
-      valueSub={row.currentStock == null ? '잔량 미확인 · 재고 점검을 한 번 하면 잡힙니다.'
-        : row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}`
-        : row.avgDaily === 0 ? '최근 사용 없음'
-        : '소진 예측 준비 중 · 점검 데이터 부족'}
+      valueSub={(() => {
+        const text = row.currentStock == null ? '잔량 미확인 · 재고 점검을 한 번 하면 잡힙니다.'
+          : `${showHub ? `창고 ${fmtQty(hubQty, stockUnit)} · ` : ''}${
+              row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}`
+              : row.avgDaily === 0 ? '최근 사용 없음'
+              : '소진 예측 준비 중 · 점검 데이터 부족'}`
+        // 임박은 값(valueDanger)만 붉었고 보조줄은 회색이라 D-숫자가 눈에 안 걸렸다. 판정은 위 lowStock 재사용(새 임계 없음).
+        return lowStock ? <span className="text-[var(--coral)]">{text}</span> : text
+      })()}
       expanded={open}
       actions={<>
         <button type="button" onClick={() => setOpen(v => !v)}
@@ -1353,12 +1363,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
             />
             {row.locations.length > 0 && (() => {
               const itemHub = row.locations.find(l => l.isHub) ?? null
+              // 창고 잔량 부기 — 모르면(허브 미지정·breakdown 없음) 숫자를 지어내지 않고 생략한다.
+              const itemHubQty = itemHub ? row.currentLocationBreakdown.find(lb => lb.locationId === itemHub.id)?.qty ?? null : null
               return (
                 <div className="relative inline-block mt-2">
                   <button type="button" onClick={() => setHubOpen(o => !o)} disabled={pending}
                     className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.name ?? '미지정'}</strong>
+                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.name ?? '미지정'}</strong>{itemHubQty != null && <span className="tnum"> · {fmtQty(itemHubQty, detailStockUnit)}</span>}
                     <span className="text-[var(--warm-muted)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
                   </button>
                   {hubOpen && (
@@ -1607,7 +1619,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <input type="text" inputMode="numeric" value={thresholdDays}
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-        <p className="text-[0.65625rem] text-[var(--warm-muted)]">예: 3이면 소진 예상 3일 이하일 때 알림</p>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)]">예: 7이면 소진 예상 7일 이하일 때 알림</p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
