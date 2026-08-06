@@ -1699,6 +1699,7 @@ function normalizeLabel(s: string): string {
 // "종량제쓰레기봉투 (50L)" 과 "종량제쓰레기봉투 (20L)" 이 같은 키가 됐고 앱이 둘 중 어디에 넣을지
 // 물었다. 물을 일이 아니다 — 이름에 50L 이라고 적혀 있다(운영자 지적 2026-08-05).
 // normalizeLabel 자체는 안 건드린다. 그 값이 병합 규칙(LINK·MUTE)의 키라 바꾸면 기존 규칙이 끊긴다.
+// 아래 단위 집합은 lib/units.ts 의 splitSizeLabel(표시용 크기 캡션 분리)과 동일하다 — 바꾸면 양쪽을 함께.
 function sizeSignature(s: string): string {
   const m = s.toLowerCase().match(/\d+(\.\d+)?\s*(l|ml|g|kg|cm|mm|m|인치)\b/g)
   return m ? m.map(x => x.replace(/\s+/g, '')).sort().join(',') : ''

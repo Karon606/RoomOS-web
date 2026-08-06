@@ -21,7 +21,7 @@ import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeShe
 import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr } from '@/lib/kstDate'
-import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor } from '@/lib/units'
+import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor, splitSizeLabel } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useCanEditScope } from '@/components/RoleContext'
@@ -881,13 +881,18 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   const hubLoc = row.locations.find(l => l.isHub) ?? null
   const hubQty = hubLoc ? row.currentLocationBreakdown.find(lb => lb.locationId === hubLoc.id)?.qty ?? null : null
   const showHub = hubLoc != null && hubQty != null && row.currentLocationBreakdown.some(lb => lb.locationId !== hubLoc.id && !hidden.has(lb.locationId))
+  // 제목 캡션 두 경로는 구조적 배타 — specHint 는 라벨에 숫자가 있으면 서버가 null 로 준다(overview.resolveSpecHint).
+  // 그래서 이름에 크기가 박힌 카드는 여기서, 이름에 없고 구매 규격이 전원일치인 카드는 specHint 로 캡션이 생긴다.
+  const sizeSplit = row.specHint ? null : splitSizeLabel(row.label)
+  const titleCaption = row.specHint ?? sizeSplit?.size ?? null
   return (
     <InvCard
       selectable={selectMode} selected={isSelected}
       onToggleSelect={onOpen} onClick={onOpen} onLongPress={onLongPress} attn={lowStock}
       // 제목 뒤 규격 병기 — 비품 카드(AssetsClient)와 같은 캡션 문법. 표시 전용이고 편집 값 자리엔 안 쓴다.
       // 구매 규격이 전원일치인 수량 카드에만 뜬다(서버 resolveSpecHint) — 특수마대 '10L' 처럼.
-      title={row.specHint ? <>{row.label} <span className="font-normal text-[var(--warm-muted)]">{row.specHint}</span></> : row.label}
+      // 이름 꼬리에 크기가 박힌 카드(봉투 20L)는 splitSizeLabel 로 같은 캡션 자리에 붙인다.
+      title={titleCaption ? <>{sizeSplit?.base ?? row.label} <span className="font-normal text-[var(--warm-muted)]">{titleCaption}</span></> : row.label}
       badges={(() => {
         // §11 병렬 최대 2개 — 3개 조건이 겹치면 2개 + "+N" 뉴트럴(운영자 승인 2026-07-22)
         const list = [
@@ -1288,13 +1293,20 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
 
   const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? (data.item.qtyUnit ?? data.item.unitHint) : (data.item.specUnit ?? data.item.qtyUnit ?? data.item.unitHint)) : null
   const isViewMode = mode === 'view' && !!data
+  // 카드 제목과 같은 분리 — 카드에서 캡션으로 떨어져 있던 크기가 모달을 열면 되돌아오면 안 된다.
+  const detailLabel = data?.item.label ?? row.label
+  const detailSplit = row.specHint ? null : splitSizeLabel(detailLabel)
+  const detailCaption = row.specHint ?? detailSplit?.size ?? null
 
   return (
     <Modal
       open
       onClose={onClose}
       width="lg"
-      title={data?.item.label ?? row.label}
+      // Modal 은 title 이 문자열일 때만 h2 를 씌운다 — JSX 로 넘기므로 같은 클래스의 h2 로 직접 감싼다.
+      title={detailCaption
+        ? <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{detailSplit?.base ?? detailLabel} <span className="font-normal text-[var(--warm-muted)]">{detailCaption}</span></h2>
+        : detailLabel}
       subtitle={data?.item.category ?? row.category}
       // 풀블리드 — 모드(점검·보정·설정 등)마다 다른 하위 폼이 자기 여백과 폭 전체 구분선을 직접 갖는다.
       bodyClassName=""

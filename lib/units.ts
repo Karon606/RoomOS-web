@@ -147,3 +147,29 @@ export function listCompatibleUnits(unit: string | null | undefined): string[] {
   }
   return out
 }
+
+// 표시용 크기 토큰 단위 집합 — app/(app)/inventory/actions.ts 의 sizeSignature(병합 가드)와 동일하다.
+// 한쪽만 바꾸면 "화면에서는 크기로 떼어낸 값"과 "병합이 크기로 보는 값"이 갈린다. 집합을 바꾸면 양쪽을 함께.
+const SIZE_UNITS = 'l|ml|g|kg|cm|mm|m|인치'
+//   뒤에 글자·숫자가 붙으면(20L들이·1m2) 크기 표기가 아니다.
+const SIZE_TOKEN = new RegExp(`\\d+(?:\\.\\d+)?\\s*(?:${SIZE_UNITS})(?![a-z0-9가-힣])`, 'gi')
+
+// 이름 꼬리에 붙은 크기 표기를 캡션으로 떼어낸다 — **표시 전용**.
+//   "종량제쓰레기봉투 (20L)" → { base: '종량제쓰레기봉투', size: '20L' }
+//   "음식물쓰레기봉투 50L"   → { base: '음식물쓰레기봉투', size: '50L' }
+// 정체성·병합 키·검색 매칭은 라벨 원문 그대로 쓴다. 여기서 떼어낸 값은 화면 밖으로 나가지 않는다.
+// 토큰이 없거나(특수마대) 둘 이상이거나(장판몰딩 12m x 7.4cm) 이름 중간에 있으면 null — 호출부는 원문 폴백.
+export function splitSizeLabel(label: string): { base: string; size: string } | null {
+  const matches = [...label.matchAll(SIZE_TOKEN)]
+  if (matches.length !== 1) return null
+  const m = matches[0]
+  const start = m.index
+  const after = label.slice(start + m[0].length)
+  if (!/^\s*\)?\s*$/.test(after)) return null            // 꼬리가 아니면 건드리지 않는다
+  const before = label.slice(0, start).replace(/\s+$/, '')
+  const hasOpen = before.endsWith('(')
+  if (hasOpen !== after.includes(')')) return null       // 괄호 짝이 안 맞으면 원문 폴백
+  const base = (hasOpen ? before.slice(0, -1) : before).trim()
+  if (!base) return null                                 // 이름이 통째로 크기면 뗄 것이 없다
+  return { base, size: m[0].replace(/\s+/g, '') }
+}
