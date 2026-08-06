@@ -20,7 +20,7 @@ import type { Prisma, SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
-import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
+import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inventory/actions'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
@@ -2667,4 +2667,58 @@ export async function getSpecTrackedInfo(labels: string[]): Promise<Record<strin
   const out: Record<string, { specUnit: string }> = {}
   for (const r of rows) if (r.specUnit && r.specUnit.trim()) out[r.label] = { specUnit: r.specUnit }
   return out
+}
+
+
+// 품명 정체성 게이트용 이력 — 이 (카테고리, 품명) 카드가 지금까지 어떤 규격으로 등록됐는지.
+// 품목의 정체성은 품명 문자열 하나다(knowledge/domain-inventory.md). 규격 칸에 크기를 적어도
+// 시스템은 그것으로 카드를 나누지 않으므로, 10L 와 20L 이 한 카드에 섞이는 일이 조용히 일어난다.
+// 화면이 저장 직전에 "나눌까요" 를 물으려면 '지금까지 쓴 규격의 종류'가 필요해서 여기서 집계한다.
+// distinct 원값 그대로 돌려준다 — 물리 동치(2.1L=2100ml) 판정은 호출부가 lib/units 로 한다.
+export async function getSizeIdentityInfo(category: string, labels: string[]): Promise<Record<string, {
+  cardId: string
+  trackUnit: string
+  qtyUnit: string | null
+  specHistory: { value: number; unit: string; count: number }[]
+}>> {
+  const { propertyId } = await requirePropertyAccess()
+  const names = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
+  if (!names.length) return {}
+  // 활성 카드가 있는 품명만 대상 — 카드가 없으면 나눌 것도 없다(침묵).
+  const cards = await prisma.trackedItem.findMany({
+    where: { propertyId, category, label: { in: names }, isArchived: false },
+    select: { id: true, label: true, trackUnit: true, qtyUnit: true },
+  })
+  if (!cards.length) return {}
+  const rows = await prisma.expense.groupBy({
+    by: ['itemLabel', 'specValue', 'specUnit'],
+    where: {
+      propertyId,
+      category,
+      itemLabel: { in: cards.map(c => c.label) },
+      isShipping: false,
+      excludeFromInventory: false,
+      specValue: { not: null, gt: 0 },
+      specUnit: { not: null },
+    },
+    _count: { _all: true },
+  })
+  const out: Record<string, { cardId: string; trackUnit: string; qtyUnit: string | null; specHistory: { value: number; unit: string; count: number }[] }> = {}
+  for (const c of cards) {
+    const hist = rows
+      .filter(r => r.itemLabel === c.label && r.specValue != null && r.specValue > 0 && (r.specUnit ?? '').trim() !== '')
+      .map(r => ({ value: r.specValue as number, unit: (r.specUnit as string).trim(), count: r._count._all }))
+      .sort((a, b) => b.count - a.count)
+    out[c.label] = { cardId: c.id, trackUnit: c.trackUnit, qtyUnit: c.qtyUnit, specHistory: hist }
+  }
+  return out
+}
+
+
+// 품명 정체성 게이트가 '나누기' 선택 시 구 카드를 '{라벨} {기존규격}' 으로 개명하는 통로.
+// 개명 로직(동명 충돌 검사 + 지출 라벨 전파)은 재고 정본 updateTrackedItem 하나뿐이라 그대로 재사용한다.
+export async function renameTrackedItemLabel(id: string, label: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requirePropertyAccess()
+  const r = await updateTrackedItem(id, { label })
+  return r.ok ? { ok: true } : { ok: false, error: r.error }
 }

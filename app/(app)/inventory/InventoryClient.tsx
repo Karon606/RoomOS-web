@@ -885,7 +885,9 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
     <InvCard
       selectable={selectMode} selected={isSelected}
       onToggleSelect={onOpen} onClick={onOpen} onLongPress={onLongPress} attn={lowStock}
-      title={row.label}
+      // 제목 뒤 규격 병기 — 비품 카드(AssetsClient)와 같은 캡션 문법. 표시 전용이고 편집 값 자리엔 안 쓴다.
+      // 구매 규격이 전원일치인 수량 카드에만 뜬다(서버 resolveSpecHint) — 특수마대 '10L' 처럼.
+      title={row.specHint ? <>{row.label} <span className="font-normal text-[var(--warm-muted)]">{row.specHint}</span></> : row.label}
       badges={(() => {
         // §11 병렬 최대 2개 — 3개 조건이 겹치면 2개 + "+N" 뉴트럴(운영자 승인 2026-07-22)
         const list = [

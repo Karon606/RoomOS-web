@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { getLabelCategoryHistory, getSpecTrackedInfo } from './actions'
+import { getLabelCategoryHistory, getSpecTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
+import { specMultiplier, convertUnit } from '@/lib/units'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -414,9 +415,12 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     if (similar) {
       const useExisting = await confirmDialog({
         title: '비슷한 품목이 있어요',
-        message: `이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' · 입력한 '${label}' 그대로 등록)`,
-        confirmLabel: `'${similar}'로`,
-        cancelLabel: '새 품목으로',
+        // 두 갈래가 각각 무엇을 뜻하는지 문장으로 말한다 — 품명이 곧 재고 카드라, 여기서 고른 쪽이
+        // 그대로 카드 하나로 합칠지 둘로 나눌지를 정한다.
+        message: `이미 '${similar}' 을 쓰고 계세요. 같은 품목이면 '${similar}' 으로 합쳐서 기록되고, `
+          + `색상·규격이 다른 물건이면 '${label}' 이 새 품목으로 나뉘어 재고도 따로 관리됩니다.`,
+        confirmLabel: `'${similar}' 으로`,
+        cancelLabel: `'${label}' 새 품목으로`,
       })
       if (useExisting) finalLabel = similar
     }
@@ -2166,10 +2170,82 @@ export default function FinanceClient({
             if (first) fd.set('category', first.category)
           }
         }
+        // 규격 정체성 게이트 — 규격 칸에 적힌 크기가 사실은 '다른 물건'일 때 품명으로 승격할지 묻는다.
+        // 품목의 정체성은 품명 문자열 하나다(knowledge/domain-inventory.md). 10L 마대와 20L 마대를 따로
+        // 관리하려면 품명이 달라야 하는데, 규격 칸은 카드를 나누지 않는다 — 그래서 그 통로에 문지기를 둔다.
+        // 시스템은 구분의 종류(용량·색·향)를 해석하지 않는다. 발동 조건은 전부 AND 이고
+        // 하나라도 어긋나면 침묵한다(보수 편향 — 실지출 전수 재생에서 충돌형 발동 0건).
+        let finalItems = addItems
+        {
+          const cat = (fd.get('category') as string) || addExpCategory
+          const sizeText = (v: number, u: string) => `${Number(v.toFixed(6))}${u}`
+          // 물리 동치 — 2.1L 과 2100ml 은 같은 규격이다. 환산 불가(차원이 다름)면 다른 규격으로 본다.
+          const sameSize = (a: { value: number; unit: string }, b: { value: number; unit: string }) => {
+            const c = convertUnit(a.value, a.unit, b.unit)
+            return c != null && Math.abs(c - b.value) < 1e-9
+          }
+          const cands = finalItems.filter(it => {
+            const label = (it.label ?? '').trim()
+            if (!label || /\d/.test(label)) return false          // 규격이 이미 이름에 있으면 침묵
+            const v = Number(it.specValue)
+            const u = (it.specUnit ?? '').trim()
+            if (!(v > 0) || !u) return false
+            return specMultiplier(v, u, it.qtyUnit) == null       // 규격이 수량 계산에 참여하면 그건 양이다
+          })
+          const info = cands.length
+            ? await getSizeIdentityInfo(cat, cands.map(it => it.label.trim()))
+                .catch(() => ({} as Awaited<ReturnType<typeof getSizeIdentityInfo>>))
+            : {}
+          let split = false
+          for (let i = 0; i < finalItems.length; i++) {
+            const it = finalItems[i]
+            if (!cands.includes(it)) continue
+            const label = it.label.trim()
+            const card = info[label]
+            if (!card || card.trackUnit !== 'qty') continue       // 카드가 없거나 규격으로 세는 카드면 침묵
+            const now = { value: Number(it.specValue), unit: (it.specUnit ?? '').trim() }
+            // 이력 규격을 물리 동치로 묶는다 — 2.1L·2100ml 두 표기가 '혼재'로 읽히지 않게.
+            const sizes: { value: number; unit: string; count: number }[] = []
+            for (const h of card.specHistory) {
+              const hit = sizes.find(s => sameSize(h, s))
+              if (hit) hit.count += h.count
+              else sizes.push({ ...h })
+            }
+            if (!sizes.length) continue
+            if (sizes.some(s => sameSize(now, s))) continue       // 써 본 규격이면 침묵 — 이력이 곧 기억이다
+            const nowText = sizeText(now.value, now.unit)
+            const only = sizes.length === 1 ? sizes[0] : null
+            const oldText = only ? sizeText(only.value, only.unit) : ''
+            const choice = await choiceDialog({
+              title: `'${label}' 를 ${nowText} 규격으로 저장할까요?`,
+              message: only
+                ? `지금까지 이 품목은 ${oldText} 규격으로만 등록했습니다. 서로 다른 품목으로 관리하려면 구분을 품명에 표시합니다. `
+                  + `나누면 이번 구매는 '${label} ${nowText}' 로, 기존 품목과 지출은 '${label} ${oldText}' 로 나뉩니다.`
+                : `이 품목은 여러 규격(${sizes.map(s => sizeText(s.value, s.unit)).join(', ')})을 같은 품목으로 관리하고 있습니다. `
+                  + `나누면 이번 구매만 '${label} ${nowText}' 로 분리되고, 기존 품목은 그대로 둡니다.`,
+              confirmLabel: only ? '규격별로 나누기' : `'${label} ${nowText}' 로 분리`,
+              altLabel: '같은 품목으로',
+              level: 'caution',
+            })
+            if (choice === null) return                            // 취소·X = 저장 중단(무변경)
+            if (choice !== 'confirm') continue                     // 같은 품목으로 — 다음 같은 규격 구매는 이력에 잡혀 침묵
+            // 나누기 — 이번 구매는 새 품명으로. 이력이 단일이면 구 카드도 규격을 붙여 개명한다.
+            // 안 붙이면 옛 규격 지출이 규격 없는 품명 아래 남아 어느 쪽 물건인지 알 수 없게 된다.
+            if (only) {
+              const r = await renameTrackedItemLabel(card.cardId, `${label} ${oldText}`)
+                .catch(() => ({ ok: false as const, error: '기존 품목 이름을 바꾸지 못했습니다.' }))
+              if (!r.ok) pushToast('error', r.error)               // 동명 카드 충돌 등 — 새 품명 저장은 그대로 진행
+            }
+            finalItems = finalItems.map((x, xi) => xi === i ? { ...x, label: `${label} ${nowText}` } : x)
+            split = true
+          }
+          // 바꾼 품명이 후속 게이트·저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 품명이다.
+          if (split) fd.set('itemsJson', JSON.stringify(finalItems.map(x => ({ ...x, setHint: undefined, allocations: addIsDurable ? undefined : x.allocations }))))
+        }
         // 용량 단위로 잔량을 세는 품목인데 용량이 비었으면 한 번 묻는다(신고 27f91356, 운영자 제안).
         // 막지 않는다 — 넣기 싫으면 그대로 저장하고, 그 구매는 개수로 집계된다.
         {
-          const noSpec = addItems.filter(it => it.label?.trim() && !(Number(it.specValue) > 0))
+          const noSpec = finalItems.filter(it => it.label?.trim() && !(Number(it.specValue) > 0))
           if (noSpec.length) {
             const info = await getSpecTrackedInfo(noSpec.map(it => it.label.trim())).catch(() => ({} as Record<string, { specUnit: string }>))
             const hit = noSpec.find(it => info[it.label.trim()])

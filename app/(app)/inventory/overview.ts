@@ -3,7 +3,7 @@
 import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
-import { specMultiplier } from '@/lib/units'
+import { specMultiplier, convertUnit } from '@/lib/units'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -75,6 +75,44 @@ export async function resolveUnitHint(
     rows.map(r => r.qtyUnit?.trim() ?? '').filter(u => u !== ''),
   )
   return units.size === 1 ? [...units][0] : null
+}
+
+// ── 카드 규격 표시 캡션(specHint) — 표시 전용. 위 unitHint 와 같은 '전원일치' 규칙의 규격판이다.
+// 수량으로 세는 카드(trackUnit='qty')에서 규격은 잔량 계산에 들어가지 않아(specMultiplier null)
+// 화면 어디에도 안 보인다. 특수마대 10L 처럼 그 크기가 곧 물건의 정체성인 경우가 있어서,
+// 이 카드의 구매 규격이 **전원일치**(물리 동치, 2.1L=2100ml)일 때만 그 값을 제목 옆에 병기한다.
+// 하나라도 다르면(10L·20L 혼재) null — 혼재에 아무 값이나 찍는 것보다 안 쓰는 게 정직하다.
+// 품명에 이미 숫자가 있으면 null(중복 표기). 카드(TrackedItem)에는 절대 쓰지 않는다.
+export async function resolveSpecHint(
+  propertyId: string, category: string, label: string, qtyUnit: string | null, trackUnit: string,
+): Promise<string | null> {
+  if (trackUnit !== 'qty') return null
+  if (/\d/.test(label)) return null
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      category,
+      itemLabel: label,
+      receivedAt: { not: null },
+      excludeFromInventory: false,
+      specValue: { not: null, gt: 0 },
+      specUnit: { not: null },
+      ...(qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit }] } : {}),
+    },
+    select: { specValue: true, specUnit: true, qtyUnit: true },
+  })
+  const specs = rows
+    .map(r => ({ value: r.specValue as number, unit: (r.specUnit ?? '').trim(), itemUnit: r.qtyUnit ?? qtyUnit }))
+    .filter(s => s.unit !== '')
+  if (!specs.length) return null
+  // 규격이 수량 계산에 참여하면(=배수가 나오면) 그건 크기가 아니라 양이다 — 표시 대상 아님.
+  if (specs.some(s => specMultiplier(s.value, s.unit, s.itemUnit) != null)) return null
+  const head = specs[0]
+  const allSame = specs.every(s => {
+    const c = convertUnit(s.value, s.unit, head.unit)
+    return c != null && Math.abs(c - head.value) < 1e-9
+  })
+  return allSame ? `${Number(head.value.toFixed(6))}${head.unit}` : null
 }
 
 export async function sumAdditions(
@@ -443,8 +481,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 예: 쌀 20kg × 1포대 60,000원 → 60,000 / (1 × 20) = 3,000원/kg
     //     물티슈 100매 × 2팩 10,000원 → 10,000 / (2 × 100) = 50원/매
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-    // unitHint 는 단가와 무관하지만 같은 왕복에 태워 조회 지연을 늘리지 않는다.
-    const [recentPurchases, unitHint] = await Promise.all([
+    // unitHint·specHint 는 단가와 무관하지만 같은 왕복에 태워 조회 지연을 늘리지 않는다.
+    const [recentPurchases, unitHint, specHint] = await Promise.all([
       prisma.expense.findMany({
         where: {
           propertyId,
@@ -462,6 +500,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         orderBy: { date: 'desc' },
       }),
       resolveUnitHint(propertyId, it.category, it.label, it.qtyUnit),
+      resolveSpecHint(propertyId, it.category, it.label, it.qtyUnit, it.trackUnit),
     ])
 
     // 실효 알림 임계값(신고 edffb4a7) — 재주문 리드타임(주문일→수령일)을 반영해 알림이 주문 여유를 갖게.
@@ -603,6 +642,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       specUnit: it.specUnit,
       qtyUnit: it.qtyUnit,
       unitHint,
+      specHint,
       alertThresholdDays: it.alertThresholdDays,
       effectiveAlertDays,
       createdAt: it.createdAt.toISOString(),
