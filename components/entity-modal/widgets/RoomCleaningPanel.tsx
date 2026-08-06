@@ -11,6 +11,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
@@ -100,11 +101,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
             예정일
-            <input type="date" value={scheduled} onChange={e => setScheduled(e.target.value)}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs" />
-          </label>
+            {/* 정본 DatePicker 사용 — 네이티브 date 입력은 앱 캘린더 문법과 어긋난다(운영자 지적 2026-08-06). */}
+            <DatePicker value={scheduled} onChange={setScheduled} className="text-xs" />
+          </div>
           <div className="flex gap-2">
             <Btn variant="primary" size="sm" disabled={pending}
               onClick={() => { run(() => createCleaning({ roomId, reason, scheduledDate: scheduled }), '청소 예정 등록됨'); setAdding(false) }}>
