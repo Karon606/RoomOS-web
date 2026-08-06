@@ -15,6 +15,7 @@ import {
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -278,15 +279,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               )}
               {canEdit && !cashReceiptOnly && !p.isDeposit && p.targetMonth === targetMonth && (
                 <div className="flex gap-1.5">
-                  <button onClick={() => startEdit(p)}
-                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
-                    style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-                    수정
-                  </button>
-                  <button onClick={() => handleDelete(p)}
-                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
-                    삭제
-                  </button>
+                  <RowActionBtn tone="neutral" onClick={() => startEdit(p)}>수정</RowActionBtn>
+                  <RowActionBtn tone="danger" onClick={() => handleDelete(p)}>삭제</RowActionBtn>
                 </div>
               )}
             </div>

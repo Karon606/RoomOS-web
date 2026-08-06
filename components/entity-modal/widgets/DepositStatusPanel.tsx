@@ -13,6 +13,7 @@ import { fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
@@ -144,8 +145,6 @@ export function DepositStatusPanel({
   }
 
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-  // 히트영역 44px(-my-2 확장 문법) — 형제 행(PaymentRecordList·TenantClient 납부 내역)과 동일
-  const rowBtnCls = 'text-[0.65625rem] font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]'
 
   return (
     <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">
@@ -263,10 +262,8 @@ export function DepositStatusPanel({
                   </p>
                   <span className="flex items-center gap-1.5 shrink-0">
                     <span className="text-xs font-semibold num text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>
-                    <button onClick={() => startEdit(r)}
-                      className={`${rowBtnCls} border-[var(--deposit-ring)] text-[var(--deposit-fg)]`}>수정</button>
-                    <button onClick={() => { void remove(r) }} disabled={pending}
-                      className={`${rowBtnCls} border-[var(--danger-ring)] text-[var(--danger-fg)] disabled:opacity-50`}>삭제</button>
+                    <RowActionBtn tone="deposit" onClick={() => startEdit(r)}>수정</RowActionBtn>
+                    <RowActionBtn tone="danger" onClick={() => { void remove(r) }} disabled={pending}>삭제</RowActionBtn>
                   </span>
                 </li>
               ))}

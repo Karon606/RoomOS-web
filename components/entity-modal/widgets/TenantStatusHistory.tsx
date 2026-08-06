@@ -16,6 +16,7 @@ import { getTenantStatusHistory, updateStatusLogReason } from '@/app/(app)/rooms
 import { Section } from './Section'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { buildReason, parseReason, reasonsForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
@@ -75,10 +76,6 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
   )
 }
 
-// 행 안 텍스트 버튼 정본 — DepositStatusPanel 의 rowBtnCls 와 같은 문법(44px 히트 영역 + 포커스 링).
-// 형제에 이미 있는 것을 새로 짜지 않는다.
-const rowBtnCls = 'text-[0.65625rem] font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)] border-[var(--warm-border)] text-[var(--coral)]'
-
 function HistRow({ item, onEdit }: { item: HistItem; onEdit: (it: HistItem) => void }) {
   // 사유를 받지 않는 전이의 reason 은 시스템 라벨('단기 연장')이라 '퇴실 사유:' 를 붙이지 않는다.
   const rLabel = reasonLabel(item.toStatus)
@@ -94,7 +91,7 @@ function HistRow({ item, onEdit }: { item: HistItem; onEdit: (it: HistItem) => v
         <div className="mt-0.5 flex items-center justify-between gap-2 pl-2">
           <span className="min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{rLabel ? `${rLabel}: ` : ''}{item.reason}</span>
           {item.editable && (
-            <button type="button" onClick={() => onEdit(item)} className={`shrink-0 ${rowBtnCls}`}>수정</button>
+            <RowActionBtn tone="accent" className="shrink-0" onClick={() => onEdit(item)}>수정</RowActionBtn>
           )}
         </div>
       )}
@@ -102,7 +99,7 @@ function HistRow({ item, onEdit }: { item: HistItem; onEdit: (it: HistItem) => v
           어느 쪽이 정본인지 화면에 단서가 없다(서버가 canRecord 로 정한다) */}
       {!item.reason && item.canRecord && rLabel && (
         <div className="mt-0.5 pl-2">
-          <button type="button" onClick={() => onEdit(item)} className={rowBtnCls}>{rLabel} 기록</button>
+          <RowActionBtn tone="accent" onClick={() => onEdit(item)}>{rLabel} 기록</RowActionBtn>
         </div>
       )}
     </li>

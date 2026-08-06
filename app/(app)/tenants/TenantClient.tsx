@@ -18,6 +18,7 @@ import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFi
 import { savePayment, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
@@ -2372,15 +2373,8 @@ export default function TenantClient({
                                     방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
                                     삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
                                 <div className="flex gap-2 ml-1">
-                                  <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.65625rem] font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border transition-colors"
-                                    style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-                                    수정
-                                  </button>
-                                  <button onClick={() => handleDeletePayRecord(p)}
-                                    className="text-xs font-medium px-2.5 py-1 -my-2 min-h-[44px] inline-flex items-center rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
-                                    삭제
-                                  </button>
+                                  <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
+                                  <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
                                 </div>
                               </div>
                             </div>
