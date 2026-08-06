@@ -24,6 +24,8 @@ export type CleaningRow = {
   id: string
   roomId: string
   roomNo: string
+  // 어느 퇴실 건인가 — 퇴실 청소만 값이 있다. 받은 청소비 잔고를 계약별로 묶는 키다.
+  leaseTermId: string | null
   reason: CleaningReason
   status: CleaningStatus
   scheduledDate: string | null
@@ -33,4 +35,21 @@ export type CleaningRow = {
   memo: string | null
   cost: number | null
   fromCleaningFund: boolean
+}
+
+// 받은 청소비 잔고 — **파생값이라 어디에도 저장하지 않는다.**
+// 받은 청소비는 반환의무가 없는 확정 수입이고(운영자 확정 2026-08-05), 잔고는 그 돈을
+// 얼마나 청소에 썼는지 보여주는 관리용 숫자일 뿐이다. 칸을 만들어 두면 수납·몰취·지출
+// 어느 쪽이 바뀌어도 갈린다.
+export type CleaningFundLease = {
+  leaseTermId: string
+  realizedIncome: number      // 받은 청소비(부가수익) + 보증금에서 뗀 청소비(몰취)
+  contractFee: number         // 계약서상 청소비 — 아직 정산 전일 때 쓰는 예상액
+  fundedExpenseTotal: number  // 그 계약에 '받은 청소비로 부담' 으로 단 청소 지출 합
+}
+
+export type CleaningFundStatus = {
+  leases: CleaningFundLease[]
+  // 완료 시점에 서버가 고를 퇴실 계약. 미리보기가 같은 답을 써야 체크 전후 표시가 안 갈린다.
+  checkoutLeaseTermId: string | null
 }
