@@ -464,8 +464,10 @@ export default function RoomsClient({
   const [batchDate, setBatchDate]     = useState('')      // 열 때 오늘(KST)로 채움
   const [batchBusy, setBatchBusy]     = useState(false)
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  // selectedIds 는 계약(leaseTermId) 키다. 한 방에 계약이 둘이면 각각 따로 선택된다.
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const isSelected = (r: RoomStatus) => r.leaseTermId != null && selectedIds.has(r.leaseTermId)
   const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   // 일괄 수납 대상 — 비공실 + 미래월 아님 + 이번 달 미수(balance<0)
   const isBatchEligible = (r: RoomStatus) =>
@@ -634,7 +636,7 @@ export default function RoomsClient({
   }
 
   // 일괄 수납 — 선택된 호실 중 '대상'만, 이번 달 미수 합계
-  const batchTargets = displayed.filter(r => selectedIds.has(r.roomId) && isBatchEligible(r))
+  const batchTargets = displayed.filter(r => isSelected(r) && isBatchEligible(r))
   const batchTotal   = batchTargets.reduce((s, r) => s + Math.max(0, Math.round(-r.balance)), 0)
 
   const openBatchPay = () => {
@@ -645,12 +647,12 @@ export default function RoomsClient({
 
   const runBatchPay = async () => {
     if (batchBusy) return
-    const ids = batchTargets.map(r => r.roomId)
+    const ids = batchTargets.map(r => r.leaseTermId!)
     if (!ids.length) { setBatchOpen(false); return }
     setBatchBusy(true)
     try {
       const res = await batchRecordRentPayment({
-        targetMonth, roomIds: ids, payDate: batchDate || kstYmdStr(), payMethod: batchMethod,
+        targetMonth, leaseTermIds: ids, payDate: batchDate || kstYmdStr(), payMethod: batchMethod,
       })
       if (!res.ok) { pushToast('error', res.error); return }
       try { localStorage.setItem('stayeum-last-pay-method', batchMethod) } catch {}
@@ -1023,15 +1025,15 @@ export default function RoomsClient({
               kind="neutral"
               tipColor={statusTipColor(tone)}
               tipBg={statusRowTint(tone)}
-              selected={selectMode && selectedIds.has(room.roomId)}
+              selected={selectMode && isSelected(room)}
               onClick={
                 selectMode
-                  ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
+                  ? (isBatchEligible(room) ? () => toggleSelect(room.leaseTermId!) : undefined)
                   : (room.isFutureMonth ? undefined : () => openPayModal(room))
               }
               onLongPress={(!selectMode && !room.isFutureMonth) ? () => {
                 setSelectMode(true)
-                if (isBatchEligible(room)) toggleSelect(room.roomId)
+                if (isBatchEligible(room)) toggleSelect(room.leaseTermId!)
               } : undefined}
               className={`px-4 py-3.5 ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태. 표시 항목 메뉴(colVis)로 타입 ON/OFF. */}
@@ -1039,8 +1041,8 @@ export default function RoomsClient({
                 <div className="flex items-center gap-2 min-w-0">
                   {selectMode && isBatchEligible(room) && (
                     <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition-colors
-                      ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
-                      {selectedIds.has(room.roomId) && (
+                      ${isSelected(room) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                      {isSelected(room) && (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>
                       )}
                     </span>
@@ -1216,7 +1218,7 @@ export default function RoomsClient({
                 // 고정(sticky) 열은 가로 스크롤 대비 불투명 배경이 필요해 행의 반투명 hover·선택 배경이 가려진다.
                 // 같은 결과색을 color-mix 로 재현해 호실·입주자 열도 함께 하이라이트되게 한다(행이 hover 대상일 때만).
                 const rowHoverable = !(room.isFutureMonth || (selectMode && !isBatchEligible(room)))
-                const stickyRowBg = selectMode && selectedIds.has(room.roomId)
+                const stickyRowBg = selectMode && isSelected(room)
                   ? 'bg-[color-mix(in_srgb,var(--coral)_5%,var(--cream))]'
                   : rowHoverable
                     ? 'bg-[var(--cream)] group-hover:bg-[color-mix(in_srgb,var(--canvas)_40%,var(--cream))]'
@@ -1226,24 +1228,24 @@ export default function RoomsClient({
                 <tr key={room.leaseTermId ?? room.roomId}
                   onClick={
                     selectMode
-                      ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
+                      ? (isBatchEligible(room) ? () => toggleSelect(room.leaseTermId!) : undefined)
                       : () => { if (!room.isFutureMonth) openPayModal(room) }
                   }
                   {...press((!selectMode && !room.isFutureMonth) ? () => {
                     setSelectMode(true)
-                    if (isBatchEligible(room)) toggleSelect(room.roomId)
+                    if (isBatchEligible(room)) toggleSelect(room.leaseTermId!)
                   } : undefined)}
                   className={`group border-b border-[var(--warm-border)]/50 transition-colors
                     ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}
-                    ${selectMode && selectedIds.has(room.roomId) ? 'bg-[var(--coral)]/5' : ''}`}>
+                    ${selectMode && isSelected(room) ? 'bg-[var(--coral)]/5' : ''}`}>
 
                   {/* sticky — 호실 (식별자 v2.0 §23: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
                   <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 transition-colors ${stickyRowBg} ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="flex items-center gap-2 min-w-0">
                       {selectMode && isBatchEligible(room) && (
-                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
-                          {selectedIds.has(room.roomId) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
+                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${isSelected(room) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                          {isSelected(room) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
                         </span>
                       )}
                       <span className="truncate">{fmtRoomNo(room.roomNo)}</span>

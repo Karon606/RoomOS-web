@@ -1729,7 +1729,7 @@ export async function restorePayment(paymentId: string): Promise<{ ok: true } | 
 // ============================================================
 export async function batchRecordRentPayment(input: {
   targetMonth: string
-  roomIds: string[]
+  leaseTermIds: string[]
   payDate: string      // 'YYYY-MM-DD'
   payMethod: string
 }): Promise<
@@ -1738,11 +1738,11 @@ export async function batchRecordRentPayment(input: {
 > {
   try {
     await requireEdit()
-    if (!input.roomIds?.length) return { ok: false, error: '선택된 호실이 없습니다.' }
+    if (!input.leaseTermIds?.length) return { ok: false, error: '선택된 호실이 없습니다.' }
 
     const rows = await getRoomPaymentStatus(input.targetMonth)
-    const sel = new Set(input.roomIds)
-    const selected = rows.filter(r => sel.has(r.roomId))
+    const sel = new Set(input.leaseTermIds)
+    const selected = rows.filter(r => r.leaseTermId != null && sel.has(r.leaseTermId))
 
     const paidRoomNos: string[] = []
     const skippedRoomNos: string[] = []
