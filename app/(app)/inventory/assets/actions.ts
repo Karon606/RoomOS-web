@@ -647,7 +647,7 @@ type MoveData = { roomId: string | null; assignedLocationId: string | null; isCo
 function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: number | null):
   { ops: Prisma.PrismaPromise<unknown>[]; movedQty: number; touchedGroups: string[] } {
   const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
-  const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
+  const movedQty = (qty == null || qty >= totalQty) ? totalQty : qty
   let need = movedQty
   // 선입선출 — 오래된 구매분부터 차감(운영자 확인 2026-07-09). 같은 날짜 안에서는 큰 행부터(분할 최소화).
   const sorted = [...exps].sort((a, b) => a.date.getTime() - b.date.getTime() || (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
@@ -698,6 +698,12 @@ export async function assignAggregateToTarget(
     if (err) return { ok: false, error: err }
     const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
     if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    // 수량 방어는 클램프가 아니라 거부. 조용히 깎으면 운영자가 다른 수량이 들어간 걸 모른다.
+    if (qty != null) {
+      if (!(qty > 0)) return { ok: false, error: '0보다 큰 수량을 입력하세요.' }
+      const have = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+      if (qty > have + 1e-9) return { ok: false, error: `수량이 보유량(${fmtQty(have)})을 넘습니다.` }
+    }
 
     const rep0 = exps[0]
     const fromState = await placeLabel(propertyId, rep0.roomId, rep0.assignedLocationId, rep0.isCommonAsset)

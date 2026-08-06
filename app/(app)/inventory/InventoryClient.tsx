@@ -1928,8 +1928,8 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
             {entry.qtyValue != null && entry.qtyValue > 1 && (
               <div className="flex items-center gap-1.5 mb-1.5">
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">도착 수량 (전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지)</span>
-                <input type="number" min={1} max={entry.qtyValue} step="any" value={rcvQtyStr} disabled={pending}
-                  onChange={e => setRcvQtyStr(e.target.value)}
+                <input type="text" inputMode="decimal" autoComplete="off" value={rcvQtyStr} disabled={pending}
+                  onChange={e => setRcvQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
               </div>
             )}
@@ -2552,7 +2552,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
         {!hasLocations && (
           <div>
             <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
-            <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={`w-full ${inputCls}`} />
+            <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} className={`w-full ${inputCls}`} />
           </div>
         )}
       </div>
@@ -2675,7 +2675,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
         </div>
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">수량{stockUnit ? ` (${stockUnit})` : ''}</p>
-          <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
+          <input type="text" inputMode="decimal" autoComplete="off" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))} className={inputCls} />
         </div>
       </div>
       <div>

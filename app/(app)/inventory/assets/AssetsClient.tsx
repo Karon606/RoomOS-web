@@ -634,9 +634,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             {awaitingReceipt && rcvAsk === it.id ? (
               <>
                 <span className="text-[0.6875rem] text-[var(--warm-muted)]">몇 {it.qtyUnit ?? '개'} 도착? (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'})</span>
-                <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
+                <input autoFocus inputMode="decimal"
                   value={rcvQty} disabled={pending}
-                  onChange={e => setRcvQty(e.target.value)}
+                  onChange={e => setRcvQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   onKeyDown={e => { if (e.key === 'Enter') markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1)) }}
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
                 <button type="button" disabled={pending}
@@ -969,7 +969,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           footer={
             <div className="flex gap-2 justify-end">
               <Btn variant="secondary" size="md" onClick={() => setBatchAssign(null)} disabled={pending}>취소</Btn>
-              <Btn variant="primary" size="md" onClick={runBatchAssign} disabled={pending}>{pending ? '배정 중…' : '배정'}</Btn>
+              <Btn variant="primary" size="md" onClick={runBatchAssign} disabled={pending || batchAssign.rows.some(r => Number(r.qty) > (r.it.qtyValue ?? 1))}>{pending ? '배정 중…' : '배정'}</Btn>
             </div>
           }
         >
@@ -983,13 +983,18 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           <ul className="space-y-2">
             {batchAssign.rows.map((r, idx) => {
               const max = r.it.qtyValue ?? 1
+              const over = Number(r.qty) > max
               return (
-                <li key={r.it.id} className="flex items-center gap-2 rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
-                  <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
-                  <input type="number" min={1} max={max} step="any" value={r.qty} disabled={pending}
-                    onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) } : b)}
-                    className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
-                  <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
+                <li key={r.it.id} className="rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
+                    {/* controlled number 는 '1.' 중간상태를 빈 값으로 소독해 1.2 가 2 가 되므로 텍스트 + inputMode 로 받는다. */}
+                    <input inputMode="decimal" value={r.qty} disabled={pending}
+                      onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x) } : b)}
+                      className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+                    <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
+                  </div>
+                  {over && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(max)}{r.it.qtyUnit ?? '개'})보다 많아요.</p>}
                 </li>
               )
             })}
