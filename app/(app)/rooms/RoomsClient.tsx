@@ -1018,7 +1018,8 @@ export default function RoomsClient({
           const tone = roomStatusTone(room, targetMonth)
           const totalUnpaid = getTotalUnpaid(room)
           return (
-            <RoomCard key={room.roomId}
+            // 한 방에 실계약과 비거주 계약이 공존하면 roomId 키가 중복돼 React 가 stale DOM 을 남기고 정렬이 고착된다(신고 7007d2c1, 418호 실증).
+            <RoomCard key={room.leaseTermId ?? room.roomId}
               kind="neutral"
               tipColor={statusTipColor(tone)}
               tipBg={statusRowTint(tone)}
@@ -1221,7 +1222,8 @@ export default function RoomsClient({
                     ? 'bg-[var(--cream)] group-hover:bg-[color-mix(in_srgb,var(--canvas)_40%,var(--cream))]'
                     : 'bg-[var(--cream)]'
                 return (
-                <tr key={room.roomId}
+                // 한 방에 실계약과 비거주 계약이 공존하면 roomId 키가 중복돼 React 가 stale DOM 을 남기고 정렬이 고착된다(신고 7007d2c1, 418호 실증).
+                <tr key={room.leaseTermId ?? room.roomId}
                   onClick={
                     selectMode
                       ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
