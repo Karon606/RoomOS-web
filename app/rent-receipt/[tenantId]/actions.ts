@@ -31,6 +31,7 @@ export type RentReceiptData = {
   warning: 'noRecord' | 'partial' | null
   kind: ReceiptKind       // 'deposit' 이면 보증금 영수증(월 개념 없음 — 스테퍼 숨김)
   preResidence: boolean   // 입주 전 보증금(예약금 성격) — 거주 기간 비움 + 반환 조건 문구가 다르다
+  nonResident: boolean    // 비거주 계약 — 살지 않으므로 '거주'가 아닌 '이용' 어휘를 쓴다
 }
 
 const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
@@ -79,9 +80,11 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
         leaseTerms: {
           // CHECKOUT_PENDING 누락 — 퇴실 예정자에게 확인서를 못 뗐다. 계약서(contractData)와
           // 실거주확인서는 원래 포함한다. 실측 5명이 해당하고 507·509호는 이미 발급 이력이 있다.
-          where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } },
+          // 비거주(NON_RESIDENT)도 대상 — 같은 입실자가 거주·비거주 계약을 함께 가질 수 있어
+          // 단순 take 1 로는 엉뚱한 쪽이 잡힌다. 여러 건을 받아 아래에서 고른다(실거주확인서와 같은 처방).
+          where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
+          take: 5,
           include: { room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
         },
       },
@@ -94,7 +97,11 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
 
   if (!tenant) return null
 
-  const lease = tenant.leaseTerms[0] ?? null
+  // 비거주만 뒤로 보내는 안정 정렬 — 거주 계약이 있으면 그쪽을 먼저 고른다.
+  // 전 상태 우선순위를 매기지 않는 것은, 기존 조합의 선택 결과를 1비트도 바꾸지 않기 위해서다.
+  const lease = [...tenant.leaseTerms]
+    .sort((a, b) => (a.status === 'NON_RESIDENT' ? 1 : 0) - (b.status === 'NON_RESIDENT' ? 1 : 0))[0] ?? null
+  const nonResident = lease?.status === 'NON_RESIDENT'
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const isShortTerm = !!lease?.isShortTerm
   // 단기는 입주월 단일 청구 — anchor 를 입주월로 고정(스테퍼도 화면에서 숨김, 회계 오더 2026-07-27)
@@ -160,6 +167,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       warning: paid <= 0 ? 'noRecord' : (contracted > 0 && paid < contracted ? 'partial' : null),
       kind,
       preResidence: notMovedIn,
+      nonResident,
     }
   }
 
@@ -245,5 +253,6 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     warning,
     kind,
     preResidence: false,
+    nonResident,
   }
 }

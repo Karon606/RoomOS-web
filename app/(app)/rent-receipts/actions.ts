@@ -51,24 +51,28 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
   }))
 }
 
-export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: string | null }
+export type IssuableTenant = { tenantId: string; tenantName: string; roomNo: string | null; status: string }
 
 // kind='deposit' 이면 예약 확정(RESERVED)도 대상 — 보증금은 입주 전에 받고 그 자리에서 영수증을 준다.
-// 이용료 확인서는 기존대로 거주중만(입주 전엔 낼 이용료가 없다).
+// 비거주(NON_RESIDENT)도 두 종류 모두 대상이다 — 방을 쓰지 않아도 이용료·보증금은 실제로 오간다.
 export async function getIssuableTenants(kind: 'rent' | 'deposit' = 'rent'): Promise<IssuableTenant[]> {
   const propertyId = await getPropertyId()
   const leases = await prisma.leaseTerm.findMany({
     // 퇴실 예정자도 발급 대상이다 — 목록에 없으면 이름 검색조차 안 된다
-    where: { propertyId, status: kind === 'deposit' ? { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } : { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
+    where: { propertyId, status: kind === 'deposit' ? { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT'] } : { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     orderBy: [{ moveInDate: 'desc' }],
-    select: { tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
+    select: { status: true, tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
   })
+  // 중복 제거 전 비거주만 뒤로 — 거주·비거주 계약을 함께 가진 입실자의 배지가 '비거주'로 잘못 붙는 것을 막는다.
+  // 실거주확인서처럼 전 상태 우선순위를 매기지 않는 이유는, 기존 조합(ACTIVE·CHECKOUT_PENDING·RESERVED)의
+  // 선택 결과가 1비트도 달라지면 안 되기 때문이다. Array.sort 는 안정 정렬이라 나머지 순서는 그대로 남는다.
+  const ranked = [...leases].sort((a, b) => (a.status === 'NON_RESIDENT' ? 1 : 0) - (b.status === 'NON_RESIDENT' ? 1 : 0))
   const seen = new Set<string>()
   const out: IssuableTenant[] = []
-  for (const l of leases) {
+  for (const l of ranked) {
     if (seen.has(l.tenant.id)) continue
     seen.add(l.tenant.id)
-    out.push({ tenantId: l.tenant.id, tenantName: l.tenant.name, roomNo: l.room?.roomNo ?? null })
+    out.push({ tenantId: l.tenant.id, tenantName: l.tenant.name, roomNo: l.room?.roomNo ?? null, status: l.status })
   }
   out.sort((a, b) => (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko', { numeric: true }) || a.tenantName.localeCompare(b.tenantName, 'ko'))
   return out

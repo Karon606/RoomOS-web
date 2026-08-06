@@ -30,6 +30,7 @@ export type RentReceiptFields = {
   recipientName: string  // 임대인 대표 성명
   kind?: ReceiptKind     // 미지정이면 'rent' — 기존 호출부 무회귀
   preResidence?: boolean // 보증금인데 아직 입주 전 — 예약금 성격이라 반환 조건이 다르다
+  nonResident?: boolean  // 비거주 계약 — 살지 않으므로 '거주' 라벨을 '이용'으로 바꾼다. 미지정이면 false(기존 이력 재작성 무회귀)
 }
 
 // 입주 전 보증금(=예약금) 안내 — 입실 취소 시 반환되지 않는다는 점이 핵심(운영자 지시 2026-07-31).
@@ -185,8 +186,9 @@ export async function buildRentReceiptPdf(
   const b1 = drawKV([
     { label: '수령인 (입주자)', value: f.name },
     { label: '호    실', value: f.room },
-    { label: '거주 기간', value: f.period },
-    { label: copy.row4, value: f.targetMonth },
+    // 비거주는 방에 살지 않는다 — '거주 기간'·'입주 예정일'이 사실과 어긋난다.
+    { label: f.nonResident ? '이용 기간' : '거주 기간', value: f.period },
+    { label: f.kind === 'deposit' && f.nonResident ? '계약 시작일' : copy.row4, value: f.targetMonth },
   ], y)
 
   // ── 납부 금액 박스 ──

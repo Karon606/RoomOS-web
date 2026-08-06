@@ -17,6 +17,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { deleteRentReceiptFile, restoreRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -128,7 +129,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">납부 확인서 · 영수증
             <InfoHint title="어떤 서류인가요?">
-              입실료 납부 확인서는 거주중 입실자의 그 달 이용료 납부 사실을, 보증금 영수증은 계약 보증금의 수령 사실을 증명합니다.
+              입실료 납부 확인서는 입실자(비거주 계약 포함)의 그 달 이용료 납부 사실을, 보증금 영수증은 계약 보증금의 수령 사실을 증명합니다.
               입실자를 선택하면 이름·호실·거주기간·금액·수령인·도장이 자동으로 채워집니다.
               금액은 실제 받은 기록에서 가져오므로, 받지 않은 돈이 서류에 적히지 않습니다.
               발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.
@@ -154,7 +155,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         </div>
         {tenants.length === 0 ? (
-          <EmptyState title={isDeposit ? '발급 대상 입실자가 없습니다' : '거주중인 입실자가 없습니다'} />
+          <EmptyState title="발급 대상 입실자가 없습니다" />
         ) : tenantRows.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] px-1 py-2">조건에 맞는 입실자가 없습니다.</p>
         ) : (
@@ -163,8 +164,13 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
               <li key={t.tenantId}>
                 <a href={`/rent-receipt/${t.tenantId}${monthQuery}`}
                   className="flex items-center justify-between gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 hover:border-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
-                  <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
-                    {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
+                  <span className="min-w-0 flex items-center gap-1.5">
+                    <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
+                      {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
+                    </span>
+                    {/* 상태 배지 — 비거주·퇴실 예정만. 정본 StatusBadge, 실거주 확인서 목록과 동일 톤 */}
+                    {t.status === 'NON_RESIDENT' && <StatusBadge tone="info" className="shrink-0">비거주</StatusBadge>}
+                    {t.status === 'CHECKOUT_PENDING' && <StatusBadge tone="exit" className="shrink-0">퇴실 예정</StatusBadge>}
                   </span>
                   <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
                 </a>

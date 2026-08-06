@@ -72,7 +72,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
   // 목록 복귀 경로 — 종류를 유지한다. 안 붙이면 보증금으로 발급하고도 입실료 탭으로 떨어진다(운영자 지적).
   const listHref = isDeposit ? '/rent-receipts?kind=deposit' : '/rent-receipts'
-  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence } })
+  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence, nonResident: data.nonResident } })
 
   // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
@@ -207,7 +207,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           </button>
           )}
           <div className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 text-sm font-semibold text-center" style={{ color: 'var(--warm-dark)' }}>
-            <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>{isDeposit ? '입주 예정일' : '발급 대상월'}</span>
+            <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>{isDeposit ? (data.nonResident ? '계약 시작일' : '입주 예정일') : '발급 대상월'}</span>
             <span className="truncate">{data.targetMonth}</span>
             {rel && (
               <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0"
@@ -250,10 +250,12 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <Field label="호실" value={f.room} onChange={set('room')} placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {/* 입주 전 보증금 영수증은 거주 기간이 비어 있다(살지 않은 기간을 적으면 허위 기재) */}
-            <Field label={isDeposit ? '거주 기간' : '거주 기간 (1달 선납)'} value={f.period} onChange={set('period')}
+            {/* 입주 전 보증금 영수증은 거주 기간이 비어 있다(살지 않은 기간을 적으면 허위 기재).
+                비거주 계약은 방에 살지 않으므로 '거주'가 아닌 '이용' 어휘를 쓴다(PDF 문면과 동일). */}
+            <Field label={data.nonResident ? (isDeposit ? '이용 기간' : '이용 기간 (1달 선납)') : (isDeposit ? '거주 기간' : '거주 기간 (1달 선납)')}
+              value={f.period} onChange={set('period')}
               placeholder={isDeposit ? '입주 전이라 비워 둡니다' : '2026.06.05 ~ 2026.07.04'} />
-            <Field label={isDeposit ? '입주 예정일' : '납부 대상월'} value={f.targetMonth} onChange={set('targetMonth')} placeholder={isDeposit ? '2026년 8월 17일' : '2026년 6월분'} />
+            <Field label={isDeposit ? (data.nonResident ? '계약 시작일' : '입주 예정일') : '납부 대상월'} value={f.targetMonth} onChange={set('targetMonth')} placeholder={isDeposit ? '2026년 8월 17일' : '2026년 6월분'} />
           </div>
           <Field label={isDeposit ? '금액 (보증금, 원)' : '금액 (월 이용료, 원)'} value={f.amount} onChange={set('amount')} placeholder={isDeposit ? '500,000' : '390,000'} />
           <div className="grid grid-cols-2 gap-3">
