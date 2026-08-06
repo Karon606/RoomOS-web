@@ -488,25 +488,40 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       maxWidth: 2.4,
     })
     sigPadRef.current = pad
+    const vv = window.visualViewport
     // canvas.width 재대입은 비트맵을 통째로 지운다. iOS 는 핀치줌·주소창 수축에도 resize 를 쏘므로
     // (위 배율 계산 주석 참조) 그리던 서명이 손도 안 뗐는데 사라졌다. 목표 크기가 지금과 같으면
     // 아무것도 하지 않고, 정말 변했을 때(회전 등)만 스트로크를 백업했다가 되돌린다 — 버리지 않는다.
+    // 패드는 배율 z 의 역수로 줄어들므로(모달 CSS 가 --sig-inv 로 축소) 비트맵 밀도에는 z 를 곱하고
+    // 펜 굵기는 z 로 나눈다 — 확대해도 화면에 보이는 해상도·획 굵기가 평소와 같다.
+    let prevW = 0, prevH = 0, prevRatio = 0
     const setupCanvas = () => {
-      const ratio = Math.max(window.devicePixelRatio || 1, 1)
-      const w = canvas.offsetWidth * ratio
-      const h = canvas.offsetHeight * ratio
-      if (canvas.width === w && canvas.height === h) return
-      const strokes = pad.toData()
-      canvas.width = w
-      canvas.height = h
+      const z = Math.max(1, vv?.scale || 1)
+      const ratio = Math.max(window.devicePixelRatio || 1, 1) * z
+      const r = canvas.getBoundingClientRect()
+      if (Math.abs(r.width - prevW) < 0.5 && Math.abs(r.height - prevH) < 0.5 && Math.abs(ratio - prevRatio) < 0.01) return
+      // fromData 좌표는 CSS px 절대값이라 패드 크기가 변하면 비율 변환 없이는 획이 어긋난다 — 폭·높이 비로 보정해 되돌린다.
+      const kx = prevW ? r.width / prevW : 1
+      const ky = prevH ? r.height / prevH : 1
+      const strokes = pad.toData().map(g => ({
+        ...g,
+        minWidth: g.minWidth * kx,
+        maxWidth: g.maxWidth * kx,
+        dotSize:  g.dotSize * kx,
+        points:   g.points.map(p => ({ ...p, x: p.x * kx, y: p.y * ky })),
+      }))
+      canvas.width  = Math.round(r.width * ratio)
+      canvas.height = Math.round(r.height * ratio)
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.scale(ratio, ratio)
+      pad.minWidth = 0.7 / z
+      pad.maxWidth = 2.4 / z
       pad.fromData(strokes)
+      prevW = r.width; prevH = r.height; prevRatio = ratio
     }
     // 확대(핀치줌) 중에는 layout viewport 기준 fixed 가 화면 밖으로 밀린다. 오버레이 기하를
     // visual viewport 로 직접 맞춘다 — React state 로 반영하면 팬 프레임마다 리렌더가 나므로 금지.
-    // padding 은 배율로 나눠 확대해도 시각 여백이 일정하게 보이도록 한다(vv 없으면 CSS inset:0 폴백).
-    const vv = window.visualViewport
+    // 배율의 역수 --sig-inv 를 함께 기입해 모달 안의 px 치수를 CSS calc 가 1/z 로 줄인다(vv 없으면 1 폴백).
     const syncOverlay = () => {
       const el = sigOverlayRef.current
       if (!el || !vv) return
@@ -514,9 +529,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       el.style.left   = `${vv.offsetLeft}px`
       el.style.width  = `${vv.width}px`
       el.style.height = `${vv.height}px`
-      el.style.padding = `${16 / (vv.scale || 1)}px`
+      el.style.setProperty('--sig-inv', String(1 / Math.max(1, vv.scale || 1)))
     }
-    // 순서 고정: syncOverlay 다음 setupCanvas — setupCanvas 가 캔버스의 offsetWidth 를 읽는다.
+    // 순서 고정: syncOverlay 다음 setupCanvas — 변수 기입이 패드 폭을 바꾸고 setupCanvas 가 그 폭을 읽는다.
     syncOverlay()
     setupCanvas()
     // vv 이벤트는 팬·핀치 동안 초당 수십 번 쏟아진다. rAF 로 프레임당 1회로 묶는다.
@@ -1417,18 +1432,24 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         /* ── 서명 모달 ──────────────────────────────────────────── */
         /* inset:0 은 visual viewport API 가 없을 때의 폴백. 있으면 JS 가 top/left/width/height 를 직접 기입하므로
            padding 이 폭 밖으로 더해지지 않게 border-box 로 둔다. transform 은 금지(좌표 계약). */
-        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
-        .sig-modal { width: 100%; max-width: 640px; background: var(--cream); border-radius: 18px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 14px; }
-        .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-        .sig-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
-        .sig-sub { font-size: 12px; color: var(--ink-s); line-height: 1.5; }
-        .sig-close { width: 32px; height: 32px; border: 0; background: transparent; color: var(--ink-s); font-size: 18px; cursor: pointer; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+        /* 모든 px 치수에 --sig-inv(=1/배율) 를 곱한다 — 핀치줌으로 z 배 확대해도 패드가 평소 크기로 보인다.
+           JS 가 변수를 안 기입한 환경(vv 없음)에서는 폴백 1 이라 아래 값들이 리터럴 그대로다. */
+        .sig-overlay { position: fixed; inset: 0; box-sizing: border-box; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: calc(16px * var(--sig-inv, 1)); }
+        .sig-modal { width: 100%; max-width: calc(640px * var(--sig-inv, 1)); background: var(--cream); border-radius: calc(18px * var(--sig-inv, 1)); padding: calc(18px * var(--sig-inv, 1)) calc(18px * var(--sig-inv, 1)) calc(16px * var(--sig-inv, 1)); box-shadow: 0 calc(20px * var(--sig-inv, 1)) calc(60px * var(--sig-inv, 1)) rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: calc(14px * var(--sig-inv, 1)); }
+        .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: calc(12px * var(--sig-inv, 1)); }
+        .sig-title { font-size: calc(15px * var(--sig-inv, 1)); font-weight: 700; color: var(--ink); margin-bottom: calc(4px * var(--sig-inv, 1)); }
+        .sig-sub { font-size: calc(12px * var(--sig-inv, 1)); color: var(--ink-s); line-height: 1.5; }
+        .sig-close { width: calc(32px * var(--sig-inv, 1)); height: calc(32px * var(--sig-inv, 1)); border: 0; background: transparent; color: var(--ink-s); font-size: calc(18px * var(--sig-inv, 1)); cursor: pointer; border-radius: calc(8px * var(--sig-inv, 1)); display: inline-flex; align-items: center; justify-content: center; }
         .sig-close:hover { background: #f3eee5; }
-        .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px; touch-action: none; }
+        .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; border-radius: calc(12px * var(--sig-inv, 1)); touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
-        .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: 1px dashed #d6cdbb; pointer-events: none; }
-        .sig-error { font-size: 12px; line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-ring); border-radius: 8px; padding: 8px 10px; }
-        .sig-actions { display: flex; align-items: center; gap: 8px; }
+        .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; pointer-events: none; }
+        .sig-error { font-size: calc(12px * var(--sig-inv, 1)); line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: calc(1px * var(--sig-inv, 1)) solid var(--danger-ring); border-radius: calc(8px * var(--sig-inv, 1)); padding: calc(8px * var(--sig-inv, 1)) calc(10px * var(--sig-inv, 1)); }
+        .sig-actions { display: flex; align-items: center; gap: calc(8px * var(--sig-inv, 1)); }
+        /* 모달 안에서만 공용 버튼 치수를 역배율로 덮는다 — 공용 .toolbar-* 정의 자체는 손대지 않는다. */
+        .sig-close svg { width: calc(16px * var(--sig-inv, 1)); height: calc(16px * var(--sig-inv, 1)); }
+        .sig-modal .toolbar-print { padding: calc(6px * var(--sig-inv, 1)) calc(14px * var(--sig-inv, 1)); border-radius: calc(8px * var(--sig-inv, 1)); font-size: calc(13px * var(--sig-inv, 1)); }
+        .sig-modal .toolbar-btn-secondary { padding: calc(6px * var(--sig-inv, 1)) calc(12px * var(--sig-inv, 1)); border-width: calc(1px * var(--sig-inv, 1)); border-radius: calc(8px * var(--sig-inv, 1)); font-size: calc(12px * var(--sig-inv, 1)); }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
         @page { size: A4; margin: 14mm; }   /* 상하좌우 동일(대칭) */
