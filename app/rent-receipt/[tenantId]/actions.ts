@@ -82,7 +82,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
           where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
-          include: { room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+          include: { room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } }, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
         },
       },
     }),
@@ -209,12 +209,16 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       ? billForLeaseMonth(
           {
             rentAmount: lease.rentAmount,
+            status: lease.status,
             discounts: lease.discounts ?? [],
             checkoutProratedAmount: lease.checkoutProratedAmount ?? null,
             checkoutProratedMonth: lease.checkoutProratedMonth ?? null,
             isShortTerm: lease.isShortTerm,
             moveInDate: lease.moveInDate,
-            room: { scheduledRent: lease.room?.scheduledRent ?? null, rentUpdateDate: lease.room?.rentUpdateDate ?? null },
+            room: {
+              scheduledRent: lease.room?.scheduledRent ?? null, rentUpdateDate: lease.room?.rentUpdateDate ?? null,
+              nonResidentScheduled: lease.room?.nonResidentScheduled ?? null, nonResidentRentDate: lease.room?.nonResidentRentDate ?? null,
+            },
           },
           viewMonth,
           lockMax > 0 ? lockMax : null,

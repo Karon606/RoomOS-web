@@ -330,9 +330,10 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — dashboard·unpaid.ts·savePayment 와 동일
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
-        { rentAmount: lease.rentAmount, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
+        { rentAmount: lease.rentAmount, status: lease.status, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
           isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate,   // 단기 입주월 단일 청구
-          room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate } },
+          room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate,
+                  nonResidentScheduled: room.nonResidentScheduled, nonResidentRentDate: room.nonResidentRentDate } },
         ms,
         lockedExpectedByMonth.get(ms) ?? null,
       )
@@ -685,12 +686,13 @@ async function findFirstUnpaidMonth(
       moveInDate: true,
       dueDay: true,
       rentAmount: true,
+      status: true,        // 비거주 축 분기(lib/billing effectiveBaseRent)
       isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
       expectedMoveOut: true,
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
   })
@@ -809,11 +811,11 @@ export async function savePayment(data: {
   const billingLease = await prisma.leaseTerm.findUnique({
     where: { id: data.leaseTermId },
     select: {
-      rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영)
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영). 거주·비거주 두 축.
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   })
 
@@ -940,6 +942,7 @@ export async function getTargetMonthOptions(
     select: {
       moveInDate: true,
       rentAmount: true,
+      status: true,        // 비거주 축 분기(lib/billing effectiveBaseRent)
       isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing)
       expectedMoveOut: true,
       checkoutProratedAmount: true,
@@ -949,7 +952,7 @@ export async function getTargetMonthOptions(
       overrideDueDay: true,
       overrideDueDayMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
   })
@@ -1474,10 +1477,10 @@ async function serverBillForMonth(leaseTermId: string, mon: string, fallback: nu
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
+      rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
   })
   if (!lease) return fallback
@@ -2391,8 +2394,8 @@ async function rewriteLockedExpectedForDiscountChange(
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      isShortTerm: true, rentAmount: true, checkoutProratedMonth: true,
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   })
   if (!lease || lease.isShortTerm) return
@@ -2405,7 +2408,7 @@ async function rewriteLockedExpectedForDiscountChange(
   const months = [...new Set(recs.map(r => r.targetMonth))]
   for (const mon of months) {
     if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-    const base = { rentAmount: lease.rentAmount, room: lease.room }
+    const base = { rentAmount: lease.rentAmount, status: lease.status, room: lease.room }
     const before = billForLeaseMonth({ ...base, discounts: prevDiscounts }, mon, null)
     const after  = billForLeaseMonth({ ...base, discounts: nextDiscounts }, mon, null)
     if (before === after) continue
@@ -2426,16 +2429,24 @@ async function rewriteLockedExpectedForDiscountChange(
 // 협의 락인(기준값과 다른 금액)·퇴실 일할 월·단기는 손대지 않는다.
 export async function rewriteLockedExpectedForRentSchedule(
   roomId: string,
-  prev: { scheduledRent: number | null; rentUpdateDate: Date | null },
-  next: { scheduledRent: number | null; rentUpdateDate: Date | null },
+  prev: { scheduledRent: number | null; rentUpdateDate: Date | null; nonResidentScheduled?: number | null; nonResidentRentDate?: Date | null },
+  next: { scheduledRent: number | null; rentUpdateDate: Date | null; nonResidentScheduled?: number | null; nonResidentRentDate?: Date | null },
 ) {
-  const beforeRoom = { scheduledRent: prev.scheduledRent, rentUpdateDate: prev.rentUpdateDate }
-  const afterRoom  = { scheduledRent: next.scheduledRent, rentUpdateDate: next.rentUpdateDate }
+  // 두 축을 함께 넘긴다 — 엔진이 계약 상태로 축을 고른다(거주 축만 바뀌면 비거주 계약은
+  // before === after 라 자동으로 건너뛴다. 명시 분기가 필요 없다).
+  const beforeRoom = {
+    scheduledRent: prev.scheduledRent, rentUpdateDate: prev.rentUpdateDate,
+    nonResidentScheduled: prev.nonResidentScheduled ?? null, nonResidentRentDate: prev.nonResidentRentDate ?? null,
+  }
+  const afterRoom  = {
+    scheduledRent: next.scheduledRent, rentUpdateDate: next.rentUpdateDate,
+    nonResidentScheduled: next.nonResidentScheduled ?? null, nonResidentRentDate: next.nonResidentRentDate ?? null,
+  }
   // 이 방의 청구 대상 계약 전부(퇴실·취소 제외)
   const leases = await prisma.leaseTerm.findMany({
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
-      id: true, isShortTerm: true, rentAmount: true, checkoutProratedMonth: true,
+      id: true, isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
   })
@@ -2448,7 +2459,7 @@ export async function rewriteLockedExpectedForRentSchedule(
     const months = [...new Set(recs.map(r => r.targetMonth))]
     for (const mon of months) {
       if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-      const base = { rentAmount: lease.rentAmount, discounts: lease.discounts }
+      const base = { rentAmount: lease.rentAmount, status: lease.status, discounts: lease.discounts }
       const before = billForLeaseMonth({ ...base, room: beforeRoom }, mon, null)
       const after  = billForLeaseMonth({ ...base, room: afterRoom }, mon, null)
       if (before === after) continue
@@ -2485,9 +2496,9 @@ export async function rewriteLockedExpectedForRentAmount(
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      id: true, isShortTerm: true, checkoutProratedMonth: true,
+      id: true, isShortTerm: true, checkoutProratedMonth: true, status: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   })
   if (!lease) return { changed }
@@ -2499,7 +2510,7 @@ export async function rewriteLockedExpectedForRentAmount(
   for (const mon of months) {
     if (fromMonth && mon < fromMonth) continue
     if (lease.checkoutProratedMonth === mon) continue
-    const base = { discounts: lease.discounts, room: lease.room }
+    const base = { discounts: lease.discounts, status: lease.status, room: lease.room }
     const before = billForLeaseMonth({ ...base, rentAmount: prevRentAmount }, mon, null)
     const after  = billForLeaseMonth({ ...base, rentAmount: nextRentAmount }, mon, null)
     if (before === after) continue

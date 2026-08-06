@@ -9,6 +9,10 @@ import { RentDiscountInput, discountedRent } from './rentDiscount'
 
 export type BillingLeaseFields = {
   rentAmount: number
+  // 계약 상태 — **필수**. 비거주(NON_RESIDENT)는 거주와 예약 인상 축이 다르다(아래 effectiveBaseRent).
+  // 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 그러면 비거주 계약이 거주 인상가로 청구된다
+  // (100,000 이 480,000 으로 4.8배 — 418호 유형). 이 타입이 곧 감지망이다.
+  status: string
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
   discounts?: RentDiscountInput[] | null
@@ -23,11 +27,28 @@ export type BillingLeaseFields = {
   // 옮기기 전까지의 예약값). 둘 다 없으면 기존처럼 rentAmount 사용(회귀 0).
   scheduledRent?: number | null
   rentUpdateMonth?: string | null       // 'YYYY-MM' — 이 달부터 scheduledRent 적용
-  room?: { scheduledRent?: number | null; rentUpdateDate?: Date | string | null } | null
+  room?: {
+    scheduledRent?: number | null
+    rentUpdateDate?: Date | string | null
+    // 비거주 축 — 엔진은 nonResidentRent 를 읽지 않는다(기준액은 계약의 rentAmount 다).
+    nonResidentRent?: number | null
+    nonResidentScheduled?: number | null
+    nonResidentRentDate?: Date | string | null
+  } | null
 }
 
 // 그 달(mon)에 유효한 기준 월세 — 예약 인상 적용월 이상이면 scheduledRent, 아니면 현재 rentAmount.
+// 비거주 계약은 축이 다르다 — 거주 예약(scheduledRent/rentUpdateDate)이 아니라
+// 비거주 예약(nonResidentScheduled/nonResidentRentDate)을 같은 규칙으로 읽는다.
+// 기준액은 어느 축이든 l.rentAmount 다. room.nonResidentRent 를 기준액으로 쓰면
+// 계약별 협의가가 방 기본값으로 덮여 사라진다.
 function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
+  if (l.status === 'NON_RESIDENT') {
+    const nrSched = l.room?.nonResidentScheduled ?? null
+    const nrMon = l.room?.nonResidentRentDate ? monthOfDate(l.room.nonResidentRentDate) : null
+    if (nrSched != null && nrSched > 0 && nrMon && mon >= nrMon) return nrSched
+    return l.rentAmount
+  }
   const sched = l.scheduledRent ?? l.room?.scheduledRent ?? null
   const rum = l.rentUpdateMonth ?? (l.room?.rentUpdateDate ? monthOfDate(l.room.rentUpdateDate) : null)
   if (sched != null && sched > 0 && rum && mon >= rum) return sched

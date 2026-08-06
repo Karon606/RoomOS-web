@@ -159,7 +159,7 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   const nonResidentRentDateRaw = nrEnabled ? (formData.get('nonResidentRentDate') as string) : ''
   const nonResidentRentDate    = nonResidentRentDateRaw ? new Date(nonResidentRentDateRaw) : null
 
-  const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true } })
+  const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
 
   await prisma.room.update({
     where: { id },
@@ -197,13 +197,16 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
 
   // 인상 예약 변경 → 락인 되쓰기. 없으면 이미 선납된 달의 락이 인상을 이겨 인상분이 영원히 미청구로 남는다
   // (할인에는 같은 장치가 이미 있다 — rewriteLockedExpectedForDiscountChange, 신고 70cde9d6).
+  // 비거주 예약도 같은 축이다 — 한쪽만 걸면 비거주 선납 락에 인상분이 영원히 안 붙는다.
   if (prevRoom && (prevRoom.scheduledRent !== scheduledRent
-      || (prevRoom.rentUpdateDate?.getTime() ?? null) !== (rentUpdateDate?.getTime() ?? null))) {
+      || (prevRoom.rentUpdateDate?.getTime() ?? null) !== (rentUpdateDate?.getTime() ?? null)
+      || prevRoom.nonResidentScheduled !== nonResidentScheduled
+      || (prevRoom.nonResidentRentDate?.getTime() ?? null) !== (nonResidentRentDate?.getTime() ?? null))) {
     const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/actions')
     await rewriteLockedExpectedForRentSchedule(
       id,
-      { scheduledRent: prevRoom.scheduledRent, rentUpdateDate: prevRoom.rentUpdateDate },
-      { scheduledRent, rentUpdateDate },
+      { scheduledRent: prevRoom.scheduledRent, rentUpdateDate: prevRoom.rentUpdateDate, nonResidentScheduled: prevRoom.nonResidentScheduled, nonResidentRentDate: prevRoom.nonResidentRentDate },
+      { scheduledRent, rentUpdateDate, nonResidentScheduled, nonResidentRentDate },
     )
   }
 
@@ -528,6 +531,15 @@ export async function applyScheduledRents() {
         data: { rentAmount: data.baseRent as number },
       })
     }
+
+    // 비거주 축의 거울 — 예약 필드를 비우기 전에 계약 rentAmount 로 옮겨야 한다.
+    // 없으면 적용일이 경과하는 순간 선반영과 모순된다(청구 엔진이 예약값을 잃어 구가로 회귀).
+    if (data.nonResidentRent != null) {
+      await prisma.leaseTerm.updateMany({
+        where: { roomId: room.id, status: 'NON_RESIDENT' },
+        data: { rentAmount: data.nonResidentRent as number },
+      })
+    }
   }))
 
   revalidatePath('/room-manage')
@@ -649,7 +661,7 @@ export async function batchUpdateRooms(
     const keys = Object.keys(data)
     const beforeRooms = await prisma.room.findMany({
       where: { id: { in: roomIds }, propertyId },
-      select: { id: true, type: true, tier: true, baseRent: true, scheduledRent: true, rentUpdateDate: true, windowType: true, direction: true },
+      select: { id: true, type: true, tier: true, baseRent: true, scheduledRent: true, rentUpdateDate: true, windowType: true, direction: true, nonResidentScheduled: true, nonResidentRentDate: true },
     })
     const beforeLeases = data.baseRent != null
       ? await prisma.leaseTerm.findMany({
@@ -703,10 +715,11 @@ export async function batchUpdateRooms(
         }
         if (b.scheduledRent === after.scheduledRent
             && (b.rentUpdateDate?.getTime() ?? null) === (after.rentUpdateDate?.getTime() ?? null)) continue
+        // 비거주 축은 일괄 수정 대상이 아니라 전후 동일하게 넘긴다(비거주 계약은 before === after 로 자동 skip).
         await rewriteLockedExpectedForRentSchedule(
           b.id,
-          { scheduledRent: b.scheduledRent, rentUpdateDate: b.rentUpdateDate },
-          after,
+          { scheduledRent: b.scheduledRent, rentUpdateDate: b.rentUpdateDate, nonResidentScheduled: b.nonResidentScheduled, nonResidentRentDate: b.nonResidentRentDate },
+          { ...after, nonResidentScheduled: b.nonResidentScheduled, nonResidentRentDate: b.nonResidentRentDate },
         )
       }
     }

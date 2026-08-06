@@ -160,9 +160,9 @@ const RENT = 300000
   eq('예약 표시: 입주월(8월) 할인 반영 42만', discountedRent(jihanDc, '2026-08', 440000), 420000)
   eq('예약 표시: 할인 종료 후(11월) 정상가 복귀', discountedRent(jihanDc, '2026-11', 440000), 440000)
   // 락 우선순위 문서화 — 락인된 달은 할인 fallback 을 이긴다(그래서 할인 변경 시 락 되쓰기가 필요)
-  eq('청구: 락인은 할인 fallback 보다 우선', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', 440000), 440000)
-  eq('청구: 락 되쓰기 후 할인가 반영', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', 420000), 420000)
-  eq('청구: 락 없으면 할인 fallback', billForLeaseMonth({ rentAmount: 440000, isShortTerm: false, discounts: jihanDc }, '2026-08', null), 420000)
+  eq('청구: 락인은 할인 fallback 보다 우선', billForLeaseMonth({ rentAmount: 440000, status: 'ACTIVE', isShortTerm: false, discounts: jihanDc }, '2026-08', 440000), 440000)
+  eq('청구: 락 되쓰기 후 할인가 반영', billForLeaseMonth({ rentAmount: 440000, status: 'ACTIVE', isShortTerm: false, discounts: jihanDc }, '2026-08', 420000), 420000)
+  eq('청구: 락 없으면 할인 fallback', billForLeaseMonth({ rentAmount: 440000, status: 'ACTIVE', isShortTerm: false, discounts: jihanDc }, '2026-08', null), 420000)
   eq('할인: 합산 캡(음수 청구 방지)', discountedRent([
     { discountType: 'amount', value: 200000, scope: 'permanent' },
     { discountType: 'amount', value: 200000, scope: 'permanent' },
@@ -223,16 +223,16 @@ const RENT = 300000
 // 단기 rentAmount = 체류 전체 사용료. 월 루프가 입주월 밖에서 fallback을 물면 이중 청구.
 // 락인·일할은 규칙보다 우선(기존 record 있는 달의 과거 결산 불변).
 {
-  const shortLease = { rentAmount: 329000, isShortTerm: true, moveInDate: '2026-07-20' }
+  const shortLease = { rentAmount: 329000, status: 'ACTIVE', isShortTerm: true, moveInDate: '2026-07-20' }
   eq('청구: 단기 입주월 = 전액', billForLeaseMonth(shortLease, '2026-07', null), 329000)
   eq('청구: 단기 비입주월 record 없음 = 0', billForLeaseMonth(shortLease, '2026-08', null), 0)
   eq('청구: 단기 비입주월 락인은 유지(결산 불변)', billForLeaseMonth(shortLease, '2026-08', 157000), 157000)
   eq('청구: 단기 일할 정산은 규칙보다 우선', billForLeaseMonth(
     { ...shortLease, checkoutProratedAmount: 50000, checkoutProratedMonth: '2026-08' }, '2026-08', null), 50000)
   eq('청구: 단기인데 입주일 없으면 기존 동작(방어)', billForLeaseMonth(
-    { rentAmount: 329000, isShortTerm: true, moveInDate: null }, '2026-08', null), 329000)
+    { rentAmount: 329000, status: 'ACTIVE', isShortTerm: true, moveInDate: null }, '2026-08', null), 329000)
   eq('청구: 장기는 규칙 미적용(회귀 0)', billForLeaseMonth(
-    { rentAmount: 470000, moveInDate: '2026-07-20' }, '2026-08', null), 470000)
+    { rentAmount: 470000, status: 'ACTIVE', moveInDate: '2026-07-20' }, '2026-08', null), 470000)
 }
 
 // ── 단기 연장 누적 재계산 — 경로 독립 (운영자 승인 2026-07-20)

@@ -83,9 +83,9 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
   const discountedLeases = await prisma.leaseTerm.findMany({
     where: { isShortTerm: false, discounts: { some: {} } },
     select: {
-      id: true, tenantId: true, propertyId: true, rentAmount: true, checkoutProratedMonth: true,
+      id: true, tenantId: true, propertyId: true, rentAmount: true, checkoutProratedMonth: true, status: true,
       tenant: { select: { name: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true, createdAt: true } },
     },
   })
@@ -101,8 +101,8 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
     for (const r of recs) byMon.set(r.targetMonth, Math.max(byMon.get(r.targetMonth) ?? 0, r.expectedAmount))
     for (const [mon, lockedMax] of byMon) {
       if (l.checkoutProratedMonth === mon) continue
-      const base = billForLeaseMonth({ rentAmount: l.rentAmount, room: l.room }, mon, null)
-      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, discounts: l.discounts, room: l.room }, mon, null)
+      const base = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, room: l.room }, mon, null)
+      const disc = billForLeaseMonth({ rentAmount: l.rentAmount, status: l.status, discounts: l.discounts, room: l.room }, mon, null)
       if (disc >= base || lockedMax !== base) continue
       violations.push({
         signature: `[정합] discount-locked-expected · ${l.id} · ${mon}`,

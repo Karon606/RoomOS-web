@@ -107,10 +107,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const pReservedLeases = prisma.leaseTerm.findMany({
     where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
     select: {
-      id: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
+      id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
   })
   const [tcY, tcM] = targetMonth.split('-').map(Number)
@@ -184,7 +184,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
-      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true } } },
+      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -385,7 +385,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing) — moveInDate와 함께 판정
         // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -471,7 +471,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const leaseByIdForCap = new Map(activeLeases.map(l => [l.id, l]))
   const paidRevenue = Object.entries(paidByLease).reduce((s, [id, paid]) => {
     const l = leaseByIdForCap.get(id)
-    const cap = l ? billForLeaseMonth(l as never, targetMonth, lockedThisMonth[id] ?? null) : (leaseRentMap.get(id) ?? 0)
+    const cap = l ? billForLeaseMonth(l, targetMonth, lockedThisMonth[id] ?? null) : (leaseRentMap.get(id) ?? 0)
     return s + Math.min(paid, cap)
   }, 0)
   const extraRevenue = incomes.reduce((s, i) => s + i.amount, 0)

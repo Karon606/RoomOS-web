@@ -38,7 +38,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       // 예약 인상 — 인상 적용월 이상은 room.scheduledRent 로 청구한다(스케줄러가 baseRent 로
       // 옮기기 전까지의 예약값). 캘린더가 이걸 안 봐서 외부로 나가는 일정에 인상 전 금액이 찍혔다(A페이즈 P2).
-      room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } },
+      room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       tenant: { select: { name: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },

@@ -254,7 +254,7 @@ export async function GET(request: NextRequest) {
         where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         include: {
           // 잔액·상태를 청구 정본(billForLeaseMonth)으로 계산하기 위해 할인·예약 인상 필드까지 가져온다
-          room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true } },
+          room: { select: { roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
           discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           tenant: {
             select: {
@@ -305,7 +305,7 @@ export async function GET(request: NextRequest) {
       // 예약(RESERVED)은 아직 입주 전이라 미납·수금 집계에서 뺀다 — 화면과 동일 정본
       // (balance 0 · isPaid true). 이 규칙 없이 청구만 정본화하면 예약자가 엑셀에서 미납으로 잡힌다.
       const isReserved = l.status === 'RESERVED'
-      const monthBill = isReserved ? 0 : billForLeaseMonth(l as never, targetMonth, lockedForMonth)
+      const monthBill = isReserved ? 0 : billForLeaseMonth(l, targetMonth, lockedForMonth)
       const balance = (prevPaidThisMonth || isReserved) ? 0 : totalPaid - monthBill
       const isPaid  = prevPaidThisMonth || isReserved || totalPaid >= monthBill
 

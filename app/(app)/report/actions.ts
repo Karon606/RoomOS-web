@@ -98,7 +98,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
       overrideDueDay: true, overrideDueDayMonth: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   })
 
@@ -136,7 +136,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     for (const [leaseId, received] of Object.entries(receivedByMonthLease[m])) {
       if (!rentMap.has(leaseId)) continue          // 매출 인식 대상(RESERVED·CANCELLED 제외) 유지
       const l = leaseById.get(leaseId)
-      const cap = l ? billForLeaseMonth(l as never, m, lockedExpectedByLeaseMonth[leaseId]?.get(m) ?? null) : 0
+      const cap = l ? billForLeaseMonth(l, m, lockedExpectedByLeaseMonth[leaseId]?.get(m) ?? null) : 0
       total += Math.min(received, cap)
     }
     revenueByMonth[m] = total
@@ -377,7 +377,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
         moveInDate: true, expectedMoveOut: true, moveOutDate: true,
         checkoutProratedAmount: true, checkoutProratedMonth: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { scheduledRent: true, rentUpdateDate: true } },
+        room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
       },
     }),
     prisma.property.findUnique({
@@ -492,7 +492,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       // scheduledRent 기준, 그 위에 할인. 원가 직산입 금지(buildLeaseRow 와 동일 규칙).
       // 정본 호출로 대체 — 종전에는 같은 규칙(일할·인상·할인)을 손으로 다시 짜 두 벌이 됐다.
       // 미래월 예측이라 락은 넘기지 않는다(그 달 record 가 아직 없다).
-      revenue += billForLeaseMonth(lease as never, month, null)
+      revenue += billForLeaseMonth(lease, month, null)
     }
     // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가
     revenue += await getCheckedOutRecognizedRevenue(prisma, propertyId, month)

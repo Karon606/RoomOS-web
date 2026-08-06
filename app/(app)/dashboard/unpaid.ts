@@ -76,7 +76,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         isShortTerm: true,   // 단기 입주월 단일 청구(lib/billing) — moveInDate와 함께 판정
         // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
         tenant: { select: { id: true, name: true } },
       },
     }),
