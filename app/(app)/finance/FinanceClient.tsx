@@ -305,10 +305,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   // 프리셋·직접입력 패널이 열리면 그 자리로 맞춘다(신고 57e65e23). 버튼 줄이 목록 아래쪽에 있으면
   // 패널이 스크롤러 밖에서 펼쳐져 무엇이 열렸는지 안 보인다. 두 패널은 배타 렌더라 ref 하나로 충분하다.
-  // behavior 는 기본(즉시). smooth 면 재노출 가드가 애니메이션 중간 기하를 읽는다.
+  // start 정렬 — nearest 는 패널을 화면 하단에 걸쳐 놓아, 품목명을 탭하는 순간 캐럿이 장래 키보드선
+  // 아래라 iOS 가 visual viewport 를 팬해 모달이 통째로 위로 밀렸다(신고 8c8ec183 의 큰 틈).
+  // smooth 허용 — 이 시점은 키보드 닫힘·가드 유휴라 애니메이션 중간 기하를 읽을 가드가 없고,
+  // 애니메이션 중 필드를 탭해도 reveal 의 scrollTop 대입이 smooth 를 끊고 resize 재시도가 수렴한다.
   const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (activeLabel) panelRef.current?.scrollIntoView({ block: 'nearest' })
+    if (activeLabel) panelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }, [activeLabel])
 
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)

@@ -47,7 +47,11 @@ function scrollParent(el: Element): HTMLElement | null {
     // 모달 안에서 본문이 안 넘치면 배경(.app-main)을 잡아 배경만 스크롤되고 델타가 수렴하지 않았다.
     // sticky 는 멈추지 않는다. 흐름 안에 있어 자기 스크롤러가 실제로 움직인다.
     if (cs.position === 'fixed') return null
-    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && n.scrollHeight > n.clientHeight) return n
+    // +1 여유 — 죽은 스크롤러(부모가 높이 무제약이라 늘 콘텐츠 높이인 overflow-y-auto, 지출 폼 본문이
+    // 그 예)가 서브픽셀 반올림으로 scrollHeight 가 clientHeight+1 이 되어 잡히면, 스크롤이 거기서
+    // 클램프돼 진짜 스크롤러(모달 본문)에 영영 안 닿는다(신고 8c8ec183 — 필드가 모달 하단에 잘린 채 방치).
+    // 진짜 스크롤러가 1px 만 넘치는 경우를 건너뛰는 부작용은 무해하다. 1px 안에는 드러낼 것이 없다.
+    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && n.scrollHeight > n.clientHeight + 1) return n
   }
   return null
 }
