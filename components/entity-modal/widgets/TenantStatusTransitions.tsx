@@ -16,7 +16,7 @@ import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
-import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
+import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -219,7 +219,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     const carriedOver = basis?.source === 'carriedOver'
     // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
     const cleaningPaid = def.withDeposit ? await getCleaningFeeReceivedForLease(lease.id) : 0
-    const deductible = cleaningPaid > 0 ? 0 : (lease.cleaningFee || 0)
+    const deductible = cleaningFeeDeductible(lease.cleaningFee || 0, cleaningPaid)
     setTransRefund(def.withDeposit
       ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - deductible))
       : undefined)

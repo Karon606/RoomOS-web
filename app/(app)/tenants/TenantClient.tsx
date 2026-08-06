@@ -48,7 +48,7 @@ import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/li
 import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
 import { DepositStatusPanel } from '@/components/entity-modal/widgets/DepositStatusPanel'
-import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
+import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
@@ -774,7 +774,7 @@ export default function TenantClient({
     // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다 — 계약서가 either/or 로 약정한다.
     // 종전에는 둘 다 하는 것을 막지 않아 2만원을 두 번 받는 상태가 실제로 있었다(520호 김민정).
     const cleaningPaid = leaseTermId ? await getCleaningFeeReceivedForLease(leaseTermId) : 0
-    const deductible = cleaningPaid > 0 ? 0 : cleaningFee
+    const deductible = cleaningFeeDeductible(cleaningFee, cleaningPaid)
     const maxRefund = Math.max(0, depositAmount - deductible)
     setDepositReturnAmt(maxRefund)
     setDepoCleaningPaid(cleaningPaid)

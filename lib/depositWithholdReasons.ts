@@ -15,6 +15,16 @@
 // 케이스가 아니라 클래스다 — 인수 전 입주자 퇴실 시 기본 선택으로 제안한다.
 export const WITHHOLD_REASONS = ['키값', '청소비', '원상복구비', '계약 위반', '기타'] as const
 
+// 퇴실 정산에서 실제로 뗄 청소비 — 계약서 §2-4 의 either/or 판정 정본.
+// "보증금이 있는 경우 퇴실 정산 시 보증금에서 공제하고, 보증금이 없는 경우 입실 시 이용료와 함께
+// 받습니다" 라 둘 중 하나다. 입실 때 따로 받았으면(ExtraIncome 카테고리 '청소비') 퇴실 공제는 0이다.
+// 종전에는 판정식이 네 곳에 흩어져 표시 화면만 빠졌고, 그래서 같은 계약이 패널에서는 30,000,
+// 퇴실 폼에서는 50,000 으로 갈렸다(520호 김민정). 수신액 조회는 tenants/actions 의
+// getCleaningFeeReceivedForLease 가 정본이며(순환 import 때문에 그 자리를 지킨다) 여기는 판정만 한다.
+export function cleaningFeeDeductible(contractFee: number, receivedSeparately: number): number {
+  return receivedSeparately > 0 ? 0 : contractFee
+}
+
 export function buildWithholdReason(selected: string, etcText: string): string {
   if (!selected) return ''
   if (selected !== '기타') return selected

@@ -18,7 +18,8 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
-import { getDepositRefundForLease, undoDepositReturn } from '@/app/(app)/tenants/actions'
+import { getDepositRefundForLease, undoDepositReturn, getCleaningFeeReceivedForLease } from '@/app/(app)/tenants/actions'
+import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
@@ -39,6 +40,7 @@ export function DepositStatusPanel({
 }) {
   const [data, setData] = useState<{ records: Rec[]; paidTotal: number; preAcquisition: boolean } | null>(null)
   const [refund, setRefund] = useState<Refund>(null)
+  const [cleaningPaid, setCleaningPaid] = useState(0)
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
@@ -47,11 +49,16 @@ export function DepositStatusPanel({
   const [pending, startTransition] = useTransition()
 
   const load = useCallback(async () => {
-    const d = await getDepositPaymentsByLease(leaseTermId)
+    // 두 값을 한 틱에 커밋한다. 순차로 넣으면 첫 페인트에 공제 전 숫자가 스쳤다가 바뀐다(로딩 점프).
+    const [d, paidCleaning] = await Promise.all([
+      getDepositPaymentsByLease(leaseTermId),
+      cleaningFee > 0 ? getCleaningFeeReceivedForLease(leaseTermId) : Promise.resolve(0),
+    ])
     setData(d)
+    setCleaningPaid(paidCleaning)
     // 퇴실·취소 계약만 환불 기록을 묻는다(그 외에는 있을 수 없어 왕복이 낭비다)
     if (status === 'CHECKED_OUT' || status === 'CANCELLED') setRefund(await getDepositRefundForLease(leaseTermId))
-  }, [leaseTermId, status])
+  }, [leaseTermId, status, cleaningFee])
 
   useEffect(() => { void load() }, [load, reloadSignal])
 
@@ -72,7 +79,9 @@ export function DepositStatusPanel({
   const carriedOver = data.preAcquisition && paid === 0 && depositAmount > 0
   const refundBase = carriedOver ? depositAmount : paid
   // 환불 예상은 표시 전용이며 어떤 저장·집계에도 흘러가지 않는다. 확정은 퇴실 처리 폼이 한다.
-  const expectedRefund = Math.max(0, refundBase - cleaningFee)
+  // 다만 판정은 돈이 움직이는 3경로와 같아야 한다 — 입실 때 청소비를 따로 받았으면 공제 0(계약서 §2-4).
+  const effectiveFee = cleaningFeeDeductible(cleaningFee, cleaningPaid)
+  const expectedRefund = Math.max(0, refundBase - effectiveFee)
   const shortfall = depositAmount > 0 ? depositAmount - paid : 0
   // 계약 보증금이 비어 있으면 환불 여부 판정 자체가 불가능하다. 환불 경고보다 이게 먼저다.
   const noContractAmount = depositAmount === 0 && paid > 0 && !settled
@@ -205,14 +214,21 @@ export function DepositStatusPanel({
         <p className="text-xs text-[var(--warm-dark)] break-keep">
           {exited ? '환불 예정액 ' : '퇴실 시 환불 예상 '}<span className="num">{fmtWon(expectedRefund)}</span>
           {/* 근거는 값이 달라질 때만 병기한다. 무조건 붙이면 바로 위 '받은 보증금'과 같은 숫자를 두 번 말한다. */}
-          {(carriedOver || cleaningFee > 0) && (
+          {(carriedOver || effectiveFee > 0) && (
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">
               {' ('}{carriedOver ? '계약 보증금' : '받은 보증금'} {fmtWon(refundBase)}
-              {cleaningFee > 0 && <> − 청소비 {fmtWon(cleaningFee)}</>}
+              {effectiveFee > 0 && <> − 청소비 {fmtWon(effectiveFee)}</>}
               {carriedOver && ' 기준, 인수 승계'}{')'}
             </span>
           )}
           {status === 'CHECKOUT_PENDING' && <span className="block text-[0.65625rem] text-[var(--warm-muted)]">퇴실 처리에서 최종 확정합니다.</span>}
+        </p>
+      )}
+      {/* 왜 청소비를 안 뺐는지 — 계약에 청소비가 적혀 있는데 예상액에서 사라지면 누락으로 읽힌다.
+          문구는 퇴실 처리 폼의 정본과 같은 한 문장이다(두 화면이 갈리면 또 어긋난다). */}
+      {!settled && refundBase > 0 && cleaningFee > 0 && cleaningPaid > 0 && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
+          청소비 {fmtWon(cleaningPaid)}은 입실 때 이미 받아 공제하지 않습니다.
         </p>
       )}
 

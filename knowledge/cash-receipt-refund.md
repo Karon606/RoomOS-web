@@ -127,3 +127,10 @@
 **세무사 확인 대상.** 고시원 임대의 부가세 과세·면세 판정, 그에 따른 청소비의 과세 여부,
 예약 취소 몰취금의 부가세 취급. 계약서에 청소비를 "퇴실 시 청소 용역 대가로 보증금에서 공제"로
 명시하면 퇴실월 인식이 정당해지고 부가세 판정 근거도 생긴다 — 지금은 문구가 애매해 해석이 갈린다.
+
+**either/or 는 표시 화면도 탄다 (2026-08-05).** 계약서 §2-4 의 either/or(입실 때 따로 받았으면 퇴실
+공제 0)는 돈이 움직이는 퇴실 3경로뿐 아니라 표시 정본인 DepositStatusPanel 의 '환불 예상'도 같은
+판정을 탄다. 종전에는 패널만 빠져 같은 계약이 패널 30,000 대 퇴실 폼 50,000 으로 갈렸다(520호 김민정).
+판정 헬퍼는 `lib/depositWithholdReasons` 의 `cleaningFeeDeductible(contractFee, receivedSeparately)`
+이고, 수신액 조회는 `app/(app)/tenants/actions.ts` 의 `getCleaningFeeReceivedForLease` 가 정본이다
+(순환 import 때문에 조회는 그 자리에 둔다).

@@ -19,6 +19,7 @@ import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
+import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1247,7 +1248,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       moveOutLeaseId: l.id,
       moveOutDepositAmount: l.depositAmount,
       // 입실 때 이미 받았으면 0 — 퇴실 환불창이 그만큼 또 빼지 않게 한다
-      moveOutCleaningFee: (l.extraIncomes ?? []).reduce((s2, e) => s2 + e.amount, 0) > 0 ? 0 : l.cleaningFee,
+      moveOutCleaningFee: cleaningFeeDeductible(l.cleaningFee, (l.extraIncomes ?? []).reduce((s2, e) => s2 + e.amount, 0)),
       moveOutTenantName: l.tenant.name,
     })
   }
