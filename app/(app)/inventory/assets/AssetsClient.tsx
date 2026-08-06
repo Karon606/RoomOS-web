@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -21,6 +21,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SearchBar } from '@/components/ui/SearchBar'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -99,6 +100,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
   // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
   const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
+  // 1대N 나눠 배정 — 한 품목을 여러 방·공용부에 수량 지정해 한 번에 분배(rows.key = 'room:id' | 'loc:id')
+  const [dist, setDist] = useState<{ it: AssetItem; assignedAt: string; rows: { key: string; qty: string }[] } | null>(null)
+  const openDistribute = (it: AssetItem) => setDist({ it, assignedAt: kstYmdStr(), rows: [] })
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — v2.0 §22 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string) => void } | null>(null)
@@ -409,6 +413,38 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
+  // 최근 배정한 방 — 방별 품목 배정일의 최대값 내림차순. 나눠 배정에서 자주 쓰는 방을 칩으로 바로 추가.
+  const recentRooms = useMemo(() => data.rooms
+    .map(g => ({ roomId: g.roomId, roomNo: g.roomNo, at: g.items.map(i => i.assignedAt).filter((x): x is string => !!x).sort().pop() ?? '' }))
+    .filter(g => g.at)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 5), [data.rooms])
+
+  // 나눠 배정 확정 — 유효 행만 추려 합계를 다시 검증하고 서버에서 한 트랜잭션으로 분배.
+  const runDistribute = () => {
+    if (!dist) return
+    const it = dist.it
+    const unit = it.qtyUnit ?? '개'
+    const max = it.qtyValue ?? 0
+    const rows = dist.rows.map(r => ({ key: r.key, qty: Number(r.qty) })).filter(r => r.qty > 0)
+    if (rows.length === 0) { pushToast('error', '배정할 곳과 수량을 입력하세요.'); return }
+    const sum = rows.reduce((s, r) => s + r.qty, 0)
+    if (sum > max + 1e-9) { pushToast('error', `수량이 보유량(${fmtQty(max)}${unit})을 넘습니다.`); return }
+    const targets = rows.map(r => {
+      const [k, id] = r.key.split(':')
+      return { target: { kind: k === 'room' ? 'room' : 'location', id }, qty: r.qty }
+    }) as Parameters<typeof distributeAssetToTargets>[0]['targets']
+    startTransition(async () => {
+      const res = await distributeAssetToTargets({ ids: it.ids, targets, assignedAt: dist.assignedAt || null })
+      if (!res.ok) { pushToast('error', res.error); return }
+      setDist(null)
+      pushToast('success', `${rows.length}곳에 ${fmtQty(sum)}${unit} 배정됨`, {
+        action: { label: '적용취소', run: () => undoBatch(res.undo) },
+      })
+      router.refresh()
+    })
+  }
+
   // 위치 이름 헬퍼
   const placeName = (v: string) => {
     const [k, id] = v.split(':')
@@ -674,6 +710,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '옮기기' : '배정하기'}
                 </button>
+                {/* 나눠 배정 — 수량이 2 이상일 때만(1개는 옮기기로 충분) */}
+                {(it.qtyValue ?? 0) > 1 && (
+                  <button type="button" onClick={() => openDistribute(it)} disabled={pending}
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    나눠 배정
+                  </button>
+                )}
                 {siblings.length > 0 && (
                   <button type="button" onClick={() => openCardMerge(it, siblings)} disabled={pending}
                     className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
@@ -1002,6 +1045,111 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </Modal>
       )}
 
+      {/* 1대N 나눠 배정 — 한 품목을 여러 방·공용부에 수량 지정 분배, 잔여는 출발지 유지 */}
+      {dist && (() => {
+        const it = dist.it
+        const unit = it.qtyUnit ?? '개'
+        const max = it.qtyValue ?? 0
+        const from = curPlace(it)
+        const used = new Set(dist.rows.map(r => r.key))
+        const okRows = dist.rows.filter(r => Number(r.qty) > 0)
+        const sum = okRows.reduce((s, r) => s + Number(r.qty), 0)
+        const rest = Math.round((max - sum) * 1000) / 1000
+        const over = sum > max + 1e-9
+        const chips = recentRooms.filter(r => !used.has('room:' + r.roomId))
+        const freeRooms = rooms.filter(r => !used.has('room:' + r.id))
+        const freeLocs = locations.filter(l => !used.has('loc:' + l.id))
+        const addRow = (key: string) => setDist(d => d && !d.rows.some(r => r.key === key) ? { ...d, rows: [...d.rows, { key, qty: '' }] } : d)
+        return (
+          <Modal open onClose={() => setDist(null)} z={260} width="sm"
+            title={`나눠 배정 · ${it.itemLabel}`}
+            subtitle={`지금 ${from}에 ${fmtQty(max)}${unit} 있습니다. 남는 수량은 그대로 둡니다.`}
+            footer={
+              <div className="flex gap-2 justify-end">
+                <Btn variant="secondary" size="md" onClick={() => setDist(null)} disabled={pending}>취소</Btn>
+                <Btn variant="primary" size="md" onClick={runDistribute} disabled={pending || over || okRows.length === 0}>
+                  {pending ? '배정 중…' : '배정'}
+                </Btn>
+              </div>
+            }>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">배정일 <span className="text-[var(--warm-muted)] font-normal">(기본 오늘 · 나중에 수정 가능)</span></span>
+                <DatePicker value={dist.assignedAt} onChange={v => setDist(d => d ? { ...d, assignedAt: v } : d)} />
+              </label>
+              {chips.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-[var(--warm-mid)]">최근 배정한 방</p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {chips.map(r => (
+                      <li key={r.roomId}>
+                        <button type="button" disabled={pending} onClick={() => addRow('room:' + r.roomId)}
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1 text-xs text-[var(--warm-mid)] transition-colors hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)] disabled:opacity-40">
+                          {fmtRoomNo(r.roomNo)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">방·공용부 추가</span>
+                <select value="" disabled={pending} onChange={e => { if (e.target.value) addRow(e.target.value) }}
+                  className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">고르면 아래 목록에 추가됩니다</option>
+                  {freeRooms.length > 0 && (
+                    <optgroup label="방">
+                      {freeRooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+                    </optgroup>
+                  )}
+                  {freeLocs.length > 0 && (
+                    <optgroup label="공용부">
+                      {freeLocs.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+              {dist.rows.length > 0 && (
+                <ul className="space-y-2">
+                  {dist.rows.map((r, idx) => {
+                    const n = Number(r.qty)
+                    // 행별 경고 — 빈 값·0 이하·보유량 초과. 합계 초과는 아래 미리보기가 따로 알린다.
+                    const warn = r.qty.trim() === '' ? '수량을 입력하세요.'
+                      : !(n > 0) ? '0보다 큰 수량을 입력하세요.'
+                      : n > max + 1e-9 ? `지금 있는 수량(${fmtQty(max)}${unit})보다 많아요.` : ''
+                    return (
+                      <li key={r.key} className="rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{placeName(r.key)}</span>
+                          {/* controlled number 는 '1.' 중간상태를 빈 값으로 소독해 1.2 가 2 가 되므로 텍스트 + inputMode 로 받는다. */}
+                          <input inputMode="decimal" value={r.qty} disabled={pending}
+                            onChange={e => setDist(d => d ? { ...d, rows: d.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x) } : d)}
+                            className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+                          <span className="text-xs text-[var(--warm-muted)] shrink-0">{unit}</span>
+                          <button type="button" disabled={pending} aria-label={`${placeName(r.key)} 제거`}
+                            onClick={() => setDist(d => d ? { ...d, rows: d.rows.filter((_, i) => i !== idx) } : d)}
+                            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">제거</button>
+                        </div>
+                        {warn && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">{warn}</p>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
+                <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
+                {okRows.length === 0
+                  ? <p className="text-[var(--warm-muted)]">배정할 방·공용부와 수량을 정해주세요.</p>
+                  : over
+                    ? <p className="text-[var(--danger-fg)]">합계 {fmtQty(sum)}{unit}가 지금 있는 수량({fmtQty(max)}{unit})보다 많아요.</p>
+                    : <p className="text-[var(--warm-dark)]">{from}에서 {okRows.length}곳에 <span className="font-semibold">{fmtQty(sum)}{unit}</span> 배정 · 잔여 {fmtQty(rest)}{unit}는 {from}에 남음</p>}
+                {okRows.length > 0 && !over && <p className="mt-0.5 text-[var(--warm-muted)]">오래된 구매분부터 차감</p>}
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
+
       {/* 무상 비품 등록 — 0원 Expense(재고자산) + '무상' 배지 */}
       {freeForm && (
         <Modal
@@ -1098,6 +1246,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
+                {/* 나눠 배정 — 수량이 2 이상일 때만(카드 액션 행과 동일 조건) */}
+                {(it.qtyValue ?? 0) > 1 && (
+                  <button type="button" onClick={() => openDistribute(it)}
+                    className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                    나눠 배정
+                  </button>
+                )}
               </div>
               {(it.roomNo || it.locationName) && (
                 <div className="flex flex-wrap items-center gap-2">

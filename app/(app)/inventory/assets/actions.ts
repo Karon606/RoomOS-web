@@ -667,6 +667,7 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
       const groupId = e.allocationGroupId ?? randomUUID()
       if (!e.allocationGroupId) touched.push(groupId)
       ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
+      // 아래 복제 필드는 buildFanOutOps 와 동일 목록 유지 — 하나라도 어긋나면 분할된 행이 별도 카드로 갈라진다.
       ops.push(prisma.expense.create({ data: {
         date: e.date, amount: assignedAmount, category: e.category,
         detail: buildAssetDetail({ ...e, qtyValue: need }),
@@ -684,6 +685,90 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
     }
   }
   return { ops, movedQty, touchedGroups: [...new Set(touched)] }
+}
+
+// 1대N 나눠 배정 공통 — buildSplitOps 의 1패스 다구간 일반화.
+// 선입선출 커서 하나로 segments 순서대로 소진하고, 대상 경계에 걸린 구매 행만 분할한다.
+// 잔여(합계에 못 미친 나머지)는 출발지에 그대로 남는다. 금액은 수량 비례 배분하되 반올림 잔차를
+// 한 곳(잔여 행, 잔여가 없으면 첫 조각)에 몰아 원금액을 정확히 보존한다.
+// 반환 createdOpIndexes = ops 안 create 연산의 위치 — $transaction 결과에서 새 행 id 를 뽑아
+// 적용취소 deleteIds 로 쓴다. moved[i] = segments[i] 에 실제로 간 수량(이력 기록용).
+function buildFanOutOps(exps: ExpRow[], propertyId: string, segments: { data: MoveData; qty: number }[]):
+  { ops: Prisma.PrismaPromise<unknown>[]; createdOpIndexes: number[]; moved: number[] } {
+  const r3 = (n: number) => Math.round(n * 1000) / 1000
+  // 선입선출 — 오래된 구매분부터 차감(buildSplitOps 와 동일 정렬). 같은 날짜 안에서는 큰 행부터.
+  const sorted = [...exps].sort((a, b) => a.date.getTime() - b.date.getTime() || (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
+  const moved = segments.map(() => 0)
+  // ① 어느 구매 행에서 어느 대상으로 얼마를 뺄지 먼저 정한다(커서 1개 = 한 번만 훑는다).
+  const plan = new Map<number, { seg: number; qty: number }[]>()
+  let row = 0
+  let left = sorted.length ? (sorted[0].qtyValue ?? 1) : 0
+  for (let s = 0; s < segments.length; s++) {
+    let need = segments[s].qty
+    while (need > 1e-9 && row < sorted.length) {
+      if (left <= 1e-9) { row++; if (row < sorted.length) left = sorted[row].qtyValue ?? 1; continue }
+      const take = r3(Math.min(left, need))
+      const parts = plan.get(row) ?? plan.set(row, []).get(row)!
+      parts.push({ seg: s, qty: take })
+      moved[s] = r3(moved[s] + take)
+      left = r3(left - take)
+      need = r3(need - take)
+    }
+  }
+  // ② 행 단위로 update/create 를 만든다.
+  const ops: Prisma.PrismaPromise<unknown>[] = []
+  const createdOpIndexes: number[] = []
+  for (const [ri, parts] of [...plan.entries()].sort((a, b) => a[0] - b[0])) {
+    const e = sorted[ri]
+    const eq = e.qtyValue ?? 1
+    const remainQty = r3(eq - parts.reduce((s, p) => s + p.qty, 0))
+    // 한 대상이 이 행을 통째로 가져가면 분할 없이 위치만 바꾼다(buildSplitOps 와 동일 거동).
+    if (parts.length === 1 && remainQty <= 1e-9) {
+      ops.push(prisma.expense.update({ where: { id: e.id }, data: segments[parts[0].seg].data }))
+      continue
+    }
+    const amts = parts.map(p => Math.round(e.amount * (p.qty / eq)))
+    const residual = e.amount - amts.reduce((s, a) => s + a, 0)
+    const groupId = e.allocationGroupId ?? randomUUID()
+    let startIdx = 0
+    if (remainQty > 1e-9) {
+      // 잔여를 원래 행에 남긴다 — 위치는 그대로, 수량·금액만 줄인다(잔차는 여기서 흡수).
+      ops.push(prisma.expense.update({ where: { id: e.id }, data: {
+        qtyValue: remainQty, amount: residual, allocationGroupId: groupId,
+        detail: buildAssetDetail({ ...e, qtyValue: remainQty }),
+      } }))
+    } else {
+      // 잔여가 없으면 첫 조각이 원래 행을 그대로 쓴다(빈 껍데기 행을 만들지 않는다).
+      amts[0] += residual
+      const p0 = parts[0]
+      ops.push(prisma.expense.update({ where: { id: e.id }, data: {
+        ...segments[p0.seg].data,
+        qtyValue: p0.qty, amount: amts[0], allocationGroupId: groupId,
+        detail: buildAssetDetail({ ...e, qtyValue: p0.qty }),
+      } }))
+      startIdx = 1
+    }
+    for (let i = startIdx; i < parts.length; i++) {
+      const p = parts[i]
+      const d = segments[p.seg].data
+      createdOpIndexes.push(ops.length)
+      // 아래 복제 필드는 buildSplitOps 와 동일 목록 유지 — 하나라도 어긋나면 분할된 행이 별도 카드로 갈라진다.
+      ops.push(prisma.expense.create({ data: {
+        date: e.date, amount: amts[i], category: e.category,
+        detail: buildAssetDetail({ ...e, qtyValue: p.qty }),
+        vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
+        receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
+        itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText, unitBasis: e.unitBasis,
+        qtyValue: p.qty, qtyUnit: e.qtyUnit,
+        receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
+        allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
+        propertyId, roomId: d.roomId, assignedLocationId: d.assignedLocationId, isCommonAsset: d.isCommonAsset,
+        assignedAt: 'assignedAt' in d ? d.assignedAt : e.assignedAt,
+        financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
+      } }))
+    }
+  }
+  return { ops, createdOpIndexes, moved }
 }
 
 export async function assignAggregateToTarget(
@@ -804,6 +889,9 @@ export type AssetAssignUndo = {
   restore: {
     id: string; roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean
     qtyValue: number | null; amount: number; allocationGroupId: string | null; detail: string | null
+    // 배정일 원상태(ISO). 전량 소진으로 통째 이동한 행을 적용취소하면 위치는 돌아오는데 배정일은
+    // 배정 시각으로 오염된 채 남던 클래스 봉합. undefined(구 토큰)면 복원 data 에서 생략한다.
+    assignedAt?: string | null
   }[]
   deleteIds: string[]
 }
@@ -821,10 +909,11 @@ export async function batchAssignAssets(
 
     // 적용취소용 — 영향 행 전체의 원상태 스냅샷
     const allIds = [...new Set(items.flatMap(i => i.ids))]
-    const restore = await prisma.expense.findMany({
+    const restoreRows = await prisma.expense.findMany({
       where: { id: { in: allIds }, propertyId },
-      select: { id: true, roomId: true, assignedLocationId: true, isCommonAsset: true, qtyValue: true, amount: true, allocationGroupId: true, detail: true },
+      select: { id: true, roomId: true, assignedLocationId: true, isCommonAsset: true, qtyValue: true, amount: true, allocationGroupId: true, detail: true, assignedAt: true },
     })
+    const restore = restoreRows.map(r => ({ ...r, assignedAt: r.assignedAt ? r.assignedAt.toISOString() : null }))
 
     const deleteIds: string[] = []
     let assigned = 0
@@ -855,6 +944,8 @@ export async function undoBatchAssignAssets(undo: AssetAssignUndo): Promise<{ ok
         data: {
           roomId: r.roomId, assignedLocationId: r.assignedLocationId, isCommonAsset: r.isCommonAsset,
           qtyValue: r.qtyValue, amount: r.amount, allocationGroupId: r.allocationGroupId, detail: r.detail,
+          // 배정일도 원복 — 스냅샷에 없는 구 토큰(undefined)이면 손대지 않는다(하위 호환).
+          ...(r.assignedAt !== undefined ? { assignedAt: r.assignedAt ? new Date(r.assignedAt) : null } : {}),
         },
       })),
     ])
@@ -863,6 +954,69 @@ export async function undoBatchAssignAssets(undo: AssetAssignUndo): Promise<{ ok
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
+// ============================================================
+// 1대N 나눠 배정 — 한 품목(집계 묶음 = ids)을 여러 방·공용부에 수량 지정해 한 번에 분배.
+//   buildFanOutOps 로 전 구간을 한 트랜잭션에 원자 실행한다(중간 실패로 절반만 배정되는 상태 없음).
+//   적용취소는 batchAssignAssets 와 같은 AssetAssignUndo 토큰(undoBatchAssignAssets 재사용).
+// ============================================================
+export async function distributeAssetToTargets(
+  input: { ids: string[]; targets: { target: AssignTarget; qty: number }[]; assignedAt?: string | null },
+): Promise<{ ok: true; distributed: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!input.ids.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const targets = input.targets ?? []
+    if (!targets.length) return { ok: false, error: '배정할 곳을 하나 이상 고르세요.' }
+    // 나눠 배정은 '어디에 두는가'가 본체라 해제(none)는 받지 않는다(해제는 옮기기 경로).
+    if (targets.some(t => t.target.kind === 'none')) return { ok: false, error: '나눠 배정은 방·공용부만 고를 수 있습니다.' }
+    if (targets.some(t => !(t.qty > 0))) return { ok: false, error: '0보다 큰 수량을 입력하세요.' }
+    const keys = targets.map(t => (t.target.kind === 'none' ? 'none' : `${t.target.kind}:${t.target.id}`))
+    if (new Set(keys).size !== keys.length) return { ok: false, error: '같은 곳을 두 번 고를 수 없습니다.' }
+    for (const t of targets) {
+      const verr = await validateTarget(t.target, propertyId)
+      if (verr) return { ok: false, error: verr }
+    }
+
+    const exps = await prisma.expense.findMany({ where: { id: { in: input.ids }, propertyId } })
+    if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    // 수량 방어는 클램프가 아니라 거부(assignAggregateToTarget 과 동일 문구·동일 판정).
+    const have = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+    const want = targets.reduce((s, t) => s + t.qty, 0)
+    if (want > have + 1e-9) return { ok: false, error: `수량이 보유량(${fmtQty(have)})을 넘습니다.` }
+
+    // 적용취소용 — 영향 행 전체의 원상태 스냅샷(분할·이동 전)
+    const restore = exps.map(e => ({
+      id: e.id, roomId: e.roomId, assignedLocationId: e.assignedLocationId, isCommonAsset: e.isCommonAsset,
+      qtyValue: e.qtyValue, amount: e.amount, allocationGroupId: e.allocationGroupId, detail: e.detail,
+      assignedAt: e.assignedAt ? e.assignedAt.toISOString() : null,
+    }))
+
+    const rep0 = exps[0]
+    const fromState = await placeLabel(propertyId, rep0.roomId, rep0.assignedLocationId, rep0.isCommonAsset)
+    const assignedAtVal = input.assignedAt ? new Date(input.assignedAt) : new Date()
+    const segments = targets.map(t => ({
+      data: { ...targetData(t.target), isCommonAsset: false, assignedAt: assignedAtVal },
+      qty: t.qty,
+    }))
+    const { ops, createdOpIndexes, moved } = buildFanOutOps(exps, propertyId, segments)
+    const results = await prisma.$transaction(ops)
+    const deleteIds = createdOpIndexes.map(i => (results[i] as { id: string }).id)
+
+    for (let s = 0; s < targets.length; s++) {
+      if (moved[s] <= 1e-9) continue
+      const td = targetData(targets[s].target)
+      await logAssignment(propertyId, rep0.itemLabel, rep0, fromState,
+        await placeLabel(propertyId, td.roomId, td.assignedLocationId, false), moved[s], assignedAtVal)
+    }
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, distributed: targets.length, undo: { restore, deleteIds } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '나눠 배정 중 오류가 발생했습니다.' }
   }
 }
 
