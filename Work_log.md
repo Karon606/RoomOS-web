@@ -2724,3 +2724,11 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - test-rent-increase.ts 신설(verify:fast 편입, DB 미사용 순수 테스트): 적용 경계·선납('그 달 이용료부터')·락 되쓰기·우선순위·퇴실 재입실·NON_RESIDENT 공존·예약 취소 7군 54건 통과.
 - **제품 결함 4건 실증(knownFail 문서화)**: billing.ts effectiveBaseRent 가 lease 상태 무시하고 room.scheduledRent 단일 축만 읽음 — 비거주 계약이 있는 방에 거주 인상 예약 시 (1)(2) 비거주 청구가 거주 인상가(48만)로 오염, (3) 비거주 예약 인상은 받는 칸이 없어 미반영, (4) 되쓰기가 비거주 락 expectedAmount 를 장부에 갈아치움. 읽기(미납·대시보드·리포트)와 쓰기(paymentRecord) 양쪽 전파 확인. 유일한 안전망이 "418·415·사무실에 예약 걸지 말 것" 구두 경고였음을 실증.
 - 수정 방향(별도 §4 승인 대기): billForLeaseMonth 가 lease 상태로 축을 고르고 되쓰기 정본이 같은 분기 공유.
+
+## 2026-08-06 (7) — 청구 엔진 상태 분기 (§4 승인, 결함 4건 봉합)
+- effectiveBaseRent 에 NON_RESIDENT 단일 분기(비거주 축 적용, 기준액은 lease.rentAmount — room.nonResidentRent 를 기준액으로 쓰면 협의가 계약 부작용이라 배제). 그 외 상태 경로 문자 그대로.
+- BillingLeaseFields.status 필수화 — 호출처 15곳 전수 + rent-receipt select 무성 실패 1곳 추가 발견·봉합, as never 캐스트 4곳 전부 제거(감지망 구멍 폐쇄).
+- 되쓰기 3형제(스케줄·할인·계약액)가 같은 분기 공유 — 거주 축 변경 시 비거주 락 자동 무접점. applyScheduledRents 에 비거주 계약액 동기화 블록(거주 축 대칭, 미동기 시 적용일 경과 순간 구가 회귀 모순).
+- 테스트: knownFail 4건 eq 승격 + 경계 3건 신설(비거주 선반영 경계·고아 미적용·비거주 축 되쓰기 격리) — 인상 61/0, 금전 110/0, 전 스위트(정산 57·회계 33·납부일 33·투어 36·생년월일 27) 무회귀.
+- 기오염 락 읽기 전용 조회: NON_RESIDENT 3건 전수에서 오염 0건 — 백필 불요. "418·415·사무실에 예약 금지" 구두 경고 해제 가능.
+- 잔여(백로그): 비거주 예약쌍 XOR 가드(고아 방지, 선택), test-rent-increase 의 knownFail 스캐폴드 미사용 경고 1건.
