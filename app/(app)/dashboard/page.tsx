@@ -14,7 +14,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
+import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -104,15 +104,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     where: { propertyId, isDeposit: true, leaseTerm: { status: 'RESERVED' } },
     _sum: { actualAmount: true },
   })
-  const pReservedLeases = prisma.leaseTerm.findMany({
-    where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
-    select: {
-      id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
-      checkoutProratedAmount: true, checkoutProratedMonth: true,
-      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
-    },
-  })
+  const pReservedExpected = getReservedFullMonthRevenue(prisma, propertyId, targetMonth)
   const [tcY, tcM] = targetMonth.split('-').map(Number)
   const pLastExpAggs = Promise.all([
     prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
@@ -142,7 +134,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedDepositReceivedAgg, pReservedLeases, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -744,10 +736,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // 신규 입실자(예약확정 RESERVED)의 이번 달 예상 매출 — 입주 예정월이 이 달 이내면 전액(할인 반영) 가산.
   // (사용자 결정 2026-06-20: RESERVED 이상은 그 달 전액으로 예상 매출에 반영. 입주 후엔 ACTIVE 로 일반 청구.)
-  const reservedLeases = await pReservedLeases
-  const reservedExpected = reservedLeases
-    .filter(l => billableInTargetMonth(l))
-    .reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0)
+  // 계산 정본은 lib/leaseStatus 로 옮겼다 — 수납 관리 등식 캡션이 같은 값을 써야 한다(2026-08-07).
+  const reservedExpected = await pReservedExpected
 
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases

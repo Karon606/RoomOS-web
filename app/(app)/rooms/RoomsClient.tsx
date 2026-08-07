@@ -412,7 +412,8 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth, myRole, incomes, incomeCategories, payAggregates, initialTab,
+  roomStatus, targetMonth, myRole, incomes, incomeCategories, payAggregates,
+  reservedExpected, checkedOutRecognized, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
@@ -420,6 +421,9 @@ export default function RoomsClient({
   incomes: Income[]
   incomeCategories: string[]
   payAggregates: { cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }
+  // 홈 예상 수입과의 다리 — 이 화면 청구액엔 안 잡히고 홈에는 잡히는 항(서버 계산 정본, 표시 전용)
+  reservedExpected: number
+  checkedOutRecognized: number
   initialTab?: 'rooms' | 'income'
 }) {
   const searchParams = useSearchParams()
@@ -795,6 +799,14 @@ export default function RoomsClient({
   const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
   const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
 
+  // ── 홈 예상 수입과의 다리 (운영자 혼동 2회, 2026-08-07) ──
+  // 두 화면 숫자가 달라 보이는 이유를 등식으로 적는다. 항의 값은 서버 정본(홈과 같은 헬퍼)이고
+  // 여기서는 더하기만 한다 — 화면이 자기 식을 만들면 그 순간 또 갈린다.
+  const homeExpectedSum  = expectedSum + reservedExpected + checkedOutRecognized + incomeSum
+  const homeCollectedSum = collectedSum + incomeSum
+  // 세 항이 전부 0이면 두 숫자가 같으므로 등식을 적을 이유가 없다.
+  const showHomeBridge   = reservedExpected !== 0 || checkedOutRecognized !== 0 || incomeSum !== 0
+
   // 부가수익 입주자 연결 선택지 — 현재 수납 화면의 계약들(비공실 + 계약 존재)
   const leaseOptions: LeaseOption[] = (() => {
     const seen = new Set<string>()
@@ -841,7 +853,7 @@ export default function RoomsClient({
             <InfoHint title="이 달 청구액">
               이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할과 무청구 퇴실월(납부일 이전 퇴실)이 반영됩니다.
               홈의 예상 매출은 여기에 부가수익, 퇴실 완료자의 이 달 귀속 인식분, 예약 확정자의 그 달 전액을 더한
-              사업 전체 전망입니다. 그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 홈이 그만큼 커집니다.
+              사업 전체 전망입니다. 그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 아래 등식 줄에 그 차이가 항목별로 적힙니다.
             </InfoHint>
           </p>
           {maxSum > expectedSum && (
@@ -858,6 +870,25 @@ export default function RoomsClient({
         <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
           <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(100, collectPct)}%`, background: 'var(--success-fg)' }} />
         </div>
+        {/* 홈 예상 수입과의 다리 — 두 화면 숫자가 다른 이유를 등식으로 적는다(운영자 혼동 2회, 2026-08-07).
+            차이를 만드는 항이 전부 0인 달엔 줄 자체가 안 나온다. */}
+        {showHomeBridge && (
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+            홈 예상 수입 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeExpectedSum)}</span>
+            {' = 이 달 청구 '}<span className="num">{fmtWon(expectedSum)}</span>
+            {reservedExpected !== 0 && <>{' + 예약 확정 '}<span className="num">{fmtWon(reservedExpected)}</span></>}
+            {checkedOutRecognized !== 0 && <>{' + 퇴실 귀속 '}<span className="num">{fmtWon(checkedOutRecognized)}</span></>}
+            {incomeSum !== 0 && <>{' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span></>}
+          </p>
+        )}
+        {/* 실수납 줄은 기타수익이 있을 때만 — 없으면 홈 실수납과 위 수납액이 같은 값이라 적을 것이 없다. */}
+        {showHomeBridge && incomeSum !== 0 && (
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+            홈 실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>
+            {' = 수납 '}<span className="num">{fmtWon(collectedSum)}</span>
+            {' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span>
+          </p>
+        )}
         {/* 현금영수증·카드 합계 — 이 달에 결제된(납부일 기준) 금액, 세무 대사용(오류신고 c0936f89) */}
         {(payAggregates.cashReceiptSum !== 0 || payAggregates.cardSum !== 0) && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">

@@ -17,6 +17,7 @@
 
 import type { LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
+import { billForLeaseMonth } from './billing'
 
 /**
  * 매출/청구 인식 대상 lease.
@@ -81,4 +82,45 @@ export async function getCheckedOutRecognizedRevenue(
     _sum: { actualAmount: true },
   })
   return agg._sum.actualAmount ?? 0
+}
+
+/**
+ * 예약 확정(RESERVED) lease 의 그 달 예상 매출 — 입주 예정월이 그 달 이내면 전액(할인·예약 인상 반영).
+ * (사용자 결정 2026-06-20: RESERVED 이상은 그 달 전액으로 예상 매출에 반영. 입주 후엔 ACTIVE 로 일반 청구.)
+ *
+ * dashboard/page.tsx 안에 갇혀 있던 계산을 문자 그대로 옮긴 것이다(2026-08-07). 수납 관리 화면이
+ * 홈 예상 수입과의 차이를 등식 캡션으로 적으려면 같은 값을 같은 식으로 구해야 한다 — 한쪽이
+ * 자기 식을 만드는 순간 두 화면 숫자가 다시 갈린다.
+ */
+export async function getReservedFullMonthRevenue(
+  prisma: PrismaDb,
+  propertyId: string,
+  targetMonth: string,
+): Promise<number> {
+  const reservedLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
+    select: {
+      id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
+    },
+  })
+  // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
+  // (다음달 입주 예정인 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
+  const monthOfDate = (d: Date | string | null): string | null => {
+    if (!d) return null
+    const dt = new Date(d)
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+  }
+  const billableInTargetMonth = (l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null }): boolean => {
+    const mi = monthOfDate(l.moveInDate ?? null)
+    if (mi && mi > targetMonth) return false   // 아직 입주 전
+    const mo = monthOfDate(l.expectedMoveOut ?? null)
+    if (mo && mo < targetMonth) return false   // 이미 퇴실
+    return true
+  }
+  return reservedLeases
+    .filter(l => billableInTargetMonth(l))
+    .reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0)
 }

@@ -674,6 +674,170 @@ const blockedKinds = new Set()
 for (const l of logs) if (!canTransition(l.fromStatus, l.toStatus)) blockedKinds.add(`${l.fromStatus}->${l.toStatus}`)
 for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전이 ${k} 를 전이표가 막는다 — 운영 흐름이 끊긴다`)
 
+// 18. 홈 예상 수입 등식 — 수납 관리 스트립 아래 캡션이 이 등식을 그대로 적는다(2026-08-07).
+//
+//   홈 예상 수입 = 이 달 청구 합 + 예약 확정 전액 + 퇴실 귀속 인식 + 기타수익.
+//   운영자가 두 화면 숫자를 두 번(7/31, 8/07) 다른 값으로 읽은 것이 이 캡션의 배경이다.
+//   캡션은 항을 네 개로 못 박았으므로, 홈이 다섯 번째 항을 더하기 시작하면 캡션이 거짓이 된다.
+//   그래서 등식의 모양(소스)과 값(데이터)을 둘 다 본다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  if (!/\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
+    violations.push('[소스] 홈 totalExpected 의 구성(청구 + 퇴실 귀속 + 예약 확정)이 바뀌었다 — 수납 관리 캡션의 등식이 거짓이 된다')
+  }
+  // 줄 끝까지 본다 — 항이 하나 더 붙어도 통과하면 다섯 번째 항을 못 잡는다(역주입에서 발견)
+  if (!/const projectedRevenue = totalExpected \+ extraRevenue\s*$/m.test(dash)) {
+    violations.push('[소스] 홈 projectedRevenue 가 totalExpected + extraRevenue 가 아니다 — 캡션이 적는 항이 실제와 어긋난다')
+  }
+  // 두 화면이 같은 헬퍼를 불러야 한다. 한쪽이 자기 식을 만들면 같은 이름의 항이 다른 값이 된다.
+  const roomsPage = readFileSync('app/(app)/rooms/page.tsx', 'utf8')
+  for (const [name, src] of [['dashboard/page', dash], ['rooms/page', roomsPage]]) {
+    for (const fn of ['getReservedFullMonthRevenue', 'getCheckedOutRecognizedRevenue']) {
+      if (!src.includes(`${fn}(prisma, propertyId, targetMonth)`)) {
+        violations.push(`[소스] ${name} 이 ${fn} 정본을 안 쓴다 — 홈과 수납 관리의 같은 항이 다른 값이 된다`)
+      }
+    }
+  }
+  const leaseStatusSrc = readFileSync('lib/leaseStatus.ts', 'utf8')
+  if (!/export async function getReservedFullMonthRevenue/.test(leaseStatusSrc) || !/billForLeaseMonth\(l, targetMonth, null\)/.test(leaseStatusSrc)) {
+    violations.push('[소스] getReservedFullMonthRevenue 정본이 사라졌거나 billForLeaseMonth 를 안 탄다 — 예약 확정 전액이 화면마다 갈린다')
+  }
+  if (!/expectedSum \+ reservedExpected \+ checkedOutRecognized \+ incomeSum/.test(roomsClient)) {
+    violations.push('[소스] RoomsClient 캡션의 홈 예상 수입 등식이 네 항 합이 아니다 — 캡션 숫자가 홈과 안 맞는다')
+  }
+  if (!/collectedSum \+ incomeSum/.test(roomsClient)) {
+    violations.push('[소스] RoomsClient 캡션의 홈 실수납 등식이 수납 + 기타수익이 아니다')
+  }
+
+  // ── 값 대조 ──
+  // 등식의 첫 항(이 달 청구 합)은 홈이 lease 단위로, 수납 관리 스트립이 방 행 단위로 낸다.
+  // 방이 안 붙은 계약이 있으면 홈에만 잡혀 캡션의 등식이 그 금액만큼 어긋난다.
+  // (여기 재현은 lib/billing 의 일할→락인→단기→할인 순서를 그대로 옮긴 간이 구현이다.)
+  const monthOf = (d) => {
+    if (!d) return null
+    const dt = new Date(d)
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+  }
+  const effBase = (l, mon) => {
+    if (l.status === 'NON_RESIDENT') {
+      const s = l.room?.nonResidentScheduled ?? null
+      const m = l.room?.nonResidentRentDate ? monthOf(l.room.nonResidentRentDate) : null
+      return (s != null && s > 0 && m && mon >= m) ? s : l.rentAmount
+    }
+    const s = l.room?.scheduledRent ?? null
+    const m = l.room?.rentUpdateDate ? monthOf(l.room.rentUpdateDate) : null
+    return (s != null && s > 0 && m && mon >= m) ? s : l.rentAmount
+  }
+  const billFor = (l, mon, locked) => {
+    if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
+    if (locked && locked > 0) return locked
+    if (l.isShortTerm && l.moveInDate) {
+      const im = monthOf(l.moveInDate)
+      if (im && mon !== im) return 0
+    }
+    return discounted(l.discounts, mon, effBase(l, mon))
+  }
+  const resolveDue = (raw, mon) => {
+    if (!raw) return null
+    if (raw.includes('-')) {
+      const [fy, fm, fd] = raw.split('-').map(Number)
+      return [fy, fm, fd].some(isNaN) ? null : new Date(fy, fm - 1, fd, 23, 59, 59, 999)
+    }
+    const [y, m] = mon.split('-').map(Number)
+    const last = new Date(y, m, 0).getDate()
+    let day
+    if (raw.includes('말')) day = last
+    else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, last) }
+    return new Date(y, m - 1, day, 23, 59, 59, 999)
+  }
+  const noBillingMonth = (l, mon, due) => {
+    if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
+    if (!l.expectedMoveOut || !due) return false
+    if (monthOf(l.expectedMoveOut) !== mon) return false
+    return new Date(l.expectedMoveOut).getTime() <= due.getTime()
+  }
+  const inMonth = (l, mon) => {
+    const mi = monthOf(l.moveInDate ?? null)
+    if (mi && mi > mon) return false
+    const mo = monthOf(l.expectedMoveOut ?? null)
+    if (mo && mo < mon) return false
+    return true
+  }
+
+  const kstNow = new Date(Date.now() + 9 * 3600000)
+  const nowMonth = `${kstNow.getUTCFullYear()}-${String(kstNow.getUTCMonth() + 1).padStart(2, '0')}`
+  const eqMonths = [-1, 0, 1].map(off => {
+    const d = new Date(Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth() + off, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  })
+  const leaseSelect = {
+    id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
+    dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, roomId: true,
+    checkoutProratedAmount: true, checkoutProratedMonth: true,
+    discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
+  }
+  for (const prop of await prisma.property.findMany({ select: { id: true, name: true } })) {
+    const [billableLeases, reservedLeases, hist] = await Promise.all([
+      prisma.leaseTerm.findMany({
+        where: { propertyId: prop.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+        select: leaseSelect,
+      }),
+      prisma.leaseTerm.findMany({
+        where: { propertyId: prop.id, status: 'RESERVED', rentAmount: { gt: 0 } },
+        select: leaseSelect,
+      }),
+      prisma.paymentRecord.findMany({
+        where: { propertyId: prop.id, isDeposit: false, targetMonth: { lte: nowMonth }, deletedAt: null },
+        select: { leaseTermId: true, targetMonth: true, expectedAmount: true, isPrevOwner: true },
+      }),
+    ])
+    const prevOwnerMonths = new Map()
+    const lockedByLease = new Map()
+    for (const p of hist) {
+      if (p.isPrevOwner) {
+        if (!prevOwnerMonths.has(p.leaseTermId)) prevOwnerMonths.set(p.leaseTermId, new Set())
+        prevOwnerMonths.get(p.leaseTermId).add(p.targetMonth)
+        continue
+      }
+      if (!lockedByLease.has(p.leaseTermId)) lockedByLease.set(p.leaseTermId, new Map())
+      const m = lockedByLease.get(p.leaseTermId)
+      if (p.expectedAmount > (m.get(p.targetMonth) ?? 0)) m.set(p.targetMonth, p.expectedAmount)
+    }
+    for (const mon of eqMonths) {
+      const billThisMonth = (l) => {
+        if (prevOwnerMonths.get(l.id)?.has(mon)) return 0
+        const dueRaw = (l.overrideDueDayMonth === mon && l.overrideDueDay) ? l.overrideDueDay : l.dueDay
+        if (noBillingMonth(l, mon, resolveDue(dueRaw, mon))) return 0
+        return billFor(l, mon, lockedByLease.get(l.id)?.get(mon) ?? null)
+      }
+      const rows = billableLeases.filter(l => l.rentAmount > 0 && inMonth(l, mon))
+      const homeBilled = rows.reduce((s, l) => s + billThisMonth(l), 0)
+      const stripBilled = rows.filter(l => l.roomId).reduce((s, l) => s + billThisMonth(l), 0)
+      if (homeBilled !== stripBilled) {
+        violations.push(`[데이터] ${prop.name} ${mon}: 홈 청구 합 ${homeBilled.toLocaleString()} ≠ 수납 화면 청구 합 ${stripBilled.toLocaleString()} — 방이 안 붙은 계약이 홈에만 잡혀 캡션 등식이 어긋난다`)
+      }
+      const reserved = reservedLeases.filter(l => inMonth(l, mon)).reduce((s, l) => s + billFor(l, mon, null), 0)
+      const coAgg = await prisma.paymentRecord.aggregate({
+        where: { propertyId: prop.id, targetMonth: mon, isDeposit: false, isPrevOwner: false, deletedAt: null, leaseTerm: { status: 'CHECKED_OUT' } },
+        _sum: { actualAmount: true },
+      })
+      const checkedOut = coAgg._sum.actualAmount ?? 0
+      const [yy, mm2] = mon.split('-').map(Number)
+      const incAgg = await prisma.extraIncome.aggregate({
+        where: { propertyId: prop.id, deletedAt: null, date: { gte: new Date(yy, mm2 - 1, 1), lte: new Date(yy, mm2, 0) } },
+        _sum: { amount: true },
+      })
+      const extra = incAgg._sum.amount ?? 0
+      const homeProjected = homeBilled + checkedOut + reserved + extra
+      const captionSum = stripBilled + reserved + checkedOut + extra
+      if (homeProjected !== captionSum) {
+        violations.push(`[데이터] ${prop.name} ${mon}: 홈 예상 수입 ${homeProjected.toLocaleString()} ≠ 캡션 등식 ${captionSum.toLocaleString()} — 두 화면이 다시 갈렸다`)
+      }
+    }
+  }
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
