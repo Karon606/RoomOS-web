@@ -151,6 +151,11 @@ const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
   { key: 'active', label: '거주중' },
   { key: 'checkout', label: '퇴실 예정' },
 ]
+// '입주 가능' 통합 필터 — 공실과 퇴실 예정을 한 칩으로 묶어 본다.
+// 예약(reserved) 방 제외가 요점이다. 퇴실 예정이면서 예약도 걸린 방이 reserved 로 빠지는 것은
+// getRooms 의 leaseTerms enum asc 정렬(LeaseStatus 선언 순서상 RESERVED 가 앞)에 의존한다.
+// 정렬이 바뀌면 그 방이 '입주 가능'에 섞여 들어오므로 회귀 앵커로 남긴다.
+const isAvailableKey = (k: RoomStatusKey) => k === 'vacant' || k === 'checkout'
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실번호·상태는 항상 표시)
 const RM_CARD_FIELDS: FieldDef[] = [
@@ -242,7 +247,7 @@ export default function RoomManageClient({
   // 필터
   type AreaPyeongRange  = '' | '<1' | '1-2' | '2-3' | '3+'
   type AreaM2Range      = '' | '<3.3' | '3.3-6.6' | '6.6-9.9' | '9.9+'
-  const [filterStatus, setFilterStatus]       = useState<RoomStatusKey | ''>('')
+  const [filterStatus, setFilterStatus]       = useState<RoomStatusKey | 'available' | ''>('')
   const [showFilters, setShowFilters]         = useState(false)
   const [filterRoomNo, setFilterRoomNo]       = useState('')
   const [filterType, setFilterType]           = useState('')
@@ -395,7 +400,10 @@ export default function RoomManageClient({
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
-      if (filterStatus && roomStatusKey(r, targetMonth) !== filterStatus) return false
+      if (filterStatus) {
+        const key = roomStatusKey(r, targetMonth)
+        if (filterStatus === 'available' ? !isAvailableKey(key) : key !== filterStatus) return false
+      }
       if (cleaningOnly && !openCleanings[r.id]) return false
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
       if (filterType && r.type !== filterType) return false
@@ -418,6 +426,33 @@ export default function RoomManageClient({
       if (sortKey === 'baseRent') return dir * (a.baseRent - b.baseRent)
       return dir * a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
     })
+  })()
+
+  // '입주 가능' 2섹션 그룹 — 지금(공실) / 곧(퇴실 예정). 필터가 켜졌을 때만 만든다.
+  // 카드 렌더는 아래 renderRoomCard 를 그대로 공유해 목록 문법이 갈라지지 않게 한다.
+  const availableGroups = (() => {
+    if (filterStatus !== 'available') return null
+    // 퇴실 예정일 — roomStatusKey 와 같은 계약을 골라 읽는다(비거주 계약은 뒤로).
+    const outOf = (r: Room) => {
+      const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
+      return lease?.expectedMoveOut ?? null
+    }
+    const soon = filteredRooms
+      .filter(r => roomStatusKey(r, targetMonth) === 'checkout')
+      .sort((a, b) => {
+        const ao = outOf(a), bo = outOf(b)
+        // 날짜 오름차순, 날짜 없는 방은 뒤로, 같으면 호실 순
+        if (ao !== bo) {
+          if (!ao) return 1
+          if (!bo) return -1
+          return ao < bo ? -1 : 1
+        }
+        return a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
+      })
+    return [
+      { key: 'now',  label: '지금 입주 가능', rooms: filteredRooms.filter(r => roomStatusKey(r, targetMonth) === 'vacant') },
+      { key: 'soon', label: '곧 입주 가능',   rooms: soon },
+    ]
   })()
 
   // ── 핸들러 ────────────────────────────────────────────────────────
@@ -791,6 +826,90 @@ export default function RoomManageClient({
     </div>
   )
 
+  // 호실 카드 한 장 — 평소 목록과 '입주 가능' 그룹 목록이 같은 렌더를 쓴다(복제 금지).
+  const renderRoomCard = (room: Room) => {
+    const tenant = currentTenant(room)
+    const thumb  = room.photos[0]
+    const rs     = getRoomStatus(room, targetMonth)
+    // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
+    // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
+    const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
+    const selected = selectMode && selectedIds.has(room.id)
+    return (
+      <RoomCard key={room.id}
+        kind={rs.kind}
+        selected={selected}
+        tipColor={tipTone ? statusTipColor(tipTone) : undefined}
+        tipBg={tipTone ? statusRowTint(tipTone) : undefined}
+        onClick={() => selectMode ? toggleSelectRoom(room.id) : (entityModal.open({ kind: 'room', roomId: room.id }), setError(''))}
+        onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelectRoom(room.id) } : undefined}
+        className="overflow-hidden flex items-stretch">
+        {/* 정보 */}
+        <div className="flex-1 p-4 min-w-0 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
+            {cardFields.floor && room.floor && (
+              <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                {room.floor}층
+              </span>
+            )}
+            {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub}>{rs.badge.label}</StatusBadge>}
+            {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
+            {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
+          </div>
+          {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
+          <div className="space-y-0.5 pt-0.5">
+            {cardFields.spec && (
+              <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
+                {room.type && <span>{room.type}</span>}
+                {room.tier && <span>{room.tier}</span>}
+                {(room.windowType || room.direction) && (
+                  <span>
+                    {[
+                      room.windowType ? getWindowLabel(room.windowType) : null,
+                      room.direction  ? getDirectionLabel(room.direction) : null,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+                {(room.areaPyeong || room.areaM2) && (
+                  <span>
+                    {[
+                      room.areaPyeong ? `${room.areaPyeong}평` : null,
+                      room.areaM2     ? `${room.areaM2}㎡`    : null,
+                    ].filter(Boolean).join(' / ')}
+                  </span>
+                )}
+              </div>
+            )}
+            {!hideMoney && (
+              <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
+            )}
+            {!hideMoney && cardFields.scheduled && room.scheduledRent != null && (
+              <p className="text-xs text-[var(--warm-mid)]">
+                → <MoneyDisplay amount={room.scheduledRent} />
+                {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
+              </p>
+            )}
+          </div>
+        </div>
+        {/* 썸네일 (오른쪽) */}
+        {cardFields.photo && (
+          <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
+            {thumb ? (
+              <img src={thumb.storageUrl} alt={fmtRoomNo(room.roomNo)} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
+                  <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
+                </svg>
+              </div>
+            )}
+          </div>
+        )}
+      </RoomCard>
+    )
+  }
+
   // ── 렌더 ─────────────────────────────────────────────────────────
 
   return (
@@ -837,7 +956,7 @@ export default function RoomManageClient({
         const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r, targetMonth); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
         return (
           <div className="flex gap-2 flex-wrap items-center">
-            <SegmentedControl<RoomStatusKey | ''>
+            <SegmentedControl<RoomStatusKey | 'available' | ''>
               size="sm"
               scroll
               ariaLabel="호실 상태 필터"
@@ -845,12 +964,15 @@ export default function RoomManageClient({
               onChange={setFilterStatus}
               options={[
                 { value: '', label: `전체 ${rooms.length}` },
+                // 입주 가능 = 공실 + 퇴실 예정. 새 집계를 돌리지 않고 위 counts 를 그대로 더한다.
+                { value: 'available', label: `입주 가능 ${(counts.vacant ?? 0) + (counts.checkout ?? 0)}` },
                 ...STATUS_FILTERS.map(s => ({ value: s.key, label: `${s.label} ${counts[s.key] ?? 0}` })),
               ]}
             />
             {/* 단기 파생 포함으로 '퇴실 예정' 숫자가 상태값과 달라진다 — 수납 관리와 같은 문구로 설명한다. */}
             <InfoHint title="호실 상태 필터">
               <span className="block">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
+              <span className="block mt-1.5">입주 가능은 공실과 퇴실 예정을 합쳐 봅니다. 예약된 방은 들어가지 않습니다.</span>
             </InfoHint>
           </div>
         )
@@ -1040,90 +1162,21 @@ export default function RoomManageClient({
           title={search ? '검색 결과가 없습니다' : '등록된 호실이 없습니다'}
           description={search ? '다른 검색어로 시도해 보세요.' : '호실 등록 버튼을 눌러 시작하세요.'}
         />
+      ) : availableGroups ? (
+        /* 입주 가능 — 지금(공실)과 곧(퇴실 예정)을 나눠 보여준다. 빈 그룹은 머리글째 감춘다. */
+        <div className="space-y-5">
+          {availableGroups.map(g => g.rooms.length === 0 ? null : (
+            <div key={g.key}>
+              <h2 className="text-sm font-semibold text-[var(--warm-muted)] mb-3">{g.label} {g.rooms.length}실</h2>
+              <div className="space-y-2">
+                {g.rooms.map(renderRoomCard)}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-2">
-          {filteredRooms.map(room => {
-            const tenant = currentTenant(room)
-            const thumb  = room.photos[0]
-            const rs     = getRoomStatus(room, targetMonth)
-            // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
-            // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
-            const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
-            const selected = selectMode && selectedIds.has(room.id)
-            return (
-              <RoomCard key={room.id}
-                kind={rs.kind}
-                selected={selected}
-                tipColor={tipTone ? statusTipColor(tipTone) : undefined}
-                tipBg={tipTone ? statusRowTint(tipTone) : undefined}
-                onClick={() => selectMode ? toggleSelectRoom(room.id) : (entityModal.open({ kind: 'room', roomId: room.id }), setError(''))}
-                onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelectRoom(room.id) } : undefined}
-                className="overflow-hidden flex items-stretch">
-                {/* 정보 */}
-                <div className="flex-1 p-4 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
-                    {cardFields.floor && room.floor && (
-                      <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
-                        {room.floor}층
-                      </span>
-                    )}
-                    {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub}>{rs.badge.label}</StatusBadge>}
-                    {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
-                    {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
-                  </div>
-                  {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
-                  <div className="space-y-0.5 pt-0.5">
-                    {cardFields.spec && (
-                      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
-                        {room.type && <span>{room.type}</span>}
-                        {room.tier && <span>{room.tier}</span>}
-                        {(room.windowType || room.direction) && (
-                          <span>
-                            {[
-                              room.windowType ? getWindowLabel(room.windowType) : null,
-                              room.direction  ? getDirectionLabel(room.direction) : null,
-                            ].filter(Boolean).join(' · ')}
-                          </span>
-                        )}
-                        {(room.areaPyeong || room.areaM2) && (
-                          <span>
-                            {[
-                              room.areaPyeong ? `${room.areaPyeong}평` : null,
-                              room.areaM2     ? `${room.areaM2}㎡`    : null,
-                            ].filter(Boolean).join(' / ')}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {!hideMoney && (
-                      <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
-                    )}
-                    {!hideMoney && cardFields.scheduled && room.scheduledRent != null && (
-                      <p className="text-xs text-[var(--warm-mid)]">
-                        → <MoneyDisplay amount={room.scheduledRent} />
-                        {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {/* 썸네일 (오른쪽) */}
-                {cardFields.photo && (
-                  <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
-                    {thumb ? (
-                      <img src={thumb.storageUrl} alt={fmtRoomNo(room.roomNo)} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
-                          <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </RoomCard>
-            )
-          })}
+          {filteredRooms.map(renderRoomCard)}
         </div>
       )}
 
