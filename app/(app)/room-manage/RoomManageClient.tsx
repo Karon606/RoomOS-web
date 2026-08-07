@@ -27,6 +27,8 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
+import { checkoutSubText, moveInSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
+import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
 
 // 공용·외관 사진 관리 모달 — 지연 로드로 순환 import 회피(이 파일이 PhotoLightbox 를 export, 그쪽이 이 파일을 다시 참조)
@@ -96,6 +98,9 @@ type Room = {
     status: string                 // ACTIVE | RESERVED | CHECKOUT_PENDING | NON_RESIDENT
     tenantId: string
     tenant: { id: string; name: string } | null
+    isShortTerm: boolean           // 단기 — 퇴실 예정 상태로 바뀌기 전에도 퇴실이 보여야 한다
+    moveInDate: string | null      // 'YYYY-MM-DD' — 예약 카드의 입주 예정일
+    expectedMoveOut: string | null  // 'YYYY-MM-DD' — 퇴실 예정 카드의 퇴실일
   }[]
 }
 
@@ -104,9 +109,9 @@ type Room = {
 type RoomStatus = {
   label: string
   kind: CardKind
-  badge: { tone: BadgeTone; label: string } | null
+  badge: { tone: BadgeTone; label: string; sub?: string } | null
 }
-function getRoomStatus(r: Room): RoomStatus {
+function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
   // 거주 계약 우선, 없으면 비거주 계약 — 비거주만 있을 때는 방 설정(nonResidentVacant)에 따라
   // 공실(현행) 또는 점유(창고·사무실)로 표시(운영자 요청 2026-07-06)
   const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
@@ -118,20 +123,26 @@ function getRoomStatus(r: Room): RoomStatus {
       : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
   if (lease.status === 'RESERVED')
     // 라벨 '입실 예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (e1b81629 재정의)
-    return { label: '입실 예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예약' } }
+    // 방 어레인지 — 입주 희망일을 퇴실일과 나란히 보려면 카드에 날짜가 있어야 한다(운영자 요청 2026-08-07).
+    return { label: '입실 예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예약', sub: moveInSubText(lease.moveInDate) ?? undefined } }
   if (lease.status === 'CHECKOUT_PENDING')
-    return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
+    return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정', sub: checkoutSubText(lease.expectedMoveOut) ?? undefined } }
+  // 단기 퇴실 도래 — 상태는 아직 ACTIVE 라 카드 종류는 거주중을 유지하고, 퇴실 신호만 뱃지로 얹는다.
+  if (isShortTermCheckoutDue(lease, targetMonth))
+    return { label: '거주중', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정', sub: checkoutSubText(lease.expectedMoveOut) ?? undefined } }
   return { label: '거주중', kind: 'resident', badge: null }
 }
 
 // 상태 빠른 필터 키 — 공실/예약/거주중/퇴실예정. getRoomStatus 와 동일한 분기.
 type RoomStatusKey = 'vacant' | 'reserved' | 'active' | 'checkout'
-function roomStatusKey(r: Room): RoomStatusKey {
+function roomStatusKey(r: Room, targetMonth: string): RoomStatusKey {
   const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
   if (!lease) return 'vacant'
   if (lease.status === 'NON_RESIDENT') return r.nonResidentVacant ? 'vacant' : 'active'
   if (lease.status === 'RESERVED') return 'reserved'
   if (lease.status === 'CHECKOUT_PENDING') return 'checkout'
+  // 단기는 상태가 아니라 사실(퇴실 예정일)로 센다 — 수납 관리 '퇴실 예정' 칩과 같은 판정.
+  if (isShortTermCheckoutDue(lease, targetMonth)) return 'checkout'
   return 'active'
 }
 const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
@@ -217,6 +228,8 @@ export default function RoomManageClient({
   // #12: initialRooms를 useState로 캡처하면 router.refresh() 후에도 갱신 안 됨(즉시 적용·편집 미반영).
   //      prop을 직접 사용 → revalidatePath+router.refresh 페어로 즉시 반영. (feedback_auto_refresh)
   const rooms = initialRooms
+  // 단기 퇴실 도래 판정의 기준월 — 이 화면은 월 선택이 없으므로 '이번 달'(KST) 고정.
+  const targetMonth = kstMonthStr()
   const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
   const directionOptions   = directions.map(v => ({ value: v, label: getDirectionLabel(v) }))
 
@@ -382,7 +395,7 @@ export default function RoomManageClient({
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
-      if (filterStatus && roomStatusKey(r) !== filterStatus) return false
+      if (filterStatus && roomStatusKey(r, targetMonth) !== filterStatus) return false
       if (cleaningOnly && !openCleanings[r.id]) return false
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
       if (filterType && r.type !== filterType) return false
@@ -821,19 +834,25 @@ export default function RoomManageClient({
 
       {/* 상태 빠른 필터 — v2.0 §23 공용 SegmentedControl(수납·고객과 동일). '전체'가 곧 해제. */}
       {(() => {
-        const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
+        const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r, targetMonth); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
         return (
-          <SegmentedControl<RoomStatusKey | ''>
-            size="sm"
-            scroll
-            ariaLabel="호실 상태 필터"
-            value={filterStatus}
-            onChange={setFilterStatus}
-            options={[
-              { value: '', label: `전체 ${rooms.length}` },
-              ...STATUS_FILTERS.map(s => ({ value: s.key, label: `${s.label} ${counts[s.key] ?? 0}` })),
-            ]}
-          />
+          <div className="flex gap-2 flex-wrap items-center">
+            <SegmentedControl<RoomStatusKey | ''>
+              size="sm"
+              scroll
+              ariaLabel="호실 상태 필터"
+              value={filterStatus}
+              onChange={setFilterStatus}
+              options={[
+                { value: '', label: `전체 ${rooms.length}` },
+                ...STATUS_FILTERS.map(s => ({ value: s.key, label: `${s.label} ${counts[s.key] ?? 0}` })),
+              ]}
+            />
+            {/* 단기 파생 포함으로 '퇴실 예정' 숫자가 상태값과 달라진다 — 수납 관리와 같은 문구로 설명한다. */}
+            <InfoHint title="호실 상태 필터">
+              <span className="block">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
+            </InfoHint>
+          </div>
         )
       })()}
 
@@ -1026,7 +1045,7 @@ export default function RoomManageClient({
           {filteredRooms.map(room => {
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
-            const rs     = getRoomStatus(room)
+            const rs     = getRoomStatus(room, targetMonth)
             // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
             // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
             const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
@@ -1049,7 +1068,7 @@ export default function RoomManageClient({
                         {room.floor}층
                       </span>
                     )}
-                    {rs.badge && <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>}
+                    {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub}>{rs.badge.label}</StatusBadge>}
                     {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
                     {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
                   </div>

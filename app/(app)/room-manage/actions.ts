@@ -37,6 +37,10 @@ export async function getRooms() {
           status: true,
           tenantId: true,
           tenant: { select: { id: true, name: true } },
+          // 방 어레인지 — 카드에 퇴실·입주 예정일을 병기하고, 단기 퇴실 도래를 파생 판정한다.
+          isShortTerm: true,
+          moveInDate: true,
+          expectedMoveOut: true,
         },
         // ACTIVE > CHECKOUT_PENDING > RESERVED 우선순위 정렬
         // (예약자보다 거주자가 호실의 '주' 점유자)
@@ -55,7 +59,17 @@ export async function getRooms() {
       ;(r as { nonResidentRent: number | null }).nonResidentRent = null
     }
   }
-  return rooms
+  // 날짜는 'YYYY-MM-DD' 문자열로 고정해 내려보낸다 — 수납 관리(rooms/actions.ts)와 같은 문법이라야
+  // 카드의 D-day·월 비교가 두 화면에서 같은 값을 낸다.
+  const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
+  return rooms.map(r => ({
+    ...r,
+    leaseTerms: r.leaseTerms.map(l => ({
+      ...l,
+      moveInDate: ymd(l.moveInDate),
+      expectedMoveOut: ymd(l.expectedMoveOut),
+    })),
+  }))
 }
 
 // 호실 추가

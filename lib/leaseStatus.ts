@@ -46,6 +46,41 @@ export const TENANT_LIST_STATUSES: LeaseStatus[] = [
 export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
 
 /**
+ * 퇴실 예정 보조 문구 — "6/26 퇴실 D-13" / "오늘 6/26 퇴실" / "6/26 퇴실 13일 경과".
+ * 수납 관리(rooms)와 호실 관리(room-manage)가 같은 문장을 쓰도록 여기서 한 번만 만든다.
+ * expectedMoveOut 은 'YYYY-MM-DD' (KST 고정 문자열).
+ */
+export function checkoutSubText(expectedMoveOut: string | null): string | null {
+  if (!expectedMoveOut) return null
+  const [, mm, dd] = expectedMoveOut.split('-')
+  const days = Math.round((new Date(expectedMoveOut).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+  const label = `${Number(mm)}/${Number(dd)} 퇴실`
+  return days > 0 ? `${label} D-${days}` : days === 0 ? `오늘 ${label}` : `${label} ${Math.abs(days)}일 경과`
+}
+
+/**
+ * 입주 예정 보조 문구 — "9/1 입주 예정". 퇴실 표기(checkoutSubText)와 대칭인 짧은 인라인 날짜.
+ */
+export function moveInSubText(moveInDate: string | null): string | null {
+  if (!moveInDate) return null
+  const [, mm, dd] = moveInDate.split('-')
+  return `${Number(mm)}/${Number(dd)} 입주 예정`
+}
+
+/**
+ * 단기 퇴실 도래 — 단기는 D-1 자동 전환 전까지 ACTIVE 로 남아 화면에 퇴실 신호가 늦게 붙는다.
+ * 상태·청구·전환 크론은 그대로 두고, 사실 축(퇴실 예정일)에서 표기와 칩 포함만 파생한다.
+ * 두 화면(수납 관리·호실 관리)이 같은 판정을 쓰도록 여기가 정본이다.
+ */
+export function isShortTermCheckoutDue(
+  lease: { isShortTerm: boolean; status: string | null; expectedMoveOut: string | null },
+  targetMonth: string,
+): boolean {
+  const ck = lease.expectedMoveOut?.slice(0, 7) ?? null
+  return lease.isShortTerm && lease.status === 'ACTIVE' && !!ck && ck <= targetMonth
+}
+
+/**
  * CHECKED_OUT lease 중 그 달 귀속 paymentRecord 가 있는 lease 목록.
  * 단기 입주 후 퇴실, 거주 중 중도퇴실 등 — 그 달 매출 인식이 필요한 케이스.
  * rentAmount 와 함께 반환되어 호출 측에서 Math.min(paid, rent) 과납 처리에 사용 가능.

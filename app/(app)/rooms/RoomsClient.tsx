@@ -26,6 +26,7 @@ import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
+import { checkoutSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
 import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 
@@ -169,23 +170,6 @@ function getDueInfo(dueDay: string | null, targetMonth: string): { days: number;
   const today = new Date(); today.setHours(0, 0, 0, 0); due.setHours(0, 0, 0, 0)
   const diff  = Math.round((today.getTime() - due.getTime()) / 86400000)
   return { days: Math.abs(diff), overdue: diff > 0 }
-}
-
-// 퇴실 예정 보조 문구 — "6/26 퇴실 D-13" / "오늘 6/26 퇴실" / "6/26 퇴실 13일 경과".
-// 미납 뱃지(완납 전)에도 퇴실 임박 정보를 함께 보여주기 위해 사용(B안).
-function checkoutSubText(expectedMoveOut: string | null): string | null {
-  if (!expectedMoveOut) return null
-  const [, mm, dd] = expectedMoveOut.split('-')
-  const days = Math.round((new Date(expectedMoveOut).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
-  const label = `${Number(mm)}/${Number(dd)} 퇴실`
-  return days > 0 ? `${label} D-${days}` : days === 0 ? `오늘 ${label}` : `${label} ${Math.abs(days)}일 경과`
-}
-
-// 단기 퇴실 도래 — 단기는 D-1 자동 전환 전까지 ACTIVE 로 남아 화면에 퇴실 신호가 늦게 붙는다.
-// 상태·청구·전환 크론은 그대로 두고, 사실 축(퇴실 예정일)에서 표기와 칩 포함만 파생한다.
-function isShortTermCheckoutDue(room: RoomStatus, targetMonth: string): boolean {
-  const ck = room.expectedMoveOut?.slice(0, 7) ?? null
-  return room.isShortTerm && room.status === 'ACTIVE' && !!ck && ck <= targetMonth
 }
 
 function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<typeof getDueInfo> {
