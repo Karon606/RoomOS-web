@@ -737,6 +737,9 @@ export async function updateTenant(formData: FormData): Promise<
     await syncRoomStayOnSave(tx, leaseTermId, {
       prevRoomId, nextRoomId: newRoomId ?? null,
       prevStatus, nextStatus: status,
+      // 입주일 사후 정정도 입주 구간에 전파 — 같은 트랜잭션이라 계약·이력이 함께 확정된다.
+      prevMoveInDate: currentLease.moveInDate,
+      nextMoveInDate: moveInDate ? new Date(moveInDate) : null,
     })
   })
 
@@ -1531,6 +1534,9 @@ export async function applyStatusTransition(input: {
     await syncRoomStayOnSave(prisma, input.leaseTermId, {
       prevRoomId: lease.roomId, nextRoomId: lease.roomId,
       prevStatus: lease.status, nextStatus: input.toStatus,
+      // 상태 전환에서 입주일을 같이 고치는 경로도 입주 구간에 전파(위 finalMoveInDate 재사용).
+      prevMoveInDate: lease.moveInDate,
+      nextMoveInDate: finalMoveInDate ? new Date(finalMoveInDate) : null,
     })
     if (input.toStatus === 'ACTIVE') await ensureOpenStay(prisma, input.leaseTermId)
 

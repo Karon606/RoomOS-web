@@ -102,6 +102,42 @@ export async function closeStay(db: RoomStayDb, leaseTermId: string, at?: Date |
   await db.roomStay.updateMany({ where: { leaseTermId, endDate: null }, data: { endDate: stayDate(when) } })
 }
 
+// 'YYYY-MM-DD' 비교용 — @db.Date 는 UTC 자정 저장이라 toISOString 슬라이스가 정확(actions.ts ymdOf 관례).
+function ymdOf(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * 입주일 정정 전파 — '입주 구간'의 startDate 를 새 입주일로 맞춘다(507호 신헌석 사건, 2026-08-07).
+ * 구간 의미는 둘이다. 그 lease 의 최초 구간 = 입주 구간(startDate 가 moveInDate),
+ * 이후 구간 = 이동 구간(startDate 가 이동일 — 입주일을 절대 따라가면 안 된다).
+ */
+async function syncMoveInStart(
+  db: RoomStayDb,
+  leaseTermId: string,
+  prevMoveIn: Date | null,
+  nextMoveIn: Date | null,
+): Promise<void> {
+  if (!prevMoveIn || !nextMoveIn) return                    // 입주일 신설·삭제는 전파 대상이 아니다
+  if (ymdOf(prevMoveIn) === ymdOf(nextMoveIn)) return       // 날짜 변화 없음
+  const open = await db.roomStay.findFirst({
+    where: { leaseTermId, endDate: null },
+    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+    select: { id: true, startDate: true },
+  })
+  if (!open?.startDate) return
+  // 1차 가드 — 열린 구간의 시작이 구 입주일과 다르면 이동일 등 따로 정해진 날짜라 건드리지 않는다.
+  if (ymdOf(open.startDate) !== ymdOf(prevMoveIn)) return
+  // 2차 가드 — 이 구간보다 이른 구간이 있으면 열린 구간은 이동 구간이다(이사 이력 존재).
+  // 이동일이 우연히 구 입주일과 같아 1차 가드를 통과하는 경계까지 여기서 배제한다.
+  const earlier = await db.roomStay.findFirst({
+    where: { leaseTermId, id: { not: open.id }, startDate: { lt: open.startDate } },
+    select: { id: true },
+  })
+  if (earlier) return
+  await db.roomStay.update({ where: { id: open.id }, data: { startDate: nextMoveIn } })
+}
+
 /** 퇴실 취소(종료 → 활성 복귀) — 가장 최근 구간을 다시 연다. 구간이 없으면 아무것도 하지 않는다. */
 export async function reopenStay(db: RoomStayDb, leaseTermId: string): Promise<void> {
   const last = await db.roomStay.findFirst({
@@ -126,6 +162,8 @@ export async function syncRoomStayOnSave(
     prevStatus: string
     nextStatus: string
     at?: Date | string | null   // 이사·퇴실 시점(없으면 퇴실일 또는 오늘 KST)
+    prevMoveInDate?: Date | null   // 입주일 정정 전파용(둘 다 주는 호출부에서만 동작)
+    nextMoveInDate?: Date | null
   },
 ): Promise<void> {
   const prevTerminal = isStayTerminalStatus(p.prevStatus)
@@ -151,6 +189,10 @@ export async function syncRoomStayOnSave(
     return
   }
   if (prevTerminal) await reopenStay(db, leaseTermId)
+  // 입주일 정정 전파는 recordRoomChange 보다 먼저다 — 호실과 입주일을 같이 바꾸면 입주 구간이
+  // 아직 열려 있는 이 시점에 날짜를 맞춰야 한다. 순서를 뒤집으면 입주 구간이 이미 마감돼
+  // 열린 구간이 이동 구간이 되고, 2차 가드에 걸려 입주일 정정이 통째로 유실된다.
+  await syncMoveInStart(db, leaseTermId, p.prevMoveInDate ?? null, p.nextMoveInDate ?? null)
   if (p.prevRoomId !== p.nextRoomId) {
     await recordRoomChange(db, leaseTermId, p.prevRoomId, p.nextRoomId, p.at)
   }
