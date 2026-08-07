@@ -1537,6 +1537,15 @@ export default function FinanceClient({
   // 참조하는 행이 없고 404 가 난다 — 저장을 누르기 전까지 영수증이 항상 깨져 보였다(신고 9742f86f).
   // 프록시에 임시 토큰을 발급하는 방향은 택하지 않는다. 인증 표면을 도로 넓히게 된다.
   const [localReceiptPreview, setLocalReceiptPreview] = useState<{ add: string; edit: string }>({ add: '', edit: '' })
+  // 로컬 미리보기의 단일 교체·해제 경로. blob: 은 명시적으로 풀어야 메모리가 반환되므로
+  // 직전 blob 주소를 ref 로 들고 있다가 교체·클리어 때 해제한다(dataURL 은 해제 대상이 아니다).
+  const localPreviewBlobRef = useRef<{ add: string; edit: string }>({ add: '', edit: '' })
+  const setLocalPreview = (target: 'add' | 'edit', url: string) => {
+    const prev = localPreviewBlobRef.current[target]
+    if (prev && prev !== url) URL.revokeObjectURL(prev)
+    localPreviewBlobRef.current[target] = url.startsWith('blob:') ? url : ''
+    setLocalReceiptPreview(p => ({ ...p, [target]: url }))
+  }
   // 영수증 확대 — 앱 안에서 연다
   const [lightbox, setLightbox] = useState('')
 
@@ -1558,6 +1567,10 @@ export default function FinanceClient({
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
     } catch {
       const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+      // 원본을 그대로 올리는 길 — 여기서 잡는 주소는 프록시라 저장 전에는 404 다.
+      // 못 여는 형식이어도 브라우저가 img 로는 그리는 경우가 있으니(HEIC on Safari)
+      // 원본 파일 자체를 미리보기로 건다. 여기 도달하면 이미지 파일임이 위에서 보장된다.
+      setLocalPreview(target, URL.createObjectURL(file))
       await handleReceiptUpload(file, setter)
       return
     }
@@ -1572,7 +1585,7 @@ export default function FinanceClient({
     const target = scanTargetRef.current === 'add' ? 'add' : 'edit'
     const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
     // 업로드 주소는 저장 후에 쓰고, 지금 화면에는 방금 만든 이미지를 그대로 둔다
-    setLocalReceiptPreview(p => ({ ...p, [target]: cropped.dataUrl }))
+    setLocalPreview(target, cropped.dataUrl)
     await handleReceiptUpload(dataUrlToFile(cropped.dataUrl, 'receipt.jpg'), setter)
     setScanCropped(null)
   }
@@ -1786,7 +1799,8 @@ export default function FinanceClient({
     setShowExpExcel(false)
   }
   // + 지출 등록 폼 초기화·열기 — 버튼과 홈 찍어올리기 딥링크(?pendingReceipt=)가 공유하는 단일 경로
-  const openAddExpense = () => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
+  // 로컬 미리보기도 함께 비운다. 안 비우면 같은 세션에서 다음 폼을 열었을 때 직전 영수증 이미지가 새 주소를 덮는다.
+  const openAddExpense = () => { setLocalPreview('add', ''); userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpBizNo(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setAddSeedNotice(''); setError('') }
   // 홈 찍어올리기 딥링크 — 정식 지출 폼 + 정밀 OCR로 일원화(오류신고 bb7b7cb4).
   // 기존 업로드 이미지 재사용(재업로드 방지), 저장 성공 시 대기 항목 자동 마감(finalize).
   const pendingSeedRef = useRef<string | null>(null)
@@ -2277,7 +2291,8 @@ export default function FinanceClient({
         }
         const res = await addExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        // 로컬 미리보기도 함께 비운다 — 다음 폼에서 직전 영수증 이미지가 새 주소를 덮는 것을 막는다.
+        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setLocalPreview('add', ''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         if (pendingSeedRef.current) { void finalizePendingReceipt(pendingSeedRef.current); pendingSeedRef.current = null }
         pushToast('success', '지출 등록됨')
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
@@ -3697,7 +3712,7 @@ export default function FinanceClient({
                     setEditExpAccName(detailExp.financeName ?? '')
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
-                    setLocalReceiptPreview(p => ({ ...p, edit: '' }))
+                    setLocalPreview('edit', '')
                     setEditExpCategory(detailExp.category)
                     // '배송비 포함'(합산형)으로 등록된 지출 — detail 의 '배송비 N원' 표기에서 합산분 복원.
                     // 안 하면 수정 저장 시 배송비가 이중 합산되거나 표기가 사라지고 단가가 부풀던 문제.
@@ -3992,7 +4007,7 @@ export default function FinanceClient({
                     ) : editReceiptUrl ? (
                       <div className="relative">
                         <img src={localReceiptPreview.edit || editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
-                        <button type="button" onClick={() => { setEditReceiptUrl(''); setLocalReceiptPreview(p => ({ ...p, edit: '' })) }}
+                        <button type="button" onClick={() => { setEditReceiptUrl(''); setLocalPreview('edit', '') }}
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                       </div>
                     ) : (
@@ -4041,7 +4056,8 @@ export default function FinanceClient({
       {lightbox && <ImageLightbox src={lightbox} alt="영수증" onClose={() => setLightbox('')} />}
       {showAddExp && (
         <Modal open width="sm" dirty={addExpDirty}
-          onClose={() => { setShowAddExp(false); setAddExpDirty(false) }}
+          // 닫을 때 로컬 미리보기도 비운다 — 다음 폼에서 직전 영수증 이미지가 새 주소를 덮는 것을 막는다.
+          onClose={() => { setShowAddExp(false); setAddExpDirty(false); setLocalPreview('add', '') }}
           // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 의 form 이 직접 구성한다.
           bodyClassName=""
           title="지출 등록">
@@ -4297,7 +4313,7 @@ export default function FinanceClient({
                   ) : addReceiptUrl ? (
                     <div className="relative">
                       <img src={localReceiptPreview.add || addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
-                      <button type="button" onClick={() => { setAddReceiptUrl(''); setLocalReceiptPreview(p => ({ ...p, add: '' })) }}
+                      <button type="button" onClick={() => { setAddReceiptUrl(''); setLocalPreview('add', '') }}
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                     </div>
                   ) : (
@@ -4312,7 +4328,7 @@ export default function FinanceClient({
                 {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setShowAddExp(false); setLocalReceiptPreview(p => ({ ...p, add: '' })) }}>취소</Btn>
+                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setShowAddExp(false); setLocalPreview('add', '') }}>취소</Btn>
                 <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                   {isPending ? '저장 중…' : '저장'}
                 </Btn>
