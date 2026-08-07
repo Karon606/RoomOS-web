@@ -29,6 +29,9 @@ type RoomRow = {
   isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
   noMoveInReport: boolean   // 전입신고 불가 방 — 공실 카드·행 배지(2026-07-06)
   status: string | null; expected: number; dueDay: string | null; currentPaid: number
+  // 단기 계약 — 입주월 1회 전액 청구라 '매월 N일' 반복 납부일이 성립하지 않는다.
+  // 표시 가드 전용(계산·집계 비관여). dueDay 자체는 입주월 미납 판정 기한으로 계속 저장된다.
+  isShortTerm: boolean
   carryOver: number; totalPaid: number; balance: number; isPaid: boolean
   leaseTermId: string | null; depositAmount: number; cleaningFee: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
@@ -230,6 +233,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: 'RESERVED', expected: reservedExpected, dueDay: lease.dueDay,
+        isShortTerm: lease.isShortTerm,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
         reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0 },
@@ -261,6 +265,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: lease.status, expected, dueDay: lease.dueDay,
+        isShortTerm: lease.isShortTerm,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
@@ -576,6 +581,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: lease.status, expected: rowExpected, dueDay: effectiveDueDay,
+        isShortTerm: lease.isShortTerm,
         currentPaid: 0, carryOver: displayCarryOver,
         totalPaid: 0, balance: cumulativeBalance,
         isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
@@ -607,6 +613,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected: rowExpected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
+      isShortTerm: lease.isShortTerm,
       currentPaid: realCurrentPaid, carryOver: displayCarryOver,
       totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid, cashReceiptIssued: cashReceiptIssuedThisMonth,
       leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
@@ -642,6 +649,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: true, noMoveInReport: room.noMoveInReport, tenantId: null, tenantName: null,
         contact: null, status: null, expected: 0, dueDay: null,
+        isShortTerm: false,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: false, leaseTermId: null,
         depositAmount: 0, cleaningFee: 0, accumulatedUnpaid: 0, isFutureMonth,
@@ -2036,6 +2044,7 @@ export async function getTenantQuickInfo(tenantId: string) {
         select: {
           id: true, status: true, rentAmount: true, depositAmount: true,
           dueDay: true, moveInDate: true, moveOutDate: true, expectedMoveOut: true,
+          isShortTerm: true,   // 단기는 '매월 N일' 납부일 표기가 성립하지 않는다(퀵 정보 표시 가드)
           room: { select: { roomNo: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -2117,6 +2126,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     status: lease.status,
     expected: fbExpected,
     dueDay: lease.dueDay,
+    isShortTerm: lease.isShortTerm,
     currentPaid: 0,
     carryOver: 0,
     totalPaid: 0,

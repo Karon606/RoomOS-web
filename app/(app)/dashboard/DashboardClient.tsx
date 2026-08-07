@@ -1239,7 +1239,8 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                     <span className="text-[var(--warm-dark)]">{fmtWon(lease.depositAmount)}</span>
                   </div>
                 )}
-                {lease.dueDay && (
+                {/* 단기는 입주월 1회 전액 청구라 '매월 N일'이 성립하지 않는다 — 납부일 줄을 생략한다. */}
+                {lease.dueDay && !lease.isShortTerm && (
                   <div className="flex justify-between mb-1">
                     <span className="text-[var(--warm-muted)]">납부일</span>
                     <span className="text-[var(--warm-dark)]">매월 {lease.dueDay}일</span>

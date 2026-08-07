@@ -163,7 +163,10 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             </div>
           ) : undefined}
         />
-        {settlement.dueDay && (() => {
+        {/* 단기는 입주월 1회 전액 청구라 반복 납부일이 없다 — 문구는 '청구 없음' 뱃지 보조줄(noBillSubText)과 같은 말을 쓴다. */}
+        {settlement.isShortTerm ? (
+          <Row k="납부" v="입주월에 전액 납부" />
+        ) : settlement.dueDay && (() => {
           // 임시 조정 활성(이 달) — settlement.dueDay는 override 반영값이라 '매월'로 쓰면 오해(오류신고 7c8c5fcd).
           const ovrActive = !!settlement.overrideDueDay && settlement.overrideDueDayMonth === month
           const d = settlement.dueDay
@@ -279,27 +282,32 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
 
           <DiscountWidget leaseTermId={leaseTermId} onChange={refresh} />
 
-          <DueDayTempAdjustWidget
-            leaseTermId={leaseTermId}
-            targetMonth={month}
-            firstUnpaidMonth={settlement.firstUnpaidMonth}
-            room={{
-              overrideDueDay: settlement.overrideDueDay,
-              overrideDueDayMonth: settlement.overrideDueDayMonth,
-              overrideDueDayReason: settlement.overrideDueDayReason,
-              dueDay: settlement.dueDay,
-            }}
-            canEdit={canEdit}
-            onChange={refresh}
-          />
+          {/* 납부일 조정·변경은 반복 납부일이 있는 계약만 — 단기는 바꿀 '매월 N일'이 없다. */}
+          {!settlement.isShortTerm && (
+            <>
+              <DueDayTempAdjustWidget
+                leaseTermId={leaseTermId}
+                targetMonth={month}
+                firstUnpaidMonth={settlement.firstUnpaidMonth}
+                room={{
+                  overrideDueDay: settlement.overrideDueDay,
+                  overrideDueDayMonth: settlement.overrideDueDayMonth,
+                  overrideDueDayReason: settlement.overrideDueDayReason,
+                  dueDay: settlement.dueDay,
+                }}
+                canEdit={canEdit}
+                onChange={refresh}
+              />
 
-          <DueDayPermanentChangeWidget
-            leaseTermId={leaseTermId}
-            targetMonth={month}
-            expected={settlement.expected}
-            currentDueDay={settlement.dueDay}
-            onChange={refresh}
-          />
+              <DueDayPermanentChangeWidget
+                leaseTermId={leaseTermId}
+                targetMonth={month}
+                expected={settlement.expected}
+                currentDueDay={settlement.dueDay}
+                onChange={refresh}
+              />
+            </>
+          )}
 
           {/* 퇴실 정산(일할) — 거주중·퇴실예정 계약에서만 */}
           {canEdit && (settlement.status === 'ACTIVE' || settlement.status === 'CHECKOUT_PENDING') && (

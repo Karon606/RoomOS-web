@@ -1988,7 +1988,8 @@ export default function TenantClient({
                             </td>
                           )
                         case 'dueDay':
-                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{fmtDueDay(lease?.dueDay)}</span></td>
+                          // 단기는 입주월 1회 전액 청구라 '매월 N일'이 없다 — 카드 뷰와 같은 규칙으로 비운다.
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{lease?.isShortTerm ? '—' : fmtDueDay(lease?.dueDay)}</span></td>
                         case 'stayPeriod':
                           return (
                             <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}>

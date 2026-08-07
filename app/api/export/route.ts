@@ -317,7 +317,8 @@ export async function GET(request: NextRequest) {
         '보증금':      l.depositAmount,
         '총 수납액':   totalPaid,
         '잔액':        balance,
-        '납부일':      effectiveDueDay ? `매월 ${effectiveDueDay}일` : '',
+        // 단기는 입주월 1회 전액 청구라 반복 납부일이 없다 — 화면과 같은 규칙으로 빈 값(신고 2026-08-06)
+        '납부일':      l.isShortTerm ? '' : effectiveDueDay ? `매월 ${effectiveDueDay}일` : '',
         '납부방법':    l.payMethod ?? '',
         '상태':        isPaid ? '완납' : '미수납',
         '계약상태':    STATUS_LABEL[l.status] ?? l.status,
