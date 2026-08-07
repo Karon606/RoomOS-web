@@ -180,7 +180,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
           <Link href={listHref} className="text-sm text-[var(--coral)]">‹ {docLabel}</Link>
-          <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)]">자동값으로</button>
+          <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)] active:bg-[var(--cream)] active:scale-[0.98]">자동값으로</button>
         </div>
 
         <div>
@@ -199,7 +199,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           {!data.isShortTerm && !isDeposit && (
           <button
             onClick={() => void stepMonth(-1)}
-            className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
             style={{ color: 'var(--warm-mid)' }}
             aria-label="이전 달"
           >
@@ -218,7 +218,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <button
             onClick={() => void stepMonth(1)}
             disabled={atCurrentMonth}
-            className="w-11 shrink-0 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="w-11 shrink-0 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
             style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
             aria-label="다음 달"
           >

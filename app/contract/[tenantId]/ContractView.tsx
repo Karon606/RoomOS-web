@@ -1264,6 +1264,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .toolbar-print { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .toolbar-print:disabled { opacity: 0.6; }
         .toolbar-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
+        /* 눌림 피드백 — 호버와 같은 토큰을 :active 에도 준다(Btn 정본과 동일 판정).
+           Tailwind 든 손수 CSS 든 호버만 걸면 터치 기기에서 눌러도 아무 반응이 없다.
+           :disabled 는 브라우저가 :active 를 매치하지 않으므로 별도 제외가 필요 없다. */
+        .toolbar-print:hover { background: var(--coral-dark); }
+        .toolbar-print:active { background: var(--coral-dark); transform: scale(0.98); }
+        .toolbar-btn-secondary:hover { background: var(--cream-soft); }
+        .toolbar-btn-secondary:active { background: var(--cream-soft); transform: scale(0.98); }
         .toolbar-btn-warn { color: var(--warning-fg); border-color: var(--warning-ring); }
         .toolbar-status { font-size: 12px; color: var(--warning-fg); font-weight: 600; }
         .toolbar-hint { font-size: 11px; color: var(--ink-m); }
@@ -1425,6 +1432,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
         .contract-paper .section-edit-title { flex: 1; padding: 4px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-weight: 700; background: #fff; font-family: inherit; }
         .contract-paper .section-edit-btn { padding: 3px 8px; font-size: 11px; border: 1px solid #d6cdbb; border-radius: 6px; background: #fff; cursor: pointer; color: #6b6258; display: inline-flex; align-items: center; justify-content: center; }
         .contract-paper .section-edit-btn:disabled { opacity: 0.3; }
+        /* 종이 위 컨트롤이라 색은 종이 팔레트 리터럴(#f3eee5 는 같은 파일 서명 모달 호버와 동일 값). */
+        .contract-paper .section-edit-btn:hover { background: #f3eee5; }
+        .contract-paper .section-edit-btn:active { background: #f3eee5; transform: scale(0.98); }
         .contract-paper .section-edit-btn-danger { color: #c4452b; border-color: #f3c8b5; }
         .contract-paper .section-edit-textarea { width: 100%; min-height: 80px; padding: 6px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-family: inherit; line-height: 1.5; background: #fff; resize: vertical; }
         .contract-paper .section-add-btn { width: 100%; padding: 8px; border: 1px dashed #a03c2e; color: #a03c2e; background: transparent; border-radius: 8px; font-size: 12px; cursor: pointer; }

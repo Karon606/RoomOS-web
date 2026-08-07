@@ -326,10 +326,14 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
           borderRadius: 999, padding: 4,
           boxShadow: '0 16px 48px -16px rgba(61,36,24,.22)',
         }}>
+          {/* 눌림은 :active 로만 표현할 수 있어 인라인 style 로 못 준다 — 인라인 치수는 그대로 두고
+              눌림 한 줄만 Btn 정본과 같은 토큰(active:scale-[0.98])으로 얹는다. disabled 는 브라우저가
+              :active 를 매치하지 않아 저절로 빠진다. */}
           <button type="button" onClick={() => step(-1)} disabled={z <= Z_MIN} aria-label="축소"
-            style={zBtn(z <= Z_MIN)}>−</button>
+            className="active:scale-[0.98]" style={zBtn(z <= Z_MIN)}>−</button>
           <button type="button" onClick={() => zoomAtCenter(1)} disabled={z === 1}
             aria-label={`현재 배율 ${z}배, 눌러서 원래 크기로`}
+            className="active:scale-[0.98]"
             style={{
               minWidth: 52, height: 44, border: 0, background: 'transparent',
               color: z === 1 ? 'var(--ink-s)' : 'var(--tc-text)',
@@ -337,7 +341,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName }: {
               cursor: z === 1 ? 'default' : 'pointer',
             }}>{z % 1 === 0 ? z : z.toFixed(1)}배</button>
           <button type="button" onClick={() => step(1)} disabled={z >= Z_MAX} aria-label="확대"
-            style={zBtn(z >= Z_MAX)}>+</button>
+            className="active:scale-[0.98]" style={zBtn(z >= Z_MAX)}>+</button>
         </div>
       )}
     </div>
