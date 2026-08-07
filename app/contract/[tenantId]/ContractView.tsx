@@ -17,7 +17,7 @@ import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
@@ -49,7 +49,7 @@ const amtText = (s: string) => {
   return d ? parseInt(d, 10).toLocaleString() : ''
 }
 const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `매월 ${parseInt(v, 10)}일`) : '—')
-const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다.'
+const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.'
 // 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
 const CELL_SELECT_STYLE = { font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' } as const
 
@@ -375,7 +375,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     } finally { release(); setSignReqPending(false) }
   }
 
-  const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.')
+  const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.')
 
   // 서명 지우기(X) — 서버에 저장된 서명이면 서버에서도 지운다.
   // 종전에는 로컬 state 만 지워서 새로고침 한 번이면 잘못 받은 서명이 그대로 되살아났다.
@@ -398,7 +398,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
     if (sigClearing) return
     if (!(await confirmDialog({
       title: '저장된 서명을 지울까요?',
-      message: '저장된 서명이 삭제되고 재서명 전까지 발급할 수 없습니다. 원격으로 받은 서명이면 보냈던 링크도 닫힙니다.',
+      message: '저장된 서명이 삭제되고 재서명 전까지 발급할 수 없습니다. 아직 발급하지 않은 서명이면 이 서명으로는 다시 발급할 수 없으니 필요하면 먼저 발급해 두세요. 원격으로 받은 서명이면 보냈던 링크도 닫힙니다.',
       level: 'danger', confirmLabel: '지우기',
     }))) return
     setSigClearing(true)
@@ -408,6 +408,33 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       if (!res.ok) { pushToast('error', res.error); return }
       clearSignatureLocal(target)
       pushToast('success', '서명을 지웠습니다.' + (res.closedLinks > 0 ? ' 보낸 서명 링크도 닫았습니다. 필요하면 서명 요청을 다시 보내 주세요.' : ''))
+      router.refresh()
+    } finally {
+      release()
+      setSigClearing(false)
+    }
+  }
+
+  // 재서명 받기 — 저장된 서명 네 칸을 한 번에 지워 본문·표시값·계약일 잠금을 통째로 푼다.
+  // 드리프트 경고에서 들어오는 길이다. 종전에는 '그래도 발급'과 '취소' 둘뿐이라, 서명 당시와
+  // 내용이 다르다는 것을 알고도 바뀐 내용으로 다시 받을 길이 화면에 없었다.
+  const handleResignAll = async () => {
+    const leaseId = data.lease?.id
+    if (!leaseId || sigClearing) return
+    if (!(await confirmDialog({
+      title: '서명을 모두 지우고 다시 받을까요?',
+      message: '저장된 서명을 모두 지우고 다시 받습니다. 아직 발급하지 않았다면 이 서명으로는 발급할 수 없게 됩니다.',
+      level: 'danger', confirmLabel: '지우기',
+    }))) return
+    setSigClearing(true)
+    const release = trackSave()
+    try {
+      const res = await clearContractSignature(leaseId, 'all')
+      if (!res.ok) { pushToast('error', res.error); return }
+      // 화면에 남은 서명 이미지도 함께 걷는다 — 서버 값은 useState 초기값이라 refresh 로 안 돌아온다.
+      clearSignatureLocal('contract')
+      clearSignatureLocal('disposal')
+      pushToast('success', '서명을 지웠습니다. 내용을 확인하거나 수정한 뒤 서명 요청을 다시 보내 주세요.')
       router.refresh()
     } finally {
       release()
@@ -644,18 +671,27 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
       pushToast('error', '먼저 서명을 받아주세요.')
       return
     }
-    // 원격 서명 이후 계약 내용이 바뀌었으면 경고 — 발급 자체는 실시간 데이터로 진행(경고만)
+    // 원격 서명 이후 계약 내용이 바뀌었으면 경고 — 발급 자체는 실시간 데이터로 진행(경고만).
+    // 갈래가 셋이다. 그대로 발급하거나, 서명을 지우고 다시 받거나, 아무것도 안 하거나(§27).
+    // 비교 실패는 발급을 막지 않는다 — 경고만 생략하고 '그대로 발급'으로 본다.
+    let driftChoice: 'confirm' | 'alt' | 'back' | null = 'confirm'
     try {
       const drift = await checkContractShareDrift(data.tenant.id)
       if (drift.ok && drift.drift) {
-        if (!(await confirmDialog({
+        driftChoice = await choiceDialog({
           title: '서명 당시와 계약 내용이 다릅니다',
-          message: '원격 서명 링크 발급 이후 임대료, 보증금, 입주일, 호실 또는 계약서 본문이 변경되었습니다. 그래도 현재 내용으로 발급할까요?',
+          message: '원격 서명 링크 발급 이후 임대료, 보증금, 입주일, 호실, 입실자 인적사항 또는 계약서 본문이 변경되었습니다. 그래도 현재 내용으로 발급할까요?',
           level: 'caution',
           confirmLabel: '그래도 발급',
-        }))) return
+          altLabel: '재서명 받기',
+        })
       }
-    } catch { /* 비교 실패는 발급을 막지 않는다 — 경고만 생략 */ }
+    } catch { /* 비교 실패는 경고만 생략 */ }
+    // 서명 삭제는 try 밖에서 부른다 — 안에서 부르면 실패가 catch 에 먹혀 그대로 발급으로 흘러간다.
+    if (driftChoice !== 'confirm') {
+      if (driftChoice === 'alt') await handleResignAll()
+      return
+    }
     if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
     setContractSaving(true)
     const release = trackSave()
@@ -797,7 +833,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
               // 잠긴 값은 입력칸 모양을 벗는다. disabled input 은 눌러도 아무 일이 없고 이유도 안 말한다.
               // 왜 잠겼는지는 눌렀을 때 말해준다 — 길 없이 막기만 하면 고장으로 읽힌다.
               <button type="button" className="toolbar-locked" onClick={() => pushToast(
-                'info', '서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 재서명을 받아야 합니다')}>
+                'info', '서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 재서명을 받아야 합니다 · 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.')}>
                 <span>계약일</span>
                 <strong className="num">{signDateEffective}</strong>
               </button>

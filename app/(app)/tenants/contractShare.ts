@@ -63,6 +63,14 @@ export async function issueContractShareLink(tenantId: string): Promise<
     if (!snapshot) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 고객 정보에서 먼저 입력해 주세요.' }
     if (!snapshot.lease) return { ok: false, error: '진행 중인 계약이 없어 링크를 발급할 수 없습니다.' }
+    // 서명이 이미 저장된 계약에는 새 링크를 안 내준다. 내주면 입주자가 새 스냅샷에 다시 서명하고,
+    // 계약 하나에 서로 다른 내용의 서명 두 벌이 생긴다. 어느 쪽이 진짜인지 화면도 서버도 말할 수 없다.
+    // 추가 조회 없이 스냅샷 값으로 판정한다 — buildContractData 가 서명 네 칸을 이미 담아 왔다.
+    const snapLease = snapshot.lease
+    if (snapLease.signatureImageUrl || snapLease.signatureSignedDate
+      || snapLease.disposalSignatureImageUrl || snapLease.disposalSignatureSignedDate) {
+      return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
+    }
 
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
     const propertyName = property?.name ?? ''
@@ -183,6 +191,34 @@ export async function reopenContractShareLink(linkId: string): Promise<{ ok: tru
   }
 }
 
+// 계약서 종이에 실제로 인쇄되는 값만 뽑은 사영 — 드리프트 비교는 이 객체끼리 통으로 한다.
+// 비교할 필드를 손으로 나열하면 축이 늘 때마다 여기를 잊는다. 실제로 입실자 인적사항(성명·생년월일·
+// 성별·연락처·흡연·비상연락망)과 전입신고가 통째로 빠져 있어서, 서명 뒤에 그 값들이 바뀌어도
+// 발급 경고가 뜨지 않았다. 한 사람 이름이 바뀐 계약서가 아무 말 없이 나가던 구멍이다.
+// 값이 undefined 면 '이 데이터에 그 축이 없다'는 뜻이고, 스냅샷 쪽이 그러면 비교에서 빠진다(아래 참조).
+function printedFacts(d: Partial<ContractData>): Record<string, unknown> {
+  const t = d.tenant
+  const l = d.lease
+  return {
+    'tenant.name': t?.name,
+    'tenant.birthdate': t?.birthdate,
+    'tenant.gender': t?.gender,
+    'tenant.primaryPhone': t?.primaryPhone,
+    'tenant.smoking': t?.smoking,
+    // 비상연락망은 배열이라 통비교 — 번호가 바뀌어도, 한 줄이 늘거나 줄어도 잡힌다.
+    'tenant.emergencyContacts': t?.emergencyContacts ? JSON.stringify(t.emergencyContacts) : undefined,
+    'lease.rentAmount': l?.rentAmount,
+    'lease.depositAmount': l?.depositAmount,
+    'lease.cleaningFee': l?.cleaningFee,
+    'lease.dueDay': l?.dueDay,
+    'lease.moveInDate': l?.moveInDate,
+    'lease.expectedMoveOut': l?.expectedMoveOut,
+    'lease.roomNo': l?.roomNo,
+    'lease.registrationStatus': l?.registrationStatus,
+    template: d.template ? JSON.stringify(d.template) : undefined,
+  }
+}
+
 // PDF 발급 전 드리프트 비교 — 원격 서명이 들어온 활성 링크의 스냅샷과 현재 렌더 데이터의 핵심 값이 다른지.
 // 경고 판단용일 뿐 발급(실시간 데이터)은 막지 않는다.
 export async function checkContractShareDrift(tenantId: string): Promise<
@@ -204,16 +240,13 @@ export async function checkContractShareDrift(tenantId: string): Promise<
     const snap = link.templateSnapshot as unknown as ContractData
     if (!current || !current.lease || !snap.lease) return { ok: true, drift: true }
 
-    // 계약서에 인쇄되는 필드를 다 본다. 종전에는 청소비·납부일·퇴실예정일이 빠져 있었다.
-    const drift =
-      snap.lease.rentAmount !== current.lease.rentAmount ||
-      snap.lease.depositAmount !== current.lease.depositAmount ||
-      snap.lease.cleaningFee !== current.lease.cleaningFee ||
-      snap.lease.dueDay !== current.lease.dueDay ||
-      snap.lease.moveInDate !== current.lease.moveInDate ||
-      snap.lease.expectedMoveOut !== current.lease.expectedMoveOut ||
-      snap.lease.roomNo !== current.lease.roomNo ||
-      JSON.stringify(snap.template) !== JSON.stringify(current.template)
+    // 인쇄 사실 사영끼리 통비교 — 계약서에 찍히는 값이 하나라도 다르면 드리프트다.
+    const snapFacts = printedFacts(snap)
+    const curFacts = printedFacts(current)
+    // **스냅샷 쪽 값이 undefined 인 축은 비교를 생략한다.** 이 사영이 생기기 전에 만들어진 스냅샷은
+    // 나중에 추가된 축(전입신고 등)의 키가 아예 없다. 없는 값을 '달라졌다'로 읽으면 바뀐 적 없는
+    // 계약에 경고가 뜨고, 경고는 한 번이라도 거짓이면 그 다음부터 아무도 안 읽는다.
+    const drift = Object.keys(curFacts).some(k => snapFacts[k] !== undefined && snapFacts[k] !== curFacts[k])
     return { ok: true, drift }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

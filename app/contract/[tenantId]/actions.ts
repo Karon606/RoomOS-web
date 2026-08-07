@@ -42,7 +42,7 @@ export async function getContractData(tenantId: string) {
 //   3) 실측상 넓힘의 비용이 0 이다 — 반쪽 상태도 동의서만 서명된 건도 지금 0건이다
 // '제출까지'로 잡지 않는 이유 — 제출은 원격 링크 전용이고 대면 서명에는 그 단계가 없다.
 // 실측에서 서명만 하고 제출을 안 한 링크가 다섯 중 둘이었고 그 둘 다 발급까지 끝났다.
-const SIGNED_LOCK_MSG = '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다.'
+const SIGNED_LOCK_MSG = '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.'
 type SigCols = {
   signatureImageUrl: string | null
   signatureSignedAt: Date | null
@@ -52,7 +52,7 @@ type SigCols = {
 const isSignatureLocked = (l: SigCols) =>
   !!l.signatureImageUrl || !!l.signatureSignedAt || !!l.disposalSignatureImageUrl || !!l.disposalSignatureSignedAt
 
-const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다.'
+const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.'
 
 // 아직 서명이 안 들어온 활성 링크를 닫는다 — 계약서 내용을 고쳤으면 입주자가 보고 있는 것은
 // 낡은 스냅샷이다(/sign 은 발급 시점 스냅샷만 그린다). 그대로 두면 운영자가 고친 적 없는
@@ -65,6 +65,24 @@ async function closeStaleUnsignedLinks(leaseTermId: string): Promise<number> {
       signedAt: null, submittedAt: null, closedAt: null,
       expiresAt: { gt: new Date() },
     },
+    data: { closedAt: new Date() },
+  })
+  return res.count
+}
+
+// 서명 전량 삭제('all') 전용 — 열려 있는 링크를 **제출본까지** 전부 닫는다.
+// 아래 closeOpenLinks 와 갈리는 지점이 둘이고, 둘 다 '남은 서명이 하나도 없다'에서 나온다.
+//  1) submittedAt 을 안 가린다. 제출본을 남겨 두는 2026-07-23 결정은 '그 서명으로 발급할 일이
+//     남아 있다'가 전제인데, 네 칸을 전부 지우면 발급할 서명 자체가 없다. 그대로 두면 종 알림이
+//     존재하지 않는 서명의 '정식 계약서 발급'을 영원히 재촉한다(운영자 승인 2026-08-06).
+//  2) 만료 여부를 안 가린다. 링크 수명이 24시간이라 서명을 지우는 시점에는 대개 이미 만료돼
+//     있는데, 그 알림의 조건은 closedAt: null 하나뿐이라(dashboard/alerts.ts) 만료로는 안 꺼진다.
+//     만료 조건을 남기면 이 삭제가 사실상 아무 링크도 닫지 못한다.
+// **부분 삭제('contract'|'disposal')와 본문 편집 쪽 closeStaleUnsignedLinks 는 현행 그대로다** —
+// 남은 서명으로 발급할 길이 살아 있으므로 2026-07-23 규칙이 그대로 적용된다.
+async function closeAllLinks(leaseTermId: string): Promise<number> {
+  const res = await prisma.contractShareLink.updateMany({
+    where: { leaseTermId, closedAt: null },
     data: { closedAt: new Date() },
   })
   return res.count
@@ -86,9 +104,10 @@ async function closeOpenLinks(leaseTermId: string): Promise<number> {
 
 // 저장된 서명 지우기 — 화면 X 버튼이 로컬 state 만 지워서, 잘못 받은 서명을 되돌릴 길이 없었다.
 // 새로고침하면 서버 값이 그대로 되살아난다(운영자 긴급 요청 2026-08-05).
+// target 'all' 은 재서명 진입로다 — 네 칸을 한 번에 지워 본문·표시값·계약일 잠금을 통째로 푼다.
 export async function clearContractSignature(
   leaseTermId: string,
-  target: 'contract' | 'disposal',
+  target: 'contract' | 'disposal' | 'all',
 ): Promise<{ ok: true; closedLinks: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -98,6 +117,22 @@ export async function clearContractSignature(
       select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true },
     })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
+    // 전량 삭제 — 서명 네 칸과 서명 시점 본문 격리본이 함께 사라진다. 격리본만 남으면 서명 없는
+    // 계약이 서명 시점 본문을 주장하게 되고, 그건 검사 축 G2 가 위반으로 잡는 상태다.
+    if (target === 'all') {
+      if (!isSignatureLocked(lease)) return { ok: true, closedLinks: 0 }   // 지울 것이 없다 — 멱등
+      await prisma.leaseTerm.update({
+        where: { id: leaseTermId },
+        data: {
+          signatureImageUrl: null, signatureSignedAt: null,
+          disposalSignatureImageUrl: null, disposalSignatureSignedAt: null,
+          signedContractSnapshot: Prisma.DbNull,
+        },
+      })
+      const closedLinks = await closeAllLinks(leaseTermId)
+      revalidatePath('/contract')
+      return { ok: true, closedLinks }
+    }
     const isContract = target === 'contract'
     const targetHas = isContract
       ? !!lease.signatureImageUrl || !!lease.signatureSignedAt
