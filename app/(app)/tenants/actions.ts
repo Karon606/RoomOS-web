@@ -155,16 +155,24 @@ export async function getRoomsForSelect() {
       id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, nonResidentVacant: true, type: true, floor: true, windowType: true, direction: true, noMoveInReport: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
-        select: { status: true },
-        take: 1,
+        // take:1 을 뺐다 — 방이 '언제 비는지'와 '이미 예약이 걸렸는지'는 계약 하나만 봐서는 알 수 없다.
+        select: { status: true, expectedMoveOut: true, isShortTerm: true },
         orderBy: { createdAt: 'desc' },
       },
     },
   })
-  return rooms.map(({ leaseTerms, ...r }) => ({
-    ...r,
-    currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
-  }))
+  return rooms.map(({ leaseTerms, ...r }) => {
+    // 점유 계약(거주중·퇴실 예정) 중 퇴실 예정일이 잡힌 건 — 단기 ACTIVE 도 여기 들어온다.
+    const occupant = leaseTerms.find(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status) && l.expectedMoveOut)
+    return {
+      ...r,
+      // 종전 의미 그대로 — 가장 최근 생성 계약 하나의 상태. 소비처가 이 뜻에 기대고 있어 바꾸지 않는다.
+      currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
+      occupantMoveOut: occupant?.expectedMoveOut ? new Date(occupant.expectedMoveOut).toISOString().slice(0, 10) : null,
+      occupantIsShortTerm: occupant?.isShortTerm ?? false,
+      hasReservation: leaseTerms.some(l => l.status === 'RESERVED'),
+    }
+  })
 }
 
 // 입주자 추가
@@ -233,16 +241,32 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
   const existingLeases = roomId ? await prisma.leaseTerm.findMany({
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-    select: { status: true },
+    select: { status: true, expectedMoveOut: true },
   }) : []
   const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
   const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
+  const hasReservation    = existingLeases.some(l => l.status === 'RESERVED')
+  const occupantLeases    = existingLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
+  // 점유자가 언제 나가는지(퇴실 예정일)가 잡혀 있으면 그 방에 다음 사람을 예약해 둘 수 있다.
+  // 겹침(같은 날 포함) 여부는 폼이 확인창으로 묻고, 여기서는 무기한 점유와 이중 예약만 막는다.
+  const roomOpensUp = occupantLeases.length > 0 && occupantLeases.every(l => !!l.expectedMoveOut)
   const incomingIsResident = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
   const incomingIsNonResident = status === 'NON_RESIDENT'
+  const occupiedIndefinitely = occupantLeases.length > 0 && !roomOpensUp
 
-  if (incomingIsResident && hasActiveResident) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
+  if (status === 'RESERVED') {
+    if (hasReservation) return { ok: false, error: '해당 호실에 이미 입실 예약이 있습니다.' }
+    if (occupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
+  } else if (incomingIsResident && hasActiveResident) {
+    // 입실·퇴실 예정으로 들어오는 건은 종전 그대로 — 지금 비어 있는 방만 받는다.
+    return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
+  }
   if (incomingIsNonResident && hasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
-  if (!incomingIsResident && !incomingIsNonResident && existingLeases.length > 0) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+  // 문의·투어 단계 — 종전엔 계약이 하나라도 있으면 막았는데 정작 예약 확정은 통과하던 잠복 모순이었다.
+  // 퇴실 예정일이 잡힌 방은 문의 단계에서도 희망 호실로 적을 수 있게 하고, 무기한 점유·예약된 방은 그대로 막는다.
+  if (!incomingIsResident && !incomingIsNonResident) {
+    if (hasReservation || hasNonResident || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+  }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -455,6 +479,34 @@ export async function updateTenant(formData: FormData): Promise<
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
   const newRoomId  = roomId || prevRoomId
+
+  // 호실 점유 재검증 — addTenant 와 같은 규칙(무기한 점유·이중 예약만 거부, 퇴실 예정일이 잡힌 방은 허용).
+  // 발화 조건을 반드시 좁힌다: 방이 실제로 바뀌거나, 비거주계 상태에서 거주계로 올라갈 때만.
+  // 조건 없이 걸면 이미 그 방에 확정돼 있는 건을 그대로 재저장하는 것까지 막혀 회귀가 된다.
+  const RESIDENT_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED']
+  const roomChanged = !!newRoomId && newRoomId !== prevRoomId
+  const climbingIntoResidence = RESIDENT_STATUSES.includes(status) && !RESIDENT_STATUSES.includes(prevStatus)
+  if (newRoomId && (roomChanged || climbingIntoResidence)) {
+    const otherLeases = await prisma.leaseTerm.findMany({
+      where: { roomId: newRoomId, id: { not: leaseTermId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      select: { status: true, expectedMoveOut: true },
+    })
+    const otherOccupants = otherLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
+    const otherOccupiedIndefinitely = otherOccupants.length > 0 && !otherOccupants.every(l => !!l.expectedMoveOut)
+    const otherHasReservation = otherLeases.some(l => l.status === 'RESERVED')
+    const otherHasNonResident = otherLeases.some(l => l.status === 'NON_RESIDENT')
+    if (status === 'RESERVED') {
+      if (otherHasReservation) return { ok: false, error: '해당 호실에 이미 입실 예약이 있습니다.' }
+      if (otherOccupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
+    } else if (RESIDENT_STATUSES.includes(status)) {
+      if (otherLeases.some(l => RESIDENT_STATUSES.includes(l.status))) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
+    } else if (status === 'NON_RESIDENT') {
+      if (otherHasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
+    } else if (otherHasReservation || otherHasNonResident || otherOccupiedIndefinitely) {
+      // 문의·투어 단계 — 예약 단계와 같은 선(퇴실 예정일이 잡힌 방은 희망 호실로 허용)
+      return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+    }
+  }
 
   // 퇴실 일할 정산 일관 유지 — 편집 폼 경로도 전환 버튼(applyStatusTransition)과 동일 정책.
   // 정산이 적용된 상태에서 퇴실일만 바꾸면 옛 날짜 기준 일할이 잔존하던 문제의 수정.

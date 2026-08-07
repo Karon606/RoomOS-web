@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
-import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
+import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
@@ -58,7 +58,33 @@ const fmtRoomNo = (no: string | null | undefined) =>
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; nonResidentVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; nonResidentVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null
+  occupantMoveOut: string | null     // 'YYYY-MM-DD' — 점유 계약(거주중·퇴실 예정)의 퇴실 예정일. 이 방이 비는 날
+  occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
+  hasReservation: boolean            // 이미 입실 예약이 걸린 방 — 이중 예약 차단
+}
+
+// 호실 선택 자격 — 폼 세 곳(선택 비활성·겹침 캡션·저장 확인창)이 같은 판정을 쓴다.
+// 판정식이 '이번 달에 나가는가'를 묻는 isShortTermCheckoutDue(수납·호실 관리 표시용)와 다른 이유는,
+// 여기서는 월 창과 무관하게 '언제 비는지 날짜가 있는가'만 필요하기 때문이다. 그래서 ACTIVE 단기도 같은 자격이다.
+// 같은 날 = 겹침으로 본다. 서버는 겹침을 막지 않는다(폼 확인창 경로).
+// 무기한 점유와 이중 예약은 서버(addTenant·updateTenant)도 막는다.
+function roomPickability(r: Room, isCurrentRoom: boolean) {
+  // 본인이 이미 들어가 있는 방이면 그 방의 예약(=본인 것)이 자기 발목을 잡지 않게 한다.
+  const blockedByReservation = r.hasReservation && !isCurrentRoom
+  const openDate = !r.isVacant && !blockedByReservation ? r.occupantMoveOut : null
+  return {
+    openDate,                                                  // 이 방이 비는 날('YYYY-MM-DD')
+    reservable: r.isVacant || isCurrentRoom || !!openDate,     // 문의·예약 확정 단계에서 고를 수 있는가
+    residable:  r.isVacant || isCurrentRoom,                   // 입실·퇴실 예정 단계는 지금 빈 방만(서버도 같은 선)
+  }
+}
+
+// 희망 입주일이 그 방 퇴실 예정일과 겹치는가 — 겹치면 그 퇴실 예정일을 돌려준다(같은 날도 겹침).
+function overlapMoveOut(room: Room | undefined, moveIn: string): string | null {
+  if (!room || room.isVacant || !room.occupantMoveOut || !moveIn) return null
+  return moveIn <= room.occupantMoveOut ? room.occupantMoveOut : null
+}
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -755,9 +781,28 @@ export default function TenantClient({
     router.refresh()
   }, [router])
 
+  // 예약 확정 저장인데 그 방 퇴실 예정일과 희망 입주일이 겹치면 한 번 묻는다(막지는 않는다).
+  // 세 저장 경로(등록·수정·상세 내 수정)가 이 판정을 공유한다 — 한 곳만 달면 경로별로 갈린다.
+  // 문의·투어 단계 저장은 묻지 않는다(방을 비우는 약속이 아니라 희망 호실 메모라서).
+  const confirmRoomOverlap = async (fd: FormData): Promise<boolean> => {
+    if ((fd.get('status') as string) !== 'RESERVED' || fd.get('reservationConfirmed') !== 'true') return true
+    const room = rooms.find(r => r.id === ((fd.get('roomId') as string) || ''))
+    const moveIn = ((fd.get('moveInDate') as string) || '').slice(0, 10)
+    const out = overlapMoveOut(room, moveIn)
+    if (!out || !room) return true
+    return confirmDialog({
+      title: `${fmtRoomNo(room.roomNo)} 퇴실 예정일과 겹칩니다`,
+      message: `이 방은 ${fmtMD(out)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요.`,
+      level: 'caution',
+      confirmLabel: '예약 확정',
+      cancelLabel: '취소',
+    })
+  }
+
   const handleAdd = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    if (!await confirmRoomOverlap(fd)) return
     startTransition(async () => {
       const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
       if (!res.ok) { setError(res.error); return }
@@ -910,6 +955,7 @@ export default function TenantClient({
   const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    if (!await confirmRoomOverlap(fd)) return
     await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, false)) return
     proceedAfterRentDecision(fd, false)
@@ -919,6 +965,7 @@ export default function TenantClient({
   const handleUpdateFromDetail = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    if (!await confirmRoomOverlap(fd)) return
     await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, true)) return
     proceedAfterRentDecision(fd, true)
@@ -3583,19 +3630,30 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="">{roomCanBeEmpty ? '호실 선택 (선택사항)' : '호실 선택'}</option>
             {rooms.map(r => {
               const isCurrentRoom = r.id === lease?.room?.id
-              const isCheckoutPending = r.currentLeaseStatus === 'CHECKOUT_PENDING'
-              // WAITING_TOUR: 공실이거나 퇴실예정인 방만 활성화
-              const disableRoom = isWaitingTourStatus
-                ? (!r.isVacant && !isCheckoutPending && !isCurrentRoom)
-                : (activeOnlyStatus && !r.isVacant && !isCurrentRoom)
+              const pick = roomPickability(r, isCurrentRoom)
+              // 문의·예약 확정: 공실·본인 방에 더해 '언제 비는지 아는 방'까지 고를 수 있다.
+              // 입실·퇴실 예정: 지금 빈 방만(서버가 점유 방을 거부한다).
+              const disableRoom = isWaitingTourStatus ? !pick.reservable : (activeOnlyStatus && !pick.residable)
+              const showOpenDate = isWaitingTourStatus && !!pick.openDate
               return (
                 <option key={r.id} value={r.id} disabled={disableRoom}
-                  style={isWaitingTourStatus && isCheckoutPending && !r.isVacant ? { fontWeight: 'bold' } : undefined}>
-                  {fmtRoomNo(r.roomNo)}{isWaitingTourStatus && isCheckoutPending && !r.isVacant ? ' (퇴실예정)' : ''}
+                  style={showOpenDate ? { fontWeight: 'bold' } : undefined}>
+                  {fmtRoomNo(r.roomNo)}{showOpenDate ? ` (${fmtMD(pick.openDate)} 퇴실)` : ''}
                 </option>
               )
             })}
           </select>
+          {/* 겹침 경고 — 막지 않고 알린다. 입주일을 아직 안 넣었으면 표시하지 않는다. */}
+          {(() => {
+            const sel = rooms.find(r => r.id === selectedRoomId)
+            const out = isWaitingTourStatus ? overlapMoveOut(sel, moveInDateVal) : null
+            if (!out) return null
+            return (
+              <p className="text-[0.65625rem] text-[var(--warning-fg)]">
+                희망 입주일({fmtMD(moveInDateVal)})이 이 방 퇴실 예정일({fmtMD(out)})과 겹칩니다.
+              </p>
+            )
+          })()}
         </div>
 
         {(() => {
