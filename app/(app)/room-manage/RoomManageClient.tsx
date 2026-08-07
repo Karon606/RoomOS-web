@@ -790,8 +790,9 @@ export default function RoomManageClient({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
+        {/* ml-auto — 좁은 폭에서 두 줄로 접힐 때도 버튼군이 우측 정렬(월 셀렉터 우측 통일 지적과 같은 클래스). */}
         {canEditUi && (
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
             공용·외관 사진
           </Btn>
