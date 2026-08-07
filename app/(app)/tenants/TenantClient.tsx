@@ -2189,8 +2189,9 @@ export default function TenantClient({
                         <p className="text-xs text-[var(--warm-muted)] leading-tight">{resvPaid ? '입주 시 납부 예정' : paySettlement?.noBillReason ? '이 달 청구' : '잔액'}</p>
                         {resvPaid ? (
                           // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
+                          // 예정 톤(info) — PaymentSummaryCards 의 같은 타일과 반드시 동색(신고 d9e6ecd2).
                           <>
-                            <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+                            <p className="text-sm font-bold mt-0.5 text-[var(--info-fg)]">{fmtWon(resvDue)}</p>
                             {paySettlement?.moveInDate && targetMonth < paySettlement.moveInDate.slice(0, 7) && (
                               <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">이번 달 청구 없음 · {Number(paySettlement.moveInDate.slice(5, 7))}월 입주 예정</p>
                             )}

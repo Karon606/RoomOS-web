@@ -74,8 +74,9 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
             </>
           ) : resv ? (
             // 선납·미수(+/−)가 아니라 '앞으로 낼 금액' — 부호 없이 표기해 구분한다.
+            // 아직 안 받은 돈이라 예정 톤(info) — 중립 짙은 색이면 수납 완료 금액과 같은 문법이 된다(신고 d9e6ecd2).
             <>
-              <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(resvDue)}</p>
+              <p className="text-sm font-bold mt-0.5 text-[var(--info-fg)]">{fmtWon(resvDue)}</p>
               {beforeMoveIn && moveInMonth && (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">이번 달 청구 없음 · {Number(moveInMonth.slice(5))}월 입주 예정</p>
               )}

@@ -114,8 +114,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
       {/* 입주 시 낼 금액 — 할인 반영 이용료에서 선납분을 뺀 값(예약 단계 운영자 질문 1순위). */}
       {settlement.status === 'RESERVED' && settlement.expected > 0 && (
         <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-          <span className="text-[var(--coral)] font-semibold">입주 시 납부 예정</span>
-          <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(Math.max(0, settlement.expected - prepaidReceived))}</span>
+          {/* 예정 톤(info)으로 한 줄을 묶는다 — 금액만 파랗고 라벨이 코랄이면 한 줄에 두 의미색이 충돌한다(신고 d9e6ecd2). */}
+          <span className="text-[var(--info-fg)] font-semibold">입주 시 납부 예정</span>
+          <span className="ml-1.5 font-semibold text-[var(--info-fg)]">{fmtWon(Math.max(0, settlement.expected - prepaidReceived))}</span>
           {prepaidReceived > 0 && (
             <span className="text-[var(--warm-muted)]"> (이용료 {fmtWon(settlement.expected)} − 선납 {fmtWon(prepaidReceived)})</span>
           )}
