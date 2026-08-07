@@ -159,6 +159,11 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   const nonResidentRentDateRaw = nrEnabled ? (formData.get('nonResidentRentDate') as string) : ''
   const nonResidentRentDate    = nonResidentRentDateRaw ? new Date(nonResidentRentDateRaw) : null
 
+  // 비거주 축도 같은 규칙 — 금액만 있고 적용일이 없으면 청구에도 스케줄러에도 안 잡혀 고아 예약으로 남는다.
+  if ((nonResidentScheduled != null) !== (nonResidentRentDate != null)) {
+    return { ok: false, error: '비거주 예약 이용료와 적용 예정일은 함께 입력해야 합니다. (적용일이 없으면 인상·인하가 적용되지 않습니다)' }
+  }
+
   const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } })
 
   await prisma.room.update({
