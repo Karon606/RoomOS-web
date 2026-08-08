@@ -222,6 +222,7 @@ model Property {
   roomStays           RoomStay[]
 
   cleanings          RoomCleaning[]
+  documentFieldOverrides DocumentFieldOverride[]
   @@map("properties")
 }
 
@@ -666,6 +667,7 @@ model LeaseTerm {
   discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
   extraIncomes   ExtraIncome[]
   roomStays      RoomStay[]       // 거주 구간 이력(파생 — 현재 방의 진실은 roomId, 2026-07-28)
+  documentFieldOverrides DocumentFieldOverride[]
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
@@ -1536,6 +1538,31 @@ model ResidenceCertFile {
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("residence_cert_files")
+}
+
+// 발급 서류 표시값 오버라이드 — 서류별 한 행(운영자 승인 2026-08-08).
+// 세 서류는 서로 다른 사실을 말하므로 값을 공유하지 않는다. 계약서는 별도 칸
+// (LeaseTerm.contractFieldOverrides)을 그대로 쓰고, 나머지 서류가 이 테이블을 쓴다.
+// 서류별로 행을 나눈 이유 — 칼럼 하나에 모으면 두 서류 동시 저장에서 lost update 가 나고,
+// 서류별 updatedAt 이 없어 "언제 저장한 값인가"를 말해 줄 수 없다.
+// fields 는 sparse JSON 이고 자동값과 같아진 키는 저장되지 않는다(lib/documentFieldOverrides 가 정본).
+model DocumentFieldOverride {
+  id          String   @id @default(uuid()) @db.Uuid
+  docType     String                              // 'RESIDENCE_CERT'
+  fields      Json                                // sparse — 존재하는 키만 자동값을 덮는다
+  updatedBy   String?  @db.Uuid                   // 마지막으로 저장한 운영자 user id
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  leaseTermId String    @db.Uuid
+  leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+
+  propertyId  String   @db.Uuid
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([leaseTermId, docType])
+  @@index([propertyId, docType])
+  @@map("document_field_overrides")
 }
 
 // 월세 영수증 — 입실자별 발급 PDF (외국인등록증 신청용 등). 실거주 확인서와 동일 구조.
