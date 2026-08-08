@@ -26,18 +26,23 @@ export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택',
   maxDate, minDate, monthOnly, disabled, className, style,
 }: DatePickerProps) {
+  // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19).
+  // 아래 뷰 기본값·'올해로'도 같은 기준을 쓴다 — new Date() 는 서버(UTC)와 기기(KST)가 갈려
+  // 연말 새벽에 달력이 지난해로 열리고 하이드레이션도 어긋난다.
+  const todayStr      = kstYmdStr()
+  const todayYear     = parseInt(todayStr.slice(0, 4), 10)
+  const todayMonthIdx = parseInt(todayStr.slice(5, 7), 10) - 1
+
   const [open, setOpen]         = useState(false)
   const [view, setView]         = useState<ViewMode>('day')
-  const [viewYear, setViewYear] = useState(() => value ? parseInt(value.slice(0, 4)) : new Date().getFullYear())
-  const [viewMonth, setViewMonth] = useState(() => value ? parseInt(value.slice(5, 7)) - 1 : new Date().getMonth())
+  const [viewYear, setViewYear] = useState(() => value ? parseInt(value.slice(0, 4)) : todayYear)
+  const [viewMonth, setViewMonth] = useState(() => value ? parseInt(value.slice(5, 7)) - 1 : todayMonthIdx)
   const [yearBase, setYearBase] = useState(() => {
-    const y = value ? parseInt(value.slice(0, 4)) : new Date().getFullYear()
+    const y = value ? parseInt(value.slice(0, 4)) : todayYear
     return Math.floor(y / 12) * 12
   })
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
   const triggerRef = useRef<HTMLButtonElement>(null)
-  // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19)
-  const todayStr   = kstYmdStr()
 
   // 외부에서 value가 바뀌면 뷰 동기화
   useEffect(() => {
@@ -252,11 +257,11 @@ export function DatePicker({
               })}
             </div>
             {/* 올해로 이동 / (월 단위) 초기화 */}
-            {(viewYear !== new Date().getFullYear() || (monthOnly && value)) && (
+            {(viewYear !== todayYear || (monthOnly && value)) && (
               <div className="mt-2 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
-                {viewYear !== new Date().getFullYear() && (
+                {viewYear !== todayYear && (
                   <button
-                    onClick={() => setViewYear(new Date().getFullYear())}
+                    onClick={() => setViewYear(todayYear)}
                     className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors"
                     style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
                     올해로
@@ -306,7 +311,7 @@ export function DatePicker({
             </div>
             {/* 현재 연도 범위로 이동 */}
             {(() => {
-              const thisYear = new Date().getFullYear()
+              const thisYear = todayYear
               const thisBase = Math.floor(thisYear / 12) * 12
               return thisBase !== yearBase ? (
                 <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>

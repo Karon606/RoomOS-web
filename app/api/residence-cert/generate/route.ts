@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { fillResidenceCertSeoul, type ResidenceCertFields } from '@/lib/residenceCertOverlay'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // pdf-lib 는 가볍고 빠름 — puppeteer 불필요. nodejs runtime(Buffer·googleapis) 필요.
 export const runtime = 'nodejs'
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
       leaseTermId = lease?.id ?? null
     }
 
-    const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
+    const issueDate = body.fields.issueDate || kstYmdStr()   // 발급일 기본값은 KST — UTC 로 자르면 KST 00~09 시에 어제 날짜로 발급된다
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `실거주확인서_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
     const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')

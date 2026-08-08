@@ -9,7 +9,7 @@ import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
-import { kstMonthStr, kstYmd } from '@/lib/kstDate'
+import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -590,7 +590,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   function calcDaysOverdue(dueDay: string | null): number | null {
     if (!dueDay) return null
-    const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
+    // KST 기준 오늘 (서버 UTC와 시간대 차이로 연체일이 하루 어긋나는 것 방지 — 형제 calcDaysOverdueForMonth 와 같은 문법)
+    const { year: ty, month: tm, day: td } = kstYmd()
+    const todayCopy = new Date(ty, tm - 1, td)
     if (dueDay.includes('-')) {
       // 다음달 지정 전체 날짜 (YYYY-MM-DD)
       const dueDate = new Date(dueDay + 'T00:00:00')
@@ -1260,8 +1262,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // 잠재 고객 연락(D-14) — 입주 희망일 2주 전부터 빈방 가능 여부 연락 안내(운영자 기준 2026-07-10)
   {
-    const t0 = new Date(); t0.setHours(0, 0, 0, 0)
-    const leadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
+    // KST 오늘의 UTC 자정 — moveInDate 는 @db.Date(UTC 자정)라 같은 기준끼리 비교해야 한다.
+    // 로컬 자정이면 서버(UTC)에서 KST 00~09 시에 아직 어제라 D-14 알림이 하루 늦게 뜬다.
+    const t0 = new Date(`${kstYmdStr()}T00:00:00.000Z`)
+    const leadDays =(await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
     const contactLeases = await prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,

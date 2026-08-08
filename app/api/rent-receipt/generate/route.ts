@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { buildRentReceiptPdf, type RentReceiptFields } from '@/lib/rentReceiptPdf'
+import { kstYmdStr } from '@/lib/kstDate'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
     const businessName = biz.name || property?.name || ''
     const bizLine1 = [biz.registrationNo ? `사업자등록번호 ${biz.registrationNo}` : null, biz.ceoName ? `대표 ${biz.ceoName}` : null].filter(Boolean).join(' · ')
     const bizLine2 = [biz.address, property?.phone ? `T. ${property.phone}` : null].filter(Boolean).join(' · ')
-    const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
+    const issueDate = body.fields.issueDate || kstYmdStr()   // 발급일 기본값은 KST — UTC 로 자르면 KST 00~09 시에 어제 날짜로 발급된다
     // 발행번호 = 발행일-발행순서 (영업장별 일련, v2.0 §26).
     //
     // **미리보기에는 번호를 찍지 않는다.** 종전에는 미리보기·보내기에도 같은 번호가 나가서

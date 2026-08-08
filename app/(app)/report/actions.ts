@@ -569,8 +569,8 @@ export type PropertyDiagnostics = {
 
 async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
   const { propertyId } = await getPropertyId()
-  const now = new Date()
-  const asOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const now = new Date()   // 아래 '몇 개월 전' 구간 계산용 — 순간 시각이라 타임존 무관
+  const asOfMonth = kstMonthStr()   // 진단 기준월은 KST — 서버(UTC) 로컬이면 매월 1일 새벽에 지난달로 진단된다
 
   // 점유율 — 공실·분모에서 집계 제외(창고·사무실, lib/vacancy 정본) 반영. 대시보드 KPI 와 동일 정의(신고 9d844226)
   const [totalRooms, occupiedRooms, vacantRooms, excludedRooms] = await Promise.all([
@@ -856,6 +856,6 @@ export async function getAvailableYears(): Promise<string[]> {
   for (const e of exps) years.add(String(new Date(e.date).getFullYear()))
   for (const i of incs) years.add(String(new Date(i.date).getFullYear()))
   const arr = Array.from(years).sort((a, b) => Number(b) - Number(a))
-  if (arr.length === 0) arr.push(String(new Date().getFullYear()))
+  if (arr.length === 0) arr.push(kstMonthStr().slice(0, 4))   // 데이터가 없을 때의 기본 연도도 KST
   return arr
 }

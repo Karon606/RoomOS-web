@@ -2,6 +2,7 @@ import { getExpenses, getExtraIncomes, getFinancialAccounts, getRecurringExpense
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
+import { kstMonthStr } from '@/lib/kstDate'
 
 // 'income'(부가 수익)은 2026-07-02 수납관리(/rooms?tab=income)로 이동 — 여기선 더 이상 유효 탭 아님.
 type FinTab = 'expense' | 'assets' | 'deposit' | 'reserve'
@@ -17,9 +18,7 @@ export default async function FinancePage({
     tab === 'expense' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
       ? tab
       : undefined
-  const now = new Date()
-  const targetMonth = month ??
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const targetMonth = month ?? kstMonthStr()   // 기본 조회월은 KST — 서버(UTC) 로컬이면 매월 1일 KST 00~09 시에 지난달이 열린다
 
   const [y, m] = targetMonth.split('-').map(Number)
   const prevMonthDate = new Date(y, m - 2, 1)

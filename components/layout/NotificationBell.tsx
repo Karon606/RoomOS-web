@@ -11,6 +11,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { getMyAlerts } from '@/app/(app)/dashboard/alertActions'
 import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
 import { useNavRouter } from '@/lib/useNavRouter'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // 카테고리별 점 색 (대시보드 알림 톤과 맞춤)
 const DOT: Record<AlertCategory, string> = {
@@ -25,10 +26,8 @@ const DOT: Record<AlertCategory, string> = {
 }
 
 const READ_KEY = 'stayeum_alert_read'
-const todayStr = () => {
-  const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
-}
+// 읽음 맵의 날짜 키 — KST 정본. 기기 로컬로 만들면 해외 기기·SSR(UTC)에서 하루가 어긋난다.
+const todayStr = () => kstYmdStr()
 function loadReadMap(): Record<string, string> {
   if (typeof window === 'undefined') return {}
   try { return JSON.parse(localStorage.getItem(READ_KEY) || '{}') } catch { return {} }

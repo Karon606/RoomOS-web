@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
+import { kstMonthStr } from '@/lib/kstDate'
 import { billForLeaseMonth } from '@/lib/billing'
 
 function fmtDate(d: Date | null | undefined): string {
@@ -229,8 +230,7 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const targetMonth = searchParams.get('month') ??
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const targetMonth = searchParams.get('month') ?? kstMonthStr()   // 기본 내보내기 달은 KST(클라 ExportButton 과 같은 기준)
   const scope = (searchParams.get('scope') ?? 'month') as 'month' | 'year' | 'all'
 
   const [yyyy, mm] = targetMonth.split('-').map(Number)
