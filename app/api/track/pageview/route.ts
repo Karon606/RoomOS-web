@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { parseUA, categorizeReferrer } from '@/lib/tracking/uaParse'
 import { lookupGeo } from '@/lib/tracking/geo'
 import { isKnownSlug, rateLimited, clientIp } from '@/lib/tracking/guard'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 클라이언트 스크립트에서 POST.
 // 익명 집계 위주(IP·UA는 해시 후 폐기). closeup(체류·스크롤)은 /api/track/closeup 으로.
@@ -34,7 +35,7 @@ function detectBot(ua: string | null): boolean {
 }
 
 function visitorHash(ip: string | null, ua: string | null, slug: string): string {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = kstYmdStr()   // 일 버킷은 KST — UTC 로 자르면 하루 경계가 KST 09 시가 된다
   return createHash('sha256').update(`${today}|${ip ?? ''}|${ua ?? ''}|${slug}`).digest('hex').slice(0, 16)
 }
 

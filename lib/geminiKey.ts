@@ -5,6 +5,7 @@
 
 import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { kstMonthStr } from '@/lib/kstDate'
 
 export const FREE_MONTHLY_AI_LIMIT = 10
 
@@ -35,7 +36,9 @@ export async function consumeGeminiAccess(): Promise<GeminiAccess> {
   if (!shared) return { ok: false, error: 'AI 기능이 아직 설정되지 않았습니다. 환경설정의 AI 설정에서 본인 API 키를 등록해 주세요.' }
   if (!propertyId) return { ok: true, apiKey: shared, own: false, remaining: null }
 
-  const month = new Date().toISOString().slice(0, 7)
+  // 월 버킷은 KST 기준 — UTC 로 자르면 매월 1일 KST 00~09 시에 새 달로 일찍 넘어가
+  // 그 9시간 동안 한도가 리셋된다(사용 현황을 보여주는 settings/actions 두 자리와 같은 기준이어야 한다).
+  const month = kstMonthStr()
   const row = await prisma.aiUsage.upsert({
     where: { propertyId_month: { propertyId, month } },
     create: { propertyId, month, count: 1 },

@@ -14,6 +14,7 @@ import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
+import { kstMonthStr } from '@/lib/kstDate'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
 } from '@/lib/google-drive'
@@ -1430,7 +1431,7 @@ export async function getAiQuotaStatus(): Promise<{ own: boolean; used: number; 
   const propertyId = await getPropertyId()
   const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { owner: { select: { geminiApiKey: true } } } })
   if (p?.owner?.geminiApiKey?.trim()) return { own: true, used: 0, remaining: 0, limit: FREE_MONTHLY_AI_LIMIT }
-  const month = new Date().toISOString().slice(0, 7)
+  const month = kstMonthStr()   // 소모 쪽(lib/geminiKey)과 같은 KST 월 버킷이어야 잔여 표시가 어긋나지 않는다
   const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } })
   const used = Math.min(row?.count ?? 0, FREE_MONTHLY_AI_LIMIT)
   return { own: false, used, remaining: FREE_MONTHLY_AI_LIMIT - used, limit: FREE_MONTHLY_AI_LIMIT }
@@ -1443,7 +1444,7 @@ export async function getAiSettings(): Promise<AiSettings> {
     select: { ownerId: true, owner: { select: { geminiApiKey: true, geminiModel: true } } },
   })
   const key = p?.owner?.geminiApiKey?.trim() || null
-  const month = new Date().toISOString().slice(0, 7)
+  const month = kstMonthStr()   // 소모 쪽(lib/geminiKey)과 같은 KST 월 버킷이어야 잔여 표시가 어긋나지 않는다
   const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } }).catch(() => null)
   return {
     keyMasked: key ? `${key.slice(0, 6)}${'*'.repeat(Math.max(4, key.length - 6))}` : null,
