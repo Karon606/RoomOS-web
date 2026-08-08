@@ -1255,9 +1255,8 @@ export async function checkoutWithDepositRefund(params: {
     if (!checkoutRes.ok) return checkoutRes
 
     if (lease.depositAmount > 0) {
-      const today = new Date()
-      const dateStr = params.moveOutDate
-        || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      // 퇴실일이 없으면 오늘 — 서버(UTC) 로컬로 만들면 KST 00~09 시에 환불 기록이 어제 날짜로 남는다.
+      const dateStr = params.moveOutDate || kstYmdStr()
       const refundRes = await recordDepositReturn({
         leaseTermId:    params.leaseTermId,
         tenantId:       params.tenantId,

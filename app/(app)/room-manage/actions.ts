@@ -16,6 +16,7 @@ import {
   deleteFromDrive,
 } from '@/lib/google-drive'
 import { looksLike360 } from '@/lib/driveImage'
+import { scheduledRentApplyCutoff } from '@/lib/billing'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -503,8 +504,9 @@ export async function reorderRoomPhotos(roomId: string, photoIds: string[]): Pro
 export async function applyScheduledRents() {
   const { propertyId } = await getPropertyId()
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // '오늘'은 KST 기준(lib/billing 정본). 로컬 자정이면 서버(UTC)에서 KST 00~09 시 동안
+  // 아직 어제라, 적용일 당일 아침 9시까지 인상이 안 걸렸다.
+  const today = scheduledRentApplyCutoff()
 
   // 날짜가 오늘 이전이고 scheduledRent가 있는 호실 조회
   const rooms = await prisma.room.findMany({

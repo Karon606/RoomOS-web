@@ -6,6 +6,7 @@
 //   ③ 현재 월세(할인 반영) fallback — record 없는 달
 // 여기 규칙을 바꾸면 세 화면·푸시·수납 등록이 한 번에 같이 바뀐다.
 import { RentDiscountInput, discountedRent } from './rentDiscount'
+import { kstYmdStr } from './kstDate'
 
 export type BillingLeaseFields = {
   rentAmount: number
@@ -69,6 +70,15 @@ export function billForLeaseMonth(
     if (inMonth && mon !== inMonth) return 0
   }
   return discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
+}
+
+// 예약 가격변경(scheduledRent/nonResidentScheduled)이 '오늘 적용되었는가'를 가르는 경계.
+// rentUpdateDate·nonResidentRentDate 는 @db.Date 라 UTC 자정 Date 로 읽힌다. 그래서 경계도
+// KST 오늘의 UTC 자정으로 맞춘다 — 같은 기준끼리 비교해야 실행 환경 타임존이 결과에 안 섞인다.
+// 로컬 자정(new Date().setHours(0,0,0,0))을 쓰면 서버(UTC)에서는 KST 00~09 시에 아직 어제라
+// 적용일 당일 아침 9시까지 인상이 안 걸리고, KST 기기에서는 하루가 통째로 밀린다.
+export function scheduledRentApplyCutoff(now: Date = new Date()): Date {
+  return new Date(`${kstYmdStr(now)}T00:00:00.000Z`)
 }
 
 // 'YYYY-MM' 추출 (Date | 'YYYY-MM-DD' | null)

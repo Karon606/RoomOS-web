@@ -7,12 +7,13 @@
 //   6월에 미리 내는 7월분(선납)도 인상가가 맞다.
 //
 // 이 파일이 덮는 것 — 경계(전월·적용월·다음달), 선납과 락인의 우선순위, 락 되쓰기,
-// 퇴실·재입실 새 계약, 같은 방의 NON_RESIDENT 공존(418호 유형), 예약 취소·변경.
+// 퇴실·재입실 새 계약, 같은 방의 NON_RESIDENT 공존(418호 유형), 예약 취소·변경,
+// 그리고 스케줄러 적용 경계가 KST 자정인지(§8 — 실행 TZ 를 타지 않아야 한다).
 //
 // 알려진 결함(knownFail)은 통과로 세지 않고 아래 목록에 모아 보고한다. 현재 동작이 고쳐지면
 // 자동으로 통과로 잡히며 '승격 필요' 안내가 뜬다 — verify 체인은 어느 쪽이든 깨지지 않는다.
 
-import { billForLeaseMonth, monthOfDate, unpaidForLease, type UnpaidRecord } from '../lib/billing'
+import { billForLeaseMonth, monthOfDate, scheduledRentApplyCutoff, unpaidForLease, type UnpaidRecord } from '../lib/billing'
 
 let pass = 0
 let fail = 0
@@ -327,6 +328,40 @@ function rewriteLocksForSchedule(lease: LeaseLite, recs: Rec[], prev: RoomSched,
   // 적용 완료 후에도 과거 달은 락인이 지킨다(소급 재계산 금지).
   eq('적용 완료: 과거 달은 락인이 구가를 지킨다', billForLeaseMonth(
     { rentAmount: NEW, status: 'ACTIVE', room: { scheduledRent: null, rentUpdateDate: null } }, '2026-05', OLD), OLD)
+}
+
+// ── 8. 적용 경계는 KST 자정 — applyScheduledRents 가 언제부터 baseRent 로 옮기는가 ──
+// 청구액(billForLeaseMonth)은 월 비교라 스케줄러와 무관하지만, 스케줄러가 늦으면
+// lease.rentAmount·room.baseRent 로 표시하는 자리(고객관리 리스트·계약서)가 옛 금액으로 남는다.
+// scheduledRentApplyCutoff 는 KST 오늘의 UTC 자정을 낸다 — @db.Date 가 UTC 자정이라 같은 기준끼리 비교된다.
+// 종전 결함: new Date().setHours(0,0,0,0) 는 실행 환경 로컬이라
+//   서버(UTC)  → KST 00~09 시에 아직 어제, 적용일 당일 아침 9시까지 미적용
+//   기기(KST)  → 로컬 자정이 UTC 자정보다 9시간 이르러 하루가 통째로 밀림
+// 아래 케이스는 실행 TZ 를 타지 않는다(kstYmdStr 이 Intl Asia/Seoul 로 뽑으므로).
+{
+  const UPD_DATE = new Date('2026-07-01T00:00:00.000Z')          // @db.Date 로 읽힌 7/1
+  const applies = (now: Date) => UPD_DATE <= scheduledRentApplyCutoff(now)
+  const cut = (now: Date) => scheduledRentApplyCutoff(now).toISOString()
+
+  // KST 새벽 창(00:00~08:59) — 여기가 종전 결함이 발화하던 구간이다.
+  eq('KST 경계: 6/30 23:59 KST 는 미적용', applies(new Date('2026-06-30T14:59:59.000Z')), false)
+  eq('KST 경계: 7/1 00:00 KST 부터 적용', applies(new Date('2026-06-30T15:00:00.000Z')), true)
+  eq('KST 경계: 7/1 02:14 KST(신고 창) 적용', applies(new Date('2026-06-30T17:14:00.000Z')), true)
+  eq('KST 경계: 7/1 08:59 KST 적용', applies(new Date('2026-06-30T23:59:59.000Z')), true)
+  eq('KST 경계: 7/1 09:00 KST 적용', applies(new Date('2026-07-01T00:00:00.000Z')), true)
+  eq('KST 경계: 7/1 23:59 KST 적용', applies(new Date('2026-07-01T14:59:59.000Z')), true)
+
+  // 경계값 자체 — UTC 자정으로 정규화되어야 @db.Date 와 어긋나지 않는다.
+  eq('KST 경계: 새벽에도 경계는 KST 오늘의 UTC 자정', cut(new Date('2026-06-30T17:14:00.000Z')), '2026-07-01T00:00:00.000Z')
+  eq('KST 경계: 낮에도 같은 경계', cut(new Date('2026-07-01T05:00:00.000Z')), '2026-07-01T00:00:00.000Z')
+  eq('KST 경계: 전날 낮은 전날 경계', cut(new Date('2026-06-30T05:00:00.000Z')), '2026-06-30T00:00:00.000Z')
+
+  // 월 경계(1일 새벽) — 인상 적용월과 조회월이 같이 밀리던 자리.
+  eq('KST 경계: 8/1 00:30 KST 는 8/1 경계', cut(new Date('2026-07-31T15:30:00.000Z')), '2026-08-01T00:00:00.000Z')
+
+  // 스케줄러가 아직 안 돌았어도 그 달 청구는 이미 인상가여야 한다(정본 규칙 재확인).
+  eq('KST 경계: 적용 전이어도 7월 청구는 인상가', billForLeaseMonth(
+    { rentAmount: OLD, status: 'ACTIVE', room: { scheduledRent: NEW, rentUpdateDate: UPD_DATE } }, '2026-07', null), NEW)
 }
 
 console.log(`\n예약 임대료 인상 회귀: ${pass} 통과 / ${fail} 실패 / ${knownFails.length} 알려진 결함`)
