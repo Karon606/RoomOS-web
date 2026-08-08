@@ -2841,3 +2841,13 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **반경**: Modal 사용 27개 파일. 셸 밖 모달 12곳이 이제 키보드 보정을 얻는다(Modal 자체 소유라 과거 노트가 경고한 '이관 시 보정 상실' 은 발생 안 함). .app-main·바텀시트·ConfirmDialog 등은 무접점.
 - **미규명 1건**: 8/8 관측 상태(--modal-vvh 통째 미적용)의 기전은 못 찾았다. 추측 수정 대신 안전망만 걸었다. 실기에서 모달 하단 액션바가 키보드 바로 위에 붙는지로 판별한다.
 - knowledge/mobile-scroll-viewport.md 에 "보이는 띠는 높이만이 아니라 위치도 갖는다" 절 신설, 716e7b0c 절에 적용 범위 한정 추가.
+
+## 2026-08-09 (2) — 새벽 하이드레이션 봉합 + 날짜 입력 정본화 (신고 d4bd3aa5·9c09ca50·7429108d, 234566e·49f69b2)
+- **#418 원인**: `new Date()` 로 오늘을 만들면 서버(UTC)와 기기(KST)가 갈린다. **KST 00~09시 창**에만 발화해 여태 안 걸렸다. 신고 시각 KST 01:13(첨부 상태바 1:11)이 결정적 증거. 퇴실일 8/19 가 서버 D-11 / 기기 D-10.
+- **처방**: `lib/kstDate.ts` 에 `kstDaysUntil()` 신설(두 YYYY-MM-DD 를 UTC 자정으로 파싱, 실행 TZ 무관). `checkoutSubText` 외에 **조사에 없던 인라인 6곳**(RoomsClient 의 입주·퇴실·납부 D-day 카드/표 쌍둥이, getDueInfo 경과일 정본)이 더 있었다 — 한 곳만 고쳤으면 같은 퇴실일이 계속 갈렸다. MonthSelector·MonthSync·ExportButton·DataButtons·PendingReceiptSection 등 전수 봉합.
+- **실증**: 시계를 신고 시각 포함 4개 순간에 고정하고 TZ=UTC / TZ=Asia/Seoul 대조 — 수정 후 12행 전부 일치, 수정 전은 D-12 대 D-11 로 갈림. 월 축도 8/31 16:13Z 에 2026-08 대 2026-09 로 갈림.
+- **감지망 신설**: `scripts/check-ssr-local-now.mjs` → verify:fast. 하이드레이션이 갈릴 수 있는 파일만 보도록 좁혀(page/layout/route/actions·'use server'·prisma 실제 import 는 서버 전용이라 제외) allowlist 0개. 서명 3종 역주입으로 4건 탐지 확인 후 복원.
+- **날짜 입력**: 자재 4곳을 정본 DatePicker 로, `key` 제거(리마운트가 열린 피커를 파괴하던 근원). DatePicker 에 `disabled` 선택 인자 추가 — 네이티브가 갖던 `disabled={pending}` 이 없으면 저장 중 재입력으로 이중 저장이 된다.
+- **조사 오판 정정**: TenantClient 퇴실 예정일은 이미 정본이었다(`Field type="date"` 가 DateFieldInner → DatePicker 를 렌더). 퇴실일 오염 경로는 없었다.
+- **디자이너 패스**: 나눠 배정 칸이 정본을 쓰면서도 className 이 없어 테두리 없는 맨 텍스트였다. 넷 다 DATE_FIELD_CLS 로 통일(형제 셀렉트와 같은 40px, 모바일 44pt). '비우기' 는 1탭이라 유지(내장 초기화는 2탭).
+- **남은 것(별도 승인)**: `applyScheduledRents`(예정 임대료 적용, loop.md 4번), dashboard 연체일·D-14 알림(서버 전용이라 #418 은 없지만 KST 00~09시 판정이 하루 어긋남), `lib/geminiKey.ts` 월 버킷이 UTC 월(매월 1일 9시간 일찍 넘어감), 서류 폼 3곳 date 입력.
