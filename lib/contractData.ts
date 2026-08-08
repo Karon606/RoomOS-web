@@ -3,7 +3,7 @@
 import 'server-only'
 import { kstYmdStr } from '@/lib/kstDate'
 import prisma from '@/lib/prisma'
-import { buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
+import { driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
@@ -122,8 +122,11 @@ export async function buildContractData(tenantId: string, propertyId: string): P
     phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
     stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
-    // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
-    logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
+    // 로고도 도장과 같이 바이트를 심는다. Drive 썸네일 URL 은 302 리디렉트 + 공개 권한이 필요한데,
+    // PDF 를 그리는 헤드리스 크로미움에는 쿠키가 없어 못 받는다. 그러면 setContent 의 networkidle0
+    // 이 영영 안 와서 30초 타임아웃으로 발급 자체가 실패한다(긴급 신고 e7c09f2d).
+    // D페이즈(2026-08-03)에 도장만 바꾸고 로고가 남아 있던 같은 클래스의 미완 수정이다.
+    logoImageUrl: property?.logoDriveFileId ? await driveImageDataUrl(property.logoDriveFileId) : null,
     refundClauseInContract: body.refundClauseInContract,
     disposalConsent: resolveDisposalConsent(body.disposalConsent),
     tenant: {

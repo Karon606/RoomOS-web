@@ -7,7 +7,7 @@ import chromium from '@sparticuz/chromium'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
-import { uploadToDrive, buildDriveThumbnailUrl, driveImageDataUrl } from '@/lib/google-drive'
+import { uploadToDrive, driveImageDataUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
@@ -177,7 +177,8 @@ export async function POST(req: Request) {
       businessInfo: body_.businessInfo ?? EMPTY_BUSINESS_INFO,
       phone: property?.phone ?? null,
       contractNo,
-      logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
+      // 로고도 바이트 임베드 — 외부 URL 이면 헤드리스가 못 받아 networkidle0 이 안 온다(신고 e7c09f2d).
+      logoImageUrl: property?.logoDriveFileId ? await driveImageDataUrl(property.logoDriveFileId) : null,
       stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
       refundClauseInContract: body_.refundClauseInContract,
       disposalConsent: resolveDisposalConsent(body_.disposalConsent),
