@@ -1,6 +1,6 @@
 'use client'
 
-// 방 청소 이력 위젯 — 예정 등록·완료 처리·되돌리기 (2026-08-05, 신고 b21e4e98).
+// 방 청소 이력 위젯 — 예정 등록·날짜 변경·완료 처리·되돌리기 (2026-08-05, 신고 b21e4e98).
 //
 // "어떤 방이 언제 청소했고 청소를 안 했는지 헷갈린다" 가 신고 본문이다.
 // 이 위젯은 돈을 만들지 않는다. 비용 연결은 2단계다.
@@ -16,6 +16,7 @@ import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
   getRoomCleanings, getCleaningFundStatus, createCleaning, completeCleaning, reopenCleaning, skipCleaning, deleteCleaning,
+  rescheduleCleaning,
 } from '@/app/(app)/room-manage/cleaningActions'
 import {
   CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL,
@@ -34,6 +35,12 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [reason, setReason] = useState<CleaningReason>('CHECKOUT')
   const [scheduled, setScheduled] = useState(kstYmdStr())
   const [doneFor, setDoneFor] = useState<string | null>(null)
+  // 완료일은 오늘로 못 박지 않는다 — 어제 한 청소를 오늘 입력하면 이력이 하루 틀어지고,
+  // 비용을 함께 넣은 건은 지출 date 까지 같이 틀어진다(신고 e1ad1c5b).
+  const [doneDate, setDoneDate] = useState(kstYmdStr())
+  // 예정일 변경 대상 행. 등록 후에는 바꿀 수단이 아예 없었다(같은 신고).
+  const [reschedFor, setReschedFor] = useState<string | null>(null)
+  const [reschedDate, setReschedDate] = useState(kstYmdStr())
   const [performer, setPerformer] = useState<CleaningPerformer>('SELF')
   const [performerName, setPerformerName] = useState('')
   const [cost, setCost] = useState('')
@@ -164,6 +171,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                       </button>
                     ))}
                   </div>
+                  <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+                    완료일
+                    {/* 예정 등록 폼과 같은 정본 DatePicker. 앞으로 한 청소는 없으므로 오늘까지만 고를 수 있다. */}
+                    <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className="text-xs" />
+                  </div>
                   {performer !== 'SELF' && (
                     <>
                       <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
@@ -206,18 +218,37 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     </>
                   )}
                   <div className="flex gap-2">
-                    <Btn variant="primary" size="sm" disabled={pending}
+                    <Btn variant="primary" size="sm" disabled={pending || !doneDate}
                       onClick={() => {
                         const c = performer === 'SELF' ? 0 : Number(cost || 0)
                         const fromFund = useFund && r.reason === 'CHECKOUT' && c > 0
-                        run(() => completeCleaning({ id: r.id, doneDate: kstYmdStr(), performer, performerName, cost: c, fromCleaningFund: fromFund }),
+                        // 비용을 넣은 건은 지출 date 도 이 날짜를 따라간다(completeCleaning 이 생성·수정 양쪽에서 doneDate 를 쓴다).
+                        run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund }),
                           fromFund ? '청소 완료 · 받은 청소비에서 부담으로 기록됨'
                             : c > 0 ? '청소 완료 · 지출도 함께 기록됨' : '청소 완료로 기록됨')
                         setDoneFor(null); setPerformerName(''); setCost(''); setUseFund(false)
                       }}>
-                      오늘 완료
+                      완료
                     </Btn>
                     <Btn variant="secondary" size="sm" onClick={() => { setDoneFor(null); setUseFund(false) }}>취소</Btn>
+                  </div>
+                </div>
+              ) : reschedFor === r.id ? (
+                /* 예정일 변경 — 완료 입력과 같은 자리, 같은 문법. 예정 상태에서만 뜬다. */
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+                    예정일
+                    <DatePicker value={reschedDate} onChange={setReschedDate} className="text-xs" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Btn variant="primary" size="sm" disabled={pending || !reschedDate}
+                      onClick={() => {
+                        run(() => rescheduleCleaning({ id: r.id, scheduledDate: reschedDate }), '예정일 변경됨')
+                        setReschedFor(null)
+                      }}>
+                      저장
+                    </Btn>
+                    <Btn variant="secondary" size="sm" onClick={() => setReschedFor(null)}>취소</Btn>
                   </div>
                 </div>
               ) : (
@@ -226,13 +257,17 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     <>
                       <button type="button"
                         onClick={() => {
-                          setDoneFor(r.id); setPerformer('SELF'); setPerformerName(''); setCost('')
+                          setReschedFor(null)
+                          setDoneFor(r.id); setPerformer('SELF'); setPerformerName(''); setCost(''); setDoneDate(kstYmdStr())
                           // 받아둔 돈이 있거나(실현) 받기로 한 돈이 있으면(계약) 기본 켜짐 —
                           // 퇴실 청소비는 그 돈으로 내는 것이 원칙이라 매번 체크하게 두면 놓친다.
                           const f = fundOf(leaseOf(r))
                           setUseFund(r.reason === 'CHECKOUT' && !!f && (f.realizedIncome > 0 || f.contractFee > 0))
                         }}
                         className="text-xs text-[var(--coral)] font-medium">완료 처리</button>
+                      <button type="button"
+                        onClick={() => { setDoneFor(null); setReschedFor(r.id); setReschedDate(r.scheduledDate ?? kstYmdStr()) }}
+                        className="text-xs text-[var(--warm-muted)]">날짜 변경</button>
                       <button type="button" disabled={pending}
                         onClick={async () => {
                           if (!(await confirmDialog({ title: '이 청소를 안 하기로 할까요?', message: '기록은 남고 상태만 바뀝니다. 다시 되돌릴 수 있습니다.', confirmLabel: '안 하기로', level: 'caution' }))) return

@@ -236,6 +236,34 @@ export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKep
   }
 }
 
+/**
+ * 예정일 변경. **예정 상태에서만.**
+ *
+ * 완료·안 함 건의 행에 보이는 날짜는 완료일이고 그것은 지출 date 와 짝이라
+ * 여기서 건드리면 두 날짜가 조용히 갈린다. 완료일을 고치려면 완료 처리를 다시 하면 되고,
+ * 그 경로는 completeCleaning 이 지출 date 까지 함께 옮긴다.
+ */
+export async function rescheduleCleaning(input: { id: string; scheduledDate: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomCleaning.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: { id: true, status: true },
+    })
+    if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
+    if (cur.status !== 'PLANNED') return { ok: false, error: '예정 상태에서만 예정일을 바꿀 수 있습니다.' }
+    await prisma.roomCleaning.update({
+      where: { id: input.id },
+      data: { scheduledDate: new Date(`${input.scheduledDate}T00:00:00`) },
+    })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
+  }
+}
+
 /** 안 하기로 함. 목록에서 지우지 않고 상태로 남긴다 — 지우면 왜 안 했는지가 사라진다. */
 export async function skipCleaning(id: string, memo?: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
