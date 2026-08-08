@@ -2851,3 +2851,12 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **조사 오판 정정**: TenantClient 퇴실 예정일은 이미 정본이었다(`Field type="date"` 가 DateFieldInner → DatePicker 를 렌더). 퇴실일 오염 경로는 없었다.
 - **디자이너 패스**: 나눠 배정 칸이 정본을 쓰면서도 className 이 없어 테두리 없는 맨 텍스트였다. 넷 다 DATE_FIELD_CLS 로 통일(형제 셀렉트와 같은 40px, 모바일 44pt). '비우기' 는 1탭이라 유지(내장 초기화는 2탭).
 - **남은 것(별도 승인)**: `applyScheduledRents`(예정 임대료 적용, loop.md 4번), dashboard 연체일·D-14 알림(서버 전용이라 #418 은 없지만 KST 00~09시 판정이 하루 어긋남), `lib/geminiKey.ts` 월 버킷이 UTC 월(매월 1일 9시간 일찍 넘어감), 서류 폼 3곳 date 입력.
+
+## 2026-08-09 (3) — 서버 KST 판정 전수 봉합 (99e907a·bde9939·4cec6e0·9c65fea)
+- **지목 3곳 외 12곳이 더 나왔다.** 케이스가 아니라 클래스를 봉합해야 한다는 원칙이 두 번째로 확인됐다(직전 234566e 에서도 1 대 6).
+- **금전(99e907a)**: `applyScheduledRents` 경계가 UTC 자정이라 KST 00~09시에 적용이 안 걸렸다. **청구액은 무영향** — `billForLeaseMonth` 가 scheduledRent·rentUpdateDate 를 직접 읽어 대상월 기준으로 판정하므로 스케줄러와 무관하다(두 개의 월 이용료 소스). 지연되던 것은 lease.rentAmount·room.baseRent 를 그대로 표시하는 고객관리 리스트·계약서. 유실 없음(lte 라 다음 방문에 걸림).
+- **판정(bde9939)**: 연체일이 새벽에 `0일` 대신 **`29일 연체`** 로 나왔다(납부일 1일 계약). 형제 `calcDaysOverdueForMonth` 는 이미 kstYmd 를 써 한쪽만 어긋나 있었다. **서류 발급일 기본값**도 새벽 발급본에 어제 날짜가 찍혔다(영수증 발행번호도 그 날짜 사용) — 관 제출 서류라 영향이 크다. 서버 기본 조회월 4곳은 234566e 가 클라만 고쳐 남아 있던 짝이다.
+- **쿼터(4cec6e0)**: AI 월 버킷이 UTC 월. 소모와 표시 2곳이 같은 식이라 셋을 함께 옮겨야 잔여 표시가 실제와 안 갈린다.
+- **테스트(핵심 산출물)**: `lib/billing.ts` 에 `scheduledRentApplyCutoff(now)` 를 두어 테스트가 복제본이 아니라 **실제 프로덕션 함수**를 덮게 했다. 예약 인상 61 → **72케이스**, 새벽 창 네 순간 고정. 역주입 시 UTC 5건·KST 9건 실패 확인 후 복원, 세 TZ 전부 72 통과.
+- **감지망 확대(9c65fea)**: 서버 전용 제외를 걷었다. **서비스가 한국 전용이라 서버에서 UTC 자정이 정당한 자리는 없다** — 순간 시각은 애초에 서명에 안 걸린다. 전체 스캔 오탐 0. 변수형(`const n = new Date()` 후 성분 추출)과 단독 `getFullYear()` 서명 추가 — 종전 규칙이 NotificationBell 과 DatePicker 7곳을 통과시키고 있었다(연말 새벽에 달력이 지난해로 열림).
+- **기존 데이터 영향 없음(읽기 전용 확인)**: 예약 가격변경 0건, DepositRefund 9건 전수 어긋남 0, AiUsage 1건 무영향. rentAmount != baseRent 3건은 scheduledRent·rentUpdateDate 가 둘 다 null 이라 이 클래스가 아니다(협의가·단기). 손대지 않았다.
