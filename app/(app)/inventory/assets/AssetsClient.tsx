@@ -50,6 +50,12 @@ const specDisp = (it: { specText: string | null; specValue: number | null; specU
 const serializeSpecKey = (it: { specValue: number | null; specUnit: string | null; specText: string | null }) =>
   [it.specValue ?? '', it.specUnit ?? '', it.specText ?? ''].join('␟')
 
+// 배정일 입력 공통 껍데기 — 이 화면의 날짜 칸 넷(일괄 배정·나눠 배정·카드 상세·옮기기)이
+// 같은 문법을 쓰도록 한 곳에 둔다. 값은 정본 DatePicker 가 받는다(네이티브 date 는 iOS 에서
+// 빈 칸을 탭만 해도 오늘이 확정돼 저장이 튀었다, 신고 7429108d).
+// py-2.5 는 형제 셀렉트·수량칸의 h-10(40px)과 같은 높이다. 모바일은 HIG 44pt 를 지킨다.
+const DATE_FIELD_CLS = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-0'
+
 type Target = { kind: 'room' | 'location'; id: string }
 
 export default function AssetsClient({ data, rooms, locations, targetMonth }: {
@@ -1067,11 +1073,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             </div>
           }
         >
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
-            <input type="date" value={batchAssign.assignedAt}
-              onChange={e => setBatchAssign(b => b ? { ...b, assignedAt: e.target.value } : b)}
-              className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            <div className="w-44">
+              <DatePicker value={batchAssign.assignedAt} disabled={pending}
+                onChange={v => setBatchAssign(b => b ? { ...b, assignedAt: v } : b)}
+                className={DATE_FIELD_CLS} />
+            </div>
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
           </div>
           <ul className="space-y-2">
@@ -1126,7 +1134,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             <div className="space-y-3">
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">배정일 <span className="text-[var(--warm-muted)] font-normal">(기본 오늘 · 나중에 수정 가능)</span></span>
-                <DatePicker value={dist.assignedAt} onChange={v => setDist(d => d ? { ...d, assignedAt: v } : d)} />
+                <DatePicker value={dist.assignedAt} disabled={pending}
+                  onChange={v => setDist(d => d ? { ...d, assignedAt: v } : d)}
+                  className={DATE_FIELD_CLS} />
               </label>
               {chips.length > 0 && (
                 <div>
@@ -1339,15 +1349,19 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </div>
               )}
               {(it.roomNo || it.locationName) && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
-                  <input key={it.assignedAt ?? 'none'} type="date" defaultValue={it.assignedAt ?? ''} disabled={pending}
-                    onChange={e => saveAssignedAt(it, e.target.value)}
-                    className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                  {it.assignedAt
-                    ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
-                        className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
-                    : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
+                  {/* 정본 DatePicker. 종전 네이티브 date 는 iOS 에서 빈 칸을 탭하는 순간 오늘을 값으로
+                      확정하고 change 를 쏴서 곧바로 저장됐고, key={assignedAt} 이 바뀌며 input 이
+                      리마운트돼 열려 있던 피커가 닫혔다(신고 7429108d). controlled 라 key 도 뺀다. */}
+                  <div className="w-44">
+                    <DatePicker value={it.assignedAt ?? ''} disabled={pending} placeholder="미상"
+                      onChange={v => saveAssignedAt(it, v)} className={DATE_FIELD_CLS} />
+                  </div>
+                  {it.assignedAt && (
+                    <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
+                      className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">비우기</button>
+                  )}
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">날짜를 고르면 바로 저장돼요</span>
                 </div>
               )}
@@ -1543,9 +1557,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               {!toNone && (
                 <label className="block">
                   <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">배정일 <span className="text-[var(--warm-muted)] font-normal">(기본 오늘 · 나중에 수정 가능)</span></span>
-                  <input type="date" value={move.date} disabled={pending}
-                    onChange={e => setMove(m => m ? { ...m, date: e.target.value } : m)}
-                    className="h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  <DatePicker value={move.date} disabled={pending}
+                    onChange={v => setMove(m => m ? { ...m, date: v } : m)}
+                    className={DATE_FIELD_CLS} />
                 </label>
               )}
               <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">

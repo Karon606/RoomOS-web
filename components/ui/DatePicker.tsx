@@ -17,13 +17,14 @@ interface DatePickerProps {
   maxDate?: string
   minDate?: string
   monthOnly?: boolean             // 월 단위 선택 — 월 뷰에서 시작, 월 클릭 시 'YYYY-MM-01' 반환·닫힘
+  disabled?: boolean              // 저장 진행 중 재입력 차단(네이티브 input 의 disabled 자리를 대신한다)
   className?: string
   style?: React.CSSProperties
 }
 
 export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택',
-  maxDate, minDate, monthOnly, className, style,
+  maxDate, minDate, monthOnly, disabled, className, style,
 }: DatePickerProps) {
   const [open, setOpen]         = useState(false)
   const [view, setView]         = useState<ViewMode>('day')
@@ -47,6 +48,7 @@ export function DatePicker({
   }, [value])
 
   const handleOpen = () => {
+    if (disabled) return
     if (triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect()
       const popW = Math.max(r.width, 280)
@@ -332,7 +334,8 @@ export function DatePicker({
         ref={triggerRef}
         type="button"
         onClick={handleOpen}
-        className={`w-full text-left ${className ?? ''}`}
+        disabled={disabled}
+        className={`w-full text-left disabled:opacity-40 ${className ?? ''}`}
         style={style}
       >
         {displayValue
