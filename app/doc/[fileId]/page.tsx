@@ -12,10 +12,11 @@ export default async function DocPage({
   searchParams,
 }: {
   params: Promise<{ fileId: string }>
-  searchParams: Promise<{ from?: string; tenantId?: string }>
+  // print=1 — 목록의 [인쇄]가 공유 시트를 못 쓰는 환경에서 넘긴 진입(신고 71753b36).
+  searchParams: Promise<{ from?: string; tenantId?: string; print?: string }>
 }) {
   const { fileId } = await params
-  const { from, tenantId } = await searchParams
+  const { from, tenantId, print } = await searchParams
 
   const access = await getPropertyAccess()
   if (!access) notFound()
@@ -30,5 +31,6 @@ export default async function DocPage({
     (await prisma.residenceCertFile.findFirst({ where: { driveFileId: fileId, propertyId, deletedAt: null }, select: { fileName: true } }).catch(() => null))
   if (!owned) notFound()
 
-  return <DocViewer fileId={fileId} from={from} tenantId={tenantId} fileName={owned.fileName.replace(/\.pdf$/i, '')} />
+  return <DocViewer fileId={fileId} from={from} tenantId={tenantId} autoPrint={print === '1'}
+    fileName={owned.fileName.replace(/\.pdf$/i, '')} />
 }

@@ -25,6 +25,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { PrintDocButton } from '@/components/ui/PrintDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
@@ -263,6 +264,10 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
                   <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`}
                     className={btnClass('secondary', 'sm')} />
+                  {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
+                      파일명은 탭이 아니라 그 행의 종류를 따른다 — '다시 작성'과 같은 이유다. */}
+                  <PrintDocButton driveFileId={c.driveFileId} from="rent-receipts"
+                    fileName={`${c.tenantName}_${c.kind === 'deposit' ? '보증금영수증' : '입실료납부확인서'}`} />
                   {/* '다시 작성'은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
                       열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다).
                       종전 라벨 '재발급'은 아무것도 발급하지 않고 작성 화면만 열어 오해를 샀다(2026-08-01 용어 정리). */}

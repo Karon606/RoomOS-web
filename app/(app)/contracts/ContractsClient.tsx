@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { PrintDocButton } from '@/components/ui/PrintDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -239,10 +240,13 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
               onClick={selectMode ? () => toggleSelect(c.id) : undefined}
               {...(!selectMode ? longPress(() => { setSelectMode(true); toggleSelect(c.id) }) : {})}
               className={[
-                'bg-[var(--cream)] border rounded-xl p-3.5 flex items-center gap-3 transition-colors',
+                'bg-[var(--cream)] border rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 transition-colors',
                 selectMode ? 'cursor-pointer select-none' : '',
                 selectMode && sel ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
               ].join(' ')}>
+              {/* 모바일에서 액션을 아래 줄로 내린다 — 형제 2화면(실거주·납부)이 이미 이 문법이고,
+                  이 행만 한 줄을 고집하다 인쇄가 붙으면서 이름 칸이 100px대로 눌렸다(신고 71753b36). */}
+              <div className="min-w-0 flex-1 flex items-start gap-2.5">
               {/* 선택 모드 좌측 체크박스 — §22 InventoryCard 정본(22px r7) */}
               {selectMode && (
                 <span className={[
@@ -274,9 +278,10 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.signedAt)} 서명</p>
               </div>
+              </div>
               {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}
               {!selectMode && (
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
                 {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
                     종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
                 <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
@@ -284,6 +289,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     학습이 안 되고, 데스크톱에서도 다운로드 폴백과 안내 토스트가 있어 실패하지 않는다. */}
                 <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}
                   className={btnClass('secondary', 'sm')} />
+                {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
+                    계약서는 여러 장이라 뷰어를 거치는 비용이 특히 컸다. */}
+                <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서`} from="contracts" />
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                   disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                   {pending && deletingId === c.id ? '삭제 중…' : '삭제'}

@@ -23,6 +23,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { PrintDocButton } from '@/components/ui/PrintDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
@@ -242,6 +243,10 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
                   <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_실거주확인서`}
                     className={btnClass('secondary', 'sm')} />
+                  {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
+                      뷰어와 같은 순서로 둔다 — 두 화면에서 '내보내기 다음이 인쇄'가 같아야 손이 기억한다. */}
+                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_실거주확인서`}
+                    from="residence-certs" />
                   <a href={`/residence-cert/${c.tenantId}`} className={btnClass('secondary', 'sm')}>
                     다시 작성
                   </a>
