@@ -46,6 +46,8 @@ type Body = {
 }
 
 export async function POST(req: Request) {
+  // 예약한 계약번호 자리 — 최상위 catch 가 보상 삭제하려면 try 밖에 있어야 한다(아래 catch 주석).
+  let reserved: { id: string; no: string } | null = null
   try {
     // 인증
     const supabase = await createClient()
@@ -151,7 +153,6 @@ export async function POST(req: Request) {
       }, { status: 409 })
     }
 
-    let reserved: { id: string; no: string } | null = null
     if (!body.preview) {
       for (let attempt = 0; attempt < 5 && !reserved; attempt++) {
         const issued = await prisma.contractFile.count({ where: { propertyId, contractNo: { not: null } } })
@@ -359,6 +360,10 @@ export async function POST(req: Request) {
       },
     })
   } catch (err) {
+    // 예약한 번호 자리를 반드시 지운다. 종전에는 Drive 업로드 실패에만 보상 삭제가 있어,
+    // 그 앞 단계(PDF 렌더)에서 실패하면 파일 없는 행이 번호만 물고 남았다 — 감지망의
+    // '번호만 예약되고 파일이 안 붙은 계약서' 가 그것이고, 다음 발급의 번호도 건너뛴다(신고 e7c09f2d).
+    if (reserved) await prisma.contractFile.delete({ where: { id: reserved.id } }).catch(() => {})
     console.error('[/api/contract/generate] failed:', err)
     return NextResponse.json(
       { ok: false, error: (err as Error).message ?? '계약서 PDF 생성 실패' },
