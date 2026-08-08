@@ -73,17 +73,51 @@ export function Modal({
   // 스크롤러가 아직 안 넘친다고 판단해 무동작이거나 최대 scrollTop 에 클램프돼 과소 스크롤이 되고,
   // 패딩(동기)과 축소(비동기)가 두 프레임으로 갈려 상단이 왕복하며 튄다. 명령형 기록은 resize
   // 핸들러 안에서 끝나므로 같은 프레임에 축소된 기하가 확정되고 가드가 그것을 읽는다.
+  //
+  // **보이는 띠는 높이만이 아니라 위치도 갖는다(신고 8e6bbac0 후속, 2026-08-09).**
+  // iOS 는 문서를 스크롤할 수 없으면 포커스 칸을 드러내려고 visual viewport 자체를 위로 민다
+  // (`vv.offsetTop` > 0). `position:fixed` 오버레이는 layout viewport 에 붙어 있어 그만큼 따라가지
+  // 않는다. 종전에는 아래쪽만 `--kbd-inset` 으로 보정하고 위쪽에는 팬 항이 없어서, `items-center`
+  // 의 정렬 프레임이 보이는 띠보다 위에 남았다. 실측(아이폰 16 Pro, 402x874, vv.height 547,
+  // 팬 327)으로 패널 상단이 화면 위로 88.5pt 잘리고 하단은 키보드에서 213.5pt 떠 그 사이로 배경이
+  // 드러났다. 상·하 어긋남의 차가 항상 safe-area+2rem(=125pt)인 것이 이 클래스의 지문이다.
+  //
+  // 그래서 오버레이의 위·아래 인셋을 **같은 vv 스냅샷 한 벌**로 적는다.
+  //   --modal-vv-top    = vv.offsetTop                          (띠의 위가 layout 어디인가)
+  //   --modal-vv-bottom = innerHeight - (offsetTop + vv.height) (띠의 아래에서 얼마가 남는가)
+  // 셋을 합치면 오버레이의 content box 가 보이는 띠와 정확히 같아진다.
+  //
+  // **팬은 `resize` 가 아니라 `scroll` 로 온다.** 그래서 이 sync 는 두 이벤트를 다 듣는다.
+  // 716e7b0c 의 "크기 갱신은 resize 에서만" 규칙과 충돌하지 않는다 — 그 규칙의 대상은 스크롤러의
+  // 패딩(`.app-main` 의 `--kbd-inset`)이고, 그것을 팬마다 다시 쓰면 scrollHeight 가 오르내려
+  // scrollTop 이 되감긴다. 여기서 팬마다 바뀌는 값은 오버레이 패딩뿐이라 패널을 **옮기기만** 하고
+  // 높이는 안 건드린다(`--modal-vvh` 는 팬 불변). 본문 스크롤러의 clientHeight·scrollTop 이
+  // 그대로임을 헤드리스 실측으로 확인했다. `--kbd-inset` 은 손대지 않는다.
   const panelRef = React.useRef<HTMLDivElement>(null)
+  const overlayRef = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     if (!open) return
     const vv = window.visualViewport
     if (!vv) return
-    const sync = () => panelRef.current?.style.setProperty('--modal-vvh', `${vv.height}px`)
+    let lastTop = '', lastBottom = ''
+    const sync = () => {
+      panelRef.current?.style.setProperty('--modal-vvh', `${vv.height}px`)
+      const ov = overlayRef.current
+      if (!ov) return
+      const top = `${Math.max(0, Math.round(vv.offsetTop))}px`
+      const bottom = `${Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height)))}px`
+      if (top !== lastTop) { ov.style.setProperty('--modal-vv-top', top); lastTop = top }
+      if (bottom !== lastBottom) { ov.style.setProperty('--modal-vv-bottom', bottom); lastBottom = bottom }
+    }
     sync()
     vv.addEventListener('resize', sync)
+    vv.addEventListener('scroll', sync)
     return () => {
       vv.removeEventListener('resize', sync)
+      vv.removeEventListener('scroll', sync)
       panelRef.current?.style.removeProperty('--modal-vvh')
+      overlayRef.current?.style.removeProperty('--modal-vv-top')
+      overlayRef.current?.style.removeProperty('--modal-vv-bottom')
     }
   }, [open])
   const dirtyRef = React.useRef(dirty)
@@ -135,18 +169,21 @@ export function Modal({
   const zClass = z === 380 ? 'z-[var(--z-report)]' : z === 280 ? 'z-[var(--z-modal-3)]' : z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'
   return (
     <div
+      ref={overlayRef}
       className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center anim-overlay-in`}
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
       //
-      // 하단은 키보드 겹침(--kbd-inset)까지 더한다(신고 e8a2c73e). items-center 는 layout viewport
+      // 위·아래에 보이는 띠의 위치를 더한다(신고 e8a2c73e·8e6bbac0). items-center 는 layout viewport
       // 전체의 세로 중앙이라, 키보드가 열려 패널이 --modal-vvh 로 줄면 줄어든 패널이 '키보드 뒤까지
-      // 포함한' 한가운데로 재정렬되며 통째로 내려앉았다. 패딩으로 정렬 기준을 보이는 띠로 옮긴다.
-      // --modal-vvh(maxHeight)와 짝이다. 하나는 "얼마나 클 수 있나", 하나는 "어디에 놓이나".
-      // 값은 ViewportOffsetGuard 가 채운다. 셸 밖 모달은 폴백 0px 이라 현행 그대로다.
+      // 포함한' 한가운데로 재정렬되며 통째로 내려앉았고(e8a2c73e), 아래만 보정하면 iOS 가 팬한 만큼
+      // 정렬 프레임이 위에 남아 상단이 화면 밖으로 잘렸다(8e6bbac0). 두 항을 다 더해야 content box 가
+      // 보이는 띠와 같아진다. --modal-vvh(maxHeight)와 짝이다. 하나는 "얼마나 클 수 있나", 하나는
+      // "어디에 놓이나". 세 값 모두 위 이펙트가 같은 vv 스냅샷으로 적는다.
+      // --kbd-inset 폴백은 이펙트가 돌기 전(첫 페인트)·visualViewport 미지원 환경용이다.
       style={{
-        paddingTop:    'max(1rem, env(safe-area-inset-top))',
-        paddingBottom: 'calc(max(1rem, env(safe-area-inset-bottom)) + var(--kbd-inset, 0px))',
+        paddingTop:    'calc(max(1rem, env(safe-area-inset-top)) + var(--modal-vv-top, 0px))',
+        paddingBottom: 'calc(max(1rem, env(safe-area-inset-bottom)) + var(--modal-vv-bottom, var(--kbd-inset, 0px)))',
         paddingLeft:   'max(1rem, env(safe-area-inset-left))',
         paddingRight:  'max(1rem, env(safe-area-inset-right))',
       }}
@@ -155,11 +192,15 @@ export function Modal({
       <div
         ref={panelRef}
         className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col anim-panel-in`}
-        // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 는 안 풀려 헤더가 잘림)
+        // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 만으로는 2rem 여유가 안 생긴다)
         // --modal-vvh 는 키보드가 열렸을 때의 실제 보이는 높이. 위 이펙트가 명령형으로 기록한다.
         // 미설정이면(visualViewport 없음·닫힘) 100dvh 폴백.
+        //
+        // 100% 는 안전망이다. 오버레이 content box(= 보이는 띠) 를 절대 못 넘게 한다. 평시에는
+        // calc 쪽이 2rem 작아 늘 이기므로 픽셀이 안 바뀌고, --modal-vvh 갱신이 어떤 이유로든
+        // 늦거나 빠진 프레임에서만 발동해 패널이 띠 밖으로 넘쳐 상·하가 잘리는 것을 막는다.
         style={{
-          maxHeight: 'calc(var(--modal-vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
+          maxHeight: 'min(calc(var(--modal-vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem), 100%)',
         } as React.CSSProperties}
         onClick={e => e.stopPropagation()}
       >

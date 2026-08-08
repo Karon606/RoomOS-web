@@ -145,8 +145,11 @@ export default function ViewportOffsetGuard() {
       if (!isEditable(e.target)) return
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }
-      // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다
-      if (overlapNow() > KBD_OPEN_PX) scheduleReveal()
+      // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다.
+      // **여기 물음은 "열렸나"라 판정 함수를 쓴다(신고 716e7b0c).** 크기 함수(overlapNow)를 쓰면
+      // iOS 가 팬한 만큼 값이 줄어 0까지 떨어지므로, 팬이 끝난 뒤의 칸-대-칸 이동에서 조용히
+      // 아무 일도 안 하게 된다. 이 파일에서 크기로 열림을 묻던 마지막 자리였다.
+      if (keyboardOpenNow()) scheduleReveal()
     }
     const onFocusOut = () => { pending.current = null }
 
