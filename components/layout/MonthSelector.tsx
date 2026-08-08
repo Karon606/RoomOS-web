@@ -4,13 +4,9 @@ import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
 import { useMyRole } from '@/components/RoleContext'
+import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 
 const MONTH_KEY = 'stayeum_selected_month'
-
-function todayMonthStr() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
 
 // 보고 있는 월이 '이번 달'과 얼마나 떨어졌는지 라벨 (과거=양수). 같으면 null.
 function relMonthLabel(view: string, today: string): string | null {
@@ -35,7 +31,9 @@ export default function MonthSelector() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const startNavigation = useStartNavigation()
-  const todayMonth = todayMonthStr()
+  // 오늘 달은 KST 고정 — new Date() 로 뽑으면 매월 1일 KST 00~09시에 서버는 지난달, 기기는 이번달을
+  // 보고 '지난달' 배지·조회월 기본값이 갈린다(하이드레이션 #418 + 엉뚱한 달 조회).
+  const todayMonth = kstMonthStr()
 
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef   = useRef<HTMLDivElement>(null)
@@ -177,9 +175,8 @@ function MonthPicker({
 }) {
   const [year, setYear] = useState(Number(current.split('-')[0]))
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
-  const now = new Date()
-  const maxYear = now.getFullYear()
-  const maxMonth = now.getMonth() + 1
+  // 미래 월 비활성 경계도 KST 기준 — 위 todayMonth 와 같은 시계를 봐야 1일 새벽에 어긋나지 않는다.
+  const { year: maxYear, month: maxMonth } = kstYmd()
 
   return (
     /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */

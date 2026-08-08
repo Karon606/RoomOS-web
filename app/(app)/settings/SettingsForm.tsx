@@ -50,6 +50,7 @@ import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProv
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { kstYmdStr } from '@/lib/kstDate'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -2111,7 +2112,7 @@ function BackupButton() {
       const json = await exportAllData()
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
-      const ts = new Date().toISOString().slice(0, 10)
+      const ts = kstYmdStr()
       const a = document.createElement('a')
       a.href = url
       a.download = `stayeum-backup-${ts}.json`

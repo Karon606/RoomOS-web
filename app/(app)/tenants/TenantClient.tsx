@@ -3530,7 +3530,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 const d = new Date(moveInDateVal + 'T00:00:00')
                 if (isNaN(d.getTime())) return ''
                 d.setDate(d.getDate() - contactLeadDays)
-                const today = new Date(); today.setHours(0, 0, 0, 0)
+                const today = new Date(kstYmdStr() + 'T00:00:00')
                 const eff = d < today ? today : d
                 return `${eff.getFullYear()}-${String(eff.getMonth() + 1).padStart(2, '0')}-${String(eff.getDate()).padStart(2, '0')}`
               })()

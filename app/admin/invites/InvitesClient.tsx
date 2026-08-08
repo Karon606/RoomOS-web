@@ -6,6 +6,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
+import { kstYmdStr } from '@/lib/kstDate'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
 
@@ -135,7 +136,7 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
             <DatePicker
               value={expiresAt}
               onChange={setExpiresAt}
-              minDate={new Date().toISOString().slice(0, 10)}
+              minDate={kstYmdStr()}
               placeholder="만료일 선택"
               className={inputCls}
               style={inputStyle}

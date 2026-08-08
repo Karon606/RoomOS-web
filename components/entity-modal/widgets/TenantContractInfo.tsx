@@ -4,6 +4,7 @@
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Section, Grid, Item } from './Section'
 import { fmtStayPeriod } from '@/lib/stayPeriod'
+import { kstYmdStr } from '@/lib/kstDate'
 
 type Lease = {
   status: string
@@ -75,7 +76,7 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
           const base = lease.contactAlertDate ? new Date(lease.contactAlertDate) : (() => {
             const d = new Date(lease.moveInDate as string | Date); d.setDate(d.getDate() - lead); return d
           })()
-          const today = new Date(); today.setHours(0, 0, 0, 0)
+          const today = new Date(kstYmdStr() + 'T00:00:00')
           const eff = base < today ? today : base
           return (
             <Item label="연락 알림일"

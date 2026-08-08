@@ -25,7 +25,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { pushToast } from '@/lib/saveStatus'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'
 import { checkoutSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
 import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
@@ -152,13 +152,13 @@ const WINDOW_LABEL: Record<string, string> = {
 }
 
 // 납부일 경과/잔여일 계산
+// 오늘은 반드시 KST 기준(kstDaysUntil)이어야 한다 — new Date() 로 재면 서버(UTC)와 기기(KST)가
+// KST 00~09시에 하루 다른 경과일을 내고, 그 숫자가 뱃지 문구로 렌더돼 하이드레이션이 갈린다.
 function getDueInfo(dueDay: string | null, targetMonth: string): { days: number; overdue: boolean } | null {
   if (!dueDay) return null
   // 다음달 지정 전체 날짜 (YYYY-MM-DD)
   if (dueDay.includes('-')) {
-    const due   = new Date(dueDay + 'T00:00:00')
-    const today = new Date(); today.setHours(0, 0, 0, 0); due.setHours(0, 0, 0, 0)
-    const diff  = Math.round((today.getTime() - due.getTime()) / 86400000)
+    const diff = -kstDaysUntil(dueDay)
     return { days: Math.abs(diff), overdue: diff > 0 }
   }
   const [yyyy, mm] = targetMonth.split('-').map(Number)
@@ -166,9 +166,9 @@ function getDueInfo(dueDay: string | null, targetMonth: string): { days: number;
     ? new Date(yyyy, mm, 0).getDate()
     : parseInt(dueDay)
   if (isNaN(dayNum)) return null
-  const due   = new Date(yyyy, mm - 1, dayNum)
-  const today = new Date(); today.setHours(0, 0, 0, 0); due.setHours(0, 0, 0, 0)
-  const diff  = Math.round((today.getTime() - due.getTime()) / 86400000)
+  // Date.UTC 는 로컬 생성자와 같은 자릿수 넘침 규칙을 쓴다(2월 31일 -> 3월 3일). 종전 동작 유지.
+  const due  = new Date(Date.UTC(yyyy, mm - 1, dayNum)).toISOString().slice(0, 10)
+  const diff = -kstDaysUntil(due)
   return { days: Math.abs(diff), overdue: diff > 0 }
 }
 
@@ -1087,7 +1087,7 @@ export default function RoomsClient({
                   {room.status === 'RESERVED' ? (() => {
                     let sub: string | undefined
                     if (room.moveInDate) {
-                      const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      const days = kstDaysUntil(room.moveInDate)
                       sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`
                     }
                     return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
@@ -1121,7 +1121,7 @@ export default function RoomsClient({
                     // 퇴실 예정 — Camel
                     if (showCheckout && room.expectedMoveOut) {
                       const [, mm, dd] = room.expectedMoveOut.split('-')
-                      const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      const days = kstDaysUntil(room.expectedMoveOut)
                       const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
                       return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
                     }
@@ -1131,7 +1131,7 @@ export default function RoomsClient({
                       // 기한을 미뤄준 사람은 '납부 예정'이 아니라 '납부 유예' — 미납 분기와 같은 말을 해야 한다
                       if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, null)}>납부 유예</StatusBadge>
                       const [, mm, dd] = room.nextDueDate!.split('-')
-                      const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      const days = kstDaysUntil(room.nextDueDate!)
                       const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
                       return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
                     }
@@ -1370,7 +1370,7 @@ export default function RoomsClient({
                         {room.status === 'RESERVED' ? (() => {
                           let sub: string | undefined
                           if (room.moveInDate) {
-                            const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            const days = kstDaysUntil(room.moveInDate)
                             sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `${Math.abs(days)}일 경과`
                           }
                           return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '입실 예약'}</StatusBadge>
@@ -1401,7 +1401,7 @@ export default function RoomsClient({
                           }
                           if (showCheckout && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')
-                            const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            const days = kstDaysUntil(room.expectedMoveOut)
                             const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
                             return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
                           }
@@ -1409,7 +1409,7 @@ export default function RoomsClient({
                           if (isAwaiting) {
                             if (isDeferredNow(room, targetMonth)) return <StatusBadge tone="await" sub={unpaidSubText(room, targetMonth, getEffectiveDueInfo(room, targetMonth), true, null)}>납부 유예</StatusBadge>
                             const [, mm, dd] = room.nextDueDate!.split('-')
-                            const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            const days = kstDaysUntil(room.nextDueDate!)
                             const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
                             return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
                           }

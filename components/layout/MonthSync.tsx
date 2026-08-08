@@ -2,10 +2,14 @@
 
 import { useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { kstMonthStr } from '@/lib/kstDate'
 
-function todayMonthStr() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+// 다음 KST 자정 +5초까지 남은 ms. 기기 로컬 자정으로 재면 KST 아닌 환경에서 최대 9시간 어긋나
+// 달이 바뀐 뒤에도 한참 stale 한 화면을 들고 있게 된다(KST 는 서머타임이 없어 고정 +9로 충분).
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+function msUntilNextKstMidnight(): number {
+  const kstNow = Date.now() + KST_OFFSET_MS
+  return 86400000 - (kstNow % 86400000)
 }
 
 /**
@@ -21,7 +25,7 @@ function todayMonthStr() {
 export default function MonthSync() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const todayMonth = todayMonthStr()
+  const todayMonth = kstMonthStr()
   const prevTodayMonthRef = useRef(todayMonth)
 
   // 렌더 사이에 todayMonth 가 바뀌었으면(자정 경과) 즉시 갱신
@@ -33,11 +37,9 @@ export default function MonthSync() {
 
   // 다음 자정 +5초에 한 번 깨어나 달이 바뀌었으면 갱신
   useEffect(() => {
-    const now = new Date()
-    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5)
-    const ms = nextMidnight.getTime() - now.getTime()
+    const ms = msUntilNextKstMidnight() + 5000
     const t = setTimeout(() => {
-      const next = todayMonthStr()
+      const next = kstMonthStr()
       if (prevTodayMonthRef.current !== next) {
         prevTodayMonthRef.current = next
         if (!searchParams.has('month')) router.refresh()

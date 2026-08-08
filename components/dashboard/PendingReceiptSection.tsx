@@ -24,6 +24,7 @@ import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
+import { kstYmdStr } from '@/lib/kstDate'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
@@ -189,7 +190,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const aiSuggestsInventory = row.inferredKind === 'inventory'
 
   const [pending, startTransition] = useTransition()
-  const [date, setDate] = useState(row.inferredDate ?? new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(row.inferredDate ?? kstYmdStr())
   const [amount, setAmount] = useState<number>(row.inferredAmount ?? 0)
   const [category, setCategory] = useState(() => {
     // 재고 모드면 추적 카테고리 중 첫 매치 또는 기본 '부식비'

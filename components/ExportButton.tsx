@@ -2,11 +2,12 @@
 
 import { useSearchParams } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
+import { kstMonthStr } from '@/lib/kstDate'
 
 export default function ExportButton() {
   const searchParams = useSearchParams()
-  const month = searchParams.get('month') ??
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  // 기본 달은 KST — new Date() 로 뽑으면 매월 1일 KST 00~09시에 지난달이 내려받아진다.
+  const month = searchParams.get('month') ?? kstMonthStr()
 
   const handleExport = () => {
     window.location.href = `/api/export?month=${month}`

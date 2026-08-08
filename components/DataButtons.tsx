@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import type { Conflict, PreviewResult } from '@/lib/import-types'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { kstMonthStr } from '@/lib/kstDate'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolution = 'overwrite' | 'keep' | 'archive'
@@ -143,8 +144,8 @@ function ResBtn({ active, onClick, label, color = 'default' }: {
 export default function DataButtons() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const month = searchParams.get('month') ??
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  // 기본 달은 KST — new Date() 로 뽑으면 매월 1일 KST 00~09시에 지난달이 내려받아진다.
+  const month = searchParams.get('month') ?? kstMonthStr()
 
   const fileRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>({ type: 'idle' })

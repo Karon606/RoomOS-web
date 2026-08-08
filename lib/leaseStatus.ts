@@ -18,6 +18,7 @@
 import type { LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
 import { billForLeaseMonth } from './billing'
+import { kstDaysUntil } from './kstDate'
 
 /**
  * 매출/청구 인식 대상 lease.
@@ -49,11 +50,15 @@ export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
  * 퇴실 예정 보조 문구 — "6/26 퇴실 D-13" / "오늘 6/26 퇴실" / "6/26 퇴실 13일 경과".
  * 수납 관리(rooms)와 호실 관리(room-manage)가 같은 문장을 쓰도록 여기서 한 번만 만든다.
  * expectedMoveOut 은 'YYYY-MM-DD' (KST 고정 문자열).
+ *
+ * 오늘은 kstDaysUntil(=kstYmdStr) 로 뽑는다. new Date() 로 뽑던 시절엔 서버(UTC)와 기기(KST)가
+ * KST 00~09시에 하루 다른 오늘을 봐서 같은 퇴실일이 D-11 / D-10 으로 갈렸고, 그 텍스트 불일치가
+ * React #418 하이드레이션 오류로 올라왔다(신고 d4bd3aa5·9c09ca50, KST 01:13 발생).
  */
 export function checkoutSubText(expectedMoveOut: string | null): string | null {
   if (!expectedMoveOut) return null
   const [, mm, dd] = expectedMoveOut.split('-')
-  const days = Math.round((new Date(expectedMoveOut).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+  const days = kstDaysUntil(expectedMoveOut)
   const label = `${Number(mm)}/${Number(dd)} 퇴실`
   return days > 0 ? `${label} D-${days}` : days === 0 ? `오늘 ${label}` : `${label} ${Math.abs(days)}일 경과`
 }
