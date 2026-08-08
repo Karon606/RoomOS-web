@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
+import { isContractIssued } from '@/lib/contractIssue'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -73,4 +74,66 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       status: lease?.status ?? null,
     }
   })
+}
+
+export type PendingIssueRow = {
+  linkId: string
+  tenantId: string
+  tenantName: string
+  roomNo: string | null
+  signedAt: Date
+  submitted: boolean
+}
+
+// 서명은 받았는데 계약서 파일이 아직 없는 계약 — /contracts 의 '발급 대기' 섹션용.
+//
+// 본 목록(getAllContractFiles)은 ContractFile 기준이라, 서명만 끝나고 발급 전인 계약은 한 줄도
+// 나오지 않았다. 서명 제출 푸시가 이 화면으로 보내는 탓에 운영자가 데이터 유실로 오인했다
+// (오류신고 d41eea8c — 502호 8/6 서명, 519호 8/8 서명, 둘 다 ContractFile 0건).
+//
+// 판정은 lib/contractIssue 정본을 쓴다. 홈 알림('원격 서명 완료 · 계약서 발급 필요')과 같은 규칙이어야
+// 종은 울리는데 목록은 침묵하는 어긋남이 안 생긴다. 규칙을 여기서 다시 짜면 그 순간 두 화면이 갈라진다.
+export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
+  const propertyId = await getPropertyId()
+  const [links, files] = await Promise.all([
+    // 만료(expiresAt) 조건은 절대 넣지 않는다. 링크 수명이 24시간이라 발급 시점엔 대개 이미 만료라,
+    // 만료를 거르면 502호처럼 서명이 끝난 계약이 또 안 보인다(오류신고 d41eea8c 재발 지점).
+    // closedAt: null 만 본다 — 운영자가 링크를 닫은 것은 계약 무산이라 대기에서 빠지는 게 맞다.
+    prisma.contractShareLink.findMany({
+      where: { propertyId, signedAt: { not: null }, closedAt: null },
+      orderBy: { signedAt: 'desc' },
+      select: {
+        id: true, signedAt: true, submittedAt: true, leaseTermId: true,
+        tenant: { select: { id: true, name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+    // driveFileId: { not: '' } 는 필수다. 발급이 실패해도 예약 행이 잠깐 존재할 수 있는데,
+    // 그 빈 행을 계약서로 세면 대기가 거짓으로 해소돼 발급 안 된 계약이 화면에서 사라진다.
+    prisma.contractFile.findMany({
+      where: { driveFileId: { not: '' }, propertyId, deletedAt: null },
+      select: { leaseTermId: true, createdAt: true },
+    }),
+  ])
+
+  const rows: PendingIssueRow[] = []
+  const seenLease = new Set<string>()
+  for (const l of links) {
+    if (!l.signedAt) continue
+    if (isContractIssued(l.signedAt, l.leaseTermId, files)) continue
+    // 같은 계약에 링크를 여러 번 냈으면 최신 하나만 — 목록에 같은 방이 두 줄로 서는 것을 막는다.
+    // orderBy signedAt desc 라 먼저 만나는 것이 최신이다.
+    if (seenLease.has(l.leaseTermId)) continue
+    seenLease.add(l.leaseTermId)
+    rows.push({
+      // 토큰은 절대 내보내지 않는다 — 클라이언트로 새면 누구나 서명 화면을 열 수 있다. linkId 만 준다.
+      linkId: l.id,
+      tenantId: l.tenant.id,
+      tenantName: l.tenant.name,
+      roomNo: l.leaseTerm.room?.roomNo ?? null,
+      signedAt: l.signedAt,
+      submitted: l.submittedAt != null,
+    })
+  }
+  return rows
 }
