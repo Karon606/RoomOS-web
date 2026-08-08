@@ -271,17 +271,22 @@ export async function getSignedSnapshot(tenantId: string, linkId: string): Promi
   })
   if (!link) return null
   const snap = link.templateSnapshot as unknown as ContractData
-  // 서명 이미지는 스냅샷에 없다(서명은 그 뒤에 들어온다) — lease 에 저장된 원본을 얹는다
+  // 서명 이미지는 스냅샷에 없다(서명은 그 뒤에 들어온다) — lease 에 저장된 원본을 얹는다.
   // 서명 시각도 같이 얹는다. 스냅샷은 링크를 만든 시점이라 서명 시각을 알 수 없고,
   // 이 값이 있어야 계약일이 '오늘'이 아니라 실제 서명한 날로 고정된다.
-  return {
-    ...snap,
+  //
+  // ⚠ 네 값 모두 **lease 안**이다(ContractData.lease 타입 정의). 종전에는 이미지 두 개만
+  // 최상위에 얹어, 화면(ContractView 가 data.lease.signatureImageUrl 을 읽는다)에는 스냅샷의
+  // 옛 값(= 링크 발급 시점이라 항상 null)이 그려졌다. 서명을 받았는데 서명란이 빈 채로 열리고
+  // 버튼이 '발급' 이 아니라 '서명 요청' 으로 뜨던 것이 그것이다(신고 9facb682, 8/3 be789f4 부터).
+  // 최상위에 얹지 마라 — ContractData 에 없는 필드라 아무도 안 읽고, 캐스트가 그 사실을 가린다.
+  const lease: ContractData['lease'] = snap.lease ? {
+    ...snap.lease,
     signatureImageUrl: link.leaseTerm?.signatureImageUrl ?? null,
     disposalSignatureImageUrl: link.leaseTerm?.disposalSignatureImageUrl ?? null,
-    lease: snap.lease ? {
-      ...snap.lease,
-      signatureSignedDate: link.signedAt ? kstYmdStr(new Date(link.signedAt)) : null,
-      disposalSignatureSignedDate: link.disposalSignedAt ? kstYmdStr(new Date(link.disposalSignedAt)) : null,
-    } : null,
-  } as ContractData
+    signatureSignedDate: link.signedAt ? kstYmdStr(new Date(link.signedAt)) : null,
+    disposalSignatureSignedDate: link.disposalSignedAt ? kstYmdStr(new Date(link.disposalSignedAt)) : null,
+  } : null
+  // as 캐스트를 걷었다 — 위 어긋남을 6일 동안 숨긴 것이 이 캐스트다.
+  return { ...snap, lease }
 }
