@@ -13,7 +13,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEditScope } from '@/components/RoleContext'
-import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, setAssetQtyUnit, setAssetRowQty, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, distributeAssetToTargets, addFreeAsset, reorderAssetItems, reorderAssetSpecs, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -117,6 +117,57 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '규격 저장됨. 규격이 다르면 별도 카드로 분리됩니다')
       setDetailItem(null)
+      router.refresh()
+    })
+  }
+  // 카드 수량 단위 편집(상세 모달) — 단위는 카드 정체성 키라 묶인 구매 전체에 함께 적용된다.
+  // 같은 이름·규격에 같은 단위 카드가 있으면 저장 즉시 한 카드로 합쳐진다(신고 2c13c859).
+  const [unitEdit, setUnitEdit] = useState<{ id: string; v: string } | null>(null)
+  const undoQtyUnit = (ids: string[], prev: string | null) => startTransition(async () => {
+    const res = await setAssetQtyUnit(ids, prev)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '단위를 되돌렸습니다')
+    router.refresh()
+  })
+  const saveQtyUnit = async (it: AssetItem, v: string) => {
+    const next = v.trim()
+    const prev = it.qtyUnit ?? null
+    if ((next || null) === prev) { setUnitEdit(null); return }
+    const shown = next || '개'
+    if (!(await confirmDialog({
+      title: `수량 단위를 ${prev ?? '개'}에서 ${shown}로 바꿀까요?`,
+      message: '저장된 수량 숫자는 그대로 두고 표기만 바꿉니다. 같은 이름·규격에 단위가 같은 카드가 있으면 하나로 합쳐집니다.',
+      level: 'caution', confirmLabel: '변경',
+    }))) return
+    startTransition(async () => {
+      const res = await setAssetQtyUnit(it.ids, next || null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setUnitEdit(null); setDetailItem(null)
+      pushToast('success', `수량 단위를 ${shown}로 바꿨습니다`, {
+        action: { label: '적용취소', run: () => undoQtyUnit(it.ids, prev) },
+      })
+      router.refresh()
+    })
+  }
+  // 구매 행별 수량 정정 — 영수증에 수량이 안 들어간 행(카드가 'N건'으로 보이는 원인)을 채우거나 고친다.
+  const [rowQty, setRowQty] = useState<Record<string, string>>({})
+  const undoRowQty = (id: string, prev: number | null) => startTransition(async () => {
+    const res = await setAssetRowQty(id, prev)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '수량을 되돌렸습니다')
+    router.refresh()
+  })
+  const saveRowQty = (b: { id: string; qty: number | null }) => {
+    const raw = (rowQty[b.id] ?? '').trim()
+    const next = raw ? Number(raw) : null
+    if (next != null && !(next > 0)) { pushToast('error', '0보다 큰 수량을 입력하세요.'); return }
+    startTransition(async () => {
+      const res = await setAssetRowQty(b.id, next)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setRowQty(p => { const n = { ...p }; delete n[b.id]; return n })
+      pushToast('success', next == null ? '수량을 비웠습니다' : '수량을 저장했습니다', {
+        action: { label: '적용취소', run: () => undoRowQty(b.id, b.qty) },
+      })
       router.refresh()
     })
   }
@@ -1239,7 +1290,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
-                <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
+                {/* 수량 미기록(qtyValue null)은 '총 0개'가 아니라 그대로 말한다 — 카드가 'N건'으로 보이는 것과 같은 상태(신고 2c13c859) */}
+                <span className="text-xs text-[var(--warm-muted)]">총 {it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : '수량 미기록'} · {won(it.amount)} · 구매 {it.count}건</span>
                 {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
                   onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '' })}
@@ -1253,6 +1305,21 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     나눠 배정
                   </button>
                 )}
+              </div>
+              {/* 수량 단위 — 카드 정체성 키라 묶인 구매 전체에 함께 적용된다(신고 2c13c859). 숫자는 그대로, 표기만 바뀐다. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">수량 단위</span>
+                <input disabled={pending}
+                  value={unitEdit?.id === it.id ? unitEdit.v : (it.qtyUnit ?? '')}
+                  placeholder="개"
+                  onChange={e => setUnitEdit({ id: it.id, v: e.target.value })}
+                  onKeyDown={e => { if (e.key === 'Enter' && unitEdit?.id === it.id) saveQtyUnit(it, unitEdit.v) }}
+                  className="w-20 h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <button type="button"
+                  disabled={pending || !(unitEdit?.id === it.id && unitEdit.v.trim() !== (it.qtyUnit ?? ''))}
+                  onClick={() => unitEdit && saveQtyUnit(it, unitEdit.v)}
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-35">저장</button>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">미터·롤처럼 세는 단위를 적어요. 숫자는 그대로예요</span>
               </div>
               {(it.roomNo || it.locationName) && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -1325,10 +1392,24 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   {it.breakdown.map(b => {
                     const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '', t: b.specText ?? '' }
                     const changed = s.v !== (b.specValue != null ? String(b.specValue) : '') || s.u !== (b.specUnit ?? '') || s.t !== (b.specText ?? '')
+                    // 수량 정정 — 비어 있으면 카드가 'N건'으로 보인다(신고 2c13c859). 단위는 카드 공용이라 위 '수량 단위'가 담당.
+                    const qBase = b.qty != null ? fmtQty(b.qty) : ''
+                    const q = rowQty[b.id] ?? qBase
+                    const qtyChanged = q.trim() !== qBase
                     return (
-                      <li key={b.id} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="tabular-nums text-[var(--warm-mid)] shrink-0">{b.date}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
-                        <span className="flex items-center gap-1.5 min-w-0">
+                      <li key={b.id} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 text-xs">
+                        <span className="flex items-center gap-1.5 shrink-0">
+                          <span className="tabular-nums text-[var(--warm-mid)]">{b.date}</span>
+                          <input value={q} disabled={pending} inputMode="decimal" placeholder="수량"
+                            onChange={e => setRowQty(p => ({ ...p, [b.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                            className="w-14 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs tabular-nums outline-none focus:border-[var(--coral)]" />
+                          <span className="text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
+                          {qtyChanged && (
+                            <button type="button" onClick={() => saveRowQty(b)} disabled={pending}
+                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline shrink-0">저장</button>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1.5 min-w-0 ml-auto">
                           <input value={s.v} disabled={pending} inputMode="decimal" placeholder="규격"
                             onChange={e => setRowSpec(p => ({ ...p, [b.id]: { ...s, v: e.target.value } }))}
                             className="w-14 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs tabular-nums outline-none focus:border-[var(--coral)]" />
@@ -1349,6 +1430,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   })}
                 </ul>
                 <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">규격(사이즈·용량)이 서로 다르면 별도 카드로 분리돼 따로 배정할 수 있습니다.</p>
+                <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">수량이 비어 있으면 카드에 몇 건인지만 표시됩니다. 수량을 채우면 단위와 함께 보입니다.</p>
               </div>
               {logRows.length > 0 && (
                 <div>

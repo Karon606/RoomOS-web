@@ -14,6 +14,7 @@ const requireEdit = () => requireScopeEdit('inventory')
 import { canReadScope } from '@/lib/auth/routeScope'
 import { getMyRole } from '@/lib/role'
 import { getTrackedCategories } from '../categoryConfig'
+import { canonicalUnit } from '@/lib/units'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
@@ -383,6 +384,66 @@ export async function setAssetRowSpec(expenseId: string, specValue: number | nul
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 비품 카드의 수량 단위 변경 — 카드 정체성 키(aggregateAssets)에 qtyUnit 이 들어가므로,
+// 같은 라벨·규격에 같은 단위 카드가 있으면 저장 즉시 한 카드로 합쳐지고, 다르게 주면 갈라진다.
+// 숫자(qtyValue)는 그대로 둔다 — 표기만 바꾸는 연산이라 환산하지 않는다(m 을 cm 로 바꿔도 값 불변).
+// 입력은 canonicalUnit 으로 정규화한다 — 'M' 과 'm' 이 다른 카드로 갈라지던 표기 혼재의 근본 차단.
+// 소모품(추적 카테고리)은 거부 — 그쪽 qtyUnit 은 잔량 산식의 매칭 키라 여기서 손대면 재고 수학이 흔들린다.
+export async function setAssetQtyUnit(expenseIds: string[], qtyUnit: string | null): Promise<{ ok: true; changed: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const unit = canonicalUnit(qtyUnit)
+    const rows = await prisma.expense.findMany({
+      where: { id: { in: expenseIds }, propertyId },
+      select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, specText: true, qtyValue: true },
+    })
+    if (!rows.length) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
+    const trackedCats = await getTrackedCategories(propertyId)
+    if (rows.some(r => trackedCats.includes(r.category)))
+      return { ok: false, error: '소모품(재고추적) 품목의 단위는 재고관리 화면에서 바꿔주세요.' }
+    await prisma.$transaction(rows.map(r => prisma.expense.update({
+      where: { id: r.id },
+      data: { qtyUnit: unit, detail: buildAssetDetail({ ...r, qtyUnit: unit }) },
+    })))
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, changed: rows.length }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '단위 변경에 실패했습니다.' }
+  }
+}
+
+// 구매 행별 수량 정정 — 영수증에 수량이 안 들어간 행(카드가 'N건'으로 보이는 원인)을 채우거나 고친다.
+// 금액(amount)은 불변이라 단가만 파생 재계산된다. 단위는 카드 공용이라 setAssetQtyUnit 이 담당.
+// setAssetQtyUnit 과 같은 소모품 거부 가드 — 추적 품목의 qtyValue 는 잔량 산식의 입력값이다.
+export async function setAssetRowQty(expenseId: string, qtyValue: number | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (qtyValue != null && !(qtyValue > 0)) return { ok: false, error: '0보다 큰 수량을 입력하세요.' }
+    const row = await prisma.expense.findFirst({
+      where: { id: expenseId, propertyId },
+      select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, specText: true, qtyUnit: true },
+    })
+    if (!row) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
+    const trackedCats = await getTrackedCategories(propertyId)
+    if (trackedCats.includes(row.category))
+      return { ok: false, error: '소모품(재고추적) 품목의 수량은 재고관리 화면에서 바꿔주세요.' }
+    const qty = qtyValue == null ? null : Math.round(qtyValue * 1000) / 1000
+    await prisma.expense.update({
+      where: { id: expenseId },
+      data: { qtyValue: qty, detail: buildAssetDetail({ ...row, qtyValue: qty }) },
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '수량 저장에 실패했습니다.' }
   }
 }
 
