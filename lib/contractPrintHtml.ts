@@ -9,6 +9,7 @@
 
 import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
+import { roomLabel } from '@/lib/tenantAddress'
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
 // 이후 요청은 메모리 캐시 사용.
@@ -81,10 +82,7 @@ const fmtDate = (d: string | null) => {
   return `${y}.${m}.${dd}`
 }
 
-const fmtRoom = (v: string | null | undefined) => {
-  if (!v) return ''
-  return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
-}
+const fmtRoom = roomLabel   // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
 
 const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

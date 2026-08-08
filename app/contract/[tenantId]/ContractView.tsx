@@ -16,6 +16,7 @@ import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[tok
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
+import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 
@@ -163,12 +164,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   const fieldDeposit = amtNum(fields.depositAmount)
   const fieldCleaning = amtNum(fields.cleaningFee)
 
-  // 호실: 숫자만이면 '호' 자동 부착, 외수 문자가 섞이면 그대로
-  const roomNoLabel = (() => {
-    const v = fields.roomNo
-    if (!v) return ''
-    return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
-  })()
+  // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
+  const roomNoLabel = roomLabel(fields.roomNo)
 
   // 보증금/청소비 동적 표기 (v2.0 §26 — 라벨 + 영문 + 값(청소비는 .sub))
   const { depositLabel, depositEn, depositNode } = (() => {

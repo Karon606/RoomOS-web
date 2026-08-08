@@ -5,6 +5,7 @@ import { billForLeaseMonth } from '@/lib/billing'
 import { getMyRole } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
+import { roomLabel } from '@/lib/tenantAddress'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -64,7 +65,7 @@ async function requireAuthAndProperty() {
   return { userId, propertyId }
 }
 
-const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? `${v.trim()}호` : v) : ''
+const fmtRoom = roomLabel   // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
 
 // month('YYYY-MM')를 주면 그 달 주기로 자동값을 채운다(과거 달 발급). 미지정이면 현재 주기 — 기존 재발급 링크 무회귀.
 export async function getRentReceiptData(tenantId: string, month?: string, kind: ReceiptKind = 'rent'): Promise<RentReceiptData | null> {

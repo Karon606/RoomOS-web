@@ -28,12 +28,15 @@ type Fields = {
 
 function buildInitial(data: ResidenceCertData): Fields {
   const start = fmtDot(data.periodStart)
-  const end = fmtDot(data.periodEnd || kstYmdStr())
+  // 퇴실 예정일이 없으면 종료일을 비운다(운영자 결정 2026-08-08). 종전에는 오늘 날짜를 채워
+  // '오늘 하루 살았다'는 서류가 나갔고, 발급일마다 값이 달라졌다. 실제 제출에서 빈칸은 문제된 적이 없다.
+  // 시작일까지 없으면 칸을 통째로 비워 양식에 인쇄된 '20 . . . ~ 20 . . .' 빈칸이 그대로 보이게 둔다.
+  const end = fmtDot(data.periodEnd)
   return {
     siteAddress: data.siteAddress, areaM2: data.areaM2,
     tenantName: data.tenantName, tenantAddress: data.tenantAddress,
     tenantBirth: fmtDot(data.tenantBirth), tenantPhone: data.tenantPhone,
-    periodText: start ? `${start}  ~  ${end}` : end,
+    periodText: start ? (end ? `${start}  ~  ${end}` : `${start}  ~`) : '',
     rentText: data.rentAmount ? data.rentAmount.toLocaleString() : '',
     depositText: data.depositAmount ? data.depositAmount.toLocaleString() : '',
     landlordBusinessName: data.landlordBusinessName, landlordName: data.landlordName,
@@ -159,8 +162,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
           <img src="/forms/residence-cert-seoul-bg.png" alt="실거주 확인서 양식" className="rc-bg"
             style={{ width: RC_PAGE.w, height: RC_PAGE.h }} draggable={false} />
 
-          {/* 인쇄된 빈칸(거주기간 '20 . . . ~ 20 . . .') 흰 박스로 덮기 — 입력칸 아래 */}
-          {RC_TEXT_FIELDS.filter(field => field.cover).map(field => (
+          {/* 인쇄된 빈칸(거주기간 '20 . . . ~ 20 . . .') 흰 박스로 덮기 — 입력칸 아래.
+              값이 있을 때만 덮는다. PDF(residenceCertOverlay)가 같은 조건이라, 종전처럼 무조건 덮으면
+              칸을 비웠을 때 화면은 백지인데 종이에는 양식 빈칸이 찍혀 "보이는 그대로"가 깨진다. */}
+          {RC_TEXT_FIELDS.filter(field => field.cover && (fv[field.key] ?? '').trim()).map(field => (
             <div key={field.key + '-cover'} className="rc-stamp-cover" style={{
               left: field.cover!.x, top: RC_PAGE.h - (field.cover!.y + field.cover!.h),
               width: field.cover!.w, height: field.cover!.h,

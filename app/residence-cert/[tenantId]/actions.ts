@@ -8,9 +8,10 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { driveImageDataUrl } from '@/lib/google-drive'
+import { tenantResidenceAddress } from '@/lib/tenantAddress'
 
 // 실거주 확인서 자동 채움 데이터.
-// 소재지·임차인 주소 = 영업장 주소 하나로 통일(호수 미부착 — 필요시 화면에서 수동 수정).
+// 소재지·임차인 주소 = 영업장 주소 + 방번호(lib/tenantAddress 정본 — 필요시 화면에서 수동 수정).
 // 면적 = 영업장 전용면적(환경설정 defaultAreaM2). 호실별 측정 면적이 아님.
 // 임대료 줄의 보증금은 보증금 금액만 (청소비 합성 없음).
 
@@ -71,6 +72,7 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
           where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'NON_RESIDENT'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 10,
+          include: { room: { select: { roomNo: true } } },
         },
       },
     }),
@@ -94,8 +96,10 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
 
-  // 소재지·임차인 주소 = 영업장 주소 하나로 통일 (호수 미부착)
-  const siteAddress = property?.address ?? ''
+  // 소재지·임차인 주소 = 영업장 주소 + 방번호. 방번호 없이 제출했다가 관청에서 연락을 받았다
+  // (2026-08-08) — 병기는 서류 유효성 요건이다. 조립은 lib/tenantAddress 한 곳에서만 한다.
+  // 방이 배정되지 않은 계약은 병기할 방번호가 없어 영업장 주소만 나간다(칸은 그대로 수정 가능).
+  const siteAddress = tenantResidenceAddress(property?.address, lease?.room?.roomNo)
 
   // 면적: 영업장 전용면적(환경설정). 호실별 측정 면적 아님.
   const area = property?.defaultAreaM2 ?? null
