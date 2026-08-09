@@ -22,6 +22,7 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
+import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -1124,6 +1125,10 @@ export default function TenantClient({
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
     const cashReceiptIssued = fd.get('cashReceipt') === 'on'   // 현금영수증 발행 표시(오류신고 2bd8befa)
+    // 보증금 수납 전 청소비 중복 확인 — 정본 lib/depositEntryGuard(신고 a5edc93e 후속, 두 폼 공용)
+    if (isDepositMode && !(await confirmDepositCleaningOverlap({
+      leaseTermId: payTarget.lease.id, depositAmount: payTarget.lease.depositAmount, payAmount, cleaningFee: payTarget.lease.cleaningFee,
+    }))) return
     startTransition(async () => {
       const release = trackSave()
       try {

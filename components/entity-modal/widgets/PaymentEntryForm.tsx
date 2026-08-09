@@ -16,6 +16,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 
@@ -143,6 +144,10 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       if (choice === null) return   // 취소는 무변경 — 저장 자체를 하지 않는다
       excessAsIncome = choice === 'alt'
     }
+    // 보증금 수납 전 청소비 중복 확인 — 청소비를 이미 받았으면 현금 몫을 알려준다(신고 a5edc93e 후속, 정본 lib/depositEntryGuard).
+    if (isDepositMode && !(await confirmDepositCleaningOverlap({
+      leaseTermId: room.leaseTermId, depositAmount: room.depositAmount, payAmount, cleaningFee: room.cleaningFee,
+    }))) return
     // 기타수익으로 돌린 경우의 적용취소 대상 — 수납 record 들과 기타수익 한 건을 함께 되돌린다.
     let undo: { recordIds: string[]; extraIncomeId: string } | null = null
     startTransition(async () => {

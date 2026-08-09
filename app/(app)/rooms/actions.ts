@@ -1127,10 +1127,6 @@ export async function saveDepositPayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
 
-  // 예약금 부분 수납 대응 (오류신고 9b974be0·63bf23bc): 실제 받은 금액을 계약 보증금 상한으로 기록.
-  // 예: 계약 보증금 30만에 예약금 10만만 받으면 보증금 record 는 10만으로 남는다(초과분은 아래 이용료 분리).
-  const depositActual = Math.min(data.totalPaid, data.depositAmount)
-
   // 계약 보증금이 0이면 보증금 수납을 받지 않는다 (2026-08-02 조사).
   //
   // 종전에는 이 경우 depositActual 이 0 이 되어 보증금 record 가 0원으로 생기고,
@@ -1143,6 +1139,27 @@ export async function saveDepositPayment(data: {
   if (data.depositAmount <= 0) {
     return { ok: false, error: '계약 보증금이 입력되지 않았습니다. 고객 정보 수정에서 보증금을 먼저 입력해 주세요.' }
   }
+
+  // 보증금 초과 수납 차단 (신고 a5edc93e 후속, 운영자 승인 2026-08-10).
+  // 종전에는 min(받은 돈, 계약 보증금) 만 봐서, 보증금을 이미 받아 둔 계약에 또 넣으면
+  // 보증금 합계가 계약액을 넘어갔다(예약금 경로에는 같은 가드가 이미 있는데 이 경로만 없었다).
+  // 잔여가 있으면 잔여까지만 보증금으로 잡고 나머지는 아래 초과분(이용료) 분기로 흘린다.
+  const depositAgg = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId: data.leaseTermId, isDeposit: true, deletedAt: null },
+    _sum: { actualAmount: true },
+  })
+  const depositPaid = depositAgg._sum.actualAmount ?? 0
+  const depositRemaining = Math.max(0, data.depositAmount - depositPaid)
+  if (depositRemaining <= 0) {
+    return {
+      ok: false as const,
+      error: `계약 보증금 ${data.depositAmount.toLocaleString()}원은 이미 ${depositPaid.toLocaleString()}원을 받아 더 받을 몫이 없습니다. 수납 내역을 확인해 주세요. 이용료라면 일반 수납으로 등록해 주세요.`,
+    }
+  }
+
+  // 예약금 부분 수납 대응 (오류신고 9b974be0·63bf23bc): 실제 받은 금액을 **잔여 보증금** 상한으로 기록.
+  // 예: 계약 보증금 30만에 예약금 10만만 받으면 보증금 record 는 10만으로 남는다(초과분은 아래 이용료 분리).
+  const depositActual = Math.min(data.totalPaid, depositRemaining)
 
   // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 사고를 막는다(신고 2026-08-02, 402호 황인정).
   //
@@ -1159,7 +1176,8 @@ export async function saveDepositPayment(data: {
     _sum: { actualAmount: true },
   })
   const alreadyRent = already._sum.actualAmount ?? 0
-  const incomingRent = Math.max(0, data.totalPaid - data.depositAmount)
+  // 이용료로 흘러갈 몫은 '계약 보증금'이 아니라 '잔여 보증금'을 뺀 나머지다 — 위 초과 수납 차단과 같은 기준.
+  const incomingRent = Math.max(0, data.totalPaid - depositRemaining)
   if (monthBillForGuard > 0 && alreadyRent > 0 && alreadyRent + incomingRent > monthBillForGuard) {
     return {
       ok: false as const,
@@ -1196,7 +1214,7 @@ export async function saveDepositPayment(data: {
     },
   })
 
-  const excess = data.totalPaid - data.depositAmount
+  const excess = data.totalPaid - depositActual
   if (excess > 0) {
     // 초과분은 이용료 record — expectedAmount 는 그 달 실제 청구액(할인·일할 반영)으로 락인
     const monthBill = await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount)
