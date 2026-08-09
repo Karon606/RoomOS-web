@@ -21,6 +21,7 @@ import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -1181,16 +1182,7 @@ export default function TenantClient({
   // level 은 caution — 소프트삭제라 되살릴 수 있는데 danger 는 '되돌릴 수 없습니다'를 자동으로 붙여 거짓말이 된다.
   // 같은 삭제인데 프리즘 경로(PaymentRecordList)에만 적용취소가 있던 불일치도 함께 봉합한다.
   const handleDeletePayRecord = async (p: PayRecord) => {
-    const mon = Number(p.targetMonth.split('-')[1])
-    if (!(await confirmDialog({
-      title: p.isDeposit
-        ? `보증금 수납 ${p.actualAmount.toLocaleString()}원을 삭제할까요?`
-        : `${mon}월분 수납 ${p.actualAmount.toLocaleString()}원을 삭제할까요?`,
-      message: p.isDeposit
-        ? '보증금 잔액이 그만큼 줄어듭니다. 환불 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.'
-        : `${mon}월 매출이 ${p.actualAmount.toLocaleString()}원 줄고 그만큼 미수로 잡힙니다. 홈과 리포트의 ${mon}월 숫자도 함께 바뀝니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.`,
-      level: 'caution', confirmLabel: '삭제',
-    }))) return
+    if (!(await confirmDeletePayment(p))) return
     const paymentId = p.id
     startTransition(async () => {
       // 적용취소는 토스트 액션으로 — 프리즘(PaymentRecordList)과 같은 패턴

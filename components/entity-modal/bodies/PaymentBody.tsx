@@ -243,10 +243,13 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           </button>
 
           {/* 수납 내역 — 요약과 같은 3개월 범위. 두 모드가 다른 범위면 그게 새 혼란이다.
-              수정·삭제는 조회월 귀속 행에만 붙는다(그 밖은 'N월 화면에서 수정합니다' 안내). */}
+              수정·삭제는 조회월 귀속 행에만 붙는다(그 밖은 'N월 화면에서 수정합니다' 안내).
+              cashReceiptOnly 가 여기에도 붙어 있어 그 설계가 통째로 죽어 있었다 — 요약 전용 플래그가
+              '더 보기'까지 따라와 앱 어디에서도 수납을 못 고쳤다(신고 a5edc93e). 안내 문구조차 같은
+              플래그에 묶여 있어 왜 못 고치는지도 안 보였다. 조회월은 이 모달 상단 MonthSelector 로 바꾼다. */}
           <div className="space-y-1">
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 3개월 · 입금일과 귀속월 모두</p>
-            <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} cashReceiptOnly onChange={refresh} scope="window" reloadSignal={reloadKey} />
+            <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} scope="window" reloadSignal={reloadKey} />
           </div>
 
           {/* 전체 수납 내역 — 모든 달(언제·얼마·귀속월·방식). 접기/펼치기. */}

@@ -18,7 +18,7 @@ import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDeletePayment } from '@/lib/paymentConfirm'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
@@ -95,8 +95,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   }
 
   const handleDelete = async (p: Record) => {
-    const parts = [fmtDate(p.payDate), fmtWon(p.actualAmount), p.isDeposit ? '보증금' : `귀속 ${Number(p.targetMonth.slice(5))}월`]
-    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', message: parts.join(' · '), level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDeletePayment(p))) return
     startTransition(async () => {
       const release = trackSave()
       try {
