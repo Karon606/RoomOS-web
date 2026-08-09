@@ -83,6 +83,12 @@ export function DepositStatusPanel({
   const effectiveFee = cleaningFeeDeductible(cleaningFee, cleaningPaid)
   const expectedRefund = Math.max(0, refundBase - effectiveFee)
   const shortfall = depositAmount > 0 ? depositAmount - paid : 0
+  // 청소비가 보증금 안의 몫인 계약(운영자 확정 2026-08-10): 입실 때 받은 청소비가 계약 보증금의
+  // 일부를 채운다. 현금만 세면 그 몫이 '부족'으로 보인다(520호 — 현금 3만 정정이 부족 2만으로 표시,
+  // 청소비 2만이 화면 어디에도 연결되지 않았다). 별도 수령 영업장도 있으므로 조용히 흡수하지 않는다 —
+  // 배지는 채워진 만큼만 완납으로 판정하되 아래 표시줄이 현금·청소비 구성을 병기한다.
+  const coveredByCleaning = Math.min(Math.max(0, shortfall), cleaningPaid)
+  const effectiveShortfall = shortfall - coveredByCleaning
   // 계약 보증금이 비어 있으면 환불 여부 판정 자체가 불가능하다. 환불 경고보다 이게 먼저다.
   const noContractAmount = depositAmount === 0 && paid > 0 && !settled
   // 퇴실했는데 환불 기록이 없는 상태 — 운영자 요건 "돌려줘야 하는지"의 정답 자리라 초록으로 덮으면 안 된다
@@ -103,9 +109,9 @@ export function DepositStatusPanel({
     : paid === 0 && status === 'CANCELLED' ? { tone: 'pale-neutral', label: '수납 없음' }
     : unsettledExit ? { tone: 'pale-amber', label: carriedOver ? '인수 승계 · 환불 미처리' : '환불 미처리' }
     : carriedOver ? { tone: 'pale-blue', label: '인수 승계' }
-    : shortfall <= 0 ? { tone: 'pale-green', label: '수납 완료' }
-    : paid === 0 ? { tone: 'pale-amber', label: '미수납' }
-    : { tone: 'pale-amber', label: `부족 ${fmtWon(shortfall)}` }
+    : effectiveShortfall <= 0 ? { tone: 'pale-green', label: '수납 완료' }
+    : paid === 0 && coveredByCleaning === 0 ? { tone: 'pale-amber', label: '미수납' }
+    : { tone: 'pale-amber', label: `부족 ${fmtWon(effectiveShortfall)}` }
 
   const startEdit = (r: Rec) => {
     setEditId(r.id); setEditAmount(r.actualAmount); setEditDate(ymd(r.payDate)); setEditMethod(r.payMethod ?? '')
@@ -169,6 +175,8 @@ export function DepositStatusPanel({
       <p className="text-sm text-[var(--warm-dark)]">
         <span className="text-[var(--warm-muted)] text-xs">받은 보증금 </span>
         <span className="font-semibold num">{fmtWon(paid)}</span>
+        {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 현금만 보이면 '어디에도 기록이 없다'로 읽힌다. */}
+        {coveredByCleaning > 0 && <span className="text-xs text-[var(--warm-mid)]"> + 청소비 {fmtWon(coveredByCleaning)}</span>}
         {depositAmount > 0 && <span className="text-[var(--warm-muted)] text-xs"> / 계약 {fmtWon(depositAmount)}</span>}
       </p>
 
@@ -225,10 +233,13 @@ export function DepositStatusPanel({
         </p>
       )}
       {/* 왜 청소비를 안 뺐는지 — 계약에 청소비가 적혀 있는데 예상액에서 사라지면 누락으로 읽힌다.
-          문구는 퇴실 처리 폼의 정본과 같은 한 문장이다(두 화면이 갈리면 또 어긋난다). */}
+          기본 문구는 퇴실 처리 폼의 정본과 같은 한 문장. 청소비가 보증금 몫을 채운 계약(coveredByCleaning)만
+          구성 설명으로 분기한다 — 같은 문장으로는 '보증금 어디에도 청소비가 없다'는 혼란을 못 푼다(2026-08-10). */}
       {!settled && refundBase > 0 && cleaningFee > 0 && cleaningPaid > 0 && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-          청소비 {fmtWon(cleaningPaid)}은 입실 때 이미 받아 공제하지 않습니다.
+          {coveredByCleaning > 0
+            ? `입실 때 받은 청소비 ${fmtWon(cleaningPaid)}이 계약 보증금의 일부를 채웁니다. 환불 예상은 현금으로 받은 몫 기준이며 청소비는 다시 공제하지 않습니다.`
+            : `청소비 ${fmtWon(cleaningPaid)}은 입실 때 이미 받아 공제하지 않습니다.`}
         </p>
       )}
 
