@@ -122,6 +122,7 @@ model User {
   joinRequests    JoinRequest[]
   statusLogs      TenantStatusLog[]
   invalidatedStatusLogs TenantStatusLog[] @relation("StatusLogInvalidatedBy")
+  foreignRegNoViews ForeignRegNoView[]
 
   @@map("users")
 }
@@ -227,6 +228,7 @@ model Property {
 
   cleanings          RoomCleaning[]
   documentFieldOverrides DocumentFieldOverride[]
+  foreignRegNoViews  ForeignRegNoView[]
   @@map("properties")
 }
 
@@ -534,6 +536,11 @@ model Tenant {
   memo             String?
   isBasicRecipient Boolean   @default(false)
   smoking          Boolean   @default(false)   // 흡연 여부 (true=흡연) — 고객관리 입력, 계약서 자동반영
+  // 외국인등록번호. 평문은 이 DB 어디에도 없다. AES-256-GCM 암호문이고 형식은 `v1:<iv>:<tag>:<ct>` 이며,
+  // AAD 로 이 행의 id 를 묶어 다른 입주자에게 옮겨 붙인 암호문은 복호 단계에서 실패한다(lib/pii).
+  // 평문을 꺼내는 문은 lib/pii 의 readStoredForeignRegNo 하나이고 화면에는 마스킹만 내려간다.
+  // 고객 화면에서의 열람은 revealForeignRegNo 서버 액션만 할 수 있고 그 호출은 foreign_reg_no_views 에 남는다.
+  foreignRegNoEnc  String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -552,8 +559,32 @@ model Tenant {
   extraIncomes   ExtraIncome[]
   residenceCertFiles ResidenceCertFile[]
   rentReceiptFiles   RentReceiptFile[]
+  foreignRegNoViews  ForeignRegNoView[]
 
   @@map("tenants")
+}
+
+// 외국인등록번호 평문 열람 기록. 고객 화면의 revealForeignRegNo 서버 액션이 유일한 평문 경로이고,
+// 그 문을 지날 때마다 누가 언제 어느 입주자의 번호를 봤는지 한 줄이 남는다.
+// 계약서 렌더는 여기 남기지 않는다. 그건 사람이 번호를 보러 들어간 것이 아니라 서류가 자기 칸을
+// 채우는 경로라, 같은 표에 섞으면 '누가 봤는가' 라는 물음의 답이 서류 발급 로그에 묻힌다.
+model ForeignRegNoView {
+  id       String   @id @default(uuid()) @db.Uuid
+  viewedAt DateTime @default(now())
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  // 사용자 행이 지워져도 '언제 열람이 있었다' 는 사실은 남아야 한다.
+  viewedById String? @db.Uuid
+  viewedBy   User?   @relation(fields: [viewedById], references: [id])
+
+  @@index([tenantId, viewedAt])
+  @@index([propertyId, viewedAt])
+  @@map("foreign_reg_no_views")
 }
 
 // ============================================================
