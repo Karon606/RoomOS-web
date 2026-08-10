@@ -9,14 +9,20 @@
 // 사유는 있을 때만 둘째 줄에 붙인다. 없는 행에 대시를 찍지 않는다 —
 // '기록 안 함'이 기본값이라 비어 있는 것이 정상 상태다.
 // 대신 사유를 받는 전이(입실 취소·퇴실)인데 비어 있으면 [사유 기록] 으로 소급 입력을 연다.
+//
+// 무효 처리(신고 e000c791) — 잘못 입력한 행은 본문 목록에서 빼되 지우지는 않는다.
+// 본문에 흐리게 남기면 신고의 불만("잘못 입력한게 내역으로 남으니까")이 그대로 남고,
+// 아주 감춰 버리면 되돌릴 자리가 토스트 수명뿐이라 적용취소 원칙이 깨진다.
+// 그래서 '이전 이력' 과 같은 접힘 칸 문법으로 아래에 따로 모은다 — 새 인터랙션이 아니다.
 
 import { useEffect, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { getTenantStatusHistory, updateStatusLogReason } from '@/app/(app)/rooms/actions'
+import { getTenantStatusHistory, updateStatusLogReason, invalidateStatusLog, restoreStatusLog } from '@/app/(app)/rooms/actions'
 import { Section } from './Section'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { buildReason, parseReason, reasonsForStatus, reasonLabel, withRo } from '@/lib/statusReasons'
@@ -29,20 +35,63 @@ type HistItem = Awaited<ReturnType<typeof getTenantStatusHistory>>['items'][numb
 
 const label = (s: string) => STATUS_LABEL[s] ?? s
 
+// 행 제목 — 확인창 문면과 목록이 같은 문장을 써야 무엇을 무효 처리하는지 헷갈리지 않는다.
+const rowTitle = (it: HistItem) =>
+  it.isCreated ? `${withRo(label(it.toStatus))} 등록` : `${label(it.fromStatus)}에서 ${withRo(label(it.toStatus))}`
+
 export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getTenantStatusHistory>> | null>(null)
   const [showOlder, setShowOlder] = useState(false)
+  const [showVoided, setShowVoided] = useState(false)
   const [edit, setEdit] = useState<HistItem | null>(null)
+  const [pending, setPending] = useState<string | null>(null)   // 처리 중인 행 id — 연타 방어
 
   // 실패해도 스켈레톤이 영구 잔존하지 않게 빈 목록으로 떨어뜨린다(§27.2)
-  const load = () => { getTenantStatusHistory(tenantId).then(setData).catch(() => setData({ items: [] })) }
+  const load = () => { getTenantStatusHistory(tenantId).then(setData).catch(() => setData({ canEdit: false, items: [] })) }
   useEffect(() => {
     let active = true
     getTenantStatusHistory(tenantId)
       .then(d => { if (active) setData(d) })
-      .catch(() => { if (active) setData({ items: [] }) })
+      .catch(() => { if (active) setData({ canEdit: false, items: [] }) })
     return () => { active = false }
   }, [tenantId])
+
+  const restore = async (it: HistItem) => {
+    if (pending) return
+    setPending(it.id)
+    try {
+      const res = await restoreStatusLog(it.id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('info', '무효 처리를 적용취소했습니다.')
+      load()
+    } catch { pushToast('error', '적용취소 중 통신 오류가 발생했습니다.') }
+    finally { setPending(null) }
+  }
+
+  const invalidate = async (it: HistItem) => {
+    if (pending) return
+    const rLabel = reasonLabel(it.toStatus)
+    const ok = await confirmDialog({
+      title: `'${rowTitle(it)}' 이력을 무효 처리할까요?`,
+      message: [
+        '상태 이력 목록에서 빠집니다.',
+        it.reason && rLabel ? `여기 적힌 ${rLabel} '${it.reason}' 도 목록·카드의 사유 표시에서 함께 빠집니다.` : null,
+        '지금 상태는 바뀌지 않습니다. 아래 무효 처리한 이력 칸에서 언제든 적용취소할 수 있습니다.',
+      ].filter(Boolean).join('\n'),
+      level: 'caution', confirmLabel: '무효 처리',
+    })
+    if (!ok) return
+    setPending(it.id)
+    try {
+      const res = await invalidateStatusLog(it.id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '이력을 무효 처리했습니다.', {
+        action: { label: '적용취소', run: () => { void restore(it) } },
+      })
+      load()
+    } catch { pushToast('error', '무효 처리 중 통신 오류가 발생했습니다.') }
+    finally { setPending(null) }
+  }
 
   if (data === null) {
     return <Section title="상태 이력"><SkeletonRows rows={2} className="py-1" /></Section>
@@ -50,13 +99,16 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
   // 이사 이력과 달리 1건이어도 보여준다 — 이사 1건은 '안 옮겼다'는 뜻이지만 상태 이력 1건은 그 자체가 답이다.
   if (data.items.length === 0) return null
 
-  const recent = data.items.slice(0, RECENT)
-  const older  = data.items.slice(RECENT)
+  const live   = data.items.filter(it => !it.deleted)
+  const voided = data.items.filter(it => it.deleted)
+  const recent = live.slice(0, RECENT)
+  const older  = live.slice(RECENT)
+  const rowProps = { canEdit: data.canEdit, pending, onEdit: setEdit, onInvalidate: invalidate, onRestore: restore }
 
   return (
     <Section title="상태 이력">
       <ul className="space-y-1.5">
-        {recent.map(it => <HistRow key={it.id} item={it} onEdit={setEdit} />)}
+        {recent.map(it => <HistRow key={it.id} item={it} {...rowProps} />)}
       </ul>
       {older.length > 0 && (
         <div className="mt-2">
@@ -66,7 +118,22 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
           </button>
           {showOlder && (
             <ul className="mt-2 space-y-1.5">
-              {older.map(it => <HistRow key={it.id} item={it} onEdit={setEdit} />)}
+              {older.map(it => <HistRow key={it.id} item={it} {...rowProps} />)}
+            </ul>
+          )}
+        </div>
+      )}
+      {/* 무효 처리한 이력 — 접힘 칸(위 '이전 이력'과 같은 문법). 지운 게 아니라 접어 둔 것이라
+          적용취소가 토스트가 사라진 뒤에도 여기 남는다(§16). */}
+      {voided.length > 0 && (
+        <div className="mt-2">
+          <button type="button" onClick={() => setShowVoided(v => !v)}
+            className="text-xs font-medium text-[var(--warm-muted)] flex items-center gap-1">
+            무효 처리한 이력 {voided.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {showVoided && (
+            <ul className="mt-2 space-y-1.5">
+              {voided.map(it => <HistRow key={it.id} item={it} {...rowProps} />)}
             </ul>
           )}
         </div>
@@ -76,30 +143,51 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
   )
 }
 
-function HistRow({ item, onEdit }: { item: HistItem; onEdit: (it: HistItem) => void }) {
+function HistRow({ item, canEdit, pending, onEdit, onInvalidate, onRestore }: {
+  item: HistItem
+  canEdit: boolean
+  pending: string | null
+  onEdit: (it: HistItem) => void
+  onInvalidate: (it: HistItem) => void
+  onRestore: (it: HistItem) => void
+}) {
   // 사유를 받지 않는 전이의 reason 은 시스템 라벨('단기 연장')이라 '퇴실 사유:' 를 붙이지 않는다.
   const rLabel = reasonLabel(item.toStatus)
+  const busy = pending === item.id
+  // 무효 행은 흐리게 — 접힘 칸 안에서도 유효한 행과 같은 무게로 읽히면 안 된다.
   return (
-    <li>
+    <li className={item.deleted ? 'opacity-55' : undefined}>
       <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="min-w-0 truncate font-medium text-[var(--warm-dark)]">
-          {item.isCreated ? `${withRo(label(item.toStatus))} 등록` : `${label(item.fromStatus)}에서 ${withRo(label(item.toStatus))}`}
+        <span className={`min-w-0 truncate font-medium text-[var(--warm-dark)] ${item.deleted ? 'line-through' : ''}`}>
+          {rowTitle(item)}
         </span>
         <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--warm-muted)]">{fmtDateDot(item.changedAt)}</span>
       </div>
       {item.reason && (
-        <div className="mt-0.5 flex items-center justify-between gap-2 pl-2">
-          <span className="min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">{rLabel ? `${rLabel}: ` : ''}{item.reason}</span>
-          {item.editable && (
-            <RowActionBtn tone="accent" className="shrink-0" onClick={() => onEdit(item)}>수정</RowActionBtn>
-          )}
+        <div className="mt-0.5 pl-2">
+          <span className="block truncate text-[0.65625rem] text-[var(--warm-muted)]">{rLabel ? `${rLabel}: ` : ''}{item.reason}</span>
         </div>
       )}
-      {/* 기록 진입은 가장 최근 종료 전이 한 행에만 — 퇴실 예정·퇴실 두 행에 다 뜨면
-          어느 쪽이 정본인지 화면에 단서가 없다(서버가 canRecord 로 정한다) */}
-      {!item.reason && item.canRecord && rLabel && (
-        <div className="mt-0.5 pl-2">
-          <RowActionBtn tone="accent" onClick={() => onEdit(item)}>{rLabel} 기록</RowActionBtn>
+      {/* 행 액션은 한 줄에 모은다 — 사유 유무에 따라 버튼이 다른 줄에 놓이면 같은 목록에서 자리가 흔들린다.
+          기록 진입은 가장 최근 종료 전이 한 행에만(서버가 canRecord 로 정한다) — 퇴실 예정·퇴실 두 행에
+          다 뜨면 어느 쪽이 정본인지 화면에 단서가 없다. */}
+      {canEdit && (
+        <div className="mt-0.5 pl-2 flex flex-wrap items-center gap-1.5">
+          {item.deleted ? (
+            // 라벨은 '적용취소' 단일이다(§16) — '되돌리기'로 갈아 쓰지 않는다.
+            // 톤·문면은 같은 모달의 환불 적용취소 행(TenantBody)과 같은 중립 계열.
+            <RowActionBtn tone="neutral" disabled={busy} onClick={() => onRestore(item)}>적용취소</RowActionBtn>
+          ) : (
+            <>
+              {item.reason && item.editable && (
+                <RowActionBtn tone="accent" disabled={busy} onClick={() => onEdit(item)}>수정</RowActionBtn>
+              )}
+              {!item.reason && item.canRecord && rLabel && (
+                <RowActionBtn tone="accent" disabled={busy} onClick={() => onEdit(item)}>{rLabel} 기록</RowActionBtn>
+              )}
+              <RowActionBtn tone="neutral" disabled={busy} onClick={() => onInvalidate(item)}>무효 처리</RowActionBtn>
+            </>
+          )}
         </div>
       )}
     </li>
