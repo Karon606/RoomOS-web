@@ -7,7 +7,9 @@ import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/short
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
+import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo } from './actions'
+import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
+import { digitsToIso } from '@/lib/birthdate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
@@ -135,6 +137,9 @@ type Tenant = {
   email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
+  // 외국인등록번호 마스킹. 서버가 이 값만 내려보낸다(암호문도 평문도 브라우저에 오지 않는다).
+  // 뒤 7자리는 [보기]가 revealForeignRegNo 를 부를 때만 오고, 그 열람은 기록으로 남는다.
+  foreignRegNoMasked?: string | null
   isBasicRecipient: boolean; smoking: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
 }
 
@@ -3331,6 +3336,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="true">흡연</option>
           </SelectField>
         </div>
+        {/* 외국인등록번호 — 본국 연락처와 같은 조건(국적이 대한민국이면 숨김).
+            숨겨져도 저장 시 기존 값은 보존된다(빈 값 = 서버가 건드리지 않음). */}
+        {natVal !== '대한민국' && (
+          <ForeignRegNoField tenantId={tenant?.id} masked={tenant?.foreignRegNoMasked ?? null} />
+        )}
       </FormSection>
 
       <FormSection title="연락처">
@@ -3940,6 +3950,105 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 }
 
 // ── 서브 컴포넌트 ─────────────────────────────────────────────────
+
+// 외국인등록번호 칸 — 국적이 대한민국이 아닐 때만 그린다(본국 연락처 칸과 같은 조건).
+//
+// 저장된 값은 마스킹만 보여준다. 뒤 7자리를 화면에 되돌려 주면 그 화면을 띄워 둔 것만으로
+// 어깨너머로 새는데, 운영자가 그 번호를 다시 읽어야 할 일은 거의 없다. 평문이 필요하면 [보기]를
+// 눌러야 하고 그때만 열람 기록이 남는다. 문법은 AI 키 칸(설정)의 마스킹 + [변경] + [삭제] 그대로다.
+function ForeignRegNoField({ tenantId, masked }: { tenantId?: string; masked: string | null }) {
+  const [editing, setEditing] = useState(!masked)
+  const [value, setValue] = useState('')
+  const [cleared, setCleared] = useState(false)
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const digits = value.replace(/\D/g, '')
+  const checked = digits.length === 13 ? validateForeignRegNo(digits) : null
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0 tabular-nums'
+
+  // 13자리가 채워지면 생년월일을 대신 채운다. 비어 있을 때만 넣는다 — 사람이 적어 둔 값을
+  // 번호가 덮으면 어느 쪽이 맞는지 아무도 모르게 된다. 다르면 말만 하고 그대로 둔다.
+  const syncBirthdate = (derived: string) => {
+    const el = document.querySelector<HTMLInputElement>('[name="birthdate"]')
+    const current = digitsToIso(el?.value ?? '')
+    if (!current) {
+      setInputByName('birthdate', derived.replace(/-/g, '.'))
+      setNotice('생년월일을 등록번호에서 채웠습니다.')
+      return
+    }
+    setNotice(current === derived ? null : `등록된 생년월일(${current})과 등록번호의 생년월일(${derived})이 다릅니다. 확인해 주세요.`)
+  }
+
+  const handleChange = (raw: string) => {
+    const next = formatForeignRegNo(raw)
+    setValue(next)
+    const d = next.replace(/\D/g, '')
+    if (d.length < 13) { setNotice(null); return }
+    const v = validateForeignRegNo(d)
+    if (!v.ok) { setNotice(v.error); return }
+    syncBirthdate(v.birthdate)
+  }
+
+  const handleReveal = async () => {
+    if (!tenantId || busy) return
+    setBusy(true)
+    try {
+      const res = await revealForeignRegNo(tenantId)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setRevealed(res.value)
+      pushToast('info', '열람 기록이 남았습니다.')
+    } finally { setBusy(false) }
+  }
+
+  const handleClear = async () => {
+    if (!(await confirmDialog({
+      title: '저장된 외국인등록번호를 지울까요?',
+      message: '저장하면 번호가 사라지고 계약서에는 생년월일이 다시 인쇄됩니다. 저장 전까지는 되돌릴 수 있습니다.',
+      level: 'caution', confirmLabel: '지우기',
+    }))) return
+    setCleared(true)
+    setEditing(false)
+    setValue('')
+    setRevealed(null)
+    setNotice(null)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">
+        외국인등록번호 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(입력하면 계약서 생년월일 칸이 이 번호로 인쇄됩니다)</span>
+      </label>
+      {/* 빈 값은 '건드리지 않음' 이다. 지우기는 아래 별도 신호로만 서버에 전달된다. */}
+      <input type="hidden" name="foreignRegNo" value={cleared ? '' : digits} />
+      <input type="hidden" name="foreignRegNoClear" value={cleared ? '1' : ''} />
+      {cleared ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-xs text-[var(--warm-muted)]">저장하면 삭제됩니다.</span>
+          <Btn type="button" variant="ghost" size="sm" onClick={() => { setCleared(false); setEditing(!masked) }}>되돌리기</Btn>
+        </div>
+      ) : masked && !editing ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-xs text-[var(--warm-dark)] tabular-nums">{revealed ?? masked}</span>
+          {!revealed && <Btn type="button" variant="secondary" size="sm" disabled={busy || !tenantId} onClick={() => void handleReveal()}>보기</Btn>}
+          <Btn type="button" variant="secondary" size="sm" onClick={() => { setEditing(true); setRevealed(null) }}>변경</Btn>
+          <Btn type="button" variant="ghost" size="sm" onClick={() => void handleClear()}>삭제</Btn>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input type="text" inputMode="numeric" autoComplete="off" value={value}
+            onChange={e => handleChange(e.target.value)}
+            placeholder="예: 900101-5123456" className={inputCls} />
+          {masked && <Btn type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setValue(''); setNotice(null) }}>취소</Btn>}
+        </div>
+      )}
+      {notice && (
+        <p className={`text-[0.6875rem] leading-relaxed ${checked && !checked.ok ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>{notice}</p>
+      )}
+    </div>
+  )
+}
 
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (

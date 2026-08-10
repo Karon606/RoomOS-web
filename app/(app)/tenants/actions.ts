@@ -31,6 +31,9 @@ function dueDayFromMoveIn(moveIn: Date): string {
 }
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
+import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
+import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } from '@/lib/pii'
+import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } from '@/lib/roomStay'
@@ -39,6 +42,24 @@ import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
+
+/**
+ * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
+ *
+ * 빈 값은 '건드리지 않음' 이다. 화면이 마스킹만 보여주는 것이 정상 흐름이라(뒤 7자리를 다시 받지 않는다)
+ * 빈 값을 삭제로 읽으면 이름만 고쳐도 번호가 조용히 사라진다. 지우기는 별도 신호로만 받는다.
+ * 국적을 대한민국으로 바꿔 칸이 사라진 경우도 같은 규칙이라 기존 값이 보존된다(본국 연락처 관행).
+ */
+function foreignRegNoPatch(formData: FormData, tenantId: string):
+  | { ok: true; data: { foreignRegNoEnc?: string | null } }
+  | { ok: false; error: string } {
+  if (formData.get('foreignRegNoClear') === '1') return { ok: true, data: { foreignRegNoEnc: null } }
+  const raw = (formData.get('foreignRegNo') as string | null) ?? ''
+  if (!raw.trim()) return { ok: true, data: {} }
+  const checked = validateForeignRegNo(raw)
+  if (!checked.ok) return { ok: false, error: checked.error }
+  return { ok: true, data: { foreignRegNoEnc: storeForeignRegNo(checked.value, tenantId) } }
+}
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
 function birthdateToDate(raw: string): Date | null {
@@ -150,7 +171,41 @@ export async function getTenants() {
       }
     }
   }
-  return tenants
+  // 신원번호는 컬럼째 내려보내지 않는다. 이 조회는 include 라 새 스칼라가 자동으로 딸려 나오는데,
+  // 암호문이라도 브라우저가 들고 있을 이유가 없다. 스코프가 없는 역할에는 마스킹조차 주지 않는다.
+  const canIdentity = canReadScope(role, 'identity')
+  return tenants.map(({ foreignRegNoEnc, ...t }) => ({
+    ...t,
+    foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, t.id) : null,
+  }))
+}
+
+/**
+ * 저장된 외국인등록번호의 평문을 꺼내는 유일한 문. 고객 화면의 [보기] 가 이 액션을 부른다.
+ * 값을 돌려주기 전에 열람 기록을 남긴다. 뒤에 두면 기록 실패가 곧 기록 없는 열람이 된다.
+ */
+export async function revealForeignRegNo(tenantId: string): Promise<
+  { ok: true; value: string } | { ok: false; error: string }
+> {
+  try {
+    const { user, propertyId, role } = await getPropertyId()
+    if (!canReadScope(role, 'identity')) return { ok: false, error: '외국인등록번호를 볼 권한이 없습니다.' }
+    const tenant = await prisma.tenant.findFirst({
+      where: { id: tenantId, propertyId },
+      select: { id: true, foreignRegNoEnc: true },
+    })
+    if (!tenant) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
+    if (!tenant.foreignRegNoEnc) return { ok: false, error: '등록된 외국인등록번호가 없습니다.' }
+    const plain = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
+    if (!plain) return { ok: false, error: '저장된 외국인등록번호를 읽지 못했습니다. 다시 입력해 주세요.' }
+    await prisma.foreignRegNoView.create({
+      data: { tenantId: tenant.id, propertyId, viewedById: user.sub },
+    })
+    return { ok: true, value: formatForeignRegNo(plain) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '외국인등록번호를 불러오지 못했습니다.' }
+  }
 }
 
 // 호실 목록 (입주자 등록/수정 시 선택용)
@@ -317,10 +372,18 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     })
   }
 
+  // 암호문 AAD 가 이 행의 id 라 id 를 먼저 정해 둔다. 만들고 나서 두 번째 문으로 채우면
+  // 그 문이 실패했을 때 번호 없는 입주자가 남고, 운영자는 저장된 줄 안다.
+  const newTenantId = randomUUID()
+  const regNo = foreignRegNoPatch(formData, newTenantId)
+  if (!regNo.ok) return { ok: false, error: regNo.error }
+
   const tenant = await prisma.tenant.create({
     data: {
+      id: newTenantId,
       propertyId,
       name: name.trim(),
+      ...regNo.data,
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),
@@ -576,6 +639,8 @@ export async function updateTenant(formData: FormData): Promise<
   }
 
   // 입주자 정보 수정
+  const regNo = foreignRegNoPatch(formData, tenantId)
+  if (!regNo.ok) return { ok: false, error: regNo.error }
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
@@ -589,6 +654,7 @@ export async function updateTenant(formData: FormData): Promise<
       nationality: nationality || null,
       gender,
       job: job || null,
+      ...regNo.data,
     },
   })
 

@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
+import { maskStoredForeignRegNo } from '@/lib/pii'
 import { kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -1994,12 +1995,13 @@ export async function getTenantDetail(tenantId: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
-  return prisma.tenant.findUnique({
+  const row = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: {
       id: true, name: true, englishName: true, email: true,
       gender: true, nationality: true, job: true,
       birthdate: true, isBasicRecipient: true, smoking: true, memo: true,
+      foreignRegNoEnc: true,
       contacts: {
         select: {
           id: true, contactType: true, contactValue: true,
@@ -2045,6 +2047,12 @@ export async function getTenantDetail(tenantId: string) {
       },
     },
   })
+  if (!row) return null
+  // 신원번호는 암호문째 내려보내지 않는다. 상세 카드는 마스킹만 그리고, 평문이 필요하면
+  // 고객 정보 화면의 [보기](revealForeignRegNo)로 가야 한다. 그 문만 열람 기록을 남긴다.
+  const { foreignRegNoEnc, ...tenant } = row
+  const canIdentity = canReadScope(await getMyRole(), 'identity')
+  return { ...tenant, foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null }
 }
 
 export async function getTenantQuickInfo(tenantId: string) {

@@ -18,10 +18,15 @@ export function canEditScope(role: Role, scope: WriteScope): boolean {
 
 // ── 읽기 스코프(민감 데이터 차단) ─────────────────────────────
 // 쓰기와 별도 맵 — 재고 쓰기 부여가 금액 읽기로 전이되지 않게(누수 방지, 적대검증 필수).
-export type ReadScope = 'money'
+//
+// identity — 신원번호(외국인등록번호). 금액과 따로 끊는다. 금액은 '업무상 볼 수 있는가' 의 문제지만
+// 신원번호는 유출되면 되돌릴 방법이 없고, 스태프가 그 번호로 할 업무가 없다. 그래서 계약을 쓰는
+// 역할(OWNER·MANAGER)만 남기고 STAFF 와 LIMITED_STAFF 를 함께 막는다. 마스킹조차 안 내려간다.
+export type ReadScope = 'money' | 'identity'
 
 const READ_SCOPE_DENY: Partial<Record<Role, ReadonlySet<ReadScope>>> = {
-  LIMITED_STAFF: new Set(['money']),
+  STAFF: new Set(['identity']),
+  LIMITED_STAFF: new Set(['money', 'identity']),
 }
 
 export function canReadScope(role: Role, scope: ReadScope): boolean {

@@ -14,6 +14,9 @@ type Tenant = {
   birthdate: Date | string | null
   isBasicRecipient: boolean
   smoking: boolean
+  // 외국인등록번호 마스킹. 평문은 이 화면에 오지 않는다. 뒤 7자리를 보려면 고객 정보 화면의
+  // [보기]를 거쳐야 하고, 그 열람만 기록으로 남는다.
+  foreignRegNoMasked?: string | null
   leaseTerms: { room: { roomNo: string } | null }[]
 }
 
@@ -37,6 +40,9 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
         <Item label="직업"       value={tenant.job ?? '—'} />
         <Item label="흡연 여부"  value={tenant.smoking ? '흡연' : '비흡연'} />
         <Item label="생년월일"   value={fmtDate(tenant.birthdate)} />
+        {tenant.foreignRegNoMasked && (
+          <Item label="외국인등록번호" value={<span className="tabular-nums">{tenant.foreignRegNoMasked}</span>} />
+        )}
         <Item label="기초수급자" value={tenant.isBasicRecipient ? '예/대상자' : '아니오/해당없음'} />
       </Grid>
     </Section>
