@@ -528,6 +528,10 @@ model Tenant {
   id               String   @id @default(uuid()) @db.Uuid
   name             String
   englishName      String?
+  // 현지 표기 이름 — 본국 표기법 그대로(Nguyễn Thị Thảo Anh, 王小明). 영문 이름과 다른 사실이다.
+  // 영문 로마자는 성조·한자를 잃어버려 그 나라 발음·글자를 되짚을 수 없다.
+  // 서류 성명 표기 선택지 'native' 의 원천이고, 값이 없으면 그 선택지 자체가 안 뜬다(lib/documentName).
+  nativeName       String?
   email            String?
   birthdate        DateTime? @db.Date
   gender           Gender    @default(UNKNOWN)
