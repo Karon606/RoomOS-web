@@ -21,6 +21,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
+import { useFocusSection } from '@/lib/useFocusSection'
 import { canShareFiles } from '@/lib/shareFile'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
@@ -36,6 +37,8 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const router = useRouter()
   const entityModal = useEntityModal()
   const searchParams = useSearchParams()
+  // 종 알림(원격 서명 완료)이 ?focus= 로 보내는 발급 대기 섹션으로 스크롤
+  useFocusSection()
   // 전역 통합 검색 ?q= 딥링크 시딩
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
   const [residency, setResidency] = useState<'current' | 'departed' | 'all'>('current')
@@ -193,7 +196,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       {/* 발급 대기 — 서명은 들어왔는데 계약서 파일이 아직 없는 계약. 파일 목록에는 존재할 수 없는 행이라
           여기서 따로 세운다. 이게 없어서 서명 완료 계약이 화면에서 통째로 사라졌다(오류신고 d41eea8c). */}
       {pendingRows.length > 0 && (
-        <div>
+        <div id="contracts-pending-issue">
           <SectionHeader
             first
             name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--coral)]">서명 완료</span></>}

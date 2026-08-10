@@ -28,6 +28,7 @@ import { useCanEditScope } from '@/components/RoleContext'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { useFocusSection } from '@/lib/useFocusSection'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
@@ -166,6 +167,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const trackedCats = categories.map(c => c.cat)
   const router = useRouter()
   const searchParams = useSearchParams()
+  // 종 알림(재고 소진 임박·수령 대기)이 ?focus= 로 보내는 섹션으로 스크롤
+  useFocusSection()
   const rows = initialRows
   // 전역 월(?month=) 이동 — Header 와 동일하게 URL + localStorage 동기화
   const changeMonth = (delta: number) => {
@@ -656,7 +659,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           const groups = [...groupMap.values()]
           const totalAmt = flat.reduce((s, f) => s + (f.p.amount || 0), 0)
           return (
-            <section className="space-y-2">
+            <section id="inventory-pending" className="space-y-2">
               {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
               <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
                 수령 대기 <span className="text-[0.65625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
@@ -749,7 +752,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         {(() => {
           const lowCount = visibleRows.filter(r => r.daysUntilEmpty != null && r.daysUntilEmpty <= r.effectiveAlertDays).length
           return lowCount > 0 ? (
-            <div className="rounded-lg border-l-[3px] px-3.5 py-2.5 text-xs font-medium"
+            <div id="inventory-lowstock" className="rounded-lg border-l-[3px] px-3.5 py-2.5 text-xs font-medium"
               style={{ borderLeftColor: 'var(--danger-fg)', background: 'var(--danger-bg)', color: 'var(--danger-fg)' }}>
               소진 임박 {lowCount}건
             </div>

@@ -198,7 +198,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `lowstock-${r.id}`, category: 'lowstock',
       title: r.label,
       subtitle: r.daysUntilEmpty <= 0 ? '재고 소진' : `약 ${r.daysUntilEmpty}일 후 소진`,
-      href: '/inventory',
+      href: '/inventory?focus=inventory-lowstock',
       urgency: 500 - Math.min(500, r.daysUntilEmpty),
     })
   }
@@ -209,7 +209,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `receipt-${e.id}`, category: 'receipt',
       title: e.itemLabel ?? '품목',
       subtitle: [e.vendor, e.amount > 0 ? fmtWon(e.amount) : '', '수령 대기'].filter(Boolean).join(' · '),
-      href: '/inventory',
+      href: '/inventory?focus=inventory-pending',
       urgency: 300,
     })
   }
