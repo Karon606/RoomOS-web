@@ -117,8 +117,11 @@ export async function createCleaning(input: {
  * 완료 처리. 되돌리면 예정으로 돌아간다 — 되돌리기가 없으면 오탭 한 번에 이력이 굳는다.
  *
  * 비용이 있으면 그때 Expense 1건을 만들고 id 를 건다. **금액은 여기 복사하지 않는다.**
- * 사본을 두면 지출에서 금액을 고쳤을 때 갈린다. 비용 0(직접 청소)이면 Expense 를 안 만든다 —
+ * 사본을 두면 지출에서 금액을 고쳤을 때 갈린다. 비용 0 이면 Expense 를 안 만든다 —
  * 자기 노동은 비용이 아니고, 지출 정본이 금액 0 을 애초에 거부한다.
+ *
+ * 직접 청소(SELF)도 비용을 받는다. 노동이 공짜인 것과 세제·용품값이 나간 것은 별개고,
+ * 그 돈은 실제로 통장에서 빠진다. 기본값이 0 이라 안 적으면 종전과 똑같이 지출이 안 생긴다.
  *
  * fromCleaningFund 는 **회계 처리가 아니라 표식**이다. 어느 돈으로 냈는지를 적을 뿐 손익을 안 바꾼다.
  * 예비비처럼 Expense 를 안 만드는 방식을 베끼면 실제로 나간 현금이 손익에서 사라진다 —
@@ -154,6 +157,13 @@ export async function completeCleaning(input: {
 
     await prisma.$transaction(async tx => {
       let expenseId = cur.expenseId
+      // expenseId 는 관계가 아니라 uuid 칸이라 지출 화면에서 그 지출을 지우면 끊긴 채로 남는다
+      // (Expense 에는 소프트삭제 칸이 없어 하드 삭제다). 없는 것을 고치려 들면 트랜잭션이 통째로
+      // 깨져 완료 처리 자체가 실패하므로, 먼저 살아 있는지 보고 없으면 안 걸린 것으로 친다.
+      if (expenseId) {
+        const alive = await tx.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true } })
+        if (!alive) expenseId = null
+      }
       // 다시 완료 처리하면 **있는 지출을 고친다.** 지우고 새로 만들면 운영자가 지출 화면에서
       // 손본 것(구매처·메모·영수증)이 통째로 사라지고 되돌릴 길이 없다. Expense 에는 소프트삭제 칸이 없다.
       if (expenseId && cost > 0) {
@@ -215,19 +225,27 @@ export async function completeCleaning(input: {
   }
 }
 
-/** 완료·건너뜀을 예정으로 되돌린다. */
+/**
+ * 완료·건너뜀을 예정으로 되돌린다(§16 적용취소).
+ *
+ * **지출은 지우지도 끊지도 않는다.** 실제로 나간 돈이고, 청소 상태를 되돌린다고 그 돈이
+ * 안 나간 것이 되지 않는다. 지울지는 지출 화면에서 운영자가 정한다.
+ *
+ * 두 번 틀렸던 자리다. 처음에는 여기서 Expense 를 하드 삭제했는데 소프트삭제 칸이 없어
+ * 되돌릴 길이 없었다. 그다음에는 연결(expenseId)만 끊었는데, 그러면 다시 완료할 때
+ * completeCleaning 이 "걸린 지출이 없다"고 보고 **생성 분기로 떨어져 같은 청소에 지출이 두 건**
+ * 생겼다. 연결을 그대로 두면 재완료가 저절로 수정 분기로 가 한 건이 유지된다.
+ * fromCleaningFund 만 내린다 — 부담 표식은 완료된 청소에 붙는 것이고 완료 시점에 다시 정한다.
+ */
 export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKept: boolean } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const cur = await prisma.roomCleaning.findFirst({ where: { id, propertyId, deletedAt: null }, select: { id: true, expenseId: true } })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    // **지출은 지우지 않는다.** 실제로 나간 돈이고, 청소 상태를 되돌린다고 그 돈이 안 나간 것이 되지 않는다.
-    // 연결만 끊고 지출은 그대로 둔다 — 지울지는 지출 화면에서 운영자가 정한다.
-    // 종전에는 여기서 하드 삭제했는데 Expense 에는 소프트삭제 칸이 없어 되돌릴 길이 없었다.
     await prisma.roomCleaning.update({
       where: { id },
-      data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, expenseId: null, fromCleaningFund: false },
+      data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, fromCleaningFund: false },
     })
     revalidatePath('/room-manage')
     return { ok: true, expenseKept: !!cur.expenseId }
@@ -237,27 +255,41 @@ export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKep
 }
 
 /**
- * 예정일 변경. **예정 상태에서만.**
+ * 그 행에 보이는 날짜를 바꾼다. 예정·안 함 건은 예정일, 완료 건은 완료일이다.
+ * 화면의 동사는 어느 쪽이든 '날짜 변경' 하나라 서버 동사도 하나로 둔다.
  *
- * 완료·안 함 건의 행에 보이는 날짜는 완료일이고 그것은 지출 date 와 짝이라
- * 여기서 건드리면 두 날짜가 조용히 갈린다. 완료일을 고치려면 완료 처리를 다시 하면 되고,
- * 그 경로는 completeCleaning 이 지출 date 까지 함께 옮긴다.
+ * 완료 건의 완료일은 지출 date 와 짝이라 **연결된 지출의 날짜도 함께 옮긴다.**
+ * completeCleaning 이 생성·수정 양쪽에서 doneDate 를 지출 date 로 쓰고 있어,
+ * 여기만 안 옮기면 청소 이력과 지출 화면의 같은 건이 서로 다른 날을 말한다.
+ *
+ * 종전에는 예정 상태에서만 열려 있었다. 완료일을 고칠 문이 없으니 운영자가 되돌리기로
+ * 우회했고, 그 우회로가 지출을 두 건으로 불리던 경로였다(reopenCleaning 주석 참고).
  */
-export async function rescheduleCleaning(input: { id: string; scheduledDate: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function rescheduleCleaning(input: { id: string; date: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const cur = await prisma.roomCleaning.findFirst({
       where: { id: input.id, propertyId, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, expenseId: true },
     })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    if (cur.status !== 'PLANNED') return { ok: false, error: '예정 상태에서만 예정일을 바꿀 수 있습니다.' }
-    await prisma.roomCleaning.update({
-      where: { id: input.id },
-      data: { scheduledDate: new Date(`${input.scheduledDate}T00:00:00`) },
+    const date = new Date(`${input.date}T00:00:00`)
+    if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+
+    if (cur.status !== 'DONE') {
+      await prisma.roomCleaning.update({ where: { id: input.id }, data: { scheduledDate: date } })
+      revalidatePath('/room-manage')
+      return { ok: true }
+    }
+    await prisma.$transaction(async tx => {
+      await tx.roomCleaning.update({ where: { id: input.id }, data: { doneDate: date } })
+      // updateMany 라 지출이 이미 지워졌으면 조용히 0건이다. update 였다면 없는 것을 고치려다
+      // 트랜잭션이 깨져 완료일 변경까지 실패한다.
+      if (cur.expenseId) await tx.expense.updateMany({ where: { id: cur.expenseId, propertyId }, data: { date } })
     })
     revalidatePath('/room-manage')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
