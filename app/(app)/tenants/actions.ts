@@ -223,6 +223,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
   const depositReceived      = formData.get('depositReceived') === '1'
+  // 얼마를 받은 것으로 기록할지 폼이 되물어 실어 보낸 값(2026-08-10). 비면 종전대로 미기록분 전액.
+  const depositReceivedAmountRaw = formData.get('depositReceivedAmount')
+  const depositReceivedAmount = depositReceivedAmountRaw != null && String(depositReceivedAmountRaw).trim() !== ''
+    ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
+    : null
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
@@ -372,7 +377,10 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     const lease = await prisma.leaseTerm.findFirst({
       where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
     })
-    if (lease) { try { await recordDepositReceived(lease.id) } catch { /* 이미 기록됨 등은 무시 */ } }
+    if (lease) {
+      try { await recordDepositReceived(lease.id, depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : undefined) }
+      catch { /* 이미 기록됨 등은 무시 */ }
+    }
   }
 
   revalidatePath('/tenants')
@@ -447,6 +455,11 @@ export async function updateTenant(formData: FormData): Promise<
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
   const depositReceived      = formData.get('depositReceived') === '1'
+  // 얼마를 받은 것으로 기록할지 폼이 되물어 실어 보낸 값(2026-08-10). 비면 종전대로 미기록분 전액.
+  const depositReceivedAmountRaw = formData.get('depositReceivedAmount')
+  const depositReceivedAmount = depositReceivedAmountRaw != null && String(depositReceivedAmountRaw).trim() !== ''
+    ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
+    : null
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
@@ -865,7 +878,8 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
   if (depositReceived && depositAmount > 0) {
-    try { await recordDepositReceived(leaseTermId) } catch { /* 이미 기록됨 등은 무시 */ }
+    try { await recordDepositReceived(leaseTermId, depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : undefined) }
+    catch { /* 이미 기록됨 등은 무시 */ }
   }
 
   // 단기에서 월 단위로 내려오면서 이용료가 바뀐 경우 — 락인된 청구액을 되쓴다(신고 2c6de978).
@@ -1154,6 +1168,18 @@ export async function getDepositCompositionForLease(leaseTermId: string): Promis
     cleaningFeeInDeposit: property?.cleaningFeeInDeposit ?? false,
   })
   return { ...comp, basis: basis.basis, basisSource: basis.source, carriedOver: basis.source === 'carriedOver' }
+}
+
+// 일괄 편집 확인창 근거 — 선택한 입주자 중 입실 청소비를 이미 받은 사람이 몇인가(2026-08-10).
+// 보증금을 한 번에 같은 값으로 덮으면 그 사람들에게는 청소비 몫이 두 번 잡힐 수 있다.
+export async function countTenantsWithCleaningFeeReceived(tenantIds: string[]): Promise<number> {
+  if (tenantIds.length === 0) return 0
+  const { propertyId } = await getPropertyId()
+  const rows = await prisma.extraIncome.findMany({
+    where: { propertyId, category: CLEANING_FEE_CATEGORY, tenantId: { in: tenantIds } },
+    select: { tenantId: true },
+  })
+  return new Set(rows.map(r => r.tenantId)).size
 }
 
 export async function getReceivedDepositTotal(leaseTermId: string): Promise<number> {

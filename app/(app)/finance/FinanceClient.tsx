@@ -1352,6 +1352,7 @@ type DepositPerTenant = {
   roomNo: string | null; status: string
   contractDeposit: number; totalIn: number; totalReturned: number; totalWithheld: number; balance: number
   hasNoInRecord: boolean
+  cleaningPaid: number        // 입실 때 받은 청소비 — '받음으로 기록' 확인창 근거(2026-08-10)
   coveredByCleaning: number   // 입실 청소비가 채운 보증금 몫(포함형 영업장만 > 0, 2026-08-10)
 }
 type DepositLedgerEntry = {
@@ -4897,12 +4898,29 @@ function DepositTab({ summary, ledger, totalBalance }: {
   const [recPending, startRec] = useTransition()
 
   // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 기록.
-  const handleRecordReceived = async (leaseTermId: string, name: string, amount: number) => {
-    if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${fmtWon(amount)})으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) return
+  // 청소비를 이미 받은 계약이면 얼마를 기록할지 되묻는다 — 입주자 폼의 '보증금 실제로 받음'과 같은 선택창.
+  // 종전에는 버튼 한 번에 계약액 전액이 무확인으로 record 되어 청소비 몫이 두 번 잡혔다(2026-08-10).
+  const handleRecordReceived = async (leaseTermId: string, name: string, amount: number, cleaningPaid: number) => {
+    const cash = Math.max(0, amount - cleaningPaid)
+    let recordAmount: number | null = null
+    if (cleaningPaid > 0 && cash < amount) {
+      const choice = await choiceDialog({
+        title: `${name} 보증금을 얼마로 기록할까요?`,
+        message: `이 계약은 입실 때 청소비 ${fmtWon(cleaningPaid)}을 이미 받았습니다.\n`
+          + `보증금 ${fmtWon(amount)}에 청소비가 포함되는 방식이라면 현금으로 받은 몫은 ${fmtWon(cash)}입니다.`,
+        confirmLabel: `${fmtWon(cash)}으로 기록`,
+        altLabel: `${fmtWon(amount)} 전액`,
+        level: 'caution',
+      })
+      if (choice === null) return
+      recordAmount = choice === 'alt' ? null : cash
+    } else if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${fmtWon(amount)})으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) {
+      return
+    }
     startRec(async () => {
       const release = trackSave()
       try {
-        await recordDepositReceived(leaseTermId)
+        await recordDepositReceived(leaseTermId, recordAmount != null ? { amount: recordAmount } : undefined)
         pushToast('success', '보증금 받음으로 기록됨')
         router.refresh()
       } catch (e) {
@@ -5000,7 +5018,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     </p>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">현재 잔고</p>
                     {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
-                      <button onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit)} disabled={recPending}
+                      <button onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit, d.cleaningPaid)} disabled={recPending}
                         className="mt-1.5 text-[0.65625rem] font-medium px-2 py-1 rounded-lg ring-1 ring-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] disabled:opacity-50 whitespace-nowrap">
                         받음으로 기록
                       </button>

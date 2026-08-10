@@ -51,6 +51,11 @@ export type Conflict = RoomConflict | TenantConflict | ExpenseConflict | IncomeC
 export type PreviewResult = {
   conflicts: Conflict[]
   hasPaymentSheet: boolean
+  /**
+   * 입실 때 청소비를 이미 받았는데 시트의 보증금이 저장값과 다른 입주자 수(2026-08-10).
+   * 청소비가 보증금 안의 몫인 영업장에서는 그 몫이 두 번 잡히는 길이라 미리 알린다. 차단은 하지 않는다.
+   */
+  cleaningDepositWarn: number
   counts: {
     rooms:    { new: number; conflict: number; autoSkipped: number }
     tenants:  { new: number; conflict: number; autoSkipped: number }

@@ -2356,6 +2356,7 @@ export type DepositPerTenant = {
   totalWithheld: number    // 미반환 처리 금액
   balance: number          // 보유 보증금 (퇴실=0, 그 외 효정 입금-환불)
   hasNoInRecord: boolean   // 입금 거래 기록 없이 계약상 보증금만 있는 경우
+  cleaningPaid: number      // 입실 때 받은 청소비(ExtraIncome '청소비') — '받음으로 기록' 확인창 근거
   coveredByCleaning: number // 입실 청소비가 채운 보증금 몫(포함형 영업장만 > 0, 2026-08-10)
 }
 
@@ -2436,6 +2437,7 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
         contractDeposit: l.depositAmount,
         totalIn, totalReturned, totalWithheld, balance,
         hasNoInRecord: totalIn === 0 && l.depositAmount > 0,
+        cleaningPaid: cleaningMap[l.id] ?? 0,
         coveredByCleaning: comp.coveredByCleaning,
       }
     })

@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult } from '@/lib/import-types'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
 
@@ -133,6 +134,9 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
   const conflicts: TenantConflict[] = []
   let newCount = 0
   let autoSkipped = 0
+  // 입실 청소비를 이미 받았는데 시트 보증금이 저장값과 다른 건 — 청소비가 보증금 안의 몫인 영업장에서는
+  // 그 몫이 두 번 잡히는 길이다. 미리 알리기만 하고 막지 않는다(2026-08-10).
+  let cleaningDepositWarn = 0
 
   for (const row of rows) {
     const name = str(row['이름'])
@@ -187,6 +191,14 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
 
       if (isExact) { autoSkipped++; continue }
 
+      if ((activeLease?.depositAmount ?? 0) !== inDeposit) {
+        const cleaning = await prisma.extraIncome.aggregate({
+          where: { propertyId, tenantId: existing.id, category: CLEANING_FEE_CATEGORY, deletedAt: null },
+          _sum: { amount: true },
+        })
+        if ((cleaning._sum.amount ?? 0) > 0) cleaningDepositWarn++
+      }
+
       conflicts.push({
         id: `tenant:${name}`,
         sheet: 'tenants',
@@ -201,7 +213,7 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
     }
   }
 
-  return { conflicts, newCount, autoSkipped }
+  return { conflicts, newCount, autoSkipped, cleaningDepositWarn }
 }
 
 async function previewExpenses(rows: Record<string, unknown>[], propertyId: string) {
@@ -397,20 +409,24 @@ export async function POST(request: NextRequest) {
     counts.rooms = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
+  let cleaningDepositWarn = 0
+
   if (wb.SheetNames.includes('입주자관리')) {
-    const { conflicts, newCount, autoSkipped } = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId)
-    allConflicts.push(...conflicts)
-    counts.tenants = { new: newCount, conflict: conflicts.length, autoSkipped }
+    const r = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId)
+    allConflicts.push(...r.conflicts)
+    counts.tenants = { new: r.newCount, conflict: r.conflicts.length, autoSkipped: r.autoSkipped }
+    cleaningDepositWarn += r.cleaningDepositWarn
   }
 
   if (wb.SheetNames.includes('퇴실자')) {
-    const { conflicts, newCount, autoSkipped } = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
-    allConflicts.push(...conflicts)
+    const r = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
+    allConflicts.push(...r.conflicts)
     counts.tenants = {
-      new: counts.tenants.new + newCount,
-      conflict: counts.tenants.conflict + conflicts.length,
-      autoSkipped: counts.tenants.autoSkipped + autoSkipped,
+      new: counts.tenants.new + r.newCount,
+      conflict: counts.tenants.conflict + r.conflicts.length,
+      autoSkipped: counts.tenants.autoSkipped + r.autoSkipped,
     }
+    cleaningDepositWarn += r.cleaningDepositWarn
   }
 
   if (wb.SheetNames.includes('지출')) {
@@ -438,5 +454,5 @@ export async function POST(request: NextRequest) {
 
   const hasPaymentSheet = wb.SheetNames.includes('수납현황')
 
-  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet } satisfies PreviewResult)
+  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet, cleaningDepositWarn } satisfies PreviewResult)
 }

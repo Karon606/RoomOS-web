@@ -10,6 +10,7 @@ import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
+  countTenantsWithCleaningFeeReceived,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
   type RentRefundTaxNotice,
 } from './actions'
@@ -20,7 +21,7 @@ import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntry
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel } from '@/lib/depositComposition'
@@ -959,10 +960,34 @@ export default function TenantClient({
     if (revert) fd.set('status', 'ACTIVE')
   }
 
+  // 보증금을 올려 저장하는 순간의 그물 — 청소비를 이미 받은 계약이라면 그 몫을 두 번 잡는 길이다.
+  // 단기 해제 프리필이 50,000 을 채우고 그대로 저장된 사고(520호)가 정확히 이 경로였다.
+  // 차단이 아니라 확인이다. 체크 시 이미 물었으면(A-3) 두 번 묻지 않는다.
+  const confirmDepositRaise = async (fd: FormData): Promise<boolean> => {
+    if (fd.get('depositRaiseAcked') === '1') return true
+    const leaseTermId = (fd.get('leaseTermId') as string) || ''
+    if (!leaseTermId) return true
+    const next = Number(fd.get('depositAmount')) || 0
+    const prev = Number(fd.get('prevDepositAmount')) || 0
+    if (next <= prev) return true
+    let cleaningPaid = 0
+    try { cleaningPaid = (await getDepositCompositionForLease(leaseTermId)).cleaningPaid }
+    catch { return true }   // 조회 실패가 저장을 막으면 안 된다
+    if (cleaningPaid <= 0) return true
+    return confirmDialog({
+      title: '청소비를 이미 받았습니다',
+      message: `이 계약은 입실 때 청소비 ${fmtWon(cleaningPaid)}을 이미 받았습니다.\n`
+        + `보증금을 ${fmtWon(prev)}에서 ${fmtWon(next)}으로 올리면, 보증금에 청소비가 포함되는 방식일 때 같은 돈이 두 번 잡힙니다.\n`
+        + `현금으로 받을 몫은 ${fmtWon(Math.max(0, next - cleaningPaid))}입니다. 이대로 저장할까요?`,
+      level: 'caution', confirmLabel: '이대로 저장',
+    })
+  }
+
   const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     if (!await confirmRoomOverlap(fd)) return
+    if (!await confirmDepositRaise(fd)) return
     await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, false)) return
     proceedAfterRentDecision(fd, false)
@@ -973,6 +998,7 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     if (!await confirmRoomOverlap(fd)) return
+    if (!await confirmDepositRaise(fd)) return
     await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, true)) return
     proceedAfterRentDecision(fd, true)
@@ -3139,6 +3165,48 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const isAutoFilled = (val: number | undefined, saved: number | undefined, dflt: number | null | undefined) =>
     !isNoAutoFill(statusVal, isShortTerm) && !(saved && saved > 0) && (dflt ?? 0) > 0 && val === dflt
 
+  // 이 계약의 보증금 구성 — 입실 때 청소비를 이미 받았는지 본다(2026-08-10 설계 감사).
+  // 사고의 발화점이 수납 폼이 아니라 이 폼이었다. 단기 체크를 해제하는 순간 환경설정 기본값 50,000 이
+  // 자동 프리필됐고, 캡션은 기본값 안내 한 줄뿐이라 이미 받은 청소비 20,000 을 언급하지 않았다.
+  const [depoCleaningPaidForm, setDepoCleaningPaidForm] = useState(0)
+  const [depositReceivedOn, setDepositReceivedOn] = useState(false)
+  const [depositReceivedAmt, setDepositReceivedAmt] = useState<number | null>(null)
+  const [depositChoiceAsked, setDepositChoiceAsked] = useState(false)
+  useEffect(() => {
+    const id = lease?.id
+    if (!id) return
+    let alive = true
+    getDepositCompositionForLease(id)
+      .then(c => { if (alive) setDepoCleaningPaidForm(c.cleaningPaid) })
+      .catch(() => { /* 조회 실패가 폼을 막으면 안 된다 — 캡션만 안 뜬다 */ })
+    return () => { alive = false }
+  }, [lease?.id])
+  // 현금으로 받을 몫 — 보증금에 청소비가 포함되는 방식일 때의 금액. 판정이 아니라 안내라 설정과 무관하게 계산한다
+  // (별도 수령 영업장 운영자는 이 안내를 보고 그대로 두면 된다 — 차단이 아니다).
+  const depoCashPortionForm = Math.max(0, (depositAmountVal ?? 0) - depoCleaningPaidForm)
+
+  // '보증금 실제로 받음' 체크 — 얼마를 기록할지 되묻는다. 종전에는 체크 한 번에 계약액 전액이
+  // 무확인으로 record 되어, 청소비로 이미 받은 몫이 두 번 잡혔다.
+  const toggleDepositReceived = async (next: boolean) => {
+    if (!next) { setDepositReceivedOn(false); setDepositReceivedAmt(null); return }
+    const contract = depositAmountVal ?? 0
+    if (depoCleaningPaidForm <= 0 || depoCashPortionForm >= contract) {
+      setDepositReceivedOn(true); setDepositReceivedAmt(null); return
+    }
+    const choice = await choiceDialog({
+      title: '얼마를 받은 것으로 기록할까요?',
+      message: `이 계약은 입실 때 청소비 ${depoCleaningPaidForm.toLocaleString()}원을 이미 받았습니다.\n`
+        + `보증금 ${contract.toLocaleString()}원에 청소비가 포함되는 방식이라면 현금으로 받은 몫은 ${depoCashPortionForm.toLocaleString()}원입니다.`,
+      confirmLabel: `${depoCashPortionForm.toLocaleString()}원으로 기록`,
+      altLabel: `${contract.toLocaleString()}원 전액`,
+      level: 'caution',
+    })
+    if (choice === null) { setDepositReceivedOn(false); setDepositReceivedAmt(null); return }
+    setDepositReceivedOn(true)
+    setDepositReceivedAmt(choice === 'alt' ? null : depoCashPortionForm)
+    setDepositChoiceAsked(true)
+  }
+
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
     const d = lease?.dueDay ?? ''
@@ -3693,15 +3761,31 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             onChange={setDepositAmountVal}
             placeholder="0원"
           />
-          {isAutoFilled(depositAmountVal, lease?.depositAmount, defaultDeposit) && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본값을 불러왔습니다. 무보증이면 0으로 지우세요.</p>
-          )}
+          {/* 프리필 안내 — 청소비를 이미 받은 계약이면 그 사실까지 말한다. 기본값 안내 한 줄만 있던 것이
+              단기 해제 순간 50,000 이 자동으로 채워진 사고의 발화점이었다(2026-08-10). */}
+          {isAutoFilled(depositAmountVal, lease?.depositAmount, defaultDeposit) ? (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
+              {depoCleaningPaidForm > 0
+                ? `환경설정 기본값을 불러왔습니다. 이 계약은 입실 때 청소비 ${depoCleaningPaidForm.toLocaleString()}원을 이미 받았으니, 보증금에 포함되는 방식이면 ${depoCashPortionForm.toLocaleString()}원으로 고쳐 주세요.`
+                : '환경설정 기본값을 불러왔습니다. 무보증이면 0으로 지우세요.'}
+            </p>
+          ) : depoCleaningPaidForm > 0 && (depositAmountVal ?? 0) > 0 ? (
+            <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">
+              이 계약은 입실 때 청소비 {depoCleaningPaidForm.toLocaleString()}원을 받았습니다. 보증금에 포함되는 방식이면 현금으로 받을 몫은 {depoCashPortionForm.toLocaleString()}원입니다.
+            </p>
+          ) : null}
           {(depositAmountVal ?? 0) > 0 && (
             <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
-              <input type="checkbox" name="depositReceived" value="1" className="w-3.5 h-3.5 accent-[var(--coral)]" />
+              <input type="checkbox" name="depositReceived" value="1" checked={depositReceivedOn}
+                onChange={e => { void toggleDepositReceived(e.target.checked) }}
+                className="w-3.5 h-3.5 accent-[var(--coral)]" />
               보증금 실제로 받음 — 실수납으로 기록 (이미 기록됐으면 자동 무시)
             </label>
           )}
+          {/* 선택한 기록 금액·직전 저장값·확인 이력 — 저장 경로가 같은 판단을 다시 하지 않게 폼이 실어 보낸다 */}
+          {depositReceivedAmt != null && <input type="hidden" name="depositReceivedAmount" value={String(depositReceivedAmt)} />}
+          {lease && <input type="hidden" name="prevDepositAmount" value={String(lease.depositAmount ?? 0)} />}
+          {depositChoiceAsked && <input type="hidden" name="depositRaiseAcked" value="1" />}
         </div>
         {/* 청소비 | 입주일 — 입주일은 거주 단계(roomIsOptional=false)만. 예약/투어는 위 상태 클러스터의 입주 희망일 사용 */}
         <div className="grid grid-cols-2 gap-3">
@@ -3997,6 +4081,20 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     if (status === 'CHECKOUT_PENDING' && exitDate) data.expectedMoveOut = exitDate
 
     if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
+
+    // 보증금을 한 번에 덮는 저장 — 청소비를 이미 받은 사람은 그 몫이 두 번 잡힐 수 있다.
+    // 차단이 아니라 고지다(2026-08-10). 조회 실패는 그냥 통과시킨다.
+    if (data.depositAmount != null && data.depositAmount > 0) {
+      let n = 0
+      try { n = await countTenantsWithCleaningFeeReceived(selectedIds) } catch { n = 0 }
+      if (n > 0 && !(await confirmDialog({
+        title: '청소비를 이미 받은 계약이 있습니다',
+        message: `선택한 ${selectedIds.length}명 중 ${n}명은 입실 때 청소비를 이미 받았습니다.\n`
+          + `보증금을 ${data.depositAmount.toLocaleString()}원으로 한 번에 덮으면, 보증금에 청소비가 포함되는 방식일 때 그 몫이 두 번 잡힙니다.\n`
+          + '이대로 적용할까요?',
+        level: 'caution', confirmLabel: '이대로 적용',
+      }))) return
+    }
 
     setPending(true); setError('')
     const res = await batchUpdateTenants(selectedIds, data)

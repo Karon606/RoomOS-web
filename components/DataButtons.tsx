@@ -179,7 +179,8 @@ export default function DataButtons() {
       }
       setResolutions(defaults)
 
-      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet) {
+      // 청소비 경고가 있으면 조용히 적용하지 않는다 — 알릴 자리가 이 창뿐이다(2026-08-10)
+      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn) {
         await applyImport(file, {})
       } else {
         setStep({ type: 'conflict', preview, file })
@@ -274,6 +275,13 @@ export default function DataButtons() {
           </div>
         }>
 
+          {/* 청소비를 이미 받은 계약의 보증금을 시트가 덮으려 할 때 — 차단은 안 하고 알린다(2026-08-10) */}
+          {preview.cleaningDepositWarn > 0 && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--warning-fg)] bg-[var(--warning-bg)] border border-[var(--warning-ring)] break-keep">
+              입실 때 청소비를 이미 받은 입주자 <span className="font-semibold">{preview.cleaningDepositWarn}명</span>의 보증금이 시트 값으로 바뀝니다. 청소비가 보증금에 포함되는 방식이면 같은 돈이 두 번 잡힐 수 있습니다. 가져온 뒤 해당 계약의 보증금을 확인해 주세요.
+            </div>
+          )}
+
           {/* 내보내기 전용 시트 안내 */}
           {preview.hasPaymentSheet && (
             <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--warning-fg)] bg-[var(--warning-bg)] border border-[var(--warning-ring)]">
@@ -283,10 +291,10 @@ export default function DataButtons() {
 
           {/* 충돌 목록 */}
           <div className="px-6 py-4 space-y-6">
-            {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && (
+            {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음. 모든 데이터를 가져올 수 있습니다.</p>
             )}
-            {conflictsBySheet.length === 0 && preview.hasPaymentSheet && (
+            {conflictsBySheet.length === 0 && (preview.hasPaymentSheet || preview.cleaningDepositWarn > 0) && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌이 없습니다. 아래 버튼으로 가져오기를 진행하세요.</p>
             )}
             {conflictsBySheet.map(({ sheet, label, items }) => (
