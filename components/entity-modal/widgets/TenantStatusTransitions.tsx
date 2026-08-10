@@ -89,7 +89,7 @@ type Lease = {
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -231,6 +231,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
       cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid,
       compositionLabel: comp ? depositCompositionLabel(comp) : null,
+      // 계약에는 보증금이 적혀 있는데 받은 기록이 없는 상태 — 서버가 환불·몰취 기록을 거절하는 자리다.
+      // 기준액이 0 이라 환불 칸이 아예 안 뜨므로, 왜 없는지는 말해 줘야 한다(조용히 넘어가면 정산 누락).
+      noBasisContract: !!comp && comp.basisSource === 'none' && comp.contract > 0 ? comp.contract : 0,
     })
   }
 
@@ -392,6 +395,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{active.def.fieldLabel}</label>
                   <MoneyInput value={transRent} onChange={setTransRent} placeholder="0원" />
                 </div>
+              )}
+              {/* 계약 보증금은 있는데 받은 기록이 없으면 환불 칸을 열 근거가 없다 — 서버도 같은 이유로 거절한다.
+                  종전에는 계약액으로 칸을 열고 저장에서야 거절해, 화면과 서버가 다른 말을 했다. */}
+              {active.def.withDeposit && (active.noBasisContract ?? 0) > 0 && (
+                <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">
+                  계약 보증금 {fmtWon(active.noBasisContract ?? 0)}이 있으나 받은 기록이 없어 환불·몰취를 기록할 수 없습니다. 수납 화면에서 보증금 수납을 먼저 등록해 주세요.
+                </p>
               )}
               {(active.def.withDeposit || active.resvCancel || active.resvCancelPrepaid) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
