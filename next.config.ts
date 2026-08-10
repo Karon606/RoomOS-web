@@ -9,7 +9,9 @@ const nextConfig: NextConfig = {
   // @sparticuz/chromium 의 bin/ 폴더는 자동 trace 누락되므로 명시적으로 포함
   // (Vercel의 var/task/node_modules/@sparticuz/chromium/bin 위치에 chromium 바이너리 배치 보장)
   outputFileTracingIncludes: {
-    '/api/contract/generate': ['./node_modules/@sparticuz/chromium/**/*'],
+    // 계약서 PDF — chromium 바이너리 + Pretendard(가변 woff2·정적 TTF 폴백).
+    // 폰트가 번들에 없으면 콜드 스타트마다 jsdelivr 로 외부 fetch 를 탔다(신고 0aed3bdd).
+    '/api/contract/generate': ['./node_modules/@sparticuz/chromium/**/*', './public/fonts/**'],
     // 입실료 납부 확인서 PDF — Pretendard TTF를 서버리스 함수 번들에 포함
     '/api/rent-receipt/generate': ['./public/fonts/**'],
   },

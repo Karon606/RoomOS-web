@@ -11,28 +11,46 @@ import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
-// 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
-// 이후 요청은 메모리 캐시 사용.
+// 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 파일을 읽는다. 이후 요청은 메모리 캐시 사용.
 const PRETENDARD_URL = 'https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2'
+const PRETENDARD_CDN_TIMEOUT_MS = 5000
+// 로컬 후보는 순서가 곧 우선순위다. 가변 woff2 가 CDN 본과 같은 파일이라 인쇄 결과가 완전히 같고
+// (굵기 축 45~920 그대로), 정적 Regular TTF 는 굵은 글씨가 합성 볼드로 나오는 차선책이다.
+const PRETENDARD_LOCAL = ['PretendardVariable.woff2', 'Pretendard-Regular.ttf']
 let pretendardCache: string | null = null
 
 // 로컬 폰트를 먼저 쓰고 CDN 은 폴백이다(E페이즈 2026-08-03).
 // 종전에는 jsdelivr 단일 의존이라 그쪽이 죽으면 계약서·실거주확인서 발급이 전면 중단됐다.
 // 영수증(rentReceiptPdf)은 원래 로컬 폰트 + 폴백 구조였다 — 세 서류의 규칙을 맞춘다.
+//
+// 로컬 파일은 함수 번들에 들어가 있어야 읽힌다. next.config.ts 의 outputFileTracingIncludes 에
+// 이 함수를 쓰는 라우트가 빠져 있으면 배포본에서는 매 콜드 스타트마다 CDN 을 타게 된다
+// (신고 0aed3bdd 의 간헐 실패 경로). scripts/check-print-selfcontained.ts 축 2 가 그 명단을 지킨다.
+//
+// CDN 에는 타임아웃 5초를 건다 — 종전에는 없어서 jsdelivr 가 느리면 발급이 통째로 멈췄다.
+// 셋 다 실패하면 빈 문자열이다. 폰트가 없으면 한글이 깨지지만, 발급 자체가 막히는 것보다 낫다.
+// 빈 값은 캐시하지 않는다 — 다음 요청은 다시 시도해야 한다.
 export async function getPretendardBase64(): Promise<string> {
   if (pretendardCache) return pretendardCache
+  const { readFile } = await import('node:fs/promises')
+  const path = await import('node:path')
+  for (const name of PRETENDARD_LOCAL) {
+    try {
+      const buf = await readFile(path.join(process.cwd(), 'public', 'fonts', name))
+      pretendardCache = Buffer.from(buf).toString('base64')
+      return pretendardCache
+    } catch { /* 다음 후보 — 다 없으면 CDN 으로 */ }
+  }
   try {
-    const { readFile } = await import('node:fs/promises')
-    const path = await import('node:path')
-    const buf = await readFile(path.join(process.cwd(), 'public', 'fonts', 'Pretendard-Regular.ttf'))
-    pretendardCache = Buffer.from(buf).toString('base64')
+    const res = await fetch(PRETENDARD_URL, { signal: AbortSignal.timeout(PRETENDARD_CDN_TIMEOUT_MS) })
+    if (!res.ok) throw new Error(`Pretendard 폰트 다운로드 실패 (${res.status})`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    pretendardCache = buf.toString('base64')
     return pretendardCache
-  } catch { /* 로컬에 없으면 CDN 으로 */ }
-  const res = await fetch(PRETENDARD_URL)
-  if (!res.ok) throw new Error(`Pretendard 폰트 다운로드 실패 (${res.status})`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  pretendardCache = buf.toString('base64')
-  return pretendardCache
+  } catch (e) {
+    console.error('[contractPrintHtml] Pretendard 폰트 확보 실패 — 폰트 없이 발급한다:', e)
+    return ''
+  }
 }
 
 export type PrintContractData = {
@@ -179,13 +197,13 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 <meta charset="utf-8" />
 <title>${escape(d.template.title)}</title>
 <style>
-  @font-face {
+  ${d.pretendardBase64 ? `@font-face {
     font-family: 'Pretendard';
     font-weight: 45 920;
     font-style: normal;
     font-display: block;
     src: url(data:font/woff2;base64,${d.pretendardBase64}) format('woff2-variations');
-  }
+  }` : '/* 폰트 확보 실패 — 빈 src 는 로딩 실패로 대기를 유발하므로 선언 자체를 뺀다 */'}
   :root{
     --p-ink:${PRINT_HEX.ink}; --p-muted:${PRINT_HEX.inkMuted}; --p-tc:${PRINT_HEX.tc};
     --p-label-bg:${PRINT_HEX.labelBg}; --p-rule:${PRINT_HEX.rule}; --p-rule-strong:${PRINT_HEX.ruleStrong}; --p-amt-bg:${PRINT_HEX.amtBg};
