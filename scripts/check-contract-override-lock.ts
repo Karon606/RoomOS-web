@@ -11,11 +11,27 @@
 //
 // 2026-08-05 에 표시값 오버라이드(contractFieldOverrides)가 들어왔다. 본문과 같은 클래스라
 // 같은 방식으로 지킨다 — 축 G5.
+//
+// 2026-08-10 에 축 G6 이 붙었다. 위 다섯 축이 '서명본과 지금이 다른가'를 보는 반면, G6 은
+// **서명이 사라졌는데 서명본 링크가 열린 채 남았는가**를 본다. 아래 상수 주석 참조.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { contractLeaseFields, parseContractFieldOverrides } from '../lib/contractFieldOverrides'
 
 type Snapshot = { template?: unknown; lease?: unknown }
+
+// 축 G6 의 래칫 기준선 — 봉합 시점(2026-08-10) 실측 1건(502호).
+//
+// 왜 0 이 아닌가. 봉합(부분 서명 삭제 시 closeAllLinks)은 **앞으로 일어날 삭제**에만 작동한다.
+// 이미 열린 채 남은 옛 링크는 그 코드가 지나간 자리에 없다. 그리고 이 1건은 데이터를 손대서
+// 지우면 안 된다 — closedAt 을 사람이 세우는 것은 땜빵이고, 진입로 교정(1번)이 들어가 있어
+// 화면은 이미 정상이다. 즉 지금 이 1건은 '남은 자국'이지 '살아 있는 고장'이 아니다.
+//
+// 스스로 사라지는 기준선이다. 운영자가 재발급을 마쳐 새 서명이 lease 에 들어오면 네 칸이
+// 다시 채워져 이 링크는 조건에서 빠지고, 그 순간 실측이 0 이 된다. 그때 아래 값을 0 으로 내린다
+// (줄어드는 쪽은 통과시키되 안내를 찍는다 — 기준선이 낡은 채로 굳지 않게).
+// 호실·이름을 명단으로 박지 않는다. 특정 입주자를 코드에 새기면 그 데이터가 사라질 때 검사도 같이 죽는다.
+const G6_BASELINE = 1
 
 const FIELD_LABEL: Record<string, string> = {
   rentAmount: '입실료', depositAmount: '보증금', cleaningFee: '청소비',
@@ -126,9 +142,49 @@ async function main() {
 
   }
 
+  // ── 축 G6 — 서명은 지워졌는데 서명본 링크가 열린 채 남았다 ──────────
+  // 링크의 signedAt 은 '그때 서명이 들어왔다'는 과거 사실이라 서명을 지워도 영원히 남는다.
+  // 진입로 셋(계약서 파일 칸·입실자 모달·발급 대기)이 그것만 보고 ?share= 서명본 화면으로 보냈고,
+  // 그 화면은 signedAt 을 계약일로 삼아 본문을 잠갔다. 결과는 **깨끗한 계약의 영구 잠김**이다
+  // (502호 실측 2026-08-10 — lease 서명 4칸 null, 스냅샷 null, 오버라이드 null 인데 화면이 안 열렸다).
+  //
+  // 세 조건이 함께 있어야 위반이다.
+  //   signedAt 있음      = 이 링크는 서명본 화면으로 열릴 자격을 주장한다
+  //   lease 서명 4칸 전부 빔 = 그런데 발급할 서명이 하나도 없다
+  //   closedAt null      = 그 주장이 아직 살아 있다(닫힌 링크는 어느 화면도 안 고른다)
+  // 서명 증거(signedAt·templateSnapshot)를 지워 해소하면 안 된다. 해소는 closedAt 을 세우거나
+  // 재서명을 받는 것 둘 중 하나다.
+  const orphanLinks = await prisma.contractShareLink.findMany({
+    where: {
+      signedAt: { not: null },
+      closedAt: null,
+      leaseTerm: {
+        signatureImageUrl: null, signatureSignedAt: null,
+        disposalSignatureImageUrl: null, disposalSignatureSignedAt: null,
+      },
+    },
+    orderBy: { signedAt: 'desc' },
+    select: {
+      id: true, signedAt: true,
+      tenant: { select: { name: true } },
+      leaseTerm: { select: { room: { select: { roomNo: true } } } },
+    },
+  })
+  for (const k of orphanLinks) {
+    const ymd = k.signedAt ? k.signedAt.toISOString().slice(0, 10) : '?'
+    console.log(`  [G6 현황] ${k.leaseTerm?.room?.roomNo ?? '?'} ${k.tenant?.name ?? '?'} · ${ymd} 서명 수신 · 서명 지워짐 · 링크 열림 (linkId ${k.id})`)
+  }
+  const g6Over = orphanLinks.length - G6_BASELINE
+  if (g6Over > 0) {
+    violations.push(`서명이 지워졌는데 열린 채 남은 서명본 링크가 ${orphanLinks.length}건 — 기준선 ${G6_BASELINE} 초과 ${g6Over}건. 부분 서명 삭제가 제출완료·만료 링크까지 닫는지 확인하라`)
+  }
+
   await prisma.$disconnect()
 
-  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 · 표시값 오버라이드 ${fieldChecked}건 대조 / 위반 ${violations.length}건`)
+  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 · 표시값 오버라이드 ${fieldChecked}건 대조 · 서명 지워진 열린 링크 ${orphanLinks.length}건(기준선 ${G6_BASELINE}) / 위반 ${violations.length}건`)
+  if (g6Over < 0) {
+    console.log(`  [G6] 실측이 기준선보다 ${-g6Over}건 적다 — scripts/check-contract-override-lock.ts 의 G6_BASELINE 을 ${orphanLinks.length} 로 내려라.`)
+  }
   if (violations.length) {
     console.error(`\n[본문 잠금] 위반 ${violations.length}건`)
     for (const v of violations) console.error('  - ' + v)
