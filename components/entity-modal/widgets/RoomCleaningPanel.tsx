@@ -166,9 +166,12 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                 <span className="text-xs text-[var(--warm-muted)] num">
                   {r.status === 'DONE' ? fmt(r.doneDate) : fmt(r.scheduledDate)}
                 </span>
-                {r.performer && (
+                {/* 되돌린 건은 수행자 구분은 내려가도 이름은 남는다(재완료 때 다시 안 적게).
+                    구분 없이 이름만 뜨면 무슨 이름인지 안 서니, 바로 옆 '기록된 지출' 과 같은 말을 붙여 가른다. */}
+                {(r.performer || r.performerName) && (
                   <span className="text-xs text-[var(--warm-muted)]">
-                    {CLEANING_PERFORMER_LABEL[r.performer]}{r.performerName ? ` · ${r.performerName}` : ''}
+                    {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
+                    {r.performerName ? ` · ${r.performerName}` : ''}
                   </span>
                 )}
                 {/* 되돌린 건은 예정인데도 지출이 그대로 걸려 있다(그래야 재완료가 두 건을 안 만든다).
@@ -315,9 +318,10 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     <RowActionBtn tone="accent" disabled={pending}
                       onClick={() => {
                         setReschedFor(null)
-                        // 기본 '업체' — 폼이 열리자마자 이름 칸이 뜨고 최근에 맡긴 곳이 채워진다.
+                        // 기본 '업체' — 폼이 열리자마자 이름 칸이 뜬다. 되돌린 건은 그때 적어 둔 이름이
+                        // 남아 있어 그것부터 쓰고(다시 받아 적으면 오타로 갈린다), 없으면 최근에 맡긴 곳.
                         setDoneFor(r.id); setPerformer('VENDOR')
-                        setPerformerName(recentPerformers[0] ?? '')
+                        setPerformerName(r.performerName ?? recentPerformers[0] ?? '')
                         setDoneDate(kstYmdStr())
                         // 되돌린 건은 지출이 그대로 걸려 있다. 비용 칸을 비워 두면 0 으로 다시 완료돼
                         // 연결이 끊기고 그 지출이 고아가 된다 — 걸려 있는 금액을 그대로 채워 둔다.

@@ -283,6 +283,11 @@ export async function completeCleaning(input: {
  * completeCleaning 이 "걸린 지출이 없다"고 보고 **생성 분기로 떨어져 같은 청소에 지출이 두 건**
  * 생겼다. 연결을 그대로 두면 재완료가 저절로 수정 분기로 가 한 건이 유지된다.
  * fromCleaningFund 만 내린다 — 부담 표식은 완료된 청소에 붙는 것이고 완료 시점에 다시 정한다.
+ *
+ * **업체·사람 이름(performerName)도 지우지 않는다.** 지출을 남기는 것과 같은 방향이다.
+ * 되돌리는 이유는 대개 날짜나 금액이라 누가 했는지는 그대로인데, 이름을 지워 버리면 재완료 때
+ * 다시 받아 적어야 하고 오타 한 번에 같은 업체가 두 이름으로 갈린다. 수행자 구분(performer)은
+ * 완료 시점의 사실이라 fromCleaningFund 와 함께 내린다.
  */
 export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKept: boolean } | { ok: false; error: string }> {
   try {
@@ -292,7 +297,7 @@ export async function reopenCleaning(id: string): Promise<{ ok: true; expenseKep
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
     await prisma.roomCleaning.update({
       where: { id },
-      data: { status: 'PLANNED', doneDate: null, performer: null, performerName: null, fromCleaningFund: false },
+      data: { status: 'PLANNED', doneDate: null, performer: null, fromCleaningFund: false },
     })
     revalidatePath('/room-manage')
     return { ok: true, expenseKept: !!cur.expenseId }
