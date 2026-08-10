@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { getLabelCategoryHistory, getSpecTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
-import { specMultiplier, convertUnit } from '@/lib/units'
+import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -145,6 +145,38 @@ const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
   '종량제쓰레기봉투 50L':  { specUnit: 'L', qtyUnit: '매' },
   '종량제쓰레기봉투 100L': { specUnit: 'L', qtyUnit: '매' },
   '음식물쓰레기 배출 스티커': { specUnit: 'L', qtyUnit: '매' },
+}
+
+// 프리셋 조회 키 정규화 — 괄호·공백·대소문자만 다른 같은 품목이 서로를 만나게 한다.
+// 위 키는 '음식물쓰레기봉투 5L' 인데 실제로 쓰는 라벨은 '음식물쓰레기봉투 (5L)' 라
+// 괄호 표기 전부가 프리셋을 못 만나고 단위 없이 등록되고 있었다.
+const itemKeyOf = (label: string) => label.replace(/[()\s]/g, '').toLowerCase()
+const ITEM_DEFAULTS_BY_KEY = new Map(Object.entries(ITEM_DEFAULTS).map(([k, v]) => [itemKeyOf(k), v]))
+// 크기 형제의 공통 단위 — 표에 없는 크기('종량제쓰레기봉투 (75L)')가 와도 같은 이름의
+// 크기 형제(10L·20L·50L·100L)가 **전원일치**면 그 단위를 쓴다. 하나라도 다르면 등록하지 않는다.
+// 혼재에 아무 단위나 찍지 않는다 — 재고 정본 resolveUnitHint 와 같은 원칙.
+const ITEM_DEFAULTS_BY_BASE = (() => {
+  const groups = new Map<string, { specUnit: string; qtyUnit: string }[]>()
+  for (const [k, v] of Object.entries(ITEM_DEFAULTS)) {
+    const split = splitSizeLabel(k)
+    if (!split) continue
+    const key = itemKeyOf(split.base)
+    const arr = groups.get(key)
+    if (arr) arr.push(v)
+    else groups.set(key, [v])
+  }
+  const out = new Map<string, { specUnit: string; qtyUnit: string }>()
+  for (const [key, vs] of groups) {
+    if (vs.every(v => v.specUnit === vs[0].specUnit && v.qtyUnit === vs[0].qtyUnit)) out.set(key, vs[0])
+  }
+  return out
+})()
+// 라벨에 맞는 프리셋 기본 단위 — 라벨 일치 → 크기 뗀 부모 이름 순.
+function itemDefaultsFor(label: string): { specUnit: string; qtyUnit: string } | undefined {
+  const direct = ITEM_DEFAULTS_BY_KEY.get(itemKeyOf(label))
+  if (direct) return direct
+  const split = splitSizeLabel(label)
+  return split ? ITEM_DEFAULTS_BY_BASE.get(itemKeyOf(split.base)) : undefined
 }
 
 export type ItemPickState = {
@@ -386,7 +418,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   async function openPreset(label: string) {
     setActiveLabel(label)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
-    const def = ITEM_DEFAULTS[label]
+    const def = itemDefaultsFor(label)
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
     setFetching(true)
@@ -1655,10 +1687,29 @@ export default function FinanceClient({
         } else renamed.push(it)
       }
       ocrItems = renamed
+      // 단위 채움 — 영수증에 단위 칸이 없으면 인식 결과의 단위는 빈 값으로 온다(뜻 없는 표기는 cleanUnit 이 이미 버렸다).
+      // 그대로 두면 수량이 맨숫자로 저장돼 같은 품목의 재고 카드와 어긋난다(신고 102d768f·c977db2a 의 재발 경로).
+      // 프리셋 경로와 같은 순서로 메운다 — 라벨 일치 프리셋 → 크기 뗀 부모 프리셋 → 직전 구매 이력.
+      // 영수증이 준 단위는 덮지 않는다. 규격 단위는 규격 값이 있을 때만 — 값 없는 단위는 뜻이 없다.
+      const unitFills = await Promise.all(ocrItems.map(async it => {
+        const needQty  = !(it.qtyUnit  ?? '').trim()
+        const needSpec = !(it.specUnit ?? '').trim() && !!(it.specValue ?? '').trim()
+        if (!needQty && !needSpec) return null
+        const def = itemDefaultsFor(it.label)
+        let qtyUnit  = needQty  ? (def?.qtyUnit  ?? '') : ''
+        let specUnit = needSpec ? (def?.specUnit ?? '') : ''
+        if ((needQty && !qtyUnit) || (needSpec && !specUnit)) {
+          const last = await getLastItemUnits(it.label).catch(() => null)
+          if (needQty  && !qtyUnit)  qtyUnit  = last?.qtyUnit  ?? ''
+          if (needSpec && !specUnit) specUnit = last?.specUnit ?? ''
+        }
+        return { qtyUnit, specUnit }
+      }))
       // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
       // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
       // specText(색상·사이즈 등 서술형 규격)가 있으면 처음부터 텍스트 규격 모드로 열림(숫자 규격 비움·개당 단가).
-      setAddItems(ocrItems.map(it => {
+      setAddItems(ocrItems.map((it, i) => {
+        const fill = unitFills[i]
         const hasTextSpec = !!(it.specText && it.specText.trim())
         // 서술 규격(애플민트향)이 있어도 **숫자 규격(2.1L)을 버리지 않는다** — 신고 1fd2e22b.
         //
@@ -1674,10 +1725,10 @@ export default function FinanceClient({
         return {
           label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint,
           specValue: it.specValue ?? '',
-          specUnit:  it.specUnit ?? '',
+          specUnit:  (it.specUnit ?? '') || (fill?.specUnit ?? ''),
           specText:  hasTextSpec ? it.specText!.trim() : undefined,
           unitBasis: basis,
-          qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '',
+          qtyValue: it.qtyValue ?? '', qtyUnit: (it.qtyUnit ?? '') || (fill?.qtyUnit ?? ''),
           amount: it.amount,
           // 정본 baseQtyOf 와 같은 규칙 — 기준수량 = 수량 × (spec 기준일 때만 규격값)
           unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * specMulHere)) : undefined,
