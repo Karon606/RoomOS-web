@@ -252,7 +252,7 @@
 - InventoryCard: bg --cream · border 1px --border · radius 14px r-xl(§00 결정 — 13px에서 정규화) · 패딩 13/14px. .sel = border --tc + ring 2px rgba(160,60,46,.16). .attn = 좌 3px --tc. 제목 14.5/600 −.015em + 인라인 뱃지 gap 6px. 메타 11.5px --ink-m. 핵심 수치 19px/700 tnum 우측(위험 시 --tc, 단위 11px --ink-m) · 슬롯은 항상 1개. 액션 행 34px r8, 주 버튼 1개만 solid --tc. 체크박스 22px r7 on=--tc(선택 모드만). 펼치기 11.5px 행.
 - SectionHeader: 마커 슬롯(카테고리=색 점 11px / 위치=아이콘 14px --ink-m) + 이름 13/700 + 카운트 11px tnum --ink-m + chevron 접기. 패딩 상14 하6(첫 상2).
 - SelectionPillBar: bg --ink · r 15 · left/right 14 · bottom 16 · shadow lg · z --z-pill 120. 카운트 13/600 흰색, 숫자 --sand tnum. 액션 36px r9 (ghost rgba(255,255,255,.13) / 주액션 solid --tc-s). 닫기 34px. 탭별 가능한 액션만 노출(숨김, 비활성 아님). 합치기는 양 탭 공통.
-- MergeSheet: 합치기 단일 바텀시트. bg --cream · 상단 r 20 · 패딩 8/18/20 · scrim rgba(31,26,23,.45) · z --z-modal 300. 그립 38x4. 제목 16/700. 대상 select 44px r10 bg --cream-2. 방향 확인 박스("이 카드 → 남는 카드", 화살표 --tc) 필수. 액션 취소(secondary)+합치기(solid --tc, flex 1.6) 46px. 모든 진입점 수렴. 실행 후 §16 undo 토스트 (환경설정에 숨기지 않음).
+- MergeSheet: 합치기 단일 바텀시트. bg --cream · 상단 r 20 · 패딩 8/18/20 · scrim rgba(31,26,23,.45) · z --z-modal 300. 그립 38x4. 제목 16/700. 대상 select 44px r10 bg --cream-2. 방향 확인 박스 필수: 세로 2행(위 사라짐 / 아래 남음) + 가운데 방향 아이콘 --tc. 각 행은 제목(카드 문법) + 식별 메타 1줄(구매일·구매처·수량·금액, 구분자 ' · '). 1대1 진입점에서는 가운데 아이콘이 44px 버튼이 되어 탭하면 두 행의 내용이 뒤바뀐다(라벨은 고정). 이때 대상 select 라벨은 '합칠 상대' 로 중립화한다. 액션 취소(secondary)+합치기(solid --tc, flex 1.6) 46px. 모든 진입점 수렴. 실행 후 §16 undo 토스트 (환경설정에 숨기지 않음).
 - 상세 진입: 카드 본문 탭 → 상세 풀화면(양 탭 공통). 가벼운 합산은 카드 내 펼치기.
 
 ## §23 리스트·테이블 화면
