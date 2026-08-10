@@ -223,6 +223,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
       subtitle: '원격 서명 완료 · 계약서 발급 필요',
+      // 할 일이 '계약서 발급'이라 목적지는 고객 모달이 아니라 계약서함의 발급 대기 섹션이다.
+      // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
+      href: '/contracts?focus=contracts-pending-issue',
       tenantId: link.tenant.id, leaseTermId: link.leaseTermId,
       roomId: link.leaseTerm.room?.id ?? null, roomNo: link.leaseTerm.room?.roomNo, tenantName: link.tenant.name,
       urgency: 820,

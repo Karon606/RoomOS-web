@@ -38,7 +38,14 @@ function saveReadMap(m: Record<string, string>) {
 
 // 알림 항목 → 상세 딥링크 URL.
 // tenantId 있으면 /tenants 의 URL 핸들러가 Prism 셸을 자동으로 띄움(Phase 2.3c).
+//
+// HREF_FIRST — tenantId 보다 href 를 먼저 보는 카테고리(예외 목록).
+// signed(원격 서명 완료)의 할 일은 '계약서 발급'인데 고객 모달에는 발급 대기 목록이 없다. tenantId 우선
+// 규칙 그대로면 8/8 에 만든 계약서함 발급 대기 섹션에 종에서는 영영 못 닿는다. 반대로 순서를 전면
+// 뒤집으면 나머지 7종에 href 가 생기는 순간 전부 목적지가 바뀌므로, 카테고리 예외로만 연다.
+const HREF_FIRST: ReadonlySet<AlertCategory> = new Set<AlertCategory>(['signed'])
 function hrefOf(a: AlertItem): string | null {
+  if (a.href && HREF_FIRST.has(a.category)) return a.href
   if (a.tenantId) return `/tenants?tenantId=${a.tenantId}`
   return a.href ?? null
 }
