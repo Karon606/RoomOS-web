@@ -9,6 +9,7 @@
 //   카드에서: {vis.floor && <…>}
 
 import { useState, useRef, useEffect } from 'react'
+import { btnClass } from './Btn'
 
 export type FieldDef = { key: string; label: string; defaultOn?: boolean }
 
@@ -37,6 +38,10 @@ export function useDisplayFields(storageKey: string, fields: readonly FieldDef[]
 
   return [visible, toggle] as const
 }
+
+// 메뉴 한 줄 = 체크박스 하나의 터치 타깃. RowActionBtn 과 같은 문법(min-h 44px + items-center)으로,
+// 보이는 여백은 그대로 두고 높이만 44px 로 채운다(§09 터치 타겟).
+const ROW_CLS = 'flex items-center gap-2.5 min-h-[44px] px-2 py-1.5 rounded-lg cursor-pointer hover:bg-[var(--cream-soft)] transition-colors'
 
 export type FieldSection = {
   heading: string
@@ -77,17 +82,18 @@ export function DisplayFieldsMenu({
 
   return (
     <div ref={ref} className={`relative ${className ?? ''}`}>
+      {/* 트리거는 §10 secondary md 정본을 소비한다 — 손복사하면 토큰이 바뀔 때 이 자리만 뒤처진다(Btn.tsx 주석). */}
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-lg text-sm font-medium bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors"
+        className={btnClass('secondary', 'md', 'shrink-0')}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h16" />
-          <circle cx="9" cy="6" r="2.2" fill="var(--cream)" />
-          <circle cx="15" cy="12" r="2.2" fill="var(--cream)" />
-          <circle cx="9" cy="18" r="2.2" fill="var(--cream)" />
+          <circle cx="9" cy="6" r="2.2" fill="var(--cream-soft)" />
+          <circle cx="15" cy="12" r="2.2" fill="var(--cream-soft)" />
+          <circle cx="9" cy="18" r="2.2" fill="var(--cream-soft)" />
         </svg>
         {label}
       </button>
@@ -98,7 +104,7 @@ export function DisplayFieldsMenu({
               <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{s.heading}</p>
               {s.fields.map(f => (
                 <label key={f.key}
-                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-[var(--cream-soft)] transition-colors">
+                  className={ROW_CLS}>
                   <input type="checkbox" checked={s.visible[f.key] ?? false} onChange={() => s.onToggle(f.key)}
                     className="w-4 h-4 accent-[var(--coral)]" />
                   <span className="text-sm text-[var(--warm-dark)]">{f.label}</span>
@@ -112,7 +118,7 @@ export function DisplayFieldsMenu({
           {fields.map(f => (
             <label
               key={f.key}
-              className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-[var(--cream-soft)] transition-colors"
+              className={ROW_CLS}
             >
               <input
                 type="checkbox"
