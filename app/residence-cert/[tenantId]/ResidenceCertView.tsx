@@ -9,7 +9,7 @@ import {
   type ResidenceCertFieldValues, type ResidenceCertOverrideKey, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
-import { DOC_NAME_STYLE_LABEL, asDocNameStyle, documentName, hasEnglishName } from '@/lib/documentName'
+import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -57,8 +57,9 @@ const toViewFields = (v: ResidenceCertFieldValues): Record<OverrideViewKey, stri
   depositText: v.depositAmount ? v.depositAmount.toLocaleString() : '',
 })
 
-/** 고객 정보의 두 이름 — 표기 선택이 이 둘 중 하나를 고른다(lib/documentName 정본). */
-const nameSourceOf = (data: ResidenceCertData) => ({ name: data.tenantName, englishName: data.tenantEnglishName })
+/** 고객 정보의 세 이름 — 표기 선택이 이 셋 중 하나를 고른다(lib/documentName 정본). */
+const nameSourceOf = (data: ResidenceCertData) =>
+  ({ name: data.tenantName, englishName: data.tenantEnglishName, nativeName: data.tenantNativeName })
 
 /** withOverrides=false 면 저장값을 무시한 순수 자동값 — '자동값으로' 버튼이 쓴다. */
 function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
@@ -67,7 +68,7 @@ function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
     ...toViewFields(v),
     areaM2: data.areaM2,
     // 성명 칸은 여전히 저장 대상이 아니다(손으로 고치면 그 발급에만 쓰인다). 저장되는 것은
-    // 한글·영문 중 어느 쪽을 채울지의 **선택**뿐이라, 초기값을 여기서 그 선택으로 조립한다.
+    // 한글·영문·현지 중 어느 쪽을 채울지의 **선택**뿐이라, 초기값을 여기서 그 선택으로 조립한다.
     tenantName: documentName(nameSourceOf(data), v.nameStyle),
     tenantBirth: fmtCertDate(data.tenantBirth), tenantPhone: data.tenantPhone,
     landlordBusinessName: data.landlordBusinessName, landlordName: data.landlordName,
@@ -131,7 +132,8 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   // 대상이 아니라, 손으로 고친 이름은 그 발급에만 쓰인다.
   // 영문 이름이 없으면 아무것도 그리지 않는다 — 대다수 입주자의 화면은 종전과 완전히 같다.
   const nameSource = nameSourceOf(data)
-  const canPickName = hasEnglishName(nameSource)
+  const nameStyles = docNameStyles(nameSource)
+  const canPickName = nameStyles.length > 1
   const savedNameStyle = mergeResidenceCertFields(data.autoFields, data.overrides).nameStyle
   const [nameStyle, setNameStyle] = useState(savedNameStyle)
   useEffect(() => { setNameStyle(savedNameStyle) }, [savedNameStyle])
@@ -253,12 +255,11 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <Link href="/residence-certs" className="rc-link">‹ 실거주 확인서</Link>
         {overrideCount > 0 && <span className="rc-badge">표시값 수정</span>}
         <div className="rc-spacer" />
-        {/* 성명 표기 — 영문 이름이 등록된 입주자에게만 붙는다. 문법은 옆의 작성일 칸과 같은 rc-field. */}
+        {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다. 문법은 옆의 작성일 칸과 같은 rc-field. */}
         {canPickName && (
           <label className="rc-field"><span>성명</span>
             <select value={nameStyle} onChange={e => commitNameStyle(e.target.value)}>
-              <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
-              <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+              {nameStyles.map(s => <option key={s} value={s}>{DOC_NAME_STYLE_LABEL[s]}</option>)}
             </select>
           </label>
         )}

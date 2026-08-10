@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
-import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, asDocNameStyle, documentName, hasEnglishName } from '@/lib/documentName'
+import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
@@ -175,15 +175,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
   // 종이에 찍는 성명. 서버가 이미 data.tenant.name 을 골라 내려주지만, 여기서는 폼의 선택으로
   // 다시 조립한다 — 고르는 순간 종이가 바뀌어야 하고 서버 왕복을 기다리면 한 박자 늦게 바뀐다.
-  // 영문 이름이 없으면 선택 UI 자체를 안 그린다(실측 103명 중 85명 — 그 화면은 완전히 그대로다).
+  // 한글 이름밖에 없으면 선택 UI 자체를 안 그린다(실측 103명 중 85명 — 그 화면은 완전히 그대로다).
   //
   // **서명본·원격 서명 화면은 링크 발급 시점 스냅샷을 그대로 그린다.** 이 기능 이전에 만들어진
-  // 스냅샷에는 아래 두 칸이 아예 없다. 없으면 종전처럼 name 하나만 쓴다 — 그 처리가 없으면
+  // 스냅샷에는 아래 세 칸이 아예 없다. 없으면 종전처럼 name 하나만 쓴다 — 그 처리가 없으면
   // 옛 서명본의 성명 칸이 통째로 빈칸으로 나간다(로고·도장 재해석과 같은 클래스, contractShare.ts).
   const snapTenant = data.tenant as Partial<ContractData['tenant']> & { name: string }
-  const nameSource = { name: snapTenant.koreanName ?? snapTenant.name, englishName: snapTenant.englishName ?? null }
+  const nameSource = {
+    name: snapTenant.koreanName ?? snapTenant.name,
+    englishName: snapTenant.englishName ?? null,
+    nativeName: snapTenant.nativeName ?? null,
+  }
   const printedName = documentName(nameSource, asDocNameStyle(fields.nameStyle))
-  const canPickName = hasEnglishName(nameSource)
+  const nameStyles = docNameStyles(nameSource)
+  const canPickName = nameStyles.length > 1
 
   // 보증금/청소비 동적 표기 (v2.0 §26 — 라벨 + 영문 + 값(청소비는 .sub))
   const { depositLabel, depositEn, depositNode } = (() => {
@@ -518,8 +523,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     ) : (
       <select className="no-print cell-select th-picker" aria-label="성명 표기" style={CELL_SELECT_STYLE}
         value={fields.nameStyle} onChange={e => handleNameStyleChange(e.target.value)}>
-        <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
-        <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+        {nameStyles.map(s => <option key={s} value={s}>{DOC_NAME_STYLE_LABEL[s]}</option>)}
       </select>
     )
   ) : null
@@ -695,6 +699,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
   }
 
+  // 본국 표기 이름(선택) — 원격 서명 화면에서 입주자 본인이 적는다. 그 나라 이름의 발음은 그 나라
+  // 표기법이 가장 정확한데, 그 표기를 아는 사람은 운영자가 아니라 본인이다(운영자 승인 2026-08-11).
+  // **강제하지 않는다.** 비워 두어도 제출은 그대로 되고, 화면에서도 muted 로 조용히 서 있는다.
+  // 이미 등록된 표기가 있으면 칸 자체를 그리지 않는다 — 이 문은 덮어쓸 수 없기 때문이다(서버 주석).
+  const [nativeNameInput, setNativeNameInput] = useState('')
+  const canEnterNativeName = remote && !snapTenant.nativeName
+
   // 원격 '제출' — 확인 팝업 후 서버에서 링크를 닫고(재접속 차단) 운영자에게 푸시 발송, 완료 화면으로 전환.
   // 서명 저장은 서명 시점에 이미 끝났고, 이 단계는 최종 확정이다.
   const canSubmit = !!signatureDataUrl && (!data.disposalConsent.enabled || !!disposalSignatureDataUrl)
@@ -709,7 +720,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     setFinalizing(true)
     const release = trackSave()
     try {
-      const res = await finalizeRemoteSubmission(shareToken)
+      const res = await finalizeRemoteSubmission(shareToken, nativeNameInput)
       if (!res.ok) { pushToast('error', res.error); return }
       setSubmitted(true)
     } finally {
@@ -1228,6 +1239,25 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         </div>
       </main>
       </div>
+      {/* 본국 표기 이름(선택) — 방금 읽은 계약서의 성명 바로 아래, 제출 CTA 위. 흐름 안에 있되
+          §29 톤으로 조용히 선다(muted·작은 글씨·테두리 없음). 한 벌만 그려 라벨과 칸이 1대1로 묶인다. */}
+      {canEnterNativeName && (
+        <div className="no-print native-name">
+          <label htmlFor="native-name-input" className="native-name-lbl">본국 표기 이름 (선택)</label>
+          <input
+            id="native-name-input"
+            type="text"
+            value={nativeNameInput}
+            onChange={e => setNativeNameInput(e.target.value)}
+            maxLength={NATIVE_NAME_MAX}
+            autoComplete="off"
+            placeholder="Nguyễn Thị Thảo Anh"
+            aria-describedby="native-name-hint"
+            className="native-name-input"
+          />
+          <p id="native-name-hint" className="native-name-hint">여권이나 본국 서류에 적힌 표기를 그대로 적어 주세요. 비워 두어도 됩니다.</p>
+        </div>
+      )}
       {/* 계약서 서명란 아래 제출 CTA */}
       {inflowSubmitCta}
       {data.disposalConsent.enabled && (
@@ -1410,6 +1440,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           border: 1px solid var(--cream-3); border-radius: 10px;
         }
         .remote-cta-text { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+        /* 본국 표기 이름(선택) — 제출 CTA 와 같은 폭·같은 자리에 서되 강조는 하지 않는다.
+           배경·테두리 없이 muted 글자만 두어 필수 칸으로 읽히지 않게 한다(§29). */
+        .native-name { width: min(210mm, 100% - 24px); margin: 12px auto 0; }
+        .native-name-lbl { display: block; font-size: 11px; color: var(--ink-s); margin-bottom: 5px; }
+        .native-name-input {
+          width: 100%; box-sizing: border-box;
+          min-height: 44px; padding: 10px 12px;
+          font-size: 14px; font-family: inherit; color: var(--ink);
+          background: #fff; border: 1px solid var(--cream-3); border-radius: 8px;
+          outline: none;
+        }
+        .native-name-input:focus { border-color: var(--coral); }
+        .native-name-hint { font-size: 11px; color: var(--ink-s); line-height: 1.5; margin: 5px 0 0; }
 
         /* 하단 알약 — §22 SelectionPillBar 의 셸 문법(다크 표면·r15·부유 그림자·z-pill)만 차용한 별도 마크업.
            이 페이지는 AppShell 밖이라 하단 내비 오프셋 없이 bottom 16px 기준. */

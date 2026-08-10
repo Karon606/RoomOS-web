@@ -32,6 +32,7 @@ function dueDayFromMoveIn(moveIn: Date): string {
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
+import { sanitizeNativeName } from '@/lib/documentName'
 import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } from '@/lib/pii'
 import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
@@ -59,6 +60,14 @@ function foreignRegNoPatch(formData: FormData, tenantId: string):
   const checked = validateForeignRegNo(raw)
   if (!checked.ok) return { ok: false, error: checked.error }
   return { ok: true, data: { foreignRegNoEnc: storeForeignRegNo(checked.value, tenantId) } }
+}
+
+// 현지 표기 이름 패치 — 폼이 그 칸을 **실제로 보냈을 때만** 키를 담는다.
+// 국적이 대한민국이면 칸 자체가 안 그려지고(외국인등록번호·본국 연락처와 같은 조건), 그때 빈 값으로
+// 덮으면 이미 들어 있던 표기가 조용히 지워진다. 칸이 보이는 상태에서 비우면 그 뜻대로 지운다.
+function nativeNamePatch(formData: FormData): { nativeName?: string | null } {
+  if (!formData.has('nativeName')) return {}
+  return { nativeName: sanitizeNativeName(formData.get('nativeName')) }
 }
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -384,6 +393,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       propertyId,
       name: name.trim(),
       ...regNo.data,
+      ...nativeNamePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),
@@ -645,6 +655,7 @@ export async function updateTenant(formData: FormData): Promise<
     where: { id: tenantId },
     data: {
       name: name.trim(),
+      ...nativeNamePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),

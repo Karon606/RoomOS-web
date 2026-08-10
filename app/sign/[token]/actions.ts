@@ -5,6 +5,7 @@
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
+import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
@@ -157,8 +158,10 @@ export async function submitRemoteSignature(
 // 다시 열리지 않게 하고(page.tsx 가 '제출 완료'로 안내), 운영자에게 웹푸시를 발송한다(best-effort).
 // closedAt 이 아니라 submittedAt 을 쓰는 이유 — 종 알림의 '정식 계약서 발급' 리마인더는 closedAt: null
 // 조건이라, 제출로 closedAt 을 찍으면 발급 전 리마인더가 사라진다(운영자 결정: 발급 전까지 유지, 2026-07-23).
+// nativeName: 입주자가 서명 화면에서 직접 적은 본국 표기 이름(선택 입력).
 export async function finalizeRemoteSubmission(
   token: string,
+  nativeName?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const link = await getActiveLink(token)
@@ -170,6 +173,23 @@ export async function finalizeRemoteSubmission(
     }
     // 계약서 서명이 이미 저장돼 있어야 제출 가능(동의서 유무는 클라이언트 canSubmit 가 게이트).
     if (!link.signedAt) return { ok: false, error: '먼저 서명을 완료해 주세요.' }
+
+    // 본국 표기 이름 — **비어 있을 때만** 채운다.
+    //
+    // 이 경로는 로그인이 없다. 자격은 문자로 나간 토큰과 생년월일뿐이고, 링크는 전달될 수 있다.
+    // 그런 문에서 고객 정보를 덮어쓰게 두면 링크를 가진 누구든 운영자가 적어 둔 표기를 갈아치울 수
+    // 있다. 그래서 조건부 updateMany 로 **아직 비어 있는 행만** 갱신한다 — 읽고 나서 쓰는 방식은
+    // 그 사이에 값이 생기면 덮어쓰므로 쓰지 않는다. 갱신행 0 은 이미 값이 있다는 뜻이고 조용히 지난다
+    // (있다/없다를 답으로 돌려주면 링크 소지자가 고객 정보의 상태를 캐낼 수 있다).
+    // 화면도 스냅샷에 표기가 없을 때만 칸을 그리므로 정상 흐름에서는 이 경합 자체가 드물다.
+    // 값을 지우거나 고치는 것은 이 문으로 못 한다 — 운영자만 고객 정보에서 한다.
+    const native = sanitizeNativeName(nativeName)
+    if (native) {
+      await prisma.tenant.updateMany({
+        where: { id: link.tenantId, OR: [{ nativeName: null }, { nativeName: '' }] },
+        data: { nativeName: native },
+      })
+    }
 
     // 제출 확정 — submittedAt 잠금(재접속 차단). 서명본은 LeaseTerm 에 이미 영속돼 운영자 화면에서 조회된다.
     await prisma.contractShareLink.update({ where: { id: link.id }, data: { submittedAt: new Date() } })

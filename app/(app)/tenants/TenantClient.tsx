@@ -10,6 +10,7 @@ import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
+import { NATIVE_NAME_MAX } from '@/lib/documentName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
@@ -134,6 +135,7 @@ type LeaseTerm = {
 
 type Tenant = {
   id: string; name: string; englishName: string | null
+  nativeName: string | null
   email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
@@ -3309,6 +3311,25 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
           <Field label="영어이름" name="englishName" defaultValue={tenant?.englishName ?? ''} placeholder="Hong Gildong" />
         </div>
+        {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·본국 연락처와 같은 조건).
+            숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
+            로마자만으로는 성조·한자를 되짚을 수 없어 영문 이름과 다른 사실이다. 서류 성명 표기
+            선택지에 '현지'가 이 값으로 붙는다. 인쇄 폰트가 못 그리는 글자(한자·아랍·태국 문자 등)면
+            선택지에서 빠지고 값은 여기 그대로 남는다. */}
+        {natVal !== '대한민국' && (
+        <div className="space-y-1.5">
+          <label htmlFor="nativeName" className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
+          <input
+            id="nativeName"
+            type="text"
+            name="nativeName"
+            defaultValue={tenant?.nativeName ?? ''}
+            maxLength={NATIVE_NAME_MAX}
+            placeholder="Nguyễn Thị Thảo Anh"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
+          />
+        </div>
+        )}
         <div className="grid grid-cols-3 gap-3">
           <Field label="생년월일" name="birthdate" type="birthdate" defaultValue={toDateInput(tenant?.birthdate)} />
           <SelectField label="성별" name="gender" defaultValue={tenant?.gender}>

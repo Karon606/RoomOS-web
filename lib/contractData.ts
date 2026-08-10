@@ -36,6 +36,7 @@ export type ContractData = {
     name: string
     koreanName: string           // 고객 정보의 이름 그대로 — 표기를 한글로 되돌렸을 때의 값
     englishName: string | null   // 고객 정보의 영문 이름. 없으면 선택 UI 자체를 안 그린다
+    nativeName: string | null    // 고객 정보의 현지 표기 이름. 없거나 서류가 못 그리는 글자면 선택지에서 빠진다
     nameStyle: DocNameStyle      // 지금 고른 표기(lease 표시값에서 옴, 계약이 없으면 기본값)
     birthdate: string | null   // YYYY-MM-DD
     /**
@@ -165,6 +166,7 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       name: documentName(tenant, nameStyle),
       koreanName: tenant.name,
       englishName: tenant.englishName,
+      nativeName: tenant.nativeName,
       nameStyle,
       birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
       foreignRegNo: foreignRegNo ? formatForeignRegNo(foreignRegNo) : null,

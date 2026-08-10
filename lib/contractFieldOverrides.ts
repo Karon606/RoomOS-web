@@ -31,7 +31,7 @@ export type ContractFieldOverrides = {
   dueDay?: string              // '14' | '말'
   roomNo?: string
   registrationStatus?: RegistrationStatusLabel
-  nameStyle?: DocNameStyle     // 성명 표기 — 'ko'(기본) | 'en'
+  nameStyle?: DocNameStyle     // 성명 표기 — 'ko'(기본) | 'en' | 'native'
 }
 
 export type ContractFieldOverrideKey = keyof ContractFieldOverrides
@@ -54,7 +54,7 @@ export const CONTRACT_FIELD_ERROR: Record<ContractFieldOverrideKey, string> = {
   dueDay: '매월 납부일은 1부터 31 사이의 숫자 또는 말 로 입력해 주세요.',
   roomNo: '호실은 20자 이내로 입력해 주세요.',
   registrationStatus: '전입신고는 신고, 미신고, 면제 중에서 골라 주세요.',
-  nameStyle: '성명 표기는 한글, 영문 중에서 골라 주세요.',
+  nameStyle: '성명 표기는 한글, 영문, 현지 중에서 골라 주세요.',
 }
 
 const AMOUNT_MAX = 100_000_000

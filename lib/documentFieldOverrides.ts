@@ -64,7 +64,7 @@ export const RESIDENCE_CERT_FIELD_ERROR: Record<ResidenceCertOverrideKey, string
   periodText: '거주 기간은 60자 이내로 입력해 주세요.',
   rentAmount: '임대료는 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
   depositAmount: '보증금은 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
-  nameStyle: '성명 표기는 한글, 영문 중에서 골라 주세요.',
+  nameStyle: '성명 표기는 한글, 영문, 현지 중에서 골라 주세요.',
 }
 
 const AMOUNT_MAX = 100_000_000
