@@ -29,6 +29,11 @@ const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }
 
+// 같은 계약의 발급본을 묶는 키 — ContractFilesPanel 과 같은 규칙이다.
+// leaseTermId 가 없는 파일은 자기 자신이 한 그룹이다(무엇의 다른 버전인지 앱이 말할 수 없다).
+// 사람이 아니라 계약이 기준인 이유는 한 사람이 계약을 둘 가질 수 있고 그 둘은 서로의 버전이 아니어서다.
+const issueGroupKey = (c: { id: string; leaseTermId: string | null }) => c.leaseTermId ?? `single:${c.id}`
+
 // 퇴실 그룹: 퇴실 완료 + 입실 취소. 연결 계약이 없는(status null) 파일은 거주중 쪽에 둔다.
 const isDeparted = (status: string | null) => status === 'CHECKED_OUT' || status === 'CANCELLED'
 
@@ -73,6 +78,26 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
 
   const departedCount = useMemo(() => contracts.filter(c => isDeparted(c.status)).length, [contracts])
 
+  // 같은 계약에 몇 부인가 — **필터·검색 전 전체**에서 센다. 보이는 행만 세면 출처 필터로 형제가
+  // 가려졌을 때 [현재] 가 사라지거나 삭제 안내가 "남는 게 없다"고 거짓말을 한다.
+  const groupCount = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of contracts) m.set(issueGroupKey(c), (m.get(issueGroupKey(c)) ?? 0) + 1)
+    return m
+  }, [contracts])
+  // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정 고정이고 contractNo 는 번호 도입
+  // 이전 발급본이 null 이라, 둘 다 같은 날 두 부를 못 가른다(황인정 실측 2부가 정확히 그 모양).
+  const currentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const [key, n] of groupCount) {
+      if (n < 2) continue
+      const newest = contracts.filter(c => issueGroupKey(c) === key)
+        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
+      ids.add(newest.id)
+    }
+    return ids
+  }, [contracts, groupCount])
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = contracts.filter(c => {
@@ -82,13 +107,19 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       return (
         c.tenantName.toLowerCase().includes(q) ||
         c.fileName.toLowerCase().includes(q) ||
+        // 계약번호가 화면에 뜨는 이름이 됐으니 검색도 그 이름을 받아야 한다
+        (c.contractNo ?? '').toLowerCase().includes(q) ||
         (c.roomNo ?? '').toLowerCase().includes(q)
       )
     })
+    // 입실자별에서만 같은 사람의 발급본을 붙여 세우고 그 안을 최신순으로 둔다 — 여러 부를 나란히
+    // 놓고 비교하는 것이 이 정렬의 용도다. 기본 최신순은 손대지 않는다(종전 화면 그대로).
     list = [...list].sort((a, b) =>
       sort === 'latest'
         ? new Date(b.signedAt).getTime() - new Date(a.signedAt).getTime()
-        : a.tenantName.localeCompare(b.tenantName, 'ko') || (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko', { numeric: true }),
+        : a.tenantName.localeCompare(b.tenantName, 'ko')
+          || (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko', { numeric: true })
+          || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )
     return list
   }, [contracts, query, residency, source, sort])
@@ -107,7 +138,16 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const pendingHidden = pendingIssues.length - pendingRows.length
 
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `${name}님의 이 계약서 파일을 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    // 같은 계약에 여러 부가 있으면 무엇이 남는지 먼저 말한다. 한 부만 지웠는데 계약서가 통째로
+    // 사라진 줄 알고 다시 발급하면 번호만 하나 더 늘어난다.
+    const target = contracts.find(c => c.id === id)
+    const siblings = target ? (groupCount.get(issueGroupKey(target)) ?? 1) - 1 : 0
+    if (!(await confirmDialog({
+      title: `${name}님의 이 계약서 파일을 삭제할까요?`,
+      message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
+        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : ''),
+      level: 'danger', confirmLabel: '삭제',
+    }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteContractFile(id)
@@ -279,9 +319,20 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                       ? 'bg-[var(--coral)]/10 text-[var(--coral)]'
                       : 'bg-[var(--canvas)] text-[var(--warm-mid)] ring-1 ring-[var(--warm-border)]'
                   }`}>{SOURCE_LABEL[c.source]}</span>
+                  {/* 여러 부 중 어느 것이 지금 유효한지 — 입실자별에서만 띄운다. 최신순은 사람이 섞여
+                      있어 옆 행과 비교할 대상이 아니라, 배지가 붙으면 무엇의 '현재'인지 알 수 없다. */}
+                  {sort === 'tenant' && currentIds.has(c.id) && (
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                  )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>
-                <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
+                {/* 계약번호가 사람이 부를 이름이다. 파일명은 자동 생성 문자열이라 아무도 못 부른다.
+                    번호가 없는 스캔본·구본은 부를 이름 자체가 없으므로 종전 표기(파일명)를 유지한다. */}
+                {!c.contractNo ? (
+                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
+                ) : (
+                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">계약번호 {c.contractNo}</p>
+                )}
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.signedAt)} 서명</p>
               </div>
               </div>

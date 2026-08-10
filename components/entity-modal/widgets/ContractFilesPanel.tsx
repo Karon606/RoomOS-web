@@ -10,8 +10,9 @@
 // 링크가 나가는 동작이라 목적어를 붙여 '서명 요청 보내기'로 바꿨다. 스캔본 올리기는 앱 안으로 들어오는
 // 유일한 방향이라 다섯 동사 밖 예외로 둔다.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import {
   getContractFiles, deleteContractFile, restoreContractFile,
   createContractScanUploadSession, finalizeContractScan,
@@ -50,6 +51,11 @@ function shareBadge(link: ContractShareLinkInfo): { label: string; active: boole
   if (link.signedAt) return { label: `서명 완료 · ${remain}`, active: true, closable: true }
   return { label: `서명 대기 · ${remain}`, active: true, closable: true }
 }
+
+// 같은 계약의 발급본을 묶는 키. leaseTermId 가 없는 파일(연결이 끊긴 구본·스캔본)은 자기 자신이 한
+// 그룹이다 — 무엇의 다른 버전인지 앱이 말할 수 없는데 묶으면 거짓말이 된다. 사람이 아니라 계약이
+// 기준인 이유는 한 사람이 계약을 둘 가질 수 있고, 그 둘은 서로의 버전이 아니기 때문이다.
+const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => f.leaseTermId ?? `single:${f.id}`
 
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
@@ -153,7 +159,16 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   }
 
   const handleDelete = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 계약서 파일을 삭제할까요?', message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    // 같은 계약에 여러 부가 있으면 무엇이 남는지 먼저 말한다. 한 부만 지웠는데 계약서가 통째로
+    // 사라진 줄 알고 다시 발급하면 번호만 하나 더 늘어난다.
+    const target = files?.find(f => f.id === id)
+    const siblings = target ? (groupCount.get(issueGroupKey(target)) ?? 1) - 1 : 0
+    if (!(await confirmDialog({
+      title: '이 계약서 파일을 삭제할까요?',
+      message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
+        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : ''),
+      level: 'danger', confirmLabel: '삭제',
+    }))) return
     const release = trackSave()
     try {
       const res = await deleteContractFile(id)
@@ -162,6 +177,28 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       await reload()
     } finally { release() }
   }
+
+  // 같은 계약의 발급본이 몇 부인가 — 다중 버전 표시(머리·계약번호 줄·[현재])는 전부 이 값이 2 이상일
+  // 때만 켠다. 지금 40계약이 1부뿐이고, 그 화면은 종전과 같은 골격이어야 한다.
+  const groupCount = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const f of files ?? []) m.set(issueGroupKey(f), (m.get(issueGroupKey(f)) ?? 0) + 1)
+    return m
+  }, [files])
+  const hasMultiIssue = [...groupCount.values()].some(v => v > 1)
+  // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정으로 고정돼 같은 날 두 부를 못 가르고,
+  // contractNo 는 번호 도입(2026-08-03) 이전 발급본이 null 이라 정렬 자체가 안 된다.
+  // 실측 황인정 2부가 정확히 그 모양이다 — signedAt 동일, 한쪽 contractNo null.
+  const currentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const [key, n] of groupCount) {
+      if (n < 2) continue
+      const newest = (files ?? []).filter(f => issueGroupKey(f) === key)
+        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
+      ids.add(newest.id)
+    }
+    return ids
+  }, [files, groupCount])
 
   const shareLink = share?.link ?? null
   const badge = shareLink ? shareBadge(shareLink) : null
@@ -248,21 +285,42 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           {stage.hint ? '등록된 계약서가 없습니다.' : '등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.'}
         </p>
       )}
+      {/* 같은 계약에 2부 이상일 때만 머리를 세운다. 1부뿐인 계약에서는 이 줄이 없어 종전 골격 그대로다. */}
+      {!loading && files && files.length > 0 && hasMultiIssue && (
+        <SectionHeader first name="보관된 계약서" count={`${files.length}부`} />
+      )}
       {!loading && files && files.length > 0 && (
         <ul className="space-y-1.5">
           {files.map(f => {
             const dt = new Date(f.signedAt)
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
+            // 식별 줄은 '어느 부인지 불러야 할 때'에만 띄운다 — 같은 계약에 2부 이상일 때.
+            // 1부뿐이면 부를 일이 없어 줄을 세우지 않는다(40계약이 종전 골격 그대로다).
+            const needsName = (groupCount.get(issueGroupKey(f)) ?? 1) > 1
             return (
               // 파일명은 더 이상 링크를 겸하지 않는다 — 링크처럼 보이지 않는 텍스트가 말없이 구글 드라이브로
               // 나가던 구조가 '앱에서 인쇄가 안 된다'의 절반이었다. 열람은 '보기'가 전담한다(§22 solid 1개).
               <li key={f.id} className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
+                {/* 어휘는 §용어 정본을 따른다(docs/document-screens-spec.md) — '서명 / 스캔' 은 사전에 없는 말이었다. */}
                 <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
-                  {f.source === 'GENERATED' ? '서명' : '스캔'}
+                  {f.source === 'GENERATED' ? '앱 발급본' : '스캔본'}
                 </span>
-                <span className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] truncate">
-                  {tenantName} · {dateLabel}
-                </span>
+                {currentIds.has(f.id) && (
+                  <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--coral)]/10 text-[var(--coral)]">현재</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="block text-xs text-[var(--warm-dark)] truncate">
+                    {tenantName} · {dateLabel}
+                  </span>
+                  {/* 계약번호가 곧 이 발급본의 이름이다(§30 행 액션 4개는 그대로).
+                      번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
+                      2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
+                  {needsName && (
+                    <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">
+                      {f.contractNo ? `계약번호 ${f.contractNo}` : f.fileName}
+                    </p>
+                  )}
+                </div>
                 <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
                 <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
                   className={btnClass('secondary', 'sm')} />

@@ -3049,6 +3049,10 @@ export type ContractFileRow = {
   source: 'GENERATED' | 'UPLOADED'
   signedAt: Date
   createdAt: Date
+  // 계약번호 — 사람이 부를 수 있는 유일한 이름. 스캔본과 번호 도입(2026-08-03) 이전 발급본은 null 이다.
+  contractNo: string | null
+  // 같은 계약의 발급본을 묶는 축. 한 사람이 계약을 둘 가질 수 있으므로 사람이 아니라 계약이 기준이다.
+  leaseTermId: string | null
   viewUrl: string
 }
 
@@ -3057,7 +3061,12 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
   const rows = await prisma.contractFile.findMany({
     where: { driveFileId: { not: '' }, tenantId, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
-    select: { id: true, driveFileId: true, fileName: true, source: true, signedAt: true, createdAt: true },
+    // issuedSnapshot 은 여기서 읽지 않는다 — 서명 dataURL 두 장이 들어 있어 목록 응답이 통째로 무거워진다.
+    // 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
+    select: {
+      id: true, driveFileId: true, fileName: true, source: true,
+      signedAt: true, createdAt: true, contractNo: true, leaseTermId: true,
+    },
   })
   return rows.map(r => ({
     ...r,
