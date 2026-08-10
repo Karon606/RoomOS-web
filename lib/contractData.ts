@@ -37,6 +37,10 @@ export type ContractData = {
     koreanName: string           // 고객 정보의 이름 그대로 — 표기를 한글로 되돌렸을 때의 값
     englishName: string | null   // 고객 정보의 영문 이름. 없으면 선택 UI 자체를 안 그린다
     nativeName: string | null    // 고객 정보의 현지 표기 이름. 없거나 서류가 못 그리는 글자면 선택지에서 빠진다
+    // 국적. 종이에는 안 찍힌다 — 원격 서명 화면이 '본국 표기 이름' 칸을 그릴지 가르는 데만 쓴다.
+    // 내국인(실측 79명)의 서명 화면은 이 기능 전과 완전히 같아야 하고, 그 판정 기준을 고객 정보 폼
+    // (국적이 대한민국이면 칸 숨김)과 다르게 두면 같은 칸이 두 화면에서 다른 규칙으로 뜬다.
+    nationality: string | null
     nameStyle: DocNameStyle      // 지금 고른 표기(lease 표시값에서 옴, 계약이 없으면 기본값)
     birthdate: string | null   // YYYY-MM-DD
     /**
@@ -167,6 +171,7 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       koreanName: tenant.name,
       englishName: tenant.englishName,
       nativeName: tenant.nativeName,
+      nationality: tenant.nationality,
       nameStyle,
       birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
       foreignRegNo: foreignRegNo ? formatForeignRegNo(foreignRegNo) : null,

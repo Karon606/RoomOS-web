@@ -703,8 +703,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 표기법이 가장 정확한데, 그 표기를 아는 사람은 운영자가 아니라 본인이다(운영자 승인 2026-08-11).
   // **강제하지 않는다.** 비워 두어도 제출은 그대로 되고, 화면에서도 muted 로 조용히 서 있는다.
   // 이미 등록된 표기가 있으면 칸 자체를 그리지 않는다 — 이 문은 덮어쓸 수 없기 때문이다(서버 주석).
+  // 국적이 대한민국이면 물을 것이 없다. 고객 정보 폼의 외국인 전용 칸들과 같은 기준을 쓴다 —
+  // 내국인(실측 79명)의 서명 화면은 이 기능 전과 완전히 같다. 국적 미기재는 외국인 쪽으로 본다(폼과 동일).
   const [nativeNameInput, setNativeNameInput] = useState('')
-  const canEnterNativeName = remote && !snapTenant.nativeName
+  const canEnterNativeName = remote && !snapTenant.nativeName && snapTenant.nationality !== '대한민국'
 
   // 원격 '제출' — 확인 팝업 후 서버에서 링크를 닫고(재접속 차단) 운영자에게 푸시 발송, 완료 화면으로 전환.
   // 서명 저장은 서명 시점에 이미 끝났고, 이 단계는 최종 확정이다.
