@@ -20,7 +20,7 @@ import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCar
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstDateTimeToUtc, splitKstDateTime } from '@/lib/kstDate'
 import { specMultiplier, isSpecDimensionMismatch, listCompatibleUnits, unitFactor, splitSizeLabel } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -2726,13 +2726,10 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   const [vendor, setVendor] = useState(entry.vendor ?? '')
   const [memo, setMemo]     = useState(entry.memo ?? '')
 
-  // 수령 확정일시
-  const initReceivedDate = entry.receivedAt
-    ? (() => { const d = new Date(entry.receivedAt); const k = new Date(d.getTime() + 9*3600000); return `${k.getUTCFullYear()}-${String(k.getUTCMonth()+1).padStart(2,'0')}-${String(k.getUTCDate()).padStart(2,'0')}` })()
-    : ''
-  const initReceivedTime = entry.receivedAt
-    ? (() => { const d = new Date(entry.receivedAt); const k = new Date(d.getTime() + 9*3600000); return `${String(k.getUTCHours()).padStart(2,'0')}:${String(k.getUTCMinutes()).padStart(2,'0')}` })()
-    : ''
+  // 수령 확정일시 — 읽기·쓰기 모두 lib/kstDate 정본(인라인 KST 계산 복제 금지)
+  const initReceived = splitKstDateTime(entry.receivedAt)
+  const initReceivedDate = initReceived.ymd
+  const initReceivedTime = initReceived.hm
   const [receivedDate, setReceivedDate] = useState(initReceivedDate)
   const [receivedTime, setReceivedTime] = useState(initReceivedTime)
   // 명시적 미수령 토글 — 'clear' sentinel 대신 별도 플래그로 DatePicker가
@@ -2744,9 +2741,8 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   const buildReceivedAt = () => {
     if (unreceived) return null  // 수령 대기로 되돌리기
     if (!receivedDate) return undefined  // 변경 없음
-    const time = receivedTime || '00:00'
     // KST → UTC 변환
-    return new Date(`${receivedDate}T${time}:00+09:00`).toISOString()
+    return kstDateTimeToUtc(receivedDate, receivedTime || '00:00')?.toISOString()
   }
 
   return (
