@@ -11,6 +11,10 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import DocumentScroll from '@/components/layout/DocumentScroll'
+import {
+  type DocNameStyle, DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL,
+  asDocNameStyle, documentName, hasEnglishName,
+} from '@/lib/documentName'
 
 type Fields = {
   name: string; room: string; period: string; targetMonth: string
@@ -21,15 +25,20 @@ const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] r
 
 // 모듈 레벨 — 렌더 본문 안에서 정의하면 입력 한 글자마다 컴포넌트 identity 가 바뀌어
 // input 이 unmount/remount 되고 모바일 키보드가 닫힌다(운영자 신고 2026-07-27).
-function Field({ label, value, onChange, placeholder }: {
+function Field({ label, value, onChange, placeholder, trailing }: {
   label: string
   value: string
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   placeholder?: string
+  /** 라벨 줄 오른쪽에 붙는 보조 컨트롤(성명 표기 선택). 없으면 라벨 줄 모양이 종전과 같다. */
+  trailing?: React.ReactNode
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+      <div className="flex items-center justify-between gap-2 min-h-[18px]">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+        {trailing}
+      </div>
       <input type="text" value={value} onChange={onChange} placeholder={placeholder} className={inputCls} />
     </div>
   )
@@ -47,9 +56,12 @@ function relMonthLabel(view: string, today: string): string | null {
   return `${-diff}개월 후`
 }
 
-function buildInitial(data: RentReceiptData): Fields {
+/** 고객 정보의 두 이름 — 표기 선택이 이 둘 중 하나를 고른다(lib/documentName 정본). */
+const nameSourceOf = (data: RentReceiptData) => ({ name: data.name, englishName: data.englishName })
+
+function buildInitial(data: RentReceiptData, nameStyle: DocNameStyle = DEFAULT_DOC_NAME_STYLE): Fields {
   return {
-    name: data.name,
+    name: documentName(nameSourceOf(data), nameStyle),
     room: data.room,
     period: data.period,
     targetMonth: data.targetMonth,
@@ -66,6 +78,20 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const [f, setF] = useState<Fields>(() => buildInitial(data))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
+
+  // ── 성명 표기(한글/영문) ─────────────────────────────────────────
+  // 이 화면의 모든 값은 그 발급에만 쓰인다(저장 층이 없다). 표기 선택도 같은 층이라 저장하지 않는다 —
+  // 여기만 계약 단위로 남기면 '이 서류는 왜 기억하지'가 되고, 남길 자리(계약)도 영수증에는 없다.
+  // 영문 이름이 없으면 아무것도 그리지 않는다 — 대다수 입주자의 화면은 종전과 완전히 같다.
+  const nameSource = nameSourceOf(data)
+  const canPickName = hasEnglishName(nameSource)
+  const [nameStyle, setNameStyle] = useState<DocNameStyle>(DEFAULT_DOC_NAME_STYLE)
+  const pickNameStyle = (raw: string) => {
+    const next = asDocNameStyle(raw)
+    if (!next || next === nameStyle) return
+    setNameStyle(next)
+    setF(p => ({ ...p, name: documentName(nameSource, next) }))
+  }
 
   // 서류 종류 — 보증금은 귀속 월이 없어 스테퍼를 숨기고 문구·라벨이 갈린다(신고 d68220bd)
   const isDeposit = data.kind === 'deposit'
@@ -98,6 +124,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
 
   const reset = async () => {
     if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라집니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
+    setNameStyle(DEFAULT_DOC_NAME_STYLE)
     setF(buildInitial(data)); setIssueDate(kstYmdStr())
     pushToast('info', '자동값으로 되돌렸습니다')
   }
@@ -246,7 +273,15 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동" />
+            {/* 성명 표기 — 영문 이름이 등록된 입주자에게만 붙는다(계약서·실거주 확인서와 같은 select). */}
+            <Field label="수령인 (입주자)" value={f.name} onChange={set('name')} placeholder="홍길동"
+              trailing={canPickName ? (
+                <select value={nameStyle} onChange={e => pickNameStyle(e.target.value)} aria-label="성명 표기"
+                  className="text-xs text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 cursor-pointer outline-none focus:border-[var(--coral)]">
+                  <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
+                  <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+                </select>
+              ) : undefined} />
             <Field label="호실" value={f.room} onChange={set('room')} placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">

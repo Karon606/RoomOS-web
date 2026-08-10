@@ -18,7 +18,8 @@ import { depositComposition } from '@/lib/depositComposition'
 export type RentReceiptData = {
   tenantId: string
   leaseTermId: string | null
-  name: string            // 수령인(입주자) 성명
+  name: string            // 수령인(입주자) 성명 — 고객 정보의 이름 그대로(표기 선택은 화면이 얹는다)
+  englishName: string | null   // 영문 이름. 없으면 표기 선택 UI 자체를 안 그린다
   room: string            // 호실
   period: string          // 거주 기간 (예 '2026.01.15 ~ 2026.07.14')
   targetMonth: string     // 납부 대상월 (예 '2026년 6월분')
@@ -162,6 +163,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       tenantId: tenant.id,
       leaseTermId: lease?.id ?? null,
       name: tenant.name,
+      englishName: tenant.englishName,
       room: fmtRoom(lease?.room?.roomNo),
       period: notMovedIn ? '' : `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
       targetMonth: moveInYmd ? kor(moveInYmd) : '',
@@ -258,6 +260,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     tenantId: tenant.id,
     leaseTermId: lease?.id ?? null,
     name: tenant.name,
+    englishName: tenant.englishName,
     room: fmtRoom(lease?.room?.roomNo),
     period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
     targetMonth: `${cy}년 ${cm}월분`,
