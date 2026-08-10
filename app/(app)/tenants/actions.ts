@@ -914,7 +914,7 @@ export async function updateTenant(formData: FormData): Promise<
   if (currentLease.isShortTerm && !isShortTerm && currentLease.rentAmount !== rentAmount) {
     const fromMonth = moveInDate ? new Date(moveInDate).toISOString().slice(0, 7)
       : (currentLease.moveInDate ? new Date(currentLease.moveInDate).toISOString().slice(0, 7) : null)
-    const { rewriteLockedExpectedForRentAmount } = await import('@/app/(app)/rooms/actions')
+    const { rewriteLockedExpectedForRentAmount } = await import('@/app/(app)/rooms/paymentEngine')
     const res = await rewriteLockedExpectedForRentAmount(leaseTermId, currentLease.rentAmount, rentAmount, fromMonth)
     if (res.changed.length > 0) {
       const detail = res.changed

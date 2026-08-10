@@ -224,7 +224,7 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
       || (prevRoom.rentUpdateDate?.getTime() ?? null) !== (rentUpdateDate?.getTime() ?? null)
       || prevRoom.nonResidentScheduled !== nonResidentScheduled
       || (prevRoom.nonResidentRentDate?.getTime() ?? null) !== (nonResidentRentDate?.getTime() ?? null))) {
-    const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/actions')
+    const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/paymentEngine')
     await rewriteLockedExpectedForRentSchedule(
       id,
       { scheduledRent: prevRoom.scheduledRent, rentUpdateDate: prevRoom.rentUpdateDate, nonResidentScheduled: prevRoom.nonResidentScheduled, nonResidentRentDate: prevRoom.nonResidentRentDate },
@@ -728,7 +728,7 @@ export async function batchUpdateRooms(
 
     // 인상 예약 일괄 변경 → 락인 되쓰기 (단건 경로와 동일 규칙). 한쪽만 걸면 다른 경로로 빠져나간다.
     if ('scheduledRent' in data || 'rentUpdateDate' in data) {
-      const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/actions')
+      const { rewriteLockedExpectedForRentSchedule } = await import('@/app/(app)/rooms/paymentEngine')
       const nextSched = 'scheduledRent' in data ? (data.scheduledRent ?? null) : undefined
       const nextDate = 'rentUpdateDate' in data ? ((data.rentUpdateDate as Date | null) ?? null) : undefined
       for (const b of beforeRooms) {

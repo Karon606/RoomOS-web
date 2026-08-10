@@ -31,8 +31,14 @@ if (!tenantsActions.includes('if (lease.isShortTerm) {')) {
 }
 
 // 인상 예약 락 되쓰기 가드(A페이즈) — 없으면 이미 선납된 달의 락이 인상을 이겨 인상분이 영원히 미청구.
-if (!roomsActions.includes('export async function rewriteLockedExpectedForRentSchedule')) {
-  violations.push('[소스] rooms/actions 의 인상 예약 락 되쓰기(rewriteLockedExpectedForRentSchedule)가 사라짐 — 선납된 달의 인상분이 미청구로 남는다')
+// 정본 자리는 rooms/paymentEngine (2026-08-10 보안 감사 — 'use server' 파일에 두면 무권한 엔드포인트가 된다).
+const paymentEngine = readFileSync('app/(app)/rooms/paymentEngine.ts', 'utf8')
+if (!paymentEngine.includes('export async function rewriteLockedExpectedForRentSchedule')) {
+  violations.push('[소스] rooms/paymentEngine 의 인상 예약 락 되쓰기(rewriteLockedExpectedForRentSchedule)가 사라짐 — 선납된 달의 인상분이 미청구로 남는다')
+}
+// 되쓰기 3형제는 서버 액션이 아니어야 한다. 'use server' 로 되돌아가면 권한·격리 없이 남의 청구액을 되쓸 수 있다.
+if (/^\s*['"]use server['"]/m.test(paymentEngine)) {
+  violations.push("[소스] rooms/paymentEngine 에 'use server' 가 붙었다 — 내부 헬퍼가 무권한 서버 액션 엔드포인트로 노출된다")
 }
 const roomManage = readFileSync('app/(app)/room-manage/actions.ts', 'utf8')
 if ((roomManage.match(/rewriteLockedExpectedForRentSchedule/g) ?? []).length < 2) {
