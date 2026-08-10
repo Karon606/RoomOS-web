@@ -4,7 +4,8 @@
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Section, Grid, Item } from './Section'
 import { fmtStayPeriod } from '@/lib/stayPeriod'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
+import { fmtDateKor } from '@/lib/fmtDate'
 
 type Lease = {
   status: string
@@ -30,15 +31,16 @@ const fmtDate = (d: Date | string | null) => {
   const DAYS = ['일', '월', '화', '수', '목', '금', '토']
   return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
 }
+// 일시 표기 — 날짜·시각 모두 KST 정본으로 뽑는다. 로컬 게터를 쓰면 서버(UTC) 렌더가 9시간 어긋나고
+// 그 값이 폼 프리필로 돌아가 저장 때마다 +9h 가 붙는 래칫이 된다(신고 54bce9c5).
 const fmtDateTime = (d: Date | string | null) => {
   if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  const hh = dt.getHours()
-  const mm = dt.getMinutes()
-  const ampm = hh < 12 ? '오전' : '오후'
-  const hh12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]}) ${ampm} ${hh12}:${String(mm).padStart(2, '0')}`
+  const { ymd, hm } = splitKstDateTime(d)
+  if (!ymd) return '—'
+  const [h, m] = hm.split(':').map(Number)
+  const ampm = h < 12 ? '오전' : '오후'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${fmtDateKor(d)} ${ampm} ${h12}:${String(m).padStart(2, '0')}`
 }
 const fmtDueDay = (dueDay: string | null) => {
   if (!dueDay) return '—'

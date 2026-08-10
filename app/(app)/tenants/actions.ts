@@ -18,7 +18,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstDateTimeToUtc } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
@@ -329,7 +329,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
           tourDate: tourDate ? new Date(tourDate) : null,
           tourTime: tourDate && tourTime ? tourTime : null,   // 날짜 없으면 시간도 무의미
-          inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
+          // 폼이 보내는 "YYYY-MM-DDTHH:mm" 은 오프셋이 없다 — 서버(UTC)가 그대로 파싱하면 9시간 뒤로 저장된다.
+          // 변환은 서버에서 한다(캐시된 구버전 클라가 남아도 오염이 재발하지 않게).
+          inquiryAt: kstDateTimeToUtc(inquiryAt),
           reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
           isShortTerm,
           paymentTiming,
@@ -777,7 +779,8 @@ export async function updateTenant(formData: FormData): Promise<
         // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
         ...(tourDate === null ? {} : { tourDate: tourDate ? new Date(tourDate) : null }),
         ...(tourTime === null && tourDate === null ? {} : { tourTime: (tourDate ?? '') && (tourTime ?? '') ? tourTime : null }),
-        ...(inquiryAt === null ? {} : { inquiryAt: inquiryAt ? new Date(inquiryAt) : null }),
+        // 오프셋 없는 폼 값을 KST 로 해석해 저장(등록 경로와 같은 정본) — 저장할 때마다 +9h 붙던 래칫 봉합.
+        ...(inquiryAt === null ? {} : { inquiryAt: kstDateTimeToUtc(inquiryAt) }),
         reservationConfirmedAt: isReservedConfirmed
           ? (currentLease.reservationConfirmedAt ?? new Date())
           : null,

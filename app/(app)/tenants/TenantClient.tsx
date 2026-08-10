@@ -38,7 +38,7 @@ import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
@@ -286,26 +286,10 @@ function fmtHM12(hm: string): string {
   return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`
 }
 
-// 일시값을 날짜('YYYY-MM-DD') + 시각('HH:mm')으로 분리
+// 일시값을 날짜('YYYY-MM-DD') + 시각('HH:mm')으로 분리 — 시각도 KST 정본(로컬 게터 금지).
 function splitDateTime(d: string | Date | null | undefined): { date: string; time: string } {
-  if (!d) return { date: '', time: '' }
-  const dt = new Date(d)
-  const date = kstYmdStr(dt)
-  const hh = String(dt.getHours()).padStart(2, '0')
-  const mm = String(dt.getMinutes()).padStart(2, '0')
-  return { date, time: `${hh}:${mm}` }
-}
-
-
-function fmtDateTime(d: string | Date | null | undefined): string {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  const hh = dt.getHours()
-  const mm = dt.getMinutes()
-  const ampm = hh < 12 ? '오전' : '오후'
-  const hh12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]}) ${ampm} ${hh12}:${String(mm).padStart(2, '0')}`
+  const { ymd, hm } = splitKstDateTime(d)
+  return { date: ymd, time: hm }
 }
 
 function fmtShortDate(d: string | Date | null | undefined): string {
@@ -3492,8 +3476,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     // (브라우저 native time input의 placeholder는 실제 값이 아니라 사용자 혼동 방지용)
                     // uncontrolled 이므로 DOM 값도 함께 세팅해야 화면에 반영된다.
                     if (date && !inquiryTimeRef.current?.value) {
-                      const now = new Date()
-                      const t = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                      // 지금 시각도 KST 정본으로 — 이 값은 KST 로 해석돼 저장된다(기기 타임존과 무관해야 한다).
+                      const t = splitKstDateTime(new Date()).hm
                       if (inquiryTimeRef.current) inquiryTimeRef.current.value = t
                       setInquiryTimeVal(t)
                     }
