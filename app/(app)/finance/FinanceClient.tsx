@@ -1576,11 +1576,15 @@ export default function FinanceClient({
   // 로컬 미리보기의 단일 교체·해제 경로. blob: 은 명시적으로 풀어야 메모리가 반환되므로
   // 직전 blob 주소를 ref 로 들고 있다가 교체·클리어 때 해제한다(dataURL 은 해제 대상이 아니다).
   const localPreviewBlobRef = useRef<{ add: string; edit: string }>({ add: '', edit: '' })
+  // 브라우저가 못 그리는 첨부(Chrome·Android 의 HEIC, PDF)는 깨진 이미지 타일로 남아
+  // 첨부 실패처럼 보였다. 타일 대신 한 줄로 말한다. 새 미리보기가 걸리면 다시 시도한다.
+  const [previewBroken, setPreviewBroken] = useState<{ add: boolean; edit: boolean }>({ add: false, edit: false })
   const setLocalPreview = (target: 'add' | 'edit', url: string) => {
     const prev = localPreviewBlobRef.current[target]
     if (prev && prev !== url) URL.revokeObjectURL(prev)
     localPreviewBlobRef.current[target] = url.startsWith('blob:') ? url : ''
     setLocalReceiptPreview(p => ({ ...p, [target]: url }))
+    setPreviewBroken(p => (p[target] ? { ...p, [target]: false } : p))
   }
   // 영수증 확대 — 앱 안에서 연다
   const [lightbox, setLightbox] = useState('')
@@ -1603,6 +1607,8 @@ export default function FinanceClient({
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
     } catch {
       const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+      // 아무 말 없이 첨부만 하고 끝나면 "인식이 안 된다" 로 읽힌다 — 무슨 일이 일어났는지 말한다.
+      pushToast('info', '이미지를 읽지 못해 자동 인식 없이 첨부만 합니다.')
       // 원본을 그대로 올리는 길 — 여기서 잡는 주소는 프록시라 저장 전에는 404 다.
       // 못 여는 형식이어도 브라우저가 img 로는 그리는 경우가 있으니(HEIC on Safari)
       // 원본 파일 자체를 미리보기로 건다. 여기 도달하면 이미지 파일임이 위에서 보장된다.
@@ -4061,7 +4067,13 @@ export default function FinanceClient({
                       </div>
                     ) : editReceiptUrl ? (
                       <div className="relative">
-                        <img src={localReceiptPreview.edit || editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                        {previewBroken.edit ? (
+                          <p className="w-full rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-6 text-center text-xs text-[var(--warm-muted)]">
+                            미리보기를 표시할 수 없는 형식입니다. 첨부는 되었습니다.
+                          </p>
+                        ) : (
+                          <img src={localReceiptPreview.edit || editReceiptUrl} onError={() => setPreviewBroken(p => ({ ...p, edit: true }))} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                        )}
                         <button type="button" onClick={() => { setEditReceiptUrl(''); setLocalPreview('edit', '') }}
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                       </div>
@@ -4367,7 +4379,13 @@ export default function FinanceClient({
                     </div>
                   ) : addReceiptUrl ? (
                     <div className="relative">
-                      <img src={localReceiptPreview.add || addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                      {previewBroken.add ? (
+                        <p className="w-full rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-6 text-center text-xs text-[var(--warm-muted)]">
+                          미리보기를 표시할 수 없는 형식입니다. 첨부는 되었습니다.
+                        </p>
+                      ) : (
+                        <img src={localReceiptPreview.add || addReceiptUrl} onError={() => setPreviewBroken(p => ({ ...p, add: true }))} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                      )}
                       <button type="button" onClick={() => { setAddReceiptUrl(''); setLocalPreview('add', '') }}
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                     </div>
