@@ -8,9 +8,20 @@
 // 이 파일이 유일한 진입점이다. 화면·PDF 발급·서명 링크 스냅샷이 같은 함수를 부르므로
 // 종이와 스냅샷이 갈릴 수 없다.
 
+import {
+  type DocNameStyle, DEFAULT_DOC_NAME_STYLE, asDocNameStyle,
+} from '@/lib/documentName'
+
 export type RegistrationStatusLabel = '신고' | '미신고' | '면제'
 
-/** 오버라이드 가능한 8개 표시 필드. 전부 optional 이고, 없는 키는 자동값이 그대로 쓰인다. */
+/**
+ * 오버라이드 가능한 9개 표시 필드. 전부 optional 이고, 없는 키는 자동값이 그대로 쓰인다.
+ *
+ * nameStyle 만 성격이 다르다 — 나머지 여덟은 '자동값 대신 이 값을 찍어라'(값 복사)인데
+ * 이것은 '등록된 두 이름 중 이쪽을 찍어라'(표기 선택)다. 값을 베끼지 않으므로 고객 정보에서
+ * 이름을 고치면 서류도 따라 고쳐진다. 그럼에도 같은 칸에 담는 이유는 잠금·되돌리기·서명 링크
+ * 스냅샷·감지망이 전부 이 칸에 이미 걸려 있어서다. 자리를 새로 파면 그 넷을 손으로 다시 잇게 된다.
+ */
 export type ContractFieldOverrides = {
   rentAmount?: number
   depositAmount?: number
@@ -20,6 +31,7 @@ export type ContractFieldOverrides = {
   dueDay?: string              // '14' | '말'
   roomNo?: string
   registrationStatus?: RegistrationStatusLabel
+  nameStyle?: DocNameStyle     // 성명 표기 — 'ko'(기본) | 'en'
 }
 
 export type ContractFieldOverrideKey = keyof ContractFieldOverrides
@@ -29,7 +41,7 @@ export type ContractFieldOverridePatch = Partial<Record<ContractFieldOverrideKey
 
 export const CONTRACT_FIELD_KEYS: readonly ContractFieldOverrideKey[] = [
   'rentAmount', 'depositAmount', 'cleaningFee',
-  'moveInDate', 'expectedMoveOut', 'dueDay', 'roomNo', 'registrationStatus',
+  'moveInDate', 'expectedMoveOut', 'dueDay', 'roomNo', 'registrationStatus', 'nameStyle',
 ]
 
 /** 검증에 걸린 키를 운영자에게 설명하는 문구. 화면이 "저장 안 됨"만 말하면 이유를 끝내 못 알려준다. */
@@ -42,6 +54,7 @@ export const CONTRACT_FIELD_ERROR: Record<ContractFieldOverrideKey, string> = {
   dueDay: '매월 납부일은 1부터 31 사이의 숫자 또는 말 로 입력해 주세요.',
   roomNo: '호실은 20자 이내로 입력해 주세요.',
   registrationStatus: '전입신고는 신고, 미신고, 면제 중에서 골라 주세요.',
+  nameStyle: '성명 표기는 한글, 영문 중에서 골라 주세요.',
 }
 
 const AMOUNT_MAX = 100_000_000
@@ -92,10 +105,11 @@ export function parseContractFieldOverrides(json: unknown): ContractFieldOverrid
   const due = asDueDay(src.dueDay); if (due !== undefined) out.dueDay = due
   const room = asRoomNo(src.roomNo); if (room !== undefined) out.roomNo = room
   const reg = asRegistration(src.registrationStatus); if (reg !== undefined) out.registrationStatus = reg
+  const ns = asDocNameStyle(src.nameStyle); if (ns !== undefined) out.nameStyle = ns
   return out
 }
 
-/** 계약서에 인쇄되는 lease 표시값 8종. 자동값(파생)과 병합값이 같은 모양이라 서로 갈릴 수 없다. */
+/** 계약서에 인쇄되는 lease 표시값 9종. 자동값(파생)과 병합값이 같은 모양이라 서로 갈릴 수 없다. */
 export type ContractLeaseFields = {
   moveInDate: string | null
   expectedMoveOut: string | null
@@ -105,6 +119,9 @@ export type ContractLeaseFields = {
   dueDay: string | null
   roomNo: string | null
   registrationStatus: RegistrationStatusLabel
+  // 성명 표기는 사람(Tenant)의 값이 아니라 **이 계약서를 어떻게 찍을지**의 선택이라 계약에 달린다.
+  // 같은 사람도 관 제출용 계약서는 영문, 보관용은 한글일 수 있다.
+  nameStyle: DocNameStyle
 }
 
 const REGISTRATION_LABEL: Record<string, RegistrationStatusLabel> = {
@@ -135,6 +152,7 @@ export function deriveContractLeaseFields(lease: ContractLeaseRow): ContractLeas
     dueDay: lease.dueDay,
     roomNo: lease.room?.roomNo ?? null,
     registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
+    nameStyle: DEFAULT_DOC_NAME_STYLE,
   }
 }
 

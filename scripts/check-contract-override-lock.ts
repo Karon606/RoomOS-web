@@ -36,7 +36,7 @@ const G6_BASELINE = 1
 const FIELD_LABEL: Record<string, string> = {
   rentAmount: '입실료', depositAmount: '보증금', cleaningFee: '청소비',
   moveInDate: '입실일', expectedMoveOut: '퇴실 예정일', dueDay: '매월 납부일',
-  roomNo: '호실', registrationStatus: '전입신고',
+  roomNo: '호실', registrationStatus: '전입신고', nameStyle: '성명 표기',
 }
 
 async function main() {
@@ -120,6 +120,10 @@ async function main() {
         fieldChecked++
         const merged = contractLeaseFields(lt) as unknown as Record<string, unknown>
         for (const key of ovKeys) {
+          // **스냅샷 쪽 값이 undefined 인 축은 비교를 생략한다.** 그 축이 생기기 전에 만들어진
+          // 스냅샷은 키가 아예 없어서, 없는 값을 '달라졌다'로 읽으면 바뀐 적 없는 계약에 위반이 뜬다
+          // (성명 표기 축 2026-08-11). 드리프트 비교(checkContractShareDrift)가 쓰는 규칙과 같다.
+          if (snapLease[key] === undefined) continue
           if (merged[key] !== snapLease[key]) {
             violations.push(`${k.tenant?.name ?? '?'} 의 계약서 ${FIELD_LABEL[key] ?? key} 표시값이 서명본과 다르다 — 서명 후 표시값 편집이 일어났다`)
           }

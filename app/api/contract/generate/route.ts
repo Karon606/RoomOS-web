@@ -13,6 +13,7 @@ import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
+import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
 
@@ -131,6 +132,11 @@ export async function POST(req: Request) {
     const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                          ?? tenant.contacts.find(c => !c.isEmergency)
 
+    // 표시값은 화면과 같은 함수로 조립한다(lib/contractFieldOverrides). 성명 표기도 그 안에 있다 —
+    // 클라이언트가 보낸 이름을 믿으면 이 API 를 직접 불러 아무 이름으로나 발급할 수 있다.
+    const leaseFields = lease ? contractLeaseFields(lease) : null
+    const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
+
     // 계약일은 서버가 다시 정한다. 화면이 잠겨도 이 API 를 직접 부르면 아무 날짜나 들어오고,
     // 그 값이 계약번호·파일명·보관 레코드까지 결정하기 때문이다.
     // 서명이 있으면 서명 시각이 곧 계약일이고, 서명 전에만 화면이 보낸 값을 신뢰한다.
@@ -224,15 +230,15 @@ export async function POST(req: Request) {
       disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,
       pretendardBase64,
       tenant: {
-        name: tenant.name,
+        name: printedTenantName,
         birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
         gender: GENDER_LABEL[tenant.gender] ?? '',
         job: tenant.job,
         primaryPhone: primaryContact?.contactValue ?? null,
       },
-      // 표시값은 화면과 같은 함수로 조립한다(lib/contractFieldOverrides). 금액·날짜는 여전히 DB 가
-      // 단일 출처다 — 클라이언트가 보낸 금액을 믿으면 이 API 를 직접 불러 아무 금액이나 발급할 수 있다.
-      lease: lease ? contractLeaseFields(lease) : null,
+      // 금액·날짜는 여전히 DB 가 단일 출처다 — 클라이언트가 보낸 금액을 믿으면 이 API 를 직접 불러
+      // 아무 금액이나 발급할 수 있다.
+      lease: leaseFields,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -352,6 +358,8 @@ export async function POST(req: Request) {
     }
 
     // 2) Drive 업로드
+    // 파일 이름은 표기 선택(printedTenantName)을 따라가지 않는다 — 보관·검색의 열쇠라 고객 정보의
+    // 이름 하나로 고정한다. 화면의 미리보기 파일명(ContractView.pdfFileName)도 같은 규칙이다.
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `계약서_${safeTenantName}_${signDate.replace(/-/g, '')}_${Date.now()}.pdf`
     // 발급본 박제 — 이 종이가 무엇을 인쇄했는지의 증거. 값은 방금 이 PDF 를 그릴 때 쓴 것 그대로다.

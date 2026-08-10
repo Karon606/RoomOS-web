@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
+import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, asDocNameStyle, documentName, hasEnglishName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
@@ -40,6 +41,7 @@ const toFieldForm = (l: ContractData['lease']): FieldForm => ({
   dueDay: l?.dueDay ?? '',
   roomNo: l?.roomNo ?? '',
   registrationStatus: l?.registrationStatus ?? '미신고',
+  nameStyle: l?.nameStyle ?? DEFAULT_DOC_NAME_STYLE,
 })
 const amtNum = (s: string) => {
   const n = parseInt(s.replace(/[^0-9]/g, ''), 10)
@@ -169,6 +171,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
   const roomNoLabel = roomLabel(fields.roomNo)
 
+  // ── 성명 표기(한글/영문) ─────────────────────────────────────────
+  // 종이에 찍는 성명. 서버가 이미 data.tenant.name 을 골라 내려주지만, 여기서는 폼의 선택으로
+  // 다시 조립한다 — 고르는 순간 종이가 바뀌어야 하고 서버 왕복을 기다리면 한 박자 늦게 바뀐다.
+  // 영문 이름이 없으면 선택 UI 자체를 안 그린다(실측 103명 중 85명 — 그 화면은 완전히 그대로다).
+  //
+  // **서명본·원격 서명 화면은 링크 발급 시점 스냅샷을 그대로 그린다.** 이 기능 이전에 만들어진
+  // 스냅샷에는 아래 두 칸이 아예 없다. 없으면 종전처럼 name 하나만 쓴다 — 그 처리가 없으면
+  // 옛 서명본의 성명 칸이 통째로 빈칸으로 나간다(로고·도장 재해석과 같은 클래스, contractShare.ts).
+  const snapTenant = data.tenant as Partial<ContractData['tenant']> & { name: string }
+  const nameSource = { name: snapTenant.koreanName ?? snapTenant.name, englishName: snapTenant.englishName ?? null }
+  const printedName = documentName(nameSource, asDocNameStyle(fields.nameStyle))
+  const canPickName = hasEnglishName(nameSource)
+
   // 보증금/청소비 동적 표기 (v2.0 §26 — 라벨 + 영문 + 값(청소비는 .sub))
   const { depositLabel, depositEn, depositNode } = (() => {
     const dep = data.lease ? fieldDeposit : 0
@@ -186,7 +201,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   // 변수 치환 맵 — 본문 섹션 내 {{key}} 자리 자동 채움
   const vars = useMemo<Record<string, string>>(() => ({
-    name:             data.tenant.name ?? '',
+    name:             printedName,
     phone:            data.tenant.primaryPhone ?? '',
     birth:            fmtDate(data.tenant.birthdate),
     job:              data.tenant.job ?? '',
@@ -202,11 +217,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     emergencyContact: emergencyContactText,
     환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause() : '',
     ...cleaningFeeVars(data.lease ? fieldCleaning : undefined),
-  }), [data, smoking, emergencyContactText, roomNoLabel, fields, fieldRent, fieldDeposit, fieldCleaning])
+  }), [data, smoking, emergencyContactText, roomNoLabel, printedName, fields, fieldRent, fieldDeposit, fieldCleaning])
 
   // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)
   const dcVars: Record<string, string> = {
-    성명: data.tenant.name, 호실: roomNoLabel, 연락처: data.tenant.primaryPhone ?? '',
+    성명: printedName, 호실: roomNoLabel, 연락처: data.tenant.primaryPhone ?? '',
     미납일수: String(data.disposalConsent.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
   }
 
@@ -326,6 +341,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     })
   }
 
+  // 성명 표기 변경 — 저장은 표시값과 같은 길(commitField)을 그대로 탄다. 서명 잠금·링크 닫힘·
+  // 되돌리기가 그 길에 이미 걸려 있어 여기서 다시 배선할 것이 없다.
+  // 서명란 성명은 별도 입력칸이라 따로 맞춰 준다 — 다만 운영자가 손으로 고쳐 둔 값은 건드리지 않는다.
+  const handleNameStyleChange = (raw: string) => {
+    const next = asDocNameStyle(raw)
+    if (!next) return
+    const before = documentName(nameSource, asDocNameStyle(fields.nameStyle))
+    if (signatureName === before) setSignatureName(documentName(nameSource, next))
+    commitField('nameStyle', next)
+  }
+
   // 자동값 복원 — 손으로 고친 값을 버리고 입주자 상세정보에 들어 있는 값으로 되돌린다(§30.3, 운영자 확정).
   // 표시값 오버라이드가 저장돼 있으면 그것도 함께 지운다 — 그 값만 남으면 '복원했는데 그대로'가 된다.
   // 그 외 폼 값(성명·비상연락망·계약일)은 발급 전까지 어디에도 저장되지 않아 서버를 안 부른다.
@@ -337,7 +363,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       message: '직접 수정한 내용이 모두 사라지고 입실자 정보에 저장된 값으로 복원됩니다.',
       confirmLabel: '되돌리기', level: 'caution',
     }))) return
-    setSignatureName(data.tenant.name ?? '')
+    // 표시값을 통째로 지우면 성명 표기도 기본(한글)으로 돌아간다 — 서명란도 그 이름으로 맞춘다.
+    setSignatureName(nameSource.name)
     setEmergencyContactText(initialEmergencyText())
     let linkNote = ''
     if (data.hasFieldOverrides && !bodyLocked && data.lease?.id) {
@@ -767,7 +794,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     return res.blob()
   }
 
-  const pdfFileName = () => `계약서_${(data.tenant.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}`
+  // 파일 이름은 표기 선택을 따라가지 않는다 — 보관·검색의 열쇠라 고객 정보의 이름 하나로 고정한다
+  // (서버 발급본의 Drive 파일명도 같은 값이다). 표기 선택은 종이 안의 성명만 바꾼다.
+  const pdfFileName = () => `계약서_${(nameSource.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}`
 
   const fetchPreviewPdfBytes = async (): Promise<ArrayBuffer> => {
     const blob = await fetchPreviewPdf()
@@ -952,7 +981,21 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         <table className="info">
           <tbody>
             <tr>
-              <th>성명<span className="en">Name</span></th><td>{data.tenant.name}</td>
+              <th>성명<span className="en">Name</span></th>
+              <td>
+                {/* 영문 이름이 등록된 입주자에게만 표기 선택이 붙는다. 문법은 전입신고·흡연 셀과 같은
+                    cell-select 이고, 값·라벨 짝은 보증금 셀의 field-pair 를 그대로 쓴다. */}
+                {canPickName ? fieldCell(printedName, (
+                  <span className="no-print field-pair">
+                    <span>{printedName}</span>
+                    <select className="cell-select" aria-label="성명 표기" style={CELL_SELECT_STYLE}
+                      value={fields.nameStyle} onChange={e => handleNameStyleChange(e.target.value)}>
+                      <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
+                      <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+                    </select>
+                  </span>
+                )) : printedName}
+              </td>
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
@@ -1174,7 +1217,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="dc-title">{data.disposalConsent.title}</div>
           <div className="dc-sec-h">1. 입실자 정보</div>
           <table className="info dc-info"><tbody>
-            <tr><th>성명<span className="en">Name</span></th><td>{data.tenant.name}</td></tr>
+            <tr><th>성명<span className="en">Name</span></th><td>{printedName}</td></tr>
             <tr><th>호실<span className="en">Room</span></th><td className="num">{roomNoLabel}</td></tr>
             <tr><th>연락처<span className="en">Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td></tr>
           </tbody></table>
@@ -1187,7 +1230,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="dc-date num">{disposalDateLabel}</div>
           <div className="dc-sign">
             <span className="dc-sign-lbl">동의자(입실자) 성명</span>
-            <span className="dc-sign-line">{signatureName || data.tenant.name}</span>
+            <span className="dc-sign-line">{signatureName || printedName}</span>
             <span className="dc-sign-seal">
               {disposalSignatureDataUrl ? (
                 <>

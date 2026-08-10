@@ -10,6 +10,7 @@ import {
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
+import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/documentName'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -27,7 +28,13 @@ export type ContractData = {
   disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서 (계약서와 함께 출력)
   tenant: {
     id: string
+    // **이 계약서에 실제로 찍히는 성명이다.** 표기 선택(lease.nameStyle)이 이미 적용돼 있으므로
+    // 화면·PDF·원격 서명 스냅샷·인쇄 사실 사영(printedFacts)이 전부 같은 문자열을 본다.
+    // 원천 두 칸은 아래 koreanName·englishName 이고, 선택 UI 만 그 둘을 읽는다.
     name: string
+    koreanName: string           // 고객 정보의 이름 그대로 — 표기를 한글로 되돌렸을 때의 값
+    englishName: string | null   // 고객 정보의 영문 이름. 없으면 선택 UI 자체를 안 그린다
+    nameStyle: DocNameStyle      // 지금 고른 표기(lease 표시값에서 옴, 계약이 없으면 기본값)
     birthdate: string | null   // YYYY-MM-DD
     gender: string             // '남' | '여' | ''
     job: string | null
@@ -45,6 +52,9 @@ export type ContractData = {
     dueDay: string | null               // 매월 납부일 ('14' | '말' 등)
     roomNo: string | null
     registrationStatus: '신고' | '미신고' | '면제'
+    // 성명 표기 선택. 표시값 오버라이드와 같은 칸에 살아서 서명 잠금·되돌리기·링크 닫힘이
+    // 이미 걸려 있고, 이 스냅샷이 그대로 /sign 화면과 서명본 발급으로 간다.
+    nameStyle: DocNameStyle
     signatureImageUrl: string | null   // #8 이전에 받은 앱서명(dataURL) — 출력 시 재표시
     disposalSignatureImageUrl: string | null   // 동의서 별도 서명(dataURL) — 출력 시 재표시
     // 그 서명을 받은 날(KST, YYYY-MM-DD). 있으면 계약일이 이 값으로 고정된다.
@@ -113,6 +123,8 @@ export async function buildContractData(tenantId: string, propertyId: string): P
   // 전부 이 값을 쓰므로 종이와 기록이 갈릴 수 없다(lib/contractFieldOverrides 가 정본).
   const fields = lease ? contractLeaseFields(lease) : null
   const fieldOverrides = lease ? parseContractFieldOverrides(lease.contractFieldOverrides) : {}
+  // 계약이 없으면 선택을 담아 둘 자리가 없다 — 기본(한글)으로 그린다.
+  const nameStyle = fields?.nameStyle ?? DEFAULT_DOC_NAME_STYLE
 
   return {
     template: body.template,
@@ -131,7 +143,12 @@ export async function buildContractData(tenantId: string, propertyId: string): P
     disposalConsent: resolveDisposalConsent(body.disposalConsent),
     tenant: {
       id: tenant.id,
-      name: tenant.name,
+      // 성명 표기는 표시값과 같은 층에서 온다 — 화면·PDF·스냅샷이 한 값을 보게 하려는 것이고,
+      // 그래서 서명 잠금·되돌리기·링크 닫힘 규칙을 따로 배선하지 않아도 그대로 따라온다.
+      name: documentName(tenant, nameStyle),
+      koreanName: tenant.name,
+      englishName: tenant.englishName,
+      nameStyle,
       birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
       gender: GENDER_LABEL[tenant.gender] ?? '',
       job: tenant.job,
