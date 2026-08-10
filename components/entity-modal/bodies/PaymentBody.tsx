@@ -103,6 +103,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
         depositAmount={settlement.depositAmount}
         cleaningFee={settlement.cleaningFee}
         reservationDepositMode={resvMode}
+        canEdit={canEdit}
         reloadSignal={reloadKey}
         onChanged={refresh}
       />

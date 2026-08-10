@@ -2301,6 +2301,7 @@ export default function TenantClient({
                         depositAmount={paySettlement.depositAmount}
                         cleaningFee={paySettlement.cleaningFee}
                         reservationDepositMode={paySettlement.reservationDepositMode}
+                        canEdit={canEdit}
                         reloadSignal={payReloadKey}
                         onChanged={reloadPay}
                       />
@@ -2442,10 +2443,13 @@ export default function TenantClient({
                                 {/* 이 화면에는 조회 월 선택 UI 가 없다. 다른 달 귀속 행의 편집을 막으면
                                     방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
                                     삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
-                                <div className="flex gap-2 ml-1">
-                                  <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
-                                  <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
-                                </div>
+                                {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit 가 최종 방어(감사 D3) */}
+                                {canEdit && (
+                                  <div className="flex gap-2 ml-1">
+                                    <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
+                                    <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           )

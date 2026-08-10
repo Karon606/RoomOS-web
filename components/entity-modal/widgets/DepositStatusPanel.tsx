@@ -30,13 +30,16 @@ const PAY_METHODS = ['계좌이체', '현금', '신용카드', '결제선생', '
 const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 
 export function DepositStatusPanel({
-  leaseTermId, status, depositAmount, cleaningFee, reservationDepositMode, reloadSignal, onChanged,
+  leaseTermId, status, depositAmount, cleaningFee, reservationDepositMode, canEdit, reloadSignal, onChanged,
 }: {
   leaseTermId: string
   status: string | null
   depositAmount: number
   cleaningFee: number
   reservationDepositMode?: string | null
+  // 뷰어(STAFF)에게는 편집 진입을 숨긴다 — 형제 위젯(PaymentRecordList)과 같은 전달 경로.
+  // 서버 requireEdit 가 최종 방어라 여기 없어도 저장은 막히지만, 눌러야 거절되는 버튼은 보이면 안 된다.
+  canEdit: boolean
   reloadSignal?: number
   onChanged?: () => void
 }) {
@@ -215,7 +218,7 @@ export function DepositStatusPanel({
         </p>
       )}
       {/* §16 상시 적용취소 진입점 — 토스트는 사라지고, 이 패널이 정본이 되었으니 여기가 '원위치'다. */}
-      {settled && refund && (
+      {canEdit && settled && refund && (
         <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void undoRefund(refund) }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           적용취소
@@ -298,8 +301,8 @@ export function DepositStatusPanel({
                   </p>
                   <span className="flex items-center gap-1.5 shrink-0">
                     <span className="text-xs font-semibold num text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>
-                    <RowActionBtn tone="deposit" onClick={() => startEdit(r)}>수정</RowActionBtn>
-                    <RowActionBtn tone="danger" onClick={() => { void remove(r) }} disabled={pending}>삭제</RowActionBtn>
+                    {canEdit && <RowActionBtn tone="deposit" onClick={() => startEdit(r)}>수정</RowActionBtn>}
+                    {canEdit && <RowActionBtn tone="danger" onClick={() => { void remove(r) }} disabled={pending}>삭제</RowActionBtn>}
                   </span>
                 </li>
               ))}
