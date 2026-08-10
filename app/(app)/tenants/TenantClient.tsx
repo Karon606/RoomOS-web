@@ -1356,18 +1356,16 @@ export default function TenantClient({
     <div className="space-y-4">
       {showNoticeSms && <NoticeSmsModal onClose={() => setShowNoticeSms(false)} />}
 
-      {/* 헤더 */}
+      {/* 헤더 — §23 정본(호실 관리 3140975)과 같은 구조. 제목 + 우측 CTA 둘.
+          shrink-0 이 없으면 360dp 이하에서 flex 가 버튼을 압축해 글자가 낱자로 쪼개진다(신고 aea83d6b 클래스).
+          ml-auto 는 두 줄로 접혔을 때도 버튼군을 우측에 붙여 둔다. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
         {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit가 최종 방어(감사 D3) */}
         {canEdit && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           <Btn type="button" variant="secondary" size="md" onClick={() => setShowNoticeSms(true)}>
             단체 문자
-          </Btn>
-          <Btn type="button" variant="secondary" size="md"
-            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
-            {selectMode ? '선택 취소' : '선택'}
           </Btn>
           <Btn variant="primary" size="md"
             onClick={() => { setAddTenantDirty(false); setShowAdd(true); setError('') }}>
@@ -1485,17 +1483,26 @@ export default function TenantClient({
           ]}
         />
 
-        {/* 구분선 */}
-        <div className="flex-1" />
+        {/* 선택 · 표시 항목 — 목록 조작은 헤더가 아니라 이 줄에 선다(형제 수납 관리와 같은 ml-auto 그룹).
+            새 줄로 떨어져도 우측 정렬을 유지해 드롭다운이 화면 왼쪽으로 잘리지 않는다. */}
+        <div className="ml-auto flex gap-2 items-center">
+          {/* 뷰어(STAFF)에겐 숨김 — 헤더의 묶음 canEdit 가드에서 빠져나왔으므로 개별로 단다(감사 D3) */}
+          {canEdit && (
+            <Btn type="button" variant="secondary" size="md"
+              onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
+              {selectMode ? '선택 취소' : '선택'}
+            </Btn>
+          )}
 
-        {/* 표시 항목 — 데스크탑 표 열. v2.0 §23 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
-        <DisplayFieldsMenu
-          className="hidden sm:block"
-          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat) && !(hideMoney && MONEY_COLS.includes(c.key)))}
-          visible={colVis as Record<string, boolean>}
-          onToggle={k => updateColVis(k as ColKey, !colVis[k as ColKey])}
-          heading="표에 표시할 항목"
-        />
+          {/* 표시 항목 — 데스크탑 표 열. v2.0 §23 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
+          <DisplayFieldsMenu
+            className="hidden sm:block"
+            fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat) && !(hideMoney && MONEY_COLS.includes(c.key)))}
+            visible={colVis as Record<string, boolean>}
+            onToggle={k => updateColVis(k as ColKey, !colVis[k as ColKey])}
+            heading="표에 표시할 항목"
+          />
+        </div>
       </div>
 
       {/* 문의·예약 단계 2차 필터 — 요청관리 2단 필터 정본 문법(sm 세그먼트, e1b81629).
