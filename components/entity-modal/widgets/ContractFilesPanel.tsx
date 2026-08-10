@@ -31,6 +31,7 @@ import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
@@ -38,7 +39,8 @@ import { blockSmsIfStaging } from '@/lib/smsHref'
 // 종전에는 active(만료 전)일 때만 닫기 버튼이 떠서, 만료된 링크는 '계약서 발급 필요' 알림을
 // 끌 방법이 사라졌다(503호 송호준: 서명 완료·링크 만료·발급 전 상태로 알림 영구 잔존).
 function shareBadge(link: ContractShareLinkInfo): { label: string; active: boolean; closable: boolean } {
-  if (link.lockedAt) return { label: '링크 잠김 (생년월일 5회 오류)', active: false, closable: !link.closedAt }
+  // 횟수를 적지 않는다 — 한도가 계약서마다 다르다(외국인등록번호가 실린 계약은 3회, 그 외 5회).
+  if (link.lockedAt) return { label: '링크 잠김 (생년월일 오류 한도 초과)', active: false, closable: !link.closedAt }
   // 제출 판정이 닫힘보다 먼저다. 제출은 서버가 이미 막는데(getActiveLink) 배지가 그걸 모르면
   // 죽은 링크를 '서명 완료 · 남은 시간'으로 표시해 운영자가 살아 있는 줄 안다(2026-08-02 조사).
   // 닫힘을 먼저 보면 제출 건이 그냥 '링크 닫힘'으로만 떠 정보가 줄어든다.
@@ -70,7 +72,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
-  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean } | null>(null)
+  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean } | null>(null)
   const [sharePending, setSharePending] = useState(false)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
   const [detailId, setDetailId] = useState<string | null>(null)
@@ -82,9 +84,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   }
   const reloadShare = async () => {
     const res = await getContractShareState(tenantId)
-    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue })
+    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue, hasForeignRegNo: res.hasForeignRegNo })
     // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
-    else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false }); pushToast('error', res.error) }
+    else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false }); pushToast('error', res.error) }
   }
   useEffect(() => { reload(); reloadShare() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,6 +103,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 서명 요청 보내기 — 활성 링크가 있으면 재사용(다시 보내기), 없으면 새로 만든 뒤 메시지 앱으로 이동
   const handleShareSend = async () => {
     if (sharePending) return
+    if (!(await confirmForeignRegNoLink(share?.hasForeignRegNo))) return
     setSharePending(true)
     const release = trackSave()
     try {
@@ -230,7 +233,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
     if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
       const hint = shareLink.lockedAt
-        ? '생년월일을 5번 틀려 링크가 잠겼습니다. 서명 요청을 다시 보내면 풀립니다.'
+        ? '생년월일 입력 오류가 한도에 닿아 링크가 잠겼습니다. 서명 요청을 다시 보내면 풀립니다.'
         : new Date(shareLink.expiresAt).getTime() <= Date.now()
           ? '서명 요청 링크가 만료됐습니다. 다시 보내 주세요.'
           : '입주자가 아직 서명하지 않았습니다.'

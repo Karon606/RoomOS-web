@@ -1534,7 +1534,9 @@ model ContractFile {
 }
 
 // 계약서 원격 서명 링크 — 발급 시점 렌더 데이터(templateSnapshot)를 고정해 입주자에게 24시간 링크 제공.
-// 생년월일 5회 오류 시 lockedAt, 운영자 닫기 closedAt(만료 전 적용취소 가능). 서명은 LeaseTerm 서명 필드에 기록.
+// 생년월일 오류 한도 도달 시 lockedAt, 운영자 닫기 closedAt(만료 전 적용취소 가능). 서명은 LeaseTerm 서명 필드에 기록.
+// 한도는 계약서마다 다르다 — 외국인등록번호가 실린 계약은 3회, 그 외는 5회(app/sign/[token]/actions).
+// templateSnapshot 에는 신원번호 평문을 담지 않는다(등록 여부 플래그만). 렌더할 때 서버가 복호해 끼운다.
 model ContractShareLink {
   id                String    @id @default(uuid()) @db.Uuid
   token             String    @unique
@@ -1545,7 +1547,7 @@ model ContractShareLink {
   signedAt          DateTime? // 원격 계약서 서명 수신 시각
   disposalSignedAt  DateTime? // 원격 동의서(잔여 소지품) 서명 수신 시각
   birthdateAttempts Int       @default(0)
-  lockedAt          DateTime? // 생년월일 5회 오류로 잠김 — 재발급 필요
+  lockedAt          DateTime? // 생년월일 오류 한도 도달로 잠김 — 재발급 필요
   createdBy         String?   @db.Uuid
   createdAt         DateTime  @default(now())
 

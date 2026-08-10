@@ -20,6 +20,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
@@ -390,6 +391,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const [signReqPending, setSignReqPending] = useState(false)
   const handleSignRequest = async () => {
     if (signReqPending) return
+    if (!(await confirmForeignRegNoLink(data.tenant.hasForeignRegNo))) return
     setSignReqPending(true)
     const release = trackSave()
     try {

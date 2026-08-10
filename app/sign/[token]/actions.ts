@@ -9,7 +9,20 @@ import { notifyPropertyOperators } from '@/lib/pushSend'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
 const INACTIVE_MSG = '링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.'
-const MAX_ATTEMPTS = 5
+
+// 생년월일 확인 시도 한도. 기본은 5회지만, 외국인등록번호가 실린 계약서는 3회로 줄인다.
+// 게이트를 뚫었을 때 새는 것의 크기가 다르기 때문이다. 생년월일은 8자리이고 그중 앞자리는
+// 대개 짐작 가능해 실제 탐색 공간이 작다. 그 문 뒤에 신원번호가 있으면 시도 예산도 줄여야 한다.
+const MAX_ATTEMPTS_DEFAULT = 5
+const MAX_ATTEMPTS_WITH_ID = 3
+
+// 판정 근거는 링크 스냅샷이다. 스냅샷에는 평문이 없고 등록 여부 플래그만 남아 있다(contractShare).
+// 지금 입주자 행을 다시 읽지 않는 이유는, 링크가 나간 뒤에 번호를 지워도 **그 링크가 나를 때 실린
+// 계약서에는 번호가 있었기** 때문이다. 한도는 그 종이를 기준으로 정해져야 한다.
+function maxAttemptsFor(templateSnapshot: unknown): number {
+  const snap = templateSnapshot as { tenant?: { hasForeignRegNo?: boolean } } | null
+  return snap?.tenant?.hasForeignRegNo ? MAX_ATTEMPTS_WITH_ID : MAX_ATTEMPTS_DEFAULT
+}
 
 async function getActiveLink(token: string) {
   if (typeof token !== 'string' || !token) return null
@@ -33,24 +46,26 @@ export async function verifyShareBirthdate(
     const input = typeof ymd === 'string' ? ymd.trim() : ''
 
     if (!expected || expected !== input) {
+      const maxAttempts = maxAttemptsFor(link.templateSnapshot)
+      const lockedMsg = `입력 오류가 ${maxAttempts}회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.`
       // 원자적 조건부 증가 — birthdateAttempts < MAX 인 행만 갱신(적대검증 P1: read-then-increment 경합으로
-      // 동시 요청이 잠금 전에 5회를 넘겨 전수 대입하던 창을 없앤다). 갱신행 0 = 이미 한도 도달 = 잠금.
+      // 동시 요청이 잠금 전에 한도를 넘겨 전수 대입하던 창을 없앤다). 갱신행 0 = 이미 한도 도달 = 잠금.
       const bumped = await prisma.contractShareLink.updateMany({
-        where: { id: link.id, birthdateAttempts: { lt: MAX_ATTEMPTS } },
+        where: { id: link.id, birthdateAttempts: { lt: maxAttempts } },
         data: { birthdateAttempts: { increment: 1 } },
       })
       if (bumped.count === 0) {
         // 이 시도로 한도에 처음 닿았거나 이미 초과 — lockedAt 을 멱등 세팅(아직 null 인 것만)
         await prisma.contractShareLink.updateMany({ where: { id: link.id, lockedAt: null }, data: { lockedAt: new Date() } })
-        return { ok: false, error: '입력 오류가 5회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.' }
+        return { ok: false, error: lockedMsg }
       }
       const cur = await prisma.contractShareLink.findUnique({ where: { id: link.id }, select: { birthdateAttempts: true } })
-      const used = cur?.birthdateAttempts ?? MAX_ATTEMPTS
-      if (used >= MAX_ATTEMPTS) {
+      const used = cur?.birthdateAttempts ?? maxAttempts
+      if (used >= maxAttempts) {
         await prisma.contractShareLink.updateMany({ where: { id: link.id, lockedAt: null }, data: { lockedAt: new Date() } })
-        return { ok: false, error: '입력 오류가 5회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.' }
+        return { ok: false, error: lockedMsg }
       }
-      return { ok: false, error: `생년월일이 일치하지 않습니다. 남은 시도 ${MAX_ATTEMPTS - used}회.` }
+      return { ok: false, error: `생년월일이 일치하지 않습니다. 남은 시도 ${maxAttempts - used}회.` }
     }
 
     // 통과 — httpOnly HMAC 쿠키 발급. 유지시간 = min(2시간, 링크 남은 TTL)

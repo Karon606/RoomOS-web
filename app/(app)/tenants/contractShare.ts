@@ -14,8 +14,33 @@ import { buildContractData, type ContractData } from '@/lib/contractData'
 import { printedFacts } from '@/lib/contractPrintedFacts'
 import { isContractIssued } from '@/lib/contractIssue'
 import { driveImageDataUrl } from '@/lib/google-drive'
+import { formatForeignRegNo } from '@/lib/foreignRegNo'
+import { readStoredForeignRegNo } from '@/lib/pii'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
+
+/**
+ * 링크 스냅샷에 담기 전에 평문 신원번호를 지운다.
+ *
+ * templateSnapshot 은 24시간짜리 공개 링크가 여는 JSON 이다. 여기에 번호가 들어가면
+ * 토큰 하나가 곧 외국인등록번호 유출이 되고, 링크가 닫혀도 DB 에는 평문이 영구히 남는다.
+ * hasForeignRegNo 는 남긴다 — 시도 한도(3회)와 발급 확인창이 그 값을 보고 판정한다.
+ * /sign 은 렌더할 때 서버가 다시 복호해 끼운다(app/sign/[token]/page.tsx).
+ */
+function withoutPlainPii(d: ContractData): ContractData {
+  return { ...d, tenant: { ...d.tenant, foreignRegNo: null } }
+}
+
+/** 스냅샷을 화면·인쇄에 쓰기 직전에 평문을 다시 끼운다. 저장된 값은 건드리지 않는다. */
+async function injectForeignRegNo(d: ContractData, tenantId: string): Promise<ContractData> {
+  if (!d.tenant?.hasForeignRegNo) return d
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { id: true, foreignRegNoEnc: true },
+  })
+  const plain = tenant ? readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id) : null
+  return { ...d, tenant: { ...d.tenant, foreignRegNo: plain ? formatForeignRegNo(plain) : null } }
+}
 
 export type ContractShareLinkInfo = {
   id: string
@@ -113,7 +138,7 @@ export async function issueContractShareLink(tenantId: string): Promise<
         data: {
           token: randomBytes(32).toString('base64url'),
           propertyId, tenantId, leaseTermId,
-          templateSnapshot: snapshot as unknown as object,
+          templateSnapshot: withoutPlainPii(snapshot) as unknown as object,
           expiresAt: new Date(Date.now() + SHARE_TTL_MS),
           createdBy: userId,
         },
@@ -132,7 +157,7 @@ export async function issueContractShareLink(tenantId: string): Promise<
 // 화면에서 다시 계산하지 않고 서버가 lib/contractIssue 정본으로 내려준다. 규칙을 두 곳에 두면
 // 홈 알림은 떠 있는데 패널은 아무 말도 안 하는 식으로 어긋난다.
 export async function getContractShareState(tenantId: string): Promise<
-  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean }
+  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean }
   | { ok: false; error: string }
 > {
   try {
@@ -156,7 +181,8 @@ export async function getContractShareState(tenantId: string): Promise<
       }),
       prisma.tenant.findFirst({
         where: { id: tenantId, propertyId },
-        select: { contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+        // 등록 여부만 읽는다(암호문도 마스킹도 화면에 필요 없다) — 발급 확인창이 이 값을 본다.
+        select: { foreignRegNoEnc: true, contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
       }),
       prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
     ])
@@ -178,6 +204,7 @@ export async function getContractShareState(tenantId: string): Promise<
       phone: primaryContact?.contactValue ?? null,
       propertyName: property?.name ?? '',
       needsIssue,
+      hasForeignRegNo: !!tenant.foreignRegNoEnc,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -309,7 +336,9 @@ export async function getSignedSnapshot(tenantId: string, linkId: string): Promi
   // 저장값은 건드리지 않는다 — 스냅샷은 '서명 시점의 사실' 이고, 로고·도장은 그 사실이 아니라 표시 자산이다.
   const images = await resolveSnapshotImages(snap, propertyId)
   // as 캐스트를 걷었다 — 위 어긋남을 6일 동안 숨긴 것이 이 캐스트다.
-  return { data: { ...snap, ...images, lease }, signatureLive: isSignatureLive(link.leaseTerm) }
+  // 신원번호는 스냅샷에 없다(저장 전에 지운다) — 읽는 순간 서버가 복호해 끼운다. 로고·도장과 같은 자리다.
+  const data = await injectForeignRegNo({ ...snap, ...images, lease }, tenantId)
+  return { data, signatureLive: isSignatureLive(link.leaseTerm) }
 }
 
 // 스냅샷의 로고·도장이 data URL 이 아니면 현재 영업장 설정에서 바이트로 다시 만든다.

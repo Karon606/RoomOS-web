@@ -5,6 +5,8 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import type { ContractData } from '@/lib/contractData'
 import { shareCookieName } from '@/lib/contractShareCookie'
+import { formatForeignRegNo } from '@/lib/foreignRegNo'
+import { readStoredForeignRegNo } from '@/lib/pii'
 import ContractView from '@/app/contract/[tenantId]/ContractView'
 import BirthdateGate from './BirthdateGate'
 import DocumentScroll from '@/components/layout/DocumentScroll'
@@ -61,6 +63,17 @@ export default async function SignPage({
   if (!cookieStore.get(shareCookieName(link.id))) return <BirthdateGate token={token} />
 
   const data = link.templateSnapshot as unknown as ContractData
+  // 외국인등록번호는 스냅샷에 없다. 24시간짜리 공개 링크가 여는 JSON 이라 평문을 담아 두지 않고
+  // (contractShare withoutPlainPii), 생년월일 게이트를 통과한 이 자리에서만 서버가 복호해 끼운다.
+  // 게이트 위쪽에 두면 안 된다 — 본인 확인 전에 번호가 페이로드에 실린다.
+  if (data.tenant?.hasForeignRegNo) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: link.tenantId },
+      select: { id: true, foreignRegNoEnc: true },
+    })
+    const plain = tenant ? readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id) : null
+    data.tenant.foreignRegNo = plain ? formatForeignRegNo(plain) : null
+  }
   // 계약 내용은 발급 시점 스냅샷 고정. 단 서명은 이 링크로 들어온 최신 값을 보여준다(서명 후 재확인용).
   if (data.lease && (link.signedAt || link.disposalSignedAt)) {
     const lease = await prisma.leaseTerm.findUnique({
