@@ -109,12 +109,26 @@ export function Modal({
       if (top !== lastTop) { ov.style.setProperty('--modal-vv-top', top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty('--modal-vv-bottom', bottom); lastBottom = bottom }
     }
+    // 복귀 재동기(오류신고 734ea211·e97f4b2b). vv 의 resize·scroll 만 들으면 앱 전환·복귀,
+    // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 어긋나게 찍힌 스냅샷을 씻을 기회가
+    // 없어 세션 내내 남는다. 값이 안 바뀌면 위 lastTop/lastBottom 메모가 쓰기를 막으므로 비용이 없다.
+    // rAF 한 박자를 더 도는 이유는 복귀·회전 직후 프레임의 vv 가 아직 옛 값을 낼 수 있어서다.
+    const resync = () => { sync(); requestAnimationFrame(sync) }
+    const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
     sync()
     vv.addEventListener('resize', sync)
     vv.addEventListener('scroll', sync)
+    window.addEventListener('pageshow', resync)
+    window.addEventListener('resize', resync)
+    window.addEventListener('orientationchange', resync)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       vv.removeEventListener('resize', sync)
       vv.removeEventListener('scroll', sync)
+      window.removeEventListener('pageshow', resync)
+      window.removeEventListener('resize', resync)
+      window.removeEventListener('orientationchange', resync)
+      document.removeEventListener('visibilitychange', onVisibility)
       panelRef.current?.style.removeProperty('--modal-vvh')
       overlayRef.current?.style.removeProperty('--modal-vv-top')
       overlayRef.current?.style.removeProperty('--modal-vv-bottom')

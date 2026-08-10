@@ -33,6 +33,9 @@ import { useEffect, useRef } from 'react'
 
 const KBD_INSET = '--kbd-inset'
 const KBD_OPEN_PX = 60      // 이만큼 가려지면 키보드가 올라온 것으로 본다
+// 겹침 크기의 물리적 상한(화면 높이 대비). 소프트 키보드는 액세서리 바를 포함해도 화면의
+// 절반을 크게 넘지 못한다. 이보다 큰 값은 잘못 찍힌 스냅샷이다 — 아래 onResize 주석 참조.
+const KBD_MAX_RATIO = 0.7
 const REVEAL_GAP = 16       // 재노출 시 칸 아래로 남길 여백
 // 포커스한 칸을 놓을 목표선. 보이는 띠 위에서 35 퍼센트 지점이다.
 // 50 퍼센트가 아닌 이유는 입력칸 위 라벨이 항상 띠 안에 남도록 상부 여유를 두는 것이다.
@@ -131,15 +134,42 @@ export default function ViewportOffsetGuard() {
     const restore = () => {
       if (window.scrollY !== 0 || vv.offsetTop > 0) window.scrollTo(0, 0)
     }
+    // 직전에 채택한 겹침 값. 아래 상한 클램프가 값을 버릴 때 되쓴다.
+    let lastInset = 0
     // 크기 갱신은 resize 에서만. 팬 프레임마다 다시 쓰면 scrollHeight 가 오르내리며
     // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
+    //
+    // **불가능한 값은 채택하지 않는다(오류신고 734ea211·e97f4b2b).** overlapNow() 에는 하한만 있고
+    // 상한이 없었다. 오류신고 창이 납작해진 실측에서 --kbd-inset 이 약 652px(화면의 74퍼센트)로
+    // 남아 있었는데, 그 값을 씻어낼 이벤트를 아무도 안 들어서 앱 재시작이 유일한 복구였다.
+    //
+    // 버릴 때 0 이 아니라 **직전 유효값을 유지**한다. 키보드가 열려 있는 세션 중 한 프레임만
+    // 잘못 찍혀도 0 을 쓰면 .app-main 의 scrollHeight 가 줄며 scrollTop 이 클램프돼 화면이
+    // 툭 떨어진다 — 716e7b0c 가 적어둔 붕괴 증상 그대로다. 유지하면 그 프레임만 값이 조금 낡을 뿐
+    // 레이아웃이 안 흔들린다. 초기값이 0 이고 닫힐 때마다 0 으로 되돌리므로, 열림 첫 프레임부터
+    // 오염된 경우에는 0(= 종전 기본값)이 되어 과보정 쪽으로는 실수하지 않는다.
     const onResize = () => {
-      const open = keyboardOpenNow()
-      root.style.setProperty(KBD_INSET, open ? `${overlapNow()}px` : '0px')
-      if (open) { scheduleReveal(); return }
-      restore()
+      if (!keyboardOpenNow()) {
+        lastInset = 0
+        root.style.setProperty(KBD_INSET, '0px')
+        restore()
+        return
+      }
+      const raw = overlapNow()
+      if (raw <= window.innerHeight * KBD_MAX_RATIO) lastInset = raw
+      root.style.setProperty(KBD_INSET, `${lastInset}px`)
+      scheduleReveal()
     }
     const onScroll = () => { if (!keyboardOpenNow()) restore() }
+
+    // **복귀 재동기.** vv 의 resize·scroll 만 듣던 것이 위 오염을 영구화했다. 앱 전환·복귀,
+    // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 값이 잘못 찍히면 씻을 기회가 없다.
+    // 여기서 같은 판정을 한 번 더 돌려 스냅샷을 다시 적는다. 값이 그대로면 같은 문자열을 다시
+    // 쓰는 것뿐이라 계산값이 안 바뀌고 레이아웃도 그대로다.
+    // rAF 로 한 박자 더 도는 이유 — 복귀·회전 직후 프레임의 visualViewport 는 아직 옛 값을 낼 수
+    // 있다. 그 자리에서 한 번만 읽고 끝내면 오염된 값을 그대로 다시 쓰게 된다.
+    const resync = () => { onResize(); requestAnimationFrame(onResize) }
+    const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
 
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return
@@ -157,11 +187,19 @@ export default function ViewportOffsetGuard() {
     vv.addEventListener('scroll', onScroll)
     document.addEventListener('focusin', onFocusIn, true)
     document.addEventListener('focusout', onFocusOut, true)
+    window.addEventListener('pageshow', resync)
+    window.addEventListener('resize', resync)
+    window.addEventListener('orientationchange', resync)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       vv.removeEventListener('resize', onResize)
       vv.removeEventListener('scroll', onScroll)
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('focusout', onFocusOut, true)
+      window.removeEventListener('pageshow', resync)
+      window.removeEventListener('resize', resync)
+      window.removeEventListener('orientationchange', resync)
+      document.removeEventListener('visibilitychange', onVisibility)
       root.style.removeProperty(KBD_INSET)
     }
   }, [])
