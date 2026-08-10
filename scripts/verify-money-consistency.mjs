@@ -298,9 +298,11 @@ for (const l of cfLeases) {
     violations.push(`[데이터] ${l.room?.roomNo ?? '-'}호 ${l.tenant.name} — 청소비를 입실 때 ${received.toLocaleString()}원 받고 퇴실에서 ${rf.withheldAmount.toLocaleString()}원 또 뗐다(계약서는 둘 중 하나만 약정)`)
   }
 }
-// 소스 가드 — 퇴실 폼이 입실 수납 이력을 안 보면 같은 사고가 재발한다
+// 소스 가드 — 퇴실 폼이 입실 수납 이력을 안 보면 같은 사고가 재발한다.
+// 조회 정본이 getDepositCompositionForLease 로 합쳐졌다(2026-08-10) — 둘 중 하나면 통과.
 for (const f of ['app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/widgets/TenantStatusTransitions.tsx']) {
-  if (!readFileSync(f, 'utf8').includes('getCleaningFeeReceivedForLease')) {
+  const src = readFileSync(f, 'utf8')
+  if (!src.includes('getCleaningFeeReceivedForLease') && !src.includes('getDepositCompositionForLease')) {
     violations.push(`[소스] ${f} 이 입실 청소비 수납 이력을 안 본다 — 퇴실에서 이중 공제된다`)
   }
 }

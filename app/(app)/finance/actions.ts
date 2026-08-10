@@ -24,6 +24,8 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { depositComposition } from '@/lib/depositComposition'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -2354,6 +2356,7 @@ export type DepositPerTenant = {
   totalWithheld: number    // 미반환 처리 금액
   balance: number          // 보유 보증금 (퇴실=0, 그 외 효정 입금-환불)
   hasNoInRecord: boolean   // 입금 거래 기록 없이 계약상 보증금만 있는 경우
+  coveredByCleaning: number // 입실 청소비가 채운 보증금 몫(포함형 영업장만 > 0, 2026-08-10)
 }
 
 // 리드 단계 계약 — 보증금 탭에서 '계약상 약정액만' 있는 건을 숨기는 기준(실입금·환불이 있으면 상태 무관 노출).
@@ -2375,7 +2378,7 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
   if (leases.length === 0) return []
 
   const leaseIds = leases.map(l => l.id)
-  const [paymentSums, refundSums] = await Promise.all([
+  const [paymentSums, refundSums, cleaningSums, property] = await Promise.all([
     prisma.paymentRecord.groupBy({
       by: ['leaseTermId'],
       where: { propertyId, isDeposit: true, leaseTermId: { in: leaseIds } },
@@ -2386,7 +2389,17 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
       where: { propertyId, leaseTermId: { in: leaseIds } },
       _sum: { returnedAmount: true, withheldAmount: true },
     }),
+    // 입실 때 받은 청소비 — 포함형 영업장에서는 계약 보증금의 일부를 채운 몫이다(2026-08-10).
+    prisma.extraIncome.groupBy({
+      by: ['leaseTermId'],
+      where: { propertyId, category: CLEANING_FEE_CATEGORY, leaseTermId: { in: leaseIds } },
+      _sum: { amount: true },
+    }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } }),
   ])
+  const cleaningMap: Record<string, number> = {}
+  for (const c of cleaningSums) if (c.leaseTermId) cleaningMap[c.leaseTermId] = c._sum.amount ?? 0
+  const cleaningFeeInDeposit = property?.cleaningFeeInDeposit ?? false
   const inMap: Record<string, number> = {}
   for (const p of paymentSums) inMap[p.leaseTermId] = p._sum.actualAmount ?? 0
   const returnedMap: Record<string, number> = {}
@@ -2408,6 +2421,12 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
       // 퇴실(CHECKED_OUT) — 옛 흐름은 ExtraIncome으로만 환불 처리해서
       // DepositRefund가 없는 경우가 있음. 회계상 보증금 정리 완료로 보고 0.
       const balance       = isCheckedOut ? 0 : Math.max(0, effectiveIn - totalReturned - totalWithheld)
+      // 계약액과 입금액의 차이가 청소비 몫으로 설명되는지 — 포함형 영업장에서는 그 차이가 어긋남이 아니다.
+      // 종전에는 520호처럼 현금 30,000 + 청소비 20,000 인 계약이 상시 경고색 '(계약 50,000)'으로 떴다.
+      const comp = depositComposition({
+        contractDeposit: l.depositAmount, depositPaid: totalIn,
+        cleaningPaid: cleaningMap[l.id] ?? 0, cleaningFeeInDeposit,
+      })
       return {
         leaseTermId: l.id,
         tenantId:    l.tenant.id,
@@ -2417,6 +2436,7 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
         contractDeposit: l.depositAmount,
         totalIn, totalReturned, totalWithheld, balance,
         hasNoInRecord: totalIn === 0 && l.depositAmount > 0,
+        coveredByCleaning: comp.coveredByCleaning,
       }
     })
     // 입금 흔적 또는 환불 흔적 또는 계약상 보증금이 있는 케이스 모두 노출

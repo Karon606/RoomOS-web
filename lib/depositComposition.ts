@@ -58,11 +58,11 @@ export function depositComposition(input: {
 }
 
 /**
- * '보증금 50,000 (현금 30,000 + 청소비 20,000)' 구성 한 줄.
- * 청소비 몫이 없으면 null — 무조건 붙이면 같은 숫자를 두 번 말하게 된다(DepositStatusPanel 규칙).
+ * '받은 보증금 30,000 + 청소비 20,000 / 계약 50,000' 구성 한 줄 — DepositStatusPanel 표시 문법 정본.
+ * 청소비가 채운 몫이 없으면 null. 무조건 붙이면 바로 옆 숫자를 두 번 말하게 된다(패널 규칙 그대로).
  */
-export function depositCompositionLabel(c: Pick<DepositComposition, 'contract' | 'cashDue' | 'cleaningCredit'>): string | null {
-  if (c.cleaningCredit <= 0) return null
+export function depositCompositionLabel(c: Pick<DepositComposition, 'contract' | 'depositPaid' | 'coveredByCleaning'>): string | null {
+  if (c.coveredByCleaning <= 0) return null
   const won = (n: number) => n.toLocaleString()
-  return `보증금 ${won(c.contract)} (현금 ${won(c.cashDue)} + 청소비 ${won(c.cleaningCredit)})`
+  return `받은 보증금 ${won(c.depositPaid)} + 청소비 ${won(c.coveredByCleaning)} / 계약 ${won(c.contract)}`
 }

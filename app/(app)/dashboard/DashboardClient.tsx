@@ -58,6 +58,7 @@ export type DashboardData = {
   netProfit:         number
   totalDeposit:      number
   depositRecorded:   number     // 보유 보증금 중 실수납(입금기록 있음)
+  depositByCleaning: number     // 보유 보증금 중 입실 청소비가 채운 몫(포함형 영업장, 2026-08-10)
   depositUnrecorded: number     // 보유 보증금 중 미기록(전 원장 등 계약상만)
   reserveBalance:    number
   reserveMonthly:    { deposit: number; withdraw: number }
@@ -85,7 +86,7 @@ export type DashboardData = {
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -153,11 +154,13 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
   cleaningFee: number
+  /** '받은 보증금 30,000 + 청소비 20,000 / 계약 50,000' — 청소비가 보증금 몫을 채운 계약만(정본 문법) */
+  compositionLabel: string | null
   pending: boolean
   onClose: () => void
   onConfirm: (refundAmount: number, moveOutDate: string, reason: string) => void
@@ -207,6 +210,10 @@ function CheckoutRefundModal({
           </div>
 
           {depositAmount > 0 && (<>
+          {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 세 정산 폼이 같은 한 줄을 쓴다. */}
+          {compositionLabel && (
+            <p className="text-[0.65625rem] break-keep" style={{ color: 'var(--warm-mid)' }}>{compositionLabel}</p>
+          )}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>보증금</p>
@@ -460,6 +467,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           tenantName={moveOutTenantName}
           depositAmount={moveOutDeposit}
           cleaningFee={moveOutCleaning}
+          compositionLabel={alert.moveOutCompositionLabel ?? null}
           pending={confirmPending}
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}
@@ -815,7 +823,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
             // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
-              sub: `실수납 ${fmtKorMoney(data.depositRecorded)} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
+              // 청소비 몫은 받은 돈이라 '미기록'과 섞으면 안 된다 — 있을 때만 한 칸 더 쓴다(2026-08-10)
+              sub: `실수납 ${fmtKorMoney(data.depositRecorded)}${data.depositByCleaning > 0 ? ` · 청소비 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
           ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
             <div
               key={i}

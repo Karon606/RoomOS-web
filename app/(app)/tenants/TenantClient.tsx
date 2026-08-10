@@ -9,7 +9,7 @@ import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getCleaningFeeReceivedForLease,
+import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
   type RentRefundTaxNotice,
 } from './actions'
@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
+import { depositCompositionLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -457,7 +458,7 @@ export default function TenantClient({
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
-  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string } | null>(null)
+  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string; compositionLabel: string | null } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositRefundDirty, setDepositRefundDirty] = useState(false)   // 환불 창 dirty — 금액·날짜를 만졌을 때만 닫기 확인(§12)
   // 이용료 환불(통합 환불 창, 운영자 승인 2026-07-20) — 계산은 서버 미리보기, 최종 금액은 운영자 확정
@@ -820,9 +821,13 @@ export default function TenantClient({
     const tenantId      = (fd.get('tenantId') as string) || ''   // 폼 hidden은 tenantId — 'id'로 읽어 빈 값이 넘어가던 잠복 버그(운영자 신고 2026-07-20)
     // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다 — 계약서가 either/or 로 약정한다.
     // 종전에는 둘 다 하는 것을 막지 않아 2만원을 두 번 받는 상태가 실제로 있었다(520호 김민정).
-    const cleaningPaid = leaseTermId ? await getCleaningFeeReceivedForLease(leaseTermId) : 0
+    const comp = leaseTermId ? await getDepositCompositionForLease(leaseTermId) : null
+    const cleaningPaid = comp?.cleaningPaid ?? 0
     const deductible = cleaningFeeDeductible(cleaningFee, cleaningPaid)
-    const maxRefund = Math.max(0, depositAmount - deductible)
+    // 정산 기준액은 서버 정본(basis) — 계약 보증금이 아니라 실제로 받은 몫이다. 종전에는 폼의 계약값을
+    // 그대로 열어, 청소비로 받은 2만이 섞인 계약에서 화면이 5만을 제시하고 저장은 서버가 3만 기준으로 거절했다.
+    const depoBase = comp ? comp.basis : depositAmount
+    const maxRefund = Math.max(0, depoBase - deductible)
     setDepositReturnAmt(maxRefund)
     setDepoCleaningPaid(cleaningPaid)
     // 청소비만 떼는 정상 퇴실은 답이 정해져 있다 — 프리셀렉트(변경 가능)
@@ -850,7 +855,7 @@ export default function TenantClient({
         }
       }).catch(() => {})
     }
-    setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId })
+    setDepositRefundModal({ fd, tenantName, depositAmount: depoBase, cleaningFee, fromDetail, leaseTermId, tenantId, compositionLabel: comp ? depositCompositionLabel(comp) : null })
   }
 
   // 위약금율 입력(0~10, 빈 값 = 영업장 기본) — 서버 재계산 후 환불 기본값 갱신. 캡은 서버가 재클램프.
@@ -1612,6 +1617,10 @@ export default function TenantClient({
                     <span className="font-semibold text-[var(--warm-mid)]">보증금</span>
                     <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(dep)}</span>
                   </div>
+                  {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다(DepositStatusPanel 정본 문법). */}
+                  {depositRefundModal.compositionLabel && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{depositRefundModal.compositionLabel}</p>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-[var(--warm-muted)]">− 청소비</span>
                     <span className={`tabular-nums ${fee > 0 && depoCleaningPaid === 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>

@@ -20,6 +20,8 @@ import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
+import { depositComposition, depositCompositionLabel } from '@/lib/depositComposition'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -73,8 +75,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true, cleaningFeeInDeposit: true },
   })
+  // 청소비를 보증금 안의 몫으로 받는 영업장인지 — 보유 보증금 분해와 퇴실 알림 기준액의 판정 근거(2026-08-10)
+  const cleaningFeeInDeposit = property?.cleaningFeeInDeposit ?? false
   const acquisitionDate = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate)
     : property?.acquisitionDate ? new Date(property.acquisitionDate) : null
@@ -98,6 +102,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
     _sum: { actualAmount: true },
   })
+  // 보유 보증금 분해에 쓸 계약별 구성 — 청소비를 보증금 안의 몫으로 받는 영업장에서만 조회한다.
+  // 종전에는 그 몫이 통째로 '미기록'(전 원장 승계분)으로 잡혀, 받은 적 없는 돈처럼 읽혔다(520호 20,000).
+  // 중첩 where 는 소프트삭제 자동 필터가 안 붙는다(lib/prisma 는 최상위 연산만) — deletedAt 명시 필수.
+  const pDepositCleaningLeases = cleaningFeeInDeposit
+    ? prisma.leaseTerm.findMany({
+        where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
+        select: {
+          depositAmount: true,
+          paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
+          extraIncomes:   { where: { category: CLEANING_FEE_CATEGORY, deletedAt: null }, select: { amount: true } },
+        },
+      })
+    : Promise.resolve([])
   // 예약 확정 전(RESERVED) 실수납 예약금 — 계약 보증금 총액엔 미포함이나 이미 받은 현금이라
   // 실수납·총액 양쪽에 동일 가산해 재무 요약과 정합(입주 전이므로 아직 안 받은 예약 보증금은 제외).
   const pReservedDepositReceivedAgg = prisma.paymentRecord.aggregate({
@@ -134,7 +151,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -233,8 +250,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       include: {
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true } },
-        // 입실 때 받은 청소비 — 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
-        extraIncomes: { where: { category: '청소비' }, select: { amount: true } },
+        // 입실 때 받은 청소비 — 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03).
+        // 중첩 where 는 소프트삭제 자동 필터가 안 붙는다(lib/prisma 는 최상위 연산만) — deletedAt 명시.
+        extraIncomes:   { where: { category: CLEANING_FEE_CATEGORY, deletedAt: null }, select: { amount: true } },
+        // 정산 기준액 — 계약 보증금이 아니라 실제로 받은 보증금이다(환불 서버가 되계산하는 그 값).
+        paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
@@ -472,11 +492,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // RESERVED 실수납 예약금 — 총액·실수납 양쪽에 같은 값을 더해 미기록분(차이)은 불변으로 유지.
   const reservedDepositReceived = (await pReservedDepositReceivedAgg)._sum.actualAmount ?? 0
   const totalDeposit = (depositAgg._sum.depositAmount ?? 0) + reservedDepositReceived
-  // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 미기록(전 원장 등 기록 없이 계약상만).
+  // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 청소비로 채운 몫 vs 미기록(전 원장 등 계약상만).
   // 총액(totalDeposit, 계약 기준)은 유지하고 아래에 분해만 표기 → 전 원장 보증금 누락 위험 없음.
+  // 청소비 몫을 따로 세지 않으면 그만큼이 '미기록'으로 잡혀, 실제로는 입실 때 받은 돈이 승계분처럼 읽힌다.
   const depositRecordedAgg = await pDepositRecordedAgg
   const depositRecorded = (depositRecordedAgg._sum.actualAmount ?? 0) + reservedDepositReceived
-  const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded)
+  const depositByCleaning = (await pDepositCleaningLeases).reduce((s, l) => s + depositComposition({
+    contractDeposit: l.depositAmount,
+    depositPaid: l.paymentRecords.reduce((a, r) => a + r.actualAmount, 0),
+    cleaningPaid: l.extraIncomes.reduce((a, i) => a + i.amount, 0),
+    cleaningFeeInDeposit: true,
+  }).coveredByCleaning, 0)
+  const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded - depositByCleaning)
 
   // 예상 매출/순이익은 unpaidLeasesRaw 루프(line ~832) 안에서 projectedThisMonthByLease
   // 가 채워진 뒤 계산해야 함 → 아래 unpaidAmount 계산 직후로 이동.
@@ -1228,6 +1255,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   for (const l of moveOutLeases) {
     const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'
+    // 홈에서 바로 퇴실 처리할 때 여는 최대치 — 서버(recordDepositReturn)가 되계산하는 기준액과 같아야 한다.
+    // 종전에는 계약 보증금을 그대로 실어, 현금 30,000 만 받은 계약에 5만을 제시하고 저장이 거절됐다.
+    const moveOutDepositPaid = l.paymentRecords.reduce((s2, r) => s2 + r.actualAmount, 0)
+    const moveOutCleaningPaid = (l.extraIncomes ?? []).reduce((s2, e) => s2 + e.amount, 0)
+    // 인수 전 입주자는 이 앱에 영수 기록이 없는 게 정상이라 계약 보증금이 기준이다(getDepositBasisForLease 규칙).
+    const moveOutCarriedOver = moveOutDepositPaid === 0
+      && !!(acquisitionDate && l.moveInDate && new Date(l.moveInDate) < acquisitionDate)
+    const moveOutComp = depositComposition({
+      contractDeposit: l.depositAmount, depositPaid: moveOutDepositPaid,
+      cleaningPaid: moveOutCleaningPaid, cleaningFeeInDeposit,
+    })
     alertItems.push({
       category:  'moveout',
       text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}퇴실 예정`,
@@ -1238,9 +1276,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       detail:    l.expectedMoveOut ? `퇴실 예정일: ${fmtKorDate(l.expectedMoveOut)}` : '퇴실 날짜 미정',
       exactDate: fmtShortDate(l.expectedMoveOut),
       moveOutLeaseId: l.id,
-      moveOutDepositAmount: l.depositAmount,
+      moveOutDepositAmount: moveOutCarriedOver ? l.depositAmount : moveOutDepositPaid,
       // 입실 때 이미 받았으면 0 — 퇴실 환불창이 그만큼 또 빼지 않게 한다
-      moveOutCleaningFee: cleaningFeeDeductible(l.cleaningFee, (l.extraIncomes ?? []).reduce((s2, e) => s2 + e.amount, 0)),
+      moveOutCleaningFee: cleaningFeeDeductible(l.cleaningFee, moveOutCleaningPaid),
+      moveOutCompositionLabel: depositCompositionLabel(moveOutComp),
       moveOutTenantName: l.tenant.name,
     })
   }
@@ -1602,6 +1641,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
     depositRecorded,
+    depositByCleaning,
     depositUnrecorded,
     reserveBalance,
     reserveMonthly,

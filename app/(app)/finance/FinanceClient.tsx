@@ -1352,6 +1352,7 @@ type DepositPerTenant = {
   roomNo: string | null; status: string
   contractDeposit: number; totalIn: number; totalReturned: number; totalWithheld: number; balance: number
   hasNoInRecord: boolean
+  coveredByCleaning: number   // 입실 청소비가 채운 보증금 몫(포함형 영업장만 > 0, 2026-08-10)
 }
 type DepositLedgerEntry = {
   type: 'IN' | 'REFUND'; date: Date; amount: number
@@ -4980,10 +4981,13 @@ function DepositTab({ summary, ledger, totalBalance }: {
                               계약서에 약정한 보증금 금액으로, 실제 입금 기록과는 별개입니다. 입금 기록이 없는 계약은 이 약정액을 기준으로 잔고를 계산합니다. 실제로 받았다면 옆의 받음으로 기록 버튼으로 실수납을 남기세요.
                             </InfoHint></>
                         : `입금 ${fmtWon(d.totalIn)}`}
+                      {/* 청소비가 채운 몫은 받은 돈이다 — 병기하지 않으면 아래 '(계약 N)'이 어긋남처럼 읽힌다. */}
+                      {d.coveredByCleaning > 0 && ` + 청소비 ${fmtWon(d.coveredByCleaning)}`}
                       {d.totalReturned > 0 && ` · 반환 ${fmtWon(d.totalReturned)}`}
                       {d.totalWithheld > 0 && ` · 미반환 ${fmtWon(d.totalWithheld)}`}
                       {!d.hasNoInRecord && d.contractDeposit !== d.totalIn && (
-                        <span className="ml-1 text-[var(--warning-fg)]">(계약 {fmtWon(d.contractDeposit)})</span>
+                        // 차이가 청소비 몫으로 설명되면 경고색이 아니다(포함형 영업장 상시 오탐이던 자리).
+                        <span className={`ml-1 ${d.contractDeposit === d.totalIn + d.coveredByCleaning ? 'text-[var(--warm-muted)]' : 'text-[var(--warning-fg)]'}`}>(계약 {fmtWon(d.contractDeposit)})</span>
                       )}
                       {d.status === 'CHECKED_OUT' && d.balance === 0 && (d.totalReturned + d.totalWithheld === 0) && (
                         <span className="ml-1 text-[var(--warm-muted)]">· 퇴실 정리됨</span>

@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositBasisForLease, getCleaningFeeReceivedForLease,
+import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease,
   getReservedPrepaidTotal, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
+import { depositCompositionLabel } from '@/lib/depositComposition'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -88,7 +89,7 @@ type Lease = {
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -204,21 +205,19 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       : '',
     )
     setTransRent(def.field === 'rentAmount' ? (lease.rentAmount || undefined) : undefined)
-    // 정산 기준액 — 계약 보증금이 0이어도 실제로 받은 보증금이 있으면 그 금액으로 연다.
-    // 종전에는 lease.depositAmount 만 봐서, 계약상 0인데 실수납이 있는 계약(520호 김민정 청소비 20,000)은
-    // 반환·몰취 화면이 어느 경로로도 뜨지 않았다(B페이즈). 예약 취소 경로는 이미 실수납 기준이었다.
-    let depoBaseForForm = lease.depositAmount || 0
-    let depoFromReceived = false
-    if (def.withDeposit && depoBaseForForm === 0) {
-      depoBaseForForm = await getReceivedDepositTotal(lease.id)
-      depoFromReceived = depoBaseForForm > 0
-    }
+    // 정산 기준액은 서버 정본(getDepositBasisForLease().basis)을 그대로 쓴다 — 환불 저장이 되계산하는 그 값이다.
+    // 종전에는 계약 보증금을 먼저 믿고 0일 때만 실수납으로 폴백해서, 계약 50,000 인데 현금 30,000 만 받은
+    // 계약(520호 김민정 — 나머지 20,000 은 청소비로 받았다)에 화면이 50,000 을 제시하고 저장은 서버가
+    // 30,000 기준으로 거절했다. 화면이 여는 최대치와 서버 기준이 갈리면 안 된다.
     // 인수 전 입주자는 이전 원장 운영 원칙대로 키값 명목으로 돌려주지 않는다(운영자 확정 2026-08-02).
     // 케이스가 아니라 클래스라 기본 선택으로 제안한다. 세그먼트라 한 번 눌러 되돌릴 수 있다.
-    const basis = def.withDeposit ? await getDepositBasisForLease(lease.id) : null
-    const carriedOver = basis?.source === 'carriedOver'
+    const comp = def.withDeposit ? await getDepositCompositionForLease(lease.id) : null
+    const depoBaseForForm = comp ? comp.basis : (lease.depositAmount || 0)
+    // 기준액이 계약 보증금과 다를 때만 '받은 보증금'으로 못박는다(같으면 같은 말을 두 번 하는 셈).
+    const depoFromReceived = !!comp && comp.basisSource === 'received' && comp.basis !== comp.contract
+    const carriedOver = comp?.carriedOver === true
     // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
-    const cleaningPaid = def.withDeposit ? await getCleaningFeeReceivedForLease(lease.id) : 0
+    const cleaningPaid = comp?.cleaningPaid ?? 0
     const deductible = cleaningFeeDeductible(lease.cleaningFee || 0, cleaningPaid)
     setTransRefund(def.withDeposit
       ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - deductible))
@@ -228,7 +227,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       if (carriedOver) setWithholdReason('키값')
       else if (deductible > 0) setWithholdReason('청소비')
     }
-    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm, cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid })
+    setActive({
+      def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
+      cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid,
+      compositionLabel: comp ? depositCompositionLabel(comp) : null,
+    })
   }
 
   const runTransition = (
@@ -395,6 +398,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   <label className="text-xs font-medium text-[var(--warm-mid)] block">
                     {active.resvCancelPrepaid ? '선납 환불' : active.resvCancel ? '예약금 환불' : '보증금 환불'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancelPrepaid ? '받은 선납금' : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
                   </label>
+                  {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 현금만 보이면 '계약 5만인데 왜 3만인가'로 읽힌다.
+                      문법은 DepositStatusPanel 정본과 같은 한 줄(두 화면이 갈리지 않게). */}
+                  {active.compositionLabel && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">{active.compositionLabel}</p>
+                  )}
                   {/* 종전에는 '환불 안 함'이 단방향 버튼이라 한 번 누르면 되돌아올 길이 금액 재입력뿐이었다.
                       상호배타 선택은 SegmentedControl 정본을 쓴다(§10 raw button 금지·§12). */}
                   <SegmentedControl size="sm" ariaLabel="보증금 환불 여부"

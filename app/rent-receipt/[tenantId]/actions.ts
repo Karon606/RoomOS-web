@@ -11,6 +11,8 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import type { ReceiptKind } from '@/lib/rentReceiptPdf'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { depositComposition } from '@/lib/depositComposition'
 
 // 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
 export type RentReceiptData = {
@@ -92,7 +94,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     }),
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { phone: true, businessInfo: true, bankAccount: true },
+      select: { phone: true, businessInfo: true, bankAccount: true, cleaningFeeInDeposit: true },
     }),
   ])
 
@@ -139,6 +141,19 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       }
     }
     const contracted = lease?.depositAmount ?? 0
+    // 청소비가 보증금 안의 몫인 영업장에서는 현금 30,000 + 청소비 20,000 = 계약 50,000 이 완납이다.
+    // 종전에는 현금만 세서 그런 계약이 영수증마다 '일부 수령' 경고를 달고 나왔다(상시 오탐).
+    const cleaningPaidAgg = lease
+      ? await prisma.extraIncome.aggregate({
+          where: { leaseTermId: lease.id, propertyId, category: CLEANING_FEE_CATEGORY }, _sum: { amount: true },
+        })
+      : null
+    const depoComp = depositComposition({
+      contractDeposit: contracted, depositPaid: paid,
+      cleaningPaid: cleaningPaidAgg?._sum.amount ?? 0,
+      cleaningFeeInDeposit: property?.cleaningFeeInDeposit ?? false,
+    })
+    const depoPartial = contracted > 0 && depoComp.shortfall > 0
     const moveInYmd = lease?.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
     // 아직 입주 전이면 거주한 적이 없으므로 거주 기간을 비운다(운영자 지적 2026-07-31).
     // 보증금은 입주 전에 받는 돈이라 이 경우가 오히려 일반적이고, 살지도 않은 기간을 적으면 허위 기재다.
@@ -155,17 +170,20 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       payMethod: last?.payMethod ?? bank,
       // 입주 전이면 예약금과 성격이 같다 — 입실 취소 시 반환되지 않는다는 점을 비고에 명시(운영자 지시)
       note: notMovedIn
-        ? (contracted > 0 && paid < contracted
+        ? (depoPartial
             ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 · 입실 취소 시 반환되지 않습니다`
             : '입주 전 예약금 · 입실 취소 시 반환되지 않습니다')
-        : (contracted > 0 && paid < contracted
-            ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 수령`
-            : '퇴실 시 미납금·손해배상액 공제 후 반환'),
+        : depoPartial
+          ? `계약 보증금 ${contracted.toLocaleString()}원 중 일부 수령`
+          : depoComp.coveredByCleaning > 0
+            // 현금 영수액과 계약 보증금이 다른 이유를 서류 자체가 설명해야 한다(입주자가 들고 가는 종이다).
+            ? `계약 보증금 ${contracted.toLocaleString()}원 중 청소비 ${depoComp.coveredByCleaning.toLocaleString()}원은 입실 시 별도 수령 · 퇴실 시 미납금·손해배상액 공제 후 반환`
+            : '퇴실 시 미납금·손해배상액 공제 후 반환',
       recipientName: biz.ceoName ?? '',
       anchorMonth: viewMonth,
       todayMonth,
       isShortTerm,
-      warning: paid <= 0 ? 'noRecord' : (contracted > 0 && paid < contracted ? 'partial' : null),
+      warning: paid <= 0 ? 'noRecord' : (depoPartial ? 'partial' : null),
       kind,
       preResidence: notMovedIn,
       nonResident,
