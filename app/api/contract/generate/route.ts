@@ -45,9 +45,31 @@ type Body = {
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
+// setContent 대기 상한. 종전 30초는 maxDuration 60초를 거의 다 먹어 재시도할 여유가 없었다.
+const SET_CONTENT_TIMEOUT_MS = 15000
+
+// 단계별 소요(ms) — 실패했을 때 "어디서 시간을 썼는지" 를 알 수 있는 유일한 지문이다.
+// 종전에는 TimeoutError 한 줄만 남아 폰트인지 Drive 인지 렌더인지 구분할 수 없었다(신고 0aed3bdd).
+// 개인정보는 넣지 않는다 — 단계 이름과 숫자뿐이다.
+type Timings = Record<string, number>
+async function step<T>(t: Timings, key: string, fn: () => Promise<T>): Promise<T> {
+  const at = Date.now()
+  try { return await fn() } finally { t[key] = Date.now() - at }
+}
+
 export async function POST(req: Request) {
   // 예약한 계약번호 자리 — 최상위 catch 가 보상 삭제하려면 try 밖에 있어야 한다(아래 catch 주석).
   let reserved: { id: string; no: string } | null = null
+  // 진단용 계측 — catch 에서도 읽어야 하므로 try 밖에 둔다.
+  const timings: Timings = {}
+  const startedAt = Date.now()
+  let pdfCalls = 0
+  let renderRetried = false
+  let isPreview = false
+  const logTimings = (result: string) => console.log('[contract/generate]', JSON.stringify({
+    result, preview: isPreview, pdfCalls, retried: renderRetried,
+    total: Date.now() - startedAt, ...timings,
+  }))
   try {
     // 인증
     const supabase = await createClient()
@@ -59,6 +81,7 @@ export async function POST(req: Request) {
     await requireEdit()
 
     const body = (await req.json()) as Body
+    isPreview = body.preview === true
     if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId 필요' }, { status: 400 })
     // 서명 없이도 생성 허용 — 서명란은 '(서명)' 자리표시로 출력(출력 후 직접 서명·스캔 첨부 케이스).
 
@@ -133,7 +156,7 @@ export async function POST(req: Request) {
     const disposalSignDateLabel = ymdLabel(disposalSignDate)
 
     // Pretendard variable woff2 base64 — 한글 폰트 보장 (모듈 캐시)
-    const pretendardBase64 = await getPretendardBase64()
+    const pretendardBase64 = await step(timings, 'font', () => getPretendardBase64())
 
     // 계약번호 No. YYYYMMDD-NNN (영업장별 일련, v2.0 §26) — 입실료 납부확인서와 동일 패턴.
     //
@@ -173,14 +196,19 @@ export async function POST(req: Request) {
     }
     const contractNo = reserved?.no ?? '미리보기'
 
+    // 로고·도장 모두 바이트 임베드 — 외부 URL 이면 헤드리스가 못 받아 이미지가 빈칸으로 나온다(신고 e7c09f2d).
+    const [logoImageUrl, stampImageUrl] = await step(timings, 'driveImages', () => Promise.all([
+      property?.logoDriveFileId ? driveImageDataUrl(property.logoDriveFileId) : Promise.resolve(null),
+      property?.stampDriveFileId ? driveImageDataUrl(property.stampDriveFileId) : Promise.resolve(null),
+    ]))
+
     const printData: PrintContractData = {
       template,
       businessInfo: body_.businessInfo ?? EMPTY_BUSINESS_INFO,
       phone: property?.phone ?? null,
       contractNo,
-      // 로고도 바이트 임베드 — 외부 URL 이면 헤드리스가 못 받아 networkidle0 이 안 온다(신고 e7c09f2d).
-      logoImageUrl: property?.logoDriveFileId ? await driveImageDataUrl(property.logoDriveFileId) : null,
-      stampImageUrl: property?.stampDriveFileId ? await driveImageDataUrl(property.stampDriveFileId) : null,
+      logoImageUrl,
+      stampImageUrl,
       refundClauseInContract: body_.refundClauseInContract,
       disposalConsent: resolveDisposalConsent(body_.disposalConsent),
       disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,
@@ -200,81 +228,110 @@ export async function POST(req: Request) {
       signDate: signDateLabel,
       disposalSignDate: disposalSignDateLabel,
       signatureName: body.signatureName,
-      signatureImageDataUrl: body.signatureImageDataUrl,
+      // 동의서 서명(위)과 같은 규칙 — data:image/ 가 아니면 안 그린다. 종전에는 계약서 서명만
+      // 무검증이라 임의 문자열이 src 로 들어갔고, 그것이 외부 URL 이면 헤드리스가 받으러 나간다.
+      signatureImageDataUrl: body.signatureImageDataUrl?.startsWith('data:image/') ? body.signatureImageDataUrl : '',
     }
 
     const html = buildContractPrintHtml(printData)
 
     // 1) Chromium 실행해 HTML → PDF
-    // PDF 생성에는 WebGL 불필요 → swiftshader 스킵해서 cold start 단축
-    chromium.setGraphicsMode = false
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: { width: 794, height: 1123, deviceScaleFactor: 2 }, // A4 96dpi @ 2x
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    })
+    //
+    // 대기 조건은 'load' 다. 이 문서는 외부 참조가 0 건이라(폰트·로고·도장·서명 전부 data URL)
+    // networkidle0 은 지킬 것이 없으면서, 단일 프로세스 크로미움이 한 번 삐끗하면 30초를 통째로
+    // 태우고 지문 없는 TimeoutError 만 남겼다(신고 0aed3bdd, 간헐 실패 4회).
+    // 외부 참조가 0 이라는 사실은 scripts/check-print-selfcontained.ts 축 1 이 지킨다.
+    // 글꼴이 실제로 적용됐는지는 그 다음 줄의 document.fonts.ready 가 따로 보장한다.
+    const renderPdf = async (attempt: number): Promise<Buffer> => {
+      // 재시도 회차는 키를 나눠 남긴다 — 1차에서 몇 초를 태웠는지가 진단의 핵심이다.
+      const k = (name: string) => attempt === 1 ? name : `${name}_r${attempt}`
+      // PDF 생성에는 WebGL 불필요 → swiftshader 스킵해서 cold start 단축
+      chromium.setGraphicsMode = false
+      const browser = await step(timings, k('launch'), async () => puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: { width: 794, height: 1123, deviceScaleFactor: 2 }, // A4 96dpi @ 2x
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      }))
+      try {
+        const page = await browser.newPage()
+        await step(timings, k('setContent'), () => page.setContent(html, { waitUntil: 'load', timeout: SET_CONTENT_TIMEOUT_MS }))
+        // 폰트 로딩까지 확실하게 대기
+        await step(timings, k('fontsReady'), () => page.evaluateHandle('document.fonts.ready'))
+        const baseOpts = { format: 'A4' as const, printBackground: true, preferCSSPageSize: false }
+        const baseMargin = { top: '14mm', right: '14mm', bottom: '14mm', left: '14mm' }  // 상하좌우 동일(대칭) — 좌우 14mm 는 표 우측 테두리 잘림 방지
+        // page.pdf 호출 수 — 축소맞춤 루프가 몇 바퀴 돌았는지가 곧 렌더 시간의 대부분이다.
+        const printPdf = async (opts: Parameters<typeof page.pdf>[0]) => { pdfCalls++; return Buffer.from(await page.pdf(opts)) }
+        const countPdfPages = (buf: Buffer) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
+        // 각 서류(.paper: 계약서 + (옵션)동의서)는 1물리페이지에 들어가야 함 → 의도한 페이지 수.
+        // 동의서는 page-break-before 로 항상 새 장이므로 '한 장 강제'가 아니라 '서류별 한 장' 이 목표.
+        const expectedPages = Math.max(1, (html.match(/<div class="paper/g) || []).length)
+
+        // 1차: scale 1(원본) 렌더 → 페이지 수 판정 (조항 적으면 의도대로, 많으면 하단이 다음 장으로 넘침)
+        let scale = 1
+        const fullPdf = await printPdf({ ...baseOpts, margin: baseMargin })  // 원본(100%) 보관 — 축소로도 못 맞추면 되돌릴 기준
+        let renderedPdf = fullPdf
+        let pageCount = countPdfPages(renderedPdf)
+        // 살짝 넘치면(하단 조금 잘림) 한 장에 맞게 부드럽게 축소(최대 ~12%, 하한 0.88 = 가독성 바닥).
+        while (pageCount > expectedPages && scale > 0.88) {
+          scale = Math.round((scale - 0.04) * 100) / 100
+          renderedPdf = await printPdf({ ...baseOpts, margin: baseMargin, scale })
+          pageCount = countPdfPages(renderedPdf)
+        }
+        // 축소(≥88%)로도 의도 페이지 수에 못 맞추면 = 내용이 매우 많음 → 글씨가 작아지는 손해만 보고
+        // 어차피 다중 페이지가 됨. 이럴 땐 원본(100%)으로 되돌려 '읽기 좋은 크기 + 여러 장'으로 출력한다.
+        // (운영자가 조항을 많이 적어도 글씨는 절대 88% 미만으로 작아지지 않음. 섹션은 page-break-inside:avoid 로 통째 유지.)
+        if (pageCount > expectedPages) {
+          scale = 1
+          renderedPdf = fullPdf
+          pageCount = countPdfPages(renderedPdf)
+        }
+
+        if (pageCount > 1) {
+          // 다중 페이지 — v2.0 §26·v2.0 §26: 꼬리말에 페이지번호(좌) + 영업장명(우).
+          // 단일 페이지는 페이지번호 생략(v2.0 §26). @sparticuz chromium 한글폰트 없음 → 꼬리말에도 Pretendard 임베드.
+          const bizNameEsc = (printData.businessInfo.name || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          // 폰트를 못 구했으면 @font-face 를 넣지 않는다 — 빈 src 는 로딩 실패로 대기를 만든다(본문 쪽과 같은 규칙).
+          const footerFontCss = pretendardBase64
+            ? `@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}`
+            : ''
+          const footerTemplate =
+            `<style>${footerFontCss}*{margin:0;padding:0}</style>` +
+            `<div style="font-family:'Pretendard',sans-serif;font-size:8pt;color:#6B5D4F;width:100%;padding:0 14mm;display:flex;justify-content:space-between;align-items:center;">` +
+            `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+            `<span>${bizNameEsc}</span></div>`
+          return await printPdf({
+            ...baseOpts,
+            margin: baseMargin,   // 상하좌우 동일(대칭) — 푸터는 14mm 하단 여백 안에 렌더
+            scale,   // 축소맞춤 적용분 유지 (각 서류가 자기 페이지에 들어가도록)
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',   // 머리말 없음 (1p 본문 헤더와 중복 방지)
+            footerTemplate,
+          })
+        }
+        return renderedPdf
+      } finally {
+        await browser.close().catch(() => {})
+      }
+    }
+
+    // 1회 재시도. 실패의 정체가 '단일 프로세스 크로미움이 가끔 삐끗한다' 라서, 같은 입력을 새 프로세스로
+    // 한 번만 더 그려 보는 것이 유일하게 근거 있는 대응이다(브라우저는 위 finally 가 이미 닫았다).
+    // 15초 x 2회 + 렌더·업로드가 maxDuration 60초 예산 안에 들어간다. 두 번 다 실패하면 그냥 실패한다.
     let pdfBuffer: Buffer
     try {
-      const page = await browser.newPage()
-      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 })
-      // 폰트 로딩까지 확실하게 대기
-      await page.evaluateHandle('document.fonts.ready')
-      const baseOpts = { format: 'A4' as const, printBackground: true, preferCSSPageSize: false }
-      const baseMargin = { top: '14mm', right: '14mm', bottom: '14mm', left: '14mm' }  // 상하좌우 동일(대칭) — 좌우 14mm 는 표 우측 테두리 잘림 방지
-      const countPdfPages = (buf: Buffer) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
-      // 각 서류(.paper: 계약서 + (옵션)동의서)는 1물리페이지에 들어가야 함 → 의도한 페이지 수.
-      // 동의서는 page-break-before 로 항상 새 장이므로 '한 장 강제'가 아니라 '서류별 한 장' 이 목표.
-      const expectedPages = Math.max(1, (html.match(/<div class="paper/g) || []).length)
-
-      // 1차: scale 1(원본) 렌더 → 페이지 수 판정 (조항 적으면 의도대로, 많으면 하단이 다음 장으로 넘침)
-      let scale = 1
-      const fullPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin }))  // 원본(100%) 보관 — 축소로도 못 맞추면 되돌릴 기준
-      let renderedPdf = fullPdf
-      let pageCount = countPdfPages(renderedPdf)
-      // 살짝 넘치면(하단 조금 잘림) 한 장에 맞게 부드럽게 축소(최대 ~12%, 하한 0.88 = 가독성 바닥).
-      while (pageCount > expectedPages && scale > 0.88) {
-        scale = Math.round((scale - 0.04) * 100) / 100
-        renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin, scale }))
-        pageCount = countPdfPages(renderedPdf)
-      }
-      // 축소(≥88%)로도 의도 페이지 수에 못 맞추면 = 내용이 매우 많음 → 글씨가 작아지는 손해만 보고
-      // 어차피 다중 페이지가 됨. 이럴 땐 원본(100%)으로 되돌려 '읽기 좋은 크기 + 여러 장'으로 출력한다.
-      // (운영자가 조항을 많이 적어도 글씨는 절대 88% 미만으로 작아지지 않음. 섹션은 page-break-inside:avoid 로 통째 유지.)
-      if (pageCount > expectedPages) {
-        scale = 1
-        renderedPdf = fullPdf
-        pageCount = countPdfPages(renderedPdf)
-      }
-
-      if (pageCount > 1) {
-        // 다중 페이지 — v2.0 §26·v2.0 §26: 꼬리말에 페이지번호(좌) + 영업장명(우).
-        // 단일 페이지는 페이지번호 생략(v2.0 §26). @sparticuz chromium 한글폰트 없음 → 꼬리말에도 Pretendard 임베드.
-        const bizNameEsc = (printData.businessInfo.name || '')
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        const footerTemplate =
-          `<style>@font-face{font-family:'Pretendard';src:url(data:font/woff2;base64,${pretendardBase64}) format('woff2-variations');font-weight:45 920}*{margin:0;padding:0}</style>` +
-          `<div style="font-family:'Pretendard',sans-serif;font-size:8pt;color:#6B5D4F;width:100%;padding:0 14mm;display:flex;justify-content:space-between;align-items:center;">` +
-          `<span style="font-variant-numeric:tabular-nums"><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
-          `<span>${bizNameEsc}</span></div>`
-        pdfBuffer = Buffer.from(await page.pdf({
-          ...baseOpts,
-          margin: baseMargin,   // 상하좌우 동일(대칭) — 푸터는 14mm 하단 여백 안에 렌더
-          scale,   // 축소맞춤 적용분 유지 (각 서류가 자기 페이지에 들어가도록)
-          displayHeaderFooter: true,
-          headerTemplate: '<div></div>',   // 머리말 없음 (1p 본문 헤더와 중복 방지)
-          footerTemplate,
-        }))
-      } else {
-        pdfBuffer = renderedPdf
-      }
-    } finally {
-      await browser.close().catch(() => {})
+      pdfBuffer = await renderPdf(1)
+    } catch (e) {
+      renderRetried = true
+      console.warn('[/api/contract/generate] 렌더 1차 실패 — 1회 재시도:', (e as Error).message)
+      pdfBuffer = await renderPdf(2)
     }
 
     // 미리보기/인쇄 모드 — Drive 저장·DB 기록·서명 영구저장 없이 PDF 바이트만 반환.
     // (Safari 의 '프린트 → PDF 저장' 백지 버그 우회: 화면 '인쇄' 버튼이 이 서버 PDF 를 새 탭으로 연다.)
     if (body.preview) {
+      logTimings('ok')
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
@@ -290,7 +347,7 @@ export async function POST(req: Request) {
     // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
     let record
     try {
-      const { fileId } = await uploadToDrive(pdfBuffer, fileName, 'application/pdf')
+      const { fileId } = await step(timings, 'upload', () => uploadToDrive(pdfBuffer, fileName, 'application/pdf'))
       record = await prisma.contractFile.update({
         where: { id: reserved!.id },
         data: { driveFileId: fileId, fileName },
@@ -349,6 +406,7 @@ export async function POST(req: Request) {
       }
     }
 
+    logTimings('ok')
     return NextResponse.json({
       ok: true,
       file: {
@@ -364,6 +422,7 @@ export async function POST(req: Request) {
     // 그 앞 단계(PDF 렌더)에서 실패하면 파일 없는 행이 번호만 물고 남았다 — 감지망의
     // '번호만 예약되고 파일이 안 붙은 계약서' 가 그것이고, 다음 발급의 번호도 건너뛴다(신고 e7c09f2d).
     if (reserved) await prisma.contractFile.delete({ where: { id: reserved.id } }).catch(() => {})
+    logTimings('fail')
     console.error('[/api/contract/generate] failed:', err)
     return NextResponse.json(
       { ok: false, error: (err as Error).message ?? '계약서 PDF 생성 실패' },
