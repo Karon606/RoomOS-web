@@ -63,10 +63,12 @@ function renderClauseItem(text: string): React.ReactNode {
 
 // mode 미지정이면 100% 기존 운영자 경로. 'remote'면 입주자 원격 서명 화면 —
 // 편집·인쇄·저장 등 운영 기능을 숨기고, 서명 제출은 submitRemoteSignature(공개 액션)로 보낸다.
-export default function ContractView({ data, mode, shareToken, signedSnapshot }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
+  /** 서명본으로 열렸는데 lease 서명 네 칸이 **전부** 비었는가 — 즉 서명이 지워진 계약의 기록 보기다. */
+  signatureErased?: boolean
 }) {
   const remote = mode === 'remote'
   const router = useRouter()
@@ -282,7 +284,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
   // 서버가 준 값이라 서명란 X 버튼(로컬 state 만 지운다)으로도 안 풀린다.
   // 잠금을 컬럼으로 저장하지 않는 이유 — 3단계 재서명이 서명 네 칸을 null 로 만들면 파생값이라
   // 아무 추가 작업 없이 자동으로 풀린다. 저장하면 그 칸을 함께 지워야 하고 빠뜨리면 영원히 잠긴다.
-  const bodyLocked = !!fixedSignDate || !!signatureCapturedAt
+  //
+  // 안전망(2026-08-10) — 그 자동 해제가 서명본 화면에서만 안 먹었다. 여기서 fixedSignDate 는
+  // 링크의 signedAt(과거 사실)에서 오므로 서명을 지워도 값이 남고, 화면이 영원히 잠겼다(502호).
+  // 그래서 **lease 서명 네 칸이 전부 빈 경우에만** 그 과거 사실을 잠금 근거에서 뺀다.
+  // 주의: 조건을 '한 칸이라도 빔'으로 넓히면 안 된다 — 반쪽 서명 상태가 안 잠기게 되어
+  // 위 신고 9facb682 봉합(서명본 화면이 안 잠기던 결함)이 그대로 풀린다.
+  // signatureCapturedAt(이 화면에서 방금 받은 서명)은 안전망 대상이 아니다. 그건 과거 사실이 아니라
+  // 지금 화면에 살아 있는 서명이라, 지워졌다는 사실과 무관하게 그대로 잠가야 한다.
+  const bodyLocked = (!!fixedSignDate && !signatureErased) || !!signatureCapturedAt
 
   // 정보 표 값 커밋 — 블러·선택 변경 시 즉시 저장한다. 표시값 전용 칸에만 쓰고,
   // 임대료·보증금 같은 원천 값은 손대지 않는다(수납·청구와 무접점).
@@ -801,7 +811,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot }:
           인쇄에는 안 나간다(계약서 본문이 아니라 운영자용 안내다). */}
       {signedSnapshot && (
         <div className="no-print" style={{ background: 'var(--info-bg)', border: '1px solid var(--info-ring)', borderRadius: 10, padding: '10px 12px', margin: '0 0 12px', fontSize: 12, color: 'var(--info-fg)', lineHeight: 1.6 }}>
-          입주자가 서명한 시점의 내용입니다. 지금 계약과 다를 수 있습니다. 바뀐 내용으로 받으려면 서명 요청을 다시 보내면 새 계약서가 따로 만들어집니다.
+          {signatureErased ? (
+            // 서명을 지운 계약인데 옛 링크 URL 로 들어온 경우. 발급 대상이 아니라 남은 기록이라는 사실을
+            // 먼저 말하고, 지금 계약을 다루는 문(일반 화면)을 같은 자리에서 열어 준다.
+            // 전체 문서 이동이다 — 소프트 내비로 가면 계약일·서명란 state 가 옛 스냅샷 값으로 남는다.
+            <>
+              서명이 지워진 계약의 기록 보기입니다. 지금 계약을 고치거나 서명을 다시 받으려면 일반 화면에서 하세요.{' '}
+              <a href={`/contract/${data.tenant.id}`} style={{ color: 'var(--info-fg)', fontWeight: 600, textDecoration: 'underline' }}>
+                일반 화면으로
+              </a>
+            </>
+          ) : '입주자가 서명한 시점의 내용입니다. 지금 계약과 다를 수 있습니다. 바뀐 내용으로 받으려면 서명 요청을 다시 보내면 새 계약서가 따로 만들어집니다.'}
         </div>
       )}
       {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}

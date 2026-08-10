@@ -13,7 +13,14 @@ export default async function ContractPage({
 }) {
   const { tenantId } = await params
   const { share } = await searchParams
-  const data = share ? await getSignedSnapshot(tenantId, share) : await getContractData(tenantId)
+  if (share) {
+    // 서명이 지워진 뒤에도 이 URL 은 열린다(링크 기록은 남으므로). 그 사실을 화면에 넘겨
+    // 배너 문구와 본문 잠금이 '기록 보기'로 갈리게 한다(502호 2026-08-10).
+    const snap = await getSignedSnapshot(tenantId, share)
+    if (!snap) notFound()
+    return <ContractView data={snap.data} signedSnapshot signatureErased={!snap.signatureLive} />
+  }
+  const data = await getContractData(tenantId)
   if (!data) notFound()
-  return <ContractView data={data} signedSnapshot={!!share} />
+  return <ContractView data={data} />
 }
