@@ -163,15 +163,21 @@ export async function getRoomsForSelect() {
     },
   })
   return rooms.map(({ leaseTerms, ...r }) => {
-    // 점유 계약(거주중·퇴실 예정) 중 퇴실 예정일이 잡힌 건 — 단기 ACTIVE 도 여기 들어온다.
-    const occupant = leaseTerms.find(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status) && l.expectedMoveOut)
+    // 그 방을 잡고 있는 계약 중 퇴실 예정일이 잡힌 건 — 단기 ACTIVE 도, 퇴실일 있는 예약도 여기 들어온다.
+    // 예약을 빼면 '조성훈이 8/31 나가는 404호'가 언제 비는지 모르는 방으로 취급돼 고를 수 없었다.
+    const occupants = leaseTerms.filter(l => ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(l.status) && l.expectedMoveOut)
+    // 방이 비는 날은 마지막으로 나가는 사람 기준 — 계약이 둘이면 먼저 나가는 쪽을 보면 안 된다.
+    const lastOut = occupants.reduce<typeof occupants[number] | null>(
+      (m, l) => (!m || l.expectedMoveOut! > m.expectedMoveOut! ? l : m), null)
     return {
       ...r,
       // 종전 의미 그대로 — 가장 최근 생성 계약 하나의 상태. 소비처가 이 뜻에 기대고 있어 바꾸지 않는다.
       currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
-      occupantMoveOut: occupant?.expectedMoveOut ? new Date(occupant.expectedMoveOut).toISOString().slice(0, 10) : null,
-      occupantIsShortTerm: occupant?.isShortTerm ?? false,
-      hasReservation: leaseTerms.some(l => l.status === 'RESERVED'),
+      occupantMoveOut: lastOut?.expectedMoveOut ? new Date(lastOut.expectedMoveOut).toISOString().slice(0, 10) : null,
+      occupantIsShortTerm: lastOut?.isShortTerm ?? false,
+      // 퇴실 예정일 없는 예약만 '무기한'이다. 날짜가 잡힌 예약은 언제 비는지 아는 방이라 막지 않고
+      // 겹칠 때만 확인창으로 묻는다(운영 재량). 서버 가드(addTenant·updateTenant)도 같은 선이다.
+      hasIndefiniteReservation: leaseTerms.some(l => l.status === 'RESERVED' && !l.expectedMoveOut),
     }
   })
 }
@@ -251,17 +257,19 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   }) : []
   const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
   const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
-  const hasReservation    = existingLeases.some(l => l.status === 'RESERVED')
+  // 예약도 '언제 나가는지 아는가'로 나눈다 — 퇴실 예정일 없는 예약만 방을 무기한 잡은 것이다.
+  // 날짜가 잡힌 예약은 화면(roomPickability)이 고를 수 있게 열어 주므로, 서버도 같은 선이어야 한다.
+  const hasIndefiniteReservation = existingLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
   const occupantLeases    = existingLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
   // 점유자가 언제 나가는지(퇴실 예정일)가 잡혀 있으면 그 방에 다음 사람을 예약해 둘 수 있다.
-  // 겹침(같은 날 포함) 여부는 폼이 확인창으로 묻고, 여기서는 무기한 점유와 이중 예약만 막는다.
+  // 겹침(같은 날 포함) 여부는 폼이 확인창으로 묻고, 여기서는 무기한 점유와 무기한 예약만 막는다.
   const roomOpensUp = occupantLeases.length > 0 && occupantLeases.every(l => !!l.expectedMoveOut)
   const incomingIsResident = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
   const incomingIsNonResident = status === 'NON_RESIDENT'
   const occupiedIndefinitely = occupantLeases.length > 0 && !roomOpensUp
 
   if (status === 'RESERVED') {
-    if (hasReservation) return { ok: false, error: '해당 호실에 이미 입실 예약이 있습니다.' }
+    if (hasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
     if (occupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
   } else if (incomingIsResident && hasActiveResident) {
     // 입실·퇴실 예정으로 들어오는 건은 종전 그대로 — 지금 비어 있는 방만 받는다.
@@ -271,7 +279,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   // 문의·투어 단계 — 종전엔 계약이 하나라도 있으면 막았는데 정작 예약 확정은 통과하던 잠복 모순이었다.
   // 퇴실 예정일이 잡힌 방은 문의 단계에서도 희망 호실로 적을 수 있게 하고, 무기한 점유·예약된 방은 그대로 막는다.
   if (!incomingIsResident && !incomingIsNonResident) {
-    if (hasReservation || hasNonResident || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+    if (hasIndefiniteReservation || hasNonResident || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
   }
 
   const contactsToCreate: {
@@ -509,16 +517,17 @@ export async function updateTenant(formData: FormData): Promise<
     })
     const otherOccupants = otherLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
     const otherOccupiedIndefinitely = otherOccupants.length > 0 && !otherOccupants.every(l => !!l.expectedMoveOut)
-    const otherHasReservation = otherLeases.some(l => l.status === 'RESERVED')
+    // addTenant 와 같은 세분 — 퇴실 예정일 없는 예약만 무기한 점유로 본다.
+    const otherHasIndefiniteReservation = otherLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
     const otherHasNonResident = otherLeases.some(l => l.status === 'NON_RESIDENT')
     if (status === 'RESERVED') {
-      if (otherHasReservation) return { ok: false, error: '해당 호실에 이미 입실 예약이 있습니다.' }
+      if (otherHasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
       if (otherOccupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
     } else if (RESIDENT_STATUSES.includes(status)) {
       if (otherLeases.some(l => RESIDENT_STATUSES.includes(l.status))) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
     } else if (status === 'NON_RESIDENT') {
       if (otherHasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
-    } else if (otherHasReservation || otherHasNonResident || otherOccupiedIndefinitely) {
+    } else if (otherHasIndefiniteReservation || otherHasNonResident || otherOccupiedIndefinitely) {
       // 문의·투어 단계 — 예약 단계와 같은 선(퇴실 예정일이 잡힌 방은 희망 호실로 허용)
       return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
     }

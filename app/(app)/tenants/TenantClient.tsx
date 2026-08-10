@@ -63,19 +63,20 @@ const fmtRoomNo = (no: string | null | undefined) =>
 // ── 타입 ─────────────────────────────────────────────────────────
 
 type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; nonResidentVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null
-  occupantMoveOut: string | null     // 'YYYY-MM-DD' — 점유 계약(거주중·퇴실 예정)의 퇴실 예정일. 이 방이 비는 날
+  occupantMoveOut: string | null     // 'YYYY-MM-DD' — 그 방을 잡은 계약(거주중·퇴실 예정·예약) 중 마지막 퇴실 예정일. 이 방이 비는 날
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
-  hasReservation: boolean            // 이미 입실 예약이 걸린 방 — 이중 예약 차단
+  hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
 }
 
 // 호실 선택 자격 — 폼 세 곳(선택 비활성·겹침 캡션·저장 확인창)이 같은 판정을 쓴다.
 // 판정식이 '이번 달에 나가는가'를 묻는 isShortTermCheckoutDue(수납·호실 관리 표시용)와 다른 이유는,
 // 여기서는 월 창과 무관하게 '언제 비는지 날짜가 있는가'만 필요하기 때문이다. 그래서 ACTIVE 단기도 같은 자격이다.
 // 같은 날 = 겹침으로 본다. 서버는 겹침을 막지 않는다(폼 확인창 경로).
-// 무기한 점유와 이중 예약은 서버(addTenant·updateTenant)도 막는다.
+// 무기한 점유와 무기한 예약은 서버(addTenant·updateTenant)도 막는다 — 화면과 서버가 같은 규칙이다.
 function roomPickability(r: Room, isCurrentRoom: boolean) {
   // 본인이 이미 들어가 있는 방이면 그 방의 예약(=본인 것)이 자기 발목을 잡지 않게 한다.
-  const blockedByReservation = r.hasReservation && !isCurrentRoom
+  // 퇴실 예정일이 잡힌 예약은 '언제 비는지 아는 방'이라 막지 않는다(겹치면 확인창이 묻는다).
+  const blockedByReservation = r.hasIndefiniteReservation && !isCurrentRoom
   const openDate = !r.isVacant && !blockedByReservation ? r.occupantMoveOut : null
   return {
     openDate,                                                  // 이 방이 비는 날('YYYY-MM-DD')
