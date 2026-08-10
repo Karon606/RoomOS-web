@@ -56,8 +56,10 @@ async function getPropertyId() {
 // 퇴실하면 청소 예정을 자동으로 만든다(신고 b21e4e98 3단계).
 // 붙일 자리가 두 곳이다 — checkoutTenant(홈 알림 경로)와 applyStatusTransition(상태전환 위젯 경로).
 // 한 곳만 넣으면 퇴실 경로에 따라 누락된다. 코드가 스스로 "동일"이라고 적어둔 그 중복이다.
-// 이미 열린 예정이 있으면 만들지 않는다. 되풀이 퇴실이나 상태 되돌리기로 같은 방에 예정이 쌓이면
-// '청소 필요' 숫자가 실제보다 커진다.
+// 이미 열린 **퇴실** 청소 예정이 있으면 만들지 않는다. 되풀이 퇴실이나 상태 되돌리기로 같은 방에
+// 예정이 쌓이면 '청소 필요' 숫자가 실제보다 커진다.
+// 종전에는 사유를 안 보고 그 방의 아무 예정에나 걸려 넘어갔다. 그러면 입실 중 요청 청소 하나가
+// 열려 있다는 이유로 퇴실 청소가 조용히 안 생긴다 — 사유가 다르면 다른 일이라 서로 갈음이 안 된다.
 // 퇴실을 되돌리면 자동으로 만든 청소 예정도 걷는다. 안 걷으면 거주 중인 방에 '청소 필요' 가 붙는다.
 // **자동으로 만든 것만** 지운다 — 운영자가 손으로 등록한 예정은 leaseTermId 가 없거나 사유가 다르고,
 // 그것까지 지우면 사람이 넣은 일정을 코드가 없앤 것이 된다.
@@ -74,12 +76,14 @@ async function ensureCheckoutCleaning(propertyId: string, roomId: string | null,
   if (!roomId) return
   try {
     const open = await prisma.roomCleaning.findFirst({
-      where: { roomId, propertyId, deletedAt: null, status: 'PLANNED' },
+      where: { roomId, propertyId, deletedAt: null, status: 'PLANNED', reason: 'CHECKOUT' },
       select: { id: true },
     })
     if (open) return
     await prisma.roomCleaning.create({
-      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: new Date() },
+      // scheduledDate 는 @db.Date 다. 날 new Date() 를 넣으면 서버(UTC)가 KST 오전 9시 전에는
+      // 어제로 잘라 저장해 예정일이 하루 앞선다. 다른 쓰기들과 같은 KST 자정 관행으로 맞춘다.
+      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: new Date(`${kstYmdStr()}T00:00:00`) },
     })
   } catch { /* 청소 이력은 퇴실을 막지 않는다 — 실패해도 퇴실 처리는 그대로 끝난다 */ }
 }
