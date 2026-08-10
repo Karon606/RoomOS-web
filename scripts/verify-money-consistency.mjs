@@ -840,6 +840,72 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 19. 청소비가 보증금 안의 몫인 영업장 — 이중 계상과 판정 정본 이탈 (2026-08-10, 운영자 승인 구조).
+//
+//   (a) 데이터. 포함형 영업장에서 현금으로 받은 보증금이 '계약 보증금 − 기수령 청소비'를 넘으면
+//       같은 돈이 두 번 잡힌 것이다. 520호 김민정이 정정 전 정확히 그 상태였고(계약 50,000 ·
+//       현금 50,000 · 청소비 20,000), 앱은 아무 말도 하지 않았다. 존량이 아니라 유량이 위험하다 —
+//       단기가 월 계약으로 전환될 때마다 프리필이 같은 길을 다시 연다.
+{
+  const inclusiveProps = await prisma.property.findMany({
+    where: { cleaningFeeInDeposit: true }, select: { id: true, name: true },
+  })
+  for (const prop of inclusiveProps) {
+    const ls = await prisma.leaseTerm.findMany({
+      where: { propertyId: prop.id, depositAmount: { gt: 0 } },
+      select: {
+        depositAmount: true,
+        tenant: { select: { name: true } },
+        room: { select: { roomNo: true } },
+        // 중첩 where 는 소프트삭제 자동 필터가 안 붙는다(원시 클라이언트라 더욱) — deletedAt 명시 필수
+        paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
+        extraIncomes:   { where: { category: '청소비', deletedAt: null }, select: { amount: true } },
+      },
+    })
+    for (const l of ls) {
+      const cleaningPaid = l.extraIncomes.reduce((s, i) => s + i.amount, 0)
+      if (cleaningPaid <= 0) continue
+      const depositPaid = l.paymentRecords.reduce((s, r) => s + r.actualAmount, 0)
+      const cashDue = Math.max(0, l.depositAmount - Math.min(l.depositAmount, cleaningPaid))
+      if (depositPaid > cashDue) {
+        violations.push(`[데이터] ${prop.name} ${l.room?.roomNo ?? '-'}호 ${l.tenant.name} — 청소비 ${cleaningPaid.toLocaleString()}원을 이미 받았는데 현금 보증금이 ${depositPaid.toLocaleString()}원(현금 몫 ${cashDue.toLocaleString()}원). ${(depositPaid - cashDue).toLocaleString()}원이 이중 계상`)
+      }
+    }
+  }
+}
+//   (b) 소스. 판정식이 다시 흩어지면 자리마다 청소비 몫이 갈린다 — 종전에 딱 그래서 화면이 5만,
+//       서버가 3만이었다. 보증금 구성을 읽는 자리는 lib/depositComposition 정본을 통해야 한다.
+{
+  const COMPOSITION_CALLERS = [
+    'components/entity-modal/widgets/DepositStatusPanel.tsx',
+    'components/entity-modal/widgets/TenantStatusTransitions.tsx',
+    'app/(app)/tenants/TenantClient.tsx',
+    'app/(app)/tenants/actions.ts',
+    'app/(app)/dashboard/page.tsx',
+    'app/(app)/finance/actions.ts',
+    'app/(app)/rooms/actions.ts',
+    'app/rent-receipt/[tenantId]/actions.ts',
+    'lib/depositEntryGuard.ts',
+  ]
+  for (const f of COMPOSITION_CALLERS) {
+    if (!readFileSync(f, 'utf8').includes('@/lib/depositComposition')) {
+      violations.push(`[소스] ${f} 이 보증금 구성 판정 정본(lib/depositComposition)을 안 쓴다 — 청소비 몫이 자리마다 갈린다`)
+    }
+  }
+  // 정본을 부르면서 옆에서 또 계산하는 경우까지 잡는다. import 만 보면 통과하는 반쪽 그물이 된다.
+  const REIMPL = /(coveredByCleaning|cleaningCredit|cashDue)\s*=\s*Math\.(min|max)/
+  const walkTs = (d) => readdirSync(d, { withFileTypes: true }).flatMap(e => {
+    const full = `${d}/${e.name}`
+    return e.isDirectory() ? walkTs(full) : (/\.(ts|tsx)$/.test(e.name) ? [full] : [])
+  })
+  for (const file of ['app', 'lib', 'components'].flatMap(walkTs)) {
+    if (file === 'lib/depositComposition.ts') continue   // 정의부
+    if (REIMPL.test(readFileSync(file, 'utf8'))) {
+      violations.push(`[소스] ${file} 이 청소비 몫을 직접 계산한다 — lib/depositComposition 정본을 쓸 것`)
+    }
+  }
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
