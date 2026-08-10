@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { getOpenCleaningsByRoom } from './cleaningActions'
-import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtMDDay } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
@@ -862,6 +862,8 @@ export default function RoomManageClient({
     const tenant = currentTenant(room)
     const thumb  = room.photos[0]
     const rs     = getRoomStatus(room, targetMonth)
+    // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
+    const cleaning = openCleanings[room.id]
     // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
     // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
     const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
@@ -886,7 +888,15 @@ export default function RoomManageClient({
             )}
             {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub} secondary={rs.badge.secondary}>{rs.badge.label}</StatusBadge>}
             {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
-            {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
+            {/* 보조줄에 예정일 + 요일(§11). 청소 업체는 화목·월수금처럼 요일로 오니 날짜만으로는
+                일정을 못 읽는다(운영자 요청 2026-08-10). D-day 는 붙이지 않는다 — 남은 날수가
+                아니라 무슨 요일에 오는가가 이 자리의 정보다. 날짜를 비워 등록한 건은 보조줄 없음.
+                뱃지는 늘리지 않는다 — 이 줄은 이미 상태·전입신고 불가와 셋이 나눠 쓰고 있다. */}
+            {cleaning && (
+              <StatusBadge tone="await" sub={cleaning.scheduledDate ? `${fmtMDDay(cleaning.scheduledDate)} 예정` : undefined}>
+                청소 필요
+              </StatusBadge>
+            )}
           </div>
           {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
           <div className="space-y-0.5 pt-0.5">

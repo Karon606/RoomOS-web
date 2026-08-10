@@ -1,5 +1,6 @@
 // 날짜 표시 정본 포맷터 — 페이지별 로컬 fmtDate 재정의 금지(감사 B5, 2026-07-10).
-// 규칙: 목록·표 = fmtDateDot('2026.07.10') · 문장·상세 = fmtDateKor('2026년 7월 10일 (금)') · 짧은 인라인 = fmtMD('7/10').
+// 규칙: 목록·표 = fmtDateDot('2026.07.10') · 문장·상세 = fmtDateKor('2026년 7월 10일 (금)') · 짧은 인라인 = fmtMD('7/10')
+//       · 요일이 정보인 짧은 인라인 = fmtMDDay('7/10 (금)').
 // 기존 로컬 정의를 발견하면 이 모듈로 치환한다(신규 코드는 반드시 여기서 import).
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토']
@@ -41,6 +42,18 @@ export function fmtMD(d: Date | string | null | undefined): string {
   const dt = toKstDate(d)
   if (!dt) return '—'
   return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
+}
+
+/**
+ * 짧은 인라인 + 요일 — '7/10 (금)' (KST 기준).
+ * 요일 자체가 정보인 자리에 쓴다(청소 업체는 화목·월수금처럼 요일로 온다 — 운영자 2026-08-10).
+ * 요일은 fmtDateKor 과 같은 DAYS·같은 +9h 시프트에서 뽑는다 — 로컬 getDay() 를 쓰면
+ * 서버(UTC)와 기기(KST)가 자정 전후로 다른 요일을 그려 하이드레이션이 갈린다.
+ */
+export function fmtMDDay(d: Date | string | null | undefined): string {
+  const dt = toKstDate(d)
+  if (!dt) return '—'
+  return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()} (${DAYS[dt.getUTCDay()]})`
 }
 
 /** 월·일 문장용 — '7월 29일' (KST 기준). 대시보드 '실제이체' 표기와 동일 문법(카드정산 공유) */

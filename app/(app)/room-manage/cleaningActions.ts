@@ -72,7 +72,16 @@ export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
   }))
 }
 
-/** 영업장 전체의 '아직 안 끝난' 청소 — 호실 카드 배지·필터가 쓴다. roomId 를 키로 돌려준다. */
+/**
+ * 영업장 전체의 '아직 안 끝난' 청소 — 호실 카드 배지·필터가 쓴다. roomId 를 키로 돌려준다.
+ *
+ * 한 방에 예정이 여럿이면 **가장 이른 예정일** 하나만 남긴다. 카드 보조줄은 한 줄이라
+ * 어느 건을 말하는지 여기서 정해야 한다 — 조회 순서에 맡기면(종전: 마지막 행이 이김)
+ * 같은 방이 새로고침마다 다른 날을 말할 수 있다. 운영자가 먼저 마주칠 일정이 가장 이른 것이다.
+ *
+ * 예정일이 없는 건(등록 때 날짜를 비울 수 있다)은 날짜 있는 건에 밀린다. 그런 건만 남으면
+ * scheduledDate 가 null 로 나가고, 화면은 보조줄 없이 배지만 그린다 — 없는 날짜는 짓지 않는다.
+ */
 export async function getOpenCleaningsByRoom(): Promise<Record<string, { status: CleaningStatus; scheduledDate: string | null }>> {
   const { propertyId } = await requirePropertyAccess()
   const rows = await prisma.roomCleaning.findMany({
@@ -80,7 +89,13 @@ export async function getOpenCleaningsByRoom(): Promise<Record<string, { status:
     select: { roomId: true, status: true, scheduledDate: true },
   })
   const out: Record<string, { status: CleaningStatus; scheduledDate: string | null }> = {}
-  for (const r of rows) out[r.roomId] = { status: r.status as CleaningStatus, scheduledDate: ymd(r.scheduledDate) }
+  for (const r of rows) {
+    const next = { status: r.status as CleaningStatus, scheduledDate: ymd(r.scheduledDate) }
+    const cur = out[r.roomId]
+    // 'YYYY-MM-DD' 는 사전순이 곧 날짜순이라 문자열 비교로 이르고 늦음이 갈린다.
+    if (cur && (!next.scheduledDate || (cur.scheduledDate && cur.scheduledDate <= next.scheduledDate))) continue
+    out[r.roomId] = next
+  }
   return out
 }
 
