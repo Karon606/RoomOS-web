@@ -16,6 +16,7 @@ import { reasonsForStatus } from '@/lib/statusReasons'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 
 async function getPropertyId() {
@@ -1144,16 +1145,35 @@ export async function saveDepositPayment(data: {
   // 종전에는 min(받은 돈, 계약 보증금) 만 봐서, 보증금을 이미 받아 둔 계약에 또 넣으면
   // 보증금 합계가 계약액을 넘어갔다(예약금 경로에는 같은 가드가 이미 있는데 이 경로만 없었다).
   // 잔여가 있으면 잔여까지만 보증금으로 잡고 나머지는 아래 초과분(이용료) 분기로 흘린다.
-  const depositAgg = await prisma.paymentRecord.aggregate({
-    where: { leaseTermId: data.leaseTermId, isDeposit: true, deletedAt: null },
-    _sum: { actualAmount: true },
-  })
+  //
+  // 청소비를 보증금 안의 몫으로 받는 영업장(설정 cleaningFeeInDeposit)에서는 입실 때 받은 청소비도
+  // 계약 보증금의 일부다. 그 몫을 빼지 않으면 현금 몫을 다 받은 계약에 청소비만큼을 또 넣을 수 있다
+  // (520호 김민정 — 현금 30,000 을 받은 계약에 20,000 을 더 넣으면 이중 계상 복원). 설정이 꺼진
+  // 영업장에서는 청소비가 보증금과 무관하므로 종전과 완전히 같은 판정이다(정상 수납을 막지 않는다).
+  const [depositAgg, cleaningAgg, propForDeposit] = await Promise.all([
+    prisma.paymentRecord.aggregate({
+      where: { leaseTermId: data.leaseTermId, isDeposit: true, deletedAt: null },
+      _sum: { actualAmount: true },
+    }),
+    prisma.extraIncome.aggregate({
+      where: { leaseTermId: data.leaseTermId, propertyId, category: CLEANING_FEE_CATEGORY, deletedAt: null },
+      _sum: { amount: true },
+    }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } }),
+  ])
   const depositPaid = depositAgg._sum.actualAmount ?? 0
-  const depositRemaining = Math.max(0, data.depositAmount - depositPaid)
+  const depoComp = depositComposition({
+    contractDeposit: data.depositAmount, depositPaid,
+    cleaningPaid: cleaningAgg._sum.amount ?? 0,
+    cleaningFeeInDeposit: propForDeposit?.cleaningFeeInDeposit ?? false,
+  })
+  const depositRemaining = depoComp.shortfall
   if (depositRemaining <= 0) {
     return {
       ok: false as const,
-      error: `계약 보증금 ${data.depositAmount.toLocaleString()}원은 이미 ${depositPaid.toLocaleString()}원을 받아 더 받을 몫이 없습니다. 수납 내역을 확인해 주세요. 이용료라면 일반 수납으로 등록해 주세요.`,
+      error: depoComp.coveredByCleaning > 0
+        ? `계약 보증금 ${data.depositAmount.toLocaleString()}원은 현금 ${depositPaid.toLocaleString()}원과 입실 청소비 ${depoComp.coveredByCleaning.toLocaleString()}원으로 이미 채워져 더 받을 몫이 없습니다. 이용료라면 일반 수납으로 등록해 주세요.`
+        : `계약 보증금 ${data.depositAmount.toLocaleString()}원은 이미 ${depositPaid.toLocaleString()}원을 받아 더 받을 몫이 없습니다. 수납 내역을 확인해 주세요. 이용료라면 일반 수납으로 등록해 주세요.`,
     }
   }
 
