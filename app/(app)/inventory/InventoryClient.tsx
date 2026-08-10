@@ -1351,7 +1351,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       ) : mode === 'disposal' ? (
         <DisposalForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
-        <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }}
+          onGone={() => { onChange(); onClose() }} />
       ) : (
         <>
           <div className="px-5 sm:px-6 pt-3">
@@ -1563,8 +1564,10 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
   )
 }
 
-function SettingsForm({ row, onCancel, onDone }: {
+function SettingsForm({ row, onCancel, onDone, onGone }: {
   row: InventoryRow; onCancel: () => void; onDone: () => void
+  /** 이 카드 자체가 합쳐져 사라진 경우 — 삭제된 id 를 다시 조회하지 않도록 상세를 닫는다 */
+  onGone?: () => void
 }) {
   const [labelEdit, setLabelEdit]         = useState(row.label)
   const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
@@ -1708,7 +1711,7 @@ function SettingsForm({ row, onCancel, onDone }: {
       {/* 위치 할당 섹션 */}
       <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
       {/* 병합 섹션 — 같은 카테고리 다른 카드로 통합 */}
-      <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} />
+      <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} onGone={onGone} />
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
@@ -1720,8 +1723,9 @@ function SettingsForm({ row, onCancel, onDone }: {
   )
 }
 
-function MergeSection({ currentId, currentLabel, onDone }: {
+function MergeSection({ currentId, currentLabel, onDone, onGone }: {
   currentId: string; currentLabel: string; category: string; onDone: () => void
+  onGone?: () => void
 }) {
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([])
   const [open, setOpen] = useState(false)
@@ -1729,15 +1733,17 @@ function MergeSection({ currentId, currentLabel, onDone }: {
   useEffect(() => { getSameCategoryItems(currentId).then(setSiblings) }, [currentId])
   if (siblings.length === 0) return null
 
-  // 이 카드를 대상(남을 카드)으로 합침 — 기록 이전 후 이 카드 삭제. (v2.0 §22 MergeSheet 단일)
-  const handleMerge = async (destId: string) => {
+  // 이 카드를 대상(남을 카드)으로 합침 — 기록 이전 후 사라지는 카드 삭제. (v2.0 §22 MergeSheet 단일)
+  // srcId 가 오면 시트에서 방향을 뒤집은 것 — 고른 상대가 사라지고 이 카드가 남는다.
+  const handleMerge = async (destId: string, srcId?: string) => {
     setPending(true)
-    const res = await mergeTrackedItems(currentId, destId, true)
+    const res = await mergeTrackedItems(srcId ?? currentId, destId, true)
     setPending(false)
     if (!res.ok) { pushToast('error', res.error); return }
     setOpen(false)
     pushToast('success', `병합 완료 · 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
-    onDone()
+    // 이 카드가 흡수돼 사라졌으면 상세를 닫는다 — 삭제된 id 를 다시 조회하면 빈 상세가 남는다
+    if (!srcId && onGone) onGone(); else onDone()
   }
 
   return (
@@ -1749,7 +1755,7 @@ function MergeSection({ currentId, currentLabel, onDone }: {
       </p>
       {open && (
         <MergeSheet open onClose={() => setOpen(false)}
-          sourceLabel={currentLabel} targets={siblings}
+          sourceLabel={currentLabel} sourceId={currentId} targets={siblings}
           description="대표(남을 카드)로 지출·점검·무상입수 기록이 이동하고 이 카드는 사라집니다. 적용취소는 ‘병합 적용취소·규칙’."
           confirmLabel="합치기" onConfirm={handleMerge} pending={pending} />
       )}

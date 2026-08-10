@@ -49,6 +49,17 @@ const specDisp = (it: { specText: string | null; specValue: number | null; specU
 // 규격 식별자 직렬화 — 서버 serializeSpecKey 와 동일(specValue␟specUnit␟specText). 규격 순서 편집 키.
 const serializeSpecKey = (it: { specValue: number | null; specUnit: string | null; specText: string | null }) =>
   [it.specValue ?? '', it.specUnit ?? '', it.specText ?? ''].join('␟')
+// 합치기 시트 라벨 — 카드 제목과 같은 문법(품목명 + 규격 병기)
+const mergeLabelOf = (it: AssetItem) => { const s = specDisp(it); return s ? `${it.itemLabel} ${s}` : it.itemLabel }
+// 합치기 시트 식별 메타 — 카드 메타에서 구매일·구매처·수량·금액만 추린다(카테고리·'N월 구매분'·배정은 시트에서 무의미).
+// 이름·규격이 같은 두 카드는 이 한 줄이 없으면 시트 안에서 구분되지 않는다(오류신고 9a9ed836).
+const mergeMetaOf = (it: AssetItem) => [
+  `${it.date.slice(2)} 구매`,
+  it.vendor,
+  it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`,
+  it.count > 1 ? `구매 ${it.count}건` : null,
+  won(it.amount),
+].filter(Boolean).join(' · ')
 
 // 배정일 입력 공통 껍데기 — 이 화면의 날짜 칸 넷(일괄 배정·나눠 배정·카드 상세·옮기기)이
 // 같은 문법을 쓰도록 한 곳에 둔다. 값은 정본 DatePicker 가 받는다(네이티브 date 는 iOS 에서
@@ -111,7 +122,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const openDistribute = (it: AssetItem) => setDist({ it, assignedAt: kstYmdStr(), rows: [] })
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — v2.0 §22 MergeSheet 단일 통일(카드별·선택 공용)
-  const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string) => void } | null>(null)
+  const [sheet, setSheet] = useState<{ sourceLabel: string; sourceId?: string; sourceMeta?: string; targets: MergeTarget[]; note?: ReactNode; onConfirm: (destId: string, srcId?: string) => void } | null>(null)
   // 비품 상세 풀화면 — v2.0 §22 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
@@ -409,17 +420,25 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     const converted = (it.qtyValue ?? 0) * it.specValue
     return `1세트=${it.specValue}개. 개수 단위 카드로 합치면 ${converted}개로 변환해 합칩니다.`
   }
-  // 카드별 합치기 — 이 카드를 같은 구역·분류 다른 카드(대표)로 통일
+  // 카드별 합치기 — 이 카드를 같은 구역·분류 다른 카드(대표)로 통일. 1대1 이라 시트에서 방향을 바꿀 수 있다.
   const openCardMerge = (it: AssetItem, siblings: AssetItem[]) => setSheet({
-    sourceLabel: it.detail || it.itemLabel,
-    targets: siblings.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    sourceLabel: mergeLabelOf(it),
+    sourceId: it.id,
+    sourceMeta: mergeMetaOf(it),
+    targets: siblings.map(s => ({ id: s.id, label: mergeLabelOf(s), meta: mergeMetaOf(s) })),
     note: setNoteFor(it),
-    onConfirm: destId => runCombine(destId, it.ids, siblings.find(s => s.id === destId)?.itemLabel ?? ''),
+    onConfirm: (destId, srcId) => {
+      // srcId 가 오면 방향이 뒤집힌 것 — 고른 상대가 이 카드로 흡수된다
+      const absorbed = srcId ? siblings.find(s => s.id === srcId) : it
+      if (!absorbed) return
+      const keeper = destId === it.id ? it : siblings.find(s => s.id === destId)
+      runCombine(destId, absorbed.ids, keeper?.itemLabel ?? '')
+    },
   })
   // 선택 합치기 — 고른 비품들을 대표로 통일
   const openSelectionMerge = () => setSheet({
     sourceLabel: `선택 ${selItems.length}개`,
-    targets: selItems.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    targets: selItems.map(s => ({ id: s.id, label: s.detail || s.itemLabel, meta: mergeMetaOf(s) })),
     note: selItems.some(isSetStructured) ? '세트 구조 품목이 포함돼 있어요. 개수 단위 카드로 합치면 1세트=구성수만큼 개수로 변환해 합칩니다.' : undefined,
     onConfirm: destId => runCombine(destId, selItems.filter(s => s.id !== destId).flatMap(s => s.ids), selItems.find(s => s.id === destId)?.itemLabel ?? ''),
   })
@@ -1053,7 +1072,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       {/* 합치기 — v2.0 §22 MergeSheet 단일(카드별·선택 공용). 방향 고지 + 적용취소는 환경설정 '품명 병합' */}
       {sheet && (
         <MergeSheet open onClose={() => setSheet(null)}
-          sourceLabel={sheet.sourceLabel} targets={sheet.targets} note={sheet.note}
+          sourceLabel={sheet.sourceLabel} sourceId={sheet.sourceId} sourceMeta={sheet.sourceMeta} targets={sheet.targets} note={sheet.note}
           description="대표(남을 품목) 기준으로 이름·사양이 통일돼 한 카드가 됩니다. 적용취소는 환경설정 ‘품명 병합’."
           onConfirm={sheet.onConfirm} pending={pending} />
       )}
