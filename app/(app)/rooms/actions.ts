@@ -13,7 +13,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { primaryRoomLease } from '@/lib/leaseStatus'
+import { primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -2234,7 +2234,10 @@ export async function getRoomQuickInfo(roomId: string) {
 
 // 풀 호실 상세 — Prism 호실 면(어디 페이지서 열든) + room-manage 인라인 상세 공유.
 // quickInfo 와 달리 tier·floor·비거주·areaPyeong/M2 까지 포함하고, 상태 라벨/뱃지 정보를 같이 돌려준다.
-export async function getRoomDetail(roomId: string) {
+//
+// targetMonth('YYYY-MM') 는 단기 퇴실 도래를 묻는 기준월이다. 호실 카드가 보는 달과 같은 달이라야
+// 같은 라벨이 나온다 — 이 인자가 없던 시절엔 402·503호가 카드에선 [퇴실 예정], 모달에선 '거주중'이었다.
+export async function getRoomDetail(roomId: string, targetMonth: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
@@ -2246,44 +2249,46 @@ export async function getRoomDetail(roomId: string) {
       nonResidentRent: true, nonResidentScheduled: true, nonResidentRentDate: true,
       floor: true, windowType: true, direction: true,
       areaPyeong: true, areaM2: true,
-      memo: true, isVacant: true,
+      memo: true, isVacant: true, nonResidentVacant: true,
       photos: {
         select: { id: true, storageUrl: true, fileName: true, driveFileId: true },
         orderBy: { sortOrder: 'asc' },
       },
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        // 비거주(NON_RESIDENT)도 조회한다 — 빼 두었더니 창고·사무실처럼 비거주 계약만 있는 방을
+        // 모달만 '공실'이라 불렀다(415호·사무실, 카드는 '비거주'). 주 계약 선택은 아래
+        // primaryRoomLease 가 하고 거주·예약이 먼저라, 비거주는 그것만 있을 때만 주인이 된다.
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         select: {
           id: true, status: true, tenantId: true,
-          moveInDate: true, reservationConfirmedAt: true,
+          isShortTerm: true, moveInDate: true, expectedMoveOut: true, reservationConfirmedAt: true,
           tenant: { select: { id: true, name: true } },
         },
-        // 정렬은 take 로 잘릴 때 점유 계약이 먼저 남게 하는 역할만 한다 — 주 계약은
-        // 아래 primaryRoomLease 가 의미로 고른다(호실 카드와 같은 규칙).
+        // 정렬·take 는 호실 카드(getRooms)와 같은 값이라야 잘림까지 같다 — 정렬은 take 로 잘릴 때
+        // 점유 계약이 먼저 남게 하는 역할만 하고, 주 계약은 primaryRoomLease 가 의미로 고른다.
         orderBy: { status: 'asc' },
         take: 3,
       },
     },
   })
   if (!room) return null
+  // 날짜는 'YYYY-MM-DD' 문자열로 고정 — 호실 카드(getRooms)와 같은 문법이라야 월 비교·D-day 가 같다.
+  const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
+  const leases = room.leaseTerms.map(l => ({ ...l, moveInDate: ymd(l.moveInDate), expectedMoveOut: ymd(l.expectedMoveOut) }))
   // 이 방의 주 계약 — 사는 사람이 먼저다. 종전엔 'createdAt desc 첫 계약'이라 최근에 만든 예약이
   // 실거주자를 밀어냈고, 그래서 카드는 송호준인데 눌러 연 모달은 Arafat 이었다(503호).
-  const lease = primaryRoomLease(room.leaseTerms)
+  const lease = primaryRoomLease(leases)
   // 주 계약이 아닌 예약 — 거주자가 있는 방에 이미 잡혀 있는 다음 사람. 별도 줄로 보여준다.
-  const reserved = room.leaseTerms.find(l => l.status === 'RESERVED' && l.id !== lease?.id)
-  // 상태 라벨/뱃지 — RoomManageClient.getRoomStatus 와 같은 계약을 보고 같은 라벨을 쓴다.
-  let status: { label: string; badge: { tone: 'movein' | 'exit'; label: string } | null }
-  if (!lease)                              status = { label: '공실',     badge: null }
-  else if (lease.status === 'RESERVED')         status = { label: '입실 예약', badge: { tone: 'movein', label: '입실 예약' } }
-  else if (lease.status === 'CHECKOUT_PENDING') status = { label: '퇴실 예정', badge: { tone: 'exit',   label: '퇴실 예정' } }
-  else                                          status = { label: '거주중',   badge: null }
+  const reserved = leases.find(l => l.status === 'RESERVED' && l.id !== lease?.id)
+  // 상태 라벨/뱃지 — 호실 카드와 같은 함수(lib/leaseStatus.roomStatusView)로 만든다.
+  const status = roomStatusView(lease, { nonResidentVacant: room.nonResidentVacant, targetMonth })
   return {
     ...room,
     leaseTerms: lease ? [lease] : [],
     reservation: reserved ? {
       tenantName: reserved.tenant.name,
       // 'YYYY-MM-DD' — 화면이 카드와 같은 헬퍼(moveInSubText)로 문장을 만든다.
-      moveInDate: reserved.moveInDate ? new Date(reserved.moveInDate).toISOString().slice(0, 10) : null,
+      moveInDate: reserved.moveInDate,
       confirmed: !!reserved.reservationConfirmedAt,
     } : null,
     status,

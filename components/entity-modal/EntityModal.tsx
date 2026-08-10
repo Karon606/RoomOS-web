@@ -108,6 +108,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   const searchParams = useSearchParams()
   const month = searchParams.get('month') || kstMonthStr()
   const isPastMonth = month < kstMonthStr()   // 프리즘이 과거 월을 보고 있으면 강조
+  // 호실 면의 기준월은 조회 월(수납 축)과 분리한다. 호실 상태는 '지금 그 방이 어떤가'라는 현재의
+  // 사실이고, 호실 카드(RoomManageClient targetMonth)도 언제나 KST 이번 달로 묻는다. 조회 월을
+  // 따라가면 모달 안에서 지난달로 옮긴 뒤 호실 면으로 돌아왔을 때 뒤에 깔린 카드와 또 갈린다 —
+  // 이번에 봉합한 바로 그 클래스다. 게다가 호실 면엔 월 선택기가 없어 설명할 자리도 없다.
+  const roomStatusMonth = kstMonthStr()
   const [isPending, startTransition] = useTransition()
 
   const hasRoom = !!links?.roomId
@@ -338,7 +343,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
             <MonthSelector />
           </div>
         )}
-        {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
+        {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
         {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>

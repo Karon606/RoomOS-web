@@ -105,6 +105,42 @@ export function isShortTermCheckoutDue(
 }
 
 /**
+ * 호실 상태 — 그 방을 한 줄로 뭐라 부를 것인가(공실·비거주·입실 예약·거주중·퇴실 예정).
+ *
+ * 카드(호실 관리)와 프리즘 호실 면(모달)이 각자 판정하다 갈렸다. 모달은 기준월이 없어 단기 퇴실
+ * 도래를 못 물었고(402·503호는 카드 [퇴실 예정] 인데 모달은 '거주중'), 비거주를 아예 조회에서
+ * 빼 415호·사무실이 모달에서만 '공실'이 됐다. 라벨을 만드는 자리를 여기 하나로 둔다.
+ *
+ * lease 는 primaryRoomLease 가 고른 주 계약이다(없으면 공실). 보조 문구(퇴실 D-day·입주 예정일)
+ * 처럼 화면마다 다른 장식은 호출 측이 이 결과 위에 얹는다 — 라벨·뱃지·카드 종류까지가 여기 몫이다.
+ */
+export type RoomStatusView = {
+  label: string
+  kind: 'resident' | 'vacant'
+  badge: { tone: 'movein' | 'exit' | 'info'; label: string } | null
+}
+export function roomStatusView(
+  lease: { status: string; isShortTerm: boolean; expectedMoveOut: string | null } | null | undefined,
+  opts: { nonResidentVacant: boolean; targetMonth: string },
+): RoomStatusView {
+  if (!lease)
+    return { label: '공실', kind: 'vacant', badge: null }
+  if (lease.status === 'NON_RESIDENT')
+    return opts.nonResidentVacant
+      ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
+      : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
+  // 라벨 '입실 예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (e1b81629 재정의)
+  if (lease.status === 'RESERVED')
+    return { label: '입실 예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예약' } }
+  if (lease.status === 'CHECKOUT_PENDING')
+    return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
+  // 단기 퇴실 도래 — 상태는 아직 ACTIVE 라 라벨·카드 종류는 거주중을 유지하고, 퇴실 신호만 뱃지로 얹는다.
+  if (isShortTermCheckoutDue(lease, opts.targetMonth))
+    return { label: '거주중', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
+  return { label: '거주중', kind: 'resident', badge: null }
+}
+
+/**
  * CHECKED_OUT lease 중 그 달 귀속 paymentRecord 가 있는 lease 목록.
  * 단기 입주 후 퇴실, 거주 중 중도퇴실 등 — 그 달 매출 인식이 필요한 케이스.
  * rentAmount 와 함께 반환되어 호출 측에서 Math.min(paid, rent) 과납 처리에 사용 가능.

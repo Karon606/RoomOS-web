@@ -27,7 +27,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
-import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, primaryRoomLease } from '@/lib/leaseStatus'
+import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
 
@@ -130,34 +130,27 @@ type RoomStatus = {
 }
 function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
   const lease = primaryLease(r)
-  if (!lease)
-    return { label: '공실', kind: 'vacant', badge: null }
-  if (lease.status === 'NON_RESIDENT')
-    return r.nonResidentVacant
-      ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
-      : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
+  // 라벨·뱃지·카드 종류는 lib/leaseStatus.roomStatusView 정본 — 프리즘 호실 면(모달)이 같은 함수를 쓴다.
+  // 이 화면은 그 결과 위에 보조줄만 얹는다. 판정을 여기서 다시 쓰면 카드와 모달이 또 갈린다.
+  const base = roomStatusView(lease, { nonResidentVacant: r.nonResidentVacant, targetMonth })
+  if (!lease || !base.badge || lease.status === 'NON_RESIDENT') return base
   if (lease.status === 'RESERVED') {
-    // 라벨 '입실 예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (e1b81629 재정의)
     // 방 어레인지 — 입주 희망일을 퇴실일과 나란히 보려면 카드에 날짜가 있어야 한다(운영자 요청 2026-08-07).
     // 퇴실 예정일까지 잡힌 예약이면 그 사실도 나란히 — 수납 관리의 '미납 + 퇴실 예정' 두 뱃지 문법과 같다.
     const exitSub = checkoutSubText(lease.expectedMoveOut)
-    return { label: '입실 예약', kind: 'vacant', badge: {
-      tone: 'movein', label: '입실 예약',
+    return { ...base, badge: {
+      ...base.badge,
       sub: [moveInSubText(lease.moveInDate), exitSub].filter(Boolean).join(' · ') || undefined,
       secondary: exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined,
     } }
   }
   // 거주자 카드의 보조줄 — 퇴실 D-day 뒤에 이 방에 잡혀 있는 다음 예약의 입주 예정일을 시간 순으로 잇는다.
   // "8/29 퇴실 D-19 · 9/2 입주 예정". 예약 카드의 병기 문법(2026-08-07)과 같은 문장이고, 뱃지는 늘리지 않는다.
-  const residentSub = (out: string | null) =>
-    [checkoutSubText(out), moveInSubText(nextReservedLease(r, lease)?.moveInDate ?? null)]
-      .filter(Boolean).join(' · ') || undefined
-  if (lease.status === 'CHECKOUT_PENDING')
-    return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정', sub: residentSub(lease.expectedMoveOut) } }
-  // 단기 퇴실 도래 — 상태는 아직 ACTIVE 라 카드 종류는 거주중을 유지하고, 퇴실 신호만 뱃지로 얹는다.
-  if (isShortTermCheckoutDue(lease, targetMonth))
-    return { label: '거주중', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정', sub: residentSub(lease.expectedMoveOut) } }
-  return { label: '거주중', kind: 'resident', badge: null }
+  return { ...base, badge: {
+    ...base.badge,
+    sub: [checkoutSubText(lease.expectedMoveOut), moveInSubText(nextReservedLease(r, lease)?.moveInDate ?? null)]
+      .filter(Boolean).join(' · ') || undefined,
+  } }
 }
 
 // 상태 빠른 필터 키 — 공실/예약/거주중/퇴실예정. getRoomStatus 와 동일한 분기.

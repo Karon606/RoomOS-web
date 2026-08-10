@@ -18,17 +18,19 @@ import { RoomRequests } from '../widgets/RoomRequests'
 
 type RoomDetail = NonNullable<Awaited<ReturnType<typeof getRoomDetail>>>
 
-export function RoomBody({ roomId, onApplyScheduledNow }: {
+export function RoomBody({ roomId, month, onApplyScheduledNow }: {
   roomId: string
+  /** 상태 판정 기준월 'YYYY-MM' — 단기 퇴실 도래를 호실 카드와 같은 달로 물어야 라벨이 같다. */
+  month: string
   /** room-manage 페이지에서만 전달. 다른 진입(EntityModal/Prism)에선 미제공 → 버튼 숨김. */
   onApplyScheduledNow?: () => void
 }) {
   const [room, setRoom] = useState<RoomDetail | null>(null)
   useEffect(() => {
     let active = true
-    getRoomDetail(roomId).then(d => { if (active && d) setRoom(d as RoomDetail) })
+    getRoomDetail(roomId, month).then(d => { if (active && d) setRoom(d as RoomDetail) })
     return () => { active = false }
-  }, [roomId])
+  }, [roomId, month])
 
   if (!room) return <SkeletonRows rows={5} className="py-4" />
 
