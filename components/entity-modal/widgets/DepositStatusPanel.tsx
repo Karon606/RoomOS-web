@@ -18,11 +18,13 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
-import { getDepositRefundForLease, undoDepositReturn, getCleaningFeeReceivedForLease } from '@/app/(app)/tenants/actions'
+import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease } from '@/app/(app)/tenants/actions'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
+import { depositComposition } from '@/lib/depositComposition'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
+type Comp = Awaited<ReturnType<typeof getDepositCompositionForLease>>
 
 const PAY_METHODS = ['계좌이체', '현금', '신용카드', '결제선생', '기타']
 const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
@@ -40,7 +42,7 @@ export function DepositStatusPanel({
 }) {
   const [data, setData] = useState<{ records: Rec[]; paidTotal: number; preAcquisition: boolean } | null>(null)
   const [refund, setRefund] = useState<Refund>(null)
-  const [cleaningPaid, setCleaningPaid] = useState(0)
+  const [comp, setComp] = useState<Comp | null>(null)
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
@@ -50,21 +52,28 @@ export function DepositStatusPanel({
 
   const load = useCallback(async () => {
     // 두 값을 한 틱에 커밋한다. 순차로 넣으면 첫 페인트에 공제 전 숫자가 스쳤다가 바뀐다(로딩 점프).
-    const [d, paidCleaning] = await Promise.all([
+    const [d, c] = await Promise.all([
       getDepositPaymentsByLease(leaseTermId),
-      cleaningFee > 0 ? getCleaningFeeReceivedForLease(leaseTermId) : Promise.resolve(0),
+      getDepositCompositionForLease(leaseTermId),
     ])
     setData(d)
-    setCleaningPaid(paidCleaning)
+    setComp(c)
     // 퇴실·취소 계약만 환불 기록을 묻는다(그 외에는 있을 수 없어 왕복이 낭비다)
     if (status === 'CHECKED_OUT' || status === 'CANCELLED') setRefund(await getDepositRefundForLease(leaseTermId))
-  }, [leaseTermId, status, cleaningFee])
+  }, [leaseTermId, status])
 
   useEffect(() => { void load() }, [load, reloadSignal])
 
-  if (!data) return <SkeletonRows rows={2} className="py-1" />
+  if (!data || !comp) return <SkeletonRows rows={2} className="py-1" />
+  const cleaningPaid = comp.cleaningPaid
 
   const paid = data.paidTotal
+  // 판정은 정본 함수가 한다. 화면이 보여주는 그 숫자(paid·depositAmount)를 그대로 넣어야
+  // 배지와 표시줄이 갈리지 않는다 — 서버가 5만, 화면이 3만이던 사고가 그 갈림에서 났다.
+  const view = depositComposition({
+    contractDeposit: depositAmount, depositPaid: paid,
+    cleaningPaid, cleaningFeeInDeposit: comp.cleaningFeeInDeposit,
+  })
   // 예약금을 '이용료 선납'이나 '없음'으로 받는 계약은 보증금 개념이 없다. 단 record 가 있으면 숨기지 않는다 —
   // PaymentRecordList 가 보증금 행의 편집을 이 패널로 넘겼기 때문에, 여기서 숨기면 어디서도 못 고치게 된다.
   if (status === 'RESERVED' && (reservationDepositMode === 'prepaid' || reservationDepositMode === 'none') && paid === 0) return null
@@ -82,13 +91,13 @@ export function DepositStatusPanel({
   // 다만 판정은 돈이 움직이는 3경로와 같아야 한다 — 입실 때 청소비를 따로 받았으면 공제 0(계약서 §2-4).
   const effectiveFee = cleaningFeeDeductible(cleaningFee, cleaningPaid)
   const expectedRefund = Math.max(0, refundBase - effectiveFee)
-  const shortfall = depositAmount > 0 ? depositAmount - paid : 0
-  // 청소비가 보증금 안의 몫인 계약(운영자 확정 2026-08-10): 입실 때 받은 청소비가 계약 보증금의
+  // 청소비가 보증금 안의 몫인 영업장(설정 cleaningFeeInDeposit): 입실 때 받은 청소비가 계약 보증금의
   // 일부를 채운다. 현금만 세면 그 몫이 '부족'으로 보인다(520호 — 현금 3만 정정이 부족 2만으로 표시,
   // 청소비 2만이 화면 어디에도 연결되지 않았다). 별도 수령 영업장도 있으므로 조용히 흡수하지 않는다 —
   // 배지는 채워진 만큼만 완납으로 판정하되 아래 표시줄이 현금·청소비 구성을 병기한다.
-  const coveredByCleaning = Math.min(Math.max(0, shortfall), cleaningPaid)
-  const effectiveShortfall = shortfall - coveredByCleaning
+  // 판정식은 lib/depositComposition 정본. 여기서 다시 min/max 를 쓰면 스무 곳이 또 갈린다.
+  const coveredByCleaning = view.coveredByCleaning
+  const effectiveShortfall = view.shortfall
   // 계약 보증금이 비어 있으면 환불 여부 판정 자체가 불가능하다. 환불 경고보다 이게 먼저다.
   const noContractAmount = depositAmount === 0 && paid > 0 && !settled
   // 퇴실했는데 환불 기록이 없는 상태 — 운영자 요건 "돌려줘야 하는지"의 정답 자리라 초록으로 덮으면 안 된다

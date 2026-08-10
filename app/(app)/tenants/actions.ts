@@ -9,6 +9,7 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { canTransition, transitionDeniedMessage } from '@/lib/leaseTransitions'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { depositComposition, type DepositComposition } from '@/lib/depositComposition'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
@@ -1129,6 +1130,30 @@ export async function getDepositBasisForLease(leaseTermId: string): Promise<{
   if (received > 0) return { received, contract, preAcquisition, basis: received, source: 'received' }
   if (preAcquisition && contract > 0) return { received, contract, preAcquisition, basis: contract, source: 'carriedOver' }
   return { received, contract, preAcquisition, basis: 0, source: 'none' }
+}
+
+// 계약 하나의 보증금 구성 + 정산 기준액을 한 번에 — 화면이 각자 조각을 모으지 않게 하는 자리.
+//
+// 종전에는 청소비를 연결해 읽는 자리가 DepositStatusPanel 하나뿐이었고, 그 한 곳도 min/max 를
+// 직접 썼다. 퇴실 정산 3폼·홈 보유 보증금·재무 보증금 탭은 계약 보증금을 그대로 믿어, 화면이 5만을
+// 제시하고 서버가 3만으로 거절하는 실사고 지점이 됐다(설계 감사 2026-08-10).
+// 판정은 lib/depositComposition 정본이 하고 여기는 입력만 모은다.
+export async function getDepositCompositionForLease(leaseTermId: string): Promise<
+  DepositComposition & { basis: number; basisSource: 'received' | 'carriedOver' | 'none'; carriedOver: boolean }
+> {
+  const { propertyId } = await getPropertyId()
+  const [basis, cleaningPaid, property] = await Promise.all([
+    getDepositBasisForLease(leaseTermId),
+    getCleaningFeeReceivedForLease(leaseTermId),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } }),
+  ])
+  const comp = depositComposition({
+    contractDeposit: basis.contract,
+    depositPaid: basis.received,
+    cleaningPaid,
+    cleaningFeeInDeposit: property?.cleaningFeeInDeposit ?? false,
+  })
+  return { ...comp, basis: basis.basis, basisSource: basis.source, carriedOver: basis.source === 'carriedOver' }
 }
 
 export async function getReceivedDepositTotal(leaseTermId: string): Promise<number> {
