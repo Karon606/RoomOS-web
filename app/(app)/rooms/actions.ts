@@ -13,6 +13,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
+import { primaryRoomLease } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -2202,7 +2203,7 @@ export async function getRoomQuickInfo(roomId: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
-  return prisma.room.findUnique({
+  const room = await prisma.room.findUnique({
     where: { id: roomId },
     select: {
       id: true, roomNo: true, type: true,
@@ -2216,12 +2217,19 @@ export async function getRoomQuickInfo(roomId: string) {
       },
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        select: { tenant: { select: { name: true } } },
-        orderBy: { createdAt: 'desc' },
-        take: 1,
+        select: { status: true, tenant: { select: { name: true } } },
+        // 정렬은 take 로 잘릴 때 점유 계약이 먼저 남게 하는 역할만 한다 — 주 계약은
+        // 아래 primaryRoomLease 가 의미로 고른다(호실 카드와 같은 규칙).
+        orderBy: { status: 'asc' },
+        take: 3,
       },
     },
   })
+  if (!room) return null
+  // leaseTerms[0] = 그 방의 주 계약. 종전엔 'createdAt desc 첫 계약'이라 최근에 만든 예약이
+  // 실거주자를 밀어냈다(503호).
+  const primary = primaryRoomLease(room.leaseTerms)
+  return { ...room, leaseTerms: primary ? [primary] : [] }
 }
 
 // 풀 호실 상세 — Prism 호실 면(어디 페이지서 열든) + room-manage 인라인 상세 공유.
@@ -2247,22 +2255,39 @@ export async function getRoomDetail(roomId: string) {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         select: {
           id: true, status: true, tenantId: true,
+          moveInDate: true, reservationConfirmedAt: true,
           tenant: { select: { id: true, name: true } },
         },
-        orderBy: { createdAt: 'desc' },
-        take: 1,
+        // 정렬은 take 로 잘릴 때 점유 계약이 먼저 남게 하는 역할만 한다 — 주 계약은
+        // 아래 primaryRoomLease 가 의미로 고른다(호실 카드와 같은 규칙).
+        orderBy: { status: 'asc' },
+        take: 3,
       },
     },
   })
   if (!room) return null
-  // 상태 라벨/뱃지 — RoomManageClient.getRoomStatus 와 동일 로직
-  const lease = room.leaseTerms[0]
+  // 이 방의 주 계약 — 사는 사람이 먼저다. 종전엔 'createdAt desc 첫 계약'이라 최근에 만든 예약이
+  // 실거주자를 밀어냈고, 그래서 카드는 송호준인데 눌러 연 모달은 Arafat 이었다(503호).
+  const lease = primaryRoomLease(room.leaseTerms)
+  // 주 계약이 아닌 예약 — 거주자가 있는 방에 이미 잡혀 있는 다음 사람. 별도 줄로 보여준다.
+  const reserved = room.leaseTerms.find(l => l.status === 'RESERVED' && l.id !== lease?.id)
+  // 상태 라벨/뱃지 — RoomManageClient.getRoomStatus 와 같은 계약을 보고 같은 라벨을 쓴다.
   let status: { label: string; badge: { tone: 'movein' | 'exit'; label: string } | null }
   if (!lease)                              status = { label: '공실',     badge: null }
   else if (lease.status === 'RESERVED')         status = { label: '입실 예약', badge: { tone: 'movein', label: '입실 예약' } }
   else if (lease.status === 'CHECKOUT_PENDING') status = { label: '퇴실 예정', badge: { tone: 'exit',   label: '퇴실 예정' } }
   else                                          status = { label: '거주중',   badge: null }
-  return { ...room, status }
+  return {
+    ...room,
+    leaseTerms: lease ? [lease] : [],
+    reservation: reserved ? {
+      tenantName: reserved.tenant.name,
+      // 'YYYY-MM-DD' — 화면이 카드와 같은 헬퍼(moveInSubText)로 문장을 만든다.
+      moveInDate: reserved.moveInDate ? new Date(reserved.moveInDate).toISOString().slice(0, 10) : null,
+      confirmed: !!reserved.reservationConfirmedAt,
+    } : null,
+    status,
+  }
 }
 
 // 호실↔고객(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
@@ -2292,12 +2317,15 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     return { roomId: null, roomNo: null, tenantId: t?.id ?? null, tenantName: t?.name ?? null, leaseTermId: null }
   }
   if (input.roomId) {
-    const lease = await prisma.leaseTerm.findFirst({
+    // 방 하나가 어느 사람을 가리키는가 — 호실 카드·호실 면과 같은 규칙(거주 우선)이라야 한다.
+    // 'createdAt desc 한 건'이던 시절엔 최근에 만든 예약이 실거주자를 밀어내, 모달 제목과
+    // 하단 고객·수납 면이 방에 사는 사람이 아니라 예약자를 열었다(503호).
+    const leases = await prisma.leaseTerm.findMany({
       where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-      orderBy: { createdAt: 'desc' }, select: leaseSelect,
+      orderBy: { status: 'asc' }, take: 3, select: { ...leaseSelect, status: true },
     })
     const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
-    return pack(lease, room)
+    return pack(primaryRoomLease(leases) ?? null, room)
   }
   return null
 }

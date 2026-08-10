@@ -34,6 +34,25 @@ export const BILLABLE_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PENDING', '
 export const CURRENT_OCCUPANCY_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PENDING']
 
 /**
+ * 방을 대표하는 계약 — 실제로 그 방에 사는 사람이 먼저다. 없으면 예약자, 그마저 없으면 첫 계약.
+ *
+ * 화면마다 자기 방식으로 고르다가 같은 방이 화면마다 다른 사람을 가리켰다. 호실 카드는
+ * 'NON_RESIDENT 가 아닌 첫 계약'을 골랐는데 getRooms 의 status asc 는 enum 선언 순서라
+ * RESERVED 가 ACTIVE 보다 앞이었고, 프리즘 호실 면은 'createdAt desc 첫 계약'이라 최근에 만든
+ * 예약을 골랐다. 그래서 503호는 카드에 송호준(퇴실 예정), 눌러 연 모달에 Arafat(예약)이 떴다.
+ * 정렬이 아니라 의미로 고르고, 그 의미를 여기 한 곳에만 둔다.
+ *
+ * 마지막 폴백(leases[0])은 호출 측이 넘긴 집합에 달렸다 — 비거주까지 넘기면 비거주가,
+ * 점유 계약만 넘기면 없음이 된다. 넘기는 집합이 곧 그 화면의 정의다.
+ */
+export function primaryRoomLease<T extends { status: string }>(leases: T[]): T | undefined {
+  const residing: string[] = CURRENT_OCCUPANCY_STATUSES
+  return leases.find(l => residing.includes(l.status))
+    ?? leases.find(l => l.status === 'RESERVED')
+    ?? leases[0]
+}
+
+/**
  * 고객 관리 목록 표시 대상 — 투어 단계부터 비거주까지 진행 중인 모든 단계.
  * 퇴실(CHECKED_OUT) · 취소(CANCELLED) 만 제외.
  */
