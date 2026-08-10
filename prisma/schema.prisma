@@ -167,7 +167,10 @@ model Property {
   refundPenaltyWithinDays Int?     // 입주 후 N일 이내 퇴실 시 위약금 적용 (null/0 = 위약금 없음)
   refundPenaltyPct        Int?     // 위약금율 — 잔 입실료의 P%
   refundDailyRate         Int?     // 1일당 입실료 차감액(고정). null = 월 이용료 ÷ 30 자동
-  refundDeductCleaning    Boolean  @default(false)  // 환불 시 청소비(lease.cleaningFee) 차감
+  refundDeductCleaning    Boolean  @default(false)  // 환불 시 청소비(lease.cleaningFee) 차감 — 코드 미사용(되돌리기 여지로 보존)
+  // 청소비를 보증금 안의 몫으로 받는 영업장인지(운영자 확정 2026-08-10). true 면 입실 때 받은
+  // 청소비가 계약 보증금의 일부를 채운 것으로 판정한다(lib/depositComposition 정본).
+  cleaningFeeInDeposit    Boolean  @default(false)
   refundClauseInContract  Boolean  @default(true)   // 계약서에 환불 규정 조항({{환불규정}})을 자동 표시할지
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }

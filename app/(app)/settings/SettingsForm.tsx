@@ -75,6 +75,7 @@ type Property = {
   bankAccount: string | null
   contactLeadDays?: number | null
   refundClauseInContract: boolean
+  cleaningFeeInDeposit: boolean   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
   disposalConsentTemplate: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
@@ -865,6 +866,14 @@ export default function SettingsForm({
                   className="w-4 h-4 accent-[var(--coral)]" />
                 계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(계약서 본문에 {'{{환불규정}}'} 자리표시자가 있을 때만 나옵니다. 조항을 직접 쓴 경우 이 설정은 영향이 없습니다)</span>
               </label>
+              {/* 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고친다(형제 토글과 같은 문법). */}
+              {isOwner && (
+                <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+                  <input type="checkbox" name="cleaningFeeInDeposit" value="1" defaultChecked={property?.cleaningFeeInDeposit ?? false}
+                    className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+                  <span className="break-keep">청소비를 보증금에 포함해서 받는다 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(보증금 50,000원에 청소비 20,000원이 들어 있고 현금으로는 30,000원만 받는 방식입니다. 켜면 입실 때 받은 청소비가 보증금의 그만큼을 채운 것으로 계산합니다)</span></span>
+                </label>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>

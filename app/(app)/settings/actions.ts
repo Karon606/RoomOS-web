@@ -97,6 +97,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       bankAccount: true,
       contactLeadDays: true,
       refundClauseInContract: true,
+      cleaningFeeInDeposit: true,   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
       disposalConsentTemplate: true,
       publicSlug: true,
       logoDriveFileId: true,
@@ -740,6 +741,11 @@ export async function updatePropertySettings(formData: FormData) {
     ? Math.min(10, Math.max(0, Number(String(refundPenaltyPctRaw).replace(/[^0-9]/g, '')) || 0))
     : null
   const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
+  // 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고칠 수 있다.
+  // 체크박스는 소유자에게만 렌더되므로, 역할을 안 보고 저장하면 다른 멤버의 저장 한 번에 false 로 꺼진다.
+  const cleaningFeeInDeposit = (await getMyRole()) === 'OWNER'
+    ? formData.get('cleaningFeeInDeposit') === '1'
+    : undefined
   // 잔여 소지품 임의처분 동의서
   const disposalEnabled = formData.get('disposalEnabled') === '1'
   const disposalDaysRaw = formData.get('disposalDays')
@@ -766,6 +772,7 @@ export async function updatePropertySettings(formData: FormData) {
       contactLeadDays:  Math.min(90, Math.max(1, Number(String(contactLeadDaysRaw ?? '').replace(/[^0-9]/g, '')) || 14)),
       refundPenaltyPct,
       refundClauseInContract,
+      ...(cleaningFeeInDeposit === undefined ? {} : { cleaningFeeInDeposit }),
       disposalConsentTemplate: {
         enabled: disposalEnabled,
         days: disposalDaysRaw && String(disposalDaysRaw).trim() ? Number(String(disposalDaysRaw).replace(/[^0-9]/g, '')) || 7 : 7,
