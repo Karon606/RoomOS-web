@@ -165,6 +165,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
 
   const shareLink = share?.link ?? null
   const badge = shareLink ? shareBadge(shareLink) : null
+  // 서명본으로 열 것인가 — signedAt(과거 사실)만으로는 부족하다. 서명을 지운 뒤에도 그 값은 남아서
+  // 깨끗한 계약이 옛 스냅샷 화면에 영구히 갇혔다(502호 2026-08-10). 지금 서명이 있어야 서명본이다.
+  const signedViewLinkId = shareLink?.signedAt && shareLink.signatureLive ? shareLink.id : null
 
   // 계약서 진행 단계 — 지금 할 일 하나만 주 버튼으로. 로딩 중에는 판정하지 않는다(색이 튀지 않게).
   //   S0 없음        : 계약서를 만드는 것부터
@@ -208,9 +211,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
             바뀐 내용으로 받으려면 서명 요청을 다시 보내 새 링크·새 계약서를 만든다. */}
         {/* 새 창으로 열지 않는다 — 홈화면 앱(standalone)에는 주소창이 없어 돌아오면 앱 두 번째 사본이 된다.
             계약서 작성 화면에는 자체 복귀 링크가 있다(ContractView 툴바). */}
-        <BtnLink href={share?.link?.signedAt ? `/contract/${tenantId}?share=${share.link.id}` : `/contract/${tenantId}`}
+        <BtnLink href={signedViewLinkId ? `/contract/${tenantId}?share=${signedViewLinkId}` : `/contract/${tenantId}`}
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-          {share?.link?.signedAt ? '서명본 계약서 발급' : '계약서 작성·서명'}
+          {signedViewLinkId ? '서명본 계약서 발급' : '계약서 작성·서명'}
         </BtnLink>
         {!hideSignRequest && (
           <Btn variant={stage.primary === 'resend' ? 'primary' : 'secondary'} size="sm"

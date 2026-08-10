@@ -83,6 +83,9 @@ export type PendingIssueRow = {
   roomNo: string | null
   signedAt: Date
   submitted: boolean
+  // 이 계약에 서명이 **지금도** 남아 있는가(lease 서명 4칸 중 하나라도). signedAt 은 과거 사실이라
+  // 서명을 지워도 남는다 — 그것만 보고 ?share= 로 보내면 옛 스냅샷에 갇힌다(502호 2026-08-10).
+  signatureLive: boolean
 }
 
 // 서명은 받았는데 계약서 파일이 아직 없는 계약 — /contracts 의 '발급 대기' 섹션용.
@@ -105,7 +108,13 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       select: {
         id: true, signedAt: true, submittedAt: true, leaseTermId: true,
         tenant: { select: { id: true, name: true } },
-        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+        leaseTerm: {
+          select: {
+            room: { select: { roomNo: true } },
+            signatureImageUrl: true, signatureSignedAt: true,
+            disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+          },
+        },
       },
     }),
     // driveFileId: { not: '' } 는 필수다. 발급이 실패해도 예약 행이 잠깐 존재할 수 있는데,
@@ -133,6 +142,8 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       roomNo: l.leaseTerm.room?.roomNo ?? null,
       signedAt: l.signedAt,
       submitted: l.submittedAt != null,
+      signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt
+        || l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
     })
   }
   return rows

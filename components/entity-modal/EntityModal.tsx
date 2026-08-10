@@ -268,7 +268,9 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     let share = ''
     try {
       const res = await getContractShareState(tenantId)
-      if (res.ok && res.link?.signedAt) share = `&share=${encodeURIComponent(res.link.id)}`
+      // signedAt 만으로는 부족하다 — 서명을 지워도 남는 과거 사실이라, 깨끗한 계약이 옛 스냅샷
+      // 화면에 갇혔다(502호 2026-08-10). 지금 서명이 남아 있을 때만 서명본으로 연다.
+      if (res.ok && res.link?.signedAt && res.link.signatureLive) share = `&share=${encodeURIComponent(res.link.id)}`
     } catch { /* 조회 실패는 무시 — 일반 진입으로 간다. 문이 막히는 것보다 낫다 */ }
     window.location.assign(`/contract/${tenantId}${docFromQuery('tenant', tenantId)}${share}`)
     onClose()

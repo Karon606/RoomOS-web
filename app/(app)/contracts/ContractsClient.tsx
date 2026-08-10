@@ -217,7 +217,10 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtMD(p.signedAt)} 서명{p.submitted ? ' · 제출 완료' : ''}</p>
                 </div>
                 {/* 보기·보내기·삭제는 두지 않는다 — 아직 대상 파일이 없어 셋 다 거짓 약속이 된다. */}
-                <BtnLink href={`/contract/${p.tenantId}?share=${p.linkId}`} variant="primary" size="sm" className="shrink-0">
+                {/* 서명이 지워진 계약은 일반 화면으로 보낸다. 링크의 signedAt 은 과거 사실이라 서명을
+                    지워도 남는데, 그것만 보고 ?share= 로 보내면 옛 스냅샷에 갇힌다(502호 2026-08-10). */}
+                <BtnLink href={p.signatureLive ? `/contract/${p.tenantId}?share=${p.linkId}` : `/contract/${p.tenantId}`}
+                  variant="primary" size="sm" className="shrink-0">
                   발급
                 </BtnLink>
               </li>

@@ -24,6 +24,23 @@ export type ContractShareLinkInfo = {
   closedAt: string | null
   lockedAt: string | null
   submittedAt: string | null   // 제출 확정 — 이후 링크는 서버가 막는다(getActiveLink)
+  // 이 링크의 계약(leaseTerm)에 서명이 **지금도** 남아 있는가.
+  // signedAt 은 '그때 서명이 들어왔다'는 과거 사실이라 서명을 지워도 영원히 남는다. 진입로가 그것만
+  // 보고 ?share= 서명본 화면으로 보내면, 서명을 지운 계약이 옛 스냅샷에 영구히 갇힌다(502호 2026-08-10).
+  signatureLive: boolean
+}
+
+// lease 서명 4칸 중 하나라도 있으면 서명이 살아 있다. 판정 정본은 이 함수 하나다 —
+// 진입로마다 제 규칙을 두면 어떤 문은 서명본으로, 어떤 문은 일반 화면으로 갈린다.
+type LeaseSigCols = {
+  signatureImageUrl: string | null
+  signatureSignedAt: Date | null
+  disposalSignatureImageUrl: string | null
+  disposalSignatureSignedAt: Date | null
+}
+function isSignatureLive(l: LeaseSigCols | null | undefined): boolean {
+  if (!l) return false
+  return !!(l.signatureImageUrl || l.signatureSignedAt || l.disposalSignatureImageUrl || l.disposalSignatureSignedAt)
 }
 
 // 요청 헤더로 현재 origin 조립 — 프록시 뒤(Vercel)에서는 x-forwarded-* 우선
@@ -37,7 +54,7 @@ async function buildShareUrl(token: string): Promise<string> {
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
   disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
-}, url: string): ContractShareLinkInfo {
+}, url: string, signatureLive: boolean): ContractShareLinkInfo {
   return {
     id: link.id,
     url,
@@ -48,6 +65,7 @@ function serializeLink(link: {
     lockedAt: link.lockedAt ? link.lockedAt.toISOString() : null,
     // 제출 시각을 안 내려보내서 운영자 배지가 죽은 링크를 '서명 완료 · 남은 시간'으로 표시했다
     submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
+    signatureLive,
   }
 }
 
@@ -99,7 +117,8 @@ export async function issueContractShareLink(tenantId: string): Promise<
         },
       })
     }, { isolationLevel: 'Serializable' })
-    return { ok: true, link: serializeLink(link, await buildShareUrl(link.token)), phone: snapshot.tenant.primaryPhone, propertyName }
+    // signatureLive 는 false 로 고정한다 — 바로 위 가드가 lease 서명 네 칸이 비어 있음을 이미 증명했다.
+    return { ok: true, link: serializeLink(link, await buildShareUrl(link.token), false), phone: snapshot.tenant.primaryPhone, propertyName }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '링크 발급에 실패했습니다.' }
@@ -123,6 +142,15 @@ export async function getContractShareState(tenantId: string): Promise<
       prisma.contractShareLink.findFirst({
         where: { tenantId, propertyId },
         orderBy: { createdAt: 'desc' },
+        // 서명 네 칸을 같이 읽는다 — 진입로가 signedAt(과거 사실)만 보고 서명본 화면으로 보내지 않게.
+        include: {
+          leaseTerm: {
+            select: {
+              signatureImageUrl: true, signatureSignedAt: true,
+              disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+            },
+          },
+        },
       }),
       prisma.tenant.findFirst({
         where: { id: tenantId, propertyId },
@@ -144,7 +172,7 @@ export async function getContractShareState(tenantId: string): Promise<
     }
     return {
       ok: true,
-      link: link ? serializeLink(link, await buildShareUrl(link.token)) : null,
+      link: link ? serializeLink(link, await buildShareUrl(link.token), isSignatureLive(link.leaseTerm)) : null,
       phone: primaryContact?.contactValue ?? null,
       propertyName: property?.name ?? '',
       needsIssue,
@@ -263,12 +291,25 @@ export async function checkContractShareDrift(tenantId: string): Promise<
 // 실측 520호 김민정 — 1주일(157,000)에 서명했는데 그 뒤 1개월(470,000)로 전환됐다.
 // 운영자 확인 2026-08-03 — "1주일짜리는 그거대로 저장되고 1달짜리는 별개로 진행되는거지.
 // 즉 각각 남는 구조가 맞아". 서명본은 그 스냅샷으로 발급하고, 새 내용은 새 서명을 받는다.
-export async function getSignedSnapshot(tenantId: string, linkId: string): Promise<ContractData | null> {
+//
+// signatureLive 를 함께 돌려준다 — 서명이 지워진 뒤에도 이 화면은 열린다(링크 URL 은 남으므로).
+// 그때 화면이 스스로 잠기지 않게 하려면 '지금 서명이 있는가'를 화면이 알아야 한다(2026-08-10).
+export async function getSignedSnapshot(tenantId: string, linkId: string): Promise<
+  { data: ContractData; signatureLive: boolean } | null
+> {
   await requireEdit()
   const { propertyId } = await requirePropertyAccess()
   const link = await prisma.contractShareLink.findFirst({
     where: { id: linkId, tenantId, propertyId, signedAt: { not: null } },
-    select: { templateSnapshot: true, signedAt: true, disposalSignedAt: true, leaseTerm: { select: { signatureImageUrl: true, disposalSignatureImageUrl: true } } },
+    select: {
+      templateSnapshot: true, signedAt: true, disposalSignedAt: true,
+      leaseTerm: {
+        select: {
+          signatureImageUrl: true, signatureSignedAt: true,
+          disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        },
+      },
+    },
   })
   if (!link) return null
   const snap = link.templateSnapshot as unknown as ContractData
@@ -294,7 +335,7 @@ export async function getSignedSnapshot(tenantId: string, linkId: string): Promi
   // 저장값은 건드리지 않는다 — 스냅샷은 '서명 시점의 사실' 이고, 로고·도장은 그 사실이 아니라 표시 자산이다.
   const images = await resolveSnapshotImages(snap, propertyId)
   // as 캐스트를 걷었다 — 위 어긋남을 6일 동안 숨긴 것이 이 캐스트다.
-  return { ...snap, ...images, lease }
+  return { data: { ...snap, ...images, lease }, signatureLive: isSignatureLive(link.leaseTerm) }
 }
 
 // 스냅샷의 로고·도장이 data URL 이 아니면 현재 영업장 설정에서 바이트로 다시 만든다.
