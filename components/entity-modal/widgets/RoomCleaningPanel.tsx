@@ -13,11 +13,12 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { DatePicker } from '@/components/ui/DatePicker'
+import CategorySelect from '@/components/ui/CategorySelect'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
   getRoomCleanings, getCleaningFundStatus, createCleaning, completeCleaning, reopenCleaning, skipCleaning, deleteCleaning,
-  rescheduleCleaning,
+  rescheduleCleaning, getRecentCleaningPerformers,
 } from '@/app/(app)/room-manage/cleaningActions'
 import {
   CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL,
@@ -46,8 +47,12 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   // 그 우회로가 같은 청소에 지출을 두 건 만들던 경로였다.
   const [reschedFor, setReschedFor] = useState<string | null>(null)
   const [reschedDate, setReschedDate] = useState(kstYmdStr())
-  const [performer, setPerformer] = useState<CleaningPerformer>('SELF')
+  // 기본은 '업체'. 청소는 대개 맡기고, 직접 한 경우가 예외라 기본을 직접으로 두면
+  // 매번 칩을 한 번 더 눌러야 이름 칸이 나온다(운영자 지적 2026-08-10, 신고 c2a87782).
+  const [performer, setPerformer] = useState<CleaningPerformer>('VENDOR')
   const [performerName, setPerformerName] = useState('')
+  // 최근에 맡긴 업체·사람 — 이름 칸 선택지. 없는 영업장은 지금처럼 손으로 적는다.
+  const [recentPerformers, setRecentPerformers] = useState<string[]>([])
   const [cost, setCost] = useState('')
   const [useFund, setUseFund] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -56,8 +61,13 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [fund, setFund] = useState<CleaningFundStatus | null>(null)
   // 실패를 빈 목록으로 삼키지 않는다. 그러면 고장이 '기록 없음' 과 똑같이 보인다.
   const reload = () => {
-    void Promise.all([getRoomCleanings(roomId), getCleaningFundStatus(roomId)])
-      .then(([v, f]) => { setRows(v); setFund(f); setLoadFailed(false) })
+    void Promise.all([
+      getRoomCleanings(roomId),
+      getCleaningFundStatus(roomId),
+      // 추천 목록만 실패를 삼킨다. 이름 칸 편의값 하나 때문에 이력 전체가 '불러오지 못했습니다'가 되면 안 된다.
+      getRecentCleaningPerformers().catch(() => [] as string[]),
+    ])
+      .then(([v, f, p]) => { setRows(v); setFund(f); setRecentPerformers(p); setLoadFailed(false) })
       .catch(() => { setRows([]); setFund(null); setLoadFailed(true) })
   }
   useEffect(reload, [roomId])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -185,7 +195,14 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                 <div className="mt-2 space-y-2">
                   <div className="flex gap-1.5 flex-wrap">
                     {PERFORMERS.map(pf => (
-                      <button key={pf} type="button" onClick={() => setPerformer(pf)}
+                      <button key={pf} type="button" onClick={() => {
+                        setPerformer(pf)
+                        // 직접 청소는 이름 칸이 사라진다. 값을 남겨 두면 화면에 없는 이름이 저장되고
+                        // 지출 구매처까지 따라 들어간다 — 안 보이는 값은 저장하지 않는다.
+                        if (pf === 'SELF') setPerformerName('')
+                        // 맡긴 쪽으로 바꾸면 최근에 맡긴 곳을 채워 둔다. 이미 적어 둔 이름은 덮지 않는다.
+                        else if (!performerName) setPerformerName(recentPerformers[0] ?? '')
+                      }}
                         className="px-2 py-1 rounded-lg text-xs"
                         style={performer === pf
                           ? { background: 'var(--coral)', color: 'var(--on-solid)' }
@@ -199,11 +216,22 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     {/* 예정 등록 폼과 같은 정본 DatePicker. 앞으로 한 청소는 없으므로 오늘까지만 고를 수 있다. */}
                     <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className="text-xs" />
                   </div>
-                  {/* 이름 칸은 맡긴 경우에만. 직접 청소는 적을 이름이 없다. */}
+                  {/* 이름 칸은 맡긴 경우에만. 직접 청소는 적을 이름이 없다.
+                      맡긴 이력이 있으면 그 목록에서 고른다 — 같은 업체를 매번 손으로 적으면 오타 한 번에
+                      한 업체가 두 이름으로 갈린다. 처음 쓰는 영업장(이력 0건)은 고를 것이 '기타' 하나뿐이라
+                      select 가 오히려 걸리적거려 지금의 입력 칸을 그대로 둔다. */}
                   {performer !== 'SELF' && (
-                    <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
-                      placeholder="업체·사람 이름 (선택)"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs" />
+                    recentPerformers.length > 0 ? (
+                      <CategorySelect
+                        value={performerName} onChange={setPerformerName}
+                        options={recentPerformers} emptyLabel="업체·사람 이름 (선택)"
+                        placeholder="업체·사람 이름" closeIconSize={12}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+                    ) : (
+                      <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
+                        placeholder="업체·사람 이름 (선택)"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs" />
+                    )
                   )}
                   {/* 비용을 적으면 지출이 함께 만들어져 그 방 비용에 잡힌다. 비우면 지출을 안 만든다.
                       직접 청소에도 이 칸이 뜬다 — 노동은 공짜여도 세제·용품값은 실제로 나간 돈이다. */}
@@ -287,7 +315,10 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     <RowActionBtn tone="accent" disabled={pending}
                       onClick={() => {
                         setReschedFor(null)
-                        setDoneFor(r.id); setPerformer('SELF'); setPerformerName(''); setDoneDate(kstYmdStr())
+                        // 기본 '업체' — 폼이 열리자마자 이름 칸이 뜨고 최근에 맡긴 곳이 채워진다.
+                        setDoneFor(r.id); setPerformer('VENDOR')
+                        setPerformerName(recentPerformers[0] ?? '')
+                        setDoneDate(kstYmdStr())
                         // 되돌린 건은 지출이 그대로 걸려 있다. 비용 칸을 비워 두면 0 으로 다시 완료돼
                         // 연결이 끊기고 그 지출이 고아가 된다 — 걸려 있는 금액을 그대로 채워 둔다.
                         setCost(r.cost ? String(r.cost) : '')

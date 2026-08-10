@@ -73,6 +73,38 @@ export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
 }
 
 /**
+ * 최근에 맡긴 업체·사람 이름 5개 — 완료 폼 이름 칸의 선택지. 최신순.
+ *
+ * **Expense.vendor 와 합치지 않는다.** 그쪽은 완료 처리가 이 이름을 받아 적은 파생 사본이고,
+ * 지출 화면에서 손으로 넣은 구매처(청소와 무관한 곳까지)가 같은 칸에 섞여 있다. 둘을 합치면
+ * 선택지가 금세 더러워지고, 사본이 갈렸을 때 어느 쪽이 맞는지도 못 가린다. 정본은 청소 이력 한 곳이다.
+ *
+ * 직접 청소(SELF)는 뺀다 — 적을 이름이 없는 수행자라 이름 칸 자체가 안 뜬다.
+ */
+export async function getRecentCleaningPerformers(): Promise<string[]> {
+  const { propertyId } = await requirePropertyAccess()
+  const rows = await prisma.roomCleaning.findMany({
+    where: {
+      propertyId, deletedAt: null, status: 'DONE',
+      performer: { in: ['VENDOR', 'THIRD_PARTY'] },
+      performerName: { not: null },
+    },
+    // 같은 날 완료한 건이 여럿이면 doneDate 만으로는 순서가 안 정해져 새로고침마다 목록이 흔들린다.
+    orderBy: [{ doneDate: 'desc' }, { createdAt: 'desc' }],
+    // 같은 곳에 계속 맡긴 영업장은 앞쪽이 한 이름으로 채워진다. 넉넉히 읽어 중복을 걷어낸 뒤 자른다.
+    take: 100,
+    select: { performerName: true },
+  })
+  const out: string[] = []
+  for (const r of rows) {
+    const name = r.performerName?.trim()
+    if (!name || out.includes(name)) continue
+    out.push(name)
+  }
+  return out.slice(0, 5)
+}
+
+/**
  * 영업장 전체의 '아직 안 끝난' 청소 — 호실 카드 배지·필터가 쓴다. roomId 를 키로 돌려준다.
  *
  * 한 방에 예정이 여럿이면 **가장 이른 예정일** 하나만 남긴다. 카드 보조줄은 한 줄이라
