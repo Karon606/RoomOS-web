@@ -109,7 +109,7 @@ type Room = {
 type RoomStatus = {
   label: string
   kind: CardKind
-  badge: { tone: BadgeTone; label: string; sub?: string } | null
+  badge: { tone: BadgeTone; label: string; sub?: string; secondary?: { tone: BadgeTone; label: string } } | null
 }
 function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
   // 거주 계약 우선, 없으면 비거주 계약 — 비거주만 있을 때는 방 설정(nonResidentVacant)에 따라
@@ -121,10 +121,17 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
     return r.nonResidentVacant
       ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
       : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
-  if (lease.status === 'RESERVED')
+  if (lease.status === 'RESERVED') {
     // 라벨 '입실 예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (e1b81629 재정의)
     // 방 어레인지 — 입주 희망일을 퇴실일과 나란히 보려면 카드에 날짜가 있어야 한다(운영자 요청 2026-08-07).
-    return { label: '입실 예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예약', sub: moveInSubText(lease.moveInDate) ?? undefined } }
+    // 퇴실 예정일까지 잡힌 예약이면 그 사실도 나란히 — 수납 관리의 '미납 + 퇴실 예정' 두 뱃지 문법과 같다.
+    const exitSub = checkoutSubText(lease.expectedMoveOut)
+    return { label: '입실 예약', kind: 'vacant', badge: {
+      tone: 'movein', label: '입실 예약',
+      sub: [moveInSubText(lease.moveInDate), exitSub].filter(Boolean).join(' · ') || undefined,
+      secondary: exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined,
+    } }
+  }
   if (lease.status === 'CHECKOUT_PENDING')
     return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정', sub: checkoutSubText(lease.expectedMoveOut) ?? undefined } }
   // 단기 퇴실 도래 — 상태는 아직 ACTIVE 라 카드 종류는 거주중을 유지하고, 퇴실 신호만 뱃지로 얹는다.
@@ -865,7 +872,7 @@ export default function RoomManageClient({
                 {room.floor}층
               </span>
             )}
-            {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub}>{rs.badge.label}</StatusBadge>}
+            {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub} secondary={rs.badge.secondary}>{rs.badge.label}</StatusBadge>}
             {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
             {openCleanings[room.id] && <StatusBadge tone="await">청소 필요</StatusBadge>}
           </div>
@@ -985,7 +992,7 @@ export default function RoomManageClient({
             {/* 단기 파생 포함으로 '퇴실 예정' 숫자가 상태값과 달라진다 — 수납 관리와 같은 문구로 설명한다. */}
             <InfoHint title="호실 상태 필터">
               <span className="block">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
-              <span className="block mt-1.5">입주 가능은 공실과 퇴실 예정을 합쳐 봅니다. 예약된 방은 들어가지 않습니다.</span>
+              <span className="block mt-1.5">입주 가능은 언제 비는지 날짜가 잡힌 방을 모두 모읍니다. 예약된 방도 퇴실 예정일이 있으면 들어갑니다.</span>
             </InfoHint>
           </div>
         )
