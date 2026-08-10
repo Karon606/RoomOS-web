@@ -121,6 +121,7 @@ model User {
   ownedProperties Property[]
   joinRequests    JoinRequest[]
   statusLogs      TenantStatusLog[]
+  invalidatedStatusLogs TenantStatusLog[] @relation("StatusLogInvalidatedBy")
 
   @@map("users")
 }
@@ -1011,6 +1012,12 @@ model TenantStatusLog {
 
   changedById String? @db.Uuid
   changedBy   User?   @relation(fields: [changedById], references: [id])
+
+  // 무효 처리(소프트삭제) — 잘못 입력한 이력을 없던 일로 만들되 감사 추적은 남긴다(신고 e000c791).
+  // null = 유효, 값 = 무효 처리한 시각. 복원은 null 로 되돌린다.
+  deletedAt   DateTime?
+  deletedById String?   @db.Uuid
+  deletedBy   User?     @relation("StatusLogInvalidatedBy", fields: [deletedById], references: [id])
 
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
