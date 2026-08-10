@@ -104,6 +104,21 @@ type Room = {
   }[]
 }
 
+// 이 화면이 쓰는 상태 묶음 — 거주 중(방에 사람이 있다) / 점유(그 방을 이미 누가 잡았다).
+const RESIDING_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING']
+const OCCUPYING_STATUSES = ['RESERVED', ...RESIDING_STATUSES]
+
+// 방을 대표하는 계약 — 실제로 그 방에 사는 사람이 먼저다. 없으면 예약자, 그마저 없으면 비거주.
+// 종전엔 'NON_RESIDENT 가 아닌 첫 계약'을 골랐는데, getRooms 의 status asc 는 enum 선언 순서라
+// RESERVED 가 ACTIVE 보다 앞이다. 그래서 예약이 걸린 방(503호)은 퇴실 예정인 실거주자를 두고도
+// 예약자 카드로 뒤집혀, 입주자 이름·퇴실 D-day 가 화면에서 사라졌다. 정렬이 아니라 의미로 고른다.
+// 비거주만 있는 방은 방 설정(nonResidentVacant)에 따라 공실 또는 점유로 표시(운영자 요청 2026-07-06).
+function primaryLease(r: Room) {
+  return r.leaseTerms.find(l => RESIDING_STATUSES.includes(l.status))
+    ?? r.leaseTerms.find(l => l.status === 'RESERVED')
+    ?? r.leaseTerms[0]
+}
+
 // 호실 상태 — 카드 종류(거주중·퇴실예정=resident / 공실·예약=vacant) + 예외 뱃지.
 // 거주중·공실은 카드 베이스만으로 구분(뱃지 X), 예약·퇴실예정만 뱃지.
 type RoomStatus = {
@@ -112,9 +127,7 @@ type RoomStatus = {
   badge: { tone: BadgeTone; label: string; sub?: string; secondary?: { tone: BadgeTone; label: string } } | null
 }
 function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
-  // 거주 계약 우선, 없으면 비거주 계약 — 비거주만 있을 때는 방 설정(nonResidentVacant)에 따라
-  // 공실(현행) 또는 점유(창고·사무실)로 표시(운영자 요청 2026-07-06)
-  const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
+  const lease = primaryLease(r)
   if (!lease)
     return { label: '공실', kind: 'vacant', badge: null }
   if (lease.status === 'NON_RESIDENT')
@@ -143,7 +156,7 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
 // 상태 빠른 필터 키 — 공실/예약/거주중/퇴실예정. getRoomStatus 와 동일한 분기.
 type RoomStatusKey = 'vacant' | 'reserved' | 'active' | 'checkout'
 function roomStatusKey(r: Room, targetMonth: string): RoomStatusKey {
-  const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
+  const lease = primaryLease(r)
   if (!lease) return 'vacant'
   if (lease.status === 'NON_RESIDENT') return r.nonResidentVacant ? 'vacant' : 'active'
   if (lease.status === 'RESERVED') return 'reserved'
@@ -166,8 +179,6 @@ const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
 //   전부 퇴실일 있음 → 곧 입주 가능(입주 가능일 = 마지막 퇴실일 다음 날)
 //   하나라도 무기한  → 제외
 // RESERVED 도 점유로 센다. 월 창은 보지 않고 날짜만 본다 — CHECKOUT_PENDING 과 같은 기준이다.
-const RESIDING_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING']
-const OCCUPYING_STATUSES = ['RESERVED', ...RESIDING_STATUSES]
 type RoomAvailability = { kind: 'now' } | { kind: 'soon'; availableFrom: string }
 function roomAvailability(r: Room): RoomAvailability | null {
   const occ = r.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status))
@@ -413,7 +424,8 @@ export default function RoomManageClient({
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
+  // 카드에 적히는 이름 — 상태 판정과 같은 계약을 봐야 이름과 뱃지가 같은 사람을 가리킨다.
+  const currentTenant = (room: Room) => primaryLease(room)?.tenant?.name ?? null
 
   // 검색 · 정렬 적용
   const filteredRooms = (() => {

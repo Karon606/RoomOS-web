@@ -43,10 +43,12 @@ export async function getRooms() {
           moveInDate: true,
           expectedMoveOut: true,
         },
-        // ACTIVE > CHECKOUT_PENDING > RESERVED 우선순위 정렬
-        // (예약자보다 거주자가 호실의 '주' 점유자)
+        // status asc 는 LeaseStatus 선언 순서 — RESERVED · ACTIVE · CHECKOUT_PENDING · NON_RESIDENT 다.
+        // 즉 예약이 거주보다 앞선다. 종전 주석은 그 반대로 적혀 있었고, 화면이 주석을 믿고 '첫 계약'을
+        // 주 계약으로 쓰다가 예약 걸린 방에서 실거주자를 잃었다. 주 계약 선택은 화면(primaryLease)이
+        // 의미로 하고, 여기 정렬은 take 로 잘릴 때 점유 계약이 먼저 남게 하는 역할만 한다.
         orderBy: { status: 'asc' },
-        take: 2,   // 거주 계약 + 비거주 계약 동시 존재 대비
+        take: 3,   // 예약 + 거주 + 비거주 동시 존재 대비(2 면 비거주가 잘려 창고·사무실 표시가 사라진다)
       },
     },
     orderBy: { roomNo: 'asc' },
