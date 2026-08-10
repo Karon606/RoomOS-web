@@ -70,7 +70,7 @@ async function closeStaleUnsignedLinks(leaseTermId: string): Promise<number> {
   return res.count
 }
 
-// 서명 전량 삭제('all') 전용 — 열려 있는 링크를 **제출본까지** 전부 닫는다.
+// 서명이 하나도 안 남았을 때 — 열려 있는 링크를 **제출본·만료본까지** 전부 닫는다.
 // 아래 closeOpenLinks 와 갈리는 지점이 둘이고, 둘 다 '남은 서명이 하나도 없다'에서 나온다.
 //  1) submittedAt 을 안 가린다. 제출본을 남겨 두는 2026-07-23 결정은 '그 서명으로 발급할 일이
 //     남아 있다'가 전제인데, 네 칸을 전부 지우면 발급할 서명 자체가 없다. 그대로 두면 종 알림이
@@ -78,8 +78,14 @@ async function closeStaleUnsignedLinks(leaseTermId: string): Promise<number> {
 //  2) 만료 여부를 안 가린다. 링크 수명이 24시간이라 서명을 지우는 시점에는 대개 이미 만료돼
 //     있는데, 그 알림의 조건은 closedAt: null 하나뿐이라(dashboard/alerts.ts) 만료로는 안 꺼진다.
 //     만료 조건을 남기면 이 삭제가 사실상 아무 링크도 닫지 못한다.
-// **부분 삭제('contract'|'disposal')와 본문 편집 쪽 closeStaleUnsignedLinks 는 현행 그대로다** —
-// 남은 서명으로 발급할 길이 살아 있으므로 2026-07-23 규칙이 그대로 적용된다.
+// **부분 삭제('contract'|'disposal')도 그 삭제로 네 칸이 전부 비면 여기로 온다**(2026-08-10).
+// 전량 삭제냐 부분 삭제냐는 조작의 이름일 뿐이고, 결과가 '서명 0' 이면 남은 근거도 같기 때문이다.
+// 종전에는 부분 삭제가 무조건 closeOpenLinks 라 제출완료·만료 링크가 열린 채 살아남았고,
+// 그 링크의 signedAt 하나 때문에 깨끗한 계약이 옛 스냅샷 화면에 갇혔다(502호 실측).
+// 본문 편집 쪽 closeStaleUnsignedLinks 는 현행 그대로다 — 거기서는 서명이 사라지지 않는다.
+//
+// 닫기는 closedAt 만 세운다. signedAt·templateSnapshot 같은 서명 증거는 절대 지우지 않는다 —
+// 그건 '그때 이런 내용에 서명이 들어왔다'는 사실의 기록이고, 잠금과는 별개다.
 async function closeAllLinks(leaseTermId: string): Promise<number> {
   const res = await prisma.contractShareLink.updateMany({
     where: { leaseTermId, closedAt: null },
@@ -88,7 +94,8 @@ async function closeAllLinks(leaseTermId: string): Promise<number> {
   return res.count
 }
 
-// 서명을 지웠을 때 닫아야 할 링크 — 아직 열려 있는 것 전부다. 서명이 이미 들어온 링크도 닫는다.
+// 서명을 지웠는데 **다른 서명이 아직 남아 있을 때** 닫는 링크 — 살아 있는 것 전부다.
+// 서명이 이미 들어온 링크도 닫는다.
 // 지운 서명의 출처가 계속 열려 있으면 입주자가 다시 들어가 서명할 수 있고, 운영자 화면에는
 // 방금 지운 서명이 되살아난 것처럼 보인다.
 // **제출(submittedAt)된 링크는 건드리지 않는다.** 제출본은 일부러 closedAt 을 비워 두는데
@@ -153,7 +160,8 @@ export async function clearContractSignature(
         ...(otherRemains ? {} : { signedContractSnapshot: Prisma.DbNull }),
       },
     })
-    const closedLinks = await closeOpenLinks(leaseTermId)
+    // 남은 서명이 있으면 2026-07-23 규칙대로 살아 있는 링크만, 하나도 안 남으면 제출완료·만료까지 전부.
+    const closedLinks = otherRemains ? await closeOpenLinks(leaseTermId) : await closeAllLinks(leaseTermId)
     revalidatePath('/contract')
     return { ok: true, closedLinks }
   } catch (err) {
