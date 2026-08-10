@@ -15,6 +15,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteContractFile, restoreContractFile } from '@/app/(app)/tenants/actions'
+import { IssuedContractSheet } from '@/components/doc/IssuedContractSheet'
 import type { ContractListRow, PendingIssueRow } from './actions'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -51,6 +52,8 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const [sort, setSort] = useState<'latest' | 'tenant'>('latest')
   const [pending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   // 다중 'PDF 보내기' 선택 모드 — 읽기 액션이라 STAFF 도 가능(canEdit 에 묶지 않음).
   // 다건 전송은 PDF 원본으로만 한다(mode='pdf' 강제). 단건 '보내기'는 2026-08-01 부터 사진도
@@ -330,8 +333,14 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     번호가 없는 스캔본·구본은 부를 이름 자체가 없으므로 종전 표기(파일명)를 유지한다. */}
                 {!c.contractNo ? (
                   <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
-                ) : (
+                ) : selectMode ? (
+                  // 선택 모드에선 행 전체가 체크박스라 안쪽 버튼이 클릭을 가로채면 안 된다(이름 칸과 같은 규칙)
                   <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">계약번호 {c.contractNo}</p>
+                ) : (
+                  <button type="button" onClick={() => setDetailId(c.id)}
+                    className="block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors mt-0.5">
+                    계약번호 {c.contractNo}
+                  </button>
                 )}
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.signedAt)} 서명</p>
               </div>
@@ -375,6 +384,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
           onClose={exitSelectMode}
         />
       )}
+      {detailId && <IssuedContractSheet fileId={detailId} onClose={() => setDetailId(null)} />}
     </div>
   )
 }

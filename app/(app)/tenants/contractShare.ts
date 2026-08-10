@@ -10,6 +10,8 @@ import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { buildContractData, type ContractData } from '@/lib/contractData'
+// 인쇄 사실 사영(15축)은 lib 정본을 쓴다 — 발급본 박제(ContractFile.issuedSnapshot)와 같은 축이어야 한다.
+import { printedFacts } from '@/lib/contractPrintedFacts'
 import { isContractIssued } from '@/lib/contractIssue'
 import { driveImageDataUrl } from '@/lib/google-drive'
 
@@ -217,34 +219,6 @@ export async function reopenContractShareLink(linkId: string): Promise<{ ok: tru
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '링크 다시 열기에 실패했습니다.' }
-  }
-}
-
-// 계약서 종이에 실제로 인쇄되는 값만 뽑은 사영 — 드리프트 비교는 이 객체끼리 통으로 한다.
-// 비교할 필드를 손으로 나열하면 축이 늘 때마다 여기를 잊는다. 실제로 입실자 인적사항(성명·생년월일·
-// 성별·연락처·흡연·비상연락망)과 전입신고가 통째로 빠져 있어서, 서명 뒤에 그 값들이 바뀌어도
-// 발급 경고가 뜨지 않았다. 한 사람 이름이 바뀐 계약서가 아무 말 없이 나가던 구멍이다.
-// 값이 undefined 면 '이 데이터에 그 축이 없다'는 뜻이고, 스냅샷 쪽이 그러면 비교에서 빠진다(아래 참조).
-function printedFacts(d: Partial<ContractData>): Record<string, unknown> {
-  const t = d.tenant
-  const l = d.lease
-  return {
-    'tenant.name': t?.name,
-    'tenant.birthdate': t?.birthdate,
-    'tenant.gender': t?.gender,
-    'tenant.primaryPhone': t?.primaryPhone,
-    'tenant.smoking': t?.smoking,
-    // 비상연락망은 배열이라 통비교 — 번호가 바뀌어도, 한 줄이 늘거나 줄어도 잡힌다.
-    'tenant.emergencyContacts': t?.emergencyContacts ? JSON.stringify(t.emergencyContacts) : undefined,
-    'lease.rentAmount': l?.rentAmount,
-    'lease.depositAmount': l?.depositAmount,
-    'lease.cleaningFee': l?.cleaningFee,
-    'lease.dueDay': l?.dueDay,
-    'lease.moveInDate': l?.moveInDate,
-    'lease.expectedMoveOut': l?.expectedMoveOut,
-    'lease.roomNo': l?.roomNo,
-    'lease.registrationStatus': l?.registrationStatus,
-    template: d.template ? JSON.stringify(d.template) : undefined,
   }
 }
 

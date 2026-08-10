@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
+import { IssuedContractSheet } from '@/components/doc/IssuedContractSheet'
 import {
   getContractFiles, deleteContractFile, restoreContractFile,
   createContractScanUploadSession, finalizeContractScan,
@@ -71,6 +72,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
   const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean } | null>(null)
   const [sharePending, setSharePending] = useState(false)
+  // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const reload = async () => {
     setLoading(true)
@@ -312,14 +315,17 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   <span className="block text-xs text-[var(--warm-dark)] truncate">
                     {tenantName} · {dateLabel}
                   </span>
-                  {/* 계약번호가 곧 이 발급본의 이름이다(§30 행 액션 4개는 그대로).
+                  {/* 계약번호가 곧 이 발급본의 이름이다. 눌러 발급 기록을 연다(§30 행 액션 4개는 그대로).
                       번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
                       2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
-                  {needsName && (
-                    <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">
-                      {f.contractNo ? `계약번호 ${f.contractNo}` : f.fileName}
-                    </p>
-                  )}
+                  {needsName && (f.contractNo ? (
+                    <button type="button" onClick={() => setDetailId(f.id)}
+                      className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                      계약번호 {f.contractNo}
+                    </button>
+                  ) : (
+                    <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{f.fileName}</p>
+                  ))}
                 </div>
                 <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
                 <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
@@ -333,6 +339,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           })}
         </ul>
       )}
+      {detailId && <IssuedContractSheet fileId={detailId} onClose={() => setDetailId(null)} />}
     </div>
   )
 }

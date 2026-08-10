@@ -3074,6 +3074,68 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
   }))
 }
 
+// 발급본 박제(ContractFile.issuedSnapshot)의 모양. 쓰기는 발급 트랜잭션 한 번뿐이고(app/api/contract/generate),
+// 읽기는 발급 상세 시트 하나다. 어떤 경로도 이 값을 갱신하지 않는다 — 증거이기 때문이다.
+export type IssuedContractSnapshot = {
+  v: number
+  issuedAt: string                      // 발급 시각(ISO)
+  bodySource: 'SNAPSHOT' | 'ARCHIVED' | 'LIVE'   // 본문을 어디서 가져왔나(lib/contract resolveSignedBody)
+  shareLinkId: string | null            // 원격 서명 링크로 받은 서명이면 그 링크. 없으면 대면 서명이다
+  signature: {
+    contractImage: string | null        // dataURL
+    contractSignedAt: string | null     // ISO
+    disposalImage: string | null
+    disposalSignedAt: string | null
+  }
+  facts: Record<string, unknown>        // lib/contractPrintedFacts 15축 사영
+}
+
+export type IssuedContractDetail = {
+  contractNo: string | null
+  fileName: string
+  source: 'GENERATED' | 'UPLOADED'
+  signedAt: Date
+  createdAt: Date
+  tenantName: string
+  snapshot: IssuedContractSnapshot | null
+}
+
+// 발급 상세 — 이 발급본이 무엇을 인쇄했는지의 기록 한 건. 목록 쿼리에서 분리한 이유는
+// issuedSnapshot 이 서명 dataURL 두 장을 품고 있어서다(목록 42건에 곱하면 응답이 통째로 무거워진다).
+// 게이트는 서명 이미지를 돌려주는 형제 경로(contractShare getSignedSnapshot)와 같은 requireEdit 이다.
+export async function getContractIssuedSnapshot(id: string): Promise<
+  { ok: true; detail: IssuedContractDetail } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const row = await prisma.contractFile.findFirst({
+      where: { id, propertyId },
+      select: {
+        contractNo: true, fileName: true, source: true, signedAt: true, createdAt: true,
+        issuedSnapshot: true, tenant: { select: { name: true } },
+      },
+    })
+    if (!row) return { ok: false, error: '계약서 파일을 찾을 수 없습니다.' }
+    const snap = row.issuedSnapshot as IssuedContractSnapshot | null
+    return {
+      ok: true,
+      detail: {
+        contractNo: row.contractNo,
+        fileName: row.fileName,
+        source: row.source as 'GENERATED' | 'UPLOADED',
+        signedAt: row.signedAt,
+        createdAt: row.createdAt,
+        tenantName: row.tenant.name,
+        snapshot: snap && typeof snap === 'object' ? snap : null,
+      },
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '발급 기록을 불러오지 못했습니다.' }
+  }
+}
+
 export async function deleteContractFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()

@@ -13,6 +13,8 @@ import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
+// 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
+import { printedFacts } from '@/lib/contractPrintedFacts'
 
 // puppeteer + chromium은 nodejs runtime 필수 (edge 불가).
 // Vercel: 메모리/콜드스타트 고려해 maxDuration 60s (Pro 기본 한도).
@@ -135,16 +137,24 @@ export async function POST(req: Request) {
     // 미리보기는 저장되는 것이 없으므로 화면 값을 그대로 쓴다 — 서명 전 날짜를 바꿔가며 확인하는 용도다.
     let signDate = body.signDate
     let disposalSignDate = body.signDate
+    // 발급본 박제에 쓸 값 — 위 계약일 계산과 같은 출처를 읽되 계산 자체는 건드리지 않는다.
+    // 방금 받은 서명(capturedAt)이 있으면 그것이 이 종이에 실제로 찍힌 서명의 시각이다.
+    let issuedSignatureAt: Date | null = null
+    let issuedDisposalAt: Date | null = null
+    let issuedShareLinkId: string | null = null
     if (!body.preview && lease?.id) {
       const link = await prisma.contractShareLink.findFirst({
         where: { leaseTermId: lease.id, signedAt: { not: null } },
         orderBy: { signedAt: 'desc' },
-        select: { signedAt: true, disposalSignedAt: true },
+        select: { id: true, signedAt: true, disposalSignedAt: true },
       })
       const signedAt = link?.signedAt ?? lease.signatureSignedAt ?? null
       const disposalAt = link?.disposalSignedAt ?? lease.disposalSignatureSignedAt ?? null
       if (signedAt) signDate = kstYmdStr(signedAt)
       disposalSignDate = disposalAt ? kstYmdStr(disposalAt) : signDate
+      issuedShareLinkId = link?.id ?? null
+      issuedSignatureAt = parseCapturedAt(body.signatureCapturedAt) ?? signedAt
+      issuedDisposalAt = parseCapturedAt(body.disposalSignatureCapturedAt) ?? disposalAt
     }
 
     // 표시 형식: YYYY-MM-DD → YYYY년 M월 D일
@@ -344,13 +354,51 @@ export async function POST(req: Request) {
     // 2) Drive 업로드
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `계약서_${safeTenantName}_${signDate.replace(/-/g, '')}_${Date.now()}.pdf`
+    // 발급본 박제 — 이 종이가 무엇을 인쇄했는지의 증거. 값은 방금 이 PDF 를 그릴 때 쓴 것 그대로다.
+    // DB 를 다시 읽으면 그 사이 바뀐 값이 들어와 종이와 기록이 갈린다.
+    //
+    // lease 의 서명 네 칸에 얹어 두면 서명을 지울 때 이미 발급한 계약서의 증거까지 함께 사라진다
+    // (502호 2026-08-10 — 8/6 서명 이미지 소실). 그래서 발급본 자기 자신이 들고 있는다.
+    //
+    // 축은 lib/contractPrintedFacts 정본 하나다. 드리프트 비교와 같은 15축이어야
+    // "발급 때 경고가 없었는데 기록에는 다르게 남는" 상태가 생기지 않는다.
+    // 비상연락망은 그 사영의 정의대로 등록된 비상연락처 목록이다(화면에서 손으로 고친 한 줄 텍스트가
+    // 아니라 그 줄의 원천). 흡연은 이 종이에 실제로 찍힌 값을 쓴다.
+    const issuedSnapshot = {
+      v: 1,
+      issuedAt: new Date().toISOString(),
+      bodySource: body_.source,
+      shareLinkId: issuedShareLinkId,
+      signature: {
+        contractImage: printData.signatureImageDataUrl || null,
+        contractSignedAt: issuedSignatureAt ? issuedSignatureAt.toISOString() : null,
+        disposalImage: printData.disposalSignatureImageDataUrl,
+        disposalSignedAt: issuedDisposalAt ? issuedDisposalAt.toISOString() : null,
+      },
+      facts: printedFacts({
+        tenant: {
+          name: printData.tenant.name,
+          birthdate: printData.tenant.birthdate,
+          gender: printData.tenant.gender,
+          primaryPhone: printData.tenant.primaryPhone,
+          smoking: body.smoking === '흡연',
+          emergencyContacts: tenant.contacts
+            .filter(c => c.isEmergency)
+            .map(c => ({ name: '', phone: c.contactValue, relation: c.emergencyRelation ?? null })),
+        },
+        lease: printData.lease,
+        template: printData.template,
+      }),
+    }
+
     // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
+    // 박제는 파일 정보와 **같은 문**으로 넣는다 — 나중에 따로 쓰는 경로를 두면 그것이 곧 갱신 경로가 된다.
     let record
     try {
       const { fileId } = await step(timings, 'upload', () => uploadToDrive(pdfBuffer, fileName, 'application/pdf'))
       record = await prisma.contractFile.update({
         where: { id: reserved!.id },
-        data: { driveFileId: fileId, fileName },
+        data: { driveFileId: fileId, fileName, issuedSnapshot: issuedSnapshot as unknown as object },
         select: { id: true, driveFileId: true, fileName: true, signedAt: true, contractNo: true },
       })
     } catch (e) {

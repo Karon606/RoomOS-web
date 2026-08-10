@@ -1478,6 +1478,11 @@ model ContractFile {
   // 계약번호 YYYYMMDD-NNN — 영수증 발행번호와 같은 이유로 저장한다. 스캔 업로드본은 null 이다
   // (종전에는 업로드본까지 세어 다음 앱 발급본의 번호가 건너뛰었다).
   contractNo   String?
+  // 발급 시점 박제 — 이 발급본이 무엇을 인쇄했는지의 증거.
+  // printedFacts 15축(lib/contractPrintedFacts) + 서명 2장·서명 시각 2개 + 본문 출처 + 원격 서명 링크 id.
+  // 쓰기는 발급 트랜잭션(app/api/contract/generate) 한 번뿐이다 — 어떤 경로도 이 값을 갱신하지 않는다.
+  // lease 의 서명 네 칸에 얹혀 있던 증거가 서명 삭제로 함께 사라지던 것을 끊는다(502호 2026-08-10).
+  issuedSnapshot Json?
   signedAt     DateTime           @default(now())            // 서명 일시 (사용자가 입력한 서명일 또는 업로드 시각)
   deletedAt    DateTime?                                      // 소프트삭제 — null=활성, 값=삭제됨(적용취소). 조회는 deletedAt:null 필터.
   createdAt    DateTime           @default(now())
