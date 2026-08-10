@@ -68,6 +68,10 @@ export type PrintContractData = {
   tenant: {
     name: string
     birthdate: string | null
+    // 외국인등록번호(하이픈 표기). 값이 있으면 생년월일 칸을 이 번호가 **대체**한다.
+    // 종이에 칸을 하나 더 만들지 않는 이유는 두 값이 같은 사실을 말하기 때문이다.
+    // 없으면 종전 그대로 생년월일이 찍힌다(등록번호 없는 발급본은 픽셀 단위로 무변화).
+    foreignRegNo: string | null
     gender: string
     job: string | null
     primaryPhone: string | null
@@ -236,6 +240,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .info tr { height: 7.4mm; }
   .info th { width: 30mm; background: var(--p-label-bg); font-size: 8.5pt; font-weight: 600; text-align: left; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; line-height: 1.25; }
   .info th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); letter-spacing: .01em; }
+  /* '외국인등록번호' 는 30mm 라벨 칸에서 한 줄로는 아슬아슬하다. 줄바꿈을 막고 자간만 좁혀
+     행 높이를 그대로 지킨다. 두 줄이 되면 이 행만 키가 커져 표가 흐트러진다. */
+  .info th.th-long { white-space: nowrap; letter-spacing: -.045em; }
   .info td { font-size: 9.5pt; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
   .info td.amt { font-weight: 700; color: var(--p-tc); font-variant-numeric: tabular-nums; }
   .info td .sub { font-size: 8pt; color: var(--p-muted); font-weight: 400; }
@@ -256,6 +263,12 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
   /* 서약 */
   .pledge { border: 0.6pt solid var(--p-rule-strong); background: var(--p-amt-bg); padding: 3mm 5mm; font-size: 9.5pt; font-weight: 500; line-height: 1.4; text-align: center; margin-bottom: 4mm; break-inside: avoid; }
+
+  /* 신원번호 수집·이용 동의 — 등록번호가 실린 계약서에만 코드가 붙인다(영업장 템플릿 밖).
+     환불 조항과 같은 방식이다. 템플릿에 넣으면 영업장이 지울 수 있고, 지워진 채 번호만 인쇄된다.
+     테두리 상자가 아니라 윗줄 하나로 끊는다. 상자로 두르면 12.3mm 를 먹어 축소맞춤 하한(88%)을
+     그대로 밀어붙였다(실측 2026-08-11). 서명 바로 위 한 문단이면 읽히는 자리로 충분하다. */
+  .consent-note { font-size: 7.6pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
 
   /* 서명 — 두 칸 높이를 동일 고정(height) → 밑줄 좌우 정렬. 내용은 가운데 정렬(이름이 바닥으로 안 내려감). 긴 이름 줄바꿈. */
   .sign-wrap { margin-top: 3mm; }
@@ -296,7 +309,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
   /* 페이지 분할 보호 */
   body { widows: 2; orphans: 2; }
-  .info, .emerg, .pledge, .sign-wrap, .doc-footer { page-break-inside: avoid; }
+  .info, .emerg, .pledge, .consent-note, .sign-wrap, .doc-footer { page-break-inside: avoid; }
   .doc-footer { page-break-before: avoid; }
 </style>
 </head>
@@ -329,7 +342,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
           <th>연락처<span class="en">Mobile Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td>
         </tr>
         <tr>
-          <th>생년월일<span class="en">Date of Birth</span></th><td class="num">${escape(fmtDate(d.tenant.birthdate))}</td>
+          ${d.tenant.foreignRegNo
+            ? `<th class="th-long">외국인등록번호<span class="en">Alien Reg. No.</span></th><td class="num">${escape(d.tenant.foreignRegNo)}</td>`
+            : `<th>생년월일<span class="en">Date of Birth</span></th><td class="num">${escape(fmtDate(d.tenant.birthdate))}</td>`}
           <th>성별<span class="en">Gender</span></th><td>${escape(d.tenant.gender)}</td>
         </tr>
         <tr>
@@ -358,6 +373,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     <div class="clauses">${clausesHtml}</div>
 
     <div class="pledge">${escape(renderContractText(d.template.oathText, vars))}</div>
+
+    ${d.tenant.foreignRegNo ? `<div class="consent-note">본인은 위 외국인등록번호가 임대차 계약 체결과 관계기관 제출 목적으로 수집·이용되는 데 동의합니다. / I consent to the collection and use of my alien registration number for this lease agreement.</div>` : ''}
 
     <div class="sign-wrap">
       <div class="sign-date num">${escape(d.signDate)}</div>

@@ -11,6 +11,8 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/documentName'
+import { formatForeignRegNo } from '@/lib/foreignRegNo'
+import { readStoredForeignRegNo } from '@/lib/pii'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -36,6 +38,17 @@ export type ContractData = {
     englishName: string | null   // 고객 정보의 영문 이름. 없으면 선택 UI 자체를 안 그린다
     nameStyle: DocNameStyle      // 지금 고른 표기(lease 표시값에서 옴, 계약이 없으면 기본값)
     birthdate: string | null   // YYYY-MM-DD
+    /**
+     * 이 계약서의 생년월일 칸에 대신 찍을 외국인등록번호(하이픈 표기). 없으면 null 이고 종전대로 생년월일이 찍힌다.
+     *
+     * **평문이다.** 이 값을 담은 채로 어디에 저장하면 안 된다.
+     *   - 원격 서명 링크 스냅샷: contractShare 가 null 로 지우고, /sign 은 렌더할 때 서버가 다시 복호해 끼운다.
+     *   - 발급본 박제: 마스킹 + HMAC 지문만 남긴다(lib/pii foreignRegNoFact).
+     * 권한이 없는 역할에는 호출부(getContractData)가 마스킹으로 바꿔 내려보낸다.
+     */
+    foreignRegNo: string | null
+    /** 등록번호가 등록돼 있는가. 평문을 지운 스냅샷에서도 남아, 링크 시도 한도와 발급 확인창이 이 값을 본다. */
+    hasForeignRegNo: boolean
     gender: string             // '남' | '여' | ''
     job: string | null
     smoking: boolean             // 흡연 여부 — 계약서 흡연란 기본값 (고객관리에서 설정)
@@ -115,6 +128,10 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       relation: c.emergencyRelation ?? null,
     }))
 
+  // 외국인등록번호는 여기서 딱 한 번 복호한다. 이 함수의 반환값은 평문을 품으므로,
+  // 저장하는 호출부(원격 서명 링크 스냅샷)는 담기 전에 지워야 한다(contractShare).
+  const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
+
   // 본문 선택은 resolveSignedBody 한 곳이 정한다. 서명이 끝난 계약은 박제본을 읽으므로
   // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 규칙을 여기서 복제하면 발급 API 와 갈린다.
   const body = resolveSignedBody(lease, property)
@@ -150,6 +167,8 @@ export async function buildContractData(tenantId: string, propertyId: string): P
       englishName: tenant.englishName,
       nameStyle,
       birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
+      foreignRegNo: foreignRegNo ? formatForeignRegNo(foreignRegNo) : null,
+      hasForeignRegNo: !!tenant.foreignRegNoEnc,
       gender: GENDER_LABEL[tenant.gender] ?? '',
       job: tenant.job,
       smoking: (tenant as { smoking?: boolean }).smoking ?? false,

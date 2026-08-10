@@ -16,6 +16,8 @@ import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
+import { formatForeignRegNo } from '@/lib/foreignRegNo'
+import { foreignRegNoFact, readStoredForeignRegNo } from '@/lib/pii'
 
 // puppeteer + chromium은 nodejs runtime 필수 (edge 불가).
 // Vercel: 메모리/콜드스타트 고려해 maxDuration 60s (Pro 기본 한도).
@@ -136,6 +138,8 @@ export async function POST(req: Request) {
     // 클라이언트가 보낸 이름을 믿으면 이 API 를 직접 불러 아무 이름으로나 발급할 수 있다.
     const leaseFields = lease ? contractLeaseFields(lease) : null
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
+    // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
+    const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
 
     // 계약일은 서버가 다시 정한다. 화면이 잠겨도 이 API 를 직접 부르면 아무 날짜나 들어오고,
     // 그 값이 계약번호·파일명·보관 레코드까지 결정하기 때문이다.
@@ -232,6 +236,9 @@ export async function POST(req: Request) {
       tenant: {
         name: printedTenantName,
         birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
+        // 등록번호가 있으면 종이의 생년월일 칸을 이 번호가 대체한다. 값은 서버가 직접 복호한다 —
+        // 클라이언트가 보낸 번호를 믿으면 이 API 를 직접 불러 아무 번호나 인쇄할 수 있다.
+        foreignRegNo: foreignRegNo ? formatForeignRegNo(foreignRegNo) : null,
         gender: GENDER_LABEL[tenant.gender] ?? '',
         job: tenant.job,
         primaryPhone: primaryContact?.contactValue ?? null,
@@ -387,6 +394,9 @@ export async function POST(req: Request) {
         tenant: {
           name: printData.tenant.name,
           birthdate: printData.tenant.birthdate,
+          // 박제에는 평문을 남기지 않는다. 마스킹 + HMAC 지문이라 "이 종이에 어떤 번호가 찍혔는가" 는
+          // 지문 대조로 답할 수 있고, 기록만 털린 사람이 번호를 복원할 길은 없다.
+          foreignRegNoFact: foreignRegNoFact(foreignRegNo),
           gender: printData.tenant.gender,
           primaryPhone: printData.tenant.primaryPhone,
           smoking: body.smoking === '흡연',

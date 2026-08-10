@@ -36,6 +36,8 @@ function factText(key: PrintedFactKey, v: unknown): string {
   if (v === undefined) return '기록 없음'
   if (v === null || v === '') return '없음'
   if (key === 'tenant.smoking') return v === true ? '흡연' : '비흡연'
+  // 박제값은 `900101-*******#<hmac8>` 이다. 지문은 대조용이지 사람이 읽을 것이 아니라 안 그린다.
+  if (key === 'tenant.foreignRegNo') return String(v).split('#')[0]
   if (key === 'tenant.emergencyContacts') {
     try {
       const list = JSON.parse(String(v)) as Array<{ phone?: string; relation?: string | null }>

@@ -11,6 +11,15 @@ export type PrintedFactsInput = {
   tenant?: {
     name?: string
     birthdate?: string | null
+    /**
+     * 외국인등록번호 축의 **이미 안전해진** 값. `900101-*******#<hmac8>` 모양이고 평문이 아니다.
+     *
+     * 여기서 마스킹·지문을 만들지 않는 이유가 둘이다. 하나, 지문 키가 lib/pii 에 있고 그 모듈은
+     * 'server-only' 라 이 파일이 부르면 발급 상세 시트(클라이언트)가 통째로 빌드에서 깨진다.
+     * 둘, 부르는 쪽이 값을 만들어 넣게 해 두면 **평문을 넣을 길 자체가 이 축에 없다.**
+     * 등록번호가 없는 사람은 null 이다(축이 아예 없는 undefined 와 구분된다).
+     */
+    foreignRegNoFact?: string | null
     gender?: string
     primaryPhone?: string | null
     smoking?: boolean
@@ -31,7 +40,7 @@ export type PrintedFactsInput = {
 
 /** 축 순서 — 발급 상세 시트가 이 순서로 표를 그린다(종이의 위에서 아래 순서). */
 export const PRINTED_FACT_KEYS = [
-  'tenant.name', 'tenant.birthdate', 'tenant.gender', 'tenant.primaryPhone',
+  'tenant.name', 'tenant.birthdate', 'tenant.foreignRegNo', 'tenant.gender', 'tenant.primaryPhone',
   'tenant.smoking', 'tenant.emergencyContacts',
   'lease.roomNo', 'lease.moveInDate', 'lease.expectedMoveOut',
   'lease.rentAmount', 'lease.depositAmount', 'lease.cleaningFee',
@@ -45,6 +54,7 @@ export type PrintedFactKey = (typeof PRINTED_FACT_KEYS)[number]
 export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'tenant.name': '성명',
   'tenant.birthdate': '생년월일',
+  'tenant.foreignRegNo': '외국인등록번호',
   'tenant.gender': '성별',
   'tenant.primaryPhone': '연락처',
   'tenant.smoking': '흡연',
@@ -70,6 +80,8 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
   return {
     'tenant.name': t?.name,
     'tenant.birthdate': t?.birthdate,
+    // 이미 마스킹 + 지문으로 굳은 값만 지나간다. 평문이 이 축에 들어오는 길은 없다(위 타입 주석).
+    'tenant.foreignRegNo': t?.foreignRegNoFact,
     'tenant.gender': t?.gender,
     'tenant.primaryPhone': t?.primaryPhone,
     'tenant.smoking': t?.smoking,

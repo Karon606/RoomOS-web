@@ -999,7 +999,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
-              <th>생년월일<span className="en">Date of Birth</span></th><td className="num">{fmtDate(data.tenant.birthdate)}</td>
+              {/* 등록번호가 있으면 생년월일 칸을 그 번호가 대체한다(인쇄본 contractPrintHtml 과 같은 규칙).
+                  두 값이 같은 사실을 말하므로 칸을 더 만들지 않는다. */}
+              {data.tenant.foreignRegNo ? (
+                <>
+                  <th className="th-long">외국인등록번호<span className="en">Alien Reg. No.</span></th>
+                  <td className="num">{data.tenant.foreignRegNo}</td>
+                </>
+              ) : (
+                <>
+                  <th>생년월일<span className="en">Date of Birth</span></th>
+                  <td className="num">{fmtDate(data.tenant.birthdate)}</td>
+                </>
+              )}
               <th>성별<span className="en">Gender</span></th><td>{data.tenant.gender}</td>
             </tr>
             <tr>
@@ -1132,6 +1144,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <input type="text" value={draft.oathText} onChange={e => setDraft(t => ({ ...t, oathText: e.target.value }))} className="pledge-edit no-print" />
         ) : (
           <div className="pledge">{renderContractText(view.oathText, vars)}</div>
+        )}
+
+        {/* 신원번호 수집·이용 동의 — 등록번호가 실린 계약서에만 코드가 붙인다(영업장 템플릿 밖).
+            환불 조항과 같은 방식이다. 템플릿에 넣으면 영업장이 지울 수 있고, 지워진 채 번호만 인쇄된다. */}
+        {data.tenant.foreignRegNo && (
+          <div className="consent-note">본인은 위 외국인등록번호가 임대차 계약 체결과 관계기관 제출 목적으로 수집·이용되는 데 동의합니다. / I consent to the collection and use of my alien registration number for this lease agreement.</div>
         )}
 
         {/* 서명 */}
@@ -1447,6 +1465,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .contract-paper .info tr { height: 7.4mm; }
         .contract-paper .info th { width: 30mm; background: var(--p-label-bg); font-size: 8.5pt; font-weight: 600; text-align: left; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; line-height: 1.25; }
         .contract-paper .info th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); letter-spacing: .01em; }
+        /* '외국인등록번호' 는 30mm 라벨 칸에서 한 줄로는 아슬아슬하다(실측 17.19mm / 여유 6.81mm).
+           줄바꿈을 막고 자간만 좁혀 행 높이를 그대로 지킨다. 인쇄본(contractPrintHtml)과 같은 규칙. */
+        .contract-paper .info th.th-long { white-space: nowrap; letter-spacing: -.045em; }
         .contract-paper .info td { font-size: 9.5pt; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
         .contract-paper .info td.amt { font-weight: 700; color: var(--p-tc); font-variant-numeric: tabular-nums; }
         .contract-paper .info td .sub { font-size: 8pt; color: var(--p-muted); font-weight: 400; }
@@ -1476,6 +1497,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
         /* 서약 */
         .contract-paper .pledge { border: 0.6pt solid var(--p-rule-strong); background: var(--p-amt-bg); padding: 3mm 5mm; font-size: 9.5pt; font-weight: 500; line-height: 1.45; text-align: center; margin-bottom: 4.5mm; break-inside: avoid; }
+        /* 신원번호 수집·이용 동의 — 인쇄본(contractPrintHtml .consent-note)과 같은 값이어야 화면과 종이가 갈리지 않는다. */
+        .contract-paper .consent-note { font-size: 7.6pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
         .contract-paper .pledge-edit { width: 100%; padding: 3mm 5mm; border: 1px solid #d6cdbb; border-radius: 6px; text-align: center; font-size: 9.5pt; font-weight: 500; margin-bottom: 4.5mm; background: #fffaf2; font-family: inherit; }
 
         /* 서명 */
@@ -1573,7 +1596,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           }
           /* 페이지 split 보호 */
           .contract-paper .info, .contract-paper .emerg,
-          .contract-paper .pledge, .contract-paper .sign-wrap, .contract-paper .doc-footer { page-break-inside: avoid; }
+          .contract-paper .pledge, .contract-paper .consent-note, .contract-paper .sign-wrap, .contract-paper .doc-footer { page-break-inside: avoid; }
           .contract-paper .doc-footer { page-break-before: avoid; }
           .contract-paper.disposal-paper { page-break-before: always; margin-top: 0; }
           body { widows: 2; orphans: 2; }
