@@ -506,6 +506,24 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {...(opts?.date ? {} : { onBlur: (e: React.FocusEvent<HTMLInputElement>) => commitField(key, e.target.value) })}
     />
   )
+  // 성명 표기 선택 — 값 칸이 아니라 **라벨 칸**에 붙는다(실거주 확인서 툴바 '성명 [한글]' 문법).
+  // 값 칸에 두면 이름 옆에 컨트롤이 서서, 종이에 찍힐 성명이 한 줄인지 두 줄인지 화면에서 읽히지
+  // 않았다(운영자 지적 2026-08-11). 값 칸에는 이름만 남는다.
+  // 원격 화면에는 안 그리고, 서명이 끝난 계약서는 다른 표시값 칸과 같은 cell-locked 로 이유를 말한다.
+  const nameStylePicker = !remote && canPickName ? (
+    bodyLocked ? (
+      <button type="button" className="no-print cell-locked th-picker" onClick={notifyFieldsLocked}>
+        {DOC_NAME_STYLE_LABEL[asDocNameStyle(fields.nameStyle) ?? DEFAULT_DOC_NAME_STYLE]}
+      </button>
+    ) : (
+      <select className="no-print cell-select th-picker" aria-label="성명 표기" style={CELL_SELECT_STYLE}
+        value={fields.nameStyle} onChange={e => handleNameStyleChange(e.target.value)}>
+        <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
+        <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+      </select>
+    )
+  ) : null
+
   const signDateEffective = fixedSignDate
     ?? (signatureCapturedAt ? kstYmdStr(new Date(signatureCapturedAt)) : signDate)
   const disposalDateEffective = fixedDisposalSignDate
@@ -983,21 +1001,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         <table className="info">
           <tbody>
             <tr>
-              <th>성명<span className="en">Name</span></th>
-              <td>
-                {/* 영문 이름이 등록된 입주자에게만 표기 선택이 붙는다. 문법은 전입신고·흡연 셀과 같은
-                    cell-select 이고, 값·라벨 짝은 보증금 셀의 field-pair 를 그대로 쓴다. */}
-                {canPickName ? fieldCell(printedName, (
-                  <span className="no-print field-pair">
-                    <span>{printedName}</span>
-                    <select className="cell-select" aria-label="성명 표기" style={CELL_SELECT_STYLE}
-                      value={fields.nameStyle} onChange={e => handleNameStyleChange(e.target.value)}>
-                      <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
-                      <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
-                    </select>
-                  </span>
-                )) : printedName}
-              </td>
+              <th>성명{nameStylePicker}<span className="en">Name</span></th>
+              <td>{printedName}</td>
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
@@ -1486,6 +1491,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .contract-paper .field-pair-lbl { font-size: 7pt; color: var(--p-muted); font-weight: 400; white-space: nowrap; }
         /* 서명이 끝나 못 고치는 칸 — 입력칸 모양을 벗고 값만 보인다(§12). 누르면 이유를 말한다. */
         .contract-paper .cell-locked { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+        /* 라벨 칸에 붙는 선택(성명 표기) — 라벨 글자와 같은 줄에 서고 줄바꿈되지 않는다. 인쇄에는 안 나간다. */
+        .contract-paper .info th .th-picker { margin-left: 1.5mm; vertical-align: middle; white-space: nowrap; }
 
         /* 조항 — 2단 */
         .contract-paper .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
