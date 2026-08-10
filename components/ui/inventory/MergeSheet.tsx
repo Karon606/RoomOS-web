@@ -5,34 +5,42 @@
 // 적용취소는 실행 후 v2.0 §16 undo 토스트 — 환경설정에 숨기지 않음(호출부가 토스트로 처리).
 import React, { useEffect, useState } from 'react'
 
-export type MergeTarget = { id: string; label: string }
+export type MergeTarget = { id: string; label: string; meta?: string }
 
 export function MergeSheet({
-  open, onClose, sourceLabel, targets,
+  open, onClose, sourceLabel, sourceId, sourceMeta, targets,
   title = '합치기', description, note, confirmLabel = '합치기',
   onConfirm, pending = false, z = 200,
 }: {
   open: boolean
   onClose: () => void
   sourceLabel: string          // 사라질(합쳐질) 쪽 — "이 품목" 또는 "선택 N개"
+  /** 1대1 진입점에서만 전달 — 주면 방향 바꾸기 버튼이 켜지고 이 쪽도 '남을' 쪽이 될 수 있다. */
+  sourceId?: string
+  sourceMeta?: string          // 이 쪽 식별 메타 1줄(구매일·구매처·수량·금액)
   targets: MergeTarget[]       // 남을(대표) 후보
   title?: string
   description?: React.ReactNode
   note?: React.ReactNode       // 세트→개수 환산 등 추가 안내(강조 톤)
   confirmLabel?: string
-  onConfirm: (destId: string) => void
+  onConfirm: (destId: string, srcId?: string) => void
   pending?: boolean
   /** 모달 위에서 열 때 260(=--z-modal-2). 기본은 페이지 레벨(--z-modal). */
   z?: 200 | 260
 }) {
   const [destId, setDestId] = useState('')
   const [shown, setShown] = useState(false)
+  const [flipped, setFlipped] = useState(false)   // 방향 뒤집힘 — 고른 쪽이 사라지고 이 품목이 남는다
   useEffect(() => {
-    if (open) { setDestId(''); const t = setTimeout(() => setShown(true), 10); return () => clearTimeout(t) }
+    if (open) { setDestId(''); setFlipped(false); const t = setTimeout(() => setShown(true), 10); return () => clearTimeout(t) }
     setShown(false)
   }, [open])
   if (!open) return null
   const dest = targets.find(t => t.id === destId)
+  const canFlip = !!sourceId
+  // 라벨은 고정(위=사라짐 / 아래=남음), 내용만 자리를 바꾼다
+  const gone = flipped && dest ? { label: dest.label, meta: dest.meta } : { label: sourceLabel, meta: sourceMeta }
+  const keep = flipped ? { label: sourceLabel, meta: sourceMeta } : { label: dest?.label ?? '', meta: dest?.meta }
 
   return (
     // 하단 시트라 패딩 합산이 시트를 키보드(대상 선택 select 의 iOS 피커) 위로 밀어 올린다
@@ -49,27 +57,42 @@ export function MergeSheet({
           <p className="mt-2 rounded-lg border border-[var(--coral)]/30 bg-[var(--coral-pale)] px-3 py-2 text-[0.75rem] leading-relaxed text-[var(--warm-dark)]">{note}</p>
         )}
 
-        {/* 대상 선택 — 남을(대표) 카드 */}
-        <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">합칠 대상 (남을 품목)</label>
+        {/* 대상 선택 — 방향을 바꿀 수 있는 진입점에서는 '남을 쪽'을 단정하지 않는다 */}
+        <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">{canFlip ? '합칠 상대' : '합칠 대상 (남을 품목)'}</label>
         <select value={destId} onChange={e => setDestId(e.target.value)} disabled={pending}
           className="mt-1.5 h-11 w-full rounded-lg border-[1.5px] border-[var(--warm-border)] bg-[var(--canvas)] px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-          <option value="">대표(남을 품목) 선택…</option>
-          {targets.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          <option value="">{canFlip ? '상대 품목 선택…' : '대표(남을 품목) 선택…'}</option>
+          {targets.map(t => <option key={t.id} value={t.id}>{t.meta ? `${t.label} · ${t.meta}` : t.label}</option>)}
         </select>
 
-        {/* 방향 고지 — 무엇이 사라지고 무엇이 남는지 */}
+        {/* 방향 고지 — 세로 2행(위 사라짐 / 아래 남음). 같은 이름 다른 규격을 메타로 구분한다(신고 9a9ed836). */}
         {dest && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5">
-            <div className="min-w-0 flex-1">
+          <div className="mt-3 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2">
+            <div className="rounded-lg px-2.5 py-2 transition-colors duration-[var(--dur-base)]">
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">합쳐질(사라짐)</p>
-              <p className="truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{sourceLabel}</p>
+              <p className="text-[0.8125rem] font-semibold leading-snug text-[var(--warm-dark)]">{gone.label}</p>
+              {gone.meta && <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]">{gone.meta}</p>}
             </div>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
-            <div className="min-w-0 flex-1 text-right">
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">남을(대표)</p>
-              <p className="truncate text-[0.8125rem] font-semibold text-[var(--coral)]">{dest.label}</p>
+            <div className="flex items-center justify-center">
+              {canFlip ? (
+                <button type="button" onClick={() => setFlipped(f => !f)} disabled={pending}
+                  aria-label="합쳐질 품목과 남을 품목 방향 바꾸기"
+                  className="inline-flex h-11 min-w-[44px] items-center justify-center gap-1.5 rounded-lg px-2.5 text-[var(--warm-mid)] transition-colors duration-[var(--dur-base)] hover:bg-[var(--cream-2)] hover:text-[var(--coral)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 disabled:opacity-50">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M12 5v14M6 13l6 6 6-6" />
+                  </svg>
+                  <span className="text-[10.5px] leading-none">방향 바꾸기</span>
+                </button>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="my-1" aria-hidden>
+                  <path d="M12 5v14M6 13l6 6 6-6" />
+                </svg>
+              )}
+            </div>
+            <div className="rounded-lg bg-[var(--coral-pale)] px-2.5 py-2 transition-colors duration-[var(--dur-base)]">
+              <p className="text-[0.65625rem] text-[var(--coral)]">남을(대표)</p>
+              <p className="text-[0.8125rem] font-semibold leading-snug text-[var(--warm-dark)]">{keep.label}</p>
+              {keep.meta && <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">{keep.meta}</p>}
             </div>
           </div>
         )}
@@ -77,7 +100,7 @@ export function MergeSheet({
         <div className="mt-4 flex gap-2">
           <button type="button" onClick={onClose} disabled={pending}
             className="h-[46px] flex-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--cream-2)] disabled:opacity-50">취소</button>
-          <button type="button" onClick={() => dest && onConfirm(dest.id)} disabled={pending || !dest}
+          <button type="button" onClick={() => { if (!dest) return; if (flipped && sourceId) onConfirm(sourceId, dest.id); else onConfirm(dest.id) }} disabled={pending || !dest}
             className="h-[46px] flex-[1.6] rounded-lg bg-[var(--coral)] text-sm font-semibold text-[var(--on-solid)] transition-colors hover:bg-[var(--coral-dark)] disabled:opacity-50">
             {pending ? '합치는 중…' : confirmLabel}
           </button>
