@@ -704,8 +704,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         amount,
         detail:             detail || null,
         itemLabel:          itemLabel || null,
-        specUnit:           specUnit || null,
-        qtyUnit:            qtyUnit || null,
+        // 다품목 경로와 같은 정화 — 운영자가 단위 칸에 '-' 를 쳐도 뜻 없는 표기는 저장하지 않는다.
+        specUnit:           cleanUnit(specUnit) ?? null,
+        qtyUnit:            cleanUnit(qtyUnit)  ?? null,
         specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
         // 서술형 규격(색상·사이즈) — 다품목 경로만 저장하고 단일 품목은 유실되던 버그(오류신고 48376868)
         specText:           specTextRaw || null,
@@ -822,7 +823,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       const rows = expandExpenseRows(multiItems, roomId || null)
       const firstRow = rows[0]
       const restRows = rows.slice(1)
-      const detailOf = (r: ExpandedRow) => `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`
+      const detailOf = (r: ExpandedRow) => `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${cleanUnit(r.it.specUnit) ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${cleanUnit(r.it.qtyUnit) ?? ''}` : ''}`
 
       await prisma.$transaction([
         prisma.expense.update({
@@ -841,8 +842,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             settleStatus:       baseSettleStatus,
             roomId:             firstRow.roomId,
             itemLabel: firstRow.it.label,
-            specUnit:  firstRow.it.specUnit || null,
-            qtyUnit:   firstRow.it.qtyUnit  || null,
+            // 등록 경로(addExpense)와 같은 정화 — 수정 저장으로도 뜻 없는 단위가 새로 들어오지 않게.
+            specUnit:  cleanUnit(firstRow.it.specUnit) ?? null,
+            qtyUnit:   cleanUnit(firstRow.it.qtyUnit)  ?? null,
             specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
             specText:  firstRow.it.specText || null,
             unitBasis: firstRow.it.unitBasis || null,
@@ -869,8 +871,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             settleStatus:       baseSettleStatus,
             roomId:             r.roomId,
             itemLabel: r.it.label,
-            specUnit:  r.it.specUnit || null,
-            qtyUnit:   r.it.qtyUnit  || null,
+            specUnit:  cleanUnit(r.it.specUnit) ?? null,
+            qtyUnit:   cleanUnit(r.it.qtyUnit)  ?? null,
             specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
             specText:  r.it.specText || null,
             unitBasis: r.it.unitBasis || null,
@@ -923,8 +925,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         // 폼이 품목 필드를 아예 안 보낸 편집(카테고리만 수정 등)에서는 기존 값 보존 —
         // null 덮어쓰기로 품목 연결이 끊겨 재고에서 증발하던 버그(종량제봉투 2026-07-10)
         ...(formData.has('itemLabel') ? { itemLabel: itemLabel || null } : {}),
-        ...(formData.has('specUnit') ? { specUnit: specUnit || null } : {}),
-        ...(formData.has('qtyUnit') ? { qtyUnit: qtyUnit || null } : {}),
+        ...(formData.has('specUnit') ? { specUnit: cleanUnit(specUnit) ?? null } : {}),
+        ...(formData.has('qtyUnit') ? { qtyUnit: cleanUnit(qtyUnit) ?? null } : {}),
         ...(formData.has('specValue') ? { specValue: specValueRaw ? parseFloat(specValueRaw) : null } : {}),
         ...(formData.has('qtyValue') ? { qtyValue: qtyValueRaw ? parseFloat(qtyValueRaw) : null } : {}),
         // 서술형 규격·단가 기준 — 미전송 편집(카테고리만 수정 등)에선 기존 값 보존(위 5필드와 동일 가드)
