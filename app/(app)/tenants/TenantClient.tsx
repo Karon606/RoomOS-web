@@ -3492,6 +3492,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 defaultValue={initialInquiry.time}
                 onChange={e => setInquiryTimeVal(e.target.value)}
                 disabled={!inquiryDateVal}
+                aria-label="입실 문의 시각"
                 className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
               />
             </div>
@@ -3541,7 +3542,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 onChange={e => setTourTimeVal(e.target.value)}
                 min={tourMinTime}
                 disabled={!tourDateVal} aria-label="투어 예정 시간"
-                className="w-[110px] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors disabled:opacity-40" />
+                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors disabled:opacity-40" />
             </div>
             {tourTimeTooEarly ? (
               <p className="text-[0.65625rem] text-[var(--danger-fg)]">투어 시간은 입실 문의 시각({fmtHM12(tourMinTime!)}) 이후로 넣어 주세요.</p>
