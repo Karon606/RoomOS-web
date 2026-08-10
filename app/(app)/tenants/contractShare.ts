@@ -11,6 +11,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { buildContractData, type ContractData } from '@/lib/contractData'
 import { isContractIssued } from '@/lib/contractIssue'
+import { driveImageDataUrl } from '@/lib/google-drive'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -287,6 +288,42 @@ export async function getSignedSnapshot(tenantId: string, linkId: string): Promi
     signatureSignedDate: link.signedAt ? kstYmdStr(new Date(link.signedAt)) : null,
     disposalSignatureSignedDate: link.disposalSignedAt ? kstYmdStr(new Date(link.disposalSignedAt)) : null,
   } : null
+  // 로고·도장은 **읽는 순간에** 다시 해석한다. 8/8 이전에 만들어진 스냅샷은 두 값이 Drive 썸네일
+  // 외부 URL 이라(로고 12건·도장 7건) 브라우저가 못 받아 서명본 화면에서 빈칸으로 보인다.
+  // 발급 PDF 는 route 가 매번 driveImageDataUrl 로 다시 만드니 영향이 없지만, 화면은 스냅샷을 그대로 그린다.
+  // 저장값은 건드리지 않는다 — 스냅샷은 '서명 시점의 사실' 이고, 로고·도장은 그 사실이 아니라 표시 자산이다.
+  const images = await resolveSnapshotImages(snap, propertyId)
   // as 캐스트를 걷었다 — 위 어긋남을 6일 동안 숨긴 것이 이 캐스트다.
-  return { ...snap, lease }
+  return { ...snap, ...images, lease }
+}
+
+// 스냅샷의 로고·도장이 data URL 이 아니면 현재 영업장 설정에서 바이트로 다시 만든다.
+// 실패하면 null 이다(화면이 죽는 것보다 로고 없이 뜨는 편이 낫다). 둘 다 이미 data URL 이면 조회조차 안 한다.
+async function resolveSnapshotImages(
+  snap: ContractData, propertyId: string,
+): Promise<Pick<ContractData, 'logoImageUrl' | 'stampImageUrl'>> {
+  const stale = (v: string | null | undefined) => !!v && !v.startsWith('data:')
+  if (!stale(snap.logoImageUrl) && !stale(snap.stampImageUrl)) {
+    return { logoImageUrl: snap.logoImageUrl ?? null, stampImageUrl: snap.stampImageUrl ?? null }
+  }
+  try {
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { logoDriveFileId: true, stampDriveFileId: true },
+    })
+    const [logo, stamp] = await Promise.all([
+      stale(snap.logoImageUrl) && property?.logoDriveFileId ? driveImageDataUrl(property.logoDriveFileId) : Promise.resolve(null),
+      stale(snap.stampImageUrl) && property?.stampDriveFileId ? driveImageDataUrl(property.stampDriveFileId) : Promise.resolve(null),
+    ])
+    return {
+      logoImageUrl: stale(snap.logoImageUrl) ? logo : (snap.logoImageUrl ?? null),
+      stampImageUrl: stale(snap.stampImageUrl) ? stamp : (snap.stampImageUrl ?? null),
+    }
+  } catch (e) {
+    console.error('[contractShare] 서명본 로고·도장 재해석 실패:', e)
+    return {
+      logoImageUrl: stale(snap.logoImageUrl) ? null : (snap.logoImageUrl ?? null),
+      stampImageUrl: stale(snap.stampImageUrl) ? null : (snap.stampImageUrl ?? null),
+    }
+  }
 }
