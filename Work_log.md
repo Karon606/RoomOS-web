@@ -2900,3 +2900,12 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **감지망 2종**: check-naive-datetime(verify:fast, 오프셋 없는 일시 파싱·로컬 시각 게터, allowlist 는 ThemeProvider 1곳), check-inquiry-drift(verify:db, 9h 배수 지문 — 기준선 13건, 백필 후 하향 예정). 역주입 4종 전부 탐지 확인.
 - **저장 피드백은 이미 있었다** — 조용해 보인 건 토스트 부재가 아니라 값이 되밀려서. 투어 min 차단은 운영자 결정으로 유지.
 - **백필 대기**: 활성 퍼널 대조표 운영자 회신 대기(9h 배수 = 저장 횟수라 산술 복원 가능하나 손입력 혼입 가능성 때문에 대조 우선).
+
+## 2026-08-10 (6) — 입주 가능 확대 + 배정 연동 + 503호 (신고 54656796, 4452102..c58613f)
+- **판정**: 칩 키가 아니라 방 단위 술어(roomAvailability)로. 점유 계약(RESERVED·ACTIVE·CHECKOUT_PENDING) 전부에 퇴실 예정일이 있으면 '곧 입주 가능', 입주 가능일 = max(퇴실일)+1. NON_RESIDENT 분기 유지(415호·사무실 오탐 방지). 입주 가능 5 → **7**(409 8/18·404 9/1 추가), 다른 칩 불변.
+- **카드**: [입실 예약][퇴실 예정] 나란히 뱃지(§11 병렬, StatusBadge secondary 정본) + 보조줄 "8/11 입주 예정 · 8/17 퇴실 D-7"(기존 헬퍼 join). InfoHint 문구 교체. 모바일 320px + 아주 큰 글씨 조합만 13px 잘림(보고만, 공용 컴포넌트라 범위 밖).
+- **503호(승인)**: primary lease 를 거주 우선으로 — 예약이 최신이면 실거주자가 카드에서 사라지던 결함. 송호준·퇴실 예정 복귀, 퇴실 예정 칩 5 → 6, 입실 예약 6 → 5. actions.ts 의 사실과 반대인 정렬 주석 정정, take 2 → 3(3계약 방에서 NON_RESIDENT 잘림 방지).
+- **배정 연동(승인, 한 세트)**: 무기한 예약만 차단, 퇴실일 있는 예약은 겹침 경고 후 재량(confirmRoomOverlap 위임). 화면·서버 같은 규칙(8/7 봉합 클래스 재발 금지). 10케이스 재현 전부 일치.
+- **감지망**: check-room-availability-drift(verify:db) — 날짜 잡힌 예약이 판정에서 빠지는 방 감지, 실데이터 오탐 0.
+- **별건 관찰(승인 대상)**: EntityModal 호실 면(getRoomDetail·getRoomQuickInfo, createdAt desc take 1)이 제3의 선택 규칙이라 **카드는 송호준인데 눌러 열면 Arafat** — 이번 수정으로 드러난 기존 드리프트.
+- **저장소 위생**: .git 안 iCloud 중복(refs 'main 2'·index 사본 8개·logs 사본 1개) 제거 — git fsck·log --all 이 bad object 로 죽던 원인.
