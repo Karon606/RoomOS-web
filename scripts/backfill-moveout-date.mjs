@@ -8,7 +8,7 @@ const p = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.e
 const targets = await p.leaseTerm.findMany({
   where: { status: 'CHECKED_OUT', moveOutDate: null },
   select: { id: true, expectedMoveOut: true, tenant: { select: { name: true } },
-    statusLogs: { where: { toStatus: 'CHECKED_OUT' }, orderBy: { changedAt: 'desc' }, take: 1, select: { changedAt: true } } },
+    statusLogs: { where: { deletedAt: null, toStatus: 'CHECKED_OUT' }, orderBy: { changedAt: 'desc' }, take: 1, select: { changedAt: true } } },
 })
 console.log('대상:', targets.length, '건')
 for (const l of targets) {

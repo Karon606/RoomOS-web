@@ -110,7 +110,10 @@ export async function getTenants() {
             // 확정 순간이 아니다. 여기를 빼면 가장 자연스러운 수집 지점의 값이 표·카드에서 사라진다.
             // take 를 늘려 화면이 골라 쓴다 — 사유 있는 최신 한 건(표시)과 최신 CANCELLED(취소 단계)는
             // 서로 다른 행일 수 있어서 한 건만 가져오면 둘 중 하나가 죽는다.
-            where: { toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } },
+            // deletedAt 은 손수 적는다 — 중첩 관계 조회는 소프트삭제 자동필터가 안 걸린다.
+            // 여기가 무효 처리의 결정적 자리다(신고 e000c791): 잘못 적힌 퇴실 사유를 안 거르면
+            // 그 사람이 실제로 퇴실하는 날 목록·카드의 퇴실 사유로 그대로 튀어나온다.
+            where: { deletedAt: null, toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } },
             orderBy: { changedAt: 'desc' },
             take: 5,
             select: { fromStatus: true, toStatus: true, reason: true },

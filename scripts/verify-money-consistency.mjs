@@ -649,9 +649,28 @@ for (const [file, src] of [['TenantStatusTransitions', readFileSync('components/
   }
 }
 
+// 16-3. 무효 처리한 이력이 사유 파생에 섞이면 안 된다 (신고 e000c791, 2026-08-10).
+//
+//   중첩 관계 조회(include 의 statusLogs)는 소프트삭제 자동필터가 **안 걸린다**.
+//   여기서 deletedAt 이 빠지면 잘못 적은 퇴실 사유가 무효 처리 뒤에도 살아 있다가,
+//   그 사람이 실제로 퇴실하는 날 목록·카드의 퇴실 사유로 튀어나온다(조정미 님 '개인 사정').
+for (const [name, src] of [['tenants/actions getTenants', tenantsActions],
+                           ['api/calendar 투어 피드', readFileSync('app/api/calendar/[token]/route.ts', 'utf8')]]) {
+  const i = src.indexOf('statusLogs: {')
+  if (i < 0) continue
+  // select: 앞까지가 그 블록의 조회 조건이다. 키 순서에 안 기대게 블록을 통째로 본다.
+  // 주석은 걷어낸다 — 'deletedAt 을 손수 적는다' 같은 설명문이 코드 대신 검사를 통과시킨다(역주입에서 발견).
+  const end = src.indexOf('select:', i)
+  const blk = src.slice(i, end > i ? end : i + 700).split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+  if (!blk.includes('deletedAt')) {
+    violations.push(`[소스] ${name} 의 중첩 statusLogs 에 deletedAt 필터가 없다 — 무효 처리한 이력이 파생값으로 되살아난다`)
+  }
+}
+
 // 등록 로그는 전이가 아니다. leaseTermId 를 안 채우면 계약 단위 조회에서 사라지고,
 // fromStatus 를 지어내면 전이표 검증에 유령 데이터가 섞인다(실제로 44건이 그랬다).
-const orphanLogs = await prisma.tenantStatusLog.count({ where: { leaseTermId: null } })
+// 무효 처리분은 뺀다 — 없던 일로 한 행을 백필하라고 요구하면 그 지시가 거짓이 된다.
+const orphanLogs = await prisma.tenantStatusLog.count({ where: { leaseTermId: null, deletedAt: null } })
 if (orphanLogs > 0) violations.push(`[데이터] 계약이 안 붙은 상태 로그 ${orphanLogs}건 — scripts/backfill-status-log-creation 로 정정하라`)
 
 // 17. 상태 전이 — 서버에 전이표가 없어 8x8 전부가 통과했고, 상태를 바꾸는 경로가 넷이라
@@ -669,9 +688,10 @@ for (const fn of ['moveInTenant', 'confirmReservationToActive', 'applyStatusTran
     violations.push(`[소스] ${fn} 에 예약 선납 재앵커가 없다 — 이 경로로 예약->거주중 하면 선납이 옛 달에 남아 입주월이 미납으로 뜬다`)
   }
 }
-// 실제로 발생한 전이를 전이표가 막으면 안 된다 — 쓰이는 흐름은 뜻이 성립하는 것이다
+// 실제로 발생한 전이를 전이표가 막으면 안 된다 — 쓰이는 흐름은 뜻이 성립하는 것이다.
+// 무효 처리분은 뺀다 — 잘못 입력해서 없던 일로 한 전이를 근거로 전이표를 넓히면 오답이 규칙이 된다.
 const { canTransition } = await import('../lib/leaseTransitions.ts')
-const logs = await prisma.tenantStatusLog.findMany({ select: { fromStatus: true, toStatus: true } })
+const logs = await prisma.tenantStatusLog.findMany({ where: { deletedAt: null }, select: { fromStatus: true, toStatus: true } })
 const blockedKinds = new Set()
 for (const l of logs) if (!canTransition(l.fromStatus, l.toStatus)) blockedKinds.add(`${l.fromStatus}->${l.toStatus}`)
 for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전이 ${k} 를 전이표가 막는다 — 운영 흐름이 끊긴다`)

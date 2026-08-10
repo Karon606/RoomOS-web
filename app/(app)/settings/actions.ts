@@ -1317,7 +1317,9 @@ export async function exportAllData(): Promise<string> {
     prisma.financialAccount.findMany({ where: { propertyId } }),
     prisma.recurringExpense.findMany({ where: { propertyId } }),
     prisma.tenantContact.findMany({ where: { tenant: { propertyId } } }),
-    prisma.tenantStatusLog.findMany({ where: { propertyId } }),
+    // 무효 처리분 제외 — 백업은 복원 시 deletedAt 을 안 되살리므로 포함하면 무효 행이 유효로 살아난다
+    // (tenantRequest 와 같은 규약, knowledge/soft-delete-pattern '백업 export').
+    prisma.tenantStatusLog.findMany({ where: { propertyId, deletedAt: null } }),
     prisma.tenantRequest.findMany({ where: { propertyId, deletedAt: null } }),
     // 재고 도메인 — 백업에 통째로 빠져 있던 공백 보완(복원 시 재고 데이터 전손 방지, 2026-07-13)
     prisma.storageLocation.findMany({ where: { propertyId } }),

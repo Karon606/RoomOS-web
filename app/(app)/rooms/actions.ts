@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { requireEdit, getMyRole } from '@/lib/role'
+import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
@@ -2796,28 +2796,36 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
 //
 // tenantId 로 묶는다 — leaseTermId 가 없는 옛 로그가 44건 있어서(addTenant 가 안 채웠다)
 // 계약으로 묶으면 그 사람들 이력이 통째로 사라진다. 그 근원은 따로 고치고 백필한다.
+//
+// 무효 처리된 행도 **가져온다**(신고 e000c791). 이 화면이 되살릴 수 있는 유일한 자리라
+// 여기서까지 걸러 버리면 적용취소가 토스트 수명 동안만 가능한 반쪽이 된다.
+// 대신 목록 본문에는 안 섞고 호출부가 접힌 칸으로 내린다 — 유효한 행만 세는 판정(canRecord)에서도 뺀다.
 export async function getTenantStatusHistory(tenantId: string): Promise<{
+  canEdit: boolean
   items: { id: string; fromStatus: string; toStatus: string; reason: string | null; changedAt: string
-    isCreated: boolean; editable: boolean; canRecord: boolean }[]
+    isCreated: boolean; editable: boolean; canRecord: boolean; deleted: boolean }[]
 }> {
   const propertyId = await getPropertyId()
+  const role = await getMyRole()
   const rows = await prisma.tenantStatusLog.findMany({
     where: { propertyId, tenantId },
     orderBy: { changedAt: 'desc' },
-    select: { id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true },
+    select: { id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true, deletedAt: true },
   })
   // 사유를 아직 안 적은 행이 여럿이면 '어디에 적어야 하나'가 화면에 안 나온다.
   // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 고객이 11명이다.
   // 기록 진입은 **가장 최근 종료 전이 한 행에만** 연다. 나머지는 이미 적힌 것만 읽고 고친다.
-  const latestEndId = rows.find(r => r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus))?.id ?? null
+  const latestEndId = rows.find(r => !r.deletedAt && r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus))?.id ?? null
   return {
+    canEdit: canEdit(role),
     items: rows.map(r => {
       // 등록은 전이가 아니다. from === to 만으로는 부족하다 — 같은 상태로 재저장하면(퇴실 예정일만 변경)
       // 사람이 만든 from === to 로그가 생긴다(실측 2건). 등록 로그는 changedById 가 비어 있다.
       const isCreated = r.fromStatus === r.toStatus && r.changedById === null
       // 사유를 받는 전이만 고칠 수 있다(입실 취소·퇴실). '단기 연장' 같은 시스템 라벨은 손대지 않는다 —
       // 이 구분선이 있어야 '이력을 마음대로 고치는 앱'이 되지 않는다.
-      const editable = r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus) !== null
+      // 무효 처리된 행은 사유 편집도 닫는다 — 없던 일로 한 행의 주석을 고칠 이유가 없다.
+      const editable = !r.deletedAt && r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus) !== null
       return {
         id: r.id,
         fromStatus: r.fromStatus,
@@ -2827,6 +2835,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
         isCreated,
         editable,
         canRecord: editable && r.id === latestEndId,
+        deleted: r.deletedAt !== null,
       }
     }),
   }
@@ -2848,9 +2857,10 @@ export async function updateStatusLogReason(logId: string, reason: string | null
     const propertyId = await getPropertyId()
     const row = await prisma.tenantStatusLog.findFirst({
       where: { id: logId, propertyId },
-      select: { id: true, fromStatus: true, toStatus: true, reason: true },
+      select: { id: true, fromStatus: true, toStatus: true, reason: true, deletedAt: true },
     })
     if (!row) return { ok: false, error: '이력을 찾을 수 없습니다.' }
+    if (row.deletedAt) return { ok: false, error: '무효 처리된 이력입니다. 적용취소한 뒤 수정하세요.' }
     if (row.fromStatus === row.toStatus || !reasonsForStatus(row.toStatus)) {
       return { ok: false, error: '이 이력은 사유를 기록하는 항목이 아닙니다.' }
     }
@@ -2858,6 +2868,65 @@ export async function updateStatusLogReason(logId: string, reason: string | null
     await prisma.tenantStatusLog.update({ where: { id: logId }, data: { reason: next } })
     revalidatePath('/tenants')
     return { ok: true, prev: row.reason }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+
+// 상태 이력 무효 처리 (신고 e000c791 — "잘못 입력한게 내역으로 남으니까").
+//
+// 왜 소프트삭제인가. 조정미 님 사례가 이 기능의 근거다 — 8/7 새벽 다른 사람과 혼동해
+// 퇴실 예정으로 바꿨다가 5.5시간 뒤 되돌렸고, 그때 적은 퇴실 사유 '개인 사정'이 이력에 남았다.
+// 그 값은 지금은 종료 상태 게이트에 가려 안 보이지만, 이분이 **실제로 퇴실하는 날**
+// 목록·카드의 퇴실 사유로 튀어나온다(endReasonText 는 사유가 적힌 최신 한 건을 고른다).
+// 그러니 지우기는 해야 하는데, 하드삭제는 '언제 무엇이 있었나'를 함께 지운다 — 그래서 무효 표시다.
+//
+// 상태 자체는 안 건드린다. 이력은 관찰 기록이고 현재 상태의 정본은 LeaseTerm.status 다.
+// 여기서 lease 를 함께 되돌리면 화면에 없는 부작용이 생긴다(확인창 문구도 그렇게 약속한다).
+export async function invalidateStatusLog(logId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    // 영업장 스코프 검증 — 남의 영업장 로그 id 를 실어 보내도 못 건드린다
+    const { propertyId, userId } = await requirePropertyAccess()
+    const row = await prisma.tenantStatusLog.findFirst({
+      where: { id: logId, propertyId },
+      select: { id: true, deletedAt: true },
+    })
+    if (!row) return { ok: false, error: '이력을 찾을 수 없습니다.' }
+    if (row.deletedAt) return { ok: false, error: '이미 무효 처리된 이력입니다.' }
+    await prisma.tenantStatusLog.update({
+      where: { id: logId },
+      data: { deletedAt: new Date(), deletedById: userId },
+    })
+    revalidatePath('/tenants'); revalidatePath('/rooms')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+
+// 무효 처리 적용취소 — deletedAt 을 되돌린다. 무효 처리한 계정(deletedById)도 함께 지운다.
+// 토스트가 사라진 뒤에도 이력 위젯의 접힌 칸에서 언제든 부를 수 있다(§16 적용취소 상시 보장).
+export async function restoreStatusLog(logId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.tenantStatusLog.findFirst({
+      where: { id: logId, propertyId },
+      select: { id: true, deletedAt: true },
+    })
+    if (!row) return { ok: false, error: '이력을 찾을 수 없습니다.' }
+    if (!row.deletedAt) return { ok: false, error: '무효 처리된 이력이 아닙니다.' }
+    await prisma.tenantStatusLog.update({
+      where: { id: logId },
+      data: { deletedAt: null, deletedById: null },
+    })
+    revalidatePath('/tenants'); revalidatePath('/rooms')
+    return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

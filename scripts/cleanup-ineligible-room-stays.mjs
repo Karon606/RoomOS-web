@@ -19,7 +19,7 @@ async function main() {
         select: {
           status: true,
           tenant: { select: { name: true } },
-          statusLogs: { select: { toStatus: true } },
+          statusLogs: { where: { deletedAt: null }, select: { toStatus: true } },
         },
       },
     },
