@@ -2945,3 +2945,14 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **정리(d183cc0)**: 호출부 0 인 `compressImageForOcr` 제거, finance 라우트 `maxDuration = 60`(OCR 자체 30초 중단 문구보다 플랫폼이 먼저 죽는 것 방지, room-manage 와 같은 처방).
 - **검증**: tsc 0 · check-server-action-exports 0 · verify:fast 전 항목(금전 110·인상 72·납부일 33·정산 57·회계 33·보증금 13·투어 36·생년월일 27) · verify:db(재고 귀속 위반 0, 기존 기준선 경고만) · next build exit 0 · 변경 파일 신규 lint 0.
 - **남은 것**: OCR 프롬프트의 품목 사전이 단위 없는 품목을 `규격단위 — · 수량단위 —` 로 적어 AI 에게 줄표를 단위로 보여 준다(actions.ts vocab 블록). 이번 승인 범위 밖이라 안 건드렸다 — 오염의 상류일 수 있어 별건 판단 필요.
+
+## 2026-08-10 (11) — 종 알림 무반응·오배송 봉합 (신고 de84a2d9 승인 안 D, 6c825bb·0194d7d·f757c7b)
+- **원인**: `/tenants` 자동 오픈 훅의 deps 가 `[]` 라 마운트 1회만 돌았다. 이미 고객관리에 있는 상태에서 벨이 `router.push('/tenants?tenantId=X')` 를 불러도 URL 만 바뀌고 셸은 그대로다. 종 8종 중 6종(unpaid·contact·checkout·movein·tour·signed)이 이 경로라 같은 화면에서는 전부 무반응이었다. 바로 아래 `?edit=1` 훅은 deps 가 `[searchParams, initialTenants]` 로 옳고, **2026-05-31 에 같은 결함을 주석까지 남기며 edit 쪽만 고쳤다** — 이 자리 3회차 회귀.
+- **훅 클래스 봉합(6c825bb)**: deps 를 형제 훅과 동일하게. `initialOpenRef`(불리언 1회 빗장) → `openedTenantRef`(연 대상 tenantId)로 역할 교체 — 검색어(`?q=`)·조회월(`?month=`) 변경이나 refresh 로 훅이 다시 돌 때 셸이 재오픈되면 안에서 옮겨 둔 면이 초기화되기 때문이다. tenantId 가 URL 에서 사라지면 ref 를 비워 다음 알림을 다시 받는다. `edit=1` 은 아래 훅에 온전히 위임(둘 다 처리하면 한 요청에 셸과 편집 폼이 동시에 뜬다).
+- **재오픈 루프 실증**: `clearTenantUrlParams` 의 `router.replace` 가 `searchParams` 를 흔들어 훅이 되도는 것이 이 설계의 함정이라, 두 훅과 정리 함수를 그대로 옮겨 고정점까지 돌렸다(실제보다 엄격하게 매 렌더 재실행). 16시나리오 24검사 통과 — 정리 회차는 ref 만 비우고 종료, 추가 오픈 0. 역주입 확인: 개정 전은 같은 경로 무반응 재현, 가드 없는 변형은 검색·월 변경마다 재오픈 3회 재현.
+- **재고 2종(f757c7b)**: `/inventory` 로만 보내 같은 화면이면 URL 이 그대로였다. 벨의 '같은 경로면 refresh' 분기는 서버 컴포넌트를 조용히 다시 그릴 뿐 반응을 못 만든다. 목적지에 섹션을 실어(`?focus=<요소 id>`) 받는 쪽이 스크롤한 뒤 **파라미터를 소진**한다 — 남기면 같은 섹션의 다음 알림이 또 같은 URL 이라 무반응으로 회귀한다. 수신은 `lib/useFocusSection` 하나(FinanceClient `?tab=` 스크롤과 같은 방식), 재고 2섹션·계약서함 발급 대기 3자리가 공유.
+- **signed 오배송(0194d7d)**: `hrefOf` 가 `tenantId` 를 `href` 보다 먼저 봐서 8/8 에 만든 계약서함 발급 대기 섹션에 종에서는 영영 못 닿았다. 순서를 전면으로 뒤집으면 나머지 7종에 href 가 생기는 순간 전부 목적지가 바뀌므로 signed 만 담은 카테고리 예외(`HREF_FIRST`)로 열었다. `tenantId` 는 다른 소비처를 위해 유지.
+- **미납 문자 동선은 새로 안 만들었다** — Prism 고객 모달 연락처 섹션의 독촉 버튼(`TenantContactInfo`, 연체 1일 이상 + 미납액 > 0)이 이미 정본이라 알림이 그 모달을 열게 하는 것으로 끝난다.
+- **손대지 않은 것**: 대시보드 AlertsStrip(항상 타 경로 발이라 결함 없음), 벨의 same-path refresh 분기(000469d 경합 방지 의도 보존).
+- **검증**: tsc 0 · verify:fast 전 항목(금전 110·인상 72·납부일 33·정산 57·회계 33·보증금 13·투어 36·생년월일 27 + 감지망 9종) · next build exit 0 · 변경 파일 eslint 신규 0(HEAD 56 = 개정 후 56, 신규 파일 0).
+- **관찰(미수정)**: `request` 알림의 `&tab=requests` 는 Phase 2.3c 로 탭 시스템이 사라진 뒤 죽은 파라미터다(`dashboard/page.tsx:1445`, `requests/RequestsClient.tsx:548`). 그리고 URL 이 이미 `?tenantId=X` 인 채 모달만 닫은 상태에서 **같은 사람**의 알림을 다시 누르면 URL 이 동일해 내비게이션 자체가 없다 — 알림은 클릭 즉시 읽음 처리돼 당일 목록에서 사라지므로 실사용 경로는 아니지만 URL 을 신호로 쓰는 방식의 구조적 한계다.
