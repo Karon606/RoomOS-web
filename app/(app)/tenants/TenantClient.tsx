@@ -529,29 +529,31 @@ export default function TenantClient({
   // URL 파라미터 — /tenants?tenantId=xxx → 셸 열기, &edit=1 → 자체 편집 폼(페이지 종속) 열기.
   // Phase 2.3c (2026-05-30): 상세 팝업은 전역 Prism 셸로 마이그레이션. 편집 폼만 페이지에 잔존.
   //
-  // 최초 mount 시(예: /tenants?tenantId=X 딥링크) Prism 자동 오픈은 1회만.
-  // Prism 셸의 [수정] 버튼이 ?edit=1 을 추가로 push 하므로, 편집 폼 분기는 별도 useEffect 로 항상 감지.
-  // (이전엔 deps=[] 라 mount 후 URL 변화를 못 잡아 [수정] 누르면 Prism 만 닫히고 폼 안 열리는 버그가 있었음 — 2026-05-31)
-  const initialOpenRef = useRef(false)
+  // deps 는 아래 edit 훅과 같다. mount 1회(deps=[])로 두면 **이미 /tenants 에 있는 상태**에서 종 알림이
+  // /tenants?tenantId=X 를 push 해도 URL 만 바뀌고 셸이 안 열린다 — 2026-05-31 에 같은 결함을 적어 두고
+  // edit 쪽만 고친 자리다(종 8종 중 6종이 이 경로라 같은 화면에서 누르면 전부 무반응이었다).
+  //
+  // openedTenantRef: **같은 대상은 한 번만 연다.** 검색어(?q=)·조회월(?month=) 변경이나 refresh 로
+  // effect 가 다시 돌 때마다 셸이 재오픈되면 안에서 옮겨 둔 면(수납·호실)이 초기화된다.
+  // tenantId 가 URL 에서 사라지면(clearTenantUrlParams) ref 를 비워 다음 알림 클릭을 다시 받는다 —
+  // 파라미터 정리는 tenantId 를 지우므로 여기서 재오픈으로 되돌아오는 고리가 생기지 않는다.
+  // edit=1 은 아래 훅 담당 — 여기서 같이 처리하면 한 요청에 셸과 편집 폼이 둘 다 뜬다.
+  const openedTenantRef = useRef<string | null>(null)
   useEffect(() => {
-    if (initialOpenRef.current) return
     const tenantId = searchParams.get('tenantId')
-    const edit = searchParams.get('edit')
-    if (!tenantId) return
+    if (!tenantId) { openedTenantRef.current = null; return }
+    if (searchParams.get('edit') === '1') return
+    if (openedTenantRef.current === tenantId) return
     const found = initialTenants.find(t => t.id === tenantId)
     if (!found) return
-    initialOpenRef.current = true
-    if (edit === '1') {
-      setDetailTenant(found); setDetailEditMode(true)
-    } else {
-      entityModal.open({
-        kind: 'tenant',
-        tenantId: found.id,
-        leaseTermId: found.leaseTerms[0]?.id ?? undefined,
-        roomId: found.leaseTerms[0]?.room?.id ?? undefined,
-      })
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    openedTenantRef.current = tenantId
+    entityModal.open({
+      kind: 'tenant',
+      tenantId: found.id,
+      leaseTermId: found.leaseTerms[0]?.id ?? undefined,
+      roomId: found.leaseTerms[0]?.room?.id ?? undefined,
+    })
+  }, [searchParams, initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?edit=1 변화 감지 — Prism [수정] 버튼 클릭 시 호출됨.
   // ⚠️ 한 edit 요청(tenantId+edit=1)당 폼을 '한 번만' 연다(handledEditRef). 안 그러면 저장 후
@@ -878,6 +880,8 @@ export default function TenantClient({
   }
 
   // URL ?edit=1·?tenantId 정리 — 안 지우면 저장/새로고침 후 edit 감지 useEffect 가 폼을 다시 염(깜빡·유지 버그).
+  // tenantId 가 사라지면 위 자동 오픈 훅은 openedTenantRef 만 비우고 끝난다(재오픈 없음) — 정리와 재오픈이
+  // 서로를 부르는 고리가 되지 않는 지점이라 여기서 명시해 둔다.
   const clearTenantUrlParams = () => {
     if (searchParams.get('edit') === '1' || searchParams.get('tenantId')) {
       const params = new URLSearchParams(searchParams.toString())
