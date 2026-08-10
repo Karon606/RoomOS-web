@@ -9,6 +9,7 @@ import {
   type ResidenceCertFieldValues, type ResidenceCertOverrideKey, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
+import { DOC_NAME_STYLE_LABEL, asDocNameStyle, documentName, hasEnglishName } from '@/lib/documentName'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -56,13 +57,18 @@ const toViewFields = (v: ResidenceCertFieldValues): Record<OverrideViewKey, stri
   depositText: v.depositAmount ? v.depositAmount.toLocaleString() : '',
 })
 
+/** 고객 정보의 두 이름 — 표기 선택이 이 둘 중 하나를 고른다(lib/documentName 정본). */
+const nameSourceOf = (data: ResidenceCertData) => ({ name: data.tenantName, englishName: data.tenantEnglishName })
+
 /** withOverrides=false 면 저장값을 무시한 순수 자동값 — '자동값으로' 버튼이 쓴다. */
 function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
   const v = withOverrides ? mergeResidenceCertFields(data.autoFields, data.overrides) : data.autoFields
   return {
     ...toViewFields(v),
     areaM2: data.areaM2,
-    tenantName: data.tenantName,
+    // 성명 칸은 여전히 저장 대상이 아니다(손으로 고치면 그 발급에만 쓰인다). 저장되는 것은
+    // 한글·영문 중 어느 쪽을 채울지의 **선택**뿐이라, 초기값을 여기서 그 선택으로 조립한다.
+    tenantName: documentName(nameSourceOf(data), v.nameStyle),
     tenantBirth: fmtCertDate(data.tenantBirth), tenantPhone: data.tenantPhone,
     landlordBusinessName: data.landlordBusinessName, landlordName: data.landlordName,
     landlordAddress: data.landlordAddress, landlordIdNo: data.landlordIdNo,
@@ -120,6 +126,39 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
       .finally(() => release())
   }
 
+  // ── 성명 표기(한글/영문) ─────────────────────────────────────────
+  // 저장되는 것은 이름이 아니라 **선택**이다(lib/documentName 정본). 성명 칸 자체는 여전히 저장
+  // 대상이 아니라, 손으로 고친 이름은 그 발급에만 쓰인다.
+  // 영문 이름이 없으면 아무것도 그리지 않는다 — 대다수 입주자의 화면은 종전과 완전히 같다.
+  const nameSource = nameSourceOf(data)
+  const canPickName = hasEnglishName(nameSource)
+  const savedNameStyle = mergeResidenceCertFields(data.autoFields, data.overrides).nameStyle
+  const [nameStyle, setNameStyle] = useState(savedNameStyle)
+  useEffect(() => { setNameStyle(savedNameStyle) }, [savedNameStyle])
+
+  const commitNameStyle = (raw: string) => {
+    const next = asDocNameStyle(raw)
+    if (!next || next === nameStyle) return
+    setNameStyle(next)
+    setF(p => ({ ...p, tenantName: documentName(nameSource, next) }))
+    const leaseTermId = data.leaseTermId
+    if (!leaseTermId) return                  // 계약이 없으면 저장할 자리가 없다(화면 안내로 알린다)
+    if (next === savedNameStyle) return       // 서버가 내려준 값과 같으면 저장할 것이 없다
+    const release = trackSave()
+    saveResidenceCertFieldOverride(leaseTermId, { nameStyle: next })
+      .then(res => {
+        if (!res.ok) {
+          pushToast('error', res.error)
+          setNameStyle(savedNameStyle)
+          setF(p => ({ ...p, tenantName: documentName(nameSource, savedNameStyle) }))
+          return
+        }
+        pushToast('success', `${RESIDENCE_CERT_FIELD_LABEL.nameStyle} 저장됨. 다음 발급에도 이 표기로 나옵니다.`)
+        router.refresh()
+      })
+      .finally(() => release())
+  }
+
   // 디자인 폭(595.3pt)을 viewport 에 맞춰 scale.
   // 상한 4/3 은 '종이가 실물 A4 폭을 넘지 않는다' 는 뜻이다 — 793.7(A4 를 CSS px 로) / 595.3(pt) = 4/3.
   // 종전 1.4 는 실물의 1.05배였다. 계약서 상한 1 과 달라 보였지만 단위(px 대 pt)가 달랐을 뿐
@@ -146,6 +185,8 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         router.refresh()
       } finally { release() }
     }
+    // 표시값 행을 통째로 지웠으니 성명 표기도 자동값(한글)으로 돌아간다.
+    setNameStyle(data.autoFields.nameStyle)
     setF(buildInitial(data, false)); setIssueDate(kstYmdStr())
     pushToast('info', '자동값으로 되돌렸습니다')
   }
@@ -212,6 +253,15 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         <Link href="/residence-certs" className="rc-link">‹ 실거주 확인서</Link>
         {overrideCount > 0 && <span className="rc-badge">표시값 수정</span>}
         <div className="rc-spacer" />
+        {/* 성명 표기 — 영문 이름이 등록된 입주자에게만 붙는다. 문법은 옆의 작성일 칸과 같은 rc-field. */}
+        {canPickName && (
+          <label className="rc-field"><span>성명</span>
+            <select value={nameStyle} onChange={e => commitNameStyle(e.target.value)}>
+              <option value="ko">{DOC_NAME_STYLE_LABEL.ko}</option>
+              <option value="en">{DOC_NAME_STYLE_LABEL.en}</option>
+            </select>
+          </label>
+        )}
         <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
@@ -328,7 +378,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-link { color: var(--tc-text); font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
         .rc-spacer { flex: 1; }
         .rc-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
-        .rc-field input { padding: 4px 8px; border: 1px solid var(--warm-border); border-radius: 6px; font-size: 12px; }
+        /* 작성일(input)과 성명 표기(select)가 같은 칸으로 보여야 한다 — 한 줄에 나란히 서는 형제다 */
+        .rc-field input, .rc-field select { padding: 4px 8px; border: 1px solid var(--warm-border); border-radius: 6px; font-size: 12px; background: #fff; color: inherit; font-family: inherit; }
+        .rc-field select { cursor: pointer; }
         .rc-issue { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .rc-issue:disabled { opacity: 0.6; }
         .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--warm-border); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }

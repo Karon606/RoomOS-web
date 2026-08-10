@@ -12,18 +12,30 @@
 // 자동값과 같아진 키는 저장에서 뺀다. 낡은 값이 쌓이지 않게 하는 1차 방어다.
 
 import { tenantResidenceAddress } from '@/lib/tenantAddress'
+import {
+  type DocNameStyle, DEFAULT_DOC_NAME_STYLE, asDocNameStyle,
+} from '@/lib/documentName'
 
 /** 표시값 저장을 연 서류. 납부확인서·보증금영수증은 계약 단위로 저장할 값이 없어 아직 없다. */
 export const DOC_TYPES = ['RESIDENCE_CERT'] as const
 export type DocOverrideType = (typeof DOC_TYPES)[number]
 
-/** 실거주 확인서에서 저장을 연 5개 표시 필드. 전부 optional 이고, 없는 키는 자동값이 그대로 쓰인다. */
+/**
+ * 실거주 확인서에서 저장을 연 6개 표시 필드. 전부 optional 이고, 없는 키는 자동값이 그대로 쓰인다.
+ *
+ * nameStyle 은 2026-08-11 에 붙었다. 성명은 '인적사항 — 저장 안 함'으로 분류돼 있었는데
+ * (2026-08-08 4층 분류), 그 결정은 **이름 값을 서류 칸에 베끼는 것**을 막으려던 것이다. 여기 담는
+ * 것은 값이 아니라 '등록된 두 이름 중 어느 쪽을 찍는가'라 낡을 수가 없다 — 고객 정보에서 철자를
+ * 고치면 다음 발급에 그대로 따라온다. 성명 칸 자체는 여전히 저장 대상이 아니고, 손으로 고친 이름은
+ * 그 발급에만 쓰인다.
+ */
 export type ResidenceCertOverrides = {
   siteAddress?: string
   tenantAddress?: string
   periodText?: string
   rentAmount?: number
   depositAmount?: number
+  nameStyle?: DocNameStyle
 }
 
 export type ResidenceCertOverrideKey = keyof ResidenceCertOverrides
@@ -32,7 +44,7 @@ export type ResidenceCertOverrideKey = keyof ResidenceCertOverrides
 export type ResidenceCertOverridePatch = Partial<Record<ResidenceCertOverrideKey, string | number | null>>
 
 export const RESIDENCE_CERT_KEYS: readonly ResidenceCertOverrideKey[] = [
-  'siteAddress', 'tenantAddress', 'periodText', 'rentAmount', 'depositAmount',
+  'siteAddress', 'tenantAddress', 'periodText', 'rentAmount', 'depositAmount', 'nameStyle',
 ]
 
 /** 화면·감지망이 함께 쓰는 사람 말 이름. 두 곳에서 따로 지으면 같은 칸이 다르게 불린다. */
@@ -42,6 +54,7 @@ export const RESIDENCE_CERT_FIELD_LABEL: Record<ResidenceCertOverrideKey, string
   periodText: '거주 기간',
   rentAmount: '임대료',
   depositAmount: '보증금',
+  nameStyle: '성명 표기',
 }
 
 /** 검증에 걸린 키를 운영자에게 설명하는 문구. 화면이 "저장 안 됨"만 말하면 이유를 끝내 못 알려준다. */
@@ -51,6 +64,7 @@ export const RESIDENCE_CERT_FIELD_ERROR: Record<ResidenceCertOverrideKey, string
   periodText: '거주 기간은 60자 이내로 입력해 주세요.',
   rentAmount: '임대료는 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
   depositAmount: '보증금은 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
+  nameStyle: '성명 표기는 한글, 영문 중에서 골라 주세요.',
 }
 
 const AMOUNT_MAX = 100_000_000
@@ -79,16 +93,18 @@ export function parseResidenceCertOverrides(json: unknown): ResidenceCertOverrid
   const period = asText(src.periodText, PERIOD_MAX); if (period !== undefined) out.periodText = period
   const rent = asAmount(src.rentAmount); if (rent !== undefined) out.rentAmount = rent
   const dep = asAmount(src.depositAmount); if (dep !== undefined) out.depositAmount = dep
+  const ns = asDocNameStyle(src.nameStyle); if (ns !== undefined) out.nameStyle = ns
   return out
 }
 
-/** 실거주 확인서에 인쇄되는 표시값 5종. 자동값(파생)과 병합값이 같은 모양이라 서로 갈릴 수 없다. */
+/** 실거주 확인서에 인쇄되는 표시값 6종. 자동값(파생)과 병합값이 같은 모양이라 서로 갈릴 수 없다. */
 export type ResidenceCertFieldValues = {
   siteAddress: string
   tenantAddress: string
   periodText: string
   rentAmount: number
   depositAmount: number
+  nameStyle: DocNameStyle
 }
 
 /** 자동값의 원천 — 계약 행(방 조인) + 영업장 주소. */
@@ -135,6 +151,8 @@ export function deriveResidenceCertFields(src: ResidenceCertSource): ResidenceCe
     periodText: residenceCertPeriodText(ymd(src.moveInDate), ymd(src.expectedMoveOut)),
     rentAmount: src.rentAmount,
     depositAmount: src.depositAmount,
+    // 성명 표기의 자동값은 늘 한글이다 — 계약 행에서 파생할 것이 없다.
+    nameStyle: DEFAULT_DOC_NAME_STYLE,
   }
 }
 

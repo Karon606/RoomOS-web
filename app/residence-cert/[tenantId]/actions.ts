@@ -29,7 +29,8 @@ export type ResidenceCertData = {
   leaseTermId: string | null
   // 소재지·임차인
   areaM2: string             // 면적(㎡) — 문자열(편집 가능)
-  tenantName: string
+  tenantName: string         // 고객 정보의 이름 그대로. 종이에 찍을 성명은 아래 표기 선택과 함께 조립한다
+  tenantEnglishName: string | null   // 영문 이름. 없으면 표기 선택 UI 자체를 안 그린다
   tenantBirth: string        // YYYY-MM-DD (없으면 '')
   tenantPhone: string
   // 저장 가능한 표시값 5종 — 자동값과 저장값을 나눠 내려준다(화면이 둘을 병기한다)
@@ -138,6 +139,7 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
     leaseTermId: lease?.id ?? null,
     areaM2: area != null ? String(area) : '',
     tenantName: tenant.name,
+    tenantEnglishName: tenant.englishName,
     tenantBirth: ymd(tenant.birthdate),
     tenantPhone: primaryContact?.contactValue ?? '',
     autoFields,
