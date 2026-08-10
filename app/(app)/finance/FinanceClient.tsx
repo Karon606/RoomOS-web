@@ -1321,31 +1321,6 @@ function StackedBar({
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-// 영수증 사진을 OCR 전송용으로 압축 — Server Action 페이로드 한도(10MB) 회피
-// HEIC/HEIF는 createImageBitmap이 처리 가능 (iOS Safari 17+).
-// EXIF orientation 적용 — Safari/Chrome 기본값 차이 회피 (모바일 카메라 사진 일관성).
-async function compressImageForOcr(
-  file: File, maxDim: number, quality: number,
-): Promise<{ base64: string; dataUrl: string }> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-  const w = bitmap.width
-  const h = bitmap.height
-  const scale = Math.min(1, maxDim / Math.max(w, h))
-  const targetW = Math.max(1, Math.round(w * scale))
-  const targetH = Math.max(1, Math.round(h * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = targetW
-  canvas.height = targetH
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas 2D 컨텍스트를 만들 수 없습니다.')
-  ctx.drawImage(bitmap, 0, 0, targetW, targetH)
-  bitmap.close?.()
-  const dataUrl = canvas.toDataURL('image/jpeg', quality)
-  const base64  = dataUrl.replace(/^data:image\/jpeg;base64,/, '')
-  if (!base64) throw new Error('이미지 인코딩 결과가 비어 있습니다.')
-  return { base64, dataUrl }
-}
-
 // 영수증 스캔(모서리 인식·원근 보정)은 공용 components/ReceiptScanModal 로 이동 — 홈 찍어올리기와 공유
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''

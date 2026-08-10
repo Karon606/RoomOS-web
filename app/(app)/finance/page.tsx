@@ -4,6 +4,10 @@ import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { kstMonthStr } from '@/lib/kstDate'
 
+// 영수증 OCR·업로드 Server Action 이 같은 라우트의 페이지 timeout 을 따름 → 60초로 확장(room-manage 와 같은 처방).
+// OCR 은 스스로 30초에 끊고 안내 문구를 돌려주는데, 플랫폼 기본 한도가 그보다 짧으면 그 문구 대신 함수가 먼저 죽는다.
+export const maxDuration = 60
+
 // 'income'(부가 수익)은 2026-07-02 수납관리(/rooms?tab=income)로 이동 — 여기선 더 이상 유효 탭 아님.
 type FinTab = 'expense' | 'assets' | 'deposit' | 'reserve'
 
