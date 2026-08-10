@@ -2984,3 +2984,10 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **2단계**: contract_files.issuedSnapshot JSONB 추가(승인 마이그레이션). 발급 트랜잭션에서 printedFacts 15축(lib/contractPrintedFacts 로 승격, contractShare 와 공유) + 서명 이미지 2장·시각 2개·본문 출처·링크 id 박제 — **서명을 지워도 발급본 증거가 남는다**(502호에서 8/6 서명 소실된 그 결함의 근본 방어). 계약번호 탭 → 발급 상세 시트(편집 컨트롤 0 — 불변 원칙의 화면 표현). 기존 43건은 "기록 없습니다" 안내.
 - **감지망**: check-contract-issued-snapshot(verify:db) — 신규 발급본 박제 누락 0 + 개수 래칫. 역주입 발화 확인. **첫 실발급 후 SNAPSHOT_BASELINE 1 로 잠가야 축 B 가동**(스크립트가 안내 출력).
 - **대기**: 3단계(추가 발급 동선·영문 이름 세 서류·대표 수동 지정). getContractIssuedSnapshot 게이트는 requireEdit(형제 getSignedSnapshot 과 동일).
+
+## 2026-08-11 (3) — 서류 성명 한글·영문 선택 (f7ce2ce..eb7633c)
+- **정본 lib/documentName** — 저장하는 것은 이름이 아니라 표기 선택('ko'|'en'). 값 복사가 아니라 낡을 수 없고, 원천(고객 정보)이 바뀌면 다음 발급이 따라온다(4층 분류 '인적사항 저장 안 함' 결정과 충돌 없음 — 취지 유지). 영문 이름 비면 UI 자체가 안 뜸(85명 화면 무변화 실증).
+- **저장 위치 서류별**: 계약서 = contractFieldOverrides nameStyle 키(서명 잠금·되돌리기·스냅샷 박제가 이미 걸린 자리), 실거주확인서 = documentFieldOverrides nameStyle, 납부확인서·보증금영수증 = 저장 안 함(그 발급 한정).
+- **printedFacts 축 신설 안 함** — ContractData.tenant.name 자체를 인쇄 성명으로. 화면·PDF·/sign·발급본 박제·드리프트가 한 문자열. 옛 링크 스냅샷(새 칸 없음)은 종전 name 폴백 방어.
+- **실기 대상**: 표기가 실제로 갈리는 ACTIVE 5명(419 미로노바·411 쩐 마이린·412 김명화·511 페다·416 하산보예프). 502호는 name·englishName 둘 다 영문이라 무의미 — **한글 이름을 알려주면 name 복구(데이터 작업, 지시 대기)**.
+- 파일명은 표기와 무관하게 고객 정보 이름 고정(보관 검색 열쇠). 3단계 잔여: 추가 발급 동선·대표 수동 지정.
