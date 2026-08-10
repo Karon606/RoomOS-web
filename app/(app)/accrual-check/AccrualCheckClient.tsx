@@ -43,7 +43,10 @@ function fmtDueDay(d: string | null): string {
   return `${d}일`
 }
 
-export default function AccrualCheckClient({ initialResult }: { initialResult: Result }) {
+export default function AccrualCheckClient({ initialResult, myRole }: { initialResult: Result; myRole: string }) {
+  // 뷰어(STAFF)에게는 귀속 월을 옮기는 진입을 숨긴다 — 진단(읽기)은 그대로 보이고,
+  // 서버 requireEdit 가 최종 방어다(입주자·수납 화면과 같은 문법).
+  const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const [result, setResult] = useState(initialResult)
   const [filter, setFilter] = useState<'all' | SuspectCategory>('all')
@@ -152,7 +155,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
             {label}
           </button>
         ))}
-        {counts['late-payment'] > 0 && (
+        {canEdit && counts['late-payment'] > 0 && (
           <button
             onClick={handleBulkLate}
             disabled={isPending}
@@ -210,20 +213,22 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
                 <div className="text-xs text-[var(--warm-muted)] italic">메모: {s.memo}</div>
               )}
 
-              <div className="flex gap-2 pt-1 flex-wrap">
-                {s.inferredAccrualMonth && s.inferredAccrualMonth !== s.targetMonth && (
-                  <Btn
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => handleMove(s, s.inferredAccrualMonth!)}
-                    disabled={isPending}
-                  >
-                    {s.inferredAccrualMonth}로 이동
-                  </Btn>
-                )}
-                <ManualMonthInput record={s} onMove={handleMove} disabled={isPending} />
-              </div>
+              {canEdit && (
+                <div className="flex gap-2 pt-1 flex-wrap">
+                  {s.inferredAccrualMonth && s.inferredAccrualMonth !== s.targetMonth && (
+                    <Btn
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleMove(s, s.inferredAccrualMonth!)}
+                      disabled={isPending}
+                    >
+                      {s.inferredAccrualMonth}로 이동
+                    </Btn>
+                  )}
+                  <ManualMonthInput record={s} onMove={handleMove} disabled={isPending} />
+                </div>
+              )}
             </div>
           ))
         )}

@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { requireEdit } from '@/lib/role'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -160,6 +161,7 @@ export type TargetMonthUndo = { recordId: string; targetMonth: string; seqNo: nu
 
 export async function bulkApplyLatePayments(): Promise<{ ok: true; moved: number; undo: TargetMonthUndo } | { ok: false; error: string }> {
   try {
+    await requireEdit()
     const { suspects } = await analyzePaymentTargetMonth()
     const targets = suspects.filter(s => s.category === 'late-payment' && s.inferredAccrualMonth)
     let moved = 0
@@ -181,6 +183,7 @@ export async function moveRecordTargetMonth(
   newTargetMonth: string
 ): Promise<{ ok: true; undo?: TargetMonthUndo } | { ok: false; error: string }> {
   try {
+    await requireEdit()
     const { propertyId } = await getPropertyId()
 
     if (!/^\d{4}-\d{2}$/.test(newTargetMonth)) {
@@ -224,6 +227,7 @@ export async function moveRecordTargetMonth(
 // 귀속월 이동 적용취소 — 스냅샷(원래 월·seqNo)으로 복원. seqNo 충돌 시 그 월의 다음 번호로.
 export async function undoTargetMonthMoves(undo: TargetMonthUndo): Promise<{ ok: true; restored: number } | { ok: false; error: string }> {
   try {
+    await requireEdit()
     const { propertyId } = await getPropertyId()
     let restored = 0
     for (const u of undo) {
