@@ -3,10 +3,12 @@
 // 인앱 알림센터 — 헤더 우측. "오늘 챙길 일"(미납·당일 일정·재고·수령)을 모아 보여준다.
 // 목록 소스는 getMyAlerts() → computeAlerts(). 항목 클릭 시 해당 상세로 딥링크 이동 + '읽음' 처리.
 // 읽음 처리는 localStorage 에 날짜별로 저장(오늘 확인한 알림은 숨김, 다음 날 여전히 살아있으면 다시 노출).
-//   ※ 종은 Header(EntityModalProvider 밖)에 있어 전역 모달을 못 쓰므로 URL 딥링크로 이동한다.
+//   ※ 종은 Header(EntityModalProvider 밖)라 useEntityModal 을 못 쓴다. 고객이 목적지인 알림은
+//     openEntityModal 열기 신호로 제자리에서 셸을 열고, 그 밖은 URL 딥링크로 이동한다.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { openEntityModal } from '@/components/entity-modal/EntityModal'
 import { useRouter, usePathname } from 'next/navigation'
 import { getMyAlerts } from '@/app/(app)/dashboard/alertActions'
 import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
@@ -44,9 +46,12 @@ function saveReadMap(m: Record<string, string>) {
 // 규칙 그대로면 8/8 에 만든 계약서함 발급 대기 섹션에 종에서는 영영 못 닿는다. 반대로 순서를 전면
 // 뒤집으면 나머지 7종에 href 가 생기는 순간 전부 목적지가 바뀌므로, 카테고리 예외로만 연다.
 const HREF_FIRST: ReadonlySet<AlertCategory> = new Set<AlertCategory>(['signed'])
+// 목적지가 고객 상세인 알림 — 제자리 오픈과 딥링크가 같은 판정을 쓰도록 여기 하나로 둔다.
+const tenantTargetOf = (a: AlertItem): string | null =>
+  (a.href && HREF_FIRST.has(a.category)) ? null : (a.tenantId ?? null)
 function hrefOf(a: AlertItem): string | null {
-  if (a.href && HREF_FIRST.has(a.category)) return a.href
-  if (a.tenantId) return `/tenants?tenantId=${a.tenantId}`
+  const tenantId = tenantTargetOf(a)
+  if (tenantId) return `/tenants?tenantId=${tenantId}`
   return a.href ?? null
 }
 
@@ -106,6 +111,13 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
   const onItem = (a: AlertItem) => {
     setOpen(false)
     markRead([a.id])           // 클릭 = 확인 → 오늘 목록에서 제거
+    // 고객이 목적지인 알림은 /tenants 를 거치지 않고 이 자리에서 셸을 연다.
+    // 경유하면 셸이 뜨기 전에 입주자 목록 전체를 서버에서 다시 그려 받아야 한다(제기역점 실측
+    // getTenants 1,430KB · gzip 811KB, DB 130ms). 셸에 필요한 것은 tenantId 하나이고 셸이 스스로
+    // 조회한다(1.3KB). 전역 검색도 같은 착지를 쓴다(GlobalSearchHost onPick).
+    // 신호가 닿지 않으면(Provider 미마운트) 아래 딥링크로 그대로 흘러간다 — 무반응은 만들지 않는다.
+    const tenantId = tenantTargetOf(a)
+    if (tenantId && openEntityModal({ kind: 'tenant', tenantId })) return
     const href = hrefOf(a)
     if (href) {
       router.push(href)

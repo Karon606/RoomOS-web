@@ -20,6 +20,7 @@ import { deleteTenant } from '@/app/(app)/tenants/actions'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from './PrismNavBar'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
@@ -39,10 +40,22 @@ export function useEntityModal(): Ctx {
   return ctx
 }
 
+// Provider 밖에서 셸을 여는 열기 신호 — lib/globalSearch 의 bindGlobalSearch 와 같은 모듈 pub/sub.
+// 헤더(종·검색)는 AppShell 안, Provider 밖이라 useEntityModal 을 쓸 수 없다.
+let opener: ((seed: Seed) => void) | null = null
+/** Provider 밖에서 Prism 셸을 연다. 신호가 닿지 않으면 false — 호출부가 URL 딥링크로 폴백한다. */
+export function openEntityModal(seed: Seed): boolean {
+  if (!opener) return false
+  opener(seed)
+  return true
+}
+
 const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—')
 
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<{ kind: EntityKind; seed: Seed; links: Links } | null>(null)
+  // links: undefined = 아직 해소 중(뼈대), null = 해소했는데 연결 없음(빈 안내). 둘을 한 값으로 두면
+  // 여는 순간부터 링크가 올 때까지 "연결된 고객이 없습니다"가 떠 있다 — 있는 사람인데도.
+  const [state, setState] = useState<{ kind: EntityKind; seed: Seed; links: Links | undefined } | null>(null)
   // 모달 열기 직전의 페이지 스크롤 위치 — 닫을 때 그 위치로 복원 (router.refresh() 가
   // 페이지 상단으로 리셋시키는 문제 해결, 사용자 피드백 2026-06-01).
   const scrollYRef = useRef<number>(0)
@@ -59,8 +72,13 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   }, [pathname])
   const open = useCallback((seed: Seed) => {
     if (typeof window !== 'undefined') scrollYRef.current = window.scrollY
-    setState({ kind: seed.kind, seed, links: null })
+    setState({ kind: seed.kind, seed, links: undefined })
   }, [])
+  // 헤더 종이 쓰는 열기 신호 배선 — Provider 는 (app) 레이아웃에 하나뿐이다.
+  useEffect(() => {
+    opener = open
+    return () => { if (opener === open) opener = null }
+  }, [open])
   const close = useCallback(() => {
     setState(null)
     if (typeof window !== 'undefined') {
@@ -73,13 +91,16 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
 
   // seed 의 id 로 연결된 호실/고객/lease id 해소 (네비 가용성·제목용)
   useEffect(() => {
-    if (!state || state.links) return
+    if (!state || state.links !== undefined) return
     let active = true
     getEntityLinks({
       roomId: state.seed.roomId ?? undefined,
       tenantId: state.seed.tenantId ?? undefined,
       leaseTermId: state.seed.leaseTermId ?? undefined,
-    }).then(links => { if (active) setState(s => (s ? { ...s, links } : s)) })
+    })
+      .then(links => { if (active) setState(s => (s ? { ...s, links } : s)) })
+      // 조회 실패도 해소로 친다 — undefined 로 남으면 뼈대가 영영 돌아간다.
+      .catch(() => { if (active) setState(s => (s ? { ...s, links: null } : s)) })
     return () => { active = false }
   }, [state])
 
@@ -100,7 +121,7 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
 }
 
 function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }: {
-  kind: EntityKind; links: Links; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void; onClose: () => void
+  kind: EntityKind; links: Links | undefined; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void; onClose: () => void
 }) {
   const router = useRouter()
   // 페이지 이동 전용 — refresh(7곳)까지 진행바를 태우면 모달 안 저장마다 막대가 떠 소음이 된다
@@ -333,19 +354,23 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
       }
     >
       <div>
-        {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
-            강조는 MonthSelector 알약 자체(과거면 amber)로 충분 — 별도 박스로 감싸면 '네모 안 네모'라 과함. */}
-        {kind === 'payment' && hasPay && (
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-medium" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
-              {isPastMonth ? '지난 달 조회 중' : '조회 월'}
-            </span>
-            <MonthSelector />
-          </div>
-        )}
-        {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
-        {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
-        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+        {/* 링크 해소 전에는 뼈대 — body 들이 자기 조회 중에 쓰는 것과 같은 SkeletonRows 정본이라
+            셸이 열린 뒤 뼈대가 한 번도 끊기지 않고 내용으로 이어진다. */}
+        {links === undefined ? <SkeletonRows rows={5} className="py-4" /> : (<>
+          {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
+              강조는 MonthSelector 알약 자체(과거면 amber)로 충분 — 별도 박스로 감싸면 '네모 안 네모'라 과함. */}
+          {kind === 'payment' && hasPay && (
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
+                {isPastMonth ? '지난 달 조회 중' : '조회 월'}
+              </span>
+              <MonthSelector />
+            </div>
+          )}
+          {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
+          {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
+          {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+        </>)}
       </div>
     </Modal>
   )
