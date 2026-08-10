@@ -267,8 +267,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   /* 신원번호 수집·이용 동의 — 등록번호가 실린 계약서에만 코드가 붙인다(영업장 템플릿 밖).
      환불 조항과 같은 방식이다. 템플릿에 넣으면 영업장이 지울 수 있고, 지워진 채 번호만 인쇄된다.
      테두리 상자가 아니라 윗줄 하나로 끊는다. 상자로 두르면 12.3mm 를 먹어 축소맞춤 하한(88%)을
-     그대로 밀어붙였다(실측 2026-08-11). 서명 바로 위 한 문단이면 읽히는 자리로 충분하다. */
-  .consent-note { font-size: 7.6pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
+     그대로 밀어붙였다(실측 2026-08-11). 서명 바로 위 한 문단이면 읽히는 자리로 충분하다.
+     크기는 8pt 다. v2.0 §26 의 최소 8.5pt 예외가 '푸터·법적 주석' 이고 이 문장이 그 법적 주석이다.
+     더 줄이면 예외 밖이라 안 줄인다 — 읽히지 않는 동의 문구는 동의를 받은 것이 아니다. */
+  .consent-note { font-size: 8pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
 
   /* 서명 — 두 칸 높이를 동일 고정(height) → 밑줄 좌우 정렬. 내용은 가운데 정렬(이름이 바닥으로 안 내려감). 긴 이름 줄바꿈. */
   .sign-wrap { margin-top: 3mm; }

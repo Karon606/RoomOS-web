@@ -4025,12 +4025,12 @@ function ForeignRegNoField({ tenantId, masked }: { tenantId?: string; masked: st
       <input type="hidden" name="foreignRegNoClear" value={cleared ? '1' : ''} />
       {cleared ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-xs text-[var(--warm-muted)]">저장하면 삭제됩니다.</span>
-          <Btn type="button" variant="ghost" size="sm" onClick={() => { setCleared(false); setEditing(!masked) }}>되돌리기</Btn>
+          <span className="flex flex-1 items-center truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 min-h-[44px] text-xs text-[var(--warm-muted)]">저장하면 삭제됩니다.</span>
+          <Btn type="button" variant="ghost" size="sm" onClick={() => { setCleared(false); setEditing(!masked) }}>적용취소</Btn>
         </div>
       ) : masked && !editing ? (
         <div className="flex items-center gap-2">
-          <span className="flex-1 truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2 text-xs text-[var(--warm-dark)] tabular-nums">{revealed ?? masked}</span>
+          <span className="flex flex-1 items-center truncate rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 min-h-[44px] text-xs text-[var(--warm-dark)] tabular-nums">{revealed ?? masked}</span>
           {!revealed && <Btn type="button" variant="secondary" size="sm" disabled={busy || !tenantId} onClick={() => void handleReveal()}>보기</Btn>}
           <Btn type="button" variant="secondary" size="sm" onClick={() => { setEditing(true); setRevealed(null) }}>변경</Btn>
           <Btn type="button" variant="ghost" size="sm" onClick={() => void handleClear()}>삭제</Btn>

@@ -1500,7 +1500,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         /* 서약 */
         .contract-paper .pledge { border: 0.6pt solid var(--p-rule-strong); background: var(--p-amt-bg); padding: 3mm 5mm; font-size: 9.5pt; font-weight: 500; line-height: 1.45; text-align: center; margin-bottom: 4.5mm; break-inside: avoid; }
         /* 신원번호 수집·이용 동의 — 인쇄본(contractPrintHtml .consent-note)과 같은 값이어야 화면과 종이가 갈리지 않는다. */
-        .contract-paper .consent-note { font-size: 7.6pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
+        .contract-paper .consent-note { font-size: 8pt; line-height: 1.4; color: var(--p-ink); border-top: 0.4pt solid var(--p-rule); padding-top: 2mm; margin-bottom: 2mm; word-break: keep-all; break-inside: avoid; }
         .contract-paper .pledge-edit { width: 100%; padding: 3mm 5mm; border: 1px solid #d6cdbb; border-radius: 6px; text-align: center; font-size: 9.5pt; font-weight: 500; margin-bottom: 4.5mm; background: #fffaf2; font-family: inherit; }
 
         /* 서명 */
