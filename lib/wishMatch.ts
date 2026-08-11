@@ -32,6 +32,13 @@ export const WISH_LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as c
  */
 export const GAP_CAP_DAYS = 30
 
+/**
+ * 미루기 권고를 띄우는 최대 대기 일수. 지금 바로 갈 방이 없고 가장 빠른 방이 이 안쪽이면
+ * "며칠만 늦추면 됩니다"라고 말할 값어치가 있다. 등급 문구에만 쓰고 후보 집합은 자르지 않는다
+ * (후보는 GAP_CAP_DAYS 30일 그대로 — 운영자 확정 2026-08-11).
+ */
+export const DELAY_HINT_DAYS = 7
+
 /** 날짜 게이트 판정. excluded 만 후보에서 빠지고, 나머지 셋은 남는다. */
 export type WishGate = 'ok' | 'flexible' | 'unconfirmed' | 'excluded'
 
@@ -57,14 +64,41 @@ export type WishRoomMatch = {
   excludedCount: number
 }
 
+/** 사람 축 한 줄 — 그 사람이 들어갈 수 있는 방 하나. 방 축 후보의 전치라 판정 필드가 같다. */
+export type WishLeaseRoom = {
+  roomNo: string
+  roomId: string
+  availability: RoomAvailability
+  matchedBy: 'rooms' | 'conditions'
+  gate: WishGate
+  waitDays: number
+}
+
+/** 사람 축 한 칸 — "이 사람은 어느 방에 들어갈 수 있는가". 방 축(WishRoomMatch)을 뒤집은 것이다. */
+export type WishLeaseMatch = {
+  leaseId: string
+  tenantId: string
+  tenantName: string
+  status: string
+  /** 그 사람의 입주 희망일 'YYYY-MM-DD'. 없으면 null. */
+  wishMoveIn: string | null
+  /** 날짜 게이트를 통과한 방 — ok 먼저, 그 안에서 대기 짧은 순. */
+  rooms: WishLeaseRoom[]
+  /** 희망했지만 날짜가 안 맞아 빠진 방 수. */
+  excludedCount: number
+}
+
 export type WishMatchResult = {
   rooms: WishRoomMatch[]
+  /** 같은 판정의 사람 축 전치 — 방 축을 다시 계산하지 않는다(§ 두 축은 같은 한 판정이다). */
+  leases: WishLeaseMatch[]
   /** 희망한 방이 하나 이상 매칭됐지만 전부 날짜에서 빠진 사람 — 카드에 사유를 붙일 대상. */
   noDateFitLeaseIds: string[]
 }
 
 type WishRoomInfo = {
   roomNo: string
+  roomId: string
   type: string | null
   floor: string | null
   windowType: string | null
@@ -159,6 +193,20 @@ function sortCandidates(list: (WishCandidate & { orderAt: number })[]): (WishCan
 }
 
 /**
+ * 사람 축 한 칸 안의 방 순서 — 날짜가 맞는 방(ok)이 먼저고, 그 다음은 덜 기다리는 방이다.
+ * 같은 날 비는 방끼리는 호실번호 순(사람이 목록을 눈으로 훑는 순서).
+ */
+function sortLeaseRooms(list: WishLeaseRoom[]): WishLeaseRoom[] {
+  return [...list].sort((a, b) => {
+    const ga = a.gate === 'ok' ? 0 : 1
+    const gb = b.gate === 'ok' ? 0 : 1
+    if (ga !== gb) return ga - gb
+    if (a.waitDays !== b.waitDays) return a.waitDays - b.waitDays
+    return a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
+  })
+}
+
+/**
  * 방 축·사람 축을 붙여 방별 후보 목록을 만든다. 조회는 loadWishMatch 가 하고 여기는 순수 계산이다
  * (감지망 스크립트가 같은 함수를 DB 값으로 되돌려 검사할 수 있게).
  *
@@ -226,16 +274,26 @@ export function buildWishMatch(
   }
 
   const result: WishRoomMatch[] = []
-  // 사람별 '매칭된 방 수 / 그중 날짜로 빠진 수' — 전부 빠진 사람만 카드에 사유가 붙는다.
-  const perLease = new Map<string, { matched: number; excluded: number }>()
+  // 사람 축 — 방 축을 세는 이 자리에서 같은 후보를 뒤집어 담는다. 여기서 다시 순회하며 게이트를
+  // 물으면 그 순간 판정이 두 벌이 되고, 규칙이 바뀔 때 한쪽만 고쳐진다(제외 카운트가 그렇게 샜다).
+  const perLease = new Map<string, WishLeaseMatch>()
   for (const [roomNo, raw] of byRoom) {
     const info = roomByNo.get(roomNo)
     if (!info || raw.length === 0) continue
     for (const c of raw) {
-      const t = perLease.get(c.leaseId) ?? { matched: 0, excluded: 0 }
-      t.matched += 1
-      if (c.gate === 'excluded') t.excluded += 1
-      perLease.set(c.leaseId, t)
+      let t = perLease.get(c.leaseId)
+      if (!t) {
+        t = {
+          leaseId: c.leaseId, tenantId: c.tenantId, tenantName: c.tenantName, status: c.status,
+          wishMoveIn: c.wishMoveIn, rooms: [], excludedCount: 0,
+        }
+        perLease.set(c.leaseId, t)
+      }
+      if (c.gate === 'excluded') t.excludedCount += 1
+      else t.rooms.push({
+        roomNo, roomId: info.roomId, availability: info.availability,
+        matchedBy: c.matchedBy, gate: c.gate, waitDays: c.waitDays,
+      })
     }
     const passers = sortCandidates(raw.filter(c => c.gate !== 'excluded'))
     result.push({
@@ -251,12 +309,17 @@ export function buildWishMatch(
   }
   result.sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
+  // 통과한 방이 하나도 없고 빠진 방만 있는 사람 = 종전 'matched > 0 && excluded === matched'.
+  // 같은 집합을 새 구조에서 파생시킨다 — 두 번 세지 않는다.
+  const leaseAxis: WishLeaseMatch[] = []
   const noDateFitLeaseIds: string[] = []
-  for (const [leaseId, t] of perLease) {
-    if (t.matched > 0 && t.excluded === t.matched) noDateFitLeaseIds.push(leaseId)
+  for (const t of perLease.values()) {
+    t.rooms = sortLeaseRooms(t.rooms)
+    leaseAxis.push(t)
+    if (t.rooms.length === 0 && t.excludedCount > 0) noDateFitLeaseIds.push(t.leaseId)
   }
 
-  return { rooms: result, noDateFitLeaseIds }
+  return { rooms: result, leases: leaseAxis, noDateFitLeaseIds }
 }
 
 /**
@@ -272,7 +335,8 @@ export async function loadWishMatch(
     prisma.room.findMany({
       where: { propertyId },
       select: {
-        roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true, nonResidentVacant: true,
+        // id — 사람 축 줄에서 호실 면을 여는 데 쓴다(호실번호는 영업장 안에서만 유일해 키가 못 된다).
+        id: true, roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true, nonResidentVacant: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
           select: { status: true, expectedMoveOut: true },
@@ -299,7 +363,7 @@ export async function loadWishMatch(
     const availability = roomAvailability(r)
     if (!availability) continue   // 언제 비는지 모르는 방은 매칭 축에 없다
     rooms.push({
-      roomNo: r.roomNo, type: r.type, floor: r.floor ?? null,
+      roomNo: r.roomNo, roomId: r.id, type: r.type, floor: r.floor ?? null,
       windowType: r.windowType, direction: r.direction, baseRent: r.baseRent,
       availability,
     })
@@ -337,4 +401,29 @@ export function wishGateDetail(c: Pick<WishCandidate, 'gate' | 'waitDays'>): str
   if (c.gate === 'flexible') return `희망일보다 ${c.waitDays}일 늦게 비지만 일정 조절이 가능한 분입니다.`
   if (c.gate === 'unconfirmed') return `희망일보다 ${c.waitDays}일 늦게 빕니다. 일정을 조절할 수 있는지 확인해 주세요.`
   return ''
+}
+
+/** 방이 언제부터 되는가 — "8/18부터". 지금 빈 방은 날짜가 없으니 기존 어휘 그대로 '공실'. */
+export function wishRoomFromLabel(a: RoomAvailability): string {
+  return a.kind === 'now' ? '공실' : `${fmtWishMD(a.availableFrom)}부터`
+}
+
+/** 사람 축 한 줄의 우측 캡션 — "8/18부터" 또는 "8/30부터 · 5일 늦음". */
+export function wishLeaseRoomCaption(r: Pick<WishLeaseRoom, 'availability' | 'waitDays'>): string {
+  const from = wishRoomFromLabel(r.availability)
+  return r.waitDays > 0 ? `${from} · ${r.waitDays}일 늦음` : from
+}
+
+/**
+ * 미루기 권고 한 줄 — 지금 바로 갈 방이 0실이고 가장 빠른 방이 DELAY_HINT_DAYS 안쪽일 때만 나온다.
+ * 문장은 wishGateDetail 원문에 방 번호만 앞에 붙인 것이다(어휘를 새로 만들지 않는다).
+ * 대상이 아니면 빈 문자열 — 호출부는 그때 줄 자체를 그리지 않는다.
+ */
+export function wishDelayHint(rooms: WishLeaseRoom[]): string {
+  if (rooms.length === 0) return ''
+  if (rooms.some(r => r.gate === 'ok')) return ''
+  const soonest = rooms.reduce((m, r) => (r.waitDays < m.waitDays ? r : m), rooms[0])
+  if (soonest.waitDays <= 0 || soonest.waitDays > DELAY_HINT_DAYS) return ''
+  const detail = wishGateDetail(soonest)
+  return detail ? `${soonest.roomNo}호는 ${detail}` : ''
 }
