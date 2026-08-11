@@ -17,7 +17,10 @@
 
 import type { LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
-import { billForLeaseMonth } from './billing'
+import {
+  billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth,
+  type BillingLeaseFields,
+} from './billing'
 import { fmtDateDot } from './fmtDate'
 import { kstDaysUntil } from './kstDate'
 
@@ -333,6 +336,121 @@ export async function getCheckedOutRecognizedRevenue(
     _sum: { actualAmount: true },
   })
   return agg._sum.actualAmount ?? 0
+}
+
+/**
+ * 그 달 실수납 매출(이용료 축) — 보증금·기타수익은 다른 축이라 여기 없다.
+ *
+ *   거주·비거주 계약   Σ min(그 달 귀속 수납 합, **그 달 청구액**)
+ *   퇴실 계약          Σ 그 달 귀속 수납 합 (= getCheckedOutRecognizedRevenue 정본, 같은 값)
+ *
+ * 왜 정본으로 올렸나 (2026-08-11, 회계 패널).
+ *   홈 안에서 예상 축과 실수납 축이 서로 다른 상한을 쓰고 있었다. 예상 축은 그 달 청구액
+ *   (billForLeaseMonth, 락인 반영)인데, 실수납 축은 퇴실 계약에 대해 `lease.rentAmount` 로
+ *   캡했다. 그런데 rentAmount 는 오늘의 가격표(가변 마스터)고 락인은 그 달의 확정 청구권
+ *   (불변 기록)이다. 가변 마스터로 과거를 재계산하면 방 가격을 고치는 순간 마감한 달의
+ *   숫자가 바뀐다 — 결산 재현성이 없어진다.
+ *
+ *   실측(제기역점): 502호 남태우는 5·6월 청구가 각각 470,000 으로 락인돼 있고 그대로 완납했는데,
+ *   나중에 rentAmount 가 440,000 이 되면서 두 달 합 60,000 이 실수납에서 잘렸다. 그 결과
+ *   `pendingRevenue = projectedRevenue − totalRevenue` 가 **이미 퇴실하고 완납한 사람에게서**
+ *   30,000 을 미수로 세웠다. 잘린 돈은 매출도 부채도 아니게 증발한다.
+ *
+ *   반대로 헐겁기도 했다. 519호 임형진 6월은 실제 청구 370,000 인데 캡이 470,000, 418호 서민준
+ *   6월은 실제 청구 80,000 인데 캡이 400,000 이었다. 보호장치가 아니라 보호장치라는 이름뿐이었다.
+ *
+ * 상한을 무엇으로 두는가 — **그 축이 인식하는 그 달 청구액**이다.
+ *   거주·비거주의 인식액은 billThisMonth(양도인 귀속월 0 · 무청구 퇴실월 0 · 나머지는 락인 반영)라
+ *   상한도 같은 값이다. 퇴실 계약의 인식액은 정책상 rentAmount 가 아니라 '그 달 귀속 수납 합'
+ *   자체이므로(일할 정산되는 짧은 거주를 과다 인식하지 않기 위한 기존 정본), 상한도 그 값과 같다.
+ *   즉 퇴실 항은 예상 축과 실수납 축이 **문자 그대로 같은 함수**를 부른다 — 두 축이 갈릴 여지가 없다.
+ *   회계 패널은 퇴실 항에도 락인 캡을 걸자고 했으나(진짜 과납이 조용히 수익이 되는 것을 막자는 취지),
+ *   그러면 인식 축(무캡)과 실수납 축(유캡)이 다시 갈려 같은 이름의 숫자가 화면마다 달라진다.
+ *   그 취지는 캡이 아니라 감지망으로 옮겼다 — verify-money-consistency 가 '퇴실 계약의 그 달 수납이
+ *   그 달 락인 청구를 넘는' 건을 직접 잡는다.
+ *
+ * 반환값을 쪼개 주는 이유는 수납 관리 캡션이 항별로 등식을 적기 때문이다.
+ */
+export type PaidRevenueBreakdown = {
+  occupied: number     // 거주·비거주 계약분
+  checkedOut: number   // 퇴실 계약분 (= getCheckedOutRecognizedRevenue)
+  total: number
+}
+
+export async function getPaidRevenue(
+  prisma: PrismaDb,
+  propertyId: string,
+  targetMonth: string,
+): Promise<PaidRevenueBreakdown> {
+  // 양도인 귀속 기준일 — 별도 설정이 없으면 인수일. 수납 화면(getRoomPaymentStatus)과 같은 기준이다.
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+  })
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+
+  const [leases, payments, prevOwnerRows, checkedOut] = await Promise.all([
+    prisma.leaseTerm.findMany({
+      where: { propertyId, status: { in: BILLABLE_STATUSES } },
+      select: {
+        id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true,
+        dueDay: true, overrideDueDay: true, overrideDueDayMonth: true,
+        checkoutProratedAmount: true, checkoutProratedMonth: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+        room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
+      },
+    }),
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
+        ...(cutoff ? { payDate: { gte: cutoff } } : {}),
+      },
+      select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
+    }),
+    prisma.paymentRecord.findMany({
+      where: { propertyId, targetMonth, isPrevOwner: true },
+      select: { leaseTermId: true },
+    }),
+    getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth),
+  ])
+
+  const prevOwnerLeases = new Set(prevOwnerRows.map(p => p.leaseTermId))
+  const paidByLease = new Map<string, number>()
+  const lockedByLease = new Map<string, number>()
+  for (const p of payments) {
+    paidByLease.set(p.leaseTermId, (paidByLease.get(p.leaseTermId) ?? 0) + p.actualAmount)
+    if (p.expectedAmount > (lockedByLease.get(p.leaseTermId) ?? 0)) lockedByLease.set(p.leaseTermId, p.expectedAmount)
+  }
+
+  let occupied = 0
+  for (const l of leases) {
+    const paid = paidByLease.get(l.id) ?? 0
+    if (paid <= 0) continue
+    // 아직 입주 전인 계약은 그 달 청구 대상이 아니다 — 예상 축·수납 화면 행과 같은 게이트.
+    const moveInMonth = monthOfDate(l.moveInDate)
+    if (moveInMonth && moveInMonth > targetMonth) continue
+    occupied += Math.min(paid, monthBillForRevenue(l, targetMonth, {
+      isPrevOwnerMonth: prevOwnerLeases.has(l.id),
+      locked: lockedByLease.get(l.id) ?? null,
+    }))
+  }
+  return { occupied, checkedOut, total: occupied + checkedOut }
+}
+
+/**
+ * 그 달 청구액(매출 인식용) — 양도인 귀속월과 무청구 퇴실월은 0, 나머지는 lib/billing 정본.
+ * dashboard 의 billThisMonth 와 같은 규칙이며 수납 화면 행의 rowExpected 와도 같다.
+ */
+function monthBillForRevenue(
+  l: BillingLeaseFields & { expectedMoveOut?: Date | string | null; dueDay?: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+  targetMonth: string,
+  opts: { isPrevOwnerMonth: boolean; locked: number | null },
+): number {
+  if (opts.isPrevOwnerMonth) return 0
+  if (isAfterMoveOutMonth(l.expectedMoveOut ?? null, targetMonth)) return 0
+  const dueRaw = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay) ? l.overrideDueDay : (l.dueDay ?? null)
+  if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut ?? null, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
+  return billForLeaseMonth(l, targetMonth, opts.locked)
 }
 
 /**

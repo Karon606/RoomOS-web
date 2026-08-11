@@ -807,8 +807,12 @@ export default function RoomsClient({
   // ── 홈 예상 수입과의 다리 (운영자 혼동 2회, 2026-08-07) ──
   // 두 화면 숫자가 달라 보이는 이유를 등식으로 적는다. 항의 값은 서버 정본(홈과 같은 헬퍼)이고
   // 여기서는 더하기만 한다 — 화면이 자기 식을 만들면 그 순간 또 갈린다.
+  //
+  // 실수납 등식에 '퇴실 귀속'이 빠져 있었다(2026-08-11). 홈 실수납은 퇴실 계약의 그 달 귀속 수납을
+  // 포함하는데 여기는 안 더해서, 6월 3,800,000 · 7월 1,940,000 이 통째로 어긋났다. 예상 축이 이미
+  // 같은 이름으로 더하고 있던 항이라 한쪽만 빠진 누락이었다. 두 줄이 같은 항을 같은 값으로 적는다.
   const homeExpectedSum  = expectedSum + reservedExpected + checkedOutRecognized + incomeSum
-  const homeCollectedSum = collectedSum + incomeSum
+  const homeCollectedSum = collectedSum + checkedOutRecognized + incomeSum
   // 세 항이 전부 0이면 두 숫자가 같으므로 등식을 적을 이유가 없다.
   const showHomeBridge   = reservedExpected !== 0 || checkedOutRecognized !== 0 || incomeSum !== 0
 
@@ -886,12 +890,14 @@ export default function RoomsClient({
             {incomeSum !== 0 && <>{' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span></>}
           </p>
         )}
-        {/* 실수납 줄은 기타수익이 있을 때만 — 없으면 홈 실수납과 위 수납액이 같은 값이라 적을 것이 없다. */}
-        {showHomeBridge && incomeSum !== 0 && (
+        {/* 실수납 줄은 퇴실 귀속이나 기타수익이 있을 때만 — 둘 다 없으면 홈 실수납과 위 수납액이 같은 값이다.
+            예약 확정은 아직 받은 돈이 아니라 이 축에 들어오지 않는다(예상 축에만 있다). */}
+        {showHomeBridge && (checkedOutRecognized !== 0 || incomeSum !== 0) && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">
             홈 실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>
             {' = 수납 '}<span className="num">{fmtWon(collectedSum)}</span>
-            {' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span>
+            {checkedOutRecognized !== 0 && <>{' + 퇴실 귀속 '}<span className="num">{fmtWon(checkedOutRecognized)}</span></>}
+            {incomeSum !== 0 && <>{' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span></>}
           </p>
         )}
         {/* 현금영수증·카드 합계 — 이 달에 결제된(납부일 기준) 금액, 세무 대사용(오류신고 c0936f89) */}

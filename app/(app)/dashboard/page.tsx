@@ -14,7 +14,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, roomReservationQueue, primaryRoomLease } from '@/lib/leaseStatus'
+import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue, roomReservationQueue, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -97,7 +97,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 응답시간: 서로 독립인 조회를 여기서 미리 시작 — await는 각 사용 지점 그대로 ──
   // 값·계산식·에러 처리 불변, 쿼리 시작 시점만 앞당김(순차 왕복 → 동시 실행).
-  const pCheckedOutRev        = getCheckedOutLeasesWithRevenue(prisma, propertyId, targetMonth)
+  const pPaidRevenue          = getPaidRevenue(prisma, propertyId, targetMonth)
   const pCheckedOutRecognized = getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
   const pRecurringWithStatus  = getRecurringExpensesWithStatus(targetMonth)
   const pDepositRecordedAgg   = prisma.paymentRecord.aggregate({
@@ -153,7 +153,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -454,36 +454,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
-  const activeLeaseIds  = new Set(activeLeases.map(l => l.id))
-  const leaseRentMap    = new Map(activeLeases.map(l => [l.id, l.rentAmount]))
-
-  // CHECKED_OUT lease 도 그 달 귀속 입금이 있으면 매출 인식 (totalExpected/Revenue 통일 정책).
-  // 단기 입주 후 퇴실(예: 5월 단기 정산) + 거주 중 중도퇴실(예: 월초 입금 후 퇴실).
-  // 헬퍼: lib/leaseStatus.ts — 같은 의도의 다른 페이지도 이 헬퍼 사용.
-  const checkedOutLeasesForRev = await pCheckedOutRev
-  for (const l of checkedOutLeasesForRev) {
-    activeLeaseIds.add(l.id)
-    leaseRentMap.set(l.id, l.rentAmount)
-  }
-
-  // 계약당 이달 납부 합계 → 이용료 상한 적용 (과납분은 다음달 수입)
-  const paidByLease: Record<string, number> = {}
-  for (const p of payments) {
-    if (!activeLeaseIds.has(p.leaseTermId)) continue
-    paidByLease[p.leaseTermId] = (paidByLease[p.leaseTermId] ?? 0) + p.actualAmount
-  }
-  // 캡은 원가가 아니라 그 달 청구액이어야 한다 — 원가로 캡하면 할인 계약에 정가가 입금되거나
+  // 이달 실수납(이용료 축)은 정본 하나로 — lib/leaseStatus getPaidRevenue.
+  // 캡은 원가가 아니라 그 달 청구액이어야 한다. 원가로 캡하면 할인 계약에 정가가 입금되거나
   // 퇴실 일할월·인상 적용월에 매출이 과대/과소가 되고, '예상매출 = 수납완료 + 수납예정' 등식이 깨진다(A페이즈).
-  const lockedThisMonth: Record<string, number> = {}
-  for (const p of payments) {
-    if (p.expectedAmount > (lockedThisMonth[p.leaseTermId] ?? 0)) lockedThisMonth[p.leaseTermId] = p.expectedAmount
-  }
-  const leaseByIdForCap = new Map(activeLeases.map(l => [l.id, l]))
-  const paidRevenue = Object.entries(paidByLease).reduce((s, [id, paid]) => {
-    const l = leaseByIdForCap.get(id)
-    const cap = l ? billForLeaseMonth(l, targetMonth, lockedThisMonth[id] ?? null) : (leaseRentMap.get(id) ?? 0)
-    return s + Math.min(paid, cap)
-  }, 0)
+  // 여기 있던 인라인 계산은 퇴실 계약만 lease.rentAmount(오늘의 가격표)로 캡해, 락인 470,000 을
+  // 완납한 502호 남태우에게서 5·6월 합 60,000 을 잘라내고 그만큼을 허수 미수로 세웠다(2026-08-11 회계 패널).
+  // 수납 관리 캡션이 같은 항을 적으므로 식은 한 곳에만 둔다 — 화면이 자기 식을 만들면 그 순간 갈린다.
+  const paidBreakdown = await pPaidRevenue
+  const paidRevenue = paidBreakdown.total
   const extraRevenue = incomes.reduce((s, i) => s + i.amount, 0)
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
