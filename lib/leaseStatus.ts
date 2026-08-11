@@ -77,7 +77,20 @@ export function nextRoomReservation<T extends { id: string; status: string; move
   leases: T[],
   primary?: { id: string } | null,
 ): T | undefined {
-  return sortByMoveIn(leases.filter(l => l.status === 'RESERVED' && l.id !== primary?.id))[0]
+  return roomReservationQueue(leases, primary)[0]
+}
+
+/**
+ * 그 방에 잡혀 있는 입실 예약 전부 — 입주 예정일 오름차순. nextRoomReservation 의 복수형이다.
+ *
+ * 홈 방 현황 타일이 '다음 한 명'이 아니라 '줄 서 있는 사람들'을 세우면서 필요해졌다(2026-08-11).
+ * 순서 문장을 호출부가 다시 쓰면 primaryRoomLease 때와 같은 사본이 늘어나므로 여기서 한 번만 정한다.
+ */
+export function roomReservationQueue<T extends { id: string; status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+  primary?: { id: string } | null,
+): T[] {
+  return sortByMoveIn(leases.filter(l => l.status === 'RESERVED' && l.id !== primary?.id))
 }
 
 /**
