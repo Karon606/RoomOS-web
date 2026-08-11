@@ -866,9 +866,14 @@ export default function RoomsClient({
     <div className="space-y-4">
       {/* 헤더 — 좌측 제목+탭(수납/부가수익), 우측 월 셀렉터(기간) */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* min-w-0 — 이 래퍼가 안 줄어들면 탭 트랙의 max-w-full 이 화면이 아니라 자기 내용폭에 걸려
+            좌우 여백(16px) 밖으로 밀려난다. 줄여 두면 §25 규정대로 트랙 안에서 가로 스크롤한다. */}
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
-          <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab} equal
+          {/* equal 은 안 쓴다 — 탭이 셋이 되면서 가장 긴 라벨 폭 × 3 이 320~390px 대역을 넘어,
+              폭이 눌린 세그먼트 밖으로 글자가 15px 삐져나왔다(실측). 형제 지출 관리(3탭)와 같이
+              자연폭 + 넘치면 가로 스크롤(§25). */}
+          <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab}
             onChange={id => setViewTab(id as ViewTabId)}
             tabs={[
               { id: 'rooms',   label: '수납' },

@@ -1065,9 +1065,10 @@ export default function RoomManageClient({
           부제도 걷는다 — 바로 아래 상태 칩이 같은 값을 이미 말하고 있었고, 게다가 부제의 '거주중'은
           퇴실 예정을 합쳐 39, 칩은 나눠서 36 이라 한 화면에 같은 이름의 숫자가 둘이었다. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* min-w-0 — 안 줄어들면 탭 트랙의 max-w-full 이 좌우 여백 밖으로 밀린다(수납 관리와 같은 처방). */}
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본) */}
+          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본). 2탭이라 equal 유지(형제 서류 종류 탭 문법) */}
           <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab} equal
             onChange={id => setViewTab(id as 'rooms' | 'cleaning')}
             tabs={[
