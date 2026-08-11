@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { fmtWon } from '@/lib/fmtMoney'
 import { pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -75,11 +76,23 @@ export function ShortStayExtensionModal({
   const overThreshold = !!(current && !current.ok && current.overThreshold)
   const canConfirm = !!ok && !loading && !submitting
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!ok || submitting) return
+    // 뒷사람의 입주일을 밟는 연장이면 한 번 묻는다 — 막지는 않는다(겹침은 운영 재량, confirmRoomOverlap 문법).
+    // 승인 표식(allowOverlap)이 없으면 서버가 같은 규칙으로 거절한다.
+    if (ok.overlap) {
+      const proceed = await confirmDialog({
+        title: `${ok.overlap.tenantName}님 입주 예정일과 겹칩니다`,
+        message: `${ok.roomNo ? `${ok.roomNo}호는` : '이 방은'} ${fmtMD(ok.overlap.moveIn)}에 ${ok.overlap.tenantName}님이 들어올 예정입니다. ${fmtMD(ok.newOut)}까지 연장하면 겹치는데 이대로 확정할까요.`,
+        level: 'caution',
+        confirmLabel: '연장 확정',
+        cancelLabel: '취소',
+      })
+      if (!proceed) return
+    }
     setSubmitErr('')
     setSubmitting(true)
-    void extendShortStay(leaseTermId, ok.newOut, currentOut).then(r => {
+    void extendShortStay(leaseTermId, ok.newOut, currentOut, !!ok.overlap).then(r => {
       setSubmitting(false)
       if (!r.ok) { setSubmitErr(r.error); return }
       setDone({ diff: r.diff })
@@ -187,6 +200,12 @@ export function ShortStayExtensionModal({
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">청소비는 입실 시 1회 청구라 추가되지 않습니다.</p>
                 {ok.roundedUp && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{ok.stayDays}일 → {ok.units}주 계약으로 올림.</p>}
                 {ok.cappedAtMonth && <p className="text-[0.65625rem] text-[var(--warm-muted)]">(1개월 요금 상한)</p>}
+                {/* 겹침 안내 — 확정 버튼을 누르면 확인창이 한 번 더 묻는다. 여기서 미리 알려 헛클릭을 줄인다. */}
+                {ok.overlap && (
+                  <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
+                    {fmtMD(ok.overlap.moveIn)}에 {ok.overlap.tenantName}님 입주 예정입니다. 이 연장은 그 날짜와 겹칩니다.
+                  </p>
+                )}
               </div>
             ) : (
               <p className="text-xs text-[var(--warm-muted)]">

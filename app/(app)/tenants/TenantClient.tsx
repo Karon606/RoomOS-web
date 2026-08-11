@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
+import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from 'react'
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
@@ -69,6 +69,10 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   occupantMoveOut: string | null     // 'YYYY-MM-DD' — 그 방을 잡은 계약(거주중·퇴실 예정·예약) 중 마지막 퇴실 예정일. 이 방이 비는 날
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
+  // 퇴실 예정일이 잡힌 점유 계약들의 구간 — 겹침 문구가 '마지막 날짜'가 아니라 실제로 막고 선 계약을 지목하게.
+  occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
+  // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
+  reservations: { leaseId: string; tenantName: string; moveIn: string; moveOut: string | null }[]
 }
 
 // 호실 선택 자격 — 폼 세 곳(선택 비활성·겹침 캡션·저장 확인창)이 같은 판정을 쓴다.
@@ -88,10 +92,22 @@ function roomPickability(r: Room, isCurrentRoom: boolean) {
   }
 }
 
-// 희망 입주일이 그 방 퇴실 예정일과 겹치는가 — 겹치면 그 퇴실 예정일을 돌려준다(같은 날도 겹침).
-function overlapMoveOut(room: Room | undefined, moveIn: string): string | null {
-  if (!room || room.isVacant || !room.occupantMoveOut || !moveIn) return null
-  return moveIn <= room.occupantMoveOut ? room.occupantMoveOut : null
+// 일정 조절 세그먼트 값 — 빈 문자열이 '미확인'(DB null).
+type MoveInFlexValue = '' | 'yes' | 'no'
+
+// 희망 입주일이 그 방의 어느 계약과 겹치는가 — 겹치는 그 계약을 돌려준다(같은 날도 겹침).
+//
+// 종전에는 방의 '마지막 퇴실 예정일'(occupantMoveOut) 하나만 보고 그 날짜를 문구에 박았다.
+// 계약이 둘 이상 이어 붙은 방에서는 실제로 앞을 막고 선 계약과 다른 날짜를 말한다 —
+// 404호(조성훈 8/15~8/31 · 박정후 9/1~12/20)에 8/20 입주를 적으면 "12/20에 퇴실 예정"이라고
+// 안내했다. 사실은 조성훈이 8/31까지 있다. 구간으로 물어 실제 겹치는 계약을 지목한다.
+function overlapOccupancy(room: Room | undefined, moveIn: string, selfLeaseId?: string): Room['occupancies'][number] | null {
+  if (!room || !moveIn) return null
+  const hits = room.occupancies.filter(o => o.leaseId !== selfLeaseId && moveIn <= o.moveOut)
+  if (hits.length === 0) return null
+  // 희망일을 품고 있는 계약이 있으면 그것이 앞을 막고 선 계약이다. 없으면 가장 먼저 나가는 쪽.
+  return hits.find(o => !o.moveIn || o.moveIn <= moveIn)
+    ?? hits.reduce((m, o) => (o.moveOut < m.moveOut ? o : m), hits[0])
 }
 
 type Contact = {
@@ -125,6 +141,7 @@ type LeaseTerm = {
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
   wishRooms: string | null; wishConditions: string | null; keepAlertAfterInquiry: boolean; visitRoute: string | null
+  moveInFlexible: boolean | null   // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
   room: { id: string; roomNo: string; floor: string | null } | null
   paymentRecords: PaymentRecord[]
   // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
@@ -385,6 +402,7 @@ function loadColVis(): Record<ColKey, boolean> | null {
 
 export default function TenantClient({
   initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole, shortStayUnitDays = 7,
+  wishDateNoticeLeaseIds = [],
 }: {
   initialTenants: Tenant[]
   rooms: Room[]
@@ -396,8 +414,11 @@ export default function TenantClient({
   propertyReservationDepositMode?: string | null   // 영업장 예약금 기본 모드 — 예약자 라벨/폼 기본값
   myRole: string
   shortStayUnitDays?: number   // 단기 계약 단위 일수(영업장 정책) — 카드 '(N주)' 표기용
+  // 희망한 방이 전부 입주 희망일에서 빠진 계약 — 홈 알림의 '제외 N명'과 같은 판정(lib/wishMatch)
+  wishDateNoticeLeaseIds?: string[]
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
+  const wishDateNoticeSet = useMemo(() => new Set(wishDateNoticeLeaseIds), [wishDateNoticeLeaseIds])
   const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 금액 컬럼·필드·정렬·필터를 집합에서 제외
   // 카드 표시 항목 — 금액 차단 시 '이용료·납부일' 제거, '보증금·거주기간'은 거주기간만
   const tenantCardFields: FieldDef[] = hideMoney
@@ -779,18 +800,50 @@ export default function TenantClient({
     router.refresh()
   }, [router])
 
-  // 예약 확정 저장인데 그 방 퇴실 예정일과 희망 입주일이 겹치면 한 번 묻는다(막지는 않는다).
+  // 저장이 그 방의 다른 계약과 겹치면 한 번 묻는다(막지는 않는다). 두 방향이 있다.
+  //   들어가는 쪽 — 예약 확정 입주일이 앞사람 퇴실 예정일과 겹친다.
+  //   미는 쪽     — 내 퇴실 예정일을 뒤로 늘려 다음 예약자 입주일을 밟는다.
   // 세 저장 경로(등록·수정·상세 내 수정)가 이 판정을 공유한다 — 한 곳만 달면 경로별로 갈린다.
-  // 문의·투어 단계 저장은 묻지 않는다(방을 비우는 약속이 아니라 희망 호실 메모라서).
+  // 확인한 겹침은 allowRoomOverlap 으로 서버에 실어 보낸다. 서버는 그 표식이 없으면 거절한다(같은 규칙 한 벌).
   const confirmRoomOverlap = async (fd: FormData): Promise<boolean> => {
-    if ((fd.get('status') as string) !== 'RESERVED' || fd.get('reservationConfirmed') !== 'true') return true
+    const leaseId = (fd.get('leaseTermId') as string) || undefined
     const room = rooms.find(r => r.id === ((fd.get('roomId') as string) || ''))
+    if (!room) return true
+    // 저장 전 계약 — 퇴실일이 실제로 뒤로 밀렸는지 비교하려면 이전 값이 필요하다(폼은 새 값만 보낸다).
+    const prevLease = leaseId
+      ? initialTenants.flatMap(t => t.leaseTerms).find(l => l.id === leaseId)
+      : undefined
+
+    // 미는 쪽 — 퇴실 예정일을 늘리면 그 방에 잡힌 다음 예약의 입주일과 겹칠 수 있다.
+    // 서버 가드(nextReservationConflict)와 같은 구간 판정이다. 내가 들어오기 전에 이미 나가는 예약은 겹치지 않는다.
+    const prevOut = toDateInput(prevLease?.expectedMoveOut)
+    const newOut = ((fd.get('expectedMoveOut') as string) || '').slice(0, 10)
+    const selfIn = ((fd.get('moveInDate') as string) || '').slice(0, 10) || toDateInput(prevLease?.moveInDate)
+    if (newOut && prevOut && newOut > prevOut) {
+      const hit = room.reservations
+        .filter(rv => rv.leaseId !== leaseId && rv.moveIn <= newOut && (!rv.moveOut || !selfIn || rv.moveOut >= selfIn))
+        .sort((a, b) => a.moveIn.localeCompare(b.moveIn))[0]
+      if (hit) {
+        const ok = await confirmDialog({
+          title: `${hit.tenantName}님 입주 예정일과 겹칩니다`,
+          message: `${fmtRoomNo(room.roomNo)}은 ${fmtMD(hit.moveIn)}에 ${hit.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${fmtMD(newOut)}로 두면 겹치는데 이대로 저장할까요.`,
+          level: 'caution',
+          confirmLabel: '이대로 저장',
+          cancelLabel: '취소',
+        })
+        if (!ok) return false
+        fd.set('allowRoomOverlap', 'true')
+      }
+    }
+
+    // 들어가는 쪽 — 문의·투어 단계 저장은 묻지 않는다(방을 비우는 약속이 아니라 희망 호실 메모라서).
+    if ((fd.get('status') as string) !== 'RESERVED' || fd.get('reservationConfirmed') !== 'true') return true
     const moveIn = ((fd.get('moveInDate') as string) || '').slice(0, 10)
-    const out = overlapMoveOut(room, moveIn)
-    if (!out || !room) return true
+    const hit = overlapOccupancy(room, moveIn, leaseId)
+    if (!hit) return true
     return confirmDialog({
-      title: `${fmtRoomNo(room.roomNo)} 퇴실 예정일과 겹칩니다`,
-      message: `이 방은 ${fmtMD(out)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요.`,
+      title: `${hit.tenantName}님 퇴실 예정일과 겹칩니다`,
+      message: `${fmtRoomNo(room.roomNo)}은 ${hit.tenantName}님이 ${fmtMD(hit.moveOut)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요.`,
       level: 'caution',
       confirmLabel: '예약 확정',
       cancelLabel: '취소',
@@ -1855,6 +1908,13 @@ export default function TenantClient({
                     {status === 'CANCELLED' ? '취소 사유' : '퇴실 사유'}: {endReasonText(lease)}
                   </p>
                 )}
+                {/* 매칭 제외 사유 — 희망한 방이 하나 이상 있었는데 전부 입주 희망일과 안 맞아 후보에서 빠졌다.
+                    홈 알림은 수만 알려 준다("제외 N명"). 누구인지 여기서 짚어야 그분께 연락할 수 있다. */}
+                {lease && wishDateNoticeSet.has(lease.id) && (
+                  <p className="text-[0.65625rem] text-[var(--warning-fg)] mb-2 truncate">
+                    현재 희망일에 맞는 방 없음
+                  </p>
+                )}
                 {/* 연락처 — 탭하면 바로 전화 */}
                 {cardFields.contact && primary && (
                   <a href={`tel:${primary.contactValue.replace(/[^0-9+]/g, '')}`} onClick={e => e.stopPropagation()}
@@ -2034,6 +2094,10 @@ export default function TenantClient({
                     <td className={`sticky z-20 px-4 py-3 overflow-hidden transition-colors ${stickyRowBg}`}
                       style={{ left: colWidths.roomNo, maxWidth: colWidths.name }}>
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant.name}</p>
+                      {/* 매칭 제외 사유 — 카드와 같은 문장. 표는 열이 정해져 있어 이름 아래 캡션으로 내린다. */}
+                      {lease && wishDateNoticeSet.has(lease.id) && (
+                        <p className="text-[0.65625rem] text-[var(--warning-fg)] truncate">현재 희망일에 맞는 방 없음</p>
+                      )}
                     </td>
                     {visibleCols.map(c => {
                       const tdBase = 'px-4 py-3 overflow-hidden'
@@ -3231,6 +3295,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [dueDayDisp, setDueDayDisp] = useState(initDueDay().disp)
   // 신규 등록은 입주일 기본값을 오늘로 프리필(청구 상태 저장 시 필수 — 미납 오탐 방지). 편집은 기존값 유지.
   const [moveInDateVal, setMoveInDateVal] = useState(tenant ? toDateInput(lease?.moveInDate) : toDateInput(new Date()))
+  // 일정 조절 가능 여부 — 빈 문자열이 '미확인'(DB null)이다. SegmentedControl 은 값이 목록에 없으면
+  // activeIdx 가 -1 이라 칩이 그려지지 않고 어느 세그먼트도 활성으로 보이지 않는다(미선택 표현).
+  const [moveInFlexVal, setMoveInFlexVal] = useState<MoveInFlexValue>(
+    lease?.moveInFlexible === true ? 'yes' : lease?.moveInFlexible === false ? 'no' : '')
 
   const applyDueDay = (input: string) => {
     const t = input.trim()
@@ -3635,6 +3703,32 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               placeholder="입주 희망일 선택"
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
+            {/* 일정 조절 — 매칭 날짜 게이트의 유일한 입력(lib/wishMatch). 미선택은 '아직 안 물어봤다'로 남고
+                후보에서 빠지지 않는다. 이 hidden 은 예약·투어 단계에서 항상 렌더된다 — 조건부로 그리면
+                서버의 '부재=보존' 관행 탓에 희망일을 지워도 옛 값이 남는다(신고 c4b74c7d 와 같은 클래스).
+                거주 단계 저장은 이 블록 자체가 없어 필드가 안 가고, 그래서 값이 보존된다. */}
+            <input type="hidden" name="moveInFlexible" value={moveInFlexVal} />
+            {moveInDateVal && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-xs font-medium text-[var(--warm-mid)]">일정 조절</span>
+                <SegmentedControl<MoveInFlexValue>
+                  size="sm"
+                  ariaLabel="입주 희망일 조절 가능 여부"
+                  options={[{ value: 'yes', label: '가능' }, { value: 'no', label: '불가' }]}
+                  value={moveInFlexVal}
+                  onChange={setMoveInFlexVal}
+                />
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">
+                  {moveInFlexVal === 'yes' ? '방이 조금 늦게 비어도 매칭 후보로 남습니다'
+                    : moveInFlexVal === 'no' ? '이 날짜에 못 맞추는 방은 매칭에서 빠집니다'
+                    : '미선택 · 확인 전까지 후보로 남습니다'}
+                </span>
+                {moveInFlexVal && (
+                  <button type="button" onClick={() => setMoveInFlexVal('')}
+                    className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
+                )}
+              </div>
+            )}
             {/* 연락 알림일 — 이 날부터 '연락할 때' 알림. 비우면 영업장 기본(입주 희망일 N일 전). 운영자 요청 2026-07-10 */}
             {moveInDateVal && (() => {
               const def = (() => {
@@ -3761,14 +3855,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               )
             })}
           </select>
-          {/* 겹침 경고 — 막지 않고 알린다. 입주일을 아직 안 넣었으면 표시하지 않는다. */}
+          {/* 겹침 경고 — 막지 않고 알린다. 입주일을 아직 안 넣었으면 표시하지 않는다.
+              누구와 겹치는지까지 말한다 — 계약이 이어 붙은 방에서 '방의 마지막 퇴실일'은 앞을 막고 선 사람이 아니다. */}
           {(() => {
             const sel = rooms.find(r => r.id === selectedRoomId)
-            const out = isWaitingTourStatus ? overlapMoveOut(sel, moveInDateVal) : null
-            if (!out) return null
+            const hit = isWaitingTourStatus ? overlapOccupancy(sel, moveInDateVal, lease?.id) : null
+            if (!hit) return null
             return (
               <p className="text-[0.65625rem] text-[var(--warning-fg)]">
-                희망 입주일({fmtMD(moveInDateVal)})이 이 방 퇴실 예정일({fmtMD(out)})과 겹칩니다.
+                희망 입주일({fmtMD(moveInDateVal)})이 {hit.tenantName}님 퇴실 예정일({fmtMD(hit.moveOut)})과 겹칩니다.
               </p>
             )
           })()}

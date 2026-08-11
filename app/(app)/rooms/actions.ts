@@ -2025,6 +2025,7 @@ export async function getTenantDetail(tenantId: string) {
           reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
 
           contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용
+          moveInFlexible: true,     // 입주 희망일 조절 가능 여부 — 매칭 날짜 게이트의 답을 상세에서도 보게(null=미확인)
           registrationStatus: true, payMethod: true, cashReceipt: true,
           reservationDepositMode: true,   // 예약금 모드 — 예약 취소 반환/몰취 경로 분기용
           property: { select: { contactLeadDays: true, reservationDepositMode: true } },

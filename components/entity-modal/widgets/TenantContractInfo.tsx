@@ -19,6 +19,7 @@ type Lease = {
   moveOutDate: Date | string | null
   expectedMoveOut: Date | string | null
   inquiryAt: Date | string | null
+  moveInFlexible?: boolean | null                    // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
   contactAlertDate?: Date | string | null            // 연락 알림 시작일 지정(없으면 기본)
   property?: { contactLeadDays: number } | null      // 영업장 기본 리드타임
 }
@@ -70,6 +71,12 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
           : <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />}
         {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
           <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />
+        )}
+        {/* 일정 조절 — 매칭 날짜 게이트가 읽는 값. 미확인이면 '확인 전'이라고 말한다(빈 값으로 두면
+            물어본 적 없는 것과 '불가'가 화면에서 같아 보인다). 거주 단계에는 쓰이지 않아 그리지 않는다. */}
+        {isPending && lease.status !== 'CANCELLED' && lease.moveInDate && (
+          <Item label="일정 조절"
+            value={lease.moveInFlexible === true ? '가능' : lease.moveInFlexible === false ? '불가 (이 날짜만)' : '확인 전'} />
         )}
         {isPending && lease.expectedMoveOut && <Item label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
         {/* 연락 알림일 — 이 날부터 홈·종에 '연락할 때' 알림(운영자 요청 2026-07-10: 상세에 보여야 안심) */}

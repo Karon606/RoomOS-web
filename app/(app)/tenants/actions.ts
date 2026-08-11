@@ -20,6 +20,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
+import { loadWishMatch } from '@/lib/wishMatch'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
 // 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
@@ -190,6 +191,20 @@ export async function getTenants() {
 }
 
 /**
+ * 희망한 방이 하나 이상 있었지만 전부 날짜에서 빠진 계약의 id 목록.
+ *
+ * 홈 알림은 그 사람들을 세어 보여 주기만 한다("날짜가 맞지 않아 제외 N명"). 정작 연락해야 할
+ * 상대가 목록 어디에 있는지 알 수 없으면 알림이 행동으로 이어지지 않는다 — 운영자 오더의
+ * "기다리는 사람에게 방이 없다고 알려줄 수 있어야 한다"가 여기서 완성된다.
+ * 판정은 홈과 같은 함수(lib/wishMatch)를 쓴다. 사본을 만들면 두 화면이 다른 사람을 가리킨다.
+ */
+export async function getWishDateNotices(): Promise<string[]> {
+  const { propertyId } = await getPropertyId()
+  const { noDateFitLeaseIds } = await loadWishMatch(prisma, propertyId, kstYmdStr())
+  return noDateFitLeaseIds
+}
+
+/**
  * 저장된 외국인등록번호의 평문을 꺼내는 유일한 문. 고객 화면의 [보기] 가 이 액션을 부른다.
  * 값을 돌려주기 전에 열람 기록을 남긴다. 뒤에 두면 기록 실패가 곧 기록 없는 열람이 된다.
  */
@@ -217,6 +232,48 @@ export async function revealForeignRegNo(tenantId: string): Promise<
   }
 }
 
+/**
+ * 폼의 '일정 조절' 세그먼트 읽기 — 'yes'=true · 'no'=false · ''=미확인(null).
+ * 필드 자체가 없으면 undefined 를 돌려준다. 거주 단계 저장은 이 입력을 그리지 않으므로
+ * undefined 가 곧 '이 저장은 그 값을 편집하지 않는다'다(tourDate·inquiryAt 과 같은 부재=보존 관행).
+ */
+function moveInFlexibleOf(formData: FormData): boolean | null | undefined {
+  if (!formData.has('moveInFlexible')) return undefined
+  const v = (formData.get('moveInFlexible') as string) || ''
+  return v === 'yes' ? true : v === 'no' ? false : null
+}
+
+/**
+ * 그 방에 잡힌 예약 중 늘어난 체류 구간과 겹치는 첫 건 — 단기 연장(extendShortStay)과 편집 폼(updateTenant)이 공유한다.
+ *
+ * 구간으로 묻는다. "새 퇴실일 ≥ 다음 예약 입주일" 하나만 보면 **앞에 있던 예약**까지 걸린다 —
+ * 404호는 조성훈(8/15~8/31) 뒤에 박정후(9/1~12/20)가 붙어 있어서, 박정후를 하루 늘리는 것이
+ * 이미 나간 조성훈과 겹친다고 나왔다. 겹침은 두 구간이 실제로 포개질 때만이다.
+ *   내 구간 [입주일, 새 퇴실일] · 예약 구간 [입주일, 퇴실 예정일(없으면 무기한)]
+ */
+async function nextReservationConflict(
+  roomId: string | null,
+  excludeLeaseId: string,
+  selfMoveInYmd: string | null,
+  newOutYmd: string | null,
+): Promise<{ moveIn: string; tenantName: string } | null> {
+  if (!roomId || !newOutYmd) return null
+  const next = await prisma.leaseTerm.findFirst({
+    where: {
+      roomId, id: { not: excludeLeaseId }, status: 'RESERVED',
+      moveInDate: { not: null, lte: new Date(`${newOutYmd}T00:00:00.000Z`) },
+      // 내가 들어오기 전에 이미 나가는 예약은 겹치지 않는다(퇴실일 없는 예약은 무기한이라 항상 겹친다).
+      ...(selfMoveInYmd
+        ? { OR: [{ expectedMoveOut: null }, { expectedMoveOut: { gte: new Date(`${selfMoveInYmd}T00:00:00.000Z`) } }] }
+        : {}),
+    },
+    orderBy: { moveInDate: 'asc' },
+    select: { moveInDate: true, tenant: { select: { name: true } } },
+  })
+  if (!next?.moveInDate) return null
+  return { moveIn: new Date(next.moveInDate).toISOString().slice(0, 10), tenantName: next.tenant.name }
+}
+
 // 호실 목록 (입주자 등록/수정 시 선택용)
 export async function getRoomsForSelect() {
   const { propertyId } = await getPropertyId()
@@ -228,11 +285,12 @@ export async function getRoomsForSelect() {
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         // take:1 을 뺐다 — 방이 '언제 비는지'와 '이미 예약이 걸렸는지'는 계약 하나만 봐서는 알 수 없다.
-        select: { status: true, expectedMoveOut: true, isShortTerm: true },
+        select: { id: true, status: true, moveInDate: true, expectedMoveOut: true, isShortTerm: true, tenant: { select: { name: true } } },
         orderBy: { createdAt: 'desc' },
       },
     },
   })
+  const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
   return rooms.map(({ leaseTerms, ...r }) => {
     // 그 방을 잡고 있는 계약 중 퇴실 예정일이 잡힌 건 — 단기 ACTIVE 도, 퇴실일 있는 예약도 여기 들어온다.
     // 예약을 빼면 '조성훈이 8/31 나가는 404호'가 언제 비는지 모르는 방으로 취급돼 고를 수 없었다.
@@ -249,6 +307,16 @@ export async function getRoomsForSelect() {
       // 퇴실 예정일 없는 예약만 '무기한'이다. 날짜가 잡힌 예약은 언제 비는지 아는 방이라 막지 않고
       // 겹칠 때만 확인창으로 묻는다(운영 재량). 서버 가드(addTenant·updateTenant)도 같은 선이다.
       hasIndefiniteReservation: leaseTerms.some(l => l.status === 'RESERVED' && !l.expectedMoveOut),
+      // 구간 목록 — 겹침 문구가 '방의 마지막 퇴실일'이 아니라 실제로 앞을 막고 선 계약을 지목하도록.
+      occupancies: occupants.map(l => ({
+        leaseId: l.id, tenantName: l.tenant.name, status: l.status,
+        moveIn: ymd(l.moveInDate), moveOut: ymd(l.expectedMoveOut)!,
+      })),
+      // 입주 예정일이 잡힌 예약 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 확인창이 묻는 근거.
+      // 퇴실 예정일까지 준다(없으면 무기한) — 겹침은 두 구간이 실제로 포개질 때만이다(서버 가드와 같은 식).
+      reservations: leaseTerms
+        .filter(l => l.status === 'RESERVED' && l.moveInDate)
+        .map(l => ({ leaseId: l.id, tenantName: l.tenant.name, moveIn: ymd(l.moveInDate)!, moveOut: ymd(l.expectedMoveOut) })),
     }
   })
 }
@@ -293,6 +361,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const wishRooms           = formData.get('wishRooms') as string
   const wishConditions      = formData.get('wishConditions') as string
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
+  const moveInFlexible      = moveInFlexibleOf(formData)
   const visitRoute          = formData.get('visitRoute') as string
   const tourDate            = formData.get('tourDate') as string
   const tourTime            = formData.get('tourTime') as string   // 'HH:MM' 또는 ''
@@ -430,6 +499,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           wishRooms: wishRooms || null,
           wishConditions: wishConditions || null,
           keepAlertAfterInquiry,
+          moveInFlexible: moveInFlexible ?? null,
           visitRoute: visitRoute || null,
         },
       },
@@ -538,6 +608,10 @@ export async function updateTenant(formData: FormData): Promise<
   const wishRooms          = formData.get('wishRooms') as string
   const wishConditions     = formData.get('wishConditions') as string
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
+  // undefined = 폼에 필드 없음(거주 단계 저장) → Prisma 가 그 컬럼을 건드리지 않는다.
+  // `|| null` 로 뭉뚱그리면 거주 정보를 저장할 때마다 예약 단계에서 받아 둔 답이 증발한다.
+  const moveInFlexible     = moveInFlexibleOf(formData)
+  const allowRoomOverlap   = formData.get('allowRoomOverlap') === 'true'
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string | null   // null = 폼에 필드 없음(보존)
   const tourTime           = formData.get('tourTime') as string | null   // null = 폼에 필드 없음(보존)
@@ -584,12 +658,34 @@ export async function updateTenant(formData: FormData): Promise<
   const prevStatus = currentLease.status
   const newRoomId  = roomId || prevRoomId
 
+  // 퇴실 예정일 변경 판정 — 재검증 발화와 일할 정산 재계산이 같은 값을 봐야 한다.
+  // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
+  // 기존값을 '변경 없음'으로 간주해 정산 재계산·초기화가 헛트리거되지 않게 한다.
+  const prevMoveOutIso = currentLease.expectedMoveOut ? new Date(currentLease.expectedMoveOut).toISOString().slice(0, 10) : null
+  const moveOutFieldPresent = expectedMoveOut !== null
+  const newMoveOutIso  = moveOutFieldPresent ? (expectedMoveOut || null) : prevMoveOutIso
+
   // 호실 점유 재검증 — addTenant 와 같은 규칙(무기한 점유·이중 예약만 거부, 퇴실 예정일이 잡힌 방은 허용).
-  // 발화 조건을 반드시 좁힌다: 방이 실제로 바뀌거나, 비거주계 상태에서 거주계로 올라갈 때만.
-  // 조건 없이 걸면 이미 그 방에 확정돼 있는 건을 그대로 재저장하는 것까지 막혀 회귀가 된다.
+  // 발화 조건을 반드시 좁힌다: 방이 실제로 바뀌거나, 비거주계 상태로부터 거주계로 올라가거나,
+  // 같은 방에서 퇴실 예정일을 뒤로 미룰 때만. 조건 없이 걸면 이미 그 방에 확정돼 있는 건을
+  // 그대로 재저장하는 것까지 막혀 회귀가 된다.
+  // 퇴실일 연장을 발화 조건에 더한 이유(2026-08-11): 방도 상태도 안 바뀌는 저장이라 종전엔 아무 검사도
+  // 지나가지 않았는데, 그 한 번의 저장이 뒤에 잡혀 있는 예약자의 입주일을 그대로 밟는다.
   const RESIDENT_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED']
   const roomChanged = !!newRoomId && newRoomId !== prevRoomId
   const climbingIntoResidence = RESIDENT_STATUSES.includes(status) && !RESIDENT_STATUSES.includes(prevStatus)
+  // 무기한이던 계약에 퇴실일을 넣는 것은 '연장'이 아니라 축소다 — 없던 겹침을 만들 수 없으므로 묻지 않는다.
+  const moveOutExtended = !!newMoveOutIso && !!prevMoveOutIso && newMoveOutIso > prevMoveOutIso
+  if (newRoomId && moveOutExtended && !allowRoomOverlap) {
+    // 다음 예약자와 겹치면 거절한다. 화면은 저장 전에 확인창으로 묻고, 운영자가 그래도 하겠다면
+    // allowRoomOverlap 을 실어 보낸다 — 화면과 서버가 같은 규칙 한 벌이다(confirmRoomOverlap 문법).
+    const selfMoveIn = moveInDate || (currentLease.moveInDate ? new Date(currentLease.moveInDate).toISOString().slice(0, 10) : null)
+    const conflict = await nextReservationConflict(newRoomId, leaseTermId, selfMoveIn, newMoveOutIso)
+    if (conflict) {
+      const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`
+      return { ok: false, error: `이 방은 ${md(conflict.moveIn)}에 ${conflict.tenantName}님이 들어올 예정입니다. 퇴실 예정일을 ${md(newMoveOutIso)}로 두면 겹칩니다. 그 예약의 입주일을 먼저 옮기거나, 저장 화면의 확인을 거쳐 주세요.` }
+    }
+  }
   if (newRoomId && (roomChanged || climbingIntoResidence)) {
     const otherLeases = await prisma.leaseTerm.findMany({
       where: { roomId: newRoomId, id: { not: leaseTermId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -615,11 +711,7 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 퇴실 일할 정산 일관 유지 — 편집 폼 경로도 전환 버튼(applyStatusTransition)과 동일 정책.
   // 정산이 적용된 상태에서 퇴실일만 바꾸면 옛 날짜 기준 일할이 잔존하던 문제의 수정.
-  const prevMoveOutIso = currentLease.expectedMoveOut ? new Date(currentLease.expectedMoveOut).toISOString().slice(0, 10) : null
-  // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
-  // 기존값을 '변경 없음'으로 간주해 정산 재계산·초기화가 헛트리거되지 않게 한다.
-  const moveOutFieldPresent = expectedMoveOut !== null
-  const newMoveOutIso  = moveOutFieldPresent ? (expectedMoveOut || null) : prevMoveOutIso
+  // (prevMoveOutIso·newMoveOutIso 는 위 재검증 블록과 같은 값을 쓴다.)
   let prorationPatch: Record<string, unknown> = {}
   let prorationNotice: string | null = null
   if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING' && currentLease.checkoutProratedAmount != null) {
@@ -888,6 +980,7 @@ export async function updateTenant(formData: FormData): Promise<
         wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
         wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
         keepAlertAfterInquiry,
+        ...(moveInFlexible === undefined ? {} : { moveInFlexible }),
         visitRoute: visitRoute || null,
         // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등).
         // 단기 동기화 시엔 건너뛴다 — 일할이 락보다 우선이라 남으면 방금 올린 연장 청구가 통째로 무시된다.
@@ -3633,6 +3726,8 @@ export type ShortStayExtensionPreview =
       newRent: number; diff: number
       cappedAtMonth: boolean; roundedUp: boolean
       thresholdDays: number
+      /** 새 퇴실일이 그 방 다음 예약의 입주일을 밟는가 — 있으면 화면이 확인을 받아야 확정된다. */
+      overlap: { moveIn: string; tenantName: string } | null
     }
   | { ok: false; error: string; overThreshold?: boolean }
 
@@ -3644,7 +3739,7 @@ async function loadExtensionQuote(propertyId: string, leaseTermId: string, newOu
       id: true, status: true, isShortTerm: true, rentAmount: true, cleaningFee: true,
       moveInDate: true, expectedMoveOut: true, autoCheckoutAt: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
-      shortStayExtensions: true, tenantId: true,
+      shortStayExtensions: true, tenantId: true, roomId: true,
       tenant: { select: { name: true } },
       room: { select: { roomNo: true, baseRent: true } },
       property: { select: { shortStayPolicy: true } },
@@ -3688,6 +3783,7 @@ export async function previewShortStayExtension(leaseTermId: string, newOutYmd: 
     newRent: quote.baseAmount, diff: quote.baseAmount - lease.rentAmount,
     cappedAtMonth: quote.cappedAtMonth, roundedUp: quote.roundedUp,
     thresholdDays: r.policy.thresholdDays,
+    overlap: await nextReservationConflict(lease.roomId, leaseTermId, moveInYmd, newOutYmd),
   }
 }
 
@@ -3697,11 +3793,13 @@ export async function previewShortStayExtension(leaseTermId: string, newOutYmd: 
  * 퇴실 일할 필드 클리어(일할이 락인보다 우선이라 남으면 연장 청구가 무시됨 — 적대검증 P0-1),
  * 입주월 마커 record(expectedAmount=새 누적)로 청구 락 인상, isPaid 재계산, 이력 스냅샷 적립.
  * expectedCurrentOutYmd는 클라가 본 현 퇴실일 — 조건부 선점(updateMany)의 멱등 토큰(이중 제출·동시 수정 방어).
+ * allowOverlap 은 화면이 "다음 예약자와 겹칩니다"를 물어 운영자가 승인했다는 표식이다 — 없으면 서버가 거절한다.
  */
 export async function extendShortStay(
   leaseTermId: string,
   newOutYmd: string,
   expectedCurrentOutYmd: string | null,
+  allowOverlap?: boolean,
 ): Promise<{ ok: true; diff: number; newRent: number; inMonth: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -3711,6 +3809,15 @@ export async function extendShortStay(
     const { lease, quote, moveInYmd, currentOutYmd } = r
 
     if (currentOutYmd !== expectedCurrentOutYmd) return { ok: false, error: '다른 곳에서 계약이 수정되었습니다. 새로고침 후 다시 시도해 주세요.' }
+    // 연장이 뒷사람의 입주일을 밟는지 — 이 방은 이미 다음 사람에게 약속돼 있을 수 있다(404호 사슬).
+    // 편집 폼(updateTenant)과 같은 규칙·같은 판정 함수다. 확인 없이 미는 경로를 남기지 않는다.
+    if (!allowOverlap) {
+      const conflict = await nextReservationConflict(lease.roomId, leaseTermId, moveInYmd, newOutYmd)
+      if (conflict) {
+        const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`
+        return { ok: false, error: `이 방은 ${md(conflict.moveIn)}에 ${conflict.tenantName}님이 들어올 예정입니다. ${md(newOutYmd)}까지 연장하면 겹칩니다.` }
+      }
+    }
     if (quote.baseAmount <= lease.rentAmount) {
       return { ok: false, error: '새 누적 요금이 기존 이용료 이하입니다. 수동 협의 금액이면 수정 폼에서 직접 조정해 주세요.' }
     }
