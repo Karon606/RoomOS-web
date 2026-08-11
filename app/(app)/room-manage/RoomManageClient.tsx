@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { getOpenCleaningsByRoom } from './cleaningActions'
-import { fmtDateDot as fmtDate, fmtMDDay } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
@@ -450,15 +450,17 @@ export default function RoomManageClient({
     if (filterStatus !== 'available') return null
     // 정렬 키는 입주 가능일(= 마지막 퇴실일 다음 날) — 계약이 둘인 방은 먼저 나가는 사람이 아니라
     // 늦게 나가는 사람 기준이라야 '언제부터 받을 수 있나'가 맞는다.
+    // 카드에 날짜 칩을 얹으려면 방과 입주 가능일이 붙어 다녀야 한다 — 렌더에서 다시 판정하면
+    // 정렬이 쓴 값과 칩이 쓴 값이 갈릴 수 있다. 'now' 그룹은 날짜가 없으므로 undefined 다.
     const soon = filteredRooms
       .map(r => ({ r, a: roomAvailability(r) }))
       .filter((x): x is { r: Room; a: { kind: 'soon'; availableFrom: string } } => x.a?.kind === 'soon')
       .sort((x, y) => x.a.availableFrom !== y.a.availableFrom
         ? (x.a.availableFrom < y.a.availableFrom ? -1 : 1)
         : x.r.roomNo.localeCompare(y.r.roomNo, 'ko', { numeric: true }))
-      .map(x => x.r)
+      .map((x): { r: Room; availableFrom?: string } => ({ r: x.r, availableFrom: x.a.availableFrom }))
     return [
-      { key: 'now',  label: '지금 입주 가능', rooms: filteredRooms.filter(r => roomAvailability(r)?.kind === 'now') },
+      { key: 'now',  label: '지금 입주 가능', rooms: filteredRooms.filter(r => roomAvailability(r)?.kind === 'now').map((r): { r: Room; availableFrom?: string } => ({ r })) },
       { key: 'soon', label: '곧 입주 가능',   rooms: soon },
     ]
   })()
@@ -835,7 +837,11 @@ export default function RoomManageClient({
   )
 
   // 호실 카드 한 장 — 평소 목록과 '입주 가능' 그룹 목록이 같은 렌더를 쓴다(복제 금지).
-  const renderRoomCard = (room: Room) => {
+  // availableFrom — '입주 가능' 필터의 '곧' 그룹에서만 넘어오는 입주 가능일('YYYY-MM-DD').
+  // 평소 목록은 넘기지 않는다. 그 화면에서 46실 카드가 저마다 날짜 칩을 달면 칩 줄이 상태·전입신고
+  // 불가·청소 필요와 넷이 되고, 정작 그 목록에서 묻는 것은 '이 방이 지금 어떤가'다.
+  // 그룹 화면은 질문 자체가 '언제부터인가'라 날짜가 제목(그룹 머리글)의 답이 된다.
+  const renderRoomCard = (room: Room, availableFrom?: string) => {
     const tenant = currentTenant(room)
     const thumb  = room.photos[0]
     const rs     = getRoomStatus(room, targetMonth)
@@ -861,6 +867,13 @@ export default function RoomManageClient({
             {cardFields.floor && room.floor && (
               <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                 {room.floor}층
+              </span>
+            )}
+            {/* 입주 가능일 — 층 칩과 같은 메타 칩 문법이다. 상태 뱃지 앞에 두는 이유는 이것이
+                방을 가리키는 사실(호실번호·층)에 붙는 정보이지 상태가 아니기 때문이다. */}
+            {availableFrom && (
+              <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                {fmtMD(availableFrom)}부터
               </span>
             )}
             {rs.badge && <StatusBadge tone={rs.badge.tone} sub={rs.badge.sub} secondary={rs.badge.secondary}>{rs.badge.label}</StatusBadge>}
@@ -1188,14 +1201,16 @@ export default function RoomManageClient({
             <div key={g.key}>
               <h2 className="text-sm font-semibold text-[var(--warm-muted)] mb-3">{g.label} {g.rooms.length}실</h2>
               <div className="space-y-2">
-                {g.rooms.map(renderRoomCard)}
+                {g.rooms.map(x => renderRoomCard(x.r, x.availableFrom))}
               </div>
             </div>
           ))}
         </div>
       ) : (
         <div className="space-y-2">
-          {filteredRooms.map(renderRoomCard)}
+          {/* 인자를 안 넘기는 호출이다 — .map(renderRoomCard) 로 두면 배열 인덱스가 availableFrom
+              자리에 들어가 두 번째 카드부터 '1부터' 같은 칩이 붙는다. */}
+          {filteredRooms.map(room => renderRoomCard(room))}
         </div>
       )}
 
