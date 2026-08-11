@@ -30,19 +30,22 @@ const fmtDuration = (ms: number) => {
   return rs === 0 ? `${m}분` : `${m}분 ${rs}초`
 }
 
-// 작은 막대 패널 공통 컴포넌트 — 채널·디바이스·OS·브라우저·국가 등에서 재사용
+// 작은 막대 패널 공통 컴포넌트 — 채널·디바이스·OS·브라우저·국가 등에서 재사용.
+// note 를 주면 제목 아래 설명 줄이 붙는다(섹션별 체류 카드와 같은 문법).
 function BarPanel({
-  title, rows, color, emptyText,
+  title, rows, color, emptyText, note,
 }: {
   title: string
   rows: { label: string; count: number; percent: number }[]
   color: string
   emptyText: string
+  note?: ReactNode
 }) {
   return (
     <div className="rounded-xl p-4"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-      <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>{title}</p>
+      <p className={`text-xs font-semibold ${note ? 'mb-1' : 'mb-3'}`} style={{ color: 'var(--ink-2)' }}>{title}</p>
+      {note && <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>{note}</p>}
       {rows.length === 0 ? (
         <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyText}</p>
       ) : (
@@ -209,7 +212,9 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
               <Field label="브라우저" value={v.browserLabel ?? '미상'} />
               <Field label="화면" value={v.screenLabel ?? '미상'} num={v.screenLabel != null} />
               <Field label="브라우저 창" value={v.viewportLabel ?? '미상'} num={v.viewportLabel != null} />
-              <Field label="언어" value={v.language ?? '미상'} num={v.language != null} />
+              <Field label="기기 언어" value={v.language ?? '미상'} num={v.language != null} />
+              <Field label="열람 언어" value={v.viewedLanguageLabel ?? '기록 없음'}
+                hint={<InfoHint title="열람 언어">공개 페이지에서 실제로 고른 언어입니다. 도중에 바꿨으면 바꾼 순서대로 표시됩니다. 열람 언어 수집 전 방문은 기록 없음으로 표시됩니다.</InfoHint>} />
               <Field label="방문자 ID" value={v.visitorHash ? `${v.visitorHash.slice(0, 8)}…` : '없음'} num={!!v.visitorHash} />
             </div>
 
@@ -815,11 +820,12 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             color="var(--persimmon)" emptyText={emptyTxt} />
         </div>
 
-        {/* 언어 + 화면 해상도 */}
+        {/* 기기 언어 + 열람 언어 — 왼쪽은 브라우저가 알려준 언어, 오른쪽은 페이지에서 실제로 고른 언어 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="rounded-xl p-4"
             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-            <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>언어</p>
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>기기 언어</p>
+            <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자 브라우저에 설정된 언어 · 실제 열람 언어와는 별개</p>
             {stats.languages.length === 0 ? (
               <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
             ) : (
@@ -828,6 +834,47 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
                   <li key={i} className="flex items-baseline justify-between gap-2">
                     <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
                     <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(l.count)}건</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <BarPanel title="열람 언어" color="var(--persimmon)"
+            rows={stats.viewedLanguages.map(l => ({ label: l.language, count: l.count, percent: l.percent }))}
+            note={<>
+              공개 페이지에서 실제로 고른 언어 · 샘플 {fmt(stats.viewedLangSample)}건
+              {stats.viewedLangSample > 0 && <> · 기본값을 바꿔 본 방문 {fmt(stats.viewedLangSwitched)}건</>}
+              {stats.viewedLangMissing > 0 && <> · 수집 전 방문 {fmt(stats.viewedLangMissing)}건은 집계 제외</>}
+            </>}
+            emptyText={stats.viewedLangMissing > 0
+              ? `이 기간 방문 ${fmt(stats.viewedLangMissing)}건은 모두 수집 전 기록`
+              : emptyTxt} />
+        </div>
+
+        {/* 기기 언어별 열람 언어 + 화면 해상도 — 제공하지 않는 기기 언어가 무엇을 골랐나가 신호다 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="rounded-xl p-4"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>기기 언어별 열람 언어</p>
+            <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>
+              기기 언어별로 실제 어떤 언어를 골랐나 · 사이트에 없는 언어를 쓰는 기기를 위에 먼저 표시
+            </p>
+            {stats.langCross.length === 0 ? (
+              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyTxt}</p>
+            ) : (
+              <ul className="space-y-2">
+                {stats.langCross.map((c, i) => (
+                  <li key={i} className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs truncate" style={{ color: c.offered ? 'var(--warm-dark)' : 'var(--tc-text)', fontWeight: c.offered ? 400 : 600 }}>
+                        {c.device}
+                        {!c.offered && <span className="text-[0.65625rem] font-normal"> · 미제공 언어</span>}
+                      </span>
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
+                    </div>
+                    <p className="text-[0.65625rem] truncate" style={{ color: 'var(--warm-muted)' }}>
+                      {c.viewed.map(v => `${v.language} ${fmt(v.count)}`).join(' · ')}
+                    </p>
                   </li>
                 ))}
               </ul>

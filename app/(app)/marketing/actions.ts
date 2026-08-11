@@ -84,8 +84,21 @@ export type MarketingStats = {
   // 지역 (국가 / 도시) — city 에 상위 지역(시·도) 병행 표기
   countries: { country: string; count: number; percent: number }[]
   cities: { city: string; region: string | null; country: string | null; count: number }[]
-  // 언어 Top
+  // 언어 Top — 기기 언어(navigator.language)
   languages: { language: string; count: number }[]
+  // 열람 언어 — 공개 페이지에서 실제로 고른 언어. 기기 언어와 다른 사람이 마케팅 신호다.
+  viewedLanguages: { language: string; count: number; percent: number }[]
+  viewedLangSample: number     // 열람 언어가 기록된 방문 수 (분모)
+  viewedLangMissing: number    // 열람 언어 도입 전 방문 — 집계에서 뺀 수
+  viewedLangSwitched: number   // 기기 언어와 다르게 봤거나 도중에 바꾼 방문 수
+  // 기기 언어 x 열람 언어 — 기기 언어별로 무엇을 골랐나. 사이트가 제공하지 않는 기기 언어
+  // (예: 베트남어)가 전부 영어를 고른다면 그 언어 페이지를 검토할 근거가 된다.
+  langCross: {
+    device: string             // 기기 언어 앞머리 표시명 ('한국어'·'베트남어')
+    count: number
+    offered: boolean           // 사이트가 그 언어를 제공하는가 (열람 언어로 등장한 적이 있는가)
+    viewed: { language: string; count: number }[]
+  }[]
   // 화면 해상도 Top
   resolutions: { res: string; count: number }[]
   // 봇 트래픽 (참고용 — 범위 내)
@@ -226,6 +239,22 @@ function mergeSectionsByLabel(per: Map<string, { totalMs: number; count: number 
 // 채널 카테고리·디바이스 표시명 — 요약 집계와 방문 기록 목록이 같은 이름을 쓰도록 모듈 스코프에 둔다.
 const CHANNEL_LABEL: Record<string, string> = { search: '검색', social: '소셜', direct: '직접', other: '기타' }
 const DT_LABEL: Record<string, string> = { mobile: '모바일', tablet: '태블릿', desktop: '데스크탑' }
+
+// 언어 코드 → 한국어 표시명. 사이트가 제공하는 4개(ko·en·zh·ja)뿐 아니라 기기 언어(vi·th 등)까지
+// 이름이 나와야 '어느 나라 사람이 무엇으로 보는가'를 읽을 수 있다. 직접 표를 들고 있으면 언어를
+// 늘릴 때마다 손이 가므로 Intl 에 맡긴다. 모르는 코드는 코드 그대로 돌려준다.
+const LANG_NAMES = new Intl.DisplayNames(['ko'], { type: 'language' })
+const langLabelCache = new Map<string, string>()
+function viewedLangLabel(code: string): string {
+  const hit = langLabelCache.get(code)
+  if (hit !== undefined) return hit
+  let out = code
+  try { out = LANG_NAMES.of(code) ?? code } catch { out = code }
+  langLabelCache.set(code, out)
+  return out
+}
+// 기기 언어 'ko-KR' 과 열람 언어 'ko' 를 견주려면 지역 꼬리표를 뗀 앞머리로 맞춰야 한다.
+const langBase = (v: string | null): string | null => (v ? v.trim().toLowerCase().split('-')[0] || null : null)
 
 // 프로모션 팝업 닫기 방식 — 기록 키 → 표시 라벨. 표시 순서도 이 배열이 정본(요약 카드·방문 상세 공통).
 const POPUP_CLOSE_ORDER = ['x', 'scrim', 'esc', 'today', 'cta_kakao', 'cta_rooms', 'leave']
@@ -382,6 +411,7 @@ export async function getMarketingStats(
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
       deviceTypes: [], oses: [], browsers: [],
       countries: [], cities: [], languages: [], resolutions: [],
+      viewedLanguages: [], viewedLangSample: 0, viewedLangMissing: 0, viewedLangSwitched: 0, langCross: [],
       botCount: 0,
     }
   }
@@ -397,7 +427,7 @@ export async function getMarketingStats(
       isMobile: true, visitorHash: true,
       country: true, region: true, city: true,
       os: true, browser: true, deviceType: true,
-      language: true, screenWidth: true, screenHeight: true,
+      language: true, viewedLanguage: true, languageTrail: true, screenWidth: true, screenHeight: true,
       durationMs: true, activeMs: true, ctaClicks: true,
       scrollDepthPct: true, sectionDwellMs: true, popupView: true,
     },
@@ -547,6 +577,56 @@ export async function getMarketingStats(
     .sort((a, b) => b.count - a.count)
     .slice(0, 8)
 
+  // 열람 언어 — 공개 페이지에서 실제로 고른 언어. 도입(2026-08-11) 전 방문은 값이 없어 분모에서 뺀다.
+  const viewedRows = inRange.filter(r => !!r.viewedLanguage)
+  const viewedLangSample = viewedRows.length
+  const viewedLangMissing = inRange.length - viewedLangSample
+  const vlMap = new Map<string, number>()
+  for (const r of viewedRows) {
+    const code = r.viewedLanguage!
+    vlMap.set(code, (vlMap.get(code) ?? 0) + 1)
+  }
+  const viewedLanguages = Array.from(vlMap.entries())
+    .map(([code, count]) => ({
+      language: viewedLangLabel(code),
+      count,
+      percent: Math.round((count / Math.max(1, viewedLangSample)) * 100),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  // 전환 방문 — 도중에 언어를 바꿨거나(trail 에 두 개 이상), 기기 언어와 다른 언어로 본 방문.
+  // 둘 다 '기본값을 그대로 두지 않은 사람'이라 같은 신호로 센다.
+  const viewedLangSwitched = viewedRows.filter(r => {
+    if (r.languageTrail && r.languageTrail.includes('>')) return true
+    const dev = langBase(r.language)
+    return !!dev && dev !== langBase(r.viewedLanguage)
+  }).length
+
+  // 기기 언어 x 열람 언어 — 기기 언어 앞머리로 묶고, 그 안에서 무엇을 골랐는지 센다.
+  // 사이트가 제공하지 않는 기기 언어를 위로 올린다(그게 보려는 것이다).
+  const offered = new Set(Array.from(vlMap.keys()).map(c => langBase(c)).filter((c): c is string => !!c))
+  const crossMap = new Map<string, { count: number; viewed: Map<string, number> }>()
+  for (const r of viewedRows) {
+    const dev = langBase(r.language)
+    if (!dev) continue
+    let hit = crossMap.get(dev)
+    if (!hit) { hit = { count: 0, viewed: new Map() }; crossMap.set(dev, hit) }
+    hit.count++
+    hit.viewed.set(r.viewedLanguage!, (hit.viewed.get(r.viewedLanguage!) ?? 0) + 1)
+  }
+  const langCross = Array.from(crossMap.entries())
+    .map(([dev, v]) => ({
+      device: viewedLangLabel(dev),
+      count: v.count,
+      offered: offered.has(dev),
+      viewed: Array.from(v.viewed.entries())
+        .map(([code, count]) => ({ language: viewedLangLabel(code), count }))
+        .sort((a, b) => b.count - a.count),
+    }))
+    .sort((a, b) => (a.offered === b.offered ? b.count - a.count : (a.offered ? 1 : -1)))
+    .slice(0, 12)
+
   // 화면 해상도 Top (보기 좋게 묶기)
   const resMap = new Map<string, number>()
   for (const r of inRange) {
@@ -683,6 +763,7 @@ export async function getMarketingStats(
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
+    viewedLanguages, viewedLangSample, viewedLangMissing, viewedLangSwitched, langCross,
     botCount,
   }
 }
@@ -722,6 +803,8 @@ export type VisitSession = {
   screenLabel: string | null
   viewportLabel: string | null
   language: string | null
+  // 열람 언어 — 이 방문이 실제로 읽은 언어. 도중에 바꿨으면 '한국어 > 영어' 처럼 순서대로.
+  viewedLanguageLabel: string | null
   visitorHash: string | null
   userAgent: string | null
 }
@@ -803,6 +886,15 @@ function visitSections(sd: unknown): { name: string; ms: number }[] {
   return mergeSectionsByLabel(per).map(a => ({ name: a.name, ms: a.totalMs }))
 }
 
+// 방문 1건의 열람 언어 → 상세 한 줄. 이력이 있으면 바꾼 순서대로, 없으면 마지막 값만.
+// '>' 는 경로 표기(가이드 §29 허용) — 저장 형태와 같은 모양이라 대조하기 쉽다.
+function visitViewedLanguage(viewed: string | null, trail: string | null): string | null {
+  const steps = (trail ?? '').split('>').map(s => s.trim()).filter(Boolean)
+  if (steps.length > 1) return steps.map(viewedLangLabel).join(' > ')
+  const one = viewed ?? steps[0] ?? null
+  return one ? viewedLangLabel(one) : null
+}
+
 // 방문 1건의 popupView(JSON) → 상세 한 줄용 요약. 미노출(suppressed)·기록 없음은 null.
 function visitPopup(pv: unknown): VisitSession['popup'] {
   const p = parsePopup(pv)
@@ -857,7 +949,8 @@ export async function getVisitSessions(
       os: true, osVersion: true, browser: true, browserVersion: true,
       deviceType: true, isMobile: true,
       screenWidth: true, screenHeight: true, viewportWidth: true, viewportHeight: true,
-      language: true, visitorHash: true, ip: true, userAgent: true,
+      language: true, viewedLanguage: true, languageTrail: true,
+      visitorHash: true, ip: true, userAgent: true,
     },
   })
   const hasMore = raw.length > VISIT_PAGE_SIZE
@@ -926,6 +1019,7 @@ export async function getVisitSessions(
       screenLabel: r.screenWidth && r.screenHeight ? `${r.screenWidth} × ${r.screenHeight}` : null,
       viewportLabel: r.viewportWidth && r.viewportHeight ? `${r.viewportWidth} × ${r.viewportHeight}` : null,
       language: r.language,
+      viewedLanguageLabel: visitViewedLanguage(r.viewedLanguage, r.languageTrail),
       visitorHash: r.visitorHash,
       userAgent: r.userAgent,
     }
