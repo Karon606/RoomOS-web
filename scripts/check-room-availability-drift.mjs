@@ -8,9 +8,11 @@
 // 화면 어디에도 없다. 호실 관리 '입주 가능'은 이 방을 (옳게) 빼지만, 예약은 그대로 남아
 // 조용히 지켜지지 않을 약속이 된다.
 //
-// 오탐이 없는 이유 — 이 상태는 만들 수 없다. addTenant·updateTenant 가 무기한 점유 방에는
-// 예약을 못 넣는다(occupiedIndefinitely 가드). 즉 뒤늦게 거주 계약의 퇴실 예정일을 지웠을
-// 때만 생긴다. 정상 운영으로 도달하는 경로가 없으므로 걸리면 전부 진짜다.
+// 오탐 방지 — 무기한 계약이라도 그 **입주일이 예약 퇴실일보다 뒤**면 정상이다. 예약자가
+// 먼저 쓰고 완전히 나간 다음에 무기한 입주가 시작되는 사슬(404호 조성훈 8/15~8/31 뒤
+// 박정후 9/1 무기한, 2026-08-11 유령 퇴실일 정정으로 처음 등장)은 아무 약속도 깨지 않는다.
+// 위반은 예약 기간이 무기한 점유와 실제로 겹칠 때만이다 — 그 예약은 비워 줄 사람의
+// 퇴실 예정일 없이 잡힌 약속이라 조용히 지켜지지 않는다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -27,7 +29,7 @@ async function main() {
       property: { select: { name: true } },
       leaseTerms: {
         where: { status: { in: OCCUPYING_STATUSES } },
-        select: { status: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+        select: { status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
       },
     },
   })
@@ -37,10 +39,17 @@ async function main() {
   for (const r of rooms) {
     const occ = r.leaseTerms
     if (occ.length === 0) continue
-    const datedReservation = occ.some(l => l.status === 'RESERVED' && l.expectedMoveOut)
-    if (!datedReservation) continue
+    const datedReservations = occ.filter(l => l.status === 'RESERVED' && l.expectedMoveOut)
+    if (datedReservations.length === 0) continue
     const indefinite = occ.filter(l => !l.expectedMoveOut)
     if (indefinite.length === 0) continue
+    // 예약이 무기한 점유와 겹치는가 — 예약 퇴실일이 무기한 계약의 입주일보다 앞이면 안 겹친다.
+    // 무기한 계약에 입주일이 없으면 이미 시작된 점유로 보고 겹침으로 판정한다.
+    const clashes = datedReservations.some(res => indefinite.some(ind => {
+      const indStart = ymd(ind.moveInDate)
+      return !indStart || ymd(res.expectedMoveOut) >= indStart
+    }))
+    if (!clashes) continue
     violations.push({
       roomNo: r.roomNo,
       property: r.property?.name ?? '?',
