@@ -39,15 +39,18 @@ export function RoomBody({ roomId, month, onApplyScheduledNow }: {
       <PhotoStrip photos={room.photos} />
       <RoomBasicInfo room={room} onApplyScheduledNow={onApplyScheduledNow} />
       <div className="mt-2.5" />
+      {/* 기본정보 바로 다음이 거주 이력 — 없어진 '예약자' 줄의 자리를 이 위젯이 받았다
+          (운영자 지시 2026-08-11). 방을 열고 가장 먼저 묻는 것이 "지금 누가 살고 다음은 누구인가" 다. */}
+      <RoomStayHistory roomId={roomId} />
+      <div className="mt-2.5" />
       <RoomSpatialInfo room={room} />
       <div className="mt-2.5" />
       <MemoSection memo={room.memo} />
       <div className="mt-2.5" />
       <RoomExpenses roomId={roomId} />
       <div className="mt-2.5" />
-      <RoomStayHistory roomId={roomId} />
-      <div className="mt-2.5" />
-      {/* 거주 이력 다음에 청소 이력 — 퇴실하면 청소한다는 순서 그대로다(신고 b21e4e98) */}
+      {/* 청소 이력은 지출 다음에 둔다 — 청소는 곧 돈이 나가는 일이라 지출과 붙는 편이 읽힌다.
+          거주 이력과 붙어 있던 종전 순서(신고 b21e4e98)는 그 위젯이 상단으로 올라가며 풀렸다. */}
       <RoomCleaningPanel roomId={roomId} />
       <div className="mt-2.5" />
       <RoomRequests roomId={roomId} />

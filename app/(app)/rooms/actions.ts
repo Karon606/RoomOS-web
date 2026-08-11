@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { nextRoomReservation, primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
+import { primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -2266,9 +2266,9 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
   // 이 방의 주 계약 — 사는 사람이 먼저다. 종전엔 'createdAt desc 첫 계약'이라 최근에 만든 예약이
   // 실거주자를 밀어냈고, 그래서 카드는 송호준인데 눌러 연 모달은 Arafat 이었다(503호).
   const lease = primaryRoomLease(leases)
-  // 주 계약이 아닌 예약 — 거주자가 있는 방에 이미 잡혀 있는 다음 사람. 별도 줄로 보여준다.
-  // 고르는 규칙은 lib/leaseStatus 의 nextRoomReservation 정본(호실 카드·홈 방 현황과 공유).
-  const reserved = nextRoomReservation(leases, lease)
+  // 예약자는 여기서 안 내려보낸다 — 기본정보의 '예약자' 줄을 없애고 그 사실을 '거주 이력 및 예정'
+  // 위젯의 미래 행이 받았다(운영자 지시 2026-08-11). 예약을 고르는 정본은 그 위젯이 쓰는
+  // getRoomStayHistory 다. 두 곳이 각자 예약을 고르면 같은 방에서 다른 사람을 말하게 된다.
   // 상태 라벨/뱃지 — 호실 카드와 같은 함수(lib/leaseStatus.roomStatusView)로 만든다.
   const status = roomStatusView(lease, { nonResidentVacant: room.nonResidentVacant, targetMonth })
   // '언제부터 이 방을 줄 수 있나' — 위 leaseTerms 는 take: 3 이라 계산 입력으로 쓸 수 없다.
@@ -2282,15 +2282,6 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
   return {
     ...room,
     leaseTerms: lease ? [lease] : [],
-    reservation: reserved ? {
-      tenantName: reserved.tenant.name,
-      // 'YYYY-MM-DD' — 화면이 카드와 같은 헬퍼(reservationSubText)로 문장을 만든다.
-      moveInDate: reserved.moveInDate,
-      // 퇴실일까지 잡힌 예약(404호 8/15~8/31)은 카드 보조줄에 함께 서는 사실이다. 안 내려보내면
-      // 같은 예약이 카드에는 '· 8/31 퇴실 D-20', 모달에는 입주일만으로 갈린다.
-      expectedMoveOut: reserved.expectedMoveOut,
-      confirmed: !!reserved.reservationConfirmedAt,
-    } : null,
     status,
     availability,
   }
@@ -2581,6 +2572,9 @@ export async function getRoomStayHistory(roomId: string): Promise<{
     id: string; tenantId: string | null; tenantName: string
     startDate: string | null; endDate: string | null
     kind: 'past' | 'current' | 'upcoming'
+    /** 예약 확정 여부 — kind='upcoming' 에서만 뜻이 있다. 기본정보에서 없앤 '예약자' 줄의
+     *  확정 뱃지가 갖고 있던 사실이라, 여기로 옮겨 오지 않으면 화면에서 통째로 사라진다. */
+    confirmed: boolean
   }[]
 }> {
   const propertyId = await getPropertyId()
@@ -2596,7 +2590,7 @@ export async function getRoomStayHistory(roomId: string): Promise<{
     }),
     prisma.leaseTerm.findMany({
       where: { propertyId, roomId, status: 'RESERVED' },
-      select: { id: true, tenantId: true, moveInDate: true, expectedMoveOut: true, createdAt: true, tenant: { select: { name: true } } },
+      select: { id: true, tenantId: true, moveInDate: true, expectedMoveOut: true, reservationConfirmedAt: true, createdAt: true, tenant: { select: { name: true } } },
     }),
   ])
   const ymd = (d: Date | null) => d ? d.toISOString().slice(0, 10) : null
@@ -2604,6 +2598,7 @@ export async function getRoomStayHistory(roomId: string): Promise<{
     id: string; tenantId: string | null; tenantName: string
     startDate: string | null; endDate: string | null
     kind: 'past' | 'current' | 'upcoming'
+    confirmed: boolean
     createdAt: Date
   }
   const items: Row[] = [
@@ -2617,6 +2612,7 @@ export async function getRoomStayHistory(roomId: string): Promise<{
         startDate: ymd(r.startDate),
         endDate: ymd(r.endDate),
         kind: r.endDate === null ? 'current' : 'past',
+        confirmed: false,
         createdAt: r.createdAt,
       })),
     ...reserved.map((l): Row => ({
@@ -2626,6 +2622,8 @@ export async function getRoomStayHistory(roomId: string): Promise<{
       startDate: ymd(l.moveInDate),
       endDate: ymd(l.expectedMoveOut),
       kind: 'upcoming',
+      // 어휘는 고객 관리·수납 관리와 같다 — 확정이면 '예약 확정', 아니면 '입실 예약'.
+      confirmed: !!l.reservationConfirmedAt,
       createdAt: l.createdAt,
     })),
   ]
