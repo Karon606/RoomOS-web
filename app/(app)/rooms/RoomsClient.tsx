@@ -15,6 +15,8 @@ import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
+import { DepositSection } from './DepositSection'
+import type { DepositPerTenant, DepositLedgerEntry } from '@/app/(app)/finance/actions'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { fmtKorMoney, fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { MoneyEquation, expectedRevenueTerms, paidRevenueTerms } from '@/components/ui/MoneyEquation'
@@ -33,6 +35,9 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
+// 뷰 전환 탭(v2.0 §25) — URL ?tab= 값과 같은 문자열이다. 홈 KPI 딥링크가 이 값으로 들어온다.
+type ViewTabId = 'rooms' | 'income' | 'deposit'
 
 type RoomStatus = {
   roomId: string
@@ -410,7 +415,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 
 export default function RoomsClient({
   roomStatus, targetMonth, isFutureMonth, myRole, incomes, incomeCategories, payAggregates,
-  reservedExpected, checkedOutRecognized, prepaidReceived, leaseOptions, initialTab,
+  reservedExpected, checkedOutRecognized, prepaidReceived, leaseOptions, depositSummary, depositLedger, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
@@ -427,12 +432,16 @@ export default function RoomsClient({
   prepaidReceived: number
   // 부가수익 입주자 연결 선택지 — 서버 정본(getExtraIncomeLeaseOptions). 그 달 수납 행에서 파생하지 않는다.
   leaseOptions: LeaseOption[]
-  initialTab?: 'rooms' | 'income'
+  // 보증금 원장 — 월 스코프가 없는 전체 조회(서버 정본 getDepositSummaryByTenant·getDepositLedger)
+  depositSummary: DepositPerTenant[]
+  depositLedger: DepositLedgerEntry[]
+  initialTab?: ViewTabId
 }) {
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
-  // 수납 / 부가수익 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익)
-  const [viewTab, setViewTab] = useState<'rooms' | 'income'>(initialTab ?? 'rooms')
+  // 수납 / 부가수익 / 보증금 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익),
+  // 보증금은 2026-08-12 이동(받고 돌려주는 돈이라 지출이 아니다).
+  const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).
   const [filter, setFilter] = useState<RoomFilter>('all')
   useEffect(() => {
@@ -832,6 +841,13 @@ export default function RoomsClient({
   const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
   const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
 
+  // 대시보드 '보유 보증금'과 동일 기준(거주중: ACTIVE·CHECKOUT_PENDING)으로 합계 —
+  // RESERVED(입실 전) 잔고까지 합산해 두 화면의 보유 보증금이 다르게 보이던 문제.
+  // 목록에는 전 상태 노출 유지(원장 성격), 합계만 기준 통일.
+  const totalDepositBalance = depositSummary
+    .filter(d => d.status === 'ACTIVE' || d.status === 'CHECKOUT_PENDING')
+    .reduce((s, d) => s + d.balance, 0)
+
   // ── 홈 예상 수입과의 다리 (운영자 혼동 2회, 2026-08-07) ──
   // 두 화면 숫자가 달라 보이는 이유를 등식으로 적는다. 항의 값은 서버 정본(홈과 같은 헬퍼)이고
   // 여기서는 더하기만 한다 — 화면이 자기 식을 만들면 그 순간 또 갈린다.
@@ -853,10 +869,11 @@ export default function RoomsClient({
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
           <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab} equal
-            onChange={id => setViewTab(id as 'rooms' | 'income')}
+            onChange={id => setViewTab(id as ViewTabId)}
             tabs={[
-              { id: 'rooms',  label: '수납' },
-              { id: 'income', label: '부가수익', suffix: incomeSum > 0 ? `+${fmtKorMoney(incomeSum)}` : undefined },
+              { id: 'rooms',   label: '수납' },
+              { id: 'income',  label: '부가수익', suffix: incomeSum > 0 ? `+${fmtKorMoney(incomeSum)}` : undefined },
+              { id: 'deposit', label: '보증금',  suffix: fmtKorMoney(totalDepositBalance) },
             ]} />
         </div>
         <MonthSelector />
@@ -865,6 +882,11 @@ export default function RoomsClient({
       {/* 부가수익 탭 — 과납분·보증금 미반환분 등 수납 파생 수익 + 일반 기타수입 */}
       {viewTab === 'income' && (
         <IncomeSection incomes={incomes} incomeCategories={incomeCategories} leaseOptions={leaseOptions} />
+      )}
+
+      {/* 보증금 탭 — 원장 성격이라 월 셀렉터와 무관하다(종전 지출 관리 탭과 같은 중립). */}
+      {viewTab === 'deposit' && (
+        <DepositSection summary={depositSummary} ledger={depositLedger} totalBalance={totalDepositBalance} />
       )}
 
       {viewTab === 'rooms' && <>

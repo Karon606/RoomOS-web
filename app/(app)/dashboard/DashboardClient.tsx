@@ -1713,8 +1713,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           })()}
         </Link>
 
-        {/* Row 4 Left: 보유 보증금 */}
-        <Link href="/finance?tab=deposit" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        {/* Row 4 Left: 보유 보증금 — 2026-08-12 수납 관리로 이관(받고 돌려주는 돈이라 지출이 아니다). */}
+        <Link href="/rooms?tab=deposit" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             보유 보증금
           </p>

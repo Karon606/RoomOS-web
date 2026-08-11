@@ -1,4 +1,4 @@
-import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger, getTrackedCategories, getLastPayDefaults } from './actions'
+import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getTrackedCategories, getLastPayDefaults } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -8,8 +8,9 @@ import { kstMonthStr } from '@/lib/kstDate'
 // OCR 은 스스로 30초에 끊고 안내 문구를 돌려주는데, 플랫폼 기본 한도가 그보다 짧으면 그 문구 대신 함수가 먼저 죽는다.
 export const maxDuration = 60
 
-// 'income'(부가 수익)은 2026-07-02 수납관리(/rooms?tab=income)로 이동 — 여기선 더 이상 유효 탭 아님.
-type FinTab = 'expense' | 'assets' | 'deposit' | 'reserve'
+// 'income'(부가 수익)은 2026-07-02, 'deposit'(보증금)은 2026-08-12 수납관리(/rooms?tab=…)로 이동 —
+// 여기선 더 이상 유효 탭 아니다.
+type FinTab = 'expense' | 'assets' | 'reserve'
 
 export default async function FinancePage({
   searchParams,
@@ -19,7 +20,7 @@ export default async function FinancePage({
   await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { month, tab } = await searchParams
   const initialTab: FinTab | undefined =
-    tab === 'expense' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
+    tab === 'expense' || tab === 'assets' || tab === 'reserve'
       ? tab
       : undefined
   const targetMonth = month ?? kstMonthStr()   // 기본 조회월은 KST — 서버(UTC) 로컬이면 매월 1일 KST 00~09 시에 지난달이 열린다
@@ -29,7 +30,7 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger, trackedCategories, lastPayDefaults] = await Promise.all([
+  const [expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, trackedCategories, lastPayDefaults] = await Promise.all([
     getExpenses(targetMonth),
     getFinancialAccounts(),
     getIncomeCategories(),
@@ -46,8 +47,6 @@ export default async function FinancePage({
     getReserveMonthlySummary(targetMonth),
     getReserveTransactions(targetMonth),
     getSettleableExpenses(targetMonth),
-    getDepositSummaryByTenant(),
-    getDepositLedger(),
     getTrackedCategories(),
     getLastPayDefaults(),
   ])
@@ -78,8 +77,6 @@ export default async function FinancePage({
       reserveTxns={reserveTxns}
       settleableExpenses={settleableExpenses}
       lastPayDefaults={lastPayDefaults}
-      depositSummary={depositSummary}
-      depositLedger={depositLedger}
       trackedCategories={trackedCategories}
       initialTab={initialTab}
     />
