@@ -5,7 +5,7 @@ import { kstMonthStr } from '@/lib/kstDate'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import prisma from '@/lib/prisma'
-import { getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue } from '@/lib/leaseStatus'
+import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue } from '@/lib/leaseStatus'
 import RoomsClient from './RoomsClient'
 
 export default async function RoomsPage({
@@ -23,7 +23,7 @@ export default async function RoomsPage({
   const { propertyId } = await requirePropertyAccess()
 
   // 부가수익 — /finance에서 이동(2026-07-02). 과납분·보증금 미반환분 등 수납 파생 수익이라 수납 흐름 옆에.
-  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized] = await Promise.all([
+  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized, paidRevenue] = await Promise.all([
     getRoomPaymentStatus(targetMonth),
     getMyRole(),
     getExtraIncomes(targetMonth),
@@ -31,17 +31,24 @@ export default async function RoomsPage({
     getMonthPaymentAggregates(targetMonth),
     getReservedFullMonthRevenue(prisma, propertyId, targetMonth),
     getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth),
+    // 미래월 '미리 받은 이 달 이용료' 보조줄 — 홈 실수납과 같은 정본을 부른다.
+    // 미래월 행은 서버가 그 달 수납을 0으로 잠그기 때문에 화면이 행에서 되계산할 수 없다.
+    getPaidRevenue(prisma, propertyId, targetMonth),
   ])
+  // 아직 오지 않은 달인가 — KST 기준 서버 판정. 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
+  const isFutureMonth = targetMonth > kstMonthStr()
   return (
     <RoomsClient
       roomStatus={roomStatus}
       targetMonth={targetMonth}
+      isFutureMonth={isFutureMonth}
       myRole={myRole}
       incomes={incomes}
       incomeCategories={incomeCategories}
       payAggregates={payAggregates}
       reservedExpected={reservedExpected}
       checkedOutRecognized={checkedOutRecognized}
+      prepaidReceived={paidRevenue.occupied}
       initialTab={tab === 'income' ? 'income' : 'rooms'}
     />
   )

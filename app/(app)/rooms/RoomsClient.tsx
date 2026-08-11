@@ -408,11 +408,13 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth, myRole, incomes, incomeCategories, payAggregates,
-  reservedExpected, checkedOutRecognized, initialTab,
+  roomStatus, targetMonth, isFutureMonth, myRole, incomes, incomeCategories, payAggregates,
+  reservedExpected, checkedOutRecognized, prepaidReceived, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
+  // 아직 오지 않은 달인가 — 서버(KST)가 판정해 내려준다. 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
+  isFutureMonth: boolean
   myRole: string
   incomes: Income[]
   incomeCategories: string[]
@@ -420,6 +422,8 @@ export default function RoomsClient({
   // 홈 예상 수입과의 다리 — 이 화면 청구액엔 안 잡히고 홈에는 잡히는 항(서버 계산 정본, 표시 전용)
   reservedExpected: number
   checkedOutRecognized: number
+  // 미리 받은 그 달 이용료 — 홈 실수납과 같은 정본(getPaidRevenue)의 값. 미래월 보조줄 전용.
+  prepaidReceived: number
   initialTab?: 'rooms' | 'income'
 }) {
   const searchParams = useSearchParams()
@@ -835,7 +839,9 @@ export default function RoomsClient({
   const homeExpectedSum  = expectedSum + reservedExpected + checkedOutRecognized + incomeSum
   const homeCollectedSum = collectedSum + checkedOutRecognized + incomeSum
   // 세 항이 전부 0이면 두 숫자가 같으므로 등식을 적을 이유가 없다.
-  const showHomeBridge   = reservedExpected !== 0 || checkedOutRecognized !== 0 || incomeSum !== 0
+  // 미래월엔 아예 안 적는다 — 홈도 미래월을 열 수 없어 대조할 상대가 없고, 좌변이 아래에서
+  // 거짓으로 판정한 그 수납액을 그대로 나른다(디자인 패널 2026-08-11).
+  const showHomeBridge   = !isFutureMonth && (reservedExpected !== 0 || checkedOutRecognized !== 0 || incomeSum !== 0)
 
   // 부가수익 입주자 연결 선택지 — 현재 수납 화면의 계약들(비공실 + 계약 존재)
   const leaseOptions: LeaseOption[] = (() => {
@@ -874,6 +880,22 @@ export default function RoomsClient({
       {/* 수납 진행 스트립 — 걷은 돈/걷을 돈(%) + 만실 참고치. 예상=아래 목록 청구액 합(일할·무청구 반영) */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1.5">
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          {/* 미래월은 수납액·달성률을 말하지 않는다(디자인 패널 2026-08-11).
+              서버가 미래월 행의 그 달 청구를 0으로 잠그기 때문에, 수납액이 청구액과 같아져
+              받지도 않은 돈이 늘 100% 완납으로 떴다(9월 15,530,000). 0%로 뒤집는 안도 기각했다 —
+              같은 진행바 문법이 현재월에서 '다 밀렸다'를 뜻해서 거짓의 방향만 바뀐다.
+              아직 도래하지 않은 질문에는 숫자로 답하지 않고, 청구 예정액 한 값만 세운다.
+              완납색(success)도 쓰지 않는다 — 가이드 v2.0 §03·§04 에서 아직 안 받은 돈은 예정(info)이다. */}
+          {isFutureMonth ? (
+            <p className="text-sm text-[var(--warm-dark)]">
+              <span className="text-xs text-[var(--warm-muted)]">이 달 청구 예정액 </span>
+              <span className="font-semibold num">{fmtWon(expectedSum)}</span>
+              <InfoHint title="이 달 청구 예정액">
+                아직 오지 않은 달이라 이 화면 목록에 있는 계약들의 이번 달 이용료 청구 예정 합계만 보여줍니다.
+                납부일이 도래하지 않아 수납액과 달성률은 표시하지 않습니다. 미리 받은 금액이 있으면 아래에 따로 적힙니다.
+              </InfoHint>
+            </p>
+          ) : (
           <p className="text-sm text-[var(--warm-dark)]">
             <span className="text-xs text-[var(--warm-muted)]">수납 </span>
             <span className="font-bold text-[var(--success-fg)] num">{fmtWon(collectedSum)}</span>
@@ -886,6 +908,7 @@ export default function RoomsClient({
               사업 전체 전망입니다. 그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 아래 등식 줄에 그 차이가 항목별로 적힙니다.
             </InfoHint>
           </p>
+          )}
           {maxSum > expectedSum && (
             <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 기준 {fmtWon(maxSum)}
               {/* '만실 시'에서 개명 — 예측이 아니라 정가 환산 기준선이라 '시'가 과한 약속이었다(2026-08-01).
@@ -897,9 +920,19 @@ export default function RoomsClient({
             </span>
           )}
         </div>
-        <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
-          <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(100, collectPct)}%`, background: 'var(--success-fg)' }} />
-        </div>
+        {/* 진행바는 분모가 '도래한 청구'일 때만 성립한다 — 미래월엔 게이지 자체를 두지 않는다. */}
+        {!isFutureMonth && (
+          <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
+            <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(100, collectPct)}%`, background: 'var(--success-fg)' }} />
+          </div>
+        )}
+        {/* 미리 받은 돈은 사실이므로 미래월에도 보여야 한다(knowledge/money-display-feedback §1).
+            값은 홈 실수납과 같은 서버 정본(getPaidRevenue)이다 — 화면이 행 잔액으로 되계산하지 않는다. */}
+        {isFutureMonth && prepaidReceived > 0 && (
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+            미리 받은 이 달 이용료 <span className="font-semibold text-[var(--info-fg)] num">{fmtWon(prepaidReceived)}</span>
+          </p>
+        )}
         {/* 홈 예상 수입과의 다리 — 두 화면 숫자가 다른 이유를 등식으로 적는다(운영자 혼동 2회, 2026-08-07).
             차이를 만드는 항이 전부 0인 달엔 줄 자체가 안 나온다. */}
         {showHomeBridge && (
