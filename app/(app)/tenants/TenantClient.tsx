@@ -70,6 +70,7 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   occupantMoveOut: string | null     // 'YYYY-MM-DD' — 그 방을 잡은 계약(거주중·퇴실 예정·예약) 중 마지막 퇴실 예정일. 이 방이 비는 날
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
+  vacancyExcluded: boolean           // 비거주 점유 방(창고·사무실) — 서버 가드와 같은 정본 술어(lib/vacancy)
   // 퇴실 예정일이 잡힌 점유 계약들의 구간 — 겹침 문구가 '마지막 날짜'가 아니라 실제로 막고 선 계약을 지목하게.
   occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
   // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
@@ -86,10 +87,13 @@ function roomPickability(r: Room, isCurrentRoom: boolean) {
   // 퇴실 예정일이 잡힌 예약은 '언제 비는지 아는 방'이라 막지 않는다(겹치면 확인창이 묻는다).
   const blockedByReservation = r.hasIndefiniteReservation && !isCurrentRoom
   const openDate = !r.isVacant && !blockedByReservation ? r.occupantMoveOut : null
+  // 비거주 점유 방(창고·사무실)은 isVacant 가 true 로 남는다 — 비거주는 공실 플래그를 안 내린다.
+  // 그래서 '빈 방'만 보면 415호가 고를 수 있는 방으로 보인다. 서버 가드와 같은 술어로 함께 접는다.
+  const openForNewLease = r.isVacant && !r.vacancyExcluded
   return {
     openDate,                                                  // 이 방이 비는 날('YYYY-MM-DD')
-    reservable: r.isVacant || isCurrentRoom || !!openDate,     // 문의·예약 확정 단계에서 고를 수 있는가
-    residable:  r.isVacant || isCurrentRoom,                   // 입실·퇴실 예정 단계는 지금 빈 방만(서버도 같은 선)
+    reservable: openForNewLease || isCurrentRoom || !!openDate, // 문의·예약 확정 단계에서 고를 수 있는가
+    residable:  openForNewLease || isCurrentRoom,              // 입실·퇴실 예정 단계는 지금 빈 방만(서버도 같은 선)
   }
 }
 
@@ -3065,7 +3069,9 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             <option value="">호실 선택… {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
             {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
               <option key={r.id} value={r.roomNo}>
-                {fmtRoomNo(r.roomNo)}{r.isVacant && !(r.currentLeaseStatus === 'NON_RESIDENT' && !r.nonResidentVacant) ? ' (공실)' : ''}
+                {/* 비거주 점유 방은 공실이라 부르지 않는다. 종전엔 '가장 최근 계약 하나'로 물어
+                    비거주가 최신이 아닌 방에서 판정이 샜다 — 방 단위 정본 술어로 바꾼다. */}
+                {fmtRoomNo(r.roomNo)}{r.isVacant && !r.vacancyExcluded ? ' (공실)' : ''}
               </option>
             ))}
           </select>

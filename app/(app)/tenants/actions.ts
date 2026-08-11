@@ -45,6 +45,7 @@ import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
+import { isVacancyExcluded } from '@/lib/vacancy'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -308,6 +309,26 @@ async function nextReservationConflict(
   return { moveIn: new Date(next.moveInDate).toISOString().slice(0, 10), tenantName: next.tenant.name }
 }
 
+/**
+ * 비거주 점유 방인가 — 방 배정이 일어나는 경로가 공유하는 정본 판정.
+ *
+ * 415호(최은옥)·사무실(이원빈)처럼 명의만 있는 창고·사무실은 사람이 들어갈 수 없는 방인데,
+ * 점유 계약이 0건이라 종전 가드가 전부 통과시켰다. 정작 문의·투어만 hasNonResident 로 막혀
+ * 가장 약한 단계를 막고 가장 강한 단계(입주·예약)를 여는 역전이었다.
+ *
+ * 판정은 lib/vacancy 의 집계 제외 술어 그대로다 — 사본을 만들지 않는다. 418호처럼 방 설정이
+ * '공실로 세라'(nonResidentVacant=true)인 거주·비거주 동거 방은 여기 걸리지 않는다(현존·정당).
+ * 방을 못 읽었으면(=배정 대상 방이 없음) 막지 않는다.
+ */
+function nonResidentOccupiedRoom(room: { nonResidentVacant: boolean } | null, hasNonResident: boolean): boolean {
+  return !!room && isVacancyExcluded(room, hasNonResident)
+}
+
+// 위 판정에 걸렸을 때의 안내. 계약 쪽 필드로는 풀 수 없는 상태라(비거주 계약에 퇴실 예정일을 넣는 것은
+// 뜻이 안 맞는다) 유일한 출구인 방 설정을 지목한다. 문구는 호실 관리 편집의 체크박스 라벨 그대로다.
+const NON_RESIDENT_ROOM_ERROR =
+  '해당 호실은 비거주자(명의)가 쓰는 방으로 설정돼 있습니다. 호실 관리 편집에서 \'비거주 점유 시 공실 집계에서 제외\'를 해제한 뒤 배정해 주세요.'
+
 // 호실 목록 (입주자 등록/수정 시 선택용)
 export async function getRoomsForSelect() {
   const { propertyId } = await getPropertyId()
@@ -336,6 +357,10 @@ export async function getRoomsForSelect() {
       ...r,
       // 종전 의미 그대로 — 가장 최근 생성 계약 하나의 상태. 소비처가 이 뜻에 기대고 있어 바꾸지 않는다.
       currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
+      // 비거주 점유 방(창고·사무실) — 서버 가드(nonResidentOccupiedRoom)와 같은 정본 술어다.
+      // currentLeaseStatus 로는 판정이 샌다. 그것은 '가장 최근 생성 계약 하나'라 비거주가 최신이 아닌
+      // 방(418호 형태)에서는 비거주가 있다는 사실 자체가 안 보인다 — 방 단위 사실로 따로 싣는다.
+      vacancyExcluded: isVacancyExcluded(r, leaseTerms.some(l => l.status === 'NON_RESIDENT')),
       occupantMoveOut: lastOut?.expectedMoveOut ? new Date(lastOut.expectedMoveOut).toISOString().slice(0, 10) : null,
       occupantIsShortTerm: lastOut?.isShortTerm ?? false,
       // 퇴실 예정일 없는 예약만 '무기한'이다. 날짜가 잡힌 예약은 언제 비는지 아는 방이라 막지 않고
@@ -425,12 +450,21 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   }
 
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
-  const existingLeases = roomId ? await prisma.leaseTerm.findMany({
-    where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-    select: { status: true, expectedMoveOut: true },
-  }) : []
+  // 방 설정(nonResidentVacant)까지 같이 읽는다 — 비거주 점유 방 판정(nonResidentOccupied)의 입력이다.
+  const roomForGuard = roomId ? await prisma.room.findUnique({
+    where: { id: roomId },
+    select: {
+      nonResidentVacant: true,
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+        select: { status: true, expectedMoveOut: true },
+      },
+    },
+  }) : null
+  const existingLeases = roomForGuard?.leaseTerms ?? []
   const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
   const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
+  const nonResidentOccupied = nonResidentOccupiedRoom(roomForGuard, hasNonResident)
   // 예약도 '언제 나가는지 아는가'로 나눈다 — 퇴실 예정일 없는 예약만 방을 무기한 잡은 것이다.
   // 날짜가 잡힌 예약은 화면(roomPickability)이 고를 수 있게 열어 주므로, 서버도 같은 선이어야 한다.
   const hasIndefiniteReservation = existingLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
@@ -442,6 +476,8 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const incomingIsNonResident = status === 'NON_RESIDENT'
   const occupiedIndefinitely = occupantLeases.length > 0 && !roomOpensUp
 
+  // 비거주 점유 방(창고·사무실) — 새 명의를 얹는 것 말고는 어느 단계도 받지 않는다.
+  if (!incomingIsNonResident && nonResidentOccupied) return { ok: false, error: NON_RESIDENT_ROOM_ERROR }
   if (status === 'RESERVED') {
     if (hasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
     if (occupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
@@ -452,8 +488,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   if (incomingIsNonResident && hasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
   // 문의·투어 단계 — 종전엔 계약이 하나라도 있으면 막았는데 정작 예약 확정은 통과하던 잠복 모순이었다.
   // 퇴실 예정일이 잡힌 방은 문의 단계에서도 희망 호실로 적을 수 있게 하고, 무기한 점유·예약된 방은 그대로 막는다.
+  // 비거주는 위 정본 판정 한 줄이 대신 본다 — 여기서 또 hasNonResident 를 보면 판정이 두 벌이 된다.
   if (!incomingIsResident && !incomingIsNonResident) {
-    if (hasIndefiniteReservation || hasNonResident || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+    if (hasIndefiniteReservation || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
   }
 
   const contactsToCreate: {
@@ -722,15 +759,27 @@ export async function updateTenant(formData: FormData): Promise<
     }
   }
   if (newRoomId && (roomChanged || climbingIntoResidence)) {
-    const otherLeases = await prisma.leaseTerm.findMany({
-      where: { roomId: newRoomId, id: { not: leaseTermId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-      select: { status: true, expectedMoveOut: true },
+    // 방 설정(nonResidentVacant)까지 같이 읽는다 — addTenant 와 같은 정본 판정의 입력이다.
+    const roomForGuard = await prisma.room.findUnique({
+      where: { id: newRoomId },
+      select: {
+        nonResidentVacant: true,
+        leaseTerms: {
+          where: { id: { not: leaseTermId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          select: { status: true, expectedMoveOut: true },
+        },
+      },
     })
+    const otherLeases = roomForGuard?.leaseTerms ?? []
     const otherOccupants = otherLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
     const otherOccupiedIndefinitely = otherOccupants.length > 0 && !otherOccupants.every(l => !!l.expectedMoveOut)
     // addTenant 와 같은 세분 — 퇴실 예정일 없는 예약만 무기한 점유로 본다.
     const otherHasIndefiniteReservation = otherLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
     const otherHasNonResident = otherLeases.some(l => l.status === 'NON_RESIDENT')
+    // 비거주 점유 방(창고·사무실) — addTenant 와 같은 한 줄. 본인 계약은 위 where 에서 이미 빠져 있어
+    // 415호 명의자가 그 방의 거주자로 올라서는 정당한 전환은 걸리지 않는다.
+    const nonResidentOccupied = nonResidentOccupiedRoom(roomForGuard, otherHasNonResident)
+    if (status !== 'NON_RESIDENT' && nonResidentOccupied) return { ok: false, error: NON_RESIDENT_ROOM_ERROR }
     if (status === 'RESERVED') {
       if (otherHasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
       if (otherOccupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
@@ -738,8 +787,9 @@ export async function updateTenant(formData: FormData): Promise<
       if (otherLeases.some(l => RESIDENT_STATUSES.includes(l.status))) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
     } else if (status === 'NON_RESIDENT') {
       if (otherHasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
-    } else if (otherHasIndefiniteReservation || otherHasNonResident || otherOccupiedIndefinitely) {
-      // 문의·투어 단계 — 예약 단계와 같은 선(퇴실 예정일이 잡힌 방은 희망 호실로 허용)
+    } else if (otherHasIndefiniteReservation || otherOccupiedIndefinitely) {
+      // 문의·투어 단계 — 예약 단계와 같은 선(퇴실 예정일이 잡힌 방은 희망 호실로 허용).
+      // 비거주는 위 정본 판정 한 줄이 대신 본다(addTenant 와 같은 결).
       return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
     }
   }
