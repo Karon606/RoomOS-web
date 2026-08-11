@@ -86,10 +86,15 @@ function WishRoomRow({ room }: { room: WishLeaseRoom }) {
   return (
     <li className="flex items-baseline justify-between gap-2 text-xs">
       {/* 호실번호를 누르면 같은 모달 안에서 그 방의 면으로 바뀐다 — 거주 이력의 이름 클릭과 같은 문법
-          (평시 행 색, hover 코랄, 밑줄·화살표 없음). py-1 -my-1 은 히트 영역만 세로로 넓힌다. */}
+          (평시 행 색, hover 코랄, 밑줄·화살표 없음). py-1 -my-1 은 히트 영역만 세로로 넓힌다.
+          방 타입은 호실번호의 수식어라 같은 버튼 안에 공백으로 잇는다 — 가운뎃점은 동격 항목을 잇는
+          자리이고(§11) 우측 캡션이 이미 하나 쓴다. 재고 카드의 '제품명 + 규격' 병기와 같은 문법이다.
+          자기 색을 선언해 hover 코랄을 물려받지 않는다(코랄은 식별자에만). 폭이 모자라면 truncate 가
+          뒤부터 먹으므로 호실번호는 끝까지 남는다. 타입이 비어 있으면 아무것도 그리지 않는다. */}
       <button type="button" onClick={() => entityModal.open({ kind: 'room', roomId: room.roomId })}
         className="min-w-0 truncate text-left py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--coral)]">
         {room.roomNo}호
+        {room.roomType && <span className="font-normal text-[var(--warm-muted)]"> {room.roomType}</span>}
       </button>
       <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">{wishLeaseRoomCaption(room)}</span>
     </li>

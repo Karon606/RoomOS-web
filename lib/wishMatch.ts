@@ -68,6 +68,8 @@ export type WishRoomMatch = {
 export type WishLeaseRoom = {
   roomNo: string
   roomId: string
+  /** 방 타입(원룸·미니룸 등). 영업장이 자유로 편집하는 값이라 비어 있을 수 있다. 판정에는 쓰지 않는다. */
+  roomType: string | null
   availability: RoomAvailability
   matchedBy: 'rooms' | 'conditions'
   gate: WishGate
@@ -291,7 +293,7 @@ export function buildWishMatch(
       }
       if (c.gate === 'excluded') t.excludedCount += 1
       else t.rooms.push({
-        roomNo, roomId: info.roomId, availability: info.availability,
+        roomNo, roomId: info.roomId, roomType: info.type, availability: info.availability,
         matchedBy: c.matchedBy, gate: c.gate, waitDays: c.waitDays,
       })
     }

@@ -67,8 +67,9 @@ const lease = (
 const ROOMS: Rooms = [
   room('402', soon('2026-08-30')),
   room('404', soon('2026-09-30')),
-  room('409', soon('2026-08-18')),
-  room('413', soon('2026-08-16')),
+  // 방 타입은 영업장이 자유로 편집하는 값이라 비어 있을 수 있다 — 전치가 null 을 그대로 옮기는지 본다.
+  room('409', soon('2026-08-18'), { type: '미니룸' }),
+  room('413', soon('2026-08-16'), { type: null }),
   room('513', soon('2026-10-01')),
   room('514', soon('2026-09-10')),
   room('522', soon('2026-09-21')),
@@ -128,6 +129,9 @@ const M = buildWishMatch(ROOMS, LEASES, TODAY)
   eq('정렬: 전부 빠진 사람의 제외 수', l3.excludedCount, 2)
 
   eq('정렬: 방 id 를 함께 들고 온다', l1.rooms[0].roomId, 'r-409')
+  // 방 타입은 사람 축이 다시 조회하지 않는다 — 방 축 정보(WishRoomInfo.type)를 전치에 실어 나른다.
+  eq('전치: 방 타입을 그대로 옮긴다', l1.rooms.map(r => `${r.roomNo}/${r.roomType}`),
+    ['409/미니룸', '413/null', '402/1인실', '514/1인실', '522/1인실'])
 }
 
 // ── 줄 캡션 문자열 ──
