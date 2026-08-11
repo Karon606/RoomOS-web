@@ -92,3 +92,16 @@
 - [x] 실증: 4개월(6~9월) 전후 대조 전항 차 0, 바뀐 것은 8월 카테고리 분해뿐
 - [ ] **502호 남태우 재분류 승인** — 같은 클래스 1건, 파손 차감 미포함 확인 후 정정 (verify:data 발화 중)
 - [ ] 운영자 실기 확인 후 푸시 — 이 세션은 푸시 금지
+
+## 정산 데이터 정정 2건 + 부가수익 연결 결함 (2026-08-12 운영자 확정)
+- [x] 1. 남태우(502) 행 모양 대조 — 507·509 정정본과 category 한 칸만 달랐음(연결·결제수단·detail 전부 동일)
+- [x] 2. 부가수익 입주자 연결 결함 봉합 — 선택지 정본 `getExtraIncomeLeaseOptions`(퇴실 포함 73개) + 목록 밖 기존 연결 항목화 + 서버 '칸 없음/연결 안 함' 구분
+- [x] 3. 남태우 재분류 백필 — '보증금 몰취' → '청소비'(id 7c913657, 금액·날짜·detail·연결 불변)
+- [x] 4. [미반환분 분류] 축 verify:data → verify:db 게이트 승격(존량 0 · 체인 마지막)
+- [x] 5. 422 파트쿨리나 락인 오염 정정 — 6월 record 소프트삭제 + 청소비 부가수익(scripts/backfill-partkulina-cleaning.mjs, --revert 왕복 실증)
+- [x] 6. 근본 봉합 — `rewriteLockedExpectedForRentAmount` 가 단기 두 칸을 청구 엔진에 넘긴다
+- [x] 7. 감지망 신설 — `check-billing-lock-drift.ts`(데이터 1축 + 소스 가드 3종) verify:db 편입
+- [x] 8. 부가수익 연결 소스 가드 3종 — verify-money-consistency 6-3
+- [x] 검증: tsc · check-server-action-exports · verify:fast(전 항목) · verify:db · verify:data · next build · 변경 파일 신규 lint 0
+- [x] 실증: 5~9월 KPI 전후 대조 18항 전부 의도한 변화, 그 외 차 0 · 역주입 6종 발화 후 원복 · 왕복 후 상태 재현성 차 0
+- [ ] 운영자 실기 확인(부가수익 수정에서 퇴실자 선택·연결 보존) 후 푸시 — 이 세션은 푸시 금지
