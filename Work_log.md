@@ -3079,3 +3079,12 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **별칭·표시 이름(3497ace)**: tenants.nickname·displayNameStyle(DB 선적용, 마이그레이션 prisma/migrate_tenant_nickname.sql). lib/displayName 정본 — 값이 아니라 선택('nickname'|'en', NULL=한글)을 저장, 원천이 비면 한글 폴백(선택은 보존), 서류(lib/documentName)는 이 축을 절대 안 읽음. 고객정보 폼에 별칭 입력 + 표시 선택 SelectField(선택지는 원천 있는 것만). shortName(split ' ')[1]) 자동 축약 규칙 폐기 — '성 이름' 두 토큰 가정이 다중 토큰 이름에서 중간 토큰만 남기던 클래스('티'), truncate 로 대체. 바뀌는 밴드 7개(전부 다중 토큰 외국 이름 — 온이름 표시), 한글 40개 불변.
 - **검증**: 46실 전수(공실 처리 전환 정확히 2실), tsc·verify:fast(test-money 121 통과)·verify:db·build 통과, eslint 신규 0, KPI diff 0, 대비 AA 미달 0, 320px 금액 잘림 0(이름 말줄임 2건은 의도).
 - **범위 밖 보고**: 415호에 지금 입주 계약 저장 가능(addTenant 가드가 문의·투어만 막고 ACTIVE·RESERVED 통과 — 이중 점유 구멍, 별건 승인 필요), 소개 페이지 공개 후보 쿼리가 vacancyExcluded 미제외, BAND_BG.none(--cream-soft) 대 §03 --neutral-bg 이탈 명문화 필요, lib/formatMoney.ts 죽은 코드.
+
+## 2026-08-11 (14) — 매칭 사람 축: 고객 상세 '입주 가능한 방' + 연락 알림에 답 (655a06a..32111f4)
+- **운영자 발제**: 문의자 티니(희망일 8/25) 고객 정보에서 그 날짜 기준 입주 가능한 방이 보이고, "일주일 정도만 미루면 가능하니 연락해 물어보라" 권고도 있으면 좋겠다. 설계 패널 보고 후 승인 — 상세 한 곳만(목록 캡션 없음), 권고는 바로 가능한 방 0실+최단 7일 이하일 때만, 알림 신설 없이 기존 '연락할 때' 설명문에 답 채움, 호실번호 클릭 이동, 앞당기기 권고 제외.
+- **정본 설계**: 방 축 사본 금지 — buildWishMatch 의 기존 perLease 루프에서 같은 후보를 뒤집어 담는 전치(leases: WishLeaseMatch[]). 새 순회·새 게이트 호출 0, noDateFitLeaseIds 는 새 구조에서 파생(의미 불변). DELAY_HINT_DAYS=7 은 문구 등급에만, 후보 집합은 GAP_CAP 30일 그대로. scripts/test-wish-match.ts 전치 항등식 38건 verify:fast 편입 — DB 4축 대신 순수 함수로 잠금(전치는 DB 재대조 대상이 없음).
+- **화면**: TenantWishRooms 위젯(고객 상세 계약 정보 바로 아래, WISH_LEAD+미확정만 — 거주자·확정자는 위젯 자체 없음). RoomStayHistory 거울상 문법, 호실번호 클릭으로 같은 모달 호실 면 교체(이름 클릭의 짝). "8/18부터" / "8/30부터 · 5일 늦음", 제외 캡션, 권고 문장은 wishGateDetail 원문 재사용.
+- **알림**: contact 설명문 뒤에 잇기 — "희망일에 맞는 방 2실(409호 8/18부터, 413호 8/16부터)이 있습니다." 추가 쿼리 0, 알림 항목 수 diff 0. 오늘 발화 최마이클 1건 실물 확인, 8/12 티니 합류.
+- **실물 대조**: 문의 5명 전원 계획서 기대치 일치(티니 409 ok·413 ok·402 +5·514 +16·522 +27, 제외 2실). 미루기 권고는 전원 ok 방 보유라 현 데이터 발화 0건(정상) — 합성 픽스처로 검증.
+- **검증**: tsc·verify:fast(신설 38 포함)·verify:db 3축 위반 0·build 47/47·eslint 신규 0, KPI 무접점, 320~390px 라이트·다크 잘림 0, AA 미달 신규 0.
+- **범위 밖**: 리드 5명 전원 wishConditions 빈 객체(사실상 전 호실 매칭 — 조건 입력 전까지 개인화 낮음), getWishRoomsForLease 가 위젯 하나에 전체 매칭 재계산(캐시는 필요 시 별건), --warm-muted 캡션 라이트 2.73 형제 전체 기존 클래스.
