@@ -29,6 +29,10 @@ import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import { withheldPartsLabel } from '@/lib/depositComposition'
+
+// 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
+type DepositRefundInfo = NonNullable<Awaited<ReturnType<typeof getDepositRefundForLease>>>
 
 type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
@@ -36,7 +40,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
   // 보증금 환불 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
   // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
-  const [depoRefund, setDepoRefund] = useState<{ refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null } | null>(null)
+  const [depoRefund, setDepoRefund] = useState<DepositRefundInfo | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
@@ -133,22 +137,24 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
 // 보증금 환불 확정 표시 + 상시 적용취소 — 기록이 있을 때만 나타난다(B페이즈).
 // 용어는 화면 표면 기준 '환불'로 통일한다(서버 함수명은 recordDepositReturn 이지만 사용자 문구는 환불).
 function DepositRefundUndoRow({ info, onDone }: {
-  info: { refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null }
+  info: DepositRefundInfo
   onDone: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const allWithheld = info.returned === 0 && info.withheld > 0
+  const partsLabel = withheldPartsLabel(info.parts, fmtWon)
   const handleUndo = async () => {
     const ok = await confirmDialog({
       title: '보증금 환불 기록을 적용취소할까요?',
+      // 미반환분은 성격대로 최대 2행이라 무엇이 사라지는지 카테고리까지 말한다(가이드 §14).
       message: info.withheld > 0
-        ? `환불 ${fmtWon(info.returned)} · 미환불 ${fmtWon(info.withheld)} 기록을 지웁니다. 미환불분으로 잡힌 부가수익도 함께 사라집니다.`
+        ? `환불 ${fmtWon(info.returned)} · 미환불 ${fmtWon(info.withheld)} 기록을 지웁니다. 미환불분으로 잡힌 부가수익(${partsLabel ?? '보증금 몰취'})도 함께 사라집니다.`
         : `환불 ${fmtWon(info.returned)} 기록을 지웁니다.`,
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
     startTransition(async () => {
-      const r = await undoDepositReturn(info.refundId, info.extraIncomeId)
+      const r = await undoDepositReturn(info.refundId, info.extraIncomeIds)
       if (r.ok) { pushToast('info', '보증금 환불을 적용취소했습니다.'); onDone() }
       else pushToast('error', r.error)
     })

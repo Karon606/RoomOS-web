@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
-import { depositCompositionLabel } from '@/lib/depositComposition'
+import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -1115,7 +1115,8 @@ export default function TenantClient({
           const mon = kstYmdStr().slice(0, 7)
           if (!(await confirmDialog({
             title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
-            message: `${depositAmount.toLocaleString()}원이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 부가수익(보증금)으로 기록됩니다.\n사유: ${buildWithholdReason(depoWithholdReason, depoWithholdEtc)}.`,
+            // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
+            message: `${fmtWon(depositAmount)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depositAmount, cleaningFeeDeductible(cleaningFee, depoCleaningPaid), fmtWon)} 기록됩니다.\n사유: ${buildWithholdReason(depoWithholdReason, depoWithholdEtc)}.`,
             level: 'caution', confirmLabel: '전액 미환불로 처리',
           }))) return
         }
@@ -1133,7 +1134,7 @@ export default function TenantClient({
         if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
         else setEditTenant(null)
         refresh()
-        const { refundId, extraIncomeId } = refundRes
+        const { refundId, extraIncomeIds } = refundRes
         const totalRefunded = (rp ? rentRefundAmt : 0) + depositReturnAmt
         // 홈택스 조치 안내 — 앱과 국세청은 연동되지 않아 앱이 대신 취소해 줄 수 없다.
         // 확인창으로 막지 않는다(환불 확정은 이미 여러 단계를 거친 뒤라 습관적으로 넘기게 된다).
@@ -1159,7 +1160,7 @@ export default function TenantClient({
                   const ru = await undoRentRefund(leaseTermId)   // 스냅샷은 서버에 영속 — id 전달 불필요
                   if (!ru.ok) { pushToast('error', ru.error); return }
                 }
-                const r = await undoDepositReturn(refundId, extraIncomeId)
+                const r = await undoDepositReturn(refundId, extraIncomeIds)
                 if (r.ok) { pushToast('info', '환불 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }
                 else pushToast('error', r.error)
               })()
@@ -1747,7 +1748,7 @@ export default function TenantClient({
                         )}
                       </div>
                     )}
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">미환불분은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFeeDeductible(fee, depoCleaningPaid), fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
                     {exceedsMax && (
                       <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                     )}
@@ -1768,7 +1769,7 @@ export default function TenantClient({
                   </div>
                   {unreturned > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-[var(--warm-muted)]">부가수익 귀속 (보증금)</span>
+                      <span className="text-[var(--warm-muted)]">부가수익 귀속</span>
                       <span className="font-medium tabular-nums">{fmtWon(unreturned)}</span>
                     </div>
                   )}

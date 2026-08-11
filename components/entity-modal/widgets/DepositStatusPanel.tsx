@@ -20,7 +20,7 @@ import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
 import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease } from '@/app/(app)/tenants/actions'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
-import { depositComposition } from '@/lib/depositComposition'
+import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
@@ -159,13 +159,14 @@ export function DepositStatusPanel({
     const mon = `${Number(r.date.slice(0, 4))}년 ${Number(r.date.slice(5, 7))}월`
     if (!(await confirmDialog({
       title: '환불 기록을 적용취소할까요?',
+      // 미반환분은 성격대로 최대 2행(청소비 몫 / 몰취)이라 무엇이 사라지는지 카테고리까지 말한다(§14).
       message: r.withheld > 0
-        ? `미환불 ${fmtWon(r.withheld)}으로 잡힌 부가수익도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
+        ? `미환불 ${fmtWon(r.withheld)}으로 잡힌 부가수익(${withheldPartsLabel(r.parts, fmtWon) ?? '보증금 몰취'})도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
         : '환불 기록만 지웁니다. 퇴실 상태는 그대로 유지됩니다.',
       level: 'caution', confirmLabel: '적용취소',
     }))) return
     startTransition(async () => {
-      const res = await withSave(() => undoDepositReturn(r.refundId, r.extraIncomeId), { success: '환불 기록을 지웠습니다' })
+      const res = await withSave(() => undoDepositReturn(r.refundId, r.extraIncomeIds), { success: '환불 기록을 지웠습니다' })
       if (!res.ok) return
       setRefund(null); await load(); onChanged?.()
     })

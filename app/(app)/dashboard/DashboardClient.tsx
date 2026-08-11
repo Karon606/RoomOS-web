@@ -27,6 +27,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
 })
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney, fmtManShort, fmtWon } from '@/lib/fmtMoney'
+import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
@@ -328,12 +329,12 @@ function CheckoutRefundModal({
             </div>
             {unreturned > 0 && (
               <div className="flex justify-between">
-                <span style={{ color: 'var(--warm-muted)' }}>부가수익 귀속 (보증금)</span>
+                <span style={{ color: 'var(--warm-muted)' }}>부가수익 귀속</span>
                 <span className="font-medium">{fmtWon(unreturned)}</span>
               </div>
             )}
             <p className="text-[0.65625rem] pt-1" style={{ color: 'var(--warm-muted)' }}>
-              미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
+              미환불분은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFee, fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
             </p>
           </div>
           </>)}

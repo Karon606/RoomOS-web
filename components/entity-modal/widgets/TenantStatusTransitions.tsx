@@ -17,7 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
-import { depositCompositionLabel } from '@/lib/depositComposition'
+import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -283,7 +283,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
             const mon = (fields?.moveOutDate || kstYmdStr()).slice(0, 7)
             if (!(await confirmDialog({
               title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
-              message: `${depoBase.toLocaleString()}원이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 부가수익(보증금)으로 기록됩니다.\n사유: ${reason}.`,
+              // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
+              message: `${fmtWon(depoBase)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depoBase, active?.cleaningFee ?? 0, fmtWon)} 기록됩니다.\n사유: ${reason}.`,
               level: 'caution', confirmLabel: '전액 미환불로 처리',
             }))) return
           }
@@ -448,8 +449,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                       : active.resvCancel
                       ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
                       : active.carriedOver
-                      ? <>인수 전 입주자라 이전 원장 원칙대로 키값 명목 미환불이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>
-                      : <>환불하지 않은 금액은 보증금 수익으로 기록됩니다.</>}
+                      ? <>인수 전 입주자라 이전 원장 원칙대로 키값 명목 미환불이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
+                      : <>환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>}
                   </p>
                 </div>
               )}
