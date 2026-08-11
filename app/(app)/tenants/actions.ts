@@ -20,7 +20,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
-import { loadWishMatch } from '@/lib/wishMatch'
+import { loadWishMatch, WISH_LEAD_STATUSES, type WishLeaseMatch } from '@/lib/wishMatch'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
 // 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
@@ -214,6 +214,28 @@ export async function getWishDateNotices(): Promise<string[]> {
   const { propertyId } = await getPropertyId()
   const { noDateFitLeaseIds } = await loadWishMatch(prisma, propertyId, kstYmdStr())
   return noDateFitLeaseIds
+}
+
+/**
+ * 이 계약 한 건의 사람 축 — "이 사람은 지금 어느 방에 들어갈 수 있는가".
+ *
+ * 홈 알림은 방을 세로 보고("409호에 맞는 사람 3명"), 고객 상세는 사람을 세로 본다. 같은 판정을
+ * 뒤집어 보는 것뿐이라 여기서 다시 매칭 규칙을 쓰지 않고 loadWishMatch 의 사람 축 한 칸을 꺼낸다.
+ *
+ * 노출 조건은 buildWishMatch 와 같아야 한다 — 리드 3상태이고 예약 확정 전. 여기가 한 글자라도
+ * 다르면 홈은 후보라고 하는데 상세에는 안 보이는(또는 그 반대) 상태가 된다. 대상이 아니면 null.
+ */
+export async function getWishRoomsForLease(leaseTermId: string): Promise<WishLeaseMatch | null> {
+  const { propertyId } = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    select: { id: true, status: true, reservationConfirmedAt: true },
+  })
+  if (!lease) return null
+  const leadStatuses: string[] = [...WISH_LEAD_STATUSES]
+  if (!leadStatuses.includes(lease.status) || lease.reservationConfirmedAt) return null
+  const { leases } = await loadWishMatch(prisma, propertyId, kstYmdStr())
+  return leases.find(l => l.leaseId === leaseTermId) ?? null
 }
 
 /**
