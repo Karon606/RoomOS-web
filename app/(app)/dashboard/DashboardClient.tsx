@@ -86,8 +86,8 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
@@ -117,10 +117,15 @@ const DASH_STATUS_LABEL: Record<string, string> = {
 // 밴드마다 색 글자를 쓰던 시절엔 타일 46개가 저마다 다른 색으로 말해 무엇이 급한지가 안 보였다.
 const CELL_NAME  = { fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2 } as const
 const CELL_MONEY = { fontSize: '0.65625rem', fontWeight: 600, lineHeight: 1.2 } as const
-const CELL_SUB   = { fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2, color: 'var(--ink-3)' } as const
+// 일정줄은 색이 아니라 무게로 물러난다 — 밴드 잉크를 그대로 물려받는다(금액 600 · 이름 500 · 일정 400).
+// --ink-3 을 박아 두던 시절엔 색 밴드 위에서 4.3~4.5 까지 떨어졌다. 틴트를 묽게 하는 대신 글자를
+// 밴드와 같은 잉크로 올려 대비를 벌고, 색은 배경 한 채널만 쓰게 둔다.
+const CELL_SUB   = { fontSize: '0.65625rem', fontWeight: 400, lineHeight: 1.2 } as const
 // 연체만 금액에 색이 붙는다 — §18 '연체 카드: 호실번호·금액 --tc' 의 금액 쪽.
 // 호실번호는 밴드 밖 공통 헤더라 한 사람 몫으로 칠할 수 없다(2인 방에서 남의 연체가 옆 사람에게 번진다).
 const CELL_MONEY_OVERDUE = { ...CELL_MONEY, fontWeight: 700, color: 'var(--overdue-fg)' } as const
+// 연체 밴드의 일정줄만 붉음을 물려받는다 — §18 '연체 카드'가 금액과 함께 상태를 한 목소리로 말하는 자리다.
+const CELL_SUB_OVERDUE = { ...CELL_SUB, color: 'var(--overdue-fg)' } as const
 // 호실번호 헤더 띠 — 밴드 밖 상단 소블럭(§19 표 헤더 문법). 방 이름이 밴드에서 빠져야
 // 2인 방 두 밴드가 이름·금액·일정 3슬롯으로 완전 대칭이 된다.
 const CELL_HEAD  = { background: 'var(--canvas)', color: 'var(--ink)', fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.2 } as const
@@ -129,20 +134,32 @@ const NBSP = '\u00A0'
 // 타일 폭이 좁아 전체 이름은 잘린다 — 성을 뺀 이름만(다단어 외국인 이름은 두 번째 토큰).
 const shortName = (name: string) => name.split(' ')[1] ?? name
 
-// 예외만 칠한다 — 완납·납부 예정·입실 예약은 색이 없다. 색이 붙는 타일이 미납·연체·공실뿐이라
-// 화면을 열면 먼저 예외가 보인다. 다섯 색을 다 칠하던 시절엔 46개가 모두 색이라 아무것도 안 튀었다.
-type BandTone = 'none' | 'unpaid' | 'overdue' | 'vacant'
+// 사람이 있으면 색이 있고, 없으면 없다(운영자 오더 2026-08-11).
+//   완납 초록 · 납부 예정과 입실 예약 파랑 · 미납 붉음 · 연체(7일 초과) 같은 붉음 더 짙게 · 공실 무색.
+// 색은 배경 틴트 한 채널만 쓴다. 글자는 중립 잉크로 두고, 연체 하나만 §18 정본대로 금액·상태어에 색을 얹는다.
+// 밴드마다 색 글자를 쓰던 시안 A 는 이름·금액·일정이 저마다 다른 색으로 말해 조잡했다.
+type BandTone = 'none' | 'paid' | 'await' | 'unpaid' | 'overdue'
+// 농도는 §03·§04 정본 그대로 쓴다. 알파를 임의로 깎으면 색이 약해져 '눈에 띄게'라는 주문과 어긋나고,
+// 어차피 대비는 틴트가 아니라 글자 쪽에서 벌 수 있다(아래 CELL_SUB 가 밴드 잉크를 물려받는 이유).
 const BAND_BG: Record<BandTone, string> = {
-  none:    'var(--cream-soft)',
-  unpaid:  'var(--warning-bg)',   // §03 UNPAID — 기한 경과
-  overdue: 'var(--danger-bg)',    // §03 OVERDUE — 7일 초과
-  vacant:  'var(--neutral-bg)',
+  none:    'var(--cream-soft)',        // 공실 — 사람이 없으니 색도 없다
+  paid:    'var(--status-paid-bg)',    // §03 PAID 올리브
+  await:   'var(--status-await-bg)',   // §03 AWAIT 인디고 — 납부 예정·입실 예약 공용
+  unpaid:  'var(--danger-bg)',         // 붉은 계열 옅은 단계(§04 danger)
+  overdue: 'var(--overdue-bg)',        // §03 OVERDUE — 같은 계열 짙은 단계
 }
 // 공실 글자는 한 단계 물린 잉크로. opacity 를 곱하지 않는다 — 틴트 위에서 대비가 무너진다.
 const bandStyle = (tone: BandTone) => ({
   background: BAND_BG[tone],
-  color:      tone === 'vacant' ? 'var(--ink-3)' : 'var(--ink-2)',
+  color:      tone === 'none' ? 'var(--ink-3)' : 'var(--ink-2)',
 })
+// 한 사람의 색 — 예약자는 아직 안 들어왔으니 납부 여부를 묻지 않는다(입실 예약도 '예정').
+// 미납 중 7일 초과만 연체로 부른다(§03·§24) — 그 경과일은 미수납 위젯 배지가 쓰는 값 그대로다.
+const personTone = (p: { status: string; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }): BandTone =>
+  p.status === 'RESERVED' ? 'await'
+    : p.payStatus === 'unpaid' ? ((p.daysOverdue ?? 0) >= 7 ? 'overdue' : 'unpaid')
+      : p.payStatus === 'awaiting' ? 'await'
+        : 'paid'
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
 
@@ -1768,19 +1785,20 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                         {/* 범례 — 스와치는 타일 실제 표면색(밴드 틴트 그대로, BAND_BG 와 같은 토큰).
                             종전 스와치는 fg(짙은 글자색)라 타일 어디에도 없는 색을 견본으로 내밀었다.
-                            항목도 색이 붙는 셋만 남긴다 — 나머지는 색이 없다는 사실 자체가 설명이다. */}
+                            공실 견본은 비어 보이는 게 맞다 — 무색이라는 사실이 그 방의 상태다. */}
                         <div className="flex gap-3.5 shrink-0 flex-wrap items-center" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                           {([
+                            { tone: 'paid'    as const, label: '완납' },
+                            { tone: 'await'   as const, label: '납부·입실 예정' },
                             { tone: 'unpaid'  as const, label: '미납' },
                             { tone: 'overdue' as const, label: '연체' },
-                            { tone: 'vacant'  as const, label: '공실' },
+                            { tone: 'none'    as const, label: '공실' },
                           ]).map(s => (
                             <div key={s.label} className="flex items-center gap-[5px]">
                               {/* 10% 틴트는 7px 에서 안 보인다 — 견본 크기를 키우고 테두리는 중립 헤어라인으로(상태색 아님) */}
                               <span className="inline-block w-3 h-3 rounded-[3px]" style={{ background: BAND_BG[s.tone], border: '1px solid var(--border)' }} />{s.label}
                             </div>
                           ))}
-                          <span>색 없음 = 완납 · 납부 예정 · 입실 예약</span>
                         </div>
                         {(() => {
                             const unpaidRooms = new Set(data.unpaidRoomNosForView)
@@ -1843,10 +1861,15 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               // 비거주 점유 방은 그 계약의 협의가(방 기본값이면 415호가 15만을 35만으로 부른다),
                               // 나머지는 방 기본 이용료 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
                               const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.baseRent
-                              // 사람이 없는 타일만 방 단위로 칠한다 — 공실·비거주는 색을 가질 사람이 없다.
+                              // 사람이 없는 타일 — 비거주 점유(창고·사무실)는 그 계약자가 곧 이 방의 사람이라
+                              // 거주자와 같은 색 규칙을 쓴다. 정말 아무도 없는 방만 무색이다.
                               // 방 단위 Set 은 여기 한 자리에만 남는다(사람이 있는 타일은 사람이 자기 색을 들고 온다).
-                              const isUnpaid = r.isVacant ? (nonResItem?.payStatus === 'unpaid') : unpaidRooms.has(r.roomNo)
-                              const roomTone: BandTone = isUnpaid ? 'unpaid' : r.isVacant ? 'vacant' : 'none'
+                              const roomTone: BandTone = nonResItem
+                                ? personTone({ status: 'NON_RESIDENT', payStatus: nonResItem.payStatus, daysOverdue: nonResItem.daysOverdue })
+                                : r.isVacant ? 'none'
+                                  : unpaidRooms.has(r.roomNo) ? 'unpaid' : 'none'
+                              const roomSub = roomTone === 'overdue' ? `연체 D+${nonResItem?.daysOverdue}`
+                                : roomTone === 'unpaid' ? '미납' : NBSP
                               return (
                                 <div
                                   key={r.roomNo}
@@ -1860,18 +1883,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     {people.length === 0
                                       ? <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(roomTone)}>
                                           <span className="truncate w-full text-center" style={CELL_NAME}>{roomLabel}</span>
-                                          <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{roomAmount > 0 ? fmtWon(roomAmount) : NBSP}</span>
-                                          <span className="truncate w-full text-center" style={CELL_SUB}>{roomTone === 'unpaid' ? '미납' : NBSP}</span>
+                                          <span className="truncate w-full text-center tnum" style={roomTone === 'overdue' ? CELL_MONEY_OVERDUE : CELL_MONEY}>{roomAmount > 0 ? fmtWon(roomAmount) : NBSP}</span>
+                                          <span className="truncate w-full text-center" style={roomTone === 'overdue' ? CELL_SUB_OVERDUE : CELL_SUB}>{roomSub}</span>
                                         </div>
                                       : people.map(p => {
-                                          // 예약자는 납부 여부로 색을 가르지 않는다 — 아직 안 들어온 사람이라 색이 없다.
-                                          // 7일 초과만 연체(§03·§24) — 판정 날짜는 미수납 목록 배지가 쓰는 그 값이다.
-                                          const isOverdue = p.payStatus === 'unpaid' && p.daysOverdue != null && p.daysOverdue >= 7
-                                          const tone: BandTone = p.status === 'RESERVED' ? 'none'
-                                            : p.payStatus === 'unpaid' ? (isOverdue ? 'overdue' : 'unpaid')
-                                              : 'none'
-                                          // 일정 슬롯은 늘 있다(빈 줄이라도) — 예외 상태는 색과 함께 말로도 한 번 더 말한다.
-                                          const subLine = tone === 'overdue' ? `연체 D+${p.daysOverdue}`
+                                          const tone = personTone(p)
+                                          const isOverdue = tone === 'overdue'
+                                          // 일정 슬롯은 늘 있다(빈 줄이라도) — 미납·연체는 색과 함께 말로도 한 번 더 말한다.
+                                          const subLine = isOverdue ? `연체 D+${p.daysOverdue}`
                                             : tone === 'unpaid' ? '미납'
                                               : p.status === 'RESERVED' ? (moveInDateLabel(p.moveInDate) ?? DASH_STATUS_LABEL.RESERVED)
                                                 : checkoutDateLabel(p.expectedMoveOut)
@@ -1880,10 +1899,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                             <div key={p.leaseId} className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
                                               <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
                                               <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{p.amount > 0 ? fmtWon(p.amount) : NBSP}</span>
-                                              <span className="truncate w-full text-center" style={CELL_SUB}>{subLine ?? NBSP}</span>
+                                              <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{subLine ?? NBSP}</span>
                                             </div>
                                           )
                                         })}
+                                    {/* 다섯 명 이상 — 넷을 세우고 남은 수만 한 줄로. 밴드가 아니라 꼬리라 grow 를 주지 않는다. */}
+                                    {r.occupantsMore > 0 && (
+                                      <div className="truncate w-full text-center px-1 py-[3px]" style={{ ...bandStyle('none'), ...CELL_SUB }}>
+                                        +{r.occupantsMore}명
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               )
@@ -1924,8 +1949,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           const rentMan = n.rentAmount > 0 ? `${Math.round(n.rentAmount / 10000)}만` : null
                           const nameParts = n.tenantName.split(' ')
                           const shortName = nameParts.length >= 2 ? nameParts[1] : n.tenantName
-                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자를 같은 정본에서 가져온다.
-                          const tone: BandTone = n.payStatus === 'unpaid' ? 'unpaid' : 'none'
+                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자·색 규칙을 같은 정본에서 가져온다.
+                          const tone = personTone({ status: 'NON_RESIDENT', payStatus: n.payStatus, daysOverdue: n.daysOverdue })
+                          const isOverdue = tone === 'overdue'
                           return (
                             <div
                               key={n.tenantId}
@@ -1935,8 +1961,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               <div className="truncate w-full text-center tnum px-1 py-[3px]" style={CELL_HEAD}>{fmtRoomNo(n.roomNo)}</div>
                               <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
                                 <span className="truncate w-full text-center" style={CELL_NAME}>{shortName}</span>
-                                <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{rentMan ?? NBSP}</span>
-                                <span className="truncate w-full text-center" style={CELL_SUB}>{tone === 'unpaid' ? '미납' : NBSP}</span>
+                                <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{rentMan ?? NBSP}</span>
+                                <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{isOverdue ? `연체 D+${n.daysOverdue}` : tone === 'unpaid' ? '미납' : NBSP}</span>
                               </div>
                             </div>
                           )

@@ -14,7 +14,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, nextRoomReservation, primaryRoomLease } from '@/lib/leaseStatus'
+import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, roomReservationQueue, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishGateDetail, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -325,11 +325,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
             checkoutProratedAmount: true, checkoutProratedMonth: true,
             discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           },
-          // 정렬·take 는 호실 카드(room-manage getRooms)와 같은 값이라야 잘림까지 같다 — 주 계약은
-          // primaryRoomLease 가 의미로 고른다. createdAt desc 이던 시절엔 최근에 만든 예약이
+          // 주 계약은 primaryRoomLease 가 의미로 고른다. createdAt desc 이던 시절엔 최근에 만든 예약이
           // 실거주자를 밀어내 402호 카드에 김주호(입실 예정)가 떴다(신고 2026-08-11).
+          //
+          // take 는 타일이 세울 수 있는 최대 인원에서 거꾸로 잡는다 — 점유 4명 + 초과 감지 1 + 비거주 1.
+          // 3 이던 시절엔 잘림이 곧 오표시였다: status asc 는 enum 선언 순서(RESERVED < ACTIVE)라
+          // 예약이 셋 걸린 방에서는 실거주자가 잘려 나갔다. 호실 카드(getRooms)는 사람을 하나만
+          // 세우므로 take 3 으로 충분하지만, 여기는 넷까지 세우므로 그만큼 더 읽는다.
           orderBy: { status: 'asc' },
-          take: 3,
+          take: 6,
         },
       },
       orderBy: { roomNo: 'asc' },
@@ -1012,6 +1016,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 납부 예정 호실 — dueDay 미도래 + 아직 받지 않음 (방 현황 그리드 4번째 상태)
   const awaitingRoomNosForView = Array.from(new Set(awaitingLeases.map(l => l.roomNo)))
 
+  // 타일 '연체 D+N' 의 N — 미수납 위젯 배지가 쓰는 그 값을 그대로 옮겨 담는다(새 계산이 아니다).
+  // 한 사람의 경과일을 두 위젯이 각자 세면 같은 화면에서 다른 날짜를 말하게 된다.
+  const daysOverdueByLease: Record<string, number | null> = {}
+  for (const c of unpaidCandidates) daysOverdueByLease[c.leaseId] = c.daysOverdue
+
   // ── 비거주자 현황 ────────────────────────────────────────────
   const nonResidentItems = roomsWithTenants.flatMap(r =>
     r.leaseTerms
@@ -1024,6 +1033,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         payStatus:  (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
                   : (upcomingByLease[l.id] ?? 0) > 0 ? 'awaiting' as const
                   : 'paid' as const,
+        // 비거주자도 사람이라 같은 단계를 받는다 — 미납 7일 초과면 연체(§03).
+        daysOverdue: daysOverdueByLease[l.id] ?? null,
       }))
   )
 
@@ -1042,10 +1053,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 사람마다 갈리기 때문이다(아래 payStatus). 조회·집계는 하나도 건드리지 않고 읽기만 한다.
   const tileBillMonth = (l: { status: string; isShortTerm: boolean; moveInDate: Date | null }): string =>
     (l.status === 'RESERVED' || l.isShortTerm) ? (monthOfDate(l.moveInDate) ?? targetMonth) : targetMonth
-  // 타일 '연체 D+N' 의 N — 미수납 위젯 배지가 쓰는 그 값을 그대로 옮겨 담는다(새 계산이 아니다).
-  // 한 사람의 경과일을 두 위젯이 각자 세면 같은 화면에서 다른 날짜를 말하게 된다.
-  const daysOverdueByLease: Record<string, number | null> = {}
-  for (const c of unpaidCandidates) daysOverdueByLease[c.leaseId] = c.daysOverdue
+  // 타일 한 장에 세우는 사람 수 상한 — 넘치면 '+N명' 한 줄로 접는다(운영자 확정 2026-08-11).
+  const TILE_OCCUPANT_LIMIT = 4
   const tileYmd = (d: Date | null): string | null => d ? new Date(d).toISOString().slice(0, 10) : null
   const tileOccupant = (r: typeof roomsWithTenants[number], l: typeof roomsWithTenants[number]['leaseTerms'][number]) => {
     const mon = tileBillMonth(l)
@@ -1088,13 +1097,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 비거주는 위 '비거주자 현황' 블록이 따로 세운다 — 타일 사람 줄에서는 뺀다.
       const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT')
       const primary = primaryRoomLease(occupying)
-      const next = nextRoomReservation(occupying, primary)
+      // 타일에 세울 사람 — 사는 사람(또는 먼저 들어올 예약) 다음에 남은 입실 예약을 입주일 순으로.
+      // 예약을 한 명만 세우던 시절엔 404호(8/15·9/1)의 뒷사람이 화면 어디에도 없었다.
+      const queue = [primary, ...roomReservationQueue(occupying, primary)].filter(l => l != null)
       return {
         tenantName:   primary?.tenant.name ?? null,
         tenantId:     primary?.tenant.id ?? null,
         tenantStatus: primary?.status ?? null,
-        // 타일에 세울 사람 — 사는 사람(또는 먼저 들어올 예약) 다음에 다음 입실 예약.
-        occupants: [primary, next].filter(l => l != null).map(l => tileOccupant(r, l)),
+        // 네 명까지 세운다 — 320px 폭에서 밴드 넷이 타일 높이를 넘기지 않는 상한이다.
+        occupants: queue.slice(0, TILE_OCCUPANT_LIMIT).map(l => tileOccupant(r, l)),
+        // 다섯 명 이상이면 넘치는 수만 한 줄로 — 잘라 놓고 말이 없으면 없는 사람이 된다.
+        occupantsMore: Math.max(0, queue.length - TILE_OCCUPANT_LIMIT),
       }
     })(),
     nonResidentName:  r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.name ?? null,
