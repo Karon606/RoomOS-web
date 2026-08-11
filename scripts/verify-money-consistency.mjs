@@ -882,6 +882,24 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/label: '이 달 청구액'.+\n.+label: '예약 확정'.+\n.+label: '퇴실 귀속'.+\n.+label: '기타수익'/.test(eqSrc)) {
     violations.push('[소스] MoneyEquation 예상 수입 등식의 네 항 이름·순서가 바뀌었다 — 두 화면이 같은 문장을 못 쓴다')
   }
+  // 운영이익 등식의 마지막 항은 '실제로 뺀 금액'이어야 한다. 서버는 과거월에 미기록 고정지출
+  // 추정을 안 더하는데(page.tsx isPastMonth 분기) 캡션이 추정치를 그대로 빼면 그 금액만큼
+  // 등식이 거짓이 된다. 6월 실데이터로 706,457 원짜리 거짓말이 될 수 있던 자리다.
+  if (!/pendingRecurring:\s*data\.expectedExpense - data\.totalExpense/.test(dashClient)) {
+    violations.push('[소스] 홈 운영이익 캡션의 고정 지출(예정) 항이 expectedExpense - totalExpense 유도가 아니다 — 과거월에 안 뺀 돈을 뺐다고 적는다')
+  }
+  if (/projectedRecurringExpense/.test(dashClient.slice(dashClient.indexOf('const profitTerms')))) {
+    violations.push('[소스] 홈 운영이익 캡션 경로가 projectedRecurringExpense 를 직접 쓴다 — 과거월 분기를 안 타 등식이 거짓이 된다')
+  }
+  if (!/const projectedNetProfit = projectedRevenue - expectedExpense/.test(dash)) {
+    violations.push('[소스] 홈 projectedNetProfit 이 projectedRevenue - expectedExpense 가 아니다 — 운영이익 캡션이 실제 산식과 어긋난다')
+  }
+  if (!/expectedExpense = isPastMonth \? totalExpense : totalExpense \+ projectedRecurringExpense/.test(dash)) {
+    violations.push('[소스] 홈 예상 지출의 과거월 분기가 바뀌었다 — 운영이익 캡션의 마지막 항이 실제로 뺀 금액과 갈린다')
+  }
+  if (!/label: '예상 수입'.+\n.+label: '기록된 지출'.+\n.+label: '고정 지출 \(예정\)'/.test(eqSrc)) {
+    violations.push('[소스] MoneyEquation 운영이익 등식의 항 이름·순서가 바뀌었다 — 지출 관리·결산 보고서 어휘와 갈린다')
+  }
   if (!/const totalExpected  = billedThisMonth\s*\n\s*\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
     violations.push('[소스] 홈 totalExpected 의 첫 항이 billedThisMonth 가 아니다 — 예상 수입 캡션의 첫 항이 되계산으로 돌아갔다')
   }

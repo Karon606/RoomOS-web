@@ -1384,9 +1384,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       '수납 관리의 이 달 청구액은 현재 입주자 청구만 집계합니다. 예약 확정, 퇴실자의 이 달 몫, 기타수익만큼 이 값이 더 큽니다.',
       '결산 보고서의 수납액은 실제 받은 돈만 집계하므로 이 값보다 작을 수 있습니다.',
     ] },
+    // 카드에 등식이 붙었으므로 도움말이 같은 항을 다른 이름으로 부르면 안 된다(2026-08-12).
     projectedNetProfit: { title: '예상 운영이익', body: [
-      '예상 수입에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다.',
+      '예상 수입에서 기록된 지출과 아직 안 빠진 고정 지출 (예정)을 뺀 월말 전망입니다.',
+      '기록된 지출은 이 달 장부에 올라간 지출 전부입니다. 지출 관리의 일반 지출과 고정 지출 (기록됨)이 여기 들어갑니다.',
       '막대는 예상 지출 중 실제로 확정된 비율입니다. 다 채워질수록 전망이 정확해집니다.',
+      '지난 달을 조회하면 고정 지출 (예정) 항은 사라집니다. 그 달에는 추정치를 더하지 않기 때문입니다.',
     ] },
     overdue: { title: '누적 미납 (현 입주자)', body: [
       '납부일이 지났는데 아직 받지 못한 금액의 합계입니다.',
@@ -1615,9 +1618,18 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         {/* Row 2 Right: 예상 순이익 + 달성도 — 매출 위젯과 동일 방식(예상 큰 숫자 + 현재/예상 달성 bar).
             다크 카드 유지(순이익 구분). 예비비 이체분 있으면 운영 가용 자금 보조 표시. */}
         {(() => {
-          const expectedNet = data.projectedNetProfit   // 예상 매출 − 예상 지출 (월말 전망)
+          const expectedNet = data.projectedNetProfit   // 예상 수입 − 예상 지출 (월말 전망)
           const currentNet  = data.netProfit            // 현재 장부(수납 − 실제 지출) — 지출 덜 빠져 과대평가됨
           const isPosExp = expectedNet >= 0
+          // 등식의 마지막 항은 **실제로 빠진 금액**이다. 서버는 과거월에 미기록 고정지출 추정을
+          // 안 더하는데(page.tsx expectedExpense 분기) 캡션이 추정치를 그대로 빼면 그 금액만큼
+          // 등식이 거짓이 된다. 뺀 값을 받으면 과거월엔 저절로 0이 되어 항이 사라진다.
+          // 이렇게 두면 좌변 projectedNetProfit = projectedRevenue − expectedExpense 와 항등이다.
+          const profitTerms = operatingProfitTerms({
+            projectedRevenue: data.projectedRevenue,
+            recordedExpense:  data.totalExpense,
+            pendingRecurring: data.expectedExpense - data.totalExpense,
+          })
           // 순이익엔 '달성율'(현재/예상)이 안 맞음: 수납은 월초에 몰리고 지출은 月내내 빠져
           // 현재 장부가 부풀려져 100%에 박힘. 대신 '지출이 얼마나 확정됐나'(실제/예상)를 보여
           // 다 채워지면 예상치로 수렴함을 표시.
@@ -1632,11 +1644,18 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>{monthCaption}</span>
                 <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
               </p>
-              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
+              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 4, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
                 {isPosExp ? '+' : ''}{expectedNet.toLocaleString()}
                 <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--np-unit)', marginLeft: 2 }}>원</small>
               </p>
-              <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
+              {/* 등식 캡션 — 예상 수입 카드와 같은 자리(큰 숫자 바로 아래, 진행바 위), 같은 정본.
+                  항이 하나뿐이면 좌변을 되풀이할 뿐이라 줄 자체를 안 적는다. */}
+              {!data.isFutureMonth && profitTerms.length > 1 && (
+                <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5, wordBreak: 'keep-all', margin: 0 }}>
+                  <MoneyEquation terms={profitTerms} />
+                </p>
+              )}
+              <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '8px 0 6px' }}>
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
               {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
