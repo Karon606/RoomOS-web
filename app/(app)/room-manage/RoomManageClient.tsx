@@ -2,6 +2,10 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { getOpenCleaningsByRoom } from './cleaningActions'
+import {
+  CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL, type CleaningRow, type CleaningStatus,
+} from './cleaningConstants'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { fmtDateDot as fmtDate, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
@@ -228,14 +232,121 @@ function suggestBaseRent(rooms: Room[], type: string, tier: string, windowType: 
   return best
 }
 
+// ── 청소 뷰 ───────────────────────────────────────────────────────
+//
+// 영업장 전체 청소를 한 화면에서 본다(2026-08-12 구조 개편). 종전에는 방 상세를 하나씩 열어야만
+// 청소 이력이 보여서 "이번 달 청소비를 얼마 썼나"에 답할 자리가 없었다.
+//
+// 행 문법은 방 상세의 RoomCleaningPanel 정본을 그대로 쓴다 — 같은 사실을 두 화면이 다르게 그리면
+// 그 자체가 이질감이다. 다른 것은 둘뿐이다. 앞에 호실 번호가 서고(교차 목록이라 그것이 식별자다),
+// 날짜는 정본 포맷터 fmtMD 를 쓴다(lib/fmtDate — 목록의 짧은 인라인 규약).
+//
+// 조작은 두지 않는다. 완료·되돌리기·삭제는 방 상세 패널 한 곳이 정본이고, 호실 번호를 누르면
+// 카드 클릭과 같은 동선으로 그 방이 열린다. 조작을 복제하면 확인창·토스트·적용취소를 두 벌
+// 관리하게 되고 그 순간 둘이 갈린다.
+const CLEANING_STATUS_LABEL: Record<CleaningStatus, string> = { PLANNED: '예정', DONE: '완료', SKIPPED: '안 함' }
+const cleaningTone = (s: CleaningStatus): BadgeTone => (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
+
+function CleaningView({ rows, targetMonth, onOpenRoom }: {
+  rows: CleaningRow[]
+  targetMonth: string
+  onOpenRoom: (roomId: string) => void
+}) {
+  const [status, setStatus] = useState<CleaningStatus | ''>('PLANNED')
+  const counts = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
+  const shown = status ? rows.filter(r => r.status === status) : rows
+
+  // 합계는 **세그먼트와 무관하게** 이번 달 전체에서 낸다. 필터에 따라 움직이면 같은 이름의 숫자가
+  // 화면 조작마다 달라져 "이번 달 청소비"라는 이름이 거짓이 된다.
+  // '받은 청소비로 부담'은 그중 일부다(운영 부담이 아닌 몫).
+  const monthDone = rows.filter(r => r.status === 'DONE' && (r.doneDate ?? '').slice(0, 7) === targetMonth)
+  const monthCost = monthDone.reduce((s, r) => s + (r.cost ?? 0), 0)
+  const monthFunded = monthDone.filter(r => r.fromCleaningFund).reduce((s, r) => s + (r.cost ?? 0), 0)
+
+  return (
+    <div className="space-y-3">
+      {/* 상태 세그먼트 — v2.0 §23 공용 SegmentedControl(같은 화면 호실 상태 필터와 같은 문법) */}
+      <SegmentedControl<CleaningStatus | ''>
+        size="sm"
+        scroll
+        ariaLabel="청소 상태 필터"
+        value={status}
+        onChange={setStatus}
+        options={[
+          { value: 'PLANNED', label: `예정 ${counts.PLANNED ?? 0}` },
+          { value: 'DONE',    label: `완료 ${counts.DONE ?? 0}` },
+          { value: 'SKIPPED', label: `안 함 ${counts.SKIPPED ?? 0}` },
+          { value: '',        label: `전체 ${rows.length}` },
+        ]}
+      />
+
+      {shown.length === 0 ? (
+        <EmptyState
+          title={status ? `'${CLEANING_STATUS_LABEL[status]}' 상태인 청소가 없습니다` : '청소 기록이 없습니다'}
+          description={status ? '다른 상태를 눌러 보세요.' : '방 상세의 청소 이력에서 예정을 등록할 수 있습니다.'}
+        />
+      ) : (
+        <ul className="space-y-1.5">
+          {shown.map(r => (
+            <li key={r.id} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* 호실 번호가 그 방으로 가는 문 — 카드 클릭과 같은 동선(형제 목록의 이름 버튼 문법) */}
+                <button type="button" onClick={() => onOpenRoom(r.roomId)}
+                  className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
+                  {fmtRoomNo(r.roomNo)}
+                </button>
+                <StatusBadge tone={cleaningTone(r.status)}>{CLEANING_STATUS_LABEL[r.status]}</StatusBadge>
+                <span className="text-xs text-[var(--warm-dark)]">{CLEANING_REASON_LABEL[r.reason]}</span>
+                <span className="text-xs text-[var(--warm-muted)] num">
+                  {fmtMD(r.status === 'DONE' ? r.doneDate : r.scheduledDate)}
+                </span>
+                {(r.performer || r.performerName) && (
+                  <span className="text-xs text-[var(--warm-muted)]">
+                    {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
+                    {r.performerName ? ` · ${r.performerName}` : ''}
+                  </span>
+                )}
+                {r.cost != null && r.cost > 0 && (
+                  r.status === 'DONE' ? (
+                    <span className="text-xs font-medium text-[var(--warm-dark)] num">{r.cost.toLocaleString()}원</span>
+                  ) : (
+                    <span className="text-xs text-[var(--warm-muted)] num">기록된 지출 {r.cost.toLocaleString()}원</span>
+                  )
+                )}
+                {/* 표식은 실제로 부담한 금액이 있을 때만 — 지출이 지워졌거나 0 이면 부담액이 없다(결함 D5) */}
+                {r.fromCleaningFund && r.cost != null && r.cost > 0 && (
+                  <span className="text-xs text-[var(--warm-muted)]">받은 청소비로 부담</span>
+                )}
+              </div>
+              {r.memo && (
+                <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words">{r.memo}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* 이번 달 합계 — 방 상세에서는 낼 수 없던 숫자다(방 하나만 보이므로). */}
+      <p className="text-xs text-[var(--warm-muted)] num">
+        이번 달 청소비 <span className="font-semibold text-[var(--warm-dark)]">{monthCost.toLocaleString()}원</span>
+        {' · 받은 청소비로 부담 '}
+        <span className="font-semibold text-[var(--warm-dark)]">{monthFunded.toLocaleString()}원</span>
+      </p>
+    </div>
+  )
+}
+
 export default function RoomManageClient({
   initialRooms,
+  initialCleanings,
   roomTypes,
   roomTiers,
   windowTypes,
   directions,
 }: {
   initialRooms: Room[]
+  // 영업장 전체 청소 이력 — '청소' 뷰의 재료. initialRooms 와 같은 이유로 prop 을 직접 쓴다.
+  initialCleanings: CleaningRow[]
   roomTypes: string[]
   roomTiers: string[]
   windowTypes: string[]
@@ -382,6 +493,9 @@ export default function RoomManageClient({
       .catch(() => setCleaningLoadFailed(true))
   }, [rooms])
   const [cleaningOnly, setCleaningOnly] = useState(false)
+  // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
+  const [viewTab, setViewTab] = useState<'rooms' | 'cleaning'>('rooms')
+  const plannedCleaningCount = initialCleanings.filter(c => c.status === 'PLANNED').length
 
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -951,7 +1065,16 @@ export default function RoomManageClient({
           부제도 걷는다 — 바로 아래 상태 칩이 같은 값을 이미 말하고 있었고, 게다가 부제의 '거주중'은
           퇴실 예정을 합쳐 39, 칩은 나눠서 36 이라 한 화면에 같은 이름의 숫자가 둘이었다. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
+          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본) */}
+          <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab} equal
+            onChange={id => setViewTab(id as 'rooms' | 'cleaning')}
+            tabs={[
+              { id: 'rooms',    label: '호실' },
+              { id: 'cleaning', label: '청소', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
+            ]} />
+        </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
         {/* ml-auto — 좁은 폭에서 두 줄로 접힐 때도 버튼군이 우측 정렬(월 셀렉터 우측 통일 지적과 같은 클래스). */}
         {canEditUi && (
@@ -966,6 +1089,13 @@ export default function RoomManageClient({
         )}
       </div>
 
+      {/* 청소 뷰 — 영업장 전체 청소 목록. 조작은 방 상세 패널이 정본이라 여기엔 두지 않는다. */}
+      {viewTab === 'cleaning' && (
+        <CleaningView rows={initialCleanings} targetMonth={targetMonth}
+          onOpenRoom={roomId => { entityModal.open({ kind: 'room', roomId }); setError('') }} />
+      )}
+
+      {viewTab === 'rooms' && <>
       {/* 검색바 + 필터 토글 — v2.0 §23 공용 SearchBar. 스크롤 시 상단 고정 */}
       <div className="flex gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="호실 번호, 입주자 이름, 방 타입 검색" className="flex-1" />
@@ -1213,6 +1343,7 @@ export default function RoomManageClient({
           {filteredRooms.map(room => renderRoomCard(room))}
         </div>
       )}
+      </>}
 
       {/* 상세 모달은 전역 Prism 셸(EntityModal)이 담당. 카드 클릭이 entityModal.open() 호출 */}
 

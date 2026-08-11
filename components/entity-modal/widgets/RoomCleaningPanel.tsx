@@ -14,11 +14,11 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { DatePicker } from '@/components/ui/DatePicker'
 import CategorySelect from '@/components/ui/CategorySelect'
-import { pushToast, trackSave } from '@/lib/saveStatus'
+import { pushToast, trackSave, type ToastAction } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
   getRoomCleanings, getCleaningFundStatus, createCleaning, completeCleaning, reopenCleaning, skipCleaning, deleteCleaning,
-  rescheduleCleaning, getRecentCleaningPerformers,
+  restoreCleaning, rescheduleCleaning, getRecentCleaningPerformers,
 } from '@/app/(app)/room-manage/cleaningActions'
 import {
   CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL,
@@ -81,14 +81,19 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
 
   // okMsg 를 함수로도 받는다 — 되돌리기 문구는 지출이 남았는지를 **서버가 돌려준 값**으로 갈라야 한다.
   // 클라가 들고 있는 목록으로 짐작하면 마지막 조회 이후 지출을 지운 경우와 어긋난다.
+  // action 은 토스트 우측 적용취소 버튼(v2.0 §15·§16) — 삭제처럼 확인창만으로는 못 무르는 것에 단다.
   type Done = { ok: true; id?: string; expenseKept?: boolean }
-  const run = (fn: () => Promise<Done | { ok: false; error: string }>, okMsg: string | ((res: Done) => string)) =>
+  const run = (
+    fn: () => Promise<Done | { ok: false; error: string }>,
+    okMsg: string | ((res: Done) => string),
+    action?: ToastAction,
+  ) =>
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await fn()
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', typeof okMsg === 'function' ? okMsg(res) : okMsg)
+        pushToast('success', typeof okMsg === 'function' ? okMsg(res) : okMsg, action ? { action } : undefined)
         reload()
       } finally { release() }
     })
@@ -183,8 +188,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                     <span className="text-xs text-[var(--warm-muted)] num">기록된 지출 {r.cost.toLocaleString()}원</span>
                   )
                 )}
-                {/* 표식이라 배지가 아니다. 새 톤을 만들면 StatusBadge 세 곳을 같이 고쳐야 한다. */}
-                {r.fromCleaningFund && (
+                {/* 표식이라 배지가 아니다. 새 톤을 만들면 StatusBadge 세 곳을 같이 고쳐야 한다.
+                    부담한 **금액이 있을 때만** 뜬다(결함 D5). fromCleaningFund 는 완료 시점에 켜지는데
+                    그 뒤 지출을 지우면 표식만 남아 "받은 청소비로 냈다"고 말하면서 부담액은 0 이다 —
+                    잔고 계산(fundedExpenseTotal)은 지출에서 읽으므로 화면만 혼자 다른 말을 하게 된다. */}
+                {r.fromCleaningFund && r.cost != null && r.cost > 0 && (
                   <span className="text-xs text-[var(--warm-muted)]">받은 청소비로 부담</span>
                 )}
               </div>
@@ -273,8 +281,18 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                   })()}
                   <div className="flex gap-2">
                     <Btn variant="primary" size="sm" disabled={pending || !doneDate}
-                      onClick={() => {
+                      onClick={async () => {
                         const c = Number(cost || 0)
+                        // 걸려 있는 지출이 있는데 비용을 0 으로 저장하면 서버가 **연결만 끊는다**(지우는 판단은
+                        // 운영자 몫이라 그게 맞다). 그런데 화면에는 아무 말도 없어서, 비용 칸을 지우고 다시
+                        // 완료한 순간 그 지출이 어느 청소에도 안 걸린 고아가 된다(결함 D3, 감지망이 잡는 그 상태다).
+                        if (r.cost != null && r.cost > 0 && c === 0) {
+                          if (!(await confirmDialog({
+                            title: '비용을 0으로 저장할까요?',
+                            message: `이 청소에 걸린 지출 ${won(r.cost)}은 지워지지 않고 연결만 끊깁니다. 지출 관리에 남으니 필요 없으면 거기서 지우세요.`,
+                            confirmLabel: '0으로 저장', level: 'caution',
+                          }))) return
+                        }
                         const fromFund = useFund && r.reason === 'CHECKOUT' && c > 0
                         // 비용을 넣은 건은 지출 date 도 이 날짜를 따라간다(completeCleaning 이 생성·수정 양쪽에서 doneDate 를 쓴다).
                         run(() => completeCleaning({ id: r.id, doneDate, performer, performerName, cost: c, fromCleaningFund: fromFund }),
@@ -365,8 +383,24 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                   )}
                   <RowActionBtn tone="danger" disabled={pending} className="ml-auto"
                     onClick={async () => {
-                      if (!(await confirmDialog({ title: '이 청소 기록을 삭제할까요?', message: '기록이 목록에서 사라집니다.', confirmLabel: '삭제', level: 'danger' }))) return
-                      run(() => deleteCleaning(r.id), '삭제됨')
+                      // 지출이 걸려 있으면 문구를 가른다(결함 D1). 삭제는 청소 기록만 지우고 지출은 남기는데
+                      // 종전 확인창은 그 사실에 침묵했다 — 되돌리기는 이미 말해 주던 것을 삭제만 안 했다.
+                      const linkedCost = r.cost != null && r.cost > 0 ? r.cost : null
+                      if (!(await confirmDialog({
+                        title: '이 청소 기록을 삭제할까요?',
+                        message: linkedCost != null
+                          ? `기록이 목록에서 사라집니다. 함께 기록된 지출 ${won(linkedCost)}은 지출 관리에 그대로 남습니다.`
+                          : '기록이 목록에서 사라집니다.',
+                        confirmLabel: '삭제', level: 'danger',
+                      }))) return
+                      // 소프트삭제라 되살릴 수 있다(결함 D2) — 지출 삭제 토스트와 같은 적용취소 문법.
+                      run(() => deleteCleaning(r.id), '삭제됨', {
+                        label: '적용취소',
+                        run: () => { void restoreCleaning(r.id).then(res => {
+                          if (res.ok) { pushToast('info', '청소 기록을 복원했습니다'); reload() }
+                          else pushToast('error', res.error)
+                        }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) },
+                      })
                     }}>
                     삭제
                   </RowActionBtn>

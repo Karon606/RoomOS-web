@@ -36,11 +36,14 @@ function pickLatestCheckoutLease(rows: CheckoutLeaseCandidate[]): string | null 
   return best?.id ?? null
 }
 
-/** 그 방의 청소 이력 — 최근 것부터. */
-export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
-  const { propertyId } = await requirePropertyAccess()
+/**
+ * 청소 행 조회 공통부 — 방 하나든 영업장 전체든 **같은 모양**을 돌려준다.
+ * 조회 조건만 다르고 금액 이어붙이기·필드 변환은 하나뿐이라, 사본을 두면 방 상세와 목록이
+ * 같은 건을 다르게 말하기 시작한다(금액은 지출에서 읽는 파생값이라 특히 갈리기 쉽다).
+ */
+async function loadCleaningRows(where: { propertyId: string; roomId?: string }): Promise<CleaningRow[]> {
   const rows = await prisma.roomCleaning.findMany({
-    where: { roomId, propertyId, deletedAt: null },
+    where: { ...where, deletedAt: null },
     orderBy: [{ doneDate: 'desc' }, { scheduledDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, roomId: true, leaseTermId: true,
@@ -67,6 +70,25 @@ export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
     cost: costById[r.id] ?? null,
     fromCleaningFund: r.fromCleaningFund,
   }))
+}
+
+/** 그 방의 청소 이력 — 최근 것부터. */
+export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
+  const { propertyId } = await requirePropertyAccess()
+  return loadCleaningRows({ propertyId, roomId })
+}
+
+/**
+ * 영업장 전체의 청소 이력 — 호실 관리 '청소' 뷰가 쓴다. 최근 것부터, 상태를 안 가린다.
+ *
+ * 여기서 상태·기간으로 자르지 않는다. 화면이 상태 세그먼트와 이번 달 합계를 같은 한 벌의 행에서
+ * 만들어야 세그먼트를 바꿀 때마다 숫자가 흔들리지 않는다 — 서버가 미리 잘라 내려주면 '전체'와
+ * '이번 달' 두 질문에 답할 재료가 화면에 동시에 있지 못한다. 상태(status)와 기간(scheduledDate·
+ * doneDate)은 행마다 실려 나가므로 판정은 화면이 한다.
+ */
+export async function getPropertyCleanings(): Promise<CleaningRow[]> {
+  const { propertyId } = await requirePropertyAccess()
+  return loadCleaningRows({ propertyId })
 }
 
 /**

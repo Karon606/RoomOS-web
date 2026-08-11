@@ -1,4 +1,5 @@
 import { getRooms, applyScheduledRents } from './actions'
+import { getPropertyCleanings } from './cleaningActions'
 import { getRoomTypeOptions, getRoomTierOptions, getWindowTypeOptions, getRoomDirectionOptions } from '@/app/(app)/settings/actions'
 import RoomManageClient from './RoomManageClient'
 
@@ -8,12 +9,15 @@ export const maxDuration = 60
 export default async function RoomManagePage() {
   await applyScheduledRents()
 
-  const [rooms, roomTypes, roomTiers, windowTypes, directions] = await Promise.all([
+  // 청소 뷰(2026-08-12) — 영업장 전체 청소 이력. 청소 처리가 revalidatePath('/room-manage') 를 부르므로
+  // 모달에서 완료·삭제해도 이 목록이 따라온다(카드 배지와 같은 갱신 경로).
+  const [rooms, cleanings, roomTypes, roomTiers, windowTypes, directions] = await Promise.all([
     getRooms(),
+    getPropertyCleanings(),
     getRoomTypeOptions(),
     getRoomTierOptions(),
     getWindowTypeOptions(),
     getRoomDirectionOptions(),
   ])
-  return <RoomManageClient initialRooms={rooms} roomTypes={roomTypes} roomTiers={roomTiers} windowTypes={windowTypes} directions={directions} />
+  return <RoomManageClient initialRooms={rooms} initialCleanings={cleanings} roomTypes={roomTypes} roomTiers={roomTiers} windowTypes={windowTypes} directions={directions} />
 }
