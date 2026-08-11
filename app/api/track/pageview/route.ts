@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { parseUA, categorizeReferrer } from '@/lib/tracking/uaParse'
 import { lookupGeo } from '@/lib/tracking/geo'
 import { isKnownSlug, rateLimited, clientIp } from '@/lib/tracking/guard'
+import { safeViewedLanguage, safeLanguageTrail } from '@/lib/tracking/lang'
 import { kstYmdStr } from '@/lib/kstDate'
 
 // 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 클라이언트 스크립트에서 POST.
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
           screenWidth?: number; screenHeight?: number
           viewportWidth?: number; viewportHeight?: number
           language?: string
+          viewedLanguage?: string; languageTrail?: string
         }
       | null
     if (!body || typeof body.slug !== 'string' || !body.slug.trim()) {
@@ -87,6 +89,9 @@ export async function POST(req: NextRequest) {
     const utmMedium   = trim(body.utmMedium)
     const utmCampaign = trim(body.utmCampaign)
     const language    = trim(body.language)
+    // 열람 언어 — 진입 시점 선택. 이후 전환은 /api/track/closeup 이 같은 행을 갱신한다.
+    const viewedLanguage = safeViewedLanguage(body.viewedLanguage)
+    const languageTrail  = safeLanguageTrail(body.languageTrail)
 
     // Vercel 자동 헤더 — 도시 단위 위치
     const country = trim(req.headers.get('x-vercel-ip-country'))
@@ -132,6 +137,8 @@ export async function POST(req: NextRequest) {
         viewportWidth: safeInt(body.viewportWidth, 20000),
         viewportHeight: safeInt(body.viewportHeight, 20000),
         language,
+        viewedLanguage,
+        languageTrail,
         userAgent: trim(ua),
         isMobile,
         visitorHash: vh,

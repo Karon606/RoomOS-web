@@ -63,6 +63,19 @@
     // CTA 클릭 로그 — closeup 에도 이중으로 실어 즉시 전송이 유실돼도 남게 한다.
     var ctaLog = [];
 
+    // 열람 언어 — 기기 언어(navigator.language)와 별개로, 페이지에서 실제로 어떤 언어로 읽었나.
+    // 사이트가 window.__stayeumLang(현재값)과 'stayeum:lang' 이벤트(전환)로 알려준다.
+    // 이 파일은 영업장 공용이라 특정 사이트의 버튼·전역을 직접 뒤지지 않는다 — 안 알려주는 페이지는
+    // <html lang> 을 초기값으로만 쓰고 전환은 잡히지 않는다(그 페이지엔 언어 전환이 없다는 뜻).
+    var MAX_TRAIL = 12;
+    function normLang(v) {
+      if (typeof v !== 'string') return null;
+      var s = v.trim().toLowerCase();
+      return /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(s) ? s : null;
+    }
+    var viewedLang = normLang(window.__stayeumLang) || normLang(document.documentElement.lang);
+    var langTrail = viewedLang ? [viewedLang] : [];
+
     function getScrollPct() {
       var doc = document.documentElement;
       var body = document.body;
@@ -88,6 +101,9 @@
       viewportWidth:  window.innerWidth  || null,
       viewportHeight: window.innerHeight || null,
       language: navigator.language || null,
+      // 열람 언어 — 진입 시점의 선택(딥링크·저장된 선택·브라우저 언어 자동 선택 결과)
+      viewedLanguage: viewedLang,
+      languageTrail: langTrail.length > 0 ? langTrail.join('>') : null,
     };
 
     // 1) 입장 기록 — id 는 클라가 이미 만들었으므로 응답을 기다릴 필요가 없다(keepalive 로 이탈 중에도 발송).
@@ -170,6 +186,18 @@
       else { try { fetch('/api/track/cta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }); } catch (_) {} }
     }, true);
 
+    // 2d) 언어 전환 — 바꾼 즉시 기존 행을 갱신한다(closeup 채널 재사용, 새 엔드포인트를 늘리지 않는다).
+    //     closeup 에도 이중으로 실어(ctaLog 와 같은 이유) 즉시 전송이 유실돼도 마지막 상태는 남게 한다.
+    document.addEventListener('stayeum:lang', function (e) {
+      var next = normLang(e && e.detail && e.detail.lang);
+      if (!next || next === viewedLang) return;
+      viewedLang = next;
+      if (langTrail.length < MAX_TRAIL) langTrail.push(next);
+      var body = JSON.stringify({ id: pv_id, viewedLanguage: viewedLang, languageTrail: langTrail.join('>') });
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/track/closeup', new Blob([body], { type: 'application/json' }));
+      else { try { fetch('/api/track/closeup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }); } catch (_) {} }
+    });
+
     // 3) 페이지 닫을 때 closeup (체류·활성시간·스크롤·섹션·마일스톤) — sendBeacon 으로 안전 전송
     function sendCloseup() {
       var curActive = activeMs + (activeSince != null ? Date.now() - activeSince : 0);
@@ -180,6 +208,8 @@
         scrollDepthPct: getScrollPct() > maxScrollPct ? getScrollPct() : maxScrollPct,
         sectionDwellMs: sectionTimes,
         scrollMilestones: milestones,
+        viewedLanguage: viewedLang,
+        languageTrail: langTrail.length > 0 ? langTrail.join('>') : null,
       };
       var url = '/api/track/closeup';
       var json = JSON.stringify(data);

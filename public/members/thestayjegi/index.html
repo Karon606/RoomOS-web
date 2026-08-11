@@ -1292,6 +1292,10 @@ footer {
     document.documentElement.lang = DOC_LANG[lang];
     LANGS.forEach(function (k) { btns[k].classList.toggle('on', k === lang); });
     try { localStorage.setItem(LS_KEY, lang); } catch (err) {}
+    /* 열람 언어 추적 훅 — 공용 _track.js 가 이것만 보고 기록한다(사이트별 하드코딩 없음).
+       _track.js 는 defer 라 이 스크립트보다 늦게 돌아, 진입 시점 값은 전역으로 넘긴다. */
+    window.__stayeumLang = lang;
+    try { document.dispatchEvent(new CustomEvent('stayeum:lang', { detail: { lang: lang } })); } catch (err) {}
   }
   LANGS.forEach(function (k) {
     btns[k].addEventListener('click', function () { setLang(k); });
@@ -1308,6 +1312,8 @@ footer {
     if (pref.indexOf('zh') === 0) setLang('zh');
     else if (pref.indexOf('ja') === 0) setLang('ja');
     else if (pref && pref.indexOf('ko') !== 0) setLang('en');
+    /* 한국어는 기본값이라 setLang 을 안 거친다. 열람 언어 초기값만 남긴다(문구·저장은 그대로). */
+    if (!window.__stayeumLang) window.__stayeumLang = 'ko';
   })();
 })();
 </script>

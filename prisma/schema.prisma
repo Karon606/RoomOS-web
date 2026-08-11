@@ -1736,7 +1736,12 @@ model PageView {
   screenHeight  Int?
   viewportWidth Int?
   viewportHeight Int?
-  language      String?                        // 'ko-KR'
+  language      String?                        // 'ko-KR' — 기기 언어(navigator.language), 방문자가 무엇을 골랐는지는 모른다
+
+  // 열람 언어 — 공개 페이지의 언어 전환(KO/EN/ZH/JA)으로 실제 어떤 언어로 봤나. 기기 언어와 별개다.
+  // 기기 언어가 ko-KR 인데 영어로 읽는 사람이 있고, 그 전환 자체가 마케팅 신호다(운영자 요청 2026-08-11).
+  viewedLanguage String?                       // 마지막 열람 언어 'ko'·'en'·'zh'·'ja'
+  languageTrail  String?                       // 전환 이력 'ko>en>ja' (첫 자동 선택 포함, 연속 중복 없음)
 
   // 참여도 (페이지 닫을 때 sendBeacon 으로 업데이트 — 별도 endpoint)
   durationMs    Int?                           // 체류 시간 (밀리초) — 벽시계(백그라운드 포함), 레거시
