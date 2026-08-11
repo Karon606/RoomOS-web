@@ -7,7 +7,7 @@ import { useState, useTransition } from 'react'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
-import { addExtraIncome, updateExtraIncome, deleteExtraIncome, restoreExtraIncome, type getExtraIncomes } from '@/app/(app)/finance/actions'
+import { addExtraIncome, updateExtraIncome, deleteExtraIncome, restoreExtraIncome, type getExtraIncomes, type getExtraIncomeLeaseOptions } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -24,7 +24,7 @@ import { OtherMonthNotice } from '@/components/ui/OtherMonthNotice'
 const fmtRoomNo = (no: string | null | undefined) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
 export type Income = Awaited<ReturnType<typeof getExtraIncomes>>[number]
-export type LeaseOption = { leaseTermId: string; tenantName: string; roomNo: string | null }
+export type LeaseOption = Awaited<ReturnType<typeof getExtraIncomeLeaseOptions>>[number]
 
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
@@ -119,15 +119,25 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
   }
 
   // 입주자 선택 셀렉트 — 등록·수정 폼 공용. 값=leaseTermId(서버가 tenantId 보충), 빈 값=연결 없음.
-  const LeaseSelect = ({ name, defaultValue }: { name: string; defaultValue?: string }) => (
-    <select name={name} defaultValue={defaultValue ?? ''}
-      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-      <option value="">연결 안 함 (자판기 등 일반 수입)</option>
-      {leaseOptions.map(o => (
-        <option key={o.leaseTermId} value={o.leaseTermId}>{o.roomNo ? `${fmtRoomNo(o.roomNo)} ` : ''}{o.tenantName}</option>
-      ))}
-    </select>
-  )
+  // 선택지는 서버 정본(getExtraIncomeLeaseOptions) — 퇴실 계약도 들어 있고 '(퇴실)'로 구분된다.
+  const LeaseSelect = ({ name, defaultValue, currentLabel }: { name: string; defaultValue?: string; currentLabel?: string | null }) => {
+    const cur = defaultValue ?? ''
+    // 목록에 없는 기존 연결은 항목으로 세운다. 안 세우면 브라우저가 첫 항목('연결 안 함')을 고르고,
+    // 카테고리만 고쳐 저장해도 연결이 조용히 끊긴다(2026-08-12 실기 발견의 구조적 원인).
+    const missing = cur !== '' && !leaseOptions.some(o => o.leaseTermId === cur)
+    return (
+      <select name={name} defaultValue={cur}
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        <option value="">연결 안 함 (자판기 등 일반 수입)</option>
+        {missing && <option value={cur}>{currentLabel || '현재 연결 유지'}</option>}
+        {leaseOptions.map(o => (
+          <option key={o.leaseTermId} value={o.leaseTermId}>
+            {o.roomNo ? `${fmtRoomNo(o.roomNo)} ` : ''}{o.tenantName}{o.pastLabel ? ` (${o.pastLabel})` : ''}
+          </option>
+        ))}
+      </select>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -289,7 +299,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">입주자 연결 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
-                    <LeaseSelect name="leaseTermId" defaultValue={detailInc.leaseTermId ?? ''} />
+                    <LeaseSelect name="leaseTermId" defaultValue={detailInc.leaseTermId ?? ''} currentLabel={tenantLabel(detailInc)} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>

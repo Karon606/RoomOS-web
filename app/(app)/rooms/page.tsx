@@ -1,5 +1,5 @@
 import { getRoomPaymentStatus, getMonthPaymentAggregates } from './actions'
-import { getExtraIncomes } from '@/app/(app)/finance/actions'
+import { getExtraIncomes, getExtraIncomeLeaseOptions } from '@/app/(app)/finance/actions'
 import { getIncomeCategories, getMyRole } from '@/app/(app)/settings/actions'
 import { kstMonthStr } from '@/lib/kstDate'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -23,7 +23,7 @@ export default async function RoomsPage({
   const { propertyId } = await requirePropertyAccess()
 
   // 부가수익 — /finance에서 이동(2026-07-02). 과납분·보증금 미반환분 등 수납 파생 수익이라 수납 흐름 옆에.
-  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized, paidRevenue] = await Promise.all([
+  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized, paidRevenue, leaseOptions] = await Promise.all([
     getRoomPaymentStatus(targetMonth),
     getMyRole(),
     getExtraIncomes(targetMonth),
@@ -34,6 +34,8 @@ export default async function RoomsPage({
     // 미래월 '미리 받은 이 달 이용료' 보조줄 — 홈 실수납과 같은 정본을 부른다.
     // 미래월 행은 서버가 그 달 수납을 0으로 잠그기 때문에 화면이 행에서 되계산할 수 없다.
     getPaidRevenue(prisma, propertyId, targetMonth),
+    // 부가수익 입주자 연결 선택지 — 그 달 수납 행이 아니라 연결 가능한 계약 전부(퇴실 포함).
+    getExtraIncomeLeaseOptions(),
   ])
   // 아직 오지 않은 달인가 — KST 기준 서버 판정. 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
   const isFutureMonth = targetMonth > kstMonthStr()
@@ -49,6 +51,7 @@ export default async function RoomsPage({
       reservedExpected={reservedExpected}
       checkedOutRecognized={checkedOutRecognized}
       prepaidReceived={paidRevenue.occupied}
+      leaseOptions={leaseOptions}
       initialTab={tab === 'income' ? 'income' : 'rooms'}
     />
   )

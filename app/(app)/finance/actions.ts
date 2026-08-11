@@ -26,6 +26,8 @@ import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
+import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
+import { statusLabel } from '@/lib/statusColors'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -1690,6 +1692,48 @@ export async function getExtraIncomes(targetMonth: string) {
   })
 }
 
+/**
+ * 부가수익 '입주자 연결' 선택지 — **연결할 수 있는 계약 전부**다.
+ *
+ * 종전에는 화면이 그 달 수납 행(roomStatus)에서 파생했다. 수납 행은 청구 대상 계약
+ * (ACTIVE·RESERVED·CHECKOUT_PENDING·NON_RESIDENT)만 만들고 공실 행은 leaseTermId 가 null 이라,
+ * **퇴실한 사람은 선택지에 아예 없었다.** 그런데 보증금 미반환분·퇴실 청소비처럼 퇴실 계약에
+ * 묶이는 부가수익이 이 화면의 주된 손님이다. 게다가 select 는 defaultValue 가 목록에 없으면
+ * 첫 항목('연결 안 함')을 고르므로, 퇴실자에게 묶인 수익의 **카테고리만 고쳐 저장해도 연결이
+ * 조용히 끊겼다**(502호 남태우 재분류 때 실기 발견, 2026-08-12).
+ *
+ * 그래서 축을 바꾼다 — '그 달 청구 대상'이 아니라 '돈이 오갈 수 있었던 계약'이다.
+ * 문의·투어 단계(WAITING_TOUR·TOUR_DONE)와 입실 취소(CANCELLED)는 뺀다. 취소 26건은 수납 record 가
+ * 0건이고 24건은 호실도 없다 — 넣으면 목록만 길어진다. 이미 그런 계약에 묶인 수익이 있어도
+ * 화면이 기존 연결을 별도 항목으로 세우므로 끊기지 않는다.
+ */
+export async function getExtraIncomeLeaseOptions() {
+  const propertyId = await getPropertyId()
+  const leases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: { in: [...BILLABLE_STATUSES, 'RESERVED', 'CHECKED_OUT'] } },
+    select: {
+      id: true, status: true, moveInDate: true, moveOutDate: true,
+      tenant: { select: { name: true } }, room: { select: { roomNo: true } },
+    },
+  })
+  const opt = (l: (typeof leases)[number], pastLabel: string | null) => ({
+    leaseTermId: l.id, tenantName: l.tenant.name, roomNo: l.room?.roomNo ?? null, pastLabel,
+  })
+
+  // 현재 계약 — 수납 화면과 같은 순서(호실 오름차순 · 방 안에서는 roomLeaseRowOrder 정본).
+  const current = leases.filter(l => l.status !== 'CHECKED_OUT')
+  const roomKeys = [...new Set(current.map(l => l.room?.roomNo ?? ''))]
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const out = roomKeys.flatMap(key =>
+    roomLeaseRowOrder(current.filter(l => (l.room?.roomNo ?? '') === key)).map(l => opt(l, null)),
+  )
+
+  // 지난 계약 — 최근 퇴실 순. 라벨 정본(STATUS_LABEL)으로 현재 계약과 구분한다.
+  const closed = leases.filter(l => l.status === 'CHECKED_OUT')
+    .sort((a, b) => (b.moveOutDate?.getTime() ?? 0) - (a.moveOutDate?.getTime() ?? 0))
+  return [...out, ...closed.map(l => opt(l, statusLabel(l.status)))]
+}
+
 // 생성된 id 를 돌려준다 — 과납 초과분을 기타수익으로 돌린 경우 토스트 적용취소가 되돌릴 대상이다(v2.0 §16).
 export async function addExtraIncome(formData: FormData): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
@@ -1744,11 +1788,21 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
-    const leaseTermId = ((formData.get('leaseTermId') as string) || '').trim() || null
-    let tenantId      = ((formData.get('tenantId') as string) || '').trim() || null
-    if (leaseTermId && !tenantId) {
-      const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
-      tenantId = lt?.tenantId ?? null
+    // 입주자 연결 — **칸이 없는 폼과 '연결 안 함'을 구분한다.**
+    // 둘을 같게 읽으면(종전) 연결 칸을 안 그리는 폼에서 저장할 때마다 기존 연결이 조용히 끊긴다.
+    // 끊긴 연결은 화면에서 뱃지 하나가 사라지는 것으로 끝나지 않는다 — 보증금 출처 부가수익은
+    // leaseTermId 로 미반환분과 대조되고 청소비 잔고도 계약별로 묶이므로, 그 행이 통째로 미아가 된다.
+    const leaseRaw  = formData.get('leaseTermId')
+    const tenantRaw = formData.get('tenantId')
+    let link: { tenantId: string | null; leaseTermId: string | null } | null = null
+    if (leaseRaw !== null || tenantRaw !== null) {
+      const leaseTermId = String(leaseRaw ?? '').trim() || null
+      let tenantId      = String(tenantRaw ?? '').trim() || null
+      if (leaseTermId && !tenantId) {
+        const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
+        tenantId = lt?.tenantId ?? null
+      }
+      link = { tenantId, leaseTermId }
     }
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
@@ -1762,7 +1816,7 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
-        tenantId, leaseTermId,
+        ...(link ?? {}),
       },
     })
     revalidatePath('/finance'); revalidatePath('/rooms')

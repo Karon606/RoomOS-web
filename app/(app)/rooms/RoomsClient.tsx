@@ -409,7 +409,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 
 export default function RoomsClient({
   roomStatus, targetMonth, isFutureMonth, myRole, incomes, incomeCategories, payAggregates,
-  reservedExpected, checkedOutRecognized, prepaidReceived, initialTab,
+  reservedExpected, checkedOutRecognized, prepaidReceived, leaseOptions, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
@@ -424,6 +424,8 @@ export default function RoomsClient({
   checkedOutRecognized: number
   // 미리 받은 그 달 이용료 — 홈 실수납과 같은 정본(getPaidRevenue)의 값. 미래월 보조줄 전용.
   prepaidReceived: number
+  // 부가수익 입주자 연결 선택지 — 서버 정본(getExtraIncomeLeaseOptions). 그 달 수납 행에서 파생하지 않는다.
+  leaseOptions: LeaseOption[]
   initialTab?: 'rooms' | 'income'
 }) {
   const searchParams = useSearchParams()
@@ -842,18 +844,6 @@ export default function RoomsClient({
   // 미래월엔 아예 안 적는다 — 홈도 미래월을 열 수 없어 대조할 상대가 없고, 좌변이 아래에서
   // 거짓으로 판정한 그 수납액을 그대로 나른다(디자인 패널 2026-08-11).
   const showHomeBridge   = !isFutureMonth && (reservedExpected !== 0 || checkedOutRecognized !== 0 || incomeSum !== 0)
-
-  // 부가수익 입주자 연결 선택지 — 현재 수납 화면의 계약들(비공실 + 계약 존재)
-  const leaseOptions: LeaseOption[] = (() => {
-    const seen = new Set<string>()
-    const out: LeaseOption[] = []
-    for (const r of roomStatus) {
-      if (!r.leaseTermId || !r.tenantName || seen.has(r.leaseTermId)) continue
-      seen.add(r.leaseTermId)
-      out.push({ leaseTermId: r.leaseTermId, tenantName: r.tenantName, roomNo: r.roomNo })
-    }
-    return out
-  })()
 
   return (
     <div className="space-y-4">

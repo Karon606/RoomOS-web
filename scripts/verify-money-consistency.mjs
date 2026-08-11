@@ -215,6 +215,28 @@ if (!/:\s*FORFEIT_CATEGORY/.test(tenantsActions)) {
   }
 }
 
+// 6-3. 부가수익 '입주자 연결' 이 저장할 때마다 조용히 끊기지 않는가 (실기 발견 2026-08-12).
+//
+//   select 는 defaultValue 가 옵션 목록에 없으면 첫 항목을 고른다. 부가수익 수정 폼의 첫 항목은
+//   '연결 안 함' 이라, 목록에 없는 사람(퇴실자)에게 묶인 수익은 **카테고리만 고쳐 저장해도 연결이
+//   사라졌다.** 끊긴 연결은 뱃지 하나가 아니라 원장의 대조 축이다 — 보증금 출처 부가수익은
+//   leaseTermId 로 미반환분(6-2)과 맞춰 보고 청소비 잔고도 계약별로 묶인다.
+{
+  const incomeSection = readFileSync('app/(app)/rooms/IncomeSection.tsx', 'utf8')
+  if (!/const missing = cur !== '' && !leaseOptions\.some/.test(incomeSection)) {
+    violations.push('[소스] 부가수익 입주자 선택이 목록에 없는 기존 연결을 항목으로 세우지 않는다 — 저장할 때마다 연결이 조용히 끊긴다')
+  }
+  const financeActions = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+  if (!/export async function getExtraIncomeLeaseOptions/.test(financeActions)
+      || !/'RESERVED', 'CHECKED_OUT'/.test(financeActions)) {
+    violations.push('[소스] 부가수익 연결 선택지 정본이 없거나 퇴실 계약을 뺐다 — 퇴실자에게 묶이는 수익(미반환분·퇴실 청소비)을 연결할 수 없다')
+  }
+  // 칸이 없는 폼과 '연결 안 함' 을 같게 읽으면, 연결 칸을 안 그리는 폼이 저장할 때마다 연결을 지운다.
+  if (!/if \(leaseRaw !== null \|\| tenantRaw !== null\)/.test(financeActions)) {
+    violations.push("[소스] updateExtraIncome 이 '칸 없음' 과 '연결 안 함' 을 구분하지 않는다 — 연결 칸이 없는 폼이 기존 연결을 지운다")
+  }
+}
+
 // 7. 환불 재기록의 증빙 메타 승계 — 빠지면 그 결제일 달의 카드·현금영수증 합계에서 금액이
 //    통째로 사라진다(519호 임형진 사례). 소스에서 승계 여부를 본다.
 for (const field of ['payMethod:', 'paymentConfirmedAt:', 'paymentConfirmedBy:', 'bankTxRef:']) {
