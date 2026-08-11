@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, BtnLink } from '@/components/ui/Btn'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -448,11 +448,20 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             </>
           )}
         </div>
-        {stats.botCount > 0 && (
-          <span className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>
-            봇 {fmt(stats.botCount)}건 제외
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {stats.botCount > 0 && (
+            <span className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>
+              봇 {fmt(stats.botCount)}건 제외
+            </span>
+          )}
+          {/* 세션 리플레이는 Clarity 대시보드가 정본 화면이다 — 여기서는 문만 연다.
+              주소는 서버(getMarketingStats)가 태그 주입과 같은 env 로 만들어 내려주고, env 가 없으면 버튼도 없다. */}
+          {stats.clarityUrl && (
+            <BtnLink href={stats.clarityUrl} target="_blank" rel="noopener noreferrer" variant="secondary" size="sm">
+              Clarity 세션 보기
+            </BtnLink>
+          )}
+        </div>
       </div>
 
       {/* 범위 선택 — 세그먼트는 자체 한 줄(6개라 좁은 화면에서 넘침), 캡션·직접 지정은 아래 줄 */}

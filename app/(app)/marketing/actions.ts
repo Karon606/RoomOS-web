@@ -27,6 +27,8 @@ export type MarketingStats = {
   rangeTo: string
   publicSlug: string | null
   publicUrl: string | null
+  // Clarity 세션 리플레이 대시보드 — 태그 주입(scripts/inject-clarity.mjs)과 같은 env. 없으면 버튼이 안 뜬다.
+  clarityUrl: string | null
   // 범위와 무관한 4종 누적 카드 (참고용 — 항상 today/7d/30d/all-time)
   totals: { today: number; week: number; month: number; allTime: number }
   // 범위 내 핵심 지표
@@ -370,6 +372,11 @@ export async function getMarketingStats(
   })
   const slug = property?.publicSlug?.trim() || null
   const publicUrl = slug ? `https://www.stayeum.com/members/${slug}/` : null
+  // 소개 페이지에 심는 태그(scripts/inject-clarity.mjs)와 같은 env 를 읽는다 — 두 자리가 갈리면
+  // 녹화는 되는데 볼 문이 없거나 그 반대가 된다. 상용화에서 영업장별 ID 가 되면 여기와 주입
+  // 스크립트가 함께 property 값으로 옮겨 간다.
+  const clarityId = process.env.CLARITY_PROJECT_ID?.trim() || null
+  const clarityUrl = clarityId ? `https://clarity.microsoft.com/projects/view/${clarityId}/dashboard` : null
 
   // 임의 기간(from~to, KST 양끝 포함)이 유효하면 그 창, 아니면 프리셋 범위.
   const YMD = /^\d{4}-\d{2}-\d{2}$/
@@ -396,7 +403,7 @@ export async function getMarketingStats(
 
   if (!slug) {
     return {
-      range, bucket, rangeFrom, rangeTo, publicSlug: null, publicUrl: null,
+      range, bucket, rangeFrom, rangeTo, publicSlug: null, publicUrl: null, clarityUrl: null,
       totals: { today: 0, week: 0, month: 0, allTime: 0 },
       rangeViews: 0, rangeVisitors: 0,
       engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, stayCount: 0, scrollCount: 0, bounceRatePct: 0 },
@@ -757,7 +764,7 @@ export async function getMarketingStats(
   }
 
   return {
-    range, bucket, rangeFrom, rangeTo, publicSlug: slug, publicUrl,
+    range, bucket, rangeFrom, rangeTo, publicSlug: slug, publicUrl, clarityUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
     rangeViews, rangeVisitors, engagement, ctas, sections, sectionSampleCount, popup,
     trend, referrers, channels, namedSources, campaigns, hourly,
