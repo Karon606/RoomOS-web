@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
+import { primaryRoomLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -643,11 +643,11 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   }
 
   return rooms.flatMap(room => {
-    const roomLeases = activeLeases.filter(l => l.roomId === room.id)
-    const primaryLease = roomLeases.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
-    const nonResidentLease = roomLeases.find(l => l.status === 'NON_RESIDENT')
+    // 점유 계약 전부를 행으로 — 방이 아니라 계약이 청구의 단위다(정본 lib/leaseStatus roomLeaseRowOrder).
+    // 종전에는 방마다 대표 하나만 골라, 한 방에 계약이 둘이면 나머지 하나의 청구가 화면에서 사라졌다.
+    const roomLeases = roomLeaseRowOrder(activeLeases.filter(l => l.roomId === room.id))
 
-    if (!primaryLease && !nonResidentLease) {
+    if (roomLeases.length === 0) {
       const prev = prevLeases.find(l => l.roomId === room.id)
       return [{
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -673,9 +673,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }]
     }
 
-    const rows = []
-    if (primaryLease) rows.push(buildLeaseRow(room, primaryLease as LeaseWithOverride, null, null))
-    if (nonResidentLease) rows.push(buildLeaseRow(room, nonResidentLease as LeaseWithOverride, null, null))
+    const rows = roomLeases.map(lease => buildLeaseRow(room, lease as LeaseWithOverride, null, null))
     // 입주일이 viewMonth보다 미래인 행 제외 (예: 5월 11일 입주자가 4월 수납에 미납으로 표시되는 버그)
     // RESERVED는 예외 — 입주 전에도 예약 확인용으로 표시
     return rows.filter(row => {

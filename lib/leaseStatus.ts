@@ -101,6 +101,29 @@ export function roomReservationQueue<T extends { id: string; status: string; mov
 export const OCCUPYING_STATUSES: LeaseStatus[] = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
 
 /**
+ * 한 방의 계약을 수납 행 순서로 세운다 — 점유(거주·퇴실 예정·입실 예약)가 먼저 입주 예정일 순,
+ * 그다음 비거주(창고·사무실)가 같은 순.
+ *
+ * 종전 수납 관리는 방마다 대표 계약 하나(+비거주 하나)만 행으로 만들었다. 한 방에 계약이 둘이면
+ * 나머지 하나가 화면에서 통째로 사라졌고, 그 계약의 그 달 청구액도 같이 사라져 홈 예상 수입과
+ * 수납 화면 청구 합이 갈렸다(2026-08-11 실측: 402호 황인정 329,000 · 503호 송호준 420,000).
+ * 대표 선택이 정렬 없는 조회 순서에 달려 있어 어느 쪽이 사라지는지도 비결정적이었다.
+ * 방이 아니라 계약이 청구의 단위다 — 한 방에 계약이 둘이면 행도 둘이다(418호가 이미 그 선례다).
+ *
+ * 순서를 여기 두는 이유는 primaryRoomLease 와 같다. 호출부가 각자 정렬하면 같은 방이 화면마다
+ * 다른 순서로 뜬다. 비거주를 뒤로 미는 것은 종전 순서(거주 먼저, 비거주 다음)를 그대로 지키기 위함이다.
+ */
+export function roomLeaseRowOrder<T extends { status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+): T[] {
+  const occupying: string[] = OCCUPYING_STATUSES
+  return [
+    ...sortByMoveIn(leases.filter(l => occupying.includes(l.status))),
+    ...sortByMoveIn(leases.filter(l => l.status === 'NON_RESIDENT')),
+  ]
+}
+
+/**
  * 방이 언제 비는가 — 지금(now) / 그 날부터(soon) / 모른다(null).
  *
  *   점유 계약 없음   → 지금 입주 가능(비거주만 있는 방은 방 설정 nonResidentVacant 를 그대로 따른다)

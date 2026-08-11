@@ -788,12 +788,19 @@ export default function RoomsClient({
   // 채워지는데 단기가 들어차 있으면 오히려 0이 되는 역전이라 영업 판단이 거꾸로 잡힌다.
   // NON_RESIDENT(창고·사무실)는 임대 수용력이 아니라 제외한다(lib/vacancy 집계 제외 정본, 신고 9d844226).
   // expectedSum 에는 절대 넣지 않는다 — 넣으면 청구액과 수납률이 함께 부풀려진다(신고 78ea0c3d 클래스).
-  const zeroBilledFill = billableRows
-    .filter(r => r.expected === 0 && r.status !== 'NON_RESIDENT')
-    .reduce((s, r) => s + (r.baseRent || 0), 0)
-  const maxSum       = expectedSum + vacants.reduce((s, r) => s + (r.baseRent || 0), 0)
-                                   + reservedRows.reduce((s, r) => s + (r.baseRent || 0), 0)
-                                   + zeroBilledFill
+  //
+  // 채움은 **방 단위로 한 번씩**이다(2026-08-11). 행이 계약 단위가 되면서 한 방에 행이 둘일 수 있는데
+  // (402호 거주 + 입실 예약), 행마다 기준가를 채우면 같은 방이 두 번 잡힌다 — 8월 만실 기준이
+  // 19,155,000 에서 20,394,000 으로 부풀었다. 만실 기준은 '방이 몇 개인가'를 묻는 수용력 참고치라
+  // 계약 수로 늘어나면 안 된다. 이미 청구가 잡힌 방은 그 청구액이 곧 그 방의 몫이라 채우지 않는다.
+  const billedRoomIds = new Set(billableRows.filter(r => r.expected > 0).map(r => r.roomId))
+  const fillByRoom = new Map<string, number>()
+  for (const r of vacants) fillByRoom.set(r.roomId, r.baseRent || 0)
+  for (const r of reservedRows) if (!billedRoomIds.has(r.roomId)) fillByRoom.set(r.roomId, r.baseRent || 0)
+  for (const r of billableRows) {
+    if (r.expected === 0 && r.status !== 'NON_RESIDENT' && !billedRoomIds.has(r.roomId)) fillByRoom.set(r.roomId, r.baseRent || 0)
+  }
+  const maxSum       = expectedSum + [...fillByRoom.values()].reduce((s, v) => s + v, 0)
   const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
   const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
 
