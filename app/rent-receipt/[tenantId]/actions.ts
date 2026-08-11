@@ -11,7 +11,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import type { ReceiptKind } from '@/lib/rentReceiptPdf'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 
 // 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
@@ -147,7 +147,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     // 종전에는 현금만 세서 그런 계약이 영수증마다 '일부 수령' 경고를 달고 나왔다(상시 오탐).
     const cleaningPaidAgg = lease
       ? await prisma.extraIncome.aggregate({
-          where: { leaseTermId: lease.id, propertyId, category: CLEANING_FEE_CATEGORY }, _sum: { amount: true },
+          where: { leaseTermId: lease.id, propertyId, ...CLEANING_FEE_RECEIVED_WHERE }, _sum: { amount: true },
         })
       : null
     const depoComp = depositComposition({

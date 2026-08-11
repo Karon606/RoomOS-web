@@ -20,13 +20,10 @@ import {
   type CleaningReason, type CleaningStatus, type CleaningPerformer, type CleaningRow,
   type CleaningFundStatus,
 } from './cleaningConstants'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
+import { CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
-
-// 보증금에서 청소비 명목으로 뗀 몰취의 사유 문자열 — lib/depositWithholdReasons 의 선택지 그대로다.
-// 받은 청소비와 이름만 같을 뿐 다른 테이블·다른 개념이라 수입 카테고리 상수를 재사용하지 않는다.
-const CLEANING_WITHHOLD_REASON = '청소비'
 
 type CheckoutLeaseCandidate = { id: string; moveOutDate: Date | null; expectedMoveOut: Date | null }
 // 퇴실일은 확정 퇴실일이 있으면 그것, 없으면 예정일. 둘 다 없으면 맨 뒤로 민다.
@@ -427,7 +424,7 @@ export async function getCleaningFundStatus(roomId: string): Promise<CleaningFun
     .filter(c => c.status === 'DONE' && c.fromCleaningFund && c.expenseId)
     .map(c => c.expenseId as string)
 
-  const [leases, incomes, refunds, expenses] = await Promise.all([
+  const [leases, incomes, depositSourced, refunds, expenses] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { id: { in: leaseIds }, propertyId },
       select: { id: true, cleaningFee: true },
@@ -436,6 +433,12 @@ export async function getCleaningFundStatus(roomId: string): Promise<CleaningFun
     prisma.extraIncome.groupBy({
       by: ['leaseTermId'],
       where: { leaseTermId: { in: leaseIds }, propertyId, category: CLEANING_FEE_CATEGORY },
+      _sum: { amount: true },
+    }),
+    // 그중 퇴실 정산이 보증금 청소비 몫으로 만든 분 — 아래 몰취 항과 같은 돈이라 한 번만 세야 한다.
+    prisma.extraIncome.groupBy({
+      by: ['leaseTermId'],
+      where: { leaseTermId: { in: leaseIds }, propertyId, category: CLEANING_FEE_CATEGORY, payMethod: DEPOSIT_SOURCED_PAY_METHOD },
       _sum: { amount: true },
     }),
     prisma.depositRefund.groupBy({
@@ -450,6 +453,7 @@ export async function getCleaningFundStatus(roomId: string): Promise<CleaningFun
 
   const feeByLease = new Map(leases.map(l => [l.id, l.cleaningFee]))
   const incomeByLease = new Map(incomes.map(g => [g.leaseTermId as string, g._sum.amount ?? 0]))
+  const depositSourcedByLease = new Map(depositSourced.map(g => [g.leaseTermId as string, g._sum.amount ?? 0]))
   const withheldByLease = new Map(refunds.map(g => [g.leaseTermId, g._sum.withheldAmount ?? 0]))
   const amountByExpense = new Map(expenses.map(e => [e.id, e.amount]))
   const fundedByLease = new Map<string, number>()
@@ -461,7 +465,11 @@ export async function getCleaningFundStatus(roomId: string): Promise<CleaningFun
   return {
     leases: leaseIds.map(id => ({
       leaseTermId: id,
-      realizedIncome: (incomeByLease.get(id) ?? 0) + (withheldByLease.get(id) ?? 0),
+      // 몰취 항은 **아직 부가수익으로 안 갈린 옛 기록**을 위한 보정이다(2026-08-11). 퇴실 정산이
+      // 청소비 몫을 '청소비' 부가수익으로 만들기 시작하면서 같은 돈이 두 항에 들어가게 됐다.
+      // 이미 부가수익으로 선 만큼은 몰취 항에서 뺀다 — 안 빼면 507호가 20,000 을 40,000 으로 보고한다.
+      realizedIncome: (incomeByLease.get(id) ?? 0)
+        + Math.max(0, (withheldByLease.get(id) ?? 0) - (depositSourcedByLease.get(id) ?? 0)),
       contractFee: feeByLease.get(id) ?? 0,
       fundedExpenseTotal: fundedByLease.get(id) ?? 0,
     })),

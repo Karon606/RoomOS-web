@@ -23,7 +23,7 @@ import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel } from '@/lib/depositComposition'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         select: {
           depositAmount: true,
           paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
-          extraIncomes:   { where: { category: CLEANING_FEE_CATEGORY, deletedAt: null }, select: { amount: true } },
+          extraIncomes:   { where: { ...CLEANING_FEE_RECEIVED_WHERE, deletedAt: null }, select: { amount: true } },
         },
       })
     : Promise.resolve([])
@@ -253,7 +253,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         room:   { select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true } },
         // 입실 때 받은 청소비 — 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03).
         // 중첩 where 는 소프트삭제 자동 필터가 안 붙는다(lib/prisma 는 최상위 연산만) — deletedAt 명시.
-        extraIncomes:   { where: { category: CLEANING_FEE_CATEGORY, deletedAt: null }, select: { amount: true } },
+        extraIncomes:   { where: { ...CLEANING_FEE_RECEIVED_WHERE, deletedAt: null }, select: { amount: true } },
         // 정산 기준액 — 계약 보증금이 아니라 실제로 받은 보증금이다(환불 서버가 되계산하는 그 값).
         paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
       },

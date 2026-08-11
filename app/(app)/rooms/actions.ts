@@ -17,7 +17,7 @@ import { reasonsForStatus } from '@/lib/statusReasons'
 import { primaryRoomLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
@@ -1158,7 +1158,7 @@ export async function saveDepositPayment(data: {
       _sum: { actualAmount: true },
     }),
     prisma.extraIncome.aggregate({
-      where: { leaseTermId: data.leaseTermId, propertyId, category: CLEANING_FEE_CATEGORY, deletedAt: null },
+      where: { leaseTermId: data.leaseTermId, propertyId, ...CLEANING_FEE_RECEIVED_WHERE, deletedAt: null },
       _sum: { amount: true },
     }),
     prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } }),

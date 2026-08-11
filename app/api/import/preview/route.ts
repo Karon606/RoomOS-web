@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult } from '@/lib/import-types'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
 
@@ -193,7 +193,7 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
 
       if ((activeLease?.depositAmount ?? 0) !== inDeposit) {
         const cleaning = await prisma.extraIncome.aggregate({
-          where: { propertyId, tenantId: existing.id, category: CLEANING_FEE_CATEGORY, deletedAt: null },
+          where: { propertyId, tenantId: existing.id, ...CLEANING_FEE_RECEIVED_WHERE, deletedAt: null },
           _sum: { amount: true },
         })
         if ((cleaning._sum.amount ?? 0) > 0) cleaningDepositWarn++

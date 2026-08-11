@@ -24,7 +24,7 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
+import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 
 async function getPropertyId() {
@@ -2393,9 +2393,10 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
       _sum: { returnedAmount: true, withheldAmount: true },
     }),
     // 입실 때 받은 청소비 — 포함형 영업장에서는 계약 보증금의 일부를 채운 몫이다(2026-08-10).
+    // 퇴실 정산이 보증금 청소비 몫으로 만든 '청소비'는 입실 수령분이 아니라 제외한다(2026-08-11).
     prisma.extraIncome.groupBy({
       by: ['leaseTermId'],
-      where: { propertyId, category: CLEANING_FEE_CATEGORY, leaseTermId: { in: leaseIds } },
+      where: { propertyId, ...CLEANING_FEE_RECEIVED_WHERE, leaseTermId: { in: leaseIds } },
       _sum: { amount: true },
     }),
     prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } }),
