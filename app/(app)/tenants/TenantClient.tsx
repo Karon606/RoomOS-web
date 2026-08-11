@@ -6,6 +6,7 @@ import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
+import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
@@ -290,19 +291,29 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 
 // v2.0 §23 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
 // '거주중(living)' = ACTIVE+CHECKOUT_PENDING — 퇴실 예정도 아직 사는 사람이라 거주중에 포함(기본값).
-// 'inquiry' = 잠재고객 퍼널 통합(문의~예약 확정) — 구 '예약'/'투어' 분리 세그먼트 통합(e1b81629).
+// 'inquiry' = 아직 방이 안 정해진 잠재고객(문의~입실 예약) — 구 '예약'/'투어' 분리 세그먼트 통합(e1b81629).
+// 'confirmed'(입실 예정) = 방·날짜가 잡힌 예약 확정 — 2026-08-12 최상위 그룹으로 분리(운영자 확정).
+//   문의 퍼널 맨 끝에 묻혀 있었는데, 확정자는 더 이상 '설득할 사람'이 아니라 '맞이할 사람'이라
+//   퇴실 예정과 짝을 이루는 운영 축이다. 그래서 자리도 퇴실 예정 바로 옆이다.
 // 하위 단계는 2차 sm 세그먼트(InquiryStage)로 구분 — 요청관리 2단 필터 정본 문법.
-type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'inquiry' | 'CANCELLED' | 'past' | 'all'
-type InquiryStage = '' | 'INQUIRY' | 'TOUR' | 'RESERVED' | 'CONFIRMED'
+type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'confirmed' | 'NON_RESIDENT' | 'inquiry' | 'CANCELLED' | 'past' | 'all'
+type InquiryStage = '' | 'INQUIRY' | 'TOUR' | 'RESERVED'
 
 // 잠재고객 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
 // 투어 = 투어 예정(WAITING_TOUR+투어일) + 투어 완료(TOUR_DONE).
+// 예약 확정은 null 이다 — 이제 별도 그룹('입실 예정')이라 문의 퍼널의 단계가 아니다.
+// 여기서 갈라 두면 단계 카운트·단계 필터가 저절로 확정자를 빼고, 부르는 쪽마다 조건을 또 적지 않아도 된다.
 function inquiryStageOf(lease: { status: string; tourDate?: string | Date | null; reservationConfirmedAt?: string | Date | null } | undefined): Exclude<InquiryStage, ''> | null {
   if (!lease) return null
-  if (lease.status === 'RESERVED')     return lease.reservationConfirmedAt ? 'CONFIRMED' : 'RESERVED'
+  if (lease.status === 'RESERVED')     return lease.reservationConfirmedAt ? null : 'RESERVED'
   if (lease.status === 'TOUR_DONE')    return 'TOUR'
   if (lease.status === 'WAITING_TOUR') return lease.tourDate ? 'TOUR' : 'INQUIRY'
   return null
+}
+
+/** 예약 확정 — '입실 예정' 그룹의 유일한 판정. 그룹·카운트·정렬이 같은 함수를 본다. */
+function isConfirmedReservation(lease: { status: string; reservationConfirmedAt?: string | Date | null } | undefined): boolean {
+  return lease?.status === 'RESERVED' && !!lease.reservationConfirmedAt
 }
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────
@@ -495,8 +506,10 @@ export default function TenantClient({
   // 문의·예약 그룹 내 단계 필터 — 그룹 세그먼트 선택 시에만 노출, 그룹 이탈 시 초기화
   const [inquiryStage, setInquiryStage] = useState<InquiryStage>('')
   const changeStatusFilter = (v: StatusFilter) => { setStatusFilter(v); setInquiryStage('') }
+  // 입실 예정은 아직 안 들어온 사람이라 표 열 구성이 문의·예약과 같다(입주희망일·문의일 등).
+  // 열 집합을 새로 만들지 않는다 — 같은 성격의 그룹이 서로 다른 표를 그리면 그게 이질감이다.
   const cat: 'residents' | 'inquiry' | 'dropped' | 'past' =
-    statusFilter === 'inquiry' ? 'inquiry'
+    statusFilter === 'inquiry' || statusFilter === 'confirmed' ? 'inquiry'
     : statusFilter === 'CANCELLED' ? 'dropped'
     : statusFilter === 'past' ? 'past'
     : 'residents'
@@ -677,15 +690,21 @@ export default function TenantClient({
 
     // 단일 상태 필터 — 생애주기 전 상태를 한 줄로 평탄화
     const isResident = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status)
-    const isInquiry  = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status)
+    // 리드 3상태는 매칭 정본(lib/wishMatch)이 날짜 게이트를 거는 그 집합이다. 문자열을 여기 또 적으면
+    // 그룹에는 보이는데 매칭에는 안 잡히는(또는 그 반대) 사람이 생긴다 — 정의를 한 곳에 잠근다.
+    const isLead     = (WISH_LEAD_STATUSES as readonly string[]).includes(status)
+    const isConfirmed = isConfirmedReservation(t.leaseTerms[0])
+    const isInquiry  = isLead && !isConfirmed   // 확정자는 '입실 예정'으로 빠져나갔다
     const isDropped  = status === 'CANCELLED'
-    const isPast     = !isResident && !isInquiry && !isDropped   // 퇴실·종료
+    // 퇴실 판정은 isInquiry 가 아니라 isLead 로 본다 — 확정자를 뺀 집합으로 빼면 확정자가 퇴실로 굴러떨어진다.
+    const isPast     = !isResident && !isLead && !isDropped   // 퇴실·종료
     const matchStatus =
-      statusFilter === 'all'     ? true :
-      statusFilter === 'living'  ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
-      statusFilter === 'inquiry' ? isInquiry && (!inquiryStage || inquiryStageOf(t.leaseTerms[0]) === inquiryStage) :
-      statusFilter === 'past'    ? isPast :
-      status === statusFilter    // CHECKOUT_PENDING/NON_RESIDENT/CANCELLED
+      statusFilter === 'all'       ? true :
+      statusFilter === 'living'    ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
+      statusFilter === 'confirmed' ? isConfirmed :
+      statusFilter === 'inquiry'   ? isInquiry && (!inquiryStage || inquiryStageOf(t.leaseTerms[0]) === inquiryStage) :
+      statusFilter === 'past'      ? isPast :
+      status === statusFilter      // CHECKOUT_PENDING/NON_RESIDENT/CANCELLED
     if (!matchStatus) return false
 
     // 층 필터
@@ -739,15 +758,25 @@ export default function TenantClient({
   const sorted = [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
 
-    // 문의·예약 그룹은 퍼널 역순(입주 임박순) 고정 — 확정 → 입실 예약 → 투어 → 문의(e1b81629).
-    // 구 예약 세그먼트의 '확정자 위로 + 입주 임박순'(운영자 요청)의 상위 호환. 세그먼트는 안 쪼갬(§23).
+    // 입실 예정 그룹은 입주 임박순 고정 — 이 그룹의 질문은 하나뿐이다("다음에 누가 들어오나").
+    // 동률(같은 날 입주)은 문의 오래된 순 — 다른 그룹의 동률 규칙과 같다.
+    if (statusFilter === 'confirmed') {
+      const moveIn = (t: Tenant) => { const d = t.leaseTerms[0]?.moveInDate; return d ? new Date(d).getTime() : Infinity }
+      const ma = moveIn(a), mb = moveIn(b)
+      if (ma !== mb) return ma - mb
+      return inquiryTime(a) - inquiryTime(b)
+    }
+
+    // 문의·예약 그룹은 퍼널 역순(입주 임박순) 고정 — 입실 예약 → 투어 → 문의(e1b81629).
+    // 확정 단계는 2026-08-12 에 '입실 예정' 최상위 그룹으로 빠졌다(inquiryStageOf 가 null 을 준다).
+    // 세그먼트는 안 쪼갬(§23).
     if (statusFilter === 'inquiry') {
-      const STAGE_RANK: Record<string, number> = { CONFIRMED: 0, RESERVED: 1, TOUR: 2, INQUIRY: 3 }
+      const STAGE_RANK: Record<string, number> = { RESERVED: 1, TOUR: 2, INQUIRY: 3 }
       const la = a.leaseTerms[0], lb = b.leaseTerms[0]
       const sa = STAGE_RANK[inquiryStageOf(la) ?? 'INQUIRY']
       const sb = STAGE_RANK[inquiryStageOf(lb) ?? 'INQUIRY']
       if (sa !== sb) return sa - sb
-      // 단계 내: 확정·예약은 입주 임박순, 투어는 투어일 임박순, 동률·문의는 문의 오래된 순
+      // 단계 내: 예약은 입주 임박순, 투어는 투어일 임박순, 동률·문의는 문의 오래된 순
       const dateOf = (l: LeaseTerm | undefined, rank: number): number => {
         const d = rank <= 1 ? l?.moveInDate : rank === 2 ? l?.tourDate : null
         return d ? new Date(d).getTime() : Infinity
@@ -1407,12 +1436,19 @@ export default function TenantClient({
   const countCheckout  = cntBy(s => s === 'CHECKOUT_PENDING')
   const countLiving    = cntBy(s => ['ACTIVE', 'CHECKOUT_PENDING'].includes(s))   // 거주중 = 거주중+퇴실예정
   const countNonRes    = cntBy(s => s === 'NON_RESIDENT')
-  const countInquiry   = cntBy(s => ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(s))   // 문의·예약 그룹 = 잠재고객 총량
+  // 입실 예정 = 예약 확정. 문의·예약에서 빠져나온 만큼 그대로 여기 선다(두 그룹의 합 = 종전 문의·예약).
+  const countConfirmed = initialTenants.filter(t => isConfirmedReservation(t.leaseTerms[0])).length
+  // 문의·예약 = 아직 방이 안 정해진 리드. 확정자를 뺀다 — 그룹 술어(isInquiry)와 같은 식이라야
+  // 칩 숫자와 목록 길이가 안 갈린다.
+  const countInquiry   = initialTenants.filter(t =>
+    (WISH_LEAD_STATUSES as readonly string[]).includes(statusOf(t)) && !isConfirmedReservation(t.leaseTerms[0])).length
   const countCancelled = cntBy(s => s === 'CANCELLED')
-  const countPast      = countAll - countLiving - countNonRes - countInquiry - countCancelled
+  // 항등식 — 전체는 서로 겹치지 않는 그룹들로 정확히 쪼개진다. 입실 예정을 새로 빼 놓고 여기서
+  // 안 빼면 그만큼이 '퇴실'로 굴러떨어진다(목록 술어 isPast 는 리드 전체를 빼므로 화면과도 어긋난다).
+  const countPast      = countAll - countLiving - countNonRes - countInquiry - countConfirmed - countCancelled
   // 퍼널 단계별 카운트 — 2차 필터 라벨용(파생 단계는 status만으론 못 세서 lease 기준)
   const cntStage = (st: Exclude<InquiryStage, ''>) => initialTenants.filter(t => inquiryStageOf(t.leaseTerms[0]) === st).length
-  const stageCounts = { INQUIRY: cntStage('INQUIRY'), TOUR: cntStage('TOUR'), RESERVED: cntStage('RESERVED'), CONFIRMED: cntStage('CONFIRMED') }
+  const stageCounts = { INQUIRY: cntStage('INQUIRY'), TOUR: cntStage('TOUR'), RESERVED: cntStage('RESERVED') }
 
   // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
   function getTenantFloor(t: typeof initialTenants[0]) {
@@ -1549,6 +1585,8 @@ export default function TenantClient({
           options={[
             { value: 'living',           label: `거주중 ${countLiving} (퇴실예정 포함)` },
             { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
+            // 나가는 사람 바로 옆에 들어오는 사람 — 방을 넘겨받는 두 축이 나란히 선다(운영자 확정).
+            { value: 'confirmed',        label: `입실 예정 ${countConfirmed}` },
             { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
             { value: 'inquiry',          label: `문의·예약 ${countInquiry}` },
             { value: 'CANCELLED',        label: `입실 취소 ${countCancelled}` },
@@ -1595,7 +1633,7 @@ export default function TenantClient({
               { value: 'INQUIRY',   label: `문의 ${stageCounts.INQUIRY}` },
               { value: 'TOUR',      label: `투어 ${stageCounts.TOUR}` },
               { value: 'RESERVED',  label: `입실 예약 ${stageCounts.RESERVED}` },
-              { value: 'CONFIRMED', label: `예약 확정 ${stageCounts.CONFIRMED}` },
+              // '예약 확정' 단계는 2026-08-12 에 상위 '입실 예정' 그룹으로 승격돼 여기서 뺐다.
             ]}
           />
         </div>
@@ -1975,14 +2013,15 @@ export default function TenantClient({
                 {/* 보증금 · 거주기간 */}
                 {cardFields.deposit && ((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
                   const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
-                  // 확정 예약자는 받은 돈이 예약금(보증금 선수납)이라 라벨을 '예약금'으로 명시(운영자 요청 2026-07-15)
-                  const isConfirmedReservation = lease?.status === 'RESERVED' && !!lease.reservationConfirmedAt
+                  // 확정 예약자는 받은 돈이 예약금(보증금 선수납)이라 라벨을 '예약금'으로 명시(운영자 요청 2026-07-15).
+                  // 판정은 '입실 예정' 그룹과 같은 정본 함수 — 같은 사실을 두 식으로 적으면 언젠가 갈린다.
+                  const confirmedResv = isConfirmedReservation(lease)
                   // 예약자는 예약금 모드에 따라 라벨 분기 — prepaid: 선납, none: 표시 안 함, 그 외: 예약금.
                   const resvMode = lease?.status === 'RESERVED'
                     ? resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm)
                     : null
                   const showDeposit = !hideMoney && (lease?.depositAmount ?? 0) > 0 && resvMode !== 'none'
-                  const depositLabel = resvMode === 'prepaid' ? '이용료 선납' : isConfirmedReservation ? '예약금' : '보증금'
+                  const depositLabel = resvMode === 'prepaid' ? '이용료 선납' : confirmedResv ? '예약금' : '보증금'
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
                       {showDeposit && (
