@@ -31,7 +31,7 @@ type Snapshot = { template?: unknown; lease?: unknown }
 // 다시 채워져 이 링크는 조건에서 빠지고, 그 순간 실측이 0 이 된다. 그때 아래 값을 0 으로 내린다
 // (줄어드는 쪽은 통과시키되 안내를 찍는다 — 기준선이 낡은 채로 굳지 않게).
 // 호실·이름을 명단으로 박지 않는다. 특정 입주자를 코드에 새기면 그 데이터가 사라질 때 검사도 같이 죽는다.
-const G6_BASELINE = 1
+const G6_BASELINE = 0
 
 const FIELD_LABEL: Record<string, string> = {
   rentAmount: '입실료', depositAmount: '보증금', cleaningFee: '청소비',
