@@ -26,6 +26,7 @@ import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntry
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
@@ -764,6 +765,19 @@ export default function TenantClient({
       const moveIn = (t: Tenant) => { const d = t.leaseTerms[0]?.moveInDate; return d ? new Date(d).getTime() : Infinity }
       const ma = moveIn(a), mb = moveIn(b)
       if (ma !== mb) return ma - mb
+      return inquiryTime(a) - inquiryTime(b)
+    }
+
+    // 퇴실 예정도 같은 이유로 날짜 고정 — 이 그룹의 질문은 "다음에 누가 나가나"뿐인데
+    // 종전에는 호실순이라 9/30 가 8/15 위에 섰다. 입실 예정과 대칭이다(카드에 보이는 그 날짜로 센다).
+    if (statusFilter === 'CHECKOUT_PENDING') {
+      const out = (t: Tenant) => {
+        const l = t.leaseTerms[0]
+        const d = l?.expectedMoveOut ?? l?.moveOutDate
+        return d ? new Date(d).getTime() : Infinity   // 날짜 없는 건은 맨 뒤 — 없는 날짜를 짓지 않는다
+      }
+      const oa = out(a), ob = out(b)
+      if (oa !== ob) return oa - ob
       return inquiryTime(a) - inquiryTime(b)
     }
 
@@ -1583,7 +1597,9 @@ export default function TenantClient({
           value={statusFilter}
           onChange={changeStatusFilter}
           options={[
-            { value: 'living',           label: `거주중 ${countLiving} (퇴실예정 포함)` },
+            // 라벨은 숫자까지 — 괄호 설명은 §19 InfoHint 로 뺀다. 칩 안에 문장을 넣으면 좁은 폭에서
+            // 이 칩 하나가 트랙을 밀어내 뒤쪽 그룹이 스크롤 밖으로 숨는다.
+            { value: 'living',           label: `거주중 ${countLiving}` },
             { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
             // 나가는 사람 바로 옆에 들어오는 사람 — 방을 넘겨받는 두 축이 나란히 선다(운영자 확정).
             { value: 'confirmed',        label: `입실 예정 ${countConfirmed}` },
@@ -1594,6 +1610,11 @@ export default function TenantClient({
             { value: 'all',              label: `전체 ${countAll}` },
           ]}
         />
+        {/* 그룹 경계 설명 — 호실 관리 상태 필터와 같은 자리·같은 문법(§19 InfoHint) */}
+        <InfoHint title="고객 상태 그룹">
+          <span className="block">거주중에는 퇴실 예정도 들어갑니다. 퇴실 예정은 아직 사는 사람이라 두 곳에 함께 셉니다.</span>
+          <span className="block mt-1.5">입실 예정은 방과 날짜가 잡힌 예약 확정입니다. 아직 방이 안 정해진 사람은 문의·예약에 있습니다.</span>
+        </InfoHint>
 
         {/* 선택 · 표시 항목 — 목록 조작은 헤더가 아니라 이 줄에 선다(형제 수납 관리와 같은 ml-auto 그룹).
             새 줄로 떨어져도 우측 정렬을 유지해 드롭다운이 화면 왼쪽으로 잘리지 않는다. */}
