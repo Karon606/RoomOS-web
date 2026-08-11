@@ -17,6 +17,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { fmtKorMoney, fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
+import { MoneyEquation, expectedRevenueTerms, paidRevenueTerms } from '@/components/ui/MoneyEquation'
 import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -923,25 +924,26 @@ export default function RoomsClient({
             미리 받은 이 달 이용료 <span className="font-semibold text-[var(--info-fg)] num">{fmtWon(prepaidReceived)}</span>
           </p>
         )}
-        {/* 홈 예상 수입과의 다리 — 두 화면 숫자가 다른 이유를 등식으로 적는다(운영자 혼동 2회, 2026-08-07).
-            차이를 만드는 항이 전부 0인 달엔 줄 자체가 안 나온다. */}
+        {/* 홈 카드와의 다리 — 두 화면 숫자가 다른 이유를 등식으로 적는다(운영자 혼동 2회, 2026-08-07).
+            차이를 만드는 항이 전부 0인 달엔 줄 자체가 안 나온다.
+            문장은 홈 KPI 카드와 같은 정본(MoneyEquation)이 만든다 — 값이 원 단위로 같아도
+            항 구성이나 이름이 화면마다 갈리면 같은 숫자를 놓고 다른 설명을 읽게 된다(2026-08-12). */}
         {showHomeBridge && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">
-            홈 예상 수입 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeExpectedSum)}</span>
-            {' = 이 달 청구 '}<span className="num">{fmtWon(expectedSum)}</span>
-            {reservedExpected !== 0 && <>{' + 예약 확정 '}<span className="num">{fmtWon(reservedExpected)}</span></>}
-            {checkedOutRecognized !== 0 && <>{' + 퇴실 귀속 '}<span className="num">{fmtWon(checkedOutRecognized)}</span></>}
-            {incomeSum !== 0 && <>{' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span></>}
+            홈 예상 수입 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeExpectedSum)}</span>{' '}
+            <MoneyEquation terms={expectedRevenueTerms({
+              billed: expectedSum, reserved: reservedExpected, checkedOut: checkedOutRecognized, extra: incomeSum,
+            })} />
           </p>
         )}
         {/* 실수납 줄은 퇴실 귀속이나 기타수익이 있을 때만 — 둘 다 없으면 홈 실수납과 위 수납액이 같은 값이다.
             예약 확정은 아직 받은 돈이 아니라 이 축에 들어오지 않는다(예상 축에만 있다). */}
         {showHomeBridge && (checkedOutRecognized !== 0 || incomeSum !== 0) && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">
-            홈 실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>
-            {' = 수납 '}<span className="num">{fmtWon(collectedSum)}</span>
-            {checkedOutRecognized !== 0 && <>{' + 퇴실 귀속 '}<span className="num">{fmtWon(checkedOutRecognized)}</span></>}
-            {incomeSum !== 0 && <>{' + 기타수익 '}<span className="num">{fmtWon(incomeSum)}</span></>}
+            홈 실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>{' '}
+            <MoneyEquation terms={paidRevenueTerms({
+              collected: collectedSum, checkedOut: checkedOutRecognized, extra: incomeSum,
+            })} />
           </p>
         )}
         {/* 현금영수증·카드 합계 — 이 달에 결제된(납부일 기준) 금액, 세무 대사용(오류신고 c0936f89) */}

@@ -745,9 +745,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const reservedExpected = await pReservedExpected
 
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
-  const totalExpected  = billableLeases
+  // 첫 항을 따로 세운 것은 KPI 카드 등식 캡션이 '이 달 청구'를 이름으로 부르기 때문이다.
+  // 화면이 totalExpected 에서 두 항을 빼서 되계산하면 그 순간 캡션이 자기 식을 갖는다.
+  const billedThisMonth = billableLeases
     .filter(l => !prevOwnerLeaseIds.has(l.id))
     .reduce((s, l) => s + billThisMonth(l), 0)
+  const totalExpected  = billedThisMonth
     + checkedOutRecognized + reservedExpected
 
   const categoryBreakdown = expByCategory.map(c => ({
@@ -1611,6 +1614,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     overdueAmount,
     upcomingAmount,
     totalExpected,
+    // KPI 등식 캡션의 항 — 새 계산이 아니라 위에서 쓴 값을 그대로 싣는다.
+    billedThisMonth,
+    reservedExpected,
+    checkedOutRecognized,
+    // 미래월 판정은 서버(KST)가 내린다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
+    isFutureMonth: targetMonth > realTodayMonthStr,
     categoryBreakdown,
     trend,
     totalRooms,

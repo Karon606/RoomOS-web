@@ -868,6 +868,33 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     violations.push('[소스] rooms/page 가 미래월 판정을 서버(KST)에서 내리지 않는다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다')
   }
 
+  // ── 등식 문장 정본 (2026-08-12) ──
+  // 값이 원 단위로 같아도 두 화면이 **각자 문장을 조립하면** 항 구성·항 이름이 갈린다.
+  // 한쪽만 '퇴실 귀속'을 빠뜨리거나 한쪽만 '이 달 청구'라 부르면 같은 숫자에 다른 설명이 붙는다.
+  // 그래서 문장은 components/ui/MoneyEquation 하나가 만들고, 두 화면이 그걸 부른다.
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  const eqSrc      = readFileSync('components/ui/MoneyEquation.tsx', 'utf8')
+  for (const [name, src] of [['RoomsClient', roomsClient], ['dashboard/DashboardClient', dashClient]]) {
+    if (!/expectedRevenueTerms\(\{/.test(src) || !/<MoneyEquation terms=/.test(src)) {
+      violations.push(`[소스] ${name} 이 등식 문장을 MoneyEquation 정본으로 안 만든다 — 화면마다 항 구성이 갈린다`)
+    }
+  }
+  if (!/label: '이 달 청구액'.+\n.+label: '예약 확정'.+\n.+label: '퇴실 귀속'.+\n.+label: '기타수익'/.test(eqSrc)) {
+    violations.push('[소스] MoneyEquation 예상 수입 등식의 네 항 이름·순서가 바뀌었다 — 두 화면이 같은 문장을 못 쓴다')
+  }
+  if (!/const totalExpected  = billedThisMonth\s*\n\s*\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
+    violations.push('[소스] 홈 totalExpected 의 첫 항이 billedThisMonth 가 아니다 — 예상 수입 캡션의 첫 항이 되계산으로 돌아갔다')
+  }
+  // 항이 하나뿐인 달엔 등식을 적지 않는다 — 바로 위 큰 숫자를 그대로 되풀이할 뿐이다.
+  // 미래월 가드는 수납 관리와 같은 달에 뜨고 사라지게 하려는 것이다(한쪽만 비면 그게 또 불일치다).
+  if (!/!data\.isFutureMonth && hasRevenueBridge\(/.test(dashClient)) {
+    violations.push('[소스] 홈 예상 수입 캡션이 미래월·무차이 달에도 렌더된다 — 수납 관리와 뜨고 지는 달이 갈린다')
+  }
+  // 등식 줄은 전체 자릿수라야 눈으로 검산이 된다(§06 축약 금지 구역).
+  if (/fmtKorMoney|fmtManShort/.test(eqSrc)) {
+    violations.push('[소스] MoneyEquation 이 축약 포맷을 쓴다 — 자릿수가 흔들려 두 화면 대조가 안 된다')
+  }
+
   // ── 값 대조 ──
   // (여기 재현은 lib/billing 의 일할→락인→단기→할인 순서를 그대로 옮긴 간이 구현이다.)
   const monthOf = (d) => {

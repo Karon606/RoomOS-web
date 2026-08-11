@@ -27,6 +27,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
 })
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney, fmtManShort, fmtWon } from '@/lib/fmtMoney'
+import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
@@ -75,6 +76,14 @@ export type DashboardData = {
   overdueAmount:     number
   upcomingAmount:    number
   totalExpected:     number
+  // ── KPI 등식 캡션의 항 (2026-08-12) ──
+  // 카드가 자기 식을 만들지 않도록 서버가 쓴 값을 그대로 받는다.
+  billedThisMonth:      number   // 이 달 청구 합 — totalExpected 에서 퇴실 귀속·예약 확정을 뺀 몫
+  reservedExpected:     number   // 예약 확정자의 그 달 전액
+  checkedOutRecognized: number   // 퇴실 완료자의 그 달 귀속 인식분
+  // 아직 오지 않은 달인가 — 서버(KST)가 판정한다. 수납 관리와 같은 달에 캡션이 뜨고 사라져야
+  // 두 화면을 오가며 대조할 때 한쪽만 비는 일이 없다(rooms/page.tsx 와 같은 문법).
+  isFutureMonth:        boolean
   categoryBreakdown: { category: string; amount: number; percent: number }[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
@@ -1570,15 +1579,28 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>{monthCaption}</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
-          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 4 }}>
             {data.projectedRevenue.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(255,252,247,0.5)', marginLeft: 3 }}>원</small>
           </p>
+          {/* 등식 캡션 — 이 숫자가 어디서 왔는지 큰 숫자 바로 아래에 적는다(운영자 지시 2026-08-12).
+              진행바 아래에 두면 등호의 좌변이 바로 위 '달성 93%' 로 읽혀 매달린다(디자인 패널).
+              문장은 수납 관리 캡션과 같은 정본(MoneyEquation)이 만든다 — 값이 같아도 항이 갈리면 또 사고다. */}
+          {!data.isFutureMonth && hasRevenueBridge({ reserved: data.reservedExpected, checkedOut: data.checkedOutRecognized, extra: data.extraRevenue }) && (
+            <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5, wordBreak: 'keep-all', margin: 0 }}>
+              <MoneyEquation terms={expectedRevenueTerms({
+                billed:     data.billedThisMonth,
+                reserved:   data.reservedExpected,
+                checkedOut: data.checkedOutRecognized,
+                extra:      data.extraRevenue,
+              })} />
+            </p>
+          )}
           {(() => {
             const pct = data.projectedRevenue > 0 ? Math.min(100, Math.round((data.totalRevenue / data.projectedRevenue) * 100)) : 0
             return (
               <>
-                <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '2px 0 6px' }}>
+                <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '8px 0 6px' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#fff', borderRadius: 3 }} />
                 </div>
                 {/* v2.0 §24 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
