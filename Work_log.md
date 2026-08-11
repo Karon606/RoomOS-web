@@ -3096,3 +3096,10 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **방 타입 병기(fd97bb0)**: 고객 상세 '입주 가능한 방' 행을 "409호 원룸"(버튼 안 muted 수식어, AssetsClient 병기 선례) — 운영자 질문 "공간 협소?"에 실측 답: 320px 최악 조합(8자 타입)도 잘림 0, 실제 타입(원룸·미니룸)은 여유 5자분. 전치 패스스루, 테스트 39 통과.
 - **검증**: tsc·verify:fast·verify:db(축 3종 위반 0)·build·eslint 신규 0. 청소 탭 신설은 운영자 홀드(결함 5건 중 D4 고아 감지망만 선행 예정), Clarity 승인(계정 생성 안내 발송, ID 대기).
 - **범위 밖**: 엑셀 가져오기 route 방 점유 가드 0개(이중 배정 통과 + isVacant 덮어쓰기), batchUpdateTenants 가 canTransition 없이 NON_RESIDENT 포함, search actions 최신 계약 하나 누수, TenantWishRooms fmtRoomNo 미사용(현재 실해 0).
+
+## 2026-08-11 (16) — 호실 상세 개편·Clarity 배선·청소 고아 감지망 (629c72c..81389a5)
+- **호실 상세 개편(629c72c, 운영자 지시)**: 예약자 InfoRow 제거, '거주 이력 및 예정'을 기본정보 바로 아래로. 현재·미래 행은 항상 펼침(제목 h3 — RoomCleaningPanel 형제 문법), 과거만 '이전 거주 N건' 접기(TenantMoveHistory 문법). 확정 여부는 뱃지 대신 어휘('입실 예약'/'예약 확정' — 고객 관리 정본, 4글자 동일 폭). D-day 는 미채택(두 날짜가 행에 있어 사실 손실 0, 과설계 금지). 404호는 개선 — 종전 예약자 줄은 1건만 보였는데 예약 2건이 다 선다. getRoomDetail reservation 반환 소비처 0 확인 후 정리.
+- **Clarity 빌드 시점 주입(fd084c2, 운영자 승인)**: 소개 페이지가 정적 HTML 이라 env 가 안 닿음 — scripts/inject-clarity.mjs 를 build 체인(publish-gallery-thumbs 선례)에. CLARITY_PROJECT_ID 없으면 무동작(sha 동일 실증), 있으면 head 직전 9줄 삽입(멱등, 비영숫자 ID 는 빌드 중단). 관리자 앱 번들 clarity 문자열 0건 실증. ID 수신 후 Vercel env 등록만 남음.
+- **청소 고아 감지망(81389a5)**: check-cleaning-expense-orphan.mjs — (가) 살아 있는 청소가 삭제된 지출을 가리킴(오늘 507호 실재형), (나) 방 걸린 청소용역비 지출이 어느 청소에도 안 걸림. roomId 없는 고정지출형(건물 청소비 62.7만)은 비대상. 기준선 위반 0, 역주입 2방향+대조군 발화 확인(트랜잭션 롤백, 흔적 0). verify:db 편입.
+- **검증**: tsc·verify:fast·verify:db·build·eslint 신규 0. 실데이터 46방 전수 순회 대조.
+- **참고**: 살아 있는 예약 5건 전부 확정이라 '입실 예약'(미확정) 문구는 현 데이터 미출현. 청소 이력 위젯 배치(거주 이력과 분리, 신고 b21e4e98 순서)는 운영자 판단 대기.
