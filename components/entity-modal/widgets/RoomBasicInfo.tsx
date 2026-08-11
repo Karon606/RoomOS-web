@@ -6,7 +6,7 @@
 import { useTransition } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { moveInSubText, type RoomStatusView } from '@/lib/leaseStatus'
+import { availableFromText, reservationSubText, type RoomAvailability, type RoomStatusView } from '@/lib/leaseStatus'
 import { InfoRow } from './InfoRow'
 
 type Room = {
@@ -22,7 +22,9 @@ type Room = {
   // 호실 카드와 같은 판정(lib/leaseStatus.roomStatusView)에서 온 값.
   status: RoomStatusView
   // 거주자가 있는 방에 이미 잡혀 있는 다음 사람. 없으면 null (getRoomDetail 이 판정).
-  reservation?: { tenantName: string; moveInDate: string | null; confirmed: boolean } | null
+  reservation?: { tenantName: string; moveInDate: string | null; expectedMoveOut: string | null; confirmed: boolean } | null
+  // 이 방을 언제부터 줄 수 있나 — lib/leaseStatus.roomAvailability 판정(호실 카드 '입주 가능' 필터와 같은 축).
+  availability?: RoomAvailability | null
 }
 
 const fmtDate = (d: Date | string | null | undefined) => {
@@ -43,6 +45,8 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
   // '예정 가격 즉시 적용'의 조건은 '지금 이 방에 거주·예약 계약이 걸려 있지 않은가'다. 비거주를
   // 조회에 넣기 전에는 배열이 비었는지로 물었는데, 이제 비거주가 들어오므로 뜻을 그대로 적는다.
   const isVacant = !room.leaseTerms.some(l => l.status !== 'NON_RESIDENT')
+  // 날짜가 잡힌 방(soon)에만 값이 있다 — 지금 빈 방은 상태 줄이 이미 '공실'이라 같은 말을 두 번 하지 않는다.
+  const availableFrom = availableFromText(room.availability)
   return (
     <div className="space-y-2.5">
       <InfoRow label="상태" value={
@@ -50,6 +54,9 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
           ? <StatusBadge tone={room.status.badge.tone}>{room.status.badge.label}</StatusBadge>
           : <span className="text-sm">{room.status.label}</span>
       } />
+      {/* 방을 언제부터 줄 수 있나 — 상태 바로 아래다. 퇴실일이 잡힌 방에서 운영자가 상태 다음으로
+          묻는 것이 이것이고, 호실 관리 '입주 가능' 필터가 같은 판정으로 같은 방을 세운다. */}
+      {availableFrom && <InfoRow label="입주 가능" value={availableFrom} />}
       <InfoRow label={isNonResident ? '비거주자' : '입주자'} value={tenantName ?? '공실'} />
       {/* 예약자 — 입주자와 별도 줄이다. 한 방에 사는 사람과 잡아 둔 사람이 동시에 있을 때
           둘 중 하나만 보이면 다른 하나가 화면에서 사라진다(운영자 확정 2026-08-10).
@@ -58,7 +65,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
         <InfoRow label="예약자" value={
           <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
             <span>{room.reservation.tenantName}</span>
-            <StatusBadge tone="movein" sub={moveInSubText(room.reservation.moveInDate) ?? undefined}>
+            <StatusBadge tone="movein" sub={reservationSubText(room.reservation) || undefined}>
               {room.reservation.confirmed ? '예약 확정' : '입실 예약'}
             </StatusBadge>
           </span>

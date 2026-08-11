@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { nextRoomReservation, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
+import { nextRoomReservation, primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -2271,16 +2271,28 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
   const reserved = nextRoomReservation(leases, lease)
   // 상태 라벨/뱃지 — 호실 카드와 같은 함수(lib/leaseStatus.roomStatusView)로 만든다.
   const status = roomStatusView(lease, { nonResidentVacant: room.nonResidentVacant, targetMonth })
+  // '언제부터 이 방을 줄 수 있나' — 위 leaseTerms 는 take: 3 이라 계산 입력으로 쓸 수 없다.
+  // 잘린 한 건이 무기한이면 방은 '모른다'인데 '곧 입주 가능'으로 뒤집힌다. 판정에 필요한 두 필드만
+  // take 없이 다시 읽는다. 판정 자체는 lib/leaseStatus 의 roomAvailability 정본(호실 카드·홈 매칭 공유).
+  const availabilityLeases = await prisma.leaseTerm.findMany({
+    where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+    select: { status: true, expectedMoveOut: true },
+  })
+  const availability = roomAvailability({ nonResidentVacant: room.nonResidentVacant, leaseTerms: availabilityLeases })
   return {
     ...room,
     leaseTerms: lease ? [lease] : [],
     reservation: reserved ? {
       tenantName: reserved.tenant.name,
-      // 'YYYY-MM-DD' — 화면이 카드와 같은 헬퍼(moveInSubText)로 문장을 만든다.
+      // 'YYYY-MM-DD' — 화면이 카드와 같은 헬퍼(reservationSubText)로 문장을 만든다.
       moveInDate: reserved.moveInDate,
+      // 퇴실일까지 잡힌 예약(404호 8/15~8/31)은 카드 보조줄에 함께 서는 사실이다. 안 내려보내면
+      // 같은 예약이 카드에는 '· 8/31 퇴실 D-20', 모달에는 입주일만으로 갈린다.
+      expectedMoveOut: reserved.expectedMoveOut,
       confirmed: !!reserved.reservationConfirmedAt,
     } : null,
     status,
+    availability,
   }
 }
 

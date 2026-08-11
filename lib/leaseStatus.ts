@@ -18,6 +18,7 @@
 import type { LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
 import { billForLeaseMonth } from './billing'
+import { fmtDateDot } from './fmtDate'
 import { kstDaysUntil } from './kstDate'
 
 /**
@@ -139,6 +140,17 @@ export function roomAvailability(room: {
 }
 
 /**
+ * 입주 가능일 한 줄 — "2026.08.30 부터". 날짜가 잡힌 방(soon)에만 값이 있고, 나머지는 null 이다.
+ *
+ * 'now' 에 문구를 안 주는 이유: 지금 비어 있다는 사실은 이미 상태 줄이 '공실'로 말한다. 같은 사실을
+ * 두 줄로 적으면 읽는 사람이 다른 뜻을 찾는다. 'null'(무기한 계약이 걸린 방)은 애초에 모르는 값이다.
+ * 날짜 표기는 fmtDateDot 정본 — 목록·표의 '2026.08.30' 문법이다.
+ */
+export function availableFromText(availability: RoomAvailability | null | undefined): string | null {
+  return availability?.kind === 'soon' ? `${fmtDateDot(availability.availableFrom)} 부터` : null
+}
+
+/**
  * 고객 관리 목록 표시 대상 — 투어 단계부터 비거주까지 진행 중인 모든 단계.
  * 퇴실(CHECKED_OUT) · 취소(CANCELLED) 만 제외.
  */
@@ -197,6 +209,19 @@ export function moveInSubText(moveInDate: string | null): string | null {
   if (!moveInDate) return null
   const [, mm, dd] = moveInDate.split('-')
   return `${Number(mm)}/${Number(dd)} 입주 예정`
+}
+
+/**
+ * 예약 계약의 보조 문구 — "8/17 입주 예정 · 8/29 퇴실 D-18". 언제 들어오고 언제 나가는가를 한 줄로.
+ *
+ * 호실 카드(RoomManageClient)가 RESERVED 분기에서 만들던 문장 그대로다. 프리즘 호실 면의 예약자
+ * 줄은 입주 예정일만 보여 줘서, 퇴실일까지 잡힌 예약(404호 8/15~8/31)이 카드에는 있고 모달에는
+ * 없었다. 문장을 두 곳이 각자 들면 primaryRoomLease 때와 같은 길을 간다 — 여기 하나로 둔다.
+ *
+ * 빈 문자열을 돌려줄 수 있다(두 날짜 모두 없는 예약). 호출부가 `|| undefined` 로 받는 종전 문법을 유지한다.
+ */
+export function reservationSubText(lease: { moveInDate: string | null; expectedMoveOut: string | null }): string {
+  return [moveInSubText(lease.moveInDate), checkoutSubText(lease.expectedMoveOut)].filter(Boolean).join(' · ')
 }
 
 /**

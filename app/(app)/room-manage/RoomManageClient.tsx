@@ -27,7 +27,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
-import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
+import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, reservationSubText, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
 
@@ -134,10 +134,11 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
   if (lease.status === 'RESERVED') {
     // 방 어레인지 — 입주 희망일을 퇴실일과 나란히 보려면 카드에 날짜가 있어야 한다(운영자 요청 2026-08-07).
     // 퇴실 예정일까지 잡힌 예약이면 그 사실도 나란히 — 수납 관리의 '미납 + 퇴실 예정' 두 뱃지 문법과 같다.
+    // 문장은 lib/leaseStatus 의 reservationSubText 정본 — 프리즘 호실 면의 예약자 줄이 같은 함수를 쓴다.
     const exitSub = checkoutSubText(lease.expectedMoveOut)
     return { ...base, badge: {
       ...base.badge,
-      sub: [moveInSubText(lease.moveInDate), exitSub].filter(Boolean).join(' · ') || undefined,
+      sub: reservationSubText(lease) || undefined,
       secondary: exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined,
     } }
   }
