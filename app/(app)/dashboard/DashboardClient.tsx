@@ -1785,14 +1785,15 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                         {/* 범례 — 스와치는 타일 실제 표면색(밴드 틴트 그대로, BAND_BG 와 같은 토큰).
                             종전 스와치는 fg(짙은 글자색)라 타일 어디에도 없는 색을 견본으로 내밀었다.
-                            공실 견본은 비어 보이는 게 맞다 — 무색이라는 사실이 그 방의 상태다. */}
+                            공실 견본은 비어 보이는 게 맞다 — 무색이라는 사실이 그 방의 상태다.
+                            비거주만 걸린 방(415호·사무실 유형)도 사람 없는 방이라 같은 견본을 쓴다. */}
                         <div className="flex gap-3.5 shrink-0 flex-wrap items-center" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                           {([
                             { tone: 'paid'    as const, label: '완납' },
                             { tone: 'await'   as const, label: '납부·입실 예정' },
                             { tone: 'unpaid'  as const, label: '미납' },
                             { tone: 'overdue' as const, label: '연체' },
-                            { tone: 'none'    as const, label: '공실' },
+                            { tone: 'none'    as const, label: '공실·비거주' },
                           ]).map(s => (
                             <div key={s.label} className="flex items-center gap-[5px]">
                               {/* 10% 틴트는 7px 에서 안 보인다 — 견본 크기를 키우고 테두리는 중립 헤어라인으로(상태색 아님) */}
@@ -1849,27 +1850,28 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             })
                             const renderCell = (r: typeof data.rooms[0]) => {
                               const hasNonResident = !!r.nonResidentName
-                              const nonResItem = r.isVacant && hasNonResident
-                                ? data.nonResidentItems.find(n => n.roomNo === r.roomNo) : null
                               // 사람 줄 — 사는 사람(또는 먼저 들어올 예약) + 다음 입실 예약(lib/leaseStatus 정본).
                               const people = r.isVacant ? [] : r.occupants
                               // 사람이 없을 때만 방 자체를 부른다.
-                              // 집계 제외 방(창고·사무실)은 '공실'이 아니라 비거주 점유자 이름으로(신고 9d844226 잔여)
+                              // 거주·예약 계약이 하나도 없고 비거주 계약만 걸린 방(415호·사무실 유형)은 방의 용도만
+                              // 말한다 — 점유자 이름을 세우면 그 방에 사는 사람으로 읽힌다(운영자 지적 2026-08-11).
+                              // 그 사람의 호실·이름·금액·미납은 아래 '비거주자 현황' 카드가 정본 자리다.
+                              // '공실'이라 부르지 않는 이유 — 이 앱에서 공실은 lib/vacancy 가 정의한 집계어이고
+                              // 415호·사무실은 집계 제외다(KPI 가 "공실 0개 · 집계 제외 2실"이라 말하는 그 둘).
+                              // 공실로 세라고 설정한 방(nonResidentVacant)은 종전 어휘 '공실 (비거주자)' 그대로다.
                               const roomLabel = !r.isVacant ? '거주중'
-                                : r.vacancyExcluded ? (r.nonResidentName ? shortName(r.nonResidentName) : '비거주')
+                                : r.vacancyExcluded ? '비거주'
                                 : hasNonResident ? '공실 (비거주자)' : '공실'
                               // 비거주 점유 방은 그 계약의 협의가(방 기본값이면 415호가 15만을 35만으로 부른다),
                               // 나머지는 방 기본 이용료 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
                               const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.baseRent
-                              // 사람이 없는 타일 — 비거주 점유(창고·사무실)는 그 계약자가 곧 이 방의 사람이라
-                              // 거주자와 같은 색 규칙을 쓴다. 정말 아무도 없는 방만 무색이다.
+                              // 사람이 없는 타일은 무색이다. 비거주 점유를 사람 색으로 칠하던 시안 D(7408890)를
+                              // 운영자가 뒤집었다 — 색까지 사람과 같으면 그 방에 누가 산다고 말하는 것과 같다.
+                              // 그 사람의 수납 단계(미납·연체 D+N)는 아래 비거주자 현황 카드가 색과 함께 말한다.
                               // 방 단위 Set 은 여기 한 자리에만 남는다(사람이 있는 타일은 사람이 자기 색을 들고 온다).
-                              const roomTone: BandTone = nonResItem
-                                ? personTone({ status: 'NON_RESIDENT', payStatus: nonResItem.payStatus, daysOverdue: nonResItem.daysOverdue })
-                                : r.isVacant ? 'none'
-                                  : unpaidRooms.has(r.roomNo) ? 'unpaid' : 'none'
-                              const roomSub = roomTone === 'overdue' ? `연체 D+${nonResItem?.daysOverdue}`
-                                : roomTone === 'unpaid' ? '미납' : NBSP
+                              const roomTone: BandTone = r.isVacant ? 'none'
+                                : unpaidRooms.has(r.roomNo) ? 'unpaid' : 'none'
+                              const roomSub = roomTone === 'unpaid' ? '미납' : NBSP
                               return (
                                 <div
                                   key={r.roomNo}
@@ -1883,8 +1885,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     {people.length === 0
                                       ? <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(roomTone)}>
                                           <span className="truncate w-full text-center" style={CELL_NAME}>{roomLabel}</span>
-                                          <span className="truncate w-full text-center tnum" style={roomTone === 'overdue' ? CELL_MONEY_OVERDUE : CELL_MONEY}>{roomAmount > 0 ? fmtWon(roomAmount) : NBSP}</span>
-                                          <span className="truncate w-full text-center" style={roomTone === 'overdue' ? CELL_SUB_OVERDUE : CELL_SUB}>{roomSub}</span>
+                                          <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{roomAmount > 0 ? fmtWon(roomAmount) : NBSP}</span>
+                                          <span className="truncate w-full text-center" style={CELL_SUB}>{roomSub}</span>
                                         </div>
                                       : people.map(p => {
                                           const tone = personTone(p)
