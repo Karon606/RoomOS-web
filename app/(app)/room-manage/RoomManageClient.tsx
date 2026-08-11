@@ -27,7 +27,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
-import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
+import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
 
@@ -104,10 +104,6 @@ type Room = {
   }[]
 }
 
-// 이 화면이 쓰는 상태 묶음 — 거주 중(방에 사람이 있다) / 점유(그 방을 이미 누가 잡았다).
-const RESIDING_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING']
-const OCCUPYING_STATUSES = ['RESERVED', ...RESIDING_STATUSES]
-
 // 방을 대표하는 계약 — 규칙은 lib/leaseStatus 의 primaryRoomLease 가 정본이다(프리즘 호실 면과 공유).
 // 이 화면은 비거주까지 넘긴다 — 비거주만 있는 방은 방 설정(nonResidentVacant)에 따라
 // 공실 또는 점유로 표시해야 하기 때문이다(운영자 요청 2026-07-06).
@@ -172,29 +168,8 @@ const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
   { key: 'active', label: '거주중' },
   { key: 'checkout', label: '퇴실 예정' },
 ]
-// '입주 가능' 판정 — 칩 키가 아니라 방 단위 사실로 묻는다.
-// 칩(roomStatusKey)은 '주 계약 하나'의 상태를 세는 축이라, 한 방에 계약이 둘이면 어느 하나로만
-// 분류되고 나머지 사실이 사라진다. 퇴실 예정일이 잡힌 예약 방(409·404호)이 그래서 통째로 빠졌다.
-// 여기서는 그 방의 점유 계약을 전부 본다.
-//   점유 계약 없음   → 지금 입주 가능(비거주만 있는 방은 방 설정 nonResidentVacant 를 그대로 따른다)
-//   전부 퇴실일 있음 → 곧 입주 가능(입주 가능일 = 마지막 퇴실일 다음 날)
-//   하나라도 무기한  → 제외
-// RESERVED 도 점유로 센다. 월 창은 보지 않고 날짜만 본다 — CHECKOUT_PENDING 과 같은 기준이다.
-type RoomAvailability = { kind: 'now' } | { kind: 'soon'; availableFrom: string }
-function roomAvailability(r: Room): RoomAvailability | null {
-  const occ = r.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status))
-  if (occ.length === 0) {
-    // 비거주(창고·사무실)만 있는 방 — 방 설정이 공실로 보라고 할 때만 입주 가능(415호·사무실 오탐 방지).
-    if (r.leaseTerms.some(l => l.status === 'NON_RESIDENT') && !r.nonResidentVacant) return null
-    return { kind: 'now' }
-  }
-  if (!occ.every(l => l.expectedMoveOut)) return null
-  const lastOut = occ.reduce((m, l) => (l.expectedMoveOut! > m ? l.expectedMoveOut! : m), occ[0].expectedMoveOut!)
-  // 'YYYY-MM-DD' 하루 더하기 — 파싱·포맷을 둘 다 UTC 로 묶어 기기 시간대가 끼어들 틈을 없앤다.
-  const d = new Date(`${lastOut}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + 1)
-  return { kind: 'soon', availableFrom: d.toISOString().slice(0, 10) }
-}
+// '입주 가능' 판정은 lib/leaseStatus 의 roomAvailability 가 정본이다 — 홈 매칭 알림이 같은 방 축을 쓴다.
+// 칩(roomStatusKey)이 아니라 방 단위 사실로 묻는 이유는 그쪽 주석에 있다.
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실번호·상태는 항상 표시)
 const RM_CARD_FIELDS: FieldDef[] = [

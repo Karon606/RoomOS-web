@@ -87,7 +87,7 @@ export type DashboardData = {
   // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number }[]; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -300,6 +300,17 @@ function CheckoutRefundModal({
   )
 }
 
+// 날짜 게이트로 후보에서 빠진 사람 수 — 목록에는 없지만 그 방을 기다리던 사람들이다.
+// 운영자가 그분들에게 "이번 방은 어렵다"고 연락할 수 있게 수를 남긴다(운영자 오더 2026-08-11).
+function ExcludedByDateCaption({ count }: { count?: number }) {
+  if (!count) return null
+  return (
+    <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
+      입주 희망일이 맞지 않아 제외 {count}명. 고객 목록 카드에 사유가 표시됩니다.
+    </p>
+  )
+}
+
 function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   alert: AlertItem
   onClose: () => void
@@ -381,7 +392,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
         {alert.wishCandidates && alert.wishCandidates.length > 0 ? (
           <div className="px-5 py-4 space-y-2" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
             <p className="text-[0.6875rem] font-semibold" style={{ color: 'var(--warm-muted)' }}>
-              {alert.wishRoomNo ? `${alert.wishRoomNo}호 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (등록 순)
+              {alert.wishRoomNo ? `${alert.wishRoomNo}호 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (날짜·문의 순)
             </p>
             <div className="space-y-1.5">
               {alert.wishCandidates.map(c => (
@@ -399,18 +410,20 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--warm-dark)' }}>{c.tenantName}님</p>
                     <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                      {c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}
+                      {c.caption}
                     </p>
                   </div>
                   <span style={{ color: 'var(--warm-muted)', fontSize: '0.875rem' }}>›</span>
                 </Link>
               ))}
             </div>
+            <ExcludedByDateCaption count={alert.wishExcludedCount} />
           </div>
         ) : (
-          alert.detail && (
-            <div className="px-5 py-4" style={{ borderBottom: isRecurring || alert.tenantId ? `1px solid ${DIVIDER_COLOR}` : undefined }}>
-              <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
+          (alert.detail || alert.wishExcludedCount) && (
+            <div className="px-5 py-4 space-y-2" style={{ borderBottom: isRecurring || alert.tenantId ? `1px solid ${DIVIDER_COLOR}` : undefined }}>
+              {alert.detail && <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>}
+              <ExcludedByDateCaption count={alert.wishExcludedCount} />
             </div>
           )
         )}

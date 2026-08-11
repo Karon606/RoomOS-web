@@ -81,6 +81,51 @@ export function nextRoomReservation<T extends { id: string; status: string; move
 }
 
 /**
+ * 그 방을 이미 누가 잡았다 — 거주 중 + 아직 안 들어온 예약.
+ * "지금 사람이 있는가"(CURRENT_OCCUPANCY_STATUSES)와 다르다. 방을 새로 줄 수 있는지 물을 땐 이쪽이다.
+ */
+export const OCCUPYING_STATUSES: LeaseStatus[] = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
+
+/**
+ * 방이 언제 비는가 — 지금(now) / 그 날부터(soon) / 모른다(null).
+ *
+ *   점유 계약 없음   → 지금 입주 가능(비거주만 있는 방은 방 설정 nonResidentVacant 를 그대로 따른다)
+ *   전부 퇴실일 있음 → 곧 입주 가능(입주 가능일 = 마지막 퇴실일 다음 날)
+ *   하나라도 무기한  → 모른다(null)
+ *
+ * 호실 관리 '입주 가능' 칩이 쓰던 판정을 여기로 올렸다(2026-08-11). 홈 매칭 알림이 자기 방 축
+ * (isVacant + 퇴실 예정 방)을 따로 들고 있어서 같은 방을 두 화면이 다르게 세고 있었다 — 409·404호처럼
+ * 퇴실일이 잡힌 예약이 걸린 방은 호실 관리에선 '입주 가능'인데 매칭에선 아예 없는 방이었다.
+ * 칩이 아니라 방 단위 사실로 묻는 이유는 2026-08-10 기록 그대로다: 한 방에 계약이 둘이면
+ * 주 계약 하나로 분류하는 순간 나머지 사실이 사라진다.
+ *
+ * 월 창은 보지 않고 날짜만 본다 — CHECKOUT_PENDING 과 ACTIVE 단기가 같은 자격인 이유다.
+ * expectedMoveOut 은 'YYYY-MM-DD' 문자열이거나 @db.Date(UTC 자정)다. 둘 다 UTC 로 읽어 기기 시간대를 배제한다.
+ */
+export type RoomAvailability = { kind: 'now' } | { kind: 'soon'; availableFrom: string }
+export function roomAvailability(room: {
+  nonResidentVacant: boolean
+  leaseTerms: { status: string; expectedMoveOut: Date | string | null }[]
+}): RoomAvailability | null {
+  const ymd = (d: Date | string | null): string | null =>
+    d == null ? null : typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10)
+  const occupying: string[] = OCCUPYING_STATUSES
+  const occ = room.leaseTerms.filter(l => occupying.includes(l.status))
+  if (occ.length === 0) {
+    // 비거주(창고·사무실)만 있는 방 — 방 설정이 공실로 보라고 할 때만 입주 가능(415호·사무실 오탐 방지).
+    if (room.leaseTerms.some(l => l.status === 'NON_RESIDENT') && !room.nonResidentVacant) return null
+    return { kind: 'now' }
+  }
+  const outs = occ.map(l => ymd(l.expectedMoveOut))
+  if (outs.some(o => o == null)) return null
+  const lastOut = outs.reduce((m, o) => (o! > m! ? o : m), outs[0])!
+  // 'YYYY-MM-DD' 하루 더하기 — 파싱·포맷을 둘 다 UTC 로 묶어 기기 시간대가 끼어들 틈을 없앤다.
+  const d = new Date(`${lastOut}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return { kind: 'soon', availableFrom: d.toISOString().slice(0, 10) }
+}
+
+/**
  * 고객 관리 목록 표시 대상 — 투어 단계부터 비거주까지 진행 중인 모든 단계.
  * 퇴실(CHECKED_OUT) · 취소(CANCELLED) 만 제외.
  */

@@ -15,6 +15,7 @@ import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, nextRoomReservation, primaryRoomLease } from '@/lib/leaseStatus'
+import { loadWishMatch, wishCandidateCaption, wishGateDetail, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -173,8 +174,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     checkoutCount,
     nonResidentCount,
     activeTenants,
-    vacantRoomList,
-    wishRoomLeases,
+    wishMatch,
     roomsWithTenants,
     recentPaymentsRaw,
     unpaidLeasesRaw,
@@ -291,32 +291,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { gender: true, nationality: true, job: true },
     }),
-    // 희망 이동 호실용 공실 목록 (조건 매칭에 type/windowType/direction/baseRent 사용)
-    prisma.room.findMany({
-      // 비거주 점유 중 + '공실 표시 안 함' 방(창고·사무실)은 이동 후보에서 제외 (2026-07-06, lib/vacancy 정본)
-      where: {
-        propertyId, isVacant: true,
-        NOT: vacancyExcludedWhere,
-      },
-      select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true },
-    }),
-    // 희망 이동 호실/조건 계약 (예약/투어/거주중/퇴실예정 — 호실 또는 조건 보유자)
-    prisma.leaseTerm.findMany({
-      where: {
-        propertyId,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE'] },
-        OR: [
-          { wishRooms: { not: null } },
-          { wishConditions: { not: null } },
-        ],
-      },
-      select: {
-        id: true, status: true, wishRooms: true, wishConditions: true, inquiryAt: true, createdAt: true,
-        moveInDate: true, keepAlertAfterInquiry: true, reservationConfirmedAt: true,
-        tenant: { select: { name: true, id: true } },
-        room:   { select: { roomNo: true } },
-      },
-    }),
+    // 희망 호실·조건 매칭 — 방 축(roomAvailability)·날짜 게이트·정렬까지 lib/wishMatch 가 정본이다.
+    // 종전엔 여기서 자체 방 축('isVacant 인 방 + 퇴실 예정 방')을 만들어 호실 관리 '입주 가능'과 갈렸다.
+    loadWishMatch(prisma, propertyId, kstYmdStr()),
     // 방 현황 그리드용
     prisma.room.findMany({
       where: { propertyId },
@@ -794,123 +771,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }))
 
   // ── 희망 호실/조건 알림 ──────────────────────────────────────
-  // "공실"로 간주: 실제 공실(isVacant) + 퇴실 예정(CHECKOUT_PENDING) 호실
-  type TargetRoomInfo = { roomNo: string; type: string | null; floor: string | null; windowType: string | null; direction: string | null; baseRent: number; isCheckoutPending: boolean }
-  const vacantInfoMap = new Map<string, TargetRoomInfo>()
-  for (const r of vacantRoomList) {
-    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, floor: r.floor ?? null, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent, isCheckoutPending: false })
-  }
-  for (const l of moveOutLeases) {
-    const r = l.room
-    if (!r?.roomNo) continue
-    if (vacantInfoMap.has(r.roomNo)) continue
-    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, floor: r.floor ?? null, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent ?? 0, isCheckoutPending: true })
-  }
-
-  const matchesConditions = (room: TargetRoomInfo, raw: string | null): boolean => {
-    if (raw == null) return false
-    let cond: { floor?: string; windowType?: string; type?: string; direction?: string; minRent?: number; maxRent?: number }
-    try { cond = JSON.parse(raw) } catch { return false }
-    if (!cond) return false
-    // 빈 객체 = 조건 무관 → 모든 빈 방 매칭
-    const roomFloor = room.floor ?? (() => {
-      const n = room.roomNo.replace(/[^0-9]/g, '')
-      return n.length >= 3 ? n.slice(0, n.length - 2) : ''
-    })()
-    if (cond.floor && cond.floor !== roomFloor) return false
-    if (cond.windowType && cond.windowType !== room.windowType) return false
-    if (cond.type && cond.type !== room.type) return false
-    if (cond.direction && cond.direction !== room.direction) return false
-    if (cond.minRent != null && room.baseRent < cond.minRent) return false
-    if (cond.maxRent != null && room.baseRent > cond.maxRent) return false
-    return true
-  }
-
-  // 입주 희망일 경과 시 옵션이 꺼져 있으면 매칭 제외
-  // KST 기준 자정
-  const todayMidnight = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
-  const isInquiryExpired = (l: { moveInDate: Date | null; keepAlertAfterInquiry: boolean }): boolean => {
-    if (l.keepAlertAfterInquiry) return false
-    if (!l.moveInDate) return false
-    return new Date(l.moveInDate) < todayMidnight
-  }
-
-  type WishCandidate = {
-    tenantName: string; tenantId: string; status: string
-    inquiryAt: Date | null; createdAt: Date
-    matchedBy: 'rooms' | 'conditions'
-  }
-  const candidatesByRoom = new Map<string, WishCandidate[]>()
-
-  for (const l of wishRoomLeases) {
-    // 입주 희망일이 지난 예약자는 옵션이 켜져 있지 않으면 매칭 제외
-    if (isInquiryExpired(l)) continue
-    // 예약 확정자는 이미 호실이 정해진 상태 → 매칭 알림에서 제외
-    if (l.reservationConfirmedAt) continue
-
-    const inquiryAt = l.inquiryAt ? new Date(l.inquiryAt) : null
-    const createdAt = new Date(l.createdAt)
-
-    // 1) 호실 직접 매칭
-    const wished = (l.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
-    for (const no of wished) {
-      const info = vacantInfoMap.get(no)
-      if (!info) continue
-      if (l.room?.roomNo === no) continue
-      if (!candidatesByRoom.has(no)) candidatesByRoom.set(no, [])
-      candidatesByRoom.get(no)!.push({
-        tenantName: l.tenant.name, tenantId: l.tenant.id, status: l.status,
-        inquiryAt, createdAt, matchedBy: 'rooms',
-      })
-    }
-
-    // 2) 조건 매칭 — 호실 미지정자가 wishConditions를 등록한 경우, 조건에 부합하는 모든 빈 방에 후보로 등록.
-    //    단 '조건 무관'(빈 객체 "{}")은 '호실 미지정 seeker'에게만. 이미 방 배정된 거주중/퇴실예정의 잔여 "{}"는
-    //    '아무 방이나'로 잘못 매칭되므로 제외(구체 조건이 있는 실제 이동희망은 그대로 매칭). 2026-07-01 오탐 수정(412호 등).
-    if (l.wishConditions) {
-      const hasRealCond = (() => {
-        try { const c = JSON.parse(l.wishConditions!); return !!c && Object.values(c).some(v => v != null && v !== '') } catch { return false }
-      })()
-      if (hasRealCond || !l.room?.roomNo) for (const info of vacantInfoMap.values()) {
-        if (!matchesConditions(info, l.wishConditions)) continue
-        if (l.room?.roomNo === info.roomNo) continue
-        // 같은 사람이 호실로도, 조건으로도 매칭되면 중복 방지
-        const list = candidatesByRoom.get(info.roomNo) ?? []
-        if (list.some(c => c.tenantId === l.tenant.id)) continue
-        if (!candidatesByRoom.has(info.roomNo)) candidatesByRoom.set(info.roomNo, [])
-        candidatesByRoom.get(info.roomNo)!.push({
-          tenantName: l.tenant.name, tenantId: l.tenant.id, status: l.status,
-          inquiryAt, createdAt, matchedBy: 'conditions',
-        })
-      }
-    }
-  }
-
-  type WishGroupedAlert = {
-    roomNo: string
-    isCheckoutPending: boolean
-    candidates: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]
-  }
-  const wishGroupedAlerts: WishGroupedAlert[] = []
-  for (const [roomNo, candidates] of candidatesByRoom) {
-    candidates.sort((a, b) => {
-      const at = a.inquiryAt?.getTime() ?? a.createdAt.getTime()
-      const bt = b.inquiryAt?.getTime() ?? b.createdAt.getTime()
-      return at - bt
-    })
-    const info = vacantInfoMap.get(roomNo)
-    wishGroupedAlerts.push({
-      roomNo,
-      isCheckoutPending: !!info?.isCheckoutPending,
-      candidates: candidates.map((c, idx) => ({
-        tenantId: c.tenantId,
-        tenantName: c.tenantName,
-        rank: idx + 1,
-        matchedBy: c.matchedBy,
-      })),
-    })
-  }
-  wishGroupedAlerts.sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
+  // 판정은 전부 lib/wishMatch 가 끝냈다(방 축·날짜 게이트·2군 정렬·제외 카운트). 여기는 문장만 만든다.
+  const wishGroupedAlerts = wishMatch.rooms
 
   // ── 6개월 트렌드 ─────────────────────────────────────────────
   const trend = last6Months.map(m => {
@@ -1382,8 +1244,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   for (const g of wishGroupedAlerts) {
-    if (g.candidates.length === 0) continue
-    const stateLabel = g.isCheckoutPending ? '퇴실 예정' : '공실'
+    // 방 상태는 날짜로 말한다 — "공실" 또는 "8/30 입주 가능"(운영자 승인 2026-08-11).
+    const stateLabel = wishRoomStateLabel(g.availability)
+    // 후보가 하나도 안 남아도 알린다. 날짜가 안 맞아 빠진 사람이 있다는 사실 자체가
+    // 그 사람에게 연락할 이유이기 때문이다(운영자 오더 2026-08-11).
+    if (g.candidates.length === 0) {
+      alertItems.push({
+        category:  'wish',
+        text:      `${g.roomNo}호 ${stateLabel} · 조건 맞는 대기자 없음`,
+        link:      `/tenants`,
+        dotColor:  'var(--success-fg)',
+        timeLabel: `날짜 불가 ${g.excludedCount}명`,
+        detail:    `${g.roomNo}호를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 고객 목록 카드에 사유가 표시됩니다.`,
+        wishRoomNo: g.roomNo,
+      })
+      continue
+    }
     if (g.candidates.length === 1) {
       const c = g.candidates[0]
       const text = c.matchedBy === 'conditions'
@@ -1399,14 +1275,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  'var(--success-fg)',
         timeLabel: '연락 가능',
         tenantId:  c.tenantId,
-        detail,
+        detail:    [detail, wishGateDetail(c)].filter(Boolean).join(' '),
+        wishExcludedCount: g.excludedCount,
       })
       continue
     }
 
     const text = `${g.roomNo}호 ${stateLabel} · 매칭 후보 ${g.candidates.length}명`
     const detail = g.candidates
-      .map(c => `${c.rank}순위 ${c.tenantName}님 · ${c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}`)
+      .map(c => `${c.rank}순위 ${c.tenantName}님 · ${wishCandidateCaption(c)}`)
       .join('\n')
     alertItems.push({
       category:  'wish',
@@ -1420,8 +1297,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantName: c.tenantName,
         rank: c.rank,
         matchedBy: c.matchedBy,
+        caption: wishCandidateCaption(c),
       })),
       wishRoomNo: g.roomNo,
+      wishExcludedCount: g.excludedCount,
     })
   }
 
