@@ -11,6 +11,7 @@ import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revea
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
 import { NATIVE_NAME_MAX } from '@/lib/documentName'
+import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
@@ -153,6 +154,9 @@ type LeaseTerm = {
 type Tenant = {
   id: string; name: string; englishName: string | null
   nativeName: string | null
+  // 별칭과 카드 표시 이름 선택(lib/displayName). 서류 성명 표기(lib/documentName)와는 별개 축이다.
+  nickname: string | null
+  displayNameStyle: string | null
   email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
@@ -3300,6 +3304,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [moveInFlexVal, setMoveInFlexVal] = useState<MoveInFlexValue>(
     lease?.moveInFlexible === true ? 'yes' : lease?.moveInFlexible === false ? 'no' : '')
 
+  // 카드 표시 이름 — 고를 수 있는 표기는 값이 실제로 들어 있는 칸뿐이다(lib/displayName 이 정본).
+  // 그래서 별칭·영어이름 두 칸을 controlled 로 들고 있는다: 지금 타이핑한 별칭이 곧바로
+  // 선택지에 뜨지 않으면, 적어 놓고도 왜 못 고르는지 알 수 없다.
+  // OCR 자동 채움(setInputByName)은 네이티브 setter + input 이벤트라 controlled 에서도 그대로 반영된다.
+  const [englishNameVal, setEnglishNameVal] = useState(tenant?.englishName ?? '')
+  const [nicknameVal, setNicknameVal] = useState(tenant?.nickname ?? '')
+  const [displayStyleVal, setDisplayStyleVal] = useState<DisplayNameStyle>(asDisplayNameStyle(tenant?.displayNameStyle))
+  const displayStyleOptions = displayNameStyles({ name: '', englishName: englishNameVal, nickname: nicknameVal })
+
   const applyDueDay = (input: string) => {
     const t = input.trim()
     if (!t) { setDueDayRaw(''); setDueDayDisp(''); return }
@@ -3382,7 +3395,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       <FormSection title="기본 정보">
         <div className="grid grid-cols-2 gap-3">
           <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
-          <Field label="영어이름" name="englishName" defaultValue={tenant?.englishName ?? ''} placeholder="Hong Gildong" />
+          <Field label="영어이름" name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
         </div>
         {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·본국 연락처와 같은 조건).
             숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
@@ -3403,6 +3416,23 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           />
         </div>
         )}
+        {/* 별칭과 카드 표시 이름 — 내국인·외국인 가리지 않는다(국적 가드 밖). '정다솜 (Sasha)'처럼
+            이름 칸에 부르는 말을 욱여넣은 사례가 이미 있다. 서류 성명 표기(계약서·확인서)는 별개
+            축이라 이 선택의 영향을 받지 않는다(lib/documentName).
+            전송 지점(hidden)은 선택지가 하나뿐이라 셀렉트가 안 그려질 때도 항상 렌더한다 —
+            칸이 사라져 값이 안 가면 서버의 '부재=보존'이 아니라 여기서는 옛 값이 남는다. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="별칭" hint="(실제로 부르는 이름 · 카드 표시 이름에서 고를 수 있습니다)"
+            name="nickname" value={nicknameVal} onChange={setNicknameVal}
+            maxLength={NICKNAME_MAX} placeholder="안아" />
+          <input type="hidden" name="displayNameStyle" value={displayStyleVal} />
+          {displayStyleOptions.length > 1 && (
+            <SelectField label="카드 표시 이름" value={displayStyleVal}
+              onChange={v => setDisplayStyleVal(asDisplayNameStyle(v))}>
+              {displayStyleOptions.map(s => <option key={s} value={s}>{DISPLAY_NAME_STYLE_LABEL[s]}</option>)}
+            </SelectField>
+          )}
+        </div>
         <div className="grid grid-cols-3 gap-3">
           <Field label="생년월일" name="birthdate" type="birthdate" defaultValue={toDateInput(tenant?.birthdate)} />
           <SelectField label="성별" name="gender" defaultValue={tenant?.gender}>
@@ -4227,19 +4257,25 @@ function DateFieldInner({ name, defaultValue, placeholder, value, onChange }: {
   )
 }
 
-function Field({ label, name, type = 'text', placeholder, defaultValue, required, value, onChange }: {
+function Field({ label, name, type = 'text', placeholder, defaultValue, required, value, onChange, maxLength, hint }: {
   label: string; name: string; type?: string; placeholder?: string; defaultValue?: string; required?: boolean
-  value?: string; onChange?: (v: string) => void   // type="date" 에서만 지원(controlled)
+  // value/onChange 를 주면 controlled, 아니면 defaultValue uncontrolled (SelectField 와 같은 배타 규칙).
+  value?: string; onChange?: (v: string) => void
+  maxLength?: number
+  hint?: string   // 라벨 옆 보조 설명 — '현지 표기 이름' 캡션과 같은 문법
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}
+        {hint && <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal"> {hint}</span>}
+      </label>
       {type === 'date'
         ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} value={value} onChange={onChange} />
         : type === 'birthdate'
         ? <BirthdateInput name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
-        : <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
+        : <input type={type} name={name} placeholder={placeholder} required={required} maxLength={maxLength}
+            {...(value === undefined ? { defaultValue } : { value, onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange?.(e.target.value) })}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0" />
       }
     </div>
@@ -4247,8 +4283,9 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
 }
 
 // value/onChange 를 주면 controlled, 아니면 defaultValue uncontrolled (배타 사용).
+// name 을 안 주면 전송하지 않는 순수 UI 셀렉트 — 값은 따로 상시 렌더한 hidden 이 나른다.
 function SelectField({ label, name, children, defaultValue, value, onChange, required }: {
-  label: string; name: string; children: React.ReactNode
+  label: string; name?: string; children: React.ReactNode
   defaultValue?: string; value?: string; onChange?: (v: string) => void; required?: boolean
 }) {
   return (

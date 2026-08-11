@@ -34,6 +34,7 @@ import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisCha
 import { digitsToIso } from '@/lib/birthdate'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { sanitizeNativeName } from '@/lib/documentName'
+import { sanitizeNickname, toStoredDisplayNameStyle } from '@/lib/displayName'
 import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } from '@/lib/pii'
 import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
@@ -69,6 +70,17 @@ function foreignRegNoPatch(formData: FormData, tenantId: string):
 function nativeNamePatch(formData: FormData): { nativeName?: string | null } {
   if (!formData.has('nativeName')) return {}
   return { nativeName: sanitizeNativeName(formData.get('nativeName')) }
+}
+
+// 별칭·카드 표시 이름 패치 — 현지 표기와 같은 '칸이 왔을 때만 건드린다' 규칙.
+// 폼은 두 칸을 항상 보내지만(전송 지점 상시 렌더), 다른 경로에서 부분 저장이 들어오면
+// 여기 없는 키는 손대지 않는다. 표시 선택은 기본(한글)일 때 NULL 로 남긴다 — 칸이 생기기 전과 같은 상태.
+// 서류 성명 표기(lib/documentName)와는 별개 축이라 그쪽 저장에는 아무 영향이 없다.
+function displayNamePatch(formData: FormData): { nickname?: string | null; displayNameStyle?: string | null } {
+  const patch: { nickname?: string | null; displayNameStyle?: string | null } = {}
+  if (formData.has('nickname')) patch.nickname = sanitizeNickname(formData.get('nickname'))
+  if (formData.has('displayNameStyle')) patch.displayNameStyle = toStoredDisplayNameStyle(formData.get('displayNameStyle'))
+  return patch
 }
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -463,6 +475,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       name: name.trim(),
       ...regNo.data,
       ...nativeNamePatch(formData),
+      ...displayNamePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),
@@ -748,6 +761,7 @@ export async function updateTenant(formData: FormData): Promise<
     data: {
       name: name.trim(),
       ...nativeNamePatch(formData),
+      ...displayNamePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),

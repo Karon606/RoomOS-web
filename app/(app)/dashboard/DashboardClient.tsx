@@ -86,8 +86,8 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
@@ -131,8 +131,11 @@ const CELL_SUB_OVERDUE = { ...CELL_SUB, color: 'var(--overdue-fg)' } as const
 const CELL_HEAD  = { background: 'var(--canvas)', color: 'var(--ink)', fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.2 } as const
 // 빈 슬롯 — 날짜 없는 방도 자리는 지킨다(46타일 높이 균일).
 const NBSP = '\u00A0'
-// 타일 폭이 좁아 전체 이름은 잘린다 — 성을 뺀 이름만(다단어 외국인 이름은 두 번째 토큰).
-const shortName = (name: string) => name.split(' ')[1] ?? name
+// 이름은 자르지 않는다. 종전엔 공백으로 쪼개 두 번째 토큰만 세웠는데(2026-04-29 도입, b193d55 에서
+// 사람 단위 타일로 이식), 그 규칙은 '성 이름' 두 토큰짜리 한국식 표기를 가정한 것이라 다중 토큰
+// 이름에서 무너졌다 — 502호 '응우옌 티 타오 아인'이 '티'가 됐고(Thị 는 베트남 여성 이름의 중간
+// 표지라 사람을 특정하지 못한다), 'Jihan Ismam'은 성이 이름 자리에 섰다. 넘치면 앞머리부터
+// 보이도록 CSS 말줄임에 맡긴다 — 짧게 부르고 싶으면 고객 정보의 별칭이 그 자리다(lib/displayName).
 
 // 사람이 있으면 색이 있고, 없으면 없다(운영자 오더 2026-08-11).
 //   완납 초록 · 납부 예정과 입실 예약 파랑 · 미납 붉음 · 연체(7일 초과) 같은 붉음 더 짙게 · 공실 무색.
@@ -1899,7 +1902,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                           return (
                                             // 이름·금액·일정 3슬롯 고정 — 두 사람이 서면 두 밴드가 같은 높이로 대칭이 된다.
                                             <div key={p.leaseId} className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
-                                              <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
+                                              <span className="truncate w-full text-center" title={p.displayName} style={CELL_NAME}>{p.displayName}</span>
                                               <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{p.amount > 0 ? fmtManShort(p.amount) : NBSP}</span>
                                               <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{subLine ?? NBSP}</span>
                                             </div>
@@ -1948,9 +1951,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       </p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-[6px]">
                         {data.nonResidentItems.map(n => {
-                          const nameParts = n.tenantName.split(' ')
-                          const shortName = nameParts.length >= 2 ? nameParts[1] : n.tenantName
-                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자·색 규칙·금액 축약까지
+                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자·색 규칙·금액 축약·이름까지
                           // 같은 정본에서 가져온다. 종전 축약(Math.round(rentAmount/10000))은 손실형이라
                           // 329,000 을 33만으로 불렀다(§06 격자 타일 규칙으로 흡수, 32.9만).
                           const tone = personTone({ status: 'NON_RESIDENT', payStatus: n.payStatus, daysOverdue: n.daysOverdue })
@@ -1963,7 +1964,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             >
                               <div className="truncate w-full text-center tnum px-1 py-[3px]" style={CELL_HEAD}>{fmtRoomNo(n.roomNo)}</div>
                               <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
-                                <span className="truncate w-full text-center" style={CELL_NAME}>{shortName}</span>
+                                <span className="truncate w-full text-center" title={n.displayName} style={CELL_NAME}>{n.displayName}</span>
                                 <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{n.rentAmount > 0 ? fmtManShort(n.rentAmount) : NBSP}</span>
                                 <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{isOverdue ? `연체 D+${n.daysOverdue}` : tone === 'unpaid' ? '미납' : NBSP}</span>
                               </div>

@@ -532,6 +532,11 @@ model Tenant {
   // 영문 로마자는 성조·한자를 잃어버려 그 나라 발음·글자를 되짚을 수 없다.
   // 서류 성명 표기 선택지 'native' 의 원천이고, 값이 없으면 그 선택지 자체가 안 뜬다(lib/documentName).
   nativeName       String?
+  // 별칭 — 실제로 부르는 이름(안아, Maruf). 카드 표시용이고 서류 성명과는 무관하다.
+  nickname         String?
+  // 카드(홈 타일 등)에 보여줄 이름 — 'nickname' | 'en'. NULL = 기본(한글 이름 name).
+  // 서류의 성명 표기 선택(lib/documentName)과 별개 축이다 — 서류는 이 값을 절대 읽지 않는다.
+  displayNameStyle String?
   email            String?
   birthdate        DateTime? @db.Date
   gender           Gender    @default(UNKNOWN)

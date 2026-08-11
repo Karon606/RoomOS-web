@@ -20,6 +20,7 @@ import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
+import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel } from '@/lib/depositComposition'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -318,7 +319,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
           select: {
-            id: true, tenant: { select: { id: true, name: true } }, status: true, rentAmount: true,
+            // 타일에 부를 이름은 lib/displayName 이 고른다 — 별칭·영어이름·한글 이름 셋 중 하나.
+            // 서류 성명(lib/documentName)과는 별개 축이고, 이 세 칸은 화면 카드에서만 쓴다.
+            id: true, tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } }, status: true, rentAmount: true,
             // 사람별 실제 청구액(lib/billing) — 할인·일할·단기·예약 인상을 수납 관리와 같은 식으로 읽는다.
             // expectedMoveOut — 타일 퇴실 예정일 줄("8/14 퇴실"). 청구 판정에는 쓰지 않는다.
             isShortTerm: true, moveInDate: true, expectedMoveOut: true,
@@ -1028,7 +1031,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       .map(l => ({
         roomNo:     r.roomNo,
         tenantId:   l.tenant.id,
-        tenantName: l.tenant.name,
+        // 카드에 부를 이름 — 별칭을 골라 둔 사람은 별칭으로 선다(lib/displayName 정본).
+        displayName: displayName(l.tenant, l.tenant.displayNameStyle),
         rentAmount: l.rentAmount,
         payStatus:  (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
                   : (upcomingByLease[l.id] ?? 0) > 0 ? 'awaiting' as const
@@ -1061,7 +1065,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return {
       leaseId:  l.id,
       tenantId: l.tenant.id,
-      name:     l.tenant.name,
+      // 카드에 부를 이름 — 고객 정보의 '카드 표시 이름' 선택을 따른다(lib/displayName).
+      // 법적 성명이 필요한 자리(서류·문자·내보내기)는 이 값을 쓰지 않는다.
+      displayName: displayName(l.tenant, l.tenant.displayNameStyle),
       status:   l.status,
       // 일할 → 락인 → 할인. 수납 관리·미수납 위젯이 쓰는 그 함수 그대로 — 두 화면이 같은 숫자를 말한다.
       amount:   billForLeaseMonth({ ...l, room: r }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
