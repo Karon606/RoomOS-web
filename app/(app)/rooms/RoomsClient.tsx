@@ -802,7 +802,7 @@ export default function RoomsClient({
 
   // ── 상단 수납 진행 스트립 (표시 전용 — 서버가 계산한 행 값을 그대로 합산, §4 재계산 없음) ──
   // 예상 = 이 화면 행들의 그 달 청구액 합(Σ expected) → 공실 제외·무청구 퇴실월 0원·퇴실 일할이 자동 반영.
-  //   단 RESERVED 행 제외 — 예약 확정자의 그 달 전액은 홈 예상 매출에만 가산(아래 InfoHint 정본).
+  //   단 RESERVED 행 제외 — 예약 확정자의 그 달 전액은 예상 수입에만 가산(아래 InfoHint 정본).
   //   예약 행 expected는 표시용 청구 예정액이고 잔액 0이라, 합산하면 청구·수납이 함께 부풀려진다(신고 78ea0c3d).
   // 수납 = 예상 − 이번 달 미수(행별 balance<0, 이월 미수와 구분되도록 expected로 캡).
   // 만실 기준 = 예상 + 공실·예약 방 + 청구 0원 점유 방의 기준 임대료(baseRent) — 아래 zeroBilledFill 주석 참조.
@@ -895,8 +895,8 @@ export default function RoomsClient({
             <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
             <InfoHint title="이 달 청구액">
               이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할과 무청구 퇴실월(납부일 이전 퇴실)이 반영됩니다.
-              홈의 예상 매출은 여기에 부가수익, 퇴실 완료자의 이 달 귀속 인식분, 예약 확정자의 그 달 전액을 더한
-              사업 전체 전망입니다. 그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 아래 등식 줄에 그 차이가 항목별로 적힙니다.
+              예상 수입은 여기에 예약 확정, 퇴실 귀속, 기타수익을 더한 사업 전체 전망이고 홈 화면 카드에도 같은 등식이 적힙니다.
+              그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 아래 등식 줄에 그 차이가 항목별로 적힙니다.
             </InfoHint>
           </p>
           )}
@@ -930,7 +930,7 @@ export default function RoomsClient({
             항 구성이나 이름이 화면마다 갈리면 같은 숫자를 놓고 다른 설명을 읽게 된다(2026-08-12). */}
         {showHomeBridge && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">
-            홈 예상 수입 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeExpectedSum)}</span>{' '}
+            예상 수입 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeExpectedSum)}</span>{' '}
             <MoneyEquation terms={expectedRevenueTerms({
               billed: expectedSum, reserved: reservedExpected, checkedOut: checkedOutRecognized, extra: incomeSum,
             })} />
@@ -940,7 +940,7 @@ export default function RoomsClient({
             예약 확정은 아직 받은 돈이 아니라 이 축에 들어오지 않는다(예상 축에만 있다). */}
         {showHomeBridge && (checkedOutRecognized !== 0 || incomeSum !== 0) && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">
-            홈 실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>{' '}
+            실수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(homeCollectedSum)}</span>{' '}
             <MoneyEquation terms={paidRevenueTerms({
               collected: collectedSum, checkedOut: checkedOutRecognized, extra: incomeSum,
             })} />
