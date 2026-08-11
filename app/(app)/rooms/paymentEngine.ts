@@ -150,7 +150,7 @@ export async function rewriteLockedExpectedForRentAmount(
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      id: true, isShortTerm: true, checkoutProratedMonth: true, status: true,
+      id: true, isShortTerm: true, moveInDate: true, checkoutProratedMonth: true, status: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
@@ -164,7 +164,14 @@ export async function rewriteLockedExpectedForRentAmount(
   for (const mon of months) {
     if (fromMonth && mon < fromMonth) continue
     if (lease.checkoutProratedMonth === mon) continue
-    const base = { discounts: lease.discounts, status: lease.status, room: lease.room }
+    // 단기 두 칸(isShortTerm·moveInDate)을 반드시 함께 넘긴다. 빼면 엔진의 '단기 입주월 단일 청구'
+    // 규칙이 통째로 꺼져서(둘 다 있을 때만 발동), 아직 단기인 계약의 **입주월 밖 달에 양수 락인을
+    // 새로 찍는다.** 그 달은 청구가 없는 달이라 락인이 그대로 허수 미납이 된다 —
+    // 422호 파트쿨리나 6월(262,500 락인 · 242,500 허수 미납)이 만들어진 것과 같은 모양이다.
+    const base = {
+      discounts: lease.discounts, status: lease.status, room: lease.room,
+      isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate,
+    }
     const before = billForLeaseMonth({ ...base, rentAmount: prevRentAmount }, mon, null)
     const after  = billForLeaseMonth({ ...base, rentAmount: nextRentAmount }, mon, null)
     if (before === after) continue
