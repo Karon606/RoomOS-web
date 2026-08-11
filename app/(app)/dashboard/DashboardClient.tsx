@@ -26,7 +26,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
   ),
 })
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
-import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtManShort, fmtWon } from '@/lib/fmtMoney'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
@@ -1885,7 +1885,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     {people.length === 0
                                       ? <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(roomTone)}>
                                           <span className="truncate w-full text-center" style={CELL_NAME}>{roomLabel}</span>
-                                          <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{roomAmount > 0 ? fmtWon(roomAmount) : NBSP}</span>
+                                          <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{roomAmount > 0 ? fmtManShort(roomAmount) : NBSP}</span>
                                           <span className="truncate w-full text-center" style={CELL_SUB}>{roomSub}</span>
                                         </div>
                                       : people.map(p => {
@@ -1900,7 +1900,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                             // 이름·금액·일정 3슬롯 고정 — 두 사람이 서면 두 밴드가 같은 높이로 대칭이 된다.
                                             <div key={p.leaseId} className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
                                               <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
-                                              <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{p.amount > 0 ? fmtWon(p.amount) : NBSP}</span>
+                                              <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{p.amount > 0 ? fmtManShort(p.amount) : NBSP}</span>
                                               <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{subLine ?? NBSP}</span>
                                             </div>
                                           )
@@ -1948,10 +1948,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       </p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-[6px]">
                         {data.nonResidentItems.map(n => {
-                          const rentMan = n.rentAmount > 0 ? `${Math.round(n.rentAmount / 10000)}만` : null
                           const nameParts = n.tenantName.split(' ')
                           const shortName = nameParts.length >= 2 ? nameParts[1] : n.tenantName
-                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자·색 규칙을 같은 정본에서 가져온다.
+                          // 바로 위 방 현황 타일과 같은 클래스 — 헤더 띠·밴드·중립 글자·색 규칙·금액 축약까지
+                          // 같은 정본에서 가져온다. 종전 축약(Math.round(rentAmount/10000))은 손실형이라
+                          // 329,000 을 33만으로 불렀다(§06 격자 타일 규칙으로 흡수, 32.9만).
                           const tone = personTone({ status: 'NON_RESIDENT', payStatus: n.payStatus, daysOverdue: n.daysOverdue })
                           const isOverdue = tone === 'overdue'
                           return (
@@ -1963,7 +1964,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               <div className="truncate w-full text-center tnum px-1 py-[3px]" style={CELL_HEAD}>{fmtRoomNo(n.roomNo)}</div>
                               <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>
                                 <span className="truncate w-full text-center" style={CELL_NAME}>{shortName}</span>
-                                <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{rentMan ?? NBSP}</span>
+                                <span className="truncate w-full text-center tnum" style={isOverdue ? CELL_MONEY_OVERDUE : CELL_MONEY}>{n.rentAmount > 0 ? fmtManShort(n.rentAmount) : NBSP}</span>
                                 <span className="truncate w-full text-center" style={isOverdue ? CELL_SUB_OVERDUE : CELL_SUB}>{isOverdue ? `연체 D+${n.daysOverdue}` : tone === 'unpaid' ? '미납' : NBSP}</span>
                               </div>
                             </div>

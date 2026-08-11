@@ -5,6 +5,7 @@
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
 import { unpaidForLease, billedForLease, type UnpaidRecord } from '@/lib/billing'
+import { fmtManShort } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
   calcProRata,
@@ -417,6 +418,22 @@ const RENT = 300000
 
   // 선납은 음수로 나온다 — 표시 규칙은 호출부가 정한다
   eq('미납: 선납은 음수', unpaidForLease([R('2026-07', 470_000, 500_000)]), -30_000)
+}
+
+// ── fmtManShort ── 격자 타일 만 축약(§06). 표시 규칙이지만 여기 고정한다 —
+// 반올림 방향이 흔들리면 타일이 실제보다 적은 돈을 말하게 된다.
+{
+  eq('만 축약: 정수 만',        fmtManShort(550_000),   '55만')
+  eq('만 축약: 소수 한 자리',    fmtManShort(329_000),   '32.9만')
+  eq('만 축약: 7.1만',          fmtManShort(71_000),    '7.1만')
+  eq('만 축약: 트레일링 .0 제거', fmtManShort(1_570_000), '157만')
+  eq('만 축약: 둘째 자리 반올림', fmtManShort(1_234_500), '123.5만')
+  eq('만 축약: 만 단위 콤마',    fmtManShort(12_340_000), '1,234만')
+  eq('만 축약: 1만 경계',        fmtManShort(10_000),    '1만')
+  eq('만 축약: 1만 미만은 원',   fmtManShort(9_999),     '9,999원')
+  eq('만 축약: 7천원',          fmtManShort(7_000),     '7,000원')
+  eq('만 축약: 0원',            fmtManShort(0),         '0원')
+  eq('만 축약: 음수는 U+2212',   fmtManShort(-329_000),  '−32.9만')
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
