@@ -20,6 +20,7 @@ import { TenantBasicInfo } from '../widgets/TenantBasicInfo'
 import { ShortStayInfoWidget } from '../widgets/ShortStayInfoWidget'
 import { TenantContactInfo } from '../widgets/TenantContactInfo'
 import { TenantContractInfo } from '../widgets/TenantContractInfo'
+import { TenantWishRooms } from '../widgets/TenantWishRooms'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
@@ -82,6 +83,9 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
+      {/* 입주 가능한 방 — 아직 방이 없는 리드에게만. 조건(계약 정보) 바로 아래에 두는 것은
+          "이 조건이면 어느 방이 되는가"가 그 조건을 읽은 다음의 질문이기 때문이다. */}
+      {lease && <TenantWishRooms lease={lease} />}
       {/* 계약서 파일 — 계약 정보(조건) 바로 아래. 조건과 그 조건을 담은 서류가 한 쌍이고,
           서명 완료·발급 전 상태에서 홈 알림을 끄러 들어왔을 때 발급 버튼에 스크롤 없이 닿아야 한다.
           운영자 확정(2026-08-01). 종전에는 메모 아래였고, 그 때문에 모달 하단에 '계약서 출력'
