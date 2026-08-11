@@ -1042,6 +1042,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 사람마다 갈리기 때문이다(아래 payStatus). 조회·집계는 하나도 건드리지 않고 읽기만 한다.
   const tileBillMonth = (l: { status: string; isShortTerm: boolean; moveInDate: Date | null }): string =>
     (l.status === 'RESERVED' || l.isShortTerm) ? (monthOfDate(l.moveInDate) ?? targetMonth) : targetMonth
+  // 타일 '연체 D+N' 의 N — 미수납 위젯 배지가 쓰는 그 값을 그대로 옮겨 담는다(새 계산이 아니다).
+  // 한 사람의 경과일을 두 위젯이 각자 세면 같은 화면에서 다른 날짜를 말하게 된다.
+  const daysOverdueByLease: Record<string, number | null> = {}
+  for (const c of unpaidCandidates) daysOverdueByLease[c.leaseId] = c.daysOverdue
   const tileYmd = (d: Date | null): string | null => d ? new Date(d).toISOString().slice(0, 10) : null
   const tileOccupant = (r: typeof roomsWithTenants[number], l: typeof roomsWithTenants[number]['leaseTerms'][number]) => {
     const mon = tileBillMonth(l)
@@ -1057,6 +1061,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       payStatus: (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
                : (upcomingByLease[l.id] ?? 0) > 0 ? 'awaiting' as const
                : 'paid' as const,
+      // 미납 중 7일 초과만 연체로 부른다(§03) — 그 판정에 쓰는 경과일.
+      daysOverdue: daysOverdueByLease[l.id] ?? null,
       // 타일 보조줄용 날짜 — "8/17 입실" / "8/14 퇴실". 청구 판정에는 관여하지 않는다.
       moveInDate:      tileYmd(l.moveInDate),
       expectedMoveOut: tileYmd(l.expectedMoveOut),
