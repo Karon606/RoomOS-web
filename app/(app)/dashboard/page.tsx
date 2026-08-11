@@ -15,7 +15,7 @@ import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, roomReservationQueue, primaryRoomLease } from '@/lib/leaseStatus'
-import { loadWishMatch, wishCandidateCaption, wishGateDetail, wishRoomStateLabel } from '@/lib/wishMatch'
+import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -1266,8 +1266,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
     })
+    // "연락하세요"까지만 말하고 끝나면 운영자가 다시 방을 뒤져야 한다. 이미 뽑아 둔 매칭의 사람 축에
+    // 답이 들어 있으므로 그 답을 뒷문장으로 잇는다 — 알림을 새로 만들지 않고, 조회도 늘리지 않는다.
+    const wishByLease = new Map(wishMatch.leases.map(l => [l.leaseId, l]))
     for (const l of contactLeases) {
       if (!l.moveInDate) continue
+      const wish = wishByLease.get(l.id)
+      const okRooms = wish?.rooms.filter(r => r.gate === 'ok') ?? []
+      // 희망일에 맞는 방이 있으면 그 방을, 없으면 며칠만 미루면 되는지를 말한다(둘 다 아니면 침묵).
+      const answer = okRooms.length > 0
+        ? `희망일에 맞는 방 ${okRooms.length}실(${okRooms.map(r => `${r.roomNo}호 ${wishRoomFromLabel(r.availability)}`).join(', ')})이 있습니다.`
+        : wish ? wishDelayHint(wish.rooms) : ''
       alertItems.push({
         category:  'contact',
         text:      `${l.tenant.name}님 연락할 때 · 입주 희망 ${fmtShortDate(l.moveInDate)}${l.isShortTerm ? ' (단기)' : ''}`,
@@ -1275,7 +1284,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  'var(--coral)',
         timeLabel: dayLabel(daysUntil(l.moveInDate)),
         tenantId:  l.tenant.id,
-        detail:    `입주 희망일이 ${leadDays}일 안입니다. 빈방이 나올지, 어렵겠는지 미리 연락해 주세요.`,
+        detail:    [`입주 희망일이 ${leadDays}일 안입니다. 빈방이 나올지, 어렵겠는지 미리 연락해 주세요.`, answer]
+          .filter(Boolean).join(' '),
         exactDate: fmtShortDate(l.moveInDate),
       })
     }
