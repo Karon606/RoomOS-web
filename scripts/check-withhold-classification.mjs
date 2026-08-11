@@ -1,5 +1,5 @@
 // 퇴실 미반환분 분류 감사(읽기 전용) — 보증금 안의 청소비 몫이 '보증금 몰취'로 잡혀 있는 건을 찾는다.
-// 사용: node --env-file=.env.local scripts/check-withhold-classification.mjs
+// 사용: node --env-file=.env.local scripts/check-withhold-classification.mjs (verify:db 마지막 항)
 //
 // 운영자 정본(2026-08-11):
 //   "보증금 5만원에 이미 청소비 2만원이 포함되어 있었고 난 3만원을 돌려준 거야. 즉 정상적인 청소비를
@@ -8,10 +8,16 @@
 // 생성 경로는 이미 성격대로 가른다(recordDepositReturn 의 splitWithheldDeposit, 소스 가드는
 // verify-money-consistency 6-2). 여기는 **과거분 존량**을 본다.
 //
-// 왜 verify:db(차단)가 아니라 verify:data(비차단)인가. 과거 건의 재분류는 "그 미반환에 파손 차감이
-// 섞이지 않았다"는 운영자 확인이 있어야 확정된다. 개발자가 푸시 시점에 채울 수 없는 값이라
-// 게이트로 두면 확인될 때까지 모든 배포가 막히는 영구 실패 게이트가 된다(G-4 2026-08-03 판례).
-// 대신 조용히 넘어가지 않고 매번 보여 준다.
+// 2026-08-11 에는 verify:data(비차단)였다. 과거 3건의 재분류가 "그 미반환에 파손 차감이 섞이지
+// 않았다"는 운영자 확인을 기다리고 있었고, 그 상태로 게이트에 두면 확인될 때까지 모든 배포가
+// 막히는 영구 실패 게이트가 되기 때문이다(G-4 2026-08-03 판례).
+//
+// 2026-08-12 에 verify:db(차단)로 올렸다. 마지막 한 건(502호 남태우)까지 운영자 승인으로 정정돼
+// 존량이 0이 됐고, 그러면 대기하던 입력이 없어진다. 이제 여기가 울리는 경우는 둘뿐이다 —
+// 생성 경로(recordDepositReturn 의 splitWithheldDeposit)가 퇴행했거나, 누군가 손으로 카테고리를
+// 되돌렸거나. 둘 다 개발자가 푸시 시점에 고칠 수 있는 일이다(check-spec-missing 때 정한 기준:
+// 개발자가 지금 고칠 수 있으면 게이트, 운영자가 판단해야 하면 입력 대기).
+// 체인 마지막에 둔다 — 여기서 끊겨도 앞의 19종은 이미 다 돈 뒤다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
