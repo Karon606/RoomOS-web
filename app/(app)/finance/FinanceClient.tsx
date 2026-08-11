@@ -93,12 +93,6 @@ type Expense = {
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
 
-type Income = {
-  id: string; date: Date; amount: number; category: string
-  detail: string | null; memo: string | null; payMethod: string | null
-  financialAccountId: string | null; financialAccount: FAcc | null
-}
-
 type FinancialAccount = {
   id: string; type: string; brand: string; alias: string | null
   identifier: string | null; owner: string | null
@@ -1374,13 +1368,12 @@ type DepositLedgerEntry = {
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
+  expenses, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
   depositSummary, depositLedger, trackedCategories,
   initialTab,
 }: {
   expenses: Expense[]
-  incomes: Income[]
   financialAccounts: FinancialAccount[]
   incomeCategories: string[]
   expenseCategories: string[]
@@ -2480,7 +2473,6 @@ export default function FinanceClient({
   const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
   const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
-  const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
 
   // ── 카테고리별 차트 데이터 ─────────────────────────────────
   const currentCatMap: Record<string, number> = {}
@@ -2538,68 +2530,52 @@ export default function FinanceClient({
         <MonthSelector />
       </div>
 
-      {/* ── 월간 요약 위젯 ── */}
+      {/* ── 월간 요약 위젯 — 지출 한 덩어리 ──
+          부가 수익 합계 반쪽을 걷어냈다(운영자 지시 2026-08-12, "여긴 지출 관리니까 없는 게 맞는 것 같아").
+          부가수익은 2026-07-02 에 수납 관리로 이관됐고 이 화면에는 손익을 계산하는 자리가 없어서,
+          그 숫자는 계산에 참여하지 못한 채 '- 전체 예상 지출' 옆에 서서 차액이 이익인 것처럼 보이게 했다.
+          그리드 트랙까지 함께 걷어낸다 — grid-cols-2 를 남기면 자식 하나가 왼쪽 절반만 차지한다. */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
-        {/* 상단: 지출 / 부가수익 */}
-        <div className="grid grid-cols-2 divide-x divide-[var(--warm-border)]">
-
-          {/* 전체 예상 지출 */}
-          <div className="px-5 py-4 space-y-2">
-            <p className="text-xs font-medium text-[var(--warm-muted)]">전체 예상 지출</p>
-            <p className="text-xl font-bold text-[var(--warm-dark)] num">
-              <MoneyDisplay amount={totalExpectedExp} prefix="-" />
-            </p>
-            <div className="space-y-1 pt-1 border-t border-[var(--warm-border)]">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[var(--warm-muted)]">일반 지출</span>
-                <span className="text-[var(--warm-dark)] font-medium num">
-                  <MoneyDisplay amount={normalExpTotal} />
-                </span>
-              </div>
-              {(recRecordedTotal > 0 || recPendingTotal > 0) && (
-                <>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[var(--warm-muted)]">고정 지출 (기록됨)</span>
-                    <span className="text-[var(--warm-dark)] font-medium num">
-                      <MoneyDisplay amount={recRecordedTotal} />
+        {/* 전체 예상 지출 */}
+        <div className="px-5 py-4 space-y-2">
+          <p className="text-xs font-medium text-[var(--warm-muted)]">전체 예상 지출</p>
+          <p className="text-xl font-bold text-[var(--warm-dark)] num">
+            <MoneyDisplay amount={totalExpectedExp} prefix="-" />
+          </p>
+          {/* 전폭이 되면서 키-값 행을 가로로 편다. 이 문법(flex justify-between 키-값)은 좁은 칼럼
+              관용구라 전폭에서 쓰면 라벨과 값 사이에 리더 공백이 수백 px 벌어진다(1440px 약 985px).
+              모바일(sm 미만)은 종전대로 세로로 쌓는다. */}
+          <div className="space-y-1 sm:space-y-0 sm:flex sm:flex-wrap sm:gap-x-6 pt-1 border-t border-[var(--warm-border)]">
+            <div className="flex items-center justify-between text-xs sm:flex-1">
+              <span className="text-[var(--warm-muted)]">일반 지출</span>
+              <span className="text-[var(--warm-dark)] font-medium num">
+                <MoneyDisplay amount={normalExpTotal} />
+              </span>
+            </div>
+            {(recRecordedTotal > 0 || recPendingTotal > 0) && (
+              <>
+                <div className="flex items-center justify-between text-xs sm:flex-1">
+                  <span className="text-[var(--warm-muted)]">고정 지출 (기록됨)</span>
+                  <span className="text-[var(--warm-dark)] font-medium num">
+                    <MoneyDisplay amount={recRecordedTotal} />
+                  </span>
+                </div>
+                {/* 예정 행: 라벨+뱃지가 금액과 겹쳐 줄바꿈되던 문제 — 뱃지를 라벨 아래 줄로 분리(윗줄은 라벨↔금액만) */}
+                <div className="text-xs space-y-0.5 sm:flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
+                    <span className="text-[var(--warning-fg)] font-medium num">
+                      <MoneyDisplay amount={recPendingTotal} />
                     </span>
                   </div>
-                  {/* 예정 행: 반폭 열에서 라벨+뱃지가 금액과 겹쳐 줄바꿈되던 문제 — 뱃지를 라벨 아래 줄로 분리(윗줄은 라벨↔금액만) */}
-                  <div className="text-xs space-y-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
-                      <span className="text-[var(--warning-fg)] font-medium num">
-                        <MoneyDisplay amount={recPendingTotal} />
-                      </span>
-                    </div>
-                    {recPendingTotal > 0 && (
-                      <div><Badge tone="pale-amber">{recUnrecordedCount}건 미기록</Badge></div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+                  {recPendingTotal > 0 && (
+                    <div><Badge tone="pale-amber">{recUnrecordedCount}건 미기록</Badge></div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-
-          {/* 부가수익 — 클릭 시 수납관리 부가수익 탭으로 (탭 자체는 2026-07-02 수납관리로 이동, 합계 위젯은 손익 요약이라 유지) */}
-          <button type="button" onClick={() => router.push(`/rooms?month=${targetMonth}&tab=income`)}
-            className="px-5 py-4 space-y-2 text-left transition-colors hover:bg-[var(--canvas)]/60 cursor-pointer">
-            <p className="text-xs font-medium text-[var(--warm-muted)] flex items-center justify-between">
-              부가 수익 합계
-              <span className="text-[var(--coral)] font-medium">내역 보기 ›</span>
-            </p>
-            <p className="text-xl font-bold text-[var(--warm-dark)] num">
-              <MoneyDisplay amount={totalIncomeSum} prefix="+" />
-            </p>
-            <div className="pt-1 border-t border-[var(--warm-border)]">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[var(--warm-muted)]">수익 건수</span>
-                <span className="text-[var(--warm-dark)] font-medium">{incomes.length}건</span>
-              </div>
-            </div>
-          </button>
         </div>
-
       </div>
 
       {/* ── 카테고리별 지출 분석 ── */}
