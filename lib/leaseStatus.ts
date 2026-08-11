@@ -44,12 +44,40 @@ export const CURRENT_OCCUPANCY_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PE
  *
  * 마지막 폴백(leases[0])은 호출 측이 넘긴 집합에 달렸다 — 비거주까지 넘기면 비거주가,
  * 점유 계약만 넘기면 없음이 된다. 넘기는 집합이 곧 그 화면의 정의다.
+ *
+ * 예약이 둘 이상이면 입주 예정일이 이른 쪽이 주 계약이다(404호 8/15·9/1). moveInDate 를 안 넘기는
+ * 호출부는 종전대로 배열 순서를 따른다.
  */
-export function primaryRoomLease<T extends { status: string }>(leases: T[]): T | undefined {
+export function primaryRoomLease<T extends { status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+): T | undefined {
   const residing: string[] = CURRENT_OCCUPANCY_STATUSES
   return leases.find(l => residing.includes(l.status))
-    ?? leases.find(l => l.status === 'RESERVED')
+    ?? sortByMoveIn(leases.filter(l => l.status === 'RESERVED'))[0]
     ?? leases[0]
+}
+
+/** 입주 예정일 오름차순(미정은 뒤) — '먼저 들어올 사람' 순서. 원본 배열은 건드리지 않는다. */
+function sortByMoveIn<T extends { moveInDate?: Date | string | null }>(leases: T[]): T[] {
+  const key = (l: T) => l.moveInDate ? new Date(l.moveInDate).getTime() : Number.MAX_SAFE_INTEGER
+  return [...leases].sort((a, b) => key(a) - key(b))
+}
+
+/**
+ * 그 방에 잡혀 있는 다음 입실 예약 — 주 계약이 아닌 RESERVED 중 입주 예정일이 가장 이른 계약.
+ *
+ * 호실 카드(RoomManageClient)와 프리즘 호실 면(getRoomDetail)이 같은 문장을 각자 들고 있었다.
+ * 홈 방 현황이 세 번째 사본을 쓰면 primaryRoomLease 때와 똑같은 길을 간다 — 규칙을 여기 하나로 둔다.
+ *
+ * 날짜로 고르는 이유: 한 방에 예약이 둘 이상 걸릴 수 있다(무기한 예약만 차단하고 퇴실일이 잡힌
+ * 예약은 이어 붙인다 — 2026-08-10 배정 연동). 404호가 8/15·9/1 두 건이다. 배열 순서에 맡기면
+ * '다음'이 9/1 로 뒤집힌다. 주 계약 선택(primaryRoomLease)도 같은 순서를 쓴다.
+ */
+export function nextRoomReservation<T extends { id: string; status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+  primary?: { id: string } | null,
+): T | undefined {
+  return sortByMoveIn(leases.filter(l => l.status === 'RESERVED' && l.id !== primary?.id))[0]
 }
 
 /**

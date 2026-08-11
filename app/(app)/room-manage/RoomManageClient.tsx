@@ -27,7 +27,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
 import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
-import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
+import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
 
@@ -117,8 +117,9 @@ function primaryLease(r: Room) {
 
 // 거주자가 있는 방에 잡혀 있는 다음 예약 — 카드에서는 뱃지를 늘리지 않고 보조줄에만 병기한다.
 // 뱃지 자리는 이미 상태 뱃지 + 전입신고 불가 + 청소 필요가 나눠 쓰고 있어 §11 최대 2개를 넘긴다.
+// 고르는 규칙은 lib/leaseStatus 의 nextRoomReservation 이 정본이다(호실 면·홈 방 현황과 공유).
 function nextReservedLease(r: Room, primary: { id: string } | undefined) {
-  return r.leaseTerms.find(l => l.status === 'RESERVED' && l.id !== primary?.id)
+  return nextRoomReservation(r.leaseTerms, primary)
 }
 
 // 호실 상태 — 카드 종류(거주중·퇴실예정=resident / 공실·예약=vacant) + 예외 뱃지.

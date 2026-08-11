@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
+import { nextRoomReservation, primaryRoomLease, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
@@ -2266,7 +2266,8 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
   // 실거주자를 밀어냈고, 그래서 카드는 송호준인데 눌러 연 모달은 Arafat 이었다(503호).
   const lease = primaryRoomLease(leases)
   // 주 계약이 아닌 예약 — 거주자가 있는 방에 이미 잡혀 있는 다음 사람. 별도 줄로 보여준다.
-  const reserved = leases.find(l => l.status === 'RESERVED' && l.id !== lease?.id)
+  // 고르는 규칙은 lib/leaseStatus 의 nextRoomReservation 정본(호실 카드·홈 방 현황과 공유).
+  const reserved = nextRoomReservation(leases, lease)
   // 상태 라벨/뱃지 — 호실 카드와 같은 함수(lib/leaseStatus.roomStatusView)로 만든다.
   const status = roomStatusView(lease, { nonResidentVacant: room.nonResidentVacant, targetMonth })
   return {
@@ -2314,7 +2315,9 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     // 하단 고객·수납 면이 방에 사는 사람이 아니라 예약자를 열었다(503호).
     const leases = await prisma.leaseTerm.findMany({
       where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-      orderBy: { status: 'asc' }, take: 3, select: { ...leaseSelect, status: true },
+      // moveInDate — 예약이 둘 이상인 방에서 primaryRoomLease 가 '먼저 들어올 사람'을 고를 수 있게(404호).
+      // 안 넘기면 배열 순서로 떨어져 모달 제목이 카드와 다른 사람을 가리킨다(2026-08-10 (7) 클래스).
+      orderBy: { status: 'asc' }, take: 3, select: { ...leaseSelect, status: true, moveInDate: true },
     })
     const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
     return pack(primaryRoomLease(leases) ?? null, room)
