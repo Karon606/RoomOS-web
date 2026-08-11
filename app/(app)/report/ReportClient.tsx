@@ -164,7 +164,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard label="총 수납액" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]"
           hint={<InfoHint title="총 수납액">실제로 입금된 이용료를 입금일이 아니라 그 돈이 어느 달 몫인지(귀속월) 기준으로 모은 금액입니다. 아직 받지 못한 이용료는 포함되지 않으므로, 받을 예정 금액까지 포함하는 홈의 예상 수입보다 작을 수 있습니다.</InfoHint>} />
-        <SummaryCard label="기타 수익" value={fmt(summary.totalExtraIncome)} />
+        <SummaryCard label="기타수익" value={fmt(summary.totalExtraIncome)} />
         <SummaryCard label="총 지출" value={fmt(summary.totalExpense)} />
         <SummaryCard
           label="운영이익"
@@ -457,7 +457,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 청구액</span><span className="text-[var(--warm-dark)]">{fmt(r.expectedRevenue)}</span></div>
-              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타 수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExpense)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">점유/공실</span><span className="text-[var(--warm-dark)]">{r.occupiedRooms} / {r.occupiedRooms + r.vacantRooms}</span></div>
             </div>
@@ -473,7 +473,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
               <tr className="text-left text-xs text-[var(--warm-muted)]">
                 <th className="px-4 py-3 font-medium">월</th>
                 <th className="px-4 py-3 font-medium text-right">예상 청구액</th>
-                <th className="px-4 py-3 font-medium text-right">기타 수익</th>
+                <th className="px-4 py-3 font-medium text-right">기타수익</th>
                 <th className="px-4 py-3 font-medium text-right">예상 지출</th>
                 <th className="px-4 py-3 font-medium text-right">예상 운영이익</th>
                 <th className="px-4 py-3 font-medium text-right">점유/공실</th>
@@ -501,9 +501,13 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
         </div>
       </div>
       <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-        예상 청구액 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타 수익 = 전년 동월 실적,
+        예상 청구액 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타수익 = 전년 동월 실적,
         없으면 최근 3개월 평균. 입주 예정·퇴실 예정 일정도 반영되며, 미확정 변수가 많을수록 실제 결과와 차이가 날 수 있습니다.
         여기의 예상 청구액은 이용료만 집계하며, 홈의 예상 수입은 기타수익을 포함합니다.
+        {/* 동명이의 고지 — 홈에도 '예상 지출'·'예상 운영이익'이 있는데 모집단이 다르다.
+            이름을 바꾸면 이 화면 안 열 헤더·CSV 까지 갈리므로 뜻을 적어 가른다(2026-08-12). */}
+        {' '}같은 이름이지만 홈의 예상 지출은 이 달 기록분에 미기록 고정 지출 추정을 더한 값이고,
+        여기 예상 지출은 과거 실적 기반 추정이라 서로 다른 숫자입니다. 예상 운영이익도 같습니다.
       </p>
     </div>
   )

@@ -6,13 +6,22 @@
 //
 // 값은 여기서 만들지 않는다. 서버가 쓴 값을 받아 이름만 붙인다.
 // 항 이름은 전부 **운영자가 확인하러 갈 화면의 라벨과 글자까지 같다**.
-//   이 달 청구액 = 수납 관리 스트립 · 기타수익 = 홈 재무 요약 타일
-//   기록된 지출 = 결산 보고서 운영이익 정의 · 고정 지출 (예정) = 지출 관리 요약 위젯
+//   이 달 청구액 = 수납 관리 스트립 · 기타수익 = 홈 세부 재무 요약 타일
+//   기록된 지출 = 홈 세부 재무 요약 타일 · 결산 보고서 운영이익 정의
+//   고정 지출 (예정) = 지출 관리 요약 위젯
 import { Fragment } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 
 /** 등식의 항 하나. op 는 이 항 **앞에** 붙는 연산자다(첫 항은 '=' 뒤라 op 를 안 쓴다). */
 export type EquationTerm = { label: string; amount: number; op: '+' | '−' }
+
+// 지출 두 항의 이름 정본 (2026-08-12 용어 통일).
+// 홈 예상 운영이익 등식과 홈 예상 지출 등식이 **같은 두 값**을 각각 빼고 더한다. 두 곳이 문자열을
+// 따로 들면 한쪽만 고쳐졌을 때 같은 모집단이 두 이름을 갖는다 — 그게 이번 지적의 형태였다.
+//   기록된 지출      = 그 달 장부에 올라간 Expense 전건(고정 연결분 포함)
+//   고정 지출 (예정) = 그 달에 아직 기록 안 된 활성 고정지출 추정분(실제로 더하거나 뺀 금액)
+const L_RECORDED_EXPENSE  = '기록된 지출'
+const L_PENDING_RECURRING = '고정 지출 (예정)'
 
 /**
  * 예상 수입 = 이 달 청구액 + 예약 확정 + 퇴실 귀속 + 기타수익.
@@ -54,8 +63,27 @@ export function operatingProfitTerms(v: {
   projectedRevenue: number; recordedExpense: number; pendingRecurring: number
 }): EquationTerm[] {
   const terms: EquationTerm[] = [{ label: '예상 수입', amount: v.projectedRevenue, op: '+' }]
-  if (v.recordedExpense  !== 0) terms.push({ label: '기록된 지출',      amount: v.recordedExpense,  op: '−' })
-  if (v.pendingRecurring !== 0) terms.push({ label: '고정 지출 (예정)', amount: v.pendingRecurring, op: '−' })
+  if (v.recordedExpense  !== 0) terms.push({ label: L_RECORDED_EXPENSE,  amount: v.recordedExpense,  op: '−' })
+  if (v.pendingRecurring !== 0) terms.push({ label: L_PENDING_RECURRING, amount: v.pendingRecurring, op: '−' })
+  return terms
+}
+
+/**
+ * 예상 지출 = 기록된 지출 + 고정 지출 (예정).
+ *
+ * 바로 위 운영이익 카드가 빼는 **그 두 항**을 여기서는 더한다. 두 카드가 같은 두 숫자를 놓고
+ * 한쪽은 '기록된 지출·고정 지출 (예정)', 다른 쪽은 '고정(정액)·고정(변동)·수시'로만 말해서
+ * 같은 화면의 두 카드가 다른 언어를 썼다(운영자 지적 2026-08-12).
+ *
+ * `pendingRecurring` 은 운영이익 등식과 **같은 값**(예상 지출 − 기록된 지출)을 받는다.
+ * 미기록 추정치를 따로 넘기면 과거월에 등식이 거짓이 된다(operatingProfitTerms 주석 참고).
+ * 항이 하나뿐인 달(과거월)에는 좌변을 되풀이할 뿐이라 부르는 쪽이 줄을 안 적는다.
+ */
+export function expectedExpenseTerms(v: {
+  recordedExpense: number; pendingRecurring: number
+}): EquationTerm[] {
+  const terms: EquationTerm[] = [{ label: L_RECORDED_EXPENSE, amount: v.recordedExpense, op: '+' }]
+  if (v.pendingRecurring !== 0) terms.push({ label: L_PENDING_RECURRING, amount: v.pendingRecurring, op: '+' })
   return terms
 }
 

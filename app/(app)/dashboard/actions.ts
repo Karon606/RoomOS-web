@@ -234,8 +234,8 @@ export async function analyzeDashboardWithGemini(
 
 ■ 이달 재무 요약
 - 총 수입: ${(data.totalRevenue / 10000).toFixed(1)}만원 (순수 이용료 ${(data.paidRevenue / 10000).toFixed(1)}만원)
-- 총 지출: ${(data.totalExpense / 10000).toFixed(1)}만원
-- 순수익: ${(data.netProfit / 10000).toFixed(1)}만원
+- 기록된 지출: ${(data.totalExpense / 10000).toFixed(1)}만원
+- 운영이익: ${(data.netProfit / 10000).toFixed(1)}만원
 - 보유 보증금: ${(data.totalDeposit / 10000).toFixed(0)}만원
 
 ■ 수납 현황

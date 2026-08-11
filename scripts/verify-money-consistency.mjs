@@ -897,8 +897,32 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/expectedExpense = isPastMonth \? totalExpense : totalExpense \+ projectedRecurringExpense/.test(dash)) {
     violations.push('[소스] 홈 예상 지출의 과거월 분기가 바뀌었다 — 운영이익 캡션의 마지막 항이 실제로 뺀 금액과 갈린다')
   }
-  if (!/label: '예상 수입'.+\n.+label: '기록된 지출'.+\n.+label: '고정 지출 \(예정\)'/.test(eqSrc)) {
+  // 지출 두 항의 이름은 상수 하나에서 나온다(2026-08-12 용어 통일). 운영이익 등식은 빼고
+  // 예상 지출 등식은 더하는 **같은 두 값**이라, 문자열이 두 곳에 흩어지면 한쪽만 고쳐졌을 때
+  // 같은 모집단이 두 이름을 갖는다 — 그게 이번 지적("두 카드 용어 통일")의 형태였다.
+  if (!/L_RECORDED_EXPENSE\s+=\s+'기록된 지출'/.test(eqSrc) || !/L_PENDING_RECURRING\s+=\s+'고정 지출 \(예정\)'/.test(eqSrc)) {
+    violations.push('[소스] MoneyEquation 지출 항 이름 상수가 바뀌었다 — 홈 타일·지출 관리·결산 보고서 어휘와 갈린다')
+  }
+  if (!/label: '예상 수입'.+\n.+label: L_RECORDED_EXPENSE.+\n.+label: L_PENDING_RECURRING/.test(eqSrc)) {
     violations.push('[소스] MoneyEquation 운영이익 등식의 항 이름·순서가 바뀌었다 — 지출 관리·결산 보고서 어휘와 갈린다')
+  }
+  if (!/expectedExpenseTerms[\s\S]{0,400}?label: L_RECORDED_EXPENSE[\s\S]{0,200}?label: L_PENDING_RECURRING/.test(eqSrc)) {
+    violations.push('[소스] MoneyEquation 예상 지출 등식이 운영이익 등식과 같은 항 이름 상수를 안 쓴다 — 두 카드가 같은 돈을 다른 말로 부른다')
+  }
+  // 예상 지출 캡션도 운영이익 캡션과 **같은 차분**을 받아야 한다. 미기록 추정치를 직접 넘기면
+  // 과거월(추정을 안 더하는 달)에 좌변보다 큰 우변을 적게 된다.
+  if (!/expectedExpenseTerms\(\{[\s\S]{0,200}?pendingRecurring:\s*data\.expectedExpense - data\.totalExpense/.test(dashClient)) {
+    violations.push('[소스] 홈 예상 지출 캡션의 고정 지출(예정) 항이 expectedExpense - totalExpense 유도가 아니다 — 과거월에 없는 항을 적는다')
+  }
+  // 홈 세부 재무 요약 타일과 등식이 같은 변수를 다른 이름으로 부르던 자리(2026-08-12 정정).
+  if (!/label: '기록된 지출', value: data\.totalExpense/.test(dashClient)) {
+    violations.push('[소스] 홈 세부 재무 요약의 totalExpense 타일 이름이 등식 항과 갈렸다 — 같은 숫자에 두 이름이 붙는다')
+  }
+  // 폐기 어휘가 **화면·프롬프트 문자열로** 되살아났는지만 본다(주석의 정정 기록은 대상이 아니라
+  // JSX 텍스트 노드 시작 '>' 와 프롬프트 항목 '- ' 로 자리를 좁힌다).
+  const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
+  if (/>\s*(장부 )?순이익|>\s*순수익/.test(dashClient) || /^- (순수익|순이익):/m.test(dashActions)) {
+    violations.push('[소스] 홈에 폐기 어휘(순이익·순수익)가 되살아났다 — netProfit 의 이름은 운영이익 하나다')
   }
   if (!/const totalExpected  = billedThisMonth\s*\n\s*\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
     violations.push('[소스] 홈 totalExpected 의 첫 항이 billedThisMonth 가 아니다 — 예상 수입 캡션의 첫 항이 되계산으로 돌아갔다')

@@ -2512,9 +2512,11 @@ export default function FinanceClient({
           그 숫자는 계산에 참여하지 못한 채 '- 전체 예상 지출' 옆에 서서 차액이 이익인 것처럼 보이게 했다.
           그리드 트랙까지 함께 걷어낸다 — grid-cols-2 를 남기면 자식 하나가 왼쪽 절반만 차지한다. */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
-        {/* 전체 예상 지출 */}
+        {/* 예상 지출 — 이름은 홈 카드와 글자까지 같다(2026-08-12 용어 통일). 두 화면이 같은 것을
+            말하려고 만든 숫자인데(page.tsx 가 이 화면과 같은 추정식을 쓴다) 한쪽만 '전체'가 붙어
+            다른 항목처럼 읽혔다. '전체'는 부가수익 반쪽을 걷어내면서 가를 대상도 없어졌다. */}
         <div className="px-5 py-4 space-y-2">
-          <p className="text-xs font-medium text-[var(--warm-muted)]">전체 예상 지출</p>
+          <p className="text-xs font-medium text-[var(--warm-muted)]">예상 지출</p>
           <p className="text-xl font-bold text-[var(--warm-dark)] num">
             <MoneyDisplay amount={totalExpectedExp} prefix="-" />
           </p>

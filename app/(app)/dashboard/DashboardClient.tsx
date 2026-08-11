@@ -27,7 +27,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
 })
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney, fmtManShort, fmtWon } from '@/lib/fmtMoney'
-import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
+import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
@@ -895,7 +895,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           {([
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
             { label: '기타수익', value: data.extraRevenue, color: 'var(--viz-4)' },
-            { label: '지출',     value: data.totalExpense, color: 'var(--tc)' },
+            // '지출' → '기록된 지출' (2026-08-12 용어 통일). 바로 아래 예상 운영이익 등식이 빼는
+            // 항과 **같은 변수**(totalExpense)인데 이름이 둘이었다. 같은 모집단은 같은 이름이다.
+            { label: '기록된 지출', value: data.totalExpense, color: 'var(--tc)' },
             { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
             // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
@@ -1388,7 +1390,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     projectedNetProfit: { title: '예상 운영이익', body: [
       '예상 수입에서 기록된 지출과 아직 안 빠진 고정 지출 (예정)을 뺀 월말 전망입니다.',
       '기록된 지출은 이 달 장부에 올라간 지출 전부입니다. 지출 관리의 일반 지출과 고정 지출 (기록됨)이 여기 들어갑니다.',
+      '뺀 두 항을 더하면 아래 예상 지출 카드의 금액이 됩니다. 두 카드가 같은 두 숫자를 같은 이름으로 씁니다.',
       '막대는 예상 지출 중 실제로 확정된 비율입니다. 다 채워질수록 전망이 정확해집니다.',
+      '아래 줄의 운영이익은 지금까지 기록된 것만으로 계산한 값이고, 맨 위 세부 재무 요약의 운영이익과 같은 숫자입니다.',
       '지난 달을 조회하면 고정 지출 (예정) 항은 사라집니다. 그 달에는 추정치를 더하지 않기 때문입니다.',
     ] },
     overdue: { title: '누적 미납 (현 입주자)', body: [
@@ -1399,8 +1403,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     ] },
     expectedExpense: { title: '예상 지출', body: [
       '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다.',
-      '막대 색은 줄일 수 있는 정도 순입니다.',
-      '고정(정액)은 매달 같은 금액, 고정(변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.',
+      '숫자 아래 등식은 위 예상 운영이익 카드가 빼는 두 항과 같습니다. 기록된 지출 + 고정 지출 (예정) = 예상 지출입니다.',
+      '막대와 그 아래 범례는 같은 금액을 다른 기준으로 나눈 것입니다. 줄일 수 있는 정도 순입니다.',
+      '고정 지출 전체 (정액)은 매달 같은 금액, 고정 지출 전체 (변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.',
+      '범례의 고정 두 칸은 이 달 고정지출 전체 추정이라, 등식의 고정 지출 (예정)(아직 기록 안 된 몫)보다 큽니다.',
       '이번 달에는 아직 기록하지 않은 고정지출 예상치가 더해지고, 지난 달을 조회할 때는 기록된 지출만 집계합니다.',
     ] },
   }
@@ -1658,9 +1664,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '8px 0 6px' }}>
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
-              {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
+              {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동.
+                  '장부 순이익' → '운영이익' (2026-08-12 용어 통일). 위 세부 재무 요약 타일의 '운영이익'과
+                  **같은 변수**(netProfit)이고 결산 보고서도 같은 이름을 쓴다. '순이익'은 2026-06 전수
+                  통일에서 폐기된 어휘인데 이 한 자리에 남아 있었다. 큰 숫자(예상)와의 구분은 카드 제목의
+                  '예상'이 이미 한다 — 예상 수입 카드의 보조줄도 같은 자리에서 확정치를 말한다. */}
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                장부 순이익 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 반영 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>
+                운영이익 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 반영 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>
               </p>
             </div>
           )
@@ -1690,10 +1700,25 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             예상 지출 <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>{monthCaption}</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
-          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 4 }}>
             {data.expectedExpense.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
+          {/* 등식 캡션 — 위 두 카드와 같은 자리(큰 숫자 바로 아래, 진행바 위), 같은 정본(§24).
+              운영이익 카드가 **빼는** 두 항을 여기서는 더한다. 종전에는 이 카드만 '고정(정액)·
+              고정(변동)·수시' 라는 다른 축의 말만 써서 두 카드가 같은 돈을 다른 언어로 말했다
+              (운영자 지적 2026-08-12). 항이 하나뿐인 과거월엔 좌변을 되풀이할 뿐이라 안 적는다. */}
+          {(() => {
+            const expTerms = expectedExpenseTerms({
+              recordedExpense:  data.totalExpense,
+              pendingRecurring: data.expectedExpense - data.totalExpense,
+            })
+            return !data.isFutureMonth && expTerms.length > 1 ? (
+              <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)', lineHeight: 1.5, wordBreak: 'keep-all', margin: '0 0 2px' }}>
+                <MoneyEquation terms={expTerms} />
+              </p>
+            ) : null
+          })()}
           {(() => {
             const t = data.expenseTiers
             const tot = (t.immovable + t.variable + t.savable) || 1
@@ -1704,9 +1729,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {t.variable  > 0 && <div style={{ width: `${(t.variable  / tot) * 100}%`, background: 'var(--warm-mid)' }} />}
                   {t.savable   > 0 && <div style={{ width: `${(t.savable   / tot) * 100}%`, background: 'var(--coral)' }} />}
                 </div>
-                {/* v2.0 §24 — 보조 1줄(통제가능성 막대 범례). 정액/변동/수시 정의 설명은 (i) 도움말로 이관해 카드는 1줄 유지. 폰트 §05 최소 10.5px */}
+                {/* v2.0 §24 — 보조 1줄(통제가능성 막대 범례). 정액/변동/수시 정의 설명은 (i) 도움말로 이관. 폰트 §05 최소 10.5px.
+                    '고정(정액)' → '고정 지출 전체 (정액)' (2026-08-12 용어 통일). 이 두 칸은 활성 고정지출
+                    **전체**의 추정액이고, 바로 위 등식의 '고정 지출 (예정)'은 그중 **아직 기록 안 된 몫**이다.
+                    모집단이 다른데 앞 글자가 같아 한 카드 안에서 같은 것으로 읽혔다. */}
                 <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
-                  <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
+                  <span style={{ color: 'var(--ink-2)' }}>●</span> 고정 지출 전체 (정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정 지출 전체 (변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                 </p>
               </>
             )
