@@ -12,6 +12,8 @@
 // 화면이 각자 min/max 를 다시 쓰지 않게 하는 것이 이 파일의 목적이다. 종전에는 DepositStatusPanel
 // 한 곳만 청소비를 연결해 읽었고, 나머지 스무 곳은 계약 보증금을 그대로 믿었다.
 
+import { CLEANING_FEE_CATEGORY, FORFEIT_CATEGORY } from '@/lib/incomeCategories'
+
 export type DepositComposition = {
   /** 계약 보증금 (0 하한) */
   contract: number
@@ -55,6 +57,53 @@ export function depositComposition(input: {
     cashDue: Math.max(0, contract - cleaningCredit),
     shortfall: Math.max(0, rawShortfall - coveredByCleaning),
   }
+}
+
+/**
+ * 퇴실 미반환분을 **청소비 몫**과 **몰취 몫**으로 가르는 정본(운영자 규칙 2026-08-11).
+ *
+ *   "보증금 5만원에 이미 청소비 2만원이 포함되어 있었고 난 3만원을 돌려준 거야. 즉 정상적인 청소비를
+ *    받은 거야. 보증금 몰취는 시설물이 파손되거나 했을 때 (잔여) 3만원에서 차감할 때 몰취가 되는 거지."
+ *
+ * 즉 미반환분은 먼저 청소비 몫을 채우고, 그걸 넘는 만큼만 몰취다. 청소비 몫은 계약에 적힌 금액이라
+ * 추정이 아니라 객관적으로 갈린다. 사유 텍스트('청소비')는 보지 않는다 — 사유는 운영자가 고르는
+ * 자유 값이라 같은 거래가 라벨에 따라 다른 계정으로 가면 그게 곧 다음 오분류다.
+ *
+ * cleaningPortion 은 퇴실 폼이 실제로 떼는 금액과 같은 판정을 써야 한다
+ * (lib/depositWithholdReasons 의 cleaningFeeDeductible — 입실 때 따로 받았으면 0).
+ * 화면이 여는 최대치와 서버 기준이 갈리면 안 된다는 규칙(§27.2)의 연장이다.
+ */
+export function splitWithheldDeposit(withheld: number, cleaningPortion: number): { cleaning: number; forfeit: number } {
+  const w = Math.max(0, withheld)
+  const cleaning = Math.min(w, Math.max(0, cleaningPortion))
+  return { cleaning, forfeit: w - cleaning }
+}
+
+/**
+ * 미반환분이 **어디로 갈지** 한 조각 — "부가수익 '청소비'로" / "부가수익 '청소비' 2만과 '보증금 몰취' 3만으로".
+ * 퇴실 정산 3폼(상태전환 미니폼·고객정보 환불창·홈 알림)과 확인창이 같은 문장을 쓰게 하는 자리다.
+ * 종전에는 여섯 자리가 각자 "부가수익(보증금)" 이라고 단정했고, 그 이름은 2026-08-01 에 이미 폐기됐다.
+ * 조사까지 여기서 붙인다 — 분해 여부에 따라 앞말 받침이 달라져 호출부가 각자 쓰면 틀린다.
+ */
+export function withheldDestinationLabel(withheld: number, cleaningPortion: number, fmt: (n: number) => string): string {
+  const { cleaning, forfeit } = splitWithheldDeposit(withheld, cleaningPortion)
+  if (cleaning > 0 && forfeit > 0) return `부가수익 '${CLEANING_FEE_CATEGORY}' ${fmt(cleaning)}과 '${FORFEIT_CATEGORY}' ${fmt(forfeit)}으로`
+  if (cleaning > 0) return `부가수익 '${CLEANING_FEE_CATEGORY}'로`
+  return `부가수익 '${FORFEIT_CATEGORY}'로`
+}
+
+/**
+ * 미반환분이 실제로 어떤 부가수익으로 섰는지 한 줄 — '청소비 20,000원 · 보증금 몰취 30,000원'.
+ * 적용취소 확인창이 지울 대상을 정확히 말하기 위한 문법 정본(가이드 §14 — 건수·금액은 서버 실데이터).
+ * 행이 하나뿐이면 카테고리 이름만 돌려준다(옆 숫자를 두 번 말하지 않는다 — 구성 라벨과 같은 규칙).
+ */
+export function withheldPartsLabel(
+  parts: { category: string; amount: number }[],
+  fmt: (n: number) => string,
+): string | null {
+  if (parts.length === 0) return null
+  if (parts.length === 1) return parts[0].category
+  return parts.map(p => `${p.category} ${fmt(p.amount)}`).join(' · ')
 }
 
 /**

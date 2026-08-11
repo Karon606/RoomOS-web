@@ -8,8 +8,9 @@ import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { canTransition, transitionDeniedMessage } from '@/lib/leaseTransitions'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
-import { depositComposition, type DepositComposition } from '@/lib/depositComposition'
+import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
+import { depositComposition, splitWithheldDeposit, type DepositComposition } from '@/lib/depositComposition'
+import { cleaningFeeDeductible, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Prisma } from '@prisma/client'
@@ -1211,8 +1212,10 @@ export async function updateTenant(formData: FormData): Promise<
 
 // 퇴실 시 보증금 환불 처리:
 // 1. DepositRefund 레코드 생성 (반환액 + 미반환액 양쪽 모두 명시 기록)
-// 2. 미반환분이 있으면 ExtraIncome(category='보증금', payMethod='보유 보증금')도 생성
+// 2. 미반환분이 있으면 ExtraIncome(payMethod='보유 보증금')도 생성
 //    → 매출 인식 + '보유 보증금' KPI에서 차감 효과
+//    카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 '청소비', 그걸 넘는 차감만 '보증금 몰취'.
+//    둘 다 있으면 행도 둘이다(splitWithheldDeposit).
 // leaseTermId / tenantId는 환불 이력 추적·표시를 위해 필수
 export async function recordDepositReturn(params: {
   leaseTermId: string
@@ -1225,7 +1228,9 @@ export async function recordDepositReturn(params: {
   memo?: string
   // 신고 9b974be0: 부가수익 detail 문구 분기. 기본은 퇴실, 'reservationCancel'은 예약 취소 몰취.
   context?: 'checkout' | 'reservationCancel'
-}): Promise<{ ok: true; refundId: string; extraIncomeId: string | null } | { ok: false; error: string }> {
+  // 미반환분은 성격대로 최대 2행(청소비 몫 / 몰취)이라 id 도 배열이다. 적용취소가 한 행만 지우면
+  // 나머지가 원장에 유령 매출로 남는다(가이드 §16 '가짜 undo 금지').
+}): Promise<{ ok: true; refundId: string; extraIncomeIds: string[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -1273,7 +1278,7 @@ export async function recordDepositReturn(params: {
       },
     })
 
-    let extraIncomeId: string | null = null
+    const extraIncomeIds: string[] = []
     if (withheld > 0) {
       // 몰취 성격에 따라 카테고리 — 예약 취소 몰취는 위약금, 퇴실 미반환분은 보증금 몰취.
       // 세무 자료에서 반환의무 있는 예수보증금(부채)과 실현 수익이 섞이지 않게(회계 패널 권고).
@@ -1287,42 +1292,77 @@ export async function recordDepositReturn(params: {
       // 임대료 수납(PaymentRecord)으로 가야 한다. 지금은 미납이 있는 몰취 사례가 0건이라
       // 오분류가 실제로 없지만, 퇴실 정산의 초과 부과가 도입되면 발생한다. 그때 분기한다.
       const forfeitCategory = params.context === 'reservationCancel' ? PENALTY_CATEGORY : FORFEIT_CATEGORY
-      const property = await prisma.property.findUnique({
-        where: { id: propertyId },
-        select: { incomeCategories: true },
-      })
+
+      // 미반환분 전부가 몰취인 것은 아니다(운영자 정본 2026-08-11). 보증금 안에 든 청소비 몫을 쓴 것은
+      // 정상 청소비 수취고, 그 몫을 넘는 차감만 몰취다. 판정은 사유 텍스트가 아니라 계약에 적힌
+      // 청소비와 입실 수령 이력으로 한다 — 사유는 운영자가 자유롭게 고르는 값이라 라벨이 계정을
+      // 정하게 두면 같은 거래가 선택에 따라 다른 계정으로 간다.
+      // 퇴실 폼이 여는 최대 환불액도 같은 cleaningFeeDeductible 로 계산한다(화면과 서버가 한 규칙).
+      // 예약 취소는 이용료 선납 몰취라 보증금 청소비 몫이라는 개념 자체가 없다.
+      const [lease, property] = await Promise.all([
+        prisma.leaseTerm.findFirst({ where: { id: params.leaseTermId, propertyId }, select: { cleaningFee: true } }),
+        prisma.property.findUnique({ where: { id: propertyId }, select: { incomeCategories: true } }),
+      ])
+      const cleaningPortion = params.context === 'reservationCancel'
+        ? 0
+        : cleaningFeeDeductible(lease?.cleaningFee ?? 0, await getCleaningFeeReceivedForLease(params.leaseTermId))
+      const split = splitWithheldDeposit(withheld, Math.min(cleaningPortion, basisAmount))
+
+      // 사유를 아는 케이스만 그 이름으로 표기 — 사유 미상까지 청소비로 단정하지 않는다(신고 13438ec9).
+      // 승계분(이 앱에 입금 기록이 없는 보증금)은 그 사실을 남긴다. 세무 자료를 받는 쪽이
+      // '입금 기록 없는 매출'을 물어볼 때 답이 이 줄에 있어야 한다.
+      const carriedNote = carriedOver ? ' (인수 승계분)' : ''
+      // 청소비 몫을 이미 따로 뗀 뒤라면 남은 몰취 행까지 '청소비' 라고 쓸 수 없다 — 카테고리와
+      // 세부 항목이 서로 다른 말을 하는 행이 생긴다.
+      const forfeitReason = params.reason?.trim() === CLEANING_WITHHOLD_REASON && split.cleaning > 0
+        ? '보증금 미반환분'
+        : (params.reason?.trim() || '보증금 미반환분').replace(/^기타 · /, '')
+      const parts = [
+        ...(split.cleaning > 0 ? [{
+          category: CLEANING_FEE_CATEGORY as string,
+          amount:   split.cleaning,
+          detail:   `${params.tenantName} 퇴실 · ${CLEANING_WITHHOLD_REASON}${carriedNote}`,
+        }] : []),
+        ...(split.forfeit > 0 ? [{
+          category: forfeitCategory as string,
+          amount:   split.forfeit,
+          detail:   params.context === 'reservationCancel'
+            ? `${params.tenantName} 예약 취소 · 예약금 몰취`
+            : `${params.tenantName} 퇴실 · ${forfeitReason}${carriedNote}`,
+        }] : []),
+      ]
+
       const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
-      const cats = raw.split(',').map((s: string) => s.trim()).filter(Boolean)
-      if (!cats.includes(forfeitCategory)) {
+      const cats: string[] = raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+      const missing = [...new Set(parts.map(p => p.category))].filter(c => !cats.includes(c))
+      if (missing.length > 0) {
         await prisma.property.update({
           where: { id: propertyId },
-          data: { incomeCategories: [...cats, forfeitCategory].join(',') } as any,
+          data: { incomeCategories: [...cats, ...missing].join(',') } as any,
         })
       }
 
-      const inc = await prisma.extraIncome.create({
-        data: {
-          propertyId,
-          date:      refundDate,
-          amount:    withheld,
-          category:  forfeitCategory,
-          // 사유를 아는 케이스만 그 이름으로 표기 — 사유 미상까지 청소비로 단정하지 않는다(신고 13438ec9).
-          // 승계분(이 앱에 입금 기록이 없는 보증금)은 그 사실을 남긴다. 세무 자료를 받는 쪽이
-          // '입금 기록 없는 매출'을 물어볼 때 답이 이 줄에 있어야 한다.
-          detail:    params.context === 'reservationCancel'
-            ? `${params.tenantName} 예약 취소 · 예약금 몰취`
-            : `${params.tenantName} 퇴실 · ${(params.reason?.trim() || '보증금 미반환분').replace(/^기타 · /, '')}${carriedOver ? ' (인수 승계분)' : ''}`,
-          payMethod: '보유 보증금',
-          // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
-          tenantId:    params.tenantId,
-          leaseTermId: params.leaseTermId,
-        },
-      })
-      extraIncomeId = inc.id
+      for (const part of parts) {
+        const inc = await prisma.extraIncome.create({
+          data: {
+            propertyId,
+            date:      refundDate,
+            amount:    part.amount,
+            category:  part.category,
+            detail:    part.detail,
+            // 새로 들어온 돈이 아니라 이미 받아 둔 보증금을 쓴 것 — 적용취소가 이 표식으로 대상을 찾는다.
+            payMethod: DEPOSIT_SOURCED_PAY_METHOD,
+            // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
+            tenantId:    params.tenantId,
+            leaseTermId: params.leaseTermId,
+          },
+        })
+        extraIncomeIds.push(inc.id)
+      }
     }
     revalidatePath('/finance')
     revalidatePath('/dashboard')
-    return { ok: true, refundId: refund.id, extraIncomeId }
+    return { ok: true, refundId: refund.id, extraIncomeIds }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1334,7 +1374,8 @@ export async function recordDepositReturn(params: {
 // 종전에는 undoDepositReturn 호출부가 토스트 액션 하나뿐이라, 토스트가 사라지면 되돌릴 방법이 없었다.
 // 그런데 recordDepositReturn 은 계약당 1건 멱등 가드가 있어, 잘못 기록하면 재퇴실까지 막혔다.
 export async function getDepositRefundForLease(leaseTermId: string): Promise<
-  { refundId: string; returned: number; withheld: number; date: string; reason: string | null; extraIncomeId: string | null } | null
+  { refundId: string; returned: number; withheld: number; date: string; reason: string | null
+    extraIncomeIds: string[]; parts: { category: string; amount: number }[] } | null
 > {
   const { propertyId } = await getPropertyId()
   const r = await prisma.depositRefund.findFirst({
@@ -1343,26 +1384,29 @@ export async function getDepositRefundForLease(leaseTermId: string): Promise<
     select: { id: true, returnedAmount: true, withheldAmount: true, date: true, reason: true },
   })
   if (!r) return null
-  // 몰취분 ExtraIncome 은 leaseTermId + '보유 보증금' 결제수단으로 식별(생성부와 동일 규약)
-  const inc = r.withheldAmount > 0
-    ? await prisma.extraIncome.findFirst({
-        where: { leaseTermId, propertyId, payMethod: '보유 보증금' },
-        orderBy: { createdAt: 'desc' }, select: { id: true },
+  // 미반환분 ExtraIncome 은 leaseTermId + '보유 보증금' 결제수단으로 식별(생성부와 동일 규약).
+  // findFirst 였을 때는 청소비 몫과 몰취가 갈린 계약에서 한 행만 잡아, 적용취소가 절반만 됐다.
+  const incs = r.withheldAmount > 0
+    ? await prisma.extraIncome.findMany({
+        where: { leaseTermId, propertyId, payMethod: DEPOSIT_SOURCED_PAY_METHOD },
+        orderBy: { createdAt: 'asc' }, select: { id: true, category: true, amount: true },
       })
-    : null
+    : []
   return {
     refundId: r.id, returned: r.returnedAmount, withheld: r.withheldAmount, reason: r.reason,
-    date: r.date.toISOString().slice(0, 10), extraIncomeId: inc?.id ?? null,
+    date: r.date.toISOString().slice(0, 10),
+    extraIncomeIds: incs.map(i => i.id),
+    parts: incs.map(i => ({ category: i.category, amount: i.amount })),
   }
 }
 
-export async function undoDepositReturn(refundId: string, extraIncomeId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function undoDepositReturn(refundId: string, extraIncomeIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     await prisma.$transaction([
       prisma.depositRefund.deleteMany({ where: { id: refundId, propertyId } }),
-      ...(extraIncomeId ? [prisma.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })] : []),
+      ...(extraIncomeIds.length > 0 ? [prisma.extraIncome.deleteMany({ where: { id: { in: extraIncomeIds }, propertyId } })] : []),
     ])
     revalidatePath('/finance'); revalidatePath('/dashboard')
     return { ok: true }
@@ -1383,10 +1427,14 @@ export async function undoDepositReturn(refundId: string, extraIncomeId: string 
 // 제시하고 사유 '청소비' 를 자동 선택했다. 실측 520호 김민정 1건이 이미 그 상태다
 // (입실 청소비 20,000 수령 + 보증금 50,000 + 청소비 필드 20,000, ACTIVE).
 // 퇴실하면 2만원을 두 번 받는다(E페이즈 조사 2026-08-03).
+//
+// 퇴실 정산이 만든 청소비 몫(payMethod '보유 보증금')은 빼고 센다 — 그건 '입실 때 따로 받은 돈'이
+// 아니라 보증금 안에 있던 몫이다. 안 빼면 퇴실 직후 either/or 가 뒤집혀, 적용취소 후 재기록 때
+// 환불 최대치가 30,000 에서 50,000 으로 벌어진다(CLEANING_FEE_RECEIVED_WHERE 주석 참조).
 export async function getCleaningFeeReceivedForLease(leaseTermId: string): Promise<number> {
   const { propertyId } = await getPropertyId()
   const agg = await prisma.extraIncome.aggregate({
-    where: { leaseTermId, propertyId, category: CLEANING_FEE_CATEGORY },
+    where: { leaseTermId, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
     _sum: { amount: true },
   })
   return agg._sum.amount ?? 0
@@ -1451,7 +1499,7 @@ export async function countTenantsWithCleaningFeeReceived(tenantIds: string[]): 
   if (tenantIds.length === 0) return 0
   const { propertyId } = await getPropertyId()
   const rows = await prisma.extraIncome.findMany({
-    where: { propertyId, category: CLEANING_FEE_CATEGORY, tenantId: { in: tenantIds } },
+    where: { propertyId, ...CLEANING_FEE_RECEIVED_WHERE, tenantId: { in: tenantIds } },
     select: { tenantId: true },
   })
   return new Set(rows.map(r => r.tenantId)).size
