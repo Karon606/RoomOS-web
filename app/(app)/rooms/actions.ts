@@ -2568,29 +2568,82 @@ export async function getRoomExpenses(roomId: string): Promise<{
 }
 
 
-// 이 방의 거주 이력 — RoomStay 구간(endDate null = 현재) + 그 구간의 입주자명. 최신 구간이 위.
+// 이 방의 거주 이력과 예정 — 지나간 RoomStay 구간(endDate null = 현재)에 아직 안 들어온 입실 예약을 잇는다.
+//
+// 왜 한 목록인가 — 방을 두고 묻는 질문은 언제나 하나다. "이 방은 누가 언제 쓰는가."
+// 과거만 있는 목록은 그 절반만 답한다. 402호처럼 8/17 에 들어올 사람이 잡혀 있는데
+// 이력에는 지금 사는 사람이 마지막 줄이면, 방을 다시 내줄 수 있는지 화면이 말해 주지 않는다.
+// 예약은 RoomStay 구간이 없으므로(실입주 기록만 남긴다) 계약에서 의사 행으로 만들어 얹는다.
+//
+// 취소(CANCELLED)는 status: 'RESERVED' 조회에서 자연히 빠진다 — 지켜지지 않은 약속은 예정이 아니다.
 export async function getRoomStayHistory(roomId: string): Promise<{
-  items: { id: string; tenantName: string; startDate: string | null; endDate: string | null }[]
+  items: {
+    id: string; tenantId: string | null; tenantName: string
+    startDate: string | null; endDate: string | null
+    kind: 'past' | 'current' | 'upcoming'
+  }[]
 }> {
   const propertyId = await getPropertyId()
-  const rows = await prisma.roomStay.findMany({
-    // 표시 게이트 — 거주 이력은 실입주 기록만. 문의·투어·예약 단계 lease 의 구간은 데이터 게이트와 별개로 이중 방어(2026-07-28 오더).
-    where: { propertyId, roomId, leaseTerm: { status: { notIn: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] } } },
-    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
-    select: {
-      id: true, startDate: true, endDate: true,
-      leaseTerm: { select: { tenant: { select: { name: true } } } },
-    },
-  })
-  return {
-    // 시작일이 아직 오지 않은 열린 구간(입주 예정)은 '현재'로 오독되므로 제외.
-    items: rows.filter(r => !(r.endDate === null && r.startDate && r.startDate.toISOString().slice(0, 10) > kstYmdStr())).map(r => ({
-      id: r.id,
-      tenantName: r.leaseTerm?.tenant?.name ?? '—',
-      startDate: r.startDate ? r.startDate.toISOString().slice(0, 10) : null,
-      endDate: r.endDate ? r.endDate.toISOString().slice(0, 10) : null,
-    })),
+  const [rows, reserved] = await Promise.all([
+    prisma.roomStay.findMany({
+      // 표시 게이트 — 지나간 이력은 실입주 기록만. 문의·투어 단계 lease 의 구간은 데이터 게이트와 별개로 이중 방어(2026-07-28 오더).
+      // RESERVED 는 여기서 계속 빼고 아래 의사 행으로 받는다 — 한 예약이 두 줄이 되면 안 된다.
+      where: { propertyId, roomId, leaseTerm: { status: { notIn: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] } } },
+      select: {
+        id: true, startDate: true, endDate: true, createdAt: true,
+        leaseTerm: { select: { tenantId: true, tenant: { select: { name: true } } } },
+      },
+    }),
+    prisma.leaseTerm.findMany({
+      where: { propertyId, roomId, status: 'RESERVED' },
+      select: { id: true, tenantId: true, moveInDate: true, expectedMoveOut: true, createdAt: true, tenant: { select: { name: true } } },
+    }),
+  ])
+  const ymd = (d: Date | null) => d ? d.toISOString().slice(0, 10) : null
+  type Row = {
+    id: string; tenantId: string | null; tenantName: string
+    startDate: string | null; endDate: string | null
+    kind: 'past' | 'current' | 'upcoming'
+    createdAt: Date
   }
+  const items: Row[] = [
+    // 시작일이 아직 오지 않은 열린 구간(입주 예정)은 '현재'로 오독되므로 제외.
+    ...rows
+      .filter(r => !(r.endDate === null && r.startDate && r.startDate.toISOString().slice(0, 10) > kstYmdStr()))
+      .map((r): Row => ({
+        id: r.id,
+        tenantId: r.leaseTerm?.tenantId ?? null,
+        tenantName: r.leaseTerm?.tenant?.name ?? '—',
+        startDate: ymd(r.startDate),
+        endDate: ymd(r.endDate),
+        kind: r.endDate === null ? 'current' : 'past',
+        createdAt: r.createdAt,
+      })),
+    ...reserved.map((l): Row => ({
+      id: l.id,
+      tenantId: l.tenantId,
+      tenantName: l.tenant?.name ?? '—',
+      startDate: ymd(l.moveInDate),
+      endDate: ymd(l.expectedMoveOut),
+      kind: 'upcoming',
+      createdAt: l.createdAt,
+    })),
+  ]
+  // 정렬은 애플리케이션에서 — DB orderBy 로는 두 출처를 한 줄로 세울 수 없고, Postgres 의 desc 는
+  // null 을 맨 앞에 놓는다. 시작일 없는 옛 구간(404호 이지우)이 미래 예약보다 위에 서던 이유다.
+  // 키는 '시작일, 없으면 종료일' — 그 사람이 이 방과 얽힌 가장 이른 시점이다. 둘 다 없으면 맨 아래.
+  // 같은 날짜끼리는 종전 DB 정렬과 같은 createdAt 내림차순.
+  const key = (r: Row) => r.startDate ?? r.endDate
+  items.sort((a, b) => {
+    const ka = key(a), kb = key(b)
+    if (ka !== kb) {
+      if (ka == null) return 1
+      if (kb == null) return -1
+      return ka < kb ? 1 : -1
+    }
+    return b.createdAt.getTime() - a.createdAt.getTime()
+  })
+  return { items: items.map(({ createdAt: _createdAt, ...it }) => it) }
 }
 
 
