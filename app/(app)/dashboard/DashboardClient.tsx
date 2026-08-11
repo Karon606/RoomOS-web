@@ -84,7 +84,8 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number }[]; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
@@ -110,6 +111,12 @@ const DASH_DIR_LABEL: Record<string, string> = {
 const DASH_STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '입실 예약', CHECKOUT_PENDING: '퇴실 예정',
 }
+
+// 방 현황 타일 글자 — 이름줄·금액줄. 종전 인라인 style 을 그대로 옮긴 값이라 1인 타일 높이는 변하지 않는다.
+const CELL_NAME  = { fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2 } as const
+const CELL_MONEY = { fontSize: '0.65625rem', fontWeight: 600, opacity: 0.8 } as const
+// 타일 폭이 좁아 전체 이름은 잘린다 — 성을 뺀 이름만(다단어 외국인 이름은 두 번째 토큰).
+const shortName = (name: string) => name.split(' ')[1] ?? name
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
 
@@ -1789,13 +1796,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 ? data.nonResidentItems.find(n => n.roomNo === r.roomNo) : null
                               const isUnpaid   = r.isVacant ? (nonResItem?.payStatus === 'unpaid') : unpaidRooms.has(r.roomNo)
                               const isAwaiting = r.isVacant ? (nonResItem?.payStatus === 'awaiting') : (!isUnpaid && awaitingRooms.has(r.roomNo))
-                              const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
-                              const nameParts = r.tenantName?.split(' ') ?? []
+                              // 사람 줄 — 사는 사람(또는 먼저 들어올 예약) + 다음 입실 예약(lib/leaseStatus 정본).
+                              const people = r.isVacant ? [] : r.occupants
+                              // 사람이 없을 때만 방 자체를 부른다.
                               // 집계 제외 방(창고·사무실)은 '공실'이 아니라 비거주 점유자 이름으로(신고 9d844226 잔여)
-                              const nrName = r.nonResidentName?.split(' ')[1] ?? r.nonResidentName ?? '비거주'
-                              const displayName = r.isVacant
-                                ? (r.vacancyExcluded ? nrName : hasNonResident ? '공실 (비거주자)' : '공실')
-                                : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
+                              const roomLabel = !r.isVacant ? '거주중'
+                                : r.vacancyExcluded ? (r.nonResidentName ? shortName(r.nonResidentName) : '비거주')
+                                : hasNonResident ? '공실 (비거주자)' : '공실'
+                              // 비거주 점유 방은 그 계약의 협의가(방 기본값이면 415호가 15만을 35만으로 부른다),
+                              // 나머지는 방 기본 이용료 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
+                              const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.baseRent
                               const cellStyle = (r.isVacant && !hasNonResident)
                                 ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
                                 : isUnpaid
@@ -1813,8 +1823,22 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   style={cellStyle}
                                 >
                                   <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(r.roomNo)}</span>
-                                  <span className="truncate w-full text-center" style={{ fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
-                                  {rentMan && <span style={{ fontSize: '0.65625rem', fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                                  {people.length === 0
+                                    ? <>
+                                        <span className="truncate w-full text-center" style={CELL_NAME}>{roomLabel}</span>
+                                        {roomAmount > 0 && <span className="tnum" style={CELL_MONEY}>{fmtWon(roomAmount)}</span>}
+                                      </>
+                                    : people.map((p, i) => (
+                                        // 줄 간격 3px, 사람 사이 9px — 이름·금액이 한 덩어리로 읽혀야 누가 얼마인지 안 갈린다.
+                                        <div key={p.leaseId} className="w-full flex flex-col items-center gap-[3px]" style={{ marginTop: i > 0 ? 6 : 0 }}>
+                                          {/* 아직 안 들어온 사람 — 이름만 세우면 사는 사람으로 읽힌다(신고 2026-08-11 의 오독 그대로). */}
+                                          {p.status === 'RESERVED' && (
+                                            <span className="truncate w-full text-center" style={{ ...CELL_NAME, opacity: 0.7 }}>{DASH_STATUS_LABEL.RESERVED}</span>
+                                          )}
+                                          <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
+                                          {p.amount > 0 && <span className="tnum" style={CELL_MONEY}>{fmtWon(p.amount)}</span>}
+                                        </div>
+                                      ))}
                                 </div>
                               )
                             }

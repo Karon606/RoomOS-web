@@ -13,8 +13,8 @@ import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue } from '@/lib/leaseStatus'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
+import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue, getReservedFullMonthRevenue, nextRoomReservation, primaryRoomLease } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
@@ -335,10 +335,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         baseRent: true,
         scheduledRent: true,
         rentUpdateDate: true,
+        // 비거주 예약 인상 축 — billForLeaseMonth 가 NON_RESIDENT 계약을 이 축으로 읽는다(418호 유형).
+        nonResidentScheduled: true,
+        nonResidentRentDate: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-          select: { id: true, tenant: { select: { id: true, name: true } }, status: true, rentAmount: true },
-          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true, tenant: { select: { id: true, name: true } }, status: true, rentAmount: true,
+            // 사람별 실제 청구액(lib/billing) — 할인·일할·단기·예약 인상을 수납 관리와 같은 식으로 읽는다.
+            isShortTerm: true, moveInDate: true,
+            checkoutProratedAmount: true, checkoutProratedMonth: true,
+            discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+          },
+          // 정렬·take 는 호실 카드(room-manage getRooms)와 같은 값이라야 잘림까지 같다 — 주 계약은
+          // primaryRoomLease 가 의미로 고른다. createdAt desc 이던 시절엔 최근에 만든 예약이
+          // 실거주자를 밀어내 402호 카드에 김주호(입실 예정)가 떴다(신고 2026-08-11).
+          orderBy: { status: 'asc' },
+          take: 3,
         },
       },
       orderBy: { roomNo: 'asc' },
@@ -942,6 +955,28 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   })
 
   // ── 방 현황 그리드 ───────────────────────────────────────────
+  // 타일에 세울 사람 — 주 계약(사는 사람 우선) + 그 방에 잡혀 있는 다음 입실 예약.
+  // 선택 규칙은 lib/leaseStatus 정본 하나만 쓴다. 홈이 자기 규칙을 만들던 시절엔 402호가
+  // 카드·모달과 다른 사람(김주호)을 가리켰다 — primaryRoomLease 수렴의 다섯 번째 사본이었다.
+  //
+  // 금액은 방 기본 이용료가 아니라 그 계약의 그 달 청구액이다. 방 하나에 둘이 각자 내면
+  // 방값 47만이 아니라 각자의 32만9천이 맞다(운영자 신고 2026-08-11).
+  //   묻는 달 — 거주는 조회 월. 단기·예약은 입주월이다. 단기는 입주월에 체류 전체 사용료를
+  //   한 번 청구하는 계약이라(lib/billing) 다른 달을 물으면 0 이 나온다. 수납 관리도 예약 행을
+  //   입주월로 묻는다(rooms/actions reservedExpected) — 그 문법을 단기 거주까지 그대로 쓴다.
+  const tileBillMonth = (l: { status: string; isShortTerm: boolean; moveInDate: Date | null }): string =>
+    (l.status === 'RESERVED' || l.isShortTerm) ? (monthOfDate(l.moveInDate) ?? targetMonth) : targetMonth
+  const tileOccupant = (r: typeof roomsWithTenants[number], l: typeof roomsWithTenants[number]['leaseTerms'][number]) => {
+    const mon = tileBillMonth(l)
+    return {
+      leaseId:  l.id,
+      tenantId: l.tenant.id,
+      name:     l.tenant.name,
+      status:   l.status,
+      // 일할 → 락인 → 할인. 수납 관리·미수납 위젯이 쓰는 그 함수 그대로 — 두 화면이 같은 숫자를 말한다.
+      amount:   billForLeaseMonth({ ...l, room: r }, mon, lockedExpectedByLeaseMonth[l.id]?.get(mon) ?? null),
+    }
+  }
   const roomsData = roomsWithTenants.map(r => ({
     id:            r.id,
     roomNo:        r.roomNo,
@@ -958,11 +993,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     baseRent:      r.baseRent,
     scheduledRent: r.scheduledRent,
     rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
-    tenantName:       r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
-    tenantId:         r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.id ?? null,
-    tenantStatus:     r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
+    ...(() => {
+      // 비거주는 아래 '비거주자 현황' 블록이 따로 세운다 — 타일 사람 줄에서는 뺀다.
+      const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT')
+      const primary = primaryRoomLease(occupying)
+      const next = nextRoomReservation(occupying, primary)
+      return {
+        tenantName:   primary?.tenant.name ?? null,
+        tenantId:     primary?.tenant.id ?? null,
+        tenantStatus: primary?.status ?? null,
+        // 타일에 세울 사람 — 사는 사람(또는 먼저 들어올 예약) 다음에 다음 입실 예약.
+        occupants: [primary, next].filter(l => l != null).map(l => tileOccupant(r, l)),
+      }
+    })(),
     nonResidentName:  r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.name ?? null,
     nonResidentId:    r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.id ?? null,
+    // 비거주만 있는 방(창고·사무실)은 그 계약이 곧 타일의 사람이다 — 방 기본값이 아니라 협의가로 보여야 한다.
+    nonResidentAmount: (() => {
+      const nr = r.leaseTerms.find(l => l.status === 'NON_RESIDENT')
+      return nr ? tileOccupant(r, nr).amount : null
+    })(),
   }))
 
   // ── 누적 미납 상세 — 발생주의(targetMonth 기반) ──────────
