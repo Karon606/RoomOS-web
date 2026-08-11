@@ -270,6 +270,7 @@
 ## §24 대시보드·위젯
 
 - KpiCard: 수치 1개 + 보조 1줄. 타입 3종: 강조(bg --tc, 1~2장, 내부 cream 계열만, 음수 캡션 --sand) · 일반(cream+border) · 경고(.attn 좌 3px + --danger).
+- 등식 캡션: 수치가 여러 항의 합·차인 경우에 한해 수치 바로 아래 분해 등식 1줄을 추가할 수 있다. 등식은 진행바 위, 보조줄은 진행바 아래. 문장은 정본 MoneyEquation 이 만든다(화면이 자기 식을 조립하면 같은 이름의 숫자가 화면마다 갈린다).
 - 차트 색 매핑(lib/chartColors.ts 단일 출처): 수입 --tc · 지출 --ink-s · 기타수익 --camel · 보증금 --deposit-fg · 예비비 --reserve-fg · 완납 --success-fg · 예정 --info-fg · 미납 --warning-fg · 연체 --overdue-solid. raw hex 8종 치환.
 - 위젯 셸: bg --cream · border 1px --border · r-xl · 공통 헤더·진입 표시 · 그림자 없음.
 - 진입: 페이지=Link / 상세=entityModal / 폼=Modal. window.location.href·router.push 혼용 제거.
