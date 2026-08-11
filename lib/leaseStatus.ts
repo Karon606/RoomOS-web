@@ -104,8 +104,8 @@ export function roomReservationQueue<T extends { id: string; status: string; mov
 export const OCCUPYING_STATUSES: LeaseStatus[] = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
 
 /**
- * 한 방의 계약을 수납 행 순서로 세운다 — 점유(거주·퇴실 예정·입실 예약)가 먼저 입주 예정일 순,
- * 그다음 비거주(창고·사무실)가 같은 순.
+ * 한 방의 계약을 수납 행 순서로 세운다 — 거주(거주중·퇴실 예정) 먼저, 그다음 입실 예약,
+ * 마지막이 비거주(창고·사무실). 각 층 안에서는 입주 예정일이 이른 순이다.
  *
  * 종전 수납 관리는 방마다 대표 계약 하나(+비거주 하나)만 행으로 만들었다. 한 방에 계약이 둘이면
  * 나머지 하나가 화면에서 통째로 사라졌고, 그 계약의 그 달 청구액도 같이 사라져 홈 예상 수입과
@@ -115,13 +115,20 @@ export const OCCUPYING_STATUSES: LeaseStatus[] = ['RESERVED', 'ACTIVE', 'CHECKOU
  *
  * 순서를 여기 두는 이유는 primaryRoomLease 와 같다. 호출부가 각자 정렬하면 같은 방이 화면마다
  * 다른 순서로 뜬다. 비거주를 뒤로 미는 것은 종전 순서(거주 먼저, 비거주 다음)를 그대로 지키기 위함이다.
+ *
+ * 층을 나누는 이유(디자인 패널 2026-08-11). 순수 입주 예정일 순이면 입주 예정일이 이미 지난 예약이
+ * 나중에 들어온 거주자보다 위로 올라간다. 이 화면의 질문은 '지금 누구에게 받아야 하나'라 지금 사는
+ * 사람이 먼저다. 층 위계를 primaryRoomLease 와 같게 맞춰 두면 '첫 행 = 주 계약'이 항상 참이 되어
+ * 두 규칙이 서로를 검증한다. 402호는 8/2 거주와 8/17 예약이라 날짜 순으로도 같은 결과지만,
+ * 규칙이 그것을 보장하지는 않았다.
  */
 export function roomLeaseRowOrder<T extends { status: string; moveInDate?: Date | string | null }>(
   leases: T[],
 ): T[] {
-  const occupying: string[] = OCCUPYING_STATUSES
+  const residing: string[] = CURRENT_OCCUPANCY_STATUSES
   return [
-    ...sortByMoveIn(leases.filter(l => occupying.includes(l.status))),
+    ...sortByMoveIn(leases.filter(l => residing.includes(l.status))),
+    ...sortByMoveIn(leases.filter(l => l.status === 'RESERVED')),
     ...sortByMoveIn(leases.filter(l => l.status === 'NON_RESIDENT')),
   ]
 }

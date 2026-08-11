@@ -581,29 +581,50 @@ export default function RoomsClient({
     return true
   })
 
+  // 같은 호실의 행은 어떤 정렬에서도 붙어 있어야 한다(디자인 패널 2026-08-11).
+  // 행이 계약 단위가 되면서 한 방에 행이 둘일 수 있는데, 기본 정렬이 '수납 상태'라 402호 거주(미납 그룹)와
+  // 입실 예약(예약 그룹)이 목록 양 끝으로 흩어진다. 그러면 같은 호실 번호가 두 군데 떠서 중복 등록으로 읽힌다.
+  // 그래서 정렬은 방 단위로 하고, 방 안 순서는 서버 정본(roomLeaseRowOrder)이 준 순서를 그대로 둔다.
+  // 상태 그룹만은 그 방에서 가장 급한 행을 따른다 — 한 계약이 미납이면 그 방은 미납 블록에 있어야 한다.
+  const roomFirstIndex = new Map<string, number>()
+  const roomLeadRow    = new Map<string, RoomStatus>()
+  const roomStatusGrp  = new Map<string, number>()
+  const statusGrpOf = (r: RoomStatus) => {
+    if (r.isVacant) return 5
+    if (!r.isPaid) return 0
+    if (isCheckoutRoom(r)) return 1
+    if (r.status === 'RESERVED') return 2
+    if (isAwaitingRoom(r)) return 3
+    return 4
+  }
+  filtered.forEach((r, i) => {
+    if (!roomLeadRow.has(r.roomId)) { roomLeadRow.set(r.roomId, r); roomFirstIndex.set(r.roomId, i) }
+    const g = statusGrpOf(r)
+    if (g < (roomStatusGrp.get(r.roomId) ?? Number.MAX_SAFE_INTEGER)) roomStatusGrp.set(r.roomId, g)
+  })
+  const rowSeq = new Map(filtered.map((r, i) => [r.leaseTermId ?? r.roomId, i]))
+
   const sorted = [...filtered].sort((a, b) => {
+    // 같은 방이면 서버가 정한 방 안 순서를 그대로 — 화면이 다시 정하면 화면마다 순서가 갈린다.
+    if (a.roomId === b.roomId) {
+      return (rowSeq.get(a.leaseTermId ?? a.roomId) ?? 0) - (rowSeq.get(b.leaseTermId ?? b.roomId) ?? 0)
+    }
     // 상태 열: 미납(0)→퇴실예정(1)→예약(2)→납부예정(3)→완납(4)→공실(5) 그룹 고정
     if (sortKey === 'status') {
-      const grpKey = (r: RoomStatus) => {
-        if (r.isVacant) return 5
-        if (!r.isPaid) return 0
-        if (isCheckoutRoom(r)) return 1
-        if (r.status === 'RESERVED') return 2
-        if (isAwaitingRoom(r)) return 3
-        return 4
-      }
-      const grpA = grpKey(a), grpB = grpKey(b)
+      const grpA = roomStatusGrp.get(a.roomId) ?? 5, grpB = roomStatusGrp.get(b.roomId) ?? 5
       if (grpA !== grpB) return grpA - grpB
     }
 
-    const va = getSortValue(a, sortKey, targetMonth)
-    const vb = getSortValue(b, sortKey, targetMonth)
+    const va = getSortValue(roomLeadRow.get(a.roomId) ?? a, sortKey, targetMonth)
+    const vb = getSortValue(roomLeadRow.get(b.roomId) ?? b, sortKey, targetMonth)
     let cmp = 0
     if (typeof va === 'number' && typeof vb === 'number') {
       cmp = va - vb
     } else {
       cmp = String(va).localeCompare(String(vb), 'ko')
     }
+    // 대표 행 값이 같은 두 방은 조회 순서(호실 오름차순)로 갈라 정렬이 흔들리지 않게 한다.
+    if (cmp === 0) cmp = (roomFirstIndex.get(a.roomId) ?? 0) - (roomFirstIndex.get(b.roomId) ?? 0)
     return sortDir === 'asc' ? cmp : -cmp
   })
 
@@ -978,13 +999,16 @@ export default function RoomsClient({
           ariaLabel="수납 상태 필터"
           value={filter}
           onChange={setFilter}
+          // 단위가 '실'에서 '명'으로 바뀐다(디자인 패널 2026-08-11). 칩은 필터라 숫자가 곧 그 목록의 행 수여야
+          // 하는데, 행은 방이 아니라 계약 단위다. 418호(거주 + 비거주)만으로도 이미 방 수보다 컸고 402·404·503
+          // 다중 계약이 들어오면 더 벌어진다. 공실만 방에만 있는 사실이라 '실'을 유지한다.
           options={[
-            { value: 'all',      label: `전체 ${occupied.length}실` },
-            { value: 'unpaid',   label: `미납 ${unpaidCount}실` },
-            { value: 'checkout', label: `퇴실 예정 ${checkoutCount}실` },
-            { value: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
-            { value: 'paid',     label: `완납 ${paidCount}실` },
-            { value: 'adjusted', label: `임시 조정 ${adjustedCount}실` },
+            { value: 'all',      label: `전체 ${occupied.length}명` },
+            { value: 'unpaid',   label: `미납 ${unpaidCount}명` },
+            { value: 'checkout', label: `퇴실 예정 ${checkoutCount}명` },
+            { value: 'awaiting', label: `납부 예정 ${awaitingCount}명` },
+            { value: 'paid',     label: `완납 ${paidCount}명` },
+            { value: 'adjusted', label: `임시 조정 ${adjustedCount}명` },
             { value: 'vacant',   label: `공실 ${vacants.length}실` },
           ]}
         />
@@ -994,6 +1018,7 @@ export default function RoomsClient({
           <span className="block">뱃지가 &lsquo;납부 유예&rsquo;로 바뀐 건도 받을 돈이라 집계에 그대로 남습니다. 지난달분을 미룬 경우는 미납에, 이번 달분을 미룬 경우는 납부 예정에 들어갑니다.</span>
           <span className="block mt-1.5">이번 달 납부일을 조정한 건은 &lsquo;임시 조정&rsquo;에서 모아 볼 수 있습니다.</span>
           <span className="block mt-1.5">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
+          <span className="block mt-1.5">숫자는 방이 아니라 계약 수입니다. 한 방에 계약이 둘이면 행도 둘이고, 같은 호실은 항상 붙여서 보입니다.</span>
         </InfoHint>
 
         {/* 공실 표시 · 열 설정 — flex-wrap 새 줄로 떨어져도 항상 우측 정렬되도록 ml-auto 그룹.
@@ -1558,9 +1583,10 @@ export default function RoomsClient({
 
       {/* 수납 모달은 전역 Prism 셸 (EntityModal/PaymentBody) 가 담당 */}
 
-      {/* 선택 모드 하단 바 — v2.0 §22 공용 SelectionPillBar */}
+      {/* 선택 모드 하단 바 — v2.0 §22 공용 SelectionPillBar.
+          selectedIds 는 leaseTermId 집합이라 세는 단위가 방이 아니라 계약이다 — 상단 칩과 같은 단위로. */}
       {selectMode && selectedIds.size > 0 && (
-        <SelectionPillBar count={selectedIds.size} unit="실" onClose={exitSelectMode}>
+        <SelectionPillBar count={selectedIds.size} unit="명" onClose={exitSelectMode}>
           <PillButton primary disabled={batchTargets.length === 0} onClick={openBatchPay}>
             일괄 수납 처리
           </PillButton>
