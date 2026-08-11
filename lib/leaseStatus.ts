@@ -414,8 +414,10 @@ export async function getPaidRevenue(
       },
       select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
     }),
+    // 양도인 귀속월 판정 — 보증금 record 는 월 청구 축이 아니라 제외한다(홈 allHistoricalPayments·
+    // 수납 화면 allRecordsThruMonth 둘 다 isDeposit:false 로 모은 뒤 isPrevOwner 를 본다).
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth, isPrevOwner: true },
+      where: { propertyId, targetMonth, isDeposit: false, isPrevOwner: true },
       select: { leaseTermId: true },
     }),
     getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth),
