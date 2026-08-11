@@ -79,3 +79,16 @@
 - [x] 검증: tsc · server-action-exports · verify:fast(금전 121/예약인상 72/납부일 33 등 전부) · verify:db · next build · 신규 lint 0
 - [x] 실증: 6·7·8·9월 전후 대조 차 0(독립 재현 스크립트), 46방 전수 대조 변경 3방, 감지망 전코드 발화 17건
 - [ ] 운영자 실기 확인(402호 황인정 행 복귀 등) 후 푸시 — 이 세션은 푸시 금지
+
+## 부가수익 분류 규칙: 보증금 안의 청소비 몫 (2026-08-11 운영자 정본)
+- [x] 1. 분류 정본 `splitWithheldDeposit` + recordDepositReturn 이 성격대로 최대 2행 생성 (2da8970)
+- [x] 2. 적용취소 대칭 — `extraIncomeIds` 배열, 조회 findMany, 확인창이 지울 카테고리 명시 (2da8970·9e7cf54)
+- [x] 3. `CLEANING_FEE_RECEIVED_WHERE` 로 '입실 수령분만' 6자리 수렴 + 청소비 잔고 이중 계상 제거 (3634ac5)
+- [x] 4. 안내 문구 6자리 `withheldDestinationLabel` 수렴 (9e7cf54)
+- [x] 5. 백필 2건 — 507호 먀 야다나 모에·509호 탄 타르 누 아예 '보증금 몰취' → '청소비'
+- [x] 6. 감지망 두 겹 — 게이트(소스 가드 + 합 대조) · verify:data(존량 오분류), 역주입 4종 발화 후 원복 (77c6200)
+- [x] 7. 테스트 — 분류 15케이스 추가(보증금 구성 회귀 13 → 28)
+- [x] 검증: tsc · server-action-exports · verify:fast · verify:db · next build · 변경 파일 신규 lint 0
+- [x] 실증: 4개월(6~9월) 전후 대조 전항 차 0, 바뀐 것은 8월 카테고리 분해뿐
+- [ ] **502호 남태우 재분류 승인** — 같은 클래스 1건, 파손 차감 미포함 확인 후 정정 (verify:data 발화 중)
+- [ ] 운영자 실기 확인 후 푸시 — 이 세션은 푸시 금지
