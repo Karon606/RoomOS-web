@@ -912,10 +912,15 @@ export default function TenantClient({
       openDepositRefundModal(fd, fromDetail)
       return
     }
+    // 이 저장으로 퇴실 예정일이 비워지는가 — 단기 해제(퇴실일 칸이 화면에서 사라짐)나 퇴실일 삭제가
+    // 조용히 지나가지 않게 알린다. 서버가 같은 사실을 이미 고지한 경우(거주중 복귀)는 겹치지 않게 건너뛴다.
+    const clearsMoveOut = !!(fd.get('prevExpectedMoveOut') as string | null)
+      && (fd.get('expectedMoveOut') as string | null) === ''
     startTransition(async () => {
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (res.notice) pushToast('info', res.notice)
+      else if (clearsMoveOut) pushToast('info', '퇴실 예정일도 함께 지웠습니다')
       // 단기 청구가 함께 조정된 저장 — 결과를 알리고 되돌릴 길을 같이 준다(적용취소 원칙).
       if (res.shortSync) {
         const { leaseTermId, diff, newRent, kind } = res.shortSync
@@ -3664,6 +3669,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         {/* 단기 희망 토글 — 체크 시 월 이용료/보증금/청소비 자동 입력 건너뛰고 수동 입력 강제 */}
         <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1">
           <input type="hidden" name="isShortTerm" value={isShortTerm ? 'true' : 'false'} />
+          {/* 퇴실 예정일의 유일한 전송 지점(거주 전·거주중). 서버는 필드 부재를 '보존'으로 읽으므로
+              (신고 aae0ab38 관행) 이 입력을 조건부로 그리면 화면에서 사라진 값이 DB에 그대로 남는다.
+              신고 c4b74c7d 가 그 경로다 — 단기 희망을 끄면 퇴실일 칸이 사라져 필드째 전송에서 빠졌고,
+              단기를 켠 채 날짜만 지워도 값이 있을 때만 그리던 탓에 역시 빠져 12/20 이 계속 남았다.
+              단기 해제 = 퇴실 예정일이 필요 없다는 뜻이므로 빈 값을 명시 전송해 함께 비운다.
+              퇴실 예정·퇴실 확정(showExitDate)은 아래 '퇴실일' 필드가 정본이라 여기서 손대지 않는다 —
+              퇴실 예정 처리 경로와 무접점. */}
+          {!showExitDate && <input type="hidden" name="expectedMoveOut" value={isShortTerm ? shortOut : ''} />}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isShortTerm} onChange={e => setIsShortTerm(e.target.checked)}
               className="w-4 h-4 accent-[var(--coral)]" />
@@ -3693,10 +3706,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                 </div>
-                {/* 문의·예약 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장. 거주 단계(showExitDate)는
-                    아래 '퇴실일' 필드가 같은 shortOut 을 쓰므로 name="expectedMoveOut" 은 항상 정확히 하나만 전송된다.
-                    roomIsOptional 게이트면 '예약 확정'자가 제외되어 입력해도 저장이 안 됐다(운영자 신고 2026-07-15) */}
-                {!showExitDate && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
+                {/* 여기 값(shortOut)은 이 박스 바깥 위쪽의 hidden expectedMoveOut 하나로만 전송된다.
+                    거주 단계(showExitDate)는 아래 '퇴실일' 필드가 같은 shortOut 을 쓰므로
+                    name="expectedMoveOut" 은 어느 상태에서도 정확히 하나만 전송된다. */}
                 {!selectedRoomId ? (
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
                 ) : short && days != null ? (
