@@ -1591,10 +1591,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .contract-paper .dc-body { font-size: 9.4pt; line-height: 1.75; color: var(--p-ink); }
         .contract-paper .dc-p { margin-bottom: 2.6mm; word-break: keep-all; }
         .contract-paper .dc-date { text-align: center; font-size: 10pt; margin: 9mm 0 5mm; }
-        .contract-paper .dc-sign { display: flex; align-items: baseline; justify-content: flex-end; gap: 3mm; font-size: 10pt; }
+        /* 서명 행 — 본계약 sign-line·seal-wrap 과 같은 세로 가운데 정렬. baseline 정렬이면 11mm
+           서명 이미지가 글자 기준선 위로 떠올라 이름 옆이 아니라 위에 붙는다(운영자 신고 2026-08-11). */
+        .contract-paper .dc-sign { display: flex; align-items: center; justify-content: flex-end; gap: 3mm; font-size: 10pt; }
         .contract-paper .dc-sign-lbl { color: var(--p-muted); }
         .contract-paper .dc-sign-line { min-width: 42mm; border-bottom: 0.5pt solid var(--p-rule); padding: 0 2mm 1mm; font-weight: 600; text-align: center; }
-        .contract-paper .dc-sign-seal { color: var(--p-muted); font-size: 9pt; }
+        .contract-paper .dc-sign-seal { color: var(--p-muted); font-size: 9pt; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
         .contract-paper .dc-to { text-align: center; font-size: 11pt; font-weight: 700; margin: 8mm 0 4mm; }
 
         .only-print { display: none; }
