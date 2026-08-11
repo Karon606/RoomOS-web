@@ -148,11 +148,33 @@ export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
  * React #418 하이드레이션 오류로 올라왔다(신고 d4bd3aa5·9c09ca50, KST 01:13 발생).
  */
 export function checkoutSubText(expectedMoveOut: string | null): string | null {
+  const label = checkoutDateLabel(expectedMoveOut)
+  if (!label) return null
+  const days = kstDaysUntil(expectedMoveOut!)
+  return days > 0 ? `${label} D-${days}` : days === 0 ? `오늘 ${label}` : `${label} ${Math.abs(days)}일 경과`
+}
+
+/**
+ * 날짜만 세우는 짧은 라벨 — "8/14 퇴실" / "8/17 입실". checkoutSubText 의 앞머리와 같은 문장이다.
+ *
+ * D-day 를 왜 떼는가 — §11 보조줄 예시("6/13 퇴실 D-3")는 목록 행처럼 폭이 넉넉한 자리의 문법이다.
+ * 홈 방 현황 타일은 320px 화면에서 글자가 놓이는 폭이 68px 뿐이라 D-day 를 붙이면 10.5px 글자
+ * 기준으로 잘린다. 잘린 날짜는 없는 날짜보다 나쁘므로 좁은 자리에서는 날짜만 세운다.
+ */
+export function checkoutDateLabel(expectedMoveOut: string | null): string | null {
   if (!expectedMoveOut) return null
   const [, mm, dd] = expectedMoveOut.split('-')
-  const days = kstDaysUntil(expectedMoveOut)
-  const label = `${Number(mm)}/${Number(dd)} 퇴실`
-  return days > 0 ? `${label} D-${days}` : days === 0 ? `오늘 ${label}` : `${label} ${Math.abs(days)}일 경과`
+  return `${Number(mm)}/${Number(dd)} 퇴실`
+}
+
+/**
+ * 입실 예정 짧은 라벨 — "8/17 입실". 퇴실 표기(checkoutDateLabel)와 대칭.
+ * 명사는 '입실' — RESERVED 를 부르는 말은 수납·호실관리·고객관리가 이미 '입실 예약'으로 통일돼 있다.
+ */
+export function moveInDateLabel(moveInDate: string | null): string | null {
+  if (!moveInDate) return null
+  const [, mm, dd] = moveInDate.split('-')
+  return `${Number(mm)}/${Number(dd)} 입실`
 }
 
 /**

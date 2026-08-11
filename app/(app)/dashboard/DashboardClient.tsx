@@ -39,6 +39,7 @@ import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { fmtRoomNo } from './dashUtils'
+import { checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number }[]; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; name: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; moveInDate: string | null; expectedMoveOut: string | null }[]; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
@@ -117,6 +118,26 @@ const CELL_NAME  = { fontSize: '0.65625rem', fontWeight: 500, lineHeight: 1.2 } 
 const CELL_MONEY = { fontSize: '0.65625rem', fontWeight: 600, opacity: 0.8 } as const
 // 타일 폭이 좁아 전체 이름은 잘린다 — 성을 뺀 이름만(다단어 외국인 이름은 두 번째 토큰).
 const shortName = (name: string) => name.split(' ')[1] ?? name
+
+// 타일 색 밴드 — 방이 아니라 사람 한 명이 색 하나를 갖는다(§03 상태 5단계 토큰 그대로).
+// 방 단위로 칠하던 시절엔 한 푼도 안 받은 예약 방(404·409·501·509)이 완납 초록으로 떴다 —
+// 예약은 미수 집계 대상이 아니라 '안 밀린 사람'으로 떨어졌기 때문이다.
+type BandTone = 'paid' | 'awaiting' | 'unpaid' | 'vacant'
+const BAND: Record<BandTone, { bg: string; fg: string }> = {
+  paid:     { bg: 'var(--status-paid-bg)',   fg: 'var(--status-paid-fg)'   },
+  awaiting: { bg: 'var(--status-await-bg)',  fg: 'var(--status-await-fg)'  },
+  unpaid:   { bg: 'var(--status-unpaid-bg)', fg: 'var(--status-unpaid-fg)' },
+  vacant:   { bg: 'var(--status-vacant-bg)', fg: 'var(--status-vacant-fg)' },
+}
+// 좌측 3px 팁 = 그 밴드의 fg (§03 '좌측 팁 = fg와 동일', statusTipColor 와 같은 값).
+// 색만으로 가르면 색약 사용자에게는 네 상태가 한 덩어리다 — 팁이 위치·굵기로 한 번 더 말한다.
+// 밴드 사이 1px 인셋 선은 같은 색 밴드가 붙었을 때(404호 파랑 둘) 경계를 세운다. 높이는 안 늘어난다.
+const bandStyle = (tone: BandTone, divided: boolean) => ({
+  background: BAND[tone].bg,
+  color:      BAND[tone].fg,
+  borderLeft: `3px solid ${BAND[tone].fg}`,
+  ...(divided ? { boxShadow: `inset 0 1px 0 color-mix(in srgb, ${BAND[tone].fg} 22%, transparent)` } : null),
+})
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
 
@@ -1807,8 +1828,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               const hasNonResident = !!r.nonResidentName
                               const nonResItem = r.isVacant && hasNonResident
                                 ? data.nonResidentItems.find(n => n.roomNo === r.roomNo) : null
-                              const isUnpaid   = r.isVacant ? (nonResItem?.payStatus === 'unpaid') : unpaidRooms.has(r.roomNo)
-                              const isAwaiting = r.isVacant ? (nonResItem?.payStatus === 'awaiting') : (!isUnpaid && awaitingRooms.has(r.roomNo))
                               // 사람 줄 — 사는 사람(또는 먼저 들어올 예약) + 다음 입실 예약(lib/leaseStatus 정본).
                               const people = r.isVacant ? [] : r.occupants
                               // 사람이 없을 때만 방 자체를 부른다.
@@ -1819,39 +1838,51 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               // 비거주 점유 방은 그 계약의 협의가(방 기본값이면 415호가 15만을 35만으로 부른다),
                               // 나머지는 방 기본 이용료 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
                               const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.baseRent
-                              const cellStyle = (r.isVacant && !hasNonResident)
-                                ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
-                                : isUnpaid
-                                  ? { background: 'var(--status-unpaid-bg)', color: 'var(--status-unpaid-fg)' }
-                                  : isAwaiting
-                                    ? { background: 'var(--status-await-bg)', color: 'var(--status-await-fg)' }
-                                    : (r.isVacant && hasNonResident)
-                                      ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
-                                      : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
+                              // 사람이 없는 타일만 방 단위로 칠한다 — 공실·비거주는 색을 가질 사람이 없다.
+                              // 방 단위 Set 은 여기 한 자리에만 남는다(사람이 있는 타일은 사람이 자기 색을 들고 온다).
+                              const isUnpaid   = r.isVacant ? (nonResItem?.payStatus === 'unpaid') : unpaidRooms.has(r.roomNo)
+                              const isAwaiting = r.isVacant ? (nonResItem?.payStatus === 'awaiting') : (!isUnpaid && awaitingRooms.has(r.roomNo))
+                              const roomTone: BandTone = (r.isVacant && !hasNonResident) ? 'vacant'
+                                : isUnpaid ? 'unpaid'
+                                  : isAwaiting ? 'awaiting'
+                                    : (r.isVacant && hasNonResident) ? 'vacant'
+                                      : 'paid'
                               return (
                                 <div
                                   key={r.roomNo}
                                   onClick={() => entityModal.open({ kind: 'room', roomId: r.id })}
-                                  className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
-                                  style={cellStyle}
+                                  className="rounded-[8px] flex flex-col cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                                 >
-                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(r.roomNo)}</span>
                                   {people.length === 0
-                                    ? <>
+                                    ? <div className="grow flex flex-col items-center justify-center px-1 py-2.5 gap-[3px]" style={bandStyle(roomTone, false)}>
+                                        <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(r.roomNo)}</span>
                                         <span className="truncate w-full text-center" style={CELL_NAME}>{roomLabel}</span>
                                         {roomAmount > 0 && <span className="tnum" style={CELL_MONEY}>{fmtWon(roomAmount)}</span>}
-                                      </>
-                                    : people.map((p, i) => (
-                                        // 줄 간격 3px, 사람 사이 9px — 이름·금액이 한 덩어리로 읽혀야 누가 얼마인지 안 갈린다.
-                                        <div key={p.leaseId} className="w-full flex flex-col items-center gap-[3px]" style={{ marginTop: i > 0 ? 6 : 0 }}>
-                                          {/* 아직 안 들어온 사람 — 이름만 세우면 사는 사람으로 읽힌다(신고 2026-08-11 의 오독 그대로). */}
-                                          {p.status === 'RESERVED' && (
-                                            <span className="truncate w-full text-center" style={{ ...CELL_NAME, opacity: 0.7 }}>{DASH_STATUS_LABEL.RESERVED}</span>
-                                          )}
-                                          <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
-                                          {p.amount > 0 && <span className="tnum" style={CELL_MONEY}>{fmtWon(p.amount)}</span>}
-                                        </div>
-                                      ))}
+                                      </div>
+                                    : people.map((p, i) => {
+                                        // 예약자는 납부 여부로 색을 가르지 않는다 — 아직 안 들어온 사람이라 '예정' 하나다.
+                                        const tone: BandTone = p.status === 'RESERVED' ? 'awaiting' : p.payStatus
+                                        // 퇴실 예정일은 사는 사람에게만 붙인다 — 예약자는 입실일이 먼저 할 말이다.
+                                        const exitLine = (p.status === 'ACTIVE' || p.status === 'CHECKOUT_PENDING')
+                                          ? checkoutDateLabel(p.expectedMoveOut) : null
+                                        return (
+                                          // 줄 간격 3px — 이름·금액이 한 덩어리로 읽혀야 누가 얼마인지 안 갈린다.
+                                          <div key={p.leaseId} className="grow flex flex-col items-center justify-center px-1 py-2.5 gap-[3px]" style={bandStyle(tone, i > 0)}>
+                                            {i === 0 && <span className="truncate w-full text-center font-bold" style={{ fontSize: '0.6875rem' }}>{fmtRoomNo(r.roomNo)}</span>}
+                                            {/* 아직 안 들어온 사람 — 이름만 세우면 사는 사람으로 읽힌다(신고 2026-08-11 의 오독 그대로). */}
+                                            {p.status === 'RESERVED' && (
+                                              <span className="truncate w-full text-center" style={{ ...CELL_NAME, opacity: 0.7 }}>
+                                                {moveInDateLabel(p.moveInDate) ?? DASH_STATUS_LABEL.RESERVED}
+                                              </span>
+                                            )}
+                                            <span className="truncate w-full text-center" style={CELL_NAME}>{shortName(p.name)}</span>
+                                            {p.amount > 0 && <span className="tnum" style={CELL_MONEY}>{fmtWon(p.amount)}</span>}
+                                            {exitLine && (
+                                              <span className="truncate w-full text-center" style={{ ...CELL_NAME, opacity: 0.7 }}>{exitLine}</span>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
                                 </div>
                               )
                             }
@@ -1891,11 +1922,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           const rentMan = n.rentAmount > 0 ? `${Math.round(n.rentAmount / 10000)}만` : null
                           const nameParts = n.tenantName.split(' ')
                           const shortName = nameParts.length >= 2 ? nameParts[1] : n.tenantName
-                          const cellStyle = n.payStatus === 'unpaid'
-                            ? { background: 'var(--status-unpaid-bg)', color: 'var(--status-unpaid-fg)' }
-                            : n.payStatus === 'awaiting'
-                              ? { background: 'var(--status-await-bg)', color: 'var(--status-await-fg)' }
-                              : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
+                          // 바로 위 방 현황 타일과 같은 클래스 — 색·좌측 팁을 같은 정본(bandStyle)에서 가져온다.
+                          const cellStyle = bandStyle(n.payStatus === 'unpaid' ? 'unpaid' : n.payStatus === 'awaiting' ? 'awaiting' : 'paid', false)
                           return (
                             <div
                               key={n.tenantId}
