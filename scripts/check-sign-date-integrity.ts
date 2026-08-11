@@ -47,15 +47,26 @@ async function main() {
 
   // 축 3. 원격 링크의 서명 시각과 lease 의 시각이 갈렸는가.
   //   둘은 같은 트랜잭션에서 같은 값으로 쓴다. 갈리면 그 트랜잭션이 깨진 것이다.
+  //
+  //   단, 대조 대상은 **현재 서명을 만든 링크 하나**다. 서명을 지우고 새 링크로 다시 받으면
+  //   (502호 2026-08-11 실사례 — 이름 정정 재서명) 옛 링크의 서명일은 정당한 과거 기록이라
+  //   lease 의 새 서명일과 갈리는 것이 정상이다. 그래서 닫힌 링크는 건너뛰고, 열린 링크
+  //   중에서도 계약마다 가장 최근에 서명된 것만 대조한다.
   const links = await prisma.contractShareLink.findMany({
-    where: { NOT: { signedAt: null } },
+    where: { NOT: { signedAt: null }, closedAt: null },
     select: {
-      id: true, signedAt: true,
+      id: true, signedAt: true, leaseTermId: true,
       tenant: { select: { name: true } },
       leaseTerm: { select: { signatureSignedAt: true } },
     },
   })
+  const latestByLease = new Map<string, (typeof links)[number]>()
   for (const k of links) {
+    if (!k.signedAt) continue
+    const cur = latestByLease.get(k.leaseTermId)
+    if (!cur || new Date(k.signedAt) > new Date(cur.signedAt!)) latestByLease.set(k.leaseTermId, k)
+  }
+  for (const k of latestByLease.values()) {
     const mine = k.leaseTerm?.signatureSignedAt
     if (!mine || !k.signedAt) continue
     if (kstYmdStr(new Date(mine)) !== kstYmdStr(new Date(k.signedAt))) {
