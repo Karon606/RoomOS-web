@@ -35,6 +35,10 @@ export type CleaningRow = {
   memo: string | null
   cost: number | null
   fromCleaningFund: boolean
+  // 소프트삭제 시각. 살아 있는 행은 null 이다.
+  // 영업장 목록 조회만 삭제분을 함께 실어 온다 — 복원 진입점('삭제됨 보기')이 그 화면에 있고,
+  // 그 6건은 토스트 6초를 놓치면 닿을 길이 없었다(§16 은 토스트 밖 진입점을 요구한다).
+  deletedAt: string | null
 }
 
 // 받은 청소비 잔고 — **파생값이라 어디에도 저장하지 않는다.**

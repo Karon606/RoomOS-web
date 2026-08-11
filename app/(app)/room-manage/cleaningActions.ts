@@ -41,14 +41,18 @@ function pickLatestCheckoutLease(rows: CheckoutLeaseCandidate[]): string | null 
  * 조회 조건만 다르고 금액 이어붙이기·필드 변환은 하나뿐이라, 사본을 두면 방 상세와 목록이
  * 같은 건을 다르게 말하기 시작한다(금액은 지출에서 읽는 파생값이라 특히 갈리기 쉽다).
  */
-async function loadCleaningRows(where: { propertyId: string; roomId?: string }): Promise<CleaningRow[]> {
+async function loadCleaningRows(
+  where: { propertyId: string; roomId?: string },
+  opts: { includeDeleted?: boolean } = {},
+): Promise<CleaningRow[]> {
   const rows = await prisma.roomCleaning.findMany({
-    where: { ...where, deletedAt: null },
+    where: { ...where, ...(opts.includeDeleted ? {} : { deletedAt: null }) },
     orderBy: [{ doneDate: 'desc' }, { scheduledDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, roomId: true, leaseTermId: true,
       reason: true, status: true, scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true,
+      deletedAt: true,
       room: { select: { roomNo: true } },
     },
   })
@@ -69,6 +73,7 @@ async function loadCleaningRows(where: { propertyId: string; roomId?: string }):
     // 금액은 지출에서 읽는다. 여기 복사해 두면 지출에서 고쳤을 때 갈린다.
     cost: costById[r.id] ?? null,
     fromCleaningFund: r.fromCleaningFund,
+    deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
   }))
 }
 
@@ -85,10 +90,14 @@ export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
  * 만들어야 세그먼트를 바꿀 때마다 숫자가 흔들리지 않는다 — 서버가 미리 잘라 내려주면 '전체'와
  * '이번 달' 두 질문에 답할 재료가 화면에 동시에 있지 못한다. 상태(status)와 기간(scheduledDate·
  * doneDate)은 행마다 실려 나가므로 판정은 화면이 한다.
+ *
+ * **삭제분도 함께 실어 보낸다**(deletedAt 로 갈린다). 그 화면의 '삭제됨 보기'가 소프트삭제를 되살릴
+ * 유일한 문이고(§16 은 토스트 6초 밖 진입점을 요구한다), 삭제분만 따로 받아 오면 조회가 한 벌 더
+ * 늘어 같은 사실을 두 축으로 읽게 된다. 살아 있는 행만 필요한 자리는 화면에서 한 번 거른다.
  */
 export async function getPropertyCleanings(): Promise<CleaningRow[]> {
   const { propertyId } = await requirePropertyAccess()
-  return loadCleaningRows({ propertyId })
+  return loadCleaningRows({ propertyId }, { includeDeleted: true })
 }
 
 /**
@@ -121,33 +130,6 @@ export async function getRecentCleaningPerformers(): Promise<string[]> {
     out.push(name)
   }
   return out.slice(0, 5)
-}
-
-/**
- * 영업장 전체의 '아직 안 끝난' 청소 — 호실 카드 배지·필터가 쓴다. roomId 를 키로 돌려준다.
- *
- * 한 방에 예정이 여럿이면 **가장 이른 예정일** 하나만 남긴다. 카드 보조줄은 한 줄이라
- * 어느 건을 말하는지 여기서 정해야 한다 — 조회 순서에 맡기면(종전: 마지막 행이 이김)
- * 같은 방이 새로고침마다 다른 날을 말할 수 있다. 운영자가 먼저 마주칠 일정이 가장 이른 것이다.
- *
- * 예정일이 없는 건(등록 때 날짜를 비울 수 있다)은 날짜 있는 건에 밀린다. 그런 건만 남으면
- * scheduledDate 가 null 로 나가고, 화면은 보조줄 없이 배지만 그린다 — 없는 날짜는 짓지 않는다.
- */
-export async function getOpenCleaningsByRoom(): Promise<Record<string, { status: CleaningStatus; scheduledDate: string | null }>> {
-  const { propertyId } = await requirePropertyAccess()
-  const rows = await prisma.roomCleaning.findMany({
-    where: { propertyId, deletedAt: null, status: 'PLANNED' },
-    select: { roomId: true, status: true, scheduledDate: true },
-  })
-  const out: Record<string, { status: CleaningStatus; scheduledDate: string | null }> = {}
-  for (const r of rows) {
-    const next = { status: r.status as CleaningStatus, scheduledDate: ymd(r.scheduledDate) }
-    const cur = out[r.roomId]
-    // 'YYYY-MM-DD' 는 사전순이 곧 날짜순이라 문자열 비교로 이르고 늦음이 갈린다.
-    if (cur && (!next.scheduledDate || (cur.scheduledDate && cur.scheduledDate <= next.scheduledDate))) continue
-    out[r.roomId] = next
-  }
-  return out
 }
 
 export async function createCleaning(input: {

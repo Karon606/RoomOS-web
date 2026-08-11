@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect } from 'react'
-import { getOpenCleaningsByRoom } from './cleaningActions'
-import {
-  CLEANING_REASON_LABEL, CLEANING_PERFORMER_LABEL, type CleaningRow, type CleaningStatus,
-} from './cleaningConstants'
+import type { CleaningRow, CleaningStatus } from './cleaningConstants'
+import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/CleaningRowBody'
+import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { fmtDateDot as fmtDate, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -237,101 +236,115 @@ function suggestBaseRent(rooms: Room[], type: string, tier: string, windowType: 
 // 영업장 전체 청소를 한 화면에서 본다(2026-08-12 구조 개편). 종전에는 방 상세를 하나씩 열어야만
 // 청소 이력이 보여서 "이번 달 청소비를 얼마 썼나"에 답할 자리가 없었다.
 //
-// 행 문법은 방 상세의 RoomCleaningPanel 정본을 그대로 쓴다 — 같은 사실을 두 화면이 다르게 그리면
-// 그 자체가 이질감이다. 다른 것은 둘뿐이다. 앞에 호실 번호가 서고(교차 목록이라 그것이 식별자다),
-// 날짜는 정본 포맷터 fmtMD 를 쓴다(lib/fmtDate — 목록의 짧은 인라인 규약).
+// **관리 화면이지 뷰어가 아니다**(운영자 지적 2026-08-12 — "그 어디에도 수정하거나 접속할 수 없다").
+// 처음 시공은 조작을 빼고 호실번호 클릭만 뒀는데, 목록에서 본 것을 목록에서 못 고치면 방 상세를
+// 하나씩 여는 종전 동선으로 되돌아간다. 그렇다고 조작을 복제하면 확인창·토스트·적용취소가 두 벌이
+// 되므로, 행 자체를 정본 컴포넌트(components/cleaning/CleaningRowBody)로 만들어 방 상세 패널과
+// **같은 코드**를 부른다. 등록 폼도 같은 정본(CleaningPlanForm)이고 여기서는 호실을 먼저 고른다.
 //
-// 조작은 두지 않는다. 완료·되돌리기·삭제는 방 상세 패널 한 곳이 정본이고, 호실 번호를 누르면
-// 카드 클릭과 같은 동선으로 그 방이 열린다. 조작을 복제하면 확인창·토스트·적용취소를 두 벌
-// 관리하게 되고 그 순간 둘이 갈린다.
-const CLEANING_STATUS_LABEL: Record<CleaningStatus, string> = { PLANNED: '예정', DONE: '완료', SKIPPED: '안 함' }
-const cleaningTone = (s: CleaningStatus): BadgeTone => (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
+// 목록 껍데기는 형제 목록 문법이다 — cream 카드 + divide-y(보증금·수납 목록), 합계는 목록 위
+// 액션 줄 좌측(지출 관리), 등록은 Modal(지출·수익 등록). 날짜는 목록·표 정본 fmtDateDot 이다.
+type CleaningSeg = CleaningStatus | '' | 'DELETED'
 
-function CleaningView({ rows, targetMonth, onOpenRoom }: {
+function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onOpenRoom, onChanged }: {
   rows: CleaningRow[]
+  rooms: { id: string; roomNo: string }[]
   targetMonth: string
+  recentPerformers: string[]
+  canEdit: boolean
   onOpenRoom: (roomId: string) => void
+  onChanged: () => void
 }) {
-  const [status, setStatus] = useState<CleaningStatus | ''>('PLANNED')
-  const counts = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
-  const shown = status ? rows.filter(r => r.status === status) : rows
+  const [segRaw, setSeg] = useState<CleaningSeg>('PLANNED')
+  const [adding, setAdding] = useState(false)
+
+  // 살아 있는 행과 삭제분을 한 번에 받는다(getPropertyCleanings). 아래 모든 집계는 살아 있는 것만 센다.
+  const live = rows.filter(r => !r.deletedAt)
+  const deleted = rows.filter(r => r.deletedAt)
+  // 마지막 삭제분을 되살리면 그 세그먼트 자체가 사라진다. 선택값을 그대로 두면 아무것도 안 켜진
+  // 컨트롤이 남으므로 '전체'로 떨군다.
+  const seg: CleaningSeg = segRaw === 'DELETED' && deleted.length === 0 ? '' : segRaw
+  const counts = live.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
+
+  // 예정은 **임박한 것부터**다. 서버 정렬(최근순)은 완료 이력에는 맞지만 예정에는 거꾸로라
+  // 기본 세그먼트에서 가장 먼 날이 맨 위에 섰다(형제: 퇴실 예정 퇴실일 asc, 입실 예정 입주일 asc).
+  // 날짜 없는 건은 뒤로 민다 — 'YYYY-MM-DD' 는 사전순이 곧 날짜순이다.
+  const byScheduledAsc = (a: CleaningRow, b: CleaningRow) =>
+    (a.scheduledDate ?? '9999').localeCompare(b.scheduledDate ?? '9999')
+  const shown = seg === 'DELETED' ? deleted
+    : seg === 'PLANNED' ? live.filter(r => r.status === 'PLANNED').sort(byScheduledAsc)
+    : seg ? live.filter(r => r.status === seg)
+    : live
 
   // 합계는 **세그먼트와 무관하게** 이번 달 전체에서 낸다. 필터에 따라 움직이면 같은 이름의 숫자가
   // 화면 조작마다 달라져 "이번 달 청소비"라는 이름이 거짓이 된다.
   // '받은 청소비로 부담'은 그중 일부다(운영 부담이 아닌 몫).
-  const monthDone = rows.filter(r => r.status === 'DONE' && (r.doneDate ?? '').slice(0, 7) === targetMonth)
+  const monthDone = live.filter(r => r.status === 'DONE' && (r.doneDate ?? '').slice(0, 7) === targetMonth)
   const monthCost = monthDone.reduce((s, r) => s + (r.cost ?? 0), 0)
   const monthFunded = monthDone.filter(r => r.fromCleaningFund).reduce((s, r) => s + (r.cost ?? 0), 0)
 
+  const segLabel = seg === 'DELETED' ? '삭제됨'
+    : seg ? CLEANING_STATUS_LABEL[seg] : ''
+
   return (
     <div className="space-y-3">
-      {/* 상태 세그먼트 — v2.0 §23 공용 SegmentedControl(같은 화면 호실 상태 필터와 같은 문법) */}
-      <SegmentedControl<CleaningStatus | ''>
+      {/* 액션 줄 — 합계 좌측, CTA 우측 ml-auto(지출 관리와 같은 문법). 합계를 목록 위로 올렸다:
+          형제 목록은 전부 위에 있고, 아래에 두면 긴 목록에서 스크롤해야 보인다. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-[var(--warm-muted)] num">
+          이번 달 청소비 <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={monthCost} /></span>
+          {' · 받은 청소비로 부담 '}
+          <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={monthFunded} /></span>
+        </p>
+        {canEdit && (
+          <div className="ml-auto">
+            <Btn variant="primary" size="md" onClick={() => setAdding(true)}>+ 청소 예정 등록</Btn>
+          </div>
+        )}
+      </div>
+
+      {/* 상태 세그먼트 — v2.0 §23 공용 SegmentedControl(같은 화면 호실 상태 필터와 같은 문법).
+          '삭제됨'은 있을 때만 선다. 소프트삭제를 되살릴 문이 토스트 6초뿐이었고(§16 은 그 밖의
+          진입점을 요구한다), 그 사이 지운 것들은 화면에서 닿을 길이 없었다. */}
+      <SegmentedControl<CleaningSeg>
         size="sm"
         scroll
         ariaLabel="청소 상태 필터"
-        value={status}
-        onChange={setStatus}
+        value={seg}
+        onChange={setSeg}
         options={[
           { value: 'PLANNED', label: `예정 ${counts.PLANNED ?? 0}` },
           { value: 'DONE',    label: `완료 ${counts.DONE ?? 0}` },
           { value: 'SKIPPED', label: `안 함 ${counts.SKIPPED ?? 0}` },
-          { value: '',        label: `전체 ${rows.length}` },
+          { value: '',        label: `전체 ${live.length}` },
+          ...(deleted.length > 0 ? [{ value: 'DELETED' as const, label: `삭제됨 ${deleted.length}` }] : []),
         ]}
       />
 
       {shown.length === 0 ? (
         <EmptyState
-          title={status ? `'${CLEANING_STATUS_LABEL[status]}' 상태인 청소가 없습니다` : '청소 기록이 없습니다'}
-          description={status ? '다른 상태를 눌러 보세요.' : '방 상세의 청소 이력에서 예정을 등록할 수 있습니다.'}
+          title={segLabel ? `'${segLabel}' 상태인 청소가 없습니다` : '청소 기록이 없습니다'}
+          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소 예정 등록으로 시작할 수 있습니다.'}
         />
       ) : (
-        <ul className="space-y-1.5">
-          {shown.map(r => (
-            <li key={r.id} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {/* 호실 번호가 그 방으로 가는 문 — 카드 클릭과 같은 동선(형제 목록의 이름 버튼 문법) */}
-                <button type="button" onClick={() => onOpenRoom(r.roomId)}
-                  className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
-                  {fmtRoomNo(r.roomNo)}
-                </button>
-                <StatusBadge tone={cleaningTone(r.status)}>{CLEANING_STATUS_LABEL[r.status]}</StatusBadge>
-                <span className="text-xs text-[var(--warm-dark)]">{CLEANING_REASON_LABEL[r.reason]}</span>
-                <span className="text-xs text-[var(--warm-muted)] num">
-                  {fmtMD(r.status === 'DONE' ? r.doneDate : r.scheduledDate)}
-                </span>
-                {(r.performer || r.performerName) && (
-                  <span className="text-xs text-[var(--warm-muted)]">
-                    {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
-                    {r.performerName ? ` · ${r.performerName}` : ''}
-                  </span>
-                )}
-                {r.cost != null && r.cost > 0 && (
-                  r.status === 'DONE' ? (
-                    <span className="text-xs font-medium text-[var(--warm-dark)] num">{r.cost.toLocaleString()}원</span>
-                  ) : (
-                    <span className="text-xs text-[var(--warm-muted)] num">기록된 지출 {r.cost.toLocaleString()}원</span>
-                  )
-                )}
-                {/* 표식은 실제로 부담한 금액이 있을 때만 — 지출이 지워졌거나 0 이면 부담액이 없다(결함 D5) */}
-                {r.fromCleaningFund && r.cost != null && r.cost > 0 && (
-                  <span className="text-xs text-[var(--warm-muted)]">받은 청소비로 부담</span>
-                )}
-              </div>
-              {r.memo && (
-                <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words">{r.memo}</p>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
+          <ul className="divide-y divide-[var(--warm-border)]/50">
+            {shown.map(r => (
+              <li key={r.id} className="px-4 py-3">
+                <CleaningRowBody row={r} recentPerformers={recentPerformers} canEdit={canEdit}
+                  deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      {/* 이번 달 합계 — 방 상세에서는 낼 수 없던 숫자다(방 하나만 보이므로). */}
-      <p className="text-xs text-[var(--warm-muted)] num">
-        이번 달 청소비 <span className="font-semibold text-[var(--warm-dark)]">{monthCost.toLocaleString()}원</span>
-        {' · 받은 청소비로 부담 '}
-        <span className="font-semibold text-[var(--warm-dark)]">{monthFunded.toLocaleString()}원</span>
-      </p>
+      {/* 등록 — 형제(지출·수익 등록)와 같은 Modal 문법. 폼 자체는 방 상세 패널과 같은 정본이고
+          여기서만 호실 선택이 앞에 붙는다. */}
+      <SharedModal open={adding} onClose={() => setAdding(false)} title="청소 예정 등록">
+        <CleaningPlanForm rooms={rooms}
+          onDone={() => { setAdding(false); onChanged() }} onCancel={() => setAdding(false)} />
+      </SharedModal>
     </div>
   )
 }
@@ -339,14 +352,18 @@ function CleaningView({ rows, targetMonth, onOpenRoom }: {
 export default function RoomManageClient({
   initialRooms,
   initialCleanings,
+  recentPerformers,
   roomTypes,
   roomTiers,
   windowTypes,
   directions,
 }: {
   initialRooms: Room[]
-  // 영업장 전체 청소 이력 — '청소' 뷰의 재료. initialRooms 와 같은 이유로 prop 을 직접 쓴다.
+  // 영업장 전체 청소 이력(삭제분 포함) — '청소' 뷰와 카드 배지의 공통 재료.
+  // initialRooms 와 같은 이유로 prop 을 직접 쓴다.
   initialCleanings: CleaningRow[]
+  // 최근에 맡긴 업체·사람 — 청소 완료 폼 이름 칸 선택지. 서버에서 함께 받아 클라 왕복을 없앤다.
+  recentPerformers: string[]
   roomTypes: string[]
   roomTiers: string[]
   windowTypes: string[]
@@ -359,6 +376,8 @@ export default function RoomManageClient({
   // #12: initialRooms를 useState로 캡처하면 router.refresh() 후에도 갱신 안 됨(즉시 적용·편집 미반영).
   //      prop을 직접 사용 → revalidatePath+router.refresh 페어로 즉시 반영. (feedback_auto_refresh)
   const rooms = initialRooms
+  // 살아 있는 청소 — 카드 배지·뷰 탭 접미 N 이 함께 딛는 한 벌(서버가 삭제분까지 실어 온다).
+  const liveCleanings = initialCleanings.filter(c => !c.deletedAt)
   // 단기 퇴실 도래 판정의 기준월 — 이 화면은 월 선택이 없으므로 '이번 달'(KST) 고정.
   const targetMonth = kstMonthStr()
   const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
@@ -481,21 +500,28 @@ export default function RoomManageClient({
   // 청소 예정이 남은 방 — "어떤 방이 청소 안 됐는지 헷갈린다"(신고 b21e4e98)에 한눈에 답한다.
   // 상태 판정에 섞지 않는다. 청소는 거주 상태와 축이 다르고, 섞으면 getRoomStatus 한 함수가
   // 두 가지 일을 하게 된다. 배지로만 얹고 필터는 별도 칩으로 둔다.
-  const [openCleanings, setOpenCleanings] = useState<Record<string, { scheduledDate: string | null }>>({})
-  // rooms 를 의존에 둔다. 청소 처리가 revalidatePath('/room-manage') 를 부르면 서버가 다시 그리고
-  // rooms 참조가 바뀌므로 배지가 따라온다. 빈 배열로 두면 모달에서 완료해도 카드가 그대로다.
-  const [cleaningLoadFailed, setCleaningLoadFailed] = useState(false)
-  useEffect(() => {
-    // 실패를 삼키지 않는다. 이번 장애(2026-08-05) 때 서버 액션이 전부 죽었는데도 이 화면이 조용했던
-    // 이유가 빈 catch 였다. 고장과 '청소 예정 없음' 이 화면에서 구분돼야 한다.
-    void getOpenCleaningsByRoom()
-      .then(v => { setOpenCleanings(v); setCleaningLoadFailed(false) })
-      .catch(() => setCleaningLoadFailed(true))
-  }, [rooms])
+  //
+  // **재료는 '청소' 뷰와 같은 한 벌이다**(2026-08-12 수렴). 종전에는 카드 배지만 별도 서버 액션을
+  // 클라에서 다시 불러 같은 사실을 두 축으로 읽었고, 목록에서 완료 처리해도 배지가 한 박자 늦거나
+  // 다른 날을 말할 수 있었다. 예정이 여럿인 방은 **가장 이른 예정일** 하나만 남긴다 — 보조줄은
+  // 한 줄이라 어느 건인지 여기서 정해야 하고, 운영자가 먼저 마주칠 일정이 가장 이른 것이다.
+  // 예정일 없는 건(등록 때 비울 수 있다)은 날짜 있는 건에 밀리고, 그런 건만 남으면 날짜 없이
+  // 배지만 그린다 — 없는 날짜는 짓지 않는다.
+  const openCleanings = (() => {
+    const out: Record<string, { scheduledDate: string | null }> = {}
+    for (const c of liveCleanings) {
+      if (c.status !== 'PLANNED') continue
+      const cur = out[c.roomId]
+      // 'YYYY-MM-DD' 는 사전순이 곧 날짜순이라 문자열 비교로 이르고 늦음이 갈린다.
+      if (cur && (!c.scheduledDate || (cur.scheduledDate && cur.scheduledDate <= c.scheduledDate))) continue
+      out[c.roomId] = { scheduledDate: c.scheduledDate }
+    }
+    return out
+  })()
   const [cleaningOnly, setCleaningOnly] = useState(false)
   // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<'rooms' | 'cleaning'>('rooms')
-  const plannedCleaningCount = initialCleanings.filter(c => c.status === 'PLANNED').length
+  const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
 
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -1078,7 +1104,10 @@ export default function RoomManageClient({
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
         {/* ml-auto — 좁은 폭에서 두 줄로 접힐 때도 버튼군이 우측 정렬(월 셀렉터 우측 통일 지적과 같은 클래스). */}
-        {canEditUi && (
+        {/* 호실 뷰에서만 — 둘 다 호실에 대한 동작이라 청소 뷰에서는 할 일이 아니고, 청소 뷰의
+            '+ 청소 예정 등록'까지 서면 헤더 CTA 가 셋이 된다(§23 은 1~2개). 형제(수납 관리)도
+            탭별 CTA 를 섹션 안에 둔다. */}
+        {canEditUi && viewTab === 'rooms' && (
         <div className="flex items-center gap-2 shrink-0 ml-auto">
           <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>
             공용·외관 사진
@@ -1090,10 +1119,12 @@ export default function RoomManageClient({
         )}
       </div>
 
-      {/* 청소 뷰 — 영업장 전체 청소 목록. 조작은 방 상세 패널이 정본이라 여기엔 두지 않는다. */}
+      {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
-        <CleaningView rows={initialCleanings} targetMonth={targetMonth}
-          onOpenRoom={roomId => { entityModal.open({ kind: 'room', roomId }); setError('') }} />
+        <CleaningView rows={initialCleanings} rooms={rooms} targetMonth={targetMonth}
+          recentPerformers={recentPerformers} canEdit={canEditUi}
+          onOpenRoom={roomId => { entityModal.open({ kind: 'room', roomId }); setError('') }}
+          onChanged={() => router.refresh()} />
       )}
 
       {viewTab === 'rooms' && <>
@@ -1268,11 +1299,8 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {cleaningLoadFailed && (
-        <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'var(--danger-bg)', color: 'var(--danger-fg)' }}>
-          청소 상태를 불러오지 못했습니다. 새로고침해도 같으면 알려 주세요.
-        </p>
-      )}
+      {/* 청소 조회 실패 안내는 걷었다 — 배지 재료가 서버 페이지와 같은 한 벌이 되면서
+          '조회만 따로 실패하는' 상태가 사라졌다. 실패하면 페이지가 실패한다. */}
 
       {/* 청소 필요만 — 상태 칩과 축이 달라 별도 토글이다. 상태 칩에 섞으면 '공실이면서 청소 필요'를 못 고른다. */}
       {Object.keys(openCleanings).length > 0 && (
