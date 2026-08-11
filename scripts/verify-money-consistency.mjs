@@ -8,6 +8,17 @@ import { PrismaPg } from '@prisma/adapter-pg'
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 const violations = []
 
+// 카테고리·결제수단 문자열은 lib/incomeCategories 가 정본이나 이 스크립트는 .mjs 라 TS 를 못 읽는다.
+// 사본이 갈리지 않게 아래 소스 가드(규칙 6)가 정본에 같은 문자열이 있는지 함께 본다.
+const DEPOSIT_SOURCED_PAY_METHOD = '보유 보증금'
+const CLEANING_CATEGORY = '청소비'
+// '입실 때 별도로 받은 청소비' 만 — 퇴실 정산이 보증금 청소비 몫으로 만든 분은 뺀다(2026-08-11).
+// NOT 만 쓰면 payMethod NULL 행까지 떨어진다(SQL 3치 논리) — 정본과 같은 OR 문법.
+const CLEANING_RECEIVED_WHERE = {
+  category: CLEANING_CATEGORY,
+  OR: [{ payMethod: null }, { payMethod: { not: DEPOSIT_SOURCED_PAY_METHOD } }],
+}
+
 // ── 소스 가드 ──────────────────────────────────────────────
 const roomsActions = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
 if (!roomsActions.includes('reservedExpected = discountedRent')) {
@@ -136,6 +147,72 @@ for (const r of legacyForfeit) {
 // check-standalone-scroll 의 lockBackgroundScroll).
 if (!/:\s*FORFEIT_CATEGORY/.test(tenantsActions)) {
   violations.push("[소스] 몰취 카테고리가 lib/incomeCategories 정본을 안 탄다 — 문자열이 흩어지면 개명 때 일부만 바뀐다")
+}
+
+// 6-2. 퇴실 미반환분의 성격 분류 (운영자 정본 2026-08-11).
+//
+//   "보증금 5만원에 이미 청소비 2만원이 포함되어 있었고 난 3만원을 돌려준 거야. 즉 정상적인 청소비를
+//    받은 거야. 보증금 몰취는 시설물이 파손되거나 했을 때 (잔여) 3만원에서 차감할 때 몰취가 되는 거지."
+//
+//   보증금 안의 청소비 몫은 '청소비', 그 몫을 넘는 차감만 '보증금 몰취'다. 종전에는 사유와 무관하게
+//   전부 몰취로 찍혀 정상 청소비 수취 3건이 손해배상성 잡수입으로 서 있었다.
+//   여기(게이트)는 **구조 정합**만 본다 — 미반환분 부가수익 합이 DepositRefund.withheldAmount 와
+//   어긋나면 분리 기록이 깨진 것이다(한쪽만 만들어졌거나, 적용취소가 한 행만 지웠거나).
+//   분류가 맞는지(청소비 몫이 몰취로 잡혀 있는지)는 verify:data 쪽 비차단 축이 본다.
+{
+  const refunds = await prisma.depositRefund.findMany({
+    select: {
+      id: true, leaseTermId: true, withheldAmount: true, date: true,
+      leaseTerm: { select: { cleaningFee: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } } },
+    },
+  })
+  for (const r of refunds) {
+    if (r.withheldAmount <= 0) continue
+    const who = `${r.leaseTerm?.room?.roomNo ?? '-'}호 ${r.leaseTerm?.tenant?.name ?? '?'}`
+    const rows = await prisma.extraIncome.findMany({
+      where: { leaseTermId: r.leaseTermId, payMethod: DEPOSIT_SOURCED_PAY_METHOD, deletedAt: null },
+      select: { category: true, amount: true },
+    })
+    // 입실 때 따로 받았으면 퇴실 공제는 0 이다(계약서 §2-4 either/or) — 판정은 코드와 같은 규칙.
+    const receivedAtMoveIn = await prisma.extraIncome.aggregate({
+      where: { leaseTermId: r.leaseTermId, ...CLEANING_RECEIVED_WHERE }, _sum: { amount: true },
+    })
+    const cleaningPortion = (receivedAtMoveIn._sum.amount ?? 0) > 0 ? 0 : (r.leaseTerm?.cleaningFee ?? 0)
+    const expectedCleaning = Math.min(r.withheldAmount, cleaningPortion)
+
+    const gotCleaning = rows.filter(x => x.category === CLEANING_CATEGORY).reduce((s, x) => s + x.amount, 0)
+    const gotOther    = rows.filter(x => x.category !== CLEANING_CATEGORY).reduce((s, x) => s + x.amount, 0)
+    // 분류 자체(청소비 몫이 몰취로 잡혀 있는가)는 여기서 막지 않는다 — 과거분 재분류는 운영자가
+    // '파손 차감이 섞이지 않았다'를 확인해 줘야 하는 판단이라, 게이트로 두면 확인될 때까지 모든
+    // 배포가 막히는 영구 실패 게이트가 된다(G-4 2026-08-03 과 같은 이유).
+    // 그 축은 scripts/check-withhold-classification.mjs 가 verify:data 로 매번 보여 준다.
+    void expectedCleaning
+    if (rows.length > 0 && gotCleaning + gotOther !== r.withheldAmount) {
+      violations.push(`[데이터] ${who} ${r.date.toISOString().slice(0, 10)} — 미반환 ${r.withheldAmount.toLocaleString()}원인데 보증금 출처 부가수익 합이 ${(gotCleaning + gotOther).toLocaleString()}원이다(행 ${rows.length}개). 분리 기록이나 적용취소가 한쪽만 됐다`)
+    }
+  }
+}
+// 소스 가드 — 분류 정본과 '입실 수령분만' 조건이 사라지면 이 규칙의 전제가 무너진다.
+{
+  const incomeCats = readFileSync('lib/incomeCategories.ts', 'utf8')
+  if (!incomeCats.includes(`'${DEPOSIT_SOURCED_PAY_METHOD}'`) || !incomeCats.includes('CLEANING_FEE_RECEIVED_WHERE')) {
+    violations.push('[소스] lib/incomeCategories 에 보증금 출처 표식·입실 수령 조건 정본이 없다 — 이 스크립트의 사본과 갈린다')
+  }
+  if (!readFileSync('lib/depositComposition.ts', 'utf8').includes('export function splitWithheldDeposit')) {
+    violations.push('[소스] 미반환분 분류 정본(splitWithheldDeposit)이 사라졌다 — 청소비 몫이 다시 몰취로 뭉친다')
+  }
+  if (!tenantsActions.includes('splitWithheldDeposit(withheld')) {
+    violations.push('[소스] recordDepositReturn 이 미반환분을 성격대로 가르지 않는다 — 정상 청소비 수취가 몰취로 기록된다')
+  }
+  // 청소비 몫을 세는 자리가 퇴실 정산 파생분까지 '입실 수령' 으로 읽으면 either/or 가 뒤집힌다.
+  for (const f of ['app/(app)/tenants/actions.ts', 'app/(app)/finance/actions.ts', 'app/(app)/rooms/actions.ts',
+                   'app/(app)/dashboard/page.tsx', 'app/rent-receipt/[tenantId]/actions.ts']) {
+    const src = readFileSync(f, 'utf8')
+    // 전개 형태로 본다 — 이름만 스치는 오탐/오통과(예: 접미사 붙은 변수)를 피한다.
+    if (!src.includes('...CLEANING_FEE_RECEIVED_WHERE')) {
+      violations.push(`[소스] ${f} 이 입실 수령 청소비 조건 정본을 안 쓴다 — 퇴실 정산이 만든 청소비까지 입실 수령분으로 센다`)
+    }
+  }
 }
 
 // 7. 환불 재기록의 증빙 메타 승계 — 빠지면 그 결제일 달의 카드·현금영수증 합계에서 금액이
@@ -293,7 +370,9 @@ const cfLeases = await prisma.leaseTerm.findMany({
 })
 for (const l of cfLeases) {
   const paid = await prisma.extraIncome.aggregate({
-    where: { leaseTermId: l.id, category: '청소비' }, _sum: { amount: true },
+    // 퇴실 정산이 보증금 청소비 몫으로 만든 '청소비'(payMethod '보유 보증금')는 입실 수령분이 아니다.
+    // 안 빼면 2026-08-11 분류 규칙 이후 정상 퇴실이 전부 '이중 징수' 로 찍힌다.
+    where: { leaseTermId: l.id, ...CLEANING_RECEIVED_WHERE }, _sum: { amount: true },
   })
   const received = paid._sum.amount ?? 0
   if (received <= 0) continue
@@ -1012,7 +1091,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
         room: { select: { roomNo: true } },
         // 중첩 where 는 소프트삭제 자동 필터가 안 붙는다(원시 클라이언트라 더욱) — deletedAt 명시 필수
         paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
-        extraIncomes:   { where: { category: '청소비', deletedAt: null }, select: { amount: true } },
+        extraIncomes:   { where: { ...CLEANING_RECEIVED_WHERE, deletedAt: null }, select: { amount: true } },
       },
     })
     for (const l of ls) {
