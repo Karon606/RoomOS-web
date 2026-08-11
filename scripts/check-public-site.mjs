@@ -156,8 +156,28 @@ if (/im\.alt\s*=\s*''/.test(gal)) {
   for (const [field, why] of [
     ['r.ctaClicks', '본문 CTA 클릭이 DB 에만 쌓이고 화면에는 0 으로 보인다'],
     ['r.activeMs ?? r.durationMs', '방치탭을 뺀 체류를 저장해두고 화면은 레거시 durationMs 를 읽는다'],
+    ['r.viewedLanguage', '열람 언어를 저장해두고 화면은 기기 언어만 보여준다'],
   ]) {
     if (!mktActions.includes(field)) violations.push(`marketing/actions: ${field} 를 읽지 않는다 — ${why}`)
+  }
+
+  // 3-1. 열람 언어 훅 — 언어 전환 버튼이 있는 페이지는 전환 사실을 공용 스크립트에 알려야 한다.
+  //      _track.js 는 영업장 공용이라 사이트 내부 변수를 직접 뒤지지 않는다. 훅이 빠지면
+  //      기기 언어만 남고 '실제로 무엇으로 읽었나'가 통째로 사라진다(운영자 요청 2026-08-11).
+  if (!track.includes("'stayeum:lang'")) {
+    violations.push("_track.js: 'stayeum:lang' 을 듣지 않는다 — 언어를 바꿔도 열람 언어가 안 바뀐다")
+  }
+  for (const slug of readdirSync(ROOT, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)) {
+    const file = `${ROOT}/${slug}/index.html`
+    if (!existsSync(file)) continue
+    const html = readFileSync(file, 'utf8')
+    if (!/data-lang=|id="langKo"/.test(html)) continue   // 언어 전환이 없는 페이지는 대상 아님
+    for (const [needle, why] of [
+      ['__stayeumLang', '진입 시점 언어를 알리지 않는다 — 최초 열람 언어가 안 남는다'],
+      ["'stayeum:lang'", '언어 전환을 알리지 않는다 — 중간에 바꾼 이력이 안 남는다'],
+    ]) {
+      if (!html.includes(needle)) violations.push(`${slug}: ${why} (${needle} 없음)`)
+    }
   }
 
   // 3-2. 추적 엔드포인트는 아무나 무한히 호출할 수 있으면 안 된다 (D페이즈 잔여 2026-08-03).
