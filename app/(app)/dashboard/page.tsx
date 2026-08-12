@@ -431,9 +431,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // '문의·투어' StatCard 집계용 — 라벨에 걸맞게 투어 완료도 포함(e1b81629 후속, 운영자 승인)
     prisma.leaseTerm.count({ where: { propertyId, status: 'TOUR_DONE' } }),
-    // 소개 페이지 공개 후보 — 공실이고 사진 있는데 아직 미공개인 방
+    // 소개 페이지 공개 후보 — 공실이고 사진 있는데 아직 미공개인 방(창고·사무실 등 비거주 점유는 제외).
+    // 집계 제외 방은 팔 수 있는 방이 아니다 — 415호에 사진만 올리면 손님에게 내보이라고 권하던 자리다.
+    // 바로 아래 철회 후보가 이미 같은 where 를 빼고 있었다. 한 카드의 두 줄이 다른 모집단을 보면 안 된다.
     prisma.room.findMany({
-      where: { propertyId, isVacant: true, showOnSite: false, photos: { some: {} } },
+      where: { propertyId, isVacant: true, showOnSite: false, photos: { some: {} }, NOT: vacancyExcludedWhere },
       select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
       orderBy: { roomNo: 'asc' },
     }),
