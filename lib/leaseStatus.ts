@@ -173,14 +173,18 @@ export function roomAvailability(room: {
 }
 
 /**
- * 입주 가능일 한 줄 — "2026.08.30 부터". 날짜가 잡힌 방(soon)에만 값이 있고, 나머지는 null 이다.
+ * 입주 가능일 한 줄 — "2026.08.30부터". 날짜가 잡힌 방(soon)에만 값이 있고, 나머지는 null 이다.
  *
  * 'now' 에 문구를 안 주는 이유: 지금 비어 있다는 사실은 이미 상태 줄이 '공실'로 말한다. 같은 사실을
  * 두 줄로 적으면 읽는 사람이 다른 뜻을 찾는다. 'null'(무기한 계약이 걸린 방)은 애초에 모르는 값이다.
  * 날짜 표기는 fmtDateDot 정본 — 목록·표의 '2026.08.30' 문법이다.
+ *
+ * 조사 '부터'는 앞말에 붙여 쓴다 — 형제 availableFromLabel("8/30부터")·fmtRentApplyFrom("9월분부터")과
+ * 같은 규칙이다. 종전의 "2026.08.30 부터" 는 프리즘 한 자리에서만 띄어 써 같은 사실이 화면마다
+ * 다르게 적히던 자리였다(§29).
  */
 export function availableFromText(availability: RoomAvailability | null | undefined): string | null {
-  return availability?.kind === 'soon' ? `${fmtDateDot(availability.availableFrom)} 부터` : null
+  return availability?.kind === 'soon' ? `${fmtDateDot(availability.availableFrom)}부터` : null
 }
 
 /**
