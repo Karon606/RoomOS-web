@@ -46,7 +46,7 @@ import CategorySelect from '@/components/ui/CategorySelect'
 import type { SetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
-import { chartColor } from '@/lib/chartColors'
+import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { getNextBusinessDay } from '@/lib/krHolidays'
@@ -2432,15 +2432,18 @@ export default function FinanceClient({
   const lastYearCatMap: Record<string, number> = {}
   for (const t of lastYearTotals) lastYearCatMap[t.category] = t.total
 
-  // 이번 달 금액 내림차순 정렬 후 순서대로 색상 배정 (이름 매핑 아님)
+  // 이번 달 금액 내림차순 정렬 — 목록·막대가 큰 것부터 서는 순서다.
   const allCats = Array.from(new Set([
     ...Object.keys(currentCatMap),
     ...Object.keys(prevCatMap),
     ...Object.keys(lastYearCatMap),
   ])).sort((a, b) => (currentCatMap[b] ?? 0) - (currentCatMap[a] ?? 0))
 
+  // 색은 그 순서가 아니라 영업장 설정의 등록 순서다(lib/chartColors 정본, 2026-08-13).
+  // 이 카드는 한 화면에서 이달·지난달·전년동월 세 막대를 나란히 세우는 자리라 색이 흔들리면
+  // 비교 자체가 성립하지 않았고, 홈 지출 도넛과도 같은 카테고리가 다른 색이었다.
   const catColorMap: Record<string, string> = {}
-  allCats.forEach((cat, i) => { catColorMap[cat] = chartColor(i) })
+  allCats.forEach(cat => { catColorMap[cat] = expenseCategoryColor(cat, expenseCategories) })
 
   const currentTotal = Object.values(currentCatMap).reduce((s, v) => s + v, 0)
   const prevTotal    = Object.values(prevCatMap).reduce((s, v) => s + v, 0)
