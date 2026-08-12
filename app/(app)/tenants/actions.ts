@@ -387,18 +387,14 @@ export async function getRoomsForSelect() {
   })
 }
 
-// 입주자 추가
-export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-  await requireEdit()
-  const { propertyId } = await getPropertyId()
 
-  const name             = formData.get('name') as string
-  const englishName      = formData.get('englishName') as string
-  const email            = formData.get('email') as string
-  const birthdate        = formData.get('birthdate') as string
-  const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
-  const smoking = formData.get('smoking') === 'true'
+// ── 계약 생성 공용부 (2026-08-13, 1인 다호실) ───────────────────────────────
+// 사람을 새로 만들며 계약을 얹는 경로(addTenant)와 있는 사람에게 계약만 더 얹는 경로
+// (addLeaseToTenant)가 **같은 폼 문법·같은 가드·같은 뒤처리**를 쓰게 하는 자리다.
+// 사본을 두면 새 진입점에만 가드가 빠지는 그 사고(엑셀 가져오기가 그랬다)를 되풀이한다.
+
+/** 계약 폼의 lease 칸을 읽는다. tenant 칸(이름·연락처 등)은 여기서 읽지 않는다. */
+function readLeaseFields(formData: FormData) {
   const roomId           = formData.get('roomId') as string
   const status           = (formData.get('status') as LeaseStatus) || 'ACTIVE'
   const rentAmount       = Number(formData.get('rentAmount')) || 0
@@ -409,17 +405,6 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const expectedMoveOut  = formData.get('expectedMoveOut') as string
   const contactAlertDate = formData.get('contactAlertDate') as string | null
   const paymentTiming    = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
-  const contactType      = (formData.get('contactType') as ContactType) || 'PHONE'
-  const contactValue     = formData.get('contactValue') as string
-  const emergencyRelation = formData.get('emergencyRelation') as string
-  const emergencyContact = formData.get('emergencyContact') as string
-  const homeCountryContact = formData.get('homeCountryContact') as string
-  const homeCountryCode    = formData.get('homeCountryCode') as string
-  const memo             = formData.get('memo') as string
-  const nationality      = formData.get('nationality') as string
-  const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
-  const job              = formData.get('job') as string
-  // LeaseTerm extras
   const payMethod           = formData.get('payMethod') as string
   const cashReceipt         = formData.get('cashReceipt') as string
   const registrationStatus  = (formData.get('registrationStatus') as RegistrationStatus) || 'NOT_REPORTED'
@@ -440,26 +425,65 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const depositReceivedAmount = depositReceivedAmountRaw != null && String(depositReceivedAmountRaw).trim() !== ''
     ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
     : null
-
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
+
+  return {
+    roomId, status, rentAmount, depositAmount, moveInDate,
+    isReservedConfirmed, depositReceived, depositReceivedAmount,
+    /** LeaseTerm.create 에 실리는 데이터. propertyId 는 부르는 쪽이 붙인다. */
+    data: {
+      roomId: roomId || null,
+      status,
+      rentAmount,
+      depositAmount,
+      cleaningFee,
+      dueDay: DUE_PENDING_STATUSES.includes(status) ? null : (dueDay || null),
+      moveInDate: moveInDate ? new Date(moveInDate) : null,
+      expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+      contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
+      tourDate: tourDate ? new Date(tourDate) : null,
+      tourTime: tourDate && tourTime ? tourTime : null,   // 날짜 없으면 시간도 무의미
+      // 폼이 보내는 "YYYY-MM-DDTHH:mm" 은 오프셋이 없다 — 서버(UTC)가 그대로 파싱하면 9시간 뒤로 저장된다.
+      // 변환은 서버에서 한다(캐시된 구버전 클라가 남아도 오염이 재발하지 않게).
+      inquiryAt: kstDateTimeToUtc(inquiryAt),
+      reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
+      isShortTerm,
+      paymentTiming,
+      payMethod: payMethod || null,
+      cashReceipt: cashReceipt || null,
+      registrationStatus,
+      contractUrl: contractUrl || null,
+      wishRooms: wishRooms || null,
+      wishConditions: wishConditions || null,
+      keepAlertAfterInquiry,
+      moveInFlexible: moveInFlexible ?? null,
+      visitRoute: visitRoute || null,
+    },
+  }
+}
+
+/**
+ * 계약 하나를 저장해도 되는가 — 필수 칸과 방 배정 가드. 통과하면 null, 막히면 문구.
+ * 두 진입점이 이 한 함수를 부른다. 방 배정 판정 자체는 lib/roomAssignment 정본이다.
+ */
+async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>): Promise<string | null> {
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
-  if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
-  if (!roomId && !roomOptionalStatuses.includes(status)) return { ok: false, error: '호실을 선택해주세요.' }
-  if (isReservedConfirmed) {
-    if (!roomId) return { ok: false, error: '예약 확정 시 호실은 필수입니다.' }
-    if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
-    if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
+  if (!f.roomId && !roomOptionalStatuses.includes(f.status)) return '호실을 선택해주세요.'
+  if (f.isReservedConfirmed) {
+    if (!f.roomId) return '예약 확정 시 호실은 필수입니다.'
+    if (!f.rentAmount) return '예약 확정 시 월 이용료는 필수입니다.'
+    if (!f.moveInDate) return '예약 확정 시 입주 희망일은 필수입니다.'
   }
   // 청구 발생 상태(unpaid.ts unpaidLeasesRaw 필터와 동일: ACTIVE·CHECKOUT_PENDING·NON_RESIDENT + rentAmount>0)로
   // 저장할 땐 입주일 필수. 비우면 leaseStartMonth가 인수 컷오프월로 앵커되어 과거월이 한꺼번에 미납으로 잡힌다.
-  if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status) && rentAmount > 0 && !moveInDate) {
-    return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(f.status) && f.rentAmount > 0 && !f.moveInDate) {
+    return '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.'
   }
 
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
-  // 방 설정(nonResidentVacant)까지 같이 읽는다 — 비거주 점유 방 판정(nonResidentOccupied)의 입력이다.
-  const roomForGuard = roomId ? await prisma.room.findUnique({
-    where: { id: roomId },
+  // 방 설정(nonResidentVacant)까지 같이 읽는다 — 집계 제외 방 판정(nonResidentOccupied)의 입력이다.
+  const roomForGuard = f.roomId ? await prisma.room.findUnique({
+    where: { id: f.roomId },
     select: {
       nonResidentVacant: true,
       leaseTerms: {
@@ -468,15 +492,151 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       },
     },
   }) : null
-  const existingLeases = roomForGuard?.leaseTerms ?? []
   // 점유 가드는 lib/roomAssignment 한 벌이다 — 종전에는 여기와 updateTenant 에 같은 판정이 두 벌 적혀
   // 있었고 엑셀 가져오기에는 0 개였다(2026-08-12 봉합). 문구·순서는 그 정본이 갖는다.
-  const denial = roomAssignmentDenial({
-    incomingStatus: status,
+  return roomAssignmentDenial({
+    incomingStatus: f.status,
     nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
-    otherLeases: existingLeases,
+    otherLeases: roomForGuard?.leaseTerms ?? [],
   })
+}
+
+/** 계약을 만든 직후의 파생 처리 — 방 점유 플래그·등록 로그·거주 구간·보증금 받음 기록. */
+async function afterLeaseCreated(
+  f: ReturnType<typeof readLeaseFields>,
+  ctx: { propertyId: string; tenantId: string; leaseId: string },
+) {
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(f.status) && f.roomId) {
+    await prisma.room.update({ where: { id: f.roomId }, data: { isVacant: false } })
+  }
+  // NON_RESIDENT, WAITING_TOUR, TOUR_DONE는 isVacant에 영향 없음
+
+  // 등록 로그 — 신고 ad517231 조사에서 두 가지가 틀린 것이 드러났다.
+  //   1) fromStatus 에 'RESERVED' 를 **하드코딩**해서, 실제 생성 상태와 무관하게 거짓 전이를 썼다.
+  //      167건 중 44건이 그렇게 쌓였고, 어제 전이표를 넓힐 때 그 유령 데이터가 근거에 섞였다.
+  //   2) leaseTermId 를 안 채웠다. 계약 단위로 이력을 묶으면 이 사람들이 통째로 사라진다.
+  // 등록은 전이가 아니므로 from 과 to 를 같게 둔다(canTransition 은 from === to 를 항상 허용한다).
+  await prisma.tenantStatusLog.create({
+    data: { tenantId: ctx.tenantId, leaseTermId: ctx.leaseId, fromStatus: f.status, toStatus: f.status, propertyId: ctx.propertyId },
+  })
+
+  // 거주 구간 이력 — 호실이 있으면 열린 구간을 만든다(파생 기록, 추가 write). 종료 상태로 만든 계약은 바로 마감.
+  await ensureOpenStay(prisma, ctx.leaseId)
+  if (isStayTerminalStatus(f.status)) await closeStay(prisma, ctx.leaseId)
+
+  // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
+  if (f.depositReceived && f.depositAmount > 0) {
+    try { await recordDepositReceived(ctx.leaseId, f.depositReceivedAmount != null && f.depositReceivedAmount > 0 ? { amount: f.depositReceivedAmount } : undefined) }
+    catch { /* 이미 기록됨 등은 무시 */ }
+  }
+}
+
+/**
+ * 이 사람이 이미 등록돼 있는가 — 이름과 연락처가 둘 다 같으면 같은 사람으로 본다.
+ *
+ * 왜 필요한가 (설계 패널 2026-08-13). 방을 하나 더 주려고 같은 사람을 새 고객으로 또 등록하면
+ * 그 사람은 앱 안에서 조용히 두 사람이 된다. 이름만으로 막으면 동명이인이 못 들어오고, 연락처만
+ * 보면 가족이 번호를 같이 쓰는 경우를 막는다 — 둘 다 같을 때만 묻는다.
+ * 숫자만 남겨 비교한다(010-1234-5678 과 01012345678 은 같은 번호다).
+ */
+export async function findDuplicateTenant(name: string, contactValue: string): Promise<
+  { id: string; name: string; roomNo: string | null; status: string | null } | null
+> {
+  const { propertyId } = await getPropertyId()
+  const digits = (contactValue ?? '').replace(/\D/g, '')
+  if (!name?.trim() || digits.length < 8) return null
+  const rows = await prisma.tenant.findMany({
+    where: { propertyId, name: name.trim() },
+    select: {
+      id: true, name: true,
+      contacts: { select: { contactValue: true } },
+      leaseTerms: { select: { status: true, moveInDate: true, room: { select: { roomNo: true } } } },
+    },
+  })
+  const hit = rows.find(r => r.contacts.some(c => c.contactValue.replace(/\D/g, '') === digits))
+  if (!hit) return null
+  const main = primaryTenantLease(hit.leaseTerms)
+  return { id: hit.id, name: hit.name, roomNo: main?.room?.roomNo ?? null, status: main?.status ?? null }
+}
+
+/**
+ * 중복 등록 확인창을 지나왔는가 — 폼이 이 값을 실어 보내면 서버는 경고를 넘긴다.
+ * 화면(등록 폼)은 제출 전에 findDuplicateTenant 로 먼저 묻고 확인을 받으면 이 값을 싣는다.
+ * 그래도 서버가 다시 보는 이유는 방 배정 가드와 같다 — 판정이 화면에만 있으면 그게 실제 규칙이 된다.
+ */
+const DUPLICATE_ACK = 'allowDuplicateTenant'
+
+/**
+ * 있는 고객에게 계약을 하나 더 — 새 진입점(고객 상세 '계약 추가').
+ *
+ * tenant 칸은 **한 글자도 건드리지 않는다.** 이 경로가 이름·연락처를 같이 저장하면 계약을 더하는
+ * 일이 사람 정보를 덮는 일이 되어, 창고 계약을 만들다가 거주 계약의 연락처가 바뀔 수 있다.
+ * 가드·뒤처리는 addTenant 와 문자 그대로 같은 함수를 쓴다.
+ */
+export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const tenantId = formData.get('tenantId') as string
+    if (!tenantId) return { ok: false, error: '고객을 찾을 수 없습니다.' }
+    const tenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } })
+    if (!tenant) return { ok: false, error: '고객을 찾을 수 없습니다.' }
+
+    const f = readLeaseFields(formData)
+    const denial = await leaseSaveDenial(f)
+    if (denial) return { ok: false, error: denial }
+
+    const lease = await prisma.leaseTerm.create({
+      data: { ...f.data, propertyId, tenantId },
+      select: { id: true },
+    })
+    await afterLeaseCreated(f, { propertyId, tenantId, leaseId: lease.id })
+
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 입주자 추가
+export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+  await requireEdit()
+  const { propertyId } = await getPropertyId()
+
+  const name             = formData.get('name') as string
+  const englishName      = formData.get('englishName') as string
+  const email            = formData.get('email') as string
+  const birthdate        = formData.get('birthdate') as string
+  const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
+  const smoking = formData.get('smoking') === 'true'
+  const contactType      = (formData.get('contactType') as ContactType) || 'PHONE'
+  const contactValue     = formData.get('contactValue') as string
+  const emergencyRelation = formData.get('emergencyRelation') as string
+  const emergencyContact = formData.get('emergencyContact') as string
+  const homeCountryContact = formData.get('homeCountryContact') as string
+  const homeCountryCode    = formData.get('homeCountryCode') as string
+  const memo             = formData.get('memo') as string
+  const nationality      = formData.get('nationality') as string
+  const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
+  const job              = formData.get('job') as string
+  // 계약 칸·가드·뒤처리는 새 진입점(addLeaseToTenant)과 문자 그대로 같은 함수를 쓴다.
+  const f = readLeaseFields(formData)
+
+  if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
+  const denial = await leaseSaveDenial(f)
   if (denial) return { ok: false, error: denial }
+
+  // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 고객을 만드는 순간 그 사람은 앱 안에서
+  // 조용히 두 사람이 된다. 확인창을 지나온 폼만 통과시킨다(화면이 '계약 추가' 경로를 권한다).
+  if (formData.get(DUPLICATE_ACK) !== '1') {
+    const dup = await findDuplicateTenant(name, contactValue)
+    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세에서 '계약 추가'를 써 주세요.` }
+  }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -529,76 +689,15 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       nationality: nationality || null,
       gender,
       job: job || null,
-      leaseTerms: {
-        create: {
-          propertyId,
-          roomId: roomId || null,
-          status,
-          rentAmount,
-          depositAmount,
-          cleaningFee,
-          dueDay: DUE_PENDING_STATUSES.includes(status) ? null : (dueDay || null),
-          moveInDate: moveInDate ? new Date(moveInDate) : null,
-          expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
-          contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
-          tourDate: tourDate ? new Date(tourDate) : null,
-          tourTime: tourDate && tourTime ? tourTime : null,   // 날짜 없으면 시간도 무의미
-          // 폼이 보내는 "YYYY-MM-DDTHH:mm" 은 오프셋이 없다 — 서버(UTC)가 그대로 파싱하면 9시간 뒤로 저장된다.
-          // 변환은 서버에서 한다(캐시된 구버전 클라가 남아도 오염이 재발하지 않게).
-          inquiryAt: kstDateTimeToUtc(inquiryAt),
-          reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
-          isShortTerm,
-          paymentTiming,
-          payMethod: payMethod || null,
-          cashReceipt: cashReceipt || null,
-          registrationStatus,
-          contractUrl: contractUrl || null,
-          wishRooms: wishRooms || null,
-          wishConditions: wishConditions || null,
-          keepAlertAfterInquiry,
-          moveInFlexible: moveInFlexible ?? null,
-          visitRoute: visitRoute || null,
-        },
-      },
+      leaseTerms: { create: { ...f.data, propertyId } },
       contacts: contactsToCreate.length > 0 ? { create: contactsToCreate } : undefined,
     },
   })
 
-  if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status) && roomId) {
-    await prisma.room.update({ where: { id: roomId }, data: { isVacant: false } })
-  }
-  // NON_RESIDENT, WAITING_TOUR, TOUR_DONE는 isVacant에 영향 없음
-
-  // 거주 구간 이력 — 호실이 있으면 열린 구간을 만든다(파생 기록, 추가 write). 종료 상태로 만든 계약은 바로 마감.
   const newLease = await prisma.leaseTerm.findFirst({
     where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
   })
-
-  // 등록 로그 — 신고 ad517231 조사에서 두 가지가 틀린 것이 드러났다.
-  //   1) fromStatus 에 'RESERVED' 를 **하드코딩**해서, 실제 생성 상태와 무관하게 거짓 전이를 썼다.
-  //      167건 중 44건이 그렇게 쌓였고, 어제 전이표를 넓힐 때 그 유령 데이터가 근거에 섞였다.
-  //   2) leaseTermId 를 안 채웠다. 계약 단위로 이력을 묶으면 이 사람들이 통째로 사라진다.
-  // 등록은 전이가 아니므로 from 과 to 를 같게 둔다(canTransition 은 from === to 를 항상 허용한다).
-  // 계약 조회를 이 아래로 미룰 필요가 없어 순서만 바꿔 leaseTermId 를 공짜로 채운다.
-  await prisma.tenantStatusLog.create({
-    data: { tenantId: tenant.id, leaseTermId: newLease?.id ?? null, fromStatus: status, toStatus: status, propertyId },
-  })
-
-  if (newLease) {
-    await ensureOpenStay(prisma, newLease.id)
-    if (isStayTerminalStatus(status)) await closeStay(prisma, newLease.id)
-  }
-
-  // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
-  if (depositReceived && depositAmount > 0) {
-    const lease = await prisma.leaseTerm.findFirst({
-      where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
-    })
-    if (lease) {
-      try { await recordDepositReceived(lease.id, depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : undefined) }
-      catch { /* 이미 기록됨 등은 무시 */ }
-    }
-  }
+  if (newLease) await afterLeaseCreated(f, { propertyId, tenantId: tenant.id, leaseId: newLease.id })
 
   revalidatePath('/tenants')
   return { ok: true }

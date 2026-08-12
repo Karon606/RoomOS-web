@@ -8,7 +8,7 @@ import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo } from './actions'
+import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
 import { NATIVE_NAME_MAX } from '@/lib/documentName'
@@ -495,6 +495,9 @@ export default function TenantClient({
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
+  // 계약 추가 — 있는 고객에게 계약만 하나 더(창고·사무실 명의 등). 사람 칸은 안 그리고 안 보낸다.
+  const [addLeaseTenant, setAddLeaseTenant] = useState<Tenant | null>(null)
+  const [addLeaseDirty, setAddLeaseDirty]   = useState(false)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
@@ -912,10 +915,38 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     if (!await confirmRoomOverlap(fd)) return
+    // 같은 사람을 또 등록하려는가 — 이름과 연락처가 둘 다 같으면 묻는다. 방을 하나 더 주려고
+    // 새 고객을 만드는 순간 그 사람은 앱 안에서 조용히 두 사람이 된다(설계 패널 2026-08-13).
+    // 판정은 서버 정본(findDuplicateTenant)이고, 서버는 저장 직전에 한 번 더 본다.
+    const dup = await findDuplicateTenant((fd.get('name') as string) || '', (fd.get('contactValue') as string) || '')
+    if (dup) {
+      const where = dup.roomNo ? `${fmtRoomNo(dup.roomNo)} ` : ''
+      const ok = await confirmDialog({
+        title: `${dup.name}님은 이미 등록돼 있습니다`,
+        message: `${where}${STATUS_LABEL[dup.status ?? ''] ?? '등록됨'} 상태로 같은 연락처가 저장돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세의 '계약 추가'를 쓰세요. 동명이인이라 정말 새 고객이면 그대로 등록합니다.`,
+        level: 'caution',
+        confirmLabel: '새 고객으로 등록',
+        cancelLabel: '취소',
+      })
+      if (!ok) return
+      fd.set('allowDuplicateTenant', '1')
+    }
     startTransition(async () => {
       const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
       if (!res.ok) { setError(res.error); return }
       setShowAdd(false); refresh()
+    })
+  }
+
+  // 계약 추가 — 사람은 그대로 두고 계약만 하나 더. 방 배정 확인창은 등록·수정과 같은 한 벌이다.
+  const handleAddLease = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault(); setError('')
+    const fd = new FormData(e.currentTarget)
+    if (!await confirmRoomOverlap(fd)) return
+    startTransition(async () => {
+      const res = await withSave(() => addLeaseToTenant(fd), { success: '계약 추가됨' })
+      if (!res.ok) { setError(res.error); return }
+      setAddLeaseTenant(null); setAddLeaseDirty(false); refresh()
     })
   }
 
@@ -2342,6 +2373,13 @@ export default function TenantClient({
               <input type="hidden" name="leaseTermId" value={mainLease(editTenant)?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
+                {/* 계약 추가 — 이 사람에게 방을 하나 더(창고·사무실 명의 등). 수정 폼 옆에 두는 것은
+                    같은 사람을 새 고객으로 또 등록하는 길목이 여기이기 때문이다. */}
+                <Btn type="button" variant="secondary" size="md"
+                  onClick={() => { const t = editTenant; setEditTenant(null); setEditTenantDirty(false); setError(''); setAddLeaseTenant(t) }}
+                  className="flex-1">
+                  계약 추가
+                </Btn>
                 <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
                   className="flex-1">
                   취소
@@ -2349,6 +2387,31 @@ export default function TenantClient({
                 <Btn type="submit" variant="primary" size="md" disabled={isPending}
                   className="flex-1">
                   {isPending ? '저장 중…' : '저장'}
+                </Btn>
+              </div>
+            </form>
+        </Modal>
+      )}
+
+      {/* ── 계약 추가 모달 ─────────────────────────────────────────── */}
+      {addLeaseTenant && (
+        <Modal open width="lg" dirty={addLeaseDirty}
+          onClose={() => { setAddLeaseTenant(null); setAddLeaseDirty(false) }}
+          title={`계약 추가 · ${addLeaseTenant.name}`}
+          subtitle="이 고객에게 계약을 하나 더 만듭니다. 이름·연락처 등 고객 정보는 바뀌지 않습니다.">
+            <form key={`lease-${addLeaseTenant.id}`} onSubmit={handleAddLease} className="space-y-4"
+              onInput={() => requestAnimationFrame(() => setAddLeaseDirty(true))} onChange={() => setAddLeaseDirty(true)}>
+              <input type="hidden" name="tenantId" value={addLeaseTenant.id} />
+              {/* tenant 를 넘기지 않는다 — 넘기면 기존 계약 값이 프리필돼 새 계약이 옛 계약의 사본이 된다. */}
+              <TenantForm rooms={rooms} leaseOnly error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+              <div className="flex gap-2 pt-2">
+                <Btn type="button" variant="secondary" size="md" onClick={() => setAddLeaseTenant(null)}
+                  className="flex-1">
+                  취소
+                </Btn>
+                <Btn type="submit" variant="primary" size="md" disabled={isPending}
+                  className="flex-1">
+                  {isPending ? '저장 중…' : '계약 추가'}
                 </Btn>
               </div>
             </form>
@@ -3207,9 +3270,13 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
 
 // ── 폼 컴포넌트 (추가/수정 공용) ─────────────────────────────────
 
-function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14 }: {
+function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, leaseOnly = false }: {
   rooms: Room[]; tenant?: Tenant; error?: string
   defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
+  // 계약만 더하는 모드('계약 추가') — 사람 칸(기본 정보·연락처·메모)을 아예 그리지 않는다.
+  // 안 그리는 것이 곧 안 보내는 것이고, 서버(addLeaseToTenant)도 사람 칸을 읽지 않는다.
+  // 계약을 하나 더하는 일이 사람 정보를 덮는 일이 되면 안 된다.
+  leaseOnly?: boolean
 }) {
   const lease     = mainLease(tenant)
   const primary   = tenant?.contacts.find(c => c.isPrimary)
@@ -3433,6 +3500,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
   return (
     <>
+      {/* 사람 칸 — 계약만 더하는 모드에서는 통째로 안 그린다(OCR 도구도 사람 칸을 채우는 도구다). */}
+      {!leaseOnly && (
+      <>
       <OcrToolbar
         onContract={data => {
           // controlled state
@@ -3582,6 +3652,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         </div>
         )}
       </FormSection>
+      </>
+      )}
 
       <FormSection title="계약 정보">
         <div className="grid grid-cols-2 gap-3">
@@ -4149,10 +4221,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             계약서 접점이 흩어져 보이는 원인이었다. 컬럼과 저장 액션은 유지(기존 값 보존). */}
       </FormSection>
 
+      {!leaseOnly && (
       <FormSection title="메모">
         <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
+      )}
 
       {/* 저장하면 실제로 걸릴 추가 청구·청구 감액 한 줄 요약 — 서버가 쓰는 calcShortStay 와 같은 규칙을 폼 값으로 돌린 것.
           단기는 rentAmount 가 체류 전체 사용료라 '이미 청구'는 저장돼 있는 이용료와 같다(서버 왕복 없음). */}
