@@ -2151,12 +2151,15 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────
 
+// 이 파일 폼 모달 셋(호실 등록·수정·일괄 편집)의 얇은 래퍼. 본문 여백은 얹지 않는다 —
+// SharedModal 이 이미 §13 기본값(px-5 sm:px-6 py-4)을 주므로 여기서 한 겹 더 주면 이중 여백이다.
+// 320px 에서 좌우 40px 을 폼에서 빼앗아 2열 칸이 98px 까지 좁아지던 자리였다(§13).
 function Modal({ title, children, onClose }: {
   title: string; children: React.ReactNode; onClose: () => void
 }) {
   return (
     <SharedModal open onClose={onClose} title={title} width="md">
-      <div className="px-5 sm:px-6 py-5">{children}</div>
+      {children}
     </SharedModal>
   )
 }

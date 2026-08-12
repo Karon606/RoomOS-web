@@ -335,12 +335,14 @@ export function DatePicker({
       {/* 폼 제출용 hidden input (form 내부에 위치) */}
       {name && <input type="hidden" name={name} value={value} readOnly />}
 
+      {/* truncate — 좁은 칸(2열 폼 셀)에서 "2026년 8월 30일"이 두 줄로 접혀 트리거만 56px 이 되고
+          옆 칸 입력(40px)과 행 정렬이 깨지던 자리다. 한 줄로 잠가 두면 §12 입력 높이가 유지된다. */}
       <button
         ref={triggerRef}
         type="button"
         onClick={handleOpen}
         disabled={disabled}
-        className={`w-full text-left disabled:opacity-40 ${className ?? ''}`}
+        className={`w-full text-left truncate disabled:opacity-40 ${className ?? ''}`}
         style={style}
       >
         {displayValue
