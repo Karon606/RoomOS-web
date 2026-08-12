@@ -17,7 +17,7 @@ import {
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
-import { availableFromLabel } from '../lib/leaseStatus'
+import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
@@ -520,6 +520,22 @@ const RENT = 300000
   eq('입주 가능 라벨: 앞 0 제거',  availableFromLabel('2026-08-16'), '8/16부터')
   eq('입주 가능 라벨: 10월 1일',   availableFromLabel('2026-10-01'), '10/1부터')
   eq('입주 가능 라벨: 매칭과 동일', wishRoomFromLabel({ kind: 'soon', availableFrom: '2026-08-18' }), '8/18부터')
+}
+
+// ── availableFromText ── 폭이 넉넉한 자리(호실 상세 기본정보)의 긴 형태. 2026-08-12 에 '부터'를
+// 붙여쓰기로 고쳤는데(§29) 잠금이 안 걸려 있어 여기 건다 — 띄어쓰기 하나가 형제 라벨과 갈리면
+// 같은 사실이 화면마다 다르게 적힌다. 짧은 형제(availableFromLabel)와 같은 규칙임을 함께 고정한다.
+{
+  eq('입주 가능 문장: fmtDateDot + 부터', availableFromText({ kind: 'soon', availableFrom: '2026-08-30' }), '2026.08.30부터')
+  eq('입주 가능 문장: 공백 없음',         availableFromText({ kind: 'soon', availableFrom: '2026-08-30' })!.includes(' '), false)
+  eq('입주 가능 문장: 앞 0 유지',         availableFromText({ kind: 'soon', availableFrom: '2026-10-01' }), '2026.10.01부터')
+  // 'now'(지금 공실)는 상태 줄이 이미 '공실'로 말하므로 문구를 안 준다. null 은 무기한 계약이라 모르는 값이다.
+  eq('입주 가능 문장: 지금 공실은 null',  availableFromText({ kind: 'now' }), null)
+  eq('입주 가능 문장: 판정 없음은 null',  availableFromText(null), null)
+  // 두 형태가 같은 조사 규칙을 쓴다 — 한쪽만 고치면 여기서 걸린다.
+  eq('입주 가능 문장: 짧은 형제와 같은 조사',
+    availableFromText({ kind: 'soon', availableFrom: '2026-08-30' })!.endsWith('부터')
+      && availableFromLabel('2026-08-30').endsWith('부터'), true)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
