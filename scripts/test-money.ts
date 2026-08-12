@@ -5,7 +5,7 @@
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
 import { unpaidForLease, billedForLease, type UnpaidRecord } from '@/lib/billing'
-import { fmtManShort } from '../lib/fmtMoney'
+import { fmtManShort, fmtOfferRentAhead } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
   calcProRata,
@@ -16,7 +16,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
-import { billForLeaseMonth, offerRentForMonth } from '../lib/billing'
+import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
@@ -453,6 +453,50 @@ const RENT = 300000
   // 적용일 없는 예약값(고아)은 청구 엔진과 같이 침묵한다 — 화면만 인상가를 말하면 청구와 갈린다.
   eq('제시가: 적용일 없는 예약값은 무시',  offerRentForMonth({ ...raise, rentUpdateDate: null }, '2026-09'), 350_000)
   eq('제시가: 예약값 0 은 무시',           offerRentForMonth({ ...raise, scheduledRent: 0 }, '2026-09'), 350_000)
+}
+
+// ── offerRentChangeAfterMonth ── 아직 제시가에 안 실린 예약 가격변경(홈 타일 꼬리 '9월 36만').
+// 두 끝점을 모두 offerRentForMonth 로 구하므로 위 블록의 가드(0·음수·고아 적용일·파싱 실패)를
+// 그대로 물려받는다. 여기서 잠그는 것은 '언제 발화하는가' 하나다.
+// 오늘 실데이터에 예약 인상이 걸린 방은 0실이라, 이 블록이 유일한 감지망이다.
+{
+  const raise = { baseRent: 350_000, scheduledRent: 380_000, rentUpdateDate: '2026-09-01' }
+  eq('예고: 예약 없으면 없음',        offerRentChangeAfterMonth({ baseRent: 350_000, scheduledRent: null, rentUpdateDate: null }, '2026-08'), null)
+  eq('예고: 다음 달 인상',            offerRentChangeAfterMonth(raise, '2026-08'), { month: '2026-09', rent: 380_000 })
+  eq('예고: 인하도 같은 규칙',        offerRentChangeAfterMonth({ ...raise, scheduledRent: 320_000 }, '2026-08'), { month: '2026-09', rent: 320_000 })
+  // 이미 제시가에 실린 달에는 예고가 없다 — 타일이 세운 숫자가 곧 그 인상가다.
+  eq('예고: 적용월 당월은 없음',       offerRentChangeAfterMonth(raise, '2026-09'), null)
+  eq('예고: 적용월 이후도 없음',       offerRentChangeAfterMonth(raise, '2026-10'), null)
+  // 적용 스케줄러가 아직 안 돌아 예약값이 남아 있어도, 지난 적용일은 예고가 아니다(제시가가 이미 인상가).
+  eq('예고: 적용일 과거는 없음',       offerRentChangeAfterMonth({ ...raise, rentUpdateDate: '2026-07-01' }, '2026-08'), null)
+  // 달 중간 적용일 — 8/20 적용은 8월분부터라 8월 화면엔 없고 7월 화면엔 있다. 위 제시가 블록의 짝이다.
+  eq('예고: 달 중간 적용일 당월은 없음', offerRentChangeAfterMonth({ ...raise, rentUpdateDate: '2026-08-20' }, '2026-08'), null)
+  eq('예고: 달 중간 적용일 전월은 예고', offerRentChangeAfterMonth({ ...raise, rentUpdateDate: '2026-08-20' }, '2026-07'), { month: '2026-08', rent: 380_000 })
+  // 제시가가 안 움직이면 예고도 없다 — 손사본 예고가 가장 먼저 틀리는 네 자리.
+  eq('예고: 적용일 없는 예약값은 없음', offerRentChangeAfterMonth({ ...raise, rentUpdateDate: null }, '2026-08'), null)
+  eq('예고: 예약값 0 은 없음',         offerRentChangeAfterMonth({ ...raise, scheduledRent: 0 }, '2026-08'), null)
+  eq('예고: 예약값 음수는 없음',       offerRentChangeAfterMonth({ ...raise, scheduledRent: -1 }, '2026-08'), null)
+  eq('예고: 같은 값 예약은 없음',       offerRentChangeAfterMonth({ ...raise, scheduledRent: 350_000 }, '2026-08'), null)
+  eq('예고: 잘못된 적용일은 없음',      offerRentChangeAfterMonth({ ...raise, rentUpdateDate: '2026-13-99' }, '2026-08'), null)
+  // 먼 미래도 규칙은 같다 — 표기가 달을 인쇄하므로 '가까운 미래'로 좁힐 이유가 없다.
+  // 좁히면 8월에 건 10월 인상이 9월 내내 침묵하고, 줄이 없는 것이 '변경 없음'이라는 거짓이 된다.
+  eq('예고: 6개월 뒤도 예고',          offerRentChangeAfterMonth({ ...raise, rentUpdateDate: '2027-02-01' }, '2026-08'), { month: '2027-02', rent: 380_000 })
+  // 8/31 경계(Work_log 2026-08-12(7) 범위 밖 항목) — 입주 가능일이 8/31 이면 기준월은 8월이라
+  // 제시가는 8월가로 남고(선납 모델), 9/1 인상은 예고로 붙는다. 숫자를 옮기지 않고 예고만 더한다.
+  eq('예고: 8/31 입주 가능 + 9/1 인상', offerRentChangeAfterMonth(raise, '2026-08-31'.slice(0, 7)), { month: '2026-09', rent: 380_000 })
+  eq('예고: 그 자리 제시가는 8월가',    offerRentForMonth(raise, '2026-08-31'.slice(0, 7)), 350_000)
+}
+
+// ── fmtOfferRentAhead ── 예고 꼬리 문자열. 타일 날짜 문법(M/D)과 갈라지는 지점이라 문자열째 잠근다.
+{
+  eq('예고 라벨: 앞 0 제거',      fmtOfferRentAhead('2026-09', 360_000),  '9월 36만')
+  eq('예고 라벨: 두 자리 달',     fmtOfferRentAhead('2026-12', 360_000),  '12월 36만')
+  eq('예고 라벨: 소수 만',        fmtOfferRentAhead('2026-09', 329_000),  '9월 32.9만')
+  eq('예고 라벨: 인하도 같은 꼴',  fmtOfferRentAhead('2026-09', 320_000),  '9월 32만')
+  // '부터'를 쓰지 않는다 — 그 조사는 입주 가능일(availableFromLabel)이 이미 상태 축에서 쓰고 있다.
+  eq('예고 라벨: 부터 미사용',    fmtOfferRentAhead('2026-09', 360_000).includes('부터'), false)
+  // 슬래시가 없어야 타일의 날짜 문법("8/30부터")과 읽기 전에 갈린다.
+  eq('예고 라벨: 슬래시 없음',    fmtOfferRentAhead('2026-09', 360_000).includes('/'), false)
 }
 
 // ── availableFromLabel ── 입주 가능 짧은 라벨. 홈 타일·호실 카드 칩·고객 상세가 같은 문자열을 쓴다.

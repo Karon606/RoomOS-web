@@ -72,6 +72,34 @@ export function offerRentForMonth(
   return effectiveBaseRent({ rentAmount: room.baseRent, status: 'ACTIVE', room }, mon)
 }
 
+// 아직 제시가에 반영되지 않은 예약 가격변경 — 홈 타일 가격 예고의 발화 판정. 없으면 null.
+//
+// 두 끝점을 모두 offerRentForMonth 로 구한다. 예고가 말하는 값과 타일이 세운 값이 갈릴 자리를
+// 구조적으로 없애는 것이 이 함수의 전부다. scheduledRent 를 직접 읽어 조립하면 가드(0·음수·
+// 고아 적용일·파싱 실패)를 손으로 다시 써야 하고, 그 손사본이 언젠가 정본과 갈린다.
+//
+// 왜 날짜가 아니라 달로 비교하는가 — offerRentForMonth 와 같은 이유다. 적용일이 8/20 이어도
+// 8월분은 전부 인상가라, 날짜로 비교하면 8/5 에 보는 타일이 이미 38만을 세워 놓고 그 아래
+// "8/20 부터 38만"을 예고한다. 이미 그 값인데 곧 그 값이 된다고 말하는 것이고, 8/20 에는
+// 아무 숫자도 안 변한 날 예고만 사라져 화면이 혼자 움직인다.
+//
+// 기준월(mon)은 '오늘'이 아니라 그 자리가 지금 보여 주는 달이다 — 빈 방 타일은 대시보드
+// 선택월, 입주 가능 블락은 그 방이 비는 달. 오늘로 잡으면 9월을 열어 둔 화면에 이미 지나간
+// 전환이 예고로 뜬다.
+//
+// 인상·인하를 가르지 않는다(운영자 지시 2026-08-12). 방향은 표기가 아니라 두 금액의 대소가 말한다.
+export function offerRentChangeAfterMonth(
+  room: { baseRent: number; scheduledRent?: number | null; rentUpdateDate?: Date | string | null },
+  mon: string,                  // 'YYYY-MM' — 그 자리가 지금 보여 주는 달
+): { month: string; rent: number } | null {
+  const applyMon = monthOfDate(room.rentUpdateDate)
+  if (!applyMon || applyMon <= mon) return null
+  const rent = offerRentForMonth(room, applyMon)
+  // 값이 안 움직이면 변경이 아니다 — 같은 값 예약(35만을 35만으로)은 예고할 것이 없다.
+  if (rent === offerRentForMonth(room, mon)) return null
+  return { month: applyMon, rent }
+}
+
 export function billForLeaseMonth(
   l: BillingLeaseFields,
   mon: string,                  // 'YYYY-MM'
