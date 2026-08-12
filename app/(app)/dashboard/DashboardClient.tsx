@@ -903,10 +903,20 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             // 항과 **같은 변수**(totalExpense)인데 이름이 둘이었다. 같은 모집단은 같은 이름이다.
             { label: '기록된 지출', value: data.totalExpense, color: 'var(--tc)' },
             { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
-            // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
+            // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 받은 보증금/미기록(전 원장) 표시.
+            //
+            // 어휘 두 건을 고쳤다(2026-08-12 운영자 점검).
+            //   '실수납' → '받은 보증금' — '실수납'은 수납 관리 캡션이 이용료+부가수익 축 합계
+            //     (paidRevenue + extraRevenue)에 쓰는 이름이다. 같은 이름이 홈 안에서 탭만 바꾸면
+            //     보증금 숫자로 바뀌던 자리다. 새 말이 아니라 depositCompositionLabel 이 이미 쓰는
+            //     '받은 보증금 30,000 + 청소비 20,000 / 계약 50,000' 의 그 말이다.
+            //   '청소비' → '청소비 몫' — 이 값은 청소비 수익 총액이 아니라 **보유 중인 계약 보증금 중
+            //     입실 청소비가 채운 몫**(depositComposition.coveredByCleaning)이다. 퇴실자 청소비는
+            //     보증금을 이미 안 들고 있으니 여기 없고, 보증금이 0인 계약(409호)의 청소비도 채울
+            //     보증금이 없어 여기 없다. '청소비'라 부르면 그 달 청소비 수익으로 읽힌다(운영자 질의).
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
               // 청소비 몫은 받은 돈이라 '미기록'과 섞으면 안 된다 — 있을 때만 한 칸 더 쓴다(2026-08-10)
-              sub: `실수납 ${fmtKorMoney(data.depositRecorded)}${data.depositByCleaning > 0 ? ` · 청소비 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
+              sub: `받은 보증금 ${fmtKorMoney(data.depositRecorded)}${data.depositByCleaning > 0 ? ` · 청소비 몫 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
           ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
             <div
               key={i}
@@ -965,7 +975,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           ) : (
             <div className="flex items-center gap-5">
               <div className="shrink-0">
-                <DonutChart segments={categorySegments} centerLabel={`${data.totalExpense > 0 ? Math.round(data.totalExpense / 10000) : 0}만`} centerSub="총 지출" />
+                {/* centerSub 는 바로 위 타일과 **같은 변수**(totalExpense)다 — '총 지출'은 2026-08-12
+                    지출 어휘 통일에서 타일·등식만 고치고 지나친 자리였다(같은 화면 한 값 두 이름). */}
+                <DonutChart segments={categorySegments} centerLabel={`${data.totalExpense > 0 ? Math.round(data.totalExpense / 10000) : 0}만`} centerSub="기록된 지출" />
               </div>
               <div className="flex-1 space-y-2.5 min-w-0">
                 {data.categoryBreakdown.map((c, i) => (
@@ -1616,9 +1628,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '8px 0 6px' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#fff', borderRadius: 3 }} />
                 </div>
-                {/* v2.0 §24 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
+                {/* v2.0 §24 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동.
+                    '수납+기타' → '실수납' (2026-08-12 운영자 점검). 수납 관리 캡션이 원 단위로 같은 값을
+                    '실수납'이라 부르고(RoomsClient homeCollectedSum), 감지망도 그 항등을 '홈 실수납'이라는
+                    이름으로 잠그고 있다. 같은 숫자에 두 이름을 두던 마지막 자리였다. */}
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
-                  수납+기타 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
+                  실수납 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
                 </p>
               </>
             )
