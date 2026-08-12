@@ -946,8 +946,24 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/받은 보증금 \$\{fmtKorMoney\(data\.depositReceived\)\}/.test(dashClient)) {
     violations.push('[소스] 홈 보유 보증금 분해가 depositReceived 를 받은 보증금이라 부르지 않는다 — 이용료 축의 실수납과 이름이 겹친다')
   }
-  if (!/청소비 몫 \$\{fmtKorMoney\(data\.depositByCleaning\)\}/.test(dashClient)) {
-    violations.push('[소스] 홈 보유 보증금 분해가 depositByCleaning 을 청소비 몫이라 부르지 않는다 — 청소비 수익 총액으로 읽힌다')
+  // 2026-08-13 운영자 확정으로 이 개념의 이름은 '보증금 안의 청소비'가 됐다. '청소비 몫'은
+  // 무엇 안의 몫인지가 빠져 청소비 수익 총액으로 읽혔다. 상위 항이 이미 '받은 보증금'이라고
+  // 말한 이 자리에서만 '이 중 청소비'로 줄인다('이 중'이 곧 '보증금 안의').
+  if (!/이 중 청소비 \$\{fmtKorMoney\(data\.depositByCleaning\)\}/.test(dashClient)) {
+    violations.push("[소스] 홈 보유 보증금 분해가 depositByCleaning 을 '이 중 청소비'라 부르지 않는다 — 청소비 수익 총액으로 읽힌다")
+  }
+  // paidRevenue 는 **이용료 축만**이다. '수납액 (귀속)'은 옆 칸 부가수익까지 합친 말로 읽혀
+  // 두 칸의 합이 어딘가 세 번째에 있는 것처럼 보였다(운영자 확정 2026-08-13).
+  // 두 축을 더한 값의 이름은 '실수납' 하나다.
+  // 폐기 어휘는 **라벨 자리로** 좁혀 본다 — 정정 기록을 적은 주석까지 잡으면 근거가 사라진다
+  // (위 '순이익' 가드가 JSX 텍스트 노드로 자리를 좁힌 것과 같은 문법).
+  if (/label: '[^']*수납액 \(귀속\)'|label="[^"]*수납액 \(귀속\)"/.test(dashClient)) {
+    violations.push("[소스] 홈에 '수납액 (귀속)' 어휘가 되살아났다 — paidRevenue 는 이용료 축이고 두 축의 합은 '실수납'이다")
+  }
+  // 라벨 자리 두 곳(요약 타일·수납 현황 금액 줄)에 다 서야 한다. 설명 모달 본문은 세지 않는다 —
+  // 본문이 그 말을 한 번 쓰는 것만으로 통과하면 한쪽만 개명해도 그물이 안 걸린다(역주입에서 발견).
+  if ((dashClient.match(/label: '이용료 수납 \(귀속\)'|label="이용료 수납 \(귀속\)"/g) ?? []).length < 2) {
+    violations.push('[소스] 홈 요약 타일과 수납 현황이 같은 paidRevenue 를 다른 이름으로 부른다 — 같은 값에 두 이름이 붙는다')
   }
   // 폐기 어휘가 **화면·프롬프트 문자열로** 되살아났는지만 본다(주석의 정정 기록은 대상이 아니라
   // JSX 텍스트 노드 시작 '>' 와 프롬프트 항목 '- ' 로 자리를 좁힌다).

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { ViewTabs } from '@/components/ui/ViewTabs'
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -27,7 +27,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
 })
 import { CHART_COLORS, expenseCategoryColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney, fmtManShort, fmtOfferRentAhead, fmtWon } from '@/lib/fmtMoney'
-import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
+import { MoneyEquation, expectedRevenueTerms, paidRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge, type EquationTerm } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
@@ -43,6 +43,7 @@ import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appC
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { DonutChart } from '@/components/ui/DonutChart'
+import { InfoHint } from '@/components/ui/InfoHint'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ export type DashboardData = {
   // ── KPI 등식 캡션의 항 (2026-08-12) ──
   // 카드가 자기 식을 만들지 않도록 서버가 쓴 값을 그대로 받는다.
   billedThisMonth:      number   // 이 달 청구 합 — totalExpected 에서 퇴실 귀속·예약 확정을 뺀 몫
+  collectedThisMonth:   number   // 실수납 등식의 첫 항('수납') — 퇴실 귀속·부가수익을 뺀 이용료 수납분
   reservedExpected:     number   // 예약 확정자의 그 달 전액
   checkedOutRecognized: number   // 퇴실 완료자의 그 달 귀속 인식분
   // 아직 오지 않은 달인가 — 서버(KST)가 판정한다. 수납 관리와 같은 달에 캡션이 뜨고 사라져야
@@ -810,6 +812,18 @@ function Row({ label, value, colorStyle }: { label: string; value: React.ReactNo
   )
 }
 
+/**
+ * 등식 캡션 한 줄 — 상단 KPI 카드가 큰 숫자 아래 적는 그 줄과 크기·색·줄바꿈 규칙이 같다(§24).
+ * 문장은 MoneyEquation 정본이 만들고 여기서는 자리만 준다 — 항 이름·순서를 화면이 짓지 않는다.
+ */
+function EqCaption({ terms }: { terms: EquationTerm[] }) {
+  return (
+    <p className="text-[0.65625rem] mt-1" style={{ color: 'var(--warm-muted)', lineHeight: 1.5, wordBreak: 'keep-all' }}>
+      <MoneyEquation terms={terms} />
+    </p>
+  )
+}
+
 function DistList({ items, colors }: { items: { label: string; count: number; percent: number }[]; colors: string[] }) {
   if (items.length === 0) return <p className="text-sm py-4 text-center" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
   return (
@@ -880,6 +894,21 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   // 같은 것을 다시 누르면 접는다 — 목록이 열린 채로 남아 카드 높이를 붙잡지 않게.
   const [openCategory, setOpenCategory] = useState<string | null>(null)
   const openCat = data.categoryBreakdown.find(c => c.category === openCategory) ?? null
+
+  // ── 등식 문장 — 상단 KPI 카드·수납 관리와 같은 정본(MoneyEquation)이 만든다 ──────
+  // 뜨고 사라지는 달도 세 화면이 같아야 한다(hasRevenueBridge · isFutureMonth 같은 술어).
+  const showBridge = !data.isFutureMonth && hasRevenueBridge({
+    reserved: data.reservedExpected, checkedOut: data.checkedOutRecognized, extra: data.extraRevenue,
+  })
+  const revenueTerms = expectedRevenueTerms({
+    billed: data.billedThisMonth, reserved: data.reservedExpected,
+    checkedOut: data.checkedOutRecognized, extra: data.extraRevenue,
+  })
+  // 첫 항은 서버가 보낸 값이다 — 화면이 paidRevenue 에서 퇴실 항을 빼서 되계산하면
+  // 그 순간 캡션이 자기 식을 갖는다(billedThisMonth 를 따로 싣는 것과 같은 이유).
+  const paidTerms = paidRevenueTerms({
+    collected: data.collectedThisMonth, checkedOut: data.checkedOutRecognized, extra: data.extraRevenue,
+  })
   // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   // 세 항은 서버가 한 모집단을 배타 분할해 보낸 값이다(page.tsx paymentStatusPool). 여기서
   // 다시 나누지 않는다 — 수납률 분모를 화면이 조립하던 시절엔 같은 화면이 두 비율을 말했다.
@@ -902,7 +931,10 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             // 위에서 2.78:1 로 주저앉는다 — 라이트에서는 세 토큰이 모두 #A03C2E 라 픽셀이 안 바뀌고,
             // 다크에서만 --tc-text(#C9614C 4.63:1) · --danger-fg(#E08A75 7.05:1) 로 갈라진다.
             // 바로 아래 '지출과 이익' 카드가 이미 같은 근거로 --danger-fg 를 쓰고 있었다.
-            { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--tc-text)' },
+            // '수납액 (귀속)' → '이용료 수납 (귀속)' (운영자 확정 2026-08-13). 바로 옆 칸이 '부가수익'인데
+            // '수납액'은 둘을 합친 말로 읽혀, 두 칸의 합이 세 번째 어딘가에 있는 것처럼 보였다.
+            // 이 값(paidRevenue)은 이용료 축만이고, 둘을 더한 값의 이름은 '실수납'이다(KPI 보조줄).
+            { label: '이용료 수납 (귀속)', value: data.paidRevenue,  color: 'var(--tc-text)' },
             { label: '부가수익', value: data.extraRevenue, color: 'var(--viz-4)' },
             // '지출' → '기록된 지출' (2026-08-12 용어 통일). 바로 아래 예상 운영이익 등식이 빼는
             // 항과 **같은 변수**(totalExpense)인데 이름이 둘이었다. 같은 모집단은 같은 이름이다.
@@ -920,15 +952,31 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             //     수납 기록 축(청소비 명목 수납이 채운 몫)은 김민정형 역산 예외에서만 값이 서서
             //     "청소비 포함 보증금이 몇 명분이냐"는 정책 심상과 어긋났다(운영자 질의 2건).
             //     받은 보증금의 부분집합이라 '이 중'으로 묶는다 — 항등은 받은 + 미기록 = 총액.
+            //
+            // 2026-08-13 운영자 확정: 이 개념의 이름은 '보증금 안의 청소비'다. '청소비 몫'은
+            //   무엇 안의 몫인지가 빠져 청소비 수익 총액으로 읽혔다. 다만 바로 앞 항이 이미
+            //   '받은 보증금'이라고 말한 이 자리에서는 '이 중 청소비'로 줄인다 — '이 중'이 곧
+            //   '보증금 안의'라서, 안 줄이면 한 줄에서 같은 말을 두 번 하게 된다.
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
-              sub: `받은 보증금 ${fmtKorMoney(data.depositReceived)}${data.depositByCleaning > 0 ? ` · 이 중 청소비 몫 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
-          ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
+              sub: `받은 보증금 ${fmtKorMoney(data.depositReceived)}${data.depositByCleaning > 0 ? ` · 이 중 청소비 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}`,
+              hint: (
+                <InfoHint title="보유 보증금">
+                  <p>계약서에 적힌 보증금 총액입니다. 아래 줄이 그 총액을 둘로 가릅니다.</p>
+                  <p className="mt-2"><b>받은 보증금</b>은 실제로 입금받아 기록이 남은 몫이고, <b>미기록</b>은 계약서에만 있는 몫입니다(전 원장에게 승계받아 현금이 오간 적 없는 계약 등). 두 값을 더하면 보유 보증금이 됩니다.</p>
+                  <p className="mt-2"><b>이 중 청소비</b>는 받은 보증금 안에 들어 있는 <b>보증금 안의 청소비</b>입니다. 청소비를 따로 받지 않고 보증금에 포함해 받는 영업장 설정에서, 계약서상 청소비로 잡혀 퇴실 때 반환하지 않을 몫입니다. 받은 보증금과 나란히 더하는 항이 아니라 그 일부입니다.</p>
+                  <p className="mt-2">입실 때 청소비를 따로 받은 계약은 여기 잡히지 않습니다. 그 돈은 이미 부가수익으로 인식됩니다.</p>
+                </InfoHint>
+              ) },
+          ] as { label: string; value: number; color: string; sub?: string; hint?: ReactNode }[]).map((item, i) => (
             <div
               key={i}
               className="px-3 py-3 text-center min-w-0"
               style={{ borderRight: '1px solid var(--warm-border)', borderBottom: '1px solid var(--warm-border)' }}
             >
-              <p className="text-[10.5px] font-medium mb-1 truncate" style={{ color: 'var(--warm-muted)' }}>{item.label}</p>
+              {/* 설명 버튼은 truncate 밖에 둔다 — 안에 두면 좁은 칸에서 라벨과 함께 잘려 사라진다. */}
+              <p className="text-[10.5px] font-medium mb-1 flex items-center justify-center min-w-0" style={{ color: 'var(--warm-muted)' }}>
+                <span className="truncate">{item.label}</span>{item.hint}
+              </p>
               <p className="text-[13px] font-bold leading-tight break-all" style={{ color: item.color }}>
                 <MoneyDisplay amount={Math.abs(item.value)} prefix={item.value < 0 ? '-' : ''} />
               </p>
@@ -967,16 +1015,34 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           </div>
           {/* 위 항들의 합이 예상 수입이고, 그중 실제로 받은 몫이 실수납이다.
               두 이름 다 상단 KPI 카드가 쓰는 말이라 여기서 새로 짓지 않는다. */}
+          {/* 등식 두 줄 — 상단 KPI 카드·수납 관리 캡션과 **같은 정본 문장**이다(MoneyEquation).
+              위 목록과 같은 항을 다시 적는 것처럼 보일 수 있으나, 목록은 세로로 늘어선 값이고
+              등식은 다른 화면에서 눈으로 대조할 한 줄이다 — 세 화면이 글자까지 같은 문장을 써야
+              같은 숫자에 다른 설명이 붙지 않는다(2026-07/08 신뢰 사고 세 건의 형태). */}
           <div className="mt-2.5 pt-2.5 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
-            <Row label="예상 수입" value={<MoneyDisplay amount={data.projectedRevenue} />} />
-            <Row label="실수납" value={<MoneyDisplay amount={data.totalRevenue} />} colorStyle={{ color: 'var(--success-fg)' }} />
+            <div>
+              <Row label="예상 수입" value={<MoneyDisplay amount={data.projectedRevenue} />} />
+              {showBridge && <EqCaption terms={revenueTerms} />}
+            </div>
+            <div>
+              <Row label="실수납" value={<MoneyDisplay amount={data.totalRevenue} />} colorStyle={{ color: 'var(--success-fg)' }} />
+              {showBridge && <EqCaption terms={paidTerms} />}
+            </div>
           </div>
           {/* 미수 — 상단 KPI 는 도래분(누적 미납)만 말한다. 아직 납부일이 안 온 몫이 얼마인지는
               홈 어디에도 없어서 '미납 0원'이 '받을 돈이 없다'로 읽혔다. 두 항과 합을 함께 세운다.
               모집단 한정어(현 입주자)는 KPI 카드 라벨과 같은 말로 소제목에 둔다 — 퇴실자 잔여 채권은
               여기 없고 결산 보고서 월말 미수 잔액이 그 자리다. */}
           <div className="mt-3 pt-3 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
-            <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>미수 (현 입주자)</p>
+            <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>
+              미수 (현 입주자)
+              <InfoHint title="미수 (현 입주자)">
+                <p>아직 받지 못한 돈을 <b>납부일이 지났는지</b>로 가른 것입니다. 두 항의 합이 아래 합계입니다.</p>
+                <p className="mt-2"><b>누적 미납</b>은 납부일이 이미 지났는데 안 들어온 돈입니다. 지난달 이전에 밀린 이월분도 여기 들어갑니다. 회수가 필요한 금액입니다.</p>
+                <p className="mt-2"><b>납부 예정</b>은 납부일이 아직 오지 않은 정상 청구분입니다. 밀린 돈이 아니라 곧 들어올 돈입니다.</p>
+                <p className="mt-2">모집단은 현재 입주자(거주·비거주)입니다. 퇴실한 분의 남은 미납은 여기 없고, 전체 채권은 결산 보고서의 월말 미수 잔액에서 보실 수 있습니다.</p>
+              </InfoHint>
+            </p>
             {/* 색은 바로 아래 수납 현황 도넛 범례와 같은 개념색이다 — 같은 화면에서 '미납'과
                 '수납예정'이 건수로 서 있고 여기서는 같은 개념이 금액으로 선다.
                 --tc 를 쓰지 않는다: 다크에서 안 밝아져 크림 카드 위 대비가 2.78:1 로 떨어진다
@@ -1010,6 +1076,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 </div>
                 <div className="mt-2.5 pt-2.5 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
                   <Row label="예상 지출" value={<MoneyDisplay amount={data.expectedExpense} />} />
+                  {!data.isFutureMonth && pendingRecurring !== 0 && (
+                    <EqCaption terms={expectedExpenseTerms({ recordedExpense: data.totalExpense, pendingRecurring })} />
+                  )}
                 </div>
                 {/* 이익 두 줄 — 왼쪽 카드의 실수납에서 기록된 지출을 뺀 것이 운영이익,
                     예상 수입에서 예상 지출을 뺀 것이 예상 운영이익이다. 색은 요약 타일 운영이익과 같다. */}
@@ -1019,8 +1088,17 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                       쪼개면 하이픈이 붙어 §06 을 벗어난다(타일 쪽은 기존 결함으로 별건 보고). */}
                   <Row label="운영이익" value={<MoneyDisplay amount={data.netProfit} />}
                     colorStyle={profitColor(data.netProfit)} />
-                  <Row label="예상 운영이익" value={<MoneyDisplay amount={data.projectedNetProfit} />}
-                    colorStyle={profitColor(data.projectedNetProfit)} />
+                  <div>
+                    <Row label="예상 운영이익" value={<MoneyDisplay amount={data.projectedNetProfit} />}
+                      colorStyle={profitColor(data.projectedNetProfit)} />
+                    {!data.isFutureMonth && (
+                      <EqCaption terms={operatingProfitTerms({
+                        projectedRevenue: data.projectedRevenue,
+                        recordedExpense:  data.totalExpense,
+                        pendingRecurring,
+                      })} />
+                    )}
+                  </div>
                 </div>
               </>
             )
@@ -1066,7 +1144,15 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>지출 카테고리</h3>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>
+            지출 카테고리
+            <InfoHint title="지출 카테고리">
+              <p>이 달 <b>예상 지출</b>을 카테고리로 나눈 것입니다. 가운데 숫자가 그 합이고, 위 &apos;지출과 이익&apos;의 예상 지출과 같은 값입니다.</p>
+              <p className="mt-2">조각의 <b>옅은 부분</b>은 아직 장부에 안 올라간 <b>고정 지출 (예정)</b>입니다. 임대료처럼 낼 것이 정해진 돈이라, 빼고 보면 이 달 지출 그림이 실제보다 작아집니다. 범례에 &apos;기록 · 예정&apos;으로 금액을 나눠 적었습니다.</p>
+              <p className="mt-2">지난 달을 조회하면 예정분은 사라집니다. 그 달에는 추정치를 더하지 않기 때문입니다.</p>
+              <p className="mt-2">조각이나 범례를 누르면 금액 큰 순으로 다섯 건까지 펼쳐집니다. 전체는 &apos;지출 관리에서 전체 보기&apos;로 이어집니다.</p>
+            </InfoHint>
+          </h3>
           {data.categoryBreakdown.length === 0 ? (
             <p className="text-sm py-6 text-center" style={{ color: 'var(--warm-muted)' }}>이달 지출 없음</p>
           ) : (
@@ -1149,7 +1235,15 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         </div>
 
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>수납 현황</h3>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>
+            수납 현황
+            <InfoHint title="수납률">
+              <p>가운데 <b>수납률</b>은 현재 입주자 계약 중 완납한 계약의 비율입니다. 금액이 아니라 <b>건수</b> 비율입니다.</p>
+              <p className="mt-2">분모는 아래 세 항의 합입니다. 완납 · 수납예정 · 미납이 한 계약을 한 번씩만 세도록 나눈 것이라, 셋을 더하면 정확히 모집단이 됩니다.</p>
+              <p className="mt-2">미납은 납부일이 지난 미회수가 하나라도 있는 계약(이월 미수 포함), 수납예정은 납부일이 아직 안 온 몫만 남은 계약, 완납은 나머지입니다.</p>
+              <p className="mt-2">아래 이용료 수납 (귀속)은 같은 사람 집합이 아닙니다. 그 금액에는 퇴실한 분의 이 달 몫이 들어 있습니다.</p>
+            </InfoHint>
+          </h3>
           <div className="flex items-center gap-5">
             <div className="shrink-0">
               <DonutChart segments={paymentSegments} centerLabel={`${data.paymentRate}%`} centerSub="수납률" />
@@ -1186,7 +1280,10 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               계약의 그 달 귀속분이 들어 있어 같은 사람 집합이 아니다. 같은 칸에 이어 붙이면
               넷째 항처럼 읽힌다. */}
           <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--warm-border)' }}>
-            <Row label="이달 수납액 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
+            {/* 위 요약 타일과 **같은 변수**(paidRevenue)라 이름도 같다 — '수납액'은 부가수익까지
+                합친 말로 읽혀 옆 칸과 겹쳤다(운영자 확정 2026-08-13). 두 축을 더한 값의 이름은 '실수납'이다.
+                달 한정어는 뺀다 — 이 탭이 이미 조회월 스코프이고 타일도 같은 달을 말한다. */}
+            <Row label="이용료 수납 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
           </div>
         </div>
       </div>

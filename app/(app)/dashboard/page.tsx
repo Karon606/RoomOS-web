@@ -1746,6 +1746,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalExpected,
     // KPI 등식 캡션의 항 — 새 계산이 아니라 위에서 쓴 값을 그대로 싣는다.
     billedThisMonth,
+    // 실수납 등식의 첫 항('수납')도 서버가 보낸다 — 화면이 paidRevenue 에서 퇴실 항을 빼서
+    // 되계산하면 캡션이 자기 식을 갖는다(billedThisMonth 를 따로 싣는 것과 같은 이유).
+    collectedThisMonth: paidBreakdown.occupied,
     reservedExpected,
     checkedOutRecognized,
     // 미래월 판정은 서버(KST)가 내린다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
