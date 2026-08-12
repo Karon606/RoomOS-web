@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
+import { BILLABLE_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
@@ -2049,7 +2049,42 @@ export async function getTenantDetail(tenantId: string) {
   // 고객 정보 화면의 [보기](revealForeignRegNo)로 가야 한다. 그 문만 열람 기록을 남긴다.
   const { foreignRegNoEnc, ...tenant } = row
   const canIdentity = canReadScope(await getMyRole(), 'identity')
-  return { ...tenant, foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null }
+  return {
+    ...tenant,
+    foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null,
+    monthlyBilling: await tenantMonthlyBilling(row.leaseTerms),
+  }
+}
+
+/**
+ * 계약이 둘 이상인 사람의 이번 달 청구 합계 — 계약 하나면 null(줄 자체가 안 뜬다).
+ *
+ * 청구는 계약별로 유지하고 합산은 표시만 한다(운영자 확정 2026-08-13). 그래서 여기서 새로 계산하지
+ * 않고 수납 관리 행(getRoomPaymentStatus)의 `expected` 를 그대로 모은다 — 같은 이름의 숫자가 화면마다
+ * 다르면 그게 사고다. 양도인 귀속월 0·무청구 퇴실월 0·락인·할인·일할이 전부 그 행에 이미 반영돼 있어,
+ * 이 줄과 수납 화면은 문자 그대로 같은 값을 말한다.
+ *
+ * 무거운 조회를 매번 부르지 않기 위해 계약이 둘 이상일 때만 부른다. 오늘 실데이터로는 그런 고객이
+ * 0명이라 이 함수는 한 번도 안 돌고, 상세 모달의 조회 수도 종전과 같다.
+ */
+async function tenantMonthlyBilling(
+  leases: { id: string; status: string; room: { roomNo: string } | null }[],
+): Promise<{ month: string; parts: { leaseId: string; roomNo: string; amount: number }[]; total: number } | null> {
+  const billable: string[] = BILLABLE_STATUSES
+  const target = leases.filter(l => billable.includes(l.status))
+  if (target.length < 2) return null
+  if (!canReadScope(await getMyRole(), 'money')) return null
+
+  const kst = kstYmd()
+  const month = `${kst.year}-${String(kst.month).padStart(2, '0')}`
+  const rows = await getRoomPaymentStatus(month)
+  const byLease = new Map(rows.filter(r => r.leaseTermId).map(r => [r.leaseTermId!, r]))
+  const parts = target.map(l => ({
+    leaseId: l.id,
+    roomNo: l.room?.roomNo ?? '',
+    amount: byLease.get(l.id)?.expected ?? 0,
+  }))
+  return { month, parts, total: parts.reduce((s, p) => s + p.amount, 0) }
 }
 
 /** 사람 축 조회가 메인 계약 하나만 내려보낼 때 쓰는 마무리 — 화면의 `leaseTerms[0]` 문법을 그대로 유지시킨다. */
