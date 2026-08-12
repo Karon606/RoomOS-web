@@ -2372,12 +2372,15 @@ export default function TenantClient({
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={mainLease(editTenant)?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
-              <div className="flex gap-2 pt-2">
+              {/* 320px 에서 셋을 한 줄에 두면 버튼 안쪽 폭이 56px 로 눌려 '계약 추가'가 두 줄로 접힌다
+                  (280px 본문 − 간격 16px ÷ 3 − 좌우 여백 32px). 좁은 화면에서는 제 줄을 갖고, 넓어지면
+                  종전대로 취소·저장 옆에 선다. §22 solid 는 여전히 '저장' 하나뿐이다. */}
+              <div className="flex flex-wrap gap-2 pt-2">
                 {/* 계약 추가 — 이 사람에게 방을 하나 더(창고·사무실 명의 등). 수정 폼 옆에 두는 것은
                     같은 사람을 새 고객으로 또 등록하는 길목이 여기이기 때문이다. */}
                 <Btn type="button" variant="secondary" size="md"
                   onClick={() => { const t = editTenant; setEditTenant(null); setEditTenantDirty(false); setError(''); setAddLeaseTenant(t) }}
-                  className="flex-1">
+                  className="basis-full sm:flex-1 sm:basis-0">
                   계약 추가
                 </Btn>
                 <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
@@ -2460,6 +2463,7 @@ export default function TenantClient({
                   <SegmentedControl
                     ariaLabel="수납할 계약"
                     size="sm"
+                    scroll
                     value={lease.id}
                     options={payableLeases.map(l => ({ value: l.id, label: fmtRoomNo(l.room?.roomNo, '호실 미지정') }))}
                     onChange={id => { const next = payableLeases.find(l => l.id === id); if (next && next.id !== lease.id) void openPayModal(tenant, next) }}
