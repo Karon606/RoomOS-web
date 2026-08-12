@@ -144,11 +144,13 @@ export default function SaveFeedback() {
                 )}
               </div>
               {t.action && (
-                /* 토스트는 모드 불변 다크 칩 — --sand는 다크에서 어두워지므로 고정 라이트 샌드 */
+                /* 토스트는 모드 불변 다크 칩 — --sand는 다크에서 어두워지므로 고정 라이트 샌드.
+                   그 고정값은 이제 --on-solid-accent 토큰이 들고 있다(같은 함정을 밟던
+                   --rev-change 와 한 출처, 2026-08-12). 리터럴을 남기지 않는다. */
                 <button type="button"
                   onClick={() => { t.action!.run(); remove(t.id) }}
                   className="shrink-0 -my-2.5 -mr-3 px-3 self-stretch text-[13px] font-bold hover:underline"
-                  style={{ color: '#F2D9B8', minHeight: 44 }}>
+                  style={{ color: 'var(--on-solid-accent)', minHeight: 44 }}>
                   {t.action.label}
                 </button>
               )}

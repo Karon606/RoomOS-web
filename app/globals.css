@@ -118,6 +118,12 @@
      자리마다 rgba 를 손으로 적던 자리였고, 그 리터럴 base 는 #FFFCF7(순백에 가까움)이라
      §28 '코랄 솔리드 위 --on-solid, 순백 금지' 를 벗어나 있었다. */
   --on-solid-sub: color-mix(in srgb, var(--on-solid) 82%, transparent);
+  /* 솔리드 채움 위 **강조** 글자 — §24 강조 KpiCard 의 증감·달성 수치, §15 토스트 액션 버튼.
+     값은 라이트 --sand 와 같은 #F2D9B8 이지만 var(--sand) 를 물면 안 된다: --sand 는 다크에서
+     보조 버튼 hover 표면(#332619)으로 뒤집혀 코랄 위 2.22:1 이 된다(--cream 이 다크에서
+     표면색으로 뒤집히는 것과 같은 함정, §28). 채움색이 양 모드 고정이라 이 값도 고정이다.
+     --tc 위 4.84:1. */
+  --on-solid-accent: #F2D9B8;
   --danger-fg:    #A03C2E;  --danger-bg:  rgba(160,60,46,.08);  --danger-ring:  rgba(160,60,46,.22);  --danger-solid:  #A03C2E;
   --success-fg:   #4E6834;  --success-bg: rgba(85,108,58,.10);   --success-ring: rgba(85,108,58,.22); --success-solid: #4E6834;
   --warning-fg:   #8B5E0A;  --warning-bg: rgba(180,120,10,.10);  --warning-ring: rgba(180,120,10,.24); --warning-solid: #8B5E0A;
@@ -149,8 +155,11 @@
   --np-pos:     var(--viz-3);
   --np-neg:     var(--tc-s);
   --np-cash:    var(--viz-7);
-  /* #2 당월 매출 증감(테라코타 solid 위) */
-  --rev-change: var(--viz-4);
+  /* #2 당월 매출 증감·달성(테라코타 solid 위) — §28 감사가 지정한 sand.
+     라이트에서 --viz-4(앰버)를 쓰던 것은 코랄 위 1.80:1 로 사실상 판독이 안 됐다.
+     페어 토큰이 아니라 모드 불변값이다(아래 html.dark 에 짝을 두지 않는다 — 코랄 채움이 불변이라
+     라이트·다크에 다른 값을 두면 한쪽이 반드시 틀린다. 그게 종전 --sand 재정의 충돌의 원인이었다). */
+  --rev-change: var(--on-solid-accent);
   /* #6 공실 수치 — 라이트 현행 유지, 다크는 뮤트(공실≠위험) */
   --vacant-num: var(--coral);
 
@@ -500,8 +509,8 @@ html.dark {
   --np-pos:     var(--d-success);
   --np-neg:     var(--d-overdue);
   --np-cash:    var(--d-success);
-  /* #2 -N% 텍스트: sand (앰버 금지, 강조는 weight 로) */
-  --rev-change: var(--sand);
+  /* #2 -N% 텍스트: 다크 짝을 두지 않는다 — :root 의 --on-solid-accent 가 모드 불변으로 이긴다.
+     여기 var(--sand) 를 두던 것이 다크 --sand(#332619 hover 표면) 재정의와 충돌해 2.22:1 이었다. */
   /* #6 공실 = 위험 아님 */
   --vacant-num: var(--d-ink-m);
 }
