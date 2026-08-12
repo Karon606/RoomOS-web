@@ -935,8 +935,8 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   // 반대 방향 — '실수납'이라는 이름이 보증금 축으로 새면 홈 안에서 탭만 바꿔도 같은 말이
   // 다른 숫자를 가리킨다. 보유 보증금 분해는 depositCompositionLabel 과 같은 말('받은 보증금')을 쓴다.
   // '청소비 몫'도 마찬가지다 — 그 값은 청소비 수익이 아니라 보증금 중 청소비가 채운 몫이다.
-  if (!/받은 보증금 \$\{fmtKorMoney\(data\.depositRecorded\)\}/.test(dashClient)) {
-    violations.push('[소스] 홈 보유 보증금 분해가 depositRecorded 를 받은 보증금이라 부르지 않는다 — 이용료 축의 실수납과 이름이 겹친다')
+  if (!/받은 보증금 \$\{fmtKorMoney\(data\.depositReceived\)\}/.test(dashClient)) {
+    violations.push('[소스] 홈 보유 보증금 분해가 depositReceived 를 받은 보증금이라 부르지 않는다 — 이용료 축의 실수납과 이름이 겹친다')
   }
   if (!/청소비 몫 \$\{fmtKorMoney\(data\.depositByCleaning\)\}/.test(dashClient)) {
     violations.push('[소스] 홈 보유 보증금 분해가 depositByCleaning 을 청소비 몫이라 부르지 않는다 — 청소비 수익 총액으로 읽힌다')
