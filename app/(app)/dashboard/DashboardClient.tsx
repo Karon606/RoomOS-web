@@ -1030,9 +1030,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
             <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{isAreaRange ? '납부일 기준' : '귀속월 기준'}</span>
           </div>
+          {/* 막대 모드의 수입은 KPI '실수납'과 같은 정본(getPaidRevenueByMonths)이라 이름도 같게 부른다.
+              면적 모드(일간·주간)는 납부일 축이라 캡이라는 개념이 없다 — 거기서 '실수납'이라 부르면
+              그때 거짓이 되므로 종전 이름을 그대로 둔다. 배지가 이미 같은 조건으로 갈린다.
+              지출은 KPI 타일·도넛과 같은 변수라 '기록된 지출'이다(2026-08-12 어휘 통일에서 지나친 자리). */}
           <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />수입 (수납 기준)</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--ink-m)' }} />지출</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />{isAreaRange ? '수입 (수납 기준)' : '실수납'}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--ink-m)' }} />{isAreaRange ? '지출' : '기록된 지출'}</span>
           </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">

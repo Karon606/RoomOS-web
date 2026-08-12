@@ -401,6 +401,31 @@ export async function getPaidRevenue(
   propertyId: string,
   targetMonth: string,
 ): Promise<PaidRevenueBreakdown> {
+  const byMonth = await getPaidRevenueByMonths(prisma, propertyId, [targetMonth])
+  return byMonth.get(targetMonth) ?? { occupied: 0, checkedOut: 0, total: 0 }
+}
+
+/**
+ * 여러 달을 한 번에 — 추이 그래프처럼 월이 6·12·24개인 자리를 위한 배치형. 값은 getPaidRevenue 와 같다.
+ *
+ * 왜 배치인가 (2026-08-12, 회계 패널). 추이 막대의 수입은 그 달 귀속 수납의 **무캡 합**이었다.
+ * 홈 KPI 실수납은 그 달 청구액으로 캡한 합인데, 같은 화면 같은 달을 두 식이 말하고 있었다.
+ * 오늘 실데이터로는 6개월 전부 차 0원이지만 그건 아직 과납·양도인 겹침이 없어서지 규칙이 같아서가
+ * 아니다. 그래서 추이가 정본을 부르게 하고, 부르려면 월마다 5쿼리를 돌 수는 없어 여기를 배치로 연다.
+ *
+ * 월에 의존하는 조회는 paymentRecord 둘과 퇴실 집계 하나뿐이라 `in` 하나로 묶인다. 계약 조회와
+ * 영업장 조회는 월과 무관하므로 몇 달을 물어도 그대로 한 번이다. 즉 6개월도 5쿼리, 24개월도 5쿼리다.
+ *
+ * getPaidRevenue 는 이 함수에 위임만 한다 — 사본을 두면 이 문제를 세 번째로 반복한다.
+ */
+export async function getPaidRevenueByMonths(
+  prisma: PrismaDb,
+  propertyId: string,
+  months: string[],
+): Promise<Map<string, PaidRevenueBreakdown>> {
+  const out = new Map<string, PaidRevenueBreakdown>()
+  if (months.length === 0) return out
+
   // 양도인 귀속 기준일 — 별도 설정이 없으면 인수일. 수납 화면(getRoomPaymentStatus)과 같은 기준이다.
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -408,7 +433,7 @@ export async function getPaidRevenue(
   })
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
 
-  const [leases, payments, prevOwnerRows, checkedOut] = await Promise.all([
+  const [leases, payments, prevOwnerRows, checkedOutRows] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: BILLABLE_STATUSES } },
       select: {
@@ -421,41 +446,67 @@ export async function getPaidRevenue(
     }),
     prisma.paymentRecord.findMany({
       where: {
-        propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
+        propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false,
         ...(cutoff ? { payDate: { gte: cutoff } } : {}),
       },
-      select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
+      select: { targetMonth: true, leaseTermId: true, actualAmount: true, expectedAmount: true },
     }),
     // 양도인 귀속월 판정 — 보증금 record 는 월 청구 축이 아니라 제외한다(홈 allHistoricalPayments·
     // 수납 화면 allRecordsThruMonth 둘 다 isDeposit:false 로 모은 뒤 isPrevOwner 를 본다).
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth, isDeposit: false, isPrevOwner: true },
-      select: { leaseTermId: true },
+      where: { propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: true },
+      select: { targetMonth: true, leaseTermId: true },
     }),
-    getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth),
+    // 퇴실 항 — getCheckedOutRecognizedRevenue 와 같은 where 를 달별로 묶은 것뿐이다(payDate 컷오프 없음).
+    prisma.paymentRecord.groupBy({
+      by: ['targetMonth'],
+      where: {
+        propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false,
+        leaseTerm: { status: 'CHECKED_OUT' },
+      },
+      _sum: { actualAmount: true },
+    }),
   ])
 
-  const prevOwnerLeases = new Set(prevOwnerRows.map(p => p.leaseTermId))
-  const paidByLease = new Map<string, number>()
-  const lockedByLease = new Map<string, number>()
+  const prevOwnerByMonth = new Map<string, Set<string>>()
+  for (const p of prevOwnerRows) {
+    let s = prevOwnerByMonth.get(p.targetMonth)
+    if (!s) { s = new Set(); prevOwnerByMonth.set(p.targetMonth, s) }
+    s.add(p.leaseTermId)
+  }
+  const paidByMonth = new Map<string, Map<string, number>>()
+  const lockedByMonth = new Map<string, Map<string, number>>()
   for (const p of payments) {
+    let paidByLease = paidByMonth.get(p.targetMonth)
+    if (!paidByLease) { paidByLease = new Map(); paidByMonth.set(p.targetMonth, paidByLease) }
     paidByLease.set(p.leaseTermId, (paidByLease.get(p.leaseTermId) ?? 0) + p.actualAmount)
+    let lockedByLease = lockedByMonth.get(p.targetMonth)
+    if (!lockedByLease) { lockedByLease = new Map(); lockedByMonth.set(p.targetMonth, lockedByLease) }
     if (p.expectedAmount > (lockedByLease.get(p.leaseTermId) ?? 0)) lockedByLease.set(p.leaseTermId, p.expectedAmount)
   }
+  const checkedOutByMonth = new Map(checkedOutRows.map(r => [r.targetMonth, r._sum.actualAmount ?? 0]))
 
-  let occupied = 0
-  for (const l of leases) {
-    const paid = paidByLease.get(l.id) ?? 0
-    if (paid <= 0) continue
-    // 아직 입주 전인 계약은 그 달 청구 대상이 아니다 — 예상 축·수납 화면 행과 같은 게이트.
-    const moveInMonth = monthOfDate(l.moveInDate)
-    if (moveInMonth && moveInMonth > targetMonth) continue
-    occupied += Math.min(paid, monthBillForRevenue(l, targetMonth, {
-      isPrevOwnerMonth: prevOwnerLeases.has(l.id),
-      locked: lockedByLease.get(l.id) ?? null,
-    }))
+  for (const targetMonth of months) {
+    const prevOwnerLeases = prevOwnerByMonth.get(targetMonth) ?? new Set<string>()
+    const paidByLease = paidByMonth.get(targetMonth)
+    const lockedByLease = lockedByMonth.get(targetMonth)
+    const checkedOut = checkedOutByMonth.get(targetMonth) ?? 0
+
+    let occupied = 0
+    for (const l of leases) {
+      const paid = paidByLease?.get(l.id) ?? 0
+      if (paid <= 0) continue
+      // 아직 입주 전인 계약은 그 달 청구 대상이 아니다 — 예상 축·수납 화면 행과 같은 게이트.
+      const moveInMonth = monthOfDate(l.moveInDate)
+      if (moveInMonth && moveInMonth > targetMonth) continue
+      occupied += Math.min(paid, monthBillForRevenue(l, targetMonth, {
+        isPrevOwnerMonth: prevOwnerLeases.has(l.id),
+        locked: lockedByLease?.get(l.id) ?? null,
+      }))
+    }
+    out.set(targetMonth, { occupied, checkedOut, total: occupied + checkedOut })
   }
-  return { occupied, checkedOut, total: occupied + checkedOut }
+  return out
 }
 
 /**

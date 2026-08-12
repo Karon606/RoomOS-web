@@ -14,7 +14,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
+import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -98,6 +98,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 응답시간: 서로 독립인 조회를 여기서 미리 시작 — await는 각 사용 지점 그대로 ──
   // 값·계산식·에러 처리 불변, 쿼리 시작 시점만 앞당김(순차 왕복 → 동시 실행).
   const pPaidRevenue          = getPaidRevenue(prisma, propertyId, targetMonth)
+  // 추이 막대의 이용료 항 — KPI 실수납과 같은 정본을 쓴다(2026-08-12 회계 패널). 종전에는 그 달 귀속
+  // 수납의 무캡 합이라, 같은 화면에서 같은 달을 두 식이 말했다. 배치형이라 6개월도 쿼리 수는 그대로다.
+  const pTrendPaidRevenue     = getPaidRevenueByMonths(prisma, propertyId, last6Months)
   const pCheckedOutRecognized = getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
   const pRecurringWithStatus  = getRecurringExpensesWithStatus(targetMonth)
   const pDepositRecordedAgg   = prisma.paymentRecord.aggregate({
@@ -153,7 +156,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -167,7 +170,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     expByCategory,
     moveInLeases,
     moveOutLeases,
-    trendPayments,
     trendExpenses,
     trendIncomes,
     activeCount,
@@ -260,19 +262,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
-    // 6개월 트렌드
-    prisma.paymentRecord.findMany({
-      where: {
-        propertyId,
-        targetMonth: { in: last6Months },
-        isDeposit: false,
-        isPrevOwner: false,
-        // RESERVED 선납·취소분 제외(조기 매출 차단). CHECKED_OUT는 유지 — dashboard/actions fetchRangeData와 동일 규칙.
-        leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } },
-        ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
-      },
-      select: { targetMonth: true, actualAmount: true },
-    }),
+    // 6개월 트렌드 — 이용료 항은 pTrendPaidRevenue(정본)로 옮겼다. 여기 있던 무캡 합산 조회는
+    // 그 자리에서 사라졌다(2026-08-12). 지출·부가수익은 date 축이라 그대로 남는다.
     prisma.expense.findMany({
       where: { propertyId, date: { gte: trendStartDate, lte: endDate } },
       select: { date: true, amount: true },
@@ -767,12 +758,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const wishGroupedAlerts = wishMatch.rooms
 
   // ── 6개월 트렌드 ─────────────────────────────────────────────
+  // 이용료 항은 정본(getPaidRevenueByMonths)이다 — 그 달 청구액으로 캡한 합이라 마지막 막대가
+  // KPI '실수납'과 원 단위로 같다. 부가수익은 축이 하나(date)뿐이라 KPI extraRevenue 와 이미 같은 값이고,
+  // 지출도 KPI 와 같은 창(그 달 1일~말일)이다.
+  const trendPaidRevenue = await pTrendPaidRevenue
   const trend = last6Months.map(m => {
     const [y, mo] = m.split('-').map(Number)
     const mStart  = new Date(y, mo - 1, 1)
     const mEnd    = new Date(y, mo, 0)
     const revenue =
-      trendPayments.filter(p => p.targetMonth === m).reduce((s, p) => s + p.actualAmount, 0) +
+      (trendPaidRevenue.get(m)?.total ?? 0) +
       trendIncomes
         .filter(i => new Date(i.date) >= mStart && new Date(i.date) <= mEnd)
         .reduce((s, i) => s + i.amount, 0)
@@ -1001,6 +996,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const upcomingCount = unpaidCandidates.filter(l => l.upcomingPortion > 0).length
   // 예상 매출 진행바용 — 도래·미도래 합산한 총 미수령 건수
   const pendingCount = unpaidCandidates.length
+
   // ── 수납 현황 도넛 — 한 모집단을 한 축으로 배타 분할 (회계 패널 2026-08-12) ──
   //
   //   미납     도래·미회수가 하나라도 있다 (이월 미수 우선 — 수납 관리 isPaid 와 같은 규칙)
@@ -1027,7 +1023,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const paymentRate = paymentPool.length > 0
     ? Math.round((paidCount / paymentPool.length) * 100)
     : 0
-
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))

@@ -1242,6 +1242,51 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 18-3. 추이 막대의 수입은 KPI 실수납과 같은 정본이다 (2026-08-12 회계 패널).
+//
+//   종전 추이는 그 달 귀속 record 의 무캡 합이었다. 홈 KPI 는 그 달 청구액으로 캡한 합이라,
+//   같은 화면에서 같은 달을 두 식이 말했다(오늘 실데이터로는 6개월 전부 차 0원인 잠복 상태였다).
+//   막대 모드만 수렴한다 — 일간·주간은 납부일 축이라 '그 달 청구 캡'이라는 개념이 성립하지 않는다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  const leaseStatusSrc = readFileSync('lib/leaseStatus.ts', 'utf8')
+
+  if (!/export async function getPaidRevenueByMonths\(/.test(leaseStatusSrc)) {
+    violations.push('[소스] 배치형 정본(getPaidRevenueByMonths)이 사라졌다 — 추이가 다시 자기 합산식을 갖는다')
+  }
+  // 단건이 배치에 위임하는가. 사본이 둘로 갈리면 아래 호출부 가드가 전부 무의미해진다.
+  if (!/const byMonth = await getPaidRevenueByMonths\(prisma, propertyId, \[targetMonth\]\)/.test(leaseStatusSrc)) {
+    violations.push('[소스] getPaidRevenue 가 배치형 위임이 아니다 — 같은 식이 두 벌이 됐다')
+  }
+  if (!/getPaidRevenueByMonths\(prisma, propertyId, last6Months\)/.test(dash)) {
+    violations.push('[소스] 홈 6개월 추이가 정본을 안 쓴다 — 마지막 막대가 KPI 실수납과 갈린다')
+  }
+  if (/trendPayments\.filter\(p => p\.targetMonth === m\)/.test(dash)) {
+    violations.push('[소스] 홈 추이가 무캡 합산(targetMonth 직접 합)으로 되돌아갔다')
+  }
+  // 막대 5분기(월간·반년·분기·연간·전체)가 전부 정본을 탄다. 호출 형태로 본다 — import 만 보면 통과한다.
+  if ((dashActions.match(/paidRevenueForMonths\(propertyId, /g) ?? []).length < 3) {
+    violations.push('[소스] getTrendData 의 막대 분기 일부가 정본(paidRevenueForMonths)을 안 탄다 — 범위 버튼마다 수입 축이 갈린다')
+  }
+  if (/payments\.filter\(p => p\.targetMonth === m\)|payments\.filter\(p => months\.includes\(p\.targetMonth/.test(dashActions)) {
+    violations.push('[소스] getTrendData 막대 분기에 귀속월 무캡 합산이 되살아났다')
+  }
+  // 면적 모드(일간·주간)는 납부일 축 그대로다. 여기에 캡을 걸면 '납부일 기준' 배지가 거짓이 된다.
+  // 일간·주간 두 곳이다. 존재만 보면 한쪽이 사라져도 나머지 하나로 통과한다(역주입에서 발견).
+  if ((dashActions.match(/payments\.filter\(p => p\.payDate && /g) ?? []).length < 2) {
+    violations.push('[소스] getTrendData 의 납부일 축(일간·주간) 합산이 사라졌다 — 배지 문구와 실제가 어긋난다')
+  }
+  // 범례 이름 — 막대는 KPI 와 같은 값이라 같은 이름('실수납'·'기록된 지출')을 쓰고, 면적은 다른 축이라 안 쓴다.
+  if (!/isAreaRange \? '수입 \(수납 기준\)' : '실수납'/.test(dashClient)) {
+    violations.push('[소스] 추이 범례가 막대 모드에서 KPI 와 같은 이름(실수납)을 안 쓴다 — 같은 값에 두 이름이 붙는다')
+  }
+  if (!/isAreaRange \? '지출' : '기록된 지출'/.test(dashClient)) {
+    violations.push('[소스] 추이 범례의 지출 이름이 KPI 타일·도넛과 갈렸다')
+  }
+}
+
 // 19. 청소비가 보증금 안의 몫인 영업장 — 이중 계상과 판정 정본 이탈 (2026-08-10, 운영자 승인 구조).
 //
 //   (a) 데이터. 포함형 영업장에서 현금으로 받은 보증금이 '계약 보증금 − 기수령 청소비'를 넘으면

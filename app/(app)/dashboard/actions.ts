@@ -5,6 +5,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import { getPaidRevenueByMonths } from '@/lib/leaseStatus'
 import type { DashboardData } from './DashboardClient'
 import { computeUnpaidStatus } from './unpaid'
 
@@ -25,16 +26,21 @@ function addMonths(m: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date, months?: string[], acquisitionDate?: Date | null) {
-  const acqFilter = acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}
+// 납부일 축(일간·주간) 전용 조회. 귀속월 축(막대 모드)의 이용료는 lib/leaseStatus 정본이 만든다.
+async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date, acquisitionDate?: Date | null) {
   return Promise.all([
     prisma.paymentRecord.findMany({
       // RESERVED 선납·취소분은 트렌드 매출에서 제외(조기 매출 노출 차단). CHECKED_OUT는 유지(단기·중도퇴실 매출 보존).
-      where: months
-        ? { propertyId, targetMonth: { in: months }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...acqFilter }
-        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } } },
+      where: { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } } },
       select: { targetMonth: true, payDate: true, actualAmount: true },
     }),
+    ...fetchRangeExpenseIncome(propertyId, startDate, endDate),
+  ])
+}
+
+// 지출·부가수익은 어느 축에서도 date 기준이다(ExtraIncome 에는 귀속월 칸 자체가 없다).
+function fetchRangeExpenseIncome(propertyId: string, startDate: Date, endDate: Date) {
+  return [
     prisma.expense.findMany({
       where: { propertyId, date: { gte: startDate, lte: endDate } },
       select: { date: true, amount: true },
@@ -43,7 +49,19 @@ async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date
       where: { propertyId, date: { gte: startDate, lte: endDate } },
       select: { date: true, amount: true },
     }),
-  ])
+  ] as const
+}
+
+/**
+ * 막대 모드(귀속월 축)의 달별 이용료 실수납 — 홈 KPI '실수납'과 같은 정본이다.
+ *
+ * 종전에는 그 달 귀속 record 의 actualAmount 무캡 합이었다. 캡이 없으니 과납·양도인 겹침이
+ * 생기는 순간 같은 화면 같은 달을 두 숫자가 말한다(2026-08-12 회계 패널). 오늘 실데이터로는
+ * 6개월 전부 차 0원이라 지금이 바꾸기 가장 안전한 시점이다.
+ */
+async function paidRevenueForMonths(propertyId: string, months: string[]): Promise<Map<string, number>> {
+  const byMonth = await getPaidRevenueByMonths(prisma, propertyId, months)
+  return new Map([...byMonth].map(([m, b]) => [m, b.total]))
 }
 
 export async function getTrendData(range: TrendRange, targetMonth: string): Promise<TrendPoint[]> {
@@ -61,7 +79,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   if (range === 'daily') {
     const startDate = new Date(tyear, tmonth - 1, 1)
     const endDate   = new Date(tyear, tmonth, 0)
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, startDate, endDate, undefined, acquisitionDate)
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, startDate, endDate, acquisitionDate)
 
     return Array.from({ length: endDate.getDate() }, (_, i) => {
       const dayStr = ds(new Date(tyear, tmonth - 1, i + 1))
@@ -85,7 +103,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
       return { start, end }
     })
 
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, weeks[0].start, weeks[11].end, undefined, acquisitionDate)
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, weeks[0].start, weeks[11].end, acquisitionDate)
     return weeks.map(w => {
       const inW = (d: Date) => d >= w.start && d <= w.end
       const revenue =
@@ -103,15 +121,16 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
     )
     const [fy, fm] = months[0].split('-').map(Number)
     const [ly, lm] = months[months.length - 1].split('-').map(Number)
-    const [payments, expenses, incomes] = await fetchRangeData(
-      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), months, acquisitionDate
-    )
+    const [paid, expenses, incomes] = await Promise.all([
+      paidRevenueForMonths(propertyId, months),
+      ...fetchRangeExpenseIncome(propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0)),
+    ])
     return months.map(m => {
       const [y, mo] = m.split('-').map(Number)
       const mStart = new Date(y, mo - 1, 1); const mEnd = new Date(y, mo, 0)
       const inM = (d: Date) => d >= mStart && d <= mEnd
       const revenue =
-        payments.filter(p => p.targetMonth === m).reduce((s, p) => s + p.actualAmount, 0) +
+        (paid.get(m) ?? 0) +
         incomes.filter(i => inM(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
       const expense = expenses.filter(e => inM(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
       return { label: `${parseInt(m.slice(5))}월`, revenue, expense, profit: revenue - expense }
@@ -134,64 +153,63 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
     const allMonths = quarters.flatMap(q => q.months)
     const [fy, fm] = quarters[0].months[0].split('-').map(Number)
     const [ly, lm] = quarters[7].months[2].split('-').map(Number)
-    const [payments, expenses, incomes] = await fetchRangeData(
-      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), allMonths, acquisitionDate
-    )
+    const [paid, expenses, incomes] = await Promise.all([
+      paidRevenueForMonths(propertyId, allMonths),
+      ...fetchRangeExpenseIncome(propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0)),
+    ])
     return quarters.map(({ year, q, months }) => {
       const [fy2, fm2] = months[0].split('-').map(Number)
       const [ly2, lm2] = months[2].split('-').map(Number)
       const qStart = new Date(fy2, fm2 - 1, 1); const qEnd = new Date(ly2, lm2, 0)
       const inQ = (d: Date) => d >= qStart && d <= qEnd
+      // 분기 = 그 세 달의 달별 정본 합이다. 분기 단위로 다시 캡하면 달마다 갈린 과납이 상쇄돼 값이 달라진다.
       const revenue =
-        payments.filter(p => months.includes(p.targetMonth!)).reduce((s, p) => s + p.actualAmount, 0) +
+        months.reduce((s, m) => s + (paid.get(m) ?? 0), 0) +
         incomes.filter(i => inQ(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
       const expense = expenses.filter(e => inQ(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
       return { label: `${year}Q${q}`, revenue, expense, profit: revenue - expense }
     })
   }
 
-  // ── 연간: 연도별 전체 ────────────────────────────────────────
-  if (range === 'annual') {
-    const [payments, expenses, incomes] = await Promise.all([
-      // RESERVED 선납·취소분 제외 — 월별(fetchRangeData)과 같은 규칙. 연간·전체만 필터가 빠져 있어
-      // 아직 입주도 안 한 예약자의 선납이 조기 매출로 잡혔다(A페이즈).
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
-      prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
-      prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
+  // ── 연간·전체: 기간 전체 ─────────────────────────────────────
+  // 두 범위는 월 목록이 미리 없다. 그래서 귀속월을 먼저 훑어 목록을 만든 뒤 정본에 묻는다.
+  // 목록에 여분의 달이 섞여도 무해하다 — 그 달 정본 값이 0으로 돌아올 뿐이다.
+  if (range === 'annual' || range === 'all') {
+    const [payMonthRows, expenses, incomes] = await Promise.all([
+      prisma.paymentRecord.groupBy({
+        by: ['targetMonth'],
+        where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) },
+        _count: { _all: true },
+      }),
+      ...fetchRangeExpenseIncome(propertyId, new Date(1970, 0, 1), new Date(9999, 11, 31)),
     ])
-    const years = new Set<number>()
-    payments.forEach(p => years.add(parseInt(p.targetMonth.slice(0, 4))))
-    expenses.forEach(e => years.add(new Date(e.date).getFullYear()))
-    incomes.forEach(i => years.add(new Date(i.date).getFullYear()))
-    return [...years].sort().map(year => {
-      const revenue =
-        payments.filter(p => p.targetMonth.startsWith(`${year}`)).reduce((s, p) => s + p.actualAmount, 0) +
-        incomes.filter(i => new Date(i.date).getFullYear() === year).reduce((s, i) => s + i.amount, 0)
-      const expense = expenses.filter(e => new Date(e.date).getFullYear() === year).reduce((s, e) => s + e.amount, 0)
-      return { label: `${year}년`, revenue, expense, profit: revenue - expense }
-    })
-  }
+    const monthOf = (d: Date | string) => { const t = new Date(d); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}` }
+    const payMonths = payMonthRows.map(r => r.targetMonth)
+    const paid = await paidRevenueForMonths(propertyId, payMonths)
 
-  // ── 전체: 모든 월 ────────────────────────────────────────────
-  if (range === 'all') {
-    const [payments, expenses, incomes] = await Promise.all([
-      // RESERVED 선납·취소분 제외 — 월별(fetchRangeData)과 같은 규칙. 연간·전체만 필터가 빠져 있어
-      // 아직 입주도 안 한 예약자의 선납이 조기 매출로 잡혔다(A페이즈).
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } }, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
-      prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
-      prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
-    ])
-    const monthSet = new Set<string>()
-    payments.forEach(p => monthSet.add(p.targetMonth))
-    expenses.forEach(e => { const d = new Date(e.date); monthSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`) })
-    incomes.forEach(i => { const d = new Date(i.date); monthSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`) })
-    const months = [...monthSet].sort()
-    return months.map(m => {
+    if (range === 'annual') {
+      const years = new Set<number>()
+      payMonths.forEach(m => years.add(parseInt(m.slice(0, 4))))
+      expenses.forEach(e => years.add(new Date(e.date).getFullYear()))
+      incomes.forEach(i => years.add(new Date(i.date).getFullYear()))
+      return [...years].sort().map(year => {
+        const revenue =
+          payMonths.filter(m => m.startsWith(`${year}`)).reduce((s, m) => s + (paid.get(m) ?? 0), 0) +
+          incomes.filter(i => new Date(i.date).getFullYear() === year).reduce((s, i) => s + i.amount, 0)
+        const expense = expenses.filter(e => new Date(e.date).getFullYear() === year).reduce((s, e) => s + e.amount, 0)
+        return { label: `${year}년`, revenue, expense, profit: revenue - expense }
+      })
+    }
+
+    const monthSet = new Set<string>(payMonths)
+    expenses.forEach(e => monthSet.add(monthOf(e.date)))
+    incomes.forEach(i => monthSet.add(monthOf(i.date)))
+    return [...monthSet].sort().map(m => {
       const [y, mo] = m.split('-').map(Number)
       const mStart = new Date(y, mo - 1, 1); const mEnd = new Date(y, mo, 0)
       const inM = (d: Date) => d >= mStart && d <= mEnd
       const revenue =
-        payments.filter(p => p.targetMonth === m).reduce((s, p) => s + p.actualAmount, 0) +
+        (paid.get(m) ?? 0) +
         incomes.filter(i => inM(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
       const expense = expenses.filter(e => inM(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
       return { label: `${String(y).slice(2)}/${mo}`, revenue, expense, profit: revenue - expense }
