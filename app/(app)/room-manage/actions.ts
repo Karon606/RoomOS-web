@@ -16,7 +16,7 @@ import {
   deleteFromDrive,
 } from '@/lib/google-drive'
 import { looksLike360 } from '@/lib/driveImage'
-import { scheduledRentApplyCutoff } from '@/lib/billing'
+import { applyScheduledRentsFor } from '@/lib/scheduledRent'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -501,75 +501,13 @@ export async function reorderRoomPhotos(roomId: string, photoIds: string[]): Pro
 }
 
 // ── [Trigger B] 예약된 가격 일괄 적용 ────────────────────────────────
-// 호실의 rentUpdateDate가 오늘 이전이면 baseRent를 scheduledRent로 업데이트하고 예약 필드 초기화.
-// 호실 관리 페이지 로드 시 자동 실행되며, API 라우트(/api/cron/apply-rents)에서도 호출됨.
+// 규칙 본문은 lib/scheduledRent applyScheduledRentsFor 정본이다. 여기는 접근 검사를 거쳐
+// 자기 영업장 id 를 넘기는 서버 액션 껍데기고, 크론(/api/cron/apply-rents)은 CRON_SECRET 을
+// 거쳐 전 영업장에 대해 **같은 함수**를 부른다 — 두 경로가 갈릴 자리를 안 만든다.
+// 호실 관리 페이지는 로드 시 await, 홈·고객 관리는 응답 후 after() 로 부른다.
 export async function applyScheduledRents() {
   const { propertyId } = await getPropertyId()
-
-  // '오늘'은 KST 기준(lib/billing 정본). 로컬 자정이면 서버(UTC)에서 KST 00~09 시 동안
-  // 아직 어제라, 적용일 당일 아침 9시까지 인상이 안 걸렸다.
-  const today = scheduledRentApplyCutoff()
-
-  // 날짜가 오늘 이전이고 scheduledRent가 있는 호실 조회
-  const rooms = await prisma.room.findMany({
-    where: {
-      propertyId,
-      OR: [
-        { scheduledRent: { not: null }, rentUpdateDate: { lte: today } },
-        { nonResidentScheduled: { not: null }, nonResidentRentDate: { lte: today } },
-      ],
-    },
-    select: {
-      id: true,
-      scheduledRent: true,
-      rentUpdateDate: true,
-      nonResidentScheduled: true,
-      nonResidentRentDate: true,
-    },
-  })
-
-  if (rooms.length === 0) return { updated: 0 }
-
-  // 각 호실 업데이트 (baseRent 적용 + 예약 필드 초기화 + 활성 계약 rentAmount 동기화)
-  await Promise.all(rooms.map(async room => {
-    const data: Record<string, unknown> = {}
-
-    if (room.scheduledRent != null && room.rentUpdateDate && room.rentUpdateDate <= today) {
-      data.baseRent      = room.scheduledRent
-      data.scheduledRent = null
-      data.rentUpdateDate = null
-    }
-    if (room.nonResidentScheduled != null && room.nonResidentRentDate && room.nonResidentRentDate <= today) {
-      data.nonResidentRent      = room.nonResidentScheduled
-      data.nonResidentScheduled = null
-      data.nonResidentRentDate  = null
-    }
-    if (Object.keys(data).length === 0) return
-
-    await prisma.room.update({ where: { id: room.id }, data })
-
-    if (data.baseRent != null) {
-      await prisma.leaseTerm.updateMany({
-        where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        data: { rentAmount: data.baseRent as number },
-      })
-    }
-
-    // 비거주 축의 거울 — 예약 필드를 비우기 전에 계약 rentAmount 로 옮겨야 한다.
-    // 없으면 적용일이 경과하는 순간 선반영과 모순된다(청구 엔진이 예약값을 잃어 구가로 회귀).
-    if (data.nonResidentRent != null) {
-      await prisma.leaseTerm.updateMany({
-        where: { roomId: room.id, status: 'NON_RESIDENT' },
-        data: { rentAmount: data.nonResidentRent as number },
-      })
-    }
-  }))
-
-  revalidatePath('/room-manage')
-  revalidatePath('/rooms')
-  revalidatePath('/tenants')
-
-  return { updated: rooms.length }
+  return applyScheduledRentsFor(propertyId)
 }
 
 // ── 단일 호실 즉시 적용 ──────────────────────────────────────────────

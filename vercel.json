@@ -1,6 +1,7 @@
 {
   "regions": ["icn1"],
   "crons": [
-    { "path": "/api/cron/push-alerts", "schedule": "0 0 * * *" }
+    { "path": "/api/cron/push-alerts", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/apply-rents", "schedule": "0 15 * * *" }
   ]
 }
