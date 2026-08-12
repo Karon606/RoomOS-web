@@ -238,9 +238,11 @@ export async function analyzeDashboardWithGemini(
     `  ${t.month}: 수입 ${(t.revenue / 10000).toFixed(0)}만원 / 지출 ${(t.expense / 10000).toFixed(0)}만원 / 순수익 ${(t.profit / 10000).toFixed(0)}만원`
   ).join('\n')
 
+  // 카테고리 금액은 화면 도넛과 같은 축이다 — 기록된 지출 + 고정 지출 (예정), 분모는 예상 지출.
+  // 기록분만 적던 시절엔 프롬프트가 임대료 없는 지출 구성을 읽고 "임대료 부담이 없다"고 답할 수 있었다.
   const categoryText = data.categoryBreakdown.length > 0
     ? data.categoryBreakdown.map(c =>
-        `  ${c.category}: ${(c.amount / 10000).toFixed(0)}만원 (${c.percent}%)`
+        `  ${c.category}: ${(c.amount / 10000).toFixed(0)}만원 (${c.percent}%)${c.pending > 0 ? ` — 이 중 예정 ${(c.pending / 10000).toFixed(0)}만원` : ''}`
       ).join('\n')
     : '  지출 없음'
 
@@ -259,7 +261,7 @@ export async function analyzeDashboardWithGemini(
 ■ 수납 현황
 - 완납: ${data.paidCount}건 / 수납예정: ${data.awaitingCount}건 / 미납: ${data.unpaidCount}건 (수납률 ${paymentRate}%)
 
-■ 지출 카테고리
+■ 지출 카테고리 (예상 지출 기준 — 기록분 + 미기록 고정 지출 예정분)
 ${categoryText}
 
 ■ 6개월 트렌드

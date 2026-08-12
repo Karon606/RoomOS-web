@@ -919,11 +919,10 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/label: '기록된 지출', value: data\.totalExpense/.test(dashClient)) {
     violations.push('[소스] 홈 세부 재무 요약의 totalExpense 타일 이름이 등식 항과 갈렸다 — 같은 숫자에 두 이름이 붙는다')
   }
-  // 지출 카테고리 도넛 중앙 문구도 같은 변수(totalExpense)다 — 2026-08-12 어휘 통일이
-  // 타일·등식만 고치고 지나쳐, 같은 화면 한 값이 '기록된 지출'과 '총 지출' 두 이름을 갖고 있었다.
-  if (!/centerSub="기록된 지출"/.test(dashClient)) {
-    violations.push('[소스] 홈 지출 카테고리 도넛 중앙 문구가 기록된 지출이 아니다 — 같은 화면 같은 값에 두 이름이 붙는다')
-  }
+  // 지출 카테고리 도넛 중앙 문구는 도넛이 실제로 나눈 값의 이름이다. 2026-08-12 에는 그 값이
+  // totalExpense 라 '기록된 지출'이었고(그때 '총 지출'이라는 두 번째 이름을 걷어냈다),
+  // 2026-08-13 에 도넛이 예정분까지 담으면서 값이 expectedExpense 로 바뀌었다 — 이름도 함께 옮겼다.
+  // 잠금은 아래 18-4 축이 잇는다(중앙 라벨·중앙 문구·분모를 한자리에서 본다).
   // 지출 카테고리 색은 **그 달 금액 순위**가 아니라 영업장 설정 등록 순서다(2026-08-13).
   // 순위로 칠하던 시절엔 같은 임대료가 7월 카멜·8월 테라코타여서 두 달 도넛을 나란히 못 봤다
   // (실측: 13종 중 8종이 5개월 사이 색이 흔들렸고 수선유지비는 다섯 색을 돌았다).
@@ -1293,6 +1292,56 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
   if (!/isAreaRange \? '지출' : '기록된 지출'/.test(dashClient)) {
     violations.push('[소스] 추이 범례의 지출 이름이 KPI 타일·도넛과 갈렸다')
+  }
+}
+
+// 18-4. 홈 지출 카테고리 도넛 = 예상 지출 (2026-08-13).
+//
+//   도넛이 기록분만 세던 시절에는 아직 안 낸 임대료 396만이 그 달 지출 그림에서 통째로 빠져,
+//   8월 도넛이 청소용역비를 두 번째로 큰 지출로 그렸다(실제 1위는 46% 임대료).
+//   지금은 조각 합이 KPI '예상 지출'과 원 단위로 같아야 한다:
+//       sum(categoryBreakdown.amount) === expectedExpense
+//   이 항등은 세 가지가 동시에 지켜져야 성립한다. 하나라도 풀리면 도넛과 KPI 가 갈린다.
+//     (a) 예정 항을 **과거월에는 안 더한다** — expectedExpense 와 같은 isPastMonth 가드.
+//         이 가드가 풀리면 지난달 도넛만 KPI 보다 커진다(가장 눈에 안 띄는 형태의 거짓).
+//     (b) 예정 항의 모집단·추정식이 projectedRecurringExpense 와 같다(같은 필터·같은 정본 헬퍼).
+//     (c) 퍼센트 분모가 expectedExpense 다 — 기록분으로 나누면 합이 100% 를 넘는다.
+//   (d) 는 데이터 축이다: 카테고리로 모은 합이 그 달 지출 총액과 같아야 한다(어느 행도 새지 않음).
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  if (!/if \(!isPastMonth\) \{\s*\n\s*for \(const r of recurringWithStatus\)/.test(dash)) {
+    violations.push('[소스] 홈 지출 카테고리 예정분에 과거월 가드(isPastMonth)가 없다 — 지난달 도넛 합계가 예상 지출보다 커진다')
+  }
+  if (!/if \(r\.isPending \|\| r\.recordedExpenseId\) continue/.test(dash)) {
+    violations.push('[소스] 홈 지출 카테고리 예정분의 모집단이 projectedRecurringExpense 와 다르다 — 도넛 합계와 예상 지출이 갈린다')
+  }
+  if (!/pendingByCategory\[r\.category\][\s\S]{0,80}effectiveRecurringAmount\(r\)/.test(dash)) {
+    violations.push('[소스] 홈 지출 카테고리 예정분이 추정식 정본(effectiveRecurringAmount)을 안 쓴다')
+  }
+  if (!/percent: expectedExpense > 0 \? Math\.round\(\(c\.amount \/ expectedExpense\) \* 100\)/.test(dash)) {
+    violations.push('[소스] 홈 지출 카테고리 퍼센트 분모가 예상 지출이 아니다 — 조각 비율 합이 100% 를 넘는다')
+  }
+  if (!/centerSub="예상 지출"/.test(dashClient) || !/centerLabel=\{`\$\{data\.expectedExpense/.test(dashClient)) {
+    violations.push('[소스] 홈 지출 도넛 중앙이 예상 지출을 말하지 않는다 — 조각이 나눈 값과 가운데 글자가 갈린다')
+  }
+  // (d) 데이터 — 카테고리 합 == 그 달 지출 총액. 카테고리가 빈 문자열·null 인 행이 생기면 여기서 갈린다.
+  const nowKst = new Date(Date.now() + 9 * 3600 * 1000)
+  for (const off of [0, -1]) {
+    const d = new Date(Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth() + off, 1))
+    const y = d.getUTCFullYear(), mo = d.getUTCMonth() + 1
+    const gte = new Date(y, mo - 1, 1), lte = new Date(y, mo, 0)
+    for (const prop of await prisma.property.findMany({ select: { id: true, name: true } })) {
+      const [byCat, all] = await Promise.all([
+        prisma.expense.groupBy({ by: ['category'], where: { propertyId: prop.id, date: { gte, lte } }, _sum: { amount: true } }),
+        prisma.expense.aggregate({ where: { propertyId: prop.id, date: { gte, lte } }, _sum: { amount: true } }),
+      ])
+      const catSum = byCat.reduce((s, c) => s + (c._sum.amount ?? 0), 0)
+      const total  = all._sum.amount ?? 0
+      if (catSum !== total) {
+        violations.push(`[데이터] ${prop.name} ${y}-${String(mo).padStart(2, '0')} 지출 카테고리 합 ${catSum.toLocaleString()}원 ≠ 총 지출 ${total.toLocaleString()}원 — 도넛에서 새는 행이 있다`)
+      }
+    }
   }
 }
 

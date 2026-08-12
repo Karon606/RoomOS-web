@@ -756,11 +756,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpected  = billedThisMonth
     + checkedOutRecognized + reservedExpected
 
-  const categoryBreakdown = expByCategory.map(c => ({
-    category: c.category,
-    amount:   c._sum.amount ?? 0,
-    percent:  totalExpense > 0 ? Math.round(((c._sum.amount ?? 0) / totalExpense) * 100) : 0,
-  }))
+  // 지출 카테고리 분해는 예상 지출(expectedExpense)이 정해진 뒤에 만든다 — 도넛의 분모가
+  // 그 값이라 여기서 만들면 아직 없는 값을 나눠야 한다(아래 '지출 카테고리 분해' 블록).
 
   // ── 희망 호실/조건 알림 ──────────────────────────────────────
   // 판정은 전부 lib/wishMatch 가 끝냈다(방 축·날짜 게이트·2군 정렬·제외 카운트). 여기는 문장만 만든다.
@@ -962,6 +959,40 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
+
+  // ── 지출 카테고리 분해 — 기록된 지출 + 이 달 고정 지출 (예정) ──────────────
+  // 도넛의 분모는 **예상 지출**이다. 기록분만 세던 시절에는 아직 안 낸 임대료 396만이
+  // 그 달 지출 그림에서 통째로 빠져, 8월 도넛이 "청소용역비가 두 번째로 큰 달"로 보였다.
+  // 실제로는 임대료가 46% 이고 청소용역비는 8% 다.
+  //
+  // 새 금액을 만들지 않는다 — 두 항 모두 위에서 이미 쓴 값(expByCategory · recurringWithStatus)을
+  // 카테고리로 모으기만 한다. 예정 항의 필터·추정식은 projectedRecurringExpense 와 글자까지 같고,
+  // 과거월 가드도 expectedExpense 와 같은 isPastMonth 하나를 쓴다. 그래서
+  //   sum(categoryBreakdown.amount) === expectedExpense
+  // 가 어느 달에나 성립한다 — 감지망이 이 항등을 축으로 본다(도넛 합계 == 예상 지출).
+  const pendingByCategory: Record<string, number> = {}
+  if (!isPastMonth) {
+    for (const r of recurringWithStatus) {
+      if (r.isPending || r.recordedExpenseId) continue
+      pendingByCategory[r.category] = (pendingByCategory[r.category] ?? 0) + effectiveRecurringAmount(r)
+    }
+  }
+  const recordedCategories = new Set(expByCategory.map(c => c.category))
+  const categoryBreakdown = [
+    ...expByCategory.map(c => ({
+      category: c.category,
+      recorded: c._sum.amount ?? 0,
+      pending:  pendingByCategory[c.category] ?? 0,
+    })),
+    // 이 달에 아직 한 건도 기록이 없는 카테고리(8월 임대료·관리비)는 여기서 처음 선다.
+    ...Object.entries(pendingByCategory)
+      .filter(([cat]) => !recordedCategories.has(cat))
+      .map(([category, pending]) => ({ category, recorded: 0, pending })),
+  ]
+    .map(c => ({ ...c, amount: c.recorded + c.pending }))
+    .sort((a, b) => b.amount - a.amount)
+    .map(c => ({ ...c, percent: expectedExpense > 0 ? Math.round((c.amount / expectedExpense) * 100) : 0 }))
+
   // 지난달·전년동월 지출(실제 합계) — 예상 지출이 더/덜 쓰는지 비교용 (trend는 6개월뿐이라 전년동월은 별도 집계)
   const [lastMonthExpAgg, lastYearExpAgg] = await pLastExpAggs
   const lastMonthExpense = lastMonthExpAgg._sum.amount ?? 0

@@ -23,6 +23,7 @@ export async function POST(req: Request) {
       unpaidAmount: number; overdueAmount?: number; upcomingAmount?: number
       totalRooms: number; occupiedRooms: number; vacantRooms: number
       statusCounts: { active: number; reserved: number; checkout: number }
+      // amount·percent 는 예상 지출 축이다(기록분 + 미기록 고정 지출 예정분, 홈 도넛과 같은 값).
       categoryBreakdown: { category: string; amount: number; percent: number }[]
       trend: { month: string; revenue: number; expense: number; profit: number }[]
     }
@@ -71,7 +72,7 @@ ${paymentLine}
 누적 미납(회수 지연): ${(overdueAmount / 10000).toFixed(0)}만원 (${data.unpaidCount}건)
 납부 예정(미도래·정상): ${(upcomingAmount / 10000).toFixed(0)}만원 (${upcomingCount}건)
 입주율 ${occupancyRate}% (${data.occupiedRooms}/${data.totalRooms}실)
-주요 지출: ${topCategories || '없음'}
+주요 지출 (예상 지출 기준): ${topCategories || '없음'}
 최근 3개월 추이: ${recentTrend || '데이터 없음'}
 
 다음 3가지를 각 2문장 이내로 작성하세요. 번호와 제목만 사용하고 마크다운 기호 금지. '미수금'이라는 단어를 쓸 때는 반드시 누적 미납(회수 지연) 금액만 가리키며, 납부 예정과 합쳐 부르지 마세요:

@@ -87,7 +87,9 @@ export type DashboardData = {
   // 아직 오지 않은 달인가 — 서버(KST)가 판정한다. 수납 관리와 같은 달에 캡션이 뜨고 사라져야
   // 두 화면을 오가며 대조할 때 한쪽만 비는 일이 없다(rooms/page.tsx 와 같은 문법).
   isFutureMonth:        boolean
-  categoryBreakdown: { category: string; amount: number; percent: number }[]
+  // 지출 카테고리 분해 — amount = recorded + pending, percent 의 분모는 expectedExpense.
+  // pending 은 그 달 미기록 고정 지출 추정분이고 과거월엔 서버가 0으로 보낸다(isPastMonth 가드).
+  categoryBreakdown: { category: string; amount: number; recorded: number; pending: number; percent: number }[]
   // 영업장 설정의 지출 카테고리 등록 순서 — 도넛·범례 색이 이 순서로 고정된다(금액 순위 아님).
   expenseCategoryOrder: string[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
@@ -853,10 +855,20 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   // 색은 그 달 금액 순위가 아니라 영업장 설정의 등록 순서가 정한다(lib/chartColors 정본).
   // 순위로 칠하던 시절엔 같은 임대료가 7월 카멜·8월 테라코타여서 두 달을 나란히 못 봤다.
   const categoryColor = (category: string) => expenseCategoryColor(category, data.expenseCategoryOrder)
-  const categorySegments = data.categoryBreakdown.map(c => ({
-    value: c.amount,
-    color: categoryColor(c.category),
-  }))
+  // 아직 안 낸 고정 지출은 **같은 색을 옅게** 잇는다. 별도 조각으로 떼어내지 않는다 —
+  // 떼면 한 카테고리가 링 위에서 두 항목처럼 읽히고, 범례도 두 줄이 된다.
+  // 옅은 꼬리는 같은 카테고리 조각의 연장이고, 진한 부분이 이미 장부에 오른 몫이다.
+  // 대비 실측(라이트 크림 #fbf6ef): 원색 2.22~8.64 대 70% 1.71~4.13, ΔE76 11.3~25.1 로
+  // 두 부분이 눈으로 갈린다. 다크(#1A130E)는 1.98~7.68 대 1.55~4.38, ΔE 11.8~19.1.
+  const pendingTint = (color: string) => `color-mix(in srgb, ${color} 70%, transparent)`
+  // 조각 순서 = 범례 순서 = 금액 큰 것부터(서버 정렬). 기록분 바로 뒤에 그 카테고리의 예정분이 붙는다.
+  const categorySegments = data.categoryBreakdown.flatMap(c => {
+    const base = categoryColor(c.category)
+    return [
+      { value: c.recorded, color: base },
+      { value: c.pending,  color: pendingTint(base) },
+    ]
+  })
   // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   // 세 항은 서버가 한 모집단을 배타 분할해 보낸 값이다(page.tsx paymentStatusPool). 여기서
   // 다시 나누지 않는다 — 수납률 분모를 화면이 조립하던 시절엔 같은 화면이 두 비율을 말했다.
@@ -1047,18 +1059,33 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           {data.categoryBreakdown.length === 0 ? (
             <p className="text-sm py-6 text-center" style={{ color: 'var(--warm-muted)' }}>이달 지출 없음</p>
           ) : (
-            <div className="flex items-center gap-5">
+            /* 좁은 폭에서는 도넛 아래로 범례를 내린다 — 320px 에서 옆 칸은 88px 밖에 안 되는데
+               금액은 안 줄어들어 카테고리 이름이 세로로 압착된다(형제 '수납 현황' 카드가 같은 이유로
+               금액 줄을 전폭으로 내린 그 문법). 넓은 화면에서는 종전처럼 도넛 옆에 선다. */
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
               <div className="shrink-0">
-                {/* centerSub 는 바로 위 타일과 **같은 변수**(totalExpense)다 — '총 지출'은 2026-08-12
-                    지출 어휘 통일에서 타일·등식만 고치고 지나친 자리였다(같은 화면 한 값 두 이름). */}
-                <DonutChart segments={categorySegments} centerLabel={`${data.totalExpense > 0 ? Math.round(data.totalExpense / 10000) : 0}만`} centerSub="기록된 지출" />
+                {/* 중앙은 도넛이 실제로 나눈 그 값이다 — 조각 합 = 기록된 지출 + 고정 지출 (예정) = 예상 지출.
+                    기록분만 세던 시절에는 중앙이 '기록된 지출'이었고, 아직 안 낸 임대료가 통째로 빠져
+                    8월 도넛이 청소용역비를 두 번째로 큰 지출로 그렸다(실제 46% 는 임대료). */}
+                <DonutChart segments={categorySegments} centerLabel={`${data.expectedExpense > 0 ? Math.round(data.expectedExpense / 10000) : 0}만`} centerSub="예상 지출" />
               </div>
-              <div className="flex-1 space-y-2.5 min-w-0">
+              <div className="w-full sm:flex-1 space-y-2.5 min-w-0">
                 {data.categoryBreakdown.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: categoryColor(c.category) }} />
-                    <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
-                    <span className="text-xs shrink-0" style={{ color: 'var(--warm-dark)' }}>{c.percent}%</span>
+                  <div key={i} className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: categoryColor(c.category) }} />
+                      <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
+                      {/* 금액 병기 — 퍼센트만 있던 시절엔 '12%'가 얼마인지 알려면 화면을 옮겨야 했다. */}
+                      <span className="text-xs shrink-0 num" style={{ color: 'var(--warm-dark)' }}>{fmtKorMoney(c.amount)}</span>
+                      <span className="text-xs shrink-0 w-9 text-right" style={{ color: 'var(--warm-muted)' }}>{c.percent}%</span>
+                    </div>
+                    {/* 옅은 꼬리가 무엇인지 글자로도 말한다. 두 몫이 다 있을 때만 나눠 적고,
+                        통째로 예정인 카테고리는 '예정' 한 마디면 된다(그 조각은 전부 옅다). */}
+                    {c.pending > 0 && (
+                      <p className="text-[0.65625rem] pl-[18px] leading-tight" style={{ color: 'var(--warm-muted)' }}>
+                        {c.recorded > 0 ? `기록 ${fmtKorMoney(c.recorded)} · 예정 ${fmtKorMoney(c.pending)}` : '예정'}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
