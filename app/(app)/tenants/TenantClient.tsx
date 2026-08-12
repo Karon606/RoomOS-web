@@ -3209,7 +3209,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const emergency = tenant?.contacts.find(c => c.isEmergency)
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
 
-  const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
+  // 신규 등록의 기본 상태는 문의다 — 실제 유입은 문의부터 시작하고, 거주중 기본은 실수로
+  // 문의자를 입주자로 등록하게 만들었다(운영자 지시 2026-08-12). 수정 폼은 기존 상태 유지.
+  const [statusVal, setStatusVal]   = useState(lease?.status ?? 'WAITING_TOUR')
   // 수정 폼에서 입실 취소로 바꿀 때도 사유를 받는다 — 상태전환 미니폼과 같은 선택지(운영자 지시 2026-07-27)
   const [cancelReasonVal, setCancelReasonVal] = useState('')
   const [cancelReasonEtc, setCancelReasonEtc] = useState('')
