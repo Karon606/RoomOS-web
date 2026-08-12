@@ -897,12 +897,16 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}
         >
           {([
-            { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
+            // 색은 전부 §19 페어 토큰이다. --tc·--coral 은 다크에서 안 밝아져 크림 카드(--d-card)
+            // 위에서 2.78:1 로 주저앉는다 — 라이트에서는 세 토큰이 모두 #A03C2E 라 픽셀이 안 바뀌고,
+            // 다크에서만 --tc-text(#C9614C 4.63:1) · --danger-fg(#E08A75 7.05:1) 로 갈라진다.
+            // 바로 아래 '지출과 이익' 카드가 이미 같은 근거로 --danger-fg 를 쓰고 있었다.
+            { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--tc-text)' },
             { label: '부가수익', value: data.extraRevenue, color: 'var(--viz-4)' },
             // '지출' → '기록된 지출' (2026-08-12 용어 통일). 바로 아래 예상 운영이익 등식이 빼는
             // 항과 **같은 변수**(totalExpense)인데 이름이 둘이었다. 같은 모집단은 같은 이름이다.
-            { label: '기록된 지출', value: data.totalExpense, color: 'var(--tc)' },
-            { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
+            { label: '기록된 지출', value: data.totalExpense, color: 'var(--tc-text)' },
+            { label: '운영이익', value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--danger-fg)' },
             // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 받은 보증금/미기록(전 원장) 표시.
             //
             // 어휘 두 건을 고쳤다(2026-08-12 운영자 점검).
@@ -1800,12 +1804,15 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             누적 미납 (현 입주자)
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.overdue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
-          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--tc)' : 'var(--ink-2)' }}>
+          {/* 수치·건수는 --danger-fg 다. 미수는 §04 danger 의미이고, 이 카드가 이미 같은 토큰으로
+              좌측 3px 팁을 그린다. --tc 는 다크에서 안 밝아져 크림 카드 위 2.78:1 이었다
+              (--danger-fg 는 다크 #E08A75 로 7.05:1, 라이트는 #A03C2E 라 픽셀 불변). */}
+          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--danger-fg)' : 'var(--ink-2)' }}>
             {data.overdueAmount.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
-            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 도래·미회수
+            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--danger-fg)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 도래·미회수
           </p>
         </Link>
 
