@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useCanEdit } from '@/components/RoleContext'
 import { fmtWon } from '@/lib/fmtMoney'
 import { CleaningRowBody } from '@/components/cleaning/CleaningRowBody'
@@ -72,8 +73,11 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
         </div>
       )}
 
+      {/* 첫 조회는 뼈대다 — 인라인 '불러오는 중…' 은 §17 원칙 금지고, 같은 폴더 형제 위젯
+          아홉 곳(상태 이력·수납 기록·보증금·이사 이력·입주 가능한 방 등)이 전부 이 문법이다.
+          행 두 개는 그 형제들이 쓰는 수치 그대로 — 이 목록도 보통 한두 행으로 열린다. */}
       {rows === null ? (
-        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+        <SkeletonRows rows={2} className="py-1" />
       ) : loadFailed ? (
         <p className="text-xs text-[var(--danger-fg)]">청소 이력을 불러오지 못했습니다.</p>
       ) : rows.length === 0 ? (
