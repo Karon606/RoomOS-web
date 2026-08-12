@@ -1123,10 +1123,16 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
                 <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.unpaid }}>{data.unpaidCount}건</span>
               </div>
-              <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
-                <Row label="이달 수납액 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
-              </div>
             </div>
+          </div>
+          {/* 금액 줄은 도넛 옆 칸이 아니라 카드 전폭이다. 오른쪽 칸은 320px 에서 88px 밖에 안 되는데
+              금액(whitespace-nowrap)이 안 줄어드니 라벨만 23px 로 압착돼 일곱 줄로 접혔다.
+              전폭으로 내리면 어느 폭에서든 라벨이 100px 한 줄이다(실측 320px 371→267px).
+              자리를 가르는 것이 뜻에도 맞다 — 위 세 항은 현 입주자 모집단이고 이 금액에는 퇴실
+              계약의 그 달 귀속분이 들어 있어 같은 사람 집합이 아니다. 같은 칸에 이어 붙이면
+              넷째 항처럼 읽힌다. */}
+          <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--warm-border)' }}>
+            <Row label="이달 수납액 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
           </div>
         </div>
       </div>
