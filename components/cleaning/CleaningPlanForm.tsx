@@ -13,7 +13,7 @@ import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { createCleaning } from '@/app/(app)/room-manage/cleaningActions'
 import { CLEANING_REASON_LABEL, type CleaningReason } from '@/app/(app)/room-manage/cleaningConstants'
-import { fmtRoomNo } from './CleaningRowBody'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
 

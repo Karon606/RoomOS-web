@@ -30,6 +30,7 @@ import {
   type CleaningRow, type CleaningPerformer, type CleaningStatus,
   type CleaningFundStatus, type CleaningFundLease,
 } from '@/app/(app)/room-manage/cleaningConstants'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
@@ -40,9 +41,6 @@ export const CLEANING_STATUS_LABEL: Record<CleaningStatus, string> = {
 // 완료=paid(끝난 것), 안 함=info(중립), 예정=await(기다리는 것)
 export const cleaningTone = (s: CleaningStatus): BadgeTone =>
   (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
-
-export const fmtRoomNo = (no: string | null | undefined) =>
-  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
 
 export function CleaningRowBody({
   row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, onOpenRoom, onChanged,

@@ -24,8 +24,7 @@ import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { canShareFiles } from '@/lib/shareFile'
-
-const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }

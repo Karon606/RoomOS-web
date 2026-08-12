@@ -26,6 +26,7 @@ import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
 import { PaymentBody } from './bodies/PaymentBody'
 import { useNavRouter } from '@/lib/useNavRouter'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
@@ -49,8 +50,6 @@ export function openEntityModal(seed: Seed): boolean {
   opener(seed)
   return true
 }
-
-const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—')
 
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
   // links: undefined = 아직 해소 중(뼈대), null = 해소했는데 연결 없음(빈 안내). 둘을 한 값으로 두면

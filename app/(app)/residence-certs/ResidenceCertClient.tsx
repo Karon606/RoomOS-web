@@ -30,10 +30,9 @@ import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
 import { canShareFiles } from '@/lib/shareFile'
 import { prewarmPdfToPng } from '@/lib/pdfToPng'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
-const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
-
 export default function ResidenceCertClient({ files, tenants }: { files: ResidenceCertListRow[]; tenants: IssuableTenant[] }) {
   const router = useRouter()
   const entityModal = useEntityModal()

@@ -32,9 +32,7 @@ import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'
 import { checkoutSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
 import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
-
-const fmtRoomNo = (no: string | null | undefined) =>
-  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // 뷰 전환 탭(v2.0 §25) — URL ?tab= 값과 같은 문자열이다. 홈 KPI 딥링크가 이 값으로 들어온다.
 type ViewTabId = 'rooms' | 'income' | 'deposit'

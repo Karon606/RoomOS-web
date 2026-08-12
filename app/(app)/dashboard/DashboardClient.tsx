@@ -40,8 +40,8 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
-import { fmtRoomNo } from './dashUtils'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── 타입 ────────────────────────────────────────────────────────
 

@@ -32,8 +32,7 @@ import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { useLongPress } from '@/lib/useLongPress'
 import { canShareFiles } from '@/lib/shareFile'
 import { prewarmPdfToPng } from '@/lib/pdfToPng'
-
-const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 export default function RentReceiptsClient({ files, tenants, month, kind = 'rent' }: { files: RentReceiptListRow[]; tenants: IssuableTenant[]; month?: string; kind?: 'rent' | 'deposit' }) {

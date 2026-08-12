@@ -40,7 +40,7 @@ const CoralTag = ({ children }: { children: ReactNode }) => (
 )
 
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
-const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
+import { fmtRoomNo } from '@/lib/roomNo'
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 const rankInOrder = (ord: string[], v: string) => { const i = ord.indexOf(v); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
 // 규격 표기 — 카드 제목과 같은 문구(specText 우선, 없으면 값+단위)
@@ -449,7 +449,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     if (!v || selItems.length === 0) return
     const [k, id] = v.split(':')
     const label = k === 'room'
-      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
+      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '')
       : (locations.find(l => l.id === id)?.name ?? '')
     setBatchAssign({
       target: { kind: k === 'room' ? 'room' : 'location', id },
@@ -524,7 +524,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 위치 이름 헬퍼
   const placeName = (v: string) => {
     const [k, id] = v.split(':')
-    return k === 'room' ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '') : (locations.find(l => l.id === id)?.name ?? '')
+    return k === 'room' ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo, '') : (locations.find(l => l.id === id)?.name ?? '')
   }
   const curPlace = (it: AssetItem) =>
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : '미배정(여분)')

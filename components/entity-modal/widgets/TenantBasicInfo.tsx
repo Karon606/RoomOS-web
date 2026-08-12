@@ -3,6 +3,7 @@
 import { flagByName } from '@/components/ui/CountrySelect'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { Section, Grid, Item } from './Section'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Tenant = {
   name: string
@@ -23,8 +24,6 @@ type Tenant = {
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '—',
 }
-const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—')
-
 export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
   const lease = tenant.leaseTerms[0]
   const natFlag = flagByName(tenant.nationality)

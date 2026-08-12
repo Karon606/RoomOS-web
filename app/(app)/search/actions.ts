@@ -10,6 +10,7 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot, kstMonthOf } from '@/lib/fmtDate'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 export type SearchGroupType = 'tenant' | 'room' | 'expense' | 'item' | 'request' | 'doc'
 export type SearchBadgeTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
@@ -26,8 +27,6 @@ export type SearchHit = {
 }
 export type SearchGroup = { type: SearchGroupType; label: string; hits: SearchHit[]; hasMore: boolean; moreHref: string }
 export type GlobalSearchResult = { queryKind: SearchQueryKind; groups: SearchGroup[] }
-
-const fmtRoomNo = (no: string | null | undefined) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : null)
 
 // 입주자 상태 배지 톤 — StatusBadge 의미색과 동일 방향(거주=success, 퇴실예정=warning, 예약·비거주=info)
 const STATUS_TONE: Record<string, SearchBadgeTone> = {
@@ -214,7 +213,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
           : STATUS_LABEL[status] ?? status,
         tone: STATUS_TONE[status] ?? 'neutral',
       } : null,
-      caption: [fmtRoomNo(lease?.room?.roomNo) ?? '방 미배정', reason].filter(Boolean).join(' · ') || null,
+      caption: [fmtRoomNo(lease?.room?.roomNo, '방 미배정'), reason].filter(Boolean).join(' · ') || null,
       action: { type: 'modal', kind: 'tenant', tenantId: t.id },
     }
   })
@@ -225,7 +224,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   const sortedRooms = [...rooms].sort((a, b) => roomRank(a) - roomRank(b))
   const roomHits: SearchHit[] = sortedRooms.slice(0, TAKE_SHOW).map(r => ({
     group: 'room', id: r.id,
-    title: fmtRoomNo(r.roomNo) ?? r.roomNo,
+    title: fmtRoomNo(r.roomNo, r.roomNo),
     // 집계 제외 방(비거주 점유 + 공실 표시 안 함, lib/vacancy 정본)은 '공실' 대신 점유자 이름(신고 9d844226 잔여)
     right: isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT'))
       ? (r.leaseTerms[0]?.tenant.name ?? null)
@@ -243,7 +242,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
       title: e.itemLabel ?? e.detail ?? e.category,
       right: fmtWon(e.amount),
       badge: null,
-      caption: [fmtDateDot(e.date), e.vendor, fmtRoomNo(e.room?.roomNo)].filter(Boolean).join(' · ') || null,
+      caption: [fmtDateDot(e.date), e.vendor, fmtRoomNo(e.room?.roomNo, '')].filter(Boolean).join(' · ') || null,
       action: { type: 'href', href: `/finance?month=${month}&q=${enc}` },
     }
   })

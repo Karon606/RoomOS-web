@@ -14,6 +14,7 @@ import {
   type WishLeaseMatch, type WishLeaseRoom,
 } from '@/lib/wishMatch'
 import { Section } from './Section'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const RECENT = 5   // 최근 N실만 펼침, 초과분은 접기 뒤로(형제 이력 위젯과 같은 수)
 
@@ -93,7 +94,7 @@ function WishRoomRow({ room }: { room: WishLeaseRoom }) {
           뒤부터 먹으므로 호실번호는 끝까지 남는다. 타입이 비어 있으면 아무것도 그리지 않는다. */}
       <button type="button" onClick={() => entityModal.open({ kind: 'room', roomId: room.roomId })}
         className="min-w-0 truncate text-left py-1 -my-1 font-medium text-[var(--warm-dark)] transition-colors hover:text-[var(--coral)]">
-        {room.roomNo}호
+        {fmtRoomNo(room.roomNo)}
         {room.roomType && <span className="font-normal text-[var(--warm-muted)]"> {room.roomType}</span>}
       </button>
       <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">{wishLeaseRoomCaption(room)}</span>

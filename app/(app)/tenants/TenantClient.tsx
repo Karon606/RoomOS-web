@@ -62,9 +62,7 @@ import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
-
-const fmtRoomNo = (no: string | null | undefined) =>
-  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 

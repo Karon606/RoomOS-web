@@ -34,12 +34,10 @@ import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
 import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, reservationSubText, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
 import dynamic from 'next/dynamic'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // 공용·외관 사진 관리 모달 — 지연 로드로 순환 import 회피(이 파일이 PhotoLightbox 를 export, 그쪽이 이 파일을 다시 참조)
 const PropertyPhotosManager = dynamic(() => import('./PropertyPhotosManager'), { ssr: false })
-
-const fmtRoomNo = (no: string | null | undefined) =>
-  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
 
 export type Photo = {
   id: string
