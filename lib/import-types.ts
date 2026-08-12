@@ -56,6 +56,12 @@ export type PreviewResult = {
    * 청소비가 보증금 안의 몫인 영업장에서는 그 몫이 두 번 잡히는 길이라 미리 알린다. 차단은 하지 않는다.
    */
   cleaningDepositWarn: number
+  /**
+   * 방 배정이 점유 가드에 막혀 저장되지 않을 행(2026-08-12).
+   * 가져오기에는 확인창이 없어 적용 때 실패 목록에 서므로, 어느 행이 왜 막히는지 미리 알린다.
+   * 처리 방법을 고를 여지가 없는 사실이라 conflicts(해결 선택) 가 아니라 안내로 싣는다.
+   */
+  roomBlocked: { name: string; roomNo: string; reason: string }[]
   counts: {
     rooms:    { new: number; conflict: number; autoSkipped: number }
     tenants:  { new: number; conflict: number; autoSkipped: number }

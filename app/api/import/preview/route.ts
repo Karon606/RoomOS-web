@@ -7,6 +7,9 @@ import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
 import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult } from '@/lib/import-types'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
+import { isVacancyExcluded } from '@/lib/vacancy'
+import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES, type RoomAssignmentOccupant } from '@/lib/roomAssignment'
+import { LeaseStatus } from '@prisma/client'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
 
@@ -70,10 +73,13 @@ const DIRECTION_MAP: Record<string, string> = {
 const GENDER_MAP: Record<string, string> = {
   '남': 'MALE', '여': 'FEMALE', '기타': 'OTHER', 'MALE': 'MALE', 'FEMALE': 'FEMALE',
 }
+// 적용 경로(app/api/import/route.ts)의 STATUS_MAP 과 같은 표여야 한다 — 종전에는 '비거주'만 여기 없어서
+// 미리보기가 명의 계약을 거주중으로 읽었고, 그래서 바뀔 것이 없는 행도 늘 변경 충돌로 섰다.
 const STATUS_MAP: Record<string, string> = {
   '거주중': 'ACTIVE', '입실예정': 'RESERVED', '퇴실예정': 'CHECKOUT_PENDING',
-  '퇴실': 'CHECKED_OUT', '취소': 'CANCELLED',
+  '퇴실': 'CHECKED_OUT', '취소': 'CANCELLED', '비거주': 'NON_RESIDENT',
   'ACTIVE': 'ACTIVE', 'RESERVED': 'RESERVED', 'CHECKOUT_PENDING': 'CHECKOUT_PENDING',
+  'CHECKED_OUT': 'CHECKED_OUT', 'CANCELLED': 'CANCELLED', 'NON_RESIDENT': 'NON_RESIDENT',
 }
 const ACCOUNT_TYPE_MAP: Record<string, string> = {
   '은행계좌': 'BANK_ACCOUNT', '신용카드': 'CREDIT_CARD', '체크카드': 'CHECK_CARD', '기타': 'OTHER',
@@ -130,8 +136,65 @@ async function previewRooms(rows: Record<string, unknown>[], propertyId: string)
   return { conflicts, newCount, autoSkipped }
 }
 
-async function previewTenants(rows: Record<string, unknown>[], propertyId: string) {
+/**
+ * 이 행이 만들 계약이 방 배정 가드에 막히는가 — 적용 경로와 같은 정본 판정(lib/roomAssignment).
+ *
+ * `pendingByRoom` 은 같은 파일에서 이 행보다 앞선 행이 그 방에 넣기로 한 계약이다. 적용은 행을
+ * 차례로 저장하므로 두 번째 행은 첫 행이 만든 계약과 부딪힌다 — 그 순서를 여기서도 재현하지 않으면
+ * 미리보기가 통과라 말한 파일이 적용에서 실패한다. 막히지 않은 행만 뒤 행의 입력으로 쌓는다.
+ */
+async function previewRoomBlock(
+  row: Record<string, unknown>,
+  name: string,
+  propertyId: string,
+  pendingByRoom: Map<string, RoomAssignmentOccupant[]>,
+): Promise<{ roomNo: string; reason: string } | null> {
+  const roomNo = str(row['호실'])
+  if (!roomNo) return null
+  const room = await prisma.room.findUnique({
+    where: { propertyId_roomNo: { propertyId, roomNo } },
+    select: { id: true, nonResidentVacant: true },
+  })
+  // 방이 시트에만 있고 아직 없으면 계약도 안 만들어진다 — 막을 배정 자체가 없다.
+  if (!room) return null
+
+  const dbLeases = await prisma.leaseTerm.findMany({
+    where: { roomId: room.id, status: { in: [...ROOM_GUARD_STATUSES] as LeaseStatus[] } },
+    select: { status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+  })
+  const pending = pendingByRoom.get(room.id) ?? []
+  const others: RoomAssignmentOccupant[] = [
+    ...dbLeases.map(l => ({
+      status: l.status as string,
+      moveIn: fmtDate(l.moveInDate) || null,
+      moveOut: fmtDate(l.expectedMoveOut) || null,
+      tenantName: l.tenant.name,
+    })),
+    ...pending,
+  ]
+  const incoming = {
+    status: STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE',
+    moveIn: fmtDate(parseDate(row['입실일'])) || null,
+    moveOut: fmtDate(parseDate(row['퇴실 예정일'])) || null,
+  }
+  const reason = roomAssignmentBlockReason({
+    incoming,
+    // 앞선 행이 얹은 명의도 센다 — 적용은 그 계약을 이미 저장한 뒤에 이 행을 만난다.
+    nonResidentOccupied: isVacancyExcluded(room, others.some(o => o.status === 'NON_RESIDENT')),
+    others,
+  })
+  if (reason) return { roomNo, reason }
+  pendingByRoom.set(room.id, [...pending, { ...incoming, tenantName: name }])
+  return null
+}
+
+async function previewTenants(
+  rows: Record<string, unknown>[],
+  propertyId: string,
+  pendingByRoom: Map<string, RoomAssignmentOccupant[]>,
+) {
   const conflicts: TenantConflict[] = []
+  const roomBlocked: PreviewResult['roomBlocked'] = []
   let newCount = 0
   let autoSkipped = 0
   // 입실 청소비를 이미 받았는데 시트 보증금이 저장값과 다른 건 — 청소비가 보증금 안의 몫인 영업장에서는
@@ -210,10 +273,14 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
       })
     } else {
       newCount++
+      // 새 고객 행은 반드시 방 배정이 일어난다 — 적용 전에 막힐 행을 미리 지목한다.
+      // 기존 고객 행은 처리 방법(유지·덮어쓰기·퇴실→신규)에 따라 배정 여부가 갈려 아직 단정할 수 없다.
+      const blocked = await previewRoomBlock(row, name, propertyId, pendingByRoom)
+      if (blocked) roomBlocked.push({ name, ...blocked })
     }
   }
 
-  return { conflicts, newCount, autoSkipped, cleaningDepositWarn }
+  return { conflicts, newCount, autoSkipped, cleaningDepositWarn, roomBlocked }
 }
 
 async function previewExpenses(rows: Record<string, unknown>[], propertyId: string) {
@@ -410,16 +477,20 @@ export async function POST(request: NextRequest) {
   }
 
   let cleaningDepositWarn = 0
+  const roomBlocked: PreviewResult['roomBlocked'] = []
+  // 두 시트를 한 파일로 적용하므로 앞선 배정 누적은 시트를 가로질러 이어져야 한다.
+  const pendingByRoom = new Map<string, RoomAssignmentOccupant[]>()
 
   if (wb.SheetNames.includes('입주자관리')) {
-    const r = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId)
+    const r = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId, pendingByRoom)
     allConflicts.push(...r.conflicts)
     counts.tenants = { new: r.newCount, conflict: r.conflicts.length, autoSkipped: r.autoSkipped }
     cleaningDepositWarn += r.cleaningDepositWarn
+    roomBlocked.push(...r.roomBlocked)
   }
 
   if (wb.SheetNames.includes('퇴실자')) {
-    const r = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
+    const r = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId, pendingByRoom)
     allConflicts.push(...r.conflicts)
     counts.tenants = {
       new: counts.tenants.new + r.newCount,
@@ -427,6 +498,7 @@ export async function POST(request: NextRequest) {
       autoSkipped: counts.tenants.autoSkipped + r.autoSkipped,
     }
     cleaningDepositWarn += r.cleaningDepositWarn
+    roomBlocked.push(...r.roomBlocked)
   }
 
   if (wb.SheetNames.includes('지출')) {
@@ -456,5 +528,5 @@ export async function POST(request: NextRequest) {
 
   const hasPaymentSheet = wb.SheetNames.includes('수납현황')
 
-  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet, cleaningDepositWarn } satisfies PreviewResult)
+  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet, cleaningDepositWarn, roomBlocked } satisfies PreviewResult)
 }

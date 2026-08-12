@@ -6,7 +6,10 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
+import { isVacancyExcluded } from '@/lib/vacancy'
+import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
 import * as XLSX from 'xlsx'
+import { LeaseStatus } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
@@ -238,12 +241,55 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
   return result
 }
 
+/**
+ * 방 배정 점유 가드 — 화면 경로(addTenant·updateTenant)와 같은 정본 판정(lib/roomAssignment)을 시트에도 건다.
+ *
+ * 종전에는 여기 가드가 문자 그대로 0 개였다. 거주자 이중 배정도, 415호 같은 비거주 점유 방 배정도
+ * 전부 통과했고, 통과한 뒤 isVacant:false 덮어쓰기가 비거주 점유 표시까지 지웠다(2026-08-12 봉합).
+ *
+ * 겹침은 화면에서는 확인창이 묻는 운영 재량이지만 시트에는 물어볼 자리가 없다 — 묻지 못하면 거절하고
+ * 실패 목록에 세워, 운영자가 시트를 고쳐 다시 올리게 한다. 막을 이유가 없으면 null.
+ */
+async function roomAssignmentBlock(
+  room: { id: string; nonResidentVacant: boolean },
+  status: string,
+  moveIn: Date | null,
+  moveOut: Date | null,
+): Promise<string | null> {
+  const leases = await prisma.leaseTerm.findMany({
+    where: { roomId: room.id, status: { in: [...ROOM_GUARD_STATUSES] as LeaseStatus[] } },
+    select: { status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+  })
+  return roomAssignmentBlockReason({
+    incoming: { status, moveIn: fmtDate(moveIn) || null, moveOut: fmtDate(moveOut) || null },
+    nonResidentOccupied: isVacancyExcluded(room, leases.some(l => l.status === 'NON_RESIDENT')),
+    others: leases.map(l => ({
+      status: l.status,
+      moveIn: fmtDate(l.moveInDate) || null,
+      moveOut: fmtDate(l.expectedMoveOut) || null,
+      tenantName: l.tenant.name,
+    })),
+  })
+}
+
 async function createTenantAndLease(row: Record<string, unknown>, propertyId: string, result: SheetResult) {
   const name = str(row['이름'])
   const roomNo = str(row['호실'])
   const room = roomNo ? await prisma.room.findUnique({
     where: { propertyId_roomNo: { propertyId, roomNo } },
   }) : null
+
+  // 방을 배정하는 유일한 자리다 — 아무것도 만들기 전에 먼저 묻는다. 뒤에서 막으면 주인 없는
+  // 고객 정보만 남는다(덮어쓰기 갈래는 방을 옮기지 않으므로 이 가드의 대상이 아니다).
+  if (room) {
+    const status = (STATUS_MAP[str(row['계약상태'])] as string) ?? 'ACTIVE'
+    const blocked = await roomAssignmentBlock(room, status, parseDate(row['입실일']), parseDate(row['퇴실 예정일']))
+    if (blocked) {
+      result.skipped++
+      result.errors.push(`${name} (${roomNo}호): ${blocked}`)
+      return
+    }
+  }
 
   const tenant = await prisma.tenant.create({
     data: {

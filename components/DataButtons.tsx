@@ -179,8 +179,9 @@ export default function DataButtons() {
       }
       setResolutions(defaults)
 
-      // 청소비 경고가 있으면 조용히 적용하지 않는다 — 알릴 자리가 이 창뿐이다(2026-08-10)
-      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn) {
+      // 청소비 경고가 있으면 조용히 적용하지 않는다 — 알릴 자리가 이 창뿐이다(2026-08-10).
+      // 호실 배정이 막히는 행도 같다 — 그냥 적용하면 왜 빠졌는지 결과 창에서야 알게 된다(2026-08-12).
+      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn && preview.roomBlocked.length === 0) {
         await applyImport(file, {})
       } else {
         setStep({ type: 'conflict', preview, file })
@@ -275,6 +276,17 @@ export default function DataButtons() {
           </div>
         }>
 
+          {/* 방 배정이 점유 가드에 막히는 행 — 이 행들은 적용해도 저장되지 않는다(2026-08-12) */}
+          {step.preview.roomBlocked.length > 0 && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] border border-[var(--danger-ring)] break-keep space-y-1">
+              <p><span className="font-semibold">{step.preview.roomBlocked.length}명</span>은 호실 배정이 막혀 저장되지 않습니다. 시트의 호실이나 날짜를 고쳐 다시 올려 주세요.</p>
+              {step.preview.roomBlocked.slice(0, 5).map((b, i) => (
+                <p key={i}>{b.name} ({b.roomNo}호) {b.reason}</p>
+              ))}
+              {step.preview.roomBlocked.length > 5 && <p>외 {step.preview.roomBlocked.length - 5}명</p>}
+            </div>
+          )}
+
           {/* 청소비를 이미 받은 계약의 보증금을 시트가 덮으려 할 때 — 차단은 안 하고 알린다(2026-08-10) */}
           {preview.cleaningDepositWarn > 0 && (
             <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--warning-fg)] bg-[var(--warning-bg)] border border-[var(--warning-ring)] break-keep">
@@ -291,10 +303,10 @@ export default function DataButtons() {
 
           {/* 충돌 목록 */}
           <div className="px-6 py-4 space-y-6">
-            {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn && (
+            {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && !preview.cleaningDepositWarn && preview.roomBlocked.length === 0 && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음. 모든 데이터를 가져올 수 있습니다.</p>
             )}
-            {conflictsBySheet.length === 0 && (preview.hasPaymentSheet || preview.cleaningDepositWarn > 0) && (
+            {conflictsBySheet.length === 0 && (preview.hasPaymentSheet || preview.cleaningDepositWarn > 0 || preview.roomBlocked.length > 0) && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌이 없습니다. 아래 버튼으로 가져오기를 진행하세요.</p>
             )}
             {conflictsBySheet.map(({ sheet, label, items }) => (
