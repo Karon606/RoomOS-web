@@ -1468,7 +1468,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'ai',       label: 'AI 분석' },
 ]
 
-export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
+export default function DashboardClient({ data, targetMonth, paymentMethods, initialTab }: { data: DashboardData; targetMonth: string; paymentMethods: string[]; initialTab?: Tab }) {
   const router = useRouter()
   // KPI 용어 설명(사용성 감사 F3) — 라벨 옆 ? 탭
   const [kpiHelp, setKpiHelp] = useState<{ title: string; body: string[] } | null>(null)
@@ -1515,7 +1515,23 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const monthCaption = isViewingRealMonth
     ? '(이번 달)'
     : `(${Number(targetMonth.slice(5))}월 마감)`
-  const [tab, setTab]                             = useState<Tab>('overview')
+  const [tab, setTab]                             = useState<Tab>(initialTab ?? 'overview')
+  // 탭을 바꾸면 주소도 같이 바꾼다 — 딥링크로 그 탭에 착지하고, 다른 화면에 다녀와도(뒤로가기)
+  // 보던 탭으로 돌아온다. 서버는 이 파라미터로 첫 탭을 정하므로 새로고침에도 살아남는다.
+  //
+  // router.replace 가 아니라 window.history 인 이유. 탭 전환은 **그리는 화면만** 바뀌고 다시 받을
+  // 데이터가 없는데, router 를 태우면 홈 서버 컴포넌트가 통째로 다시 돌아 탭 하나 누를 때마다
+  // 로딩 점프가 생긴다. Next 는 pushState·replaceState 를 라우터에 동기화해 주므로
+  // (linking-and-navigating 문서 Native History API) 월 셀렉터의 useSearchParams 도 이 값을 본다.
+  // 기본 탭에서는 파라미터를 지운다 — 지출 관리·수납 관리가 기본 탭에 ?tab= 을 안 다는 그 문법.
+  const changeTab = (next: Tab) => {
+    setTab(next)
+    const sp = new URLSearchParams(window.location.search)
+    if (next === 'overview') sp.delete('tab')
+    else sp.set('tab', next)
+    const qs = sp.toString()
+    window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname)
+  }
   // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 고객·수납은 비활성으로 통일)
   const entityModal = useEntityModal()
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
@@ -1898,7 +1914,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         {/* v2.0 §25 뷰 전환 탭 — 개별 필 나열(제4 변종) 폐기, 코랄 채움 정본. sticky 래퍼는 유지 */}
         <div className="sticky -top-4 md:-top-6 z-10 pb-2 pt-0.5" style={{ background: 'var(--canvas)' }}>
           <ViewTabs ariaLabel="대시보드 탭" activeId={tab}
-            onChange={id => setTab(id as (typeof TABS)[number]['key'])}
+            onChange={id => changeTab(id as (typeof TABS)[number]['key'])}
             tabs={TABS.map(t => ({ id: t.key, label: t.label }))} />
         </div>
 

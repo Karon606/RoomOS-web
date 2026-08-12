@@ -1730,13 +1730,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ month?: string; tab?: string }>
 }) {
   await requireRouteAccess()   // 클라 내비 뒷문 차단(제한 스태프)
   const { propertyId } = await requirePropertyAccess()
 
-  const { month } = await searchParams
+  const { month, tab } = await searchParams
   const targetMonth = month ?? kstMonthStr()
+  // 어느 탭을 열고 있는지는 주소가 정본이다(수납 관리·지출 관리와 같은 문법).
+  // 종전에는 탭이 클라 상태뿐이라 홈에서 지출 관리로 갔다 돌아오면 늘 '현황'이었고,
+  // 재무 탭을 가리키는 딥링크를 만들 수단 자체가 없었다. 모르는 값은 기본 탭으로 떨군다.
+  const initialTab = tab === 'finance' || tab === 'tenants' || tab === 'ai' ? tab : 'overview'
 
   // 예약 인상/인하 적용일 경과분 동기화 — 어느 페이지로 들어와도 7/1 인상이 baseRent·rentAmount 에 반영되게
   // (호실관리 미방문 시 리스트·표시가 옛값으로 남는 것 방지). 실패해도 페이지는 정상 노출.
@@ -1769,7 +1773,7 @@ export default async function DashboardPage({
       })()}
 
       {/* ── 대시보드 ──────────────────────────────────────────── */}
-      <DashboardClient data={dashboardData} targetMonth={targetMonth} paymentMethods={paymentMethods} />
+      <DashboardClient data={dashboardData} targetMonth={targetMonth} paymentMethods={paymentMethods} initialTab={initialTab} />
 
     </div>
   )
