@@ -6,11 +6,13 @@
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { recordDepositReceived } from './actions'
 import type { DepositPerTenant, DepositLedgerEntry } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -150,11 +152,14 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                       {fmtWon(d.balance)}
                     </p>
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">현재 잔고</p>
+                    {/* 행 액션은 RowActionBtn 정본 — 맨 버튼은 히트영역이 글자 높이라 §09 터치 타깃
+                        44px 에 못 미친다. 형제(수납 기록·보증금 패널·상태 이력·청소 행)와 같은 문법이다.
+                        mt-3.5 는 정본이 히트영역용으로 먹는 -my-2 를 되갚아 종전 6px 간격을 지킨다. */}
                     {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
-                      <button onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit, d.cleaningPaid)} disabled={recPending}
-                        className="mt-1.5 text-[0.65625rem] font-medium px-2 py-1 rounded-lg ring-1 ring-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] disabled:opacity-50 whitespace-nowrap">
+                      <RowActionBtn tone="success" disabled={recPending} className="mt-3.5 whitespace-nowrap"
+                        onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit, d.cleaningPaid)}>
                         받음으로 기록
-                      </button>
+                      </RowActionBtn>
                     )}
                   </div>
                 </li>
@@ -177,7 +182,9 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                       <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'}`}>
                         {e.type === 'IN' ? '입금' : '환불'}
                       </span>
-                      <span className="text-xs text-[var(--warm-muted)]">{new Date(e.date).toISOString().slice(0, 10)}</span>
+                      {/* 날짜는 fmtDateDot 정본(감사 B5) — toISOString 은 UTC 라 KST 00~09시에
+                          하루 앞선 날짜를 그렸고, 서버·기기가 갈려 하이드레이션도 어긋날 자리였다. */}
+                      <span className="text-xs text-[var(--warm-muted)]">{fmtDateDot(e.date)}</span>
                       <span className="text-xs text-[var(--warm-dark)]">· {e.tenantName}</span>
                       {e.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {e.roomNo}호</span>}
                     </div>

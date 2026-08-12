@@ -10,13 +10,16 @@ const HIT_CLS = '-my-2 min-h-[44px] inline-flex items-center focus-visible:outli
 const CHROME_CLS = 'text-[0.65625rem] font-medium px-2.5 py-1 rounded-lg border'
 
 // 톤은 적용처의 기존 색 조합을 그대로 옮긴 것이다(수정=중립 계열, 삭제=위험 계열).
-type Tone = 'neutral' | 'danger' | 'deposit' | 'accent'
+// success 는 §10 Btn 이 이미 의미색 액션으로 두고 있는 계열이다 — 긍정 사실을 남기는 행 액션
+// (보증금 '받음으로 기록')이 raw 버튼에서 넘어오며 등재됐다(2026-08-12).
+type Tone = 'neutral' | 'danger' | 'deposit' | 'accent' | 'success'
 
 const TONE_CLS: Record<Tone, string> = {
   neutral: 'border-[var(--warm-border)] text-[var(--warm-mid)]',
   danger: 'border-[var(--danger-ring)] text-[var(--danger-fg)]',
   deposit: 'border-[var(--deposit-ring)] text-[var(--deposit-fg)]',
   accent: 'border-[var(--warm-border)] text-[var(--coral)]',
+  success: 'border-[var(--success-ring)] text-[var(--success-fg)]',
 }
 
 export function RowActionBtn({
