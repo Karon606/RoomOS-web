@@ -988,7 +988,7 @@ export default function SettingsForm({
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">엑셀 가져오기·내보내기</h2>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-            호실·입주자·지출·기타수익·설정을 엑셀(.xlsx)로 내보내거나, 작성한 엑셀을 가져와 일괄 등록합니다.
+            호실·입주자·지출·부가수익·설정을 엑셀(.xlsx)로 내보내거나, 작성한 엑셀을 가져와 일괄 등록합니다.
             가져오기 시 중복 항목은 처리 방법을 직접 선택할 수 있습니다.
           </p>
           <DataButtons />
@@ -998,7 +998,7 @@ export default function SettingsForm({
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">데이터 백업</h2>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-            영업장의 모든 데이터(호실·입주자·계약·수납·지출·기타수익 등)를 JSON 파일로 내려받습니다.
+            영업장의 모든 데이터(호실·입주자·계약·수납·지출·부가수익 등)를 JSON 파일로 내려받습니다.
             정기적으로 백업해두면 사고 시 복구에 활용할 수 있습니다.
           </p>
           <BackupButton />

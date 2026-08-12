@@ -59,7 +59,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
   })
 
   const handleExportCSV = () => {
-    const header = ['월', '청구액', '수납액', '전년 수납액', '증감', '기타수익', '지출', '운영이익', '미수 증감', '월말 미수 잔액']
+    const header = ['월', '청구액', '수납액', '전년 수납액', '증감', '부가수익', '지출', '운영이익', '미수 증감', '월말 미수 잔액']
     const lines: string[][] = [header]
     summary.rows.forEach((r, i) => {
       const prev = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
@@ -164,13 +164,13 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard label="총 수납액" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]"
           hint={<InfoHint title="총 수납액">실제로 입금된 이용료를 입금일이 아니라 그 돈이 어느 달 몫인지(귀속월) 기준으로 모은 금액입니다. 아직 받지 못한 이용료는 포함되지 않으므로, 받을 예정 금액까지 포함하는 홈의 예상 수입보다 작을 수 있습니다.</InfoHint>} />
-        <SummaryCard label="기타수익" value={fmt(summary.totalExtraIncome)} />
+        <SummaryCard label="부가수익" value={fmt(summary.totalExtraIncome)} />
         <SummaryCard label="총 지출" value={fmt(summary.totalExpense)} />
         <SummaryCard
           label="운영이익"
           value={(summary.totalProfit >= 0 ? '+' : '-') + fmt(Math.abs(summary.totalProfit)).replace('원', '원')}
           accent={summary.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}
-          hint={<InfoHint title="운영이익">수납액과 기타수익에서 기록된 지출을 뺀 금액입니다. 감가상각비, 대출이자, 세금을 반영하기 전이므로 회계상 당기순이익과는 다릅니다.</InfoHint>}
+          hint={<InfoHint title="운영이익">수납액과 부가수익에서 기록된 지출을 뺀 금액입니다. 감가상각비, 대출이자, 세금을 반영하기 전이므로 회계상 당기순이익과는 다릅니다.</InfoHint>}
         />
       </div>
 
@@ -243,7 +243,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">청구액</span><span className="text-[var(--warm-dark)]">{fmt(r.billedAmount)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">수납액</span><span className="text-[var(--warm-dark)]">{fmt(r.revenue)}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.extraIncome)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">부가수익</span><span className="text-[var(--warm-mid)]">{fmt(r.extraIncome)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expense)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수 잔액</span><span className="text-[var(--warning-fg)]">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
                 {summary.prevYear && (
@@ -289,7 +289,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">청구액</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalBilled)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">수납액</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalRevenue)}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">부가수익</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수 잔액</span><span className="text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</span></div>
             {summary.prevYear && summary.prevYear.totalRevenue > 0 && (() => {
@@ -322,7 +322,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 <th className="px-4 py-3 font-medium text-right">청구액</th>
                 <th className="px-4 py-3 font-medium text-right">수납액</th>
                 {summary.prevYear && <th className="px-4 py-3 font-medium text-right">전년 수납액 (Δ)</th>}
-                <th className="px-4 py-3 font-medium text-right">기타수익</th>
+                <th className="px-4 py-3 font-medium text-right">부가수익</th>
                 <th className="px-4 py-3 font-medium text-right">지출</th>
                 <th className="px-4 py-3 font-medium text-right">운영이익</th>
                 <th className="px-4 py-3 font-medium text-right">미수 증감</th>
@@ -457,7 +457,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 청구액</span><span className="text-[var(--warm-dark)]">{fmt(r.expectedRevenue)}</span></div>
-              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">부가수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExpense)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--warm-muted)]">점유/공실</span><span className="text-[var(--warm-dark)]">{r.occupiedRooms} / {r.occupiedRooms + r.vacantRooms}</span></div>
             </div>
@@ -473,7 +473,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
               <tr className="text-left text-xs text-[var(--warm-muted)]">
                 <th className="px-4 py-3 font-medium">월</th>
                 <th className="px-4 py-3 font-medium text-right">예상 청구액</th>
-                <th className="px-4 py-3 font-medium text-right">기타수익</th>
+                <th className="px-4 py-3 font-medium text-right">부가수익</th>
                 <th className="px-4 py-3 font-medium text-right">예상 지출</th>
                 <th className="px-4 py-3 font-medium text-right">예상 운영이익</th>
                 <th className="px-4 py-3 font-medium text-right">점유/공실</th>
@@ -501,9 +501,9 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
         </div>
       </div>
       <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-        예상 청구액 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타수익 = 전년 동월 실적,
+        예상 청구액 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/부가수익 = 전년 동월 실적,
         없으면 최근 3개월 평균. 입주 예정·퇴실 예정 일정도 반영되며, 미확정 변수가 많을수록 실제 결과와 차이가 날 수 있습니다.
-        여기의 예상 청구액은 이용료만 집계하며, 홈의 예상 수입은 기타수익을 포함합니다.
+        여기의 예상 청구액은 이용료만 집계하며, 홈의 예상 수입은 부가수익을 포함합니다.
         {/* 동명이의 고지 — 홈에도 '예상 지출'·'예상 운영이익'이 있는데 모집단이 다르다.
             이름을 바꾸면 이 화면 안 열 헤더·CSV 까지 갈리므로 뜻을 적어 가른다(2026-08-12). */}
         {' '}같은 이름이지만 홈의 예상 지출은 이 달 기록분에 미기록 고정 지출 추정을 더한 값이고,

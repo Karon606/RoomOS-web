@@ -435,8 +435,10 @@ export async function POST(request: NextRequest) {
     counts.expenses = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
-  if (wb.SheetNames.includes('기타수익')) {
-    const { conflicts, newCount, autoSkipped } = await previewIncomes(sheetToRows(wb, '기타수익'), propertyId)
+  // '부가수익'이 정본 시트명(2026-08-12 통일). 옛 내보내기 파일의 '기타수익' 시트도 계속 받는다.
+  const incomeSheetName = wb.SheetNames.includes('부가수익') ? '부가수익' : wb.SheetNames.includes('기타수익') ? '기타수익' : null
+  if (incomeSheetName) {
+    const { conflicts, newCount, autoSkipped } = await previewIncomes(sheetToRows(wb, incomeSheetName), propertyId)
     allConflicts.push(...conflicts)
     counts.incomes = { new: newCount, conflict: conflicts.length, autoSkipped }
   }

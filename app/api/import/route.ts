@@ -520,8 +520,12 @@ export async function POST(request: NextRequest) {
   if (wb.SheetNames.includes('지출'))
     results['지출'] = await importExpenses(sheetToRows(wb, '지출'), propertyId, resolutions)
 
-  if (wb.SheetNames.includes('기타수익'))
-    results['기타수익'] = await importIncomes(sheetToRows(wb, '기타수익'), propertyId, resolutions)
+  // '부가수익'이 정본 시트명(2026-08-12 통일). 옛 내보내기 파일의 '기타수익' 시트도 계속 받는다.
+  for (const incomeSheet of ['부가수익', '기타수익']) {
+    if (!wb.SheetNames.includes(incomeSheet)) continue
+    results[incomeSheet] = await importIncomes(sheetToRows(wb, incomeSheet), propertyId, resolutions)
+    break
+  }
 
   if (wb.SheetNames.includes('요청사항'))
     results['요청사항'] = await importRequests(sheetToRows(wb, '요청사항'), propertyId)

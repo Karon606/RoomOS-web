@@ -553,7 +553,8 @@ export async function GET(request: NextRequest) {
     ['호실관리',   roomSheet],
     ['요청사항',   requestSheet],
     ['지출',       expenseSheet],
-    ['기타수익',   incomeSheet],
+    // 시트 이름은 화면 정본 어휘를 따른다(2026-08-12 '부가수익' 통일). 가져오기는 옛 이름도 받는다.
+    ['부가수익',   incomeSheet],
     ['설정',       settingSheet],
   ]
   for (const [name, data] of sheets) {

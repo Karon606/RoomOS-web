@@ -894,7 +894,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         >
           {([
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
-            { label: '기타수익', value: data.extraRevenue, color: 'var(--viz-4)' },
+            { label: '부가수익', value: data.extraRevenue, color: 'var(--viz-4)' },
             // '지출' → '기록된 지출' (2026-08-12 용어 통일). 바로 아래 예상 운영이익 등식이 빼는
             // 항과 **같은 변수**(totalExpense)인데 이름이 둘이었다. 같은 모집단은 같은 이름이다.
             { label: '기록된 지출', value: data.totalExpense, color: 'var(--tc)' },
@@ -1382,8 +1382,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       '이번 달 입주자 전원이 납부를 마쳤을 때의 수입입니다.',
       '퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다.',
       '막대는 지금까지 실제 수납된 금액의 달성률입니다.',
-      '아직 받지 않은 금액과 기타수익도 포함됩니다.',
-      '수납 관리의 이 달 청구액은 현재 입주자 청구만 집계합니다. 예약 확정, 퇴실자의 이 달 몫, 기타수익만큼 이 값이 더 큽니다.',
+      '아직 받지 않은 금액과 부가수익도 포함됩니다.',
+      '수납 관리의 이 달 청구액은 현재 입주자 청구만 집계합니다. 예약 확정, 퇴실자의 이 달 몫, 부가수익만큼 이 값이 더 큽니다.',
       '결산 보고서의 수납액은 실제 받은 돈만 집계하므로 이 값보다 작을 수 있습니다.',
     ] },
     // 카드에 등식이 붙었으므로 도움말이 같은 항을 다른 이름으로 부르면 안 된다(2026-08-12).
@@ -1664,7 +1664,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '8px 0 6px' }}>
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
-              {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동.
+              {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/부가수익으로 이동.
                   '장부 순이익' → '운영이익' (2026-08-12 용어 통일). 위 세부 재무 요약 타일의 '운영이익'과
                   **같은 변수**(netProfit)이고 결산 보고서도 같은 이름을 쓴다. '순이익'은 2026-06 전수
                   통일에서 폐기된 어휘인데 이 한 자리에 남아 있었다. 큰 숫자(예상)와의 구분은 카드 제목의

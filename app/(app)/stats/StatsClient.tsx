@@ -128,7 +128,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="이달 수입"   value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+기타수익"  colorStyle={{ color: 'var(--coral)' }} />
+        <StatCard label="이달 수입"   value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+부가수익"  colorStyle={{ color: 'var(--coral)' }} />
         <StatCard label="이달 지출"   value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계"  colorStyle={{ color: 'var(--danger-fg)' }} />
         <StatCard label="순수익"      value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" colorStyle={{ color: data.netProfit >= 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }} />
         <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준"  colorStyle={{ color: 'var(--deposit-fg)' }} />

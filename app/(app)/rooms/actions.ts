@@ -1835,7 +1835,7 @@ export async function batchDeletePayments(
   }
 }
 
-// 과납 초과분 기타수익 처리 적용취소 — 확인창 한 번이 만든 두 테이블 record 를 함께 되돌린다(v2.0 §16).
+// 과납 초과분 부가수익 처리 적용취소 — 확인창 한 번이 만든 두 테이블 record 를 함께 되돌린다(v2.0 §16).
 //
 // 반쪽 취소를 만들면 안 되는 자리다. 수납만 지우면 그 달이 미수로 돌아가는데 초과분은 수익에 남는다.
 // 운영자가 그 미수를 보고 다시 수납을 넣는 순간 초과분이 이중계상된다 — 안 되돌린 것보다 나쁘다.
@@ -1862,7 +1862,7 @@ export async function undoOverpayExtraIncome(
     })
     if (targets.length !== recordIds.length) return { ok: false, error: '수납 기록을 찾을 수 없습니다.', intact: true }
     const inc = await prisma.extraIncome.findFirst({ where: { id: extraIncomeId, propertyId }, select: { id: true } })
-    if (!inc) return { ok: false, error: '기타수익 기록을 찾을 수 없습니다.', intact: true }
+    if (!inc) return { ok: false, error: '부가수익 기록을 찾을 수 없습니다.', intact: true }
 
     const deletedAt = new Date()
     await prisma.$transaction([

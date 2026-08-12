@@ -922,7 +922,7 @@ export default function RoomsClient({
             <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
             <InfoHint title="이 달 청구액">
               이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할과 무청구 퇴실월(납부일 이전 퇴실)이 반영됩니다.
-              예상 수입은 여기에 예약 확정, 퇴실 귀속, 기타수익을 더한 사업 전체 전망이고 홈 화면 카드에도 같은 등식이 적힙니다.
+              예상 수입은 여기에 예약 확정, 퇴실 귀속, 부가수익을 더한 사업 전체 전망이고 홈 화면 카드에도 같은 등식이 적힙니다.
               그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 아래 등식 줄에 그 차이가 항목별로 적힙니다.
             </InfoHint>
           </p>
@@ -963,7 +963,7 @@ export default function RoomsClient({
             })} />
           </p>
         )}
-        {/* 실수납 줄은 퇴실 귀속이나 기타수익이 있을 때만 — 둘 다 없으면 홈 실수납과 위 수납액이 같은 값이다.
+        {/* 실수납 줄은 퇴실 귀속이나 부가수익이 있을 때만 — 둘 다 없으면 홈 실수납과 위 수납액이 같은 값이다.
             예약 확정은 아직 받은 돈이 아니라 이 축에 들어오지 않는다(예상 축에만 있다). */}
         {showHomeBridge && (checkedOutRecognized !== 0 || incomeSum !== 0) && (
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">

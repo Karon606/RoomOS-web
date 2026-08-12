@@ -6,7 +6,7 @@
 //
 // 값은 여기서 만들지 않는다. 서버가 쓴 값을 받아 이름만 붙인다.
 // 항 이름은 전부 **운영자가 확인하러 갈 화면의 라벨과 글자까지 같다**.
-//   이 달 청구액 = 수납 관리 스트립 · 기타수익 = 홈 세부 재무 요약 타일
+//   이 달 청구액 = 수납 관리 스트립 · 부가수익 = 홈 세부 재무 요약 타일
 //   기록된 지출 = 홈 세부 재무 요약 타일 · 결산 보고서 운영이익 정의
 //   고정 지출 (예정) = 지출 관리 요약 위젯
 import { Fragment } from 'react'
@@ -24,7 +24,7 @@ const L_RECORDED_EXPENSE  = '기록된 지출'
 const L_PENDING_RECURRING = '고정 지출 (예정)'
 
 /**
- * 예상 수입 = 이 달 청구액 + 예약 확정 + 퇴실 귀속 + 기타수익.
+ * 예상 수입 = 이 달 청구액 + 예약 확정 + 퇴실 귀속 + 부가수익.
  * 첫 항은 값과 무관하게 항상 선다(그 달 청구가 0원이어도 사실이다).
  * 나머지는 0이면 생략한다 — 0원짜리 항은 등식을 길게만 만든다.
  */
@@ -34,12 +34,12 @@ export function expectedRevenueTerms(v: {
   const terms: EquationTerm[] = [{ label: '이 달 청구액', amount: v.billed, op: '+' }]
   if (v.reserved   !== 0) terms.push({ label: '예약 확정', amount: v.reserved,   op: '+' })
   if (v.checkedOut !== 0) terms.push({ label: '퇴실 귀속', amount: v.checkedOut, op: '+' })
-  if (v.extra      !== 0) terms.push({ label: '기타수익',  amount: v.extra,      op: '+' })
+  if (v.extra      !== 0) terms.push({ label: '부가수익',  amount: v.extra,      op: '+' })
   return terms
 }
 
 /**
- * 실수납 = 수납 + 퇴실 귀속 + 기타수익.
+ * 실수납 = 수납 + 퇴실 귀속 + 부가수익.
  * 예약 확정은 아직 받은 돈이 아니라 이 축에 들어오지 않는다(예상 축에만 있다).
  */
 export function paidRevenueTerms(v: {
@@ -47,7 +47,7 @@ export function paidRevenueTerms(v: {
 }): EquationTerm[] {
   const terms: EquationTerm[] = [{ label: '수납', amount: v.collected, op: '+' }]
   if (v.checkedOut !== 0) terms.push({ label: '퇴실 귀속', amount: v.checkedOut, op: '+' })
-  if (v.extra      !== 0) terms.push({ label: '기타수익',  amount: v.extra,      op: '+' })
+  if (v.extra      !== 0) terms.push({ label: '부가수익',  amount: v.extra,      op: '+' })
   return terms
 }
 
