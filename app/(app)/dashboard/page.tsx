@@ -692,11 +692,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return calcDaysOverdueForMonth(effectiveDueDayForMonth(l, monthStr), monthStr)
   }
 
-  const paymentByLease = payments.reduce((acc, p) => {
-    acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
-    return acc
-  }, {} as Record<string, number>)
-
   // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
   // (다음달 입주 예정인 ACTIVE 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
   const monthOfDate = (d: Date | string | null): string | null => {
@@ -1037,8 +1032,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
-  // 납부 예정 호실 — dueDay 미도래 + 아직 받지 않음 (방 현황 그리드 4번째 상태)
-  const awaitingRoomNosForView = Array.from(new Set(awaitingLeases.map(l => l.roomNo)))
 
   // 타일 '연체 D+N' 의 N — 미수납 위젯 배지가 쓰는 그 값을 그대로 옮겨 담는다(새 계산이 아니다).
   // 한 사람의 경과일을 두 위젯이 각자 세면 같은 화면에서 다른 날짜를 말하게 된다.
@@ -1130,8 +1123,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     areaPyeong:    r.areaPyeong,
     areaM2:        r.areaM2,
     baseRent:      r.baseRent,
-    scheduledRent: r.scheduledRent,
-    rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
     // 사람이 아직 없는 방을 지금 내놓는 값 — 예약 인상이 이번 달에 이미 걸려 있으면 인상가다.
     // 종전엔 타일이 baseRent 를 직표시해 인상 예약이 걸린 빈 방을 구가로 불렀다(오늘 해당 0실).
     offerRent:     offerRentForMonth(r, targetMonth),
@@ -1722,7 +1713,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     activity:        activityItems,
     unpaidLeases,
     unpaidRoomNosForView,
-    awaitingRoomNosForView,
     nonResidentItems,
     publishCandidates: publishCandidateRooms.map(r => ({
       id: r.id, roomNo: r.roomNo, tier: r.tier, baseRent: r.baseRent, thumbUrl: r.photos[0]?.storageUrl ?? null,

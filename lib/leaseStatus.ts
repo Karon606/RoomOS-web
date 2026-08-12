@@ -323,25 +323,6 @@ export function roomStatusView(
 }
 
 /**
- * CHECKED_OUT lease 중 그 달 귀속 paymentRecord 가 있는 lease 목록.
- * 단기 입주 후 퇴실, 거주 중 중도퇴실 등 — 그 달 매출 인식이 필요한 케이스.
- * rentAmount 와 함께 반환되어 호출 측에서 Math.min(paid, rent) 과납 처리에 사용 가능.
- */
-export async function getCheckedOutLeasesWithRevenue(
-  prisma: PrismaDb,
-  propertyId: string,
-  targetMonth: string,
-): Promise<{ id: string; rentAmount: number }[]> {
-  return prisma.leaseTerm.findMany({
-    where: {
-      propertyId, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
-      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false, deletedAt: null } },
-    },
-    select: { id: true, rentAmount: true },
-  })
-}
-
-/**
  * CHECKED_OUT lease 의 그 달 귀속 paymentRecord 합계.
  * totalExpected (발생주의 청구) 의 단기·중도퇴실 보정 — rentAmount 전체가 아닌
  * 실제 정산된 금액(일할 등)이 paymentRecord 에 들어 있으므로 그대로 사용.

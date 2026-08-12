@@ -151,7 +151,6 @@
   --np-label:   rgba(180,210,240,0.78);
   --np-unit:    rgba(180,210,240,0.65);
   --np-cap:     rgba(180,210,240,0.65);
-  --np-cap2:    rgba(180,210,240,0.70);
   --np-pos:     var(--viz-3);
   --np-neg:     var(--tc-s);
   --np-cash:    var(--viz-7);
@@ -505,7 +504,6 @@ html.dark {
   --np-label:   var(--d-ink-s);
   --np-unit:    var(--d-ink-m);
   --np-cap:     var(--d-ink-m);
-  --np-cap2:    var(--d-ink-s);
   --np-pos:     var(--d-success);
   --np-neg:     var(--d-overdue);
   --np-cash:    var(--d-success);
