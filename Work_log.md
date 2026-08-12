@@ -3215,3 +3215,15 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **검증**: 게이트 전부, eslint 신규 0, KPI·산식 무접점, 실측 전후표 동봉. 절전 2회 중단을 체크포인트 재개 + 항목별 즉시 커밋으로 완주.
 - **운영자 판단 대기**: DatePicker 한글 전체형 날짜가 320px 에서 말줄임 잔존 — fmtDateDot 전환은 27개 파일 파급이라 보류("잘린 날짜는 없는 날짜보다 나쁘다" 판례와 충돌 지점).
 - **범위 밖**: 코랄 카드 (i) 버튼 opacity 실효 1.98, 진행바 fill 순백(§03 위반), DatePicker placeholder opacity 하드코딩, 입력 placeholder·§19 테이블 헤더 4.11 잔존(§12 개정 필요), --np-cap2 죽은 토큰, availableFromText 미잠금.
+
+## 2026-08-12 (13) — 구조 부채 8건 일괄 (7ac0e5a4..c301893b)
+- **fmtRoomNo 13벌 수렴**(lib/roomNo 정본, 규칙 동일·빈 값 표기만 인자화) — '사무실' 1실이 희망 방 목록에서 '사무실호'로 그려지던 실결함 해소. dashUtils 파일 소멸.
+- **DonutChart 3벌 수렴**(components/ui 정본, 가운데 글자 홈 수치로) + StatsClient 25KB 삭제(도달 불가·다섯 번째 분모 숙주, redirect page 는 보존).
+- **예약 인상 손사본 정본화** — 지시했던 offerRentForMonth 는 부적합 판정(baseRent 축이라 협의가를 덮음), effectiveBaseRent 를 lib/billing export 로 위임. 손사본에 상태 분기 누락(비거주 계약까지 무는 418호 4.8배 클래스) 동반 봉합 — 1,200쌍 대조 diff 0, 역주입으로 갈림 실증.
+- **fmtManShort 반올림 유지, §06 개정** — 규정 자체가 표(반올림)와 본문(올림)으로 갈려 있었고, 제시가·가격 예고는 올림이 곧 비싸게 적는 거짓말이라 반올림으로 통일 명문화. 실측 갈리는 값 0종.
+- **TZ 의존 날짜 파싱 5자리 정정**(ymdToDbDate 정본) — 청소 3경로 + 퇴실 자동 청소 + 양도인 정산 payDate. check-naive-datetime 에 @db.Date 축 (c) 신설(schema 에서 칸 이름 직접 읽음), 역주입 5자리 발화. 로컬 개발 세션 입력분은 하루 앞섰을 수 있어 운영자 눈 확인 권장(프로덕션 입력분 정상).
+- **죽은 코드 6건 삭제**(formatMoney 파일·getCheckedOutLeasesWithRevenue·DashboardClient 고아 2필드·awaitingRoomNosForView·paymentByLease·--np-cap2), scheduledRentChanges 는 AI 프롬프트 소비처 실재로 보존.
+- **applyScheduledRents 크론 신설**(95e19774) — 규칙 본문을 lib/scheduledRent 로 무변경 이동, 서버 액션과 크론이 같은 함수. 0 15 * * *(KST 자정), 멱등·로그, CRON_SECRET 프로덕션 존재 확인. 위험 평가 기록: 소개 페이지 옛 가격·신규 계약 폼 구가 프리필이 페이지 로드 의존이던 것 해소.
+- **availableFromText 잠금 6케이스**(test-money 166).
+- **검증**: 게이트 전부, eslint 신규 0(항목마다 stash 대조), 46실 금액 표면 diff 0.
+- **범위 밖**: `${roomNo}호` 직접 조립 81곳(알림·SMS 카피라 임의 미변경 — '사무실' 1실만 영향), prorate 로컬 기준쌍은 정합이라 보존.
