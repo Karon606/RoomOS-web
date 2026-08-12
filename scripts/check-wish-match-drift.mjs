@@ -29,7 +29,7 @@ const ymd = d => d == null ? null : new Date(d).toISOString().slice(0, 10)
 function roomAvailability(room) {
   const occ = room.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status))
   if (occ.length === 0) {
-    if (room.leaseTerms.some(l => l.status === 'NON_RESIDENT') && !room.nonResidentVacant) return null
+    if (!room.nonResidentVacant) return null
     return { kind: 'now' }
   }
   const outs = occ.map(l => ymd(l.expectedMoveOut))
@@ -75,9 +75,8 @@ async function main() {
     const av = roomAvailability(r)
     availByKey.set(`${r.propertyId}|${r.roomNo}`, av)
     // 1) 방 집합 차 — '지금 비어 있다'와 isVacant 플래그가 어긋나면 두 화면이 다른 방을 센다.
-    //    비거주 제외 방(창고·사무실)은 두 정의가 일부러 다르므로 검사에서 뺀다(lib/vacancy 정본).
-    const nonResExcluded = r.leaseTerms.some(l => l.status === 'NON_RESIDENT') && !r.nonResidentVacant
-    if (nonResExcluded) continue
+    //    공실 집계 제외 방(창고·사무실)은 두 정의가 일부러 다르므로 검사에서 뺀다(lib/vacancy 정본).
+    if (!r.nonResidentVacant) continue
     const isNow = av?.kind === 'now'
     if (isNow !== r.isVacant) {
       roomAxis.push({

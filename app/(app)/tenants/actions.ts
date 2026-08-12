@@ -313,7 +313,7 @@ async function nextReservationConflict(
 }
 
 /**
- * 비거주 점유 방인가 — 방 배정이 일어나는 경로가 공유하는 정본 판정.
+ * 세를 놓지 않는 방인가 — 방 배정이 일어나는 경로가 공유하는 정본 판정.
  *
  * 415호(최은옥)·사무실(이원빈)처럼 명의만 있는 창고·사무실은 사람이 들어갈 수 없는 방인데,
  * 점유 계약이 0건이라 종전 가드가 전부 통과시켰다. 정작 문의·투어만 hasNonResident 로 막혀
@@ -322,9 +322,14 @@ async function nextReservationConflict(
  * 판정은 lib/vacancy 의 집계 제외 술어 그대로다 — 사본을 만들지 않는다. 418호처럼 방 설정이
  * '공실로 세라'(nonResidentVacant=true)인 거주·비거주 동거 방은 여기 걸리지 않는다(현존·정당).
  * 방을 못 읽었으면(=배정 대상 방이 없음) 막지 않는다.
+ *
+ * 2026-08-13 이후 술어가 방 단위 사실(플래그 하나)이 되면서, 명의자가 그 방의 거주자로 올라서는
+ * 전환도 여기 걸린다. 그게 맞다 — 창고에 사람이 살기 시작하면 그 방은 더 이상 창고가 아니므로
+ * 방 설정을 먼저 내려야 한다(거부 문구가 지목하는 그 출구다). 종전에는 명의를 거주로 바꾸는 순간
+ * 술어가 거짓이 되어 통과했고, 그 결과가 감지망 축 ③(집계 제외 방에 거주 계약)이 부르는 상태였다.
  */
-function nonResidentOccupiedRoom(room: { nonResidentVacant: boolean } | null, hasNonResident: boolean): boolean {
-  return !!room && isVacancyExcluded(room, hasNonResident)
+function nonResidentOccupiedRoom(room: { nonResidentVacant: boolean } | null): boolean {
+  return !!room && isVacancyExcluded(room)
 }
 
 // 호실 목록 (입주자 등록/수정 시 선택용)
@@ -355,10 +360,10 @@ export async function getRoomsForSelect() {
       ...r,
       // 종전 의미 그대로 — 가장 최근 생성 계약 하나의 상태. 소비처가 이 뜻에 기대고 있어 바꾸지 않는다.
       currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
-      // 비거주 점유 방(창고·사무실) — 서버 가드(nonResidentOccupiedRoom)와 같은 정본 술어다.
-      // currentLeaseStatus 로는 판정이 샌다. 그것은 '가장 최근 생성 계약 하나'라 비거주가 최신이 아닌
-      // 방(418호 형태)에서는 비거주가 있다는 사실 자체가 안 보인다 — 방 단위 사실로 따로 싣는다.
-      vacancyExcluded: isVacancyExcluded(r, leaseTerms.some(l => l.status === 'NON_RESIDENT')),
+      // 집계 제외 방(창고·사무실) — 서버 가드(nonResidentOccupiedRoom)와 같은 정본 술어다.
+      // currentLeaseStatus 로는 판정이 샌다. 그것은 '가장 최근 생성 계약 하나'라 계약이 없거나
+      // 비거주가 최신이 아닌 방에서는 답이 안 나온다 — 방 단위 사실로 따로 싣는다.
+      vacancyExcluded: isVacancyExcluded(r),
       occupantMoveOut: lastOut?.expectedMoveOut ? new Date(lastOut.expectedMoveOut).toISOString().slice(0, 10) : null,
       occupantIsShortTerm: lastOut?.isShortTerm ?? false,
       // 퇴실 예정일 없는 예약만 '무기한'이다. 날짜가 잡힌 예약은 언제 비는지 아는 방이라 막지 않고
@@ -460,12 +465,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     },
   }) : null
   const existingLeases = roomForGuard?.leaseTerms ?? []
-  const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
   // 점유 가드는 lib/roomAssignment 한 벌이다 — 종전에는 여기와 updateTenant 에 같은 판정이 두 벌 적혀
   // 있었고 엑셀 가져오기에는 0 개였다(2026-08-12 봉합). 문구·순서는 그 정본이 갖는다.
   const denial = roomAssignmentDenial({
     incomingStatus: status,
-    nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard, hasNonResident),
+    nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
     otherLeases: existingLeases,
   })
   if (denial) return { ok: false, error: denial }
@@ -749,10 +753,10 @@ export async function updateTenant(formData: FormData): Promise<
     })
     const otherLeases = roomForGuard?.leaseTerms ?? []
     // addTenant 와 같은 한 벌(lib/roomAssignment 정본). 본인 계약은 위 where 에서 이미 빠져 있어
-    // 415호 명의자가 그 방의 거주자로 올라서는 정당한 전환은 걸리지 않는다.
+    // 같은 방 안의 다른 계약과만 겨룬다.
     const denial = roomAssignmentDenial({
       incomingStatus: status,
-      nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard, otherLeases.some(l => l.status === 'NON_RESIDENT')),
+      nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
       otherLeases,
     })
     if (denial) return { ok: false, error: denial }

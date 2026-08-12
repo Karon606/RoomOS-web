@@ -501,7 +501,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     let occupied = 0
     let vacant = 0
     for (const room of allRoomsForCount) {
-      if (isVacancyExcluded(room, room.leaseTerms.some(l => l.status === 'NON_RESIDENT'))) continue
+      if (isVacancyExcluded(room)) continue
       const has = room.leaseTerms.some(l => {
         if (l.status === 'NON_RESIDENT') return false
         const moveIn = l.moveInDate ? new Date(l.moveInDate) : null

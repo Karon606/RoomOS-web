@@ -24,7 +24,7 @@
 // 확인창(overlapOccupancy)과 같은 선이고, 같은 날 퇴실·입주는 겹침으로 센다.
 // 퇴실 예정일이 없는 계약은 무기한이라 그 뒤 전부와 겹친다.
 //
-// 축 ③ 비거주 점유 방(창고·사무실)에 거주·예약 계약이 들어가 있는 방.
+// 축 ③ 공실 집계 제외 방(창고·사무실)에 거주·예약 계약이 들어가 있는 방.
 //
 // 왜 이게 사고인가 — 415호(최은옥)·사무실(이원빈)은 명의만 있는 방이라 점유 계약이 0건이다.
 // 그래서 addTenant·updateTenant 가드가 전부 통과시켰고, 거기에 입주자를 저장하면 명의자와
@@ -42,8 +42,8 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: proc
 // 방을 잡고 있는 계약 — app/(app)/room-manage/RoomManageClient.tsx OCCUPYING_STATUSES 와 같은 정의.
 const OCCUPYING_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
 
-// lib/vacancy.ts isVacancyExcluded 와 같은 정의 — 비거주 계약 점유 + 공실 집계 제외 설정.
-const isVacancyExcluded = (nonResidentVacant, occupiedByNonResident) => occupiedByNonResident && !nonResidentVacant
+// lib/vacancy.ts isVacancyExcluded 와 같은 정의 — 방 설정 하나(세를 놓지 않는 방).
+const isVacancyExcluded = (nonResidentVacant) => !nonResidentVacant
 
 async function main() {
   const rooms = await prisma.room.findMany({
@@ -69,7 +69,7 @@ async function main() {
     const where = { property: r.property?.name ?? '?', roomNo: r.roomNo }
 
     // ── 축 ③ — 점유 계약 유무와 무관하게 방 단위 사실로 묻는다.
-    if (isVacancyExcluded(r.nonResidentVacant, r.leaseTerms.some(l => l.status === 'NON_RESIDENT')) && occ.length > 0) {
+    if (isVacancyExcluded(r.nonResidentVacant) && occ.length > 0) {
       axis3.push({ ...where, detail: r.leaseTerms.map(label).join(' | ') })
     }
 
@@ -117,8 +117,8 @@ async function main() {
     '무기한 계약의 퇴실 예정일을 넣거나, 그 예약을 다른 방으로 옮긴다.')
   bad += report('한 방에 체류 구간이 겹치는 계약이 둘 이상이다(이중 점유)', axis2,
     '겹치는 쪽의 입주일 또는 퇴실 예정일을 옮기거나, 한쪽을 다른 방으로 옮긴다.')
-  bad += report('비거주 점유 방(창고·사무실)에 거주·예약 계약이 있다', axis3,
-    '그 계약을 다른 방으로 옮기거나, 호실 관리 편집에서 비거주 점유 시 공실 집계에서 제외를 해제한다.')
+  bad += report('공실 집계 제외 방(창고·사무실)에 거주·예약 계약이 있다', axis3,
+    '그 계약을 다른 방으로 옮기거나, 호실 관리 편집에서 공실 집계에서 제외를 해제한다.')
 
   await prisma.$disconnect()
   if (bad > 0) process.exit(1)

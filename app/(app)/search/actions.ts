@@ -225,8 +225,8 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   const roomHits: SearchHit[] = sortedRooms.slice(0, TAKE_SHOW).map(r => ({
     group: 'room', id: r.id,
     title: fmtRoomNo(r.roomNo, r.roomNo),
-    // 집계 제외 방(비거주 점유 + 공실 표시 안 함, lib/vacancy 정본)은 '공실' 대신 점유자 이름(신고 9d844226 잔여)
-    right: isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT'))
+    // 집계 제외 방(창고·사무실, lib/vacancy 정본)은 '공실' 대신 점유자 이름(신고 9d844226 잔여)
+    right: isVacancyExcluded(r)
       ? (r.leaseTerms[0]?.tenant.name ?? null)
       : r.isVacant ? '공실' : (r.leaseTerms[0]?.tenant.name ?? null),
     badge: null,

@@ -262,7 +262,7 @@ async function roomAssignmentBlock(
   })
   return roomAssignmentBlockReason({
     incoming: { status, moveIn: fmtDate(moveIn) || null, moveOut: fmtDate(moveOut) || null },
-    nonResidentOccupied: isVacancyExcluded(room, leases.some(l => l.status === 'NON_RESIDENT')),
+    nonResidentOccupied: isVacancyExcluded(room),
     others: leases.map(l => ({
       status: l.status,
       moveIn: fmtDate(l.moveInDate) || null,

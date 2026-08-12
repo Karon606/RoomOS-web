@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fmtAccount, expenseAccountKey } from '@/lib/expenseExport'
 import { kstMonthStr } from '@/lib/kstDate'
 import { billForLeaseMonth } from '@/lib/billing'
+import { isVacancyExcluded } from '@/lib/vacancy'
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return ''
@@ -456,7 +457,6 @@ export async function GET(request: NextRequest) {
   const rooms = await prisma.room.findMany({
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
-    include: { leaseTerms: { where: { status: 'NON_RESIDENT' }, select: { id: true }, take: 1 } },
   })
   const roomSheet = rooms.map(r => ({
     '호실번호':   r.roomNo,
@@ -466,8 +466,8 @@ export async function GET(request: NextRequest) {
     '방향':       DIRECTION_LABEL[r.direction ?? ''] ?? r.direction ?? '',
     '면적(평)':   r.areaPyeong ?? '',
     '면적(㎡)':   r.areaM2 ?? '',
-    // 집계 제외 방(비거주 점유 + 공실 표시 안 함)은 N — 화면 공실 정의(lib/vacancy)와 통일(신고 9d844226 잔여)
-    '공실':       r.isVacant && !(r.leaseTerms.length > 0 && !r.nonResidentVacant) ? 'Y' : 'N',
+    // 집계 제외 방(창고·사무실)은 N — 화면 공실 정의(lib/vacancy)와 통일(신고 9d844226 잔여)
+    '공실':       r.isVacant && !isVacancyExcluded(r) ? 'Y' : 'N',
     '메모':       r.memo ?? '',
   }))
 

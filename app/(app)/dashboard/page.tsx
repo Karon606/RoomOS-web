@@ -1166,7 +1166,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const roomsData = roomsWithTenants.map(r => {
     // 집계 제외(창고·사무실) — 배치도 등에서 공실로 칠하지 않기 위한 파생값(lib/vacancy 정본).
     // 아래 offerRentAhead 도 같은 판정을 봐야 해서 리터럴 밖으로 뺀다(같은 식 두 벌 금지).
-    const vacancyExcluded = isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT'))
+    const vacancyExcluded = isVacancyExcluded(r)
     return {
     id:            r.id,
     roomNo:        r.roomNo,

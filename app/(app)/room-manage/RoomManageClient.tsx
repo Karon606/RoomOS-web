@@ -157,7 +157,8 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
 type RoomStatusKey = 'vacant' | 'reserved' | 'active' | 'checkout'
 function roomStatusKey(r: Room, targetMonth: string): RoomStatusKey {
   const lease = primaryLease(r)
-  if (!lease) return 'vacant'
+  // 계약 없는 방 — 공실 집계에서 뺀 방(빈 창고)은 라벨과 같은 칸에 선다(roomStatusView 와 같은 분기).
+  if (!lease) return r.nonResidentVacant ? 'vacant' : 'active'
   if (lease.status === 'NON_RESIDENT') return r.nonResidentVacant ? 'vacant' : 'active'
   if (lease.status === 'RESERVED') return 'reserved'
   if (lease.status === 'CHECKOUT_PENDING') return 'checkout'
@@ -1629,7 +1630,7 @@ export default function RoomManageClient({
                 <input type="checkbox" defaultChecked={!editRoom.nonResidentVacant}
                   onChange={e => { const h = e.currentTarget.form?.elements.namedItem('nonResidentVacant') as HTMLInputElement | null; if (h) h.value = e.currentTarget.checked ? '0' : '1' }}
                   className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                비거주 점유 시 공실 집계에서 제외 <span className="text-[var(--warm-muted)]">(창고·사무실 등, 홈·리포트 공실 수에서 빠짐)</span>
+                공실 집계에서 제외 <span className="text-[var(--warm-muted)]">(창고·사무실 등 세를 놓지 않는 방, 홈·리포트 공실 수에서 빠짐)</span>
               </label>
               <input type="hidden" name="nonResidentVacant" defaultValue={editRoom.nonResidentVacant ? '1' : '0'} />
             </div>

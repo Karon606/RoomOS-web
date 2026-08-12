@@ -180,7 +180,7 @@ async function previewRoomBlock(
   const reason = roomAssignmentBlockReason({
     incoming,
     // 앞선 행이 얹은 명의도 센다 — 적용은 그 계약을 이미 저장한 뒤에 이 행을 만난다.
-    nonResidentOccupied: isVacancyExcluded(room, others.some(o => o.status === 'NON_RESIDENT')),
+    nonResidentOccupied: isVacancyExcluded(room),
     others,
   })
   if (reason) return { roomNo, reason }

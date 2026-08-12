@@ -14,10 +14,10 @@ export const RESIDENT_STATUSES: readonly string[] = ['ACTIVE', 'RESERVED', 'CHEC
 /** 방 배정 가드가 읽어야 할 그 방의 다른 계약 상태 — 점유계 + 명의. */
 export const ROOM_GUARD_STATUSES: readonly string[] = [...RESIDENT_STATUSES, 'NON_RESIDENT']
 
-// 비거주 점유 방에 걸렸을 때의 안내. 계약 쪽 필드로는 풀 수 없는 상태라(비거주 계약에 퇴실 예정일을
+// 집계 제외 방에 걸렸을 때의 안내. 계약 쪽 필드로는 풀 수 없는 상태라(비거주 계약에 퇴실 예정일을
 // 넣는 것은 뜻이 안 맞는다) 유일한 출구인 방 설정을 지목한다. 문구는 호실 관리 편집의 체크박스 라벨 그대로다.
 export const NON_RESIDENT_ROOM_ERROR =
-  '해당 호실은 비거주자(명의)가 쓰는 방으로 설정돼 있습니다. 호실 관리 편집에서 \'비거주 점유 시 공실 집계에서 제외\'를 해제한 뒤 배정해 주세요.'
+  '해당 호실은 세를 놓지 않는 방(창고·사무실)으로 설정돼 있습니다. 호실 관리 편집에서 \'공실 집계에서 제외\'를 해제한 뒤 배정해 주세요.'
 
 export type RoomAssignmentLease = {
   status: string

@@ -23,6 +23,7 @@ import {
 } from './billing'
 import { fmtDateDot } from './fmtDate'
 import { kstDaysUntil } from './kstDate'
+import { isVacancyExcluded } from './vacancy'
 
 /**
  * 매출/청구 인식 대상 lease.
@@ -136,7 +137,7 @@ export function roomLeaseRowOrder<T extends { status: string; moveInDate?: Date 
 /**
  * 방이 언제 비는가 — 지금(now) / 그 날부터(soon) / 모른다(null).
  *
- *   점유 계약 없음   → 지금 입주 가능(비거주만 있는 방은 방 설정 nonResidentVacant 를 그대로 따른다)
+ *   점유 계약 없음   → 지금 입주 가능(공실 집계 제외 방은 세를 놓는 방이 아니라 아예 후보가 아니다)
  *   전부 퇴실일 있음 → 곧 입주 가능(입주 가능일 = 마지막 퇴실일 다음 날)
  *   하나라도 무기한  → 모른다(null)
  *
@@ -159,8 +160,10 @@ export function roomAvailability(room: {
   const occupying: string[] = OCCUPYING_STATUSES
   const occ = room.leaseTerms.filter(l => occupying.includes(l.status))
   if (occ.length === 0) {
-    // 비거주(창고·사무실)만 있는 방 — 방 설정이 공실로 보라고 할 때만 입주 가능(415호·사무실 오탐 방지).
-    if (room.leaseTerms.some(l => l.status === 'NON_RESIDENT') && !room.nonResidentVacant) return null
+    // 창고·사무실 — 세를 놓는 방이 아니라 입주 후보가 아니다(415호·사무실·옥탑 601~604 오탐 방지).
+    // 판정은 lib/vacancy 의 집계 제외 술어와 같은 방 단위 사실이다. 종전에는 여기에 'NON_RESIDENT
+    // 계약이 있는가'가 함께 걸려 있어, 명의자가 아직 없는 빈 창고가 '지금 입주 가능'으로 섰다.
+    if (isVacancyExcluded(room)) return null
     return { kind: 'now' }
   }
   const outs = occ.map(l => ymd(l.expectedMoveOut))
@@ -306,7 +309,11 @@ export function roomStatusView(
   opts: { nonResidentVacant: boolean; targetMonth: string },
 ): RoomStatusView {
   if (!lease)
-    return { label: '공실', kind: 'vacant', badge: null }
+    // 계약이 하나도 없는 방 — 공실 집계에서 뺀 방(빈 창고 601~604)까지 '공실'로 부르면 카드와
+    // 홈·리포트 공실 수가 갈린다. 홈 타일은 이미 제외 방을 '비거주'로 적는다(DashboardClient §방 현황).
+    return opts.nonResidentVacant
+      ? { label: '공실', kind: 'vacant', badge: null }
+      : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
   if (lease.status === 'NON_RESIDENT')
     return opts.nonResidentVacant
       ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
