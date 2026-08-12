@@ -13,6 +13,7 @@ import { contractLeaseFields, parseContractFieldOverrides } from '@/lib/contract
 import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
+import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -86,7 +87,14 @@ const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남', FEMALE: '여', UNKNOWN: '',
 }
-export async function buildContractData(tenantId: string, propertyId: string): Promise<ContractData | null> {
+/**
+ * @param leaseTermId 계약 지목(선택). 그 사람의 발급 대상 계약 중 하나를 이름으로 고른다.
+ *   없거나 이 사람의 발급 대상이 아니면 **종전 추론을 그대로** 쓴다 — 기존 링크·기존 호출은
+ *   글자 하나 안 바뀐다(하위 호환이 이 인자의 유일한 계약 조건이다).
+ *   계약이 둘인 사람(509호 거주 + 601호 창고)에게 추론은 늘 거주 계약을 고르므로, 창고 계약서를
+ *   뽑을 길이 아예 없었다. 이 인자가 그 길이다.
+ */
+export async function buildContractData(tenantId: string, propertyId: string, leaseTermId?: string | null): Promise<ContractData | null> {
   const [tenant, property] = await Promise.all([
     prisma.tenant.findFirst({
       where: { id: tenantId, propertyId },
@@ -98,7 +106,7 @@ export async function buildContractData(tenantId: string, propertyId: string): P
           // 실거주 확인서는 신고 ace54135 로 이미 같은 판단을 받았는데 계약서만 안 따라왔다(케이스 정정의 재발).
           // 같은 입주자가 거주·비거주 계약을 같은 방에 동시 보유할 수 있어(tenants/actions.ts 공존 허용)
           // 단순 take 1 이 아니라 넉넉히 조회한 뒤 JS 에서 우선순위로 고른다.
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          where: { status: { in: CONTRACT_ISSUE_STATUSES } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 10,
           include: { room: { select: { roomNo: true } } },
@@ -121,7 +129,10 @@ export async function buildContractData(tenantId: string, propertyId: string): P
   // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
   // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨). 실거주 확인서 정본과 같은 식이다.
   const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
-  const lease = [...tenant.leaseTerms]
+  // 지목이 있으면 그 계약. 위 where 안에서만 찾으므로 남의 계약 id 를 넣어도 통하지 않고,
+  // 못 찾으면 조용히 종전 추론으로 떨어진다(막지 않는다 — 옛 URL 이 404 가 되면 그게 회귀다).
+  const named = leaseTermId ? tenant.leaseTerms.find(l => l.id === leaseTermId) : undefined
+  const lease = named ?? [...tenant.leaseTerms]
     .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)

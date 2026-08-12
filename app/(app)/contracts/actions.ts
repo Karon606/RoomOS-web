@@ -90,6 +90,8 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
 export type PendingIssueRow = {
   linkId: string
   tenantId: string
+  // 이 링크가 어느 계약의 것인가 — 서명이 지워져 일반 화면으로 보낼 때 그 계약을 지목한다.
+  leaseTermId: string
   tenantName: string
   roomNo: string | null
   signedAt: Date
@@ -149,6 +151,7 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       // 토큰은 절대 내보내지 않는다 — 클라이언트로 새면 누구나 서명 화면을 열 수 있다. linkId 만 준다.
       linkId: l.id,
       tenantId: l.tenant.id,
+      leaseTermId: l.leaseTermId,
       tenantName: l.tenant.name,
       roomNo: l.leaseTerm.room?.roomNo ?? null,
       signedAt: l.signedAt,

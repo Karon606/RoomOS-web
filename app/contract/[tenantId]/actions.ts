@@ -27,13 +27,13 @@ async function requireAuthAndProperty() {
   return { userId, propertyId }
 }
 
-export async function getContractData(tenantId: string) {
+export async function getContractData(tenantId: string, leaseTermId?: string | null) {
   // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
   // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
   const role = await getMyRole()
   if (!canReadScope(role, 'money')) throw new Error('권한이 없습니다.')
   const { propertyId } = await requireAuthAndProperty()
-  const data = await buildContractData(tenantId, propertyId)
+  const data = await buildContractData(tenantId, propertyId, leaseTermId)
   // 신원번호를 볼 수 없는 역할에는 마스킹을 그린다. 칸을 생년월일로 되돌리지 않는 이유는,
   // 그러면 화면과 실제 인쇄물이 서로 다른 서류가 되어 무엇이 나갔는지 화면으로 알 수 없어서다.
   if (data && data.tenant.foreignRegNo && !canReadScope(role, 'identity')) {

@@ -29,7 +29,7 @@ import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { primaryTenantLease } from '@/lib/leaseStatus'
+import { primaryTenantLease, CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { withheldPartsLabel } from '@/lib/depositComposition'
 
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
@@ -97,7 +97,10 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           운영자 확정(2026-08-01). 종전에는 메모 아래였고, 그 때문에 모달 하단에 '계약서 출력'
           버튼이 따로 있었다(중복 접점 — 함께 제거). */}
       <Section title="계약서 파일">
-        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
+        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name}
+          extraLeases={tenant.leaseTerms
+            .filter(l => l.id !== lease?.id && (CONTRACT_ISSUE_STATUSES as string[]).includes(l.status))
+            .map(l => ({ id: l.id, roomNo: l.room?.roomNo ?? null }))} />
       </Section>
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
       <TenantMoveHistory tenantId={tenant.id} />

@@ -29,6 +29,7 @@ import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
+import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -63,10 +64,14 @@ const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => f.lease
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
 // 배지와 닫기는 이 플래그와 무관하게 항상 렌더한다 — 알림 해제 경로가 사라지면 503호 건이 재발한다.
-export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false }: {
+export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false, extraLeases }: {
   tenantId: string
   tenantName: string
   hideSignRequest?: boolean
+  // 이 사람의 부계약(창고·사무실 명의 등) — 있으면 그 계약의 계약서로 바로 들어가는 문을 하나씩 연다.
+  // 계약이 하나뿐인 사람에게는 undefined 라 버튼 행이 종전 그대로다(2026-08-13, 1인 다호실).
+  // 주 버튼(계약서 작성·서명)은 지목 없이 종전 URL 을 유지한다 — 추론이 고르는 계약이 곧 메인이다.
+  extraLeases?: { id: string; roomNo: string | null }[]
 }) {
   const [files, setFiles]   = useState<ContractFileRow[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -258,6 +263,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
           {signedViewLinkId ? '서명본 계약서 발급' : '계약서 작성·서명'}
         </BtnLink>
+        {/* 부계약 계약서 — 종전에는 이 문이 없어 창고 계약서를 뽑을 길 자체가 없었다.
+            발급 화면이 어느 계약을 그릴지 URL 로 지목한다(?leaseTermId=). 본문 문안은 별건이다. */}
+        {extraLeases?.map(l => (
+          <BtnLink key={l.id} href={`/contract/${tenantId}?leaseTermId=${l.id}`} variant="ghost" size="sm">
+            {fmtRoomNo(l.roomNo, '호실 미지정')} 계약서
+          </BtnLink>
+        ))}
         {!hideSignRequest && (
           <Btn variant={stage.primary === 'resend' ? 'primary' : 'secondary'} size="sm"
             onClick={handleShareSend} disabled={sharePending}>

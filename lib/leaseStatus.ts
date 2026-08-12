@@ -233,6 +233,13 @@ export const TENANT_LIST_STATUSES: LeaseStatus[] = [
 ]
 
 /**
+ * 계약서 발급 대상 — 비거주 등록자·예약자·퇴실 예정자도 포함한다.
+ * 비거주는 방에 살지 않을 뿐 임대료를 내는 계약이고, 돈을 받는 관계에는 근거 문서가 있어야 한다.
+ * lib/contractData 의 조회 where 와 화면의 '계약별 진입' 목록이 같은 집합을 써야 갈리지 않는다.
+ */
+export const CONTRACT_ISSUE_STATUSES: LeaseStatus[] = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT']
+
+/**
  * 종료된 lease — 공실 방의 직전 입주자 표시, 평균 거주기간 통계 등.
  */
 export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
