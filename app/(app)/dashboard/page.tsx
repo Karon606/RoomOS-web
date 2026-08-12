@@ -971,10 +971,27 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //   sum(categoryBreakdown.amount) === expectedExpense
   // 가 어느 달에나 성립한다 — 감지망이 이 항등을 축으로 본다(도넛 합계 == 예상 지출).
   const pendingByCategory: Record<string, number> = {}
+  const pendingItemsByCategory: Record<string, { title: string; amount: number }[]> = {}
   if (!isPastMonth) {
     for (const r of recurringWithStatus) {
       if (r.isPending || r.recordedExpenseId) continue
       pendingByCategory[r.category] = (pendingByCategory[r.category] ?? 0) + effectiveRecurringAmount(r)
+      ;(pendingItemsByCategory[r.category] ??= []).push({ title: r.title, amount: effectiveRecurringAmount(r) })
+    }
+  }
+  // 조각을 눌렀을 때 펼칠 상위 5건 — **이미 읽은 expenses** 를 금액순으로 훑을 뿐 새 조회가 없다.
+  // 다섯 건에서 끊는 것은 카드 안에 접어 넣는 목록이기 때문이다. 나머지는 '지출 관리에서 전체 보기'로 간다.
+  const topByCategory: Record<string, { date: string; amount: number; label: string }[]> = {}
+  const countByCategory: Record<string, number> = {}
+  for (const e of [...expenses].sort((a, b) => b.amount - a.amount)) {
+    countByCategory[e.category] = (countByCategory[e.category] ?? 0) + 1
+    const list = (topByCategory[e.category] ??= [])
+    if (list.length < 5) {
+      list.push({
+        date:   new Date(e.date).toISOString().slice(0, 10),
+        amount: e.amount,
+        label:  e.detail || e.vendor || e.itemLabel || '',
+      })
     }
   }
   const recordedCategories = new Set(expByCategory.map(c => c.category))
@@ -991,7 +1008,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   ]
     .map(c => ({ ...c, amount: c.recorded + c.pending }))
     .sort((a, b) => b.amount - a.amount)
-    .map(c => ({ ...c, percent: expectedExpense > 0 ? Math.round((c.amount / expectedExpense) * 100) : 0 }))
+    .map(c => ({
+      ...c,
+      percent: expectedExpense > 0 ? Math.round((c.amount / expectedExpense) * 100) : 0,
+      top:          topByCategory[c.category] ?? [],
+      recordedCount: countByCategory[c.category] ?? 0,
+      pendingItems: pendingItemsByCategory[c.category] ?? [],
+    }))
 
   // 지난달·전년동월 지출(실제 합계) — 예상 지출이 더/덜 쓰는지 비교용 (trend는 6개월뿐이라 전년동월은 별도 집계)
   const [lastMonthExpAgg, lastYearExpAgg] = await pLastExpAggs

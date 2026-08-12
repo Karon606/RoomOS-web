@@ -1324,6 +1324,7 @@ export default function FinanceClient({
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
   trackedCategories,
   initialTab,
+  initialCategory,
 }: {
   expenses: Expense[]
   financialAccounts: FinancialAccount[]
@@ -1347,6 +1348,7 @@ export default function FinanceClient({
   lastPayDefaults: { payMethod: string | null; financialAccountId: string | null; financeName: string | null } | null
   trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
   initialTab?: Tab
+  initialCategory?: string      // ?cat= — 홈 지출 도넛 드릴다운이 실어 보낸 카테고리 필터 초기값
 }) {
   const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   const router = useRouter()
@@ -1368,10 +1370,13 @@ export default function FinanceClient({
   const finColWidthsRef                 = useRef<Record<string, number>>(DEFAULT_FIN_WIDTHS)
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
-  const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all', roomId: 'all', kind: 'all' })
+  // 카테고리 초기값은 ?cat= 이 있으면 그 값이다(홈 지출 도넛 드릴다운 착지).
+  const [expFilter, setExpFilter] = useState({ method: 'all', category: initialCategory ?? 'all', finance: 'all', roomId: 'all', kind: 'all' })
   const [expAmountMin, setExpAmountMin] = useState<number | undefined>(undefined)
   const [expAmountMax, setExpAmountMax] = useState<number | undefined>(undefined)
-  const [showExpFilters, setShowExpFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
+  // 검색창 옆 필터 토글(정본 §23 호실관리 패턴). ?cat= 으로 들어오면 펼친 채로 연다 —
+  // 목록이 걸러져 있는데 왜 걸러졌는지가 접혀 있으면 '지출이 세 건뿐인 달'로 읽힌다.
+  const [showExpFilters, setShowExpFilters] = useState(!!initialCategory)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   // 하이드레이션 #418 방지(서버 기본값 + 마운트 후 복원, 오류신고 5489fac1).

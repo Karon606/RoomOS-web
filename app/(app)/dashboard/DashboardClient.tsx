@@ -89,7 +89,14 @@ export type DashboardData = {
   isFutureMonth:        boolean
   // 지출 카테고리 분해 — amount = recorded + pending, percent 의 분모는 expectedExpense.
   // pending 은 그 달 미기록 고정 지출 추정분이고 과거월엔 서버가 0으로 보낸다(isPastMonth 가드).
-  categoryBreakdown: { category: string; amount: number; recorded: number; pending: number; percent: number }[]
+  // top·recordedCount·pendingItems 는 조각을 눌렀을 때 펼치는 드릴다운용 — 서버가 이미 읽은
+  // expenses·recurringWithStatus 에서 추린 것이라 클릭에 새 왕복이 없다.
+  categoryBreakdown: {
+    category: string; amount: number; recorded: number; pending: number; percent: number
+    top: { date: string; amount: number; label: string }[]
+    recordedCount: number
+    pendingItems: { title: string; amount: number }[]
+  }[]
   // 영업장 설정의 지출 카테고리 등록 순서 — 도넛·범례 색이 이 순서로 고정된다(금액 순위 아님).
   expenseCategoryOrder: string[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
@@ -865,10 +872,14 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   const categorySegments = data.categoryBreakdown.flatMap(c => {
     const base = categoryColor(c.category)
     return [
-      { value: c.recorded, color: base },
-      { value: c.pending,  color: pendingTint(base) },
+      { value: c.recorded, color: base,              id: c.category },
+      { value: c.pending,  color: pendingTint(base), id: c.category },
     ]
   })
+  // 조각·범례를 누르면 그 카테고리가 무엇으로 이루어졌는지 카드 안에서 바로 펼친다.
+  // 같은 것을 다시 누르면 접는다 — 목록이 열린 채로 남아 카드 높이를 붙잡지 않게.
+  const [openCategory, setOpenCategory] = useState<string | null>(null)
+  const openCat = data.categoryBreakdown.find(c => c.category === openCategory) ?? null
   // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   // 세 항은 서버가 한 모집단을 배타 분할해 보낸 값이다(page.tsx paymentStatusPool). 여기서
   // 다시 나누지 않는다 — 수납률 분모를 화면이 조립하던 시절엔 같은 화면이 두 비율을 말했다.
@@ -1067,28 +1078,72 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 {/* 중앙은 도넛이 실제로 나눈 그 값이다 — 조각 합 = 기록된 지출 + 고정 지출 (예정) = 예상 지출.
                     기록분만 세던 시절에는 중앙이 '기록된 지출'이었고, 아직 안 낸 임대료가 통째로 빠져
                     8월 도넛이 청소용역비를 두 번째로 큰 지출로 그렸다(실제 46% 는 임대료). */}
-                <DonutChart segments={categorySegments} centerLabel={`${data.expectedExpense > 0 ? Math.round(data.expectedExpense / 10000) : 0}만`} centerSub="예상 지출" />
+                <DonutChart segments={categorySegments} centerLabel={`${data.expectedExpense > 0 ? Math.round(data.expectedExpense / 10000) : 0}만`} centerSub="예상 지출"
+                  onSelect={cat => setOpenCategory(prev => prev === cat ? null : cat)} />
               </div>
-              <div className="w-full sm:flex-1 space-y-2.5 min-w-0">
-                {data.categoryBreakdown.map((c, i) => (
-                  <div key={i} className="min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
+              <div className="w-full sm:flex-1 space-y-1 min-w-0">
+                {data.categoryBreakdown.map((c, i) => {
+                  const on = openCategory === c.category
+                  return (
+                  /* 범례 한 줄이 곧 진입점이다 — 도넛 조각은 마우스 편의고, 키보드·보조기술은
+                     이 버튼으로 같은 곳에 닿는다(§25 목록 항목 문법, 버튼 크롬 없음). */
+                  <button key={i} type="button" aria-expanded={on}
+                    onClick={() => setOpenCategory(prev => prev === c.category ? null : c.category)}
+                    className="w-full text-left min-w-0 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-[var(--canvas)]"
+                    style={on ? { background: 'var(--canvas)' } : undefined}>
+                    <span className="flex items-center gap-2 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: categoryColor(c.category) }} />
                       <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
                       {/* 금액 병기 — 퍼센트만 있던 시절엔 '12%'가 얼마인지 알려면 화면을 옮겨야 했다. */}
                       <span className="text-xs shrink-0 num" style={{ color: 'var(--warm-dark)' }}>{fmtKorMoney(c.amount)}</span>
                       <span className="text-xs shrink-0 w-9 text-right" style={{ color: 'var(--warm-muted)' }}>{c.percent}%</span>
-                    </div>
+                    </span>
                     {/* 옅은 꼬리가 무엇인지 글자로도 말한다. 두 몫이 다 있을 때만 나눠 적고,
                         통째로 예정인 카테고리는 '예정' 한 마디면 된다(그 조각은 전부 옅다). */}
                     {c.pending > 0 && (
-                      <p className="text-[0.65625rem] pl-[18px] leading-tight" style={{ color: 'var(--warm-muted)' }}>
+                      <span className="block text-[0.65625rem] pl-[18px] leading-tight" style={{ color: 'var(--warm-muted)' }}>
                         {c.recorded > 0 ? `기록 ${fmtKorMoney(c.recorded)} · 예정 ${fmtKorMoney(c.pending)}` : '예정'}
-                      </p>
+                      </span>
                     )}
-                  </div>
-                ))}
+                  </button>
+                  )
+                })}
               </div>
+            </div>
+          )}
+          {/* ── 드릴다운 ── 카드 전폭이다. 도넛 옆 칸에 끼우면 320px 에서 날짜·금액이 겹친다.
+              목록은 서버가 실어 보낸 상위 5건이라 여는 데 왕복이 없다. */}
+          {openCat && (
+            <div className="mt-4 pt-3 space-y-1.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: categoryColor(openCat.category) }} />
+                <p className="text-xs font-semibold flex-1 truncate" style={{ color: 'var(--warm-dark)' }}>{openCat.category}</p>
+                <p className="text-xs num shrink-0" style={{ color: 'var(--warm-dark)' }}>{fmtWon(openCat.amount)}</p>
+              </div>
+              {openCat.top.map((r, i) => (
+                <div key={i} className="flex items-baseline gap-2 text-[0.6875rem] min-w-0">
+                  <span className="shrink-0 num" style={{ color: 'var(--warm-muted)' }}>{fmtDateDot(r.date)}</span>
+                  <span className="truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label || '내역 없음'}</span>
+                  <span className="shrink-0 num" style={{ color: 'var(--warm-dark)' }}>{fmtWon(r.amount)}</span>
+                </div>
+              ))}
+              {openCat.recordedCount > openCat.top.length && (
+                <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
+                  그 밖 {openCat.recordedCount - openCat.top.length}건
+                </p>
+              )}
+              {/* 아직 안 낸 고정 지출은 장부에 없는 줄이라 기록분과 섞지 않는다 — 별도 줄로 세운다. */}
+              {openCat.pendingItems.map((r, i) => (
+                <div key={`p${i}`} className="flex items-baseline gap-2 text-[0.6875rem] min-w-0">
+                  <span className="shrink-0" style={{ color: 'var(--warm-muted)' }}>예정</span>
+                  <span className="truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{r.title}</span>
+                  <span className="shrink-0 num" style={{ color: 'var(--warm-mid)' }}>{fmtWon(r.amount)}</span>
+                </div>
+              ))}
+              <Link href={`/finance?tab=expense&month=${targetMonth}&cat=${encodeURIComponent(openCat.category)}`}
+                className="inline-block pt-1 text-[0.6875rem]" style={{ color: 'var(--coral)' }}>
+                지출 관리에서 전체 보기 ›
+              </Link>
             </div>
           )}
         </div>

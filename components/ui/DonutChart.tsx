@@ -12,11 +12,16 @@
 // 작았으므로 갈림 자체가 결함이었다 — 정본은 홈 쪽 수치로 모은다.
 // StatsClient 사본은 도달 불가라 수렴 대상이 아니라 삭제 대상이었다(page 가 redirect).
 
+// 조각을 눌러 파고들 수 있는 도넛은 segment 에 id 를 달고 onSelect 를 넘긴다(홈 지출 카테고리).
+// 점선 스트로크는 칠해진 곳에서만 클릭이 잡히므로 조각 사이 빈틈은 눌리지 않는다.
+// 키보드 경로는 도넛이 아니라 옆 범례가 진다 — SVG 원에 포커스를 주는 것보다 범례 버튼이
+// 이름·금액까지 읽히는 정본 진입점이다(부르는 쪽이 범례를 button 으로 세운다).
 export function DonutChart({
-  segments, centerLabel, centerSub, size = 140, strokeWidth = 22,
+  segments, centerLabel, centerSub, size = 140, strokeWidth = 22, onSelect,
 }: {
-  segments: { value: number; color: string }[]
+  segments: { value: number; color: string; id?: string }[]
   centerLabel?: string; centerSub?: string; size?: number; strokeWidth?: number
+  onSelect?: (id: string) => void
 }) {
   const r = (size - strokeWidth) / 2
   const cx = size / 2; const cy = size / 2
@@ -37,7 +42,9 @@ export function DonutChart({
             <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color}
               strokeWidth={strokeWidth}
               strokeDasharray={`${dashLength} ${C - dashLength}`}
-              transform={`rotate(${angle}, ${cx}, ${cy})`} />
+              transform={`rotate(${angle}, ${cx}, ${cy})`}
+              onClick={onSelect && seg.id ? () => onSelect(seg.id!) : undefined}
+              style={onSelect && seg.id ? { cursor: 'pointer' } : undefined} />
           )
         })
       )}

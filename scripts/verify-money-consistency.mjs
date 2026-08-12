@@ -1325,6 +1325,15 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/centerSub="예상 지출"/.test(dashClient) || !/centerLabel=\{`\$\{data\.expectedExpense/.test(dashClient)) {
     violations.push('[소스] 홈 지출 도넛 중앙이 예상 지출을 말하지 않는다 — 조각이 나눈 값과 가운데 글자가 갈린다')
   }
+  // (e) 드릴다운 딥링크는 **두 화면이 맺은 계약**이다. 한쪽만 고치면 '전체 보기'가 필터 없이 착지해
+  //     운영자가 카테고리를 다시 고르게 된다(그러면 조각을 눌러 온 뜻이 사라진다).
+  const finPage = readFileSync('app/(app)/finance/page.tsx', 'utf8')
+  if (!/cat\?: string/.test(finPage) || !/initialCategory=/.test(finPage)) {
+    violations.push('[소스] 지출 관리가 ?cat= 을 안 받는다 — 홈 도넛 드릴다운의 전체 보기가 필터 없이 착지한다')
+  }
+  if (!/\/finance\?tab=expense&month=\$\{targetMonth\}&cat=\$\{encodeURIComponent/.test(dashClient)) {
+    violations.push('[소스] 홈 도넛 드릴다운 링크가 지출 관리 계약(tab=expense&month&cat)과 어긋난다')
+  }
   // (d) 데이터 — 카테고리 합 == 그 달 지출 총액. 카테고리가 빈 문자열·null 인 행이 생기면 여기서 갈린다.
   const nowKst = new Date(Date.now() + 9 * 3600 * 1000)
   for (const off of [0, -1]) {
