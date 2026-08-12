@@ -1857,7 +1857,7 @@ function AppearanceTab() {
                 className={`w-full text-left px-4 py-3 rounded-xl border transition-colors flex items-start gap-3
                   ${selected
                     ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
-                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
+                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--camel)]'}`}
               >
                 <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
                   ${selected ? 'border-[var(--persimmon)]' : 'border-[var(--warm-border)]'}`}>
@@ -1890,7 +1890,7 @@ function AppearanceTab() {
                 className={`text-left px-3 py-3 rounded-xl border transition-colors flex flex-col gap-2
                   ${selected
                     ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
-                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
+                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--camel)]'}`}
               >
                 <div className="flex items-center gap-2">
                   <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0

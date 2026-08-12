@@ -1706,20 +1706,20 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         {/* Row 2 Left: 예상 매출 + 달성도 — 고시원 특성상 유지되면 매출이 거의 안 늘어 '현재까지'보다
             '예상 매출 대비 성과(수납 달성도)'가 유효. 예상엔 퇴실예정(일할/0)·신규 예약확정(전액) 반영됨. */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
+          <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--on-solid-sub)', marginBottom: 8 }}>
             예상 수입
-            <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>{monthCaption}</span>
+            <span style={{ fontSize: '0.65625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--on-solid-sub)' }}>{monthCaption}</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 4 }}>
             {data.projectedRevenue.toLocaleString()}
-            <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(255,252,247,0.5)', marginLeft: 3 }}>원</small>
+            <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--on-solid-sub)', marginLeft: 3 }}>원</small>
           </p>
           {/* 등식 캡션 — 이 숫자가 어디서 왔는지 큰 숫자 바로 아래에 적는다(운영자 지시 2026-08-12).
               진행바 아래에 두면 등호의 좌변이 바로 위 '달성 93%' 로 읽혀 매달린다(디자인 패널).
               문장은 수납 관리 캡션과 같은 정본(MoneyEquation)이 만든다 — 값이 같아도 항이 갈리면 또 사고다. */}
           {!data.isFutureMonth && hasRevenueBridge({ reserved: data.reservedExpected, checkedOut: data.checkedOutRecognized, extra: data.extraRevenue }) && (
-            <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5, wordBreak: 'keep-all', margin: 0 }}>
+            <p style={{ fontSize: '0.65625rem', color: 'var(--on-solid-sub)', lineHeight: 1.5, wordBreak: 'keep-all', margin: 0 }}>
               <MoneyEquation terms={expectedRevenueTerms({
                 billed:     data.billedThisMonth,
                 reserved:   data.reservedExpected,
@@ -1739,7 +1739,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     '수납+기타' → '실수납' (2026-08-12 운영자 점검). 수납 관리 캡션이 원 단위로 같은 값을
                     '실수납'이라 부르고(RoomsClient homeCollectedSum), 감지망도 그 항등을 '홈 실수납'이라는
                     이름으로 잠그고 있다. 같은 숫자에 두 이름을 두던 마지막 자리였다. */}
-                <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
+                <p style={{ fontSize: '0.65625rem', color: 'var(--on-solid-sub)', lineHeight: 1.5 }}>
                   실수납 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
                 </p>
               </>
