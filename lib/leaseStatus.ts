@@ -56,6 +56,35 @@ export const CURRENT_OCCUPANCY_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PE
 export function primaryRoomLease<T extends { status: string; moveInDate?: Date | string | null }>(
   leases: T[],
 ): T | undefined {
+  return primaryLeaseOf(leases)
+}
+
+/**
+ * 사람을 대표하는 계약 — 방 축(primaryRoomLease)의 전치다. 규칙은 문자 그대로 같고 묻는 대상만 다르다.
+ * 실제로 살고 있는 계약이 먼저, 없으면 입주 예정일이 이른 예약, 그마저 없으면 첫 계약.
+ *
+ * 왜 필요한가 (2026-08-13, 1인 다호실 시공). 사람 축 조회 열여섯 곳이 `take: 1` 로 계약을 하나만
+ * 읽고, 소비하는 마흔아홉 줄이 `leaseTerms[0]` 을 '그 사람의 계약'으로 읽고 있었다. 한 사람이 방을
+ * 둘 쓰기 시작하면(509호 거주 + 601호 창고) 그 가정이 깨진다 — 어느 쪽이 [0] 인지는 정렬에 달렸고,
+ * 정렬이 조회마다 달라 같은 사람이 화면마다 다른 계약으로 보인다. 방 축이 2026-06 에 정확히 같은
+ * 길을 갔다(503호가 카드와 모달에서 다른 사람을 가리켰다). 그때의 처방을 그대로 옮긴다.
+ *
+ * 넘기는 집합이 곧 그 화면의 정의라는 것도 방 축과 같다 — 비거주까지 넘기면 비거주가 마지막 폴백이
+ * 되고, 거주 계약만 넘기면 없음이 된다. 퇴실·취소를 넘길지도 호출부가 정한다.
+ */
+export function primaryTenantLease<T extends { status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+): T | undefined {
+  return primaryLeaseOf(leases)
+}
+
+/**
+ * 두 축이 공유하는 한 규칙. 사본을 두면 언젠가 한쪽만 고쳐져 방 축과 사람 축이 같은 계약을
+ * 다르게 고른다 — 그 순간 '첫 행 = 주 계약' 같은 상호 검증이 전부 무너진다.
+ */
+function primaryLeaseOf<T extends { status: string; moveInDate?: Date | string | null }>(
+  leases: T[],
+): T | undefined {
   const residing: string[] = CURRENT_OCCUPANCY_STATUSES
   return leases.find(l => residing.includes(l.status))
     ?? sortByMoveIn(leases.filter(l => l.status === 'RESERVED'))[0]
