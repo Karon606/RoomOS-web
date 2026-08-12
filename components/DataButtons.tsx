@@ -19,7 +19,7 @@ type Step =
   | { type: 'done'; results: Record<string, SheetResult> }
 
 const SHEET_LABELS: Record<string, string> = {
-  rooms: '호실관리', tenants: '입주자관리', expenses: '지출', incomes: '기타수익', settings: '설정',
+  rooms: '호실관리', tenants: '입주자관리', expenses: '지출', incomes: '부가수익', settings: '설정',
 }
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }

@@ -28,12 +28,12 @@ type Room = {
   depositAmount: number
   cleaningFee: number
   moveInDate: string | null
-  roomNo?: string | null   // 과납분 기타수익 기록 시 내역 표기용
+  roomNo?: string | null   // 과납분 부가수익 기록 시 내역 표기용
   status?: string | null   // RESERVED면 예약금(모드 3택) 폼으로 분기
   reservationDepositMode?: string | null   // 예약금 처리 모드 기본값('deposit'|'prepaid'|'none')
 }
 
-// 초과 납부분을 '기타 수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
+// 초과 납부분을 '부가수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
 const EXTRA_INCOME_CATEGORY = '기타 임대수입'
 
 // 자릿수 오입력(0 하나 더) 방지 — 추천액의 이 배수 이상이면 제출 전 확인. 저장 로직은 불변.
@@ -83,7 +83,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   }, [forcedTm, tmOptions, room.balance, room.expected])
   const [payAmount, setPayAmount] = useState<number>(suggestedAmount)
   useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
-  // 추천(이번에 낼 금액)보다 더 낸 초과분 — '이월' 또는 '기타 수익' 처리 대상
+  // 추천(이번에 낼 금액)보다 더 낸 초과분 — '이월' 또는 '부가수익' 처리 대상
   const excess = Math.max(0, payAmount - suggestedAmount)
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
@@ -118,14 +118,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     setError('')
     // 자릿수 오입력 확인 — 보증금/청소비 합산은 정상적으로 커지므로 제외. 기준값(추천액) 없으면 생략.
     // 초과분 처리 — 놓치기 쉬운 폼 안 체크박스를 확인창으로 올렸다(운영자 오더 2026-08-03).
-    // 금액만 치고 저장을 누르면 초과 블록을 못 보고 지나가는데, 그러면 기타수익으로 잡혔어야 할 돈이
+    // 금액만 치고 저장을 누르면 초과 블록을 못 보고 지나가는데, 그러면 부가수익으로 잡혔어야 할 돈이
     // 조용히 다음 달로 넘어간다. 결정을 한 자리로 모아 반드시 거치게 한다.
     // 기본(주 버튼)은 이월이다 — 선납 처리가 우선이라는 운영 원칙.
     //
     // 자릿수 확인창을 여기 합쳤다. 종전에는 따로 떠서 **큰 금액이면 확인창 두 개가 연속**으로 뜨는데,
     // 다이얼로그가 DOM 을 유지한 채 내용만 바꿔서 전환 표시가 전혀 없었다. 연타 한 번이
     // 초과분 처리 방식을 대신 결정한다(디자이너 패스). 그 결정은 아래 성공 토스트의
-    // 적용취소로 되돌린다 — undoOverpayExtraIncome 이 수납과 기타수익을 함께 지운다.
+    // 적용취소로 되돌린다 — undoOverpayExtraIncome 이 수납과 부가수익을 함께 지운다.
     // 자릿수 의심 조건은 초과분 조건에 완전히 포섭되므로(5배 이상이면 초과분은 반드시 양수)
     // 합쳐도 커버리지가 줄지 않는다.
     let excessAsIncome = false
@@ -138,7 +138,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           + `청구액 ${fmtWon(suggestedAmount)}보다 ${fmtWon(excess)} 더 받았습니다.\n이월하면 다음 달 이용료에 먼저 충당됩니다.`,
         ...(suspicious ? { level: 'caution' as const } : {}),
         confirmLabel: '이월',
-        altLabel: '기타수익',
+        altLabel: '부가수익',
         cancelLabel: '취소',
       })
       if (choice === null) return   // 취소는 무변경 — 저장 자체를 하지 않는다
@@ -148,7 +148,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
     if (isDepositMode && !(await confirmDepositCleaningOverlap({
       leaseTermId: room.leaseTermId, depositAmount: room.depositAmount, payAmount, cleaningFee: room.cleaningFee,
     }))) return
-    // 기타수익으로 돌린 경우의 적용취소 대상 — 수납 record 들과 기타수익 한 건을 함께 되돌린다.
+    // 부가수익으로 돌린 경우의 적용취소 대상 — 수납 record 들과 부가수익 한 건을 함께 되돌린다.
     let undo: { recordIds: string[]; extraIncomeId: string } | null = null
     startTransition(async () => {
       const release = trackSave()
@@ -186,12 +186,12 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
           if (!depRes.ok) { pushToast('error', depRes.error); return }
         } else {
-          // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
+          // 초과분을 '부가수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
           const useIncome = excessAsIncome
           const rentPart = useIncome ? payAmount - excess : payAmount
           // 납부 내역에서도 보이도록 그 달 기록 메모에 초과분 표시(이용료 금액 자체는 정상가 유지 — 중복 매출 방지)
           const rentMemo = useIncome
-            ? `${memo ? memo + ' · ' : ''}초과 ${fmtWon(excess)} 기타수익 처리`
+            ? `${memo ? memo + ' · ' : ''}초과 ${fmtWon(excess)} 부가수익 처리`
             : memo
           const result: SavePaymentResult = await savePayment({
             leaseTermId:    room.leaseTermId,
@@ -218,9 +218,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             if (memo) fd.set('memo', memo)
             const incRes = await addExtraIncome(fd)
             // 실패하면 여기서 끊는다. 종전에는 이 토스트를 띄우고도 아래 성공 토스트로 흘러가서,
-            // 기록되지 않은 기타수익을 '기록됨'이라고 말했다(전문가 패널 2026-08-03).
+            // 기록되지 않은 부가수익을 '기록됨'이라고 말했다(전문가 패널 2026-08-03).
             if (!incRes.ok) {
-              pushToast('error', '기타수익 기록에 실패했습니다', {
+              pushToast('error', '부가수익 기록에 실패했습니다', {
                 detail: `이용료 ${fmtWon(rentPart)}은 저장됨 · ${incRes.error}`,
               })
               onSaved?.()
@@ -242,16 +242,16 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           const u: { recordIds: string[]; extraIncomeId: string } = undo
           let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
           pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}이용료 ${fmtWon(payAmount - excess)} 수납됨`, {
-            detail: `초과분 ${fmtWon(excess)}은 기타수익으로 기록`,
+            detail: `초과분 ${fmtWon(excess)}은 부가수익으로 기록`,
             action: {
               label: '적용취소',
               run: () => {
                 if (undone) return
                 undone = true
                 void undoOverpayExtraIncome(u.recordIds, u.extraIncomeId).then(r => {
-                  if (r.ok) pushToast('info', '수납과 기타수익 기록을 취소했습니다')
+                  if (r.ok) pushToast('info', '수납과 부가수익 기록을 취소했습니다')
                   else pushToast('error', r.error, {
-                    detail: r.intact ? '수납과 기타수익 모두 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
+                    detail: r.intact ? '수납과 부가수익 모두 그대로 남아 있습니다' : '수납 내역에서 상태를 확인하세요',
                   })
                   onSaved?.()
                 }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
@@ -318,7 +318,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       {!isDepositMode && !isCleaningFeeMode && excess > 0 && (
         <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2.5">
           <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{fmtWon(excess)}</span>
-            <span className="text-[var(--warm-muted)]"> · 저장할 때 이월(기본)과 기타수익 중 고릅니다.</span></p>
+            <span className="text-[var(--warm-muted)]"> · 저장할 때 이월(기본)과 부가수익 중 고릅니다.</span></p>
         </div>
       )}
       {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}
