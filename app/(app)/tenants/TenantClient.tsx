@@ -63,6 +63,7 @@ import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -168,6 +169,14 @@ type Tenant = {
   // 뒤 7자리는 [보기]가 revealForeignRegNo 를 부를 때만 오고, 그 열람은 기록으로 남는다.
   foreignRegNoMasked?: string | null
   isBasicRecipient: boolean; smoking: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
+}
+
+// 이 사람의 메인 계약 — 규칙은 lib/leaseStatus 의 primaryTenantLease 정본이다(방 축 primaryRoomLease 의 전치).
+// 종전의 `leaseTerms[0]` 은 서버 조회가 계약을 하나로 잘라 보내던 시절의 문법이라, 한 사람이 방을 둘
+// 쓰면(509호 거주 + 601호 창고) 어느 쪽이 [0] 인지가 정렬에 달렸다. 같은 사람이 목록·카드·모달에서
+// 다른 계약으로 보이는 길이다 — 방 축이 2026-06 에 갔던 그 길이라 같은 처방을 쓴다.
+function mainLease(t: { leaseTerms: LeaseTerm[] } | null | undefined): LeaseTerm | undefined {
+  return t ? primaryTenantLease(t.leaseTerms) : undefined
 }
 
 // 수납 모달의 청구·잔액 정본(서버 계산 — 할인·인상·예약 실수납 반영)
@@ -384,7 +393,7 @@ function getScheduledDate(lease: LeaseTerm | undefined): { date: string | Date |
 }
 
 function getSortValue(t: Tenant, key: SortKey): string | number {
-  const l = t.leaseTerms[0]
+  const l = mainLease(t)
   switch (key) {
     case 'roomNo':          return l?.room?.roomNo ?? ''
     case 'name':            return t.name
@@ -449,7 +458,7 @@ export default function TenantClient({
   // 퇴실자 클릭 시 Prism의 month를 퇴실월로 자동 세팅 (수납 내역이 그 월 안에 있어야 보임).
   // 일반 입주자는 현재 month 유지.
   const openTenantPrism = (tenant: Tenant) => {
-    const lease = tenant.leaseTerms[0]
+    const lease = mainLease(tenant)
     if (lease && ['CHECKED_OUT', 'CANCELLED'].includes(lease.status) && lease.moveOutDate) {
       const d = new Date(lease.moveOutDate)
       const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -598,8 +607,8 @@ export default function TenantClient({
     entityModal.open({
       kind: 'tenant',
       tenantId: found.id,
-      leaseTermId: found.leaseTerms[0]?.id ?? undefined,
-      roomId: found.leaseTerms[0]?.room?.id ?? undefined,
+      leaseTermId: mainLease(found)?.id ?? undefined,
+      roomId: mainLease(found)?.room?.id ?? undefined,
     })
   }, [searchParams, initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -662,7 +671,7 @@ export default function TenantClient({
   const genderOptions = [...new Set(initialTenants.map(t => t.gender).filter(Boolean))]
   // 거주기간(개월) — 표시 로직(calcStayPeriod)과 동일식·동일 종점(moveOutDate ?? today, SSR 안전)
   const stayMonthsOf = (t: Tenant): number | null => {
-    const l = t.leaseTerms[0]
+    const l = mainLease(t)
     if (!l?.moveInDate) return null
     const start = new Date(l.moveInDate)
     const end   = l.moveOutDate ? new Date(l.moveOutDate) : new Date(today)
@@ -685,14 +694,14 @@ export default function TenantClient({
   }
 
   const filtered = initialTenants.filter(t => {
-    const status = t.leaseTerms[0]?.status ?? ''
+    const status = mainLease(t)?.status ?? ''
 
     // 단일 상태 필터 — 생애주기 전 상태를 한 줄로 평탄화
     const isResident = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status)
     // 리드 3상태는 매칭 정본(lib/wishMatch)이 날짜 게이트를 거는 그 집합이다. 문자열을 여기 또 적으면
     // 그룹에는 보이는데 매칭에는 안 잡히는(또는 그 반대) 사람이 생긴다 — 정의를 한 곳에 잠근다.
     const isLead     = (WISH_LEAD_STATUSES as readonly string[]).includes(status)
-    const isConfirmed = isConfirmedReservation(t.leaseTerms[0])
+    const isConfirmed = isConfirmedReservation(mainLease(t))
     const isInquiry  = isLead && !isConfirmed   // 확정자는 '입실 예정'으로 빠져나갔다
     const isDropped  = status === 'CANCELLED'
     // 퇴실 판정은 isInquiry 가 아니라 isLead 로 본다 — 확정자를 뺀 집합으로 빼면 확정자가 퇴실로 굴러떨어진다.
@@ -701,7 +710,7 @@ export default function TenantClient({
       statusFilter === 'all'       ? true :
       statusFilter === 'living'    ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
       statusFilter === 'confirmed' ? isConfirmed :
-      statusFilter === 'inquiry'   ? isInquiry && (!inquiryStage || inquiryStageOf(t.leaseTerms[0]) === inquiryStage) :
+      statusFilter === 'inquiry'   ? isInquiry && (!inquiryStage || inquiryStageOf(mainLease(t)) === inquiryStage) :
       statusFilter === 'past'      ? isPast :
       status === statusFilter      // CHECKOUT_PENDING/NON_RESIDENT/CANCELLED
     if (!matchStatus) return false
@@ -714,14 +723,14 @@ export default function TenantClient({
     if (genderFilter && t.gender !== genderFilter) return false
     if (dueDayFilterValid && dueDayFilter) {
       // 날짜형(일회성 지정)은 월 컨텍스트가 없어 제외 — 정기 납부일만 매칭
-      if (dueDayBucketOf(t.leaseTerms[0]?.dueDay) !== dueDayFilter) return false
+      if (dueDayBucketOf(mainLease(t)?.dueDay) !== dueDayFilter) return false
     }
     if (stayFilterValid && stayFilter) {
       const m = stayMonthsOf(t)
       if (m == null || !matchStayBucket(m)) return false
     }
     if (rentMinFilter != null || rentMaxFilter != null) {
-      const rent = t.leaseTerms[0]?.rentAmount
+      const rent = mainLease(t)?.rentAmount
       if (rent == null) return false
       if (rentMinFilter != null && rent < rentMinFilter) return false
       if (rentMaxFilter != null && rent > rentMaxFilter) return false
@@ -734,11 +743,11 @@ export default function TenantClient({
     return (
       t.name.toLowerCase().includes(q) ||
       (t.englishName?.toLowerCase().includes(q) ?? false) ||
-      (t.leaseTerms[0]?.room?.roomNo ?? '').includes(q) ||
+      (mainLease(t)?.room?.roomNo ?? '').includes(q) ||
       // 상태 검색은 화면에 보이는 파생 라벨 기준('문의'·'예약 확정' 포함) — 칩 표시와 동일 규칙
       ((status === 'RESERVED'
-        ? (t.leaseTerms[0]?.reservationConfirmedAt ? '예약 확정' : '입실 예약')
-        : statusException(status, { hasTourDate: !!t.leaseTerms[0]?.tourDate })?.label ?? STATUS_LABEL[status] ?? ''
+        ? (mainLease(t)?.reservationConfirmedAt ? '예약 확정' : '입실 예약')
+        : statusException(status, { hasTourDate: !!mainLease(t)?.tourDate })?.label ?? STATUS_LABEL[status] ?? ''
       ).includes(q)) ||
       (t.nationality?.toLowerCase().includes(q) ?? false) ||
       (t.job?.toLowerCase().includes(q) ?? false) ||
@@ -748,7 +757,7 @@ export default function TenantClient({
 
   // inquiryAt 보조 정렬 (오래된 순 = 오래 기다린 순). 없으면 createdAt fallback. asc 고정.
   const inquiryTime = (t: Tenant): number => {
-    const l = t.leaseTerms[0]
+    const l = mainLease(t)
     const inq = l?.inquiryAt
     if (inq) return new Date(inq).getTime()
     const c = (l as any)?.createdAt
@@ -760,7 +769,7 @@ export default function TenantClient({
     // 입실 예정 그룹은 입주 임박순 고정 — 이 그룹의 질문은 하나뿐이다("다음에 누가 들어오나").
     // 동률(같은 날 입주)은 문의 오래된 순 — 다른 그룹의 동률 규칙과 같다.
     if (statusFilter === 'confirmed') {
-      const moveIn = (t: Tenant) => { const d = t.leaseTerms[0]?.moveInDate; return d ? new Date(d).getTime() : Infinity }
+      const moveIn = (t: Tenant) => { const d = mainLease(t)?.moveInDate; return d ? new Date(d).getTime() : Infinity }
       const ma = moveIn(a), mb = moveIn(b)
       if (ma !== mb) return ma - mb
       return inquiryTime(a) - inquiryTime(b)
@@ -770,7 +779,7 @@ export default function TenantClient({
     // 종전에는 호실순이라 9/30 가 8/15 위에 섰다. 입실 예정과 대칭이다(카드에 보이는 그 날짜로 센다).
     if (statusFilter === 'CHECKOUT_PENDING') {
       const out = (t: Tenant) => {
-        const l = t.leaseTerms[0]
+        const l = mainLease(t)
         const d = l?.expectedMoveOut ?? l?.moveOutDate
         return d ? new Date(d).getTime() : Infinity   // 날짜 없는 건은 맨 뒤 — 없는 날짜를 짓지 않는다
       }
@@ -784,7 +793,7 @@ export default function TenantClient({
     // 세그먼트는 안 쪼갬(§23).
     if (statusFilter === 'inquiry') {
       const STAGE_RANK: Record<string, number> = { RESERVED: 1, TOUR: 2, INQUIRY: 3 }
-      const la = a.leaseTerms[0], lb = b.leaseTerms[0]
+      const la = mainLease(a), lb = mainLease(b)
       const sa = STAGE_RANK[inquiryStageOf(la) ?? 'INQUIRY']
       const sb = STAGE_RANK[inquiryStageOf(lb) ?? 'INQUIRY']
       if (sa !== sb) return sa - sb
@@ -800,8 +809,8 @@ export default function TenantClient({
 
     // 호실순: 미배정자(호실 없음)는 항상 하단, 미배정 내에서는 inquiryAt asc 고정
     if (sortKey === 'roomNo') {
-      const ra = a.leaseTerms[0]?.room?.roomNo ?? ''
-      const rb = b.leaseTerms[0]?.room?.roomNo ?? ''
+      const ra = mainLease(a)?.room?.roomNo ?? ''
+      const rb = mainLease(b)?.room?.roomNo ?? ''
       const aHas = !!ra
       const bHas = !!rb
       if (aHas !== bHas) return aHas ? -1 : 1   // 배정된 사람 위로 (sortDir 무관)
@@ -811,8 +820,8 @@ export default function TenantClient({
 
     // 상태순: 같은 상태 내에서는 inquiryAt asc로 보조 정렬
     if (sortKey === 'status') {
-      const sa = a.leaseTerms[0]?.status ?? ''
-      const sb = b.leaseTerms[0]?.status ?? ''
+      const sa = mainLease(a)?.status ?? ''
+      const sb = mainLease(b)?.status ?? ''
       if (sa !== sb) return dir * sa.localeCompare(sb, 'ko', { numeric: true })
       return inquiryTime(a) - inquiryTime(b)
     }
@@ -1442,29 +1451,29 @@ export default function TenantClient({
 
   // ── 인원수 ────────────────────────────────────────────────────
 
-  const statusOf = (t: typeof initialTenants[0]) => t.leaseTerms[0]?.status ?? ''
+  const statusOf = (t: typeof initialTenants[0]) => mainLease(t)?.status ?? ''
   const cntBy = (pred: (s: string) => boolean) => initialTenants.filter(t => pred(statusOf(t))).length
   const countAll       = initialTenants.length
   const countCheckout  = cntBy(s => s === 'CHECKOUT_PENDING')
   const countLiving    = cntBy(s => ['ACTIVE', 'CHECKOUT_PENDING'].includes(s))   // 거주중 = 거주중+퇴실예정
   const countNonRes    = cntBy(s => s === 'NON_RESIDENT')
   // 입실 예정 = 예약 확정. 문의·예약에서 빠져나온 만큼 그대로 여기 선다(두 그룹의 합 = 종전 문의·예약).
-  const countConfirmed = initialTenants.filter(t => isConfirmedReservation(t.leaseTerms[0])).length
+  const countConfirmed = initialTenants.filter(t => isConfirmedReservation(mainLease(t))).length
   // 문의·예약 = 아직 방이 안 정해진 리드. 확정자를 뺀다 — 그룹 술어(isInquiry)와 같은 식이라야
   // 칩 숫자와 목록 길이가 안 갈린다.
   const countInquiry   = initialTenants.filter(t =>
-    (WISH_LEAD_STATUSES as readonly string[]).includes(statusOf(t)) && !isConfirmedReservation(t.leaseTerms[0])).length
+    (WISH_LEAD_STATUSES as readonly string[]).includes(statusOf(t)) && !isConfirmedReservation(mainLease(t))).length
   const countCancelled = cntBy(s => s === 'CANCELLED')
   // 항등식 — 전체는 서로 겹치지 않는 그룹들로 정확히 쪼개진다. 입실 예정을 새로 빼 놓고 여기서
   // 안 빼면 그만큼이 '퇴실'로 굴러떨어진다(목록 술어 isPast 는 리드 전체를 빼므로 화면과도 어긋난다).
   const countPast      = countAll - countLiving - countNonRes - countInquiry - countConfirmed - countCancelled
   // 퍼널 단계별 카운트 — 2차 필터 라벨용(파생 단계는 status만으론 못 세서 lease 기준)
-  const cntStage = (st: Exclude<InquiryStage, ''>) => initialTenants.filter(t => inquiryStageOf(t.leaseTerms[0]) === st).length
+  const cntStage = (st: Exclude<InquiryStage, ''>) => initialTenants.filter(t => inquiryStageOf(mainLease(t)) === st).length
   const stageCounts = { INQUIRY: cntStage('INQUIRY'), TOUR: cntStage('TOUR'), RESERVED: cntStage('RESERVED') }
 
   // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
   function getTenantFloor(t: typeof initialTenants[0]) {
-    const room = t.leaseTerms[0]?.room
+    const room = mainLease(t)?.room
     if (!room) return ''
     if (room.floor) return room.floor
     const n = room.roomNo.replace(/[^0-9]/g, '')
@@ -1907,7 +1916,7 @@ export default function TenantClient({
       ) : (
         <div className="sm:hidden space-y-2">
           {sorted.map(tenant => {
-            const lease   = tenant.leaseTerms[0]
+            const lease   = mainLease(tenant)
             const primary = tenant.contacts.find(c => c.isPrimary) ?? tenant.contacts[0]
             const status  = lease?.status ?? ''
             const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined, today)
@@ -2132,7 +2141,7 @@ export default function TenantClient({
             </thead>
             <tbody>
               {sorted.map(tenant => {
-                const lease   = tenant.leaseTerms[0]
+                const lease   = mainLease(tenant)
                 const primary = tenant.contacts.find(c => c.isPrimary)
                 const status  = lease?.status ?? ''
                 const sched   = getScheduledDate(lease)
@@ -2268,7 +2277,7 @@ export default function TenantClient({
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
                 onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
-                <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
+                <input type="hidden" name="leaseTermId" value={mainLease(t)?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
                   <TenantForm rooms={rooms} tenant={t} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
@@ -2330,7 +2339,7 @@ export default function TenantClient({
             <form key={editTenant.id} onSubmit={handleUpdate} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
-              <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
+              <input type="hidden" name="leaseTermId" value={mainLease(editTenant)?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
@@ -3202,7 +3211,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   rooms: Room[]; tenant?: Tenant; error?: string
   defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
 }) {
-  const lease     = tenant?.leaseTerms[0]
+  const lease     = mainLease(tenant)
   const primary   = tenant?.contacts.find(c => c.isPrimary)
   const emergency = tenant?.contacts.find(c => c.isEmergency)
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)

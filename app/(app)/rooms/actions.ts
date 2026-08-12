@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { primaryRoomLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
+import { primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
@@ -2038,8 +2038,9 @@ export async function getTenantDetail(tenantId: string) {
             take: 60,
           },
         },
+        // take: 1 을 뺐다(2026-08-13) — 한 사람이 방을 둘 쓰면 상세가 나머지 계약을 아예 못 본다.
+        // 메인 계약 선택은 화면이 primaryTenantLease 정본으로 하고, 부계약은 '추가 계약' 줄이 받는다.
         orderBy: { createdAt: 'desc' },
-        take: 1,
       },
     },
   })
@@ -2051,11 +2052,17 @@ export async function getTenantDetail(tenantId: string) {
   return { ...tenant, foreignRegNoMasked: canIdentity ? maskStoredForeignRegNo(foreignRegNoEnc, row.id) : null }
 }
 
+/** 사람 축 조회가 메인 계약 하나만 내려보낼 때 쓰는 마무리 — 화면의 `leaseTerms[0]` 문법을 그대로 유지시킨다. */
+function mainLeaseOnly<T extends { status: string; moveInDate?: Date | string | null }>(leases: T[]): T[] {
+  const main = primaryTenantLease(leases)
+  return main ? [main] : []
+}
+
 export async function getTenantQuickInfo(tenantId: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
-  return prisma.tenant.findUnique({
+  const row = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: {
       id: true, name: true, gender: true, nationality: true,
@@ -2069,11 +2076,12 @@ export async function getTenantQuickInfo(tenantId: string) {
           isShortTerm: true,   // 단기는 '매월 N일' 납부일 표기가 성립하지 않는다(퀵 정보 표시 가드)
           room: { select: { roomNo: true } },
         },
+        // 형제(getTenantDetail)와 같은 선 — 잘라 읽지 않고 메인 계약은 정본이 고른다.
         orderBy: { createdAt: 'desc' },
-        take: 1,
       },
     },
   })
+  return row ? { ...row, leaseTerms: mainLeaseOnly(row.leaseTerms) } : row
 }
 
 // 단일 lease의 그 달 RoomRow (수납 상태) — 입주자 페이지에서 인라인 표시용

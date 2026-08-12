@@ -10,6 +10,7 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot, kstMonthOf } from '@/lib/fmtDate'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 export type SearchGroupType = 'tenant' | 'room' | 'expense' | 'item' | 'request' | 'doc'
@@ -184,7 +185,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   const allTenants = [...textTenants, ...phoneTenants]
   const lq = q.toLowerCase()
   const tenantRank = (t: typeof allTenants[number]) => {
-    const status = t.leaseTerms[0]?.status ?? 'CHECKED_OUT'
+    const status = primaryTenantLease(t.leaseTerms)?.status ?? 'CHECKED_OUT'
     const w = STATUS_WEIGHT[status] ?? 4
     const name = t.name.toLowerCase()
     const nameRank = name === lq ? 0 : name.startsWith(lq) ? 1 : 2
@@ -193,7 +194,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
   allTenants.sort((a, b) => tenantRank(a) - tenantRank(b))
 
   const tenantHits: SearchHit[] = allTenants.slice(0, TAKE_SHOW).map(t => {
-    const lease = t.leaseTerms[0]
+    const lease = primaryTenantLease(t.leaseTerms)
     const status = lease?.status
     const matchedPhone = phoneMatchedSet.has(t.id)
       ? t.contacts.find(c => c.contactValue.replace(/\D/g, '').includes(qDigits))?.contactValue ?? null
@@ -304,9 +305,11 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
 const tenantSelect = {
   id: true, name: true, englishName: true, nationality: true, job: true,
   contacts: { select: { contactValue: true }, take: 3 },
+  // take: 1 을 뺐다 — 방을 둘 쓰는 사람은 잘라 읽으면 검색 결과의 상태·호실이 정렬에 달린다.
+  // 메인 계약은 primaryTenantLease 정본이 고른다.
   leaseTerms: {
-    orderBy: { createdAt: 'desc' as const }, take: 1,
+    orderBy: { createdAt: 'desc' as const },
     // tourDate·reservationConfirmedAt — 파생 라벨(문의/예약 확정) 분기용 (e1b81629)
-    select: { status: true, tourDate: true, reservationConfirmedAt: true, room: { select: { roomNo: true } } },
+    select: { status: true, moveInDate: true, tourDate: true, reservationConfirmedAt: true, room: { select: { roomNo: true } } },
   },
 }

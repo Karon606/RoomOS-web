@@ -5,7 +5,7 @@ import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
-import { getPaidRevenueByMonths } from '@/lib/leaseStatus'
+import { getPaidRevenueByMonths, primaryTenantLease } from '@/lib/leaseStatus'
 import type { DashboardData } from './DashboardClient'
 import { computeUnpaidStatus } from './unpaid'
 
@@ -396,11 +396,12 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
       select: {
         name: true,
         contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 },
+        // take: 1 을 뺐다 — 방을 둘 쓰는 사람에게 문자 머리말이 창고 호실을 적으면 안 된다.
+        // 메인 계약(primaryTenantLease)의 호실이 그 사람의 호실이다.
         leaseTerms: {
           where: { roomId: { not: null } },
           orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { room: { select: { roomNo: true } } },
+          select: { status: true, moveInDate: true, room: { select: { roomNo: true } } },
         },
       },
     })
@@ -413,7 +414,7 @@ export async function getPersonalSmsContext(tenantId: string): Promise<PersonalS
       ok: true,
       phone: tenant.contacts[0]?.contactValue?.trim() || null,
       tenantName: tenant.name,
-      roomNo: tenant.leaseTerms[0]?.room?.roomNo ?? '',
+      roomNo: primaryTenantLease(tenant.leaseTerms)?.room?.roomNo ?? '',
       bankAccount: prop?.bankAccount ?? '',
       templates,
     }

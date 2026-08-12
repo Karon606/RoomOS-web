@@ -29,6 +29,7 @@ import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 import { withheldPartsLabel } from '@/lib/depositComposition'
 
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
@@ -47,7 +48,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
     getTenantDetail(tenantId).then(d => { if (active && d) setTenant(d as TenantDetail) })
     return () => { active = false }
   }, [tenantId, reloadKey])
-  const leaseIdForRefund = tenant?.leaseTerms[0]?.id ?? null
+  const leaseIdForRefund = (tenant ? primaryTenantLease(tenant.leaseTerms) : undefined)?.id ?? null
   useEffect(() => {
     if (!leaseIdForRefund) { setDepoRefund(null); return }
     let active = true
@@ -58,7 +59,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
 
   if (!tenant) return <SkeletonRows rows={5} className="py-4" />
 
-  const lease = tenant.leaseTerms[0]
+  // 메인 계약 — 상세 본문 전체가 이 하나를 그린다(부계약은 4단계의 '추가 계약' 줄이 받는다).
+  const lease = primaryTenantLease(tenant.leaseTerms)
   const status = lease?.status ?? ''
 
   return (

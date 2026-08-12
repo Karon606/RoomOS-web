@@ -7,6 +7,7 @@ import prisma from '@/lib/prisma'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
 import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
@@ -143,16 +144,17 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
       const existing = await prisma.tenant.findFirst({
         where: { propertyId, name },
         include: {
+          // take: 1 을 뺐다 — 시트 한 줄이 덮을 계약은 정렬이 고른 아무 계약이 아니라 메인 계약이다.
+          // 방을 둘 쓰는 사람에게 이용료·보증금을 창고 계약에 쓰는 사고를 막는다.
           leaseTerms: {
             where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
             include: { room: { select: { id: true, roomNo: true } } },
-            take: 1,
           },
         },
       })
 
       if (existing) {
-        const activeLease  = existing.leaseTerms[0]
+        const activeLease  = primaryTenantLease(existing.leaseTerms)
         const existingRoom = activeLease?.room?.roomNo ?? null
         const inRoomNo     = str(row['호실']) || null
         const inStatus     = inRoomNo ? (STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE') : null
@@ -180,7 +182,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
         if (resolution === 'keep') { result.skipped++; continue }
 
         if (resolution === 'archive') {
-          const activeLease = existing.leaseTerms[0]
+          const activeLease = primaryTenantLease(existing.leaseTerms)
           if (activeLease) {
             await prisma.leaseTerm.update({
               where: { id: activeLease.id },
@@ -211,7 +213,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               memo:        str(row['메모']) || null,
             },
           })
-          const activeLease = existing.leaseTerms[0]
+          const activeLease = primaryTenantLease(existing.leaseTerms)
           if (activeLease && row['이용료']) {
             // 시트에 칸이 **없으면 미변경**이다. parseNum 은 빈칸을 0 으로 환원하므로,
             // 이용료 칸만 채운 시트를 올리면 기존 보증금·청소비가 0 으로 파괴적 갱신됐다(2026-08-02 조사).

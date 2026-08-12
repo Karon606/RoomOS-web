@@ -48,6 +48,7 @@ import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -144,7 +145,10 @@ export async function getTenants() {
       contacts: true,
       leaseTerms: {
         orderBy: { createdAt: 'desc' },
-        take: 1,
+        // take: 1 을 뺐다(2026-08-13) — 한 사람이 방을 둘 쓰면(509호 거주 + 601호 창고) '그 사람의
+        // 계약'이 하나가 아니다. 잘라 보내면 어느 쪽이 오는지가 정렬에 달리고, 화면은 나머지 계약이
+        // 존재한다는 사실 자체를 모른다. 메인 계약 선택은 화면이 primaryTenantLease 정본으로 한다.
+        // 정렬(createdAt desc)은 그 정본의 마지막 폴백이 종전과 같은 계약을 고르도록 유지한다.
         include: {
           room: { select: { id: true, roomNo: true, floor: true } },
           // 환불 이력 유무 — 퇴실 재저장 시 환불 모달 재노출(중복 저장)을 막는 판정용(신고 13438ec9). 추가 왕복 없음.
@@ -1993,8 +1997,8 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
     where: { id: tenantId },
     include: {
       leaseTerms: {
+        // 메인 계약 하나를 분석한다. 잘라 읽으면 정렬이 고르므로 전부 읽고 정본이 고른다.
         orderBy: { createdAt: 'desc' },
-        take: 1,
         include: {
           room: { select: { roomNo: true } },
           paymentRecords: {
@@ -2013,7 +2017,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
 
   if (!tenant) return '[오류] 입주자를 찾을 수 없습니다.'
 
-  const lease = tenant.leaseTerms[0]
+  const lease = primaryTenantLease(tenant.leaseTerms)
   const payments = lease?.paymentRecords ?? []
   // 청구·미납은 정본 규칙(월별 최댓값)으로 — 합으로 잡으면 나눠 낸 달이 곱해진다(신고 2026-08-02).
   // AI 가 이 값으로 "회수 지연 심각" 같은 진단을 쓰므로 부풀린 값이 그대로 문장이 된다.
@@ -2336,7 +2340,7 @@ export async function getTenantRequests(tenantId: string) {
 
 export async function getAllRequestsForProperty() {
   const { propertyId } = await getPropertyId()
-  return prisma.tenantRequest.findMany({
+  const rows = await prisma.tenantRequest.findMany({
     where: { propertyId, deletedAt: null },
     orderBy: [{ resolvedAt: 'asc' }, { isUrgent: 'desc' }, { createdAt: 'desc' }],
     select: {
@@ -2347,16 +2351,26 @@ export async function getAllRequestsForProperty() {
       tenant: {
         select: {
           id: true, name: true,
+          // take: 1 + status asc 를 뺐다 — enum 선언 순서라 RESERVED 가 ACTIVE 를 이기던 자리다
+          // (primaryRoomLease 머리말의 503호 사례와 같은 함정). 메인 계약은 정본이 고른다.
           leaseTerms: {
             where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-            orderBy: { status: 'asc' },
-            take: 1,
-            select: { room: { select: { roomNo: true } } },
+            select: { status: true, moveInDate: true, room: { select: { roomNo: true } } },
           },
         },
       },
     },
   })
+  return rows.map(r => ({
+    ...r,
+    tenant: r.tenant ? { ...r.tenant, leaseTerms: mainLeaseOnly(r.tenant.leaseTerms) } : r.tenant,
+  }))
+}
+
+/** 사람 축 조회가 메인 계약 하나만 내려보낼 때 쓰는 마무리 — 화면의 `leaseTerms[0]` 문법을 그대로 유지시킨다. */
+function mainLeaseOnly<T extends { status: string; moveInDate?: Date | string | null }>(leases: T[]): T[] {
+  const main = primaryTenantLease(leases)
+  return main ? [main] : []
 }
 
 // 폼에서 직접 입력한 카테고리를 저장 흐름 안에서 처리 — 기존 목록과 일치하면 정본 값을 쓰고,
@@ -2502,22 +2516,22 @@ export async function updateTenantRequest(id: string, data: {
 
 export async function getActiveTenantsForRequests() {
   const { propertyId } = await getPropertyId()
-  return prisma.tenant.findMany({
+  const rows = await prisma.tenant.findMany({
     where: {
       propertyId,
       leaseTerms: { some: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } } },
     },
     select: {
       id: true, name: true,
+      // 형제(getAllRequestsForProperty)와 같은 선 — 잘라 읽지 않고 정본이 메인 계약을 고른다.
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        orderBy: { status: 'asc' },
-        take: 1,
-        select: { room: { select: { roomNo: true } } },
+        select: { status: true, moveInDate: true, room: { select: { roomNo: true } } },
       },
     },
     orderBy: { name: 'asc' },
   })
+  return rows.map(r => ({ ...r, leaseTerms: mainLeaseOnly(r.leaseTerms) }))
 }
 
 export async function resolveTenantRequest(id: string, memo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -3490,9 +3504,10 @@ export async function finalizeContractScan(input: {
           // 퇴실 예정·비거주도 살아 있는 계약이다. 여기가 서명 상태까지 좌우하게 됐으므로
           // 계약서 화면·발급 API 와 같은 목록을 쓴다.
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          // take: 1 을 뺐다 — 스캔본이 붙을 계약은 '입주일이 가장 늦은 계약'이 아니라 그 사람의
+          // 메인 계약이다(primaryTenantLease). 창고 계약이 나중에 생겼다고 그쪽에 붙으면 안 된다.
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
-          select: { id: true, signatureSignedAt: true, signedContractSnapshot: true },
+          select: { id: true, status: true, moveInDate: true, signatureSignedAt: true, signedContractSnapshot: true },
         },
       },
     })
@@ -3506,7 +3521,7 @@ export async function finalizeContractScan(input: {
     if (!(await isOwnedByApp(input.driveFileId))) {
       return { ok: false, error: '업로드된 파일을 찾을 수 없습니다. 다시 시도해 주세요.' }
     }
-    const lease = tenant.leaseTerms[0] ?? null
+    const lease = primaryTenantLease(tenant.leaseTerms) ?? null
     const signedAt = input.signedAt ? new Date(`${input.signedAt}T00:00:00`) : new Date()
     // 스캔본 업로드는 서명 완료로 친다(운영자 확정 2026-08-04). 종이에 서명이 있고 그 스캔이 원본이다.
     // 다만 **서명 이미지는 만들지 않는다** — 서명은 종이에 있고 없는 것을 지어내지 않는다.
@@ -3608,14 +3623,25 @@ export async function batchUpdateTenants(
     }
 
     if (Object.keys(leaseFields).length > 0) {
-      const before = await prisma.leaseTerm.findMany({
+      const allLive = await prisma.leaseTerm.findMany({
         where: {
           tenantId: { in: tenantIds },
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
         // rentAmount·moveInDate — 아래 청구 상태 백스톱의 입력(단건 경로 applyStatusTransition 과 같은 판정).
-        select: { id: true, depositAmount: true, dueDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true },
+        select: { id: true, tenantId: true, depositAmount: true, dueDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true },
       })
+      // 사람당 메인 계약 하나만 덮는다(2026-08-13). 종전에는 이 where 가 그 사람의 살아 있는 계약을
+      // 전부 집어, 방을 둘 쓰는 사람(509호 거주 + 601호 창고)에게 일괄 편집을 걸면 보증금·납부일·상태가
+      // 두 계약에 동시에 찍혔다. 창고 계약에 거주 계약의 보증금이 들어가는 식이다. 머리말이 이미
+      // '가장 최근 활성·예약 계약에 적용'이라 적고 있었는데 코드가 그 말을 지키지 않던 자리다.
+      // 고르는 규칙은 화면이 메인으로 보여 주는 그 계약과 같아야 한다 — primaryTenantLease 정본.
+      const byTenant = new Map<string, typeof allLive>()
+      for (const l of allLive) {
+        const arr = byTenant.get(l.tenantId)
+        if (arr) arr.push(l); else byTenant.set(l.tenantId, [l])
+      }
+      const before = [...byTenant.values()].map(ls => primaryTenantLease(ls)!).filter(Boolean)
 
       // 상태를 바꾸는 일괄은 단건 경로와 같은 선을 지킨다. 종전에는 전이 검증이 통째로 없어
       // 퇴실 완료에서 투어 대기로, 아무 계약이나 비거주로 한 번에 뒤집을 수 있었다 — 경로가 넷이라

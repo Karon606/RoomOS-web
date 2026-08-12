@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult } from '@/lib/import-types'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { primaryTenantLease } from '@/lib/leaseStatus'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES, type RoomAssignmentOccupant } from '@/lib/roomAssignment'
 import { LeaseStatus } from '@prisma/client'
 
@@ -208,17 +209,17 @@ async function previewTenants(
     const existing = await prisma.tenant.findFirst({
       where: { propertyId, name },
       include: {
+        // 적용(app/api/import)과 같은 선 — 미리보기가 다른 계약을 보면 두 화면이 다른 답을 말한다.
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
           include: { room: { select: { roomNo: true } } },
-          take: 1,
         },
       },
     })
 
     if (existing) {
       const incomingRoom = str(row['호실']) || null
-      const activeLease  = existing.leaseTerms[0]
+      const activeLease  = primaryTenantLease(existing.leaseTerms)
       const existingRoom = activeLease?.room?.roomNo ?? null
 
       const inEnglishName = str(row['영문명']) || null
