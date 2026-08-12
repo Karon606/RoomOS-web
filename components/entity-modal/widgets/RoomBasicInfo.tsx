@@ -9,6 +9,8 @@ import { useTransition } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { availableFromText, type RoomAvailability, type RoomStatusView } from '@/lib/leaseStatus'
+import { fmtRentApplyFrom } from '@/lib/fmtMoney'
+import { kstMonthOf } from '@/lib/fmtDate'
 import { InfoRow } from './InfoRow'
 
 type Room = {
@@ -25,12 +27,6 @@ type Room = {
   status: RoomStatusView
   // 이 방을 언제부터 줄 수 있나 — lib/leaseStatus.roomAvailability 판정(호실 카드 '입주 가능' 필터와 같은 축).
   availability?: RoomAvailability | null
-}
-
-const fmtDate = (d: Date | string | null | undefined) => {
-  if (!d) return ''
-  const t = new Date(d)
-  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
 }
 
 export function RoomBasicInfo({ room, onApplyScheduledNow }: {
@@ -66,8 +62,10 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
           <InfoRow label="예약 이용료" value={
             <span className="text-[var(--warning-fg)]">
               <MoneyDisplay amount={room.scheduledRent} />
+              {/* 인상은 그 달 전체에 걸린다 — 적용일이 9/20 이어도 9월분 청구는 전부 인상가다(lib/billing).
+                  종전 "(2026-09-20 적용)" 은 엔진이 지키지 않는 약속이었다. 문장 정본은 fmtRentApplyFrom. */}
               {room.rentUpdateDate && (
-                <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(room.rentUpdateDate)} 적용)</span>
+                <span className="text-[var(--warm-muted)] ml-1 text-xs whitespace-nowrap">({fmtRentApplyFrom(kstMonthOf(room.rentUpdateDate))})</span>
               )}
             </span>
           } />
@@ -93,8 +91,9 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
             <InfoRow label="비거주 예약료" value={
               <span className="text-[var(--warning-fg)]">
                 <MoneyDisplay amount={room.nonResidentScheduled} />
+                {/* 비거주 축도 같은 규칙이다 — effectiveBaseRent 가 nonResidentScheduled 를 `mon >= 적용월` 로 읽는다. */}
                 {room.nonResidentRentDate && (
-                  <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(room.nonResidentRentDate)} 적용)</span>
+                  <span className="text-[var(--warm-muted)] ml-1 text-xs whitespace-nowrap">({fmtRentApplyFrom(kstMonthOf(room.nonResidentRentDate))})</span>
                 )}
               </span>
             } />

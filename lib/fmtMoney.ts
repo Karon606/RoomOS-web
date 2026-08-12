@@ -5,6 +5,8 @@
 //         2,543,100 → "254만3100원"
 //         400,000   → "40만원"
 //         39,000    → "3만9000원"
+import { kstMonthStr } from './kstDate'
+
 export function fmtKorMoney(n: number, opts: { zero?: string } = {}): string {
   const r = Math.round(n)
   if (r === 0) return opts.zero ?? '0원'
@@ -70,6 +72,27 @@ export function fmtManShort(n: number): string {
 // 잘린 값은 없는 값보다 나쁘다(lib/leaseStatus checkoutDateLabel 이 D-day 를 뗀 것과 같은 판단).
 export function fmtOfferRentAhead(month: string, rent: number): string {
   return `${Number(month.slice(5))}월 ${fmtManShort(rent)}`
+}
+
+// 예약 이용료가 언제부터 청구되는가 — '9월분부터'. 호실 상세·호실 카드가 이 한 문장을 같이 쓴다.
+//
+// 왜 달인가 — fmtOfferRentAhead 와 같은 이유다. effectiveBaseRent 가 `mon >= 적용월` 이라 적용일이
+// 9/20 이어도 9월분 청구는 전부 인상가고, 선납해도 인상가다(운영자 확정 규칙). 두 화면이 종전에
+// "(2026-09-20 적용)"·"(2026.09.20)" 으로 일 단위를 말해, 엔진이 지키지 않는 약속을 적고 있었다.
+// 운영자 혼동의 뿌리라고 패널 2인이 독립으로 지적한 자리다(2026-08-12).
+//
+// 왜 여기는 '분'을 쓰고 홈 타일(fmtOfferRentAhead)은 안 쓰는가 — 폭이다. 타일은 밴드가 68px 이라
+// '분' 9px 이 절단을 만들지만(위 주석의 실측), 이 두 자리는 카드 꼬리 158px·모달 값 칸 172px 이라
+// 여유가 있다. 그래서 정본 귀속월 어휘 'N월분'(할인 위젯·수납 유예·fmtNoBillCovered 가 쓰는 그 말)을
+// 그대로 쓴다. '부터'를 붙이는 것도 같은 이유다 — 그 달 하나가 아니라 그 달 이후 전부이므로,
+// 떼면 과소 진술이 된다. 타일이 '부터'를 못 쓰는 것은 밴드 안에서 입주 가능일의 '부터'와 겹치기 때문이다.
+//
+// 해가 넘어가면 4자리 연도를 앞에 붙인다 — '2027년 1월분부터'. 안 붙이면 지난 1월로 읽힌다.
+// 기준 '지금'은 KST 정본(kstMonthStr)이다. new Date() 로 연도를 뽑으면 서버(UTC)와 기기(KST)가
+// 연말 09시 창에서 다른 해를 봐 하이드레이션이 갈린다.
+export function fmtRentApplyFrom(month: string, nowMonth: string = kstMonthStr()): string {
+  const yearPrefix = month.slice(0, 4) === nowMonth.slice(0, 4) ? '' : `${month.slice(0, 4)}년 `
+  return `${yearPrefix}${Number(month.slice(5))}월분부터`
 }
 
 // 청구 없는 달의 '그 달을 덮은 수납' 캡션 — '7월분 7/7 수납 470,000원'.

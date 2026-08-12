@@ -5,7 +5,8 @@ import type { CleaningRow, CleaningStatus } from './cleaningConstants'
 import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/CleaningRowBody'
 import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { ViewTabs } from '@/components/ui/ViewTabs'
-import { fmtDateDot as fmtDate, fmtMD, fmtMDDay } from '@/lib/fmtDate'
+import { kstMonthOf, fmtMD, fmtMDDay } from '@/lib/fmtDate'
+import { fmtRentApplyFrom } from '@/lib/fmtMoney'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
@@ -1058,7 +1059,9 @@ export default function RoomManageClient({
             {!hideMoney && cardFields.scheduled && room.scheduledRent != null && (
               <p className="text-xs text-[var(--warm-mid)]">
                 → <MoneyDisplay amount={room.scheduledRent} />
-                {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
+                {/* 날짜가 아니라 달로 적는다 — 인상은 그 달 전체에 걸린다(lib/billing effectiveBaseRent).
+                    호실 상세 모달이 같은 문장(fmtRentApplyFrom)을 쓴다. */}
+                {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 whitespace-nowrap">({fmtRentApplyFrom(kstMonthOf(room.rentUpdateDate))})</span>}
               </p>
             )}
           </div>
@@ -1467,6 +1470,7 @@ export default function RoomManageClient({
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">고른 날짜가 속한 달분부터 적용됩니다.</p>
                 </div>
               )}
             </div>
@@ -1567,6 +1571,7 @@ export default function RoomManageClient({
                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
             </div>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">고른 날짜가 속한 달분부터 적용됩니다.</p>
 
             {/* 비거주 이용료 설정 */}
             <div className="border border-[var(--warm-border)] rounded-xl p-3.5 space-y-3">
@@ -1599,6 +1604,7 @@ export default function RoomManageClient({
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">고른 날짜가 속한 달분부터 적용됩니다.</p>
                 </div>
               )}
             </div>
@@ -2104,9 +2110,10 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
 
         {!clearScheduled && scheduledRent != null && (
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일 <span className="text-[var(--danger-fg)]">*</span> <span className="text-[var(--warm-muted)]">(예약이용료가 적용될 날짜 · 없으면 적용 안 됨)</span></label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일 <span className="text-[var(--danger-fg)]">*</span> <span className="text-[var(--warm-muted)]">(없으면 적용 안 됨)</span></label>
             <DatePicker name="batchRentUpdateDate" value={rentUpdateDateVal} onChange={setRentUpdateDateVal}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">고른 날짜가 속한 달분부터 적용됩니다.</p>
           </div>
         )}
 

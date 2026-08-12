@@ -5,7 +5,7 @@
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
 import { unpaidForLease, billedForLease, type UnpaidRecord } from '@/lib/billing'
-import { fmtManShort, fmtOfferRentAhead } from '../lib/fmtMoney'
+import { fmtManShort, fmtOfferRentAhead, fmtRentApplyFrom } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
   calcProRata,
@@ -497,6 +497,22 @@ const RENT = 300000
   eq('예고 라벨: 부터 미사용',    fmtOfferRentAhead('2026-09', 360_000).includes('부터'), false)
   // 슬래시가 없어야 타일의 날짜 문법("8/30부터")과 읽기 전에 갈린다.
   eq('예고 라벨: 슬래시 없음',    fmtOfferRentAhead('2026-09', 360_000).includes('/'), false)
+}
+
+// ── fmtRentApplyFrom ── 호실 상세·호실 카드의 인상 표기. 엔진이 달 단위라 화면도 달로 말해야 한다.
+// 종전 "(2026-09-20 적용)" 은 적용일이 9/20 이어도 9월분 전액이 인상가인 엔진과 어긋났다(2026-08-12).
+{
+  eq('인상 표기: 같은 해',        fmtRentApplyFrom('2026-09', '2026-08'), '9월분부터')
+  eq('인상 표기: 두 자리 달',      fmtRentApplyFrom('2026-12', '2026-08'), '12월분부터')
+  // 해가 넘어가면 4자리 연도를 붙인다 — 안 붙이면 지나간 1월로 읽힌다.
+  eq('인상 표기: 해 넘김',        fmtRentApplyFrom('2027-01', '2026-12'), '2027년 1월분부터')
+  eq('인상 표기: 같은 해면 무접두', fmtRentApplyFrom('2027-03', '2027-01'), '3월분부터')
+  // 날짜 문법(슬래시·일)과 섞이지 않아야 상태 날짜로 오독되지 않는다.
+  eq('인상 표기: 슬래시 없음',     fmtRentApplyFrom('2026-09', '2026-08').includes('/'), false)
+  // 그 달 하나가 아니라 그 달 이후 전부다 — '부터'를 떼면 과소 진술이 된다.
+  eq('인상 표기: 부터 유지',       fmtRentApplyFrom('2026-09', '2026-08').endsWith('부터'), true)
+  // 홈 타일은 폭 때문에 '분'·'부터'를 못 쓴다(lib/fmtMoney 주석의 실측). 두 문장이 섞이지 않게 잠근다.
+  eq('인상 표기: 타일과 다른 문장', fmtRentApplyFrom('2026-09', '2026-08') === fmtOfferRentAhead('2026-09', 360_000), false)
 }
 
 // ── availableFromLabel ── 입주 가능 짧은 라벨. 홈 타일·호실 카드 칩·고객 상세가 같은 문자열을 쓴다.
