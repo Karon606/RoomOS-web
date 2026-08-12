@@ -39,6 +39,22 @@ export function kstDaysUntil(ymd: string, today: string = kstYmdStr()): number {
   return Math.round((target - base) / 86400000)
 }
 
+// @db.Date 칸에 넣을 'YYYY-MM-DD' → **UTC 자정** Date. 날짜만 뜻하는 값의 저장 정본이다.
+//
+// 왜 필요한가 — `new Date(`${ymd}T00:00:00`)` 은 오프셋이 없어 **실행 환경의 타임존으로** 읽힌다.
+// Vercel(UTC)에서는 UTC 자정이라 맞지만, KST 기기에서 같은 코드를 돌리면 전날 15:00Z 가 되고
+// @db.Date 는 UTC 날짜 부분을 잘라 저장하므로 **하루 앞선 날짜가 박힌다**. 프로덕션에서만 맞는
+// 코드라 눈에 안 띄는 것이 이 결함의 성질이다(2026-08-12 청소 날짜에서 발견).
+//
+// 읽는 쪽과도 짝이 맞는다 — lib/fmtDate 는 +9h 시프트 후 UTC 게터를 쓰는데, UTC 자정 값은
+// 그 시프트로 날짜가 안 바뀐다(fmtDate 주석의 '@db.Date 자정 저장 값은 날짜 불변').
+//
+// 형식이 어긋나면 Invalid Date 를 그대로 돌려준다 — 부르는 쪽이 이미 Number.isNaN 으로
+// 거르고 있고, 여기서 null 로 바꾸면 그 검사가 조용히 통과해 버린다.
+export function ymdToDbDate(ymd: string): Date {
+  return new Date(`${ymd.slice(0, 10)}T00:00:00.000Z`)
+}
+
 // ── 시각까지 있는 일시(날짜 + HH:mm) ────────────────────────────
 // 날짜만 다루는 위 함수들과 달리 '몇 시 몇 분'이 함께 있는 값이다.
 // 폼은 오프셋 없는 "2026-08-05T14:46"(= 사용자가 본 KST)을 보내는데, 서버(UTC)의

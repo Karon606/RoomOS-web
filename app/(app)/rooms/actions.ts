@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
-import { kstYmd, kstYmdStr } from '@/lib/kstDate'
+import { kstYmd, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -1051,7 +1051,7 @@ export async function savePrevOwnerSettle(
       targetMonth,
       expectedAmount: lease.rentAmount,
       actualAmount:   lease.rentAmount,
-      payDate:        new Date(`${targetMonth}-01T00:00:00`),
+      payDate:        ymdToDbDate(`${targetMonth}-01`),
       payMethod:      '양도인 정산',
       memo:           '[양도인 정산]',
       isPrevOwner:    true,

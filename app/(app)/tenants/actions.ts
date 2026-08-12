@@ -19,7 +19,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
-import { kstYmdStr, kstDateTimeToUtc } from '@/lib/kstDate'
+import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { loadWishMatch, WISH_LEAD_STATUSES, type WishLeaseMatch } from '@/lib/wishMatch'
 
@@ -128,8 +128,9 @@ async function ensureCheckoutCleaning(propertyId: string, roomId: string | null,
     if (open) return
     await prisma.roomCleaning.create({
       // scheduledDate 는 @db.Date 다. 날 new Date() 를 넣으면 서버(UTC)가 KST 오전 9시 전에는
-      // 어제로 잘라 저장해 예정일이 하루 앞선다. 다른 쓰기들과 같은 KST 자정 관행으로 맞춘다.
-      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: new Date(`${kstYmdStr()}T00:00:00`) },
+      // 어제로 잘라 저장해 예정일이 하루 앞선다. 날짜 저장 정본(ymdToDbDate)으로 UTC 자정을 박는다
+      // — 종전의 `T00:00:00` 은 오프셋이 없어 KST 기기에서 돌면 도리어 하루 앞섰다.
+      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: ymdToDbDate(kstYmdStr()) },
     })
   } catch { /* 청소 이력은 퇴실을 막지 않는다 — 실패해도 퇴실 처리는 그대로 끝난다 */ }
 }

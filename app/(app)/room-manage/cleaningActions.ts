@@ -22,6 +22,7 @@ import {
 } from './cleaningConstants'
 import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
+import { ymdToDbDate } from '@/lib/kstDate'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -149,7 +150,7 @@ export async function createCleaning(input: {
         propertyId, roomId: input.roomId,
         leaseTermId: input.leaseTermId ?? null,
         reason: input.reason,
-        scheduledDate: input.scheduledDate ? new Date(`${input.scheduledDate}T00:00:00`) : null,
+        scheduledDate: input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null,
         memo: input.memo?.trim() || null,
       },
       select: { id: true },
@@ -198,7 +199,7 @@ export async function completeCleaning(input: {
       },
     })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    const doneDate = new Date(`${input.doneDate}T00:00:00`)
+    const doneDate = ymdToDbDate(input.doneDate)
     const cost = Math.max(0, Math.round(input.cost ?? 0))
     // 퇴실 청소가 아니면 부담 표식을 무시한다. 비용 0(직접 청소)도 부담할 것이 없다.
     const fromFund = !!input.fromCleaningFund && cost > 0 && cur.reason === 'CHECKOUT'
@@ -327,7 +328,7 @@ export async function rescheduleCleaning(input: { id: string; date: string }): P
       select: { id: true, status: true, expenseId: true },
     })
     if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
-    const date = new Date(`${input.date}T00:00:00`)
+    const date = ymdToDbDate(input.date)
     if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
 
     if (cur.status !== 'DONE') {
