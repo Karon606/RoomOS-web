@@ -161,7 +161,10 @@ type BandTone = 'none' | 'paid' | 'await' | 'unpaid' | 'overdue'
 // 농도는 §03·§04 정본 그대로 쓴다. 알파를 임의로 깎으면 색이 약해져 '눈에 띄게'라는 주문과 어긋나고,
 // 어차피 대비는 틴트가 아니라 글자 쪽에서 벌 수 있다(아래 CELL_SUB 가 밴드 잉크를 물려받는 이유).
 const BAND_BG: Record<BandTone, string> = {
-  none:    'var(--cream-soft)',        // 공실 — 사람이 없으니 색도 없다
+  // 공실 — 사람이 없으니 색도 없다. 표면색은 상태 틴트가 아니라 카드 베이스라 --card-vacant-bg
+  // ('비거주·공실')를 쓴다. 값은 --cream-soft 를 그대로 물어 라이트 #F5EDE0 · 다크 #261C14 로
+  // 종전과 픽셀이 같고, 이 밴드가 어느 개념의 표면인지가 토큰 이름에 남는다(§03).
+  none:    'var(--card-vacant-bg)',
   paid:    'var(--status-paid-bg)',    // §03 PAID 올리브
   await:   'var(--status-await-bg)',   // §03 AWAIT 인디고 — 납부 예정·입실 예약 공용
   unpaid:  'var(--danger-bg)',         // 붉은 계열 옅은 단계(§04 danger)
