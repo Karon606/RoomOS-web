@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
-import { canTransition, transitionDeniedMessage } from '@/lib/leaseTransitions'
+import { canTransition, transitionDeniedMessage, transitionStatusLabel } from '@/lib/leaseTransitions'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { depositComposition, splitWithheldDeposit, type DepositComposition } from '@/lib/depositComposition'
@@ -47,6 +47,7 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
+import { roomAssignmentDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -325,11 +326,6 @@ function nonResidentOccupiedRoom(room: { nonResidentVacant: boolean } | null, ha
   return !!room && isVacancyExcluded(room, hasNonResident)
 }
 
-// 위 판정에 걸렸을 때의 안내. 계약 쪽 필드로는 풀 수 없는 상태라(비거주 계약에 퇴실 예정일을 넣는 것은
-// 뜻이 안 맞는다) 유일한 출구인 방 설정을 지목한다. 문구는 호실 관리 편집의 체크박스 라벨 그대로다.
-const NON_RESIDENT_ROOM_ERROR =
-  '해당 호실은 비거주자(명의)가 쓰는 방으로 설정돼 있습니다. 호실 관리 편집에서 \'비거주 점유 시 공실 집계에서 제외\'를 해제한 뒤 배정해 주세요.'
-
 // 호실 목록 (입주자 등록/수정 시 선택용)
 export async function getRoomsForSelect() {
   const { propertyId } = await getPropertyId()
@@ -463,36 +459,15 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     },
   }) : null
   const existingLeases = roomForGuard?.leaseTerms ?? []
-  const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
   const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
-  const nonResidentOccupied = nonResidentOccupiedRoom(roomForGuard, hasNonResident)
-  // 예약도 '언제 나가는지 아는가'로 나눈다 — 퇴실 예정일 없는 예약만 방을 무기한 잡은 것이다.
-  // 날짜가 잡힌 예약은 화면(roomPickability)이 고를 수 있게 열어 주므로, 서버도 같은 선이어야 한다.
-  const hasIndefiniteReservation = existingLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
-  const occupantLeases    = existingLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
-  // 점유자가 언제 나가는지(퇴실 예정일)가 잡혀 있으면 그 방에 다음 사람을 예약해 둘 수 있다.
-  // 겹침(같은 날 포함) 여부는 폼이 확인창으로 묻고, 여기서는 무기한 점유와 무기한 예약만 막는다.
-  const roomOpensUp = occupantLeases.length > 0 && occupantLeases.every(l => !!l.expectedMoveOut)
-  const incomingIsResident = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
-  const incomingIsNonResident = status === 'NON_RESIDENT'
-  const occupiedIndefinitely = occupantLeases.length > 0 && !roomOpensUp
-
-  // 비거주 점유 방(창고·사무실) — 새 명의를 얹는 것 말고는 어느 단계도 받지 않는다.
-  if (!incomingIsNonResident && nonResidentOccupied) return { ok: false, error: NON_RESIDENT_ROOM_ERROR }
-  if (status === 'RESERVED') {
-    if (hasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
-    if (occupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
-  } else if (incomingIsResident && hasActiveResident) {
-    // 입실·퇴실 예정으로 들어오는 건은 종전 그대로 — 지금 비어 있는 방만 받는다.
-    return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
-  }
-  if (incomingIsNonResident && hasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
-  // 문의·투어 단계 — 종전엔 계약이 하나라도 있으면 막았는데 정작 예약 확정은 통과하던 잠복 모순이었다.
-  // 퇴실 예정일이 잡힌 방은 문의 단계에서도 희망 호실로 적을 수 있게 하고, 무기한 점유·예약된 방은 그대로 막는다.
-  // 비거주는 위 정본 판정 한 줄이 대신 본다 — 여기서 또 hasNonResident 를 보면 판정이 두 벌이 된다.
-  if (!incomingIsResident && !incomingIsNonResident) {
-    if (hasIndefiniteReservation || occupiedIndefinitely) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
-  }
+  // 점유 가드는 lib/roomAssignment 한 벌이다 — 종전에는 여기와 updateTenant 에 같은 판정이 두 벌 적혀
+  // 있었고 엑셀 가져오기에는 0 개였다(2026-08-12 봉합). 문구·순서는 그 정본이 갖는다.
+  const denial = roomAssignmentDenial({
+    incomingStatus: status,
+    nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard, hasNonResident),
+    otherLeases: existingLeases,
+  })
+  if (denial) return { ok: false, error: denial }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -772,27 +747,14 @@ export async function updateTenant(formData: FormData): Promise<
       },
     })
     const otherLeases = roomForGuard?.leaseTerms ?? []
-    const otherOccupants = otherLeases.filter(l => ['ACTIVE', 'CHECKOUT_PENDING'].includes(l.status))
-    const otherOccupiedIndefinitely = otherOccupants.length > 0 && !otherOccupants.every(l => !!l.expectedMoveOut)
-    // addTenant 와 같은 세분 — 퇴실 예정일 없는 예약만 무기한 점유로 본다.
-    const otherHasIndefiniteReservation = otherLeases.some(l => l.status === 'RESERVED' && !l.expectedMoveOut)
-    const otherHasNonResident = otherLeases.some(l => l.status === 'NON_RESIDENT')
-    // 비거주 점유 방(창고·사무실) — addTenant 와 같은 한 줄. 본인 계약은 위 where 에서 이미 빠져 있어
+    // addTenant 와 같은 한 벌(lib/roomAssignment 정본). 본인 계약은 위 where 에서 이미 빠져 있어
     // 415호 명의자가 그 방의 거주자로 올라서는 정당한 전환은 걸리지 않는다.
-    const nonResidentOccupied = nonResidentOccupiedRoom(roomForGuard, otherHasNonResident)
-    if (status !== 'NON_RESIDENT' && nonResidentOccupied) return { ok: false, error: NON_RESIDENT_ROOM_ERROR }
-    if (status === 'RESERVED') {
-      if (otherHasIndefiniteReservation) return { ok: false, error: '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.' }
-      if (otherOccupiedIndefinitely) return { ok: false, error: '해당 호실에 거주 중인 입주자가 있습니다. 퇴실 예정일을 먼저 입력해 주세요.' }
-    } else if (RESIDENT_STATUSES.includes(status)) {
-      if (otherLeases.some(l => RESIDENT_STATUSES.includes(l.status))) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
-    } else if (status === 'NON_RESIDENT') {
-      if (otherHasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
-    } else if (otherHasIndefiniteReservation || otherOccupiedIndefinitely) {
-      // 문의·투어 단계 — 예약 단계와 같은 선(퇴실 예정일이 잡힌 방은 희망 호실로 허용).
-      // 비거주는 위 정본 판정 한 줄이 대신 본다(addTenant 와 같은 결).
-      return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
-    }
+    const denial = roomAssignmentDenial({
+      incomingStatus: status,
+      nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard, otherLeases.some(l => l.status === 'NON_RESIDENT')),
+      otherLeases,
+    })
+    if (denial) return { ok: false, error: denial }
   }
 
   // 퇴실 일할 정산 일관 유지 — 편집 폼 경로도 전환 버튼(applyStatusTransition)과 동일 정책.
@@ -3597,7 +3559,7 @@ export async function batchUpdateTenants(
     // 퇴실 예정일(YYYY-MM-DD) — status 가 CHECKOUT_PENDING 일 때만 유효(신고 204522b7). 빈 값 = 미변경.
     expectedMoveOut?: string
   },
-): Promise<{ ok: true; tenantCount: number; leaseCount: number; undo: BatchTenantsUndo } | { ok: false; error: string }> {
+): Promise<{ ok: true; tenantCount: number; leaseCount: number; skipped: { reason: string; count: number }[]; undo: BatchTenantsUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -3619,6 +3581,10 @@ export async function batchUpdateTenants(
 
     let tenantCount = 0
     let leaseCount = 0
+
+    // 사유별 제외 건수 — 일괄 편집 정본 문법(finance batchUpdateExpenses 와 같은 모양·같은 토스트).
+    const skippedCounts: Record<string, number> = {}
+    const bump = (reason: string) => { skippedCounts[reason] = (skippedCounts[reason] ?? 0) + 1 }
 
     // 되돌리기 스냅샷 — 덮어쓰기 전 원값(감사 백로그 2026-07-10, 일괄 수납 undo와 동일 패턴)
     const undo: BatchTenantsUndo = { tenants: [], leases: [] }
@@ -3642,22 +3608,38 @@ export async function batchUpdateTenants(
           tenantId: { in: tenantIds },
           status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
         },
-        select: { id: true, depositAmount: true, dueDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true },
+        // rentAmount·moveInDate — 아래 청구 상태 백스톱의 입력(단건 경로 applyStatusTransition 과 같은 판정).
+        select: { id: true, depositAmount: true, dueDay: true, status: true, expectedMoveOut: true, autoCheckoutAt: true, rentAmount: true, moveInDate: true },
       })
-      undo.leases = before.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(leaseFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
-      const r = await prisma.leaseTerm.updateMany({
-        where: {
-          tenantId: { in: tenantIds },
-          status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
-        },
-        data: leaseFields,
+
+      // 상태를 바꾸는 일괄은 단건 경로와 같은 선을 지킨다. 종전에는 전이 검증이 통째로 없어
+      // 퇴실 완료에서 투어 대기로, 아무 계약이나 비거주로 한 번에 뒤집을 수 있었다 — 경로가 넷이라
+      // 경로마다 규칙이 갈리던 그 문제(lib/leaseTransitions 머리말)가 일괄에만 남아 있었다.
+      // 막힌 건은 통째로 실패시키지 않고 건너뛴 뒤 사유를 세어 돌려준다(일괄 편집 정본 문법).
+      const nextStatus = typeof leaseFields.status === 'string' ? leaseFields.status : null
+      const eligible = before.filter(b => {
+        if (!nextStatus) return true
+        if (!canTransition(b.status, nextStatus)) { bump(`${transitionStatusLabel(b.status)}에서 바꿀 수 없음`); return false }
+        // 백스톱 — 청구 발생 상태로 올리는데 입주일이 없으면 unpaid 가 인수월부터 미납을 오탐한다
+        // (addTenant·updateTenant·applyStatusTransition 이 이미 같은 문장으로 막는 자리).
+        if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(nextStatus) && b.rentAmount > 0 && !b.moveInDate) {
+          bump('입주일 없음'); return false
+        }
+        return true
       })
-      leaseCount = r.count
+
+      undo.leases = eligible.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(leaseFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
+      if (eligible.length > 0) {
+        const r = await prisma.leaseTerm.updateMany({
+          where: { id: { in: eligible.map(b => b.id) } },
+          data: leaseFields,
+        })
+        leaseCount = r.count
+      }
 
       // 거주 구간 이력 — 일괄 전환이 종료 상태를 넘나들 때만 마감·재개방(호실은 안 바뀜, 추가 write).
-      if (typeof leaseFields.status === 'string') {
-        const nextStatus = leaseFields.status as string
-        for (const b of before) {
+      if (nextStatus) {
+        for (const b of eligible) {
           await syncRoomStayOnSave(prisma, b.id, {
             prevRoomId: null, nextRoomId: null,
             prevStatus: b.status, nextStatus,
@@ -3666,10 +3648,13 @@ export async function batchUpdateTenants(
       }
     }
 
-    if (tenantCount === 0 && leaseCount === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
+    const skipped = Object.entries(skippedCounts).map(([reason, count]) => ({ reason, count }))
+    // 전부 걸러진 저장은 '변경할 항목이 없습니다'가 아니다 — 왜 안 바뀌었는지가 답이라
+    // 사유를 실어 정상 응답으로 돌려주고 토스트가 그것을 말한다(제외가 0건일 때만 종전 문구).
+    if (tenantCount === 0 && leaseCount === 0 && skipped.length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
     revalidatePath('/tenants')
     revalidatePath('/rooms')
-    return { ok: true, tenantCount, leaseCount, undo }
+    return { ok: true, tenantCount, leaseCount, skipped, undo }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

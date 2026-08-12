@@ -4446,7 +4446,9 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     if (!res.ok) { setError(res.error); return }
     {
       const u = res.undo
-      pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`, {
+      // 건너뛴 건은 사유별로 꼬리에 붙인다 — 지출 일괄 편집과 같은 문법(FinanceClient skipMsg).
+      const skipMsg = res.skipped.length ? ' · ' + res.skipped.map(s => `${s.reason} ${s.count}건 제외`).join(', ') : ''
+      pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료${skipMsg}`, {
         action: { label: '적용취소', run: () => { void undoBatchUpdateTenants(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다'); else pushToast('error', r.error) }) } },
       })
     }

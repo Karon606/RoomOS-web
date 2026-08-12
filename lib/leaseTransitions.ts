@@ -41,6 +41,14 @@ export function canTransition(from: string, to: string): boolean {
   return list.includes(to as LeaseStatusName)
 }
 
+/**
+ * 상태 이름의 전이표 어휘 — 거부 사유를 **목록으로 셀 때** 쓴다(일괄 편집이 사유별 건수를 묶는 자리).
+ * 아래 한 문장을 그대로 세면 토스트가 넘치고, 호출부가 제 이름표를 만들면 같은 전이가 화면마다 달리 불린다.
+ */
+export function transitionStatusLabel(status: string): string {
+  return LABEL[status as LeaseStatusName] ?? status
+}
+
 /** 거부 사유 문구 — 운영자가 무엇을 해야 하는지까지 말한다. */
 export function transitionDeniedMessage(from: string, to: string): string {
   const f = LABEL[from as LeaseStatusName] ?? from
