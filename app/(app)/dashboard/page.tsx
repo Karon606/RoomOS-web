@@ -523,12 +523,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 이 값은 page 후반(loop 뒤)에 totalExpense 와 projectedRecurringExpense 가 준비된 후 계산.
   let expectedExpense = 0  // placeholder, 아래에서 다시 채움
 
-  // 완납 여부 판단 — viewMonth(targetMonth) 기준 그 월의 납부 이력으로 평가
-  const paymentByLeaseForStatus = allMonthPayments.reduce((acc, p) => {
-    acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
-    return acc
-  }, {} as Record<string, number>)
-
   // 인수 기준일 이전 월 or 인수월 내 기준일 이전 납부일 → 양도인 몫으로 완납 처리 (viewMonth 기준)
   const cutoffMonthStr = acquisitionDate
     ? `${acquisitionDate.getFullYear()}-${String(acquisitionDate.getMonth() + 1).padStart(2, '0')}`
@@ -565,7 +559,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const prevOwnerLeaseIds = new Set<string>()
   if (cutoffMonthStr && targetMonth < cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
-      paymentByLeaseForStatus[l.id] = l.rentAmount
       prevOwnerLeaseIds.add(l.id)
     }
   } else if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
@@ -580,7 +573,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dayNum = getOriginalDueDay(l)
       }
       if (dayNum != null && dayNum < cutoffDay) {
-        paymentByLeaseForStatus[l.id] = l.rentAmount
         prevOwnerLeaseIds.add(l.id)
       }
     }
@@ -741,7 +733,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (isCheckoutNoBillingMonthFor(l, l.expectedMoveOut, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
     return billForLeaseMonth(l, targetMonth, lockedExpectedByLeaseMonth[l.id]?.get(targetMonth) ?? null)
   }
-  const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
+  // 수납 현황 도넛의 완납 건수는 아래 미납 루프 뒤에서 배타 3분류로 센다(2026-08-12 회계 패널).
+  // 여기서 세던 그 달 축 완납(billableLeases + billThisMonth)은 나머지 두 항이 누적 축이라
+  // 셋이 아무 모집단도 분할하지 못했다 — 사정은 그 자리 주석에 적었다.
 
   // ── 단기 입주·중도퇴실 lease 의 매출 추가 인식 (lib/leaseStatus.ts 정책)
   // 일할 정산되는 짧은 거주를 과다 인식하지 않도록 rentAmount 전체가 아닌
@@ -851,6 +845,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const firstUnpaidByLease: Record<string, string | null> = {}
   const overdueByLease: Record<string, number> = {}
   const upcomingByLease: Record<string, number> = {}
+  // 수납 현황 도넛의 모집단 — 이 루프가 실제로 판정한 계약. 아래 firstMonth 게이트에 걸려
+  // 건너뛴 계약(조회월에는 아직 내 장부에 없던 계약)은 셋 중 어디에도 서지 않는다.
+  const paymentStatusPool = new Set<string>()
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
     const leaseStartMonth = lMoveIn
@@ -929,6 +926,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
     overdueByLease[l.id] = leaseOverdue
     upcomingByLease[l.id] = leaseUpcoming
+    paymentStatusPool.add(l.id)
   }
 
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
@@ -1003,6 +1001,33 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const upcomingCount = unpaidCandidates.filter(l => l.upcomingPortion > 0).length
   // 예상 매출 진행바용 — 도래·미도래 합산한 총 미수령 건수
   const pendingCount = unpaidCandidates.length
+  // ── 수납 현황 도넛 — 한 모집단을 한 축으로 배타 분할 (회계 패널 2026-08-12) ──
+  //
+  //   미납     도래·미회수가 하나라도 있다 (이월 미수 우선 — 수납 관리 isPaid 와 같은 규칙)
+  //   수납예정 도래분은 없고 미도래 미회수만 있다
+  //   완납     나머지
+  //
+  // 종전에는 완납만 '그 달 축'(billableLeases 중 그 달 귀속 수납 >= 그 달 청구)이고 나머지 둘은
+  // '누적 축'이라, 세 항이 아무 모집단도 분할하지 않았다. 세 가지가 한꺼번에 어긋나 있었다.
+  //   ① 완납이면서 이월 미수가 있는 계약은 완납과 미납 양쪽에 서서 분모에 두 번 잡힌다(잠복).
+  //   ② 그 달 청구가 0인 계약은 0 >= 0 이라 완납으로 세어진다(2026-08 2건). 낼 것이 없던 달이다.
+  //   ③ 그 달 귀속 수납이 모자란데 누적으로는 완납인 계약은 어디에도 안 서서 도넛에서 증발한다.
+  //      2026-04 3건이 그랬고, 정체는 인수월 양도인 자동 처리분이었다 — billThisMonth 는 그 규칙을
+  //      모르고 현재 rentAmount 로 47만·35만을 청구로 세웠다.
+  //
+  // 위 루프가 만든 값만 쓴다. 그 루프는 인수월 양도인 자동 처리·양도인 귀속월·무청구 퇴실월·
+  // 퇴실월 초과·단기 비청구월 게이트를 이미 전부 물고 있어, 게이트를 여기서 다시 쓰면 사본이 갈린다.
+  // 그래서 세 항의 합은 정의상 모집단(paymentStatusPool)과 같다.
+  const paymentPool = unpaidLeasesRaw.filter(l => paymentStatusPool.has(l.id))
+  const awaitingCount = paymentPool.filter(l =>
+    (overdueByLease[l.id] ?? 0) === 0 && (upcomingByLease[l.id] ?? 0) > 0).length
+  const paidCount = paymentPool.length - unpaidCount - awaitingCount
+  // 수납률은 서버가 한 번만 나눈다 — 화면·AI 프롬프트 두 곳이 각자 나누던 시절엔 분모가 셋이었고
+  // (완납/(완납+미납), 완납/(완납+예정+미납)) 2026-08 에 같은 화면이 100% 와 61% 를 동시에 말했다.
+  const paymentRate = paymentPool.length > 0
+    ? Math.round((paidCount / paymentPool.length) * 100)
+    : 0
+
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
@@ -1655,6 +1680,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     paidCount,
     unpaidCount,
     upcomingCount,
+    // 도넛 전용 배타 항 — upcomingCount(이월 미수가 함께 있는 계약도 세는 누적 축)와 다른 값이다.
+    // 그쪽은 upcomingAmount 와 짝이라 AI 프롬프트 '납부 예정 N만원 (M건)' 이 계속 쓴다.
+    awaitingCount,
+    paymentRate,
     pendingCount,
     pendingRevenue,
     unpaidAmount,

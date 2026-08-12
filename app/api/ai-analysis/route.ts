@@ -19,6 +19,7 @@ export async function POST(req: Request) {
       totalRevenue: number; paidRevenue: number
       totalExpense: number; netProfit: number; totalDeposit: number
       paidCount: number; unpaidCount: number; upcomingCount?: number
+      awaitingCount?: number; paymentRate?: number
       unpaidAmount: number; overdueAmount?: number; upcomingAmount?: number
       totalRooms: number; occupiedRooms: number; vacantRooms: number
       statusCounts: { active: number; reserved: number; checkout: number }
@@ -34,9 +35,12 @@ export async function POST(req: Request) {
   const upcomingAmount = data.upcomingAmount ?? 0
   const upcomingCount = data.upcomingCount ?? 0
 
-  const paymentRate = (data.paidCount + data.unpaidCount) > 0
-    ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
-    : 0
+  // 수납률은 서버 정본(dashboard/page.tsx paymentRate)이 보낸 값만 쓴다. 여기서 다시 나누던 시절엔
+  // 분모에 수납예정이 빠져 화면 도넛이 61% 인 달에 프롬프트가 100% 라고 적었다(2026-08).
+  // 안 실려 오면 0 으로 때우지 않고 그 줄을 통째로 안 적는다 — 0% 는 없는 값이 아니라 틀린 값이다.
+  const paymentLine = data.paymentRate == null
+    ? `완납 ${data.paidCount}건, 미납 ${data.unpaidCount}건`
+    : `수납률 ${data.paymentRate}% (완납 ${data.paidCount}건, 수납예정 ${data.awaitingCount ?? 0}건, 미납 ${data.unpaidCount}건)`
   const occupancyRate = data.totalRooms > 0
     ? Math.round((data.occupiedRooms / data.totalRooms) * 100)
     : 0
@@ -63,7 +67,7 @@ export async function POST(req: Request) {
 분석 시 두 항목을 절대 합쳐 부르지 말고, '회수 지연'은 누적 미납만을 의미하도록 작성하세요.`,
     prompt: `${targetMonth} 운영 데이터 (발생주의 기준):
 매출 ${(data.totalRevenue / 10000).toFixed(0)}만원, 지출 ${(data.totalExpense / 10000).toFixed(0)}만원, 순이익 ${(data.netProfit / 10000).toFixed(0)}만원
-수납률 ${paymentRate}% (완납 ${data.paidCount}건, 미납 ${data.unpaidCount}건)
+${paymentLine}
 누적 미납(회수 지연): ${(overdueAmount / 10000).toFixed(0)}만원 (${data.unpaidCount}건)
 납부 예정(미도래·정상): ${(upcomingAmount / 10000).toFixed(0)}만원 (${upcomingCount}건)
 입주율 ${occupancyRate}% (${data.occupiedRooms}/${data.totalRooms}실)

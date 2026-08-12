@@ -209,9 +209,9 @@ export async function analyzeDashboardWithGemini(
   if (!ai.ok) return `[오류] ${ai.error}`
   const apiKey = ai.apiKey
 
-  const paymentRate = (data.paidCount + data.unpaidCount) > 0
-    ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
-    : 0
+  // 수납률은 서버 정본(page.tsx paymentRate)을 그대로 읽는다. 여기서 다시 나누던 시절엔
+  // 분모에 수납예정이 빠져 있어, 화면 도넛이 61% 인 달에 프롬프트가 100% 라고 적었다(2026-08).
+  const paymentRate = data.paymentRate
   const occupancyRate = data.totalRooms > 0
     ? Math.round((data.occupiedRooms / data.totalRooms) * 100)
     : 0
@@ -239,7 +239,7 @@ export async function analyzeDashboardWithGemini(
 - 보유 보증금: ${(data.totalDeposit / 10000).toFixed(0)}만원
 
 ■ 수납 현황
-- 완납: ${data.paidCount}건 / 미납: ${data.unpaidCount}건 (수납률 ${paymentRate}%)
+- 완납: ${data.paidCount}건 / 수납예정: ${data.awaitingCount}건 / 미납: ${data.unpaidCount}건 (수납률 ${paymentRate}%)
 
 ■ 지출 카테고리
 ${categoryText}

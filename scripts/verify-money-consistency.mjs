@@ -1186,6 +1186,62 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 18-2. 홈 수납 현황 도넛 — 한 모집단을 한 축으로 배타 분할 (2026-08-12 회계 패널).
+//
+//   종전에는 완납만 '그 달 축'(billableLeases 중 그 달 귀속 수납 >= 그 달 청구)이고 수납예정·미납은
+//   '누적 축'이었다. 셋이 아무 모집단도 분할하지 않아 세 가지가 한꺼번에 어긋났다.
+//     완납이면서 이월 미수가 있는 계약이 분모에 두 번 서고(잠복), 그 달 청구가 0인 계약이
+//     0 >= 0 이라 완납으로 세어지고(2026-08 2건), 그 달 귀속 수납이 모자란데 누적으로는 완납인
+//     계약은 어디에도 안 서서 도넛에서 증발했다(2026-04 3건, 정체는 인수월 양도인 자동 처리분).
+//
+//   데이터 대조로는 못 잡는다 — 세 건수는 화면 파생값이라 SQL 로 독립 재현할 대상이 없고,
+//   '건수가 안 맞는 것' 자체가 정상인 상태가 없다(규칙 10 주석과 같은 판단). 감시할 것은
+//   **코드가 다시 자기 축·자기 분모를 만드는 것**이다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  const dashActions = readFileSync('app/(app)/dashboard/actions.ts', 'utf8')
+  const aiRoute = readFileSync('app/api/ai-analysis/route.ts', 'utf8')
+
+  // (a) 모집단이 미납 루프에서 나온다 — 그 루프만이 인수월 양도인 자동 처리·양도인 귀속월·
+  //     무청구 퇴실월·퇴실월 초과·단기 비청구월 게이트를 전부 물고 있다.
+  if (!/const paymentStatusPool = new Set<string>\(\)/.test(dash) || !/paymentStatusPool\.add\(l\.id\)/.test(dash)) {
+    violations.push('[소스] 홈 수납 현황의 모집단(paymentStatusPool)이 미납 루프에서 나오지 않는다 — 청구 게이트 사본이 다시 갈린다')
+  }
+  // (b) 세 항이 배타다. 완납을 모집단에서 빼서 구하지 않으면 합이 모집단과 어긋날 수 있다.
+  if (!/const paidCount = paymentPool\.length - unpaidCount - awaitingCount/.test(dash)) {
+    violations.push('[소스] 홈 완납 건수가 모집단 빼기로 나오지 않는다 — 세 항이 다시 서로 다른 축을 갖는다')
+  }
+  if (!/const awaitingCount = paymentPool\.filter\(l =>\s*\n?\s*\(overdueByLease\[l\.id\] \?\? 0\) === 0 && \(upcomingByLease\[l\.id\] \?\? 0\) > 0\)\.length/.test(dash)) {
+    violations.push('[소스] 홈 수납예정 건수가 도래분 0 조건을 잃었다 — 이월 미수가 있는 계약이 미납과 수납예정 양쪽에 선다')
+  }
+  // (c) 종전의 그 달 축 완납이 되살아나지 않았는가.
+  if (/paymentByLeaseForStatus\[l\.id\] \?\? 0\) >= billThisMonth\(l\)/.test(dash)) {
+    violations.push('[소스] 홈 완납 건수가 그 달 축(billThisMonth)으로 되돌아갔다 — 나머지 두 항과 모집단이 갈린다')
+  }
+  // (d) 수납률 분모는 서버에 하나뿐이다. 화면·프롬프트가 각자 나누던 시절 같은 화면이 100% 와 61% 를
+  //     동시에 말했다(2026-08). 세 소비처가 전부 서버 값을 읽는지 본다.
+  if (!/const paymentRate = paymentPool\.length > 0/.test(dash)) {
+    violations.push('[소스] 홈 수납률 정본(paymentRate)이 서버에서 사라졌다 — 분모가 다시 화면마다 생긴다')
+  }
+  if (!/centerLabel=\{`\$\{data\.paymentRate\}%`\}/.test(dashClient)) {
+    violations.push('[소스] 홈 도넛 수납률이 서버 정본을 안 쓴다 — 화면이 자기 분모를 만든다')
+  }
+  for (const [name, src] of [['dashboard/actions AI 프롬프트', dashActions], ['api/ai-analysis 프롬프트', aiRoute]]) {
+    if (/\(data\.paidCount \+ data\.unpaidCount\)/.test(src)) {
+      violations.push(`[소스] ${name} 이 수납률을 자기 분모로 다시 나눈다 — 수납예정이 빠져 화면과 다른 비율을 적는다`)
+    }
+    if (!/data\.paymentRate/.test(src)) {
+      violations.push(`[소스] ${name} 이 서버 수납률(paymentRate)을 안 읽는다`)
+    }
+  }
+  // (e) 건수와 금액은 모집단이 다르다 — 건수에는 퇴실 계약이 없고 금액(paidRevenue)에는 그 달 귀속분이
+  //     들어 있다(2026-06 퇴실 귀속 381만·10건). 값을 맞추는 대신 라벨로 가르기로 했으므로 그 라벨을 잠근다.
+  if (!/건수 \(현 입주자\)/.test(dashClient)) {
+    violations.push('[소스] 홈 수납 현황 카드의 건수 모집단 한정어가 사라졌다 — 퇴실 귀속이 들어간 금액과 같은 모집단으로 읽힌다')
+  }
+}
+
 // 19. 청소비가 보증금 안의 몫인 영업장 — 이중 계상과 판정 정본 이탈 (2026-08-10, 운영자 승인 구조).
 //
 //   (a) 데이터. 포함형 영업장에서 현금으로 받은 보증금이 '계약 보증금 − 기수령 청소비'를 넘으면

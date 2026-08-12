@@ -70,6 +70,8 @@ export type DashboardData = {
   paidCount:         number
   unpaidCount:       number
   upcomingCount:     number
+  awaitingCount:     number
+  paymentRate:       number
   pendingCount:      number
   pendingRevenue:    number     // 수납 예정 = 예상매출 − 수납완료 (손익 정합용)
   unpaidAmount:      number
@@ -878,15 +880,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     color: chartColor(i),
   }))
   // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
+  // 세 항은 서버가 한 모집단을 배타 분할해 보낸 값이다(page.tsx paymentStatusPool). 여기서
+  // 다시 나누지 않는다 — 수납률 분모를 화면이 조립하던 시절엔 같은 화면이 두 비율을 말했다.
   const paymentSegments = [
     { value: data.paidCount,     color: CONCEPT_COLORS.paid },
-    { value: data.upcomingCount, color: CONCEPT_COLORS.await },
+    { value: data.awaitingCount, color: CONCEPT_COLORS.await },
     { value: data.unpaidCount,   color: CONCEPT_COLORS.unpaid },
   ]
-  const paymentTotal = data.paidCount + data.upcomingCount + data.unpaidCount
-  const paymentRate = paymentTotal > 0
-    ? Math.round((data.paidCount / paymentTotal) * 100)
-    : 0
 
   return (
     <div className="space-y-5">
@@ -1084,19 +1084,24 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>수납 현황</h3>
           <div className="flex items-center gap-5">
             <div className="shrink-0">
-              <DonutChart segments={paymentSegments} centerLabel={`${paymentRate}%`} centerSub="수납률" />
+              <DonutChart segments={paymentSegments} centerLabel={`${data.paymentRate}%`} centerSub="수납률" />
             </div>
             <div className="flex-1 space-y-3">
+              {/* 건수 3항의 모집단은 현 입주자(거주·비거주)다. 바로 아래 수납액에는 퇴실 계약의
+                  그 달 귀속분이 들어 있어 두 숫자가 같은 사람 집합이 아니다(2026-06 퇴실 귀속 381만·10건).
+                  한정어는 새 말이 아니라 KPI '누적 미납 (현 입주자)'·형제 카드 '미수 (현 입주자)'가
+                  이미 쓰는 그 말이고, 그 KPI 의 모집단이 여기 세 항과 같은 집합이다. */}
+              <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>건수 (현 입주자)</p>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.paid }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
                 <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.paid }}>{data.paidCount}건</span>
               </div>
-              {data.upcomingCount > 0 && (
+              {data.awaitingCount > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.await }} />
                   <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>수납예정</span>
-                  <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.await }}>{data.upcomingCount}건</span>
+                  <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.await }}>{data.awaitingCount}건</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
