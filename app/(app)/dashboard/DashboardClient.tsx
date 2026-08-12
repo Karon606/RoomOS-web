@@ -137,11 +137,12 @@ const CELL_MONEY = { fontSize: '0.65625rem', fontWeight: 600, lineHeight: 1.2 } 
 // --ink-3 을 박아 두던 시절엔 색 밴드 위에서 4.3~4.5 까지 떨어졌다. 틴트를 묽게 하는 대신 글자를
 // 밴드와 같은 잉크로 올려 대비를 벌고, 색은 배경 한 채널만 쓰게 둔다.
 const CELL_SUB   = { fontSize: '0.65625rem', fontWeight: 400, lineHeight: 1.2 } as const
-// 연체만 금액에 색이 붙는다 — §18 '연체 카드: 호실번호·금액 --tc' 의 금액 쪽.
-// 호실번호는 밴드 밖 공통 헤더라 한 사람 몫으로 칠할 수 없다(2인 방에서 남의 연체가 옆 사람에게 번진다).
-const CELL_MONEY_OVERDUE = { ...CELL_MONEY, fontWeight: 700, color: 'var(--overdue-fg)' } as const
-// 연체 밴드의 일정줄만 붉음을 물려받는다 — §18 '연체 카드'가 금액과 함께 상태를 한 목소리로 말하는 자리다.
-const CELL_SUB_OVERDUE = { ...CELL_SUB, color: 'var(--overdue-fg)' } as const
+// 연체 밴드의 금액·일정줄은 무게로만 강조한다. §18 '연체 카드: 호실번호·금액 --tc' 는 표면이 중립일 때
+// 글자가 상태를 지는 문법이고, 여기서는 표면이 이미 짙은 테라코타라 같은 붉음을 글자에 또 얹으면
+// 대비가 무너진다(라이트 3.00:1 · 다크 4.04:1, 둘 다 AA 미달). 붉음은 표면 몫으로 한 번만 쓰고
+// 글자는 다른 밴드와 같은 --ink-2 를 물려받는다. Bold 는 §03 OVERDUE 의 남은 절반이다.
+const CELL_MONEY_OVERDUE = { ...CELL_MONEY, fontWeight: 700 } as const
+const CELL_SUB_OVERDUE = { ...CELL_SUB, fontWeight: 600 } as const
 // 호실번호 헤더 띠 — 밴드 밖 상단 소블럭(§19 표 헤더 문법). 방 이름이 밴드에서 빠져야
 // 2인 방 두 밴드가 이름·금액·일정 3슬롯으로 완전 대칭이 된다.
 const CELL_HEAD  = { background: 'var(--canvas)', color: 'var(--ink)', fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.2 } as const
@@ -158,22 +159,22 @@ const NBSP = '\u00A0'
 // 색은 배경 틴트 한 채널만 쓴다. 글자는 중립 잉크로 두고, 연체 하나만 §18 정본대로 금액·상태어에 색을 얹는다.
 // 밴드마다 색 글자를 쓰던 시안 A 는 이름·금액·일정이 저마다 다른 색으로 말해 조잡했다.
 type BandTone = 'none' | 'paid' | 'await' | 'unpaid' | 'overdue'
-// 농도는 §03·§04 정본 그대로 쓴다. 알파를 임의로 깎으면 색이 약해져 '눈에 띄게'라는 주문과 어긋나고,
-// 어차피 대비는 틴트가 아니라 글자 쪽에서 벌 수 있다(아래 CELL_SUB 가 밴드 잉크를 물려받는 이유).
+// 농도는 밴드 표면 티어(--band-*, §03)에서 온다. 칩·배지용 --status-*-bg 를 그대로 쓰던 시절엔
+// 다섯 밴드가 라이트에서 최소 ΔE76 3.23 까지 붙어 "무슨 색인지 구분이 안 된다"는 신고를 받았다.
+// hue 는 정본 그대로고 알파 단계만 다르다 — 자세한 근거는 globals.css 밴드 표면 5종 주석에 있다.
 const BAND_BG: Record<BandTone, string> = {
-  // 공실 — 사람이 없으니 색도 없다. 표면색은 상태 틴트가 아니라 카드 베이스라 --card-vacant-bg
-  // ('비거주·공실')를 쓴다. 값은 --cream-soft 를 그대로 물어 라이트 #F5EDE0 · 다크 #261C14 로
-  // 종전과 픽셀이 같고, 이 밴드가 어느 개념의 표면인지가 토큰 이름에 남는다(§03).
-  none:    'var(--card-vacant-bg)',
-  paid:    'var(--status-paid-bg)',    // §03 PAID 올리브
-  await:   'var(--status-await-bg)',   // §03 AWAIT 인디고 — 납부 예정·입실 예약 공용
-  unpaid:  'var(--danger-bg)',         // 붉은 계열 옅은 단계(§04 danger)
-  overdue: 'var(--overdue-bg)',        // §03 OVERDUE — 같은 계열 짙은 단계
+  // 공실 — 사람이 없으니 색도 없다. 카드 베이스(--card-vacant-bg)를 그대로 물어
+  // 라이트 #F5EDE0 · 다크 #261C14, 이 티어에서 유일하게 값이 안 바뀐 밴드다.
+  none:    'var(--band-vacant-bg)',
+  paid:    'var(--band-paid-bg)',      // §03 PAID 올리브
+  await:   'var(--band-await-bg)',     // §03 AWAIT 인디고 — 납부 예정·입실 예약 공용
+  unpaid:  'var(--band-unpaid-bg)',    // 붉은 계열 옅은 단계(운영자 2026-08-11 "미납이나 연체는 붉은색")
+  overdue: 'var(--band-overdue-bg)',   // §03 OVERDUE — 같은 계열 짙은 단계
 }
 // 잉크는 밴드 다섯 종 모두 --ink-2 다. 종전엔 무색 밴드만 --ink-3 로 한 단계 물렸는데,
-// 타일 전체가 링크라 hover:opacity-75 가 얹히면 그 글자가 2.95:1 까지 떨어져 판독이 안 됐다
-// (--ink-2 는 같은 표면에서 평상 12.34 · hover 5.91). 위계는 색이 아니라 밴드 배경이 진다.
-// opacity 를 곱하지 않는다 — 틴트 위에서 대비가 무너진다.
+// 그 글자가 hover 에서 2.95:1 까지 떨어져 판독이 안 됐다. 위계는 색이 아니라 밴드 배경이 진다.
+// opacity 를 곱하지 않는다 — 틴트 위에서 대비가 무너진다(타일 hover 도 같은 이유로 .room-tile
+// 윤곽으로 바꿨다). 새 표면 위 최저 대비는 라이트 6.52 · 다크 7.25 로 전 조합 AA 통과다.
 const bandStyle = (tone: BandTone) => ({
   background: BAND_BG[tone],
   color:      'var(--ink-2)',
@@ -2059,7 +2060,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <div
                                   key={r.roomNo}
                                   onClick={() => entityModal.open({ kind: 'room', roomId: r.id })}
-                                  className="rounded-[8px] flex flex-col cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                                  className="room-tile rounded-[8px] flex flex-col cursor-pointer overflow-hidden"
                                 >
                                   {/* 호실번호는 밴드 밖 공통 헤더 — 방 이름은 사람 것이 아니라 타일 것이다 */}
                                   <div className="truncate w-full text-center tnum px-1 py-[3px]" style={CELL_HEAD}>{fmtRoomNo(r.roomNo)}</div>
@@ -2168,7 +2169,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <div
                               key={n.tenantId}
                               onClick={() => entityModal.open({ kind: 'tenant', tenantId: n.tenantId })}
-                              className="rounded-[8px] flex flex-col cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                              className="room-tile rounded-[8px] flex flex-col cursor-pointer overflow-hidden"
                             >
                               <div className="truncate w-full text-center tnum px-1 py-[3px]" style={CELL_HEAD}>{fmtRoomNo(n.roomNo)}</div>
                               <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle(tone)}>

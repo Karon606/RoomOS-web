@@ -93,6 +93,17 @@
   --card-vacant-bd:   var(--warm-border);
   --card-neutral-bg:  var(--cream);           /* 수납·재고 등 일반 데이터 카드 */
   --card-neutral-bd:  var(--warm-border);
+  /* 밴드 표면 5종 — 홈 방 현황·비거주자 현황 타일(§03). 카드 베이스와 같은 축이고 상태만 5단계로 늘렸다.
+     칩·배지용 --status-*-bg(.08~.14)를 여기에 그대로 끌어 쓰던 시절엔 다섯 밴드가 서로 갈리지 않았다
+     — 그 티어는 옆에 선 글자색이 뜻을 지고 틴트는 거들기만 하는 자리라 알파가 낮다. 46타일 격자에서는
+     표면 하나가 상태를 혼자 말하므로 라이트 최소 ΔE76 가 3.23(완납 대 공실)까지 내려갔다.
+     hue 는 §03·§04 정본 그대로 두고 알파 단계만 올렸다(임의 hex 없음). 값은 전 쌍 ΔE76 12 이상
+     (완납-예정·완납-공실·예정-공실·미납-연체는 15 이상)을 만족하는 최소 농도다 — 한 칸 낮추면 깨진다. */
+  --band-paid-bg:     rgba(85,108,58,.36);    /* PAID 올리브 */
+  --band-await-bg:    rgba(30,64,175,.16);    /* AWAIT 인디고 — 납부 예정·입실 예약 공용 */
+  --band-unpaid-bg:   rgba(160,60,46,.22);    /* UNPAID 테라코타 옅은 단계 */
+  --band-overdue-bg:  rgba(160,60,46,.44);    /* OVERDUE 같은 계열 짙은 단계 */
+  --band-vacant-bg:   var(--card-vacant-bg);  /* 공실·비거주·입주 가능 — 무색(카드 베이스 그대로) */
   /* 뱃지 — §14.4 정본 별칭 (paid=success·await=info·unpaid=warning·overdue=overdue-solid) */
   --badge-paid-bg:    var(--success-bg);      /* 완납·정상 */
   --badge-paid-fg:    var(--success-fg);
@@ -187,7 +198,9 @@
   /* Status — v1.2 명시 토큰 */
   --success:      var(--success-fg);        /* #4E6834 — §14.4 정본 직접 참조(순환 방지) */
   --overdue:      var(--overdue-fg);        /* #A03C2E */
-  --overdue-bg:   rgba(160,60,46,.18);
+  /* --overdue-bg 는 소비처가 홈 타일 하나뿐이었고 그 자리가 --band-overdue-bg 로 옮겨가 사라졌다.
+     §04 가 이미 "연체 행은 --danger-bg + 좌측 3px --overdue-fg 보더, 별도 --overdue-bg 없음"이라
+     못박고 있어 §03 과의 어긋남도 함께 닫힌다. */
 
   /* Border tokens — 카드·디바이더 표준 (v1.1는 var(--warm-border) 단일 hex 사용) */
   --border:       rgba(61,36,24,.10);
@@ -402,6 +415,19 @@ html.doc-scroll body {
    카드/입력/디바이더는 shadow 미사용 — border 1px solid var(--cream-3)로 처리. */
 .shadow-lift { box-shadow: 0 16px 48px -16px rgba(61, 36, 24, 0.22); }   /* v2.0 §07 정본 값 */
 
+/* 방 현황·비거주자 현황 타일 hover — 색을 흐리지 않는 윤곽 강조.
+   종전 hover:opacity-75 는 타일 표면과 글자를 함께 카드색 쪽으로 25% 섞었다. 그 세척이
+   밴드 색 체계의 상한을 쥐고 있었다 — opacity 를 얹은 채로는 다섯 밴드의 최소 ΔE76 을
+   6.77 이상으로 못 올리고(전 조합 탐색), 연체 밴드 글자는 hover 에서 3.05:1 로 떨어졌다.
+   outline 은 레이아웃을 밀지 않아 6px 격자 간격을 건드리지 않고, 저장소 다수 문법인
+   hover:border-[var(--coral)](§27)의 타일판이다. 색 하나만 바뀌는 게 아니라 윤곽이
+   생기므로 색각 유형과 무관하게 어느 타일을 짚었는지 읽힌다. */
+.room-tile {
+  outline: 2px solid transparent;
+  transition: outline-color var(--dur-fast, 100ms) ease;
+}
+.room-tile:hover { outline-color: var(--coral); }
+
 /* ── M7 다크모드 — html.dark 가 토글 ──────────────────────────────
    가이드: 잉크↔크림 한 쌍만 반전. persimmon은 라이트/다크 동일 hex.
    라이트 cream/ink → 다크 dark-bg/cream-on-dark.
@@ -464,7 +490,13 @@ html.dark {
   --success:            var(--d-success);
   --success-bg:         rgba(163,191,123,.14);
   --overdue:            var(--d-overdue);       /* 텍스트·팁용 */
-  --overdue-bg:         rgba(160,60,46,.30);
+
+  /* 밴드 표면 5종 다크 — 라이트와 같은 hue·같은 판정(전 쌍 ΔE76 12 이상, 지정 4쌍 15 이상)의 최소 농도.
+     공실은 --card-vacant-bg 를 물어 여기서 따로 잡지 않는다(다크 #261C14). */
+  --band-paid-bg:     rgba(163,191,123,.34);
+  --band-await-bg:    rgba(147,169,209,.22);
+  --band-unpaid-bg:   rgba(224,138,117,.22);
+  --band-overdue-bg:  rgba(160,60,46,.60);
 
   --card-resident-bg: rgba(163,191,123,.14);
   --card-resident-bd: rgba(163,191,123,.28);
