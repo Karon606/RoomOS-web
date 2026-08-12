@@ -1028,6 +1028,23 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <Row label="실수납" value={<MoneyDisplay amount={data.totalRevenue} />} colorStyle={{ color: 'var(--success-fg)' }} />
               {showBridge && <EqCaption terms={paidTerms} />}
             </div>
+            {/* 예상 수입 중 아직 안 들어온 몫 — 서버가 pendingRevenue 로 보내고 있었는데 화면에
+                서는 자리가 없었다. 아래 '누적 미납'은 납부일이 지난 누적 축이라 다른 값이다.
+                한정어 '이 달'로 두 축을 가른다. 미래월은 아직 받을 때가 아니라 말하지 않는다
+                (수납 관리가 미래월에 수납·달성률을 말하지 않기로 한 판례와 같은 결). */}
+            {!data.isFutureMonth && (
+              <div>
+                <Row label="이 달 미수납" value={<MoneyDisplay amount={data.pendingRevenue} />} />
+                {/* 서버가 음수를 0으로 눌러 보내므로(초과 수납), 눌린 달에는 등식을 적지 않는다 —
+                    적으면 좌변 0에 음수 우변이 붙어 캡션 자체가 거짓말이 된다. */}
+                {data.projectedRevenue >= data.totalRevenue && (
+                  <EqCaption terms={[
+                    { label: '예상 수입', amount: data.projectedRevenue, op: '+' },
+                    { label: '실수납',   amount: data.totalRevenue,     op: '−' },
+                  ]} />
+                )}
+              </div>
+            )}
           </div>
           {/* 미수 — 상단 KPI 는 도래분(누적 미납)만 말한다. 아직 납부일이 안 온 몫이 얼마인지는
               홈 어디에도 없어서 '미납 0원'이 '받을 돈이 없다'로 읽혔다. 두 항과 합을 함께 세운다.
@@ -1088,6 +1105,20 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                       쪼개면 하이픈이 붙어 §06 을 벗어난다(타일 쪽은 기존 결함으로 별건 보고). */}
                   <Row label="운영이익" value={<MoneyDisplay amount={data.netProfit} />}
                     colorStyle={profitColor(data.netProfit)} />
+                  {/* 운영이익에서 이 달 매출로 적립한 예비비를 빼야 실제로 굴릴 수 있는 돈이 나온다.
+                      서버가 operatingCashAvailable 로 보내고 있었는데 화면 어디에도 서지 않아,
+                      예비비를 뗀 달에도 '운영이익 = 쓸 수 있는 돈'으로 읽혔다.
+                      적립이 없는 달에는 두 값이 같으므로 줄을 세우지 않는다(좌변 되풀이). */}
+                  {data.reserveAccrualFromThisMonth > 0 && (
+                    <div>
+                      <Row label="운영 가용 자금" value={<MoneyDisplay amount={data.operatingCashAvailable} />}
+                        colorStyle={profitColor(data.operatingCashAvailable)} />
+                      <EqCaption terms={[
+                        { label: '운영이익',        amount: data.netProfit,                  op: '+' },
+                        { label: '이 달 예비비 적립', amount: data.reserveAccrualFromThisMonth, op: '−' },
+                      ]} />
+                    </div>
+                  )}
                   <div>
                     <Row label="예상 운영이익" value={<MoneyDisplay amount={data.projectedNetProfit} />}
                       colorStyle={profitColor(data.projectedNetProfit)} />
@@ -1279,11 +1310,20 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               자리를 가르는 것이 뜻에도 맞다 — 위 세 항은 현 입주자 모집단이고 이 금액에는 퇴실
               계약의 그 달 귀속분이 들어 있어 같은 사람 집합이 아니다. 같은 칸에 이어 붙이면
               넷째 항처럼 읽힌다. */}
-          <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--warm-border)' }}>
+          <div className="mt-4 pt-3 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
             {/* 위 요약 타일과 **같은 변수**(paidRevenue)라 이름도 같다 — '수납액'은 부가수익까지
                 합친 말로 읽혀 옆 칸과 겹쳤다(운영자 확정 2026-08-13). 두 축을 더한 값의 이름은 '실수납'이다.
                 달 한정어는 뺀다 — 이 탭이 이미 조회월 스코프이고 타일도 같은 달을 말한다. */}
             <Row label="이용료 수납 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
+            {/* 그 수납이 얼마 중의 얼마인지 — 위 세 항은 건수 비율(수납률)을 갖는데 금액 줄에는
+                견줄 상대가 없었다. 서버가 totalExpected 로 보내던 값이 그 상대다(같은 이용료 축·
+                같은 귀속 축, 부가수익 제외). 화면에 처음 서는 값이고 새 집계가 아니다. */}
+            <Row label="이용료 예상 (귀속)" value={<MoneyDisplay amount={data.totalExpected} />} />
+            <EqCaption terms={[
+              { label: '이 달 청구액', amount: data.billedThisMonth,      op: '+' },
+              ...(data.reservedExpected     !== 0 ? [{ label: '예약 확정', amount: data.reservedExpected,     op: '+' as const }] : []),
+              ...(data.checkedOutRecognized !== 0 ? [{ label: '퇴실 귀속', amount: data.checkedOutRecognized, op: '+' as const }] : []),
+            ]} />
           </div>
         </div>
       </div>

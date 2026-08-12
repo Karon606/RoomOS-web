@@ -974,6 +974,18 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/const totalExpected  = billedThisMonth\s*\n\s*\+ checkedOutRecognized \+ reservedExpected/.test(dash)) {
     violations.push('[소스] 홈 totalExpected 의 첫 항이 billedThisMonth 가 아니다 — 예상 수입 캡션의 첫 항이 되계산으로 돌아갔다')
   }
+  // 재무 탭이 세운 나머지 두 등식의 좌변 정의(2026-08-13, 죽어 있던 payload 필드 기용).
+  //   운영 가용 자금 = 운영이익 − 이 달 예비비 적립 · 이 달 미수납 = 예상 수입 − 실수납
+  // 좌변을 서버가 다르게 만들기 시작하면 캡션이 조용히 거짓이 된다 — 화면은 그 값을 검산하지 않는다.
+  if (!/operatingCashAvailable: \(totalRevenue - totalExpense\) - reserveAccrualFromThisMonth/.test(dash)) {
+    violations.push('[소스] operatingCashAvailable 이 운영이익 − 이 달 예비비 적립 이 아니다 — 재무 탭 운영 가용 자금 등식이 거짓이 된다')
+  }
+  if (!/netProfit: totalRevenue - totalExpense/.test(dash)) {
+    violations.push('[소스] 홈 netProfit 이 실수납 − 기록된 지출 이 아니다 — 운영 가용 자금 등식의 첫 항과 갈린다')
+  }
+  if (!/const pendingRevenue = Math\.max\(0, projectedRevenue - totalRevenue\)/.test(dash)) {
+    violations.push('[소스] pendingRevenue 가 예상 수입 − 실수납 이 아니다 — 재무 탭 이 달 미수납 등식이 거짓이 된다')
+  }
   // 항이 하나뿐인 달엔 등식을 적지 않는다 — 바로 위 큰 숫자를 그대로 되풀이할 뿐이다.
   // 미래월 가드는 수납 관리와 같은 달에 뜨고 사라지게 하려는 것이다(한쪽만 비면 그게 또 불일치다).
   if (!/!data\.isFutureMonth && hasRevenueBridge\(/.test(dashClient)) {
