@@ -167,10 +167,13 @@ const BAND_BG: Record<BandTone, string> = {
   unpaid:  'var(--danger-bg)',         // 붉은 계열 옅은 단계(§04 danger)
   overdue: 'var(--overdue-bg)',        // §03 OVERDUE — 같은 계열 짙은 단계
 }
-// 공실 글자는 한 단계 물린 잉크로. opacity 를 곱하지 않는다 — 틴트 위에서 대비가 무너진다.
+// 잉크는 밴드 다섯 종 모두 --ink-2 다. 종전엔 무색 밴드만 --ink-3 로 한 단계 물렸는데,
+// 타일 전체가 링크라 hover:opacity-75 가 얹히면 그 글자가 2.95:1 까지 떨어져 판독이 안 됐다
+// (--ink-2 는 같은 표면에서 평상 12.34 · hover 5.91). 위계는 색이 아니라 밴드 배경이 진다.
+// opacity 를 곱하지 않는다 — 틴트 위에서 대비가 무너진다.
 const bandStyle = (tone: BandTone) => ({
   background: BAND_BG[tone],
-  color:      tone === 'none' ? 'var(--ink-3)' : 'var(--ink-2)',
+  color:      'var(--ink-2)',
 })
 // 한 사람의 색 — 예약자는 아직 안 들어왔으니 납부 여부를 묻지 않는다(입실 예약도 '예정').
 // 미납 중 7일 초과만 연체로 부른다(§03·§24) — 그 경과일은 미수납 위젯 배지가 쓰는 값 그대로다.
