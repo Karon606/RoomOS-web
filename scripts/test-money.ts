@@ -16,7 +16,9 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
-import { billForLeaseMonth } from '../lib/billing'
+import { billForLeaseMonth, offerRentForMonth } from '../lib/billing'
+import { availableFromLabel } from '../lib/leaseStatus'
+import { wishRoomFromLabel } from '../lib/wishMatch'
 import { lockOf, shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice } from '../lib/shortStayLock'
 
 let pass = 0
@@ -434,6 +436,30 @@ const RENT = 300000
   eq('만 축약: 7천원',          fmtManShort(7_000),     '7,000원')
   eq('만 축약: 0원',            fmtManShort(0),         '0원')
   eq('만 축약: 음수는 U+2212',   fmtManShort(-329_000),  '−32.9만')
+}
+
+// ── offerRentForMonth ── 계약 없는 방의 제시가(홈 타일 입주 가능 블락·빈 타일 금액).
+// 비교가 달 단위라는 것이 이 함수의 전부다. 날짜 비교로 흔들리면 화면이 말한 값과
+// 그 사람이 실제로 내는 첫 달 청구가 갈린다(적용일 8/20 인 방이 8/16 에 비는 경우).
+{
+  const plain = { baseRent: 350_000, scheduledRent: null, rentUpdateDate: null }
+  const raise = { baseRent: 350_000, scheduledRent: 380_000, rentUpdateDate: '2026-09-01' }
+  eq('제시가: 예약 인상 없음',            offerRentForMonth(plain, '2026-08'), 350_000)
+  eq('제시가: 적용월 전이면 현재가',       offerRentForMonth(raise, '2026-08'), 350_000)
+  eq('제시가: 적용월이면 인상가',          offerRentForMonth(raise, '2026-09'), 380_000)
+  eq('제시가: 적용월 이후도 인상가',       offerRentForMonth(raise, '2026-10'), 380_000)
+  // 적용일이 달 중간이어도 그 달 이용료는 전부 인상가다 — 8/20 적용이면 8/16 에 비는 방도 인상가.
+  eq('제시가: 달 중간 적용일도 그 달부터', offerRentForMonth({ ...raise, rentUpdateDate: '2026-08-20' }, '2026-08'), 380_000)
+  // 적용일 없는 예약값(고아)은 청구 엔진과 같이 침묵한다 — 화면만 인상가를 말하면 청구와 갈린다.
+  eq('제시가: 적용일 없는 예약값은 무시',  offerRentForMonth({ ...raise, rentUpdateDate: null }, '2026-09'), 350_000)
+  eq('제시가: 예약값 0 은 무시',           offerRentForMonth({ ...raise, scheduledRent: 0 }, '2026-09'), 350_000)
+}
+
+// ── availableFromLabel ── 입주 가능 짧은 라벨. 홈 타일·호실 카드 칩·고객 상세가 같은 문자열을 쓴다.
+{
+  eq('입주 가능 라벨: 앞 0 제거',  availableFromLabel('2026-08-16'), '8/16부터')
+  eq('입주 가능 라벨: 10월 1일',   availableFromLabel('2026-10-01'), '10/1부터')
+  eq('입주 가능 라벨: 매칭과 동일', wishRoomFromLabel({ kind: 'soon', availableFrom: '2026-08-18' }), '8/18부터')
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

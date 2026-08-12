@@ -56,6 +56,22 @@ function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
   return l.rentAmount
 }
 
+// 계약이 아직 없는 방을 그 달에 얼마로 내놓는가 — 제시가. 기준액은 계약의 rentAmount 가 아니라 방의 baseRent 다.
+//
+// effectiveBaseRent 가 기준액으로 rentAmount 를 고집하는 이유는 협의가 보호다(계약별 협의가가 방 기본값으로
+// 덮여 사라지는 것을 막는다). 아직 계약이 없는 방에는 보호할 협의가가 없고, 그 방을 내놓는 값은 baseRent 다
+// (소개 페이지 공개가·매칭 조건 필터도 같은 축을 쓴다). 예약 인상 규칙은 그대로 물려받는다.
+//
+// 왜 달로 묻는가 — 인상은 '그 달 이용료부터'라 적용일이 8/20 이어도 8월분은 전부 인상가다. 8/16 에 비는 방을
+// 날짜로 비교하면 구가라 말하는데 그 사람이 실제로 내는 첫 달 청구는 인상가가 된다. 화면과 청구가 갈린다.
+// 할인·퇴실 일할·락인은 계약에 붙는 값이라 계약 없는 방에는 존재할 수 없다 — 생략이 아니라 항등이다.
+export function offerRentForMonth(
+  room: { baseRent: number; scheduledRent?: number | null; rentUpdateDate?: Date | string | null },
+  mon: string,                  // 'YYYY-MM'
+): number {
+  return effectiveBaseRent({ rentAmount: room.baseRent, status: 'ACTIVE', room }, mon)
+}
+
 export function billForLeaseMonth(
   l: BillingLeaseFields,
   mon: string,                  // 'YYYY-MM'

@@ -236,6 +236,18 @@ export function moveInDateLabel(moveInDate: string | null): string | null {
 }
 
 /**
+ * 입주 가능 짧은 라벨 — "8/16부터". 퇴실·입실 라벨(checkoutDateLabel·moveInDateLabel)의 세 번째 형제다.
+ *
+ * 폭이 넉넉한 자리는 availableFromText("2026.08.30 부터")를 쓰고, 좁은 자리(홈 타일 밴드 68px·
+ * 호실 카드 메타 칩·고객 상세 위젯)는 이쪽이다. 조사 '부터'는 앞말에 붙여 쓴다.
+ * 문자열을 여기 한 번만 두는 이유는 형제 둘과 같다 — 화면마다 조립하면 같은 날짜를 다르게 적는다.
+ */
+export function availableFromLabel(availableFrom: string): string {
+  const [, mm, dd] = availableFrom.split('-')
+  return `${Number(mm)}/${Number(dd)}부터`
+}
+
+/**
  * 입주 예정 보조 문구 — "9/1 입주 예정". 퇴실 표기(checkoutSubText)와 대칭인 짧은 인라인 날짜.
  */
 export function moveInSubText(moveInDate: string | null): string | null {

@@ -21,7 +21,7 @@
 // 제외자가 있으면 알림은 뜨고, 모든 희망 방에서 제외된 사람은 고객 목록 카드에 사유가 붙는다.
 
 import type { PrismaDb } from '@/lib/prisma'
-import { roomAvailability, type RoomAvailability } from '@/lib/leaseStatus'
+import { availableFromLabel, roomAvailability, type RoomAvailability } from '@/lib/leaseStatus'
 
 /** 날짜 게이트를 적용하는 단계 — 아직 방이 확정되지 않은 리드. */
 export const WISH_LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as const
@@ -407,7 +407,7 @@ export function wishGateDetail(c: Pick<WishCandidate, 'gate' | 'waitDays'>): str
 
 /** 방이 언제부터 되는가 — "8/18부터". 지금 빈 방은 날짜가 없으니 기존 어휘 그대로 '공실'. */
 export function wishRoomFromLabel(a: RoomAvailability): string {
-  return a.kind === 'now' ? '공실' : `${fmtWishMD(a.availableFrom)}부터`
+  return a.kind === 'now' ? '공실' : availableFromLabel(a.availableFrom)
 }
 
 /** 사람 축 한 줄의 우측 캡션 — "8/18부터" 또는 "8/30부터 · 5일 늦음". */
