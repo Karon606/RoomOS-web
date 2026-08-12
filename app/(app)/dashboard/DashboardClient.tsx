@@ -935,6 +935,94 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         </div>
       </div>
 
+      {/* ── 분해 두 장 ── 홈 카드는 요약, 재무 탭은 전모다(운영자 2026-08-12
+          "이곳이야말로 매출·이익·지출 등 모든 내용이 다 보여도 괜찮은 위치").
+          여기 서는 값은 **전부 서버가 이미 보내던 정본 필드**다 — 화면이 새 집계를 만들지 않는다.
+          위 요약 타일·상단 KPI 카드와 겹치는 숫자는 총계뿐이고, 새로 서는 것은 그 총계를 이루는
+          항들(청구·예약 확정·퇴실 귀속·부가수익 / 기록된 지출·고정 지출 (예정) / 도래·미도래)이다.
+          항 이름은 MoneyEquation 정본·수납 관리·지출 관리가 쓰는 말 그대로다(같은 이름 같은 숫자). */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* 수입과 미수 */}
+        <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>수입과 미수</h3>
+          {/* 0인 항은 세우지 않는다 — MoneyEquation 이 등식에서 0 항을 빼는 규칙과 같다.
+              '이 달 청구액'만 값과 무관하게 선다(그 달 청구가 0원이어도 사실이다). */}
+          <div className="space-y-2.5">
+            <Row label="이 달 청구액" value={<MoneyDisplay amount={data.billedThisMonth} />} />
+            {data.reservedExpected !== 0 && (
+              <Row label="예약 확정" value={<MoneyDisplay amount={data.reservedExpected} />} />
+            )}
+            {data.checkedOutRecognized !== 0 && (
+              <Row label="퇴실 귀속" value={<MoneyDisplay amount={data.checkedOutRecognized} />} />
+            )}
+            {data.extraRevenue !== 0 && (
+              <Row label="부가수익" value={<MoneyDisplay amount={data.extraRevenue} />} />
+            )}
+          </div>
+          {/* 위 항들의 합이 예상 수입이고, 그중 실제로 받은 몫이 실수납이다.
+              두 이름 다 상단 KPI 카드가 쓰는 말이라 여기서 새로 짓지 않는다. */}
+          <div className="mt-2.5 pt-2.5 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+            <Row label="예상 수입" value={<MoneyDisplay amount={data.projectedRevenue} />} />
+            <Row label="실수납" value={<MoneyDisplay amount={data.totalRevenue} />} colorStyle={{ color: 'var(--success-fg)' }} />
+          </div>
+          {/* 미수 — 상단 KPI 는 도래분(누적 미납)만 말한다. 아직 납부일이 안 온 몫이 얼마인지는
+              홈 어디에도 없어서 '미납 0원'이 '받을 돈이 없다'로 읽혔다. 두 항과 합을 함께 세운다.
+              모집단 한정어(현 입주자)는 KPI 카드 라벨과 같은 말로 소제목에 둔다 — 퇴실자 잔여 채권은
+              여기 없고 결산 보고서 월말 미수 잔액이 그 자리다. */}
+          <div className="mt-3 pt-3 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+            <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>미수 (현 입주자)</p>
+            {/* 색은 바로 아래 수납 현황 도넛 범례와 같은 개념색이다 — 같은 화면에서 '미납'과
+                '수납예정'이 건수로 서 있고 여기서는 같은 개념이 금액으로 선다.
+                --tc 를 쓰지 않는다: 다크에서 안 밝아져 크림 카드 위 대비가 2.78:1 로 떨어진다
+                (§19 페어 토큰 --overdue-fg·--danger-fg 계열이 그 자리를 위해 있다). */}
+            <Row label="누적 미납" value={<MoneyDisplay amount={data.overdueAmount} />}
+              colorStyle={data.overdueAmount > 0 ? { color: CONCEPT_COLORS.unpaid } : undefined} />
+            <Row label="납부 예정" value={<MoneyDisplay amount={data.upcomingAmount} />}
+              colorStyle={{ color: CONCEPT_COLORS.await }} />
+            <Row label="합계" value={<MoneyDisplay amount={data.unpaidAmount} />} />
+          </div>
+        </div>
+
+        {/* 지출과 이익 */}
+        <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>지출과 이익</h3>
+          {(() => {
+            // 상단 KPI 예상 지출 등식이 더하는 **그 두 항**이다. 둘째 항은 추정치가 아니라
+            // 실제로 더해진 금액(expectedExpense − totalExpense)이라 과거월엔 저절로 0이 되어 사라진다
+            // (MoneyEquation 의 pendingRecurring 규칙과 같은 값·같은 이름).
+            const pendingRecurring = data.expectedExpense - data.totalExpense
+            // 음수는 --danger-fg 다. 요약 타일은 --tc 를 쓰는데 라이트에서는 같은 #A03C2E 라 픽셀이 같고,
+            // 다크에서만 갈린다 — --tc 는 안 밝아져 크림 카드 위에서 2.78:1 이고 --danger-fg 는 §19 페어라 밝아진다.
+            const profitColor = (n: number) => ({ color: n >= 0 ? 'var(--success)' : 'var(--danger-fg)' })
+            return (
+              <>
+                <div className="space-y-2.5">
+                  <Row label="기록된 지출" value={<MoneyDisplay amount={data.totalExpense} />} />
+                  {pendingRecurring !== 0 && (
+                    <Row label="고정 지출 (예정)" value={<MoneyDisplay amount={pendingRecurring} />} />
+                  )}
+                </div>
+                <div className="mt-2.5 pt-2.5 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                  <Row label="예상 지출" value={<MoneyDisplay amount={data.expectedExpense} />} />
+                </div>
+                {/* 이익 두 줄 — 왼쪽 카드의 실수납에서 기록된 지출을 뺀 것이 운영이익,
+                    예상 수입에서 예상 지출을 뺀 것이 예상 운영이익이다. 색은 요약 타일 운영이익과 같다. */}
+                <div className="mt-3 pt-3 space-y-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                  <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>이익</p>
+                  {/* 음수는 fmtKorMoney 가 §06 대로 U+2212 을 붙인다 — 위 타일처럼 abs + '-' 로
+                      쪼개면 하이픈이 붙어 §06 을 벗어난다(타일 쪽은 기존 결함으로 별건 보고). */}
+                  <Row label="운영이익" value={<MoneyDisplay amount={data.netProfit} />}
+                    colorStyle={profitColor(data.netProfit)} />
+                  <Row label="예상 운영이익" value={<MoneyDisplay amount={data.projectedNetProfit} />}
+                    colorStyle={profitColor(data.projectedNetProfit)} />
+                </div>
+              </>
+            )
+          })()}
+        </div>
+      </div>
+
       {/* ── 추이 ── */}
       <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
