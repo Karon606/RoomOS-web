@@ -6,7 +6,7 @@
 // 그만큼 채우고, 별도로 받는 영업장(별도형)에서는 보증금과 아무 상관이 없다.
 // 한쪽만 고정하면 반대쪽이 조용히 뒤집힌다 — 포함형에 맞춘 코드가 별도형의 실제 부족을 완납으로
 // 덮고, 별도형에 맞춘 코드가 포함형에 영원한 '부족 20,000'을 띄운다. 둘 다 실제로 일어났다.
-import { depositComposition, depositCompositionLabel, splitWithheldDeposit, withheldDestinationLabel, withheldPartsLabel } from '../lib/depositComposition'
+import { depositComposition, depositCompositionLabel, heldContractCleaningPortion, splitWithheldDeposit, withheldDestinationLabel, withheldPartsLabel } from '../lib/depositComposition'
 import { cleaningFeeDeductible } from '../lib/depositWithholdReasons'
 import { fmtWon } from '../lib/fmtMoney'
 
@@ -114,6 +114,17 @@ eq('적용취소·두 행', withheldPartsLabel(
   [{ category: '청소비', amount: 20000 }, { category: '보증금 몰취', amount: 30000 }], fmtWon),
   '청소비 20,000원 · 보증금 몰취 30,000원')
 eq('적용취소·행 없음', withheldPartsLabel([], fmtWon), null)
+
+
+// 보유 보증금의 계약 축 청소비 몫(운영자 확정 2026-08-12) — 실수취 상한·계약 상한·음수 방어.
+eq('계약몫·정상(5만 수취, 청소비 2만)', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: 20000, depositPaid: 50000, cleaningPaid: 0 }), 20000)
+eq('계약몫·김민정형(3만+청소비 2만 수취)', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: 20000, depositPaid: 30000, cleaningPaid: 20000 }), 20000)
+eq('계약몫·미수취(419호형)', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: 20000, depositPaid: 0, cleaningPaid: 0 }), 0)
+eq('계약몫·부분 수취가 청소비보다 작음', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: 20000, depositPaid: 10000, cleaningPaid: 0 }), 10000)
+eq('계약몫·청소비 약정 없음', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: 0, depositPaid: 50000, cleaningPaid: 0 }), 0)
+eq('계약몫·약정 null', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: null, depositPaid: 50000, cleaningPaid: 0 }), 0)
+eq('계약몫·보증금 0(서종희형)', heldContractCleaningPortion({ contractDeposit: 0, cleaningFee: 20000, depositPaid: 0, cleaningPaid: 20000 }), 0)
+eq('계약몫·청소비가 보증금 초과(비정상 입력)', heldContractCleaningPortion({ contractDeposit: 30000, cleaningFee: 50000, depositPaid: 30000, cleaningPaid: 0 }), 30000)
 
 console.log(`\n보증금 구성 판정 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

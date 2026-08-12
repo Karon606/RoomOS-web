@@ -115,3 +115,26 @@ export function depositCompositionLabel(c: Pick<DepositComposition, 'contract' |
   const won = (n: number) => n.toLocaleString()
   return `받은 보증금 ${won(c.depositPaid)} + 청소비 ${won(c.coveredByCleaning)} / 계약 ${won(c.contract)}`
 }
+
+/**
+ * 보유 보증금 중 **계약 기준** 청소비 몫 (운영자 확정 2026-08-12).
+ *
+ * "보증금 5만에 청소비 2만 포함"이 기본 정책이라, 홈 재무 탭의 이 자리에서 운영자가 기대하는
+ * 숫자는 "지금 들고 있는 보증금 가운데 퇴실 때 청소비로 쓰일 몫이 얼마인가"다(계약 축).
+ * 종전 수납 기록 축(coveredByCleaning — 청소비 명목 수납이 보증금 부족분을 채운 몫)은
+ * 주단위 시작을 역산한 예외 기록(520호 김민정)에서만 값이 서서 정책 심상과 어긋났다.
+ *
+ * 실수취 상한을 거는 이유 — 보증금을 아직 안 낸 계약(전 원장 승계, 419호 미수취 등)의
+ * 청소비 몫까지 세면 안 받은 돈을 들고 있다고 말하게 된다. 계약 상한은 청소비 약정이
+ * 보증금보다 큰 비정상 입력 방어다. 퇴실 정산 분류(splitWithheldDeposit)와 같은 계약 축이다.
+ */
+export function heldContractCleaningPortion(args: {
+  contractDeposit: number
+  cleaningFee: number | null | undefined
+  depositPaid: number
+  cleaningPaid: number
+}): number {
+  const fee = Math.max(0, args.cleaningFee ?? 0)
+  const received = Math.max(0, args.depositPaid) + Math.max(0, args.cleaningPaid)
+  return Math.min(fee, received, Math.max(0, args.contractDeposit))
+}

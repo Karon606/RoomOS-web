@@ -60,7 +60,7 @@ export type DashboardData = {
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
-  depositRecorded:   number     // 보유 보증금 중 실수납(입금기록 있음)
+  depositReceived:   number     // 보유 보증금 중 실수취(보증금 명목 + 청소비 명목이 채운 몫)
   depositByCleaning: number     // 보유 보증금 중 입실 청소비가 채운 몫(포함형 영업장, 2026-08-10)
   depositUnrecorded: number     // 보유 보증금 중 미기록(전 원장 등 계약상만)
   reserveBalance:    number
@@ -910,13 +910,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             //     (paidRevenue + extraRevenue)에 쓰는 이름이다. 같은 이름이 홈 안에서 탭만 바꾸면
             //     보증금 숫자로 바뀌던 자리다. 새 말이 아니라 depositCompositionLabel 이 이미 쓰는
             //     '받은 보증금 30,000 + 청소비 20,000 / 계약 50,000' 의 그 말이다.
-            //   '청소비' → '청소비 몫' — 이 값은 청소비 수익 총액이 아니라 **보유 중인 계약 보증금 중
-            //     입실 청소비가 채운 몫**(depositComposition.coveredByCleaning)이다. 퇴실자 청소비는
-            //     보증금을 이미 안 들고 있으니 여기 없고, 보증금이 0인 계약(409호)의 청소비도 채울
-            //     보증금이 없어 여기 없다. '청소비'라 부르면 그 달 청소비 수익으로 읽힌다(운영자 질의).
+            //   '청소비 몫'은 **계약 축**이다(운영자 확정 2026-08-12) — 받은 보증금 안에서 계약상
+            //     청소비로 잡혀 있어 퇴실 때 반환되지 않을 몫(heldContractCleaningPortion 정본).
+            //     수납 기록 축(청소비 명목 수납이 채운 몫)은 김민정형 역산 예외에서만 값이 서서
+            //     "청소비 포함 보증금이 몇 명분이냐"는 정책 심상과 어긋났다(운영자 질의 2건).
+            //     받은 보증금의 부분집합이라 '이 중'으로 묶는다 — 항등은 받은 + 미기록 = 총액.
             { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
-              // 청소비 몫은 받은 돈이라 '미기록'과 섞으면 안 된다 — 있을 때만 한 칸 더 쓴다(2026-08-10)
-              sub: `받은 보증금 ${fmtKorMoney(data.depositRecorded)}${data.depositByCleaning > 0 ? ` · 청소비 몫 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
+              sub: `받은 보증금 ${fmtKorMoney(data.depositReceived)}${data.depositByCleaning > 0 ? ` · 이 중 청소비 몫 ${fmtKorMoney(data.depositByCleaning)}` : ''} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
           ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
             <div
               key={i}

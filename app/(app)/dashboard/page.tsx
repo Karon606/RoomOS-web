@@ -22,7 +22,7 @@ import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
-import { depositComposition, depositCompositionLabel } from '@/lib/depositComposition'
+import { depositComposition, depositCompositionLabel, heldContractCleaningPortion } from '@/lib/depositComposition'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
@@ -115,6 +115,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
         select: {
           depositAmount: true,
+          cleaningFee: true,
           paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
           extraIncomes:   { where: { ...CLEANING_FEE_RECEIVED_WHERE, deletedAt: null }, select: { amount: true } },
         },
@@ -470,18 +471,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // RESERVED 실수납 예약금 — 총액·실수납 양쪽에 같은 값을 더해 미기록분(차이)은 불변으로 유지.
   const reservedDepositReceived = (await pReservedDepositReceivedAgg)._sum.actualAmount ?? 0
   const totalDeposit = (depositAgg._sum.depositAmount ?? 0) + reservedDepositReceived
-  // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 청소비로 채운 몫 vs 미기록(전 원장 등 계약상만).
-  // 총액(totalDeposit, 계약 기준)은 유지하고 아래에 분해만 표기 → 전 원장 보증금 누락 위험 없음.
-  // 청소비 몫을 따로 세지 않으면 그만큼이 '미기록'으로 잡혀, 실제로는 입실 때 받은 돈이 승계분처럼 읽힌다.
+  // 보유 보증금 분해 — 받은 돈(실수취) vs 미기록(전 원장 등 계약상만). 총액(totalDeposit, 계약 기준) 유지.
+  // 받은 돈 = 보증금 명목 수납 + 청소비 명목 수납이 보증금 부족분을 채운 몫(김민정형 역산 기록).
+  // 청소비 몫은 **계약 축**이다(운영자 확정 2026-08-12) — 받은 돈 안에서 퇴실 때 청소비로 쓰일 몫.
+  // 받은 돈과 나란히 더하는 항이 아니라 부분집합이라, 표시도 '이 중'으로 묶는다(항등: 받은 + 미기록 = 총액).
   const depositRecordedAgg = await pDepositRecordedAgg
-  const depositRecorded = (depositRecordedAgg._sum.actualAmount ?? 0) + reservedDepositReceived
-  const depositByCleaning = (await pDepositCleaningLeases).reduce((s, l) => s + depositComposition({
+  const depositCleaningLeases = await pDepositCleaningLeases
+  const depositCleaningFunded = depositCleaningLeases.reduce((s, l) => s + depositComposition({
     contractDeposit: l.depositAmount,
     depositPaid: l.paymentRecords.reduce((a, r) => a + r.actualAmount, 0),
     cleaningPaid: l.extraIncomes.reduce((a, i) => a + i.amount, 0),
     cleaningFeeInDeposit: true,
   }).coveredByCleaning, 0)
-  const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded - depositByCleaning)
+  const depositReceived = (depositRecordedAgg._sum.actualAmount ?? 0) + reservedDepositReceived + depositCleaningFunded
+  const depositByCleaning = depositCleaningLeases.reduce((s, l) => s + heldContractCleaningPortion({
+    contractDeposit: l.depositAmount,
+    cleaningFee: l.cleaningFee,
+    depositPaid: l.paymentRecords.reduce((a, r) => a + r.actualAmount, 0),
+    cleaningPaid: l.extraIncomes.reduce((a, i) => a + i.amount, 0),
+  }), 0)
+  const depositUnrecorded = Math.max(0, totalDeposit - depositReceived)
 
   // 예상 매출/순이익은 unpaidLeasesRaw 루프(line ~832) 안에서 projectedThisMonthByLease
   // 가 채워진 뒤 계산해야 함 → 아래 unpaidAmount 계산 직후로 이동.
@@ -1667,7 +1676,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
-    depositRecorded,
+    depositReceived,
     depositByCleaning,
     depositUnrecorded,
     reserveBalance,
