@@ -34,6 +34,18 @@
 //
 // 오탐 방지 — 418호처럼 방 설정이 '공실로 세라'(nonResidentVacant=true)인 거주·비거주 동거는
 // 정상이다. 판정은 lib/vacancy 의 집계 제외 술어 그대로다.
+//
+// 축 ④ 한 사람이 거주 계약(ACTIVE·CHECKOUT_PENDING)을 2건 이상 들고 있는 경우.
+//
+// 왜 이게 사고인가 — 1인 다호실은 **비거주 부계약만 허용**이 현 운영 전제다(운영자 확정
+// 2026-08-13: 601호는 김상혁의 두 번째 계약이되 NON_RESIDENT·창고다). 한 사람에게 거주 계약이
+// 둘이면 그 사람이 두 방에 동시에 산다는 뜻이고, 그러면 메인 계약 선택(primaryTenantLease)이
+// 배열 순서에 의존하게 되어 같은 사람이 화면마다 다른 계약으로 보인다 — 방 축이 2026-06 에
+// 겪은 그 사고의 사람 축 판본이다. 수납 행 순서(roomLeaseRowOrder)와 주 계약이 갈리는 구간도
+// 정확히 여기다(test-lease-primary 가 그 경계를 잠근다).
+//
+// 운영이 실제로 2실 거주를 하기로 하면 이 축은 오탐이 된다. 그때는 규칙을 바꾸는 것이 아니라
+// **기준선을 갱신**한다(BASELINE_TWO_RESIDENCES) — 지금 기준선은 0 이다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -44,6 +56,11 @@ const OCCUPYING_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
 
 // lib/vacancy.ts isVacancyExcluded 와 같은 정의 — 방 설정 하나(세를 놓지 않는 방).
 const isVacancyExcluded = (nonResidentVacant) => !nonResidentVacant
+
+// 거주 계약 — lib/leaseStatus 의 CURRENT_OCCUPANCY_STATUSES 와 같은 정의.
+const CURRENT_OCCUPANCY_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING']
+// 한 사람이 거주 계약 둘을 정당하게 들고 있는 인원 수. 오늘 0 명이다.
+const BASELINE_TWO_RESIDENCES = 0
 
 async function main() {
   const rooms = await prisma.room.findMany({
@@ -104,10 +121,32 @@ async function main() {
     axis1.push({ ...where, detail: occ.map(label).join(' | ') })
   }
 
+  // ── 축 ④ — 사람 축. 방이 아니라 사람을 단위로 센다.
+  const people = await prisma.tenant.findMany({
+    select: {
+      name: true,
+      property: { select: { name: true } },
+      leaseTerms: {
+        where: { status: { in: CURRENT_OCCUPANCY_STATUSES } },
+        select: { status: true, moveInDate: true, expectedMoveOut: true, room: { select: { roomNo: true } } },
+      },
+    },
+  })
+  const axis4 = []
+  for (const t of people) {
+    if (t.leaseTerms.length < 2) continue
+    axis4.push({
+      property: t.property?.name ?? '?',
+      // 이 축의 주어는 방이 아니라 사람이다 — 행 머리를 그대로 쓴다('호'를 붙이지 않는다).
+      subject: t.name,
+      detail: t.leaseTerms.map(l => `${l.room?.roomNo ?? '호실 미지정'}/${l.status}/${ymd(l.moveInDate) ?? '미정'}~${ymd(l.expectedMoveOut) ?? '무기한'}`).join(' | '),
+    })
+  }
+
   const report = (title, rows, fix) => {
     if (rows.length === 0) return 0
     console.error(`[입주 가능 정합] ${title} — 위반 ${rows.length}건`)
-    for (const v of rows) console.error(`  ${v.property} ${v.roomNo}호: ${v.detail}`)
+    for (const v of rows) console.error(`  ${v.property} ${v.subject ?? `${v.roomNo}호`}: ${v.detail}`)
     console.error(`  조치: ${fix}`)
     return rows.length
   }
@@ -119,10 +158,14 @@ async function main() {
     '겹치는 쪽의 입주일 또는 퇴실 예정일을 옮기거나, 한쪽을 다른 방으로 옮긴다.')
   bad += report('공실 집계 제외 방(창고·사무실)에 거주·예약 계약이 있다', axis3,
     '그 계약을 다른 방으로 옮기거나, 호실 관리 편집에서 공실 집계에서 제외를 해제한다.')
+  if (axis4.length > BASELINE_TWO_RESIDENCES) {
+    bad += report('한 사람이 거주 계약을 2건 이상 들고 있다(다호실은 비거주 부계약만 허용)', axis4,
+      '한쪽을 비거주(창고·사무실 명의)로 바꾸거나 종료한다. 2실 거주가 실제 운영 방침이 되면 이 스크립트의 BASELINE_TWO_RESIDENCES 를 갱신한다.')
+  }
 
   await prisma.$disconnect()
   if (bad > 0) process.exit(1)
-  console.log(`[입주 가능 정합] 방 ${rooms.length}개 검사 / 위반 0건 (축 3종)`)
+  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 고객 ${people.length}명 검사 / 위반 0건 (축 4종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES})`)
 }
 
 main()
