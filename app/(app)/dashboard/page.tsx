@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import DashboardClient, { type DashboardData } from './DashboardClient'
-import { getPaymentMethods } from '@/app/(app)/settings/actions'
+import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
@@ -103,6 +103,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const pTrendPaidRevenue     = getPaidRevenueByMonths(prisma, propertyId, last6Months)
   const pCheckedOutRecognized = getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
   const pRecurringWithStatus  = getRecurringExpensesWithStatus(targetMonth)
+  // 지출 카테고리 도넛의 색은 이 등록 순서가 정한다(금액 순위 아님) — 달을 바꿔도 같은
+  // 카테고리가 같은 색이려면 달과 무관한 축이어야 한다. 목록 정본은 영업장 설정 하나뿐이다.
+  const pExpenseCategories    = getExpenseCategories()
   const pDepositRecordedAgg   = prisma.paymentRecord.aggregate({
     where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
     _sum: { actualAmount: true },
@@ -157,7 +160,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pExpenseCategories, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -1694,6 +1697,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 미래월 판정은 서버(KST)가 내린다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
     isFutureMonth: targetMonth > realTodayMonthStr,
     categoryBreakdown,
+    // 도넛·범례 색의 축 — 값이 아니라 순서만 쓴다(lib/chartColors expenseCategoryColor).
+    expenseCategoryOrder: await pExpenseCategories,
     trend,
     totalRooms,
     vacantRooms,

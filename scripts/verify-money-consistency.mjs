@@ -924,6 +924,15 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/centerSub="기록된 지출"/.test(dashClient)) {
     violations.push('[소스] 홈 지출 카테고리 도넛 중앙 문구가 기록된 지출이 아니다 — 같은 화면 같은 값에 두 이름이 붙는다')
   }
+  // 지출 카테고리 색은 **그 달 금액 순위**가 아니라 영업장 설정 등록 순서다(2026-08-13).
+  // 순위로 칠하던 시절엔 같은 임대료가 7월 카멜·8월 테라코타여서 두 달 도넛을 나란히 못 봤다
+  // (실측: 13종 중 8종이 5개월 사이 색이 흔들렸고 수선유지비는 다섯 색을 돌았다).
+  if (!/expenseCategoryColor\(category, data\.expenseCategoryOrder\)/.test(dashClient)) {
+    violations.push('[소스] 홈 지출 카테고리 색이 등록 순서 정본(expenseCategoryColor)을 안 탄다 — 달마다 같은 카테고리가 다른 색이 된다')
+  }
+  if (/chartColor\(i\)/.test(dashClient)) {
+    violations.push('[소스] 홈이 순위 인덱스 색(chartColor(i))으로 되돌아갔다 — 지출 카테고리 색이 그 달 금액 순위를 따라 흔들린다')
+  }
   // 같은 숫자 한 이름 — totalRevenue(= paidRevenue + extraRevenue)는 '실수납'이다.
   // 수납 관리 캡션이 원 단위로 같은 값을 그렇게 부르고 아래 [데이터] 축이 그 항등을 잠근다.
   // 종전 홈 보조줄 '수납+기타'가 같은 숫자의 두 번째 이름이었다(2026-08-12 정정).

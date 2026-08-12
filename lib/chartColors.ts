@@ -36,15 +36,28 @@ export const CONCEPT_COLORS = {
   overdue:  'var(--overdue-solid)',  // 연체
 } as const
 
-/** 지출 카테고리 고정 색상 매핑 — viz 토큰 고정 배정 */
-export const EXPENSE_CATEGORY_COLORS: Record<string, string> = {
-  '관리비':      'var(--viz-1)',
-  '수선유지':    'var(--viz-4)',
-  '세금':        'var(--viz-5)',
-  '인건비':      'var(--viz-2)',
-  '소모품':      'var(--viz-3)',
-  '보증금 반환': 'var(--viz-7)',
-  '기타':        'var(--viz-8)',
+/**
+ * 지출 카테고리 고정 색 — **영업장 설정의 등록 순서**가 색을 정한다(정본 목록은
+ * settings/actions 의 getExpenseCategories). 카테고리 이름을 코드에 박지 않는다:
+ * 목록은 영업장마다 다르고 운영자가 언제든 더하고 지운다.
+ *
+ * 왜 등록 순서인가. 종전에는 그 달 **금액 순위**가 색이었다. 같은 임대료가 7월에는 2위라
+ * 카멜, 8월에는 1위라 테라코타여서 두 달 도넛을 나란히 놓고 비교할 수가 없었다.
+ * 등록 순서는 달과 무관하므로 같은 카테고리는 언제나 같은 색이다.
+ *
+ * 목록에 없는 카테고리(설정에서 지운 뒤 과거 지출만 남은 것 — 실데이터 '청소비' 1종)는
+ * 이름으로 자리를 정한다. 그 달에 무엇이 함께 서느냐에 기대면 달을 바꿀 때 또 흔들린다.
+ *
+ * 알아 둘 한계: viz 팔레트는 여덟 색뿐이라 등록 카테고리가 아홉 개를 넘으면 색이 돈다
+ * (제기역점은 13종 — 9번째부터 viz-1 과 겹친다). 팔레트를 늘리는 것은 가이드 §04 개정이라
+ * 운영자·디자인 판단 영역이고, 이 함수는 그 결정이 내려지면 CHART_COLORS 만 길어지면 된다.
+ */
+export function expenseCategoryColor(category: string, registered: readonly string[]): string {
+  const i = registered.indexOf(category)
+  if (i >= 0) return chartColor(i)
+  let h = 0
+  for (const ch of category) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return chartColor(h)
 }
 
 /** 성별 색상 매핑 */

@@ -25,7 +25,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
     </div>
   ),
 })
-import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
+import { CHART_COLORS, expenseCategoryColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney, fmtManShort, fmtOfferRentAhead, fmtWon } from '@/lib/fmtMoney'
 import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
@@ -88,6 +88,8 @@ export type DashboardData = {
   // 두 화면을 오가며 대조할 때 한쪽만 비는 일이 없다(rooms/page.tsx 와 같은 문법).
   isFutureMonth:        boolean
   categoryBreakdown: { category: string; amount: number; percent: number }[]
+  // 영업장 설정의 지출 카테고리 등록 순서 — 도넛·범례 색이 이 순서로 고정된다(금액 순위 아님).
+  expenseCategoryOrder: string[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
   vacantRooms:       number
@@ -848,9 +850,12 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     revenue: Math.round(t.revenue / 10000),
     expense: Math.round(t.expense / 10000),
   }))
-  const categorySegments = data.categoryBreakdown.map((c, i) => ({
+  // 색은 그 달 금액 순위가 아니라 영업장 설정의 등록 순서가 정한다(lib/chartColors 정본).
+  // 순위로 칠하던 시절엔 같은 임대료가 7월 카멜·8월 테라코타여서 두 달을 나란히 못 봤다.
+  const categoryColor = (category: string) => expenseCategoryColor(category, data.expenseCategoryOrder)
+  const categorySegments = data.categoryBreakdown.map(c => ({
     value: c.amount,
-    color: chartColor(i),
+    color: categoryColor(c.category),
   }))
   // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   // 세 항은 서버가 한 모집단을 배타 분할해 보낸 값이다(page.tsx paymentStatusPool). 여기서
@@ -1051,7 +1056,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <div className="flex-1 space-y-2.5 min-w-0">
                 {data.categoryBreakdown.map((c, i) => (
                   <div key={i} className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: chartColor(i) }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: categoryColor(c.category) }} />
                     <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
                     <span className="text-xs shrink-0" style={{ color: 'var(--warm-dark)' }}>{c.percent}%</span>
                   </div>
