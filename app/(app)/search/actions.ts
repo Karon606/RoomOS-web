@@ -92,9 +92,13 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
           take: 6,
           select: {
             id: true, roomNo: true, type: true, floor: true, baseRent: true, isVacant: true, nonResidentVacant: true,
+            // take: 1 을 뺐다 — 집계 제외 판정은 '방에 비거주 계약이 있는가'라는 방 단위 사실이라
+            // 가장 최근 생성 계약 하나로는 답할 수 없다. 비거주가 최신이 아닌 방(418호 형태)에서는
+            // 그 사실 자체가 안 보인다. getRoomsForSelect·getRoomDetail 이 같은 함정에서 쓴 처방 그대로다.
+            // 표시 이름은 종전대로 [0](최근 생성 계약)이라 정렬을 유지하면 값이 바뀌지 않는다.
             leaseTerms: {
               where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-              orderBy: { createdAt: 'desc' }, take: 1,
+              orderBy: { createdAt: 'desc' },
               select: { status: true, tenant: { select: { name: true } } },
             },
           },
@@ -223,7 +227,7 @@ export async function globalSearch(rawQuery: string): Promise<GlobalSearchResult
     group: 'room', id: r.id,
     title: fmtRoomNo(r.roomNo) ?? r.roomNo,
     // 집계 제외 방(비거주 점유 + 공실 표시 안 함, lib/vacancy 정본)은 '공실' 대신 점유자 이름(신고 9d844226 잔여)
-    right: isVacancyExcluded(r, r.leaseTerms[0]?.status === 'NON_RESIDENT')
+    right: isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT'))
       ? (r.leaseTerms[0]?.tenant.name ?? null)
       : r.isVacant ? '공실' : (r.leaseTerms[0]?.tenant.name ?? null),
     badge: null,
