@@ -26,7 +26,7 @@ const TrendChart = nextDynamic(() => import('./TrendChart'), {
   ),
 })
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
-import { fmtKorMoney, fmtManShort, fmtWon } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtManShort, fmtOfferRentAhead, fmtWon } from '@/lib/fmtMoney'
 import { MoneyEquation, expectedRevenueTerms, operatingProfitTerms, expectedExpenseTerms, hasRevenueBridge } from '@/components/ui/MoneyEquation'
 import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
@@ -98,7 +98,9 @@ export type DashboardData = {
   // occupants = 타일에 세울 사람 — 거주 먼저 입주일 순, 그다음 입실 예약. 선택·순서는 lib/leaseStatus 정본.
   // availability = 사람 아래 세울 입주 가능 블락(from = 사슬 끝 입주 가능일, rent = 그 달 제시가). 서버 판정이고
   // 클라이언트는 재판정하지 않는다 — occupants 는 이미 잘린 집합이라 여기서 다시 세면 5인 이상 방에서 틀린다.
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  // ahead / offerRentAhead = 그 자리가 보여 주는 달 뒤에 걸린 미반영 가격변경(lib/billing 정본). 판정도 서버 몫이다
+  // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
@@ -1951,6 +1953,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               const roomTone: BandTone = r.isVacant ? 'none'
                                 : unpaidRooms.has(r.roomNo) ? 'unpaid' : 'none'
                               const roomSub = roomTone === 'unpaid' ? '미납' : NBSP
+                              // 가격 예고는 제시가를 세운 자리에만 붙는다 — 사람 없는 방은 이번 달,
+                              // 입주 가능 블락은 그 방이 비는 달. 사람 밴드의 금액은 방 제시가가 아니라
+                              // 그 사람의 청구액(할인·일할·락인)이라 방 예약값을 얹으면 우리가 계산하지
+                              // 않은 청구를 약속하게 된다. 둘은 동시에 서지 않는다(사람 유무로 갈린다).
+                              const ahead = people.length === 0 ? r.offerRentAhead : (r.availability?.ahead ?? null)
                               return (
                                 <div
                                   key={r.roomNo}
@@ -1997,6 +2004,19 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                         <span className="truncate w-full text-center" style={CELL_NAME}>입주 가능</span>
                                         <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{r.availability.rent > 0 ? fmtManShort(r.availability.rent) : NBSP}</span>
                                         <span className="truncate w-full text-center" style={CELL_SUB}>{availableFromLabel(r.availability.from)}</span>
+                                      </div>
+                                    )}
+                                    {/* 가격 변경 예고 꼬리 — 아직 제시가에 안 실린 예약 인상·인하를 미리 말한다(운영자 발제 2026-08-12).
+                                        밴드 안이 아니라 꼬리인 이유 — 일정 슬롯은 '사람·방의 상태가 언제 바뀌는가'가 독점한다
+                                        ("8/14 퇴실"·"8/17 입실"·"8/30부터"). 그 자리에 돈을 넣으면 뒤엣것도 상태 전환일로 읽히고,
+                                        "8/30부터" 옆에 "9/1" 이 서면 그 날 다른 예약이 들어온다는 뜻이 된다(운영자 지적).
+                                        가격은 사람 축도 밴드 축도 아닌 방 축의 사실이라 타일 부연 자리가 맞다.
+                                        형태는 아래 '+N명' 꼬리 그대로다 — grow 를 주지 않아 3슬롯 대칭을 건드리지 않는다.
+                                        둘은 상호배타다(사람이 넷을 채우면 서버가 availability 를 안 내린다).
+                                        날짜(M/D)가 아니라 달(M월)로 적는 이유는 lib/fmtMoney fmtOfferRentAhead 주석에 있다. */}
+                                    {ahead && (
+                                      <div className="truncate w-full text-center tnum px-1 py-[3px]" style={{ ...bandStyle('none'), ...CELL_SUB }}>
+                                        {fmtOfferRentAhead(ahead.month, ahead.rent)}
                                       </div>
                                     )}
                                     {/* 다섯 명 이상 — 넷을 세우고 남은 수만 한 줄로. 밴드가 아니라 꼬리라 grow 를 주지 않는다. */}

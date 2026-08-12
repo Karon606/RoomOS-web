@@ -13,7 +13,7 @@ import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
@@ -1082,12 +1082,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       expectedMoveOut: tileYmd(l.expectedMoveOut),
     }
   }
-  const roomsData = roomsWithTenants.map(r => ({
+  const roomsData = roomsWithTenants.map(r => {
+    // 집계 제외(창고·사무실) — 배치도 등에서 공실로 칠하지 않기 위한 파생값(lib/vacancy 정본).
+    // 아래 offerRentAhead 도 같은 판정을 봐야 해서 리터럴 밖으로 뺀다(같은 식 두 벌 금지).
+    const vacancyExcluded = isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT'))
+    return {
     id:            r.id,
     roomNo:        r.roomNo,
     isVacant:      r.isVacant,
-    // 집계 제외(창고·사무실) — 배치도 등에서 공실로 칠하지 않기 위한 파생값(lib/vacancy 정본)
-    vacancyExcluded: isVacancyExcluded(r, r.leaseTerms.some(l => l.status === 'NON_RESIDENT')),
+    vacancyExcluded,
     type:          r.type,
     tier:          r.tier as string | null,
     floor:         r.floor as string | null,
@@ -1101,6 +1104,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 사람이 아직 없는 방을 지금 내놓는 값 — 예약 인상이 이번 달에 이미 걸려 있으면 인상가다.
     // 종전엔 타일이 baseRent 를 직표시해 인상 예약이 걸린 빈 방을 구가로 불렀다(오늘 해당 0실).
     offerRent:     offerRentForMonth(r, targetMonth),
+    // 아직 제시가에 안 실린 예약 인상·인하 — 빈 방 타일 꼬리의 '9월 36만'(lib/billing 정본).
+    // 비거주 점유 방은 금액 자체가 다른 축(nonResidentAmount)이라 거주 축 예고를 붙이면
+    // 협의가 아래에 방 예약값이 서게 된다 — 415호 오표시와 같은 클래스라 여기서 뺀다.
+    offerRentAhead: vacancyExcluded ? null : offerRentChangeAfterMonth(r, targetMonth),
     ...(() => {
       // 비거주는 위 '비거주자 현황' 블록이 따로 세운다 — 타일 사람 줄에서는 뺀다.
       const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT')
@@ -1128,7 +1135,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         occupantsMore: Math.max(0, queue.length - TILE_OCCUPANT_LIMIT),
         // 금액은 그 방이 비는 달의 제시가다 — 인상 적용월 이상이면 인상가(lib/billing 정본, 월 단위).
         availability: (availability?.kind === 'soon' && occupants.length < TILE_OCCUPANT_LIMIT)
-          ? { from: availability.availableFrom, rent: offerRentForMonth(r, availability.availableFrom.slice(0, 7)) }
+          // 예고를 availability 안에 넣는 이유 — 이 블락의 기준월은 방이 비는 달이지 이번 달이 아니다.
+          // 형제 필드로 두면 화면이 엉뚱한 달의 예고를 이 블락에 짝지을 여지가 생긴다.
+          ? { from: availability.availableFrom,
+              rent:  offerRentForMonth(r, availability.availableFrom.slice(0, 7)),
+              ahead: offerRentChangeAfterMonth(r, availability.availableFrom.slice(0, 7)) }
           : null,
       }
     })(),
@@ -1139,7 +1150,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const nr = r.leaseTerms.find(l => l.status === 'NON_RESIDENT')
       return nr ? tileOccupant(r, nr).amount : null
     })(),
-  }))
+    }
+  })
 
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
