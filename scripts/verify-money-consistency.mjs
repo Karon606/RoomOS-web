@@ -879,7 +879,8 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push(`[소스] ${name} 이 등식 문장을 MoneyEquation 정본으로 안 만든다 — 화면마다 항 구성이 갈린다`)
     }
   }
-  if (!/label: '이 달 청구액'.+\n.+label: '예약 확정'.+\n.+label: '퇴실 귀속'.+\n.+label: '기타수익'/.test(eqSrc)) {
+  // 마지막 항 이름은 '부가수익'(2026-08-12 운영자 확정 — 수납 관리 탭 어휘가 정본, '기타수익' 폐기).
+  if (!/label: '이 달 청구액'.+\n.+label: '예약 확정'.+\n.+label: '퇴실 귀속'.+\n.+label: '부가수익'/.test(eqSrc)) {
     violations.push('[소스] MoneyEquation 예상 수입 등식의 네 항 이름·순서가 바뀌었다 — 두 화면이 같은 문장을 못 쓴다')
   }
   // 운영이익 등식의 마지막 항은 '실제로 뺀 금액'이어야 한다. 서버는 과거월에 미기록 고정지출
