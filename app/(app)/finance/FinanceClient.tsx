@@ -66,6 +66,7 @@ import {
   DEFAULT_RECURRING_CATEGORY,
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
+import { DonutChart } from '@/components/ui/DonutChart'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -1243,40 +1244,6 @@ function BrandLogo({ name, size = 18 }: { name: string; size?: number }) {
 
 // ── Chart Components ─────────────────────────────────────────────
 
-function DonutChart({
-  segments, centerLabel, centerSub, size = 130, strokeWidth = 20,
-}: {
-  segments: { value: number; color: string }[]
-  centerLabel?: string; centerSub?: string; size?: number; strokeWidth?: number
-}) {
-  const r = (size - strokeWidth) / 2
-  const cx = size / 2; const cy = size / 2
-  const C = 2 * Math.PI * r
-  const total = segments.reduce((s, seg) => s + seg.value, 0)
-  let cumulativeAngle = -90
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--cream-3)" strokeWidth={strokeWidth} />
-      ) : (
-        segments.filter(s => s.value > 0).map((seg, i) => {
-          const pct = seg.value / total
-          const dashLength = pct * C
-          const angle = cumulativeAngle
-          cumulativeAngle += pct * 360
-          return (
-            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color}
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${dashLength} ${C - dashLength}`}
-              transform={`rotate(${angle}, ${cx}, ${cy})`} />
-          )
-        })
-      )}
-      {centerLabel && <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
-      {centerSub && <text x={cx} y={cy + 19} textAnchor="middle" fontSize="10" fill="var(--neutral-fg)">{centerSub}</text>}
-    </svg>
-  )
-}
 
 function StackedBar({
   segments, total, maxTotal, label, sublabel, colorMap,

@@ -42,6 +42,7 @@ import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModa
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { DonutChart } from '@/components/ui/DonutChart'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -774,40 +775,6 @@ function AlertsStrip({ alerts, onOpenAlert }: {
 
 // ── 도넛 차트 ───────────────────────────────────────────────────
 
-function DonutChart({
-  segments, centerLabel, centerSub, size = 140, strokeWidth = 22,
-}: {
-  segments: { value: number; color: string }[]
-  centerLabel?: string; centerSub?: string; size?: number; strokeWidth?: number
-}) {
-  const r = (size - strokeWidth) / 2
-  const cx = size / 2; const cy = size / 2
-  const C = 2 * Math.PI * r
-  const total = segments.reduce((s, seg) => s + seg.value, 0)
-  let cumulativeAngle = -90
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--cream-3)" strokeWidth={strokeWidth} />
-      ) : (
-        segments.filter(s => s.value > 0).map((seg, i) => {
-          const pct = seg.value / total
-          const dashLength = pct * C
-          const angle = cumulativeAngle
-          cumulativeAngle += pct * 360
-          return (
-            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color}
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${dashLength} ${C - dashLength}`}
-              transform={`rotate(${angle}, ${cx}, ${cy})`} />
-          )
-        })
-      )}
-      {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
-      {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="var(--neutral-fg)">{centerSub}</text>}
-    </svg>
-  )
-}
 
 // ── 공용 컴포넌트 ───────────────────────────────────────────────
 
