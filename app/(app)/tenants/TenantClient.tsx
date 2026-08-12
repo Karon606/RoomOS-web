@@ -63,7 +63,7 @@ import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { primaryTenantLease } from '@/lib/leaseStatus'
+import { primaryTenantLease, roomLeaseRowOrder } from '@/lib/leaseStatus'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -2421,6 +2421,13 @@ export default function TenantClient({
       {/* ── 수납 모달 ─────────────────────────────────────────────── */}
       {payTarget && (() => {
         const { tenant, lease } = payTarget
+        // 이 사람의 청구 계약들 — 둘 이상이면 수납 폼이 어느 계약에 넣는지 고를 수 있어야 한다.
+        // 기본 선택은 메인 계약(openPayModal 이 mainLease 로 연다)이고, 여기서 다른 계약으로 넘어간다.
+        // 미납을 다른 계약에서 자동으로 충당하지는 않는다 — 청구는 계약별이고 합산은 표시뿐이다
+        // (운영자 확정 2026-08-13). 고르는 일은 사람이 한다.
+        const payableLeases = roomLeaseRowOrder(
+          tenant.leaseTerms.filter(l => ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'RESERVED'].includes(l.status)),
+        )
         const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
         const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]') && !p.isDeposit)
         // 목록에 그릴 집합 — 3개월 창. 위 regularRecords 는 금액 계산용이라 조회월 기준 그대로 둔다.
@@ -2446,6 +2453,19 @@ export default function TenantClient({
             bodyClassName=""
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
             subtitle={`${targetMonth} · ${paySettlement?.noBillReason ? '청구 없음' : `예정 ${fmtWon(expected)}`}`}>
+
+              {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다. 계약이 하나면 세그먼트가 없다(픽셀 무변동). */}
+              {payableLeases.length > 1 && (
+                <div className="px-6 pt-4">
+                  <SegmentedControl
+                    ariaLabel="수납할 계약"
+                    size="sm"
+                    value={lease.id}
+                    options={payableLeases.map(l => ({ value: l.id, label: fmtRoomNo(l.room?.roomNo, '호실 미지정') }))}
+                    onChange={id => { const next = payableLeases.find(l => l.id === id); if (next && next.id !== lease.id) void openPayModal(tenant, next) }}
+                  />
+                </div>
+              )}
 
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
