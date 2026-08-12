@@ -2312,7 +2312,14 @@ export default function TenantClient({
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
                   <TenantForm rooms={rooms} tenant={t} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
-                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex flex-wrap gap-2 shrink-0">
+                  {/* 계약 추가 — 목록 경유 수정 모달과 같은 문. 수정 창이 두 벌이라 한쪽에만 두면
+                      프리즘 경유(운영자 주 동선)에서 문이 안 보인다(2026-08-13 실기 신고). */}
+                  <Btn type="button" variant="secondary" size="md"
+                    onClick={() => { setDetailEditMode(false); setDetailTenant(null); setDetailEditDirty(false); setError(''); clearTenantUrlParams(); setAddLeaseTenant(t) }}
+                    className="basis-full sm:flex-1 sm:basis-0">
+                    계약 추가
+                  </Btn>
                   <Btn type="button" variant="secondary" size="md" onClick={closeEdit} className="flex-1">취소</Btn>
                   <Btn type="submit" variant="primary" size="md" disabled={isPending} className="flex-1">
                     {isPending ? '저장 중…' : '저장'}
