@@ -15,7 +15,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { primaryRoomLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
-import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
+import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
@@ -194,10 +194,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const proratedAmt = l.checkoutProratedAmount
     const proratedMonth = l.checkoutProratedMonth
     // 예약 인상 — 대상월이 인상 적용월 이상이면 scheduledRent 로 청구('7월 이용료부터' 반영, 적용일 전 선납도 인상가).
-    const rentUpdMonth = room.rentUpdateDate ? monthOfDate(room.rentUpdateDate) : null
-    const baseForMonth = (room.scheduledRent != null && room.scheduledRent > 0 && rentUpdMonth && targetMonth >= rentUpdMonth)
-      ? room.scheduledRent
-      : lease.rentAmount
+    // 규칙은 lib/billing effectiveBaseRent 정본이 쥔다. 여기 손으로 베껴 두었더니 상태 분기가
+    // 빠져 있어서, 거주 인상 예약이 같은 방의 비거주 계약까지 물 수 있었다(418호 4.8배 클래스).
+    const baseForMonth = effectiveBaseRent({ ...lease, room }, targetMonth)
     const expected = (proratedAmt != null && proratedMonth === targetMonth)
       ? proratedAmt
       : discountedRent(leaseDiscounts, targetMonth, baseForMonth)
@@ -227,9 +226,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       // 표시 정본 수렴(신고 50a2a69b) — 청구 예정액은 입주월 기준 할인·예약 인상 반영(원가 직표시 금지).
       // balance·totalPaid 0 + isPaid true 는 유지(예약은 미납·수금 집계 제외 정본) — 실수납은 reservationPaid 로 노출.
       const moveInMonth = moveInDate ? moveInDate.slice(0, 7) : targetMonth
-      const reservedBase = (room.scheduledRent != null && room.scheduledRent > 0 && rentUpdMonth && moveInMonth >= rentUpdMonth)
-        ? room.scheduledRent
-        : lease.rentAmount
+      const reservedBase = effectiveBaseRent({ ...lease, room }, moveInMonth)
       const reservedExpected = discountedRent(leaseDiscounts, moveInMonth, reservedBase)
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,

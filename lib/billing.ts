@@ -43,7 +43,13 @@ export type BillingLeaseFields = {
 // 비거주 예약(nonResidentScheduled/nonResidentRentDate)을 같은 규칙으로 읽는다.
 // 기준액은 어느 축이든 l.rentAmount 다. room.nonResidentRent 를 기준액으로 쓰면
 // 계약별 협의가가 방 기본값으로 덮여 사라진다.
-function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
+//
+// export 인 이유 — 청구 전체(billForLeaseMonth)가 아니라 **기준 월세만** 필요한 호출부가 있다.
+// 수납 관리 행 조립(rooms/actions buildLeaseRow)이 그렇다. 그 자리는 일할·락인·단기 규칙을
+// 자기 순서로 이미 세워 두었고 필요한 것은 '그 달 기준액' 한 조각뿐이라, 종전에는 이 함수를
+// 손으로 두 벌 베껴 놓고 있었다(2026-08-12 구조 부채 정리). 손사본은 상태 분기를 빠뜨려
+// 비거주 계약에 거주 인상 예약을 물릴 수 있었다 — 418호 4.8배와 같은 클래스다.
+export function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
   if (l.status === 'NON_RESIDENT') {
     const nrSched = l.room?.nonResidentScheduled ?? null
     const nrMon = l.room?.nonResidentRentDate ? monthOfDate(l.room.nonResidentRentDate) : null
