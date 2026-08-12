@@ -13,8 +13,8 @@ import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, resolveDueDateForMonth } from '@/lib/billing'
-import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue, roomReservationQueue, primaryRoomLease } from '@/lib/leaseStatus'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { getCheckedOutRecognizedRevenue, getPaidRevenue, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -187,6 +187,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     tourDoneCount,
     publishCandidateRooms,
     unpublishCandidateRooms,
+    availabilityLeases,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
@@ -450,6 +451,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, isVacant: false, showOnSite: true, NOT: vacancyExcludedWhere },
       select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
       orderBy: { roomNo: 'asc' },
+    }),
+    // 입주 가능 판정(roomAvailability)의 계산 입력 — 위 방 현황 조회는 take: 6 이라 여기 못 쓴다.
+    // 잘린 한 건이 무기한이면 방은 '모른다'인데 '곧 입주 가능'으로 뒤집히고, 타일이 홈 매칭 알림보다
+    // 이른 날짜를 말하게 된다(같은 함수라도 먹이는 집합이 다르면 답이 갈린다). 판정에 필요한 두 필드만
+    // take 없이 읽는 처방은 2026-08-11 getRoomDetail 이 같은 함정에서 쓴 것 그대로다.
+    prisma.leaseTerm.findMany({
+      where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      select: { roomId: true, status: true, expectedMoveOut: true },
     }),
   ])
 
@@ -1040,6 +1049,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     (l.status === 'RESERVED' || l.isShortTerm) ? (monthOfDate(l.moveInDate) ?? targetMonth) : targetMonth
   // 타일 한 장에 세우는 사람 수 상한 — 넘치면 '+N명' 한 줄로 접는다(운영자 확정 2026-08-11).
   const TILE_OCCUPANT_LIMIT = 4
+  // 방별 입주 가능 판정 — take 없이 읽은 계약으로 lib/leaseStatus 정본에 묻는다(판정 사본 금지).
+  // roomId 가 없는 계약(방 미배정)은 방 축에 속하지 않는다.
+  const availabilityLeasesByRoom = new Map<string, { status: string; expectedMoveOut: Date | null }[]>()
+  for (const l of availabilityLeases) {
+    if (!l.roomId) continue
+    const arr = availabilityLeasesByRoom.get(l.roomId)
+    if (arr) arr.push(l)
+    else availabilityLeasesByRoom.set(l.roomId, [l])
+  }
   const tileYmd = (d: Date | null): string | null => d ? new Date(d).toISOString().slice(0, 10) : null
   const tileOccupant = (r: typeof roomsWithTenants[number], l: typeof roomsWithTenants[number]['leaseTerms'][number]) => {
     const mon = tileBillMonth(l)
@@ -1080,21 +1098,38 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     baseRent:      r.baseRent,
     scheduledRent: r.scheduledRent,
     rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
+    // 사람이 아직 없는 방을 지금 내놓는 값 — 예약 인상이 이번 달에 이미 걸려 있으면 인상가다.
+    // 종전엔 타일이 baseRent 를 직표시해 인상 예약이 걸린 빈 방을 구가로 불렀다(오늘 해당 0실).
+    offerRent:     offerRentForMonth(r, targetMonth),
     ...(() => {
       // 비거주는 위 '비거주자 현황' 블록이 따로 세운다 — 타일 사람 줄에서는 뺀다.
       const occupying = r.leaseTerms.filter(l => l.status !== 'NON_RESIDENT')
       const primary = primaryRoomLease(occupying)
-      // 타일에 세울 사람 — 사는 사람(또는 먼저 들어올 예약) 다음에 남은 입실 예약을 입주일 순으로.
-      // 예약을 한 명만 세우던 시절엔 404호(8/15·9/1)의 뒷사람이 화면 어디에도 없었다.
-      const queue = [primary, ...roomReservationQueue(occupying, primary)].filter(l => l != null)
+      // 타일에 세울 사람 — 수납 관리 행 순서 정본(거주 먼저 입주일 순, 그다음 입실 예약)을 그대로 쓴다.
+      // 종전 조립('주 계약 하나 + 나머지 예약')은 한 방에 거주 계약이 둘이면 두 번째 거주자를 통째로
+      // 떨어뜨렸는데, 아래 입주 가능 판정은 그 떨어진 계약의 퇴실일까지 세어 날짜를 잡는다. 그러면
+      // 화면에 없는 사람이 정한 날짜가 공실 블락에 뜬다. 두 축이 같은 계약 집합을 보게 맞춘다.
+      const queue = roomLeaseRowOrder(occupying)
+      const occupants = queue.slice(0, TILE_OCCUPANT_LIMIT).map(l => tileOccupant(r, l))
+      // 언제부터 이 방을 줄 수 있나 — 사슬 끝 정본(lib/leaseStatus). 날짜가 잡힌 방(soon)에만 값이 있다.
+      // 밴드 상한은 공실 블락까지 합쳐 넷이다(패널 판정 2026-08-12) — 사람이 넷을 채우면 블락은 안 붙는다.
+      // 사람은 사실이고 공실은 파생값(맨 아래 퇴실일 + 1)이라, 잘라야 한다면 파생값 쪽을 자른다.
+      const availability = roomAvailability({
+        nonResidentVacant: r.nonResidentVacant,
+        leaseTerms: availabilityLeasesByRoom.get(r.id) ?? [],
+      })
       return {
         tenantName:   primary?.tenant.name ?? null,
         tenantId:     primary?.tenant.id ?? null,
         tenantStatus: primary?.status ?? null,
         // 네 명까지 세운다 — 320px 폭에서 밴드 넷이 타일 높이를 넘기지 않는 상한이다.
-        occupants: queue.slice(0, TILE_OCCUPANT_LIMIT).map(l => tileOccupant(r, l)),
+        occupants,
         // 다섯 명 이상이면 넘치는 수만 한 줄로 — 잘라 놓고 말이 없으면 없는 사람이 된다.
         occupantsMore: Math.max(0, queue.length - TILE_OCCUPANT_LIMIT),
+        // 금액은 그 방이 비는 달의 제시가다 — 인상 적용월 이상이면 인상가(lib/billing 정본, 월 단위).
+        availability: (availability?.kind === 'soon' && occupants.length < TILE_OCCUPANT_LIMIT)
+          ? { from: availability.availableFrom, rent: offerRentForMonth(r, availability.availableFrom.slice(0, 7)) }
+          : null,
       }
     })(),
     nonResidentName:  r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.name ?? null,

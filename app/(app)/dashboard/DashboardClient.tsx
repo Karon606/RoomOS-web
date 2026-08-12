@@ -41,7 +41,7 @@ import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { fmtRoomNo } from './dashUtils'
-import { checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
+import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -95,8 +95,10 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  // occupants = 타일에 세울 사람 — 주 계약(사는 사람 우선) + 다음 입실 예약. 선택은 lib/leaseStatus 정본.
-  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  // occupants = 타일에 세울 사람 — 거주 먼저 입주일 순, 그다음 입실 예약. 선택·순서는 lib/leaseStatus 정본.
+  // availability = 사람 아래 세울 입주 가능 블락(from = 사슬 끝 입주 가능일, rent = 그 달 제시가). 서버 판정이고
+  // 클라이언트는 재판정하지 않는다 — occupants 는 이미 잘린 집합이라 여기서 다시 세면 5인 이상 방에서 틀린다.
+  rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
   alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
@@ -1859,14 +1861,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         {/* 범례 — 스와치는 타일 실제 표면색(밴드 틴트 그대로, BAND_BG 와 같은 토큰).
                             종전 스와치는 fg(짙은 글자색)라 타일 어디에도 없는 색을 견본으로 내밀었다.
                             공실 견본은 비어 보이는 게 맞다 — 무색이라는 사실이 그 방의 상태다.
-                            비거주만 걸린 방(415호·사무실 유형)도 사람 없는 방이라 같은 견본을 쓴다. */}
+                            비거주만 걸린 방(415호·사무실 유형)도 사람 없는 방이라 같은 견본을 쓴다.
+                            항목을 늘리지 않고 라벨만 늘린다 — 무색 견본 하나가 이제 셋을 뜻하기 때문이다(공실·비거주·입주 가능).
+                            범례는 색 사전이라 같은 색에 칸을 하나 더 내주면 색이 둘인 것처럼 읽힌다. */}
                         <div className="flex gap-3.5 shrink-0 flex-wrap items-center" style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
                           {([
                             { tone: 'paid'    as const, label: '완납' },
                             { tone: 'await'   as const, label: '납부·입실 예정' },
                             { tone: 'unpaid'  as const, label: '미납' },
                             { tone: 'overdue' as const, label: '연체' },
-                            { tone: 'none'    as const, label: '공실·비거주' },
+                            { tone: 'none'    as const, label: '공실·비거주·입주 가능' },
                           ]).map(s => (
                             <div key={s.label} className="flex items-center gap-[5px]">
                               {/* 10% 틴트는 7px 에서 안 보인다 — 견본 크기를 키우고 테두리는 중립 헤어라인으로(상태색 아님) */}
@@ -1936,8 +1940,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 : r.vacancyExcluded ? '비거주'
                                 : hasNonResident ? '공실 (비거주자)' : '공실'
                               // 비거주 점유 방은 그 계약의 협의가(방 기본값이면 415호가 15만을 35만으로 부른다),
-                              // 나머지는 방 기본 이용료 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
-                              const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.baseRent
+                              // 나머지는 이번 달 제시가 — 아직 사람이 없으니 내놓은 값이 그 방의 금액이다.
+                              // 제시가는 예약 인상을 본다(lib/billing offerRentForMonth) — baseRent 직표시이던
+                              // 시절엔 인상 예약이 걸린 빈 방을 구가로 불렀다.
+                              const roomAmount = r.vacancyExcluded ? (r.nonResidentAmount ?? 0) : r.offerRent
                               // 사람이 없는 타일은 무색이다. 비거주 점유를 사람 색으로 칠하던 시안 D(7408890)를
                               // 운영자가 뒤집었다 — 색까지 사람과 같으면 그 방에 누가 산다고 말하는 것과 같다.
                               // 그 사람의 수납 단계(미납·연체 D+N)는 아래 비거주자 현황 카드가 색과 함께 말한다.
@@ -1978,6 +1984,21 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                             </div>
                                           )
                                         })}
+                                    {/* 입주 가능 블락 — 사람이 다 나간 뒤 그 방을 언제부터 얼마에 줄 수 있는가(운영자 지시 2026-08-12).
+                                        사람 밴드와 같은 3슬롯이고 순서는 늘 맨 아래다. 입주 가능일은 정의상 그 방 어느 계약의
+                                        퇴실일보다도 뒤라(사슬 끝 + 1일) 시간순이 어긋날 수 없다.
+                                        '공실'이라 부르지 않는다 — 공실은 lib/vacancy 가 정의한 지금형 집계어이고, 이 방들은
+                                        오늘 사람이 살고 있어 KPI 가 공실 0실이라 말한다. 같은 화면에서 같은 말이 두 뜻이 된다.
+                                        어휘 '입주 가능'은 호실 관리 필터·카드 칩·프리즘 호실 면·매칭 알림이 이미 쓰는 정본이다.
+                                        색은 사람 것이라 여기엔 없다(무색) — 사람 없는 타일과 같은 밴드다.
+                                        판정은 서버 몫이다. 여기서 occupants 로 다시 세면 이미 잘린 집합을 보게 된다. */}
+                                    {people.length > 0 && r.availability && (
+                                      <div className="grow flex flex-col justify-center px-1 py-2 gap-[3px]" style={bandStyle('none')}>
+                                        <span className="truncate w-full text-center" style={CELL_NAME}>입주 가능</span>
+                                        <span className="truncate w-full text-center tnum" style={CELL_MONEY}>{r.availability.rent > 0 ? fmtManShort(r.availability.rent) : NBSP}</span>
+                                        <span className="truncate w-full text-center" style={CELL_SUB}>{availableFromLabel(r.availability.from)}</span>
+                                      </div>
+                                    )}
                                     {/* 다섯 명 이상 — 넷을 세우고 남은 수만 한 줄로. 밴드가 아니라 꼬리라 grow 를 주지 않는다. */}
                                     {r.occupantsMore > 0 && (
                                       <div className="truncate w-full text-center px-1 py-[3px]" style={{ ...bandStyle('none'), ...CELL_SUB }}>
