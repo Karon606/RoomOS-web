@@ -1257,8 +1257,11 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                   <span className="shrink-0 num" style={{ color: 'var(--warm-mid)' }}>{fmtWon(r.amount)}</span>
                 </div>
               ))}
+              {/* 색은 --coral 이 아니라 §19 페어 토큰 --tc-text 다. 라이트에서는 같은 #A03C2E 라
+                  픽셀이 안 바뀌고, 다크에서만 갈린다 — --coral 은 안 밝아져 크림 카드 위에서 2.78:1 로
+                  주저앉고 --tc-text 는 4.63:1 이다(형제 '전체 보기 ›' 링크들은 아직 --coral, 별건 보고). */}
               <Link href={`/finance?tab=expense&month=${targetMonth}&cat=${encodeURIComponent(openCat.category)}`}
-                className="inline-block pt-1 text-[0.6875rem]" style={{ color: 'var(--coral)' }}>
+                className="inline-block pt-1 text-[0.6875rem]" style={{ color: 'var(--tc-text)' }}>
                 지출 관리에서 전체 보기 ›
               </Link>
             </div>
