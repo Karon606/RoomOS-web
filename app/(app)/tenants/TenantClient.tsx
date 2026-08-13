@@ -4307,7 +4307,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               {parentVal !== '' && selectedRoom?.vacancyExcluded && statusVal !== 'NON_RESIDENT'
                 && !['CHECKED_OUT', 'CANCELLED'].includes(statusVal) && (
                 <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
-                  이 호실은 세를 놓지 않는 방(창고·사무실)으로 설정돼 있습니다. 상태를 비거주자로 바꾸면 합본 계약서에 이 호실이 함께 실립니다.{' '}
+                  이 호실은 거주용이 아닌 방(창고·사무실)으로 설정돼 있습니다. 상태를 비거주자로 바꾸면 합본 계약서에 이 호실이 함께 실립니다.{' '}
                   <button type="button" onClick={() => setStatusVal('NON_RESIDENT')}
                     className="underline text-[var(--coral)] font-medium">비거주자로 변경</button>
                 </p>

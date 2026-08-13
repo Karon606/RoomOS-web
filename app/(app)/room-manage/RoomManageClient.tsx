@@ -1631,7 +1631,7 @@ export default function RoomManageClient({
                 <input type="checkbox" defaultChecked={!editRoom.nonResidentVacant}
                   onChange={e => { const h = e.currentTarget.form?.elements.namedItem('nonResidentVacant') as HTMLInputElement | null; if (h) h.value = e.currentTarget.checked ? '0' : '1' }}
                   className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                공실 집계에서 제외 <span className="text-[var(--warm-muted)]">(창고·사무실 등 세를 놓지 않는 방, 홈·리포트 공실 수에서 빠짐)</span>
+                공실 집계에서 제외 <span className="text-[var(--warm-muted)]">(창고·사무실 등 거주용이 아닌 방, 홈·리포트 공실 수에서 빠짐)</span>
               </label>
               <input type="hidden" name="nonResidentVacant" defaultValue={editRoom.nonResidentVacant ? '1' : '0'} />
               {/* 단독 계약 불가 (2026-08-13, 다호실 2단계). 체크가 곧 standaloneLeaseAllowed=false 라

@@ -95,7 +95,7 @@ eq('시트 · 종료 계약은 단독 불가 방이어도 통과',
   sheet({ roomStandaloneAllowed: false, incoming: { status: 'CHECKED_OUT', moveIn: '2026-01-01', moveOut: '2026-07-31' } }), null)
 // 비거주 점유 방 문구가 먼저다 — 두 설정이 같이 켜진 방(창고)에서 순서가 뒤집히면 안내가 엉킨다.
 eq('시트 · 비거주 점유 문구가 먼저',
-  sheet({ roomStandaloneAllowed: false, nonResidentOccupied: true })?.startsWith('해당 호실은 세를 놓지 않는 방'), true)
+  sheet({ roomStandaloneAllowed: false, nonResidentOccupied: true })?.startsWith('해당 호실은 거주용이 아닌 방'), true)
 
 // ── 납부일 전파 축(2026-08-13 운영자 오더) ────────────────────────────
 // 부모 계약의 납부일이 바뀌면 딸린 계약도 같은 날로 따라간다. 따라오는 것은 '비었거나 옛 부모 날과

@@ -54,7 +54,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: proc
 // 방을 잡고 있는 계약 — app/(app)/room-manage/RoomManageClient.tsx OCCUPYING_STATUSES 와 같은 정의.
 const OCCUPYING_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING']
 
-// lib/vacancy.ts isVacancyExcluded 와 같은 정의 — 방 설정 하나(세를 놓지 않는 방).
+// lib/vacancy.ts isVacancyExcluded 와 같은 정의 — 방 설정 하나(거주용이 아닌 방).
 const isVacancyExcluded = (nonResidentVacant) => !nonResidentVacant
 
 // 거주 계약 — lib/leaseStatus 의 CURRENT_OCCUPANCY_STATUSES 와 같은 정의.
