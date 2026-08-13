@@ -23,7 +23,7 @@
 - [[mobile-scroll-viewport]] — 모바일 스크롤·뷰포트 함정(overscroll-contain 은 진짜 스크롤러에만, iOS/Android 키보드·핀치줌 차이, 두 엔진 실기 검증 규칙, 셸 밖 단독 라우트 스크롤 계약 A/B)
 - [[money-display-feedback]] — 돈 표시·저장 피드백 정본(표시 정본 수렴·원가 직표시 금지, 받은 돈은 조회월 무관 표시, 저장 피드백 3종·수납일 기본값 오늘, 크리티컬 신고 50a2a69b)
 - [[cash-receipt-refund]] — 현금영수증은 앱 표시일 뿐 실제 발행은 홈택스(임형진 사례)·환불 재기록의 증빙 메타 유실·두 축(귀속월 vs 결제일) 구분
-- [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등)
+- [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등) + 사람을 부르는 말(입주자/입실자·입주/입실 경계)·다호실 종속(메인 계약)
 - [[open-issues]] — 미해결·후속 작업
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)
 - [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어)
