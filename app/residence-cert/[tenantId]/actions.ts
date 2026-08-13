@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { driveImageDataUrl } from '@/lib/google-drive'
+import { pickDocumentLease } from '@/lib/documentLease'
 import {
   type ResidenceCertFieldValues, type ResidenceCertOverrides, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_ERROR, deriveResidenceCertFields, normalizeResidenceCertOverrides,
@@ -94,12 +95,9 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
 
   if (!tenant) return null
 
-  // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
-  // (아래에서 고른 lease 로 저장된 표시값을 다시 조회한다 — 계약이 정해져야 행을 찾을 수 있다.)
-  // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨).
-  const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
-  const lease = [...tenant.leaseTerms]
-    .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
+  // 선택 규칙은 lib/documentLease 정본 하나다(계약서·납부 확인서와 같은 함수).
+  // (여기서 고른 lease 로 저장된 표시값을 다시 조회한다 — 계약이 정해져야 행을 찾을 수 있다.)
+  const lease = pickDocumentLease(tenant.leaseTerms)
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}

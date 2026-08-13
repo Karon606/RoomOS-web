@@ -13,6 +13,7 @@ import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
+import { pickDocumentLease } from '@/lib/documentLease'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
@@ -121,11 +122,8 @@ export async function POST(req: Request) {
     ])
     if (!tenant) return NextResponse.json({ ok: false, error: '입실자를 찾을 수 없습니다.' }, { status: 404 })
 
-    // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
-    // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨). 실거주 확인서 정본과 같은 식이다.
-    const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
-    const lease = [...tenant.leaseTerms]
-      .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
+    // 선택 규칙은 lib/documentLease 정본 하나다 — 화면(buildContractData)과 같은 함수를 쓴다.
+    const lease = pickDocumentLease(tenant.leaseTerms)
     // 본문 선택은 resolveSignedBody 한 곳이 정한다(lib/contract.ts). 서명이 끝난 계약은 박제본을 읽으므로
     // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 화면(contractData)과 같은 함수를 쓴다.
     const body_ = resolveSignedBody(lease, property)

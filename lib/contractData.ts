@@ -14,6 +14,7 @@ import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/d
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
+import { pickDocumentLease } from '@/lib/documentLease'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -126,14 +127,10 @@ export async function buildContractData(tenantId: string, propertyId: string, le
 
   if (!tenant) return null
 
-  // 우선순위 ACTIVE > CHECKOUT_PENDING > RESERVED > NON_RESIDENT (실제 거주 계약을 우선 채움).
-  // 우선순위가 같으면 moveInDate 최신(위 orderBy 로 이미 desc 정렬됨). 실거주 확인서 정본과 같은 식이다.
-  const LEASE_PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, RESERVED: 2, NON_RESIDENT: 3 }
+  // 선택 규칙은 lib/documentLease 정본 하나다(계약서·실거주 확인서·납부 확인서 공용).
   // 지목이 있으면 그 계약. 위 where 안에서만 찾으므로 남의 계약 id 를 넣어도 통하지 않고,
   // 못 찾으면 조용히 종전 추론으로 떨어진다(막지 않는다 — 옛 URL 이 404 가 되면 그게 회귀다).
-  const named = leaseTermId ? tenant.leaseTerms.find(l => l.id === leaseTermId) : undefined
-  const lease = named ?? [...tenant.leaseTerms]
-    .sort((a, b) => (LEASE_PRIORITY[a.status] ?? 99) - (LEASE_PRIORITY[b.status] ?? 99))[0] ?? null
+  const lease = pickDocumentLease(tenant.leaseTerms, leaseTermId)
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const emergencyContacts = tenant.contacts

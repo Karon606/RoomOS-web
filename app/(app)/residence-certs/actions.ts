@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
+import { documentLeaseRank } from '@/lib/documentLease'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -66,11 +67,10 @@ export async function getIssuableTenants(): Promise<IssuableTenant[]> {
       room: { select: { roomNo: true } },
     },
   })
-  // 입실자 중복 제거(여러 lease 가능성 대비) — 발급 상세(getResidenceCertData)와 동일하게
-  // 실거주 계약 우선(ACTIVE > CHECKOUT_PENDING > NON_RESIDENT). 거주·비거주 계약을 동시에 가진
-  // 입실자의 배지가 '비거주'로 잘못 붙지 않게 한다.
-  const PRIORITY: Record<string, number> = { ACTIVE: 0, CHECKOUT_PENDING: 1, NON_RESIDENT: 2 }
-  const ranked = [...leases].sort((a, b) => (PRIORITY[a.status] ?? 99) - (PRIORITY[b.status] ?? 99))
+  // 입실자 중복 제거(여러 lease 가능성 대비) — 발급 상세(getResidenceCertData)와 **문자 그대로 같은**
+  // 규칙을 쓴다(lib/documentLease 정본). 거주·비거주 계약을 동시에 가진 입실자의 배지가 '비거주'로
+  // 잘못 붙지 않게 한다. 목록과 상세가 다른 계약을 고르면 배지와 발급 내용이 갈린다.
+  const ranked = [...leases].sort((a, b) => documentLeaseRank(a.status) - documentLeaseRank(b.status))
   const seen = new Set<string>()
   const out: IssuableTenant[] = []
   for (const l of ranked) {

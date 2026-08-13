@@ -12,6 +12,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import type { ReceiptKind } from '@/lib/rentReceiptPdf'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
+import { pickDocumentLease } from '@/lib/documentLease'
 import { depositComposition } from '@/lib/depositComposition'
 
 // 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
@@ -102,10 +103,10 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
 
   if (!tenant) return null
 
-  // 비거주만 뒤로 보내는 안정 정렬 — 거주 계약이 있으면 그쪽을 먼저 고른다.
-  // 전 상태 우선순위를 매기지 않는 것은, 기존 조합의 선택 결과를 1비트도 바꾸지 않기 위해서다.
-  const lease = [...tenant.leaseTerms]
-    .sort((a, b) => (a.status === 'NON_RESIDENT' ? 1 : 0) - (b.status === 'NON_RESIDENT' ? 1 : 0))[0] ?? null
+  // 선택 규칙은 lib/documentLease 정본 하나다(계약서·실거주 확인서와 같은 함수).
+  // 종전의 '비거주만 뒤로'는 절반짜리라, 한 사람이 예약과 거주를 함께 들면 이 서류만 다른 계약을
+  // 그렸다. 실데이터 107명 전원에서 선택 결과가 같음을 확인하고 전 상태 우선순위로 올렸다.
+  const lease = pickDocumentLease(tenant.leaseTerms)
   const nonResident = lease?.status === 'NON_RESIDENT'
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const isShortTerm = !!lease?.isShortTerm

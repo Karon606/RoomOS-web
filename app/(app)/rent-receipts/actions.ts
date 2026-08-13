@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
+import { documentLeaseRank } from '@/lib/documentLease'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -63,10 +64,10 @@ export async function getIssuableTenants(kind: 'rent' | 'deposit' = 'rent'): Pro
     orderBy: [{ moveInDate: 'desc' }],
     select: { status: true, tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
   })
-  // 중복 제거 전 비거주만 뒤로 — 거주·비거주 계약을 함께 가진 입실자의 배지가 '비거주'로 잘못 붙는 것을 막는다.
-  // 실거주확인서처럼 전 상태 우선순위를 매기지 않는 이유는, 기존 조합(ACTIVE·CHECKOUT_PENDING·RESERVED)의
-  // 선택 결과가 1비트도 달라지면 안 되기 때문이다. Array.sort 는 안정 정렬이라 나머지 순서는 그대로 남는다.
-  const ranked = [...leases].sort((a, b) => (a.status === 'NON_RESIDENT' ? 1 : 0) - (b.status === 'NON_RESIDENT' ? 1 : 0))
+  // 중복 제거 전 정렬 — 발급 상세(getRentReceiptData)와 **문자 그대로 같은** 규칙을 쓴다
+  // (lib/documentLease 정본). 거주·비거주 계약을 함께 가진 입실자의 배지가 '비거주'로 잘못 붙는 것을
+  // 막는다. Array.sort 는 안정 정렬이라 우선순위가 같은 계약끼리는 위 orderBy 순서가 그대로 남는다.
+  const ranked = [...leases].sort((a, b) => documentLeaseRank(a.status) - documentLeaseRank(b.status))
   const seen = new Set<string>()
   const out: IssuableTenant[] = []
   for (const l of ranked) {
