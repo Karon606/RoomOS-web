@@ -1273,7 +1273,9 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
   // (e) 건수와 금액은 모집단이 다르다 — 건수에는 퇴실 계약이 없고 금액(paidRevenue)에는 그 달 귀속분이
   //     들어 있다(2026-06 퇴실 귀속 381만·10건). 값을 맞추는 대신 라벨로 가르기로 했으므로 그 라벨을 잠근다.
-  if (!/건수 \(현 입주자\)/.test(dashClient)) {
+  // 소제목은 2026-08-13 에 '건수와 이 달 청구 (현 입주자)' 로 늘었다(금액 병기). 잠그는 것은
+  //     한정어 자체이지 문장 전체가 아니다 — 앞말이 늘어도 모집단 표시는 살아 있어야 한다.
+  if (!/건수[^\n]{0,20}\(현 입주자\)/.test(dashClient)) {
     violations.push('[소스] 홈 수납 현황 카드의 건수 모집단 한정어가 사라졌다 — 퇴실 귀속이 들어간 금액과 같은 모집단으로 읽힌다')
   }
 }
@@ -1499,6 +1501,68 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   // (d) 표시용 부산물은 홈에만 둔다. unpaid.ts 는 푸시 전용이라 소비처가 없어 죽은 코드가 된다.
   if (/agingOverdue/.test(unpaidSrc)) {
     violations.push('[소스] unpaid.ts 에 에이징 부산물이 들어갔다 — 소비처가 없는 죽은 코드다(표시는 page.tsx 몫)')
+  }
+}
+
+// 18-7. 홈 수납 현황 카드의 금액 3항과 예약 확정 줄 (2026-08-13, 운영자 지시 + 회계 패널).
+//
+//   건수 옆에 금액을 병기한다. 금액 축은 **그 달 청구액**이고 항등은
+//       완납 + 수납예정 + 미납 === billedThisMonth
+//   다. 실수납 축을 쓰지 않는 이유 — '완납'은 누적 축 판정이라 그 달 귀속 수납이 그 달 청구보다
+//   적은 완납 계약이 정상적으로 존재한다(2026-04 3건 사건의 정체). 완납 줄 옆에 청구보다 작은
+//   수납액이 서면 카드가 자기 분류를 반박한다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  const leaseStatusSrc3 = readFileSync('lib/leaseStatus.ts', 'utf8')
+
+  // (a) 완납 금액은 **나머지**다 — 건수를 모집단 빼기로 구하는 것과 같은 이유.
+  if (!/const paidBilled = billedThisMonth - unpaidBilled - awaitingBilled/.test(dash)) {
+    violations.push('[소스] 홈 완납 금액이 나머지로 나오지 않는다 — 세 항의 합이 이 달 청구액과 갈린다')
+  }
+  // (b) 계약별 금액은 billedThisMonth 를 만든 그 배열에서 길어 온다. 모집단(paymentPool)을 직접
+  //     훑으면 퇴실월이 지난 계약·양도인 계약이 섞여 합이 어긋난다.
+  if (!/const billedByLease = new Map\(billedContributors\.map\(l => \[l\.id, billThisMonth\(l\)\]\)\)/.test(dash)) {
+    violations.push('[소스] 홈 수납 현황 금액이 billedContributors 에서 나오지 않는다 — 모집단이 달라 합이 이 달 청구액과 갈린다')
+  }
+  // (c) 예약 확정은 배타 3분류 밖이다. 도넛 조각에 들어가면 현 입주자 모집단이 아닌 값이 수납률 분모를 흔든다.
+  if (/const paymentSegments = \[[\s\S]{0,300}?reserved/.test(dashClient)) {
+    violations.push('[소스] 홈 수납 현황 도넛 조각에 예약 확정이 들어갔다 — 수납률 분모가 현 입주자 모집단을 벗어난다')
+  }
+  // (d) 건수와 금액이 같은 게이트에서 나온다. 화면이 RESERVED 를 따로 세면 둘 중 하나가 거짓이 된다.
+  if (!/amount: billable\.reduce\(\(s, l\) => s \+ billForLeaseMonth\(l, targetMonth, null\), 0\),\s*\n\s*count:  billable\.length,/.test(leaseStatusSrc3)) {
+    violations.push('[소스] 예약 확정 금액과 건수가 같은 필터에서 나오지 않는다 — 다음 달 입주 예정자가 건수에만 선다')
+  }
+  if (!/reservedCount: reservedBreakdown\.count/.test(dash)) {
+    violations.push('[소스] 홈 예약 확정 건수가 금액과 같은 정본에서 나오지 않는다')
+  }
+  // (e) 데이터 — 청구 대상 계약이 전부 미납 루프 모집단에 들어야 완납 금액(나머지)이 참이 된다.
+  //     안 드는 계약이 있으면 그 청구액이 조용히 완납 금액으로 흘러든다.
+  const monthOfPool = (d) => { if (!d) return null; const t = new Date(d); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}` }
+  const kstPool = new Date(Date.now() + 9 * 3600000)
+  const poolMonths = [-1, 0, 1].map(off => {
+    const d = new Date(Date.UTC(kstPool.getUTCFullYear(), kstPool.getUTCMonth() + off, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  })
+  for (const prop of await prisma.property.findMany({ select: { id: true, name: true, acquisitionDate: true, prevOwnerCutoffDate: true } })) {
+    const acqP = prop.prevOwnerCutoffDate ?? prop.acquisitionDate ?? null
+    const cutMonth = acqP ? `${new Date(acqP).getFullYear()}-${String(new Date(acqP).getMonth() + 1).padStart(2, '0')}` : null
+    const poolLeases = await prisma.leaseTerm.findMany({
+      where: { propertyId: prop.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, rentAmount: { gt: 0 } },
+      select: { id: true, moveInDate: true, expectedMoveOut: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } },
+    })
+    for (const mon of poolMonths) {
+      for (const l of poolLeases) {
+        const mi = monthOfPool(l.moveInDate); if (mi && mi > mon) continue          // billableLeases 게이트
+        const mo = monthOfPool(l.expectedMoveOut); if (mo && mo < mon) continue
+        // 미납 루프 모집단 게이트 — firstMonth = max(입주월, 인수월) 이 조회월보다 뒤면 셋 중 어디에도 안 선다.
+        const startMonth = mi ?? cutMonth ?? mon
+        const firstMonth = cutMonth && startMonth < cutMonth ? cutMonth : startMonth
+        if (firstMonth > mon) {
+          violations.push(`[데이터] ${prop.name} ${mon}: ${l.room?.roomNo ?? '-'}호 ${l.tenant.name} 이 청구 대상인데 수납 현황 모집단 밖이다 — 그 청구액이 완납 금액으로 흘러든다`)
+        }
+      }
+    }
   }
 }
 

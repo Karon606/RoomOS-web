@@ -74,6 +74,13 @@ export type DashboardData = {
   unpaidCount:       number
   upcomingCount:     number
   awaitingCount:     number
+  // 세 항의 이 달 청구액 — 건수와 같은 계약 집합의 청구 합이다. 셋을 더하면 billedThisMonth.
+  // 미납 줄의 금액도 '밀린 총액'이 아니라 그 계약들의 이 달 청구분이다(밀린 총액은 overdueAmount).
+  paidBilled:        number
+  awaitingBilled:    number
+  unpaidBilled:      number
+  // 예약 확정 건수 — reservedExpected 와 같은 게이트(그 달 청구 대상인 RESERVED)에서 나온 수다.
+  reservedCount:     number
   paymentRate:       number
   pendingCount:      number
   pendingRevenue:    number     // 수납 예정 = 예상매출 − 수납완료 (손익 정합용)
@@ -951,6 +958,31 @@ function RoomSegmentCard({ data }: { data: DashboardData }) {
 }
 
 /**
+ * 수납 현황 카드의 한 항 — 점·이름·건수 한 줄과 그 아래 금액 보조 줄.
+ *
+ * 금액을 같은 줄에 병기하지 않는 이유는 폭이다. 도넛 옆 칸은 320px 에서 88px, lg 반폭에서도
+ * 170px 인데 병기 한 줄은 약 185px 를 요구한다(금액은 whitespace-nowrap 이라 안 줄고 라벨만
+ * 압착돼 접힌다 — 2026-08-12 에 금액 줄을 전폭으로 내린 그 실패 모드다).
+ * 보조 줄 문법·크기·색은 형제 '지출 카테고리' 범례의 '기록 · 예정' 줄 그대로다.
+ */
+function PayStatRow({ color, label, count, amount, muted }: {
+  color: string; label: string; count: number; amount: number; muted?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+        <span className="text-sm flex-1 truncate" style={{ color: 'var(--warm-mid)' }}>{label}</span>
+        <span className="text-sm font-semibold shrink-0" style={{ color: muted ? 'var(--warm-mid)' : color }}>{count}건</span>
+      </div>
+      <span className="block text-[0.65625rem] pl-[18px] leading-tight num" style={{ color: 'var(--warm-muted)' }}>
+        <MoneyDisplay amount={amount} />
+      </span>
+    </div>
+  )
+}
+
+/**
  * 미수 에이징 — '누적 미납'을 귀속월로 가른 하위 목록.
  *
  * 새 값이 아니라 바로 위 줄의 분해다(Σ 버킷 금액 === 누적 미납). 규격은 형제 '지출 카테고리'
@@ -1440,36 +1472,48 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <p>가운데 <b>수납률</b>은 현재 입주자 계약 중 완납한 계약의 비율입니다. 금액이 아니라 <b>건수</b> 비율입니다.</p>
               <p className="mt-2">분모는 아래 세 항의 합입니다. 완납 · 수납예정 · 미납이 한 계약을 한 번씩만 세도록 나눈 것이라, 셋을 더하면 정확히 모집단이 됩니다.</p>
               <p className="mt-2">미납은 납부일이 지난 미회수가 하나라도 있는 계약(이월 미수 포함), 수납예정은 납부일이 아직 안 온 몫만 남은 계약, 완납은 나머지입니다.</p>
+              <p className="mt-2">각 줄 아래 금액은 그 계약들의 <b>이 달 청구액</b>입니다. 미납 줄의 금액도 밀린 총액이 아니라 이 달 청구분입니다. 밀린 총액은 왼쪽 <b>미수 (현 입주자)</b>의 누적 미납입니다.</p>
+              <p className="mt-2"><b>예약 확정</b>은 세 분류 밖입니다. 아직 입주 전이라 완납·수납예정·미납 어디에도 설 상태가 없고, 수납률 분모에도 들어가지 않습니다.</p>
               <p className="mt-2">아래 이용료 수납 (귀속)은 같은 사람 집합이 아닙니다. 그 금액에는 퇴실한 분의 이 달 몫이 들어 있습니다.</p>
             </InfoHint>
           </h3>
-          <div className="flex items-center gap-5">
+          {/* 좁은 폭에서는 도넛 아래로 목록을 내린다 — 320px 에서 옆 칸은 86px 뿐이라 금액을
+              보조 줄로 내려도 '수납예정'·'예약 확정' 네 글자가 말줄임에 걸린다(실측). 형제
+              '지출 카테고리' 카드가 같은 이유로 쓰는 그 문법이다. 내리면 목록이 카드 안쪽
+              전폭(248px)을 받아 어느 라벨도 안 잘린다. */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
             <div className="shrink-0">
               <DonutChart segments={paymentSegments} centerLabel={`${data.paymentRate}%`} centerSub="수납률" />
             </div>
-            <div className="flex-1 space-y-3">
+            <div className="w-full sm:flex-1 space-y-3 min-w-0">
               {/* 건수 3항의 모집단은 현 입주자(거주·비거주)다. 바로 아래 수납액에는 퇴실 계약의
                   그 달 귀속분이 들어 있어 두 숫자가 같은 사람 집합이 아니다(2026-06 퇴실 귀속 381만·10건).
                   한정어는 새 말이 아니라 KPI '누적 미납 (현 입주자)'·형제 카드 '미수 (현 입주자)'가
-                  이미 쓰는 그 말이고, 그 KPI 의 모집단이 여기 세 항과 같은 집합이다. */}
-              <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>건수 (현 입주자)</p>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.paid }} />
-                <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
-                <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.paid }}>{data.paidCount}건</span>
-              </div>
+                  이미 쓰는 그 말이고, 그 KPI 의 모집단이 여기 세 항과 같은 집합이다.
+                  소제목이 '건수와 이 달 청구'인 것은 금액이 붙었기 때문이다 — 미납 줄의 금액이
+                  밀린 총액으로 읽히면 형제 카드 '누적 미납'과 같은 이름의 다른 숫자가 된다. */}
+              <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>건수와 이 달 청구 (현 입주자)</p>
+              {/* 금액은 건수와 같은 줄에 두지 않는다 — 도넛 옆 칸은 320px 에서 88px, lg 반폭에서도
+                  170px 뿐인데 병기 한 줄은 185px 를 요구한다(금액은 whitespace-nowrap 이라 안 줄어든다).
+                  보조 줄로 내리면 어느 폭에서든 들어가고, 형제 '지출 카테고리' 범례가 같은 자리에
+                  같은 크기로 '기록 · 예정' 금액을 적는 그 문법이다. 색은 안 물린다(상태는 점과 건수가
+                  이미 말한다 — 캡션 티어에 색을 또 얹으면 §20 위계가 평평해진다). */}
+              <PayStatRow color={CONCEPT_COLORS.paid}   label="완납"    count={data.paidCount}     amount={data.paidBilled} />
               {data.awaitingCount > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.await }} />
-                  <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>수납예정</span>
-                  <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.await }}>{data.awaitingCount}건</span>
+                <PayStatRow color={CONCEPT_COLORS.await} label="수납예정" count={data.awaitingCount} amount={data.awaitingBilled} />
+              )}
+              <PayStatRow color={CONCEPT_COLORS.unpaid} label="미납"    count={data.unpaidCount}   amount={data.unpaidBilled} />
+              {/* 예약 확정은 배타 3분류 **밖**이다 — 도넛에도 수납률 분모에도 들어가지 않는다.
+                  자리는 세 줄 아래 구분선 밑이다: 위에서 아래로 읽는 순서가 카드 바닥 등식
+                  '이 달 청구액 + 예약 확정 + 퇴실 귀속'의 항 순서와 그대로 겹친다.
+                  퇴실 귀속은 줄로 세우지 않는다 — 그 사람은 더 이상 청구 대상이 아니라 세 분류
+                  어디에도 설 상태가 없고, 값은 바닥 등식과 형제 카드에 이미 서 있다.
+                  건수가 0이면 안 그린다. 금액 0원 1건(전액 할인 예약)은 사실이라 그린다. */}
+              {data.reservedCount > 0 && (
+                <div className="pt-2.5" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                  <PayStatRow color={STATUS_COLORS.reserved} label="예약 확정" count={data.reservedCount} amount={data.reservedExpected} muted />
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.unpaid }} />
-                <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
-                <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.unpaid }}>{data.unpaidCount}건</span>
-              </div>
             </div>
           </div>
           {/* 금액 줄은 도넛 옆 칸이 아니라 카드 전폭이다. 오른쪽 칸은 320px 에서 88px 밖에 안 되는데
@@ -1483,6 +1527,17 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 합친 말로 읽혀 옆 칸과 겹쳤다(운영자 확정 2026-08-13). 두 축을 더한 값의 이름은 '실수납'이다.
                 달 한정어는 뺀다 — 이 탭이 이미 조회월 스코프이고 타일도 같은 달을 말한다. */}
             <Row label="이용료 수납 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
+            {/* 위 세 분류 금액의 합 — 카드 안의 경첩이다. 좌변은 바로 아래 '이용료 예상 (귀속)'
+                등식의 첫 항과 같은 이름 같은 숫자라, 카드 하나가 두 등식으로 완결된다.
+                자리를 도넛 옆이 아니라 전폭 블록에 둔 것은 폭 때문이다(그 칸은 lg 에서도 170px). */}
+            <Row label="이 달 청구액" value={<MoneyDisplay amount={data.billedThisMonth} />} />
+            {/* 0인 항은 뺀다 — MoneyEquation 이 예상 수입 등식에서 쓰는 그 규칙이다(첫 항만 값과
+                무관하게 선다). 0원짜리 항은 등식을 길게만 만든다. */}
+            <EqCaption terms={[
+              { label: '완납', amount: data.paidBilled, op: '+' },
+              ...(data.awaitingBilled !== 0 ? [{ label: '수납예정', amount: data.awaitingBilled, op: '+' as const }] : []),
+              ...(data.unpaidBilled   !== 0 ? [{ label: '미납',    amount: data.unpaidBilled,   op: '+' as const }] : []),
+            ]} />
             {/* 그 수납이 얼마 중의 얼마인지 — 위 세 항은 건수 비율(수납률)을 갖는데 금액 줄에는
                 견줄 상대가 없었다. 서버가 totalExpected 로 보내던 값이 그 상대다(같은 이용료 축·
                 같은 귀속 축, 부가수익 제외). 화면에 처음 서는 값이고 새 집계가 아니다. */}

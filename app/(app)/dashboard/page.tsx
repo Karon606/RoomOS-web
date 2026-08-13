@@ -1179,6 +1179,30 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     ? Math.round((paidCount / paymentPool.length) * 100)
     : 0
 
+  // ── 세 항의 금액 — 건수 옆에 병기할 값 (운영자 지시·회계 패널 2026-08-13) ────────────
+  //
+  // 금액 축은 **그 달 청구액**이다. 계약 하나가 받는 금액은 'billedThisMonth 가 그 계약에
+  // 대해 실제로 더한 값'으로 정의한다 — 그래야
+  //     완납 + 수납예정 + 미납 === billedThisMonth
+  // 가 성립한다. 두 모집단이 완전히 겹치지 않기 때문에 pool 을 그냥 billThisMonth 로 훑으면
+  // 깨진다: paymentStatusPool 에는 퇴실월이 지난 CHECKOUT_PENDING 계약과 양도인 계약이
+  // 들어 있는데(그 루프는 청구 가능 월 목록이 비어 완납으로 분류한다) billableLeases 는
+  // 그들을 뺀다. 그래서 위에서 billedThisMonth 를 만든 그 배열에서 금액을 길어 온다.
+  //
+  // 실수납 축(그 달 귀속 수납)을 안 쓰는 이유 — '완납'은 **누적 축** 판정이라 그 달 귀속 수납이
+  // 그 달 청구보다 적은 완납 계약이 정상적으로 존재한다(2026-04 3건 사건의 정체). 완납 줄 옆에
+  // 청구보다 작은 수납액이 서면 카드가 자기 분류를 반박한다.
+  const billedByLease = new Map(billedContributors.map(l => [l.id, billThisMonth(l)]))
+  const billedOf = (id: string) => billedByLease.get(id) ?? 0
+  const unpaidLeaseIds = new Set(unpaidLeases.map(l => l.leaseId))
+  const awaitingLeaseIds = new Set(paymentPool
+    .filter(l => (overdueByLease[l.id] ?? 0) === 0 && (upcomingByLease[l.id] ?? 0) > 0)
+    .map(l => l.id))
+  const unpaidBilled   = paymentPool.filter(l => unpaidLeaseIds.has(l.id)).reduce((s, l) => s + billedOf(l.id), 0)
+  const awaitingBilled = paymentPool.filter(l => awaitingLeaseIds.has(l.id)).reduce((s, l) => s + billedOf(l.id), 0)
+  // 완납은 나머지다 — 건수를 모집단 빼기로 구하는 것과 같은 이유(세 항이 다시 서로 다른 축을 갖지 않게).
+  const paidBilled = billedThisMonth - unpaidBilled - awaitingBilled
+
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
 
@@ -1826,6 +1850,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     paidCount,
     unpaidCount,
     upcomingCount,
+    // 세 항의 이 달 청구액 — 건수 옆에 병기한다. 셋을 더하면 billedThisMonth 다(위 정의 참조).
+    paidBilled,
+    awaitingBilled,
+    unpaidBilled,
+    // 예약 확정 건수 — 금액(reservedExpected)과 같은 게이트에서 나온 값이다.
+    reservedCount: reservedBreakdown.count,
     // 도넛 전용 배타 항 — upcomingCount(이월 미수가 함께 있는 계약도 세는 누적 축)와 다른 값이다.
     // 그쪽은 upcomingAmount 와 짝이라 AI 프롬프트 '납부 예정 N만원 (M건)' 이 계속 쓴다.
     awaitingCount,
