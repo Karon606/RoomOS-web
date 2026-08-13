@@ -89,7 +89,11 @@ export function shouldOfferCheckoutProration(
   expectedMoveOut: string,   // 'YYYY-MM-DD'
   todayYmd: string,          // 'YYYY-MM-DD' (KST 오늘)
   moveInYmd?: string | null, // 입주 달 퇴실 보정(위와 동일)
+  isShortTerm?: boolean,     // 단기는 기간 요금 — 일할 정산 대상이 아니다
 ): boolean {
+  // 단기 차단 — 정산 엔진의 단기 일할 차단(B페이즈 정책)과 같은 선. 엔진만 막고 제안 팝업이
+  // 물으면 화면이 정책과 모순되는 제안을 한다(402호 황인정 단기 실사례, 운영자 신고 2026-08-13).
+  if (isShortTerm) return false
   const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut, moveInYmd)
   if (!calc || calc.reduction <= 0 || calc.daysUsed >= PRORATE_BASE_DAYS) return false
   return isMoveOutNear(expectedMoveOut, todayYmd)

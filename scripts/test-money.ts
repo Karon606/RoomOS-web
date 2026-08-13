@@ -85,6 +85,8 @@ const RENT = 300000
 // ── shouldOfferCheckoutProration ── 팝업 판정: 감액 있음 + 오늘+1달(달력) 이내
 {
   eq('팝업: 근접 부분 기간 → true', shouldOfferCheckoutProration(RENT, '1', '2026-06-20', '2026-06-10'), true)
+  // 단기는 기간 요금이라 일할 정산 제안 자체가 금지다(402호 황인정 실사례, 2026-08-13).
+  eq('팝업: 단기는 조건 충족해도 false', shouldOfferCheckoutProration(RENT, '1', '2026-06-20', '2026-06-10', null, true), false)
   eq('팝업: 3달 뒤 퇴실 → false', shouldOfferCheckoutProration(RENT, '1', '2026-09-20', '2026-06-10'), false)
   eq('팝업: 전액 회차(감액 0) → false', shouldOfferCheckoutProration(RENT, '1', '2026-01-31', '2026-01-10'), false)
   // 달력 한 달 경계: 6/2 기준 상한 7/2 (6월=30일이어도 고정 31일이 아니라 달력 기준)
