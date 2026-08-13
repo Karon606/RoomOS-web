@@ -22,6 +22,7 @@ import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNe
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { loadWishMatch, WISH_LEAD_STATUSES, type WishLeaseMatch } from '@/lib/wishMatch'
+import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
 // 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
@@ -878,6 +879,10 @@ export async function updateTenant(formData: FormData): Promise<
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
   const newRoomId  = roomId || prevRoomId
+  // 이 저장으로 확정될 납부일. 딸린 계약 전파가 같은 값을 봐야 해서 저장 데이터 밖으로 꺼내 둔다.
+  // 거주 전 상태는 강제로 비운다. 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
+  const nextDueDay = DUE_PENDING_STATUSES.includes(status) ? null
+    : (dueDay || (DUE_PENDING_STATUSES.includes(prevStatus) && moveInDate ? dueDayFromMoveIn(new Date(moveInDate)) : null))
 
   // 퇴실 예정일 변경 판정 — 재검증 발화와 일할 정산 재계산이 같은 값을 봐야 한다.
   // 신고 aae0ab38: 폼에 퇴실일 필드가 렌더되지 않으면(=null) 이 저장은 퇴실일을 편집하지 않는 것 —
@@ -1181,9 +1186,7 @@ export async function updateTenant(formData: FormData): Promise<
         rentAmount: shortPlan ? shortPlan.targetRent : rentAmount,
         depositAmount,
         cleaningFee,
-        // 거주 전 상태는 납부일 강제 비움. 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
-        dueDay: DUE_PENDING_STATUSES.includes(status) ? null
-          : (dueDay || (DUE_PENDING_STATUSES.includes(prevStatus) && moveInDate ? dueDayFromMoveIn(new Date(moveInDate)) : null)),
+        dueDay: nextDueDay,
         moveInDate: moveInDate ? new Date(moveInDate) : null,
         // 신고 aae0ab38: 폼에 퇴실일 필드가 없으면(null) 기존 값 보존 — 예약확정 단기 예약자의 퇴실 예정일 증발 방지.
         // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리(tourDate/inquiryAt 관행).
@@ -1227,6 +1230,9 @@ export async function updateTenant(formData: FormData): Promise<
         ...(shortPlan ? {} : prorationPatch),
       },
     })
+    // 딸린 계약의 납부일도 같은 트랜잭션에서 옮긴다 — 부모만 바뀌고 딸린 쪽이 옛 날에 남으면
+    // 한 사람의 두 방 청구일이 갈린다(운영자 오더 2026-08-13).
+    await propagateDueDayToSubLeases(tx, leaseTermId, currentLease.dueDay, nextDueDay)
     // 거주 구간 이력 — 호실 변경·종료 전환을 파생 테이블에 기록(추가 write, 위 저장 분기와 무관).
     // 계약 저장 뒤라야 마감일이 방금 확정된 moveOutDate 를 읽는다.
     await syncRoomStayOnSave(tx, leaseTermId, {
@@ -1814,11 +1820,14 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   })
   if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
+  // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
+  const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
-    // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
-    data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) },
+    data: { status: 'ACTIVE', ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
   })
+  // 이 계약에 딸린 계약도 같은 날로 — 부모가 비어 있다 날을 갖는 것도 납부일 변경이다.
+  if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
 
   // 입주월 재앵커 — prepaid 예약금이 실제 입주월과 다른 달에 걸려 있으면 이동(deposit/none은 no-op).
   if (lease.status === 'RESERVED') await reanchorReservationPrepaid(leaseTermId)
@@ -1896,11 +1905,14 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       }
     }
 
+    // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
+    const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
-      // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
-      data: { status: 'ACTIVE', ...(lease.dueDay == null && lease.moveInDate ? { dueDay: dueDayFromMoveIn(lease.moveInDate) } : {}) },
+      data: { status: 'ACTIVE', ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
     })
+    // 딸린 계약도 같은 날로(moveInTenant 와 같은 한 벌).
+    if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
 
     // 입주월 재앵커 — prepaid 예약금을 실제 입주월로(deposit/none은 no-op).
     await reanchorReservationPrepaid(leaseTermId)
@@ -2107,6 +2119,10 @@ export async function applyStatusTransition(input: {
     }
 
     await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+    // 딸린 계약도 같은 날로 — 위 자동 파생이 부모의 빈 납부일을 채운 경우다(운영자 오더 2026-08-13).
+    if (typeof data.dueDay === 'string') {
+      await propagateDueDayToSubLeases(prisma, input.leaseTermId, lease.dueDay, data.dueDay)
+    }
 
     // 거주 구간 이력 — 퇴실·입실취소는 마감, 종료에서 복귀하면 재개방, 입실 처리는 열린 구간 보장(추가 write).
     await syncRoomStayOnSave(prisma, input.leaseTermId, {
@@ -2797,6 +2813,8 @@ export async function changeDueDay(
       where: { id: leaseTermId },
       data: { dueDay: newDueDay.trim(), ...pr.data },
     })
+    // 딸린 계약도 같은 날로. 되돌리기 스냅샷에 함께 실어야 적용취소가 전파분까지 원복한다.
+    undoSnap.subLeases = await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, newDueDay.trim())
 
     if (adjustAmount !== 0) {
       const maxSeq = await prisma.paymentRecord.aggregate({
@@ -2841,6 +2859,8 @@ export type DueDayChangeUndo = {
   prevDueDay: string | null
   prevProration: { checkoutProratedAmount: number | null; checkoutProratedMonth: string | null; checkoutProrationUndo: unknown }
   adjustRecordId: string | null
+  // 함께 옮겨 간 딸린 계약의 원값. 선택 항목이라, 이 필드가 없던 시절에 받아 둔 스냅샷도 그대로 먹는다.
+  subLeases?: { id: string; prevDueDay: string | null }[]
 }
 
 export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -2856,6 +2876,8 @@ export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true 
         checkoutProratedMonth: u.prevProration.checkoutProratedMonth,
         checkoutProrationUndo: u.prevProration.checkoutProrationUndo == null ? Prisma.DbNull : (u.prevProration.checkoutProrationUndo as Prisma.InputJsonValue),
       } }),
+      // 함께 옮겼던 딸린 계약도 제자리로 — 전파분이 남으면 되돌린 것이 아니다.
+      ...(u.subLeases ?? []).map(s => prisma.leaseTerm.updateMany({ where: { id: s.id, propertyId }, data: { dueDay: s.prevDueDay } })),
       ...(u.adjustRecordId ? [prisma.paymentRecord.deleteMany({ where: { id: u.adjustRecordId, propertyId } })] : []),
     ])
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard')
@@ -3848,6 +3870,16 @@ export async function batchUpdateTenants(
           data: leaseFields,
         })
         leaseCount = r.count
+        // 딸린 계약의 납부일도 함께 옮긴다(운영자 오더 2026-08-13). 일괄은 사람마다 메인 계약 하나만
+        // 덮으므로, 딸린 계약은 여기서 부모를 따라가지 않으면 옛 날에 홀로 남는다.
+        // 되돌리기 목록에 같은 모양으로 이어 붙여 적용취소 한 번이 전파분까지 되돌리게 한다.
+        if ('dueDay' in leaseFields) {
+          const nextDue = (leaseFields.dueDay ?? null) as string | null
+          for (const b of eligible) {
+            const moved = await propagateDueDayToSubLeases(prisma, b.id, b.dueDay, nextDue)
+            undo.leases.push(...moved.map(m => ({ id: m.id, fields: { dueDay: m.prevDueDay } })))
+          }
+        }
       }
 
       // 거주 구간 이력 — 일괄 전환이 종료 상태를 넘나들 때만 마감·재개방(호실은 안 바뀜, 추가 write).

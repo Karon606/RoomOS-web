@@ -11,6 +11,7 @@ import {
   leaseSubordinationDenial, roomAssignmentBlockReason,
   STANDALONE_LEASE_ERROR, STANDALONE_LEASE_IMPORT_ERROR,
 } from '../lib/roomAssignment'
+import { propagateDueDayToSubLeases, sameDueDay } from '../lib/dueDay'
 
 let pass = 0
 let fail = 0
@@ -96,5 +97,73 @@ eq('시트 · 종료 계약은 단독 불가 방이어도 통과',
 eq('시트 · 비거주 점유 문구가 먼저',
   sheet({ roomStandaloneAllowed: false, nonResidentOccupied: true })?.startsWith('해당 호실은 세를 놓지 않는 방'), true)
 
-console.log(`\n계약 종속 가드 회귀: ${pass} 통과 / ${fail} 실패`)
-if (fail > 0) process.exit(1)
+// ── 납부일 전파 축(2026-08-13 운영자 오더) ────────────────────────────
+// 부모 계약의 납부일이 바뀌면 딸린 계약도 같은 날로 따라간다. 따라오는 것은 '비었거나 옛 부모 날과
+// 같던' 계약뿐이다 — 폼이 '부모와 같음'이라 부르는 그 판정과 같은 한 벌이라야, 화면에서 '따로'로
+// 보이던 계약이 저장 한 번에 조용히 끌려가지 않는다.
+type FakeLease = { id: string; dueDay: string | null; status: string; parentLeaseTermId: string | null }
+function fakeDb(rows: FakeLease[]) {
+  const moved: { ids: string[]; dueDay: string | null }[] = []
+  const db = {
+    leaseTerm: {
+      findMany: async ({ where }: { where: { parentLeaseTermId: string; status: { in: string[] } } }) =>
+        rows.filter(r => r.parentLeaseTermId === where.parentLeaseTermId && where.status.in.includes(r.status))
+            .map(r => ({ id: r.id, dueDay: r.dueDay })),
+      updateMany: async ({ where, data }: { where: { id: { in: string[] } }; data: { dueDay: string | null } }) => {
+        moved.push({ ids: where.id.in, dueDay: data.dueDay })
+        return { count: where.id.in.length }
+      },
+    },
+  }
+  return { db: db as unknown as Parameters<typeof propagateDueDayToSubLeases>[0], moved }
+}
+/** 실제로 옮겨 간 계약 id 목록(정렬). 되돌리기 스냅샷이 그대로 그 목록이어야 한다. */
+async function movedIds(rows: FakeLease[], prev: string | null, next: string | null): Promise<string[]> {
+  const { db } = fakeDb(rows)
+  const snap = await propagateDueDayToSubLeases(db, '509', prev, next)
+  return snap.map(s => s.id).sort()
+}
+
+eq('같음 정규화 · 30 과 말일은 같은 날', sameDueDay('30', '말일'), true)
+eq('같음 정규화 · 빈 값 둘은 같다', sameDueDay(null, ''), true)
+eq('같음 정규화 · 7 과 15 는 다르다', sameDueDay('7', '15'), false)
+
+const 자식들: FakeLease[] = [
+  { id: '601-빈값',   dueDay: null,   status: 'NON_RESIDENT',    parentLeaseTermId: '509' },
+  { id: '602-부모와같음', dueDay: '7',  status: 'ACTIVE',          parentLeaseTermId: '509' },
+  { id: '603-따로',   dueDay: '20',   status: 'ACTIVE',          parentLeaseTermId: '509' },
+  { id: '604-거주전',  dueDay: null,   status: 'WAITING_TOUR',    parentLeaseTermId: '509' },
+  { id: '605-퇴실',   dueDay: '7',    status: 'CHECKED_OUT',     parentLeaseTermId: '509' },
+  { id: '701-남의부모', dueDay: '7',   status: 'ACTIVE',          parentLeaseTermId: '401' },
+]
+// 전파는 DB 를 읽고 쓰므로 async — 이 파일은 DB 없이 도는 검사라 위 가짜 클라이언트로 본다.
+async function dueDayPropagationTests() {
+  eq('전파 · 비었거나 같던 딸린 계약이 따라온다',
+    await movedIds(자식들, '7', '15'), ['601-빈값', '602-부모와같음'])
+  eq('전파 · 따로 정한 날은 안 움직인다',
+    (await movedIds(자식들, '7', '15')).includes('603-따로'), false)
+  eq('전파 · 거주 전 단계에는 납부일을 심지 않는다',
+    (await movedIds(자식들, '7', '15')).includes('604-거주전'), false)
+  eq('전파 · 끝난 계약의 지난 납부일은 손대지 않는다',
+    (await movedIds(자식들, '7', '15')).includes('605-퇴실'), false)
+  eq('전파 · 다른 계약에 딸린 것은 남의 일이다',
+    (await movedIds(자식들, '7', '15')).includes('701-남의부모'), false)
+  eq('전파 · 딸린 계약이 없으면 아무것도 안 한다', await movedIds([], '7', '15'), [])
+  eq('전파 · 부모 날이 그대로면 아무것도 안 한다', await movedIds(자식들, '7', '7'), [])
+  eq('전파 · 30 을 말일로 고쳐 적는 것은 같은 날이라 무변동', await movedIds(자식들, '30', '말일'), [])
+  eq('전파 · 빈 부모가 날을 갖는 것도 변경이다(입실 처리)',
+    await movedIds(자식들, null, '13'), ['601-빈값'])
+  // 되돌리기 — 스냅샷은 '옮기기 전 값'이어야 한다. 원값이 아니라 새 값을 담으면 적용취소가 헛돈다.
+  {
+    const { db } = fakeDb(자식들)
+    const snap = await propagateDueDayToSubLeases(db, '509', '7', '15')
+    eq('전파 · 되돌리기 스냅샷은 옮기기 전 값',
+      snap.slice().sort((a, b) => a.id.localeCompare(b.id)),
+      [{ id: '601-빈값', prevDueDay: null }, { id: '602-부모와같음', prevDueDay: '7' }])
+  }
+}
+
+void dueDayPropagationTests().then(() => {
+  console.log(`\n계약 종속 가드 회귀: ${pass} 통과 / ${fail} 실패`)
+  if (fail > 0) process.exit(1)
+})

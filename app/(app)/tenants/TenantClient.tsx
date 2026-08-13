@@ -38,6 +38,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import BirthdateInput from '@/components/ui/BirthdateInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
+import { dueDayParts, sameDueDay } from '@/lib/dueDay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
@@ -482,17 +483,6 @@ function fmtDueDay(dueDay: string | null | undefined): string {
   if (!isNaN(n)) return n >= 30 ? '매월 말일' : `매월 ${n}일`
   if (dueDay.includes('말')) return '매월 말일'
   return `매월 ${dueDay}일`
-}
-
-// 저장한 납부일 한 값을 폼이 쓰는 두 짝(제출값 raw · 화면 표시 disp)으로 가른다.
-// 폼 초기값과 '딸릴 계약과 같은 납부일' 표시가 같은 규칙을 써야, 부모의 30 이 한쪽에서는
-// '말일'이고 다른 쪽에서는 '30일'인 어긋남이 안 생긴다.
-function dueDayParts(dueDay: string | null | undefined): { raw: string; disp: string } {
-  const d = dueDay ?? ''
-  if (!d) return { raw: '', disp: '' }
-  const n = parseInt(d, 10)
-  if (!isNaN(n)) return n >= 30 ? { raw: '말일', disp: '말일' } : { raw: d, disp: `${n}일` }
-  return d.includes('말') ? { raw: '말일', disp: '말일' } : { raw: d, disp: d }
 }
 
 // 거주기간 표시 — lib/stayPeriod 정본(달력 기준 만 개월, 신고 f9803357) 위임
@@ -3672,9 +3662,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 잠그지 않고 '따로 정하기'로 푼다. 기존 계약을 열 때는 저장된 값이 부모와 다르면 따로 모드로 시작한다.
   const [dueSeparate, setDueSeparate] = useState(() => {
     const p = parentLeases.find(l => l.id === lease?.parentLeaseTermId)
-    const own = dueDayParts(lease?.dueDay).raw
-    if (!p || !own) return false
-    return own !== dueDayParts(p.dueDay).raw
+    if (!p || !lease?.dueDay) return false
+    return !sameDueDay(lease.dueDay, p.dueDay)
   })
   const parentLease = parentVal ? parentLeases.find(l => l.id === parentVal) : undefined
   // 고를 수 없는 부모(퇴실·취소로 목록에서 빠진 계약)면 상속할 값을 알 수 없으니 종전대로 직접 입력이다.

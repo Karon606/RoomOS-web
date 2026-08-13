@@ -8,6 +8,7 @@ import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, isStayTerminalStatus } from '@/lib/roomStay'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
+import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
 import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
@@ -219,16 +220,20 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
             // 이용료 칸만 채운 시트를 올리면 기존 보증금·청소비가 0 으로 파괴적 갱신됐다(2026-08-02 조사).
             // 계약서 URL 이 이미 formData.has() 로 같은 방어를 하고 있다. 그 문법에 맞춘다.
             const has = (k: string) => k in row && String(row[k] ?? '').trim() !== ''
+            const nextDueDay = str(row['납부일']) || null
             await prisma.leaseTerm.update({
               where: { id: activeLease.id },
               data: {
                 rentAmount:    parseNum(row['이용료']),
                 ...(has('보증금') ? { depositAmount: parseNum(row['보증금']) } : {}),
                 ...(has('청소비') ? { cleaningFee:   parseNum(row['청소비']) } : {}),
-                dueDay:        str(row['납부일']) || null,
+                dueDay:        nextDueDay,
                 payMethod:     str(row['납부방법']) || null,
               },
             })
+            // 딸린 계약의 납부일도 함께 옮긴다 — 시트에는 부모 한 줄만 있고 딸린 계약은 없다
+            // (운영자 오더 2026-08-13). 저장 경로마다 규칙이 갈리지 않게 같은 헬퍼를 쓴다.
+            await propagateDueDayToSubLeases(prisma, activeLease.id, activeLease.dueDay, nextDueDay)
           }
           result.imported++
           continue
