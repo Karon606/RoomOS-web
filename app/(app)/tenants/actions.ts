@@ -23,6 +23,7 @@ import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { loadWishMatch, WISH_LEAD_STATUSES, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
+import { propagateMoveInDateToSubLeases } from '@/lib/moveInDate'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
 // 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
@@ -1233,6 +1234,9 @@ export async function updateTenant(formData: FormData): Promise<
     // 딸린 계약의 납부일도 같은 트랜잭션에서 옮긴다 — 부모만 바뀌고 딸린 쪽이 옛 날에 남으면
     // 한 사람의 두 방 청구일이 갈린다(운영자 오더 2026-08-13).
     await propagateDueDayToSubLeases(tx, leaseTermId, currentLease.dueDay, nextDueDay)
+    // 입주일도 같은 자리에서 옮긴다(신고 eb66b990) — 입주일은 청구가 시작되는 달을 정하는 값이라
+    // 갈리면 한 사람의 두 방이 서로 다른 달부터 청구된다. 딸린 계약의 거주 구간 이력까지 헬퍼가 함께 본다.
+    await propagateMoveInDateToSubLeases(tx, leaseTermId, currentLease.moveInDate, moveInDate ? new Date(moveInDate) : null)
     // 거주 구간 이력 — 호실 변경·종료 전환을 파생 테이블에 기록(추가 write, 위 저장 분기와 무관).
     // 계약 저장 뒤라야 마감일이 방금 확정된 moveOutDate 를 읽는다.
     await syncRoomStayOnSave(tx, leaseTermId, {
@@ -2122,6 +2126,11 @@ export async function applyStatusTransition(input: {
     // 딸린 계약도 같은 날로 — 위 자동 파생이 부모의 빈 납부일을 채운 경우다(운영자 오더 2026-08-13).
     if (typeof data.dueDay === 'string') {
       await propagateDueDayToSubLeases(prisma, input.leaseTermId, lease.dueDay, data.dueDay)
+    }
+    // 입주일도 같은 자리에서 — 전환 미니폼이 입주일을 함께 고치는 경로(입실 처리·예약 확정)가 있다(신고 eb66b990).
+    // 이 저장이 입주일을 편집하지 않았으면(필드 부재) 아무것도 하지 않는다.
+    if (input.moveInDate !== undefined) {
+      await propagateMoveInDateToSubLeases(prisma, input.leaseTermId, lease.moveInDate, input.moveInDate ? new Date(input.moveInDate) : null)
     }
 
     // 거주 구간 이력 — 퇴실·입실취소는 마감, 종료에서 복귀하면 재개방, 입실 처리는 열린 구간 보장(추가 write).
