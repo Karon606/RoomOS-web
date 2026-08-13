@@ -51,10 +51,22 @@ export function openEntityModal(seed: Seed): boolean {
   return true
 }
 
+// 셸에 쌓인 한 면. open() 은 이 면을 **쌓고**, 뒤로는 한 장 걷는다.
+//
+// 왜 스택인가 (2026-08-13, 1인 다호실 1단계). 601호 면에서 다른 방·다른 사람으로 건너뛰면
+// 종전에는 시드가 통째로 교체돼 직전 면이 사라졌다. 되돌아갈 길이 '닫고 다시 찾기'뿐이라,
+// 방을 둘 쓰는 사람을 오가며 확인하는 동선이 매번 처음부터였다. 프레임에 links 를 함께 들고
+// 있으므로 뒤로 갈 때 재조회가 없다 — 걷어낸 면이 그대로 다시 선다.
+type Frame = { kind: EntityKind; seed: Seed; links: Links | undefined; seq: number }
+
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
   // links: undefined = 아직 해소 중(뼈대), null = 해소했는데 연결 없음(빈 안내). 둘을 한 값으로 두면
   // 여는 순간부터 링크가 올 때까지 "연결된 고객이 없습니다"가 떠 있다 — 있는 사람인데도.
-  const [state, setState] = useState<{ kind: EntityKind; seed: Seed; links: Links | undefined } | null>(null)
+  const [stack, setStack] = useState<Frame[]>([])
+  const top = stack.length > 0 ? stack[stack.length - 1] : null
+  // 프레임 식별자 — 배열 인덱스로는 안 된다. 비동기 링크 해소가 돌아왔을 때 그 사이 스택이
+  // 밀렸으면 엉뚱한 면에 남의 links 를 심는다.
+  const seqRef = useRef(0)
   // 모달 열기 직전의 페이지 스크롤 위치 — 닫을 때 그 위치로 복원 (router.refresh() 가
   // 페이지 상단으로 리셋시키는 문제 해결, 사용자 피드백 2026-06-01).
   const scrollYRef = useRef<number>(0)
@@ -66,20 +78,25 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (pathnameRef.current !== pathname) {
       pathnameRef.current = pathname
-      setState(null)
+      setStack([])
     }
   }, [pathname])
   const open = useCallback((seed: Seed) => {
-    if (typeof window !== 'undefined') scrollYRef.current = window.scrollY
-    setState({ kind: seed.kind, seed, links: undefined })
+    setStack(s => {
+      // 스크롤 위치는 **셸이 처음 열릴 때만** 찍는다. 쌓는 중에 다시 찍으면 배경이 잠긴 동안의
+      // 값이라 같긴 하지만, 의미가 '셸을 열기 직전'이라는 것을 코드가 말하게 둔다.
+      if (s.length === 0 && typeof window !== 'undefined') scrollYRef.current = window.scrollY
+      return [...s, { kind: seed.kind, seed, links: undefined, seq: ++seqRef.current }]
+    })
   }, [])
   // 헤더 종이 쓰는 열기 신호 배선 — Provider 는 (app) 레이아웃에 하나뿐이다.
   useEffect(() => {
     opener = open
     return () => { if (opener === open) opener = null }
   }, [open])
+  const back = useCallback(() => { setStack(s => s.slice(0, -1)) }, [])
   const close = useCallback(() => {
-    setState(null)
+    setStack([])
     if (typeof window !== 'undefined') {
       const y = scrollYRef.current
       // router.refresh 가 redraw 후 0,0 로 리셋할 수 있어 두 번 시도 (RAF + 150ms 후)
@@ -90,28 +107,34 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
 
   // seed 의 id 로 연결된 호실/고객/lease id 해소 (네비 가용성·제목용)
   useEffect(() => {
-    if (!state || state.links !== undefined) return
+    if (!top || top.links !== undefined) return
     let active = true
+    const seq = top.seq
+    const put = (links: Links) => setStack(s => s.map(f => (f.seq === seq ? { ...f, links } : f)))
     getEntityLinks({
-      roomId: state.seed.roomId ?? undefined,
-      tenantId: state.seed.tenantId ?? undefined,
-      leaseTermId: state.seed.leaseTermId ?? undefined,
+      roomId: top.seed.roomId ?? undefined,
+      tenantId: top.seed.tenantId ?? undefined,
+      leaseTermId: top.seed.leaseTermId ?? undefined,
     })
-      .then(links => { if (active) setState(s => (s ? { ...s, links } : s)) })
+      .then(links => { if (active) put(links) })
       // 조회 실패도 해소로 친다 — undefined 로 남으면 뼈대가 영영 돌아간다.
-      .catch(() => { if (active) setState(s => (s ? { ...s, links: null } : s)) })
+      .catch(() => { if (active) put(null) })
     return () => { active = false }
-  }, [state])
+  }, [top])
 
   return (
     <EntityModalContext.Provider value={{ open, close }}>
       {children}
-      {state && (
+      {top && (
         <PrismShellView
-          kind={state.kind}
-          links={state.links}
-          openCheckoutProration={state.seed.openCheckoutProration}
-          setKind={k => setState(s => (s ? { ...s, kind: k } : s))}
+          // 면이 바뀌면 셸 내부 상태(퇴실 정산 시드 소진 등)를 새로 시작한다. 면 전환(setKind)은
+          // seq 가 그대로라 리마운트되지 않는다 — 그 상태는 한 면 안에서 이어져야 한다.
+          key={top.seq}
+          kind={top.kind}
+          links={top.links}
+          openCheckoutProration={top.seed.openCheckoutProration}
+          setKind={k => setStack(s => (s.length > 0 ? [...s.slice(0, -1), { ...s[s.length - 1], kind: k }] : s))}
+          onBack={stack.length > 1 ? back : undefined}
           onClose={close}
         />
       )}
@@ -119,8 +142,11 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   )
 }
 
-function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }: {
-  kind: EntityKind; links: Links | undefined; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void; onClose: () => void
+function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, onClose }: {
+  kind: EntityKind; links: Links | undefined; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void
+  /** 셸에 쌓인 직전 면으로 — 스택이 한 장뿐이면 undefined 라 Modal 이 뒤로 버튼을 안 그린다. */
+  onBack?: () => void
+  onClose: () => void
 }) {
   const router = useRouter()
   // 페이지 이동 전용 — refresh(7곳)까지 진행바를 태우면 모달 안 저장마다 막대가 떠 소음이 된다
@@ -286,7 +312,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
 
   return (
     <Modal
-      open onClose={onClose} width="sm" title={title} z={280}
+      open onClose={onClose} onBack={onBack} width="sm" title={title} z={280}
       footer={
         <div className="space-y-2">
           {/* 액션 행 — kind 마다 다른 액션. PrismNavBar 위. */}
