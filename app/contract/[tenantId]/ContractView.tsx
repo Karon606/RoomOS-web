@@ -400,7 +400,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     setSignReqPending(true)
     const release = trackSave()
     try {
-      const res = await issueContractShareLink(data.tenant.id)
+      // 화면이 그리고 있는 그 계약의 스냅샷을 보낸다 — 지목이 없으면 서버 추론이 다른 계약을 골라
+      // 입주자가 보고 있다고 믿는 것과 다른 계약서에 서명하게 된다(2026-08-13, 1인 다호실).
+      const res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
       if (!res.phone) {
         pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 고객 정보에서 연락처를 먼저 등록해 주세요.')
@@ -743,7 +745,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     // 비교 실패는 발급을 막지 않는다 — 경고만 생략하고 '그대로 발급'으로 본다.
     let driftChoice: 'confirm' | 'alt' | 'back' | null = 'confirm'
     try {
-      const drift = await checkContractShareDrift(data.tenant.id)
+      const drift = await checkContractShareDrift(data.tenant.id, data.lease?.id ?? null)
       if (drift.ok && drift.drift) {
         driftChoice = await choiceDialog({
           title: '서명 당시와 계약 내용이 다릅니다',
@@ -768,6 +770,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: data.tenant.id,
+          // 지금 화면이 그리고 있는 그 계약을 지목한다. 안 실으면 서버가 제 추론으로 다른 계약을
+          // 골라 화면과 다른 내용의 PDF 를 보관한다(2026-08-13, 1인 다호실).
+          leaseTermId: data.lease?.id ?? null,
           signDate,
           signatureName,
           signatureImageDataUrl: signatureDataUrl,
@@ -808,6 +813,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tenantId: data.tenant.id,
+        // 미리보기·보내기도 같은 계약을 지목한다. 발급본과 다른 종이가 나가면 그게 더 나쁘다.
+        leaseTermId: data.lease?.id ?? null,
         signDate,
         signatureName,
         signatureImageDataUrl: signatureDataUrl,

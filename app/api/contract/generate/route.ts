@@ -40,6 +40,15 @@ const GENDER_LABEL: Record<string, string> = { MALE: '남', FEMALE: '여', UNKNO
 
 type Body = {
   tenantId: string
+  /**
+   * 어느 계약의 계약서인가. 화면이 그리고 있는 그 계약을 그대로 실어 보낸다(2026-08-13, 1인 다호실).
+   *
+   * 없으면 종전 추론 그대로다 — 하위 호환이 이 인자의 유일한 계약 조건이다. 종전에는 화면이
+   * ?leaseTermId= 로 601호 창고 계약서를 열어 놓고 발급을 누르면, 이 API 가 제 추론으로 509호
+   * 거주 계약을 골라 **화면과 다른 내용의 PDF** 를 만들어 보관했다. 계약번호·파일명·박제까지
+   * 그 계약으로 남으므로 종이와 기록이 통째로 갈리는 자리였다.
+   */
+  leaseTermId?: string | null
   signDate: string                  // YYYY-MM-DD — 서명 전에만 신뢰한다. 서명 후에는 서버가 다시 확정한다(아래 resolveSignDates)
   signatureName: string
   signatureImageDataUrl: string     // base64 PNG dataURL
@@ -122,8 +131,9 @@ export async function POST(req: Request) {
     ])
     if (!tenant) return NextResponse.json({ ok: false, error: '입실자를 찾을 수 없습니다.' }, { status: 404 })
 
-    // 선택 규칙은 lib/documentLease 정본 하나다 — 화면(buildContractData)과 같은 함수를 쓴다.
-    const lease = pickDocumentLease(tenant.leaseTerms)
+    // 선택 규칙은 lib/documentLease 정본 하나다 — 화면(buildContractData)과 같은 함수·같은 인자다.
+    // 지목은 위 where(발급 대상 상태) 안에서만 찾으므로 남의 계약 id 를 실어도 통하지 않는다.
+    const lease = pickDocumentLease(tenant.leaseTerms, body.leaseTermId)
     // 본문 선택은 resolveSignedBody 한 곳이 정한다(lib/contract.ts). 서명이 끝난 계약은 박제본을 읽으므로
     // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 화면(contractData)과 같은 함수를 쓴다.
     const body_ = resolveSignedBody(lease, property)

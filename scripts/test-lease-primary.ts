@@ -5,6 +5,7 @@
 // 여기서 고정하는 것: 위계(거주 > 예약 > 첫 계약), 예약 동률(입주 예정일 이른 쪽), 전치 항등.
 
 import { primaryRoomLease, primaryTenantLease, roomLeaseRowOrder } from '../lib/leaseStatus'
+import { pickDocumentLease } from '../lib/documentLease'
 
 let pass = 0
 let fail = 0
@@ -61,6 +62,34 @@ for (const c of cases) {
 const original = [l('r2', 'RESERVED', '2026-09-01'), l('r1', 'RESERVED', '2026-08-15')]
 primaryTenantLease(original)
 eq('원본 배열 불변', original.map(x => x.id), ['r2', 'r1'])
+
+// ── 서류 계약 선택(lib/documentLease) ──────────────────────────────────
+//
+// 화면 앵커(위 두 축)와 다른 질문이라 규칙도 다르다 — '이 서류를 채울 계약'은 상태 우선순위
+// 하나로만 가른다. 여기서 잠그는 것: 우선순위 표, 동률의 배열 순서(안정), 지목 우선, 지목 폴백.
+//
+// 지목 케이스가 곧 601호 창고 계약서의 증거다. 지목이 없으면 거주 계약(509)이 나가고, 601 을
+// 지목하면 601 이 나간다. 이 두 줄이 갈리지 않으면 창고 계약서를 뽑을 길이 아예 없다.
+const docLeases = [
+  { id: '601', status: 'NON_RESIDENT' },
+  { id: '509', status: 'ACTIVE' },
+]
+eq('서류 · 지목 없으면 거주 계약', pickDocumentLease(docLeases)?.id, '509')
+eq('서류 · 601 을 지목하면 601', pickDocumentLease(docLeases, '601')?.id, '601')
+eq('서류 · 남의 계약 지목은 조용히 추론으로', pickDocumentLease(docLeases, 'someone-else')?.id, '509')
+eq('서류 · 빈 집합은 null', pickDocumentLease([]), null)
+eq('서류 · 우선순위 표', [
+  pickDocumentLease([{ id: 'c', status: 'CHECKOUT_PENDING' }, { id: 'a', status: 'ACTIVE' }])?.id,
+  pickDocumentLease([{ id: 'r', status: 'RESERVED' }, { id: 'c', status: 'CHECKOUT_PENDING' }])?.id,
+  pickDocumentLease([{ id: 'n', status: 'NON_RESIDENT' }, { id: 'r', status: 'RESERVED' }])?.id,
+], ['a', 'c', 'r'])
+// 동률은 호출부가 넘긴 순서 그대로(안정 정렬) — 호출부 orderBy 가 moveInDate desc 라 최신 계약이다.
+eq('서류 · 동률은 배열 순서', pickDocumentLease([{ id: 'a1', status: 'ACTIVE' }, { id: 'a2', status: 'ACTIVE' }])?.id, 'a1')
+// 표에 없는 상태(투어 단계)는 맨 뒤 — 발급 대상 조회가 이미 걸러내지만 규칙 자체가 안전해야 한다.
+eq('서류 · 표 밖 상태는 맨 뒤', pickDocumentLease([{ id: 't', status: 'WAITING_TOUR' }, { id: 'n', status: 'NON_RESIDENT' }])?.id, 'n')
+const docOriginal = [{ id: 'n', status: 'NON_RESIDENT' }, { id: 'a', status: 'ACTIVE' }]
+pickDocumentLease(docOriginal)
+eq('서류 · 원본 배열 불변', docOriginal.map(x => x.id), ['n', 'a'])
 
 console.log(`\n주 계약 선택 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

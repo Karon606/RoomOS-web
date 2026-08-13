@@ -97,7 +97,12 @@ function serializeLink(link: {
 }
 
 // 발급 — 활성 링크가 있으면 재사용(getOrCreate, 중복 발급 방지). 재발급이 필요한 상태(만료·닫힘·잠김)면 새로 만든다.
-export async function issueContractShareLink(tenantId: string): Promise<
+//
+// leaseTermId 는 계약 지목이다(2026-08-13, 1인 다호실). 화면이 601호 창고 계약서를 열어 놓고 서명
+// 요청을 보내면 그 계약의 스냅샷이 나가야 한다. 종전에는 인자가 없어 서버가 제 추론으로 509호
+// 거주 계약을 골랐고, 입주자는 자기가 보고 있다고 믿는 것과 다른 계약서에 서명하게 됐다.
+// 없으면 종전 추론 그대로다 — 기존 호출부(계약서 파일 칸의 주 버튼)는 글자 하나 안 바뀐다.
+export async function issueContractShareLink(tenantId: string, namedLeaseTermId?: string | null): Promise<
   | { ok: true; link: ContractShareLinkInfo; phone: string | null; propertyName: string }
   | { ok: false; error: string }
 > {
@@ -105,7 +110,7 @@ export async function issueContractShareLink(tenantId: string): Promise<
     await requireEdit()
     const { userId, propertyId } = await requirePropertyAccess()
 
-    const snapshot = await buildContractData(tenantId, propertyId)
+    const snapshot = await buildContractData(tenantId, propertyId, namedLeaseTermId)
     if (!snapshot) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 고객 정보에서 먼저 입력해 주세요.' }
     if (!snapshot.lease) return { ok: false, error: '진행 중인 계약이 없어 링크를 발급할 수 없습니다.' }
@@ -251,7 +256,9 @@ export async function reopenContractShareLink(linkId: string): Promise<{ ok: tru
 
 // PDF 발급 전 드리프트 비교 — 원격 서명이 들어온 활성 링크의 스냅샷과 현재 렌더 데이터의 핵심 값이 다른지.
 // 경고 판단용일 뿐 발급(실시간 데이터)은 막지 않는다.
-export async function checkContractShareDrift(tenantId: string): Promise<
+// leaseTermId 는 계약 지목이다 — 발급 직전 비교이므로 발급과 **같은 계약**을 봐야 한다. 지목이 있으면
+// 그 계약의 서명 링크만 후보로 삼는다. 없으면 종전 그대로(사람의 최신 서명 링크)라 기존 호출은 불변이다.
+export async function checkContractShareDrift(tenantId: string, leaseTermId?: string | null): Promise<
   | { ok: true; drift: boolean }
   | { ok: false; error: string }
 > {
@@ -260,13 +267,13 @@ export async function checkContractShareDrift(tenantId: string): Promise<
     // 만료 조건을 뺐다 — 만료된 링크의 차이가 아예 감지되지 않던 구멍(E페이즈 조사 2026-08-03).
     // 실측 김민정 건이 서명 당시 157,000 인데 현재 470,000 이었고 링크가 만료돼 경고가 안 떴다.
     const link = await prisma.contractShareLink.findFirst({
-      where: { tenantId, propertyId, signedAt: { not: null } },
+      where: { tenantId, propertyId, signedAt: { not: null }, ...(leaseTermId ? { leaseTermId } : {}) },
       orderBy: { createdAt: 'desc' },
       select: { templateSnapshot: true },
     })
     if (!link) return { ok: true, drift: false }
 
-    const current = await buildContractData(tenantId, propertyId)
+    const current = await buildContractData(tenantId, propertyId, leaseTermId)
     const snap = link.templateSnapshot as unknown as ContractData
     if (!current || !current.lease || !snap.lease) return { ok: true, drift: true }
 
