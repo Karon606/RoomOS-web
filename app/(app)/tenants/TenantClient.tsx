@@ -2412,6 +2412,35 @@ export default function TenantClient({
             <form key={`lease-${addLeaseTenant.id}`} onSubmit={handleAddLease} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddLeaseDirty(true))} onChange={() => setAddLeaseDirty(true)}>
               <input type="hidden" name="tenantId" value={addLeaseTenant.id} />
+              {/* 맥락 배너 — 이 창이 '새 사람 등록'이 아니라 '있는 사람에게 방을 하나 더'라는 것을 본문 첫 줄에서 말한다.
+                  운영자 실기 지적(2026-08-13): 본문이 등록 창과 같은 폼이라 "아까 분명 입력했는데 왜 빈칸이지?" 로 읽힌다.
+                  제목(계약 추가 · 이름)과 부제만으로는 안 걸렸다 — 부제는 10.5px muted 라 시선에 안 잡힌다.
+                  문법은 이 페이지가 이미 쓰는 --info-* 인라인 배너(수납 모달 양도인 귀속·자동 분배 요약)를 그대로 쓴다.
+                  새 패턴을 신설하지 않는 이유는 §27 — 가이드 등재 없는 임의 신설 금지다. 순서는 roomLeaseRowOrder 정본
+                  (거주 → 예약 → 비거주)이라 수납 폼의 계약 세그먼트와 같은 줄 순서로 읽힌다. */}
+              {(() => {
+                const alive = addLeaseTenant.leaseTerms.filter(l => !['CHECKED_OUT', 'CANCELLED'].includes(l.status))
+                const ordered = roomLeaseRowOrder(alive)
+                // roomLeaseRowOrder 는 거주·예약·비거주 세 층만 세운다 — 문의·투어 단계는 층이 없어 빠진다.
+                // 이 배너의 일은 '지금 가진 계약'을 빠짐없이 보이는 것이라, 남은 단계를 뒤에 잇는다.
+                // 빠뜨리면 배너가 바로 그 오해("이거 말고 또 있었나?")를 새로 만든다.
+                const existing = [...ordered, ...alive.filter(l => !ordered.includes(l))]
+                if (existing.length === 0) return null
+                return (
+                  <div className="bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2.5 space-y-1.5">
+                    <p className="text-xs font-semibold text-[var(--info-fg)]">{addLeaseTenant.name} 님이 지금 가진 계약</p>
+                    <ul className="space-y-0.5">
+                      {existing.map(l => (
+                        <li key={l.id} className="text-xs text-[var(--info-fg)] leading-relaxed">
+                          {[fmtRoomNo(l.room?.roomNo, ''), STATUS_LABEL[l.status] ?? l.status, l.rentAmount > 0 ? fmtWon(l.rentAmount) : '']
+                            .filter(Boolean).join(' · ')}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-[var(--info-fg)] leading-relaxed opacity-80">아래 칸은 여기에 더할 새 계약이라 비어 있습니다.</p>
+                  </div>
+                )
+              })()}
               {/* tenant 를 넘기지 않는다 — 넘기면 기존 계약 값이 프리필돼 새 계약이 옛 계약의 사본이 된다. */}
               <TenantForm rooms={rooms} leaseOnly error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
