@@ -851,6 +851,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 수납 현황 도넛의 모집단 — 이 루프가 실제로 판정한 계약. 아래 firstMonth 게이트에 걸려
   // 건너뛴 계약(조회월에는 아직 내 장부에 없던 계약)은 셋 중 어디에도 서지 않는다.
   const paymentStatusPool = new Set<string>()
+  // ── 미수 에이징 — **이 루프의 부산물**이다 (운영자 승인 2026-08-13) ────────────────
+  //   버킷은 그 미수가 발생한 **귀속월 그대로**다(30일·60일 같은 상대 버킷이 아니다).
+  //   아래 월별 분리가 이미 (계약, 월)마다 미충당분과 도래 여부를 판정하므로 여기서는 그 값을
+  //   달별로 모으기만 한다 — 새 계산도, 새 게이트도 없다. 그래서
+  //       Σ 버킷 금액 === overdueAmount
+  //   가 정의상 성립한다(감지망 축). 게이트를 여기서 다시 쓰면 사본이 갈린다.
+  //
+  //   도래분만 담는다(회계 패널 2026-08-13). 에이징은 회수 지연을 보는 도구인데 미도래분은
+  //   지연이 아니고, 그것을 넣으면 형제 카드가 '누적 미납'과 '납부 예정'으로 이미 갈라 둔 것을
+  //   다시 합쳐 놓게 된다 — 어느 쪽이 정본인지 화면이 말하지 못한다.
+  const agingOverdue = new Map<string, { amount: number; leases: Set<string> }>()
+  const addAging = (
+    bucket: Map<string, { amount: number; leases: Set<string> }>,
+    mon: string, leaseId: string, amount: number,
+  ) => {
+    let b = bucket.get(mon)
+    if (!b) { b = { amount: 0, leases: new Set() }; bucket.set(mon, b) }
+    b.amount += amount
+    b.leases.add(leaseId)
+  }
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
     const leaseStartMonth = lMoveIn
@@ -924,7 +944,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (monthUnpaid <= 0) continue
       const days = daysOverdueForMonth(l, mon)
       // days >= 0 (도래) 또는 알 수 없음 → 미수, days < 0 (미도래) → 납부 예정
-      if (days == null || days >= 0) leaseOverdue += monthUnpaid
+      // 에이징은 이 분기의 부산물이다 — 같은 조건 안에서 같은 값을 달별로 모으기만 한다.
+      if (days == null || days >= 0) { leaseOverdue += monthUnpaid; addAging(agingOverdue, mon, l.id, monthUnpaid) }
       else leaseUpcoming += monthUnpaid
     }
     overdueByLease[l.id] = leaseOverdue
@@ -1756,6 +1777,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 미래월 판정은 서버(KST)가 내린다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
     isFutureMonth: targetMonth > realTodayMonthStr,
     categoryBreakdown,
+    // 미수 에이징 — 귀속월 오름차순. Σ amount === overdueAmount(= 누적 미납).
+    agingBuckets: [...agingOverdue.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, b]) => ({ month, amount: b.amount, count: b.leases.size })),
     // 도넛·범례 색의 축 — 값이 아니라 순서만 쓴다(lib/chartColors expenseCategoryColor).
     expenseCategoryOrder: await pExpenseCategories,
     trend,

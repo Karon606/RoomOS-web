@@ -101,6 +101,10 @@ export type DashboardData = {
   }[]
   // 영업장 설정의 지출 카테고리 등록 순서 — 도넛·범례 색이 이 순서로 고정된다(금액 순위 아님).
   expenseCategoryOrder: string[]
+  // 미수 에이징 — 귀속월 그대로의 버킷(30일·60일 같은 상대 버킷이 아니다). 도래·미회수분만이라
+  // Σ amount === overdueAmount(누적 미납)다. count 는 그 달에 미회수분이 있는 계약 수이고,
+  // 한 계약이 여러 달 밀려 있으면 여러 버킷에 서므로 그 합은 unpaidCount 보다 클 수 있다.
+  agingBuckets: { month: string; amount: number; count: number }[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
   vacantRooms:       number
@@ -846,6 +850,54 @@ function DistList({ items, colors }: { items: { label: string; count: number; pe
   )
 }
 
+/**
+ * 미수 에이징 — '누적 미납'을 귀속월로 가른 하위 목록.
+ *
+ * 새 값이 아니라 바로 위 줄의 분해다(Σ 버킷 금액 === 누적 미납). 규격은 형제 '지출 카테고리'
+ * 드릴다운 목록 그대로다 — 이 탭에서 '카드 안 한 항목을 펼친 하위 목록'의 전례가 그것뿐이다.
+ *
+ * 월 표기는 'N월분'이다. 'YYYY-MM' 은 모바일에서 읽기 나쁘다는 판례(accrual-check)와 같은 어휘고,
+ * 해가 갈리는 버킷만 연도를 붙인다(PaymentRecordList 의 'YYYY년 M월분'). 당월은 괄호 한정어.
+ *
+ * 색은 두 단계뿐이고 새 색이 0종이다 — 이월분은 --overdue-fg, 당월분은 --warning-fg(§03 상태 5단계의
+ * 두 칸, §24 의 미납·연체 두 단계). 다만 줄에 '연체'라는 낱말은 쓰지 않는다: 귀속월 버킷은 일수
+ * 판정이 아니라 이월 여부라, 납부일이 늦은 계약은 전월 귀속분도 아직 미납 단계일 수 있다.
+ */
+function AgingList({ buckets, targetMonth }: { buckets: DashboardData['agingBuckets']; targetMonth: string }) {
+  if (buckets.length === 0) return null
+  const monLabel = (m: string) => {
+    const [y, mo] = m.split('-')
+    const head = y === targetMonth.slice(0, 4) ? `${Number(mo)}월분` : `${Number(y)}년 ${Number(mo)}월분`
+    return m === targetMonth ? `${head} (당월)` : head
+  }
+  // 다섯 줄까지만 편다 — 넘치면 오래된 쪽을 한 줄로 접는다(형제 목록의 '그 밖 N건'과 같은 문법).
+  const MAX = 5
+  const folded = buckets.length > MAX ? buckets.slice(0, buckets.length - MAX) : []
+  const shown  = buckets.slice(folded.length)
+  return (
+    <div className="pl-3 space-y-1">
+      {folded.length > 0 && (
+        <div className="flex items-baseline gap-2 text-[0.6875rem] min-w-0">
+          <span className="shrink-0" style={{ color: 'var(--warm-muted)' }}>그 밖 {folded.length}개월</span>
+          <span className="flex-1" />
+          <span className="shrink-0 num" style={{ color: 'var(--overdue-fg)' }}>
+            <MoneyDisplay amount={folded.reduce((s, b) => s + b.amount, 0)} />
+          </span>
+        </div>
+      )}
+      {shown.map(b => (
+        <div key={b.month} className="flex items-baseline gap-2 text-[0.6875rem] min-w-0">
+          <span className="shrink-0 num" style={{ color: 'var(--warm-muted)' }}>{monLabel(b.month)}</span>
+          <span className="flex-1 truncate" style={{ color: 'var(--warm-muted)' }}>{b.count}건</span>
+          <span className="shrink-0 num" style={{ color: b.month === targetMonth ? 'var(--warning-fg)' : 'var(--overdue-fg)' }}>
+            <MoneyDisplay amount={b.amount} />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── 재무 탭 ─────────────────────────────────────────────────────
 
 function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
@@ -1057,6 +1109,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 <p>아직 받지 못한 돈을 <b>납부일이 지났는지</b>로 가른 것입니다. 두 항의 합이 아래 합계입니다.</p>
                 <p className="mt-2"><b>누적 미납</b>은 납부일이 이미 지났는데 안 들어온 돈입니다. 지난달 이전에 밀린 이월분도 여기 들어갑니다. 회수가 필요한 금액입니다.</p>
                 <p className="mt-2"><b>납부 예정</b>은 납부일이 아직 오지 않은 정상 청구분입니다. 밀린 돈이 아니라 곧 들어올 돈입니다.</p>
+                <p className="mt-2">누적 미납 아래에는 그 돈이 <b>어느 달 몫</b>인지 갈라 적습니다. 한 계약이 여러 달 밀려 있으면 그 달마다 한 번씩 서기 때문에, 월별 건수를 더한 값은 위 <b>누적 미납 N건</b>(계약 수)보다 클 수 있습니다.</p>
+                <p className="mt-2">납부일이 아직 안 온 몫은 그 목록에 없습니다. 납부 예정에 있습니다.</p>
                 <p className="mt-2">모집단은 현재 입주자(거주·비거주)입니다. 퇴실한 분의 남은 미납은 여기 없고, 전체 채권은 결산 보고서의 월말 미수 잔액에서 보실 수 있습니다.</p>
               </InfoHint>
             </p>
@@ -1066,6 +1120,10 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 (§19 페어 토큰 --overdue-fg·--danger-fg 계열이 그 자리를 위해 있다). */}
             <Row label="누적 미납" value={<MoneyDisplay amount={data.overdueAmount} />}
               colorStyle={data.overdueAmount > 0 ? { color: CONCEPT_COLORS.unpaid } : undefined} />
+            {/* 그 돈이 어느 달 몫인지 — 새 값이 아니라 바로 위 '누적 미납'을 귀속월로 가른 것이다.
+                총계와 그 항이 다른 카드에 있으면 이 탭이 명문화한 원칙(총계를 이루는 항을 그 자리에
+                세운다)이 깨진다. 규격은 형제 '지출 카테고리' 드릴다운 목록 그대로다. */}
+            <AgingList buckets={data.agingBuckets} targetMonth={targetMonth} />
             <Row label="납부 예정" value={<MoneyDisplay amount={data.upcomingAmount} />}
               colorStyle={{ color: CONCEPT_COLORS.await }} />
             <Row label="합계" value={<MoneyDisplay amount={data.unpaidAmount} />} />

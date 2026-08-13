@@ -1382,6 +1382,54 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 18-6. 홈 미수 에이징과 두 벌 미납 루프 (2026-08-13).
+//
+//   에이징은 발생주의 미납 루프의 **부산물**이다. 버킷은 귀속월 그대로이고 담는 것은 도래·미회수분뿐이라
+//       Σ 버킷 금액 === overdueAmount (= 누적 미납)
+//   가 정의상 성립한다. 성립을 깨는 길은 하나뿐이다 — 부산물이 그 분기 밖으로 나가는 것.
+//
+//   그리고 이 루프는 **두 벌**이다(dashboard/page.tsx · dashboard/unpaid.ts). 한쪽은 홈 화면이,
+//   한쪽은 푸시 크론이 쓴다. 종전에는 둘을 잇는 그물이 하나도 없었고 잠금은 unpaid.ts 머리의
+//   "한쪽을 고치면 양쪽을 함께" 라는 **주석 문장**뿐이었다. 주석은 그물이 아니다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  const unpaidSrc = readFileSync('app/(app)/dashboard/unpaid.ts', 'utf8')
+
+  // (a) 부산물이 도래 분기 안에 있는가. 밖으로 나가면 미도래분까지 버킷에 담겨 항등이 깨진다.
+  if (!/if \(days == null \|\| days >= 0\) \{ leaseOverdue \+= monthUnpaid; addAging\(agingOverdue, mon, l\.id, monthUnpaid\) \}/.test(dash)) {
+    violations.push('[소스] 홈 미수 에이징이 도래 분기 밖으로 나갔다 — 버킷 합이 누적 미납과 갈린다')
+  }
+  // (b)(c) 두 벌 사본의 청구 가능 월 게이트와 FIFO 충당 규칙이 같은가. 주석·공백만 정규화해 글자로 대조한다.
+  //   부산물 한 줄은 page 쪽에만 붙으므로 FIFO 는 **충당 네 줄과 도래 판정까지**만 자른다 —
+  //   전문을 비교하면 그물이 늘 발화해 무시하게 되고, 안 자르면 게이트가 갈려도 안 걸린다.
+  const normLoop = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, ' ').trim()
+  const sliceLoop = (src, from, to) => {
+    const a = src.indexOf(from)
+    if (a < 0) return null
+    const b = src.indexOf(to, a)
+    return b < 0 ? null : src.slice(a, b + to.length)
+  }
+  const LOOP_BLOCKS = [
+    ['청구 가능 월 게이트', 'const billableMonthList: string[] = []', 'billableMonthList.push(mon)',
+      '홈 미수납 건수와 푸시 알림 건수가 어긋난다'],
+    ['FIFO 충당 규칙', 'for (const mon of billableMonthList) {\n      const monthBill = billForMonth(mon)', 'const days = daysOverdueForMonth(l, mon)',
+      '같은 사람의 미납액이 화면과 알림에서 달라진다'],
+  ]
+  for (const [name, from, to, harm] of LOOP_BLOCKS) {
+    const a = sliceLoop(dash, from, to)
+    const b = sliceLoop(unpaidSrc, from, to)
+    if (!a || !b) {
+      violations.push(`[소스] 미납 루프의 ${name} 블록을 두 파일에서 찾지 못했다 — 대조 그물이 무력해졌다`)
+    } else if (normLoop(a) !== normLoop(b)) {
+      violations.push(`[소스] dashboard/page.tsx 와 dashboard/unpaid.ts 의 ${name} 이 갈렸다 — ${harm}`)
+    }
+  }
+  // (d) 표시용 부산물은 홈에만 둔다. unpaid.ts 는 푸시 전용이라 소비처가 없어 죽은 코드가 된다.
+  if (/agingOverdue/.test(unpaidSrc)) {
+    violations.push('[소스] unpaid.ts 에 에이징 부산물이 들어갔다 — 소비처가 없는 죽은 코드다(표시는 page.tsx 몫)')
+  }
+}
+
 // 19. 청소비가 보증금 안의 몫인 영업장 — 이중 계상과 판정 정본 이탈 (2026-08-10, 운영자 승인 구조).
 //
 //   (a) 데이터. 포함형 영업장에서 현금으로 받은 보증금이 '계약 보증금 − 기수령 청소비'를 넘으면
