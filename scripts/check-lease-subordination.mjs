@@ -35,7 +35,7 @@ const ALIVE = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'WAITIN
 function brokenSubordination(l) {
   if (!l.parentLeaseTermId) return null
   if (!l.parent) return '부모 계약이 없다(삭제됐거나 연결이 끊겼다)'
-  if (l.parent.tenantId !== l.tenantId) return '부모가 다른 고객의 계약이다'
+  if (l.parent.tenantId !== l.tenantId) return '부모가 다른 입주자의 계약이다'
   if (!PARENT_OK.includes(l.parent.status)) return `부모가 끝난 계약이다(${l.parent.status})`
   if (l.parent.parentLeaseTermId) return '부모가 또 다른 계약의 추가 계약이다(2단 종속)'
   if (l.parentLeaseTermId === l.id) return '자기 자신을 부모로 가리킨다'

@@ -122,7 +122,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           </div>
         )
       })()}
-      {/* 단기 희망 고객 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
+      {/* 단기 희망 입주자 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
       {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} tenantId={tenant.id} tenantName={tenant.name} onChange={refresh} />}
       {lease && <TenantAdditionalInfo lease={lease} />}
 

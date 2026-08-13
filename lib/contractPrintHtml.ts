@@ -401,7 +401,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="sign-date num">${escape(d.signDate)}</div>
       <div class="sign-grid">
         <div class="sign-col">
-          <div class="sign-role">임차인 (입주자)</div>
+          <div class="sign-role">임차인 (입실자)</div>
           <div class="sign-line">
             <span class="lbl">성명</span><span class="val">${escape(d.signatureName)}</span>
             <span class="seal-wrap">${d.signatureImageDataUrl

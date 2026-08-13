@@ -187,7 +187,7 @@ function mainLease(t: { leaseTerms: LeaseTerm[] } | null | undefined): LeaseTerm
 //
 // 술어는 프리즘 '추가 계약' 줄(TenantBasicInfo)과 문자 그대로 같은 한 벌이다. 한쪽이 세는 계약을
 // 다른 쪽이 안 세면 같은 사람이 화면마다 다른 방 수를 갖는다. 취소·퇴실 계약은 죽은 계약이라 안 센다.
-// 계약이 하나면 빈 문자열이고, 그 고객의 목록 픽셀은 종전과 완전히 같다(지금 108명 중 107명).
+// 계약이 하나면 빈 문자열이고, 그 입주자의 목록 픽셀은 종전과 완전히 같다(지금 108명 중 107명).
 // 꼬리에는 '호'를 안 붙인다 — 앞 칸이 이미 '509호'라 '(+601호)'는 같은 말을 두 번 하고 폭만 먹는다.
 function extraRoomSuffix(t: { leaseTerms: LeaseTerm[] }, main: LeaseTerm | undefined): string {
   const live: string[] = TENANT_LIST_STATUSES
@@ -214,11 +214,11 @@ function parentLeaseOptions(t: { leaseTerms: LeaseTerm[] }, selfLeaseId?: string
 }
 
 /**
- * 수정 창의 계약 전환 — 두 수정 창(목록 경유 '수정', 프리즘 경유 '고객 정보 수정')이 같은 한 벌을 쓴다.
+ * 수정 창의 계약 전환 — 두 수정 창(목록 경유 '수정', 프리즘 경유 '입주자 정보 수정')이 같은 한 벌을 쓴다.
  *
  * 왜 정본 하나인가. 2026-08-13 실기 신고가 정확히 그 사고였다 — '계약 추가' 문을 한쪽 창에만 달아
  * 운영자 주 동선에서는 보이지 않았다. 세그먼트를 손으로 두 벌 적으면 같은 일이 또 일어난다.
- * 계약이 하나면 아무것도 그리지 않는다(픽셀 무변동) — 지금 고객 대부분이 그렇다.
+ * 계약이 하나면 아무것도 그리지 않는다(픽셀 무변동) — 지금 입주자 대부분이 그렇다.
  */
 function EditLeaseSegment({ leases, value, onChange }: {
   leases: LeaseTerm[]; value: string; onChange: (id: string) => void
@@ -275,10 +275,10 @@ function LeaseEditForms({ tenant, activeLeaseId, onChangeLease, rooms, error, de
   const [visited, setVisited] = useState<string[]>([])
   const leases = editableLeases(tenant)
   // 지금 고른 계약은 항상 들어간다 — 처음 여는 계약은 아직 아무 데도 안 들렀다.
-  // 이 사람의 계약만 세므로 다른 고객을 고쳤던 흔적은 저절로 빠진다.
+  // 이 사람의 계약만 세므로 다른 입주자를 고쳤던 흔적은 저절로 빠진다.
   const shown = leases.map(l => l.id).filter(id => id === activeLeaseId || visited.includes(id))
 
-  // 계약이 하나도 없는 고객 — 종전대로 계약 없는 폼 한 벌(사람 칸만 고친다).
+  // 계약이 하나도 없는 입주자 — 종전대로 계약 없는 폼 한 벌(사람 칸만 고친다).
   if (shown.length === 0) {
     return <TenantForm rooms={rooms} tenant={tenant} error={error}
       defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
@@ -426,7 +426,7 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 
 // v2.0 §23 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
 // '거주중(living)' = ACTIVE+CHECKOUT_PENDING — 퇴실 예정도 아직 사는 사람이라 거주중에 포함(기본값).
-// 'inquiry' = 아직 방이 안 정해진 잠재고객(문의~입실 예약) — 구 '예약'/'투어' 분리 세그먼트 통합(e1b81629).
+// 'inquiry' = 아직 방이 안 정해진 사람(문의~입실 예약) — 구 '예약'/'투어' 분리 세그먼트 통합(e1b81629).
 // 'confirmed'(입실 예정) = 방·날짜가 잡힌 예약 확정 — 2026-08-12 최상위 그룹으로 분리(운영자 확정).
 //   문의 퍼널 맨 끝에 묻혀 있었는데, 확정자는 더 이상 '설득할 사람'이 아니라 '맞이할 사람'이라
 //   퇴실 예정과 짝을 이루는 운영 축이다. 그래서 자리도 퇴실 예정 바로 옆이다.
@@ -434,7 +434,7 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'confirmed' | 'NON_RESIDENT' | 'inquiry' | 'CANCELLED' | 'past' | 'all'
 type InquiryStage = '' | 'INQUIRY' | 'TOUR' | 'RESERVED'
 
-// 잠재고객 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
+// 문의 퍼널 단계 파생 — 칩 라벨과 동일 규칙(문의 = WAITING_TOUR·투어일 없음).
 // 투어 = 투어 예정(WAITING_TOUR+투어일) + 투어 완료(TOUR_DONE).
 // 예약 확정은 null 이다 — 이제 별도 그룹('입실 예정')이라 문의 퍼널의 단계가 아니다.
 // 여기서 갈라 두면 단계 카운트·단계 필터가 저절로 확정자를 빼고, 부르는 쪽마다 조건을 또 적지 않아도 된다.
@@ -622,7 +622,7 @@ export default function TenantClient({
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
-  // 계약 추가 — 있는 고객에게 계약만 하나 더(창고·사무실 명의 등). 사람 칸은 안 그리고 안 보낸다.
+  // 계약 추가 — 있는 입주자에게 계약만 하나 더(창고·사무실 명의 등). 사람 칸은 안 그리고 안 보낸다.
   const [addLeaseTenant, setAddLeaseTenant] = useState<Tenant | null>(null)
   const [addLeaseDirty, setAddLeaseDirty]   = useState(false)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
@@ -1047,16 +1047,16 @@ export default function TenantClient({
     const fd = new FormData(e.currentTarget)
     if (!await confirmRoomOverlap(fd)) return
     // 같은 사람을 또 등록하려는가 — 이름과 연락처가 둘 다 같으면 묻는다. 방을 하나 더 주려고
-    // 새 고객을 만드는 순간 그 사람은 앱 안에서 조용히 두 사람이 된다(설계 패널 2026-08-13).
+    // 새 입주자를 만드는 순간 그 사람은 앱 안에서 조용히 두 사람이 된다(설계 패널 2026-08-13).
     // 판정은 서버 정본(findDuplicateTenant)이고, 서버는 저장 직전에 한 번 더 본다.
     const dup = await findDuplicateTenant((fd.get('name') as string) || '', (fd.get('contactValue') as string) || '')
     if (dup) {
       const where = dup.roomNo ? `${fmtRoomNo(dup.roomNo)} ` : ''
       const ok = await confirmDialog({
         title: `${dup.name}님은 이미 등록돼 있습니다`,
-        message: `${where}${STATUS_LABEL[dup.status ?? ''] ?? '등록됨'} 상태로 같은 연락처가 저장돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세의 '계약 추가'를 쓰세요. 동명이인이라 정말 새 고객이면 그대로 등록합니다.`,
+        message: `${where}${STATUS_LABEL[dup.status ?? ''] ?? '등록됨'} 상태로 같은 연락처가 저장돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세의 '계약 추가'를 쓰세요. 동명이인이라 정말 새 입주자면 그대로 등록합니다.`,
         level: 'caution',
-        confirmLabel: '새 고객으로 등록',
+        confirmLabel: '새 입주자로 등록',
         cancelLabel: '취소',
       })
       if (!ok) return
@@ -1762,7 +1762,7 @@ export default function TenantClient({
         <SegmentedControl
           size="md"
           scroll
-          ariaLabel="고객 상태 필터"
+          ariaLabel="상태 필터"
           value={statusFilter}
           onChange={changeStatusFilter}
           options={[
@@ -1780,7 +1780,7 @@ export default function TenantClient({
           ]}
         />
         {/* 그룹 경계 설명 — 호실 관리 상태 필터와 같은 자리·같은 문법(§19 InfoHint) */}
-        <InfoHint title="고객 상태 그룹">
+        <InfoHint title="상태 그룹">
           <span className="block">거주중에는 퇴실 예정도 들어갑니다. 퇴실 예정은 아직 사는 사람이라 두 곳에 함께 셉니다.</span>
           <span className="block mt-1.5">입실 예정은 방과 날짜가 잡힌 예약 확정입니다. 아직 방이 안 정해진 사람은 문의·예약에 있습니다.</span>
         </InfoHint>
@@ -1876,7 +1876,7 @@ export default function TenantClient({
         const rentDiff = rp ? rentRefundAmt - rentCalcDefault : 0
         const rentExceeds = !!rp && rentRefundAmt > rp.prepaidAmount
         const totalRefund = (rp ? rentRefundAmt : 0) + depositReturnAmt
-        // z 280 — 상세 경유 '고객 정보 수정' 창이 260이라 같은 층이면 이 창이 뒤에 깔려
+        // z 280 — 상세 경유 '입주자 정보 수정' 창이 260이라 같은 층이면 이 창이 뒤에 깔려
         // 저장을 눌러도 아무 일도 없는 것처럼 보였다(운영자 신고 2026-07-20). 가격 변동 확인창과 동일 층.
         // dirty는 금액·날짜를 실제로 만졌을 때만(§12) — 종전 하드코딩은 그냥 닫아도 확인을 물었다.
         return (
@@ -2072,8 +2072,8 @@ export default function TenantClient({
         <EmptyState
           className="sm:hidden"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '입주자를 등록하면 이곳에 표시됩니다.'}
         />
       ) : (
         <div className="sm:hidden space-y-2">
@@ -2095,7 +2095,7 @@ export default function TenantClient({
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
                 {/* CANCELLED 칩이 처음으로 보이게 되면서 우측 폭이 길어졌다. 가드가 없으면
-                    이름이 긴 고객에서 줄바꿈으로 행 높이가 늘어난다(§20). */}
+                    이름이 긴 입주자에서 줄바꿈으로 행 높이가 늘어난다(§20). */}
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2 min-w-0">
                     {lease?.room?.roomNo ? (
@@ -2247,8 +2247,8 @@ export default function TenantClient({
         <EmptyState
           className="hidden sm:block"
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
-          title={search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
-          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+          title={search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '입주자를 등록하면 이곳에 표시됩니다.'}
         />
       ) : (
         <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-310px)]">
@@ -2445,7 +2445,7 @@ export default function TenantClient({
             onClose={() => { setDetailEditDirty(false); closeEdit() }}
             // 풀블리드 — 스크롤 본문과 폭 전체 구분선 액션 바를 children 의 form 이 직접 구성한다.
             bodyClassName=""
-            title={`고객 정보 수정 · ${t.name}`}>
+            title={`입주자 정보 수정 · ${t.name}`}>
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
                 onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
@@ -2533,7 +2533,7 @@ export default function TenantClient({
                   종전대로 취소·저장 옆에 선다. §22 solid 는 여전히 '저장' 하나뿐이다. */}
               <div className="flex flex-wrap gap-2 pt-2">
                 {/* 계약 추가 — 이 사람에게 방을 하나 더(창고·사무실 명의 등). 수정 폼 옆에 두는 것은
-                    같은 사람을 새 고객으로 또 등록하는 길목이 여기이기 때문이다. */}
+                    같은 사람을 새 입주자로 또 등록하는 길목이 여기이기 때문이다. */}
                 <Btn type="button" variant="secondary" size="md"
                   onClick={() => { const t = editTenant; setEditTenant(null); setEditTenantDirty(false); setError(''); setAddLeaseTenant(t) }}
                   className="basis-full sm:flex-1 sm:basis-0">
@@ -2558,7 +2558,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={addLeaseDirty}
           onClose={() => { setAddLeaseTenant(null); setAddLeaseDirty(false) }}
           title={`계약 추가 · ${addLeaseTenant.name}`}
-          subtitle="이 고객에게 계약을 하나 더 만듭니다. 이름·연락처 등 고객 정보는 바뀌지 않습니다.">
+          subtitle="이 입주자에게 계약을 하나 더 만듭니다. 이름·연락처 등 입주자 정보는 바뀌지 않습니다.">
             <form key={`lease-${addLeaseTenant.id}`} onSubmit={handleAddLease} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setAddLeaseDirty(true))} onChange={() => setAddLeaseDirty(true)}>
               <input type="hidden" name="tenantId" value={addLeaseTenant.id} />
@@ -3541,7 +3541,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
   // 단기 요금 자동 계산 — 홈 '단기 요금 계산'과 동일 로직(calcShortStay), 운영자 요청 2026-07-09
   const [shortQuoteData, setShortQuoteData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
-  // 입실일 = 입주 희망일(moveInDateVal)과 동일 값(운영자 지적 2026-07-10: 따로 입력할 필요 없음)
+  // 단기 박스의 날짜 칸은 아래 입주일(moveInDateVal)과 같은 값이다(운영자 지적 2026-07-10: 따로 입력할 필요 없음).
+  // 라벨도 moveInLabel 하나를 공유한다 — 같은 칸을 두 이름으로 부르면 두 칸으로 읽힌다.
   const [shortOut, setShortOut] = useState(toDateInput(lease?.expectedMoveOut))
   const [contactAlertVal, setContactAlertVal] = useState(toDateInput(lease?.contactAlertDate ?? null))
   useEffect(() => {
@@ -3870,7 +3871,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음). */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 · 국가 선택 시 자동 포맷)</span></label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(외국인 입주자 · 국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
             name="homeCountryContact"
             countryName="homeCountryCode"
@@ -4197,8 +4198,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">입실일 = 입주 희망일</span>
-                    <DatePicker value={moveInDateVal} onChange={setMoveInDateVal} placeholder="입실일"
+                    <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">{moveInLabel} (아래 칸과 같은 날짜)</span>
+                    <DatePicker value={moveInDateVal} onChange={setMoveInDateVal} placeholder={moveInLabel}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                   <div>
@@ -4845,7 +4846,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     <Modal open onClose={onClose} width="md" dirty={dirty}
       // 풀블리드 — 본문과 폭 전체 구분선 액션 바를 children 이 직접 구성한다.
       bodyClassName=""
-      title="고객 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
+      title="입주자 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
       <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
@@ -4913,7 +4914,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 예정일 (계약 전체 적용)</label>
               <DatePicker value={exitDate} onChange={setExitDate} placeholder="미변경" className={inputCls} />
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">입력하면 선택한 {selectedIds.length}명 모두 같은 날짜로 저장됩니다. 기존 개별 날짜도 덮어씁니다. 일할 정산은 각 고객 카드에서 개별 진행하세요.</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">입력하면 선택한 {selectedIds.length}명 모두 같은 날짜로 저장됩니다. 기존 개별 날짜도 덮어씁니다. 일할 정산은 각 입주자 카드에서 개별 진행하세요.</p>
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 'use client'
 
 // 계약서 파일 관리 — 작성·서명 진입 + 서명 요청 문자 + 스캔본 올리기 + 목록 표시·삭제.
-// TenantClient 에서 이주(2026-05-30): 셸의 고객 면과 페이지 자체 팝업 양쪽에서 재사용.
+// TenantClient 에서 이주(2026-05-30): 셸의 입주자 면과 페이지 자체 팝업 양쪽에서 재사용.
 //
 // 용어는 서류 정본 동사 5개를 따른다(2026-08-01 운영자 지적 후 정리).
 //   발급 = 공식본을 만들어 보관·이력에 남김 · 보내기 = 만들어진 서류를 입주자에게 전달
@@ -115,7 +115,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       const res = await issueContractShareLink(tenantId)
       if (!res.ok) { pushToast('error', res.error); return }
       await reloadShare()
-      if (!res.phone) { pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 고객 정보에서 연락처를 먼저 등록해 주세요.'); return }
+      if (!res.phone) { pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.'); return }
       openSms(res.link.url, res.phone, res.propertyName)
     } finally { release(); setSharePending(false) }
   }

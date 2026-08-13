@@ -1137,7 +1137,7 @@ export async function saveDepositPayment(data: {
   // 실측 90건 중 54건이 0이고 이 영업장 표준은 5만원이다. 그래서 막고 입력을 유도하는 쪽이 맞다.
   // 예약금 경로(saveReservationDeposit)의 중복 가드도 `depositAmount > 0` 조건이라 0 계약에서는 건너뛴다.
   if (data.depositAmount <= 0) {
-    return { ok: false, error: '계약 보증금이 입력되지 않았습니다. 고객 정보 수정에서 보증금을 먼저 입력해 주세요.' }
+    return { ok: false, error: '계약 보증금이 입력되지 않았습니다. 입주자 정보 수정에서 보증금을 먼저 입력해 주세요.' }
   }
 
   // 보증금 초과 수납 차단 (신고 a5edc93e 후속, 운영자 승인 2026-08-10).
@@ -1983,7 +1983,7 @@ export async function getTenantLeaseForDashboard(tenantId: string, targetMonth?:
   return { ...lease, carryOver }
 }
 
-// 풀 고객 상세 — Prism 셸의 kind='tenant' body 가 사용. quickInfo 대비 contacts 전체 필드·
+// 풀 입주자 상세 — Prism 셸의 kind='tenant' body 가 사용. quickInfo 대비 contacts 전체 필드·
 // lease 전체 필드(청소비·납부방식·전입신고·결제수단·현금영수증·방문경로·희망 호실·계약서 URL)·
 // 추가 정보·짧은 결제 요약(분석 탭) 포함.
 export async function getTenantDetail(tenantId: string) {
@@ -2005,7 +2005,7 @@ export async function getTenantDetail(tenantId: string) {
         },
       },
       leaseTerms: {
-        // CANCELLED 포함 (신고 ad517231). 종전에는 빠져 있어서 **취소된 고객을 상세로 열면
+        // CANCELLED 포함 (신고 ad517231). 종전에는 빠져 있어서 **취소된 입주자를 상세로 열면
         // lease 가 undefined 가 되고 계약 정보·상태 위젯·취소 사유가 통째로 안 그려졌다.**
         // 운영자가 "볼 수 있는 곳이 없다"고 한 것이 과장이 아니라 정확한 서술이었다.
         where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CANCELLED'] } },
@@ -2021,7 +2021,7 @@ export async function getTenantDetail(tenantId: string) {
           tourDate: true,   // e1b81629: 투어일 유무로 '문의'/'투어 예정' 파생 라벨 분기
           reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
 
-          contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용
+          contactAlertDate: true,   // '연락할 때' 알림 시작일(지정) — 상세 표시용
           moveInFlexible: true,     // 입주 희망일 조절 가능 여부 — 매칭 날짜 게이트의 답을 상세에서도 보게(null=미확인)
           registrationStatus: true, payMethod: true, cashReceipt: true,
           reservationDepositMode: true,   // 예약금 모드 — 예약 취소 반환/몰취 경로 분기용
@@ -2048,7 +2048,7 @@ export async function getTenantDetail(tenantId: string) {
   })
   if (!row) return null
   // 신원번호는 암호문째 내려보내지 않는다. 상세 카드는 마스킹만 그리고, 평문이 필요하면
-  // 고객 정보 화면의 [보기](revealForeignRegNo)로 가야 한다. 그 문만 열람 기록을 남긴다.
+  // 입주자 정보 화면의 [보기](revealForeignRegNo)로 가야 한다. 그 문만 열람 기록을 남긴다.
   const { foreignRegNoEnc, ...tenant } = row
   const canIdentity = canReadScope(await getMyRole(), 'identity')
   return {
@@ -2066,7 +2066,7 @@ export async function getTenantDetail(tenantId: string) {
  * 다르면 그게 사고다. 양도인 귀속월 0·무청구 퇴실월 0·락인·할인·일할이 전부 그 행에 이미 반영돼 있어,
  * 이 줄과 수납 화면은 문자 그대로 같은 값을 말한다.
  *
- * 무거운 조회를 매번 부르지 않기 위해 계약이 둘 이상일 때만 부른다. 오늘 실데이터로는 그런 고객이
+ * 무거운 조회를 매번 부르지 않기 위해 계약이 둘 이상일 때만 부른다. 오늘 실데이터로는 그런 입주자가
  * 0명이라 이 함수는 한 번도 안 돌고, 상세 모달의 조회 수도 종전과 같다.
  */
 async function tenantMonthlyBilling(
@@ -2327,13 +2327,13 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
   }
 }
 
-// 호실↔고객(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
+// 호실↔입주자(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
 // 어느 한 id를 주면 연결된 나머지 id들을 해소해 돌려준다.
 //
 // **앵커는 방이 아니라 사람의 메인 계약이다**(2026-08-13, 1인 다호실 1단계).
-//   601호 창고로 들어와도 제목·고객 면·수납 면은 그 사람의 메인 계약(509호)을 말한다. 앵커가
+//   601호 창고로 들어와도 제목·입주자 면·수납 면은 그 사람의 메인 계약(509호)을 말한다. 앵커가
 //   '내가 누른 방'이면 같은 사람이 어느 문으로 들어왔느냐에 따라 다른 사람처럼 보인다 — 실제로
-//   김상혁은 고객 검색으로 들어가면 제목이 '601 · 김상혁'이었고 수납 면이 "이 상태의 고객은 수납
+//   김상혁은 입주자 검색으로 들어가면 제목이 '601 · 김상혁'이었고 수납 면이 "이 상태의 입주자는 수납
 //   정보를 열 수 없습니다"로 막혔다(601 계약이 아직 문의 단계라). 앵커 선택은 사람 축 정본
 //   primaryTenantLease 하나가 한다.
 //
@@ -2348,7 +2348,7 @@ export type EntityLinks = {
   roomNo: string | null
   tenantId: string | null
   tenantName: string | null
-  /** 앵커 — 이 사람의 메인 계약. 제목·고객 면·수납 면 기본값이 이것을 본다. */
+  /** 앵커 — 이 사람의 메인 계약. 제목·입주자 면·수납 면 기본값이 이것을 본다. */
   leaseTermId: string | null
   /** 앵커 계약의 방 번호. 진입 방과 다를 수 있다(부계약 방으로 들어온 경우). */
   anchorRoomNo: string | null
@@ -2418,7 +2418,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
 
   if (input.leaseTermId) {
     // 계약을 이름으로 지목한 진입(수납 관리 행 등) — 그 계약은 수납 면의 초기 선택으로 살아남는다.
-    // 앵커까지 그 계약으로 바꾸지는 않는다. 601호 행을 눌러도 제목·고객 면은 그 사람의 메인 계약이다.
+    // 앵커까지 그 계약으로 바꾸지는 않는다. 601호 행을 눌러도 제목·입주자 면은 그 사람의 메인 계약이다.
     return pack(
       await prisma.leaseTerm.findUnique({ where: { id: input.leaseTermId }, select: leaseSelect }),
       { namedLease: true, namedRoom: true },
@@ -2435,12 +2435,12 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
   if (input.roomId) {
     // 방 하나가 어느 사람을 가리키는가 — 호실 카드·호실 면과 같은 규칙(거주 우선)이라야 한다.
     // 'createdAt desc 한 건'이던 시절엔 최근에 만든 예약이 실거주자를 밀어내, 모달 제목과
-    // 하단 고객·수납 면이 방에 사는 사람이 아니라 예약자를 열었다(503호).
+    // 하단 입주자·수납 면이 방에 사는 사람이 아니라 예약자를 열었다(503호).
     //
     // 집합은 getRoomDetail 과 **문자 그대로 같아야 한다**. 종전에는 여기만 NON_RESIDENT 가 빠져
     // 있어, 같은 방을 두 함수가 다른 필터로 조회했다. 비거주 계약만 있는 방(415호·사무실)은
     // 호실 면이 비거주자를 정상으로 그리고 거주 이력 위젯도 그 사람으로 가는 링크를 주는데,
-    // 바로 아래 나브바의 '고객 정보' 탭만 회색으로 죽어 있었다(운영자 실기 지적 2026-08-13).
+    // 바로 아래 나브바의 '입주자 정보' 탭만 회색으로 죽어 있었다(운영자 실기 지적 2026-08-13).
     const leases = await prisma.leaseTerm.findMany({
       where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // moveInDate — 예약이 둘 이상인 방에서 primaryRoomLease 가 '먼저 들어올 사람'을 고를 수 있게(404호).
@@ -2461,7 +2461,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
       })
     }
     const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
-    // 방을 이름으로 지목한 진입 — 호실 면은 이 방을 그린다. 앵커(제목·고객·수납)는 그 사람의 메인 계약이다.
+    // 방을 이름으로 지목한 진입 — 호실 면은 이 방을 그린다. 앵커(제목·입주자·수납)는 그 사람의 메인 계약이다.
     return pack(primary, { roomFallback: room, namedRoom: true })
   }
   return null
@@ -2558,7 +2558,7 @@ export async function getDepositPaymentsByLease(leaseTermId: string) {
   return { records, paidTotal: records.reduce((s, r) => s + r.actualAmount, 0), preAcquisition }
 }
 
-// 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
+// 입주자별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
 // 청구 조정 전표(isBillingAdjust)는 수납이 아니라 청구 락 조정용이라 행·합계·건수 모두에서 제외.
 export async function getAllPaymentsByLease(leaseTermId: string) {
   // 형제 조회(getPaymentsByLease·getDepositPaymentsByLease·getLeaseSettlementInfo)에는 있는데
@@ -2760,7 +2760,7 @@ export async function getRoomStayHistory(roomId: string): Promise<{
       startDate: ymd(l.moveInDate),
       endDate: ymd(l.expectedMoveOut),
       kind: 'upcoming',
-      // 어휘는 고객 관리·수납 관리와 같다 — 확정이면 '예약 확정', 아니면 '입실 예약'.
+      // 어휘는 입주자 관리·수납 관리와 같다 — 확정이면 '예약 확정', 아니면 '입실 예약'.
       confirmed: !!l.reservationConfirmedAt,
       createdAt: l.createdAt,
     })),
@@ -2862,7 +2862,7 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
     select: { id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true, deletedAt: true },
   })
   // 사유를 아직 안 적은 행이 여럿이면 '어디에 적어야 하나'가 화면에 안 나온다.
-  // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 고객이 11명이다.
+  // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 입주자가 11명이다.
   // 기록 진입은 **가장 최근 종료 전이 한 행에만** 연다. 나머지는 이미 적힌 것만 읽고 고친다.
   const latestEndId = rows.find(r => !r.deletedAt && r.fromStatus !== r.toStatus && reasonsForStatus(r.toStatus))?.id ?? null
   return {
@@ -2983,9 +2983,9 @@ export async function restoreStatusLog(logId: string): Promise<{ ok: true } | { 
 }
 
 
-// 고객별 최근 결제수단 — 수납 폼 프리필용(운영자 요청 2026-07-06).
-// 특정 고객은 카드/현금을 고정적으로 쓰므로 '기기에서 마지막으로 쓴 방식'(전역)이 아니라
-// 그 고객의 직전 기록을 따른다. 기록이 없으면 null(호출부가 기기 최근 → 계좌이체 순 폴백).
+// 입주자별 최근 결제수단 — 수납 폼 프리필용(운영자 요청 2026-07-06).
+// 특정 입주자는 카드/현금을 고정적으로 쓰므로 '기기에서 마지막으로 쓴 방식'(전역)이 아니라
+// 그 입주자의 직전 기록을 따른다. 기록이 없으면 null(호출부가 기기 최근 → 계좌이체 순 폴백).
 export async function getTenantLastPayMethod(tenantId: string): Promise<string | null> {
   const propertyId = await getPropertyId()
   const rec = await prisma.paymentRecord.findFirst({

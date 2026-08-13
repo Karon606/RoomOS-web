@@ -88,11 +88,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const [disposalSignatureCapturedAt, setDisposalSignatureCapturedAt] = useState<string | null>(null)
   const [signatureName, setSignatureName] = useState(data.tenant.name ?? '')
   const [smoking, setSmoking]         = useState(data.tenant.smoking ? '흡연' : '비흡연')
-  // 계약서에서 흡연 여부를 바꾸면 입실자(고객정보)에 즉시 저장 — 출력용 일회성이 아니라 영구 반영
+  // 계약서에서 흡연 여부를 바꾸면 입실자(입주자 정보)에 즉시 저장 — 출력용 일회성이 아니라 영구 반영
   const handleSmokingChange = (v: string) => {
     setSmoking(v)
     setTenantSmoking(data.tenant.id, v === '흡연').then(res => {
-      if (res.ok) pushToast('success', '흡연 여부 저장됨 (고객정보 반영)')
+      if (res.ok) pushToast('success', '흡연 여부 저장됨 (입주자 정보 반영)')
       else pushToast('error', res.error)
     })
   }
@@ -409,7 +409,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       const res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
       if (!res.phone) {
-        pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 고객 정보에서 연락처를 먼저 등록해 주세요.')
+        pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.')
         return
       }
       if (blockSmsIfStaging()) return
@@ -709,7 +709,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 표기법이 가장 정확한데, 그 표기를 아는 사람은 운영자가 아니라 본인이다(운영자 승인 2026-08-11).
   // **강제하지 않는다.** 비워 두어도 제출은 그대로 되고, 화면에서도 muted 로 조용히 서 있는다.
   // 이미 등록된 표기가 있으면 칸 자체를 그리지 않는다 — 이 문은 덮어쓸 수 없기 때문이다(서버 주석).
-  // 국적이 대한민국이면 물을 것이 없다. 고객 정보 폼의 외국인 전용 칸들과 같은 기준을 쓴다 —
+  // 국적이 대한민국이면 물을 것이 없다. 입주자 정보 폼의 외국인 전용 칸들과 같은 기준을 쓴다 —
   // 내국인(실측 79명)의 서명 화면은 이 기능 전과 완전히 같다. 국적 미기재는 외국인 쪽으로 본다(폼과 동일).
   const [nativeNameInput, setNativeNameInput] = useState('')
   const canEnterNativeName = remote && !snapTenant.nativeName && snapTenant.nationality !== '대한민국'
@@ -838,7 +838,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     return res.blob()
   }
 
-  // 파일 이름은 표기 선택을 따라가지 않는다 — 보관·검색의 열쇠라 고객 정보의 이름 하나로 고정한다
+  // 파일 이름은 표기 선택을 따라가지 않는다 — 보관·검색의 열쇠라 입주자 정보의 이름 하나로 고정한다
   // (서버 발급본의 Drive 파일명도 같은 값이다). 표기 선택은 종이 안의 성명만 바꾼다.
   const pdfFileName = () => `계약서_${(nameSource.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}`
 
@@ -1211,7 +1211,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="sign-date num">{signDateLabel}</div>
           <div className="sign-grid">
             <div className="sign-col">
-              <div className="sign-role">임차인 (입주자)</div>
+              <div className="sign-role">임차인 (입실자)</div>
               <div className="sign-line">
                 <span className="lbl">성명</span>
                 {remote ? (

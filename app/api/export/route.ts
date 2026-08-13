@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
         '납부방법':    l.payMethod ?? '',
         '상태':        isPaid ? '완납' : '미수납',
         '계약상태':    STATUS_LABEL[l.status] ?? l.status,
-        '입실일':      fmtDate(l.moveInDate),
+        '입주일':      fmtDate(l.moveInDate),
         '퇴실 예정일': fmtDate(l.expectedMoveOut),
       }
     })
@@ -402,7 +402,7 @@ export async function GET(request: NextRequest) {
       '청소비':         lease?.cleaningFee ?? '',
       '납부일':         lease?.dueDay ?? '',
       '납부방법':       lease?.payMethod ?? '',
-      '입실일':         fmtDate(lease?.moveInDate),
+      '입주일':         fmtDate(lease?.moveInDate),
       '퇴실 예정일':    fmtDate(lease?.expectedMoveOut),
       '계약상태':       STATUS_LABEL[lease?.status ?? ''] ?? '',
       '메모':           t.memo ?? '',
@@ -446,7 +446,7 @@ export async function GET(request: NextRequest) {
       '이용료':         lease?.rentAmount ?? '',
       '보증금':         lease?.depositAmount ?? '',
       '청소비':         lease?.cleaningFee ?? '',
-      '입실일':         fmtDate(lease?.moveInDate),
+      '입주일':         fmtDate(lease?.moveInDate),
       '퇴실일':         fmtDate((lease as any)?.moveOutDate),
       '퇴실 예정일':    fmtDate(lease?.expectedMoveOut),
       '계약상태':       STATUS_LABEL[lease?.status ?? ''] ?? '',

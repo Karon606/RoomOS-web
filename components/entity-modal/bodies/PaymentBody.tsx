@@ -43,7 +43,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
    */
   leases?: { id: string; roomNo: string | null }[]
   onSelectLease?: (leaseTermId: string) => void
-  /** 고객관리 '퇴실 정산?' 팝업에서 '예' 진입 시 — full 모드로 열고 퇴실 정산 위젯 자동 펼침. */
+  /** 입주자 관리 '퇴실 정산?' 팝업에서 '예' 진입 시 — full 모드로 열고 퇴실 정산 위젯 자동 펼침. */
   openCheckoutProration?: boolean
 }) {
   const router = useRouter()
@@ -89,7 +89,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
   if (settlement === null) return (
     <div className="space-y-3">
       {leaseSegment}
-      <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+      <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 입주자는 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
     </div>
   )
 

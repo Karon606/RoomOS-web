@@ -161,7 +161,7 @@ const DASH_DIR_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
   SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
 }
-// RESERVED 라벨 '입실 예약' 통일 — 수납·호실관리·고객관리·lib/statusColors 와 동일 용어 (e1b81629)
+// RESERVED 라벨 '입실 예약' 통일 — 수납·호실 관리·입주자 관리·lib/statusColors 와 동일 용어 (e1b81629)
 const DASH_STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '입실 예약', CHECKOUT_PENDING: '퇴실 예정',
 }
@@ -189,7 +189,7 @@ const NBSP = '\u00A0'
 // 사람 단위 타일로 이식), 그 규칙은 '성 이름' 두 토큰짜리 한국식 표기를 가정한 것이라 다중 토큰
 // 이름에서 무너졌다 — 502호 '응우옌 티 타오 아인'이 '티'가 됐고(Thị 는 베트남 여성 이름의 중간
 // 표지라 사람을 특정하지 못한다), 'Jihan Ismam'은 성이 이름 자리에 섰다. 넘치면 앞머리부터
-// 보이도록 CSS 말줄임에 맡긴다 — 짧게 부르고 싶으면 고객 정보의 별칭이 그 자리다(lib/displayName).
+// 보이도록 CSS 말줄임에 맡긴다 — 짧게 부르고 싶으면 입주자 정보의 별칭이 그 자리다(lib/displayName).
 
 // 사람이 있으면 색이 있고, 없으면 없다(운영자 오더 2026-08-11).
 //   완납 초록 · 납부 예정과 입실 예약 파랑 · 미납 붉음 · 연체(7일 초과) 같은 붉음 더 짙게 · 공실 무색.
@@ -412,7 +412,7 @@ function ExcludedByDateCaption({ count }: { count?: number }) {
   if (!count) return null
   return (
     <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
-      입주 희망일이 맞지 않아 제외 {count}명. 고객 목록 카드에 사유가 표시됩니다.
+      입주 희망일이 맞지 않아 제외 {count}명. 입주자 목록 카드에 사유가 표시됩니다.
     </p>
   )
 }
@@ -1815,7 +1815,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
 // ── 방 상세 팝업 ─────────────────────────────────────────────────
 
 // RoomDetailPopup 제거됨 (2026-05-29) — 대시보드 방 현황 클릭은 전역 EntityModal(Pivot)로 일원화.
-// 호실/고객/수납 탭이 모든 진입점에서 동일한 라벨·위치·모양·순서 + 현재 탭만 Terracotta 강조.
+// 호실/입주자/수납 탭이 모든 진입점에서 동일한 라벨·위치·모양·순서 + 현재 탭만 Terracotta 강조.
 
 // ── 입주자 빠른 정보 모달 ─────────────────────────────────────────
 
@@ -2024,11 +2024,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
     const qs = sp.toString()
     window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname)
   }
-  // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 고객·수납은 비활성으로 통일)
+  // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 입주자·수납은 비활성으로 통일)
   const entityModal = useEntityModal()
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
-  const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 고객 관리에서 이관 2026-07-06)
+  const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 입주자 관리에서 이관 2026-07-06)
   // 고정지출 기록은 지출관리와 같은 공용 모달을 쓴다 — 알림 페이로드가 아니라 서버 현황을 받아 연다.
   const [recordingRec, setRecordingRec]           = useState<RecurringExpenseWithStatus | null>(null)
   const [recAccounts, setRecAccounts]             = useState<RecModalAccount[]>([])
@@ -2161,7 +2161,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       {!data.onboarding && (<>
 
       {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
-      {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
+      {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(입주자 관리에서 이관, 운영자 지시 2026-07-06) */}
       <div className="flex justify-end items-center gap-2">
         <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>단기 요금 계산</Btn>
         <MonthSelector />
@@ -2905,7 +2905,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
         </div>
       </div>
 
-      {/* RoomDetailPopup 제거됨 — 호실 클릭은 EntityModal(Pivot)로 일원화 (호실/고객/수납 통일된 탭) */}
+      {/* RoomDetailPopup 제거됨 — 호실 클릭은 EntityModal(Pivot)로 일원화 (호실/입주자/수납 통일된 탭) */}
       {selectedAlert && (
         <AlertDetailModal
           alert={selectedAlert}

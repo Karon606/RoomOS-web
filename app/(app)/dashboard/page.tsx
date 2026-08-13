@@ -1261,7 +1261,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return {
       leaseId:  l.id,
       tenantId: l.tenant.id,
-      // 카드에 부를 이름 — 고객 정보의 '카드 표시 이름' 선택을 따른다(lib/displayName).
+      // 카드에 부를 이름 — 입주자 정보의 '카드 표시 이름' 선택을 따른다(lib/displayName).
       // 법적 성명이 필요한 자리(서류·문자·내보내기)는 이 값을 쓰지 않는다.
       displayName: displayName(l.tenant, l.tenant.displayNameStyle),
       status:   l.status,
@@ -1472,7 +1472,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 잠재 고객 연락(D-14) — 입주 희망일 2주 전부터 빈방 가능 여부 연락 안내(운영자 기준 2026-07-10)
+  // '연락할 때' 알림(D-14) — 입주 희망일 2주 전부터 빈방 가능 여부 연락 안내(운영자 기준 2026-07-10)
   {
     // KST 오늘의 UTC 자정 — moveInDate 는 @db.Date(UTC 자정)라 같은 기준끼리 비교해야 한다.
     // 로컬 자정이면 서버(UTC)에서 KST 00~09 시에 아직 어제라 D-14 알림이 하루 늦게 뜬다.
@@ -1526,7 +1526,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         link:      `/tenants`,
         dotColor:  'var(--success-fg)',
         timeLabel: `날짜 불가 ${g.excludedCount}명`,
-        detail:    `${g.roomNo}호를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 고객 목록 카드에 사유가 표시됩니다.`,
+        detail:    `${g.roomNo}호를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
         wishRoomNo: g.roomNo,
       })
       continue

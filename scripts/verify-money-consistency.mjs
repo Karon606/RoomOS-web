@@ -714,10 +714,10 @@ const tenantBody = readFileSync('components/entity-modal/bodies/TenantBody.tsx',
 // 상세 모달이 취소 계약을 못 열면 그 사람의 이력·계약 정보가 통째로 안 그려진다
 const detailWhere = roomsActionsSrc.match(/leaseTerms:\s*\{[\s\S]{0,400}?status:\s*\{\s*in:\s*\[([^\]]*)\]/)
 if (detailWhere && !detailWhere[1].includes('CANCELLED')) {
-  violations.push("[소스] getTenantDetail 이 CANCELLED 계약을 제외한다 — 취소된 고객 상세가 통째로 빈다")
+  violations.push("[소스] getTenantDetail 이 CANCELLED 계약을 제외한다 — 취소된 입주자 상세가 통째로 빈다")
 }
 if (!/<TenantStatusHistory/.test(tenantBody)) {
-  violations.push('[소스] 고객 카드에 상태 이력 위젯이 없다 — 입실 취소·퇴실 사유를 볼 곳이 사라진다')
+  violations.push('[소스] 입주자 카드에 상태 이력 위젯이 없다 — 입실 취소·퇴실 사유를 볼 곳이 사라진다')
 }
 // 모바일 카드 게이트 — 여기가 죽으면 취소 단계가 화면에 영원히 안 뜬다.
 // 정규식으로 조건절을 잡으려다 statusException( 의 괄호에서 끊겨 못 잡았다(역주입에서 발견).

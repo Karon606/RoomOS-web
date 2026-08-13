@@ -1,7 +1,7 @@
 'use client'
 
-// 고객 문자 — 저장된 템플릿 선택 또는 직접 작성(AI 다듬기) 후 문자앱(sms:)으로 넘기는 단일 스텝 컴포즈 모달.
-// (고객 상세 '문자' 버튼, 신고 962c65d2) 실제 발송은 운영자 폰의 문자앱에서 이뤄지므로 여기 이력은 '발송 시도'다.
+// 입주자 문자 — 저장된 템플릿 선택 또는 직접 작성(AI 다듬기) 후 문자앱(sms:)으로 넘기는 단일 스텝 컴포즈 모달.
+// (입주자 상세 '문자' 버튼, 신고 962c65d2) 실제 발송은 운영자 폰의 문자앱에서 이뤄지므로 여기 이력은 '발송 시도'다.
 // UnpaidSmsModal/NoticeSmsModal 을 복제해 만든 별도 경로 — 검증된 두 모달은 이번에 건드리지 않는다.
 
 import { useEffect, useState } from 'react'
@@ -25,7 +25,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
   const [aiPending, setAiPending] = useState(false)
   const [logged, setLogged] = useState(false)
 
-  // 변수 치환 — 고객 문자는 이름·호수·계좌번호 3종만(청구 정보 없음)
+  // 변수 치환 — 입주자 문자는 이름·호수·계좌번호 3종만(청구 정보 없음)
   const render = (tpl: string, c: Extract<PersonalSmsContext, { ok: true }>) => tpl
     .replaceAll('{이름}', c.tenantName)
     .replaceAll('{호수}', c.roomNo)
@@ -86,7 +86,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
   }
 
   return (
-    <Modal open onClose={onClose} title="고객 문자" width="sm" z={260}
+    <Modal open onClose={onClose} title="입주자 문자" width="sm" z={260}
       subtitle="템플릿을 고르거나 직접 작성한 뒤 문자앱으로 보냅니다 · 여기 기록은 '발송 시도'입니다"
       footer={
         <div className="flex items-center gap-2 justify-end">
@@ -112,7 +112,7 @@ export function TenantSmsModal({ tenantId, onClose }: { tenantId: string; onClos
               받는 사람: <span className="font-semibold text-[var(--warm-dark)]">{ctx.tenantName}</span>
               {ctx.phone
                 ? <span className="tabular-nums"> · {ctx.phone}</span>
-                : <span className="text-[var(--danger-fg)]"> · 전화번호가 없습니다 (고객 연락처를 먼저 등록하세요)</span>}
+                : <span className="text-[var(--danger-fg)]"> · 전화번호가 없습니다 (입주자 연락처를 먼저 등록하세요)</span>}
             </p>
             <label className="block">
               {/* 관리(추가·수정·삭제)는 설정에 있다 — 발송 흐름엔 고르기만 둔다(NoticeSmsModal 문법) */}

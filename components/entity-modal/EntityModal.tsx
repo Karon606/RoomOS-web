@@ -1,6 +1,6 @@
 'use client'
 
-// Prism 셸 — 호실·고객·수납 통합 상세 모달 (전역).
+// Prism 셸 — 호실·입주자·수납 통합 상세 모달 (전역).
 // "데이터 조합으로 발현되는 뷰" — kind 에 따라 body 가 위젯 조합으로 바뀜.
 // 하단 PrismNavBar 클릭은 onSelect={setKind} 로 **인플레이스 전환** — 새 모달 안 뜸 (2중 스택 X).
 //
@@ -62,7 +62,7 @@ type Frame = { kind: EntityKind; seed: Seed; links: Links | undefined; seq: numb
 
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
   // links: undefined = 아직 해소 중(뼈대), null = 해소했는데 연결 없음(빈 안내). 둘을 한 값으로 두면
-  // 여는 순간부터 링크가 올 때까지 "연결된 고객이 없습니다"가 떠 있다 — 있는 사람인데도.
+  // 여는 순간부터 링크가 올 때까지 "연결된 입주자가 없습니다"가 떠 있다 — 있는 사람인데도.
   const [stack, setStack] = useState<Frame[]>([])
   const top = stack.length > 0 ? stack[stack.length - 1] : null
   // 프레임 식별자 — 배열 인덱스로는 안 된다. 비동기 링크 해소가 돌아왔을 때 그 사이 스택이
@@ -106,7 +106,7 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
     }
   }, [])
 
-  // seed 의 id 로 연결된 호실/고객/lease id 해소 (네비 가용성·제목용)
+  // seed 의 id 로 연결된 호실/입주자/lease id 해소 (네비 가용성·제목용)
   useEffect(() => {
     if (!top || top.links !== undefined) return
     let active = true
@@ -168,7 +168,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
 
   // ── 호실 면이 보고 있는 방 ────────────────────────────────────────────
   // 한 사람이 방을 둘 쓰면(509호 거주 + 601호 창고) 호실 면은 그중 하나를 그린다. 초기값은 진입한
-  // 방이고, 세그먼트로 바꾼다. **앵커는 안 따라온다** — 제목·고객 면·수납 면은 메인 계약 그대로다.
+  // 방이고, 세그먼트로 바꾼다. **앵커는 안 따라온다** — 제목·입주자 면·수납 면은 메인 계약 그대로다.
   //
   // 상태를 셸이 들고 있는 이유는 아래 액션 행이다. RoomBody 안에 두면 화면은 601호를 그리는데
   // [삭제]·[수정]은 links.roomId(진입 방)를 지워 버린다. 보는 방과 조작 대상은 하나여야 한다.
@@ -195,7 +195,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
 
   // ── 수납 면이 여는 계약 ───────────────────────────────────────────────
   // 기본은 앵커(메인 계약)다. 601호 창고 면에서 수납 탭으로 넘어와도 메인이 열린다 — 종전에는
-  // 진입 계약이 그대로 열려 문의 단계 계약이면 "이 상태의 고객은 수납 정보를 열 수 없습니다"라는
+  // 진입 계약이 그대로 열려 문의 단계 계약이면 "이 상태의 입주자는 수납 정보를 열 수 없습니다"라는
   // 막다른 길이었다. 다만 계약을 **이름으로 지목**하고 들어온 진입(수납 관리의 계약별 행)은 그
   // 계약이 열린다. 601호 행을 눌렀는데 509호 수납이 열리면 돈이 엉뚱한 계약에 들어간다.
   const [leaseSel, setLeaseSel] = useState<string | null>(null)
@@ -282,11 +282,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     onClose()
   }
 
-  // 고객 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
+  // 입주자 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
   const handleDeleteTenant = async () => {
     if (!links?.tenantId) return
     const ok = await confirmDialog({
-      title: `${links.tenantName ?? '이 고객'}님을 삭제할까요?`,
+      title: `${links.tenantName ?? '이 입주자'}님을 삭제할까요?`,
       level: 'danger', confirmLabel: '삭제',
     })
     if (!ok) return
@@ -295,7 +295,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
         const force = await confirmDialog({
-          title: `${links.tenantName ?? '이 고객'}님 기록을 영구 삭제할까요?`,
+          title: `${links.tenantName ?? '이 입주자'}님 기록을 영구 삭제할까요?`,
           message: '매출 통계·과거 조회에서도 함께 사라집니다.',
           level: 'danger', confirmLabel: '영구 삭제',
           impact: [
@@ -448,7 +448,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           )}
           {kind === 'room'    && (hasRoom   ? <RoomBody roomId={shownRoomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow}
                                                 rooms={roomOptions} onSelectRoom={setRoomSel} subLeaseNote={subLeaseNote} /> : <Empty label="연결된 호실이 없습니다." />)}
-          {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
+          {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 입주자가 없습니다." />)}
           {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit roomNo={shownLeaseRoomNo}
                                                 leases={leaseOptions} onSelectLease={setLeaseSel} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}

@@ -228,7 +228,7 @@ export async function getWishDateNotices(): Promise<string[]> {
 /**
  * 이 계약 한 건의 사람 축 — "이 사람은 지금 어느 방에 들어갈 수 있는가".
  *
- * 홈 알림은 방을 세로 보고("409호에 맞는 사람 3명"), 고객 상세는 사람을 세로 본다. 같은 판정을
+ * 홈 알림은 방을 세로 보고("409호에 맞는 사람 3명"), 입주자 상세는 사람을 세로 본다. 같은 판정을
  * 뒤집어 보는 것뿐이라 여기서 다시 매칭 규칙을 쓰지 않고 loadWishMatch 의 사람 축 한 칸을 꺼낸다.
  *
  * 노출 조건은 buildWishMatch 와 같아야 한다 — 리드 3상태이고 예약 확정 전. 여기가 한 글자라도
@@ -248,7 +248,7 @@ export async function getWishRoomsForLease(leaseTermId: string): Promise<WishLea
 }
 
 /**
- * 저장된 외국인등록번호의 평문을 꺼내는 유일한 문. 고객 화면의 [보기] 가 이 액션을 부른다.
+ * 저장된 외국인등록번호의 평문을 꺼내는 유일한 문. 입주자 화면의 [보기] 가 이 액션을 부른다.
  * 값을 돌려주기 전에 열람 기록을 남긴다. 뒤에 두면 기록 실패가 곧 기록 없는 열람이 된다.
  */
 export async function revealForeignRegNo(tenantId: string): Promise<
@@ -478,8 +478,8 @@ function readLeaseFields(formData: FormData) {
  * 이 계약의 종속 지목이 성립하는가 — 통과하면 null, 막히면 문구.
  *
  * 판정은 lib/roomAssignment 의 leaseSubordinationDenial 한 벌이고 여기서는 그 입력만 읽어 온다.
- * 부모 후보는 **같은 고객 안에서만** 찾는다 — 남의 계약 id 를 실어 보내도 조회에서 안 걸린다.
- * 새 고객의 첫 계약(tenantId 미정)은 딸릴 대상 자체가 없으므로 부모 조회를 하지 않는다.
+ * 부모 후보는 **같은 입주자 안에서만** 찾는다 — 남의 계약 id 를 실어 보내도 조회에서 안 걸린다.
+ * 새 입주자의 첫 계약(tenantId 미정)은 딸릴 대상 자체가 없으므로 부모 조회를 하지 않는다.
  */
 async function subordinationDenial(
   input: { roomId: string; parentLeaseTermId: string | null; tenantId: string | null; selfLeaseTermId: string | null },
@@ -513,7 +513,7 @@ async function subordinationDenial(
  * 계약 하나를 저장해도 되는가 — 필수 칸과 방 배정 가드. 통과하면 null, 막히면 문구.
  * 두 진입점이 이 한 함수를 부른다. 방 배정 판정 자체는 lib/roomAssignment 정본이다.
  *
- * @param tenantId 이 계약의 주인. 새 고객 등록(addTenant)은 아직 없으므로 null 이다 —
+ * @param tenantId 이 계약의 주인. 새 입주자 등록(addTenant)은 아직 없으므로 null 이다 —
  *   그때는 딸릴 대상이 없어 종속 지목이 성립할 수 없고, 단독 계약 불가 방은 그대로 막힌다.
  */
 async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: string | null): Promise<string | null> {
@@ -590,7 +590,7 @@ async function afterLeaseCreated(
 /**
  * 이 사람이 이미 등록돼 있는가 — 이름과 연락처가 둘 다 같으면 같은 사람으로 본다.
  *
- * 왜 필요한가 (설계 패널 2026-08-13). 방을 하나 더 주려고 같은 사람을 새 고객으로 또 등록하면
+ * 왜 필요한가 (설계 패널 2026-08-13). 방을 하나 더 주려고 같은 사람을 새 입주자로 또 등록하면
  * 그 사람은 앱 안에서 조용히 두 사람이 된다. 이름만으로 막으면 동명이인이 못 들어오고, 연락처만
  * 보면 가족이 번호를 같이 쓰는 경우를 막는다 — 둘 다 같을 때만 묻는다.
  * 숫자만 남겨 비교한다(010-1234-5678 과 01012345678 은 같은 번호다).
@@ -623,7 +623,7 @@ export async function findDuplicateTenant(name: string, contactValue: string): P
 const DUPLICATE_ACK = 'allowDuplicateTenant'
 
 /**
- * 있는 고객에게 계약을 하나 더 — 새 진입점(고객 상세 '계약 추가').
+ * 있는 입주자에게 계약을 하나 더 — 새 진입점(입주자 상세 '계약 추가').
  *
  * tenant 칸은 **한 글자도 건드리지 않는다.** 이 경로가 이름·연락처를 같이 저장하면 계약을 더하는
  * 일이 사람 정보를 덮는 일이 되어, 창고 계약을 만들다가 거주 계약의 연락처가 바뀔 수 있다.
@@ -634,9 +634,9 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
     await requireEdit()
     const { propertyId } = await getPropertyId()
     const tenantId = formData.get('tenantId') as string
-    if (!tenantId) return { ok: false, error: '고객을 찾을 수 없습니다.' }
+    if (!tenantId) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
     const tenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } })
-    if (!tenant) return { ok: false, error: '고객을 찾을 수 없습니다.' }
+    if (!tenant) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
 
     const f = readLeaseFields(formData)
     const denial = await leaseSaveDenial(f, tenantId)
@@ -684,16 +684,16 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const f = readLeaseFields(formData)
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
-  // 새 고객이라 tenantId 가 아직 없다 — 딸릴 대상이 없으므로 종속 지목은 성립할 수 없고,
+  // 새 입주자라 tenantId 가 아직 없다 — 딸릴 대상이 없으므로 종속 지목은 성립할 수 없고,
   // 단독 계약 불가 방은 여기서 막혀 운영자를 '계약 추가' 경로로 보낸다.
   const denial = await leaseSaveDenial(f, null)
   if (denial) return { ok: false, error: denial }
 
-  // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 고객을 만드는 순간 그 사람은 앱 안에서
+  // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 입주자를 만드는 순간 그 사람은 앱 안에서
   // 조용히 두 사람이 된다. 확인창을 지나온 폼만 통과시킨다(화면이 '계약 추가' 경로를 권한다).
   if (formData.get(DUPLICATE_ACK) !== '1') {
     const dup = await findDuplicateTenant(name, contactValue)
-    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 고객 상세에서 '계약 추가'를 써 주세요.` }
+    if (dup) return { ok: false, error: `${dup.name}님은 같은 연락처로 이미 등록돼 있습니다. 방을 하나 더 드리는 것이라면 그 입주자 상세에서 '계약 추가'를 써 주세요.` }
   }
 
   const contactsToCreate: {
@@ -2961,7 +2961,7 @@ type CheckoutProrationUndo = {
   appliedAmount?: number | null
 }
 
-// 적용된 일할 정산의 일관 유지 — 퇴실일/납부일이 바뀌는 모든 경로(고객관리 편집 폼 updateTenant,
+// 적용된 일할 정산의 일관 유지 — 퇴실일/납부일이 바뀌는 모든 경로(입주자 관리 편집 폼 updateTenant,
 // 전환 버튼 applyStatusTransition, 납입일 영구 변경 changeDueDay)가 이 헬퍼로 같은 결과를 낸다.
 // (경로마다 정산이 잔존/무통보 삭제되던 불일치 해소 — 2026-06-11 점검 후속)
 // 반환: leaseTerm.update 에 합칠 data 조각 + 사용자 안내문.

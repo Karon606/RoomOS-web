@@ -910,8 +910,8 @@ export default function SettingsForm({
                 className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">잠재고객 연락 알림 (며칠 전부터)</label>
-              <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 고객의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">연락할 때 알림 (며칠 전부터)</label>
+              <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 입주자의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
               <div className="flex items-center gap-2">
                 <input type="text" name="contactLeadDays" inputMode="numeric"
                   defaultValue={String(property?.contactLeadDays ?? 14)}
@@ -1026,15 +1026,15 @@ export default function SettingsForm({
         <SmsTemplateCard
           kind="notice"
           title="단체 공지 문자 템플릿"
-          description="고객 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
+          description="입주자 관리의 [단체 공지]에서 골라 쓰는 문구입니다. 모두에게 같은 내용이 나가므로 이름·호수 같은 개인별 값은 채워지지 않습니다."
           emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] 7월 15일(수) 오전 10시부터 12시까지 전 층 수도 점검이 있습니다. 이용에 참고 부탁드립니다.&rdquo;</>}
           namePlaceholder="예: 수도 점검 공지"
           bodyLabel="문자 내용"
         />
         <SmsTemplateCard
           kind="personal"
-          title="고객 문자 템플릿"
-          description={<>고객 상세의 [문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
+          title="입주자 문자 템플릿"
+          description={<>입주자 상세의 [문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
             {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {계좌번호}'}</span></>}
           emptyExample={<>아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] {'{이름}'}님, 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;</>}
           namePlaceholder="예: 계좌 안내"
@@ -2294,7 +2294,7 @@ function AiSettingsCard() {
 
 // 문자 템플릿 카드 — kind 로 두 종류를 같은 컴포넌트가 관리(OptionSection 재사용 문법과 동일).
 //  'unpaid' 미납 안내: 대시보드 '누적 미납'의 [안내문자]가 사용. 변수는 발송 시점에 자동 치환.
-//  'notice' 단체 공지: 고객 관리 [단체 공지]가 사용. 배치 전체가 한 본문을 공유해 치환이 구조적으로 없다.
+//  'notice' 단체 공지: 입주자 관리 [단체 공지]가 사용. 배치 전체가 한 본문을 공유해 치환이 구조적으로 없다.
 // 종전엔 'unpaid' 하드코딩이라 공지 템플릿은 목록조차 없어 수정도 삭제도 불가능했다(운영자 신고 2026-07-17).
 function SmsTemplateCard({ kind, title, description, emptyExample, namePlaceholder, bodyLabel }: {
   kind: 'unpaid' | 'notice' | 'personal'
@@ -2385,7 +2385,7 @@ function SmsTemplateCard({ kind, title, description, emptyExample, namePlacehold
   )
 }
 
-// 단기 입실 정책 카드 — 수치만 바꾸면 시뮬레이션(고객 관리 > 요금 계산)이 그대로 따라간다.
+// 단기 입실 정책 카드 — 수치만 바꾸면 시뮬레이션(입주자 관리 > 요금 계산)이 그대로 따라간다.
 // 제기역점 기준(시드): 최소 1주 · 주 단위 계약 · 1달 이내 = 계약일수 × 1.5 (1개월 상한) + 청소비 2만.
 function ShortStayPolicyCard() {
   const [p, setP] = useState<ShortStayPolicy | null>(null)
@@ -2414,7 +2414,7 @@ function ShortStayPolicyCard() {
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">단기 입실 정책</h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-        1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 고객 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
+        1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 입주자 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
       </p>
       {!p ? (
         <SkeletonRows rows={3} />

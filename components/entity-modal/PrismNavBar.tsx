@@ -1,7 +1,7 @@
 'use client'
 
 // Prism 공통 하단 네비 — 어느 상세 팝업에서 보든 같은 자리·같은 모양·같은 순서.
-// 현재 면(호실/고객/수납)은 Terracotta 강조, 연결 대상이 없으면 disabled.
+// 현재 면(호실/입주자/수납)은 Terracotta 강조, 연결 대상이 없으면 disabled.
 //
 // 두 가지 모드:
 //  · onSelect 제공 → "인플레이스 전환" — 같은 셸 안에서 body 만 갈아끼움 (2중 스택 X). PrismShell 안에서 쓰인다.
@@ -37,7 +37,7 @@ export function PrismNavBar({ current, links, onSelect }: {
   // '정보' 접미 — 액션 버튼이 아니라 '다른 면 보기' 라는 점을 명확히 (사용자 피드백 2026-05-31).
   const items: { kind: PrismCurrent; label: string; enabled: boolean }[] = [
     { kind: 'room',    label: '호실 정보', enabled: !!links.roomId },
-    { kind: 'tenant',  label: '고객 정보', enabled: !!links.tenantId },
+    { kind: 'tenant',  label: '입주자 정보', enabled: !!links.tenantId },
     ...(canSeeMoney ? [{ kind: 'payment' as const, label: '수납 정보', enabled: !!links.leaseTermId }] : []),
   ]
 

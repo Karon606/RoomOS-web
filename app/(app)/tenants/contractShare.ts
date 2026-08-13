@@ -112,7 +112,7 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
 
     const snapshot = await buildContractData(tenantId, propertyId, namedLeaseTermId)
     if (!snapshot) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
-    if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 고객 정보에서 먼저 입력해 주세요.' }
+    if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 입주자 정보에서 먼저 입력해 주세요.' }
     if (!snapshot.lease) return { ok: false, error: '진행 중인 계약이 없어 링크를 발급할 수 없습니다.' }
     // 서명이 이미 저장된 계약에는 새 링크를 안 내준다. 내주면 입주자가 새 스냅샷에 다시 서명하고,
     // 계약 하나에 서로 다른 내용의 서명 두 벌이 생긴다. 어느 쪽이 진짜인지 화면도 서버도 말할 수 없다.

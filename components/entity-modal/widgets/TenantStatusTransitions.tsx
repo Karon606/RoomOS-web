@@ -1,6 +1,6 @@
 'use client'
 
-// 고객 상태 전환 버튼 + 미니폼. lease.status 기반 다음 단계 전환(투어/예약/입실/퇴실/비거주 등).
+// 입주자 상태 전환 버튼 + 미니폼. lease.status 기반 다음 단계 전환(투어/예약/입실/퇴실/비거주 등).
 // applyStatusTransition·recordDepositReturn 서버액션 그대로 호출. 추출은 UI/state 만 이동.
 // transitionsFor() 정의 그대로 이주.
 
@@ -129,7 +129,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       if (missing.length > 0) {
         await alertDialog(
           `${tenantName}님 · 예약 확정 불가`,
-          `예약 확정에는 ${missing.join('·')}이 필요합니다. 고객 정보 수정에서 입력한 뒤 다시 확정해 주세요.`,
+          `예약 확정에는 ${missing.join('·')}이 필요합니다. 입주자 정보 수정에서 입력한 뒤 다시 확정해 주세요.`,
         )
         return
       }

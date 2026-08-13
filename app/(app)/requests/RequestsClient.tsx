@@ -316,7 +316,7 @@ export default function RequestsClient({
         </Btn>
       </div>
 
-      {/* 등록·수정 폼 — v2.0 §23 페이지 Modal (지출·고객 등록과 동일 흐름) */}
+      {/* 등록·수정 폼 — v2.0 §23 페이지 Modal (지출·입주자 등록과 동일 흐름) */}
       <Modal open={showAddForm} onClose={() => { setShowAddForm(false); setAddDirty(false) }}
         title={editingId ? '요청 수정' : '새 요청 등록'} width="md" dirty={addDirty}>
         <form className="space-y-3" onSubmit={e => e.preventDefault()}

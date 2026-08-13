@@ -89,6 +89,14 @@ function sheetToRows(wb: XLSX.WorkBook, name: string): Record<string, unknown>[]
   return XLSX.utils.sheet_to_json(ws, { defval: '' })
 }
 
+// 입주일 열 — 화면 폼 라벨('입주일')로 이름을 맞췄다(2026-08-13 어휘 통일). 옛 시트가 쓰던
+// '입실일'도 그대로 읽는다. 내보낸 파일을 다시 올리는 것이 이 기능의 주 사용법이라, 옛 이름을
+// 못 읽게 되는 순간 지난 백업이 통째로 날짜 없는 행이 된다.
+function moveInCell(row: Record<string, unknown>): unknown {
+  const v = row['입주일']
+  return v == null || String(v).trim() === '' ? row['입실일'] : v
+}
+
 // ── 시트별 임포트 ────────────────────────────────────────────────
 
 async function importRooms(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
@@ -174,7 +182,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
           (activeLease?.cleaningFee   ?? 0)              === parseNum(row['청소비']) &&
           (activeLease?.dueDay        ?? null)           === (str(row['납부일']) || null) &&
           (activeLease?.payMethod     ?? null)           === (str(row['납부방법']) || null) &&
-          fmtDate(activeLease?.moveInDate      ?? null)  === fmtDate(parseDate(row['입실일'])) &&
+          fmtDate(activeLease?.moveInDate      ?? null)  === fmtDate(parseDate(moveInCell(row))) &&
           fmtDate(activeLease?.expectedMoveOut ?? null)  === fmtDate(parseDate(row['퇴실 예정일']))
         if (isExact) { result.skipped++; continue }
 
@@ -291,7 +299,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
   // 고객 정보만 남는다(덮어쓰기 갈래는 방을 옮기지 않으므로 이 가드의 대상이 아니다).
   if (room) {
     const status = (STATUS_MAP[str(row['계약상태'])] as string) ?? 'ACTIVE'
-    const blocked = await roomAssignmentBlock(room, status, parseDate(row['입실일']), parseDate(row['퇴실 예정일']))
+    const blocked = await roomAssignmentBlock(room, status, parseDate(moveInCell(row)), parseDate(row['퇴실 예정일']))
     if (blocked) {
       result.skipped++
       result.errors.push(`${name} (${roomNo}호): ${blocked}`)
@@ -343,7 +351,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
         cleaningFee:     parseNum(row['청소비']),
         dueDay:          str(row['납부일']) || null,
         payMethod:       str(row['납부방법']) || null,
-        moveInDate:      parseDate(row['입실일']),
+        moveInDate:      parseDate(moveInCell(row)),
         expectedMoveOut: parseDate(row['퇴실 예정일']),
       },
     })

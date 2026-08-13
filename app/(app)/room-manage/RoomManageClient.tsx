@@ -470,7 +470,7 @@ export default function RoomManageClient({
 
   // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
   // handledOpenRef: 같은 요청은 1회만 처리 — initialRooms 갱신(저장 후 refresh)마다
-  // effect 가 재실행되며 닫은 폼이 옛 데이터로 재오픈되던 레이스 방지(고객관리 edit=1 버그와 동일 패턴).
+  // effect 가 재실행되며 닫은 폼이 옛 데이터로 재오픈되던 레이스 방지(입주자 관리 edit=1 버그와 동일 패턴).
   const searchParams = useSearchParams()
   const handledOpenRef = useRef<string | null>(null)
   useEffect(() => {
@@ -630,7 +630,7 @@ export default function RoomManageClient({
   // URL ?roomId·?edit=1 정리 — 안 지우면 저장/닫기 후에도 파라미터가 남는다.
   // 그 상태에서 같은 방을 다시 [수정](EntityModal)하면 router.push 가 '동일 URL' 이라 무시되고
   // handledOpenRef 도 그대로라 useEffect 가 openEdit 을 호출하지 않아 → 셸만 닫히고 편집 폼이
-  // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(고객관리 clearTenantUrlParams 와 동일 패턴).
+  // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(입주자 관리 clearTenantUrlParams 와 동일 패턴).
   const clearRoomUrlParams = () => {
     if (searchParams.get('edit') === '1' || searchParams.get('roomId')) {
       const params = new URLSearchParams(searchParams.toString())
@@ -1147,7 +1147,7 @@ export default function RoomManageClient({
         </button>
       </div>
 
-      {/* 상태 빠른 필터 — v2.0 §23 공용 SegmentedControl(수납·고객과 동일). '전체'가 곧 해제. */}
+      {/* 상태 빠른 필터 — v2.0 §23 공용 SegmentedControl(수납·입주자와 동일). '전체'가 곧 해제. */}
       {(() => {
         const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r, targetMonth); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
         // 입주 가능은 칩 합이 아니라 목록과 같은 술어로 센다 — 숫자와 목록이 갈리면 안 된다.
@@ -2064,7 +2064,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
       })
     }
     if ((res.skippedNegotiated ?? 0) > 0) {
-      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 고객관리에서 개별 변경하세요.`)
+      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 입주자 관리에서 개별 변경하세요.`)
     }
     onDone()
   }

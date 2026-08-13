@@ -274,7 +274,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       {rows.length === 0 && pendingRows.length === 0 ? (
         <EmptyState
           title={contracts.length === 0 ? '계약서가 아직 없습니다' : '조건에 맞는 계약서가 없습니다'}
-          description={contracts.length === 0 ? '고객 정보에서 계약서를 작성해 서명받거나 스캔본을 올리면 여기에 모입니다.' : '검색어나 필터를 조정해 보세요.'}
+          description={contracts.length === 0 ? '입주자 정보에서 계약서를 작성해 서명받거나 스캔본을 올리면 여기에 모입니다.' : '검색어나 필터를 조정해 보세요.'}
         />
       ) : (
         <div>

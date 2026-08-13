@@ -23,7 +23,7 @@ export type AlertItem = {
   category: AlertCategory
   title: string         // 예: "201호 홍길동", "쌀"
   subtitle: string      // 예: "월이용료 35만원 미납 · 5일 경과" (단기는 "이용료 …")
-  tenantId?: string     // 있으면 클릭 시 EntityModal(고객 뷰) 열기
+  tenantId?: string     // 있으면 클릭 시 EntityModal(입주자 뷰) 열기
   href?: string         // tenantId 없으면 이 경로로 이동 (재고·수령)
   urgency: number       // 정렬용 (높을수록 급함)
   // Prism 수납 face 진입용 — '수납 관리 보기' 버튼이 사용. lease 알림에는 항상 채움.
@@ -78,14 +78,14 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       select: { id: true, itemLabel: true, vendor: true, amount: true, date: true },
       orderBy: { date: 'asc' },
     }),
-    // 잠재 고객 연락 — 입주 희망일 D-14 이내(운영자 기준 2026-07-10): 빈방 가능 여부를 먼저 알려주기.
+    // '연락할 때' 알림 — 입주 희망일 D-14 이내(운영자 기준 2026-07-10): 빈방 가능 여부를 먼저 알려주기.
     // 예약 확정(방 확보) 건은 제외 — 입주 당일 알림이 따로 있다. 해소(상태 변경·희망일 경과) 전까지 매일.
     prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
         moveInDate: { gte: today },
         OR: [
-          { contactAlertDate: { lte: today } },   // 고객별 지정일 도래
+          { contactAlertDate: { lte: today } },   // 입주자별 지정일 도래
           { contactAlertDate: null, moveInDate: { lt: new Date(today.getTime() + contactLeadDays * 86400000) } },
         ],
       },
@@ -140,7 +140,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     })
   }
 
-  // 잠재 고객 연락(D-14) — 미납 다음 순위. 희망일이 가까울수록 급함.
+  // '연락할 때' 알림(D-14) — 미납 다음 순위. 희망일이 가까울수록 급함.
   for (const l of contactLeases) {
     if (!l.moveInDate) continue
     const dLeft = Math.ceil((l.moveInDate.getTime() - today.getTime()) / 86400000)
@@ -227,7 +227,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
       subtitle: '원격 서명 완료 · 계약서 발급 필요',
-      // 할 일이 '계약서 발급'이라 목적지는 고객 모달이 아니라 계약서함의 발급 대기 섹션이다.
+      // 할 일이 '계약서 발급'이라 목적지는 입주자 모달이 아니라 계약서함의 발급 대기 섹션이다.
       // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
       href: '/contracts?focus=contracts-pending-issue',
       tenantId: link.tenant.id, leaseTermId: issueLeaseId,

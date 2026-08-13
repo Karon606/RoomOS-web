@@ -16,6 +16,14 @@ export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, Set
 
 // ── 헬퍼 ────────────────────────────────────────────────────────
 
+// 입주일 열 — 화면 폼 라벨('입주일')로 이름을 맞췄다(2026-08-13 어휘 통일). 옛 시트가 쓰던
+// '입실일'도 그대로 읽는다. 내보낸 파일을 다시 올리는 것이 이 기능의 주 사용법이라, 옛 이름을
+// 못 읽게 되는 순간 지난 백업이 통째로 날짜 없는 행이 된다.
+function moveInCell(row: Record<string, unknown>): unknown {
+  const v = row['입주일']
+  return v == null || String(v).trim() === '' ? row['입실일'] : v
+}
+
 function parseDate(val: unknown): Date | null {
   if (!val) return null
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val
@@ -175,7 +183,7 @@ async function previewRoomBlock(
   ]
   const incoming = {
     status: STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE',
-    moveIn: fmtDate(parseDate(row['입실일'])) || null,
+    moveIn: fmtDate(parseDate(moveInCell(row))) || null,
     moveOut: fmtDate(parseDate(row['퇴실 예정일'])) || null,
   }
   const reason = roomAssignmentBlockReason({
@@ -234,7 +242,7 @@ async function previewTenants(
       const inCleaning    = parseNum(row['청소비'])
       const inDueDay      = str(row['납부일']) || null
       const inPayMethod   = str(row['납부방법']) || null
-      const inMoveIn      = fmtDate(parseDate(row['입실일']))
+      const inMoveIn      = fmtDate(parseDate(moveInCell(row)))
       const inMoveOut     = fmtDate(parseDate(row['퇴실 예정일']))
 
       const isExact =
