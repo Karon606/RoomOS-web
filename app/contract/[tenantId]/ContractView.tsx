@@ -172,6 +172,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
   const roomNoLabel = roomLabel(fields.roomNo)
 
+  // 이 계약에 딸린 계약들(합본 계약서). 서명 링크 스냅샷은 이 칸이 생기기 전에 만들어진 것이
+  // 있으므로 없으면 빈 배열로 읽는다 — 옛 링크가 열리자마자 깨지면 그게 회귀다.
+  const subLeases = data.subLeases ?? []
+
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
   // 종이에 찍는 성명. 서버가 이미 data.tenant.name 을 골라 내려주지만, 여기서는 폼의 선택으로
   // 다시 조립한다 — 고르는 순간 종이가 바뀌어야 하고 서버 왕복을 기다리면 한 박자 늦게 바뀐다.
@@ -1096,6 +1100,29 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <th>매월 납부일<span className="en">Payment Day</span></th>
               <td className="num">{fieldCell(dueDayLabel(fields.dueDay), fieldInput('dueDay', '매월 납부일'))}</td>
             </tr>
+            {/* 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계.
+                인쇄(lib/contractPrintHtml)와 같은 라벨·같은 순서·같은 합계다. 종속이 없으면
+                아무 행도 안 그린다(종속 없는 계약서 전건이 이 기능 전과 같은 DOM 이다).
+                이 두 행에는 표시값 오버라이드 입력을 두지 않는다 — 편집 대상은 이 계약서의
+                계약이고, 딸린 계약의 값은 그 계약이 정본이다. */}
+            {subLeases.length > 0 && (
+              <>
+                {subLeases.map(s => (
+                  <tr key={s.id}>
+                    <th>추가 호실<span className="en">Additional Room</span></th>
+                    <td className="num">{roomLabel(s.roomNo)}</td>
+                    <th>추가 입실료<span className="en">Rent / month</span></th>
+                    <td className="amt">{s.rentAmount.toLocaleString()}원</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th>호실 합계<span className="en">Rooms</span></th>
+                  <td className="num">{[fields.roomNo, ...subLeases.map(s => s.roomNo)].map(r => roomLabel(r)).filter(Boolean).join(' · ')}</td>
+                  <th>입실료 합계<span className="en">Total Rent</span></th>
+                  <td className="amt">{(fieldRent + subLeases.reduce((s, x) => s + x.rentAmount, 0)).toLocaleString()}원</td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
 

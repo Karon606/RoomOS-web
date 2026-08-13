@@ -86,6 +86,9 @@ export type PrintContractData = {
     roomNo: string | null
     registrationStatus: string
   } | null
+  // 이 계약에 딸린 계약들(합본 계약서 — 2026-08-13 다호실 2단계). 비면 행이 하나도 안 붙고
+  // 인쇄물은 이 기능 전과 바이트 단위로 같다. 종속 없는 계약서 전건이 그 경우다.
+  subLeases?: { roomNo: string | null; rentAmount: number }[]
   // 사용자가 입력한 화면 상태
   smoking: string                 // '비흡연' | '흡연'
   emergencyContactText: string
@@ -162,6 +165,22 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   }
   const [colL, colR] = splitClauseColumns(d.template.sections)
   const clausesHtml = `<div class="clause-col">${colL.map(renderFrag).join('')}</div><div class="clause-col">${colR.map(renderFrag).join('')}</div>`
+
+  // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.
+  // 정보 표의 네 칸(라벨·값·라벨·값) 문법을 그대로 쓴다. 표를 따로 세우면 열 폭이 안 맞아
+  // 같은 종이 안에서 호실이 두 자리에 다른 규칙으로 찍힌다.
+  // **종속이 없으면 빈 문자열이고, 앞 행의 `</tr>` 바로 뒤에 붙어 공백조차 남기지 않는다** —
+  // 종속 없는 계약서의 인쇄 HTML 이 이 기능 전과 바이트 단위로 같아야 하기 때문이다.
+  const subs = d.subLeases ?? []
+  const subRowsHtml = subs.length === 0 ? '' : `
+        ${subs.map(s => `<tr>
+          <th>추가 호실<span class="en">Additional Room</span></th><td class="num">${escape(fmtRoom(s.roomNo))}</td>
+          <th>추가 입실료<span class="en">Rent / month</span></th><td class="amt">${s.rentAmount.toLocaleString()}원</td>
+        </tr>`).join('\n        ')}
+        <tr>
+          <th>호실 합계<span class="en">Rooms</span></th><td class="num">${escape([d.lease?.roomNo, ...subs.map(s => s.roomNo)].map(r => fmtRoom(r)).filter(Boolean).join(' · '))}</td>
+          <th>입실료 합계<span class="en">Total Rent</span></th><td class="amt">${((d.lease?.rentAmount ?? 0) + subs.reduce((s, x) => s + x.rentAmount, 0)).toLocaleString()}원</td>
+        </tr>`
 
   const biz = d.businessInfo
   const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${escape(biz.registrationNo)}` : '', biz.ceoName ? `대표 ${escape(biz.ceoName)}` : ''].filter(Boolean).join(' · ')
@@ -364,7 +383,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
         <tr>
           <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
           <th>매월 납부일<span class="en">Payment Day</span></th><td class="num">${d.lease?.dueDay ? (d.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(d.lease.dueDay, 10)}일`) : '—'}</td>
-        </tr>
+        </tr>${subRowsHtml}
       </tbody>
     </table>
     ${d.emergencyContactText ? `<table class="emerg"><tbody><tr>

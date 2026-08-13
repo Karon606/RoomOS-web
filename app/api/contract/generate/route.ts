@@ -14,6 +14,7 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
+import { contractSubLeases } from '@/lib/contractData'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
@@ -145,6 +146,9 @@ export async function POST(req: Request) {
     // 표시값은 화면과 같은 함수로 조립한다(lib/contractFieldOverrides). 성명 표기도 그 안에 있다 —
     // 클라이언트가 보낸 이름을 믿으면 이 API 를 직접 불러 아무 이름으로나 발급할 수 있다.
     const leaseFields = lease ? contractLeaseFields(lease) : null
+    // 합본 계약서의 종속 호실 — 화면과 같은 정본(lib/contractData) 하나다. 여기서 손으로 다시
+    // 세면 종이와 화면이 다른 행을 그리고, 그 차이는 발급하고 나서야 보인다.
+    const subLeases = contractSubLeases(tenant.leaseTerms, lease?.id)
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
@@ -254,6 +258,9 @@ export async function POST(req: Request) {
       // 금액·날짜는 여전히 DB 가 단일 출처다 — 클라이언트가 보낸 금액을 믿으면 이 API 를 직접 불러
       // 아무 금액이나 발급할 수 있다.
       lease: leaseFields,
+      // 합본 — 이 계약에 딸린 계약의 호실·임료. 화면(buildContractData)과 같은 함수·같은 정렬이라
+      // 종이와 화면이 다른 행을 그릴 수 없다. 종속이 없으면 빈 배열이고 인쇄물은 종전과 같다.
+      subLeases,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -413,6 +420,7 @@ export async function POST(req: Request) {
             .map(c => ({ name: '', phone: c.contactValue, relation: c.emergencyRelation ?? null })),
         },
         lease: printData.lease,
+        subLeases: printData.subLeases,
         template: printData.template,
       }),
     }

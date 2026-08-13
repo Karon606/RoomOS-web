@@ -9,7 +9,7 @@ import {
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
   resolveSignedBody,
 } from '@/lib/contract'
-import { contractLeaseFields, parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
+import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
 import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
@@ -17,6 +17,37 @@ import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
+
+/**
+ * 합본 계약서의 종속 호실 한 줄 — 이 계약에 딸린 계약의 호실과 그 방 임료.
+ *
+ * 왜 금액을 여기 싣는가. 종이가 '509호 김상혁'만 말하고 601호 창고를 말하지 않으면, 그 사람이
+ * 매달 내는 52만원의 근거가 계약서 어디에도 없다. 계약은 둘이지만 종이는 한 장이어야 한다
+ * (운영자 오더 2026-08-13). 청구·수납은 여전히 계약별로 따로다 — 합쳐지는 것은 종이뿐이다.
+ */
+export type ContractSubLease = { id: string; roomNo: string | null; rentAmount: number }
+
+/**
+ * 이 계약에 딸린 계약들을 계약서 행으로 뽑는다. 종속이 없으면 빈 배열이고, 그때 렌더는
+ * 이 기능 전과 **바이트 단위로 같다**(호출부가 빈 배열에 아무것도 안 그린다).
+ *
+ * 표시값은 본 계약과 같은 정본(contractLeaseFields)을 쓴다 — 종속분만 원천 컬럼을 직접 읽으면
+ * 같은 종이 안에서 한 행은 오버라이드를 따르고 한 행은 안 따르는 상태가 된다.
+ * 호실 오름차순으로 세운다. 조회 정렬(입주일 desc)을 그대로 쓰면 날짜를 고칠 때마다 종이의
+ * 행 순서가 바뀌고, 그러면 박제 축(lease.subLeases)이 내용 변화 없이 드리프트로 잡힌다.
+ */
+export function contractSubLeases<T extends ContractLeaseRow & { id: string; parentLeaseTermId: string | null }>(
+  leases: T[], parentLeaseId: string | undefined,
+): ContractSubLease[] {
+  if (!parentLeaseId) return []
+  return leases
+    .filter(l => l.parentLeaseTermId === parentLeaseId)
+    .map(l => {
+      const f = contractLeaseFields(l)
+      return { id: l.id, roomNo: f.roomNo, rentAmount: f.rentAmount }
+    })
+    .sort((a, b) => (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko'))
+}
 
 export type ContractData = {
   template: ContractTemplate           // 입실자 오버라이드 우선, 없으면 영업장 공통
@@ -81,6 +112,8 @@ export type ContractData = {
     signatureSignedDate: string | null
     disposalSignatureSignedDate: string | null
   } | null
+  // 이 계약에 딸린 계약들(합본 계약서). 종속이 없으면 빈 배열이고 화면·인쇄는 아무 행도 안 그린다.
+  subLeases: ContractSubLease[]
 }
 
 const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
@@ -199,5 +232,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
       signatureSignedDate: kstOrNull((lease as { signatureSignedAt?: Date | null }).signatureSignedAt),
       disposalSignatureSignedDate: kstOrNull((lease as { disposalSignatureSignedAt?: Date | null }).disposalSignatureSignedAt),
     } : null,
+    // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
+    subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
   }
 }
