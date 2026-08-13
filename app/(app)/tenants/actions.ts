@@ -344,6 +344,8 @@ export async function getRoomsForSelect() {
     orderBy: { roomNo: 'asc' },
     select: {
       id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, nonResidentVacant: true, type: true, floor: true, windowType: true, direction: true, noMoveInReport: true,
+      // 단독 계약 불가 방인가 — 폼의 '딸릴 계약' 셀렉트가 필수로 바뀌는 조건(서버 가드와 같은 사실).
+      standaloneLeaseAllowed: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         // take:1 을 뺐다 — 방이 '언제 비는지'와 '이미 예약이 걸렸는지'는 계약 하나만 봐서는 알 수 없다.

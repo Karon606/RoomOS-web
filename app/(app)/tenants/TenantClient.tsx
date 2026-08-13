@@ -64,6 +64,7 @@ import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { primaryTenantLease, roomLeaseRowOrder } from '@/lib/leaseStatus'
+import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
   vacancyExcluded: boolean           // 비거주 점유 방(창고·사무실) — 서버 가드와 같은 정본 술어(lib/vacancy)
+  standaloneLeaseAllowed: boolean    // 이 방만으로 계약이 되는가 — false 면 '딸릴 계약'이 필수다(2026-08-13)
   // 퇴실 예정일이 잡힌 점유 계약들의 구간 — 겹침 문구가 '마지막 날짜'가 아니라 실제로 막고 선 계약을 지목하게.
   occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
   // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
@@ -148,6 +150,7 @@ type LeaseTerm = {
   registrationStatus: string; contractUrl: string | null
   wishRooms: string | null; wishConditions: string | null; keepAlertAfterInquiry: boolean; visitRoute: string | null
   moveInFlexible: boolean | null   // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
+  parentLeaseTermId: string | null // 딸려 있는 계약(2026-08-13 다호실 2단계). null=단독 계약
   room: { id: string; roomNo: string; floor: string | null } | null
   paymentRecords: PaymentRecord[]
   // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
@@ -177,6 +180,53 @@ type Tenant = {
 // 다른 계약으로 보이는 길이다 — 방 축이 2026-06 에 갔던 그 길이라 같은 처방을 쓴다.
 function mainLease(t: { leaseTerms: LeaseTerm[] } | null | undefined): LeaseTerm | undefined {
   return t ? primaryTenantLease(t.leaseTerms) : undefined
+}
+
+// 이 사람의 계약을 수정 창이 고를 순서대로 — 거주 · 예약 · 비거주를 먼저 세우고(roomLeaseRowOrder 정본)
+// 층이 없는 단계(문의·투어·퇴실 완료)를 뒤에 잇는다. 하나도 빠뜨리지 않는 것이 이 함수의 일이다.
+// 빠뜨리면 지금 편집 중인 계약이 세그먼트에 없는 상태가 만들어진다.
+function editableLeases(t: { leaseTerms: LeaseTerm[] }): LeaseTerm[] {
+  const ordered = roomLeaseRowOrder(t.leaseTerms)
+  return [...ordered, ...t.leaseTerms.filter(l => !ordered.includes(l))]
+}
+
+// '딸릴 계약' 후보 — 같은 사람의 살아 있는 계약 중 자기 자신과 이미 딸려 있는 계약을 뺀다.
+// 상태 명단은 서버 가드가 쓰는 그 상수(PARENT_LEASE_STATUSES)를 그대로 읽는다. 손으로 베끼면
+// 화면이 고르게 해 준 것을 서버가 거부하거나, 화면이 못 고르는 것을 서버가 받는다.
+function parentLeaseOptions(t: { leaseTerms: LeaseTerm[] }, selfLeaseId?: string): LeaseTerm[] {
+  return roomLeaseRowOrder(
+    t.leaseTerms.filter(l => l.id !== selfLeaseId && !l.parentLeaseTermId && PARENT_LEASE_STATUSES.includes(l.status)),
+  )
+}
+
+/**
+ * 수정 창의 계약 전환 — 두 수정 창(목록 경유 '수정', 프리즘 경유 '고객 정보 수정')이 같은 한 벌을 쓴다.
+ *
+ * 왜 정본 하나인가. 2026-08-13 실기 신고가 정확히 그 사고였다 — '계약 추가' 문을 한쪽 창에만 달아
+ * 운영자 주 동선에서는 보이지 않았다. 세그먼트를 손으로 두 벌 적으면 같은 일이 또 일어난다.
+ * 계약이 하나면 아무것도 그리지 않는다(픽셀 무변동) — 지금 고객 대부분이 그렇다.
+ */
+function EditLeaseSegment({ leases, value, onChange }: {
+  leases: LeaseTerm[]; value: string; onChange: (id: string) => void
+}) {
+  if (leases.length < 2) return null
+  // 같은 방에 계약이 둘인 사람(거주 + 비거주 명의 공존)은 호실만으로는 구분이 안 된다.
+  // 그때만 상태를 덧붙인다 — 늘 붙이면 흔한 경우의 라벨이 길어져 좁은 화면에서 밀린다.
+  const labelOf = (l: LeaseTerm) => {
+    const room = fmtRoomNo(l.room?.roomNo, '호실 미지정')
+    const dup = leases.filter(o => fmtRoomNo(o.room?.roomNo, '호실 미지정') === room).length > 1
+    return dup ? `${room} · ${STATUS_LABEL[l.status] ?? l.status}` : room
+  }
+  return (
+    <SegmentedControl
+      ariaLabel="수정할 계약"
+      size="sm"
+      scroll
+      value={value}
+      options={leases.map(l => ({ value: l.id, label: labelOf(l) }))}
+      onChange={onChange}
+    />
+  )
 }
 
 // 수납 모달의 청구·잔액 정본(서버 계산 — 할인·인상·예약 실수납 반영)
@@ -500,6 +550,10 @@ export default function TenantClient({
   const [addLeaseDirty, setAddLeaseDirty]   = useState(false)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
+  // 두 수정 창이 지금 편집 중인 계약. 값이 그 사람의 계약이 아니면(창을 닫고 다른 사람을 열었을 때)
+  // 조용히 메인 계약으로 되돌아간다 — 그래서 창을 닫을 때마다 손으로 초기화할 자리가 없다.
+  const [editLeaseId, setEditLeaseId]     = useState<string | null>(null)
+  const [detailEditLeaseId, setDetailEditLeaseId] = useState<string | null>(null)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string; compositionLabel: string | null } | null>(null)
@@ -2295,6 +2349,8 @@ export default function TenantClient({
       {/* 편집 폼 모달 — 페이지 종속 (상세 팝업은 전역 Prism 셸이 담당, Phase 2.3c) */}
       {detailTenant && detailEditMode && (() => {
         const t = detailTenant
+        // 세그먼트가 고른 계약. 값이 이 사람의 것이 아니면 메인 계약으로 되돌아간다.
+        const editLease = t.leaseTerms.find(l => l.id === detailEditLeaseId) ?? mainLease(t)
         const closeEdit = () => {
           setDetailEditMode(false); setDetailTenant(null); setError('')
           clearTenantUrlParams()
@@ -2308,9 +2364,13 @@ export default function TenantClient({
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
                 onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
-                <input type="hidden" name="leaseTermId" value={mainLease(t)?.id ?? ''} />
+                <input type="hidden" name="leaseTermId" value={editLease?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
-                  <TenantForm rooms={rooms} tenant={t} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+                  {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다(수납 모달과 같은 정본). */}
+                  <EditLeaseSegment leases={editableLeases(t)} value={editLease?.id ?? ''} onChange={setDetailEditLeaseId} />
+                  <TenantForm key={editLease?.id ?? 'main'} rooms={rooms} tenant={t} leaseId={editLease?.id}
+                    parentLeases={parentLeaseOptions(t, editLease?.id)}
+                    error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex flex-wrap gap-2 shrink-0">
                   {/* 계약 추가 — 목록 경유 수정 모달과 같은 문. 수정 창이 두 벌이라 한쪽에만 두면
@@ -2370,15 +2430,22 @@ export default function TenantClient({
       )}
 
       {/* ── 입주자 수정 모달 ────────────────────────────────────────── */}
-      {editTenant && (
+      {editTenant && (() => {
+        // 세그먼트가 고른 계약. 값이 이 사람의 것이 아니면 메인 계약으로 되돌아간다.
+        const editLease = editTenant.leaseTerms.find(l => l.id === editLeaseId) ?? mainLease(editTenant)
+        return (
         <Modal open width="lg" dirty={editTenantDirty}
           onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
           title={`수정 · ${editTenant.name}`}>
             <form key={editTenant.id} onSubmit={handleUpdate} className="space-y-4"
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
-              <input type="hidden" name="leaseTermId" value={mainLease(editTenant)?.id ?? ''} />
-              <TenantForm rooms={rooms} tenant={editTenant} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+              <input type="hidden" name="leaseTermId" value={editLease?.id ?? ''} />
+              {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다(프리즘 경유 수정 창과 같은 한 벌). */}
+              <EditLeaseSegment leases={editableLeases(editTenant)} value={editLease?.id ?? ''} onChange={setEditLeaseId} />
+              <TenantForm key={editLease?.id ?? 'main'} rooms={rooms} tenant={editTenant} leaseId={editLease?.id}
+                parentLeases={parentLeaseOptions(editTenant, editLease?.id)}
+                error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               {/* 320px 에서 셋을 한 줄에 두면 버튼 안쪽 폭이 56px 로 눌려 '계약 추가'가 두 줄로 접힌다
                   (280px 본문 − 간격 16px ÷ 3 − 좌우 여백 32px). 좁은 화면에서는 제 줄을 갖고, 넓어지면
                   종전대로 취소·저장 옆에 선다. §22 solid 는 여전히 '저장' 하나뿐이다. */}
@@ -2401,7 +2468,8 @@ export default function TenantClient({
               </div>
             </form>
         </Modal>
-      )}
+        )
+      })()}
 
       {/* ── 계약 추가 모달 ─────────────────────────────────────────── */}
       {addLeaseTenant && (
@@ -2441,8 +2509,11 @@ export default function TenantClient({
                   </div>
                 )
               })()}
-              {/* tenant 를 넘기지 않는다 — 넘기면 기존 계약 값이 프리필돼 새 계약이 옛 계약의 사본이 된다. */}
-              <TenantForm rooms={rooms} leaseOnly error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+              {/* tenant 를 넘기지 않는다 — 넘기면 기존 계약 값이 프리필돼 새 계약이 옛 계약의 사본이 된다.
+                  parentLeases 만 예외다. 값이 아니라 '고를 수 있는 계약 목록'이라 프리필이 아니고,
+                  단독 계약 불가 방(창고)을 고르면 이 칸이 필수가 된다. */}
+              <TenantForm rooms={rooms} leaseOnly parentLeases={parentLeaseOptions(addLeaseTenant)}
+                error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setAddLeaseTenant(null)}
                   className="flex-1">
@@ -3330,15 +3401,21 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
 
 // ── 폼 컴포넌트 (추가/수정 공용) ─────────────────────────────────
 
-function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, leaseOnly = false }: {
+function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, leaseOnly = false, leaseId, parentLeases = [] }: {
   rooms: Room[]; tenant?: Tenant; error?: string
   defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
   // 계약만 더하는 모드('계약 추가') — 사람 칸(기본 정보·연락처·메모)을 아예 그리지 않는다.
   // 안 그리는 것이 곧 안 보내는 것이고, 서버(addLeaseToTenant)도 사람 칸을 읽지 않는다.
   // 계약을 하나 더하는 일이 사람 정보를 덮는 일이 되면 안 된다.
   leaseOnly?: boolean
+  // 이 폼이 편집하는 계약(2026-08-13, 실기 신고 — 부계약을 고칠 입구가 없었다).
+  // 없거나 이 사람의 계약이 아니면 종전대로 메인 계약이다. 수정 창의 계약 세그먼트가 이 값을 준다.
+  leaseId?: string
+  // '딸릴 계약' 셀렉트의 선택지. 비면 칸 자체를 그리지 않는다 — 고를 것이 없는데 필수로 막으면
+  // 운영자에게 출구 없는 오류를 주는 것이다(칸이 없으면 서버도 종속을 편집하지 않는 저장으로 읽는다).
+  parentLeases?: LeaseTerm[]
 }) {
-  const lease     = mainLease(tenant)
+  const lease     = (leaseId ? tenant?.leaseTerms.find(l => l.id === leaseId) : undefined) ?? mainLease(tenant)
   const primary   = tenant?.contacts.find(c => c.isPrimary)
   const emergency = tenant?.contacts.find(c => c.isEmergency)
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
@@ -4106,6 +4183,35 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             )
           })()}
         </div>
+
+        {/* 딸릴 계약 (2026-08-13, 다호실 2단계) — 이 계약이 어느 계약에 딸리는가.
+            고를 것이 있을 때만 그린다. 단독 계약이 불가한 방을 고르면 필수가 되고,
+            그 방을 고르지 않았으면 '딸리지 않음'이 그대로 기본이다(종전 저장과 같은 값).
+            판정은 서버(lib/roomAssignment)가 다시 본다 — 화면에만 있는 규칙은 규칙이 아니다. */}
+        {parentLeases.length > 0 && (() => {
+          const selectedRoom = rooms.find(r => r.id === selectedRoomId)
+          const required = selectedRoom ? !selectedRoom.standaloneLeaseAllowed : false
+          return (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">딸릴 계약{required ? ' *' : ''}</label>
+              <select name="parentLeaseTermId" defaultValue={lease?.parentLeaseTermId ?? ''} required={required}
+                onWheel={e => e.stopPropagation()}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                <option value="">딸리지 않음 (단독 계약)</option>
+                {parentLeases.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {[fmtRoomNo(l.room?.roomNo, '호실 미지정'), STATUS_LABEL[l.status] ?? l.status].filter(Boolean).join(' · ')}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                {required
+                  ? '이 호실은 단독 계약이 불가한 방입니다. 딸릴 계약을 골라 주세요.'
+                  : '계약서를 딸릴 계약 한 장에 합쳐서 인쇄합니다. 청구와 수납은 계약별로 따로입니다.'}
+              </p>
+            </div>
+          )
+        })()}
 
         {(() => {
           const selectedRoom = rooms.find(r => r.id === selectedRoomId)
