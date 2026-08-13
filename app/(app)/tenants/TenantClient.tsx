@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
@@ -239,6 +239,69 @@ function EditLeaseSegment({ leases, value, onChange }: {
       options={leases.map(l => ({ value: l.id, label: labelOf(l) }))}
       onChange={onChange}
     />
+  )
+}
+
+/**
+ * 수정 창의 계약별 폼 — 세그먼트로 계약을 오가도 적다 만 입력이 그대로 남는다.
+ *
+ * 왜 인스턴스를 여러 벌 들고 있나. 종전에는 TenantForm 에 `key={계약id}` 를 걸어 전환할 때마다
+ * 통째로 새로 마운트했다. 601호를 고치다 509호를 들렀다 돌아오면 601호 폼이 서버 값으로 되감겨
+ * 손으로 적은 것이 사라졌다(운영자 실기 신고 2026-08-13). 폼 값은 TenantForm 안의 useState 와
+ * uncontrolled DOM 에 흩어져 있어 밖에서 갈무리했다 되돌릴 수 있는 모양이 아니다. 그래서 값을
+ * 옮기는 대신 폼 자체를 살려 둔다 — 지금 고르지 않은 계약의 폼은 숨긴다.
+ *
+ * 숨기는 방법이 fieldset[disabled] 인 이유. 숨은 폼도 같은 <form> 안에 있어서, 그냥 감추기만 하면
+ * ① FormData 가 두 계약의 값을 함께 담아 이름이 겹치는 칸에서 엉뚱한 쪽이 저장되고
+ * ② 숨은 칸의 required 가 "focus 할 수 없는 폼 컨트롤" 로 제출 자체를 막는다.
+ * disabled 된 컨트롤은 제출에서도 빠지고 검증에서도 빠진다 — 두 함정을 한 속성이 같이 막는다.
+ *
+ * 처음 여는 계약만 마운트하고 나머지는 들른 순간 붙인다. 계약마다 보증금 구성 조회가 한 번 나가는데,
+ * 열지도 않은 계약 몫까지 창을 열자마자 쏘면 왕복이 계약 수만큼 늘어난다.
+ *
+ * 세그먼트를 이 컴포넌트가 함께 그리는 이유는 '들른 계약'을 아는 곳이 여기 하나여야 하기 때문이다.
+ * 두 수정 창이 각자 세는 순간 한쪽만 고쳐지는 그 사고(2026-08-13 '계약 추가' 문)를 또 만든다.
+ *
+ * 저장에 성공하면 두 수정 창 모두 창을 닫으므로(proceedAfterRentDecision) 이 컴포넌트가 통째로
+ * 사라진다. 다음에 여는 창은 서버에서 새로 받은 값으로 시작한다 — 옛 입력이 남을 자리가 없다.
+ */
+function LeaseEditForms({ tenant, activeLeaseId, onChangeLease, rooms, error, defaultDeposit, defaultCleaningFee, contactLeadDays }: {
+  tenant: Tenant; activeLeaseId: string; onChangeLease: (id: string) => void
+  rooms: Room[]; error?: string
+  defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
+}) {
+  // 들른 계약. 세그먼트를 누르는 그 자리에서만 늘어난다.
+  const [visited, setVisited] = useState<string[]>([])
+  const leases = editableLeases(tenant)
+  // 지금 고른 계약은 항상 들어간다 — 처음 여는 계약은 아직 아무 데도 안 들렀다.
+  // 이 사람의 계약만 세므로 다른 고객을 고쳤던 흔적은 저절로 빠진다.
+  const shown = leases.map(l => l.id).filter(id => id === activeLeaseId || visited.includes(id))
+
+  // 계약이 하나도 없는 고객 — 종전대로 계약 없는 폼 한 벌(사람 칸만 고친다).
+  if (shown.length === 0) {
+    return <TenantForm rooms={rooms} tenant={tenant} error={error}
+      defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+  }
+  return (
+    <>
+      <EditLeaseSegment leases={leases} value={activeLeaseId}
+        onChange={id => { setVisited(v => v.includes(id) ? v : [...v, id]); onChangeLease(id) }} />
+      {/* 바깥 space-y 는 이 div 한 칸에만 걸리고, 섹션 사이 간격은 fieldset 이 제 안에서 낸다.
+          형제 fieldset 사이에는 간격을 두지 않는다 — 한 번에 하나만 보이는데 Tailwind v4 의 space-y 는
+          margin-bottom 이라, 숨은 쪽이 마지막 자식이면 보이는 쪽 아래에 빈 칸이 하나 더 생긴다. */}
+      <div className="min-w-0">
+        {shown.map(id => {
+          const on = id === activeLeaseId
+          return (
+            <fieldset key={id} disabled={!on} hidden={!on} className="space-y-4 min-w-0">
+              <TenantForm rooms={rooms} tenant={tenant} leaseId={id}
+                parentLeases={parentLeaseOptions(tenant, id)}
+                error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
+            </fieldset>
+          )
+        })}
+      </div>
+    </>
   )
 }
 
@@ -2398,10 +2461,9 @@ export default function TenantClient({
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={editLease?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
-                  {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다(수납 모달과 같은 정본). */}
-                  <EditLeaseSegment leases={editableLeases(t)} value={editLease?.id ?? ''} onChange={setDetailEditLeaseId} />
-                  <TenantForm key={editLease?.id ?? 'main'} rooms={rooms} tenant={t} leaseId={editLease?.id}
-                    parentLeases={parentLeaseOptions(t, editLease?.id)}
+                  {/* 계약 전환 세그먼트 + 계약별 폼. 방을 둘 쓰는 사람에게만 세그먼트가 뜨고,
+                      오가는 동안 각 계약의 미저장 입력은 그대로 남는다(목록 경유 수정 창과 같은 한 벌). */}
+                  <LeaseEditForms key={t.id} tenant={t} activeLeaseId={editLease?.id ?? ''} onChangeLease={setDetailEditLeaseId} rooms={rooms}
                     error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex flex-wrap gap-2 shrink-0">
@@ -2473,10 +2535,8 @@ export default function TenantClient({
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editLease?.id ?? ''} />
-              {/* 계약 전환 — 방을 둘 쓰는 사람에게만 뜬다(프리즘 경유 수정 창과 같은 한 벌). */}
-              <EditLeaseSegment leases={editableLeases(editTenant)} value={editLease?.id ?? ''} onChange={setEditLeaseId} />
-              <TenantForm key={editLease?.id ?? 'main'} rooms={rooms} tenant={editTenant} leaseId={editLease?.id}
-                parentLeases={parentLeaseOptions(editTenant, editLease?.id)}
+              {/* 계약 전환 세그먼트 + 계약별 폼(프리즘 경유 수정 창과 같은 한 벌). */}
+              <LeaseEditForms key={editTenant.id} tenant={editTenant} activeLeaseId={editLease?.id ?? ''} onChangeLease={setEditLeaseId} rooms={rooms}
                 error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               {/* 320px 에서 셋을 한 줄에 두면 버튼 안쪽 폭이 56px 로 눌려 '계약 추가'가 두 줄로 접힌다
                   (280px 본문 − 간격 16px ÷ 3 − 좌우 여백 32px). 좁은 화면에서는 제 줄을 갖고, 넓어지면
@@ -3448,6 +3508,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   parentLeases?: LeaseTerm[]
 }) {
   const lease     = (leaseId ? tenant?.leaseTerms.find(l => l.id === leaseId) : undefined) ?? mainLease(tenant)
+  // 이 폼 한 벌의 고유 접두사 — 수정 창은 계약마다 폼을 한 벌씩 들고 있어서(LeaseEditForms)
+  // 고정 id 를 쓰면 문서에 같은 id 가 여럿 생기고 라벨이 늘 첫 번째 폼을 가리킨다.
+  const formUid   = useId()
   const primary   = tenant?.contacts.find(c => c.isPrimary)
   const emergency = tenant?.contacts.find(c => c.isEmergency)
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
@@ -3727,9 +3790,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             선택지에서 빠지고 값은 여기 그대로 남는다. */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
-          <label htmlFor="nativeName" className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
+          <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
           <input
-            id="nativeName"
+            id={`nativeName-${formUid}`}
             type="text"
             name="nativeName"
             defaultValue={tenant?.nativeName ?? ''}
@@ -4528,7 +4591,8 @@ function ForeignRegNoField({ tenantId, masked }: { tenantId?: string; masked: st
   // 13자리가 채워지면 생년월일을 대신 채운다. 비어 있을 때만 넣는다 — 사람이 적어 둔 값을
   // 번호가 덮으면 어느 쪽이 맞는지 아무도 모르게 된다. 다르면 말만 하고 그대로 둔다.
   const syncBirthdate = (derived: string) => {
-    const el = document.querySelector<HTMLInputElement>('[name="birthdate"]')
+    // setInputByName 과 같은 지문 — 숨은 계약 폼(fieldset[disabled])의 생년월일을 보지 않는다.
+    const el = document.querySelector<HTMLInputElement>('[name="birthdate"]:not(:disabled)')
     const current = digitsToIso(el?.value ?? '')
     if (!current) {
       setInputByName('birthdate', derived.replace(/-/g, '.'))

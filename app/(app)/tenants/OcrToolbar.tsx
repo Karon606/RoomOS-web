@@ -26,9 +26,13 @@ async function fileToBase64(f: File): Promise<{ b64: string; mime: string }> {
 
 // React controlled input 의 value 를 프로그래매틱하게 바꾸려면
 // 네이티브 setter 호출 + input/change 이벤트 디스패치가 필요.
+//
+// :not(:disabled) 로 좁히는 이유 — 수정 창은 계약마다 폼을 한 벌씩 들고 지금 고르지 않은 것을
+// fieldset[disabled] 로 숨긴다(LeaseEditForms). 이름이 같은 칸이 문서에 여럿 있게 되므로,
+// 그냥 첫 번째를 잡으면 화면에 보이지도 않는 폼에 OCR 결과가 들어간다. 살아 있는 폼은 하나뿐이다.
 export function setInputByName(name: string, value: string | undefined | null) {
   if (!value) return false
-  const el = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[name="${name}"]`)
+  const el = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[name="${name}"]:not(:disabled)`)
   if (!el) return false
   const proto = el instanceof HTMLSelectElement
     ? HTMLSelectElement.prototype
