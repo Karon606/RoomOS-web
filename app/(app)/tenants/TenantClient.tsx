@@ -63,7 +63,7 @@ import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { primaryTenantLease, roomLeaseRowOrder } from '@/lib/leaseStatus'
+import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
 
 // ── 타입 ─────────────────────────────────────────────────────────
@@ -180,6 +180,19 @@ type Tenant = {
 // 다른 계약으로 보이는 길이다 — 방 축이 2026-06 에 갔던 그 길이라 같은 처방을 쓴다.
 function mainLease(t: { leaseTerms: LeaseTerm[] } | null | undefined): LeaseTerm | undefined {
   return t ? primaryTenantLease(t.leaseTerms) : undefined
+}
+
+// 메인 계약 밖에 있는 진행 중 계약의 호실 — 목록 호실 칸의 꼬리('509호 (+601)').
+//
+// 술어는 프리즘 '추가 계약' 줄(TenantBasicInfo)과 문자 그대로 같은 한 벌이다. 한쪽이 세는 계약을
+// 다른 쪽이 안 세면 같은 사람이 화면마다 다른 방 수를 갖는다. 취소·퇴실 계약은 죽은 계약이라 안 센다.
+// 계약이 하나면 빈 문자열이고, 그 고객의 목록 픽셀은 종전과 완전히 같다(지금 108명 중 107명).
+// 꼬리에는 '호'를 안 붙인다 — 앞 칸이 이미 '509호'라 '(+601호)'는 같은 말을 두 번 하고 폭만 먹는다.
+function extraRoomSuffix(t: { leaseTerms: LeaseTerm[] }, main: LeaseTerm | undefined): string {
+  const live: string[] = TENANT_LIST_STATUSES
+  const extras = t.leaseTerms.filter(l => l.id !== main?.id && live.includes(l.status))
+  if (extras.length === 0) return ''
+  return ` (+${extras.map(l => l.room?.roomNo ?? '미지정').join(', ')})`
 }
 
 // 이 사람의 계약을 수정 창이 고를 순서대로 — 거주 · 예약 · 비거주를 먼저 세우고(roomLeaseRowOrder 정본)
@@ -2023,7 +2036,11 @@ export default function TenantClient({
                   <div className="flex items-center gap-2 min-w-0">
                     {lease?.room?.roomNo ? (
                       <>
-                        <span className="text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(lease.room.roomNo)}</span>
+                        {/* 표의 호실 칸과 같은 꼬리 — 카드에만 없으면 좁은 화면에서 그 사실이 사라진다. */}
+                        <span className="min-w-0 truncate text-sm font-bold tnum text-[var(--warm-dark)]">
+                          {fmtRoomNo(lease.room.roomNo)}
+                          {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
+                        </span>
                         {lease.room.floor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
                       </>
                     ) : (() => {
@@ -2247,8 +2264,12 @@ export default function TenantClient({
                     <td className={`sticky left-0 z-20 px-4 py-3 text-sm font-semibold overflow-hidden transition-colors ${stickyRowBg}`}
                       style={{ maxWidth: colWidths.roomNo, borderLeft: tipTone ? `3px solid ${statusTipColor(tipTone)}` : undefined }}
                       onClick={e => { e.stopPropagation(); if (lease?.room?.id) setRoomDetailId(lease.room.id) }}>
+                      {/* 방을 둘 쓰는 사람은 꼬리로 나머지 호실을 적는다 — 이 칸은 메인 계약 하나만
+                          말해 왔고, 그 사실이 표 어디에도 없었다(프리즘 '추가 계약' 줄과 같은 술어).
+                          꼬리는 링크가 아니라 사실 표기라 코랄을 안 쓴다. 칸이 좁으면 종전대로 잘린다. */}
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
                         {fmtRoomNo(lease?.room?.roomNo)}
+                        {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
                       </span>
                     </td>
                     {/* sticky — 이름 */}
