@@ -154,7 +154,7 @@ async function previewRoomBlock(
   if (!roomNo) return null
   const room = await prisma.room.findUnique({
     where: { propertyId_roomNo: { propertyId, roomNo } },
-    select: { id: true, nonResidentVacant: true },
+    select: { id: true, nonResidentVacant: true, standaloneLeaseAllowed: true },
   })
   // 방이 시트에만 있고 아직 없으면 계약도 안 만들어진다 — 막을 배정 자체가 없다.
   if (!room) return null
@@ -182,6 +182,7 @@ async function previewRoomBlock(
     incoming,
     // 앞선 행이 얹은 명의도 센다 — 적용은 그 계약을 이미 저장한 뒤에 이 행을 만난다.
     nonResidentOccupied: isVacancyExcluded(room),
+    roomStandaloneAllowed: room.standaloneLeaseAllowed,
     others,
   })
   if (reason) return { roomNo, reason }

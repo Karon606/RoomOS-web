@@ -253,7 +253,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
  * 실패 목록에 세워, 운영자가 시트를 고쳐 다시 올리게 한다. 막을 이유가 없으면 null.
  */
 async function roomAssignmentBlock(
-  room: { id: string; nonResidentVacant: boolean },
+  room: { id: string; nonResidentVacant: boolean; standaloneLeaseAllowed: boolean },
   status: string,
   moveIn: Date | null,
   moveOut: Date | null,
@@ -265,6 +265,7 @@ async function roomAssignmentBlock(
   return roomAssignmentBlockReason({
     incoming: { status, moveIn: fmtDate(moveIn) || null, moveOut: fmtDate(moveOut) || null },
     nonResidentOccupied: isVacancyExcluded(room),
+    roomStandaloneAllowed: room.standaloneLeaseAllowed,
     others: leases.map(l => ({
       status: l.status,
       moveIn: fmtDate(l.moveInDate) || null,

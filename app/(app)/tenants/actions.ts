@@ -47,7 +47,7 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
-import { roomAssignmentDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
+import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 
 /**
@@ -426,13 +426,22 @@ function readLeaseFields(formData: FormData) {
     ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
     : null
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
+  // 딸릴 계약(2026-08-13, 다호실 2단계). **칸이 폼에 없는 것과 비워 둔 것은 다르다.**
+  // 없으면(null) 이 저장은 종속을 편집하지 않는 것이고, 있으면서 빈 값이면 종속을 끊는 것이다.
+  // 이 구분을 안 두면 종속 셀렉트가 없는 폼(수정 등)의 저장 한 번이 조용히 부모를 끊는다
+  // (퇴실 예정일 칸에서 같은 사고가 있었다 — 신고 aae0ab38).
+  const parentRaw = formData.get('parentLeaseTermId')
+  const parentFieldPresent = parentRaw !== null
+  const parentLeaseTermId = parentFieldPresent ? (String(parentRaw).trim() || null) : null
 
   return {
     roomId, status, rentAmount, depositAmount, moveInDate,
     isReservedConfirmed, depositReceived, depositReceivedAmount,
+    parentFieldPresent, parentLeaseTermId,
     /** LeaseTerm.create 에 실리는 데이터. propertyId 는 부르는 쪽이 붙인다. */
     data: {
       roomId: roomId || null,
+      parentLeaseTermId,
       status,
       rentAmount,
       depositAmount,
@@ -463,10 +472,48 @@ function readLeaseFields(formData: FormData) {
 }
 
 /**
+ * 이 계약의 종속 지목이 성립하는가 — 통과하면 null, 막히면 문구.
+ *
+ * 판정은 lib/roomAssignment 의 leaseSubordinationDenial 한 벌이고 여기서는 그 입력만 읽어 온다.
+ * 부모 후보는 **같은 고객 안에서만** 찾는다 — 남의 계약 id 를 실어 보내도 조회에서 안 걸린다.
+ * 새 고객의 첫 계약(tenantId 미정)은 딸릴 대상 자체가 없으므로 부모 조회를 하지 않는다.
+ */
+async function subordinationDenial(
+  input: { roomId: string; parentLeaseTermId: string | null; tenantId: string | null; selfLeaseTermId: string | null },
+): Promise<string | null> {
+  const { roomId, parentLeaseTermId, tenantId, selfLeaseTermId } = input
+  // 방이 없는 계약(문의·투어)은 단독 계약 규칙의 대상이 아니다 — 없는 방 설정을 '불가'로 읽으면 안 된다.
+  const room = roomId
+    ? await prisma.room.findUnique({ where: { id: roomId }, select: { standaloneLeaseAllowed: true } })
+    : null
+  const parent = parentLeaseTermId && tenantId
+    ? await prisma.leaseTerm.findFirst({
+        where: { id: parentLeaseTermId, tenantId },
+        select: { id: true, tenantId: true, status: true, parentLeaseTermId: true },
+      })
+    : null
+  // 자신에게 딸린 계약이 있는가 — 2단 종속의 반대 방향이다. 부모를 지목할 때만 물으면 된다.
+  const selfHasSubLeases = parentLeaseTermId && selfLeaseTermId
+    ? (await prisma.leaseTerm.count({ where: { parentLeaseTermId: selfLeaseTermId } })) > 0
+    : false
+  return leaseSubordinationDenial({
+    roomStandaloneAllowed: room?.standaloneLeaseAllowed ?? true,
+    parentLeaseTermId,
+    parent,
+    selfTenantId: tenantId,
+    selfLeaseTermId,
+    selfHasSubLeases,
+  })
+}
+
+/**
  * 계약 하나를 저장해도 되는가 — 필수 칸과 방 배정 가드. 통과하면 null, 막히면 문구.
  * 두 진입점이 이 한 함수를 부른다. 방 배정 판정 자체는 lib/roomAssignment 정본이다.
+ *
+ * @param tenantId 이 계약의 주인. 새 고객 등록(addTenant)은 아직 없으므로 null 이다 —
+ *   그때는 딸릴 대상이 없어 종속 지목이 성립할 수 없고, 단독 계약 불가 방은 그대로 막힌다.
  */
-async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>): Promise<string | null> {
+async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: string | null): Promise<string | null> {
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
   if (!f.roomId && !roomOptionalStatuses.includes(f.status)) return '호실을 선택해주세요.'
   if (f.isReservedConfirmed) {
@@ -494,10 +541,16 @@ async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>): Promise<s
   }) : null
   // 점유 가드는 lib/roomAssignment 한 벌이다 — 종전에는 여기와 updateTenant 에 같은 판정이 두 벌 적혀
   // 있었고 엑셀 가져오기에는 0 개였다(2026-08-12 봉합). 문구·순서는 그 정본이 갖는다.
-  return roomAssignmentDenial({
+  const denial = roomAssignmentDenial({
     incomingStatus: f.status,
     nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
     otherLeases: roomForGuard?.leaseTerms ?? [],
+  })
+  if (denial) return denial
+
+  // 종속 가드 — 생성 경로는 늘 묻는다. 부모 지목도, 단독 계약 불가 방도 이 한 줄이 본다.
+  return subordinationDenial({
+    roomId: f.roomId, parentLeaseTermId: f.parentLeaseTermId, tenantId, selfLeaseTermId: null,
   })
 }
 
@@ -583,7 +636,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
     if (!tenant) return { ok: false, error: '고객을 찾을 수 없습니다.' }
 
     const f = readLeaseFields(formData)
-    const denial = await leaseSaveDenial(f)
+    const denial = await leaseSaveDenial(f, tenantId)
     if (denial) return { ok: false, error: denial }
 
     const lease = await prisma.leaseTerm.create({
@@ -628,7 +681,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const f = readLeaseFields(formData)
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
-  const denial = await leaseSaveDenial(f)
+  // 새 고객이라 tenantId 가 아직 없다 — 딸릴 대상이 없으므로 종속 지목은 성립할 수 없고,
+  // 단독 계약 불가 방은 여기서 막혀 운영자를 '계약 추가' 경로로 보낸다.
+  const denial = await leaseSaveDenial(f, null)
   if (denial) return { ok: false, error: denial }
 
   // 같은 사람을 또 등록하려는가 — 방을 하나 더 주려고 새 고객을 만드는 순간 그 사람은 앱 안에서
@@ -742,6 +797,12 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 계약 정보
   const roomId             = formData.get('roomId') as string
+  // 딸릴 계약 — contractUrl 과 같은 관행이다. 칸이 폼에 없으면 undefined 를 넣어 Prisma 가 그
+  // 컬럼을 건드리지 않게 한다. 무조건 `|| null` 로 쓰면 종속 셀렉트가 없는 폼의 저장 한 번이
+  // 조용히 부모를 끊고, 그 계약은 단독 계약 불가 방에 부모 없이 남는다.
+  const parentLeaseTermId  = formData.has('parentLeaseTermId')
+    ? (((formData.get('parentLeaseTermId') as string) || '').trim() || null)
+    : undefined
   const status             = formData.get('status') as LeaseStatus
   const rentAmount         = Number(formData.get('rentAmount')) || 0
   const depositAmount      = Number(formData.get('depositAmount')) || 0
@@ -800,6 +861,8 @@ export async function updateTenant(formData: FormData): Promise<
     where: { id: leaseTermId },
     select: {
       roomId: true, status: true, reservationConfirmedAt: true, isShortTerm: true, rentAmount: true,
+      // 폼에 종속 칸이 없는 저장은 저장된 값이 그대로 판정 입력이 된다(끊지도, 다시 묻지도 않는다).
+      parentLeaseTermId: true,
       // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
       expectedMoveOut: true, moveOutDate: true, dueDay: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
@@ -861,6 +924,22 @@ export async function updateTenant(formData: FormData): Promise<
       incomingStatus: status,
       nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
       otherLeases,
+    })
+    if (denial) return { ok: false, error: denial }
+  }
+
+  // 종속 재검증 — 방 배정 재검증과 같은 이유로 발화 조건을 좁힌다. 방이 바뀌어 단독 계약 불가 방으로
+  // 들어올 때, 거주계로 올라올 때, 그리고 폼이 종속 칸을 실제로 실어 보냈을 때만 묻는다.
+  // 조건 없이 걸면 방 설정을 뒤늦게 '단독 불가'로 켠 순간 그 방의 기존 계약이 재저장조차 안 된다 —
+  // 이미 그렇게 남아 있는 계약은 막는 게 아니라 감지망 축 ②가 이름을 불러 준다.
+  const parentEdited = parentLeaseTermId !== undefined
+  if (roomChanged || climbingIntoResidence || parentEdited) {
+    const effectiveParent = parentEdited ? parentLeaseTermId : currentLease.parentLeaseTermId
+    const denial = await subordinationDenial({
+      roomId: newRoomId ?? '',
+      parentLeaseTermId: effectiveParent,
+      tenantId,
+      selfLeaseTermId: leaseTermId,
     })
     if (denial) return { ok: false, error: denial }
   }
@@ -1133,6 +1212,8 @@ export async function updateTenant(formData: FormData): Promise<
         cashReceipt: cashReceipt || null,
         registrationStatus,
         contractUrl,
+        // undefined 면 이 저장은 종속을 편집하지 않는 것이다(contractUrl 과 같은 관행).
+        parentLeaseTermId,
         // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
         wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
         wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
