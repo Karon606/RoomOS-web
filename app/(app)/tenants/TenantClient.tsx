@@ -421,6 +421,17 @@ function fmtDueDay(dueDay: string | null | undefined): string {
   return `매월 ${dueDay}일`
 }
 
+// 저장한 납부일 한 값을 폼이 쓰는 두 짝(제출값 raw · 화면 표시 disp)으로 가른다.
+// 폼 초기값과 '딸릴 계약과 같은 납부일' 표시가 같은 규칙을 써야, 부모의 30 이 한쪽에서는
+// '말일'이고 다른 쪽에서는 '30일'인 어긋남이 안 생긴다.
+function dueDayParts(dueDay: string | null | undefined): { raw: string; disp: string } {
+  const d = dueDay ?? ''
+  if (!d) return { raw: '', disp: '' }
+  const n = parseInt(d, 10)
+  if (!isNaN(n)) return n >= 30 ? { raw: '말일', disp: '말일' } : { raw: d, disp: `${n}일` }
+  return d.includes('말') ? { raw: '말일', disp: '말일' } : { raw: d, disp: d }
+}
+
 // 거주기간 표시 — lib/stayPeriod 정본(달력 기준 만 개월, 신고 f9803357) 위임
 function calcStayPeriod(
   moveInDate: string | Date | null | undefined,
@@ -3591,15 +3602,21 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   }
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
-  const initDueDay = (): { raw: string; disp: string } => {
-    const d = lease?.dueDay ?? ''
-    if (!d) return { raw: '', disp: '' }
-    const n = parseInt(d, 10)
-    if (!isNaN(n)) return n >= 30 ? { raw: '말일', disp: '말일' } : { raw: d, disp: `${n}일` }
-    return d.includes('말') ? { raw: '말일', disp: '말일' } : { raw: d, disp: d }
-  }
-  const [dueDayRaw, setDueDayRaw] = useState(initDueDay().raw)
-  const [dueDayDisp, setDueDayDisp] = useState(initDueDay().disp)
+  const [dueDayRaw, setDueDayRaw] = useState(() => dueDayParts(lease?.dueDay).raw)
+  const [dueDayDisp, setDueDayDisp] = useState(() => dueDayParts(lease?.dueDay).disp)
+  // 딸릴 계약이 정해져 있으면 납부일은 그 계약과 같은 날이 기본이다(운영자 오더 2026-08-13).
+  // 한 사람이 방을 둘 쓰면 돈은 대개 같은 날 한 번에 들어온다. 다르게 받고 싶은 경우가 있으니
+  // 잠그지 않고 '따로 정하기'로 푼다. 기존 계약을 열 때는 저장된 값이 부모와 다르면 따로 모드로 시작한다.
+  const [dueSeparate, setDueSeparate] = useState(() => {
+    const p = parentLeases.find(l => l.id === lease?.parentLeaseTermId)
+    const own = dueDayParts(lease?.dueDay).raw
+    if (!p || !own) return false
+    return own !== dueDayParts(p.dueDay).raw
+  })
+  const parentLease = parentVal ? parentLeases.find(l => l.id === parentVal) : undefined
+  // 고를 수 없는 부모(퇴실·취소로 목록에서 빠진 계약)면 상속할 값을 알 수 없으니 종전대로 직접 입력이다.
+  const dueSameAsParent = !!parentLease && !dueSeparate
+  const parentDue = dueDayParts(parentLease?.dueDay)
   // 신규 등록은 입주일 기본값을 오늘로 프리필(청구 상태 저장 시 필수 — 미납 오탐 방지). 편집은 기존값 유지.
   const [moveInDateVal, setMoveInDateVal] = useState(tenant ? toDateInput(lease?.moveInDate) : toDateInput(new Date()))
   // 일정 조절 가능 여부 — 빈 문자열이 '미확인'(DB null)이다. SegmentedControl 은 값이 목록에 없으면
@@ -4344,11 +4361,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {/* 거주 전 상태는 납부일 숨김(단기 문법과 동일) — 서버도 같은 기준으로 비운다 */}
           {!duePending && <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
-            <input type="hidden" name="dueDay" value={dueDayRaw} />
+            {/* 딸릴 계약과 같은 날이 기본일 때는 부모의 값을 그대로 제출한다. 상속 플래그를 새로 만들지 않는
+                이유는 저장된 것이 곧 청구가 읽는 값이어야 하기 때문이다 — 화면에 보이는 날이 곧 청구일이다. */}
+            <input type="hidden" name="dueDay" value={dueSameAsParent ? parentDue.raw : dueDayRaw} />
             <input
               type="text"
-              value={dueDayDisp}
+              value={dueSameAsParent ? parentDue.disp : dueDayDisp}
+              readOnly={dueSameAsParent}
               onChange={e => {
+                if (dueSameAsParent) return
                 const v = e.target.value
                 const stripped = v.replace(/일$/, '').trim()
                 const n = Number(stripped)
@@ -4358,12 +4379,40 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   setDueDayDisp(v)
                 }
               }}
-              onFocus={() => setDueDayDisp(prev => prev.replace(/일$/, ''))}
-              onBlur={() => applyDueDay(dueDayDisp)}
-              placeholder="15일, 말일 등"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+              onFocus={() => { if (!dueSameAsParent) setDueDayDisp(prev => prev.replace(/일$/, '')) }}
+              onBlur={() => { if (!dueSameAsParent) applyDueDay(dueDayDisp) }}
+              placeholder={dueSameAsParent ? '없음' : '15일, 말일 등'}
+              className={`w-full border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm placeholder-[var(--warm-muted)] outline-none transition-colors ${
+                dueSameAsParent
+                  ? 'bg-[var(--cream)] text-[var(--warm-mid)] cursor-default'
+                  : 'bg-[var(--canvas)] text-[var(--warm-dark)] focus:border-[var(--coral)]'}`}
             />
-            {!tenant && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
+            {parentLease && (
+              <>
+                {dueSameAsParent && (() => {
+                  // 어느 계약을 따라가는지 호실로 말한다. 호실이 없는 단계면 '딸릴 계약'으로 부른다.
+                  const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '딸릴 계약'
+                  return (
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                      {parentDue.raw ? `${who}과 같은 납부일입니다.` : `${who}에 납부일이 없습니다.`}
+                    </p>
+                  )
+                })()}
+                <label className="flex items-start gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5 leading-snug">
+                  <input type="checkbox" checked={dueSeparate}
+                    onChange={e => {
+                      const next = e.target.checked
+                      // 따로 풀 때 내 값이 비어 있으면 부모 값에서 이어 쓴다 — 빈 칸이 되면 방금까지
+                      // 보이던 날이 사라져 다시 적어야 한다. 내가 적어 둔 값이 있으면 그것을 지키고.
+                      if (next && !dueDayRaw && parentDue.raw) { setDueDayRaw(parentDue.raw); setDueDayDisp(parentDue.disp) }
+                      setDueSeparate(next)
+                    }}
+                    className="w-3.5 h-3.5 accent-[var(--coral)] mt-px shrink-0" />
+                  납부일 따로 정하기
+                </label>
+              </>
+            )}
+            {!tenant && !dueSameAsParent && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
           </div>}
           {showExitDate && (
             // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
