@@ -404,6 +404,11 @@ model Room {
   // 방 특성 (2026-07-06, 운영자 요청 — 415 창고·사무실 사례)
   noMoveInReport    Boolean @default(false)  // 전입신고 불가 방 — 등록 시 경고 + 카드 배지
   nonResidentVacant Boolean @default(true)   // 비거주 점유 시 공실로 표시할지 (false = 창고·사무실처럼 점유로 취급)
+  // 이 방만으로 계약을 맺을 수 있는가 (2026-08-13, 다호실 2단계 — 601호 옥탑 창고 사례).
+  // false = 다른 계약에 딸려야만 하는 방이다. 그 방으로 계약을 저장하려면 부모 계약을 지목해야 한다
+  // (lib/roomAssignment 의 leaseSubordinationDenial 이 정본, 등록·계약 추가·수정·엑셀 가져오기 공용).
+  // nonResidentVacant 와는 다른 질문이다 — 저쪽은 '공실로 세는가', 이쪽은 '혼자 계약이 되는가'.
+  standaloneLeaseAllowed Boolean @default(true)
   areaPyeong Float?
   areaM2     Float?
   floor      String?                    // 층 (자동 유추 또는 수동 입력)
@@ -702,6 +707,20 @@ model LeaseTerm {
   roomId String? @db.Uuid
   room   Room?   @relation(fields: [roomId], references: [id])
 
+  // 이 계약이 딸려 있는 계약 (2026-08-13, 다호실 2단계 — 509호 거주에 딸린 601호 창고).
+  // null = 단독 계약(기존 전건이 여기다 — 동작 무변동). 부모는 **같은 사람의 살아있는 계약**이어야 하고
+  // 2단 종속·순환은 금지다(lib/roomAssignment 의 leaseSubordinationDenial 이 그 판정 정본).
+  //
+  // 청구·수납은 이 칸을 모른다. 계약은 여전히 각자 청구되고 각자 충당된다 — 1단계 설계 판정
+  // (한 계약 = 상태 하나)을 뒤집지 않는다. 이 칸이 바꾸는 것은 **서류와 표기**뿐이다.
+  // 계약서는 부모 한 장에 합본으로 인쇄되고(종속분은 단독 발급 차단), 목록·호실 칸이 부모로 모인다.
+  //
+  // onDelete: SetNull 인 이유. 부모 계약을 지우는 일이 딸린 창고 계약까지 지우면 안 된다 —
+  // 그 계약은 여전히 돈을 받는 관계다. 끊긴 종속은 감지망 두 축이 잡는다(부모 부재·단독 불가 방의 고아).
+  parentLeaseTermId String?     @db.Uuid
+  parentLeaseTerm   LeaseTerm?  @relation("LeaseSubordination", fields: [parentLeaseTermId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  subLeaseTerms     LeaseTerm[] @relation("LeaseSubordination")
+
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
@@ -718,6 +737,7 @@ model LeaseTerm {
   documentFieldOverrides DocumentFieldOverride[]
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
+  @@index([parentLeaseTermId])  // 부모 계약의 종속분 조회(합본 계약서·목록 접기)
   @@map("lease_terms")
 }
 
