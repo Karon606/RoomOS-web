@@ -35,6 +35,14 @@ export type PrintedFactsInput = {
     roomNo?: string | null
     registrationStatus?: string
   } | null
+  /**
+   * 이 계약에 딸린 계약들(합본 계약서의 종속 호실 행). 종이에 찍히는 값이므로 축이 있어야 한다 —
+   * 601호 창고의 호실이나 임료가 서명 뒤에 바뀌면 그 종이는 이미 사실과 다른 종이다.
+   *
+   * **없거나 비면 축 자체가 없는 것(undefined)으로 남는다.** 기존 발급본 2건은 이 칸을 모르므로,
+   * 빈 배열을 `[]` 로 박으면 옛 박제(축 없음)와 지금(빈 배열)이 달라져 전건이 드리프트로 뜬다.
+   */
+  subLeases?: { roomNo: string | null; rentAmount: number }[] | null
   template?: unknown
 }
 
@@ -45,6 +53,7 @@ export const PRINTED_FACT_KEYS = [
   'lease.roomNo', 'lease.moveInDate', 'lease.expectedMoveOut',
   'lease.rentAmount', 'lease.depositAmount', 'lease.cleaningFee',
   'lease.dueDay', 'lease.registrationStatus',
+  'lease.subLeases',
   'template',
 ] as const
 
@@ -67,6 +76,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'lease.cleaningFee': '청소비',
   'lease.dueDay': '매월 납부일',
   'lease.registrationStatus': '전입신고',
+  'lease.subLeases': '추가 호실',
   template: '계약서 본문',
 }
 
@@ -95,6 +105,13 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
     'lease.expectedMoveOut': l?.expectedMoveOut,
     'lease.roomNo': l?.roomNo,
     'lease.registrationStatus': l?.registrationStatus,
+    // 종속 호실은 배열이라 통비교 — 호실이 바뀌어도, 임료가 바뀌어도, 한 줄이 늘거나 줄어도 잡힌다.
+    // 비면 undefined 다(축 없음). 기존 박제 2건과 종속 없는 계약 전건이 여기서 무변동이어야 한다.
+    // 축에 담는 것은 종이에 찍히는 두 값뿐이다. 계약 id 까지 담으면 방·금액이 그대로인데도
+    // 계약을 지웠다 다시 만든 것만으로 드리프트가 뜬다.
+    'lease.subLeases': d.subLeases?.length
+      ? JSON.stringify(d.subLeases.map(s => ({ roomNo: s.roomNo, rentAmount: s.rentAmount })))
+      : undefined,
     template: d.template ? JSON.stringify(d.template) : undefined,
   }
 }

@@ -12,6 +12,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { splitKstDateTime } from '@/lib/kstDate'
 import { fmtWon } from '@/lib/fmtMoney'
+import { roomLabel } from '@/lib/tenantAddress'
 import { PRINTED_FACT_KEYS, PRINTED_FACT_LABEL, type PrintedFactKey } from '@/lib/contractPrintedFacts'
 import { getContractIssuedSnapshot, type IssuedContractDetail } from '@/app/(app)/tenants/actions'
 
@@ -43,6 +44,13 @@ function factText(key: PrintedFactKey, v: unknown): string {
       const list = JSON.parse(String(v)) as Array<{ phone?: string; relation?: string | null }>
       if (!Array.isArray(list) || list.length === 0) return '없음'
       return list.map(c => [c.relation, c.phone].filter(Boolean).join(' ')).join(' · ')
+    } catch { return String(v) }
+  }
+  if (key === 'lease.subLeases') {
+    try {
+      const list = JSON.parse(String(v)) as Array<{ roomNo?: string | null; rentAmount?: number }>
+      if (!Array.isArray(list) || list.length === 0) return '없음'
+      return list.map(s => [s.roomNo ? roomLabel(s.roomNo) : '호실 미지정', fmtWon(s.rentAmount ?? 0)].join(' ')).join(' · ')
     } catch { return String(v) }
   }
   if (AMOUNT_KEYS.has(key) && typeof v === 'number') return fmtWon(v)
@@ -120,7 +128,12 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
               )}
 
               <GroupTitle>이 발급본의 표시값</GroupTitle>
-              {PRINTED_FACT_KEYS.filter(k => k !== 'template').map(k => (
+              {/* 추가 호실은 딸린 계약이 있는 발급본에만 있는 축이다 — 없는 발급본에 '기록 없음'
+                  줄을 세우면 단독 계약 전건의 시트에 결함처럼 보이는 빈 줄이 하나 는다.
+                  다른 축은 종전대로 늘 그린다(그쪽은 모든 계약서에 있는 칸이라 공백이 곧 사실이다). */}
+              {PRINTED_FACT_KEYS.filter(k => k !== 'template')
+                .filter(k => k !== 'lease.subLeases' || snap.facts[k] !== undefined)
+                .map(k => (
                 <Row key={k} label={PRINTED_FACT_LABEL[k]} value={factText(k, snap.facts[k])} />
               ))}
 
