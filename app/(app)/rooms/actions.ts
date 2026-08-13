@@ -14,7 +14,7 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
-import { BILLABLE_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
+import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
@@ -2327,29 +2327,108 @@ export async function getRoomDetail(roomId: string, targetMonth: string) {
 
 // 호실↔고객(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
 // 어느 한 id를 주면 연결된 나머지 id들을 해소해 돌려준다.
+//
+// **앵커는 방이 아니라 사람의 메인 계약이다**(2026-08-13, 1인 다호실 1단계).
+//   601호 창고로 들어와도 제목·고객 면·수납 면은 그 사람의 메인 계약(509호)을 말한다. 앵커가
+//   '내가 누른 방'이면 같은 사람이 어느 문으로 들어왔느냐에 따라 다른 사람처럼 보인다 — 실제로
+//   김상혁은 고객 검색으로 들어가면 제목이 '601 · 김상혁'이었고 수납 면이 "이 상태의 고객은 수납
+//   정보를 열 수 없습니다"로 막혔다(601 계약이 아직 문의 단계라). 앵커 선택은 사람 축 정본
+//   primaryTenantLease 하나가 한다.
+//
+//   진입한 방(roomId·roomNo)은 종전 값 그대로 돌려준다 — 호실 면이 '내가 누른 방'을 그리고,
+//   앵커 방과 다르면 방 선택기가 둘을 오간다. 제목이 말하는 방은 anchorRoomNo 다.
+//
+//   entryLeaseTermId 는 **명시적으로 지목된 계약**일 때만 값이 있다. 수납 관리의 행은 계약 단위라
+//   601호 행을 누르면 601 수납이 열려야 한다(그 돈은 그 계약에 넣는 돈이다). 방·사람으로 들어온
+//   경우에는 null 이고, 그때 수납 면은 앵커(메인 계약)로 열린다.
+export type EntityLinks = {
+  roomId: string | null
+  roomNo: string | null
+  tenantId: string | null
+  tenantName: string | null
+  /** 앵커 — 이 사람의 메인 계약. 제목·고객 면·수납 면 기본값이 이것을 본다. */
+  leaseTermId: string | null
+  /** 앵커 계약의 방 번호. 진입 방과 다를 수 있다(부계약 방으로 들어온 경우). */
+  anchorRoomNo: string | null
+  /** 호출부가 계약을 이름으로 지목했을 때만 값이 있다. 수납 면의 초기 선택. */
+  entryLeaseTermId: string | null
+  /** 이 사람의 진행 중 계약 — 프리즘 순서(거주·예약·비거주, 그다음 투어 단계). 방 선택기·계약 세그먼트가 쓴다. */
+  leases: { id: string; roomId: string | null; roomNo: string | null; status: string }[]
+}
 export async function getEntityLinks(input: { roomId?: string; tenantId?: string; leaseTermId?: string }): Promise<
-  { roomId: string | null; roomNo: string | null; tenantId: string | null; tenantName: string | null; leaseTermId: string | null } | null
+  EntityLinks | null
 > {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
   const leaseSelect = { id: true, tenantId: true, roomId: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } }
   type LeaseLink = { id: string; tenantId: string; roomId: string | null; room: { roomNo: string } | null; tenant: { name: string } | null }
-  const pack = (lease: LeaseLink | null, roomFallback?: { id: string; roomNo: string } | null) => ({
-    roomId: lease?.roomId ?? roomFallback?.id ?? null,
-    roomNo: lease?.room?.roomNo ?? roomFallback?.roomNo ?? null,
-    tenantId: lease?.tenantId ?? null,
-    tenantName: lease?.tenant?.name ?? null,
-    leaseTermId: lease?.id ?? null,
-  })
+  const emptyLinks: EntityLinks = {
+    roomId: null, roomNo: null, tenantId: null, tenantName: null,
+    leaseTermId: null, anchorRoomNo: null, entryLeaseTermId: null, leases: [],
+  }
+
+  // 이 사람의 진행 중 계약과 그중 메인 — 세 갈래(계약·사람·방)가 **같은 앵커**를 쓰게 하는 한 자리.
+  // 순서 정본은 roomLeaseRowOrder(거주·예약·비거주)다. 투어 단계는 그 함수의 대상이 아니라 뒤에
+  // 붙인다 — 빠뜨리면 아직 문의 단계인 부계약 방(601호 창고)이 방 선택기에서 통째로 사라진다.
+  const anchorOf = async (tenantId: string) => {
+    const rows = await prisma.leaseTerm.findMany({
+      where: { tenantId, status: { in: TENANT_LIST_STATUSES } },
+      select: { id: true, status: true, moveInDate: true, roomId: true, room: { select: { roomNo: true } } },
+    })
+    const ranked = roomLeaseRowOrder(rows)
+    const rankedIds = new Set(ranked.map(l => l.id))
+    const ordered = [...ranked, ...rows.filter(l => !rankedIds.has(l.id))]
+    return { ordered, anchor: primaryTenantLease(ordered) ?? null }
+  }
+
+  const pack = async (
+    lease: LeaseLink | null,
+    opts: { roomFallback?: { id: string; roomNo: string } | null; namedLease?: boolean; namedRoom?: boolean } = {},
+  ): Promise<EntityLinks> => {
+    const tenantId = lease?.tenantId ?? null
+    const seedRoomId = lease?.roomId ?? opts.roomFallback?.id ?? null
+    const seedRoomNo = lease?.room?.roomNo ?? opts.roomFallback?.roomNo ?? null
+    // 진행 중 계약이 하나도 없는 사람(퇴실·취소만)은 종전 추론 그대로다 — 앵커로 삼을 것이 없다.
+    const base: EntityLinks = {
+      roomId: seedRoomId, roomNo: seedRoomNo,
+      tenantId, tenantName: lease?.tenant?.name ?? null,
+      leaseTermId: lease?.id ?? null,
+      anchorRoomNo: seedRoomNo,
+      entryLeaseTermId: opts.namedLease ? (lease?.id ?? null) : null,
+      leases: [],
+    }
+    if (!tenantId) return base
+    const { ordered, anchor } = await anchorOf(tenantId)
+    if (!anchor) return base
+    return {
+      // 방을 이름으로 지목하고 들어왔으면 그 방이 호실 면의 방이다(601호로 들어왔으면 601호를 그린다).
+      // 사람으로 들어왔으면 지목한 방이 없으므로 앵커 계약의 방이다.
+      roomId: opts.namedRoom ? seedRoomId : (anchor.roomId ?? seedRoomId),
+      roomNo: opts.namedRoom ? seedRoomNo : (anchor.room?.roomNo ?? seedRoomNo),
+      tenantId, tenantName: lease?.tenant?.name ?? null,
+      leaseTermId: anchor.id,
+      anchorRoomNo: anchor.room?.roomNo ?? null,
+      entryLeaseTermId: opts.namedLease ? (lease?.id ?? null) : null,
+      leases: ordered.map(l => ({ id: l.id, roomId: l.roomId, roomNo: l.room?.roomNo ?? null, status: l.status })),
+    }
+  }
+
   if (input.leaseTermId) {
-    return pack(await prisma.leaseTerm.findUnique({ where: { id: input.leaseTermId }, select: leaseSelect }))
+    // 계약을 이름으로 지목한 진입(수납 관리 행 등) — 그 계약은 수납 면의 초기 선택으로 살아남는다.
+    // 앵커까지 그 계약으로 바꾸지는 않는다. 601호 행을 눌러도 제목·고객 면은 그 사람의 메인 계약이다.
+    return pack(
+      await prisma.leaseTerm.findUnique({ where: { id: input.leaseTermId }, select: leaseSelect }),
+      { namedLease: true, namedRoom: true },
+    )
   }
   if (input.tenantId) {
+    // 사람만 주어졌을 때의 씨앗 — 앵커가 잡히면 여기서 고른 계약은 안 쓰인다. 진행 중 계약이 하나도
+    // 없는 사람(퇴실·취소만)에게만 종전 추론(createdAt desc)이 그대로 남는다.
     const lease = await prisma.leaseTerm.findFirst({ where: { tenantId: input.tenantId }, orderBy: { createdAt: 'desc' }, select: leaseSelect })
     if (lease) return pack(lease)
     const t = await prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { id: true, name: true } })
-    return { roomId: null, roomNo: null, tenantId: t?.id ?? null, tenantName: t?.name ?? null, leaseTermId: null }
+    return { ...emptyLinks, tenantId: t?.id ?? null, tenantName: t?.name ?? null }
   }
   if (input.roomId) {
     // 방 하나가 어느 사람을 가리키는가 — 호실 카드·호실 면과 같은 규칙(거주 우선)이라야 한다.
@@ -2380,7 +2459,8 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
       })
     }
     const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
-    return pack(primary, room)
+    // 방을 이름으로 지목한 진입 — 호실 면은 이 방을 그린다. 앵커(제목·고객·수납)는 그 사람의 메인 계약이다.
+    return pack(primary, { roomFallback: room, namedRoom: true })
   }
   return null
 }
