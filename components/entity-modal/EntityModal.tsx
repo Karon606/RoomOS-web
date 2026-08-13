@@ -7,7 +7,7 @@
 // Phase 2.2 (2026-05-30): kind='room' body 를 RoomBody 위젯 조합으로. 액션 행([삭제][수정])을 셸이 직접 처리.
 // Phase 2.3 = kind='tenant' 위젯화 (TenantView 미니 잔존), Phase 2.4 = kind='payment' 요약 위젯화.
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef, useTransition } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { docFromQuery } from '@/lib/docNav'
@@ -165,6 +165,33 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const hasTenant = !!links?.tenantId
   const hasPay = !!links?.leaseTermId
 
+  // ── 호실 면이 보고 있는 방 ────────────────────────────────────────────
+  // 한 사람이 방을 둘 쓰면(509호 거주 + 601호 창고) 호실 면은 그중 하나를 그린다. 초기값은 진입한
+  // 방이고, 세그먼트로 바꾼다. **앵커는 안 따라온다** — 제목·고객 면·수납 면은 메인 계약 그대로다.
+  //
+  // 상태를 셸이 들고 있는 이유는 아래 액션 행이다. RoomBody 안에 두면 화면은 601호를 그리는데
+  // [삭제]·[수정]은 links.roomId(진입 방)를 지워 버린다. 보는 방과 조작 대상은 하나여야 한다.
+  const [roomSel, setRoomSel] = useState<string | null>(null)
+  // 이 사람이 계약으로 쥔 방들 — 계약 순서(메인이 먼저)이고, 진입 방이 그 목록에 없으면 뒤에 붙인다
+  // (공실·퇴실 방으로 들어온 경우). 하나뿐이면 RoomBody 가 세그먼트를 안 그린다.
+  const roomOptions = useMemo(() => {
+    const out: { id: string; roomNo: string | null }[] = []
+    const push = (id: string | null | undefined, roomNo: string | null | undefined) => {
+      if (!id || out.some(o => o.id === id)) return
+      out.push({ id, roomNo: roomNo ?? null })
+    }
+    for (const l of links?.leases ?? []) push(l.roomId, l.roomNo)
+    push(links?.roomId, links?.roomNo)
+    return out
+  }, [links])
+  const shownRoomId = (roomSel && roomOptions.some(o => o.id === roomSel) ? roomSel : null) ?? links?.roomId ?? null
+  const shownRoomNo = roomOptions.find(o => o.id === shownRoomId)?.roomNo ?? links?.roomNo ?? null
+  // 앵커 계약이 걸린 방 — 지금 보는 방이 이것과 다르면 그 방은 이 사람의 추가 계약 방이다.
+  const anchorRoomId = links?.leases.find(l => l.id === links.leaseTermId)?.roomId ?? null
+  const subLeaseNote = anchorRoomId && shownRoomId && shownRoomId !== anchorRoomId && links?.tenantName
+    ? `${fmtRoomNo(links.anchorRoomNo)} ${links.tenantName}님의 추가 계약 방입니다.`
+    : undefined
+
   // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
   // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
   const [prorationSeedSpent, setProrationSeedSpent] = useState(false)
@@ -173,18 +200,21 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     if (kind === 'payment' && k !== 'payment' && openCheckoutProration) setProrationSeedSpent(true)
     setKind(k)
   }
-  const title = links ? `${fmtRoomNo(links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '…'
+  // 제목은 **앵커**를 말한다 — 이 사람의 메인 계약이 걸린 방이다. 부계약 방(601호 창고)으로 들어와도
+  // 제목은 '509 · 김상혁'이다. 종전처럼 진입 방을 적으면 같은 사람이 어느 문으로 들어왔느냐에 따라
+  // 다른 이름으로 불린다. 지금 보고 있는 방은 호실 면의 방 선택기가 말한다(2026-08-13, 1인 다호실).
+  const title = links ? `${fmtRoomNo(links.anchorRoomNo ?? links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
   const handleApplyScheduledNow = async () => {
-    if (!links?.roomId) return
+    if (!shownRoomId) return
     const ok = await confirmDialog({
-      title: `${fmtRoomNo(links.roomNo)} 예정 가격을 즉시 적용할까요?`,
+      title: `${fmtRoomNo(shownRoomNo)} 예정 가격을 즉시 적용할까요?`,
       confirmLabel: '적용',
     })
     if (!ok) return
     startTransition(async () => {
-      const res = await withSave(() => applyScheduledRentNow(links.roomId!), { success: '예정 가격 적용됨' })
+      const res = await withSave(() => applyScheduledRentNow(shownRoomId), { success: '예정 가격 적용됨' })
       if (res.ok && res.undo) {
         const u = res.undo
         pushToast('info', '잘못 적용했다면 되돌릴 수 있어요', {
@@ -195,18 +225,18 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     })
   }
   const handleDeleteRoom = async () => {
-    if (!links?.roomId) return
+    if (!shownRoomId) return
     const ok = await confirmDialog({
-      title: `${fmtRoomNo(links.roomNo)} 호실을 삭제할까요?`,
+      title: `${fmtRoomNo(shownRoomNo)} 호실을 삭제할까요?`,
       level: 'danger', confirmLabel: '삭제',
     })
     if (!ok) return
     startTransition(async () => {
-      const res = await withSave(() => deleteRoom(links.roomId!), { success: '삭제됨', silentError: true })
+      const res = await withSave(() => deleteRoom(shownRoomId), { success: '삭제됨', silentError: true })
       // 과거 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
         const force = await confirmDialog({
-          title: `${fmtRoomNo(links.roomNo)} 기록을 영구 삭제할까요?`,
+          title: `${fmtRoomNo(shownRoomNo)} 기록을 영구 삭제할까요?`,
           message: '매출 통계·과거 조회에서도 함께 사라집니다.',
           level: 'danger', confirmLabel: '영구 삭제',
           impact: [
@@ -215,7 +245,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           ],
         })
         if (!force) return
-        const res2 = await withSave(() => deleteRoom(links.roomId!, { force: true }), { success: '삭제됨' })
+        const res2 = await withSave(() => deleteRoom(shownRoomId, { force: true }), { success: '삭제됨' })
         if (res2.ok) { onClose(); router.refresh() }
         return
       }
@@ -225,8 +255,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   }
   // 수정은 페이지 종속 편집 폼이 있는 /room-manage 로 위임 (Phase 2.5 에서 위젯 편집 모드로 대체 예정).
   const handleEditRoom = () => {
-    if (!links?.roomId) return
-    navRouter.push(`/room-manage?roomId=${links.roomId}&edit=1`)
+    if (!shownRoomId) return
+    navRouter.push(`/room-manage?roomId=${shownRoomId}&edit=1`)
     onClose()
   }
 
@@ -394,7 +424,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               <MonthSelector />
             </div>
           )}
-          {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
+          {kind === 'room'    && (hasRoom   ? <RoomBody roomId={shownRoomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow}
+                                                rooms={roomOptions} onSelectRoom={setRoomSel} subLeaseNote={subLeaseNote} /> : <Empty label="연결된 호실이 없습니다." />)}
           {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
           {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}

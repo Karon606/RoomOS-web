@@ -6,7 +6,9 @@
 
 import { useEffect, useState } from 'react'
 import { RoomCleaningPanel } from '@/components/entity-modal/widgets/RoomCleaningPanel'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { fmtRoomNo } from '@/lib/roomNo'
 import { getRoomDetail } from '@/app/(app)/rooms/actions'
 import { PhotoStrip } from '../widgets/PhotoStrip'
 import { RoomBasicInfo } from '../widgets/RoomBasicInfo'
@@ -18,12 +20,20 @@ import { RoomRequests } from '../widgets/RoomRequests'
 
 type RoomDetail = NonNullable<Awaited<ReturnType<typeof getRoomDetail>>>
 
-export function RoomBody({ roomId, month, onApplyScheduledNow }: {
+export function RoomBody({ roomId, month, onApplyScheduledNow, rooms, onSelectRoom, subLeaseNote }: {
   roomId: string
   /** 상태 판정 기준월 'YYYY-MM' — 단기 퇴실 도래를 호실 카드와 같은 달로 물어야 라벨이 같다. */
   month: string
   /** room-manage 페이지에서만 전달. 다른 진입(EntityModal/Prism)에선 미제공 → 버튼 숨김. */
   onApplyScheduledNow?: () => void
+  /**
+   * 이 사람이 계약으로 쥐고 있는 방들 — 둘 이상일 때만 전환 세그먼트를 그린다.
+   * 계약이 하나인 사람에게는 길이 1이라 아무것도 안 그린다(픽셀 무변동).
+   */
+  rooms?: { id: string; roomNo: string | null }[]
+  onSelectRoom?: (roomId: string) => void
+  /** 지금 보는 방이 그 사람의 추가 계약 방일 때의 한 줄. 메인 계약 방이면 undefined. */
+  subLeaseNote?: string
 }) {
   const [room, setRoom] = useState<RoomDetail | null>(null)
   useEffect(() => {
@@ -36,6 +46,23 @@ export function RoomBody({ roomId, month, onApplyScheduledNow }: {
 
   return (
     <>
+      {/* 방 전환 — 한 사람이 방을 둘 쓸 때만(509호 거주 + 601호 창고). 문법은 수납 폼의 계약 세그먼트와
+          같은 정본(SegmentedControl size="sm")이다. 고르는 것은 '보는 방'일 뿐 앵커는 안 바뀐다 —
+          제목·고객 면·수납 면은 메인 계약 그대로다. 좁은 폭에서 넘치면 트랙이 가로로 스크롤한다. */}
+      {rooms && rooms.length > 1 && onSelectRoom && (
+        <div className="mb-2.5">
+          <SegmentedControl
+            ariaLabel="이 사람의 계약 방"
+            size="sm"
+            scroll
+            value={roomId}
+            options={rooms.map(r => ({ value: r.id, label: fmtRoomNo(r.roomNo, '호실 미지정') }))}
+            onChange={onSelectRoom}
+          />
+        </div>
+      )}
+      {/* 종속 안내 — '딸림' 관계를 스키마가 아직 모르므로 아는 사실만 적는다: 같은 사람의 추가 계약이다. */}
+      {subLeaseNote && <p className="mb-2.5 text-xs text-[var(--warm-muted)]">{subLeaseNote}</p>}
       <PhotoStrip photos={room.photos} />
       <RoomBasicInfo room={room} onApplyScheduledNow={onApplyScheduledNow} />
       <div className="mt-2.5" />
