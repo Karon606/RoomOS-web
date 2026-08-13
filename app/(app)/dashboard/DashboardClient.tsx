@@ -870,6 +870,16 @@ function DistList({ items, colors }: { items: { label: string; count: number; pe
   )
 }
 
+/** 추이 범례 칩 하나 — 스와치 색이 곧 막대 채움색이라 두 자리가 갈리지 않게 한 곳에서 그린다. */
+function TrendLegendChip({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="w-2.5 h-2.5 rounded-sm inline-block shrink-0" style={{ background: color }} />
+      {label}
+    </span>
+  )
+}
+
 // 방 속성 세그먼트 축 — 라벨 어법은 형제 카드 컨트롤과 같다('아이템별'·'결제수단별'·'월별').
 // 교차 축 구분자는 곱셈 기호가 아니라 가운뎃점이다(§11·§22 구분자 ' · ').
 const SEGMENT_AXIS_OPTIONS = [
@@ -1051,12 +1061,39 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   }, [trendRange, targetMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAreaRange = trendRange === 'daily' || trendRange === 'weekly'
-  // 만원 단위로 사전 변환 — tickFormatter에서 /10000 재연산 불필요
-  const chartData = trendPoints.map(t => ({
-    label: t.label,
-    revenue: Math.round(t.revenue / 10000),
-    expense: Math.round(t.expense / 10000),
-  }))
+  // ── 게이지 적층 — 조회월 막대 **하나**에만 얹는다 (회계 패널 2026-08-13) ──────────────
+  //
+  // 왜 6개 막대 전부가 아닌가. projectedRevenue·expectedExpense 는 **조회월 하나를 위해 정의된
+  // 값**이다. 과거 달에 다시 계산하면 그 달의 청구가 아니라 '오늘의 계약 로스터로 그 달을 다시
+  // 청구해 본 값'이 나온다 — billedThisMonth 의 모집단이 현재 status 로 걸러진 계약이라 그 사이
+  // 퇴실한 사람은 통째로 빠지고 오늘의 예약자가 과거 달에 들어온다. 5월 막대에 얹을 '5월 예상
+  // 수입'은 5월에 존재한 적이 없는 숫자다. 지출 쪽은 그릴 것이 아예 없다 — 과거월 정의가
+  // '추정을 안 더한다'라 예정층 두께가 정의상 0이다.
+  //
+  // 막대 단위가 달인 두 범위(반년 6·월간 12)에서만 얹는다. 그 두 범위는 목록이 조회월로 끝나므로
+  // 마지막 점이 곧 조회월 막대다. 분기·연간·전체는 막대 단위가 달이 아니라 '분기 예상'이라는
+  // 새 회계 개념을 먼저 정의해야 하고, 일간·주간은 납부일 축이라 귀속월 개념이 없다.
+  //
+  // 미래월은 두 축 모두 안 얹는다. 아직 발생하지 않은 수익이라 인식 시점 자체가 오지 않았고,
+  // 실적 채움이 없는 막대에 옅은 층만 뜨면 그것은 진행도가 아니라 예측 막대다.
+  const stackMonthBar = (trendRange === 'biannual' || trendRange === 'monthly') && !data.isFutureMonth
+  // 만원 단위로 사전 변환 — tickFormatter에서 /10000 재연산 불필요.
+  // 옅은 층은 '반올림한 합 − 반올림한 실적'이다. 두 값을 각각 반올림해 더하면 막대 높이와
+  // 툴팁 합계가 1만원 어긋나는 달이 생긴다.
+  const man = (won: number) => Math.round(won / 10000)
+  const chartData = trendPoints.map((t, i) => {
+    const isTargetBar = stackMonthBar && i === trendPoints.length - 1
+    const revenue = man(t.revenue)
+    const expense = man(t.expense)
+    return {
+      label: t.label,
+      revenue,
+      expense,
+      revenuePending: isTargetBar ? Math.max(0, man(t.revenue + data.pendingRevenue) - revenue) : 0,
+      expensePending: isTargetBar ? Math.max(0, man(t.expense + (data.expectedExpense - data.totalExpense)) - expense) : 0,
+    }
+  })
+  const showStackLegend = stackMonthBar && !isAreaRange
   // 색은 그 달 금액 순위가 아니라 영업장 설정의 등록 순서가 정한다(lib/chartColors 정본).
   // 순위로 칠하던 시절엔 같은 임대료가 7월 카멜·8월 테라코타여서 두 달을 나란히 못 봤다.
   const categoryColor = (category: string) => expenseCategoryColor(category, data.expenseCategoryOrder)
@@ -1334,14 +1371,6 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
             <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{isAreaRange ? '납부일 기준' : '귀속월 기준'}</span>
           </div>
-          {/* 막대 모드의 수입은 KPI '실수납'과 같은 정본(getPaidRevenueByMonths)이라 이름도 같게 부른다.
-              면적 모드(일간·주간)는 납부일 축이라 캡이라는 개념이 없다 — 거기서 '실수납'이라 부르면
-              그때 거짓이 되므로 종전 이름을 그대로 둔다. 배지가 이미 같은 조건으로 갈린다.
-              지출은 KPI 타일·도넛과 같은 변수라 '기록된 지출'이다(2026-08-12 어휘 통일에서 지나친 자리). */}
-          <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />{isAreaRange ? '수입 (수납 기준)' : '실수납'}</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--ink-m)' }} />{isAreaRange ? '지출' : '기록된 지출'}</span>
-          </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">
           {TREND_RANGES.map(r => (
@@ -1361,6 +1390,22 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         ) : (
           <TrendChart mode={isAreaRange ? 'area' : 'bar'} data={chartData} />
         )}
+        {/* 범례는 차트 아래다 — 적층이 붙으면 칩이 넷이고, 320px 카드 안쪽 248px 에 네 칩을
+            나란히 두려면 412px 이 필요하다. 헤더 행에는 제목과 기준 배지가 이미 서 있다.
+            막대 모드의 수입은 KPI '실수납'과 같은 정본(getPaidRevenueByMonths)이라 이름도 같게 부른다.
+            면적 모드(일간·주간)는 납부일 축이라 캡이라는 개념이 없다 — 거기서 '실수납'이라 부르면
+            그때 거짓이 되므로 종전 이름을 그대로 둔다. 배지가 이미 같은 조건으로 갈린다.
+            지출은 KPI 타일·도넛과 같은 변수라 '기록된 지출'이다(2026-08-12 어휘 통일에서 지나친 자리).
+            옅은 층 이름도 이 화면이 이미 쓰는 말 그대로다 — '이 달 미수납'은 형제 카드의 그 줄,
+            '고정 지출 (예정)'은 예상 지출 등식이 더하는 그 항이다(같은 변수에 두 이름 금지).
+            과거월이라 옅은 층 두께가 0인 달에도 칩은 지우지 않는다 — 달마다 범례가 바뀌면
+            두 달을 나란히 못 본다. */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 text-xs" style={{ color: 'var(--warm-muted)' }}>
+          <TrendLegendChip color="var(--tc-text)" label={isAreaRange ? '수입 (수납 기준)' : '실수납'} />
+          {showStackLegend && <TrendLegendChip color="color-mix(in srgb, var(--tc-text) 70%, transparent)" label="이 달 미수납" />}
+          <TrendLegendChip color="var(--ink-s)" label={isAreaRange ? '지출' : '기록된 지출'} />
+          {showStackLegend && <TrendLegendChip color="color-mix(in srgb, var(--ink-s) 70%, transparent)" label="고정 지출 (예정)" />}
+        </div>
       </div>
 
       {/* ── 방 속성별 이용료 ── 카드 전폭이다. 반폭 카드가 지금 넷(짝수)이라 한 장을 더하면 2열

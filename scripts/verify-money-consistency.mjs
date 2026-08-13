@@ -1566,6 +1566,60 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 18-8. 홈 추이 게이지 적층 (2026-08-13, 운영자 지시 + 회계 패널).
+//
+//   막대는 게이지가 된다 — 진한 채움이 실적이고 그 위 옅은 층이 아직 안 들어온/안 나간 몫이다.
+//   층 두께는 KPI 카드가 이미 쓰는 두 값과 원 단위로 같아야 한다:
+//       수입 옅은 층 === pendingRevenue ('이 달 미수납')
+//       지출 옅은 층 === expectedExpense − totalExpense ('고정 지출 (예정)')
+//
+//   적층은 **조회월 막대 하나**에만 얹는다. projectedRevenue·expectedExpense 는 조회월 하나를
+//   위해 정의된 값이라, 과거 달에 다시 계산하면 '오늘의 계약 로스터로 그 달을 다시 청구해 본 값'
+//   이 나온다 — 그 달에 존재한 적 없는 숫자다. 미래월은 두 축 모두 안 얹는다(발생하지 않은 수익).
+{
+  const dashClient = readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8')
+  const trendChart = readFileSync('app/(app)/dashboard/TrendChart.tsx', 'utf8')
+
+  // (a) 층 두께가 KPI 정본 두 값에서 나온다. 화면이 자기 식을 조립하면 같은 이름이 다른 값이 된다.
+  if (!/revenuePending: isTargetBar \? Math\.max\(0, man\(t\.revenue \+ data\.pendingRevenue\) - revenue\) : 0/.test(dashClient)) {
+    violations.push('[소스] 추이 수입 옅은 층이 pendingRevenue 정본에서 나오지 않는다 — 게이지가 카드와 다른 미수납을 그린다')
+  }
+  if (!/expensePending: isTargetBar \? Math\.max\(0, man\(t\.expense \+ \(data\.expectedExpense - data\.totalExpense\)\) - expense\) : 0/.test(dashClient)) {
+    violations.push('[소스] 추이 지출 옅은 층이 고정 지출 (예정) 정본에서 나오지 않는다')
+  }
+  // (b) 적층 대상은 조회월 막대 하나. 두 범위(반년·월간)는 목록이 조회월로 끝나므로 마지막 점이다.
+  if (!/const stackMonthBar = \(trendRange === 'biannual' \|\| trendRange === 'monthly'\) && !data\.isFutureMonth/.test(dashClient)) {
+    violations.push('[소스] 추이 적층이 조회월 막대 하나로 좁혀져 있지 않거나 미래월 가드를 잃었다 — 정의되지 않은 과거 예상액을 그린다')
+  }
+  if (!/const isTargetBar = stackMonthBar && i === trendPoints\.length - 1/.test(dashClient)) {
+    violations.push('[소스] 추이 적층 대상 막대가 조회월(마지막 점)이 아니다')
+  }
+  // (c) 옅은 층 색은 도넛 예정 틴트와 **같은 문법**이다(같은 hue 70%). 새 색을 만들면
+  //     이 화면에서 '옅다'가 자리마다 다른 뜻이 된다.
+  if (!/const pendingTint = \(color\) => `color-mix\(in srgb, \$\{color\} 70%, transparent\)`/.test(trendChart.replace(/: string/g, ''))) {
+    violations.push('[소스] 추이 옅은 층이 도넛 예정 틴트와 다른 문법으로 만들어진다 — 같은 뜻에 두 시각 어휘가 생긴다')
+  }
+  // (d) 시리즈 색은 §19 페어 한 쌍뿐이다(축 눈금 글자색은 별개 축이라 보지 않는다).
+  //     --coral 은 다크에서 안 밝아져 크림 카드 위 2.78:1 이고 그 70% 층은 1.97:1 이다.
+  //     지출은 범례가 --ink-m(#93816F)·막대가 --neutral-fg(#C7B5A2)라 같은 시리즈가 두 색이었다.
+  if (!/const REV = 'var\(--tc-text\)'/.test(trendChart) || !/const EXP = 'var\(--ink-s\)'/.test(trendChart)) {
+    violations.push('[소스] 추이 시리즈 색이 §19 페어(--tc-text·--ink-s)가 아니다 — 다크에서 대비가 무너진다')
+  }
+  for (const bad of [/(fill|stroke|stopColor)=\{?["']?var\(--coral\)/, /(fill|stroke|stopColor)=\{?["']?var\(--neutral-fg\)/, /(fill|stroke)=\{?["']?var\(--ink-m\)/]) {
+    if (bad.test(trendChart)) {
+      violations.push('[소스] 추이 시리즈 채움·선이 §19 페어를 벗어났다 — 범례 스와치와 막대 색이 다크에서 갈린다')
+    }
+  }
+  // 범례 스와치도 같은 토큰이어야 한다 — 한 곳만 고치면 스와치와 막대가 다른 색이 된다.
+  if (!/TrendLegendChip color="var\(--tc-text\)"/.test(dashClient) || !/TrendLegendChip color="var\(--ink-s\)"/.test(dashClient)) {
+    violations.push('[소스] 추이 범례 스와치가 막대 시리즈 색과 갈렸다')
+  }
+  // (e) 라운드는 그 달 최상단 층에만. 두 층 모두에 주면 사이에 초승달 빈틈이 생겨 세 번째 층처럼 읽힌다.
+  if (!/\(d\.revenuePending \?\? 0\) > 0 \? 0 :/.test(trendChart) || !/\(d\.expensePending \?\? 0\) > 0 \? 0 :/.test(trendChart)) {
+    violations.push('[소스] 추이 적층 막대의 라운드가 최상단 층 판정을 잃었다 — 두 층 사이에 빈틈이 생긴다')
+  }
+}
+
 // 19. 청소비가 보증금 안의 몫인 영업장 — 이중 계상과 판정 정본 이탈 (2026-08-10, 운영자 승인 구조).
 //
 //   (a) 데이터. 포함형 영업장에서 현금으로 받은 보증금이 '계약 보증금 − 기수령 청소비'를 넘으면
