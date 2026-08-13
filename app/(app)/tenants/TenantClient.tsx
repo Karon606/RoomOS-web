@@ -3450,6 +3450,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(본국 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
+  // '딸릴 계약' 선택 — 창고류 방(공실 집계 제외)이 딸릴 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
+  const [parentVal, setParentVal] = useState(lease?.parentLeaseTermId ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [actualOut, setActualOut]   = useState(toDateInput(lease?.moveOutDate))   // 실제 퇴실일 — 퇴실 상태에서만 렌더
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
@@ -4215,7 +4217,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           return (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">딸릴 계약{required ? ' *' : ''}</label>
-              <select name="parentLeaseTermId" defaultValue={lease?.parentLeaseTermId ?? ''} required={required}
+              <select name="parentLeaseTermId" value={parentVal} onChange={e => setParentVal(e.target.value)} required={required}
                 onWheel={e => e.stopPropagation()}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                 <option value="">딸리지 않음 (단독 계약)</option>
@@ -4230,6 +4232,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   ? '이 호실은 단독 계약이 불가한 방입니다. 딸릴 계약을 골라 주세요.'
                   : '계약서를 딸릴 계약 한 장에 합쳐서 인쇄합니다. 청구와 수납은 계약별로 따로입니다.'}
               </p>
+              {/* 창고류 방이 딸릴 때 비거주자 권고 — 자동 전환 금지(멀쩡한 방 둘을 혼자 계약할 수 있다,
+                  운영자 오더 2026-08-13). 버튼은 화면 상태만 바꾸고 저장은 여전히 저장 버튼이다(투어일 힌트 전례).
+                  실사고: 601호가 '투어 대기'인 채 딸려 합본 계약서에 안 실렸다 — 발급은 발급 대상 상태만 싣는다. */}
+              {parentVal !== '' && selectedRoom?.vacancyExcluded && statusVal !== 'NON_RESIDENT'
+                && !['CHECKED_OUT', 'CANCELLED'].includes(statusVal) && (
+                <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
+                  이 호실은 세를 놓지 않는 방(창고·사무실)으로 설정돼 있습니다. 상태를 비거주자로 바꾸면 합본 계약서에 이 호실이 함께 실립니다.{' '}
+                  <button type="button" onClick={() => setStatusVal('NON_RESIDENT')}
+                    className="underline text-[var(--coral)] font-medium">비거주자로 변경</button>
+                </p>
+              )}
             </div>
           )
         })()}
