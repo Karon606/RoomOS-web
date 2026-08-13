@@ -53,7 +53,7 @@ export default async function RoomsPage({
       incomes={incomes}
       incomeCategories={incomeCategories}
       payAggregates={payAggregates}
-      reservedExpected={reservedExpected}
+      reservedExpected={reservedExpected.amount}
       checkedOutRecognized={checkedOutRecognized}
       prepaidReceived={paidRevenue.occupied}
       leaseOptions={leaseOptions}

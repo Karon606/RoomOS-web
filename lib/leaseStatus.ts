@@ -565,12 +565,43 @@ function monthBillForRevenue(
  * dashboard/page.tsx 안에 갇혀 있던 계산을 문자 그대로 옮긴 것이다(2026-08-07). 수납 관리 화면이
  * 홈 예상 수입과의 차이를 등식 캡션으로 적으려면 같은 값을 같은 식으로 구해야 한다 — 한쪽이
  * 자기 식을 만드는 순간 두 화면 숫자가 다시 갈린다.
+ *
+ * 배치형에 위임만 한다 — 사본을 두면 단월과 배치가 갈린다(getPaidRevenue 가 같은 이유로 위임한다).
+ * 금액과 건수를 함께 돌려주는 것도 같은 이유다(getPaidRevenue 가 항을 쪼개 주는 것과 같은 문법).
  */
 export async function getReservedFullMonthRevenue(
   prisma: PrismaDb,
   propertyId: string,
   targetMonth: string,
-): Promise<number> {
+): Promise<ReservedRevenueBreakdown> {
+  const byMonth = await getReservedFullMonthRevenueByMonths(prisma, propertyId, [targetMonth])
+  return byMonth.get(targetMonth) ?? { amount: 0, count: 0 }
+}
+
+/** 예약 확정의 그 달 몫 — 금액과 **건수**. 건수의 모집단은 금액의 모집단과 같다(같은 게이트 한 벌). */
+export type ReservedRevenueBreakdown = {
+  amount: number   // Σ billForLeaseMonth — getReservedFullMonthRevenue 와 같은 값
+  count:  number   // 그 금액을 낸 계약 수 (그 달 청구 대상인 RESERVED)
+}
+
+/**
+ * 여러 달을 한 번에 — 추이처럼 월이 6·12·24개인 자리를 위한 배치형. 값은 단월판과 같다.
+ *
+ * 왜 배치인가. RESERVED 조회는 **월과 무관**하다(status 하나로 끝난다). 달마다 부르면 같은 행을
+ * 달 수만큼 다시 읽을 뿐이라, 몇 달을 물어도 쿼리는 한 번이면 된다. 청구 판정만 달마다 다시 한다.
+ *
+ * 건수를 함께 내는 이유 — 홈 수납 현황 카드가 '예약 확정 N건 M원'을 한 줄로 적는다(운영자 지시
+ * 2026-08-13). 화면이 계약을 따로 세면 금액과 건수의 모집단이 갈린다: 금액은 그 달 청구 대상만
+ * 세는데 화면은 RESERVED 전체를 세기 쉽고, 그러면 '4건 154만8천'이 '6건 154만8천'이 된다.
+ */
+export async function getReservedFullMonthRevenueByMonths(
+  prisma: PrismaDb,
+  propertyId: string,
+  months: string[],
+): Promise<Map<string, ReservedRevenueBreakdown>> {
+  const out = new Map<string, ReservedRevenueBreakdown>()
+  if (months.length === 0) return out
+
   const reservedLeases = await prisma.leaseTerm.findMany({
     where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
     select: {
@@ -580,21 +611,24 @@ export async function getReservedFullMonthRevenue(
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },
   })
-  // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
+  // 그 달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
   // (다음달 입주 예정인 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
-  const monthOfDate = (d: Date | string | null): string | null => {
-    if (!d) return null
-    const dt = new Date(d)
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-  }
-  const billableInTargetMonth = (l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null }): boolean => {
+  const billableInMonth = (
+    l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null },
+    targetMonth: string,
+  ): boolean => {
     const mi = monthOfDate(l.moveInDate ?? null)
     if (mi && mi > targetMonth) return false   // 아직 입주 전
     const mo = monthOfDate(l.expectedMoveOut ?? null)
     if (mo && mo < targetMonth) return false   // 이미 퇴실
     return true
   }
-  return reservedLeases
-    .filter(l => billableInTargetMonth(l))
-    .reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0)
+  for (const targetMonth of months) {
+    const billable = reservedLeases.filter(l => billableInMonth(l, targetMonth))
+    out.set(targetMonth, {
+      amount: billable.reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0),
+      count:  billable.length,
+    })
+  }
+  return out
 }

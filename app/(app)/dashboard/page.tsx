@@ -745,7 +745,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 신규 입실자(예약확정 RESERVED)의 이번 달 예상 매출 — 입주 예정월이 이 달 이내면 전액(할인 반영) 가산.
   // (사용자 결정 2026-06-20: RESERVED 이상은 그 달 전액으로 예상 매출에 반영. 입주 후엔 ACTIVE 로 일반 청구.)
   // 계산 정본은 lib/leaseStatus 로 옮겼다 — 수납 관리 등식 캡션이 같은 값을 써야 한다(2026-08-07).
-  const reservedExpected = await pReservedExpected
+  // 금액과 건수를 한 게이트에서 받는다 — 화면이 RESERVED 를 따로 세면 '4건 154만8천'이 '6건 154만8천'이 된다.
+  const reservedBreakdown = await pReservedExpected
+  const reservedExpected = reservedBreakdown.amount
 
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   // 첫 항을 따로 세운 것은 KPI 카드 등식 캡션이 '이 달 청구'를 이름으로 부르기 때문이다.
