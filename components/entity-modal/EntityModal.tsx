@@ -27,6 +27,7 @@ import { TenantBody } from './bodies/TenantBody'
 import { PaymentBody } from './bodies/PaymentBody'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
@@ -191,6 +192,27 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const subLeaseNote = anchorRoomId && shownRoomId && shownRoomId !== anchorRoomId && links?.tenantName
     ? `${fmtRoomNo(links.anchorRoomNo)} ${links.tenantName}님의 추가 계약 방입니다.`
     : undefined
+
+  // ── 수납 면이 여는 계약 ───────────────────────────────────────────────
+  // 기본은 앵커(메인 계약)다. 601호 창고 면에서 수납 탭으로 넘어와도 메인이 열린다 — 종전에는
+  // 진입 계약이 그대로 열려 문의 단계 계약이면 "이 상태의 고객은 수납 정보를 열 수 없습니다"라는
+  // 막다른 길이었다. 다만 계약을 **이름으로 지목**하고 들어온 진입(수납 관리의 계약별 행)은 그
+  // 계약이 열린다. 601호 행을 눌렀는데 509호 수납이 열리면 돈이 엉뚱한 계약에 들어간다.
+  const [leaseSel, setLeaseSel] = useState<string | null>(null)
+  const leaseOptions = useMemo(() => {
+    const out: { id: string; roomNo: string | null }[] = []
+    const push = (id: string | null | undefined, roomNo: string | null | undefined) => {
+      if (!id || out.some(o => o.id === id)) return
+      out.push({ id, roomNo: roomNo ?? null })
+    }
+    // 청구가 도는 계약만 — 투어 단계 계약에는 수납 면이 열 것이 없다(수납 폼 세그먼트와 같은 집합).
+    for (const l of links?.leases ?? []) if ((CONTRACT_ISSUE_STATUSES as string[]).includes(l.status)) push(l.id, l.roomNo)
+    push(links?.entryLeaseTermId, links?.roomNo)
+    return out
+  }, [links])
+  const shownLeaseId = (leaseSel && leaseOptions.some(o => o.id === leaseSel) ? leaseSel : null)
+    ?? links?.entryLeaseTermId ?? links?.leaseTermId ?? null
+  const shownLeaseRoomNo = leaseOptions.find(o => o.id === shownLeaseId)?.roomNo ?? links?.roomNo ?? null
 
   // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
   // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
@@ -427,7 +449,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           {kind === 'room'    && (hasRoom   ? <RoomBody roomId={shownRoomId!} month={roomStatusMonth} onApplyScheduledNow={handleApplyScheduledNow}
                                                 rooms={roomOptions} onSelectRoom={setRoomSel} subLeaseNote={subLeaseNote} /> : <Empty label="연결된 호실이 없습니다." />)}
           {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
-          {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+          {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit roomNo={shownLeaseRoomNo}
+                                                leases={leaseOptions} onSelectLease={setLeaseSel} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}
       </div>
     </Modal>

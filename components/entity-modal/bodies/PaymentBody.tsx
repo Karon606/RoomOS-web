@@ -9,7 +9,9 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Btn } from '@/components/ui/Btn'
+import { fmtRoomNo } from '@/lib/roomNo'
 import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
@@ -28,12 +30,19 @@ type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 
-export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutProration }: {
+export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSelectLease, openCheckoutProration }: {
   leaseTermId: string
   month: string
   canEdit: boolean
   /** 'XX호' — full 모드에서 "수납 관리에서 열기" 딥링크용. */
   roomNo?: string | null
+  /**
+   * 이 사람의 청구 계약들 — 둘 이상일 때만 전환 세그먼트를 그린다(계약이 하나면 픽셀 무변동).
+   * 미납을 다른 계약에서 자동으로 충당하지는 않는다. 청구는 계약별이고 합산은 표시뿐이라
+   * (운영자 확정 2026-08-13) 이것은 규칙이 아니라 기본 선택이며, 고르는 일은 사람이 한다.
+   */
+  leases?: { id: string; roomNo: string | null }[]
+  onSelectLease?: (leaseTermId: string) => void
   /** 고객관리 '퇴실 정산?' 팝업에서 '예' 진입 시 — full 모드로 열고 퇴실 정산 위젯 자동 펼침. */
   openCheckoutProration?: boolean
 }) {
@@ -62,9 +71,26 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // router.refresh() 가 없으면 셸 닫고 페이지로 돌아갔을 때 카드가 여전히 미납으로 보임.
   const refresh = () => startTransition(() => { setReloadKey(k => k + 1); router.refresh() })
 
-  if (settlement === undefined) return <SkeletonRows rows={5} className="py-4" />
+  // 계약 전환 — 방을 둘 쓰는 사람에게만. 문법은 수납 폼의 계약 세그먼트와 같은 정본이다.
+  // 뼈대·막다른 길 상태에서도 그린다. 고른 계약이 열리지 않을 때 다른 계약으로 나갈 문이 없으면
+  // 그것이 곧 새 막다른 길이다.
+  const leaseSegment = leases && leases.length > 1 && onSelectLease ? (
+    <SegmentedControl
+      ariaLabel="수납할 계약"
+      size="sm"
+      scroll
+      value={leaseTermId}
+      options={leases.map(l => ({ value: l.id, label: fmtRoomNo(l.roomNo, '호실 미지정') }))}
+      onChange={onSelectLease}
+    />
+  ) : null
+
+  if (settlement === undefined) return <div className="space-y-3">{leaseSegment}<SkeletonRows rows={5} className="py-4" /></div>
   if (settlement === null) return (
-    <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+    <div className="space-y-3">
+      {leaseSegment}
+      <p className="text-xs text-[var(--warm-muted)] py-4">이 상태의 고객은 수납 정보를 열 수 없습니다. 계약 정보를 확인해 주세요.</p>
+    </div>
   )
 
   // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 행으로 그리지 않는다.
@@ -83,6 +109,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
 
   return (
     <div className="space-y-3">
+      {leaseSegment}
       <PaymentSummaryCards settlement={settlement} month={month} />
 
       {/* 보증금 — 계약 단위. 조회월과 무관하다. RESERVED 전용이던 '보증금 대체' 줄을 여기로 흡수했다.
