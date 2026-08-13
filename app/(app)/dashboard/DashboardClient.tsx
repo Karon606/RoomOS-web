@@ -44,6 +44,7 @@ import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/le
 import { fmtRoomNo } from '@/lib/roomNo'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { InfoHint } from '@/components/ui/InfoHint'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -101,6 +102,18 @@ export type DashboardData = {
   }[]
   // 영업장 설정의 지출 카테고리 등록 순서 — 도넛·범례 색이 이 순서로 고정된다(금액 순위 아님).
   expenseCategoryOrder: string[]
+  // 방 속성 세그먼트 — 이 달 청구액을 방 속성으로 나눈 것. 축마다 Σ amount === billedThisMonth 다.
+  // parts 는 원값(OUTER·스탠다드·'4')이고 라벨은 화면이 붙인다 — 서버에 창문 라벨 사본을 또 두지 않기 위해서다.
+  // absorb = 방이 없거나 속성이 빈 흡수 칸. 계약 0이면 안 그린다(그려도 0원 줄이라 읽을 것이 없다).
+  // leasedRooms 는 **방 수**, leases 는 계약 수다 — 418호처럼 한 방에 둘이면 2건이 1실이다.
+  roomSegments: {
+    axis: string
+    rows: {
+      parts: { field: 'window' | 'tier' | 'floor'; value: string | null }[]
+      absorb: boolean; unassigned: boolean
+      rooms: number; leasedRooms: number; leases: number; amount: number; percent: number
+    }[]
+  }[]
   // 미수 에이징 — 귀속월 그대로의 버킷(30일·60일 같은 상대 버킷이 아니다). 도래·미회수분만이라
   // Σ amount === overdueAmount(누적 미납)다. count 는 그 달에 미회수분이 있는 계약 수이고,
   // 한 계약이 여러 달 밀려 있으면 여러 버킷에 서므로 그 합은 unpaidCount 보다 클 수 있다.
@@ -850,6 +863,93 @@ function DistList({ items, colors }: { items: { label: string; count: number; pe
   )
 }
 
+// 방 속성 세그먼트 축 — 라벨 어법은 형제 카드 컨트롤과 같다('아이템별'·'결제수단별'·'월별').
+// 교차 축 구분자는 곱셈 기호가 아니라 가운뎃점이다(§11·§22 구분자 ' · ').
+const SEGMENT_AXIS_OPTIONS = [
+  { value: 'windowTier', label: '창·등급별' },
+  { value: 'tier',       label: '등급별' },
+  { value: 'window',     label: '창별' },
+  { value: 'floor',      label: '층별' },
+] as const
+type SegmentAxis = typeof SEGMENT_AXIS_OPTIONS[number]['value']
+
+/**
+ * 방 속성 세그먼트 카드 — 이 달 청구액을 방의 속성으로 나눈 것.
+ *
+ * 값은 전부 서버가 나눈 것이다(축마다 Σ amount === 이 달 청구액, 비율 분모도 서버가 한 번만
+ * 나눈다). 화면은 라벨을 붙이고 순서대로 그릴 뿐이다.
+ *
+ * 왜 도넛이 아니라 목록·진행바인가. viz 팔레트는 여덟 색뿐인데(lib/chartColors) 창·등급 교차는
+ * 그 수를 넘길 수 있어 같은 카드 안에 같은 색 두 조각이 선다. 그리고 세그먼트는 축을 바꾸면
+ * 목록 자체가 바뀌는 임시 분류라, 순서대로 색을 물리면 같은 방이 '등급별'과 '층별'에서 다른
+ * 색이 된다 — 지출 카테고리 색을 금액 순위에서 등록 순서로 옮기며 죽인 그 흔들림이다.
+ * 이 카드가 나누는 값은 '수입' 하나뿐이라 개념색 하나면 된다.
+ *
+ * 바 채움이 --coral 이 아니라 §19 페어 --tc-text 인 이유: 라이트에서는 같은 #A03C2E 라 픽셀이
+ * 안 바뀌고, 다크에서만 갈린다 — 트랙(--warm-border) 위 대비가 --coral 은 2.32:1(1.4.11 미달)
+ * 이고 --tc-text 는 3.86:1 이다(라이트 4.31:1).
+ */
+function RoomSegmentCard({ data }: { data: DashboardData }) {
+  const [axis, setAxis] = useState<SegmentAxis>('windowTier')
+  const group = data.roomSegments.find(g => g.axis === axis) ?? data.roomSegments[0]
+  // 전체 0실인 칸은 안 세운다(0인 항은 세우지 않는다는 이 탭의 규칙). 입실 0실이지만 방은 있는
+  // 칸은 세운다 — 어느 속성의 방이 통째로 비었는지가 이 카드가 답해야 할 질문이다.
+  const rows = (group?.rows ?? []).filter(r => r.rooms > 0 || r.leases > 0)
+  const segLabel = (parts: DashboardData['roomSegments'][number]['rows'][number]['parts'], unassigned: boolean) =>
+    unassigned ? '방 미배정' : parts.map(p =>
+      p.value == null ? '미지정'
+      : p.field === 'window' ? (DASH_WINDOW_LABEL[p.value] ?? p.value)
+      : p.field === 'floor'  ? `${p.value}층`
+      : p.value).join(' · ')
+  return (
+    <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>
+          방 속성별 이용료
+          <InfoHint title="방 속성별 이용료">
+            <p>이 달 <b>청구액</b>을 방의 속성으로 나눈 것입니다. 어느 조합이 매출을 지고 있는지, 어느 조합이 비어 있는지를 함께 봅니다.</p>
+            <p className="mt-2">비율의 분모는 이 달 청구액입니다. 그래서 어느 축을 골라도 조각의 합이 그 금액과 같습니다.</p>
+            <p className="mt-2"><b>전체 N실</b>은 그 속성을 가진 방 전부이고 <b>입실 M실</b>은 그중 이 달 청구가 걸린 방입니다. 방 하나에 계약이 둘이면(거주와 비거주가 함께 있는 방) 2건이 1실이라, 그럴 때만 계약 수를 함께 적습니다.</p>
+            <p className="mt-2">창고·사무실처럼 공실 집계에서 빼는 방도 여기서는 셉니다. 그 방들의 비거주 이용료가 이 금액 안에 들어 있어서, 빼면 금액만 있고 방은 없는 칸이 생깁니다.</p>
+          </InfoHint>
+        </h3>
+        <SegmentedControl
+          options={SEGMENT_AXIS_OPTIONS}
+          value={axis}
+          onChange={setAxis}
+          size="sm"
+          scroll
+          ariaLabel="방 속성 축"
+        />
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-sm py-6 text-center" style={{ color: 'var(--warm-muted)' }}>나눌 청구가 없음</p>
+      ) : (
+        /* 전폭 카드에서 한 줄을 통으로 쓰면 왼쪽 이름과 오른쪽 금액이 멀어져 눈이 못 따라간다.
+           두 열로 흘리면 한 행의 읽는 폭이 반폭 카드와 같아진다(위 요약 타일이 쓰는 그 문법). */
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-2.5">
+          {rows.map((r, i) => (
+            <div key={i} className="min-w-0">
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-xs flex-1 truncate" style={{ color: 'var(--warm-mid)' }}>{segLabel(r.parts, r.unassigned)}</span>
+                <span className="text-xs shrink-0 num" style={{ color: 'var(--warm-dark)' }}><MoneyDisplay amount={r.amount} /></span>
+              </div>
+              {/* 비율을 1행에서 뺀 것은 폭 때문이다 — 320px 에서 이름·금액·비율을 한 줄에 두면
+                  교차 축 이름이 절단 직전에 선다. 들여쓰기는 형제 범례 보조 줄과 같은 18px. */}
+              <span className="block text-[0.65625rem] pl-[18px] leading-tight" style={{ color: 'var(--warm-muted)' }}>
+                전체 {r.rooms}실 중 입실 {r.leasedRooms}실{r.leases > r.leasedRooms ? ` (계약 ${r.leases}건)` : ''} · {r.percent}%
+              </span>
+              <div className="h-1.5 rounded-full overflow-hidden mt-1" style={{ background: 'var(--warm-border)' }}>
+                <div className="h-full rounded-full" style={{ width: `${r.percent}%`, background: 'var(--tc-text)' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * 미수 에이징 — '누적 미납'을 귀속월로 가른 하위 목록.
  *
@@ -1230,6 +1330,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           <TrendChart mode={isAreaRange ? 'area' : 'bar'} data={chartData} />
         )}
       </div>
+
+      {/* ── 방 속성별 이용료 ── 카드 전폭이다. 반폭 카드가 지금 넷(짝수)이라 한 장을 더하면 2열
+          격자에 빈 칸이 생기고, 3열은 1024px 에서 열 폭이 236px 이라 형제 카드의 도넛(140px)이
+          성립하지 않는다. 세그먼트 목록은 도넛이 없어 전폭에서 빈 곳이 안 생긴다.
+          자리는 시간축(추이) 다음, 구성 분해(지출 카테고리·수납 현황)의 첫 자리다 — 이 카드가
+          나누는 것은 수입이고, 형제 두 장이 지출과 건수를 나눈다. */}
+      <RoomSegmentCard data={data} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>

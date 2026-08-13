@@ -201,7 +201,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
-      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } } },
+      // room.id·tier·floor·windowType — 방 속성 세그먼트(아래 roomSegments)가 이 계약의 청구액을
+      // 어느 칸에 넣을지 정하는 축이다. 청구 계산에는 관여하지 않는다(읽기만 늘린다).
+      select: { id: true, status: true, rentAmount: true, isShortTerm: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { id: true, tier: true, floor: true, windowType: true, scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -752,11 +754,78 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   // 첫 항을 따로 세운 것은 KPI 카드 등식 캡션이 '이 달 청구'를 이름으로 부르기 때문이다.
   // 화면이 totalExpected 에서 두 항을 빼서 되계산하면 그 순간 캡션이 자기 식을 갖는다.
-  const billedThisMonth = billableLeases
-    .filter(l => !prevOwnerLeaseIds.has(l.id))
+  const billedContributors = billableLeases.filter(l => !prevOwnerLeaseIds.has(l.id))
+  const billedThisMonth = billedContributors
     .reduce((s, l) => s + billThisMonth(l), 0)
   const totalExpected  = billedThisMonth
     + checkedOutRecognized + reservedExpected
+
+  // ── 방 속성 세그먼트 — 이 달 청구액을 방의 속성으로 나눈 것 (운영자 승인 2026-08-13) ────
+  //
+  // 새 금액을 만들지 않는다. **바로 위 billedThisMonth 를 만든 그 배열(billedContributors)** 을
+  // 같은 함수(billThisMonth)로 다시 훑어 칸에 담기만 한다. 그래서 어느 축에서나
+  //     Σ rows.amount === billedThisMonth
+  // 가 성립한다 — 감지망이 이 항등을 축으로 본다. 화면이 자기 합을 만들면 그 순간 갈린다.
+  //
+  // 방이 없는 계약(roomId null)도 칸을 잃지 않게 '방 미배정' 으로 받는다. 떨어뜨리면 항등이
+  // 조용히 깨진다 — 오늘 실데이터는 0건이지만 방 배정 전 계약이 생기는 경로가 실재한다.
+  //
+  // 방 수는 두 축이다. '전체 N실'은 그 속성을 가진 **방**의 수(계약과 무관, 빈 방 포함)이고
+  // '계약 M실'은 그중 청구가 걸린 방의 수다. 계약 건수와 다르다 — 418호처럼 한 방에 거주와
+  // 비거주가 함께 있으면 2건이 1실이다(비거주 금액 포함은 운영자 확정).
+  const SEGMENT_AXES = [
+    { axis: 'windowTier', fields: ['window', 'tier'] },
+    { axis: 'tier',       fields: ['tier'] },
+    { axis: 'window',     fields: ['window'] },
+    { axis: 'floor',      fields: ['floor'] },
+  ] as const
+  type SegmentField = 'window' | 'tier' | 'floor'
+  const segmentValue = (
+    room: { tier?: string | null; floor?: string | null; windowType?: string | null } | null,
+    field: SegmentField,
+  ): string | null =>
+    field === 'window' ? (room?.windowType ?? null) : field === 'tier' ? (room?.tier ?? null) : (room?.floor ?? null)
+  const roomSegments = SEGMENT_AXES.map(({ axis, fields }) => {
+    const rows = new Map<string, { parts: { field: SegmentField; value: string | null }[]; rooms: number; leaseRoomIds: Set<string>; leases: number; amount: number; unassigned: boolean }>()
+    const touch = (parts: { field: SegmentField; value: string | null }[], unassigned: boolean) => {
+      const key = unassigned ? '\u0000미배정' : parts.map(p => p.value ?? '\u0000').join('\u0001')
+      let row = rows.get(key)
+      if (!row) { row = { parts, rooms: 0, leaseRoomIds: new Set(), leases: 0, amount: 0, unassigned }; rows.set(key, row) }
+      return row
+    }
+    // 전체 N실 — 방 목록이 모집단이다(공실·집계 제외 방까지 그대로). 계약이 사는 칸을 빼놓지 않으려면
+    // 계약 쪽 모집단과 같은 방 집합이어야 한다 — 여기서 제외 방을 빼면 415호·사무실의 비거주 청구가
+    // '전체 0실 중 계약 1실' 이 된다.
+    for (const r of roomsWithTenants) {
+      touch(fields.map(f => ({ field: f, value: segmentValue(r, f) })), false).rooms += 1
+    }
+    for (const l of billedContributors) {
+      const row = touch(fields.map(f => ({ field: f, value: segmentValue(l.room, f) })), !l.room)
+      row.amount += billThisMonth(l)
+      row.leases += 1
+      if (l.room?.id) row.leaseRoomIds.add(l.room.id)
+    }
+    return {
+      axis,
+      rows: [...rows.values()]
+        .map(r => ({
+          parts: r.parts,
+          // 흡수 칸인가 — 방이 없거나(방 미배정) 속성이 비어 있는(미지정) 칸. 계약이 0이면 화면이
+          // 안 그린다(항등은 서버 쪽에서 이미 성립하므로 그린 줄만 보고 합을 맞출 필요가 없다).
+          absorb: r.unassigned || r.parts.some(p => p.value === null),
+          unassigned: r.unassigned,
+          rooms: r.rooms,
+          leasedRooms: r.leaseRoomIds.size,
+          leases: r.leases,
+          amount: r.amount,
+          // 분모는 서버가 한 번만 나눈다 — 화면이 나누면 축마다 다른 분모가 생긴다(수납률 전례).
+          // 금액 비율만 낸다. 방 수는 'M/N 실' 분수 그대로 두고 퍼센트를 붙이지 않는다 —
+          // 한 줄에 두 축의 퍼센트가 서면 어느 쪽인지 읽는 사람이 매번 판단해야 한다.
+          percent: billedThisMonth > 0 ? Math.round((r.amount / billedThisMonth) * 100) : 0,
+        }))
+        .sort((a, b) => b.amount - a.amount || b.rooms - a.rooms),
+    }
+  })
 
   // 지출 카테고리 분해는 예상 지출(expectedExpense)이 정해진 뒤에 만든다 — 도넛의 분모가
   // 그 값이라 여기서 만들면 아직 없는 값을 나눠야 한다(아래 '지출 카테고리 분해' 블록).
@@ -1777,6 +1846,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 미래월 판정은 서버(KST)가 내린다 — 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
     isFutureMonth: targetMonth > realTodayMonthStr,
     categoryBreakdown,
+    // 방 속성 세그먼트 — 축마다 Σ amount === billedThisMonth. 라벨은 화면이 붙인다(원값을 싣는다).
+    roomSegments,
     // 미수 에이징 — 귀속월 오름차순. Σ amount === overdueAmount(= 누적 미납).
     agingBuckets: [...agingOverdue.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))

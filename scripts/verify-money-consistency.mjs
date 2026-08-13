@@ -1382,6 +1382,78 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 18-5. 홈 방 속성 세그먼트 = 이 달 청구액을 나눈 것 (2026-08-13, 운영자 승인).
+//
+//   카드는 이 달 청구액을 방의 속성(창·등급·층)으로 나눠 보여 준다. 나눈 조각의 합이 나누기 전
+//   값과 다르면 그 카드는 없는 돈을 말하거나 있는 돈을 감춘다. 항등은 축마다 하나다:
+//       Σ rows.amount === billedThisMonth
+//   구조로 먼저 지킨다 — 세그먼트는 billedThisMonth 를 만든 **그 배열**(billedContributors)을
+//   **그 함수**(billThisMonth)로 다시 훑는다. 여기서는 그 구조가 유지되는지를 본다.
+{
+  const dash = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+
+  // (a) 합계와 세그먼트가 같은 배열에서 나온다. 배열이 갈리면 항등은 그 순간 우연이 된다.
+  if (!/const billedContributors = billableLeases\.filter\(l => !prevOwnerLeaseIds\.has\(l\.id\)\)/.test(dash)
+      || !/const billedThisMonth = billedContributors\s*\n\s*\.reduce\(\(s, l\) => s \+ billThisMonth\(l\), 0\)/.test(dash)) {
+    violations.push('[소스] 홈 billedThisMonth 가 billedContributors 배열에서 나오지 않는다 — 세그먼트가 다른 모집단을 나누게 된다')
+  }
+  if (!/for \(const l of billedContributors\) \{[\s\S]{0,240}?row\.amount \+= billThisMonth\(l\)/.test(dash)) {
+    violations.push('[소스] 홈 방 속성 세그먼트가 billedContributors·billThisMonth 정본을 안 탄다 — 조각 합이 이 달 청구액과 갈린다')
+  }
+  // (b) 흡수 칸 — 방이 없는 계약이 떨어지면 항등이 조용히 깨진다.
+  if (!/touch\(fields\.map\(f => \(\{ field: f, value: segmentValue\(l\.room, f\) \}\)\), !l\.room\)/.test(dash)) {
+    violations.push('[소스] 홈 세그먼트에 방 미배정 흡수 칸이 없다 — 방 없는 청구 계약이 어느 칸에도 안 서서 조각 합이 모자란다')
+  }
+  // (c) 방 모집단은 방 목록 전체다. 집계 제외 방을 빼면 415호·사무실의 비거주 청구가
+  //     '전체 0실 중 입실 1실' 이 된다(그 방들의 이용료는 billedThisMonth 안에 있다).
+  if (!/for \(const r of roomsWithTenants\) \{\s*\n\s*touch\(fields\.map\(f => \(\{ field: f, value: segmentValue\(r, f\) \}\)\), false\)\.rooms \+= 1/.test(dash)) {
+    violations.push('[소스] 홈 세그먼트의 방 모집단이 방 목록 전체가 아니다 — 계약이 사는 칸의 분모가 사라진다')
+  }
+  // (d) 비율 분모는 서버에 하나뿐이다. 화면이 나누면 축마다 다른 분모가 생긴다(수납률 전례).
+  if (!/percent: billedThisMonth > 0 \? Math\.round\(\(r\.amount \/ billedThisMonth\) \* 100\)/.test(dash)) {
+    violations.push('[소스] 홈 세그먼트 비율의 분모가 이 달 청구액이 아니다 — 조각 비율 합이 100% 를 벗어난다')
+  }
+  // (e) 데이터 — 청구 대상 계약의 방이 방 목록 안에 있어야 속성 칸을 얻는다. 밖에 있으면
+  //     그 금액은 '전체 0실'인 칸에 서고 방 수 합도 전체 방 수와 어긋난다.
+  const monthOfSeg = (d) => { if (!d) return null; const t = new Date(d); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}` }
+  const kstSeg = new Date(Date.now() + 9 * 3600000)
+  const segMonths = [-1, 0, 1].map(off => {
+    const d = new Date(Date.UTC(kstSeg.getUTCFullYear(), kstSeg.getUTCMonth() + off, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  })
+  for (const prop of await prisma.property.findMany({ select: { id: true, name: true } })) {
+    const [propRooms, segLeases] = await Promise.all([
+      prisma.room.findMany({ where: { propertyId: prop.id }, select: { id: true, tier: true, floor: true, windowType: true } }),
+      prisma.leaseTerm.findMany({
+        where: { propertyId: prop.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, rentAmount: { gt: 0 } },
+        select: { id: true, roomId: true, moveInDate: true, expectedMoveOut: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } },
+      }),
+    ])
+    const roomIds = new Set(propRooms.map(r => r.id))
+    for (const mon of segMonths) {
+      for (const l of segLeases) {
+        const mi = monthOfSeg(l.moveInDate); if (mi && mi > mon) continue
+        const mo = monthOfSeg(l.expectedMoveOut); if (mo && mo < mon) continue
+        if (l.roomId && !roomIds.has(l.roomId)) {
+          violations.push(`[데이터] ${prop.name} ${mon}: ${l.room?.roomNo ?? '-'}호 ${l.tenant.name} 의 방이 이 영업장 방 목록 밖이다 — 세그먼트에서 전체 0실인 칸에 금액만 선다`)
+        }
+      }
+    }
+    // 축마다 방 수 합이 전체 방 수여야 한다. null 속성 방을 떨어뜨리면 여기서 걸린다.
+    for (const fields of [['window', 'tier'], ['tier'], ['window'], ['floor']]) {
+      const by = new Map()
+      for (const r of propRooms) {
+        const k = fields.map(f => (f === 'window' ? r.windowType : f === 'tier' ? r.tier : r.floor) ?? ' ').join('')
+        by.set(k, (by.get(k) ?? 0) + 1)
+      }
+      const sum = [...by.values()].reduce((a, b) => a + b, 0)
+      if (sum !== propRooms.length) {
+        violations.push(`[데이터] ${prop.name} 세그먼트 축 ${fields.join('-')}: 방 수 합 ${sum} 이 전체 방 ${propRooms.length} 과 다르다`)
+      }
+    }
+  }
+}
+
 // 18-6. 홈 미수 에이징과 두 벌 미납 루프 (2026-08-13).
 //
 //   에이징은 발생주의 미납 루프의 **부산물**이다. 버킷은 귀속월 그대로이고 담는 것은 도래·미회수분뿐이라
