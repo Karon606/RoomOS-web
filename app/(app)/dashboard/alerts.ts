@@ -14,7 +14,7 @@ import { kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
-import { isContractIssued } from '@/lib/contractIssue'
+import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed'
 
@@ -97,7 +97,8 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       where: { propertyId, signedAt: { not: null }, closedAt: null },
       select: {
         id: true, tenantId: true, leaseTermId: true, signedAt: true,
-        leaseTerm: { select: { room: { select: { id: true, roomNo: true } } } },
+        // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
+        leaseTerm: { select: { room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true } },
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -218,7 +219,10 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   // 판정은 lib/contractIssue 정본을 쓴다 — 계약서 파일 패널이 같은 규칙으로 '계약서 발급'을 주 동작으로 올린다.
   for (const link of signedLinks) {
     if (!link.signedAt) continue
-    if (isContractIssued(link.signedAt, link.leaseTermId, generatedFiles)) continue
+    // 딸린 계약의 종이는 부모 합본 한 장이다 — 그 종이가 생기면 이 알림도 함께 끝난다.
+    // 발급 대기 목록과 같은 한 값을 본다(lib/contractIssue issuingLeaseId).
+    const issueLeaseId = issuingLeaseId(link.leaseTermId, link.leaseTerm.parentLeaseTermId)
+    if (isContractIssued(link.signedAt, issueLeaseId, generatedFiles)) continue
     items.push({
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
@@ -226,7 +230,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       // 할 일이 '계약서 발급'이라 목적지는 고객 모달이 아니라 계약서함의 발급 대기 섹션이다.
       // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
       href: '/contracts?focus=contracts-pending-issue',
-      tenantId: link.tenant.id, leaseTermId: link.leaseTermId,
+      tenantId: link.tenant.id, leaseTermId: issueLeaseId,
       roomId: link.leaseTerm.room?.id ?? null, roomNo: link.leaseTerm.room?.roomNo, tenantName: link.tenant.name,
       urgency: 820,
     })

@@ -12,6 +12,18 @@
 
 export type ContractFileRef = { leaseTermId: string | null; createdAt: Date }
 
+/**
+ * 이 서명을 덮는 계약서는 **어느 계약의 것인가** — 딸린 계약(2026-08-13 다호실 2단계)의 종이는
+ * 부모 한 장이다. 601호 창고 계약에 서명이 들어와도 발급되는 종이는 509호 합본 계약서이고,
+ * 그 종이가 만들어지면 601 의 대기·알림도 함께 끝나야 한다.
+ *
+ * 이 한 줄이 없으면 홈 종은 601 을 부르는데 발급은 막혀 있어(부모로만 발급) 알림이 영영 안 꺼진다.
+ * 부르는 곳이 둘(홈 알림·발급 대기 목록)이라 여기 한 벌로 둔다.
+ */
+export function issuingLeaseId(leaseTermId: string, parentLeaseTermId: string | null | undefined): string {
+  return parentLeaseTermId ?? leaseTermId
+}
+
 export function isContractIssued(
   signedAt: Date,
   leaseTermId: string,

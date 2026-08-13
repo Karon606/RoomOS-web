@@ -2011,6 +2011,8 @@ export async function getTenantDetail(tenantId: string) {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT', 'CANCELLED'] } },
         select: {
           id: true, status: true, isShortTerm: true,
+          // 딸려 있는 계약인가 — 계약서 파일 패널이 종속분에는 제 계약서 버튼을 안 낸다(부모 한 장).
+          parentLeaseTermId: true,
           shortStayExtensions: true,   // 단기 연장 이력 — 위젯의 연장 이력 줄·적용취소 진입점용
           checkoutProrationUndo: true, // 중도퇴실 환불 스냅샷(refund 키) — 상세의 상시 적용취소 진입점용(§16)
           rentAmount: true, depositAmount: true, cleaningFee: true,

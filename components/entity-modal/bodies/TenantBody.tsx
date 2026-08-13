@@ -99,7 +99,9 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <Section title="계약서 파일">
         <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name}
           extraLeases={tenant.leaseTerms
-            .filter(l => l.id !== lease?.id && (CONTRACT_ISSUE_STATUSES as string[]).includes(l.status))
+            // 딸린 계약은 제 계약서 버튼을 갖지 않는다 — 그 계약의 종이는 부모 한 장이고,
+            // 여기 버튼을 남기면 같은 방이 두 장으로 나가는 길이 열린다(발급 자체도 서버가 막는다).
+            .filter(l => l.id !== lease?.id && !l.parentLeaseTermId && (CONTRACT_ISSUE_STATUSES as string[]).includes(l.status))
             .map(l => ({ id: l.id, roomNo: l.room?.roomNo ?? null }))} />
       </Section>
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}

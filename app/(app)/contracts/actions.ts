@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
-import { isContractIssued } from '@/lib/contractIssue'
+import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -126,6 +126,9 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
             room: { select: { roomNo: true } },
             signatureImageUrl: true, signatureSignedAt: true,
             disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+            // 딸린 계약이면 발급할 종이는 부모 것이다 — 대기 한 줄이 부모를 가리켜야 발급이 된다.
+            parentLeaseTermId: true,
+            parentLeaseTerm: { select: { room: { select: { roomNo: true } } } },
           },
         },
       },
@@ -142,18 +145,21 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   const seenLease = new Set<string>()
   for (const l of links) {
     if (!l.signedAt) continue
-    if (isContractIssued(l.signedAt, l.leaseTermId, files)) continue
+    // 딸린 계약의 대기는 부모 한 줄로 선다 — 그 계약의 종이가 부모 합본이기 때문이다.
+    // 지목·해소 판정·중복 제거가 전부 이 한 값을 본다(lib/contractIssue 정본).
+    const issueLeaseId = issuingLeaseId(l.leaseTermId, l.leaseTerm.parentLeaseTermId)
+    if (isContractIssued(l.signedAt, issueLeaseId, files)) continue
     // 같은 계약에 링크를 여러 번 냈으면 최신 하나만 — 목록에 같은 방이 두 줄로 서는 것을 막는다.
     // orderBy signedAt desc 라 먼저 만나는 것이 최신이다.
-    if (seenLease.has(l.leaseTermId)) continue
-    seenLease.add(l.leaseTermId)
+    if (seenLease.has(issueLeaseId)) continue
+    seenLease.add(issueLeaseId)
     rows.push({
       // 토큰은 절대 내보내지 않는다 — 클라이언트로 새면 누구나 서명 화면을 열 수 있다. linkId 만 준다.
       linkId: l.id,
       tenantId: l.tenant.id,
-      leaseTermId: l.leaseTermId,
+      leaseTermId: issueLeaseId,
       tenantName: l.tenant.name,
-      roomNo: l.leaseTerm.room?.roomNo ?? null,
+      roomNo: (l.leaseTerm.parentLeaseTermId ? l.leaseTerm.parentLeaseTerm?.room?.roomNo : l.leaseTerm.room?.roomNo) ?? null,
       signedAt: l.signedAt,
       submitted: l.submittedAt != null,
       signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt

@@ -145,6 +145,18 @@ export async function POST(req: Request) {
 
     // 표시값은 화면과 같은 함수로 조립한다(lib/contractFieldOverrides). 성명 표기도 그 안에 있다 —
     // 클라이언트가 보낸 이름을 믿으면 이 API 를 직접 불러 아무 이름으로나 발급할 수 있다.
+    // 딸린 계약은 제 계약서를 갖지 않는다 — 그 종이는 부모 합본 한 장이다(2026-08-13 다호실 2단계).
+    // 미리보기도 함께 막는다. 미리보기로 나온 PDF 를 그대로 보내면 그것이 곧 두 번째 계약서다.
+    // 화면·패널이 이 경로를 안 내주지만 API 를 직접 부르면 통하므로 서버가 다시 본다.
+    if (lease?.parentLeaseTermId) {
+      const parent = tenant.leaseTerms.find(l => l.id === lease.parentLeaseTermId)
+      const where = parent?.room?.roomNo ? `${parent.room.roomNo}호 계약서` : '딸린 계약의 계약서'
+      return NextResponse.json({
+        ok: false,
+        error: `이 계약은 다른 계약에 딸려 있어 따로 발급하지 않습니다. ${where}에 이 호실이 함께 인쇄됩니다.`,
+      }, { status: 409 })
+    }
+
     const leaseFields = lease ? contractLeaseFields(lease) : null
     // 합본 계약서의 종속 호실 — 화면과 같은 정본(lib/contractData) 하나다. 여기서 손으로 다시
     // 세면 종이와 화면이 다른 행을 그리고, 그 차이는 발급하고 나서야 보인다.

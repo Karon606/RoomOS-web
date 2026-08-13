@@ -123,6 +123,18 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
       return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
     }
 
+    // 딸린 계약에는 제 서명 링크를 내주지 않는다(2026-08-13 다호실 2단계). 그 계약의 종이는 부모
+    // 합본 한 장이라, 여기서 링크를 내면 같은 사람이 같은 방을 두 번 서명하고 발급은 부모로만 된다.
+    // 스냅샷에 담기지 않는 사실이라 한 번 더 묻는다 — 발급 API 도 같은 판정을 제 자리에서 다시 본다.
+    const subCheck = await prisma.leaseTerm.findUnique({
+      where: { id: snapshot.lease.id },
+      select: { parentLeaseTermId: true, parentLeaseTerm: { select: { room: { select: { roomNo: true } } } } },
+    })
+    if (subCheck?.parentLeaseTermId) {
+      const where = subCheck.parentLeaseTerm?.room?.roomNo ? `${subCheck.parentLeaseTerm.room.roomNo}호 계약` : '딸린 계약'
+      return { ok: false, error: `이 계약은 다른 계약에 딸려 있어 따로 서명받지 않습니다. ${where}의 계약서에 이 호실이 함께 인쇄됩니다.` }
+    }
+
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
     const propertyName = property?.name ?? ''
 
