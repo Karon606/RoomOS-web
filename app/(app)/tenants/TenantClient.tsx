@@ -74,7 +74,7 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   occupantIsShortTerm: boolean       // 그 점유 계약이 단기인지 — 상태는 ACTIVE 라도 퇴실일이 잡혀 있다
   hasIndefiniteReservation: boolean  // 퇴실 예정일 없는 예약이 걸린 방 — 언제 비는지 몰라 차단
   vacancyExcluded: boolean           // 비거주 점유 방(창고·사무실) — 서버 가드와 같은 정본 술어(lib/vacancy)
-  standaloneLeaseAllowed: boolean    // 이 방만으로 계약이 되는가 — false 면 '딸릴 계약'이 필수다(2026-08-13)
+  standaloneLeaseAllowed: boolean    // 이 방만으로 계약이 되는가 — false 면 '메인 계약'이 필수다(2026-08-13)
   // 퇴실 예정일이 잡힌 점유 계약들의 구간 — 겹침 문구가 '마지막 날짜'가 아니라 실제로 막고 선 계약을 지목하게.
   occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
   // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
@@ -204,7 +204,7 @@ function editableLeases(t: { leaseTerms: LeaseTerm[] }): LeaseTerm[] {
   return [...ordered, ...t.leaseTerms.filter(l => !ordered.includes(l))]
 }
 
-// '딸릴 계약' 후보 — 같은 사람의 살아 있는 계약 중 자기 자신과 이미 딸려 있는 계약을 뺀다.
+// '메인 계약' 후보 — 같은 사람의 살아 있는 계약 중 자기 자신과 이미 다른 계약에 묶인 계약을 뺀다.
 // 상태 명단은 서버 가드가 쓰는 그 상수(PARENT_LEASE_STATUSES)를 그대로 읽는다. 손으로 베끼면
 // 화면이 고르게 해 준 것을 서버가 거부하거나, 화면이 못 고르는 것을 서버가 받는다.
 function parentLeaseOptions(t: { leaseTerms: LeaseTerm[] }, selfLeaseId?: string): LeaseTerm[] {
@@ -3493,7 +3493,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 이 폼이 편집하는 계약(2026-08-13, 실기 신고 — 부계약을 고칠 입구가 없었다).
   // 없거나 이 사람의 계약이 아니면 종전대로 메인 계약이다. 수정 창의 계약 세그먼트가 이 값을 준다.
   leaseId?: string
-  // '딸릴 계약' 셀렉트의 선택지. 비면 칸 자체를 그리지 않는다 — 고를 것이 없는데 필수로 막으면
+  // '메인 계약' 셀렉트의 선택지. 비면 칸 자체를 그리지 않는다 — 고를 것이 없는데 필수로 막으면
   // 운영자에게 출구 없는 오류를 주는 것이다(칸이 없으면 서버도 종속을 편집하지 않는 저장으로 읽는다).
   parentLeases?: LeaseTerm[]
 }) {
@@ -3514,7 +3514,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(본국 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
-  // '딸릴 계약' 선택 — 창고류 방(공실 집계 제외)이 딸릴 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
+  // '메인 계약' 선택 — 창고류 방(공실 집계 제외)이 묶일 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
   const [parentVal, setParentVal] = useState(lease?.parentLeaseTermId ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [actualOut, setActualOut]   = useState(toDateInput(lease?.moveOutDate))   // 실제 퇴실일 — 퇴실 상태에서만 렌더
@@ -3657,7 +3657,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const [dueDayRaw, setDueDayRaw] = useState(() => dueDayParts(lease?.dueDay).raw)
   const [dueDayDisp, setDueDayDisp] = useState(() => dueDayParts(lease?.dueDay).disp)
-  // 딸릴 계약이 정해져 있으면 납부일은 그 계약과 같은 날이 기본이다(운영자 오더 2026-08-13).
+  // 메인 계약이 정해져 있으면 납부일은 그 계약과 같은 날이 기본이다(운영자 오더 2026-08-13).
   // 한 사람이 방을 둘 쓰면 돈은 대개 같은 날 한 번에 들어온다. 다르게 받고 싶은 경우가 있으니
   // 잠그지 않고 '따로 정하기'로 푼다. 기존 계약을 열 때는 저장된 값이 부모와 다르면 따로 모드로 시작한다.
   const [dueSeparate, setDueSeparate] = useState(() => {
@@ -4276,20 +4276,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           })()}
         </div>
 
-        {/* 딸릴 계약 (2026-08-13, 다호실 2단계) — 이 계약이 어느 계약에 딸리는가.
+        {/* 메인 계약 (2026-08-13, 다호실 2단계) — 이 계약이 어느 계약에 묶이는가.
             고를 것이 있을 때만 그린다. 단독 계약이 불가한 방을 고르면 필수가 되고,
-            그 방을 고르지 않았으면 '딸리지 않음'이 그대로 기본이다(종전 저장과 같은 값).
+            그 방을 고르지 않았으면 '없음'이 그대로 기본이다(종전 저장과 같은 값).
             판정은 서버(lib/roomAssignment)가 다시 본다 — 화면에만 있는 규칙은 규칙이 아니다. */}
         {parentLeases.length > 0 && (() => {
           const selectedRoom = rooms.find(r => r.id === selectedRoomId)
           const required = selectedRoom ? !selectedRoom.standaloneLeaseAllowed : false
           return (
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">딸릴 계약{required ? ' *' : ''}</label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">메인 계약{required ? ' *' : ''}</label>
               <select name="parentLeaseTermId" value={parentVal} onChange={e => setParentVal(e.target.value)} required={required}
                 onWheel={e => e.stopPropagation()}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                <option value="">딸리지 않음 (단독 계약)</option>
+                <option value="">없음 (단독 계약)</option>
                 {parentLeases.map(l => (
                   <option key={l.id} value={l.id}>
                     {[fmtRoomNo(l.room?.roomNo, '호실 미지정'), STATUS_LABEL[l.status] ?? l.status].filter(Boolean).join(' · ')}
@@ -4298,12 +4298,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </select>
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                 {required
-                  ? '이 호실은 단독 계약이 불가한 방입니다. 딸릴 계약을 골라 주세요.'
-                  : '계약서를 딸릴 계약 한 장에 합쳐서 인쇄합니다. 청구와 수납은 계약별로 따로입니다.'}
+                  ? '이 호실은 단독 계약이 불가한 방입니다. 메인 계약을 골라 주세요.'
+                  : '계약서는 메인 계약의 계약서 한 장에 합쳐서 인쇄됩니다. 청구와 수납은 계약별로 따로입니다.'}
               </p>
               {/* 창고류 방이 딸릴 때 비거주자 권고 — 자동 전환 금지(멀쩡한 방 둘을 혼자 계약할 수 있다,
                   운영자 오더 2026-08-13). 버튼은 화면 상태만 바꾸고 저장은 여전히 저장 버튼이다(투어일 힌트 전례).
-                  실사고: 601호가 '투어 대기'인 채 딸려 합본 계약서에 안 실렸다 — 발급은 발급 대상 상태만 싣는다. */}
+                  실사고: 601호가 '투어 대기'인 채 묶여 합본 계약서에 안 실렸다 — 발급은 발급 대상 상태만 싣는다. */}
               {parentVal !== '' && selectedRoom?.vacancyExcluded && statusVal !== 'NON_RESIDENT'
                 && !['CHECKED_OUT', 'CANCELLED'].includes(statusVal) && (
                 <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
@@ -4413,7 +4413,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {/* 거주 전 상태는 납부일 숨김(단기 문법과 동일) — 서버도 같은 기준으로 비운다 */}
           {!duePending && <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
-            {/* 딸릴 계약과 같은 날이 기본일 때는 부모의 값을 그대로 제출한다. 상속 플래그를 새로 만들지 않는
+            {/* 메인 계약과 같은 날이 기본일 때는 메인 계약의 값을 그대로 제출한다. 상속 플래그를 새로 만들지 않는
                 이유는 저장된 것이 곧 청구가 읽는 값이어야 하기 때문이다 — 화면에 보이는 날이 곧 청구일이다. */}
             <input type="hidden" name="dueDay" value={dueSameAsParent ? parentDue.raw : dueDayRaw} />
             <input
@@ -4442,8 +4442,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             {parentLease && (
               <>
                 {dueSameAsParent && (() => {
-                  // 어느 계약을 따라가는지 호실로 말한다. 호실이 없는 단계면 '딸릴 계약'으로 부른다.
-                  const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '딸릴 계약'
+                  // 어느 계약을 따라가는지 호실로 말한다. 호실이 없는 단계면 '메인 계약'으로 부른다.
+                  const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약'
                   return (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
                       {parentDue.raw ? `${who}과 같은 납부일입니다.` : `${who}에 납부일이 없습니다.`}

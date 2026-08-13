@@ -19,16 +19,16 @@ export const ROOM_GUARD_STATUSES: readonly string[] = [...RESIDENT_STATUSES, 'NO
 export const NON_RESIDENT_ROOM_ERROR =
   '해당 호실은 세를 놓지 않는 방(창고·사무실)으로 설정돼 있습니다. 호실 관리 편집에서 \'공실 집계에서 제외\'를 해제한 뒤 배정해 주세요.'
 
-// 단독 계약 불가 방(다른 계약에 딸리는 방)에 부모 지목 없이 계약을 저장하려 할 때의 안내.
+// 단독 계약 불가 방(다른 계약에 묶어야 하는 방)에 메인 계약 지목 없이 계약을 저장하려 할 때의 안내.
 // 문구는 호실 관리 편집의 체크박스 라벨과 같은 낱말을 쓴다 — 거부당한 사람이 어느 설정을 본 것인지
 // 바로 알아야 한다(비거주 점유 방 문구가 '공실 집계에서 제외'를 지목하는 것과 같은 문법).
 export const STANDALONE_LEASE_ERROR =
-  '해당 호실은 단독 계약이 불가한 방(다른 계약에 딸리는 방)으로 설정돼 있습니다. 이 계약이 딸릴 계약을 함께 골라 주세요.'
+  '해당 호실은 단독 계약이 불가한 방(다른 계약에 묶어야 하는 방)으로 설정돼 있습니다. 메인 계약을 함께 골라 주세요.'
 
-// 같은 사정을 시트에 말하는 문구. 어느 계약에 딸리는지는 시트에 적을 자리가 없으므로
+// 같은 사정을 시트에 말하는 문구. 메인 계약은 시트에 적을 자리가 없으므로
 // 출구가 다르다 — 문구가 하나뿐이면 가져오기에서 막힌 운영자는 고를 수 없는 것을 고르라는 말을 듣는다.
 export const STANDALONE_LEASE_IMPORT_ERROR =
-  '해당 호실은 단독 계약이 불가한 방(다른 계약에 딸리는 방)으로 설정돼 있습니다. 어느 계약에 딸리는지는 시트로 지목할 수 없으니 고객 상세의 \'계약 추가\'로 만들어 주세요.'
+  '해당 호실은 단독 계약이 불가한 방으로 설정돼 있습니다. 메인 계약은 시트로 지목할 수 없으니 입주자 상세의 \'계약 추가\'로 만들어 주세요.'
 
 /**
  * 부모가 될 수 있는 계약의 상태 — 끝난 계약(퇴실 완료·입실 취소)과 문의 단계에는 아무것도 딸릴 수 없다.
@@ -73,19 +73,19 @@ export function leaseSubordinationDenial(input: {
     return roomStandaloneAllowed ? null : STANDALONE_LEASE_ERROR
   }
   if (selfLeaseTermId && parentLeaseTermId === selfLeaseTermId) {
-    return '계약을 자기 자신에 딸리게 할 수는 없습니다.'
+    return '계약을 자기 자신의 메인 계약으로 고를 수는 없습니다.'
   }
   if (!parent || !selfTenantId || parent.tenantId !== selfTenantId) {
-    return '딸릴 계약을 찾을 수 없습니다. 같은 고객의 진행 중인 계약 중에서 골라 주세요.'
+    return '메인 계약을 찾을 수 없습니다. 같은 입주자의 진행 중인 계약 중에서 골라 주세요.'
   }
   if (!PARENT_LEASE_STATUSES.includes(parent.status)) {
-    return '딸릴 계약이 이미 끝난 계약입니다. 진행 중인 계약 중에서 골라 주세요.'
+    return '고른 메인 계약이 이미 끝난 계약입니다. 진행 중인 계약 중에서 골라 주세요.'
   }
   if (parent.parentLeaseTermId) {
-    return '딸릴 계약이 이미 다른 계약에 딸려 있습니다. 종속은 한 단계까지만 됩니다.'
+    return '고른 계약이 이미 다른 계약의 추가 계약입니다. 종속은 한 단계까지만 됩니다.'
   }
   if (selfHasSubLeases) {
-    return '이 계약에는 이미 딸린 계약이 있습니다. 딸린 계약이 있는 계약은 다른 계약에 딸릴 수 없습니다.'
+    return '이 계약에는 이미 추가 계약이 있습니다. 추가 계약이 있는 계약은 다른 계약의 추가 계약이 될 수 없습니다.'
   }
   return null
 }
@@ -197,8 +197,8 @@ export function roomAssignmentBlockReason(input: {
   if (!isResident && !isNonResident) return null
   // 축 ③ — 비거주 점유 방(창고·사무실)에는 새 명의 말고 아무것도 넣지 않는다.
   if (!isNonResident && input.nonResidentOccupied) return NON_RESIDENT_ROOM_ERROR
-  // 축 ⑤ — 단독 계약 불가 방(다른 계약에 딸리는 방). 시트에는 어느 계약에 딸리는지 적을 자리가
-  // 없으므로 통째로 막고 앱의 '계약 추가'로 보낸다. 화면 경로는 부모를 골라 통과할 수 있다.
+  // 축 ⑤ — 단독 계약 불가 방(다른 계약에 묶어야 하는 방). 시트에는 메인 계약을 적을 자리가
+  // 없으므로 통째로 막고 앱의 '계약 추가'로 보낸다. 화면 경로는 메인 계약을 골라 통과할 수 있다.
   if (!input.roomStandaloneAllowed) return STANDALONE_LEASE_IMPORT_ERROR
   if (isNonResident) {
     return input.others.some(o => o.status === 'NON_RESIDENT')

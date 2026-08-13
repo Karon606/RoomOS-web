@@ -89,7 +89,7 @@ type Room = {
   showOnSite: boolean            // 소개 페이지 갤러리 공개 여부(운영자 토글, 사진 있을 때만)
   noMoveInReport: boolean        // 전입신고 불가 방 — 카드 배지 + 등록 경고(2026-07-06)
   nonResidentVacant: boolean     // 비거주 점유 시 공실로 표시할지 (false = 창고·사무실)
-  standaloneLeaseAllowed: boolean // 이 방만으로 계약이 되는가 (false = 다른 계약에 딸리는 방, 2026-08-13)
+  standaloneLeaseAllowed: boolean // 이 방만으로 계약이 되는가 (false = 다른 계약에 묶어야 하는 방, 2026-08-13)
   floor: string | null
   windowType: string | null
   direction: string | null
@@ -1641,7 +1641,7 @@ export default function RoomManageClient({
                 <input type="checkbox" defaultChecked={!editRoom.standaloneLeaseAllowed}
                   onChange={e => { const h = e.currentTarget.form?.elements.namedItem('standaloneLeaseAllowed') as HTMLInputElement | null; if (h) h.value = e.currentTarget.checked ? '0' : '1' }}
                   className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                이 방은 단독 계약이 불가합니다 <span className="text-[var(--warm-muted)]">(다른 계약에 딸리는 방, 계약 저장 때 딸릴 계약을 골라야 함)</span>
+                이 방은 단독 계약이 불가합니다 <span className="text-[var(--warm-muted)]">(다른 계약에 묶어야 하는 방, 계약 저장 때 메인 계약을 골라야 함)</span>
               </label>
               <input type="hidden" name="standaloneLeaseAllowed" defaultValue={editRoom.standaloneLeaseAllowed ? '1' : '0'} />
             </div>

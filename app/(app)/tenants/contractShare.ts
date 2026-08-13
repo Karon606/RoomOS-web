@@ -131,8 +131,8 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
       select: { parentLeaseTermId: true, parentLeaseTerm: { select: { room: { select: { roomNo: true } } } } },
     })
     if (subCheck?.parentLeaseTermId) {
-      const where = subCheck.parentLeaseTerm?.room?.roomNo ? `${subCheck.parentLeaseTerm.room.roomNo}호 계약` : '딸린 계약'
-      return { ok: false, error: `이 계약은 다른 계약에 딸려 있어 따로 서명받지 않습니다. ${where}의 계약서에 이 호실이 함께 인쇄됩니다.` }
+      const where = subCheck.parentLeaseTerm?.room?.roomNo ? `${subCheck.parentLeaseTerm.room.roomNo}호 계약` : '메인 계약'
+      return { ok: false, error: `이 계약은 다른 계약의 추가 계약이라 따로 서명받지 않습니다. ${where}의 계약서에 이 호실이 함께 인쇄됩니다.` }
     }
 
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })

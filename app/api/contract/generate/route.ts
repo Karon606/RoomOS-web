@@ -150,10 +150,10 @@ export async function POST(req: Request) {
     // 화면·패널이 이 경로를 안 내주지만 API 를 직접 부르면 통하므로 서버가 다시 본다.
     if (lease?.parentLeaseTermId) {
       const parent = tenant.leaseTerms.find(l => l.id === lease.parentLeaseTermId)
-      const where = parent?.room?.roomNo ? `${parent.room.roomNo}호 계약서` : '딸린 계약의 계약서'
+      const where = parent?.room?.roomNo ? `${parent.room.roomNo}호 계약서` : '메인 계약의 계약서'
       return NextResponse.json({
         ok: false,
-        error: `이 계약은 다른 계약에 딸려 있어 따로 발급하지 않습니다. ${where}에 이 호실이 함께 인쇄됩니다.`,
+        error: `이 계약은 다른 계약의 추가 계약이라 따로 발급하지 않습니다. ${where}에 이 호실이 함께 인쇄됩니다.`,
       }, { status: 409 })
     }
 

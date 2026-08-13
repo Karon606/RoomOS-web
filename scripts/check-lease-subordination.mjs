@@ -37,7 +37,7 @@ function brokenSubordination(l) {
   if (!l.parent) return '부모 계약이 없다(삭제됐거나 연결이 끊겼다)'
   if (l.parent.tenantId !== l.tenantId) return '부모가 다른 고객의 계약이다'
   if (!PARENT_OK.includes(l.parent.status)) return `부모가 끝난 계약이다(${l.parent.status})`
-  if (l.parent.parentLeaseTermId) return '부모가 또 다른 계약에 딸려 있다(2단 종속)'
+  if (l.parent.parentLeaseTermId) return '부모가 또 다른 계약의 추가 계약이다(2단 종속)'
   if (l.parentLeaseTermId === l.id) return '자기 자신을 부모로 가리킨다'
   return null
 }
@@ -47,7 +47,7 @@ function orphanInNoStandaloneRoom(l) {
   if (l.parentLeaseTermId) return null
   if (!l.room || l.room.standaloneLeaseAllowed) return null
   if (!ALIVE.includes(l.status)) return null
-  return `${l.room.roomNo}호는 단독 계약이 불가한 방인데 딸릴 계약이 없다`
+  return `${l.room.roomNo}호는 단독 계약이 불가한 방인데 메인 계약이 없다`
 }
 
 // ── 자가 역주입 ── 그물이 실제로 발화하는가. 실데이터가 0건이라 이 확인이 없으면
