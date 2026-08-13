@@ -2355,14 +2355,32 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
     // 방 하나가 어느 사람을 가리키는가 — 호실 카드·호실 면과 같은 규칙(거주 우선)이라야 한다.
     // 'createdAt desc 한 건'이던 시절엔 최근에 만든 예약이 실거주자를 밀어내, 모달 제목과
     // 하단 고객·수납 면이 방에 사는 사람이 아니라 예약자를 열었다(503호).
+    //
+    // 집합은 getRoomDetail 과 **문자 그대로 같아야 한다**. 종전에는 여기만 NON_RESIDENT 가 빠져
+    // 있어, 같은 방을 두 함수가 다른 필터로 조회했다. 비거주 계약만 있는 방(415호·사무실)은
+    // 호실 면이 비거주자를 정상으로 그리고 거주 이력 위젯도 그 사람으로 가는 링크를 주는데,
+    // 바로 아래 나브바의 '고객 정보' 탭만 회색으로 죽어 있었다(운영자 실기 지적 2026-08-13).
     const leases = await prisma.leaseTerm.findMany({
-      where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // moveInDate — 예약이 둘 이상인 방에서 primaryRoomLease 가 '먼저 들어올 사람'을 고를 수 있게(404호).
       // 안 넘기면 배열 순서로 떨어져 모달 제목이 카드와 다른 사람을 가리킨다(2026-08-10 (7) 클래스).
       orderBy: { status: 'asc' }, take: 3, select: { ...leaseSelect, status: true, moveInDate: true },
     })
+    let primary: LeaseLink | null = primaryRoomLease(leases) ?? null
+    if (!primary) {
+      // 아직 방을 잡지 않은 단계(문의·투어)라도 사람이 붙어 있으면 연결은 있는 것이다.
+      // 나브바가 묻는 것은 '누가 이 방에 사는가'가 아니라 '이 방에서 갈 수 있는 사람이 있는가'다.
+      // 비활성은 연결된 사람이 **정말 없는** 방만이어야 한다(운영자 지적 2026-08-13).
+      // 위 집합과 나눠 묻는 이유: 한 조회로 합치면 enum 오름차순에서 문의·투어가 맨 앞으로 와
+      // take 로 거주·비거주를 밀어낸다. 방을 잡은 계약이 있으면 그쪽이 언제나 먼저다.
+      primary = await prisma.leaseTerm.findFirst({
+        where: { roomId: input.roomId, status: { in: ['WAITING_TOUR', 'TOUR_DONE'] } },
+        orderBy: { status: 'desc' },   // 투어 완료가 문의보다 뒤 단계다(enum 순서)
+        select: leaseSelect,
+      })
+    }
     const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
-    return pack(primaryRoomLease(leases) ?? null, room)
+    return pack(primary, room)
   }
   return null
 }
