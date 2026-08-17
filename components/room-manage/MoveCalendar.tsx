@@ -14,7 +14,7 @@ import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, type BadgeTone } from '@/components/ui/StatusBadge'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { fmtMD } from '@/lib/fmtDate'
-import type { MoveBar, MoveCalendarMonth, MoveCalendarRow } from '@/lib/moveCalendar'
+import type { MoveBar, MoveCalendarMonth, MoveCalendarRow, MoveDaySpan, MoveGap } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -155,6 +155,45 @@ export function MoveCalendar({ data }: { data: MoveCalendarMonth }) {
   )
 }
 
+/** 한 막대의 라벨을 어디에 어떻게 놓을지. 공백 캡션이 이 결과를 보고 자리를 비켜 준다. */
+type Placed = {
+  bar: MoveBar
+  full: string
+  mode: 'full' | 'name' | 'outside'
+  side: 'right' | 'left' | null
+  /**
+   * 바 밖 라벨이 차지할 열 구간 — 글자가 실제로 먹는 만큼만 잡는다(다음 막대 앞에서 끊는다).
+   * 남는 칸까지 통째로 잡으면 상자가 공백 캡션 위에 겹쳐 앉아, 글자는 안 부딪혀도
+   * 캡션이 어디에 설 수 있는지 계산할 근거가 사라진다.
+   */
+  ink: MoveDaySpan | null
+}
+
+function place(bar: MoveBar, row: MoveCalendarRow, dim: number, dayWidth: number): Placed {
+  const full = `${bar.tenantName} · ${bar.label}`
+  const px = (bar.endDay - bar.startDay + 1) * dayWidth
+  // 실측 전(첫 프레임)은 이름만 — 가장 흔한 결말이라 측정 뒤 흔들림이 가장 작다.
+  const fits: Placed['mode'] = dayWidth === 0 ? 'name'
+    : px >= estWidth(full) + 16 ? 'full'
+      : px >= estWidth(bar.tenantName) + 16 ? 'name' : 'outside'
+  const bare: Placed = { bar, full, mode: fits, side: null, ink: null }
+  if (fits !== 'outside') return bare
+
+  // 같은 층에서 다음 막대가 시작하는 날 — 바 밖 라벨이 그 위로 넘어가지 않게 끊는 자리.
+  const next = row.bars.filter(b => b.lane === bar.lane && b.startDay > bar.endDay)
+    .reduce((m, b) => Math.min(m, b.startDay), dim + 1)
+  const needDays = Math.max(1, Math.ceil((estWidth(full) + 8) / dayWidth))
+  if (bar.endDay < dim && next > bar.endDay + 1) {
+    const limit = Math.min(next - 1, dim)
+    return { ...bare, side: 'right', ink: { startDay: bar.endDay + 1, endDay: Math.min(bar.endDay + needDays, limit) } }
+  }
+  if (bar.startDay > 1) {
+    return { ...bare, side: 'left', ink: { startDay: Math.max(1, bar.startDay - needDays), endDay: bar.startDay - 1 } }
+  }
+  // 양옆이 다 막힌 자리 — 잘린 이름이라도 바 안에 둔다(아무것도 없는 것보다는 낫다).
+  return { ...bare, mode: 'name' }
+}
+
 function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
   row: MoveCalendarRow
   dim: number
@@ -165,9 +204,26 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
 }) {
   const attn = row.conflicts.length > 0
-  // 같은 층에서 그 막대 다음에 오는 막대의 시작일 — 바 밖 라벨이 넘어가지 않게 끊는 자리.
-  const nextStartInLane = (bar: MoveBar): number =>
-    row.bars.filter(b => b.lane === bar.lane && b.startDay > bar.endDay).reduce((m, b) => Math.min(m, b.startDay), dim + 1)
+  const placed = row.bars.map(bar => place(bar, row, dim, dayWidth))
+  // 캡션은 0층(gridRow 1)에 그리므로 0층의 바 밖 라벨과만 자리를 다툰다.
+  const blocked = placed.filter(p => p.bar.lane === 0 && p.ink).map(p => p.ink!)
+
+  /** 공백에서 바 밖 라벨을 뺀 뒤 남은 가장 넓은 구간. 40px 이 안 나오면 캡션을 세우지 않는다. */
+  const captionSpan = (g: MoveGap): MoveDaySpan | null => {
+    const taken = new Set<number>()
+    for (const b of blocked) for (let d = b.startDay; d <= b.endDay; d++) taken.add(d)
+    let best: MoveDaySpan | null = null
+    let cur: MoveDaySpan | null = null
+    for (let d = g.startDay; d <= g.endDay + 1; d++) {
+      if (d <= g.endDay && !taken.has(d)) cur = cur ? { startDay: cur.startDay, endDay: d } : { startDay: d, endDay: d }
+      else if (cur) {
+        if (!best || cur.endDay - cur.startDay > best.endDay - best.startDay) best = cur
+        cur = null
+      }
+    }
+    if (!best) return null
+    return (best.endDay - best.startDay + 1) * dayWidth >= GAP_CAPTION_MIN ? best : null
+  }
 
   return (
     <div>
@@ -186,18 +242,20 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
           {fmtRoomNo(row.roomNo)}
         </div>
 
-        {/* 공백 캡션 — 폭이 나올 때만. 색은 없다(트랙 그대로). */}
-        {row.gaps.map(g => g.days * dayWidth >= GAP_CAPTION_MIN && (
-          <div key={`gap-${g.startDay}`} className="flex items-center justify-center text-[0.65625rem] tnum pointer-events-none"
-            style={{ gridColumn: `${g.startDay + 1} / ${g.endDay + 2}`, gridRow: '1 / 2', color: 'var(--ink-m)' }}>
-            {g.days}일 공실
-          </div>
-        ))}
+        {/* 공백 캡션 — 바 밖 라벨을 피해 남은 자리에, 폭이 나올 때만. 색은 없다(트랙 그대로). */}
+        {row.gaps.map(g => {
+          const span = captionSpan(g)
+          return span && (
+            <div key={`gap-${g.startDay}`} className="flex items-center justify-center text-[0.65625rem] tnum pointer-events-none"
+              style={{ gridColumn: `${span.startDay + 1} / ${span.endDay + 2}`, gridRow: '1 / 2', color: 'var(--ink-m)' }}>
+              {g.days}일 공실
+            </div>
+          )
+        })}
 
         {/* 막대 */}
-        {row.bars.map(bar => (
-          <Bar key={bar.leaseId} bar={bar} dim={dim} dayWidth={dayWidth}
-            laneNextStart={nextStartInLane(bar)} onOpen={() => onOpen(row.roomId, bar.leaseId, bar.tenantId)} />
+        {placed.map(p => (
+          <Bar key={p.bar.leaseId} p={p} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
         ))}
 
         {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03). */}
@@ -229,26 +287,9 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
   )
 }
 
-function Bar({ bar, dim, dayWidth, laneNextStart, onOpen }: {
-  bar: MoveBar
-  dim: number
-  dayWidth: number
-  laneNextStart: number
-  onOpen: () => void
-}) {
+function Bar({ p, onOpen }: { p: Placed; onOpen: () => void }) {
+  const { bar, full, mode, side, ink } = p
   const tone = barTone(bar)
-  const full = `${bar.tenantName} · ${bar.label}`
-  const px = (bar.endDay - bar.startDay + 1) * dayWidth
-  // 폭이 줄면 라벨을 이름만으로 줄이고, 더 줄면 통째로 바 밖에 낸다. 실측 전(첫 프레임)은
-  // 이름만 — 가장 흔한 결말이라 측정 뒤 흔들림이 가장 작다.
-  const mode: 'full' | 'name' | 'outside' =
-    dayWidth === 0 ? 'name'
-      : px >= estWidth(full) + 16 ? 'full'
-        : px >= estWidth(bar.tenantName) + 16 ? 'name'
-          : 'outside'
-  // 바 밖 라벨은 오른쪽이 기본이고, 오른쪽에 자리가 없으면 왼쪽에 붙는다.
-  const outRight = mode === 'outside' && bar.endDay < dim && laneNextStart > bar.endDay + 1
-  const outLeft = mode === 'outside' && !outRight && bar.startDay > 1
 
   return (
     <>
@@ -265,12 +306,12 @@ function Bar({ bar, dim, dayWidth, laneNextStart, onOpen }: {
         }}>
         {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
       </button>
-      {(outRight || outLeft) && (
+      {side && ink && (
         <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none"
           style={{
-            gridColumn: outRight ? `${bar.endDay + 2} / ${Math.min(laneNextStart, dim + 1) + 1}` : `2 / ${bar.startDay + 1}`,
+            gridColumn: `${ink.startDay + 1} / ${ink.endDay + 2}`,
             gridRow: `${bar.lane + 1} / span 1`,
-            textAlign: outRight ? 'left' : 'right',
+            textAlign: side === 'right' ? 'left' : 'right',
             color: 'var(--ink-s)',
           }}>
           {full}
