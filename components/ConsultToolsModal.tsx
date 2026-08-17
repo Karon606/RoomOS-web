@@ -16,7 +16,8 @@ import { Btn, btnClass } from '@/components/ui/Btn'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
 import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
-import { shareOrDownloadFile } from '@/lib/shareFile'
+import { shareOrDownloadFile, shareFiles } from '@/lib/shareFile'
+import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { getConsultInfo, type ConsultInfo } from '@/app/(app)/consultInfo'
 
 // 행 하나. value 가 비면 목록에서 빠진다 — '미설정' 을 띄우면 탭해도 복사할 것이 없어
@@ -89,6 +90,22 @@ async function fetchBizCertBlob(): Promise<Blob> {
   return res.blob()
 }
 
+// 보낼 준비 완료 형태 — PDF 는 여기서 이미 이미지로 변환돼 있다.
+type PreparedCert = { blobs: Blob[]; mime: string; ext: string; original: Blob; originalMime: string }
+
+// PDF 는 이미지로 변환해 첨부한다(운영자 실사용 보고 2026-08-18 — 문자메시지가 PDF 첨부를 간혹
+// 거부한다). 공유 시트는 목적지를 미리 알 수 없으므로 항상 이미지가 안전하고, 이미지 원본은 그대로다.
+// 변환은 프리페치 단계에서 끝낸다 — 탭 후 변환을 시작하면 제스처 허용 시간이 지나 다운로드로 샌다.
+async function prepareBizCert(fallbackMime: string | null): Promise<PreparedCert> {
+  const blob = await fetchBizCertBlob()
+  const mime = blob.type || fallbackMime || 'application/pdf'
+  if (mime === 'application/pdf') {
+    const pages = await pdfToPngBlobs(await blob.arrayBuffer())
+    return { blobs: pages, mime: 'image/png', ext: 'png', original: blob, originalMime: mime }
+  }
+  return { blobs: [blob], mime, ext: CERT_EXT[mime] ?? 'png', original: blob, originalMime: mime }
+}
+
 export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [info, setInfo] = useState<ConsultInfo | null>(null)
   const [loading, setLoading] = useState(false)
@@ -98,7 +115,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
   // 사업자등록증을 탭 전에 미리 받아 둔다. 공유 시트는 탭 직후에만 열 수 있어(lib/shareFile 제스처
   // 규칙) 탭하고 나서 내려받기 시작하면 허용 시간이 지나 전송이 다운로드로 새어 나간다.
   // 서류 보내기 시트가 체크하는 순간부터 준비를 거는 것과 같은 이유다(lib/docShareQueue).
-  const certRef = useRef<Promise<Blob> | null>(null)
+  const certRef = useRef<Promise<PreparedCert> | null>(null)
 
   const load = useCallback(() => {
     // 열 때마다 버린다 — 환경설정에서 등록증을 교체한 직후에 옛 파일이 나가면 안 된다(값 재조회와 같은 이유).
@@ -109,7 +126,8 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
         if (res.ok) {
           setInfo(res.info)
           if (res.info.bizCertMimeType) {
-            const p = fetchBizCertBlob()
+            if (res.info.bizCertMimeType === 'application/pdf') prewarmPdfToPng()
+            const p = prepareBizCert(res.info.bizCertMimeType)
             p.catch(() => { /* 탭 전 실패는 조용히 — 탭 시점에 같은 프라미스를 다시 기다려 알린다 */ })
             certRef.current = p
           }
@@ -135,22 +153,33 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
     }
   }
 
-  // 올린 형식 그대로 내보낸다 — 사진·PDF 변환을 끼우지 않는다(원본이 곧 상대가 받을 서류다).
-  // 공유 시트를 못 여는 기기는 shareOrDownloadFile 이 다운로드로 받아 준다 — 한 건짜리 '보내기'가
-  // 늘 그렇게 한다(components/ui/SendDocButton). 여러 건일 때만 폴백이 없어 진입을 감춘다.
+  // PDF 는 이미지로 변환해 내보낸다(prepareBizCert 주석 참조 — 문자메시지의 PDF 첨부 거부).
+  // 이미지 원본은 그대로다. 한 장이면 shareOrDownloadFile(다운로드 폴백 포함, SendDocButton 문법),
+  // PDF 가 여러 장이면 이미지 여러 장을 shareFiles 로 — 그 폴백은 원본 PDF 저장이다.
   const sendBizCert = async () => {
     if (!info) return
     setSending(true)
     try {
-      const pending = certRef.current ?? fetchBizCertBlob()
+      const pending = certRef.current ?? prepareBizCert(info.bizCertMimeType)
       certRef.current = pending
-      const blob = await pending
-      const mime = blob.type || info.bizCertMimeType
-      const ext = CERT_EXT[mime] ?? 'pdf'
+      const prep = await pending
       const base = info.propertyName ? `${info.propertyName}_사업자등록증` : '사업자등록증'
-      const result = await shareOrDownloadFile(blob, `${base}.${ext}`, mime)
-      if (result === 'downloaded') {
-        pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
+      if (prep.blobs.length === 1) {
+        const result = await shareOrDownloadFile(prep.blobs[0], `${base}.${prep.ext}`, prep.mime)
+        if (result === 'downloaded') {
+          pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
+        }
+      } else {
+        const files = prep.blobs.map((b, i) => new File([b], `${base}_${i + 1}.${prep.ext}`, { type: prep.mime }))
+        const result = await shareFiles(files)
+        if (result === 'retry') {
+          pushToast('info', '한 번 더 눌러 주세요.')
+        } else if (result === 'unsupported') {
+          // 여러 장 저장은 브라우저가 연속 다운로드를 막는다 — 원본 한 파일로 받는 것이 폴백이다.
+          const ext = CERT_EXT[prep.originalMime] ?? 'pdf'
+          await shareOrDownloadFile(prep.original, `${base}.${ext}`, prep.originalMime)
+          pushToast('info', '이 기기에서는 바로 보낼 수 없어 원본 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
+        }
       }
     } catch (err) {
       certRef.current = null   // 다음 탭에서 다시 받는다
@@ -224,7 +253,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
                   <span className="block text-sm font-medium text-[var(--warm-dark)]">
                     {sending ? '준비 중…' : '사업자등록증 보내기'}
                   </span>
-                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">문자·메일에 파일 그대로 첨부됩니다</span>
+                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">문자·메일에 이미지로 첨부됩니다</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
