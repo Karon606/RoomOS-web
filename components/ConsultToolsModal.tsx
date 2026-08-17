@@ -141,8 +141,11 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
               <CopyRow key={r.key} label={r.label} value={r.value} valueClass={r.valueClass}
                 onCopy={() => copy(r.value, r.toast)} />
             ))}
+            {/* 안내문은 한글을 어절 단위(break-keep)로 접는데 URL 줄만 끊을 자리가 없어 320px 에서
+                34px 삐져나갔다(헤드리스 실측). overflow-wrap:anywhere 는 다른 접을 자리가 없을 때만
+                발동해 한글 줄은 그대로 두고 URL 만 접는다. */}
             {showIntro && (
-              <CopyRow label="안내문 한 번에" value={introText} valueClass="whitespace-pre-line break-keep"
+              <CopyRow label="안내문 한 번에" value={introText} valueClass="whitespace-pre-line break-keep [overflow-wrap:anywhere]"
                 onCopy={() => copy(introText, '안내문 복사됨')} />
             )}
           </div>
