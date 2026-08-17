@@ -13,6 +13,23 @@
 | 사업자등록번호 | `businessInfo.registrationNo` (`lib/bizNo` 정규화 통과값) | 손 포맷 |
 | 대표 연락처 | `Property.phone` | |
 | 공개 소개 페이지 URL | `lib/publicSite.publicSiteUrl(publicSlug)` | 화면마다 손조립 |
+| 사업자등록증 사본 | `Property.bizCertDriveFileId` + `bizCertMimeType`, 열람은 `/api/biz-cert` | Drive 공개 URL |
+
+## 사업자등록증은 값이 아니라 파일이다 (2026-08-18 추가)
+
+위 다섯은 복사해서 붙이는 문자열인데 등록증은 **첨부로 나가는 파일**이다. 그래서 규칙이 다르다.
+
+- 원천은 영업장당 한 건이다. `/api/biz-cert` 는 **파일 ID 를 인자로 받지 않는다** — 요청자가
+  접근할 수 있는 그 영업장 것만 내려준다. 임의 Drive ID 를 끼워 넣을 자리를 없앤 것이다.
+- 공개 권한을 붙이지 않는다. 상호·대표자·소재지가 한 장에 모인 서류다([[public-asset-exposure]]).
+- `bizCertMimeType` 은 **Drive 가 판정한 값**을 저장한다. 클라이언트가 부르는 mime 을 믿으면
+  그 값이 그대로 전송 `Content-Type` 이 된다.
+- 4MB 상한. 도장·로고(5MB)보다 낮은 이유는 이 파일만 서버리스 함수가 바이트를 통째로 실어
+  응답하기 때문이다(그 경로 실질 한도 4.5MB).
+- 형식을 바꾸지 않고 올린 그대로 보낸다. 서류 3종과 달리 PNG 변환 선택지를 주지 않는다 —
+  등록증은 우리가 그린 서류가 아니라 받아 둔 원본이다.
+- `businessInfo.address` 가 '사업자등록증 표기 주소' 인 것과 헷갈리지 마라. 그건 문자열,
+  이건 그 문자열이 인쇄된 종이의 사본이다.
 
 ## 왜 계좌는 FinancialAccount 가 아닌가
 

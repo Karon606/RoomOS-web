@@ -3,18 +3,20 @@
 // 상담 도구 — 카톡·네이버톡 상담 중 자주 알려주는 영업장 값을 탭 한 번에 복사하는 모음.
 // 한 손으로 쓰는 도구라 값마다 별도 버튼을 찾게 하지 않고 행 전체가 복사 타겟이다.
 // 코너 안에 단기 요금 계산 진입을 함께 둔다(운영자 제안, 오류신고 ce05bb74).
+// 구분선 아래는 복사가 아닌 줄이다 — 사업자등록증 보내기(파일 첨부)와 단기 요금 계산(운영자 오더 2026-08-18).
 //
 // 표시되는 값이 곧 복사되는 값이다 — 말줄임을 쓰지 않는다. 화면에 '3333-01-234…' 를
 // 남기면 눈으로 본 것과 클립보드에 담긴 것이 갈린다(§06 축약 금지 구역과 같은 사고).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
+import { shareOrDownloadFile } from '@/lib/shareFile'
 import { getConsultInfo, type ConsultInfo } from '@/app/(app)/consultInfo'
 
 // 행 하나. value 가 비면 목록에서 빠진다 — '미설정' 을 띄우면 탭해도 복사할 것이 없어
@@ -73,17 +75,46 @@ function CopyRow({ label, value, valueClass, onCopy }: {
   )
 }
 
+// 사업자등록증 첨부 파일명의 확장자. mime 을 그대로 쪼개면 image/jpeg 가 '.jpeg' 가 되고
+// 받는 쪽 앱이 낯설게 다루는 일이 있어 흔한 형식만 손으로 짝지어 둔다.
+const CERT_EXT: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+  'image/heic': 'heic', 'image/gif': 'gif',
+}
+
+async function fetchBizCertBlob(): Promise<Blob> {
+  const res = await fetch('/api/biz-cert')
+  if (!res.ok) throw new Error('사업자등록증을 불러오지 못했습니다.')
+  return res.blob()
+}
+
 export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [info, setInfo] = useState<ConsultInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const [quoteOpen, setQuoteOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  // 사업자등록증을 탭 전에 미리 받아 둔다. 공유 시트는 탭 직후에만 열 수 있어(lib/shareFile 제스처
+  // 규칙) 탭하고 나서 내려받기 시작하면 허용 시간이 지나 전송이 다운로드로 새어 나간다.
+  // 서류 보내기 시트가 체크하는 순간부터 준비를 거는 것과 같은 이유다(lib/docShareQueue).
+  const certRef = useRef<Promise<Blob> | null>(null)
 
   const load = useCallback(() => {
+    // 열 때마다 버린다 — 환경설정에서 등록증을 교체한 직후에 옛 파일이 나가면 안 된다(값 재조회와 같은 이유).
+    certRef.current = null
     setFailed(false); setLoading(true)
     getConsultInfo()
       .then(res => {
-        if (res.ok) { setInfo(res.info); return }
+        if (res.ok) {
+          setInfo(res.info)
+          if (res.info.bizCertMimeType) {
+            const p = fetchBizCertBlob()
+            p.catch(() => { /* 탭 전 실패는 조용히 — 탭 시점에 같은 프라미스를 다시 기다려 알린다 */ })
+            certRef.current = p
+          }
+          return
+        }
         setInfo(null); setFailed(true); pushToast('error', res.error)
       })
       .catch(() => { setInfo(null); setFailed(true); pushToast('error', '영업장 정보를 불러오지 못했습니다.') })
@@ -102,6 +133,34 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
     } catch {
       pushToast('error', '복사에 실패했습니다. 길게 눌러 직접 복사해 주세요.')
     }
+  }
+
+  // 올린 형식 그대로 내보낸다 — 사진·PDF 변환을 끼우지 않는다(원본이 곧 상대가 받을 서류다).
+  // 공유 시트를 못 여는 기기는 shareOrDownloadFile 이 다운로드로 받아 준다 — 한 건짜리 '보내기'가
+  // 늘 그렇게 한다(components/ui/SendDocButton). 여러 건일 때만 폴백이 없어 진입을 감춘다.
+  const sendBizCert = async () => {
+    if (!info) return
+    setSending(true)
+    try {
+      const pending = certRef.current ?? fetchBizCertBlob()
+      certRef.current = pending
+      const blob = await pending
+      const mime = blob.type || info.bizCertMimeType
+      const ext = CERT_EXT[mime] ?? 'pdf'
+      const base = info.propertyName ? `${info.propertyName}_사업자등록증` : '사업자등록증'
+      const result = await shareOrDownloadFile(blob, `${base}.${ext}`, mime)
+      if (result === 'downloaded') {
+        pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
+      }
+    } catch (err) {
+      certRef.current = null   // 다음 탭에서 다시 받는다
+      pushToast('error', (err as Error).message ?? '사업자등록증을 보내지 못했습니다.')
+    }
+    // finally 로 묶지 않는다 — try/finally 안의 setState 를 보면 react-hooks 컴파일러 규칙이
+    // 이 컴포넌트 전체 분석을 포기해, 위 useEffect 의 set-state-in-effect 검사까지 조용히 꺼졌다
+    // (eslint 가 그 disable 지시를 '쓰이지 않음'으로 보고해 드러났다). catch 가 전부 삼키므로
+    // 여기까지 오는 길은 하나뿐이고 결과는 finally 와 같다.
+    setSending(false)
   }
 
   const items = info ? copyItems(info) : []
@@ -151,8 +210,32 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
           </div>
         )}
 
-        {/* 단기 요금 계산 — 홈 월 선택 줄에 홀로 서 있던 도구를 이 코너 안으로 들였다(운영자 제안). */}
+        {/* 탭이 곧 동작인 줄들 — 위 목록은 복사, 여기는 복사가 아니다. 그래서 구분선 아래에 따로 선다.
+            모달 부제('탭하면 클립보드에 복사됩니다')가 위 목록의 약속이라 섞으면 그 약속이 거짓말이 된다. */}
         <div className="border-t border-[var(--warm-border)]">
+          {/* 사업자등록증 — 파일이 있을 때만 선다(값 없는 복사 줄을 빼는 규칙과 같다).
+              라벨에 '보내기'를 박는다 — 한 코너에서 위는 복사, 이 줄은 전송이라 라벨이 갈라 줘야 한다.
+              동사는 서류 어휘 정본을 따른다('공유' 금지, '보내기'가 정본). */}
+          {info?.bizCertMimeType && (
+            <button type="button" onClick={sendBizCert} disabled={sending}
+              className={`${ROW_CLS} border-b border-[var(--warm-border)]/50 disabled:opacity-60`}>
+              <span className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-[var(--warm-dark)]">
+                    {sending ? '준비 중…' : '사업자등록증 보내기'}
+                  </span>
+                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">문자·메일에 파일 그대로 첨부됩니다</span>
+                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                  className="shrink-0 text-[var(--warm-mid)]">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </span>
+            </button>
+          )}
+
+          {/* 단기 요금 계산 — 홈 월 선택 줄에 홀로 서 있던 도구를 이 코너 안으로 들였다(운영자 제안). */}
           <button type="button" onClick={() => setQuoteOpen(true)} className={ROW_CLS}>
             <span className="flex items-center justify-between gap-3">
               <span className="min-w-0">
