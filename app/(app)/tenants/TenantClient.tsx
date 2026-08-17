@@ -2801,6 +2801,8 @@ export default function TenantClient({
                         canEdit={canEdit}
                         reloadSignal={payReloadKey}
                         onChanged={reloadPay}
+                        tenantId={paySettlement.tenantId}
+                        tenantName={paySettlement.tenantName}
                       />
                     )}
 

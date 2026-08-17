@@ -18,7 +18,9 @@ import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
-import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease } from '@/app/(app)/tenants/actions'
+import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease, recordDepositReturn } from '@/app/(app)/tenants/actions'
+import { kstYmdStr } from '@/lib/kstDate'
+import { WITHHOLD_REASONS, buildWithholdReason, CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
 
@@ -31,6 +33,7 @@ const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 
 export function DepositStatusPanel({
   leaseTermId, status, depositAmount, cleaningFee, reservationDepositMode, canEdit, reloadSignal, onChanged,
+  tenantId, tenantName,
 }: {
   leaseTermId: string
   status: string | null
@@ -42,6 +45,9 @@ export function DepositStatusPanel({
   canEdit: boolean
   reloadSignal?: number
   onChanged?: () => void
+  // 환불 정산 재기록에 필요(recordDepositReturn 파라미터). 없으면 재기록 폼이 안 선다 — 열람 전용 자리 호환.
+  tenantId?: string | null
+  tenantName?: string | null
 }) {
   const [data, setData] = useState<{ records: Rec[]; paidTotal: number; preAcquisition: boolean } | null>(null)
   const [refund, setRefund] = useState<Refund>(null)
@@ -51,6 +57,13 @@ export function DepositStatusPanel({
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
   const [editMethod, setEditMethod] = useState('')
+  // 환불 정산 재기록 폼 — 퇴실 완료 계약에서 기록이 없을 때(최초 미처리·적용취소 직후)만 선다.
+  // 종전에는 기록 입구가 퇴실 처리 과정에만 있어, 지우고 나면 어디서도 다시 못 적었다(황인정 402 실사례).
+  const [recOpen, setRecOpen] = useState(false)
+  const [recAmount, setRecAmount] = useState(0)
+  const [recDate, setRecDate] = useState('')
+  const [recReason, setRecReason] = useState('')
+  const [recEtc, setRecEtc] = useState('')
   const [pending, startTransition] = useTransition()
 
   const load = useCallback(async () => {
@@ -172,6 +185,43 @@ export function DepositStatusPanel({
     })
   }
 
+  const openRecord = () => {
+    // 기본값은 화면이 이미 보여주는 환불 예상 그대로 — 다른 숫자로 시작하면 표시와 폼이 갈린다.
+    setRecAmount(expectedRefund)
+    setRecDate(kstYmdStr())
+    setRecReason(carriedOver ? CARRIED_OVER_WITHHOLD_REASON : effectiveFee > 0 ? CLEANING_WITHHOLD_REASON : '')
+    setRecEtc('')
+    setRecOpen(true)
+  }
+  const saveRecord = async () => {
+    if (!tenantId || !tenantName) return
+    const withheldNow = Math.max(0, refundBase - recAmount)
+    const reason = buildWithholdReason(recReason, recEtc)
+    if (withheldNow > 0 && !reason) { pushToast('error', '미환불 사유를 선택해 주세요.'); return }
+    // 전액 미환불 결정만 되묻는다 — 퇴실 처리 폼과 같은 방향(몰취에만 마찰).
+    if (recAmount === 0 && refundBase > 0) {
+      if (!(await confirmDialog({
+        title: '보증금을 전액 돌려주지 않은 것으로 기록할까요?',
+        message: `${fmtWon(refundBase)}이 미환불로 기록됩니다.\n사유: ${reason}.`,
+        level: 'caution', confirmLabel: '전액 미환불로 기록',
+      }))) return
+    }
+    startTransition(async () => {
+      const res = await withSave(
+        () => recordDepositReturn({
+          leaseTermId, tenantId, depositAmount: refundBase,
+          returnedAmount: recAmount, date: recDate || kstYmdStr(), tenantName,
+          ...(withheldNow > 0 && reason ? { reason } : {}),
+        }),
+        { success: '환불 정산을 기록했습니다' },
+      )
+      if (!res.ok) return
+      setRecOpen(false)
+      setRefund(await getDepositRefundForLease(leaseTermId))
+      await load(); onChanged?.()
+    })
+  }
+
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
@@ -227,6 +277,41 @@ export function DepositStatusPanel({
       )}
       {unsettledExit && (
         <p className="text-xs text-[var(--warning-fg)] break-keep">퇴실했으나 환불 처리가 기록되지 않았습니다.</p>
+      )}
+      {/* 재기록 입구 — 퇴실 완료 + 기록 없음(적용취소 직후 포함). 취소 계약은 예약 취소 경로가 정본이라 제외. */}
+      {canEdit && unsettledExit && status === 'CHECKED_OUT' && tenantId && tenantName && !recOpen && (
+        <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 정산 기록</Btn>
+      )}
+      {recOpen && (
+        <div className="space-y-1.5 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-2.5 py-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <div>
+              <label className="text-[0.65625rem] text-[var(--warm-muted)]">반환액</label>
+              <input type="number" inputMode="numeric" value={recAmount}
+                onChange={e => setRecAmount(Math.max(0, Number(e.target.value) || 0))} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[0.65625rem] text-[var(--warm-muted)]">처리일</label>
+              <DatePicker name="refundRecordDate" value={recDate} onChange={setRecDate} className={inputCls} />
+            </div>
+          </div>
+          {Math.max(0, refundBase - recAmount) > 0 && (
+            <div className="space-y-1">
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">미환불 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
+              <select value={recReason} onChange={e => setRecReason(e.target.value)} className={inputCls}>
+                <option value="">사유 선택</option>
+                {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              {recReason === '기타' && (
+                <input value={recEtc} onChange={e => setRecEtc(e.target.value)} placeholder="사유 입력" className={inputCls} />
+              )}
+            </div>
+          )}
+          <div className="flex gap-1.5">
+            <Btn variant="primary" size="sm" disabled={pending} onClick={() => { void saveRecord() }}>기록</Btn>
+            <Btn variant="subtle" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
+          </div>
+        </div>
       )}
 
       {/* 퇴실 시 환불 예상 — 굵기를 올리지 않는다. 확정액이 아니라 예상이고, 실제 환불은 이용료 정산까지 얽힌다.

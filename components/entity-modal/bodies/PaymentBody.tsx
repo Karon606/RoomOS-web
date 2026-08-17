@@ -133,6 +133,8 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         canEdit={canEdit}
         reloadSignal={reloadKey}
         onChanged={refresh}
+        tenantId={settlement.tenantId}
+        tenantName={settlement.tenantName}
       />
 
       {/* 입주월 전 조회 — 예정액이 이번 달 청구로 오독되지 않게 맥락 명시(운영자 지적 2026-07-30) */}
