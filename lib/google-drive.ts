@@ -194,6 +194,20 @@ export async function isOwnedByApp(fileId: string): Promise<boolean> {
   }
 }
 
+// 우리 소유 여부 + Drive 가 판정한 mimeType 을 한 번에 — 이미지·PDF 를 함께 받는 파일용.
+// isOwnedByApp 와 같은 files.get 인데 mime 까지 필요한 자리에서 왕복을 두 번 하지 않으려는 것이다.
+// null = 우리 소유가 아니거나 휴지통이거나 조회 실패(호출부가 편입을 거절한다).
+export async function ownedDriveFileMime(fileId: string): Promise<string | null> {
+  try {
+    const drive = getDriveClient()
+    const res = await drive.files.get({ fileId, fields: 'ownedByMe, trashed, mimeType' })
+    if (res.data.ownedByMe !== true || res.data.trashed === true) return null
+    return res.data.mimeType ?? null
+  } catch {
+    return null
+  }
+}
+
 // 공개 권한 회수 — anyone 권한만 지운다(소유자·공유 권한은 건드리지 않는다).
 export async function revokeDrivePublicAccess(fileId: string): Promise<boolean> {
   const drive = getDriveClient()

@@ -17,6 +17,7 @@ import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategor
 import { kstMonthStr } from '@/lib/kstDate'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, trashInDrive, buildDriveThumbnailUrl, driveImageDataUrl,
+  ownedDriveFileMime,
 } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
@@ -795,6 +796,8 @@ export type ContractSettings = {
   businessInfo: BusinessInfo
   stampDriveFileId: string | null
   stampThumbnailUrl: string | null
+  /** 사업자등록증 사본 — null 이면 미등록. mimeType 으로 화면이 이미지·PDF 를 가른다. */
+  bizCert: { driveFileId: string; mimeType: string } | null
 }
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = {
@@ -805,7 +808,10 @@ export async function getContractSettings(): Promise<ContractSettings> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { contractTemplate: true, businessInfo: true, stampDriveFileId: true },
+    select: {
+      contractTemplate: true, businessInfo: true, stampDriveFileId: true,
+      bizCertDriveFileId: true, bizCertMimeType: true,
+    },
   })
   const template = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
   const businessInfo = (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO
@@ -815,6 +821,11 @@ export async function getContractSettings(): Promise<ContractSettings> {
     businessInfo,
     stampDriveFileId,
     stampThumbnailUrl: stampDriveFileId ? await driveImageDataUrl(stampDriveFileId) : null,
+    // 도장과 달리 바이트를 내려받지 않는다 — PDF 도 받는 자리라 최대 4MB 를 화면 열 때마다
+    // 서버가 통째로 읽게 된다. 미리보기는 <img> 가 /api/biz-cert 프록시를 직접 물면 된다.
+    bizCert: property?.bizCertDriveFileId
+      ? { driveFileId: property.bizCertDriveFileId, mimeType: property.bizCertMimeType ?? '' }
+      : null,
   }
 }
 
@@ -855,6 +866,104 @@ export async function saveBusinessInfo(info: BusinessInfo): Promise<{ ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+// ── 사업자등록증 사본 (도장과 같은 업로드 축, 이미지·PDF 둘 다 받음) ──────
+//
+// 상담 중 문자·메일 첨부로 그대로 나가는 원본이라 변환하지 않고 올린 형식 그대로 둔다.
+// 도장처럼 공개 읽기 권한을 붙이지 않는다 — 사업자등록증은 상호·대표자·소재지가 한 장에 모인
+// 서류라 링크만 알면 열리는 상태로 두면 안 된다. 화면도 전송도 /api/biz-cert 인증 프록시를 쓴다.
+//
+// 4MB 상한의 사정: 이 파일은 서버리스 함수가 바이트를 통째로 실어 응답한다(그 경로의 실질 한도가
+// 4.5MB). 도장·로고의 5MB 를 그대로 쓰면 경계 부근 파일이 업로드는 되고 전송에서만 터진다.
+const MAX_BIZ_CERT_BYTES = 4 * 1024 * 1024
+const BIZ_CERT_MIME_OK = (m: string) => m.startsWith('image/') || m === 'application/pdf'
+
+export async function createBizCertUploadSession(input: {
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!BIZ_CERT_MIME_OK(input.mimeType)) return { ok: false, error: '이미지 또는 PDF 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_BIZ_CERT_BYTES) return { ok: false, error: `파일 크기는 ${MAX_BIZ_CERT_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const propertyId = await getPropertyId()
+    const ext = input.fileName.split('.').pop() ?? 'pdf'
+    const uniqueName = `bizcert_${propertyId}_${Date.now()}.${ext}`
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      origin: input.origin,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeBizCert(driveFileId: string): Promise<{ ok: true; mimeType: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const propertyId = await getPropertyId()
+    // mime 은 클라이언트가 부르는 대로 믿지 않는다 — 저장된 값이 곧 전송 Content-Type 이 된다.
+    // 같은 호출이 소유 검증도 겸한다(임의 Drive ID 를 우리 영업장 레코드로 편입하는 것을 막는 정본).
+    const mimeType = await ownedDriveFileMime(driveFileId)
+    if (!mimeType) return { ok: false, error: '업로드된 파일을 확인하지 못했습니다.' }
+    if (!BIZ_CERT_MIME_OK(mimeType)) {
+      try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
+      return { ok: false, error: '이미지 또는 PDF 파일만 업로드 가능합니다.' }
+    }
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { bizCertDriveFileId: true },
+    })
+    // 교체된 원본은 영구 삭제가 아니라 휴지통으로 — 도장과 같은 규칙(30일 유예).
+    if (prev?.bizCertDriveFileId && prev.bizCertDriveFileId !== driveFileId) {
+      try { await trashInDrive(prev.bizCertDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { bizCertDriveFileId: driveFileId, bizCertMimeType: mimeType },
+    })
+    revalidatePath('/settings')
+    return { ok: true, mimeType }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (driveFileId) {
+      try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function deleteBizCert(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { bizCertDriveFileId: true },
+    })
+    if (prev?.bizCertDriveFileId) {
+      try { await trashInDrive(prev.bizCertDriveFileId) } catch { /* 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { bizCertDriveFileId: null, bizCertMimeType: null },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
   }
 }
 
