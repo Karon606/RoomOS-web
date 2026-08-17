@@ -18,6 +18,7 @@ import { StayQuoteModal } from '@/components/StayQuoteModal'
 import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
 import { shareOrDownloadFile, shareFiles } from '@/lib/shareFile'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
+import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { getConsultInfo, type ConsultInfo } from '@/app/(app)/consultInfo'
 
 // 행 하나. value 가 비면 목록에서 빠진다 — '미설정' 을 띄우면 탭해도 복사할 것이 없어
@@ -153,9 +154,10 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
     }
   }
 
-  // PDF 는 이미지로 변환해 내보낸다(prepareBizCert 주석 참조 — 문자메시지의 PDF 첨부 거부).
-  // 이미지 원본은 그대로다. 한 장이면 shareOrDownloadFile(다운로드 폴백 포함, SendDocButton 문법),
-  // PDF 가 여러 장이면 이미지 여러 장을 shareFiles 로 — 그 폴백은 원본 PDF 저장이다.
+  // PDF 로 올린 등록증은 보낼 때 형식을 고른다(운영자 오더 2026-08-18 — 문자엔 사진이 확실하고
+  // 메일엔 PDF 원본이 맞는다). 물음은 SendDocButton 의 choiceDialog 정본(§14) 그대로이고, 선택
+  // 버튼 탭이 새 제스처라 공유 시트가 바로 열린다. 이미지로 올린 등록증은 물을 것이 없어 그대로 나간다.
+  // 사진 변환은 프리페치가 이미 끝내 두었다(prepareBizCert).
   const sendBizCert = async () => {
     if (!info) return
     setSending(true)
@@ -164,7 +166,24 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
       certRef.current = pending
       const prep = await pending
       const base = info.propertyName ? `${info.propertyName}_사업자등록증` : '사업자등록증'
-      if (prep.blobs.length === 1) {
+      let asImage = true
+      if (prep.originalMime === 'application/pdf') {
+        const format = await choiceDialog({
+          title: '어떤 형식으로 보낼까요?',
+          message: `문자메시지로 보낼 때는 사진이 확실합니다. PDF는 일부 휴대폰·문자 앱에서 첨부가 안 될 수 있고, 이메일에는 PDF 원본이 깔끔합니다.${prep.blobs.length > 1 ? ` 사진은 장수만큼(${prep.blobs.length}장) 만들어집니다.` : ''}`,
+          confirmLabel: '사진으로',
+          altLabel: 'PDF로',
+        })
+        if (!format || format === 'back') { setSending(false); return }
+        asImage = format === 'confirm'
+      }
+      if (!asImage) {
+        const ext = CERT_EXT[prep.originalMime] ?? 'pdf'
+        const result = await shareOrDownloadFile(prep.original, `${base}.${ext}`, prep.originalMime)
+        if (result === 'downloaded') {
+          pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
+        }
+      } else if (prep.blobs.length === 1) {
         const result = await shareOrDownloadFile(prep.blobs[0], `${base}.${prep.ext}`, prep.mime)
         if (result === 'downloaded') {
           pushToast('info', '이 기기에서는 바로 보낼 수 없어 파일로 저장했습니다.', { duration: TOAST_DUR_LONG })
@@ -253,7 +272,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
                   <span className="block text-sm font-medium text-[var(--warm-dark)]">
                     {sending ? '준비 중…' : '사업자등록증 보내기'}
                   </span>
-                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">문자·메일에 이미지로 첨부됩니다</span>
+                  <span className="block text-xs leading-normal break-keep text-[var(--warm-muted)]">{info?.bizCertMimeType === 'application/pdf' ? '보낼 때 사진과 PDF 중 고릅니다' : '문자·메일에 파일 그대로 첨부됩니다'}</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
