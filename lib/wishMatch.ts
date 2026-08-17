@@ -27,6 +27,15 @@ import { availableFromLabel, roomAvailability, type RoomAvailability } from '@/l
 export const WISH_LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as const
 
 /**
+ * 이 저장 결과가 리드 게이트를 떠나는가 — 떠나면 조절 여부(moveInFlexible)를 함께 접어야 한다.
+ * 매칭(wishDateGate)은 리드에서만 이 값을 읽으므로, 그 밖의 상태(예약 확정 포함)에 남은 값은
+ * 화면에 '조절 가능'만 계속 말하는 거짓 표시다. check-wish-match-drift 축 3과 같은 판정.
+ */
+export function leavesWishLead(status: string, reservationConfirmedAt: Date | null): boolean {
+  return !(WISH_LEAD_STATUSES as readonly string[]).includes(status) || reservationConfirmedAt != null
+}
+
+/**
  * 희망일보다 방이 늦게 비어도 후보로 남겨 두는 최대 일수.
  * 30일 = 한 달. 그 이상 기다리라고 연락하는 것은 매칭이 아니라 다른 방 안내다(운영자 승인 2026-08-11).
  */

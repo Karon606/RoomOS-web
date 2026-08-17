@@ -21,7 +21,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
-import { loadWishMatch, WISH_LEAD_STATUSES, type WishLeaseMatch } from '@/lib/wishMatch'
+import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { propagateMoveInDateToSubLeases } from '@/lib/moveInDate'
 
@@ -469,7 +469,8 @@ function readLeaseFields(formData: FormData) {
       wishRooms: wishRooms || null,
       wishConditions: wishConditions || null,
       keepAlertAfterInquiry,
-      moveInFlexible: moveInFlexible ?? null,
+      // 리드 밖(거주중 직등록·예약 확정 등)이면 접는다 — 매칭이 안 읽는 자리의 잔존은 거짓 표시(감지망 축 3)
+      moveInFlexible: leavesWishLead(status, isReservedConfirmed ? new Date() : null) ? null : (moveInFlexible ?? null),
       visitRoute: visitRoute || null,
     },
   }
@@ -1224,7 +1225,10 @@ export async function updateTenant(formData: FormData): Promise<
         wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
         wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
         keepAlertAfterInquiry,
-        ...(moveInFlexible === undefined ? {} : { moveInFlexible }),
+        // 리드를 떠나는 저장(비리드 상태·예약 확정)은 조절 여부를 접는다 — 잔존은 거짓 표시(감지망 축 3)
+        ...(leavesWishLead(status, isReservedConfirmed ? new Date() : null)
+          ? { moveInFlexible: null }
+          : (moveInFlexible === undefined ? {} : { moveInFlexible })),
         visitRoute: visitRoute || null,
         // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등).
         // 단기 동기화 시엔 건너뛴다 — 일할이 락보다 우선이라 남으면 방금 올린 연장 청구가 통째로 무시된다.
@@ -1828,7 +1832,8 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
-    data: { status: 'ACTIVE', ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
+    // moveInFlexible: 리드를 떠나므로 접는다(감지망 축 3, lib/wishMatch.leavesWishLead 판정과 동일)
+    data: { status: 'ACTIVE', moveInFlexible: null, ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
   })
   // 이 계약에 딸린 계약도 같은 날로 — 부모가 비어 있다 날을 갖는 것도 납부일 변경이다.
   if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
@@ -1913,7 +1918,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
     const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
-      data: { status: 'ACTIVE', ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
+      data: { status: 'ACTIVE', moveInFlexible: null, ...(derivedDueDay ? { dueDay: derivedDueDay } : {}) },
     })
     // 딸린 계약도 같은 날로(moveInTenant 와 같은 한 벌).
     if (derivedDueDay) await propagateDueDayToSubLeases(prisma, leaseTermId, lease.dueDay, derivedDueDay)
@@ -1966,7 +1971,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   // moveOutDate = 실제 퇴실일(호출부 입력, 기본 오늘). 예정일 복사 금지 — 계약상 예정일과 실제 퇴실은 다르다(2026-07-28 오더).
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
-    data: { status: 'CHECKED_OUT', moveOutDate: moveOutDate ? new Date(moveOutDate) : new Date() },
+    data: { status: 'CHECKED_OUT', moveInFlexible: null, moveOutDate: moveOutDate ? new Date(moveOutDate) : new Date() },
   })
 
   // [Trigger A] 퇴실 완료 시 예약된 가격이 있으면 baseRent에 적용하고 예약 필드 초기화
@@ -2053,7 +2058,7 @@ export async function applyStatusTransition(input: {
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: input.leaseTermId },
       select: {
-        roomId: true, status: true, dueDay: true, rentAmount: true, moveInDate: true,
+        roomId: true, status: true, dueDay: true, rentAmount: true, moveInDate: true, reservationConfirmedAt: true,
         expectedMoveOut: true, isShortTerm: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
@@ -2095,6 +2100,13 @@ export async function applyStatusTransition(input: {
       data.moveOutDate = new Date()
     }
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
+    // 리드를 떠나는 전환은 조절 여부를 접는다 — 매칭이 안 읽는 자리의 잔존은 거짓 표시(감지망 축 3)
+    {
+      const finalReservedAt = input.reservationConfirmedAt !== undefined
+        ? (input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null)
+        : lease.reservationConfirmedAt
+      if (leavesWishLead(input.toStatus, finalReservedAt)) data.moveInFlexible = null
+    }
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
     // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생 — 거주 전 단계는 납부일을 비워두므로(2026-07-30) 진입 시 채운다
     if (['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(input.toStatus) && !lease.dueDay && finalMoveInDate) {
@@ -3805,7 +3817,11 @@ export async function batchUpdateTenants(
     const leaseFields: Record<string, unknown> = {}
     if ('depositAmount' in data && data.depositAmount != null) leaseFields.depositAmount = data.depositAmount
     if ('dueDay' in data) leaseFields.dueDay = data.dueDay
-    if ('status' in data && data.status) leaseFields.status = data.status
+    if ('status' in data && data.status) {
+      leaseFields.status = data.status
+      // 리드 밖 상태로의 일괄 전환은 조절 여부를 접는다(감지망 축 3) — 일괄엔 예약 확정 토글이 없어 상태만 본다
+      if (leavesWishLead(data.status, null)) leaseFields.moveInFlexible = null
+    }
     // 퇴실 예정일 — 퇴실 예정 전환과 함께일 때만. 단건 경로(updateTenant)와 동일하게 단기 자동 전환 기록 리셋(재무장)
     if (data.status === 'CHECKOUT_PENDING' && data.expectedMoveOut) {
       leaseFields.expectedMoveOut = new Date(data.expectedMoveOut)
