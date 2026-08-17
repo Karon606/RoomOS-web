@@ -19,6 +19,8 @@ type Lease = {
   moveOutDate: Date | string | null
   expectedMoveOut: Date | string | null
   inquiryAt: Date | string | null
+  tourDate?: Date | string | null                    // 투어 예정일 — 문의 단계에서만 값이 있다
+  tourTime?: string | null                           // 투어 예정 시각 'HH:MM'(KST) — null=시간 미정
   moveInFlexible?: boolean | null                    // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
   contactAlertDate?: Date | string | null            // 연락 알림 시작일 지정(없으면 기본)
   property?: { contactLeadDays: number } | null      // 영업장 기본 리드타임
@@ -52,9 +54,22 @@ const fmtDueDay = (dueDay: string | null) => {
 }
 // 거주기간 표시 — lib/stayPeriod 정본(달력 기준 만 개월, 신고 f9803357) 위임
 const calcStayPeriod = (moveIn: Date | string | null, end?: Date | string | null) => fmtStayPeriod(moveIn, end)
+// 투어 예정 한 줄 — 날짜에 시각이 있으면 붙인다. 시각은 'HH:MM'(KST) 문자열이라 날짜와 달리
+// 시간대 변환이 없다. 오전/오후 표기는 형제(입실 문의 일시)와 같은 문법이다.
+const fmtTourAt = (d: Date | string | null | undefined, hm: string | null | undefined) => {
+  if (!d) return '—'
+  const base = fmtDate(d as Date | string)
+  if (!hm) return base
+  const [h, m] = hm.split(':').map(Number)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return base
+  return `${base} ${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`
+}
 
 export function TenantContractInfo({ lease }: { lease: Lease }) {
   const isPending = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
+  // 아직 들어오기 전(또는 끝난) 계약인가 — 문의 일시·투어 예정일이 뜨는 조건 한 벌.
+  // 거주 단계에 투어 예정일을 남기면 이미 지난 약속이 앞으로의 일정처럼 읽힌다.
+  const isLead = !['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status)
   return (
     <Section title="계약 정보">
       <Grid>
@@ -66,12 +81,13 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
             단기도 숨김 — 입주월 1회 전액 청구라 '매월 N일'이 성립하지 않는다. */}
         {!isPending && !lease.isShortTerm && <Item label="납부일" value={fmtDueDay(lease.dueDay)} />}
         <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
-        {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt
-          ? <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
-          : <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />}
-        {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
-          <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />
-        )}
+        {/* 문의 일시 · 투어 예정일 · 입주 희망일 — 리드가 걸어온 순서 그대로 선다.
+            종전에는 문의 일시와 입주일이 삼항 한 벌로 얽혀 사이에 줄을 넣을 자리가 없었다.
+            조건을 쪼개기만 한 것이라 그려지는 항목은 종전과 같다(입주일 줄은 늘 선다).
+            투어 예정일은 입력해 두고도 열람에 없던 값이다(신고 91b72261). */}
+        {isLead && lease.inquiryAt && <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />}
+        {isLead && lease.tourDate && <Item label="투어 예정일" value={fmtTourAt(lease.tourDate, lease.tourTime)} />}
+        <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />
         {/* 일정 조절 — 매칭 날짜 게이트가 읽는 값. 미확인이면 '확인 전'이라고 말한다(빈 값으로 두면
             물어본 적 없는 것과 '불가'가 화면에서 같아 보인다). 거주 단계에는 쓰이지 않아 그리지 않는다. */}
         {isPending && lease.status !== 'CANCELLED' && lease.moveInDate && (

@@ -1994,6 +1994,8 @@ export async function getTenantDetail(tenantId: string) {
     where: { id: tenantId },
     select: {
       id: true, name: true, englishName: true, email: true,
+      // 현지 표기 이름 — 적어 넣고도 열람에서 볼 곳이 없었다(신고 4aabd1dc). 기본 정보 위젯이 그린다.
+      nativeName: true,
       gender: true, nationality: true, job: true,
       birthdate: true, isBasicRecipient: true, smoking: true, memo: true,
       foreignRegNoEnc: true,
@@ -2019,6 +2021,7 @@ export async function getTenantDetail(tenantId: string) {
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
           tourDate: true,   // e1b81629: 투어일 유무로 '문의'/'투어 예정' 파생 라벨 분기
+          tourTime: true,   // 투어 예정 시각 — 계약 정보 위젯이 날짜와 한 줄로 적는다(신고 91b72261)
           reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
 
           contactAlertDate: true,   // '연락할 때' 알림 시작일(지정) — 상세 표시용

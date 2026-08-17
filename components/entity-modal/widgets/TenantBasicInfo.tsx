@@ -24,6 +24,8 @@ type Lease = {
 type Tenant = {
   name: string
   englishName: string | null
+  // 현지 표기 이름(본국 표기 그대로). 외국인만 값이 있고, 비면 줄이 서지 않는다.
+  nativeName?: string | null
   email: string | null
   gender: string
   nationality: string | null
@@ -58,6 +60,9 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
         <Item label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{tenant.name}</span>} />
         <Item label="호실"       value={fmtRoomNo(lease?.room?.roomNo)} />
         {tenant.englishName && <Item label="영어이름" value={tenant.englishName} />}
+        {/* 현지 표기 이름 — 영어이름 바로 옆이다. 같은 사람을 부르는 표기 셋(한글·영문·현지)이라
+            읽는 눈이 한 자리에서 모아 본다. 값이 있을 때만 줄이 서는 형제 문법(영어이름·이메일) 그대로. */}
+        {tenant.nativeName && <Item label="현지 표기 이름" value={tenant.nativeName} />}
         {tenant.email && <Item label="이메일" value={tenant.email} />}
         <Item label="성별"       value={GENDER_LABEL[tenant.gender] ?? tenant.gender} />
         <Item label="국적"       value={tenant.nationality ? `${natFlag} ${tenant.nationality}` : '—'} />
