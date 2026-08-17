@@ -72,7 +72,8 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const landedRef = useRef(false)
+  /** 마지막으로 내려앉은 달. null 이면 아직 첫 착지 전이다. */
+  const landedRef = useRef<string | null>(null)
   const [todayOff, setTodayOff] = useState(false)
   const days = data.days
   const todayDay = data.todayDay
@@ -90,12 +91,21 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
   /** 오늘의 왼쪽 좌표(px). 오늘이 범위 밖이면 null. */
   const todayX = todayDay != null ? (todayDay - 1) * DAY_W : null
 
-  // 첫 착지 — 오늘을 뷰포트 왼쪽 1/4 에 둔다. 보고 있는 달이 오늘의 달이 아니면(딥링크·점프)
-  // 그 달 1일을 왼쪽에 세운다. 애니메이션 없이 즉시 — 첫 페인트가 흐르면 위치를 착각한다.
+  // 착지 — 오늘을 뷰포트 왼쪽 1/4 에 둔다. 보고 있는 달이 오늘의 달이 아니면(딥링크·점프)
+  // 그 달 1일을 호실 열 바로 오른쪽에 세운다. 애니메이션 없이 즉시 — 첫 페인트가 흐르면 위치를 착각한다.
+  //
+  // 첫 마운트뿐 아니라 **보고 있는 달이 바뀔 때마다** 다시 내려앉는다. 종전에는 마운트 한 번으로
+  // 끝나서 월 셀렉터로 9월을 골라도 트랙이 그 자리에 서 있었다(운영자 신고 2026-08-18).
+  //
+  // 반응하는 것은 URL 이 아니라 **서버가 준 focusMonth** 다. 아래 syncPosition 이 스크롤을 따라
+  // history.replaceState 로 적는 ?month= 는 라우터 상태만 바꾸고 서버 컴포넌트를 다시 돌리지 않아
+  // 이 prop 을 못 건드린다(Next 문서: replaceState 는 usePathname·useSearchParams 와만 동기화).
+  // 즉 스크롤이 만든 월 변경은 여기 안 닿는다 — 스크롤이 착지를 부르고 착지가 다시 스크롤을 부르는
+  // 피드백 루프가 애초에 성립하지 않는다. 셀렉터 점프·홈 딥링크만 router.push 라 여기에 닿는다.
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (!el || landedRef.current) return
-    landedRef.current = true
+    if (!el || landedRef.current === data.focusMonth) return
+    landedRef.current = data.focusMonth
     const focus = data.months.find(m => m.month === data.focusMonth)
     const focusHasToday = !!focus && todayDay != null
       && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
@@ -120,6 +130,9 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
     const leftDay = Math.floor((el.scrollLeft + view / 4) / DAY_W) + 1
     const m = data.months.find(mm => leftDay >= mm.startDay && leftDay < mm.startDay + mm.days)
     if (!m) return
+    // 착지 기준점을 손으로 끈 자리로 옮긴다 — 이 ref 는 '지금 트랙이 보고 있는 달'이어야
+    // 셀렉터가 그 달에서 한 칸 물러설 때(9월까지 끌고 와서 ◀ → 8월) 착지가 다시 걸린다.
+    landedRef.current = m.month
     const url = new URL(window.location.href)
     if (url.searchParams.get('month') === m.month) return
     url.searchParams.set('month', m.month)
