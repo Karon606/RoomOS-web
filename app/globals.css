@@ -428,6 +428,11 @@ html.doc-scroll body {
 }
 .room-tile:hover { outline-color: var(--coral); }
 
+/* 입퇴실 캘린더 트랙의 한 층 높이 — 데스크톱 36px(막대 24px), 터치 기기 44px(HIG 44pt).
+   미디어 쿼리라 JS 로 못 정한다(기기 판정을 렌더에 넣으면 하이드레이션이 갈린다). */
+.move-track { --mc-lane: 36px; }
+@media (pointer: coarse) { .move-track { --mc-lane: 44px; } }
+
 /* ── M7 다크모드 — html.dark 가 토글 ──────────────────────────────
    가이드: 잉크↔크림 한 쌍만 반전. persimmon은 라이트/다크 동일 hex.
    라이트 cream/ink → 다크 dark-bg/cream-on-dark.

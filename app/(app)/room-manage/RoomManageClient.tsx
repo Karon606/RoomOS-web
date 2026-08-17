@@ -5,6 +5,9 @@ import type { CleaningRow, CleaningStatus } from './cleaningConstants'
 import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/CleaningRowBody'
 import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { ViewTabs } from '@/components/ui/ViewTabs'
+import MonthSelector from '@/components/layout/MonthSelector'
+import { MoveCalendar } from '@/components/room-manage/MoveCalendar'
+import type { MoveCalendarMonth } from '@/lib/moveCalendar'
 import { kstMonthOf, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { displayName } from '@/lib/displayName'
 import { fmtRentApplyFrom } from '@/lib/fmtMoney'
@@ -73,6 +76,9 @@ async function avgBrightness(file: File): Promise<number> {
   })
 }
 const DARK_THRESHOLD = 70   // 평균 밝기 이 미만이면 어둡다고 경고
+
+/** 이 화면의 뷰 전환 탭(§25). 링크로 들어오는 진입점이 있어 서버가 초기값을 정한다. */
+export type ViewTabId = 'rooms' | 'cleaning' | 'moves'
 
 type Room = {
   id: string
@@ -380,6 +386,8 @@ export default function RoomManageClient({
   roomTiers,
   windowTypes,
   directions,
+  moveCalendar,
+  initialTab,
 }: {
   initialRooms: Room[]
   // 영업장 전체 청소 이력(삭제분 포함) — '청소' 뷰와 카드 배지의 공통 재료.
@@ -391,6 +399,10 @@ export default function RoomManageClient({
   roomTiers: string[]
   windowTypes: string[]
   directions: string[]
+  // 입퇴실 뷰 한 벌 — 조립·충돌 판정까지 서버가 끝낸 결과다(lib/moveCalendar 정본).
+  moveCalendar: MoveCalendarMonth
+  // 홈 '이달 입퇴실 N건' 링크가 ?tab=moves 로 들어온다(수납 관리 initialTab 과 같은 문법).
+  initialTab?: ViewTabId
 }) {
   const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   const hideMoney = !useCanReadScope('money')   // 제한 스태프 — 이용료·예정 이용료 표시 제거(서버 A-2에서 null)
@@ -543,7 +555,7 @@ export default function RoomManageClient({
   })()
   const [cleaningOnly, setCleaningOnly] = useState(false)
   // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
-  const [viewTab, setViewTab] = useState<'rooms' | 'cleaning'>('rooms')
+  const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
 
   const [selectMode, setSelectMode]   = useState(false)
@@ -1142,12 +1154,13 @@ export default function RoomManageClient({
         {/* min-w-0 — 안 줄어들면 탭 트랙의 max-w-full 이 좌우 여백 밖으로 밀린다(수납 관리와 같은 처방). */}
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본). 2탭이라 equal 유지(형제 서류 종류 탭 문법) */}
+          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본). equal 유지(형제 서류 종류 탭 문법) */}
           <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab} equal
-            onChange={id => setViewTab(id as 'rooms' | 'cleaning')}
+            onChange={id => setViewTab(id as ViewTabId)}
             tabs={[
               { id: 'rooms',    label: '호실' },
               { id: 'cleaning', label: '청소', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
+              { id: 'moves',    label: '입퇴실', suffix: moveCalendar.eventCount > 0 ? String(moveCalendar.eventCount) : undefined },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
@@ -1165,7 +1178,13 @@ export default function RoomManageClient({
           </Btn>
         </div>
         )}
+        {/* 월 셀렉터는 입퇴실 뷰에만 — 이 뷰만 월별 데이터다(§25 탭 좌·셀렉터 우, 전 페이지 우측 통일).
+            호실·청소 뷰의 CTA 와 같은 자리를 쓰므로 셋이 한 줄에 몰리지 않는다. */}
+        {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector /></div>}
       </div>
+
+      {/* 입퇴실 뷰 — 그 달 방별 변동. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
+      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
