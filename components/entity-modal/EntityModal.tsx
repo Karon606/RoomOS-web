@@ -28,6 +28,8 @@ import { PaymentBody } from './bodies/PaymentBody'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
+import { canShareFiles } from '@/lib/shareFile'
+import { TenantDocBundleSheet } from '@/components/doc/TenantDocBundleSheet'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
@@ -213,6 +215,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const shownLeaseId = (leaseSel && leaseOptions.some(o => o.id === leaseSel) ? leaseSel : null)
     ?? links?.entryLeaseTermId ?? links?.leaseTermId ?? null
   const shownLeaseRoomNo = leaseOptions.find(o => o.id === shownLeaseId)?.roomNo ?? links?.roomNo ?? null
+
+  // ── 서류 묶음 보내기 시트 ─────────────────────────────────────────────
+  // 열면 그 사람의 보관 서류를 계약 축으로 세워 한 번의 공유 시트로 보낸다(신고 44501308).
+  // 값은 '어느 계약 분을 기본 체크할지' — 사람 단위 진입은 null 이라 아무것도 안 고른다.
+  const [docSheetLease, setDocSheetLease] = useState<string | null | undefined>(undefined)
+  // 다건 보내기는 공유 시트 말고 폴백이 없다 — 미지원 기기(데스크톱·인앱 브라우저)는 진입점을 숨긴다.
+  // 형제 3화면과 같은 정책이고, SSR 은 기기를 알 수 없어 마운트 후 1회 판정한다.
+  const [canShare, setCanShare] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setCanShare(canShareFiles()) }, [])
 
   // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
   // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
@@ -408,6 +420,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
                   입실료 납부 확인서
                 </Btn>
               )}
+              {/* 위 셋은 서류를 만들러 가는 문이고, 이것은 이미 만들어진 서류를 보내는 문이다.
+                  종전에는 종류마다 목록 화면을 따로 열어 한 사람의 종이를 네 번에 걸쳐 보냈다. */}
+              {links?.tenantId && canShare && (
+                <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(null)}>
+                  서류 보내기
+                </Btn>
+              )}
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
                 수정
@@ -425,6 +444,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('deposit', shownLeaseId)}>
                 보증금 영수증
               </Btn>
+              {/* 여기서 연 시트는 이 면이 열어 둔 계약 분을 기본 체크한다 — 보고 있는 계약과
+                  나가는 종이가 하나여야 한다(위 두 버튼의 지목과 같은 규칙). */}
+              {canShare && (
+                <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(shownLeaseId)}>
+                  서류 보내기
+                </Btn>
+              )}
             </div>
           )}
           {/* deepLink 행 — Phase 2.4a 에서 수납 딥링크 in-place 전환으로 대체됨. 다른 kind 에 필요시 부활. */}
@@ -461,6 +487,15 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
           {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={shownLeaseId!} month={month} canEdit roomNo={shownLeaseRoomNo}
                                                 leases={leaseOptions} onSelectLease={setLeaseSel} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
         </>)}
+        {/* 서류 묶음 보내기 — 셸 안에서 겹쳐 세운다(발급 상세 시트와 같은 층 문법: 셸 패널 안에
+            그리면 셸의 층 안에서 그 위에 올라간다). undefined = 닫힘, null = 지목 없는 사람 단위 진입. */}
+        {docSheetLease !== undefined && links?.tenantId && (
+          <TenantDocBundleSheet
+            tenantId={links.tenantId}
+            preselectLeaseTermId={docSheetLease}
+            onClose={() => setDocSheetLease(undefined)}
+          />
+        )}
       </div>
     </Modal>
   )
