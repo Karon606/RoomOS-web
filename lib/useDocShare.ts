@@ -5,7 +5,7 @@
 // 자동 share 절대 금지: 준비가 끝나도 사용자가 '보내기'를 탭할 때만 send() 를 호출한다(제스처 만료 재발 방지).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DocShareQueue } from './docShareQueue'
+import { DocShareQueue, shareFileNames } from './docShareQueue'
 import { shareFiles } from './shareFile'
 import { pushToast } from './saveStatus'
 
@@ -47,7 +47,9 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
   }, [idsKey, mode])
 
   const st = queue.state(ids)
-  const totalBytes = mode === 'pdf' ? [...st.blobs.values()].reduce((s, b) => s + b.size, 0) : undefined
+  const totalBytes = mode === 'pdf'
+    ? [...st.blobs.values()].flat().reduce((s, b) => s + b.size, 0)
+    : undefined
 
   const send = useCallback(async () => {
     const es = entriesRef.current
@@ -63,14 +65,10 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
 
     const ext = mode === 'png' ? 'png' : 'pdf'
     const mime = mode === 'png' ? 'image/png' : 'application/pdf'
-    // 파일명 = {이름}_{서류명}, 같은 이름 충돌 시 발급일 접미. 첨부 순서 = 표시 순서 고정.
-    const baseCount = new Map<string, number>()
-    for (const e of es) { const b = `${e.personName}_${e.docLabel}`; baseCount.set(b, (baseCount.get(b) ?? 0) + 1) }
-    const files = es.map(e => {
-      const base = `${e.personName}_${e.docLabel}`
-      const name = `${(baseCount.get(base) ?? 0) > 1 ? `${base}_${e.dateStr}` : base}.${ext}`
-      return new File([s.blobs.get(e.id) as Blob], name, { type: mime })
-    })
+    // 첨부 순서 = 표시 순서 고정. 파일명 규칙은 shareFileNames 정본(한 장짜리는 종전과 같은 이름).
+    const blobLists = es.map(e => s.blobs.get(e.id) ?? [])
+    const names = shareFileNames(es, blobLists.map(b => b.length), ext)
+    const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: mime }))
 
     const result = await shareFiles(files)
     // 'shared'·'cancelled' 은 무반응(정상). 'retry' 는 재탭 유도, 'unsupported' 는 안내.
@@ -84,5 +82,5 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
     }
   }, [mode, queue, onChange, toItems])
 
-  return { done: st.done, failedCount: st.failed.length, totalBytes, send }
+  return { done: st.done, failedCount: st.failed.length, totalBytes, fileCount: st.fileCount, send }
 }

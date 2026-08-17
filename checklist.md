@@ -105,3 +105,15 @@
 - [x] 검증: tsc · check-server-action-exports · verify:fast(전 항목) · verify:db · verify:data · next build · 변경 파일 신규 lint 0
 - [x] 실증: 5~9월 KPI 전후 대조 18항 전부 의도한 변화, 그 외 차 0 · 역주입 6종 발화 후 원복 · 왕복 후 상태 재현성 차 0
 - [ ] 운영자 실기 확인(부가수익 수정에서 퇴실자 선택·연결 보존) 후 푸시 — 이 세션은 푸시 금지
+
+## 서류 묶음 발송 1단계 (신고 44501308, 확정 설계 시공)
+
+승인 사항: 사람 단위로 열되 행은 계약 축, 미발급 자동 발급 없음(작성 왕복만), 합본 PDF·데스크톱 폴백·이메일은 범위 밖.
+
+- [ ] 1. `lib/docShareQueue` 다페이지 확장 — 항목당 `Blob[]`, 첨부 파일명 정본 `shareFileNames`, 1페이지 경로 무회귀 케이스 잠금
+- [ ] 2. `useDocShare`·`DocMultiShareBar` 배선 — 파일 수 노출, MAX_SHARE(10) 초과 시 바가 개수 안내(막음), 모달 안 알약(aboveModal)
+- [ ] 3. 서버 액션 `getTenantDocBundle` — CONTRACT_ISSUE_STATUSES 계약별 그룹, 종류별 최신, deletedAt null
+- [ ] 4. 시트 컴포넌트 `TenantDocBundleSheet` — 형식 세그먼트, 계약 그룹, 서류 목록 4화면 행 문법, 미발급 = 작성 왕복
+- [ ] 5. `EntityModal` 배선 — 입주자 면 '서류 보내기', 수납 면은 `shownLeaseId` 기본 체크, 공유 미지원 기기 진입점 숨김
+- [ ] 6. 게이트 — tsc 0 · verify:fast · verify:db · 프로덕션 빌드 · eslint 신규 0(497) · 320/360/390 라이트·다크 넘침 0 실측
+- [ ] 7. 실데이터 읽기 전용 검증 — 김상혁(509 메인 + 601 비거주 종속) 행 규칙 전부, 계약 1건 입주자 무회귀
