@@ -8,6 +8,7 @@ import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
@@ -608,6 +609,7 @@ function loadColVis(): Record<ColKey, boolean> | null {
 
 export default function TenantClient({
   initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole, shortStayUnitDays = 7,
+  shortStayReservationMode = null,
   wishDateNoticeLeaseIds = [],
 }: {
   initialTenants: Tenant[]
@@ -620,6 +622,8 @@ export default function TenantClient({
   propertyReservationDepositMode?: string | null   // 영업장 예약금 기본 모드 — 예약자 라벨/폼 기본값
   myRole: string
   shortStayUnitDays?: number   // 단기 계약 단위 일수(영업장 정책) — 카드 '(N주)' 표기용
+  // 단기 정책의 예약금 처리 — 단기 계약에서 영업장 공통 기본값보다 앞선다(null=미설정, 현행 해석)
+  shortStayReservationMode?: ShortStayReservationMode | null
   // 희망한 방이 전부 입주 희망일에서 빠진 계약 — 홈 알림의 '제외 N명'과 같은 판정(lib/wishMatch)
   wishDateNoticeLeaseIds?: string[]
 }) {
@@ -2269,7 +2273,7 @@ export default function TenantClient({
                   const confirmedResv = isConfirmedReservation(lease)
                   // 예약자는 예약금 모드에 따라 라벨 분기 — prepaid: 선납, none: 표시 안 함, 그 외: 예약금.
                   const resvMode = lease?.status === 'RESERVED'
-                    ? resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm)
+                    ? resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm, shortStayReservationMode)
                     : null
                   const showDeposit = !hideMoney && (lease?.depositAmount ?? 0) > 0 && resvMode !== 'none'
                   const depositLabel = resvMode === 'prepaid' ? '이용료 선납' : confirmedResv ? '예약금' : '보증금'
@@ -3170,7 +3174,7 @@ export default function TenantClient({
                       moveInDate: lease.moveInDate ? kstYmdStr(new Date(lease.moveInDate)) : null,
                       roomNo: lease.room?.roomNo ?? null,
                       status: 'RESERVED',
-                      reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm),
+                      reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm, shortStayReservationMode),
                     }}
                     targetMonth={targetMonth}
                     onSaved={async () => { setShowPayForm(false); const { records, windowRecords } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}

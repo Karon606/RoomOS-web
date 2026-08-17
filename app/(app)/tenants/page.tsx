@@ -23,7 +23,7 @@ export default async function TenantsPage({
     getRoomsForSelect(),
     getPropertySettings(),
     getMyRole(),
-    getShortStayPolicy(),   // 단기 카드 '(N주)' 표기용 — 영업장별 계약 단위(unitDays)
+    getShortStayPolicy(),   // 단기 카드 '(N주)' 표기용 계약 단위(unitDays) + 단기 예약금 처리(reservationMode)
     getWishDateNotices(),   // 희망한 방이 전부 날짜에서 빠진 계약 — 카드에 사유를 붙일 대상(홈 알림과 같은 판정)
   ])
   return (
@@ -38,6 +38,7 @@ export default async function TenantsPage({
       propertyReservationDepositMode={settings?.reservationDepositMode ?? null}
       myRole={myRole}
       shortStayUnitDays={shortStay.unitDays}
+      shortStayReservationMode={shortStay.reservationMode}
       wishDateNoticeLeaseIds={wishDateNoticeLeaseIds}
     />
   )

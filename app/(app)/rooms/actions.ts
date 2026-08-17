@@ -17,6 +17,7 @@ import { reasonsForStatus } from '@/lib/statusReasons'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import { parseShortStayPolicy } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
@@ -106,7 +107,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   const [property, rooms, activeLeases, prevLeases, allRecordsThruMonth] = await Promise.all([
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { acquisitionDate: true, prevOwnerCutoffDate: true, reservationDepositMode: true },
+      // shortStayPolicy — 단기 계약의 예약금 처리가 영업장 공통 기본값보다 앞선다(resolveReservationDepositMode).
+      select: { acquisitionDate: true, prevOwnerCutoffDate: true, reservationDepositMode: true, shortStayPolicy: true },
     }),
     prisma.room.findMany({
       where: { propertyId },
@@ -167,6 +169,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     reservedPaidMap.set(g.leaseTermId, cur)
   }
 
+  // 단기 예약금 처리 — 행마다 다시 파싱하지 않는다(정책은 영업장 하나뿐이다).
+  const shortStayResvMode = parseShortStayPolicy(property?.shortStayPolicy).reservationMode
   const acquisitionDate = property?.acquisitionDate ?? null
   // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
@@ -254,7 +258,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
         reservationDepositMode: resolveReservationDepositMode(
-          lease.reservationDepositMode, property?.reservationDepositMode, lease.isShortTerm,
+          lease.reservationDepositMode, property?.reservationDepositMode, lease.isShortTerm, shortStayResvMode,
         ),
       }
     }
@@ -2028,7 +2032,8 @@ export async function getTenantDetail(tenantId: string) {
           moveInFlexible: true,     // 입주 희망일 조절 가능 여부 — 매칭 날짜 게이트의 답을 상세에서도 보게(null=미확인)
           registrationStatus: true, payMethod: true, cashReceipt: true,
           reservationDepositMode: true,   // 예약금 모드 — 예약 취소 반환/몰취 경로 분기용
-          property: { select: { contactLeadDays: true, reservationDepositMode: true } },
+          // shortStayPolicy — 단기 계약의 예약금 처리가 영업장 공통 기본값보다 앞선다(본문이 같은 정본으로 해석).
+          property: { select: { contactLeadDays: true, reservationDepositMode: true, shortStayPolicy: true } },
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
           room: { select: { id: true, roomNo: true } },
           paymentRecords: {
@@ -2152,7 +2157,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
   // 예약금 모드 해석 — 영업장 기본값 상속. 호실 미지정 예약자(roomId null)도 모드 인지 표시·수납을 위해.
   const settleProp = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { reservationDepositMode: true },
+    select: { reservationDepositMode: true, shortStayPolicy: true },
   })
 
   // RESERVED fallback 도 표시 정본 수렴(신고 50a2a69b) — 입주월 기준 할인 반영 + 조회월 무관 실수납 합.
@@ -2224,6 +2229,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,
     reservationDepositMode: resolveReservationDepositMode(
       lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
+      parseShortStayPolicy(settleProp?.shortStayPolicy).reservationMode,
     ),
     reservationPaid: fbReservationPaid,
     billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
