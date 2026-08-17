@@ -104,6 +104,39 @@ const VIEW = 'app/contract/[tenantId]/ContractView.tsx'
   }
 }
 
+// 축 ⓑ 이어붙임 — 서명 요청과 부속 서류 두 벌도 계약을 지목하는가 (2026-08-13 다호실 마무리).
+// 계약서 축만 지목하고 나머지가 무지목이면, 같은 사람의 서류가 문마다 다른 계약을 그린다.
+{
+  const PANEL = 'components/entity-modal/widgets/ContractFilesPanel.tsx'
+  const raw = read(PANEL)
+  if (!raw) fail('ⓑ', `${PANEL} 를 읽을 수 없다`, '경로가 바뀌었으면 이 스크립트의 상수를 함께 옮긴다.')
+  else {
+    const m = strip(raw).match(/issueContractShareLink\s*\(([^)]*)\)/)
+    if (!m) fail('ⓑ', `${PANEL} 에서 issueContractShareLink 호출을 못 찾았다`, '호출 자리가 바뀌었으면 이 스크립트도 함께 고친다.')
+    else if (!m[1].includes(',')) {
+      fail('ⓑ', `${PANEL} 의 서명 요청이 계약을 지목하지 않는다`,
+        '이 칸이 그리는 계약을 실어야 한다. 무지목이면 서버 추론이 다른 계약을 골라, 방을 둘 쓰는 입주자에게 화면과 다른 계약서의 서명 링크가 나간다.')
+    }
+  }
+  // 부속 서류 두 벌 — 상세 조회가 지목 인자를 받아 정본에 넘기는 형태여야 한다.
+  for (const [file, fn] of [
+    ['app/rent-receipt/[tenantId]/actions.ts', 'getRentReceiptData'],
+    ['app/residence-cert/[tenantId]/actions.ts', 'getResidenceCertData'],
+  ]) {
+    const src0 = read(file)
+    if (!src0) { fail('ⓑ', `${file} 를 읽을 수 없다`, '경로가 바뀌었으면 이 스크립트의 상수를 함께 옮긴다.'); continue }
+    const src = strip(src0)
+    if (!new RegExp(`function ${fn}\\s*\\([^)]*leaseTermId`).test(src)) {
+      fail('ⓑ', `${file} 의 ${fn} 이 계약 지목 인자를 안 받는다`,
+        '지목이 없으면 딸린 계약(창고 등) 몫 서류를 뽑을 길이 아예 없다.')
+    }
+    if (!/pickDocumentLease\s*\(\s*tenant\.leaseTerms\s*,\s*leaseTermId\s*\)/.test(src)) {
+      fail('ⓑ', `${file} 가 지목을 계약 선택에 안 넘긴다`,
+        'pickDocumentLease 에 지목을 넘겨야 URL 이 고른 계약이 서류에 실린다. 안 넘기면 인자만 있고 동작은 종전 추론이다.')
+    }
+  }
+}
+
 // 축 ⓑ 뒷단 — 서류 계약 선택 손사본이 정본 밖에서 되살아났는가.
 // 우선순위 표(ACTIVE 0 · CHECKOUT_PENDING 1 · …)와 절반짜리 규칙('비거주만 뒤로') 두 지문을 본다.
 {

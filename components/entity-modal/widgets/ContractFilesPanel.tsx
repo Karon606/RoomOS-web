@@ -64,10 +64,16 @@ const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => f.lease
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
 // 배지와 닫기는 이 플래그와 무관하게 항상 렌더한다 — 알림 해제 경로가 사라지면 503호 건이 재발한다.
-export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false, extraLeases }: {
+export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = false, leaseTermId, extraLeases }: {
   tenantId: string
   tenantName: string
   hideSignRequest?: boolean
+  // 이 칸이 그리고 있는 계약 — 화면이 고른 대표 계약이다(부계약은 아래 extraLeases 가 받는다).
+  // 서명 요청이 이 값을 실어야 화면과 종이가 같은 계약을 가리킨다(2026-08-13, 다호실 마무리).
+  // 종전에는 지목이 없어 서버가 제 추론으로 계약을 다시 골랐다 — 계약이 하나뿐인 사람에게는 늘
+  // 같은 답이지만, 방을 둘 쓰는 사람에게는 화면이 말하는 계약과 스냅샷이 갈릴 수 있었다.
+  // 안 넘기면 종전 추론 그대로다(하위 호환) — 수정 폼처럼 서명 요청이 없는 자리는 넘길 것도 없다.
+  leaseTermId?: string | null
   // 이 사람의 부계약(창고·사무실 명의 등) — 있으면 그 계약의 계약서로 바로 들어가는 문을 하나씩 연다.
   // 계약이 하나뿐인 사람에게는 undefined 라 버튼 행이 종전 그대로다(2026-08-13, 1인 다호실).
   // 주 버튼(계약서 작성·서명)은 지목 없이 종전 URL 을 유지한다 — 추론이 고르는 계약이 곧 메인이다.
@@ -112,7 +118,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     setSharePending(true)
     const release = trackSave()
     try {
-      const res = await issueContractShareLink(tenantId)
+      const res = await issueContractShareLink(tenantId, leaseTermId ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
       await reloadShare()
       if (!res.phone) { pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.'); return }
