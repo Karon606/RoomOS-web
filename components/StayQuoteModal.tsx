@@ -11,10 +11,12 @@ import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { getRoomsForQuote } from '@/app/(app)/tenants/actions'
 
 // ── 단기 입실 요금 시뮬레이션 — 등록 없이 견적(운영자 요청 2026-07-05) ──
-// 위치: 홈 헤더 + 전체 메뉴(운영자 지시 2026-07-06 — 문의 전화 시 홈에서 바로).
+// 위치: 상담 도구 코너 안 + 전체 메뉴(2026-08-17, 오류신고 ce05bb74 — 홈 월 선택 줄에 홀로
+// 서 있던 진입을 코너 안으로 들였다. '문의 전화 시 홈에서 바로'(2026-07-06)는 홈의 상담 도구
+// 버튼이 그대로 잇는다).
 // 방 선택 시 월세 자동(직접 수정 가능) + 입실·퇴실일 → 회차/일할 분해.
 // 계산은 lib/prorate.calcStayQuote — 실제 퇴실 정산(일할)과 동일 규칙이라 금액이 일치.
-export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function StayQuoteModal({ open, onClose, z = 200 }: { open: boolean; onClose: () => void; z?: 200 | 260 }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
   const [roomId, setRoomId] = useState('')
   const [rentStr, setRentStr] = useState('')
@@ -41,7 +43,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
   const quote = !short && rent > 0 && inDate && outDate ? calcStayQuote(rent, inDate, outDate) : null
 
   return (
-    <Modal open={open} onClose={onClose} title="단기 입실 요금 계산" width="sm"
+    <Modal open={open} onClose={onClose} title="단기 입실 요금 계산" width="sm" z={z}
       subtitle="등록 없이 기간별 요금을 미리 계산합니다 · 실제 정산(일할)과 동일 규칙">
       <div className="space-y-3">
         <label className="block">

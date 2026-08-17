@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
-import { StayQuoteModal } from '@/components/StayQuoteModal'
+import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
@@ -2031,7 +2031,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
   const entityModal = useEntityModal()
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
-  const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 입주자 관리에서 이관 2026-07-06)
+  const [toolsOpen, setToolsOpen] = useState(false)   // 상담 도구(값 복사 + 단기 요금 계산, 오류신고 ce05bb74)
   // 고정지출 기록은 지출관리와 같은 공용 모달을 쓴다 — 알림 페이로드가 아니라 서버 현황을 받아 연다.
   const [recordingRec, setRecordingRec]           = useState<RecurringExpenseWithStatus | null>(null)
   const [recAccounts, setRecAccounts]             = useState<RecModalAccount[]>([])
@@ -2163,13 +2163,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       )}
       {!data.onboarding && (<>
 
-      {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
-      {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(입주자 관리에서 이관, 운영자 지시 2026-07-06) */}
-      <div className="flex justify-end items-center gap-2">
-        <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>단기 요금 계산</Btn>
+      {/* ── 기간(월) 셀렉터 + 상담 도구 — 우측 정렬 ────────────────────── */}
+      {/* 상담 도구: 카톡·네이버톡 상담 중 쓰는 값 복사 + 단기 요금 계산(오류신고 ce05bb74).
+          flex-wrap 은 320px 대응 — MonthSelector 는 과거월에서 '오늘' 버튼과 상대월 배지가 붙어
+          혼자 291px 이라 콘텐츠 폭 288px 을 이미 넘는다. 형제 페이지(카드 정산·마케팅 헤더 줄)와
+          같은 문법으로 접는다. */}
+      <div className="flex flex-wrap justify-end items-center gap-2">
+        <Btn type="button" variant="secondary" size="md" onClick={() => setToolsOpen(true)}>상담 도구</Btn>
         <MonthSelector />
       </div>
-      <StayQuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} />
+      <ConsultToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} />
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
