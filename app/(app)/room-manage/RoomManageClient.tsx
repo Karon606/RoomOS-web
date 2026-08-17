@@ -114,8 +114,9 @@ function primaryLease(r: Room) {
   return primaryRoomLease(r.leaseTerms)
 }
 
-// 거주자가 있는 방에 잡혀 있는 다음 예약 — 카드에서는 뱃지를 늘리지 않고 보조줄에만 병기한다.
-// 뱃지 자리는 이미 상태 뱃지 + 전입신고 불가 + 청소 필요가 나눠 쓰고 있어 §11 최대 2개를 넘긴다.
+// 카드에 이름이 아직 안 적힌 다음 예약 — 거주자가 있는 방의 예약, 예약이 둘인 방의 뒷사람.
+// 카드에서는 뱃지를 늘리지 않고 입주자 줄 아래 예약자 줄로 적는다. 뱃지 자리는 이미 상태 뱃지 +
+// 전입신고 불가 + 청소 필요가 나눠 쓰고 있어 §11 최대 2개를 넘긴다.
 // 고르는 규칙은 lib/leaseStatus 의 nextRoomReservation 이 정본이다(호실 면·홈 방 현황과 공유).
 function nextReservedLease(r: Room, primary: { id: string } | undefined) {
   return nextRoomReservation(r.leaseTerms, primary)
@@ -145,12 +146,13 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
       secondary: exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined,
     } }
   }
-  // 거주자 카드의 보조줄 — 퇴실 D-day 뒤에 이 방에 잡혀 있는 다음 예약의 입주 예정일을 시간 순으로 잇는다.
-  // "8/29 퇴실 D-19 · 9/2 입주 예정". 예약 카드의 병기 문법(2026-08-07)과 같은 문장이고, 뱃지는 늘리지 않는다.
+  // 거주자 카드의 보조줄 — 이 뱃지가 가리키는 사람(거주자)의 퇴실 D-day 다.
+  // 다음 예약의 입주 예정일은 2026-08-07 에 이 줄로 함께 잇던 것을 카드의 예약자 줄로 옮겼다
+  // (신고 ba546ecb). 날짜 둘을 한 줄에 이으면 뒤엣것이 누구 날짜인지 말할 자리가 없고,
+  // 뱃지가 없는 방(그냥 거주중)은 이 줄 자체가 안 서서 예약이 카드에서 통째로 사라졌다.
   return { ...base, badge: {
     ...base.badge,
-    sub: [checkoutSubText(lease.expectedMoveOut), moveInSubText(nextReservedLease(r, lease)?.moveInDate ?? null)]
-      .filter(Boolean).join(' · ') || undefined,
+    sub: checkoutSubText(lease.expectedMoveOut) || undefined,
   } }
 }
 
@@ -1007,6 +1009,14 @@ export default function RoomManageClient({
     const tenant = currentTenant(room)
     const thumb  = room.photos[0]
     const rs     = getRoomStatus(room, targetMonth)
+    // 카드에 이름이 안 적히는 예약 — 거주자가 있는 방의 예약, 예약이 둘인 방의 뒷사람(404호 8/15·9/1).
+    // '입실 예약' 칸이 사람 축이 된 이상 그 칸에 선 방은 누구의 예약인지 카드에서 말해야 한다.
+    // 문장은 카드가 이미 쓰던 조각 그대로다 — 이름(입주자 줄) + moveInSubText('9/2 입주 예정').
+    // 날짜 없는 예약은 상태 라벨로 메운다. 이름만 적으면 두 번째 거주자로 읽힌다.
+    const reserved = nextReservedLease(room, primaryLease(room))
+    const reservedLine = reserved
+      ? [reserved.tenant?.name, moveInSubText(reserved.moveInDate) ?? '입실 예약'].filter(Boolean).join(' · ')
+      : null
     // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
     const cleaning = openCleanings[room.id]
     // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
@@ -1051,6 +1061,11 @@ export default function RoomManageClient({
             )}
           </div>
           {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
+          {/* 예약자 줄 — 사는 사람 아래 한 단 낮은 톤으로 선다. 같은 크기·굵기로 적으면 두 사람이
+              같이 사는 방으로 읽힌다. 색은 아래 예정 이용료 줄과 같은 --warm-mid 다. --warm-muted 로
+              적었더니 320px 실측에서 바로 밑 스펙 줄(타입·창문·면적)과 크기·색이 같아 사람이 스펙의
+              한 줄로 읽혔다. '입주자' 표시 항목을 끄면 함께 사라진다(같은 사람 축이다). */}
+          {cardFields.tenant && reservedLine && <p className="text-xs text-[var(--warm-mid)] truncate">{reservedLine}</p>}
           <div className="space-y-0.5 pt-0.5">
             {cardFields.spec && (
               <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
