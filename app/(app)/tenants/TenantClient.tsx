@@ -39,6 +39,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import BirthdateInput from '@/components/ui/BirthdateInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { dueDayParts, sameDueDay } from '@/lib/dueDay'
+import { sameMoveInDate } from '@/lib/moveInDate'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
@@ -197,6 +198,15 @@ function extraRoomSuffix(t: { leaseTerms: LeaseTerm[] }, main: LeaseTerm | undef
 }
 
 /**
+ * 수정 창의 폼 한 벌이 지금 손에 쥔, 아직 저장하지 않은 값 — 딸린 계약이 비추는 원천이다.
+ *
+ * 두 칸만 담는다. 딸린 계약이 '메인 계약과 같음'으로 따라가는 값이 입주일과 납부일 둘뿐이라서다.
+ * 늘리려면 폼이 보고하는 자리(TenantForm 의 useEffect)와 읽는 자리를 함께 늘려야 한다.
+ * 두 값 모두 저장 문자열 그대로다. 입주일은 'YYYY-MM-DD', 납부일은 raw('14'·'말일').
+ */
+type LeaseFormLiveValues = { moveInDate: string; dueDay: string }
+
+/**
  * 이 계약에 딸린 진행 중 계약 — 메인 계약을 끝낼 때 남겨질 계약들이다(다호실 마무리 2026-08-17).
  *
  * 서버는 막지 않는다. 부모를 퇴실·취소로 보내는 것 자체는 정당한 일이고(창고만 남기고 방을 뺄 수도
@@ -288,6 +298,23 @@ function LeaseEditForms({ tenant, activeLeaseId, onChangeLease, rooms, error, de
 }) {
   // 들른 계약. 세그먼트를 누르는 그 자리에서만 늘어난다.
   const [visited, setVisited] = useState<string[]>([])
+  // 폼들이 지금 손에 쥔(아직 저장 안 한) 값 — 계약 id 로 한 벌씩(신고 eb66b990).
+  //
+  // 왜 여기 모으나. 딸린 계약의 '메인 계약과 같음' 칸은 메인 계약의 **지금 화면 값**을 비춰야 한다.
+  // 저장된 값만 보면 메인 폼에서 입주일을 8/20 으로 고쳐도 딸린 폼은 8/14 를 계속 보여 주고,
+  // 저장하고 나서야 따라온다(서버 전파는 이미 있다 — lib/moveInDate). 화면이 저장 뒤에야
+  // 진실을 말하면 운영자는 저장 전에 무엇이 될지 모른 채 저장 버튼을 누른다.
+  // 폼끼리 직접 주고받지 않고 이 컴포넌트를 거치는 이유는 '들른 계약'을 아는 곳이 여기 하나이기
+  // 때문이다(세그먼트를 오가도 인스턴스가 살아 있어 값이 남는다).
+  const [liveValues, setLiveValues] = useState<Record<string, LeaseFormLiveValues>>({})
+  const reportLive = useCallback((id: string, v: LeaseFormLiveValues) => {
+    setLiveValues(prev => {
+      const cur = prev[id]
+      // 같은 값이면 새 객체를 만들지 않는다. 만들면 자식이 다시 그려지고 그 자식이 다시 보고한다.
+      if (cur && cur.moveInDate === v.moveInDate && cur.dueDay === v.dueDay) return prev
+      return { ...prev, [id]: v }
+    })
+  }, [])
   const leases = editableLeases(tenant)
   // 지금 고른 계약은 항상 들어간다 — 처음 여는 계약은 아직 아무 데도 안 들렀다.
   // 이 사람의 계약만 세므로 다른 입주자를 고쳤던 흔적은 저절로 빠진다.
@@ -312,6 +339,7 @@ function LeaseEditForms({ tenant, activeLeaseId, onChangeLease, rooms, error, de
             <fieldset key={id} disabled={!on} hidden={!on} className="space-y-4 min-w-0">
               <TenantForm rooms={rooms} tenant={tenant} leaseId={id}
                 parentLeases={parentLeaseOptions(tenant, id)}
+                liveValues={liveValues} onLiveChange={reportLive}
                 error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
             </fieldset>
           )
@@ -471,6 +499,14 @@ function isConfirmedReservation(lease: { status: string; reservationConfirmedAt?
 function toDateInput(d: string | Date | null | undefined): string {
   if (!d) return ''
   return kstYmdStr(new Date(d))
+}
+
+// 'YYYY-MM-DD' → DatePicker 트리거가 보여 주는 그 문자열('2026년 8월 14일').
+// 잠긴 날짜 칸(메인 계약과 같음)이 이 표기를 쓴다 — '따로 정하기'를 눌러 달력으로 바뀌는 순간
+// 글자가 달라지면 값이 바뀐 것처럼 보인다. 표기 규칙을 DatePicker 와 한 벌로 묶어 둔다.
+function fmtDateTrigger(ymd: string): string {
+  if (!ymd) return ''
+  return new Date(ymd + 'T00:00:00').toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 // 'HH:mm' → '오후 6:40' (안내 문구용 12시간 표기)
@@ -3498,7 +3534,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
 
 // ── 폼 컴포넌트 (추가/수정 공용) ─────────────────────────────────
 
-function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, leaseOnly = false, leaseId, parentLeases = [] }: {
+function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, leaseOnly = false, leaseId, parentLeases = [], liveValues, onLiveChange }: {
   rooms: Room[]; tenant?: Tenant; error?: string
   defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
   // 계약만 더하는 모드('계약 추가') — 사람 칸(기본 정보·연락처·메모)을 아예 그리지 않는다.
@@ -3511,6 +3547,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // '메인 계약' 셀렉트의 선택지. 비면 칸 자체를 그리지 않는다 — 고를 것이 없는데 필수로 막으면
   // 운영자에게 출구 없는 오류를 주는 것이다(칸이 없으면 서버도 종속을 편집하지 않는 저장으로 읽는다).
   parentLeases?: LeaseTerm[]
+  // 같은 수정 창에 떠 있는 형제 폼들의 미저장 값(계약 id 로 색인). 메인 계약의 폼이 함께 떠 있으면
+  // '같음' 칸이 저장값 대신 이 값을 비춘다. 없으면 종전대로 저장된 부모 값이다(신고 eb66b990).
+  liveValues?: Record<string, LeaseFormLiveValues>
+  // 이 폼의 값이 바뀔 때마다 위로 올린다. 수정 창 밖(등록·계약 추가)에서는 넘기지 않는다.
+  onLiveChange?: (leaseId: string, v: LeaseFormLiveValues) => void
 }) {
   const lease     = (leaseId ? tenant?.leaseTerms.find(l => l.id === leaseId) : undefined) ?? mainLease(tenant)
   // 이 폼 한 벌의 고유 접두사 — 수정 창은 계약마다 폼을 한 벌씩 들고 있어서(LeaseEditForms)
@@ -3556,7 +3597,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
   // 단기 요금 자동 계산 — 홈 '단기 요금 계산'과 동일 로직(calcShortStay), 운영자 요청 2026-07-09
   const [shortQuoteData, setShortQuoteData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
-  // 단기 박스의 날짜 칸은 아래 입주일(moveInDateVal)과 같은 값이다(운영자 지적 2026-07-10: 따로 입력할 필요 없음).
+  // 단기 박스의 날짜 칸은 아래 입주일(moveInVal)과 같은 값이다(운영자 지적 2026-07-10: 따로 입력할 필요 없음).
   // 라벨도 moveInLabel 하나를 공유한다 — 같은 칸을 두 이름으로 부르면 두 칸으로 읽힌다.
   const [shortOut, setShortOut] = useState(toDateInput(lease?.expectedMoveOut))
   const [contactAlertVal, setContactAlertVal] = useState(toDateInput(lease?.contactAlertDate ?? null))
@@ -3682,11 +3723,41 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
     return !sameDueDay(lease.dueDay, p.dueDay)
   })
   const parentLease = parentVal ? parentLeases.find(l => l.id === parentVal) : undefined
+  // 메인 계약 폼이 같은 창에 떠 있으면 그 폼의 **지금 값**이 진실이다(신고 eb66b990).
+  // 떠 있지 않으면(아직 안 들른 계약) 종전대로 저장된 값을 본다.
+  const parentLive = parentVal ? liveValues?.[parentVal] : undefined
   // 고를 수 없는 부모(퇴실·취소로 목록에서 빠진 계약)면 상속할 값을 알 수 없으니 종전대로 직접 입력이다.
   const dueSameAsParent = !!parentLease && !dueSeparate
-  const parentDue = dueDayParts(parentLease?.dueDay)
+  const parentDue = dueDayParts(parentLive ? parentLive.dueDay : parentLease?.dueDay)
   // 신규 등록은 입주일 기본값을 오늘로 프리필(청구 상태 저장 시 필수 — 미납 오탐 방지). 편집은 기존값 유지.
   const [moveInDateVal, setMoveInDateVal] = useState(tenant ? toDateInput(lease?.moveInDate) : toDateInput(new Date()))
+  // 입주일도 메인 계약과 같은 날이 기본이다(신고 eb66b990). 문법은 바로 위 납부일과 같은 한 벌이다.
+  // 판정은 서버 전파(lib/moveInDate propagateMoveInDateToSubLeases)가 '따라올 자식'을 가르는 그
+  // 함수를 그대로 쓴다. 화면이 '같음'이라 부르는 것과 서버가 옮기는 것이 어긋나면 안 된다.
+  const [moveInSeparate, setMoveInSeparate] = useState(() => {
+    const p = parentLeases.find(l => l.id === lease?.parentLeaseTermId)
+    if (!p || !lease?.moveInDate) return false
+    return !sameMoveInDate(lease.moveInDate, p.moveInDate)
+  })
+  const moveInSameAsParent = !!parentLease && !moveInSeparate
+  const parentMoveIn = parentLive ? parentLive.moveInDate : toDateInput(parentLease?.moveInDate)
+  // 이 폼이 실제로 제출·계산에 쓰는 입주일. 같음 모드면 메인 계약의 지금 값이다.
+  // state 를 되쓰지 않고 여기서 가르는 이유는, 되쓰면 한 값에 진실이 둘(내 state 와 부모 값)이
+  // 생겨 렌더 순서에 따라 화면과 제출값이 갈리기 때문이다. 아래 파생 계산(단기 일수·연락 알림일·
+  // 겹침 경고)도 전부 이 값을 읽는다.
+  const moveInVal = moveInSameAsParent ? parentMoveIn : moveInDateVal
+  const setMoveIn = (v: string) => { if (!moveInSameAsParent) setMoveInDateVal(v) }
+  // 비추고 있는 값이 아직 저장 전인가 — 그렇다면 그렇다고 말한다.
+  // 수정 창은 지금 고른 계약 하나만 저장한다. 메인 폼에서 날짜를 바꾸고 이 계약 쪽에서 저장하면
+  // 이 계약만 새 날로 가고 메인 계약은 옛 날에 남는다. 두 날이 갈리는 유일한 길이라 미리 말해 준다.
+  const parentMoveInUnsaved = !!parentLive && !sameMoveInDate(parentMoveIn, parentLease?.moveInDate ?? null)
+  const parentDueUnsaved = !!parentLive && !sameDueDay(parentLive.dueDay, parentLease?.dueDay ?? null)
+  // 내 값을 형제 폼들에게 알린다. 딸린 계약의 '같음' 칸이 이 값을 비춘다.
+  // 값이 같으면 위(LeaseEditForms)에서 상태를 새로 만들지 않으므로 되먹임이 돌지 않는다.
+  useEffect(() => {
+    if (!onLiveChange || !leaseId) return
+    onLiveChange(leaseId, { moveInDate: moveInVal, dueDay: dueSameAsParent ? parentDue.raw : dueDayRaw })
+  }, [onLiveChange, leaseId, moveInVal, dueSameAsParent, parentDue.raw, dueDayRaw])
   // 일정 조절 가능 여부 — 빈 문자열이 '미확인'(DB null)이다. SegmentedControl 은 값이 목록에 없으면
   // activeIdx 가 -1 이라 칩이 그려지지 않고 어느 세그먼트도 활성으로 보이지 않는다(미선택 표현).
   const [moveInFlexVal, setMoveInFlexVal] = useState<MoveInFlexValue>(
@@ -3732,8 +3803,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 서버(addTenant·updateTenant)도 같은 기준으로 비우는 이중 방어. 청구 상태 진입 시 서버가 입주일 기준 재파생.
   const duePending = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal)
   useEffect(() => {
-    if (!tenant && !dueDayRaw && moveInDateVal && !roomIsOptional && !duePending) {
-      const d = new Date(moveInDateVal)
+    if (!tenant && !dueDayRaw && moveInVal && !roomIsOptional && !duePending) {
+      const d = new Date(moveInVal)
       const day = d.getDate()
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
       applyDueDay(day >= lastDay ? '말일' : String(day))
@@ -3742,6 +3813,64 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
   const showExitDate = ['CHECKOUT_PENDING', 'CHECKED_OUT'].includes(statusVal)
   const moveInLabel = roomIsOptional ? '입주희망일' : '입주일'
+
+  // 입주일 칸 한 벌 — 거주 전(입주 희망일)과 거주 단계(입주일) 두 자리가 같은 것을 그린다.
+  // 두 자리에 손으로 두 번 적으면 한쪽만 '같음' 잠금을 얻는다(다호실은 예약·비거주가 섞여
+  // 어느 자리가 뜰지 고정돼 있지 않다). 컴포넌트가 아니라 함수라 호출해도 다시 마운트되지 않는다.
+  const renderMoveInInput = (placeholder: string) => moveInSameAsParent ? (
+    <>
+      {/* 같음 모드의 제출 지점. 화면 칸은 읽기 전용이라 값을 담지 않는다(납부일과 같은 문법). */}
+      <input type="hidden" name="moveInDate" value={moveInVal} />
+      <input
+        type="text" readOnly value={fmtDateTrigger(moveInVal)} placeholder="없음"
+        className="w-full truncate border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm placeholder-[var(--warm-muted)] outline-none bg-[var(--cream)] text-[var(--warm-mid)] cursor-default"
+      />
+    </>
+  ) : (
+    <DatePicker
+      name="moveInDate"
+      value={moveInVal}
+      onChange={(v) => {
+        setMoveIn(v)
+        // 거주 단계에서 입주일을 고르면 납부일을 그 날로 파생한다(종전 거동 그대로).
+        if (v && !roomIsOptional) {
+          const d = new Date(v)
+          const day = d.getDate()
+          const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+          applyDueDay(day >= lastDay ? '말일' : String(day))
+        }
+      }}
+      placeholder={placeholder}
+      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+    />
+  )
+
+  // 입주일 상속 안내 + '따로 정하기' — 납부일 칸의 같은 두 줄과 문장·순서가 같은 한 벌이다.
+  const moveInInheritUi = parentLease ? (
+    <>
+      {moveInSameAsParent && (() => {
+        // 어느 계약을 따라가는지 호실로 말한다. 호실이 없는 단계면 '메인 계약'으로 부른다.
+        const who = parentLease.room?.roomNo ? `${fmtRoomNo(parentLease.room.roomNo)} 계약` : '메인 계약'
+        return (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+            {parentMoveIn ? `${who}과 같은 입주일입니다.` : `${who}에 입주일이 없습니다.`}
+            {parentMoveInUnsaved && ' 메인 계약에서 아직 저장하지 않은 값입니다.'}
+          </p>
+        )
+      })()}
+      <label className="flex items-start gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5 leading-snug">
+        <input type="checkbox" checked={moveInSeparate}
+          onChange={e => {
+            const next = e.target.checked
+            // 따로 풀 때 내 값이 비어 있으면 부모 값에서 이어 쓴다(납부일 토글과 같은 규칙).
+            if (next && !moveInDateVal && parentMoveIn) setMoveInDateVal(parentMoveIn)
+            setMoveInSeparate(next)
+          }}
+          className="w-3.5 h-3.5 accent-[var(--coral)] mt-px shrink-0" />
+        입주일 따로 정하기
+      </label>
+    </>
+  ) : null
 
   return (
     <>
@@ -4142,19 +4271,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         {roomIsOptional && (
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">입주 희망일</label>
-            <DatePicker
-              name="moveInDate"
-              value={moveInDateVal}
-              onChange={setMoveInDateVal}
-              placeholder="입주 희망일 선택"
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-            />
+            {renderMoveInInput('입주 희망일 선택')}
+            {moveInInheritUi}
             {/* 일정 조절 — 매칭 날짜 게이트의 유일한 입력(lib/wishMatch). 미선택은 '아직 안 물어봤다'로 남고
                 후보에서 빠지지 않는다. 이 hidden 은 예약·투어 단계에서 항상 렌더된다 — 조건부로 그리면
                 서버의 '부재=보존' 관행 탓에 희망일을 지워도 옛 값이 남는다(신고 c4b74c7d 와 같은 클래스).
                 거주 단계 저장은 이 블록 자체가 없어 필드가 안 가고, 그래서 값이 보존된다. */}
             <input type="hidden" name="moveInFlexible" value={moveInFlexVal} />
-            {moveInDateVal && (
+            {moveInVal && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span className="text-xs font-medium text-[var(--warm-mid)]">일정 조절</span>
                 <SegmentedControl<MoveInFlexValue>
@@ -4176,9 +4300,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </div>
             )}
             {/* 연락 알림일 — 이 날부터 '연락할 때' 알림. 비우면 영업장 기본(입주 희망일 N일 전). 운영자 요청 2026-07-10 */}
-            {moveInDateVal && (() => {
+            {moveInVal && (() => {
               const def = (() => {
-                const d = new Date(moveInDateVal + 'T00:00:00')
+                const d = new Date(moveInVal + 'T00:00:00')
                 if (isNaN(d.getTime())) return ''
                 d.setDate(d.getDate() - contactLeadDays)
                 const today = new Date(kstYmdStr() + 'T00:00:00')
@@ -4228,16 +4352,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {isShortTerm && (() => {
             const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
               ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
-            const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
+            const days = moveInVal && shortOut ? stayDaysOf(moveInVal, shortOut) : null
             const short = shortQuoteData && baseRent > 0 && days != null
-              ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInDateVal, moveOutYmd: shortOut }) : null
+              ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInVal, moveOutYmd: shortOut }) : null
             return (
               <div className="pl-6 pt-1 space-y-2">
                 <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">{moveInLabel} (아래 칸과 같은 날짜)</span>
-                    <DatePicker value={moveInDateVal} onChange={setMoveInDateVal} placeholder={moveInLabel}
+                    {/* 메인 계약과 같음이면 여기서도 못 고친다. 이 칸은 아래 입주일과 같은 값이라
+                        한쪽만 열어 두면 잠긴 날짜를 옆문으로 바꾸는 길이 된다(제출은 안 되고 계산만 흔들린다). */}
+                    <DatePicker value={moveInVal} onChange={setMoveIn} placeholder={moveInLabel}
+                      disabled={moveInSameAsParent}
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                   <div>
@@ -4266,7 +4393,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     <span className="ml-2 text-[0.65625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
                   </div>
                 ) : days != null && shortQuoteData && days > shortQuoteData.shortStay.thresholdDays
-                    && !(moveInDateVal && shortOut && isWithinOneCalendarMonth(moveInDateVal, shortOut)) ? (
+                    && !(moveInVal && shortOut && isWithinOneCalendarMonth(moveInVal, shortOut)) ? (
                   <p className="text-[0.65625rem] text-[var(--warning-fg)]">단기 범위(입실일부터 한 달)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
                 ) : (
                   <p className="text-[0.65625rem] text-[var(--warm-muted)]">입실일과 퇴실일을 고르면 요금이 자동 계산됩니다</p>
@@ -4305,11 +4432,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               누구와 겹치는지까지 말한다 — 계약이 이어 붙은 방에서 '방의 마지막 퇴실일'은 앞을 막고 선 사람이 아니다. */}
           {(() => {
             const sel = rooms.find(r => r.id === selectedRoomId)
-            const hit = isWaitingTourStatus ? overlapOccupancy(sel, moveInDateVal, lease?.id) : null
+            const hit = isWaitingTourStatus ? overlapOccupancy(sel, moveInVal, lease?.id) : null
             if (!hit) return null
             return (
               <p className="text-[0.65625rem] text-[var(--warning-fg)]">
-                희망 입주일({fmtMD(moveInDateVal)})이 {hit.tenantName}님 퇴실 예정일({fmtMD(hit.moveOut)})과 겹칩니다.
+                희망 입주일({fmtMD(moveInVal)})이 {hit.tenantName}님 퇴실 예정일({fmtMD(hit.moveOut)})과 겹칩니다.
               </p>
             )
           })()}
@@ -4429,21 +4556,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           {!roomIsOptional && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">{moveInLabel}</label>
-              <DatePicker
-                name="moveInDate"
-                value={moveInDateVal}
-                onChange={(v) => {
-                  setMoveInDateVal(v)
-                  if (v && !roomIsOptional) {
-                    const d = new Date(v)
-                    const day = d.getDate()
-                    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-                    applyDueDay(day >= lastDay ? '말일' : String(day))
-                  }
-                }}
-                placeholder={`${moveInLabel} 선택`}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-              />
+              {renderMoveInInput(`${moveInLabel} 선택`)}
+              {moveInInheritUi}
             </div>
           )}
         </div>
@@ -4486,6 +4600,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   return (
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
                       {parentDue.raw ? `${who}과 같은 납부일입니다.` : `${who}에 납부일이 없습니다.`}
+                      {parentDueUnsaved && ' 메인 계약에서 아직 저장하지 않은 값입니다.'}
                     </p>
                   )
                 })()}
@@ -4573,9 +4688,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       {lease && isShortTerm && typeof lease.rentAmount === 'number' && (() => {
         const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
           ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
-        const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
+        const days = moveInVal && shortOut ? stayDaysOf(moveInVal, shortOut) : null
         const short = shortQuoteData && baseRent > 0 && days != null
-          ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInDateVal, moveOutYmd: shortOut }) : null
+          ? calcShortStay(shortQuoteData.shortStay, baseRent, days, { moveInYmd: moveInVal, moveOutYmd: shortOut }) : null
         if (!short || days == null) return null
         // 폼 금액을 건드렸으면 그 값이 목표, 아니면 정책 재계산가 — 서버 판정과 같은 규칙
         const target = (rentAmount ?? 0) !== lease.rentAmount ? (rentAmount ?? 0) : short.baseAmount
