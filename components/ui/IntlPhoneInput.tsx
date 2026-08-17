@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AsYouType, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js'
 import { COUNTRIES, flag } from './CountrySelect'
 
@@ -12,6 +12,7 @@ export function IntlPhoneInput({
   countryName,
   defaultValue,
   defaultCountry = 'KR',
+  syncCountry,
   placeholder = '전화번호',
   className,
 }: {
@@ -19,6 +20,9 @@ export function IntlPhoneInput({
   countryName: string          // ISO code hidden input name
   defaultValue?: string        // e.164 형식 또는 raw
   defaultCountry?: string      // ISO code (KR, RU 등)
+  // 밖에서 따라오게 하고 싶은 국가(국적 셀렉트 등). 값이 **바뀔 때만** 국가를 옮긴다.
+  // 마운트 시점 값은 defaultCountry 가 이미 반영하고 있으므로 여기서 다시 밀지 않는다.
+  syncCountry?: string
   placeholder?: string
   className?: string
 }) {
@@ -35,6 +39,21 @@ export function IntlPhoneInput({
 
   const [country, setCountry] = useState<string>(initial.country)
   const [display, setDisplay] = useState<string>(initial.display)
+
+  // 국적을 고르면 국가도 따라온다(신고 aed91367). 수동 변경은 그대로 살아 있다 —
+  // 이 효과는 syncCountry 가 **바뀐 순간**에만 돌고, 그 뒤 셀렉트로 고른 값은 다음 변경까지 유지된다.
+  //
+  // 번호가 이미 적혀 있으면 옮기지 않는다. 국가를 바꾸면 아래 재포맷이 같은 숫자를 새 나라 번호로
+  // 다시 읽어(+81 이 +84 가 된다) 저장값이 조용히 다른 번호가 된다. 국적이 미국인데 일본에 사는
+  // 경우가 있다는 운영자 지적이 정확히 그 자리다. 빈 칸일 때만 미리 맞춰 준다.
+  const syncedRef = useRef(syncCountry)
+  useEffect(() => {
+    if (!syncCountry || syncCountry === syncedRef.current) return
+    syncedRef.current = syncCountry
+    if (display.trim()) return
+    setCountry(syncCountry)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncCountry])
 
   // 국가 변경 시 기존 입력을 새 국가 포맷으로 재포맷
   useEffect(() => {

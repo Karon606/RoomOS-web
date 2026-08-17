@@ -17,6 +17,13 @@ export function flagByName(name: string | null | undefined): string {
   return found ? flag(found.code) : ''
 }
 
+// 이름 → ISO 코드. 국적(이름으로 저장)과 전화 국가(코드로 저장)를 잇는 유일한 다리다.
+// 목록에 없는 이름이면 undefined — 부르는 쪽이 종전 기본값을 그대로 쓰게 한다(신고 aed91367).
+export function codeByName(name: string | null | undefined): string | undefined {
+  if (!name) return undefined
+  return COUNTRIES.find(c => c.name === name)?.code
+}
+
 // 자주 사용 상단 고정 + 나머지 한국어 가나다 순
 export const COUNTRIES: { code: string; name: string }[] = [
   // ── 자주 사용 ─────────────────────────

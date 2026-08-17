@@ -42,7 +42,7 @@ import { dueDayParts, sameDueDay } from '@/lib/dueDay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
-import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
+import { CountrySelect, flagByName, codeByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
@@ -3873,7 +3873,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           </div>
         </div>
         {/* 본국 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
-            숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음). */}
+            숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음).
+            국가는 국적을 따라간다(신고 aed91367). 저장된 국가가 있으면 그것이 먼저다 —
+            국적이 미국인데 일본에 사는 경우가 있어 국적이 저장값을 덮으면 안 된다.
+            마운트 뒤 국적을 바꾸는 흐름은 syncCountry 가 받는다(번호가 비어 있을 때만). */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(외국인 입주자 · 국가 선택 시 자동 포맷)</span></label>
@@ -3881,7 +3884,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             name="homeCountryContact"
             countryName="homeCountryCode"
             defaultValue={homeCountry?.contactValue ?? ''}
-            defaultCountry={homeCountry?.countryCode ?? 'KR'}
+            defaultCountry={homeCountry?.countryCode ?? codeByName(natVal) ?? 'KR'}
+            syncCountry={codeByName(natVal)}
             placeholder="국가 선택 후 번호 입력"
           />
         </div>
