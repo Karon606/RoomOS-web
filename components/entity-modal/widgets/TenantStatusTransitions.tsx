@@ -16,7 +16,8 @@ import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
-import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
+import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
+  CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -209,8 +210,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     // 종전에는 계약 보증금을 먼저 믿고 0일 때만 실수납으로 폴백해서, 계약 50,000 인데 현금 30,000 만 받은
     // 계약(520호 김민정 — 나머지 20,000 은 청소비로 받았다)에 화면이 50,000 을 제시하고 저장은 서버가
     // 30,000 기준으로 거절했다. 화면이 여는 최대치와 서버 기준이 갈리면 안 된다.
-    // 인수 전 입주자는 이전 원장 운영 원칙대로 키값 명목으로 돌려주지 않는다(운영자 확정 2026-08-02).
+    // 인수 전 입주자는 이전 원장 운영 원칙대로 승계받은 보증금을 돌려주지 않는다(운영자 확정 2026-08-02).
     // 케이스가 아니라 클래스라 기본 선택으로 제안한다. 세그먼트라 한 번 눌러 되돌릴 수 있다.
+    // 두 기본 사유는 목록 정본의 상수를 그대로 쓴다. 문자열을 여기 베끼면 목록만 개명될 때
+    // 셀렉트에 없는 값이 골라진 것처럼 되어 칸이 빈 채로 뜬다(어휘 중립화 2026-08-17).
     const comp = def.withDeposit ? await getDepositCompositionForLease(lease.id) : null
     const depoBaseForForm = comp ? comp.basis : (lease.depositAmount || 0)
     // 기준액이 계약 보증금과 다를 때만 '받은 보증금'으로 못박는다(같으면 같은 말을 두 번 하는 셈).
@@ -224,8 +227,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       : undefined)
     // 답이 정해진 경우는 미리 골라 둔다. 앱이 아는 값을 매번 묻지 않는다(모두 변경 가능).
     if (def.withDeposit) {
-      if (carriedOver) setWithholdReason('키값')
-      else if (deductible > 0) setWithholdReason('청소비')
+      if (carriedOver) setWithholdReason(CARRIED_OVER_WITHHOLD_REASON)
+      else if (deductible > 0) setWithholdReason(CLEANING_WITHHOLD_REASON)
     }
     setActive({
       def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
@@ -449,7 +452,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                       : active.resvCancel
                       ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
                       : active.carriedOver
-                      ? <>인수 전 입주자라 이전 원장 원칙대로 키값 명목 미환불이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
+                      ? <>인수 전 입주자라 이전 원장 원칙대로 승계받은 보증금을 돌려주지 않는 것이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
                       : <>환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>}
                   </p>
                 </div>
