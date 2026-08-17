@@ -110,10 +110,14 @@
 
 승인 사항: 사람 단위로 열되 행은 계약 축, 미발급 자동 발급 없음(작성 왕복만), 합본 PDF·데스크톱 폴백·이메일은 범위 밖.
 
-- [ ] 1. `lib/docShareQueue` 다페이지 확장 — 항목당 `Blob[]`, 첨부 파일명 정본 `shareFileNames`, 1페이지 경로 무회귀 케이스 잠금
-- [ ] 2. `useDocShare`·`DocMultiShareBar` 배선 — 파일 수 노출, MAX_SHARE(10) 초과 시 바가 개수 안내(막음), 모달 안 알약(aboveModal)
-- [ ] 3. 서버 액션 `getTenantDocBundle` — CONTRACT_ISSUE_STATUSES 계약별 그룹, 종류별 최신, deletedAt null
-- [ ] 4. 시트 컴포넌트 `TenantDocBundleSheet` — 형식 세그먼트, 계약 그룹, 서류 목록 4화면 행 문법, 미발급 = 작성 왕복
-- [ ] 5. `EntityModal` 배선 — 입주자 면 '서류 보내기', 수납 면은 `shownLeaseId` 기본 체크, 공유 미지원 기기 진입점 숨김
-- [ ] 6. 게이트 — tsc 0 · verify:fast · verify:db · 프로덕션 빌드 · eslint 신규 0(497) · 320/360/390 라이트·다크 넘침 0 실측
-- [ ] 7. 실데이터 읽기 전용 검증 — 김상혁(509 메인 + 601 비거주 종속) 행 규칙 전부, 계약 1건 입주자 무회귀
+- [x] 1. `lib/docShareQueue` 다페이지 확장 — 항목당 `Blob[]`, 첨부 파일명 정본 `shareFileNames`, 1페이지 경로 무회귀 케이스 잠금
+- [x] 2. `useDocShare`·`DocMultiShareBar` 배선 — 파일 수 노출, MAX_SHARE(10) 초과 시 바가 개수 안내(막음), 모달 안 알약(aboveModal)
+- [x] 3. 서버 액션 `getTenantDocBundle` — CONTRACT_ISSUE_STATUSES 계약별 그룹, 종류별 최신, deletedAt null
+- [x] 4. 시트 컴포넌트 `TenantDocBundleSheet` — 형식 세그먼트, 계약 그룹, 서류 목록 4화면 행 문법, 미발급 = 작성 왕복
+- [x] 5. `EntityModal` 배선 — 입주자 면 '서류 보내기', 수납 면은 `shownLeaseId` 기본 체크, 공유 미지원 기기 진입점 숨김
+- [x] 6. 게이트 — tsc 0 · verify:fast · verify:db · 프로덕션 빌드 · eslint 신규 0(497) · 320/360/390 라이트·다크 넘침 0 실측
+- [x] 7. 실데이터 읽기 전용 검증 — 김상혁(509 메인 + 601 비거주 종속) 행 규칙 전부, 계약 1건 입주자 무회귀
+- [x] 후속 발견 봉합 — 준비 큐 캐시가 형식을 안 가려 사진/PDF 전환 시 옛 형식이 나가던 길(형식별 큐로 분리)
+- [x] 후속 발견 봉합 — 하단 알약이 320px 에서 화면 밖으로 밀려 닫기 버튼에 손이 안 닿던 길(문구 축소 허용)
+- [ ] 운영자 실기 확인 — 실기기 공유 시트(사진 여러 장·PDF), 다페이지 계약서 장수, 작성 왕복 복귀
+- [ ] 푸시 — 이 세션은 푸시 금지
