@@ -14,6 +14,7 @@ import { docFromQuery } from '@/lib/docNav'
 import { getContractShareState } from '@/app/(app)/tenants/contractShare'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow, undoApplyScheduledRent } from '@/app/(app)/room-manage/actions'
 import { deleteTenant } from '@/app/(app)/tenants/actions'
@@ -155,7 +156,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 페이지 이동 전용 — refresh(7곳)까지 진행바를 태우면 모달 안 저장마다 막대가 떠 소음이 된다
   const navRouter = useNavRouter()
   const searchParams = useSearchParams()
-  const month = searchParams.get('month') || kstMonthStr()
+  // 수납 면은 돈이라 미래 월이 잠긴 축이다 — URL 이 미래를 들고 있어도 이번 달로 읽는다(lib/monthParam).
+  const month = resolveMonthParam(searchParams.get('month'))
   const isPastMonth = month < kstMonthStr()   // 프리즘이 과거 월을 보고 있으면 강조
   // 호실 면의 기준월은 조회 월(수납 축)과 분리한다. 호실 상태는 '지금 그 방이 어떤가'라는 현재의
   // 사실이고, 호실 카드(RoomManageClient targetMonth)도 언제나 KST 이번 달로 묻는다. 조회 월을

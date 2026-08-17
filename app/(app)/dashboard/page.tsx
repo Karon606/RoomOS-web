@@ -10,6 +10,7 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
@@ -1933,7 +1934,8 @@ export default async function DashboardPage({
   const { propertyId } = await requirePropertyAccess()
 
   const { month, tab } = await searchParams
-  const targetMonth = month ?? kstMonthStr()
+  // 월 해석은 정본 하나로 — 잠긴 화면이라 미래 월은 이번 달로 끌어내린다(lib/monthParam).
+  const targetMonth = resolveMonthParam(month)
   // 어느 탭을 열고 있는지는 주소가 정본이다(수납 관리·지출 관리와 같은 문법).
   // 종전에는 탭이 클라 상태뿐이라 홈에서 지출 관리로 갔다 돌아오면 늘 '현황'이었고,
   // 재무 탭을 가리키는 딥링크를 만들 수단 자체가 없었다. 모르는 값은 기본 탭으로 떨군다.

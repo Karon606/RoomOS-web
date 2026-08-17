@@ -2,7 +2,7 @@ import { getExpenses, getFinancialAccounts, getRecurringExpensesWithStatus, getR
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
-import { kstMonthStr } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 
 // 영수증 OCR·업로드 Server Action 이 같은 라우트의 페이지 timeout 을 따름 → 60초로 확장(room-manage 와 같은 처방).
 // OCR 은 스스로 30초에 끊고 안내 문구를 돌려주는데, 플랫폼 기본 한도가 그보다 짧으면 그 문구 대신 함수가 먼저 죽는다.
@@ -25,7 +25,7 @@ export default async function FinancePage({
     tab === 'expense' || tab === 'assets' || tab === 'reserve'
       ? tab
       : undefined
-  const targetMonth = month ?? kstMonthStr()   // 기본 조회월은 KST — 서버(UTC) 로컬이면 매월 1일 KST 00~09 시에 지난달이 열린다
+  const targetMonth = resolveMonthParam(month)   // 기본 조회월은 KST · 잠긴 화면이라 미래 월은 이번 달로(lib/monthParam)
 
   const [y, m] = targetMonth.split('-').map(Number)
   const prevMonthDate = new Date(y, m - 2, 1)

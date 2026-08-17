@@ -1154,15 +1154,23 @@ export default function RoomManageClient({
         {/* min-w-0 — 안 줄어들면 탭 트랙의 max-w-full 이 좌우 여백 밖으로 밀린다(수납 관리와 같은 처방). */}
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본). equal 유지(형제 서류 종류 탭 문법) */}
-          <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab} equal
+          {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본).
+              equal 을 뗐다. 라벨이 '입퇴실 캘린더'로 길어지면서 세 칸이 가장 긴 칸에 맞춰
+              부풀어(320px 118.7px x 3) 트랙이 콘텐츠 폭을 통째로 먹고, 390px 에서 월 셀렉터가
+              한 줄 더 밀려 내려갔다(헤더 높이 102 → 142). 320px 에서는 칸이 288 에 갇혀 글자가
+              1px 잘렸다. 자연폭으로 두면 56.9 / 79 / 129 = 트랙 266.9 로 세 폭 전부 안 잘리고
+              헤더 높이도 종전 그대로다(142/142/102). 자연폭 + 넘치면 가로 스크롤이 §25 의 기본이고
+              형제 수납 관리(3탭 + 접미 N)가 쓰는 바로 그 문법이다 — equal 은 아직 부록 등재 제안 중. */}
+          <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab}
             onChange={id => setViewTab(id as ViewTabId)}
             tabs={[
               { id: 'rooms',    label: '호실' },
               { id: 'cleaning', label: '청소', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
+              // '입퇴실'만으로는 무엇이 열리는지 안 보인다는 운영자 제안(2026-08-18) — 이 탭이 여는 것은
+              // 달력이라 이름이 그렇게 말한다. 홈 링크 문구('이달 입퇴실 N건')는 그대로 둔다.
               // 접미 N 은 **보고 있는 달**의 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
               // 눌러 들어왔을 때 그 숫자가 여기서 다른 값으로 바뀌면 둘 중 하나가 거짓으로 읽힌다.
-              { id: 'moves',    label: '입퇴실', suffix: moveCalendar.focusEventCount > 0 ? String(moveCalendar.focusEventCount) : undefined },
+              { id: 'moves',    label: '입퇴실 캘린더', suffix: moveCalendar.focusEventCount > 0 ? String(moveCalendar.focusEventCount) : undefined },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
