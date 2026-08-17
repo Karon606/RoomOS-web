@@ -448,8 +448,8 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
       {row.tail && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
           <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
-          <p className="pb-1.5 pl-1 text-[0.65625rem] truncate" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
-            {row.tail}
+          <p className="min-w-0 pb-1.5 text-[0.65625rem]" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
+            <span className="sticky inline-block max-w-full truncate pl-1.5" style={{ left: ROOM_COL }}>{row.tail}</span>
           </p>
         </div>
       )}
@@ -463,8 +463,11 @@ function Bar({ p, onOpen }: { p: Placed; onOpen: () => void }) {
 
   return (
     <>
+      {/* 이 버튼에 overflow-hidden 을 걸면 안 된다 — 그 순간 버튼 자신이 스크롤 컨테이너가 되어
+          안의 sticky 이름이 트랙이 아니라 버튼에 붙고, 트랙을 끌어도 따라오지 않는다(실측에서
+          한 번 걸렸다). 넘침은 안쪽 span 의 truncate 가 자기 상자에서 막는다. */}
       <button type="button" onClick={onOpen} title={full}
-        className="min-w-0 self-center flex items-center px-2 text-[0.6875rem] font-semibold truncate transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+        className="min-w-0 self-center flex items-center text-[0.6875rem] font-semibold transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
         style={{
           gridColumn: `${bar.startDay + 1} / ${bar.endDay + 2}`,
           gridRow: `${bar.lane + 1} / span 1`,
@@ -474,7 +477,12 @@ function Bar({ p, onOpen }: { p: Placed; onOpen: () => void }) {
           color: bar.conflicted ? 'var(--ink-2)' : tone.fg,
           borderRadius: barRadius(bar),
         }}>
-        {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
+        {/* 이름은 막대 안에서 sticky 다. 연속 트랙에서는 한 막대가 화면보다 넓은 일이 흔한데,
+            글자를 막대 왼쪽 끝에 붙여 두면 그 막대가 화면을 가득 채운 순간 **이름 없는 색 띠**가
+            된다(390px 에서 열일곱 행 중 열 행이 그랬다). 막대 안에 갇히므로 옆 막대는 안 침범한다. */}
+        <span className="sticky min-w-0 max-w-full truncate px-2" style={{ left: ROOM_COL }}>
+          {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
+        </span>
       </button>
       {side && ink && (
         <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none"
