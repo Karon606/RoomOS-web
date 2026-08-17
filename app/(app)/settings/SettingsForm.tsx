@@ -57,7 +57,7 @@ import {
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { calcShortStay, type ShortStayPolicy } from '@/lib/shortStay'
+import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 type Property = {
@@ -820,7 +820,7 @@ export default function SettingsForm({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
-              <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다.</p>
+              <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다. 단기 계약은 단기 입실 정책에서 예약금 처리를 따로 정하면 그 방식을 따릅니다.</p>
               <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                 <option value="deposit">보증금 대체 · 받은 예약금을 보증금으로</option>
@@ -2393,6 +2393,8 @@ function ShortStayPolicyCard() {
   useEffect(() => { getShortStayPolicy().then(setP).catch(() => setP(null)) }, [])
 
   const numCls = 'w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  // 셀렉트는 같은 테두리·여백 문법에 폭만 전폭 — 문장형 선택지가 좁은 칸에서 잘리지 않게.
+  const selCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   const setNum = (k: 'unitDays' | 'minUnits' | 'thresholdDays' | 'multiplier' | 'cleaningFee' | 'roundTo' | 'deposit') =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const v = e.target.value.replace(/[^0-9.]/g, '')
@@ -2461,6 +2463,17 @@ function ShortStayPolicyCard() {
                 보증금은 요금에 포함되지 않는 별도 예치금이며 일반 입주자처럼 퇴실 때 환불합니다(0이면 없음).
                 {preview && ` 예: 월 이용료 60만 기준 최소 계약(${p.unitDays * p.minUnits}일) = ${preview.total.toLocaleString()}원`}
               </p>
+              {/* 예약금 처리 — 요금 계산과는 다른 축이라 계산 설명 아래 제 줄로 둔다.
+                  손대지 않으면 미설정으로 남아 영업장 기본 처리(위 '예약금 기본 처리')를 그대로 따른다. */}
+              <label className="block">
+                <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">예약금 처리</span>
+                <select value={p.reservationMode ?? 'refundableDeposit'}
+                  onChange={e => setP({ ...p, reservationMode: e.target.value as ShortStayReservationMode })}
+                  className={selCls}>
+                  <option value="refundableDeposit">퇴실 시 환불 보증금(현행)</option>
+                  <option value="applyToRent">청소비 차감 후 이용료 충당</option>
+                </select>
+              </label>
             </>
           )}
           <Btn type="button" variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? '저장 중…' : '정책 저장'}</Btn>

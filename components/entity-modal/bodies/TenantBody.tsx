@@ -29,6 +29,7 @@ import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
+import { parseShortStayPolicy } from '@/lib/shortStay'
 import { primaryTenantLease, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
 import { withheldPartsLabel } from '@/lib/depositComposition'
 
@@ -78,6 +79,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             reservationConfirmedAt: lease.reservationConfirmedAt, roomId: lease.room?.id ?? null,
             reservationDepositMode: resolveReservationDepositMode(
               lease.reservationDepositMode, lease.property?.reservationDepositMode, lease.isShortTerm,
+              parseShortStayPolicy(lease.property?.shortStayPolicy).reservationMode,
             ),
           }}
           tenantId={tenant.id}

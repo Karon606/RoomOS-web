@@ -16,6 +16,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
+import { reservationFeeSplit, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
@@ -222,6 +223,42 @@ const RENT = 300000
   // JSON 방어 파싱 — 이상값은 기본값으로
   eq('단기: 정책 파싱 방어', parseShortStayPolicy({ enabled: true, multiplier: 99, cleaningFee: -5 }),
     { ...SHORT_STAY_DEFAULTS, enabled: true })
+}
+
+// ── 예약금 분해·모드 해석 ── (신고 8c0f9688, 운영자 승인 2026-08-17)
+// 예약금은 청소비를 먼저 채우고 남은 몫이 이용료 선납이다. 두 몫의 합은 언제나 받은 돈이다.
+{
+  eq('예약금 분해: 5만 중 청소비 2만', reservationFeeSplit(50000, 20000), { cleaning: 20000, prepaid: 30000 })
+  // 청소비에 못 미치면 전액이 청소비 몫 — 선납으로 넘어가는 음수 몫이 생기면 안 된다.
+  eq('예약금 분해: 예약금 < 청소비', reservationFeeSplit(10000, 20000), { cleaning: 10000, prepaid: 0 })
+  eq('예약금 분해: 딱 청소비만큼',    reservationFeeSplit(20000, 20000), { cleaning: 20000, prepaid: 0 })
+  eq('예약금 분해: 청소비 0 = 전액 선납', reservationFeeSplit(50000, 0), { cleaning: 0, prepaid: 50000 })
+  eq('예약금 분해: 예약금 0',        reservationFeeSplit(0, 20000), { cleaning: 0, prepaid: 0 })
+  // 음수·비수치 방어 — 돈을 쪼개는 자리라 NaN 이 새면 하류가 통째로 깨진다.
+  eq('예약금 분해: 음수·NaN은 0',    reservationFeeSplit(-5000, NaN), { cleaning: 0, prepaid: 0 })
+  eq('예약금 분해: 두 몫의 합 = 받은 돈', (() => {
+    const s = reservationFeeSplit(33333, 20000); return s.cleaning + s.prepaid
+  })(), 33333)
+
+  // 해석 우선순위 — 계약 개별 선택 > 단기 정책 > 영업장 기본 > 단기/장기 폴백.
+  // 미설정(1단계 현재 상태)은 종전 해석과 문자 그대로 같아야 한다. 이게 무회귀의 잠금이다.
+  eq('예약금 모드: 미설정 장기 = deposit', resolveReservationDepositMode(null, null, false, null), 'deposit')
+  eq('예약금 모드: 미설정 단기 = prepaid', resolveReservationDepositMode(null, null, true, null), 'prepaid')
+  eq('예약금 모드: 미설정이면 영업장 기본 그대로(단기)', resolveReservationDepositMode(null, 'deposit', true, null), 'deposit')
+  eq('예약금 모드: 미설정이면 영업장 기본 그대로(장기)', resolveReservationDepositMode(null, 'prepaid', false, null), 'prepaid')
+  eq('예약금 모드: 인자 생략 = 미설정과 동일', resolveReservationDepositMode(null, 'none', true), 'none')
+  // applyToRent 를 켜면 단기만 움직인다 — 같은 영업장의 장기 계약은 그대로다.
+  eq('예약금 모드: applyToRent 단기 = prepaid', resolveReservationDepositMode(null, 'deposit', true, 'applyToRent'), 'prepaid')
+  eq('예약금 모드: applyToRent 장기 무영향', resolveReservationDepositMode(null, 'deposit', false, 'applyToRent'), 'deposit')
+  eq('예약금 모드: refundableDeposit 단기 = deposit', resolveReservationDepositMode(null, 'prepaid', true, 'refundableDeposit'), 'deposit')
+  eq('예약금 모드: refundableDeposit 장기 무영향', resolveReservationDepositMode(null, 'prepaid', false, 'refundableDeposit'), 'prepaid')
+  // 계약 개별 선택은 단기 정책보다도 앞선다.
+  eq('예약금 모드: 계약 선택이 최우선', resolveReservationDepositMode('none', 'deposit', true, 'applyToRent'), 'none')
+  // 정책 JSON 을 거쳐도 같은 답 — 파서와 해석기가 한 벌임을 잠근다.
+  eq('예약금 모드: 파서 경유 동일', resolveReservationDepositMode(
+    null, 'deposit', true, parseShortStayPolicy({ enabled: true, reservationMode: 'applyToRent' }).reservationMode), 'prepaid')
+  eq('예약금 모드: 파서가 이상값을 미설정으로', resolveReservationDepositMode(
+    null, 'deposit', true, parseShortStayPolicy({ enabled: true, reservationMode: 'weird' }).reservationMode), 'deposit')
 }
 
 // ── billForLeaseMonth 단기 입주월 단일 청구 ── (운영자 승인 2026-07-20)

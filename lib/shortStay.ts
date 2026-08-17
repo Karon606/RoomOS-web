@@ -6,6 +6,11 @@
 
 import { PRORATE_BASE_DAYS } from './prorate'
 
+// 단기 예약금을 어떻게 쓰는가 — 'refundableDeposit'(퇴실 시 환불하는 보증금, 현행)
+// | 'applyToRent'(청소비를 먼저 떼고 남은 몫을 이용료 선납으로 충당).
+// 계약(LeaseTerm.reservationDepositMode)의 개별 선택이 이보다 앞선다.
+export type ShortStayReservationMode = 'applyToRent' | 'refundableDeposit'
+
 export type ShortStayPolicy = {
   enabled: boolean
   unitDays: number        // 계약 단위 일수 (7 = 주 단위 계약)
@@ -14,12 +19,18 @@ export type ShortStayPolicy = {
   multiplier: number      // 청구 배율 (1.5 = 계약일수의 1.5배 일수만큼 청구)
   cleaningFee: number     // 단기 청소비 (원)
   roundTo: number         // 기본요금 절삭 단위 (1000 = 천원 단위 반올림, 1 = 절삭 없음)
-  deposit: number         // 단기 보증금 (원) — 요금 아님, 퇴실 시 환불 (운영자 요청 2026-07-09)
+  // 단기 보증금 (원) — 요금이 아니라 별도 예치금이고 퇴실 시 환불한다 (운영자 요청 2026-07-09).
+  // 예약 때 받는 예약금과는 다른 돈이다. 예약금의 쓰임은 아래 reservationMode 가 정한다.
+  deposit: number
+  // 단기 계약의 예약금 처리 — null = 미설정. 미설정이면 영업장 공통 기본값
+  // (Property.reservationDepositMode)을 그대로 따른다(현행 해석 그대로).
+  reservationMode: ShortStayReservationMode | null
 }
 
 // 신규 영업장 기본값 — 정책 미사용. 제기역점 값은 시드로 저장돼 있음.
 export const SHORT_STAY_DEFAULTS: ShortStayPolicy = {
   enabled: false, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 20000, roundTo: 1000, deposit: 0,
+  reservationMode: null,
 }
 
 // DB Json 값 → 정책 (필드 누락·이상값은 기본값으로 방어)
@@ -31,6 +42,8 @@ export function parseShortStayPolicy(raw: unknown): ShortStayPolicy {
     const n = typeof v === 'number' ? v : NaN
     return Number.isFinite(n) && n >= min && n <= max ? n : def
   }
+  // 예약금 처리는 허용 두 값만 통과 — 그 밖의 값(옛 저장분·오타)은 미설정으로 떨어져 현행 해석을 쓴다.
+  const resvMode = o.reservationMode
   return {
     enabled: o.enabled === true,
     unitDays: Math.round(num(o.unitDays, d.unitDays, 1, 31)),
@@ -40,6 +53,7 @@ export function parseShortStayPolicy(raw: unknown): ShortStayPolicy {
     cleaningFee: Math.round(num(o.cleaningFee, d.cleaningFee, 0, 10_000_000)),
     roundTo: Math.round(num(o.roundTo, d.roundTo, 1, 100_000)),
     deposit: Math.round(num(o.deposit, d.deposit, 0, 100_000_000)),
+    reservationMode: resvMode === 'applyToRent' || resvMode === 'refundableDeposit' ? resvMode : d.reservationMode,
   }
 }
 
