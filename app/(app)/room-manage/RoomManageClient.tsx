@@ -569,9 +569,12 @@ export default function RoomManageClient({
     const roomNoQ = filterRoomNo.trim().toLowerCase()
     const base = rooms.filter(r => {
       if (q) {
+        // 예약자 이름도 잡는다 — 카드에 이름이 안 적히는 예약(거주자가 있는 방)은 종전에 검색으로도
+        // 닿을 수 없었다. 이름으로 방을 찾는 것이 이 검색창의 주 용도인데 예약자만 예외였다.
         const ok =
           r.roomNo.toLowerCase().includes(q) ||
           (currentTenant(r) ?? '').toLowerCase().includes(q) ||
+          r.leaseTerms.some(l => l.status === 'RESERVED' && (l.tenant?.name ?? '').toLowerCase().includes(q)) ||
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
