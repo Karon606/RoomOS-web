@@ -29,7 +29,7 @@ import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
 import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { primaryTenantLease, CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
+import { primaryTenantLease, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
 import { withheldPartsLabel } from '@/lib/depositComposition'
 
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
@@ -82,6 +82,13 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           }}
           tenantId={tenant.id}
           tenantName={tenant.name}
+          // 이 계약에 딸린 진행 중 계약 — 퇴실·취소 확인창이 '함께 정리되지 않는다'고 말할 근거다.
+          // 술어는 아래 '추가 계약' 줄(TenantBasicInfo)과 같은 한 벌이되, 거기는 '메인이 아닌 계약'을
+          // 세고 여기는 '이 계약에 묶인 계약'을 센다. 조회가 CHECKED_OUT 을 안 실어 오므로
+          // 죽은 계약은 애초에 후보에 없다(취소만 걸러 낸다).
+          subLeases={tenant.leaseTerms
+            .filter(l => l.parentLeaseTermId === lease.id && (TENANT_LIST_STATUSES as string[]).includes(l.status))
+            .map(l => ({ id: l.id, roomNo: l.room?.roomNo ?? null }))}
           onChange={refresh}
         />
       )}

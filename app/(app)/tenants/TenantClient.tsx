@@ -63,8 +63,8 @@ import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible } from '@/
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
-import { fmtRoomNo } from '@/lib/roomNo'
-import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
+import { fmtRoomNo, fmtRoomList } from '@/lib/roomNo'
+import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
 
 // ── 타입 ─────────────────────────────────────────────────────────
@@ -194,6 +194,21 @@ function extraRoomSuffix(t: { leaseTerms: LeaseTerm[] }, main: LeaseTerm | undef
   const extras = t.leaseTerms.filter(l => l.id !== main?.id && live.includes(l.status))
   if (extras.length === 0) return ''
   return ` (+${extras.map(l => l.room?.roomNo ?? '미지정').join(', ')})`
+}
+
+/**
+ * 이 계약에 딸린 진행 중 계약 — 메인 계약을 끝낼 때 남겨질 계약들이다(다호실 마무리 2026-08-17).
+ *
+ * 서버는 막지 않는다. 부모를 퇴실·취소로 보내는 것 자체는 정당한 일이고(창고만 남기고 방을 뺄 수도
+ * 있다), 끊긴 부모는 감지망 축 ①(check-lease-subordination)이 사후에 센다. 화면이 할 일은
+ * '자동으로 따라 정리되지는 않는다'는 사실을 그 순간에 말해 주는 것뿐이다.
+ *
+ * 술어는 목록 호실 꼬리·프리즘 '추가 계약' 줄과 같은 한 벌이다(죽은 계약은 안 센다).
+ */
+function liveSubLeases(t: { leaseTerms: LeaseTerm[] } | null | undefined, parentId: string | undefined): LeaseTerm[] {
+  if (!t || !parentId) return []
+  const live: string[] = TENANT_LIST_STATUSES
+  return t.leaseTerms.filter(l => l.parentLeaseTermId === parentId && live.includes(l.status))
 }
 
 // 이 사람의 계약을 수정 창이 고를 순서대로 — 거주 · 예약 · 비거주를 먼저 세우고(roomLeaseRowOrder 정본)
@@ -3928,6 +3943,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <option value="CANCELLED">입실 취소</option>
               </optgroup>
             </select>
+            {/* 딸린 계약 경고 — 메인 계약을 끝내도 추가 계약은 따라 정리되지 않는다(다호실 마무리 2026-08-17).
+                막지 않고 알린다. 창고만 남기고 방을 빼는 것도 정당한 저장이라 서버는 그대로 받는다.
+                상태전환 미니폼의 같은 경고와 문장 한 벌이다. */}
+            {(() => {
+              const closing: string[] = CLOSED_STATUSES
+              const subs = statusVal !== lease?.status && closing.includes(statusVal)
+                ? liveSubLeases(tenant, lease?.id) : []
+              if (subs.length === 0) return null
+              return (
+                <p className="mt-1 text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed break-keep">
+                  이 계약에 딸린 추가 계약 {subs.length}건({fmtRoomList(subs.map(l => l.room?.roomNo))})은 자동으로 정리되지 않습니다. 각 계약에서 따로 처리해 주세요.
+                </p>
+              )
+            })()}
             {/* 상태를 바꾸는 저장 — 상태전환 미니폼과 같은 사유 수집(수정 폼 경로 누락 봉합, 2026-07-27).
                 어떤 전이에서 받을지는 statusReasons 정본이 정한다. 입실 취소에 더해 퇴실 계열도 받는다
                 (운영자 오더 2026-08-03). 폼과 미니폼이 각자 조건을 들면 또 갈린다. */}

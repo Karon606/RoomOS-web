@@ -23,7 +23,14 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
+import { CLOSED_STATUSES } from '@/lib/leaseStatus'
+import { fmtRoomList } from '@/lib/roomNo'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
+
+// 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
+// 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
+// 퇴실 예정은 아직 부모 자격이 살아 있어 경고하지 않는다.
+const CLOSING_STATUSES: string[] = CLOSED_STATUSES
 
 type TransitionDef = {
   key: string
@@ -94,10 +101,15 @@ type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: stri
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
-export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange }: {
+export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases = [], onChange }: {
   lease: Lease
   tenantId: string
   tenantName: string
+  /**
+   * 이 계약에 딸린 진행 중 계약 — 퇴실·취소 확인창이 '함께 정리되지 않는다'고 말할 때만 쓴다.
+   * 부모가 골라 넘긴다(같은 사람의 계약을 이미 손에 쥔 곳이 거기다). 비어 있으면 아무것도 안 그린다.
+   */
+  subLeases?: { id: string; roomNo: string | null }[]
   /** 전환 성공 후 부모가 settlement/tenant 재조회. */
   onChange?: () => void
 }) {
@@ -362,6 +374,16 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
             </div>
           }>
             <div className="space-y-3">
+              {/* 딸린 계약 경고 — 메인 계약을 끝내도 추가 계약은 따라 정리되지 않는다(다호실 마무리 2026-08-17).
+                  막지 않고 알린다. 창고만 남기고 방을 빼는 것도 정당한 처리라 서버는 그대로 받고,
+                  끊긴 부모는 감지망 축 ①(check-lease-subordination)이 사후에 센다.
+                  수정 폼의 같은 경고와 문장 한 벌이다. 맨 위에 두는 것은 날짜·금액을 정하기 전에
+                  '이 처리가 무엇을 남기는가'를 먼저 읽어야 하기 때문이다. */}
+              {subLeases.length > 0 && CLOSING_STATUSES.includes(active.def.toStatus) && (
+                <p className="text-[0.6875rem] text-[var(--warning-fg)] leading-relaxed break-keep">
+                  이 계약에 딸린 추가 계약 {subLeases.length}건({fmtRoomList(subLeases.map(s => s.roomNo))})은 자동으로 정리되지 않습니다. 각 계약에서 따로 처리해 주세요.
+                </p>
+              )}
               {/* e1b81629: 입실 취소 미니폼 — 반환·몰취 대상 없으면 확인 문구, 사유는 선택 입력 */}
               {active.def.key === 'cancel' && active.depositAmount === 0 && (
                 <p className="text-sm text-[var(--warm-dark)] leading-relaxed">입실 취소로 변경할까요? 문의·투어·예약 기록은 보존됩니다.</p>

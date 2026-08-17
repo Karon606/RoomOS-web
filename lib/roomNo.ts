@@ -23,3 +23,17 @@ export function fmtRoomNo(no: string | null | undefined, empty = '—'): string 
   if (!no) return empty
   return /^\d+$/.test(no) ? `${no}호` : no
 }
+
+/**
+ * 호실 여럿을 문장 안에 세우는 한 줄 — '601호' · '601호·602호' · '601호·602호 외 1건'.
+ *
+ * 딸린 계약 경고가 두 화면(수정 폼·상태전환 미니폼)에서 같은 말을 해야 해서 여기 둔다.
+ * 화면마다 join 을 적으면 한쪽만 구분자가 바뀌거나 한쪽만 길이를 안 끊는다.
+ * 셋부터 꼬리를 다는 것은 좁은 폭(320px) 한 줄에 들어가는 한계가 대략 거기여서다.
+ *
+ * @param max 그대로 나열할 최대 개수. 넘으면 '외 N건'으로 접는다.
+ */
+export function fmtRoomList(nos: (string | null | undefined)[], max = 2): string {
+  const names = nos.map(n => fmtRoomNo(n, '호실 미지정'))
+  return names.length <= max ? names.join('·') : `${names.slice(0, max).join('·')} 외 ${names.length - max}건`
+}
