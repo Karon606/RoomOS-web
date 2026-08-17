@@ -8,7 +8,7 @@ import { dueDayForCutoff } from '@/lib/dueDate'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
-import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
+import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
@@ -131,6 +131,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     _sum: { actualAmount: true },
   })
   const pReservedExpected = getReservedFullMonthRevenue(prisma, propertyId, targetMonth)
+  // 이달 입퇴실 건수 — 호실 관리 입퇴실 탭과 같은 한 벌을 부른다. 홈이 따로 세면 같은 달을
+  // 두 화면이 다른 숫자로 부른다. 액션 안의 requirePropertyAccess 는 React cache 라 같은
+  // 요청에서 이미 한 조회를 다시 하지 않는다.
+  const pMoveCalendar = getMoveCalendarMonth(targetMonth)
   const [tcY, tcM] = targetMonth.split('-').map(Number)
   const pLastExpAggs = Promise.all([
     prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
@@ -160,7 +164,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     orderBy: { updatedAt: 'desc' },
   }).catch(() => null)
   // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
-  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pExpenseCategories, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
+  for (const p of [pPaidRevenue, pTrendPaidRevenue, pCheckedOutRecognized, pRecurringWithStatus, pExpenseCategories, pDepositRecordedAgg, pDepositCleaningLeases, pReservedDepositReceivedAgg, pReservedExpected, pMoveCalendar, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -1888,6 +1892,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     expenseCategoryOrder: await pExpenseCategories,
     trend,
     totalRooms,
+    moveEventCount: (await pMoveCalendar).eventCount,
     vacantRooms,
     excludedRooms,
     // 입실 = 전체 − 공실 − 집계 제외 — 제외분(창고·사무실)이 입실로 부풀지 않게(운영자 결정 2026-07-21)

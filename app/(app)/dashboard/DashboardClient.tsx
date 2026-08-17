@@ -127,6 +127,9 @@ export type DashboardData = {
   agingBuckets: { month: string; amount: number; count: number }[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
+  // 이달 입퇴실 건수 — 호실 관리 입퇴실 탭이 세는 그 수다(lib/moveCalendar 한 벌에서 나온다).
+  // 홈이 따로 세면 같은 달을 두 화면이 다른 숫자로 부른다.
+  moveEventCount:    number
   vacantRooms:       number
   excludedRooms:     number   // 공실 집계 제외(창고·사무실, lib/vacancy 정본) — 공실에도 입실에도 안 넣음
   occupiedRooms:     number
@@ -2657,6 +2660,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                           })()}
                       </>
                     )}
+                    {/* 이달 입퇴실 — 방 현황이 '지금'을 말한다면 이 줄은 '이 달에 몇 번 바뀌는가'다.
+                        숫자는 호실 관리 입퇴실 탭이 세는 그 수 그대로다(서버 한 벌). */}
+                    <Link href={`/room-manage?tab=moves&month=${targetMonth}`}
+                      className="self-start inline-block text-[0.6875rem]" style={{ color: 'var(--tc-text)' }}>
+                      이달 입퇴실 <span className="tnum">{data.moveEventCount}</span>건 ›
+                    </Link>
                   </div>
 
                   {/* 비거주자 현황 */}
