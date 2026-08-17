@@ -38,7 +38,10 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   const todayMonth = kstMonthStr()
 
   const [showPicker, setShowPicker] = useState(false)
-  const pickerRef   = useRef<HTMLDivElement>(null)
+  // 라벨과 팝오버는 이제 형제가 아니다(알약이 팝오버를 자르지 않도록 껍데기를 하나 세웠다) —
+  // 바깥 클릭 판정은 둘 다 봐야 종전과 같다(◀▶ 를 누르면 닫히던 동작 유지).
+  const labelRef    = useRef<HTMLDivElement>(null)
+  const popRef      = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isPending, startLocal] = useTransition()
 
@@ -63,7 +66,8 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
     if (!showPicker) return
     const handle = (e: MouseEvent) => {
       const t = e.target as Node
-      if (pickerRef.current && !pickerRef.current.contains(t)) setShowPicker(false)
+      if (labelRef.current?.contains(t) || popRef.current?.contains(t)) return
+      setShowPicker(false)
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
@@ -100,9 +104,19 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   if (role === 'LIMITED_STAFF') return null   // 모든 훅 호출 뒤 조건부 렌더(rules-of-hooks 준수)
 
   return (
-    // 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
+    /**
+     * 껍데기 — 팝오버의 기준 상자다. 알약 자체에 걸린 overflow-hidden(둥근 모서리가 '오늘' 버튼
+     * 배경을 자르는 데 필요하다)이 팝오버까지 잘라 **연월을 눌러도 아무것도 안 뜨던** 결함이
+     * 여기서 갈렸다(2026-06-30 6e5d722c 이후 줄곧, 운영자 신고 2026-08-18). 팝오버를 알약 밖으로
+     * 한 겹 꺼내면 잘림도 사라지고, right-0 이 알약 오른쪽 모서리에 맞아 320px 에서 왼쪽으로
+     * 삐져나가던 것도 함께 맞는다(라벨 기준일 때 -22.6px).
+     * 박스 모델은 종전 루트 그대로다 — shrink-0·self-start 를 여기로 옮겼을 뿐이라 호출부 여덟 곳의
+     * 자리·폭이 안 흔들린다.
+     */
+    <div className="relative shrink-0 self-start">
+    {/* 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지). */}
     <div
-      className="flex items-stretch min-h-[44px] rounded-lg shrink-0 self-start overflow-hidden transition-colors"
+      className="flex items-stretch min-h-[44px] rounded-lg overflow-hidden transition-colors"
       aria-busy={isPending}
       style={{
         ...(isCurrent
@@ -121,28 +135,19 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <div ref={pickerRef} className="relative flex">
-        <div
-          onClick={() => setShowPicker(v => !v)}
-          className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap flex items-center gap-1.5"
-          style={{ color: 'var(--warm-dark)' }}
-          role="button"
-          aria-label="월 선택"
-        >
-          {displayMonth}
-          {rel && (
-            <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
-              style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
-          )}
-        </div>
-        {showPicker && (
-          <MonthPicker
-            current={localMonth}
-            todayMonth={todayMonth}
-            allowFuture={allowFuture}
-            onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
-            onClose={() => setShowPicker(false)}
-          />
+      <div
+        ref={labelRef}
+        onClick={() => setShowPicker(v => !v)}
+        className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap flex items-center gap-1.5"
+        style={{ color: 'var(--warm-dark)' }}
+        role="button"
+        aria-expanded={showPicker}
+        aria-label="월 선택"
+      >
+        {displayMonth}
+        {rel && (
+          <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
+            style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
         )}
       </div>
       <button
@@ -165,17 +170,29 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
         </button>
       )}
     </div>
+    {showPicker && (
+      <MonthPicker
+        ref={popRef}
+        current={localMonth}
+        todayMonth={todayMonth}
+        allowFuture={allowFuture}
+        onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
+        onClose={() => setShowPicker(false)}
+      />
+    )}
+    </div>
   )
 }
 
 function MonthPicker({
-  current, todayMonth, allowFuture = false, onSelect, onClose
+  current, todayMonth, allowFuture = false, onSelect, onClose, ref
 }: {
   current: string
   todayMonth: string
   allowFuture?: boolean
   onSelect: (month: string) => void
   onClose: () => void
+  ref?: React.Ref<HTMLDivElement>
 }) {
   const [year, setYear] = useState(Number(current.split('-')[0]))
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
@@ -183,8 +200,9 @@ function MonthPicker({
   const { year: maxYear, month: maxMonth } = kstYmd()
 
   return (
-    /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */
+    /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 알약 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */
     <div
+      ref={ref}
       className="absolute top-full mt-1.5 right-0 rounded-xl shadow-lift p-4 w-72 max-w-[88vw] z-[var(--z-dropdown)]"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
