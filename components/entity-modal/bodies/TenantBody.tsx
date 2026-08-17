@@ -97,7 +97,9 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           운영자 확정(2026-08-01). 종전에는 메모 아래였고, 그 때문에 모달 하단에 '계약서 출력'
           버튼이 따로 있었다(중복 접점 — 함께 제거). */}
       <Section title="계약서 파일">
-        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name}
+        {/* leaseTermId — 이 본문이 그리고 있는 계약(메인). 서명 요청이 이 값을 실어 화면과 스냅샷이
+            같은 계약을 가리킨다. 계약이 하나뿐인 사람에게는 추론과 같은 답이라 종전과 동일하다. */}
+        <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} leaseTermId={lease?.id ?? null}
           extraLeases={tenant.leaseTerms
             // 딸린 계약은 제 계약서 버튼을 갖지 않는다 — 그 계약의 종이는 부모 한 장이고,
             // 여기 버튼을 남기면 같은 방이 두 장으로 나가는 길이 열린다(발급 자체도 서버가 막는다).
