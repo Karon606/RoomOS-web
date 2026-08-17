@@ -114,8 +114,9 @@ function primaryLease(r: Room) {
   return primaryRoomLease(r.leaseTerms)
 }
 
-// 거주자가 있는 방에 잡혀 있는 다음 예약 — 카드에서는 뱃지를 늘리지 않고 보조줄에만 병기한다.
-// 뱃지 자리는 이미 상태 뱃지 + 전입신고 불가 + 청소 필요가 나눠 쓰고 있어 §11 최대 2개를 넘긴다.
+// 카드에 이름이 아직 안 적힌 다음 예약 — 거주자가 있는 방의 예약, 예약이 둘인 방의 뒷사람.
+// 카드에서는 뱃지를 늘리지 않고 입주자 줄 아래 예약자 줄로 적는다. 뱃지 자리는 이미 상태 뱃지 +
+// 전입신고 불가 + 청소 필요가 나눠 쓰고 있어 §11 최대 2개를 넘긴다.
 // 고르는 규칙은 lib/leaseStatus 의 nextRoomReservation 이 정본이다(호실 면·홈 방 현황과 공유).
 function nextReservedLease(r: Room, primary: { id: string } | undefined) {
   return nextRoomReservation(r.leaseTerms, primary)
@@ -145,12 +146,13 @@ function getRoomStatus(r: Room, targetMonth: string): RoomStatus {
       secondary: exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined,
     } }
   }
-  // 거주자 카드의 보조줄 — 퇴실 D-day 뒤에 이 방에 잡혀 있는 다음 예약의 입주 예정일을 시간 순으로 잇는다.
-  // "8/29 퇴실 D-19 · 9/2 입주 예정". 예약 카드의 병기 문법(2026-08-07)과 같은 문장이고, 뱃지는 늘리지 않는다.
+  // 거주자 카드의 보조줄 — 이 뱃지가 가리키는 사람(거주자)의 퇴실 D-day 다.
+  // 다음 예약의 입주 예정일은 2026-08-07 에 이 줄로 함께 잇던 것을 카드의 예약자 줄로 옮겼다
+  // (신고 ba546ecb). 날짜 둘을 한 줄에 이으면 뒤엣것이 누구 날짜인지 말할 자리가 없고,
+  // 뱃지가 없는 방(그냥 거주중)은 이 줄 자체가 안 서서 예약이 카드에서 통째로 사라졌다.
   return { ...base, badge: {
     ...base.badge,
-    sub: [checkoutSubText(lease.expectedMoveOut), moveInSubText(nextReservedLease(r, lease)?.moveInDate ?? null)]
-      .filter(Boolean).join(' · ') || undefined,
+    sub: checkoutSubText(lease.expectedMoveOut) || undefined,
   } }
 }
 
@@ -173,6 +175,24 @@ const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
   { key: 'active', label: '거주중' },
   { key: 'checkout', label: '퇴실 예정' },
 ]
+
+// 그 방에 잡혀 있는 예약이 하나라도 있는가 — 주 계약이 누구인지는 묻지 않는다.
+function hasReservation(r: Room) {
+  return r.leaseTerms.some(l => l.status === 'RESERVED')
+}
+
+// 이 방이 그 칸에 서는가 — '입실 예약'만 **사람 축**이라 배타가 아니다(신고 ba546ecb).
+//
+// 종전에는 네 칸 전부 roomStatusKey 로 방을 한 칸에만 세웠다. 그러면 거주자가 있는 방에 잡힌 예약은
+// 주 계약(거주)에 밀려 '입실 예약' 칸에서 통째로 사라진다 — 409호는 서종희가 살고 후지이 미나미가
+// 9월 입실 예약인데 칸에는 '거주중'으로만 섰고, 예약을 보러 온 운영자에게는 그 예약이 없는 것과 같았다.
+// 방이 아니라 사람이 예약의 단위다(수납 관리가 '방이 아니라 계약이 청구의 단위'라 한 것과 같은 이유).
+// 겹침 자체는 새 문법이 아니다 — '입주 가능' 칸이 이미 방 단위 사실로 물어 다른 칸과 겹친다.
+//
+// 칸 숫자도 이 술어로 센다. 목록과 다른 술어로 세면 '입실 예약 5' 를 눌러 4실이 나온다.
+function matchesStatusFilter(r: Room, key: RoomStatusKey, targetMonth: string) {
+  return key === 'reserved' ? hasReservation(r) : roomStatusKey(r, targetMonth) === key
+}
 // '입주 가능' 판정은 lib/leaseStatus 의 roomAvailability 가 정본이다 — 홈 매칭 알림이 같은 방 축을 쓴다.
 // 칩(roomStatusKey)이 아니라 방 단위 사실로 묻는 이유는 그쪽 주석에 있다.
 
@@ -551,15 +571,18 @@ export default function RoomManageClient({
     const roomNoQ = filterRoomNo.trim().toLowerCase()
     const base = rooms.filter(r => {
       if (q) {
+        // 예약자 이름도 잡는다 — 카드에 이름이 안 적히는 예약(거주자가 있는 방)은 종전에 검색으로도
+        // 닿을 수 없었다. 이름으로 방을 찾는 것이 이 검색창의 주 용도인데 예약자만 예외였다.
         const ok =
           r.roomNo.toLowerCase().includes(q) ||
           (currentTenant(r) ?? '').toLowerCase().includes(q) ||
+          r.leaseTerms.some(l => l.status === 'RESERVED' && (l.tenant?.name ?? '').toLowerCase().includes(q)) ||
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
       if (filterStatus) {
         if (filterStatus === 'available') { if (!roomAvailability(r)) return false }
-        else if (roomStatusKey(r, targetMonth) !== filterStatus) return false
+        else if (!matchesStatusFilter(r, filterStatus, targetMonth)) return false
       }
       if (cleaningOnly && !openCleanings[r.id]) return false
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
@@ -986,6 +1009,14 @@ export default function RoomManageClient({
     const tenant = currentTenant(room)
     const thumb  = room.photos[0]
     const rs     = getRoomStatus(room, targetMonth)
+    // 카드에 이름이 안 적히는 예약 — 거주자가 있는 방의 예약, 예약이 둘인 방의 뒷사람(404호 8/15·9/1).
+    // '입실 예약' 칸이 사람 축이 된 이상 그 칸에 선 방은 누구의 예약인지 카드에서 말해야 한다.
+    // 문장은 카드가 이미 쓰던 조각 그대로다 — 이름(입주자 줄) + moveInSubText('9/2 입주 예정').
+    // 날짜 없는 예약은 상태 라벨로 메운다. 이름만 적으면 두 번째 거주자로 읽힌다.
+    const reserved = nextReservedLease(room, primaryLease(room))
+    const reservedLine = reserved
+      ? [reserved.tenant?.name, moveInSubText(reserved.moveInDate) ?? '입실 예약'].filter(Boolean).join(' · ')
+      : null
     // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
     const cleaning = openCleanings[room.id]
     // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
@@ -1030,6 +1061,11 @@ export default function RoomManageClient({
             )}
           </div>
           {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
+          {/* 예약자 줄 — 사는 사람 아래 한 단 낮은 톤으로 선다. 같은 크기·굵기로 적으면 두 사람이
+              같이 사는 방으로 읽힌다. 색은 아래 예정 이용료 줄과 같은 --warm-mid 다. --warm-muted 로
+              적었더니 320px 실측에서 바로 밑 스펙 줄(타입·창문·면적)과 크기·색이 같아 사람이 스펙의
+              한 줄로 읽혔다. '입주자' 표시 항목을 끄면 함께 사라진다(같은 사람 축이다). */}
+          {cardFields.tenant && reservedLine && <p className="text-xs text-[var(--warm-mid)] truncate">{reservedLine}</p>}
           <div className="space-y-0.5 pt-0.5">
             {cardFields.spec && (
               <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
@@ -1149,7 +1185,12 @@ export default function RoomManageClient({
 
       {/* 상태 빠른 필터 — v2.0 §23 공용 SegmentedControl(수납·입주자와 동일). '전체'가 곧 해제. */}
       {(() => {
-        const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r, targetMonth); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
+        // 칸마다 목록과 같은 술어로 센다 — '입실 예약'이 사람 축(비배타)이 되면서 한 번의 분류로는
+        // 셀 수 없어졌다. 아래 '입주 가능'이 같은 이유로 이미 따로 세고 있다.
+        const counts = STATUS_FILTERS.reduce((acc, s) => {
+          acc[s.key] = rooms.filter(r => matchesStatusFilter(r, s.key, targetMonth)).length
+          return acc
+        }, {} as Record<RoomStatusKey, number>)
         // 입주 가능은 칩 합이 아니라 목록과 같은 술어로 센다 — 숫자와 목록이 갈리면 안 된다.
         const availableCount = rooms.filter(r => roomAvailability(r)).length
         return (
@@ -1170,6 +1211,7 @@ export default function RoomManageClient({
             <InfoHint title="호실 상태 필터">
               <span className="block">단기 계약은 퇴실 예정 상태로 바뀌기 전에도 포함됩니다.</span>
               <span className="block mt-1.5">입주 가능은 언제 비는지 날짜가 잡힌 방을 모두 모읍니다. 예약된 방도 퇴실 예정일이 있으면 들어갑니다.</span>
+              <span className="block mt-1.5">입실 예약은 예약이 잡힌 방을 모두 모읍니다. 거주자가 있는 방도 함께 들어가므로 칸별 숫자의 합이 전체 방 수보다 클 수 있습니다.</span>
             </InfoHint>
           </div>
         )
