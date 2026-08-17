@@ -8,6 +8,7 @@
 //   공개 소개 페이지 URL       = publicSlug 를 lib/publicSite 정본이 조립
 //   입금 계좌                  = Property.bankAccount (미납 안내 문자 {계좌번호}·납부 확인서와 같은 값)
 //   사업자등록번호             = businessInfo.registrationNo (계약서 헤더·영수증과 같은 값)
+//   사업자등록증               = Property.bizCertDriveFileId (환경설정 계약서 탭에서 올린 사본)
 //
 // FinancialAccount 는 쓰지 않는다. 그 표는 지출·카드정산 원장이라 신용카드 끝 4자리와
 // 운영자 개인 계좌가 섞여 있고, '수납용 대표 계좌' 를 가리키는 표식이 스키마에 없다.
@@ -27,6 +28,12 @@ export type ConsultInfo = {
   phone: string
   bankAccount: string
   bizNo: string
+  /**
+   * 사업자등록증 사본의 mime — 빈 문자열이면 미등록이라 '보내기' 줄을 세우지 않는다.
+   * 파일 자체는 /api/biz-cert 가 내려준다(여기로 바이트를 실어 나르지 않는다 — 코너를 열 때마다
+   * 서버 액션 응답에 최대 4MB 가 붙는다). 값이 없으면 줄을 뺀다는 규칙은 복사 항목과 같다.
+   */
+  bizCertMimeType: string
 }
 
 export type ConsultInfoResult =
@@ -39,7 +46,10 @@ export async function getConsultInfo(): Promise<ConsultInfoResult> {
     if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
     const property = await prisma.property.findUnique({
       where: { id: access.propertyId },
-      select: { name: true, address: true, phone: true, publicSlug: true, bankAccount: true, businessInfo: true },
+      select: {
+        name: true, address: true, phone: true, publicSlug: true, bankAccount: true, businessInfo: true,
+        bizCertDriveFileId: true, bizCertMimeType: true,
+      },
     })
     if (!property) return { ok: false, error: '영업장 정보를 찾을 수 없습니다.' }
 
@@ -59,6 +69,11 @@ export async function getConsultInfo(): Promise<ConsultInfoResult> {
         // requireRouteAccess 가 못 막는 자리라 여기서 직접 끊는다.
         bankAccount:  canReadScope(access.role, 'money') ? (property.bankAccount?.trim() ?? '') : '',
         bizNo:        rawBizNo ? (normalizeBizNo(rawBizNo) ?? rawBizNo) : '',
+        // mime 이 비어 있던 옛 저장분도 파일은 있다 — 그때는 PDF 로 보고 줄을 세운다.
+        // /api/biz-cert 가 바이트로 형식을 되짚으므로 첨부는 제 형식으로 나간다.
+        bizCertMimeType: property.bizCertDriveFileId
+          ? (property.bizCertMimeType?.trim() || 'application/pdf')
+          : '',
       },
     }
   } catch (err) {
