@@ -1180,7 +1180,7 @@ export default function RoomManageClient({
         )}
         {/* 월 셀렉터는 입퇴실 뷰에만 — 이 뷰만 월별 데이터다(§25 탭 좌·셀렉터 우, 전 페이지 우측 통일).
             호실·청소 뷰의 CTA 와 같은 자리를 쓰므로 셋이 한 줄에 몰리지 않는다. */}
-        {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector /></div>}
+        {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector allowFuture /></div>}
       </div>
 
       {/* 입퇴실 뷰 — 그 달 방별 변동. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}

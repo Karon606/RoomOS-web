@@ -24,8 +24,10 @@ function relMonthLabel(view: string, today: string): string | null {
  * 보이는 월 컨트롤 ◀ 5월 ▶ + 월 선택 팝오버.
  * 헤더가 아니라 각 월-페이지(대시보드·수납·지출) 콘텐츠 상단에 둔다 ('기간은 데이터 옆에').
  * 자정 롤오버 등 보이지 않는 자동 새로고침은 MonthSync(셸 상주)가 담당한다.
+ * allowFuture: 재무류 화면은 미래 월이 무의미해 이번 달에서 잠그는 것이 기본이지만,
+ * 예약이 사는 화면(입퇴실 캘린더)은 미래 월이 본론이라 잠금을 푼다(운영자 지적 2026-08-17).
  */
-export default function MonthSelector() {
+export default function MonthSelector({ allowFuture = false }: { allowFuture?: boolean } = {}) {
   const role = useMyRole()   // 제한 스태프는 월 컨텍스트가 무의미(재고·조회 화면) — 아래에서 숨김
   const router = useRouter()
   const pathname = usePathname()
@@ -90,7 +92,7 @@ export default function MonthSelector() {
 
   const [cy, cm] = localMonth.split('-')
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
-  const atCurrentMonth = localMonth >= todayMonth
+  const atCurrentMonth = !allowFuture && localMonth >= todayMonth
   const isCurrent = localMonth === todayMonth
   const rel = relMonthLabel(localMonth, todayMonth)
   const jumpToday = () => { setLocalMonth(todayMonth); localMonthRef.current = todayMonth; if (debounceRef.current) clearTimeout(debounceRef.current); applyMonth(todayMonth) }
@@ -137,6 +139,7 @@ export default function MonthSelector() {
           <MonthPicker
             current={localMonth}
             todayMonth={todayMonth}
+            allowFuture={allowFuture}
             onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
             onClose={() => setShowPicker(false)}
           />
@@ -166,10 +169,11 @@ export default function MonthSelector() {
 }
 
 function MonthPicker({
-  current, todayMonth, onSelect, onClose
+  current, todayMonth, allowFuture = false, onSelect, onClose
 }: {
   current: string
   todayMonth: string
+  allowFuture?: boolean
   onSelect: (month: string) => void
   onClose: () => void
 }) {
@@ -211,7 +215,7 @@ function MonthPicker({
         {months.map((label, i) => {
           const monthStr = `${year}-${String(i + 1).padStart(2, '0')}`
           const isActive = monthStr === current
-          const disabled = year > maxYear || (year === maxYear && i + 1 > maxMonth)
+          const disabled = !allowFuture && (year > maxYear || (year === maxYear && i + 1 > maxMonth))
           return (
             <button
               key={i}
