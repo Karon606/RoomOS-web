@@ -63,7 +63,10 @@ async function requireAuthAndProperty() {
 const ymd = (d: Date | null | undefined) =>
   d ? new Date(d).toISOString().slice(0, 10) : ''
 
-export async function getResidenceCertData(tenantId: string): Promise<ResidenceCertData | null> {
+// leaseTermId 는 계약 지목이다(2026-08-13, 다호실 마무리 — 계약서 축과 같은 문법).
+// 한 사람이 방을 둘 쓰면 추론은 늘 거주 계약을 골라, 딸린 계약 몫 확인서를 뽑을 길이 없었다.
+// 없거나 이 사람의 발급 대상이 아니면 종전 추론 그대로다 — 기존 링크·저장된 표시값은 불변이다.
+export async function getResidenceCertData(tenantId: string, leaseTermId?: string | null): Promise<ResidenceCertData | null> {
   // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
   // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
   if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
@@ -97,7 +100,7 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
 
   // 선택 규칙은 lib/documentLease 정본 하나다(계약서·납부 확인서와 같은 함수).
   // (여기서 고른 lease 로 저장된 표시값을 다시 조회한다 — 계약이 정해져야 행을 찾을 수 있다.)
-  const lease = pickDocumentLease(tenant.leaseTerms)
+  const lease = pickDocumentLease(tenant.leaseTerms, leaseTermId)
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}

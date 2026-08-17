@@ -73,7 +73,11 @@ async function requireAuthAndProperty() {
 const fmtRoom = roomLabel   // 호실 표기는 lib/tenantAddress 정본 하나 — 서류마다 제 규칙을 두면 갈린다
 
 // month('YYYY-MM')를 주면 그 달 주기로 자동값을 채운다(과거 달 발급). 미지정이면 현재 주기 — 기존 재발급 링크 무회귀.
-export async function getRentReceiptData(tenantId: string, month?: string, kind: ReceiptKind = 'rent'): Promise<RentReceiptData | null> {
+//
+// leaseTermId 는 계약 지목이다(2026-08-13, 다호실 마무리 — 계약서 축과 같은 문법).
+// 한 사람이 방을 둘 쓰면 추론은 늘 거주 계약을 골라, 601호 창고 몫 납부 확인서를 뽑을 길이 없었다.
+// 없거나 이 사람의 발급 대상이 아니면 종전 추론 그대로다 — 기존 재발급 링크는 글자 하나 안 바뀐다.
+export async function getRentReceiptData(tenantId: string, month?: string, kind: ReceiptKind = 'rent', leaseTermId?: string | null): Promise<RentReceiptData | null> {
   // 이 라우트는 (app) 셸 밖이라 canAccessRoute 가 안 걸린다. 목록은 막혀 있는데
   // 상세 URL 로 직접 들어가면 금액·생년월일·전화가 그대로 보였다(E페이즈 조사 2026-08-03).
   if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
@@ -106,7 +110,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
   // 선택 규칙은 lib/documentLease 정본 하나다(계약서·실거주 확인서와 같은 함수).
   // 종전의 '비거주만 뒤로'는 절반짜리라, 한 사람이 예약과 거주를 함께 들면 이 서류만 다른 계약을
   // 그렸다. 실데이터 107명 전원에서 선택 결과가 같음을 확인하고 전 상태 우선순위로 올렸다.
-  const lease = pickDocumentLease(tenant.leaseTerms)
+  const lease = pickDocumentLease(tenant.leaseTerms, leaseTermId)
   const nonResident = lease?.status === 'NON_RESIDENT'
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const isShortTerm = !!lease?.isShortTerm

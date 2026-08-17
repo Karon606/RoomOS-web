@@ -2,13 +2,18 @@ import { notFound } from 'next/navigation'
 import { getResidenceCertData } from './actions'
 import ResidenceCertView from './ResidenceCertView'
 
+// ?leaseTermId=<id> 는 계약 지목이다(2026-08-13, 다호실 마무리 — /contract/[tenantId] 와 같은 문법).
+// 없으면 종전 추론 그대로라 기존 링크·발급 이력의 '다시 작성'은 불변이다.
 export default async function ResidenceCertPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantId: string }>
+  searchParams: Promise<{ leaseTermId?: string }>
 }) {
   const { tenantId } = await params
-  const data = await getResidenceCertData(tenantId)
+  const { leaseTermId } = await searchParams
+  const data = await getResidenceCertData(tenantId, leaseTermId ?? null)
   if (!data) notFound()
   // 지자체별 서식 상이 — 현재 서울형만 지원, 그 외 지역은 발급 차단 안내(운영자 정정 2026-07-10)
   if (!data.regionSupported) {

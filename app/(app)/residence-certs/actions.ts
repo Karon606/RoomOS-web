@@ -22,6 +22,9 @@ export type ResidenceCertListRow = {
   driveFileId: string
   tenantId: string
   tenantName: string
+  // 이 발급본이 어느 계약의 것인가 — '다시 작성'이 같은 계약으로 돌아가려면 필요하다.
+  // 계약이 끊긴 옛 발급본은 null 이고, 그때는 지목 없이 종전 추론으로 연다.
+  leaseTermId: string | null
   roomNo: string | null
   status: string | null
 }
@@ -33,7 +36,7 @@ export async function getAllResidenceCertFiles(): Promise<ResidenceCertListRow[]
     where: { propertyId, deletedAt: null },
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
-      id: true, fileName: true, issuedAt: true, driveFileId: true,
+      id: true, fileName: true, issuedAt: true, driveFileId: true, leaseTermId: true,
       tenant: { select: { id: true, name: true } },
       leaseTerm: { select: { status: true, room: { select: { roomNo: true } } } },
     },
@@ -46,6 +49,7 @@ export async function getAllResidenceCertFiles(): Promise<ResidenceCertListRow[]
     driveFileId: r.driveFileId,
     tenantId: r.tenant.id,
     tenantName: r.tenant.name,
+    leaseTermId: r.leaseTermId,
     roomNo: r.leaseTerm?.room?.roomNo ?? null,
     status: r.leaseTerm?.status ?? null,
   }))

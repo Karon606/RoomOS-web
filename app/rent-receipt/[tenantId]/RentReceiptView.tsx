@@ -121,7 +121,10 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     if (dirty && !(await confirmDialog({ title: '대상월을 옮길까요?', message: '작성 중인 내용이 초기화됩니다.', confirmLabel: '옮기기', level: 'caution' }))) return
     const [ay, am] = data.anchorMonth.split('-').map(Number)
     const d = new Date(ay, am - 1 + delta, 1)
-    router.replace(`/rent-receipt/${data.tenantId}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    // 보고 있는 계약을 URL 에 고정해 옮긴다 — 안 실으면 601호 창고 확인서에서 달을 옮기는 순간
+    // 서버가 다시 추론해 509호 거주 계약으로 갈아탄다(계약이 하나뿐인 사람은 추론과 같은 답이다).
+    const named = data.leaseTermId ? `&leaseTermId=${encodeURIComponent(data.leaseTermId)}` : ''
+    router.replace(`/rent-receipt/${data.tenantId}?month=${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${named}`)
   }
 
   const reset = async () => {

@@ -353,9 +353,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
-  const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent') => {
+  //
+  // namedLeaseTermId 는 계약 지목이다(2026-08-13, 다호실 마무리 — 계약서 축과 같은 ?leaseTermId= 문법).
+  // 수납 면에서 누른 버튼은 **그 면이 열어 둔 계약**의 서류를 뽑아야 한다. 601호 창고 계약을 보고
+  // 있는데 509호 거주 계약의 확인서가 나오면, 받지도 않은 돈의 종이가 나가거나 그 반대가 된다.
+  // 입주자 면의 버튼은 사람 단위라 지목 없이 종전대로 — 추론이 고르는 계약이 곧 메인이다
+  // (계약서 파일 칸의 주 버튼과 같은 규칙).
+  const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent', namedLeaseTermId?: string | null) => {
     if (!links?.tenantId) return
-    window.location.assign(`/rent-receipt/${links.tenantId}?${kindArg === 'deposit' ? 'kind=deposit&' : ''}from=tenant&tenantId=${encodeURIComponent(links.tenantId)}`)
+    const named = namedLeaseTermId ? `leaseTermId=${encodeURIComponent(namedLeaseTermId)}&` : ''
+    window.location.assign(`/rent-receipt/${links.tenantId}?${kindArg === 'deposit' ? 'kind=deposit&' : ''}${named}from=tenant&tenantId=${encodeURIComponent(links.tenantId)}`)
     onClose()
   }
 
@@ -407,13 +414,15 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               </Btn>
             </div>
           )}
-          {/* 수납 관리(=payment 모달)에서 서류 발급 진입 — 돈을 기록한 자리에서 바로 뽑는 동선(신고 d68220bd) */}
+          {/* 수납 관리(=payment 모달)에서 서류 발급 진입 — 돈을 기록한 자리에서 바로 뽑는 동선(신고 d68220bd).
+              계약 세그먼트가 열어 둔 계약(shownLeaseId)을 그대로 실어 보낸다 — 보고 있는 계약과
+              나가는 종이가 하나여야 한다(2026-08-13, 다호실 마무리). */}
           {kind === 'payment' && links?.tenantId && (
             <div className="flex flex-wrap gap-2 items-center">
-              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent')}>
+              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent', shownLeaseId)}>
                 입실료 납부 확인서
               </Btn>
-              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('deposit')}>
+              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('deposit', shownLeaseId)}>
                 보증금 영수증
               </Btn>
             </div>

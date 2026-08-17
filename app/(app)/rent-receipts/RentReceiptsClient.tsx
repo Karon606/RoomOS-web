@@ -218,6 +218,11 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
           <ul className="space-y-2">
             {fileRows.map(c => {
               const sel = selected.has(c.id)
+              // '다시 작성'이 여는 URL — 종류와 계약을 그 행에서 가져온다.
+              const reissueQuery = [
+                c.kind === 'deposit' ? 'kind=deposit' : '',
+                c.leaseTermId ? `leaseTermId=${encodeURIComponent(c.leaseTermId)}` : '',
+              ].filter(Boolean).join('&')
               return (
               <li key={c.id}
                 onClick={selectMode ? () => toggleSelect(c.id) : undefined}
@@ -270,7 +275,10 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                   {/* '다시 작성'은 그 행의 종류를 그대로 따른다 — 탭이 아니라 행 기준(보증금 행에서 입실료 폼이
                       열리면 엉뚱한 금액이 자동 채워져 잘못된 서류가 발급된다).
                       종전 라벨 '재발급'은 아무것도 발급하지 않고 작성 화면만 열어 오해를 샀다(2026-08-01 용어 정리). */}
-                  <a href={`/rent-receipt/${c.tenantId}${c.kind === 'deposit' ? '?kind=deposit' : ''}`}
+                  {/* 계약도 그 행을 따른다(?leaseTermId=) — 601호 창고 몫 확인서를 다시 열었는데
+                      509호 거주 계약이 채워지면 종이와 기록이 갈린다. 계약이 끊긴 옛 발급본은
+                      지목 없이 종전 추론으로 연다(무회귀). */}
+                  <a href={`/rent-receipt/${c.tenantId}${reissueQuery ? `?${reissueQuery}` : ''}`}
                     className={btnClass('secondary', 'sm')}>다시 작성</a>
                   <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                     disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
