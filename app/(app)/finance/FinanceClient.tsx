@@ -49,11 +49,11 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
-import { getNextBusinessDay } from '@/lib/krHolidays'
+import { recurringDueDateFor } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { kstYmdStr, kstMonthStr, kstMonthsAgoStr } from '@/lib/kstDate'
+import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -1714,7 +1714,8 @@ export default function FinanceClient({
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   // 기록 폼의 프리필·입력 상태는 공용 RecurringExpenseRecordModal 내부에 있다(대시보드와 동일 폼).
-  const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
+  // dueDate = 그 예정 행의 납부 예정일 — 모달 날짜 프리필용(신고 1cfaabab: 오늘로 뜨던 것).
+  const [recordingRec, setRecordingRec] = useState<{ rec: RecurringExpenseWithStatus; dueDate: string } | null>(null)
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
@@ -2774,19 +2775,18 @@ export default function FinanceClient({
               (expAmountMax == null || effectiveRecurringAmount(r) <= expAmountMax)
             )
 
-            // D-3 이내(과거 도래 포함)만 보기 옵션 적용
+            // D-3 이내(과거 도래 포함)만 보기 옵션 적용 — 판정도 표시와 같은 예정일(자동이체 휴일 시프트 반영)을 쓴다.
             const todayStr = kstYmdStr()
-            const todayDay = parseInt(todayStr.slice(8, 10), 10)
             const isThisMonth = targetMonth === todayStr.slice(0, 7)
-            const isSoon = (dueDay: number) => {
+            const isSoon = (r: RecurringExpenseWithStatus) => {
               if (!isThisMonth) return true // 다른 달 보기 시 always show
-              return dueDay - todayDay <= 3
+              return kstDaysUntil(recurringDueDateFor(r, targetMonth), todayStr) <= 3
             }
             const unconfirmedRecs = recVisibility === 'soon'
-              ? unconfirmedRecsFiltered.filter(r => isSoon(r.dueDay))
+              ? unconfirmedRecsFiltered.filter(r => isSoon(r))
               : unconfirmedRecsFiltered
             const hiddenRecs = recVisibility === 'soon'
-              ? unconfirmedRecsFiltered.filter(r => !isSoon(r.dueDay))
+              ? unconfirmedRecsFiltered.filter(r => !isSoon(r))
               : []
             const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + effectiveRecurringAmount(r), 0)
 
@@ -2863,18 +2863,8 @@ export default function FinanceClient({
               ...unconfirmedRecs.map(r => ({
                 kind: 'recurring' as const,
                 rec: r,
-                // 납부일이 그 달 일수를 넘으면(예: 31일/말일 + 30일 달) 말일로 클램프 — 'YYYY-MM-31' invalid date 방지
-                // 자동이체는 실제 이체일(주말·공휴일이면 다음 영업일)로 표시 — 대시보드 알림과 동일 규칙(lib/krHolidays)
-                dateStr: (() => {
-                  const [ty, tm] = targetMonth.split('-').map(Number)
-                  const lastDay = new Date(ty, tm, 0).getDate()
-                  const day = Math.min(r.dueDay, lastDay)
-                  if (r.isAutoDebit) {
-                    const eff = getNextBusinessDay(new Date(ty, tm - 1, day))
-                    return `${eff.getFullYear()}-${String(eff.getMonth() + 1).padStart(2, '0')}-${String(eff.getDate()).padStart(2, '0')}`
-                  }
-                  return `${targetMonth}-${String(day).padStart(2, '0')}`
-                })(),
+                // 말일 클램프 + 자동이체 휴일 시프트는 lib/recurringDueDate 정본 — 필터·모달 프리필과 같은 값.
+                dateStr: recurringDueDateFor(r, targetMonth),
               })),
             ].sort((a, b) => {
               // 1차: 날짜 내림차순 (최신 날짜 먼저)
@@ -3015,7 +3005,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => setRecordingRec(r)}
+                          onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -3134,7 +3124,7 @@ export default function FinanceClient({
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
-                              onClick={() => setRecordingRec(r)}
+                              onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -4616,9 +4606,10 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <RecurringExpenseRecordModal
-        rec={recordingRec}
+        rec={recordingRec.rec}
         financialAccounts={financialAccounts}
         paymentMethods={paymentMethods}
+        defaultDate={recordingRec.dueDate}
         onClose={() => setRecordingRec(null)}
         onDone={() => { setRecordingRec(null); router.refresh(); pushToast('success', '지출이 기록되었습니다') }}
       />
