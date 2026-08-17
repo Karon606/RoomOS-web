@@ -29,7 +29,7 @@ if (cmd === 'done' || cmd === 'dismiss') {
 const open = await prisma.errorReport.findMany({
   where: { status: 'open' },
   orderBy: { createdAt: 'desc' },
-  take: 30,
+  take: 100,   // 30이 잔량을 숨겼다(2026-08-17 실측 34건 중 4건 미표시) — 백로그가 그보다 커지면 그때 페이지네이션
 })
 if (open.length === 0) {
   console.log('미처리 오류신고 없음 (open 0건)')
