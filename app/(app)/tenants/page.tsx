@@ -2,7 +2,8 @@ import { getTenants, getRoomsForSelect, getWishDateNotices } from './actions'
 import { after } from 'next/server'
 import { getPropertySettings, getMyRole, getShortStayPolicy } from '@/app/(app)/settings/actions'
 import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
-import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 import TenantClient from './TenantClient'
 
 export default async function TenantsPage({
@@ -11,7 +12,7 @@ export default async function TenantsPage({
   searchParams: Promise<{ month?: string }>
 }) {
   const { month } = await searchParams
-  const targetMonth = month ?? kstMonthStr()   // 기본 조회월은 KST — 서버(UTC) 로컬이면 매월 1일 KST 00~09 시에 지난달이 열린다
+  const targetMonth = resolveMonthParam(month)   // 기본 조회월은 KST · 잠긴 화면이라 미래 월은 이번 달로(lib/monthParam)
 
   // 예약 인상/인하 적용일이 지난 호실은 진입 시 baseRent·rentAmount 동기화(호실관리 미방문 시 리스트가 옛값으로 남는 것 방지).
   after(() => applyScheduledRents().catch(() => { /* 적용 실패해도 페이지는 정상 노출 */ }))   // 응답 후 실행 — 표시값은 billForLeaseMonth가 scheduledRent 반영

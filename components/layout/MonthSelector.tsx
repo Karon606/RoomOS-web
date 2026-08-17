@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
 import { useMyRole } from '@/components/RoleContext'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 
 const MONTH_KEY = 'stayeum_selected_month'
 
@@ -45,7 +46,9 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isPending, startLocal] = useTransition()
 
-  const searchParamsMonth = searchParams.get('month') ?? todayMonth
+  // 표시도 조회와 같은 자를 쓴다 — 잠긴 화면에 미래 월 URL 이 들어오면(입퇴실에서 넘어온 링크)
+  // 서버는 이번 달을 그리는데 라벨만 9월이면 둘이 갈린다(lib/monthParam, 운영자 신고 2026-08-18).
+  const searchParamsMonth = resolveMonthParam(searchParams.get('month'), { allowFuture })
   // localMonth: ◀/▶ 클릭 시 URL 반영(디바운스 350ms) 전까지 즉시 보여주는 낙관적 표시값.
   const [localMonth, setLocalMonth] = useState(searchParamsMonth)
   const localMonthRef = useRef(localMonth)

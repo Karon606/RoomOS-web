@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import type { Conflict, PreviewResult } from '@/lib/import-types'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
-import { kstMonthStr } from '@/lib/kstDate'
+import { resolveMonthParam } from '@/lib/monthParam'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolution = 'overwrite' | 'keep' | 'archive'
@@ -145,7 +145,8 @@ export default function DataButtons() {
   const searchParams = useSearchParams()
   const router = useRouter()
   // 기본 달은 KST — new Date() 로 뽑으면 매월 1일 KST 00~09시에 지난달이 내려받아진다.
-  const month = searchParams.get('month') ?? kstMonthStr()
+  // 내보내는 달은 화면이 보고 있는 달과 같아야 한다 — 잠긴 화면이라 미래는 이번 달로(lib/monthParam).
+  const month = resolveMonthParam(searchParams.get('month'))
 
   const fileRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>({ type: 'idle' })
