@@ -25,7 +25,8 @@ const CUTOFF = new Date('2026-08-11T00:33:33+09:00')
 // 축 B 의 래칫 기준선 — 2026-08-12 실측 2건(502호 영문명 재발급 + 409호 서종희 발급).
 // 박제는 늘기만 하고 절대 줄지 않는다. 실측이 기준선보다 많아지면 아래 안내대로 값을 올려 잠근다
 // (올려 두지 않으면 그 사이 사라진 박제를 이 축이 못 본다).
-const SNAPSHOT_BASELINE = 2
+// 2026-08-18 실측 6건으로 상향 — 운영자 발급 증가분 4건(축 자체 안내에 따른 래칫 정비).
+const SNAPSHOT_BASELINE = 6
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
