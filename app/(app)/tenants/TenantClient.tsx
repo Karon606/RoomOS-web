@@ -3777,7 +3777,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
             로마자만으로는 성조·한자를 되짚을 수 없어 영문 이름과 다른 사실이다. 서류 성명 표기
             선택지에 '현지'가 이 값으로 붙는다. 인쇄 폰트가 못 그리는 글자(한자·아랍·태국 문자 등)면
-            선택지에서 빠지고 값은 여기 그대로 남는다. */}
+            선택지에서 빠지고 값은 여기 그대로 남는다.
+            예시는 실존 입주자와 무관한 가상 이름이다(신고 c170be72). 종전 예시가 지금 사는 분의
+            실제 현지 표기라 운영자가 거슬려 했다. 로마자를 피한 것은 이 칸이 위 '영어이름'과 다른
+            값이라는 것을 예시 한 줄로 보이게 하려는 것이다. */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
           <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
@@ -3787,7 +3790,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             name="nativeName"
             defaultValue={tenant?.nativeName ?? ''}
             maxLength={NATIVE_NAME_MAX}
-            placeholder="Nguyễn Thị Thảo Anh"
+            placeholder="Иван Иванов"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
           />
         </div>
@@ -3796,11 +3799,13 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             이름 칸에 부르는 말을 욱여넣은 사례가 이미 있다. 서류 성명 표기(계약서·확인서)는 별개
             축이라 이 선택의 영향을 받지 않는다(lib/documentName).
             전송 지점(hidden)은 선택지가 하나뿐이라 셀렉트가 안 그려질 때도 항상 렌더한다 —
-            칸이 사라져 값이 안 가면 서버의 '부재=보존'이 아니라 여기서는 옛 값이 남는다. */}
+            칸이 사라져 값이 안 가면 서버의 '부재=보존'이 아니라 여기서는 옛 값이 남는다.
+            예시 '미소'도 실존 입주자와 무관한 가상 별칭이다(신고 c170be72). 한국에 사는 외국인이
+            스스로 붙이는 한국식 애칭의 결을 보이려는 것이라, 실명이 아니라 누가 봐도 별명인 말을 쓴다. */}
         <div className="grid grid-cols-2 gap-3">
           <Field label="별칭" hint="(실제로 부르는 이름 · 카드 표시 이름에서 고를 수 있습니다)"
             name="nickname" value={nicknameVal} onChange={setNicknameVal}
-            maxLength={NICKNAME_MAX} placeholder="안아" />
+            maxLength={NICKNAME_MAX} placeholder="미소" />
           <input type="hidden" name="displayNameStyle" value={displayStyleVal} />
           {displayStyleOptions.length > 1 && (
             <SelectField label="카드 표시 이름" value={displayStyleVal}
