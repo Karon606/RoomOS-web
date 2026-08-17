@@ -1714,7 +1714,8 @@ export default function FinanceClient({
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   // 기록 폼의 프리필·입력 상태는 공용 RecurringExpenseRecordModal 내부에 있다(대시보드와 동일 폼).
-  const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
+  // dueDate = 그 예정 행의 납부 예정일 — 모달 날짜 프리필용(신고 1cfaabab: 오늘로 뜨던 것).
+  const [recordingRec, setRecordingRec] = useState<{ rec: RecurringExpenseWithStatus; dueDate: string } | null>(null)
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 지출 엑셀 내려받기 모달 (기간·시트 구분·카드계좌 필터 선택) ────────────
@@ -3015,7 +3016,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => setRecordingRec(r)}
+                          onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -3134,7 +3135,7 @@ export default function FinanceClient({
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
-                              onClick={() => setRecordingRec(r)}
+                              onClick={() => setRecordingRec({ rec: r, dueDate: item.dateStr })}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -4616,9 +4617,10 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <RecurringExpenseRecordModal
-        rec={recordingRec}
+        rec={recordingRec.rec}
         financialAccounts={financialAccounts}
         paymentMethods={paymentMethods}
+        defaultDate={recordingRec.dueDate}
         onClose={() => setRecordingRec(null)}
         onDone={() => { setRecordingRec(null); router.refresh(); pushToast('success', '지출이 기록되었습니다') }}
       />

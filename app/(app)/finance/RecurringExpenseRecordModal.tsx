@@ -39,11 +39,13 @@ export function effectivePayMethods(
 }
 
 export function RecurringExpenseRecordModal({
-  rec, financialAccounts, paymentMethods, onClose, onDone,
+  rec, financialAccounts, paymentMethods, defaultDate, onClose, onDone,
 }: {
   rec: RecurringExpenseWithStatus
   financialAccounts: RecModalAccount[]
   paymentMethods: string[]
+  /** 예정 행에서 열 때 그 행의 납부 예정일('YYYY-MM-DD')을 프리필 — 없으면 오늘(대시보드 알림 등) */
+  defaultDate?: string
   onClose: () => void
   /** 지출 기록 성공 시에만 호출 — 닫기·refresh·토스트는 caller 몫 */
   onDone: () => void
@@ -58,7 +60,7 @@ export function RecurringExpenseRecordModal({
     const sum = rec.items.reduce((s, it) => s + it.amount, 0)
     return sum > 0 ? sum : effectiveRecurringAmount(rec)
   })
-  const [date, setDate]           = useState(() => kstYmdStr())
+  const [date, setDate]           = useState(() => defaultDate ?? kstYmdStr())
   const [memo, setMemo]           = useState(rec.memo ?? '')
   // #6: 가장 최근 실제 기록의 결제수단·계좌를 기본값으로(지난달 처리 방식 자동 대기)
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
