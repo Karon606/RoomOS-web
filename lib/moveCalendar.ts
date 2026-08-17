@@ -191,12 +191,22 @@ export function buildMoveCalendar(input: {
   const first = ymdOf(month, 1)
   const last = ymdOf(month, dim)
 
-  // 행이 되는 방 — 변동이 있는 방만. 관통 점유는 행을 만들지 않는다.
-  const roomIds = new Set(input.changed.map(l => l.roomId))
+  // 행이 되는 방 — 그 달에 **실제로** 입주나 퇴실이 있는 방만. 관통 점유는 행을 만들지 않는다.
+  //
+  // 조회는 세 날짜 중 하나만 월 창에 걸려도 가져오는 과대근사다(퇴실의 진짜 날짜가
+  // moveOutDate 인지 expectedMoveOut 인지는 한 줄의 SQL 조건으로 못 적는다 — 퇴실 완료는
+  // 실제일이 이긴다). 그 선을 여기서 한 번만 긋는다. 퇴실 예정일은 8/31 인데 실제로는 9/2 에
+  // 나간 계약처럼, 조회에는 걸리지만 이 달의 변동은 아닌 건이 빈 행으로 서는 것을 막는다.
+  const changedIn = (l: MoveCalendarLease): boolean => {
+    const from = l.moveInDate
+    const to = stayEnd(l)
+    return (!!from && from >= first && from <= last) || (!!to && to >= first && to <= last)
+  }
+  const roomIds = new Set(input.changed.filter(changedIn).map(l => l.roomId))
 
   // 막대가 되는 계약 — 변동분 + 그 방들의 점유 계약. id 중복은 한 번만.
   const byId = new Map<string, MoveCalendarLease>()
-  for (const l of input.changed) byId.set(l.id, l)
+  for (const l of input.changed) if (roomIds.has(l.roomId)) byId.set(l.id, l)
   for (const l of input.context) if (roomIds.has(l.roomId)) byId.set(l.id, l)
 
   const perRoom = new Map<string, { roomId: string; roomNo: string; leases: MoveCalendarLease[] }>()

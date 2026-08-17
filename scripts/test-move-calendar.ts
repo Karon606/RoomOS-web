@@ -209,6 +209,10 @@ eq('이번 달 · 오늘 표시', build([lease({ roomNo: '401', status: 'ACTIVE'
 // 변동 없는 방의 관통 점유만 넘겨도 행이 되지 않는다(행은 변동이 만든다).
 eq('빈 달 · 관통 점유만으로는 행이 서지 않는다',
   build([], [lease({ roomNo: '601', status: 'ACTIVE', moveInDate: '2026-01-01' })]).rows.length, 0)
+// 조회 과대근사 걸러내기 — 퇴실 예정일은 8/31 인데 실제로는 9/2 에 나갔다. 조회에는 걸리지만
+// 이 달의 변동은 아니다(퇴실 완료는 실제일이 이긴다).
+eq('빈 달 · 실제 퇴실이 다음 달이면 행이 아니다',
+  build([lease({ roomNo: '602', status: 'CHECKED_OUT', moveInDate: '2026-03-01', expectedMoveOut: '2026-08-31', moveOutDate: '2026-09-02' })]).rows.length, 0)
 
 // ── 리스트 편성 ── 같은 날은 퇴실 먼저.
 {

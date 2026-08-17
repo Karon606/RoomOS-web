@@ -17,6 +17,10 @@ import {
 } from '@/lib/google-drive'
 import { looksLike360 } from '@/lib/driveImage'
 import { applyScheduledRentsFor } from '@/lib/scheduledRent'
+import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
+import { displayName } from '@/lib/displayName'
+import { kstMonthStr, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { buildMoveCalendar, daysInMonth, type MoveCalendarLease, type MoveCalendarMonth } from '@/lib/moveCalendar'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -74,6 +78,83 @@ export async function getRooms() {
       expectedMoveOut: ymd(l.expectedMoveOut),
     })),
   }))
+}
+
+/**
+ * 입퇴실 캘린더 한 달치 — 그 달에 입주·퇴실·예약 시작이 있는 방의 체류 구간.
+ *
+ * 위 getRooms 를 재사용하지 않는 이유가 셋이다. `take: 3` 이라 계약이 넷인 방에서 하나가 잘리고,
+ * 퇴실 완료(CHECKED_OUT)를 아예 안 읽어 과거 달의 퇴실이 통째로 사라지며, 사진·상세까지 딸려 와
+ * 이 화면이 쓰지 않는 것을 실어 나른다. 이 화면의 질문은 '이 달에 무엇이 바뀌었나'라 조회도
+ * 그 모양이어야 한다.
+ *
+ * 조회는 둘이다.
+ *   ① 변동 계약 — 세 날짜 중 하나가 월 창 안(취소는 제외). 어느 방이 행이 되는지를 정한다.
+ *   ② 그 방들의 점유 계약 전부 — 행은 안 늘리고 막대만 늘린다. 관통 점유를 함께 그려야
+ *      그 위에 얹힌 예약이 충돌로 보인다.
+ * ①은 과대근사다 — 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
+ * 그 선은 조립(lib/moveCalendar)이 한 번만 긋는다. 충돌 판정도 거기서 occupancyOverlaps 를
+ * 부른다 — 화면도 이 액션도 사본을 들지 않는다.
+ */
+export async function getMoveCalendarMonth(month: string): Promise<MoveCalendarMonth> {
+  const { propertyId } = await getPropertyId()
+  const target = /^\d{4}-\d{2}$/.test(month) ? month : kstMonthStr()
+  const first = ymdToDbDate(`${target}-01`)
+  const last = ymdToDbDate(`${target}-${String(daysInMonth(target)).padStart(2, '0')}`)
+
+  // select 최소 — 이 화면은 날짜·상태·이름만 쓴다. 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙).
+  const select = {
+    id: true,
+    status: true,
+    isShortTerm: true,
+    moveInDate: true,
+    moveOutDate: true,
+    expectedMoveOut: true,
+    roomId: true,
+    room: { select: { roomNo: true } },
+    tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } },
+  } as const
+
+  const changed = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId,
+      roomId: { not: null },
+      status: { in: ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] },
+      OR: [
+        { moveInDate:      { gte: first, lte: last } },
+        { expectedMoveOut: { gte: first, lte: last } },
+        { moveOutDate:     { gte: first, lte: last } },
+      ],
+    },
+    select,
+  })
+  const roomIds = [...new Set(changed.map(l => l.roomId!))]
+  const context = roomIds.length === 0 ? [] : await prisma.leaseTerm.findMany({
+    where: { propertyId, roomId: { in: roomIds }, status: { in: OCCUPYING_STATUSES } },
+    select,
+  })
+
+  // 날짜는 'YYYY-MM-DD' 문자열로 고정 — 위 getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다.
+  const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
+  const toLease = (l: (typeof changed)[number]): MoveCalendarLease => ({
+    id: l.id,
+    status: l.status,
+    isShortTerm: l.isShortTerm,
+    moveInDate: ymd(l.moveInDate),
+    moveOutDate: ymd(l.moveOutDate),
+    expectedMoveOut: ymd(l.expectedMoveOut),
+    roomId: l.roomId!,
+    roomNo: l.room?.roomNo ?? '',
+    tenantId: l.tenant.id,
+    tenantName: displayName(l.tenant, l.tenant.displayNameStyle),
+  })
+
+  return buildMoveCalendar({
+    month: target,
+    today: kstYmdStr(),
+    changed: changed.map(toLease),
+    context: context.map(toLease),
+  })
 }
 
 // 호실 추가
