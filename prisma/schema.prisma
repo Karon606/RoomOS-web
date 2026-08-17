@@ -179,6 +179,11 @@ model Property {
   // 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류. shape: { enabled, days, title, body }
   disposalConsentTemplate Json?
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
+  // 사업자등록증 사본 (Drive 파일 ID) — 상담 중 문자·메일 첨부로 그대로 보내는 원본.
+  // 도장과 달리 이미지·PDF 를 모두 받으므로 판정한 mime 을 함께 둔다(화면 분기·전송 Content-Type).
+  // 공개 권한은 붙이지 않는다(도장과 같은 이유) — /api/biz-cert 인증 프록시로만 나간다.
+  bizCertDriveFileId String?
+  bizCertMimeType    String?
   stampDriveFileId String?   // 도장 PNG (Drive 파일 ID, 투명 배경 권장)
   calendarToken    String?   @unique  // 캘린더 구독(.ics) 피드 비밀 토큰 — 납부예정·퇴실예정 자동 동기화
   logoDriveFileId  String?   // 영업장 로고 (Drive 파일 ID, 계약서 헤더 좌측 — 투명 배경 서류용)
