@@ -433,6 +433,14 @@ html.doc-scroll body {
 .move-track { --mc-lane: 36px; }
 @media (pointer: coarse) { .move-track { --mc-lane: 44px; } }
 
+/* 행 되짚기 — 트랙이 화면보다 넓어지면서 왼쪽 호실과 오른쪽 막대가 한눈에 안 들어온다.
+   행 전체를 밝혀 눈이 가로로 흘러갈 줄을 잡아 준다. sticky 호실 열은 자기 배경(--cream)을
+   들고 있어 함께 바꿔 주지 않으면 그 칸만 안 따라온다. hover 가 없는 기기에는 안 걸린다. */
+@media (hover: hover) {
+  .mc-row:hover { background: var(--cream-soft); }
+  .mc-row:hover .mc-room { background: var(--cream-soft); }
+}
+
 /* ── M7 다크모드 — html.dark 가 토글 ──────────────────────────────
    가이드: 잉크↔크림 한 쌍만 반전. persimmon은 라이트/다크 동일 hex.
    라이트 cream/ink → 다크 dark-bg/cream-on-dark.

@@ -7,7 +7,7 @@ import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { MoveCalendar } from '@/components/room-manage/MoveCalendar'
-import type { MoveCalendarMonth } from '@/lib/moveCalendar'
+import type { MoveCalendarRange } from '@/lib/moveCalendar'
 import { kstMonthOf, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { displayName } from '@/lib/displayName'
 import { fmtRentApplyFrom } from '@/lib/fmtMoney'
@@ -399,8 +399,8 @@ export default function RoomManageClient({
   roomTiers: string[]
   windowTypes: string[]
   directions: string[]
-  // 입퇴실 뷰 한 벌 — 조립·충돌 판정까지 서버가 끝낸 결과다(lib/moveCalendar 정본).
-  moveCalendar: MoveCalendarMonth
+  // 입퇴실 뷰 한 벌 — 조립·충돌 판정까지 서버가 끝낸 연속 범위다(lib/moveCalendar 정본).
+  moveCalendar: MoveCalendarRange
   // 홈 '이달 입퇴실 N건' 링크가 ?tab=moves 로 들어온다(수납 관리 initialTab 과 같은 문법).
   initialTab?: ViewTabId
 }) {
@@ -1160,7 +1160,9 @@ export default function RoomManageClient({
             tabs={[
               { id: 'rooms',    label: '호실' },
               { id: 'cleaning', label: '청소', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
-              { id: 'moves',    label: '입퇴실', suffix: moveCalendar.eventCount > 0 ? String(moveCalendar.eventCount) : undefined },
+              // 접미 N 은 **보고 있는 달**의 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
+              // 눌러 들어왔을 때 그 숫자가 여기서 다른 값으로 바뀌면 둘 중 하나가 거짓으로 읽힌다.
+              { id: 'moves',    label: '입퇴실', suffix: moveCalendar.focusEventCount > 0 ? String(moveCalendar.focusEventCount) : undefined },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
@@ -1178,12 +1180,14 @@ export default function RoomManageClient({
           </Btn>
         </div>
         )}
-        {/* 월 셀렉터는 입퇴실 뷰에만 — 이 뷰만 월별 데이터다(§25 탭 좌·셀렉터 우, 전 페이지 우측 통일).
-            호실·청소 뷰의 CTA 와 같은 자리를 쓰므로 셋이 한 줄에 몰리지 않는다. */}
+        {/* 월 셀렉터는 입퇴실 뷰에만 — 자리는 그대로 두되 역할이 바뀌었다(2026-08-17 연속 뷰).
+            종전에는 달마다 다시 조회하는 스위치였고, 지금은 넓은 트랙 위의 **점프 컨트롤**이다.
+            트랙을 끌면 보고 있는 달이 ?month= 로 따라 적히므로 이 라벨이 현재 위치를 말한다.
+            §25 탭 좌·셀렉터 우 — 형제 페이지와 같은 자리를 지킨다. */}
         {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector allowFuture /></div>}
       </div>
 
-      {/* 입퇴실 뷰 — 그 달 방별 변동. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
+      {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
       {viewTab === 'moves' && <MoveCalendar data={moveCalendar} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}

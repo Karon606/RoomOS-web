@@ -1,4 +1,4 @@
-import { getRooms, applyScheduledRents, getMoveCalendarMonth } from './actions'
+import { getRooms, applyScheduledRents, getMoveCalendarRange } from './actions'
 import { getPropertyCleanings, getRecentCleaningPerformers } from './cleaningActions'
 import { getRoomTypeOptions, getRoomTierOptions, getWindowTypeOptions, getRoomDirectionOptions } from '@/app/(app)/settings/actions'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -14,7 +14,9 @@ export default async function RoomManagePage({
 }) {
   await applyScheduledRents()
 
-  // 입퇴실 뷰의 조회 월 — MonthSelector 가 ?month= 로 적어 넣는다(수납·재고와 같은 문법).
+  // 입퇴실 뷰가 보고 있는 달 — MonthSelector 가 ?month= 로 적어 넣는다(수납·재고와 같은 문법).
+  // 연속 뷰에서는 조회 창이 아니라 **착지 지점**이다. 범위는 데이터가 정하고, 이 달은 그 안
+  // 어디에 내려앉을지를 말한다(범위 밖이면 그쪽으로 범위가 늘어난다 — getMoveCalendarRange).
   // 기본은 KST 이번 달. 서버 로컬(Vercel=UTC)로 잡으면 매월 1일 00~09시 KST 에 전월을 본다.
   const { month, tab } = await searchParams
   const targetMonth = month ?? kstMonthStr()
@@ -30,8 +32,8 @@ export default async function RoomManagePage({
     getRoomTierOptions(),
     getWindowTypeOptions(),
     getRoomDirectionOptions(),
-    // 입퇴실 뷰(2026-08-17) — 탭 접미 N 도 이 한 벌이 딛는다. 조회 둘뿐이라 다른 탭에서도 함께 받는다.
-    getMoveCalendarMonth(targetMonth),
+    // 입퇴실 뷰(2026-08-17) — 탭 접미 N 도 이 한 벌이 딛는다. 조회 셋뿐이라 다른 탭에서도 함께 받는다.
+    getMoveCalendarRange(targetMonth),
   ])
   return <RoomManageClient initialRooms={rooms} initialCleanings={cleanings} recentPerformers={performers} roomTypes={roomTypes} roomTiers={roomTiers} windowTypes={windowTypes} directions={directions}
     moveCalendar={moveCalendar} initialTab={tab === 'cleaning' || tab === 'moves' ? tab : 'rooms'} />

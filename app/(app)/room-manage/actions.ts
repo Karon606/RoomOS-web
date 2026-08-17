@@ -20,7 +20,7 @@ import { applyScheduledRentsFor } from '@/lib/scheduledRent'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { displayName } from '@/lib/displayName'
 import { kstMonthStr, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
-import { buildMoveCalendar, daysInMonth, type MoveCalendarLease, type MoveCalendarMonth } from '@/lib/moveCalendar'
+import { buildMoveCalendar, buildMoveRange, monthLastDay, shiftMonth, type MoveCalendarLease, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -80,6 +80,92 @@ export async function getRooms() {
   }))
 }
 
+// ── 입퇴실 캘린더 공통 재료 ────────────────────────────────────────
+// 월 창(홈 '이달 입퇴실 N건')과 연속 범위(호실 관리 입퇴실 탭)가 같은 select·같은 변환을 쓴다.
+// 둘이 사본을 들면 같은 계약이 두 화면에서 다른 이름·다른 날짜로 뜬다.
+
+/** 취소를 뺀 전 생애 — 퇴실 완료까지 읽어야 지난 달의 퇴실이 트랙에서 안 사라진다. */
+const MOVE_LEASE_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] as const
+
+/** select 최소 — 이 화면은 날짜·상태·이름만 쓴다. 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙). */
+const MOVE_LEASE_SELECT = {
+  id: true,
+  status: true,
+  isShortTerm: true,
+  moveInDate: true,
+  moveOutDate: true,
+  expectedMoveOut: true,
+  roomId: true,
+  room: { select: { roomNo: true } },
+  tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } },
+} as const
+
+/** MOVE_LEASE_SELECT 가 뽑는 모양. 추론에 맡기면 select 가 두 곳에서 불릴 때 원본 모델로 넓어진다. */
+type MoveLeaseRow = {
+  id: string
+  status: string
+  isShortTerm: boolean
+  moveInDate: Date | null
+  moveOutDate: Date | null
+  expectedMoveOut: Date | null
+  roomId: string | null
+  room: { roomNo: string } | null
+  tenant: { id: string; name: string; englishName: string | null; nickname: string | null; displayNameStyle: string | null }
+}
+
+/** 날짜는 'YYYY-MM-DD' 문자열로 고정 — getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다. */
+const dbYmd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
+
+const toMoveLease = (l: MoveLeaseRow): MoveCalendarLease => ({
+  id: l.id,
+  status: l.status,
+  isShortTerm: l.isShortTerm,
+  moveInDate: dbYmd(l.moveInDate),
+  moveOutDate: dbYmd(l.moveOutDate),
+  expectedMoveOut: dbYmd(l.expectedMoveOut),
+  roomId: l.roomId!,
+  roomNo: l.room?.roomNo ?? '',
+  tenantId: l.tenant.id,
+  tenantName: displayName(l.tenant, l.tenant.displayNameStyle),
+})
+
+/** 연속 범위 경계 — 과거는 한 달, 미래는 데이터가 정하되 바닥 +2 · 천장 +6 개월. */
+const RANGE_PAST_MONTHS = 1
+const RANGE_MIN_AHEAD = 2
+const RANGE_MAX_AHEAD = 6
+
+/**
+ * 그 범위의 변동 계약과, 변동이 있는 방의 점유 계약 전부.
+ *
+ * ①은 과대근사다 — 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
+ * 그 선은 조립(lib/moveCalendar)이 한 번만 긋는다. 충돌 판정도 거기서 occupancyOverlaps 를
+ * 부른다 — 화면도 이 액션도 사본을 들지 않는다.
+ */
+async function fetchMoveLeases(propertyId: string, from: string, to: string): Promise<{ changed: MoveCalendarLease[]; context: MoveCalendarLease[] }> {
+  const first = ymdToDbDate(from)
+  const last = ymdToDbDate(to)
+  const changed = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId,
+      roomId: { not: null },
+      status: { in: [...MOVE_LEASE_STATUSES] },
+      OR: [
+        { moveInDate:      { gte: first, lte: last } },
+        { expectedMoveOut: { gte: first, lte: last } },
+        { moveOutDate:     { gte: first, lte: last } },
+      ],
+    },
+    select: MOVE_LEASE_SELECT,
+  })
+  const roomIds = [...new Set(changed.map(l => l.roomId!))]
+  const context = roomIds.length === 0 ? [] : await prisma.leaseTerm.findMany({
+    where: { propertyId, roomId: { in: roomIds }, status: { in: OCCUPYING_STATUSES } },
+    select: MOVE_LEASE_SELECT,
+  })
+
+  return { changed: changed.map(toMoveLease), context: context.map(toMoveLease) }
+}
+
 /**
  * 입퇴실 캘린더 한 달치 — 그 달에 입주·퇴실·예약 시작이 있는 방의 체류 구간.
  *
@@ -88,72 +174,82 @@ export async function getRooms() {
  * 이 화면이 쓰지 않는 것을 실어 나른다. 이 화면의 질문은 '이 달에 무엇이 바뀌었나'라 조회도
  * 그 모양이어야 한다.
  *
- * 조회는 둘이다.
- *   ① 변동 계약 — 세 날짜 중 하나가 월 창 안(취소는 제외). 어느 방이 행이 되는지를 정한다.
- *   ② 그 방들의 점유 계약 전부 — 행은 안 늘리고 막대만 늘린다. 관통 점유를 함께 그려야
- *      그 위에 얹힌 예약이 충돌로 보인다.
- * ①은 과대근사다 — 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
- * 그 선은 조립(lib/moveCalendar)이 한 번만 긋는다. 충돌 판정도 거기서 occupancyOverlaps 를
- * 부른다 — 화면도 이 액션도 사본을 들지 않는다.
+ * 홈 현황의 '이달 입퇴실 N건'이 이 함수의 eventCount 를 딛는다 — 호실 관리는 연속 범위를
+ * 보지만 그 탭 접미 N 도 같은 '이 달'의 수라야 두 화면이 다른 숫자를 말하지 않는다.
  */
 export async function getMoveCalendarMonth(month: string): Promise<MoveCalendarMonth> {
   const { propertyId } = await getPropertyId()
   const target = /^\d{4}-\d{2}$/.test(month) ? month : kstMonthStr()
-  const first = ymdToDbDate(`${target}-01`)
-  const last = ymdToDbDate(`${target}-${String(daysInMonth(target)).padStart(2, '0')}`)
-
-  // select 최소 — 이 화면은 날짜·상태·이름만 쓴다. 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙).
-  const select = {
-    id: true,
-    status: true,
-    isShortTerm: true,
-    moveInDate: true,
-    moveOutDate: true,
-    expectedMoveOut: true,
-    roomId: true,
-    room: { select: { roomNo: true } },
-    tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } },
-  } as const
-
-  const changed = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId,
-      roomId: { not: null },
-      status: { in: ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] },
-      OR: [
-        { moveInDate:      { gte: first, lte: last } },
-        { expectedMoveOut: { gte: first, lte: last } },
-        { moveOutDate:     { gte: first, lte: last } },
-      ],
-    },
-    select,
-  })
-  const roomIds = [...new Set(changed.map(l => l.roomId!))]
-  const context = roomIds.length === 0 ? [] : await prisma.leaseTerm.findMany({
-    where: { propertyId, roomId: { in: roomIds }, status: { in: OCCUPYING_STATUSES } },
-    select,
-  })
-
-  // 날짜는 'YYYY-MM-DD' 문자열로 고정 — 위 getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다.
-  const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
-  const toLease = (l: (typeof changed)[number]): MoveCalendarLease => ({
-    id: l.id,
-    status: l.status,
-    isShortTerm: l.isShortTerm,
-    moveInDate: ymd(l.moveInDate),
-    moveOutDate: ymd(l.moveOutDate),
-    expectedMoveOut: ymd(l.expectedMoveOut),
-    roomId: l.roomId!,
-    roomNo: l.room?.roomNo ?? '',
-    tenantId: l.tenant.id,
-    tenantName: displayName(l.tenant, l.tenant.displayNameStyle),
-  })
+  const { changed, context } = await fetchMoveLeases(propertyId, `${target}-01`, monthLastDay(target))
 
   return buildMoveCalendar({
     month: target,
     today: kstYmdStr(),
-    changed: changed.map(toLease),
-    context: context.map(toLease),
+    changed,
+    context,
+  })
+}
+
+/**
+ * 입퇴실 캘린더 연속 범위 한 벌 — 여러 달을 이어 붙인 하나의 트랙(2026-08-17 운영자 오더).
+ *
+ * 종전에는 달마다 한 번씩 조회해 월 페이지를 그렸다. 운영자가 넘긴 질문은 "이 달"이 아니라
+ * "다음에 무엇이 오는가"라, 경계를 달이 아니라 **데이터가 끝나는 곳**에 두고 한 번에 조회한다.
+ *
+ * 경계 규칙(패널 확정).
+ *   · 왼쪽 = 이번 달 -1. 지난달 퇴실을 보며 다음 사람을 잡는 것이 이 화면의 일상 동선이다.
+ *   · 오른쪽 = 마지막 변동이 있는 달. 단 바닥 +2 개월(끝이 오늘에 붙어 스크롤할 곳이 없는 상태 방지),
+ *     천장 +6 개월(예약 하나가 반년 뒤에 있을 때 빈 트랙을 수천 px 끌지 않게).
+ *   · 천장 밖에 남은 예정은 건수와 최초 날짜로만 말하고(beyond), 점프로 닿는다.
+ *   · ?month= 가 범위 밖이면 그쪽으로 범위를 넓힌다 — 딥링크 착지와 '이전 달 더 보기'가
+ *     이 한 규칙을 함께 쓴다(파라미터를 새로 만들지 않는다).
+ *
+ * 조회는 셋이다. ①은 날짜 세 칸만 뽑는 스캔이라 조인이 없고, ②③은 종전 월 조회와 같은 모양이다.
+ */
+export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendarRange> {
+  const { propertyId } = await getPropertyId()
+  const today = kstYmdStr()
+  const todayMonth = today.slice(0, 7)
+  const focusMonth = focus && /^\d{4}-\d{2}$/.test(focus) ? focus : todayMonth
+
+  // ① 변동 날짜 스캔 — 범위의 끝과 '범위 밖에 남은 예정'을 한 번에 읽는다.
+  const marks = await prisma.leaseTerm.findMany({
+    where: { propertyId, roomId: { not: null }, status: { in: [...MOVE_LEASE_STATUSES] } },
+    select: { moveInDate: true, moveOutDate: true, expectedMoveOut: true },
+  })
+  const changeDates: string[] = []
+  for (const l of marks) {
+    // 퇴실의 진짜 날짜는 실제일이 이긴다 — lib/moveCalendar stayEnd 와 같은 선.
+    const from = dbYmd(l.moveInDate)
+    const to = dbYmd(l.moveOutDate) ?? dbYmd(l.expectedMoveOut)
+    if (from) changeDates.push(from)
+    if (to) changeDates.push(to)
+  }
+  const lastChange = changeDates.reduce((a, b) => (a > b ? a : b), today)
+  const firstChange = changeDates.reduce((a, b) => (a < b ? a : b), today)
+
+  const minEnd = shiftMonth(todayMonth, RANGE_MIN_AHEAD)
+  const maxEnd = shiftMonth(todayMonth, RANGE_MAX_AHEAD)
+  const lastMonth = lastChange.slice(0, 7)
+  let endMonth = lastMonth < minEnd ? minEnd : lastMonth > maxEnd ? maxEnd : lastMonth
+  let startMonth = shiftMonth(todayMonth, -RANGE_PAST_MONTHS)
+  if (focusMonth < startMonth) startMonth = focusMonth
+  if (focusMonth > endMonth) endMonth = focusMonth
+
+  const from = `${startMonth}-01`
+  const to = monthLastDay(endMonth)
+  const beyondDates = changeDates.filter(d => d > to).sort()
+
+  const { changed, context } = await fetchMoveLeases(propertyId, from, to)
+  return buildMoveRange({
+    from,
+    to,
+    today,
+    focusMonth,
+    changed,
+    context,
+    beyond: beyondDates.length > 0 ? { count: beyondDates.length, firstDate: beyondDates[0] } : null,
+    canExtendPast: firstChange < from,
   })
 }
 

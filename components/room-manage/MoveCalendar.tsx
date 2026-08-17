@@ -1,27 +1,41 @@
 'use client'
 
-// 입퇴실 캘린더 — 그 달 방별 변동을 데스크톱은 간트로, 768px 미만은 날짜순 리스트로 그린다.
+// 입퇴실 캘린더 — 여러 달을 이어 붙인 하나의 연속 간트. 하루는 24px 고정이고 트랙이 가로로 스크롤된다.
 //
 // 조립·판정은 lib/moveCalendar 정본이 서버에서 끝낸다. 이 파일은 그 결과를 배치할 뿐이고
 // 겹침·충돌을 다시 세지 않는다 — 화면이 사본을 들면 감지망이 사고라 부르는 상태와 갈린다.
 //
-// 두 편성은 같은 한 벌(rows·events)을 나눠 쓴다. 별도 조회가 없으므로 폭이 바뀌어도 같은 달이다.
+// **편성은 하나다**(운영자 2026-08-17 "횡스크롤이 가능하다면 모바일에서도 카드타입을 안 해도 되지 않나").
+// 종전에는 768px 미만을 날짜순 리스트로 갈라 그렸는데, 트랙 자체가 가로로 흐르게 되자 좁은 폭은
+// 같은 트랙을 좁은 창으로 보는 것으로 족해졌다. 두 편성이 사라지면서 "같은 방이 두 화면에서 다른
+// 날짜로 뜬다"는 위험도 함께 사라진다. 리스트가 답하던 '다음 일정' 질문은 위의 고정 요약 줄이 받는다.
+//
+// 스크롤은 두 축이 공존해야 한다 — 트랙은 가로로만 진짜 스크롤러이므로 overscroll 제어도 X 축에만
+// 건다. 두 축에 걸면 세로로는 넘칠 일이 없는 '가짜 스크롤러'가 되어 Android Blink 가 터치를 래치하고
+// 페이지 세로 스크롤이 먹통이 된다(knowledge/mobile-scroll-viewport, 신고 d8554128).
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { Btn } from '@/components/ui/Btn'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { RoomCard } from '@/components/ui/RoomCard'
-import { StatusBadge, statusTipColor, type BadgeTone } from '@/components/ui/StatusBadge'
+import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { fmtMD } from '@/lib/fmtDate'
-import type { MoveBar, MoveCalendarMonth, MoveCalendarRow, MoveDaySpan, MoveGap } from '@/lib/moveCalendar'
+import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
-/** 하루의 최소 폭 — 이보다 좁아지면 트랙이 가로로 스크롤된다(페이지는 안 밀린다). */
-const MIN_DAY = 18
+/**
+ * 하루의 고정 폭. 월 페이지에서는 한 달이 폭에 맞게 늘어났지만, 연속 트랙에서는 달마다 폭이
+ * 달라지면 같은 하루가 자리마다 다른 크기가 된다. 24px 이면 기본 뷰포트에 서너 주가 들어오고
+ * 320px 좁은 폭에서도 열흘 남짓이 남는다.
+ */
+const DAY_W = 24
 /** 캡션 'N일 공실'을 세울 최소 폭. 이보다 좁으면 공백은 색 없는 빈 자리로만 말한다. */
 const GAP_CAPTION_MIN = 40
+/** 고정 요약 줄에 세울 최대 건수. 넘치면 '외 N건'으로 접는다(방 많은 영업장에서 벽이 되지 않게). */
+const UPCOMING_MAX = 8
 
 /** 11px 글자의 대략 폭 — 한글·전각은 11, 나머지는 6.2. 라벨을 바 안에 넣을지 밖에 낼지의 자다. */
 function estWidth(s: string): number {
@@ -39,48 +53,114 @@ function barTone(bar: MoveBar): { bg: string; fg: string } {
     : { bg: 'var(--badge-exit-bg)', fg: 'var(--badge-exit-fg)' }
 }
 
-/** 막대 모서리 — 월 밖으로 이어지는 쪽은 직각, 이 달 안에서 끝나는 쪽만 둥글다. */
+/** 막대 모서리 — 범위 밖으로 이어지는 쪽은 직각, 트랙 안에서 끝나는 쪽만 둥글다. */
 function barRadius(bar: MoveBar): string {
   const l = bar.clippedStart ? '0' : 'var(--radius-xs)'
   const r = bar.clippedEnd ? '0' : 'var(--radius-xs)'
   return `${l} ${r} ${r} ${l}`
 }
 
-export function MoveCalendar({ data }: { data: MoveCalendarMonth }) {
-  const entityModal = useEntityModal()
-  const trackRef = useRef<HTMLDivElement>(null)
-  const [dayWidth, setDayWidth] = useState(0)
-  const dim = data.daysInMonth
+/** 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다. */
+function eventTone(e: MoveEvent): { tone: BadgeTone; label: string } {
+  return e.type === 'out' ? { tone: 'exit', label: '퇴실' }
+    : e.kind === 'reserved' ? { tone: 'await', label: '입실 예약' }
+      : { tone: 'movein', label: '입실' }
+}
 
-  // 하루의 실측 폭 — 라벨을 바 안에 넣을지, 공백 캡션을 세울지가 여기서 갈린다.
-  // ViewTabs 와 같은 실측 문법(레이아웃 직후 측정 + ResizeObserver).
-  useLayoutEffect(() => {
-    const el = trackRef.current
-    if (!el) return
-    const measure = () => setDayWidth(Math.max(0, (el.clientWidth - ROOM_COL) / dim))
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [dim])
+export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
+  const entityModal = useEntityModal()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const landedRef = useRef(false)
+  const [todayOff, setTodayOff] = useState(false)
+  const days = data.days
+  const todayDay = data.todayDay
 
   const openLease = (roomId: string, leaseId: string, tenantId: string) =>
     entityModal.open({ kind: 'room', roomId, leaseTermId: leaseId, tenantId })
 
-  if (data.rows.length === 0) {
-    return (
-      <EmptyState
-        title="이달 입퇴실 변동이 없습니다"
-        description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
-      />
-    )
+  /** 그 달로 다시 조회해 착지한다 — 범위 밖이면 서버가 범위를 그쪽으로 넓힌다. */
+  const jumpToMonth = (month: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('month', month)
+    router.push(`?${params.toString()}`)
   }
 
-  const cols = `${ROOM_COL}px repeat(${dim}, minmax(0, 1fr))`
-  const days = Array.from({ length: dim }, (_, i) => i + 1)
+  /** 오늘의 왼쪽 좌표(px). 오늘이 범위 밖이면 null. */
+  const todayX = todayDay != null ? (todayDay - 1) * DAY_W : null
+
+  // 첫 착지 — 오늘을 뷰포트 왼쪽 1/4 에 둔다. 보고 있는 달이 오늘의 달이 아니면(딥링크·점프)
+  // 그 달 1일을 왼쪽에 세운다. 애니메이션 없이 즉시 — 첫 페인트가 흐르면 위치를 착각한다.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || landedRef.current) return
+    landedRef.current = true
+    const focus = data.months.find(m => m.month === data.focusMonth)
+    const focusHasToday = !!focus && todayDay != null
+      && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
+    el.scrollLeft = focusHasToday && todayX != null
+      ? Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
+      : focus ? (focus.startDay - 1) * DAY_W : 0
+  }, [data.months, data.focusMonth, todayDay, todayX])
+
+  // 스크롤 추적 — ① '오늘로' 버튼을 띄울지 ② 보고 있는 달을 URL 에 적을지.
+  //
+  // URL 갱신은 반드시 history.replaceState 다. router.replace 는 서버 왕복을 다시 돌고,
+  // push 였다면 스크롤 한 번에 히스토리가 수십 칸 쌓여 뒤로가기가 못 쓰게 된다. 네이티브
+  // history API 는 Next 라우터에 연결돼 있어 useSearchParams 를 구독한 월 셀렉터가 따라온다.
+  const syncPosition = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const view = Math.max(0, el.clientWidth - ROOM_COL)
+    setTodayOff(todayX == null ? false : todayX < el.scrollLeft || todayX > el.scrollLeft + view)
+
+    // 판정 지점은 왼쪽 끝이 아니라 뷰포트의 1/4 — 착지 규칙(오늘을 1/4 에)과 같은 자를 써야
+    // 방금 내려앉은 자리에서 곧바로 옆 달로 적히지 않는다.
+    const leftDay = Math.floor((el.scrollLeft + view / 4) / DAY_W) + 1
+    const m = data.months.find(mm => leftDay >= mm.startDay && leftDay < mm.startDay + mm.days)
+    if (!m) return
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('month') === m.month) return
+    url.searchParams.set('month', m.month)
+    window.history.replaceState(window.history.state, '', url)
+  }, [data.months, todayX])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onScroll = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(syncPosition, 180)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => { el.removeEventListener('scroll', onScroll); if (timer) clearTimeout(timer) }
+  }, [syncPosition])
+
+  const scrollToToday = () => {
+    const el = scrollRef.current
+    if (!el || todayX == null) return
+    el.scrollLeft = Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
+    setTodayOff(false)
+  }
+
+  const cols = `${ROOM_COL}px repeat(${days}, ${DAY_W}px)`
+  const trackW = ROOM_COL + days * DAY_W
+  // 월 경계선을 그을 자리 — 첫 달은 트랙의 시작이라 선이 없다.
+  const monthStarts = data.months.slice(1).map(m => m.startDay)
+  const monthStartSet = new Set(monthStarts)
+  // 눈금에 적을 '그 달 며칠' — 범위 첫날부터 하루씩 더해 UTC 게터로 뽑는다(실행 환경 시간대 무관).
+  const dayNums = Array.from({ length: days }, (_, i) =>
+    new Date(Date.parse(`${data.from}T00:00:00Z`) + i * 86400000).getUTCDate())
+  const beyond = data.beyond
 
   return (
     <div className="space-y-3">
+      {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
+          매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
+      <UpcomingRow items={data.upcoming} onOpen={openLease} />
+
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
         <div className="space-y-1.5">
@@ -99,58 +179,141 @@ export function MoveCalendar({ data }: { data: MoveCalendarMonth }) {
         </div>
       )}
 
-      {/* ── 데스크톱 간트 ── 768px 이상. 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */}
-      <div className="hidden md:block rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <div className="overflow-x-auto">
-          <div ref={trackRef} className="move-track" style={{ minWidth: ROOM_COL + dim * MIN_DAY }}>
+      {data.rows.length === 0 ? (
+        <EmptyState
+          title="이 기간에 입퇴실 변동이 없습니다"
+          description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
+        />
+      ) : (
+        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). relative — '오늘로'가 이 안에 뜬다. */
+        <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <div ref={scrollRef} className="overflow-x-auto" style={{ overscrollBehaviorX: 'contain' }}>
+            <div className="move-track" style={{ width: trackW }}>
 
-            {/* 날짜 눈금 — 오늘만 원형 강조(다른 달에서는 아예 없다). */}
-            <div className="grid items-center" style={{ gridTemplateColumns: cols, borderBottom: '1px solid var(--warm-border)' }}>
-              <div className="sticky left-0 z-20 px-2 py-1.5 text-[0.65625rem] font-bold uppercase"
-                style={{ background: 'var(--cream)', color: 'var(--ink-m)' }}>호실</div>
-              {days.map(d => (
-                <div key={d} className="py-1.5 flex justify-center">
-                  <span className="inline-flex items-center justify-center tnum text-[0.65625rem] leading-none"
-                    style={d === data.todayDay
-                      ? { width: 17, height: 17, borderRadius: 9999, background: 'var(--coral)', color: 'var(--on-solid)', fontWeight: 700 }
-                      : { color: 'var(--ink-m)' }}>{d}</span>
-                </div>
+              {/* 눈금 두 줄 — 위는 월 밴드, 아래는 날짜. 호실 열이 둘을 가로질러 sticky 로 선다. */}
+              <div className="grid" style={{ gridTemplateColumns: cols, gridTemplateRows: 'auto auto', borderBottom: '1px solid var(--warm-border)' }}>
+                <div className="sticky left-0 z-30 flex items-end px-2 pb-1.5 text-[0.65625rem] font-bold uppercase"
+                  style={{ gridColumn: '1 / 2', gridRow: '1 / 3', background: 'var(--cream)', color: 'var(--ink-m)' }}>호실</div>
+
+                {data.months.map(m => (
+                  <MonthLabel key={m.month} m={m} />
+                ))}
+
+                {/* '오늘' — 월 라벨과 겹치는 자리에서는 오늘이 이긴다(z-20 · 불투명). */}
+                {todayDay != null && (
+                  <span className="z-20 self-center justify-self-start whitespace-nowrap rounded-full px-1.5 py-0.5 text-[0.625rem] font-bold leading-none"
+                    style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / 2', background: 'var(--coral)', color: 'var(--on-solid)' }}>
+                    오늘
+                  </span>
+                )}
+
+                {/* 날짜 — 달이 바뀌는 칸에는 왼쪽 경계선이 선다. */}
+                {dayNums.map((n, i) => (
+                  <div key={i} className="py-1.5 flex justify-center"
+                    style={{ gridColumn: `${i + 2} / span 1`, gridRow: '2 / 3', borderLeft: monthStartSet.has(i + 1) ? '1px solid var(--warm-border)' : undefined }}>
+                    <span className="inline-flex items-center justify-center tnum text-[0.65625rem] leading-none"
+                      style={i + 1 === todayDay
+                        ? { width: 17, height: 17, borderRadius: 9999, background: 'var(--coral)', color: 'var(--on-solid)', fontWeight: 700 }
+                        : { color: 'var(--ink-m)' }}>{n}</span>
+                  </div>
+                ))}
+              </div>
+
+              {data.rows.map((row, ri) => (
+                <GanttRow key={row.roomId} row={row} days={days} cols={cols}
+                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0} onOpen={openLease} />
               ))}
             </div>
-
-            {data.rows.map((row, ri) => (
-              <GanttRow key={row.roomId} row={row} dim={dim} cols={cols} dayWidth={dayWidth}
-                todayDay={data.todayDay} first={ri === 0} onOpen={openLease} />
-            ))}
           </div>
-        </div>
-      </div>
 
-      {/* ── 모바일 리스트 ── 768px 미만. 같은 한 벌의 다른 편성이다(§20). */}
-      <ul className="md:hidden space-y-2">
-        {data.events.map(e => {
-          const tone: BadgeTone = e.type === 'out' ? 'exit' : e.kind === 'reserved' ? 'await' : 'movein'
-          const label = e.type === 'out' ? '퇴실' : e.kind === 'reserved' ? '입실 예약' : '입실'
-          const span = [e.stayFrom ? fmtMD(e.stayFrom) : '이전부터', e.stayTo ? fmtMD(e.stayTo) : '퇴실일 미정'].join(' ~ ')
-          return (
-            <li key={`${e.leaseId}-${e.type}`}>
-              <RoomCard kind="neutral" tipColor={statusTipColor(tone)} onClick={() => openLease(e.roomId, e.leaseId, e.tenantId)}>
-                <div className="px-3.5 py-3 space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-bold tnum" style={{ color: 'var(--ink-2)' }}>
-                      {fmtMD(`${data.month}-${String(e.day).padStart(2, '0')}`)} · {fmtRoomNo(e.roomNo)}
-                    </p>
-                    <StatusBadge tone={tone}>{label}</StatusBadge>
-                  </div>
-                  <p className="truncate text-xs" style={{ color: 'var(--ink-s)' }}>
-                    {e.tenantName} <span className="tnum" style={{ color: 'var(--ink-m)' }}>{span}</span>
-                  </p>
-                </div>
-              </RoomCard>
-            </li>
-          )
-        })}
-      </ul>
+          {/* 오늘이 화면 밖일 때만 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이. */}
+          {todayOff && (
+            <button type="button" onClick={scrollToToday}
+              className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+              style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
+              오늘로
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── 트랙의 양 끝 ── 범위 밖의 사실과 그리로 가는 길. 트랙 끝에 붙이면 수천 px 을 끌어야
+          닿으므로 카드 밖 한 줄로 세운다(320px 에서도 손이 닿는 자리다). */}
+      {(data.canExtendPast || beyond) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {data.canExtendPast && (
+            <Btn variant="ghost" size="sm" onClick={() => jumpToMonth(shiftMonth(data.months[0].month, -1))}>
+              이전 달 더 보기
+            </Btn>
+          )}
+          {beyond && (
+            <div className="ml-auto flex items-center gap-2">
+              <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>
+                이후 예정 {beyond.count}건 · 최초 {fmtMD(beyond.firstDate)}
+              </p>
+              <Btn variant="ghost" size="sm" onClick={() => jumpToMonth(beyond.firstDate.slice(0, 7))}>
+                그때로 이동
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 월 밴드의 한 칸 — 라벨은 그 달 안에서 sticky 라, 달 중간을 보고 있어도 어느 달인지 안 잃는다.
+ * sticky 요소는 자기 칸(그리드 셀) 안에 갇히므로 다음 달로 넘어가면 라벨도 함께 밀려 나간다.
+ */
+function MonthLabel({ m }: { m: MoveRangeMonth }) {
+  return (
+    <div className="min-w-0 py-1"
+      style={{ gridColumn: `${m.startDay + 1} / ${m.startDay + m.days + 1}`, gridRow: '1 / 2', borderLeft: m.startDay === 1 ? undefined : '1px solid var(--warm-border)' }}>
+      <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none"
+        style={{ left: ROOM_COL, background: 'var(--cream)' }}>
+        <span className="font-bold" style={{ color: 'var(--ink-2)' }}>{Number(m.month.slice(5, 7))}월</span>
+        {/* 빈 달을 말없이 두면 고장으로 읽힌다 — 비어 있는 것이 사실이라고 옅게 적어 둔다. */}
+        {m.eventCount === 0 && <span style={{ color: 'var(--ink-m)' }}>변동 없음</span>}
+      </span>
+    </div>
+  )
+}
+
+/** 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다. */
+function UpcomingRow({ items, onOpen }: {
+  items: MoveEvent[]
+  onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+}) {
+  const shown = items.slice(0, UPCOMING_MAX)
+  const rest = items.length - shown.length
+  return (
+    <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>
+          다가오는 {UPCOMING_DAYS}일
+        </p>
+        {items.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>예정된 입퇴실이 없습니다.</p>
+        ) : (
+          <>
+            {shown.map(e => {
+              const { tone, label } = eventTone(e)
+              return (
+                <button key={`${e.leaseId}-${e.type}`} type="button"
+                  onClick={() => onOpen(e.roomId, e.leaseId, e.tenantId)}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
+                  <span className="tnum font-semibold" style={{ color: 'var(--ink-2)' }}>{fmtMD(e.date)}</span>
+                  <span className="tnum" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(e.roomNo)}</span>
+                  <StatusBadge tone={tone}>{label}</StatusBadge>
+                  <span style={{ color: 'var(--ink-s)' }}>{e.tenantName}</span>
+                </button>
+              )
+            })}
+            {rest > 0 && <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>외 {rest}건</p>}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -169,22 +332,20 @@ type Placed = {
   ink: MoveDaySpan | null
 }
 
-function place(bar: MoveBar, row: MoveCalendarRow, dim: number, dayWidth: number): Placed {
+function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
   const full = `${bar.tenantName} · ${bar.label}`
-  const px = (bar.endDay - bar.startDay + 1) * dayWidth
-  // 실측 전(첫 프레임)은 이름만 — 가장 흔한 결말이라 측정 뒤 흔들림이 가장 작다.
-  const fits: Placed['mode'] = dayWidth === 0 ? 'name'
-    : px >= estWidth(full) + 16 ? 'full'
-      : px >= estWidth(bar.tenantName) + 16 ? 'name' : 'outside'
+  const px = (bar.endDay - bar.startDay + 1) * DAY_W
+  const fits: Placed['mode'] = px >= estWidth(full) + 16 ? 'full'
+    : px >= estWidth(bar.tenantName) + 16 ? 'name' : 'outside'
   const bare: Placed = { bar, full, mode: fits, side: null, ink: null }
   if (fits !== 'outside') return bare
 
   // 같은 층에서 다음 막대가 시작하는 날 — 바 밖 라벨이 그 위로 넘어가지 않게 끊는 자리.
   const next = row.bars.filter(b => b.lane === bar.lane && b.startDay > bar.endDay)
-    .reduce((m, b) => Math.min(m, b.startDay), dim + 1)
-  const needDays = Math.max(1, Math.ceil((estWidth(full) + 8) / dayWidth))
-  if (bar.endDay < dim && next > bar.endDay + 1) {
-    const limit = Math.min(next - 1, dim)
+    .reduce((m, b) => Math.min(m, b.startDay), days + 1)
+  const needDays = Math.max(1, Math.ceil((estWidth(full) + 8) / DAY_W))
+  if (bar.endDay < days && next > bar.endDay + 1) {
+    const limit = Math.min(next - 1, days)
     return { ...bare, side: 'right', ink: { startDay: bar.endDay + 1, endDay: Math.min(bar.endDay + needDays, limit) } }
   }
   if (bar.startDay > 1) {
@@ -194,17 +355,17 @@ function place(bar: MoveBar, row: MoveCalendarRow, dim: number, dayWidth: number
   return { ...bare, mode: 'name' }
 }
 
-function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
+function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   row: MoveCalendarRow
-  dim: number
+  days: number
   cols: string
-  dayWidth: number
   todayDay: number | null
+  monthStarts: number[]
   first: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
 }) {
   const attn = row.conflicts.length > 0
-  const placed = row.bars.map(bar => place(bar, row, dim, dayWidth))
+  const placed = row.bars.map(bar => place(bar, row, days))
   // 캡션은 0층(gridRow 1)에 그리므로 0층의 바 밖 라벨과만 자리를 다툰다.
   const blocked = placed.filter(p => p.bar.lane === 0 && p.ink).map(p => p.ink!)
 
@@ -222,18 +383,18 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
       }
     }
     if (!best) return null
-    return (best.endDay - best.startDay + 1) * dayWidth >= GAP_CAPTION_MIN ? best : null
+    return (best.endDay - best.startDay + 1) * DAY_W >= GAP_CAPTION_MIN ? best : null
   }
 
   return (
     <div>
-      <div className="grid" style={{
+      <div className="mc-row grid" style={{
         gridTemplateColumns: cols,
         gridTemplateRows: `repeat(${row.laneCount}, var(--mc-lane))`,
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
       }}>
         {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn). */}
-        <div className="sticky left-0 z-20 flex items-center px-2 tnum text-xs font-bold"
+        <div className="mc-room sticky left-0 z-20 flex items-center px-2 tnum text-xs font-bold"
           style={{
             gridColumn: '1 / 2', gridRow: '1 / -1',
             background: 'var(--cream)', color: 'var(--ink-2)',
@@ -242,13 +403,22 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
           {fmtRoomNo(row.roomNo)}
         </div>
 
-        {/* 공백 캡션 — 바 밖 라벨을 피해 남은 자리에, 폭이 나올 때만. 색은 없다(트랙 그대로). */}
+        {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}
+        {monthStarts.map(d => (
+          <div key={`mb-${d}`} aria-hidden className="pointer-events-none"
+            style={{ gridColumn: `${d + 1} / span 1`, gridRow: '1 / -1', width: 1, justifySelf: 'start', background: 'var(--warm-border)' }} />
+        ))}
+
+        {/* 공백 캡션 — 바 밖 라벨을 피해 남은 자리에, 폭이 나올 때만. 색은 없다(트랙 그대로).
+            글자는 그 구간 안에서 sticky 라 긴 공백을 반쯤 지나가도 캡션이 화면에 남는다. */}
         {row.gaps.map(g => {
           const span = captionSpan(g)
           return span && (
-            <div key={`gap-${g.startDay}`} className="flex items-center justify-center text-[0.65625rem] tnum pointer-events-none"
-              style={{ gridColumn: `${span.startDay + 1} / ${span.endDay + 2}`, gridRow: '1 / 2', color: 'var(--ink-m)' }}>
-              {g.days}일 공실
+            <div key={`gap-${g.startDay}`} className="flex items-center justify-center pointer-events-none"
+              style={{ gridColumn: `${span.startDay + 1} / ${span.endDay + 2}`, gridRow: '1 / 2' }}>
+              <span className="sticky whitespace-nowrap text-[0.65625rem] tnum" style={{ left: ROOM_COL, color: 'var(--ink-m)' }}>
+                {g.days}일 공실
+              </span>
             </div>
           )
         })}
@@ -267,17 +437,17 @@ function GanttRow({ row, dim, cols, dayWidth, todayDay, first, onOpen }: {
             }} />
         ))}
 
-        {/* 오늘 — 트랙을 가로지르는 세로 1px. 다른 달에서는 todayDay 가 null 이라 아예 없다. */}
+        {/* 오늘 — 트랙을 가로지르는 세로 1px. 오늘이 범위 밖이면 아예 없다. */}
         {todayDay != null && (
           <div aria-hidden className="pointer-events-none"
             style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / -1', width: 1, justifySelf: 'start', background: 'var(--tc-text)' }} />
         )}
       </div>
 
-      {/* 꼬리 — 트랙 밖(다음 달)의 사실을 한 줄로. 막대로 그리면 이 달에 있는 일로 읽힌다. */}
+      {/* 꼬리 — 트랙 밖의 사실을 한 줄로. 그 예약이 범위 안에 들어오면 막대가 말하므로 이 줄은 없다. */}
       {row.tail && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
-          <div className="sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
           <p className="pb-1.5 pl-1 text-[0.65625rem] truncate" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
             {row.tail}
           </p>
