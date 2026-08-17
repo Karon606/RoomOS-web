@@ -142,12 +142,12 @@ export function residenceCertPeriodText(startYmd: string, endYmd: string): strin
 
 /** 오버라이드를 뺀 자동값. 정규화(자동값과 같은 키 제거)의 기준이기도 하다. */
 export function deriveResidenceCertFields(src: ResidenceCertSource): ResidenceCertFieldValues {
-  // 소재지·임차인 주소 = 영업장 주소 + 방번호(lib/tenantAddress 정본). 두 칸의 자동값은 같지만
-  // 따로 덮을 수 있어야 한다 — 건물 주소와 입주자 주소를 다르게 적어 내는 관청이 있다.
-  const address = tenantResidenceAddress(src.propertyAddress, src.roomNo)
+  // 임차인 주소 = 영업장 주소 + 방번호(lib/tenantAddress 정본). 소재지는 사업장 자체의 주소라
+  // 방번호가 붙으면 안 된다(운영자 정정 2026-08-18 — 종전에는 두 칸이 같은 값이었다).
+  // 두 칸은 여전히 따로 덮을 수 있다 — 건물 주소와 입주자 주소를 다르게 적어 내는 관청이 있다.
   return {
-    siteAddress: address,
-    tenantAddress: address,
+    siteAddress: (src.propertyAddress ?? '').trim(),
+    tenantAddress: tenantResidenceAddress(src.propertyAddress, src.roomNo),
     periodText: residenceCertPeriodText(ymd(src.moveInDate), ymd(src.expectedMoveOut)),
     rentAmount: src.rentAmount,
     depositAmount: src.depositAmount,
