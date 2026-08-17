@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import prisma from '@/lib/prisma'
 import { kstYmdStr } from '@/lib/kstDate'
+import { publicSiteUrl } from '@/lib/publicSite'
 
 // /marketing 페이지용 — 영업장 publicSlug 의 페이지뷰를 범위·세분도별로 집계.
 // 범위 선택 시 클라가 같은 액션을 다시 호출 → 새 통계 받아 차트·표 재렌더.
@@ -371,7 +372,7 @@ export async function getMarketingStats(
     select: { publicSlug: true },
   })
   const slug = property?.publicSlug?.trim() || null
-  const publicUrl = slug ? `https://www.stayeum.com/members/${slug}/` : null
+  const publicUrl = publicSiteUrl(slug)
   // 소개 페이지에 심는 태그(scripts/inject-clarity.mjs)와 같은 env 를 읽는다 — 두 자리가 갈리면
   // 녹화는 되는데 볼 문이 없거나 그 반대가 된다. 상용화에서 영업장별 ID 가 되면 여기와 주입
   // 스크립트가 함께 property 값으로 옮겨 간다.
