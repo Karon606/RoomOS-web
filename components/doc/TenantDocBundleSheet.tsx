@@ -26,7 +26,8 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { docFromQuery } from '@/lib/docNav'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
-import { getTenantDocBundle, type DocBundleGroup, type DocBundleRow, type TenantDocBundle } from '@/app/(app)/tenants/docBundle'
+import { getTenantDocBundle } from '@/app/(app)/tenants/docBundle'
+import type { DocBundleGroup, DocBundleRow, TenantDocBundle } from '@/lib/docBundle'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋(형제 3화면과 같은 숫자)
 
@@ -129,6 +130,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     }))
   const share = useDocShare(shareEntries, mode)
 
+  const overLimit = selected.size > 0 && share.fileCount > MAX_SHARE
   const groups = bundle?.groups ?? []
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
   const showGroupTitles = groups.length > 1
@@ -147,6 +149,14 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             options={[{ value: 'png', label: '사진' }, { value: 'pdf', label: 'PDF' }]}
           />
         </div>
+
+        {/* 장수 초과 안내 — 알약에는 '사진 N장' 만 들어간다(320px 폭 한계). 어떻게 하면 되는지는
+            자리가 있는 여기서 말한다. 사진은 페이지마다 한 장이라 계약서가 섞이면 금세 넘는다. */}
+        {overLimit && (
+          <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] text-[var(--warning-fg)]">
+            사진은 한 번에 {MAX_SHARE}장까지 보낼 수 있습니다. 몇 건을 빼거나 PDF 로 보내세요.
+          </p>
+        )}
 
         {!bundle && !failed && <SkeletonRows rows={4} />}
         {failed && <p className="text-xs text-[var(--danger-fg)]">서류 목록을 불러오지 못했습니다.</p>}
@@ -197,9 +207,13 @@ function DocRow({ row, tenantId, selected, onToggle }: {
   return (
     <li
       onClick={issued ? onToggle : undefined}
+      // 형제 목록 화면은 액션이 넷이라 좁은 폭에서 아래 줄로 내리지만, 여기는 행마다 버튼이 하나라
+      // 내리면 320px 에서 한 화면에 세 행밖에 안 들어간다. 한 줄을 유지한다(실측 잘림 0).
       className={[
-        'flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border p-3 transition-colors',
-        issued ? 'cursor-pointer select-none bg-[var(--cream)]' : 'bg-[var(--canvas)]',
+        // 셸 패널이 cream 이라 행은 canvas 다(모달 안 행 문법 정본 — 계약서 파일 칸과 같은 표면).
+        // 선택 표시는 §22 .sel 그대로 테두리 + 링이고, 미발급은 잠긴 체크박스·회색 문구가 말한다.
+        'flex items-center gap-2 rounded-xl border bg-[var(--canvas)] p-3 transition-colors',
+        issued ? 'cursor-pointer select-none' : '',
         selected ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
       ].join(' ')}>
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
@@ -225,7 +239,7 @@ function DocRow({ row, tenantId, selected, onToggle }: {
         </div>
       </div>
       {/* 버튼은 행 선택을 가로채지 않는다 — 체크는 행 전체, 이동은 버튼 */}
-      <div className="flex shrink-0 items-center gap-1.5 sm:justify-end" onClick={e => e.stopPropagation()}>
+      <div className="flex shrink-0 items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
         {issued
           ? <ViewDocButton driveFileId={row.driveFileId as string} from="tenant" tenantId={tenantId} />
           : <BtnLink href={writeHref(row, tenantId)} variant="secondary" size="sm">작성</BtnLink>}

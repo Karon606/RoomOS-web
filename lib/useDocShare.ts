@@ -19,9 +19,12 @@ export type DocShareEntry = {
 
 // entries 는 현재 선택 항목을 표시 순서대로. mode 는 png(사진)·pdf.
 export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
-  const queueRef = useRef<DocShareQueue | null>(null)
-  if (!queueRef.current) queueRef.current = new DocShareQueue()
-  const queue = queueRef.current
+  // 큐는 **형식마다 하나**다. 캐시 키가 driveFileId 뿐이라 한 큐를 공유하면 사진으로 준비해 둔
+  // Blob 이 PDF 로 바꾼 뒤에도 그대로 나간다 — 형식 전환이 있는 화면(서류 묶음 보내기 시트)에서
+  // PDF 를 골랐는데 PNG 가 첨부되는 길이다. 형식이 고정인 화면은 큐를 하나만 만들므로 종전과 같다.
+  const queuesRef = useRef<{ png: DocShareQueue | null; pdf: DocShareQueue | null }>({ png: null, pdf: null })
+  if (!queuesRef.current[mode]) queuesRef.current[mode] = new DocShareQueue()
+  const queue = queuesRef.current[mode] as DocShareQueue
   // 연속 거부 카운트 — 재탭(신선한 제스처)마저 거부되면 실질 공유 불가 기기(주로 PC)로 판정, 무한 안내 방지
   const retryCount = useRef(0)
 

@@ -36,12 +36,16 @@ export function DocMultiShareBar({
 
   return (
     <SelectionPillBar count={count} unit="건" onClose={onClose} aboveModal={aboveModal}>
+      {/* 상태 문구는 줄어들 수 있어야 한다. 320px 에서 나란한 요소가 전부 nowrap 이면 알약이 화면
+          밖으로 밀려 **닫기 버튼에 손이 닿지 않는다**(실측 용량 초과 문구에서 71px 이탈).
+          360·390 에서는 글자가 다 들어가 종전과 픽셀이 같고, 320 에서만 말줄임으로 접힌다. */}
       {converting ? (
-        <span className="mono tnum whitespace-nowrap text-[0.8125rem] font-medium text-white/70">변환 중 {done}/{count}</span>
+        <span className="mono tnum min-w-0 truncate text-[0.8125rem] font-medium text-white/70">변환 중 {done}/{count}</span>
       ) : oversized ? (
-        <span className="whitespace-nowrap text-[0.8125rem] font-medium text-white/70">용량이 커서 나눠 보내주세요</span>
+        <span className="min-w-0 truncate text-[0.8125rem] font-medium text-white/70">용량이 커서 나눠 보내주세요</span>
       ) : tooMany ? (
-        <span className="whitespace-nowrap text-[0.8125rem] font-medium text-white/70">{files}장이라 나눠 보내주세요</span>
+        // 장수만 말한다 — '어떻게 해야 하나'는 알약에 들어갈 폭이 없어 호출부 화면이 한 줄로 안내한다.
+        <span className="min-w-0 truncate text-[0.8125rem] font-medium text-white/70">사진 {files}장</span>
       ) : null}
       <PillButton primary disabled={disabled} onClick={onSend}>{sendLabel}</PillButton>
     </SelectionPillBar>

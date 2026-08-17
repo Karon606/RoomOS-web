@@ -97,6 +97,17 @@ async function queueTests() {
     eq('캐시 · 준비된 항목은 다시 받지 않는다', fetched, 1)
   }
   {
+    // 캐시 키는 driveFileId 뿐이라 **형식을 가리지 않는다.** 사진으로 준비한 Blob 이 PDF 요청에도
+    // 그대로 나온다 — 그래서 useDocShare 가 형식마다 큐를 따로 든다. 이 사실을 여기 못 박는다.
+    const q = new DocShareQueue(async () => [png(7)])
+    const fetchBytes = async () => bytes(4)
+    q.enqueue([{ id: 'a', fetchBytes, toPng: true }], () => {})
+    await settle(q, ['a'])
+    q.enqueue([{ id: 'a', fetchBytes, toPng: false }], () => {})
+    const s = await settle(q, ['a'])
+    eq('캐시 · 형식을 가리지 않는다(훅이 형식마다 큐를 나누는 근거)', s.blobs.get('a')?.[0].type, 'image/png')
+  }
+  {
     let tries = 0
     const q = new DocShareQueue(async () => [png(1)])
     q.enqueue([{ id: 'a', toPng: true, fetchBytes: async () => { tries++; if (tries === 1) throw new Error('일시 실패'); return bytes(4) } }], () => {})
