@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import FloorPlanEditor from './FloorPlanEditor'
+import { displayName } from '@/lib/displayName'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -30,7 +31,8 @@ export default async function FloorPlanPage() {
     },
     select: {
       room: { select: { roomNo: true } },
-      tenant: { select: { name: true } },
+      // 별칭·영어이름·표시 선택 — 배치도 칸에 부를 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙).
+      tenant: { select: { name: true, englishName: true, nickname: true, displayNameStyle: true } },
     },
   })
 
@@ -38,9 +40,12 @@ export default async function FloorPlanPage() {
   rooms.forEach((r: { id: string; roomNo: string; isVacant: boolean }) => {
     roomStatuses[r.roomNo] = { isVacant: r.isVacant }
   })
-  leases.forEach((l: { room: { roomNo: string } | null; tenant: { name: string } | null }) => {
+  leases.forEach(l => {
     if (l.room?.roomNo) {
-      roomStatuses[l.room.roomNo] = { isVacant: false, tenantName: l.tenant?.name ?? undefined }
+      roomStatuses[l.room.roomNo] = {
+        isVacant: false,
+        tenantName: l.tenant ? displayName(l.tenant, l.tenant.displayNameStyle) : undefined,
+      }
     }
   })
 

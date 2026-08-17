@@ -12,7 +12,7 @@ import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revea
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
 import { NATIVE_NAME_MAX } from '@/lib/documentName'
-import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
+import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
@@ -574,7 +574,8 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
   const l = mainLease(t)
   switch (key) {
     case 'roomNo':          return l?.room?.roomNo ?? ''
-    case 'name':            return t.name
+    // 이름순은 화면에 선 이름으로 센다 — 별칭이 적힌 사람을 한글 이름 자리에 세우면 정렬이 어긋나 보인다.
+    case 'name':            return displayName(t, t.displayNameStyle)
     case 'status':          return l?.status ?? ''
     case 'rentAmount':      return l?.rentAmount ?? 0
     case 'depositAmount':   return l?.depositAmount ?? 0
@@ -928,6 +929,9 @@ export default function TenantClient({
     return (
       t.name.toLowerCase().includes(q) ||
       (t.englishName?.toLowerCase().includes(q) ?? false) ||
+      // 별칭도 잡는다 — 카드·표에 별칭이 서 있는 사람은 그 말이 그 사람의 이름이다.
+      // 보이는 이름으로 검색이 안 되면 목록에서 찾을 길이 없다.
+      (t.nickname?.toLowerCase().includes(q) ?? false) ||
       (mainLease(t)?.room?.roomNo ?? '').includes(q) ||
       // 상태 검색은 화면에 보이는 파생 라벨 기준('문의'·'예약 확정' 포함) — 칩 표시와 동일 규칙
       ((status === 'RESERVED'
@@ -2183,7 +2187,9 @@ export default function TenantClient({
                         </span>
                       )
                     })()}
-                    <span className="min-w-0 truncate text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
+                    {/* 카드에 부를 이름 — 입주자 정보의 '카드 표시 이름' 선택을 따른다(lib/displayName 정본).
+                        홈 방 현황 타일과 같은 규칙이다. 원천이 비면 한글 이름으로 돌아온다. */}
+                    <span className="min-w-0 truncate text-sm font-semibold text-[var(--warm-dark)]">{displayName(tenant, tenant.displayNameStyle)}</span>
                   </div>
                   {/* CANCELLED 를 게이트에 더한다 — statusException('CANCELLED') 이 null 이라
                       이 조건이 항상 false 였고, 바로 아래 quietSub 삼항식은 **실행되지 않는 죽은 코드**였다.
@@ -2390,7 +2396,8 @@ export default function TenantClient({
                     {/* sticky — 이름 */}
                     <td className={`sticky z-20 px-4 py-3 overflow-hidden transition-colors ${stickyRowBg}`}
                       style={{ left: colWidths.roomNo, maxWidth: colWidths.name }}>
-                      <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant.name}</p>
+                      {/* 카드와 같은 이름 — 같은 목록의 두 표현이라 부르는 말이 갈리면 안 된다(lib/displayName). */}
+                      <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{displayName(tenant, tenant.displayNameStyle)}</p>
                       {/* 매칭 제외 사유 — 카드와 같은 문장. 표는 열이 정해져 있어 이름 아래 캡션으로 내린다. */}
                       {lease && wishDateNoticeSet.has(lease.id) && (
                         <p className="text-[0.65625rem] text-[var(--warning-fg)] truncate">현재 희망일에 맞는 방 없음</p>

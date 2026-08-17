@@ -1321,7 +1321,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         leaseTerms: availabilityLeasesByRoom.get(r.id) ?? [],
       })
       return {
-        tenantName:   primary?.tenant.name ?? null,
+        // 평면 배치도 칸에 적히는 이름 — 방 하나가 8px 글자 한 줄뿐이라 별칭이 가장 절실한 자리다.
+        // 방 현황 타일(occupants.displayName)과 같은 규칙을 쓴다(lib/displayName 정본).
+        tenantName:   primary ? displayName(primary.tenant, primary.tenant.displayNameStyle) : null,
         tenantId:     primary?.tenant.id ?? null,
         tenantStatus: primary?.status ?? null,
         // 네 명까지 세운다 — 320px 폭에서 밴드 넷이 타일 높이를 넘기지 않는 상한이다.

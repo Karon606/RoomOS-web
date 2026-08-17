@@ -6,6 +6,7 @@ import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/Cl
 import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { kstMonthOf, fmtMD, fmtMDDay } from '@/lib/fmtDate'
+import { displayName } from '@/lib/displayName'
 import { fmtRentApplyFrom } from '@/lib/fmtMoney'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, reorderRoomPhotos, setRoomShowOnSite, setRoomPhotoShowOnSite, setRoomPhotoIs360, requestGalleryRedeploy, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
@@ -100,7 +101,8 @@ type Room = {
     id: string
     status: string                 // ACTIVE | RESERVED | CHECKOUT_PENDING | NON_RESIDENT
     tenantId: string
-    tenant: { id: string; name: string } | null
+    // 별칭·영어이름·표시 선택 — 카드가 부를 이름을 lib/displayName 이 이 셋에서 고른다.
+    tenant: { id: string; name: string; englishName: string | null; nickname: string | null; displayNameStyle: string | null } | null
     isShortTerm: boolean           // 단기 — 퇴실 예정 상태로 바뀌기 전에도 퇴실이 보여야 한다
     moveInDate: string | null      // 'YYYY-MM-DD' — 예약 카드의 입주 예정일
     expectedMoveOut: string | null  // 'YYYY-MM-DD' — 퇴실 예정 카드의 퇴실일
@@ -563,7 +565,14 @@ export default function RoomManageClient({
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
   // 카드에 적히는 이름 — 상태 판정과 같은 계약을 봐야 이름과 뱃지가 같은 사람을 가리킨다.
-  const currentTenant = (room: Room) => primaryLease(room)?.tenant?.name ?? null
+  // 부를 이름은 입주자 정보의 '카드 표시 이름' 선택을 따른다(lib/displayName 정본, 홈 타일과 같은 규칙).
+  const currentTenant = (room: Room) => {
+    const t = primaryLease(room)?.tenant
+    return t ? displayName(t, t.displayNameStyle) : null
+  }
+  // 검색용 이름 뭉치 — 카드에 별칭이 서 있어도 한글 이름으로 찾을 수 있어야 하고, 그 반대도 같다.
+  const tenantNameHay = (t: { name: string; nickname: string | null; englishName: string | null } | null | undefined) =>
+    `${t?.name ?? ''} ${t?.nickname ?? ''} ${t?.englishName ?? ''}`.toLowerCase()
 
   // 검색 · 정렬 적용
   const filteredRooms = (() => {
@@ -575,8 +584,8 @@ export default function RoomManageClient({
         // 닿을 수 없었다. 이름으로 방을 찾는 것이 이 검색창의 주 용도인데 예약자만 예외였다.
         const ok =
           r.roomNo.toLowerCase().includes(q) ||
-          (currentTenant(r) ?? '').toLowerCase().includes(q) ||
-          r.leaseTerms.some(l => l.status === 'RESERVED' && (l.tenant?.name ?? '').toLowerCase().includes(q)) ||
+          tenantNameHay(primaryLease(r)?.tenant).includes(q) ||
+          r.leaseTerms.some(l => l.status === 'RESERVED' && tenantNameHay(l.tenant).includes(q)) ||
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
@@ -1015,7 +1024,7 @@ export default function RoomManageClient({
     // 날짜 없는 예약은 상태 라벨로 메운다. 이름만 적으면 두 번째 거주자로 읽힌다.
     const reserved = nextReservedLease(room, primaryLease(room))
     const reservedLine = reserved
-      ? [reserved.tenant?.name, moveInSubText(reserved.moveInDate) ?? '입실 예약'].filter(Boolean).join(' · ')
+      ? [reserved.tenant ? displayName(reserved.tenant, reserved.tenant.displayNameStyle) : null, moveInSubText(reserved.moveInDate) ?? '입실 예약'].filter(Boolean).join(' · ')
       : null
     // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
     const cleaning = openCleanings[room.id]

@@ -37,7 +37,8 @@ export async function getRooms() {
           id: true,
           status: true,
           tenantId: true,
-          tenant: { select: { id: true, name: true } },
+          // 별칭·영어이름·표시 선택도 내려보낸다 — 카드가 부를 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙).
+          tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } },
           // 방 어레인지 — 카드에 퇴실·입주 예정일을 병기하고, 단기 퇴실 도래를 파생 판정한다.
           isShortTerm: true,
           moveInDate: true,
