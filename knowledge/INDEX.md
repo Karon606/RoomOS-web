@@ -21,6 +21,7 @@
 
 ## 운영 지식
 - [[decisions]] — 주요 의사결정 로그(왜 그렇게 했나)
+- [[month-scope]] — 보고 있는 월의 흐름(URL 정본·내비 전파·localStorage 는 쓰기 전용)·미래 월은 입퇴실 캘린더에서만(해석 정본 lib/monthParam)·팝오버 클립과 착지 루프 함정
 - [[mobile-scroll-viewport]] — 모바일 스크롤·뷰포트 함정(overscroll-contain 은 진짜 스크롤러에만, iOS/Android 키보드·핀치줌 차이, 두 엔진 실기 검증 규칙, 셸 밖 단독 라우트 스크롤 계약 A/B)
 - [[money-display-feedback]] — 돈 표시·저장 피드백 정본(표시 정본 수렴·원가 직표시 금지, 받은 돈은 조회월 무관 표시, 저장 피드백 3종·수납일 기본값 오늘, 크리티컬 신고 50a2a69b)
 - [[cash-receipt-refund]] — 현금영수증은 앱 표시일 뿐 실제 발행은 홈택스(임형진 사례)·환불 재기록의 증빙 메타 유실·두 축(귀속월 vs 결제일) 구분
