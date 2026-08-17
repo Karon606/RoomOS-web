@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
+import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { signOut } from '@/app/property-select/actions'
@@ -382,6 +383,7 @@ function MobileMenu({
   pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; role: Role; onClose?: () => void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
+  const [toolsOpen, setToolsOpen] = useState(false)   // 상담 도구(도구 타일 — 홈이 아닌 화면에서도 열리게, 오류신고 ce05bb74)
   const { isDark, toggleQuick } = useTheme()          // 다크/라이트 빠른 전환 — '시스템 따라'면 임시 전환(다음 시스템 변화에 자동 복귀)
   const navGroups = navGroupsFor(role)
   const homeHref = roleHome(role)                     // 로고 목적지 — 제한 스태프는 /inventory
@@ -434,6 +436,14 @@ function MobileMenu({
           </div>
           <div className="grid grid-cols-3 gap-1.5">
             {!isLimited && (
+            <button type="button" onClick={() => setToolsOpen(true)}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
+              style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+              <svg {...ico} width={19} height={19}><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span className="text-[0.6875rem] font-medium leading-tight">상담 도구</span>
+            </button>
+            )}
+            {!isLimited && (
             <button type="button" onClick={() => setQuoteOpen(true)}
               className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
               style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
@@ -456,6 +466,7 @@ function MobileMenu({
         </div>
       </div>
       <StayQuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} />
+      <ConsultToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} />
 
       {/* 계정 (하단 고정) */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
