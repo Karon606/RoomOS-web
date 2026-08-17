@@ -23,6 +23,7 @@ import {
   exportAllData,
   saveContractTemplate, saveBusinessInfo,
   createStampUploadSession, finalizeStamp, deleteStamp,
+  createBizCertUploadSession, finalizeBizCert, deleteBizCert,
   createLogoUploadSession, finalizeLogo, deleteLogo,
   createAppLogoUploadSession, finalizeAppLogo, deleteAppLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
@@ -34,7 +35,7 @@ import {
 import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { Btn } from '@/components/ui/Btn'
+import { Btn, btnClass } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
@@ -1580,9 +1581,11 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
   const [template, setTemplate]         = useState<ContractTemplate>(initial.template)
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
+  const [bizCert, setBizCert]           = useState(initial.bizCert)
   const [savingTpl, setSavingTpl]       = useState(false)
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
+  const [certUploading, setCertUploading]   = useState(false)
 
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
@@ -1631,6 +1634,40 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '사업자 정보 저장됨')
     } finally { release(); setSavingBiz(false) }
+  }
+
+  // 사업자등록증 — 업로드 축은 도장과 같다(세션 발급 → Drive 직접 PUT → 마무리).
+  // 다른 점은 둘뿐이다. 이미지 말고 PDF 도 받는다는 것과, mime 을 서버가 판정해 함께 저장한다는 것.
+  const handleBizCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setCertUploading(true)
+    const release = trackSave()
+    try {
+      const session = await createBizCertUploadSession({
+        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        origin: window.location.origin,
+      })
+      if (!session.ok) { pushToast('error', session.error); return }
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const fin = await finalizeBizCert(driveFileId)
+      if (!fin.ok) { pushToast('error', fin.error); return }
+      setBizCert({ driveFileId, mimeType: fin.mimeType })
+      pushToast('success', '사업자등록증 업로드됨')
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '사업자등록증 업로드 실패')
+    } finally { release(); setCertUploading(false) }
+  }
+  const handleBizCertDelete = async () => {
+    if (!(await confirmDialog({ title: '사업자등록증을 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
+    const release = trackSave()
+    try {
+      const res = await deleteBizCert()
+      if (!res.ok) { pushToast('error', res.error); return }
+      setBizCert(null)
+      pushToast('success', '사업자등록증 삭제됨')
+    } finally { release() }
   }
 
   const handleStampSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1683,6 +1720,37 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           <BizField label="사업자번호" value={businessInfo.registrationNo} onChange={v => setBusinessInfo(b => ({ ...b, registrationNo: v }))} />
           <BizField label="대표자" value={businessInfo.ceoName} onChange={v => setBusinessInfo(b => ({ ...b, ceoName: v }))} />
           <BizField label="사업장 주소" value={businessInfo.address} onChange={v => setBusinessInfo(b => ({ ...b, address: v }))} />
+        </div>
+      </div>
+
+      {/* 사업자등록증 — 사업자등록번호 바로 아래에 둔다. 같은 서류에서 옮겨 적는 값들이라
+          하나를 채우러 온 김에 다른 하나도 눈에 들어와야 한다(운영자 오더 2026-08-18). */}
+      <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자등록증</h3>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">이미지 또는 PDF, 4MB 이하. 상담 도구에서 문자·메일 첨부로 바로 보낼 수 있습니다.</p>
+        <div className="flex items-center gap-4">
+          {/* 미리보기 바탕은 --cream-soft — 다크에서 --canvas 는 #000 이라 카드에 검은 구멍이 뚫린다(§28) */}
+          <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--cream-soft)] overflow-hidden">
+            {bizCert?.mimeType.startsWith('image/') ? (
+              // 인증 프록시를 직접 문다 — Drive 공개 URL 을 쓰지 않는다. v= 는 교체 직후 옛 캐시를 끊는 키다.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={`/api/biz-cert?v=${bizCert.driveFileId}`} alt="사업자등록증" className="max-w-full max-h-full object-contain" />
+            ) : bizCert ? (
+              <span className="text-xs font-medium text-[var(--warm-mid)]">PDF</span>
+            ) : (
+              // --warm-muted 는 이 바탕(--cream-soft) 위에서 다크 4.46:1 로 §28 본문 하한(4.5)에 못 미쳤다
+              // (헤드리스 실측). --warm-mid 는 라이트에서 --warm-muted 와 같은 값이라 밝은 화면은 무변동.
+              <span className="text-xs text-[var(--warm-mid)]">미등록</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            {/* 파일 input 을 감싸는 label 이라 Btn 을 쓸 수 없다 — 토큰은 btnClass 로 공유한다. */}
+            <label className={btnClass('primary', 'sm', `cursor-pointer ${certUploading ? 'opacity-60' : ''}`)}>
+              {certUploading ? '업로드 중…' : (bizCert ? '교체' : '업로드')}
+              <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleBizCertSelect} disabled={certUploading} />
+            </label>
+            {bizCert && <Btn variant="danger" size="sm" onClick={handleBizCertDelete} disabled={certUploading}>삭제</Btn>}
+          </div>
         </div>
       </div>
 
