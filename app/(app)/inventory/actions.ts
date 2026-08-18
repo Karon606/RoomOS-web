@@ -3145,7 +3145,7 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   // 실측 — 종량제쓰레기봉투 50L 실제 21매인데 보정 폼이 31매를 미리 채웠고, 리클린 1.5L 가 3.5L 였다.
   // 그대로 저장하면 그 값이 새 기준선으로 박히고 차이가 소모로도 안 잡혀 오차가 장부에 영구 편입된다.
   //
-  // 입수·폐기는 날짜(date) 단위로 기록되므로 baseDate 를 그대로 쓴다(원 규칙 유지).
+  // 입수·폐기는 날짜(date)가 1차 기준이고 같은 날이면 입력 시각으로 가른다 — 아래에서 정본 함수로 넘긴다.
   const baseDate = baseline?.date ?? null
   const basePurchaseCutoff = baseline?.createdAt ?? null
   const baseTotal = baseline?.remainingQty ?? 0
@@ -3166,17 +3166,18 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
     const spec = specMultiplier(p.specValue, p.specUnit, it.specUnit)
     return spec != null ? s + q * spec : s + q
   }, 0)
-  const [addAgg, dispAgg] = await Promise.all([
-    prisma.stockAddition.aggregate({
-      where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
-      _sum: { addedQty: true },
-    }),
-    prisma.stockDisposal.aggregate({
-      where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
-      _sum: { disposedQty: true },
-    }),
+  // 입수·폐기 경계도 정본(overview.sumAdditions/sumDisposals)을 그대로 쓴다 — 규칙을 사본으로 적지 않는다.
+  //
+  // 종전에는 여기만 `date > baseDate` 라 **같은 날 점검보다 늦게 입력된 입수가 통째로 빠졌다.**
+  // 정본은 날짜가 같으면 입력 시각(createdAt)으로 앞뒤를 가른다. 그래서 카드 잔량에는 있는 수량이
+  // 보정 폼 프리필에는 없었고, 그 프리필을 그대로 저장하면 그 수량이 새 기준선에서 영구히 사라진다
+  // (화면이 거짓을 보여주고 그 거짓을 고치면 데이터가 깨지는 구조 — knowledge/domain-inventory.md).
+  // 폐기 등록의 잔량 초과 게이트도 같은 함수를 쓰므로 정당한 폐기를 거부하던 경계가 함께 풀린다.
+  const [additionTotal, disposalTotal] = await Promise.all([
+    sumAdditions(trackedItemId, baseDate, asOf, basePurchaseCutoff),
+    sumDisposals(trackedItemId, baseDate, asOf, basePurchaseCutoff),
   ])
-  const expectedTotal = baseTotal + purchaseTotal + (addAgg._sum.addedQty ?? 0) - (dispAgg._sum.disposedQty ?? 0)
+  const expectedTotal = baseTotal + purchaseTotal + additionTotal - disposalTotal
 
   const baseByLoc = new Map((baseline?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty]))
   // 품목별 허브 — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
