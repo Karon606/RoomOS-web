@@ -3,7 +3,7 @@
 // v2.0 §25 뷰 전환 탭 (View Tabs) — 코랄 채움 조인트 탭 정본.
 // SegmentedControl(v2.0 §23)은 필터(라디오, 해제 가능) 전용 — 이 컴포넌트는 "항상 정확히 1개 활성"인
 // 뷰 전환에만 쓴다(판별은 v2.0 §25). 링크 탭(href)은 <Link>, 아니면 <button>. 접미(suffix)는 24.3 형식.
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
 // 링크 탭(href)은 페이지 전환 시 컴포넌트가 리마운트돼 슬라이드가 사라진다(수납만 움직인다는 지적 2026-07-06).
@@ -59,6 +59,24 @@ export function ViewTabs({
     if (el.parentElement) ro.observe(el.parentElement)
     return () => ro.disconnect()
   }, [activeIdx, tabs.length, fill, equal, memKey])
+
+  // 활성 탭을 트랙 안으로 — 트랙이 가로로 넘칠 때만(환경설정 8탭). 딥링크로 뒤쪽 탭에 착지하면
+  // 고른 탭이 스크롤 밖에 있어 '아무 탭도 안 골라진' 화면으로 보인다. 넘치지 않는 트랙(대부분의
+  // 3~4탭 페이지)에서는 첫 줄에서 빠져나가 무동작이다. 움직이는 것은 트랙의 가로 스크롤뿐이라
+  // 페이지 세로 위치는 건드리지 않는다(scrollIntoView 를 안 쓰는 이유).
+  const scrolledOnce = useRef(false)
+  useEffect(() => {
+    const el = refs.current[activeIdx]
+    const track = el?.parentElement
+    if (!el || !track || track.scrollWidth <= track.clientWidth) return
+    const max = track.scrollWidth - track.clientWidth
+    const left = Math.max(0, Math.min(max, el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2))
+    if (Math.abs(track.scrollLeft - left) < 1) return
+    // 첫 착지는 즉시(딥링크로 들어오자마자 트랙이 미끄러지면 화면이 흔들린다), 이후 전환만 부드럽게.
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    track.scrollTo({ left, behavior: scrolledOnce.current && !reduce ? 'smooth' : 'auto' })
+    scrolledOnce.current = true
+  }, [activeIdx])
 
   // 키보드 roving(v2.0 §25) — ←/→ 이동, Home/End 처음/끝. 활성만 tabindex=0.
   const onKeyDown = (e: React.KeyboardEvent, idx: number) => {
