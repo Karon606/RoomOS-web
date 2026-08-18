@@ -19,6 +19,8 @@ import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel } from '@/lib/reservationDeposit'
+import type { ShortStayReservationMode } from '@/lib/shortStay'
 
 type Room = {
   leaseTermId: string
@@ -31,6 +33,10 @@ type Room = {
   roomNo?: string | null   // 과납분 부가수익 기록 시 내역 표기용
   status?: string | null   // RESERVED면 예약금(모드 3택) 폼으로 분기
   reservationDepositMode?: string | null   // 예약금 처리 모드 기본값('deposit'|'prepaid'|'none')
+  // 예약금 분해(청소비 + 이용료 충당) 판정·프리필 입력 — 서버와 같은 정본(reservationFeeSplitApplies)을 쓴다.
+  isShortTerm?: boolean
+  shortStayReservationMode?: string | null
+  shortStayDeposit?: number
 }
 
 // 초과 납부분을 '부가수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
@@ -443,9 +449,21 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   const initial = (['deposit', 'prepaid', 'none'] as const).includes(room.reservationDepositMode as ResvMode)
     ? (room.reservationDepositMode as ResvMode) : 'deposit'
   const [mode, setMode] = useState<ResvMode>(initial)
+  // 분해 여부 판정은 서버 저장부와 같은 정본을 쓴다 — 화면이 나눠 보여주고 서버가 안 나누면 그게 사고다.
+  const splits = (m: ResvMode) => reservationFeeSplitApplies({
+    mode: m,
+    isShortTerm: !!room.isShortTerm,
+    shortStayMode: room.shortStayReservationMode as ShortStayReservationMode | null | undefined,
+    cleaningFee: room.cleaningFee || 0,
+  })
   // 보증금 대체 프리필은 '남은 금액' — 전액 프리필이 기수납분을 못 보고 중복 수납을 유발했다(신고 50a2a69b).
   const depositRemain = Math.max(0, (room.depositAmount || 0) - depositPaidTotal)
-  const defaultAmount = (m: ResvMode) => m === 'prepaid' ? (room.expected || 0) : m === 'deposit' ? depositRemain : 0
+  // 분해 수납의 프리필은 단기 정책의 예약금 시드다(운영자 확정 2026-08-19). 이 자리에서 받는 돈은
+  // 한 달 이용료가 아니라 '예약금'이라, 종전처럼 월 이용료를 채워 두면 매번 지우고 다시 쳐야 한다.
+  // 시드가 0(미설정)이면 종전 기본값으로 떨어진다 — 빈 칸을 만들지 않는다.
+  const defaultAmount = (m: ResvMode) =>
+    m === 'prepaid' ? (splits(m) && (room.shortStayDeposit ?? 0) > 0 ? room.shortStayDeposit! : (room.expected || 0))
+    : m === 'deposit' ? depositRemain : 0
   const [amount, setAmount] = useState<number>(defaultAmount(initial))
   // 수납일 정본은 '받은 날'(오늘) — 입주 희망일 프리필은 조회월 밖으로 기록을 밀어 0원으로 보이게 했다.
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
@@ -455,6 +473,11 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   const [error, setError] = useState<string>('')
 
   const changeMode = (m: ResvMode) => { setMode(m); setAmount(defaultAmount(m)) }
+
+  // 지금 입력된 금액이 어떻게 갈리는지 — 분해 대상이 아니면 null 이라 줄이 서지 않는다(순수 산술이라 메모 불필요).
+  const splitPreview = splits(mode)
+    ? (() => { const s = reservationFeeSplit(amount, room.cleaningFee || 0); return reservationCompositionLabel(s.cleaning, s.prepaid, fmtWon) })()
+    : null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -510,7 +533,9 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
         </div>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
           {mode === 'deposit' ? '받은 예약금을 보증금으로 기록합니다.'
-            : mode === 'prepaid' ? '받은 금액을 입주월 이용료로 충당합니다(선납).'
+            : mode === 'prepaid' ? (splits(mode)
+              ? `청소비 ${fmtWon(room.cleaningFee)}을 먼저 떼고 남은 금액을 입주월 이용료로 충당합니다. 보증금은 남기지 않습니다.`
+              : '받은 금액을 입주월 이용료로 충당합니다(선납).')
             : '예약금 없이 예약만 저장합니다.'}
         </p>
       </div>
@@ -531,6 +556,17 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           {mode === 'deposit' && depositPaidTotal > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
               이미 받은 {fmtWon(depositPaidTotal)} / 계약 보증금 {fmtWon(room.depositAmount)}
+            </p>
+          )}
+          {/* 분해 미리보기 — 저장 전에 이 돈이 어떻게 쪼개져 적히는지 보여준다. 금액을 고치면 같이 움직인다.
+              문장은 정본 하나(reservationCompositionLabel)라 예약 취소 미니폼과 갈리지 않는다.
+              몫이 하나뿐이면(예약금 ≤ 청소비) null 이라 줄이 서지 않는다 — 옆 숫자를 두 번 말하지 않는다. */}
+          {splitPreview && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{splitPreview}</p>
+          )}
+          {splits(mode) && amount > 0 && !splitPreview && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              전액 청소비로 기록됩니다 (계약 청소비 {fmtWon(room.cleaningFee)}).
             </p>
           )}
           <div className="space-y-1">

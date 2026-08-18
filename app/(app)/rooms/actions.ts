@@ -16,8 +16,8 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { reasonsForStatus } from '@/lib/statusReasons'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
-import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
-import { parseShortStayPolicy } from '@/lib/shortStay'
+import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
+import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
@@ -66,8 +66,15 @@ type RoomRow = {
   noBillCoveredMonth?: string | null    // 그 돈의 귀속월 'YYYY-MM'
   // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
   reservationDepositMode?: string | null
+  // 단기 정책 원값 — 예약금 분해 판정(reservationFeeSplitApplies)과 프리필에 필요하다.
+  // 해석값(reservationDepositMode)만으로는 'applyToRent 라서 prepaid' 인지 '영업장 기본이 prepaid' 인지
+  // 구분할 수 없어서, 화면이 서버와 같은 판정을 하려면 원값이 있어야 한다. RESERVED 행에서만 채움.
+  shortStayReservationMode?: ShortStayReservationMode | null
+  shortStayDeposit?: number   // 단기 정책 예약금 시드(원) — 예약금 폼 기본값 프리필
   // 예약(RESERVED) 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 비예약 행은 null.
-  reservationPaid?: { deposit: number; prepaid: number } | null
+  // cleaning 은 분해 수납의 청소비 몫(ExtraIncome '청소비'). record 가 아니라 부가수익이라 따로 센다 —
+  // 빼면 5만을 받은 예약이 화면에서 3만으로 보인다(받은 돈이 화면에서 증발하는 그 사고 유형).
+  reservationPaid?: { deposit: number; prepaid: number; cleaning: number } | null
   // 청구 조정 이력(단기 연장·감액) — 미취소 스냅샷만 시간순. 월 이용료 보조 줄·배지 표시 전용(계산 비관여).
   billingAdjusts?: BillingAdjustEntry[]
 }
@@ -161,16 +168,29 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     where: { leaseTermId: { in: reservedIds }, deletedAt: null },
     _sum: { actualAmount: true },
   }) : []
-  const reservedPaidMap = new Map<string, { deposit: number; prepaid: number }>()
+  // 예약 단계 청소비 몫(분해 수납) — 부가수익이라 record groupBy 로는 안 잡힌다.
+  const reservedCleaningRows = reservedIds.length > 0 ? await prisma.extraIncome.groupBy({
+    by: ['leaseTermId'],
+    where: { leaseTermId: { in: reservedIds }, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+    _sum: { amount: true },
+  }) : []
+  const reservedPaidMap = new Map<string, { deposit: number; prepaid: number; cleaning: number }>()
   for (const g of reservedPaidRows) {
-    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0 }
+    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0, cleaning: 0 }
     if (g.isDeposit) cur.deposit += g._sum.actualAmount ?? 0
     else cur.prepaid += g._sum.actualAmount ?? 0
     reservedPaidMap.set(g.leaseTermId, cur)
   }
+  for (const g of reservedCleaningRows) {
+    if (!g.leaseTermId) continue
+    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0, cleaning: 0 }
+    cur.cleaning += g._sum.amount ?? 0
+    reservedPaidMap.set(g.leaseTermId, cur)
+  }
 
   // 단기 예약금 처리 — 행마다 다시 파싱하지 않는다(정책은 영업장 하나뿐이다).
-  const shortStayResvMode = parseShortStayPolicy(property?.shortStayPolicy).reservationMode
+  const shortStayPolicy = parseShortStayPolicy(property?.shortStayPolicy)
+  const shortStayResvMode = shortStayPolicy.reservationMode
   const acquisitionDate = property?.acquisitionDate ?? null
   // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
@@ -242,7 +262,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isShortTerm: lease.isShortTerm,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
-        reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0 },
+        reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0, cleaning: 0 },
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
         prevTenantName, prevContact,
@@ -260,6 +280,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         reservationDepositMode: resolveReservationDepositMode(
           lease.reservationDepositMode, property?.reservationDepositMode, lease.isShortTerm, shortStayResvMode,
         ),
+        shortStayReservationMode: shortStayResvMode,
+        shortStayDeposit: shortStayPolicy.deposit,
       }
     }
 
@@ -1278,6 +1300,50 @@ export async function saveDepositPayment(data: {
 //
 // ExtraIncome 은 이미 발생일(date) 기준으로 매출에 합산되므로 새 집계 로직이 필요 없다.
 // 초과분(이용료) 처리는 기존과 동일하게 record 로 남긴다.
+// 청소비 수익 생성부 정본 — 입실 별도 수령(saveCleaningFeePayment)과 예약금 분해(saveReservationDeposit) 공용.
+//
+// 두 자리가 각자 만들면 카테고리 보장·detail 문법·결제수단 규약이 갈린다. 카테고리 보장을 여기서
+// 함께 하는 이유는, 영업장 수입 카테고리에 '청소비'가 없으면 재무 화면 필터에 안 떠서 받은 돈이
+// 화면에서 사라지기 때문이다(생성과 노출이 한 벌이라 떼어 두면 한쪽만 도는 날이 온다).
+//
+// occasion 은 원장에서 "언제 받은 청소비인가"가 읽히게 하는 자리다. 입실 수령분과 예약금 분해분은
+// 계정도 결제수단 규약도 같지만(둘 다 실제 입금 경로), 나중에 되짚을 때 구분이 필요하다.
+async function createCleaningFeeIncome(args: {
+  propertyId:  string
+  leaseTermId: string
+  tenantId:    string
+  amount:      number
+  payDate:     string
+  payMethod:   string
+  memo?:       string
+  occasion:    '입실' | '예약'
+}): Promise<string> {
+  const property = await prisma.property.findUnique({
+    where: { id: args.propertyId }, select: { incomeCategories: true },
+  })
+  const cats = (property?.incomeCategories ?? '').split(',').map(c => c.trim()).filter(Boolean)
+  if (!cats.includes(CLEANING_FEE_CATEGORY)) {
+    await prisma.property.update({
+      where: { id: args.propertyId },
+      data: { incomeCategories: [...cats, CLEANING_FEE_CATEGORY].join(',') },
+    })
+  }
+  const tenant = await prisma.tenant.findFirst({ where: { id: args.tenantId, propertyId: args.propertyId }, select: { name: true } })
+  const created = await prisma.extraIncome.create({
+    data: {
+      propertyId:  args.propertyId,
+      date:        new Date(args.payDate),
+      amount:      args.amount,
+      category:    CLEANING_FEE_CATEGORY,
+      detail:      `${tenant?.name ?? '입실자'} ${args.occasion} · 청소비${args.memo ? ` · ${args.memo}` : ''}`,
+      payMethod:   args.payMethod,
+      tenantId:    args.tenantId,
+      leaseTermId: args.leaseTermId,
+    },
+  })
+  return created.id
+}
+
 export async function saveCleaningFeePayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -1296,30 +1362,10 @@ export async function saveCleaningFeePayment(data: {
     const feeActual = Math.max(0, Math.min(data.totalPaid, data.cleaningFee))
     if (feeActual <= 0) return { ok: false, error: '청소비 금액이 올바르지 않습니다.' }
 
-    // 영업장 수입 카테고리에 '청소비' 보장 — 없으면 재무 화면 필터에 안 뜬다
-    const property = await prisma.property.findUnique({
-      where: { id: propertyId }, select: { incomeCategories: true },
-    })
-    const cats = (property?.incomeCategories ?? '').split(',').map(c => c.trim()).filter(Boolean)
-    if (!cats.includes(CLEANING_FEE_CATEGORY)) {
-      await prisma.property.update({
-        where: { id: propertyId },
-        data: { incomeCategories: [...cats, CLEANING_FEE_CATEGORY].join(',') },
-      })
-    }
-
-    const tenant = await prisma.tenant.findFirst({ where: { id: data.tenantId, propertyId }, select: { name: true } })
-    await prisma.extraIncome.create({
-      data: {
-        propertyId,
-        date:      new Date(data.payDate),
-        amount:    feeActual,
-        category:  CLEANING_FEE_CATEGORY,
-        detail:    `${tenant?.name ?? '입실자'} 입실 · 청소비${data.memo ? ` · ${data.memo}` : ''}`,
-        payMethod: data.payMethod,
-        tenantId:    data.tenantId,
-        leaseTermId: data.leaseTermId,
-      },
+    await createCleaningFeeIncome({
+      propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
+      amount: feeActual, payDate: data.payDate, payMethod: data.payMethod,
+      memo: data.memo, occasion: '입실',
     })
 
     // 초과분은 이용료 record — 기존 경로와 동일한 락인 규칙
@@ -1353,6 +1399,7 @@ export async function saveCleaningFeePayment(data: {
 //   deposit: 현행 보증금 대체 그대로(isDeposit=true).
 //   prepaid: savePayment(forcedTargetMonth=입주 예정월, isDeposit=false)로 첫 청구월 이용료 선납.
 //            expectedAmount는 savePayment가 서버 재계산하므로 클라 값을 신뢰하지 않는다(0 전달).
+//            단기 정책이 applyToRent 면 여기서 **분해**한다 — 아래 주석 참조.
 //   none: record 생성 안 함(모드만 저장).
 // 어느 모드로 받았는지 수납 시점에 LeaseTerm.reservationDepositMode로 확정 저장.
 export async function saveReservationDeposit(data: {
@@ -1370,7 +1417,13 @@ export async function saveReservationDeposit(data: {
     const propertyId = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: data.leaseTermId, propertyId },
-      select: { depositAmount: true, rentAmount: true, moveInDate: true },
+      select: {
+        depositAmount: true, rentAmount: true, moveInDate: true,
+        // 분해 판정 입력(reservationFeeSplitApplies) — 단기 여부·계약 청소비·영업장 단기 정책.
+        // 정책은 lease 관계로 한 번에 가져온다(모드마다 쿼리를 하나 더 걸 이유가 없다).
+        isShortTerm: true, cleaningFee: true,
+        property: { select: { shortStayPolicy: true } },
+      },
     })
     if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
 
@@ -1411,18 +1464,69 @@ export async function saveReservationDeposit(data: {
       })
       if (!dep.ok) return { ok: false, error: dep.error }
     } else if (data.mode === 'prepaid') {
-      await savePayment({
-        leaseTermId:    data.leaseTermId,
-        tenantId:       data.tenantId,
-        targetMonth:    firstMonth,
-        expectedAmount: 0,   // 서버 재계산 — 클라 값 미신뢰
-        actualAmount:   data.amount,
-        payDate:        data.payDate,
-        payMethod:      data.payMethod,
-        memo:           data.memo,
-        forcedTargetMonth: firstMonth,
-        cashReceiptIssued: data.cashReceiptIssued,
+      // 분해 판정은 정본 하나(reservationFeeSplitApplies) — 화면 미리보기와 같은 식이다.
+      // 정책 미설정(현행)에서는 항상 false 라 아래 else 가지가 종전과 문자 그대로 같이 돈다.
+      const splitApplies = reservationFeeSplitApplies({
+        mode: 'prepaid',
+        isShortTerm: lease.isShortTerm,
+        shortStayMode: parseShortStayPolicy(lease.property?.shortStayPolicy).reservationMode,
+        cleaningFee: lease.cleaningFee,
       })
+      if (splitApplies) {
+        // 분해 수납(운영자 확정 2026-08-19) — 청소비를 먼저 채우고 남은 몫이 입주월 이용료 선납이다.
+        // 보증금 record 는 만들지 않는다: 이 돈은 돌려줄 예수금이 아니라 확정 대가 + 선납이다.
+        // 청소비 수익 인식일은 **받은 날**이다(기존 '받은 달 수익' 정본과 같은 축).
+        // 이 부가수익이 서면 cleaningFeeDeductible 이 퇴실 공제를 자동으로 0 으로 판정한다(계약서 §2-4).
+        const split = reservationFeeSplit(data.amount, lease.cleaningFee)
+        // 잔여 몫이 그 달 이용료를 넘으면 초과분은 선납으로 남는다(savePayment 의 단기 흡수 규칙).
+        // 퇴실 때 기존 완납 초과 환불 흐름이 그대로 처리한다 — 여기서 새 산식을 만들지 않는다.
+        let prepaidIds: string[] = []
+        if (split.prepaid > 0) {
+          const paid = await savePayment({
+            leaseTermId:    data.leaseTermId,
+            tenantId:       data.tenantId,
+            targetMonth:    firstMonth,
+            expectedAmount: 0,   // 서버 재계산 — 클라 값 미신뢰
+            actualAmount:   split.prepaid,
+            payDate:        data.payDate,
+            payMethod:      data.payMethod,
+            memo:           data.memo,
+            forcedTargetMonth: firstMonth,
+            cashReceiptIssued: data.cashReceiptIssued,
+          })
+          prepaidIds = paid.createdIds
+        }
+        if (split.cleaning > 0) {
+          // 두 몫은 한 결제다. DB 트랜잭션으로 묶지 못하는 이유는 선납 몫이 공용 결제 엔진
+          // (savePayment — 일할·락인·FIFO)을 타기 때문이다. 그 안의 record 생성을 여기 베끼면
+          // 청구액 산식이 둘이 되고, 그게 이 프로젝트가 가장 크게 데인 사고 유형이다.
+          // 대신 실패하면 방금 만든 선납을 되돌린다 — 결과는 같은 전부-또는-전무다.
+          // (반쪽만 남으면 감지망 축 C 가 울리고 운영자가 손으로 맞춰야 한다.)
+          try {
+            await createCleaningFeeIncome({
+              propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
+              amount: split.cleaning, payDate: data.payDate, payMethod: data.payMethod,
+              memo: data.memo, occasion: '예약',
+            })
+          } catch (err) {
+            if (prepaidIds.length > 0) await prisma.paymentRecord.deleteMany({ where: { id: { in: prepaidIds } } })
+            throw err
+          }
+        }
+      } else {
+        await savePayment({
+          leaseTermId:    data.leaseTermId,
+          tenantId:       data.tenantId,
+          targetMonth:    firstMonth,
+          expectedAmount: 0,   // 서버 재계산 — 클라 값 미신뢰
+          actualAmount:   data.amount,
+          payDate:        data.payDate,
+          payMethod:      data.payMethod,
+          memo:           data.memo,
+          forcedTargetMonth: firstMonth,
+          cashReceiptIssued: data.cashReceiptIssued,
+        })
+      }
     }
     // none: 수납 없음 — 모드만 저장.
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
@@ -1436,6 +1540,11 @@ export async function saveReservationDeposit(data: {
 // 입주월 재앵커 — 예약 확정/입실 처리 시 실제 입주월이 선납 record의 targetMonth와 다르면 이동.
 // prepaid 모드만 대상(deposit/none은 no-op). 결제 저장은 기존 recalculatePayments 재사용, 신규 수식 없음.
 // RESERVED 단계엔 isDeposit=false record가 예약 선납분뿐이라 전량 재앵커가 안전.
+//
+// 분해 수납(applyToRent)에서도 옮기는 것은 **선납 몫뿐**이다. 청소비 몫은 PaymentRecord 가 아니라
+// ExtraIncome 이라 이 함수의 사정권 밖이고, 그게 맞다 — 청소비 수익 인식일은 받은 날이지
+// 입주월이 아니다(운영자 확정 2026-08-19, 기존 '받은 달 수익' 정본과 같은 축).
+// 입주일을 옮겼다고 이미 인식한 청소비 매출이 다른 달로 따라가면 그 달 결산이 흔들린다.
 export async function reanchorReservationPrepaid(leaseTermId: string): Promise<void> {
   await requireEdit()
   const propertyId = await getPropertyId()
@@ -2159,10 +2268,11 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     where: { id: propertyId },
     select: { reservationDepositMode: true, shortStayPolicy: true },
   })
+  const fbShortStay = parseShortStayPolicy(settleProp?.shortStayPolicy)
 
   // RESERVED fallback 도 표시 정본 수렴(신고 50a2a69b) — 입주월 기준 할인 반영 + 조회월 무관 실수납 합.
   let fbExpected = 0
-  let fbReservationPaid: { deposit: number; prepaid: number } | null = null
+  let fbReservationPaid: { deposit: number; prepaid: number; cleaning: number } | null = null
   if (lease.status === 'RESERVED') {
     const fbMoveInMonth = lease.moveInDate
       ? new Date(lease.moveInDate).toISOString().slice(0, 7)
@@ -2179,7 +2289,11 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
       where: { leaseTermId: lease.id, deletedAt: null },
       _sum: { actualAmount: true },
     })
-    fbReservationPaid = { deposit: 0, prepaid: 0 }
+    const fbCleaning = await prisma.extraIncome.aggregate({
+      where: { leaseTermId: lease.id, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+      _sum: { amount: true },
+    })
+    fbReservationPaid = { deposit: 0, prepaid: 0, cleaning: fbCleaning._sum.amount ?? 0 }
     for (const g of sums) {
       if (g.isDeposit) fbReservationPaid.deposit += g._sum.actualAmount ?? 0
       else fbReservationPaid.prepaid += g._sum.actualAmount ?? 0
@@ -2229,8 +2343,10 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,
     reservationDepositMode: resolveReservationDepositMode(
       lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
-      parseShortStayPolicy(settleProp?.shortStayPolicy).reservationMode,
+      fbShortStay.reservationMode,
     ),
+    shortStayReservationMode: fbShortStay.reservationMode,
+    shortStayDeposit: fbShortStay.deposit,
     reservationPaid: fbReservationPaid,
     billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
   }

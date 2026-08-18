@@ -40,6 +40,7 @@ export default async function TenantsPage({
       myRole={myRole}
       shortStayUnitDays={shortStay.unitDays}
       shortStayReservationMode={shortStay.reservationMode}
+      shortStayDeposit={shortStay.deposit}
       wishDateNoticeLeaseIds={wishDateNoticeLeaseIds}
     />
   )
