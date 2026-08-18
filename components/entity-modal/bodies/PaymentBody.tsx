@@ -236,6 +236,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                   roomNo: roomNo,
                   status: settlement.status,
                   reservationDepositMode: settlement.reservationDepositMode,
+                  isShortTerm: settlement.isShortTerm,
+                  shortStayReservationMode: settlement.shortStayReservationMode,
+                  shortStayDeposit: settlement.shortStayDeposit,
                 }}
                 depositPaidTotal={depositPaidTotal}
                 targetMonth={month}
@@ -304,6 +307,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                   roomNo: roomNo,
                   status: settlement.status,
                   reservationDepositMode: settlement.reservationDepositMode,
+                  isShortTerm: settlement.isShortTerm,
+                  shortStayReservationMode: settlement.shortStayReservationMode,
+                  shortStayDeposit: settlement.shortStayDeposit,
                 }}
                 depositPaidTotal={depositPaidTotal}
                 targetMonth={month}

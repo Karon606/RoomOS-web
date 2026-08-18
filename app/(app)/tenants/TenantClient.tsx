@@ -609,7 +609,7 @@ function loadColVis(): Record<ColKey, boolean> | null {
 
 export default function TenantClient({
   initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, propertyReservationDepositMode = null, myRole, shortStayUnitDays = 7,
-  shortStayReservationMode = null,
+  shortStayReservationMode = null, shortStayDeposit = 0,
   wishDateNoticeLeaseIds = [],
 }: {
   initialTenants: Tenant[]
@@ -624,6 +624,8 @@ export default function TenantClient({
   shortStayUnitDays?: number   // 단기 계약 단위 일수(영업장 정책) — 카드 '(N주)' 표기용
   // 단기 정책의 예약금 처리 — 단기 계약에서 영업장 공통 기본값보다 앞선다(null=미설정, 현행 해석)
   shortStayReservationMode?: ShortStayReservationMode | null
+  // 단기 정책 예약금 시드(원) — 분해 수납 폼의 금액 프리필. 0(미설정)이면 종전 기본값으로 떨어진다.
+  shortStayDeposit?: number
   // 희망한 방이 전부 입주 희망일에서 빠진 계약 — 홈 알림의 '제외 N명'과 같은 판정(lib/wishMatch)
   wishDateNoticeLeaseIds?: string[]
 }) {
@@ -3177,6 +3179,9 @@ export default function TenantClient({
                       roomNo: lease.room?.roomNo ?? null,
                       status: 'RESERVED',
                       reservationDepositMode: resolveReservationDepositMode(lease.reservationDepositMode, propertyReservationDepositMode, lease.isShortTerm, shortStayReservationMode),
+                      isShortTerm: lease.isShortTerm,
+                      shortStayReservationMode,
+                      shortStayDeposit,
                     }}
                     targetMonth={targetMonth}
                     onSaved={async () => { setShowPayForm(false); const { records, windowRecords } = await getPaymentsByLease(lease.id, targetMonth); setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1); refresh() }}

@@ -17,7 +17,7 @@ import { reasonsForStatus } from '@/lib/statusReasons'
 import { BILLABLE_STATUSES, TENANT_LIST_STATUSES, primaryRoomLease, primaryTenantLease, roomAvailability, roomLeaseRowOrder, roomStatusView } from '@/lib/leaseStatus'
 import { billForLeaseMonth, effectiveBaseRent, isAfterMoveOutMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { resolveReservationDepositMode, reservationFeeSplit, reservationFeeSplitApplies } from '@/lib/reservationDeposit'
-import { parseShortStayPolicy } from '@/lib/shortStay'
+import { parseShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { CLEANING_FEE_CATEGORY, CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
@@ -66,6 +66,11 @@ type RoomRow = {
   noBillCoveredMonth?: string | null    // 그 돈의 귀속월 'YYYY-MM'
   // 예약금 처리 모드 해석값 'deposit'|'prepaid'|'none' — 예약자 수납/표시 분기용(RESERVED 행·조회 fallback에서만 채움)
   reservationDepositMode?: string | null
+  // 단기 정책 원값 — 예약금 분해 판정(reservationFeeSplitApplies)과 프리필에 필요하다.
+  // 해석값(reservationDepositMode)만으로는 'applyToRent 라서 prepaid' 인지 '영업장 기본이 prepaid' 인지
+  // 구분할 수 없어서, 화면이 서버와 같은 판정을 하려면 원값이 있어야 한다. RESERVED 행에서만 채움.
+  shortStayReservationMode?: ShortStayReservationMode | null
+  shortStayDeposit?: number   // 단기 정책 예약금 시드(원) — 예약금 폼 기본값 프리필
   // 예약(RESERVED) 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 비예약 행은 null.
   reservationPaid?: { deposit: number; prepaid: number } | null
   // 청구 조정 이력(단기 연장·감액) — 미취소 스냅샷만 시간순. 월 이용료 보조 줄·배지 표시 전용(계산 비관여).
@@ -170,7 +175,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   }
 
   // 단기 예약금 처리 — 행마다 다시 파싱하지 않는다(정책은 영업장 하나뿐이다).
-  const shortStayResvMode = parseShortStayPolicy(property?.shortStayPolicy).reservationMode
+  const shortStayPolicy = parseShortStayPolicy(property?.shortStayPolicy)
+  const shortStayResvMode = shortStayPolicy.reservationMode
   const acquisitionDate = property?.acquisitionDate ?? null
   // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
@@ -260,6 +266,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         reservationDepositMode: resolveReservationDepositMode(
           lease.reservationDepositMode, property?.reservationDepositMode, lease.isShortTerm, shortStayResvMode,
         ),
+        shortStayReservationMode: shortStayResvMode,
+        shortStayDeposit: shortStayPolicy.deposit,
       }
     }
 
@@ -2246,6 +2254,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     where: { id: propertyId },
     select: { reservationDepositMode: true, shortStayPolicy: true },
   })
+  const fbShortStay = parseShortStayPolicy(settleProp?.shortStayPolicy)
 
   // RESERVED fallback 도 표시 정본 수렴(신고 50a2a69b) — 입주월 기준 할인 반영 + 조회월 무관 실수납 합.
   let fbExpected = 0
@@ -2316,8 +2325,10 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,
     reservationDepositMode: resolveReservationDepositMode(
       lease.reservationDepositMode, settleProp?.reservationDepositMode, lease.isShortTerm,
-      parseShortStayPolicy(settleProp?.shortStayPolicy).reservationMode,
+      fbShortStay.reservationMode,
     ),
+    shortStayReservationMode: fbShortStay.reservationMode,
+    shortStayDeposit: fbShortStay.deposit,
     reservationPaid: fbReservationPaid,
     billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
   }
