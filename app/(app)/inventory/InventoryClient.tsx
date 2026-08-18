@@ -2474,6 +2474,19 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
       {/* v2.0 §12 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
       <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
+          {/* 보정 날짜 + 보충 완료 게이트 — 공용 Modal 전환(e24c4e03)에서 머리 블록째 사라졌는데
+              disabled={!restockDone} 만 남아 실측 칸과 저장 버튼이 영구히 잠겨 있었다. 원본 그대로 복구. */}
+          <div className="flex items-center gap-2">
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] shrink-0">보정 날짜</span>
+            <div className="w-44"><DatePicker value={date} onChange={setDate} /></div>
+          </div>
+          <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
+            <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
+            <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
+              <strong className="text-[var(--warm-dark)]">창고 → 방 보충을 모두 마쳤습니다.</strong><br />
+              보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 보충 완료 후 점검을 권장합니다.
+            </span>
+          </label>
           {categories.map(({ cat, alias }) => {
             const catRows = rows.filter(r => r.category === cat)
             if (!catRows.length) return null
