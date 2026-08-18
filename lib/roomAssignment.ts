@@ -179,6 +179,9 @@ export type OverlapSpan = { from: string | null; to: string | null }
  * 시작은 두 입주일 중 늦은 쪽, 끝은 두 퇴실일 중 이른 쪽이다. 한쪽이 없으면 있는 쪽이 답이고,
  * 둘 다 없으면 그 끝은 열려 있다(null) — 입주일이 둘 다 없으면 이미 시작된 점유이고,
  * 퇴실 예정일이 둘 다 없으면 무기한이다.
+ *
+ * **사본 주의** — scripts/check-room-availability-drift.mjs 축 ②에 같은 식이 한 벌 더 있다
+ * (.mjs 라 이 파일을 import 하지 못한다). 여기를 고치면 저기도 함께 고친다. 저쪽 주석도 여기를 가리킨다.
  */
 export function occupancyOverlapSpan(a: OccupancySpan, b: OccupancySpan): OverlapSpan | null {
   if (!occupancyOverlaps(a, b)) return null
