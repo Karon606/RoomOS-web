@@ -4,9 +4,12 @@
 // 종 뱃지 숫자 = 홈화면 푸시 뱃지 숫자가 자동으로 일치한다.
 //
 // 정책(2026-05-24 푸시 정책과 동일):
-//   · 일정 기반(퇴실·투어·입주) → "당일에 있을 일"만 (경과·예정은 제외).
+//   · 일정 기반(퇴실·투어·입주·고정지출 출금/납부) → "당일에 있을 일"만 (경과·예정은 제외).
 //   · 진행 중(미납·재고 소진 임박·수령 대기) → 해소될 때까지 매일.
 // 대시보드의 넓은 AlertsStrip(납부예정·위시·요청·고정지출 포함)과는 의도적으로 별개 — 종은 푸시와 동일 범위.
+//   ※ 고정지출은 두 곳에 다 서지만 창이 다르다 — AlertsStrip 은 D-N 임박(alertDaysBefore)까지 미리 알리고,
+//     여기(종·푸시)는 **오늘 실제로 돈이 나가는 건**만 센다(운영자 신고 568633fb: "출금되는 내용도 알림에
+//     있어야 될듯"). 오늘 아침 푸시에 그 항목이 아예 없던 것이 이 신고의 내용이다.
 
 import prisma from '@/lib/prisma'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -15,8 +18,11 @@ import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
+import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurringStatus'
+import { recurringDueToday } from '@/lib/recurringDueDate'
+import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 
-export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed'
+export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'autodebit' | 'manualpay'
 
 export type AlertItem = {
   id: string            // 목록 key (고유)
@@ -37,6 +43,8 @@ const CATEGORY_LABEL: Record<AlertCategory, string> = {
   unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
   contact: '연락할 때', signed: '서명 완료',
+  // 운영자 어휘 그대로 — 자동이체는 계좌에서 '출금'되고, 직접 내는 건은 '납부'한다(신고 568633fb 원문).
+  autodebit: '오늘 출금', manualpay: '오늘 납부',
 }
 
 // 금액 표기는 정본 fmtWon 사용(감사 B4)
@@ -47,10 +55,13 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const k = kstYmd()
   const today = new Date(k.year, k.month - 1, k.day)
   const tomorrow = new Date(today.getTime() + 86400000)
+  // 고정지출 판정용 'YYYY-MM-DD' — 위 today 와 같은 k 에서 뽑는다(두 번 재면 자정 경계에서 갈린다).
+  const todayYmd = `${k.year}-${String(k.month).padStart(2, '0')}-${String(k.day).padStart(2, '0')}`
+  const thisMonth = todayYmd.slice(0, 7)
   const trackedCats = await getTrackedCategories(propertyId)
   const contactLeadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
 
-  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles] = await Promise.all([
+  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
     // 퇴실 — 당일 + 경과(미처리) + 단기 자동 전환 D-1(내일): 처리 전까지 지속(운영자 확정 2026-07-11)
@@ -111,6 +122,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       where: { driveFileId: { not: '' }, propertyId, source: { in: ['GENERATED', 'UPLOADED'] }, deletedAt: null },
       select: { leaseTermId: true, createdAt: true },
     }),
+    // 고정지출 이번 달 현황 — 재무 지출 탭이 예정 행을 세울 때 쓰는 그 함수 그대로.
+    // 기록 여부(recordedExpenseId)를 여기서 손으로 다시 판정하지 않는다.
+    computeRecurringExpensesWithStatus(propertyId, thisMonth),
   ])
 
   const items: AlertItem[] = []
@@ -192,6 +206,32 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     })
   }
 
+  // 오늘 나가는 돈 — 고정지출 중 오늘이 실제 출금일(자동이체)·납부일(직접 납부)인 건.
+  // 날짜는 lib/recurringDueDate 정본 하나만 본다(recurringDueToday): 자동이체는 주말·공휴일 시프트 후
+  // 실제 이체일, 비자동은 기준일 그대로(말일 클램프만). 이번 달 기록이 이미 있으면 빠진다 —
+  // 재무 지출 탭에서 예정 행이 사라지는 것과 같은 판정이라 두 화면이 어긋나지 않는다.
+  // 금액도 재무 탭·홈 알림과 같은 정본 추정식(effectiveRecurringAmount)을 쓴다 — 기본액을 그대로
+  // 적으면 예약금액·과거평균이 반영된 실제 금액과 갈린다(2026-07-30 신고).
+  for (const re of recurringThisMonth) {
+    if (!recurringDueToday(re, todayYmd)) continue
+    const amountLabel = recurringAmountLabel(re)   // '예약금액'·'예상치' — 추정치를 확정 금액처럼 적지 않기 위해
+    items.push({
+      id: `recurring-${re.id}`,
+      category: re.isAutoDebit ? 'autodebit' : 'manualpay',
+      title: re.title,
+      subtitle: [
+        fmtWon(effectiveRecurringAmount(re)),
+        amountLabel,
+        ...(re.isAutoDebit ? ['오늘 출금', '자동이체'] : ['오늘 납부']),
+      ].filter(Boolean).join(' · '),
+      // 할 일은 '기록'이라 목적지는 예정 행이 서 있는 재무 지출 탭이다(이번 달).
+      href: `/finance?tab=expense&month=${thisMonth}`,
+      // 직접 납부가 자동이체보다 위 — 하나는 오늘 사람이 해야 하고 하나는 계좌가 알아서 한다.
+      // 둘 다 '오늘 입주'(700) 아래, '오늘 투어'(600) 위.
+      urgency: re.isAutoDebit ? 660 : 680,
+    })
+  }
+
   // 재고 소진 임박 — daysUntilEmpty 가 작을수록 급함
   for (const r of inventory) {
     if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.effectiveAlertDays) continue
@@ -242,10 +282,10 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
 /** cron 메시지용 — 카테고리별 건수 + 합계. computeAlerts 와 같은 소스라 종 뱃지와 일치. */
 export function summarizeAlerts(items: AlertItem[]): { total: number; parts: string[]; byCategory: Record<AlertCategory, number> } {
-  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, signed: 0 } as Record<AlertCategory, number>
+  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, signed: 0, autodebit: 0, manualpay: 0 } as Record<AlertCategory, number>
   for (const it of items) byCategory[it.category]++
-  // 푸시 메시지 순서: 미납 → 퇴실 → 서명 완료 → 투어 → 입주 → 재고 → 수령
-  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'tour', 'movein', 'lowstock', 'receipt']
+  // 푸시 메시지 순서: 미납 → 퇴실 → 서명 완료 → 투어 → 입주 → 오늘 출금 → 오늘 납부 → 재고 → 수령
+  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'tour', 'movein', 'autodebit', 'manualpay', 'lowstock', 'receipt']
   const parts = order.filter(c => byCategory[c] > 0).map(c => `${CATEGORY_LABEL[c]} ${byCategory[c]}`)
   return { total: items.length, parts, byCategory }
 }

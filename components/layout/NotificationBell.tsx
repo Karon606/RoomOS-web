@@ -25,6 +25,10 @@ const DOT: Record<AlertCategory, string> = {
   lowstock: 'var(--viz-4)',
   receipt:  'var(--ink-m)',
   signed:   'var(--success)',
+  // 고정지출 출금·납부 — 홈 AlertsStrip 의 'recurring' 점과 같은 색(var(--info-fg))이라
+  // 두 화면에서 같은 종류의 알림이 같은 색으로 보인다.
+  autodebit: 'var(--info-fg)',
+  manualpay: 'var(--info-fg)',
 }
 
 const READ_KEY = 'stayeum_alert_read'
