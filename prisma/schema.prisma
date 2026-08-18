@@ -123,6 +123,7 @@ model User {
   statusLogs      TenantStatusLog[]
   invalidatedStatusLogs TenantStatusLog[] @relation("StatusLogInvalidatedBy")
   foreignRegNoViews ForeignRegNoView[]
+  overlapAcks     LeaseOverlapAck[]
 
   @@map("users")
 }
@@ -234,6 +235,7 @@ model Property {
   cleanings          RoomCleaning[]
   documentFieldOverrides DocumentFieldOverride[]
   foreignRegNoViews  ForeignRegNoView[]
+  overlapAcks        LeaseOverlapAck[]
   @@map("properties")
 }
 
@@ -430,6 +432,7 @@ model Room {
   expenses   Expense[]
   roomStays  RoomStay[]
   cleanings  RoomCleaning[]
+  overlapAcks LeaseOverlapAck[]
 
   @@unique([propertyId, roomNo])
   @@map("rooms")
@@ -740,6 +743,8 @@ model LeaseTerm {
   extraIncomes   ExtraIncome[]
   roomStays      RoomStay[]       // 거주 구간 이력(파생 — 현재 방의 진실은 roomId, 2026-07-28)
   documentFieldOverrides DocumentFieldOverride[]
+  overlapAcksAsFront LeaseOverlapAck[] @relation("OverlapAckFront")
+  overlapAcksAsBack  LeaseOverlapAck[] @relation("OverlapAckBack")
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@index([parentLeaseTermId])  // 부모 계약의 종속분 조회(합본 계약서·목록 접기)
@@ -765,6 +770,53 @@ model RoomStay {
   @@index([roomId, startDate])
   @@index([leaseTermId])
   @@map("room_stays")
+}
+
+// 확인된 겹침 — 한 방의 두 계약이 하루 이상 포개지는 것을 운영자가 **의도된 것으로 확인**한 기록
+// (겹침 판정 개정, 운영자 확정 2026-08-19).
+//
+// 왜 데이터로 남기는가. 종전에는 화면 확인창이 "이대로 저장할까요"를 묻고 운영자가 승인하면 저장이
+// 지나갔는데, 그 승인은 아무 데도 안 남았다. 그래서 감지망(check-room-availability-drift 축 ②)은
+// 매번 같은 줄을 다시 불렀고, 캘린더는 확인이 끝난 겹침에도 계속 빨간 줄을 세웠다. 확인이 사람의
+// 머릿속에만 있으면 그 사실을 아는 화면이 하나도 없다.
+//
+// 구간(overlapFrom~overlapTo)은 확인 시점의 **스냅샷**이다. 지금 실제 겹침이 이 구간을 하루라도
+// 벗어나면 그 확인은 더 이상 같은 사실이 아니라 자동 실효되고 다시 발화한다(lib/roomAssignment 의
+// findOverlapAck 가 그 판정 정본). 그래서 날짜를 계약에서 조인해 오지 않고 여기 박아 둔다.
+//
+// 해제는 소프트삭제(deletedAt)다. 다시 확인하면 새 행이 쌓인다 — 확인을 되살리는 것이 아니라
+// 그때의 사실로 새로 확인하는 것이라야 구간 스냅샷의 뜻이 산다.
+//
+// 앞뒤(front/back)는 입주일이 이른 쪽이 앞이다. 판정은 순서를 묻지 않는다(날짜가 밀리면 앞뒤가
+// 바뀔 수 있는데 그건 같은 확인이다) — 이 구분은 사람이 행을 읽을 때를 위한 것이다.
+model LeaseOverlapAck {
+  id        String    @id @default(uuid()) @db.Uuid
+  // 확인 시점의 겹침 구간 'YYYY-MM-DD'. 사전순 비교가 곧 날짜 비교라 TEXT 로 둔다(lib/kstDate 규약).
+  overlapFrom String
+  overlapTo   String
+  memo      String?
+  createdAt DateTime  @default(now())
+  // 해제(소프트삭제). null = 유효한 확인, 값 = 해제한 시각.
+  deletedAt DateTime?
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  roomId String @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  frontLeaseTermId String    @db.Uuid
+  frontLeaseTerm   LeaseTerm @relation("OverlapAckFront", fields: [frontLeaseTermId], references: [id], onDelete: Cascade)
+  backLeaseTermId  String    @db.Uuid
+  backLeaseTerm    LeaseTerm @relation("OverlapAckBack", fields: [backLeaseTermId], references: [id], onDelete: Cascade)
+
+  ackedById String? @db.Uuid
+  ackedBy   User?   @relation(fields: [ackedById], references: [id])
+
+  @@index([propertyId, deletedAt])
+  @@index([frontLeaseTermId])
+  @@index([backLeaseTermId])
+  @@map("lease_overlap_acks")
 }
 
 // #14 월세 할인 — 입주자(계약)별, 여러 개 중첩 가능.
