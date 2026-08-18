@@ -849,7 +849,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         />
       )}
       {showMergeRules && <MergeRulesModal onClose={() => { setShowMergeRules(false); router.refresh() }} />}
-      {showReconcile && <FullReconcileModal rows={rows} categories={categories} onClose={() => setShowReconcile(false)} onDone={() => { setShowReconcile(false); pushToast('success', '전체 재고 보정 완료'); router.refresh() }} />}
+      {/* 완료 토스트는 모달이 직접 띄운다(적용취소 버튼 동봉). 여기서 또 띄우면 저장 때 두 개가 겹치고,
+          적용취소로 되돌린 뒤에도 '보정 완료'가 떠서 되돌린 사실을 덮었다. */}
+      {showReconcile && <FullReconcileModal rows={rows} categories={categories} onClose={() => setShowReconcile(false)} onDone={() => { setShowReconcile(false); router.refresh() }} />}
       {showAdd && <AddItemModal categories={categories} onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
       {showCatSettings && <InventoryCategorySettingsModal categories={categories} allExpenseCategories={allExpenseCategories} onClose={() => setShowCatSettings(false)} onDone={() => { setShowCatSettings(false); router.refresh() }} />}
       {showBatchLoc && (
@@ -2444,6 +2446,8 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
   const [date, setDate] = useState(todayKst)
   const [restockDone, setRestockDone] = useState(false)
+  // 줄어든 차이의 귀속 — 모달 단위 선택 1개(행별 아님). 기본은 현행(제외).
+  const [attribution, setAttribution] = useState<DiffAttribution>('exclude')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
@@ -2483,25 +2487,30 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
       ? Number(actuals[r.id]?.[NO_LOC] || '0')
       : vLocs(r).reduce((s, l) => s + Number(actuals[r.id]?.[l.id] || '0'), 0)
 
+  const expectedOf = (r: InventoryRow) => r.currentStock ?? r.lastRemainingQty ?? 0
   // 차이 있는 품목만 저장 대상
-  const changed = rows.filter(r => Math.abs(actualTotalOf(r) - (r.currentStock ?? r.lastRemainingQty ?? 0)) > 0.001)
+  const changed = rows.filter(r => Math.abs(actualTotalOf(r) - expectedOf(r)) > 0.001)
+  // 줄어든 품목이 하나라도 있을 때만 2지선다를 띄운다. 늘어난 품목은 선택과 무관하게 보정으로 저장된다.
+  const shortCount = changed.filter(r => actualTotalOf(r) - expectedOf(r) < -0.001).length
+  const asUsage = shortCount > 0 && attribution === 'usage'
 
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-40'
 
   const handleSave = async () => {
     if (!changed.length) { setError('변경된(차이 있는) 품목이 없습니다.'); return }
     setPending(true); setError('')
+    // expectedQty — 서버가 품목별 차이의 부호를 판정하는 근거(화면이 보여준 예상 재고 그대로).
     const items = changed.map(r => r.locations.length === 0
-      ? { trackedItemId: r.id, remainingQty: Number(actuals[r.id]?.[NO_LOC] || '0') }
-      : { trackedItemId: r.id, locationQtys: vLocs(r).map(l => ({ storageLocationId: l.id, qty: Number(actuals[r.id]?.[l.id] || '0') })) })
-    const res = await saveFullReconcile({ date, items })
+      ? { trackedItemId: r.id, remainingQty: Number(actuals[r.id]?.[NO_LOC] || '0'), expectedQty: expectedOf(r) }
+      : { trackedItemId: r.id, locationQtys: vLocs(r).map(l => ({ storageLocationId: l.id, qty: Number(actuals[r.id]?.[l.id] || '0') })), expectedQty: expectedOf(r) })
+    const res = await saveFullReconcile({ date, attribution, items })
     setPending(false)
     if (!res.ok) { setError(res.error); return }
     // 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데 되돌리기가 없었다.
-    pushToast('success', `재고 보정 ${res.count}건 저장됨`, {
+    pushToast('success', asUsage ? `${res.count}품목 저장됨 (줄어든 ${shortCount}품목은 사용으로 기록)` : `재고 보정 ${res.count}건 저장됨`, {
       action: { label: '적용취소', run: () => { void (async () => {
         for (const cid of res.createdIds) { const r = await deleteStockCheck(cid); if (!r.ok) { pushToast('error', r.error); return } }
-        pushToast('info', '보정을 되돌렸습니다')
+        pushToast('info', asUsage ? '기록을 되돌렸습니다' : '보정을 되돌렸습니다')
         onDone()
       })().catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
     })
@@ -2510,14 +2519,14 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
 
   return (
     <Modal open onClose={onClose} title="전체 재고 보정"
-      subtitle="실제 남은 수량을 세어 기준선을 다시 맞춥니다. 차이는 사용량으로 잡히지 않습니다."
+      subtitle={`실제 남은 수량을 세어 기준선을 다시 맞춥니다. ${asUsage ? '줄어든 차이는 지난 기간 사용으로 기록됩니다.' : '차이는 사용량으로 잡히지 않습니다.'}`}
       width="2xl" dirty={dirty}
       footer={<div className="flex items-center justify-between gap-2">
-          <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 보정</span>
+          <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 저장</span>
           <div className="flex items-center gap-2">
             <Btn variant="ghost" size="sm" onClick={onClose}>취소</Btn>
             <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
-              {pending ? '저장 중…' : `보정 저장 (${changed.length})`}
+              {pending ? '저장 중…' : asUsage ? `저장 (${changed.length})` : `보정 저장 (${changed.length})`}
             </Btn>
           </div>
       </div>}
@@ -2538,6 +2547,12 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
               보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 보충 완료 후 점검을 권장합니다.
             </span>
           </label>
+          {/* 모달 단위 선택 1개(행별 아님) — 줄어든 품목이 하나라도 생기면 뜬다. 날짜·보충 완료와 같은
+              '이 저장 전체에 걸리는 결정' 무리라 여기 둔다. */}
+          {shortCount > 0 && (
+            <DiffAttributionChoice name="full-diff-attr" value={attribution} onChange={setAttribution}
+              sinceLabel="각 품목의 직전 점검 이후" />
+          )}
           {categories.map(({ cat, alias }) => {
             const catRows = rows.filter(r => r.category === cat)
             if (!catRows.length) return null
