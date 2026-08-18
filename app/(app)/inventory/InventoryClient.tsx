@@ -3416,7 +3416,8 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         <input type="checkbox" checked={reconcileMode} onChange={e => setReconcileMode(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
         <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
           <strong className="text-[var(--warm-dark)]">전체 보정으로 기록</strong>. 실제 수량과 차이를 사용량으로 잡지 않습니다.<br />
-          계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (채움 완료 후 점검 권장)
+          계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (채움 완료 후 점검 권장)<br />
+          체크하지 않으면 차이가 직전 점검 이후 기간의 소비로 계산됩니다.
         </span>
       </label>
       {(draftPending || draftSavedAt) && (() => {
