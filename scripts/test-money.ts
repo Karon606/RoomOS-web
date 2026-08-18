@@ -16,7 +16,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
-import { reservationFeeSplit, resolveReservationDepositMode } from '../lib/reservationDeposit'
+import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
 import { wishRoomFromLabel } from '../lib/wishMatch'
@@ -259,6 +259,49 @@ const RENT = 300000
     null, 'deposit', true, parseShortStayPolicy({ enabled: true, reservationMode: 'applyToRent' }).reservationMode), 'prepaid')
   eq('예약금 모드: 파서가 이상값을 미설정으로', resolveReservationDepositMode(
     null, 'deposit', true, parseShortStayPolicy({ enabled: true, reservationMode: 'weird' }).reservationMode), 'deposit')
+}
+
+// ── 예약금 분해 발동 조건(삼중 가드) ── (운영자 확정 2026-08-19, 2단계)
+// 이 판정 하나가 "모드 미설정 상태 무영향"의 잠금이다. applyToRent 가 아닌 모든 조합은 false 여야 하고,
+// false 면 서버는 종전 선납 경로를 그대로 탄다(청소비 부가수익도 안 생긴다).
+{
+  const on = { mode: 'prepaid' as const, isShortTerm: true, shortStayMode: 'applyToRent' as const, cleaningFee: 20000 }
+  eq('분해 발동: applyToRent 단기 청소비 있음', reservationFeeSplitApplies(on), true)
+  // ① 정책이 미설정이면 발동 안 함 — 영업장 기본값이 우연히 prepaid 여도 마찬가지다.
+  eq('분해 발동: 정책 미설정이면 false', reservationFeeSplitApplies({ ...on, shortStayMode: null }), false)
+  eq('분해 발동: refundableDeposit 이면 false', reservationFeeSplitApplies({ ...on, shortStayMode: 'refundableDeposit' }), false)
+  // ② 장기 계약은 분해 대상이 아니다.
+  eq('분해 발동: 장기 계약이면 false', reservationFeeSplitApplies({ ...on, isShortTerm: false }), false)
+  // ③ 뗄 청소비가 없으면 종전 선납과 결과가 같다 — 분해하지 않는다.
+  eq('분해 발동: 청소비 0 이면 false', reservationFeeSplitApplies({ ...on, cleaningFee: 0 }), false)
+  // 계약별 개별 선택이 정책보다 앞선다 — 해석값이 prepaid 가 아니면 그 선택의 뜻대로 분해 안 함.
+  eq('분해 발동: 계약이 보증금 대체면 false', reservationFeeSplitApplies({ ...on, mode: 'deposit' }), false)
+  eq('분해 발동: 계약이 안 받음이면 false', reservationFeeSplitApplies({ ...on, mode: 'none' }), false)
+  // 해석기와 한 벌로 물린 실제 조합 — 제기역점 3단계 발효 후의 단기 예약이 이 줄이다.
+  eq('분해 발동: 해석기 경유(영업장 deposit + 정책 applyToRent)', reservationFeeSplitApplies({
+    mode: resolveReservationDepositMode(null, 'deposit', true, 'applyToRent'),
+    isShortTerm: true, shortStayMode: 'applyToRent', cleaningFee: 20000,
+  }), true)
+  // 발효 전(현행) 조합 — 같은 계약이라도 정책이 비어 있으면 false 다.
+  eq('분해 발동: 발효 전 조합은 false', reservationFeeSplitApplies({
+    mode: resolveReservationDepositMode(null, 'deposit', true, null),
+    isShortTerm: true, shortStayMode: null, cleaningFee: 20000,
+  }), false)
+
+  // 표시 문법 — 수납 폼 미리보기·예약금 구성 줄·예약 취소 미니폼이 같은 문장을 쓴다.
+  const won = (n: number) => `${n.toLocaleString()}원`
+  const s = reservationFeeSplit(50000, 20000)
+  eq('분해 문구: 5만 = 청소비 2만 + 충당 3만',
+    reservationCompositionLabel(s.cleaning, s.prepaid, won), '예약금 50,000원 = 청소비 20,000원 + 이용료 충당 30,000원')
+  // 몫이 하나뿐이면 옆 숫자를 두 번 말하게 되므로 줄을 세우지 않는다.
+  eq('분해 문구: 전액 청소비면 null', reservationCompositionLabel(20000, 0, won), null)
+  eq('분해 문구: 청소비 몫 0 이면 null', reservationCompositionLabel(0, 50000, won), null)
+
+  // 산식 5 — 잔여 몫이 그 달 이용료를 넘어도 분해식은 그대로다. 초과분은 선납으로 남고
+  // 퇴실 정산의 기존 완납 초과 환불 흐름이 처리한다(여기서 새 산식을 만들지 않는다).
+  const over = reservationFeeSplit(300000, 20000)
+  eq('분해: 잔여가 이용료를 넘어도 분해식 불변', over, { cleaning: 20000, prepaid: 280000 })
+  eq('분해: 초과분도 두 몫의 합 = 받은 돈', over.cleaning + over.prepaid, 300000)
 }
 
 // ── billForLeaseMonth 단기 입주월 단일 청구 ── (운영자 승인 2026-07-20)
