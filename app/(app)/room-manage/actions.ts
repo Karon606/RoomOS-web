@@ -21,6 +21,7 @@ import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
 import { displayName } from '@/lib/displayName'
 import { kstMonthStr, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { buildMoveCalendar, buildMoveRange, monthLastDay, shiftMonth, type MoveCalendarLease, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
+import { createOverlapAck, loadOverlapAcks, softDeleteOverlapAck } from '@/lib/overlapAck'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -250,7 +251,42 @@ export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendar
     context,
     beyond: beyondDates.length > 0 ? { count: beyondDates.length, firstDate: beyondDates[0] } : null,
     canExtendPast: firstChange < from,
+    // 확인된 겹침 — 조립은 DB 를 못 보고, 확인 여부는 계산이 아니라 사실이라 조회가 넘긴다.
+    acks: await loadOverlapAcks(propertyId),
   })
+}
+
+/**
+ * 캘린더 [겹침 확인] — 이 겹침은 의도된 것이라고 기록한다(겹침 판정 개정 2026-08-19).
+ *
+ * 판정·기록은 lib/overlapAck 정본이 한다. 화면이 보낸 날짜는 믿지 않는다 — 여기 오는 것은
+ * 두 계약의 id 뿐이고, 구간은 서버가 지금 DB 를 다시 읽어 계산한다.
+ */
+export async function acknowledgeOverlap(frontLeaseTermId: string, backLeaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, user } = await getPropertyId()
+    const res = await createOverlapAck({ propertyId, frontLeaseTermId, backLeaseTermId, ackedById: user.sub })
+    if (!res.ok) return res
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '확인 처리 중 오류가 발생했습니다.' }
+  }
+}
+
+/** 확인 해제 — 소프트삭제다. 되돌리면 그 겹침은 다시 답하지 않은 상태로 돌아간다. */
+export async function releaseOverlapAck(ackId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const res = await softDeleteOverlapAck(ackId, propertyId)
+    if (!res.ok) return res
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '해제 처리 중 오류가 발생했습니다.' }
+  }
 }
 
 // 호실 추가

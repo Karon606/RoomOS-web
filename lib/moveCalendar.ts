@@ -10,7 +10,11 @@
 // 곧 '그 달 며칠'이라, 달을 넘겨도 같은 코드가 같은 그림을 그린다.
 //
 // 판정은 전부 정본을 부른다.
-//   · 겹침 여부 = lib/roomAssignment occupancyOverlaps (같은 날 퇴실·입주도 겹침으로 세는 그 선).
+//   · 겹침 여부 = lib/roomAssignment occupancyOverlaps.
+//   · 당일 회전 = isSameDayTurnover — 겹치되 충돌이 아니다(2026-08-19 개정). 층 분리 기하는 그대로
+//     두어 같은 칸에 선 두 막대가 회전 자체를 말하게 하고, 빨간 밴드와 요약 줄만 세우지 않는다.
+//   · 확인된 겹침 = findOverlapAck — 조회가 넘긴 확인 목록(acks)으로 중립 톤을 가른다. 줄은 지우지
+//     않는다. 사라지면 해제할 길이 없고, 한 방에 두 사람이 있다는 사실도 함께 사라진다.
 //   · 다음 예약 = lib/leaseStatus roomReservationQueue.
 //   · 날짜 문구 = checkoutDateLabel · moveInDateLabel · moveInSubText.
 //
@@ -18,7 +22,7 @@
 // 날짜 덧셈이 필요한 자리만 UTC 자정으로 다룬다(lib/kstDate 규약 — 서버 UTC·기기 KST 가 하루
 // 다른 오늘을 보는 함정을 애초에 열지 않는다).
 
-import { occupancyOverlaps } from './roomAssignment'
+import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, occupancyOverlaps, type OverlapAckSpan } from './roomAssignment'
 import { OCCUPYING_STATUSES, checkoutDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
 import { fmtRoomNo } from './roomNo'
 import { fmtMD } from './fmtDate'
@@ -68,8 +72,13 @@ export type MoveBar = {
 
 export type MoveDaySpan = { startDay: number; endDay: number }
 export type MoveGap = MoveDaySpan & { days: number }
+/** 겹친 구간 — 확인된 겹침은 중립 톤으로 그린다(빨강은 아직 답하지 않은 것에만 쓴다). */
+export type MoveOverlapSpan = MoveDaySpan & { acked: boolean }
 
 export type MoveConflictKind = 'overlap' | 'indefinite' | 'reversed'
+
+/** 조립이 읽는 확인 한 줄 — 판정에 필요한 칸만. 실물은 LeaseOverlapAck 이다. */
+export type MoveOverlapAck = OverlapAckSpan & { id: string }
 
 export type MoveConflict = {
   kind: MoveConflictKind
@@ -79,6 +88,16 @@ export type MoveConflict = {
   leaseId: string
   tenantId: string
   text: string
+  /**
+   * 의도된 겹침으로 확인된 상태인가 — kind:'overlap' 만 대상이다.
+   * 무기한(indefinite)은 '퇴실일을 넣으라'는 다른 처방이고 역전(reversed)은 데이터 사고라
+   * 확인으로 덮을 것이 아니다. 확인되면 중립 톤으로 내려가고 감지망 축 ②에서도 빠진다.
+   */
+  acked: boolean
+  /** 확인 줄의 id — [확인 해제] 가 이 값을 쓴다. 확인 전이면 null. */
+  ackId: string | null
+  /** [겹침 확인] 이 지목할 두 계약(앞=입주일이 이른 쪽). 확인 대상이 아닌 충돌은 null. */
+  pair: { frontLeaseTermId: string; backLeaseTermId: string } | null
 }
 
 export type MoveCalendarRow = {
@@ -89,7 +108,7 @@ export type MoveCalendarRow = {
   laneCount: number
   bars: MoveBar[]
   gaps: MoveGap[]
-  overlaps: MoveDaySpan[]
+  overlaps: MoveOverlapSpan[]
   conflicts: MoveConflict[]
   /** 범위 밖(오른쪽)의 다음 예약을 한 줄로. 트랙 안에 들어온 예약은 막대가 말하므로 null 이다. */
   tail: string | null
@@ -238,6 +257,7 @@ function toSpans(days: Set<number>, upTo: number): MoveDaySpan[] {
  *                그려야 그 위에 얹힌 예약이 충돌로 보이고, 연속 트랙에서 점유 띠가 안 끊긴다.
  * @param order   행 정렬. 한 달 창은 첫 변동일이 곧 그 달의 이야기 순서지만, 여러 달을 잇는
  *                트랙에서는 그 키가 의미를 잃어(같은 방이 여러 달에 걸쳐 여러 번 바뀐다) 호실번호로 센다.
+ * @param acks    유효한 확인된 겹침. 조회가 넘긴다 — 조립은 DB 를 못 보고, 확인 여부는 사실이지 계산이 아니다.
  */
 function assemble(input: {
   from: string
@@ -246,6 +266,7 @@ function assemble(input: {
   changed: MoveCalendarLease[]
   context: MoveCalendarLease[]
   order: 'firstChange' | 'roomNo'
+  acks: MoveOverlapAck[]
 }): { days: number; todayDay: number | null; rows: MoveCalendarRow[]; events: MoveEvent[]; conflicts: MoveConflict[] } {
   const { today, order } = input
   const first = input.from
@@ -329,6 +350,7 @@ function assemble(input: {
         allConflicts.push({
           kind: 'reversed', roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId,
           text: `${fmtRoomNo(g.roomNo)} ${l.tenantName}님 계약의 입주일이 퇴실일보다 뒤입니다.`,
+          acked: false, ackId: null, pair: null,
         })
       }
     }
@@ -339,31 +361,49 @@ function assemble(input: {
     // (lib/roomAssignment roomAssignmentBlockReason 의 같은 선) 같은 날 인수인계는 사고가 아니다.
     const holding = bars.filter(b => (OCCUPYING_STATUSES as string[]).includes(barLease.get(b.leaseId)!.status))
     const overlapDays = new Set<number>()
+    const ackedDays = new Set<number>()
     const rowConflicts: MoveConflict[] = []
     for (let i = 0; i < holding.length; i++) {
       for (let j = i + 1; j < holding.length; j++) {
         const a = holding[i], b = holding[j]
-        if (!occupancyOverlaps({ moveIn: a.stayFrom, moveOut: a.stayTo }, { moveIn: b.stayFrom, moveOut: b.stayTo })) continue
-        a.conflicted = true
-        b.conflicted = true
+        const sa = { moveIn: a.stayFrom, moveOut: a.stayTo }
+        const sb = { moveIn: b.stayFrom, moveOut: b.stayTo }
+        if (!occupancyOverlaps(sa, sb)) continue
+        // 당일 회전(앞이 나가는 그날 뒤가 들어온다)은 사고가 아니다 — 같은 칸에 선 두 막대가
+        // 층으로 갈려 그 회전을 그대로 말한다. 빨간 밴드도 요약 줄도 세우지 않는다(2026-08-19 개정).
+        if (isSameDayTurnover(sa, sb)) continue
         const lo = Math.max(a.startDay, b.startDay)
         const hi = Math.min(a.endDay, b.endDay)
-        for (let d = lo; d <= hi; d++) overlapDays.add(d)
         // 무기한 점유 위에 얹힌 예약은 겹침의 특수형이다 — 손봐야 할 곳이 예약이 아니라
         // 거주의 빈 퇴실일이라 문구도 진입 대상도 다르다(roomAssignmentDenial 과 같은 처방).
         const openResident = [a, b].find(x => x.kind === 'resident' && x.openEnded)
         const reserved = [a, b].find(x => x.kind === 'reserved')
         if (openResident && reserved && openResident !== reserved) {
+          a.conflicted = true
+          b.conflicted = true
+          for (let d = lo; d <= hi; d++) overlapDays.add(d)
           rowConflicts.push({
             kind: 'indefinite', roomId: g.roomId, roomNo: g.roomNo, leaseId: openResident.leaseId, tenantId: openResident.tenantId,
             text: `${fmtRoomNo(g.roomNo)} ${openResident.tenantName}님 퇴실일이 미정인데 ${reserved.tenantName}님 입실 예약이 잡혀 있습니다.`,
+            acked: false, ackId: null, pair: null,
           })
           continue
         }
+        // 확인된 겹침인가 — 지금 구간이 확인 구간 안이어야 한다(벗어나면 자동 실효라 다시 빨강이다).
+        const ack = findOverlapAck(input.acks, a.leaseId, b.leaseId, occupancyOverlapSpan(sa, sb))
+        if (!ack) { a.conflicted = true; b.conflicted = true }
+        for (let d = lo; d <= hi; d++) (ack ? ackedDays : overlapDays).add(d)
         const later = a.startDay >= b.startDay ? a : b
+        const [front, back] = !a.stayFrom ? [a, b] : !b.stayFrom ? [b, a] : (a.stayFrom <= b.stayFrom ? [a, b] : [b, a])
+        const when = `${fmtMD(ymdOfDay(lo))}~${fmtMD(ymdOfDay(hi))}`
         rowConflicts.push({
           kind: 'overlap', roomId: g.roomId, roomNo: g.roomNo, leaseId: later.leaseId, tenantId: later.tenantId,
-          text: `${fmtRoomNo(g.roomNo)} ${a.tenantName}·${b.tenantName} 체류가 ${fmtMD(ymdOfDay(lo))}~${fmtMD(ymdOfDay(hi))} 겹칩니다.`,
+          text: ack
+            ? `${fmtRoomNo(g.roomNo)} ${a.tenantName}·${b.tenantName} ${when} 겹침 확인됨`
+            : `${fmtRoomNo(g.roomNo)} ${a.tenantName}·${b.tenantName} 체류가 ${when} 겹칩니다.`,
+          acked: !!ack,
+          ackId: ack?.id ?? null,
+          pair: { frontLeaseTermId: front.leaseId, backLeaseTermId: back.leaseId },
         })
       }
     }
@@ -395,7 +435,11 @@ function assemble(input: {
       laneCount,
       bars: bars.sort((a, b) => a.lane - b.lane || a.startDay - b.startDay),
       gaps,
-      overlaps: toSpans(overlapDays, days),
+      // 확인 전 겹침이 이긴다 — 같은 날이 두 쌍에 걸려 있으면 아직 답하지 않은 쪽 색을 세운다.
+      overlaps: [
+        ...toSpans(overlapDays, days).map(s => ({ ...s, acked: false })),
+        ...toSpans(new Set([...ackedDays].filter(d => !overlapDays.has(d))), days).map(s => ({ ...s, acked: true })),
+      ].sort((x, y) => x.startDay - y.startDay),
       conflicts: rowConflicts.concat(allConflicts.filter(c => c.kind === 'reversed' && c.roomId === g.roomId)),
       tail,
       tailLeaseId: nextUp?.id ?? null,
@@ -427,10 +471,11 @@ export function buildMoveCalendar(input: {
   today: string
   changed: MoveCalendarLease[]
   context: MoveCalendarLease[]
+  acks?: MoveOverlapAck[]
 }): MoveCalendarMonth {
   const { month } = input
   const dim = daysInMonth(month)
-  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange' })
+  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange', acks: input.acks ?? [] })
   return {
     month,
     daysInMonth: dim,
@@ -457,9 +502,10 @@ export function buildMoveRange(input: {
   context: MoveCalendarLease[]
   beyond: { count: number; firstDate: string } | null
   canExtendPast: boolean
+  acks?: MoveOverlapAck[]
 }): MoveCalendarRange {
   const { from, to, today, focusMonth } = input
-  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo' })
+  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo', acks: input.acks ?? [] })
 
   const months: MoveRangeMonth[] = []
   for (let m = from.slice(0, 7); m <= to.slice(0, 7); m = shiftMonth(m, 1)) {
