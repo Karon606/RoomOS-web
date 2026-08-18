@@ -1,49 +1,48 @@
-# 창고 특약(추가 호실 특약) 시공 체크리스트 — 2026-08-19
+# 겹침 판정 개정 — 시공 체크리스트 (설계 확정 2026-08-19, 운영자 4택 전체안)
 
-확정 설계: 창고 특약 확정 설계(패널 산출 + 운영자 위임 확정, 2026-08-19).
-형태는 본문에 조건부 절 하나. 기존 24개 조항 무수정, 별지 기각, 문안 코드 정본 고정.
+설계 정본: scratchpad/overlap-ack-design.md. 설계 밖 확대 금지.
 
-## 1단계 — 문안·부착 정본 (lib/contract.ts)
-- [x] DEFAULT_SUB_LEASE_ADDENDUM (절 제목 + 8항, 설계 문안 그대로)
-- [x] appendSubLeaseAddendum — null 이면 받은 배열 그대로 반환(diff 0 보장), 번호 동적(기본 5)
-- [x] SignedContractSnapshot·ResolvedBody·resolveSignedBody 에 선택 필드(옛 박제 = null)
-- [x] 커밋
+## 1단계 — 판정 정본(층 1)
+- [ ] lib/roomAssignment: occupancyOverlapSpan · isSameDayTurnover · findOverlapAck 신설
+      (occupancyOverlaps 의 >= 는 무수정 — 소비처 전체가 흔들린다)
+- [ ] roomAssignmentBlockReason(가져오기): 당일 회전 허용
+- [ ] scripts/test-lease-subordination 에 당일 회전 케이스 추가
+- [ ] 커밋
 
-## 2단계 — 조건 정본 (lib/contractData.ts)
-- [x] room select 에 nonResidentVacant 추가
-- [x] contractSubLeaseAddendum — NON_RESIDENT + nonResidentVacant=false, 박제본은 동결값
-- [x] ContractData.subLeaseAddendum
-- [x] 커밋
+## 2단계 — LeaseOverlapAck 모델
+- [ ] prisma/schema.prisma 모델 + Property·Room·LeaseTerm·User 역참조
+- [ ] migrate_lease_overlap_ack.sql (CREATE TABLE IF NOT EXISTS 한정)
+- [ ] 실 DB 적용(DDL 만, 행 데이터 불변)
+- [ ] 커밋
 
-## 3단계 — 렌더 (화면·인쇄)
-- [x] ContractView 1155행 splitClauseColumns 앞에 헬퍼(편집 목록 미노출, 옛 스냅샷 ?? null)
-- [x] contractPrintHtml 166행 동일 적용(renderFrag 재사용)
-- [x] 커밋
+## 3단계 — 기록·해제 서버 정본
+- [ ] lib/overlapAck: recordOverlapAcks · releaseOverlapAck · loadOverlapAcks
+- [ ] tenants/actions: allowRoomOverlap 통과 시 기록(등록·계약 추가·수정)
+- [ ] 커밋
 
-## 4단계 — 사영 축 (lib/contractPrintedFacts.ts)
-- [x] 축 subLeaseAddendum + 라벨 '추가 호실 특약', 없으면 undefined
-- [x] IssuedContractSheet — 표시값 표에서 빼고 '본문 출처'에 조건부 한 줄(기존 발급본 시트 무변동)
-- [x] 커밋
+## 4단계 — 캘린더 조립(층 1·2)
+- [ ] lib/moveCalendar: 당일 회전 충돌 제외 · 확인된 겹침 중립 · acks 입력
+- [ ] scripts/test-move-calendar 기대값 갱신(당일 회전 — 승인됨) + 확인된 겹침 축 추가
+- [ ] room-manage/actions: ack 조회 + acknowledgeOverlap·releaseOverlapAck 액션
+- [ ] 커밋
 
-## 5단계 — 발급·서명 박제
-- [x] generate route: room select · 판정 · printData · 발급본 박제 facts · 대면 서명 박제
-- [x] sign actions 127행 newSnapshot 동결
-- [x] contractShare 무변경 확인(withoutPlainPii 가 `...d` 전개라 새 칸 보존)
-- [x] 커밋
+## 5단계 — 캘린더 UI
+- [ ] MoveCalendar: [겹침 확인] · [확인 해제] · 중립 톤 · 코랄 팁 끔
+- [ ] 커밋
+
+## 6단계 — 입주자 폼(층 1 화면)
+- [ ] TenantClient: 당일 회전 캡션 · 확인창 제거 · 문구에 기록 고지 · allowRoomOverlap 표식
+- [ ] 커밋
+
+## 7단계 — 감지망 축 ②
+- [ ] check-room-availability-drift: 당일 회전 제외 · 유효 ack 제외 · 확인된 겹침 N건 · 잔존 ack 정보 줄
+- [ ] 커밋
 
 ## 게이트
-- [x] tsc 0
-- [x] verify:fast 전 축 통과 (커밋 훅 5회 + 최종 1회)
-- [x] verify:db 계약 축 전부 통과 — 발급본 박제 6/6(기준선 6) · 본문 잠금 위반 0 ·
-      계약일 정합 위반 0 · 신원번호 평문 0. 기존 데이터 결함 3건은 무관(아래 관찰)
-- [x] 프로덕션 빌드 성공 (컴파일 14.0s · 정적 47/47)
-- [x] eslint 496 (기준선 496 · 신규 0, stash 대조)
-- [x] 계약서 화면 320/360/390 × 라이트/다크 12조합 넘침 0
-
-## 검증 필수 4종
-- [x] 종속 없는 실계약 전건 렌더 문자열 대조 — 164건 중 162건 문자 단위 동일,
-      차이 2건은 김상혁 509(auto·지목) 즉 특약 대상 그 자체
-- [x] 김상혁 합본 — 특약 절 '5. 추가 호실 특약(보관 용도)' 8항 렌더 + PDF 실측
-      (특약 전후 모두 100% 배율·3장, 88% 하한 되돌림 동일 = 다중 페이지 경로 정상)
-- [x] 기존 발급본·박제·서명 링크 기준선 무변동 — 링크 23건·박제 6건 전부 새 축 없음(undefined)
-- [x] 감지망 축(특약 조건 대 렌더 일치) — 164건 대조 불일치 0
+- [ ] tsc 0
+- [ ] verify:fast 무회귀(캘린더 기대값 갱신 포함)
+- [ ] verify:db 개정 축 ② 실측(422 는 ack 전이라 위반 1이 정상)
+- [ ] 프로덕션 빌드
+- [ ] eslint 신규 0(기준선 496, stash 대조)
+- [ ] 새 UI 320/360/390 라이트·다크 넘침 0
+- [ ] 역주입 3종(회전 무위반 · ack 없는 겹침 검출 · ack 구간 초과 재발화)

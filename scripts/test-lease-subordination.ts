@@ -9,6 +9,7 @@
 
 import {
   leaseSubordinationDenial, roomAssignmentBlockReason,
+  findOverlapAck, isSameDayTurnover, occupancyOverlapSpan,
   STANDALONE_LEASE_ERROR, STANDALONE_LEASE_IMPORT_ERROR,
 } from '../lib/roomAssignment'
 import { propagateDueDayToSubLeases, sameDueDay } from '../lib/dueDay'
@@ -98,6 +99,60 @@ eq('시트 · 종료 계약은 단독 불가 방이어도 통과',
 // 비거주 점유 방 문구가 먼저다 — 두 설정이 같이 켜진 방(창고)에서 순서가 뒤집히면 안내가 엉킨다.
 eq('시트 · 비거주 점유 문구가 먼저',
   sheet({ roomStandaloneAllowed: false, nonResidentOccupied: true })?.startsWith('해당 호실은 거주용이 아닌 방'), true)
+
+// ── 겹침 판정 개정(2026-08-19 운영자 확정) ────────────────────────────
+// 층 1 — 당일 회전은 정상. 층 2 — 하루 이상 겹침은 확인(LeaseOverlapAck)을 데이터로 받는다.
+
+const span = (moveIn: string | null, moveOut: string | null) => ({ moveIn, moveOut })
+
+eq('구간 · 포개진 자리를 답한다',
+  occupancyOverlapSpan(span('2026-08-01', '2026-08-20'), span('2026-08-15', '2026-08-30')),
+  { from: '2026-08-15', to: '2026-08-20' })
+eq('구간 · 안 겹치면 null',
+  occupancyOverlapSpan(span('2026-08-01', '2026-08-14'), span('2026-08-15', '2026-08-30')), null)
+eq('구간 · 무기한 쪽은 열린 채로 남는다',
+  occupancyOverlapSpan(span('2026-08-01', null), span('2026-08-15', null)),
+  { from: '2026-08-15', to: null })
+
+eq('회전 · 나가는 날 들어오는 하루는 회전이다',
+  isSameDayTurnover(span('2026-07-01', '2026-08-15'), span('2026-08-15', '2026-08-30')), true)
+eq('회전 · 순서를 바꿔도 같은 답',
+  isSameDayTurnover(span('2026-08-15', '2026-08-30'), span('2026-07-01', '2026-08-15')), true)
+eq('회전 · 입주일 없는 점유가 나가는 날도 회전이다',
+  isSameDayTurnover(span(null, '2026-08-15'), span('2026-08-15', '2026-08-30')), true)
+eq('회전 · 하루라도 더 포개지면 회전이 아니다',
+  isSameDayTurnover(span('2026-07-01', '2026-08-16'), span('2026-08-15', '2026-08-30')), false)
+eq('회전 · 같은 날 함께 시작하는 둘은 회전이 아니다',
+  isSameDayTurnover(span('2026-08-15', '2026-08-15'), span('2026-08-15', '2026-08-30')), false)
+eq('회전 · 안 겹치면 회전도 아니다',
+  isSameDayTurnover(span('2026-07-01', '2026-08-14'), span('2026-08-15', '2026-08-30')), false)
+
+// 가져오기 — 자기가 내보낸 시트를 그대로 다시 올리는 그 경로다.
+eq('시트 · 당일 회전은 통과',
+  sheet({
+    incoming: { status: 'RESERVED', moveIn: '2026-08-15', moveOut: '2026-08-30' },
+    others: [{ status: 'CHECKOUT_PENDING', moveIn: '2026-07-01', moveOut: '2026-08-15', tenantName: '앞사람' }],
+  }), null)
+eq('시트 · 하루 이상 겹침은 계속 차단',
+  sheet({
+    incoming: { status: 'RESERVED', moveIn: '2026-08-15', moveOut: '2026-08-30' },
+    others: [{ status: 'CHECKOUT_PENDING', moveIn: '2026-07-01', moveOut: '2026-08-16', tenantName: '앞사람' }],
+  }) !== null, true)
+
+const ack = { frontLeaseTermId: 'A', backLeaseTermId: 'B', overlapFrom: '2026-08-18', overlapTo: '2026-08-19' }
+const spanOf = (a: [string | null, string | null], b: [string | null, string | null]) =>
+  occupancyOverlapSpan(span(a[0], a[1]), span(b[0], b[1]))
+
+eq('확인 · 구간 안이면 덮인다',
+  findOverlapAck([ack], 'A', 'B', spanOf(['2026-07-01', '2026-08-19'], ['2026-08-18', '2026-08-30']))?.overlapTo, '2026-08-19')
+eq('확인 · 앞뒤가 바뀌어도 같은 확인이다',
+  findOverlapAck([ack], 'B', 'A', spanOf(['2026-07-01', '2026-08-19'], ['2026-08-18', '2026-08-30'])) !== null, true)
+eq('확인 · 구간을 하루라도 넘으면 실효(재발화)',
+  findOverlapAck([ack], 'A', 'B', spanOf(['2026-07-01', '2026-08-20'], ['2026-08-18', '2026-08-30'])), null)
+eq('확인 · 다른 계약 쌍은 안 덮인다',
+  findOverlapAck([ack], 'A', 'C', spanOf(['2026-07-01', '2026-08-19'], ['2026-08-18', '2026-08-30'])), null)
+eq('확인 · 무기한 겹침은 스냅샷이 없어 안 덮인다',
+  findOverlapAck([ack], 'A', 'B', spanOf(['2026-07-01', null], ['2026-08-18', null])), null)
 
 // ── 납부일 전파 축(2026-08-13 운영자 오더) ────────────────────────────
 // 부모 계약의 납부일이 바뀌면 딸린 계약도 같은 날로 따라간다. 따라오는 것은 '비었거나 옛 부모 날과
