@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease,
-  getReservedPrepaidTotal, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
+  getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
@@ -19,6 +19,7 @@ import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
   CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
+import { reservationCompositionLabel } from '@/lib/reservationDeposit'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -169,11 +170,18 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 예약금 모드별 분기 — deposit: 보증금 반환/몰취, prepaid: 이용료 선납 반환/몰취, none: 대상 없음.
     if (def.key === 'cancel' && lease.status === 'RESERVED') {
       if (lease.reservationDepositMode === 'prepaid') {
-        const received = await getReservedPrepaidTotal(lease.id)
+        // 기준액은 예약 단계에서 받은 돈 전부 — 분해 수납이면 청소비 몫도 포함된다(산식 1).
+        // 구성은 같은 서버 헬퍼가 돌려주므로 화면 숫자가 기준액과 갈릴 수 없다.
+        const comp = await getReservedPrepaidComposition(lease.id)
+        const received = comp.cleaning + comp.prepaid
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
           setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
-          setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancelPrepaid: true })
+          setActive({
+            def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0,
+            resvCancelPrepaid: true,
+            compositionLabel: reservationCompositionLabel(comp.cleaning, comp.prepaid, fmtWon),
+          })
           return
         }
         // 선납 실수납 없음 — 아래 기존 확인 흐름으로.
@@ -271,9 +279,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             ...(buildReason(transReason, transReasonEtc) ? { reason: buildReason(transReason, transReasonEtc) } : {}),
           })
           if (!res.ok) { pushToast('error', res.error); return }
-          const { recordIds, extraIncomeId } = r
+          const { recordIds, cleaningIncomeIds, extraIncomeId } = r
           pushToast('success', `${tenantName}님 · ${def.label} 완료`, {
-            action: { label: '취소 되돌리기', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId).then(u => {
+            action: { label: '취소 되돌리기', run: () => { void undoReservationPrepaidCancel(recordIds, extraIncomeId, cleaningIncomeIds).then(u => {
               if (u.ok) { pushToast('info', '예약 선납 반환/몰취를 되돌렸습니다 (상태는 유지 — 필요 시 상태 변경으로 복구)'); onChange?.() }
               else pushToast('error', u.error)
             }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
@@ -432,7 +440,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               {(active.def.withDeposit || active.resvCancel || active.resvCancelPrepaid) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)] block">
-                    {active.resvCancelPrepaid ? '선납 환불' : active.resvCancel ? '예약금 환불' : '보증금 환불'} <span className="text-[var(--warm-muted)] font-normal">({active.resvCancelPrepaid ? '받은 선납금' : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
+                    {active.resvCancelPrepaid ? '선납 환불' : active.resvCancel ? '예약금 환불' : '보증금 환불'} <span className="text-[var(--warm-muted)] font-normal">({/* 분해 수납이면 이 금액은 선납만이 아니라 받은 예약금 전부다(청소비 몫 포함) — 아래 구성 줄이 내역을 편다 */}
+                      {active.resvCancelPrepaid ? (active.compositionLabel ? '받은 예약금' : '받은 선납금') : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
                   </label>
                   {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 현금만 보이면 '계약 5만인데 왜 3만인가'로 읽힌다.
                       문법은 DepositStatusPanel 정본과 같은 한 줄(두 화면이 갈리지 않게). */}

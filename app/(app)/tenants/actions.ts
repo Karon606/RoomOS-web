@@ -1681,41 +1681,79 @@ export async function getReceivedDepositTotal(leaseTermId: string): Promise<numb
   return agg._sum.actualAmount ?? 0
 }
 
-// prepaid 모드 예약 취소 기준액 — 그 lease의 이용료 선납 실수납 합(isDeposit=false).
-// 계약 보증금이 아니라 실제 받은 선납이 반환·몰취 기준. 소프트삭제는 aggregate 확장이 자동 필터(where에 deletedAt 금지).
-export async function getReservedPrepaidTotal(leaseTermId: string): Promise<number> {
-  const { propertyId } = await getPropertyId()
-  const agg = await prisma.paymentRecord.aggregate({
-    where: { leaseTermId, propertyId, isDeposit: false },
-    _sum: { actualAmount: true },
-  })
-  return agg._sum.actualAmount ?? 0
+// prepaid 모드 예약 취소 기준액 — 그 lease가 예약 단계에서 실제로 받은 돈 전부.
+// 계약 보증금이 아니라 실제 받은 금액이 반환·몰취 기준. 소프트삭제는 aggregate 확장이 자동 필터(where에 deletedAt 금지).
+//
+// 두 몫을 함께 센다(운영자 확정 2026-08-19, 산식 1). 분해 수납(applyToRent)은 받은 예약금을
+// 청소비 부가수익 + 이용료 선납 record 로 나눠 적는데, 입실 전 취소는 **청소 용역을 하기 전**이라
+// 청소비 몫도 돌려주거나 몰취해야 할 돈이다. 선납 record 만 세면 화면이 3만을 제시하고 운영자는
+// 5만을 받은 걸 아는 상태가 된다 — 화면 최대치와 실제가 갈리는 그 사고 유형이다.
+//
+// 분해하지 않은 예약(정책 미설정·장기·청소비 0)에는 예약 단계 청소비 부가수익이 없으므로
+// 두 번째 항이 0 이고 값이 종전과 문자 그대로 같다(실측 RESERVED 전수 갈림 0건).
+async function reservedPrepaidComposition(propertyId: string, leaseTermId: string): Promise<{ cleaning: number; prepaid: number }> {
+  const [agg, cleaning] = await Promise.all([
+    prisma.paymentRecord.aggregate({
+      where: { leaseTermId, propertyId, isDeposit: false },
+      _sum: { actualAmount: true },
+    }),
+    prisma.extraIncome.aggregate({
+      where: { leaseTermId, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+      _sum: { amount: true },
+    }),
+  ])
+  return { cleaning: cleaning._sum.amount ?? 0, prepaid: agg._sum.actualAmount ?? 0 }
 }
 
-// prepaid 모드 예약 취소 — 이용료 선납 반환/몰취.
-//   반환: 선납 record 전량 소프트삭제(매출 자동 소멸).
+export async function getReservedPrepaidTotal(leaseTermId: string): Promise<number> {
+  const { propertyId } = await getPropertyId()
+  const c = await reservedPrepaidComposition(propertyId, leaseTermId)
+  return c.cleaning + c.prepaid
+}
+
+// 예약 취소 미니폼의 구성 표시용 — 기준액이 어떻게 나뉘어 있는지(청소비 몫 / 선납 몫).
+// 합은 getReservedPrepaidTotal 과 정의상 같다(같은 헬퍼를 쓴다 — 두 화면 숫자가 갈릴 여지 없음).
+export async function getReservedPrepaidComposition(leaseTermId: string): Promise<{ cleaning: number; prepaid: number }> {
+  const { propertyId } = await getPropertyId()
+  return reservedPrepaidComposition(propertyId, leaseTermId)
+}
+
+// prepaid 모드 예약 취소 — 예약 단계에서 받은 돈의 반환/몰취.
+//   반환: 선납 record + 예약 청소비 부가수익 전량 소프트삭제(매출 자동 소멸).
 //   몰취: 소프트삭제 + 몰취분을 ExtraIncome(category '위약금')로 재인식.
-// record 소프트삭제와 ExtraIncome 생성을 한 트랜잭션으로 강제해 이중 계상을 차단한다.
+// 소프트삭제와 ExtraIncome 생성을 한 트랜잭션으로 강제해 이중 계상을 차단한다.
+//
+// 청소비 몫도 기준에 넣는 이유(운영자 확정 2026-08-19, 산식 1) — 입실 전 취소는 청소 용역을
+// 하기 전이라 그 돈은 아직 대가가 아니다. 그래서 반환이면 청소비 인식을 지우고, 몰취면 위약금으로
+// 성격이 바뀐다. 분해하지 않은 예약에는 그 부가수익이 없어 종전과 완전히 같은 경로다.
 export async function recordReservationPrepaidCancel(params: {
   leaseTermId: string
   tenantId: string
   refundAmount: number
   date: string
   tenantName: string
-}): Promise<{ ok: true; recordIds: string[]; extraIncomeId: string | null } | { ok: false; error: string }> {
+}): Promise<{ ok: true; recordIds: string[]; cleaningIncomeIds: string[]; extraIncomeId: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
 
-    const records = await prisma.paymentRecord.findMany({
-      where: { leaseTermId: params.leaseTermId, propertyId, isDeposit: false },
-      select: { id: true, actualAmount: true },
-    })
+    const [records, cleaningIncomes] = await Promise.all([
+      prisma.paymentRecord.findMany({
+        where: { leaseTermId: params.leaseTermId, propertyId, isDeposit: false },
+        select: { id: true, actualAmount: true },
+      }),
+      prisma.extraIncome.findMany({
+        where: { leaseTermId: params.leaseTermId, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+        select: { id: true, amount: true },
+      }),
+    ])
     const total = records.reduce((s, r) => s + r.actualAmount, 0)
+      + cleaningIncomes.reduce((s, r) => s + r.amount, 0)
     const returned = Math.max(0, Math.min(params.refundAmount, total))
     const withheld = Math.max(0, total - returned)
     const recordIds = records.map(r => r.id)
+    const cleaningIncomeIds = cleaningIncomes.map(r => r.id)
     const forfeitDate = new Date(params.date)
     const deletedAt = new Date()
 
@@ -1732,6 +1770,9 @@ export async function recordReservationPrepaidCancel(params: {
     const extraIncomeId = await prisma.$transaction(async tx => {
       if (recordIds.length > 0) {
         await tx.paymentRecord.updateMany({ where: { id: { in: recordIds } }, data: { deletedAt } })
+      }
+      if (cleaningIncomeIds.length > 0) {
+        await tx.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds } }, data: { deletedAt } })
       }
       if (withheld > 0) {
         const inc = await tx.extraIncome.create({
@@ -1752,20 +1793,25 @@ export async function recordReservationPrepaidCancel(params: {
     })
 
     revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
-    return { ok: true, recordIds, extraIncomeId }
+    return { ok: true, recordIds, cleaningIncomeIds, extraIncomeId }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
-// prepaid 예약 취소 적용취소 — 소프트삭제한 선납 record 복원 + 몰취 부가수입 삭제(대칭).
-export async function undoReservationPrepaidCancel(recordIds: string[], extraIncomeId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+// prepaid 예약 취소 적용취소 — 소프트삭제한 선납 record·예약 청소비 복원 + 몰취 부가수입 삭제(대칭).
+// 지운 것과 되살리는 것이 정확히 짝이어야 한다. 청소비 몫을 지우면서 복원만 빼면 취소를 되돌린
+// 계약에서 그 매출이 영영 사라진다(적용취소 원칙 — 모든 기능에는 되돌릴 길이 있어야 한다).
+export async function undoReservationPrepaidCancel(
+  recordIds: string[], extraIncomeId: string | null, cleaningIncomeIds: string[] = [],
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     await prisma.$transaction([
       ...(recordIds.length > 0 ? [prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt: null } })] : []),
+      ...(cleaningIncomeIds.length > 0 ? [prisma.extraIncome.updateMany({ where: { id: { in: cleaningIncomeIds }, propertyId }, data: { deletedAt: null } })] : []),
       ...(extraIncomeId ? [prisma.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })] : []),
     ])
     revalidatePath('/finance'); revalidatePath('/dashboard'); revalidatePath('/rooms'); revalidatePath('/tenants')
