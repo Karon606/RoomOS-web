@@ -21,7 +21,7 @@ import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
-import { listSiteRoomCandidates } from '@/lib/siteCandidates'
+import { countSiteRoomCandidates } from '@/lib/siteCandidates'
 import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel, heldContractCleaningPortion } from '@/lib/depositComposition'
@@ -197,7 +197,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     reserveTxnsRaw,
     allMonthPayments,
     tourDoneCount,
-    siteCandidates,
+    siteWaiting,
     availabilityLeases,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
@@ -442,9 +442,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // '문의·투어' StatCard 집계용 — 라벨에 걸맞게 투어 완료도 포함(e1b81629 후속, 운영자 승인)
     prisma.leaseTerm.count({ where: { propertyId, status: 'TOUR_DONE' } }),
-    // 소개 페이지 반영 대기 후보(올릴 방·내릴 방) — 모집단 정의는 lib/siteCandidates 한 벌.
-    // 환경설정 웹사이트 탭이 같은 방들을 그리므로 where 를 여기 두면 두 화면이 갈린다.
-    listSiteRoomCandidates(propertyId),
+    // 소개 페이지 반영 대기 — 홈은 건수 한 줄만 말한다(방 목록은 환경설정 웹사이트 탭이 그린다).
+    // 모집단 정의는 lib/siteCandidates 한 벌이라 두 화면의 숫자가 갈릴 수 없다.
+    countSiteRoomCandidates(propertyId),
     // 입주 가능 판정(roomAvailability)의 계산 입력 — 위 방 현황 조회는 take: 6 이라 여기 못 쓴다.
     // 잘린 한 건이 무기한이면 방은 '모른다'인데 '곧 입주 가능'으로 뒤집히고, 타일이 홈 매칭 알림보다
     // 이른 날짜를 말하게 된다(같은 함수라도 먹이는 집합이 다르면 답이 갈린다). 판정에 필요한 두 필드만
@@ -1901,8 +1901,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidLeases,
     unpaidRoomNosForView,
     nonResidentItems,
-    publishCandidates:   siteCandidates.publish,
-    unpublishCandidates: siteCandidates.unpublish,
+    siteWaitingCount: siteWaiting.total,
   }
 
   return dashboardData

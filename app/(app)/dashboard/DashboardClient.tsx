@@ -33,7 +33,6 @@ import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
-import { setRoomShowOnSite } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -151,10 +150,9 @@ export type DashboardData = {
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; deferredDue?: string | null; unpaidAmount: number; monthsOverdue: number }[]
   unpaidRoomNosForView: string[]
-  // 소개 페이지 공개 후보 — 공실·사진 있고 미공개인 방
-  publishCandidates:   { id: string; roomNo: string; tier: string | null; baseRent: number; thumbUrl: string | null }[]
-  // 소개 페이지 철회 후보 — 입주 중인데 공개 상태인 방
-  unpublishCandidates: { id: string; roomNo: string; tier: string | null; baseRent: number; thumbUrl: string | null }[]
+  // 소개 페이지 반영 대기 건수 — 올릴 방(공실·사진 있고 미공개) + 내릴 방(입주 중인데 공개).
+  // 홈은 한 줄로 알리기만 하고 방 목록은 안 그린다(작업대는 환경설정 웹사이트 탭).
+  siteWaitingCount: number
 }
 
 // ── 레이블 ──────────────────────────────────────────────────────
@@ -2100,20 +2098,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
   })
   const visibleUnpaid = unpaidExpanded ? sortedUnpaid : sortedUnpaid.slice(0, UNPAID_LIMIT)
 
-  // 소개 페이지 공개/철회 — showOnSite 토글 후 대시보드 갱신(정본은 room-manage 액션)
-  const [siteBusy, startSiteTransition] = useTransition()
-  const handleShowOnSite = (id: string, show: boolean) => {
-    startSiteTransition(async () => {
-      const res = await setRoomShowOnSite(id, show)
-      if (res.ok) {
-        pushToast('success', show ? '소개 페이지에 올렸어요' : '소개 페이지에서 내렸어요')
-        router.refresh()
-      } else {
-        pushToast('error', res.error)
-      }
-    })
-  }
-
   return (
     <div className="space-y-3.5">
       {smsTarget && <UnpaidSmsModal target={smsTarget} onClose={() => setSmsTarget(null)} />}
@@ -2869,45 +2853,17 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
 
               </div>
 
-              {/* ── 소개 페이지 반영 대기 — 공개 후보(공실·사진 있음) / 철회 후보(입주 중인데 공개) ── */}
-              {[
-                { list: data.publishCandidates,   title: '소개 페이지에 올릴 수 있는 방', show: true,  label: '공개' },
-                { list: data.unpublishCandidates, title: '소개 페이지에서 내릴 수 있는 방', show: false, label: '내림' },
-              ].map(card => card.list.length === 0 ? null : (
-                <div key={card.title} className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
-                    <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>{card.title}</h3>
-                    <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{card.list.length}건</span>
-                  </div>
-                  <div>
-                    {card.list.map((r, i, arr) => (
-                      <div key={r.id} className="flex items-center gap-3 px-5 py-3"
-                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-                        <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-[var(--canvas)]">
-                          {r.thumbUrl ? (
-                            <img src={r.thumbUrl} alt={fmtRoomNo(r.roomNo)} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
-                                <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(r.roomNo)}{r.tier ? ` ${r.tier}` : ''}</p>
-                          <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{fmtKorMoney(r.baseRent)}</p>
-                        </div>
-                        <button type="button" disabled={siteBusy}
-                          onClick={() => handleShowOnSite(r.id, card.show)}
-                          className="min-h-[44px] inline-flex items-center text-[0.65625rem] px-2.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
-                          {card.label}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {/* ── 소개 페이지 반영 대기 — 한 줄만 ──
+                  카드 두 장(올릴 방·내릴 방)이 서 있던 자리다. 홈은 '오늘의 운영 상태'를 말하는 화면이고
+                  소개 페이지를 손보는 것은 설정의 일이라, 카드는 환경설정 웹사이트 탭으로 옮기고
+                  여기엔 알림 한 줄만 남긴다(운영자 확정 2026-08-18). 0건이면 줄 자체를 안 그린다.
+                  문법은 위 '이달 입퇴실 N건' 링크 줄 그대로다. */}
+              {data.siteWaitingCount > 0 && (
+                <Link href="/settings?tab=website"
+                  className="inline-block text-[0.6875rem]" style={{ color: 'var(--tc-text)' }}>
+                  소개 페이지 반영 대기 <span className="tnum">{data.siteWaitingCount}</span>건 ›
+                </Link>
+              )}
             </>
           )}
 
