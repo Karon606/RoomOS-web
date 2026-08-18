@@ -7,6 +7,7 @@ import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/short
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
+import { isSameDayTurnover } from '@/lib/roomAssignment'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
@@ -1094,13 +1095,20 @@ export default function TenantClient({
     const moveIn = ((fd.get('moveInDate') as string) || '').slice(0, 10)
     const hit = overlapOccupancy(room, moveIn, leaseId)
     if (!hit) return true
-    return confirmDialog({
+    // 당일 회전(앞사람이 나가는 그날 들어온다)은 묻지 않는다 — 운영 일상이라 확인창이 곧 잡음이
+    // 된다(2026-08-19 겹침 판정 개정, 운영자 확정). 폼 아래 중립 캡션이 그 사실만 적어 둔다.
+    if (isSameDayTurnover({ moveIn, moveOut: newOut || null }, hit)) return true
+    const ok = await confirmDialog({
       title: `${hit.tenantName}님 퇴실 예정일과 겹칩니다`,
-      message: `${fmtRoomNo(room.roomNo)}은 ${hit.tenantName}님이 ${fmtMD(hit.moveOut)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요.`,
+      message: `${fmtRoomNo(room.roomNo)}은 ${hit.tenantName}님이 ${fmtMD(hit.moveOut)}에 퇴실 예정입니다. 희망 입주일 ${fmtMD(moveIn)}과 겹치는데 이대로 예약을 확정할까요. 확정하면 확인된 겹침으로 기록됩니다.`,
       level: 'caution',
       confirmLabel: '예약 확정',
       cancelLabel: '취소',
     })
+    if (!ok) return false
+    // 승인은 데이터로 남는다 — 서버가 이 표식을 보고 확인된 겹침 한 줄을 적는다(lib/overlapAck).
+    fd.set('allowRoomOverlap', 'true')
+    return true
   }
 
   const handleAdd = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -4454,11 +4462,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             })}
           </select>
           {/* 겹침 경고 — 막지 않고 알린다. 입주일을 아직 안 넣었으면 표시하지 않는다.
-              누구와 겹치는지까지 말한다 — 계약이 이어 붙은 방에서 '방의 마지막 퇴실일'은 앞을 막고 선 사람이 아니다. */}
+              누구와 겹치는지까지 말한다 — 계약이 이어 붙은 방에서 '방의 마지막 퇴실일'은 앞을 막고 선 사람이 아니다.
+              당일 회전만은 경고가 아니라 중립 캡션이다 — 앞사람이 나가는 그날 들어오는 것은 정상이라
+              노랑으로 부르면 진짜 겹침과 구분이 안 된다(2026-08-19 겹침 판정 개정). */}
           {(() => {
             const sel = rooms.find(r => r.id === selectedRoomId)
             const hit = isWaitingTourStatus ? overlapOccupancy(sel, moveInVal, lease?.id) : null
             if (!hit) return null
+            if (isSameDayTurnover({ moveIn: moveInVal, moveOut: (isShortTerm ? shortOut : '') || null }, hit)) {
+              return (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                  당일 회전입니다. {fmtMD(hit.moveOut)} 오후 퇴실 후 입실 가능합니다.
+                </p>
+              )
+            }
             return (
               <p className="text-[0.65625rem] text-[var(--warning-fg)]">
                 희망 입주일({fmtMD(moveInVal)})이 {hit.tenantName}님 퇴실 예정일({fmtMD(hit.moveOut)})과 겹칩니다.
