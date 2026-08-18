@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef } from 'react'
+import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -96,7 +97,7 @@ function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
 
-type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'website' | 'appearance' | 'data'
+type Tab = SettingsTab
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic',      label: '기본정보' },
@@ -111,11 +112,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'appearance', label: '화면' },
 ]
 
-/** ?tab= 딥링크 검증 — 서버(page.tsx)가 첫 탭을 정할 때 쓴다. */
-export type SettingsTab = Tab
-export function isSettingsTab(v: string | undefined): v is Tab {
-  return !!v && TABS.some(t => t.key === v)
-}
+// ?tab= 딥링크 검증(isSettingsTab)과 탭 키 타입은 ./tabs 정본으로 — 서버가 이 파일('use client')의
+// 함수를 부르면 실행에서만 터진다(2026-08-18 /settings 사고).
 
 type JoinRequestRow = {
   id: string

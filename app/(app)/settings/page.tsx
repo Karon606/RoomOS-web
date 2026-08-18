@@ -1,6 +1,7 @@
 import { getPropertySettings, getMembers, getMyRole, getContractSettings } from './actions'
 import { getJoinCode, listJoinRequests } from './memberActions'
-import SettingsForm, { isSettingsTab, type SettingsTab } from './SettingsForm'
+import SettingsForm from './SettingsForm'
+import { isSettingsTab, type SettingsTab } from './tabs'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { listSiteRoomCandidates } from '@/lib/siteCandidates'
