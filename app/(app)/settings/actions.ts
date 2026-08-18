@@ -752,10 +752,15 @@ export async function updatePropertySettings(formData: FormData) {
   const disposalDaysRaw = formData.get('disposalDays')
   const disposalTitle   = (formData.get('disposalTitle') as string) ?? ''
   const disposalBody    = (formData.get('disposalBody') as string) ?? ''
-  const publicSlugRaw     = formData.get('publicSlug') as string | null
-  const publicSlug = publicSlugRaw
-    ? publicSlugRaw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
-    : ''
+  // 소개 페이지 주소(슬러그)는 2026-08-18 IA 1단계에서 **웹사이트 탭**으로 옮겼다. 이 폼에는 그 입력이 없다.
+  // FormData 통짜 저장이라 없는 필드를 그냥 읽으면 null 이 되고, 기본정보에서 영업장명만 고쳐 저장한
+  // 순간 소개 페이지 주소가 조용히 지워진다(마케팅 화면이 빈 상태로 돌아간다). 그래서 **필드가 실려
+  // 왔을 때만** 그 칼럼을 쓴다 — 바로 위 cleaningFeeInDeposit 이 같은 함정에서 쓴 undefined 문법이다.
+  // 옛 폼(캐시된 번들)이 이 필드를 계속 보내도 종전대로 저장되므로 배포 경계에서도 안전하다.
+  // 웹사이트 탭의 저장 출구는 아래 updatePublicSlug.
+  const publicSlug = formData.has('publicSlug')
+    ? normalizePublicSlug(formData.get('publicSlug') as string | null)
+    : undefined
 
   await prisma.property.update({
     where: { id: propertyId },
@@ -780,13 +785,44 @@ export async function updatePropertySettings(formData: FormData) {
         title: disposalTitle.trim() || '잔여 소지품 임의처분 동의서',
         body: disposalBody,
       },
-      publicSlug:       publicSlug || null,
+      ...(publicSlug === undefined ? {} : { publicSlug: publicSlug || null }),
     },
   })
 
   revalidatePath('/settings')
   revalidatePath('/rooms')
   revalidatePath('/marketing')
+}
+
+// 소개 페이지 주소(슬러그) — 소문자·숫자·하이픈만. 통짜 저장과 전용 저장이 같은 규칙을 써야
+// 어느 쪽으로 들어와도 같은 값이 남는다.
+function normalizePublicSlug(raw: string | null): string {
+  return raw ? raw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') : ''
+}
+
+// 웹사이트 탭의 슬러그 저장 — 이 칼럼 하나만 쓴다(기본정보 통짜 저장과 분리).
+// publicSlug 는 @unique 라 다른 영업장이 쓰는 값이면 P2002 가 난다. 통짜 저장 시절엔 그 raw 예외가
+// 그대로 토스트에 찍혔다 — 여기서는 사람 말로 돌려준다.
+export async function updatePublicSlug(raw: string): Promise<ActionResult> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const slug = normalizePublicSlug(raw)
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { publicSlug: slug || null },
+    })
+    revalidatePath('/settings')
+    revalidatePath('/rooms')
+    revalidatePath('/marketing')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if ((err as { code?: string })?.code === 'P2002') {
+      return { ok: false, error: '이미 다른 영업장이 쓰고 있는 주소입니다. 다른 주소를 넣어 주세요.' }
+    }
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // ── 계약서 (영업장별 템플릿 + 사업자 정보 + 도장) ─────────────────

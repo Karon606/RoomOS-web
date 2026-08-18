@@ -34,6 +34,9 @@ tsc 가 중복 식별자 오류로 실패한다. pre-push 가 먼저 지운다(`
 - **check-standalone-scroll** 셸 밖 라우트의 스크롤 계약(A/B) + **정본 컴포넌트 알맹이**
   (DocumentScroll 의 클래스 토글, Modal 의 배경 잠금 호출, globals 의 잠금 규칙)
 - **check-public-tracking** 공개 페이지 트래킹 참조 유지
+- **check-settings-slug-guard** 소개 페이지 주소 무회귀 — 통짜 저장(updatePropertySettings)이
+  `formData.has('publicSlug')` 가드를 쥐고 있는가 · 전용 출구(updatePublicSlug)가 살아 있는가 ·
+  기본정보 폼에 옛 입력이 부활하지 않았는가. 가드가 빠지면 기본정보 저장 한 번에 주소가 null 로 덮인다
 - **verify-money-consistency** 원가 직표시·중복 수납·할인 미반영 락·미래 수납일·스트립 RESERVED 혼입·단기 일할
 - **check-public-site** 공개 홍보 사이트 — 4벌 규칙·§29 금지 문자·og 5종·CSS 클래스 충돌·
   갤러리 다국어 사전(언어별 키 구성 일치)·갤러리 접근성 6종·추적 정합(geo 순서·CTA 셀렉터·

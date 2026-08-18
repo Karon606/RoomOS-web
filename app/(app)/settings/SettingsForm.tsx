@@ -42,6 +42,9 @@ import { ImageCropModal } from '@/components/ui/ImageCropModal'
 import { PushToggle } from './PushToggle'
 import { CalendarSubscribeCard } from './CalendarSubscribeCard'
 import { ItemNameMergePanel } from './ItemNameMergePanel'
+import { WebsiteTab } from './WebsiteTab'
+import { ViewTabs } from '@/components/ui/ViewTabs'
+import type { SiteRoomCandidates } from '@/lib/siteCandidates'
 import DataButtons from '@/components/DataButtons'
 import { deactivateProperty, deletePropertyPermanently, getPropertyDeletionImpact } from '@/app/property-select/actions'
 import { Modal } from '@/components/ui/Modal'
@@ -93,7 +96,7 @@ function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
 
-type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'appearance' | 'data'
+type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'website' | 'appearance' | 'data'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic',      label: '기본정보' },
@@ -101,9 +104,18 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'finance',    label: '수익·지출' },
   { key: 'members',    label: '멤버 관리' },
   { key: 'contract',   label: '계약서' },
+  // 손님에게 내보이는 것들 — 계약서 옆이 제자리다(둘 다 밖으로 나가는 얼굴이고, 안쪽 살림인
+  // 데이터·도구·화면보다 앞선다). 2026-08-18 IA 1단계로 신설.
+  { key: 'website',    label: '웹사이트' },
   { key: 'data',       label: '데이터·도구' },
   { key: 'appearance', label: '화면' },
 ]
+
+/** ?tab= 딥링크 검증 — 서버(page.tsx)가 첫 탭을 정할 때 쓴다. */
+export type SettingsTab = Tab
+export function isSettingsTab(v: string | undefined): v is Tab {
+  return !!v && TABS.some(t => t.key === v)
+}
 
 type JoinRequestRow = {
   id: string
@@ -120,6 +132,8 @@ export default function SettingsForm({
   contractSettings,
   initialJoinCode,
   initialJoinRequests,
+  siteCandidates,
+  initialTab,
 }: {
   property: Property | null
   members: MemberWithUser[]
@@ -127,9 +141,13 @@ export default function SettingsForm({
   contractSettings: ContractSettings
   initialJoinCode?: string | null
   initialJoinRequests?: JoinRequestRow[]
+  /** 소개 페이지 반영 대기 — 서버가 실어 내린다(웹사이트 탭이 마운트에서 다시 받지 않는다). */
+  siteCandidates: SiteRoomCandidates
+  /** ?tab= 딥링크 착지 탭. 홈의 '소개 페이지 반영 대기 N건' 링크가 website 로 들어온다. */
+  initialTab?: Tab
 }) {
   const router = useRouter()
-  const [tab, setTab]             = useState<Tab>('basic')
+  const [tab, setTab]             = useState<Tab>(initialTab ?? 'basic')
   const [toast, setToast]         = useState('')
   const [isPending, startTransition] = useTransition()
 
@@ -708,21 +726,16 @@ export default function SettingsForm({
         <p className="text-sm text-[var(--warm-muted)] mt-0.5">영업장 기본 정보 및 옵션 관리</p>
       </div>
 
-      {/* 탭 */}
-      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-1 mb-6">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
-              tab === t.key
-                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-                : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* 탭 — v2.0 §25 뷰 전환 탭 정본(ViewTabs). 종전에는 flex-1 필 나열('제4 변종')이라
+          라벨에 nowrap 이 없어 좁은 폭에서 넘치는 대신 접혔다. 웹사이트 탭이 늘어 8칸이 되자
+          320px 에서 칸이 31.25px 로 좁아지며 '데이터·도구'가 네 줄로 접히고 탭 줄 높이가
+          66 → 86px 로 부푼다(헤드리스 실측). 자연폭 + 넘치면 가로 스크롤이 §25 의 기본이고
+          호실 관리·수납 관리·홈이 이미 쓰는 그 문법이다 — 트랙이 max-w-full overflow-x-auto 라
+          어느 폭에서도 문서 가로 넘침이 0이다. */}
+      <div className="mb-6">
+        <ViewTabs ariaLabel="환경설정 탭" activeId={tab}
+          onChange={id => setTab(id as Tab)}
+          tabs={TABS.map(t => ({ id: t.key, label: t.label }))} />
       </div>
 
       {/* 기본정보 탭 */}
@@ -920,19 +933,11 @@ export default function SettingsForm({
                 <span className="text-sm text-[var(--warm-mid)]">일 전부터</span>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">소개 페이지 주소(슬러그)</label>
-              <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
-                소개 페이지 URL의 마지막 부분 (예: <code>thestayjegi</code>). 입력하면 <code>www.stayeum.com/members/&lt;슬러그&gt;</code> 의 트래픽이 <strong>마케팅</strong> 메뉴에서 보입니다. 소문자·숫자·하이픈만 허용.
-              </p>
-              <input
-                type="text"
-                name="publicSlug"
-                defaultValue={property?.publicSlug ?? ''}
-                placeholder="예: mygosiwon"
-                autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none focus:border-[var(--coral)] bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
-              />
+            {/* 이사 안내 — 소개 페이지 주소(슬러그)는 웹사이트 탭으로 옮겼다(2026-08-18 IA 1단계).
+                계약서 탭의 로고 안내와 같은 문법. 여기서 찾던 사람이 빈손으로 돌아가지 않게 한 줄만 세운다.
+                TODO(2026-09 중순 제거): 옮긴 지 2~4주 지나면 이 안내를 걷는다. */}
+            <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+              소개 페이지 주소는 <span className="font-semibold text-[var(--warm-dark)]">웹사이트 탭</span>으로 옮겼습니다.
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
               {isPending ? '저장 중…' : '저장'}
@@ -1569,6 +1574,8 @@ export default function SettingsForm({
       )}
 
       {tab === 'contract' && <ContractTab initial={contractSettings} />}
+
+      {tab === 'website' && <WebsiteTab initialSlug={property?.publicSlug ?? ''} candidates={siteCandidates} />}
 
       {tab === 'appearance' && <AppearanceTab />}
     </div>

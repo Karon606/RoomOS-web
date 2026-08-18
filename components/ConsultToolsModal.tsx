@@ -236,7 +236,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
           <div className="px-5 py-4 sm:px-6">
             <EmptyState
               title="복사할 정보가 없습니다"
-              description="환경설정 > 기본 정보에서 주소·대표 연락처·입금 계좌·소개 페이지 주소를 채우면 여기에 뜹니다."
+              description="환경설정 기본 정보에서 주소·대표 연락처·입금 계좌를, 웹사이트 탭에서 소개 페이지 주소를 채우면 여기에 뜹니다."
               action={
                 <Link href="/settings" onClick={onClose} className={btnClass('secondary', 'sm')}>환경설정 열기</Link>
               }

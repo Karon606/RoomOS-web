@@ -605,6 +605,7 @@ export async function setRoomShowOnSite(roomId: string, show: boolean): Promise<
     await prisma.room.update({ where: { id: roomId }, data: { showOnSite: show } })
     revalidatePath('/room-manage')
     revalidatePath('/dashboard')
+    revalidatePath('/settings')   // 웹사이트 탭의 '소개 페이지 반영 대기' 목록이 이 값으로 서 있다
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

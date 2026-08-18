@@ -377,13 +377,14 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
           <p className="font-semibold">소개 페이지 주소가 설정되지 않았어요.</p>
           <p style={{ color: 'var(--warm-muted)' }}>
-            환경설정 &gt; 기본정보에서 <strong>소개 페이지 주소(슬러그)</strong>를 입력하시면 영업장의 소개 페이지
+            환경설정 &gt; 웹사이트 탭에서 <strong>소개 페이지 주소</strong>를 입력하시면 영업장의 소개 페이지
             트래픽(페이지뷰·유입·UTM)을 여기서 보실 수 있어요.
           </p>
-          <Link href="/settings"
+          {/* 탭까지 지목해 착지시킨다 — '환경설정으로 이동' 뒤에 탭을 또 찾게 하지 않는다 */}
+          <Link href="/settings?tab=website"
             className="inline-block px-4 py-2 rounded-lg text-sm font-medium"
             style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
-            환경설정으로 이동
+            웹사이트 설정으로 이동
           </Link>
         </div>
       </div>
