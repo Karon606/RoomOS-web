@@ -214,7 +214,7 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
               <Field label="브라우저 창" value={v.viewportLabel ?? '미상'} num={v.viewportLabel != null} />
               <Field label="기기 언어" value={v.language ?? '미상'} num={v.language != null} />
               <Field label="열람 언어" value={v.viewedLanguageLabel ?? '기록 없음'}
-                hint={<InfoHint title="열람 언어">공개 페이지에서 실제로 고른 언어입니다. 도중에 바꿨으면 바꾼 순서대로 표시됩니다. 열람 언어 수집 전 방문은 기록 없음으로 표시됩니다.</InfoHint>} />
+                hint={<InfoHint title="열람 언어">소개 페이지에서 실제로 고른 언어입니다. 도중에 바꿨으면 바꾼 순서대로 표시됩니다. 열람 언어 수집 전 방문은 기록 없음으로 표시됩니다.</InfoHint>} />
               <Field label="방문자 ID" value={v.visitorHash ? `${v.visitorHash.slice(0, 8)}…` : '없음'} num={!!v.visitorHash} />
             </div>
 
@@ -371,13 +371,13 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
       <div className="space-y-4">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
-          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
+          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>소개 페이지 방문 분석</p>
         </div>
         <div className="rounded-xl p-6 text-sm space-y-3"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
-          <p className="font-semibold">공개 페이지 슬러그가 설정되지 않았어요.</p>
+          <p className="font-semibold">소개 페이지 주소가 설정되지 않았어요.</p>
           <p style={{ color: 'var(--warm-muted)' }}>
-            환경설정 &gt; 기본정보에서 <strong>공개 페이지 슬러그</strong>를 입력하시면 영업장의 공개 랜딩 페이지
+            환경설정 &gt; 기본정보에서 <strong>소개 페이지 주소(슬러그)</strong>를 입력하시면 영업장의 소개 페이지
             트래픽(페이지뷰·유입·UTM)을 여기서 보실 수 있어요.
           </p>
           <Link href="/settings"
@@ -436,7 +436,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
-          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>공개 페이지 방문 분석</p>
+          <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>소개 페이지 방문 분석</p>
           {stats.publicUrl && (
             <>
               {/* 운영자 전용 화면의 링크라 nolog=1 을 붙여 클릭 시 내 방문이 기록에서 제외되게 한다(그 브라우저 계속 유지) */}
@@ -668,7 +668,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
               {isCustom
                 ? '이 기간에 측정 데이터 없음'
-                : '아직 측정 데이터 없음 (공개 페이지 방문이 쌓이면 영역별로 표시됩니다)'}
+                : '아직 측정 데이터 없음 (소개 페이지 방문이 쌓이면 영역별로 표시됩니다)'}
             </p>
           ) : (
             <ul className="space-y-1.5">
@@ -704,7 +704,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               프로모션 팝업 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.popup.sampleCount)}건)</span>
             </p>
             <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>
-              공개 페이지에 뜬 팝업의 노출·체류·전환 · &lsquo;오늘 하루 보지 않기&rsquo;로 안 뜬 방문은 노출에서 제외
+              소개 페이지에 뜬 팝업의 노출·체류·전환 · &lsquo;오늘 하루 보지 않기&rsquo;로 안 뜬 방문은 노출에서 제외
             </p>
             <div className="grid grid-cols-3 gap-x-2 gap-y-3">
               <div>
@@ -851,7 +851,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           <BarPanel title="열람 언어" color="var(--persimmon)"
             rows={stats.viewedLanguages.map(l => ({ label: l.language, count: l.count, percent: l.percent }))}
             note={<>
-              공개 페이지에서 실제로 고른 언어 · 샘플 {fmt(stats.viewedLangSample)}건
+              소개 페이지에서 실제로 고른 언어 · 샘플 {fmt(stats.viewedLangSample)}건
               {stats.viewedLangSample > 0 && <> · 기본값을 바꿔 본 방문 {fmt(stats.viewedLangSwitched)}건</>}
               {stats.viewedLangMissing > 0 && <> · 수집 전 방문 {fmt(stats.viewedLangMissing)}건은 집계 제외</>}
             </>}

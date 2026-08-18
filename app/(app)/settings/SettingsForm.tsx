@@ -921,9 +921,9 @@ export default function SettingsForm({
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">소개 페이지 주소(슬러그)</label>
               <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
-                공개 랜딩 페이지 URL의 마지막 부분 (예: <code>thestayjegi</code>). 입력하면 <code>www.stayeum.com/members/&lt;슬러그&gt;</code> 의 트래픽이 <strong>마케팅</strong> 메뉴에서 보입니다. 소문자·숫자·하이픈만 허용.
+                소개 페이지 URL의 마지막 부분 (예: <code>thestayjegi</code>). 입력하면 <code>www.stayeum.com/members/&lt;슬러그&gt;</code> 의 트래픽이 <strong>마케팅</strong> 메뉴에서 보입니다. 소문자·숫자·하이픈만 허용.
               </p>
               <input
                 type="text"
