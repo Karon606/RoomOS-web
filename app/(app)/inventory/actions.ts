@@ -13,7 +13,7 @@ import { redirect } from 'next/navigation'
 // 이 파일의 모든 쓰기 게이트는 재고 스코프로 판정한다(전역 requireEdit 아님) — 제한 스태프 재고 쓰기 허용(65992b0a).
 import { requireScopeEdit } from '@/lib/role'
 const requireEdit = () => requireScopeEdit('inventory')
-import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
@@ -975,17 +975,23 @@ export async function createStockCheck(data: {
 }
 
 // 전체 재고 보정(총점검) — 여러 품목의 실측을 한 번에 기준선으로 박는다.
-// 보충(창고→방 이동)이 끝난 상태에서 실제 남은 수량을 세어 입력 → isReconcile 점검 생성.
-// 사용량 계산은 이 점검 직전 구간의 차이(분실·오차)를 소모로 잡지 않는다(overview.ts).
+// 보충(창고→방 이동)이 끝난 상태에서 실제 남은 수량을 세어 입력 → 점검 생성.
+// 기본은 isReconcile 점검이라 직전 구간의 차이(분실·오차)를 소모로 잡지 않는다(overview.ts).
 // 차이가 0 인(실측=예상) 품목은 건너뛴다 — 불필요한 점검 레코드 방지.
 export async function saveFullReconcile(data: {
   date: string
+  // 줄어든 차이의 귀속 — 화면 단위 선택 1개(행별 아님). 없으면 'exclude'(현행 보정).
+  // 늘어난 품목은 선택과 무관하게 항상 보정 — 판정 정본은 constants.resolveDiffAttribution.
+  attribution?: DiffAttribution
   items: {
     trackedItemId: string
     // 위치 있는 품목: 위치별 실측. 위치 없는 품목: remainingQty.
     locationQtys?: { storageLocationId: string; qty: number }[]
     remainingQty?: number
     memo?: string | null
+    // 그 화면이 보여준 '이 시점 예상 재고' — 차이의 부호 판정에만 쓴다(저장값에는 안 들어간다).
+    // 없으면 부호를 알 수 없으므로 현행(보정)으로 저장된다.
+    expectedQty?: number
   }[]
   // createdIds — 적용취소용. 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데
   // 되돌릴 방법이 없었다(C페이즈 조사 2026-08-03). 만든 점검 id 를 돌려주면 토스트에서 지울 수 있다.
@@ -1008,14 +1014,18 @@ export async function saveFullReconcile(data: {
           ? item.locationQtys!.reduce((s, l) => s + l.qty, 0)
           : (item.remainingQty ?? 0)
         if (total < 0) continue
+        const { isReconcile, defaultMemo } = resolveDiffAttribution(
+          data.attribution,
+          item.expectedQty == null ? null : total - item.expectedQty,
+        )
         const made = await tx.stockCheck.create({
           select: { id: true },
           data: {
             trackedItemId: item.trackedItemId,
             date,
             remainingQty: total,
-            isReconcile: true,
-            memo: item.memo ?? '전체 재고 보정',
+            isReconcile,
+            memo: item.memo ?? defaultMemo,
             ...(hasLoc ? {
               locationBreakdown: {
                 create: item.locationQtys!.map(l => ({

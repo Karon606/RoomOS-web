@@ -147,6 +147,33 @@ export type MergeUndoRow = {
   createdAt: string            // ISO
 }
 
+// ── 보정 저장 시 '차이'를 무엇으로 볼 것인가 (운영자 승인 2026-08-19) ─────────────
+// 종전엔 보정이 언제나 isReconcile 점검이라, 실제로 그 기간에 쓴 양이어도 소비 통계에서
+// 통째로 빠졌다(라면 카드가 '안 쓰는 품목'으로 보이던 원인). 새 산식을 만들지 않는다 —
+// '차이를 직전 점검 이후 소비로 계산'은 일반 점검(isReconcile=false)이 이미 하는 일이고
+// (overview.ts intervalPairs), 여기서는 그 둘 중 하나를 고를 수 있게만 한다.
+//   'exclude'(기본, 현행) 차이를 소비 통계에서 제외 = 실측 리셋 선언(isReconcile=true).
+//   'usage'               차이를 직전 점검 이후 소비로 계산 = 일반 점검(isReconcile=false).
+export type DiffAttribution = 'exclude' | 'usage'
+
+// 기본 메모 — 운영자가 사유를 안 적었을 때만 쓰인다.
+export const DIFF_MEMO_EXCLUDE = '전체 재고 보정'
+export const DIFF_MEMO_USAGE = '기간 정산'
+
+// diff = 실측 − 그 시점 예상 재고. 음수(줄어듦)만 소비일 수 있다.
+// 재고가 늘어난(diff ≥ 0) 품목은 선택과 무관하게 항상 보정이다 — 늘어난 양을 '소비'라 부를 수
+// 없고, 일반 점검으로 저장하면 그 구간이 음수 소모로 잡혀 평균 소모율을 갉아먹는다.
+// diff 를 모르면(null) 판정 근거가 없으므로 현행(보정)으로 남긴다.
+export function resolveDiffAttribution(
+  mode: DiffAttribution | undefined,
+  diff: number | null | undefined,
+): { isReconcile: boolean; defaultMemo: string } {
+  const asUsage = mode === 'usage' && diff != null && diff < -1e-6
+  return asUsage
+    ? { isReconcile: false, defaultMemo: DIFF_MEMO_USAGE }
+    : { isReconcile: true, defaultMemo: DIFF_MEMO_EXCLUDE }
+}
+
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean; isReconcile?: boolean }
   | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null; receivedLocationName: string | null }
