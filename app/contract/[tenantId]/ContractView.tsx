@@ -15,7 +15,7 @@ import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
-import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -175,6 +175,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 이 계약에 딸린 계약들(합본 계약서). 서명 링크 스냅샷은 이 칸이 생기기 전에 만들어진 것이
   // 있으므로 없으면 빈 배열로 읽는다 — 옛 링크가 열리자마자 깨지면 그게 회귀다.
   const subLeases = data.subLeases ?? []
+  // 추가 호실 특약(보관 용도) — 창고류 방이 딸린 계약서에만 서버가 채워 준다. 옛 링크 스냅샷에는
+  // 이 칸이 없으므로 없으면 null 로 읽는다(subLeases 와 같은 하위 호환 규칙).
+  // 편집 목록(clauses-edit)에는 안 뜬다 — 영업장이 지울 수 있는 조항이 아니다(신원번호 동의문 전례).
+  const subLeaseAddendum = data.subLeaseAddendum ?? null
 
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
   // 종이에 찍는 성명. 서버가 이미 data.tenant.name 을 골라 내려주지만, 여기서는 폼의 선택으로
@@ -1152,7 +1156,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         {/* 조항 — 보기: 2단 / 편집: 단일 인라인 편집 */}
         {!editing ? (
           <div className="clauses">
-            {splitClauseColumns(view.sections).map((col, ci) => (
+            {splitClauseColumns(appendSubLeaseAddendum(view.sections, subLeaseAddendum)).map((col, ci) => (
               <div key={ci} className="clause-col">
                 {col.map((frag, fi) => (
                   <div key={fi} className="clause-group">

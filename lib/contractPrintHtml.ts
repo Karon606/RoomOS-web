@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
@@ -89,6 +89,9 @@ export type PrintContractData = {
   // 이 계약에 딸린 계약들(합본 계약서 — 2026-08-13 다호실 2단계). 비면 행이 하나도 안 붙고
   // 인쇄물은 이 기능 전과 바이트 단위로 같다. 종속 없는 계약서 전건이 그 경우다.
   subLeases?: { roomNo: string | null; rentAmount: number }[]
+  // 추가 호실 특약(보관 용도). 없으면(null·미지정) 절이 하나도 안 붙고 조항 2단 분배도
+  // 종전 입력 그대로라, 그 계약서의 HTML 은 이 기능 전과 문자 단위로 같다.
+  subLeaseAddendum?: SubLeaseAddendum | null
   // 사용자가 입력한 화면 상태
   smoking: string                 // '비흡연' | '흡연'
   emergencyContactText: string
@@ -163,7 +166,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     const h = frag.title ? `<div class="clause-h">${escape(renderContractText(frag.title, vars))}</div>` : ''
     return `<div class="clause-group">${h}<ul class="clause-list">${lis}</ul></div>`
   }
-  const [colL, colR] = splitClauseColumns(d.template.sections)
+  // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거·2단 분배가 그대로 따라온다.
+  const [colL, colR] = splitClauseColumns(appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum))
   const clausesHtml = `<div class="clause-col">${colL.map(renderFrag).join('')}</div><div class="clause-col">${colR.map(renderFrag).join('')}</div>`
 
   // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.
