@@ -14,7 +14,7 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
-import { contractSubLeases } from '@/lib/contractData'
+import { contractSubLeases, contractSubLeaseAddendum } from '@/lib/contractData'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
@@ -116,7 +116,9 @@ export async function POST(req: Request) {
             where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
             orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
             take: 10,
-            include: { room: { select: { roomNo: true } } },
+            // 방 설정(nonResidentVacant)까지 읽는다 — 화면(buildContractData)과 같은 입력이라야
+            // 추가 호실 특약 판정이 종이와 화면에서 갈리지 않는다.
+            include: { room: { select: { roomNo: true, nonResidentVacant: true } } },
           },
         },
       }),
@@ -161,6 +163,9 @@ export async function POST(req: Request) {
     // 합본 계약서의 종속 호실 — 화면과 같은 정본(lib/contractData) 하나다. 여기서 손으로 다시
     // 세면 종이와 화면이 다른 행을 그리고, 그 차이는 발급하고 나서야 보인다.
     const subLeases = contractSubLeases(tenant.leaseTerms, lease?.id)
+    // 추가 호실 특약도 화면과 같은 정본이 판정한다(lib/contractData). 서명이 끝난 계약은
+    // 그때 박제된 것을 그대로 쓰므로, 이미 서명한 종이에 절이 새로 생기지 않는다.
+    const subLeaseAddendum = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body_)
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
@@ -273,6 +278,7 @@ export async function POST(req: Request) {
       // 합본 — 이 계약에 딸린 계약의 호실·임료. 화면(buildContractData)과 같은 함수·같은 정렬이라
       // 종이와 화면이 다른 행을 그릴 수 없다. 종속이 없으면 빈 배열이고 인쇄물은 종전과 같다.
       subLeases,
+      subLeaseAddendum,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -434,6 +440,7 @@ export async function POST(req: Request) {
         lease: printData.lease,
         subLeases: printData.subLeases,
         template: printData.template,
+        subLeaseAddendum: printData.subLeaseAddendum,
       }),
     }
 
@@ -474,6 +481,9 @@ export async function POST(req: Request) {
               refundClauseInContract: printData.refundClauseInContract,
               disposalConsent: printData.disposalConsent as unknown as object,
               businessInfo: printData.businessInfo as unknown as object,
+              // 이 종이에 실제로 붙은 특약을 함께 동결한다. 안 담으면 서명 뒤 재발급에서
+              // 박제본이 특약을 모르고(null) 절이 통째로 사라진다.
+              subLeaseAddendum: (printData.subLeaseAddendum ?? null) as unknown as object,
             } } : {}),
           },
         })
