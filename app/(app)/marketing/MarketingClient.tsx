@@ -2,14 +2,15 @@
 
 import Link from 'next/link'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useTransition, type MouseEvent, type ReactNode } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn, BtnLink } from '@/components/ui/Btn'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { kstYmdStr } from '@/lib/kstDate'
-import { trackSave } from '@/lib/saveStatus'
+import { pushToast, trackSave } from '@/lib/saveStatus'
+import { canShareUrl, shareUrl } from '@/lib/shareUrl'
 import {
   getMarketingStats, getVisitSessions,
   type MarketingStats, type MarketingRange, type MarketingBucket,
@@ -255,6 +256,42 @@ const spanDays = (from: string, to: string) =>
 // 'YYYY-MM-DD' → 'M/D' (카드 제목용 축약)
 const md = (s: string) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`
 
+// 소개 페이지 열기 — 목적지가 같은 오리진이라 홈화면 앱은 target="_blank" 를 무시하고 앱 창에서
+// 열어버린다. 그러면 주소창도 뒤로가기도 없는 공개 페이지에 갇힌다(신고 3353a4ed, §27.7).
+// 그래서 터치 기기는 공유 시트로 넘기고(사용자가 열 곳을 직접 고른다), 데스크톱은 새 탭 그대로 둔다.
+// 주소의 nolog=1 은 그대로 유지한다 — 연 브라우저에 운영자 제외 플래그가 심긴다(_track.js).
+function PublicSiteLink({ publicUrl }: { publicUrl: string }) {
+  const href = `${publicUrl}?nolog=1`
+
+  // 공유 시트는 탭 직후(transient activation)에만 열 수 있다 — 판정은 동기, 호출도 같은 틱에서 한다
+  const open = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (!canShareUrl()) return   // 데스크톱은 앵커 기본 동작(새 탭) 그대로
+    e.preventDefault()
+    void shareUrl(href)
+  }
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(href)
+      pushToast('success', '소개 페이지 주소 복사됨')
+    } catch {
+      pushToast('error', '복사에 실패했습니다. 길게 눌러 직접 복사해 주세요.')
+    }
+  }
+
+  return (
+    <>
+      <a href={href} target="_blank" rel="noopener noreferrer" onClick={open}
+        className="text-xs hover:underline break-all" style={{ color: 'var(--persimmon-d)' }}>
+        {publicUrl} ›
+      </a>
+      <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>이 링크로 열면 내 방문은 기록에 남지 않아요.</p>
+      {/* 공유 시트에서 열 곳을 못 찾는 기기를 위한 보조 동작 — 주소를 복사해 브라우저에 직접 붙여넣는다 */}
+      <Btn variant="secondary" size="sm" onClick={copy} className="mt-1.5">링크 복사</Btn>
+    </>
+  )
+}
+
 export default function MarketingClient({ initialStats }: { initialStats: MarketingStats }) {
   const [stats, setStats] = useState<MarketingStats>(initialStats)
   // range = 프리셋(직접 지정을 풀면 돌아갈 곳). customFrom/customTo = 임의 기간(조회창의 유일한 진실).
@@ -438,16 +475,8 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
           <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>소개 페이지 방문 분석</p>
-          {stats.publicUrl && (
-            <>
-              {/* 운영자 전용 화면의 링크라 nolog=1 을 붙여 클릭 시 내 방문이 기록에서 제외되게 한다(그 브라우저 계속 유지) */}
-              <a href={`${stats.publicUrl}?nolog=1`} target="_blank" rel="noopener noreferrer"
-                className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>
-                {stats.publicUrl} ›
-              </a>
-              <p className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>이 링크로 열면 내 방문은 기록에 남지 않아요.</p>
-            </>
-          )}
+          {/* 운영자 전용 화면의 링크라 nolog=1 을 붙여 클릭 시 내 방문이 기록에서 제외되게 한다(그 브라우저 계속 유지) */}
+          {stats.publicUrl && <PublicSiteLink publicUrl={stats.publicUrl} />}
         </div>
         <div className="flex items-center gap-3">
           {stats.botCount > 0 && (
