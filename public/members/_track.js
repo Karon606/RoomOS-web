@@ -8,13 +8,36 @@
     var SLUG = m ? m[1] : null;
     if (!SLUG) return;  // members 경로가 아니면 트래킹하지 않음
 
+    // 운영자 복귀 버튼 — 이 페이지는 앱 밖(공개 사이트)이라 홈화면 앱에서 열면 주소창도 뒤로가기도
+    // 없어 돌아올 길이 사라진다(신고 3353a4ed, 가이드 §27.7 "새 창은 복귀 경로를 함께 둔다").
+    // 트래킹 제외가 켜진 브라우저 = 운영자 본인이므로 그때만 만든다. 고객 화면에는 아예 안 생긴다.
+    // 운영자 전용이라 4개 언어 병기 대상이 아니다(고객 문구가 아니다).
+    function mountBackToApp() {
+      var put = function () {
+        if (!document.body || document.getElementById('stayeum-back-to-app')) return;
+        var a = document.createElement('a');
+        a.id = 'stayeum-back-to-app';
+        a.href = '/dashboard';
+        a.textContent = '앱으로 돌아가기';
+        a.setAttribute('style', 'position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom));'
+          + 'z-index:95;display:inline-flex;align-items:center;min-height:44px;padding:0 16px;'
+          + 'border-radius:999px;background:rgba(23,23,23,.88);color:#fff;font-size:13px;'
+          + 'font-family:inherit;line-height:1;text-decoration:none;box-shadow:0 4px 14px rgba(0,0,0,.28);'
+          // 테두리 한 줄 — 짙은 초록 히어로 위에서는 알약과 배경의 경계가 거의 안 보인다
+          + 'border:1px solid rgba(255,255,255,.22)');
+        document.body.appendChild(a);
+      };
+      if (document.body) put();
+      else document.addEventListener('DOMContentLoaded', put);
+    }
+
     // 본인(운영자) 제외 — 주소 뒤에 ?nolog=1 을 붙여 한 번 열면 그 브라우저는 이후 계속 제외(localStorage 기억).
     // ?nolog=0 으로 해제. 여기서 return 하면 pageview·closeup·cta·갤러리 계측(pv 의존)이 전부 차단된다.
     try {
       var flag = new URLSearchParams(window.location.search).get('nolog');
       if (flag === '1') localStorage.setItem('stayeumNoLog', '1');
       else if (flag === '0') localStorage.removeItem('stayeumNoLog');
-      if (localStorage.getItem('stayeumNoLog') === '1') return;
+      if (localStorage.getItem('stayeumNoLog') === '1') { mountBackToApp(); return; }
     } catch (e) { /* localStorage 막힌 브라우저는 그냥 정상 트래킹 */ }
 
     // 섹션 목록 — 우선 <script data-sections="..."> 로 페이지가 명시한 값 사용,
