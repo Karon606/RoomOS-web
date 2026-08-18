@@ -6,7 +6,7 @@ import { getMyRole } from '@/lib/role'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
-import prisma from '@/lib/prisma'
+import prisma, { type PrismaDb } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -17,6 +17,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
+import { planStockShift, type LedgerCheck, type LedgerDelta, type ShiftRow } from '@/lib/stockLedger'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
 async function getPropertyId() {
@@ -1377,10 +1378,193 @@ export async function getDraftItemIds(): Promise<string[]> {
   return rows.map(r => r.trackedItemId)
 }
 
+// ── 원장 리플레이 조정 — 무상 입수의 날짜·수량·위치를 나중에 고치면 그 뒤 점검의 저장 잔량을 함께 옮긴다.
+//
+// 왜 필요한가(운영자 신고 2026-08-19, 쌀 40kg). StockCheck.remainingQty 는 절대값이라
+// 8/18 로 잘못 넣은 입고를 8/10 으로 정정하면 그 사이 점검(8/12·8/14)의 저장값이 그대로인 채
+// 입고만 그 앞으로 가버려 잔량에서 40kg 이 통째로 증발했다. 즉 **날짜를 정직하게 고치는 행위가
+// 처벌받는** 구조였고, 운영자는 결국 전 기록을 지우고 다시 입력해야 했다.
+//
+// 조정은 자동이 아니다. 서버는 계획만 만들고(previewStockAdditionShift) 클라가 영향받는 점검을
+// 숫자로 보여준 뒤 운영자가 고른 경우에만 적용한다. 적용분은 스냅샷으로 되돌린다(§16).
+// 계산 규칙 정본은 lib/stockLedger — 여기서는 조회·적용·되돌리기만 한다.
+
+// 트랜잭션 클라이언트 타입 — lib/prisma 가 $extends 로 확장한 클라이언트라 Prisma.TransactionClient 와 다르다.
+type InventoryTx = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+
+export type LedgerShiftUndo = {
+  trackedItemId: string
+  checks: { id: string; remainingQty: number; locs: { storageLocationId: string; remainingQty: number | null }[] }[]
+  createdLinks: string[]   // 이 조정이 새로 만든 (품목,위치) 링크
+}
+
+export type StockShiftPreview =
+  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[] }
+  | { ok: false; error: string }
+
+async function loadLedgerChecks(trackedItemId: string): Promise<LedgerCheck[]> {
+  const rows = await prisma.stockCheck.findMany({
+    where: { trackedItemId },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true } } },
+  })
+  return rows.map(c => ({
+    id: c.id,
+    dateMs: c.date.getTime(),
+    createdAtMs: c.createdAt.getTime(),
+    isReconcile: c.isReconcile,
+    total: c.remainingQty,
+    hasBreakdown: c.locationBreakdown.length > 0,
+    byLoc: c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty })),
+  }))
+}
+
+// 계획 실패 사유를 운영자 문구로. 0 클램프하지 않고 막는 것이 이 설계의 요지다.
+function shiftPlanError(code: 'NEGATIVE' | 'NO_LOCATION', dateMs: number): string {
+  const d = new Date(dateMs).toISOString().slice(0, 10)
+  return code === 'NEGATIVE'
+    ? `조정하면 ${d} 점검의 잔량이 0 보다 작아집니다. 그 점검을 먼저 확인해 주세요.`
+    : '이 품목에 연결된 보관 위치가 없어 위치별 잔량을 함께 옮길 수 없습니다.'
+}
+
+// before/after 델타로 조정 계획을 만든다. 위치는 '위치 미지정이면 품목 허브' 규칙(additionsSinceCheckByLocation 과 동일).
+async function buildAdditionShiftPlan(
+  item: { id: string; hubLocationId: string | null },
+  propertyId: string,
+  before: { dateMs: number; createdAtMs: number; qty: number; storageLocationId: string | null } | null,
+  after: { dateMs: number; createdAtMs: number; qty: number; storageLocationId: string | null } | null,
+): Promise<{ ok: true; rows: ShiftRow[] } | { ok: false; error: string }> {
+  const needsHub = (before && !before.storageLocationId) || (after && !after.storageLocationId)
+  const hub = needsHub ? await resolveItemHubLocationId(item.id, item.hubLocationId, propertyId) : null
+  const toDelta = (d: typeof before): LedgerDelta | null =>
+    d ? { dateMs: d.dateMs, createdAtMs: d.createdAtMs, qty: d.qty, locationId: d.storageLocationId ?? hub } : null
+  const checks = await loadLedgerChecks(item.id)
+  const plan = planStockShift(checks, toDelta(before), toDelta(after))
+  if (!plan.ok) return { ok: false, error: shiftPlanError(plan.code, plan.dateMs) }
+  return { ok: true, rows: plan.rows }
+}
+
+// 계획 적용 — 총량과 위치별 잔량만 쓴다. 보충 마커(restockedQty)·createdAt 은 건드리지 않는다
+// (마커는 이동량이지 잔량이 아니고, createdAt 을 밀면 구간 귀속 순서가 조용히 바뀐다).
+async function applyShiftRows(
+  tx: InventoryTx, trackedItemId: string, rows: ShiftRow[],
+): Promise<LedgerShiftUndo> {
+  const undo: LedgerShiftUndo = { trackedItemId, checks: [], createdLinks: [] }
+  const links = await tx.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true } })
+  const linked = new Set(links.map(l => l.storageLocationId))
+  for (const r of rows) {
+    const snapshot: LedgerShiftUndo['checks'][number]['locs'] = []
+    for (const l of r.locs) {
+      snapshot.push({ storageLocationId: l.locationId, remainingQty: l.storedQty })
+      if (l.storedQty == null) {
+        // 쓰기 계약 — 링크 없이 StockCheckLocation 행을 만들지 않는다(knowledge/domain-inventory.md 불변식).
+        if (!linked.has(l.locationId)) {
+          await tx.trackedItemLocation.create({ data: { trackedItemId, storageLocationId: l.locationId } })
+          linked.add(l.locationId)
+          undo.createdLinks.push(l.locationId)
+        }
+        await tx.stockCheckLocation.create({
+          data: { stockCheckId: r.checkId, storageLocationId: l.locationId, remainingQty: l.nextQty },
+        })
+      } else {
+        await tx.stockCheckLocation.updateMany({
+          where: { stockCheckId: r.checkId, storageLocationId: l.locationId },
+          data: { remainingQty: l.nextQty },
+        })
+      }
+    }
+    await tx.stockCheck.update({ where: { id: r.checkId }, data: { remainingQty: r.nextTotal } })
+    undo.checks.push({ id: r.checkId, remainingQty: r.storedTotal, locs: snapshot })
+  }
+  return undo
+}
+
+// 조정 되돌리기 — 페이로드는 클라이언트발이므로 점검 id 를 반드시 품목 스코프로 검증한다(B1 선례).
+async function revertShiftRows(tx: InventoryTx, undo: LedgerShiftUndo): Promise<void> {
+  const ids = undo.checks.map(c => c.id)
+  if (ids.length > 0) {
+    const owned = await tx.stockCheck.findMany({
+      where: { id: { in: ids }, trackedItemId: undo.trackedItemId }, select: { id: true },
+    })
+    const ownedIds = new Set(owned.map(o => o.id))
+    for (const c of undo.checks) {
+      if (!ownedIds.has(c.id)) continue
+      await tx.stockCheck.update({ where: { id: c.id }, data: { remainingQty: c.remainingQty } })
+      for (const l of c.locs) {
+        if (l.remainingQty == null) {
+          await tx.stockCheckLocation.deleteMany({ where: { stockCheckId: c.id, storageLocationId: l.storageLocationId } })
+        } else {
+          await tx.stockCheckLocation.updateMany({
+            where: { stockCheckId: c.id, storageLocationId: l.storageLocationId },
+            data: { remainingQty: l.remainingQty },
+          })
+        }
+      }
+    }
+  }
+  for (const locId of undo.createdLinks) {
+    // 그 사이 다른 점검이 그 위치를 쓰기 시작했으면 링크를 남긴다(재고 든 위치엔 링크가 있어야 한다).
+    const used = await tx.stockCheckLocation.count({
+      where: { storageLocationId: locId, stockCheck: { trackedItemId: undo.trackedItemId } },
+    })
+    if (used === 0) {
+      await tx.trackedItemLocation.deleteMany({ where: { trackedItemId: undo.trackedItemId, storageLocationId: locId } })
+    }
+  }
+}
+
+// 조정 미리보기 — 클라가 확인 다이얼로그에 실제 숫자를 띄우는 데 쓴다. 쓰기 없음.
+// additionId 없음 = 신규 등록, next 없음 = 삭제.
+export async function previewStockAdditionShift(input: {
+  trackedItemId: string
+  additionId?: string | null
+  next?: { date: string; addedQty: number; storageLocationId: string | null } | null
+}): Promise<StockShiftPreview> {
+  try {
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({
+      where: { id: input.trackedItemId, propertyId }, select: { id: true, hubLocationId: true },
+    })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+
+    let before: Parameters<typeof buildAdditionShiftPlan>[2] = null
+    if (input.additionId) {
+      const a = await prisma.stockAddition.findFirst({
+        where: { id: input.additionId, trackedItemId: it.id },
+        select: { date: true, createdAt: true, addedQty: true, storageLocationId: true },
+      })
+      if (!a) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+      before = { dateMs: a.date.getTime(), createdAtMs: a.createdAt.getTime(), qty: a.addedQty, storageLocationId: a.storageLocationId }
+    }
+    // 새 기록의 입력 시각은 지금 — 같은 날 경계(날짜가 같으면 입력 시각으로 앞뒤를 가른다)에 쓰인다.
+    const createdAtMs = before?.createdAtMs ?? Date.now()
+    const after = input.next
+      ? { dateMs: new Date(input.next.date).getTime(), createdAtMs, qty: input.next.addedQty, storageLocationId: input.next.storageLocationId }
+      : null
+
+    const plan = await buildAdditionShiftPlan(it, propertyId, before, after)
+    if (!plan.ok) return { ok: false, error: plan.error }
+    return {
+      ok: true,
+      rows: plan.rows.map(r => ({
+        date: new Date(r.dateMs).toISOString().slice(0, 10),
+        storedTotal: Math.round(r.storedTotal * 100) / 100,
+        nextTotal: Math.round(r.nextTotal * 100) / 100,
+      })),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // ── StockAddition CRUD
 export async function createStockAddition(data: {
   trackedItemId: string; date: string; addedQty: number; source?: string; memo?: string
   storageLocationId?: string | null
+  // 소급 등록(이미 점검이 지나간 날짜)일 때 그 뒤 점검의 저장 잔량도 함께 옮길지.
+  // 미지정 = 기존 동작(기록만 남김). 클라가 previewStockAdditionShift 로 물어본 뒤에만 켠다.
+  adjustFollowing?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1392,15 +1576,30 @@ export async function createStockAddition(data: {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
     }
-    const r = await prisma.stockAddition.create({
-      data: {
-        trackedItemId: data.trackedItemId,
-        date: new Date(data.date),
-        addedQty: data.addedQty,
-        source: data.source || null,
-        memo: data.memo || null,
-        storageLocationId: data.storageLocationId || null,
-      },
+    const createdAt = new Date()
+    let rows: ShiftRow[] = []
+    if (data.adjustFollowing) {
+      const plan = await buildAdditionShiftPlan(it, propertyId, null, {
+        dateMs: new Date(data.date).getTime(), createdAtMs: createdAt.getTime(),
+        qty: data.addedQty, storageLocationId: data.storageLocationId || null,
+      })
+      if (!plan.ok) return { ok: false, error: plan.error }
+      rows = plan.rows
+    }
+    const r = await prisma.$transaction(async tx => {
+      const created = await tx.stockAddition.create({
+        data: {
+          trackedItemId: data.trackedItemId,
+          date: new Date(data.date),
+          addedQty: data.addedQty,
+          source: data.source || null,
+          memo: data.memo || null,
+          storageLocationId: data.storageLocationId || null,
+          createdAt,
+        },
+      })
+      if (rows.length > 0) await applyShiftRows(tx, it.id, rows)
+      return created
     })
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
@@ -1413,19 +1612,33 @@ export async function createStockAddition(data: {
 export type StockAdditionUndo = {
   id: string; trackedItemId: string; date: string; addedQty: number
   source: string | null; memo: string | null; storageLocationId: string | null
+  // 삭제와 함께 되돌린 점검 조정(적용했을 때만). 없으면 종전과 동일하게 기록만 복원한다.
+  shift?: LedgerShiftUndo | null
 }
 
-export async function deleteStockAddition(id: string): Promise<{ ok: true; undo: StockAdditionUndo } | { ok: false; error: string }> {
+export async function deleteStockAddition(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true; undo: StockAdditionUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    let rows: ShiftRow[] = []
+    if (opts?.adjustFollowing) {
+      const plan = await buildAdditionShiftPlan(a.trackedItem, propertyId, {
+        dateMs: a.date.getTime(), createdAtMs: a.createdAt.getTime(), qty: a.addedQty, storageLocationId: a.storageLocationId,
+      }, null)
+      if (!plan.ok) return { ok: false, error: plan.error }
+      rows = plan.rows
+    }
     const undo: StockAdditionUndo = {
       id: a.id, trackedItemId: a.trackedItemId, date: a.date.toISOString(),
       addedQty: a.addedQty, source: a.source, memo: a.memo, storageLocationId: a.storageLocationId,
+      shift: null,
     }
-    await prisma.stockAddition.delete({ where: { id } })
+    await prisma.$transaction(async tx => {
+      if (rows.length > 0) undo.shift = await applyShiftRows(tx, a.trackedItemId, rows)
+      await tx.stockAddition.delete({ where: { id } })
+    })
     revalidatePath('/inventory')
     return { ok: true, undo }
   } catch (err) {
@@ -1443,11 +1656,14 @@ export async function undoDeleteStockAddition(undo: StockAdditionUndo): Promise<
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     const exists = await prisma.stockAddition.findUnique({ where: { id: undo.id }, select: { id: true } })
     if (exists) return { ok: true }
-    await prisma.stockAddition.create({
-      data: {
-        id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
-        addedQty: undo.addedQty, source: undo.source, memo: undo.memo, storageLocationId: undo.storageLocationId,
-      },
+    await prisma.$transaction(async tx => {
+      await tx.stockAddition.create({
+        data: {
+          id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
+          addedQty: undo.addedQty, source: undo.source, memo: undo.memo, storageLocationId: undo.storageLocationId,
+        },
+      })
+      if (undo.shift) await revertShiftRows(tx, { ...undo.shift, trackedItemId: undo.trackedItemId })
     })
     revalidatePath('/inventory')
     return { ok: true }
@@ -1457,10 +1673,19 @@ export async function undoDeleteStockAddition(undo: StockAdditionUndo): Promise<
   }
 }
 
+// 수정 적용취소 스냅샷 — 날짜 수정은 종전에 되돌릴 수 없었다(§16 미충족).
+export type StockAdditionEditUndo = {
+  id: string; trackedItemId: string
+  before: { date: string; addedQty: number; source: string | null; memo: string | null; storageLocationId: string | null }
+  shift: LedgerShiftUndo | null
+}
+
 export async function updateStockAddition(id: string, data: {
   date?: string; addedQty?: number; source?: string | null; memo?: string | null
   storageLocationId?: string | null
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 그 뒤 점검의 저장 잔량도 함께 옮길지. 미지정 = 기존 동작(기록만 수정).
+  adjustFollowing?: boolean
+}): Promise<{ ok: true; undo: StockAdditionEditUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1471,21 +1696,69 @@ export async function updateStockAddition(id: string, data: {
       const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
       if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
     }
-    await prisma.stockAddition.update({
-      where: { id },
-      data: {
-        ...(data.date ? { date: new Date(data.date) } : {}),
-        ...(data.addedQty !== undefined ? { addedQty: data.addedQty } : {}),
-        ...(data.source !== undefined ? { source: data.source || null } : {}),
-        ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
-        ...(data.storageLocationId !== undefined ? { storageLocationId: data.storageLocationId || null } : {}),
+    const nextDateMs = data.date ? new Date(data.date).getTime() : a.date.getTime()
+    const nextQty = data.addedQty !== undefined ? data.addedQty : a.addedQty
+    const nextLoc = data.storageLocationId !== undefined ? (data.storageLocationId || null) : a.storageLocationId
+    let rows: ShiftRow[] = []
+    if (data.adjustFollowing) {
+      const plan = await buildAdditionShiftPlan(a.trackedItem, propertyId,
+        { dateMs: a.date.getTime(), createdAtMs: a.createdAt.getTime(), qty: a.addedQty, storageLocationId: a.storageLocationId },
+        { dateMs: nextDateMs, createdAtMs: a.createdAt.getTime(), qty: nextQty, storageLocationId: nextLoc },
+      )
+      if (!plan.ok) return { ok: false, error: plan.error }
+      rows = plan.rows
+    }
+    const undo: StockAdditionEditUndo = {
+      id: a.id, trackedItemId: a.trackedItemId,
+      before: {
+        date: a.date.toISOString(), addedQty: a.addedQty,
+        source: a.source, memo: a.memo, storageLocationId: a.storageLocationId,
       },
+      shift: null,
+    }
+    await prisma.$transaction(async tx => {
+      await tx.stockAddition.update({
+        where: { id },
+        data: {
+          ...(data.date ? { date: new Date(data.date) } : {}),
+          ...(data.addedQty !== undefined ? { addedQty: data.addedQty } : {}),
+          ...(data.source !== undefined ? { source: data.source || null } : {}),
+          ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+          ...(data.storageLocationId !== undefined ? { storageLocationId: data.storageLocationId || null } : {}),
+        },
+      })
+      if (rows.length > 0) undo.shift = await applyShiftRows(tx, a.trackedItemId, rows)
+    })
+    revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 입수 수정 적용취소 — 기록을 이전 값으로 되돌리고, 함께 옮겼던 점검 잔량도 스냅샷으로 복원한다.
+export async function undoUpdateStockAddition(undo: StockAdditionEditUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const a = await prisma.stockAddition.findUnique({ where: { id: undo.id }, include: { trackedItem: true } })
+    if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    await prisma.$transaction(async tx => {
+      await tx.stockAddition.update({
+        where: { id: undo.id },
+        data: {
+          date: new Date(undo.before.date), addedQty: undo.before.addedQty,
+          source: undo.before.source, memo: undo.before.memo, storageLocationId: undo.before.storageLocationId,
+        },
+      })
+      if (undo.shift) await revertShiftRows(tx, { ...undo.shift, trackedItemId: a.trackedItemId })
     })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
-    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
-import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtDateKor } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -84,6 +84,7 @@ import {
   unmergeTrackedItem,
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
+  previewStockAdditionShift, undoUpdateStockAddition,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
@@ -122,6 +123,47 @@ const fmtQty = (val: number | null, unit: string | null) => {
 // 품목 행의 표시 단위 — 추적 단위(spec/qty)에 맞춰. TransferStockModal 과 동일 규칙.
 // unitHint = 카드 단위가 비었을 때의 표시 폴백(구매 단위 전원일치일 때만 서버가 내림).
 const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? r.unitHint ?? '개') : (r.specUnit ?? r.qtyUnit ?? r.unitHint ?? '개')
+
+// ── 무상 입수 정정이 뒤 점검에 미치는 영향 묻기 (운영자 신고 2026-08-19, 쌀 40kg)
+// 점검 잔량은 절대값이라 입수 날짜를 앞으로 옮기면 그 사이 점검이 입수를 삼켜 잔량이 증발한다.
+// 서버가 만든 조정 계획(lib/stockLedger)을 실제 숫자로 보여주고 운영자가 고르게 한다.
+// 조용한 덮어쓰기는 하지 않는다 — 실제로 센 값이면 '이 기록만' 을 고르면 된다.
+type ShiftAsk = { adjust: boolean; asked: boolean; count: number } | null
+
+async function askLedgerShift(input: {
+  trackedItemId: string
+  additionId?: string | null
+  next?: { date: string; addedQty: number; storageLocationId: string | null } | null
+  title: string
+  keepLine: string                      // 이번 변경으로 바뀌지 않는 것 한 줄
+  impactLine: (n: number) => string     // 무엇이 어긋났는지 한 줄
+  unit: string | null
+}): Promise<{ result: ShiftAsk; error?: string }> {
+  const pre = await previewStockAdditionShift({
+    trackedItemId: input.trackedItemId, additionId: input.additionId ?? null, next: input.next ?? null,
+  })
+  if (!pre.ok) return { result: null, error: pre.error }
+  // 어긋나는 점검이 없으면 묻지 않는다 — 날짜 오타 정정이 대부분이라 매번 물으면 확인창이 소음이 된다.
+  if (pre.rows.length === 0) return { result: { adjust: false, asked: false, count: 0 } }
+  const shown = pre.rows.slice(0, 4)
+  const lines = shown.map(r => `· ${fmtDate(r.date)} 점검 ${fmtQty(r.storedTotal, input.unit)} 에서 ${fmtQty(r.nextTotal, input.unit)} 으로`)
+  if (pre.rows.length > shown.length) lines.push(`· 그 밖에 ${pre.rows.length - shown.length}건`)
+  const choice = await choiceDialog({
+    title: input.title,
+    level: 'caution',
+    message: [
+      input.keepLine,
+      input.impactLine(pre.rows.length),
+      lines.join('\n'),
+      '실제로 세어 적은 값이면 조정하지 말고 이 기록만 바꾸세요. 직후 적용취소로 되돌릴 수 있습니다.',
+    ].join('\n'),
+    confirmLabel: '함께 조정',
+    altLabel: '이 기록만',
+    cancelLabel: '취소',
+  })
+  if (choice === null || choice === 'back') return { result: null }
+  return { result: { adjust: choice === 'confirm', asked: true, count: pre.rows.length } }
+}
 
 // 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
 type HubShortPending = {
@@ -1250,10 +1292,21 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   }
 
   const handleDeleteAddition = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 입수 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
+    // 이 입수가 뒤 점검 잔량에 이미 얹혀 있으면 함께 뺄지 먼저 묻는다(빼지 않으면 유령 재고로 남는다).
+    const ask = await askLedgerShift({
+      trackedItemId, additionId: id, next: null,
+      title: '이 입수 기록을 삭제할까요?',
+      keepLine: '입수 기록은 삭제됩니다.',
+      impactLine: n => `이 입수를 담고 있는 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+      unit: detailStockUnit,
+    })
+    if (ask.error) { pushToast('error', ask.error); return }
+    if (!ask.result) return
+    // 어긋나는 점검이 없으면 위에서 묻지 않았으므로 기존 삭제 확인을 그대로 띄운다(§14 다이얼로그 중첩 금지).
+    if (!ask.result.asked && !(await confirmDialog({ title: '이 입수 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     setLoadingId(id)
     const release = trackSave()
-    deleteStockAddition(id).then(res => {
+    deleteStockAddition(id, { adjustFollowing: ask.result.adjust }).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨', {
         action: { label: '적용취소', run: () => { void undoDeleteStockAddition(res.undo).then(r => {
           if (r.ok) { pushToast('info', '입수 기록을 복원했습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
@@ -1429,7 +1482,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">아직 기록이 없습니다.</p>
                 ) : (
                   <ul className="space-y-1.5">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} trackedItemId={trackedItemId} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onDeleteDisposal={handleDeleteDisposal} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                   </ul>
                 )}
               </div>
@@ -1763,8 +1816,8 @@ function MergeSection({ currentId, currentLabel, onDone, onGone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
-  entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
+function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onDeleteDisposal, onConfirmReceipt, onChanged, loadingId }: {
+  entry: TimelineEntry; trackedItemId: string; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
@@ -1997,14 +2050,45 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
       onCancel={() => { setEditing(false); setEditError('') }}
       onSave={async (data) => {
         setSavePending(true); setEditError('')
-        const res = await updateStockAddition(entry.id, data)
+        // 날짜·수량·위치를 고치면 그 뒤 점검의 저장 잔량이 어긋난다 — 함께 옮길지 먼저 묻는다.
+        const wasDate = entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10)
+        const movedDate = !!data.date && data.date !== wasDate
+        const ask = await askLedgerShift({
+          trackedItemId, additionId: entry.id,
+          next: { date: data.date ?? wasDate, addedQty: data.addedQty ?? entry.addedQty, storageLocationId: data.storageLocationId ?? null },
+          title: movedDate ? `무상 입수 날짜를 ${fmtDateKor(data.date)}로 옮길까요?` : '무상 입수 기록을 바꿀까요?',
+          keepLine: '수량과 출처, 메모는 입력한 대로 저장됩니다.',
+          impactLine: n => `이 날짜 뒤의 점검 ${n}건은 저장된 잔량이 이 입수를 담고 있지 않습니다. 함께 조정하면 이렇게 바뀝니다.`,
+          unit: stockUnit,
+        })
+        if (ask.error) { setSavePending(false); setEditError(ask.error); return }
+        if (!ask.result) { setSavePending(false); return }
+        const res = await updateStockAddition(entry.id, { ...data, adjustFollowing: ask.result.adjust })
         setSavePending(false)
         if (!res.ok) { setEditError(res.error); return }
-        setEditing(false); onChanged()
+        setEditing(false)
+        pushToast('success', '입수 기록 수정됨', {
+          ...(ask.result.adjust && ask.result.count > 0 ? { detail: `점검 ${ask.result.count}건의 잔량도 함께 옮겼습니다.` } : {}),
+          action: { label: '적용취소', run: () => { void undoUpdateStockAddition(res.undo).then(r => {
+            if (r.ok) { pushToast('info', '입수 기록을 되돌렸습니다'); onChanged() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        })
+        onChanged()
       }}
       onDelete={async () => {
+        // 삭제도 같은 물음을 거친다 — 뒤 점검에 얹힌 만큼 빼지 않으면 유령 재고가 남는다.
+        const ask = await askLedgerShift({
+          trackedItemId, additionId: entry.id, next: null,
+          title: '이 입수 기록을 삭제할까요?',
+          keepLine: '입수 기록은 삭제됩니다.',
+          impactLine: n => `이 입수를 담고 있는 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+          unit: stockUnit,
+        })
+        if (ask.error) { setEditError(ask.error); return }
+        if (!ask.result) return
         setSavePending(true)
-        const res = await deleteStockAddition(entry.id)
+        const res = await deleteStockAddition(entry.id, { adjustFollowing: ask.result.adjust })
         setSavePending(false)
         if (!res.ok) { setEditError(res.error); return }
         pushToast('success', '입수 기록 삭제됨', {
@@ -4817,11 +4901,36 @@ function AdditionForm({ item, onCancel, onDone }: {
     setError('')
     if (computed <= 0) { setError('수량은 0보다 커야 합니다.'); return }
     startTransition(async () => {
+      // 소급 등록(이미 점검이 지나간 날짜)이면 그 뒤 점검의 저장 잔량도 함께 옮길지 묻는다.
+      // 안 물으면 그 입수가 점검에 삼켜져 잔량에서 통째로 증발한다(운영자 신고 2026-08-19).
+      const unit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
+      const ask = await askLedgerShift({
+        trackedItemId: item.id,
+        next: { date, addedQty: computed, storageLocationId: storageLocationId || null },
+        title: `${fmtDateKor(date)} 입수로 기록할까요?`,
+        keepLine: '입수 기록은 입력한 대로 저장됩니다.',
+        impactLine: n => `이 날짜 뒤의 점검 ${n}건은 저장된 잔량이 이 입수를 담고 있지 않습니다. 함께 조정하면 이렇게 바뀝니다.`,
+        unit,
+      })
+      if (ask.error) { setError(ask.error); return }
+      if (!ask.result) return
       const res = await createStockAddition({
         trackedItemId: item.id, date, addedQty: computed, source, memo: memo || undefined,
         storageLocationId: storageLocationId || null,
+        adjustFollowing: ask.result.adjust,
       })
       if (!res.ok) { setError(res.error); return }
+      if (ask.result.adjust && ask.result.count > 0) {
+        // 조정까지 적용했으면 §16 진입점 1(토스트) 로 회수 경로를 준다 — 삭제가 정확히 역조정이다.
+        const newId = res.id
+        pushToast('success', '입수 기록 저장됨', {
+          detail: `점검 ${ask.result.count}건의 잔량도 함께 옮겼습니다.`,
+          action: { label: '적용취소', run: () => { void deleteStockAddition(newId, { adjustFollowing: true }).then(r => {
+            if (r.ok) { pushToast('info', '입수 기록을 되돌렸습니다'); onDone() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        })
+      }
       onDone()
     })
   }
