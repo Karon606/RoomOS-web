@@ -935,8 +935,10 @@ export default function SettingsForm({
             </div>
             {/* 이사 안내 — 소개 페이지 주소(슬러그)는 웹사이트 탭으로 옮겼다(2026-08-18 IA 1단계).
                 계약서 탭의 로고 안내와 같은 문법. 여기서 찾던 사람이 빈손으로 돌아가지 않게 한 줄만 세운다.
+                바탕만 다르다 — 그쪽은 페이지 바탕 위라 --canvas 가 맞지만 이 줄은 카드(--cream) 안이라
+                다크에서 --canvas(#000)를 쓰면 카드에 검은 구멍이 뚫린다(§28, 중첩 패널은 --cream-soft).
                 TODO(2026-09 중순 제거): 옮긴 지 2~4주 지나면 이 안내를 걷는다. */}
-            <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+            <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
               소개 페이지 주소는 <span className="font-semibold text-[var(--warm-dark)]">웹사이트 탭</span>으로 옮겼습니다.
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
