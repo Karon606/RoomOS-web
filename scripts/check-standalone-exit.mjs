@@ -102,6 +102,25 @@ try {
   violations.push('[소스] 서류 보기 정본(ViewDocButton·DocViewer) 을 읽을 수 없다 — 사라졌다')
 }
 
+// 방문 분석의 소개 페이지 열기 — 위 세 규칙이 통째로 못 잡던 자리다(신고 3353a4ed).
+// href 가 변수 템플릿(`${publicUrl}?nolog=1`)이라 리터럴 내부 경로로도, 이름 있는 앱 자산으로도
+// 안 보인다. 게다가 목적지는 **같은 오리진의 정적 페이지**라 외부 이탈로 넘겨짚기도 어렵다 —
+// 홈화면 앱은 scope 안이면 target="_blank" 를 무시하고 앱 창에서 열어버린다.
+// 정적으로 판정 가능한 축은 '결과물이 제자리에 있는가' 하나뿐이라 그것을 못 박는다.
+// 공유 시트 분기(앱 창을 안 뺏김)와 공개 페이지의 복귀 버튼(나가도 돌아옴)은 한 쌍이다.
+try {
+  const mk = strip(readFileSync('app/(app)/marketing/MarketingClient.tsx', 'utf8'))
+  if (!/canShareUrl\(\)/.test(mk) || !/\bshareUrl\(/.test(mk)) {
+    violations.push('[소스] 방문 분석이 소개 페이지를 공유 시트로 넘기지 않는다 — 홈화면 앱이 같은 오리진 새 탭을 앱 창에서 열어 돌아올 수 없다')
+  }
+  const track = strip(readFileSync('public/members/_track.js', 'utf8'))
+  if (!/id\s*=\s*'stayeum-back-to-app'/.test(track) || !/href\s*=\s*'\/dashboard'/.test(track)) {
+    violations.push('[소스] 공개 페이지의 운영자 복귀 버튼이 사라졌다 — 앱 밖으로 나간 운영자가 돌아올 길을 잃는다')
+  }
+} catch {
+  violations.push('[소스] 소개 페이지 열기 정본(MarketingClient·_track.js) 을 읽을 수 없다 — 사라졌다')
+}
+
 if (violations.length) {
   console.error(`\n[앱 밖 이탈] 위반 ${violations.length}건`)
   for (const v of violations) console.error('  - ' + v)
