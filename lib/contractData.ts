@@ -6,7 +6,8 @@ import prisma from '@/lib/prisma'
 import { driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
-  DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
+  type SubLeaseAddendum, type ResolvedBody,
+  DEFAULT_CONTRACT_TEMPLATE, DEFAULT_SUB_LEASE_ADDENDUM, resolveDisposalConsent,
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
@@ -47,6 +48,28 @@ export function contractSubLeases<T extends ContractLeaseRow & { id: string; par
       return { id: l.id, roomNo: f.roomNo, rentAmount: f.rentAmount }
     })
     .sort((a, b) => (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko'))
+}
+
+/**
+ * 이 계약서에 추가 호실 특약(보관 용도)을 붙일지 판정한다. 화면·발급 API 가 같이 쓰는 정본이다 —
+ * 두 곳이 각자 조건을 들고 있으면 화면에는 있고 종이에는 없는 절이 생긴다.
+ *
+ * 조건은 둘이 함께 참일 때다.
+ *   ① 딸린 계약의 상태가 NON_RESIDENT — 그 방에 살지 않고 쓰기만 하는 계약이다.
+ *   ② 그 방이 거주용이 아닌 방(Room.nonResidentVacant=false) — 창고·사무실처럼 점유로 세는 방이다.
+ * 601호 창고가 정확히 이 조건이고, 주소지만 유지하는 비거주나 미래 거주 예정 방은 ②에서 자연히 빠진다.
+ *
+ * 서명이 끝난 계약(박제본)은 그때 붙어 있던 것을 그대로 쓴다. 지금 조건으로 다시 판정하면
+ * 나중에 창고를 딸았다는 이유만으로 이미 서명한 종이의 본문이 늘어난다.
+ */
+export function contractSubLeaseAddendum<
+  T extends { parentLeaseTermId: string | null; status: string; room?: { nonResidentVacant: boolean } | null },
+>(leases: T[], parentLeaseId: string | undefined, body: ResolvedBody): SubLeaseAddendum | null {
+  if (body.source === 'SNAPSHOT') return body.subLeaseAddendum
+  if (!parentLeaseId) return null
+  const storage = leases.some(l =>
+    l.parentLeaseTermId === parentLeaseId && l.status === 'NON_RESIDENT' && l.room?.nonResidentVacant === false)
+  return storage ? DEFAULT_SUB_LEASE_ADDENDUM : null
 }
 
 export type ContractData = {
@@ -114,6 +137,10 @@ export type ContractData = {
   } | null
   // 이 계약에 딸린 계약들(합본 계약서). 종속이 없으면 빈 배열이고 화면·인쇄는 아무 행도 안 그린다.
   subLeases: ContractSubLease[]
+  // 추가 호실 특약(보관 용도). 창고류 방이 딸린 계약서에만 채워지고, 아니면 null 이라
+  // 렌더가 절을 하나도 안 붙인다(그 경우의 종이는 이 기능 전과 문자 단위로 같다).
+  // template 안에 넣지 않는 이유는 lib/contract 의 상수 주석에 있다(박제 축 드리프트).
+  subLeaseAddendum: SubLeaseAddendum | null
 }
 
 const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
@@ -143,7 +170,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
           where: { status: { in: CONTRACT_ISSUE_STATUSES } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 10,
-          include: { room: { select: { roomNo: true } } },
+          // 방 설정(nonResidentVacant)까지 읽는다 — 추가 호실 특약을 붙일지 가르는 입력이다.
+          include: { room: { select: { roomNo: true, nonResidentVacant: true } } },
         },
       },
     }),
@@ -234,5 +262,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     } : null,
     // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
+    // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
+    subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body),
   }
 }

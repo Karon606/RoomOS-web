@@ -44,6 +44,14 @@ export type PrintedFactsInput = {
    */
   subLeases?: { roomNo: string | null; rentAmount: number }[] | null
   template?: unknown
+  /**
+   * 추가 호실 특약(보관 용도). 종이에 찍히는 본문이라 축이 있어야 한다 — 문안이 바뀌면
+   * 그 종이는 이미 사실과 다른 종이다.
+   *
+   * **없으면 축 자체가 없는 것(undefined)으로 남는다.** 특약이 붙지 않는 계약서 전건과
+   * 이 칸을 모르는 기존 발급본·링크 스냅샷이 여기서 무변동이어야 한다.
+   */
+  subLeaseAddendum?: { title: string; items: string[] } | null
 }
 
 /** 축 순서 — 발급 상세 시트가 이 순서로 표를 그린다(종이의 위에서 아래 순서). */
@@ -55,6 +63,7 @@ export const PRINTED_FACT_KEYS = [
   'lease.dueDay', 'lease.registrationStatus',
   'lease.subLeases',
   'template',
+  'subLeaseAddendum',
 ] as const
 
 export type PrintedFactKey = (typeof PRINTED_FACT_KEYS)[number]
@@ -78,6 +87,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'lease.registrationStatus': '전입신고',
   'lease.subLeases': '추가 호실',
   template: '계약서 본문',
+  subLeaseAddendum: '추가 호실 특약',
 }
 
 /**
@@ -113,5 +123,8 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
       ? JSON.stringify(d.subLeases.map(s => ({ roomNo: s.roomNo, rentAmount: s.rentAmount })))
       : undefined,
     template: d.template ? JSON.stringify(d.template) : undefined,
+    // 특약도 통비교 — 절 제목이든 항목 한 줄이든 바뀌면 그 종이와 지금이 다르다는 뜻이다.
+    // 없으면 undefined 다(축 없음). 특약이 안 붙는 계약서 전건이 여기서 무변동이어야 한다.
+    subLeaseAddendum: d.subLeaseAddendum ? JSON.stringify(d.subLeaseAddendum) : undefined,
   }
 }

@@ -131,7 +131,8 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
               {/* 추가 호실은 딸린 계약이 있는 발급본에만 있는 축이다 — 없는 발급본에 '기록 없음'
                   줄을 세우면 단독 계약 전건의 시트에 결함처럼 보이는 빈 줄이 하나 는다.
                   다른 축은 종전대로 늘 그린다(그쪽은 모든 계약서에 있는 칸이라 공백이 곧 사실이다). */}
-              {PRINTED_FACT_KEYS.filter(k => k !== 'template')
+              {/* 특약은 표시값이 아니라 본문이다 — 본문 기록과 같은 자리(아래 '본문 출처')에 둔다. */}
+              {PRINTED_FACT_KEYS.filter(k => k !== 'template' && k !== 'subLeaseAddendum')
                 .filter(k => k !== 'lease.subLeases' || snap.facts[k] !== undefined)
                 .map(k => (
                 <Row key={k} label={PRINTED_FACT_LABEL[k]} value={factText(k, snap.facts[k])} />
@@ -140,6 +141,11 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
               <GroupTitle>본문 출처</GroupTitle>
               <Row label="가져온 곳" value={BODY_SOURCE_LABEL[snap.bodySource] ?? snap.bodySource} />
               <Row label="본문 기록" value={snap.facts.template === undefined ? '없음' : '있음'} />
+              {/* 추가 호실 특약은 붙은 발급본에만 줄을 세운다 — 특약이 없는 계약서 전건의 시트는
+                  이 기능 전과 같다(추가 호실 축과 같은 규칙). */}
+              {snap.facts.subLeaseAddendum !== undefined && (
+                <Row label={PRINTED_FACT_LABEL.subLeaseAddendum} value="있음" />
+              )}
             </>
           )}
         </div>
