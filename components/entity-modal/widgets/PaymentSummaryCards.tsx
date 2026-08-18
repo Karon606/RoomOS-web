@@ -9,7 +9,7 @@ type Settlement = {
   // 예약(RESERVED) 표시 정본(신고 50a2a69b) — 실수납은 조회월 무관 reservationPaid, 잔액 대신 '입주 시 납부 예정'.
   status?: string | null
   expected?: number
-  reservationPaid?: { deposit: number; prepaid: number } | null
+  reservationPaid?: { deposit: number; prepaid: number; cleaning: number } | null
   moveInDate?: string | null
   // 이 달 청구가 없는 사정 — 뱃지만 고치고 여기를 두면 눌러 들어와서 다시 0원 세 개를 만난다(2026-08-02).
   noBillReason?: 'shortTermPrepaid' | 'checkoutNoBilling' | null
@@ -24,7 +24,8 @@ import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'   // v2.0 §06 단일 
 export function PaymentSummaryCards({ settlement, month }: { settlement: Settlement; month?: string }) {
   // 예약 단계는 청구·잔액이 0으로 잠겨 있어(미납 집계 제외 정본) 실수납·입주 시 낼 금액을 따로 보여준다.
   const resv = settlement.status === 'RESERVED' ? (settlement.reservationPaid ?? null) : null
-  const resvPaid = resv ? resv.deposit + resv.prepaid : 0
+  // 분해 수납의 청소비 몫도 '받은 돈'이다 — 빼면 5만을 받은 예약이 3만으로 보인다.
+  const resvPaid = resv ? resv.deposit + resv.prepaid + resv.cleaning : 0
   const resvDue = resv ? Math.max(0, (settlement.expected ?? 0) - resv.prepaid) : 0
   // 입주월 전 조회 — '이번 달 청구 없음' 맥락(예정액이 이번 달 청구로 오독되지 않게, 운영자 지적 2026-07-30)
   const moveInMonth = settlement.moveInDate ? settlement.moveInDate.slice(0, 7) : null

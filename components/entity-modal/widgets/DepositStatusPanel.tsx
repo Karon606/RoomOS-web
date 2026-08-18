@@ -92,6 +92,9 @@ export function DepositStatusPanel({
   })
   // 예약금을 '이용료 선납'이나 '없음'으로 받는 계약은 보증금 개념이 없다. 단 record 가 있으면 숨기지 않는다 —
   // PaymentRecordList 가 보증금 행의 편집을 이 패널로 넘겼기 때문에, 여기서 숨기면 어디서도 못 고치게 된다.
+  //
+  // 분해 수납(applyToRent 단기)도 보증금 record 를 만들지 않으므로 이 가드에 그대로 걸려 패널이 서지 않는다.
+  // 그 자리는 PaymentBody 의 예약금 구성 줄이 대신한다(받은 총액 + 청소비 몫 / 이용료 충당 몫).
   if (status === 'RESERVED' && (reservationDepositMode === 'prepaid' || reservationDepositMode === 'none') && paid === 0) return null
   // 받은 것도 없고 계약도 없고 환불 기록도 없으면 보여줄 사실이 없다
   if (paid === 0 && depositAmount === 0 && !refund) return null

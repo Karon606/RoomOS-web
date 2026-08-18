@@ -75,13 +75,25 @@ export function reservationFeeSplitApplies(args: {
 }
 
 /**
+ * '청소비 20,000 + 이용료 충당 30,000' — 분해 내역 문법 정본(총액 없이 몫만).
+ * 총액이 바로 옆에 이미 서 있는 자리(예약금 구성 줄)가 쓴다.
+ * 몫이 하나뿐이면 null — 그때는 총액을 다른 말로 한 번 더 쓰는 셈이라 줄을 세우지 않는다.
+ */
+export function reservationSplitPartsLabel(
+  cleaning: number, prepaid: number, fmt: (n: number) => string,
+): string | null {
+  if (cleaning <= 0 || prepaid <= 0) return null
+  return `청소비 ${fmt(cleaning)} + 이용료 충당 ${fmt(prepaid)}`
+}
+
+/**
  * '예약금 50,000 = 청소비 20,000 + 이용료 충당 30,000' 한 줄 — 분해 표시 문법 정본.
- * 수납 폼 미리보기·예약금 구성 줄·예약 취소 미니폼이 같은 문장을 쓴다.
+ * 수납 폼 미리보기·예약 취소 미니폼처럼 총액을 함께 말해야 하는 자리가 쓴다.
  * 몫이 하나뿐이면 null — 바로 옆 숫자를 두 번 말하지 않는다(depositCompositionLabel 과 같은 규칙).
  */
 export function reservationCompositionLabel(
   cleaning: number, prepaid: number, fmt: (n: number) => string,
 ): string | null {
-  if (cleaning <= 0 || prepaid <= 0) return null
-  return `예약금 ${fmt(cleaning + prepaid)} = 청소비 ${fmt(cleaning)} + 이용료 충당 ${fmt(prepaid)}`
+  const parts = reservationSplitPartsLabel(cleaning, prepaid, fmt)
+  return parts ? `예약금 ${fmt(cleaning + prepaid)} = ${parts}` : null
 }

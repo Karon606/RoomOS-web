@@ -29,6 +29,7 @@ type Settlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>
 type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
+import { reservationSplitPartsLabel } from '@/lib/reservationDeposit'
 
 export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSelectLease, openCheckoutProration }: {
   leaseTermId: string
@@ -102,6 +103,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
   const prepaidReceived = settlement.reservationPaid?.prepaid
     ?? payRecords.filter(r => !r.isDeposit).reduce((s, r) => s + r.actualAmount, 0)
   const resvMode = settlement.reservationDepositMode ?? 'deposit'
+  // 분해 수납의 청소비 몫 — 있으면 이 예약금은 나뉘어 적힌 것이다(문법은 lib 정본).
+  const resvCleaning = settlement.reservationPaid?.cleaning ?? 0
+  const resvPartsLabel = reservationSplitPartsLabel(resvCleaning, prepaidReceived, fmtWon)
 
   // 청구 조정 이력 — 단기는 입주월 1회 청구라 그 달에서만 보조 줄·배지를 보여준다.
   const adjusts = (settlement.moveInDate?.slice(0, 7) === month ? settlement.billingAdjusts : null) ?? []
@@ -118,10 +122,14 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
       {settlement.status === 'RESERVED' && resvMode === 'none' ? (
         <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-3 py-2">예약금 없음</p>
       ) : settlement.status === 'RESERVED' && resvMode === 'prepaid' ? (
+        /* 분해 수납이면 보증금 record 가 없어 아래 DepositStatusPanel 이 서지 않는다.
+           그 자리를 이 줄이 대신한다 — 받은 돈 총액과 그 구성(청소비 몫 / 이용료 충당 몫). */
         <p className="text-xs bg-[var(--canvas)] rounded-lg px-3 py-2">
-          <span className="text-[var(--coral)] font-semibold">이용료 선납</span>
-          <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(prepaidReceived)}</span>
-          <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>
+          <span className="text-[var(--coral)] font-semibold">{resvPartsLabel ? '예약금' : '이용료 선납'}</span>
+          <span className="ml-1.5 font-semibold text-[var(--warm-dark)]">{fmtWon(resvCleaning + prepaidReceived)}</span>
+          {resvPartsLabel
+            ? <span className="block mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{resvPartsLabel}</span>
+            : <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>}
         </p>
       ) : null}
       <DepositStatusPanel

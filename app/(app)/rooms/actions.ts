@@ -72,7 +72,9 @@ type RoomRow = {
   shortStayReservationMode?: ShortStayReservationMode | null
   shortStayDeposit?: number   // 단기 정책 예약금 시드(원) — 예약금 폼 기본값 프리필
   // 예약(RESERVED) 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 비예약 행은 null.
-  reservationPaid?: { deposit: number; prepaid: number } | null
+  // cleaning 은 분해 수납의 청소비 몫(ExtraIncome '청소비'). record 가 아니라 부가수익이라 따로 센다 —
+  // 빼면 5만을 받은 예약이 화면에서 3만으로 보인다(받은 돈이 화면에서 증발하는 그 사고 유형).
+  reservationPaid?: { deposit: number; prepaid: number; cleaning: number } | null
   // 청구 조정 이력(단기 연장·감액) — 미취소 스냅샷만 시간순. 월 이용료 보조 줄·배지 표시 전용(계산 비관여).
   billingAdjusts?: BillingAdjustEntry[]
 }
@@ -166,11 +168,23 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     where: { leaseTermId: { in: reservedIds }, deletedAt: null },
     _sum: { actualAmount: true },
   }) : []
-  const reservedPaidMap = new Map<string, { deposit: number; prepaid: number }>()
+  // 예약 단계 청소비 몫(분해 수납) — 부가수익이라 record groupBy 로는 안 잡힌다.
+  const reservedCleaningRows = reservedIds.length > 0 ? await prisma.extraIncome.groupBy({
+    by: ['leaseTermId'],
+    where: { leaseTermId: { in: reservedIds }, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+    _sum: { amount: true },
+  }) : []
+  const reservedPaidMap = new Map<string, { deposit: number; prepaid: number; cleaning: number }>()
   for (const g of reservedPaidRows) {
-    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0 }
+    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0, cleaning: 0 }
     if (g.isDeposit) cur.deposit += g._sum.actualAmount ?? 0
     else cur.prepaid += g._sum.actualAmount ?? 0
+    reservedPaidMap.set(g.leaseTermId, cur)
+  }
+  for (const g of reservedCleaningRows) {
+    if (!g.leaseTermId) continue
+    const cur = reservedPaidMap.get(g.leaseTermId) ?? { deposit: 0, prepaid: 0, cleaning: 0 }
+    cur.cleaning += g._sum.amount ?? 0
     reservedPaidMap.set(g.leaseTermId, cur)
   }
 
@@ -248,7 +262,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isShortTerm: lease.isShortTerm,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
-        reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0 },
+        reservationPaid: reservedPaidMap.get(lease.id) ?? { deposit: 0, prepaid: 0, cleaning: 0 },
         leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
         prevTenantName, prevContact,
@@ -2258,7 +2272,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
 
   // RESERVED fallback 도 표시 정본 수렴(신고 50a2a69b) — 입주월 기준 할인 반영 + 조회월 무관 실수납 합.
   let fbExpected = 0
-  let fbReservationPaid: { deposit: number; prepaid: number } | null = null
+  let fbReservationPaid: { deposit: number; prepaid: number; cleaning: number } | null = null
   if (lease.status === 'RESERVED') {
     const fbMoveInMonth = lease.moveInDate
       ? new Date(lease.moveInDate).toISOString().slice(0, 7)
@@ -2275,7 +2289,11 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
       where: { leaseTermId: lease.id, deletedAt: null },
       _sum: { actualAmount: true },
     })
-    fbReservationPaid = { deposit: 0, prepaid: 0 }
+    const fbCleaning = await prisma.extraIncome.aggregate({
+      where: { leaseTermId: lease.id, propertyId, ...CLEANING_FEE_RECEIVED_WHERE },
+      _sum: { amount: true },
+    })
+    fbReservationPaid = { deposit: 0, prepaid: 0, cleaning: fbCleaning._sum.amount ?? 0 }
     for (const g of sums) {
       if (g.isDeposit) fbReservationPaid.deposit += g._sum.actualAmount ?? 0
       else fbReservationPaid.prepaid += g._sum.actualAmount ?? 0

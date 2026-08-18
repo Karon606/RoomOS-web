@@ -2735,11 +2735,11 @@ export default function TenantClient({
                         {/* 예약자는 조회월 무관 실수납 합(예약금+선납) — 프리즘 카드와 동일 숫자(신고 50a2a69b 잔여 정합) */}
                         <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">
                           <MoneyDisplay amount={lease.status === 'RESERVED' && paySettlement?.reservationPaid
-                            ? paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid
+                            ? paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid + paySettlement.reservationPaid.cleaning
                             : regularPaid} />
                         </p>
-                        {lease.status === 'RESERVED' && paySettlement?.reservationPaid && (paySettlement.reservationPaid.deposit > 0 || paySettlement.reservationPaid.prepaid > 0) && (
-                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 {fmtWon(paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid)} 포함</p>
+                        {lease.status === 'RESERVED' && paySettlement?.reservationPaid && (paySettlement.reservationPaid.deposit > 0 || paySettlement.reservationPaid.prepaid > 0 || paySettlement.reservationPaid.cleaning > 0) && (
+                          <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">예약금 {fmtWon(paySettlement.reservationPaid.deposit + paySettlement.reservationPaid.prepaid + paySettlement.reservationPaid.cleaning)} 포함</p>
                         )}
                         {paySettlement?.noBillReason && fmtNoBillCovered({ month: paySettlement.noBillCoveredMonth, date: paySettlement.noBillCoveredDate, amount: paySettlement.noBillCoveredAmount }) ? (
                           <p className="text-[0.65625rem] mt-0.5 text-[var(--warm-muted)]">
@@ -4401,10 +4401,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     <p className="text-[0.6875rem] text-[var(--warm-dark)]">
                       {days}일 → {short.units}주 계약{short.cappedAtMonth ? ' (1개월 상한 적용)' : ''} ·
                       사용료 {fmtWon(short.baseAmount)} + 청소비 {fmtWon(short.cleaningFee)} = <span className="font-bold">{fmtWon(short.total)}</span>
-                      {short.deposit > 0 && <span className="text-[var(--warm-muted)]"> · 보증금 {fmtWon(short.deposit)} 별도(퇴실 시 환불)</span>}
+                      {/* 정책 예약금(shortStay.deposit)의 성격이 예약금 처리 모드에 따라 다르다.
+                          applyToRent 에서는 퇴실 때 돌려줄 예치금이 아니라, 청소비를 떼고 나머지를
+                          이용료로 충당하는 '예약금'이다 — '퇴실 시 환불'이라고 쓰면 반대로 안내하게 된다. */}
+                      {short.deposit > 0 && (shortQuoteData?.shortStay.reservationMode === 'applyToRent'
+                        ? <span className="text-[var(--warm-muted)]"> · 예약금 {fmtWon(short.deposit)}(청소비 차감 후 이용료 충당)</span>
+                        : <span className="text-[var(--warm-muted)]"> · 보증금 {fmtWon(short.deposit)} 별도(퇴실 시 환불)</span>)}
                     </p>
                     <button type="button"
-                      onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee); if (short.deposit > 0) setDepositAmountVal(short.deposit) }}
+                      // applyToRent 는 보증금 record 를 만들지 않는 규칙이라 계약 보증금 칸도 채우지 않는다.
+                      // 채우면 받지도 않은 예치금 책임이 계약에 박히고 퇴실 정산이 그 금액을 환불하려 든다.
+                      onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee); if (short.deposit > 0 && shortQuoteData?.shortStay.reservationMode !== 'applyToRent') setDepositAmountVal(short.deposit) }}
                       className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
                       이 금액 채우기
                     </button>
