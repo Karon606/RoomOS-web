@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
-import { fmtDateDot as fmtDate, fmtDateKor } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -87,7 +87,7 @@ import {
   previewStockAdditionShift, undoUpdateStockAddition,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
-import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
+import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
 
 // 드래그 순서 override 정렬용 rank — 배열에 없는 id는 뒤로(안정 정렬로 서버 상대순서 보존).
 const rankInOrder = (ord: string[], id: string) => { const i = ord.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i }
@@ -2127,6 +2127,40 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
   )
 }
 
+// ── 줄어든 차이의 귀속 2지선다 (보정 표면 공용, 운영자 승인 2026-08-19) ──────────
+// 차이가 음수(예상보다 줄어듦)일 때만 띄운다 — 늘어난 차이는 소비일 수 없어 선택지가 없다.
+// 시각 문법은 CheckForm 의 보정 라벨 박스 정본(테두리 박스·honey 강조)을 그대로 따른다.
+// 기본값은 '제외'(현행) — 아무것도 안 고르고 저장하면 지금까지와 똑같이 저장된다.
+function DiffAttributionChoice({ value, onChange, name, sinceLabel }: {
+  value: DiffAttribution
+  onChange: (v: DiffAttribution) => void
+  name: string          // 라디오 그룹 이름 — 한 화면에 두 그룹이 뜨지 않게 호출부가 정한다
+  sinceLabel: string    // '직전 점검(8월 12일) 이후' 처럼 어느 구간의 소비인지
+}) {
+  const box = (on: boolean) =>
+    `flex items-start gap-2 cursor-pointer select-none rounded-lg border px-2.5 py-2 transition-colors ${
+      on ? 'bg-[var(--honey)]/10 border-[var(--honey)]/40' : 'bg-[var(--canvas)] border-[var(--warm-border)]'}`
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-[var(--warm-mid)]">줄어든 차이 처리</p>
+      <label className={box(value === 'usage')}>
+        <input type="radio" name={name} checked={value === 'usage'} onChange={() => onChange('usage')} className="mt-0.5 accent-[var(--coral)]" />
+        <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
+          <strong className="text-[var(--warm-dark)]">지난 기간 사용으로 기록</strong><br />
+          {sinceLabel} 소비로 계산되어 소진 예상과 월별 사용량에 반영됩니다.
+        </span>
+      </label>
+      <label className={box(value === 'exclude')}>
+        <input type="radio" name={name} checked={value === 'exclude'} onChange={() => onChange('exclude')} className="mt-0.5 accent-[var(--coral)]" />
+        <span className="text-[0.65625rem] text-[var(--warm-mid)] leading-snug">
+          <strong className="text-[var(--warm-dark)]">소비 통계에서 제외</strong><br />
+          분실, 파손, 계산 오차 등 실제 사용이 아닐 때 고릅니다.
+        </span>
+      </label>
+    </div>
+  )
+}
+
 // ── 재고 점검 인라인 편집 폼
 // ── 전체 재고 보정(총점검) — 보충 완료 후, 전 품목 실측을 한 번에 기준선으로 박는다.
 //    차이는 사용량으로 잡지 않음(isReconcile). 위치별 예상치 프리필 → 사용자가 실제 센 값만 고침.
@@ -2151,6 +2185,8 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
   const unit = item.trackUnit === 'qty' ? (item.qtyUnit ?? item.unitHint) : (item.specUnit ?? item.qtyUnit ?? item.unitHint)
   const [date, setDate] = useState(todayKst)
   const [memo, setMemo] = useState('')
+  // 줄어든 차이의 귀속 — 기본은 현행(제외). 차이가 음수일 때만 화면에 뜬다.
+  const [attribution, setAttribution] = useState<DiffAttribution>('exclude')
   const [expected, setExpected] = useState<{ total: number; byLoc: Record<string, number> } | null>(null)
   const [actuals, setActuals] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -2184,6 +2220,11 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   const dateHasCheck = existingCheckDays.includes(date)
+  // 실제로 사용으로 기록될 때만 true — 차이가 없거나 늘었으면 선택과 무관하게 보정이다(서버 판정과 동일).
+  const asUsage = diff < -0.001 && attribution === 'usage'
+  // 부연에 쓸 기준 구간 — getStockAsOf 가 잡는 기준선과 같은 규칙(고른 날짜 이하 마지막 점검).
+  const baselineDay = existingCheckDays.filter(d => d <= date).sort().pop() ?? null
+  const sinceLabel = baselineDay ? `직전 점검(${fmtMonthDayKor(baselineDay)}) 이후` : '직전 점검 이후'
 
   const handleSave = async () => {
     // 같은 날 이미 점검이 있으면 — 새 보정을 또 만들면 타임라인이 중복돼 헷갈림.
@@ -2192,17 +2233,18 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
       return
     }
     setPending(true); setError('')
+    // expectedQty — 서버가 차이의 부호를 판정하는 근거. 화면이 보여준 예상 재고 그대로 보낸다.
     const items = hasLoc
-      ? [{ trackedItemId: item.id, locationQtys: tlLocations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined }]
-      : [{ trackedItemId: item.id, remainingQty: Number(actuals[NO_LOC] || '0'), memo: memo || undefined }]
-    const res = await saveFullReconcile({ date, items })
+      ? [{ trackedItemId: item.id, locationQtys: tlLocations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined, expectedQty: expectedTotal }]
+      : [{ trackedItemId: item.id, remainingQty: Number(actuals[NO_LOC] || '0'), memo: memo || undefined, expectedQty: expectedTotal }]
+    const res = await saveFullReconcile({ date, attribution, items })
     setPending(false)
     if (!res.ok) { setError(res.error); return }
     // 전체 보정은 여러 품목의 기준선을 한 번에 박는 가장 위험한 액션인데 되돌리기가 없었다.
-    pushToast('success', `재고 보정 ${res.count}건 저장됨`, {
+    pushToast('success', asUsage ? '지난 기간 사용으로 기록됨' : `재고 보정 ${res.count}건 저장됨`, {
       action: { label: '적용취소', run: () => { void (async () => {
         for (const cid of res.createdIds) { const r = await deleteStockCheck(cid); if (!r.ok) { pushToast('error', r.error); return } }
-        pushToast('info', '보정을 되돌렸습니다')
+        pushToast('info', asUsage ? '기록을 되돌렸습니다' : '보정을 되돌렸습니다')
         onDone()
       })().catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
     })
@@ -2213,7 +2255,10 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
     <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <div>
         <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
-        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
+          고른 날짜 시점의 실제 수량으로 기준선을 보정합니다.{' '}
+          {asUsage ? '줄어든 차이는 지난 기간 사용으로 기록됩니다.' : '차이는 사용량으로 잡히지 않습니다.'}
+        </p>
       </div>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="space-y-1.5">
@@ -2222,6 +2267,9 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
         {dateHasCheck && (
           <p className="text-[0.6875rem] text-[var(--honey)] bg-[var(--honey)]/10 border border-[var(--honey)]/30 rounded-lg px-2.5 py-1.5">
             이 날짜엔 이미 점검 기록이 있어요. 보통은 새 보정을 만들기보다 <strong>그 점검의 [수정]</strong>에서 고치는 게 정확합니다 (같은 날 중복 방지).
+            {/* 같은 날에 보정이 하나라도 있으면 살아남는 점검도 보정으로 승격된다(overview dedupSameDay).
+                고른 선택이 조용히 무효가 되므로 이 동선에서만 한 줄 더 알린다. */}
+            {asUsage && <><br />같은 날 보정 기록이 있으면 이 저장도 보정으로 묶여 사용량에 반영되지 않습니다. 그 점검을 먼저 지우고 저장하세요.</>}
           </p>
         )}
       </div>
@@ -2265,6 +2313,9 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
               <span className="text-[0.6875rem] text-[var(--warm-muted)]">예상과 동일 (차이 없음)</span>
             )}
           </div>
+          {diff < -0.001 && (
+            <DiffAttributionChoice name="tl-diff-attr" value={attribution} onChange={setAttribution} sinceLabel={sinceLabel} />
+          )}
         </>
       )}
 
@@ -2277,7 +2328,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
       <div className="pt-1 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
         <Btn type="button" variant="primary" onClick={handleSave} disabled={pending || loading} fullWidth>
-          {pending ? '저장 중…' : '이 시점에 보정 저장'}
+          {pending ? '저장 중…' : asUsage ? '이 시점에 사용으로 기록' : '이 시점에 보정 저장'}
         </Btn>
       </div>
     </div>
