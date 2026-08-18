@@ -107,6 +107,48 @@ export function buildRefundClause(): string {
   return '중도 퇴실 시 환불액은 「총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(총 결제금액의 10%)」으로 산정하며, 1일 이용요금은 월 이용료의 30분의 1로 합니다.'
 }
 
+// ── 추가 호실 특약(보관 용도) ────────────────────────────────────────
+//
+// 창고·사무실처럼 거주용이 아닌 방을 추가 호실로 딸고 있는 계약서에만 코드가 붙이는 절이다.
+// 환불 조항·신원번호 동의문과 같은 방식이다 — 영업장 템플릿에 넣으면 운영자가 지울 수 있고,
+// 지워진 채로 창고 호실만 인쇄된다. 그러면 그 방을 주거로 쓰지 말라는 근거가 종이 어디에도 없다.
+//
+// **template 객체에 주입하지 않는다.** 본문 템플릿은 박제·드리프트 비교의 축(printedFacts.template)
+// 이라, 코드가 만든 절을 그 안에 섞으면 조항을 한 글자도 안 고친 계약서가 통째로 드리프트로 뜬다.
+// 그래서 ContractData 의 별도 칸으로 내려가고, 렌더 직전에 절 배열 뒤에 붙는다.
+//
+// 문안은 전 영업장 공통 고정이다(운영자 위임 확정 2026-08-19). 영업장별 편집은 별도 백로그다.
+export type SubLeaseAddendum = { title: string; items: string[] }
+
+export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
+  title: '추가 호실 특약(보관 용도)',
+  items: [
+    '추가 호실은 위 표에 적힌 별도 계약에 따라 이용하는 공간이며, 주거 용도로 사용할 수 없습니다. 취침, 취사, 난방기구 사용을 금하며 물품 보관 등 계약 시 정한 용도로만 이용합니다.',
+    '추가 호실에는 화기 및 인화성/폭발성/휘발성 물질, 부패하거나 악취를 유발하는 물품, 동식물, 법령상 보관이 금지된 물품을 보관할 수 없습니다.',
+    '현금, 귀중품, 유가증권 등 고가품은 보관하지 않는 것을 원칙으로 하며, 보관물의 도난/훼손/멸실에 대해 본 사업자의 고의 또는 중대한 과실이 없는 한 책임지지 않습니다.',
+    '보관물의 관리 책임은 입실자 본인에게 있으며, 보관물로 인하여 화재/누수/해충/악취 등 시설 또는 타인의 피해가 발생한 경우 원상복구 하거나 변상해야 합니다.',
+    '화재발생, 방역 및 긴급수리, 비상 상황 시 마스터키 출입 규정은 추가 호실에도 동일하게 적용됩니다.',
+    '추가 입실료는 본 계약 입실료와 같은 방법으로 매월 선납하며, 환불과 미납 시 처리, 연락두절 시 처리는 본 계약서의 해당 조항을 추가 호실에 동일하게 적용합니다.',
+    '추가 호실 이용을 중단할 때는 7일 전에 알려주어야 하며, 종료일까지 보관물을 전부 반출하고 호실을 처음 상태로 반환해야 합니다. 기한 내 반출하지 않은 물품은 연락두절 시 처리 조항에 따라 보관 후 폐기될 수 있습니다.',
+    '본 계약이 종료되는 경우 추가 호실 이용 계약도 함께 종료됩니다. 추가 호실만 계속 이용하려면 별도 계약을 새로 체결해야 합니다.',
+  ],
+}
+
+/**
+ * 절 배열 뒤에 추가 호실 특약을 붙인다. 화면·인쇄가 같은 함수를 쓴다.
+ *
+ * **null 이면 받은 배열을 그대로 돌려준다.** 특약이 없는 계약서의 렌더가 이 기능 전과
+ * 문자 단위로 같아야 하고, 그 사실을 새 배열을 만들지 않는 것으로 보장한다.
+ * 절 번호는 앞 절 개수로 정한다 — 운영자가 조항을 늘리거나 지워도 번호가 이어진다(기본 5).
+ */
+export function appendSubLeaseAddendum<T extends { title: string; items: string[] }>(
+  sections: T[],
+  addendum: SubLeaseAddendum | null | undefined,
+): Array<T | { title: string; items: string[] }> {
+  if (!addendum) return sections
+  return [...sections, { title: `${sections.length + 1}. ${addendum.title}`, items: addendum.items }]
+}
+
 // 조항을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).
 // 규칙(내용 무관·운영자가 바꿔도 동일 적용):
 //  1) 항목을 '순서대로' 흘려 담는다. 왼쪽 단을 위→아래로, 그다음 오른쪽 단을 위→아래로 읽으면 원래 순서.
@@ -227,6 +269,12 @@ export type SignedContractSnapshot = {
   refundClauseInContract?: boolean
   disposalConsent?: unknown
   businessInfo?: BusinessInfo
+  /**
+   * 서명 당시 종이에 붙어 있던 추가 호실 특약. 이 칸이 생기기 전 박제에는 아예 없고(undefined),
+   * 그때는 null 로 읽는다 — **이미 서명이 끝난 계약서에 특약을 소급해 끼워 넣지 않는다.**
+   * 종이에 없던 절이 재발급에서 튀어나오면 그건 서명 시점 본문 격리를 스스로 깨는 것이다.
+   */
+  subLeaseAddendum?: SubLeaseAddendum | null
   // 서명 원본이 앱 밖에 있는 경우 그 증거 파일
   sourceContractFileId?: string
 }
@@ -237,6 +285,12 @@ export type ResolvedBody = {
   refundClauseInContract: boolean
   disposalConsent: unknown
   businessInfo: BusinessInfo | null
+  /**
+   * 박제본이 들고 있던 추가 호실 특약. **박제본(SNAPSHOT)일 때만 의미가 있다.**
+   * 서명 전 계약(LIVE)·앱 밖 원본(ARCHIVED)은 null 이고, 지금 조건으로 붙일지 판정하는 것은
+   * lib/contractData 의 contractSubLeaseAddendum 이 한다(딸린 계약과 방 설정을 봐야 하기 때문).
+   */
+  subLeaseAddendum: SubLeaseAddendum | null
   /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
   blockIssue: boolean
 }
@@ -266,18 +320,20 @@ export function resolveSignedBody(
       refundClauseInContract: snap.refundClauseInContract ?? live.refundClauseInContract,
       disposalConsent: snap.disposalConsent ?? live.disposalConsent,
       businessInfo: snap.businessInfo ?? live.businessInfo,
+      subLeaseAddendum: snap.subLeaseAddendum ?? null,
       blockIssue: false,
     }
   }
   // 본문 없는 박제본(종이 스캔·과거 발급본) — 앱은 그 본문을 모른다.
   // 미리보기는 현재값으로 그리되 **새 발급본은 만들지 않는다.** 그 계약의 원본은 앱 밖에 있다.
-  if (snap) return { source: 'ARCHIVED', ...live, blockIssue: true }
+  if (snap) return { source: 'ARCHIVED', ...live, subLeaseAddendum: null, blockIssue: true }
 
   // 박제본이 없으면 지금까지와 완전히 같다 — 개별 수정본 우선, 없으면 공통 템플릿.
   return {
     source: 'LIVE',
     ...live,
     template: (lease?.contractOverride as ContractTemplate | null) ?? live.template,
+    subLeaseAddendum: null,
     blockIssue: false,
   }
 }
