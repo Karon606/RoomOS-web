@@ -23,3 +23,21 @@ export function recurringDueDateFor(rec: RecurringDueSource, month: string): str
   const eff = getNextBusinessDay(new Date(y, m - 1, day))
   return `${eff.getFullYear()}-${String(eff.getMonth() + 1).padStart(2, '0')}-${String(eff.getDate()).padStart(2, '0')}`
 }
+
+/** '오늘 출금·납부' 알림 모집단 판정에 필요한 필드 — RecurringExpenseWithStatus 가 그대로 대입된다. */
+export type RecurringDueTodaySource = RecurringDueSource & {
+  isPending: boolean                  // activeSince 가 이번 달 이후 — 아직 활성화 전
+  recordedExpenseId: string | null    // 이번 달 지출 기록(확인 처리된 예정 행)
+}
+
+/**
+ * 그 항목이 오늘(KST) 돈이 나가는 건인가 — 푸시와 인앱 종이 같은 이 함수를 쓴다(신고 568633fb).
+ * 날짜는 recurringDueDateFor 하나만 본다: 자동이체는 휴일 시프트 후 실제 이체일, 비자동은 기준일(말일 클램프).
+ * 활성화 전이거나 이번 달 기록이 이미 있으면 알릴 일이 아니다 — 기록 여부는 재무 화면과 같은 값
+ * (getRecurringExpensesWithStatus 의 recordedExpenseId)을 그대로 본다.
+ */
+export function recurringDueToday(rec: RecurringDueTodaySource, todayYmd: string): boolean {
+  if (rec.isPending) return false
+  if (rec.recordedExpenseId) return false
+  return recurringDueDateFor(rec, todayYmd.slice(0, 7)) === todayYmd
+}
