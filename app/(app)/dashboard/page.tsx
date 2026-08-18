@@ -21,6 +21,7 @@ import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 import { requireRouteAccess } from '@/lib/auth/requireRouteAccess'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
+import { listSiteRoomCandidates } from '@/lib/siteCandidates'
 import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel, heldContractCleaningPortion } from '@/lib/depositComposition'
@@ -196,8 +197,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     reserveTxnsRaw,
     allMonthPayments,
     tourDoneCount,
-    publishCandidateRooms,
-    unpublishCandidateRooms,
+    siteCandidates,
     availabilityLeases,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
@@ -442,20 +442,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // '문의·투어' StatCard 집계용 — 라벨에 걸맞게 투어 완료도 포함(e1b81629 후속, 운영자 승인)
     prisma.leaseTerm.count({ where: { propertyId, status: 'TOUR_DONE' } }),
-    // 소개 페이지 공개 후보 — 공실이고 사진 있는데 아직 미공개인 방(창고·사무실 등 비거주 점유는 제외).
-    // 집계 제외 방은 팔 수 있는 방이 아니다 — 415호에 사진만 올리면 손님에게 내보이라고 권하던 자리다.
-    // 바로 아래 철회 후보가 이미 같은 where 를 빼고 있었다. 한 카드의 두 줄이 다른 모집단을 보면 안 된다.
-    prisma.room.findMany({
-      where: { propertyId, isVacant: true, showOnSite: false, photos: { some: {} }, NOT: vacancyExcludedWhere },
-      select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
-      orderBy: { roomNo: 'asc' },
-    }),
-    // 소개 페이지 철회 후보 — 입주 중인데 아직 공개 상태인 방(창고·사무실 등 비거주 점유는 제외)
-    prisma.room.findMany({
-      where: { propertyId, isVacant: false, showOnSite: true, NOT: vacancyExcludedWhere },
-      select: { id: true, roomNo: true, tier: true, baseRent: true, photos: { select: { storageUrl: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
-      orderBy: { roomNo: 'asc' },
-    }),
+    // 소개 페이지 반영 대기 후보(올릴 방·내릴 방) — 모집단 정의는 lib/siteCandidates 한 벌.
+    // 환경설정 웹사이트 탭이 같은 방들을 그리므로 where 를 여기 두면 두 화면이 갈린다.
+    listSiteRoomCandidates(propertyId),
     // 입주 가능 판정(roomAvailability)의 계산 입력 — 위 방 현황 조회는 take: 6 이라 여기 못 쓴다.
     // 잘린 한 건이 무기한이면 방은 '모른다'인데 '곧 입주 가능'으로 뒤집히고, 타일이 홈 매칭 알림보다
     // 이른 날짜를 말하게 된다(같은 함수라도 먹이는 집합이 다르면 답이 갈린다). 판정에 필요한 두 필드만
@@ -1912,12 +1901,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidLeases,
     unpaidRoomNosForView,
     nonResidentItems,
-    publishCandidates: publishCandidateRooms.map(r => ({
-      id: r.id, roomNo: r.roomNo, tier: r.tier, baseRent: r.baseRent, thumbUrl: r.photos[0]?.storageUrl ?? null,
-    })),
-    unpublishCandidates: unpublishCandidateRooms.map(r => ({
-      id: r.id, roomNo: r.roomNo, tier: r.tier, baseRent: r.baseRent, thumbUrl: r.photos[0]?.storageUrl ?? null,
-    })),
+    publishCandidates:   siteCandidates.publish,
+    unpublishCandidates: siteCandidates.unpublish,
   }
 
   return dashboardData
