@@ -104,8 +104,8 @@ export type RoomAssignmentLease = {
  *
  * 세분의 근거. 예약도 '언제 나가는지 아는가'로 나눈다 — 퇴실 예정일 없는 예약만 방을 무기한 잡은 것이다.
  * 날짜가 잡힌 예약은 화면(roomPickability)이 고를 수 있게 열어 주므로 서버도 같은 선이어야 한다.
- * 겹침(같은 날 포함) 여부는 화면이 확인창으로 묻는 운영 재량이라 여기서는 묻지 않는다 — 확인창이
- * 없는 경로(가져오기)는 occupancyOverlaps 를 따로 걸어 스스로 판단한다.
+ * 겹침 여부는 화면이 확인창으로 묻는 운영 재량이라 여기서는 묻지 않는다 — 확인창이 없는 경로
+ * (가져오기)는 occupancyOverlaps 를 따로 걸어 스스로 판단한다(당일 회전은 빼고 본다).
  */
 export function roomAssignmentDenial(input: {
   incomingStatus: string
@@ -152,6 +152,9 @@ export function roomAssignmentDenial(input: {
  * 입주일이 없으면 이미 시작된 점유로, 퇴실 예정일이 없으면 무기한으로 읽는다.
  * 감지망 check-room-availability-drift 축 ② 와 화면 확인창(overlapOccupancy)이 쓰는 그 선이다.
  * 날짜는 'YYYY-MM-DD' 문자열이라 사전순 비교가 곧 날짜 비교다.
+ *
+ * 이 `>=` 는 고치지 않는다(2026-08-19 개정 확정). 당일 회전을 정상으로 보는 소비처는 아래
+ * isSameDayTurnover 로 따로 빼고, 겹침의 정의 자체는 한 벌로 둔다.
  */
 export function occupancyOverlaps(
   a: { moveIn: string | null; moveOut: string | null },
@@ -159,6 +162,89 @@ export function occupancyOverlaps(
 ): boolean {
   return (!a.moveOut || !b.moveIn || a.moveOut >= b.moveIn)
     && (!b.moveOut || !a.moveIn || b.moveOut >= a.moveIn)
+}
+
+/** 체류 구간 한 벌 — 날짜는 'YYYY-MM-DD'(없으면 null = 열려 있다). */
+export type OccupancySpan = { moveIn: string | null; moveOut: string | null }
+
+/** 실제로 포개진 구간 — 겹치지 않으면 null. 양끝 중 열린 쪽은 null 로 남는다(무기한). */
+export type OverlapSpan = { from: string | null; to: string | null }
+
+/**
+ * 두 체류가 실제로 포개진 구간 — 겹침 여부를 넘어 **언제부터 언제까지**를 답한다.
+ *
+ * 아래 두 술어(당일 회전·확인된 겹침)가 전부 이 하나를 딛는다. 겹친 날짜를 각자 다시 세면
+ * "회전이라 통과"와 "그 구간을 확인했다"가 서로 다른 날을 말하게 된다.
+ *
+ * 시작은 두 입주일 중 늦은 쪽, 끝은 두 퇴실일 중 이른 쪽이다. 한쪽이 없으면 있는 쪽이 답이고,
+ * 둘 다 없으면 그 끝은 열려 있다(null) — 입주일이 둘 다 없으면 이미 시작된 점유이고,
+ * 퇴실 예정일이 둘 다 없으면 무기한이다.
+ *
+ * **사본 주의** — scripts/check-room-availability-drift.mjs 축 ②에 같은 식이 한 벌 더 있다
+ * (.mjs 라 이 파일을 import 하지 못한다). 여기를 고치면 저기도 함께 고친다. 저쪽 주석도 여기를 가리킨다.
+ */
+export function occupancyOverlapSpan(a: OccupancySpan, b: OccupancySpan): OverlapSpan | null {
+  if (!occupancyOverlaps(a, b)) return null
+  const later = (x: string | null, y: string | null) => (x && y ? (x > y ? x : y) : (x ?? y))
+  const earlier = (x: string | null, y: string | null) => (x && y ? (x < y ? x : y) : (x ?? y))
+  return { from: later(a.moveIn, b.moveIn), to: earlier(a.moveOut, b.moveOut) }
+}
+
+/**
+ * 당일 회전인가 — 앞 계약이 나가는 그날 뒤 계약이 들어오고, 겹침이 그 하루뿐인 경우.
+ *
+ * 고시원의 일상이다. 오전에 방을 비우고 오후에 다음 사람이 들어온다. 그런데 판정선이
+ * occupancyOverlaps 한 벌뿐이던 동안에는 이 하루가 '이중 점유'로 셌다 — 감지망이 부르고,
+ * 화면이 확인창을 띄우고, 자기가 내보낸 시트를 다시 올리면 가져오기가 막았다.
+ *
+ * occupancyOverlaps 의 `>=` 자체는 고치지 않는다(소비처 넷이 전부 흔들린다). 대신 이름 있는
+ * 술어로 따로 묻고, 회전을 정상으로 보는 소비처가 각자 이 함수를 불러 명시적으로 뺀다.
+ *
+ * 같은 날 **함께 시작하는** 두 계약은 회전이 아니다 — 앞 계약의 입주일이 그 하루보다 앞서야
+ * 나가는 사람과 들어오는 사람이 갈린다(입주일이 아예 없으면 이미 시작된 점유라 앞선 것으로 읽는다).
+ */
+export function isSameDayTurnover(a: OccupancySpan, b: OccupancySpan): boolean {
+  const span = occupancyOverlapSpan(a, b)
+  if (!span || !span.from || !span.to || span.from !== span.to) return false
+  const day = span.from
+  const turns = (front: OccupancySpan, back: OccupancySpan) =>
+    front.moveOut === day && back.moveIn === day && (front.moveIn === null || front.moveIn < day)
+  return turns(a, b) || turns(b, a)
+}
+
+/**
+ * 확인된 겹침 한 줄 — LeaseOverlapAck 의 판정에 필요한 칸만. 구간은 확인 시점의 스냅샷이다.
+ */
+export type OverlapAckSpan = {
+  frontLeaseTermId: string
+  backLeaseTermId: string
+  overlapFrom: string
+  overlapTo: string
+}
+
+/**
+ * 지금의 겹침이 확인된 겹침인가 — 덮는 확인 줄, 없으면 null.
+ *
+ * 유효 조건은 둘이다. **같은 두 계약**이고(앞뒤 순서는 묻지 않는다 — 날짜가 밀리면 앞뒤가 바뀔 수
+ * 있는데 그건 같은 확인이다), **지금 실제 겹침 구간이 확인 구간 안**이어야 한다.
+ *
+ * 구간을 벗어나면 자동 실효다. 8/18~8/19 하루를 확인했는데 퇴실일이 8/25 로 밀리면 그것은 더 이상
+ * 확인받은 사실이 아니다 — 다시 발화해서 운영자에게 묻는 것이 맞다. 열린 구간(무기한)은 스냅샷을
+ * 뜰 수 없으므로 절대 덮이지 않는다. 확인은 유한한 사실에만 붙는다.
+ */
+export function findOverlapAck<T extends OverlapAckSpan>(
+  acks: readonly T[],
+  leaseAId: string,
+  leaseBId: string,
+  span: OverlapSpan | null,
+): T | null {
+  if (!span || !span.from || !span.to) return null
+  const from = span.from
+  const to = span.to
+  return acks.find(k =>
+    ((k.frontLeaseTermId === leaseAId && k.backLeaseTermId === leaseBId)
+      || (k.frontLeaseTermId === leaseBId && k.backLeaseTermId === leaseAId))
+    && from >= k.overlapFrom && to <= k.overlapTo) ?? null
 }
 
 /** 그 방을 이미 잡고 있는 계약 한 줄 — 날짜는 'YYYY-MM-DD'(없으면 null). */
@@ -205,7 +291,13 @@ export function roomAssignmentBlockReason(input: {
       ? '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.'
       : null
   }
-  // 축 ② — 체류 구간이 실제로 포개지면 한 방에 두 사람이다. 같은 날 퇴실·입주도 겹침으로 센다.
-  const hit = input.others.find(o => RESIDENT_STATUSES.includes(o.status) && occupancyOverlaps(input.incoming, o))
+  // 축 ② — 체류 구간이 실제로 포개지면 한 방에 두 사람이다. 단 **당일 회전은 뺀다**.
+  // 앞사람이 나가는 그날 뒷사람이 들어오는 것은 정상 운영인데, 종전에는 이 하루가 막혀 자기가
+  // 내보낸 시트를 그대로 다시 올리는 것조차 실패했다(잠복 결함, 2026-08-19 개정). 하루 이상
+  // 겹치는 것은 그대로 막는다 — 시트에는 확인창을 띄울 자리가 없다.
+  const hit = input.others.find(o =>
+    RESIDENT_STATUSES.includes(o.status)
+    && occupancyOverlaps(input.incoming, o)
+    && !isSameDayTurnover(input.incoming, o))
   return hit ? `해당 호실은 ${hit.tenantName}님의 체류 기간(${hit.moveIn ?? '미정'} ~ ${hit.moveOut ?? '무기한'})과 겹칩니다.` : null
 }

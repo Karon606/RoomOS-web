@@ -18,11 +18,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
+import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
+import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { fmtMD } from '@/lib/fmtDate'
-import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
+import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -178,16 +181,7 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
       {data.conflicts.length > 0 && (
         <div className="space-y-1.5">
           {data.conflicts.map((c, i) => (
-            <div key={`${c.leaseId}-${c.kind}-${i}`}
-              className="flex items-center gap-3 rounded-lg border-l-[3px] px-3.5 py-2.5"
-              style={{ borderLeftColor: 'var(--coral)', background: 'var(--danger-bg)' }}>
-              <p className="flex-1 min-w-0 text-xs font-medium" style={{ color: 'var(--danger-fg)' }}>{c.text}</p>
-              <button type="button" onClick={() => openLease(c.roomId, c.leaseId, c.tenantId)}
-                className="shrink-0 min-h-[44px] inline-flex items-center text-[0.6875rem] font-semibold px-2.5 rounded-md border transition-colors hover:bg-[var(--coral)]/10"
-                style={{ borderColor: 'color-mix(in srgb, var(--coral) 45%, transparent)', color: 'var(--tc-text)' }}>
-                계약 보기
-              </button>
-            </div>
+            <ConflictRow key={`${c.leaseId}-${c.kind}-${i}`} c={c} onOpen={openLease} onDone={() => router.refresh()} />
           ))}
         </div>
       )}
@@ -272,6 +266,88 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * 충돌 요약 한 줄 — §18 Status Row. 톤이 둘이다.
+ *
+ * 아직 답하지 않은 충돌은 종전대로 코랄 팁 + danger 다. **확인된 겹침**은 중립으로 내려간다
+ * (팁 --ink-m · --neutral-bg · 글자 --ink-s) — 사실은 그대로인데 운영자가 이미 답한 자리라
+ * 매일 같은 빨강으로 부르면 그 빨강이 아무것도 뜻하지 않게 된다.
+ *
+ * 줄 자체는 확인 뒤에도 지우지 않는다(설계 확정 2026-08-19). 사라지면 [확인 해제] 로 가는 길이
+ * 없어지고, 한 방에 두 사람이 있다는 사실 표시도 함께 사라진다.
+ */
+function ConflictRow({ c, onOpen, onDone }: {
+  c: MoveConflict
+  onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+  onDone: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const tone = c.acked
+    ? { tip: 'var(--ink-m)', bg: 'var(--neutral-bg)', fg: 'var(--ink-s)' }
+    : { tip: 'var(--coral)', bg: 'var(--danger-bg)', fg: 'var(--danger-fg)' }
+
+  const ack = async () => {
+    if (!c.pair) return
+    const ok = await confirmDialog({
+      title: `${fmtRoomNo(c.roomNo)} 겹침을 확인 처리할까요`,
+      message: `${c.text} 의도된 겹침이면 확인 처리합니다. 확인된 겹침은 중립 표시되고 정합 검사에서 제외됩니다.`,
+      level: 'caution',
+      confirmLabel: '의도된 겹침으로 확인',
+      cancelLabel: '취소',
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const res = await withSave(() => acknowledgeOverlap(c.pair!.frontLeaseTermId, c.pair!.backLeaseTermId), { success: '겹침 확인됨' })
+      if (res.ok) onDone()
+    } finally { setBusy(false) }
+  }
+
+  const release = async () => {
+    if (!c.ackId) return
+    setBusy(true)
+    try {
+      const res = await withSave(() => releaseOverlapAck(c.ackId!), { success: '확인 해제됨' })
+      if (res.ok) onDone()
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border-l-[3px] px-3.5 py-2.5"
+      style={{ borderLeftColor: tone.tip, background: tone.bg }}>
+      <p className="min-w-0 flex-1 basis-40 text-xs font-medium" style={{ color: tone.fg }}>{c.text}</p>
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {/* 확인은 겹침(overlap)에만 붙는다 — 무기한은 퇴실일을 넣으라는 처방이고 역전은 데이터 사고다. */}
+        {c.kind === 'overlap' && !c.acked && c.pair && (
+          <ConflictBtn onClick={ack} busy={busy} acked={false}>겹침 확인</ConflictBtn>
+        )}
+        {c.acked && c.ackId && (
+          <ConflictBtn onClick={release} busy={busy} acked>확인 해제</ConflictBtn>
+        )}
+        <ConflictBtn onClick={() => onOpen(c.roomId, c.leaseId, c.tenantId)} busy={false} acked={c.acked}>계약 보기</ConflictBtn>
+      </div>
+    </div>
+  )
+}
+
+/** 요약 줄의 보조 액션 — 줄 톤을 따라간다(확인된 줄에서 혼자 빨강으로 남으면 중립이 깨진다). */
+function ConflictBtn({ onClick, busy, acked, children }: {
+  onClick: () => void
+  busy: boolean
+  acked: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={busy}
+      className={`min-h-[44px] inline-flex items-center whitespace-nowrap text-[0.6875rem] font-semibold px-2.5 rounded-md border transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)] ${acked ? 'hover:bg-[var(--cream-soft)]' : 'hover:bg-[var(--coral)]/10'}`}
+      style={acked
+        ? { borderColor: 'var(--warm-border)', color: 'var(--ink-2)' }
+        : { borderColor: 'color-mix(in srgb, var(--coral) 45%, transparent)', color: 'var(--tc-text)' }}>
+      {children}
+    </button>
   )
 }
 
@@ -377,7 +453,8 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   first: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
 }) {
-  const attn = row.conflicts.length > 0
+  // 좌측 코랄 팁은 **아직 답하지 않은** 충돌에만. 확인된 겹침만 남은 행은 팁을 끈다(중립).
+  const attn = row.conflicts.some(c => !c.acked)
   const placed = row.bars.map(bar => place(bar, row, days))
   // 캡션은 0층(gridRow 1)에 그리므로 0층의 바 밖 라벨과만 자리를 다툰다.
   const blocked = placed.filter(p => p.bar.lane === 0 && p.ink).map(p => p.ink!)
@@ -441,12 +518,15 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
           <Bar key={p.bar.leaseId} p={p} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
         ))}
 
-        {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03). */}
+        {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03).
+            확인된 겹침은 중립 밴드다. 여기 쓸 수 있는 것은 **반투명** 토큰뿐이라(--band-vacant-bg 는
+            불투명이라 아래 막대를 덮어 버린다) 중립 계열의 --neutral-ring 을 표면으로 쓴다. */}
         {row.overlaps.map(s => (
           <div key={`ov-${s.startDay}`} aria-hidden className="pointer-events-none"
             style={{
               gridColumn: `${s.startDay + 1} / ${s.endDay + 2}`, gridRow: '1 / -1',
-              background: 'var(--band-overdue-bg)', borderRadius: 'var(--radius-xs)',
+              background: s.acked ? 'var(--neutral-ring)' : 'var(--band-overdue-bg)',
+              borderRadius: 'var(--radius-xs)',
             }} />
         ))}
 

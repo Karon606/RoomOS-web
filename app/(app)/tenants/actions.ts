@@ -50,6 +50,7 @@ import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
+import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 
 /**
@@ -316,6 +317,22 @@ async function nextReservationConflict(
   })
   if (!next?.moveInDate) return null
   return { moveIn: new Date(next.moveInDate).toISOString().slice(0, 10), tenantName: next.tenant.name }
+}
+
+/**
+ * 겹침 확인창을 지나온 저장인가 — 지나왔으면 그 승인을 확인된 겹침으로 적는다.
+ *
+ * 화면(confirmRoomOverlap)이 겹침을 묻고 운영자가 "이대로"를 고르면 폼에 allowRoomOverlap 이
+ * 실린다. 종전에는 그 표식이 서버 가드를 통과시키는 데만 쓰이고 흔적 없이 사라졌다 — 승인이
+ * 사람의 머릿속에만 남아 감지망과 캘린더는 매번 같은 겹침을 다시 불렀다(2026-08-19 개정).
+ *
+ * 무엇을 적을지는 lib/overlapAck 이 저장 후의 사실을 다시 읽어 정한다. 여기서는 표식만 본다.
+ * 기록이 실패해도 저장은 되돌리지 않는다 — 확인이 없으면 감지망이 부를 뿐이고 그쪽이 안전하다.
+ */
+async function recordOverlapAckIfAllowed(formData: FormData, leaseTermId: string, ackedById: string | null) {
+  if (formData.get('allowRoomOverlap') !== 'true') return
+  try { await recordOverlapAcksForLease(leaseTermId, ackedById) }
+  catch { /* 확인 기록 실패는 저장을 되돌릴 사유가 아니다 */ }
 }
 
 /**
@@ -634,7 +651,7 @@ const DUPLICATE_ACK = 'allowDuplicateTenant'
 export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { propertyId } = await getPropertyId()
+    const { propertyId, user } = await getPropertyId()
     const tenantId = formData.get('tenantId') as string
     if (!tenantId) return { ok: false, error: '입주자를 찾을 수 없습니다.' }
     const tenant = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } })
@@ -649,6 +666,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
       select: { id: true },
     })
     await afterLeaseCreated(f, { propertyId, tenantId, leaseId: lease.id })
+    await recordOverlapAckIfAllowed(formData, lease.id, user.sub)
 
     revalidatePath('/tenants')
     revalidatePath('/rooms')
@@ -664,7 +682,7 @@ export async function addLeaseToTenant(formData: FormData): Promise<{ ok: true }
 export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
   await requireEdit()
-  const { propertyId } = await getPropertyId()
+  const { propertyId, user } = await getPropertyId()
 
   const name             = formData.get('name') as string
   const englishName      = formData.get('englishName') as string
@@ -758,6 +776,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
   })
   if (newLease) await afterLeaseCreated(f, { propertyId, tenantId: tenant.id, leaseId: newLease.id })
+  if (newLease) await recordOverlapAckIfAllowed(formData, newLease.id, user.sub)
 
   revalidatePath('/tenants')
   return { ok: true }
@@ -1356,6 +1375,9 @@ export async function updateTenant(formData: FormData): Promise<
   if (prevStatus === 'RESERVED' && status === 'ACTIVE') {
     await reanchorReservationPrepaid(leaseTermId)
   }
+
+  // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
+  await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
 
   revalidatePath('/tenants')
   revalidatePath('/rooms')

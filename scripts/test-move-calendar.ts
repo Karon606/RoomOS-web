@@ -3,6 +3,8 @@
 // 여기서 고정하는 것: 월 창 클리핑(월 밖으로 이어지는 쪽), 퇴실일 선택(퇴실 완료는 실제일),
 // 행 정렬(첫 변동일 · 동률은 호실번호), 층 배치(같은 날 인수인계는 층이 갈린다),
 // 충돌 3종의 대상 집합(퇴실 완료 계약은 방을 잡지 않는다), 다음 달 예약 꼬리, 빈 달.
+// 2026-08-19 겹침 판정 개정으로 두 축이 붙었다 — 당일 회전은 충돌이 아니고(기대값 갱신, 운영자
+// 승인), 하루 이상 겹침은 확인(LeaseOverlapAck)으로 중립이 되되 구간을 벗어나면 실효된다.
 //
 // 케이스는 2026-08 실데이터에서 가져왔다 — 409호(8/17 퇴실 + 9/8 후지이 미나미), 404호(예약 이어 붙임),
 // 413호(같은 날 퇴실·입주), 509호(퇴실 예정일과 실제 퇴실일이 하루 다름), 503호(월 경계 관통).
@@ -96,7 +98,7 @@ eq('2월 윤년은 29일', daysInMonth('2028-02'), 29)
   const out = build([a, b], [a, b])
   const row = out.rows[0]
   eq('겹침 · 두 층으로 갈린다', row.laneCount, 2)
-  eq('겹침 · 구간', row.overlaps, [{ startDay: 18, endDay: 20 }])
+  eq('겹침 · 구간', row.overlaps, [{ startDay: 18, endDay: 20, acked: false }])
   eq('겹침 · 충돌 하나', row.conflicts.map(c => c.kind), ['overlap'])
   eq('겹침 · 문구', row.conflicts[0].text, '404호 가나·다라 체류가 8/18~8/20 겹칩니다.')
   eq('겹침 · 진입 대상은 나중 계약', row.conflicts[0].leaseId, 'r2')
@@ -140,13 +142,61 @@ eq('2월 윤년은 29일', daysInMonth('2028-02'), 29)
   eq('413 · 공백 없음', row.gaps.length, 0)
 }
 
-// ── 같은 날 인수인계라도 둘 다 방을 잡고 있으면 충돌이다 ──
+// ── 당일 회전 ── 앞이 나가는 그날 뒤가 들어온다. 둘 다 방을 잡고 있어도 사고가 아니다.
+//
+// 종전에는 이 하루가 'overlap' 충돌이었다(요약 줄 + 빨간 밴드). 고시원의 일상이라 운영자가
+// 정상으로 확정했다(2026-08-19 겹침 판정 개정). 층 분리는 그대로다 — 같은 칸에 선 두 막대가
+// 회전 자체를 말하므로, 기하를 지우면 그 하루에 무슨 일이 있었는지가 사라진다.
 {
   const outgo = lease({ id: 'c1', roomNo: '414', status: 'CHECKOUT_PENDING', moveInDate: '2026-07-01', expectedMoveOut: '2026-08-15', tenantName: '수정' })
   const incom = lease({ id: 'c2', roomNo: '414', status: 'RESERVED', moveInDate: '2026-08-15', expectedMoveOut: '2026-08-30', tenantName: '영호' })
   const row = build([outgo, incom], [outgo, incom]).rows[0]
-  eq('같은 날 · 충돌', row.conflicts.map(c => c.kind), ['overlap'])
-  eq('같은 날 · 겹친 하루', row.overlaps, [{ startDay: 15, endDay: 15 }])
+  eq('당일 회전 · 충돌 아님', row.conflicts.length, 0)
+  eq('당일 회전 · 밴드 없음', row.overlaps, [])
+  eq('당일 회전 · 층은 갈린다', row.laneCount, 2)
+  eq('당일 회전 · 막대 표시도 없다', row.bars.some(b => b.conflicted), false)
+  // 하루라도 더 포개지면 그대로 충돌이다 — 회전 예외가 겹침 전체를 열어 주는 것이 아니다.
+  const longer = lease({ id: 'c3', roomNo: '414', status: 'RESERVED', moveInDate: '2026-08-14', expectedMoveOut: '2026-08-30', tenantName: '영호' })
+  eq('당일 회전 · 이틀이면 충돌', build([outgo, longer], [outgo, longer]).rows[0].conflicts.map(c => c.kind), ['overlap'])
+}
+
+// ── 확인된 겹침 ── 하루 이상 겹침을 운영자가 '의도된 것'으로 확인하면 중립으로 내려간다.
+// 줄은 남는다(해제 진입점이자 사실 표시). 구간을 벗어나면 확인이 실효돼 다시 빨강이다.
+{
+  const front = lease({ id: 'k1', roomNo: '422', status: 'CHECKOUT_PENDING', moveInDate: '2026-06-01', expectedMoveOut: '2026-08-19', tenantName: '박호정' })
+  const back = lease({ id: 'k2', roomNo: '422', status: 'RESERVED', moveInDate: '2026-08-18', expectedMoveOut: '2026-09-30', tenantName: '한희규' })
+  const withAck = (acks: { id: string; frontLeaseTermId: string; backLeaseTermId: string; overlapFrom: string; overlapTo: string }[]) =>
+    buildMoveCalendar({ month: MONTH, today: TODAY, changed: [front, back], context: [front, back], acks }).rows[0]
+
+  const bare = withAck([])
+  eq('확인 전 · 충돌', bare.conflicts.map(c => [c.kind, c.acked]), [['overlap', false]])
+  eq('확인 전 · 빨간 밴드', bare.overlaps, [{ startDay: 18, endDay: 19, acked: false }])
+  eq('확인 전 · 확인 대상 두 계약(앞=입주일이 이른 쪽)', bare.conflicts[0].pair, { frontLeaseTermId: 'k1', backLeaseTermId: 'k2' })
+
+  const ack = { id: 'ack-1', frontLeaseTermId: 'k1', backLeaseTermId: 'k2', overlapFrom: '2026-08-18', overlapTo: '2026-08-19' }
+  const done = withAck([ack])
+  eq('확인 후 · 줄은 남는다', done.conflicts.length, 1)
+  eq('확인 후 · 중립 문구', done.conflicts[0].text, '422호 박호정·한희규 8/18~8/19 겹침 확인됨')
+  eq('확인 후 · 해제 진입점', [done.conflicts[0].acked, done.conflicts[0].ackId], [true, 'ack-1'])
+  eq('확인 후 · 밴드도 중립', done.overlaps, [{ startDay: 18, endDay: 19, acked: true }])
+  eq('확인 후 · 막대는 충돌 표시를 벗는다', done.bars.some(b => b.conflicted), false)
+
+  // 구간 초과 — 퇴실일이 하루 더 밀리면 그 확인은 같은 사실이 아니다(재발화).
+  const pushed = lease({ id: 'k1', roomNo: '422', status: 'CHECKOUT_PENDING', moveInDate: '2026-06-01', expectedMoveOut: '2026-08-20', tenantName: '박호정' })
+  const refired = buildMoveCalendar({ month: MONTH, today: TODAY, changed: [pushed, back], context: [pushed, back], acks: [ack] }).rows[0]
+  eq('구간 초과 · 확인 실효', refired.conflicts.map(c => c.acked), [false])
+  eq('구간 초과 · 다시 빨강', refired.overlaps, [{ startDay: 18, endDay: 20, acked: false }])
+}
+
+// ── 확인 대상이 아닌 충돌 ── 무기한·역전은 확인으로 덮을 것이 아니다(다른 처방).
+{
+  const live = lease({ id: 'n1', roomNo: '507', status: 'ACTIVE', moveInDate: '2026-08-04', tenantName: '한결' })
+  const resv = lease({ id: 'n2', roomNo: '507', status: 'RESERVED', moveInDate: '2026-08-20', tenantName: '두리' })
+  const c = build([live, resv], [live, resv]).rows[0].conflicts[0]
+  eq('무기한 · 확인 대상 아님', [c.kind, c.acked, c.pair], ['indefinite', false, null])
+  const bad = lease({ id: 'n3', roomNo: '508', status: 'ACTIVE', moveInDate: '2026-08-20', expectedMoveOut: '2026-08-10', tenantName: '거꾸로' })
+  const r = build([bad], [bad]).rows[0].conflicts[0]
+  eq('역전 · 확인 대상 아님', [r.kind, r.acked, r.pair], ['reversed', false, null])
 }
 
 // ── 509호 ── 퇴실 예정일(8/2)과 실제 퇴실일(8/3)이 다르면 실제일이 이긴다.
@@ -332,7 +382,7 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   const a = lease({ id: 'y1', roomNo: '404', status: 'RESERVED', moveInDate: '2026-12-28', expectedMoveOut: '2027-01-05', tenantName: '가나' })
   const b = lease({ id: 'y2', roomNo: '404', status: 'RESERVED', moveInDate: '2027-01-03', expectedMoveOut: '2027-01-20', tenantName: '다라' })
   const row = range({ from: '2026-12-01', to: '2027-01-31', changed: [a, b], today: '2026-12-15' }).rows[0]
-  eq('연말 · 겹친 구간 좌표', row.overlaps, [{ startDay: 34, endDay: 36 }])
+  eq('연말 · 겹친 구간 좌표', row.overlaps, [{ startDay: 34, endDay: 36, acked: false }])
   eq('연말 · 문구의 날짜는 1월', row.conflicts[0].text, '404호 가나·다라 체류가 1/3~1/5 겹칩니다.')
   eq('연말 · 두 층', row.laneCount, 2)
 }

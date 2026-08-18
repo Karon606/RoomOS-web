@@ -21,8 +21,14 @@
 //
 // 오탐 방지 — 한 방에 계약이 둘 이상 있는 것 자체는 정상이다(402·404·503호). 이어 붙은
 // 구간은 겹치지 않는다. 위반은 두 구간이 실제로 포개질 때만이다 — 판정식은 addTenant 폼의
-// 확인창(overlapOccupancy)과 같은 선이고, 같은 날 퇴실·입주는 겹침으로 센다.
-// 퇴실 예정일이 없는 계약은 무기한이라 그 뒤 전부와 겹친다.
+// 확인창(overlapOccupancy)과 같은 선이다. 퇴실 예정일이 없는 계약은 무기한이라 그 뒤 전부와 겹친다.
+//
+// 이 축은 2026-08-19 겹침 판정 개정으로 둘을 뺀다(운영자 확정).
+//   · **당일 회전** — 앞이 나가는 그날 뒤가 들어오고 겹침이 그 하루뿐이면 정상 운영이다.
+//     종전에는 이것이 위반으로 서서, 정상인 방이 매일 감지망에 이름을 올렸다.
+//   · **확인된 겹침** — 운영자가 의도된 것으로 확인한 구간(LeaseOverlapAck)은 위반이 아니다.
+//     단 확인은 **구간 스냅샷**이라, 지금 겹침이 그 구간을 하루라도 넘으면 다시 위반이다.
+//     겹침이 사라졌는데 남아 있는 확인은 위반이 아니라 정보 줄로만 말한다(청소 대상이지 사고가 아니다).
 //
 // 축 ③ 공실 집계 제외 방(창고·사무실)에 거주·예약 계약이 들어가 있는 방.
 //
@@ -62,6 +68,28 @@ const CURRENT_OCCUPANCY_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING']
 // 한 사람이 거주 계약 둘을 정당하게 들고 있는 인원 수. 오늘 0 명이다.
 const BASELINE_TWO_RESIDENCES = 0
 
+// ── 겹침 판정 사본 ──────────────────────────────────────────────
+// lib/roomAssignment.ts 의 occupancyOverlapSpan · isSameDayTurnover 와 **같은 식**이다.
+// 이 스크립트는 .mjs 라 TS 정본을 import 하지 못해 사본을 든다. 저쪽 주석도 여기를 가리킨다 —
+// 한쪽만 고치면 감지망과 앱이 서로 다른 답을 말하기 시작하므로 반드시 함께 고친다.
+const overlapSpan = (a, b) => {
+  const overlaps = (!a.moveOut || !b.moveIn || a.moveOut >= b.moveIn)
+    && (!b.moveOut || !a.moveIn || b.moveOut >= a.moveIn)
+  if (!overlaps) return null
+  const later = (x, y) => (x && y ? (x > y ? x : y) : (x ?? y))
+  const earlier = (x, y) => (x && y ? (x < y ? x : y) : (x ?? y))
+  return { from: later(a.moveIn, b.moveIn), to: earlier(a.moveOut, b.moveOut) }
+}
+const sameDayTurnover = (a, b) => {
+  const s = overlapSpan(a, b)
+  if (!s || !s.from || !s.to || s.from !== s.to) return false
+  const day = s.from
+  const turns = (front, back) => front.moveOut === day && back.moveIn === day && (front.moveIn === null || front.moveIn < day)
+  return turns(a, b) || turns(b, a)
+}
+/** 두 계약 id 로 만드는 확인 색인 키 — 앞뒤 순서를 묻지 않는다(날짜가 밀리면 순서가 바뀐다). */
+const pairKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
+
 async function main() {
   const rooms = await prisma.room.findMany({
     orderBy: { roomNo: 'asc' },
@@ -71,10 +99,24 @@ async function main() {
       property: { select: { name: true } },
       leaseTerms: {
         where: { status: { in: [...OCCUPYING_STATUSES, 'NON_RESIDENT'] } },
-        select: { status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+        select: { id: true, status: true, moveInDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
       },
     },
   })
+
+  // 유효한 확인(해제분 제외) — 축 ②가 위반에서 뺄 근거다.
+  const acks = await prisma.leaseOverlapAck.findMany({
+    where: { deletedAt: null },
+    select: { id: true, frontLeaseTermId: true, backLeaseTermId: true, overlapFrom: true, overlapTo: true },
+  })
+  const acksByPair = new Map()
+  for (const k of acks) {
+    const key = pairKey(k.frontLeaseTermId, k.backLeaseTermId)
+    acksByPair.set(key, [...(acksByPair.get(key) ?? []), k])
+  }
+  /** 지금 겹치고 있는 쌍의 확인 id — 여기 없는 확인은 겹침이 사라진 잔존분이다. */
+  const liveAckIds = new Set()
+  let ackedPairs = 0
 
   const ymd = (d) => d ? new Date(d).toISOString().slice(0, 10) : null
   const label = (l) => `${l.status}/${l.tenant?.name ?? '-'}/${ymd(l.moveInDate) ?? '미정'}~${ymd(l.expectedMoveOut) ?? '무기한'}`
@@ -92,16 +134,23 @@ async function main() {
 
     if (occ.length === 0) continue
 
-    // ── 축 ② — 두 구간이 실제로 포개지는 쌍이 하나라도 있는가. 같은 날은 겹침으로 센다.
+    // ── 축 ② — 두 구간이 실제로 포개지는 쌍이 하나라도 있는가.
+    // 당일 회전은 빼고, 확인된 겹침도 뺀다(확인 구간을 넘으면 다시 위반이다).
     const pair = []
     for (let i = 0; i < occ.length; i++) {
       for (let j = i + 1; j < occ.length; j++) {
         const a = occ[i], b = occ[j]
-        const aIn = ymd(a.moveInDate), aOut = ymd(a.expectedMoveOut)
-        const bIn = ymd(b.moveInDate), bOut = ymd(b.expectedMoveOut)
         // 입주일이 없으면 이미 시작된 점유로, 퇴실 예정일이 없으면 무기한으로 읽는다.
-        const overlaps = (!aOut || !bIn || aOut >= bIn) && (!bOut || !aIn || bOut >= aIn)
-        if (overlaps) pair.push(`${label(a)} <> ${label(b)}`)
+        const sa = { moveIn: ymd(a.moveInDate), moveOut: ymd(a.expectedMoveOut) }
+        const sb = { moveIn: ymd(b.moveInDate), moveOut: ymd(b.expectedMoveOut) }
+        const span = overlapSpan(sa, sb)
+        if (!span) continue
+        if (sameDayTurnover(sa, sb)) continue
+        const hit = (acksByPair.get(pairKey(a.id, b.id)) ?? []).find(k =>
+          span.from && span.to && span.from >= k.overlapFrom && span.to <= k.overlapTo)
+        for (const k of acksByPair.get(pairKey(a.id, b.id)) ?? []) liveAckIds.add(k.id)
+        if (hit) { ackedPairs++; continue }
+        pair.push(`${label(a)} <> ${label(b)}`)
       }
     }
     if (pair.length > 0) axis2.push({ ...where, detail: pair.join(' | ') })
@@ -163,9 +212,16 @@ async function main() {
       '한쪽을 비거주(창고·사무실 명의)로 바꾸거나 종료한다. 2실 거주가 실제 운영 방침이 되면 이 스크립트의 BASELINE_TWO_RESIDENCES 를 갱신한다.')
   }
 
+  // 겹침이 사라졌는데 남아 있는 확인 — 위반이 아니다. 날짜를 옮겨 겹침을 푼 정상 처리의 흔적이고,
+  // 그 계약들이 다시 겹치면 그때 다시 유효해진다. 사실만 한 줄로 적어 둔다.
+  const staleAcks = acks.filter(k => !liveAckIds.has(k.id))
+  if (staleAcks.length > 0) {
+    console.log(`[입주 가능 정합] 겹침이 사라진 확인 ${staleAcks.length}건 — 위반 아님(다시 겹치면 그때 유효해진다).`)
+  }
+
   await prisma.$disconnect()
   if (bad > 0) process.exit(1)
-  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 입주자 ${people.length}명 검사 / 위반 0건 (축 4종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES})`)
+  console.log(`[입주 가능 정합] 방 ${rooms.length}개 · 입주자 ${people.length}명 검사 / 위반 0건 · 확인된 겹침 ${ackedPairs}건 (축 4종, 2실 거주 기준선 ${BASELINE_TWO_RESIDENCES})`)
 }
 
 main()
