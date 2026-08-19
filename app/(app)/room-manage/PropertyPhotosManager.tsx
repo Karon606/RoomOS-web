@@ -1,7 +1,7 @@
 'use client'
 // 공용·외관 사진 관리 — 카테고리별 업로드·공개·360·삭제. 방 사진 편집과 같은 조작감(PhotoLightbox 재사용).
 import { useState, useEffect, useRef } from 'react'
-import { PhotoLightbox, uploadFileToDriveSession, type Photo } from './RoomManageClient'
+import { PhotoLightbox, uploadFileToDriveSession, type Photo } from '@/components/room-manage/PhotoViewer'
 import {
   getPropertyPhotoData, createPhotoCategory, renamePhotoCategory, deletePhotoCategory,
   createPropertyPhotoUploadSession, finalizePropertyPhoto, deletePropertyPhoto,
