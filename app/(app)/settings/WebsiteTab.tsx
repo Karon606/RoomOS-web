@@ -1,13 +1,15 @@
 'use client'
 
 // 환경설정 '웹사이트' 탭 — 손님에게 내보이는 소개 페이지를 한 자리에서 손본다(2026-08-18 IA 1단계).
-// 담는 것은 셋이다. ① 소개 페이지 주소(슬러그) ② 소개 페이지 반영 대기(올릴 방·내릴 방) ③ 바로가기.
-// 홈에 있던 카드 두 장이 여기로 옮겨 왔다 — 홈은 "반영 대기 N건" 한 줄만 말한다.
+// 담는 것은 넷이다. ① 소개 페이지 주소(슬러그) ② 소개 페이지 반영 대기(올릴 방·내릴 방)
+// ③ 공용·외관 사진 ④ 바로가기. 홈에 있던 카드 두 장이 여기로 옮겨 왔다 — 홈은 "반영 대기 N건" 한 줄만 말한다.
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
+import { useCanEdit } from '@/components/RoleContext'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -15,6 +17,10 @@ import { publicSiteUrl } from '@/lib/publicSite'
 import { setRoomShowOnSite } from '@/app/(app)/room-manage/actions'
 import { updatePublicSlug } from './actions'
 import type { SiteRoomCandidate, SiteRoomCandidates } from '@/lib/siteCandidates'
+
+// 공용·외관 사진 관리 모달 — 호실 관리 헤더가 여는 것과 **같은 정본**을 그대로 연다(손사본 금지).
+// 지연 로드라 웹사이트 탭을 열어도 누르기 전에는 내려받지 않는다.
+const PropertyPhotosManager = dynamic(() => import('@/app/(app)/room-manage/PropertyPhotosManager'), { ssr: false })
 
 export function WebsiteTab({
   initialSlug,
@@ -24,9 +30,11 @@ export function WebsiteTab({
   candidates: SiteRoomCandidates
 }) {
   const router = useRouter()
+  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 진입 숨김(감사 D3) — 호실 관리 쪽 같은 버튼과 같은 가드
   const [slug, setSlug] = useState(initialSlug)
   const [savedSlug, setSavedSlug] = useState(initialSlug)
   const [savingSlug, setSavingSlug] = useState(false)
+  const [showPropPhotos, setShowPropPhotos] = useState(false)
   const [busy, startSiteTransition] = useTransition()
 
   const savedUrl = publicSiteUrl(savedSlug)
@@ -170,7 +178,22 @@ export function WebsiteTab({
         )}
       </div>
 
-      {/* ③ 바로가기 — 소개 페이지에 실리는 것들의 실제 작업대는 다른 화면에 있다.
+      {/* ③ 공용·외관 사진 — 방이 아닌 공간의 사진. 여는 모달은 호실 관리 헤더가 여는 것과 같은 정본이라
+          두 자리가 같은 작업대로 수렴한다(정주소는 버튼이 아니라 모달이다 — ConsultToolsModal·ReceiptScanModal 과 같은 문법).
+          카드 ②(방 축) 바로 뒤에 두어 방·공용 두 축이 나란히 읽히게 하고, 떠나는 문인 ④ 바로가기는 마지막을 지킨다.
+          버튼만 두고 썸네일은 두지 않는다 — 여기서 내릴 판단이 없는 미리보기이고, 넣으면 모달의 지연 로딩이 무의미해진다.
+          카드 ②의 '올리기·내리기'와 달리 이 진입은 canEditUi 로 가린다(감사 D3, 호실 관리와 같은 처방). */}
+      {canEditUi && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">공용·외관 사진</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+            건물 외관, 복도, 주방처럼 방이 아닌 공간의 사진입니다. 카테고리별로 올리고 공개 여부를 정합니다.
+          </p>
+          <Btn variant="secondary" size="md" onClick={() => setShowPropPhotos(true)}>사진 관리</Btn>
+        </div>
+      )}
+
+      {/* ④ 바로가기 — 소개 페이지에 실리는 것들의 실제 작업대는 다른 화면에 있다.
           여기서 그 화면을 다시 만들지 않고 문만 낸다(데이터·도구 탭의 '발생주의 데이터 진단' 줄과 같은 문법). */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">바로가기</h2>
@@ -188,6 +211,8 @@ export function WebsiteTab({
           </Link>
         </div>
       </div>
+
+      {showPropPhotos && <PropertyPhotosManager onClose={() => setShowPropPhotos(false)} />}
     </>
   )
 }
