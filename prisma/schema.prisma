@@ -175,6 +175,10 @@ model Property {
   // 청소비가 계약 보증금의 일부를 채운 것으로 판정한다(lib/depositComposition 정본).
   cleaningFeeInDeposit    Boolean  @default(false)
   refundClauseInContract  Boolean  @default(true)   // 계약서에 환불 규정 조항({{환불규정}})을 자동 표시할지
+  // 다중 계약서 작성 허용(영업장 단위, 운영자 결정 2026-08-20). 기본 꺼짐 = 1인당 계약서 1개.
+  // 켜야만 발급 목적 입력과 '새 버전 작성'이 화면에 뜬다. 껐을 때 이미 만든 파생 판본은
+  // 숨김이지 삭제가 아니다 — 데이터는 그대로 살아 있고 다시 켜면 되돌아온다.
+  multiContractVersions   Boolean  @default(false)
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   // 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류. shape: { enabled, days, title, body }
@@ -1615,6 +1619,16 @@ model ContractFile {
   // 파일도 Drive 원본도 issuedSnapshot 도 그대로 남고, 목록은 [폐기됨] 배지를 달아 계속 보여준다.
   // 계약일 정합 검사(축 1)가 이 값을 보고 폐기본을 제외한다 — 그 종이의 계약일은 그때 그 서명일이 맞다.
   voidedAt     DateTime?
+  // 구버전 도장 — 이 발급본이 나온 뒤 그 계약의 서명이 다음 판본으로 교체됐다는 사실.
+  // 폐기와 다르다. 폐기는 '이 판본은 계약서로서 효력이 없다'이고, 이것은 '그때는 맞았고
+  // 지금 서명의 주인은 다음 판본이다'다. 파일도 Drive 원본도 issuedSnapshot 도 그대로 남는다.
+  // 계약일 정합 검사(축 1)가 이 값을 보고 구버전을 제외한다 — 그 종이의 계약일은 그때 그 서명일이 맞다.
+  supersededAt DateTime?
+  // 발급 목적 — null 이 곧 '실계약'이다. 값은 lib/contractPurpose 화이트리스트뿐이고,
+  // 쓰기는 발급 트랜잭션(번호 예약) 한 번뿐이다. 고쳐야 하면 폐기하고 다시 발급한다.
+  // null 을 기본으로 두는 이유: 기존 발급본은 전부 실계약이라 백필이 없고, 문자열 기본값을
+  // 박으면 '아직 안 고름'과 '실계약을 골랐음'이 구분되지 않는다.
+  issuePurpose String?
   createdAt    DateTime           @default(now())
 
   tenantId     String   @db.Uuid
