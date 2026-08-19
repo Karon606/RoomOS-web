@@ -100,15 +100,17 @@ function windowLabel(val: string) {
 
 type Tab = SettingsTab
 
+// 2026-08-19 IA 2단계(운영자 승인) 순서. 읽는 사람이 안에서 밖으로 걸어 나가는 차례다 —
+// 우리가 누구인지(기본정보), 얼마를 받는지(요금·정책), 무엇으로 부르는지(분류 관리),
+// 무엇을 써 주는지(계약서·서류), 손님에게 어떻게 보이는지(웹사이트), 누가 함께 쓰는지(멤버 관리),
+// 그리고 안쪽 살림 둘(데이터·도구, 화면). 앞의 넷이 영업장 자체를 정하는 칸이고 뒤의 넷은 도구다.
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic',      label: '기본정보' },
-  { key: 'room',       label: '호실 설정' },
-  { key: 'finance',    label: '수익·지출' },
-  { key: 'members',    label: '멤버 관리' },
-  { key: 'contract',   label: '계약서' },
-  // 손님에게 내보이는 것들 — 계약서 옆이 제자리다(둘 다 밖으로 나가는 얼굴이고, 안쪽 살림인
-  // 데이터·도구·화면보다 앞선다). 2026-08-18 IA 1단계로 신설.
+  { key: 'pricing',    label: '요금·정책' },
+  { key: 'options',    label: '분류 관리' },
+  { key: 'contract',   label: '계약서·서류' },
   { key: 'website',    label: '웹사이트' },
+  { key: 'members',    label: '멤버 관리' },
   { key: 'data',       label: '데이터·도구' },
   { key: 'appearance', label: '화면' },
 ]
@@ -287,15 +289,8 @@ export default function SettingsForm({
     : ''
   const [acqDateVal, setAcqDateVal]         = useState(acqDate)
   const [cutoffDateVal, setCutoffDateVal]   = useState(cutoffDate)
-  // 잔여 소지품 임의처분 동의서 — 저장값(JSON) 폴백
-  const dcRaw = (property?.disposalConsentTemplate as Partial<DisposalConsentTemplate> | null) ?? null
-  const dc = {
-    enabled: dcRaw?.enabled ?? DEFAULT_DISPOSAL_CONSENT.enabled,
-    days:    dcRaw?.days    ?? DEFAULT_DISPOSAL_CONSENT.days,
-    title:   dcRaw?.title   ?? DEFAULT_DISPOSAL_CONSENT.title,
-    body:    dcRaw?.body    ?? DEFAULT_DISPOSAL_CONSENT.body,
-  }
-  const [areaVal, setAreaVal]               = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
+  // 전용면적·임의처분 동의서는 2026-08-19 IA 2단계에서 계약서·서류 탭으로 옮겼다 — 그 값들의
+  // 상태도 함께 갔다(DocumentDefaultsCard). 여기서 들고 있으면 쓰는 자리와 사는 자리가 갈린다.
 
   // ── 방타입 ─────────────────────────────────────────────────────
   const [roomTypes, setRoomTypes] = useState<string[]>([])
@@ -763,7 +758,6 @@ export default function SettingsForm({
 
       {/* 기본정보 탭 */}
       {tab === 'basic' && (
-        <>
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
 
@@ -845,107 +839,6 @@ export default function SettingsForm({
               <DatePicker name="prevOwnerCutoffDate" value={cutoffDateVal} onChange={setCutoffDateVal}
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--warm-mid)]">기본 보증금</label>
-                <MoneyInput name="defaultDeposit" defaultValue={property?.defaultDeposit ?? undefined} placeholder="0원" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--warm-mid)]">기본 청소비</label>
-                <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
-              <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다. 단기 계약은 단기 입실 정책에서 예약금 처리를 따로 정하면 그 방식을 따릅니다.</p>
-              <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                <option value="deposit">보증금 대체 · 받은 예약금을 보증금으로</option>
-                <option value="prepaid">이용료 선납 · 입주월 이용료로 충당</option>
-                <option value="none">안 받음 · 예약금 없이 예약</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">중도퇴실 위약금 기본값</label>
-              <p className="text-xs text-[var(--warm-muted)]">중도퇴실 환불 시 총 결제금액에서 공제하는 위약금율입니다. 공정위 기준(10%)을 넘길 수 없고, 퇴실 처리 때 사람별로 이 값 이하로 조정할 수 있습니다.</p>
-              <div className="relative w-32">
-                <input type="text" inputMode="numeric" name="refundPenaltyPct"
-                  defaultValue={property?.refundPenaltyPct ?? 10}
-                  autoComplete="off"
-                  className="w-full px-3 py-2.5 pr-8 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">%</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>
-              <p className="text-xs text-[var(--warm-muted)]">영업장(호실)의 전용면적입니다. 실거주 확인서의 면적 칸에 자동으로 들어갑니다. (호실별 측정 면적이 아닌 영업장 기준 면적)</p>
-              <div className="relative">
-                <input type="text" inputMode="decimal" name="defaultAreaM2"
-                  value={areaVal}
-                  onChange={e => setAreaVal(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder="예: 13.2"
-                  autoComplete="off"
-                  className="w-full px-3 py-2.5 pr-10 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                {areaVal.trim() !== '' && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
-                )}
-              </div>
-            </div>
-            <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
-              <h3 className="text-xs font-semibold text-[var(--warm-dark)]">계약·서류</h3>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서와 함께 적용·출력되는 환불 규정·동의서 설정입니다.</p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
-              <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
-              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
-                <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
-                  className="w-4 h-4 accent-[var(--coral)]" />
-                계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(계약서 본문에 {'{{환불규정}}'} 자리표시자가 있을 때만 나옵니다. 조항을 직접 쓴 경우 이 설정은 영향이 없습니다)</span>
-              </label>
-              {/* 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고친다(형제 토글과 같은 문법). */}
-              {isOwner && (
-                <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
-                  <input type="checkbox" name="cleaningFeeInDeposit" value="1" defaultChecked={property?.cleaningFeeInDeposit ?? false}
-                    className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
-                  <span className="break-keep">청소비를 보증금에 포함해서 받는다 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(보증금 50,000원에 청소비 20,000원이 들어 있고 현금으로는 30,000원만 받는 방식입니다. 켜면 입실 때 받은 청소비가 보증금의 그만큼을 채운 것으로 계산합니다)</span></span>
-                </label>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
-              <p className="text-xs text-[var(--warm-muted)]">계약서와 함께 출력되는 별도 서류. 입실자 정보·날짜·서명란은 자동입니다. 본문에 변수 사용 가능: <span className="num">{'{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}'}</span></p>
-              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
-                <input type="checkbox" name="disposalEnabled" value="1" defaultChecked={dc.enabled} className="w-4 h-4 accent-[var(--coral)]" />
-                계약서와 함께 출력
-              </label>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <div className="space-y-1">
-                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">제목</label>
-                  <input type="text" name="disposalTitle" defaultValue={dc.title}
-                    className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">미납 기준일</label>
-                  <input type="text" inputMode="numeric" name="disposalDays" defaultValue={String(dc.days)} placeholder="7"
-                    className="w-20 px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[0.6875rem] text-[var(--warm-muted)]">동의 내용 (본문)</label>
-                <textarea name="disposalBody" defaultValue={dc.body} rows={9}
-                  className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
-              <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
-              <input type="text" name="bankAccount"
-                defaultValue={property?.bankAccount ?? ''}
-                placeholder="예: 카카오뱅크 3333-01-2345678 (홍길동)"
-                autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
-            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">연락할 때 알림 (며칠 전부터)</label>
               <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 입주자의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
@@ -956,41 +849,29 @@ export default function SettingsForm({
                 <span className="text-sm text-[var(--warm-mid)]">일 전부터</span>
               </div>
             </div>
-            {/* 이사 안내 — 소개 페이지 주소(슬러그)는 웹사이트 탭으로 옮겼다(2026-08-18 IA 1단계).
-                계약서 탭의 로고 안내와 같은 문법. 여기서 찾던 사람이 빈손으로 돌아가지 않게 한 줄만 세운다.
-                바탕만 다르다 — 그쪽은 페이지 바탕 위라 --canvas 가 맞지만 이 줄은 카드(--cream) 안이라
-                다크에서 --canvas(#000)를 쓰면 카드에 검은 구멍이 뚫린다(§28, 중첩 패널은 --cream-soft).
-                TODO(2026-09 중순 제거): 옮긴 지 2~4주 지나면 이 안내를 걷는다. */}
-            <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
-              소개 페이지 주소는 <span className="font-semibold text-[var(--warm-dark)]">웹사이트 탭</span>으로 옮겼습니다.
+            {/* 이사 안내 — 기본정보 한 탭이 영업장 정보·요금·서류·분류를 모두 이고 있어 스크롤 끝까지
+                가야 찾던 칸이 나왔다. 네 갈래로 나눠 보냈으니 여기서 찾던 사람이 빈손으로 돌아가지
+                않게 간 곳을 적는다. 1단계(슬러그)와 2단계(나머지 셋)를 상자 하나에 모은 것은,
+                상자 둘이 나란히 서면 안내가 카드의 주인이 되기 때문이다.
+                바탕은 --cream-soft — 이 줄은 카드(--cream) 안이라 다크에서 --canvas(#000)를 쓰면
+                카드에 검은 구멍이 뚫린다(§28, 중첩 패널은 --cream-soft).
+                TODO(제거): 첫 줄은 2026-09 중순, 나머지 셋은 2026-09 하순. 한 번에 걷어도 된다. */}
+            <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-0.5" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
+              <p>소개 페이지 주소는 <span className="font-semibold text-[var(--warm-dark)]">웹사이트 탭</span>으로 옮겼습니다.</p>
+              <p>기본 보증금·청소비·예약금·위약금·환불 규정은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책 탭</span>으로 옮겼습니다.</p>
+              <p>영업장 전용면적·입금 계좌번호·잔여 소지품 임의처분 동의서는 <span className="font-semibold text-[var(--warm-dark)]">계약서·서류 탭</span>으로 옮겼습니다.</p>
+              <p>요청 카테고리는 <span className="font-semibold text-[var(--warm-dark)]">분류 관리 탭</span>으로 옮겼습니다.</p>
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
               {isPending ? '저장 중…' : '저장'}
             </Btn>
           </form>
         </div>
-
-        {/* 요청 카테고리 — 액션마다 즉시 저장(위 폼의 저장 버튼과 무관) */}
-        <div className="mt-4">
-          <OptionSection
-            title="요청 카테고리 관리"
-            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
-            items={requestCategs}
-            getLabel={v => v}
-            newValue={newRequestCateg}
-            onNewValueChange={setNewRequestCateg}
-            onAdd={handleAddRequestCateg}
-            onDelete={handleDeleteRequestCateg}
-            onReorder={handleReorderRequestCategs}
-            onRename={handleRenameRequestCateg}
-            onReset={handleResetRequestCategs}
-            placeholder="예: 인터넷, 주차, 택배…"
-          />
-        </div>
-        </>
       )}
 
-      {/* 데이터·도구 탭 — 알림·캘린더·점검·엑셀·백업 (기본정보에서 분리) */}
+      {/* 데이터·도구 탭 — 알림·캘린더·점검·엑셀·백업·문자 템플릿·AI·도움말·위험 구역.
+          영업장을 무엇으로 정하느냐가 아니라 무엇으로 다루느냐의 칸이다. 2026-08-19 IA 2단계에서
+          여기 섞여 있던 설정 둘(단기 입실 정책은 요금, 품목 세부스펙은 분류)을 제 축으로 보냈다. */}
       {tab === 'data' && (
         <>
         {/* 알림 — PWA 푸시 (홈 화면 설치 시 폰으로 알림 + 아이콘 뱃지) */}
@@ -1038,11 +919,13 @@ export default function SettingsForm({
         {/* 품명 병합 (AI) — 비품·자재·소모품·부식 유사 품명 통일 */}
         <ItemNameMergePanel />
 
-        {/* 품목 세부스펙 사전 — 지출 저장 시 자동 적립된 색상·사이즈·치수 관리(신고 ba9feb6b) */}
-        <ItemSpecOptionsPanel />
+        {/* 이사 안내 — 여기 있던 둘이 어디로 갔는지(2026-08-19 IA 2단계). 옛 자리에 그대로 세운다.
+            TODO(2026-09 하순 제거). */}
+        <div className="rounded-xl px-3 py-2 mt-4 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed space-y-0.5" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+          <p>단기 입실 정책은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책 탭</span>으로 옮겼습니다.</p>
+          <p>품목 세부스펙은 <span className="font-semibold text-[var(--warm-dark)]">분류 관리 탭</span>으로 옮겼습니다.</p>
+        </div>
 
-        {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
-        {isOwner && <ShortStayPolicyCard />}
         <SmsTemplateCard
           kind="unpaid"
           title="미납 안내 문자 템플릿"
@@ -1100,9 +983,17 @@ export default function SettingsForm({
         </>
       )}
 
-      {/* 호실 설정 탭 */}
-      {tab === 'room' && (
+      {/* 분류 관리 탭 — 앱이 쓰는 이름표를 한자리에 모았다(2026-08-19 IA 2단계).
+          종전에는 같은 일(목록에 이름 하나 추가하기)이 호실 설정·수익·지출·기본정보·데이터·도구
+          네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(수납·지출 축) · 요청 · 품목 순이다.
+          앞의 여덟은 OptionSection 정본 하나로 같은 손놀림이고, 마지막 품목 세부스펙만
+          지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
+      {tab === 'options' && (
         <div className="space-y-4">
+          {/* 이사 안내 — 사라진 두 탭을 찾던 사람에게. TODO(2026-09 하순 제거). */}
+          <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+            &lsquo;호실 설정&rsquo; 탭과 &lsquo;수익·지출&rsquo; 탭에 있던 분류 항목이 이 탭으로 모였습니다.
+          </div>
           <OptionSection
             title="방타입 관리"
             description="호실 등록 시 선택할 수 있는 방 유형 목록입니다."
@@ -1159,12 +1050,6 @@ export default function SettingsForm({
             onReset={handleResetDirections}
             placeholder="예: 남동향, 남남동향…"
           />
-        </div>
-      )}
-
-      {/* 수익·지출 탭 */}
-      {tab === 'finance' && (
-        <div className="space-y-4">
           <OptionSection
             title="부가수익 카테고리 관리"
             description="수납 관리 > 부가수익 탭에서 수익 등록 시 선택할 카테고리입니다."
@@ -1207,8 +1092,108 @@ export default function SettingsForm({
             onReset={handleResetPayMethods}
             placeholder="예: 자동이체, 법인카드…"
           />
+          {/* 요청 카테고리 — 기본정보 탭에서 옮겨 왔다. */}
+          <OptionSection
+            title="요청 카테고리 관리"
+            description="요청·컴플레인 등록과 목록 필터에서 선택할 분류입니다. 비우면 기본 5종(시설·소음·청결·편의·기타)을 사용합니다."
+            items={requestCategs}
+            getLabel={v => v}
+            newValue={newRequestCateg}
+            onNewValueChange={setNewRequestCateg}
+            onAdd={handleAddRequestCateg}
+            onDelete={handleDeleteRequestCateg}
+            onReorder={handleReorderRequestCategs}
+            onRename={handleRenameRequestCateg}
+            onReset={handleResetRequestCategs}
+            placeholder="예: 인터넷, 주차, 택배…"
+          />
+          {/* 품목 세부스펙 사전 — 데이터·도구 탭에서 옮겨 왔다(신고 ba9feb6b).
+              적립된 게 없으면 카드 자체가 서지 않는다. */}
+          <ItemSpecOptionsPanel />
+        </div>
+      )}
 
-          {/* 고정 지출 관리 */}
+      {/* 요금·정책 탭 — 돈의 기준을 한자리에서 정한다(2026-08-19 IA 2단계).
+          장기 기본값(이 카드) 다음에 단기 예외(단기 입실 정책), 그다음이 매달 나가는 돈(고정 지출)이다.
+          받는 돈에서 나가는 돈으로 읽히는 차례라 세 카드가 한 이야기가 된다. */}
+      {tab === 'pricing' && (
+        <div className="space-y-4">
+          {/* 이사 안내 — '수익·지출' 탭을 찾던 사람에게 어디로 갈렸는지 알린다.
+              카드가 아니라 페이지 바탕 위라 --canvas 가 맞다(계약서 탭 로고 안내와 같은 자리).
+              TODO(2026-09 하순 제거). */}
+          <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+            &lsquo;수익·지출&rsquo; 탭은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책</span>과 <span className="font-semibold text-[var(--warm-dark)]">분류 관리</span>로 나뉘었습니다. 고정 지출 관리는 이 탭 아래에 있습니다.
+          </div>
+
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">기본 요금·환불 규정</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">기본 보증금</label>
+                  <MoneyInput name="defaultDeposit" defaultValue={property?.defaultDeposit ?? undefined} placeholder="0원" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">기본 청소비</label>
+                  <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">예약금 기본 처리</label>
+                <p className="text-xs text-[var(--warm-muted)]">예약 시 받는 예약금의 기본 처리 방식입니다. 예약마다 개별로 바꿀 수 있습니다. 단기 계약은 단기 입실 정책에서 예약금 처리를 따로 정하면 그 방식을 따릅니다.</p>
+                <select name="reservationDepositMode" defaultValue={property?.reservationDepositMode ?? 'deposit'}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="deposit">보증금 대체 · 받은 예약금을 보증금으로</option>
+                  <option value="prepaid">이용료 선납 · 입주월 이용료로 충당</option>
+                  <option value="none">안 받음 · 예약금 없이 예약</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">중도퇴실 위약금 기본값</label>
+                <p className="text-xs text-[var(--warm-muted)]">중도퇴실 환불 시 총 결제금액에서 공제하는 위약금율입니다. 공정위 기준(10%)을 넘길 수 없고, 퇴실 처리 때 사람별로 이 값 이하로 조정할 수 있습니다.</p>
+                <div className="relative w-32">
+                  <input type="text" inputMode="numeric" name="refundPenaltyPct"
+                    defaultValue={property?.refundPenaltyPct ?? 10}
+                    autoComplete="off"
+                    className="w-full px-3 py-2.5 pr-8 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">%</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
+                <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
+                {/* 체크박스 앞의 hidden '0' — 꺼진 체크박스는 FormData 에 안 실린다. 저장이 필드 단위로
+                    쪼개진 뒤로는(2026-08-19) 그 부재가 "이 탭은 이 필드를 담당하지 않는다"로 읽혀
+                    체크를 풀 길이 사라진다. 짝을 세워 두면 has 는 항상 참이고 값은 '1' 유무로 갈린다.
+                    같은 이름의 hidden 은 환경설정의 세 체크박스 전부에 있다(감지망 축 ⓔ). */}
+                <input type="hidden" name="refundClauseInContract" value="0" />
+                <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+                  <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
+                    className="w-4 h-4 accent-[var(--coral)]" />
+                  계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(계약서 본문에 {'{{환불규정}}'} 자리표시자가 있을 때만 나옵니다. 조항을 직접 쓴 경우 이 설정은 영향이 없습니다)</span>
+                </label>
+                {/* 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고친다(형제 토글과 같은 문법). */}
+                {isOwner && (
+                  <>
+                  <input type="hidden" name="cleaningFeeInDeposit" value="0" />
+                  <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+                    <input type="checkbox" name="cleaningFeeInDeposit" value="1" defaultChecked={property?.cleaningFeeInDeposit ?? false}
+                      className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+                    <span className="break-keep">청소비를 보증금에 포함해서 받는다 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(보증금 50,000원에 청소비 20,000원이 들어 있고 현금으로는 30,000원만 받는 방식입니다. 켜면 입실 때 받은 청소비가 보증금의 그만큼을 채운 것으로 계산합니다)</span></span>
+                  </label>
+                  </>
+                )}
+              </div>
+              <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
+                {isPending ? '저장 중…' : '저장'}
+              </Btn>
+            </form>
+          </div>
+
+          {/* 단기 입실 정책 — 데이터·도구에서 옮겨 왔다. 오너 전용(§4 요금 기준). */}
+          {isOwner && <ShortStayPolicyCard />}
+
+          {/* 고정 지출 관리 — 수익·지출 탭에서 옮겨 왔다(카드 내부는 무수정). */}
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1612,7 +1597,13 @@ export default function SettingsForm({
         </div>
       )}
 
-      {tab === 'contract' && <ContractTab initial={contractSettings} />}
+      {/* 계약서·서류 탭 — 계약서 자체(사업자 정보·등록증·도장·본문)에 더해 2026-08-19 IA 2단계로
+          서류에 자동으로 박히는 값 셋(전용면적·입금 계좌번호·임의처분 동의서)이 기본정보에서 왔다.
+          저장 손잡이는 위쪽 폼들과 같은 것을 쓴다 — 같은 행동이 탭마다 다른 피드백을 주면 안 된다. */}
+      {tab === 'contract' && (
+        <ContractTab initial={contractSettings} property={property}
+          onSubmitProperty={handleSubmit} saving={isPending} />
+      )}
 
       {tab === 'website' && <WebsiteTab initialSlug={property?.publicSlug ?? ''} candidates={siteCandidates} />}
 
@@ -1623,7 +1614,13 @@ export default function SettingsForm({
 
 // ── 계약서 탭 ─────────────────────────────────────────────────────
 
-function ContractTab({ initial }: { initial: ContractSettings }) {
+function ContractTab({ initial, property, onSubmitProperty, saving }: {
+  initial: ContractSettings
+  /** 서류 자동채움 값(전용면적·계좌번호·동의서)의 현재 저장값 — 기본정보에서 옮겨 왔다. */
+  property: Property | null
+  onSubmitProperty: (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => void
+  saving: boolean
+}) {
   const [template, setTemplate]         = useState<ContractTemplate>(initial.template)
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
@@ -1632,6 +1629,17 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
   const [certUploading, setCertUploading]   = useState(false)
+
+  // 서류 자동채움 값 — 기본정보 탭에서 옮겨 온 상태(2026-08-19 IA 2단계). 칸의 문법은 무수정.
+  const [areaVal, setAreaVal] = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
+  // 잔여 소지품 임의처분 동의서 — 저장값(JSON) 폴백
+  const dcRaw = (property?.disposalConsentTemplate as Partial<DisposalConsentTemplate> | null) ?? null
+  const dc = {
+    enabled: dcRaw?.enabled ?? DEFAULT_DISPOSAL_CONSENT.enabled,
+    days:    dcRaw?.days    ?? DEFAULT_DISPOSAL_CONSENT.days,
+    title:   dcRaw?.title   ?? DEFAULT_DISPOSAL_CONSENT.title,
+    body:    dcRaw?.body    ?? DEFAULT_DISPOSAL_CONSENT.body,
+  }
 
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
@@ -1897,6 +1905,75 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           </span>
         </div>
       </div>
+
+      {/* 서류 자동채움 값 — 기본정보 탭에서 옮겨 왔다(2026-08-19 IA 2단계). 셋 다 "서류를 뽑을 때
+          저절로 들어가는 값"이라는 한 가지 성격이고, 그 성격이 이 탭의 이름(계약서·서류)이다.
+          카드 하나에 담고 안에서 border-t 소제목으로 확인서 축과 계약서 동반 축을 가른다 —
+          기본정보 폼이 쓰던 그 소제목 문법 그대로다(형제 카드는 h3 + p-4 sm:p-5 를 쓴다).
+          폼 자체가 카드다 — 사업자 정보 카드처럼 제목 줄 오른쪽에 저장이 붙는다. */}
+      <form onSubmit={onSubmitProperty} className="rounded-xl p-4 sm:p-5 space-y-3"
+        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[var(--warm-dark)]">서류 자동채움 값</h3>
+          <Btn type="submit" variant="primary" size="sm" disabled={saving}>{saving ? '저장 중…' : '저장'}</Btn>
+        </div>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">서류를 뽑을 때 저절로 채워지는 값입니다. 기본정보 탭에서 옮겨 왔습니다.</p>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>
+          <p className="text-xs text-[var(--warm-muted)]">영업장(호실)의 전용면적입니다. 실거주 확인서의 면적 칸에 자동으로 들어갑니다. (호실별 측정 면적이 아닌 영업장 기준 면적)</p>
+          <div className="relative">
+            <input type="text" inputMode="decimal" name="defaultAreaM2"
+              value={areaVal}
+              onChange={e => setAreaVal(e.target.value.replace(/[^0-9.]/g, ''))}
+              placeholder="예: 13.2"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 pr-10 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+            {areaVal.trim() !== '' && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
+          <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
+          <input type="text" name="bankAccount"
+            defaultValue={property?.bankAccount ?? ''}
+            placeholder="예: 카카오뱅크 3333-01-2345678 (홍길동)"
+            autoComplete="off"
+            className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+        </div>
+        <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
+          <h4 className="text-xs font-semibold text-[var(--warm-dark)]">계약서 동반 서류</h4>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
+          <p className="text-xs text-[var(--warm-muted)]">계약서와 함께 출력되는 별도 서류. 입실자 정보·날짜·서명란은 자동입니다. 본문에 변수 사용 가능: <span className="num">{'{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}'}</span></p>
+          {/* 체크박스 앞의 hidden '0' — 요금·정책 탭의 두 토글과 같은 이유다(감지망 축 ⓔ). */}
+          <input type="hidden" name="disposalEnabled" value="0" />
+          <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+            <input type="checkbox" name="disposalEnabled" value="1" defaultChecked={dc.enabled} className="w-4 h-4 accent-[var(--coral)]" />
+            계약서와 함께 출력
+          </label>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="space-y-1">
+              <label className="text-[0.6875rem] text-[var(--warm-muted)]">제목</label>
+              <input type="text" name="disposalTitle" defaultValue={dc.title}
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[0.6875rem] text-[var(--warm-muted)]">미납 기준일</label>
+              <input type="text" inputMode="numeric" name="disposalDays" defaultValue={String(dc.days)} placeholder="7"
+                className="w-20 px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[0.6875rem] text-[var(--warm-muted)]">동의 내용 (본문)</label>
+            <textarea name="disposalBody" defaultValue={dc.body} rows={9}
+              className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
+          </div>
+        </div>
+      </form>
     </div>
   )
 }
@@ -2283,8 +2360,9 @@ function ItemSpecOptionsPanel() {
   }
 
   if (groups !== null && groups.length === 0) return null   // 아직 적립된 게 없으면 카드 숨김
+  // 카드 사이 간격은 담는 쪽(분류 관리 탭의 space-y-4)이 준다 — 제 mt 를 들고 있으면 이중이 된다.
   return (
-    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">품목 세부스펙</h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         단가와 무관한 구분 정보(색상·사이즈·치수)입니다. 지출 입력 때 저장한 값이 자동으로 쌓이고, 품목 선택 시 칩으로 재사용됩니다.
@@ -2526,8 +2604,9 @@ function ShortStayPolicyCard() {
     else pushToast('error', res.error)
   }
 
+  // 카드 사이 간격은 담는 쪽(요금·정책 탭의 space-y-4)이 준다 — 제 mt 를 들고 있으면 이중이 된다.
   return (
-    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">단기 입실 정책</h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 입주자 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
