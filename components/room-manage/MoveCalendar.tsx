@@ -63,11 +63,21 @@ function barRadius(bar: MoveBar): string {
   return `${l} ${r} ${r} ${l}`
 }
 
-/** 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다. */
+/**
+ * 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다.
+ *
+ * 이사가 맨 앞이다. 방을 옮긴 날을 '퇴실'이라 부르면 이 줄을 읽은 운영자가 그 방을 광고에
+ * 올린다 — 오독의 대가가 실제 영업이다. 톤은 중립(info) 이다. 이사는 사고도 예정도 아닌
+ * 사실이고, exit·movein 은 둘 다 카멜이라 눈으로도 안 갈린다.
+ *
+ * 판정은 조립이 끝냈다(MoveEvent.moved). 화면이 'leaseId 가 같고 날짜가 같은 out·in 쌍'을
+ * 다시 세면 그 사본이 곧 두 번째 진실이 된다.
+ */
 function eventTone(e: MoveEvent): { tone: BadgeTone; label: string } {
-  return e.type === 'out' ? { tone: 'exit', label: '퇴실' }
-    : e.kind === 'reserved' ? { tone: 'await', label: '입실 예약' }
-      : { tone: 'movein', label: '입실' }
+  return e.moved ? { tone: 'info', label: '이사' }
+    : e.type === 'out' ? { tone: 'exit', label: '퇴실' }
+      : e.kind === 'reserved' ? { tone: 'await', label: '입실 예약' }
+        : { tone: 'movein', label: '입실' }
 }
 
 export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
@@ -389,7 +399,8 @@ function UpcomingRow({ items, onOpen }: {
             {shown.map(e => {
               const { tone, label } = eventTone(e)
               return (
-                <button key={`${e.leaseId}-${e.type}`} type="button"
+                // 키는 막대 id 다 — 이사는 한 계약이 같은 날 두 방에서 변동을 내므로 계약 id 로는 겹친다.
+                <button key={`${e.barId}-${e.type}`} type="button"
                   onClick={() => onOpen(e.roomId, e.leaseId, e.tenantId)}
                   className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
                   <span className="tnum font-semibold" style={{ color: 'var(--ink-2)' }}>{fmtMD(e.date)}</span>
@@ -514,8 +525,10 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
         })}
 
         {/* 막대 */}
+        {/* 막대 — 키는 구간 id 다. 계약 id 로 쓰면 나갔다 같은 방으로 돌아온 계약에서 키가 겹쳐
+            React 가 stale DOM 을 남긴다(같은 사고 전례: RoomsClient 정렬 고착, 신고 7007d2c1). */}
         {placed.map(p => (
-          <Bar key={p.bar.leaseId} p={p} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
+          <Bar key={p.bar.id} p={p} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
         ))}
 
         {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03).
