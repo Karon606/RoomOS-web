@@ -9,8 +9,9 @@
 //     '재서명 받기' 가 방금 받은 서명을 다시 폐기한다.
 
 import {
-  buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink, pickCurrentSignatureLink,
-  parseContractVersionArchive, restoredFieldsFrom, voidedVersionHasEvidence,
+  archiveOwnsEachFileOnce, buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink,
+  pickCurrentSignatureLink, parseContractVersionArchive, restoreTargetsFrom, restoredFieldsFrom,
+  versionKind, voidedVersionHasEvidence,
   type VoidableLease,
 } from '../lib/contractVersion'
 
@@ -152,6 +153,70 @@ const signedLease: VoidableLease = {
   eq('발급 출처 · 평시에는 그 링크 그대로',
     pickCurrentSignatureLink([OLD], { signatureSignedAt: SIGNED_AT, disposalSignatureSignedAt: DISPOSAL_AT })?.id, 'old')
   eq('발급 출처 · 링크가 없어도 터지지 않는다', pickCurrentSignatureLink([], { signatureSignedAt: SIGNED_AT }), null)
+}
+
+// ── 이동 종류(kind) 정규화 ──
+// 폐기와 '새 버전 작성'이 한 배열에 쌓인다. kind 없는 구항목이 폐기로 읽히는 것이 이 묶음의 몸통이다.
+{
+  const base = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-015'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null,
+  })
+  eq('종류 · kind 없는 구항목은 폐기', versionKind(base), 'void')
+  eq('종류 · kind 를 안 넘기면 칸 자체가 안 생긴다', 'kind' in base, false)
+  const sup = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-016'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: '새 버전 작성', kind: 'supersede',
+  })
+  eq('종류 · supersede 항목', versionKind(sup), 'supersede')
+  eq('종류 · void 를 명시해도 폐기', versionKind({ ...base, kind: 'void' }), 'void')
+  // 모르는 값은 폐기로 떨어진다 — supersede 로 읽으면 되돌리기가 엉뚱한 도장을 지운다.
+  eq('종류 · 모르는 값은 폐기로 떨어진다',
+    versionKind({ ...base, kind: 'archive' as unknown as 'void' }), 'void')
+  // v 를 올리면 새 항목이 파서에서 통째로 사라진다 — 그 사실을 못으로 박는다.
+  eq('종류 · v 를 올린 항목은 파서가 버린다',
+    parseContractVersionArchive([{ ...base, v: 2 }]).length, 0)
+  eq('종류 · 섞인 배열의 순서와 개수가 보존된다',
+    parseContractVersionArchive([base, sup]).map(versionKind), ['void', 'supersede'])
+
+  // supersede 항목도 폐기와 똑같이 증거를 담는다(G7 통과).
+  eq('종류 · supersede 도 서명 이미지를 담는다', sup.signature.contractImage, signedLease.signatureImageUrl)
+  eq('종류 · supersede 도 G7 통과', voidedVersionHasEvidence(sup), true)
+  // fileIds 를 비우지 않는다 — 어느 종이가 이 이동으로 구버전이 됐는지가 증거다.
+  eq('종류 · supersede 도 발급본 목록을 담는다', sup.fileIds, ['file-016'])
+  // 서명이 없는 lease 로 만든 항목은 빈 껍데기다 — 진입로에 hasVoidableVersion 게이트가 필요한 근거.
+  const emptySup = buildVoidedVersion({
+    lease: { signatureImageUrl: null, signatureSignedAt: null, disposalSignatureImageUrl: null, disposalSignatureSignedAt: null, signedContractSnapshot: null },
+    fileIds: [], closedLinkIds: [], voidedAt: VOID_AT, voidedBy: null, reason: null, kind: 'supersede',
+  })
+  eq('종류 · 서명 없는 supersede 는 G7 위반', voidedVersionHasEvidence(emptySup), false)
+}
+
+// ── 도장 소유권 — 되돌리기가 무엇을 지우는가 ──
+// 한 발급본은 이력 항목 하나에만 속해야 한다. 두 항목이 같은 파일을 소유하면 나중 항목을
+// 되돌릴 때 앞 항목이 찍은 도장까지 지워져, 폐기된 종이가 이력만 남긴 채 되살아난다.
+{
+  const v = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-A'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null,
+  })
+  const s = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-B'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null, kind: 'supersede',
+  })
+  eq('도장 · 폐기를 되돌리면 voidedAt 을 지운다', restoreTargetsFrom(v), { ids: ['file-A'], clear: 'voidedAt' })
+  eq('도장 · 새 버전을 되돌리면 supersededAt 을 지운다', restoreTargetsFrom(s), { ids: ['file-B'], clear: 'supersededAt' })
+  eq('도장 · kind 없는 구항목은 voidedAt 을 지운다',
+    restoreTargetsFrom({ ...v, kind: undefined }).clear, 'voidedAt')
+  eq('도장 · 소유가 겹치지 않으면 통과', archiveOwnsEachFileOnce([v, s]), true)
+  // 이동 쿼리가 이미 도장 찍힌 파일을 다시 집은 모양 — 이것이 거짓이어야 한다.
+  const greedy = { ...s, fileIds: ['file-A', 'file-B'] }
+  eq('도장 · 한 파일을 두 항목이 소유하면 위반', archiveOwnsEachFileOnce([v, greedy]), false)
+  eq('도장 · 빈 이력은 통과', archiveOwnsEachFileOnce([]), true)
+
+  // LIFO — 마지막 항목이 무엇인지가 적용취소의 대상이다.
+  const archive = parseContractVersionArchive([v, s])
+  eq('도장 · 마지막 항목은 새 버전', versionKind(archive[archive.length - 1]), 'supersede')
 }
 
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)

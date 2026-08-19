@@ -482,7 +482,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       title: '이 계약서를 폐기하고 다시 작성할까요?',
       message: '지금까지 받은 서명과 이미 발급한 계약서는 폐기 기록으로 그대로 남습니다. '
         + '이 화면의 잠금이 풀려 현재 정보로 다시 작성할 수 있고, 발급하려면 서명을 다시 받아야 합니다. '
-        + '되돌리기는 폐기 직후 토스트에서 할 수 있습니다.',
+        // 폐기본이 목록에서 접히므로 어디로 갔는지 먼저 말한다. 안 말하면 사라진 것으로 읽힌다.
+        + "폐기한 계약서는 입주자 정보의 '폐기한 계약서' 칸에서 볼 수 있고, 거기서 되돌릴 수도 있습니다.",
       level: 'danger', confirmLabel: '폐기',
     }))) return
     setSigClearing(true)
@@ -495,7 +496,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       clearSignatureLocal('disposal')
       pushToast('success', [
         '계약서를 폐기했습니다.',
-        res.voidedFiles > 0 ? `발급본 ${res.voidedFiles}부는 폐기 기록으로 남습니다.` : '',
+        res.voidedFiles > 0 ? `발급본 ${res.voidedFiles}부는 입주자 정보의 '폐기한 계약서' 칸에 남습니다.` : '',
         '내용을 고친 뒤 서명을 다시 받아 발급해 주세요.',
       ].filter(Boolean).join(' '), {
         action: {

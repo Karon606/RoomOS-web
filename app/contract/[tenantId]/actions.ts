@@ -18,7 +18,8 @@ import {
   CONTRACT_FIELD_ERROR, deriveContractLeaseFields, normalizeContractFieldOverrides,
 } from '@/lib/contractFieldOverrides'
 import {
-  buildVoidedVersion, hasVoidableVersion, parseContractVersionArchive, restoredFieldsFrom,
+  buildVoidedVersion, hasVoidableVersion, parseContractVersionArchive, restoreTargetsFrom,
+  restoredFieldsFrom, versionKind, type ContractVersionKind,
 } from '@/lib/contractVersion'
 
 // ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
@@ -140,10 +141,13 @@ async function voidVersion(
       },
     })
     if (!lease) throw new Error('대상 계약을 찾을 수 없습니다.')
-    // 이미 폐기된 부에는 다시 찍지 않는다 — 도장은 그 버전이 폐기된 시각이지 마지막 폐기 시각이 아니다.
+    // 이미 도장이 찍힌 부에는 다시 찍지 않는다 — 도장은 그 버전이 그렇게 된 시각이지 마지막 시각이 아니다.
     // 소프트삭제된 부에도 찍는다. 그 부도 이 버전으로 나간 종이라, 삭제를 되돌리면 폐기본이어야 한다.
+    // **구버전 도장이 찍힌 부도 제외한다.** 한 발급본은 이력 항목 하나에만 속해야 한다 —
+    // 두 항목이 같은 파일을 소유하면, 나중 항목을 되돌릴 때 앞 항목이 찍은 도장까지 지워져
+    // 폐기된 종이가 이력만 남긴 채 되살아난다(백엔드 무회귀 검토 2026-08-20).
     const files = await tx.contractFile.findMany({
-      where: { leaseTermId, propertyId, voidedAt: null },
+      where: { leaseTermId, propertyId, voidedAt: null, supersededAt: null },
       select: { id: true },
     })
     const links = await tx.contractShareLink.findMany({
@@ -219,6 +223,10 @@ export async function voidContractVersion(
  */
 export async function restoreContractVersion(
   leaseTermId: string,
+  // 무엇을 되돌리려는가. 폐기와 새 버전 작성이 같은 배열에 쌓이므로, 부르는 쪽이 기대를 밝히지
+  // 않으면 낡은 폐기 토스트의 적용취소가 방금 만든 새 버전을 되돌린다(마지막 항목 pop).
+  // 생략하면 폐기다 — 이 인자가 생기기 전 호출부와 같은 뜻이 되게 한다.
+  expectKind: ContractVersionKind = 'void',
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -234,9 +242,15 @@ export async function restoreContractVersion(
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     const archive = parseContractVersionArchive(lease.contractVersionArchive)
     const entry = archive[archive.length - 1]
-    if (!entry) return { ok: false, error: '되돌릴 폐기 기록이 없습니다.' }
+    const noun = expectKind === 'supersede' ? '이전 버전' : '폐기'
+    if (!entry) return { ok: false, error: `되돌릴 ${noun} 기록이 없습니다.` }
+    // 마지막 항목이 기대한 종류가 아니면 손대지 않는다. 폐기 → 새 버전 순으로 두 번 움직인 뒤
+    // 낡은 폐기 토스트의 적용취소를 누르면, 종류를 안 보는 pop 은 방금 만든 버전을 되돌린다.
+    if (versionKind(entry) !== expectKind) {
+      return { ok: false, error: `가장 최근 기록이 ${noun} 가 아니라 되돌릴 수 없습니다. 계약서 화면에서 확인해 주세요.` }
+    }
     if (hasVoidableVersion(lease)) {
-      return { ok: false, error: '이 계약에 새 서명이 이미 들어와 있어 폐기를 되돌릴 수 없습니다.' }
+      return { ok: false, error: `이 계약에 새 서명이 이미 들어와 있어 ${noun} 을 되돌릴 수 없습니다.` }
     }
     const f = restoredFieldsFrom(entry)
     const rest = archive.slice(0, -1)
@@ -257,8 +271,19 @@ export async function restoreContractVersion(
           contractVersionArchive: rest.length ? (rest as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         },
       })
-      if (entry.fileIds.length) {
-        await tx.contractFile.updateMany({ where: { id: { in: entry.fileIds }, propertyId }, data: { voidedAt: null } })
+      // 그 항목이 실제로 찍은 도장만 지운다. 종전에는 종류를 안 보고 voidedAt 만 지워서,
+      // 새 버전 작성을 되돌리면 서명은 돌아오는데 그 종이는 계속 구버전으로 남았다.
+      // where 의 NOT 조건은 '도장이 실제로 찍혀 있는 파일만' 을 강제한다 — 남의 항목이 소유한
+      // 파일이 섞여 들어와도 그쪽 도장은 건드리지 않는다.
+      const targets = restoreTargetsFrom(entry)
+      if (targets.ids.length) {
+        await tx.contractFile.updateMany({
+          where: {
+            id: { in: targets.ids }, propertyId,
+            NOT: targets.clear === 'supersededAt' ? { supersededAt: null } : { voidedAt: null },
+          },
+          data: targets.clear === 'supersededAt' ? { supersededAt: null } : { voidedAt: null },
+        })
       }
       // 폐기 직전 상태로 정확히 되돌린다 — 만료·제출 여부를 따지지 않는다. 그 판정은 입주자에게
       // 링크를 다시 열어 주는 reopenContractShareLink 의 것이고, 여기는 되돌리기다.

@@ -53,6 +53,8 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
   const [detailId, setDetailId] = useState<string | null>(null)
+  // 폐기본 펼침 — 매번 닫힌 채로 연다(예외 상황이라 기억해 둘 상태가 아니다).
+  const [showVoided, setShowVoided] = useState(false)
 
   // 다중 'PDF 보내기' 선택 모드 — 읽기 액션이라 STAFF 도 가능(canEdit 에 묶지 않음).
   // 다건 전송은 PDF 원본으로만 한다(mode='pdf' 강제). 단건 '보내기'는 2026-08-01 부터 사진도
@@ -101,9 +103,21 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
     return ids
   }, [contracts, groupCount])
 
+  // 같은 계약에 **화면에 남는** 부수가 몇인가 — 삭제 안내의 'N부는 남습니다' 가 이 값을 쓴다.
+  // 폐기본이 접혀 있는데 그것까지 세면 아무것도 안 보이는데 남는다고 말하는 상태가 된다.
+  const liveGroupCount = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of contracts) if (!c.voidedAt) m.set(issueGroupKey(c), (m.get(issueGroupKey(c)) ?? 0) + 1)
+    return m
+  }, [contracts])
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = contracts.filter(c => {
+      // 폐기본은 기본으로 접는다(운영자 결정 2026-08-20) — 숨김이지 삭제가 아니다.
+      // 세는 일(groupCount·currentIds)은 여전히 전량으로 하므로 배지·안내는 흔들리지 않는다.
+      // 선택 모드에서는 펼쳐 둔 상태여도 뺀다 — 다건 보내기는 효력 없는 종이를 담으면 안 된다.
+      if ((!showVoided || selectMode) && c.voidedAt) return false
       if (residency !== 'all' && (residency === 'departed') !== isDeparted(c.status)) return false
       if (source !== 'all' && c.source !== source) return false
       if (!q) return true
@@ -125,7 +139,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
           || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )
     return list
-  }, [contracts, query, residency, source, sort])
+  }, [contracts, query, residency, source, sort, showVoided, selectMode])
+  // 접혀 있는 폐기본이 몇 부인가 — 0부면 펼치기 줄 자체를 그리지 않는다.
+  const voidedCount = useMemo(() => contracts.filter(c => c.voidedAt).length, [contracts])
 
   // 발급 대기 행은 파일이 아니라 '아직 파일이 없는 계약'이다. 그래서 검색어(이름·호실)에만 반응한다.
   // 출처 필터는 앱 서명·스캔이라는 파일의 속성이라 대기 행이 답할 수 없고, 발급 대기는 언제나 거주중이라
@@ -143,8 +159,11 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   const handleDelete = async (id: string, name: string) => {
     // 같은 계약에 여러 부가 있으면 무엇이 남는지 먼저 말한다. 한 부만 지웠는데 계약서가 통째로
     // 사라진 줄 알고 다시 발급하면 번호만 하나 더 늘어난다.
+    // 세는 것은 화면에 남는 부수다. 접힌 폐기본까지 세면 거짓말이 된다(형제 화면과 같은 규칙).
     const target = contracts.find(c => c.id === id)
-    const siblings = target ? (groupCount.get(issueGroupKey(target)) ?? 1) - 1 : 0
+    const siblings = target
+      ? Math.max(0, (liveGroupCount.get(issueGroupKey(target)) ?? 0) - (target.voidedAt ? 0 : 1))
+      : 0
     if (!(await confirmDialog({
       title: `${name}님의 이 계약서 파일을 삭제할까요?`,
       message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
@@ -235,6 +254,15 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
           <button type="button" onClick={() => { setSource('all'); setResidency('current') }}
             className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
             발급 대기에 <span className="font-semibold text-[var(--warm-dark)]">{pendingHidden}건</span> 더 있음 · 전체에서 보기 ›
+          </button>
+        )}
+        {/* 폐기한 계약서 펼치기 — 형제 화면(입주자 정보 계약서 칸)과 같은 문법.
+            숨김이지 삭제가 아니라는 사실을 부수로 말한다. 0부면 줄 자체가 없다. */}
+        {voidedCount > 0 && !selectMode && (
+          <button type="button" onClick={() => setShowVoided(v => !v)}
+            className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+            {showVoided ? '폐기한 계약서 숨기기' : `폐기한 계약서 ${voidedCount}부 보기`}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
         )}
       </div>
@@ -335,7 +363,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
                       정렬과 무관하게 늘 띄운다: [현재] 와 달리 옆 행과 비교할 것 없이 그 자체로 사실이다. */}
                   {c.voidedAt && (
-                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">폐기됨</span>
                   )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>
@@ -361,13 +389,18 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 {/* 보기 = 앱 안 PDF 뷰어(인쇄·저장·확대가 여기서 다 된다). §22 solid 는 이 하나.
                     종전 '원본 보기'는 구글 드라이브로 나가 앱을 벗어났다. */}
                 <ViewDocButton driveFileId={c.driveFileId} from="contracts" />
-                {/* 보내기는 조건 없이 띄운다 — 형제 2화면과 같게. canShare 로 숨기면 기기마다 행이 달라져
-                    학습이 안 되고, 데스크톱에서도 다운로드 폴백과 안내 토스트가 있어 실패하지 않는다. */}
-                <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}
-                  className={btnClass('secondary', 'sm')} />
+                {/* 보내기·인쇄는 폐기본에서 걷는다 — 효력 없는 종이를 밖으로 내보내는 길을 열어두면 안 된다.
+                    보내기는 그 밖에서는 조건 없이 띄운다(형제 2화면과 같게). canShare 로 숨기면 기기마다
+                    행이 달라져 학습이 안 되고, 데스크톱에도 다운로드 폴백과 안내 토스트가 있다. */}
+                {!c.voidedAt && (
+                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}
+                    className={btnClass('secondary', 'sm')} />
+                )}
                 {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                     계약서는 여러 장이라 뷰어를 거치는 비용이 특히 컸다. */}
-                <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서`} from="contracts" />
+                {!c.voidedAt && (
+                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서`} from="contracts" />
+                )}
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                   disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">
                   {pending && deletingId === c.id ? '삭제 중…' : '삭제'}

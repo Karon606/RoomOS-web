@@ -13,10 +13,24 @@
 // 이 파일은 순수 함수만 담는다 — 서버 액션·감지망·테스트가 같은 규칙을 쓰게 하려는 것이고,
 // 규칙을 각자 짜면 '화면은 폐기했다는데 검사는 서명이 남았다고 보는' 상태가 된다.
 
-/** 폐기된 계약서 버전 한 건 — append-only. 이 모양은 절대 파괴적으로 바뀌지 않는다(v 로 판별). */
+/**
+ * 이력 항목이 어떤 이동이었나.
+ *   void      — 이 판본은 계약서로서 효력이 없다(폐기).
+ *   supersede — 그때는 맞았고 지금 서명의 주인이 다음 판본으로 넘어갔다(구버전).
+ * kind 가 없는 구항목은 전부 void 다 — 이 칸이 생기기 전 이력은 폐기뿐이었다.
+ */
+export type ContractVersionKind = 'void' | 'supersede'
+
+/** 계약서 버전 이력 한 건 — append-only. 이 모양은 절대 파괴적으로 바뀌지 않는다(v 로 판별). */
 export type VoidedContractVersion = {
   v: 1
-  /** 폐기 시각(ISO) */
+  /**
+   * 이 이동의 종류. **v 를 올리지 않고 선택 필드로 더한다** — v: 2 로 올리면
+   * parseContractVersionArchive 의 필터에서 새 항목이 통째로 사라지고, G7 은 개수만 줄고
+   * 되돌리기는 "되돌릴 기록이 없습니다" 를 돌려준다. 둘 다 소리 없이 실패하는 종류다.
+   */
+  kind?: ContractVersionKind
+  /** 이 이동이 일어난 시각(ISO). 폐기든 대체든 같은 칸을 쓴다 — 이름은 폐기 때 붙은 것이다. */
   voidedAt: string
   /** 폐기한 사용자 id. 알 수 없으면 null */
   voidedBy: string | null
@@ -72,7 +86,52 @@ export function parseContractVersionArchive(json: unknown): VoidedContractVersio
     !!e && typeof e === 'object' && (e as { v?: unknown }).v === 1)
 }
 
-/** 폐기 이력 한 건을 조립한다. 값은 lease 에서 읽은 그대로다 — 여기서 가공하면 증거가 아니다. */
+/**
+ * 이 항목이 어떤 이동이었나 — 모르는 값은 전부 void 로 떨어진다.
+ *
+ * 안전한 쪽으로 실패한다는 뜻이다. 모르는 값을 supersede 로 읽으면 되돌리기가 엉뚱한 도장을
+ * 지우고(폐기된 발급본이 살아 돌아온다), void 로 읽으면 최악이라도 '되돌릴 것이 없다' 로 끝난다.
+ */
+export function versionKind(e: VoidedContractVersion): ContractVersionKind {
+  return (e as { kind?: unknown }).kind === 'supersede' ? 'supersede' : 'void'
+}
+
+/**
+ * 이 이력을 되돌릴 때 **어느 도장을 지워야 하는가**.
+ *
+ * 폐기와 대체가 한 배열에 섞이면서 생긴 자리다. 종전 되돌리기는 종류를 안 보고 voidedAt 만
+ * 지웠는데, 그러면 대체를 되돌렸을 때 서명 네 칸은 돌아오고 그 종이는 여전히 구버전으로 남는다.
+ * 되돌리기가 새로운 어긋남을 만드는 것이 가장 나쁘다.
+ */
+export function restoreTargetsFrom(e: VoidedContractVersion): {
+  ids: string[]
+  clear: 'voidedAt' | 'supersededAt'
+} {
+  return {
+    ids: Array.isArray(e.fileIds) ? e.fileIds : [],
+    clear: versionKind(e) === 'supersede' ? 'supersededAt' : 'voidedAt',
+  }
+}
+
+/**
+ * 이력의 각 발급본이 **정확히 한 항목에만** 속하는가 — 도장 소유권 불변식.
+ *
+ * 한 파일이 두 항목에 실리면 나중 항목을 되돌릴 때 앞 항목이 찍은 도장까지 지워진다
+ * (폐기된 발급본이 되살아나는데 폐기 이력은 그대로 남는 상태). 이 판정이 거짓이면
+ * 이동 쿼리가 이미 도장 찍힌 파일을 다시 집었다는 뜻이다.
+ */
+export function archiveOwnsEachFileOnce(archive: readonly VoidedContractVersion[]): boolean {
+  const seen = new Set<string>()
+  for (const e of archive) {
+    for (const id of Array.isArray(e.fileIds) ? e.fileIds : []) {
+      if (seen.has(id)) return false
+      seen.add(id)
+    }
+  }
+  return true
+}
+
+/** 이력 한 건을 조립한다. 값은 lease 에서 읽은 그대로다 — 여기서 가공하면 증거가 아니다. */
 export function buildVoidedVersion(input: {
   lease: VoidableLease
   fileIds: string[]
@@ -80,10 +139,13 @@ export function buildVoidedVersion(input: {
   voidedAt: Date
   voidedBy: string | null
   reason: string | null
+  /** 생략하면 폐기다 — 이 칸이 생기기 전 이력과 같은 뜻이 되게 한다. */
+  kind?: ContractVersionKind
 }): VoidedContractVersion {
   const l = input.lease
   return {
     v: 1,
+    ...(input.kind === 'supersede' ? { kind: 'supersede' as const } : {}),
     voidedAt: input.voidedAt.toISOString(),
     voidedBy: input.voidedBy,
     reason: input.reason,
