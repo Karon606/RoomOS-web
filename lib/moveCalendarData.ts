@@ -62,7 +62,9 @@ export const toMoveLease = (l: MoveLeaseRow): MoveCalendarLease => ({
   moveInDate: dbYmd(l.moveInDate),
   moveOutDate: dbYmd(l.moveOutDate),
   expectedMoveOut: dbYmd(l.expectedMoveOut),
-  roomId: l.roomId!,
+  // context 조회는 구간의 방으로도 걸리므로 '지금 방'이 비어 있는 계약이 섞일 수 있다(호실 해제).
+  // 그런 계약의 막대는 구간이 내므로 이 칸은 안 쓰이고, 빈 문자열은 어느 방 id 와도 안 맞는다.
+  roomId: l.roomId ?? '',
   roomNo: l.room?.roomNo ?? '',
   tenantId: l.tenant.id,
   tenantName: displayName(l.tenant, l.tenant.displayNameStyle),
