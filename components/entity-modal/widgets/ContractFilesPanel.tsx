@@ -244,7 +244,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     if (share?.needsIssue) {
       return { primary: 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
     }
-    if ((files?.length ?? 0) > 0) return { primary: null, hint: null }
+    // 폐기본은 '갖춰진 계약서'로 세지 않는다 — 전부 폐기된 계약의 다음 할 일은 다시 작성이고,
+    // 그때 주 버튼이 사라지면 폐기하고 나서 무엇을 해야 하는지 화면이 말하지 않는다(신고 63cd1049).
+    // 목록의 '등록된 계약서가 없습니다' 문구는 files.length 를 보므로 여기 변화에 흔들리지 않는다.
+    if ((files ?? []).some(f => !f.voidedAt)) return { primary: null, hint: null }
     // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.
     // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
     if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
