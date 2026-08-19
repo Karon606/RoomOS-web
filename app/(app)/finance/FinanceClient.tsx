@@ -3729,10 +3729,10 @@ export default function FinanceClient({
                               title: '재고 계산에 다시 포함할까요?',
                               keepLine: '이 구매가 다시 재고 잔량에 들어갑니다.',
                               impactLine: n => `이 수령 시점 뒤의 재고 점검 ${n}건에 그 수량을 함께 더할 수 있습니다.`,
-                              tailLine: '제외할 때 함께 조정했다면 함께 조정을, 점검이 실측 그대로면 이 기록만을 고르세요.',
+                              tailLine: '제외할 때 점검을 함께 조정했다면 같은 방식으로 되살리세요. 점검이 실측 그대로면 조정하지 말고 이 기록만 포함하세요.',
                               unit: null,
                               confirmLabel: '함께 조정',
-                              altLabel: '이 기록만',
+                              altLabel: '이 기록만 포함',
                             })
                             if (ask === null) return
                             adjustFollowing = ask.adjust
