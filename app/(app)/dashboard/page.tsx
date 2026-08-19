@@ -1026,7 +1026,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //              · totalExpected 는 page 앞쪽에서 billableLeases 기반 계산됨 (양도인 제외)
   //   예상 지출 = 발생 지출 + 이번 달 미발생 고정지출 (사용자 정의: 검증식 totalExpense+projectedRecurring)
   //   예상 순이익 = 예상 매출 - 예상 지출
-  // 지출 화면과 동일한 추정식으로 통일: 임시조정 → 과거평균(변동) → 기본액.
+  // 지출 화면과 동일한 추정식으로 통일 — 예약금액, 비변동 계약액, 작년 같은 달, 최근 3개월 평균, 기본액 순.
   // (getRecurringExpensesWithStatus 재사용 — 두 화면이 같은 데이터·식을 써 금액이 일치)
   const recurringWithStatus = await pRecurringWithStatus
   const projectedRecurringExpense = recurringWithStatus
@@ -1732,7 +1732,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const shiftedNote = re.isAutoDebit && effectiveDate.getTime() !== nominalDate.getTime()
       ? ` (실제이체 ${fmtShortDate(effectiveDate)})`
       : ''
-    // 금액 출처 라벨 — 재무 탭 표기와 동일 어휘('예약금액'·'예상치'). 기본액이면 라벨 없이 금액만.
+    // 금액 출처 라벨 — 재무 탭·기록 모달과 글자까지 같은 정본. 비변동 계약액이면 라벨 없이 금액만.
     const expectedAmt = effectiveRecurringAmount(re)
     const amountLabel = recurringAmountLabel(re)
     alertItems.push({

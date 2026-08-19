@@ -214,7 +214,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   // 적으면 예약금액·과거평균이 반영된 실제 금액과 갈린다(2026-07-30 신고).
   for (const re of recurringThisMonth) {
     if (!recurringDueToday(re, todayYmd)) continue
-    const amountLabel = recurringAmountLabel(re)   // '예약금액'·'예상치' — 추정치를 확정 금액처럼 적지 않기 위해
+    const amountLabel = recurringAmountLabel(re)   // 금액의 출처('예약금액'·'작년 8월'·'3개월 평균'·'기본액')
     items.push({
       id: `recurring-${re.id}`,
       category: re.isAutoDebit ? 'autodebit' : 'manualpay',

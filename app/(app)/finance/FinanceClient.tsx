@@ -50,7 +50,7 @@ import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor } from '@/lib/recurringDueDate'
-import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
+import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -3026,7 +3026,10 @@ export default function FinanceClient({
                       }
                       // 미확인 고정 지출 카드
                       const r = item.rec
-                      const expectedAmt = effectiveRecurringAmount(r)
+                      // 금액과 그 근거 라벨 모두 정본 하나에서 — 라벨을 항목 성격(isVariable)에 걸면
+                      // 예약금액이 잡힌 달에도 '예상치'라 적혀 추정치와 확정 금액이 뒤바뀌어 읽힌다.
+                      const expectedAmt   = effectiveRecurringAmount(r)
+                      const expectedLabel = recurringAmountLabel(r)
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
@@ -3042,12 +3045,11 @@ export default function FinanceClient({
                               <p className="text-sm text-[var(--warm-dark)] font-medium truncate">{r.title}</p>
                               <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">
                                 {item.dateStr.slice(5).replace('-', '/')} 납부{r.isAutoDebit ? ' · 자동이체' : ''}
-                                {r.pendingAmount != null ? ` · 예약금액 있음` : ''}
                               </p>
                             </div>
                             <div className="text-right shrink-0">
                               <p className="text-sm font-semibold text-[var(--danger-fg)]"><MoneyDisplay amount={expectedAmt} prefix="-" /></p>
-                              {r.isVariable && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">예상치</p>}
+                              {expectedLabel && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{expectedLabel}</p>}
                             </div>
                           </div>
                         </div>
@@ -3142,10 +3144,10 @@ export default function FinanceClient({
                               </Fragment>
                             )
                           }
-                          // 미확인 고정 지출 행
+                          // 미확인 고정 지출 행 — 금액·라벨 모두 정본(lib/recurringEstimate) 하나에서
                           const r = item.rec
-                          // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
-                      const expectedAmt = effectiveRecurringAmount(r)
+                          const expectedAmt   = effectiveRecurringAmount(r)
+                          const expectedLabel = recurringAmountLabel(r)
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
@@ -3172,7 +3174,7 @@ export default function FinanceClient({
                                 <span className="text-sm font-semibold text-[var(--danger-fg)] truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
-                                {r.isVariable && <span className="text-[0.65625rem] text-[var(--warm-muted)]">예상치</span>}
+                                {expectedLabel && <span className="text-[0.65625rem] text-[var(--warm-muted)] truncate block">{expectedLabel}</span>}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                 <span className="text-xs text-[var(--warning-fg)] font-medium">
