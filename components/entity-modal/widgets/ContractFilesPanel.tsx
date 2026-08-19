@@ -232,22 +232,32 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   //   S0 없음        : 계약서를 만드는 것부터
   //   S1 서명 대기   : 입주자가 아직 안 눌렀다 — 다시 보내기가 다음 수. 만료·잠김도 같은 계열이다
   //   S2 서명 받음   : 발급이 다음 수
-  //   S3 보관됨      : 목록이 주인공이라 주 버튼을 두지 않는다
+  //   S3 보관됨      : 목록이 주인공이라 주 버튼 강조는 내리되, 안내는 남긴다(침묵 금지)
   //
   // 라벨은 단계와 무관하게 '계약서 작성·서명' 으로 고정한다. S2 에서 '계약서 발급' 으로 바꿔봤다가
   // 되돌렸다 — 그 링크는 입력 화면으로 가고 발급은 거기서 한 단계 더 들어가야 일어난다. 이 파일이
   // 정한 동사 정의(작성 = 입력 화면 진입 / 발급 = 공식본 생성·보관)를 라벨이 스스로 어기는 셈이고,
   // 누르면 발급될 줄 알았다가 폼이 나오는 배신이 된다. 단계 구분은 안내 문구가 한다(디자이너 패스).
-  const stage: { primary: 'write' | 'resend' | null; hint: string | null } = (() => {
+  const stage: { primary: 'write' | 'issue' | 'resend' | null; hint: string | null } = (() => {
     // 조회 실패(share === null)여도 화면이 회색으로 굳지 않게 S0 으로 떨어뜨린다
     if (loading) return { primary: null, hint: null }
     if (share?.needsIssue) {
-      return { primary: 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
+      // 서명본 문이 서 있으면 그것이 다음 수다. 서명이 지워져 그 문이 없으면 작성으로 되돌린다.
+      return { primary: signedViewLinkId ? 'issue' : 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
     }
     // 폐기본은 '갖춰진 계약서'로 세지 않는다 — 전부 폐기된 계약의 다음 할 일은 다시 작성이고,
     // 그때 주 버튼이 사라지면 폐기하고 나서 무엇을 해야 하는지 화면이 말하지 않는다(신고 63cd1049).
     // 목록의 '등록된 계약서가 없습니다' 문구는 files.length 를 보므로 여기 변화에 흔들리지 않는다.
-    if ((files ?? []).some(f => !f.voidedAt)) return { primary: null, hint: null }
+    //
+    // S3 에서 주 버튼을 내리는 것은 그대로 두되 **안내는 반드시 남긴다**. 종전에는 hint 까지 함께
+    // 비어 주 버튼 강조도 문구도 없는 상태가 됐고, 그 침묵이 501호 "계약서 작성·서명이 없다"의
+    // 절반이었다(나머지 절반은 아래 라벨 교체였다, 2026-08-19 (11)).
+    if ((files ?? []).some(f => !f.voidedAt)) {
+      return {
+        primary: null,
+        hint: '계약서가 발급돼 있습니다. 내용을 바꾸려면 계약서 화면에서 이 계약서를 폐기하고 다시 작성해 주세요.',
+      }
+    }
     // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.
     // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
     if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
@@ -273,10 +283,24 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
             바뀐 내용으로 받으려면 서명 요청을 다시 보내 새 링크·새 계약서를 만든다. */}
         {/* 새 창으로 열지 않는다 — 홈화면 앱(standalone)에는 주소창이 없어 돌아오면 앱 두 번째 사본이 된다.
             계약서 작성 화면에는 자체 복귀 링크가 있다(ContractView 툴바). */}
-        <BtnLink href={signedViewLinkId ? `/contract/${tenantId}?share=${signedViewLinkId}` : `/contract/${tenantId}`}
+        {/* 한 컨트롤이 라벨과 목적지를 함께 갈아치우던 것을 둘로 쪼갠다.
+            종전에는 서명본이 있으면 라벨이 '서명본 계약서 발급' 으로 바뀌고 href 도 ?share= 로
+            옮겨 갔다. 작성으로 가는 문이 화면에서 통째로 사라진 셈이라 운영자는 "계약서
+            작성·서명이 없다" 고 신고했다(501호 2026-08-19).
+            라벨만 고정하고 href 만 가르는 것으로는 부족하다 — ?share= 가 여는 화면은 **서명 시점
+            박제**이고 스스로 "지금 계약을 고치거나 서명을 다시 받으려면 일반 화면에서 하세요" 라고
+            말한다(ContractView.tsx:941). 그 문으로 보내면서 '작성' 이라 부르면 배신의 방향만 바뀐다.
+            그래서 작성 문은 항상 같은 자리에 같은 이름으로 서고, 서명본 발급은 있을 때만 옆에 선다. */}
+        <BtnLink href={`/contract/${tenantId}`}
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-          {signedViewLinkId ? '서명본 계약서 발급' : '계약서 작성·서명'}
+          계약서 작성·서명
         </BtnLink>
+        {signedViewLinkId && (
+          <BtnLink href={`/contract/${tenantId}?share=${signedViewLinkId}`}
+            variant={stage.primary === 'issue' ? 'primary' : 'secondary'} size="sm">
+            서명본 계약서 발급
+          </BtnLink>
+        )}
         {/* 부계약 계약서 — 종전에는 이 문이 없어 창고 계약서를 뽑을 길 자체가 없었다.
             발급 화면이 어느 계약을 그릴지 URL 로 지목한다(?leaseTermId=). 본문 문안은 별건이다. */}
         {extraLeases?.map(l => (
