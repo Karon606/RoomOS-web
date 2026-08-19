@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, shiftMonth, type MoveCalendarLease } from '../lib/moveCalendar'
+import { buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, shiftMonth, type MoveCalendarLease, type MoveStaySpan } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -29,20 +29,40 @@ const MONTH = '2026-08'
 const TODAY = '2026-08-18'
 
 let seq = 0
+/**
+ * 계약 한 줄. `stays` 를 안 주면 **그 계약의 방·입주일로 구간 하나를 세운다** — 방을 옮긴 적이
+ * 없는 계약의 실제 모양이 그것이고(실데이터 75건 중 74건), 그래야 아래 케이스 전부가 폴백이
+ * 아니라 구간 경로를 지난다. 예약(RESERVED)만 구간이 없다(점유가 아니라 구간을 안 만든다).
+ */
 function lease(p: Partial<MoveCalendarLease> & { roomNo: string; status: string }): MoveCalendarLease {
   seq++
+  const id = p.id ?? `l${seq}`
+  const roomId = p.roomId ?? `room-${p.roomNo}`
+  const moveInDate = p.moveInDate ?? null
+  const moveOutDate = p.moveOutDate ?? null
   return {
-    id: p.id ?? `l${seq}`,
+    id,
     status: p.status,
     isShortTerm: p.isShortTerm ?? false,
-    moveInDate: p.moveInDate ?? null,
-    moveOutDate: p.moveOutDate ?? null,
+    moveInDate,
+    moveOutDate,
     expectedMoveOut: p.expectedMoveOut ?? null,
-    roomId: p.roomId ?? `room-${p.roomNo}`,
+    roomId,
     roomNo: p.roomNo,
     tenantId: p.tenantId ?? `t${seq}`,
     tenantName: p.tenantName ?? `사람${seq}`,
+    stays: p.stays ?? (p.status === 'RESERVED'
+      ? []
+      // 열린 구간의 끝은 조립이 계약에서 읽는다 — 퇴실 완료가 아니면 endDate 는 비어 있다.
+      : [{ id: `${id}-s1`, roomId, roomNo: p.roomNo, startDate: moveInDate, endDate: moveOutDate }]),
   }
+}
+
+/** 이사한 계약의 구간 — 방을 옮긴 순서대로. `[호실, 시작, 끝]`, 끝이 없으면 열린 구간이다. */
+function stays(id: string, rows: [string, string, string | null][]): MoveStaySpan[] {
+  return rows.map(([roomNo, startDate, endDate], i) => ({
+    id: `${id}-s${i + 1}`, roomId: `room-${roomNo}`, roomNo, startDate, endDate,
+  }))
 }
 
 const build = (changed: MoveCalendarLease[], context: MoveCalendarLease[] = [], month = MONTH, today = TODAY) =>
@@ -409,6 +429,96 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   eq('범위 밖 · 천장 너머', out.beyond, { count: 3, firstDate: '2026-11-02' })
   eq('범위 밖 · 과거 확장 가능', out.canExtendPast, true)
   eq('범위 밖 · 보고 있는 달이 9월이면 접미도 9월 건수', out.focusEventCount, 1)
+}
+
+// ══ 이사(한 계약이 두 방에 걸친다) ═══════════════════════════════
+//
+// 이 축이 비어 있어서 사고가 났다. 캘린더가 계약의 roomId 한 칸만 읽던 시절, 방을 옮긴 계약은
+// 옛 방에 0칸이고 새 방에 최초 입주일부터 통째로 그려졌다(신고 2026-08-20, 김태란 506→508).
+// 아래는 그 상태로 되돌아가면 반드시 깨지는 것들만 고정한다.
+
+// ── 기본형 ── 8/10 에 506호에서 508호로. 두 방에 각각 막대가 서고 이사일 하루는 양쪽에 있다.
+{
+  const mv = lease({
+    id: 'mv', roomNo: '508', status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '김이사',
+    stays: stays('mv', [['506', '2026-01-05', '2026-08-10'], ['508', '2026-08-10', null]]),
+  })
+  const out = build([mv], [mv])
+  eq('이사 · 행 둘(옛 방·새 방)', out.rows.map(r => r.roomNo), ['506', '508'])
+  const old = out.rows[0], now = out.rows[1]
+  eq('이사 · 옛 방 막대는 월 이전부터 10일까지', [old.bars[0].startDay, old.bars[0].endDay, old.bars[0].clippedStart], [1, 10, true])
+  eq('이사 · 새 방 막대는 10일부터 말일까지(퇴실일 없어 오른쪽 잘림)', [now.bars[0].startDay, now.bars[0].endDay, now.bars[0].clippedEnd], [10, 31, true])
+  eq('이사 · 옛 방 라벨은 어디로 갔는지 말한다', old.bars[0].label, '8/10 508호로 이사')
+  eq('이사 · 새 방 라벨은 어디서 왔는지 말한다', now.bars[0].label, '8/10 506호에서 이사')
+  eq("이사 · '퇴실'도 '입실'도 아니다", [old.bars[0].label.includes('퇴실'), now.bars[0].label.includes('입실')], [false, false])
+  eq("이사 · 혼자 '퇴실일 미정'으로 서지 않는다", now.bars[0].label.includes('퇴실일 미정'), false)
+  eq('이사 · 이사일 하루는 두 방 모두에 칠해진다(그날 두 방을 다 쓴다)', [old.bars[0].endDay, now.bars[0].startDay], [10, 10])
+  eq('이사 · 옛 방 공백은 이사 다음 날부터', old.gaps, [{ startDay: 11, endDay: 31, days: 21 }])
+  eq('이사 · 새 방은 이사 전날까지 비어 있었다', now.gaps, [{ startDay: 1, endDay: 9, days: 9 }])
+  eq('이사 · 같은 사람이 두 행에 선 것은 충돌이 아니다', out.conflicts.length, 0)
+  eq('이사 · 건수는 둘(옛 방이 비고 새 방이 찬다)', out.eventCount, 2)
+  eq('이사 · 두 변동 모두 이사로 표시된다', out.events.map(e => [e.roomNo, e.type, e.moved]), [['506', 'out', true], ['508', 'in', true]])
+  eq('이사 · 막대 키는 구간 id 라 계약 id 로 겹치지 않는다', [old.bars[0].id, now.bars[0].id], ['mv-s1', 'mv-s2'])
+}
+
+// ── 옛 방의 다음 사람 ── 이사로 빈 방에 다른 사람이 들어온다. 겹치지 않으면 충돌이 아니다.
+{
+  const mv = lease({
+    id: 'mv2', roomNo: '508', status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '김이사',
+    stays: stays('mv2', [['506', '2026-01-05', '2026-08-10'], ['508', '2026-08-10', null]]),
+  })
+  const next = lease({ id: 'nx', roomNo: '506', status: 'ACTIVE', moveInDate: '2026-08-20', tenantName: '다음' })
+  const out = build([mv, next], [mv, next])
+  const old = out.rows.find(r => r.roomNo === '506')!
+  eq('이사 다음 사람 · 옛 방에 막대 둘', old.bars.map(b => b.tenantName), ['김이사', '다음'])
+  eq('이사 다음 사람 · 한 층(겹치지 않는다)', old.laneCount, 1)
+  eq('이사 다음 사람 · 공백은 그 사이만', old.gaps, [{ startDay: 11, endDay: 19, days: 9 }])
+  eq('이사 다음 사람 · 충돌 없음', out.conflicts.length, 0)
+}
+
+// ── 이사가 범위 밖 ── 창이 이사 뒤부터면 옛 방 행은 서지 않고 새 방 막대만 관통한다.
+{
+  const mv = lease({
+    id: 'mv3', roomNo: '508', status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '김이사',
+    stays: stays('mv3', [['506', '2026-01-05', '2026-07-10'], ['508', '2026-07-10', null]]),
+  })
+  const out = build([mv], [mv])
+  eq('범위 밖 이사 · 그 달에 변동이 없으니 행이 없다', out.rows.length, 0)
+  const wide = range({ from: '2026-07-01', to: '2026-08-31', changed: [mv], context: [mv] })
+  eq('범위 안 이사 · 행 둘', wide.rows.map(r => r.roomNo), ['506', '508'])
+  eq('범위 안 이사 · 새 방 막대는 10일째부터', wide.rows[1].bars[0].startDay, 10)
+}
+
+// ── 나갔다 같은 방으로 돌아옴 ── 한 계약이 한 행에 막대 둘. 계약 id 로는 키가 겹친다.
+{
+  const back = lease({
+    id: 'bk', roomNo: '506', status: 'ACTIVE', moveInDate: '2026-08-01', tenantName: '되돌이',
+    stays: stays('bk', [['506', '2026-08-01', '2026-08-10'], ['507', '2026-08-10', '2026-08-20'], ['506', '2026-08-20', null]]),
+  })
+  const out = build([back], [back])
+  const r506 = out.rows.find(r => r.roomNo === '506')!
+  eq('복귀 · 506 에 막대 둘', r506.bars.length, 2)
+  eq('복귀 · 막대 키가 서로 다르다', r506.bars[0].id !== r506.bars[1].id, true)
+  eq('복귀 · 같은 계약끼리는 겹침 판정을 하지 않는다', out.conflicts.length, 0)
+  eq('복귀 · 한 층', r506.laneCount, 1)
+  eq('복귀 · 라벨', r506.bars.map(b => b.label), ['8/1 입실 · 8/10 507호로 이사', '8/20 507호에서 이사'])
+}
+
+// ── 예약은 구간이 없다 ── 구간을 안 만드는 것이 설계라 계약이 그대로 한 구간이 된다.
+{
+  const rsv = lease({ id: 'rv', roomNo: '410', status: 'RESERVED', moveInDate: '2026-08-20', tenantName: '예약' })
+  eq('예약 · 구간 없음', rsv.stays.length, 0)
+  const row = build([rsv], [rsv]).rows[0]
+  eq('예약 · 계약이 한 구간을 대신한다', [row.bars.length, row.bars[0].startDay], [1, 20])
+  eq('예약 · 이사가 아니다', [row.bars[0].movedFromRoomNo, row.bars[0].movedToRoomNo], [null, null])
+}
+
+// ── 열린 구간의 끝은 계약이 말한다 ── 구간에서 읽으면 퇴실 예정일이 통째로 사라진다.
+{
+  const l = lease({ id: 'op', roomNo: '411', status: 'ACTIVE', moveInDate: '2026-08-05', expectedMoveOut: '2026-08-25', tenantName: '예정' })
+  const row = build([l], [l]).rows[0]
+  eq('열린 구간 · 끝은 퇴실 예정일', [row.bars[0].endDay, row.bars[0].openEnded], [25, false])
+  eq('열린 구간 · 라벨에 퇴실일이 선다', row.bars[0].label, '8/5 입실 · 8/25 퇴실')
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)

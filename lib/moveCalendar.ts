@@ -23,9 +23,26 @@
 // 다른 오늘을 보는 함정을 애초에 열지 않는다).
 
 import { findOverlapAck, isSameDayTurnover, occupancyOverlapSpan, occupancyOverlaps, type OverlapAckSpan } from './roomAssignment'
-import { OCCUPYING_STATUSES, checkoutDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
+import { OCCUPYING_STATUSES, checkoutDateLabel, moveDateLabel, moveInDateLabel, moveInSubText, primaryRoomLease, roomReservationQueue } from './leaseStatus'
 import { fmtRoomNo } from './roomNo'
 import { fmtMD } from './fmtDate'
+
+/**
+ * 이 계약이 실제로 머문 방 한 칸 — RoomStay 구간 하나다.
+ *
+ * 계약의 roomId 는 '지금 방' 한 칸뿐이라 방을 옮긴 계약은 옛 방의 거주가 통째로 사라지고
+ * 새 방에 최초 입주일부터 그려진다. 막대의 방·기간은 그래서 계약이 아니라 이 구간에서 나온다.
+ * 상태·금액·예약은 계속 계약이 정본이다 — 구간은 "어디에 언제 있었나"만 안다.
+ */
+export type MoveStaySpan = {
+  id: string
+  roomId: string
+  roomNo: string
+  /** 최초 구간은 입주일, 이후 구간은 이사일이다(lib/roomStay 의 입주 구간·이동 구간 구분). */
+  startDate: string | null
+  /** 열린 구간(아직 그 방에 있다)은 null — 그 끝은 계약이 말한다. */
+  endDate: string | null
+}
 
 /** 조립이 필요한 계약 한 줄 — 서버가 select 최소로 뽑아 이름까지 붙여 넘긴다. */
 export type MoveCalendarLease = {
@@ -41,16 +58,33 @@ export type MoveCalendarLease = {
   tenantId: string
   /** lib/displayName 이 고른 표기. 조립은 이름을 다시 고르지 않는다. */
   tenantName: string
+  /**
+   * 거주 구간 전부(시작일 오름차순이 아니어도 된다 — 조립이 다시 세운다).
+   *
+   * 선택 칸이 아니라 **필수**다. 없어도 되는 칸으로 두면 조회 한 곳이 빠뜨렸을 때 타입이 안 잡고
+   * 그 순간 이 화면은 다시 계약의 roomId 한 칸만 보는 상태로 돌아간다.
+   * 예약(RESERVED)은 구간을 만들지 않는 것이 설계라 비어 있고, 그때만 계약이 구간을 대신한다.
+   */
+  stays: MoveStaySpan[]
 }
 
 export type MoveBarKind = 'resident' | 'reserved'
 
 /** 트랙 위 막대 하나 — 그 범위에 보이는 구간만큼 잘린 체류. */
 export type MoveBar = {
+  /**
+   * 막대 하나의 고유 키. 계약 id 로는 부족하다 — 한 계약이 나갔다 같은 방으로 돌아오면
+   * 그 방 행에 같은 계약 id 의 막대가 둘 선다.
+   */
+  id: string
   leaseId: string
   tenantId: string
   tenantName: string
   kind: MoveBarKind
+  /** 이사로 시작했다면 그 전 방 번호 — 다른 방에서 옮겨 온 것이라 입실이 아니다. 아니면 null. */
+  movedFromRoomNo: string | null
+  /** 이사로 끝났다면 옮겨 간 방 번호 — 다른 방으로 간 것이라 퇴실이 아니다. 아니면 null. */
+  movedToRoomNo: string | null
   /** 겹치는 막대끼리 세로로 비켜 앉는 층. 0부터. */
   lane: number
   startDay: number
@@ -122,6 +156,13 @@ export type MoveEvent = {
   /** 그 변동의 실제 날짜 'YYYY-MM-DD'. 여러 달을 잇는 범위에서는 day 만으로 날짜를 못 만든다. */
   date: string
   type: 'in' | 'out'
+  /**
+   * 이 변동이 이사인가 — 그 방을 기준으로 하면 나가고 들어오는 것이 맞지만(그래서 type 은 그대로),
+   * 사람을 기준으로 하면 퇴실도 입실도 아니다. 문구를 가르는 것은 이 칸이다.
+   */
+  moved: boolean
+  /** 이 변동을 낸 막대 — 한 계약이 같은 날 두 방에서 변동을 내므로 계약 id 는 유일 키가 아니다. */
+  barId: string
   roomId: string
   roomNo: string
   leaseId: string
@@ -210,19 +251,75 @@ function stayEnd(l: MoveCalendarLease): string | null {
 }
 
 /**
+ * 계약 하나를 방별 체류 조각으로 편다 — 막대 하나가 곧 조각 하나다.
+ *
+ * 구간이 있으면 구간이 진실이다. 구간이 없는 계약은 예약뿐이고(RESERVED 는 점유가 아니라
+ * 구간을 만들지 않는 것이 설계다) 그때만 계약 자체가 한 조각이 된다. 비예약인데 구간이 없으면
+ * 기록 지점이 빠진 것이라 감지망(check-room-stay-drift ③)이 잡는다 — 여기서 계약으로 되돌아가
+ * 그리면 그 사고가 화면에서 정상으로 보인다. 그래서 폴백은 조용히 넓히지 않는다.
+ *
+ * 조각의 앞뒤에 다른 구간이 있으면 그 경계는 퇴실·입실이 아니라 **이사**다. 이 한 사실이
+ * 라벨과 이벤트 문구를 가른다.
+ */
+type StaySlice = {
+  id: string
+  roomId: string
+  roomNo: string
+  from: string | null
+  to: string | null
+  movedFromRoomNo: string | null
+  movedToRoomNo: string | null
+}
+
+function slicesOf(l: MoveCalendarLease): StaySlice[] {
+  if (l.stays.length === 0) {
+    return [{ id: l.id, roomId: l.roomId, roomNo: l.roomNo, from: l.moveInDate, to: stayEnd(l), movedFromRoomNo: null, movedToRoomNo: null }]
+  }
+  // 시작일 없는 옛 구간은 맨 앞으로 — 그것이 그 사람이 이 계약과 얽힌 가장 이른 시점이다
+  // (getRoomStayHistory 의 정렬 키와 같은 선).
+  const sorted = [...l.stays].sort((a, b) => (a.startDate ?? '') < (b.startDate ?? '') ? -1 : (a.startDate ?? '') > (b.startDate ?? '') ? 1 : 0)
+  return sorted.map((s, i) => ({
+    id: s.id,
+    roomId: s.roomId,
+    roomNo: s.roomNo,
+    from: s.startDate,
+    // 열린 구간의 끝은 계약이 말한다(퇴실 완료면 실제일, 진행 중이면 예정일, 둘 다 없으면 미정).
+    // 구간에서 읽으면 안 된다 — RoomStay 는 실제로 나간 날만 담아서 퇴실 예정일이 애초에 없다.
+    // 그랬다가는 아직 안 나간 사람 전부가 무기한 관통 막대가 된다.
+    to: s.endDate ?? stayEnd(l),
+    movedFromRoomNo: i > 0 ? sorted[i - 1].roomNo : null,
+    movedToRoomNo: i < sorted.length - 1 ? sorted[i + 1].roomNo : null,
+  }))
+}
+
+/**
  * 막대 라벨 — 그 범위에 무엇이 바뀌었는가를 말한다.
  *
  * 입주·퇴실이 범위 안이면 그 날짜를 세우고, 둘 다 없을 때만 상태를 말한다. 퇴실일 미정을
  * 늘 붙이면 진행 중 거주 대부분이 같은 말을 달고 서서 정작 변동이 묻힌다 — 무기한 점유가
  * 정보가 되는 자리는 아무 변동도 없이 트랙을 관통하는 막대다(예약과 포개지는 바로 그 경우다).
+ *
+ * 이사 경계는 이름이 다르다. 옛 방에서 이사로 끝난 날을 '퇴실'이라 적으면 나가지 않은 사람이
+ * 나간 것이 되고, 새 방에서 이사로 시작한 날을 '입실'이라 적으면 계약이 그날 시작한 것이 된다.
+ *
+ * 상대 호실까지 적는 이유. 이사는 두 행에 걸친 하나의 사건인데 행 정렬은 호실번호 고정이라
+ * (:roomNo 정렬) 506호와 508호 사이에 507호가 낀다. 두 막대를 선으로 이을 수도 없다(가이드
+ * 미등재). 게다가 범위가 이사일을 안 물면 한쪽 막대는 아예 안 선다. 어느 막대 하나만 봐도
+ * 어디로 갔는지·어디서 왔는지 알아야 그 사건이 화면에서 사라지지 않는다.
  */
-function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; stayFrom: string | null; stayTo: string | null }): string {
+function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; movedFromRoomNo: string | null; movedToRoomNo: string | null; stayFrom: string | null; stayTo: string | null }): string {
+  const startLabel = bar.movedFromRoomNo
+    ? moveDateLabel(bar.stayFrom, { roomNo: bar.movedFromRoomNo, dir: 'from' })
+    : moveInDateLabel(bar.stayFrom)
+  const endLabel = bar.movedToRoomNo
+    ? moveDateLabel(bar.stayTo, { roomNo: bar.movedToRoomNo, dir: 'to' })
+    : checkoutDateLabel(bar.stayTo)
   const parts: string[] = []
-  if (bar.startsInRange && bar.stayFrom) parts.push(moveInDateLabel(bar.stayFrom)!)
-  if (bar.endsInRange && bar.stayTo) parts.push(checkoutDateLabel(bar.stayTo)!)
+  if (bar.startsInRange && startLabel) parts.push(startLabel)
+  if (bar.endsInRange && endLabel) parts.push(endLabel)
   if (parts.length > 0) return parts.join(' · ')
   if (bar.openEnded) return '퇴실일 미정'
-  return bar.stayTo ? checkoutDateLabel(bar.stayTo)! : '퇴실일 미정'
+  return endLabel ?? '퇴실일 미정'
 }
 
 /** 겹치지 않는 막대끼리 같은 층에 앉힌다. 같은 날 퇴실·입주는 한 칸을 함께 쓰므로 층이 갈린다. */
@@ -275,29 +372,30 @@ function assemble(input: {
   const dayNo = (ymd: string): number => daysBetween(first, ymd) + 1
   const ymdOfDay = (day: number): string => addDays(first, day - 1)
 
-  // 행이 되는 방 — 그 범위에 **실제로** 입주나 퇴실이 있는 방만. 관통 점유는 행을 만들지 않는다.
+  // 계약을 방별 체류 조각으로 먼저 편다 — 이 아래로는 계약이 아니라 조각이 단위다.
+  const changedSlices = input.changed.flatMap(l => slicesOf(l).map(s => ({ lease: l, slice: s })))
+  const contextSlices = input.context.flatMap(l => slicesOf(l).map(s => ({ lease: l, slice: s })))
+
+  // 행이 되는 방 — 그 범위에 **실제로** 입주·이사·퇴실이 있는 방만. 관통 점유는 행을 만들지 않는다.
   //
   // 조회는 세 날짜 중 하나만 창에 걸려도 가져오는 과대근사다(퇴실의 진짜 날짜가 moveOutDate 인지
   // expectedMoveOut 인지는 한 줄의 SQL 조건으로 못 적는다 — 퇴실 완료는 실제일이 이긴다).
   // 그 선을 여기서 한 번만 긋는다. 퇴실 예정일은 8/31 인데 실제로는 9/2 에 나간 계약처럼,
   // 조회에는 걸리지만 이 범위의 변동은 아닌 건이 빈 행으로 서는 것을 막는다.
-  const changedIn = (l: MoveCalendarLease): boolean => {
-    const from = l.moveInDate
-    const to = stayEnd(l)
-    return (!!from && from >= first && from <= last) || (!!to && to >= first && to <= last)
-  }
-  const roomIds = new Set(input.changed.filter(changedIn).map(l => l.roomId))
+  const changedIn = (s: StaySlice): boolean =>
+    (!!s.from && s.from >= first && s.from <= last) || (!!s.to && s.to >= first && s.to <= last)
+  const roomIds = new Set(changedSlices.filter(x => changedIn(x.slice)).map(x => x.slice.roomId))
 
-  // 막대가 되는 계약 — 변동분 + 그 방들의 점유 계약. id 중복은 한 번만.
-  const byId = new Map<string, MoveCalendarLease>()
-  for (const l of input.changed) if (roomIds.has(l.roomId)) byId.set(l.id, l)
-  for (const l of input.context) if (roomIds.has(l.roomId)) byId.set(l.id, l)
+  // 막대가 되는 조각 — 변동분 + 그 방들의 점유 조각. 같은 조각이 양쪽에 있으면 한 번만.
+  const byId = new Map<string, { lease: MoveCalendarLease; slice: StaySlice }>()
+  for (const x of changedSlices) if (roomIds.has(x.slice.roomId)) byId.set(x.slice.id, x)
+  for (const x of contextSlices) if (roomIds.has(x.slice.roomId)) byId.set(x.slice.id, x)
 
-  const perRoom = new Map<string, { roomId: string; roomNo: string; leases: MoveCalendarLease[] }>()
-  for (const l of byId.values()) {
-    const g = perRoom.get(l.roomId)
-    if (g) g.leases.push(l)
-    else perRoom.set(l.roomId, { roomId: l.roomId, roomNo: l.roomNo, leases: [l] })
+  const perRoom = new Map<string, { roomId: string; roomNo: string; slices: { lease: MoveCalendarLease; slice: StaySlice }[] }>()
+  for (const x of byId.values()) {
+    const g = perRoom.get(x.slice.roomId)
+    if (g) g.slices.push(x)
+    else perRoom.set(x.slice.roomId, { roomId: x.slice.roomId, roomNo: x.slice.roomNo, slices: [x] })
   }
 
   const rows: MoveCalendarRow[] = []
@@ -308,23 +406,26 @@ function assemble(input: {
     const bars: MoveBar[] = []
     const barLease = new Map<string, MoveCalendarLease>()
 
-    for (const l of g.leases) {
-      const rawFrom = l.moveInDate
-      const rawTo = stayEnd(l)
+    for (const { lease: l, slice: sl } of g.slices) {
+      const rawFrom = sl.from
+      const rawTo = sl.to
       // 날짜 역전은 데이터 사고다. 기하는 뒤집힌 채로 두지 않고 두 날 사이를 칠해 눈에 세운다.
       const reversed = !!rawFrom && !!rawTo && rawFrom > rawTo
       const from = reversed ? rawTo : rawFrom
       const to = reversed ? rawFrom : rawTo
-      // 범위와 겹치지 않는 계약은 이 트랙의 막대가 아니다(범위 밖 예약 등 — 꼬리가 따로 말한다).
+      // 범위와 겹치지 않는 조각은 이 트랙의 막대가 아니다(범위 밖 예약 등 — 꼬리가 따로 말한다).
       if ((to && to < first) || (from && from > last)) continue
 
       const startsInRange = !!from && from >= first && from <= last
       const endsInRange = !!to && to >= first && to <= last
       const bar: MoveBar = {
+        id: sl.id,
         leaseId: l.id,
         tenantId: l.tenantId,
         tenantName: l.tenantName,
         kind: l.status === 'RESERVED' ? 'reserved' : 'resident',
+        movedFromRoomNo: sl.movedFromRoomNo,
+        movedToRoomNo: sl.movedToRoomNo,
         lane: 0,
         startDay: startsInRange ? dayNo(from!) : 1,
         endDay: endsInRange ? dayNo(to!) : days,
@@ -340,10 +441,10 @@ function assemble(input: {
       }
       bar.label = barLabel(bar)
       bars.push(bar)
-      barLease.set(l.id, l)
+      barLease.set(bar.id, l)
 
-      if (startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
-      if (endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      if (startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', moved: !!sl.movedFromRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      if (endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', moved: !!sl.movedToRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
 
       if (reversed) {
         bar.conflicted = true
@@ -359,13 +460,15 @@ function assemble(input: {
 
     // ── 충돌 ── 방을 잡고 있는 계약끼리만 본다. 퇴실 완료 계약은 방을 잡지 않으므로
     // (lib/roomAssignment roomAssignmentBlockReason 의 같은 선) 같은 날 인수인계는 사고가 아니다.
-    const holding = bars.filter(b => (OCCUPYING_STATUSES as string[]).includes(barLease.get(b.leaseId)!.status))
+    const holding = bars.filter(b => (OCCUPYING_STATUSES as string[]).includes(barLease.get(b.id)!.status))
     const overlapDays = new Set<number>()
     const ackedDays = new Set<number>()
     const rowConflicts: MoveConflict[] = []
     for (let i = 0; i < holding.length; i++) {
       for (let j = i + 1; j < holding.length; j++) {
         const a = holding[i], b = holding[j]
+        // 같은 계약의 두 조각은 같은 사람이다 — 나갔다 같은 방으로 돌아온 것을 겹침이라 부르지 않는다.
+        if (a.leaseId === b.leaseId) continue
         const sa = { moveIn: a.stayFrom, moveOut: a.stayTo }
         const sb = { moveIn: b.stayFrom, moveOut: b.stayTo }
         if (!occupancyOverlaps(sa, sb)) continue
@@ -420,7 +523,11 @@ function assemble(input: {
 
     // ── 꼬리 ── 범위 안에 퇴실이 있는 방인데 다음 사람이 트랙 밖이면, 그 사실을 한 줄로.
     // 연속 뷰에서 다음 달이 트랙 안에 들어오면 그 예약은 막대가 되므로 이 줄은 저절로 사라진다.
-    const holdingLeases = g.leases.filter(l => (OCCUPYING_STATUSES as string[]).includes(l.status))
+    //
+    // 여기만은 계약이 단위다 — 다음 차례를 세우는 질문이라 **지금 이 방을 잡고 있는 계약**만 본다.
+    // 옛 구간으로 이 행에 얹힌 계약(이미 다른 방으로 이사한 사람)은 이 방의 대기열이 아니다.
+    const holdingLeases = [...new Map(g.slices.map(x => [x.lease.id, x.lease])).values()]
+      .filter(l => l.roomId === g.roomId && (OCCUPYING_STATUSES as string[]).includes(l.status))
     const nextUp = roomReservationQueue(holdingLeases, primaryRoomLease(holdingLeases))
       .find(l => !!l.moveInDate && l.moveInDate > last)
     const hasExit = bars.some(b => b.endsInRange)

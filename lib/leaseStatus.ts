@@ -23,6 +23,7 @@ import {
 } from './billing'
 import { fmtDateDot } from './fmtDate'
 import { kstDaysUntil } from './kstDate'
+import { fmtRoomNo } from './roomNo'
 import { isVacancyExcluded } from './vacancy'
 
 /**
@@ -281,6 +282,27 @@ export function moveInDateLabel(moveInDate: string | null): string | null {
   if (!moveInDate) return null
   const [, mm, dd] = moveInDate.split('-')
   return `${Number(mm)}/${Number(dd)} 입실`
+}
+
+/**
+ * 이사 짧은 라벨 — "7/1 508호로 이사" · "7/1 506호에서 이사". 상대 호실을 모르면 "7/1 이사".
+ *
+ * 퇴실·입실 라벨의 형제이고, 그 둘이 못 하는 말을 한다. 방을 옮긴 날은 옛 방에서 보면 끝이고
+ * 새 방에서 보면 시작이지만 어느 쪽도 퇴실·입실이 아니다. 그 날을 '퇴실'이라 적으면 나가지
+ * 않은 사람이 나간 것이 되고 '입실'이라 적으면 계약이 그날 시작한 것이 된다. 명사는 '이사' —
+ * 입주자 모달의 '이사 이력'(TenantMoveHistory)이 이미 쓰는 말이다.
+ *
+ * 상대 호실을 함께 적는 이유는 이 사건이 두 방에 걸쳐 있기 때문이다. 한쪽 방만 보고 있어도
+ * 어디로 갔는지·어디서 왔는지 알아야 이사가 '퇴실 하나'와 '입실 하나'로 흩어져 읽히지 않는다.
+ */
+export function moveDateLabel(movedAt: string | null, counterpart?: { roomNo: string; dir: 'to' | 'from' } | null): string | null {
+  if (!movedAt) return null
+  const [, mm, dd] = movedAt.split('-')
+  const day = `${Number(mm)}/${Number(dd)}`
+  if (!counterpart) return `${day} 이사`
+  // 조사는 앞말에 붙여 쓴다(availableFromLabel 의 '부터'와 같은 관례). 호실 표기는 늘 'N호'라
+  // 받침이 없어 '로'·'에서'가 그대로 붙는다.
+  return `${day} ${fmtRoomNo(counterpart.roomNo)}${counterpart.dir === 'to' ? '로' : '에서'} 이사`
 }
 
 /**
