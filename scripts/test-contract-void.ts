@@ -9,7 +9,7 @@
 //     '재서명 받기' 가 방금 받은 서명을 다시 폐기한다.
 
 import {
-  buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink,
+  buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink, pickCurrentSignatureLink,
   parseContractVersionArchive, restoredFieldsFrom, voidedVersionHasEvidence,
   type VoidableLease,
 } from '../lib/contractVersion'
@@ -137,6 +137,21 @@ const signedLease: VoidableLease = {
     isCurrentSignatureLink({ signedAt: null, disposalSignedAt: null },
       { signatureSignedAt: null, disposalSignatureSignedAt: null }), false)
   eq('기준 · lease 가 없으면 거짓', isCurrentSignatureLink({ signedAt: SIGNED_AT }, null), false)
+
+  // ── 발급이 계약일을 어느 링크에서 읽나 — 종이에 찍히는 날짜의 출처 ──
+  // 최신 하나를 집으면 폐기 후 대면 재서명한 계약서에 옛 날짜가 인쇄된다.
+  const OLD = { id: 'old', signedAt: SIGNED_AT, disposalSignedAt: DISPOSAL_AT }
+  const RESIGN_AT = new Date('2026-08-20T01:00:00.000Z')
+  const NEW = { id: 'new', signedAt: RESIGN_AT, disposalSignedAt: null }
+  eq('발급 출처 · 원격 재서명이면 새 링크를 고른다',
+    pickCurrentSignatureLink([NEW, OLD], { signatureSignedAt: RESIGN_AT, disposalSignatureSignedAt: null })?.id, 'new')
+  eq('발급 출처 · 대면 재서명이면 어떤 링크도 안 고른다(lease 시각으로 떨어진다)',
+    pickCurrentSignatureLink([OLD], { signatureSignedAt: RESIGN_AT, disposalSignatureSignedAt: null }), null)
+  eq('발급 출처 · 폐기 직후 서명 0 이면 없음',
+    pickCurrentSignatureLink([OLD], { signatureSignedAt: null, disposalSignatureSignedAt: null }), null)
+  eq('발급 출처 · 평시에는 그 링크 그대로',
+    pickCurrentSignatureLink([OLD], { signatureSignedAt: SIGNED_AT, disposalSignatureSignedAt: DISPOSAL_AT })?.id, 'old')
+  eq('발급 출처 · 링크가 없어도 터지지 않는다', pickCurrentSignatureLink([], { signatureSignedAt: SIGNED_AT }), null)
 }
 
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)

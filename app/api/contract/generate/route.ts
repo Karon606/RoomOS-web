@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { pickCurrentSignatureLink } from '@/lib/contractVersion'
 import { resolveSignedBody } from '@/lib/contract'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
@@ -182,11 +183,17 @@ export async function POST(req: Request) {
     let issuedDisposalAt: Date | null = null
     let issuedShareLinkId: string | null = null
     if (!body.preview && lease?.id) {
-      const link = await prisma.contractShareLink.findFirst({
+      // '서명이 들어온 적 있는 링크' 가 아니라 **지금 lease 에 남아 있는 서명을 만든 링크** 여야 한다.
+      // signedAt 은 과거 사실이라 버전을 폐기해도 링크에 영원히 남는다. 최신 하나를 그냥 집으면,
+      // 폐기 후 대면으로 재서명받아 발급할 때 계약일이 옛 서명일로 찍히고 박제의 shareLinkId 도
+      // 이미 닫힌 링크를 가리킨다. 종이가 나간 뒤라 감지망(계약일 정합)이 잡아도 늦다.
+      // 판정은 드리프트 비교·본문 잠금 검사와 같은 정본을 쓴다(2026-08-19 다중 버전 설계 조사).
+      const links = await prisma.contractShareLink.findMany({
         where: { leaseTermId: lease.id, signedAt: { not: null } },
         orderBy: { signedAt: 'desc' },
         select: { id: true, signedAt: true, disposalSignedAt: true },
       })
+      const link = pickCurrentSignatureLink(links, lease)
       const signedAt = link?.signedAt ?? lease.signatureSignedAt ?? null
       const disposalAt = link?.disposalSignedAt ?? lease.disposalSignatureSignedAt ?? null
       if (signedAt) signDate = kstYmdStr(signedAt)

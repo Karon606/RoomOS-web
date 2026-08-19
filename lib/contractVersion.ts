@@ -166,3 +166,18 @@ export function isCurrentSignatureLink(
   return same(link.signedAt, lease.signatureSignedAt)
     || same(link.disposalSignedAt, lease.disposalSignatureSignedAt)
 }
+
+/**
+ * 서명이 들어온 적 있는 링크들 중 **지금 서명의 출처**를 고른다. 없으면 null.
+ *
+ * '최신 signedAt 하나'를 집는 것과 다르다. 폐기 뒤 대면으로 재서명을 받으면 지금 서명은 링크가
+ * 없는데, 옛 링크는 signedAt 을 그대로 들고 있어 최신 하나로는 그것이 걸린다. 그 값으로 계약일을
+ * 찍으면 종이에 옛 날짜가 인쇄된다(2026-08-19 다중 버전 설계 조사에서 발견).
+ * 고르지 못하면 부르는 쪽이 lease 의 서명 시각으로 떨어지는 것이 맞다 — 그것이 지금 서명이다.
+ */
+export function pickCurrentSignatureLink<T extends { signedAt?: Date | null; disposalSignedAt?: Date | null }>(
+  links: readonly T[],
+  lease: { signatureSignedAt?: Date | null; disposalSignatureSignedAt?: Date | null } | null | undefined,
+): T | null {
+  return links.find(l => isCurrentSignatureLink(l, lease)) ?? null
+}
