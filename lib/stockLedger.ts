@@ -96,6 +96,16 @@ export function purchaseAfterCheck(
   return d.receivedAtMs > c.createdAtMs
 }
 
+// 실측이 장부보다 큰가 — '입수 기록 누락 의심' 신호(백로그 4번)의 판정 정본. 안내 전용이고
+// 자동 수정은 없다. 장부보다 많이 세어졌다는 것은 수령 확인·무상 입수 기록이 빠졌다는 신호다
+// (반대로 적게 세어진 것은 소모라서 정상). 허용 오차는 관용 오차(0.001)와 동일, 반환은
+// 표시용 2자리 반올림 초과분. null = 신호 없음.
+export function overbookExcess(measured: number, book: number): number | null {
+  if (!(measured > book + 1e-3)) return null
+  const excess = Math.round((measured - book) * 100) / 100
+  return excess > 0 ? excess : null
+}
+
 // 그 점검의 저장 잔량이 이 델타를 이미 담고 있는가(= 점검보다 앞이거나 같은 시각).
 function reflectedIn(d: AnyLedgerDelta | null, c: LedgerCheck): number {
   if (!d) return 0

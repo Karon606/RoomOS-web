@@ -1,7 +1,7 @@
 // 재고 원장 리플레이 정본(lib/stockLedger) 회귀 테스트 — DB 불필요, 순수 함수 케이스 고정.
 // 운영자 신고(2026-08-19 쌀 40kg)를 그대로 박제한다. 8/18 로 잘못 넣은 무상 입고를 8/10 으로
 // 정정하면 그 사이 점검들의 저장 절대값이 그대로라 40kg 이 증발하던 사건이다.
-import { planStockShift, deltaAfterCheck, purchaseAfterCheck, type LedgerCheck, type LedgerDelta, type PurchaseDelta } from '../lib/stockLedger'
+import { planStockShift, deltaAfterCheck, purchaseAfterCheck, overbookExcess, type LedgerCheck, type LedgerDelta, type PurchaseDelta } from '../lib/stockLedger'
 
 let pass = 0
 const fails: string[] = []
@@ -343,6 +343,14 @@ eq('구매 경계: 같은 시각이면 반영(앞)', purchaseAfterCheck({ receiv
   eq('구매 정정 대칭: 8/7 총량 60 복귀', plan.ok ? plan.rows.find(r => r.checkId === 'c0807')?.nextTotal : null, 60)
   eq('구매 정정 대칭: 8/14 창고 36 복귀', plan.ok ? plan.rows.find(r => r.checkId === 'c0814')?.locs.find(l => l.locationId === W)?.nextQty : null, 36)
 }
+
+// ── 입수 과소 의심 신호(overbookExcess, 백로그 4번) — 실측 > 장부일 때만 ────
+eq('과소 신호: 같으면 없음', overbookExcess(10, 10), null)
+eq('과소 신호: 부동소수 오차는 없음', overbookExcess(10.0005, 10), null)
+eq('과소 신호: 적게 세면(소모) 없음', overbookExcess(8, 10), null)
+eq('과소 신호: 많이 세면 초과분', overbookExcess(12, 10), 2)
+eq('과소 신호: 소수 초과분 2자리', overbookExcess(10.257, 10), 0.26)
+eq('과소 신호: 장부 0 에서 실측 존재', overbookExcess(3, 0), 3)
 
 console.log(`\n재고 원장 리플레이 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

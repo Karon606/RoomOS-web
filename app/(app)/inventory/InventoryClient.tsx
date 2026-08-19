@@ -11,6 +11,7 @@ import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
+import { overbookExcess } from '@/lib/stockLedger'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -1397,7 +1398,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
+        <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds}
+          currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
+          onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
           setMode('view'); reload(); onChange()
           pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
             ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
@@ -3049,10 +3052,13 @@ function calcLocMove(beforeStr: string, afterStr: string, baseline: number | nul
   return { beforeN, afterN, restocked }
 }
 
-function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDone, onDraftChange, onGoDisposal }: {
+function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, hasPriorCheck, pendingCount, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
   hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력 행에서 제외. 카드 칩과 동일 기준(운영자 지적 2026-07-18)
+  currentStock?: number | null   // 장부 잔량(서버 정본) — 실측 > 장부의 입수 과소 의심 신호(백로그 4번)
+  hasPriorCheck?: boolean        // 직전 점검 존재 — 첫 점검(시작 재고 선언)은 신호 대상이 아니다
+  pendingCount?: number          // 수령 대기 구매 건수 — 신호 문구에 부기
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
   onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
 }) {
@@ -3237,6 +3243,20 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
     : (hasLocations
         ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
         : 0)
+
+  // 입수 과소 의심 신호(백로그 4번) — 실측 합계가 장부 잔량(서버 정본 currentStock)보다 크면
+  // 수령 확인·무상 입수 기록이 빠졌다는 신호다. 판정 정본은 lib/stockLedger overbookExcess.
+  // 안내 전용(자동 수정 없음). 무언가 입력한 뒤에만, 직전 점검이 있을 때만 — 첫 점검은
+  // 시작 재고 선언이라 장부(0 또는 구매 합)보다 큰 것이 정상이다.
+  const enteredAny = hasLocations
+    ? (restockMode
+        ? hubTouched || Object.values(beforeQtys).some(v => v !== '') || Object.values(afterQtys).some(v => v !== '')
+        : touched.size > 0)
+    : qty !== ''
+  const measuredTotal = hasLocations ? computed : (Number(qty) || 0)
+  const overbook = hasPriorCheck && currentStock != null && enteredAny
+    ? overbookExcess(measuredTotal, currentStock)
+    : null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -3476,6 +3496,16 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         </div>
       )}
 
+      {/* 입수 과소 의심 신호(백로그 4번) — 시각 문법은 위 폐기 바로가기 경고 박스 정본과 동일 */}
+      {overbook != null && currentStock != null && (
+        <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
+          <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
+            실측 합계가 장부 잔량({fmtQty(currentStock, stockUnit)})보다 {fmtQty(overbook, stockUnit)} 많습니다.
+            구매 수령 확인이나 무상 입수 기록이 빠졌는지 확인해 주세요.
+            {(pendingCount ?? 0) > 0 && ` 수령 대기 구매가 ${pendingCount}건 있습니다.`}
+          </p>
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
