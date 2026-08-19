@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
-import { kstYmd } from '@/lib/kstDate'
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { runIntegrityAudit } from '@/lib/integrityAudit'
 import { ensureWebPushConfigured, sendToSubscriptions } from '@/lib/pushSend'
 import { canTransition } from '@/lib/leaseTransitions'
@@ -37,8 +37,10 @@ export async function GET(req: Request) {
   // 그리고 updateMany 로 한 번에 밀지 않고 건별로 돌면서 **이력을 남긴다.** 종전에는 이 전이만
   // TenantStatusLog 를 안 써서, 상태 이력에서 "언제 퇴실 예정이 됐나"가 사라졌다
   // (고객 카드 상태 이력 위젯이 생기면서 이 구멍이 드러났다).
-  const k = kstYmd()
-  const kstToday = new Date(k.year, k.month - 1, k.day)
+  //
+  // 창은 @db.Date 저장 축(UTC 자정)으로 잡는다 — 로컬 자정으로 만들던 시절엔 KST 기기에서
+  // 창이 하루 앞으로 밀려 '오늘·내일'이 아니라 '어제·오늘' 퇴실을 집었다. 창 정본은 lib/kstDate.
+  const kstToday = ymdToDbDate(kstYmdStr())
   const kstDayAfterTomorrow = new Date(kstToday.getTime() + 2 * 86400000)
   const flipTargets = await prisma.leaseTerm.findMany({
     where: {
