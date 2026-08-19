@@ -8,11 +8,12 @@ import prisma from '@/lib/prisma'
 import { unpaidForLease } from '@/lib/billing'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { redirect } from 'next/navigation'
-import { kstMonthStr } from '@/lib/kstDate'
+import { dbDateMonthKey, kstMonthStr, monthsDbRange, yearDbRange } from '@/lib/kstDate'
 import { discountedRent } from '@/lib/rentDiscount'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
+import { shiftMonth } from '@/lib/moveCalendar'
 
 async function getPropertyId() {
   const { userId, propertyId } = await requirePropertyAccess()
@@ -51,8 +52,9 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const yearNum = parseInt(year, 10)
   if (isNaN(yearNum)) throw new Error('잘못된 연도')
 
-  const yearStart = new Date(yearNum, 0, 1)
-  const yearEnd = new Date(yearNum, 11, 31, 23, 59, 59, 999)
+  // 한 해 창 — lib/kstDate 정본. 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 밀려
+  // 12/31 지출이 그 해 보고서에서 빠지고 전년 12/31 이 딸려 들어왔다.
+  const yearWindow = yearDbRange(yearNum)
 
   const months = Array.from({ length: 12 }, (_, i) => `${yearNum}-${String(i + 1).padStart(2, '0')}`)
 
@@ -145,25 +147,23 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   // 지출 / 기타수익 — 발생일(date) 기준
   const [expenses, incomes] = await Promise.all([
     prisma.expense.findMany({
-      where: { propertyId, date: { gte: yearStart, lte: yearEnd } },
+      where: { propertyId, date: yearWindow },
       select: { date: true, amount: true, category: true },
     }),
     prisma.extraIncome.findMany({
-      where: { propertyId, date: { gte: yearStart, lte: yearEnd } },
+      where: { propertyId, date: yearWindow },
       select: { date: true, amount: true },
     }),
   ])
 
   const expenseByMonth: Record<string, number> = {}
   for (const e of expenses) {
-    const d = new Date(e.date)
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const m = dbDateMonthKey(e.date)
     expenseByMonth[m] = (expenseByMonth[m] ?? 0) + e.amount
   }
   const extraByMonth: Record<string, number> = {}
   for (const i of incomes) {
-    const d = new Date(i.date)
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const m = dbDateMonthKey(i.date)
     extraByMonth[m] = (extraByMonth[m] ?? 0) + i.amount
   }
 
@@ -402,39 +402,39 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     }
     return arr
   })()
-  const last3Start = new Date(startY, startM - 4, 1)
-  const last3End = new Date(startY, startM - 1, 0); last3End.setHours(23, 59, 59, 999)
+  const startMonth = `${startY}-${String(startM).padStart(2, '0')}`
+  // 최근 3개월 창 — 지금은 소비처가 없다(평균은 아래 last3Months 월 키로 낸다). 형태만 정본을 따른다.
+  const last3Window = monthsDbRange(shiftMonth(startMonth, -3), shiftMonth(startMonth, -1))
 
-  // 전년 1년치 + 최근 3개월
-  const yearBackStart = new Date(startY - 1, startM - 1, 1)
-  const yearBackEnd = new Date(startY, startM + monthsAhead - 1, 0); yearBackEnd.setHours(23, 59, 59, 999)
+  // 전년 1년치 + 최근 3개월. 창 정본은 lib/kstDate — 로컬 자정으로 잡던 시절엔 KST 기기에서
+  // 창이 하루 밀려 각 달 말일 지출이 그 달 평균에서 통째로 빠졌다.
+  const yearBackWindow = monthsDbRange(shiftMonth(startMonth, -12), shiftMonth(startMonth, monthsAhead - 1))
 
   const [historicalExpenses, historicalIncomes] = await Promise.all([
     prisma.expense.findMany({
       where: {
         propertyId,
-        date: { gte: yearBackStart, lte: yearBackEnd },
+        date: yearBackWindow,
       },
       select: { date: true, amount: true },
     }),
     prisma.extraIncome.findMany({
       where: {
         propertyId,
-        date: { gte: yearBackStart, lte: yearBackEnd },
+        date: yearBackWindow,
       },
       select: { date: true, amount: true },
     }),
   ])
 
-  const monthKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   const expByMonth: Record<string, number> = {}
   for (const e of historicalExpenses) {
-    const k = monthKeyOf(new Date(e.date))
+    const k = dbDateMonthKey(e.date)
     expByMonth[k] = (expByMonth[k] ?? 0) + e.amount
   }
   const incByMonth: Record<string, number> = {}
   for (const i of historicalIncomes) {
-    const k = monthKeyOf(new Date(i.date))
+    const k = dbDateMonthKey(i.date)
     incByMonth[k] = (incByMonth[k] ?? 0) + i.amount
   }
 
@@ -661,18 +661,14 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
 
   // 12개월 트렌드
   const trendRevenue = trendMonths.map(m => actualByMonth[m] ?? 0)
-  const monthRanges = trendMonths.map(m => {
-    const [y, mo] = m.split('-').map(Number)
-    return { from: new Date(y, mo - 1, 1), to: new Date(y, mo, 0, 23, 59, 59, 999) }
-  })
   const expenses12 = await prisma.expense.findMany({
-    where: { propertyId, date: { gte: monthRanges[0].from, lte: monthRanges[11].to } },
+    where: { propertyId, date: monthsDbRange(trendMonths[0], trendMonths[11]) },
     select: { date: true, amount: true, category: true },
   })
   const expenseByMonth: Record<string, number> = {}
   const categoryAcc: Record<string, number> = {}
   for (const e of expenses12) {
-    const m = `${new Date(e.date).getFullYear()}-${String(new Date(e.date).getMonth() + 1).padStart(2, '0')}`
+    const m = dbDateMonthKey(e.date)
     expenseByMonth[m] = (expenseByMonth[m] ?? 0) + e.amount
     categoryAcc[e.category] = (categoryAcc[e.category] ?? 0) + e.amount
   }

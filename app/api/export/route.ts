@@ -10,6 +10,7 @@ import { resolveMonthParam } from '@/lib/monthParam'
 import { billForLeaseMonth } from '@/lib/billing'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
+import { dbDateMonthKey, monthDbRange, yearDbRange, ymdToDbDate, type DbDateRange } from '@/lib/kstDate'
 
 function fmtDate(d: Date | null | undefined): string {
   if (!d) return ''
@@ -107,10 +108,10 @@ function buildExpenseSheet(rows: ExpenseRow[]): XLSX.WorkSheet {
   return ws
 }
 
-// 지출 월별 그룹 키 — 날짜 기준 'YYYY-MM'.
+// 지출 월별 그룹 키 — 날짜 기준 'YYYY-MM'(lib/kstDate 정본).
 function expenseMonthKey(d: Date | null): string {
   if (!d) return '날짜없음'
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return dbDateMonthKey(d)
 }
 
 // 엑셀 시트명 제약 준수 — 금지문자(\ / ? * [ ] :) 제거, 31자 이내, 빈 값은 '미지정'.
@@ -148,15 +149,13 @@ export async function GET(request: NextRequest) {
     const fromParam = searchParams.get('from')      // 'YYYY-MM-DD', KST 로컬 파싱
     const toParam = searchParams.get('to')          // 'YYYY-MM-DD', KST 로컬 파싱
     const groupParam = (searchParams.get('group') ?? 'method') as 'method' | 'account' | 'month'
-    let expDateRange: { gte: Date; lte: Date } | undefined
+    let expDateRange: DbDateRange | { gte: Date; lte: Date } | undefined
     if (fromParam && toParam) {
-      // 직접 지정·빠른 선택 — from 00:00 ~ to 23:59:59 (기존 month 파싱과 동일한 로컬 new Date 문법).
-      const [fy, fm, fd] = fromParam.split('-').map(Number)
-      const [ty, tm, td] = toParam.split('-').map(Number)
-      expDateRange = { gte: new Date(fy, fm - 1, fd), lte: new Date(ty, tm - 1, td, 23, 59, 59) }
+      // 직접 지정·빠른 선택 — 양끝 날짜 포함. @db.Date 칸이라 UTC 자정끼리의 lte 가 정확하다
+      // (로컬 자정으로 만들던 시절엔 KST 기기에서 시작이 하루 앞으로 밀려 전날 지출이 딸려 왔다).
+      expDateRange = { gte: ymdToDbDate(fromParam), lte: ymdToDbDate(toParam) }
     } else if (monthParam) {
-      const [ey, em] = monthParam.split('-').map(Number)
-      expDateRange = { gte: new Date(ey, em - 1, 1), lte: new Date(ey, em, 0, 23, 59, 59) }
+      expDateRange = monthDbRange(monthParam)
     }
     // 카드·계좌 필터 — 쉼표 구분 accountKey 목록(각 값 encodeURIComponent). 있으면 공용 accountKey(시트 그룹핑과 동일 정의)로 걸러낸다.
     const accountsParam = searchParams.get('accounts')
@@ -235,16 +234,13 @@ export async function GET(request: NextRequest) {
   const targetMonth = resolveMonthParam(searchParams.get('month'))   // 클라 ExportButton 과 같은 기준(KST · 미래 월 클램프, lib/monthParam)
   const scope = (searchParams.get('scope') ?? 'month') as 'month' | 'year' | 'all'
 
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
-  const monthStart = new Date(yyyy, mm - 1, 1)
-  const monthEnd   = new Date(yyyy, mm, 0, 23, 59, 59)
-  const yearStart  = new Date(yyyy, 0, 1)
-  const yearEnd    = new Date(yyyy, 11, 31, 23, 59, 59)
-
+  const yyyy = targetMonth.slice(0, 4)
+  // 창 정본은 lib/kstDate — 로컬 자정으로 만들던 시절엔 KST 기기에서 창이 하루 앞으로 밀려
+  // 말일 지출·기타수익·요청사항이 시트에서 빠지고 전월 말일 것이 딸려 들어왔다.
   const dateRange = scope === 'month'
-    ? { gte: monthStart, lte: monthEnd }
+    ? monthDbRange(targetMonth)
     : scope === 'year'
-      ? { gte: yearStart, lte: yearEnd }
+      ? yearDbRange(yyyy)
       : undefined
 
   // ── 수납현황 ────────────────────────────────────────────────────
