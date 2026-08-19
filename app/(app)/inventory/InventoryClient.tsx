@@ -3256,6 +3256,12 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
           if (!res.ok) { setError(res.error); return }
           await deleteItemDrafts(item.id)
           onDraftChange?.()
+          // 같은 날 중복 앵커 안내(백로그 3번) — 저장은 됐고, 지울지는 운영자 몫(자동 삭제 절대 없음).
+          if (res.sameDayNotice) {
+            pushToast('info', '같은 날 점검이 이미 있습니다', {
+              detail: '잔량은 마지막에 저장한 값으로 계산됩니다. 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.',
+            })
+          }
           onDone()
         } finally { submittingRef.current = false }
       })
@@ -3299,7 +3305,9 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         onDraftChange?.()
         // 점검 저장에 적용취소가 없었다 — 삭제·입수·폐기·수령에는 다 있는데 **제일 자주 쓰는 저장**에만
         // 없었다(C페이즈 조사 2026-08-03). 잘못 센 값이 기준선으로 박히면 되돌릴 방법이 없었다.
+        // 같은 날 중복 앵커(백로그 3번)는 이 토스트의 부연으로 안내 — 토스트를 겹쳐 쌓지 않는다.
         pushToast('success', '재고 점검 저장됨', {
+          ...(res.sameDayNotice ? { detail: '같은 날 점검이 이미 있습니다. 잔량은 마지막에 저장한 값으로 계산되고, 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.' } : {}),
           action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
             if (r.ok) { onDraftChange?.(); onDone() } else pushToast('error', r.error)
           }) } },

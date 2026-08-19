@@ -834,7 +834,8 @@ export async function createStockCheck(data: {
   allowHubClamp?: boolean
   // 경로 B — 클라(CheckForm)가 실제로 차감한 허브 위치 id. 검출 허브와 차감 허브를 일치시켜 오탐/미탐 방지.
   restockHubLocationId?: string
-}): Promise<{ ok: true; id: string } | { ok: false; error: string } | HubShortResponse> {
+  // sameDayNotice — 같은 날 맨 절대값 점검이 이미 있음(안내 전용, 저장은 정상 진행. 백로그 3번).
+}): Promise<{ ok: true; id: string; sameDayNotice?: boolean } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -942,6 +943,19 @@ export async function createStockCheck(data: {
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
     if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    // 같은 날 중복 앵커 안내(백로그 3번) — 감지·안내만 하고 저장은 그대로 진행한다.
+    // 자동 삭제는 절대 하지 않는다(2026-08-19 점보롤 앵커 오판 삭제 교훈 — 값이 같아도
+    // 보충 마커 등 사건 기록이 실린 앵커는 중복이 아니다). 그래서 수령 자동 점검(sourceExpenseId)·
+    // 보정(isReconcile)·보충 마커가 실린 같은 날 점검은 세지 않고, 맨 절대값 점검만 안내 대상.
+    // 위치 병합 저장(locationPatch)은 같은 날 연속 점검이 설계된 흐름이라 제외.
+    let sameDayNotice = false
+    if (!data.locationPatch) {
+      const sameDay = await prisma.stockCheck.findMany({
+        where: { trackedItemId: data.trackedItemId, date: ymdToDbDate(data.date), sourceExpenseId: null, isReconcile: false },
+        select: { locationBreakdown: { select: { restockedQty: true } } },
+      })
+      sameDayNotice = sameDay.some(c => !c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
+    }
     const r = await prisma.stockCheck.create({
       data: {
         trackedItemId: data.trackedItemId,
@@ -963,7 +977,7 @@ export async function createStockCheck(data: {
       },
     })
     revalidatePath('/inventory')
-    return { ok: true, id: r.id }
+    return { ok: true, id: r.id, ...(sameDayNotice ? { sameDayNotice: true } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
