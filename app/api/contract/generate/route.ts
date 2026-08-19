@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { resolveSignedBody } from '@/lib/contract'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
@@ -234,7 +234,9 @@ export async function POST(req: Request) {
             data: {
               propertyId, tenantId: tenant.id, leaseTermId: lease?.id ?? null,
               driveFileId: '', fileName: '', source: 'GENERATED', contractNo: no,
-              signedAt: new Date(`${signDate}T00:00:00`),
+              // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀
+              // KST 기기에서 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정).
+              signedAt: ymdToDbDate(signDate),
             },
             select: { id: true },
           })

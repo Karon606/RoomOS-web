@@ -3815,7 +3815,9 @@ export async function finalizeContractScan(input: {
       return { ok: false, error: '업로드된 파일을 찾을 수 없습니다. 다시 시도해 주세요.' }
     }
     const lease = primaryTenantLease(tenant.leaseTerms) ?? null
-    const signedAt = input.signedAt ? new Date(`${input.signedAt}T00:00:00`) : new Date()
+    // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀 KST 기기에서
+    // 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정). 미입력이면 업로드 시각 그대로.
+    const signedAt = input.signedAt ? ymdToDbDate(input.signedAt) : new Date()
     // 스캔본 업로드는 서명 완료로 친다(운영자 확정 2026-08-04). 종이에 서명이 있고 그 스캔이 원본이다.
     // 다만 **서명 이미지는 만들지 않는다** — 서명은 종이에 있고 없는 것을 지어내지 않는다.
     // 본문도 담지 않는다. 인쇄는 아무 기록을 안 남겨서 종이에 무엇이 인쇄됐는지 앱이 원리적으로 모른다.

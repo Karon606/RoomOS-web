@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
 import { buildRentReceiptPdf, type RentReceiptFields } from '@/lib/rentReceiptPdf'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -102,7 +102,9 @@ export async function POST(req: Request) {
           fileName,
           kind: receiptKind,
           receiptNo,
-          issuedAt: new Date(`${issueDate}T00:00:00`),
+          // 발급일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀 KST 기기에서
+          // 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정), 읽기는 lib/fmtDate 와 짝.
+          issuedAt: ymdToDbDate(issueDate),
         },
         select: { id: true, driveFileId: true, fileName: true, issuedAt: true, receiptNo: true },
       })

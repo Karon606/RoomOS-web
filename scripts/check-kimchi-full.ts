@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { kstMonthStr, monthDbRange } from '../lib/kstDate'
+import { shiftMonth } from '../lib/moveCalendar'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -7,9 +9,8 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   const item = await prisma.trackedItem.findFirst({ where: { label: '김치', isArchived: false } })
   if (!item) return
-  const monthsAgo7 = new Date()
-  monthsAgo7.setMonth(monthsAgo7.getMonth() - 7)
-  monthsAgo7.setDate(1); monthsAgo7.setHours(0, 0, 0, 0)
+  // 재고 overview 와 같은 창 정본 — 로컬 자정으로 만들면 KST 기기에서 하루 앞으로 밀린다.
+  const monthsAgo7 = monthDbRange(shiftMonth(kstMonthStr(), -7)).gte
   console.log('monthsAgo7 cutoff:', monthsAgo7.toISOString())
   const allChecks = await prisma.stockCheck.findMany({
     where: { trackedItemId: item.id, date: { gte: monthsAgo7 } },

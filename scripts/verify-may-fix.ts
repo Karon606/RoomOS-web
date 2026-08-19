@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { discountedRent } from '../lib/rentDiscount'
+import { monthDbRange } from '../lib/kstDate'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -10,9 +11,8 @@ const TARGET_MONTH = '2026-05'
 async function main() {
   const property = await prisma.property.findFirst({ where: { name: { contains: '제기' } }, select: { id: true } })
   if (!property) return
-  const [year, month] = TARGET_MONTH.split('-').map(Number)
-  const startDate = new Date(year, month - 1, 1)
-  const endDate = new Date(year, month, 0, 23, 59, 59, 999)
+  // 창 정본 — 로컬 자정으로 만들면 KST 기기에서 하루 앞으로 밀려 말일 퇴실이 빠진다.
+  const monthWindow = monthDbRange(TARGET_MONTH)
 
   const active = await prisma.leaseTerm.findMany({
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, rentAmount: { gt: 0 } },
@@ -24,7 +24,7 @@ async function main() {
     where: {
       propertyId: property.id, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
       OR: [
-        { moveOutDate: { gte: startDate, lte: endDate } },
+        { moveOutDate: monthWindow },
         { paymentRecords: { some: { targetMonth: TARGET_MONTH, isDeposit: false } } },
       ],
     },
