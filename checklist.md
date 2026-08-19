@@ -1,89 +1,52 @@
-# 재고 보정 소비 귀속 선택지 (운영자 승인 2026-08-19)
+# 고정 지출 카드 실기 신고 2건 (2026-08-19)
 
-## 0단계 — 착수 전 발견한 회귀 (선행 처리)
-- [x] 전체 보정 모달의 DatePicker·보충 완료 체크박스가 e24c4e03(2026-07-02)에서 삭제됨 확인
-- [x] disabled={!restockDone} 만 남아 실측 칸·저장 버튼이 영구 잠김 → 삭제 마크업 원문 복구
-- [x] 커밋 (5bbcfdf7)
+신고 원문.
+"'전기요금' 카드에서 수정 버튼을 눌러도 작동하지 않아. 비활성 버튼은 누르고 딜레이가 생겨서
+작동 안하는 줄 알았어. 그리고 모바일의 경우 너무 좁은 곳에 많은 내용이 있어서 정작 '전기요금'이라는
+이름도 '전...'으로밖에 안 보여. 이 부분은 수정이 필요할 듯"
 
-## 1단계 — 판정 정본 + 서버 분기
-- [x] constants.resolveDiffAttribution — 순수 판정(기본 'exclude', 증가분·근거없음은 항상 보정)
-- [x] saveFullReconcile 에 attribution(화면 단위) + 품목별 expectedQty(부호 판정용)
-- [x] scripts/test-reconcile-attribution.ts 12케이스 · verify:fast 등록
-- [x] 커밋 (cd3c93c6)
+대상은 같은 목록을 그리는 두 자리다. 한쪽만 고치면 반대편에서 같은 신고가 다시 온다.
+- 환경설정 > 데이터·도구 > 고정 지출 관리 카드 (app/(app)/settings/SettingsForm.tsx)
+- 지출 관리 > 고정 지출 관리 모달 (app/(app)/finance/FinanceClient.tsx)
 
-## 2단계 — 타임라인 보정 폼
-- [x] DiffAttributionChoice 공용 조각(CheckForm 보정 라벨 박스 문법 그대로)
-- [x] 차이 음수일 때만 노출 · 기준 구간 날짜를 부연에 박음
-- [x] 폼 머리글·저장 버튼·저장/되돌리기 토스트가 선택을 따라감
-- [x] 같은 날 점검 경고에 dedupSameDay 승격 함정 한 줄
-- [x] 커밋 (36dc4218)
+## 0단계 — 원인 확정 (헤드리스 실측)
+- [x] 편집 폼이 목록 **위**에 렌더 · 여는 순간 934px 가 스크롤 위치 위쪽에 삽입
+- [x] 스크롤 앵커링이 보던 행을 못박아 화면 변화 0 (scrollTop 1139 에서 2073, lastRowTop 300.3 불변)
+- [x] 폼 실제 위치 top -1022 / bottom -104 (뷰포트 상단 56) = 완전히 화면 밖, 그래서 "무반응"
+- [x] 320px 제목 실측 — 전기요금 18.2/48px, 일반전화이용료 22.4/84px, 오성미네랄-정수기 관리 54.5/129px, 임대관리비 0/60px
+- [x] 4버튼(묶기 해제 포함) 행은 320px 에서 3px 넘쳐 삭제 버튼 잘림
 
-## 3단계 — 전체 재고 보정 모달
-- [x] 모달 단위 선택 1개(행별 아님) · 줄어든 품목 있을 때만 노출
-- [x] 품목별 expectedQty 전달 — 증가분은 선택과 무관하게 보정 저장
-- [x] 부모의 중복 완료 토스트 제거(적용취소 후에도 '보정 완료'가 뜨던 것)
-- [x] 커밋 (a3b29372)
+## 1단계 — [수정] 무반응 봉합 (양쪽) — a436451e
+- [x] 폼 ref + rAF + scrollIntoView({ block:'start', behavior:'smooth' })
+- [x] 편집 중 행 표식 (§22 .sel · 보더 --tc + ring)
+- [x] 폼 머리글에 대상 이름 명시 (§14)
 
-## 4단계 — 점검 폼 부연 + 감사 정합
-- [x] 보정 체크박스에 '체크하지 않으면 …' 한 줄
-- [x] audit-reconcile-baselines 범위 주석(사용 기록 저장분은 의도적 제외)
-- [x] 커밋 (14108588, 6e47cfca)
+## 2단계 — 행 액션 정본화 + 왕복 표시 (양쪽) — 65a0ad40
+- [x] raw button 7개를 RowActionBtn 정본으로 (히트영역 44px, §09·§10)
+- [x] 행별 busyId 잠금 (선례 RequestsClient:86)
+- [x] 환경설정 토글·삭제·묶기 해제를 trackSave 로 감싸 §17 상단 진행 바 노출
+- [x] 환경설정 토글 desync 봉합 (서버 !r.isActive 대 로컬 !x.isActive)
+- [x] 지출 관리 모달 결과 무시 봉합 (withSave, §27.2)
+- [x] 목록 조회 await 무보호 catch 추가
 
-## 게이트
-- [x] tsc 0 (단계마다)
-- [x] verify:fast 전 항목 통과 (커밋 훅 5회 + 최종 1회)
-- [x] verify:db — 재고 축 전부 위반 0. 기존 데이터 결함 3건은 무관(아래 관찰)
-- [x] 프로덕션 빌드 성공 (컴파일 15.0s · 정적 47/47)
-- [x] eslint 496 → 494 (546c6927 대조 · 신규 0 · 회귀 복구로 미사용 setter 경고 2건 해소)
-- [x] 새 UI 320/360/390 × 라이트·다크 6조합 문서 넘침 0 · 요소 위반 0
-- [x] 실데이터 변경 0 (verify:db 는 읽기 전용, 마이그레이션·백필 없음)
+## 3단계 — 좁은 폭 레이아웃 재설계 (양쪽) — 61fbdf34
+- [x] 640px 미만 액션 줄 하단 스택 (§20)
+- [x] 배지 줄 flex-wrap · 제목 truncate 걷고 break-keep (품명 최우선 보존)
+- [x] 손복사 배지 span 을 Badge 정본으로 (§11 · 두 화면 농도 갈림 해소)
+- [x] 메타 줄 num 적용 (§06 tnum)
 
-# 겹침 판정 개정 — 시공 체크리스트 (설계 확정 2026-08-19, 운영자 4택 전체안)
-
-설계 정본: scratchpad/overlap-ack-design.md. 설계 밖 확대 금지.
-
-## 1단계 — 판정 정본(층 1)
-- [x] lib/roomAssignment: occupancyOverlapSpan · isSameDayTurnover · findOverlapAck 신설
-      (occupancyOverlaps 의 >= 는 무수정 — 소비처 전체가 흔들린다)
-- [x] roomAssignmentBlockReason(가져오기): 당일 회전 허용
-- [x] scripts/test-lease-subordination 에 당일 회전·확인 케이스 20건 추가
-- [x] 커밋 8bfda62d
-
-## 2단계 — LeaseOverlapAck 모델
-- [x] prisma/schema.prisma 모델 + Property·Room·LeaseTerm·User 역참조
-- [x] migrate_lease_overlap_ack.sql (CREATE TABLE/INDEX IF NOT EXISTS 한정)
-- [x] 실 DB 적용 — 컬럼 11개 생성 확인 · 행 0 (행 데이터 무변경)
-- [x] 커밋 4ec6a1a7
-
-## 3단계 — 기록·해제 서버 정본
-- [x] lib/overlapAck: loadOverlapAcks · recordOverlapAcksForLease · createOverlapAck · softDeleteOverlapAck
-- [x] tenants/actions: allowRoomOverlap 통과 시 기록(등록·계약 추가·수정)
-- [x] 커밋 2c4bcda6
-
-## 4단계 — 캘린더 조립(층 1·2)
-- [x] lib/moveCalendar: 당일 회전 충돌 제외 · 확인된 겹침 중립 · acks 입력
-- [x] scripts/test-move-calendar 기대값 갱신(당일 회전 — 승인됨) + 확인된 겹침 축 추가 → 123 통과
-- [x] room-manage/actions: ack 조회 + acknowledgeOverlap·releaseOverlapAck
-- [x] 커밋 0e626f94
-
-## 5단계 — 캘린더 UI
-- [x] MoveCalendar: [겹침 확인] · [확인 해제] · 중립 톤 · 코랄 팁 끔
-- [x] 커밋 cc6775dd
-
-## 6단계 — 입주자 폼(층 1 화면)
-- [x] TenantClient: 당일 회전 캡션 · 확인창 제거 · 문구에 기록 고지 · allowRoomOverlap 표식
-- [x] 커밋 b5da86d1
-
-## 7단계 — 감지망 축 ②
-- [x] check-room-availability-drift: 당일 회전 제외 · 유효 ack 제외 · 확인된 겹침 N건 · 잔존 ack 정보 줄
-- [x] 커밋 bb1ac52d
-
-## 게이트
+## 4단계 — 게이트
 - [x] tsc 0
-- [x] verify:fast 전 축 통과 (커밋 훅 7회 + 최종 1회) — 캘린더 123 · 종속 75 · 금전 200
-- [x] verify:db 개정 축 실측 — 축 ② 위반 1건(422호, ack 전이라 정상). 나머지 21축 통과.
-      무관한 기존 결함 2건(아래 관찰)
-- [x] 프로덕션 빌드 성공 (컴파일 14.0s · 정적 47/47)
-- [x] eslint 496 (기준선 496 · 신규 0, stash 대조)
-- [x] 새 UI 320/360/390 × 라이트/다크 12조합 넘침 0 · 버튼 히트 44px 이상
-- [x] 역주입 5종(회전 무위반 · ack 없는 겹침 검출 · ack 시 제외 · 구간 초과 재발화 · 잔존 ack 정보 줄)
+- [x] verify:fast 전 항목 통과 (커밋 훅에서도 3회 통과)
+- [x] verify:db — 기존 데이터 실패 2건 외 전 항목 통과
+      (전기요금 예약금액 잔존 · 서류 표시값 오버라이드 3건. 둘 다 운영자 실기 대기 건이고 이번 변경과 무관)
+- [x] 프로덕션 빌드 성공
+- [x] eslint 신규 0 (변경 전 스냅샷 대조 · error 294 warning 201 동일, 파일별 델타 0)
+- [x] 320/360/390 라이트·다크 실측 — 잘린 제목 5/5 에서 0/5, 행 넘침 3px 에서 0,
+      히트영역 44px 미만 15개에서 0개, 히트영역 겹침 0, 가로 넘침 0
+
+## 운영자 판단 대기 (손대지 않음)
+- 배지 개수 §11 상한 초과(최대 4개) — 자동이체·활성시작을 메타로 내릴지
+- 비활성 행 opacity-50 대비 미달(라이트 1.83:1 · 다크 2.31:1) — 형제 카드 전수 안건
+- 다크에서 행 배경 --canvas 가 순흑 — 저장소 전반 관행이라 단독 변경 부적절
+- 납부일 표기 불일치 — 환경설정 '말일' 대 지출 관리 '매월 31일'
