@@ -1410,7 +1410,9 @@ export async function getDraftItemIds(): Promise<string[]> {
 // 계산 규칙 정본은 lib/stockLedger, 조회·적용·되돌리기 공용층은 ./ledgerShift(무상 입수·지출 공용).
 
 export type StockShiftPreview =
-  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[]; hasAutoCheck?: boolean }
+  // unit — 물음에 뜨는 잔량 숫자의 단위. 없으면 맨숫자가 나가 '8' 이 롤인지 미터인지 알 수 없다.
+  // 규칙은 재고 화면의 rowUnit 과 같다(규격 추적이면 specUnit, 수량 추적이면 qtyUnit).
+  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[]; hasAutoCheck?: boolean; unit?: string | null }
   | { ok: false; error: string }
 
 // 조정 미리보기 — 클라가 확인 다이얼로그에 실제 숫자를 띄우는 데 쓴다. 쓰기 없음.
@@ -1514,6 +1516,7 @@ export async function previewExpenseStockShift(input: {
         storedTotal: Math.round(r.storedTotal * 100) / 100,
         nextTotal: Math.round(r.nextTotal * 100) / 100,
       })),
+      unit: it.trackUnit === 'qty' ? it.qtyUnit : (it.specUnit ?? it.qtyUnit),
       ...(own.length > 0 ? { hasAutoCheck: true } : {}),
     }
   } catch (err) {

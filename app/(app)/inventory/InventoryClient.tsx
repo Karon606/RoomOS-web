@@ -1203,7 +1203,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           <label className="text-xs font-medium text-[var(--warm-mid)]">시작 수량 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
           <div className="flex items-center gap-2">
             <input type="text" inputMode="decimal" autoComplete="off" value={startQty}
-              onChange={e => setStartQty(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0"
+              onChange={e => setStartQty(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="예: 12"
               className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
             {startUnit && <span className="text-xs text-[var(--warm-muted)] shrink-0">{startUnit}</span>}
           </div>
@@ -2008,7 +2008,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
             action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id, undoAdjust ? { adjustFollowing: true } : undefined).then(r => {
               if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
               else pushToast('error', r.error)
-            }) } },
+            }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
           })
           onChanged()
         }}

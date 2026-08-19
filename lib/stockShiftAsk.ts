@@ -23,6 +23,11 @@ export async function askShiftRows(input: {
   unit: string | null
   confirmLabel?: string                 // 기본 '함께 조정'
   altLabel?: string                     // 기본 '이 기록만'
+  // 위험 단계 — 기록이 사라지는 물음(지출 삭제)만 'danger'. 수정은 값이 바뀔 뿐이라 caution 이다.
+  // danger 로 올릴 때는 irreversibleNote 를 반드시 함께 준다. 기본 문구가
+  // '이 동작은 되돌릴 수 없습니다' 인데 이 물음들은 토스트 적용취소가 있어 그대로 두면 거짓이 된다.
+  level?: 'caution' | 'danger'
+  irreversibleNote?: string
 }): Promise<ShiftAskResult> {
   if (input.rows.length === 0) return { adjust: false, asked: false, count: 0 }
   const shown = input.rows.slice(0, 4)
@@ -30,7 +35,8 @@ export async function askShiftRows(input: {
   if (input.rows.length > shown.length) lines.push(`· 그 밖에 ${input.rows.length - shown.length}건`)
   const choice = await choiceDialog({
     title: input.title,
-    level: 'caution',
+    level: input.level ?? 'caution',
+    ...(input.irreversibleNote ? { irreversibleNote: input.irreversibleNote } : {}),
     message: [
       input.keepLine,
       input.impactLine(input.rows.length),

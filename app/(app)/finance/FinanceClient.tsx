@@ -28,7 +28,7 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory, syncTrackedItemCategory, previewExpenseStockShift } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, excludeExpenseFromInventory, syncTrackedItemCategory, previewExpenseStockShift } from '@/app/(app)/inventory/actions'
 import { askShiftRows } from '@/lib/stockShiftAsk'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getPendingReceiptImage, finalizePendingReceipt } from '@/app/(app)/dashboard/pendingReceipt'
@@ -2349,7 +2349,7 @@ export default function FinanceClient({
             title: '수량 정정을 재고에도 반영할까요?',
             keepLine: '지출 금액과 구매 내역은 입력한 대로 수정됩니다.',
             impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
-            unit: null,
+            unit: pre.unit ?? null,
           })
           if (ask === null) return   // 취소 — 저장 중단
           if (ask.adjust) fd.set('adjustStock', '1')
@@ -2393,7 +2393,7 @@ export default function FinanceClient({
         const shift = res.stockShift
         pushToast('success', '지출 수정됨', shift ? {
           detail: `재고 점검 ${shift.checks.length}건의 잔량도 함께 조정했습니다.`,
-          action: { label: '조정 취소', run: () => { void undoExpenseStockShift(shift).then(r => {
+          action: { label: '조정 적용취소', run: () => { void undoExpenseStockShift(shift).then(r => {
             if (r.ok) { pushToast('info', '재고 조정을 되돌렸습니다. 지출 수정은 유지됩니다.'); router.refresh() }
             else pushToast('error', r.error)
           }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
@@ -2422,10 +2422,14 @@ export default function FinanceClient({
           title: '이 구매 지출을 삭제할까요?',
           keepLine: `${fmtDate(exp.date)} · ${fmtWon(exp.amount)} · ${exp.category}`,
           impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
-          tailLine: '점검이 실제로 센 값이라 지금 잔량이 맞는다면 이 기록만 삭제하세요. 직후 적용취소로 되돌릴 수 있습니다.',
-          unit: null,
+          tailLine: '점검이 실제로 센 값이라 지금 잔량이 맞는다면 이 기록만 삭제하세요.',
+          unit: pre.unit ?? null,
           confirmLabel: '함께 조정 후 삭제',
           altLabel: '이 기록만 삭제',
+          // 기록이 사라지는 물음이라 danger 다. 다만 기본 문구('되돌릴 수 없습니다')는 이 삭제에
+          // 거짓이라 바꿔 준다 — 토스트 적용취소가 조정까지 함께 복원한다.
+          level: 'danger',
+          irreversibleNote: '삭제 직후 적용취소로 되돌릴 수 있습니다.',
         })
         if (ask === null) return
         adjustStock = ask.adjust
@@ -3720,6 +3724,7 @@ export default function FinanceClient({
                       <button onClick={() => startTransition(async () => {
                         // 수령완료 구매의 재포함 — 제외 때 함께 조정했던 점검이 있으면 대칭으로 되살릴지 묻는다.
                         let adjustFollowing = false
+                        let shiftedCount = 0
                         if (detailExp.receivedAt) {
                           const pre = await previewExpenseStockShift({ expenseId: detailExp.id, next: null, forInclude: true })
                           if (!pre.ok) { pushToast('error', pre.error); return }
@@ -3730,17 +3735,26 @@ export default function FinanceClient({
                               keepLine: '이 구매가 다시 재고 잔량에 들어갑니다.',
                               impactLine: n => `이 수령 시점 뒤의 재고 점검 ${n}건에 그 수량을 함께 더할 수 있습니다.`,
                               tailLine: '제외할 때 점검을 함께 조정했다면 같은 방식으로 되살리세요. 점검이 실측 그대로면 조정하지 말고 이 기록만 포함하세요.',
-                              unit: null,
+                              unit: pre.unit ?? null,
                               confirmLabel: '함께 조정',
                               altLabel: '이 기록만 포함',
                             })
                             if (ask === null) return
                             adjustFollowing = ask.adjust
+                            if (ask.adjust) shiftedCount = ask.count
                           }
                         }
                         const r = await includeExpenseInInventory(detailExp.id, adjustFollowing ? { adjustFollowing } : undefined)
                         if (!r.ok) { pushToast('error', r.error); return }
-                        pushToast('success', '재고 계산에 다시 포함됨'); router.refresh()
+                        // 함께 조정했으면 무엇이 움직였는지와 되돌릴 길을 싣는다 — 제외 쪽 토스트와 대칭이다.
+                        pushToast('success', '재고 계산에 다시 포함됨', shiftedCount > 0 ? {
+                          detail: `재고 점검 ${shiftedCount}건의 잔량도 함께 더했습니다.`,
+                          action: { label: '적용취소', run: () => { void excludeExpenseFromInventory(detailExp.id, { adjustFollowing: true }).then(u => {
+                            if (u.ok) { pushToast('info', '재고 계산에서 다시 제외했습니다.'); router.refresh() }
+                            else pushToast('error', u.error)
+                          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                        } : undefined)
+                        router.refresh()
                         setDetailExp({ ...detailExp, excludeFromInventory: false })
                       })} disabled={isPending}
                         className="shrink-0 px-2.5 py-1 text-[0.65625rem] font-medium rounded-lg border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors disabled:opacity-40">
