@@ -29,6 +29,8 @@ export type RecurringExpenseWithStatus = {
   recordedDate: string | null
   // 작년 같은 달 실제 기록의 그 달 합계 (없으면 null)
   priorYearActual: number | null
+  // 운영자가 고정지출 폼에 손으로 적어 둔 전년 동월 실적 (없으면 null)
+  priorYearAmount: number | null
   // 직전 3개월 중 기록이 있는 달의 '월 합계' 평균 (없으면 null)
   recentAvg: number | null
   // 이 현황이 어느 달의 것인지 'YYYY-MM' — 추정 라벨의 '작년 8월'이 여기서 나온다
@@ -162,6 +164,8 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       recordedAmount:    isPending ? null : (recorded?.amount ?? null),
       recordedDate:      isPending ? null : (recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null),
       priorYearActual,
+      // 수기 값도 0 은 '무료'가 아니라 '안 적었다'로 읽는다. 0 이 추정으로 올라오면 그 달은 안 나가는 것처럼 보인다.
+      priorYearAmount:   (re.priorYearAmount ?? 0) > 0 ? re.priorYearAmount : null,
       recentAvg,
       estimateMonth:     month,
       pendingAmount:     (re as any).pendingAmount ?? null,

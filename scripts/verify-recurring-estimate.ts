@@ -1,6 +1,6 @@
 // 미기록 고정지출 추정액 정합 검사 — 읽기 전용(SELECT 만). 불일치 발견 시 exit 1.
 // 홈 알림·재무 탭·대시보드 예상지출이 같은 금액·같은 라벨을 보여야 한다.
-// 정본식: 예약금액 > 비변동 항목의 계약액(기본액) > 작년 같은 달 실적 > 최근 3개월 평균 > 기본액.
+// 정본식: 예약금액 > 비변동 항목의 계약액(기본액) > 작년 같은 달 실적 > 수기 전년동월 > 최근 3개월 평균 > 기본액.
 //
 // ① 소스 가드: 알림 생성부가 정본 헬퍼(effectiveRecurringAmount)를 쓰는지, 정본식이나 라벨을
 //    lib/recurringEstimate.ts 밖에서 손으로 다시 쓴 곳이 없는지 검사 — 식이 두 벌로 갈라지는 재발을 잡는다.
@@ -19,8 +19,9 @@ const ALERT_FILE = 'app/(app)/dashboard/page.tsx'
 const FINANCE_FILE = 'app/(app)/finance/FinanceClient.tsx'
 // 정본식을 손으로 다시 쓴 자리 — 사다리의 두 항이 한 줄에서 ?? 로 이어지면 복제다.
 const INLINE_RES = [
-  /\bpendingAmount\b[^\n]*\?\?[^\n]*\b(priorYearActual|recentAvg|amount)\b/,
-  /\bpriorYearActual\b[^\n]*\?\?[^\n]*\b(recentAvg|amount)\b/,
+  /\bpendingAmount\b[^\n]*\?\?[^\n]*\b(priorYearActual|priorYearAmount|recentAvg|amount)\b/,
+  /\bpriorYearActual\b[^\n]*\?\?[^\n]*\b(priorYearAmount|recentAvg|amount)\b/,
+  /\bpriorYearAmount\b[^\n]*\?\?[^\n]*\b(recentAvg|amount)\b/,
 ]
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -86,6 +87,9 @@ async function main() {
       }
       if (basis === 'priorYear' && amount !== r.priorYearActual) {
         dataIssues.push(`${p.name} · ${r.title} — 작년 같은 달 채택인데 금액이 다르다`)
+      }
+      if (basis === 'priorYearManual' && amount !== r.priorYearAmount) {
+        dataIssues.push(`${p.name} · ${r.title} — 수기 전년동월 채택인데 금액이 다르다`)
       }
       if (basis === 'recentAvg' && amount !== r.recentAvg) {
         dataIssues.push(`${p.name} · ${r.title} — 3개월 평균 채택인데 금액이 다르다`)
