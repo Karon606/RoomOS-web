@@ -10,7 +10,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
-import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
+import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
   type RecurringExpenseWithStatus,
@@ -66,6 +66,10 @@ export function RecurringExpenseRecordModal({
   const [payMethod, setPayMethod] = useState(rec.lastPayMethod ?? rec.payMethod ?? '계좌이체')
   const [accId, setAccId]         = useState(rec.lastFinancialAccountId ?? rec.financialAccountId ?? '')
   const [error, setError]         = useState('')
+  // 프리필 금액의 근거 — 예정 행·알림에 붙는 라벨과 같은 말이라 눌러 들어와도 근거가 끊기지 않는다.
+  // 운영자가 고지서 금액으로 덮어쓰면 "예상 980,000 인데 1,120,000 이 나왔다"가 이 한 줄로 읽힌다.
+  const estimateLabel = recurringAmountLabel(rec)
+  const estimateHint  = estimateLabel ? `${estimateLabel} ${fmtWon(effectiveRecurringAmount(rec))}` : null
 
   const cardAccounts    = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
   const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
@@ -126,13 +130,11 @@ export function RecurringExpenseRecordModal({
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">
-                금액
-                {rec.historicalAvg && (
-                  <span className="ml-1 text-[var(--info-fg)] text-[0.65625rem]">평균 {fmtWon(rec.historicalAvg)}</span>
-                )}
-              </label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">금액</label>
               <MoneyInput value={amount} onChange={v => setAmount(v)} placeholder="0원" />
+              {estimateHint && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">{estimateHint}</p>
+              )}
             </div>
           </div>
           )}
