@@ -14,9 +14,16 @@
 //
 // 2026-08-10 에 축 G6 이 붙었다. 위 다섯 축이 '서명본과 지금이 다른가'를 보는 반면, G6 은
 // **서명이 사라졌는데 서명본 링크가 열린 채 남았는가**를 본다. 아래 상수 주석 참조.
+//
+// 2026-08-19 에 축 G7 이 붙었고(폐기 이력의 증거 결손), G1·G5 의 대조 대상이 '지금 lease 에 남아
+// 있는 서명을 만든 링크'로 좁아졌다(lib/contractVersion isCurrentSignatureLink). 버전 폐기가
+// 정식 동사가 되면서, 무효가 된 옛 링크를 기준으로 삼으면 정당한 재작성이 위반으로 뜬다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { contractLeaseFields, parseContractFieldOverrides } from '../lib/contractFieldOverrides'
+import {
+  isCurrentSignatureLink, parseContractVersionArchive, voidedVersionHasEvidence,
+} from '../lib/contractVersion'
 
 type Snapshot = { template?: unknown; lease?: unknown }
 
@@ -49,13 +56,27 @@ async function main() {
     select: {
       id: true, signatureImageUrl: true, signatureSignedAt: true,
       disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
-      signedContractSnapshot: true, contractOverride: true,
+      signedContractSnapshot: true, contractOverride: true, contractVersionArchive: true,
       tenant: { select: { name: true } },
     },
   })
   const fileIds = new Set((await prisma.contractFile.findMany({
     where: { deletedAt: null }, select: { id: true },
   })).map(f => f.id))
+
+  // 축 G7 — 폐기 이력에 서명 증거가 하나도 안 담겼다.
+  //   폐기는 '증거를 이력으로 옮기고 잠금만 푸는' 조작이다(lib/contractVersion). 이력 항목에
+  //   서명 이미지도 시각도 격리본도 없으면, 그 폐기는 아무것도 안 남기고 지운 것이다 —
+  //   폐기가 조용한 삭제로 퇴화한 상태이고, 그때는 무엇에 서명했는지 되짚을 길이 사라진다.
+  let voidedVersions = 0
+  for (const l of leases) {
+    for (const e of parseContractVersionArchive(l.contractVersionArchive)) {
+      voidedVersions++
+      if (!voidedVersionHasEvidence(e)) {
+        violations.push(`${l.tenant?.name ?? '?'} 의 폐기 기록(${e.voidedAt})에 서명 증거가 없다 — 폐기가 증거를 안 담고 지웠다`)
+      }
+    }
+  }
 
   for (const l of leases) {
     const who = l.tenant?.name ?? '?'
@@ -86,11 +107,12 @@ async function main() {
     where: { NOT: { signedAt: null } },
     orderBy: { createdAt: 'desc' },
     select: {
-      leaseTermId: true, templateSnapshot: true,
+      leaseTermId: true, templateSnapshot: true, signedAt: true, disposalSignedAt: true,
       tenant: { select: { name: true } },
       leaseTerm: {
         select: {
           contractOverride: true, contractFieldOverrides: true,
+          signatureSignedAt: true, disposalSignatureSignedAt: true,
           moveInDate: true, expectedMoveOut: true, rentAmount: true, depositAmount: true,
           cleaningFee: true, dueDay: true, registrationStatus: true,
           room: { select: { roomNo: true } },
@@ -103,9 +125,16 @@ async function main() {
   const seen = new Set<string>()
   let checked = 0
   let fieldChecked = 0
+  let skippedStale = 0
   for (const k of links) {
     if (!k.leaseTermId || seen.has(k.leaseTermId)) continue
     seen.add(k.leaseTermId)
+    // **지금 lease 에 남아 있는 서명을 만든 링크만** 대조한다(lib/contractVersion 정본).
+    // 링크의 signedAt 은 과거 사실이라 서명을 지워도, 버전을 폐기해도 남는다. 그 링크를 기준으로
+    // 삼으면 '폐기하고 이름을 고쳐 다시 작성'이라는 정당한 운영이 곧바로 위반으로 뜬다.
+    // G1·G5 가 잡으려는 것은 **서명이 살아 있는데 그 뒤에 고친 경우**뿐이다.
+    // 축 3 이 같은 판정을 2026-08-11(502호 이름 정정 재서명)에 이미 채택했다.
+    if (!isCurrentSignatureLink(k, k.leaseTerm)) { skippedStale++; continue }
 
     // 축 G5 — 표시값 오버라이드가 서명본과 다르다.
     //   오버라이드 **키가 있는 것만** 본다. 원천 컬럼(임대료 등)이 서명 뒤에 바뀐 것은
@@ -185,7 +214,7 @@ async function main() {
 
   await prisma.$disconnect()
 
-  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 · 표시값 오버라이드 ${fieldChecked}건 대조 · 서명 지워진 열린 링크 ${orphanLinks.length}건(기준선 ${G6_BASELINE}) / 위반 ${violations.length}건`)
+  console.log(`[본문 잠금·격리] 서명 계약 ${leases.filter(l => !!l.signedContractSnapshot).length}건 격리됨 · 서명본 ${checked}건 대조 · 표시값 오버라이드 ${fieldChecked}건 대조 · 지금 서명과 무관해 건너뛴 링크 ${skippedStale}건 · 폐기 기록 ${voidedVersions}건 · 서명 지워진 열린 링크 ${orphanLinks.length}건(기준선 ${G6_BASELINE}) / 위반 ${violations.length}건`)
   if (g6Over < 0) {
     console.log(`  [G6] 실측이 기준선보다 ${-g6Over}건 적다 — scripts/check-contract-override-lock.ts 의 G6_BASELINE 을 ${orphanLinks.length} 로 내려라.`)
   }

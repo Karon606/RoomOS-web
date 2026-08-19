@@ -13,6 +13,7 @@ import { buildContractData, type ContractData } from '@/lib/contractData'
 // 인쇄 사실 사영(15축)은 lib 정본을 쓴다 — 발급본 박제(ContractFile.issuedSnapshot)와 같은 축이어야 한다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
 import { isContractIssued } from '@/lib/contractIssue'
+import { isCurrentSignatureLink } from '@/lib/contractVersion'
 import { driveImageDataUrl } from '@/lib/google-drive'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
@@ -281,9 +282,17 @@ export async function checkContractShareDrift(tenantId: string, leaseTermId?: st
     const link = await prisma.contractShareLink.findFirst({
       where: { tenantId, propertyId, signedAt: { not: null }, ...(leaseTermId ? { leaseTermId } : {}) },
       orderBy: { createdAt: 'desc' },
-      select: { templateSnapshot: true },
+      select: {
+        templateSnapshot: true, signedAt: true, disposalSignedAt: true,
+        leaseTerm: { select: { signatureSignedAt: true, disposalSignatureSignedAt: true } },
+      },
     })
     if (!link) return { ok: true, drift: false }
+    // **지금 lease 에 남아 있는 서명을 만든 링크만** 비교 기준이다(lib/contractVersion 정본).
+    // 링크의 signedAt 은 과거 사실이라 버전을 폐기해도 남는다. 그것을 기준으로 삼으면 폐기 후
+    // 이름을 고쳐 재서명한 발급에서 이미 무효인 링크와 대조해 허위 경고가 뜨고, 그 경고가 권하는
+    // '재서명 받기' 를 누르면 방금 받은 서명이 폐기된다 — 경고가 스스로 사고를 만든다.
+    if (!isCurrentSignatureLink(link, link.leaseTerm)) return { ok: true, drift: false }
 
     const current = await buildContractData(tenantId, propertyId, leaseTermId)
     const snap = link.templateSnapshot as unknown as ContractData
