@@ -9,7 +9,7 @@ import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  addExpense, updateExpense, deleteExpense, undoDeleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
+  addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
   batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -28,7 +28,8 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory, syncTrackedItemCategory } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, syncTrackedItemCategory, previewExpenseStockShift } from '@/app/(app)/inventory/actions'
+import { askShiftRows } from '@/lib/stockShiftAsk'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getPendingReceiptImage, finalizePendingReceipt } from '@/app/(app)/dashboard/pendingReceipt'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -89,6 +90,7 @@ type Expense = {
   orderId: string | null; isShipping: boolean
   allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
   excludeFromInventory: boolean   // 재고 계산 제외 — 상세에서 '다시 포함' 제공
+  receivedAt: Date | null   // 수령완료 여부 — 수량 정정·삭제의 재고 전파 물음 대상 판정(점보롤 백로그 1번)
   order: { id: string; code: string; externalOrderNo?: string | null; shippingType: string | null; shippingMemo: string | null } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
@@ -2329,6 +2331,29 @@ export default function FinanceClient({
           if (converted === null) return   // 취소 → 저장 중단
           if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
         }
+        // 수령완료 구매의 수량·규격 정정 — 이 수량을 이미 반영한 점검이 있으면 함께 조정할지 묻는다
+        // (점보롤 백로그 1번, 무상 입수 정정과 같은 문법 — lib/stockShiftAsk 정본. 0건이면 침묵).
+        if (detailExp?.receivedAt && editItems.length === 1) {
+          const it = editItems[0]
+          const pre = await previewExpenseStockShift({
+            expenseId: detailExp.id,
+            next: {
+              qtyValue: it.qtyValue ? parseFloat(it.qtyValue) : null,
+              specValue: it.specValue ? parseFloat(it.specValue) : null,
+              specUnit: it.specUnit || null,
+            },
+          })
+          if (!pre.ok) { setError(pre.error); pushToast('error', pre.error); return }
+          const ask = await askShiftRows({
+            rows: pre.rows,
+            title: '수량 정정을 재고에도 반영할까요?',
+            keepLine: '지출 금액과 구매 내역은 입력한 대로 수정됩니다.',
+            impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+            unit: null,
+          })
+          if (ask === null) return   // 취소 — 저장 중단
+          if (ask.adjust) fd.set('adjustStock', '1')
+        }
         const res = await updateExpense(fd)
         if (!res.ok) { pushToast('error', res.error); return }
         // 카테고리 변경 + 품목 있음 → 재고 품목도 같이 옮길지 확인(종량제봉투 꼬임 재발 방지, 운영자 요청 2026-07-10)
@@ -2364,7 +2389,15 @@ export default function FinanceClient({
           }
         }
         setDetailExp(null); setDetailExpEdit(false); setEditShipSeparate(false); router.refresh()
-        pushToast('success', '지출 수정됨')
+        // 함께 조정을 골랐으면 무엇이 옮겨졌는지와 되돌릴 길을 토스트에 싣는다(§16 — 조정만 되돌리고 수정은 유지).
+        const shift = res.stockShift
+        pushToast('success', '지출 수정됨', shift ? {
+          detail: `재고 점검 ${shift.checks.length}건의 잔량도 함께 조정했습니다.`,
+          action: { label: '조정 취소', run: () => { void undoExpenseStockShift(shift).then(r => {
+            if (r.ok) { pushToast('info', '재고 조정을 되돌렸습니다. 지출 수정은 유지됩니다.'); router.refresh() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+        } : undefined)
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
         if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
       } finally { release() }
@@ -2374,7 +2407,32 @@ export default function FinanceClient({
     // #7: 고정지출에서 기록된 건은 '삭제'가 아니라 '이번 달 기록 취소'임을 명확히.
     //     (지출 record만 삭제 — 고정지출 항목/템플릿 자체는 그대로 유지)
     const isFixed = !!exp.recurringExpenseId
-    const ok = isFixed
+    // 수령완료 추적 구매 — 이 수량을 이미 반영한 점검이 있으면 함께 조정할지 묻는다(점보롤 백로그 1번).
+    // 물음이 뜨면 삭제 확인을 겸하므로 아래 일반 확인창은 건너뛴다. 0건이면 침묵하고 일반 확인창으로.
+    // (수령 자동 점검이 있는 구매는 서버가 종전대로 수령 취소 경로를 안내한다.)
+    let adjustStock = false
+    let askedShift = false
+    if (!isFixed && exp.receivedAt && exp.itemLabel && !exp.excludeFromInventory) {
+      const pre = await previewExpenseStockShift({ expenseId: exp.id, next: null })
+      if (!pre.ok) { pushToast('error', pre.error); return }
+      // 자동 점검이 있는 수령은 삭제가 서버에서 수령 취소 경로로 안내된다 — 조정 물음을 띄우지 않는다.
+      if (pre.rows.length > 0 && !pre.hasAutoCheck) {
+        const ask = await askShiftRows({
+          rows: pre.rows,
+          title: '이 구매 지출을 삭제할까요?',
+          keepLine: `${fmtDate(exp.date)} · ${fmtWon(exp.amount)} · ${exp.category}`,
+          impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+          tailLine: '점검이 실제로 센 값이라 지금 잔량이 맞는다면 이 기록만 삭제하세요. 직후 적용취소로 되돌릴 수 있습니다.',
+          unit: null,
+          confirmLabel: '함께 조정 후 삭제',
+          altLabel: '이 기록만 삭제',
+        })
+        if (ask === null) return
+        adjustStock = ask.adjust
+        askedShift = true
+      }
+    }
+    const ok = askedShift ? true : isFixed
       ? await confirmDialog({
           title: '이번 달 고정지출 기록만 취소할까요?',
           message: '고정지출 항목 자체는 그대로 남고, 이번 달 기록(정산)만 취소됩니다.',
@@ -2389,7 +2447,7 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await deleteExpense(exp.id)
+        const res = await deleteExpense(exp.id, adjustStock ? { adjustStock } : undefined)
         if (!res.ok) { pushToast('error', res.error); return }
         setDetailExp(null); router.refresh()
         pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨', {
@@ -3660,7 +3718,27 @@ export default function FinanceClient({
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--warm-border)]/50">
                       <span className="text-[0.65625rem] text-[var(--warm-muted)]">이 구매는 재고 계산에서 제외돼 있습니다.</span>
                       <button onClick={() => startTransition(async () => {
-                        const r = await includeExpenseInInventory(detailExp.id)
+                        // 수령완료 구매의 재포함 — 제외 때 함께 조정했던 점검이 있으면 대칭으로 되살릴지 묻는다.
+                        let adjustFollowing = false
+                        if (detailExp.receivedAt) {
+                          const pre = await previewExpenseStockShift({ expenseId: detailExp.id, next: null, forInclude: true })
+                          if (!pre.ok) { pushToast('error', pre.error); return }
+                          if (pre.rows.length > 0) {
+                            const ask = await askShiftRows({
+                              rows: pre.rows,
+                              title: '재고 계산에 다시 포함할까요?',
+                              keepLine: '이 구매가 다시 재고 잔량에 들어갑니다.',
+                              impactLine: n => `이 수령 시점 뒤의 재고 점검 ${n}건에 그 수량을 함께 더할 수 있습니다.`,
+                              tailLine: '제외할 때 점검을 함께 조정했다면 같은 방식으로 되살리세요. 점검이 실측 그대로면 조정하지 말고 이 기록만 포함하세요.',
+                              unit: null,
+                              confirmLabel: '함께 조정',
+                              altLabel: '이 기록만 포함',
+                            })
+                            if (ask === null) return
+                            adjustFollowing = ask.adjust
+                          }
+                        }
+                        const r = await includeExpenseInInventory(detailExp.id, adjustFollowing ? { adjustFollowing } : undefined)
                         if (!r.ok) { pushToast('error', r.error); return }
                         pushToast('success', '재고 계산에 다시 포함됨'); router.refresh()
                         setDetailExp({ ...detailExp, excludeFromInventory: false })

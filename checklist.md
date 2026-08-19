@@ -1,46 +1,38 @@
-# 환경설정 IA 2단계 — 8탭 재편 (2026-08-19, 운영자 승인)
+# 재고 기능 공백 4건 시공 (2026-08-19, 운영자 백로그 위임)
 
-1단계(2026-08-18)는 웹사이트 탭 신설. 2단계는 남은 일곱 칸의 뜻을 다시 나눈다.
-탭 수는 여덟 그대로, 기능 변경 0, 위치 이동과 저장 분해만.
+점보롤 사건(Work_log 2026-08-19 (5)·(6))에서 드러난 공백 4건. 정본은 lib/stockLedger
+(점검=절대값, 입수·폐기=델타, 잔량=마지막 점검+이후 델타, isReconcile=전파 정지점).
+1번이 몸통 — 무상입수에는 이미 배포된 '이후 잔량 자동 재계산'(planStockShift)의 짝을
+지출(구매) 수정·삭제 경로에 붙인다.
 
-## 0단계 — 위험 확정
-- [x] 1순위 위험 = 저장 무회귀. updatePropertySettings 가 FormData 통짜 저장이라 필드를 다른
-      탭으로 옮길 때마다 미포함 필드가 null 로 덮인다(1단계 슬러그 사고와 같은 클래스)
-- [x] 딥링크 전수 조사 — 앱 안의 ?tab= 링크는 website 둘뿐(대시보드·마케팅). room·finance 를
-      가리키는 링크 0 → 키 개명 가능
-- [x] 폼 필드 전수 18개 확인(name … contactLeadDays)
+## 0단계 — 조사·패널 합의
+- [x] 정본 문서(AGENTS·loop·Work_log (5)(6)·knowledge/domain-inventory) 정독
+- [x] 상류(지출 폼)부터 하류(잔량 표시)까지 흐름 추적 — 구매 델타의 경계 술어는
+      receivedAt <= check.createdAt (sumPurchases, overview.ts:35)
+- [x] 전문가 패널 4인(재고 도메인·백엔드 감사·UX·웹디자이너) 검토 회수
+- [x] 설계 확정 — 실데이터 판정 포함(수령완료 322건 중 자동점검 없는 구식 288건이 본류)
 
-## 1단계 — 저장 경로 필드 단위 분해 (82b5ab58)
-- [x] lib/propertySettingsPatch 정본 신설 — 실려 온 필드만 쓰는 순수 패치 빌더
-- [x] 이동 필드 전부 formData.has 가드(19종, publicSlug 포함)
-- [x] 체크박스 셋에 hidden '0' 짝(꺼진 체크박스는 FormData 에 안 실려 has 판정이 거짓말을 한다)
-- [x] actions.updatePropertySettings 는 빌더에만 위임(두 번째 저장 경로 금지)
+## 1단계 — 지출 수량 정정의 재고 전파 (몸통)
+- [x] lib/stockLedger 에 PurchaseDelta·purchaseAfterCheck (5e4d6c67, 회귀 51 → 73)
+- [x] 적용층 공용 모듈 ledgerShift 분리 + 감지망 앵커 재지정 (8c9325c6)
+- [x] previewExpenseStockShift + updateExpense adjustStock 게이트 + 정체성 차단 +
+      cancelReceiptCore(수령 취소 정본, 비움 뒷문 봉합) + deleteExpense 함께 조정 +
+      제외/재포함 대칭 + 클라 다이얼로그 정본 stockShiftAsk + 감지망 5축 (7a2e329f)
+- [x] 미사용 import 정리, eslint 기준선 복원 (8c830bc0)
+
+## 2단계 — 시작 재고 정식 입력 자리
+- [x] createTrackedItem startQty + '[시작 재고]' isReconcile 앵커, AddItemModal 칸 (dbb8f84a)
+
+## 3단계 — 같은 날 중복 앵커 감지·안내
+- [x] createStockCheck sameDayNotice(맨 절대값 점검만, 자동 삭제 없음) + 토스트 (3b2ba0f4)
+
+## 4단계 — 실측 > 장부 입수 과소 의심 신호
+- [x] overbookExcess 정본 + CheckForm 실시간 경고 박스 (a5a7f434, 회귀 79)
+
+## 게이트 (전부 필수)
 - [x] tsc 0
-
-## 2단계 — 감지망·회귀 (848a5ced)
-- [x] check-settings-slug-guard 를 이동 필드 전수로 확장 — 축 ⓐ 필드 19종 가드 · ⓓ 폼 필드 전수
-      대조 · ⓔ 체크박스 짝 · ⓕ 단일 저장 경로 (종전 ⓐⓑⓒ 유지)
-- [x] **주석 제거기 결함 봉합** — accept="image/\*" 가 가짜 블록 주석을 열어 기본정보 폼 전체가
-      그물 시야 밖이었다(축 ⓒ 가 1단계 이후 줄곧 무력). 여는 자리를 중괄호 뒤·줄 첫머리로 좁힘
-- [x] 축 ⓑ 를 임포트 확인에서 호출 확인으로 조임
-- [x] scripts/test-settings-save-scope 신설(38항) + verify:fast 편입
-- [x] 역주입 — 저장 정본 7/7 · 감지망 9/9 발화
-
-## 3단계 — 8탭 재편 (5fc45b7c)
-- [x] tabs.ts 키 개명·순서 정렬 (room → options, finance → pricing)
-- [x] TABS 라벨 8종 · 순서 = 승인 지도
-- [x] 기본정보 = 영업장명·주소·연락처·로고 둘·인수 날짜·양도인 기준일·연락 알림만
-- [x] 요금·정책 = 기본 요금·환불 규정 + 단기 입실 정책 + 고정 지출 관리
-- [x] 분류 관리 = 방타입·등급·창문·방향 + 부가수익·지출·결제 수단 + 요청 + 품목 세부스펙
-- [x] 계약서·서류 = 현 계약서 탭 + 서류 자동채움 값(전용면적·계좌번호·임의처분 동의서)
-- [x] 데이터·도구 = 위 둘이 빠진 나머지
-- [x] 이사 안내 — 옛 자리 셋(기본정보·데이터·도구)과 사라진 두 탭의 착지점 둘
-- [x] ShortStayPolicyCard·ItemSpecOptionsPanel 의 mt-4 제거(담는 쪽이 space-y-4)
-
-## 4단계 — 게이트
-- [x] tsc 0
-- [x] verify:fast exit 0 (신규 2종 포함)
-- [x] verify:db exit 0 (데이터 대조 1건은 기존 관찰 — 전기요금 예약금액)
+- [x] npm run verify:fast exit 0
+- [x] npm run verify:db exit 0 (소재지 오버라이드 3건 기지 예외 + 발급본 래칫 9건 안내는 기존 관찰)
 - [x] 프로덕션 빌드 exit 0
 - [x] eslint 491 → 491 (신규 0, 기준선 1bd40ad5 대조)
 - [x] 좁은 폭 실측 30조합(5탭 × 320/360/390 × 라이트·다크) — 신규 넘침 0,
@@ -100,3 +92,10 @@
 - [x] scripts/test-contract-void.ts + verify:fast 편입, 역주입 발화 확인
 - [x] 실데이터 함수 수준 실증(쓰기 없음): 폐기 → 이름 표기 전환 → 재발급 값 확인
 - [x] tsc 0 · verify:fast · verify:db · 프로덕션 빌드 · eslint 신규 0
+- [x] eslint 491 → 491 (신규 0)
+- [x] 320/360/390 라이트·다크 헤드리스 실측 54측점 넘침 0 (빌드 CSS + Pretendard,
+      모달·경고 박스·3지/2지 다이얼로그 최장 라벨)
+- [x] 역주입 — 신규 감지망 축 2종 발화 확인
+- [x] 웹디자이너 패스
+- [x] knowledge/domain-inventory.md 적립
+- [ ] 푸시 금지 — 메인 세션이 검증 후 머지

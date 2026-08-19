@@ -9,7 +9,9 @@ import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
-import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
+import { overbookExcess } from '@/lib/stockLedger'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -85,6 +87,7 @@ import {
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
   previewStockAdditionShift, undoUpdateStockAddition,
+  previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
@@ -128,7 +131,7 @@ const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? r.uni
 // 점검 잔량은 절대값이라 입수 날짜를 앞으로 옮기면 그 사이 점검이 입수를 삼켜 잔량이 증발한다.
 // 서버가 만든 조정 계획(lib/stockLedger)을 실제 숫자로 보여주고 운영자가 고르게 한다.
 // 조용한 덮어쓰기는 하지 않는다 — 실제로 센 값이면 '이 기록만' 을 고르면 된다.
-type ShiftAsk = { adjust: boolean; asked: boolean; count: number } | null
+type ShiftAsk = ShiftAskResult
 
 async function askLedgerShift(input: {
   trackedItemId: string
@@ -144,25 +147,11 @@ async function askLedgerShift(input: {
   })
   if (!pre.ok) return { result: null, error: pre.error }
   // 어긋나는 점검이 없으면 묻지 않는다 — 날짜 오타 정정이 대부분이라 매번 물으면 확인창이 소음이 된다.
-  if (pre.rows.length === 0) return { result: { adjust: false, asked: false, count: 0 } }
-  const shown = pre.rows.slice(0, 4)
-  const lines = shown.map(r => `· ${fmtDate(r.date)} 점검 ${fmtQty(r.storedTotal, input.unit)} 에서 ${fmtQty(r.nextTotal, input.unit)} 으로`)
-  if (pre.rows.length > shown.length) lines.push(`· 그 밖에 ${pre.rows.length - shown.length}건`)
-  const choice = await choiceDialog({
-    title: input.title,
-    level: 'caution',
-    message: [
-      input.keepLine,
-      input.impactLine(pre.rows.length),
-      lines.join('\n'),
-      '실제로 세어 적은 값이면 조정하지 말고 이 기록만 바꾸세요. 직후 적용취소로 되돌릴 수 있습니다.',
-    ].join('\n'),
-    confirmLabel: '함께 조정',
-    altLabel: '이 기록만',
-    cancelLabel: '취소',
+  // 다이얼로그 문법은 공용 정본(lib/stockShiftAsk) — 지출 쪽 물음과 같은 모양이어야 한다.
+  const result = await askShiftRows({
+    rows: pre.rows, title: input.title, keepLine: input.keepLine, impactLine: input.impactLine, unit: input.unit,
   })
-  if (choice === null || choice === 'back') return { result: null }
-  return { result: { adjust: choice === 'confirm', asked: true, count: pre.rows.length } }
+  return { result }
 }
 
 // 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
@@ -1141,13 +1130,21 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   const [qtyUnit, setQtyUnit]   = useState('')
   const [unitWizOpen, setUnitWizOpen] = useState(false)   // 단위 단계별 선택(포장형태→규격 단위)
   const applyUnitWizard = (r: SpecWizardResult) => { setQtyUnit(r.qtyUnit); setSpecUnit(r.specUnit) }
+  // 시작 수량(선택) — 지금 갖고 있는 재고를 오늘 첫 점검으로 함께 기록(백로그 2번, 임의 점검 관행의 정식 자리).
+  const [startQty, setStartQty] = useState('')
   const [memo, setMemo]         = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  // 시작 수량 뒤에 붙일 단위 — 표시 정본 rowUnit 과 같은 우선순위(규격 단위 우선, 폐기물류는 수량 단위).
+  const startUnit = specUnit.trim() || qtyUnit.trim() || null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    const startQtyNum = startQty.trim() === '' ? null : Number(startQty)
+    if (startQtyNum != null && (isNaN(startQtyNum) || startQtyNum < 0)) {
+      setError('시작 수량은 0 이상이어야 합니다.'); return
+    }
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -1156,10 +1153,13 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           specUnit: specUnit || null,
           qtyUnit:  qtyUnit  || null,
           memo:     memo     || null,
+          startQty: startQtyNum,
         })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
         onDone()
-        pushToast('success', '품목 추가됨')
+        pushToast('success', '품목 추가됨', startQtyNum != null ? {
+          detail: `시작 재고(${startQtyNum}${startUnit ?? ''})를 오늘 첫 점검으로 기록했습니다.`,
+        } : undefined)
       } finally { release() }
     })
   }
@@ -1198,6 +1198,16 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
             <input type="text" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)} placeholder="롤, 매, 포대"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">시작 수량 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+          <div className="flex items-center gap-2">
+            <input type="text" inputMode="decimal" autoComplete="off" value={startQty}
+              onChange={e => setStartQty(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0"
+              className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            {startUnit && <span className="text-xs text-[var(--warm-muted)] shrink-0">{startUnit}</span>}
+          </div>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">지금 갖고 있는 재고가 있으면 적어 주세요. 오늘 날짜의 첫 재고 점검으로 기록됩니다.</p>
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
@@ -1388,7 +1398,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds} onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
+        <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds}
+          currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
+          onGoDisposal={() => setMode('disposal')} onCancel={() => setMode('view')} onDone={() => {
           setMode('view'); reload(); onChange()
           pushToast('success', '점검을 저장했습니다', nextId && onGoToItem
             ? { action: { label: '다음 품목', run: () => onGoToItem(nextId) } }
@@ -1927,21 +1939,73 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         entry={entry} stockUnit={stockUnit}
         onCancel={() => { setEditing(false); setEditError('') }}
         onSave={async (data) => {
-          setSavePending(true); setEditError('')
-          const res = await updateExpenseFromInventory(entry.id, data)
+          setEditError('')
+          // 수령 대기로 되돌리기 — 이 수령분을 이미 삼킨 점검이 있으면 함께 조정해서만 취소한다.
+          // 조정 없는 취소는 재수령 때 같은 수량이 이중 가산되는 바로 그 구멍이라 두 갈래(진행/취소)만 묻는다.
+          let adjustFollowing = false
+          if (data.receivedAt === null && entry.receivedAt) {
+            const pre = await previewExpenseStockShift({ expenseId: entry.id, next: null, forReceiptCancel: true })
+            if (!pre.ok) { setEditError(pre.error); return }
+            if (pre.rows.length > 0) {
+              const go = await askShiftRowsRequired({
+                rows: pre.rows,
+                title: '수령을 취소할까요?',
+                keepLine: '이 구매는 수령 대기로 돌아갑니다.',
+                impactLine: n => `이 수령분을 이미 반영한 재고 점검 ${n}건에서 그만큼을 함께 뺍니다.`,
+                tailLine: '다시 수령 확인하면 그 시점 잔량 기준으로 다시 들어옵니다. 직후 적용취소로 되돌릴 수 있습니다.',
+                unit: stockUnit,
+                confirmLabel: '함께 조정 후 취소',
+              })
+              if (!go) return
+              adjustFollowing = true
+            }
+          }
+          setSavePending(true)
+          const res = await updateExpenseFromInventory(entry.id, adjustFollowing ? { ...data, adjustFollowing } : data)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          setEditing(false); onChanged()
+          setEditing(false)
+          const cancelUndo = res.cancelUndo
+          if (cancelUndo) {
+            pushToast('success', '수령을 취소했습니다', {
+              ...(cancelUndo.shift ? { detail: `점검 ${cancelUndo.shift.checks.length}건의 잔량도 함께 뺐습니다.` } : {}),
+              action: { label: '적용취소', run: () => { void undoCancelReceipt(cancelUndo).then(r => {
+                if (r.ok) { pushToast('info', '수령 상태를 복원했습니다'); onChanged() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+            })
+          }
+          onChanged()
         }}
         onDelete={async () => {
-          if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
+          // 수령완료 구매의 제외는 원장에서 델타 제거와 같다 — 삼킨 점검이 있으면 함께 옮길지 묻는다.
+          let adjustFollowing = false
+          if (entry.receivedAt) {
+            const pre = await previewExpenseStockShift({ expenseId: entry.id, next: null })
+            if (!pre.ok) { setEditError(pre.error); return }
+            if (pre.rows.length > 0) {
+              const ask = await askShiftRows({
+                rows: pre.rows,
+                title: '이 구매를 재고에서 제외할까요?',
+                keepLine: '지출 페이지에는 그대로 남습니다.',
+                impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+                unit: stockUnit,
+                confirmLabel: '함께 조정 후 제외',
+                altLabel: '이 기록만 제외',
+              })
+              if (ask === null) return
+              adjustFollowing = ask.adjust
+            } else if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
+          } else if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
           setSavePending(true)
-          const res = await excludeExpenseFromInventory(entry.id)
+          const res = await excludeExpenseFromInventory(entry.id, adjustFollowing ? { adjustFollowing } : undefined)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능
+          // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능. 함께 조정했다면 포함도 같은 대칭 조정으로.
+          const undoAdjust = adjustFollowing
           pushToast('success', '구매를 재고에서 제외했습니다', {
-            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id).then(r => {
+            ...(undoAdjust ? { detail: '반영돼 있던 점검 잔량도 함께 뺐습니다.' } : {}),
+            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id, undoAdjust ? { adjustFollowing: true } : undefined).then(r => {
               if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
               else pushToast('error', r.error)
             }) } },
@@ -2988,10 +3052,13 @@ function calcLocMove(beforeStr: string, afterStr: string, baseline: number | nul
   return { beforeN, afterN, restocked }
 }
 
-function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDone, onDraftChange, onGoDisposal }: {
+function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, hasPriorCheck, pendingCount, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
   hiddenLocationIds?: string[]   // 숨긴(비어 있는) 위치 — 입력 행에서 제외. 카드 칩과 동일 기준(운영자 지적 2026-07-18)
+  currentStock?: number | null   // 장부 잔량(서버 정본) — 실측 > 장부의 입수 과소 의심 신호(백로그 4번)
+  hasPriorCheck?: boolean        // 직전 점검 존재 — 첫 점검(시작 재고 선언)은 신호 대상이 아니다
+  pendingCount?: number          // 수령 대기 구매 건수 — 신호 문구에 부기
   onCancel: () => void; onDone: () => void; onDraftChange?: () => void
   onGoDisposal?: () => void   // 폐기 기록 바로가기 — 점검 저장 전에 폐기를 먼저 기록(이중 차감 방지, 오류신고 a1e048e8)
 }) {
@@ -3177,6 +3244,20 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         ? chkLocations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
         : 0)
 
+  // 입수 과소 의심 신호(백로그 4번) — 실측 합계가 장부 잔량(서버 정본 currentStock)보다 크면
+  // 수령 확인·무상 입수 기록이 빠졌다는 신호다. 판정 정본은 lib/stockLedger overbookExcess.
+  // 안내 전용(자동 수정 없음). 무언가 입력한 뒤에만, 직전 점검이 있을 때만 — 첫 점검은
+  // 시작 재고 선언이라 장부(0 또는 구매 합)보다 큰 것이 정상이다.
+  const enteredAny = hasLocations
+    ? (restockMode
+        ? hubTouched || Object.values(beforeQtys).some(v => v !== '') || Object.values(afterQtys).some(v => v !== '')
+        : touched.size > 0)
+    : qty !== ''
+  const measuredTotal = hasLocations ? computed : (Number(qty) || 0)
+  const overbook = hasPriorCheck && currentStock != null && enteredAny
+    ? overbookExcess(measuredTotal, currentStock)
+    : null
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -3195,6 +3276,12 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
           if (!res.ok) { setError(res.error); return }
           await deleteItemDrafts(item.id)
           onDraftChange?.()
+          // 같은 날 중복 앵커 안내(백로그 3번) — 저장은 됐고, 지울지는 운영자 몫(자동 삭제 절대 없음).
+          if (res.sameDayNotice) {
+            pushToast('info', '같은 날 점검이 이미 있습니다', {
+              detail: '잔량은 마지막에 저장한 값으로 계산됩니다. 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.',
+            })
+          }
           onDone()
         } finally { submittingRef.current = false }
       })
@@ -3238,7 +3325,9 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         onDraftChange?.()
         // 점검 저장에 적용취소가 없었다 — 삭제·입수·폐기·수령에는 다 있는데 **제일 자주 쓰는 저장**에만
         // 없었다(C페이즈 조사 2026-08-03). 잘못 센 값이 기준선으로 박히면 되돌릴 방법이 없었다.
+        // 같은 날 중복 앵커(백로그 3번)는 이 토스트의 부연으로 안내 — 토스트를 겹쳐 쌓지 않는다.
         pushToast('success', '재고 점검 저장됨', {
+          ...(res.sameDayNotice ? { detail: '같은 날 점검이 이미 있습니다. 잔량은 마지막에 저장한 값으로 계산되고, 잘못 저장한 점검은 타임라인에서 삭제할 수 있습니다.' } : {}),
           action: { label: '적용취소', run: () => { void deleteStockCheck(res.id).then(r => {
             if (r.ok) { onDraftChange?.(); onDone() } else pushToast('error', r.error)
           }) } },
@@ -3407,6 +3496,16 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, onCancel, onDo
         </div>
       )}
 
+      {/* 입수 과소 의심 신호(백로그 4번) — 시각 문법은 위 폐기 바로가기 경고 박스 정본과 동일 */}
+      {overbook != null && currentStock != null && (
+        <div className="rounded-lg px-3 py-2" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)' }}>
+          <p className="text-[0.65625rem] leading-relaxed" style={{ color: 'var(--warning-fg)' }}>
+            실측 합계가 장부 잔량({fmtQty(currentStock, stockUnit)})보다 {fmtQty(overbook, stockUnit)} 많습니다.
+            구매 수령 확인이나 무상 입수 기록이 빠졌는지 확인해 주세요.
+            {(pendingCount ?? 0) > 0 && ` 수령 대기 구매가 ${pendingCount}건 있습니다.`}
+          </p>
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}

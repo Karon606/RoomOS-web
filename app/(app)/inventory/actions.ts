@@ -6,7 +6,7 @@ import { getMyRole } from '@/lib/role'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
-import prisma, { type PrismaDb } from '@/lib/prisma'
+import prisma from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -17,8 +17,11 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
-import { planStockShift, type LedgerCheck, type LedgerDelta, type ShiftRow } from '@/lib/stockLedger'
+import { type ShiftRow } from '@/lib/stockLedger'
+// 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
+import { buildAdditionShiftPlan, buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -268,18 +271,38 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
 // ── TrackedItem CRUD
 export async function createTrackedItem(data: {
   category: string; label: string; specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
+  // 시작 수량(선택) — 지금 갖고 있는 재고를 오늘 날짜의 첫 점검(절대값 앵커)으로 함께 기록한다.
+  // 정식 자리가 없어 운영자가 임의 점검으로 대신하던 관행(점보롤 사건 배경, 백로그 2번)의 승격.
+  // 0 도 유효(재고 없이 시작함을 명시). 미지정이면 종전과 동일(점검 없음, 잔량 미점검 상태).
+  startQty?: number | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!data.category || !data.label.trim()) return { ok: false, error: '카테고리와 품목명은 필수입니다.' }
+    const startQty = data.startQty ?? null
+    if (startQty != null && (!Number.isFinite(startQty) || startQty < 0)) {
+      return { ok: false, error: '시작 수량은 0 이상이어야 합니다.' }
+    }
+    // 시작 점검 데이터 — 날짜는 오늘(KST)의 @db.Date 표현(lib/kstDate 정본).
+    // isReconcile: 시작 선언은 실측 리셋과 같은 앵커다. 뒤늦게 과거 날짜 입수를 등록해도
+    // 이 앵커 이후 전파가 여기서 멈추고(planStockShift), 통계도 이 앞 구간을 소모로 잡지 않는다.
+    const startCheck = startQty != null
+      ? { date: ymdToDbDate(kstYmdStr()), remainingQty: startQty, memo: '[시작 재고]', isReconcile: true }
+      : null
 
     const existing = await prisma.trackedItem.findUnique({
       where: { propertyId_category_label: { propertyId, category: data.category, label: data.label.trim() } },
     })
     if (existing) {
       if (existing.isArchived) {
-        const r = await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+        // 숨김 해제 부활 — 시작 수량을 넣었으면 같은 앵커를 만든다("N 으로 다시 시작" 선언).
+        // 과거 이력이 있어도 isReconcile 앵커라 이전 구간을 소모로 잡지 않는다.
+        const r = await prisma.$transaction(async tx => {
+          const it = await tx.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+          if (startCheck) await tx.stockCheck.create({ data: { trackedItemId: it.id, ...startCheck } })
+          return it
+        })
         revalidatePath('/inventory')
         return { ok: true, id: r.id }
       }
@@ -288,16 +311,22 @@ export async function createTrackedItem(data: {
 
     // 폐기물 처리비는 기본 trackUnit='qty' (50L 봉투 30매를 1500L 아닌 30매로 트래킹)
     const defaultTrackUnit = defaultTrackUnitForCategory(data.category)
-    const r = await prisma.trackedItem.create({
-      data: {
-        propertyId,
-        category: data.category,
-        label: data.label.trim(),
-        specUnit: data.specUnit || null,
-        qtyUnit: data.qtyUnit || null,
-        memo: data.memo || null,
-        trackUnit: defaultTrackUnit,
-      },
+    const r = await prisma.$transaction(async tx => {
+      const it = await tx.trackedItem.create({
+        data: {
+          propertyId,
+          category: data.category,
+          label: data.label.trim(),
+          specUnit: data.specUnit || null,
+          qtyUnit: data.qtyUnit || null,
+          memo: data.memo || null,
+          trackUnit: defaultTrackUnit,
+        },
+      })
+      // 같은 트랜잭션 — 품목만 생기고 시작 점검이 빠진 반쪽 상태 방지. 위치 링크가 아직 없으므로
+      // 위치 내역 없는 단일 버킷 점검(정식 상태, 신고 408b4396 선례)으로 만든다.
+      if (startCheck) await tx.stockCheck.create({ data: { trackedItemId: it.id, ...startCheck } })
+      return it
     })
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
@@ -744,40 +773,7 @@ function applyTransfers(lqs: LocQty[]): LocQty[] {
 // 직전 점검 이후 들어온 입수(StockAddition, 무상 입수 등)를 위치별로 합산.
 // 위치별/부분 점검의 carry-over 가 직전 점검 값을 그대로 복사하면 그 사이 입수분이
 // 새 기준선에서 증발하고 사용량 계산에선 가짜 소모로 둔갑한다(2026-06-11 쌀 +30kg 사례).
-// 이 품목의 '기본 배치 위치' — 반드시 이 품목에 링크된 위치 중에서 고른다.
-// 종전 폴백은 `hubLocationId ?? 영업장 기본 허브(isHub)` 였는데, isHub 는 영업장 기본값이지
-// 품목별 선언이 아니다. 링크 안 된 위치를 고르면 그 수량이 위치별 화면·보정 폼에서 증발한다
-// (orphan — 601303c5 김치와 같은 클래스). 링크 집합 밖이면 다음 후보로 넘어간다.
-// 폴백 허브에 링크를 만들어주는 방식은 기각 — 운영자가 선언한 적 없는 위치를 사실로 만든다.
-async function resolveItemHubLocationId(
-  trackedItemId: string,
-  hubLocationId: string | null,
-  propertyId: string,
-  linkedIds?: Set<string>,   // 호출부가 이미 갖고 있으면 재조회 생략
-): Promise<string | null> {
-  // 숨긴 위치(closedAt != null)는 허브 후보에서 제외 — 미지정 입수가 숨긴 위치로 귀속되면 안 된다(2단계 F3).
-  // 호출부가 linkedIds 를 넘길 땐 열린 링크만 담아야 한다(confirmReceipt 등).
-  let ids = linkedIds
-  if (!ids) {
-    const links = await prisma.trackedItemLocation.findMany({
-      where: { trackedItemId, closedAt: null },
-      select: { storageLocationId: true },
-      orderBy: { storageLocation: { sortOrder: 'asc' } },
-    })
-    ids = new Set(links.map(l => l.storageLocationId))
-  }
-  if (ids.size === 0) return null
-  if (hubLocationId && ids.has(hubLocationId)) return hubLocationId
-  const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
-  if (def && ids.has(def.id)) return def.id
-  // 첫 링크 — sortOrder 로 결정화(비결정적 '첫 위치' 방지)
-  const first = await prisma.trackedItemLocation.findFirst({
-    where: { trackedItemId, closedAt: null },
-    select: { storageLocationId: true },
-    orderBy: { storageLocation: { sortOrder: 'asc' } },
-  })
-  return first?.storageLocationId ?? null
-}
+// 품목 허브 해석 정본은 ledgerShift.resolveItemHubLocationId — 여기서는 import 로 쓴다.
 
 // 경계는 overview 현재고 계산(sumAdditions(last.date,…,last.createdAt))과 동일 —
 // 화면 잔량과 점검 base 가 같은 입수를 본다. 위치 미지정 입수는 품목 허브(반드시 링크된 위치)로.
@@ -838,7 +834,8 @@ export async function createStockCheck(data: {
   allowHubClamp?: boolean
   // 경로 B — 클라(CheckForm)가 실제로 차감한 허브 위치 id. 검출 허브와 차감 허브를 일치시켜 오탐/미탐 방지.
   restockHubLocationId?: string
-}): Promise<{ ok: true; id: string } | { ok: false; error: string } | HubShortResponse> {
+  // sameDayNotice — 같은 날 맨 절대값 점검이 이미 있음(안내 전용, 저장은 정상 진행. 백로그 3번).
+}): Promise<{ ok: true; id: string; sameDayNotice?: boolean } | { ok: false; error: string } | HubShortResponse> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -946,6 +943,19 @@ export async function createStockCheck(data: {
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
     if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    // 같은 날 중복 앵커 안내(백로그 3번) — 감지·안내만 하고 저장은 그대로 진행한다.
+    // 자동 삭제는 절대 하지 않는다(2026-08-19 점보롤 앵커 오판 삭제 교훈 — 값이 같아도
+    // 보충 마커 등 사건 기록이 실린 앵커는 중복이 아니다). 그래서 수령 자동 점검(sourceExpenseId)·
+    // 보정(isReconcile)·보충 마커가 실린 같은 날 점검은 세지 않고, 맨 절대값 점검만 안내 대상.
+    // 위치 병합 저장(locationPatch)은 같은 날 연속 점검이 설계된 흐름이라 제외.
+    let sameDayNotice = false
+    if (!data.locationPatch) {
+      const sameDay = await prisma.stockCheck.findMany({
+        where: { trackedItemId: data.trackedItemId, date: ymdToDbDate(data.date), sourceExpenseId: null, isReconcile: false },
+        select: { locationBreakdown: { select: { restockedQty: true } } },
+      })
+      sameDayNotice = sameDay.some(c => !c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
+    }
     const r = await prisma.stockCheck.create({
       data: {
         trackedItemId: data.trackedItemId,
@@ -967,7 +977,7 @@ export async function createStockCheck(data: {
       },
     })
     revalidatePath('/inventory')
-    return { ok: true, id: r.id }
+    return { ok: true, id: r.id, ...(sameDayNotice ? { sameDayNotice: true } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1397,131 +1407,11 @@ export async function getDraftItemIds(): Promise<string[]> {
 //
 // 조정은 자동이 아니다. 서버는 계획만 만들고(previewStockAdditionShift) 클라가 영향받는 점검을
 // 숫자로 보여준 뒤 운영자가 고른 경우에만 적용한다. 적용분은 스냅샷으로 되돌린다(§16).
-// 계산 규칙 정본은 lib/stockLedger — 여기서는 조회·적용·되돌리기만 한다.
-
-// 트랜잭션 클라이언트 타입 — lib/prisma 가 $extends 로 확장한 클라이언트라 Prisma.TransactionClient 와 다르다.
-type InventoryTx = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
-
-export type LedgerShiftUndo = {
-  trackedItemId: string
-  checks: { id: string; remainingQty: number; locs: { storageLocationId: string; remainingQty: number | null }[] }[]
-  createdLinks: string[]   // 이 조정이 새로 만든 (품목,위치) 링크
-}
+// 계산 규칙 정본은 lib/stockLedger, 조회·적용·되돌리기 공용층은 ./ledgerShift(무상 입수·지출 공용).
 
 export type StockShiftPreview =
-  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[] }
+  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[]; hasAutoCheck?: boolean }
   | { ok: false; error: string }
-
-async function loadLedgerChecks(trackedItemId: string): Promise<LedgerCheck[]> {
-  const rows = await prisma.stockCheck.findMany({
-    where: { trackedItemId },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true } } },
-  })
-  return rows.map(c => ({
-    id: c.id,
-    dateMs: c.date.getTime(),
-    createdAtMs: c.createdAt.getTime(),
-    isReconcile: c.isReconcile,
-    total: c.remainingQty,
-    hasBreakdown: c.locationBreakdown.length > 0,
-    byLoc: c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty })),
-  }))
-}
-
-// 계획 실패 사유를 운영자 문구로. 0 클램프하지 않고 막는 것이 이 설계의 요지다.
-function shiftPlanError(code: 'NEGATIVE' | 'NO_LOCATION', dateMs: number): string {
-  const d = new Date(dateMs).toISOString().slice(0, 10)
-  return code === 'NEGATIVE'
-    ? `조정하면 ${d} 점검의 잔량이 0 보다 작아집니다. 그 점검을 먼저 확인해 주세요.`
-    : '이 품목에 연결된 보관 위치가 없어 위치별 잔량을 함께 옮길 수 없습니다.'
-}
-
-// before/after 델타로 조정 계획을 만든다. 위치는 '위치 미지정이면 품목 허브' 규칙(additionsSinceCheckByLocation 과 동일).
-async function buildAdditionShiftPlan(
-  item: { id: string; hubLocationId: string | null },
-  propertyId: string,
-  before: { dateMs: number; createdAtMs: number; qty: number; storageLocationId: string | null } | null,
-  after: { dateMs: number; createdAtMs: number; qty: number; storageLocationId: string | null } | null,
-): Promise<{ ok: true; rows: ShiftRow[] } | { ok: false; error: string }> {
-  const needsHub = (before && !before.storageLocationId) || (after && !after.storageLocationId)
-  const hub = needsHub ? await resolveItemHubLocationId(item.id, item.hubLocationId, propertyId) : null
-  const toDelta = (d: typeof before): LedgerDelta | null =>
-    d ? { dateMs: d.dateMs, createdAtMs: d.createdAtMs, qty: d.qty, locationId: d.storageLocationId ?? hub } : null
-  const checks = await loadLedgerChecks(item.id)
-  const plan = planStockShift(checks, toDelta(before), toDelta(after))
-  if (!plan.ok) return { ok: false, error: shiftPlanError(plan.code, plan.dateMs) }
-  return { ok: true, rows: plan.rows }
-}
-
-// 계획 적용 — 총량과 위치별 잔량만 쓴다. 보충 마커(restockedQty)·createdAt 은 건드리지 않는다
-// (마커는 이동량이지 잔량이 아니고, createdAt 을 밀면 구간 귀속 순서가 조용히 바뀐다).
-async function applyShiftRows(
-  tx: InventoryTx, trackedItemId: string, rows: ShiftRow[],
-): Promise<LedgerShiftUndo> {
-  const undo: LedgerShiftUndo = { trackedItemId, checks: [], createdLinks: [] }
-  const links = await tx.trackedItemLocation.findMany({ where: { trackedItemId }, select: { storageLocationId: true } })
-  const linked = new Set(links.map(l => l.storageLocationId))
-  for (const r of rows) {
-    const snapshot: LedgerShiftUndo['checks'][number]['locs'] = []
-    for (const l of r.locs) {
-      snapshot.push({ storageLocationId: l.locationId, remainingQty: l.storedQty })
-      if (l.storedQty == null) {
-        // 쓰기 계약 — 링크 없이 StockCheckLocation 행을 만들지 않는다(knowledge/domain-inventory.md 불변식).
-        if (!linked.has(l.locationId)) {
-          await tx.trackedItemLocation.create({ data: { trackedItemId, storageLocationId: l.locationId } })
-          linked.add(l.locationId)
-          undo.createdLinks.push(l.locationId)
-        }
-        await tx.stockCheckLocation.create({
-          data: { stockCheckId: r.checkId, storageLocationId: l.locationId, remainingQty: l.nextQty },
-        })
-      } else {
-        await tx.stockCheckLocation.updateMany({
-          where: { stockCheckId: r.checkId, storageLocationId: l.locationId },
-          data: { remainingQty: l.nextQty },
-        })
-      }
-    }
-    await tx.stockCheck.update({ where: { id: r.checkId }, data: { remainingQty: r.nextTotal } })
-    undo.checks.push({ id: r.checkId, remainingQty: r.storedTotal, locs: snapshot })
-  }
-  return undo
-}
-
-// 조정 되돌리기 — 페이로드는 클라이언트발이므로 점검 id 를 반드시 품목 스코프로 검증한다(B1 선례).
-async function revertShiftRows(tx: InventoryTx, undo: LedgerShiftUndo): Promise<void> {
-  const ids = undo.checks.map(c => c.id)
-  if (ids.length > 0) {
-    const owned = await tx.stockCheck.findMany({
-      where: { id: { in: ids }, trackedItemId: undo.trackedItemId }, select: { id: true },
-    })
-    const ownedIds = new Set(owned.map(o => o.id))
-    for (const c of undo.checks) {
-      if (!ownedIds.has(c.id)) continue
-      await tx.stockCheck.update({ where: { id: c.id }, data: { remainingQty: c.remainingQty } })
-      for (const l of c.locs) {
-        if (l.remainingQty == null) {
-          await tx.stockCheckLocation.deleteMany({ where: { stockCheckId: c.id, storageLocationId: l.storageLocationId } })
-        } else {
-          await tx.stockCheckLocation.updateMany({
-            where: { stockCheckId: c.id, storageLocationId: l.storageLocationId },
-            data: { remainingQty: l.remainingQty },
-          })
-        }
-      }
-    }
-  }
-  for (const locId of undo.createdLinks) {
-    // 그 사이 다른 점검이 그 위치를 쓰기 시작했으면 링크를 남긴다(재고 든 위치엔 링크가 있어야 한다).
-    const used = await tx.stockCheckLocation.count({
-      where: { storageLocationId: locId, stockCheck: { trackedItemId: undo.trackedItemId } },
-    })
-    if (used === 0) {
-      await tx.trackedItemLocation.deleteMany({ where: { trackedItemId: undo.trackedItemId, storageLocationId: locId } })
-    }
-  }
-}
 
 // 조정 미리보기 — 클라가 확인 다이얼로그에 실제 숫자를 띄우는 데 쓴다. 쓰기 없음.
 // additionId 없음 = 신규 등록, next 없음 = 삭제.
@@ -1561,6 +1451,70 @@ export async function previewStockAdditionShift(input: {
         storedTotal: Math.round(r.storedTotal * 100) / 100,
         nextTotal: Math.round(r.nextTotal * 100) / 100,
       })),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 지출(구매 수령) 델타의 조정 미리보기 — 지출 수량 정정·삭제·수령 취소·재고 제외가
+// 뒤 점검의 저장 잔량을 얼마나 옮기는지 계산만 한다(쓰기 없음). 점보롤 백로그 1번.
+// 반영 경계는 구매 정본(receivedAt > 점검.createdAt, lib/stockLedger purchaseAfterCheck).
+// 매칭·환산 정본은 ledgerShift(matchedTrackedItemForExpense·convertedPurchaseQty).
+
+export async function previewExpenseStockShift(input: {
+  expenseId: string
+  // next 미지정(null) = 델타 제거(삭제·수령 취소·재고 제외). 지정 = 수량·규격 정정.
+  next?: { qtyValue: number | null; specValue: number | null; specUnit: string | null } | null
+  // 수령 취소 미리보기 — 이 지출의 자동 점검은 함께 삭제되므로 계획에서 뺀다.
+  forReceiptCancel?: boolean
+  // 재고 다시 포함 미리보기 — 지금 제외 상태인 델타를 되살리는 방향(계획 null 에서 델타로).
+  forInclude?: boolean
+}): Promise<StockShiftPreview> {
+  try {
+    const propertyId = await getPropertyId()
+    const e = await prisma.expense.findFirst({
+      where: { id: input.expenseId, propertyId },
+      select: {
+        id: true, category: true, itemLabel: true, qtyUnit: true, qtyValue: true,
+        specValue: true, specUnit: true, receivedAt: true, receivedLocationId: true,
+        excludeFromInventory: true,
+      },
+    })
+    if (!e) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+    if (!e.receivedAt || (e.excludeFromInventory && !input.forInclude)) return { ok: true, rows: [] }
+    const it = await matchedTrackedItemForExpense(propertyId, e)
+    if (!it) return { ok: true, rows: [] }
+
+    const qty = convertedPurchaseQty(it, e)
+    const receivedAtMs = e.receivedAt.getTime()
+    const delta = qty > 0
+      ? { receivedAtMs, qty, storageLocationId: e.receivedLocationId }
+      : null
+    // 방향 결정 — 포함은 (null, 델타), 정정은 (델타, 새 델타), 제거는 (델타, null).
+    const before = input.forInclude ? null : delta
+    let after: typeof delta = null
+    if (input.forInclude) {
+      after = delta
+    } else if (input.next) {
+      const qtyAfter = convertedPurchaseQty(it, input.next)
+      after = qtyAfter > 0 ? { receivedAtMs, qty: qtyAfter, storageLocationId: e.receivedLocationId } : null
+    }
+    // 자동 점검 존재 여부 — 삭제 물음의 사전 분기용(자동 점검 있는 구매의 삭제는 서버가
+    // 수령 취소 경로로 안내하므로, 클라가 조정 물음을 띄우지 않게 한다).
+    const own = await prisma.stockCheck.findMany({ where: { sourceExpenseId: e.id }, select: { id: true } })
+    const excludeCheckIds = input.forReceiptCancel ? own.map(c => c.id) : undefined
+    const plan = await buildPurchaseShiftPlan(it, propertyId, before, after, excludeCheckIds)
+    if (!plan.ok) return { ok: false, error: plan.error }
+    return {
+      ok: true,
+      rows: plan.rows.map(r => ({
+        date: new Date(r.dateMs).toISOString().slice(0, 10),
+        storedTotal: Math.round(r.storedTotal * 100) / 100,
+        nextTotal: Math.round(r.nextTotal * 100) / 100,
+      })),
+      ...(own.length > 0 ? { hasAutoCheck: true } : {}),
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1887,7 +1841,9 @@ export async function undoDeleteStockDisposal(undo: StockDisposalUndo): Promise<
 export async function updateExpenseFromInventory(id: string, data: {
   date?: string; amount?: number; vendor?: string | null; memo?: string | null
   receivedAt?: string | null  // ISO 문자열 or null(수령 대기로 되돌리기)
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 수령 대기로 되돌릴 때, 이 수령분을 삼킨 뒤 점검이 있으면 함께 조정할지(cancelReceiptCore 게이트).
+  adjustFollowing?: boolean
+}): Promise<{ ok: true; cancelUndo?: ReceiptCancelUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1899,6 +1855,16 @@ export async function updateExpenseFromInventory(id: string, data: {
     // 수령 대기(null)였던 행에 수령일을 다시 넣는 경우 — 자동 점검이 없으므로 단순 날짜 저장이 아니라
     // 정본 수령 경로(confirmReceipt)로 재생성해야 잔량·위치 배치에 반영된다(감사 잔여: 미재생성 → 재고 과소, 2026-07-22)
     const resurrect = e.receivedAt === null && newReceivedAt != null
+    // 수령 대기로 되돌리기(null) — 수령 취소와 같은 사건이므로 같은 정본(cancelReceiptCore)을 탄다.
+    // 종전에는 여기서 receivedAt 만 지우고 자동 점검을 무가드로 삭제해, 실측 머지·이후 점검 반영
+    // 가드가 통째로 우회되는 뒷문이었다(수령 취소 클래스의 반쪽).
+    const cancel = e.receivedAt !== null && newReceivedAt === null
+    let cancelUndo: ReceiptCancelUndo | undefined
+    if (cancel) {
+      const r = await cancelReceiptCore(id, propertyId, { adjustFollowing: data.adjustFollowing })
+      if (!r.ok) return r
+      cancelUndo = r.undo
+    }
     await prisma.expense.update({
       where: { id },
       data: {
@@ -1906,54 +1872,70 @@ export async function updateExpenseFromInventory(id: string, data: {
         ...(data.amount !== undefined ? { amount: data.amount } : {}),
         ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
-        ...(newReceivedAt !== undefined && !resurrect ? { receivedAt: newReceivedAt } : {}),
+        ...(newReceivedAt !== undefined && !resurrect && !cancel ? { receivedAt: newReceivedAt } : {}),
       },
     })
 
-    // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화 / null로 가면 삭제.
+    // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화.
     if (resurrect) {
       const rc = await confirmReceipt(id)
       if (!rc.ok) return rc
       // confirmReceipt는 수령 시각을 지금으로 찍으므로 사용자가 고른 날짜로 동기화
       await prisma.expense.update({ where: { id }, data: { receivedAt: newReceivedAt } })
       await prisma.stockCheck.updateMany({ where: { sourceExpenseId: id }, data: { date: newReceivedAt } })
-    } else if (newReceivedAt !== undefined) {
-      if (newReceivedAt === null) {
-        // 수령 대기로 되돌림 → 자동 점검 제거 (잔량 계산에서 이 수령분이 빠지도록)
-        await prisma.stockCheck.deleteMany({ where: { sourceExpenseId: id } })
-      } else {
-        await prisma.stockCheck.updateMany({
-          where: { sourceExpenseId: id },
-          data: { date: newReceivedAt },
-        })
-      }
+    } else if (newReceivedAt != null) {
+      await prisma.stockCheck.updateMany({
+        where: { sourceExpenseId: id },
+        data: { date: newReceivedAt },
+      })
     }
 
     revalidatePath('/inventory')
     revalidatePath('/finance')   // 지출 페이지 경로는 /finance ('/expenses' 는 존재하지 않는 경로였음)
-    return { ok: true }
+    return { ok: true, ...(cancelUndo ? { cancelUndo } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
-export async function excludeExpenseFromInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  return setExpenseInventoryExclusion(id, true)
+export async function excludeExpenseFromInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setExpenseInventoryExclusion(id, true, opts)
 }
 
-// 재고 제외 적용취소(다시 포함) — 제외가 일방향이라 실수 시 되돌릴 수 없던 문제의 역방향 액션
-export async function includeExpenseInInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  return setExpenseInventoryExclusion(id, false)
+// 재고 제외 적용취소(다시 포함) — 제외가 일방향이라 실수 시 되돌릴 수 없던 문제의 역방향 액션.
+// adjustFollowing 은 제외가 조정한 점검을 대칭 계획(planStockShift 삭제 대칭)으로 되살린다.
+export async function includeExpenseInInventory(id: string, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setExpenseInventoryExclusion(id, false, opts)
 }
 
-async function setExpenseInventoryExclusion(id: string, exclude: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+async function setExpenseInventoryExclusion(id: string, exclude: boolean, opts?: { adjustFollowing?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const e = await prisma.expense.findUnique({ where: { id } })
     if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
-    await prisma.expense.update({ where: { id }, data: { excludeFromInventory: exclude } })
+    if (e.excludeFromInventory === exclude) return { ok: true }   // 멱등 — 조정 이중 적용 방지
+    // 수령완료 구매의 제외는 원장에서 델타 제거와 같다(포함은 그 대칭) — 뒤 점검이 이 수령분을
+    // 절대값에 삼켰다면 함께 옮길지 물어서만 조정한다(점보롤 백로그 1번과 같은 클래스).
+    let rows: ShiftRow[] = []
+    let itemId: string | null = null
+    if (opts?.adjustFollowing && e.receivedAt) {
+      const it = await matchedTrackedItemForExpense(propertyId, e)
+      const qty = it ? convertedPurchaseQty(it, e) : 0
+      if (it && qty > 0) {
+        const delta = { receivedAtMs: e.receivedAt.getTime(), qty, storageLocationId: e.receivedLocationId }
+        const plan = await buildPurchaseShiftPlan(it, propertyId,
+          exclude ? delta : null, exclude ? null : delta)
+        if (!plan.ok) return { ok: false, error: plan.error }
+        rows = plan.rows
+        itemId = it.id
+      }
+    }
+    await prisma.$transaction(async tx => {
+      await tx.expense.update({ where: { id }, data: { excludeFromInventory: exclude } })
+      if (rows.length > 0 && itemId) await applyShiftRows(tx, itemId, rows)
+    })
     revalidatePath('/inventory')
     revalidatePath('/finance')
     return { ok: true }
@@ -3535,53 +3517,172 @@ export async function syncTrackedItemCategory(label: string, fromCategory: strin
 
 
 // 수령 확인 적용취소 — 이 지출로 생성된 자동 점검을 지우고 수령 대기로 복귀(감사 백로그 2026-07-10)
-export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 수령 취소 적용취소 토큰 — 취소가 지운 자동 점검 스냅샷 + 함께 옮긴 조정. §16.
+export type ReceiptCancelUndo = {
+  expenseId: string
+  receivedAtMs: number
+  receivedLocationId: string | null
+  autoChecks: {
+    id: string; trackedItemId: string; dateMs: number; createdAtMs: number
+    remainingQty: number; memo: string | null; isReconcile: boolean
+    locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null }[]
+  }[]
+  shift: LedgerShiftUndo | null
+}
+
+// 수령 취소 핵심 — undoConfirmReceipt(수령 취소 버튼)와 updateExpenseFromInventory(수령일 비움)가
+// 같은 가드·같은 조정을 타야 한다. 한쪽만 막으면 다른 쪽이 뒷문이 된다(클래스 봉합).
+//
+// adjustFollowing — 수령 이후 점검이 이 수령분을 절대값에 삼킨 경우(구식 수령 288건 포함),
+// 그 점검들에서 수령분을 함께 빼고 취소한다. 미지정이면 종전 가드 그대로 거부.
+async function cancelReceiptCore(
+  expenseId: string, propertyId: string, opts?: { adjustFollowing?: boolean },
+): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
+  const exp = await prisma.expense.findFirst({
+    where: { id: expenseId, propertyId },
+    select: {
+      id: true, category: true, itemLabel: true, qtyUnit: true, qtyValue: true,
+      specValue: true, specUnit: true, receivedAt: true, receivedLocationId: true,
+      excludeFromInventory: true,
+    },
+  })
+  if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+  if (!exp.receivedAt) return { ok: true }
+  // 자동 점검 이후 다른 점검이 있으면 거부 — 이후 점검이 수령분을 실측에 이미 반영했으므로
+  // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
+  const autoChecks = await prisma.stockCheck.findMany({
+    where: { sourceExpenseId: expenseId },
+    include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true, restockedQty: true } } },
+  })
+  // 자동 점검 안에 **운영자 실측이 머지된** 경우를 먼저 막는다(C페이즈 조사 2026-08-03).
+  //
+  // 위치별 점검 패널은 6시간 안 같은 날이면 마지막 점검에 합친다. 그 마지막 점검이 자동 수령 점검이면
+  // 운영자가 직접 센 값이 그 행 안으로 들어간다. 그 상태에서 수령 취소를 누르면 아래 deleteMany 가
+  // 행을 통째로 지워 **실측이 함께 사라진다.** '이후 점검' 가드는 같은 행이라 트립하지 않는다.
+  // 실측 2건이 이미 그 상태다(주방세제·김치 2026-07-14).
+  // 판정 신호는 보충 실측(restockedQty)이다. StockCheck 에는 updatedAt 이 없어 수정 시각으로는 못 가른다.
+  const merged = autoChecks.find(c => c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
+  if (merged) {
+    return { ok: false, error: '이 수령 기록에 직접 센 재고 점검이 함께 저장되어 있습니다. 되돌리면 그 실측까지 사라지므로 막았습니다. 재고 점검으로 잔량을 바로잡아 주세요.' }
+  }
+  const it = exp.excludeFromInventory ? null : await matchedTrackedItemForExpense(propertyId, exp)
+  let rows: ShiftRow[] = []
+  if (opts?.adjustFollowing) {
+    // 함께 조정 — 이 수령분을 절대값에 담고 있는 점검(자동 점검 제외)에서 수령분을 뺀다.
+    if (it) {
+      const qty = convertedPurchaseQty(it, exp)
+      const plan = qty > 0
+        ? await buildPurchaseShiftPlan(it, propertyId,
+            { receivedAtMs: exp.receivedAt.getTime(), qty, storageLocationId: exp.receivedLocationId },
+            null, autoChecks.map(c => c.id))
+        : { ok: true as const, rows: [] as ShiftRow[] }
+      if (!plan.ok) return { ok: false, error: plan.error }
+      rows = plan.rows
+    }
+  } else if (autoChecks.length > 0) {
+    const later = await prisma.stockCheck.findFirst({
+      where: {
+        trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
+        createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
+        OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
+      },
+      select: { id: true },
+    })
+    if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
+  } else if (it) {
+    // 자동 점검이 없는 구식 수령(2026-06 이전 경로 등) — 이 수령분을 삼킨 점검이 있으면
+    // 종전에는 아무 가드 없이 receivedAt 만 지워져, 재수령 시 그 수량이 이중 가산됐다(뒷문 봉합).
+    // 계획 실패(음수·귀속 불가)도 반영 점검이 있다는 뜻이므로 같이 거부한다.
+    const qty = convertedPurchaseQty(it, exp)
+    if (qty > 0) {
+      const plan = await buildPurchaseShiftPlan(it, propertyId,
+        { receivedAtMs: exp.receivedAt.getTime(), qty, storageLocationId: exp.receivedLocationId }, null)
+      if (!plan.ok || plan.rows.length > 0) {
+        return { ok: false, error: '수령 이후 재고 점검이 이 수령분을 이미 반영했습니다. 함께 조정해 취소하거나, 재고 점검으로 잔량을 바로잡아 주세요.' }
+      }
+    }
+  }
+  const undo: ReceiptCancelUndo = {
+    expenseId,
+    receivedAtMs: exp.receivedAt.getTime(),
+    receivedLocationId: exp.receivedLocationId,
+    autoChecks: autoChecks.map(c => ({
+      id: c.id, trackedItemId: c.trackedItemId, dateMs: c.date.getTime(), createdAtMs: c.createdAt.getTime(),
+      remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile,
+      locations: c.locationBreakdown.map(lb => ({
+        storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty, restockedQty: lb.restockedQty,
+      })),
+    })),
+    shift: null,
+  }
+  await prisma.$transaction(async tx => {
+    if (rows.length > 0 && it) undo.shift = await applyShiftRows(tx, it.id, rows)
+    await tx.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } })
+    await tx.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } })
+  })
+  return { ok: true, undo }
+}
+
+export async function undoConfirmReceipt(
+  expenseId: string, opts?: { adjustFollowing?: boolean },
+): Promise<{ ok: true; undo?: ReceiptCancelUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, receivedAt: true } })
+    const r = await cancelReceiptCore(expenseId, propertyId, opts)
+    if (!r.ok) return r
+    revalidatePath('/inventory'); revalidatePath('/finance')
+    return r
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+  }
+}
+
+// 수령 취소 적용취소 — 자동 점검을 원형(입력 시각 포함)으로 재생성하고 조정을 스냅샷으로 되돌린다.
+// createdAt 을 살리지 않으면 구매 반영 경계(receivedAt > 점검.createdAt)가 조용히 달라진다.
+export async function undoCancelReceipt(undo: ReceiptCancelUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const exp = await prisma.expense.findFirst({ where: { id: undo.expenseId, propertyId }, select: { id: true, receivedAt: true } })
     if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
-    if (!exp.receivedAt) return { ok: true }
-    // 자동 점검 이후 다른 점검이 있으면 거부 — 이후 점검이 수령분을 실측에 이미 반영했으므로
-    // 자동 점검만 지우면 이중 계상된다. date는 @db.Date 절삭이라 createdAt 기준(undoPartialReceipt와 동일 규칙).
-    const autoChecks = await prisma.stockCheck.findMany({
-      where: { sourceExpenseId: expenseId },
-      select: {
-        id: true, trackedItemId: true, createdAt: true,
-        locationBreakdown: { select: { restockedQty: true } },
-      },
-    })
-    // 자동 점검 안에 **운영자 실측이 머지된** 경우를 먼저 막는다(C페이즈 조사 2026-08-03).
-    //
-    // 위치별 점검 패널은 6시간 안 같은 날이면 마지막 점검에 합친다. 그 마지막 점검이 자동 수령 점검이면
-    // 운영자가 직접 센 값이 그 행 안으로 들어간다. 그 상태에서 수령 취소를 누르면 아래 deleteMany 가
-    // 행을 통째로 지워 **실측이 함께 사라진다.** 아래 '이후 점검' 가드는 같은 행이라 트립하지 않는다.
-    // 실측 2건이 이미 그 상태다(주방세제·김치 2026-07-14).
-    // 판정 신호는 보충 실측(restockedQty)이다. StockCheck 에는 updatedAt 이 없어 수정 시각으로는 못 가른다.
-    const merged = autoChecks.find(c => c.locationBreakdown.some(lb => (lb.restockedQty ?? 0) > 0))
-    if (merged) {
-      return { ok: false, error: '이 수령 기록에 직접 센 재고 점검이 함께 저장되어 있습니다. 되돌리면 그 실측까지 사라지므로 막았습니다. 재고 점검으로 잔량을 바로잡아 주세요.' }
+    if (exp.receivedAt) return { ok: true }   // 멱등 — 이미 복원됨(또는 재수령됨)
+    // 페이로드는 클라이언트발 — 점검 스냅샷의 품목이 이 영업장 소속인지 검증(B1 선례).
+    const itemIds = [...new Set(undo.autoChecks.map(c => c.trackedItemId))]
+    if (itemIds.length > 0) {
+      const owned = await prisma.trackedItem.count({ where: { id: { in: itemIds }, propertyId } })
+      if (owned !== itemIds.length) return { ok: false, error: '다른 영업장의 기록입니다.' }
     }
-    if (autoChecks.length > 0) {
-      const later = await prisma.stockCheck.findFirst({
-        where: {
-          trackedItemId: { in: [...new Set(autoChecks.map(c => c.trackedItemId))] },
-          createdAt: { gt: new Date(Math.max(...autoChecks.map(c => c.createdAt.getTime()))) },
-          OR: [{ sourceExpenseId: null }, { sourceExpenseId: { not: expenseId } }],
-        },
-        select: { id: true },
+    await prisma.$transaction(async tx => {
+      await tx.expense.update({
+        where: { id: undo.expenseId },
+        data: { receivedAt: new Date(undo.receivedAtMs), receivedLocationId: undo.receivedLocationId },
       })
-      if (later) return { ok: false, error: '수령 이후 재고 점검이 기록되어 되돌릴 수 없습니다. 잘못 수령했다면 재고 점검으로 잔량을 바로잡아 주세요.' }
-    }
-    await prisma.$transaction([
-      prisma.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } }),
-      prisma.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } }),
-    ])
+      for (const c of undo.autoChecks) {
+        const exists = await tx.stockCheck.findUnique({ where: { id: c.id }, select: { id: true } })
+        if (exists) continue
+        await tx.stockCheck.create({
+          data: {
+            id: c.id, trackedItemId: c.trackedItemId, date: new Date(c.dateMs), createdAt: new Date(c.createdAtMs),
+            remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile, sourceExpenseId: undo.expenseId,
+            ...(c.locations.length > 0 ? {
+              locationBreakdown: {
+                create: c.locations.map(lb => ({
+                  storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty, restockedQty: lb.restockedQty,
+                })),
+              },
+            } : {}),
+          },
+        })
+      }
+      if (undo.shift) await revertShiftRows(tx, undo.shift)
+    })
     revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
   }
 }
 
