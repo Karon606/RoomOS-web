@@ -31,6 +31,7 @@ tsc 가 중복 식별자 오류로 실패한다. pre-push 가 먼저 지운다(`
 - **test-accounting-guard**(33) 과거 회계월 보호 — 경계선은 연도가 아니라 신고 기한 날짜. 소득세 확정신고(다음해 5/31) 지난 귀속연도만 차단, 부가세·사업장현황신고 기한은 강한 고지, 인수 이전 차단
 - **test-tour-feed**(36) 투어 표시 판정 매트릭스
 - **test-birthdate**(27) 원격 서명 생년월일 게이트
+- **test-contract-void**(31) 계약서 버전 폐기 — 증거 보존(서명 2장·시각 2개·격리본·오버라이드)·폐기 왕복 항등(적용취소가 손실을 안 만든다)·폐기 대상 판정(격리본만 남은 반쪽도 포함)·대조 기준 링크(`isCurrentSignatureLink`). 자세히는 [[domain-contracts]]
 - **check-standalone-scroll** 셸 밖 라우트의 스크롤 계약(A/B) + **정본 컴포넌트 알맹이**
   (DocumentScroll 의 클래스 토글, Modal 의 배경 잠금 호출, globals 의 잠금 규칙)
 - **check-public-tracking** 공개 페이지 트래킹 참조 유지
