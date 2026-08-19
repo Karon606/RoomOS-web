@@ -89,13 +89,14 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   }, [contracts])
   // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정 고정이고 contractNo 는 번호 도입
   // 이전 발급본이 null 이라, 둘 다 같은 날 두 부를 못 가른다(황인정 실측 2부가 정확히 그 모양).
+  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
   const currentIds = useMemo(() => {
     const ids = new Set<string>()
     for (const [key, n] of groupCount) {
       if (n < 2) continue
-      const newest = contracts.filter(c => issueGroupKey(c) === key)
-        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-      ids.add(newest.id)
+      const live = contracts.filter(c => issueGroupKey(c) === key && !c.voidedAt)
+      if (!live.length) continue
+      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
     }
     return ids
   }, [contracts, groupCount])
@@ -147,7 +148,10 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
     if (!(await confirmDialog({
       title: `${name}님의 이 계약서 파일을 삭제할까요?`,
       message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
-        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : ''),
+        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : '')
+        // 형제 화면(ContractFilesPanel)과 같은 문구 — 삭제를 '폐기'로 오해한 것이 신고 63cd1049 다.
+        + ' 삭제는 파일만 정리합니다. 서명이 남아 있으면 계약서는 여전히 잠겨 있으니,'
+        + " 내용을 바꿔 다시 작성하려면 계약서 화면에서 '이 계약서 폐기' 를 눌러 주세요.",
       level: 'danger', confirmLabel: '삭제',
     }))) return
     setDeletingId(id)
@@ -244,7 +248,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
             name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--coral)]">서명 완료</span></>}
             count={`${pendingRows.length}건`}
           />
-          <p className="text-[0.6875rem] text-[var(--warm-muted)] pb-2">서명은 받았고 계약서 파일이 아직 없습니다. 발급을 누르면 서명 당시 내용으로 계약서 화면이 열립니다.</p>
+          {/* 발급본을 지워도 서명은 남아 여기 다시 선다 — 그때 '발급'을 누르면 같은 내용이 또 나간다.
+              내용을 바꾸려면 폐기가 먼저라는 사실을 대기 줄에서 말해 준다(신고 63cd1049). */}
+          <p className="text-[0.6875rem] text-[var(--warm-muted)] pb-2">서명은 받았고 계약서 파일이 아직 없습니다. 발급을 누르면 서명 당시 내용으로 계약서 화면이 열립니다. 내용을 바꿔야 하면 그 화면에서 이 계약서를 폐기하고 서명을 다시 받으세요.</p>
           <ul className="space-y-2">
             {pendingRows.map(p => (
               <li key={p.linkId}
@@ -325,6 +331,11 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                       있어 옆 행과 비교할 대상이 아니라, 배지가 붙으면 무엇의 '현재'인지 알 수 없다. */}
                   {sort === 'tenant' && currentIds.has(c.id) && (
                     <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                  )}
+                  {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
+                      정렬과 무관하게 늘 띄운다: [현재] 와 달리 옆 행과 비교할 것 없이 그 자체로 사실이다. */}
+                  {c.voidedAt && (
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
                   )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>

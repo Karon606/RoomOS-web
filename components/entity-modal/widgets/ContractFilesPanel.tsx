@@ -183,7 +183,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     if (!(await confirmDialog({
       title: '이 계약서 파일을 삭제할까요?',
       message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
-        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : ''),
+        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : '')
+        // 삭제를 '폐기'로 오해한 것이 신고 63cd1049 의 출발점이다. 삭제는 파일만 정리하고
+        // 서명 잠금은 손대지 않는다 — 그 사실을 누르기 전에 말한다.
+        + ' 삭제는 파일만 정리합니다. 서명이 남아 있으면 계약서는 여전히 잠겨 있으니,'
+        + " 내용을 바꿔 다시 작성하려면 계약서 화면에서 '이 계약서 폐기' 를 눌러 주세요.",
       level: 'danger', confirmLabel: '삭제',
     }))) return
     const release = trackSave()
@@ -206,13 +210,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정으로 고정돼 같은 날 두 부를 못 가르고,
   // contractNo 는 번호 도입(2026-08-03) 이전 발급본이 null 이라 정렬 자체가 안 된다.
   // 실측 황인정 2부가 정확히 그 모양이다 — signedAt 동일, 한쪽 contractNo null.
+  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
   const currentIds = useMemo(() => {
     const ids = new Set<string>()
     for (const [key, n] of groupCount) {
       if (n < 2) continue
-      const newest = (files ?? []).filter(f => issueGroupKey(f) === key)
-        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-      ids.add(newest.id)
+      const live = (files ?? []).filter(f => issueGroupKey(f) === key && !f.voidedAt)
+      if (!live.length) continue
+      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
     }
     return ids
   }, [files, groupCount])
@@ -239,7 +244,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     if (share?.needsIssue) {
       return { primary: 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
     }
-    if ((files?.length ?? 0) > 0) return { primary: null, hint: null }
+    // 폐기본은 '갖춰진 계약서'로 세지 않는다 — 전부 폐기된 계약의 다음 할 일은 다시 작성이고,
+    // 그때 주 버튼이 사라지면 폐기하고 나서 무엇을 해야 하는지 화면이 말하지 않는다(신고 63cd1049).
+    // 목록의 '등록된 계약서가 없습니다' 문구는 files.length 를 보므로 여기 변화에 흔들리지 않는다.
+    if ((files ?? []).some(f => !f.voidedAt)) return { primary: null, hint: null }
     // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.
     // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
     if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
@@ -331,6 +339,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                 </span>
                 {currentIds.has(f.id) && (
                   <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--coral)]/10 text-[var(--coral)]">현재</span>
+                )}
+                {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다). */}
+                {f.voidedAt && (
+                  <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--cream)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
                 )}
                 <div className="flex-1 min-w-0">
                   <span className="block text-xs text-[var(--warm-dark)] truncate">

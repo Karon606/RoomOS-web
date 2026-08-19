@@ -16,9 +16,11 @@ async function main() {
   // 축 1. 발급본에 박힌 계약일이 그 계약의 실제 서명일과 다른가.
   //   ContractFile.signedAt 은 발급 시점에 계약일로 채워진다. 서명 시각과 날짜가 갈리면
   //   이미 종이로 나간 계약서에 틀린 날이 찍혀 있다는 뜻이다.
+  //   폐기본(voidedAt)은 뺀다. 그 종이의 계약일은 **그때 그 서명일**이 맞고, 폐기 후 재서명을 받으면
+  //   lease 의 서명일만 새 날로 바뀐다 — 남겨 두면 정당한 이력이 통째로 위반으로 뜬다(신고 63cd1049).
   const files = await prisma.contractFile.findMany({
     // not: null 필터를 안 쓴다 — 이 클라이언트 버전이 거부한다. 걸러내는 것은 아래 루프가 한다.
-    where: { source: 'GENERATED', deletedAt: null },
+    where: { source: 'GENERATED', deletedAt: null, voidedAt: null },
     select: {
       id: true, signedAt: true, contractNo: true,
       tenant: { select: { name: true } },
@@ -48,7 +50,9 @@ async function main() {
   // 축 3. 원격 링크의 서명 시각과 lease 의 시각이 갈렸는가.
   //   둘은 같은 트랜잭션에서 같은 값으로 쓴다. 갈리면 그 트랜잭션이 깨진 것이다.
   //
-  //   단, 대조 대상은 **현재 서명을 만든 링크 하나**다. 서명을 지우고 새 링크로 다시 받으면
+  //   단, 대조 대상은 **현재 서명을 만든 링크 하나**다(같은 판정을 lib/contractVersion
+  //   isCurrentSignatureLink 가 정본으로 들고 있다 — 드리프트 비교·본문 잠금 검사가 그것을 쓴다).
+  //   서명을 지우고 새 링크로 다시 받으면
   //   (502호 2026-08-11 실사례 — 이름 정정 재서명) 옛 링크의 서명일은 정당한 과거 기록이라
   //   lease 의 새 서명일과 갈리는 것이 정상이다. 그래서 닫힌 링크는 건너뛰고, 열린 링크
   //   중에서도 계약마다 가장 최근에 서명된 것만 대조한다.
