@@ -4583,24 +4583,28 @@ export default function FinanceClient({
                   const selectable = recGroupMode && r.isActive
                   // 편집 중인 행 표식 (§22 .sel) — 폼이 목록 위에 있어 이것 없이는 어느 항목이 열렸는지 모른다.
                   const editing = showRecMgmtForm && editingRecMgmt?.id === r.id
+                  // 좁은 폭에서는 액션 줄을 아래로 내린다 (§20) — 환경설정 카드와 같은 행 문법.
+                  // 종전에는 액션 블록이 shrink-0 이라 폭이 모자라면 품명이 먼저 0 으로 눌렸다.
                   return (
                   <div key={r.id}
                     onClick={selectable ? () => toggleGroupSel(r.id) : undefined}
-                    className={`flex items-center gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) || editing ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) || editing ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    <div className="flex items-start gap-3 min-w-0 sm:flex-1">
                     {recGroupMode && (
                       <input type="checkbox" checked={recGroupSel.has(r.id)} disabled={!r.isActive}
                         onChange={() => toggleGroupSel(r.id)} onClick={e => e.stopPropagation()}
-                        className="w-4 h-4 accent-[var(--coral)] shrink-0" />
+                        className="w-4 h-4 mt-0.5 accent-[var(--coral)] shrink-0" />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                        {isParent && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
+                    <div className="min-w-0 flex-1">
+                      {/* flex-wrap + break-keep — 품명이 배지에 밀리지 않고 먼저 자리를 가진다. */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
+                        {isParent && <Badge tone="pale-coral">묶음 {r.items.length}</Badge>}
                         {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                        {!r.isActive && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
+                        {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                         {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}
                       </div>
-                      <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+                      <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
                         매월 {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
                         {r.payMethod && <> · {r.payMethod}</>}
                         {r.financialAccountName && <> ({r.financialAccountName})</>}
@@ -4611,10 +4615,11 @@ export default function FinanceClient({
                         </p>
                       )}
                     </div>
+                    </div>
                     {!recGroupMode && (
                     /* 행 액션은 RowActionBtn 정본 (§10 raw button 금지 · 히트영역 44px).
                        gap-y-4 는 두 줄로 접힐 때 정본의 -my-2 히트영역이 겹치지 않는 최소 세로 간격이다. */
-                    <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0">
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0 sm:justify-end">
                       <RowActionBtn disabled={recMgmtBusyId === r.id} onClick={() => handleToggleRecMgmt(r)}>
                         {r.isActive ? '비활성' : '활성화'}
                       </RowActionBtn>
