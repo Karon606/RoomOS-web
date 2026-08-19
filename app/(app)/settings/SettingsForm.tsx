@@ -1874,7 +1874,7 @@ function ContractTab({ initial, property, onSubmitProperty, saving }: {
                   type="text"
                   value={sec.title}
                   onChange={e => updateSection(idx, { title: e.target.value })}
-                  className="flex-1 bg-transparent border-b border-[var(--warm-border)] px-1 py-1 text-sm font-semibold text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                  className="flex-1 min-w-0 bg-transparent border-b border-[var(--warm-border)] px-1 py-1 text-sm font-semibold text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                 />
                 <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} aria-label="위로"
                   className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
