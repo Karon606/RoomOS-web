@@ -53,7 +53,9 @@ const amtText = (s: string) => {
   return d ? parseInt(d, 10).toLocaleString() : ''
 }
 const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `매월 ${parseInt(v, 10)}일`) : '—')
-const FIELD_LOCK_MSG = '서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.'
+// 서버(app/contract/[tenantId]/actions.ts)와 **같은 문구**여야 한다. 화면이 막고 말하는 이유와
+// 서버가 거부하며 말하는 이유가 다르면, 운영자는 두 화면에서 서로 다른 해결책을 듣는다.
+const FIELD_LOCK_MSG = "서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 내용을 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다."
 // 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
 const CELL_SELECT_STYLE = { font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' } as const
 
@@ -426,7 +428,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     } finally { release(); setSignReqPending(false) }
   }
 
-  const notifyBodyLocked = () => pushToast('info', '서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 재서명을 받아야 합니다. 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.')
+  const notifyBodyLocked = () => pushToast('info', "서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다.")
 
   // 서명 지우기(X) — 서버에 저장된 서명이면 서버에서도 지운다.
   // 종전에는 로컬 state 만 지워서 새로고침 한 번이면 잘못 받은 서명이 그대로 되살아났다.
@@ -449,7 +451,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     if (sigClearing) return
     if (!(await confirmDialog({
       title: '저장된 서명을 지울까요?',
-      message: '저장된 서명이 삭제되고 재서명 전까지 발급할 수 없습니다. 아직 발급하지 않은 서명이면 이 서명으로는 다시 발급할 수 없으니 필요하면 먼저 발급해 두세요. 원격으로 받은 서명이면 보냈던 링크도 닫힙니다.',
+      message: '저장된 서명이 이 화면에서 사라지고 재서명 전까지 발급할 수 없습니다. 마지막 서명이면 이 버전이 폐기되고 그 서명과 발급본은 폐기 기록으로 남습니다. 아직 발급하지 않은 서명이면 이 서명으로는 다시 발급할 수 없으니 필요하면 먼저 발급해 두세요. 원격으로 받은 서명이면 보냈던 링크도 닫힙니다.',
       level: 'danger', confirmLabel: '지우기',
     }))) return
     setSigClearing(true)
@@ -970,7 +972,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               // 잠긴 값은 입력칸 모양을 벗는다. disabled input 은 눌러도 아무 일이 없고 이유도 안 말한다.
               // 왜 잠겼는지는 눌렀을 때 말해준다 — 길 없이 막기만 하면 고장으로 읽힌다.
               <button type="button" className="toolbar-locked" onClick={() => pushToast(
-                'info', '서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 재서명을 받아야 합니다 · 서명란의 X 버튼으로 저장된 서명을 지우면 다시 고칠 수 있습니다.')}>
+                'info', "서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 서명을 다시 받아 주세요 · 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다.")}>
                 <span>계약일</span>
                 <strong className="num">{signDateEffective}</strong>
               </button>

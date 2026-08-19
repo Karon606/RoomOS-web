@@ -183,7 +183,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     if (!(await confirmDialog({
       title: '이 계약서 파일을 삭제할까요?',
       message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
-        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : ''),
+        + (siblings > 0 ? ` 다른 발급본 ${siblings}부는 남습니다.` : '')
+        // 삭제를 '폐기'로 오해한 것이 신고 63cd1049 의 출발점이다. 삭제는 파일만 정리하고
+        // 서명 잠금은 손대지 않는다 — 그 사실을 누르기 전에 말한다.
+        + ' 삭제는 파일만 정리합니다. 서명이 남아 있으면 계약서는 여전히 잠겨 있으니,'
+        + " 내용을 바꿔 다시 작성하려면 계약서 화면에서 '이 계약서 폐기' 를 눌러 주세요.",
       level: 'danger', confirmLabel: '삭제',
     }))) return
     const release = trackSave()
