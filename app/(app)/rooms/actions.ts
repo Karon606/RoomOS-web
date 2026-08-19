@@ -9,7 +9,8 @@ import { revalidatePath } from 'next/cache'
 import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
-import { kstYmd, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
+import { kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -2059,7 +2060,9 @@ export async function getTenantLeaseForDashboard(tenantId: string, targetMonth?:
   let carryOver = 0
   if (targetMonth && lease.moveInDate) {
     const [y, m] = targetMonth.split('-').map(Number)
-    const monthStart = new Date(y, m - 1, 1)
+    // 이 달 1일 — 로컬 자정으로 만들던 시절엔 KST 기기에서 전월 말일로 밀려, 그 날 낸 돈이
+    // '이전 달까지 입금'에서 빠지고 이월 미수로 둔갑했다. 창 정본은 lib/kstDate.
+    const monthStart = monthDbRange(targetMonth).gte
 
     // 이전 달까지 입금 합 (보증금·납입일변경 조정 제외)
     const recordsBefore = await prisma.paymentRecord.findMany({
@@ -2597,9 +2600,9 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   if (!canReadScope(await getMyRole(), 'money')) throw new Error('권한이 없습니다.')
   const propertyId = await getPropertyId()
   // 납부 내역은 payDate 기준 — viewMonth 안에 입금된 모든 record (targetMonth 무관)
-  const [y, m] = targetMonth.split('-').map(Number)
-  const monthStart = new Date(y, m - 1, 1)
-  const monthEnd = new Date(y, m, 0); monthEnd.setHours(23, 59, 59, 999)
+  // 창 정본은 lib/kstDate — 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 앞으로 밀려
+  // 말일 수납이 그 달 납부 내역에서 빠지고 전월 말일 수납이 딸려 들어왔다.
+  const monthWindow = monthDbRange(targetMonth)
   // 3개월 창 — 낸 달과 귀속월이 갈리는 수납을 한 화면에서 보기 위한 **표시 전용** 집합(신고 2c6de978).
   //
   // 축이 둘인 이유. payDate 만 보면 8월에 낸 7월분이 7월 화면에서 사라진다(김민정 건의 정확한 구조).
@@ -2609,14 +2612,11 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   // **records 는 절대 건드리지 않는다.** TenantClient 가 그 배열로 총 수납을 직접 계산하고
   // PaymentBody 의 선납 폴백도 거기 걸려 있어, 범위를 넓히면 3개월치가 한 달 총 수납으로 표시된다.
   // windowRecords 는 목록 렌더링 전용이며 어떤 합계에도 넣지 않는다(클라 재계산 금지 원칙).
-  const winStart = new Date(y, m - 3, 1)
-  const winMonths = [0, 1, 2].map(i => {
-    const d = new Date(y, m - 1 - i, 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })
+  const winMonths = [0, 1, 2].map(i => shiftMonth(targetMonth, -i))
+  const winWindow = monthsDbRange(shiftMonth(targetMonth, -2), targetMonth)
   const [records, windowRecords, property, lastWithMethod] = await Promise.all([
     prisma.paymentRecord.findMany({
-      where: { leaseTermId, payDate: { gte: monthStart, lte: monthEnd } },
+      where: { leaseTermId, payDate: monthWindow },
       orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }],
     }),
     prisma.paymentRecord.findMany({
@@ -2625,7 +2625,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
         // 보증금은 DepositStatusPanel 이 계약 단위로 맡는다(2026-08-02 정본). 여기서 또 그리면 중복이다.
         isDeposit: false, isBillingAdjust: false,
         OR: [
-          { payDate: { gte: winStart, lte: monthEnd } },
+          { payDate: winWindow },
           { targetMonth: { in: winMonths } },
         ],
       },

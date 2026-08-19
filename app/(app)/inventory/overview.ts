@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
 import { specMultiplier, convertUnit } from '@/lib/units'
+import { kstMonthStr, monthDbRange } from '@/lib/kstDate'
+import { shiftMonth } from '@/lib/moveCalendar'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -253,9 +255,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
 
   // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
   // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).
-  const monthsAgo7 = new Date()
-  monthsAgo7.setMonth(monthsAgo7.getMonth() - 7)
-  monthsAgo7.setDate(1); monthsAgo7.setHours(0, 0, 0, 0)
+  // 창의 시작은 @db.Date 저장 축(UTC 자정)으로 잡는다 — 실행 환경 자정으로 만들던 시절엔
+  // KST 기기에서 하루 앞으로 밀려 8개월 전 말일 점검이 창에 딸려 들어왔다. 창 정본은 lib/kstDate.
+  const monthsAgo7 = monthDbRange(shiftMonth(kstMonthStr(), -7)).gte
   const itemIds = items.map(i => i.id)
   const [allChecksForUsage, allItemLocations, allPending, allAdditions, allDisposals, defaultHub] = await Promise.all([
     prisma.stockCheck.findMany({

@@ -13,7 +13,7 @@
 
 import prisma from '@/lib/prisma'
 import { fmtWon } from '@/lib/fmtMoney'
-import { kstYmd } from '@/lib/kstDate'
+import { dayDbRange, kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
@@ -53,10 +53,12 @@ const CATEGORY_LABEL: Record<AlertCategory, string> = {
 export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   // KST 오늘 [00:00, 다음날 00:00) — 일정 기반은 '당일'만
   const k = kstYmd()
-  const today = new Date(k.year, k.month - 1, k.day)
-  const tomorrow = new Date(today.getTime() + 86400000)
-  // 고정지출 판정용 'YYYY-MM-DD' — 위 today 와 같은 k 에서 뽑는다(두 번 재면 자정 경계에서 갈린다).
+  // 'YYYY-MM-DD' 는 today 와 같은 k 에서 뽑는다(두 번 재면 자정 경계에서 갈린다).
   const todayYmd = `${k.year}-${String(k.month).padStart(2, '0')}-${String(k.day).padStart(2, '0')}`
+  // 창은 @db.Date 저장 축(UTC 자정)으로 잡는다 — 로컬 자정으로 만들던 시절엔 KST 기기에서
+  // tourDate·moveInDate 창이 하루 앞으로 밀려 '오늘 투어'가 어제 것을 집었고, 아래 D-day
+  // 계산(입주 희망일·퇴실 경과)도 9시간 어긋나 하루씩 더 세었다.
+  const { gte: today, lt: tomorrow } = dayDbRange(todayYmd)
   const thisMonth = todayYmd.slice(0, 7)
   const trackedCats = await getTrackedCategories(propertyId)
   const contactLeadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14

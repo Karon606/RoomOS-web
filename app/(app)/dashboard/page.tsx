@@ -9,7 +9,7 @@ import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
-import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange } from '@/lib/kstDate'
+import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
@@ -91,11 +91,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const last6Months = getLast6Months(targetMonth)
   const trendWindow = monthsDbRange(last6Months[0], targetMonth)
 
-  // KST 기준 오늘 자정
+  // KST 기준 오늘 자정 — 아래 in-JS 일수 계산(납부 예정일·요청 기한·소진 예상일)은 전부
+  // 로컬 자정끼리 빼므로 이 값을 그대로 쓴다.
   const kstToday  = kstYmd()
   const today     = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
-  const alertFrom = new Date(today.getTime() - ALERT_WINDOW_BEFORE_DAYS * 86400000)
-  const alertTo   = new Date(today.getTime() + ALERT_WINDOW_AFTER_DAYS  * 86400000)
+  // 입퇴실 알림 창은 @db.Date 칸(moveInDate·expectedMoveOut)과 비교하므로 축이 다르다.
+  // 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 앞으로 밀려, 창 마지막 날 입주·퇴실이
+  // 알림에서 통째로 빠졌다. 오늘은 위와 같은 kstToday 하나에서 뽑는다(두 번 재면 자정에 갈린다).
+  const todayDb   = ymdToDbDate(`${kstToday.year}-${String(kstToday.month).padStart(2, '0')}-${String(kstToday.day).padStart(2, '0')}`)
+  const alertFrom = new Date(todayDb.getTime() - ALERT_WINDOW_BEFORE_DAYS * 86400000)
+  const alertTo   = new Date(todayDb.getTime() + ALERT_WINDOW_AFTER_DAYS  * 86400000)
 
   // ── 응답시간: 서로 독립인 조회를 여기서 미리 시작 — await는 각 사용 지점 그대로 ──
   // 값·계산식·에러 처리 불변, 쿼리 시작 시점만 앞당김(순차 왕복 → 동시 실행).
