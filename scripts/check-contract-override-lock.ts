@@ -22,7 +22,8 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { contractLeaseFields, parseContractFieldOverrides } from '../lib/contractFieldOverrides'
 import {
-  isCurrentSignatureLink, parseContractVersionArchive, voidedVersionHasEvidence,
+  archiveOwnsEachFileOnce, isCurrentSignatureLink, parseContractVersionArchive,
+  versionKind, voidedVersionHasEvidence,
 } from '../lib/contractVersion'
 
 type Snapshot = { template?: unknown; lease?: unknown }
@@ -64,17 +65,29 @@ async function main() {
     where: { deletedAt: null }, select: { id: true },
   })).map(f => f.id))
 
-  // 축 G7 — 폐기 이력에 서명 증거가 하나도 안 담겼다.
-  //   폐기는 '증거를 이력으로 옮기고 잠금만 푸는' 조작이다(lib/contractVersion). 이력 항목에
-  //   서명 이미지도 시각도 격리본도 없으면, 그 폐기는 아무것도 안 남기고 지운 것이다 —
-  //   폐기가 조용한 삭제로 퇴화한 상태이고, 그때는 무엇에 서명했는지 되짚을 길이 사라진다.
+  // 축 G7 — 버전 이력에 서명 증거가 하나도 안 담겼다.
+  //   폐기든 새 버전 작성이든 '증거를 이력으로 옮기고 잠금만 푸는' 조작이다(lib/contractVersion).
+  //   이력 항목에 서명 이미지도 시각도 격리본도 없으면, 그 이동은 아무것도 안 남기고 지운 것이다 —
+  //   이동이 조용한 삭제로 퇴화한 상태이고, 그때는 무엇에 서명했는지 되짚을 길이 사라진다.
+  //   kind 가 없는 구항목은 폐기로 읽는다(versionKind 정본) — 이 칸이 생기기 전 이력은 폐기뿐이었다.
   let voidedVersions = 0
   for (const l of leases) {
     for (const e of parseContractVersionArchive(l.contractVersionArchive)) {
       voidedVersions++
       if (!voidedVersionHasEvidence(e)) {
-        violations.push(`${l.tenant?.name ?? '?'} 의 폐기 기록(${e.voidedAt})에 서명 증거가 없다 — 폐기가 증거를 안 담고 지웠다`)
+        const what = versionKind(e) === 'supersede' ? '새 버전 작성 기록' : '폐기 기록'
+        violations.push(`${l.tenant?.name ?? '?'} 의 ${what}(${e.voidedAt})에 서명 증거가 없다 — 이동이 증거를 안 담고 지웠다`)
       }
+    }
+  }
+  // 축 G8 — 한 발급본이 두 이력 항목에 실렸다(도장 소유권).
+  //   되돌리기는 항목의 fileIds 를 보고 도장을 지운다. 두 항목이 같은 파일을 소유하면 나중 것을
+  //   되돌릴 때 앞 항목이 찍은 도장까지 지워져, 폐기된 종이가 이력만 남긴 채 되살아난다.
+  //   그 상태는 화면·검사 어디에도 안 보이므로 여기서 잡는다(2026-08-20 다중 버전).
+  for (const l of leases) {
+    const archive = parseContractVersionArchive(l.contractVersionArchive)
+    if (!archiveOwnsEachFileOnce(archive)) {
+      violations.push(`${l.tenant?.name ?? '?'} 의 버전 이력에서 한 발급본이 두 항목에 실렸다 — 되돌리기가 남의 도장을 지운다`)
     }
   }
 

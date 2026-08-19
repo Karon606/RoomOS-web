@@ -22,6 +22,7 @@ import {
   restoredFieldsFrom, versionKind, type ContractVersionKind,
 } from '@/lib/contractVersion'
 import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
+import { bodyLockMessage, fieldLockMessage } from '@/lib/contractLockMessage'
 
 // ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
 // 기존 소비처(ContractView 등)의 import 경로 유지를 위해 타입만 재수출.
@@ -60,7 +61,12 @@ export async function getContractData(tenantId: string, leaseTermId?: string | n
 // 계약서·동의서 두 서명이 다 있으면 X 하나로는 안 풀린다. 운영자는 그 말대로 지웠는데도 안 풀리는
 // 화면을 보고 발급본을 지웠고, 그것은 잠금과 아무 상관이 없는 조작이었다.
 // 지금은 한 번에 푸는 길이 화면에 있다 — 계약서 화면 툴바의 '이 계약서 폐기'.
-const SIGNED_LOCK_MSG = "서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 계약서 화면 툴바의 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다."
+// 문안은 lib/contractLockMessage 한 벌이고, 여러 판본 만들기가 켜진 영업장에서는 '새 버전 작성'
+// 까지 함께 말한다. 토글은 잠금에 걸렸을 때만 읽는다 — 평시 저장 경로에 조회를 하나 더 얹지 않는다.
+async function multiVersionOn(propertyId: string): Promise<boolean> {
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { multiContractVersions: true } })
+  return p?.multiContractVersions === true
+}
 type SigCols = {
   signatureImageUrl: string | null
   signatureSignedAt: Date | null
@@ -70,8 +76,6 @@ type SigCols = {
 const isSignatureLocked = (l: SigCols) =>
   !!l.signatureImageUrl || !!l.signatureSignedAt || !!l.disposalSignatureImageUrl || !!l.disposalSignatureSignedAt
 
-// 위 SIGNED_LOCK_MSG 와 같은 이유로 같은 길을 가리킨다 — 성명 표기도 이 잠금에 걸린다.
-const FIELD_LOCK_MSG = "서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 내용을 바꾸려면 계약서 화면 툴바의 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다."
 
 // 아직 서명이 안 들어온 활성 링크를 닫는다 — 계약서 내용을 고쳤으면 입주자가 보고 있는 것은
 // 낡은 스냅샷이다(/sign 은 발급 시점 스냅샷만 그린다). 그대로 두면 운영자가 고친 적 없는
@@ -124,11 +128,17 @@ async function closeOpenLinks(leaseTermId: string): Promise<number> {
 //     만료 조건을 남기면 이 폐기가 사실상 아무 링크도 닫지 못한다.
 // 닫기는 closedAt 만 세운다. signedAt·templateSnapshot 같은 서명 증거는 절대 지우지 않는다 —
 // 그건 '그때 이런 내용에 서명이 들어왔다'는 사실의 기록이고, 잠금과는 별개다.
-async function voidVersion(
+//
+// 이동은 두 가지다. **폐기**(이 판본은 계약서로서 효력이 없다)와 **새 버전 작성**(그때는
+// 맞았고 지금 서명의 주인이 다음 판본으로 넘어간다). 옮기는 것은 똑같고 도장만 다르다 —
+// 폐기는 voidedAt, 새 버전은 supersededAt 이다. 이력 항목에도 kind 로 남아 되돌리기가
+// 자기가 찍은 도장만 지운다.
+async function moveVersion(
   leaseTermId: string,
   propertyId: string,
   userId: string | null,
   reason: string,
+  kind: ContractVersionKind = 'void',
 ): Promise<{ closedLinks: number; voidedFiles: number }> {
   const at = new Date()
   return prisma.$transaction(async tx => {
@@ -159,7 +169,7 @@ async function voidVersion(
       lease,
       fileIds: files.map(f => f.id),
       closedLinkIds: links.map(l => l.id),
-      voidedAt: at, voidedBy: userId, reason,
+      voidedAt: at, voidedBy: userId, reason, kind,
     })
     const archive = [...parseContractVersionArchive(lease.contractVersionArchive), entry]
     await tx.leaseTerm.update({
@@ -173,7 +183,10 @@ async function voidVersion(
       },
     })
     if (files.length) {
-      await tx.contractFile.updateMany({ where: { id: { in: files.map(f => f.id) } }, data: { voidedAt: at } })
+      await tx.contractFile.updateMany({
+        where: { id: { in: files.map(f => f.id) } },
+        data: kind === 'supersede' ? { supersededAt: at } : { voidedAt: at },
+      })
     }
     if (links.length) {
       await tx.contractShareLink.updateMany({ where: { id: { in: links.map(l => l.id) } }, data: { closedAt: at } })
@@ -205,7 +218,7 @@ export async function voidContractVersion(
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     // 폐기할 것이 없다 — 서명도 격리본도 없는 계약서는 지금 그냥 작성 중이다(멱등).
     if (!hasVoidableVersion(lease)) return { ok: true, closedLinks: 0, voidedFiles: 0 }
-    const res = await voidVersion(leaseTermId, propertyId, userId ?? null, '이 계약서 폐기')
+    const res = await moveVersion(leaseTermId, propertyId, userId ?? null, '이 계약서 폐기')
     revalidatePath('/contract')
     revalidatePath('/tenants')
     revalidatePath('/contracts')
@@ -213,6 +226,58 @@ export async function voidContractVersion(
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '폐기에 실패했습니다.' }
+  }
+}
+
+/**
+ * 새 버전 작성 — 지금 판본을 구버전으로 넘기고 다음 판본을 쓸 수 있게 연다.
+ *
+ * 폐기와 옮기는 것은 똑같고 뜻이 다르다. 폐기는 '이 판본은 계약서로서 효력이 없다' 이고,
+ * 이것은 '그때는 맞았고 지금 서명의 주인은 다음 판본이다' 다. 그래서 도장이 supersededAt 이고
+ * 그 발급본은 목록에서 계속 유효한 종이로 선다.
+ *
+ * 세 관문. 영업장 토글이 켜져 있어야 하고, 살아 있는 실계약본이 있어야 하며(운영자 결정 —
+ * 실계약이 무조건 먼저), 옮길 서명이 있어야 한다. 마지막 조건이 없으면 빈 이력 항목이 쌓여
+ * 감지망 G7 이 '증거를 안 담은 폐기' 로 잡는다.
+ */
+export async function supersedeContractVersion(
+  leaseTermId: string,
+): Promise<{ ok: true; closedLinks: number; supersededFiles: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { userId, propertyId } = await requireAuthAndProperty()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: {
+        id: true, tenantId: true, signatureImageUrl: true, signatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        signedContractSnapshot: true,
+      },
+    })
+    if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId }, select: { multiContractVersions: true },
+    })
+    if (!property?.multiContractVersions) {
+      return { ok: false, error: '이 영업장은 계약서를 한 부만 만들도록 설정돼 있습니다. 환경설정의 계약서·서류 탭에서 여러 판본 만들기를 켜 주세요.' }
+    }
+    const files = await prisma.contractFile.findMany({
+      where: { tenantId: lease.tenantId, propertyId, deletedAt: null, driveFileId: { not: '' } },
+      select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
+    })
+    if (!hasLiveRealContract(files, leaseTermId)) {
+      return { ok: false, error: '실계약 계약서를 먼저 발급해 주세요. 실계약 없이 다른 판본만 남을 수는 없습니다.' }
+    }
+    // 옮길 서명이 없다 — 이 계약서는 지금 그냥 작성 중이라 새 버전이라는 개념이 없다(멱등).
+    if (!hasVoidableVersion(lease)) return { ok: true, closedLinks: 0, supersededFiles: 0 }
+    const res = await moveVersion(leaseTermId, propertyId, userId ?? null, '새 버전 작성', 'supersede')
+    revalidatePath('/contract')
+    revalidatePath('/tenants')
+    revalidatePath('/contracts')
+    return { ok: true, closedLinks: res.closedLinks, supersededFiles: res.voidedFiles }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '새 버전 작성에 실패했습니다.' }
   }
 }
 
@@ -327,7 +392,7 @@ export async function clearContractSignature(
     // 사라지는 것은 lease 의 칸이고 값 자체는 폐기 이력으로 옮겨 간다(voidVersion).
     if (target === 'all') {
       if (!hasVoidableVersion(lease)) return { ok: true, closedLinks: 0 }   // 지울 것이 없다 — 멱등
-      const { closedLinks } = await voidVersion(leaseTermId, propertyId, userId ?? null, '재서명 받기')
+      const { closedLinks } = await moveVersion(leaseTermId, propertyId, userId ?? null, '재서명 받기')
       revalidatePath('/contract')
       revalidatePath('/tenants')
       revalidatePath('/contracts')
@@ -345,7 +410,7 @@ export async function clearContractSignature(
       ? !!lease.disposalSignatureImageUrl || !!lease.disposalSignatureSignedAt
       : !!lease.signatureImageUrl || !!lease.signatureSignedAt
     if (!otherRemains) {
-      const { closedLinks } = await voidVersion(leaseTermId, propertyId, userId ?? null, '서명 지우기')
+      const { closedLinks } = await moveVersion(leaseTermId, propertyId, userId ?? null, '서명 지우기')
       revalidatePath('/contract')
       revalidatePath('/tenants')
       revalidatePath('/contracts')
@@ -387,7 +452,7 @@ export async function saveContractFieldOverride(
       },
     })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
-    if (isSignatureLocked(lease)) return { ok: false, error: FIELD_LOCK_MSG }
+    if (isSignatureLocked(lease)) return { ok: false, error: fieldLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
     const { value, invalidKeys } = normalizeContractFieldOverrides(
       lease.contractFieldOverrides, patch, deriveContractLeaseFields(lease),
     )
@@ -419,7 +484,7 @@ export async function resetContractFieldOverrides(
       select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true },
     })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
-    if (isSignatureLocked(lease)) return { ok: false, error: FIELD_LOCK_MSG }
+    if (isSignatureLocked(lease)) return { ok: false, error: fieldLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
       data: { contractFieldOverrides: Prisma.DbNull },
@@ -444,7 +509,7 @@ export async function saveContractOverride(
     // 본인 영업장 lease만 허용
     const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
-    if (isSignatureLocked(lease)) return { ok: false, error: SIGNED_LOCK_MSG }
+    if (isSignatureLocked(lease)) return { ok: false, error: bodyLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
       data: { contractOverride: template as unknown as object },
@@ -466,7 +531,7 @@ export async function resetContractOverride(leaseTermId: string): Promise<{ ok: 
     const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     // 공통 템플릿으로 되돌리는 것도 서명한 본문을 갈아치우는 행위다. 하나만 잠그면 다른 하나로 같은 일이 된다.
-    if (isSignatureLocked(lease)) return { ok: false, error: SIGNED_LOCK_MSG }
+    if (isSignatureLocked(lease)) return { ok: false, error: bodyLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
       // { set: null } 은 Json 칸을 비우지 못하고 {"set": null} 을 값으로 넣는다(실측 2026-08-05).
