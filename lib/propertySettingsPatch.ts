@@ -39,6 +39,7 @@ export type PropertySettingsPatch = {
   refundPenaltyPct?: number | null
   refundClauseInContract?: boolean
   cleaningFeeInDeposit?: boolean
+  multiContractVersions?: boolean
   disposalConsentTemplate?: DisposalConsentPatch
   publicSlug?: string | null
 }
@@ -117,6 +118,11 @@ export function buildPropertySettingsPatch(
   }
 
   // ── 계약서·서류 탭 ─────────────────────────────────────────────
+  // 여러 판본 만들기 — 법적 위험이 걸린 설정이라 소유자만 고친다(청소비 토글과 같은 이유).
+  // 체크박스는 소유자에게만 렌더되지만, 역할을 안 보고 저장하면 위조된 폼 한 번에 뒤집힌다.
+  if (formData.has('multiContractVersions') && opts.isOwner) {
+    patch.multiContractVersions = checkboxOn(formData, 'multiContractVersions')
+  }
   if (formData.has('defaultAreaM2')) {
     const v = str(formData, 'defaultAreaM2')
     patch.defaultAreaM2 = v.trim() ? Number(v.replace(/[^0-9.]/g, '')) || null : null

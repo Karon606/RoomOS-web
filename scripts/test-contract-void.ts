@@ -9,10 +9,15 @@
 //     '재서명 받기' 가 방금 받은 서명을 다시 폐기한다.
 
 import {
-  buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink, pickCurrentSignatureLink,
-  parseContractVersionArchive, restoredFieldsFrom, voidedVersionHasEvidence,
+  archiveOwnsEachFileOnce, buildVoidedVersion, hasVoidableVersion, isCurrentSignatureLink,
+  pickCurrentSignatureLink, parseContractVersionArchive, restoreTargetsFrom, restoredFieldsFrom,
+  versionKind, voidedVersionHasEvidence,
   type VoidableLease,
 } from '../lib/contractVersion'
+import {
+  currentIssueFor, currentIssueIds, hasLiveRealContract, issueGroupKey, type IssueCopy,
+} from '../lib/contractCurrentIssue'
+import { contractPurposeLabel, normalizeIssuePurpose } from '../lib/contractPurpose'
 
 let pass = 0
 let fail = 0
@@ -152,6 +157,121 @@ const signedLease: VoidableLease = {
   eq('발급 출처 · 평시에는 그 링크 그대로',
     pickCurrentSignatureLink([OLD], { signatureSignedAt: SIGNED_AT, disposalSignatureSignedAt: DISPOSAL_AT })?.id, 'old')
   eq('발급 출처 · 링크가 없어도 터지지 않는다', pickCurrentSignatureLink([], { signatureSignedAt: SIGNED_AT }), null)
+}
+
+// ── 이동 종류(kind) 정규화 ──
+// 폐기와 '새 버전 작성'이 한 배열에 쌓인다. kind 없는 구항목이 폐기로 읽히는 것이 이 묶음의 몸통이다.
+{
+  const base = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-015'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null,
+  })
+  eq('종류 · kind 없는 구항목은 폐기', versionKind(base), 'void')
+  eq('종류 · kind 를 안 넘기면 칸 자체가 안 생긴다', 'kind' in base, false)
+  const sup = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-016'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: '새 버전 작성', kind: 'supersede',
+  })
+  eq('종류 · supersede 항목', versionKind(sup), 'supersede')
+  eq('종류 · void 를 명시해도 폐기', versionKind({ ...base, kind: 'void' }), 'void')
+  // 모르는 값은 폐기로 떨어진다 — supersede 로 읽으면 되돌리기가 엉뚱한 도장을 지운다.
+  eq('종류 · 모르는 값은 폐기로 떨어진다',
+    versionKind({ ...base, kind: 'archive' as unknown as 'void' }), 'void')
+  // v 를 올리면 새 항목이 파서에서 통째로 사라진다 — 그 사실을 못으로 박는다.
+  eq('종류 · v 를 올린 항목은 파서가 버린다',
+    parseContractVersionArchive([{ ...base, v: 2 }]).length, 0)
+  eq('종류 · 섞인 배열의 순서와 개수가 보존된다',
+    parseContractVersionArchive([base, sup]).map(versionKind), ['void', 'supersede'])
+
+  // supersede 항목도 폐기와 똑같이 증거를 담는다(G7 통과).
+  eq('종류 · supersede 도 서명 이미지를 담는다', sup.signature.contractImage, signedLease.signatureImageUrl)
+  eq('종류 · supersede 도 G7 통과', voidedVersionHasEvidence(sup), true)
+  // fileIds 를 비우지 않는다 — 어느 종이가 이 이동으로 구버전이 됐는지가 증거다.
+  eq('종류 · supersede 도 발급본 목록을 담는다', sup.fileIds, ['file-016'])
+  // 서명이 없는 lease 로 만든 항목은 빈 껍데기다 — 진입로에 hasVoidableVersion 게이트가 필요한 근거.
+  const emptySup = buildVoidedVersion({
+    lease: { signatureImageUrl: null, signatureSignedAt: null, disposalSignatureImageUrl: null, disposalSignatureSignedAt: null, signedContractSnapshot: null },
+    fileIds: [], closedLinkIds: [], voidedAt: VOID_AT, voidedBy: null, reason: null, kind: 'supersede',
+  })
+  eq('종류 · 서명 없는 supersede 는 G7 위반', voidedVersionHasEvidence(emptySup), false)
+}
+
+// ── 도장 소유권 — 되돌리기가 무엇을 지우는가 ──
+// 한 발급본은 이력 항목 하나에만 속해야 한다. 두 항목이 같은 파일을 소유하면 나중 항목을
+// 되돌릴 때 앞 항목이 찍은 도장까지 지워져, 폐기된 종이가 이력만 남긴 채 되살아난다.
+{
+  const v = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-A'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null,
+  })
+  const s = buildVoidedVersion({
+    lease: signedLease, fileIds: ['file-B'], closedLinkIds: [],
+    voidedAt: VOID_AT, voidedBy: null, reason: null, kind: 'supersede',
+  })
+  eq('도장 · 폐기를 되돌리면 voidedAt 을 지운다', restoreTargetsFrom(v), { ids: ['file-A'], clear: 'voidedAt' })
+  eq('도장 · 새 버전을 되돌리면 supersededAt 을 지운다', restoreTargetsFrom(s), { ids: ['file-B'], clear: 'supersededAt' })
+  eq('도장 · kind 없는 구항목은 voidedAt 을 지운다',
+    restoreTargetsFrom({ ...v, kind: undefined }).clear, 'voidedAt')
+  eq('도장 · 소유가 겹치지 않으면 통과', archiveOwnsEachFileOnce([v, s]), true)
+  // 이동 쿼리가 이미 도장 찍힌 파일을 다시 집은 모양 — 이것이 거짓이어야 한다.
+  const greedy = { ...s, fileIds: ['file-A', 'file-B'] }
+  eq('도장 · 한 파일을 두 항목이 소유하면 위반', archiveOwnsEachFileOnce([v, greedy]), false)
+  eq('도장 · 빈 이력은 통과', archiveOwnsEachFileOnce([]), true)
+
+  // LIFO — 마지막 항목이 무엇인지가 적용취소의 대상이다.
+  const archive = parseContractVersionArchive([v, s])
+  eq('도장 · 마지막 항목은 새 버전', versionKind(archive[archive.length - 1]), 'supersede')
+}
+
+// ── 대표본 판정 — 실계약 고정 ──
+// 종전 '폐기 아닌 것 중 최신' 은 어제 뽑은 번역본을 대표로 만든다. 목적이 먼저 거른다.
+{
+  const f = (over: Partial<IssueCopy> & { id: string }): IssueCopy => ({
+    leaseTermId: 'lease-1', createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    voidedAt: null, supersededAt: null, issuePurpose: null, ...over,
+  })
+  eq('묶음 · leaseTermId 가 있으면 그 값', issueGroupKey({ id: 'x', leaseTermId: 'lease-1' }), 'lease-1')
+  eq('묶음 · 연결이 끊긴 파일은 자기 자신이 한 그룹', issueGroupKey({ id: 'x', leaseTermId: null }), 'single:x')
+
+  const real = f({ id: 'real', createdAt: new Date('2026-08-01T00:00:00.000Z') })
+  const trans = f({ id: 'trans', createdAt: new Date('2026-08-20T00:00:00.000Z'), issuePurpose: '번역본' })
+  eq('대표 · 나중에 뽑은 번역본이 아니라 실계약이 대표',
+    currentIssueIds([real, trans]).get('lease-1'), 'real')
+  eq('대표 · 파생 판본은 후보가 아니다', currentIssueIds([trans]).size, 0)
+  eq('대표 · 폐기본은 후보가 아니다',
+    currentIssueIds([{ ...real, voidedAt: new Date() }]).size, 0)
+  // 구버전 도장은 '실계약이 아니다' 가 아니다 — 그것까지 빼면 새 판본을 만든 순간 대표가 사라진다.
+  eq('대표 · 구버전 도장이 찍혀도 실계약이면 대표',
+    currentIssueIds([{ ...real, supersededAt: new Date() }]).get('lease-1'), 'real')
+  eq('대표 · 목적 칸이 없던 구본은 실계약으로 읽는다',
+    currentIssueIds([{ ...real, issuePurpose: undefined }]).get('lease-1'), 'real')
+  // 실계약이 둘이면(정정으로 다시 쓴 경우) 그때만 시각이 동률을 가른다.
+  const fixed = f({ id: 'fixed', createdAt: new Date('2026-08-10T00:00:00.000Z') })
+  eq('대표 · 실계약이 여럿이면 나중 것', currentIssueIds([real, fixed]).get('lease-1'), 'fixed')
+  // 1부뿐인 그룹도 대표를 돌려준다 — 서류 보내기가 이 답에 기댄다.
+  eq('대표 · 1부뿐이어도 답한다', currentIssueIds([real]).get('lease-1'), 'real')
+  eq('대표 · 전부 폐기면 그 그룹의 대표가 없다',
+    currentIssueIds([{ ...real, voidedAt: new Date() }, trans]).has('lease-1'), false)
+
+  eq('대표 · 계약 지목 조회', currentIssueFor([real, trans], 'lease-1')?.id, 'real')
+  eq('대표 · 대표가 없으면 null(폐기본으로 폴백하지 않는다)',
+    currentIssueFor([{ ...real, voidedAt: new Date() }], 'lease-1'), null)
+  eq('대표 · 남의 계약은 안 고른다', currentIssueFor([real], 'lease-2'), null)
+
+  eq('선행 · 실계약이 있으면 파생을 만들 수 있다', hasLiveRealContract([real], 'lease-1'), true)
+  eq('선행 · 번역본만 있으면 파생을 못 만든다', hasLiveRealContract([trans], 'lease-1'), false)
+  eq('선행 · 실계약이 폐기됐으면 파생을 못 만든다',
+    hasLiveRealContract([{ ...real, voidedAt: new Date() }], 'lease-1'), false)
+
+  // 목적 정규화 — 화이트리스트 밖은 거부하고, 실계약은 저장값 null 이다.
+  eq('목적 · 안 실으면 실계약(null)', normalizeIssuePurpose(undefined), { ok: true, value: null })
+  eq('목적 · 실계약을 고르면 null 로 저장', normalizeIssuePurpose('실계약'), { ok: true, value: null })
+  eq('목적 · 제출용', normalizeIssuePurpose('제출용'), { ok: true, value: '제출용' })
+  eq('목적 · 화이트리스트 밖은 거부', normalizeIssuePurpose('진짜계약서2'), { ok: false })
+  eq('목적 · 문자열이 아니면 거부', normalizeIssuePurpose(42), { ok: false })
+  eq('목적 · 실계약은 화면에 안 적는다', contractPurposeLabel(null), null)
+  eq('목적 · 모르는 저장값은 실계약으로 읽는다', contractPurposeLabel('알수없음'), null)
+  eq('목적 · 파생은 그대로 적는다', contractPurposeLabel('번역본'), '번역본')
 }
 
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)

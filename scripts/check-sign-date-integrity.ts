@@ -18,9 +18,13 @@ async function main() {
   //   이미 종이로 나간 계약서에 틀린 날이 찍혀 있다는 뜻이다.
   //   폐기본(voidedAt)은 뺀다. 그 종이의 계약일은 **그때 그 서명일**이 맞고, 폐기 후 재서명을 받으면
   //   lease 의 서명일만 새 날로 바뀐다 — 남겨 두면 정당한 이력이 통째로 위반으로 뜬다(신고 63cd1049).
+  //   구버전(supersededAt)도 같은 이유로 뺀다. 새 판본을 쓰면 lease 의 서명일이 새 날로 바뀌는데
+  //   앞 판본의 종이에는 그때 그 서명일이 찍혀 있고 그것이 맞다(2026-08-20 다중 버전).
+  //   **축을 '라이브 또는 이력 중 하나와 일치' 로 넓히는 안은 채택하지 않았다** — 집합 소속 판정이
+  //   되면 이 축이 잡아야 할 결함(발급이 옛 링크 날짜를 인쇄하던 것)이 그물 밖으로 나간다.
   const files = await prisma.contractFile.findMany({
     // not: null 필터를 안 쓴다 — 이 클라이언트 버전이 거부한다. 걸러내는 것은 아래 루프가 한다.
-    where: { source: 'GENERATED', deletedAt: null, voidedAt: null },
+    where: { source: 'GENERATED', deletedAt: null, voidedAt: null, supersededAt: null },
     select: {
       id: true, signedAt: true, contractNo: true,
       tenant: { select: { name: true } },

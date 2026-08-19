@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { pickCurrentSignatureLink } from '@/lib/contractVersion'
+import { normalizeIssuePurpose } from '@/lib/contractPurpose'
+import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
 import { resolveSignedBody } from '@/lib/contract'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
@@ -59,6 +61,14 @@ type Body = {
   disposalSignatureCapturedAt?: string
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
+  /**
+   * 이 발급본을 무엇으로 남길 것인가 — lib/contractPurpose 화이트리스트뿐이다.
+   *
+   * 안 실으면 실계약이다(하위 호환). 화이트리스트 밖 값은 조용히 실계약으로 떨어뜨리지 않고
+   * 거부한다 — 그러면 API 를 직접 부른 요청이 아무 라벨이나 붙인 뒤 앱에서는 실계약처럼
+   * 보이는 판본을 만든다. 값은 발급 시점 증거라 발급 트랜잭션에서 한 번만 쓴다.
+   */
+  issuePurpose?: string | null
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
@@ -130,6 +140,8 @@ export async function POST(req: Request) {
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
           refundClauseInContract: true, disposalConsentTemplate: true,
+          // 파생 판본을 만들 수 있는 영업장인가 — 발급 목적 게이트가 이 값을 본다.
+          multiContractVersions: true,
         },
       }),
     ])
@@ -232,6 +244,37 @@ export async function POST(req: Request) {
       }, { status: 409 })
     }
 
+    // 발급 목적 게이트 — 저장 발급에만 건다. 미리보기는 아무것도 남기지 않는다.
+    //
+    // 세 관문을 순서대로 지난다.
+    //  1) 화이트리스트 밖 값은 거부한다(위 Body 주석).
+    //  2) 영업장 토글이 꺼져 있으면 파생 판본 자체를 만들 수 없다 — 1인당 계약서 1개가 그 상태의 뜻이다.
+    //  3) 살아 있는 실계약본이 없으면 파생을 못 만든다. 운영자 결정이 '실계약이 무조건 먼저' 이고,
+    //     실계약 없이 제출용만 있는 상태는 근거 없는 표시본이기 때문이다.
+    // 화면이 이 조건을 이미 지키지만 API 를 직접 부르면 통하므로 서버가 다시 본다.
+    const purpose = normalizeIssuePurpose(body.issuePurpose)
+    if (!purpose.ok) {
+      return NextResponse.json({ ok: false, error: '알 수 없는 발급 목적입니다.' }, { status: 400 })
+    }
+    if (!body.preview && purpose.value !== null) {
+      if (!property?.multiContractVersions) {
+        return NextResponse.json({
+          ok: false,
+          error: '이 영업장은 계약서를 한 부만 만들도록 설정돼 있습니다. 환경설정의 계약서·서류 탭에서 여러 판본 만들기를 켜 주세요.',
+        }, { status: 409 })
+      }
+      const issued = await prisma.contractFile.findMany({
+        where: { tenantId: tenant.id, propertyId, deletedAt: null, driveFileId: { not: '' } },
+        select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
+      })
+      if (!lease?.id || !hasLiveRealContract(issued, lease.id)) {
+        return NextResponse.json({
+          ok: false,
+          error: '실계약 계약서를 먼저 발급해 주세요. 실계약 없이 제출용이나 번역본만 남을 수는 없습니다.',
+        }, { status: 409 })
+      }
+    }
+
     if (!body.preview) {
       for (let attempt = 0; attempt < 5 && !reserved; attempt++) {
         const issued = await prisma.contractFile.count({ where: { propertyId, contractNo: { not: null } } })
@@ -241,6 +284,8 @@ export async function POST(req: Request) {
             data: {
               propertyId, tenantId: tenant.id, leaseTermId: lease?.id ?? null,
               driveFileId: '', fileName: '', source: 'GENERATED', contractNo: no,
+              // 목적은 여기서 한 번만 쓴다 — 박제와 같은 규약이다. 실계약은 null 로 남긴다.
+              issuePurpose: purpose.value,
               // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀
               // KST 기기에서 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정).
               signedAt: ymdToDbDate(signDate),

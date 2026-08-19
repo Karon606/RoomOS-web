@@ -82,6 +82,7 @@ type Property = {
   contactLeadDays?: number | null
   refundClauseInContract: boolean
   cleaningFeeInDeposit: boolean   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
+  multiContractVersions: boolean  // 한 계약에 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
   disposalConsentTemplate: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
@@ -1601,7 +1602,7 @@ export default function SettingsForm({
           서류에 자동으로 박히는 값 셋(전용면적·입금 계좌번호·임의처분 동의서)이 기본정보에서 왔다.
           저장 손잡이는 위쪽 폼들과 같은 것을 쓴다 — 같은 행동이 탭마다 다른 피드백을 주면 안 된다. */}
       {tab === 'contract' && (
-        <ContractTab initial={contractSettings} property={property}
+        <ContractTab initial={contractSettings} property={property} isOwner={isOwner}
           onSubmitProperty={handleSubmit} saving={isPending} />
       )}
 
@@ -1614,10 +1615,12 @@ export default function SettingsForm({
 
 // ── 계약서 탭 ─────────────────────────────────────────────────────
 
-function ContractTab({ initial, property, onSubmitProperty, saving }: {
+function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
   initial: ContractSettings
   /** 서류 자동채움 값(전용면적·계좌번호·동의서)의 현재 저장값 — 기본정보에서 옮겨 왔다. */
   property: Property | null
+  /** 여러 판본 만들기는 법적 위험이 걸린 설정이라 소유자만 고친다(청소비 토글과 같은 이유). */
+  isOwner: boolean
   onSubmitProperty: (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => void
   saving: boolean
 }) {
@@ -1632,6 +1635,25 @@ function ContractTab({ initial, property, onSubmitProperty, saving }: {
 
   // 서류 자동채움 값 — 기본정보 탭에서 옮겨 온 상태(2026-08-19 IA 2단계). 칸의 문법은 무수정.
   const [areaVal, setAreaVal] = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
+  // 여러 판본 만들기 — 켤 때만 경고를 띄우고, 확인해야 체크가 선다(운영자 결정 2026-08-20).
+  // 저장은 이 카드의 저장 버튼이 한다(§27.1 — 같은 카드에서 즉시저장과 폼저장을 섞지 않는다).
+  const [multiVersions, setMultiVersions] = useState(property?.multiContractVersions === true)
+  const askMultiVersions = async (next: boolean) => {
+    if (!next) { setMultiVersions(false); return }
+    const ok = await confirmDialog({
+      title: '계약서를 여러 판본으로 만들 수 있게 할까요?',
+      message: '이 기능을 켜면 한 입주자에게 기재 내용이 다른 계약서를 여러 부 만들 수 있습니다. '
+        + '월세 세액공제나 주거급여 신청에 실제와 다른 금액의 계약서가 쓰이면 신청인은 부정수급이 되고, '
+        + '그 서류를 만들어 준 운영자도 조력한 것으로 조사받을 수 있습니다. '
+        + '보증금이나 월세가 일정액을 넘는 임대차는 주택임대차 신고 대상이 될 수 있고 고시원이 그 대상인지는 '
+        + '지역과 건물 유형에 따라 갈리므로, 신고한 내용과 다른 계약서가 남으면 진위를 다투게 됩니다. '
+        + '이미 서명을 받은 계약서의 내용을 서명자 동의 없이 바꿔 다른 판본을 만드는 것은 사문서 변조에 해당할 수 있습니다. '
+        + '같은 내용을 다른 표기나 서식으로 다시 내야 할 때를 위한 기능이며, 스테이음은 기재 내용이 다른 계약서를 만드는 용도를 권하지 않습니다. '
+        + '켜기 전에 변호사 검토를 받아 보시기를 권합니다.',
+      level: 'caution', confirmLabel: '켜기',
+    })
+    if (ok) setMultiVersions(true)
+  }
   // 잔여 소지품 임의처분 동의서 — 저장값(JSON) 폴백
   const dcRaw = (property?.disposalConsentTemplate as Partial<DisposalConsentTemplate> | null) ?? null
   const dc = {
@@ -1942,6 +1964,21 @@ function ContractTab({ initial, property, onSubmitProperty, saving }: {
             autoComplete="off"
             className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
         </div>
+        {/* 여러 판본 만들기 — 소유자만. 형제 토글(청소비 보증금 포함)과 같은 문법이고, 다른 점은
+            켤 때 경고 확인창을 지난다는 것뿐이다. 체크박스 앞의 hidden '0' 은 감지망 축 ⓔ 가 지킨다. */}
+        {isOwner && (
+          <div className="pt-3 mt-1 border-t border-[var(--warm-border)] space-y-1.5">
+            <h4 className="text-xs font-semibold text-[var(--warm-dark)]">여러 판본 만들기</h4>
+            <p className="text-xs text-[var(--warm-muted)]">꺼 두면 한 입주자에게 계약서 한 부만 만들어지고, 표기를 바꿔야 하면 그 계약서를 폐기하고 다시 작성합니다. 켜면 실계약 계약서를 먼저 만든 뒤 제출용이나 번역본을 따로 만들 수 있습니다. 다시 끄면 실계약이 아닌 판본은 목록에서 숨겨집니다. 지워지지 않고, 다시 켜면 그대로 돌아옵니다.</p>
+            <input type="hidden" name="multiContractVersions" value="0" />
+            <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+              <input type="checkbox" name="multiContractVersions" value="1" checked={multiVersions}
+                onChange={e => { void askMultiVersions(e.target.checked) }}
+                className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+              <span className="break-keep">한 계약에 여러 판본 계약서를 만든다 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(법적 위험이 있는 기능입니다. 켤 때 안내를 확인해 주세요)</span></span>
+            </label>
+          </div>
+        )}
         <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">계약서 동반 서류</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>

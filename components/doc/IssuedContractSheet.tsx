@@ -15,6 +15,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { roomLabel } from '@/lib/tenantAddress'
 import { PRINTED_FACT_KEYS, PRINTED_FACT_LABEL, type PrintedFactKey } from '@/lib/contractPrintedFacts'
 import { getContractIssuedSnapshot, type IssuedContractDetail } from '@/app/(app)/tenants/actions'
+import { contractPurposeOf } from '@/lib/contractPurpose'
 
 const BODY_SOURCE_LABEL: Record<string, string> = {
   SNAPSHOT: '서명 시점 박제본',
@@ -101,6 +102,9 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
         <div className="space-y-1">
           <GroupTitle>발급 정보</GroupTitle>
           <Row label="계약번호" value={detail.contractNo ?? '없음'} />
+          {/* 용도 — 발급 시점 증거다. 값은 발급 트랜잭션에서 한 번 쓰고 아무도 갱신하지 않는다.
+              폐기·구버전 여부와는 다른 축이라 따로 적는다. */}
+          <Row label="용도" value={contractPurposeOf(detail.issuePurpose)} />
           <Row label="계약일" value={fmtDateDot(detail.signedAt)} />
           <Row label="발급 시각" value={fmtDateTime(snap?.issuedAt ?? detail.createdAt)} />
           <Row label="파일명" value={detail.fileName} />

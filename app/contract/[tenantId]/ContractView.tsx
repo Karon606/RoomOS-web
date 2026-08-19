@@ -10,7 +10,7 @@ import SignaturePad from 'signature_pad'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
-import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, restoreContractVersion } from './actions'
+import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
@@ -20,6 +20,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 
 const fmtDate = (d: string | null) => {
@@ -55,7 +56,6 @@ const amtText = (s: string) => {
 const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `매월 ${parseInt(v, 10)}일`) : '—')
 // 서버(app/contract/[tenantId]/actions.ts)와 **같은 문구**여야 한다. 화면이 막고 말하는 이유와
 // 서버가 거부하며 말하는 이유가 다르면, 운영자는 두 화면에서 서로 다른 해결책을 듣는다.
-const FIELD_LOCK_MSG = "서명이 완료된 계약서라 표시값을 고칠 수 없습니다. 내용을 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다."
 // 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
 const CELL_SELECT_STYLE = { font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' } as const
 
@@ -325,9 +325,25 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 지금 화면에 살아 있는 서명이라, 지워졌다는 사실과 무관하게 그대로 잠가야 한다.
   const bodyLocked = (!!fixedSignDate && !signatureErased) || !!signatureCapturedAt
 
+  // 여러 판본 만들기가 이 영업장에서 켜져 있는가, 그리고 이 계약에 살아 있는 실계약본이 있는가.
+  // 잠긴 계약서에서만 물어본다 — 풀려 있는 계약서에는 넘길 판본 자체가 없다. 원격(입주자) 화면은
+  // 운영 기능이 아예 없으므로 부르지 않는다. 판정은 화면 표시용이고 게이트는 서버가 다시 본다.
+  const [versionCtx, setVersionCtx] = useState<{ multiVersion: boolean; hasRealContract: boolean } | null>(null)
+  const leaseIdForCtx = data.lease?.id ?? null
+  useEffect(() => {
+    if (remote || !bodyLocked || !leaseIdForCtx) return
+    let alive = true
+    void getIssuePurposeContext(data.tenant.id, leaseIdForCtx).then(r => {
+      if (alive && r.ok) setVersionCtx({ multiVersion: r.multiVersion, hasRealContract: r.hasRealContract })
+    })
+    return () => { alive = false }
+  }, [remote, bodyLocked, leaseIdForCtx, data.tenant.id])
+
   // 정보 표 값 커밋 — 블러·선택 변경 시 즉시 저장한다. 표시값 전용 칸에만 쓰고,
   // 임대료·보증금 같은 원천 값은 손대지 않는다(수납·청구와 무접점).
-  const notifyFieldsLocked = () => pushToast('info', FIELD_LOCK_MSG)
+  // 안내 문안은 서버와 같은 정본이다(lib/contractLockMessage). 열려 있는 길이 하나인지 둘인지는
+  // 영업장 토글이 정하고, 그 값은 위 versionCtx 가 들고 있다(못 읽었으면 폐기 한 길로 말한다).
+  const notifyFieldsLocked = () => pushToast('info', fieldLockMessage(versionCtx?.multiVersion === true, 'here'))
   const commitField = (key: ContractFieldOverrideKey, raw: string) => {
     const leaseId = data.lease?.id
     if (!leaseId || remote || bodyLocked) return
@@ -428,7 +444,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     } finally { release(); setSignReqPending(false) }
   }
 
-  const notifyBodyLocked = () => pushToast('info', "서명이 완료된 계약서는 본문을 고칠 수 없습니다. 내용을 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성한 뒤 서명을 다시 받아 주세요. 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다.")
+  const notifyBodyLocked = () => pushToast('info', bodyLockMessage(versionCtx?.multiVersion === true, 'here'))
 
   // 서명 지우기(X) — 서버에 저장된 서명이면 서버에서도 지운다.
   // 종전에는 로컬 state 만 지워서 새로고침 한 번이면 잘못 받은 서명이 그대로 되살아났다.
@@ -482,7 +498,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       title: '이 계약서를 폐기하고 다시 작성할까요?',
       message: '지금까지 받은 서명과 이미 발급한 계약서는 폐기 기록으로 그대로 남습니다. '
         + '이 화면의 잠금이 풀려 현재 정보로 다시 작성할 수 있고, 발급하려면 서명을 다시 받아야 합니다. '
-        + '되돌리기는 폐기 직후 토스트에서 할 수 있습니다.',
+        // 폐기본이 목록에서 접히므로 어디로 갔는지 먼저 말한다. 안 말하면 사라진 것으로 읽힌다.
+        + "폐기한 계약서는 입주자 정보의 '폐기한 계약서' 칸에서 볼 수 있고, 거기서 되돌릴 수도 있습니다.",
       level: 'danger', confirmLabel: '폐기',
     }))) return
     setSigClearing(true)
@@ -495,7 +512,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       clearSignatureLocal('disposal')
       pushToast('success', [
         '계약서를 폐기했습니다.',
-        res.voidedFiles > 0 ? `발급본 ${res.voidedFiles}부는 폐기 기록으로 남습니다.` : '',
+        res.voidedFiles > 0 ? `발급본 ${res.voidedFiles}부는 입주자 정보의 '폐기한 계약서' 칸에 남습니다.` : '',
         '내용을 고친 뒤 서명을 다시 받아 발급해 주세요.',
       ].filter(Boolean).join(' '), {
         action: {
@@ -507,6 +524,44 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     } finally {
       release()
       setSigClearing(false)
+    }
+  }
+
+  // 새 버전 작성 — 지금 판본을 구버전으로 넘기고 다음 판본을 쓸 수 있게 연다.
+  // 폐기와 옮기는 것은 같고 뜻이 다르다. 지금 계약서는 폐기되지 않고 유효한 구버전으로 남는다 —
+  // 바로 옆 '이 계약서 폐기' 와 구분되는 지점이라 확인창이 그 문장을 먼저 말한다.
+  const [superseding, setSuperseding] = useState(false)
+  const handleSupersede = async () => {
+    const leaseId = data.lease?.id
+    if (!leaseId || superseding) return
+    if (!(await confirmDialog({
+      title: '새 버전을 작성할까요?',
+      message: '지금 계약서는 폐기되지 않고 구버전으로 남습니다. 이 화면의 잠금이 풀려 내용을 고칠 수 있고, '
+        + '새 판본을 발급하려면 서명을 다시 받아야 합니다. 발급할 때 제출용인지 번역본인지 고르게 됩니다.',
+      level: 'caution', confirmLabel: '새 버전 작성',
+    }))) return
+    setSuperseding(true)
+    const release = trackSave()
+    try {
+      const res = await supersedeContractVersion(leaseId)
+      if (!res.ok) { pushToast('error', res.error); return }
+      // 화면에 남은 서명 이미지도 함께 걷는다 — 서버 값은 useState 초기값이라 refresh 로 안 돌아온다.
+      clearSignatureLocal('contract')
+      clearSignatureLocal('disposal')
+      pushToast('success', [
+        '새 버전을 작성할 수 있습니다.',
+        res.supersededFiles > 0 ? `이전 발급본 ${res.supersededFiles}부는 구버전으로 남습니다.` : '',
+        '내용을 고친 뒤 서명을 다시 받아 발급해 주세요.',
+      ].filter(Boolean).join(' '), {
+        action: {
+          label: '적용취소',
+          run: () => { void restoreContractVersion(leaseId, 'supersede').then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) },
+        },
+      })
+      router.refresh()
+    } finally {
+      release()
+      setSuperseding(false)
     }
   }
 
@@ -814,7 +869,25 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       if (driftChoice === 'alt') await handleResignAll()
       return
     }
-    if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
+    // 발급 목적 — 물어야 하는 발급인지 서버에 먼저 묻는다. 실계약이 아직 없으면 이번 발급이
+    // 곧 그 실계약이라 물을 것이 없고, 토글이 꺼진 영업장에서는 목적 입력이 화면에 없어야 한다.
+    // 조회 실패는 실계약 발급으로 떨어뜨린다 — 그쪽이 되돌리기 쉬운 결과이고, 진짜 게이트는 서버다.
+    let issuePurpose: string | null = null
+    const purposeCtx = await getIssuePurposeContext(data.tenant.id, data.lease?.id ?? null)
+    const asksPurpose = purposeCtx.ok && purposeCtx.multiVersion && purposeCtx.hasRealContract
+    if (asksPurpose) {
+      const pick = await choiceDialog({
+        title: '이 계약서를 어떤 판본으로 발급할까요?',
+        message: '실계약 계약서가 이미 있습니다. 이번 발급본은 실계약이 아닌 판본으로 기록되고, 대표 계약서는 실계약 그대로 남습니다.',
+        level: 'caution',
+        confirmLabel: '제출용',
+        altLabel: '번역본',
+      })
+      if (pick !== 'confirm' && pick !== 'alt') return
+      issuePurpose = pick === 'confirm' ? '제출용' : '번역본'
+    } else {
+      if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
+    }
     setContractSaving(true)
     const release = trackSave()
     try {
@@ -834,6 +907,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
           smoking,
           emergencyContactText,
+          // null 이면 실계약이다. 서버가 화이트리스트로 다시 본다.
+          issuePurpose,
         }),
       })
       const text = await res.text()
@@ -972,7 +1047,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               // 잠긴 값은 입력칸 모양을 벗는다. disabled input 은 눌러도 아무 일이 없고 이유도 안 말한다.
               // 왜 잠겼는지는 눌렀을 때 말해준다 — 길 없이 막기만 하면 고장으로 읽힌다.
               <button type="button" className="toolbar-locked" onClick={() => pushToast(
-                'info', "서명이 끝난 계약서라 계약일은 고칠 수 없습니다 · 날짜를 바꾸려면 위 '이 계약서 폐기' 로 이 버전을 폐기하고 서명을 다시 받아 주세요 · 지금까지 받은 서명과 발급본은 폐기 기록으로 남습니다.")}>
+                'info', signDateLockMessage(versionCtx?.multiVersion === true, 'here'))}>
                 <span>계약일</span>
                 <strong className="num">{signDateEffective}</strong>
               </button>
@@ -1004,6 +1079,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <button onClick={handleVoidVersion} disabled={sigClearing}
                 className="toolbar-btn-secondary toolbar-btn-warn">
                 {sigClearing ? '폐기 중…' : '이 계약서 폐기'}
+              </button>
+            )}
+            {/* 여러 판본 만들기가 켜진 영업장에서, 살아 있는 실계약본이 있을 때만 선다.
+                폐기 버튼은 자리도 라벨도 그대로 둔다 — 잠금 안내 문구들이 그 이름을 지목하는 앵커다. */}
+            {bodyLocked && versionCtx?.multiVersion && versionCtx.hasRealContract && (
+              <button onClick={handleSupersede} disabled={superseding}
+                className="toolbar-btn-secondary">
+                {superseding ? '여는 중…' : '새 버전 작성'}
               </button>
             )}
             {/* 액션 집합 정본(§30) — [보내기] [발급]. 기기로 버튼 수를 가르지 않는다(사전 62행).

@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { isDerivedPurpose } from '@/lib/contractPurpose'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -3633,11 +3634,27 @@ export type ContractFileRow = {
   leaseTermId: string | null
   // 폐기된 버전의 발급본인가 — 삭제가 아니라 도장이라 목록에 계속 남고 [폐기됨] 배지가 붙는다.
   voidedAt: Date | null
+  // 이 부가 나온 뒤 그 계약의 서명이 다음 판본으로 넘어갔는가(구버전). 폐기와 다르다.
+  supersededAt: Date | null
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본). 대표본 판정이 이 값을 본다.
+  issuePurpose: string | null
+  // 이 영업장이 여러 판본 만들기를 꺼 뒀을 때 화면에서 감출 행인가 — **숨김이지 삭제가 아니다.**
+  // 행을 서버에서 잘라 내지 않고 표시만 접는 이유는, 잘라 내면 클라이언트가 부수를 못 세어
+  // [현재] 배지와 삭제 안내가 조용히 거짓말을 하기 때문이다(2026-08-20 백엔드 검토).
+  hidden: boolean
   viewUrl: string
 }
 
 export async function getContractFiles(tenantId: string): Promise<ContractFileRow[]> {
   const { propertyId } = await getPropertyId()
+  // 토글이 꺼져 있으면 파생 판본(제출용·번역본)을 화면에서 감춘다. 데이터는 그대로 살아 있고
+  // 다시 켜면 되돌아온다. **감지망·발급 대기·종 알림에는 이 필터를 절대 넣지 않는다** —
+  // 그쪽은 '파일이 존재하면 알림을 끈다' 는 억제 로직이라 여기서 새면 이미 종이가 나간 계약이
+  // 발급 대기로 되살아나고, 운영자가 발급을 누르면 같은 내용이 또 나간다.
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { multiContractVersions: true },
+  })
+  const multiVersion = property?.multiContractVersions === true
   const rows = await prisma.contractFile.findMany({
     where: { driveFileId: { not: '' }, tenantId, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
@@ -3646,10 +3663,12 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
     select: {
       id: true, driveFileId: true, fileName: true, source: true,
       signedAt: true, createdAt: true, contractNo: true, leaseTermId: true, voidedAt: true,
+      supersededAt: true, issuePurpose: true,
     },
   })
   return rows.map(r => ({
     ...r,
+    hidden: !multiVersion && isDerivedPurpose(r.issuePurpose),
     viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
   }))
 }
@@ -3677,6 +3696,8 @@ export type IssuedContractDetail = {
   signedAt: Date
   createdAt: Date
   tenantName: string
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본).
+  issuePurpose: string | null
   snapshot: IssuedContractSnapshot | null
 }
 
@@ -3693,7 +3714,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
       where: { id, propertyId },
       select: {
         contractNo: true, fileName: true, source: true, signedAt: true, createdAt: true,
-        issuedSnapshot: true, tenant: { select: { name: true } },
+        issuePurpose: true, issuedSnapshot: true, tenant: { select: { name: true } },
       },
     })
     if (!row) return { ok: false, error: '계약서 파일을 찾을 수 없습니다.' }
@@ -3707,6 +3728,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
         signedAt: row.signedAt,
         createdAt: row.createdAt,
         tenantName: row.tenant.name,
+        issuePurpose: row.issuePurpose,
         snapshot: snap && typeof snap === 'object' ? snap : null,
       },
     }

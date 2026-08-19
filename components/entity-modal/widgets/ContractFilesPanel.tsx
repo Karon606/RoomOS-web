@@ -19,6 +19,9 @@ import {
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
+import { restoreContractVersion } from '@/app/contract/[tenantId]/actions'
+import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
+import { contractPurposeLabel } from '@/lib/contractPurpose'
 import {
   issueContractShareLink, getContractShareState,
   closeContractShareLink, reopenContractShareLink,
@@ -59,7 +62,10 @@ function shareBadge(link: ContractShareLinkInfo): { label: string; active: boole
 // 같은 계약의 발급본을 묶는 키. leaseTermId 가 없는 파일(연결이 끊긴 구본·스캔본)은 자기 자신이 한
 // 그룹이다 — 무엇의 다른 버전인지 앱이 말할 수 없는데 묶으면 거짓말이 된다. 사람이 아니라 계약이
 // 기준인 이유는 한 사람이 계약을 둘 가질 수 있고, 그 둘은 서로의 버전이 아니기 때문이다.
-const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => f.leaseTermId ?? `single:${f.id}`
+const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => canonIssueGroupKey(f)
+
+// 목적 표기 — 실계약이면 null 이라 아무것도 안 그린다(lib/contractPurpose 정본).
+const purposeLabel = (f: { issuePurpose: string | null }) => contractPurposeLabel(f.issuePurpose)
 
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
@@ -85,6 +91,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
   const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean } | null>(null)
   const [sharePending, setSharePending] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
   const [detailId, setDetailId] = useState<string | null>(null)
 
@@ -178,8 +185,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const handleDelete = async (id: string) => {
     // 같은 계약에 여러 부가 있으면 무엇이 남는지 먼저 말한다. 한 부만 지웠는데 계약서가 통째로
     // 사라진 줄 알고 다시 발급하면 번호만 하나 더 늘어난다.
+    // 세는 것은 **화면에 남는 부수**다. 접힌 폐기본까지 세면 아무것도 안 보이는데
+    // "N부는 남습니다" 라고 말하게 된다. 지우는 대상이 폐기본이면 자기 자신은 애초에 안 세어진다.
     const target = files?.find(f => f.id === id)
-    const siblings = target ? (groupCount.get(issueGroupKey(target)) ?? 1) - 1 : 0
+    const key = target ? issueGroupKey(target) : ''
+    const siblings = target
+      ? Math.max(0, (liveGroupCount.get(key) ?? 0) - (target.voidedAt ? 0 : 1))
+      : 0
     if (!(await confirmDialog({
       title: '이 계약서 파일을 삭제할까요?',
       message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.'
@@ -199,6 +211,22 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     } finally { release() }
   }
 
+  // 폐기 적용취소 — 서버 정본(restoreContractVersion)이 폐기 직전 상태를 통째로 되돌린다.
+  // 그 사이 새 서명이 들어왔으면 서버가 거부한다. 그때 버튼을 감추지 않고 이유를 말하는 쪽을 택했다 —
+  // 잠긴 컨트롤을 없애면 왜 없는지 아무도 모른다(ContractView 툴바가 쓰는 것과 같은 원칙).
+  const handleRestoreVersion = async (leaseTermId: string) => {
+    if (restoring) return
+    setRestoring(true)
+    const release = trackSave()
+    try {
+      const res = await restoreContractVersion(leaseTermId, 'void')
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '폐기를 되돌렸습니다.')
+      await reload()
+      await reloadShare()
+    } finally { release(); setRestoring(false) }
+  }
+
   // 같은 계약의 발급본이 몇 부인가 — 다중 버전 표시(머리·계약번호 줄·[현재])는 전부 이 값이 2 이상일
   // 때만 켠다. 지금 40계약이 1부뿐이고, 그 화면은 종전과 같은 골격이어야 한다.
   const groupCount = useMemo(() => {
@@ -207,20 +235,32 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     return m
   }, [files])
   const hasMultiIssue = [...groupCount.values()].some(v => v > 1)
-  // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정으로 고정돼 같은 날 두 부를 못 가르고,
-  // contractNo 는 번호 도입(2026-08-03) 이전 발급본이 null 이라 정렬 자체가 안 된다.
-  // 실측 황인정 2부가 정확히 그 모양이다 — signedAt 동일, 한쪽 contractNo null.
-  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
-  const currentIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const [key, n] of groupCount) {
-      if (n < 2) continue
-      const live = (files ?? []).filter(f => issueGroupKey(f) === key && !f.voidedAt)
-      if (!live.length) continue
-      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
-    }
-    return ids
-  }, [files, groupCount])
+  // 목록은 폐기본을 기본으로 접는다(운영자 결정 2026-08-20) — **숨김이지 삭제가 아니다.**
+  // 세는 일은 여전히 전량(files)으로 한다. 접힌 행까지 세어야 [현재]·계약번호 줄·삭제 안내가
+  // 종전과 같은 답을 낸다(보이는 것만 세면 형제가 가려졌을 때 화면이 거짓말을 한다).
+  // hidden 은 토글이 꺼진 영업장의 파생 판본이다 — 서버가 표시만 접으라고 표시해 준 행이라
+  // 화면 어느 목록에도 세우지 않는다(폐기본과 달리 펼치는 길도 두지 않는다. 토글을 켜면 돌아온다).
+  const liveFiles = useMemo(() => (files ?? []).filter(f => !f.voidedAt && !f.hidden), [files])
+  const voidedFiles = useMemo(() => (files ?? []).filter(f => f.voidedAt && !f.hidden), [files])
+  const [showVoided, setShowVoided] = useState(false)
+  // 삭제 안내의 '다른 발급본 N부' 는 **화면에 남는 부수**를 말해야 한다. 접힌 폐기본까지 세면
+  // 아무것도 안 보이는데 "N부는 남습니다" 라고 하는 상태가 된다.
+  const liveGroupCount = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const f of liveFiles) m.set(issueGroupKey(f), (m.get(issueGroupKey(f)) ?? 0) + 1)
+    return m
+  }, [liveFiles])
+  // 폐기를 되돌릴 대상 계약 — 폐기는 파일 하나가 아니라 **버전 하나**를 옮기는 일이라
+  // 되돌리기도 계약 단위다(restoreContractVersion). 행마다 달면 3부일 때 세 번 누를 수 있는
+  // 것처럼 보이지만 실제로는 한 번의 동작이다.
+  const voidedLeaseIds = useMemo(
+    () => [...new Set(voidedFiles.map(f => f.leaseTermId).filter((v): v is string => !!v))],
+    [voidedFiles],
+  )
+  // 그룹별 대표 1부 — 판정은 정본 하나다(lib/contractCurrentIssue). 실계약이 고정 대표이고,
+  // 실계약이 여럿일 때만 createdAt 이 동률을 가른다. 여기서 손으로 다시 세면 형제 화면·서류
+  // 보내기와 서로 다른 종이를 '현재' 라고 부르게 된다.
+  const currentIds = useMemo(() => new Set(currentIssueIds(files ?? []).values()), [files])
 
   const shareLink = share?.link ?? null
   const badge = shareLink ? shareBadge(shareLink) : null
@@ -232,22 +272,32 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   //   S0 없음        : 계약서를 만드는 것부터
   //   S1 서명 대기   : 입주자가 아직 안 눌렀다 — 다시 보내기가 다음 수. 만료·잠김도 같은 계열이다
   //   S2 서명 받음   : 발급이 다음 수
-  //   S3 보관됨      : 목록이 주인공이라 주 버튼을 두지 않는다
+  //   S3 보관됨      : 목록이 주인공이라 주 버튼 강조는 내리되, 안내는 남긴다(침묵 금지)
   //
   // 라벨은 단계와 무관하게 '계약서 작성·서명' 으로 고정한다. S2 에서 '계약서 발급' 으로 바꿔봤다가
   // 되돌렸다 — 그 링크는 입력 화면으로 가고 발급은 거기서 한 단계 더 들어가야 일어난다. 이 파일이
   // 정한 동사 정의(작성 = 입력 화면 진입 / 발급 = 공식본 생성·보관)를 라벨이 스스로 어기는 셈이고,
   // 누르면 발급될 줄 알았다가 폼이 나오는 배신이 된다. 단계 구분은 안내 문구가 한다(디자이너 패스).
-  const stage: { primary: 'write' | 'resend' | null; hint: string | null } = (() => {
+  const stage: { primary: 'write' | 'issue' | 'resend' | null; hint: string | null } = (() => {
     // 조회 실패(share === null)여도 화면이 회색으로 굳지 않게 S0 으로 떨어뜨린다
     if (loading) return { primary: null, hint: null }
     if (share?.needsIssue) {
-      return { primary: 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
+      // 서명본 문이 서 있으면 그것이 다음 수다. 서명이 지워져 그 문이 없으면 작성으로 되돌린다.
+      return { primary: signedViewLinkId ? 'issue' : 'write', hint: '원격 서명을 받았습니다. 이제 계약서를 발급하면 됩니다.' }
     }
     // 폐기본은 '갖춰진 계약서'로 세지 않는다 — 전부 폐기된 계약의 다음 할 일은 다시 작성이고,
     // 그때 주 버튼이 사라지면 폐기하고 나서 무엇을 해야 하는지 화면이 말하지 않는다(신고 63cd1049).
     // 목록의 '등록된 계약서가 없습니다' 문구는 files.length 를 보므로 여기 변화에 흔들리지 않는다.
-    if ((files ?? []).some(f => !f.voidedAt)) return { primary: null, hint: null }
+    //
+    // S3 에서 주 버튼을 내리는 것은 그대로 두되 **안내는 반드시 남긴다**. 종전에는 hint 까지 함께
+    // 비어 주 버튼 강조도 문구도 없는 상태가 됐고, 그 침묵이 501호 "계약서 작성·서명이 없다"의
+    // 절반이었다(나머지 절반은 아래 라벨 교체였다, 2026-08-19 (11)).
+    if ((files ?? []).some(f => !f.voidedAt)) {
+      return {
+        primary: null,
+        hint: '계약서가 발급돼 있습니다. 내용을 바꾸려면 계약서 화면에서 이 계약서를 폐기하고 다시 작성해 주세요.',
+      }
+    }
     // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.
     // 만료·잠김을 S0 으로 흘려보내면 방금 보냈다는 사실이 화면에서 지워진다(디자이너 지적).
     if (shareLink && !shareLink.signedAt && !shareLink.closedAt) {
@@ -273,10 +323,24 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
             바뀐 내용으로 받으려면 서명 요청을 다시 보내 새 링크·새 계약서를 만든다. */}
         {/* 새 창으로 열지 않는다 — 홈화면 앱(standalone)에는 주소창이 없어 돌아오면 앱 두 번째 사본이 된다.
             계약서 작성 화면에는 자체 복귀 링크가 있다(ContractView 툴바). */}
-        <BtnLink href={signedViewLinkId ? `/contract/${tenantId}?share=${signedViewLinkId}` : `/contract/${tenantId}`}
+        {/* 한 컨트롤이 라벨과 목적지를 함께 갈아치우던 것을 둘로 쪼갠다.
+            종전에는 서명본이 있으면 라벨이 '서명본 계약서 발급' 으로 바뀌고 href 도 ?share= 로
+            옮겨 갔다. 작성으로 가는 문이 화면에서 통째로 사라진 셈이라 운영자는 "계약서
+            작성·서명이 없다" 고 신고했다(501호 2026-08-19).
+            라벨만 고정하고 href 만 가르는 것으로는 부족하다 — ?share= 가 여는 화면은 **서명 시점
+            박제**이고 스스로 "지금 계약을 고치거나 서명을 다시 받으려면 일반 화면에서 하세요" 라고
+            말한다(ContractView.tsx:941). 그 문으로 보내면서 '작성' 이라 부르면 배신의 방향만 바뀐다.
+            그래서 작성 문은 항상 같은 자리에 같은 이름으로 서고, 서명본 발급은 있을 때만 옆에 선다. */}
+        <BtnLink href={`/contract/${tenantId}`}
           variant={stage.primary === 'write' ? 'primary' : 'secondary'} size="sm">
-          {signedViewLinkId ? '서명본 계약서 발급' : '계약서 작성·서명'}
+          계약서 작성·서명
         </BtnLink>
+        {signedViewLinkId && (
+          <BtnLink href={`/contract/${tenantId}?share=${signedViewLinkId}`}
+            variant={stage.primary === 'issue' ? 'primary' : 'secondary'} size="sm">
+            서명본 계약서 발급
+          </BtnLink>
+        )}
         {/* 부계약 계약서 — 종전에는 이 문이 없어 창고 계약서를 뽑을 길 자체가 없었다.
             발급 화면이 어느 계약을 그릴지 URL 로 지목한다(?leaseTermId=). 본문 문안은 별건이다. */}
         {extraLeases?.map(l => (
@@ -312,18 +376,20 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       {/* 안내는 액션 행 아래에 둔다 — 위에 두면 로딩 후 나타나면서 버튼 행이 통째로 밀린다(§17) */}
       {stage.hint && <p className="text-xs text-[var(--warm-muted)]">{stage.hint}</p>}
       {loading && <SkeletonRows rows={2} />}
-      {!loading && files && files.length === 0 && (
+      {/* 빈 판정은 **화면에 서는 목록**으로 한다. files.length 로 재면 폐기본만 남은 계약이
+          '없습니다' 도 못 띄우고 빈 자리만 그린다(폐기본은 아래 접힘 칸으로 내려갔다). */}
+      {!loading && files && liveFiles.length === 0 && (
         <p className="text-xs text-[var(--warm-muted)]">
           {stage.hint ? '등록된 계약서가 없습니다.' : '등록된 계약서가 없습니다. 계약서를 작성해 서명을 받거나 스캔본을 올리세요.'}
         </p>
       )}
       {/* 같은 계약에 2부 이상일 때만 머리를 세운다. 1부뿐인 계약에서는 이 줄이 없어 종전 골격 그대로다. */}
-      {!loading && files && files.length > 0 && hasMultiIssue && (
-        <SectionHeader first name="보관된 계약서" count={`${files.length}부`} />
+      {!loading && liveFiles.length > 0 && hasMultiIssue && (
+        <SectionHeader first name="보관된 계약서" count={`${liveFiles.length}부`} />
       )}
-      {!loading && files && files.length > 0 && (
+      {!loading && liveFiles.length > 0 && (
         <ul className="space-y-1.5">
-          {files.map(f => {
+          {liveFiles.map(f => {
             const dt = new Date(f.signedAt)
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
             // 식별 줄은 '어느 부인지 불러야 할 때'에만 띄운다 — 같은 계약에 2부 이상일 때.
@@ -332,45 +398,127 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
             return (
               // 파일명은 더 이상 링크를 겸하지 않는다 — 링크처럼 보이지 않는 텍스트가 말없이 구글 드라이브로
               // 나가던 구조가 '앱에서 인쇄가 안 된다'의 절반이었다. 열람은 '보기'가 전담한다(§22 solid 1개).
-              <li key={f.id} className="flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
-                {/* 어휘는 §용어 정본을 따른다(docs/document-screens-spec.md) — '서명 / 스캔' 은 사전에 없는 말이었다. */}
-                <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
-                  {f.source === 'GENERATED' ? '앱 발급본' : '스캔본'}
-                </span>
-                {currentIds.has(f.id) && (
-                  <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--coral)]/10 text-[var(--coral)]">현재</span>
-                )}
-                {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다). */}
-                {f.voidedAt && (
-                  <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--cream)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
-                )}
-                <div className="flex-1 min-w-0">
-                  <span className="block text-xs text-[var(--warm-dark)] truncate">
-                    {tenantName} · {dateLabel}
+              // 행 표면은 --cream 이다. 종전 --canvas 는 §03 이 정한 **페이지 배경** 토큰이라
+              // 그 위에서는 배지·보조줄 대비가 통째로 내려앉았다(라이트 [현재] 4.16 · 보조줄 4.11 로
+              // 둘 다 AA 미달). 형제 화면(/contracts)과 같은 모달 안 형제 칸들이 이미 --cream 이다.
+              // 액션을 모바일에서 아래 줄로 내리는 것도 형제 정본을 따른다 — 한 줄을 고집하다
+              // 이름 칸이 100px 대로 눌린 신고가 이미 있었다(71753b36, ContractsClient:301).
+              <li key={f.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)]">
+                <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
+                  {/* 어휘는 §용어 정본을 따른다(docs/document-screens-spec.md) — '서명 / 스캔' 은 사전에 없는 말이었다. */}
+                  <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
+                    {f.source === 'GENERATED' ? '앱 발급본' : '스캔본'}
                   </span>
-                  {/* 계약번호가 곧 이 발급본의 이름이다. 눌러 발급 기록을 연다(§30 행 액션 4개는 그대로).
-                      번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
-                      2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
-                  {needsName && (f.contractNo ? (
-                    <button type="button" onClick={() => setDetailId(f.id)}
-                      className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
-                      계약번호 {f.contractNo}
-                    </button>
-                  ) : (
-                    <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{f.fileName}</p>
-                  ))}
+                  {/* 지위 배지 — §11 트라이어드(-bg + -fg + inset ring) + pill 반경.
+                      종전 coral 10% + ring 없음은 다크에서 3.03:1 이었다(--coral 은 다크 재정의가 없다). */}
+                  {/* 배지를 띄울지는 표시 정책이다 — 1부뿐이면 비교 대상이 없어 세우지 않는다.
+                      판정 자체(currentIds)는 부수를 안 본다. 서류 보내기가 1부짜리 계약의 대표도 물어보기 때문이다. */}
+                  {needsName && currentIds.has(f.id) && (
+                    <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                  )}
+                  <div className="flex-1 min-w-0 basis-full sm:basis-auto">
+                    <span className="block text-xs text-[var(--warm-dark)] truncate">
+                      {tenantName} · {dateLabel}
+                    </span>
+                    {/* 계약번호가 곧 이 발급본의 이름이다. 눌러 발급 기록을 연다(§30 행 액션 4개는 그대로).
+                        번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
+                        2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
+                    {(needsName || purposeLabel(f)) && (
+                      <p className="mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
+                        {f.contractNo ? (
+                          <button type="button" onClick={() => setDetailId(f.id)}
+                            className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
+                            계약번호 {f.contractNo}
+                          </button>
+                        ) : (
+                          <span className="max-w-full truncate">{f.fileName}</span>
+                        )}
+                        {/* 목적은 배지가 아니라 보조줄이다 — 배지 슬롯은 출처와 지위로 이미 둘이고,
+                            §11 상한이 2개다. 실계약은 아예 안 적는다(기본값이 대다수 행에 붙으면 소음). */}
+                        {purposeLabel(f) && <span className="shrink-0">· {purposeLabel(f)}</span>}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
-                <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
-                  className={btnClass('secondary', 'sm')} />
-                <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
-                  className="text-[var(--danger-fg)]">
-                  삭제
-                </Btn>
+                <div className="flex items-center gap-2 shrink-0">
+                  <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
+                  <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
+                    className={btnClass('secondary', 'sm')} />
+                  <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
+                    className="text-[var(--danger-fg)]">
+                    삭제
+                  </Btn>
+                </div>
               </li>
             )
           })}
         </ul>
+      )}
+      {/* 폐기한 계약서 — 접힘 칸(형제 정본: 같은 모달의 TenantWishRooms '더 보기'와 같은 문법).
+          지운 것이 아니라 접어 둔 것이라, 토스트가 사라진 뒤에도 적용취소가 여기 남는다(§16).
+          폐기본이 0부면 이 줄 자체를 안 그린다 — 지금 대부분의 계약이 그렇고 화면은 종전 그대로다. */}
+      {!loading && voidedFiles.length > 0 && (
+        <div className="pt-1">
+          {/* -my-2 min-h-[44px] 는 보이는 크기를 그대로 두고 히트만 넓히는 정본 수법(RowActionBtn). */}
+          <button type="button" onClick={() => setShowVoided(v => !v)}
+            className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+            {showVoided ? '폐기한 계약서 숨기기' : `폐기한 계약서 ${voidedFiles.length}부 보기`}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {showVoided && (
+            <>
+              {/* 주어는 '이 계약서'다. '이 계약'이라고 쓰면 계약 자체가 없어진 것으로 읽힌다 —
+                  입주자는 여전히 그 방에 살고 이용료를 낸다(계약 실무 검토 2026-08-20). */}
+              <p className="mt-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
+                폐기한 계약서는 계약 문서로서 효력이 없습니다. 발급 기록과 원본 파일은 증거로 그대로 보관되며, 이미 밖으로 나간 종이가 있으면 회수하거나 정정본을 다시 전달해 주세요.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {voidedFiles.map(f => {
+                  const dt = new Date(f.signedAt)
+                  const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
+                  return (
+                    <li key={f.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)] opacity-55">
+                      <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
+                        {/* 지위 배지는 슬롯 하나의 배타값이다 — 폐기된 종이는 '현재' 도 '구버전' 도 아니다.
+                            danger 트라이어드를 쓰는 것은 §04 의 무효 계열이고, 회색 계열과 색으로 갈린다. */}
+                        <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">폐기됨</span>
+                        <div className="flex-1 min-w-0 basis-full sm:basis-auto">
+                          <span className="block text-xs text-[var(--warm-dark)] truncate line-through">
+                            {tenantName} · {dateLabel}
+                          </span>
+                          {f.contractNo ? (
+                            <button type="button" onClick={() => setDetailId(f.id)}
+                              className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                              계약번호 {f.contractNo}
+                            </button>
+                          ) : (
+                            <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{f.fileName}</p>
+                          )}
+                        </div>
+                      </div>
+                      {/* 보내기는 두지 않는다 — 효력 없는 종이를 내보내는 길을 열어두면 안 된다.
+                          열람과 파일 정리는 남긴다(§30 행 액션 상한 안이다). */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
+                        <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
+                          className="text-[var(--danger-fg)]">
+                          삭제
+                        </Btn>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+              {voidedLeaseIds.map(id => (
+                // 히트영역만 44px 로 넓힌다 — 보이는 크기는 그대로 두는 정본 수법(RowActionBtn).
+                <button key={id} type="button" onClick={() => handleRestoreVersion(id)} disabled={restoring}
+                  className="mt-2 -my-1 min-h-[44px] inline-flex items-center text-xs font-medium text-[var(--coral)] disabled:opacity-60">
+                  {restoring ? '되돌리는 중…' : '폐기 적용취소'}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
       )}
       {detailId && <IssuedContractSheet fileId={detailId} onClose={() => setDetailId(null)} />}
     </div>
