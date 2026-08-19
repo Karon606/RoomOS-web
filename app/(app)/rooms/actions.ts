@@ -1615,7 +1615,8 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   const targetMonth = lease.moveInDate
     ? `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
     : `${kst.year}-${String(kst.month).padStart(2, '0')}`
-  const payDate = opts?.payDate ? new Date(opts.payDate) : new Date(kst.year, kst.month - 1, kst.day)
+  // 기본 결제일 = 오늘(KST) — 로컬 자정 Date 는 @db.Date 쓰기에서 KST 런타임 시 하루 앞으로 박힌다(2026-08-19 전역 정정과 같은 클래스)
+  const payDate = opts?.payDate ? new Date(opts.payDate) : ymdToDbDate(kstYmdStr())
 
   const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth, deletedAt: undefined } })
   await prisma.paymentRecord.create({
