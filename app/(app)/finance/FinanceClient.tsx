@@ -1824,7 +1824,7 @@ export default function FinanceClient({
   const [recGroupMode, setRecGroupMode] = useState(false)
   const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
   const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
   // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
@@ -1849,7 +1849,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, memo: '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1863,7 +1863,7 @@ export default function FinanceClient({
   }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1879,7 +1879,6 @@ export default function FinanceClient({
       isVariable: recMgmtForm.isVariable,
       alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
       activeSince: recMgmtForm.activeSince || undefined,
-      priorYearAmount: recMgmtForm.priorYearAmount ? Number(recMgmtForm.priorYearAmount.replace(/[^0-9]/g, '')) || undefined : undefined,
       memo: recMgmtForm.memo || undefined,
     }
     startRecMgmtTransition(async () => {
@@ -4516,17 +4515,10 @@ export default function FinanceClient({
                     <input type="checkbox" checked={recMgmtForm.isVariable} onChange={e => setRecMgmtForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
                     <div>
                       <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">전기·수도 등 매달 달라지는 항목</p>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">전기·수도 등 매달 달라지는 항목. 지난 기록으로 추정액을 계산합니다.</p>
                     </div>
                   </label>
                 </div>
-                {recMgmtForm.isVariable && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">전년동월 실적 (선택)</label>
-                    <MoneyInput value={Number(recMgmtForm.priorYearAmount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, priorYearAmount: v > 0 ? String(v) : '' }))} placeholder="0원" />
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">작년 같은 달 실제 납부액. 최근 3개월 평균과 함께 예상치 계산에 반영됩니다.</p>
-                  </div>
-                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모 (선택)</label>
                   <input type="text" value={recMgmtForm.memo} onChange={e => setRecMgmtForm(p => ({ ...p, memo: e.target.value }))}
