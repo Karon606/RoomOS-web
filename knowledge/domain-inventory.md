@@ -127,6 +127,18 @@
 
 **같은 날 경계는 입력 시각으로 가른다.** 델타가 점검보다 뒤인가의 정본 술어는 `date > 점검일 || (date == 점검일 && createdAt > 점검 createdAt)` 이다(`overview.sumAdditions`, `lib/stockLedger.deltaAfterCheck`). `getStockAsOf` 만 `date > baseDate` 라 **같은 날 점검보다 늦게 입력된 입수가 프리필에서 통째로 빠졌고**, 그 프리필을 저장하면 그 수량이 새 기준선에서 영구히 사라졌다(2026-08-19 수정, 정본 함수 호출로 대체). 폐기 등록의 잔량 초과 게이트도 같은 함수를 쓴다.
 
-**아직 안 닫은 같은 클래스(접점)**: `updateStockCheck` 의 점검 날짜 이동, `updateExpenseFromInventory` 의 수령일(`receivedAt`) 이동, 폐기(`StockDisposal`) 수정 경로 부재, `assets/actions.setAssetReceived` 의 `receivedAt` 직접 쓰기(자동 점검 동기화 없음).
+**아직 안 닫은 같은 클래스(접점)**: `updateStockCheck` 의 점검 날짜 이동, `updateExpenseFromInventory` 의 수령일(`receivedAt`) 이동(값 있는 이동 — 비움은 아래 취소 정본으로 봉합됨), 폐기(`StockDisposal`) 수정 경로 부재, `assets/actions.setAssetReceived` 의 `receivedAt` 직접 쓰기(자동 점검 동기화 없음).
 
-관련 자동메모리: [[fix-the-class-not-the-case]] · [[trace-full-dataflow]] · [[no-data-patching]]
+## 지출(구매 수령) 델타의 전파 짝 (2026-08-19, 점보롤 백로그 4건)
+
+**구매 델타의 반영 경계는 무상 입수와 다르다** — `receivedAt(실시각) > 점검.createdAt` 이면 미반영(`sumPurchases` 의 gt, 정본 `lib/stockLedger.purchaseAfterCheck`). 무상 입수는 (date, createdAt) 축. 조정 계획(`planStockShift`)은 두 델타를 모두 받고 순회·보정 정지 축은 (date, createdAt) 하나다(백필 점검의 축 차이는 테스트 박제).
+- **적용층 공용 모듈** `app/(app)/inventory/ledgerShift.ts`(비액션·서버 전용) — `applyShiftRows`·`revertShiftRows`·`resolveItemHubLocationId`·`matchedTrackedItemForExpense`(qtyUnit 느슨 매칭)·`convertedPurchaseQty`(useSpec 게이트, 읽기 정본과 동일 — confirmReceipt 의 수령량 산출과는 specUnit 미설정 품목에서 다를 수 있고 조정의 기준은 읽기 쪽). 'use server' 파일은 async 액션만 내보낼 수 있어 분리했다.
+- **지출 수정(updateExpense)**: 수량·규격 정정은 미리보기(`previewExpenseStockShift`) 후 3지선다(함께 조정/이 기록만/취소, `lib/stockShiftAsk` 공용 정본) — adjustStock 게이트로만 적용, 자동 점검 메모(`[수령 자동] +N`)도 재생성, 조정만 되돌리는 `undoExpenseStockShift`. **정체성 이탈은 차단**: 다른 기존 카드로 이동(라벨 dup·카테고리 이동 대상에 카드 존재)·qtyUnit 변경으로 느슨 매칭 절단·수령완료 추적 구매의 다품목 재분할 — 수령 취소 후 변경이 정본 경로. 진짜 이름변경(카드째 개명)과 카드 없는 카테고리 이동(저장 후 동기화 흐름)은 현행 유지.
+- **수령 취소 정본 `cancelReceiptCore`** — `undoConfirmReceipt` 와 `updateExpenseFromInventory` 의 수령일 비움이 같은 가드를 탄다(종전 비움 경로는 실측 머지·이후 점검 가드를 통째로 우회하는 뒷문). adjustFollowing 으로 이후 점검에서 수령분을 함께 빼며 취소(자동 점검은 계획에서 제외하고 삭제), `undoCancelReceipt` 가 자동 점검을 **입력 시각(createdAt)까지** 복원 — 안 살리면 구매 반영 경계가 조용히 달라진다. 실측 머지 가드(restockedQty)는 계속 하드 차단. **자동 점검 없는 구식 수령(실측 288/322건)의 무가드 취소도 봉합** — 반영 점검이 있으면 조정 없인 거부(재수령 이중 가산 방지).
+- **삭제(deleteExpense)**: 자동 점검 있으면 종전 차단 유지(수령 취소가 정본). 없는 구식 수령은 3지선다 후 adjustStock 로 함께 조정 삭제, undo 에 조정 스냅샷 동봉. **재고 제외/재포함도 같은 물음**(제외=델타 제거, 포함=대칭 복원 — 계획 대칭성이 undo 를 대신한다).
+- **시작 재고 정식 자리**: 품목 추가 모달의 시작 수량(선택) — 오늘(KST) 날짜 `[시작 재고]` 점검을 같은 트랜잭션 생성, **isReconcile 앵커**(뒤늦은 과거 입수 등록의 전파가 여기서 멈추고 이전 구간이 소모로 안 잡힘). 0 도 유효(재고 없이 시작 명시). 부활(숨김 해제)도 같은 앵커.
+- **같은 날 중복 앵커는 안내만**(createStockCheck sameDayNotice, 자동 삭제 절대 금지) — 수령 자동 점검·보정·보충 마커 실린 앵커는 사건 기록이라 중복으로 안 친다(점보롤 앵커 오판 삭제 교훈). locationPatch(병합 저장)는 설계된 흐름이라 제외.
+- **실측 > 장부 신호**: `overbookExcess`(lib/stockLedger, 오차 0.001) — CheckForm 이 입력 중 경고 박스로 '입수 기록 누락 의심' 안내(수령 대기 건수 부기). 첫 점검(시작 선언)·미입력 상태 제외. 자동 수정 없음.
+- 감지망: check-stock-ledger-parity 에 지출 게이트 축 5종(preview 존재·updateExpense/deleteExpense adjustStock·cancelReceiptCore 게이트+머지 가드·수령일 비움의 정본 경유·클라 물음 연결).
+
+관련 자동메모리: [[fix-the-class-not-the-case]] · [[trace-full-dataflow]] · [[no-data-patching]] · [[rollback-always-required]]
