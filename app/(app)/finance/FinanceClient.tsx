@@ -54,7 +54,8 @@ import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { MergeSheet } from '@/components/ui/inventory/MergeSheet'
@@ -1826,6 +1827,9 @@ export default function FinanceClient({
   const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
+  // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
+  // (실기 신고 2026-08-19 "딜레이가 생겨서 작동 안 하는 줄 알았어"). 선례 RequestsClient:86.
+  const [recMgmtBusyId, setRecMgmtBusyId] = useState<string | null>(null)
 
   const openRecMgmt = async () => {
     setShowRecMgmt(true)
@@ -1833,9 +1837,12 @@ export default function FinanceClient({
     setEditingRecMgmt(null)
     setRecMgmtError('')
     setRecMgmtLoading(true)
-    const list = await getRecurringExpenses()
-    setRecMgmtList(list)
-    setRecMgmtLoading(false)
+    // 조회가 던지면 Loading 에서 영영 멈춘다(§27.2 fire-and-forget 은 catch 필수).
+    try {
+      setRecMgmtList(await getRecurringExpenses())
+    } catch (e) {
+      pushToast('error', (e as Error).message ?? '고정 지출을 불러오지 못했습니다.')
+    } finally { setRecMgmtLoading(false) }
   }
   const openNewRecMgmt = () => {
     setEditingRecMgmt(null)
@@ -1846,6 +1853,14 @@ export default function FinanceClient({
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
+  // 편집 폼은 목록 **위**에 열린다. 모달 본문이 자체 스크롤러(Modal.tsx:256)라 아래쪽 행에서 [수정]을
+  // 눌러도 폼이 스크롤 밖 위쪽에 생겨 화면이 안 바뀐다 — 버튼이 죽은 것으로 보인다(실기 신고 2026-08-19).
+  // 재고 프리셋 패널(위 340행)·알림 딥링크(lib/useFocusSection:26)와 같은 문법으로 폼 자리로 맞춘다.
+  const recMgmtFormRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showRecMgmtForm) return
+    requestAnimationFrame(() => recMgmtFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
     setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
@@ -1882,21 +1897,31 @@ export default function FinanceClient({
       router.refresh()
     })
   }
+  // 종전에는 두 핸들러 모두 결과를 버려서, 실패해도 목록만 다시 그려지고 아무 말이 없었다
+  // (§27.2 화면 무반응 금지). withSave 로 감싸 §17 상단 진행 바 + §15 성공·실패 토스트를 함께 얹는다.
   const handleDeleteRecMgmt = async (id: string, title: string) => {
     if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
+    setRecMgmtBusyId(id)
     startRecMgmtTransition(async () => {
-      await deleteRecurringExpense(id)
-      const list = await getRecurringExpenses()
-      setRecMgmtList(list)
-      router.refresh()
+      try {
+        const res = await withSave(() => deleteRecurringExpense(id), { success: '고정 지출 삭제됨' })
+        if (!res.ok) return
+        setRecMgmtList(await getRecurringExpenses())
+        router.refresh()
+      } finally { setRecMgmtBusyId(null) }
     })
   }
   const handleToggleRecMgmt = (r: RecurringExpenseRow) => {
+    if (recMgmtBusyId) return
+    const next = !r.isActive
+    setRecMgmtBusyId(r.id)
     startRecMgmtTransition(async () => {
-      await updateRecurringExpense(r.id, { isActive: !r.isActive })
-      const list = await getRecurringExpenses()
-      setRecMgmtList(list)
-      router.refresh()
+      try {
+        const res = await withSave(() => updateRecurringExpense(r.id, { isActive: next }), { success: next ? '활성화됨' : '비활성 처리됨' })
+        if (!res.ok) return
+        setRecMgmtList(await getRecurringExpenses())
+        router.refresh()
+      } finally { setRecMgmtBusyId(null) }
     })
   }
   const toggleGroupSel = (id: string) => {
@@ -4398,8 +4423,9 @@ export default function FinanceClient({
           <div className="space-y-4" onInput={() => setRecMgmtDirty(true)} onChange={() => setRecMgmtDirty(true)}>
             {/* 추가/수정 폼 */}
             {showRecMgmtForm ? (
-              <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRecMgmt ? '고정 지출 수정' : '고정 지출 추가'}</p>
+              <div ref={recMgmtFormRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                {/* 어느 항목을 여는지 제목이 말한다 (§14 "제목에 대상 이름 명시") */}
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRecMgmt ? `'${editingRecMgmt.title}' 고정 지출 수정` : '고정 지출 추가'}</p>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
                   <input type="text" value={recMgmtForm.title} onChange={e => setRecMgmtForm(p => ({ ...p, title: e.target.value }))}
@@ -4555,24 +4581,30 @@ export default function FinanceClient({
                 {recMgmtList.map(r => {
                   const isParent = r.items && r.items.length > 0
                   const selectable = recGroupMode && r.isActive
+                  // 편집 중인 행 표식 (§22 .sel) — 폼이 목록 위에 있어 이것 없이는 어느 항목이 열렸는지 모른다.
+                  const editing = showRecMgmtForm && editingRecMgmt?.id === r.id
+                  // 좁은 폭에서는 액션 줄을 아래로 내린다 (§20) — 환경설정 카드와 같은 행 문법.
+                  // 종전에는 액션 블록이 shrink-0 이라 폭이 모자라면 품명이 먼저 0 으로 눌렸다.
                   return (
                   <div key={r.id}
                     onClick={selectable ? () => toggleGroupSel(r.id) : undefined}
-                    className={`flex items-center gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) || editing ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    <div className="flex items-start gap-3 min-w-0 sm:flex-1">
                     {recGroupMode && (
                       <input type="checkbox" checked={recGroupSel.has(r.id)} disabled={!r.isActive}
                         onChange={() => toggleGroupSel(r.id)} onClick={e => e.stopPropagation()}
-                        className="w-4 h-4 accent-[var(--coral)] shrink-0" />
+                        className="w-4 h-4 mt-0.5 accent-[var(--coral)] shrink-0" />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                        {isParent && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
+                    <div className="min-w-0 flex-1">
+                      {/* flex-wrap + break-keep — 품명이 배지에 밀리지 않고 먼저 자리를 가진다. */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
+                        {isParent && <Badge tone="pale-coral">묶음 {r.items.length}</Badge>}
                         {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                        {!r.isActive && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
+                        {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                         {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}
                       </div>
-                      <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+                      <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
                         매월 {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
                         {r.payMethod && <> · {r.payMethod}</>}
                         {r.financialAccountName && <> ({r.financialAccountName})</>}
@@ -4583,16 +4615,16 @@ export default function FinanceClient({
                         </p>
                       )}
                     </div>
+                    </div>
                     {!recGroupMode && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleToggleRecMgmt(r)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                    /* 행 액션은 RowActionBtn 정본 (§10 raw button 금지 · 히트영역 44px).
+                       gap-y-4 는 두 줄로 접힐 때 정본의 -my-2 히트영역이 겹치지 않는 최소 세로 간격이다. */
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0 sm:justify-end">
+                      <RowActionBtn disabled={recMgmtBusyId === r.id} onClick={() => handleToggleRecMgmt(r)}>
                         {r.isActive ? '비활성' : '활성화'}
-                      </button>
-                      <button onClick={() => openEditRecMgmt(r)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
-                      <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
+                      </RowActionBtn>
+                      <RowActionBtn disabled={recMgmtBusyId === r.id} onClick={() => openEditRecMgmt(r)}>수정</RowActionBtn>
+                      <RowActionBtn tone="danger" disabled={recMgmtBusyId === r.id} onClick={() => handleDeleteRecMgmt(r.id, r.title)}>삭제</RowActionBtn>
                     </div>
                     )}
                   </div>

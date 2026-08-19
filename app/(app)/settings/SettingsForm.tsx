@@ -5,6 +5,7 @@ import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
@@ -599,6 +600,10 @@ export default function SettingsForm({
   const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
+  // 행별 처리 중 잠금(전역 잠금 방지). 선례 RequestsClient:86 · admin UsersClient:100.
+  // 토글·삭제는 서버 왕복 + router.refresh 라 눈에 보이는 딜레이가 있는데 표시가 없어
+  // 운영자가 "작동 안 하는 줄 알았다"고 신고했다(2026-08-19).
+  const [recBusyId, setRecBusyId] = useState<string | null>(null)
   // #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목. 있으면 부모 금액·변동은 합산 파생.
   const [recItems, setRecItems] = useState<{ name: string; amount: string; isVariable: boolean }[]>([])
   const recValidItems = recItems.filter(it => it.name.trim())
@@ -629,6 +634,16 @@ export default function SettingsForm({
   }
 
   useEffect(() => { getRecurringExpenses().then(setRecurringList).catch(console.error) }, [])
+
+  // 편집 폼은 목록 **위**에 있다. 목록 아래쪽 행에서 [수정]을 누르면 900px 넘는 폼이 스크롤 위치보다
+  // 위에 삽입되는데, 스크롤 앵커링이 보던 행을 못박아 화면 픽셀이 하나도 안 바뀐다 — 운영자에게는
+  // 버튼이 죽은 것으로 보인다(실기 신고 2026-08-19, 헤드리스 실측: 폼 top −1022 / 뷰포트 상단 56).
+  // 재고 프리셋 패널이 같은 이유로 봉합된 자리와 같은 문법이다(FinanceClient:340, lib/useFocusSection:26).
+  const recFormRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showRecForm) return
+    requestAnimationFrame(() => recFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [showRecForm, editingRec])
 
   const openNewRec = () => {
     setEditingRec(null)
@@ -691,24 +706,34 @@ export default function SettingsForm({
   }
   const handleDeleteRec = async (id: string, title: string) => {
     if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
+    setRecBusyId(id)
+    const release = trackSave()   // §17 갱신 표시 = 상단 진행 바. 같은 파일의 형제 핸들러와 같은 문법.
     try {
       const res = await deleteRecurringExpense(id)
       if (!res.ok) { showToast(`삭제 실패: ${res.error}`); return }
       setRecurringList(prev => prev.filter(r => r.id !== id))
+      showToast('고정 지출 삭제됨')
       router.refresh()
     } catch (e) {
       showToast(`삭제 실패: ${(e as Error).message}`)
-    }
+    } finally { release(); setRecBusyId(null) }
   }
   const handleToggleRec = async (r: RecurringExpenseRow) => {
+    if (recBusyId) return
+    // 보낼 값을 먼저 확정한다. 종전에는 서버에 !r.isActive 를 보내면서 로컬은 !x.isActive 로 다시
+    // 뒤집어, 연타하면 서버는 한 번만 바뀌고 화면은 두 번 뒤집혀 둘이 갈렸다.
+    const next = !r.isActive
+    setRecBusyId(r.id)
+    const release = trackSave()
     try {
-      const res = await updateRecurringExpense(r.id, { isActive: !r.isActive })
+      const res = await updateRecurringExpense(r.id, { isActive: next })
       if (!res.ok) { showToast(`변경 실패: ${res.error}`); return }
-      setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: !x.isActive } : x))
+      setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: next } : x))
+      showToast(next ? '활성화됨' : '비활성 처리됨')
       router.refresh()
     } catch (e) {
       showToast(`변경 실패: ${(e as Error).message}`)
-    }
+    } finally { release(); setRecBusyId(null) }
   }
 
   return (
@@ -1195,8 +1220,10 @@ export default function SettingsForm({
 
             {/* 등록/편집 폼 */}
             {showRecForm && (
-              <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRec ? '고정 지출 수정' : '고정 지출 추가'}</p>
+              <div ref={recFormRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                {/* 어느 항목을 여는지 제목이 말한다 (§14 "제목에 대상 이름 명시") — 폼이 목록에서 떨어져
+                    있어 이름이 없으면 무엇을 고치는 중인지 화면에 남는 단서가 없다. */}
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRec ? `'${editingRec.title}' 고정 지출 수정` : '고정 지출 추가'}</p>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
                   <input type="text" value={recForm.title} onChange={e => setRecForm(p => ({ ...p, title: e.target.value }))}
@@ -1352,17 +1379,25 @@ export default function SettingsForm({
               <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
             )}
             <div className="space-y-2">
-              {recurringList.map(r => (
-                <div key={r.id} className={`flex items-center gap-3 rounded-sm px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}
-                  style={{ border: '1px solid var(--warm-border)' }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                      {r.items.length > 0 && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/10 text-[var(--coral)]">묶음 {r.items.length}</span>}
+              {recurringList.map(r => {
+                // 편집 중인 행 표식 (§22 .sel) — 폼이 목록 위에 있어 이것 없이는 어느 항목이 열렸는지 모른다.
+                const editing = showRecForm && editingRec?.id === r.id
+                // 좁은 폭에서는 액션 줄을 아래로 내린다 (§20). 종전에는 액션 블록이 shrink-0 이라
+                // 폭이 모자라면 품명이 먼저 0 으로 눌렸다 — 320px 실측에서 '전기요금'이 18.2/48px,
+                // '임대관리비'는 0px 이었다(실기 신고 2026-08-19 "'전...'으로밖에 안 보여").
+                return (
+                <div key={r.id} className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 rounded-sm px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''}`}
+                  style={{ border: `1px solid ${editing ? 'var(--coral)' : 'var(--warm-border)'}` }}>
+                  <div className="min-w-0 sm:flex-1">
+                    {/* flex-wrap + break-keep — 품명이 식별의 핵심이라 배지에 밀리지 않고 먼저 자리를
+                        가진다. 말줄임은 최후순위라 truncate 를 걷었다. */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
+                      {r.items.length > 0 && <Badge tone="pale-coral">묶음 {r.items.length}</Badge>}
                       {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                      {!r.isActive && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
+                      {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                     </div>
-                    <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+                    <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
                       매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
                     {r.items.length > 0 && (
@@ -1371,29 +1406,33 @@ export default function SettingsForm({
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => handleToggleRec(r)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                  {/* 행 액션은 RowActionBtn 정본 — raw 버튼은 히트영역이 32px 이라 §09·§10 의 44px 에
+                      못 미쳐 옆 버튼이 눌린다. gap-y-4 는 두 줄로 접힐 때 정본이 먹는 -my-2 히트영역
+                      (마진박스 28px · 보더박스 44px)이 위아래로 겹치지 않게 하는 최소값이다. */}
+                  <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0 sm:justify-end">
+                    <RowActionBtn disabled={recBusyId === r.id} onClick={() => handleToggleRec(r)}>
                       {r.isActive ? '비활성' : '활성화'}
-                    </button>
-                    <button onClick={() => openEditRec(r)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                    </RowActionBtn>
+                    <RowActionBtn disabled={recBusyId === r.id} onClick={() => openEditRec(r)}>수정</RowActionBtn>
                     {r.isGroup && (
-                      <button onClick={async () => {
+                      <RowActionBtn disabled={recBusyId === r.id} onClick={async () => {
                         if (!(await confirmDialog({ title: `'${r.title}' 묶기를 해제할까요?`, message: '묶기 전의 원본 고정지출들이 다시 활성화되고 이 묶음은 삭제됩니다. 묶음으로 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '묶기 해제' }))) return
-                        const res = await ungroupRecurringExpense(r.id)
-                        if (!res.ok) { showToast(`해제 실패: ${res.error}`); return }
-                        pushToast('success', `묶기를 해제했습니다 — 원본 ${res.restored}건 복구`)
-                        setRecurringList(prev => prev.filter(x => x.id !== r.id))
-                        router.refresh()
-                      }}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">묶기 해제</button>
+                        setRecBusyId(r.id)
+                        const release = trackSave()
+                        try {
+                          const res = await ungroupRecurringExpense(r.id)
+                          if (!res.ok) { showToast(`해제 실패: ${res.error}`); return }
+                          pushToast('success', `묶기를 해제했습니다 · 원본 ${res.restored}건 복구`)
+                          setRecurringList(prev => prev.filter(x => x.id !== r.id))
+                          router.refresh()
+                        } finally { release(); setRecBusyId(null) }
+                      }}>묶기 해제</RowActionBtn>
                     )}
-                    <button onClick={() => handleDeleteRec(r.id, r.title)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
+                    <RowActionBtn tone="danger" disabled={recBusyId === r.id} onClick={() => handleDeleteRec(r.id, r.title)}>삭제</RowActionBtn>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
