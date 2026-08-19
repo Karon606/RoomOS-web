@@ -25,6 +25,8 @@ function block(src: string, startNeedle: string, endNeedle: string, what: string
 function sourceGuards() {
   const ledger = readFileSync('lib/stockLedger.ts', 'utf8')
   const actions = readFileSync('app/(app)/inventory/actions.ts', 'utf8')
+  // 적용층 공용 모듈 — 무상 입수(inventory)와 지출 전파(finance)가 같은 적용·되돌리기를 쓴다.
+  const shiftDb = readFileSync('app/(app)/inventory/ledgerShift.ts', 'utf8')
   const client = readFileSync('app/(app)/inventory/InventoryClient.tsx', 'utf8')
 
   // ── 계산 정본 ──────────────────────────────────────────────────────────
@@ -57,12 +59,16 @@ function sourceGuards() {
     violations.push('lib/stockLedger 에 경계 술어 정본(deltaAfterCheck)이 없다')
   }
   // 적용부가 그 정본을 실제로 부르는가 — 개명·자체 구현으로 갈라지면 여기서 걸린다.
-  if (!/planStockShift\(/.test(actions) || !/from '@\/lib\/stockLedger'/.test(actions)) {
-    violations.push('재고 액션이 조정 계산 정본(lib/stockLedger planStockShift)을 쓰지 않는다')
+  if (!/planStockShift\(/.test(shiftDb) || !/from '@\/lib\/stockLedger'/.test(shiftDb)) {
+    violations.push('원장 조정 공용층이 계산 정본(lib/stockLedger planStockShift)을 쓰지 않는다')
+  }
+  // 액션이 공용층을 안 거치고 자체 구현으로 갈라지는 것도 잡는다.
+  if (!/from '\.\/ledgerShift'/.test(actions)) {
+    violations.push('재고 액션이 조정 공용층(ledgerShift)을 쓰지 않는다')
   }
 
   // ── 적용부 ────────────────────────────────────────────────────────────
-  const apply = block(actions, 'async function applyShiftRows', '\n}\n', 'applyShiftRows')
+  const apply = block(shiftDb, 'async function applyShiftRows', '\n}\n', 'applyShiftRows')
   if (apply) {
     // 쓰기 계약 — 링크 없이 StockCheckLocation 행을 만들지 않는다. 만들면 그 재고가 화면에서 통째로 사라진다.
     const linkAt = apply.indexOf('trackedItemLocation.create')
@@ -82,7 +88,7 @@ function sourceGuards() {
   // 되돌리기 페이로드는 클라이언트발이다. 품목 스코프 검증이 빠지면 남의 점검을 덮어쓸 수 있다.
   // ⚠️ 함수 어딘가에 trackedItemId 가 있는지로 보면 안 된다 — 링크 정리 쪽에도 같은 문자열이 있어
   //    소유 검증만 지워도 통과했다(역주입 실측). **소유 조회 그 자리**를 본다.
-  const revert = block(actions, 'async function revertShiftRows(', '\n}\n', 'revertShiftRows')
+  const revert = block(shiftDb, 'async function revertShiftRows(', '\n}\n', 'revertShiftRows')
   if (revert && !/id:\s*\{\s*in:\s*ids\s*\}\s*,\s*trackedItemId:\s*undo\.trackedItemId/.test(revert)) {
     violations.push('revertShiftRows 가 되돌릴 점검을 품목 스코프로 검증하지 않는다')
   }
