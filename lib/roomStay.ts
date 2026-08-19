@@ -5,6 +5,8 @@
 
 import type { PrismaDb } from '@/lib/prisma'
 import { kstYmdStr } from '@/lib/kstDate'
+import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
+import { isSameDayTurnover, occupancyOverlaps } from '@/lib/roomAssignment'
 
 // 트랜잭션 클라이언트 — lib/prisma 익스텐션이 적용된 타입이라야 tx 안에서도 규칙이 같다(syncShortStayCharge 관례).
 export type RoomStayDb = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
@@ -136,6 +138,60 @@ async function syncMoveInStart(
   })
   if (earlier) return
   await db.roomStay.update({ where: { id: open.id }, data: { startDate: nextMoveIn } })
+}
+
+/**
+ * 이사일 검증 — 이 하루가 옛 구간의 끝이자 새 구간의 시작이 된다(recordRoomChange 가 같은 값을
+ * 두 칸에 쓴다). 그래서 틀린 날짜 하나가 곧바로 사고가 된다. 이른 날짜는 시작보다 끝이 앞선
+ * 역전 구간을 만들고, 늦은 날짜는 옛 방에 이미 들어온 다음 사람과 없던 겹침을 만든다. 둘 다
+ * 캘린더에서 빨간 충돌 줄로 올라오고, 그때 운영자는 방금 자기가 만든 것인 줄 모른다.
+ *
+ * 정본을 여기 두는 이유는 recordRoomChange 가 at 을 아무 검증 없이 그대로 쓰기 때문이다.
+ * 호출부가 각자 검사하면 검사를 안 하는 호출부가 반드시 생긴다.
+ *
+ * 어긋나면 사람이 읽을 문장을, 괜찮으면 null 을 돌려준다.
+ */
+export async function validateMoveDate(
+  db: RoomStayDb,
+  leaseTermId: string,
+  p: {
+    at: string                  // 'YYYY-MM-DD'
+    fromRoomId: string
+    today: string               // KST 오늘
+    /** 이 저장으로 확정될 값 — DB 의 현재 값이 아니다. 호실과 날짜를 한 번에 바꾸는 저장이 있다. */
+    moveInDate: string | null
+    moveOutDate: string | null
+  },
+): Promise<string | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.at)) return '이사일 형식이 올바르지 않습니다.'
+  // 미래 이사는 못 받는다 — RoomStay 는 실제 점유 이력이고, 감지망(check-room-stay-drift ⑥)이
+  // 미래에 시작하는 열린 구간을 사고로 부른다. 앞으로의 이사는 예약이 받는 자리다.
+  if (p.at > p.today) return '이사일은 오늘보다 뒤로 잡을 수 없습니다.'
+
+  // 옛 구간의 시작보다 이를 수 없다. 열린 구간이 없으면(드리프트) 이 저장으로 확정될 입주일로 본다.
+  const open = await db.roomStay.findFirst({
+    where: { leaseTermId, endDate: null },
+    orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+    select: { startDate: true },
+  })
+  const start = open?.startDate ? ymdOf(open.startDate) : p.moveInDate
+  if (start && p.at < start) return `이사일은 지금 방에 들어온 날(${start})보다 이를 수 없습니다.`
+  if (p.moveOutDate && p.at > p.moveOutDate) return `이사일은 퇴실일(${p.moveOutDate})보다 뒤일 수 없습니다.`
+
+  // 옛 방의 다음 사람 — 이사일을 늦게 잡으면 이미 들어온 사람과 겹친다. 호실 선택은 '지금'
+  // 빈 방만 고르게 하므로 새 방 쪽은 이미 막혀 있지만, 옛 방을 보는 가드는 어디에도 없었다.
+  const others = await db.leaseTerm.findMany({
+    where: { roomId: p.fromRoomId, id: { not: leaseTermId }, status: { in: OCCUPYING_STATUSES } },
+    select: { moveInDate: true, moveOutDate: true, expectedMoveOut: true, tenant: { select: { name: true } } },
+  })
+  for (const o of others) {
+    const inYmd = o.moveInDate ? ymdOf(o.moveInDate) : null
+    const outYmd = o.moveOutDate ? ymdOf(o.moveOutDate) : o.expectedMoveOut ? ymdOf(o.expectedMoveOut) : null
+    if (!occupancyOverlaps({ moveIn: start, moveOut: p.at }, { moveIn: inYmd, moveOut: outYmd })) continue
+    if (isSameDayTurnover({ moveIn: start, moveOut: p.at }, { moveIn: inYmd, moveOut: outYmd })) continue
+    return `이사일을 ${p.at} 로 두면 ${o.tenant.name}님 체류와 겹칩니다. 실제로 옮긴 날을 확인해 주세요.`
+  }
+  return null
 }
 
 /** 퇴실 취소(종료 → 활성 복귀) — 가장 최근 구간을 다시 연다. 구간이 없으면 아무것도 하지 않는다. */

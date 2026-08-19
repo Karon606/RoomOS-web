@@ -42,7 +42,7 @@ import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } fro
 import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
-import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus } from '@/lib/roomStay'
+import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -835,6 +835,7 @@ export async function updateTenant(formData: FormData): Promise<
   const moveInDate         = formData.get('moveInDate') as string
   const expectedMoveOut    = formData.get('expectedMoveOut') as string | null   // null = 폼에 필드 없음(보존, tourDate/inquiryAt 관행)
   const actualMoveOut      = formData.get('actualMoveOut') as string | null     // 실제 퇴실일 — 퇴실 상태에서만 렌더(사후 정정 포함)
+  const moveDate           = formData.get('moveDate') as string | null          // 이사일 — 호실을 바꿀 때만 렌더. 거주 구간의 경계가 되는 날이다.
   const contactAlertDate   = formData.get('contactAlertDate') as string | null
   const paymentTiming      = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const payMethod          = formData.get('payMethod') as string
@@ -1183,6 +1184,23 @@ export async function updateTenant(formData: FormData): Promise<
     }
   }
 
+  // ── 이사일 ── 호실이 바뀌는 저장에서만 뜻이 있다. 이 하루가 옛 거주 구간의 끝이자 새 구간의
+  // 시작이 되고, 캘린더의 두 막대가 갈리는 자리다. 안 넘기면 종전대로 '저장을 누른 날'로 박힌다.
+  // 검증은 정본(lib/roomStay)이 한다 — 화면에만 있는 규칙은 규칙이 아니다.
+  let moveAt: Date | null = null
+  if (moveDate && prevRoomId && newRoomId && prevRoomId !== newRoomId && STAY_ELIGIBLE_STATUSES.includes(status)) {
+    const err = await validateMoveDate(prisma, leaseTermId, {
+      at: moveDate,
+      fromRoomId: prevRoomId,
+      today: kstYmdStr(),
+      // 이 저장으로 확정될 값으로 본다 — 호실과 날짜를 한 번에 바꾸는 저장이 있다.
+      moveInDate: moveInDate || null,
+      moveOutDate: (status === 'CHECKED_OUT' ? actualMoveOut : null) || newMoveOutIso,
+    })
+    if (err) return { ok: false, error: err }
+    moveAt = ymdToDbDate(moveDate)
+  }
+
   // 계약 수정 — 단기 동기화가 있으면 같은 트랜잭션에서 청구 락까지 함께 올린다(부분 반영 방지).
   await prisma.$transaction(async tx => {
     if (shortPlan) {
@@ -1265,6 +1283,8 @@ export async function updateTenant(formData: FormData): Promise<
     await syncRoomStayOnSave(tx, leaseTermId, {
       prevRoomId, nextRoomId: newRoomId ?? null,
       prevStatus, nextStatus: status,
+      // 폼이 받은 이사일 — 없으면 종전대로 오늘(KST). 이 값이 두 구간의 경계가 된다.
+      at: moveAt,
       // 입주일 사후 정정도 입주 구간에 전파 — 같은 트랜잭션이라 계약·이력이 함께 확정된다.
       prevMoveInDate: currentLease.moveInDate,
       nextMoveInDate: moveInDate ? new Date(moveInDate) : null,
