@@ -21,6 +21,7 @@ import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
+import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -270,18 +271,38 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
 // ── TrackedItem CRUD
 export async function createTrackedItem(data: {
   category: string; label: string; specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
+  // 시작 수량(선택) — 지금 갖고 있는 재고를 오늘 날짜의 첫 점검(절대값 앵커)으로 함께 기록한다.
+  // 정식 자리가 없어 운영자가 임의 점검으로 대신하던 관행(점보롤 사건 배경, 백로그 2번)의 승격.
+  // 0 도 유효(재고 없이 시작함을 명시). 미지정이면 종전과 동일(점검 없음, 잔량 미점검 상태).
+  startQty?: number | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!data.category || !data.label.trim()) return { ok: false, error: '카테고리와 품목명은 필수입니다.' }
+    const startQty = data.startQty ?? null
+    if (startQty != null && (!Number.isFinite(startQty) || startQty < 0)) {
+      return { ok: false, error: '시작 수량은 0 이상이어야 합니다.' }
+    }
+    // 시작 점검 데이터 — 날짜는 오늘(KST)의 @db.Date 표현(lib/kstDate 정본).
+    // isReconcile: 시작 선언은 실측 리셋과 같은 앵커다. 뒤늦게 과거 날짜 입수를 등록해도
+    // 이 앵커 이후 전파가 여기서 멈추고(planStockShift), 통계도 이 앞 구간을 소모로 잡지 않는다.
+    const startCheck = startQty != null
+      ? { date: ymdToDbDate(kstYmdStr()), remainingQty: startQty, memo: '[시작 재고]', isReconcile: true }
+      : null
 
     const existing = await prisma.trackedItem.findUnique({
       where: { propertyId_category_label: { propertyId, category: data.category, label: data.label.trim() } },
     })
     if (existing) {
       if (existing.isArchived) {
-        const r = await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+        // 숨김 해제 부활 — 시작 수량을 넣었으면 같은 앵커를 만든다("N 으로 다시 시작" 선언).
+        // 과거 이력이 있어도 isReconcile 앵커라 이전 구간을 소모로 잡지 않는다.
+        const r = await prisma.$transaction(async tx => {
+          const it = await tx.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+          if (startCheck) await tx.stockCheck.create({ data: { trackedItemId: it.id, ...startCheck } })
+          return it
+        })
         revalidatePath('/inventory')
         return { ok: true, id: r.id }
       }
@@ -290,16 +311,22 @@ export async function createTrackedItem(data: {
 
     // 폐기물 처리비는 기본 trackUnit='qty' (50L 봉투 30매를 1500L 아닌 30매로 트래킹)
     const defaultTrackUnit = defaultTrackUnitForCategory(data.category)
-    const r = await prisma.trackedItem.create({
-      data: {
-        propertyId,
-        category: data.category,
-        label: data.label.trim(),
-        specUnit: data.specUnit || null,
-        qtyUnit: data.qtyUnit || null,
-        memo: data.memo || null,
-        trackUnit: defaultTrackUnit,
-      },
+    const r = await prisma.$transaction(async tx => {
+      const it = await tx.trackedItem.create({
+        data: {
+          propertyId,
+          category: data.category,
+          label: data.label.trim(),
+          specUnit: data.specUnit || null,
+          qtyUnit: data.qtyUnit || null,
+          memo: data.memo || null,
+          trackUnit: defaultTrackUnit,
+        },
+      })
+      // 같은 트랜잭션 — 품목만 생기고 시작 점검이 빠진 반쪽 상태 방지. 위치 링크가 아직 없으므로
+      // 위치 내역 없는 단일 버킷 점검(정식 상태, 신고 408b4396 선례)으로 만든다.
+      if (startCheck) await tx.stockCheck.create({ data: { trackedItemId: it.id, ...startCheck } })
+      return it
     })
     revalidatePath('/inventory')
     return { ok: true, id: r.id }

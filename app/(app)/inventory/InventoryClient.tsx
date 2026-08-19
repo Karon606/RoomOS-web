@@ -1129,13 +1129,21 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   const [qtyUnit, setQtyUnit]   = useState('')
   const [unitWizOpen, setUnitWizOpen] = useState(false)   // 단위 단계별 선택(포장형태→규격 단위)
   const applyUnitWizard = (r: SpecWizardResult) => { setQtyUnit(r.qtyUnit); setSpecUnit(r.specUnit) }
+  // 시작 수량(선택) — 지금 갖고 있는 재고를 오늘 첫 점검으로 함께 기록(백로그 2번, 임의 점검 관행의 정식 자리).
+  const [startQty, setStartQty] = useState('')
   const [memo, setMemo]         = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  // 시작 수량 뒤에 붙일 단위 — 표시 정본 rowUnit 과 같은 우선순위(규격 단위 우선, 폐기물류는 수량 단위).
+  const startUnit = specUnit.trim() || qtyUnit.trim() || null
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    const startQtyNum = startQty.trim() === '' ? null : Number(startQty)
+    if (startQtyNum != null && (isNaN(startQtyNum) || startQtyNum < 0)) {
+      setError('시작 수량은 0 이상이어야 합니다.'); return
+    }
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -1144,10 +1152,13 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           specUnit: specUnit || null,
           qtyUnit:  qtyUnit  || null,
           memo:     memo     || null,
+          startQty: startQtyNum,
         })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
         onDone()
-        pushToast('success', '품목 추가됨')
+        pushToast('success', '품목 추가됨', startQtyNum != null ? {
+          detail: `시작 재고(${startQtyNum}${startUnit ?? ''})를 오늘 첫 점검으로 기록했습니다.`,
+        } : undefined)
       } finally { release() }
     })
   }
@@ -1186,6 +1197,16 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
             <input type="text" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)} placeholder="롤, 매, 포대"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">시작 수량 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></label>
+          <div className="flex items-center gap-2">
+            <input type="text" inputMode="decimal" autoComplete="off" value={startQty}
+              onChange={e => setStartQty(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0"
+              className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            {startUnit && <span className="text-xs text-[var(--warm-muted)] shrink-0">{startUnit}</span>}
+          </div>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">지금 갖고 있는 재고가 있으면 적어 주세요. 오늘 날짜의 첫 재고 점검으로 기록됩니다.</p>
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
