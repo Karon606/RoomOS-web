@@ -898,6 +898,11 @@ export default function SettingsForm({
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
               <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
+              {/* 체크박스 앞의 hidden '0' — 꺼진 체크박스는 FormData 에 안 실린다. 저장이 필드 단위로
+                  쪼개진 뒤로는(2026-08-19) 그 부재가 "이 탭은 이 필드를 담당하지 않는다"로 읽혀
+                  체크를 풀 길이 사라진다. 짝을 세워 두면 has 는 항상 참이고 값은 '1' 유무로 갈린다.
+                  같은 이름의 hidden 은 이 폼의 세 체크박스 전부에 있다(감지망 축 ⓔ). */}
+              <input type="hidden" name="refundClauseInContract" value="0" />
               <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
                 <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
                   className="w-4 h-4 accent-[var(--coral)]" />
@@ -905,16 +910,20 @@ export default function SettingsForm({
               </label>
               {/* 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고친다(형제 토글과 같은 문법). */}
               {isOwner && (
+                <>
+                <input type="hidden" name="cleaningFeeInDeposit" value="0" />
                 <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
                   <input type="checkbox" name="cleaningFeeInDeposit" value="1" defaultChecked={property?.cleaningFeeInDeposit ?? false}
                     className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
                   <span className="break-keep">청소비를 보증금에 포함해서 받는다 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(보증금 50,000원에 청소비 20,000원이 들어 있고 현금으로는 30,000원만 받는 방식입니다. 켜면 입실 때 받은 청소비가 보증금의 그만큼을 채운 것으로 계산합니다)</span></span>
                 </label>
+                </>
               )}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
               <p className="text-xs text-[var(--warm-muted)]">계약서와 함께 출력되는 별도 서류. 입실자 정보·날짜·서명란은 자동입니다. 본문에 변수 사용 가능: <span className="num">{'{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}'}</span></p>
+              <input type="hidden" name="disposalEnabled" value="0" />
               <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
                 <input type="checkbox" name="disposalEnabled" value="1" defaultChecked={dc.enabled} className="w-4 h-4 accent-[var(--coral)]" />
                 계약서와 함께 출력

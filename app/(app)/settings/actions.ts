@@ -22,6 +22,7 @@ import {
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
 } from '@/lib/contract'
+import { buildPropertySettingsPatch, normalizePublicSlug } from '@/lib/propertySettingsPatch'
 
 export { getMyRole }
 
@@ -714,90 +715,27 @@ export async function removeMember(userId: string): Promise<ActionResult> {
   }
 }
 
-// ── 기본 정보 ──────────────────────────────────────────────────────
+// ── 영업장 설정 저장 ───────────────────────────────────────────────
 
+// 환경설정의 영업장 칼럼 저장 출구는 여기 하나다. 다만 **폼은 탭마다 다르다** —
+// 기본정보(영업장명·주소·연락처·날짜·연락 알림), 요금·정책(보증금·청소비·예약금·위약금·환불 규정),
+// 계약서·서류(전용면적·계좌번호·임의처분 동의서)가 각각 제 필드만 실어 보낸다(2026-08-19 IA 2단계).
+// 그래서 이 함수는 값을 직접 읽지 않고 lib/propertySettingsPatch 에 맡긴다 — 그 정본이
+// "실려 온 필드만 쓴다"는 규칙을 필드 단위로 쥐고 있다. 여기서 formData.get 을 다시 꺼내 쓰면
+// 그 규칙 밖의 두 번째 저장 경로가 생겨 옆 탭 값을 null 로 덮는다(감지망 축 ⓕ 가 막는다).
 export async function updatePropertySettings(formData: FormData) {
   await requireEdit()
   const propertyId = await getPropertyId()
-
-  const name              = formData.get('name') as string
-  const address           = formData.get('address') as string
-  const phone             = formData.get('phone') as string
-  const acquisitionDate   = formData.get('acquisitionDate') as string
-  const prevOwnerCutoffDate = formData.get('prevOwnerCutoffDate') as string
-  const defaultDeposit    = formData.get('defaultDeposit')
-  const defaultCleaningFee = formData.get('defaultCleaningFee')
-  const defaultAreaM2     = formData.get('defaultAreaM2')
-  // 예약금 기본 처리 모드 — 'deposit'(보증금 대체)|'prepaid'(이용료 선납)|'none'(안 받음). 미허용값은 무시.
-  const reservationDepositModeRaw = formData.get('reservationDepositMode') as string | null
-  const reservationDepositMode = ['deposit', 'prepaid', 'none'].includes(reservationDepositModeRaw ?? '')
-    ? reservationDepositModeRaw
-    : 'deposit'
-  const bankAccount       = formData.get('bankAccount') as string
-  const contactLeadDaysRaw = formData.get('contactLeadDays')
-  // 퇴실 환불 규정: 기간·1일당·청소비 차감은 여전히 미사용(법정 산식 고정).
-  // 위약금율만 부활 — 공정위 기준(10%)을 상한 캡으로 두고 그 이하로만 설정 가능(운영자 결정 2026-07-20).
-  const refundPenaltyPctRaw = formData.get('refundPenaltyPct')
-  const refundPenaltyPct = refundPenaltyPctRaw != null && String(refundPenaltyPctRaw).trim() !== ''
-    ? Math.min(10, Math.max(0, Number(String(refundPenaltyPctRaw).replace(/[^0-9]/g, '')) || 0))
-    : null
-  const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
-  // 청소비 수령 방식 — 돈의 구성을 바꾸는 설정이라 소유자만 고칠 수 있다.
-  // 체크박스는 소유자에게만 렌더되므로, 역할을 안 보고 저장하면 다른 멤버의 저장 한 번에 false 로 꺼진다.
-  const cleaningFeeInDeposit = (await getMyRole()) === 'OWNER'
-    ? formData.get('cleaningFeeInDeposit') === '1'
-    : undefined
-  // 잔여 소지품 임의처분 동의서
-  const disposalEnabled = formData.get('disposalEnabled') === '1'
-  const disposalDaysRaw = formData.get('disposalDays')
-  const disposalTitle   = (formData.get('disposalTitle') as string) ?? ''
-  const disposalBody    = (formData.get('disposalBody') as string) ?? ''
-  // 소개 페이지 주소(슬러그)는 2026-08-18 IA 1단계에서 **웹사이트 탭**으로 옮겼다. 이 폼에는 그 입력이 없다.
-  // FormData 통짜 저장이라 없는 필드를 그냥 읽으면 null 이 되고, 기본정보에서 영업장명만 고쳐 저장한
-  // 순간 소개 페이지 주소가 조용히 지워진다(마케팅 화면이 빈 상태로 돌아간다). 그래서 **필드가 실려
-  // 왔을 때만** 그 칼럼을 쓴다 — 바로 위 cleaningFeeInDeposit 이 같은 함정에서 쓴 undefined 문법이다.
-  // 옛 폼(캐시된 번들)이 이 필드를 계속 보내도 종전대로 저장되므로 배포 경계에서도 안전하다.
-  // 웹사이트 탭의 저장 출구는 아래 updatePublicSlug.
-  const publicSlug = formData.has('publicSlug')
-    ? normalizePublicSlug(formData.get('publicSlug') as string | null)
-    : undefined
+  const isOwner = (await getMyRole()) === 'OWNER'
 
   await prisma.property.update({
     where: { id: propertyId },
-    data: {
-      name:             name || undefined,
-      address:          address || null,
-      phone:            phone || null,
-      acquisitionDate:  acquisitionDate ? new Date(acquisitionDate) : null,
-      prevOwnerCutoffDate: prevOwnerCutoffDate ? new Date(prevOwnerCutoffDate) : null,
-      defaultDeposit:   defaultDeposit   ? Number(String(defaultDeposit).replace(/[^0-9]/g, ''))   : null,
-      defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
-      defaultAreaM2:    defaultAreaM2 && String(defaultAreaM2).trim() ? Number(String(defaultAreaM2).replace(/[^0-9.]/g, '')) || null : null,
-      reservationDepositMode,
-      bankAccount:      bankAccount?.trim() || null,
-      contactLeadDays:  Math.min(90, Math.max(1, Number(String(contactLeadDaysRaw ?? '').replace(/[^0-9]/g, '')) || 14)),
-      refundPenaltyPct,
-      refundClauseInContract,
-      ...(cleaningFeeInDeposit === undefined ? {} : { cleaningFeeInDeposit }),
-      disposalConsentTemplate: {
-        enabled: disposalEnabled,
-        days: disposalDaysRaw && String(disposalDaysRaw).trim() ? Number(String(disposalDaysRaw).replace(/[^0-9]/g, '')) || 7 : 7,
-        title: disposalTitle.trim() || '잔여 소지품 임의처분 동의서',
-        body: disposalBody,
-      },
-      ...(publicSlug === undefined ? {} : { publicSlug: publicSlug || null }),
-    },
+    data: buildPropertySettingsPatch(formData, { isOwner }),
   })
 
   revalidatePath('/settings')
   revalidatePath('/rooms')
   revalidatePath('/marketing')
-}
-
-// 소개 페이지 주소(슬러그) — 소문자·숫자·하이픈만. 통짜 저장과 전용 저장이 같은 규칙을 써야
-// 어느 쪽으로 들어와도 같은 값이 남는다.
-function normalizePublicSlug(raw: string | null): string {
-  return raw ? raw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '') : ''
 }
 
 // 웹사이트 탭의 슬러그 저장 — 이 칼럼 하나만 쓴다(기본정보 통짜 저장과 분리).
