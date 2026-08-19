@@ -1846,6 +1846,14 @@ export default function FinanceClient({
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
+  // 편집 폼은 목록 **위**에 열린다. 모달 본문이 자체 스크롤러(Modal.tsx:256)라 아래쪽 행에서 [수정]을
+  // 눌러도 폼이 스크롤 밖 위쪽에 생겨 화면이 안 바뀐다 — 버튼이 죽은 것으로 보인다(실기 신고 2026-08-19).
+  // 재고 프리셋 패널(위 340행)·알림 딥링크(lib/useFocusSection:26)와 같은 문법으로 폼 자리로 맞춘다.
+  const recMgmtFormRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showRecMgmtForm) return
+    requestAnimationFrame(() => recMgmtFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
     setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
@@ -4398,8 +4406,9 @@ export default function FinanceClient({
           <div className="space-y-4" onInput={() => setRecMgmtDirty(true)} onChange={() => setRecMgmtDirty(true)}>
             {/* 추가/수정 폼 */}
             {showRecMgmtForm ? (
-              <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRecMgmt ? '고정 지출 수정' : '고정 지출 추가'}</p>
+              <div ref={recMgmtFormRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                {/* 어느 항목을 여는지 제목이 말한다 (§14 "제목에 대상 이름 명시") */}
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRecMgmt ? `'${editingRecMgmt.title}' 고정 지출 수정` : '고정 지출 추가'}</p>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
                   <input type="text" value={recMgmtForm.title} onChange={e => setRecMgmtForm(p => ({ ...p, title: e.target.value }))}
@@ -4555,10 +4564,12 @@ export default function FinanceClient({
                 {recMgmtList.map(r => {
                   const isParent = r.items && r.items.length > 0
                   const selectable = recGroupMode && r.isActive
+                  // 편집 중인 행 표식 (§22 .sel) — 폼이 목록 위에 있어 이것 없이는 어느 항목이 열렸는지 모른다.
+                  const editing = showRecMgmtForm && editingRecMgmt?.id === r.id
                   return (
                   <div key={r.id}
                     onClick={selectable ? () => toggleGroupSel(r.id) : undefined}
-                    className={`flex items-center gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    className={`flex items-center gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) || editing ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
                     {recGroupMode && (
                       <input type="checkbox" checked={recGroupSel.has(r.id)} disabled={!r.isActive}
                         onChange={() => toggleGroupSel(r.id)} onClick={e => e.stopPropagation()}

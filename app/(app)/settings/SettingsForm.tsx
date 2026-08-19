@@ -630,6 +630,16 @@ export default function SettingsForm({
 
   useEffect(() => { getRecurringExpenses().then(setRecurringList).catch(console.error) }, [])
 
+  // 편집 폼은 목록 **위**에 있다. 목록 아래쪽 행에서 [수정]을 누르면 900px 넘는 폼이 스크롤 위치보다
+  // 위에 삽입되는데, 스크롤 앵커링이 보던 행을 못박아 화면 픽셀이 하나도 안 바뀐다 — 운영자에게는
+  // 버튼이 죽은 것으로 보인다(실기 신고 2026-08-19, 헤드리스 실측: 폼 top −1022 / 뷰포트 상단 56).
+  // 재고 프리셋 패널이 같은 이유로 봉합된 자리와 같은 문법이다(FinanceClient:340, lib/useFocusSection:26).
+  const recFormRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showRecForm) return
+    requestAnimationFrame(() => recFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [showRecForm, editingRec])
+
   const openNewRec = () => {
     setEditingRec(null)
     setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '' })
@@ -1195,8 +1205,10 @@ export default function SettingsForm({
 
             {/* 등록/편집 폼 */}
             {showRecForm && (
-              <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRec ? '고정 지출 수정' : '고정 지출 추가'}</p>
+              <div ref={recFormRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                {/* 어느 항목을 여는지 제목이 말한다 (§14 "제목에 대상 이름 명시") — 폼이 목록에서 떨어져
+                    있어 이름이 없으면 무엇을 고치는 중인지 화면에 남는 단서가 없다. */}
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRec ? `'${editingRec.title}' 고정 지출 수정` : '고정 지출 추가'}</p>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
                   <input type="text" value={recForm.title} onChange={e => setRecForm(p => ({ ...p, title: e.target.value }))}
@@ -1352,9 +1364,12 @@ export default function SettingsForm({
               <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
             )}
             <div className="space-y-2">
-              {recurringList.map(r => (
-                <div key={r.id} className={`flex items-center gap-3 rounded-sm px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}
-                  style={{ border: '1px solid var(--warm-border)' }}>
+              {recurringList.map(r => {
+                // 편집 중인 행 표식 (§22 .sel) — 폼이 목록 위에 있어 이것 없이는 어느 항목이 열렸는지 모른다.
+                const editing = showRecForm && editingRec?.id === r.id
+                return (
+                <div key={r.id} className={`flex items-center gap-3 rounded-sm px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'} ${editing ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''}`}
+                  style={{ border: `1px solid ${editing ? 'var(--coral)' : 'var(--warm-border)'}` }}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
@@ -1393,7 +1408,8 @@ export default function SettingsForm({
                       className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
