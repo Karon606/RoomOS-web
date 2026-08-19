@@ -1410,7 +1410,7 @@ export async function getDraftItemIds(): Promise<string[]> {
 // 계산 규칙 정본은 lib/stockLedger, 조회·적용·되돌리기 공용층은 ./ledgerShift(무상 입수·지출 공용).
 
 export type StockShiftPreview =
-  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[] }
+  | { ok: true; rows: { date: string; storedTotal: number; nextTotal: number }[]; hasAutoCheck?: boolean }
   | { ok: false; error: string }
 
 // 조정 미리보기 — 클라가 확인 다이얼로그에 실제 숫자를 띄우는 데 쓴다. 쓰기 없음.
@@ -1501,11 +1501,10 @@ export async function previewExpenseStockShift(input: {
       const qtyAfter = convertedPurchaseQty(it, input.next)
       after = qtyAfter > 0 ? { receivedAtMs, qty: qtyAfter, storageLocationId: e.receivedLocationId } : null
     }
-    let excludeCheckIds: string[] | undefined
-    if (input.forReceiptCancel) {
-      const own = await prisma.stockCheck.findMany({ where: { sourceExpenseId: e.id }, select: { id: true } })
-      excludeCheckIds = own.map(c => c.id)
-    }
+    // 자동 점검 존재 여부 — 삭제 물음의 사전 분기용(자동 점검 있는 구매의 삭제는 서버가
+    // 수령 취소 경로로 안내하므로, 클라가 조정 물음을 띄우지 않게 한다).
+    const own = await prisma.stockCheck.findMany({ where: { sourceExpenseId: e.id }, select: { id: true } })
+    const excludeCheckIds = input.forReceiptCancel ? own.map(c => c.id) : undefined
     const plan = await buildPurchaseShiftPlan(it, propertyId, before, after, excludeCheckIds)
     if (!plan.ok) return { ok: false, error: plan.error }
     return {
@@ -1515,6 +1514,7 @@ export async function previewExpenseStockShift(input: {
         storedTotal: Math.round(r.storedTotal * 100) / 100,
         nextTotal: Math.round(r.nextTotal * 100) / 100,
       })),
+      ...(own.length > 0 ? { hasAutoCheck: true } : {}),
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -3592,11 +3592,12 @@ async function cancelReceiptCore(
   } else if (it) {
     // 자동 점검이 없는 구식 수령(2026-06 이전 경로 등) — 이 수령분을 삼킨 점검이 있으면
     // 종전에는 아무 가드 없이 receivedAt 만 지워져, 재수령 시 그 수량이 이중 가산됐다(뒷문 봉합).
+    // 계획 실패(음수·귀속 불가)도 반영 점검이 있다는 뜻이므로 같이 거부한다.
     const qty = convertedPurchaseQty(it, exp)
     if (qty > 0) {
       const plan = await buildPurchaseShiftPlan(it, propertyId,
         { receivedAtMs: exp.receivedAt.getTime(), qty, storageLocationId: exp.receivedLocationId }, null)
-      if (plan.ok && plan.rows.length > 0) {
+      if (!plan.ok || plan.rows.length > 0) {
         return { ok: false, error: '수령 이후 재고 점검이 이 수령분을 이미 반영했습니다. 함께 조정해 취소하거나, 재고 점검으로 잔량을 바로잡아 주세요.' }
       }
     }

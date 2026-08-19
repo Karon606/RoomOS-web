@@ -2415,7 +2415,8 @@ export default function FinanceClient({
     if (!isFixed && exp.receivedAt && exp.itemLabel && !exp.excludeFromInventory) {
       const pre = await previewExpenseStockShift({ expenseId: exp.id, next: null })
       if (!pre.ok) { pushToast('error', pre.error); return }
-      if (pre.rows.length > 0) {
+      // 자동 점검이 있는 수령은 삭제가 서버에서 수령 취소 경로로 안내된다 — 조정 물음을 띄우지 않는다.
+      if (pre.rows.length > 0 && !pre.hasAutoCheck) {
         const ask = await askShiftRows({
           rows: pre.rows,
           title: '이 구매 지출을 삭제할까요?',
