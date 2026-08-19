@@ -89,13 +89,14 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
   }, [contracts])
   // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정 고정이고 contractNo 는 번호 도입
   // 이전 발급본이 null 이라, 둘 다 같은 날 두 부를 못 가른다(황인정 실측 2부가 정확히 그 모양).
+  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
   const currentIds = useMemo(() => {
     const ids = new Set<string>()
     for (const [key, n] of groupCount) {
       if (n < 2) continue
-      const newest = contracts.filter(c => issueGroupKey(c) === key)
-        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-      ids.add(newest.id)
+      const live = contracts.filter(c => issueGroupKey(c) === key && !c.voidedAt)
+      if (!live.length) continue
+      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
     }
     return ids
   }, [contracts, groupCount])
@@ -325,6 +326,11 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                       있어 옆 행과 비교할 대상이 아니라, 배지가 붙으면 무엇의 '현재'인지 알 수 없다. */}
                   {sort === 'tenant' && currentIds.has(c.id) && (
                     <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                  )}
+                  {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
+                      정렬과 무관하게 늘 띄운다: [현재] 와 달리 옆 행과 비교할 것 없이 그 자체로 사실이다. */}
+                  {c.voidedAt && (
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
                   )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>

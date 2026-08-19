@@ -10,7 +10,7 @@ import SignaturePad from 'signature_pad'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
-import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature } from './actions'
+import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, restoreContractVersion } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
@@ -466,15 +466,58 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
   }
 
+  // 이 계약서 폐기 — 잠긴 계약서를 현재 값으로 다시 쓸 수 있게 하는 정식 진입로(신고 63cd1049).
+  //
+  // 종전에 이 문이 없어서 운영자는 발급본을 지웠는데, 그것은 잠금 사슬의 어느 고리도 아니다.
+  // 유일한 해제 수단이던 '재서명 받기' 는 드리프트 경고 안에만 있어(아래 handleContractSave)
+  // 내용이 안 바뀐 계약서에서는 그 대화상자 자체가 안 뜬다 — 구조적으로 닫힌 길이었다.
+  //
+  // 서버가 증거를 이력으로 옮기고 잠금만 푼다. 발급본·박제·Drive 원본은 그대로 남는다.
+  const handleVoidVersion = async () => {
+    const leaseId = data.lease?.id
+    if (!leaseId || sigClearing) return
+    if (!(await confirmDialog({
+      title: '이 계약서를 폐기하고 다시 작성할까요?',
+      message: '지금까지 받은 서명과 이미 발급한 계약서는 폐기 기록으로 그대로 남습니다. '
+        + '이 화면의 잠금이 풀려 현재 정보로 다시 작성할 수 있고, 발급하려면 서명을 다시 받아야 합니다. '
+        + '되돌리기는 폐기 직후 토스트에서 할 수 있습니다.',
+      level: 'danger', confirmLabel: '폐기',
+    }))) return
+    setSigClearing(true)
+    const release = trackSave()
+    try {
+      const res = await voidContractVersion(leaseId)
+      if (!res.ok) { pushToast('error', res.error); return }
+      // 화면에 남은 서명 이미지도 함께 걷는다 — 서버 값은 useState 초기값이라 refresh 로 안 돌아온다.
+      clearSignatureLocal('contract')
+      clearSignatureLocal('disposal')
+      pushToast('success', [
+        '계약서를 폐기했습니다.',
+        res.voidedFiles > 0 ? `발급본 ${res.voidedFiles}부는 폐기 기록으로 남습니다.` : '',
+        '내용을 고친 뒤 서명을 다시 받아 발급해 주세요.',
+      ].filter(Boolean).join(' '), {
+        action: {
+          label: '적용취소',
+          run: () => { void restoreContractVersion(leaseId).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) },
+        },
+      })
+      router.refresh()
+    } finally {
+      release()
+      setSigClearing(false)
+    }
+  }
+
   // 재서명 받기 — 저장된 서명 네 칸을 한 번에 지워 본문·표시값·계약일 잠금을 통째로 푼다.
   // 드리프트 경고에서 들어오는 길이다. 종전에는 '그래도 발급'과 '취소' 둘뿐이라, 서명 당시와
   // 내용이 다르다는 것을 알고도 바뀐 내용으로 다시 받을 길이 화면에 없었다.
+  // 서버는 위 폐기와 같은 정본을 탄다 — 서명 증거는 폐기 이력으로 남는다.
   const handleResignAll = async () => {
     const leaseId = data.lease?.id
     if (!leaseId || sigClearing) return
     if (!(await confirmDialog({
       title: '서명을 모두 지우고 다시 받을까요?',
-      message: '저장된 서명을 모두 지우고 다시 받습니다. 아직 발급하지 않았다면 이 서명으로는 발급할 수 없게 됩니다.',
+      message: '지금까지 받은 서명은 폐기 기록으로 남고 이 화면에서는 사라집니다. 아직 발급하지 않았다면 이 서명으로는 발급할 수 없게 됩니다.',
       level: 'danger', confirmLabel: '지우기',
     }))) return
     setSigClearing(true)
@@ -951,6 +994,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <button onClick={bodyLocked ? notifyBodyLocked : handleResetOverride} disabled={pending}
                 className={`toolbar-btn-secondary toolbar-btn-warn${bodyLocked ? ' toolbar-btn-locked' : ''}`}>
                 공통 템플릿으로
+              </button>
+            )}
+            {/* 잠긴 계약서에만 세운다 — 풀려 있는 계약서에는 폐기할 버전 자체가 없다.
+                잠금 안내 세 곳이 전부 이 버튼을 가리키므로 안내와 길이 같은 화면에 있다. */}
+            {bodyLocked && (
+              <button onClick={handleVoidVersion} disabled={sigClearing}
+                className="toolbar-btn-secondary toolbar-btn-warn">
+                {sigClearing ? '폐기 중…' : '이 계약서 폐기'}
               </button>
             )}
             {/* 액션 집합 정본(§30) — [보내기] [발급]. 기기로 버튼 수를 가르지 않는다(사전 62행).

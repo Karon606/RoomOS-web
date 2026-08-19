@@ -28,6 +28,8 @@ export type ContractListRow = {
   contractNo: string | null
   // 같은 계약의 발급본을 묶는 축. 한 사람이 계약을 둘 가질 수 있으므로 사람이 아니라 계약이 기준이다.
   leaseTermId: string | null
+  // 폐기된 버전의 발급본인가 — 삭제가 아니라 도장이라 목록에 계속 남고 [폐기됨] 배지가 붙는다.
+  voidedAt: Date | null
 }
 
 // 거주 중 성격의 lease 상태 — 이 중 하나라도 있으면 입주자는 '거주중'.
@@ -52,7 +54,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
     // 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
     select: {
       id: true, fileName: true, source: true, signedAt: true, createdAt: true,
-      driveFileId: true, contractNo: true, leaseTermId: true,
+      driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
       tenant: {
         select: {
           id: true, name: true,
@@ -83,6 +85,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       status: lease?.status ?? null,
       contractNo: r.contractNo,
       leaseTermId: r.leaseTermId,
+      voidedAt: r.voidedAt,
     }
   })
 }

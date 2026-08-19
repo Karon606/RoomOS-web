@@ -206,13 +206,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정으로 고정돼 같은 날 두 부를 못 가르고,
   // contractNo 는 번호 도입(2026-08-03) 이전 발급본이 null 이라 정렬 자체가 안 된다.
   // 실측 황인정 2부가 정확히 그 모양이다 — signedAt 동일, 한쪽 contractNo null.
+  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
   const currentIds = useMemo(() => {
     const ids = new Set<string>()
     for (const [key, n] of groupCount) {
       if (n < 2) continue
-      const newest = (files ?? []).filter(f => issueGroupKey(f) === key)
-        .reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-      ids.add(newest.id)
+      const live = (files ?? []).filter(f => issueGroupKey(f) === key && !f.voidedAt)
+      if (!live.length) continue
+      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
     }
     return ids
   }, [files, groupCount])
@@ -331,6 +332,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                 </span>
                 {currentIds.has(f.id) && (
                   <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--coral)]/10 text-[var(--coral)]">현재</span>
+                )}
+                {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다). */}
+                {f.voidedAt && (
+                  <span className="text-[0.65625rem] px-1.5 py-0.5 rounded font-medium bg-[var(--cream)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">폐기됨</span>
                 )}
                 <div className="flex-1 min-w-0">
                   <span className="block text-xs text-[var(--warm-dark)] truncate">
