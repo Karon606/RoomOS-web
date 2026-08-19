@@ -107,6 +107,8 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       // 폐기본은 기본으로 접는다(운영자 결정 2026-08-20) — 숨김이지 삭제가 아니다.
       // 세는 일(groupCount·currentIds)은 여전히 전량으로 하므로 배지·안내는 흔들리지 않는다.
       // 선택 모드에서는 펼쳐 둔 상태여도 뺀다 — 다건 보내기는 효력 없는 종이를 담으면 안 된다.
+      // 토글이 꺼진 영업장의 파생 판본 — 펼치는 길도 없다. 데이터는 그대로이고 켜면 돌아온다.
+      if (c.hidden) return false
       if ((!showVoided || selectMode) && c.voidedAt) return false
       if (residency !== 'all' && (residency === 'departed') !== isDeparted(c.status)) return false
       if (source !== 'all' && c.source !== source) return false
@@ -131,7 +133,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
     return list
   }, [contracts, query, residency, source, sort, showVoided, selectMode])
   // 접혀 있는 폐기본이 몇 부인가 — 0부면 펼치기 줄 자체를 그리지 않는다.
-  const voidedCount = useMemo(() => contracts.filter(c => c.voidedAt).length, [contracts])
+  const voidedCount = useMemo(() => contracts.filter(c => c.voidedAt && !c.hidden).length, [contracts])
 
   // 발급 대기 행은 파일이 아니라 '아직 파일이 없는 계약'이다. 그래서 검색어(이름·호실)에만 반응한다.
   // 출처 필터는 앱 서명·스캔이라는 파일의 속성이라 대기 행이 답할 수 없고, 발급 대기는 언제나 거주중이라

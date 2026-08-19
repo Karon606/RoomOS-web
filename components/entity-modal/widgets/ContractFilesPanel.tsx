@@ -238,8 +238,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 목록은 폐기본을 기본으로 접는다(운영자 결정 2026-08-20) — **숨김이지 삭제가 아니다.**
   // 세는 일은 여전히 전량(files)으로 한다. 접힌 행까지 세어야 [현재]·계약번호 줄·삭제 안내가
   // 종전과 같은 답을 낸다(보이는 것만 세면 형제가 가려졌을 때 화면이 거짓말을 한다).
-  const liveFiles = useMemo(() => (files ?? []).filter(f => !f.voidedAt), [files])
-  const voidedFiles = useMemo(() => (files ?? []).filter(f => f.voidedAt), [files])
+  // hidden 은 토글이 꺼진 영업장의 파생 판본이다 — 서버가 표시만 접으라고 표시해 준 행이라
+  // 화면 어느 목록에도 세우지 않는다(폐기본과 달리 펼치는 길도 두지 않는다. 토글을 켜면 돌아온다).
+  const liveFiles = useMemo(() => (files ?? []).filter(f => !f.voidedAt && !f.hidden), [files])
+  const voidedFiles = useMemo(() => (files ?? []).filter(f => f.voidedAt && !f.hidden), [files])
   const [showVoided, setShowVoided] = useState(false)
   // 삭제 안내의 '다른 발급본 N부' 는 **화면에 남는 부수**를 말해야 한다. 접힌 폐기본까지 세면
   // 아무것도 안 보이는데 "N부는 남습니다" 라고 하는 상태가 된다.

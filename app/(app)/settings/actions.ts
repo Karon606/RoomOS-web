@@ -100,6 +100,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       contactLeadDays: true,
       refundClauseInContract: true,
       cleaningFeeInDeposit: true,   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
+      multiContractVersions: true,  // 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
       disposalConsentTemplate: true,
       publicSlug: true,
       logoDriveFileId: true,

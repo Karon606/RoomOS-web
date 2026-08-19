@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
+import { isDerivedPurpose } from '@/lib/contractPurpose'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -34,6 +35,8 @@ export type ContractListRow = {
   supersededAt: Date | null
   // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본). 대표본 판정이 이 값을 본다.
   issuePurpose: string | null
+  // 여러 판본 만들기가 꺼진 영업장에서 화면이 접을 행인가 — 숨김이지 삭제가 아니다.
+  hidden: boolean
 }
 
 // 거주 중 성격의 lease 상태 — 이 중 하나라도 있으면 입주자는 '거주중'.
@@ -51,6 +54,12 @@ function effectiveLease<T extends { status: string }>(leases: T[]): T | null {
 // 영업장 전체 계약서 파일 — 통합 페이지(/contracts)용. 입주자·호실 정보 조인.
 export async function getAllContractFiles(): Promise<ContractListRow[]> {
   const propertyId = await getPropertyId()
+  // 형제 화면(입주자 정보 계약서 칸)과 같은 규칙 — 토글이 꺼져 있으면 파생 판본을 감춘다.
+  // 감지망·발급 대기·종 알림 쪽 쿼리에는 이 필터가 들어가면 안 된다(그쪽은 억제 로직이다).
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { multiContractVersions: true },
+  })
+  const multiVersion = property?.multiContractVersions === true
   const rows = await prisma.contractFile.findMany({
     where: { driveFileId: { not: '' }, propertyId, deletedAt: null },
     orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
@@ -93,6 +102,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       voidedAt: r.voidedAt,
       supersededAt: r.supersededAt,
       issuePurpose: r.issuePurpose,
+      hidden: !multiVersion && isDerivedPurpose(r.issuePurpose),
     }
   })
 }

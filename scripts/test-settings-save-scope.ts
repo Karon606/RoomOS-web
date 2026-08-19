@@ -37,6 +37,7 @@ const BEFORE: Row = {
   refundPenaltyPct: 10,
   refundClauseInContract: true,
   cleaningFeeInDeposit: true,
+  multiContractVersions: false,
   defaultAreaM2: 13.2,
   bankAccount: '카카오뱅크 3333-01-2345678 (홍길동)',
   disposalConsentTemplate: { enabled: true, days: 7, title: '잔여 소지품 임의처분 동의서', body: '본문' },
@@ -48,7 +49,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 const OWNED: Record<string, string[]> = {
   기본정보:    ['name', 'address', 'phone', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
-  '계약서·서류': ['defaultAreaM2', 'bankAccount', 'disposalConsentTemplate'],
+  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate'],
   웹사이트:    ['publicSlug'],
 }
 
@@ -69,6 +70,7 @@ const PRICING_FORM: [string, string][] = [
   ['cleaningFeeInDeposit', '0'], ['cleaningFeeInDeposit', '1'],
 ]
 const DOC_FORM: [string, string][] = [
+  ['multiContractVersions', '0'],
   ['defaultAreaM2', '13.2'], ['bankAccount', '카카오뱅크 3333-01-2345678 (홍길동)'],
   ['disposalEnabled', '0'], ['disposalEnabled', '1'],
   ['disposalTitle', '잔여 소지품 임의처분 동의서'], ['disposalDays', '7'], ['disposalBody', '본문'],
@@ -118,6 +120,12 @@ for (const [tab, form] of TAB_FORMS) {
   const docOff = DOC_FORM.filter(([k, v]) => !(k === 'disposalEnabled' && v === '1'))
   eq('동의서 동반 출력 해제가 false 로 저장된다',
     buildPropertySettingsPatch(fd(docOff), { isOwner: true }).disposalConsentTemplate?.enabled, false)
+  // 여러 판본 만들기 — 켜는 쪽도 못박는다. hidden '0' 만 실린 폼이 기본이라 반대편이 필요하다.
+  const docMulti: [string, string][] = [...DOC_FORM, ['multiContractVersions', '1']]
+  eq('여러 판본 만들기 켜기가 true 로 저장된다',
+    buildPropertySettingsPatch(fd(docMulti), { isOwner: true }).multiContractVersions, true)
+  eq('여러 판본 만들기 끄기가 false 로 저장된다',
+    buildPropertySettingsPatch(fd(DOC_FORM), { isOwner: true }).multiContractVersions, false)
 }
 
 // ── ④ 소유자 아닌 멤버의 저장은 청소비 구성을 못 바꾼다 ────────────────────────────
@@ -125,6 +133,11 @@ for (const [tab, form] of TAB_FORMS) {
   const patch = buildPropertySettingsPatch(fd(PRICING_FORM), { isOwner: false })
   ok('비소유자 저장에 cleaningFeeInDeposit 이 없다', !('cleaningFeeInDeposit' in patch))
   eq('그래도 나머지 요금 칼럼은 저장된다', patch.defaultDeposit, 50000)
+  // 여러 판본 만들기도 같은 이유로 소유자 전용이다 — 법적 위험이 걸린 설정이라 위조 폼 한 번에
+  // 뒤집히면 안 된다. 체크박스는 소유자에게만 렌더되지만 서버가 역할을 다시 본다.
+  const docPatch = buildPropertySettingsPatch(fd([...DOC_FORM, ['multiContractVersions', '1']]), { isOwner: false })
+  ok('비소유자 저장에 multiContractVersions 이 없다', !('multiContractVersions' in docPatch))
+  eq('그래도 나머지 서류 칼럼은 저장된다', docPatch.bankAccount, '카카오뱅크 3333-01-2345678 (홍길동)')
 }
 
 // ── ⑤ 옛 폼(캐시된 번들)이 전 필드를 통째로 보내도 종전대로 저장된다 ────────────────
