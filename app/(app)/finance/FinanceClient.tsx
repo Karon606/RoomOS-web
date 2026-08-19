@@ -54,7 +54,8 @@ import { effectiveRecurringAmount } from '@/lib/recurringEstimate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { MergeSheet } from '@/components/ui/inventory/MergeSheet'
@@ -1826,6 +1827,9 @@ export default function FinanceClient({
   const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
+  // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
+  // (실기 신고 2026-08-19 "딜레이가 생겨서 작동 안 하는 줄 알았어"). 선례 RequestsClient:86.
+  const [recMgmtBusyId, setRecMgmtBusyId] = useState<string | null>(null)
 
   const openRecMgmt = async () => {
     setShowRecMgmt(true)
@@ -1833,9 +1837,12 @@ export default function FinanceClient({
     setEditingRecMgmt(null)
     setRecMgmtError('')
     setRecMgmtLoading(true)
-    const list = await getRecurringExpenses()
-    setRecMgmtList(list)
-    setRecMgmtLoading(false)
+    // 조회가 던지면 Loading 에서 영영 멈춘다(§27.2 fire-and-forget 은 catch 필수).
+    try {
+      setRecMgmtList(await getRecurringExpenses())
+    } catch (e) {
+      pushToast('error', (e as Error).message ?? '고정 지출을 불러오지 못했습니다.')
+    } finally { setRecMgmtLoading(false) }
   }
   const openNewRecMgmt = () => {
     setEditingRecMgmt(null)
@@ -1890,21 +1897,31 @@ export default function FinanceClient({
       router.refresh()
     })
   }
+  // 종전에는 두 핸들러 모두 결과를 버려서, 실패해도 목록만 다시 그려지고 아무 말이 없었다
+  // (§27.2 화면 무반응 금지). withSave 로 감싸 §17 상단 진행 바 + §15 성공·실패 토스트를 함께 얹는다.
   const handleDeleteRecMgmt = async (id: string, title: string) => {
     if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
+    setRecMgmtBusyId(id)
     startRecMgmtTransition(async () => {
-      await deleteRecurringExpense(id)
-      const list = await getRecurringExpenses()
-      setRecMgmtList(list)
-      router.refresh()
+      try {
+        const res = await withSave(() => deleteRecurringExpense(id), { success: '고정 지출 삭제됨' })
+        if (!res.ok) return
+        setRecMgmtList(await getRecurringExpenses())
+        router.refresh()
+      } finally { setRecMgmtBusyId(null) }
     })
   }
   const handleToggleRecMgmt = (r: RecurringExpenseRow) => {
+    if (recMgmtBusyId) return
+    const next = !r.isActive
+    setRecMgmtBusyId(r.id)
     startRecMgmtTransition(async () => {
-      await updateRecurringExpense(r.id, { isActive: !r.isActive })
-      const list = await getRecurringExpenses()
-      setRecMgmtList(list)
-      router.refresh()
+      try {
+        const res = await withSave(() => updateRecurringExpense(r.id, { isActive: next }), { success: next ? '활성화됨' : '비활성 처리됨' })
+        if (!res.ok) return
+        setRecMgmtList(await getRecurringExpenses())
+        router.refresh()
+      } finally { setRecMgmtBusyId(null) }
     })
   }
   const toggleGroupSel = (id: string) => {
@@ -4595,15 +4612,14 @@ export default function FinanceClient({
                       )}
                     </div>
                     {!recGroupMode && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleToggleRecMgmt(r)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                    /* 행 액션은 RowActionBtn 정본 (§10 raw button 금지 · 히트영역 44px).
+                       gap-y-4 는 두 줄로 접힐 때 정본의 -my-2 히트영역이 겹치지 않는 최소 세로 간격이다. */
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0">
+                      <RowActionBtn disabled={recMgmtBusyId === r.id} onClick={() => handleToggleRecMgmt(r)}>
                         {r.isActive ? '비활성' : '활성화'}
-                      </button>
-                      <button onClick={() => openEditRecMgmt(r)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
-                      <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
+                      </RowActionBtn>
+                      <RowActionBtn disabled={recMgmtBusyId === r.id} onClick={() => openEditRecMgmt(r)}>수정</RowActionBtn>
+                      <RowActionBtn tone="danger" disabled={recMgmtBusyId === r.id} onClick={() => handleDeleteRecMgmt(r.id, r.title)}>삭제</RowActionBtn>
                     </div>
                     )}
                   </div>

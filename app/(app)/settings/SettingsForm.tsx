@@ -5,6 +5,7 @@ import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
@@ -599,6 +600,10 @@ export default function SettingsForm({
   const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
+  // 행별 처리 중 잠금(전역 잠금 방지). 선례 RequestsClient:86 · admin UsersClient:100.
+  // 토글·삭제는 서버 왕복 + router.refresh 라 눈에 보이는 딜레이가 있는데 표시가 없어
+  // 운영자가 "작동 안 하는 줄 알았다"고 신고했다(2026-08-19).
+  const [recBusyId, setRecBusyId] = useState<string | null>(null)
   // #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목. 있으면 부모 금액·변동은 합산 파생.
   const [recItems, setRecItems] = useState<{ name: string; amount: string; isVariable: boolean }[]>([])
   const recValidItems = recItems.filter(it => it.name.trim())
@@ -701,24 +706,34 @@ export default function SettingsForm({
   }
   const handleDeleteRec = async (id: string, title: string) => {
     if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
+    setRecBusyId(id)
+    const release = trackSave()   // §17 갱신 표시 = 상단 진행 바. 같은 파일의 형제 핸들러와 같은 문법.
     try {
       const res = await deleteRecurringExpense(id)
       if (!res.ok) { showToast(`삭제 실패: ${res.error}`); return }
       setRecurringList(prev => prev.filter(r => r.id !== id))
+      showToast('고정 지출 삭제됨')
       router.refresh()
     } catch (e) {
       showToast(`삭제 실패: ${(e as Error).message}`)
-    }
+    } finally { release(); setRecBusyId(null) }
   }
   const handleToggleRec = async (r: RecurringExpenseRow) => {
+    if (recBusyId) return
+    // 보낼 값을 먼저 확정한다. 종전에는 서버에 !r.isActive 를 보내면서 로컬은 !x.isActive 로 다시
+    // 뒤집어, 연타하면 서버는 한 번만 바뀌고 화면은 두 번 뒤집혀 둘이 갈렸다.
+    const next = !r.isActive
+    setRecBusyId(r.id)
+    const release = trackSave()
     try {
-      const res = await updateRecurringExpense(r.id, { isActive: !r.isActive })
+      const res = await updateRecurringExpense(r.id, { isActive: next })
       if (!res.ok) { showToast(`변경 실패: ${res.error}`); return }
-      setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: !x.isActive } : x))
+      setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: next } : x))
+      showToast(next ? '활성화됨' : '비활성 처리됨')
       router.refresh()
     } catch (e) {
       showToast(`변경 실패: ${(e as Error).message}`)
-    }
+    } finally { release(); setRecBusyId(null) }
   }
 
   return (
@@ -1386,26 +1401,29 @@ export default function SettingsForm({
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => handleToggleRec(r)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                  {/* 행 액션은 RowActionBtn 정본 — raw 버튼은 히트영역이 32px 이라 §09·§10 의 44px 에
+                      못 미쳐 옆 버튼이 눌린다. gap-y-4 는 두 줄로 접힐 때 정본이 먹는 -my-2 히트영역
+                      (마진박스 28px · 보더박스 44px)이 위아래로 겹치지 않게 하는 최소값이다. */}
+                  <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0">
+                    <RowActionBtn disabled={recBusyId === r.id} onClick={() => handleToggleRec(r)}>
                       {r.isActive ? '비활성' : '활성화'}
-                    </button>
-                    <button onClick={() => openEditRec(r)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                    </RowActionBtn>
+                    <RowActionBtn disabled={recBusyId === r.id} onClick={() => openEditRec(r)}>수정</RowActionBtn>
                     {r.isGroup && (
-                      <button onClick={async () => {
+                      <RowActionBtn disabled={recBusyId === r.id} onClick={async () => {
                         if (!(await confirmDialog({ title: `'${r.title}' 묶기를 해제할까요?`, message: '묶기 전의 원본 고정지출들이 다시 활성화되고 이 묶음은 삭제됩니다. 묶음으로 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '묶기 해제' }))) return
-                        const res = await ungroupRecurringExpense(r.id)
-                        if (!res.ok) { showToast(`해제 실패: ${res.error}`); return }
-                        pushToast('success', `묶기를 해제했습니다 — 원본 ${res.restored}건 복구`)
-                        setRecurringList(prev => prev.filter(x => x.id !== r.id))
-                        router.refresh()
-                      }}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">묶기 해제</button>
+                        setRecBusyId(r.id)
+                        const release = trackSave()
+                        try {
+                          const res = await ungroupRecurringExpense(r.id)
+                          if (!res.ok) { showToast(`해제 실패: ${res.error}`); return }
+                          pushToast('success', `묶기를 해제했습니다 · 원본 ${res.restored}건 복구`)
+                          setRecurringList(prev => prev.filter(x => x.id !== r.id))
+                          router.refresh()
+                        } finally { release(); setRecBusyId(null) }
+                      }}>묶기 해제</RowActionBtn>
                     )}
-                    <button onClick={() => handleDeleteRec(r.id, r.title)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
+                    <RowActionBtn tone="danger" disabled={recBusyId === r.id} onClick={() => handleDeleteRec(r.id, r.title)}>삭제</RowActionBtn>
                   </div>
                 </div>
                 )
