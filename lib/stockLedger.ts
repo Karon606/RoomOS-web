@@ -47,6 +47,22 @@ export type LedgerDelta = {
   locationId: string | null
 }
 
+// 구매 수령 델타(Expense.receivedAt). 경계 술어가 무상 입수와 다르다 —
+// 읽기 정본(overview.sumPurchases)이 구매를 receivedAt(실시각) > 점검.createdAt 로 가르므로,
+// 반영 여부도 같은 축으로 판정해야 화면 잔량과 조정 계획이 같은 사건 집합을 본다.
+// qty 는 품목 단위로 환산된 입수량(specMultiplier 적용 후)을 호출부가 넣는다.
+export type PurchaseDelta = {
+  receivedAtMs: number
+  qty: number
+  locationId: string | null
+}
+
+export type AnyLedgerDelta = LedgerDelta | PurchaseDelta
+
+function isPurchaseDelta(d: AnyLedgerDelta): d is PurchaseDelta {
+  return 'receivedAtMs' in d
+}
+
 export type ShiftRow = {
   checkId: string
   dateMs: number
@@ -71,18 +87,33 @@ export function deltaAfterCheck(
   return d.dateMs > c.dateMs || (d.dateMs === c.dateMs && d.createdAtMs > c.createdAtMs)
 }
 
+// 구매가 점검보다 '뒤'인가 — overview.sumPurchases(receivedAt > 점검.createdAt)와 같은 경계 규칙.
+// 같으면(receivedAt == createdAt) 반영으로 본다(sumPurchases 의 gt 와 동일).
+export function purchaseAfterCheck(
+  d: { receivedAtMs: number },
+  c: { createdAtMs: number },
+): boolean {
+  return d.receivedAtMs > c.createdAtMs
+}
+
 // 그 점검의 저장 잔량이 이 델타를 이미 담고 있는가(= 점검보다 앞이거나 같은 시각).
-function reflectedIn(d: LedgerDelta | null, c: LedgerCheck): number {
+function reflectedIn(d: AnyLedgerDelta | null, c: LedgerCheck): number {
   if (!d) return 0
+  if (isPurchaseDelta(d)) return purchaseAfterCheck(d, c) ? 0 : d.qty
   return deltaAfterCheck(d, c) ? 0 : d.qty
 }
 
 // before → after 로 델타 기록이 바뀔 때(생성=before null, 삭제=after null) 점검별 조정 계획.
 // 반환 rows 는 조정량이 0 이 아닌 점검만, 날짜 오름차순.
+//
+// 구매 델타(PurchaseDelta)도 같은 계획을 탄다 — 반영 술어만 다르다(reflectedIn 분기).
+// 순회·보정 정지 축은 두 종류 모두 (date, createdAt) 로 같다. 구매 반영은 createdAt 단독 축이라
+// 백필 점검(과거 날짜, 최근 입력)이 끼면 두 축이 어긋날 수 있는데, 읽기 정본(overview)이
+// 기준선·통계를 날짜 축으로 세우므로 계획도 날짜 축을 따른다(케이스는 회귀 테스트에 박제).
 export function planStockShift(
   checks: LedgerCheck[],
-  before: LedgerDelta | null,
-  after: LedgerDelta | null,
+  before: AnyLedgerDelta | null,
+  after: AnyLedgerDelta | null,
 ): ShiftPlan {
   const sorted = [...checks].sort((a, b) => a.dateMs - b.dateMs || a.createdAtMs - b.createdAtMs)
   const rows: ShiftRow[] = []
