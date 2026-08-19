@@ -118,6 +118,39 @@ function sourceGuards() {
     violations.push(`조정 인자가 물음 결과에서 오지 않는 경로가 있다 — 연결 ${wired}/4`)
   }
 
+  // ── 지출 전파 게이트(점보롤 백로그 1번) — 지출 수정·삭제·수령 취소·제외의 조정도
+  //    '제안 후 확인' 계약을 지키는가. 무상 입수 게이트와 같은 축이다.
+  const fin = readFileSync('app/(app)/finance/actions.ts', 'utf8')
+  const finClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
+  if (!/export async function previewExpenseStockShift/.test(actions)) {
+    violations.push('지출 조정 미리보기(previewExpenseStockShift)가 없다 — 운영자가 숫자를 보기 전에 적용된다')
+  }
+  for (const fn of ['updateExpense', 'deleteExpense']) {
+    const b = block(fin, `export async function ${fn}(`, '\n}\n', fn)
+    if (!b) continue
+    if (/applyShiftRows/.test(b) && !/adjustStock/.test(b)) {
+      violations.push(`${fn} 이 게이트(adjustStock) 없이 조정을 적용한다`)
+    }
+  }
+  const cancelCore = block(actions, 'async function cancelReceiptCore(', '\n}\n', 'cancelReceiptCore')
+  if (cancelCore) {
+    if (!/adjustFollowing/.test(cancelCore)) {
+      violations.push('cancelReceiptCore 에 조정 게이트(adjustFollowing)가 없다 — 수령 취소 조정이 자동으로 걸리거나 아예 빠진다')
+    }
+    if (!/restockedQty/.test(cancelCore)) {
+      violations.push('cancelReceiptCore 가 실측 머지 가드(restockedQty)를 잃었다 — 수령 취소가 실측을 지운다')
+    }
+  }
+  // 수령일 비움(updateExpenseFromInventory)이 취소 정본을 우회해 자동 점검을 직접 지우면 뒷문이 된다.
+  const updFromInv = block(actions, 'export async function updateExpenseFromInventory(', '\n}\n', 'updateExpenseFromInventory')
+  if (updFromInv && !/cancelReceiptCore\(/.test(updFromInv)) {
+    violations.push('updateExpenseFromInventory 의 수령일 비움이 취소 정본(cancelReceiptCore)을 안 탄다 — 실측 머지·반영 가드가 통째로 우회된다')
+  }
+  // 클라 물음의 결과가 저장 인자로 흐르는가 — 물음을 지우면 이 문자열을 만들 수 없다.
+  if (!/fd\.set\('adjustStock', '1'\)/.test(finClient) || !/askShiftRows\(/.test(finClient)) {
+    violations.push('지출 화면이 조정 전에 영향을 묻지 않는다(askShiftRows/adjustStock 연결 소실)')
+  }
+
   // ── 경계 규칙 — getStockAsOf 가 입수·폐기 정본을 쓰는가 ────────────────
   const asOf = block(actions, 'export async function getStockAsOf', 'const expectedTotal', 'getStockAsOf')
   if (asOf) {

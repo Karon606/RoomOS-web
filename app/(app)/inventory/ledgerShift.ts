@@ -10,6 +10,7 @@
 // 스냅샷(LedgerShiftUndo)으로 되돌린다(§16).
 import prisma, { type PrismaDb } from '@/lib/prisma'
 import { planStockShift, type LedgerCheck, type LedgerDelta, type PurchaseDelta, type ShiftRow } from '@/lib/stockLedger'
+import { specMultiplier } from '@/lib/units'
 
 // 트랜잭션 클라이언트 타입 — lib/prisma 가 $extends 로 확장한 클라이언트라 Prisma.TransactionClient 와 다르다.
 export type InventoryTx = Omit<PrismaDb, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
@@ -95,6 +96,38 @@ export async function buildAdditionShiftPlan(
   const plan = planStockShift(checks, toDelta(before), toDelta(after))
   if (!plan.ok) return { ok: false, error: shiftPlanError(plan.code, plan.dateMs) }
   return { ok: true, rows: plan.rows }
+}
+
+// 이 지출이 잔량 산식에 기여하는 품목 — sumPurchases 의 (category, itemLabel) + qtyUnit 느슨 매칭.
+// 지출 수정·삭제의 전파 게이트(finance)와 미리보기(inventory)가 같은 매칭을 봐야 한다.
+export async function matchedTrackedItemForExpense(
+  propertyId: string,
+  e: { category: string; itemLabel: string | null; qtyUnit: string | null },
+): Promise<{ id: string; trackUnit: string; specUnit: string | null; qtyUnit: string | null; hubLocationId: string | null } | null> {
+  if (!e.itemLabel) return null
+  const it = await prisma.trackedItem.findUnique({
+    where: { propertyId_category_label: { propertyId, category: e.category, label: e.itemLabel } },
+    select: { id: true, trackUnit: true, specUnit: true, qtyUnit: true, hubLocationId: true },
+  })
+  if (!it) return null
+  // 느슨 매칭 — 둘 다 값이 있는데 다르면 이 품목의 잔량에 안 들어간다(sumPurchases 와 동일).
+  if (it.qtyUnit && e.qtyUnit && it.qtyUnit !== e.qtyUnit) return null
+  return it
+}
+
+// 구매 1건이 잔량 산식에 기여하는 품목 단위 환산량 — 읽기 정본 overview.sumPurchases 와 같은 규칙
+// (useSpec 게이트 + specMultiplier). 조정 계획의 델타 크기는 반드시 읽기 쪽과 같은 값이어야
+// 화면 잔량과 계획이 같은 수량을 본다. confirmReceipt 의 수령량 산출과는 specUnit 미설정 품목에서
+// 다를 수 있는데(그쪽은 trackUnit 만 본다), 조정의 기준은 읽기 정본이다.
+export function convertedPurchaseQty(
+  item: { trackUnit: string; specUnit: string | null },
+  e: { qtyValue: number | null; specValue: number | null; specUnit: string | null },
+): number {
+  const q = e.qtyValue ?? 0
+  const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
+  if (!useSpec) return q
+  const spec = specMultiplier(e.specValue, e.specUnit, item.specUnit)
+  return spec != null ? q * spec : q
 }
 
 // 구매(수령) 델타의 조정 계획 — 반영 경계가 receivedAt > 점검.createdAt (lib/stockLedger purchaseAfterCheck).

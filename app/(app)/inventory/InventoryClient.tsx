@@ -10,6 +10,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -85,6 +86,7 @@ import {
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
   previewStockAdditionShift, undoUpdateStockAddition,
+  previewExpenseStockShift, undoCancelReceipt,
   undoConfirmReceipt, undoPartialReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock, type HubShortResponse,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type DiffAttribution } from './constants'
@@ -128,7 +130,7 @@ const rowUnit = (r: InventoryRow) => r.trackUnit === 'qty' ? (r.qtyUnit ?? r.uni
 // 점검 잔량은 절대값이라 입수 날짜를 앞으로 옮기면 그 사이 점검이 입수를 삼켜 잔량이 증발한다.
 // 서버가 만든 조정 계획(lib/stockLedger)을 실제 숫자로 보여주고 운영자가 고르게 한다.
 // 조용한 덮어쓰기는 하지 않는다 — 실제로 센 값이면 '이 기록만' 을 고르면 된다.
-type ShiftAsk = { adjust: boolean; asked: boolean; count: number } | null
+type ShiftAsk = ShiftAskResult
 
 async function askLedgerShift(input: {
   trackedItemId: string
@@ -144,25 +146,11 @@ async function askLedgerShift(input: {
   })
   if (!pre.ok) return { result: null, error: pre.error }
   // 어긋나는 점검이 없으면 묻지 않는다 — 날짜 오타 정정이 대부분이라 매번 물으면 확인창이 소음이 된다.
-  if (pre.rows.length === 0) return { result: { adjust: false, asked: false, count: 0 } }
-  const shown = pre.rows.slice(0, 4)
-  const lines = shown.map(r => `· ${fmtDate(r.date)} 점검 ${fmtQty(r.storedTotal, input.unit)} 에서 ${fmtQty(r.nextTotal, input.unit)} 으로`)
-  if (pre.rows.length > shown.length) lines.push(`· 그 밖에 ${pre.rows.length - shown.length}건`)
-  const choice = await choiceDialog({
-    title: input.title,
-    level: 'caution',
-    message: [
-      input.keepLine,
-      input.impactLine(pre.rows.length),
-      lines.join('\n'),
-      '실제로 세어 적은 값이면 조정하지 말고 이 기록만 바꾸세요. 직후 적용취소로 되돌릴 수 있습니다.',
-    ].join('\n'),
-    confirmLabel: '함께 조정',
-    altLabel: '이 기록만',
-    cancelLabel: '취소',
+  // 다이얼로그 문법은 공용 정본(lib/stockShiftAsk) — 지출 쪽 물음과 같은 모양이어야 한다.
+  const result = await askShiftRows({
+    rows: pre.rows, title: input.title, keepLine: input.keepLine, impactLine: input.impactLine, unit: input.unit,
   })
-  if (choice === null || choice === 'back') return { result: null }
-  return { result: { adjust: choice === 'confirm', asked: true, count: pre.rows.length } }
+  return { result }
 }
 
 // 허브 부족 팝업이 다룰 한 품목 — 서버 감지 정보 + 이 품목 저장을 다시 실행하는 클로저.
@@ -1927,21 +1915,73 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
         entry={entry} stockUnit={stockUnit}
         onCancel={() => { setEditing(false); setEditError('') }}
         onSave={async (data) => {
-          setSavePending(true); setEditError('')
-          const res = await updateExpenseFromInventory(entry.id, data)
+          setEditError('')
+          // 수령 대기로 되돌리기 — 이 수령분을 이미 삼킨 점검이 있으면 함께 조정해서만 취소한다.
+          // 조정 없는 취소는 재수령 때 같은 수량이 이중 가산되는 바로 그 구멍이라 두 갈래(진행/취소)만 묻는다.
+          let adjustFollowing = false
+          if (data.receivedAt === null && entry.receivedAt) {
+            const pre = await previewExpenseStockShift({ expenseId: entry.id, next: null, forReceiptCancel: true })
+            if (!pre.ok) { setEditError(pre.error); return }
+            if (pre.rows.length > 0) {
+              const go = await askShiftRowsRequired({
+                rows: pre.rows,
+                title: '수령을 취소할까요?',
+                keepLine: '이 구매는 수령 대기로 돌아갑니다.',
+                impactLine: n => `이 수령분을 이미 반영한 재고 점검 ${n}건에서 그만큼을 함께 뺍니다.`,
+                tailLine: '다시 수령 확인하면 그 시점 잔량 기준으로 다시 들어옵니다. 직후 적용취소로 되돌릴 수 있습니다.',
+                unit: stockUnit,
+                confirmLabel: '함께 조정 후 취소',
+              })
+              if (!go) return
+              adjustFollowing = true
+            }
+          }
+          setSavePending(true)
+          const res = await updateExpenseFromInventory(entry.id, adjustFollowing ? { ...data, adjustFollowing } : data)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          setEditing(false); onChanged()
+          setEditing(false)
+          const cancelUndo = res.cancelUndo
+          if (cancelUndo) {
+            pushToast('success', '수령을 취소했습니다', {
+              ...(cancelUndo.shift ? { detail: `점검 ${cancelUndo.shift.checks.length}건의 잔량도 함께 뺐습니다.` } : {}),
+              action: { label: '적용취소', run: () => { void undoCancelReceipt(cancelUndo).then(r => {
+                if (r.ok) { pushToast('info', '수령 상태를 복원했습니다'); onChanged() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+            })
+          }
+          onChanged()
         }}
         onDelete={async () => {
-          if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
+          // 수령완료 구매의 제외는 원장에서 델타 제거와 같다 — 삼킨 점검이 있으면 함께 옮길지 묻는다.
+          let adjustFollowing = false
+          if (entry.receivedAt) {
+            const pre = await previewExpenseStockShift({ expenseId: entry.id, next: null })
+            if (!pre.ok) { setEditError(pre.error); return }
+            if (pre.rows.length > 0) {
+              const ask = await askShiftRows({
+                rows: pre.rows,
+                title: '이 구매를 재고에서 제외할까요?',
+                keepLine: '지출 페이지에는 그대로 남습니다.',
+                impactLine: n => `이 구매 수량을 이미 반영한 재고 점검 ${n}건이 있습니다. 함께 조정하면 이렇게 바뀝니다.`,
+                unit: stockUnit,
+                confirmLabel: '함께 조정 후 제외',
+                altLabel: '이 기록만 제외',
+              })
+              if (ask === null) return
+              adjustFollowing = ask.adjust
+            } else if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
+          } else if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
           setSavePending(true)
-          const res = await excludeExpenseFromInventory(entry.id)
+          const res = await excludeExpenseFromInventory(entry.id, adjustFollowing ? { adjustFollowing } : undefined)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능
+          // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능. 함께 조정했다면 포함도 같은 대칭 조정으로.
+          const undoAdjust = adjustFollowing
           pushToast('success', '구매를 재고에서 제외했습니다', {
-            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id).then(r => {
+            ...(undoAdjust ? { detail: '반영돼 있던 점검 잔량도 함께 뺐습니다.' } : {}),
+            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id, undoAdjust ? { adjustFollowing: true } : undefined).then(r => {
               if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
               else pushToast('error', r.error)
             }) } },
