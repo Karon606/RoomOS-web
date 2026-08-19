@@ -3467,4 +3467,11 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
 - **검증**: tsc 0 · verify:fast exit 0(신규 2종 포함) · verify:db exit 0 · 프로덕션 빌드 exit 0 · eslint 491 → 491(1bd40ad5 대조, 신규 0) · 좁은 폭 30조합(5탭 × 320/360/390 × 라이트·다크) 신규 넘침 0, 탭 줄 46px 한 행 유지(1단계 접힘 재발 0), 트랙 635 → 662px 가로 스크롤.
 - **저장 무회귀 이중 실증**: ① 단위 회귀 38항(가정한 폼) ② 실제 DOM 이 만드는 FormData 를 정본에 그대로 먹인 실측(화면이 진짜 보내는 폼). 탭별로 담당 칼럼만 쓰고 나머지 10~13개는 패치에 등장조차 안 함 — 침범 0 · 누락 0. 체크박스를 전부 풀고 다시 뽑아 해제 저장이 false 로 남는 것까지 확인.
 - **범위 밖 관찰**: 계약서 본문 카드의 섹션 삭제 버튼이 320px 에서 11px 넘침 — 재편 전(1bd40ad5)과 **동일**(같은 하네스로 되돌려 측정, 같은 4요소·같은 right=331.2). 이번 diff 가 닿지 않은 마크업이라 손대지 않았다. 원인은 섹션 제목 input 의 min-width:auto 이고 고치면 min-w-0 한 토큰. 청소비 보증금 포함 토글이 '기본 청소비' 옆이 아니라 '퇴실 환불 규정' 블록 안에 있는 것도 무수정 이동 원칙에 따라 그대로 뒀다. verify:db 의 전기요금 예약금액 1건은 기존 관찰(KST 날짜 경계).
-- **푸시 안 함.**
+- **머지·배포(본선)**: package.json verify:fast 한 줄 충돌만(본선의 날짜 경계 감지망 vs 워크트리의 저장 범위 회귀) — 두 추가를 합집합으로 해소, f061930b. 머지 상태에서 tsc 0 · verify:fast 재실행 초록(신설 38항 포함) 확인 후 푸시. 워크트리·브랜치 정리.
+
+## 2026-08-19 (8) — KST 날짜 경계 전역 시공·배포 (운영자 승인, 워크트리 5커밋..c6f6585b)
+- **정본 신설**: lib/kstDate 에 monthDbRange·monthsDbRange·yearDbRange·dayDbRange·dbDateMonthKey·ymdToDbDate — @db.Date 비교 창을 전부 UTC 자정 기준으로. 위험 26묶음 전수 수렴, 이중 계상 결합 묶음 3단위 포함.
+- **무회귀 증명**: 프로덕션(UTC 런타임)은 수정 전후 비트 동일 96/96 — 사용자 화면 무변동. TZ 3종(UTC·KST·America/New_York) 매트릭스 오판 340 → 0. verify-recurring-estimate 초록 전환 — 전기요금 7/31 기록의 8월 오분류가 걷히며 8월 예정 행 부활(예약금액 191만 보존, (5)의 삭제 안내 철회 건 종결).
+- **머지 시 직접 정정 2건**: rooms/actions.ts:1618 보증금 기본 결제일을 ymdToDbDate(kstYmdStr()) 로(에이전트가 판단 요청으로 남긴 자리 — 로컬 자정 Date 가 @db.Date 쓰기에서 KST 런타임 시 하루 앞으로 박히는 같은 클래스), check-contract-issued-snapshot 기준선 6 → 8 래칫 정비(축 자체 안내).
+- **감지망**: check-local-midnight-boundary 신설(verify:fast) — new Date(y,m-1,…) 로컬 자정 패턴이 @db.Date 비교에 다시 들어오면 잡는다.
+- **배포**: stayeum-j2zirawdg 프로덕션 READY · 로그인 200. verify:db 잔여는 소재지 오버라이드 3건뿐(운영자 실기 대기).
