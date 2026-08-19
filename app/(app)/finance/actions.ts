@@ -28,6 +28,7 @@ import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
+import { monthDbRange } from '@/lib/kstDate'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 
 async function getPropertyId() {
@@ -48,11 +49,10 @@ export async function getTrackedCategories(): Promise<string[]> {
 
 export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ category: string; total: number }[]> {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   const rows = await prisma.expense.findMany({
     where: {
       propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      date: monthDbRange(targetMonth),
     },
     select: { category: true, amount: true },
   })
@@ -110,11 +110,10 @@ export async function getRoomList() {
 
 export async function getExpenses(targetMonth: string) {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   return prisma.expense.findMany({
     where: {
       propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      date: monthDbRange(targetMonth),
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     include: {
@@ -1677,11 +1676,10 @@ export async function unsettleExpenses(ids: string[]) {
 
 export async function getExtraIncomes(targetMonth: string) {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   return prisma.extraIncome.findMany({
     where: {
       propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      date: monthDbRange(targetMonth),
     },
     orderBy: { date: 'desc' },
     include: {
@@ -2088,12 +2086,11 @@ export async function getReserveMonthlySummary(targetMonth: string): Promise<{
   depositFromThisMonthRevenue: number  // 출처가 이 달 매출인 적립 합계 (sourceMonth 기준, date 무관)
 }> {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   const [byDate, bySourceAgg] = await Promise.all([
     prisma.reserveTransaction.findMany({
       where: {
         propertyId,
-        date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+        date: monthDbRange(targetMonth),
       },
       select: { type: true, amount: true },
     }),
@@ -2117,11 +2114,10 @@ export async function getReserveMonthlySummary(targetMonth: string): Promise<{
 
 export async function getReserveTransactions(targetMonth: string): Promise<ReserveTxn[]> {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   const rows = await prisma.reserveTransaction.findMany({
     where: {
       propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      date: monthDbRange(targetMonth),
     },
     include: {
       expense: { select: { id: true, date: true, amount: true, category: true, detail: true } },
@@ -2394,12 +2390,7 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
 // 거래 이력 (입금 + 환불 통합) — 날짜 역순
 export async function getDepositLedger(targetMonth?: string): Promise<DepositLedgerEntry[]> {
   const propertyId = await getPropertyId()
-  const monthFilter = targetMonth
-    ? (() => {
-        const [yyyy, mm] = targetMonth.split('-').map(Number)
-        return { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) }
-      })()
-    : undefined
+  const monthFilter = targetMonth ? monthDbRange(targetMonth) : undefined
 
   const [deposits, refunds] = await Promise.all([
     prisma.paymentRecord.findMany({
@@ -2460,11 +2451,10 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
 // 사후정산용 — 해당 월 지출 중 아직 미정산 잔여가 있는 것만 (정산 가능 후보)
 export async function getSettleableExpenses(targetMonth: string): Promise<{ id: string; date: Date; amount: number; category: string; detail: string | null; settledSum: number; remaining: number }[]> {
   const propertyId = await getPropertyId()
-  const [yyyy, mm] = targetMonth.split('-').map(Number)
   const expenses = await prisma.expense.findMany({
     where: {
       propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      date: monthDbRange(targetMonth),
     },
     select: { id: true, date: true, amount: true, category: true, detail: true },
     orderBy: { date: 'desc' },

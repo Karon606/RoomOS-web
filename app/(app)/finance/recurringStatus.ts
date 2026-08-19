@@ -7,7 +7,7 @@
 // 재무 화면에선 사라진 항목이 알림에만 남는다(신고 568633fb).
 
 import prisma from '@/lib/prisma'
-import { ymdToDbDate } from '@/lib/kstDate'
+import { dbDateMonthKey, monthDbRange, monthsDbRange } from '@/lib/kstDate'
 
 export type RecurringExpenseWithStatus = {
   id: string
@@ -46,8 +46,9 @@ export type RecurringExpenseWithStatus = {
 
 export async function computeRecurringExpensesWithStatus(propertyId: string, month: string): Promise<RecurringExpenseWithStatus[]> {
   const [year, m] = month.split('-').map(Number)
-  const startDate = new Date(year, m - 1, 1)
-  const endDate   = new Date(year, m, 0)
+  // '이번 달' 창 — lib/kstDate 정본. 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 하루 밀려
+  // 7/31 전기요금이 8월 기록으로 판정됐고, 그 바람에 예정 행이 사라졌다(2026-08 실측).
+  const thisMonth = monthDbRange(month)
 
   const [allRecurring, recordedThisMonth] = await Promise.all([
     prisma.recurringExpense.findMany({
@@ -56,12 +57,12 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       include: { items: { orderBy: { sortOrder: 'asc' } } },
     }),
     prisma.expense.findMany({
-      where: { propertyId, recurringExpenseId: { not: null }, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, recurringExpenseId: { not: null }, date: thisMonth },
       select: { id: true, recurringExpenseId: true, amount: true, date: true },
     }),
   ])
 
-  // activeSince: 이번 달 마지막 날보다 미래면 isPending=true (목록엔 표시하되 기록 불가)
+  // activeSince: 이번 달보다 뒤의 달이면 isPending=true (목록엔 표시하되 기록 불가)
   const recurringList = allRecurring
 
   const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
@@ -69,22 +70,22 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
   // ── 이력 창 ──────────────────────────────────────────────────
   // 창은 '진짜 달력 달'로 잡는다. @db.Date 칸은 UTC 자정으로 저장되고 Prisma 는 경계 Date 의 날짜부만
   // 비교에 쓰므로, KST 기기에서 new Date(y, m - 1, 1) 로 경계를 만들면 창이 하루씩 앞으로 밀린다
-  // (2026-08 실측: '최근 3개월'에 4/30 기록이 딸려 들어오고 7/31 기록이 빠졌다). 정본은 lib/kstDate ymdToDbDate.
+  // (2026-08 실측: '최근 3개월'에 4/30 기록이 딸려 들어오고 7/31 기록이 빠졌다). 정본은 lib/kstDate.
   const ymKey = (y: number, mo: number) => `${y}-${String(mo).padStart(2, '0')}`
-  const monthRange = (y: number, mo: number) => ({
-    gte: ymdToDbDate(`${ymKey(y, mo)}-01`),
-    lte: ymdToDbDate(`${ymKey(y, mo)}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}`),
-  })
   // 직전 3개월 — 연말을 넘어가도 어긋나지 않게 0-based 월 인덱스로 센다
   const recentMonths = [3, 2, 1].map(back => {
     const idx = (m - 1) - back
     return { y: year + Math.floor(idx / 12), mo: (((idx % 12) + 12) % 12) + 1 }
   })
-  const recentFrom = monthRange(recentMonths[0].y, recentMonths[0].mo).gte
-  const recentTo   = monthRange(recentMonths[2].y, recentMonths[2].mo).lte
+  const recentRange = monthsDbRange(
+    ymKey(recentMonths[0].y, recentMonths[0].mo),
+    ymKey(recentMonths[2].y, recentMonths[2].mo),
+  )
 
   const recurringIds = recurringList.map(re => re.id)
-  const isPendingOf = (re: { activeSince: Date | null }) => !!(re.activeSince && new Date(re.activeSince) > endDate)
+  // 활성화 예정 판정은 '달' 단위다 — activeSince 가 이번 달보다 뒤면 아직 볼 이력이 없다.
+  // Date 부등호로 재던 시절엔 말일 경계에서 실행 환경 타임존만큼 판정이 갈렸다.
+  const isPendingOf = (re: { activeSince: Date | null }) => !!(re.activeSince && dbDateMonthKey(re.activeSince) > month)
   // 아직 활성 전(isPending)인 항목은 볼 이력이 없다
   const historyIds = recurringList.filter(re => !isPendingOf(re)).map(re => re.id)
 
@@ -100,13 +101,13 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       : Promise.resolve([]),
     historyIds.length > 0
       ? prisma.expense.findMany({
-          where: { propertyId, recurringExpenseId: { in: historyIds }, date: { gte: recentFrom, lte: recentTo } },
+          where: { propertyId, recurringExpenseId: { in: historyIds }, date: recentRange },
           select: { recurringExpenseId: true, amount: true, date: true },
         })
       : Promise.resolve([]),
     historyIds.length > 0
       ? prisma.expense.findMany({
-          where: { propertyId, recurringExpenseId: { in: historyIds }, date: monthRange(year - 1, m) },
+          where: { propertyId, recurringExpenseId: { in: historyIds }, date: monthDbRange(ymKey(year - 1, m)) },
           select: { recurringExpenseId: true, amount: true },
         })
       : Promise.resolve([]),
@@ -122,7 +123,7 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
   // 건수로 나누면 한 달에 두 번 낸 항목(분할·소급 납부)의 그 달 유출액이 절반으로 세어진다.
   const monthSum = new Map<string, number>()   // `${recurringId}|${YYYY-MM}` → 그 달 합계
   for (const e of recentExpenses) {
-    const key = `${e.recurringExpenseId!}|${e.date.toISOString().slice(0, 7)}`
+    const key = `${e.recurringExpenseId!}|${dbDateMonthKey(e.date)}`
     monthSum.set(key, (monthSum.get(key) ?? 0) + e.amount)
   }
   // 작년 같은 달 — 그 달에 실제로 나간 총액이므로 합계다(평균이 아니다).
@@ -145,7 +146,7 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       ? Math.round(monthly.reduce((s, v) => s + v, 0) / monthly.length)
       : null
     const as = (re as any).activeSince as Date | null
-    const isPending = !!(as && new Date(as) > endDate)
+    const isPending = isPendingOf({ activeSince: as })
     return {
       id:                re.id,
       title:             re.title,

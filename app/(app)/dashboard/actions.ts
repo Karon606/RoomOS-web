@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { getPaidRevenueByMonths, primaryTenantLease } from '@/lib/leaseStatus'
+import { dbDateMonthKey, monthDbRange, monthsDbRange, ymdToDbDate, type DbDateRange } from '@/lib/kstDate'
+import { daysInMonth, shiftMonth } from '@/lib/moveCalendar'
 import type { DashboardData } from './DashboardClient'
 import { computeUnpaidStatus } from './unpaid'
 
@@ -20,33 +22,31 @@ async function getTrendPropertyId(): Promise<string | null> {
 
 function ds(d: Date) { return d.toISOString().slice(0, 10) }
 
-function addMonths(m: string, delta: number): string {
-  const [y, mo] = m.split('-').map(Number)
-  const d = new Date(y, mo - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 // 납부일 축(일간·주간) 전용 조회. 귀속월 축(막대 모드)의 이용료는 lib/leaseStatus 정본이 만든다.
-async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date, acquisitionDate?: Date | null) {
+// 창은 lib/kstDate 정본(DbDateRange) 하나로 받는다 — 로컬 자정 Date 두 개로 받던 시절엔
+// KST 기기에서 @db.Date 비교가 하루 밀려 말일 거래가 어느 막대에도 안 들어갔다.
+async function fetchRangeData(propertyId: string, window: DbDateRange, acquisitionDate?: Date | null) {
+  // 인수일 이후로 좁힐 때도 창의 끝은 그대로 둔다 — 시작만 늦춘다.
+  const payWindow = acquisitionDate && acquisitionDate > window.gte ? { ...window, gte: acquisitionDate } : window
   return Promise.all([
     prisma.paymentRecord.findMany({
       // RESERVED 선납·취소분은 트렌드 매출에서 제외(조기 매출 노출 차단). CHECKED_OUT는 유지(단기·중도퇴실 매출 보존).
-      where: { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } } },
+      where: { propertyId, payDate: payWindow, isDeposit: false, isPrevOwner: false, leaseTerm: { status: { notIn: ['RESERVED', 'CANCELLED'] } } },
       select: { targetMonth: true, payDate: true, actualAmount: true },
     }),
-    ...fetchRangeExpenseIncome(propertyId, startDate, endDate),
+    ...fetchRangeExpenseIncome(propertyId, window),
   ])
 }
 
 // 지출·부가수익은 어느 축에서도 date 기준이다(ExtraIncome 에는 귀속월 칸 자체가 없다).
-function fetchRangeExpenseIncome(propertyId: string, startDate: Date, endDate: Date) {
+function fetchRangeExpenseIncome(propertyId: string, window: DbDateRange) {
   return [
     prisma.expense.findMany({
-      where: { propertyId, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, date: window },
       select: { date: true, amount: true },
     }),
     prisma.extraIncome.findMany({
-      where: { propertyId, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, date: window },
       select: { date: true, amount: true },
     }),
   ] as const
@@ -77,12 +77,12 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
 
   // ── 일간: targetMonth의 날짜별 ───────────────────────────────
   if (range === 'daily') {
-    const startDate = new Date(tyear, tmonth - 1, 1)
-    const endDate   = new Date(tyear, tmonth, 0)
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, startDate, endDate, acquisitionDate)
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, monthDbRange(targetMonth), acquisitionDate)
 
-    return Array.from({ length: endDate.getDate() }, (_, i) => {
-      const dayStr = ds(new Date(tyear, tmonth - 1, i + 1))
+    // 날짜 키는 문자열로 만든다 — 로컬 Date 를 ds() 로 찍던 시절엔 KST 기기에서 1일 막대가
+    // '전월 말일' 키를 들고 있어 그 달 어느 막대와도 짝이 안 맞았다.
+    return Array.from({ length: daysInMonth(targetMonth) }, (_, i) => {
+      const dayStr = `${targetMonth}-${String(i + 1).padStart(2, '0')}`
       const revenue =
         payments.filter(p => p.payDate && ds(new Date(p.payDate)) === dayStr).reduce((s, p) => s + p.actualAmount, 0) +
         incomes.filter(i => ds(new Date(i.date)) === dayStr).reduce((s, i) => s + i.amount, 0)
@@ -93,46 +93,43 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
 
   // ── 주간: targetMonth 끝 기준 12주 ──────────────────────────
   if (range === 'weekly') {
-    const endDate = new Date(tyear, tmonth, 0)
-    const lastSat = new Date(endDate)
-    lastSat.setDate(endDate.getDate() + (6 - endDate.getDay()))
+    // 주 경계는 UTC 자정으로만 센다 — @db.Date 저장값과 같은 축이라 경계일이 밀리지 않는다.
+    // KST 는 서머타임이 없어 하루 = 정확히 86400000ms 이므로 날짜 산술도 밀리초 덧셈으로 족하다.
+    const monthEnd = new Date(Date.UTC(tyear, tmonth, 0))
+    const lastSat  = new Date(monthEnd.getTime() + (6 - monthEnd.getUTCDay()) * 86400000)
 
     const weeks = Array.from({ length: 12 }, (_, i) => {
-      const end   = new Date(lastSat); end.setDate(lastSat.getDate() - (11 - i) * 7)
-      const start = new Date(end);     start.setDate(end.getDate() - 6)
+      const end   = new Date(lastSat.getTime() - (11 - i) * 7 * 86400000)
+      const start = new Date(end.getTime() - 6 * 86400000)
       return { start, end }
     })
 
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, weeks[0].start, weeks[11].end, acquisitionDate)
+    const window = { gte: weeks[0].start, lt: new Date(weeks[11].end.getTime() + 86400000) }
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, window, acquisitionDate)
     return weeks.map(w => {
       const inW = (d: Date) => d >= w.start && d <= w.end
       const revenue =
         payments.filter(p => p.payDate && inW(new Date(p.payDate))).reduce((s, p) => s + p.actualAmount, 0) +
         incomes.filter(i => inW(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
       const expense = expenses.filter(e => inW(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
-      return { label: `${w.start.getMonth() + 1}/${w.start.getDate()}`, revenue, expense, profit: revenue - expense }
+      return { label: `${w.start.getUTCMonth() + 1}/${w.start.getUTCDate()}`, revenue, expense, profit: revenue - expense }
     })
   }
 
   // ── 월간(12개월) / 반년(6개월) ───────────────────────────────
   if (range === 'monthly' || range === 'biannual') {
     const months = Array.from({ length: range === 'monthly' ? 12 : 6 }, (_, i) =>
-      addMonths(targetMonth, i - (range === 'monthly' ? 11 : 5))
+      shiftMonth(targetMonth, i - (range === 'monthly' ? 11 : 5))
     )
-    const [fy, fm] = months[0].split('-').map(Number)
-    const [ly, lm] = months[months.length - 1].split('-').map(Number)
     const [paid, expenses, incomes] = await Promise.all([
       paidRevenueForMonths(propertyId, months),
-      ...fetchRangeExpenseIncome(propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0)),
+      ...fetchRangeExpenseIncome(propertyId, monthsDbRange(months[0], months[months.length - 1])),
     ])
     return months.map(m => {
-      const [y, mo] = m.split('-').map(Number)
-      const mStart = new Date(y, mo - 1, 1); const mEnd = new Date(y, mo, 0)
-      const inM = (d: Date) => d >= mStart && d <= mEnd
       const revenue =
         (paid.get(m) ?? 0) +
-        incomes.filter(i => inM(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
-      const expense = expenses.filter(e => inM(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
+        incomes.filter(i => dbDateMonthKey(i.date) === m).reduce((s, i) => s + i.amount, 0)
+      const expense = expenses.filter(e => dbDateMonthKey(e.date) === m).reduce((s, e) => s + e.amount, 0)
       return { label: `${parseInt(m.slice(5))}월`, revenue, expense, profit: revenue - expense }
     })
   }
@@ -151,17 +148,12 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
       if (--qq === 0) { qq = 4; qy-- }
     }
     const allMonths = quarters.flatMap(q => q.months)
-    const [fy, fm] = quarters[0].months[0].split('-').map(Number)
-    const [ly, lm] = quarters[7].months[2].split('-').map(Number)
     const [paid, expenses, incomes] = await Promise.all([
       paidRevenueForMonths(propertyId, allMonths),
-      ...fetchRangeExpenseIncome(propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0)),
+      ...fetchRangeExpenseIncome(propertyId, monthsDbRange(quarters[0].months[0], quarters[7].months[2])),
     ])
     return quarters.map(({ year, q, months }) => {
-      const [fy2, fm2] = months[0].split('-').map(Number)
-      const [ly2, lm2] = months[2].split('-').map(Number)
-      const qStart = new Date(fy2, fm2 - 1, 1); const qEnd = new Date(ly2, lm2, 0)
-      const inQ = (d: Date) => d >= qStart && d <= qEnd
+      const inQ = (d: Date) => months.includes(dbDateMonthKey(d))
       // 분기 = 그 세 달의 달별 정본 합이다. 분기 단위로 다시 캡하면 달마다 갈린 과납이 상쇄돼 값이 달라진다.
       const revenue =
         months.reduce((s, m) => s + (paid.get(m) ?? 0), 0) +
@@ -181,37 +173,36 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
         where: { propertyId, isDeposit: false, isPrevOwner: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) },
         _count: { _all: true },
       }),
-      ...fetchRangeExpenseIncome(propertyId, new Date(1970, 0, 1), new Date(9999, 11, 31)),
+      // 전 기간 센티널 — 실제 데이터가 들어올 리 없는 양끝이라 하루 단위 정밀도는 의미가 없다.
+      ...fetchRangeExpenseIncome(propertyId, { gte: ymdToDbDate('1970-01-01'), lt: ymdToDbDate('9999-12-31') }),
     ])
-    const monthOf = (d: Date | string) => { const t = new Date(d); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}` }
+    const yearOf = (d: Date | string) => dbDateMonthKey(d).slice(0, 4)
     const payMonths = payMonthRows.map(r => r.targetMonth)
     const paid = await paidRevenueForMonths(propertyId, payMonths)
 
     if (range === 'annual') {
       const years = new Set<number>()
       payMonths.forEach(m => years.add(parseInt(m.slice(0, 4))))
-      expenses.forEach(e => years.add(new Date(e.date).getFullYear()))
-      incomes.forEach(i => years.add(new Date(i.date).getFullYear()))
+      expenses.forEach(e => years.add(Number(yearOf(e.date))))
+      incomes.forEach(i => years.add(Number(yearOf(i.date))))
       return [...years].sort().map(year => {
         const revenue =
           payMonths.filter(m => m.startsWith(`${year}`)).reduce((s, m) => s + (paid.get(m) ?? 0), 0) +
-          incomes.filter(i => new Date(i.date).getFullYear() === year).reduce((s, i) => s + i.amount, 0)
-        const expense = expenses.filter(e => new Date(e.date).getFullYear() === year).reduce((s, e) => s + e.amount, 0)
+          incomes.filter(i => yearOf(i.date) === `${year}`).reduce((s, i) => s + i.amount, 0)
+        const expense = expenses.filter(e => yearOf(e.date) === `${year}`).reduce((s, e) => s + e.amount, 0)
         return { label: `${year}년`, revenue, expense, profit: revenue - expense }
       })
     }
 
     const monthSet = new Set<string>(payMonths)
-    expenses.forEach(e => monthSet.add(monthOf(e.date)))
-    incomes.forEach(i => monthSet.add(monthOf(i.date)))
+    expenses.forEach(e => monthSet.add(dbDateMonthKey(e.date)))
+    incomes.forEach(i => monthSet.add(dbDateMonthKey(i.date)))
     return [...monthSet].sort().map(m => {
       const [y, mo] = m.split('-').map(Number)
-      const mStart = new Date(y, mo - 1, 1); const mEnd = new Date(y, mo, 0)
-      const inM = (d: Date) => d >= mStart && d <= mEnd
       const revenue =
         (paid.get(m) ?? 0) +
-        incomes.filter(i => inM(new Date(i.date))).reduce((s, i) => s + i.amount, 0)
-      const expense = expenses.filter(e => inM(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
+        incomes.filter(i => dbDateMonthKey(i.date) === m).reduce((s, i) => s + i.amount, 0)
+      const expense = expenses.filter(e => dbDateMonthKey(e.date) === m).reduce((s, e) => s + e.amount, 0)
       return { label: `${String(y).slice(2)}/${mo}`, revenue, expense, profit: revenue - expense }
     })
   }

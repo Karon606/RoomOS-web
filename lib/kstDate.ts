@@ -55,6 +55,60 @@ export function ymdToDbDate(ymd: string): Date {
   return new Date(`${ymd.slice(0, 10)}T00:00:00.000Z`)
 }
 
+// ── @db.Date 창(범위) 정본 ─────────────────────────────────────
+//
+// 왜 필요한가 — `new Date(y, m - 1, 1)` 은 **실행 환경의 자정**이다. KST 기기에서 그것은
+// 전날 15:00Z 이고, @db.Date 비교는 UTC 날짜부만 보므로 창이 통째로 하루 앞으로 밀린다.
+// 2026-08 실측: 8월 창이 [7/31 .. 8/30] 이 되어 7/31 전기요금 104만원이 8월 지출로 세어지고
+// 8/31 기록은 어느 달에도 안 잡혔다. Vercel(UTC)에서는 맞게 나오므로 **프로덕션에서만 맞는
+// 코드**라 눈에 안 띄는 것이 이 결함의 성질이다.
+//
+// 끝을 `lte 말일`이 아니라 `lt 다음 달 1일`로 잡는 이유.
+//   - 말일을 셀 필요가 없다(윤년·30/31일 분기 소멸).
+//   - @db.Date 든 DateTime 이든 똑같이 정확하다 — 말일 23:59:59.999 같은 '거의 자정' 끝값이
+//     필요 없다. 그 형태는 밀리초 아래 값을 놓치고, 칸 타입이 바뀌면 조용히 틀어진다.
+//   - 인접한 두 창이 겹치지도(이중 계상) 비지도(레코드 증발) 않는 형태가 구조로 보장된다.
+export type DbDateRange = { gte: Date; lt: Date }
+
+// 'YYYY-MM' 의 다음 달. 경계 계산 전용 내부 헬퍼다.
+// 일반 용도의 정본은 lib/moveCalendar shiftMonth 지만, kstDate 는 아무 것도 import 하지 않는
+// 잎 모듈로 두어야 한다 — 클라이언트 컴포넌트가 날짜 하나 때문에 달력·계약 트리를 끌어오면 안 된다.
+function nextMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  const idx = y * 12 + m                      // 0-based(m-1) 에 한 달 더한 값
+  return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`
+}
+
+/** 'YYYY-MM' 한 달 창 — [그 달 1일, 다음 달 1일). */
+export function monthDbRange(month: string): DbDateRange {
+  return { gte: ymdToDbDate(`${month}-01`), lt: ymdToDbDate(`${nextMonth(month)}-01`) }
+}
+
+/** 'YYYY-MM' 두 달을 양끝으로 하는 창 — [from 1일, to 다음 달 1일). 양끝 달 모두 포함한다. */
+export function monthsDbRange(fromMonth: string, toMonth: string): DbDateRange {
+  return { gte: ymdToDbDate(`${fromMonth}-01`), lt: ymdToDbDate(`${nextMonth(toMonth)}-01`) }
+}
+
+/** 한 해 창 — [1/1, 다음 해 1/1). */
+export function yearDbRange(year: number | string): DbDateRange {
+  const y = Number(year)
+  return { gte: ymdToDbDate(`${y}-01-01`), lt: ymdToDbDate(`${y + 1}-01-01`) }
+}
+
+/** 하루 창 — ['YYYY-MM-DD', 다음 날). UTC 자정끼리의 덧셈이라 서머타임이 끼어들 여지가 없다. */
+export function dayDbRange(ymd: string): DbDateRange {
+  const gte = ymdToDbDate(ymd)
+  return { gte, lt: new Date(gte.getTime() + 86400000) }
+}
+
+// @db.Date 값이 속한 달 'YYYY-MM'. 로컬 게터(getFullYear/getMonth)로 뽑으면 실행 환경
+// 타임존만큼 밀리고, Date 끼리 부등호로 재면 경계일 레코드가 양쪽 버킷에서 탈락한다.
+// 저장 정본이 UTC 자정(ymdToDbDate)이므로 UTC 날짜부가 곧 달력 날짜다.
+export function dbDateMonthKey(d: Date | string): string {
+  const dt = d instanceof Date ? d : new Date(d)
+  return dt.toISOString().slice(0, 7)
+}
+
 // ── 시각까지 있는 일시(날짜 + HH:mm) ────────────────────────────
 // 날짜만 다루는 위 함수들과 달리 '몇 시 몇 분'이 함께 있는 값이다.
 // 폼은 오프셋 없는 "2026-08-05T14:46"(= 사용자가 본 KST)을 보내는데, 서버(UTC)의

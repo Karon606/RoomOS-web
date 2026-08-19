@@ -9,7 +9,8 @@ import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
-import { kstMonthStr, kstYmd, kstYmdStr } from '@/lib/kstDate'
+import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange } from '@/lib/kstDate'
+import { shiftMonth } from '@/lib/moveCalendar'
 import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
@@ -69,9 +70,9 @@ function monthRange(startMonth: string, endMonth: string): string[] {
 // ── 데이터 패칭 ────────────────────────────────────────────────
 
 async function getDashboardData(propertyId: string, targetMonth: string) {
-  const [year, month] = targetMonth.split('-').map(Number)
-  const startDate = new Date(year, month - 1, 1)
-  const endDate   = new Date(year, month, 0)
+  // 이 달 창 — lib/kstDate 정본. 로컬 자정으로 잡던 시절엔 KST 기기에서 창이 [전월 말일 .. 이 달 말일-1]로
+  // 밀려, 말일 지출이 어느 달에도 안 잡히고 전월 말일이 이 달에 이중으로 세어졌다(2026-08 실측).
+  const monthWindow = monthDbRange(targetMonth)
 
   // 미수납·납입완료 위젯은 selected month와 무관하게 항상 "오늘 기준"으로 계산 (KST)
   const realTodayMonthStr = kstMonthStr()
@@ -88,8 +89,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     : property?.acquisitionDate ? new Date(property.acquisitionDate) : null
 
   const last6Months = getLast6Months(targetMonth)
-  const [tyear, tmonth] = last6Months[0].split('-').map(Number)
-  const trendStartDate  = new Date(tyear, tmonth - 1, 1)
+  const trendWindow = monthsDbRange(last6Months[0], targetMonth)
 
   // KST 기준 오늘 자정
   const kstToday  = kstYmd()
@@ -137,10 +137,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 두 화면이 다른 숫자로 부른다. 액션 안의 requirePropertyAccess 는 React cache 라 같은
   // 요청에서 이미 한 조회를 다시 하지 않는다.
   const pMoveCalendar = getMoveCalendarMonth(targetMonth)
-  const [tcY, tcM] = targetMonth.split('-').map(Number)
   const pLastExpAggs = Promise.all([
-    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
-    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY - 1, tcM - 1, 1), lte: new Date(tcY - 1, tcM, 0) } }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, date: monthDbRange(shiftMonth(targetMonth, -1)) }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, date: monthDbRange(shiftMonth(targetMonth, -12)) }, _sum: { amount: true } }),
   ])
   const pOverduConfirmed = prisma.leaseTerm.findMany({
     where: {
@@ -218,10 +217,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: { leaseTermId: true, actualAmount: true, expectedAmount: true },
     }),
     prisma.expense.findMany({
-      where: { propertyId, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, date: monthWindow },
     }),
     prisma.extraIncome.findMany({
-      where: { propertyId, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, date: monthWindow },
     }),
     prisma.room.count({ where: { propertyId } }),
     // 공실 = isVacant 이면서 '집계 제외'(창고·사무실, lib/vacancy 정본) 아님 — 호실관리 공실 수와 정합(신고 9d844226)
@@ -235,7 +234,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     prisma.expense.groupBy({
       by: ['category'],
-      where: { propertyId, date: { gte: startDate, lte: endDate } },
+      where: { propertyId, date: monthWindow },
       _sum: { amount: true },
       orderBy: { _sum: { amount: 'desc' } },
     }),
@@ -276,11 +275,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 6개월 트렌드 — 이용료 항은 pTrendPaidRevenue(정본)로 옮겼다. 여기 있던 무캡 합산 조회는
     // 그 자리에서 사라졌다(2026-08-12). 지출·부가수익은 date 축이라 그대로 남는다.
     prisma.expense.findMany({
-      where: { propertyId, date: { gte: trendStartDate, lte: endDate } },
+      where: { propertyId, date: trendWindow },
       select: { date: true, amount: true },
     }),
     prisma.extraIncome.findMany({
-      where: { propertyId, date: { gte: trendStartDate, lte: endDate } },
+      where: { propertyId, date: trendWindow },
       select: { date: true, amount: true },
     }),
     prisma.leaseTerm.count({ where: { propertyId, status: 'ACTIVE' } }),
@@ -347,9 +346,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 최근 수납 내역 (활동 피드용) — viewMonth 안에 payDate가 있는 record
     // [납입일변경] 메모 record(일할 차액)·청구 조정 전표(단기 연장·감액 마커)는 물리적 납입이 아니므로 제외
     (() => {
-      const [vy, vm] = targetMonth.split('-').map(Number)
-      const monthStart = new Date(vy, vm - 1, 1)
-      const monthEnd = new Date(vy, vm, 0); monthEnd.setHours(23, 59, 59, 999)
       // 납입완료 피드 범위 = (이 달에 낸 결제) ∪ (이 달분 결제).
       //   → 7월분을 6월에 선납한 건: 6월 화면(payDate∈6월)·7월 화면(targetMonth=7월) 양쪽에 뜬다. 각 줄에 귀속월·선납/지연 뱃지.
       return prisma.paymentRecord.findMany({
@@ -360,7 +356,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
           isBillingAdjust: false,
           NOT: { memo: { contains: '[납입일변경]' } },
           OR: [
-            { payDate: { gte: monthStart, lte: monthEnd } },
+            { payDate: monthWindow },
             { targetMonth },
           ],
         },
@@ -504,7 +500,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const isDep = r.type === 'DEPOSIT'
     if (isDep) reserveBalance += r.amount
     else reserveBalance -= r.amount
-    if (r.date >= startDate && r.date <= endDate) {
+    if (dbDateMonthKey(r.date) === targetMonth) {
       if (isDep) reserveMonthlyDeposit += r.amount
       else reserveMonthlyWithdraw += r.amount
     }
@@ -515,7 +511,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 예상 지출 계산 ────────────────────────────────────────────
   // 고정지출 추정액은 정본식(lib/recurringEstimate) 하나만 쓴다 — 여기서 따로 추정하지 않는다.
   const nonRecurringPast = await prisma.expense.aggregate({
-    where: { propertyId, recurringExpenseId: null, date: { gte: new Date(year, month - 4, 1), lt: startDate } },
+    where: { propertyId, recurringExpenseId: null, date: monthsDbRange(shiftMonth(targetMonth, -3), shiftMonth(targetMonth, -1)) },
     _sum: { amount: true },
   })
 
@@ -834,17 +830,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 지출도 KPI 와 같은 창(그 달 1일~말일)이다.
   const trendPaidRevenue = await pTrendPaidRevenue
   const trend = last6Months.map(m => {
-    const [y, mo] = m.split('-').map(Number)
-    const mStart  = new Date(y, mo - 1, 1)
-    const mEnd    = new Date(y, mo, 0)
     const revenue =
       (trendPaidRevenue.get(m)?.total ?? 0) +
       trendIncomes
-        .filter(i => new Date(i.date) >= mStart && new Date(i.date) <= mEnd)
+        .filter(i => dbDateMonthKey(i.date) === m)
         .reduce((s, i) => s + i.amount, 0)
     const expense =
       trendExpenses
-        .filter(e => new Date(e.date) >= mStart && new Date(e.date) <= mEnd)
+        .filter(e => dbDateMonthKey(e.date) === m)
         .reduce((s, e) => s + e.amount, 0)
     return { month: m, revenue, expense, profit: revenue - expense }
   })
