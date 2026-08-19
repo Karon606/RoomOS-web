@@ -1824,7 +1824,7 @@ export default function FinanceClient({
   const [recGroupMode, setRecGroupMode] = useState(false)
   const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
   const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
   // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
@@ -1849,7 +1849,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, memo: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1863,7 +1863,7 @@ export default function FinanceClient({
   }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1879,6 +1879,9 @@ export default function FinanceClient({
       isVariable: recMgmtForm.isVariable,
       alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
       activeSince: recMgmtForm.activeSince || undefined,
+      // 비운 칸은 undefined 가 아니라 null 로 보낸다. undefined 는 Prisma 가 '변경 없음'으로 읽어
+      // 한 번 적은 값을 지울 방법이 사라진다(적용에는 적용취소가 늘 붙어야 한다).
+      priorYearAmount: recMgmtForm.priorYearAmount ? Number(recMgmtForm.priorYearAmount.replace(/[^0-9]/g, '')) || null : null,
       memo: recMgmtForm.memo || undefined,
     }
     startRecMgmtTransition(async () => {
@@ -4519,6 +4522,15 @@ export default function FinanceClient({
                     </div>
                   </label>
                 </div>
+                {recMgmtForm.isVariable && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">전년동월 실적 (선택)</label>
+                    <MoneyInput value={Number(recMgmtForm.priorYearAmount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, priorYearAmount: v > 0 ? String(v) : '' }))} placeholder="0원" />
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+                      작년 같은 달 실적을 알면 적어 두세요. 작년 기록이 쌓이기 전까지 추정에 씁니다.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모 (선택)</label>
                   <input type="text" value={recMgmtForm.memo} onChange={e => setRecMgmtForm(p => ({ ...p, memo: e.target.value }))}

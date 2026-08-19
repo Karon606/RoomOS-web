@@ -1270,6 +1270,7 @@ export type RecurringExpenseRow = {
   alertDaysBefore: number
   isActive: boolean
   activeSince: string | null
+  priorYearAmount: number | null   // 운영자가 손으로 적어 둔 전년 동월 실적(추정 사다리에서 3개월 평균보다 우선)
   memo: string | null
   isGroup: boolean   // 묶기로 만든 부모 — '묶기 해제' 노출용
   // #1 관리비 묶음: 세부항목(있으면 부모). amount/isVariable은 이 항목들로부터 파생.
@@ -1289,7 +1290,7 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       payMethod: true, vendor: true, financialAccountId: true,
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
-      isActive: true, activeSince: true, memo: true, groupSourceIds: true,
+      isActive: true, activeSince: true, priorYearAmount: true, memo: true, groupSourceIds: true,
       items: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, amount: true, isVariable: true, sortOrder: true } },
     },
   })
@@ -1314,7 +1315,7 @@ function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVaria
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; memo?: string
+  payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number | null; memo?: string
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
@@ -1343,7 +1344,7 @@ export async function addRecurringExpense(data: {
 
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
-  payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; memo: string | null
+  payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
   // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
   items: RecurringItemInput[]
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
