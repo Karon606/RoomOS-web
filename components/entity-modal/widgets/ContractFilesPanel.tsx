@@ -20,6 +20,8 @@ import {
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
 import { restoreContractVersion } from '@/app/contract/[tenantId]/actions'
+import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
+import { contractPurposeLabel } from '@/lib/contractPurpose'
 import {
   issueContractShareLink, getContractShareState,
   closeContractShareLink, reopenContractShareLink,
@@ -60,7 +62,10 @@ function shareBadge(link: ContractShareLinkInfo): { label: string; active: boole
 // 같은 계약의 발급본을 묶는 키. leaseTermId 가 없는 파일(연결이 끊긴 구본·스캔본)은 자기 자신이 한
 // 그룹이다 — 무엇의 다른 버전인지 앱이 말할 수 없는데 묶으면 거짓말이 된다. 사람이 아니라 계약이
 // 기준인 이유는 한 사람이 계약을 둘 가질 수 있고, 그 둘은 서로의 버전이 아니기 때문이다.
-const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => f.leaseTermId ?? `single:${f.id}`
+const issueGroupKey = (f: { id: string; leaseTermId: string | null }) => canonIssueGroupKey(f)
+
+// 목적 표기 — 실계약이면 null 이라 아무것도 안 그린다(lib/contractPurpose 정본).
+const purposeLabel = (f: { issuePurpose: string | null }) => contractPurposeLabel(f.issuePurpose)
 
 // hideSignRequest: 수정 폼에서만 true. 서명 요청 링크는 발급 시점의 DB 값으로 templateSnapshot 을
 // 굳히므로(schema.prisma:1431), 호실·임대료를 고치는 중에 보내면 저장 전 옛 값으로 스냅샷이 나간다.
@@ -250,20 +255,10 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     () => [...new Set(voidedFiles.map(f => f.leaseTermId).filter((v): v is string => !!v))],
     [voidedFiles],
   )
-  // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정으로 고정돼 같은 날 두 부를 못 가르고,
-  // contractNo 는 번호 도입(2026-08-03) 이전 발급본이 null 이라 정렬 자체가 안 된다.
-  // 실측 황인정 2부가 정확히 그 모양이다 — signedAt 동일, 한쪽 contractNo null.
-  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
-  const currentIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const [key, n] of groupCount) {
-      if (n < 2) continue
-      const live = (files ?? []).filter(f => issueGroupKey(f) === key && !f.voidedAt)
-      if (!live.length) continue
-      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
-    }
-    return ids
-  }, [files, groupCount])
+  // 그룹별 대표 1부 — 판정은 정본 하나다(lib/contractCurrentIssue). 실계약이 고정 대표이고,
+  // 실계약이 여럿일 때만 createdAt 이 동률을 가른다. 여기서 손으로 다시 세면 형제 화면·서류
+  // 보내기와 서로 다른 종이를 '현재' 라고 부르게 된다.
+  const currentIds = useMemo(() => new Set(currentIssueIds(files ?? []).values()), [files])
 
   const shareLink = share?.link ?? null
   const badge = shareLink ? shareBadge(shareLink) : null
@@ -414,7 +409,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   </span>
                   {/* 지위 배지 — §11 트라이어드(-bg + -fg + inset ring) + pill 반경.
                       종전 coral 10% + ring 없음은 다크에서 3.03:1 이었다(--coral 은 다크 재정의가 없다). */}
-                  {currentIds.has(f.id) && (
+                  {/* 배지를 띄울지는 표시 정책이다 — 1부뿐이면 비교 대상이 없어 세우지 않는다.
+                      판정 자체(currentIds)는 부수를 안 본다. 서류 보내기가 1부짜리 계약의 대표도 물어보기 때문이다. */}
+                  {needsName && currentIds.has(f.id) && (
                     <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
                   )}
                   <div className="flex-1 min-w-0 basis-full sm:basis-auto">
@@ -424,14 +421,21 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                     {/* 계약번호가 곧 이 발급본의 이름이다. 눌러 발급 기록을 연다(§30 행 액션 4개는 그대로).
                         번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
                         2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
-                    {needsName && (f.contractNo ? (
-                      <button type="button" onClick={() => setDetailId(f.id)}
-                        className="mt-0.5 block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
-                        계약번호 {f.contractNo}
-                      </button>
-                    ) : (
-                      <p className="mt-0.5 truncate text-[0.6875rem] text-[var(--warm-muted)]">{f.fileName}</p>
-                    ))}
+                    {(needsName || purposeLabel(f)) && (
+                      <p className="mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
+                        {f.contractNo ? (
+                          <button type="button" onClick={() => setDetailId(f.id)}
+                            className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
+                            계약번호 {f.contractNo}
+                          </button>
+                        ) : (
+                          <span className="max-w-full truncate">{f.fileName}</span>
+                        )}
+                        {/* 목적은 배지가 아니라 보조줄이다 — 배지 슬롯은 출처와 지위로 이미 둘이고,
+                            §11 상한이 2개다. 실계약은 아예 안 적는다(기본값이 대다수 행에 붙으면 소음). */}
+                        {purposeLabel(f) && <span className="shrink-0">· {purposeLabel(f)}</span>}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

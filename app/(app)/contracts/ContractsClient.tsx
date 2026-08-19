@@ -25,14 +25,14 @@ import { useLongPress } from '@/lib/useLongPress'
 import { useFocusSection } from '@/lib/useFocusSection'
 import { canShareFiles } from '@/lib/shareFile'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
+import { contractPurposeLabel } from '@/lib/contractPurpose'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }
 
-// 같은 계약의 발급본을 묶는 키 — ContractFilesPanel 과 같은 규칙이다.
-// leaseTermId 가 없는 파일은 자기 자신이 한 그룹이다(무엇의 다른 버전인지 앱이 말할 수 없다).
-// 사람이 아니라 계약이 기준인 이유는 한 사람이 계약을 둘 가질 수 있고 그 둘은 서로의 버전이 아니어서다.
-const issueGroupKey = (c: { id: string; leaseTermId: string | null }) => c.leaseTermId ?? `single:${c.id}`
+// 같은 계약의 발급본을 묶는 키 — 판정 정본 하나를 두 화면이 함께 쓴다(lib/contractCurrentIssue).
+const issueGroupKey = (c: { id: string; leaseTermId: string | null }) => canonIssueGroupKey(c)
 
 // 퇴실 그룹: 퇴실 완료 + 입실 취소. 연결 계약이 없는(status null) 파일은 거주중 쪽에 둔다.
 const isDeparted = (status: string | null) => status === 'CHECKED_OUT' || status === 'CANCELLED'
@@ -89,19 +89,9 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
     for (const c of contracts) m.set(issueGroupKey(c), (m.get(issueGroupKey(c)) ?? 0) + 1)
     return m
   }, [contracts])
-  // 그룹별 최신 1부 — createdAt 기준. signedAt 은 서명일이라 자정 고정이고 contractNo 는 번호 도입
-  // 이전 발급본이 null 이라, 둘 다 같은 날 두 부를 못 가른다(황인정 실측 2부가 정확히 그 모양).
-  // 폐기본은 후보에서 뺀다 — 폐기된 종이가 '현재' 일 수는 없다. 그룹이 통째로 폐기면 현재도 없다.
-  const currentIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const [key, n] of groupCount) {
-      if (n < 2) continue
-      const live = contracts.filter(c => issueGroupKey(c) === key && !c.voidedAt)
-      if (!live.length) continue
-      ids.add(live.reduce((a, b) => (a.createdAt > b.createdAt ? a : b)).id)
-    }
-    return ids
-  }, [contracts, groupCount])
+  // 그룹별 대표 1부 — 판정은 정본 하나다(lib/contractCurrentIssue). 실계약이 고정 대표이고,
+  // 실계약이 여럿일 때만 createdAt 이 동률을 가른다. 배지를 띄울지는 아래 표시 조건이 정한다.
+  const currentIds = useMemo(() => new Set(currentIssueIds(contracts).values()), [contracts])
 
   // 같은 계약에 **화면에 남는** 부수가 몇인가 — 삭제 안내의 'N부는 남습니다' 가 이 값을 쓴다.
   // 폐기본이 접혀 있는데 그것까지 세면 아무것도 안 보이는데 남는다고 말하는 상태가 된다.
@@ -357,7 +347,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   }`}>{SOURCE_LABEL[c.source]}</span>
                   {/* 여러 부 중 어느 것이 지금 유효한지 — 입실자별에서만 띄운다. 최신순은 사람이 섞여
                       있어 옆 행과 비교할 대상이 아니라, 배지가 붙으면 무엇의 '현재'인지 알 수 없다. */}
-                  {sort === 'tenant' && currentIds.has(c.id) && (
+                  {sort === 'tenant' && (groupCount.get(issueGroupKey(c)) ?? 1) > 1 && currentIds.has(c.id) && (
                     <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
                   )}
                   {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
@@ -369,17 +359,23 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                 </div>
                 {/* 계약번호가 사람이 부를 이름이다. 파일명은 자동 생성 문자열이라 아무도 못 부른다.
                     번호가 없는 스캔본·구본은 부를 이름 자체가 없으므로 종전 표기(파일명)를 유지한다. */}
-                {!c.contractNo ? (
-                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
-                ) : selectMode ? (
-                  // 선택 모드에선 행 전체가 체크박스라 안쪽 버튼이 클릭을 가로채면 안 된다(이름 칸과 같은 규칙)
-                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">계약번호 {c.contractNo}</p>
-                ) : (
-                  <button type="button" onClick={() => setDetailId(c.id)}
-                    className="block max-w-full truncate text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors mt-0.5">
-                    계약번호 {c.contractNo}
-                  </button>
-                )}
+                {/* 목적은 배지가 아니라 보조줄이다(§11 배지 상한 2개). 실계약은 아예 안 적는다. */}
+                <p className="mt-0.5 flex max-w-full items-baseline gap-1 text-[0.6875rem] text-[var(--warm-muted)]">
+                  {!c.contractNo ? (
+                    <span className="max-w-full truncate">{c.fileName}</span>
+                  ) : selectMode ? (
+                    // 선택 모드에선 행 전체가 체크박스라 안쪽 버튼이 클릭을 가로채면 안 된다(이름 칸과 같은 규칙)
+                    <span className="max-w-full truncate">계약번호 {c.contractNo}</span>
+                  ) : (
+                    <button type="button" onClick={() => setDetailId(c.id)}
+                      className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
+                      계약번호 {c.contractNo}
+                    </button>
+                  )}
+                  {contractPurposeLabel(c.issuePurpose) && (
+                    <span className="shrink-0">· {contractPurposeLabel(c.issuePurpose)}</span>
+                  )}
+                </p>
                 <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.signedAt)} 서명</p>
               </div>
               </div>

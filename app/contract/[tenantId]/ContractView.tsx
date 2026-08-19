@@ -10,7 +10,7 @@ import SignaturePad from 'signature_pad'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
-import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, restoreContractVersion } from './actions'
+import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
@@ -815,7 +815,25 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       if (driftChoice === 'alt') await handleResignAll()
       return
     }
-    if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
+    // 발급 목적 — 물어야 하는 발급인지 서버에 먼저 묻는다. 실계약이 아직 없으면 이번 발급이
+    // 곧 그 실계약이라 물을 것이 없고, 토글이 꺼진 영업장에서는 목적 입력이 화면에 없어야 한다.
+    // 조회 실패는 실계약 발급으로 떨어뜨린다 — 그쪽이 되돌리기 쉬운 결과이고, 진짜 게이트는 서버다.
+    let issuePurpose: string | null = null
+    const purposeCtx = await getIssuePurposeContext(data.tenant.id, data.lease?.id ?? null)
+    const asksPurpose = purposeCtx.ok && purposeCtx.multiVersion && purposeCtx.hasRealContract
+    if (asksPurpose) {
+      const pick = await choiceDialog({
+        title: '이 계약서를 어떤 판본으로 발급할까요?',
+        message: '실계약 계약서가 이미 있습니다. 이번 발급본은 실계약이 아닌 판본으로 기록되고, 대표 계약서는 실계약 그대로 남습니다.',
+        level: 'caution',
+        confirmLabel: '제출용',
+        altLabel: '번역본',
+      })
+      if (pick !== 'confirm' && pick !== 'alt') return
+      issuePurpose = pick === 'confirm' ? '제출용' : '번역본'
+    } else {
+      if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
+    }
     setContractSaving(true)
     const release = trackSave()
     try {
@@ -835,6 +853,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
           smoking,
           emergencyContactText,
+          // null 이면 실계약이다. 서버가 화이트리스트로 다시 본다.
+          issuePurpose,
         }),
       })
       const text = await res.text()

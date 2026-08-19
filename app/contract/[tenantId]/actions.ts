@@ -21,6 +21,7 @@ import {
   buildVoidedVersion, hasVoidableVersion, parseContractVersionArchive, restoreTargetsFrom,
   restoredFieldsFrom, versionKind, type ContractVersionKind,
 } from '@/lib/contractVersion'
+import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
 
 // ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
 // 기존 소비처(ContractView 등)의 import 경로 유지를 위해 타입만 재수출.
@@ -478,6 +479,40 @@ export async function resetContractOverride(leaseTermId: string): Promise<{ ok: 
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '초기화에 실패했습니다.' }
+  }
+}
+
+/**
+ * 이번 발급이 목적을 물어야 하는 발급인가 — 화면이 확인창을 고르기 전에 읽는 두 사실.
+ *
+ * 물어야 하는 조건은 둘 다 참일 때다. 영업장 토글이 켜져 있고, 살아 있는 실계약본이 이미 있다.
+ * 실계약이 없으면 이번 발급이 곧 그 실계약이라 물을 것이 없고(운영자 결정: 실계약이 무조건 먼저),
+ * 토글이 꺼져 있으면 파생 판본 자체를 만들 수 없어 화면에 목적 입력이 나타나지 않아야 한다.
+ *
+ * 화면 편의를 위한 조회일 뿐 게이트가 아니다. 진짜 게이트는 발급 API 가 서버에서 다시 본다 —
+ * 이 값을 믿고 막으면 API 를 직접 부르는 요청이 그대로 통과한다.
+ */
+export async function getIssuePurposeContext(
+  tenantId: string,
+  leaseTermId: string | null,
+): Promise<{ ok: true; multiVersion: boolean; hasRealContract: boolean } | { ok: false; error: string }> {
+  try {
+    const { propertyId } = await requireAuthAndProperty()
+    const [property, files] = await Promise.all([
+      prisma.property.findUnique({ where: { id: propertyId }, select: { multiContractVersions: true } }),
+      prisma.contractFile.findMany({
+        where: { tenantId, propertyId, deletedAt: null, driveFileId: { not: '' } },
+        select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
+      }),
+    ])
+    return {
+      ok: true,
+      multiVersion: property?.multiContractVersions === true,
+      hasRealContract: !!leaseTermId && hasLiveRealContract(files, leaseTermId),
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '발급 목적을 확인하지 못했습니다.' }
   }
 }
 

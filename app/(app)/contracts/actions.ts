@@ -30,6 +30,10 @@ export type ContractListRow = {
   leaseTermId: string | null
   // 폐기된 버전의 발급본인가 — 삭제가 아니라 도장이라 목록에 계속 남고 [폐기됨] 배지가 붙는다.
   voidedAt: Date | null
+  // 이 부가 나온 뒤 그 계약의 서명이 다음 판본으로 넘어갔는가(구버전). 폐기와 다르다.
+  supersededAt: Date | null
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본). 대표본 판정이 이 값을 본다.
+  issuePurpose: string | null
 }
 
 // 거주 중 성격의 lease 상태 — 이 중 하나라도 있으면 입주자는 '거주중'.
@@ -55,6 +59,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
     select: {
       id: true, fileName: true, source: true, signedAt: true, createdAt: true,
       driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
+      supersededAt: true, issuePurpose: true,
       tenant: {
         select: {
           id: true, name: true,
@@ -86,6 +91,8 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       contractNo: r.contractNo,
       leaseTermId: r.leaseTermId,
       voidedAt: r.voidedAt,
+      supersededAt: r.supersededAt,
+      issuePurpose: r.issuePurpose,
     }
   })
 }

@@ -3633,6 +3633,10 @@ export type ContractFileRow = {
   leaseTermId: string | null
   // 폐기된 버전의 발급본인가 — 삭제가 아니라 도장이라 목록에 계속 남고 [폐기됨] 배지가 붙는다.
   voidedAt: Date | null
+  // 이 부가 나온 뒤 그 계약의 서명이 다음 판본으로 넘어갔는가(구버전). 폐기와 다르다.
+  supersededAt: Date | null
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본). 대표본 판정이 이 값을 본다.
+  issuePurpose: string | null
   viewUrl: string
 }
 
@@ -3646,6 +3650,7 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
     select: {
       id: true, driveFileId: true, fileName: true, source: true,
       signedAt: true, createdAt: true, contractNo: true, leaseTermId: true, voidedAt: true,
+      supersededAt: true, issuePurpose: true,
     },
   })
   return rows.map(r => ({
@@ -3677,6 +3682,8 @@ export type IssuedContractDetail = {
   signedAt: Date
   createdAt: Date
   tenantName: string
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본).
+  issuePurpose: string | null
   snapshot: IssuedContractSnapshot | null
 }
 
@@ -3693,7 +3700,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
       where: { id, propertyId },
       select: {
         contractNo: true, fileName: true, source: true, signedAt: true, createdAt: true,
-        issuedSnapshot: true, tenant: { select: { name: true } },
+        issuePurpose: true, issuedSnapshot: true, tenant: { select: { name: true } },
       },
     })
     if (!row) return { ok: false, error: '계약서 파일을 찾을 수 없습니다.' }
@@ -3707,6 +3714,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
         signedAt: row.signedAt,
         createdAt: row.createdAt,
         tenantName: row.tenant.name,
+        issuePurpose: row.issuePurpose,
         snapshot: snap && typeof snap === 'object' ? snap : null,
       },
     }
