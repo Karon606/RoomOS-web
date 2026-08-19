@@ -510,8 +510,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                 })}
               </ul>
               {voidedLeaseIds.map(id => (
+                // 히트영역만 44px 로 넓힌다 — 보이는 크기는 그대로 두는 정본 수법(RowActionBtn).
                 <button key={id} type="button" onClick={() => handleRestoreVersion(id)} disabled={restoring}
-                  className="mt-2 text-xs font-medium text-[var(--coral)] disabled:opacity-60">
+                  className="mt-2 -my-1 min-h-[44px] inline-flex items-center text-xs font-medium text-[var(--coral)] disabled:opacity-60">
                   {restoring ? '되돌리는 중…' : '폐기 적용취소'}
                 </button>
               ))}
