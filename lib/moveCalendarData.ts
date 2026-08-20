@@ -159,6 +159,22 @@ export async function fetchMoveLeases(
 const MOVE_WORK_STATUSES = ['PLANNED', 'DONE'] as const
 
 /**
+ * 캘린더에서 부를 종류 문구 — 사유 라벨에 **명사가 없으면 붙인다.**
+ *
+ * CLEANING_REASON_LABEL 은 청소 목록용이라 그 화면의 열이 이미 '청소'를 말하고 있다. 그래서
+ * '공사·도배 후'·'입실 중 요청'·'기타' 처럼 명사가 없는 낱말이 섞여 있는데, 캘린더에는 그런
+ * 열이 없다. 그대로 쓰면 소리로 "404호 공사·도배 후 완료" 가 되어 **무엇이 완료됐는지가
+ * 문장에서 사라진다**(헤드리스 실측에서 열넷 중 다섯이 그 모양이었다).
+ *
+ * 사유 어휘를 여기서 다시 적지 않는다 — 사본이 곧 두 번째 진실이 된다. 정본 라벨을 그대로
+ * 쓰되 명사가 없을 때만 한 낱말을 잇는다.
+ */
+export const workKindLabel = (reason: CleaningReason): string => {
+  const label = CLEANING_REASON_LABEL[reason] ?? CLEANING_REASON_LABEL.OTHER
+  return label.includes('청소') ? label : `${label} 청소`
+}
+
+/**
  * 그 범위의 청소 — 트랙에 그릴 것만.
  *
  * **'안 함'(SKIPPED)은 안 싣는다.** 하지 않기로 한 일은 일정이 아니고, 그리면 트랙에서
@@ -218,7 +234,7 @@ export async function fetchMoveWorks(
       roomNo: room.roomNo,
       date,
       done,
-      kindLabel: CLEANING_REASON_LABEL[r.reason as CleaningReason] ?? CLEANING_REASON_LABEL.OTHER,
+      kindLabel: workKindLabel(r.reason as CleaningReason),
       performerLabel: (done ? r.performerName?.trim() : null)
         || (performer ? CLEANING_PERFORMER_LABEL[performer] : null),
       vacancyExcluded: isVacancyExcluded(room),
