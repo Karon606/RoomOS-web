@@ -1448,6 +1448,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       moveOutCleaningFee: cleaningFeeDeductible(l.cleaningFee, moveOutCleaningPaid),
       moveOutCompositionLabel: depositCompositionLabel(moveOutComp),
       moveOutTenantName: l.tenant.name,
+      // 호실이 걸린 계약인가 — 퇴실 창의 '청소 예정일' 칸은 이때만 선다(호실이 없으면 서버가
+      // 청소를 아예 안 만들어 묻고 버리는 칸이 된다).
+      moveOutHasRoom: !!l.roomId,
     })
   }
 

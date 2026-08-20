@@ -21,6 +21,7 @@ import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { reservationCompositionLabel } from '@/lib/reservationDeposit'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { CheckoutCleaningDateField, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
@@ -100,6 +101,18 @@ type Lease = {
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
 type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number } | null
 
+// 전이와 함께 보내는 값들. 종전에는 이 모양이 runTransition·submit 두 자리에 그대로 베껴져
+// 있었는데, 칸을 하나 늘릴 때마다 두 곳을 같이 고쳐야 하고 한쪽만 고치면 조용히 안 실린다.
+type TransitionFields = {
+  moveInDate?: string
+  expectedMoveOut?: string
+  moveOutDate?: string
+  rentAmount?: number
+  reservationConfirmedAt?: string | null
+  /** 퇴실 청소 예정일. '' 대신 null 이 '미정'이고, 필드 자체가 없으면 '안 보냄'이다. */
+  cleaningDate?: string | null
+}
+
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
 export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases = [], onChange }: {
@@ -127,6 +140,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
+  // 퇴실 청소 예정일 — 아직 안 건드렸으면 퇴실일(transDate)을 따라 움직인다(정본 훅).
+  const cleaning = useCheckoutCleaningDate(transDate)
   const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
@@ -219,6 +234,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 사유 상태 초기화 — 앞서 연 미니폼의 선택이 남으면 다음 전이에 엉뚱한 사유가 붙는다.
     // 종전에는 취소 분기에서만 비웠는데, 퇴실도 사유를 받게 되면서 이 경로에도 필요해졌다.
     setTransReason(''); setTransReasonEtc('')
+    // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
+    cleaning.reset()
     setTransDate(
       def.field === 'expectedMoveOut' ? toDateInput(lease.expectedMoveOut)
       : def.field === 'moveOutDate'   ? kstYmdStr()
@@ -262,7 +279,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
   const runTransition = (
     def: TransitionDef,
-    fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number; reservationConfirmedAt?: string | null } | undefined,
+    fields: TransitionFields | undefined,
   ) => {
     startTransition(async () => {
       const release = trackSave()
@@ -346,11 +363,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
   const submit = () => {
     if (!active) return
-    const fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number; reservationConfirmedAt?: string | null } = {}
+    const fields: TransitionFields = {}
     if (active.def.field === 'moveInDate')      fields.moveInDate = transDate
     if (active.def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
     if (active.def.field === 'moveOutDate')     fields.moveOutDate = transDate
     if (active.def.field === 'rentAmount')      fields.rentAmount = transRent ?? 0
+    // 청소 예정일은 칸을 실제로 그린 전이에서만 보낸다. 안 보내면 서버가 퇴실일에서 기본값을
+    // 뽑는데, 칸이 없던 전이에 빈 값을 실어 보내면 그것이 '미정'으로 읽힌다.
+    if (active.def.key === 'checkout' && lease.roomId) fields.cleaningDate = cleaning.value || null
     runTransition(active.def, fields)
   }
 
@@ -420,9 +440,19 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(active.def.field ?? '') && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{active.def.fieldLabel}</label>
+                  {/* focus-visible 링은 §09 필수인데 이 칸에는 없었다. 바로 아래 청소 예정일이
+                      같은 생김새로 서므로 둘이 다르게 반응하면 그 자체가 이질감이다. */}
                   <DatePicker value={transDate} onChange={setTransDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--persimmon)] focus-visible:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors" />
                 </div>
+              )}
+              {/* 청소 예정일 — 퇴실 확정에서만, 그리고 호실이 있을 때만 선다. 호실이 없으면
+                  서버가 청소를 아예 안 만들므로(ensureCheckoutCleaning 의 첫 줄) 묻고 버리는
+                  칸이 된다. 자리는 퇴실일 바로 아래다 — 기본값이 퇴실일에서 파생되므로 원인
+                  칸과 같은 시야에 있어야 따라 움직인 것이 보인다. 돈 블록 뒤에 두면 좁은 폭에서
+                  접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
+              {active.def.key === 'checkout' && lease.roomId && (
+                <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} moveOutYmd={transDate} />
               )}
               {active.def.field === 'rentAmount' && (
                 <div className="space-y-1.5">
