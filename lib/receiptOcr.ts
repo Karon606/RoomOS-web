@@ -3,6 +3,32 @@
 
 import type { SetHint } from '@/lib/setHint'
 import { normalizeBizNo } from '@/lib/bizNo'
+import { kstYmdStr } from '@/lib/kstDate'
+
+// 인식한 결제일이 믿을 만한 범위인가 — 아니면 채우지 않고 운영자가 고르게 둔다.
+//
+// 왜 있나 (2026-08-20 긴급 신고). 쿠팡 주문서를 찍어 등록한 지출 6건이 지출 내역에서 통째로
+// 사라졌다. 저장된 날짜가 2024-08-21 이었고 목록은 2026-08 창을 조회하기 때문이다. 화면은
+// 연도 없이 '8/21' 만 보여 주므로 운영자 눈에는 '하루 밀림'으로만 보였다.
+// 21 일은 영수증의 **도착 예정일**이었고(결제일 아님), 2024 라는 연도가 어디서 왔는지는
+// 인식 원문이 남지 않는 경로라 끝내 확인하지 못했다.
+//
+// 그래서 원인을 특정하지 않고도 같은 결과가 안 나오게 범위로 막는다. 영수증은 이미 결제된
+// 종이라 **미래일 수 없고**, 실데이터 496건에서 기록일보다 120일 넘게 과거인 지출은 0건이다.
+// 창을 400일로 넉넉히 잡아도 이번 값(730일 과거)은 걸린다.
+// 버리는 쪽으로 실패한다 — 틀린 날짜를 조용히 심는 것보다 빈 칸이 낫다.
+const OCR_DATE_MAX_PAST_DAYS = 400
+export function plausibleOcrDate(v: unknown, today: string = kstYmdStr()): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const s = v.trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined
+  const t = Date.parse(`${s}T00:00:00.000Z`)
+  const now = Date.parse(`${today}T00:00:00.000Z`)
+  if (!Number.isFinite(t)) return undefined
+  if (t > now) return undefined                                        // 결제일이 미래일 수 없다
+  if (now - t > OCR_DATE_MAX_PAST_DAYS * 86400e3) return undefined     // 너무 먼 과거는 오독으로 본다
+  return s
+}
 
 
 // 단위 칸에서 뜻 없는 표기를 버린다. 영수증의 단위 칸이 비어 있으면 줄표(—)나 기호가 들어 있는데,
@@ -59,7 +85,7 @@ export function buildReceiptOcrPrompt(opts: { categories: string; vocabBlock?: s
   return `${intro}
 
 {
-${kindLines}  "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
+${kindLines}  "date": "YYYY-MM-DD",          // 결제일·주문일만. '도착 예정'·'배송 예정'·'발송일'·'배송 완료' 날짜는 절대 쓰지 말 것. 연도가 화면에 안 보이면 지어내지 말고 date 자체를 생략
   "vendor": "상호명",              // 안 보이면 생략
   "vendorBizNo": "123-45-67890",  // 사업자등록번호(사업자번호·등록번호 표기). 안 보이면 생략
   "totalAmount": 12345,           // 최종 결제 금액 = 부가세 포함 (정수, 원). '합계/총액/결제금액/받을금액/승인금액' 값. '공급가액/과세금액'을 쓰지 말 것
@@ -173,7 +199,7 @@ export function parseReceiptOcrText(text: string, opts?: { withKind?: boolean })
   return {
     ok: true,
     data: {
-      date:        typeof parsed.date === 'string' ? parsed.date : undefined,
+      date:        plausibleOcrDate(parsed.date),
       vendor:      typeof parsed.vendor === 'string' ? parsed.vendor : undefined,
       // 인식 표기가 하이픈 유무·자리수 오차가 있어도 저장 포맷(000-00-00000)으로 정규화, 10자리 아니면 버림
       vendorBizNo: normalizeBizNo(typeof parsed.vendorBizNo === 'string' ? parsed.vendorBizNo : null) ?? undefined,

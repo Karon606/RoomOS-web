@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
-import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -714,7 +714,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   const unit = (g.trackUnit === 'qty' || specMissing) ? (g.qtyUnit ?? boxUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
                   const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
-                  const ld = new Date(latest)
                   const ids = g.items.map(f => f.p.id)
                   const expanded = pendExpanded.has(g.key)
                   return (
@@ -725,7 +724,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             {g.label}{totalQty ? ` · ${qtyLabel}` : ''}
 
                           </p>
-                          <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
+                          <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">{fmtMDYearIfOther(latest)} · {g.category}</p>
                           {/* 경고색을 안 쓴다 — 경고색은 행동 필요 신호인데 여기서의 용량 입력은 선택이다.
                               사실만 뉴트럴로 말한다(웹디자이너 판정, 신고 27f91356). */}
                           {specMissing && (
@@ -754,7 +753,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                       {g.items.length > 1 && expanded && (
                         <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
                           {g.items.map(f => {
-                            const fd = new Date(f.p.date)
                             const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, f.p.specUnit, g.specUnit, g.trackUnit)
                             const conv = specOf(g.trackUnit, f.p.specValue, f.p.specUnit, g.specUnit) != null
                             const su = (g.trackUnit === 'qty' || !conv) ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
@@ -763,7 +761,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                               : ''
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
-                                <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
+                                <span className="tabular-nums">{fmtMDYearIfOther(f.p.date)}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
                                 {/* 금액 읽기 차단 역할에게는 서버가 null 로 지운다 — 0원으로 그리면 거짓이다 */}
                                 <span className="tabular-nums">{f.p.amount == null ? '' : fmtWon(f.p.amount)}</span>
                               </li>

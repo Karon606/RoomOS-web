@@ -45,6 +45,25 @@ export function fmtMD(d: Date | string | null | undefined): string {
 }
 
 /**
+ * 짧은 인라인, 해가 다르면 연도까지 — '7/10' 또는 '2024. 8/21' (KST 기준).
+ *
+ * 왜 있나 (2026-08-20 긴급 신고). 수령 대기 목록이 연도 없이 '8/21' 만 그렸고, 그 행의 실제
+ * 값은 **2024**-08-21 이었다. 지출 내역은 2026-08 창을 조회하므로 그 지출 6건이 목록에서
+ * 통째로 사라졌는데, 화면이 연도를 감추고 있어 운영자 눈에는 '하루 밀림'으로만 보였다.
+ * 원인을 못 찾게 만든 것은 잘못된 값이 아니라 그 값을 감춘 표기다.
+ *
+ * 그래서 같은 해면 종전처럼 짧게 두고, 다른 해일 때만 연도를 드러낸다. 짧은 인라인의 이점을
+ * 평소에 잃지 않으면서 이상한 값이 스스로 드러나게 하는 것이 목적이다.
+ */
+export function fmtMDYearIfOther(d: Date | string | null | undefined, today: Date = new Date()): string {
+  const dt = toKstDate(d)
+  if (!dt) return '—'
+  const now = toKstDate(today)
+  const md = `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
+  return now && dt.getUTCFullYear() === now.getUTCFullYear() ? md : `${dt.getUTCFullYear()}. ${md}`
+}
+
+/**
  * 짧은 인라인 + 요일 — '7/10 (금)' (KST 기준).
  * 요일 자체가 정보인 자리에 쓴다(청소 업체는 화목·월수금처럼 요일로 온다 — 운영자 2026-08-10).
  * 요일은 fmtDateKor 과 같은 DAYS·같은 +9h 시프트에서 뽑는다 — 로컬 getDay() 를 쓰면
