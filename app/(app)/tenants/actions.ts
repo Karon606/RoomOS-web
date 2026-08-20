@@ -59,7 +59,7 @@ import { primaryTenantLease } from '@/lib/leaseStatus'
  *
  * 빈 값은 '건드리지 않음' 이다. 화면이 마스킹만 보여주는 것이 정상 흐름이라(뒤 7자리를 다시 받지 않는다)
  * 빈 값을 삭제로 읽으면 이름만 고쳐도 번호가 조용히 사라진다. 지우기는 별도 신호로만 받는다.
- * 국적을 대한민국으로 바꿔 칸이 사라진 경우도 같은 규칙이라 기존 값이 보존된다(본국 연락처 관행).
+ * 국적을 대한민국으로 바꿔 칸이 사라진 경우도 같은 규칙이라 기존 값이 보존된다(최종 거주국가 연락처 관행).
  */
 function foreignRegNoPatch(formData: FormData, tenantId: string):
   | { ok: true; data: { foreignRegNoEnc?: string | null } }

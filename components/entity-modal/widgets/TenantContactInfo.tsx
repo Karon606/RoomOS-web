@@ -1,6 +1,6 @@
 'use client'
 
-// 고객 연락처 — 주/비상/본국 연락처 + 전화·문자·메일 바로 연결.
+// 고객 연락처 — 주/비상/최종 거주국가 연락처 + 전화·문자·메일 바로 연결.
 
 import { useState, useEffect } from 'react'
 import { formatPhone } from '@/lib/formatPhone'
@@ -66,7 +66,7 @@ export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: str
           </>
         )}
         {home && (
-          <Item label="본국 연락처" value={fmtIntlPhone(home.contactValue, home.countryCode ?? undefined) || home.contactValue} />
+          <Item label="최종 거주국가 연락처" value={fmtIntlPhone(home.contactValue, home.countryCode ?? undefined) || home.contactValue} />
         )}
       </Grid>
     </Section>
