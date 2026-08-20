@@ -114,6 +114,20 @@ const workInk = (w: MoveWork): string =>
   w.status === 'overdue' ? 'var(--overdue-fg)' : 'var(--ink-2)'
 
 /**
+ * 트랙·행 아래 줄의 작업 글자색 — 요약 줄 칩과 자를 나눈다.
+ *
+ * 이 카드의 10.5px 글자는 전부 --ink-m 이다(범례·호실 헤더·날짜 눈금·공백 캡션·꼬리).
+ * 레일 라벨과 행 아래 청소 줄만 --ink-2 로 두면 하위 티어가 라이트에서 2.6배·다크에서 3.1배
+ * 진해져 위계가 뒤집힌다. 특히 행 아래 청소 줄은 꼬리(다음 입주 예정)와 위아래로 나란히 서는데
+ * 기하가 한 픽셀도 안 다르면서 색만 갈려 꼬리를 눌러 버린다(배포 전 디자이너 패스 실측).
+ *
+ * 요약 줄 칩은 --ink-2 그대로 둔다 — 그 형제(입퇴실 칩)가 날짜·호실을 --ink-2 로 쓴다.
+ * 크기 티어를 따라가는 것이 이 카드의 규칙이고, --ink-s 는 11px 티어(막대 밖 라벨)의 색이다.
+ */
+const workInkTrack = (w: MoveWork): string =>
+  w.status === 'overdue' ? 'var(--overdue-fg)' : 'var(--ink-m)'
+
+/**
  * 작업 하나를 소리로 읽는 문장.
  *
  * **그날 사람이 있었는지를 반드시 넣는다.** 화면에서는 작업 띠가 거주 막대와 세로로 겹쳐 서서
@@ -816,11 +830,16 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   return (
     <div>
       {/* 작업 레일은 거주 레인 **뒤에** 붙는다 — 층 하나가 아니라 다른 자다(--mc-work 20px).
-          repeat(0, …) 은 유효한 CSS 가 아니라 레일이 없으면 문자열 자체를 안 붙인다. */}
+          repeat(0, …) 은 유효한 CSS 가 아니고, 무효한 조각 하나가 선언 **전체**를 버린다.
+          그래서 양쪽 다 0 을 걸러야 한다. 청소만 있는 공실 방은 막대가 없어 laneCount 가 0 인데
+          (조립이 works 만 있는 방에도 행을 세운다), 거주 쪽만 막았을 때 그 행에서 --mc-work 가
+          통째로 무시되고 암시 행이 호실 글자 높이로 자기를 정했다(배포 전 디자이너 패스 실측). */}
       <div className="mc-row grid" style={{
         gridTemplateColumns: cols,
-        gridTemplateRows: `repeat(${row.laneCount}, var(--mc-lane))`
-          + (railCount > 0 ? ` repeat(${railCount}, var(--mc-work))` : ''),
+        gridTemplateRows: [
+          row.laneCount > 0 ? `repeat(${row.laneCount}, var(--mc-lane))` : null,
+          railCount > 0 ? `repeat(${railCount}, var(--mc-work))` : null,
+        ].filter(Boolean).join(' ') || 'var(--mc-work)',
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
       }}>
         {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn). */}
@@ -903,7 +922,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
               textAlign: p.side === 'right' ? 'left' : 'right',
               paddingLeft: p.side === 'right' ? 4 : 0,
               paddingRight: p.side === 'left' ? 4 : 0,
-              color: workInk(p.work),
+              color: workInkTrack(p.work),
             }}>
             {p.text}
           </span>
@@ -924,7 +943,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
           <p className="min-w-0 pb-1.5 text-[0.65625rem] tnum" style={{ gridColumn: '2 / -1' }}>
             <span className="sticky inline-block max-w-full truncate pl-1.5" style={{ left: ROOM_COL }}>
               {droppedWorks.map((w, i) => (
-                <span key={w.id} style={{ color: workInk(w) }}>
+                <span key={w.id} style={{ color: workInkTrack(w) }}>
                   {i > 0 && <span style={{ color: 'var(--ink-m)' }}>{' · '}</span>}
                   {workLine(w)}
                 </span>

@@ -18,6 +18,10 @@ import {
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
 
+// 배타 선택 칩의 포커스 링 — §09 'focus-visible 링 전 컴포넌트 필수'. 이 파일이 다른 자리에서
+// 이미 쓰던 문법을 상수로 올려 세 자리가 같은 링을 쓰게 한다.
+const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]'
+
 const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
 /** 담당은 **선택**이라 '미정'이 먼저 서고 기본값이다. 빈 문자열이 곧 '아직 안 정함'이다. */
 const PLANNED_PERFORMERS: (CleaningPerformer | '')[] = ['', 'SELF', 'VENDOR', 'THIRD_PARTY']
@@ -85,12 +89,15 @@ export function CleaningPlanForm({
 
       <div className={dense ? '' : 'space-y-1.5'}>
         {!dense && <p className={labelCls}>사유</p>}
-        <div className="flex gap-1.5 flex-wrap">
+        {/* 배타 선택이라 소리로도 '고른 것' 이 들려야 한다 — 채움만으로는 화면 밖에 안 나간다
+            (WCAG 4.1.2, 배포 전 디자이너 패스). 보더는 선택 쪽도 투명으로 둬서 고를 때마다
+            오른쪽 형제가 2px 씩 밀리던 것을 없앤다. */}
+        <div role="radiogroup" aria-label="청소 사유" className="flex gap-1.5 flex-wrap">
           {REASONS.map(v => (
-            <button key={v} type="button" onClick={() => setReason(v)}
-              className={`rounded-lg ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
+            <button key={v} type="button" role="radio" aria-checked={reason === v} onClick={() => setReason(v)}
+              className={`rounded-lg ${FOCUS_RING} ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
               style={reason === v
-                ? { background: 'var(--coral)', color: 'var(--on-solid)' }
+                ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
                 : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
               {CLEANING_REASON_LABEL[v]}
             </button>
@@ -110,12 +117,17 @@ export function CleaningPlanForm({
           어느 업체냐가 아니고, 업체 이름은 완료할 때 실제로 맡긴 곳을 적는다. */}
       <div className={dense ? '' : 'space-y-1.5'}>
         {!dense && <p className={labelCls}>담당 (선택)</p>}
-        <div className="flex gap-1.5 flex-wrap">
+        {/* '미정' 은 고른 값이 아니라 값의 부재다. 코랄로 칠하면 폼을 열자마자 화면에서 가장 강한
+            것이 '아직 안 정함' 이 되고, 저장값이 null 인 사실과도 갈린다(서버는 그 함정을 이미
+            피해 기본값을 안 박는다). 채움은 실제로 고른 셋에만 준다 — 소리로는 aria-checked 가
+            '미정' 상태도 그대로 말한다. */}
+        <div role="radiogroup" aria-label="청소 담당" className="flex gap-1.5 flex-wrap">
           {PLANNED_PERFORMERS.map(v => (
-            <button key={v || 'none'} type="button" onClick={() => setPlannedPerformer(v)}
-              className={`rounded-lg ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
-              style={plannedPerformer === v
-                ? { background: 'var(--coral)', color: 'var(--on-solid)' }
+            <button key={v || 'none'} type="button" role="radio" aria-checked={plannedPerformer === v}
+              onClick={() => setPlannedPerformer(v)}
+              className={`rounded-lg ${FOCUS_RING} ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
+              style={plannedPerformer === v && v !== ''
+                ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
                 : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
               {v ? CLEANING_PERFORMER_LABEL[v] : '미정'}
             </button>

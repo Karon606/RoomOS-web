@@ -170,9 +170,11 @@ export function CleaningRowBody({
       ) : doneOpen ? (
         /* 완료 입력 — 그 줄에서 바로 받는다. 별도 모달을 띄우면 창이 또 쌓인다. */
         <div className="mt-2 space-y-2">
-          <div className="flex gap-1.5 flex-wrap">
+          {/* 배타 선택이라 소리로도 고른 것이 들려야 한다(WCAG 4.1.2). 형제 둘(CleaningPlanForm
+              사유·담당)과 같은 문법이다 — 셋 중 하나만 고치면 또 갈린다. */}
+          <div role="radiogroup" aria-label="청소 수행자" className="flex gap-1.5 flex-wrap">
             {PERFORMERS.map(pf => (
-              <button key={pf} type="button" onClick={() => {
+              <button key={pf} type="button" role="radio" aria-checked={performer === pf} onClick={() => {
                 setPerformer(pf)
                 // 직접 청소는 이름 칸이 사라진다. 값을 남겨 두면 화면에 없는 이름이 저장되고
                 // 지출 구매처까지 따라 들어간다 — 안 보이는 값은 저장하지 않는다.
@@ -180,9 +182,9 @@ export function CleaningRowBody({
                 // 맡긴 쪽으로 바꾸면 최근에 맡긴 곳을 채워 둔다. 이미 적어 둔 이름은 덮지 않는다.
                 else if (!performerName) setPerformerName(recentPerformers[0] ?? '')
               }}
-                className="px-2 py-1 rounded-lg text-xs"
+                className="px-2 py-1 rounded-lg text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
                 style={performer === pf
-                  ? { background: 'var(--coral)', color: 'var(--on-solid)' }
+                  ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
                   : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
                 {CLEANING_PERFORMER_LABEL[pf]}
               </button>
