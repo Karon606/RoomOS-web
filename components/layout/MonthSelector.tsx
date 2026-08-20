@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
 import { useMyRole } from '@/components/RoleContext'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
-import { resolveMonthParam } from '@/lib/monthParam'
+import { resolveMonthChain } from '@/lib/monthParam'
 
 const MONTH_KEY = 'stayeum_selected_month'
 
@@ -27,8 +27,22 @@ function relMonthLabel(view: string, today: string): string | null {
  * 자정 롤오버 등 보이지 않는 자동 새로고침은 MonthSync(셸 상주)가 담당한다.
  * allowFuture: 재무류 화면은 미래 월이 무의미해 이번 달에서 잠그는 것이 기본이지만,
  * 예약이 사는 화면(입퇴실 캘린더)은 미래 월이 본론이라 잠금을 푼다(운영자 지적 2026-08-17).
+ *
+ * paramKey·fallbackKey: 이 컨트롤이 읽고 쓸 URL 키. 기본은 종전 그대로 `?month=` 다.
+ * 입퇴실 캘린더만 자체 키를 넘긴다 — 그 화면의 값은 '조회 장부 월'이 아니라 '지금 보고 있는
+ * 트랙 위치'라 뜻이 다르고, 한 키를 공유하면 내비가 그것을 조회 월로 복사해 전역에 흘린다
+ * (lib/monthParam TRACK_MONTH_KEY). fallbackKey 는 홈 딥링크(`?tab=moves&month=`) 착지용이다.
+ *
  */
-export default function MonthSelector({ allowFuture = false }: { allowFuture?: boolean } = {}) {
+export default function MonthSelector({
+  allowFuture = false,
+  paramKey = 'month',
+  fallbackKey,
+}: {
+  allowFuture?: boolean
+  paramKey?: string
+  fallbackKey?: string
+} = {}) {
   const role = useMyRole()   // 제한 스태프는 월 컨텍스트가 무의미(재고·조회 화면) — 아래에서 숨김
   const router = useRouter()
   const pathname = usePathname()
@@ -48,7 +62,11 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
 
   // 표시도 조회와 같은 자를 쓴다 — 잠긴 화면에 미래 월 URL 이 들어오면(입퇴실에서 넘어온 링크)
   // 서버는 이번 달을 그리는데 라벨만 9월이면 둘이 갈린다(lib/monthParam, 운영자 신고 2026-08-18).
-  const searchParamsMonth = resolveMonthParam(searchParams.get('month'), { allowFuture })
+  const searchParamsMonth = resolveMonthChain(
+    searchParams.get(paramKey),
+    fallbackKey ? searchParams.get(fallbackKey) : null,
+    { allowFuture },
+  )
   // localMonth: ◀/▶ 클릭 시 URL 반영(디바운스 350ms) 전까지 즉시 보여주는 낙관적 표시값.
   const [localMonth, setLocalMonth] = useState(searchParamsMonth)
   const localMonthRef = useRef(localMonth)
@@ -80,9 +98,13 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   // 대신 isPending 을 이 컨트롤에 묶어 '눌렸고 진행 중'을 표시한다 — 셸의 공용 트랜지션은
   // isPending 을 버려서 클릭 후 아무 표시도 없는 구간이 있었다(F페이즈).
   const applyMonth = (m: string) => {
-    localStorage.setItem(MONTH_KEY, m)
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('month', m)
+    // 전역 월 저장은 전역 키일 때만. 캘린더의 트랙 위치를 여기에 적으면 URL 로 막은 누수가
+    // 저장소 경로로 되살아난다(지금은 이 키를 읽는 코드가 없지만, 복원 기능이 생기는 날 터진다).
+    if (paramKey === 'month') localStorage.setItem(MONTH_KEY, m)
+    // 스냅샷이 아니라 **발화 시점의 실제 URL** 로 재구성한다 — 350ms 디바운스 동안 다른 코드가
+    // 세팅한 파라미터(캘린더의 트랙 위치 등)를 지워 버리던 레이스 방지(lib/useUrlState 와 같은 문법).
+    const params = new URLSearchParams(window.location.search)
+    params.set(paramKey, m)
     const navigate = () => router.push(`${pathname}?${params.toString()}`)
     startLocal(() => { if (startNavigation) startNavigation(navigate); else navigate() })
   }

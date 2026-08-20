@@ -37,6 +37,7 @@ import { PhotoLightbox, uploadFileToDriveSession, type Photo } from '@/component
 import { looksLike360 } from '@/lib/driveImage'
 import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, reservationSubText, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
+import { TRACK_MONTH_KEY } from '@/lib/monthParam'
 import dynamic from 'next/dynamic'
 import { fmtRoomNo } from '@/lib/roomNo'
 
@@ -668,7 +669,10 @@ export default function RoomManageClient({
   // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(입주자 관리 clearTenantUrlParams 와 동일 패턴).
   const clearRoomUrlParams = () => {
     if (searchParams.get('edit') === '1' || searchParams.get('roomId')) {
-      const params = new URLSearchParams(searchParams.toString())
+      // 렌더 시점 스냅샷이 아니라 **지금의 실제 URL** 로 재구성한다 — 캘린더 트랙이
+      // history.replaceState 로 적어 둔 위치를 옛 스냅샷이 되돌려 쓰던 레이스 방지
+      // (lib/useUrlState 가 같은 이유로 같은 문법을 쓴다).
+      const params = new URLSearchParams(window.location.search)
       params.delete('edit'); params.delete('roomId')
       const qs = params.toString()
       router.replace(qs ? `?${qs}` : '?', { scroll: false })
@@ -1181,9 +1185,16 @@ export default function RoomManageClient({
         )}
         {/* 월 셀렉터는 입퇴실 뷰에만 — 자리는 그대로 두되 역할이 바뀌었다(2026-08-17 연속 뷰).
             종전에는 달마다 다시 조회하는 스위치였고, 지금은 넓은 트랙 위의 **점프 컨트롤**이다.
-            트랙을 끌면 보고 있는 달이 ?month= 로 따라 적히므로 이 라벨이 현재 위치를 말한다.
+            트랙을 끌면 보고 있는 달이 ?at= 으로 따라 적히므로 이 라벨이 현재 위치를 말한다.
+            키가 형제 화면과 다른 이유는 뜻이 달라서다(lib/monthParam TRACK_MONTH_KEY) — 여기 값은
+            조회 장부 월이 아니라 트랙 위치라, 내비가 그것을 조회 월로 복사하면 전역이 그 달로 열린다.
+            fallbackKey 는 홈 딥링크(?tab=moves&month=) 착지용이다.
             §25 탭 좌·셀렉터 우 — 형제 페이지와 같은 자리를 지킨다. */}
-        {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector allowFuture /></div>}
+        {viewTab === 'moves' && (
+          <div className="shrink-0 ml-auto">
+            <MonthSelector allowFuture paramKey={TRACK_MONTH_KEY} fallbackKey="month" />
+          </div>
+        )}
       </div>
 
       {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
