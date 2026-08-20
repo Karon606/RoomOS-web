@@ -183,10 +183,14 @@ export type MoveWorkEvent = MoveWork & { roomId: string; roomNo: string }
 
 /**
  * 작업 상태의 낱말 — 화면이 각자 고르면 트랙·요약 줄·소리가 같은 상태를 다르게 부른다.
- * '지남'은 '지연'보다 짧고(하루 24px 트랙에서 한 글자가 하루다) 책임을 안 묻는 말이다.
+ *
+ * '예정일 경과'는 **이 앱이 이미 쓰는 낱말**이다(대시보드 알림의 "퇴실 예정일 경과 N일",
+ * §18 진행형 알림의 "경과 N일 · 처리 필요"). 같은 사실을 부르는 말이 화면마다 다르면
+ * 운영자가 두 낱말을 서로 다른 상태로 읽는다. '지남'·'지연'은 여기서 새로 지어낸 말이었다.
+ * '경과' 한 낱말로 줄이지 않는 이유는 뜻이 갈리기 때문이다 — 그 말만으로는 '진행 경과'로도 읽힌다.
  */
 export const MOVE_WORK_STATUS_LABEL: Record<MoveWorkStatus, string> = {
-  planned: '예정', overdue: '지남', done: '완료',
+  planned: '예정', overdue: '예정일 경과', done: '완료',
 }
 
 export type MoveDaySpan = { startDay: number; endDay: number }

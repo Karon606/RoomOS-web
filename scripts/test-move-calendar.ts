@@ -757,7 +757,7 @@ function work(p: Partial<MoveWorkInput> & { roomNo: string; date: string }): Mov
       work({ id: 'w-d', roomId: 'room-A', roomNo: '401', date: '2026-08-19', done: true }),
     ],
   })
-  eq('상태 · 어제는 지남, 오늘·내일은 예정, 완료는 완료',
+  eq('상태 · 어제는 예정일 경과, 오늘·내일은 예정, 완료는 완료',
     out.rows[0].works.map(w => [w.date, w.status]),
     [['2026-08-17', 'overdue'], ['2026-08-18', 'planned'], ['2026-08-19', 'planned'], ['2026-08-19', 'done']])
   eq('상태 · 같은 날 두 건은 층이 갈린다(하나가 하나를 덮지 않는다)',
