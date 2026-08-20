@@ -154,7 +154,7 @@ async function ensureCheckoutCleaning(
   propertyId: string,
   roomId: string | null,
   leaseTermId: string,
-  opts: { moveOutYmd: string | null; cleaningYmd: string | null | undefined },
+  opts: { cleaningYmd: string | null | undefined },
 ): Promise<CheckoutCleaningResult> {
   if (!roomId) return 'skipped-no-room'
   try {
@@ -166,7 +166,7 @@ async function ensureCheckoutCleaning(
     // (청소 행의 '날짜 변경'), 퇴실 저장이 그것을 말없이 덮으면 무를 길이 없는 덮어쓰기가 된다.
     // 지금 문제가 '앱이 혼자 날짜를 정한다'인데 그 답으로 날짜를 하나 더 혼자 정할 수는 없다.
     if (open) return 'skipped-open'
-    const ymd = resolveCheckoutCleaningYmd(opts.cleaningYmd, opts.moveOutYmd, kstYmdStr())
+    const ymd = resolveCheckoutCleaningYmd(opts.cleaningYmd)
     await prisma.roomCleaning.create({
       // scheduledDate 는 @db.Date 다. 날 new Date() 를 넣으면 서버(UTC)가 KST 오전 9시 전에는
       // 어제로 잘라 저장해 예정일이 하루 앞선다. 날짜 저장 정본(ymdToDbDate)으로 UTC 자정을 박는다
@@ -2140,7 +2140,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
 
   // 퇴실일은 바로 위 update 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘).
   const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, leaseTermId, {
-    moveOutYmd: moveOutDate || kstYmdStr(), cleaningYmd: cleaningDate,
+    cleaningYmd: cleaningDate,
   })
 
   // 거주 구간 이력 — 퇴실 확정이면 열린 구간을 퇴실일로 마감(추가 write).
@@ -2327,7 +2327,7 @@ export async function applyStatusTransition(input: {
         })
         // 퇴실일은 위 data 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘로 보정된다).
         const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId, {
-          moveOutYmd: input.moveOutDate || kstYmdStr(), cleaningYmd: input.cleaningDate,
+          cleaningYmd: input.cleaningDate,
         })
         // 이미 서 있는 안내(일할 정산 해제 등)를 덮지 않고 잇는다. 둘 다 같은 저장에서 일어난 일이다.
         const cleaningNotice = checkoutCleaningNotice(cleaningRes)

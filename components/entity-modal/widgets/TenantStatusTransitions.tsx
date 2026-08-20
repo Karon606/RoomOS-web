@@ -141,7 +141,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
   // 퇴실 청소 예정일 — 아직 안 건드렸으면 퇴실일(transDate)을 따라 움직인다(정본 훅).
-  const cleaning = useCheckoutCleaningDate(transDate)
+  const cleaning = useCheckoutCleaningDate()
   const [shortExtOpen, setShortExtOpen] = useState(false)   // 단기 '퇴실일 변경'은 요금 재계산 모달로 라우팅(뒷문 차단)
 
   const transitions = transitionsFor(lease.status, !!lease.reservationConfirmedAt, lease.isShortTerm)
@@ -452,7 +452,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   칸과 같은 시야에 있어야 따라 움직인 것이 보인다. 돈 블록 뒤에 두면 좁은 폭에서
                   접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
               {active.def.key === 'checkout' && lease.roomId && (
-                <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} moveOutYmd={transDate} />
+                <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
               )}
               {active.def.field === 'rentAmount' && (
                 <div className="space-y-1.5">

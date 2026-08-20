@@ -292,7 +292,7 @@ function CheckoutRefundModal({
   const [formError, setFormError] = useState('')
   const [reasonEtc, setReasonEtc] = useState('')
   // 퇴실 청소 예정일 — 입주자 상세 미니폼과 같은 정본 훅·같은 칸을 쓴다(두 경로가 갈리지 않게).
-  const cleaning = useCheckoutCleaningDate(moveOutDate)
+  const cleaning = useCheckoutCleaningDate()
   const unreturned = depositAmount - refund
   const exceedsMax = refund > maxRefund
 
@@ -335,7 +335,7 @@ function CheckoutRefundModal({
           {/* 청소 예정일 — 입주자 상세 퇴실 미니폼과 **같은 컴포넌트·같은 자리**(퇴실일 바로 아래,
               돈 블록 앞)다. 두 경로가 같은 퇴실을 다르게 묻기 시작하면 그때부터 갈린다. */}
           {hasRoom && (
-            <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} moveOutYmd={moveOutDate} />
+            <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
           )}
 
           {depositAmount > 0 && (<>
