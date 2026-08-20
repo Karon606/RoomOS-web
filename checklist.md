@@ -38,7 +38,7 @@ Next 라우터 패치의 `__NA` 가드에 걸린다) 신고 3·4·5 가 전부 '
 - [x] data.months[].eventCount 로 서버 왕복 없이
 - [x] 판정은 commitPosition 한 군데
 - [x] 홈 '이달 입퇴실 N건'과의 정합 유지(착지 순간 악수)
-- [ ] **헤더 접힘 경계 흔들림 — 디자이너 판정 대기**
+- [x] 접미 자릿수로 헤더가 접히던 것 — ViewTabs.suffixWidest 로 자리 예약(폰 구간 평평)
 
 ## 4항목 — 이 화면에서 미래 월 경고 톤 끄기 (edf7adb6)
 - [x] futureIsNormal 플래그(allowFuture 에서 파생 금지)
@@ -67,10 +67,12 @@ Next 라우터 패치의 `__NA` 가드에 걸린다) 신고 3·4·5 가 전부 '
 - [x] tsc 0
 - [x] npm run verify:fast exit 0 (커밋 훅에서 7회 통과)
 - [x] npm run verify:db — 기지 예외(서류 표시값 소재지 3건)에서만 정지, 캘린더 축 행 41·막대 72 위반 0
-- [ ] 프로덕션 빌드 exit 0
+- [x] 프로덕션 빌드 exit 0
 - [x] eslint 491 유지(291 errors · 200 warnings) — 신규 0
 - [x] 320/360/390/1280 x 라이트·다크 8조합 넘침 0 · 막대 밖 글자 유출 0 실측
 - [x] Android Chrome(Blink) 터치 실측 — 트랙 위 세로 스와이프로 페이지가 따라옴(래치 없음),
       가로 트랙 동작, 스크롤이 낸 RSC 요청 0, CPU 6배 스로틀에서도 longtask 0
 - [ ] iOS Safari(WebKit) 실기 — 헤드리스로 못 잼, 운영자 확인 필요
-- [ ] 웹디자이너 배포 전 패스
+      (knowledge/mobile-scroll-viewport: 에뮬레이터는 터치 래치를 재현 못 한다 — Android 도 실기 권장)
+- [x] 웹디자이너 배포 전 패스 — 차단 2건 반영 완료, 나머지는 조건부 통과
+      (셀렉터 자체 폭은 공용 컴포넌트 별건으로 knowledge/open-issues 에 적립)
