@@ -1,55 +1,76 @@
-# 입퇴실 캘린더 거주 구간(RoomStay) 재시공 (2026-08-20, 운영자 승인)
+# 입퇴실 캘린더 0단계 — 사건 문구·월 동기화·창 미끄러뜨리기 (2026-08-20, 운영자 승인)
 
-캘린더가 `LeaseTerm.roomId` 한 칸만 읽고 `RoomStay` 를 안 봐서 이사한 계약이 옛 방에 0칸,
-새 방에 최초 입주일부터 통째로 그려졌다. 증상 셋(옛 방 소실·허위 동시 거주·혼자 퇴실일 미정)이
-이 원인 하나에서 나온다. 데이터는 옳다(check-room-stay-drift 7축 통과).
+운영자 실기로 원인이 확정됐다. 스크롤 → 월 동기화가 통째로 죽어 있어서(replaceState 가
+Next 라우터 패치의 `__NA` 가드에 걸린다) 신고 3·4·5 가 전부 '변화 없음'으로 보였다.
+살리는 순간 전역 월 누수와 미래 월 경고 점멸이 함께 깨어나므로 한 묶음으로 닫았다.
 
-## 0단계 — 조사·패널 합의
-- [x] 정본 문서 정독(AGENTS·loop·Work_log 2026-08-19/20·knowledge/INDEX·brand-guide-v2.0)
-- [x] 조사 보고서 정독(scratchpad/move-calendar-fix-plan.md)
-- [x] 워크트리 환경(.env.local 심링크 · npm ci · 스키마 본선과 바이트 동일 확인)
-- [x] 기준선 실측(tsc 0 · eslint 491 · 월별 eventCount · RoomStay 커버리지)
-- [x] 전문가 패널 4인 회수 — 도메인·백엔드·UX·웹디자이너 **전원 회신**
-- [x] 설계 확정(이견은 context-notes 에 기록)
+## 0단계 — 준비·패널
+- [x] 정본 정독(AGENTS·loop·Work_log 2026-08-19/20 캘린더 엔트리·knowledge·brand-guide §03~§05)
+- [x] 워크트리 환경(node_modules·.env.local 심링크, 스키마 본선과 SHA 동일 확인)
+- [x] 기준선 실측(tsc 0 · move-calendar 회귀 160 · eslint 491 · 드리프트 행 41·막대 72 위반 0)
+- [x] Next 라우터 패치 원인 직접 확인(app-router.js:255~278 · copyNextJsInternalHistoryState:84~94)
+- [x] 시공 전 상태 실측 저장(주소창만 바뀌고 셀렉터·탭은 8월 고정, 508호 문구 left 66 고정)
+- [x] 전문가 패널 4인 회수 — 정보구조 UX · 웹디자이너 · 프런트엔드 성능 · 호실 도메인 **전원 회신**
+- [x] 설계 확정(이견·미채택 근거는 context-notes)
 
-## 1단계 — 방향 A 막대 출처 전환 (ffc53c4b)
-- [x] MoveCalendarLease 에 거주 구간(MoveStaySpan) 필수 칸 · 계약을 방별 조각으로 편다
-- [x] 열린 구간의 끝은 계약이 말한다(구간에서 읽으면 5건 퇴행)
-- [x] 이사 경계 라벨 정본 moveDateLabel(상대 호실 포함)
-- [x] 조회의 창 조건·context 방 조건에 구간 편입
-- [x] 이사가 입퇴실 건수에 들어온다(2026-07 이 9 에서 11)
-- [x] 회귀 123 에서 154(이사 6축 신설, 기존 123 무변동)
+## 1항목 — 사건 문구 sticky 해제 (38f3eb38)
+- [x] 조립이 startLabel·endLabel·stateLabel 을 따로 낸다(화면 재분할 금기)
+- [x] label 한 문자열은 종전 그대로 — title·aria·회귀가 딛는다
+- [x] 이름은 sticky 유지, 사건 문구는 막대 시작·끝에 고정
+- [x] 상태 문구('퇴실일 미정')는 사건이 아니라 상태라 이름과 함께 흐른다
+- [x] 역전 막대는 문구를 안 세운다(기하와 날짜가 어긋나는 자리)
+- [x] place()·Placed.ink·공백 캡션 계산 무변경 — 캡션 20개 불변 실측
+- [x] 회귀 160 유지
 
-## 2단계 — 요약 줄·키 (ed2819f4)
-- [x] eventTone 이사 분기(중립 info · '이사')
-- [x] 막대·요약 줄 React 키를 구간 id 로
+## 2항목 — 월 동기화 살리기 + 전역 누수 차단 (6fb5d2fe)
+- [x] replaceState 첫 인자를 null 로 · 틀린 주석 정정
+- [x] 트랙 위치를 `?at=` 으로(TRACK_MONTH_KEY) · `?month=` 는 안 건드린다
+- [x] MonthSelector 에 paramKey·fallbackKey 개방(형제 9곳 무변경)
+- [x] localStorage 전역 월 쓰기는 전역 키일 때만
+- [x] applyMonth·clearRoomUrlParams 를 발화 시점 URL 재구성으로(디바운스 레이스)
+- [x] 트랙 끝 clamp 보정 · 착지 좌표 억제
+- [x] MoveCalendar memo + useSearchParams 제거
+- [x] '오늘로' 표시를 React state 에서 DOM 직접 쓰기로
+- [x] focusMonth 딥링크 계속 동작(해석 사슬 resolveTrackMonth)
+- [x] 내비 링크에 캘린더 달이 안 붙는 것 실증
 
-## 3단계 — 이사일 입력 칸 (5ae3cf13)
-- [x] 계약 편집 폼 조건부 날짜 칸(형제 '실제 퇴실일' 문법, 오늘 KST 기본값, 캡션)
-- [x] 노출 조건이 서버의 구간 쪼개기 조건과 같은 자
-- [x] lib/roomStay validateMoveDate 5축 + 회귀 14축(74 에서 88)
+## 3항목 — 탭 접미 N 동기화 (f324c834)
+- [x] data.months[].eventCount 로 서버 왕복 없이
+- [x] 판정은 commitPosition 한 군데
+- [x] 홈 '이달 입퇴실 N건'과의 정합 유지(착지 순간 악수)
+- [ ] **헤더 접힘 경계 흔들림 — 디자이너 판정 대기**
 
-## 4단계 — 감지망 3축 (2c3013ee)
-- [x] 조회를 lib/moveCalendarData 로 분리(그물이 화면과 같은 조회를 지나게)
-- [x] scripts/check-move-calendar-drift.ts 축 A·B·C + 소스 가드 4
-- [x] verify:db 편입(check-room-stay-drift 바로 뒤)
-- [x] 역주입 발화 확인(B 1건 · C 66건 · exit 1)
+## 4항목 — 이 화면에서 미래 월 경고 톤 끄기 (edf7adb6)
+- [x] futureIsNormal 플래그(allowFuture 에서 파생 금지)
+- [x] 과거 방향 경고 유지
+- [x] 형제 여덟 곳 + 프리즘 수납 면 무변경(기본값)
 
-## 5단계 — 디자인 별건 5건 + 접근성 (20d8e24f)
-- [x] 거주 막대 토큰을 등재본으로(--band-paid-bg)
-- [x] 거주색을 형제 여덟 자리와 통일(올리브)
-- [x] hover opacity 를 코랄 outline 으로
-- [x] 터치 타겟 44px(레인 유지 · ::after 히트 확장)
-- [x] '오늘' 칩 10px 을 10.5px 로
-- [x] 범례 2칸 + 막대 aria-label + 스크롤러 role·tabIndex
+## 5항목 — 판정점·반응성 (6fb5d2fe 에 포함)
+- [x] 표시(‘오늘로’)는 rAF 즉시, URL 쓰기는 1/4 + 180ms 유지
+- [x] 표시 값을 React state 로 안 든다
+- [x] 착지 직후 옆 달로 안 적힌다(좌표 억제)
+- [ ] **왼쪽 끝 통일 여부 — 운영자 실기 확인 항목**(오더에서 이탈, 근거는 context-notes)
 
-## 6단계 — 게이트
+## 6항목 — 먼 달 점프를 넓히기에서 옮기기로 (3ec9c186)
+- [x] 경계 산식을 lib 순수 함수로(moveRangeWindow)
+- [x] 창 밖 점프는 4개월 창으로 옮긴다 · 기본 창은 불변
+- [x] 오늘이 창 밖일 때 [오늘로] 분기(재조회) + 카드 밖으로
+- [x] beyond today 가드 · 다가오는 14일 분기
+- [x] canExtendPast 생존 · 한 달씩 단조 후퇴
+- [x] 창 회귀 6축 신설(160 → 186)
+
+## 7항목 — 연도 표기 (7ec6e2fd)
+- [x] 범위 첫 달·해 바뀜에 연도 · 밴드 라벨 tnum
+- [x] beyond 줄 fmtDateDot(fmtMD 정본은 불변)
+
+## 게이트
 - [x] tsc 0
-- [x] verify:fast exit 0
-- [x] verify:db 기지 예외(소재지 3건)에서만 멈춤 · 신규 축 통과 · 후반 6축 개별 통과
-- [x] 프로덕션 빌드 exit 0
-- [x] eslint 신규 0(손댄 파일 기준선 동일)
-- [x] 320/360/390 라이트·다크 6조합 넘침 0 · 막대 히트 44.0px · 10.5px 미만 글자 0 · aria 누락 0
-- [x] 대비 실측(라이트 거주 8.01 · 예약 10.13 · 겹침 밴드 위 4.54 / 다크 7.25 · 10.35 · 6.44)
-- [x] 웹디자이너 배포 전 패스 — 차단 3(포커스 링 소실·조사 '로' 깨짐·라벨 tnum) + 비차단 4 반영,
-      가이드 §03 밴드 범위 한 줄 등재. 반영 후 회귀 160 · 넘침 재실측 통과 · 포커스 링 실측 확인.
+- [x] npm run verify:fast exit 0 (커밋 훅에서 7회 통과)
+- [x] npm run verify:db — 기지 예외(서류 표시값 소재지 3건)에서만 정지, 캘린더 축 행 41·막대 72 위반 0
+- [ ] 프로덕션 빌드 exit 0
+- [x] eslint 491 유지(291 errors · 200 warnings) — 신규 0
+- [x] 320/360/390/1280 x 라이트·다크 8조합 넘침 0 · 막대 밖 글자 유출 0 실측
+- [x] Android Chrome(Blink) 터치 실측 — 트랙 위 세로 스와이프로 페이지가 따라옴(래치 없음),
+      가로 트랙 동작, 스크롤이 낸 RSC 요청 0, CPU 6배 스로틀에서도 longtask 0
+- [ ] iOS Safari(WebKit) 실기 — 헤드리스로 못 잼, 운영자 확인 필요
+- [ ] 웹디자이너 배포 전 패스
