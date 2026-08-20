@@ -26,8 +26,10 @@ export function docMailSubject(propertyName: string): string {
 export function docMailText(
   propertyName: string, docTitles: string[], propertyPhone: string | null,
 ): string {
+  // 번호 뒤에 조사를 붙이지 않는다 — '으로'와 '로'는 앞 글자 받침을 따라가는데 전화번호 끝자리가
+  // 그때그때 달라 어느 쪽도 늘 맞지 않는다. 안내 문장은 고정하고 번호는 다음 줄로 내린다.
   const contact = propertyPhone?.trim()
-    ? `내용이 다르거나 문의사항이 있으시면 ${propertyPhone.trim()}으로 연락 주세요.`
+    ? `내용이 다르거나 문의사항이 있으시면 아래 번호로 연락 주세요.\n전화 ${propertyPhone.trim()}`
     : '내용이 다르거나 문의사항이 있으시면 이 메일에 회신해 주세요.'
   return [
     `안녕하세요. ${propertyName}입니다.`,
