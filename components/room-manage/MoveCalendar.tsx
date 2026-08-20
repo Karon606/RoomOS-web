@@ -135,7 +135,6 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   const jumpToMonth = (month: string) => {
     const params = new URLSearchParams(window.location.search)
     params.set(TRACK_MONTH_KEY, month)
-    params.set('tab', 'moves')
     router.push(`?${params.toString()}`)
   }
 
@@ -241,12 +240,11 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     landedRef.current = m.month
     onViewMonthChange?.(m.month)
     const url = new URL(window.location.href)
-    if (url.searchParams.get(TRACK_MONTH_KEY) === m.month && url.searchParams.get('tab') === 'moves') return
+    if (url.searchParams.get(TRACK_MONTH_KEY) === m.month) return
     // 트랙 위치는 전용 키다. ?month= 는 홈에서 정당하게 실려 온 조회 장부 월이라 손대지 않는다
-    // (lib/monthParam TRACK_MONTH_KEY). tab 을 함께 적는 것은 이 URL 을 북마크·공유했을 때
-    // 캘린더가 아니라 호실 목록이 열리는 것을 막기 위해서다.
+    // (lib/monthParam TRACK_MONTH_KEY). 어느 탭을 보고 있는지는 이 컴포넌트의 일이 아니다 —
+    // 상위(RoomManageClient)가 ?tab= 을 소유한다.
     url.searchParams.set(TRACK_MONTH_KEY, m.month)
-    url.searchParams.set('tab', 'moves')
     window.history.replaceState(null, '', url)
   }, [data.months, paintToday, onViewMonthChange])
 

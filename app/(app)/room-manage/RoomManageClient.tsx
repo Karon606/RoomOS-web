@@ -549,6 +549,20 @@ export default function RoomManageClient({
   // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
+  // 보고 있는 탭을 URL 에 남긴다 — 캘린더가 트랙 위치(?at=)를 적어 두는데 탭이 URL 에 없으면
+  // 그 주소를 북마크·공유했을 때 캘린더가 아니라 호실 목록이 열린다. replaceState 라 히스토리가
+  // 안 쌓이고 서버도 다시 안 돈다(첫 인자 null 이 필수 — lib/monthParam 주석 참조).
+  // 기본 탭('rooms')은 키를 지운다. 파라미터는 '기본이 아닌 상태'만 담는 것이 이 저장소의 문법이다.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const cur = url.searchParams.get('tab')
+    const next = viewTab === 'rooms' ? null : viewTab
+    if (cur === next) return
+    if (next) url.searchParams.set('tab', next)
+    else url.searchParams.delete('tab')
+    window.history.replaceState(null, '', url)
+  }, [viewTab])
+
   // 트랙이 보고 있는 달 — 캘린더가 착지할 때와 스크롤이 멎을 때마다 알려 준다. null 이면 아직 첫 착지 전.
   // 서버 왕복이 없다: 달별 건수는 이미 moveCalendar.months 에 전부 실려 왔다.
   const [viewMonth, setViewMonth] = useState<string | null>(null)
