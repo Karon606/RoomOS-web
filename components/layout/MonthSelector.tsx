@@ -33,13 +33,22 @@ function relMonthLabel(view: string, today: string): string | null {
  * 트랙 위치'라 뜻이 다르고, 한 키를 공유하면 내비가 그것을 조회 월로 복사해 전역에 흘린다
  * (lib/monthParam TRACK_MONTH_KEY). fallbackKey 는 홈 딥링크(`?tab=moves&month=`) 착지용이다.
  *
+ *
+ * futureIsNormal: 미래 월을 '경고'로 부르지 않는다. §04 의 warning 은 미납·경고·변동인데,
+ * 예약이 사는 화면에서 다음 달을 보는 것은 셋 중 어느 것도 아니다 — 그 화면에서는 미래가
+ * 본론이라 정상 사용이 곧 경고 상태가 되고, 트랙을 끌 때마다 노란 테두리가 점멸한다.
+ * **과거 방향 경고는 그대로 둔다** — 지난 장부를 현재로 착각하는 위험은 어느 화면에서나 같다.
+ * allowFuture 에서 파생시키지 않는 이유는, 파생하면 잠금 정책을 바꾸는 사람이 톤까지 함께
+ * 바꾸게 되기 때문이다(두 축은 뜻이 다르다 — '열 수 있는가' 대 '정상 상태인가').
  */
 export default function MonthSelector({
   allowFuture = false,
+  futureIsNormal = false,
   paramKey = 'month',
   fallbackKey,
 }: {
   allowFuture?: boolean
+  futureIsNormal?: boolean
   paramKey?: string
   fallbackKey?: string
 } = {}) {
@@ -123,7 +132,9 @@ export default function MonthSelector({
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
   const atCurrentMonth = !allowFuture && localMonth >= todayMonth
   const isCurrent = localMonth === todayMonth
-  const rel = relMonthLabel(localMonth, todayMonth)
+  // 이 화면에서 미래가 정상이면 경고 표면·보더·상대월 알약을 안 세운다. 과거는 종전대로 경고다.
+  const quietFuture = futureIsNormal && localMonth > todayMonth
+  const rel = quietFuture ? null : relMonthLabel(localMonth, todayMonth)
   const jumpToday = () => { setLocalMonth(todayMonth); localMonthRef.current = todayMonth; if (debounceRef.current) clearTimeout(debounceRef.current); applyMonth(todayMonth) }
 
   if (role === 'LIMITED_STAFF') return null   // 모든 훅 호출 뒤 조건부 렌더(rules-of-hooks 준수)
@@ -139,12 +150,14 @@ export default function MonthSelector({
      * 자리·폭이 안 흔들린다.
      */
     <div className="relative shrink-0 self-start">
-    {/* 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지). */}
+    {/* 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
+        단 미래가 본론인 화면(futureIsNormal)에서 미래 월은 경고가 아니다 — 표면·보더를 세우지 않는다.
+        '이번 달이 아님'은 남는 신호 둘이 말한다: 라벨의 절대 연월과, !isCurrent 일 때만 서는 [오늘] 버튼. */}
     <div
       className="flex items-stretch min-h-[44px] rounded-lg overflow-hidden transition-colors"
       aria-busy={isPending}
       style={{
-        ...(isCurrent
+        ...(isCurrent || quietFuture
           ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
           : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }),
         // 진행 중 표시 — 앱 전반의 disabled:opacity 문법과 같은 결

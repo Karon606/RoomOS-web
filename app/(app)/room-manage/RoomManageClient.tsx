@@ -1203,7 +1203,7 @@ export default function RoomManageClient({
             §25 탭 좌·셀렉터 우 — 형제 페이지와 같은 자리를 지킨다. */}
         {viewTab === 'moves' && (
           <div className="shrink-0 ml-auto">
-            <MonthSelector allowFuture paramKey={TRACK_MONTH_KEY} fallbackKey="month" />
+            <MonthSelector allowFuture futureIsNormal paramKey={TRACK_MONTH_KEY} fallbackKey="month" />
           </div>
         )}
       </div>
