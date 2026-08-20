@@ -24,7 +24,7 @@ import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
-import { fmtDateKor, fmtMD } from '@/lib/fmtDate'
+import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
 import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
@@ -354,8 +354,9 @@ function MoveCalendarView({ data, onViewMonthChange }: {
                 <div className="sticky left-0 z-30 flex items-end px-2 pb-1.5 text-[0.65625rem] font-bold uppercase"
                   style={{ gridColumn: '1 / 2', gridRow: '1 / 3', background: 'var(--cream)', color: 'var(--ink-m)' }}>호실</div>
 
-                {data.months.map(m => (
-                  <MonthLabel key={m.month} m={m} />
+                {data.months.map((m, i) => (
+                  <MonthLabel key={m.month} m={m}
+                    showYear={i === 0 || m.month.slice(0, 4) !== data.months[i - 1].month.slice(0, 4)} />
                 ))}
 
                 {/* '오늘' — 월 라벨과 겹치는 자리에서는 오늘이 이긴다(z-20 · 불투명). */}
@@ -410,8 +411,12 @@ function MoveCalendarView({ data, onViewMonthChange }: {
           )}
           {beyond && (
             <div className="ml-auto flex items-center gap-2">
+              {/* 날짜는 fmtDateDot 이다 — 이 줄이 가리키는 날은 트랙 **밖**이라 몇 월인지만으로는
+                  어느 해인지 알 수 없다(창이 해를 넘는 자리에 서면 흔하다). fmtMD 자체를 연도
+                  포함으로 바꾸지 않는다: 그 함수는 '짧은 인라인' 정본이고 소비처가 9파일 14곳이라
+                  확인 다이얼로그 본문까지 한꺼번에 길어진다. */}
               <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>
-                이후 예정 {beyond.count}건 · 최초 {fmtMD(beyond.firstDate)}
+                이후 예정 {beyond.count}건 · 최초 {fmtDateDot(beyond.firstDate)}
               </p>
               <Btn variant="ghost" size="sm" onClick={() => jumpToMonth(beyond.firstDate.slice(0, 7))}>
                 그때로 이동
@@ -518,13 +523,22 @@ function ConflictBtn({ onClick, busy, acked, children }: {
 /**
  * 월 밴드의 한 칸 — 라벨은 그 달 안에서 sticky 라, 달 중간을 보고 있어도 어느 달인지 안 잃는다.
  * sticky 요소는 자기 칸(그리드 셀) 안에 갇히므로 다음 달로 넘어가면 라벨도 함께 밀려 나간다.
+ *
+ * 연도는 **범위의 첫 달과 해가 바뀌는 달에만** 붙인다. 종전에는 어디에도 없어서 해를 넘는
+ * 범위에서 "1월"이 몇 년인지 알 수 없었다(회귀가 2026-12 → 2027-01 케이스를 이미 고정하고 있다).
+ * 매 달 적으면 여덟 번 반복되는 "2026년"이 실제 정보인 월과 시각적으로 동급이 되므로,
+ * 무게와 색으로 눌러 평소엔 안 읽히고 필요할 때만 읽히게 둔다. 문법은 형제인 월 셀렉터
+ * 라벨('2026년 8월')과 같다 — 한 화면에서 두 자리가 같은 문자열을 쓴다.
+ *
+ * tnum — 네 자리 연도가 들어오면서 옆 달 라벨과 자폭이 갈린다(§05 '모든 데이터 숫자 tnum').
  */
-function MonthLabel({ m }: { m: MoveRangeMonth }) {
+function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
   return (
     <div className="min-w-0 py-1"
       style={{ gridColumn: `${m.startDay + 1} / ${m.startDay + m.days + 1}`, gridRow: '1 / 2', borderLeft: m.startDay === 1 ? undefined : '1px solid var(--warm-border)' }}>
-      <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none"
+      <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none tnum"
         style={{ left: ROOM_COL, background: 'var(--cream)' }}>
+        {showYear && <span style={{ color: 'var(--ink-m)' }}>{m.month.slice(0, 4)}년</span>}
         <span className="font-bold" style={{ color: 'var(--ink-2)' }}>{Number(m.month.slice(5, 7))}월</span>
         {/* 빈 달을 말없이 두면 고장으로 읽힌다 — 비어 있는 것이 사실이라고 옅게 적어 둔다. */}
         {m.eventCount === 0 && <span style={{ color: 'var(--ink-m)' }}>변동 없음</span>}
