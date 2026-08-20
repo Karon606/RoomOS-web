@@ -627,13 +627,31 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
           color: 'var(--ink-2)',
           borderRadius: barRadius(bar),
         }}>
+        {/* ── 사건 문구는 막대 **시작 지점**에 못 박는다 ──
+            종전에는 이름과 사건 문구가 한 덩어리로 sticky 라, 508호 김태란 행에서 트랙을 오른쪽
+            끝까지 끌어도 "7/1 506호에서 이사"가 화면 왼쪽에 계속 따라왔다(운영자 신고 2026-08-20).
+            사건은 날짜에 일어나므로 문구도 그 날짜 칸에 있어야 하고, 스크롤과 함께 흘러 나가야 한다.
+            조각은 조립(lib/moveCalendar barLabels)이 낸다 — 화면이 ' · ' 로 다시 쪼개면 사본이 된다. */}
+        {mode === 'full' && bar.startLabel && (
+          <span className="shrink-0 whitespace-nowrap px-2 tnum">{bar.startLabel}</span>
+        )}
         {/* 이름은 막대 안에서 sticky 다. 연속 트랙에서는 한 막대가 화면보다 넓은 일이 흔한데,
             글자를 막대 왼쪽 끝에 붙여 두면 그 막대가 화면을 가득 채운 순간 **이름 없는 색 띠**가
-            된다(390px 에서 열일곱 행 중 열 행이 그랬다). 막대 안에 갇히므로 옆 막대는 안 침범한다. */}
+            된다(390px 에서 열일곱 행 중 열 행이 그랬다). 이 껍데기가 sticky 의 컨테이닝 블록이라
+            이름이 양옆 사건 문구를 침범하지 않고 그 사이에서만 미끄러진다. */}
         {/* tnum — 이 라벨에는 날짜뿐 아니라 호실번호도 들어온다(이사 문구). 옆 열의 같은 숫자와 자폭이 갈리면 안 된다. */}
-        <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
-          {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
+        <span className="min-w-0 flex-1 flex">
+          <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
+            {mode === 'outside' ? '' : mode === 'full' && bar.stateLabel
+              ? `${bar.tenantName} · ${bar.stateLabel}`
+              : bar.tenantName}
+          </span>
         </span>
+        {/* 끝 문구는 막대 **끝 지점**에. 9/30 퇴실은 9/30 칸에 있어야 하고, 7월을 보고 있을 때
+            화면에 있으면 안 된다(513호 민경진·522호 이경호가 같은 증상이었다). */}
+        {mode === 'full' && bar.endLabel && (
+          <span className="shrink-0 whitespace-nowrap px-2 tnum">{bar.endLabel}</span>
+        )}
       </button>
       {side && ink && (
         <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none tnum"

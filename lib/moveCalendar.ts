@@ -97,7 +97,25 @@ export type MoveBar = {
   /** 입주·퇴실이 이 범위 안에 있는가. 라벨이 무엇을 말할지가 여기서 갈린다. */
   startsInRange: boolean
   endsInRange: boolean
+  /** 세 조각을 종전과 같은 한 문자열로 이은 것. title·aria·회귀가 이 값을 딛는다. */
   label: string
+  /**
+   * 막대 **시작 지점**에 못 박을 사건 문구. 시작이 이 범위 안일 때만 선다.
+   *
+   * 조각을 조립이 내주는 이유. 화면이 label 을 ' · ' 로 다시 쪼개면 그 사본이 곧 두 번째 진실이 된다
+   * (이 파일 머리의 원칙). 게다가 기계적으로도 깨진다 — 호실번호는 숫자라는 보장이 없고
+   * (등록 폼이 'A동-3'·'옥탑방'을 권한다) 라벨 문자열 안에 같은 구분자가 섞일 여지가 있다.
+   */
+  startLabel: string | null
+  /** 막대 **끝 지점**에 못 박을 사건 문구. 끝이 이 범위 안일 때만 선다. */
+  endLabel: string | null
+  /**
+   * 사건이 하나도 없는 막대의 상태 문구('퇴실일 미정' 등) — 두 조각이 다 비었을 때만 선다.
+   *
+   * 이것은 사건이 아니라 상태다. 날짜 칸에 못 박으면 안 되고(그 픽셀이 그 날짜를 뜻하게 된다)
+   * 이름과 함께 sticky 로 흘러야 한다. 종전 표시가 정확히 그것이었다.
+   */
+  stateLabel: string | null
   stayFrom: string | null
   stayTo: string | null
   /** 이 막대가 충돌에 걸려 있다 — 행 좌측 팁과 짝이다. */
@@ -306,8 +324,20 @@ function slicesOf(l: MoveCalendarLease): StaySlice[] {
  * (:roomNo 정렬) 506호와 508호 사이에 507호가 낀다. 두 막대를 선으로 이을 수도 없다(가이드
  * 미등재). 게다가 범위가 이사일을 안 물면 한쪽 막대는 아예 안 선다. 어느 막대 하나만 봐도
  * 어디로 갔는지·어디서 왔는지 알아야 그 사건이 화면에서 사라지지 않는다.
+ *
+ * **조각을 따로 내는 이유**(2026-08-20). 종전에는 이 셋을 한 문자열로 이어 화면이 막대 안에서
+ * sticky 로 들고 있었다. 그러면 트랙을 아무리 끌어도 "7/1 506호에서 이사"가 화면 왼쪽에 계속
+ * 붙어 따라온다 — 8월 말을 보고 있는데 7/1 이 눈앞에 있다(운영자 신고 2026-08-20). 사건은
+ * 날짜에 일어나므로 문구도 그 날짜 칸에 있어야 한다. 감쇠는 색이 아니라 **위치**로 한다
+ * (§03 이 밴드 위 글자를 --ink-2 로 못박았고, 실측상 --ink-s 는 막대 위에서 AA 미달이다).
+ *
+ * 역전(reversed)은 조각을 안 낸다. 기하는 두 날짜를 뒤집어 그리는데(assemble 의 from/to swap)
+ * 문구는 원본 날짜를 읽으므로, 문구를 날짜 칸에 못 박으면 8/10 칸 위에 "9/20 입실"이 앉는다.
+ * 그 방을 9/20 에 광고에 올리면 실제 손실이다. 역전은 충돌 줄이 따로 말한다.
  */
-function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; movedFromRoomNo: string | null; movedToRoomNo: string | null; stayFrom: string | null; stayTo: string | null }): string {
+type BarLabels = { label: string; startLabel: string | null; endLabel: string | null; stateLabel: string | null }
+
+function barLabels(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; reversed: boolean; movedFromRoomNo: string | null; movedToRoomNo: string | null; stayFrom: string | null; stayTo: string | null }): BarLabels {
   const startLabel = bar.movedFromRoomNo
     ? moveDateLabel(bar.stayFrom, { roomNo: bar.movedFromRoomNo, dir: 'from' })
     : moveInDateLabel(bar.stayFrom)
@@ -317,9 +347,14 @@ function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded
   const parts: string[] = []
   if (bar.startsInRange && startLabel) parts.push(startLabel)
   if (bar.endsInRange && endLabel) parts.push(endLabel)
-  if (parts.length > 0) return parts.join(' · ')
-  if (bar.openEnded) return '퇴실일 미정'
-  return endLabel ?? '퇴실일 미정'
+  // 이 한 문자열은 종전과 한 글자도 다르지 않다 — title·aria·회귀 160 이 이 값을 딛는다.
+  const label = parts.length > 0 ? parts.join(' · ')
+    : bar.openEnded ? '퇴실일 미정'
+      : endLabel ?? '퇴실일 미정'
+  const pinned = !bar.reversed
+  const start = pinned && bar.startsInRange ? startLabel : null
+  const end = pinned && bar.endsInRange ? endLabel : null
+  return { label, startLabel: start, endLabel: end, stateLabel: start || end ? null : label }
 }
 
 /** 겹치지 않는 막대끼리 같은 층에 앉힌다. 같은 날 퇴실·입주는 한 칸을 함께 쓰므로 층이 갈린다. */
@@ -435,11 +470,14 @@ function assemble(input: {
         startsInRange,
         endsInRange,
         label: '',
+        startLabel: null,
+        endLabel: null,
+        stateLabel: null,
         stayFrom: rawFrom,
         stayTo: rawTo,
         conflicted: false,
       }
-      bar.label = barLabel(bar)
+      Object.assign(bar, barLabels({ ...bar, reversed }))
       bars.push(bar)
       barLease.set(bar.id, l)
 
