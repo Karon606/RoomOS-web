@@ -24,10 +24,19 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
 const atUtc = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`)
 const addDays = (ymd: string, n: number): string => new Date(atUtc(ymd) + n * DAY_MS).toISOString().slice(0, 10)
 
-/** 'YYYY-MM-DD' 로 읽히는 값만 통과. 아니면 null 이다(형식이 어긋난 값을 날짜로 취급하지 않는다). */
+/**
+ * 'YYYY-MM-DD' 로 읽히고 **실제로 있는 날**인 값만 통과. 아니면 null.
+ *
+ * 모양 검사만으로는 부족하다 — `2026-02-31` 은 정규식도 Date.parse 도 통과하는데 굴러서
+ * 3월 3일이 되고, 평년의 `2026-02-29` 는 3월 1일이 된다. 퇴실일은 사람 손으로 들어오는 값이라
+ * 이 모양이 실제로 온다. 되돌려 적어 같은 글자가 나오는지까지 봐야 굴러간 날이 걸린다.
+ */
 function normYmd(v: string | null | undefined): string | null {
   const s = (v ?? '').trim().slice(0, 10)
-  return YMD_RE.test(s) ? s : null
+  if (!YMD_RE.test(s)) return null
+  const t = Date.parse(`${s}T00:00:00Z`)
+  if (Number.isNaN(t)) return null
+  return new Date(t).toISOString().slice(0, 10) === s ? s : null
 }
 
 /**

@@ -21,6 +21,7 @@ import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/r
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
+import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'

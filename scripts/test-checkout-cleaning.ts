@@ -30,6 +30,14 @@ eq('퇴실일이 한참 과거면 오늘', defaultCheckoutCleaningYmd('2026-07-0
 eq('퇴실일이 없으면 오늘', defaultCheckoutCleaningYmd(null, TODAY), TODAY)
 eq('퇴실일이 빈 문자열이면 오늘', defaultCheckoutCleaningYmd('', TODAY), TODAY)
 eq('퇴실일 형식이 깨졌으면 오늘', defaultCheckoutCleaningYmd('2026/08/25', TODAY), TODAY)
+eq('퇴실일 0벌림이 없으면 오늘 — 사전순 비교가 뒤집히는 모양이라 통과시키면 안 된다',
+  defaultCheckoutCleaningYmd('2026-8-5', TODAY), TODAY)
+eq('퇴실일 자리가 바뀌었으면 오늘', defaultCheckoutCleaningYmd('25-08-2026', TODAY), TODAY)
+// 모양만 보면 통과하는데 실제로는 없는 날 — 그대로 두면 2/31 이 3/3 으로 굴러 예정일이 된다.
+eq('없는 날(2월 31일)은 오늘', defaultCheckoutCleaningYmd('2026-02-31', TODAY), TODAY)
+eq('평년의 2월 29일은 오늘', defaultCheckoutCleaningYmd('2026-02-29', TODAY), TODAY)
+eq('윤년의 2월 29일은 있는 날이라 그 다음 날', defaultCheckoutCleaningYmd('2028-02-29', '2028-01-01'), '2028-03-01')
+eq('13월은 오늘', defaultCheckoutCleaningYmd('2026-13-01', TODAY), TODAY)
 // 달·해 경계에서도 자리올림이 맞아야 한다. 로컬 자정 Date 를 쓰면 여기서 하루가 밀린다.
 eq('달 경계 · 말일 퇴실은 다음 달 1일', defaultCheckoutCleaningYmd('2026-08-31', TODAY), '2026-09-01')
 eq('해 경계 · 12월 31일 퇴실은 다음 해 1월 1일', defaultCheckoutCleaningYmd('2026-12-31', TODAY), '2027-01-01')
