@@ -9,7 +9,12 @@ import type { PrismaDb } from '@/lib/prisma'
 import { displayName } from '@/lib/displayName'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
-import type { MoveCalendarLease } from '@/lib/moveCalendar'
+import { isVacancyExcluded } from '@/lib/vacancy'
+import type { MoveCalendarLease, MoveWorkInput } from '@/lib/moveCalendar'
+import {
+  CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
+  type CleaningPerformer, type CleaningReason,
+} from '@/app/(app)/room-manage/cleaningConstants'
 
 /** 취소를 뺀 전 생애 — 퇴실 완료까지 읽어야 지난 달의 퇴실이 트랙에서 안 사라진다. */
 export const MOVE_LEASE_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] as const
@@ -96,6 +101,14 @@ export async function fetchMoveLeases(
   propertyId: string,
   from: string,
   to: string,
+  /**
+   * 작업(청소)이 있는 방 — **행 목록은 안 늘린다.** 점유 계약만 함께 읽는다.
+   *
+   * 조립이 '공실 작업은 행을 만들고 거주 중 작업은 안 만든다'를 판정하려면 그날 그 방에
+   * 사람이 있었는지를 알아야 하는데, 창 안에 입퇴실이 하나도 없는 방(관통 거주)은 changed 에
+   * 안 걸려 그 방의 계약이 조립에 아예 안 닿는다. 그러면 사람이 사는 방에 행이 하나 선다.
+   */
+  workRoomIds: string[] = [],
 ): Promise<{ changed: MoveCalendarLease[]; context: MoveCalendarLease[] }> {
   const first = ymdToDbDate(from)
   const last = ymdToDbDate(to)
@@ -118,7 +131,7 @@ export async function fetchMoveLeases(
   })
   // 행이 될 수 있는 방 — 계약이 지금 있는 방과 그 계약이 거쳐 간 방 전부. 과대근사라도 좋다,
   // 어느 방이 실제로 행이 되는지는 조립이 다시 한 번 거른다.
-  const roomIds = [...new Set(changed.flatMap(l => [l.roomId!, ...l.roomStays.map(s => s.roomId)]))]
+  const roomIds = [...new Set([...changed.flatMap(l => [l.roomId!, ...l.roomStays.map(s => s.roomId)]), ...workRoomIds])]
   const context = roomIds.length === 0 ? [] : await db.leaseTerm.findMany({
     where: {
       propertyId,
@@ -132,4 +145,100 @@ export async function fetchMoveLeases(
   })
 
   return { changed: changed.map(toMoveLease), context: context.map(toMoveLease) }
+}
+
+// ── 작업(청소) 조회 ───────────────────────────────────────────────
+//
+// 형제로 두는 이유는 위 fetchMoveLeases 와 같다 — 감지망이 화면과 **같은 조회**를 지나야
+// 한다. 조회를 서버 액션 파일 안에 두면 그물은 사본을 들 수밖에 없고, 그 사본은 조회가
+// 바뀔 때 옛 규칙에 남아 통과를 말한다.
+//
+// 1단계는 청소(RoomCleaning)만 싣는다. 도배·장판 같은 일반 작업 모델은 별도 승인 항목이다.
+
+/** 완료 건은 완료일, 그 외는 예정일이 그 작업이 서는 날이다. 상태를 안 보고 고르면 갈린다. */
+const MOVE_WORK_STATUSES = ['PLANNED', 'DONE'] as const
+
+/**
+ * 캘린더에서 부를 종류 문구 — 사유 라벨에 **명사가 없으면 붙인다.**
+ *
+ * CLEANING_REASON_LABEL 은 청소 목록용이라 그 화면의 열이 이미 '청소'를 말하고 있다. 그래서
+ * '공사·도배 후'·'입실 중 요청'·'기타' 처럼 명사가 없는 낱말이 섞여 있는데, 캘린더에는 그런
+ * 열이 없다. 그대로 쓰면 소리로 "404호 공사·도배 후 완료" 가 되어 **무엇이 완료됐는지가
+ * 문장에서 사라진다**(헤드리스 실측에서 열넷 중 다섯이 그 모양이었다).
+ *
+ * 사유 어휘를 여기서 다시 적지 않는다 — 사본이 곧 두 번째 진실이 된다. 정본 라벨을 그대로
+ * 쓰되 명사가 없을 때만 한 낱말을 잇는다.
+ */
+export const workKindLabel = (reason: CleaningReason): string => {
+  const label = CLEANING_REASON_LABEL[reason] ?? CLEANING_REASON_LABEL.OTHER
+  return label.includes('청소') ? label : `${label} 청소`
+}
+
+/**
+ * 그 범위의 청소 — 트랙에 그릴 것만.
+ *
+ * **'안 함'(SKIPPED)은 안 싣는다.** 하지 않기로 한 일은 일정이 아니고, 그리면 트랙에서
+ * 예정·완료와 나란히 서서 "이 방에 청소가 잡혀 있다"로 읽힌다. 그 기록은 목록이 지킨다.
+ *
+ * **소프트삭제분도 안 싣는다.** 호실 관리 '청소' 뷰는 복원 진입점 때문에 삭제분을 함께
+ * 받지만(getPropertyCleanings), 캘린더는 복원할 자리가 아니라 지운 것은 지운 것이다.
+ *
+ * 방은 따로 한 번 읽는다. 관계 include 로 달면 조회가 청소 행 수만큼 중첩되고, 여기 필요한
+ * 것은 50행 남짓의 호실번호와 공실 집계 플래그뿐이라 통째로 읽는 편이 싸다.
+ */
+export async function fetchMoveWorks(
+  db: PrismaDb,
+  propertyId: string,
+  from: string,
+  to: string,
+): Promise<MoveWorkInput[]> {
+  const first = ymdToDbDate(from)
+  const last = ymdToDbDate(to)
+  const [rows, rooms] = await Promise.all([
+    db.roomCleaning.findMany({
+      where: {
+        propertyId,
+        deletedAt: null,
+        status: { in: [...MOVE_WORK_STATUSES] },
+        OR: [
+          { status: 'PLANNED', scheduledDate: { gte: first, lte: last } },
+          { status: 'DONE', doneDate: { gte: first, lte: last } },
+        ],
+      },
+      select: {
+        id: true, roomId: true, reason: true, status: true,
+        scheduledDate: true, doneDate: true,
+        plannedPerformer: true, performer: true, performerName: true,
+      },
+    }),
+    db.room.findMany({
+      where: { propertyId },
+      select: { id: true, roomNo: true, nonResidentVacant: true },
+    }),
+  ])
+  const roomById = new Map(rooms.map(r => [r.id, r]))
+
+  const out: MoveWorkInput[] = []
+  for (const r of rows) {
+    const done = r.status === 'DONE'
+    const date = done ? dbYmd(r.doneDate) : dbYmd(r.scheduledDate)
+    const room = roomById.get(r.roomId)
+    // 날짜 없는 예정은 트랙에 세울 자리가 없다(그 방 목록에는 그대로 남는다).
+    if (!date || !room) continue
+    // 완료 건은 적어 둔 이름이 이긴다 — '업체'보다 '고시클린'이 그 줄을 읽는 사람에게 답이다.
+    // 예정 건에는 이름 칸이 없다(계획 단계에서 받는 것은 누가 하느냐뿐이다).
+    const performer = (done ? r.performer : r.plannedPerformer) as CleaningPerformer | null
+    out.push({
+      id: r.id,
+      roomId: r.roomId,
+      roomNo: room.roomNo,
+      date,
+      done,
+      kindLabel: workKindLabel(r.reason as CleaningReason),
+      performerLabel: (done ? r.performerName?.trim() : null)
+        || (performer ? CLEANING_PERFORMER_LABEL[performer] : null),
+      vacancyExcluded: isVacancyExcluded(room),
+    })
+  }
+  return out
 }

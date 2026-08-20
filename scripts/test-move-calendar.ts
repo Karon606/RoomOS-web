@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, shiftMonth, type MoveCalendarLease, type MoveStaySpan } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -309,6 +309,7 @@ const range = (p: {
   context?: MoveCalendarLease[]
   today?: string
   focusMonth?: string
+  works?: MoveWorkInput[]
 }) => buildMoveRange({
   from: p.from,
   to: p.to,
@@ -318,6 +319,7 @@ const range = (p: {
   context: p.context ?? p.changed,
   beyond: null,
   canExtendPast: false,
+  works: p.works,
 })
 
 // ── 월 산술 정본 ──
@@ -661,6 +663,134 @@ const WT = '2026-08'   // 창 회귀의 '오늘 달'
   // 오늘을 무는 창에서는 같은 예약이 잡힌다 — 위 0 이 데이터 탓이 아님을 대조로 못 박는다.
   const near = range({ from: '2026-07-01', to: '2026-10-31', changed: [soon], today: '2026-08-20', focusMonth: WT })
   eq('창 안 오늘 · 같은 예약이 다가오는 14일에 잡힌다', near.upcoming.map(e => e.date), ['2026-08-21'])
+}
+
+// ══ 작업 레인(청소) ═══════════════════════════════════════════════
+//
+// 이 절이 못 박는 것은 하나다 — **작업은 거주의 어느 배열에도 안 들어간다.** 공실 캡션·충돌
+// 판정·홈 '이달 입퇴실 N건'이 전부 bars·events 를 딛으므로, 섞이는 순간 도배 중인 빈 방이
+// 공실이 아니게 되고 충돌 판정이 거주와 청소가 겹쳤다고 빨간 밴드를 세운다.
+
+let wseq = 0
+function work(p: Partial<MoveWorkInput> & { roomNo: string; date: string }): MoveWorkInput {
+  wseq++
+  return {
+    id: p.id ?? `w${wseq}`,
+    roomId: p.roomId ?? `room-${p.roomNo}`,
+    roomNo: p.roomNo,
+    date: p.date,
+    done: p.done ?? false,
+    kindLabel: p.kindLabel ?? '퇴실 청소',
+    performerLabel: p.performerLabel ?? null,
+    vacancyExcluded: p.vacancyExcluded ?? false,
+  }
+}
+
+// ── 무회귀 ── 청소를 얹어도 거주 쪽 수가 한 톨도 안 바뀐다.
+{
+  const gone = lease({ id: 'w-gone', roomNo: '404', status: 'CHECKED_OUT', moveInDate: '2026-08-01', expectedMoveOut: '2026-08-06', moveOutDate: '2026-08-06', tenantName: '이성준' })
+  const now = lease({ id: 'w-now', roomNo: '404', status: 'ACTIVE', moveInDate: '2026-08-15', expectedMoveOut: '2026-08-31', tenantName: '조성훈' })
+  const bare = build([gone, now], [gone, now])
+  // 공백 한복판(8/10)에 하루짜리 청소를 놓는다 — 섞이면 8/7~8/14 한 구간이 둘로 쪼개진다.
+  const withWork = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [gone, now], context: [gone, now],
+    works: [work({ roomNo: '404', date: '2026-08-10', done: true })],
+  })
+  eq('작업 · 공실 캡션 불변', withWork.rows[0].gaps, bare.rows[0].gaps)
+  eq('작업 · 공실 캡션은 여전히 한 구간', withWork.rows[0].gaps, [{ startDay: 7, endDay: 14, days: 8 }])
+  eq('작업 · 막대 수 불변', withWork.rows[0].bars.length, bare.rows[0].bars.length)
+  eq('작업 · 막대 id 에 청소가 안 섞인다', withWork.rows[0].bars.map(b => b.id), bare.rows[0].bars.map(b => b.id))
+  eq('작업 · events 불변', withWork.events.map(e => [e.day, e.type]), bare.events.map(e => [e.day, e.type]))
+  eq('작업 · 홈 이달 입퇴실 건수 불변', withWork.eventCount, bare.eventCount)
+  eq('작업 · 첫 변동일 불변(청소는 입퇴실 변동이 아니다)', withWork.rows[0].firstChangeDay, bare.rows[0].firstChangeDay)
+  eq('작업 · 거주 레인 수 불변', withWork.rows[0].laneCount, bare.rows[0].laneCount)
+  eq('작업 · 작업 레인은 따로 센다', withWork.rows[0].workLaneCount, 1)
+  eq('작업 · 그 자리에 청소 한 건', withWork.rows[0].works.map(w => [w.day, w.status]), [[10, 'done']])
+  eq('작업 · 청소 없는 행은 레인 0(종전과 한 픽셀도 다르지 않다)', bare.rows[0].workLaneCount, 0)
+  eq('작업 · 청소 없는 행의 works 는 빈 배열', bare.rows[0].works, [])
+}
+
+// ── 충돌 ── 거주 막대와 같은 날 청소가 서도 충돌이 아니다.
+{
+  const stay = lease({ id: 'w-stay', roomNo: '413', status: 'ACTIVE', moveInDate: '2026-08-01', expectedMoveOut: '2026-08-31', tenantName: '거주자' })
+  const out = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [stay], context: [stay],
+    works: [work({ roomNo: '413', date: '2026-08-14' })],
+  })
+  eq('작업 · 거주와 겹쳐도 충돌 0', out.rows[0].conflicts.length, 0)
+  eq('작업 · 겹침 구간도 안 선다', out.rows[0].overlaps, [])
+  eq('작업 · 그날 사람이 있었다는 사실은 남는다(소리로 읽을 자리)', out.rows[0].works[0].occupied, true)
+}
+
+// ── 행 생성 ── 공실 작업은 행을 만들고, 거주 중 작업은 안 만든다.
+{
+  const empty = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [], context: [],
+    works: [work({ roomNo: '415', date: '2026-08-12' })],
+  })
+  eq('행 생성 · 공실 작업은 행을 만든다', empty.rows.map(r => r.roomNo), ['415'])
+  eq('행 생성 · 그 행은 막대가 없다', empty.rows[0].bars.length, 0)
+  eq('행 생성 · 그래도 입퇴실 건수는 0 이다', empty.eventCount, 0)
+
+  const held = lease({ id: 'w-held', roomNo: '520', status: 'ACTIVE', moveInDate: '2026-01-01', expectedMoveOut: null, tenantName: '관통' })
+  const during = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [], context: [held],
+    works: [work({ roomNo: '520', date: '2026-08-12' })],
+  })
+  eq('행 생성 · 거주 중 작업은 행을 안 만든다', during.rows.length, 0)
+
+  const excluded = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [], context: [],
+    works: [work({ roomNo: '601', date: '2026-08-13', done: true, vacancyExcluded: true })],
+  })
+  eq('행 생성 · 창고·사무실은 비어 있어도 행을 안 만든다', excluded.rows.length, 0)
+}
+
+// ── 상태 ── 예정일 당일은 아직 지연이 아니다.
+{
+  const out = buildMoveCalendar({
+    month: MONTH, today: '2026-08-18', changed: [], context: [],
+    works: [
+      work({ id: 'w-y', roomId: 'room-A', roomNo: '401', date: '2026-08-17' }),
+      work({ id: 'w-t', roomId: 'room-A', roomNo: '401', date: '2026-08-18' }),
+      work({ id: 'w-m', roomId: 'room-A', roomNo: '401', date: '2026-08-19' }),
+      work({ id: 'w-d', roomId: 'room-A', roomNo: '401', date: '2026-08-19', done: true }),
+    ],
+  })
+  eq('상태 · 어제는 예정일 경과, 오늘·내일은 예정, 완료는 완료',
+    out.rows[0].works.map(w => [w.date, w.status]),
+    [['2026-08-17', 'overdue'], ['2026-08-18', 'planned'], ['2026-08-19', 'planned'], ['2026-08-19', 'done']])
+  eq('상태 · 같은 날 두 건은 층이 갈린다(하나가 하나를 덮지 않는다)',
+    out.rows[0].works.filter(w => w.date === '2026-08-19').map(w => w.lane), [0, 1])
+  eq('상태 · 작업 레인 둘', out.rows[0].workLaneCount, 2)
+}
+
+// ── 범위 밖 ── 창 밖 작업은 행도 띠도 안 만든다.
+{
+  const out = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [], context: [],
+    works: [work({ roomNo: '409', date: '2026-09-02' })],
+  })
+  eq('범위 밖 작업은 행을 안 만든다', out.rows.length, 0)
+}
+
+// ── 요약 줄 ── 아직 안 끝난 청소만, 지난 예정도 함께.
+{
+  const stay = lease({ id: 'w-up', roomNo: '514', status: 'CHECKED_OUT', moveInDate: '2026-07-01', expectedMoveOut: '2026-08-16', moveOutDate: '2026-08-16', tenantName: '조선영' })
+  const out = range({
+    from: '2026-07-01', to: '2026-10-31', changed: [stay], today: '2026-08-20',
+    works: [
+      work({ id: 'u-late', roomNo: '514', date: '2026-08-19' }),
+      work({ id: 'u-soon', roomNo: '514', date: '2026-08-21' }),
+      work({ id: 'u-done', roomNo: '514', date: '2026-08-05', done: true }),
+      work({ id: 'u-far',  roomNo: '514', date: '2026-10-01' }),
+    ],
+  })
+  eq('요약 줄 · 지난 예정과 다가오는 예정만, 완료·먼 예정은 뺀다',
+    out.upcomingWorks.map(w => [w.id, w.status]), [['u-late', 'overdue'], ['u-soon', 'planned']])
+  eq('요약 줄 · 어느 방인지가 함께 실린다', out.upcomingWorks[0].roomNo, '514')
+  eq('요약 줄 · 입퇴실 요약은 청소에 안 오염된다', out.upcoming.map(e => e.date), [])
+  eq('행 · 완료·먼 예정은 트랙에 그대로 있다', out.rows[0].works.length, 4)
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)

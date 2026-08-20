@@ -1,0 +1,15 @@
+-- 청소 예정 담당자 (2026-08-20, 입퇴실 캘린더 청소 1단계 승인분).
+--
+-- 운영자 요구가 "누가 청소할지도 표시되고" 였다. 종전에는 담당자(performer)가 **완료 시점에만**
+-- 기록돼서, 예정 단계의 캘린더 막대·요약 줄에는 적을 이름이 아예 없었다.
+--
+-- 완료 시점의 performer 와 **같은 칸을 쓰지 않는다.** 되돌리기(cleaningActions reopenCleaning)가
+-- performer 를 내리도록 설계돼 있어서(수행자 구분은 완료 시점의 사실이라는 규칙), 한 칸에 담으면
+-- 완료를 되돌리는 순간 '누가 하기로 했는가' 라는 계획까지 함께 사라진다.
+--
+-- 값은 완료 쪽과 같은 세 낱말이다 — SELF | VENDOR | THIRD_PARTY (cleaningConstants CleaningPerformer).
+-- NULL 이 곧 '아직 안 정함'이다. 기존 21행은 전부 NULL 로 남으므로 **백필이 없다** — 지난 청소를
+-- 누가 하기로 했었는지는 아무도 모르고, 완료된 건의 performer 를 여기 베끼면 계획과 사실이 섞인다.
+--
+-- 물리 테이블명은 @@map 이고 컬럼은 @map 이 없어 camelCase 그대로다(기존 마이그레이션과 동일).
+ALTER TABLE "room_cleanings" ADD COLUMN IF NOT EXISTS "plannedPerformer" TEXT;

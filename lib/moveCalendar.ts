@@ -122,6 +122,77 @@ export type MoveBar = {
   conflicted: boolean
 }
 
+// ── 작업(청소) ────────────────────────────────────────────────────
+//
+// 1단계는 **청소(RoomCleaning)만** 싣는다. 도배·장판 같은 일반 작업 모델은 별도 승인 항목이다.
+//
+// 왜 막대(bars)와 다른 배열인가. 공실 캡션(gaps)·충돌 판정·홈 '이달 입퇴실 N건'이 전부
+// bars·events 를 딛는다. 작업을 거기 섞으면 도배 중인 빈 방이 공실이 아니게 되어 'N일 공실'이
+// 거짓이 되고, 충돌 판정이 거주와 청소가 겹쳤다고 빨간 밴드를 세우며, 최악은 운영자가
+// [겹침 확인]을 눌러 LeaseOverlapAck 로 그 거짓을 영구화하는 것이다.
+
+/** 조립이 읽는 작업 한 줄 — 조회가 넘긴다(acks 와 같은 문법). 판정은 여기서 한 번만 한다. */
+export type MoveWorkInput = {
+  id: string
+  roomId: string
+  roomNo: string
+  /** 그 작업이 서는 날 'YYYY-MM-DD'. 예정 건은 예정일, 완료 건은 완료일이다. */
+  date: string
+  /** 완료된 작업인가. 지연 여부는 조립이 오늘과 견줘 낸다 — 사실이 아니라 계산이다. */
+  done: boolean
+  /** 종류 문구('퇴실 청소'). **색이 아니라 글자가 종류를 말한다** — viz 로 종류를 가르는 안은 실측 기각. */
+  kindLabel: string
+  /** 담당자 문구. 아직 안 정했으면 null. */
+  performerLabel: string | null
+  /**
+   * 그 방이 공실 집계에서 제외되는 방인가(lib/vacancy isVacancyExcluded 와 같은 사실).
+   * 창고·사무실은 세를 놓는 방이 아니라, 비어 있어도 '입주 가능'이 아니다. 거기 청소가 잡혔다고
+   * 행을 세우면 그 행이 곧 거짓 입주 가능 신호가 된다(실데이터: 601호 옥탑 창고).
+   */
+  vacancyExcluded: boolean
+}
+
+/** 예정 · 지연(예정일이 지났는데 미완료) · 완료. 표면 농도로 가르고 지연만 --tc 계열이다. */
+export type MoveWorkStatus = 'planned' | 'overdue' | 'done'
+
+/** 작업 레인의 띠 하나 — 거주 막대와 **다른 배열 · 다른 레인 풀**이다. */
+export type MoveWork = {
+  id: string
+  /** 범위 첫날부터 며칠. 작업은 하루짜리라 startDay·endDay 를 따로 두지 않는다. */
+  day: number
+  date: string
+  status: MoveWorkStatus
+  kindLabel: string
+  performerLabel: string | null
+  /**
+   * 그날 그 방에 사람이 있었는가. 화면은 여기에 **색을 얹지 않는다** — 작업 띠가 거주 막대와
+   * 세로로 겹쳐 서면 그것이 곧 거주 중이다. 다만 aria 문장에는 반드시 들어간다(시각적 겹침은
+   * 소리로 안 들린다).
+   *
+   * 이름이 '거주 중'이 아닌 이유. 퇴실 당일 청소는 그날 사람이 있어도 퇴실 청소이고, 예약
+   * 첫날 청소는 입실 직전 청소다 — 그것을 '거주 중 청소'라 부르면 표준 운영이 오분류된다
+   * (도메인 패널 2026-08-20). 이 칸은 분류가 아니라 관찰이다.
+   */
+  occupied: boolean
+  /** 작업끼리만 겹치는 층. 거주 laneCount 와 섞지 않는다. */
+  lane: number
+}
+
+/** 요약 줄이 쓰는 작업 한 줄 — 트랙 밖이라 어느 방인지가 함께 있어야 한다. */
+export type MoveWorkEvent = MoveWork & { roomId: string; roomNo: string }
+
+/**
+ * 작업 상태의 낱말 — 화면이 각자 고르면 트랙·요약 줄·소리가 같은 상태를 다르게 부른다.
+ *
+ * '예정일 경과'는 **이 앱이 이미 쓰는 낱말**이다(대시보드 알림의 "퇴실 예정일 경과 N일",
+ * §18 진행형 알림의 "경과 N일 · 처리 필요"). 같은 사실을 부르는 말이 화면마다 다르면
+ * 운영자가 두 낱말을 서로 다른 상태로 읽는다. '지남'·'지연'은 여기서 새로 지어낸 말이었다.
+ * '경과' 한 낱말로 줄이지 않는 이유는 뜻이 갈리기 때문이다 — 그 말만으로는 '진행 경과'로도 읽힌다.
+ */
+export const MOVE_WORK_STATUS_LABEL: Record<MoveWorkStatus, string> = {
+  planned: '예정', overdue: '예정일 경과', done: '완료',
+}
+
 export type MoveDaySpan = { startDay: number; endDay: number }
 export type MoveGap = MoveDaySpan & { days: number }
 /** 겹친 구간 — 확인된 겹침은 중립 톤으로 그린다(빨강은 아직 답하지 않은 것에만 쓴다). */
@@ -155,10 +226,21 @@ export type MoveConflict = {
 export type MoveCalendarRow = {
   roomId: string
   roomNo: string
-  /** 범위 안 첫 변동일(입주·퇴실 중 이른 것). 월 창의 행 정렬 키다. */
+  /**
+   * 범위 안 첫 변동일(입주·퇴실 중 이른 것). 월 창의 행 정렬 키다.
+   * **작업은 여기 안 들어간다** — 청소는 입퇴실 변동이 아니다.
+   */
   firstChangeDay: number
   laneCount: number
   bars: MoveBar[]
+  /** 그 범위의 작업(청소). bars 와 별도 배열·별도 레인 풀이다(위 MoveWork 머리 주석). */
+  works: MoveWork[]
+  /**
+   * 작업 레인의 층 수. 거주 laneCount 와 **따로 센다** — 같은 풀에 넣으면 하루짜리 작업 하나가
+   * 그 방 행 높이를 통째로 한 단 늘려 행 높이가 데이터에 따라 들쭉날쭉해진다.
+   * 작업이 없으면 0 이라, 청소가 없는 행은 종전과 한 픽셀도 다르지 않다.
+   */
+  workLaneCount: number
   gaps: MoveGap[]
   overlaps: MoveOverlapSpan[]
   conflicts: MoveConflict[]
@@ -229,6 +311,12 @@ export type MoveCalendarRange = {
   rows: MoveCalendarRow[]
   /** 오늘부터 UPCOMING_DAYS 일 안의 변동. 트랙은 넓고 '다음 일정'은 매일 묻는 질문이라 따로 낸다. */
   upcoming: MoveEvent[]
+  /**
+   * 아직 안 끝난 청소 중 UPCOMING_DAYS 일 안의 것 — **지난 예정(지연)도 포함한다.**
+   * 지연은 '다가오는' 것은 아니지만 앞으로 해야 할 일이고, 이 화면에서 가장 급한 사실이다.
+   * 완료분은 안 넣는다 — 끝난 일은 다음에 할 일이 아니다(트랙과 행 아래 줄이 이미 말한다).
+   */
+  upcomingWorks: MoveWorkEvent[]
   conflicts: MoveConflict[]
   /** 범위 오른쪽 밖에 남은 예정. 천장에 걸려 안 보이는 것이 있다는 사실을 말한다. */
   beyond: { count: number; firstDate: string } | null
@@ -421,6 +509,25 @@ function barLabels(bar: { startsInRange: boolean; endsInRange: boolean; openEnde
   return { label, startLabel: start, endLabel: end, stateLabel: start || end ? null : label }
 }
 
+/**
+ * 작업끼리만 층을 가른다 — **거주 packLanes 와 다른 풀이다.**
+ *
+ * 같은 풀에 넣으면 하루짜리 청소 하나가 그 방 행 높이를 통째로 한 단(36px) 늘려, 행 높이가
+ * 데이터에 따라 들쭉날쭉해진다. 층이 갈리는 경우는 하나뿐이다 — 같은 방 같은 날 청소가 둘
+ * (자동 생성 퇴실 청소의 중복 방지는 CHECKOUT 사유만 보므로 도배 후 청소와 같은 날이 될 수 있다).
+ * 안 가르면 하나가 다른 하나를 덮어 두 건이 한 건으로 보인다.
+ */
+function packWorkLanes(works: MoveWork[]): number {
+  const laneEnd: number[] = []
+  for (const w of [...works].sort((x, y) => x.day - y.day)) {
+    let lane = laneEnd.findIndex(end => end < w.day)
+    if (lane < 0) { lane = laneEnd.length; laneEnd.push(w.day) }
+    else laneEnd[lane] = w.day
+    w.lane = lane
+  }
+  return laneEnd.length
+}
+
 /** 겹치지 않는 막대끼리 같은 층에 앉힌다. 같은 날 퇴실·입주는 한 칸을 함께 쓰므로 층이 갈린다. */
 function packLanes(bars: MoveBar[]): number {
   const laneEnd: number[] = []
@@ -454,6 +561,8 @@ function toSpans(days: Set<number>, upTo: number): MoveDaySpan[] {
  * @param order   행 정렬. 한 달 창은 첫 변동일이 곧 그 달의 이야기 순서지만, 여러 달을 잇는
  *                트랙에서는 그 키가 의미를 잃어(같은 방이 여러 달에 걸쳐 여러 번 바뀐다) 호실번호로 센다.
  * @param acks    유효한 확인된 겹침. 조회가 넘긴다 — 조립은 DB 를 못 보고, 확인 여부는 사실이지 계산이 아니다.
+ * @param works   그 범위의 작업(청소). acks 와 **같은 문법**으로 조회가 넘긴다(순수 함수 규약).
+ *                bars·events·firstChangeDay 어디에도 안 들어간다 — 위 MoveWork 머리 주석.
  */
 function assemble(input: {
   from: string
@@ -463,6 +572,7 @@ function assemble(input: {
   context: MoveCalendarLease[]
   order: 'firstChange' | 'roomNo'
   acks: MoveOverlapAck[]
+  works: MoveWorkInput[]
 }): { days: number; todayDay: number | null; rows: MoveCalendarRow[]; events: MoveEvent[]; conflicts: MoveConflict[] } {
   const { today, order } = input
   const first = input.from
@@ -485,6 +595,36 @@ function assemble(input: {
     (!!s.from && s.from >= first && s.from <= last) || (!!s.to && s.to >= first && s.to <= last)
   const roomIds = new Set(changedSlices.filter(x => changedIn(x.slice)).map(x => x.slice.roomId))
 
+  // ── 그날 그 방에 사람이 있었는가 ──
+  //
+  // 조각 전부를 본다(변동분 + 점유 맥락). 조회가 **작업이 있는 방의 점유 계약도 함께** 실어
+  // 주므로, 행이 아닌 방도 여기서 판정할 수 있다. 날짜가 하나도 없는 조각은 아무 날도 안 덮는
+  // 것으로 친다 — 열린 양끝으로 읽으면 입주일 없는 예약 하나가 그 방을 영원히 점유로 만든다.
+  const allSlices = [...changedSlices, ...contextSlices]
+  const coversDay = (sl: StaySlice, d: string): boolean => {
+    const reversed = !!sl.from && !!sl.to && sl.from > sl.to
+    const f = reversed ? sl.to : sl.from
+    const t = reversed ? sl.from : sl.to
+    if (!f && !t) return false
+    return (!f || f <= d) && (!t || t >= d)
+  }
+  const occupiedOn = (roomId: string, d: string): boolean =>
+    allSlices.some(x => x.slice.roomId === roomId && coversDay(x.slice, d))
+
+  // ── 작업이 행을 만드는 자리 ──
+  //
+  // **공실 작업은 행을 만든다** — 그 방이 언제 다시 쓸 수 있게 되는지가 이 화면의 질문이다.
+  // **거주 중 작업은 행을 안 만든다** — 50실에서 잡무까지 행이 되면 캘린더가 잡무 목록이 된다.
+  //   이미 행이 있는 방에는 그대로 얹힌다(아래 rowWorks 는 점유 여부를 안 가린다).
+  // **공실 집계 제외 방은 비어 있어도 행을 안 만든다** — 창고·사무실은 세를 놓는 방이 아니라
+  //   비어 있는 것이 정상이다. 거기 청소가 잡혔다고 행을 세우면 그 행이 곧 거짓 입주 가능
+  //   신호가 된다(실데이터 601호 옥탑 창고, lib/vacancy isVacancyExcluded 와 같은 선).
+  const worksInRange = input.works.filter(w => w.date >= first && w.date <= last)
+  for (const w of worksInRange) {
+    if (w.vacancyExcluded || roomIds.has(w.roomId)) continue
+    if (!occupiedOn(w.roomId, w.date)) roomIds.add(w.roomId)
+  }
+
   // 막대가 되는 조각 — 변동분 + 그 방들의 점유 조각. 같은 조각이 양쪽에 있으면 한 번만.
   const byId = new Map<string, { lease: MoveCalendarLease; slice: StaySlice }>()
   for (const x of changedSlices) if (roomIds.has(x.slice.roomId)) byId.set(x.slice.id, x)
@@ -495,6 +635,12 @@ function assemble(input: {
     const g = perRoom.get(x.slice.roomId)
     if (g) g.slices.push(x)
     else perRoom.set(x.slice.roomId, { roomId: x.slice.roomId, roomNo: x.slice.roomNo, slices: [x] })
+  }
+  // 계약이 한 건도 없는 빈 방에 청소만 잡힌 자리 — 위에서 roomIds 에 들었어도 조각이 없어
+  // perRoom 에는 안 선다. 호실번호는 작업이 들고 온다(조회가 room 조인을 안 하는 대신).
+  for (const w of worksInRange) {
+    if (!roomIds.has(w.roomId) || perRoom.has(w.roomId)) continue
+    perRoom.set(w.roomId, { roomId: w.roomId, roomNo: w.roomNo, slices: [] })
   }
 
   const rows: MoveCalendarRow[] = []
@@ -558,7 +704,10 @@ function assemble(input: {
       }
     }
 
-    if (bars.length === 0) continue
+    // 막대도 작업도 없으면 행이 아니다. 작업만 있는 빈 방은 남긴다 — 그 방이 언제 다시
+    // 쓸 수 있게 되는지가 이 행이 답하는 유일한 질문이다.
+    const rowWorks = worksInRange.filter(w => w.roomId === g.roomId)
+    if (bars.length === 0 && rowWorks.length === 0) continue
 
     // ── 충돌 ── 방을 잡고 있는 계약끼리만 본다. 퇴실 완료 계약은 방을 잡지 않으므로
     // (lib/roomAssignment roomAssignmentBlockReason 의 같은 선) 같은 날 인수인계는 사고가 아니다.
@@ -616,7 +765,29 @@ function assemble(input: {
 
     const laneCount = packLanes(bars)
 
+    // ── 작업 레인 ── 거주와 **다른 배열 · 다른 레인 풀**이다.
+    //
+    // 자리가 여기인 이유. 충돌 루프가 이미 끝나 판정 대상(holding)이 안 변하고, 바로 아래
+    // covered 루프 전이라 **작업 날짜가 공백 계산에 절대 못 섞인다.** 섞이면 하루짜리 청소가
+    // 공실 구간을 둘로 쪼개 'N일 공실' 캡션이 통째로 거짓이 된다.
+    const works: MoveWork[] = rowWorks
+      .map(w => ({
+        id: w.id,
+        day: dayNo(w.date),
+        date: w.date,
+        // 지연은 사실이 아니라 계산이라 조립이 낸다. 예정일 **당일은 아직 지연이 아니다** —
+        // 그날 하기로 한 일이라, 아침에 여는 화면이 오늘 할 일을 이미 늦었다고 말하면 안 된다.
+        status: w.done ? 'done' as const : w.date < today ? 'overdue' as const : 'planned' as const,
+        kindLabel: w.kindLabel,
+        performerLabel: w.performerLabel,
+        occupied: occupiedOn(g.roomId, w.date),
+        lane: 0,
+      }))
+      .sort((a, b) => a.day - b.day)
+    const workLaneCount = packWorkLanes(works)
+
     // ── 공백 ── 어느 층에도 막대가 없는 날. 캡션 'N일 공실'이 붙는 자리다.
+    // **작업은 여기 안 들어간다**(바로 위 주석).
     const covered = new Set<number>()
     for (const b of bars) for (let d = b.startDay; d <= b.endDay; d++) covered.add(d)
     const free = new Set<number>()
@@ -643,6 +814,8 @@ function assemble(input: {
       firstChangeDay: changeDays.length > 0 ? Math.min(...changeDays) : days + 1,
       laneCount,
       bars: bars.sort((a, b) => a.lane - b.lane || a.startDay - b.startDay),
+      works,
+      workLaneCount,
       gaps,
       // 확인 전 겹침이 이긴다 — 같은 날이 두 쌍에 걸려 있으면 아직 답하지 않은 쪽 색을 세운다.
       overlaps: [
@@ -681,10 +854,11 @@ export function buildMoveCalendar(input: {
   changed: MoveCalendarLease[]
   context: MoveCalendarLease[]
   acks?: MoveOverlapAck[]
+  works?: MoveWorkInput[]
 }): MoveCalendarMonth {
   const { month } = input
   const dim = daysInMonth(month)
-  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange', acks: input.acks ?? [] })
+  const r = assemble({ from: `${month}-01`, to: monthLastDay(month), today: input.today, changed: input.changed, context: input.context, order: 'firstChange', acks: input.acks ?? [], works: input.works ?? [] })
   return {
     month,
     daysInMonth: dim,
@@ -712,9 +886,10 @@ export function buildMoveRange(input: {
   beyond: { count: number; firstDate: string } | null
   canExtendPast: boolean
   acks?: MoveOverlapAck[]
+  works?: MoveWorkInput[]
 }): MoveCalendarRange {
   const { from, to, today, focusMonth } = input
-  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo', acks: input.acks ?? [] })
+  const r = assemble({ from, to, today, changed: input.changed, context: input.context, order: 'roomNo', acks: input.acks ?? [], works: input.works ?? [] })
 
   const months: MoveRangeMonth[] = []
   for (let m = from.slice(0, 7); m <= to.slice(0, 7); m = shiftMonth(m, 1)) {
@@ -735,6 +910,12 @@ export function buildMoveRange(input: {
     months,
     rows: r.rows,
     upcoming: r.events.filter(e => e.date >= today && e.date <= horizon),
+    // 아직 안 끝난 청소만. 지난 예정(지연)도 넣는다 — '다가오는' 것은 아니지만 앞으로 해야 할
+    // 일이고, 트랙에서는 표면이 상태를 말하지 않기로 했으므로 지연이 글자로 서는 자리가 여기다.
+    upcomingWorks: r.rows.flatMap(row => row.works
+      .filter(w => w.status !== 'done' && w.date <= horizon)
+      .map(w => ({ ...w, roomId: row.roomId, roomNo: row.roomNo })))
+      .sort((a, b) => a.day - b.day || (a.roomNo < b.roomNo ? -1 : a.roomNo > b.roomNo ? 1 : 0)),
     conflicts: r.conflicts,
     beyond: input.beyond,
     canExtendPast: input.canExtendPast,

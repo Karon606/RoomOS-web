@@ -117,6 +117,14 @@ export function CleaningRowBody({
         <span className="text-xs text-[var(--warm-muted)] num">
           {fmtDateDot(r.status === 'DONE' ? r.doneDate : r.scheduledDate)}
         </span>
+        {/* 예정 담당은 계획이라 '누가 하기로 했나'다. 아래 완료 수행자와 칸이 다르므로 말도 다르다 —
+            같은 낱말로 적으면 예정 건이 이미 누가 한 것처럼 읽힌다. 안 정했으면 아무 말도 안 한다
+            (예정 행마다 '담당 미정'이 서면 그 말이 아무것도 뜻하지 않게 된다). */}
+        {r.status === 'PLANNED' && r.plannedPerformer && (
+          <span className="text-xs text-[var(--warm-muted)]">
+            담당 {CLEANING_PERFORMER_LABEL[r.plannedPerformer]}
+          </span>
+        )}
         {/* 되돌린 건은 수행자 구분은 내려가도 이름은 남는다(재완료 때 다시 안 적게).
             구분 없이 이름만 뜨면 무슨 이름인지 안 서니, 바로 옆 '기록된 지출' 과 같은 말을 붙여 가른다. */}
         {(r.performer || r.performerName) && (

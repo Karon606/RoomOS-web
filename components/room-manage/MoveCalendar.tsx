@@ -26,7 +26,7 @@ import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
-import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
+import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -85,6 +85,54 @@ function barRadius(bar: MoveBar): string {
   const r = bar.clippedEnd ? '0' : 'var(--radius-xs)'
   return `${l} ${r} ${r} ${l}`
 }
+
+/**
+ * 작업(청소) 띠의 표면 — §04 'in-progress 점검·처리 중'(--inspect-*) 과 'neutral 공실·기본'.
+ *
+ * 이 트랙에서 올리브는 이미 거주이고 인디고는 예약이라, 완료를 --success-* 로 칠하면 완료된
+ * 청소가 거주 막대와 같은 말을 하게 된다. 그래서 **상태는 농도로만** 가른다.
+ *
+ * 1px 링이 붙는 이유는 실측이다 — 완료 표면(--neutral-bg)은 트랙 바탕(--cream) 대비 ΔE76 이
+ * 3.5 라 띠가 있는지조차 안 보인다. 링은 새 색이 아니라 같은 티어의 -ring 짝이다.
+ *
+ * **지연은 표면으로 안 가른다.** 표면 셋이 상태 셋을 혼자 말하기 시작하면 §03 밴드 티어
+ * 판정에 걸리고, 작업용 밴드는 v2.0 미등재라 그 순간 승인 대상이 된다. 지연은 옆 글자가 진다.
+ */
+function workTone(w: MoveWork): { bg: string; ring: string } {
+  return w.status === 'done'
+    ? { bg: 'var(--neutral-bg)', ring: 'var(--neutral-ring)' }
+    : { bg: 'var(--inspect-bg)', ring: 'var(--inspect-ring)' }
+}
+
+/**
+ * 작업 글자색 — 지연만 갈린다.
+ *
+ * --tc-text 가 아니라 --overdue-fg 인 이유는 실측이다. --tc-text 는 다크에서 --inspect-bg 위
+ * 3.51:1 로 AA 미달이고, --overdue-fg 는 두 모드 다 통과한다(라이트 #A03C2E = --tc 와 같은 값).
+ */
+const workInk = (w: MoveWork): string =>
+  w.status === 'overdue' ? 'var(--overdue-fg)' : 'var(--ink-2)'
+
+/**
+ * 작업 하나를 소리로 읽는 문장.
+ *
+ * **그날 사람이 있었는지를 반드시 넣는다.** 화면에서는 작업 띠가 거주 막대와 세로로 겹쳐 서서
+ * 그 사실을 말하는데, 겹침은 소리로 안 들린다.
+ *
+ * 다만 '거주 중 청소'라고 **분류하지 않는다**. 퇴실 당일 청소는 그날 사람이 있어도 퇴실
+ * 청소이고 예약 첫날 청소는 입실 직전 청소다 — 분류로 적으면 표준 운영이 오분류된다
+ * (도메인 패널 2026-08-20). 관찰한 사실만 한 문장으로 덧붙인다.
+ */
+function workAria(w: MoveWork, roomNo: string): string {
+  const who = w.performerLabel ? ` 담당 ${w.performerLabel}.` : ' 담당 미정.'
+  return `${fmtRoomNo(roomNo)} ${w.kindLabel} ${MOVE_WORK_STATUS_LABEL[w.status]}. ${fmtDateKor(w.date)}.${who}`
+    + (w.occupied ? ' 그날 이 방에 사람이 있습니다.' : '')
+}
+
+/** 행 아래 줄·요약 줄이 쓰는 한 조각 — 날짜 뒤라 사유 라벨이 그대로 읽힌다. */
+const workLine = (w: MoveWork): string =>
+  `${fmtMD(w.date)} ${w.kindLabel} ${MOVE_WORK_STATUS_LABEL[w.status]}`
+  + (w.performerLabel ? ` · ${w.performerLabel}` : w.status === 'done' ? '' : ' · 담당 미정')
 
 /**
  * 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다.
@@ -302,7 +350,8 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     <div className="space-y-3">
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
-      <UpcomingRow items={data.upcoming} todayInRange={todayDay != null} onOpen={openLease} />
+      <UpcomingRow items={data.upcoming} works={data.upcomingWorks} todayInRange={todayDay != null}
+        onOpen={openLease} onOpenRoom={roomId => entityModal.open({ kind: 'room', roomId })} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -337,9 +386,20 @@ function MoveCalendarView({ data, onViewMonthChange }: {
               막대와 달리 글자를 안 이고 있어 표면만으로 읽혀야 한다). */}
           <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2"
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
-            {([['var(--band-paid-bg)', '거주'], ['var(--band-await-bg)', '입실 예약']] as const).map(([bg, label]) => (
+            {/* 청소 두 칸은 트랙의 띠와 **같은 표면·같은 링**이다. 완료 표면은 트랙 바탕 대비
+                ΔE76 이 3.5 라 링이 없으면 스와치 자리가 비어 보인다. 320px 에서는 두 줄로
+                접힌다(gap-y-1 이 그 자리다) — 네 낱말을 줄여 한 줄에 우겨넣는 쪽이 더 나쁘다. */}
+            {([
+              ['var(--band-paid-bg)', null, '거주'],
+              ['var(--band-await-bg)', null, '입실 예약'],
+              ['var(--inspect-bg)', 'var(--inspect-ring)', '청소 예정'],
+              ['var(--neutral-bg)', 'var(--neutral-ring)', '청소 완료'],
+            ] as const).map(([bg, ring, label]) => (
               <span key={label} className="inline-flex items-center gap-1.5 text-[0.65625rem]" style={{ color: 'var(--ink-m)' }}>
-                <span className="inline-block" style={{ width: 18, height: 9, borderRadius: 'var(--radius-xs)', background: bg }} />
+                <span className="inline-block" style={{
+                  width: 18, height: 9, borderRadius: 'var(--radius-xs)', background: bg,
+                  border: ring ? `1px solid ${ring}` : undefined,
+                }} />
                 {label}
               </span>
             ))}
@@ -563,13 +623,20 @@ function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
  * 창이 오늘을 안 물면 그 목록은 반드시 비고, 내일 퇴실이 있어도 이 줄이 "예정된 입퇴실이
  * 없습니다"라고 적는다. 없는 것과 여기서 셀 수 없는 것은 다른 말이다.
  */
-function UpcomingRow({ items, todayInRange, onOpen }: {
+function UpcomingRow({ items, works, todayInRange, onOpen, onOpenRoom }: {
   items: MoveEvent[]
+  /** 아직 안 끝난 청소 — 지난 예정(지연)도 들어 있다. 트랙에서 표면이 상태를 말하지 않기로 했으므로
+   *  지연이 글자로 서는 자리가 여기다. */
+  works: MoveWorkEvent[]
   todayInRange: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+  /** 청소는 계약이 아니라 방의 일이라 방 모달로 간다 — 그 안에 청소 이력 위젯이 있다. */
+  onOpenRoom: (roomId: string) => void
 }) {
   const shown = items.slice(0, UPCOMING_MAX)
   const rest = items.length - shown.length
+  const shownWorks = works.slice(0, UPCOMING_MAX)
+  const restWorks = works.length - shownWorks.length
   return (
     <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -579,7 +646,11 @@ function UpcomingRow({ items, todayInRange, onOpen }: {
         {!todayInRange ? (
           <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖입니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
         ) : items.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>예정된 입퇴실이 없습니다.</p>
+          /* 청소가 있으면 아래 줄이 그것을 말하므로 여기서 '없다'고 딱 잘라 말하지 않는다 —
+             한 카드 안에서 위는 없다 하고 아래는 세 건을 세면 그 자체가 이질감이다. */
+          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>
+            {works.length > 0 ? '예정된 입퇴실은 없습니다.' : '예정된 입퇴실이 없습니다.'}
+          </p>
         ) : (
           <>
             {shown.map(e => {
@@ -600,6 +671,29 @@ function UpcomingRow({ items, todayInRange, onOpen }: {
           </>
         )}
       </div>
+
+      {/* ── 청소 ── **별도 줄**이다. 입퇴실과 같은 줄에 흘리면 '다가오는 14일 N건'이라는 한
+          덩어리로 읽혀 홈 타일의 입퇴실 건수와 눈으로 안 맞는다. 청소가 없으면 줄 자체가 없다.
+          창 밖이면 위 분기가 이미 말했으므로 여기서 같은 말을 두 번 하지 않는다. */}
+      {todayInRange && works.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>청소</p>
+          {shownWorks.map(w => (
+            <button key={w.id} type="button" onClick={() => onOpenRoom(w.roomId)}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
+              {/* 배지를 안 쓴다. StatusBadge 의 톤 일곱은 전부 입퇴실·돈의 어휘이고(연체·퇴실 예정·
+                  입실 예정…), 청소 상태를 거기 얹으려면 미등재 톤을 하나 새로 만들어야 한다.
+                  표면이 중립일 때 상태를 글자가 지는 것은 §18 이 이미 쓰는 문법이다. */}
+              <span className="tnum font-semibold" style={{ color: workInk(w) }}>{fmtMD(w.date)}</span>
+              <span className="tnum" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(w.roomNo)}</span>
+              <span style={{ color: 'var(--ink-2)' }}>{w.kindLabel}</span>
+              <span className="font-semibold" style={{ color: workInk(w) }}>{MOVE_WORK_STATUS_LABEL[w.status]}</span>
+              <span style={{ color: 'var(--ink-m)' }}>{w.performerLabel ?? '담당 미정'}</span>
+            </button>
+          ))}
+          {restWorks > 0 && <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>외 {restWorks}건</p>}
+        </div>
+      )}
     </div>
   )
 }
@@ -616,6 +710,45 @@ type Placed = {
    * 캡션이 어디에 설 수 있는지 계산할 근거가 사라진다.
    */
   ink: MoveDaySpan | null
+}
+
+/**
+ * 작업 라벨의 자리 — 띠 **옆**이다.
+ *
+ * 청소는 하루짜리라 24px 안에 한 글자도 안 들어간다(§05 최소 10.5px 한 글자가 11px, 안쪽
+ * 여백까지 세면 16px 이 남는다). 그렇다고 표면만 그리면 그 표면이 혼자 상태를 말하는 자리가
+ * 되어 §03 밴드 티어 판정에 걸리고, 작업용 밴드는 v2.0 미등재라 승인 대상이 된다.
+ *
+ * **양옆이 다 막히면 트랙에 아예 안 그리고 행 아래 줄로 떨군다.** 막대의 place() 는 그때
+ * 잘린 이름이라도 바 안에 두지만(색 띠 하나가 이름 없이 남는 것보다 낫다) 작업은 다르다 —
+ * 하루짜리라 잘라 넣을 글자 자체가 없다.
+ *
+ * 라벨이 '청소 …' 로 짧은 이유. 사유(퇴실 청소·공사·도배 후)는 행 아래 줄·요약 줄·소리가
+ * 전부 온전히 말한다. 트랙에서 세 칸을 넘기면 대부분의 청소가 트랙 밖으로 떨어져,
+ * 정작 '언제'를 보여주려던 이 레일이 텅 빈다.
+ */
+type PlacedWork = {
+  work: MoveWork
+  /** 트랙에 세울 라벨. null 이면 이 작업은 트랙에 안 그리고 행 아래 줄로 간다. */
+  text: string | null
+  ink: MoveDaySpan | null
+  side: 'right' | 'left' | null
+}
+
+function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork {
+  const text = `청소 ${MOVE_WORK_STATUS_LABEL[work.status]}`
+  const need = Math.max(1, Math.ceil((estWidth(text) + 8) / DAY_W))
+  const sameLane = works.filter(w => w.lane === work.lane && w.id !== work.id)
+  const next = sameLane.filter(w => w.day > work.day).reduce((m, w) => Math.min(m, w.day), days + 1)
+  const prev = sameLane.filter(w => w.day < work.day).reduce((m, w) => Math.max(m, w.day), 0)
+  const bare: PlacedWork = { work, text: null, ink: null, side: null }
+  if (work.day + need <= Math.min(next - 1, days)) {
+    return { work, text, side: 'right', ink: { startDay: work.day + 1, endDay: work.day + need } }
+  }
+  if (work.day - need >= Math.max(prev + 1, 1)) {
+    return { work, text, side: 'left', ink: { startDay: work.day - need, endDay: work.day - 1 } }
+  }
+  return bare
 }
 
 function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
@@ -653,6 +786,13 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   // 좌측 코랄 팁은 **아직 답하지 않은** 충돌에만. 확인된 겹침만 남은 행은 팁을 끈다(중립).
   const attn = row.conflicts.some(c => !c.acked)
   const placed = row.bars.map(bar => place(bar, row, days))
+  // 작업 레일 — 라벨을 세울 자리가 나온 것만 트랙에 선다. 나머지는 아래 한 줄로 떨어진다.
+  const placedWorks = row.works.map(w => placeWork(w, row.works, days))
+  const railWorks = placedWorks.filter(p => p.text !== null)
+  const droppedWorks = placedWorks.filter(p => p.text === null).map(p => p.work)
+  // 레일 층수는 **실제로 선 것**에서 센다. 조립이 센 workLaneCount 를 그대로 쓰면 전부
+  // 떨어진 행에 빈 레일 20px 이 남는다.
+  const railCount = railWorks.length > 0 ? Math.max(...railWorks.map(p => p.work.lane)) + 1 : 0
   // 캡션은 0층(gridRow 1)에 그리므로 0층의 바 밖 라벨과만 자리를 다툰다.
   const blocked = placed.filter(p => p.bar.lane === 0 && p.ink).map(p => p.ink!)
 
@@ -675,9 +815,12 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
 
   return (
     <div>
+      {/* 작업 레일은 거주 레인 **뒤에** 붙는다 — 층 하나가 아니라 다른 자다(--mc-work 20px).
+          repeat(0, …) 은 유효한 CSS 가 아니라 레일이 없으면 문자열 자체를 안 붙인다. */}
       <div className="mc-row grid" style={{
         gridTemplateColumns: cols,
-        gridTemplateRows: `repeat(${row.laneCount}, var(--mc-lane))`,
+        gridTemplateRows: `repeat(${row.laneCount}, var(--mc-lane))`
+          + (railCount > 0 ? ` repeat(${railCount}, var(--mc-work))` : ''),
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
       }}>
         {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn). */}
@@ -719,14 +862,51 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
 
         {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03).
             확인된 겹침은 중립 밴드다. 여기 쓸 수 있는 것은 **반투명** 토큰뿐이라(--band-vacant-bg 는
-            불투명이라 아래 막대를 덮어 버린다) 중립 계열의 --neutral-ring 을 표면으로 쓴다. */}
+            불투명이라 아래 막대를 덮어 버린다) 중립 계열의 --neutral-ring 을 표면으로 쓴다.
+
+            **거주 레인까지만 덮는다.** 종전 '1 / -1' 을 그대로 두면 작업 레일까지 빨간 밴드가
+            내려와 청소가 겹침의 당사자로 읽힌다. 겹침은 사람 대 사람의 사실이지 작업의 사실이
+            아니다. 시간축(오늘 세로선·월 경계선)만 '1 / -1' 로 남는다 — 그것은 모든 층 공통이다. */}
         {row.overlaps.map(s => (
           <div key={`ov-${s.startDay}`} aria-hidden className="pointer-events-none"
             style={{
-              gridColumn: `${s.startDay + 1} / ${s.endDay + 2}`, gridRow: '1 / -1',
+              gridColumn: `${s.startDay + 1} / ${s.endDay + 2}`, gridRow: `1 / ${row.laneCount + 1}`,
               background: s.acked ? 'var(--neutral-ring)' : 'var(--band-overdue-bg)',
               borderRadius: 'var(--radius-xs)',
             }} />
+        ))}
+
+        {/* ── 작업 레일 ── 청소가 **언제**인지를 말하는 표식과 그 옆 한 마디.
+            비인터랙티브다(pointer-events-none). 거주 막대의 히트 영역이 자기 레인을 정확히
+            채우고 있어 서로 안 겹치지만, 손이 닿을 것을 하나 더 만들면 이 트랙이 겨우 봉합한
+            Android Blink 터치 래치(신고 d8554128)에 다시 표면을 내주게 된다. 청소로 들어가는
+            길은 위 요약 줄과 방 모달이다.
+            키는 RoomCleaning.id — 계약 id 로 쓰다 stale DOM 이 남았던 전례가 있다(신고 7007d2c1). */}
+        {railWorks.map(p => (
+          <span key={`wk-${p.work.id}`} role="img" aria-label={workAria(p.work, row.roomNo)}
+            className="pointer-events-none self-center justify-self-stretch"
+            style={{
+              gridColumn: `${p.work.day + 1} / span 1`,
+              gridRow: `${row.laneCount + p.work.lane + 1} / span 1`,
+              height: 12,
+              background: workTone(p.work).bg,
+              border: `1px solid ${workTone(p.work).ring}`,
+              borderRadius: 'var(--radius-xs)',
+            }} />
+        ))}
+        {railWorks.map(p => (
+          <span key={`wl-${p.work.id}`} aria-hidden
+            className="pointer-events-none self-center truncate text-[0.65625rem] font-medium tnum"
+            style={{
+              gridColumn: `${p.ink!.startDay + 1} / ${p.ink!.endDay + 2}`,
+              gridRow: `${row.laneCount + p.work.lane + 1} / span 1`,
+              textAlign: p.side === 'right' ? 'left' : 'right',
+              paddingLeft: p.side === 'right' ? 4 : 0,
+              paddingRight: p.side === 'left' ? 4 : 0,
+              color: workInk(p.work),
+            }}>
+            {p.text}
+          </span>
         ))}
 
         {/* 오늘 — 트랙을 가로지르는 세로 1px. 오늘이 범위 밖이면 아예 없다. */}
@@ -735,6 +915,24 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
             style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / -1', width: 1, justifySelf: 'start', background: 'var(--tc-text)' }} />
         )}
       </div>
+
+      {/* 트랙에 못 세운 청소 — 양옆이 다 막힌 자리다. 표면만 그리고 말을 안 붙이는 쪽이 아니라
+          아예 트랙에서 내리고 여기서 온전히 말한다(placeWork 머리 주석). 꼬리와 같은 문법이다. */}
+      {droppedWorks.length > 0 && (
+        <div className="grid" style={{ gridTemplateColumns: cols }}>
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <p className="min-w-0 pb-1.5 text-[0.65625rem] tnum" style={{ gridColumn: '2 / -1' }}>
+            <span className="sticky inline-block max-w-full truncate pl-1.5" style={{ left: ROOM_COL }}>
+              {droppedWorks.map((w, i) => (
+                <span key={w.id} style={{ color: workInk(w) }}>
+                  {i > 0 && <span style={{ color: 'var(--ink-m)' }}>{' · '}</span>}
+                  {workLine(w)}
+                </span>
+              ))}
+            </span>
+          </p>
+        </div>
+      )}
 
       {/* 꼬리 — 트랙 밖의 사실을 한 줄로. 그 예약이 범위 안에 들어오면 막대가 말하므로 이 줄은 없다. */}
       {row.tail && (

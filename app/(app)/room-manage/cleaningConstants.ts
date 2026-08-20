@@ -30,6 +30,10 @@ export type CleaningRow = {
   status: CleaningStatus
   scheduledDate: string | null
   doneDate: string | null
+  // 예정 단계에서 정한 담당자. 아래 performer 와 **다른 칸**이다 — 이쪽은 계획이고 저쪽은
+  // 완료 시점의 사실이라, 한 칸에 담으면 완료 적용취소가 계획까지 함께 지운다.
+  // null 이 곧 '아직 안 정함'이고, 2026-08-20 이전 기록은 전부 null 이다(백필 없음).
+  plannedPerformer: CleaningPerformer | null
   performer: CleaningPerformer | null
   performerName: string | null
   memo: string | null

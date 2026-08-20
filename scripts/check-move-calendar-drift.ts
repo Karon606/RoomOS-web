@@ -10,6 +10,12 @@
 //   fetchMoveLeases)와 **같은 조립**(lib/moveCalendar buildMoveRange)을 그대로 부른다. 조회를
 //   여기서 다시 적으면 조회가 바뀔 때 그물만 옛 규칙에 남아 통과를 말한다.
 //
+// 소스 가드도 둘이 붙었다(2026-08-20, 청소 1단계). 이 둘은 DB 를 안 보고 **조립의 모양**을
+//   지킨다 — 작업(청소)이 bars·events·firstChangeDay·공백 계산 어디에도 못 섞이는지.
+//   부분 문자열 검사로는 못 잡는다("works" 라는 글자가 파일 어딘가에 있는지는 아무것도 안
+//   말한다). 괄호 깊이를 세어 블록을 잘라 내고 그 안만 본다. 주석은 먼저 걷는다 — 설명하려고
+//   적은 낱말이 위반으로 잡히면 그물이 주석을 못 쓰게 만든다.
+//
 // 축 셋.
 //   A 이사한 계약 — 계약의 roomId 가 가장 이른 구간의 방과 다른 건. **위반이 아니라 모집단**이다.
 //     아래 B·C 가 지켜보는 대상이 이것뿐이라, 조용히 늘면 B·C 의 0 이 '덮었다'인지 '안 봤다'인지
@@ -37,6 +43,35 @@ const addDays = (ymd: string, n: number): string => new Date(Date.parse(`${ymd}T
 
 const violations: string[] = []
 
+/** 주석을 걷는다 — 설명하려고 적은 낱말이 위반으로 잡히면 그물이 주석을 못 쓰게 만든다. */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ')
+}
+
+/**
+ * marker 뒤 첫 여는 괄호부터 **짝이 맞는 자리까지** 잘라 낸다.
+ *
+ * 부분 문자열로는 블록의 끝을 못 찾는다. 끝을 못 찾으면 검사 범위가 파일 끝까지 번져
+ * 무엇을 봐도 통과하거나 무엇을 봐도 걸린다 — 둘 다 그물이 아니다.
+ */
+function blockAfter(src: string, marker: string, open = '{', close = '}'): string {
+  const at = src.indexOf(marker)
+  if (at < 0) return ''
+  const start = src.indexOf(open, at)
+  if (start < 0) return ''
+  let depth = 0
+  for (let i = start; i < src.length; i++) {
+    if (src[i] === open) depth++
+    else if (src[i] === close) { depth--; if (depth === 0) return src.slice(start, i + 1) }
+  }
+  return ''
+}
+
+/** 작업 쪽 식별자 — 이 낱말이 거주 계산 블록 안에 있으면 그것이 곧 섞인 것이다. */
+const WORK_IDENTS = ['works', 'rowWorks', 'worksInRange', 'packWorkLanes', 'MoveWork']
+const mentionsWork = (block: string): string[] =>
+  WORK_IDENTS.filter(id => new RegExp(`\\b${id}\\b`).test(block))
+
 // ── 소스 가드 ── 이 표시 오류를 막는 두 겹이 살아 있는가 ─────────────
 {
   const data = readFileSync('lib/moveCalendarData.ts', 'utf8')
@@ -52,6 +87,81 @@ const violations: string[] = []
   const asm = readFileSync('lib/moveCalendar.ts', 'utf8')
   if (!/function slicesOf\(/.test(asm)) {
     violations.push('[소스] 조립이 계약을 구간 조각으로 펴지 않는다 — 막대가 다시 계약 호실 한 칸에서 나온다')
+  }
+
+  // ── 소스 축 4 ── 공백 캡션·레인·충돌 판정이 **막대만** 본다.
+  //
+  //   섞이면 무엇이 깨지는가. 하루짜리 청소가 covered 에 들어가면 8일 공실이 3일·4일 두
+  //   구간으로 쪼개져 'N일 공실'이 통째로 거짓이 된다. packLanes 에 들어가면 청소 하나가
+  //   그 방 행 높이를 한 단 늘린다. 충돌 루프에 들어가면 거주와 청소가 겹쳤다고 빨간 밴드가
+  //   서고, 운영자가 [겹침 확인]을 누르는 순간 그 거짓이 LeaseOverlapAck 으로 굳는다.
+  {
+    const code = stripComments(asm)
+    const rowBody = blockAfter(code, 'for (const g of perRoom.values())')
+    if (!rowBody) {
+      violations.push('[소스] 행 루프를 못 찾았다 — 아래 네 축이 아무것도 안 보고 통과했을 수 있다')
+    } else {
+      // 공백의 씨앗은 covered 한 줄뿐이고, 그 줄은 bars 만 훑어야 한다.
+      const coveredLines = rowBody.split('\n').filter(l => l.includes('covered.add('))
+      if (coveredLines.length !== 1 || !/for \(const b of bars\)/.test(coveredLines[0])) {
+        violations.push(`[소스] 공백 계산이 막대 아닌 것을 훑는다(covered.add 줄 ${coveredLines.length}개) — 'N일 공실'이 거짓이 된다`)
+      }
+      const conflictLoop = blockAfter(rowBody, 'for (let i = 0; i < holding.length; i++)')
+      if (!conflictLoop) {
+        violations.push('[소스] 충돌 이중 루프를 못 찾았다')
+      } else {
+        const hit = mentionsWork(conflictLoop)
+        if (hit.length > 0) violations.push(`[소스] 충돌 판정이 작업을 본다(${hit.join(',')}) — 거주와 청소가 겹쳤다고 빨간 밴드가 선다`)
+      }
+    }
+    const laneFn = blockAfter(code, 'function packLanes(')
+    const laneHit = mentionsWork(laneFn)
+    if (!laneFn) violations.push('[소스] packLanes 본문을 못 찾았다')
+    else if (laneHit.length > 0) violations.push(`[소스] 거주 레인 팩이 작업을 본다(${laneHit.join(',')}) — 하루짜리 청소가 행 높이를 한 단 늘린다`)
+  }
+
+  // ── 소스 축 5 ── 사건(events)·첫 변동일에 작업이 안 섞인다.
+  //
+  //   events 는 홈 '이달 입퇴실 N건'과 호실 관리 탭 접미 N 이 함께 딛는 한 벌이다. 청소가
+  //   거기 섞이면 두 화면의 숫자가 같이 부풀고, 그 수를 보고 광고·청소·계약 준비를 건다.
+  {
+    const code = stripComments(asm)
+    const lines = code.split('\n')
+    let at = 0
+    let pushes = 0
+    for (;;) {
+      const i = code.indexOf('events.push(', at)
+      if (i < 0) break
+      pushes++
+      at = i + 1
+      const arg = blockAfter(code.slice(i), 'events.push(', '(', ')')
+      if (!/\bbarId:/.test(arg)) {
+        violations.push('[소스] events 에 막대에서 안 나온 항목이 실린다 — 홈 이달 입퇴실 건수가 부푼다')
+      }
+      const hit = mentionsWork(arg)
+      if (hit.length > 0) violations.push(`[소스] events 에 작업이 섞인다(${hit.join(',')})`)
+    }
+    if (pushes === 0) violations.push('[소스] events.push 를 하나도 못 찾았다 — 이 축이 아무것도 안 보고 통과했다')
+
+    const changeLine = lines.find(l => l.includes('const changeDays ='))
+    if (!changeLine || !/=\s*bars\.flatMap\(/.test(changeLine)) {
+      violations.push('[소스] 첫 변동일의 씨앗이 막대가 아니다 — 청소가 행 정렬 키를 흔든다')
+    }
+    // 타입 선언에도 같은 낱말이 있으므로 **행을 만드는 자리**로 범위를 좁힌다.
+    const pushArg = blockAfter(blockAfter(code, 'for (const g of perRoom.values())'), 'rows.push(', '(', ')')
+    const firstChangeLine = pushArg.split('\n').find(l => l.includes('firstChangeDay:'))
+    if (!firstChangeLine || !firstChangeLine.includes('changeDays')) {
+      violations.push('[소스] firstChangeDay 가 changeDays 아닌 것에서 나온다')
+    }
+
+    // 작업을 만드는 블록은 거주 쪽 어느 배열도 안 건드려야 한다(반대 방향 가드).
+    const workBlock = blockAfter(code, 'const works: MoveWork[] = rowWorks', '(', ')')
+    if (!workBlock) {
+      violations.push('[소스] 작업 배열을 만드는 블록을 못 찾았다')
+    } else {
+      const leaks = ['events', 'covered', 'firstChangeDay', 'overlapDays'].filter(id => new RegExp(`\\b${id}\\b`).test(workBlock))
+      if (leaks.length > 0) violations.push(`[소스] 작업 조립이 거주 쪽 배열을 건드린다(${leaks.join(',')})`)
+    }
   }
 }
 
