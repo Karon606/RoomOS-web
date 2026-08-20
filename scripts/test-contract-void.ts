@@ -18,6 +18,9 @@ import {
   currentIssueFor, currentIssueIds, hasLiveRealContract, issueGroupKey, type IssueCopy,
 } from '../lib/contractCurrentIssue'
 import { contractPurposeLabel, normalizeIssuePurpose } from '../lib/contractPurpose'
+import {
+  bodyLockMessage, fieldLockMessage, signDateLockMessage, issuedNextStepMessage,
+} from '../lib/contractLockMessage'
 
 let pass = 0
 let fail = 0
@@ -272,6 +275,29 @@ const signedLease: VoidableLease = {
   eq('목적 · 실계약은 화면에 안 적는다', contractPurposeLabel(null), null)
   eq('목적 · 모르는 저장값은 실계약으로 읽는다', contractPurposeLabel('알수없음'), null)
   eq('목적 · 파생은 그대로 적는다', contractPurposeLabel('번역본'), '번역본')
+}
+
+// ── 안내가 토글과 어긋나지 않는가 ──
+// 켜져 있는데 '새 버전 작성' 을 안 말하면 방금 켠 기능이 어디에도 안 보이고(운영자 신고 2026-08-20),
+// 꺼져 있는데 말하면 없는 버튼을 찾게 된다. 잠금 안내 셋과 발급본 안내가 한 규칙을 지켜야 한다.
+{
+  const NEW = '새 버전 작성'
+  const VOID = '이 계약서 폐기'
+  const on = [
+    bodyLockMessage(true, 'here'), fieldLockMessage(true, 'here'),
+    signDateLockMessage(true, 'contractScreen'), issuedNextStepMessage(true),
+  ]
+  const off = [
+    bodyLockMessage(false, 'here'), fieldLockMessage(false, 'here'),
+    signDateLockMessage(false, 'contractScreen'), issuedNextStepMessage(false),
+  ]
+  eq('안내 · 켜지면 넷 다 새 버전 작성을 말한다', on.filter(m => m.includes(NEW)).length, 4)
+  eq('안내 · 꺼지면 넷 다 새 버전 작성을 말하지 않는다', off.filter(m => m.includes(NEW)).length, 0)
+  // 폐기는 토글과 무관하게 언제나 열려 있는 길이라 양쪽 다 지목해야 한다.
+  eq('안내 · 폐기는 양쪽 다 지목', [...on, ...off].filter(m => m.includes(VOID)).length, 8)
+  // 같은 화면이면 '위' 로, 다른 화면이면 어디인지 말한다.
+  eq('안내 · 같은 화면은 위로 지목', bodyLockMessage(true, 'here').includes("위 '이 계약서 폐기'"), true)
+  eq('안내 · 다른 화면은 자리를 말한다', bodyLockMessage(true, 'contractScreen').includes('계약서 화면 툴바'), true)
 }
 
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)

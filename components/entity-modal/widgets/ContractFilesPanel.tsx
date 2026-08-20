@@ -19,7 +19,8 @@ import {
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
-import { restoreContractVersion } from '@/app/contract/[tenantId]/actions'
+import { restoreContractVersion, getIssuePurposeContext } from '@/app/contract/[tenantId]/actions'
+import { issuedNextStepMessage } from '@/lib/contractLockMessage'
 import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
 import { contractPurposeLabel } from '@/lib/contractPurpose'
 import {
@@ -90,6 +91,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const [uploading, setUploading] = useState(false)
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
   const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean } | null>(null)
+  // 여러 판본 만들기 토글 — 안내 문구가 가리킬 길이 하나인지 둘인지 가른다.
+  // 게이트가 아니라 문구용이다(진짜 게이트는 서버가 다시 본다). 못 읽으면 꺼진 것으로 본다.
+  const [multiVersion, setMultiVersion] = useState(false)
   const [sharePending, setSharePending] = useState(false)
   const [restoring, setRestoring] = useState(false)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
@@ -106,7 +110,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
     else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false }); pushToast('error', res.error) }
   }
-  useEffect(() => { reload(); reloadShare() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 토글은 영업장 값이라 입주자가 바뀌어도 같지만, 이 패널이 뜨는 시점에 한 번은 읽어야 한다.
+  // 실패하면 꺼진 것으로 둔다 — 없는 버튼을 가리키는 안내보다 한 길만 말하는 안내가 낫다.
+  const reloadMultiVersion = async () => {
+    const res = await getIssuePurposeContext(tenantId, leaseTermId ?? null)
+    setMultiVersion(res.ok && res.multiVersion)
+  }
+  useEffect(() => { reload(); reloadShare(); reloadMultiVersion() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
   const openSms = (url: string, phone: string, propertyName: string) => {
@@ -295,7 +305,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     if ((files ?? []).some(f => !f.voidedAt)) {
       return {
         primary: null,
-        hint: '계약서가 발급돼 있습니다. 내용을 바꾸려면 계약서 화면에서 이 계약서를 폐기하고 다시 작성해 주세요.',
+        hint: issuedNextStepMessage(multiVersion),
       }
     }
     // 서명 전 링크가 살아 있거나 죽어 있거나 — 다음 수는 똑같이 '서명 요청 다시 보내기' 다.

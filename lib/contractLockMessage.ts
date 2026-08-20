@@ -35,3 +35,17 @@ export function fieldLockMessage(multiVersion: boolean, where: LockHintWhere): s
 export function signDateLockMessage(multiVersion: boolean, where: LockHintWhere): string {
   return `서명이 끝난 계약서라 계약일은 고칠 수 없습니다. 날짜를 바꾸려면 ${exitTail(multiVersion, where)} ${KEEP}`
 }
+
+/**
+ * 발급본이 있는 계약의 '다음 할 일' 안내 — 입주자 상세 계약서 칸(주 버튼이 내려간 자리).
+ *
+ * 잠금 안내와 문장은 다르지만 **가리켜야 할 길은 같다.** 그래서 같은 파일에 둔다.
+ * 종전에는 이 자리만 정본을 안 지나고 "폐기하고 다시 작성" 한 길을 하드코딩하고 있었다.
+ * 여러 판본 만들기를 켠 운영자가 입주자 상세에서 본 것이 정확히 그 문장이라, 방금 켠 기능은
+ * 어디에도 안 보이고 화면은 그 반대를 시켰다(운영자 신고 2026-08-20).
+ */
+export function issuedNextStepMessage(multiVersion: boolean): string {
+  return multiVersion
+    ? "계약서가 발급돼 있습니다. 내용이 다른 판본이 필요하면 계약서 화면 툴바의 '새 버전 작성' 을, 이 계약서를 무효로 하려면 그 옆 '이 계약서 폐기' 를 눌러 주세요."
+    : "계약서가 발급돼 있습니다. 내용을 바꾸려면 계약서 화면 툴바의 '이 계약서 폐기' 로 이 버전을 폐기하고 다시 작성해 주세요."
+}
