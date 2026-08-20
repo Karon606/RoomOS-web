@@ -114,9 +114,17 @@ export function CleaningRowBody({
         {/* 날짜는 목록·표 정본 fmtDateDot(lib/fmtDate) — 위젯과 목록이 같은 날을 같은 글자로 쓴다.
             로컬 재정의('26.08.07')는 감사 B5 금지 대상이었고, 연도 없는 짧은 표기는 해가 바뀌면
             작년 8/7 과 올해 8/7 이 같은 글자가 된다. */}
-        <span className="text-xs text-[var(--warm-muted)] num">
-          {fmtDateDot(r.status === 'DONE' ? r.doneDate : r.scheduledDate)}
-        </span>
+        {/* 날짜를 안 정한 예정은 '—' 로 두지 않는다. 그 글자는 '없음 또는 모름'으로 읽히는데
+            여기서는 운영자가 '아직 안 정함'을 고른 상태라 뜻이 다르다. 퇴실 미니폼이 예정일을
+            비울 수 있게 되면서 처음 생기는 상태다(2026-08-20) — 이 목록이 그 날짜를 잡는
+            대기줄이므로, 데이터가 깨진 것처럼 보이면 그 행이 할 일을 못 말한다. */}
+        {r.status === 'PLANNED' && !r.scheduledDate ? (
+          <span className="text-xs text-[var(--warm-muted)]">예정일 미정</span>
+        ) : (
+          <span className="text-xs text-[var(--warm-muted)] num">
+            {fmtDateDot(r.status === 'DONE' ? r.doneDate : r.scheduledDate)}
+          </span>
+        )}
         {/* 예정 담당은 계획이라 '누가 하기로 했나'다. 아래 완료 수행자와 칸이 다르므로 말도 다르다 —
             같은 낱말로 적으면 예정 건이 이미 누가 한 것처럼 읽힌다. 안 정했으면 아무 말도 안 한다
             (예정 행마다 '담당 미정'이 서면 그 말이 아무것도 뜻하지 않게 된다). */}

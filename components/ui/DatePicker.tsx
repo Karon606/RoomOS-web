@@ -14,6 +14,15 @@ interface DatePickerProps {
   onChange: (v: string) => void
   name?: string                   // hidden input name for form submission
   placeholder?: string
+  /**
+   * 빈 값이 **뜻을 가진 상태**일 때 그 이름('미정' 등). placeholder 와 다른 자리다.
+   *
+   * placeholder 는 "아직 안 골랐다"라서 opacity .45 로 옅게 쓴다. 그런데 그 옅음이
+   * 라이트에서 대비 2.5:1 이라(§28 본문 4.5:1) 고른 값이 그 색으로 그려지면 안 된다.
+   * 이 프롭을 주면 값 글자와 같은 색으로 또렷하게 적는다. 안 주면 종전과 완전히 같다.
+   * 형제 문법: CategorySelect 의 emptyLabel, 상태 전환 미니폼 사유의 '기록 안 함' option.
+   */
+  emptyLabel?: string
   maxDate?: string
   minDate?: string
   monthOnly?: boolean             // 월 단위 선택 — 월 뷰에서 시작, 월 클릭 시 'YYYY-MM-01' 반환·닫힘
@@ -23,7 +32,7 @@ interface DatePickerProps {
 }
 
 export function DatePicker({
-  value, onChange, name, placeholder = '날짜 선택',
+  value, onChange, name, placeholder = '날짜 선택', emptyLabel,
   maxDate, minDate, monthOnly, disabled, className, style,
 }: DatePickerProps) {
   // KST 기준 오늘 — toISOString은 UTC라 KST 00~09시에 어제로 계산되던 잠복 버그(운영자 승인 수정 2026-07-19).
@@ -195,9 +204,15 @@ export function DatePicker({
             </div>
 
             {/* 오늘 / 초기화 */}
+            {/* '오늘'도 날짜 격자와 같은 경계를 진다. 종전에는 이 버튼만 min·maxDate 를 안 봐서,
+                격자가 회색으로 잠가 둔 날을 버튼 한 번으로 값에 넣을 수 있었다 — 컨트롤이 자기
+                규칙을 스스로 깨는 모양이다. 경계를 건 호출부 열 곳이 같은 구멍을 공유했다
+                (퇴실 청소 예정일에서 드러남, 2026-08-20). 잠긴 날은 눌리지 않게만 하고 감추지는
+                않는다 — 사라지면 오른쪽 '초기화'가 자리를 옮겨 다녀 손이 헛짚는다. */}
             <div className="flex gap-2 mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
               <button onClick={() => { onChange(todayStr); setOpen(false) }}
-                className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                disabled={isDisabledDate(todayStr)}
+                className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
                 오늘
               </button>
@@ -347,6 +362,9 @@ export function DatePicker({
       >
         {displayValue
           ? displayValue
+          // 빈 값에 이름이 있으면 그것은 고른 상태라 값과 같은 색으로 적는다(위 emptyLabel 주석).
+          : emptyLabel
+          ? emptyLabel
           : <span style={{ opacity: 0.45 }}>{placeholder}</span>
         }
       </button>

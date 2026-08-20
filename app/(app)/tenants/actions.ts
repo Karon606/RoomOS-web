@@ -21,6 +21,7 @@ import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/r
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
+import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
@@ -123,21 +124,64 @@ async function clearAutoCheckoutCleaning(propertyId: string, leaseTermId: string
   } catch { /* 청소 이력은 상태 전이를 막지 않는다 */ }
 }
 
-async function ensureCheckoutCleaning(propertyId: string, roomId: string | null, leaseTermId: string) {
-  if (!roomId) return
+// 만든 결과. 종전에는 셋 다 조용했다 — 자동 생성이 뒤에서 도는 부수효과였고 운영자는 그것이
+// 생겼는지 약속받은 적이 없었다. **화면에 '청소 예정일' 칸을 세우는 순간 그건 약속이 된다.**
+// 고른 날짜가 어디에도 안 남는데 아무 말도 안 나가면, 화면과 서버가 다른 말을 하는 그 결함이다.
+type CheckoutCleaningResult = 'created' | 'skipped-open' | 'skipped-no-room' | 'failed'
+
+// 결과를 운영자에게 전할 한 문장. 만들어진 경우와 방이 없는 경우는 할 말이 없다.
+// 내보내지 않는다 — 'use server' 파일은 async 함수만 내보낼 수 있고, 상수·동기 함수를 함께
+// 내보내면 Next 런타임 가드가 (app) 진입 모듈 첫 require 에서 던져 **모든 서버 액션이 500** 이
+// 된다(2026-08-05 전면 장애, cleaningActions.ts 가 그렇게 무너졌다). 감지망도 이 모양을 본다.
+function checkoutCleaningNotice(r: CheckoutCleaningResult): string | null {
+  if (r === 'skipped-open') return "이 호실에는 아직 안 끝난 퇴실 청소 예정이 있어 새로 만들지 않았습니다. 날짜는 호실 관리 '청소'에서 바꿀 수 있습니다."
+  if (r === 'failed') return "퇴실 청소 예정을 만들지 못했습니다. 호실 관리 '청소'에서 직접 등록해 주세요."
+  return null
+}
+
+/**
+ * 퇴실 청소 예정을 만든다. 예정일은 `lib/checkoutCleaning` 규칙 정본이 정한다.
+ *
+ * 종전에는 여기서 `kstYmdStr()`(저장 버튼을 누른 날)을 그대로 박았다. 그래서 만들어진 다음
+ * 날부터 캘린더에 '예정일 경과'로 떴다(422호). 이제 퇴실 미니폼이 받은 날짜가 `cleaningYmd`
+ * 로 들어오고, 안 왔으면 퇴실일에서 기본값을 뽑는다. **어느 경로로 퇴실하든 이 한 자리를 지난다.**
+ *
+ * `opts` 를 선택 인자로 두지 않는 것은 그래서다 — 새 퇴실 경로가 이 함수를 부르면 컴파일러가
+ * 날짜를 어디서 가져올지 반드시 적게 만든다. 값을 안 정했다는 뜻은 `cleaningYmd: undefined` 로
+ * 손수 적어야 하고, 그건 잊은 것이 아니라 고른 것이다.
+ */
+async function ensureCheckoutCleaning(
+  propertyId: string,
+  roomId: string | null,
+  leaseTermId: string,
+  opts: { moveOutYmd: string | null; cleaningYmd: string | null | undefined },
+): Promise<CheckoutCleaningResult> {
+  if (!roomId) return 'skipped-no-room'
   try {
     const open = await prisma.roomCleaning.findFirst({
       where: { roomId, propertyId, deletedAt: null, status: 'PLANNED', reason: 'CHECKOUT' },
       select: { id: true },
     })
-    if (open) return
+    // 열려 있는 건의 날짜를 여기서 갈아치우지 않는다. 그 행은 운영자가 손수 정한 날일 수 있고
+    // (청소 행의 '날짜 변경'), 퇴실 저장이 그것을 말없이 덮으면 무를 길이 없는 덮어쓰기가 된다.
+    // 지금 문제가 '앱이 혼자 날짜를 정한다'인데 그 답으로 날짜를 하나 더 혼자 정할 수는 없다.
+    if (open) return 'skipped-open'
+    const ymd = resolveCheckoutCleaningYmd(opts.cleaningYmd, opts.moveOutYmd, kstYmdStr())
     await prisma.roomCleaning.create({
       // scheduledDate 는 @db.Date 다. 날 new Date() 를 넣으면 서버(UTC)가 KST 오전 9시 전에는
       // 어제로 잘라 저장해 예정일이 하루 앞선다. 날짜 저장 정본(ymdToDbDate)으로 UTC 자정을 박는다
       // — 종전의 `T00:00:00` 은 오프셋이 없어 KST 기기에서 돌면 도리어 하루 앞섰다.
-      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: ymdToDbDate(kstYmdStr()) },
+      // 운영자가 '미정'으로 두면 날짜 없이 만든다. 청소가 필요하다는 것은 계획이 아니라 사실이라
+      // (사람이 나갔으면 그 방은 더럽다) 날짜를 모르는 것과 청소가 필요 없는 것은 다른 말이다.
+      // 안 하기로 한 것의 답은 이 빈칸이 아니라 청소 행의 '안 하기로'(SKIPPED)다.
+      data: { propertyId, roomId, leaseTermId, reason: 'CHECKOUT', status: 'PLANNED', scheduledDate: ymd ? ymdToDbDate(ymd) : null },
     })
-  } catch { /* 청소 이력은 퇴실을 막지 않는다 — 실패해도 퇴실 처리는 그대로 끝난다 */ }
+    return 'created'
+  } catch {
+    /* 청소 이력은 퇴실을 막지 않는다 — 실패해도 퇴실 처리는 그대로 끝난다.
+       다만 종전처럼 흔적까지 없애지는 않는다. 부르는 쪽이 한 줄로 알린다. */
+    return 'failed'
+  }
 }
 
 export async function getTenants() {
@@ -1880,7 +1924,8 @@ export async function checkoutWithDepositRefund(params: {
   refundAmount: number
   moveOutDate?: string   // 실제 퇴실일 — 환불 기록 날짜도 같은 날로 맞춘다(정본 미니폼과 동일 규칙)
   reason?: string        // 미환불 사유 — 종전에는 이 경로에 전달 수단이 없어 홈 퇴실은 사유가 항상 비었다
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  cleaningDate?: string | null   // 퇴실 청소 예정일 — 그대로 checkoutTenant 로 흘린다(판정은 그쪽 한 자리)
+}): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const lease = await prisma.leaseTerm.findUnique({
@@ -1889,7 +1934,7 @@ export async function checkoutWithDepositRefund(params: {
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
-    const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId, params.moveOutDate)
+    const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId, params.moveOutDate, params.cleaningDate)
     if (!checkoutRes.ok) return checkoutRes
 
     if (lease.depositAmount > 0) {
@@ -1906,7 +1951,8 @@ export async function checkoutWithDepositRefund(params: {
       })
       if (!refundRes.ok) return refundRes
     }
-    return { ok: true }
+    // 퇴실 쪽이 남긴 청소 안내를 그대로 물려준다 — 홈 경로도 같은 말을 듣는다.
+    return checkoutRes.notice ? { ok: true, notice: checkoutRes.notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2054,7 +2100,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
 }
 
 // 퇴실 처리
-export async function checkoutTenant(leaseTermId: string, tenantId: string, moveOutDate?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// cleaningDate = 퇴실 청소 예정일(퇴실 미니폼 입력). 안 보내면 퇴실일에서 기본값을 뽑고,
+// 빈 문자열·null 이면 '미정'이라 날짜 없이 만든다. 판정은 lib/checkoutCleaning 정본이 한다.
+export async function checkoutTenant(leaseTermId: string, tenantId: string, moveOutDate?: string, cleaningDate?: string | null): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
@@ -2090,7 +2138,10 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
     })
   }
 
-  await ensureCheckoutCleaning(propertyId, lease.roomId, leaseTermId)
+  // 퇴실일은 바로 위 update 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘).
+  const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, leaseTermId, {
+    moveOutYmd: moveOutDate || kstYmdStr(), cleaningYmd: cleaningDate,
+  })
 
   // 거주 구간 이력 — 퇴실 확정이면 열린 구간을 퇴실일로 마감(추가 write).
   await closeStay(prisma, leaseTermId)
@@ -2106,7 +2157,9 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
   })
 
   revalidatePath('/tenants')
-  return { ok: true }
+  // 청소 예정이 안 만들어졌으면 그 사실만 얹는다. 퇴실은 이미 끝났고 여기서 실패로 뒤집지 않는다.
+  const cleaningNotice = checkoutCleaningNotice(cleaningRes)
+  return cleaningNotice ? { ok: true, notice: cleaningNotice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2148,6 +2201,10 @@ export async function applyStatusTransition(input: {
   reservationConfirmedAt?: string | null
   rentAmount?: number | null
   reason?: string | null   // 전이 사유(선택) — 취소 사유 수집(e1b81629), TenantStatusLog.reason에 기록
+  // 퇴실 청소 예정일(퇴실 확정 전이에서만 쓰인다). 필수로 올리지 않는 것은 이 함수가 전이 8종을
+  // 전부 처리하고 호출부가 한 코드로 모든 전이를 넘기기 때문이다 — 퇴실 전용 값을 전 전이의
+  // 필수로 만들면 예약 확정·투어 전환까지 더미를 채우게 되고 그 순간 규칙이 죽는다.
+  cleaningDate?: string | null
 }): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -2268,7 +2325,13 @@ export async function applyStatusTransition(input: {
           where: { id: lease.roomId },
           data: { isVacant: true, ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }) },
         })
-        await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId)
+        // 퇴실일은 위 data 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘로 보정된다).
+        const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId, {
+          moveOutYmd: input.moveOutDate || kstYmdStr(), cleaningYmd: input.cleaningDate,
+        })
+        // 이미 서 있는 안내(일할 정산 해제 등)를 덮지 않고 잇는다. 둘 다 같은 저장에서 일어난 일이다.
+        const cleaningNotice = checkoutCleaningNotice(cleaningRes)
+        if (cleaningNotice) notice = notice ? `${notice} ${cleaningNotice}` : cleaningNotice
       } else {
         // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
         await clearAutoCheckoutCleaning(propertyId, input.leaseTermId)
