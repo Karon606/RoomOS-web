@@ -15,6 +15,17 @@ export interface ViewTab {
   id: string              // 탭 식별자 (패널 aria-labelledby와 매칭)
   label: string
   suffix?: string         // 합계 접미: "+16만" | "12만" — 괄호는 컴포넌트가 붙임(24.3)
+  /**
+   * 접미가 차지할 자리를 이 문자열의 폭으로 **미리** 잡는다.
+   *
+   * 값이 화면 안에서 바뀌는 탭에만 넘긴다(입퇴실 캘린더의 '보고 있는 달' 건수처럼). 접미 폭이
+   * 달라지면 탭 트랙의 자연폭이 달라지고, flex 줄바꿈은 shrink 이전에 그 자연폭으로 판정되므로
+   * 헤더가 접혔다 펴진다 — 가로로 끌고 있는데 아래 카드가 세로로 뛴다.
+   * 자리를 미리 잡으면 접미가 없는 회차(0건)에도 폭이 안 흔들린다. 남는 자리는 닫는 괄호 **뒤**로
+   * 흘러 세그먼트 우측 여백에 흡수되므로 괄호 안에 빈칸('( 6)')이 생기지 않는다.
+   * 안 넘기면 종전과 바이트 단위로 같다.
+   */
+  suffixWidest?: string
   href?: string           // 지정 시 링크 탭(24.5). 없으면 <button>
   disabled?: boolean
 }
@@ -116,7 +127,18 @@ export function ViewTabs({
         const content = (
           <>
             {t.label}
-            {t.suffix && <span className="tabular-nums">&nbsp;({t.suffix})</span>}
+            {(t.suffix || t.suffixWidest) && (
+              // 유령과 실물을 한 격자 칸에 겹친다 — 폭은 유령이 정하고 실물은 그 안 왼쪽에 선다.
+              // ch·px 를 안 쓰므로 폰트가 바뀌어도 산다(매직넘버 없음).
+              <span className="tabular-nums inline-grid align-baseline">
+                <span aria-hidden className="invisible col-start-1 row-start-1 whitespace-nowrap">
+                  &nbsp;({t.suffixWidest ?? t.suffix})
+                </span>
+                {t.suffix && (
+                  <span className="col-start-1 row-start-1 whitespace-nowrap">&nbsp;({t.suffix})</span>
+                )}
+              </span>
+            )}
           </>
         )
         return t.href && !t.disabled ? (

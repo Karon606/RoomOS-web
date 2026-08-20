@@ -18,7 +18,7 @@ import {
 import { looksLike360 } from '@/lib/driveImage'
 import { applyScheduledRentsFor } from '@/lib/scheduledRent'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
-import { buildMoveCalendar, buildMoveRange, monthLastDay, shiftMonth, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
+import { beyondWindow, buildMoveCalendar, buildMoveRange, monthLastDay, moveRangeWindow, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
 import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases } from '@/lib/moveCalendarData'
 import { createOverlapAck, loadOverlapAcks, softDeleteOverlapAck } from '@/lib/overlapAck'
 
@@ -85,10 +85,7 @@ export async function getRooms() {
 // 조회가 이 파일 밖에 있는 이유는 감지망 때문이다 — 그물이 사본을 들면 조회가 바뀔 때 옛 규칙에
 // 남아 통과를 말한다(check-move-calendar-drift 가 같은 fetchMoveLeases 를 부른다).
 
-/** 연속 범위 경계 — 과거는 한 달, 미래는 데이터가 정하되 바닥 +2 · 천장 +6 개월. */
-const RANGE_PAST_MONTHS = 1
-const RANGE_MIN_AHEAD = 2
-const RANGE_MAX_AHEAD = 6
+// 연속 범위 경계 규칙은 lib/moveCalendar 의 moveRangeWindow 로 옮겼다 — 순수 함수라야 회귀가 선다.
 
 /**
  * 입퇴실 캘린더 한 달치 — 그 달에 입주·퇴실·예약 시작이 있는 방의 체류 구간.
@@ -152,17 +149,12 @@ export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendar
   const lastChange = changeDates.reduce((a, b) => (a > b ? a : b), today)
   const firstChange = changeDates.reduce((a, b) => (a < b ? a : b), today)
 
-  const minEnd = shiftMonth(todayMonth, RANGE_MIN_AHEAD)
-  const maxEnd = shiftMonth(todayMonth, RANGE_MAX_AHEAD)
-  const lastMonth = lastChange.slice(0, 7)
-  let endMonth = lastMonth < minEnd ? minEnd : lastMonth > maxEnd ? maxEnd : lastMonth
-  let startMonth = shiftMonth(todayMonth, -RANGE_PAST_MONTHS)
-  if (focusMonth < startMonth) startMonth = focusMonth
-  if (focusMonth > endMonth) endMonth = focusMonth
+  // 경계 산식은 lib/moveCalendar 의 순수 함수다. 'use server' 파일 안에 두면 유닛으로 못 재고
+  // (async 만 내보낼 수 있고, 내보내는 순간 인증 없는 입구가 된다) 회귀를 못 세운다.
+  const { startMonth, endMonth } = moveRangeWindow({ todayMonth, focusMonth, lastChangeMonth: lastChange.slice(0, 7) })
 
   const from = `${startMonth}-01`
   const to = monthLastDay(endMonth)
-  const beyondDates = changeDates.filter(d => d > to).sort()
 
   const { changed, context } = await fetchMoveLeases(prisma, propertyId, from, to)
   return buildMoveRange({
@@ -172,7 +164,9 @@ export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendar
     focusMonth,
     changed,
     context,
-    beyond: beyondDates.length > 0 ? { count: beyondDates.length, firstDate: beyondDates[0] } : null,
+    // 창이 과거로 미끄러지면 창의 끝이 오늘보다 이전일 수 있다 — 그때 지난 변동을 '이후 예정'으로
+    // 세면 지난 일이 앞으로의 일로 읽힌다(beyondWindow 의 today 가드).
+    beyond: beyondWindow(changeDates, to, today),
     canExtendPast: firstChange < from,
     // 확인된 겹침 — 조립은 DB 를 못 보고, 확인 여부는 계산이 아니라 사실이라 조회가 넘긴다.
     acks: await loadOverlapAcks(propertyId),

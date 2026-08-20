@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useStartNavigation } from './NavigationContext'
 import { useMyRole } from '@/components/RoleContext'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
-import { resolveMonthParam } from '@/lib/monthParam'
+import { resolveMonthChain } from '@/lib/monthParam'
 
 const MONTH_KEY = 'stayeum_selected_month'
 
@@ -27,8 +27,31 @@ function relMonthLabel(view: string, today: string): string | null {
  * 자정 롤오버 등 보이지 않는 자동 새로고침은 MonthSync(셸 상주)가 담당한다.
  * allowFuture: 재무류 화면은 미래 월이 무의미해 이번 달에서 잠그는 것이 기본이지만,
  * 예약이 사는 화면(입퇴실 캘린더)은 미래 월이 본론이라 잠금을 푼다(운영자 지적 2026-08-17).
+ *
+ * paramKey·fallbackKey: 이 컨트롤이 읽고 쓸 URL 키. 기본은 종전 그대로 `?month=` 다.
+ * 입퇴실 캘린더만 자체 키를 넘긴다 — 그 화면의 값은 '조회 장부 월'이 아니라 '지금 보고 있는
+ * 트랙 위치'라 뜻이 다르고, 한 키를 공유하면 내비가 그것을 조회 월로 복사해 전역에 흘린다
+ * (lib/monthParam TRACK_MONTH_KEY). fallbackKey 는 홈 딥링크(`?tab=moves&month=`) 착지용이다.
+ *
+ *
+ * futureIsNormal: 미래 월을 '경고'로 부르지 않는다. §04 의 warning 은 미납·경고·변동인데,
+ * 예약이 사는 화면에서 다음 달을 보는 것은 셋 중 어느 것도 아니다 — 그 화면에서는 미래가
+ * 본론이라 정상 사용이 곧 경고 상태가 되고, 트랙을 끌 때마다 노란 테두리가 점멸한다.
+ * **과거 방향 경고는 그대로 둔다** — 지난 장부를 현재로 착각하는 위험은 어느 화면에서나 같다.
+ * allowFuture 에서 파생시키지 않는 이유는, 파생하면 잠금 정책을 바꾸는 사람이 톤까지 함께
+ * 바꾸게 되기 때문이다(두 축은 뜻이 다르다 — '열 수 있는가' 대 '정상 상태인가').
  */
-export default function MonthSelector({ allowFuture = false }: { allowFuture?: boolean } = {}) {
+export default function MonthSelector({
+  allowFuture = false,
+  futureIsNormal = false,
+  paramKey = 'month',
+  fallbackKey,
+}: {
+  allowFuture?: boolean
+  futureIsNormal?: boolean
+  paramKey?: string
+  fallbackKey?: string
+} = {}) {
   const role = useMyRole()   // 제한 스태프는 월 컨텍스트가 무의미(재고·조회 화면) — 아래에서 숨김
   const router = useRouter()
   const pathname = usePathname()
@@ -48,7 +71,11 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
 
   // 표시도 조회와 같은 자를 쓴다 — 잠긴 화면에 미래 월 URL 이 들어오면(입퇴실에서 넘어온 링크)
   // 서버는 이번 달을 그리는데 라벨만 9월이면 둘이 갈린다(lib/monthParam, 운영자 신고 2026-08-18).
-  const searchParamsMonth = resolveMonthParam(searchParams.get('month'), { allowFuture })
+  const searchParamsMonth = resolveMonthChain(
+    searchParams.get(paramKey),
+    fallbackKey ? searchParams.get(fallbackKey) : null,
+    { allowFuture },
+  )
   // localMonth: ◀/▶ 클릭 시 URL 반영(디바운스 350ms) 전까지 즉시 보여주는 낙관적 표시값.
   const [localMonth, setLocalMonth] = useState(searchParamsMonth)
   const localMonthRef = useRef(localMonth)
@@ -80,9 +107,13 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   // 대신 isPending 을 이 컨트롤에 묶어 '눌렸고 진행 중'을 표시한다 — 셸의 공용 트랜지션은
   // isPending 을 버려서 클릭 후 아무 표시도 없는 구간이 있었다(F페이즈).
   const applyMonth = (m: string) => {
-    localStorage.setItem(MONTH_KEY, m)
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('month', m)
+    // 전역 월 저장은 전역 키일 때만. 캘린더의 트랙 위치를 여기에 적으면 URL 로 막은 누수가
+    // 저장소 경로로 되살아난다(지금은 이 키를 읽는 코드가 없지만, 복원 기능이 생기는 날 터진다).
+    if (paramKey === 'month') localStorage.setItem(MONTH_KEY, m)
+    // 스냅샷이 아니라 **발화 시점의 실제 URL** 로 재구성한다 — 350ms 디바운스 동안 다른 코드가
+    // 세팅한 파라미터(캘린더의 트랙 위치 등)를 지워 버리던 레이스 방지(lib/useUrlState 와 같은 문법).
+    const params = new URLSearchParams(window.location.search)
+    params.set(paramKey, m)
     const navigate = () => router.push(`${pathname}?${params.toString()}`)
     startLocal(() => { if (startNavigation) startNavigation(navigate); else navigate() })
   }
@@ -101,7 +132,9 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
   const atCurrentMonth = !allowFuture && localMonth >= todayMonth
   const isCurrent = localMonth === todayMonth
-  const rel = relMonthLabel(localMonth, todayMonth)
+  // 이 화면에서 미래가 정상이면 경고 표면·보더·상대월 알약을 안 세운다. 과거는 종전대로 경고다.
+  const quietFuture = futureIsNormal && localMonth > todayMonth
+  const rel = quietFuture ? null : relMonthLabel(localMonth, todayMonth)
   const jumpToday = () => { setLocalMonth(todayMonth); localMonthRef.current = todayMonth; if (debounceRef.current) clearTimeout(debounceRef.current); applyMonth(todayMonth) }
 
   if (role === 'LIMITED_STAFF') return null   // 모든 훅 호출 뒤 조건부 렌더(rules-of-hooks 준수)
@@ -117,12 +150,14 @@ export default function MonthSelector({ allowFuture = false }: { allowFuture?: b
      * 자리·폭이 안 흔들린다.
      */
     <div className="relative shrink-0 self-start">
-    {/* 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지). */}
+    {/* 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
+        단 미래가 본론인 화면(futureIsNormal)에서 미래 월은 경고가 아니다 — 표면·보더를 세우지 않는다.
+        '이번 달이 아님'은 남는 신호 둘이 말한다: 라벨의 절대 연월과, !isCurrent 일 때만 서는 [오늘] 버튼. */}
     <div
       className="flex items-stretch min-h-[44px] rounded-lg overflow-hidden transition-colors"
       aria-busy={isPending}
       style={{
-        ...(isCurrent
+        ...(isCurrent || quietFuture
           ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
           : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }),
         // 진행 중 표시 — 앱 전반의 disabled:opacity 문법과 같은 결

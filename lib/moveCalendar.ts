@@ -97,7 +97,25 @@ export type MoveBar = {
   /** 입주·퇴실이 이 범위 안에 있는가. 라벨이 무엇을 말할지가 여기서 갈린다. */
   startsInRange: boolean
   endsInRange: boolean
+  /** 세 조각을 종전과 같은 한 문자열로 이은 것. title·aria·회귀가 이 값을 딛는다. */
   label: string
+  /**
+   * 막대 **시작 지점**에 못 박을 사건 문구. 시작이 이 범위 안일 때만 선다.
+   *
+   * 조각을 조립이 내주는 이유. 화면이 label 을 ' · ' 로 다시 쪼개면 그 사본이 곧 두 번째 진실이 된다
+   * (이 파일 머리의 원칙). 게다가 기계적으로도 깨진다 — 호실번호는 숫자라는 보장이 없고
+   * (등록 폼이 'A동-3'·'옥탑방'을 권한다) 라벨 문자열 안에 같은 구분자가 섞일 여지가 있다.
+   */
+  startLabel: string | null
+  /** 막대 **끝 지점**에 못 박을 사건 문구. 끝이 이 범위 안일 때만 선다. */
+  endLabel: string | null
+  /**
+   * 사건이 하나도 없는 막대의 상태 문구('퇴실일 미정' 등) — 두 조각이 다 비었을 때만 선다.
+   *
+   * 이것은 사건이 아니라 상태다. 날짜 칸에 못 박으면 안 되고(그 픽셀이 그 날짜를 뜻하게 된다)
+   * 이름과 함께 sticky 로 흘러야 한다. 종전 표시가 정확히 그것이었다.
+   */
+  stateLabel: string | null
   stayFrom: string | null
   stayTo: string | null
   /** 이 막대가 충돌에 걸려 있다 — 행 좌측 팁과 짝이다. */
@@ -239,6 +257,70 @@ export function monthLastDay(month: string): string {
   return `${month}-${String(daysInMonth(month)).padStart(2, '0')}`
 }
 
+/** 연속 창의 경계 상수 — 과거는 한 달, 미래는 데이터가 정하되 바닥 +2 · 천장 +6 개월. */
+export const RANGE_PAST_MONTHS = 1
+export const RANGE_MIN_AHEAD = 2
+export const RANGE_MAX_AHEAD = 6
+/** 창 밖으로 점프했을 때의 창 폭(개월). 먼 달을 골라도 트랙이 이보다 길어지지 않는다. */
+export const RANGE_JUMP_MONTHS = 4
+
+/**
+ * 연속 창의 경계 — **넓히지 않고 옮긴다**(2026-08-20).
+ *
+ * 종전에는 focusMonth 가 범위 밖이면 그쪽으로 창을 **넓히기만** 했다. 2028년 1월을 고르면
+ * 2026-07 부터 2028-01 까지 19개월(578일 · 트랙 폭 약 13,900px)이 된다. 상한이 없어서 월 피커로
+ * 2035년을 고르면 100개월을 넘고, 그 기간 전부를 조회한다. "빈 트랙을 수천 px 끌지 않게"라던
+ * 천장 규칙(RANGE_MAX_AHEAD)이 정확히 그 반대로 작동하고 있었다.
+ *
+ * **기본 창(오늘 근처)은 한 글자도 안 바꾼다.** 오른쪽 끝을 '마지막 변동이 있는 달'에 두는 규칙은
+ * "다음에 무엇이 오는가"라는 이 화면의 존재 이유에 직접 답하는 자리라, 여기를 4개월로 깎으면
+ * 매일 아침의 기본 화면이 바뀌고 종전에 막대로 보이던 예약이 beyond 한 줄로 강등된다.
+ * 문제였던 것은 기본 창이 아니라 **점프**다.
+ *
+ * 불변식 넷(회귀가 못 박는다).
+ *   ① startMonth ≤ focusMonth ≤ endMonth — 언제나. focusMonth 가 창 밖이면 그 달의 건수를
+ *      아무도 모르는데 `?? 0` 이 "0건"으로 출력해 탭 접미가 통째로 사라진다.
+ *   ② 창의 개월 수 ≤ max(RANGE_JUMP_MONTHS, 1 + RANGE_MAX_AHEAD + RANGE_PAST_MONTHS) = 8.
+ *   ③ focusMonth 가 오늘 달이면 결과가 종전 산식과 완전히 같다.
+ *   ④ 과거 점프를 반복하면 startMonth 가 **정확히 한 달씩** 줄어든다 — focus 를 창의 첫 달에
+ *      두기 때문이다. 가운데에 두면 '이전 달 더 보기' 한 번에 두 달씩 튀어 낱말이 거짓이 된다.
+ */
+export function moveRangeWindow(input: {
+  todayMonth: string
+  focusMonth: string
+  /** 이 영업장의 마지막 변동이 있는 달. 기본 창의 오른쪽 끝을 정한다. */
+  lastChangeMonth: string
+}): { startMonth: string; endMonth: string } {
+  const { todayMonth, focusMonth, lastChangeMonth } = input
+  const minEnd = shiftMonth(todayMonth, RANGE_MIN_AHEAD)
+  const maxEnd = shiftMonth(todayMonth, RANGE_MAX_AHEAD)
+  const baseStart = shiftMonth(todayMonth, -RANGE_PAST_MONTHS)
+  const baseEnd = lastChangeMonth < minEnd ? minEnd : lastChangeMonth > maxEnd ? maxEnd : lastChangeMonth
+  if (focusMonth >= baseStart && focusMonth <= baseEnd) return { startMonth: baseStart, endMonth: baseEnd }
+  if (focusMonth < baseStart) {
+    // 과거 점프 — focus 가 창의 첫 달이다(불변식 ④).
+    return { startMonth: focusMonth, endMonth: shiftMonth(focusMonth, RANGE_JUMP_MONTHS - 1) }
+  }
+  // 미래 점프 — 앞머리로 한 달을 붙인다. '그때로 이동'으로 닿은 예약 앞에 누가 나가는지 보여야 한다.
+  return { startMonth: shiftMonth(focusMonth, -1), endMonth: shiftMonth(focusMonth, RANGE_JUMP_MONTHS - 2) }
+}
+
+/**
+ * 창 오른쪽 밖에 남은 **앞으로의** 예정.
+ *
+ * `today` 가드가 필요한 이유. 창을 과거로 미끄러뜨리면 창의 끝이 오늘보다 이전이 될 수 있는데,
+ * 그때 오른쪽 밖을 그대로 세면 이미 지난 변동이 "이후 예정 62건 · 최초 7/2"로 적힌다.
+ * 지난 일이 앞으로의 일로 읽히고, 그 수를 보고 광고·청소·계약 준비를 건다.
+ */
+export function beyondWindow(
+  changeDates: string[],
+  to: string,
+  today: string,
+): { count: number; firstDate: string } | null {
+  const rest = changeDates.filter(d => d > to && d > today).sort()
+  return rest.length > 0 ? { count: rest.length, firstDate: rest[0] } : null
+}
+
 const DAY_MS = 86400000
 const atUtc = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`)
 /** a 에서 b 까지의 날수(b 가 뒤면 양수). 양쪽 다 UTC 자정이라 실행 환경 시간대가 안 섞인다. */
@@ -306,8 +388,20 @@ function slicesOf(l: MoveCalendarLease): StaySlice[] {
  * (:roomNo 정렬) 506호와 508호 사이에 507호가 낀다. 두 막대를 선으로 이을 수도 없다(가이드
  * 미등재). 게다가 범위가 이사일을 안 물면 한쪽 막대는 아예 안 선다. 어느 막대 하나만 봐도
  * 어디로 갔는지·어디서 왔는지 알아야 그 사건이 화면에서 사라지지 않는다.
+ *
+ * **조각을 따로 내는 이유**(2026-08-20). 종전에는 이 셋을 한 문자열로 이어 화면이 막대 안에서
+ * sticky 로 들고 있었다. 그러면 트랙을 아무리 끌어도 "7/1 506호에서 이사"가 화면 왼쪽에 계속
+ * 붙어 따라온다 — 8월 말을 보고 있는데 7/1 이 눈앞에 있다(운영자 신고 2026-08-20). 사건은
+ * 날짜에 일어나므로 문구도 그 날짜 칸에 있어야 한다. 감쇠는 색이 아니라 **위치**로 한다
+ * (§03 이 밴드 위 글자를 --ink-2 로 못박았고, 실측상 --ink-s 는 막대 위에서 AA 미달이다).
+ *
+ * 역전(reversed)은 조각을 안 낸다. 기하는 두 날짜를 뒤집어 그리는데(assemble 의 from/to swap)
+ * 문구는 원본 날짜를 읽으므로, 문구를 날짜 칸에 못 박으면 8/10 칸 위에 "9/20 입실"이 앉는다.
+ * 그 방을 9/20 에 광고에 올리면 실제 손실이다. 역전은 충돌 줄이 따로 말한다.
  */
-function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; movedFromRoomNo: string | null; movedToRoomNo: string | null; stayFrom: string | null; stayTo: string | null }): string {
+type BarLabels = { label: string; startLabel: string | null; endLabel: string | null; stateLabel: string | null }
+
+function barLabels(bar: { startsInRange: boolean; endsInRange: boolean; openEnded: boolean; reversed: boolean; movedFromRoomNo: string | null; movedToRoomNo: string | null; stayFrom: string | null; stayTo: string | null }): BarLabels {
   const startLabel = bar.movedFromRoomNo
     ? moveDateLabel(bar.stayFrom, { roomNo: bar.movedFromRoomNo, dir: 'from' })
     : moveInDateLabel(bar.stayFrom)
@@ -317,9 +411,14 @@ function barLabel(bar: { startsInRange: boolean; endsInRange: boolean; openEnded
   const parts: string[] = []
   if (bar.startsInRange && startLabel) parts.push(startLabel)
   if (bar.endsInRange && endLabel) parts.push(endLabel)
-  if (parts.length > 0) return parts.join(' · ')
-  if (bar.openEnded) return '퇴실일 미정'
-  return endLabel ?? '퇴실일 미정'
+  // 이 한 문자열은 종전과 한 글자도 다르지 않다 — title·aria·회귀 160 이 이 값을 딛는다.
+  const label = parts.length > 0 ? parts.join(' · ')
+    : bar.openEnded ? '퇴실일 미정'
+      : endLabel ?? '퇴실일 미정'
+  const pinned = !bar.reversed
+  const start = pinned && bar.startsInRange ? startLabel : null
+  const end = pinned && bar.endsInRange ? endLabel : null
+  return { label, startLabel: start, endLabel: end, stateLabel: start || end ? null : label }
 }
 
 /** 겹치지 않는 막대끼리 같은 층에 앉힌다. 같은 날 퇴실·입주는 한 칸을 함께 쓰므로 층이 갈린다. */
@@ -435,11 +534,14 @@ function assemble(input: {
         startsInRange,
         endsInRange,
         label: '',
+        startLabel: null,
+        endLabel: null,
+        stateLabel: null,
         stayFrom: rawFrom,
         stayTo: rawTo,
         conflicted: false,
       }
-      bar.label = barLabel(bar)
+      Object.assign(bar, barLabels({ ...bar, reversed }))
       bars.push(bar)
       barLease.set(bar.id, l)
 

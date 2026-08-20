@@ -32,3 +32,45 @@ export function resolveMonthParam(
   if (!opts?.allowFuture && month > today) return today
   return month
 }
+
+/**
+ * 입퇴실 캘린더의 **트랙 위치** 키. 형제 여덟 화면의 `?month=` 와 뜻이 다르다.
+ *
+ * 형제의 month 는 **조회 장부 월**이다 — 값이 바뀌면 다른 행이 조회되고 화면 내용이 교체된다.
+ * 캘린더의 것은 **이미 받아 온 한 문서 안에서 지금 보고 있는 자리**다. 데이터는 그대로고
+ * 뷰포트만 움직인다. 한 키를 공유한 것이 범주 오류였고, 그래서 하단 내비·사이드바가
+ * 스크롤 위치를 '조회 월'로 오해해 링크마다 복사했다(그 결과 캘린더를 7월로 끌면 홈·지출·재고·
+ * 내보내기·프리즘 수납 면이 전부 7월 장부를 열었다).
+ *
+ * 키 이름에 'month' 를 넣지 않은 이유가 그것이다 — 이름이 형제 키를 닮으면 다음 사람이
+ * resolveMonthParam 에 먹이거나 BottomNav 옆에 한 줄 더 붙인다. `focus` 도 쓸 수 없다
+ * (lib/useFocusSection 이 알림 딥링크로 점유하고 **소진**한다 — 그 키를 쓰면 조용히 지워진다).
+ */
+export const TRACK_MONTH_KEY = 'at'
+
+/**
+ * 앞 키가 비면 뒤 키로 떨어지는 해석 — 서버와 월 셀렉터가 이 한 벌을 함께 쓴다.
+ * 사슬이 두 벌이 되면 라벨과 조회가 다른 달을 가리키는 병이 그대로 재발한다.
+ */
+export function resolveMonthChain(
+  primary: string | null | undefined,
+  fallback: string | null | undefined,
+  opts?: { allowFuture?: boolean },
+): string {
+  return resolveMonthParam(primary || fallback, opts)
+}
+
+/**
+ * 캘린더 트랙 위치의 해석 정본.
+ *
+ * `?at=` 이 없으면 `?month=` 로 떨어진다 — 홈 '이달 입퇴실 N건'이 `?tab=moves&month=` 로
+ * 들어오기 때문이다. 이 사슬이 있어야 딥링크로 착지한 트랙과 셀렉터 라벨이 같은 달을 가리킨다.
+ * `?month=` 는 **고쳐 쓰지 않는다** — 그 값은 홈에서 정당하게 실려 온 조회 장부 월이고,
+ * 지우면 캘린더를 거쳐 지출로 넘어갈 때 보던 달을 잃는다. 두 값이 함께 사는 것이 정상이다.
+ */
+export function resolveTrackMonth(
+  at: string | null | undefined,
+  month: string | null | undefined,
+): string {
+  return resolveMonthChain(at, month, { allowFuture: true })
+}

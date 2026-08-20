@@ -37,6 +37,7 @@ import { PhotoLightbox, uploadFileToDriveSession, type Photo } from '@/component
 import { looksLike360 } from '@/lib/driveImage'
 import { checkoutSubText, moveInSubText, isShortTermCheckoutDue, nextRoomReservation, primaryRoomLease, reservationSubText, roomAvailability, roomStatusView } from '@/lib/leaseStatus'
 import { kstMonthStr } from '@/lib/kstDate'
+import { TRACK_MONTH_KEY } from '@/lib/monthParam'
 import dynamic from 'next/dynamic'
 import { fmtRoomNo } from '@/lib/roomNo'
 
@@ -548,6 +549,33 @@ export default function RoomManageClient({
   // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
+  // 보고 있는 탭을 URL 에 남긴다 — 캘린더가 트랙 위치(?at=)를 적어 두는데 탭이 URL 에 없으면
+  // 그 주소를 북마크·공유했을 때 캘린더가 아니라 호실 목록이 열린다. replaceState 라 히스토리가
+  // 안 쌓이고 서버도 다시 안 돈다(첫 인자 null 이 필수 — lib/monthParam 주석 참조).
+  // 기본 탭('rooms')은 키를 지운다. 파라미터는 '기본이 아닌 상태'만 담는 것이 이 저장소의 문법이다.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const cur = url.searchParams.get('tab')
+    const next = viewTab === 'rooms' ? null : viewTab
+    if (cur === next) return
+    if (next) url.searchParams.set('tab', next)
+    else url.searchParams.delete('tab')
+    window.history.replaceState(null, '', url)
+  }, [viewTab])
+
+  // 트랙이 보고 있는 달 — 캘린더가 착지할 때와 스크롤이 멎을 때마다 알려 준다. null 이면 아직 첫 착지 전.
+  // 서버 왕복이 없다: 달별 건수는 이미 moveCalendar.months 에 전부 실려 왔다.
+  const [viewMonth, setViewMonth] = useState<string | null>(null)
+  // 접미 N 은 **보고 있는 달**의 건수다. 서버 prop(focusMonth 의 건수)만 쓰면 스크롤을 따라오지 못해
+  // 라벨은 9월인데 배지는 8월 수로 서 있었다. 못 찾으면 서버 값으로 떨어진다(트랙이 아직 안 앉은 회차).
+  const moveEventCount = viewMonth != null
+    ? moveCalendar.months.find(m => m.month === viewMonth)?.eventCount ?? moveCalendar.focusEventCount
+    : moveCalendar.focusEventCount
+  // 창 안에서 가장 큰 건수 — 접미 자리를 여기에 맞춰 두면 달을 넘겨도 탭 폭이 안 변한다.
+  // 안 잡으면 접미가 (25) → (6) → 없음으로 줄면서 탭 트랙 자연폭이 9px·22px 씩 달라지고,
+  // flex 줄바꿈이 그 자연폭으로 판정되므로 특정 폭 구간에서 헤더가 접혔다 펴진다.
+  // 창 전체가 0건이면 예약하지 않는다(안 뜰 접미에 자리를 비워 둘 이유가 없다).
+  const moveSuffixWidest = String(moveCalendar.months.reduce((m, x) => Math.max(m, x.eventCount), 0))
 
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -668,7 +696,10 @@ export default function RoomManageClient({
   // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(입주자 관리 clearTenantUrlParams 와 동일 패턴).
   const clearRoomUrlParams = () => {
     if (searchParams.get('edit') === '1' || searchParams.get('roomId')) {
-      const params = new URLSearchParams(searchParams.toString())
+      // 렌더 시점 스냅샷이 아니라 **지금의 실제 URL** 로 재구성한다 — 캘린더 트랙이
+      // history.replaceState 로 적어 둔 위치를 옛 스냅샷이 되돌려 쓰던 레이스 방지
+      // (lib/useUrlState 가 같은 이유로 같은 문법을 쓴다).
+      const params = new URLSearchParams(window.location.search)
       params.delete('edit'); params.delete('roomId')
       const qs = params.toString()
       router.replace(qs ? `?${qs}` : '?', { scroll: false })
@@ -1161,7 +1192,12 @@ export default function RoomManageClient({
               // 달력이라 이름이 그렇게 말한다. 홈 링크 문구('이달 입퇴실 N건')는 그대로 둔다.
               // 접미 N 은 **보고 있는 달**의 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
               // 눌러 들어왔을 때 그 숫자가 여기서 다른 값으로 바뀌면 둘 중 하나가 거짓으로 읽힌다.
-              { id: 'moves',    label: '입퇴실 캘린더', suffix: moveCalendar.focusEventCount > 0 ? String(moveCalendar.focusEventCount) : undefined },
+              // 그래서 착지 순간에는 홈과 같은 수이고, 그 뒤 숫자가 바뀌는 것은 운영자가 스스로
+              // 다른 달로 옮겼기 때문이다. 갱신은 스크롤이 멎은 뒤 한 번뿐이다 — rAF 로 밀면
+              // 접미 폭이 바뀔 때마다 ViewTabs 의 코랄 채움이 200ms 애니메이션에 갇힌다.
+              { id: 'moves',    label: '입퇴실 캘린더',
+                suffix: moveEventCount > 0 ? String(moveEventCount) : undefined,
+                suffixWidest: moveSuffixWidest === '0' ? undefined : moveSuffixWidest },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
@@ -1181,13 +1217,20 @@ export default function RoomManageClient({
         )}
         {/* 월 셀렉터는 입퇴실 뷰에만 — 자리는 그대로 두되 역할이 바뀌었다(2026-08-17 연속 뷰).
             종전에는 달마다 다시 조회하는 스위치였고, 지금은 넓은 트랙 위의 **점프 컨트롤**이다.
-            트랙을 끌면 보고 있는 달이 ?month= 로 따라 적히므로 이 라벨이 현재 위치를 말한다.
+            트랙을 끌면 보고 있는 달이 ?at= 으로 따라 적히므로 이 라벨이 현재 위치를 말한다.
+            키가 형제 화면과 다른 이유는 뜻이 달라서다(lib/monthParam TRACK_MONTH_KEY) — 여기 값은
+            조회 장부 월이 아니라 트랙 위치라, 내비가 그것을 조회 월로 복사하면 전역이 그 달로 열린다.
+            fallbackKey 는 홈 딥링크(?tab=moves&month=) 착지용이다.
             §25 탭 좌·셀렉터 우 — 형제 페이지와 같은 자리를 지킨다. */}
-        {viewTab === 'moves' && <div className="shrink-0 ml-auto"><MonthSelector allowFuture /></div>}
+        {viewTab === 'moves' && (
+          <div className="shrink-0 ml-auto">
+            <MonthSelector allowFuture futureIsNormal paramKey={TRACK_MONTH_KEY} fallbackKey="month" />
+          </div>
+        )}
       </div>
 
       {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
-      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} />}
+      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (

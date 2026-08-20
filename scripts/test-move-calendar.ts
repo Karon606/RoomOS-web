@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, shiftMonth, type MoveCalendarLease, type MoveStaySpan } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, shiftMonth, type MoveCalendarLease, type MoveStaySpan } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -545,6 +545,122 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   const row = build([l], [l]).rows[0]
   eq('열린 구간 · 끝은 퇴실 예정일', [row.bars[0].endDay, row.bars[0].openEnded], [25, false])
   eq('열린 구간 · 라벨에 퇴실일이 선다', row.bars[0].label, '8/5 입실 · 8/25 퇴실')
+}
+
+// ══ 창 경계(넓히기 아니라 옮기기) ══════════════════════════════════
+//
+// 종전 산식은 focusMonth 가 범위 밖이면 그쪽으로 창을 **넓히기만** 해서, 2028년을 고르면
+// 19개월 트랙(약 13,900px)이 되고 상한이 없었다. 여기서 못 박는 것은 넷이다 —
+// 상한 · 기본 창 무회귀 · focus 가 늘 창 안 · '이전 달 더 보기' 의 한 달씩 단조 후퇴.
+
+/** 두 달 사이의 개월 수(양 끝 포함). */
+const monthSpan = (a: string, b: string): number => {
+  const [ay, am] = a.split('-').map(Number)
+  const [by, bm] = b.split('-').map(Number)
+  return (by * 12 + bm) - (ay * 12 + am) + 1
+}
+/** 종전 산식(넓히기) — 무회귀 앵커의 비교군이다. 오늘 근처에서는 새 산식과 같아야 한다. */
+const legacyWindow = (todayMonth: string, focusMonth: string, lastMonth: string) => {
+  const minEnd = shiftMonth(todayMonth, 2)
+  const maxEnd = shiftMonth(todayMonth, 6)
+  let endMonth = lastMonth < minEnd ? minEnd : lastMonth > maxEnd ? maxEnd : lastMonth
+  let startMonth = shiftMonth(todayMonth, -1)
+  if (focusMonth < startMonth) startMonth = focusMonth
+  if (focusMonth > endMonth) endMonth = focusMonth
+  return { startMonth, endMonth }
+}
+
+const WT = '2026-08'   // 창 회귀의 '오늘 달'
+
+// ── 축 1 ── 먼 달로 점프해도 창이 RANGE_JUMP_MONTHS 를 안 넘는다.
+{
+  for (const focus of ['2028-01', '2036-01', '2030-07', '2020-01', '2019-05']) {
+    const w = moveRangeWindow({ todayMonth: WT, focusMonth: focus, lastChangeMonth: '2026-09' })
+    eq(`창 상한 · focus ${focus} 는 ${RANGE_JUMP_MONTHS}개월`, monthSpan(w.startMonth, w.endMonth), RANGE_JUMP_MONTHS)
+  }
+  // 트랙 일수 상한 — 4개월이 가장 긴 조합(31+31+30+31)이라도 123일을 안 넘는다.
+  const w = moveRangeWindow({ todayMonth: WT, focusMonth: '2028-01', lastChangeMonth: '2026-09' })
+  const built = range({ from: `${w.startMonth}-01`, to: monthLastDay(w.endMonth), changed: [], focusMonth: '2028-01' })
+  eq('창 상한 · 트랙 일수', built.days <= 123, true)
+  const was = legacyWindow(WT, '2028-01', '2026-09')
+  eq('창 상한 · 종전 산식이었다면 19개월', monthSpan(was.startMonth, was.endMonth), 19)
+}
+
+// ── 축 2 ── 무회귀 앵커. focus 가 오늘 달이면 종전 산식과 완전히 같다.
+{
+  for (const last of ['2026-08', '2026-10', '2026-12', '2027-02', '2027-05']) {
+    const now = moveRangeWindow({ todayMonth: WT, focusMonth: WT, lastChangeMonth: last })
+    const was = legacyWindow(WT, WT, last)
+    eq(`창 무회귀 · 마지막 변동 ${last}`, [now.startMonth, now.endMonth], [was.startMonth, was.endMonth])
+  }
+  // 창 **안**의 달을 고른 경우도 기본 창 그대로다(스크롤로 닿는 달은 전부 여기).
+  for (const focus of ['2026-07', '2026-09', '2026-10']) {
+    const now = moveRangeWindow({ todayMonth: WT, focusMonth: focus, lastChangeMonth: '2026-10' })
+    eq(`창 무회귀 · 창 안 focus ${focus}`, [now.startMonth, now.endMonth], ['2026-07', '2026-10'])
+  }
+}
+
+// ── 축 3 ── focus 는 언제나 창 안이다. 밖이면 그 달의 건수를 아무도 모르는데
+//            focusEventCount 의 `?? 0` 이 "0건"으로 출력해 탭 접미가 통째로 사라진다.
+{
+  let outside = 0
+  let tooWide = 0
+  for (let d = -24; d <= 24; d++) {
+    const focus = shiftMonth(WT, d)
+    for (const last of ['2026-08', '2026-11', '2027-03']) {
+      const w = moveRangeWindow({ todayMonth: WT, focusMonth: focus, lastChangeMonth: last })
+      if (focus < w.startMonth || focus > w.endMonth) outside++
+      if (monthSpan(w.startMonth, w.endMonth) > 8) tooWide++
+    }
+  }
+  eq('창 · focus 가 창 밖인 조합', outside, 0)
+  eq('창 · 8개월을 넘는 조합', tooWide, 0)
+}
+
+// ── 축 4 ── '이전 달 더 보기' 를 반복하면 창의 첫 달이 정확히 한 달씩 물러난다.
+//            focus 를 창 가운데 두면 한 번에 두 달씩 튀어 낱말('한 달 더')이 거짓이 된다.
+{
+  let start = moveRangeWindow({ todayMonth: WT, focusMonth: WT, lastChangeMonth: '2026-10' }).startMonth
+  const steps: string[] = [start]
+  for (let i = 0; i < 5; i++) {
+    const focus = shiftMonth(start, -1)
+    start = moveRangeWindow({ todayMonth: WT, focusMonth: focus, lastChangeMonth: '2026-10' }).startMonth
+    steps.push(start)
+  }
+  eq('창 · 이전 달 더 보기 다섯 번', steps, ['2026-07', '2026-06', '2026-05', '2026-04', '2026-03', '2026-02'])
+}
+
+// ── 축 5 ── beyond 는 창 밖이되 **앞으로의** 예정만 센다.
+//            창이 과거로 미끄러지면 창의 끝이 오늘보다 이전이라, 가드가 없으면 이미 지난 변동이
+//            "이후 예정 N건 · 최초 7/2" 로 적힌다.
+{
+  const dates = ['2026-05-10', '2026-07-02', '2026-08-25', '2026-09-30', '2026-12-01']
+  const past = moveRangeWindow({ todayMonth: WT, focusMonth: '2026-03', lastChangeMonth: '2026-09' })
+  const pastTo = monthLastDay(past.endMonth)
+  eq('beyond · 과거로 미끄러진 창의 끝', pastTo, '2026-06-30')
+  eq('beyond · 지난 변동을 예정으로 안 센다', beyondWindow(dates, pastTo, '2026-08-20'),
+    { count: 3, firstDate: '2026-08-25' })
+  // 가드가 없었다면 7/2 가 '최초 예정' 으로 섰다.
+  eq('beyond · 가드가 없을 때의 값(대조)', dates.filter(d => d > pastTo).sort()[0], '2026-07-02')
+  // 오늘을 무는 기본 창에서는 종전과 같은 답이다.
+  const base = moveRangeWindow({ todayMonth: WT, focusMonth: WT, lastChangeMonth: '2026-09' })
+  eq('beyond · 기본 창', beyondWindow(dates, monthLastDay(base.endMonth), '2026-08-20'),
+    { count: 1, firstDate: '2026-12-01' })
+  eq('beyond · 남은 게 없으면 null', beyondWindow(['2026-05-10'], '2026-09-30', '2026-08-20'), null)
+}
+
+// ── 축 6 ── 오늘이 창 밖이면 todayDay 가 없고 upcoming 도 비어 있다.
+//            이 조합이 참일 때 화면은 '예정 없음'이 아니라 '여기서는 셀 수 없음'을 말해야 한다
+//            (MoveCalendar UpcomingRow 의 todayInRange 분기와 짝이다).
+{
+  const soon = lease({ id: 'sn', roomNo: '601', status: 'RESERVED', moveInDate: '2026-08-21', tenantName: '내일' })
+  const away = moveRangeWindow({ todayMonth: WT, focusMonth: '2028-01', lastChangeMonth: '2026-09' })
+  const out = range({ from: `${away.startMonth}-01`, to: monthLastDay(away.endMonth), changed: [soon], today: '2026-08-20', focusMonth: '2028-01' })
+  eq('창 밖 오늘 · todayDay 없음', out.todayDay, null)
+  eq('창 밖 오늘 · upcoming 이 비는 것은 사실이 아니라 창의 한계다', out.upcoming.length, 0)
+  // 오늘을 무는 창에서는 같은 예약이 잡힌다 — 위 0 이 데이터 탓이 아님을 대조로 못 박는다.
+  const near = range({ from: '2026-07-01', to: '2026-10-31', changed: [soon], today: '2026-08-20', focusMonth: WT })
+  eq('창 안 오늘 · 같은 예약이 다가오는 14일에 잡힌다', near.upcoming.map(e => e.date), ['2026-08-21'])
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)

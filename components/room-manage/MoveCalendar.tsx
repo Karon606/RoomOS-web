@@ -14,8 +14,8 @@
 // 건다. 두 축에 걸면 세로로는 넘칠 일이 없는 '가짜 스크롤러'가 되어 Android Blink 가 터치를 래치하고
 // 페이지 세로 스크롤이 먹통이 된다(knowledge/mobile-scroll-viewport, 신고 d8554128).
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -24,7 +24,8 @@ import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
-import { fmtDateKor, fmtMD } from '@/lib/fmtDate'
+import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
+import { TRACK_MONTH_KEY } from '@/lib/monthParam'
 import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
@@ -102,95 +103,189 @@ function eventTone(e: MoveEvent): { tone: BadgeTone; label: string } {
         : { tone: 'movein', label: '입실' }
 }
 
-export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
+function MoveCalendarView({ data, onViewMonthChange }: {
+  data: MoveCalendarRange
+  /** 트랙이 내려앉은·멎은 달을 위로 알린다. 탭 접미 N 이 이 값을 딛는다(서버 왕복 없음). */
+  onViewMonthChange?: (month: string) => void
+}) {
   const entityModal = useEntityModal()
   const router = useRouter()
-  const searchParams = useSearchParams()
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** '오늘로' 버튼 — 표시를 DOM 에 직접 쓴다(아래 paintToday 주석). */
+  const todayBtnRef = useRef<HTMLButtonElement>(null)
   /** 마지막으로 내려앉은 달. null 이면 아직 첫 착지 전이다. */
   const landedRef = useRef<string | null>(null)
-  const [todayOff, setTodayOff] = useState(false)
+  /** 마지막으로 내려앉은 창의 첫날. 창이 미끄러지면 좌표계가 통째로 바뀌므로 다시 앉아야 한다. */
+  const landedFromRef = useRef<string | null>(null)
+  /** 착지가 만든 스크롤 위치. 여기서 한 픽셀도 안 움직였으면 URL 에 적지 않는다. */
+  const landedLeftRef = useRef<number | null>(null)
   const days = data.days
   const todayDay = data.todayDay
 
   const openLease = (roomId: string, leaseId: string, tenantId: string) =>
     entityModal.open({ kind: 'room', roomId, leaseTermId: leaseId, tenantId })
 
-  /** 그 달로 다시 조회해 착지한다 — 범위 밖이면 서버가 범위를 그쪽으로 넓힌다. */
+  /**
+   * 그 달로 다시 조회해 착지한다 — 범위 밖이면 서버가 창을 그쪽으로 미끄러뜨린다.
+   *
+   * 파라미터는 **발화 시점의 실제 URL** 에서 다시 읽는다. useSearchParams 스냅샷을 쓰면
+   * 스크롤이 방금 적어 둔 트랙 위치를 지운다. 훅을 안 부르는 덕에 이 컴포넌트가 memo 로 살아나
+   * 다른 곳의 URL 변경이 트랙 수천 칸을 다시 그리지 않는다.
+   */
   const jumpToMonth = (month: string) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('month', month)
+    const params = new URLSearchParams(window.location.search)
+    params.set(TRACK_MONTH_KEY, month)
     router.push(`?${params.toString()}`)
   }
 
   /** 오늘의 왼쪽 좌표(px). 오늘이 범위 밖이면 null. */
   const todayX = todayDay != null ? (todayDay - 1) * DAY_W : null
 
+  /**
+   * '오늘로' 버튼의 표시 — **React state 로 들지 않는다.**
+   *
+   * state 로 들면 스크롤이 멎을 때마다 트랙 전체(열일곱 행 × 수백 칸)가 다시 그려진다.
+   * 이 값은 렌더 결과를 만들지 않고 노드 하나의 보임/숨김만 정하므로 DOM 에 직접 쓴다
+   * (knowledge/mobile-scroll-viewport 의 '렌더에 안 쓰이는 뷰포트 값은 state 로 들지 않는다').
+   *
+   * 오늘이 범위 밖이면 스크롤로는 영영 닿을 수 없다 — 그때는 항상 세워 둔다. 종전에는 이 경우
+   * 버튼이 아예 안 떠서 먼 달로 간 뒤 돌아올 길이 트랙 안에 없었다.
+   */
+  const paintToday = useCallback(() => {
+    const btn = todayBtnRef.current
+    if (!btn) return
+    // display 를 직접 쓴다. hidden 속성은 UA 의 [hidden]{display:none} 이 작성자 스타일(inline-flex)에
+    // 지므로 이 버튼에서는 안 먹는다. React 의 style 에도 display 를 같은 초깃값으로 두어,
+    // 이후 리렌더에서 값이 안 바뀌면 React 가 이 자리를 건드리지 않는다.
+    //
+    // 오늘이 창 밖이면 트랙이 아예 없을 수도 있다(변동 없는 창은 카드 대신 빈 상태가 선다).
+    // 그때가 바로 돌아올 길이 가장 필요한 자리라 스크롤러 존재와 무관하게 세운다.
+    if (todayX == null) { btn.style.display = ''; return }
+    const el = scrollRef.current
+    if (!el) return
+    const view = Math.max(0, el.clientWidth - ROOM_COL)
+    btn.style.display = todayX < el.scrollLeft || todayX > el.scrollLeft + view ? '' : 'none'
+  }, [todayX])
+
   // 착지 — 오늘을 뷰포트 왼쪽 1/4 에 둔다. 보고 있는 달이 오늘의 달이 아니면(딥링크·점프)
   // 그 달 1일을 호실 열 바로 오른쪽에 세운다. 애니메이션 없이 즉시 — 첫 페인트가 흐르면 위치를 착각한다.
   //
   // 첫 마운트뿐 아니라 **보고 있는 달이 바뀔 때마다** 다시 내려앉는다. 종전에는 마운트 한 번으로
   // 끝나서 월 셀렉터로 9월을 골라도 트랙이 그 자리에 서 있었다(운영자 신고 2026-08-18).
+  // 창의 첫날(data.from)이 바뀔 때도 다시 앉는다 — 창이 미끄러지면 같은 달이라도 좌표가 달라진다.
   //
-  // 반응하는 것은 URL 이 아니라 **서버가 준 focusMonth** 다. 아래 syncPosition 이 스크롤을 따라
-  // history.replaceState 로 적는 ?month= 는 라우터 상태만 바꾸고 서버 컴포넌트를 다시 돌리지 않아
-  // 이 prop 을 못 건드린다(Next 문서: replaceState 는 usePathname·useSearchParams 와만 동기화).
-  // 즉 스크롤이 만든 월 변경은 여기 안 닿는다 — 스크롤이 착지를 부르고 착지가 다시 스크롤을 부르는
-  // 피드백 루프가 애초에 성립하지 않는다. 셀렉터 점프·홈 딥링크만 router.push 라 여기에 닿는다.
+  // 반응하는 것은 URL 이 아니라 **서버가 준 focusMonth** 다. 아래 commitPosition 이 스크롤을 따라
+  // 적는 것은 history.replaceState 라 라우터 상태만 바꾸고 서버 컴포넌트를 다시 돌리지 않는다
+  // (restore-reducer 가 ACTION_RESTORE 로 기존 CacheNode 를 재사용하고 canonicalUrl 만 바꾼다 —
+  // 네트워크 요청 0). 즉 스크롤이 만든 월 변경은 여기 안 닿는다 — 스크롤이 착지를 부르고 착지가
+  // 다시 스크롤을 부르는 피드백 루프가 애초에 성립하지 않는다. 셀렉터 점프·홈 딥링크만 router.push 라
+  // 여기에 닿고, 그때는 landedRef 가 이미 그 달이라 두 번 앉지 않는다.
   useLayoutEffect(() => {
-    const el = scrollRef.current
-    if (!el || landedRef.current === data.focusMonth) return
-    landedRef.current = data.focusMonth
-    const focus = data.months.find(m => m.month === data.focusMonth)
-    const focusHasToday = !!focus && todayDay != null
-      && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
-    el.scrollLeft = focusHasToday && todayX != null
-      ? Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
-      : focus ? (focus.startDay - 1) * DAY_W : 0
-  }, [data.months, data.focusMonth, todayDay, todayX])
+    if (landedRef.current !== data.focusMonth || landedFromRef.current !== data.from) {
+      landedRef.current = data.focusMonth
+      landedFromRef.current = data.from
+      onViewMonthChange?.(data.focusMonth)
+      const el = scrollRef.current
+      // 변동이 없는 창에서는 트랙 자체가 없다(카드 대신 빈 상태). 그래도 위의 '보고 있는 달'은
+      // 알려야 탭 접미가 그 달을 말한다.
+      if (el) {
+        const focus = data.months.find(m => m.month === data.focusMonth)
+        const focusHasToday = !!focus && todayDay != null
+          && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
+        el.scrollLeft = focusHasToday && todayX != null
+          ? Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
+          : focus ? (focus.startDay - 1) * DAY_W : 0
+        // 브라우저가 clamp 한 **실제** 값을 되읽는다. 이 자리에서 한 픽셀도 안 움직였으면
+        // 아래 commitPosition 이 URL 을 안 적는다 — 착지가 낸 스크롤 이벤트로 옆 달이 적히던 자리다.
+        landedLeftRef.current = el.scrollLeft
+      }
+    }
+    paintToday()
+  }, [data.months, data.focusMonth, data.from, todayDay, todayX, paintToday, onViewMonthChange])
 
-  // 스크롤 추적 — ① '오늘로' 버튼을 띄울지 ② 보고 있는 달을 URL 에 적을지.
-  //
-  // URL 갱신은 반드시 history.replaceState 다. router.replace 는 서버 왕복을 다시 돌고,
-  // push 였다면 스크롤 한 번에 히스토리가 수십 칸 쌓여 뒤로가기가 못 쓰게 된다. 네이티브
-  // history API 는 Next 라우터에 연결돼 있어 useSearchParams 를 구독한 월 셀렉터가 따라온다.
-  const syncPosition = useCallback(() => {
+  /**
+   * 스크롤이 멎었을 때 — 보고 있는 달을 URL 과 위(탭 접미)로 알린다.
+   *
+   * **첫 인자는 반드시 null 이다.** Next 는 window.history.replaceState 를 패치해 두는데
+   * (app-router.js) 그 패치 첫 줄이 `if (data?.__NA || data?._N) return originalReplaceState(...)`
+   * 이고, window.history.state 에는 라우터가 심어 둔 __NA 가 **항상** 들어 있다. 종전처럼
+   * window.history.state 를 되먹이면 이 가드에 걸려 라우터 동기화를 통째로 건너뛰고 주소창만
+   * 바뀐다 — 그래서 useSearchParams 를 구독한 월 셀렉터가 영영 못 들었다(운영자 신고 2026-08-20).
+   * null 을 넘기면 copyNextJsInternalHistoryState 가 __NA 와 내부 트리를 알아서 복사하므로
+   * 상태 손실이 없다(Next 공식 문서 Native History API 절의 예제도 전부 null 이다).
+   *
+   * router.replace 는 서버 왕복을 다시 돌고, push 였다면 스크롤 한 번에 히스토리가 수십 칸 쌓여
+   * 뒤로가기가 못 쓰게 된다. 그래서 여전히 네이티브 replaceState 다.
+   */
+  const commitPosition = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
+    paintToday()
+    // 착지 자리 그대로면 아직 아무도 손대지 않은 것이다.
+    if (landedLeftRef.current != null && el.scrollLeft === landedLeftRef.current) return
     const view = Math.max(0, el.clientWidth - ROOM_COL)
-    setTodayOff(todayX == null ? false : todayX < el.scrollLeft || todayX > el.scrollLeft + view)
-
     // 판정 지점은 왼쪽 끝이 아니라 뷰포트의 1/4 — 착지 규칙(오늘을 1/4 에)과 같은 자를 써야
     // 방금 내려앉은 자리에서 곧바로 옆 달로 적히지 않는다.
+    // 단 트랙 오른쪽 끝에서는 스크롤이 clamp 돼 1/4 판정점이 마지막 달에 못 닿는다(넓은 화면에서
+    // 산술로 확인: 245일 창·뷰포트 1130px 이면 마지막 달 착지가 직전 달로 판정된다). 끝에 닿았으면
+    // 마지막 달로 확정한다.
+    const atRightEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1
     const leftDay = Math.floor((el.scrollLeft + view / 4) / DAY_W) + 1
-    const m = data.months.find(mm => leftDay >= mm.startDay && leftDay < mm.startDay + mm.days)
+    const m = atRightEnd
+      ? data.months[data.months.length - 1]
+      : data.months.find(mm => leftDay >= mm.startDay && leftDay < mm.startDay + mm.days)
     if (!m) return
     // 착지 기준점을 손으로 끈 자리로 옮긴다 — 이 ref 는 '지금 트랙이 보고 있는 달'이어야
     // 셀렉터가 그 달에서 한 칸 물러설 때(9월까지 끌고 와서 ◀ → 8월) 착지가 다시 걸린다.
     landedRef.current = m.month
+    onViewMonthChange?.(m.month)
     const url = new URL(window.location.href)
-    if (url.searchParams.get('month') === m.month) return
-    url.searchParams.set('month', m.month)
-    window.history.replaceState(window.history.state, '', url)
-  }, [data.months, todayX])
+    if (url.searchParams.get(TRACK_MONTH_KEY) === m.month) return
+    // 트랙 위치는 전용 키다. ?month= 는 홈에서 정당하게 실려 온 조회 장부 월이라 손대지 않는다
+    // (lib/monthParam TRACK_MONTH_KEY). 어느 탭을 보고 있는지는 이 컴포넌트의 일이 아니다 —
+    // 상위(RoomManageClient)가 ?tab= 을 소유한다.
+    url.searchParams.set(TRACK_MONTH_KEY, m.month)
+    window.history.replaceState(null, '', url)
+  }, [data.months, paintToday, onViewMonthChange])
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
+    let raf: number | null = null
+    let lastLeft = -1
+    // 표시(‘오늘로’)는 rAF 로 즉시 따라간다 — 디바운스에 묶어 두면 관성으로 흐르는 내내
+    // 버튼이 틀린 상태로 남는다. 스스로 재예약하는 루프라 scroll 발화에 공백이 있어도 이어진다.
+    const tick = () => {
+      const cur = scrollRef.current
+      if (!cur) { raf = null; return }
+      if (cur.scrollLeft !== lastLeft) { lastLeft = cur.scrollLeft; paintToday() }
+      raf = requestAnimationFrame(tick)
+    }
+    const stopRaf = () => { if (raf != null) { cancelAnimationFrame(raf); raf = null } }
     const onScroll = () => {
+      if (raf == null) { lastLeft = -1; raf = requestAnimationFrame(tick) }
       if (timer) clearTimeout(timer)
-      timer = setTimeout(syncPosition, 180)
+      // URL 쓰기는 종전대로 180ms 디바운스다. rAF 가 죽는 환경(일부 모바일 관성 구간)에서도
+      // 이 타이머는 살아 있어 표시만 늦을 뿐 상태가 어긋나지 않는다.
+      timer = setTimeout(() => { stopRaf(); commitPosition() }, 180)
     }
     el.addEventListener('scroll', onScroll, { passive: true })
-    return () => { el.removeEventListener('scroll', onScroll); if (timer) clearTimeout(timer) }
-  }, [syncPosition])
+    return () => { el.removeEventListener('scroll', onScroll); if (timer) clearTimeout(timer); stopRaf() }
+  }, [commitPosition, paintToday])
 
-  const scrollToToday = () => {
+  /**
+   * '오늘로' — 오늘이 트랙 안이면 그 자리로 스크롤하고, 창 밖이면 이번 달로 다시 조회한다.
+   * 라벨을 가르지 않는 이유는 사용자의 뜻이 하나이기 때문이다("오늘로 데려다 줘"). 창 경계는
+   * 보이지 않는 구현 사실이고, 두 경로의 종착지는 착지 규칙이 같아 문자 그대로 같은 자리다.
+   */
+  const goToday = () => {
+    // 창 밖이면 스크롤로는 못 닿는다 — 다시 조회한다. 트랙이 아예 없는 창(변동 0)에서도 이 길이다.
+    if (todayX == null) { jumpToMonth(data.today.slice(0, 7)); return }
     const el = scrollRef.current
-    if (!el || todayX == null) return
+    if (!el) return
     el.scrollLeft = Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
-    setTodayOff(false)
+    paintToday()
   }
 
   const cols = `${ROOM_COL}px repeat(${days}, ${DAY_W}px)`
@@ -207,7 +302,7 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
     <div className="space-y-3">
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
-      <UpcomingRow items={data.upcoming} onOpen={openLease} />
+      <UpcomingRow items={data.upcoming} todayInRange={todayDay != null} onOpen={openLease} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -218,14 +313,21 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
         </div>
       )}
 
+      {/* relative — '오늘로'가 이 안에 뜬다. 카드 **밖**에 두는 이유는, 변동이 없는 창(먼 달로
+          점프하면 흔하다)에서는 카드 자체가 안 서서 버튼이 함께 사라지고 돌아올 길이 없어지기
+          때문이다. 자리는 종전과 같다(카드 오른쪽 아래). */}
+      <div className="relative">
       {data.rows.length === 0 ? (
         <EmptyState
           title="이 기간에 입퇴실 변동이 없습니다"
           description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
+          // 트랙이 없는 창에서는 아래 부유 알약이 설명문 위에 앉는다(빈 상태 안쪽 여백 32px 대
+          // 알약 윗변 54px = 세로 22px 겹침). 빈 상태의 CTA 자리가 곧 '여기서 나가는 길'이다(§17).
+          action={todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
         />
       ) : (
-        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). relative — '오늘로'가 이 안에 뜬다. */
-        <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
+        <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           {/* 범례 — 거주와 예약이 색으로만 갈리고 있었다. 스크롤러 **밖**이라야 트랙과 함께 흘러가지
               않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
               공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
@@ -253,8 +355,9 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
                 <div className="sticky left-0 z-30 flex items-end px-2 pb-1.5 text-[0.65625rem] font-bold uppercase"
                   style={{ gridColumn: '1 / 2', gridRow: '1 / 3', background: 'var(--cream)', color: 'var(--ink-m)' }}>호실</div>
 
-                {data.months.map(m => (
-                  <MonthLabel key={m.month} m={m} />
+                {data.months.map((m, i) => (
+                  <MonthLabel key={m.month} m={m}
+                    showYear={i === 0 || m.month.slice(0, 4) !== data.months[i - 1].month.slice(0, 4)} />
                 ))}
 
                 {/* '오늘' — 월 라벨과 겹치는 자리에서는 오늘이 이긴다(z-20 · 불투명). */}
@@ -284,17 +387,22 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
               ))}
             </div>
           </div>
-
-          {/* 오늘이 화면 밖일 때만 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이. */}
-          {todayOff && (
-            <button type="button" onClick={scrollToToday}
-              className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
-              style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
-              오늘로
-            </button>
-          )}
         </div>
       )}
+
+      {/* 오늘이 화면 밖일 때 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
+          보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
+          첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜지고,
+          그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday).
+          **트랙이 있을 때만 부유시킨다** — 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다. */}
+      {data.rows.length > 0 && (
+      <button ref={todayBtnRef} type="button" onClick={goToday}
+        className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+        style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
+        오늘로
+      </button>
+      )}
+      </div>
 
       {/* ── 트랙의 양 끝 ── 범위 밖의 사실과 그리로 가는 길. 트랙 끝에 붙이면 수천 px 을 끌어야
           닿으므로 카드 밖 한 줄로 세운다(320px 에서도 손이 닿는 자리다). */}
@@ -307,8 +415,12 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
           )}
           {beyond && (
             <div className="ml-auto flex items-center gap-2">
+              {/* 날짜는 fmtDateDot 이다 — 이 줄이 가리키는 날은 트랙 **밖**이라 몇 월인지만으로는
+                  어느 해인지 알 수 없다(창이 해를 넘는 자리에 서면 흔하다). fmtMD 자체를 연도
+                  포함으로 바꾸지 않는다: 그 함수는 '짧은 인라인' 정본이고 소비처가 9파일 14곳이라
+                  확인 다이얼로그 본문까지 한꺼번에 길어진다. */}
               <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>
-                이후 예정 {beyond.count}건 · 최초 {fmtMD(beyond.firstDate)}
+                이후 예정 {beyond.count}건 · 최초 {fmtDateDot(beyond.firstDate)}
               </p>
               <Btn variant="ghost" size="sm" onClick={() => jumpToMonth(beyond.firstDate.slice(0, 7))}>
                 그때로 이동
@@ -320,6 +432,15 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
     </div>
   )
 }
+
+/**
+ * memo 인 이유. 이 화면에는 useSearchParams 구독자가 여럿이라(하단 내비·사이드바·MonthSync·
+ * 월 셀렉터·RoomManageClient) URL 이 한 번 바뀔 때마다 부모가 다시 그려진다. 트랙은 열일곱 행 ×
+ * 수백 칸이라 그때마다 함께 그리면 스크롤이 멎는 순간 프레임이 떨어진다. 이 컴포넌트가 훅으로
+ * URL 을 구독하지 않게 만든 덕에(jumpToMonth 가 window.location 을 그 자리에서 읽는다) memo 가
+ * 실제로 산다 — data 는 서버 prop 이라 참조가 안정적이다.
+ */
+export const MoveCalendar = memo(MoveCalendarView)
 
 /**
  * 충돌 요약 한 줄 — §18 Status Row. 톤이 둘이다.
@@ -406,14 +527,28 @@ function ConflictBtn({ onClick, busy, acked, children }: {
 /**
  * 월 밴드의 한 칸 — 라벨은 그 달 안에서 sticky 라, 달 중간을 보고 있어도 어느 달인지 안 잃는다.
  * sticky 요소는 자기 칸(그리드 셀) 안에 갇히므로 다음 달로 넘어가면 라벨도 함께 밀려 나간다.
+ *
+ * 연도는 **범위의 첫 달과 해가 바뀌는 달에만** 붙인다. 종전에는 어디에도 없어서 해를 넘는
+ * 범위에서 "1월"이 몇 년인지 알 수 없었다(회귀가 2026-12 → 2027-01 케이스를 이미 고정하고 있다).
+ * 매 달 적으면 여덟 번 반복되는 "2026년"이 실제 정보인 월과 시각적으로 동급이 되므로,
+ * 무게와 색으로 눌러 평소엔 안 읽히고 필요할 때만 읽히게 둔다. 문법은 형제인 월 셀렉터
+ * 라벨('2026년 8월')과 같다 — 한 화면에서 두 자리가 같은 문자열을 쓴다.
+ *
+ * tnum — 네 자리 연도가 들어오면서 옆 달 라벨과 자폭이 갈린다(§05 '모든 데이터 숫자 tnum').
  */
-function MonthLabel({ m }: { m: MoveRangeMonth }) {
+function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
   return (
     <div className="min-w-0 py-1"
       style={{ gridColumn: `${m.startDay + 1} / ${m.startDay + m.days + 1}`, gridRow: '1 / 2', borderLeft: m.startDay === 1 ? undefined : '1px solid var(--warm-border)' }}>
-      <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none"
+      <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none tnum"
         style={{ left: ROOM_COL, background: 'var(--cream)' }}>
-        <span className="font-bold" style={{ color: 'var(--ink-2)' }}>{Number(m.month.slice(5, 7))}월</span>
+        {/* 연도와 월은 **한 덩어리로 읽혀야 한다** — gap-1.5(6px)를 사이에 두면 형제인 월 셀렉터
+            라벨('2026년 8월', 보통 공백 약 4px)과 자간이 갈린다. 여기서는 보통 공백으로 잇고
+            gap 은 '변동 없음' 과의 간격으로만 남긴다. */}
+        <span className="font-bold" style={{ color: 'var(--ink-2)' }}>
+          {showYear && <span className="font-normal" style={{ color: 'var(--ink-m)' }}>{`${m.month.slice(0, 4)}년 `}</span>}
+          {Number(m.month.slice(5, 7))}월
+        </span>
         {/* 빈 달을 말없이 두면 고장으로 읽힌다 — 비어 있는 것이 사실이라고 옅게 적어 둔다. */}
         {m.eventCount === 0 && <span style={{ color: 'var(--ink-m)' }}>변동 없음</span>}
       </span>
@@ -421,9 +556,16 @@ function MonthLabel({ m }: { m: MoveRangeMonth }) {
   )
 }
 
-/** 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다. */
-function UpcomingRow({ items, onOpen }: {
+/**
+ * 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다.
+ *
+ * todayInRange 가 필요한 이유. upcoming 은 **창 안의** 변동에서만 걸러진다. 먼 달로 점프해
+ * 창이 오늘을 안 물면 그 목록은 반드시 비고, 내일 퇴실이 있어도 이 줄이 "예정된 입퇴실이
+ * 없습니다"라고 적는다. 없는 것과 여기서 셀 수 없는 것은 다른 말이다.
+ */
+function UpcomingRow({ items, todayInRange, onOpen }: {
   items: MoveEvent[]
+  todayInRange: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
 }) {
   const shown = items.slice(0, UPCOMING_MAX)
@@ -434,7 +576,9 @@ function UpcomingRow({ items, onOpen }: {
         <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>
           다가오는 {UPCOMING_DAYS}일
         </p>
-        {items.length === 0 ? (
+        {!todayInRange ? (
+          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖입니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
+        ) : items.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--ink-s)' }}>예정된 입퇴실이 없습니다.</p>
         ) : (
           <>
@@ -627,13 +771,31 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
           color: 'var(--ink-2)',
           borderRadius: barRadius(bar),
         }}>
+        {/* ── 사건 문구는 막대 **시작 지점**에 못 박는다 ──
+            종전에는 이름과 사건 문구가 한 덩어리로 sticky 라, 508호 김태란 행에서 트랙을 오른쪽
+            끝까지 끌어도 "7/1 506호에서 이사"가 화면 왼쪽에 계속 따라왔다(운영자 신고 2026-08-20).
+            사건은 날짜에 일어나므로 문구도 그 날짜 칸에 있어야 하고, 스크롤과 함께 흘러 나가야 한다.
+            조각은 조립(lib/moveCalendar barLabels)이 낸다 — 화면이 ' · ' 로 다시 쪼개면 사본이 된다. */}
+        {mode === 'full' && bar.startLabel && (
+          <span className="shrink-0 whitespace-nowrap px-2 tnum">{bar.startLabel}</span>
+        )}
         {/* 이름은 막대 안에서 sticky 다. 연속 트랙에서는 한 막대가 화면보다 넓은 일이 흔한데,
             글자를 막대 왼쪽 끝에 붙여 두면 그 막대가 화면을 가득 채운 순간 **이름 없는 색 띠**가
-            된다(390px 에서 열일곱 행 중 열 행이 그랬다). 막대 안에 갇히므로 옆 막대는 안 침범한다. */}
+            된다(390px 에서 열일곱 행 중 열 행이 그랬다). 이 껍데기가 sticky 의 컨테이닝 블록이라
+            이름이 양옆 사건 문구를 침범하지 않고 그 사이에서만 미끄러진다. */}
         {/* tnum — 이 라벨에는 날짜뿐 아니라 호실번호도 들어온다(이사 문구). 옆 열의 같은 숫자와 자폭이 갈리면 안 된다. */}
-        <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
-          {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
+        <span className="min-w-0 flex-1 flex">
+          <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
+            {mode === 'outside' ? '' : mode === 'full' && bar.stateLabel
+              ? `${bar.tenantName} · ${bar.stateLabel}`
+              : bar.tenantName}
+          </span>
         </span>
+        {/* 끝 문구는 막대 **끝 지점**에. 9/30 퇴실은 9/30 칸에 있어야 하고, 7월을 보고 있을 때
+            화면에 있으면 안 된다(513호 민경진·522호 이경호가 같은 증상이었다). */}
+        {mode === 'full' && bar.endLabel && (
+          <span className="shrink-0 whitespace-nowrap px-2 tnum">{bar.endLabel}</span>
+        )}
       </button>
       {side && ink && (
         <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none tnum"
