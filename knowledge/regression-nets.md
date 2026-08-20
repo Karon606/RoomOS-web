@@ -44,6 +44,13 @@ tsc 가 중복 식별자 오류로 실패한다. pre-push 가 먼저 지운다(`
   ctaClicks·activeMs·유령 섹션 선언). build 게이트에 물려 있다
 - **check-short-stay-reservation** 단기 예약금 분해 3축 — 단기 퇴실의 '보증금 몰취'(기준선 0)·분해 규칙 영업장의 단기 계약에 보증금 수납 신규 생성(발효일 컷오프)·분해 정합(청소비 행 중복·계약 청소비 상한 이탈·보증금 공존). 소스 가드가 분해 발동 정본·청소비 detail 문법·취소 대칭을 함께 본다. 자세히는 [[short-stay-policy]]
 - **verify-recurring-estimate** / **check-restock-hub-drift** / **check-room-stay-drift** 데이터 드리프트
+- **check-move-calendar-drift**(2026-08-20 신설) 입퇴실 캘린더의 **표시 정합** 3축 — 이사한 계약
+  (모집단, 기준선 1 래칫) · 공실 오칠(캘린더가 비웠다고 칠한 날에 그 방의 **마감된** 구간이 실재)
+  · 막대 출처 이탈(거주 막대의 id 가 실재하는 구간 id 이고 방·시작이 맞는가). 화면과 **같은
+  조회·같은 조립**(lib/moveCalendarData · lib/moveCalendar)을 그대로 부른다 — 사본을 들면 조회가
+  바뀔 때 그물만 옛 규칙에 남는다. 소스 가드 4가 조회의 구간 적재·창 조건·context 방 조건·조립의
+  조각 펴기를 함께 본다. **이 그물이 필요했던 이유**: check-room-stay-drift 7축은 '데이터가
+  규약대로인가'만 물어서, 데이터가 옳은데 화면이 틀린 상태를 아무도 못 봤다. 자세히는 [[domain-room-stay]]
 
 verify-money-consistency 는 돈 밖으로도 넓어졌다 — 상태 전이표 검사·예약 선납 재앵커 호출부 4곳·
 Drive 공개 권한 명단·영수증 주소 형태·도장 임베드·캘린더 토큰 CSPRNG. 자세히는 [[public-asset-exposure]].

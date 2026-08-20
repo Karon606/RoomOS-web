@@ -25,6 +25,30 @@ export function fmtRoomNo(no: string | null | undefined, empty = '—'): string 
 }
 
 /**
+ * 호실번호에 방향 조사를 붙인 조각 — '508호로' · '사무실로' · '옥탑방으로' · 'A동-3으로'.
+ *
+ * 왜 함수가 필요한가. 호실번호는 숫자만이 아니다 — 등록 폼이 'A동-3'·'옥탑방'을 예시로 권하고,
+ * 제기역점에는 이미 '사무실'이 있다. 위 규칙대로 숫자가 아니면 '호'가 안 붙으므로 '로'를 그냥
+ * 이어 붙이면 '옥탑방로'·'A동-3로'가 된다. 특정 영업장의 호실이 다 숫자라는 것은 근거가 못 된다.
+ *
+ * 판정은 마지막 글자의 종성이다. 없거나 'ㄹ'이면 '로', 아니면 '으로'.
+ * 숫자로 끝나면 그 숫자를 읽는 소리로 본다 — 영(ㅇ)·삼(ㅁ)·육(ㄱ)만 '으로'다.
+ */
+export function roomNoWithRo(no: string | null | undefined, empty = '—'): string {
+  const label = fmtRoomNo(no, empty)
+  const last = label.slice(-1)
+  const code = last.codePointAt(0) ?? 0
+  let euro = false
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    const jong = (code - 0xac00) % 28
+    euro = jong !== 0 && jong !== 8   // 8 = ㄹ
+  } else if (/\d/.test(last)) {
+    euro = '036'.includes(last)
+  }
+  return `${label}${euro ? '으로' : '로'}`
+}
+
+/**
  * 호실 여럿을 문장 안에 세우는 한 줄 — '601호' · '601호·602호' · '601호·602호 외 1건'.
  *
  * 딸린 계약 경고가 두 화면(수정 폼·상태전환 미니폼)에서 같은 말을 해야 해서 여기 둔다.

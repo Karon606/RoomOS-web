@@ -17,10 +17,9 @@ import {
 } from '@/lib/google-drive'
 import { looksLike360 } from '@/lib/driveImage'
 import { applyScheduledRentsFor } from '@/lib/scheduledRent'
-import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
-import { displayName } from '@/lib/displayName'
-import { kstMonthStr, kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
-import { buildMoveCalendar, buildMoveRange, monthLastDay, shiftMonth, type MoveCalendarLease, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
+import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
+import { buildMoveCalendar, buildMoveRange, monthLastDay, shiftMonth, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
+import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases } from '@/lib/moveCalendarData'
 import { createOverlapAck, loadOverlapAcks, softDeleteOverlapAck } from '@/lib/overlapAck'
 
 async function getPropertyId() {
@@ -82,90 +81,14 @@ export async function getRooms() {
 }
 
 // ── 입퇴실 캘린더 공통 재료 ────────────────────────────────────────
-// 월 창(홈 '이달 입퇴실 N건')과 연속 범위(호실 관리 입퇴실 탭)가 같은 select·같은 변환을 쓴다.
-// 둘이 사본을 들면 같은 계약이 두 화면에서 다른 이름·다른 날짜로 뜬다.
-
-/** 취소를 뺀 전 생애 — 퇴실 완료까지 읽어야 지난 달의 퇴실이 트랙에서 안 사라진다. */
-const MOVE_LEASE_STATUSES = ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] as const
-
-/** select 최소 — 이 화면은 날짜·상태·이름만 쓴다. 이름은 lib/displayName 이 고른다(홈 타일과 같은 규칙). */
-const MOVE_LEASE_SELECT = {
-  id: true,
-  status: true,
-  isShortTerm: true,
-  moveInDate: true,
-  moveOutDate: true,
-  expectedMoveOut: true,
-  roomId: true,
-  room: { select: { roomNo: true } },
-  tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } },
-} as const
-
-/** MOVE_LEASE_SELECT 가 뽑는 모양. 추론에 맡기면 select 가 두 곳에서 불릴 때 원본 모델로 넓어진다. */
-type MoveLeaseRow = {
-  id: string
-  status: string
-  isShortTerm: boolean
-  moveInDate: Date | null
-  moveOutDate: Date | null
-  expectedMoveOut: Date | null
-  roomId: string | null
-  room: { roomNo: string } | null
-  tenant: { id: string; name: string; englishName: string | null; nickname: string | null; displayNameStyle: string | null }
-}
-
-/** 날짜는 'YYYY-MM-DD' 문자열로 고정 — getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다. */
-const dbYmd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
-
-const toMoveLease = (l: MoveLeaseRow): MoveCalendarLease => ({
-  id: l.id,
-  status: l.status,
-  isShortTerm: l.isShortTerm,
-  moveInDate: dbYmd(l.moveInDate),
-  moveOutDate: dbYmd(l.moveOutDate),
-  expectedMoveOut: dbYmd(l.expectedMoveOut),
-  roomId: l.roomId!,
-  roomNo: l.room?.roomNo ?? '',
-  tenantId: l.tenant.id,
-  tenantName: displayName(l.tenant, l.tenant.displayNameStyle),
-})
+// 월 창(홈 '이달 입퇴실 N건')과 연속 범위(호실 관리 입퇴실 탭)가 lib/moveCalendarData 한 벌을 쓴다.
+// 조회가 이 파일 밖에 있는 이유는 감지망 때문이다 — 그물이 사본을 들면 조회가 바뀔 때 옛 규칙에
+// 남아 통과를 말한다(check-move-calendar-drift 가 같은 fetchMoveLeases 를 부른다).
 
 /** 연속 범위 경계 — 과거는 한 달, 미래는 데이터가 정하되 바닥 +2 · 천장 +6 개월. */
 const RANGE_PAST_MONTHS = 1
 const RANGE_MIN_AHEAD = 2
 const RANGE_MAX_AHEAD = 6
-
-/**
- * 그 범위의 변동 계약과, 변동이 있는 방의 점유 계약 전부.
- *
- * ①은 과대근사다 — 퇴실의 진짜 날짜가 실제일인지 예정일인지는 한 줄의 SQL 조건으로 못 적는다.
- * 그 선은 조립(lib/moveCalendar)이 한 번만 긋는다. 충돌 판정도 거기서 occupancyOverlaps 를
- * 부른다 — 화면도 이 액션도 사본을 들지 않는다.
- */
-async function fetchMoveLeases(propertyId: string, from: string, to: string): Promise<{ changed: MoveCalendarLease[]; context: MoveCalendarLease[] }> {
-  const first = ymdToDbDate(from)
-  const last = ymdToDbDate(to)
-  const changed = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId,
-      roomId: { not: null },
-      status: { in: [...MOVE_LEASE_STATUSES] },
-      OR: [
-        { moveInDate:      { gte: first, lte: last } },
-        { expectedMoveOut: { gte: first, lte: last } },
-        { moveOutDate:     { gte: first, lte: last } },
-      ],
-    },
-    select: MOVE_LEASE_SELECT,
-  })
-  const roomIds = [...new Set(changed.map(l => l.roomId!))]
-  const context = roomIds.length === 0 ? [] : await prisma.leaseTerm.findMany({
-    where: { propertyId, roomId: { in: roomIds }, status: { in: OCCUPYING_STATUSES } },
-    select: MOVE_LEASE_SELECT,
-  })
-
-  return { changed: changed.map(toMoveLease), context: context.map(toMoveLease) }
-}
 
 /**
  * 입퇴실 캘린더 한 달치 — 그 달에 입주·퇴실·예약 시작이 있는 방의 체류 구간.
@@ -181,7 +104,7 @@ async function fetchMoveLeases(propertyId: string, from: string, to: string): Pr
 export async function getMoveCalendarMonth(month: string): Promise<MoveCalendarMonth> {
   const { propertyId } = await getPropertyId()
   const target = /^\d{4}-\d{2}$/.test(month) ? month : kstMonthStr()
-  const { changed, context } = await fetchMoveLeases(propertyId, `${target}-01`, monthLastDay(target))
+  const { changed, context } = await fetchMoveLeases(prisma, propertyId, `${target}-01`, monthLastDay(target))
 
   return buildMoveCalendar({
     month: target,
@@ -241,7 +164,7 @@ export async function getMoveCalendarRange(focus?: string): Promise<MoveCalendar
   const to = monthLastDay(endMonth)
   const beyondDates = changeDates.filter(d => d > to).sort()
 
-  const { changed, context } = await fetchMoveLeases(propertyId, from, to)
+  const { changed, context } = await fetchMoveLeases(prisma, propertyId, from, to)
   return buildMoveRange({
     from,
     to,

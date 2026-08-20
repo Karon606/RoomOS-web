@@ -15,6 +15,7 @@ import {
 import { propagateDueDayToSubLeases, sameDueDay } from '../lib/dueDay'
 import { propagateMoveInDateToSubLeases, sameMoveInDate, moveInYmd } from '../lib/moveInDate'
 import { billForLeaseMonth, monthOfDate } from '../lib/billing'
+import { validateMoveDate } from '../lib/roomStay'
 
 let pass = 0
 let fail = 0
@@ -367,8 +368,60 @@ async function moveInPropagationTests() {
   }
 }
 
+// ── 이사일 검증 ──────────────────────────────────────────────────
+//
+// 이 하루가 옛 거주 구간의 끝이자 새 구간의 시작이 된다. recordRoomChange 는 at 을 아무 검증
+// 없이 두 칸에 그대로 쓰므로, 여기서 막지 못한 날짜는 곧바로 역전 구간이나 없던 겹침이 된다.
+// 그 둘은 캘린더에서 빨간 충돌 줄로 올라오고 운영자는 방금 자기가 만든 것인 줄 모른다.
+
+type FakeOther = { moveInDate: Date | null; moveOutDate: Date | null; expectedMoveOut: Date | null; name: string }
+
+function fakeMoveDateDb(openStart: Date | null, others: FakeOther[]) {
+  return {
+    roomStay: {
+      findFirst: async () => (openStart === null ? null : { startDate: openStart }),
+    },
+    leaseTerm: {
+      findMany: async () => others.map(o => ({
+        moveInDate: o.moveInDate, moveOutDate: o.moveOutDate, expectedMoveOut: o.expectedMoveOut,
+        tenant: { name: o.name },
+      })),
+    },
+  } as unknown as Parameters<typeof validateMoveDate>[0]
+}
+
+const TODAY_MV = '2026-08-20'
+const mv = (at: string, p?: { openStart?: string | null; others?: FakeOther[]; moveIn?: string | null; moveOut?: string | null }) =>
+  validateMoveDate(fakeMoveDateDb(p?.openStart === null ? null : D(p?.openStart ?? '2026-01-05'), p?.others ?? []), 'L', {
+    at, fromRoomId: 'r506', today: TODAY_MV,
+    moveInDate: p?.moveIn === undefined ? '2026-01-05' : p.moveIn,
+    moveOutDate: p?.moveOut ?? null,
+  })
+
+async function moveDateTests() {
+  eq('이사일 · 지난 날짜는 통과(실제 이사는 대개 저장보다 먼저다)', await mv('2026-07-01'), null)
+  eq('이사일 · 오늘도 통과', await mv(TODAY_MV), null)
+  blocked('이사일 · 미래는 막는다(감지망 ⑥ 미래 시작 열린 구간)', await mv('2026-08-21'), true)
+  blocked('이사일 · 형식이 틀리면 막는다', await mv('2026-8-1'), true)
+  blocked('이사일 · 지금 방에 들어온 날보다 이를 수 없다', await mv('2026-01-04'), true)
+  eq('이사일 · 들어온 날 당일은 통과', await mv('2026-01-05'), null)
+  blocked('이사일 · 퇴실일보다 뒤일 수 없다', await mv('2026-08-15', { moveOut: '2026-08-10' }), true)
+  // 열린 구간이 없으면(드리프트) 이 저장으로 확정될 입주일을 기준으로 본다.
+  blocked('이사일 · 구간이 없으면 입주일이 하한', await mv('2026-01-04', { openStart: null }), true)
+  eq('이사일 · 입주일도 없으면 하한이 없다', await mv('2020-01-01', { openStart: null, moveIn: null }), null)
+
+  // 옛 방의 다음 사람 — 새 방 쪽은 호실 셀렉트가 이미 막지만 옛 방을 보는 가드는 없었다.
+  const 다음사람 = [{ moveInDate: D('2026-08-10'), moveOutDate: null, expectedMoveOut: null, name: '다음' }]
+  eq('이사일 · 다음 사람이 들어오기 전이면 통과', await mv('2026-08-09', { others: 다음사람 }), null)
+  eq('이사일 · 나가는 그날 들어오는 것은 사고가 아니다(당일 회전)', await mv('2026-08-10', { others: 다음사람 }), null)
+  blocked('이사일 · 다음 사람이 들어온 뒤로 늦추면 겹친다', await mv('2026-08-11', { others: 다음사람 }), true)
+  eq('이사일 · 이미 나간 사람과는 안 겹친다',
+    await mv('2026-08-15', { others: [{ moveInDate: D('2025-01-01'), moveOutDate: D('2025-12-31'), expectedMoveOut: null, name: '옛사람' }] }), null)
+}
+
 void dueDayPropagationTests()
   .then(moveInPropagationTests)
+  .then(moveDateTests)
   .then(() => {
     console.log(`\n계약 종속 가드 회귀: ${pass} 통과 / ${fail} 실패`)
     if (fail > 0) process.exit(1)

@@ -23,8 +23,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
-import { fmtRoomNo } from '@/lib/roomNo'
-import { fmtMD } from '@/lib/fmtDate'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
+import { fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
@@ -47,13 +47,35 @@ function estWidth(s: string): number {
   return w
 }
 
-/** 막대 색 — 전부 기존 토큰이다(§03·§04). 거주는 퇴실 계열 카멜, 예약은 info 계열 인디고. */
-function barTone(bar: MoveBar): { bg: string; fg: string } {
-  return bar.kind === 'reserved'
-    // --info-bg 는 알파 .08 이라 트랙 위 막대로는 안 보인다. §03 이 농도가 필요한 자리로 열어 둔
-    // 같은 hue 의 밴드 단계를 쓰고 글자만 --info-fg 로 둔다(라이트 6.16:1 · 다크 5.19:1).
-    ? { bg: 'var(--band-await-bg)', fg: 'var(--info-fg)' }
-    : { bg: 'var(--badge-exit-bg)', fg: 'var(--badge-exit-fg)' }
+/**
+ * 막대 표면 — §03 밴드 티어 두 종. 표면 하나가 상태를 혼자 말하는 자리라 알파가 낮은
+ * 배지·행 틴트가 아니라 이 티어를 쓴다(홈 방 현황 격자와 같은 이유).
+ *
+ * 거주가 올리브인 이유. 종전에는 카멜(--badge-exit-*)이었는데 그 토큰은 v2.0 미등재 v1.1 잔재이고,
+ * 무엇보다 **거주를 '퇴실 예정' 색으로 칠하는 것**이었다. 거주를 색으로 말하는 형제 여덟 자리가
+ * 전부 올리브다(호실 카드·입주자 카드·표 좌측 팁·홈 방 현황). 대비도 이쪽이 낫다 — 거주 대 예약의
+ * 명도차 ΔL* 가 1.7 에서 8.7 로 벌어져 색상 축이 무너지는 색각에서도 두 막대가 갈린다.
+ *
+ * 글자는 둘 다 --ink-2 다(§03 "밴드 위 글자는 다섯 종 모두 --ink-2"). 라이트 8.00:1 · 다크 7.25:1.
+ */
+function barTone(bar: MoveBar): string {
+  return bar.kind === 'reserved' ? 'var(--band-await-bg)' : 'var(--band-paid-bg)'
+}
+
+/**
+ * 막대 하나를 소리로 읽는 문장 — 색이 지고 있던 정보(거주냐 예약이냐)를 말로 옮긴다.
+ *
+ * 날짜 뒤에 조사를 붙이지 않는다. fmtDateKor 은 요일을 괄호로 달아서, '…(수)부터' 로 이으면
+ * 읽는 소리가 "일 괄호 수 부터" 가 된다. 짧은 문장 여럿으로 끊는 편이 낫다.
+ * 이사 문구의 '로'는 정본(roomNoWithRo)이 고른다 — 여기서 조사를 다시 고르면 사본이 된다.
+ */
+function barAria(bar: MoveBar, roomNo: string): string {
+  const what = bar.kind === 'reserved' ? '입실 예약' : '거주'
+  const start = bar.stayFrom ? `시작 ${fmtDateKor(bar.stayFrom)}.` : '시작일 미상.'
+  const end = bar.stayTo ? `종료 ${fmtDateKor(bar.stayTo)}.` : '퇴실일 미정.'
+  const moved = bar.movedFromRoomNo ? ` ${fmtRoomNo(bar.movedFromRoomNo)}에서 이사.`
+    : bar.movedToRoomNo ? ` ${roomNoWithRo(bar.movedToRoomNo)} 이사.` : ''
+  return `${fmtRoomNo(roomNo)} ${bar.tenantName} ${what}. ${start} ${end}${moved}${bar.conflicted ? ' 다른 계약과 겹칩니다.' : ''}`
 }
 
 /** 막대 모서리 — 범위 밖으로 이어지는 쪽은 직각, 트랙 안에서 끝나는 쪽만 둥글다. */
@@ -63,11 +85,21 @@ function barRadius(bar: MoveBar): string {
   return `${l} ${r} ${r} ${l}`
 }
 
-/** 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다. */
+/**
+ * 한 변동의 뱃지 톤·라벨 — 트랙의 막대 색과 같은 축이다.
+ *
+ * 이사가 맨 앞이다. 방을 옮긴 날을 '퇴실'이라 부르면 이 줄을 읽은 운영자가 그 방을 광고에
+ * 올린다 — 오독의 대가가 실제 영업이다. 톤은 중립(info) 이다. 이사는 사고도 예정도 아닌
+ * 사실이고, exit·movein 은 둘 다 카멜이라 눈으로도 안 갈린다.
+ *
+ * 판정은 조립이 끝냈다(MoveEvent.moved). 화면이 'leaseId 가 같고 날짜가 같은 out·in 쌍'을
+ * 다시 세면 그 사본이 곧 두 번째 진실이 된다.
+ */
 function eventTone(e: MoveEvent): { tone: BadgeTone; label: string } {
-  return e.type === 'out' ? { tone: 'exit', label: '퇴실' }
-    : e.kind === 'reserved' ? { tone: 'await', label: '입실 예약' }
-      : { tone: 'movein', label: '입실' }
+  return e.moved ? { tone: 'info', label: '이사' }
+    : e.type === 'out' ? { tone: 'exit', label: '퇴실' }
+      : e.kind === 'reserved' ? { tone: 'await', label: '입실 예약' }
+        : { tone: 'movein', label: '입실' }
 }
 
 export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
@@ -194,7 +226,26 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
       ) : (
         /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). relative — '오늘로'가 이 안에 뜬다. */
         <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <div ref={scrollRef} className="overflow-x-auto" style={{ overscrollBehaviorX: 'contain' }}>
+          {/* 범례 — 거주와 예약이 색으로만 갈리고 있었다. 스크롤러 **밖**이라야 트랙과 함께 흘러가지
+              않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
+              공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
+              막대마다 aria-label 이 종류를 말하므로 스와치를 소리로 읽히면 같은 말이 두 번이다. */}
+          {/* 좌측 인셋은 바로 아래 호실 열(px-2)에 맞춘다 — 한 카드 안에서 세로로 겹쳐 서는 두 글자의
+              레일이 어긋나면 그 자체가 이질감이다. 스와치는 가로로 눕힌다(정사각 10px 은 트랙 위
+              막대와 달리 글자를 안 이고 있어 표면만으로 읽혀야 한다). */}
+          <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2"
+            style={{ borderBottom: '1px solid var(--warm-border)' }}>
+            {([['var(--band-paid-bg)', '거주'], ['var(--band-await-bg)', '입실 예약']] as const).map(([bg, label]) => (
+              <span key={label} className="inline-flex items-center gap-1.5 text-[0.65625rem]" style={{ color: 'var(--ink-m)' }}>
+                <span className="inline-block" style={{ width: 18, height: 9, borderRadius: 'var(--radius-xs)', background: bg }} />
+                {label}
+              </span>
+            ))}
+          </div>
+          {/* 가로 스크롤러는 포커스를 받아야 키보드로 오른쪽 날짜에 닿는다(WCAG 2.1.1). */}
+          <div ref={scrollRef} role="region" aria-label="입퇴실 캘린더 트랙" tabIndex={0}
+            className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
+            style={{ overscrollBehaviorX: 'contain' }}>
             <div className="move-track" style={{ width: trackW }}>
 
               {/* 눈금 두 줄 — 위는 월 밴드, 아래는 날짜. 호실 열이 둘을 가로질러 sticky 로 선다. */}
@@ -208,7 +259,8 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
 
                 {/* '오늘' — 월 라벨과 겹치는 자리에서는 오늘이 이긴다(z-20 · 불투명). */}
                 {todayDay != null && (
-                  <span className="z-20 self-center justify-self-start whitespace-nowrap rounded-full px-1.5 py-0.5 text-[0.625rem] font-bold leading-none"
+                  // 10.5px 이 §05 하한이다. 같은 파일의 다른 작은 글자가 전부 그 값이다.
+                  <span className="z-20 self-center justify-self-start whitespace-nowrap rounded-full px-1.5 py-0.5 text-[0.65625rem] font-bold leading-none"
                     style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / 2', background: 'var(--coral)', color: 'var(--on-solid)' }}>
                     오늘
                   </span>
@@ -389,7 +441,8 @@ function UpcomingRow({ items, onOpen }: {
             {shown.map(e => {
               const { tone, label } = eventTone(e)
               return (
-                <button key={`${e.leaseId}-${e.type}`} type="button"
+                // 키는 막대 id 다 — 이사는 한 계약이 같은 날 두 방에서 변동을 내므로 계약 id 로는 겹친다.
+                <button key={`${e.barId}-${e.type}`} type="button"
                   onClick={() => onOpen(e.roomId, e.leaseId, e.tenantId)}
                   className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
                   <span className="tnum font-semibold" style={{ color: 'var(--ink-2)' }}>{fmtMD(e.date)}</span>
@@ -514,8 +567,10 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
         })}
 
         {/* 막대 */}
+        {/* 막대 — 키는 구간 id 다. 계약 id 로 쓰면 나갔다 같은 방으로 돌아온 계약에서 키가 겹쳐
+            React 가 stale DOM 을 남긴다(같은 사고 전례: RoomsClient 정렬 고착, 신고 7007d2c1). */}
         {placed.map(p => (
-          <Bar key={p.bar.leaseId} p={p} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
+          <Bar key={p.bar.id} p={p} roomNo={row.roomNo} onOpen={() => onOpen(row.roomId, p.bar.leaseId, p.bar.tenantId)} />
         ))}
 
         {/* 겹친 구간 — 막대 위에 얹는다. 반투명이라 아래 막대가 비치고, 그 위 글자는 --ink-2 다(§03).
@@ -550,35 +605,38 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   )
 }
 
-function Bar({ p, onOpen }: { p: Placed; onOpen: () => void }) {
+function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => void }) {
   const { bar, full, mode, side, ink } = p
-  const tone = barTone(bar)
 
   return (
     <>
       {/* 이 버튼에 overflow-hidden 을 걸면 안 된다 — 그 순간 버튼 자신이 스크롤 컨테이너가 되어
           안의 sticky 이름이 트랙이 아니라 버튼에 붙고, 트랙을 끌어도 따라오지 않는다(실측에서
-          한 번 걸렸다). 넘침은 안쪽 span 의 truncate 가 자기 상자에서 막는다. */}
-      <button type="button" onClick={onOpen} title={full}
-        className="min-w-0 self-center flex items-center text-[0.6875rem] font-semibold transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+          한 번 걸렸다). 넘침은 안쪽 span 의 truncate 가 자기 상자에서 막는다.
+
+          aria-label 이 필수인 이유. 라벨이 바 밖으로 나가는 mode 에서는 버튼 안 글자가 빈
+          문자열이라 이름 없는 버튼이 되고, title 은 접근명의 최후 폴백이라 모바일에서 안 읽힌다.
+          게다가 title 이 담는 문장에는 거주냐 예약이냐가 없다 — 그건 색만 아는 정보였다. */}
+      <button type="button" onClick={onOpen} title={full} aria-label={barAria(bar, roomNo)}
+        className="mc-bar min-w-0 self-center flex items-center text-[0.6875rem] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
         style={{
           gridColumn: `${bar.startDay + 1} / ${bar.endDay + 2}`,
           gridRow: `${bar.lane + 1} / span 1`,
           height: 'calc(var(--mc-lane) - 12px)',
-          background: tone.bg,
-          // 겹친 구간의 짙은 밴드가 위에 얹히므로 충돌 막대의 글자는 중립 잉크로 둔다(§03).
-          color: bar.conflicted ? 'var(--ink-2)' : tone.fg,
+          background: barTone(bar),
+          color: 'var(--ink-2)',
           borderRadius: barRadius(bar),
         }}>
         {/* 이름은 막대 안에서 sticky 다. 연속 트랙에서는 한 막대가 화면보다 넓은 일이 흔한데,
             글자를 막대 왼쪽 끝에 붙여 두면 그 막대가 화면을 가득 채운 순간 **이름 없는 색 띠**가
             된다(390px 에서 열일곱 행 중 열 행이 그랬다). 막대 안에 갇히므로 옆 막대는 안 침범한다. */}
-        <span className="sticky min-w-0 max-w-full truncate px-2" style={{ left: ROOM_COL }}>
+        {/* tnum — 이 라벨에는 날짜뿐 아니라 호실번호도 들어온다(이사 문구). 옆 열의 같은 숫자와 자폭이 갈리면 안 된다. */}
+        <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
           {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
         </span>
       </button>
       {side && ink && (
-        <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none"
+        <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none tnum"
           style={{
             gridColumn: `${ink.startDay + 1} / ${ink.endDay + 2}`,
             gridRow: `${bar.lane + 1} / span 1`,

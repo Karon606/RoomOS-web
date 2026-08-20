@@ -68,6 +68,8 @@ import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 import { useCanReadScope } from '@/components/RoleContext'
 import { fmtRoomNo, fmtRoomList } from '@/lib/roomNo'
 import { primaryTenantLease, roomLeaseRowOrder, TENANT_LIST_STATUSES, CLOSED_STATUSES } from '@/lib/leaseStatus'
+// 거주 구간을 만드는 상태 정본 — 이사일 칸의 노출 조건이 서버의 쪼개기 조건과 같은 자를 쓰게 한다.
+import { STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { PARENT_LEASE_STATUSES } from '@/lib/roomAssignment'
 
 // ── 타입 ─────────────────────────────────────────────────────────
@@ -3600,6 +3602,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [parentVal, setParentVal] = useState(lease?.parentLeaseTermId ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [actualOut, setActualOut]   = useState(toDateInput(lease?.moveOutDate))   // 실제 퇴실일 — 퇴실 상태에서만 렌더
+  // 이사일 — 호실을 바꿀 때만 렌더. 기본은 오늘(KST)이고 뒤늦은 입력만 고친다(실제 퇴실일과 같은 규칙).
+  const [moveDateVal, setMoveDateVal] = useState(kstYmdStr())
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
   // 문의/투어 예정 = 같은 WAITING_TOUR의 표시 구분(파생) — select 옵션 분리용 UI 상태(운영자 승인 2026-07-19).
   // 투어일이 있으면 '투어 예정' 강제('문의' 옵션 비활성), 투어일을 비우면 '문의'로 자동 복귀. 시스템이 투어일을 지우는 일은 없다.
@@ -3656,6 +3660,13 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
     const isNR = statusVal === 'NON_RESIDENT'
     setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
   }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 이사 판정 — 살던 방이 있는데 다른 방으로 바뀌는 저장. 서버가 거주 구간을 쪼개는 조건
+  // (syncRoomStayOnSave 가 recordRoomChange 를 부르는 조건)과 **같은 자**를 쓴다. 어긋나면
+  // 칸이 안 뜬 채로 구간이 쪼개지는 경로가 남고, 그 경계는 다시 '저장을 누른 날'로 박힌다.
+  // 신규 배정(방이 처음 정해지는 것)은 이사가 아니라 입주라 여기 안 걸린다.
+  const isRoomMove = !!lease?.room?.id && !!selectedRoomId && selectedRoomId !== lease.room.id
+    && (STAY_ELIGIBLE_STATUSES as string[]).includes(statusVal)
 
   // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님 (단, 예약 확정 시 RESERVED는 호실 필수)
   const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
@@ -4482,6 +4493,22 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </p>
             )
           })()}
+
+          {/* 이사일 — 살던 사람이 방을 옮길 때만. '실제 퇴실일'(아래) 과 같은 조건부 날짜 칸 문법이다.
+              이 칸이 없던 동안 거주 구간의 경계가 '저장을 누른 날'로 박혔다(lib/roomStay recordRoomChange
+              의 at 인자를 넘기는 호출부가 저장소에 0곳이었다). 그 날짜가 곧 캘린더의 두 막대가 갈리는
+              자리라, 틀리면 옛 방과 새 방이 며칠씩 어긋난 채 그려진다.
+              신규 배정(방이 처음 정해지는 것)은 이사가 아니라 입주이므로 뜨지 않는다. */}
+          {isRoomMove && (
+            // 위쪽 6px 을 더해 호실 그룹과의 간격을 12px 로 — 그룹 안 간격(6px)과 같으면 이사일이
+            // 호실 셀렉트에 딸린 라벨처럼 읽힌다(폼의 독립 칸 간격 정본이 12px 이다).
+            <div className="space-y-1.5 pt-1.5">
+              <Field label="이사일" name="moveDate" type="date" value={moveDateVal} onChange={setMoveDateVal} />
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
+                실제로 방을 옮긴 날입니다. 기본은 오늘이고, 뒤늦게 입력하는 이사는 그날로 고쳐 주세요.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* 메인 계약 (2026-08-13, 다호실 2단계) — 이 계약이 어느 계약에 묶이는가.
