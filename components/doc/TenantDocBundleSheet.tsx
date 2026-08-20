@@ -156,13 +156,19 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const sendMailNow = async () => {
     if (mailPending || !mailTo || selected.size === 0) return
     const titles = rows.filter(r => selected.has(r.key)).map(r => TITLE[r.docType])
-    // 주소를 제목에 넣지 않는다 — 조사(으로·로)가 주소 끝 글자를 따라가야 하는데 로마자라
-    // 어느 쪽도 늘 맞지 않는다. 본문에서 '입니다'로 받으면 그 문제가 사라진다.
-    // 영향 목록 상자는 파괴적 단계 전용이고 머리글이 '함께 삭제되는 항목'이라 여기 쓸 수 없다.
+    // level 은 danger 다. 아무것도 지우지 않지만 나간 메일은 되돌릴 수 없고, §16 이 되돌릴 수 없는
+    // 동작에 파괴적 다이얼로그를 요구한다. 저장소에도 삭제 아닌 비가역 동작에 danger 를 쓴 전례가
+    // 있다(캘린더 구독 주소 재발급 — CalendarSubscribeCard). 반대로 caution 을 쓴 두 자리는
+    // 되돌릴 수 있어서 danger 의 기본 문구가 거짓말이 되던 경우다(소프트삭제·납부일 임시 조정).
+    // 고지 문장은 irreversibleNote 로 넘긴다 — 본문에 손으로 적으면 §14 가 정한 강조를 잃는다.
+    // impact 는 안 넘긴다. 그 상자 머리글이 '함께 삭제되는 항목'이라 첨부 목록에 거짓이다.
+    // 제목에 이름을 부르는 것은 §14 Do 다. 주소는 본문으로 내린다 — 조사(으로·로)가 주소 끝
+    // 글자를 따라가야 하는데 로마자라 어느 쪽도 늘 맞지 않는다. 이름은 한글이라 '님의'가 늘 맞는다.
     const ok = await confirmDialog({
-      title: '서류를 메일로 보냅니다',
-      message: `받는 사람은 ${mailTo} 입니다.\n보낼 서류는 ${titles.join(' · ')} 입니다.\n보낸 메일은 되돌릴 수 없습니다.`,
-      level: 'caution',
+      title: `${bundle?.tenantName ?? ''} 님의 서류를 메일로 보냅니다`,
+      message: `받는 사람은 ${mailTo} 입니다.\n보낼 서류는 ${titles.join(' · ')} 입니다.`,
+      level: 'danger',
+      irreversibleNote: '보낸 메일은 되돌릴 수 없습니다.',
       confirmLabel: '메일 보내기',
     })
     if (!ok) return
@@ -194,12 +200,18 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
               ariaLabel="보낼 곳"
               value={dest}
               onChange={setDest}
-              options={[{ value: 'device', label: '기기' }, { value: 'mail', label: '메일' }]}
+              // '기기'는 이 저장소에 없는 단독 명사다 — 늘 '기기에 저장'·'이 기기 알림'처럼 수식을 단다.
+              // 여기서 열리는 것은 저장이 아니라 공유 시트(문자·메신저·저장이 그 안에 다 있다)라
+              // '기기에 저장'으로 부르면 거짓이 된다. '공유'는 어휘 정본상 금지어다.
+              options={[{ value: 'device', label: '이 기기' }, { value: 'mail', label: '메일' }]}
             />
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-2">
+        {/* 줄 높이를 미리 잡아 둔다. 형식 컨트롤이 메일 탭에서 통째로 사라지면 남는 것이 문단 하나(16px)라
+            줄이 30px 에서 16px 로 주저앉고 아래 목록 전체가 14px 뛴다. 30px 은 SegmentedControl size sm 의
+            실제 높이다(세그먼트 24 + 트랙 패딩 4 + 보더 2). 탭 접미 자리 예약(ViewTabs)과 같은 수법이다. */}
+        <div className="flex min-h-[30px] items-center justify-between gap-2">
           <p className="text-xs text-[var(--warm-muted)]">보낼 서류를 고르세요</p>
           {/* 형식은 기기로 보낼 때만 고른다. 메일은 발급본 PDF 를 그대로 첨부한다 —
               사진 변환은 브라우저에서만 되고, 메일에 넣을 이유도 없다. */}
@@ -217,9 +229,13 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         {/* 받는 사람 — 고칠 수 없는 표시다. 주소를 바꾸려면 입주자 정보에서 고치고 다시 연다. */}
         {effDest === 'mail' && (
           mailTo ? (
+            // 라벨은 --warm-mid 다. --warm-muted 는 이 표면(--cream-soft)의 다크에서 4.46:1 로 §28
+            // 하한에 못 미친다(사업자등록증 '미등록' 글자가 같은 숫자로 걸려 이미 한 번 올라갔다).
+            // 라이트에서는 두 토큰이 같은 값이라 픽셀이 안 바뀐다. 값은 14px — 비가역 발송 직전에
+            // 눈으로 대조하는 값이라 프리즘 읽기 전용 행(Item)과 같은 크기로 세운다.
             <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">받는 사람</p>
-              <p className="mt-0.5 break-all text-xs text-[var(--warm-dark)]">{mailTo}</p>
+              <p className="text-[0.65625rem] text-[var(--warm-mid)]">받는 사람</p>
+              <p className="mt-0.5 break-all text-sm text-[var(--warm-dark)]">{mailTo}</p>
             </div>
           ) : (
             <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] text-[var(--warning-fg)]">
@@ -273,10 +289,13 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         )}
         {selected.size > 0 && effDest === 'mail' && (
           <SelectionPillBar aboveModal count={selected.size} unit="건" onClose={() => setSelected(new Set())}>
-            {mailPending && (
-              <span className="min-w-0 truncate text-[0.8125rem] font-medium text-white/70">보내는 중…</span>
-            )}
-            <PillButton primary disabled={!mailTo || mailPending} onClick={sendMailNow}>메일 보내기</PillButton>
+            {/* 진행 표시는 버튼 안이다(§10 제출 중). 형제 알약이 문구를 밖에 두는 것은 그쪽이 제출이
+                아니라 준비 큐 진행이라서다. 요소가 하나 줄어 320px 폭 압력도 함께 사라진다.
+                §22 는 불가능한 액션을 숨기라고 하지만 여기서 숨기면 알약에 건수와 닫기만 남아
+                '왜 못 보내는지'를 말할 자리가 사라진다. 주소 없음은 위 안내 줄이 이미 말한다. */}
+            <PillButton primary disabled={!mailTo || mailPending} onClick={sendMailNow}>
+              {mailPending ? '보내는 중…' : '메일 보내기'}
+            </PillButton>
           </SelectionPillBar>
         )}
       </div>
@@ -298,9 +317,12 @@ function DocRow({ row, tenantId, selected, onToggle }: {
       // 형제 목록 화면은 액션이 넷이라 좁은 폭에서 아래 줄로 내리지만, 여기는 행마다 버튼이 하나라
       // 내리면 320px 에서 한 화면에 세 행밖에 안 들어간다. 한 줄을 유지한다(실측 잘림 0).
       className={[
-        // 셸 패널이 cream 이라 행은 canvas 다(모달 안 행 문법 정본 — 계약서 파일 칸과 같은 표면).
+        // 행 표면은 --cream 이다. --canvas 는 §03 이 정한 **페이지 배경** 토큰이라 그 위에서는
+        // 보조줄 대비가 라이트 4.11:1 로 §28 하한에 못 미치고, 다크에서는 --canvas 가 #000 이라
+        // --cream 패널 안에 검은 구멍이 뚫린다. 이 주석이 근거로 삼던 계약서 파일 칸
+        // (ContractFilesPanel)이 같은 숫자로 이미 옮겨 갔는데 이 시트만 안 따라왔다(디자이너 패스).
         // 선택 표시는 §22 .sel 그대로 테두리 + 링이고, 미발급은 잠긴 체크박스·회색 문구가 말한다.
-        'flex items-center gap-2 rounded-xl border bg-[var(--canvas)] p-3 transition-colors',
+        'flex items-center gap-2 rounded-xl border bg-[var(--cream)] p-3 transition-colors',
         issued ? 'cursor-pointer select-none' : '',
         selected ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
       ].join(' ')}>

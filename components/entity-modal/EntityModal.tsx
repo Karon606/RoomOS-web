@@ -31,10 +31,6 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { canShareFiles } from '@/lib/shareFile'
 import { getDocMailEnabled } from '@/app/(app)/tenants/docBundle'
-
-// 메일 켜짐 여부는 배포 중에 안 바뀐다 — 프리즘이 열릴 때마다 다시 묻지 않게 모듈에 접어 둔다.
-// null = 아직 안 물어봄.
-let docMailEnabledCache: boolean | null = null
 import { TenantDocBundleSheet } from '@/components/doc/TenantDocBundleSheet'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
@@ -53,6 +49,10 @@ export function useEntityModal(): Ctx {
 // Provider 밖에서 셸을 여는 열기 신호 — lib/globalSearch 의 bindGlobalSearch 와 같은 모듈 pub/sub.
 // 헤더(종·검색)는 AppShell 안, Provider 밖이라 useEntityModal 을 쓸 수 없다.
 let opener: ((seed: Seed) => void) | null = null
+
+// 메일 켜짐 여부는 배포 중에 안 바뀐다 — 프리즘이 열릴 때마다 다시 묻지 않게 모듈에 접어 둔다.
+// null = 아직 안 물어봄.
+let docMailEnabledCache: boolean | null = null
 /** Provider 밖에서 Prism 셸을 연다. 신호가 닿지 않으면 false — 호출부가 URL 딥링크로 폴백한다. */
 export function openEntityModal(seed: Seed): boolean {
   if (!opener) return false
