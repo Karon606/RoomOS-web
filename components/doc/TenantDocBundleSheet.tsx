@@ -6,6 +6,11 @@
 // 여기서 모으되 규칙은 그 네 화면 정본 그대로다 — 행 문법(보기 primary), 선택 체크박스(§22 22px r7),
 // 하단 알약(DocMultiShareBar), 준비 큐·파일명(lib/useDocShare). 이 화면은 조립만 한다.
 //
+// 2단계에서 '보낼 곳'이 하나 늘었다(신고 44501308). 기기는 종전 공유 시트 그대로고, 메일은
+// 서버가 Drive 에서 PDF 를 모아 한 통으로 보낸다. 메일 줄은 **메일 기능이 켜져 있을 때만** 선다 —
+// 키가 없으면 이 화면은 1단계와 픽셀이 같다. 받는 주소는 저장된 이 사람의 주소 하나뿐이고
+// 여기서 고칠 수 없다. 오타 한 글자가 곧 남의 사서함에 신원번호를 배달하는 길이라서다.
+//
 // **아무것도 발급하지 않는다.** 미발급 칸은 체크할 수 없고 '작성'이 기존 왕복(from=tenant)으로 보낸다.
 // 발행번호 원장과 서명이 걸려 있어 자동 발급은 금지다(패널 확정, 신고 44501308).
 
@@ -17,34 +22,31 @@ import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { BtnLink } from '@/components/ui/Btn'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { fetchDocBytes } from '@/lib/docBytes'
+import { canShareFiles } from '@/lib/shareFile'
 import { prewarmPdfToPng } from '@/lib/pdfToPng'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { docFromQuery } from '@/lib/docNav'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
-import { getTenantDocBundle } from '@/app/(app)/tenants/docBundle'
-import type { DocBundleGroup, DocBundleRow, TenantDocBundle } from '@/lib/docBundle'
+import { getTenantDocBundle, sendTenantDocBundleMail, type TenantDocBundleMail } from '@/app/(app)/tenants/docBundle'
+import {
+  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
+  type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
+} from '@/lib/docBundle'
 
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋(형제 3화면과 같은 숫자)
 
 // 화면 이름과 파일명은 다르다 — 파일명은 형제 3화면이 이미 쓰고 있는 문자열 그대로여야
-// 같은 서류가 어디서 나가든 같은 이름으로 도착한다.
-const TITLE: Record<DocBundleRow['docType'], string> = {
-  contract: '계약서',
-  rent: '입실료 납부 확인서',
-  deposit: '보증금 영수증',
-  residence: '실거주 확인서',
-}
-const FILE_LABEL: Record<DocBundleRow['docType'], string> = {
-  contract: '계약서',
-  rent: '입실료납부확인서',
-  deposit: '보증금영수증',
-  residence: '실거주확인서',
-}
+// 같은 서류가 어디서 나가든 같은 이름으로 도착한다. 두 벌 다 규칙 정본(lib/docBundle)에 있다 —
+// 메일 경로도 같은 이름을 써야 해서, 여기 사본을 두면 한쪽만 고쳐진 채로 두 이름이 돌아다닌다.
+const TITLE = DOC_TYPE_TITLE
+const FILE_LABEL = DOC_TYPE_FILE_LABEL
 
 // 그룹 머리 — '509호 계약' · '601호 계약 (비거주자)'. 거주중은 꼬리를 안 단다(그것이 기본값이라
 // 붙이면 모든 머리가 길어지기만 한다). 상태 이름은 목록 화면과 같은 STATUS_LABEL 정본이다.
@@ -74,10 +76,18 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   preselectLeaseTermId?: string | null
   onClose: () => void
 }) {
-  const [bundle, setBundle] = useState<TenantDocBundle | null>(null)
+  const [bundle, setBundle] = useState<(TenantDocBundle & { mail: TenantDocBundleMail }) | null>(null)
   const [failed, setFailed] = useState(false)
+  // 이 기기가 파일 공유 시트를 열 수 있는가. 못 열면 '기기'는 선택지가 아니다 — 1단계가 진입점
+  // 자체를 숨겼던 이유가 그것이다. 메일이 켜진 뒤로는 그 기기에서도 이 화면이 할 일이 있다.
+  // 서버 렌더와 첫 그림을 맞추려고 마운트 뒤에 잰다(형제 EntityModal 과 같은 문법).
+  const [shareSupported, setShareSupported] = useState(true)
+  useEffect(() => { setShareSupported(canShareFiles()) }, [])
+  // 보낼 곳 — 기기(공유 시트) · 메일. 기본은 기기다. 1단계에 이미 있던 흐름이 기본값을 잃으면 안 된다.
+  const [dest, setDest] = useState<'device' | 'mail'>('device')
   const [mode, setMode] = useState<'png' | 'pdf'>('png')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [mailPending, setMailPending] = useState(false)
 
   // 이 화면은 통째로 선택 모드다 — 열리자마자 변환기를 데운다(첫 탭의 제스처 만료 방어).
   useEffect(() => { prewarmPdfToPng() }, [])
@@ -130,8 +140,40 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     }))
   const share = useDocShare(shareEntries, mode)
 
-  const overLimit = selected.size > 0 && share.fileCount > MAX_SHARE
+  const mailOn = !!bundle?.mail.enabled
+  const mailTo = bundle?.mail.to ?? null
+  // 공유가 안 되는 기기에서는 메일만 남는다. 고를 것이 하나뿐이면 컨트롤을 세우지 않는다 —
+  // 무엇과 무엇을 가르는지가 없는 스위치다(그룹 머리를 안 세우는 것과 같은 규칙).
+  const effDest: 'device' | 'mail' = shareSupported ? dest : 'mail'
+  const showDestPicker = mailOn && shareSupported
+  const overLimit = effDest === 'device' && selected.size > 0 && share.fileCount > MAX_SHARE
   const groups = bundle?.groups ?? []
+
+  // 메일 보내기 — 되돌릴 수 없는 동작이라 보내기 전에 받는 사람과 목록을 한 번 되짚는다(§14·§16).
+  // 서버가 행 키를 파일로 되바꾸므로 여기서 넘기는 것은 키뿐이다(Drive 파일 ID 를 화면이 안 만진다).
+  const sendMailNow = async () => {
+    if (mailPending || !mailTo || selected.size === 0) return
+    const titles = rows.filter(r => selected.has(r.key)).map(r => TITLE[r.docType])
+    const ok = await confirmDialog({
+      title: `${mailTo}으로 서류를 보냅니다`,
+      message: '보낸 메일은 되돌릴 수 없습니다. 받는 사람과 서류를 확인해 주세요.',
+      level: 'caution',
+      confirmLabel: '메일 보내기',
+      impact: titles.map(t => ({ label: t })),
+    })
+    if (!ok) return
+    setMailPending(true)
+    try {
+      const r = await sendTenantDocBundleMail(tenantId, [...selected])
+      if (!r.ok) { pushToast('error', r.error); return }
+      pushToast('success', `서류 ${r.count}건을 메일로 보냈습니다`)
+      setSelected(new Set())
+    } catch {
+      pushToast('error', '메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setMailPending(false)
+    }
+  }
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
   const showGroupTitles = groups.length > 1
 
@@ -139,16 +181,48 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     <Modal open onClose={onClose} z={260} width="md"
       title={bundle ? `서류 보내기 · ${bundle.tenantName}` : '서류 보내기'}>
       <div className="space-y-3">
+        {/* 보낼 곳 — 메일이 켜져 있을 때만 선다. 안 켜져 있으면 아래 형식 줄 하나로 1단계와 같다. */}
+        {showDestPicker && (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-[var(--warm-muted)]">보낼 곳</p>
+            <SegmentedControl<'device' | 'mail'>
+              size="sm"
+              ariaLabel="보낼 곳"
+              value={dest}
+              onChange={setDest}
+              options={[{ value: 'device', label: '기기' }, { value: 'mail', label: '메일' }]}
+            />
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs text-[var(--warm-muted)]">보낼 서류를 고르세요</p>
-          <SegmentedControl<'png' | 'pdf'>
-            size="sm"
-            ariaLabel="보낼 형식"
-            value={mode}
-            onChange={setMode}
-            options={[{ value: 'png', label: '사진' }, { value: 'pdf', label: 'PDF' }]}
-          />
+          {/* 형식은 기기로 보낼 때만 고른다. 메일은 발급본 PDF 를 그대로 첨부한다 —
+              사진 변환은 브라우저에서만 되고, 메일에 넣을 이유도 없다. */}
+          {effDest === 'device' && (
+            <SegmentedControl<'png' | 'pdf'>
+              size="sm"
+              ariaLabel="보낼 형식"
+              value={mode}
+              onChange={setMode}
+              options={[{ value: 'png', label: '사진' }, { value: 'pdf', label: 'PDF' }]}
+            />
+          )}
         </div>
+
+        {/* 받는 사람 — 고칠 수 없는 표시다. 주소를 바꾸려면 입주자 정보에서 고치고 다시 연다. */}
+        {effDest === 'mail' && (
+          mailTo ? (
+            <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">받는 사람</p>
+              <p className="mt-0.5 break-all text-xs text-[var(--warm-dark)]">{mailTo}</p>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] text-[var(--warning-fg)]">
+              이 입주자의 메일 주소가 없습니다. 입주자 정보에 주소를 넣고 다시 열어 주세요.
+            </p>
+          )
+        )}
 
         {/* 장수 초과 안내 — 알약에는 '사진 N장' 만 들어간다(320px 폭 한계). 어떻게 하면 되는지는
             자리가 있는 여기서 말한다. 사진은 페이지마다 한 장이라 계약서가 섞이면 금세 넘는다. */}
@@ -176,8 +250,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
           </div>
         ))}
 
-        {/* 하단 알약은 모달 안 선택 모드 축(§22 aboveModal) — 형제 3화면과 같은 셸이다 */}
-        {selected.size > 0 && (
+        {/* 하단 알약은 모달 안 선택 모드 축(§22 aboveModal) — 형제 3화면과 같은 셸이다.
+            메일은 변환 큐가 없어(서버가 발급본 PDF 를 그대로 싣는다) 준비 상태 표시가 없다.
+            그래서 DocMultiShareBar 를 억지로 재사용하지 않고 같은 셸(SelectionPillBar)만 공유한다. */}
+        {selected.size > 0 && effDest === 'device' && (
           <DocMultiShareBar
             aboveModal
             count={selected.size}
@@ -190,6 +266,14 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             onSend={share.send}
             onClose={() => setSelected(new Set())}
           />
+        )}
+        {selected.size > 0 && effDest === 'mail' && (
+          <SelectionPillBar aboveModal count={selected.size} unit="건" onClose={() => setSelected(new Set())}>
+            {mailPending && (
+              <span className="min-w-0 truncate text-[0.8125rem] font-medium text-white/70">보내는 중…</span>
+            )}
+            <PillButton primary disabled={!mailTo || mailPending} onClick={sendMailNow}>메일 보내기</PillButton>
+          </SelectionPillBar>
         )}
       </div>
     </Modal>

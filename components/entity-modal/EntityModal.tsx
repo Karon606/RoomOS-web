@@ -30,6 +30,11 @@ import { useNavRouter } from '@/lib/useNavRouter'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { canShareFiles } from '@/lib/shareFile'
+import { getDocMailEnabled } from '@/app/(app)/tenants/docBundle'
+
+// 메일 켜짐 여부는 배포 중에 안 바뀐다 — 프리즘이 열릴 때마다 다시 묻지 않게 모듈에 접어 둔다.
+// null = 아직 안 물어봄.
+let docMailEnabledCache: boolean | null = null
 import { TenantDocBundleSheet } from '@/components/doc/TenantDocBundleSheet'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
@@ -227,6 +232,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const [canShare, setCanShare] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setCanShare(canShareFiles()) }, [])
+  // 서류 보내기 진입 조건 — 공유 시트가 열리거나(기기) 메일이 켜져 있으면 보인다.
+  // 종전에는 공유 시트만 봤다. 그래서 PC 에서는 보관 서류를 보낼 길이 아예 없었다(신고 44501308 2단계).
+  // 메일 켜짐은 세션에 한 번만 묻고 모듈에 접어 둔다 — 프리즘은 자주 열리고 답은 배포 중에 안 바뀐다.
+  const [mailOn, setMailOn] = useState(docMailEnabledCache ?? false)
+  useEffect(() => {
+    if (docMailEnabledCache !== null) return
+    void getDocMailEnabled()
+      .then(v => { docMailEnabledCache = v; setMailOn(v) })
+      .catch(() => { /* 못 물어봤으면 안 켜진 것으로 둔다 — 기존 공유 경로는 그대로다 */ })
+  }, [])
 
   // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
   // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
@@ -424,7 +439,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               )}
               {/* 위 셋은 서류를 만들러 가는 문이고, 이것은 이미 만들어진 서류를 보내는 문이다.
                   종전에는 종류마다 목록 화면을 따로 열어 한 사람의 종이를 네 번에 걸쳐 보냈다. */}
-              {links?.tenantId && canShare && (
+              {links?.tenantId && (canShare || mailOn) && (
                 <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(null)}>
                   서류 보내기
                 </Btn>
@@ -448,7 +463,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               </Btn>
               {/* 여기서 연 시트는 이 면이 열어 둔 계약 분을 기본 체크한다 — 보고 있는 계약과
                   나가는 종이가 하나여야 한다(위 두 버튼의 지목과 같은 규칙). */}
-              {canShare && (
+              {(canShare || mailOn) && (
                 <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(shownLeaseId)}>
                   서류 보내기
                 </Btn>

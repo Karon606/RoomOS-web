@@ -16,6 +16,22 @@ import { kstMonthOf } from '@/lib/fmtDate'
 
 export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence'
 
+// 서류 이름은 두 벌이다 — 화면에 서는 이름과 파일·메일에 적히는 이름. 파일 쪽은 형제 3화면이
+// 이미 쓰고 있는 문자열 그대로여야 같은 서류가 어디로 나가든 같은 이름으로 도착한다.
+// 규칙 정본에 함께 두는 이유는 하나다. 사본이 생기면 한쪽만 고쳐진 채로 두 이름이 돌아다닌다.
+export const DOC_TYPE_TITLE: Record<DocBundleDocType, string> = {
+  contract: '계약서',
+  rent: '입실료 납부 확인서',
+  deposit: '보증금 영수증',
+  residence: '실거주 확인서',
+}
+export const DOC_TYPE_FILE_LABEL: Record<DocBundleDocType, string> = {
+  contract: '계약서',
+  rent: '입실료납부확인서',
+  deposit: '보증금영수증',
+  residence: '실거주확인서',
+}
+
 export type DocBundleRow = {
   /** 화면 선택 키 — 계약과 종류로 만든다(파일이 없어도 행은 존재한다). */
   key: string
