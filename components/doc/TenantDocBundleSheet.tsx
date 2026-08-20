@@ -142,9 +142,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 
   const mailOn = !!bundle?.mail.enabled
   const mailTo = bundle?.mail.to ?? null
-  // 공유가 안 되는 기기에서는 메일만 남는다. 고를 것이 하나뿐이면 컨트롤을 세우지 않는다 —
-  // 무엇과 무엇을 가르는지가 없는 스위치다(그룹 머리를 안 세우는 것과 같은 규칙).
-  const effDest: 'device' | 'mail' = shareSupported ? dest : 'mail'
+  // 고를 수 있는 곳만 남긴다 — 메일이 안 켜졌으면 기기뿐이고, 공유가 안 되는 기기(PC·인앱
+  // 브라우저)에서는 메일뿐이다. 둘 중 하나뿐이면 컨트롤을 세우지 않는다. 무엇과 무엇을 가르는지가
+  // 없는 스위치라서다(그룹이 하나면 머리를 안 세우는 것과 같은 규칙).
+  // 이 세 갈래를 한 줄로 줄이면 '메일이 꺼졌는데 메일 탭'이 열린다(실측에서 실제로 열렸다).
+  const effDest: 'device' | 'mail' = !mailOn ? 'device' : !shareSupported ? 'mail' : dest
   const showDestPicker = mailOn && shareSupported
   const overLimit = effDest === 'device' && selected.size > 0 && share.fileCount > MAX_SHARE
   const groups = bundle?.groups ?? []
@@ -154,12 +156,14 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const sendMailNow = async () => {
     if (mailPending || !mailTo || selected.size === 0) return
     const titles = rows.filter(r => selected.has(r.key)).map(r => TITLE[r.docType])
+    // 주소를 제목에 넣지 않는다 — 조사(으로·로)가 주소 끝 글자를 따라가야 하는데 로마자라
+    // 어느 쪽도 늘 맞지 않는다. 본문에서 '입니다'로 받으면 그 문제가 사라진다.
+    // 영향 목록 상자는 파괴적 단계 전용이고 머리글이 '함께 삭제되는 항목'이라 여기 쓸 수 없다.
     const ok = await confirmDialog({
-      title: `${mailTo}으로 서류를 보냅니다`,
-      message: '보낸 메일은 되돌릴 수 없습니다. 받는 사람과 서류를 확인해 주세요.',
+      title: '서류를 메일로 보냅니다',
+      message: `받는 사람은 ${mailTo} 입니다.\n보낼 서류는 ${titles.join(' · ')} 입니다.\n보낸 메일은 되돌릴 수 없습니다.`,
       level: 'caution',
       confirmLabel: '메일 보내기',
-      impact: titles.map(t => ({ label: t })),
     })
     if (!ok) return
     setMailPending(true)
