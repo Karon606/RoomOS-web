@@ -204,9 +204,15 @@ export function DatePicker({
             </div>
 
             {/* 오늘 / 초기화 */}
+            {/* '오늘'도 날짜 격자와 같은 경계를 진다. 종전에는 이 버튼만 min·maxDate 를 안 봐서,
+                격자가 회색으로 잠가 둔 날을 버튼 한 번으로 값에 넣을 수 있었다 — 컨트롤이 자기
+                규칙을 스스로 깨는 모양이다. 경계를 건 호출부 열 곳이 같은 구멍을 공유했다
+                (퇴실 청소 예정일에서 드러남, 2026-08-20). 잠긴 날은 눌리지 않게만 하고 감추지는
+                않는다 — 사라지면 오른쪽 '초기화'가 자리를 옮겨 다녀 손이 헛짚는다. */}
             <div className="flex gap-2 mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
               <button onClick={() => { onChange(todayStr); setOpen(false) }}
-                className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                disabled={isDisabledDate(todayStr)}
+                className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
                 오늘
               </button>
