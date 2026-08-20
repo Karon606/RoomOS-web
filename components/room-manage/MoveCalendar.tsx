@@ -153,13 +153,17 @@ function MoveCalendarView({ data, onViewMonthChange }: {
    * 버튼이 아예 안 떠서 먼 달로 간 뒤 돌아올 길이 트랙 안에 없었다.
    */
   const paintToday = useCallback(() => {
-    const el = scrollRef.current
     const btn = todayBtnRef.current
-    if (!el || !btn) return
+    if (!btn) return
     // display 를 직접 쓴다. hidden 속성은 UA 의 [hidden]{display:none} 이 작성자 스타일(inline-flex)에
     // 지므로 이 버튼에서는 안 먹는다. React 의 style 에도 display 를 같은 초깃값으로 두어,
     // 이후 리렌더에서 값이 안 바뀌면 React 가 이 자리를 건드리지 않는다.
+    //
+    // 오늘이 창 밖이면 트랙이 아예 없을 수도 있다(변동 없는 창은 카드 대신 빈 상태가 선다).
+    // 그때가 바로 돌아올 길이 가장 필요한 자리라 스크롤러 존재와 무관하게 세운다.
     if (todayX == null) { btn.style.display = ''; return }
+    const el = scrollRef.current
+    if (!el) return
     const view = Math.max(0, el.clientWidth - ROOM_COL)
     btn.style.display = todayX < el.scrollLeft || todayX > el.scrollLeft + view ? '' : 'none'
   }, [todayX])
@@ -178,20 +182,25 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   // 다시 스크롤을 부르는 피드백 루프가 애초에 성립하지 않는다. 셀렉터 점프·홈 딥링크만 router.push 라
   // 여기에 닿고, 그때는 landedRef 가 이미 그 달이라 두 번 앉지 않는다.
   useLayoutEffect(() => {
-    const el = scrollRef.current
-    if (!el || (landedRef.current === data.focusMonth && landedFromRef.current === data.from)) return
-    landedRef.current = data.focusMonth
-    landedFromRef.current = data.from
-    const focus = data.months.find(m => m.month === data.focusMonth)
-    const focusHasToday = !!focus && todayDay != null
-      && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
-    el.scrollLeft = focusHasToday && todayX != null
-      ? Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
-      : focus ? (focus.startDay - 1) * DAY_W : 0
-    // 브라우저가 clamp 한 **실제** 값을 되읽는다. 이 자리에서 한 픽셀도 안 움직였으면
-    // 아래 commitPosition 이 URL 을 안 적는다 — 착지가 낸 스크롤 이벤트로 옆 달이 적히던 자리다.
-    landedLeftRef.current = el.scrollLeft
-    onViewMonthChange?.(data.focusMonth)
+    if (landedRef.current !== data.focusMonth || landedFromRef.current !== data.from) {
+      landedRef.current = data.focusMonth
+      landedFromRef.current = data.from
+      onViewMonthChange?.(data.focusMonth)
+      const el = scrollRef.current
+      // 변동이 없는 창에서는 트랙 자체가 없다(카드 대신 빈 상태). 그래도 위의 '보고 있는 달'은
+      // 알려야 탭 접미가 그 달을 말한다.
+      if (el) {
+        const focus = data.months.find(m => m.month === data.focusMonth)
+        const focusHasToday = !!focus && todayDay != null
+          && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
+        el.scrollLeft = focusHasToday && todayX != null
+          ? Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
+          : focus ? (focus.startDay - 1) * DAY_W : 0
+        // 브라우저가 clamp 한 **실제** 값을 되읽는다. 이 자리에서 한 픽셀도 안 움직였으면
+        // 아래 commitPosition 이 URL 을 안 적는다 — 착지가 낸 스크롤 이벤트로 옆 달이 적히던 자리다.
+        landedLeftRef.current = el.scrollLeft
+      }
+    }
     paintToday()
   }, [data.months, data.focusMonth, data.from, todayDay, todayX, paintToday, onViewMonthChange])
 
@@ -273,9 +282,10 @@ function MoveCalendarView({ data, onViewMonthChange }: {
    * 보이지 않는 구현 사실이고, 두 경로의 종착지는 착지 규칙이 같아 문자 그대로 같은 자리다.
    */
   const goToday = () => {
+    // 창 밖이면 스크롤로는 못 닿는다 — 다시 조회한다. 트랙이 아예 없는 창(변동 0)에서도 이 길이다.
+    if (todayX == null) { jumpToMonth(data.today.slice(0, 7)); return }
     const el = scrollRef.current
     if (!el) return
-    if (todayX == null) { jumpToMonth(data.today.slice(0, 7)); return }
     el.scrollLeft = Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
     paintToday()
   }
@@ -294,7 +304,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     <div className="space-y-3">
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
-      <UpcomingRow items={data.upcoming} onOpen={openLease} />
+      <UpcomingRow items={data.upcoming} todayInRange={todayDay != null} onOpen={openLease} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -305,14 +315,18 @@ function MoveCalendarView({ data, onViewMonthChange }: {
         </div>
       )}
 
+      {/* relative — '오늘로'가 이 안에 뜬다. 카드 **밖**에 두는 이유는, 변동이 없는 창(먼 달로
+          점프하면 흔하다)에서는 카드 자체가 안 서서 버튼이 함께 사라지고 돌아올 길이 없어지기
+          때문이다. 자리는 종전과 같다(카드 오른쪽 아래). */}
+      <div className="relative">
       {data.rows.length === 0 ? (
         <EmptyState
           title="이 기간에 입퇴실 변동이 없습니다"
           description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
         />
       ) : (
-        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). relative — '오늘로'가 이 안에 뜬다. */
-        <div className="relative rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
+        <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           {/* 범례 — 거주와 예약이 색으로만 갈리고 있었다. 스크롤러 **밖**이라야 트랙과 함께 흘러가지
               않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
               공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
@@ -371,17 +385,19 @@ function MoveCalendarView({ data, onViewMonthChange }: {
               ))}
             </div>
           </div>
-
-          {/* 오늘이 화면 밖일 때 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
-              보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
-              첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜진다. */}
-          <button ref={todayBtnRef} type="button" onClick={goToday}
-            className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
-            style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
-            오늘로
-          </button>
         </div>
       )}
+
+      {/* 오늘이 화면 밖일 때 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
+          보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
+          첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜지고,
+          그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday). */}
+      <button ref={todayBtnRef} type="button" onClick={goToday}
+        className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+        style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
+        오늘로
+      </button>
+      </div>
 
       {/* ── 트랙의 양 끝 ── 범위 밖의 사실과 그리로 가는 길. 트랙 끝에 붙이면 수천 px 을 끌어야
           닿으므로 카드 밖 한 줄로 세운다(320px 에서도 손이 닿는 자리다). */}
@@ -517,9 +533,16 @@ function MonthLabel({ m }: { m: MoveRangeMonth }) {
   )
 }
 
-/** 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다. */
-function UpcomingRow({ items, onOpen }: {
+/**
+ * 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다.
+ *
+ * todayInRange 가 필요한 이유. upcoming 은 **창 안의** 변동에서만 걸러진다. 먼 달로 점프해
+ * 창이 오늘을 안 물면 그 목록은 반드시 비고, 내일 퇴실이 있어도 이 줄이 "예정된 입퇴실이
+ * 없습니다"라고 적는다. 없는 것과 여기서 셀 수 없는 것은 다른 말이다.
+ */
+function UpcomingRow({ items, todayInRange, onOpen }: {
   items: MoveEvent[]
+  todayInRange: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
 }) {
   const shown = items.slice(0, UPCOMING_MAX)
@@ -530,7 +553,9 @@ function UpcomingRow({ items, onOpen }: {
         <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>
           다가오는 {UPCOMING_DAYS}일
         </p>
-        {items.length === 0 ? (
+        {!todayInRange ? (
+          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖이라 여기서는 셀 수 없습니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
+        ) : items.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--ink-s)' }}>예정된 입퇴실이 없습니다.</p>
         ) : (
           <>

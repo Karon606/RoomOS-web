@@ -257,6 +257,70 @@ export function monthLastDay(month: string): string {
   return `${month}-${String(daysInMonth(month)).padStart(2, '0')}`
 }
 
+/** 연속 창의 경계 상수 — 과거는 한 달, 미래는 데이터가 정하되 바닥 +2 · 천장 +6 개월. */
+export const RANGE_PAST_MONTHS = 1
+export const RANGE_MIN_AHEAD = 2
+export const RANGE_MAX_AHEAD = 6
+/** 창 밖으로 점프했을 때의 창 폭(개월). 먼 달을 골라도 트랙이 이보다 길어지지 않는다. */
+export const RANGE_JUMP_MONTHS = 4
+
+/**
+ * 연속 창의 경계 — **넓히지 않고 옮긴다**(2026-08-20).
+ *
+ * 종전에는 focusMonth 가 범위 밖이면 그쪽으로 창을 **넓히기만** 했다. 2028년 1월을 고르면
+ * 2026-07 부터 2028-01 까지 19개월(578일 · 트랙 폭 약 13,900px)이 된다. 상한이 없어서 월 피커로
+ * 2035년을 고르면 100개월을 넘고, 그 기간 전부를 조회한다. "빈 트랙을 수천 px 끌지 않게"라던
+ * 천장 규칙(RANGE_MAX_AHEAD)이 정확히 그 반대로 작동하고 있었다.
+ *
+ * **기본 창(오늘 근처)은 한 글자도 안 바꾼다.** 오른쪽 끝을 '마지막 변동이 있는 달'에 두는 규칙은
+ * "다음에 무엇이 오는가"라는 이 화면의 존재 이유에 직접 답하는 자리라, 여기를 4개월로 깎으면
+ * 매일 아침의 기본 화면이 바뀌고 종전에 막대로 보이던 예약이 beyond 한 줄로 강등된다.
+ * 문제였던 것은 기본 창이 아니라 **점프**다.
+ *
+ * 불변식 넷(회귀가 못 박는다).
+ *   ① startMonth ≤ focusMonth ≤ endMonth — 언제나. focusMonth 가 창 밖이면 그 달의 건수를
+ *      아무도 모르는데 `?? 0` 이 "0건"으로 출력해 탭 접미가 통째로 사라진다.
+ *   ② 창의 개월 수 ≤ max(RANGE_JUMP_MONTHS, 1 + RANGE_MAX_AHEAD + RANGE_PAST_MONTHS) = 8.
+ *   ③ focusMonth 가 오늘 달이면 결과가 종전 산식과 완전히 같다.
+ *   ④ 과거 점프를 반복하면 startMonth 가 **정확히 한 달씩** 줄어든다 — focus 를 창의 첫 달에
+ *      두기 때문이다. 가운데에 두면 '이전 달 더 보기' 한 번에 두 달씩 튀어 낱말이 거짓이 된다.
+ */
+export function moveRangeWindow(input: {
+  todayMonth: string
+  focusMonth: string
+  /** 이 영업장의 마지막 변동이 있는 달. 기본 창의 오른쪽 끝을 정한다. */
+  lastChangeMonth: string
+}): { startMonth: string; endMonth: string } {
+  const { todayMonth, focusMonth, lastChangeMonth } = input
+  const minEnd = shiftMonth(todayMonth, RANGE_MIN_AHEAD)
+  const maxEnd = shiftMonth(todayMonth, RANGE_MAX_AHEAD)
+  const baseStart = shiftMonth(todayMonth, -RANGE_PAST_MONTHS)
+  const baseEnd = lastChangeMonth < minEnd ? minEnd : lastChangeMonth > maxEnd ? maxEnd : lastChangeMonth
+  if (focusMonth >= baseStart && focusMonth <= baseEnd) return { startMonth: baseStart, endMonth: baseEnd }
+  if (focusMonth < baseStart) {
+    // 과거 점프 — focus 가 창의 첫 달이다(불변식 ④).
+    return { startMonth: focusMonth, endMonth: shiftMonth(focusMonth, RANGE_JUMP_MONTHS - 1) }
+  }
+  // 미래 점프 — 앞머리로 한 달을 붙인다. '그때로 이동'으로 닿은 예약 앞에 누가 나가는지 보여야 한다.
+  return { startMonth: shiftMonth(focusMonth, -1), endMonth: shiftMonth(focusMonth, RANGE_JUMP_MONTHS - 2) }
+}
+
+/**
+ * 창 오른쪽 밖에 남은 **앞으로의** 예정.
+ *
+ * `today` 가드가 필요한 이유. 창을 과거로 미끄러뜨리면 창의 끝이 오늘보다 이전이 될 수 있는데,
+ * 그때 오른쪽 밖을 그대로 세면 이미 지난 변동이 "이후 예정 62건 · 최초 7/2"로 적힌다.
+ * 지난 일이 앞으로의 일로 읽히고, 그 수를 보고 광고·청소·계약 준비를 건다.
+ */
+export function beyondWindow(
+  changeDates: string[],
+  to: string,
+  today: string,
+): { count: number; firstDate: string } | null {
+  const rest = changeDates.filter(d => d > to && d > today).sort()
+  return rest.length > 0 ? { count: rest.length, firstDate: rest[0] } : null
+}
+
 const DAY_MS = 86400000
 const atUtc = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`)
 /** a 에서 b 까지의 날수(b 가 뒤면 양수). 양쪽 다 UTC 자정이라 실행 환경 시간대가 안 섞인다. */
