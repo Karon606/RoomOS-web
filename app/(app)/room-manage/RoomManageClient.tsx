@@ -571,6 +571,11 @@ export default function RoomManageClient({
   const moveEventCount = viewMonth != null
     ? moveCalendar.months.find(m => m.month === viewMonth)?.eventCount ?? moveCalendar.focusEventCount
     : moveCalendar.focusEventCount
+  // 창 안에서 가장 큰 건수 — 접미 자리를 여기에 맞춰 두면 달을 넘겨도 탭 폭이 안 변한다.
+  // 안 잡으면 접미가 (25) → (6) → 없음으로 줄면서 탭 트랙 자연폭이 9px·22px 씩 달라지고,
+  // flex 줄바꿈이 그 자연폭으로 판정되므로 특정 폭 구간에서 헤더가 접혔다 펴진다.
+  // 창 전체가 0건이면 예약하지 않는다(안 뜰 접미에 자리를 비워 둘 이유가 없다).
+  const moveSuffixWidest = String(moveCalendar.months.reduce((m, x) => Math.max(m, x.eventCount), 0))
 
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -1190,7 +1195,9 @@ export default function RoomManageClient({
               // 그래서 착지 순간에는 홈과 같은 수이고, 그 뒤 숫자가 바뀌는 것은 운영자가 스스로
               // 다른 달로 옮겼기 때문이다. 갱신은 스크롤이 멎은 뒤 한 번뿐이다 — rAF 로 밀면
               // 접미 폭이 바뀔 때마다 ViewTabs 의 코랄 채움이 200ms 애니메이션에 갇힌다.
-              { id: 'moves',    label: '입퇴실 캘린더', suffix: moveEventCount > 0 ? String(moveEventCount) : undefined },
+              { id: 'moves',    label: '입퇴실 캘린더',
+                suffix: moveEventCount > 0 ? String(moveEventCount) : undefined,
+                suffixWidest: moveSuffixWidest === '0' ? undefined : moveSuffixWidest },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}

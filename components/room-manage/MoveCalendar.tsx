@@ -321,6 +321,9 @@ function MoveCalendarView({ data, onViewMonthChange }: {
         <EmptyState
           title="이 기간에 입퇴실 변동이 없습니다"
           description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
+          // 트랙이 없는 창에서는 아래 부유 알약이 설명문 위에 앉는다(빈 상태 안쪽 여백 32px 대
+          // 알약 윗변 54px = 세로 22px 겹침). 빈 상태의 CTA 자리가 곧 '여기서 나가는 길'이다(§17).
+          action={todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
         />
       ) : (
         /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
@@ -390,12 +393,15 @@ function MoveCalendarView({ data, onViewMonthChange }: {
       {/* 오늘이 화면 밖일 때 — 넓은 트랙에서 '지금'을 잃지 않게 하는 유일한 상시 손잡이.
           보임/숨김은 paintToday 가 DOM 에 직접 쓴다(스크롤마다 트랙을 다시 그리지 않으려고).
           첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜지고,
-          그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday). */}
+          그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday).
+          **트랙이 있을 때만 부유시킨다** — 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다. */}
+      {data.rows.length > 0 && (
       <button ref={todayBtnRef} type="button" onClick={goToday}
         className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
         style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
         오늘로
       </button>
+      )}
       </div>
 
       {/* ── 트랙의 양 끝 ── 범위 밖의 사실과 그리로 가는 길. 트랙 끝에 붙이면 수천 px 을 끌어야
@@ -536,8 +542,13 @@ function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
       style={{ gridColumn: `${m.startDay + 1} / ${m.startDay + m.days + 1}`, gridRow: '1 / 2', borderLeft: m.startDay === 1 ? undefined : '1px solid var(--warm-border)' }}>
       <span className="sticky z-10 inline-flex items-baseline gap-1.5 whitespace-nowrap px-2 text-[0.6875rem] leading-none tnum"
         style={{ left: ROOM_COL, background: 'var(--cream)' }}>
-        {showYear && <span style={{ color: 'var(--ink-m)' }}>{m.month.slice(0, 4)}년</span>}
-        <span className="font-bold" style={{ color: 'var(--ink-2)' }}>{Number(m.month.slice(5, 7))}월</span>
+        {/* 연도와 월은 **한 덩어리로 읽혀야 한다** — gap-1.5(6px)를 사이에 두면 형제인 월 셀렉터
+            라벨('2026년 8월', 보통 공백 약 4px)과 자간이 갈린다. 여기서는 보통 공백으로 잇고
+            gap 은 '변동 없음' 과의 간격으로만 남긴다. */}
+        <span className="font-bold" style={{ color: 'var(--ink-2)' }}>
+          {showYear && <span className="font-normal" style={{ color: 'var(--ink-m)' }}>{`${m.month.slice(0, 4)}년 `}</span>}
+          {Number(m.month.slice(5, 7))}월
+        </span>
         {/* 빈 달을 말없이 두면 고장으로 읽힌다 — 비어 있는 것이 사실이라고 옅게 적어 둔다. */}
         {m.eventCount === 0 && <span style={{ color: 'var(--ink-m)' }}>변동 없음</span>}
       </span>
@@ -566,7 +577,7 @@ function UpcomingRow({ items, todayInRange, onOpen }: {
           다가오는 {UPCOMING_DAYS}일
         </p>
         {!todayInRange ? (
-          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖이라 여기서는 셀 수 없습니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
+          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖입니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
         ) : items.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--ink-s)' }}>예정된 입퇴실이 없습니다.</p>
         ) : (
