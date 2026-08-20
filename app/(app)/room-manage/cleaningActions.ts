@@ -52,6 +52,7 @@ async function loadCleaningRows(
     select: {
       id: true, roomId: true, leaseTermId: true,
       reason: true, status: true, scheduledDate: true, doneDate: true,
+      plannedPerformer: true,
       performer: true, performerName: true, memo: true, expenseId: true, fromCleaningFund: true,
       deletedAt: true,
       room: { select: { roomNo: true } },
@@ -69,6 +70,7 @@ async function loadCleaningRows(
     id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, leaseTermId: r.leaseTermId,
     reason: r.reason as CleaningReason, status: r.status as CleaningStatus,
     scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
+    plannedPerformer: (r.plannedPerformer as CleaningPerformer | null) ?? null,
     performer: (r.performer as CleaningPerformer | null) ?? null,
     performerName: r.performerName, memo: r.memo,
     // 금액은 지출에서 읽는다. 여기 복사해 두면 지출에서 고쳤을 때 갈린다.
@@ -133,10 +135,18 @@ export async function getRecentCleaningPerformers(): Promise<string[]> {
   return out.slice(0, 5)
 }
 
+/**
+ * 청소 예정 등록.
+ *
+ * 담당자는 **선택**이다(운영자 요구 "누가 청소할지도 표시되고", 2026-08-20). 기본값을 박아
+ * 두면 아직 안 정한 것이 '업체로 정함'으로 저장되고, 그 거짓이 캘린더 요약 줄에 그대로 뜬다.
+ * 완료 시점의 performer 와 칸이 다르다 — 완료 적용취소가 그 칸을 내리기 때문이다.
+ */
 export async function createCleaning(input: {
   roomId: string
   reason: CleaningReason
   scheduledDate?: string | null
+  plannedPerformer?: CleaningPerformer | null
   leaseTermId?: string | null
   memo?: string | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
@@ -151,6 +161,7 @@ export async function createCleaning(input: {
         leaseTermId: input.leaseTermId ?? null,
         reason: input.reason,
         scheduledDate: input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null,
+        plannedPerformer: input.plannedPerformer ?? null,
         memo: input.memo?.trim() || null,
       },
       select: { id: true },
@@ -285,6 +296,10 @@ export async function completeCleaning(input: {
  * completeCleaning 이 "걸린 지출이 없다"고 보고 **생성 분기로 떨어져 같은 청소에 지출이 두 건**
  * 생겼다. 연결을 그대로 두면 재완료가 저절로 수정 분기로 가 한 건이 유지된다.
  * fromCleaningFund 만 내린다 — 부담 표식은 완료된 청소에 붙는 것이고 완료 시점에 다시 정한다.
+ *
+ * **예정 담당자(plannedPerformer)는 애초에 여기 없다.** 그 칸은 계획이고 이 함수가 내리는
+ * performer 는 완료 시점의 사실이라, 한 칸이었다면 되돌리기가 '누가 하기로 했는가'까지
+ * 함께 지웠을 것이다. 칸을 가른 이유가 그것이다(2026-08-20).
  *
  * **업체·사람 이름(performerName)도 지우지 않는다.** 지출을 남기는 것과 같은 방향이다.
  * 되돌리는 이유는 대개 날짜나 금액이라 누가 했는지는 그대로인데, 이름을 지워 버리면 재완료 때

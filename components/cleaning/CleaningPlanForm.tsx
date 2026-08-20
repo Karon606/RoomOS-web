@@ -12,10 +12,15 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { createCleaning } from '@/app/(app)/room-manage/cleaningActions'
-import { CLEANING_REASON_LABEL, type CleaningReason } from '@/app/(app)/room-manage/cleaningConstants'
+import {
+  CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
+  type CleaningPerformer, type CleaningReason,
+} from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
+/** 담당은 **선택**이라 '미정'이 먼저 서고 기본값이다. 빈 문자열이 곧 '아직 안 정함'이다. */
+const PLANNED_PERFORMERS: (CleaningPerformer | '')[] = ['', 'SELF', 'VENDOR', 'THIRD_PARTY']
 
 export function CleaningPlanForm({
   roomId, rooms, dense = false, onDone, onCancel,
@@ -33,6 +38,10 @@ export function CleaningPlanForm({
   const [pickedRoom, setPickedRoom] = useState('')
   const [reason, setReason] = useState<CleaningReason>('CHECKOUT')
   const [scheduled, setScheduled] = useState(kstYmdStr())
+  // 담당은 미리 고르지 않는다. 완료 폼은 '업체'를 기본으로 두지만(대개 맡긴다) 그것은 **일어난
+  // 일**을 적는 자리다. 계획 단계에서 기본값을 박으면 아직 안 정한 것이 '업체로 정함'으로
+  // 저장되고, 그 거짓이 캘린더 요약 줄에 그대로 선다.
+  const [plannedPerformer, setPlannedPerformer] = useState<CleaningPerformer | ''>('')
   // 사유 메모. '기타'를 고르면 라벨만으로는 무슨 청소인지 알 수 없어 설명할 자리가 필요하다.
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
@@ -50,7 +59,10 @@ export function CleaningPlanForm({
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await createCleaning({ roomId: targetRoomId, reason, scheduledDate: scheduled, memo })
+        const res = await createCleaning({
+          roomId: targetRoomId, reason, scheduledDate: scheduled,
+          plannedPerformer: plannedPerformer || null, memo,
+        })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '청소 예정 등록됨')
         onDone()
@@ -90,6 +102,25 @@ export function CleaningPlanForm({
         {dense ? '예정일' : <p className={labelCls}>예정일</p>}
         {/* 정본 DatePicker 사용 — 네이티브 date 입력은 앱 캘린더 문법과 어긋난다(운영자 지적 2026-08-06). */}
         <DatePicker value={scheduled} onChange={setScheduled} className={dense ? 'text-xs' : undefined} />
+      </div>
+
+      {/* 담당 — 운영자 요구가 "누가 청소할지도 표시되고" 라 계획 단계에서 받는다(2026-08-20).
+          완료 폼과 **다른 칸**에 저장된다(plannedPerformer) — 한 칸이면 완료 적용취소가
+          계획까지 지운다. 이름 칸은 여기 없다: 계획 단계에서 정하는 것은 누가 하느냐지
+          어느 업체냐가 아니고, 업체 이름은 완료할 때 실제로 맡긴 곳을 적는다. */}
+      <div className={dense ? '' : 'space-y-1.5'}>
+        {!dense && <p className={labelCls}>담당 (선택)</p>}
+        <div className="flex gap-1.5 flex-wrap">
+          {PLANNED_PERFORMERS.map(v => (
+            <button key={v || 'none'} type="button" onClick={() => setPlannedPerformer(v)}
+              className={`rounded-lg ${dense ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'}`}
+              style={plannedPerformer === v
+                ? { background: 'var(--coral)', color: 'var(--on-solid)' }
+                : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
+              {v ? CLEANING_PERFORMER_LABEL[v] : '미정'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 사유 메모 — '기타'는 라벨만으로 뜻이 안 서고, 나머지 사유도 "왜 지금" 이 남아야 나중에 목록을 읽을 수 있다. */}

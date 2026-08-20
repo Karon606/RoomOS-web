@@ -465,8 +465,12 @@ model RoomCleaning {
   reason     String    @default("CHECKOUT")   // CHECKOUT | AFTER_WORK | DURING_STAY | OTHER
   status     String    @default("PLANNED")    // PLANNED | DONE | SKIPPED
   scheduledDate DateTime? @db.Date
+  // 예정 단계에서 정한 담당자 (2026-08-20, 캘린더 1단계). 아래 performer 와 **다른 칸**이다 —
+  // 이쪽은 계획이고 저쪽은 완료 시점의 사실이라, 한 칸에 담으면 되돌리기(reopenCleaning 이
+  // performer 를 내린다)가 계획까지 함께 지운다. 기존 행은 null 로 남는다(백필 없음).
+  plannedPerformer String? // SELF | VENDOR | THIRD_PARTY
   doneDate      DateTime? @db.Date
-  performer     String?   // SELF | VENDOR | THIRD_PARTY
+  performer     String?   // SELF | VENDOR | THIRD_PARTY — 완료 시점에 기록되는 사실
   performerName String?   // 업체명·사람 이름 자유 입력. 청소 담당 계정이 앱에 없다
   // 비용이 있으면 Expense 1건을 만들고 그 id 를 건다. 금액은 여기 복사하지 않는다(2단계)
   expenseId  String?   @db.Uuid
