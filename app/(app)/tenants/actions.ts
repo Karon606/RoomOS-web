@@ -1074,35 +1074,43 @@ export async function updateTenant(formData: FormData): Promise<
     await prisma.tenantContact.delete({ where: { id: existingEmergency.id } })
   }
 
-  // 본국 연락처 (외국인 입주자) — upsert
-  const existingHome = await prisma.tenantContact.findFirst({
-    where: { tenantId, isHomeCountry: true },
-  })
-  if (homeCountryContact) {
-    if (existingHome) {
-      await prisma.tenantContact.update({
-        where: { id: existingHome.id },
-        data: {
-          contactType: 'PHONE',
-          contactValue: homeCountryContact,
-          countryCode: homeCountryCode || null,
-        },
-      })
-    } else {
-      await prisma.tenantContact.create({
-        data: {
-          tenantId,
-          contactType: 'PHONE',
-          contactValue: homeCountryContact,
-          isPrimary: false,
-          isEmergency: false,
-          isHomeCountry: true,
-          countryCode: homeCountryCode || null,
-        },
-      })
+  // 본국 연락처 (외국인 입주자) — upsert.
+  // 칸이 **왔을 때만** 건드린다. 국적을 대한민국으로 바꾸면 이 칸은 통째로 안 그려지고(TenantClient),
+  // 그때 폼에는 이름 자체가 없다. get 은 null 을 돌려주고 아래 else 가 저장된 행을 지웠다 —
+  // 화면 주석이 약속한 '필드 부재 = 서버가 건드리지 않음'과 정반대다. 같은 조건으로 숨는 형제
+  // 두 칸(현지 표기 이름 nativeNamePatch · 외국인등록번호 foreignRegNoPatch)은 이미 has 가드로
+  // 보존하는데 셋 중 여기만 안 막혀 있었다(신고 aed91367 시공 중 발견).
+  // 칸이 보이는 상태에서 비우면 종전대로 그 뜻대로 지운다.
+  if (formData.has('homeCountryContact')) {
+    const existingHome = await prisma.tenantContact.findFirst({
+      where: { tenantId, isHomeCountry: true },
+    })
+    if (homeCountryContact) {
+      if (existingHome) {
+        await prisma.tenantContact.update({
+          where: { id: existingHome.id },
+          data: {
+            contactType: 'PHONE',
+            contactValue: homeCountryContact,
+            countryCode: homeCountryCode || null,
+          },
+        })
+      } else {
+        await prisma.tenantContact.create({
+          data: {
+            tenantId,
+            contactType: 'PHONE',
+            contactValue: homeCountryContact,
+            isPrimary: false,
+            isEmergency: false,
+            isHomeCountry: true,
+            countryCode: homeCountryCode || null,
+          },
+        })
+      }
+    } else if (existingHome) {
+      await prisma.tenantContact.delete({ where: { id: existingHome.id } })
     }
-  } else if (existingHome) {
-    await prisma.tenantContact.delete({ where: { id: existingHome.id } })
   }
 
   // 신고 d3ea25f0 근본 수정: 단기 청구 동기화 판정은 '날짜'가 아니라 '청구 락'이 기준이다.
