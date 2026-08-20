@@ -504,6 +504,32 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   eq('복귀 · 라벨', r506.bars.map(b => b.label), ['8/1 입실 · 8/10 507호로 이사', '8/20 507호에서 이사'])
 }
 
+// ── 이사 문구의 조사 ── 호실번호가 늘 숫자라는 보장이 없다(등록 폼이 'A동-3'·'옥탑방'을 권한다).
+// '로'를 그냥 이어 붙이면 '옥탑방로'가 된다. 판정 정본은 lib/roomNo roomNoWithRo 다.
+{
+  const cases: [string, string][] = [
+    ['508', '8/10 508호로 이사'],     // 숫자에는 '호'가 붙고 호는 받침이 없다
+    ['사무실', '8/10 사무실로 이사'],   // 종성 ㄹ
+    ['옥탑방', '8/10 옥탑방으로 이사'], // 종성 ㅇ
+    ['A동-3', '8/10 A동-3으로 이사'],  // 숫자 3 = 삼, 종성 ㅁ
+    ['별관2', '8/10 별관2로 이사'],    // 숫자 2 = 이, 받침 없음
+  ]
+  for (const [roomNo, want] of cases) {
+    const l = lease({
+      id: `jo-${roomNo}`, roomNo, status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '조사',
+      stays: stays(`jo-${roomNo}`, [['506', '2026-01-05', '2026-08-10'], [roomNo, '2026-08-10', null]]),
+    })
+    const old = build([l], [l]).rows.find(r => r.roomNo === '506')!
+    eq(`이사 조사 · ${roomNo}`, old.bars[0].label, want)
+  }
+  // 들어오는 쪽 조사('에서')는 받침을 안 탄다.
+  const back = lease({
+    id: 'jo-in', roomNo: '507', status: 'ACTIVE', moveInDate: '2026-01-05', tenantName: '조사',
+    stays: stays('jo-in', [['옥탑방', '2026-01-05', '2026-08-10'], ['507', '2026-08-10', null]]),
+  })
+  eq('이사 조사 · 들어오는 쪽', build([back], [back]).rows.find(r => r.roomNo === '507')!.bars[0].label, '8/10 옥탑방에서 이사')
+}
+
 // ── 예약은 구간이 없다 ── 구간을 안 만드는 것이 설계라 계약이 그대로 한 구간이 된다.
 {
   const rsv = lease({ id: 'rv', roomNo: '410', status: 'RESERVED', moveInDate: '2026-08-20', tenantName: '예약' })

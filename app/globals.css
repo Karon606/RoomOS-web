@@ -444,6 +444,10 @@ html.doc-scroll body {
   transition: outline-color var(--dur-fast, 100ms) ease;
 }
 @media (hover: hover) { .mc-bar:hover { outline-color: var(--coral); } }
+/* 포커스 링을 여기서 함께 세운다. globals.css 의 규칙은 언레이어드라 Tailwind 의 utilities 레이어를
+   이기고, 그러면 위 `outline: 2px solid transparent` 가 막대의 focus-visible 유틸을 통째로 지운다
+   (§09 focus-visible 링 필수). offset 을 +1 로 두어 hover(안쪽 -2px)와 눈으로 갈린다. */
+.mc-bar:focus-visible { outline-color: var(--coral); outline-offset: 1px; }
 /* 히트 영역만 층 전체로 — 보이는 띠는 그대로 두고 손가락이 닿는 넓이만 44px 로 채운다(§09).
    막대 높이가 --mc-lane 에서 12px 을 빼고 가운데 정렬이라 위아래로 6px 씩 비어 있다.
    레인을 키우는 대신 이 길을 쓰는 이유는 세로다 — 열일곱 행이면 200px 넘게 길어진다. */

@@ -23,7 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
-import { fmtRoomNo } from '@/lib/roomNo'
+import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth } from '@/lib/moveCalendar'
 
@@ -62,14 +62,20 @@ function barTone(bar: MoveBar): string {
   return bar.kind === 'reserved' ? 'var(--band-await-bg)' : 'var(--band-paid-bg)'
 }
 
-/** 막대 하나를 소리로 읽는 문장 — 색이 지고 있던 정보(거주냐 예약이냐)를 말로 옮긴다. */
+/**
+ * 막대 하나를 소리로 읽는 문장 — 색이 지고 있던 정보(거주냐 예약이냐)를 말로 옮긴다.
+ *
+ * 날짜 뒤에 조사를 붙이지 않는다. fmtDateKor 은 요일을 괄호로 달아서, '…(수)부터' 로 이으면
+ * 읽는 소리가 "일 괄호 수 부터" 가 된다. 짧은 문장 여럿으로 끊는 편이 낫다.
+ * 이사 문구의 '로'는 정본(roomNoWithRo)이 고른다 — 여기서 조사를 다시 고르면 사본이 된다.
+ */
 function barAria(bar: MoveBar, roomNo: string): string {
   const what = bar.kind === 'reserved' ? '입실 예약' : '거주'
-  const from = bar.stayFrom ? `${fmtDateKor(bar.stayFrom)}부터` : '시작일 미상'
-  const to = bar.stayTo ? ` ${fmtDateKor(bar.stayTo)}까지` : ', 퇴실일 미정'
+  const start = bar.stayFrom ? `시작 ${fmtDateKor(bar.stayFrom)}.` : '시작일 미상.'
+  const end = bar.stayTo ? `종료 ${fmtDateKor(bar.stayTo)}.` : '퇴실일 미정.'
   const moved = bar.movedFromRoomNo ? ` ${fmtRoomNo(bar.movedFromRoomNo)}에서 이사.`
-    : bar.movedToRoomNo ? ` ${fmtRoomNo(bar.movedToRoomNo)}로 이사.` : ''
-  return `${fmtRoomNo(roomNo)} ${bar.tenantName} ${what}. ${from}${to}.${moved}${bar.conflicted ? ' 다른 계약과 겹칩니다.' : ''}`
+    : bar.movedToRoomNo ? ` ${roomNoWithRo(bar.movedToRoomNo)} 이사.` : ''
+  return `${fmtRoomNo(roomNo)} ${bar.tenantName} ${what}. ${start} ${end}${moved}${bar.conflicted ? ' 다른 계약과 겹칩니다.' : ''}`
 }
 
 /** 막대 모서리 — 범위 밖으로 이어지는 쪽은 직각, 트랙 안에서 끝나는 쪽만 둥글다. */
@@ -224,11 +230,14 @@ export function MoveCalendar({ data }: { data: MoveCalendarRange }) {
               않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
               공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
               막대마다 aria-label 이 종류를 말하므로 스와치를 소리로 읽히면 같은 말이 두 번이다. */}
-          <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2"
+          {/* 좌측 인셋은 바로 아래 호실 열(px-2)에 맞춘다 — 한 카드 안에서 세로로 겹쳐 서는 두 글자의
+              레일이 어긋나면 그 자체가 이질감이다. 스와치는 가로로 눕힌다(정사각 10px 은 트랙 위
+              막대와 달리 글자를 안 이고 있어 표면만으로 읽혀야 한다). */}
+          <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2"
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
             {([['var(--band-paid-bg)', '거주'], ['var(--band-await-bg)', '입실 예약']] as const).map(([bg, label]) => (
               <span key={label} className="inline-flex items-center gap-1.5 text-[0.65625rem]" style={{ color: 'var(--ink-m)' }}>
-                <span className="inline-block" style={{ width: 10, height: 10, borderRadius: 'var(--radius-xs)', background: bg }} />
+                <span className="inline-block" style={{ width: 18, height: 9, borderRadius: 'var(--radius-xs)', background: bg }} />
                 {label}
               </span>
             ))}
@@ -621,12 +630,13 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
         {/* 이름은 막대 안에서 sticky 다. 연속 트랙에서는 한 막대가 화면보다 넓은 일이 흔한데,
             글자를 막대 왼쪽 끝에 붙여 두면 그 막대가 화면을 가득 채운 순간 **이름 없는 색 띠**가
             된다(390px 에서 열일곱 행 중 열 행이 그랬다). 막대 안에 갇히므로 옆 막대는 안 침범한다. */}
-        <span className="sticky min-w-0 max-w-full truncate px-2" style={{ left: ROOM_COL }}>
+        {/* tnum — 이 라벨에는 날짜뿐 아니라 호실번호도 들어온다(이사 문구). 옆 열의 같은 숫자와 자폭이 갈리면 안 된다. */}
+        <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
           {mode === 'full' ? full : mode === 'name' ? bar.tenantName : ''}
         </span>
       </button>
       {side && ink && (
-        <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none"
+        <span className="self-center px-1 text-[0.6875rem] font-medium truncate pointer-events-none tnum"
           style={{
             gridColumn: `${ink.startDay + 1} / ${ink.endDay + 2}`,
             gridRow: `${bar.lane + 1} / span 1`,

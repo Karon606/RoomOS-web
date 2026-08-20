@@ -23,7 +23,7 @@ import {
 } from './billing'
 import { fmtDateDot } from './fmtDate'
 import { kstDaysUntil } from './kstDate'
-import { fmtRoomNo } from './roomNo'
+import { fmtRoomNo, roomNoWithRo } from './roomNo'
 import { isVacancyExcluded } from './vacancy'
 
 /**
@@ -300,9 +300,11 @@ export function moveDateLabel(movedAt: string | null, counterpart?: { roomNo: st
   const [, mm, dd] = movedAt.split('-')
   const day = `${Number(mm)}/${Number(dd)}`
   if (!counterpart) return `${day} 이사`
-  // 조사는 앞말에 붙여 쓴다(availableFromLabel 의 '부터'와 같은 관례). 호실 표기는 늘 'N호'라
-  // 받침이 없어 '로'·'에서'가 그대로 붙는다.
-  return `${day} ${fmtRoomNo(counterpart.roomNo)}${counterpart.dir === 'to' ? '로' : '에서'} 이사`
+  // 조사는 앞말에 붙여 쓴다(availableFromLabel 의 '부터'와 같은 관례). '로'는 받침을 타므로
+  // 정본(roomNoWithRo)이 고른다 — 호실번호가 늘 숫자라는 보장이 없다('옥탑방'·'A동-3').
+  return counterpart.dir === 'to'
+    ? `${day} ${roomNoWithRo(counterpart.roomNo)} 이사`
+    : `${day} ${fmtRoomNo(counterpart.roomNo)}에서 이사`
 }
 
 /**

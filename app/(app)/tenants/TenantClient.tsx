@@ -4500,12 +4500,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               자리라, 틀리면 옛 방과 새 방이 며칠씩 어긋난 채 그려진다.
               신규 배정(방이 처음 정해지는 것)은 이사가 아니라 입주이므로 뜨지 않는다. */}
           {isRoomMove && (
-            <>
+            // 위쪽 6px 을 더해 호실 그룹과의 간격을 12px 로 — 그룹 안 간격(6px)과 같으면 이사일이
+            // 호실 셀렉트에 딸린 라벨처럼 읽힌다(폼의 독립 칸 간격 정본이 12px 이다).
+            <div className="space-y-1.5 pt-1.5">
               <Field label="이사일" name="moveDate" type="date" value={moveDateVal} onChange={setMoveDateVal} />
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                 실제로 방을 옮긴 날입니다. 기본은 오늘이고, 뒤늦게 입력하는 이사는 그날로 고쳐 주세요.
               </p>
-            </>
+            </div>
           )}
         </div>
 
