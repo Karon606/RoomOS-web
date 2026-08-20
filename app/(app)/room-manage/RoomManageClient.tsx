@@ -546,7 +546,7 @@ export default function RoomManageClient({
     return out
   })()
   const [cleaningOnly, setCleaningOnly] = useState(false)
-  // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
+  // 호실 / 작업 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
   // 보고 있는 탭을 URL 에 남긴다 — 캘린더가 트랙 위치(?at=)를 적어 두는데 탭이 URL 에 없으면
@@ -1177,25 +1177,28 @@ export default function RoomManageClient({
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
           {/* 뷰 전환 탭 — 제목 옆(수납 관리와 같은 자리·같은 정본).
-              equal 을 뗐다. 라벨이 '입퇴실 캘린더'로 길어지면서 세 칸이 가장 긴 칸에 맞춰
-              부풀어(320px 118.7px x 3) 트랙이 콘텐츠 폭을 통째로 먹고, 390px 에서 월 셀렉터가
-              한 줄 더 밀려 내려갔다(헤더 높이 102 → 142). 320px 에서는 칸이 288 에 갇혀 글자가
-              1px 잘렸다. 자연폭으로 두면 56.9 / 79 / 129 = 트랙 266.9 로 세 폭 전부 안 잘리고
-              헤더 높이도 종전 그대로다(142/142/102). 자연폭 + 넘치면 가로 스크롤이 §25 의 기본이고
-              형제 수납 관리(3탭 + 접미 N)가 쓰는 바로 그 문법이다 — equal 은 아직 부록 등재 제안 중. */}
+              equal 을 뗐다. 자연폭으로 두면 세 폭이 56.89 / 79.05 / 113.91 = 트랙 251.84 로
+              320px(콘텐츠 288)에서도 글자가 안 잘리고, 넘치면 가로 스크롤이 §25 의 기본이다.
+              형제 수납 관리(3탭 + 접미 N)가 쓰는 바로 그 문법이다 — equal 은 아직 부록 등재 제안 중.
+              **id 는 URL 값이라 안 바꾼다** — 'cleaning'·'moves' 를 북마크·홈 딥링크가 물고 있다.
+              라벨만 개명한다(운영자 확정 2026-08-21: 청소는 작업의 한 종목이 된다). */}
           <ViewTabs ariaLabel="호실 관리 뷰" activeId={viewTab}
             onChange={id => setViewTab(id as ViewTabId)}
             tabs={[
               { id: 'rooms',    label: '호실' },
-              { id: 'cleaning', label: '청소', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
-              // '입퇴실'만으로는 무엇이 열리는지 안 보인다는 운영자 제안(2026-08-18) — 이 탭이 여는 것은
-              // 달력이라 이름이 그렇게 말한다. 홈 링크 문구('이달 입퇴실 N건')는 그대로 둔다.
-              // 접미 N 은 **보고 있는 달**의 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
+              // '청소'에서 '작업'으로 넓혔다 — 종목(청소·도배·장판)은 탭이 아니라 필터가 가른다.
+              // 접미 N 은 아직 **청소 예정 건수**다. 종목이 늘면 그 수도 함께 넓어져야 한다.
+              { id: 'cleaning', label: '작업', suffix: plannedCleaningCount > 0 ? String(plannedCleaningCount) : undefined },
+              // '입퇴실 캘린더'에서 '작업 일정'으로. 이 달력이 입퇴실만 담던 시절의 이름이었는데
+              // 이제 작업까지 담고, 입퇴실만 보는 것은 카드 안 축 필터가 받는다.
+              // 접미 N 은 **보고 있는 달**의 입퇴실 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
               // 눌러 들어왔을 때 그 숫자가 여기서 다른 값으로 바뀌면 둘 중 하나가 거짓으로 읽힌다.
               // 그래서 착지 순간에는 홈과 같은 수이고, 그 뒤 숫자가 바뀌는 것은 운영자가 스스로
               // 다른 달로 옮겼기 때문이다. 갱신은 스크롤이 멎은 뒤 한 번뿐이다 — rAF 로 밀면
               // 접미 폭이 바뀔 때마다 ViewTabs 의 코랄 채움이 200ms 애니메이션에 갇힌다.
-              { id: 'moves',    label: '입퇴실 캘린더',
+              // **이름과 접미가 어긋난다**: '작업 일정'인데 접미는 작업을 하나도 안 센다.
+              // 홈 타일과 앵커된 값이라 0단계에서는 안 건드리고 운영자 판단 항목으로 올렸다.
+              { id: 'moves',    label: '작업 일정',
                 suffix: moveEventCount > 0 ? String(moveEventCount) : undefined,
                 suffixWidest: moveSuffixWidest === '0' ? undefined : moveSuffixWidest },
             ]} />
