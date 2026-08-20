@@ -549,6 +549,14 @@ export default function RoomManageClient({
   // 호실 / 청소 뷰 전환(v2.0 §25). 접미 N 은 **예정 건수**다 — 위 '청소 필요 N실'은 방 수라 단위가 다르다.
   const [viewTab, setViewTab] = useState<ViewTabId>(initialTab ?? 'rooms')
   const plannedCleaningCount = liveCleanings.filter(c => c.status === 'PLANNED').length
+  // 트랙이 보고 있는 달 — 캘린더가 착지할 때와 스크롤이 멎을 때마다 알려 준다. null 이면 아직 첫 착지 전.
+  // 서버 왕복이 없다: 달별 건수는 이미 moveCalendar.months 에 전부 실려 왔다.
+  const [viewMonth, setViewMonth] = useState<string | null>(null)
+  // 접미 N 은 **보고 있는 달**의 건수다. 서버 prop(focusMonth 의 건수)만 쓰면 스크롤을 따라오지 못해
+  // 라벨은 9월인데 배지는 8월 수로 서 있었다. 못 찾으면 서버 값으로 떨어진다(트랙이 아직 안 앉은 회차).
+  const moveEventCount = viewMonth != null
+    ? moveCalendar.months.find(m => m.month === viewMonth)?.eventCount ?? moveCalendar.focusEventCount
+    : moveCalendar.focusEventCount
 
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -1165,7 +1173,10 @@ export default function RoomManageClient({
               // 달력이라 이름이 그렇게 말한다. 홈 링크 문구('이달 입퇴실 N건')는 그대로 둔다.
               // 접미 N 은 **보고 있는 달**의 건수다(트랙 전체가 아니라). 홈 '이달 입퇴실 N건'을
               // 눌러 들어왔을 때 그 숫자가 여기서 다른 값으로 바뀌면 둘 중 하나가 거짓으로 읽힌다.
-              { id: 'moves',    label: '입퇴실 캘린더', suffix: moveCalendar.focusEventCount > 0 ? String(moveCalendar.focusEventCount) : undefined },
+              // 그래서 착지 순간에는 홈과 같은 수이고, 그 뒤 숫자가 바뀌는 것은 운영자가 스스로
+              // 다른 달로 옮겼기 때문이다. 갱신은 스크롤이 멎은 뒤 한 번뿐이다 — rAF 로 밀면
+              // 접미 폭이 바뀔 때마다 ViewTabs 의 코랄 채움이 200ms 애니메이션에 갇힌다.
+              { id: 'moves',    label: '입퇴실 캘린더', suffix: moveEventCount > 0 ? String(moveEventCount) : undefined },
             ]} />
         </div>
         {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
@@ -1198,7 +1209,7 @@ export default function RoomManageClient({
       </div>
 
       {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
-      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} />}
+      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
