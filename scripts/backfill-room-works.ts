@@ -20,10 +20,23 @@ import { PrismaPg } from '@prisma/adapter-pg'
 const APPLY = process.argv.includes('--apply')
 
 // 종류 판정 — 품목·상세·카테고리를 합쳐 본다. 몰딩은 장판 부속이라 장판으로 센다.
-const kindOf = (s: string): string | null =>
-  /장판|몰딩/.test(s) ? '장판' : /도배|벽지/.test(s) ? '도배' : null
-// 시공(공임) 지출인가 — '시공'·'하리'(현장 용어)가 들어가면 그 날이 작업일이다.
-const isLabor = (s: string): boolean => /시공|하리/.test(s)
+//
+// **둘이 함께 적힌 지출이 있다.** 507·509호의 "도배+장판" 23만원이 그것이다(상세를 나눠 적기
+// 전 시기, 운영자 확인 2026-08-25). 처음엔 먼저 걸리는 하나만 골랐고 그래서 두 방의 **도배가
+// 통째로 사라졌다.** 종류를 하나만 돌려주는 함수 모양 자체가 그 결함을 부른 것이라 배열로 낸다.
+const kindsOf = (s: string): string[] => {
+  const out: string[] = []
+  if (/장판|몰딩/.test(s)) out.push('장판')
+  if (/도배|벽지/.test(s)) out.push('도배')
+  return out
+}
+// 시공(공임) 지출인가 — 그 날이 작업일이다.
+//
+// '시공'·'하리'(현장 용어)에 더해, 종류 이름이 **단독으로** 적힌 것도 공임으로 본다.
+// '벽지도배' 14만원이 그렇다 — 자재를 따로 안 사고 한 줄로 적은 도배 공임인데, 종전 규칙이
+// '시공' 글자만 봐서 자재로 분류했고 그 결과 402·409·418호에 "자재 구매일로 기록했습니다"라는
+// **거짓 메모**가 붙었다(날짜는 맞았다). 운영자 확인 — "장판시공으로 되어있는게 장판 시공한 날짜야".
+const isLabor = (s: string): boolean => /시공|하리|벽지도배|도배\+장판/.test(s)
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -43,25 +56,33 @@ async function main() {
     propertyId: string; roomId: string; kind: string
     laborDates: Date[]; matDates: Date[]
     expenseIds: string[]; amount: number
+    /** 비용이 다른 종류 기록에 함께 걸려 있으면 그 종류 이름. 화면이 "왜 0원인가"를 말할 근거다. */
+    sharedWith?: string
   }
   const groups = new Map<string, Group>()
   let skippedNoKind = 0, skippedNoRoom = 0, skippedLinked = 0
 
   for (const r of rows) {
     if (r.roomWorkId) { skippedLinked += 1; continue }
-    const kind = kindOf(`${r.itemLabel ?? ''} ${r.detail ?? ''} ${r.category}`)
-    if (!kind) { skippedNoKind += 1; continue }
+    const kinds = kindsOf(`${r.itemLabel ?? ''} ${r.detail ?? ''} ${r.category}`)
+    if (kinds.length === 0) { skippedNoKind += 1; continue }
     // 방이 없으면 어느 방 작업인지 앱이 알 수 없다. 지어내지 않고 남겨 둔다.
     if (!r.roomId) { skippedNoRoom += 1; continue }
-    const key = `${r.roomId}|${kind}`
-    const g = groups.get(key) ?? {
-      propertyId: r.propertyId, roomId: r.roomId, kind,
-      laborDates: [], matDates: [], expenseIds: [], amount: 0,
+    const labor = isLabor(`${r.itemLabel ?? ''} ${r.detail ?? ''}`)
+    for (const kind of kinds) {
+      const key = `${r.roomId}|${kind}`
+      const g = groups.get(key) ?? {
+        propertyId: r.propertyId, roomId: r.roomId, kind,
+        laborDates: [], matDates: [], expenseIds: [], amount: 0,
+      }
+      ;(labor ? g.laborDates : g.matDates).push(r.date)
+      // 지출은 **한 작업에만** 걸 수 있다(Expense.roomWorkId 는 단일). 둘에 걸친 지출은
+      // 첫 종류에만 걸고 나머지 쪽 기록에는 그 사실을 메모로 남긴다 — 금액을 임의로
+      // 쪼개면 앱이 지어낸 숫자가 장부에 들어간다.
+      if (kind === kinds[0]) { g.expenseIds.push(r.id); g.amount += r.amount }
+      else g.sharedWith = kinds[0]
+      groups.set(key, g)
     }
-    ;(isLabor(`${r.itemLabel ?? ''} ${r.detail ?? ''}`) ? g.laborDates : g.matDates).push(r.date)
-    g.expenseIds.push(r.id)
-    g.amount += r.amount
-    groups.set(key, g)
   }
 
   const roomNo = new Map(
@@ -103,7 +124,9 @@ async function main() {
       data: {
         propertyId: p.g.propertyId, roomId: p.g.roomId, kind: p.g.kind,
         status: 'DONE', doneDate: p.doneDate,
-        memo: p.guessed ? '시공 지출이 없어 자재 구매일로 기록했습니다.' : null,
+        memo: p.g.sharedWith
+          ? `비용은 같은 날 ${p.g.sharedWith} 건에 함께 기록돼 있습니다.`
+          : p.guessed ? '시공 지출이 없어 자재 구매일로 기록했습니다.' : null,
       },
     })
     made += 1
