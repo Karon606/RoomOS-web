@@ -759,6 +759,11 @@ export default function TenantClient({
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
+  // 현금영수증 발행 표시와 **발행일**. 종전에는 체크박스가 비제어라 FormData 로만 읽었는데,
+  // 발행일 칸이 체크에 따라 열리고 닫히므로 상태를 쥔다(운영자 확정 2026-08-24, 신고 8b9b6c43).
+  // 합계가 발행일의 달로 잡힌다 — 지연 발행이면 이 값이 곧 세무 숫자의 축이다.
+  const [cashReceiptOn, setCashReceiptOn] = useState(false)
+  const [cashReceiptDateVal, setCashReceiptDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
@@ -1500,6 +1505,7 @@ export default function TenantClient({
     setPayTarget(null); setPayHistory([]); setPayWindow([]); setShowPayForm(false); setError(''); setDistNotice(null); setPaySettlement(null)
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
+    setCashReceiptOn(false); setCashReceiptDateVal(kstYmdStr())
   }
 
   const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -1508,7 +1514,8 @@ export default function TenantClient({
     const fd = new FormData(e.currentTarget)
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
-    const cashReceiptIssued = fd.get('cashReceipt') === 'on'   // 현금영수증 발행 표시(오류신고 2bd8befa)
+    const cashReceiptIssued = cashReceiptOn   // 현금영수증 발행 표시(오류신고 2bd8befa) — 제어 상태가 정본
+    const cashReceiptIssuedDate = cashReceiptDateVal   // 발행일(KST). 값 결정은 서버의 lib/cashReceipt 정본.
     // 보증금 수납 전 청소비 중복 확인 — 정본 lib/depositEntryGuard(신고 a5edc93e 후속, 두 폼 공용)
     if (isDepositMode && !(await confirmDepositCleaningOverlap({
       leaseTermId: payTarget.lease.id, depositAmount: payTarget.lease.depositAmount, payAmount, cleaningFee: payTarget.lease.cleaningFee,
@@ -1528,6 +1535,7 @@ export default function TenantClient({
             payMethod,
             memo:          memo || undefined,
             cashReceiptIssued,
+            cashReceiptIssuedDate,
           })
           // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
           if (!depRes.ok) { pushToast('error', depRes.error); return }
@@ -1542,6 +1550,7 @@ export default function TenantClient({
             payMethod,
             memo,
             cashReceiptIssued,
+            cashReceiptIssuedDate,
           })
           const otherMonths = result.allocations.length > 0
             ? result.allocations.filter(a => a.targetMonth !== result.inputMonth)
@@ -3268,9 +3277,20 @@ export default function TenantClient({
                       </select>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" name="cashReceipt" className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                      <input type="checkbox" name="cashReceipt" checked={cashReceiptOn} onChange={e => setCashReceiptOn(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
                       <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
                     </label>
+                    {/* 발행일 — 형제 폼(PaymentEntryForm)과 같은 처방이다. 체크했을 때만 서고,
+                        pl-6 로 체크박스의 하위 항목임을 말하고, 껍데기는 위 '날짜' 칸과 같다.
+                        합계가 이 날짜의 달로 잡히므로 지연 발행이면 여기를 고쳐야 홈택스와 맞는다. */}
+                    {cashReceiptOn && (
+                      <div className="space-y-1 pl-6">
+                        <label className="text-xs text-[var(--warm-muted)]">발행일</label>
+                        <DatePicker value={cashReceiptDateVal} onChange={setCashReceiptDateVal} maxDate={kstYmdStr()}
+                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">메모</label>
                       <input type="text" name="memo" placeholder="메모 (선택)"

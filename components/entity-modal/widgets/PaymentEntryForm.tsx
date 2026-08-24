@@ -107,6 +107,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false)   // 현금영수증 발행 표시(메타데이터, 오류신고 2bd8befa)
+  // 발행일 — 기본값은 오늘(KST). 수납일과 **다른 값**이다(운영자 확정 2026-08-24, 신고 8b9b6c43).
+  // 합계가 이 날짜의 달로 잡히므로 지연 발행이면 여기를 고쳐야 홈택스와 맞는다.
+  const [cashReceiptIssuedDate, setCashReceiptIssuedDate] = useState<string>(kstYmdStr())
   const [memo, setMemo] = useState<string>('')
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
@@ -256,6 +259,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               payMethod,
               memo:          memo || undefined,
               cashReceiptIssued,
+              cashReceiptIssuedDate,
             })
             if (!depRes.ok) { pushToast('error', depRes.error); return }
             recordIds.push(...depRes.createdIds)
@@ -275,6 +279,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 payMethod,
                 memo:          memo || undefined,
                 cashReceiptIssued,
+                cashReceiptIssuedDate,
               })
               if (!depRes.ok) { pushToast('error', depRes.error); return }
               recordIds.push(...depRes.createdIds)
@@ -291,6 +296,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 payMethod,
                 memo:        memo || undefined,
                 cashReceiptIssued,
+                cashReceiptIssuedDate,
               })
               if (!cleanRes.ok) {
                 pushToast('error', '청소비 기록에 실패했습니다', {
@@ -314,6 +320,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                   // 정본 분기가 썼을 그 달로 못박는다. 다른 달을 넘기면 그 자체가 갈림이다.
                   forcedTargetMonth: targetMonth,
                   cashReceiptIssued,
+                  cashReceiptIssuedDate,
                 })
                 recordIds.push(...rentRes.createdIds)
               } catch (rentErr) {
@@ -366,6 +373,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             payMethod,
             memo:        memo || undefined,
             cashReceiptIssued,
+            cashReceiptIssuedDate,
           })
           if (!res.ok) { pushToast('error', res.error); return }
         } else if (isDepositMode) {
@@ -380,6 +388,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             payMethod,
             memo:          memo || undefined,
             cashReceiptIssued,
+            cashReceiptIssuedDate,
           })
           // 중복 입력 가드 — 이미 받은 돈을 못 보고 총액을 다시 넣는 경우를 막는다
           if (!depRes.ok) { pushToast('error', depRes.error); return }
@@ -402,6 +411,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             memo:           rentMemo,
             forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
             cashReceiptIssued,
+            cashReceiptIssuedDate,
           })
           if (useIncome) {
             const fd = new FormData()
@@ -684,6 +694,19 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               className="w-3.5 h-3.5 accent-[var(--coral)]" />
             <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
           </label>
+          {/* 발행일 — 체크했을 때만 선다. 안 켠 상태에서 이 칸은 뜻이 없고, 이 폼은 이미 길다.
+              조건부로 여닫는 것은 바로 아래 안내 문구들과 같은 문법이다(레이아웃 점프 허용 사례).
+              들여쓰기(pl-6)로 체크박스의 하위 항목임을 말한다 — 형제 필드가 아니라 그 체크의 부속이다.
+              껍데기 클래스는 위 '날짜'(수납일) 칸과 **같은 것**을 넘긴다(§12 한 폼 안 입력 높이 혼용 금지).
+              maxDate 로 미래를 막는다 — 아직 안 한 발행이라 국세청에 있을 수가 없다. 과거는 안 막는다.
+              운영자 원문 "업무특성상 누락 매출분도 있기 때문에 날짜가 다르게 할 필요가 있거든". */}
+          {cashReceiptIssued && (
+            <div className="space-y-1 pl-6">
+              <label className="text-xs text-[var(--warm-muted)]">발행일</label>
+              <DatePicker value={cashReceiptIssuedDate} onChange={setCashReceiptIssuedDate} maxDate={kstYmdStr()}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            </div>
+          )}
           {/* 지금 서버가 하는 일을 그대로 말한다. 발행 표시는 이 결제가 만든 record 전부에 찍히고,
               현금영수증 합계는 보증금 record 도 함께 센다(getMonthPaymentAggregates). 보증금은
               매출이 아니므로 그만큼 국세청 발행액이 신고 매출을 앞선다 — 규칙 변경은 운영자 결정 사항이라
@@ -758,6 +781,8 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false)
+  // 발행일 — 위 정본 폼과 같은 처방. 하나만 고치면 두 폼이 갈린다.
+  const [cashReceiptIssuedDate, setCashReceiptIssuedDate] = useState<string>(kstYmdStr())
   const [memo, setMemo] = useState<string>('')
   const [error, setError] = useState<string>('')
 
@@ -784,6 +809,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           payMethod,
           memo:        memo || undefined,
           cashReceiptIssued,
+          cashReceiptIssuedDate,
         })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
         if (mode === 'none') {
@@ -871,6 +897,14 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
               className="w-3.5 h-3.5 accent-[var(--coral)]" />
             <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
           </label>
+          {/* 위 정본 폼과 같은 처방(체크 시에만 노출·pl-6 하위 들여쓰기·형제와 같은 껍데기·maxDate 오늘). */}
+          {cashReceiptIssued && (
+            <div className="space-y-1 pl-6">
+              <label className="text-xs text-[var(--warm-muted)]">발행일</label>
+              <DatePicker value={cashReceiptIssuedDate} onChange={setCashReceiptIssuedDate} maxDate={kstYmdStr()}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">메모</label>
             <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"

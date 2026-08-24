@@ -7,7 +7,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { CARD_LIKE_METHODS, MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
-import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
+import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
@@ -21,6 +21,20 @@ import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
+
+/**
+ * 발행일이 입금일과 **다를 때만** 그 날짜를 덧붙인다(2026-08-24 축 재판정).
+ *
+ * 합계가 발행일의 달로 잡히므로 지연 발행이면 이 행이 어느 달 합계에 들어갔는지 화면에서
+ * 읽혀야 한다. 같은 날이면 굳이 안 적는다 — 그 경우가 대부분이고, 매번 적으면 이미 줄 하나에
+ * 배지가 넷인 자리에 뜻 없는 숫자가 하나 더 는다.
+ * 원터치 토글이 오늘로 켠 값이 실제와 다르면 여기서 눈에 걸리고, 고치는 자리는 이 행의 수정 폼이다.
+ */
+function crIssuedLabel(p: Record): string {
+  if (!p.cashReceiptIssuedAt) return ''
+  const issued = kstYmdStr(new Date(p.cashReceiptIssuedAt))
+  return issued === kstYmdStr(new Date(p.payDate)) ? '' : ` ${fmtMD(p.cashReceiptIssuedAt)} 발행`
+}
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
 
@@ -50,6 +64,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   const [editMemo, setEditMemo]           = useState<string>('')
   const [editTargetMonth, setEditTargetMonth] = useState<string>('')
   const [editCashReceipt, setEditCashReceipt] = useState(false)   // 현금영수증 발행 표시(오류신고 2bd8befa)
+  // 발행일 — **원터치 토글로 켠 뒤 고치는 자리가 여기다**(운영자 확정 2026-08-24, 신고 8b9b6c43).
+  // 토글은 한 번 눌러 켜는 자리라 날짜를 물으면 편의가 죽는다. 그래서 토글은 오늘로 켜고,
+  // 실제 발행일이 달랐으면 이 수정 폼에서 고친다 — 새 인터랙션을 만들지 않고 기존 문법을 쓴다.
+  const [editCashReceiptDate, setEditCashReceiptDate] = useState<string>('')
 
   const reload = async () => {
     const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(leaseTermId, targetMonth)
@@ -71,6 +89,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     setEditMemo(p.memo ?? '')
     setEditTargetMonth(p.targetMonth)
     setEditCashReceipt(!!p.cashReceiptIssuedAt)
+    // 저장된 발행 시각을 KST 날짜로 되읽는다. 없으면 오늘 — 여기서 처음 켜는 경우다.
+    setEditCashReceiptDate(p.cashReceiptIssuedAt ? kstYmdStr(new Date(p.cashReceiptIssuedAt)) : kstYmdStr())
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
@@ -86,6 +106,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         memo:         editMemo || undefined,
         targetMonth:  editTargetMonth || undefined,
         cashReceiptIssued: editCashReceipt,
+        cashReceiptIssuedDate: editCashReceiptDate,
       }), { success: '수납 기록 수정됨' })
       if (!res.ok) return
       await reload()
@@ -197,6 +218,16 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   className="w-3.5 h-3.5 accent-[var(--coral)]" />
                 <span className="text-[0.65625rem] text-[var(--warm-dark)]">현금영수증 발행함</span>
               </label>
+              {/* 발행일 — 체크했을 때만 선다. 껍데기는 이 폼의 형제 칸('납부일')과 같은 것을 넘긴다
+                  (§12 한 폼 안 입력 높이 혼용 금지). pl-6 은 체크박스의 하위 항목이라는 표시다.
+                  미래는 maxDate 로 막고 과거는 안 막는다 — 누락분을 나중에 올리는 것이 정상 업무다. */}
+              {editCashReceipt && (
+                <div className="space-y-1 pl-6">
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">발행일</p>
+                  <DatePicker value={editCashReceiptDate} onChange={setEditCashReceiptDate} maxDate={kstYmdStr()}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
+                </div>
+              )}
               <div className="flex gap-2 justify-end">
                 <Btn variant="secondary" size="sm" onClick={() => setEditingId(null)}>취소</Btn>
                 <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={pending}>저장</Btn>
@@ -256,11 +287,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     <input type="checkbox" checked={!!p.cashReceiptIssuedAt} disabled={pending} onChange={() => handleToggleCashReceipt(p)}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
                     <span className={`text-[0.65625rem] font-semibold ${p.cashReceiptIssuedAt ? 'text-[var(--success-fg)]' : 'text-[var(--warm-muted)]'}`}>
-                      {p.cashReceiptIssuedAt ? '현금영수증' : '현금영수증 미발행'}
+                      {p.cashReceiptIssuedAt ? `현금영수증${crIssuedLabel(p)}` : '현금영수증 미발행'}
                     </span>
                   </label>
                 ) : (
-                  p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증</span>
+                  p.cashReceiptIssuedAt && <span className="text-[0.65625rem] font-semibold bg-[var(--success-bg)] text-[var(--success-fg)] rounded px-1.5 py-0.5 whitespace-nowrap">현금영수증{crIssuedLabel(p)}</span>
                 )}
                 {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
               </div>
