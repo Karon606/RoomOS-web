@@ -131,18 +131,22 @@ for (const l of shortProrated) {
 
 // 5. 현금영수증 집계 배타 — 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않는다.
 //    배타가 아니면 같은 금액이 양쪽에 계상돼 세무 대사가 틀어진다(520호 172,000원 사례).
-//    판정이 순수 함수 정본으로 옮겨간 뒤(2026-08-24 축 재판정)로는 그 함수의 배타 구조를 본다 —
-//    카드 분기가 먼저 return 하므로 발행 표시가 켜진 카드 건도 카드 하나로만 잡힌다.
+//    2026-08-24 발행이 **금액을 든 별도 표**(CashReceipt)로 옮겨간 뒤로는 배타가 구조로 보장된다 —
+//    카드 합계는 PaymentRecord 를, 현금영수증 합계는 CashReceipt 를 본다. 한 건이 양쪽에 들 길이
+//    없다. 그래서 여기서는 **두 축이 각각 제 표를 보는지**와 카드 봉인이 살아 있는지를 본다.
 {
   const canon = readFileSync('lib/cashReceipt.ts', 'utf8')
-  const fn = canon.match(/export function paymentAggregateBucket[\s\S]*?\n}/)
-  if (!fn) {
-    violations.push('[소스] lib/cashReceipt 의 paymentAggregateBucket 을 못 찾았다 — 배타 대조가 건너뛰어졌다. 감지망을 고칠 것')
+  const cardFn = canon.match(/export function paymentCardMonth[\s\S]*?\n}/)
+  const crFn = canon.match(/export function cashReceiptMonth[\s\S]*?\n}/)
+  if (!cardFn || !crFn) {
+    violations.push('[소스] lib/cashReceipt 의 축 판정 정본(paymentCardMonth·cashReceiptMonth)을 못 찾았다 — 대조가 건너뛰어졌다. 감지망을 고칠 것')
   } else {
-    const cardAt = fn[0].indexOf("bucket: 'card'")
-    const crAt = fn[0].indexOf("bucket: 'cashReceipt'")
-    if (cardAt < 0 || crAt < 0 || cardAt > crAt) {
-      violations.push('[소스] paymentAggregateBucket 의 카드 우선 배타가 사라짐 — 카드 건에 발행 표시가 있으면 같은 금액이 양쪽에 이중 계상된다')
+    // 카드 축은 payDate, 현금영수증 축은 issuedAt 이다. 서로 뒤바뀌면 세무 대사가 통째로 틀어진다.
+    if (!/dbDateMonthKey\(r\.payDate\)/.test(cardFn[0])) {
+      violations.push('[소스] paymentCardMonth 가 payDate 축을 안 쓴다 — 매출전표는 결제 시점에 성립한다')
+    }
+    if (!/kstMonthKey\(r\.issuedAt\)/.test(crFn[0])) {
+      violations.push('[소스] cashReceiptMonth 가 발행일 KST 달을 안 쓴다 — 홈택스와 안 맞는 숫자가 다시 뜬다')
     }
   }
 }
@@ -1773,17 +1777,25 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     if (!/payDate:\s*\{\s*gte:/.test(aggFn[0])) {
       violations.push("[소스] getMonthPaymentAggregates 가 payDate 창으로 카드를 안 센다 — 캡션의 '입금일 기준 카드 수납' 이 거짓이 된다")
     }
-    // 현금영수증 축 — 발행일 창으로 따로 긁어야 한다. **payDate 창만 남으면 회귀다.**
-    if (!/cashReceiptIssuedAt:\s*\{/.test(aggFn[0])) {
-      violations.push("[소스] getMonthPaymentAggregates 가 현금영수증을 발행일(cashReceiptIssuedAt) 창으로 안 센다 — payDate 축으로 되돌아갔다. 홈택스와 안 맞는 숫자가 다시 뜬다(신고 8b9b6c43 재판정)")
+    // 현금영수증 축 — 발행 기록 표를 발행일 창으로 따로 긁어야 한다. **payDate 창만 남으면 회귀다.**
+    if (!/prisma\.cashReceipt\.findMany/.test(aggFn[0]) || !/issuedAt:\s*\{/.test(aggFn[0])) {
+      violations.push("[소스] getMonthPaymentAggregates 가 현금영수증을 발행 기록(CashReceipt.issuedAt) 창으로 안 센다 — 수납 금액을 세던 옛 축으로 되돌아갔다. 45만 받고 30만만 끊어도 45만이라 말하게 된다(신고 8b9b6c43)")
+    }
+    // 발행 금액을 그대로 더해야 한다. record 금액을 다시 세면 옛 결함이 그대로 돌아온다.
+    if (!/cashReceiptSum \+= r\.amount/.test(aggFn[0])) {
+      violations.push('[소스] getMonthPaymentAggregates 가 발행 줄의 금액(amount)을 안 더한다 — 발행한 금액이 아니라 받은 금액을 세면 홈택스와 갈린다')
     }
     // 타임스탬프 칸에 @db.Date 용 UTC 창을 쓰면 KST 자정 경계에서 하루 밀린다(2026-08-19 전역 정정 클래스).
     if (!/kstMonthTsRange\(/.test(aggFn[0])) {
       violations.push('[소스] getMonthPaymentAggregates 가 발행일 창을 lib/kstDate 정본(kstMonthTsRange)으로 안 만든다 — UTC 창을 쓰면 KST 자정 경계 발행분이 전달로 떨어진다')
     }
-    // 버킷 판정은 순수 함수 정본이 한다 — 화면·테스트·서버가 같은 식을 봐야 축이 갈리지 않는다.
-    if (!/paymentAggregateBucket\(/.test(aggFn[0])) {
-      violations.push('[소스] getMonthPaymentAggregates 가 버킷 판정 정본(lib/cashReceipt paymentAggregateBucket)을 안 쓴다 — 축 판정 사본이 생기면 테스트가 지키는 것과 화면이 보는 것이 갈린다')
+    // 달 판정은 순수 함수 정본이 한다 — 화면·테스트·서버가 같은 식을 봐야 축이 갈리지 않는다.
+    if (!/paymentCardMonth\(/.test(aggFn[0]) || !/cashReceiptMonth\(/.test(aggFn[0])) {
+      violations.push('[소스] getMonthPaymentAggregates 가 축 판정 정본(paymentCardMonth·cashReceiptMonth)을 안 쓴다 — 판정 사본이 생기면 테스트가 지키는 것과 화면이 보는 것이 갈린다')
+    }
+    // 카드 봉인의 마지막 방어선 — 발행 줄에 카드가 섞이면 그 금액이 두 합계에 겹쳐 든다.
+    if (!/isCashReceiptEligible\(r\.payMethod\)/.test(aggFn[0])) {
+      violations.push('[소스] getMonthPaymentAggregates 가 발행 줄의 카드 봉인을 안 본다 — 봉인이 뚫리면 같은 금액이 두 합계에 겹쳐 든다')
     }
   }
 }
@@ -1864,6 +1876,49 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push(`[소스] ${f} 가 수단이 카드로 바뀔 때 발행 표시를 끄지 않는다 — 체크박스만 사라지고 값은 남는다`)
     }
   }
+  // 20-e. 발행 줄을 만드는 길도 하나다. 저장 경로가 발행 줄을 안 만들면 그 수납은 합계에서
+  //       통째로 빠진다 — 화면은 발행 표시를 보여주는데 숫자만 안 는다(가장 알아채기 어려운 결함).
+  // **함수별로 본다.** 개수만 세면 호출이 `if (false)` 로 죽어 있어도 통과한다(역주입이 그것을
+  // 잡았다). 저장 함수 본문을 잘라 그 안에 호출이 살아 있는지 확인한다.
+  // 본문을 자르는 두 함정. 괄호 깊이로 세면 **인자 타입의 `{` 가 먼저 닫혀** 서명만 잘리고,
+  // 열 0의 `}` 를 그냥 찾으면 그 인자 타입을 닫는 `\n})` 에 먼저 걸린다. 둘 다 실제로 겪었다.
+  // 그래서 서명이 끝나는 `): Promise` 를 지난 뒤부터 열 0의 `}` 를 찾는다.
+  const sliceFn = (src, name) => {
+    const at = src.indexOf(`export async function ${name}(`)
+    if (at < 0) return null
+    const sigEnd = src.indexOf('): Promise', at)
+    if (sigEnd < 0) return null
+    const end = src.indexOf('\n}', sigEnd)
+    return end < 0 ? src.slice(at) : src.slice(at, end + 2)
+  }
+  const WRITERS = [
+    ['savePayment', 'syncCashReceiptLine'],
+    ['saveDepositPayment', 'syncCashReceiptLine'],
+    ['saveCleaningFeePayment', 'syncCashReceiptLine'],
+    ['updatePayment', 'resyncCashReceiptFromSiblings'],
+    ['setCashReceiptIssued', 'resyncCashReceiptFromSiblings'],
+  ]
+  for (const [fnName, call] of WRITERS) {
+    const body = sliceFn(roomsActions, fnName)
+    if (!body) {
+      violations.push(`[소스] ${fnName} 을 못 찾았다 — 발행 줄 대조가 건너뛰어졌다. 감지망을 고칠 것`)
+      continue
+    }
+    // 죽은 호출(`if (false) await ...`)도 없는 것과 같이 본다.
+    const live = new RegExp(`(^|[^)])\\s*await ${call}\\(`, 'm').test(body)
+    if (!live) {
+      violations.push(`[소스] ${fnName} 이 발행 줄(${call})을 안 만든다 — 그 경로로 받은 수납은 발행 표시만 뜨고 합계에는 안 잡힌다`)
+    }
+  }
+  // 발행 줄을 만드는 자리는 전부 봉인을 지난 issuedAt 을 넘겨야 한다. 직접 new Date() 를 박으면
+  // 카드에도 줄이 생기고 발행일이 클릭 시각으로 되돌아간다.
+  const syncCalls = roomsActions.match(/syncCashReceiptLine\(\{[\s\S]*?\n  \}\)/g) ?? []
+  for (const c of syncCalls) {
+    if (/issuedAt:\s*new Date\(\)/.test(c)) {
+      violations.push('[소스] 발행 줄에 issuedAt 을 직접 박는 자리가 있다 — 카드 봉인과 발행일 정본을 건너뛴다')
+    }
+  }
+
   // 카드 안내 문구는 정본 하나다. 사본이 늘면 네 화면이 다른 말을 한다.
   if (!/export const CARD_NOT_CASH_RECEIPT_NOTE/.test(canon)) {
     violations.push('[소스] lib/cashReceipt 의 카드 안내 문구 정본이 사라졌다 — 화면마다 다른 문장을 쓰게 된다')
@@ -1872,16 +1927,16 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   // 20-d. 조정 전표는 두 합계에서 뺀다. **보증금은 안 뺀다** — 카드로 낸 보증금이 카드사·
   //       홈택스에 카드 매출로 남으므로 앱에서만 빼면 대사가 안 된다(2026-08-24 같은 날
   //       뺐다가 되돌린 자리다. 되돌림이 또 뒤집히지 않게 양쪽을 다 본다).
-  if (!/if \(r\.isBillingAdjust\) return \{ bucket: null, month: null \}/.test(canon)) {
-    violations.push('[소스] paymentAggregateBucket 이 조정 전표를 안 거른다 — 받은 돈이 아닌 마커가 합계에 든다')
+  if (!/if \(r\.isBillingAdjust\) return null/.test(canon)) {
+    violations.push('[소스] paymentCardMonth 가 조정 전표를 안 거른다 — 받은 돈이 아닌 마커가 카드 합계에 든다')
   }
-  if (/r\.isDeposit \|\|/.test(canon)) {
-    violations.push('[소스] paymentAggregateBucket 이 보증금을 다시 걸러낸다 — 카드로 낸 보증금은 카드사 명세에 남으므로 빼면 대사가 안 된다(2026-08-24 되돌린 판정)')
+  if (/r\.isDeposit/.test(canon)) {
+    violations.push('[소스] 축 판정 정본이 보증금을 다시 걸러낸다 — 카드로 낸 보증금은 카드사 명세에 남으므로 빼면 대사가 안 된다(2026-08-24 되돌린 판정)')
   }
   // 걸러내려면 그 칸을 실제로 읽어와야 한다. select 에서 빠지면 undefined 라 조용히 통과한다.
-  const aggSel = roomsActions.match(/const AGG_SELECT = \{[^}]*\}/)
-  if (!aggSel || !/isBillingAdjust: true/.test(aggSel[0])) {
-    violations.push('[소스] getMonthPaymentAggregates 의 select 가 isBillingAdjust 를 안 읽는다 — 버킷 정본이 걸러낼 근거를 못 받아 필터가 조용히 무력해진다')
+  const aggFn2 = roomsActions.match(/export async function getMonthPaymentAggregates[\s\S]*?\n}/)
+  if (!aggFn2 || !/isBillingAdjust: true/.test(aggFn2[0])) {
+    violations.push('[소스] getMonthPaymentAggregates 의 select 가 isBillingAdjust 를 안 읽는다 — 축 정본이 걸러낼 근거를 못 받아 필터가 조용히 무력해진다')
   }
 }
 

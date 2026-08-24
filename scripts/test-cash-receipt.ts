@@ -8,7 +8,7 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { isCashReceiptEligible, paymentAggregateBucket, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
+import { cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -22,61 +22,45 @@ const day = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`)
 // KST 시각 — 발행 스탬프는 타임스탬프라 시분까지 뜻이 있다.
 const kst = (s: string) => new Date(`${s}+09:00`)
 
-// ── 읽기: 월 버킷 판정 ────────────────────────────────────────────
+// ── 읽기: 두 축 ─────────────────────────────────────────────
+//
+// 현금영수증은 CashReceipt.issuedAt 의 **KST 달**, 카드는 PaymentRecord.payDate 의 달이다.
+// 표가 갈려 있어 한 건이 두 합계에 동시에 드는 일은 구조로 없다.
 
-// 같은 날 발행 — 두 축이 같은 답을 낸다. 평소에는 이 케이스라 축을 바꿔도 숫자가 안 움직인다.
-eq('같은 날 발행', paymentAggregateBucket({
-  payMethod: '계좌이체', payDate: day('2026-08-05'), cashReceiptIssuedAt: kst('2026-08-05T14:30:00'),
-}), { bucket: 'cashReceipt', month: '2026-08' })
-
+// 같은 날 발행 — 평소에는 이 모양이라 축을 바꿔도 숫자가 안 움직인다.
+eq('같은 날 발행', cashReceiptMonth({ issuedAt: kst('2026-08-05T14:30:00'), amount: 350000 }), '2026-08')
 // 지연 발행 — 이번 신고의 실제 모양이다. 7/31 에 받은 돈을 8/22 에 몰아서 발행했다.
-// payDate 축이면 2026-07 로 가고 홈택스와 안 맞는다. 발행일 축이라 2026-08 이다.
-eq('지연 발행(7/31 입금·8/22 발행)', paymentAggregateBucket({
-  payMethod: '계좌이체', payDate: day('2026-07-31'), cashReceiptIssuedAt: kst('2026-08-22T11:00:00'),
-}), { bucket: 'cashReceipt', month: '2026-08' })
+eq('지연 발행(7/31 입금·8/22 발행)', cashReceiptMonth({ issuedAt: kst('2026-08-22T11:00:00'), amount: 470000 }), '2026-08')
 
-// ── KST 자정 경계 — 이 판정의 급소 ──────────────────────────────
-// KST 9/1 00:30 은 UTC 로 8/31 15:30 이다. UTC 달로 읽으면 8월로 떨어진다.
-eq('KST 월 첫날 새벽 발행', paymentAggregateBucket({
-  payMethod: '현금', payDate: day('2026-08-20'), cashReceiptIssuedAt: kst('2026-09-01T00:00:00'),
-}), { bucket: 'cashReceipt', month: '2026-09' })
-eq('KST 월 첫날 00:30 발행', paymentAggregateBucket({
-  payMethod: '현금', payDate: day('2026-08-20'), cashReceiptIssuedAt: kst('2026-09-01T00:30:00'),
-}), { bucket: 'cashReceipt', month: '2026-09' })
-// KST 8/31 23:59 은 UTC 로 8/31 14:59 — 이쪽은 UTC 로 읽어도 8월이라 종전 코드도 맞았다.
-// 한쪽만 걸면 반쪽 그물이 되므로 양끝을 함께 건다.
-eq('KST 월 말일 23:59 발행', paymentAggregateBucket({
-  payMethod: '현금', payDate: day('2026-08-20'), cashReceiptIssuedAt: kst('2026-08-31T23:59:59'),
-}), { bucket: 'cashReceipt', month: '2026-08' })
-// 연 경계도 같은 함정이다.
-eq('KST 새해 첫날 새벽 발행', paymentAggregateBucket({
-  payMethod: '현금', payDate: day('2026-12-20'), cashReceiptIssuedAt: kst('2027-01-01T00:10:00'),
-}), { bucket: 'cashReceipt', month: '2027-01' })
+// KST 자정 경계 — UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다.
+// 프로덕션(UTC)에서만 틀리는 종류라 사람 눈에 안 보인다.
+eq('KST 월 첫날 자정 발행', cashReceiptMonth({ issuedAt: kst('2026-09-01T00:00:00'), amount: 1 }), '2026-09')
+eq('KST 월 첫날 00:30 발행', cashReceiptMonth({ issuedAt: kst('2026-09-01T00:30:00'), amount: 1 }), '2026-09')
+eq('KST 전달 마지막날 23:59 발행', cashReceiptMonth({ issuedAt: kst('2026-08-31T23:59:00'), amount: 1 }), '2026-08')
+eq('연 경계', cashReceiptMonth({ issuedAt: kst('2027-01-01T00:10:00'), amount: 1 }), '2027-01')
 
-// ── 발행 안 됨 · 카드 ─────────────────────────────────────────────
+// 카드 축 — payDate 의 달. 조정 전표는 받은 돈이 아니라 빠지고,
+// 보증금은 든다(카드로 냈으면 카드사 명세에 그대로 남는다).
+eq('신용카드는 payDate 달로', paymentCardMonth({ payMethod: '신용카드', payDate: day('2026-08-10') }), '2026-08')
+eq('결제선생도 카드 계열', paymentCardMonth({ payMethod: '결제선생', payDate: day('2026-04-02') }), '2026-04')
+eq('계좌이체는 카드가 아니다', paymentCardMonth({ payMethod: '계좌이체', payDate: day('2026-08-10') }), null)
+eq('수단이 없으면 카드가 아니다', paymentCardMonth({ payMethod: null, payDate: day('2026-08-10') }), null)
+eq('조정 전표는 카드라도 빠진다', paymentCardMonth({ payMethod: '신용카드', payDate: day('2026-08-10'), isBillingAdjust: true }), null)
 
-eq('발행 안 됨', paymentAggregateBucket({
-  payMethod: '계좌이체', payDate: day('2026-08-05'), cashReceiptIssuedAt: null,
-}), { bucket: null, month: null })
-
-// 카드는 축이 다르다 — 매출전표가 결제 시점에 성립하므로 payDate 다.
-eq('카드', paymentAggregateBucket({
-  payMethod: '신용카드', payDate: day('2026-08-05'), cashReceiptIssuedAt: null,
-}), { bucket: 'card', month: '2026-08' })
-eq('결제선생도 카드 계열', paymentAggregateBucket({
-  payMethod: '결제선생', payDate: day('2026-07-15'), cashReceiptIssuedAt: null,
-}), { bucket: 'card', month: '2026-07' })
-// 카드 우선 — 카드 건에 발행 표시가 켜져 있어도 양쪽에 계상하지 않는다(520호 172,000원 전례).
-eq('카드 + 발행표시는 카드 하나로', paymentAggregateBucket({
-  payMethod: '신용카드', payDate: day('2026-07-15'), cashReceiptIssuedAt: kst('2026-08-22T11:00:00'),
-}), { bucket: 'card', month: '2026-07' })
-// payDate 도 @db.Date(UTC 자정)라 UTC 로 읽는 것이 맞다. 말일 카드 건이 다음 달로 새면 안 된다.
-eq('카드 말일 결제', paymentAggregateBucket({
-  payMethod: '신용카드', payDate: day('2026-08-31'), cashReceiptIssuedAt: null,
-}), { bucket: 'card', month: '2026-08' })
-eq('수단 미기재 + 발행표시', paymentAggregateBucket({
-  payMethod: null, payDate: day('2026-08-05'), cashReceiptIssuedAt: kst('2026-08-22T11:00:00'),
-}), { bucket: 'cashReceipt', month: '2026-08' })
+// ── 발행 금액 기본값 — 체크된 몫만 더한다 ──────────────────────
+//
+// 운영자 예시(514호) — 보증금 5만 + 이용료 35만 = 40만이 기본이고, 보증금 체크를 풀면 35만이 된다.
+const PARTS = { deposit: 50000, cleaning: 0, rent: 350000 }
+eq('전부 체크면 전액', cashReceiptDefaultAmount(PARTS, { deposit: true, cleaning: true, rent: true }), 400000)
+eq('보증금 체크를 풀면 이용료만', cashReceiptDefaultAmount(PARTS, { deposit: false, cleaning: true, rent: true }), 350000)
+eq('이용료를 풀면 보증금만', cashReceiptDefaultAmount(PARTS, { deposit: true, cleaning: true, rent: false }), 50000)
+eq('전부 풀면 0', cashReceiptDefaultAmount(PARTS, { deposit: false, cleaning: false, rent: false }), 0)
+// 단기 — 보증금 없이 청소비만 받는 경우(운영자 원문).
+const SHORT = { deposit: 0, cleaning: 60000, rent: 300000 }
+eq('단기는 청소비 몫이 선다', cashReceiptDefaultAmount(SHORT, { deposit: true, cleaning: true, rent: true }), 360000)
+eq('단기에서 청소비만 발행', cashReceiptDefaultAmount(SHORT, { deposit: false, cleaning: true, rent: false }), 60000)
+// 음수는 0으로 — 상류가 이상한 값을 줘도 합계가 줄어들면 안 된다.
+eq('음수 몫은 0으로 본다', cashReceiptDefaultAmount({ deposit: -1000, cleaning: 0, rent: 100 }, { deposit: true, cleaning: true, rent: true }), 100)
 
 // ── 쓰기: 스탬프 값 결정 ──────────────────────────────────────────
 
@@ -95,16 +79,16 @@ eq('기본값은 지금',
 eq('고른 날짜가 이긴다',
   iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-22', today: TODAY, now: NOW })),
   kst('2026-08-22T00:00:00').toISOString())
-// 그 값이 다시 버킷 판정을 지나면 고른 날의 달이어야 한다(쓰기와 읽기가 짝인지 확인).
-eq('고른 날짜가 그 달로 간다', paymentAggregateBucket({
-  payMethod: '계좌이체', payDate: day('2026-07-31'),
-  cashReceiptIssuedAt: resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-22', today: TODAY, now: NOW }),
-}), { bucket: 'cashReceipt', month: '2026-08' })
+// 그 값이 다시 달 판정을 지나면 고른 날의 달이어야 한다(쓰기와 읽기가 짝인지 확인).
+eq('고른 날짜가 그 달로 간다', cashReceiptMonth({
+  issuedAt: resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-22', today: TODAY, now: NOW })!,
+  amount: 470000,
+}), '2026-08')
 // 월 첫날을 고르면 그 달이다 — KST 자정으로 박으므로 UTC 로는 전달 15:00Z 다. 되읽기가 짝이어야 한다.
-eq('월 첫날을 고르면 그 달', paymentAggregateBucket({
-  payMethod: '계좌이체', payDate: day('2026-08-15'),
-  cashReceiptIssuedAt: resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-09-01', today: '2026-09-05', now: NOW }),
-}), { bucket: 'cashReceipt', month: '2026-09' })
+eq('월 첫날을 고르면 그 달', cashReceiptMonth({
+  issuedAt: resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-09-01', today: '2026-09-05', now: NOW })!,
+  amount: 1,
+}), '2026-09')
 
 // 기존 값 보존 — 재저장이 발행일을 오늘로 밀면 안 된다(updatePayment 이 원래 하던 규칙).
 const EXISTING = kst('2026-07-14T10:00:00')
@@ -176,30 +160,9 @@ eq('수단을 안 넘기면 종전대로 동작한다(옛 호출부 보호)',
   iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-20', today: TODAY, now: NOW })),
   kst('2026-08-20T00:00:00').toISOString())
 
-// 금액은 카드 합계로 넘어간다 — 집계 정본이 카드를 먼저 잡는다(이중 계상 없음).
-eq('카드 건은 카드 버킷으로',
-  paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-08-10'), cashReceiptIssuedAt: kst('2026-08-22T10:00:00') }),
-  { bucket: 'card', month: '2026-08' })
-
-// ── 조정전표만 뺀다. 보증금은 넣는다 (2026-08-24, 같은 날 뺐다가 되돌림) ──
-//
-// 처음엔 "보증금은 나중에 돌려줄거니까 제외"로 뺐다. 그런데 카드로 낸 보증금은 카드사·홈택스에
-// **카드 매출로 그대로 남는다** — 앱에서만 빼면 대사가 안 된다(운영자 확인). 조정 전표는 다르다.
-// 오늘 전표 9건은 전부 금액 0에 수단이 없어 숫자에 안 나타나지만, 전표에 수단이 붙는 날
-// 카드 건수만 조용히 부푼다 — 값이 같을 때 규칙을 맞춰 두는 편이 갈릴 때 고치는 것보다 싸다.
-eq('보증금도 현금영수증 합계에 든다(발행했으면 홈택스에 있다)',
-  paymentAggregateBucket({ payMethod: '계좌이체', payDate: day('2026-08-05'), cashReceiptIssuedAt: kst('2026-08-05T14:00:00'), isDeposit: true }),
-  { bucket: 'cashReceipt', month: '2026-08' })
-eq('카드로 낸 보증금도 카드 합계에 든다(카드사 명세에 남는다)',
-  paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-04-10'), cashReceiptIssuedAt: null, isDeposit: true }),
-  { bucket: 'card', month: '2026-04' })
-eq('조정 전표는 어느 합계에도 안 간다',
-  paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-08-05'), cashReceiptIssuedAt: null, isBillingAdjust: true }),
-  { bucket: null, month: null })
-// 표식이 없으면 종전대로 — 옛 호출부가 두 칸을 안 넘겨도 동작이 안 바뀐다.
-eq('표식이 없으면 종전대로 잡힌다',
-  paymentAggregateBucket({ payMethod: '계좌이체', payDate: day('2026-08-05'), cashReceiptIssuedAt: kst('2026-08-05T14:00:00') }),
-  { bucket: 'cashReceipt', month: '2026-08' })
+// 금액은 카드 합계로 넘어간다 — 카드 축은 payDate 다.
+eq('카드 건은 카드 합계로',
+  paymentCardMonth({ payMethod: '신용카드', payDate: day('2026-08-10') }), '2026-08')
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
 if (fail > 0) process.exit(1)

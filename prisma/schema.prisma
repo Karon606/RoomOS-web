@@ -208,6 +208,7 @@ model Property {
   leaseTerms        LeaseTerm[]
   financialAccounts FinancialAccount[]
   paymentRecords    PaymentRecord[]
+  cashReceipts      CashReceipt[]
   expenses          Expense[]
   expenseOrders     ExpenseOrder[]
   extraIncomes      ExtraIncome[]
@@ -581,6 +582,7 @@ model Tenant {
   smsLogs        SmsLog[]
   leaseTerms     LeaseTerm[]
   paymentRecords PaymentRecord[]
+  cashReceipts   CashReceipt[]
   statusLogs     TenantStatusLog[]
   requests       TenantRequest[]
   depositRefunds DepositRefund[]
@@ -746,6 +748,7 @@ model LeaseTerm {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   paymentRecords PaymentRecord[]
+  cashReceipts   CashReceipt[]
   statusLogs     TenantStatusLog[]
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
@@ -923,6 +926,43 @@ model PaymentRecord {
   @@index([leaseTermId, targetMonth])
   @@index([propertyId, targetMonth])
   @@map("payment_records")
+}
+
+// ============================================================
+// [10-b] CashReceipt — 현금영수증 발행 기록
+// ============================================================
+// "이 입금에 대해 언제 얼마를 발행했나". 종전에는 PaymentRecord.cashReceiptIssuedAt 하나로
+// "이 수납은 발행함"만 저장해서, 합계가 **발행한 금액이 아니라 발행 표시가 붙은 수납 금액**이었다.
+// 45만 받고 30만만 끊으면 앱은 45만이라 말한다 — 그 차이를 담을 자리가 없었다(운영자 확정 2026-08-24).
+// 청소비 몫이 ExtraIncome(다른 표)에 있어 발행을 기록할 자리가 없던 문제도 여기서 풀린다.
+// 발행은 **입금 단위로 한 줄**이고 그 줄이 금액을 들고 있으므로 몫이 어느 표에 흩어져 있든 상관없다.
+// 돈 계산에는 접점이 없다 — 충당·잔액·미납은 PaymentRecord 가 계속 정한다.
+model CashReceipt {
+  id        String   @id @default(uuid()) @db.Uuid
+  issuedAt  DateTime                  // 발행일. 이 값의 KST 달이 곧 집계 축(홈택스에 올라간 날)
+  amount    Int                       // 실제 발행 금액 — 받은 금액과 다를 수 있다(이 표의 존재 이유)
+  payDate   DateTime @db.Date         // 어느 입금에서 나왔나 — 화면이 '발행됨'을 말하는 근거
+  payMethod String?                   // 카드 봉인 대조용 (카드는 현금영수증 대상이 아니다)
+  inclDeposit  Boolean @default(false) // 무엇을 포함했나. 금액만 남기면 '왜 35만인가'가 사라진다
+  inclCleaning Boolean @default(false)
+  inclRent     Boolean @default(false)
+  memo      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?                 // 적용취소 — 지워도 되살릴 수 있어야 한다(저장소 원칙)
+
+  leaseTermId String    @db.Uuid
+  leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, issuedAt])
+  @@index([leaseTermId, payDate])
+  @@map("cash_receipts")
 }
 
 // ============================================================

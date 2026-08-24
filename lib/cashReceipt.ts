@@ -91,45 +91,68 @@ export const CARD_NOT_CASH_RECEIPT_NOTE = '카드 결제는 매출전표가 증�
 
 // ── 읽기 ────────────────────────────────────────────────────────
 
-export type AggregateBucket = 'card' | 'cashReceipt' | null
+// ── 카드 수납 합계 ────────────────────────────────────────────
 
-/** 월 집계가 보는 record 의 최소 형태. Prisma select 와 그대로 맞물린다. */
+/** 카드 합계가 보는 record 의 최소 형태. Prisma select 와 그대로 맞물린다. */
 export type PaymentAggregateRow = {
   payMethod: string | null
   payDate: Date                    // @db.Date — UTC 자정 저장
-  cashReceiptIssuedAt: Date | null // 타임스탬프 — KST 달로 읽는다
-  isDeposit?: boolean              // 보증금 몫 — 매출이 아니다(아래 참조)
   isBillingAdjust?: boolean         // 청구 조정 전표 — 받은 돈이 아니다
 }
 
 /**
- * 이 record 가 어느 합계의 어느 달로 가는지. **축이 둘이라 달도 갈린다.**
+ * 이 record 가 카드 수납 합계의 어느 달로 가는지. 카드가 아니면 null.
  *
- *   카드 계열      : payDate 축. 매출전표가 결제 시점에 성립한다.
- *   현금영수증 발행 : cashReceiptIssuedAt 축(KST 달). 홈택스에 올라간 날이다.
- *   둘 다 아님     : 어느 합계에도 안 들어간다.
+ * 축은 payDate 다 — 매출전표가 결제 시점에 성립한다. 현금영수증은 축도 표도 다르다
+ * (CashReceipt.issuedAt). **두 합계가 겹칠 일은 구조로 없다** — 카드는 현금영수증 대상이
+ * 아니고(isCashReceiptEligible), 발행 기록은 별도 표에 산다.
  *
- * 카드가 우선한다. 카드 건에 발행 표시가 켜져 있어도 같은 금액을 양쪽에 계상하지 않는다
- * (520호 172,000원 전례). 종전 두 if 가 배타가 아니어서 세무 대사용 숫자가 틀어졌다.
+ * 조정 전표(단기 연장·감액 마커)는 **받은 돈이 아니다** — 오늘은 9건 전부 금액 0에 수단이
+ * 없어 숫자에 안 나타나지만, 전표에 수단이 붙는 날 카드 건수만 조용히 부푼다.
  *
- * 발행 시각이 KST 자정 경계에 걸리는 것이 이 판정의 급소다. UTC 달로 읽으면 KST 8/1 새벽
- * 발행분이 7월로 떨어진다 — 저장소가 2026-08-19 에 전역 정정한 바로 그 클래스라
- * lib/kstDate 의 kstMonthKey 를 쓴다.
+ * 보증금은 **뺐다가 되돌렸다**(2026-08-24 같은 날). 처음엔 "나중에 돌려줄 돈이라 매출이 아니다"
+ * 로 뺐는데, 카드로 낸 보증금은 카드사·홈택스에 **카드 매출로 그대로 남는다**. 그것을 앱에서만
+ * 빼면 카드사 명세와 대사가 안 된다(운영자 확인 — "맞아 네 말대로 카드 매출로 남아").
+ * 실제로 2026-04 50,000원 1건, 2026-05 100,000원 2건이 그렇게 빠졌다가 돌아왔다.
  */
-export function paymentAggregateBucket(r: PaymentAggregateRow): { bucket: AggregateBucket; month: string | null } {
-  // 조정 전표(단기 연장·감액 마커)는 **받은 돈이 아니다** — 오늘은 9건 전부 금액 0에 수단이
-  // 없어 숫자에 안 나타나지만, 전표에 수단이 붙는 날 카드 건수만 조용히 부푼다.
-  //
-  // 보증금은 **뺐다가 되돌렸다**(2026-08-24 같은 날). 처음엔 "나중에 돌려줄 돈이라 매출이 아니다"
-  // 로 뺐는데, 카드로 낸 보증금은 카드사·홈택스에 **카드 매출로 그대로 남는다**. 그것을 앱에서만
-  // 빼면 카드사 명세와 대사가 안 된다(운영자 확인 — "맞아 네 말대로 카드 매출로 남아").
-  // 실제로 2026-04 50,000원 1건, 2026-05 100,000원 2건이 그렇게 빠졌다가 돌아왔다.
-  if (r.isBillingAdjust) return { bucket: null, month: null }
-  if (r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod)) {
-    return { bucket: 'card', month: dbDateMonthKey(r.payDate) }
-  }
-  if (r.cashReceiptIssuedAt) {
-    return { bucket: 'cashReceipt', month: kstMonthKey(r.cashReceiptIssuedAt) }
-  }
-  return { bucket: null, month: null }
+export function paymentCardMonth(r: PaymentAggregateRow): string | null {
+  if (r.isBillingAdjust) return null
+  if (!r.payMethod || !CARD_LIKE_METHODS.includes(r.payMethod)) return null
+  return dbDateMonthKey(r.payDate)
 }
+
+// ── 발행 기록(CashReceipt) ────────────────────────────────────
+//
+// 2026-08-24 부터 발행은 **금액을 든 한 줄**이다(운영자 확정). 종전에는 PaymentRecord 의
+// 스탬프 하나로 "이 수납은 발행함"만 저장해서, 합계가 발행 금액이 아니라 발행 표시가 붙은
+// **수납 금액**이었다. 45만 받고 30만만 끊으면 앱은 45만이라 말했다.
+
+/** 발행 한 줄의 최소 형태. Prisma select 와 그대로 맞물린다. */
+export type CashReceiptRow = {
+  issuedAt: Date   // 타임스탬프 — KST 달로 읽는다
+  amount: number
+}
+
+/** 이 발행이 잡히는 달 'YYYY-MM'(KST). 축이 발행일인 이유는 위 파일 머리말 참조. */
+export function cashReceiptMonth(r: CashReceiptRow): string {
+  return kstMonthKey(r.issuedAt)
+}
+
+/**
+ * 한 입금에 붙일 발행 금액의 기본값. 체크된 몫만 더한다(운영자 확정 2026-08-24).
+ *
+ * "총금액 40만원이 미리 입력되어 있고 보증금 v, 월이용료 v… 이렇게 디폴트값이 들어갈거야.
+ * 근데 난 보증금은 발행 안하고 싶어서 체크를 해제하면 금액은 35만원으로 바뀌고".
+ *
+ * 앱이 입금을 쪼개는 순서와 같은 세 몫이다(lib/depositComposition 의 보증금·청소비·이용료).
+ * 운영자가 금액을 직접 고치면 이 값은 더 이상 쓰이지 않는다 — 어디까지나 **기본값**이다.
+ */
+export function cashReceiptDefaultAmount(
+  parts: { deposit: number; cleaning: number; rent: number },
+  incl: { deposit: boolean; cleaning: boolean; rent: boolean },
+): number {
+  return (incl.deposit ? Math.max(0, parts.deposit) : 0)
+    + (incl.cleaning ? Math.max(0, parts.cleaning) : 0)
+    + (incl.rent ? Math.max(0, parts.rent) : 0)
+}
+

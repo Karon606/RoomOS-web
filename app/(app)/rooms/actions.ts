@@ -10,7 +10,7 @@ import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
 import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { isCashReceiptEligible, paymentAggregateBucket, resolveCashReceiptIssuedAt } from '@/lib/cashReceipt'
+import { cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '@/lib/cashReceipt'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -964,6 +964,16 @@ export async function savePayment(data: {
     await recalculatePayments(data.leaseTermId, tm, monthBillByTm[tm] ?? data.expectedAmount)
   }
 
+  // 발행 줄 — 이 결제가 만든 record 의 합이 곧 발행 금액이다(오늘은 전액. 화면이 금액 칸을
+  // 갖는 날 달라진다). 쪼개진 달을 각각 세지 않고 한 줄로 모은다 — 한 결제는 한 발행이다.
+  await syncCashReceiptLine({
+    propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
+    payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
+    issuedAt: crStamp,
+    amount: allocations.reduce((a, x) => a + x.amount, 0),
+    incl: { deposit: false, cleaning: false, rent: true },
+  })
+
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
   return { inputMonth: data.targetMonth, startMonth: startTm, allocations, createdIds }
 }
@@ -1327,6 +1337,15 @@ export async function saveDepositPayment(data: {
     await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount),
   )
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+  // 발행 줄 — 보증금 몫과 초과분(이용료) 몫은 한 결제다. 한 줄로 모은다.
+  await syncCashReceiptLine({
+    propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
+    payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
+    issuedAt: crStamp,
+    amount: data.totalPaid,
+    incl: { deposit: true, cleaning: false, rent: excess > 0 },
+  })
+
   return { ok: true as const, createdIds }
 }
 
@@ -1434,6 +1453,21 @@ export async function saveCleaningFeePayment(data: {
       createdIds.push(excessRec.id)
       await recalculatePayments(data.leaseTermId, data.targetMonth, monthBill)
     }
+    // 발행 줄 — **청소비 몫까지 함께 든다.** 종전에는 청소비가 ExtraIncome(다른 표)에 있어
+    // 스탬프를 찍을 자리가 없었고, 그래서 그 몫은 합계에서 통째로 빠졌다. 발행은 이제 금액을
+    // 든 한 줄이라 몫이 어느 표에 있든 상관없다(운영자 확정 2026-08-24 — 단기는 보증금 대신
+    // 청소비를 받으니 그것도 발행할 수 있어야 한다).
+    await syncCashReceiptLine({
+      propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
+      payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
+      issuedAt: resolveCashReceiptIssuedAt({
+        issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
+        payMethod: data.payMethod,
+      }),
+      amount: data.totalPaid,
+      incl: { deposit: false, cleaning: true, rent: excess > 0 },
+    })
+
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, createdIds, extraIncomeId }
   } catch (err) {
@@ -1829,6 +1863,18 @@ export async function updatePayment(
           await serverBillForMonth(record.leaseTermId, newTargetMonth, lease.rentAmount))
       }
     }
+    // 발행 줄 — 수납액·수단·발행 여부가 바뀌었으면 따라가야 그 달 합계가 사실과 맞는다.
+    // 수단이 카드가 되면 issuedAt 이 null 이라 있던 줄이 지워진다(카드 봉인과 같은 결론).
+    const after = await prisma.paymentRecord.findFirst({
+      where: { id: paymentId }, select: { cashReceiptIssuedAt: true, tenantId: true, payDate: true, payMethod: true },
+    })
+    if (after) {
+      await resyncCashReceiptFromSiblings({
+        propertyId, leaseTermId: record.leaseTermId, tenantId: after.tenantId,
+        payDate: after.payDate, payMethod: after.payMethod, issuedAt: after.cashReceiptIssuedAt,
+      })
+    }
+
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
@@ -1841,6 +1887,32 @@ export async function updatePayment(
 // updatePayment(재계산·인플레이션 가드 경유)를 태우지 않는 전용 경로(오류신고 c0936f89, 표준 트랙 2026-07-14).
 // restoreIssuedAt — 적용취소용: 원래 발행 시각 그대로 복원(감사 흔적 보존). 미지정 켬은 기존 시각 보존, 없으면 지금.
 // 소프트삭제 record는 findFirst 자동 필터로 걸러져 유령 수정이 성립하지 않는다(적대검증 필수 1).
+// 이 결제(형제 묶음)의 현재 총액으로 발행 줄을 다시 맞춘다. 수정·토글 뒤에 부른다.
+// 금액을 다시 세는 이유 — 수납액을 고치면 발행 금액도 따라가야 그 달 합계가 사실과 맞는다
+// (화면이 금액 칸을 갖는 날에는 운영자가 넣은 값이 이기고, 그때는 이 함수를 안 부른다).
+async function resyncCashReceiptFromSiblings(args: {
+  propertyId: string; leaseTermId: string; tenantId: string
+  payDate: Date; payMethod: string | null; issuedAt: Date | null
+}): Promise<void> {
+  const siblings = await prisma.paymentRecord.findMany({
+    where: {
+      propertyId: args.propertyId, leaseTermId: args.leaseTermId,
+      payDate: args.payDate, payMethod: args.payMethod, isBillingAdjust: false,
+    },
+    select: { actualAmount: true, isDeposit: true },
+  })
+  await syncCashReceiptLine({
+    ...args,
+    amount: siblings.reduce((a, r) => a + r.actualAmount, 0),
+    incl: {
+      deposit: siblings.some(r => r.isDeposit),
+      cleaning: false,
+      rent: siblings.some(r => !r.isDeposit),
+    },
+  })
+}
+
+
 export async function setCashReceiptIssued(
   paymentId: string, issued: boolean, restoreIssuedAt?: string | null,
 ): Promise<{ ok: true; prevIssuedAt: string | null } | { ok: false; error: string }> {
@@ -1849,7 +1921,7 @@ export async function setCashReceiptIssued(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { cashReceiptIssuedAt: true, leaseTermId: true, payDate: true, payMethod: true, createdAt: true },
+      select: { cashReceiptIssuedAt: true, leaseTermId: true, tenantId: true, payDate: true, payMethod: true, createdAt: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
     // 카드 계열은 매출전표가 증빙을 대신한다 — 현금영수증 대상이 아니다(운영자 확인 2026-08-01).
@@ -1869,6 +1941,7 @@ export async function setCashReceiptIssued(
       select: { id: true, cashReceiptIssuedAt: true },
     })
     const targets = siblings.length > 0 ? siblings : [{ id: paymentId, cashReceiptIssuedAt: record.cashReceiptIssuedAt }]
+    let lastNext: Date | null = null
     for (const t of targets) {
       // 적용취소 복원은 원래 시각을 밀리초까지 되돌린다 — 날짜 정본을 태우면 그 날 자정으로 뭉개진다.
       // 켜기·끄기는 lib/cashReceipt 정본을 지난다(기본 오늘 KST, 기존 값 보존).
@@ -1879,7 +1952,13 @@ export async function setCashReceiptIssued(
             payMethod: record.payMethod,
           })
       await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })
+      lastNext = next
     }
+    // 발행 줄 — 켜면 만들고 끄면 지운다(소프트삭제라 적용취소가 되살린다).
+    await resyncCashReceiptFromSiblings({
+      propertyId, leaseTermId: record.leaseTermId, tenantId: record.tenantId,
+      payDate: record.payDate, payMethod: record.payMethod, issuedAt: issued ? lastNext : null,
+    })
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, prevIssuedAt: record.cashReceiptIssuedAt ? record.cashReceiptIssuedAt.toISOString() : null }
   } catch (err) {
@@ -1897,16 +1976,17 @@ export async function setCashReceiptIssued(
 // 18건 7,640,000원 일괄) payDate 축 현금영수증 합계는 홈택스와 맞을 수가 없는 숫자였다.
 // 축 판정 자체는 lib/cashReceipt 의 순수 함수 정본이 한다 — 화면·테스트가 같은 식을 본다.
 //
-// 조정 전표는 두 합계에서 뺀다 — 받은 돈이 아니다. 보증금은 **넣는다**(카드로 낸 보증금이
-// 카드사·홈택스에 카드 매출로 남기 때문, 운영자 확인 2026-08-24). 판정은 버킷 정본이 한다.
+// 조정 전표는 카드 합계에서 뺀다 — 받은 돈이 아니다. 보증금은 **넣는다**(카드로 낸 보증금이
+// 카드사·홈택스에 카드 매출로 남기 때문, 운영자 확인 2026-08-24).
+//
+// **두 합계는 표가 다르다.** 카드는 PaymentRecord(payDate 축), 현금영수증은 CashReceipt
+// (issuedAt 축)다. 종전에는 둘 다 PaymentRecord 를 봤고 스탬프가 붙은 record 의 **수납 금액**을
+// 더했다 — 45만 받고 30만만 끊으면 45만이라 말했다. 이제는 발행 줄이 든 금액을 그대로 더한다.
+// 표가 갈려 있으므로 한 건이 두 합계에 동시에 드는 일도 구조로 막힌다.
 //
 // 컷오프도 축을 따라간다. 현금영수증은 국세청에 **발행자 사업자번호**로 귀속되므로 인수 전에 받은
 // 돈이라도 현 사업자가 발행했으면 현 사업자 자료다. 그래서 컷오프를 payDate 가 아니라 **발행일**에
 // 건다. 실측 해당 0건이라 오늘 값은 어느 규칙이든 같다 — 규칙이 맞는 쪽을 적어 둔다.
-//
-// 창을 둘로 나눠 두 번 조회한다. 한 번에 OR 로 긁으면 어느 축으로 들어온 행인지 잃어서
-// 다시 세어야 하고, 그때 중복 계상을 막는 책임이 호출부로 흩어진다. 버킷 판정이 배타라
-// (카드 우선) 한 record 가 두 합계에 동시에 들어가는 일이 구조로 막힌다.
 //
 // 주의: where에 deletedAt 키를 넣지 말 것 — 소프트삭제 익스텐션 opt-out이 오발동한다(적대검증 필수 3).
 export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ cashReceiptSum: number; cashReceiptCount: number; cardSum: number; cardCount: number }> {
@@ -1920,43 +2000,91 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
   // payDate는 UTC 자정(@db.Date) 저장 — 월 경계도 명시적 UTC로 구성(적대검증 필수 3)
   const from = new Date(Date.UTC(y, m - 1, 1))
   const to = new Date(Date.UTC(y, m, 1))
-  // cashReceiptIssuedAt 은 @db.Date 가 아니라 **타임스탬프**다. 위 UTC 창을 그대로 쓰면
-  // KST 자정 경계에서 하루 밀린다(8월 창이 KST 8/1 09:00 부터가 된다). 정본 창을 쓴다.
+  // issuedAt 은 @db.Date 가 아니라 **타임스탬프**다. 위 UTC 창을 그대로 쓰면 KST 자정 경계에서
+  // 하루 밀린다(8월 창이 KST 8/1 09:00 부터가 된다). 정본 창을 쓴다.
   const issuedWindow = kstMonthTsRange(targetMonth)
   // 컷오프는 @db.Date(UTC 자정)라 발행일 축과 재려면 그날 KST 자정으로 옮겨야 한다.
   const cutoffTs = cutoff ? kstDateTimeToUtc(cutoff.toISOString().slice(0, 10)) : null
-  const AGG_SELECT = { actualAmount: true, cashReceiptIssuedAt: true, payMethod: true, payDate: true, isDeposit: true, isBillingAdjust: true } as const
-  const [cardRows, issuedRows] = await Promise.all([
+  const [cardRows, receipts] = await Promise.all([
     prisma.paymentRecord.findMany({
       where: {
         propertyId,
         isPrevOwner: false,
         payDate: { gte: cutoff && cutoff > from ? cutoff : from, lt: to },   // 컷오프 이전 = 양도인 몫(적대검증 필수 2)
       },
-      select: AGG_SELECT,
+      select: { actualAmount: true, payMethod: true, payDate: true, isBillingAdjust: true },
     }),
-    prisma.paymentRecord.findMany({
+    prisma.cashReceipt.findMany({
       where: {
         propertyId,
-        isPrevOwner: false,
-        cashReceiptIssuedAt: {
+        issuedAt: {
           gte: cutoffTs && cutoffTs > issuedWindow.gte ? cutoffTs : issuedWindow.gte,
           lt: issuedWindow.lt,
         },
       },
-      select: AGG_SELECT,
+      select: { issuedAt: true, amount: true, payMethod: true },
     }),
   ])
   let cashReceiptSum = 0, cashReceiptCount = 0, cardSum = 0, cardCount = 0
   for (const r of cardRows) {
-    const b = paymentAggregateBucket(r)
-    if (b.bucket === 'card' && b.month === targetMonth) { cardSum += r.actualAmount; cardCount += 1 }
+    if (paymentCardMonth(r) === targetMonth) { cardSum += r.actualAmount; cardCount += 1 }
   }
-  for (const r of issuedRows) {
-    const b = paymentAggregateBucket(r)
-    if (b.bucket === 'cashReceipt' && b.month === targetMonth) { cashReceiptSum += r.actualAmount; cashReceiptCount += 1 }
+  for (const r of receipts) {
+    // 카드 봉인의 마지막 방어선. 발행 줄을 만드는 길이 전부 봉인을 지나므로 여기 걸릴 일은
+    // 없지만, 걸린다면 그건 봉인이 뚫린 것이고 그 금액이 두 합계에 겹쳐 든다.
+    if (!isCashReceiptEligible(r.payMethod)) continue
+    if (cashReceiptMonth(r) !== targetMonth) continue
+    cashReceiptSum += r.amount
+    cashReceiptCount += 1
   }
   return { cashReceiptSum, cashReceiptCount, cardSum, cardCount }
+}
+
+// ── 발행 줄 동기화 정본 ────────────────────────────────────────
+//
+// 다섯 저장 경로가 전부 여기를 지난다. 발행은 **입금 한 건에 한 줄**이고 그 줄이 금액을 든다
+// (운영자 확정 2026-08-24). 종전에는 PaymentRecord 스탬프만 있어서 합계가 발행 금액이 아니라
+// 발행 표시가 붙은 수납 금액이었다.
+//
+// 같은 입금을 다시 저장해도 줄이 늘지 않게 (계약·수납일·수단)으로 찾아 갱신한다. 끄면 지운다
+// (소프트삭제라 적용취소가 되살릴 수 있다 — 저장소 원칙).
+//
+// PaymentRecord.cashReceiptIssuedAt 은 **그대로 함께 쓴다**. 화면이 record 단위로 '이 수납은
+// 발행됨' 배지를 그리는 근거이고, 그 값이 곧 이 줄의 issuedAt 이다. 두 자리가 갈리지 않게
+// 쓰는 길을 여기 하나로 모은다 — 감지망 20-e 가 호출 개수를 센다.
+async function syncCashReceiptLine(args: {
+  propertyId: string
+  leaseTermId: string
+  tenantId: string
+  payDate: Date
+  payMethod: string | null
+  issuedAt: Date | null      // null 이면 발행 안 함 — 있던 줄은 지운다
+  amount: number             // 실제 발행 금액. 오늘은 입금 전액이고, 화면이 금액 칸을 갖는 날 달라진다
+  incl?: { deposit: boolean; cleaning: boolean; rent: boolean }
+}): Promise<void> {
+  const found = await prisma.cashReceipt.findFirst({
+    where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod },
+    select: { id: true },
+  })
+  if (!args.issuedAt || args.amount <= 0) {
+    if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data: { deletedAt: new Date() } })
+    return
+  }
+  const incl = args.incl ?? { deposit: false, cleaning: false, rent: true }
+  const data = {
+    issuedAt: args.issuedAt,
+    amount: args.amount,
+    inclDeposit: incl.deposit,
+    inclCleaning: incl.cleaning,
+    inclRent: incl.rent,
+  }
+  if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data })
+  else await prisma.cashReceipt.create({
+    data: {
+      propertyId: args.propertyId, leaseTermId: args.leaseTermId, tenantId: args.tenantId,
+      payDate: args.payDate, payMethod: args.payMethod, ...data,
+    },
+  })
 }
 
 // 수납 기록 삭제
