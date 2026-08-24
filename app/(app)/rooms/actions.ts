@@ -1897,6 +1897,9 @@ export async function setCashReceiptIssued(
 // 18건 7,640,000원 일괄) payDate 축 현금영수증 합계는 홈택스와 맞을 수가 없는 숫자였다.
 // 축 판정 자체는 lib/cashReceipt 의 순수 함수 정본이 한다 — 화면·테스트가 같은 식을 본다.
 //
+// 보증금과 조정 전표는 두 합계에서 뺀다(운영자 확정 2026-08-24) — 보증금은 나중에 돌려줄 돈이라
+// 매출이 아니고, 전표는 받은 돈이 아니다. 판정은 lib/cashReceipt 버킷 정본이 한다.
+//
 // 컷오프도 축을 따라간다. 현금영수증은 국세청에 **발행자 사업자번호**로 귀속되므로 인수 전에 받은
 // 돈이라도 현 사업자가 발행했으면 현 사업자 자료다. 그래서 컷오프를 payDate 가 아니라 **발행일**에
 // 건다. 실측 해당 0건이라 오늘 값은 어느 규칙이든 같다 — 규칙이 맞는 쪽을 적어 둔다.
@@ -1922,7 +1925,7 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
   const issuedWindow = kstMonthTsRange(targetMonth)
   // 컷오프는 @db.Date(UTC 자정)라 발행일 축과 재려면 그날 KST 자정으로 옮겨야 한다.
   const cutoffTs = cutoff ? kstDateTimeToUtc(cutoff.toISOString().slice(0, 10)) : null
-  const AGG_SELECT = { actualAmount: true, cashReceiptIssuedAt: true, payMethod: true, payDate: true } as const
+  const AGG_SELECT = { actualAmount: true, cashReceiptIssuedAt: true, payMethod: true, payDate: true, isDeposit: true, isBillingAdjust: true } as const
   const [cardRows, issuedRows] = await Promise.all([
     prisma.paymentRecord.findMany({
       where: {

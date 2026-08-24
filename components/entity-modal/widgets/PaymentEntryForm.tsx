@@ -712,18 +712,18 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
           )}
-          {/* 지금 서버가 하는 일을 그대로 말한다. 발행 표시는 이 결제가 만든 record 전부에 찍히고,
-              현금영수증 합계는 보증금 record 도 함께 센다(getMonthPaymentAggregates). 보증금은
-              매출이 아니므로 그만큼 국세청 발행액이 신고 매출을 앞선다 — 규칙 변경은 운영자 결정 사항이라
-              여기서는 사실만 적는다. */}
+          {/* 지금 서버가 하는 일을 그대로 말한다. 발행 표시는 이 결제가 만든 record 전부에 찍히지만,
+              **두 합계는 보증금 몫을 세지 않는다**(운영자 확정 2026-08-24 — "보증금은 나중에
+              돌려줄거니까 제외"). 그래도 홈택스에는 발행한 대로 올라가므로, 보증금까지 함께
+              발행하면 국세청 발행액이 이 화면의 합계보다 그만큼 커진다. 그 사실을 여기서 말한다. */}
           {cashReceiptIssued && splitMode && dVal > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              보증금 몫 {fmtWon(dVal)}은 돌려줄 돈이라 매출이 아닙니다. 함께 발행하면 국세청 발행액이 신고 매출보다 그만큼 커집니다.
+              보증금 몫 {fmtWon(dVal)}은 돌려줄 돈이라 합계에서 빠집니다. 함께 발행하면 국세청 발행액이 이 합계보다 그만큼 커집니다.
             </p>
           )}
           {cashReceiptIssued && splitMode && cVal > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              청소비 몫 {fmtWon(cVal)}의 발행 표시는 앱이 기록하지 못합니다. 홈택스에서 발행했다면 따로 관리해 주세요.
+              청소비 몫 {fmtWon(cVal)}에는 발행 표시가 붙지 않습니다.
             </p>
           )}
         </>

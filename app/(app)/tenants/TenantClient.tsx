@@ -3640,7 +3640,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 수정 폼에서 입실 취소로 바꿀 때도 사유를 받는다 — 상태전환 미니폼과 같은 선택지(운영자 지시 2026-07-27)
   const [cancelReasonVal, setCancelReasonVal] = useState('')
   const [cancelReasonEtc, setCancelReasonEtc] = useState('')
-  const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(최종 거주국가 연락처 숨김)
+  const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(해외 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   // '메인 계약' 선택 — 창고류 방(공실 집계 제외)이 묶일 때 비거주자 권고 힌트를 구동한다(운영자 오더 2026-08-13).
@@ -4005,7 +4005,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
           <Field label="영어이름" name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
         </div>
-        {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·최종 거주국가 연락처와 같은 조건).
+        {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·해외 연락처와 같은 조건).
             숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
             로마자만으로는 성조·한자를 되짚을 수 없어 영문 이름과 다른 사실이다. 서류 성명 표기
             선택지에 '현지'가 이 값으로 붙는다. 인쇄 폰트가 못 그리는 글자(한자·아랍·태국 문자 등)면
@@ -4073,7 +4073,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="true">흡연</option>
           </SelectField>
         </div>
-        {/* 외국인등록번호 — 최종 거주국가 연락처와 같은 조건(국적이 대한민국이면 숨김).
+        {/* 외국인등록번호 — 해외 연락처와 같은 조건(국적이 대한민국이면 숨김).
             숨겨져도 저장 시 기존 값은 보존된다(빈 값 = 서버가 건드리지 않음). */}
         {natVal !== '대한민국' && (
           <ForeignRegNoField tenantId={tenant?.id} masked={tenant?.foreignRegNoMasked ?? null} />
@@ -4104,10 +4104,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
           </div>
         </div>
-        {/* 최종 거주국가 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
-            낱말은 2026-08-20 운영자 확정 — 국적국이 아니라 한국에 오기 전 살던 나라를 뜻한다
-            (국적 미국·거주 일본 같은 경우가 있어 "본국"이 사실과 갈렸다). DB 칸 isHomeCountry 는
-            그대로다 — 뜻은 같고 개명 비용만 커진다.
+        {/* 해외 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
+            낱말은 2026-08-24 운영자 확정. '본국'은 국적국을 뜻해 국적 미국·거주 일본 같은 경우와
+            갈렸고, '최종 거주국가'는 이 사람의 지금 거주국이 한국이라 되레 헷갈렸다. 어느 나라든
+            **한국 밖 연락처**라는 사실만 말하는 낱말로 옮긴다. DB 칸 isHomeCountry 는 그대로다 —
+            뜻은 같고 개명 비용만 커진다.
             숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음).
             국가는 국적을 따라간다(신고 aed91367). 저장된 연락처가 있으면 그것이 먼저다 —
             국적이 미국인데 일본에 사는 경우가 있어 국적이 저장값을 덮으면 안 된다. 그래서
@@ -4116,7 +4117,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             (lib/homeCountrySync 정본). */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">최종 거주국가 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(국가 선택 시 자동 포맷)</span></label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">해외 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
             name="homeCountryContact"
             countryName="homeCountryCode"

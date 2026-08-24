@@ -1868,6 +1868,18 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/export const CARD_NOT_CASH_RECEIPT_NOTE/.test(canon)) {
     violations.push('[소스] lib/cashReceipt 의 카드 안내 문구 정본이 사라졌다 — 화면마다 다른 문장을 쓰게 된다')
   }
+
+  // 20-d. 보증금·조정전표는 두 합계에서 뺀다 (운영자 확정 2026-08-24 — "보증금은 나중에
+  //       돌려줄거니까 제외"). 버킷 정본이 먼저 걸러야 두 합계가 함께 지켜진다 — 서버에서
+  //       where 로 거르면 카드 창·발행일 창 두 군데를 각각 고쳐야 하고 한쪽이 샌다.
+  if (!/if \(r\.isDeposit \|\| r\.isBillingAdjust\) return \{ bucket: null, month: null \}/.test(canon)) {
+    violations.push('[소스] paymentAggregateBucket 이 보증금·조정전표를 안 거른다 — 돌려줄 돈이 이 달 매출 증빙으로 잡힌다')
+  }
+  // 걸러내려면 그 두 칸을 실제로 읽어와야 한다. select 에서 빠지면 undefined 라 조용히 통과한다.
+  const aggSel = roomsActions.match(/const AGG_SELECT = \{[^}]*\}/)
+  if (!aggSel || !/isDeposit: true/.test(aggSel[0]) || !/isBillingAdjust: true/.test(aggSel[0])) {
+    violations.push('[소스] getMonthPaymentAggregates 의 select 가 isDeposit·isBillingAdjust 를 안 읽는다 — 버킷 정본이 걸러낼 근거를 못 받아 필터가 조용히 무력해진다')
+  }
 }
 
 

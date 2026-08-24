@@ -98,6 +98,8 @@ export type PaymentAggregateRow = {
   payMethod: string | null
   payDate: Date                    // @db.Date — UTC 자정 저장
   cashReceiptIssuedAt: Date | null // 타임스탬프 — KST 달로 읽는다
+  isDeposit?: boolean              // 보증금 몫 — 매출이 아니다(아래 참조)
+  isBillingAdjust?: boolean         // 청구 조정 전표 — 받은 돈이 아니다
 }
 
 /**
@@ -115,6 +117,11 @@ export type PaymentAggregateRow = {
  * lib/kstDate 의 kstMonthKey 를 쓴다.
  */
 export function paymentAggregateBucket(r: PaymentAggregateRow): { bucket: AggregateBucket; month: string | null } {
+  // 보증금은 **나중에 돌려줄 돈**이라 매출이 아니다(운영자 확정 2026-08-24). 두 합계는 이 달에
+  // 잡을 매출 증빙을 재는 자리이므로 보증금이 섞이면 그만큼 부풀어 보인다.
+  // 조정 전표(단기 연장·감액 마커)는 애초에 받은 돈이 아니다 — 오늘은 9건 전부 금액 0에 수단이
+  // 없어 숫자에 안 나타나지만, 전표에 수단이 붙는 날 카드 건수만 조용히 부푼다.
+  if (r.isDeposit || r.isBillingAdjust) return { bucket: null, month: null }
   if (r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod)) {
     return { bucket: 'card', month: dbDateMonthKey(r.payDate) }
   }
