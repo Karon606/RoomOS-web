@@ -138,3 +138,34 @@ export function heldContractCleaningPortion(args: {
   const received = Math.max(0, args.depositPaid) + Math.max(0, args.cleaningPaid)
   return Math.min(fee, received, Math.max(0, args.contractDeposit))
 }
+
+/** 받은 돈이 보증금·청소비·이용료 세 몫으로 나뉜 모양. 세 값의 합은 항상 받은 돈과 같다. */
+export type DepositEntrySplit = { deposit: number; cleaning: number; rent: number }
+
+/**
+ * 받은 돈을 어떻게 나눌지 **제안**한다 — 저장 산식이 아니다 (운영자 확정 2026-08-24, 신고 9e6c7cb3).
+ *
+ * 운영자 원문. "입금 내역이 없으면 보증금 처리가 우선이지만 확인하는 단계가 있으면 되니까."
+ * 그래서 **제안·확인형**이다. 앱이 말없이 배분하지 않는다. 화면이 이 값을 채워 두고, 사람이
+ * 고칠 수 있고, 사람이 확정한 값이 그대로 저장 정본(saveDepositPayment·saveCleaningFeePayment·
+ * savePayment)으로 간다. 이 함수는 **첫 값을 정하는 것까지만** 한다.
+ *
+ * 왜 고칠 수 있어야 하는가. 자동 배분이면 두 자리가 반드시 틀린다.
+ *   · 인수 승계 계약은 앞선 원장이 보증금을 이미 받았다(record 0건이 정상 상태다). 보증금 몫을
+ *     0으로 내릴 길이 없으면 운영자는 매번 딴 길로 우회하고, 그 우회가 신고 98fb6fce 의 원인이었다.
+ *   · 보증금이 미수납인데 이용료만 받는 달이 실재한다. 거기서 보증금을 떼면 없는 미납이 생긴다.
+ *
+ * 순서는 보증금·청소비 먼저, 남은 것이 이용료다. 잔여를 넘겨받는 이유는 이 함수가 계약 상태를
+ * 다시 판정하지 않기 위해서다 — 보증금 잔여는 depositComposition().shortfall 정본이 정하고,
+ * 청소비 잔여는 보증금 안의 몫인 영업장에서 0 이다(그 몫은 이미 보증금 잔여에 반영돼 있다).
+ */
+export function proposeDepositEntrySplit(input: {
+  amount: number
+  depositRemaining: number
+  cleaningRemaining: number
+}): DepositEntrySplit {
+  const amount = Math.max(0, input.amount)
+  const deposit = Math.min(amount, Math.max(0, input.depositRemaining))
+  const cleaning = Math.min(amount - deposit, Math.max(0, input.cleaningRemaining))
+  return { deposit, cleaning, rent: amount - deposit - cleaning }
+}
