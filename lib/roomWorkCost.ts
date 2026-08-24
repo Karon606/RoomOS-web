@@ -1,8 +1,8 @@
-// 작업 비용을 시공비와 자재 몫으로 가르는 정본 — 화면과 백필이 같은 규칙을 쓴다.
+// 작업 비용을 시공비와 자재비로 가르는 정본 — 화면과 백필이 같은 규칙을 쓴다.
 //
 // 두 성질이 섞여 있다(운영자 확인 2026-08-25, knowledge/domain-room-work).
 //   · **시공비** — 그 방 때문에 이번에 새로 지불한 공임.
-//   · **자재 몫** — 이미 사둔 재료 중 그 방에 쓴 분량. 돈은 **살 때 이미** 나갔고, 그 지출을
+//   · **자재비** — 이미 사둔 재료 중 그 방에 쓴 분량. 돈은 **살 때 이미** 나갔고, 그 지출을
 //     방별로 쪼갠 행이다(allocationGroupId). 새로 나간 돈이 아니다.
 //
 // 왜 allocationGroupId 로 안 가르나. 그 칸은 '쪼갰다'는 사실만 말한다 — 실측하면 공임인
@@ -23,7 +23,7 @@ export function isLaborItem(label: string | null | undefined, detail?: string | 
 
 export type WorkCostSplit = { labor: number; material: number; total: number }
 
-/** 작업에 걸린 지출들을 시공비·자재 몫으로 가른다. */
+/** 작업에 걸린 지출들을 시공비·자재비로 가른다. */
 export function splitWorkCost(
   expenses: readonly { amount: number; itemLabel?: string | null; detail?: string | null }[],
 ): WorkCostSplit {

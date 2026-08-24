@@ -92,14 +92,14 @@ export function RoomWorkRowBody({
         )}
 
         {/* 여러 건이 붙었으면 그 사실을 말한다. 자재를 여러 날 사면 합계만으로는 왜 이 금액인지 안 선다.
-            이 합계는 **시공비 + 그 방에 쓴 자재 몫**이다. 자재 몫은 새로 나간 돈이 아니라 살 때
+            이 합계는 **시공비 + 그 방에 쓴 자재비**이다. 자재비는 새로 나간 돈이 아니라 살 때
             이미 잡힌 지출을 방별로 쪼갠 것이다(운영자 확인 2026-08-25). */}
         {r.expenseCount > 1 && (
           <span className="text-xs text-[var(--warm-muted)] num">지출 {r.expenseCount}건</span>
         )}
       </div>
 
-      {/* 시공비와 자재 몫 — §11 보조줄이다(운영자 요청 2026-08-25).
+      {/* 시공비와 자재비 — §11 보조줄이다(운영자 요청 2026-08-25).
           **칩 줄에 넣었다가 내렸다.** 실측(Pretendard 자, MoveCalendar:57 과 같은 식) 결과
           가장 긴 행이 437px 이 되어 320·360·390 **전부에서 두 줄로 접혔다.** 넣기 전에는
           한 줄이었다. 보조줄은 10.5px 라 같은 문장이 160px 남짓이고 어디서도 한 줄에 든다.
@@ -109,7 +109,7 @@ export function RoomWorkRowBody({
           **둘 다 있을 때만** 뜬다 — 한쪽이 0이면 위 합계가 이미 그 사실을 다 말한다. */}
       {r.laborCost > 0 && r.materialCost > 0 && (
         <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] num">
-          시공비 {fmtWon(r.laborCost)} · 자재 몫 {fmtWon(r.materialCost)}
+          시공비 {fmtWon(r.laborCost)} · 자재비 {fmtWon(r.materialCost)}
         </p>
       )}
 

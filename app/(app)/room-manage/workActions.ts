@@ -42,7 +42,7 @@ export type RoomWorkRow = {
   cost: number
   /** 그중 시공비 — 이번에 새로 나간 돈. */
   laborCost: number
-  /** 그중 자재 몫 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
+  /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
   materialCost: number
   expenseCount: number
 }

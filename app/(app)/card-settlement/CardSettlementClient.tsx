@@ -182,8 +182,18 @@ export default function CardSettlementClient({
                 {g.isFinalized ? '확정' : '예정'}
               </Badge>
             </span>
-            <span className="block mt-1 text-[0.71875rem] text-[var(--warm-mid)] truncate">
-              {g.linkedAccountName ? `출금계좌 ${g.linkedAccountName}` : '출금계좌 미지정'}
+            {/* 출금계좌 — 라벨과 계좌명을 **색과 굵기로 가른다**(운영자 지적 2026-08-25).
+                종전에는 `출금계좌 {이름}` 한 문자열이라 두 문제가 함께 났다. 나란히 같은 색으로
+                서서 '출금계좌'가 계좌명의 일부처럼 읽혔고, 그 라벨이 폭을 먹은 만큼 정작 필요한
+                계좌명이 truncate 로 잘렸다("새마을금고 (성동행당•상상…").
+                truncate 를 걷고 접히게 둔다 — 이 줄은 은행 앱에 옮겨 적을 이름이라 **가려지면
+                쓸모가 없다.** 두 줄이 되는 것보다 안 보이는 편이 나쁘다. break-keep 은 한국어를
+                낱말 단위로 접는다(음절 단위로 꺾이면 이름이 더 안 읽힌다). */}
+            <span className="block mt-1 text-[0.71875rem] leading-snug break-keep">
+              <span className="text-[var(--warm-muted)]">출금계좌</span>{' '}
+              {g.linkedAccountName
+                ? <span className="font-medium text-[var(--warm-dark)]">{g.linkedAccountName}</span>
+                : <span className="text-[var(--warm-muted)]">미지정</span>}
             </span>
           </span>
           <span className="shrink-0 flex flex-col items-end gap-1">
@@ -355,8 +365,12 @@ export default function CardSettlementClient({
                         <span className="text-[0.90625rem] font-semibold text-[var(--warm-dark)] tracking-[-0.015em]">{g.accountName}</span>
                         <Badge tone="pale-green" className="shrink-0">정산완료</Badge>
                       </span>
-                      <span className="block mt-1 text-[0.71875rem] text-[var(--warm-mid)] truncate">
-                        {g.linkedAccountName ? `출금계좌 ${g.linkedAccountName}` : '출금계좌 미지정'}
+                      {/* 위 미정산 카드와 같은 처방 — 라벨은 색으로 낮추고 계좌명은 안 자른다. */}
+                      <span className="block mt-1 text-[0.71875rem] leading-snug break-keep">
+                        <span className="text-[var(--warm-muted)]">출금계좌</span>{' '}
+                        {g.linkedAccountName
+                          ? <span className="font-medium text-[var(--warm-dark)]">{g.linkedAccountName}</span>
+                          : <span className="text-[var(--warm-muted)]">미지정</span>}
                       </span>
                     </span>
                     <span className="shrink-0 flex flex-col items-end gap-1">
