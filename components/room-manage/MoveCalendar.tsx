@@ -24,6 +24,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
+import { suppressesTap, type TapOrigin } from '@/lib/tapGuard'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
@@ -198,6 +199,23 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   /** 직전 렌더에 트랙 스크롤러가 있었는가 — 필터가 비웠다 되살리면 새 DOM 이라 다시 앉아야 한다. */
   const hadTrackRef = useRef(false)
   /**
+   * ── 스침 가드 ── 이 트랙 위의 모든 버튼이 나눠 쓰는 한 벌(오류신고 16f691e1).
+   *
+   * 막대마다 다는 대신 **스크롤러 한 곳**에 캡처로 단다. 이유가 셋이다. ① 스침이 click 을
+   * 낳는 것은 막대의 성질이 아니라 **끌리는 표면**의 성질이라, 표면에 걸면 그 위에 무엇이
+   * 서든 함께 덮인다(호실 열이 코드 0줄로 같이 지켜진다). ② 이 파일은 스크롤 중 트랙
+   * 재렌더를 피하려고 축 필터까지 URL 밖에 둔 자리다(위 axis 주석) — 막대마다 핸들러
+   * 셋과 클로저 셋을 새로 배는 것은 그 방향의 반대다. 여기 걸면 핸들러가 통틀어 셋이고
+   * 참조도 고정이다. ③ 삼키는 문법이 이미 저장소에 있다 — `lib/useLongPress:28` 이 조상의
+   * `onClickCapture` 에서 자식 click 을 `stopPropagation` 으로 끊는다. 같은 길이다.
+   *
+   * `tapRef` 는 마지막 pointerdown 의 자리와 그때의 스크롤 눈금이다. 두 손가락이 얹히면
+   * 나중 것이 덮어쓰는데, 그 상황(관성 팬 중 두 번째 손가락)은 트랙이 실제로 흐르고 있어
+   * 눈금 축이 잡는다. `scrollTickRef` 는 아래 scroll 리스너가 올린다 — 새 리스너가 아니다.
+   */
+  const tapRef = useRef<(TapOrigin & { tick: number }) | null>(null)
+  const scrollTickRef = useRef(0)
+  /**
    * 축 필터 — 전체 / 입퇴실 / 작업 (운영자 확정 2026-08-21).
    *
    * 상태가 URL 이 아니라 여기 사는 이유는 성능이다. 이 컴포넌트는 useSearchParams 를
@@ -216,6 +234,15 @@ function MoveCalendarView({ data, onViewMonthChange }: {
 
   const openLease = (roomId: string, leaseId: string, tenantId: string) =>
     entityModal.open({ kind: 'room', roomId, leaseTermId: leaseId, tenantId })
+
+  /**
+   * 방 모달 — 계약 시드 없이 방만. 요약 줄의 작업 칩과 트랙의 호실 열이 함께 쓴다.
+   *
+   * 열기 경로가 **이 컴포넌트 안**에 있어야 한다. 위(RoomManageClient)에서 prop 으로 내리면
+   * 그 컴포넌트가 useSearchParams 를 구독하므로 인라인 함수가 매 렌더 새 식별자가 되고,
+   * 아래 memo 가 죽어 스크롤이 URL 을 적는 180ms 마다 트랙 수백 칸이 다시 그려진다.
+   */
+  const openRoom = (roomId: string) => entityModal.open({ kind: 'room', roomId })
 
   /**
    * 그 달로 다시 조회해 착지한다 — 범위 밖이면 서버가 창을 그쪽으로 미끄러뜨린다.
@@ -367,6 +394,9 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     }
     const stopRaf = () => { if (raf != null) { cancelAnimationFrame(raf); raf = null } }
     const onScroll = () => {
+      // 스침 가드의 '흐름' 축 — 이 눈금이 pointerdown 과 click 사이에 올라갔으면 그 손짓은
+      // 트랙을 끈 것이다(위 tapRef 주석). 리스너를 새로 안 만들려고 여기 한 줄로 얹는다.
+      scrollTickRef.current++
       if (raf == null) { lastLeft = -1; raf = requestAnimationFrame(tick) }
       if (timer) clearTimeout(timer)
       // URL 쓰기는 종전대로 180ms 디바운스다. rAF 가 죽는 환경(일부 모바일 관성 구간)에서도
@@ -415,7 +445,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
       <UpcomingRow items={data.upcoming} works={data.upcomingWorks} todayInRange={todayDay != null}
-        onOpen={openLease} onOpenRoom={roomId => entityModal.open({ kind: 'room', roomId })} />
+        onOpen={openLease} onOpenRoom={openRoom} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -512,7 +542,21 @@ function MoveCalendarView({ data, onViewMonthChange }: {
           {/* containerType — 행 아래 줄의 글자 폭을 트랙(수천 px)이 아니라 **보이는 창**으로
               재기 위한 자(100cqw). 스크롤러는 이미 독립 포맷팅 컨텍스트(overflow)라 컨테인먼트가
               레이아웃을 더 바꾸지 않고, sticky 는 스크롤포트 기준이라 영향이 없다(실측 확인). */}
+          {/* 스침 가드는 이 표면이 진다(위 tapRef 주석). pointerdown 에서 preventDefault 를
+              하지 않고 포인터 캡처도 걸지 않는다 — 여기서 시작하는 가로 드래그가 죽는다.
+              `touch-action`·`overscrollBehaviorX` 무접점이라 신고 d8554128 봉합면을 안 건드린다. */}
           <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
+            onPointerDownCapture={e => { tapRef.current = { x: e.clientX, y: e.clientY, tick: scrollTickRef.current } }}
+            onPointerCancelCapture={() => { tapRef.current = null }}
+            onClickCapture={e => {
+              const down = tapRef.current
+              tapRef.current = null
+              if (suppressesTap({
+                origin: down, at: { x: e.clientX, y: e.clientY },
+                scrolled: down != null && down.tick !== scrollTickRef.current,
+                detail: e.detail,
+              })) { e.stopPropagation(); e.preventDefault() }
+            }}
             className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
             style={{ overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
             <div className="move-track" style={{ width: trackW }}>
@@ -550,7 +594,8 @@ function MoveCalendarView({ data, onViewMonthChange }: {
 
               {rows.map((row, ri) => (
                 <GanttRow key={row.roomId} row={row} days={days} cols={cols}
-                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0} onOpen={openLease} />
+                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0}
+                  onOpen={openLease} onOpenRoom={openRoom} />
               ))}
             </div>
           </div>
@@ -891,7 +936,7 @@ function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
   return { ...bare, mode: 'name' }
 }
 
-function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
+function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpenRoom }: {
   row: MoveCalendarRow
   days: number
   cols: string
@@ -899,6 +944,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   monthStarts: number[]
   first: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+  onOpenRoom: (roomId: string) => void
 }) {
   // 좌측 코랄 팁은 **아직 답하지 않은** 충돌에만. 확인된 겹침만 남은 행은 팁을 끈다(중립).
   const attn = row.conflicts.some(c => !c.acked)
@@ -946,16 +992,42 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
           railCount > 0 ? `repeat(${railCount}, var(--mc-work))` : null,
         ].filter(Boolean).join(' ') || 'var(--mc-work)',
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
-      }}>
-        {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn). */}
-        <div className="mc-room sticky left-0 z-20 flex items-center px-2 tnum text-xs font-bold"
+        // 거주 레인이 없는 행(청소만 있는 공실 방)은 레일만 있어 행이 20px 이다. 호실 열이
+        // 버튼이 된 지금 **그 20px 이 곧 터치 타겟 높이**라 §09 44px 을 깬다. 손가락 기기에서만
+        // 레일 자를 나눠 합이 44px 이 되게 한다(globals.css 의 --mc-work 갈아끼우기).
+        // 레인이 있는 행은 손대지 않는다 — coarse 에서 --mc-lane 이 이미 44px 이다.
+        // 히트영역 확장(.mc-bar::after 문법)은 여기서 못 쓴다: 호실 칸은 위아래 이웃 칸과
+        // 맞닿아 있고 셋 다 z-20 이라, 위로 뻗으면 이웃 행의 탭을 빼앗고 아래로 뻗으면 먹힌다.
+        ...(row.laneCount === 0 && railCount > 0
+          ? { '--mc-work-touch': `${Math.max(20, Math.ceil(44 / railCount))}px` }
+          : null),
+      } as React.CSSProperties}>
+        {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn).
+            **버튼이다**(오류신고 16f691e1 — "가장 왼쪽 호실을 누르면 해당 호실로 이동되지는
+            않네"). 목적지는 방 모달이고 계약 시드는 안 싣는다: 이 칸은 모든 레인을 가로질러
+            서 있어 여러 막대 중 어느 계약을 고를지에 자의적이지 않은 답이 없고, 계약이 하나도
+            없는 행(청소만 있는 공실 방)에도 이 칸은 선다. 형제 셋이 같은 호출이다
+            (요약 줄 :448 · 호실 카드 RoomManageClient:1075 · 청소 뷰 :1242).
+            aria-label 에 호실번호를 **그대로 다시 싣는다** — aria-label 은 접근명을 더하는 게
+            아니라 대체하므로, 빼면 음성 제어 사용자가 부를 이름이 사라진다(WCAG 2.5.3).
+            hover·focus 링은 globals.css 의 button.mc-room 이 진다. 여기에 outline 유틸을
+            같이 걸면 안 된다 — 그 파일 규칙이 언레이어드라 유틸을 통째로 지운다(.mc-bar 전례). */}
+        {/* text-left·w-full·h-full 은 방어다. Tailwind 프리플라이트가 button 의 UA 값을 거의
+            다 중화하지만 text-align:center 는 안 건드리고, 그리드 아이템의 stretch 를 엔진이
+            어떻게 푸는지도 명세 밖 여지가 있다. 이 칸이 줄어들면 불투명 크림 배경이 막대를 못
+            덮어 sticky 열 아래로 막대가 비친다 — 그것이 이 칸의 존재 이유다. 크롬 실측으로는
+            셋 다 픽셀 변화 0(박스 66×행높이·글자 위치 dx11/dy21 전후 동일)이라 값이 아니라
+            보험이다. */}
+        <button type="button" onClick={() => onOpenRoom(row.roomId)}
+          aria-label={`${fmtRoomNo(row.roomNo)} 상세 열기`}
+          className="mc-room sticky left-0 z-20 flex h-full w-full items-center px-2 text-left tnum text-xs font-bold"
           style={{
             gridColumn: '1 / 2', gridRow: '1 / -1',
-            background: 'var(--cream)', color: 'var(--ink-2)',
+            color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
           {fmtRoomNo(row.roomNo)}
-        </div>
+        </button>
 
         {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}
         {monthStarts.map(d => (
@@ -1049,7 +1121,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
           이 선언이 버려져 종전 max-w-full 로 물러난다. */}
       {droppedWorks.length > 0 && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
-          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem] tnum" style={{ gridColumn: '2 / -1' }}>
             <span className="sticky inline-block max-w-full truncate pl-1.5"
               style={{ left: ROOM_COL, maxWidth: `calc(100cqw - ${ROOM_COL}px)` }}>
@@ -1070,7 +1142,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
       {/* 꼬리 — 트랙 밖의 사실을 한 줄로. 그 예약이 범위 안에 들어오면 막대가 말하므로 이 줄은 없다. */}
       {row.tail && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
-          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem]" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
             {/* 위 '행 아래 줄'과 같은 자로 묶는다 — 기하가 한 픽셀도 안 다른 형제인데 한쪽만
                 봉합돼 있었다(디자이너 패스 기록 8). max-w-full 은 트랙 폭(수천 px)이라
