@@ -156,3 +156,52 @@ select)와 `batchUpdateTenants`(일괄 편집)는 안 부른다.** 그 두 경�
 요약 줄 칩이 방 모달로 보내는 것이 유일한 우회다. '날짜 변경' 버튼 자체는
 `components/cleaning/CleaningRowBody.tsx:336` 에 상시 있고 게이트는 `canEdit` 하나뿐이다.
 - 레일에 손닿을 것을 되돌리는 것은 위 신고 표면을 다시 여는 일이라 별도 설계가 필요하다.
+
+## InfoHint (i) 아이콘이 비-텍스트 대비 미달이다 (2026-08-24, 운영자 결정 대기)
+`components/ui/InfoHint.tsx:19` 가 `style={{ color: 'inherit', opacity: 0.55 }}` 다. 부모가
+`--warm-muted`(#7a6553), 배경이 `--cream`(#fbf6ef)일 때 합성색이 약 #b4a699 라 **2.20:1** 이고
+WCAG 1.4.11(비-텍스트 3:1) 미달이다. 캡션 글자 자체는 5.12:1 로 통과한다.
+- 접기 전략은 **접힌 손잡이가 보일 때만** 성립한다. 오류신고 8b9b6c43 에서 축 설명이 운영자에게
+  안 닿은 경로 중 하나가 이것이라는 것이 UX 패널 판정이다.
+- `opacity: 0.8` 이면 약 3.43:1 로 통과한다. 한 줄이지만 **정본 컴포넌트라 소비처 29곳이 동시에
+  진해진다** — 두 신고와 무관한 앱 전역 시각 변경이라 별도 디자이너 패스와 운영자 사선이 필요하다.
+
+## 입력칸 경계가 비-텍스트 대비 미달이다 (2026-08-24, 토큰 차원)
+`--warm-border` 보더 대 `--cream` 카드 표면이 **라이트 1.43:1 · 다크 1.20:1** 이다(칸 배경
+`--canvas` 대 카드는 라이트 1.25 · 다크 1.14). WCAG 1.4.11 3:1 미달이고, 이것은 앱의 **모든**
+입력칸이 같은 조건이다(정본 `FIELD_CLS` 포함).
+- 라이트에서 3:1 을 넘기려면 보더가 #a08e7c 근처, 다크는 #6B6156 근처까지 와야 한다.
+  `--d-border-s`(alpha .16)로 올려도 1.20:1 이라 여전히 미달이다.
+- 토큰을 움직이면 카드·디바이더까지 전부 따라간다. 전역 표면 언어 개정이라 운영자 안건.
+
+## payDate 축을 두 이름으로 부르는 자리 둘 (2026-08-24, 오류신고 8b9b6c43 파생)
+축 이름 정본은 `입금일`(payDate) · `귀속월`(targetMonth)로 정리했다([[money-display-feedback]]).
+`/rooms` 현금영수증 캡션은 정정했고 아래 둘이 남았다. 둘 다 두 글자 변경이지만 케이스가 아니라
+클래스로 닫아야 한다.
+- `app/(app)/dashboard/DashboardClient.tsx:1392` — '추이' 축 칩이 일·주 구간(payDate 축)을
+  `납부일 기준` 이라 부른다. 같은 축을 두 화면이 다르게 부르는 상태다.
+- `app/(app)/rooms/RoomsClient.tsx:1670` — 일괄 수납 모달 라벨 `납부일` 의 값은 실제로 payDate 다.
+  같은 파일 안에서 `납부일` 이 표에서는 dueDay, 이 모달에서는 payDate 다. 형제 수납 폼
+  (`PaymentEntryForm`·`TenantClient`·`PaymentRecordList`)도 payDate 를 `납부일` 이라 부르므로
+  한 자리만 고치면 불일치가 이동만 한다.
+
+## 날짜 칸 잔재 둘 — §12 radius 이탈, 재고 (2026-08-24, 오류신고 c2ab5b83 전수에서 발견)
+맨글자 9곳은 전부 닫았고(감지망 `check-datepicker-shell`), 아래 둘은 **껍데기는 있으나** §12
+'radius 6px 전 입력 통일' 을 벗어난 `rounded-xl` 이다. 이번 신고의 결함 클래스(맨글자)가 아니라
+손대지 않았다.
+- `app/(app)/inventory/InventoryClient.tsx:4170` 점검일 — `rounded-xl px-3 py-2`. 게다가 2열
+  그리드라 **320px 에서 '2026년 12월 30일' 이 잘린다**(실측 client 117 / scroll 134). 형제
+  select 36px 대 38px 로 높이도 2px 어긋난다. 같은 파일의 편집 폼 셋은 이번에
+  `grid-cols-1 sm:grid-cols-2` 로 접어 해소했으니 같은 처방이 그대로 듣는다.
+- `app/(app)/inventory/InventoryClient.tsx:3034` 수령 확정일시 — `rounded-xl px-3 py-2`.
+  잘림은 세 폭 전부 0 이라 radius 이탈만 남는다.
+
+## DatePicker 트리거는 className 으로 44px 터치 타겟을 못 만든다 (2026-08-24)
+`components/ui/RowActionBtn.tsx:7` 이 적어 둔 규칙 그대로다 — 히트영역과 시각 크롬을 한 요소에
+겹치면 `-my-2 min-h-[44px]` 가 **보이는 테두리까지 44px 로 부풀린다.** `DatePicker` 트리거는 그
+둘이 한 `<button>` 이라, 26px 형제 옆에서 44px 를 만들면 그 자체가 새 이질감이 된다.
+- 근본은 정본이 크롬을 내부 `<span>` 으로 분리하는 것이다. 그러면 호출부가 안전하게
+  `-my-2 min-h-[44px]` 를 걸 수 있고, 토큰 `--input-h-touch: 44px` 도 이미 있다.
+- 지금은 청소 dense 행 네 칸이 전부 26px 다(§09 미달, 알려진 편차). 올린다면 넷을 한 번에.
+- 같은 정본을 손볼 때 [[open-issues]] 의 'DatePicker 트리거에 접근 가능한 이름이 없다'(2026-08-20)
+  와 함께 가져갈 것.
