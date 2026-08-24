@@ -110,10 +110,17 @@ function propValue(el, prop) {
  * 객체가 흔해서, 첫 줄만 집으면 `dense` 만 읽고 껍데기를 못 본 채 위반으로 신고한다(실제로 겪었다).
  * 선언 들여쓰기보다 깊거나 이어짐 기호로 시작하는 줄까지를 한 선언으로 본다.
  */
-function resolve(expr, src) {
+function resolve(expr, src, seen = new Set(), depth = 0) {
+  // **한 단계만 펼치면 안 된다.** 이 저장소의 껍데기 상수는 상수를 또 문다
+  // (`const inputCls = `${inputBase} border-…`` 처럼). 한 겹만 보면 inputBase 안의 배경을
+  // 못 읽고 멀쩡한 자리를 위반으로 신고한다(2026-08-24 오탐 3건, DepositStatusPanel).
+  // 이미 펼친 이름은 seen 이 막아 순환 선언에서도 안 돈다.
+  if (depth > 4) return expr
   const lines = src.split('\n')
   let out = expr
   for (const name of new Set(expr.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])) {
+    if (seen.has(name)) continue
+    seen.add(name)
     const head = new RegExp(`^(\\s*)(?:const|let)\\s+${name}\\b[^=]*=`)
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(head)
@@ -131,7 +138,11 @@ function resolve(expr, src) {
       break
     }
   }
-  return out
+  // 붙인 선언 안에 아직 안 펼친 이름이 있으면 한 겹 더 들어간다.
+  const again = new Set(out.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])
+  const pending = [...again].filter(n => !seen.has(n))
+  if (pending.length === 0) return out
+  return resolve(out, src, seen, depth + 1)
 }
 
 const files = ROOTS.flatMap(r => walk(r))
