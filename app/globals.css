@@ -474,7 +474,8 @@ html.doc-scroll body {
 .mc-bar::after { content: ''; position: absolute; inset: -6px 0; }
 
 /* 호실 열 — 트랙에서 방으로 들어가는 길(오류신고 16f691e1). 문법은 .mc-bar·.room-tile 과
-   같은 2px 코랄 아웃라인이다(§03). 행 밝힘(.mc-row:hover)만으로는 부족하다 — 그것은 행
+   같은 2px 아웃라인이다(§03 — hover 는 코랄, focus 는 아래 이유로 --tc-text).
+   행 밝힘(.mc-row:hover)만으로는 부족하다 — 그것은 행
    어디에 있어도 켜져서 "이 줄"이라고만 말하고, 막대는 자기 아웃라인으로 "지금 짚은 것은 나"를
    따로 말하는데 호실 칸에만 그것이 없으면 행 안에서 유일하게 자기를 안 밝히는 컨트롤이 된다.
 
