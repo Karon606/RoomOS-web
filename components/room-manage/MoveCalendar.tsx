@@ -436,7 +436,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
            서므로 여기 안 온다. 이 가지는 정말 아무것도 없는 창이다). */
         <EmptyState
           title="이 기간에 일정이 없습니다"
-          description="입주·퇴실·예약이 잡히거나 청소 같은 작업이 등록되면 이 달력에 나타납니다."
+          description="입주·퇴실·예약이 잡히거나 작업이 등록되면 이 달력에 나타납니다."
           // 트랙이 없는 창에서는 아래 부유 알약이 설명문 위에 앉는다(빈 상태 안쪽 여백 32px 대
           // 알약 윗변 54px = 세로 22px 겹침). 빈 상태의 CTA 자리가 곧 '여기서 나가는 길'이다(§17).
           action={todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
@@ -476,7 +476,10 @@ function MoveCalendarView({ data, onViewMonthChange }: {
               표면만으로 읽혀야 한다). */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2"
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
-            <SegmentedControl<MoveAxis> size="sm" ariaLabel="일정 종류 필터"
+            {/* scroll — 같은 페이지 형제 둘(청소 상태 필터·호실 상태 필터)이 넘기는 것과 같은 문법.
+                지금 트랙은 141.52px 이라 안 넘치지만, 안 넘기면 트랙에 max-w-full 이 안 붙어
+                라벨이 길어지는 날 카드 밖으로 밀리고 overflow-hidden 에 잘린다(디자이너 패스). */}
+            <SegmentedControl<MoveAxis> size="sm" scroll ariaLabel="일정 종류 필터"
               value={axis} onChange={setAxis}
               options={[
                 { value: 'all', label: '전체' },
@@ -1069,7 +1072,11 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
         <div className="grid" style={{ gridTemplateColumns: cols }}>
           <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem]" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
-            <span className="sticky inline-block max-w-full truncate pl-1.5" style={{ left: ROOM_COL }}>{row.tail}</span>
+            {/* 위 '행 아래 줄'과 같은 자로 묶는다 — 기하가 한 픽셀도 안 다른 형제인데 한쪽만
+                봉합돼 있었다(디자이너 패스 기록 8). max-w-full 은 트랙 폭(수천 px)이라
+                truncate 가 화면 밖에서야 든다. */}
+            <span className="sticky inline-block max-w-full truncate pl-1.5"
+              style={{ left: ROOM_COL, maxWidth: `calc(100cqw - ${ROOM_COL}px)` }}>{row.tail}</span>
           </p>
         </div>
       )}
