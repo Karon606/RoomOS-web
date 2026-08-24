@@ -10,7 +10,7 @@ import { requireEdit, getMyRole, canEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { maskStoredForeignRegNo } from '@/lib/pii'
 import { kstDateTimeToUtc, kstMonthTsRange, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { paymentAggregateBucket, resolveCashReceiptIssuedAt } from '@/lib/cashReceipt'
+import { isCashReceiptEligible, paymentAggregateBucket, resolveCashReceiptIssuedAt } from '@/lib/cashReceipt'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -846,7 +846,7 @@ export async function savePayment(data: {
   // '한 결제 = 한 발행'이라는 사실이 흐려진다(형제 묶음 판정도 createdAt 근사에 기댄다).
   const crStamp = resolveCashReceiptIssuedAt({
     issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
-    payMethod: data.payMethod, payYmd: data.payDate,
+    payMethod: data.payMethod,
   })
 
   // 월별 청구액을 서버에서 직접 계산(일할→락인→할인, lib/billing 공용 규칙).
@@ -1182,7 +1182,7 @@ export async function saveDepositPayment(data: {
   // 보증금 몫과 초과분(이용료) 몫은 한 결제다 — 스탬프도 하나를 나눠 쓴다.
   const crStamp = resolveCashReceiptIssuedAt({
     issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
-    payMethod: data.payMethod, payYmd: data.payDate,
+    payMethod: data.payMethod,
   })
 
   // 계약 보증금이 0이면 보증금 수납을 받지 않는다 (2026-08-02 조사).
@@ -1427,7 +1427,7 @@ export async function saveCleaningFeePayment(data: {
           memo: null, seqNo: existingCount + 1, isPaid: false, carryOver: 0,
           cashReceiptIssuedAt: resolveCashReceiptIssuedAt({
             issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
-            payMethod: data.payMethod, payYmd: data.payDate,
+            payMethod: data.payMethod,
           }),
         },
       })
@@ -1803,12 +1803,19 @@ export async function updatePayment(
         // 현금영수증 — undefined면 미변경(기존 호출이 스탬프를 지우지 않게, 영향검증 필수).
         // 값 결정은 lib/cashReceipt 정본. 날짜를 안 넘기면 기존 발행 시각 보존(감사 흔적),
         // 넘기면 그 날짜로 고친다 — **여기가 발행일 수정 경로다**(운영자 확정 2026-08-24).
-        ...(data.cashReceiptIssued === undefined ? {} : {
+        //
+        // 단, **수단을 카드로 바꾸면 미변경이 아니라 취소다**(운영자 확정 2026-08-24).
+        // "결제 수단을 바꿨기 때문에 현금영수증은 자연히 취소가 되어야 하고 카드결제로 했으니
+        // 카드결제 금액으로 합산되어야 하는거야". 입주자 상세의 수정 폼은 발행 체크를 아예
+        // 안 보내므로(undefined) 여기서 지우지 않으면 카드 record 에 발행 표시가 남는다.
+        // 금액이 카드 합계로 넘어가는 것은 집계 정본이 이미 한다(paymentAggregateBucket 카드 우선).
+        ...(!isCashReceiptEligible(data.payMethod) ? { cashReceiptIssuedAt: null }
+          : data.cashReceiptIssued === undefined ? {} : {
           cashReceiptIssuedAt: resolveCashReceiptIssuedAt({
             issued: data.cashReceiptIssued,
             issuedDate: data.cashReceiptIssuedDate,
             existing: record.cashReceiptIssuedAt,
-            payMethod: data.payMethod, payYmd: data.payDate,
+            payMethod: data.payMethod,
           }),
         }),
       },
@@ -1869,7 +1876,7 @@ export async function setCashReceiptIssued(
         ? new Date(restoreIssuedAt)
         : resolveCashReceiptIssuedAt({
             issued, existing: t.cashReceiptIssuedAt,
-            payMethod: record.payMethod, payYmd: kstYmdStr(record.payDate),
+            payMethod: record.payMethod,
           })
       await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })
     }

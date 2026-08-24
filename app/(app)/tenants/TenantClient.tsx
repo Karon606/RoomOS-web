@@ -50,7 +50,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
-import { defaultCashReceiptIssuedYmd } from '@/lib/cashReceipt'
+import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
@@ -768,13 +768,12 @@ export default function TenantClient({
   // 결제 수단 — 종전에는 비제어라 제출 때 FormData 로만 읽었는데, 발행일 기본값이 이 값을
   // 따라가야 해서(카드=수납일) 상태로 쥔다. 제출은 여전히 name='payMethod' 로 읽는다.
   const [payMethodVal, setPayMethodVal] = useState('계좌이체')
-  // 발행일 기본값은 lib/cashReceipt 정본이 정한다(형제 폼 PaymentEntryForm 과 같은 처방).
-  // 운영자가 칸을 직접 고치면 그 뒤로는 안 따라간다 — 손으로 넣은 값을 앱이 덮지 않는다.
-  const [crDateTouched, setCrDateTouched] = useState(false)
+  // 카드로 바꾸면 발행 표시를 끈다 — 형제 폼(PaymentEntryForm)과 같은 처방이다.
+  // 카드는 현금이 아니라 현금영수증 대상 자체가 아니고, 그 금액은 카드 합계로 넘어간다
+  // (운영자 확정 2026-08-24).
   useEffect(() => {
-    if (crDateTouched) return
-    setCashReceiptDateVal(defaultCashReceiptIssuedYmd({ payMethod: payMethodVal, payYmd: payDateVal }))
-  }, [payMethodVal, payDateVal, crDateTouched])
+    if (!isCashReceiptEligible(payMethodVal)) setCashReceiptOn(false)
+  }, [payMethodVal])
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
@@ -1517,8 +1516,8 @@ export default function TenantClient({
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
     setCashReceiptOn(false); setCashReceiptDateVal(kstYmdStr())
-    // 다음에 열 때 다시 기본값을 따라가야 한다 — 안 지우면 앞 건에서 손으로 고친 날짜가 그대로 선다.
-    setPayMethodVal('계좌이체'); setCrDateTouched(false)
+    // 다음에 열 때 수단이 남아 있으면 카드 안내가 그대로 서 있다 — 기본으로 되돌린다.
+    setPayMethodVal('계좌이체')
   }
 
   const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -3289,18 +3288,25 @@ export default function TenantClient({
                         <option value="기타">기타</option>
                       </select>
                     </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" name="cashReceipt" checked={cashReceiptOn} onChange={e => setCashReceiptOn(e.target.checked)}
-                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                      <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
-                    </label>
+                    {/* 카드는 현금영수증 대상이 아니다 — 형제 폼과 같은 분기·같은 문구(정본). */}
+                    {!isCashReceiptEligible(payMethodVal) ? (
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                        {CARD_NOT_CASH_RECEIPT_NOTE}
+                      </p>
+                    ) : (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="cashReceipt" checked={cashReceiptOn} onChange={e => setCashReceiptOn(e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                        <span className="text-xs text-[var(--warm-dark)]">현금영수증 발행함</span>
+                      </label>
+                    )}
                     {/* 발행일 — 형제 폼(PaymentEntryForm)과 같은 처방이다. 체크했을 때만 서고,
                         pl-6 로 체크박스의 하위 항목임을 말하고, 껍데기는 위 '날짜' 칸과 같다.
                         합계가 이 날짜의 달로 잡히므로 지연 발행이면 여기를 고쳐야 홈택스와 맞는다. */}
                     {cashReceiptOn && (
                       <div className="space-y-1 pl-6">
                         <label className="text-xs text-[var(--warm-muted)]">발행일</label>
-                        <DatePicker value={cashReceiptDateVal} onChange={v => { setCrDateTouched(true); setCashReceiptDateVal(v) }} maxDate={kstYmdStr()}
+                        <DatePicker value={cashReceiptDateVal} onChange={setCashReceiptDateVal} maxDate={kstYmdStr()}
                           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                       </div>
                     )}

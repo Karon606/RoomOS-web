@@ -17,7 +17,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr } from '@/lib/kstDate'
-import { defaultCashReceiptIssuedYmd } from '@/lib/cashReceipt'
+import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 
@@ -90,15 +90,20 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     setEditMemo(p.memo ?? '')
     setEditTargetMonth(p.targetMonth)
     setEditCashReceipt(!!p.cashReceiptIssuedAt)
-    // 저장된 발행 시각이 있으면 그것이 사실이다 — 기본값 규칙으로 덮지 않는다.
-    // 없으면(여기서 처음 켜는 경우) 정본 기본값 — 카드는 이 건의 수납일, 그 외는 오늘.
-    setEditCashReceiptDate(p.cashReceiptIssuedAt
-      ? kstYmdStr(new Date(p.cashReceiptIssuedAt))
-      : defaultCashReceiptIssuedYmd({ payMethod: p.payMethod, payYmd: kstYmdStr(new Date(p.payDate)) }))
+    // 저장된 발행 시각을 KST 날짜로 되읽는다. 없으면 오늘 — 여기서 처음 켜는 경우다.
+    setEditCashReceiptDate(p.cashReceiptIssuedAt ? kstYmdStr(new Date(p.cashReceiptIssuedAt)) : kstYmdStr())
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
   }
+
+  // 수정 중 수단을 카드로 바꾸면 발행 표시를 끈다(운영자 확정 2026-08-24).
+  // "결제 수단을 바꿨기 때문에 현금영수증은 자연히 취소가 되어야 하고 카드결제로 했으니
+  // 카드결제 금액으로 합산되어야 하는거야". 서버도 같은 봉인을 갖지만(updatePayment) 화면이
+  // 먼저 말해야 저장을 누르기 전에 무슨 일이 일어나는지 보인다.
+  useEffect(() => {
+    if (!isCashReceiptEligible(editPayMethod)) setEditCashReceipt(false)
+  }, [editPayMethod])
 
   const handleSaveEdit = () => {
     if (!editingId) return
@@ -217,11 +222,23 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   </select>
                 </div>
               )}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={editCashReceipt} onChange={e => setEditCashReceipt(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                <span className="text-[0.65625rem] text-[var(--warm-dark)]">현금영수증 발행함</span>
-              </label>
+              {/* 카드는 현금영수증 대상이 아니다 — 형제 폼과 같은 분기·같은 문구(정본).
+                  이 자리만 한 줄이 더 붙는다. 이미 발행 표시가 있던 건을 카드로 바꾸는 중이면
+                  저장이 그 표시를 지우므로, 누르기 전에 그 사실을 말한다. */}
+              {!isCashReceiptEligible(editPayMethod) ? (
+                <div className="space-y-1">
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">{CARD_NOT_CASH_RECEIPT_NOTE}</p>
+                  {p.cashReceiptIssuedAt && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)]">저장하면 이 건의 현금영수증 발행 표시가 해제되고 금액은 카드 수납으로 잡힙니다.</p>
+                  )}
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={editCashReceipt} onChange={e => setEditCashReceipt(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                  <span className="text-[0.65625rem] text-[var(--warm-dark)]">현금영수증 발행함</span>
+                </label>
+              )}
               {/* 발행일 — 체크했을 때만 선다. 껍데기는 이 폼의 형제 칸('납부일')과 같은 것을 넘긴다
                   (§12 한 폼 안 입력 높이 혼용 금지). pl-6 은 체크박스의 하위 항목이라는 표시다.
                   미래는 maxDate 로 막고 과거는 안 막는다 — 누락분을 나중에 올리는 것이 정상 업무다. */}
