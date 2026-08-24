@@ -4621,7 +4621,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </label>
               {depositReceivedOn && (
                 <div className="pl-5 pt-1.5 space-y-1.5">
-                  <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
                       <select name="depositReceivedMethod" value={depositReceivedMethod}

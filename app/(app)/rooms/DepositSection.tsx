@@ -195,7 +195,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                   </div>
                   {recvFor === d.leaseTermId && (
                     <div className="mt-3 space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2">
-                      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
                         <div className="space-y-1.5">
                           <label className="text-xs font-medium text-[var(--warm-mid)]">금액</label>
                           <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}

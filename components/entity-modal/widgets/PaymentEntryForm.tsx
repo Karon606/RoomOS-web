@@ -506,11 +506,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           </div>
         </>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      {/* 320px 에서는 세로로 편다 — 그 폭에서 2열이면 날짜 칸 글자 자리가 좁아 '2026년 12월 30일'이
+          truncate 에 걸려 '2026년 12월 3…'으로 읽힌다(30일이 3일로 보인다). 패딩을 옆 MoneyInput 과
+          맞춘 이유는 §12 '한 폼 안 입력 높이 혼용 금지' 다 — 종전 38px 대 42px 로 갈려 있었다. */}
+      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs text-[var(--warm-muted)]">날짜</label>
           <DatePicker value={payDateVal} onChange={setPayDateVal}
-            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-[var(--warm-muted)]">금액</label>
@@ -555,10 +558,12 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               몫의 합 {fmtWon(dVal + cVal)}이 받은 금액 {fmtWon(payAmount)}을 넘습니다. 금액을 늘리거나 몫을 줄여 주세요.
             </p>
           ) : (
+            /* 되돌리기 버튼은 히트영역과 보이는 글자를 분리한다 — 글자 높이 그대로면 §09 터치 타깃
+               44px 에 못 미친다(실측 15.8px). 형제 정본 RowActionBtn 이 쓰는 -my-2 min-h-[44px] 문법이다. */
             <div className="flex items-center justify-between gap-2">
               {splitTouched ? (
                 <button type="button" onClick={resetSplit}
-                  className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] shrink-0">
+                  className="-my-2 min-h-[44px] inline-flex items-center shrink-0 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)] rounded-sm">
                   제안값으로 되돌리기
                 </button>
               ) : <span />}
@@ -819,11 +824,12 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
 
       {mode !== 'none' && (
         <>
-          <div className="grid grid-cols-2 gap-3">
+          {/* 위 정본 폼과 같은 처방 — 하나만 고치면 두 폼이 갈린다. */}
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">날짜</label>
               <DatePicker value={payDateVal} onChange={setPayDateVal}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">금액</label>

@@ -293,9 +293,10 @@ export function DepositStatusPanel({
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
   // 폼 라벨 정본(§12 — 12px / 500 / --ink-s). 종전 10.5px --warm-muted 는 크기·굵기·색 셋 다 어긋났다.
   const labelCls = 'text-xs font-medium text-[var(--warm-mid)]'
-  // 2열 그리드 — 320px 에서는 세로로 편다. 그 폭에서 날짜 칸 글자 영역이 97px 라
-  // '2026년 8월 30일'(약 104px)이 truncate 에 걸려 '2026년 8월 3…'로 읽힌다(수납일 오독).
-  const gridCls = 'grid grid-cols-1 min-[360px]:grid-cols-2 gap-1.5'
+  // 2열 그리드 — 400px 미만에서는 세로로 편다. 헤드리스 실측(320·360·390)에서 2열이면 날짜 칸
+  // 글자 자리가 모자라 '2026년 12월 30일'이 truncate 에 걸렸다. 잘리면 30일이 3일로 읽힌다 —
+  // 수납일 오독은 이 앱이 결함으로 다루는 부류다. 360 도 모자라 경계를 400 으로 잡았다(형제 재사용값).
+  const gridCls = 'grid grid-cols-1 min-[400px]:grid-cols-2 gap-1.5'
   // 인라인 폼 껍데기 — 표면을 한 단 올린다. 종전 --canvas 는 안의 입력과 같은 토큰이라
   // 다크에서 페이지·컨테이너·입력이 셋 다 #000 이고 보더 대비가 1.11:1 이었다(폼이 안 보인다).
   // --cream-soft 는 토큰 쌍이 갖춰져 있어(라이트 #f5ede0 · 다크 #261C14) 양 모드에서 산다.
