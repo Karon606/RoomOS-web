@@ -337,9 +337,11 @@ export function DepositStatusPanel({
           <div className={gridCls}>
             <div className="space-y-1.5">
               <label className={labelCls}>금액</label>
+              {/* 보더는 덧붙이지 않고 갈아끼운다 — 같은 속성 유틸리티 둘을 나란히 두면 승자가
+                  문자열 순서가 아니라 스타일시트 순서로 정해져 조용히 뒤집힌다(§12 에러 표기). */}
               <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
                 onChange={e => setRecvAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                className={`${inputCls} ${recvOver ? 'border-[var(--tc)]' : ''}`} />
+                className={recvOver ? inputCls.replace('border-[var(--warm-border)]', 'border-[var(--tc)]') : inputCls} />
             </div>
             <div className="space-y-1.5">
               <label className={labelCls}>납부일</label>
