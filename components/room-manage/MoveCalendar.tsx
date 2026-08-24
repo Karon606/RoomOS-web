@@ -1023,7 +1023,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
           className="mc-room sticky left-0 z-20 flex h-full w-full items-center px-2 text-left tnum text-xs font-bold"
           style={{
             gridColumn: '1 / 2', gridRow: '1 / -1',
-            background: 'var(--cream)', color: 'var(--ink-2)',
+            color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
           {fmtRoomNo(row.roomNo)}
@@ -1121,7 +1121,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
           이 선언이 버려져 종전 max-w-full 로 물러난다. */}
       {droppedWorks.length > 0 && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
-          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem] tnum" style={{ gridColumn: '2 / -1' }}>
             <span className="sticky inline-block max-w-full truncate pl-1.5"
               style={{ left: ROOM_COL, maxWidth: `calc(100cqw - ${ROOM_COL}px)` }}>
@@ -1142,7 +1142,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
       {/* 꼬리 — 트랙 밖의 사실을 한 줄로. 그 예약이 범위 안에 들어오면 막대가 말하므로 이 줄은 없다. */}
       {row.tail && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
-          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
+          <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem]" style={{ gridColumn: `2 / -1`, color: 'var(--ink-m)' }}>
             {/* 위 '행 아래 줄'과 같은 자로 묶는다 — 기하가 한 픽셀도 안 다른 형제인데 한쪽만
                 봉합돼 있었다(디자이너 패스 기록 8). max-w-full 은 트랙 폭(수천 px)이라
