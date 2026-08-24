@@ -154,6 +154,53 @@ export async function deleteRoomTypeOption(name: string) {
   revalidatePath('/room-manage')
 }
 
+// ── 작업 종류 관리 ────────────────────────────────────────────────
+// 청소가 아닌 방 작업(도배·장판 등)의 종류 목록. 값은 RoomWork.kind 에 **문자열로 복사돼**
+// 저장되므로, 목록에서 지워도 지나간 기록은 그 이름으로 남는다(방타입·지출 카테고리와 같은 계약).
+// 그래서 이름 변경은 아래 RENAME_CASCADE 가 기록까지 따라가야 한다 — 안 걸면 목록에 없는
+// 이름이 캘린더에 계속 선다.
+//
+// **청소는 이 목록에 없다.** 청소는 사유 4종·받은 청소비 부담 표식·예정 담당자를 더 받는
+// 제 폼과 제 표(RoomCleaning)를 갖고 있다. 한 목록에 넣으면 "고르면 같은 일이 일어난다"는
+// 약속이 깨진다(디자인 패널 판정 2026-08-25).
+
+export async function getWorkKindOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { workKindOptions: true },
+  })
+  // 형제 여덟은 `as any` 를 쓴다 — 그 칸들이 생기기 전에 쓰인 코드라 그렇다. 이 칸은 스키마에
+  // 이미 있으므로 그럴 이유가 없다(신규 eslint 지적을 만들지 않는다).
+  const raw = property?.workKindOptions ?? '도배,장판'
+  return raw.split(',').map(t => t.trim()).filter(Boolean)
+}
+
+export async function addWorkKindOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getWorkKindOptions()
+  if (current.includes(name)) return
+  const updated = [...current, name].join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { workKindOptions: updated },
+  })
+  revalidatePath('/room-manage')
+}
+
+export async function deleteWorkKindOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getWorkKindOptions()
+  const updated = current.filter((t: string) => t !== name).join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { workKindOptions: updated },
+  })
+  revalidatePath('/room-manage')
+}
+
 // ── 호실 등급 관리 ─────────────────────────────────────────────────
 // 방 타입(원룸/미니룸/복층)과 별개 차원의 등급(스탠다드/실속형/프리미엄 등) 관리.
 
@@ -384,7 +431,7 @@ export async function deleteRequestCategory(name: string) {
 
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories'
+type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories' | 'workKindOptions'
 
 const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   roomTypeOptions:   '원룸,미니룸',
@@ -395,6 +442,7 @@ const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환',
   paymentMethods:    '계좌이체,신용카드,체크카드,현금,네이버페이,카카오페이,토스,쿠팡캐시,서울페이,제로페이,페이코,SSG머니',
   requestCategories: REQUEST_CATEGORIES.join(','),
+  workKindOptions:   '도배,장판',
 }
 
 export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
@@ -407,7 +455,7 @@ export async function resetOptionsToDefault(field: ReorderableField): Promise<st
   })
   revalidatePath('/settings')
   if (['incomeCategories', 'expenseCategories', 'paymentMethods'].includes(field)) revalidatePath('/finance')
-  if (['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions'].includes(field)) revalidatePath('/room-manage')
+  if (['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions', 'workKindOptions'].includes(field)) revalidatePath('/room-manage')
   if (field === 'requestCategories') revalidatePath('/requests')
   return defaultVal.split(',').map(s => s.trim()).filter(Boolean)
 }
@@ -423,7 +471,7 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
   }
-  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
+  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions' || field === 'workKindOptions') {
     revalidatePath('/room-manage')
   }
   if (field === 'requestCategories') revalidatePath('/requests')
@@ -458,6 +506,11 @@ const RENAME_CASCADE: Record<ReorderableField, { model: string; column: string }
   roomTierOptions:   [{ model: 'room', column: 'tier' }],
   windowTypeOptions: [{ model: 'room', column: 'windowType' }],
   directionOptions:  [{ model: 'room', column: 'direction' }],
+  // 지나간 작업 기록이 옛 이름으로 남으면 목록에 없는 이름이 캘린더에 계속 선다.
+  // RoomWork 는 소프트삭제 익스텐션 대상이 아니라(lib/prisma SOFT_DELETE_MODELS 는 둘뿐)
+  // count 와 updateMany 가 둘 다 삭제분을 포함한다 — RENAME_SOFT_DELETE_MODELS 에 넣으면
+  // 오히려 두 숫자가 갈린다(디자인 패널 지적 2026-08-25).
+  workKindOptions:   [{ model: 'roomWork', column: 'kind' }],
 }
 
 // LeaseTerm.wishConditions(JSON) 안에서 이 옵션이 대응하는 키 — 예약자의 희망 조건도 같은 라벨을 쓴다.

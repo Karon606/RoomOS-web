@@ -1,5 +1,6 @@
 import { getRooms, applyScheduledRents, getMoveCalendarRange } from './actions'
 import { getPropertyCleanings, getRecentCleaningPerformers } from './cleaningActions'
+import { getPropertyRoomWorks } from './workActions'
 import { getRoomTypeOptions, getRoomTierOptions, getWindowTypeOptions, getRoomDirectionOptions } from '@/app/(app)/settings/actions'
 import { resolveTrackMonth } from '@/lib/monthParam'
 import RoomManageClient from './RoomManageClient'
@@ -29,9 +30,11 @@ export default async function RoomManagePage({
 
   // 청소 뷰(2026-08-12) — 영업장 전체 청소 이력. 청소 처리가 revalidatePath('/room-manage') 를 부르므로
   // 모달에서 완료·삭제해도 이 목록이 따라온다(카드 배지와 같은 갱신 경로).
-  const [rooms, cleanings, performers, roomTypes, roomTiers, windowTypes, directions, moveCalendar] = await Promise.all([
+  const [rooms, cleanings, works, performers, roomTypes, roomTiers, windowTypes, directions, moveCalendar] = await Promise.all([
     getRooms(),
     getPropertyCleanings(),
+    // 청소가 아닌 작업(도배·장판 등) — 같은 목록에 선다(2026-08-25).
+    getPropertyRoomWorks(),
     // 완료 폼 이름 칸 선택지 — 여기서 받아 두면 목록 행마다 클라 왕복이 없다.
     getRecentCleaningPerformers(),
     getRoomTypeOptions(),
@@ -41,6 +44,6 @@ export default async function RoomManagePage({
     // 입퇴실 뷰(2026-08-17) — 탭 접미 N 도 이 한 벌이 딛는다. 조회 셋뿐이라 다른 탭에서도 함께 받는다.
     getMoveCalendarRange(targetMonth),
   ])
-  return <RoomManageClient initialRooms={rooms} initialCleanings={cleanings} recentPerformers={performers} roomTypes={roomTypes} roomTiers={roomTiers} windowTypes={windowTypes} directions={directions}
+  return <RoomManageClient initialRooms={rooms} initialCleanings={cleanings} initialWorks={works} recentPerformers={performers} roomTypes={roomTypes} roomTiers={roomTiers} windowTypes={windowTypes} directions={directions}
     moveCalendar={moveCalendar} initialTab={tab === 'cleaning' || tab === 'moves' ? tab : 'rooms'} />
 }

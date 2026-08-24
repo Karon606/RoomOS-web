@@ -4,6 +4,9 @@ import { useState, useTransition, useRef, useEffect } from 'react'
 import type { CleaningRow, CleaningStatus } from './cleaningConstants'
 import { CleaningRowBody, CLEANING_STATUS_LABEL } from '@/components/cleaning/CleaningRowBody'
 import { CleaningPlanForm } from '@/components/cleaning/CleaningPlanForm'
+import { RoomWorkRowBody } from '@/components/work/RoomWorkRowBody'
+import { RoomWorkPlanForm } from '@/components/work/RoomWorkPlanForm'
+import type { RoomWorkRow } from './workActions'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { MoveCalendar } from '@/components/room-manage/MoveCalendar'
@@ -267,8 +270,10 @@ function suggestBaseRent(rooms: Room[], type: string, tier: string, windowType: 
 // 액션 줄 좌측(지출 관리), 등록은 Modal(지출·수익 등록). 날짜는 목록·표 정본 fmtDateDot 이다.
 type CleaningSeg = CleaningStatus | '' | 'DELETED'
 
-function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onOpenRoom, onChanged }: {
+function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEdit, onOpenRoom, onChanged }: {
   rows: CleaningRow[]
+  /** 청소가 아닌 작업(도배·장판 등). 같은 목록에 선다 — 캘린더에 뜨는 것이 여기 없으면 닿을 길이 없다. */
+  works: RoomWorkRow[]
   rooms: { id: string; roomNo: string }[]
   targetMonth: string
   recentPerformers: string[]
@@ -277,7 +282,8 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
   onChanged: () => void
 }) {
   const [segRaw, setSeg] = useState<CleaningSeg>('PLANNED')
-  const [adding, setAdding] = useState(false)
+  // 무엇을 등록할지 — null 이면 닫힘. 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 문법).
+  const [adding, setAdding] = useState<null | 'cleaning' | 'work'>(null)
 
   // 살아 있는 행과 삭제분을 한 번에 받는다(getPropertyCleanings). 아래 모든 집계는 살아 있는 것만 센다.
   const live = rows.filter(r => !r.deletedAt)
@@ -286,6 +292,8 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
   // 컨트롤이 남으므로 '전체'로 떨군다.
   const seg: CleaningSeg = segRaw === 'DELETED' && deleted.length === 0 ? '' : segRaw
   const counts = live.reduce((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc }, {} as Record<CleaningStatus, number>)
+  // 작업도 같은 세그먼트에 든다. '안 함'은 작업에 없는 상태라 청소 수 그대로다.
+  const workCounts = works.reduce((acc, w) => { acc[w.status] = (acc[w.status] ?? 0) + 1; return acc }, {} as Record<'PLANNED' | 'DONE', number>)
 
   // 예정은 **임박한 것부터**다. 서버 정렬(최근순)은 완료 이력에는 맞지만 예정에는 거꾸로라
   // 기본 세그먼트에서 가장 먼 날이 맨 위에 섰다(형제: 퇴실 예정 퇴실일 asc, 입실 예정 입주일 asc).
@@ -296,6 +304,14 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
     : seg === 'PLANNED' ? live.filter(r => r.status === 'PLANNED').sort(byScheduledAsc)
     : seg ? live.filter(r => r.status === seg)
     : live
+  // 작업은 삭제분을 안 받아 온다(getPropertyCleanings 같은 복원 진입점이 아직 없다).
+  // '삭제됨' 세그먼트에서는 그래서 작업이 안 선다 — 그 자리는 청소 복원 전용이다.
+  const shownWorks = seg === 'DELETED' ? []
+    : seg === 'SKIPPED' ? []
+    : seg === 'PLANNED' ? works.filter(w => w.status === 'PLANNED')
+        .sort((a, b) => (a.scheduledDate ?? '9999').localeCompare(b.scheduledDate ?? '9999'))
+    : seg === 'DONE' ? works.filter(w => w.status === 'DONE')
+    : works
 
   // 합계는 **세그먼트와 무관하게** 이번 달 전체에서 낸다. 필터에 따라 움직이면 같은 이름의 숫자가
   // 화면 조작마다 달라져 "이번 달 청소비"라는 이름이 거짓이 된다.
@@ -317,9 +333,11 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
           {' · 받은 청소비로 부담 '}
           <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={monthFunded} /></span>
         </p>
+        {/* CTA 둘 — 받는 칸이 달라 폼이 갈린다(방 상세 위젯과 같은 판단). §23 은 1~2개를 허용한다. */}
         {canEdit && (
-          <div className="ml-auto">
-            <Btn variant="primary" size="md" onClick={() => setAdding(true)}>+ 청소 예정 등록</Btn>
+          <div className="ml-auto flex gap-2">
+            <Btn variant="secondary" size="md" onClick={() => setAdding('work')}>+ 작업 등록</Btn>
+            <Btn variant="primary" size="md" onClick={() => setAdding('cleaning')}>+ 청소 등록</Btn>
           </div>
         )}
       </div>
@@ -330,22 +348,22 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
       <SegmentedControl<CleaningSeg>
         size="sm"
         scroll
-        ariaLabel="청소 상태 필터"
+        ariaLabel="작업 상태 필터"
         value={seg}
         onChange={setSeg}
         options={[
-          { value: 'PLANNED', label: `예정 ${counts.PLANNED ?? 0}` },
-          { value: 'DONE',    label: `완료 ${counts.DONE ?? 0}` },
+          { value: 'PLANNED', label: `예정 ${(counts.PLANNED ?? 0) + (workCounts.PLANNED ?? 0)}` },
+          { value: 'DONE',    label: `완료 ${(counts.DONE ?? 0) + (workCounts.DONE ?? 0)}` },
           { value: 'SKIPPED', label: `안 함 ${counts.SKIPPED ?? 0}` },
-          { value: '',        label: `전체 ${live.length}` },
+          { value: '',        label: `전체 ${live.length + works.length}` },
           ...(deleted.length > 0 ? [{ value: 'DELETED' as const, label: `삭제됨 ${deleted.length}` }] : []),
         ]}
       />
 
-      {shown.length === 0 ? (
+      {shown.length === 0 && shownWorks.length === 0 ? (
         <EmptyState
-          title={segLabel ? `'${segLabel}' 상태인 청소가 없습니다` : '청소 기록이 없습니다'}
-          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소 예정 등록으로 시작할 수 있습니다.'}
+          title={segLabel ? `'${segLabel}' 상태인 작업이 없습니다` : '작업 기록이 없습니다'}
+          description={segLabel ? '다른 상태를 눌러 보세요.' : '위 청소 등록이나 작업 등록으로 시작할 수 있습니다.'}
         />
       ) : (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
@@ -356,15 +374,37 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
                   deleted={seg === 'DELETED'} onOpenRoom={onOpenRoom} onChanged={onChanged} />
               </li>
             ))}
+            {/* 작업은 청소 뒤에 선다. 두 표를 날짜로 섞어 정렬하지 않는 이유는 이 목록이 세그먼트
+                안에서 이미 한 상태만 보여주기 때문이다 — 같은 상태끼리는 종류로 묶여 있는 편이
+                읽기 쉽다. 방 하나의 시간순은 방 상세 위젯이 낸다. */}
+            {shownWorks.map(w => (
+              <li key={w.id} className="px-4 py-3">
+                <div className="flex items-start gap-2">
+                  {/* 어느 방인지 — 청소 행은 CleaningRowBody 가 안에서 낸다. 작업 행은 방 상세와
+                      같은 컴포넌트를 쓰므로 호실을 여기서 붙인다. 누르면 그 방이 열린다. */}
+                  <button type="button" onClick={() => onOpenRoom(w.roomId)}
+                    className="text-xs font-semibold text-[var(--warm-dark)] shrink-0 min-h-[44px] flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
+                    {fmtRoomNo(w.roomNo)}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <RoomWorkRowBody row={w} canEdit={canEdit} onChanged={onChanged} />
+                  </div>
+                </div>
+              </li>
+            ))}
           </ul>
         </div>
       )}
 
       {/* 등록 — 형제(지출·수익 등록)와 같은 Modal 문법. 폼 자체는 방 상세 패널과 같은 정본이고
           여기서만 호실 선택이 앞에 붙는다. */}
-      <SharedModal open={adding} onClose={() => setAdding(false)} title="청소 예정 등록">
+      <SharedModal open={adding === 'cleaning'} onClose={() => setAdding(null)} title="청소 예정 등록">
         <CleaningPlanForm rooms={rooms}
-          onDone={() => { setAdding(false); onChanged() }} onCancel={() => setAdding(false)} />
+          onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
+      </SharedModal>
+      <SharedModal open={adding === 'work'} onClose={() => setAdding(null)} title="작업 예정 등록">
+        <RoomWorkPlanForm rooms={rooms}
+          onDone={() => { setAdding(null); onChanged() }} onCancel={() => setAdding(null)} />
       </SharedModal>
     </div>
   )
@@ -373,6 +413,7 @@ function CleaningView({ rows, rooms, targetMonth, recentPerformers, canEdit, onO
 export default function RoomManageClient({
   initialRooms,
   initialCleanings,
+  initialWorks,
   recentPerformers,
   roomTypes,
   roomTiers,
@@ -385,6 +426,7 @@ export default function RoomManageClient({
   // 영업장 전체 청소 이력(삭제분 포함) — '청소' 뷰와 카드 배지의 공통 재료.
   // initialRooms 와 같은 이유로 prop 을 직접 쓴다.
   initialCleanings: CleaningRow[]
+  initialWorks: RoomWorkRow[]
   // 최근에 맡긴 업체·사람 — 청소 완료 폼 이름 칸 선택지. 서버에서 함께 받아 클라 왕복을 없앤다.
   recentPerformers: string[]
   roomTypes: string[]
@@ -1237,7 +1279,7 @@ export default function RoomManageClient({
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (
-        <CleaningView rows={initialCleanings} rooms={rooms} targetMonth={targetMonth}
+        <CleaningView rows={initialCleanings} works={initialWorks} rooms={rooms} targetMonth={targetMonth}
           recentPerformers={recentPerformers} canEdit={canEditUi}
           onOpenRoom={roomId => { entityModal.open({ kind: 'room', roomId }); setError('') }}
           onChanged={() => router.refresh()} />

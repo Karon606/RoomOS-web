@@ -180,7 +180,9 @@ const cleaningKindLabel = (reason: CleaningReason): string => {
 }
 
 /**
- * 그 범위의 청소 — 트랙에 그릴 것만.
+ * 그 범위의 작업 — 트랙에 그릴 것만. **청소와 그 밖의 작업(RoomWork) 두 표를 합친다**
+ * (2026-08-25). 캘린더는 종류를 `kindLabel` 문자열 하나로만 말하므로 원천이 둘이어도
+ * 아래 조립(packWorkLanes·placeWork)은 그대로다.
  *
  * **'안 함'(SKIPPED)은 안 싣는다.** 하지 않기로 한 일은 일정이 아니고, 그리면 트랙에서
  * 예정·완료와 나란히 서서 "이 방에 청소가 잡혀 있다"로 읽힌다. 그 기록은 목록이 지킨다.
@@ -199,7 +201,7 @@ export async function fetchMoveWorks(
 ): Promise<MoveWorkInput[]> {
   const first = ymdToDbDate(from)
   const last = ymdToDbDate(to)
-  const [rows, rooms] = await Promise.all([
+  const [rows, workRows, rooms] = await Promise.all([
     db.roomCleaning.findMany({
       where: {
         propertyId,
@@ -214,6 +216,22 @@ export async function fetchMoveWorks(
         id: true, roomId: true, reason: true, status: true,
         scheduledDate: true, doneDate: true,
         plannedPerformer: true, performer: true, performerName: true,
+      },
+    }),
+    // 그 밖의 작업 — 같은 규율(삭제분 제외·날짜 있는 것만). 상태는 둘뿐이라 SKIPPED 가 없다.
+    db.roomWork.findMany({
+      where: {
+        propertyId,
+        deletedAt: null,
+        OR: [
+          { status: 'PLANNED', scheduledDate: { gte: first, lte: last } },
+          { status: 'DONE', doneDate: { gte: first, lte: last } },
+        ],
+      },
+      select: {
+        id: true, roomId: true, kind: true, status: true,
+        scheduledDate: true, doneDate: true,
+        performer: true, performerName: true,
       },
     }),
     db.room.findMany({
@@ -240,6 +258,26 @@ export async function fetchMoveWorks(
       date,
       done,
       kindLabel: cleaningKindLabel(r.reason as CleaningReason),
+      performerLabel: (done ? r.performerName?.trim() : null)
+        || (performer ? CLEANING_PERFORMER_LABEL[performer] : null),
+      vacancyExcluded: isVacancyExcluded(room),
+    })
+  }
+  // 그 밖의 작업 — 같은 모양으로 낸다. 종류는 운영자가 지은 이름 그대로다(청소처럼 라벨 표가
+  // 없다). 완료 건은 적어 둔 이름이 이긴다는 규칙도 같다.
+  for (const r of workRows) {
+    const done = r.status === 'DONE'
+    const date = done ? dbYmd(r.doneDate) : dbYmd(r.scheduledDate)
+    const room = roomById.get(r.roomId)
+    if (!date || !room) continue
+    const performer = r.performer as CleaningPerformer | null
+    out.push({
+      id: r.id,
+      roomId: r.roomId,
+      roomNo: room.roomNo,
+      date,
+      done,
+      kindLabel: r.kind,
       performerLabel: (done ? r.performerName?.trim() : null)
         || (performer ? CLEANING_PERFORMER_LABEL[performer] : null),
       vacancyExcluded: isVacancyExcluded(room),

@@ -144,6 +144,10 @@ model Property {
   acquisitionDate      DateTime? @db.Date
   prevOwnerCutoffDate  DateTime? @db.Date
   roomTypeOptions    String?   // 방타입 목록 (콤마 구분, 예: "원룸,미니룸,복층")
+  // 작업 종류 목록 (콤마 구분, 예: "도배,장판"). 다른 분류 옵션과 같은 방식이다.
+  // **청소는 여기 없다** — 제 표(RoomCleaning)와 제 화면을 이미 갖고 있어, 목록에 넣으면
+  // 지웠을 때 그 표가 어떻게 되는지가 애매해진다(2026-08-25 신고 b21e4e98 후속).
+  workKindOptions    String?
   roomTierOptions    String?   // 호실 등급 목록 (콤마 구분, 예: "스탠다드,실속형,프리미엄") — 방 타입과 별개 차원
   windowTypeOptions  String?   // 창문 유형 목록 (콤마 구분, 기본값: "WINDOW,NO_WINDOW")
   directionOptions   String?   // 방향 목록 (콤마 구분, 예: "북향,동향,남향,서향")
@@ -209,6 +213,7 @@ model Property {
   financialAccounts FinancialAccount[]
   paymentRecords    PaymentRecord[]
   cashReceipts      CashReceipt[]
+  roomWorks         RoomWork[]
   expenses          Expense[]
   expenseOrders     ExpenseOrder[]
   extraIncomes      ExtraIncome[]
@@ -437,6 +442,7 @@ model Room {
   expenses   Expense[]
   roomStays  RoomStay[]
   cleanings  RoomCleaning[]
+  roomWorks  RoomWork[]
   overlapAcks LeaseOverlapAck[]
 
   @@unique([propertyId, roomNo])
@@ -487,6 +493,42 @@ model RoomCleaning {
   @@index([roomId, doneDate])
   @@index([leaseTermId])
   @@map("room_cleanings")
+}
+
+// ============================================================
+// [4-b] RoomWork — 청소가 아닌 방 작업 (도배·장판 등)
+// ============================================================
+// 왜 RoomCleaning 과 따로 두나. 청소는 퇴실 정산·청소비 몫과 얽혀 있다(fromCleaningFund·
+// performer). 그것을 일반화하려면 회계 접점을 건드려야 하는데 이번 작업은 표시·기록 층이다.
+// 캘린더는 두 표를 합쳐 하나로 그린다(lib/moveCalendarData).
+//
+// 종류는 **문자열**이다. 목록은 Property.workKindOptions 가 들고, 이 표는 그때 고른 이름을
+// 그대로 적어 둔다 — 목록에서 이름을 지워도 지나간 기록이 사라지면 안 된다.
+// 돈은 Expense 가 계속 만들고 여기는 가리켜지기만 한다(Expense.roomWorkId).
+model RoomWork {
+  id         String    @id @default(uuid()) @db.Uuid
+  propertyId String    @db.Uuid
+  property   Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomId     String    @db.Uuid
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  kind       String                            // 환경설정에서 고른 이름 그대로 (예: 도배·장판)
+  status     String    @default("PLANNED")     // PLANNED | DONE  (청소의 SKIPPED 는 여기 없다)
+  scheduledDate DateTime? @db.Date
+  doneDate      DateTime? @db.Date
+  performer     String?                        // SELF | VENDOR | THIRD_PARTY
+  performerName String?                        // 업체명·사람 이름 자유 입력
+  memo       String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  expenses   Expense[]                          // 자재를 여러 날 사고 시공은 하루다 — 1:N
+
+  @@index([propertyId, status])
+  @@index([roomId, doneDate])
+  @@map("room_works")
 }
 
 // ============================================================
@@ -1029,6 +1071,11 @@ model Expense {
   assignedAt           DateTime?          @db.Date
   // 공용 자재 — 페인트·공구처럼 두고두고 공용으로 쓰는 비품. 방/공용부에 배분하지 않음(미배정과 구분: '의도된 공용').
   isCommonAsset        Boolean            @default(false)
+  // 이 지출이 어느 방 작업의 것인가 (도배·장판 등). **여러 지출이 한 작업에 붙는다** —
+  // 자재를 여러 날 나눠 사고 시공은 하루다. 그래서 링크가 지출 쪽에 있다
+  // (RoomCleaning.expenseId 는 1:1 이라 그 모양이 아니다).
+  roomWorkId           String?            @db.Uuid
+  roomWork             RoomWork?          @relation(fields: [roomWorkId], references: [id], onDelete: SetNull)
 
   reserveSettlements   ReserveTransaction[] @relation("ExpenseReserveSettlement")
 

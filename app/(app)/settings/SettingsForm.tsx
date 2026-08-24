@@ -20,6 +20,7 @@ import {
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   getRequestCategories, addRequestCategory, deleteRequestCategory,
   reorderOptions, renameOption, countRenameTargets, resetOptionsToDefault,
+  getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
   exportAllData,
@@ -403,6 +404,37 @@ export default function SettingsForm({
   const handleResetDirections = async () => {
     if (!(await confirmDialog({ title: '방향을 기본값(북향~북서향 8방위)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setDirections(await resetOptionsToDefault('directionOptions'))
+  }
+
+  // ── 작업 종류 ──────────────────────────────────────────────────
+  // 청소가 아닌 방 작업(도배·장판 등). 형제 여덟과 같은 손놀림이다.
+  // 청소는 이 목록에 없다 — 제 폼과 제 표를 갖고 있어 한 목록에 넣으면 고르는 순간
+  // 일어나는 일이 갈린다(디자인 패널 판정 2026-08-25). 그 사실은 카드 설명이 말한다.
+  const [workKinds, setWorkKinds] = useState<string[]>([])
+  const [newWorkKind, setNewWorkKind] = useState('')
+
+  useEffect(() => { getWorkKindOptions().then(setWorkKinds).catch(console.error) }, [])
+
+  const handleAddWorkKind = async () => {
+    const v = newWorkKind.trim(); if (!v) return
+    await addWorkKindOption(v)
+    setWorkKinds(prev => [...prev, v]); setNewWorkKind('')
+  }
+  const handleDeleteWorkKind = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 작업 종류를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
+    await deleteWorkKindOption(name)
+    setWorkKinds(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderWorkKinds = async (items: string[]) => {
+    setWorkKinds(items)
+    await reorderOptions('workKindOptions', items)
+  }
+  const handleRenameWorkKind = async (oldVal: string, newVal: string) => {
+    await runRename('workKindOptions', oldVal, newVal, setWorkKinds)
+  }
+  const handleResetWorkKinds = async () => {
+    if (!(await confirmDialog({ title: '작업 종류를 기본값(도배, 장판)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    setWorkKinds(await resetOptionsToDefault('workKindOptions'))
   }
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
@@ -987,7 +1019,7 @@ export default function SettingsForm({
       {/* 분류 관리 탭 — 앱이 쓰는 이름표를 한자리에 모았다(2026-08-19 IA 2단계).
           종전에는 같은 일(목록에 이름 하나 추가하기)이 호실 설정·수익·지출·기본정보·데이터·도구
           네 탭에 흩어져 있었다. 차례는 방(호실 축) · 돈(수납·지출 축) · 요청 · 품목 순이다.
-          앞의 여덟은 OptionSection 정본 하나로 같은 손놀림이고, 마지막 품목 세부스펙만
+          앞의 아홉은 OptionSection 정본 하나로 같은 손놀림이고, 마지막 품목 세부스펙만
           지출 저장에서 저절로 쌓이는 사전이라 추가 칸 없이 고치기·지우기만 있다. */}
       {tab === 'options' && (
         <div className="space-y-4">
@@ -1050,6 +1082,20 @@ export default function SettingsForm({
             onRename={handleRenameDirection}
             onReset={handleResetDirections}
             placeholder="예: 남동향, 남남동향…"
+          />
+          <OptionSection
+            title="작업 종류 관리"
+            description="호실 관리 > 작업 탭에서 작업 기록 등록 시 선택할 종류입니다. 청소는 등록 칸이 따로 있어 이 목록에 없습니다."
+            items={workKinds}
+            getLabel={v => v}
+            newValue={newWorkKind}
+            onNewValueChange={setNewWorkKind}
+            onAdd={handleAddWorkKind}
+            onDelete={handleDeleteWorkKind}
+            onReorder={handleReorderWorkKinds}
+            onRename={handleRenameWorkKind}
+            onReset={handleResetWorkKinds}
+            placeholder="예: 도배, 장판, 방충망 교체…"
           />
           <OptionSection
             title="부가수익 카테고리 관리"
