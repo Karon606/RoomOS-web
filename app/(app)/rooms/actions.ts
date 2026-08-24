@@ -1656,7 +1656,7 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
   const payDate = opts?.payDate ? ymdToDbDate(opts.payDate) : ymdToDbDate(kstYmdStr())
 
   const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth, deletedAt: undefined } })
-  await prisma.paymentRecord.create({
+  const created = await prisma.paymentRecord.create({
     data: {
       leaseTermId, tenantId: lease.tenantId, propertyId,
       targetMonth, expectedAmount: lease.depositAmount, actualAmount: remaining,
@@ -1666,6 +1666,8 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
     },
   })
   revalidatePath('/finance'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+  // 만든 record 의 id — 토스트의 적용취소가 되돌릴 대상(§16). 금액 계산에는 관여하지 않는다.
+  return { id: created.id, amount: remaining }
 }
 
 // 계약 단위 보증금 실입금 기록 — 보증금 패널(DepositStatusPanel)의 '수납 기록' 인라인 폼 진입로.

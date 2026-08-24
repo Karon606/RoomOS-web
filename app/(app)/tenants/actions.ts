@@ -491,6 +491,10 @@ function readLeaseFields(formData: FormData) {
   const depositReceivedAmount = depositReceivedAmountRaw != null && String(depositReceivedAmountRaw).trim() !== ''
     ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
     : null
+  // 입금일·결제수단 — 폼이 물어서 실어 보낸다(2026-08-24, 신고 98fb6fce). 안 넘기면 서버가
+  // '오늘'과 '기타'를 박는데 그것은 버튼을 누른 날이지 돈이 들어온 날이 아니다.
+  const depositReceivedDate = (formData.get('depositReceivedDate') as string | null)?.trim() || null
+  const depositReceivedMethod = (formData.get('depositReceivedMethod') as string | null)?.trim() || null
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   // 딸릴 계약(2026-08-13, 다호실 2단계). **칸이 폼에 없는 것과 비워 둔 것은 다르다.**
   // 없으면(null) 이 저장은 종속을 편집하지 않는 것이고, 있으면서 빈 값이면 종속을 끊는 것이다.
@@ -503,6 +507,7 @@ function readLeaseFields(formData: FormData) {
   return {
     roomId, status, rentAmount, depositAmount, moveInDate,
     isReservedConfirmed, depositReceived, depositReceivedAmount,
+    depositReceivedDate, depositReceivedMethod,
     parentFieldPresent, parentLeaseTermId,
     /** LeaseTerm.create 에 실리는 데이터. propertyId 는 부르는 쪽이 붙인다. */
     data: {
@@ -646,7 +651,13 @@ async function afterLeaseCreated(
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
   if (f.depositReceived && f.depositAmount > 0) {
-    try { await recordDepositReceived(ctx.leaseId, f.depositReceivedAmount != null && f.depositReceivedAmount > 0 ? { amount: f.depositReceivedAmount } : undefined) }
+    try {
+      await recordDepositReceived(ctx.leaseId, {
+        ...(f.depositReceivedAmount != null && f.depositReceivedAmount > 0 ? { amount: f.depositReceivedAmount } : {}),
+        ...(f.depositReceivedDate ? { payDate: f.depositReceivedDate } : {}),
+        ...(f.depositReceivedMethod ? { payMethod: f.depositReceivedMethod } : {}),
+      })
+    }
     catch { /* 이미 기록됨 등은 무시 */ }
   }
 }
@@ -911,6 +922,10 @@ export async function updateTenant(formData: FormData): Promise<
   const depositReceivedAmount = depositReceivedAmountRaw != null && String(depositReceivedAmountRaw).trim() !== ''
     ? Math.max(0, Number(String(depositReceivedAmountRaw).replace(/[^0-9]/g, '')) || 0)
     : null
+  // 입금일·결제수단 — 폼이 물어서 실어 보낸다(2026-08-24, 신고 98fb6fce). 안 넘기면 서버가
+  // '오늘'과 '기타'를 박는데 그것은 버튼을 누른 날이지 돈이 들어온 날이 아니다.
+  const depositReceivedDate = (formData.get('depositReceivedDate') as string | null)?.trim() || null
+  const depositReceivedMethod = (formData.get('depositReceivedMethod') as string | null)?.trim() || null
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
@@ -1413,7 +1428,13 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
   if (depositReceived && depositAmount > 0) {
-    try { await recordDepositReceived(leaseTermId, depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : undefined) }
+    try {
+      await recordDepositReceived(leaseTermId, {
+        ...(depositReceivedAmount != null && depositReceivedAmount > 0 ? { amount: depositReceivedAmount } : {}),
+        ...(depositReceivedDate ? { payDate: depositReceivedDate } : {}),
+        ...(depositReceivedMethod ? { payMethod: depositReceivedMethod } : {}),
+      })
+    }
     catch { /* 이미 기록됨 등은 무시 */ }
   }
 

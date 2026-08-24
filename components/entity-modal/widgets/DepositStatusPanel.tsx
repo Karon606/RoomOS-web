@@ -23,12 +23,13 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason, CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
+// 보증금 수납 수단 정본 — 이름 없는 부분집합을 각 화면이 베끼면 그 자리들이 갈린다.
+import { DEPOSIT_PAY_METHODS as PAY_METHODS } from '@/lib/paymentMethods'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
 type Comp = Awaited<ReturnType<typeof getDepositCompositionForLease>>
 
-const PAY_METHODS = ['계좌이체', '현금', '신용카드', '결제선생', '기타']
 const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 
 export function DepositStatusPanel({

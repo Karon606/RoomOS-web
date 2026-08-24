@@ -48,6 +48,7 @@ import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName, codeByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { DEPOSIT_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
@@ -504,6 +505,10 @@ function toDateInput(d: string | Date | null | undefined): string {
   if (!d) return ''
   return kstYmdStr(new Date(d))
 }
+
+// 보증금 '받음' 부속 입력(입금일·결제수단) — §12 전체 티어. DatePicker 트리거는 껍데기가 없어
+// 이 클래스를 안 넘기면 맨글자로 렌더된다. min-h 로 44/40 을 만든다(inline-flex 는 truncate 를 죽인다).
+const DEPOSIT_RECV_FIELD_CLS = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
 
 // 'YYYY-MM-DD' → DatePicker 트리거가 보여 주는 그 문자열('2026년 8월 14일').
 // 잠긴 날짜 칸(메인 계약과 같음)이 이 표기를 쓴다 — '따로 정하기'를 눌러 달력으로 바뀌는 순간
@@ -3712,6 +3717,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [depoCleaningPaidForm, setDepoCleaningPaidForm] = useState(0)
   const [depositReceivedOn, setDepositReceivedOn] = useState(false)
   const [depositReceivedAmt, setDepositReceivedAmt] = useState<number | null>(null)
+  // 입금일·결제수단을 묻는다(2026-08-24, 신고 98fb6fce). 안 물으면 서버가 '오늘'과 '기타'를 박는데,
+  // 그것은 버튼을 누른 날이지 돈이 들어온 날이 아니다. 실제로 그렇게 7건이 쌓였다.
+  // 기본 결제수단이 '기타'인 이유 — 이 경로는 소급 기록이라 앱이 수단을 모르는 것이 사실이다.
+  // 아는 값을 고를 수 있게 열어 두되, 모를 때 '계좌이체'를 지어내지 않는다.
+  const [depositReceivedDate, setDepositReceivedDate] = useState(kstYmdStr())
+  const [depositReceivedMethod, setDepositReceivedMethod] = useState('기타')
   const [depositChoiceAsked, setDepositChoiceAsked] = useState(false)
   useEffect(() => {
     const id = lease?.id
@@ -4601,12 +4612,36 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </p>
           ) : null}
           {(depositAmountVal ?? 0) > 0 && (
-            <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
-              <input type="checkbox" name="depositReceived" value="1" checked={depositReceivedOn}
-                onChange={e => { void toggleDepositReceived(e.target.checked) }}
-                className="w-3.5 h-3.5 accent-[var(--coral)]" />
-              보증금 실제로 받음 — 실수납으로 기록 (이미 기록됐으면 자동 무시)
-            </label>
+            <>
+              <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
+                <input type="checkbox" name="depositReceived" value="1" checked={depositReceivedOn}
+                  onChange={e => { void toggleDepositReceived(e.target.checked) }}
+                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                보증금 실제로 받음 · 실수납으로 기록
+              </label>
+              {depositReceivedOn && (
+                <div className="pl-5 pt-1.5 space-y-1.5">
+                  <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
+                      <select name="depositReceivedMethod" value={depositReceivedMethod}
+                        onChange={e => setDepositReceivedMethod(e.target.value)} className={DEPOSIT_RECV_FIELD_CLS}>
+                        {DEPOSIT_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">입금일</label>
+                      {/* DatePicker 트리거는 껍데기가 없다 — 클래스를 안 넘기면 맨글자로 렌더된다. */}
+                      <DatePicker name="depositReceivedDate" value={depositReceivedDate}
+                        onChange={setDepositReceivedDate} className={DEPOSIT_RECV_FIELD_CLS} />
+                    </div>
+                  </div>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                    이미 기록된 보증금이 있으면 미기록분만 채웁니다. 지금 받은 돈이라면 수납 정보의 보증금에서 기록하는 편이 낫습니다.
+                  </p>
+                </div>
+              )}
+            </>
           )}
           {/* 선택한 기록 금액·직전 저장값·확인 이력 — 저장 경로가 같은 판단을 다시 하지 않게 폼이 실어 보낸다 */}
           {depositReceivedAmt != null && <input type="hidden" name="depositReceivedAmount" value={String(depositReceivedAmt)} />}

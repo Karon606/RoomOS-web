@@ -3,6 +3,11 @@
 // 저장되는 문자열 값은 기존과 동일 — 충당·정산 로직 불변.
 export const PAYMENT_METHODS = ['계좌이체', '현금', '신용카드', '결제선생', '보유 보증금', '기타'] as const
 
+// 보증금 수납 수단 — '보유 보증금'만 뺀다. 보증금을 보증금으로 낼 수는 없다.
+// 이 부분집합이 이름 없이 세 자리에 복사돼 있었다(보증금 패널·수납 내역·입주자 폼).
+// 사본이 늘면 그 자리들이 갈린다 — 정본을 하나 세워 셋이 물게 한다.
+export const DEPOSIT_PAY_METHODS: readonly string[] = PAYMENT_METHODS.filter(m => m !== '보유 보증금')
+
 // 카드 계열 수단 — 카드 수납 합계 등 집계에서 신용카드와 동일 취급(운영자 지시 2026-07-14).
 // 결제선생 = 카드 정기결제 대행 서비스.
 export const CARD_LIKE_METHODS: readonly string[] = ['신용카드', '결제선생']
