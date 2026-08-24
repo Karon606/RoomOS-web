@@ -180,6 +180,12 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   // 못박는 동작까지 그대로). 판정은 UI 상태(고쳤는가)가 아니라 값으로 한다 — 고쳤다 되돌린
   // 사람과 안 건드린 사람이 같은 숫자로 다른 저장을 하면 그게 곧 다음 사고다.
   const splitIsCanonical = cVal === 0 && dVal === Math.min(payAmount, depositRemaining)
+  // 옛 2단 옵트인이 서는 자리는 이제 둘뿐이다.
+  //   ① 구성 조회가 실패했을 때의 폴백(그때는 잔여를 몰라 계약액으로 안내할 수밖에 없다)
+  //   ② 보증금이 없는 계약의 청소비 수납(단기)
+  // 보증금 잔여가 0 인 계약에는 아무것도 세우지 않는다 — 종전에는 '보증금 수납하기'가 떠 있고
+  // 눌러 저장하면 서버가 "더 받을 몫이 없습니다"로 거절하는 막다른 길이었다.
+  const legacyOptIn = !comp || (room.depositAmount === 0 && room.cleaningFee > 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -586,14 +592,15 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         </div>
       )}
       {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}
-      {(room.depositAmount > 0 || room.cleaningFee > 0) && !splitMode && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
+      {legacyOptIn && (room.depositAmount > 0 || room.cleaningFee > 0) && !splitMode && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
         <button type="button" onClick={() => setShowSpecialModes(true)}
           className="w-full text-xs font-medium text-[var(--coral)] border border-[var(--coral)]/35 bg-[var(--coral)]/5 rounded-lg px-3 py-2 hover:bg-[var(--coral)]/10 transition-colors">
           + {room.depositAmount > 0 ? '보증금' : ''}{room.depositAmount > 0 && room.cleaningFee > 0 ? '·' : ''}{room.cleaningFee > 0 ? '청소비' : ''} 수납하기
           {room.depositAmount > 0 && <span className="text-[var(--warm-muted)] font-normal"> · 보증금 {fmtKorMoney(room.depositAmount)}</span>}
         </button>
       )}
-      {room.depositAmount > 0 && !splitMode && (showSpecialModes || isDepositMode) && (
+      {/* 폴백 전용 — 구성 조회가 실패해 잔여를 모를 때만. 그때는 계약액 기준 안내가 최선이다. */}
+      {room.depositAmount > 0 && !comp && (showSpecialModes || isDepositMode) && (
         <div className="space-y-1">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isDepositMode}
