@@ -34,6 +34,23 @@ import { fmtRoomNo } from '@/lib/roomNo'
 
 const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 
+// 날짜 칸 껍데기 — 이 행의 형제 입력(업체 이름·비용·CategorySelect)과 같은 문법이다(오류신고 c2ab5b83).
+//
+// 정본 DatePicker 의 트리거 기본 클래스는 `w-full text-left truncate` 뿐이라, 호출부가 껍데기를
+// 안 넘기면 **테두리도 배경도 없는 맨글자**로 그려진다. 운영자 원문 — "날짜 변경을 입력된 날짜를
+// 터치하면 되기는 한데 다른 것과는 다르게 버튼이 없어서 사용성이 직관적이지 않아".
+//
+// `flex-1 min-w-0` 이 함께 필요하다. 기본 클래스의 `w-full` 은 flex-basis 를 auto 로 남기므로
+// 트리거의 base size 가 행 폭 전체(실측 254px)가 되고, shrink 가 base 비례로 분배되면서 옆의
+// 한글 라벨('완료일')까지 깎여 음절 단위로 꺾인다(실측 행 32px, 라벨 2줄). flex-basis 를 0 으로
+// 만들면 라벨이 자연폭을 갖고 행이 26px 한 줄로 떨어져 형제 input 과 정확히 정렬된다.
+// `min-w-0` 은 별개로 필요하다 — 없으면 truncate 가 content 밑으로 못 줄어든다.
+//
+// focus 클래스를 안 준다. 이 행의 형제 넷이 `outline-none` 을 안 걸어 UA 기본 focus-visible 링을
+// 쓰고 있어서, 아무것도 안 주는 것이 곧 형제와 같은 동작이다.
+const DENSE_DATE_CLS =
+  'flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
+
 export const CLEANING_STATUS_LABEL: Record<CleaningStatus, string> = {
   PLANNED: '예정', DONE: '완료', SKIPPED: '안 함',
 }
@@ -201,7 +218,7 @@ export function CleaningRowBody({
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
             완료일
             {/* 정본 DatePicker — 앞으로 한 청소는 없으므로 오늘까지만 고를 수 있다. */}
-            <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className="text-xs" />
+            <DatePicker value={doneDate} onChange={setDoneDate} maxDate={kstYmdStr()} className={DENSE_DATE_CLS} />
           </div>
           {/* 이름 칸은 맡긴 경우에만. 맡긴 이력이 있으면 그 목록에서 고른다 — 같은 업체를 매번 손으로
               적으면 오타 한 번에 한 업체가 두 이름으로 갈린다. 이력 0건이면 고를 것이 없어 입력 칸. */}
@@ -283,7 +300,7 @@ export function CleaningRowBody({
           <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
             {r.status === 'DONE' ? '완료일' : '예정일'}
             <DatePicker value={reschedDate} onChange={setReschedDate}
-              maxDate={r.status === 'DONE' ? kstYmdStr() : undefined} className="text-xs" />
+              maxDate={r.status === 'DONE' ? kstYmdStr() : undefined} className={DENSE_DATE_CLS} />
           </div>
           <div className="flex gap-2">
             <Btn variant="primary" size="sm" disabled={pending || !reschedDate}

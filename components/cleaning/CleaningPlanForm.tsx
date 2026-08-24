@@ -57,6 +57,16 @@ export function CleaningPlanForm({
   const labelCls = dense
     ? 'text-xs text-[var(--ink-s)]'
     : 'text-xs font-medium text-[var(--warm-mid)]'
+  // 예정일 칸 껍데기 — 비dense 자리 전용(오류신고 c2ab5b83). 정본 DatePicker 의 트리거 기본
+  // 클래스는 `w-full text-left truncate` 뿐이라 껍데기를 안 넘기면 맨글자로 그려진다. 게다가
+  // 글자 크기 클래스도 없어 body 16px 을 상속했다 — 형제 select·textarea 는 14px/42px 이었다.
+  //
+  // 위 `inputCls` 를 그대로 못 쓰는 이유는 focus 접두 하나다. 트리거가 button 이라 `:focus` 를
+  // 걸면 손가락으로 눌러 연 달력이 닫힌 뒤에도 링이 남는다(CheckoutCleaningDateField 가 같은
+  // 이유로 같은 처방을 쓴다). `inputCls` 자체를 고치지 않는 것은 그 상수를 함께 쓰는 호실
+  // select 때문이다 — 거기서는 마우스 클릭에도 링이 서야 한다. 나머지 값은 `inputCls` 와 같다.
+  const dateFieldCls =
+    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/30'
 
   const submit = () => {
     if (!targetRoomId) { pushToast('error', '호실을 골라 주세요.'); return }
@@ -107,8 +117,12 @@ export function CleaningPlanForm({
 
       <div className={dense ? 'flex items-center gap-2 text-xs text-[var(--ink-s)]' : 'space-y-1.5'}>
         {dense ? '예정일' : <p className={labelCls}>예정일</p>}
-        {/* 정본 DatePicker 사용 — 네이티브 date 입력은 앱 캘린더 문법과 어긋난다(운영자 지적 2026-08-06). */}
-        <DatePicker value={scheduled} onChange={setScheduled} className={dense ? 'text-xs' : undefined} />
+        {/* 정본 DatePicker 사용 — 네이티브 date 입력은 앱 캘린더 문법과 어긋난다(운영자 지적 2026-08-06).
+            dense 는 가로 flex 행이라 `flex-1 min-w-0` 이 함께 필요하다. 기본 클래스의 `w-full` 이
+            flex-basis 를 auto 로 남겨 트리거 base 가 행 폭 전체가 되고, shrink 가 base 비례로
+            분배되면서 옆의 한글 라벨('예정일')이 음절 단위로 꺾인다(CleaningRowBody 와 같은 자리). */}
+        <DatePicker value={scheduled} onChange={setScheduled}
+          className={dense ? `${inputCls} flex-1 min-w-0` : dateFieldCls} />
       </div>
 
       {/* 담당 — 운영자 요구가 "누가 청소할지도 표시되고" 라 계획 단계에서 받는다(2026-08-20).

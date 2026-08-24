@@ -2327,7 +2327,12 @@ function TimelineReconcileForm({ item, existingCheckDays = [], hiddenLocationIds
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보정 시점(날짜)</label>
-        <DatePicker value={date} onChange={setDate} />
+        {/* 껍데기를 넘긴다(오류신고 c2ab5b83) — 정본 DatePicker 트리거의 기본 클래스는
+            `w-full text-left truncate` 뿐이라 맨글자로 그려졌다. 값은 이 폼의 inputCls 와
+            같고 둘만 다르다: 수량 전용 text-right 를 빼고, button 이라 focus 를 focus-visible 로
+            옮겼다(손가락으로 눌러 연 달력이 닫힌 뒤 링이 남지 않게). */}
+        <DatePicker value={date} onChange={setDate}
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         {dateHasCheck && (
           <p className="text-[0.6875rem] text-[var(--honey)] bg-[var(--honey)]/10 border border-[var(--honey)]/30 rounded-lg px-2.5 py-1.5">
             이 날짜엔 이미 점검 기록이 있어요. 보통은 새 보정을 만들기보다 <strong>그 점검의 [수정]</strong>에서 고치는 게 정확합니다 (같은 날 중복 방지).
@@ -2600,7 +2605,11 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
               disabled={!restockDone} 만 남아 실측 칸과 저장 버튼이 영구히 잠겨 있었다. 원본 그대로 복구. */}
           <div className="flex items-center gap-2">
             <span className="text-[0.6875rem] text-[var(--warm-muted)] shrink-0">보정 날짜</span>
-            <div className="w-44"><DatePicker value={date} onChange={setDate} /></div>
+            {/* 껍데기는 이 모달 품목별 수량칸(inputCls)과 같은 값이다(오류신고 c2ab5b83).
+                text-right 는 수량 전용이라 뺐고, disabled:opacity-40 은 DatePicker 기본 클래스에
+                이미 있어 중복이라 뺐다. */}
+            <div className="w-44"><DatePicker value={date} onChange={setDate}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" /></div>
           </div>
           <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
             <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
@@ -2778,10 +2787,15 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
     <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2.5 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">재고 점검 수정</p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
-      <div className="grid grid-cols-2 gap-2">
+      {/* 좁은 폰에서는 1열로 접는다(오류신고 c2ab5b83 전수). 2열이면 셀이 320px 에서 106px 인데
+          '2026년 12월 30일'이 14px 로 110px 이라, 껍데기 유무와 무관하게 truncate 가 날짜의 일(日)을
+          감춘다(실측: 껍데기 전 320px 잘림, 껍데기 후 320·360 잘림). 패딩으로는 못 푼다 — 접어야 푼다.
+          같은 파일 :805 가 이미 쓰는 문법이다. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate} />
+          <DatePicker value={date} onChange={setDate}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         {!hasLocations && (
           <div>
@@ -2902,10 +2916,12 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">무상 입수 수정</p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
-      <div className="grid grid-cols-2 gap-2">
+      {/* 1열 접힘 근거는 '재고 점검 수정'과 같다(오류신고 c2ab5b83 전수). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">날짜</p>
-          <DatePicker value={date} onChange={setDate} />
+          <DatePicker value={date} onChange={setDate}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">수량{stockUnit ? ` (${stockUnit})` : ''}</p>
@@ -2983,10 +2999,12 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.65625rem] font-normal text-[var(--warm-muted)]">수정 내용은 지출 페이지에도 반영됩니다</span></p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
-      <div className="grid grid-cols-2 gap-2">
+      {/* 1열 접힘 근거는 '재고 점검 수정'과 같다(오류신고 c2ab5b83 전수). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">구매일</p>
-          <DatePicker value={date} onChange={setDate} />
+          <DatePicker value={date} onChange={setDate}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--coral)]" />
         </div>
         <div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1">금액 (원)</p>

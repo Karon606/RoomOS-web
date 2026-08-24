@@ -1678,7 +1678,12 @@ export default function RoomsClient({
           {/* 납부일 — v2.0 §12 */}
           <div>
             <label className="block text-xs font-medium text-[var(--warm-mid)] mb-1.5">납부일</label>
-            <DatePicker value={batchDate} onChange={setBatchDate} />
+            {/* 껍데기를 넘긴다(오류신고 c2ab5b83). 정본 DatePicker 의 트리거 기본 클래스는
+                `w-full text-left truncate` 뿐이라 안 넘기면 맨글자로 그려지고, 글자도 body 16px 을
+                상속했다. 이 모달엔 텍스트 입력 형제가 없어 지역 기준이 없으므로 §12 정본
+                (CheckoutCleaningDateField 의 FIELD_CLS, 42px)을 그대로 쓴다. */}
+            <DatePicker value={batchDate} onChange={setBatchDate}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--persimmon)] focus-visible:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors" />
           </div>
 
           {/* 수납 방법 — v2.0 §12 상호배타는 세그먼트 */}
