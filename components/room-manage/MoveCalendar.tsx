@@ -42,12 +42,25 @@ const GAP_CAPTION_MIN = 40
 /** 고정 요약 줄에 세울 최대 건수. 넘치면 '외 N건'으로 접는다(방 많은 영업장에서 벽이 되지 않게). */
 const UPCOMING_MAX = 8
 
-/** 11px 글자의 대략 폭 — 한글·전각은 11, 나머지는 6.2. 라벨을 바 안에 넣을지 밖에 낼지의 자다. */
-function estWidth(s: string): number {
+/**
+ * 라벨 폭의 자 — 한글·전각 0.851em · 그 외 0.564em, 글자 크기(px)를 곱해 쓴다.
+ * 라벨을 바 안에 넣을지 밖에 낼지, 밖이면 몇 칸을 잡을지의 근거다.
+ *
+ * 종전에는 크기와 무관하게 한글 11px 로 쳤는데, 실측(Pretendard Variable 헤드리스)으로
+ * 한글 전각은 0.864em 이라 10.5px 레일 라벨에서 21% 과대였다 — 자가 넉넉한 쪽으로만
+ * 틀리니 깨져 보이진 않았지만, 설 수 있던 라벨이 행 아래로 떨어지고 바 안에 들어가던
+ * 이름이 밖으로 나갔다. 0.851em 은 지시값(2026-08-24)이고 실측 0.864 와의 차 1.5% 는
+ * truncate 가 진다. 비전각 0.564em 은 종전 6.2/11 그대로다(공백 0.22em·tnum 숫자 0.68em
+ * 이 섞이는 이 라벨들에서 혼합 실측 대비 3% 안쪽).
+ */
+function estWidth(s: string, fontPx: number): number {
   let w = 0
-  for (const ch of s) w += ch.codePointAt(0)! > 0x2e80 ? 11 : 6.2
+  for (const ch of s) w += (ch.codePointAt(0)! > 0x2e80 ? 0.851 : 0.564) * fontPx
   return w
 }
+/** 바 라벨(text-[0.6875rem])과 레일 라벨(text-[0.65625rem])의 글자 크기 — estWidth 의 두 소비처. */
+const BAR_FONT = 11
+const RAIL_FONT = 10.5
 
 /**
  * 막대 표면 — §03 밴드 티어 두 종. 표면 하나가 상태를 혼자 말하는 자리라 알파가 낮은
@@ -827,7 +840,9 @@ type PlacedWork = {
 
 function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork {
   const text = moveWorkRailLabel(work)
-  const need = Math.max(1, Math.ceil((estWidth(text) + 8) / DAY_W))
+  // +4 는 라벨의 안쪽 패딩(paddingLeft/Right 4)이다 — 자에 넣지 않으면 그만큼 밀린 글자가
+  // 다음 표식 위로 넘친다(2026-08-24 지시). +8 은 종전 그대로의 안전 여유다.
+  const need = Math.max(1, Math.ceil((estWidth(text, RAIL_FONT) + 4 + 8) / DAY_W))
   const sameLane = works.filter(w => w.lane === work.lane && w.id !== work.id)
   const next = sameLane.filter(w => w.day > work.day).reduce((m, w) => Math.min(m, w.day), days + 1)
   const prev = sameLane.filter(w => w.day < work.day).reduce((m, w) => Math.max(m, w.day), 0)
@@ -844,15 +859,15 @@ function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork 
 function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
   const full = `${bar.tenantName} · ${bar.label}`
   const px = (bar.endDay - bar.startDay + 1) * DAY_W
-  const fits: Placed['mode'] = px >= estWidth(full) + 16 ? 'full'
-    : px >= estWidth(bar.tenantName) + 16 ? 'name' : 'outside'
+  const fits: Placed['mode'] = px >= estWidth(full, BAR_FONT) + 16 ? 'full'
+    : px >= estWidth(bar.tenantName, BAR_FONT) + 16 ? 'name' : 'outside'
   const bare: Placed = { bar, full, mode: fits, side: null, ink: null }
   if (fits !== 'outside') return bare
 
   // 같은 층에서 다음 막대가 시작하는 날 — 바 밖 라벨이 그 위로 넘어가지 않게 끊는 자리.
   const next = row.bars.filter(b => b.lane === bar.lane && b.startDay > bar.endDay)
     .reduce((m, b) => Math.min(m, b.startDay), days + 1)
-  const needDays = Math.max(1, Math.ceil((estWidth(full) + 8) / DAY_W))
+  const needDays = Math.max(1, Math.ceil((estWidth(full, BAR_FONT) + 8) / DAY_W))
   if (bar.endDay < days && next > bar.endDay + 1) {
     const limit = Math.min(next - 1, days)
     return { ...bare, side: 'right', ink: { startDay: bar.endDay + 1, endDay: Math.min(bar.endDay + needDays, limit) } }
