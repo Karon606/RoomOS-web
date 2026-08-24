@@ -24,6 +24,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
+import { suppressesTap, type TapOrigin } from '@/lib/tapGuard'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
@@ -198,6 +199,23 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   /** 직전 렌더에 트랙 스크롤러가 있었는가 — 필터가 비웠다 되살리면 새 DOM 이라 다시 앉아야 한다. */
   const hadTrackRef = useRef(false)
   /**
+   * ── 스침 가드 ── 이 트랙 위의 모든 버튼이 나눠 쓰는 한 벌(오류신고 16f691e1).
+   *
+   * 막대마다 다는 대신 **스크롤러 한 곳**에 캡처로 단다. 이유가 셋이다. ① 스침이 click 을
+   * 낳는 것은 막대의 성질이 아니라 **끌리는 표면**의 성질이라, 표면에 걸면 그 위에 무엇이
+   * 서든 함께 덮인다(호실 열이 코드 0줄로 같이 지켜진다). ② 이 파일은 스크롤 중 트랙
+   * 재렌더를 피하려고 축 필터까지 URL 밖에 둔 자리다(위 axis 주석) — 막대마다 핸들러
+   * 셋과 클로저 셋을 새로 배는 것은 그 방향의 반대다. 여기 걸면 핸들러가 통틀어 셋이고
+   * 참조도 고정이다. ③ 삼키는 문법이 이미 저장소에 있다 — `lib/useLongPress:27` 이 조상의
+   * `onClickCapture` 에서 자식 click 을 `stopPropagation` 으로 끊는다. 같은 길이다.
+   *
+   * `tapRef` 는 마지막 pointerdown 의 자리와 그때의 스크롤 눈금이다. 두 손가락이 얹히면
+   * 나중 것이 덮어쓰는데, 그 상황(관성 팬 중 두 번째 손가락)은 트랙이 실제로 흐르고 있어
+   * 눈금 축이 잡는다. `scrollTickRef` 는 아래 scroll 리스너가 올린다 — 새 리스너가 아니다.
+   */
+  const tapRef = useRef<(TapOrigin & { tick: number }) | null>(null)
+  const scrollTickRef = useRef(0)
+  /**
    * 축 필터 — 전체 / 입퇴실 / 작업 (운영자 확정 2026-08-21).
    *
    * 상태가 URL 이 아니라 여기 사는 이유는 성능이다. 이 컴포넌트는 useSearchParams 를
@@ -367,6 +385,9 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     }
     const stopRaf = () => { if (raf != null) { cancelAnimationFrame(raf); raf = null } }
     const onScroll = () => {
+      // 스침 가드의 '흐름' 축 — 이 눈금이 pointerdown 과 click 사이에 올라갔으면 그 손짓은
+      // 트랙을 끈 것이다(위 tapRef 주석). 리스너를 새로 안 만들려고 여기 한 줄로 얹는다.
+      scrollTickRef.current++
       if (raf == null) { lastLeft = -1; raf = requestAnimationFrame(tick) }
       if (timer) clearTimeout(timer)
       // URL 쓰기는 종전대로 180ms 디바운스다. rAF 가 죽는 환경(일부 모바일 관성 구간)에서도
@@ -512,7 +533,21 @@ function MoveCalendarView({ data, onViewMonthChange }: {
           {/* containerType — 행 아래 줄의 글자 폭을 트랙(수천 px)이 아니라 **보이는 창**으로
               재기 위한 자(100cqw). 스크롤러는 이미 독립 포맷팅 컨텍스트(overflow)라 컨테인먼트가
               레이아웃을 더 바꾸지 않고, sticky 는 스크롤포트 기준이라 영향이 없다(실측 확인). */}
+          {/* 스침 가드는 이 표면이 진다(위 tapRef 주석). pointerdown 에서 preventDefault 를
+              하지 않고 포인터 캡처도 걸지 않는다 — 여기서 시작하는 가로 드래그가 죽는다.
+              `touch-action`·`overscrollBehaviorX` 무접점이라 신고 d8554128 봉합면을 안 건드린다. */}
           <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
+            onPointerDownCapture={e => { tapRef.current = { x: e.clientX, y: e.clientY, tick: scrollTickRef.current } }}
+            onPointerCancelCapture={() => { tapRef.current = null }}
+            onClickCapture={e => {
+              const down = tapRef.current
+              tapRef.current = null
+              if (suppressesTap({
+                origin: down, at: { x: e.clientX, y: e.clientY },
+                scrolled: down != null && down.tick !== scrollTickRef.current,
+                detail: e.detail,
+              })) { e.stopPropagation(); e.preventDefault() }
+            }}
             className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
             style={{ overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
             <div className="move-track" style={{ width: trackW }}>
