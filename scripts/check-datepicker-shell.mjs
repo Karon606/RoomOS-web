@@ -110,25 +110,40 @@ function propValue(el, prop) {
  * 객체가 흔해서, 첫 줄만 집으면 `dense` 만 읽고 껍데기를 못 본 채 위반으로 신고한다(실제로 겪었다).
  * 선언 들여쓰기보다 깊거나 이어짐 기호로 시작하는 줄까지를 한 선언으로 본다.
  */
+// 상수가 **또 다른 상수 위에** 세워져 있으면 한 겹만 펴서는 못 본다.
+//   const inputBase = 'w-full bg-[…] border …'
+//   const inputCls  = `${inputBase} border-[…]`
+// className={inputCls} 를 한 겹만 펴면 `${inputBase} border-…` 까지만 보여 배경이 없다고 신고한다.
+// 실제로 DepositStatusPanel 세 자리가 그 오탐이었다(2026-08-24 확인 — 껍데기는 멀쩡히 있다).
+// 이름이 새로 나오지 않을 때까지 편다. 깊이를 제한하는 이유는 상수가 서로를 가리키는 고리를
+// 만났을 때 멈추기 위해서다.
+const RESOLVE_MAX_DEPTH = 5
+
 function resolve(expr, src) {
   const lines = src.split('\n')
   let out = expr
-  for (const name of new Set(expr.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])) {
-    const head = new RegExp(`^(\\s*)(?:const|let)\\s+${name}\\b[^=]*=`)
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(head)
-      if (!m) continue
-      const indent = m[1].length
-      out += ' ' + lines[i]
-      for (let j = i + 1; j < lines.length && j < i + 40; j++) {
-        const l = lines[j]
-        if (l.trim() === '') break
-        const ind = l.length - l.trimStart().length
-        // 더 깊게 들여쓴 줄, 또는 같은 깊이여도 이어짐 기호로 시작하는 줄은 같은 선언이다.
-        if (ind > indent || /^[?:+`'")\].]/.test(l.trim())) out += ' ' + l
-        else break
+  const seen = new Set()
+  for (let depth = 0; depth < RESOLVE_MAX_DEPTH; depth++) {
+    const names = [...new Set(out.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])].filter(n => !seen.has(n))
+    if (names.length === 0) break
+    for (const name of names) {
+      seen.add(name)
+      const head = new RegExp(`^(\\s*)(?:const|let)\\s+${name}\\b[^=]*=`)
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(head)
+        if (!m) continue
+        const indent = m[1].length
+        out += ' ' + lines[i]
+        for (let j = i + 1; j < lines.length && j < i + 40; j++) {
+          const l = lines[j]
+          if (l.trim() === '') break
+          const ind = l.length - l.trimStart().length
+          // 더 깊게 들여쓴 줄, 또는 같은 깊이여도 이어짐 기호로 시작하는 줄은 같은 선언이다.
+          if (ind > indent || /^[?:+`'")\].]/.test(l.trim())) out += ' ' + l
+          else break
+        }
+        break
       }
-      break
     }
   }
   return out

@@ -130,9 +130,21 @@ for (const l of shortProrated) {
 }
 
 // 5. 현금영수증 집계 배타 — 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않는다.
-//    두 if 가 배타가 아니면 같은 금액이 양쪽에 계상돼 세무 대사가 틀어진다(520호 172,000원 사례).
-if (!roomsActions.includes('else if (r.cashReceiptIssuedAt)')) {
-  violations.push('[소스] getMonthPaymentAggregates 의 현금영수증·카드 배타 처리가 사라짐 — 카드 건이 양쪽에 이중 계상된다')
+//    배타가 아니면 같은 금액이 양쪽에 계상돼 세무 대사가 틀어진다(520호 172,000원 사례).
+//    판정이 순수 함수 정본으로 옮겨간 뒤(2026-08-24 축 재판정)로는 그 함수의 배타 구조를 본다 —
+//    카드 분기가 먼저 return 하므로 발행 표시가 켜진 카드 건도 카드 하나로만 잡힌다.
+{
+  const canon = readFileSync('lib/cashReceipt.ts', 'utf8')
+  const fn = canon.match(/export function paymentAggregateBucket[\s\S]*?\n}/)
+  if (!fn) {
+    violations.push('[소스] lib/cashReceipt 의 paymentAggregateBucket 을 못 찾았다 — 배타 대조가 건너뛰어졌다. 감지망을 고칠 것')
+  } else {
+    const cardAt = fn[0].indexOf("bucket: 'card'")
+    const crAt = fn[0].indexOf("bucket: 'cashReceipt'")
+    if (cardAt < 0 || crAt < 0 || cardAt > crAt) {
+      violations.push('[소스] paymentAggregateBucket 의 카드 우선 배타가 사라짐 — 카드 건에 발행 표시가 있으면 같은 금액이 양쪽에 이중 계상된다')
+    }
+  }
 }
 
 // 6. 보증금 몰취 수입의 카테고리 — 옛 이름 '보증금' 이 남으면 세무 자료에서 예수보증금(부채)으로
@@ -1688,30 +1700,50 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
-// 20. 현금영수증·카드 합계의 **축 한정어는 상시 텍스트여야 한다** (오류신고 8b9b6c43, 2026-08-24).
+// 20. 현금영수증·카드 합계는 **축이 둘이고, 두 한정어가 다 상시 텍스트여야 한다**
+//     (오류신고 8b9b6c43. 첫 판정 2026-08-24, 같은 날 재판정).
 //
 //   신고 원문 "현금영수증 합계금액이 안맞아. 직접 계산해보면 764만원인데 상단 합계는717만원이야".
-//   계산은 정확했다. 상단은 payDate(입금일) 축 7,170,000 이고 운영자가 목록을 손으로 더한 값은
-//   targetMonth(귀속월) 축 7,640,000 이다. 차액 470,000 은 7/31 에 받은 8월분 한 건이 전부였다.
-//   축 설명이 InfoHint(접힌 물음표) 안에만 있어서 화면이 그 차이를 말하지 않은 것이 결함이었다.
+//
+//   **첫 판정이 틀렸다.** 그때는 "계산은 맞고 표시가 문제"로 보고 한정어 '입금일 기준' 을 세웠다.
+//   홈택스가 승인일자로 집계한다는 일반론에서 출발해 "입금일에 발행하니 두 축이 같다"고 단정했고,
+//   **운영자의 실제 발행 관행을 확인하지 않았다.** 결제선생 실자료가 반대를 보여줬다 — 발행 32건
+//   중 29건이 발행일 != 입금일이고 2026-08-22 하루에 18건 7,640,000원이 몰려 있다. 운영자의 764만은
+//   그 8/22 발행분과 정확히 일치한다. payDate 축 717만은 홈택스와 맞을 수가 없는 숫자였다.
+//
+//   그래서 축을 갈랐다.
+//     현금영수증 : cashReceiptIssuedAt 이 그 달(KST) — 홈택스에 올라간 날.
+//     카드       : payDate 가 그 달 — 매출전표가 결제 시점에 성립한다.
+//   같은 날 발행하면 두 축이 같은 답을 낸다. 평소엔 숫자가 안 바뀌고 지연됐을 때만 바로잡힌다.
 //
 //   **파일 전체 includes 는 그물이 못 된다.** 같은 낱말이 InfoHint 본문에도 있어서, 한정어가 다시
 //   InfoHint 안으로 되숨는 바로 그 회귀에서 통과해 버린다(위 7번 주석이 적은 '반쪽 감지망' 전례와
-//   같은 함정이다). 그래서 '<InfoHint 앞' 상시 텍스트 조각만 잘라서 본다.
+//   같은 함정이다). 그래서 각 한정어가 **자기 숫자와 같은 상시 텍스트 조각 안에** 있는지 본다.
 {
-  const AXIS = '입금일 기준'
-  // 상시 텍스트 조각 — 조건식부터 InfoHint 가 열리기 직전까지. JSX 주석은 화면에 안 뜨므로 걷어낸다.
-  const strip = roomsClient.match(/payAggregates\.cashReceiptSum !== 0[\s\S]*?<InfoHint/)
-  if (!strip) {
-    violations.push('[소스] RoomsClient 현금영수증·카드 합계 줄을 못 찾았다 — 대조가 통째로 건너뛰어졌다. 감지망을 고칠 것')
-  } else {
+  // 두 줄 각각 — [정규식으로 자를 조각, 있어야 할 한정어, 그 줄이 말하는 값의 이름]
+  const LINES = [
+    [/payAggregates\.cashReceiptSum !== 0[\s\S]*?cashReceiptCount\}건\)/, '발행일 기준', '현금영수증'],
+    [/입금일 기준 카드 수납[\s\S]*?cardCount\}건\)/, '입금일 기준', '카드 수납'],
+  ]
+  for (const [re, axis, what] of LINES) {
+    const strip = roomsClient.match(re)
+    if (!strip) {
+      violations.push(`[소스] RoomsClient ${what} 합계 줄을 못 찾았다 — 대조가 통째로 건너뛰어졌다. 감지망을 고칠 것`)
+      continue
+    }
+    // JSX 주석은 화면에 안 뜨므로 걷어낸다. 주석에 낱말이 있다고 통과시키면 반쪽 그물이다.
     const visible = strip[0].replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-    if (!visible.includes(AXIS)) {
-      violations.push(`[소스] RoomsClient 현금영수증·카드 합계에 축 한정어('${AXIS}')가 상시 텍스트로 없다 — InfoHint 안으로 되숨으면 목록을 귀속월로 손수 더한 값과 달라 보이는 신고가 재발한다`)
+    if (!visible.includes(axis)) {
+      violations.push(`[소스] RoomsClient ${what} 합계에 축 한정어('${axis}')가 상시 텍스트로 없다 — 한 줄에 축이 둘이라 한정어가 빠지면 어느 숫자가 어느 축인지 화면이 말하지 않는다`)
     }
     if (/납부일/.test(visible)) {
-      violations.push("[소스] RoomsClient 축 한정어가 '납부일' 로 되돌아갔다 — 이 화면의 '납부일' 은 LeaseTerm.dueDay(약정 지급일)라 반대 축(귀속월)의 앵커다. 정본은 '입금일'")
+      violations.push(`[소스] RoomsClient ${what} 축 한정어가 '납부일' 로 되돌아갔다 — 이 화면의 '납부일' 은 LeaseTerm.dueDay(약정 지급일)라 반대 축(귀속월)의 앵커다`)
     }
+  }
+  // 현금영수증 줄에 '입금일' 이 섞이면 축이 뒤바뀐 것이다(재판정 전으로 되돌아간 모양).
+  const crLine = roomsClient.match(/payAggregates\.cashReceiptSum !== 0[\s\S]*?cashReceiptCount\}건\)/)
+  if (crLine && /입금일/.test(crLine[0].replace(/\{\/\*[\s\S]*?\*\/\}/g, ''))) {
+    violations.push("[소스] RoomsClient 현금영수증 합계가 다시 '입금일' 축을 말한다 — 발행일 축으로 재판정한 것이 되돌아갔다(신고 8b9b6c43 재발)")
   }
   // 상시 한정어와 InfoHint 본문은 짝이다. 한쪽만 남으면 반쪽이라 각각 본다.
   const hint = roomsClient.match(/<InfoHint title="현금영수증·카드 합계">[\s\S]*?<\/InfoHint>/)
@@ -1721,22 +1753,79 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
     if (/납부일/.test(hint[0])) {
       violations.push("[소스] 현금영수증·카드 InfoHint 가 축을 '납부일' 로 부른다 — 같은 화면에서 한 숫자가 두 축 이름을 갖는다")
     }
-    // 문구는 다듬어도 되지만 이 세 축은 설명이 살아 있다는 앵커다.
+    // 문구는 다듬어도 되지만 이 네 축은 설명이 살아 있다는 앵커다.
     for (const [needle, why] of [
+      ['발행한 날', '현금영수증이 발행일 축이라는 설명이 사라졌다 — 축이 둘이라는 사실을 본문이 말해야 한다'],
       ['귀속월', '귀속월 축과 다를 수 있다는 설명이 사라졌다 — 손수 더한 값과의 차이를 아무도 설명하지 않는다'],
-      ['지난달', '월말 선납이 지난달 합계에 잡힌다는 설명이 사라졌다 — 이번 신고의 실제 원인(7/31 수납 470,000)이 다시 미설명이 된다'],
+      ['지난달', '월말 선납이 다른 달 합계에 잡힌다는 설명이 사라졌다 — 신고가 겪은 혼동이 다시 미설명이 된다'],
       ['매출전표', '카드와 현금영수증이 겹치지 않는다는 설명이 사라졌다 — 두 값이 이중 계상으로 읽힌다(520호 172,000원 전례)'],
     ]) {
       if (!hint[0].includes(needle)) violations.push(`[소스] 현금영수증·카드 InfoHint: ${why}`)
     }
   }
-  // 캡션이 '입금일'이라 말하려면 서버가 실제로 payDate 축이어야 한다. 축이 바뀌면 캡션이 거짓이 된다.
+  // 캡션이 말하는 축을 서버가 실제로 세는지. 축이 되돌아가면 캡션이 거짓이 된다.
   const roomsActions = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
   const aggFn = roomsActions.match(/export async function getMonthPaymentAggregates[\s\S]*?\n}/)
   if (!aggFn) {
     violations.push('[소스] getMonthPaymentAggregates 를 못 찾았다 — 캡션이 말하는 축을 대조할 수 없다. 감지망을 고칠 것')
-  } else if (!/payDate:\s*\{\s*gte:/.test(aggFn[0])) {
-    violations.push('[소스] getMonthPaymentAggregates 가 payDate 창으로 안 센다 — 화면 캡션의 \'입금일 기준\' 이 거짓이 된다')
+  } else {
+    // 카드 축 — payDate 창이 살아 있어야 한다.
+    if (!/payDate:\s*\{\s*gte:/.test(aggFn[0])) {
+      violations.push("[소스] getMonthPaymentAggregates 가 payDate 창으로 카드를 안 센다 — 캡션의 '입금일 기준 카드 수납' 이 거짓이 된다")
+    }
+    // 현금영수증 축 — 발행일 창으로 따로 긁어야 한다. **payDate 창만 남으면 회귀다.**
+    if (!/cashReceiptIssuedAt:\s*\{/.test(aggFn[0])) {
+      violations.push("[소스] getMonthPaymentAggregates 가 현금영수증을 발행일(cashReceiptIssuedAt) 창으로 안 센다 — payDate 축으로 되돌아갔다. 홈택스와 안 맞는 숫자가 다시 뜬다(신고 8b9b6c43 재판정)")
+    }
+    // 타임스탬프 칸에 @db.Date 용 UTC 창을 쓰면 KST 자정 경계에서 하루 밀린다(2026-08-19 전역 정정 클래스).
+    if (!/kstMonthTsRange\(/.test(aggFn[0])) {
+      violations.push('[소스] getMonthPaymentAggregates 가 발행일 창을 lib/kstDate 정본(kstMonthTsRange)으로 안 만든다 — UTC 창을 쓰면 KST 자정 경계 발행분이 전달로 떨어진다')
+    }
+    // 버킷 판정은 순수 함수 정본이 한다 — 화면·테스트·서버가 같은 식을 봐야 축이 갈리지 않는다.
+    if (!/paymentAggregateBucket\(/.test(aggFn[0])) {
+      violations.push('[소스] getMonthPaymentAggregates 가 버킷 판정 정본(lib/cashReceipt paymentAggregateBucket)을 안 쓴다 — 축 판정 사본이 생기면 테스트가 지키는 것과 화면이 보는 것이 갈린다')
+    }
+  }
+}
+
+// 20-b. 현금영수증 발행일은 **정본 하나**가 정한다 (운영자 확정 2026-08-24).
+//
+//   종전에는 다섯 저장 경로가 각자 `new Date()` 를 박았다 — 클릭한 순간이지 발행한 날이 아니다.
+//   축이 발행일로 바뀐 뒤로 그 차이가 곧 세무 숫자의 오차다. 운영자 원문 — "현금영수증 발행
+//   체크처리할 때 처리한 날짜도 입력할 수 있어야 이런 오류가 안생기겠네. 디폴트는 당일이고
+//   날짜를 바꿀 수 있게 해야겠다".
+//
+//   발행일이 입금일과 다른 것은 **정상이다**("업무특성상 누락 매출분도 있기 때문에 날짜가 다르게
+//   할 필요가 있거든"). 그래서 경고도 차단도 두지 않는다. 막는 것은 미래 하나뿐이고 그 판정도
+//   정본 안에 있다.
+{
+  const roomsActions = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+  // 값 결정 자리가 곧 회귀 지점이다 — `cashReceiptIssuedAt:` 우변에 new Date() 가 바로 오면 위반.
+  // 정본(resolveCashReceiptIssuedAt)이나 그것이 만든 변수만 와야 한다.
+  for (const m of roomsActions.matchAll(/cashReceiptIssuedAt:\s*([^,\n]*new Date\(\)[^,\n]*)/g)) {
+    violations.push(`[소스] rooms/actions 가 발행일을 직접 박는다(${m[1].trim().slice(0, 60)}) — 클릭한 순간이지 발행한 날이 아니다. lib/cashReceipt resolveCashReceiptIssuedAt 정본을 쓸 것`)
+  }
+  // 다섯 저장 경로가 전부 정본을 지나는지 — 이름만 보면 한 곳만 고치고 나머지가 새는 것을 못 잡는다.
+  const CALLS = (roomsActions.match(/resolveCashReceiptIssuedAt\(/g) ?? []).length
+  if (CALLS < 5) {
+    violations.push(`[소스] rooms/actions 의 발행일 정본 호출이 ${CALLS}곳뿐이다(5곳이어야 한다: savePayment · saveDepositPayment · saveCleaningFeePayment · updatePayment · setCashReceiptIssued) — 빠진 경로는 클릭 시각을 박는다`)
+  }
+  // 재저장이 발행일을 오늘로 밀면 안 된다. updatePayment 은 원래부터 기존 값을 보존했다.
+  const upd = roomsActions.match(/export async function updatePayment[\s\S]*?\n}/)
+  if (upd && !/existing:\s*record\.cashReceiptIssuedAt/.test(upd[0])) {
+    violations.push('[소스] updatePayment 이 기존 발행 시각을 정본에 안 넘긴다 — 금액만 고쳐도 발행일이 오늘로 밀려 그 달 합계가 움직인다')
+  }
+  // 미래 발행은 화면에서도 막는다 — 아직 안 한 발행이라 국세청에 있을 수가 없다.
+  const canon = readFileSync('lib/cashReceipt.ts', 'utf8')
+  if (!/raw <= today/.test(canon)) {
+    violations.push('[소스] lib/cashReceipt 의 미래 발행일 가드가 사라졌다 — 아직 하지 않은 발행이 그 달 합계에 미리 잡힌다')
+  }
+  // 발행일 입력칸은 정본 DatePicker 여야 한다(네이티브 date 는 iOS 에서 형제와 다른 껍데기가 된다).
+  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'app/(app)/tenants/TenantClient.tsx', 'components/entity-modal/widgets/PaymentRecordList.tsx']) {
+    const src = readFileSync(f, 'utf8')
+    if (!src.includes('cashReceiptIssuedDate')) {
+      violations.push(`[소스] ${f} 에 현금영수증 발행일 입력이 없다 — 체크만 하면 클릭한 날이 박히고 지연 발행이 다시 어긋난다`)
+    }
   }
 }
 
