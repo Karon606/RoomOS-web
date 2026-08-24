@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -791,6 +791,26 @@ function work(p: Partial<MoveWorkInput> & { roomNo: string; date: string }): Mov
   eq('요약 줄 · 어느 방인지가 함께 실린다', out.upcomingWorks[0].roomNo, '514')
   eq('요약 줄 · 입퇴실 요약은 청소에 안 오염된다', out.upcoming.map(e => e.date), [])
   eq('행 · 완료·먼 예정은 트랙에 그대로 있다', out.rows[0].works.length, 4)
+}
+
+// ══ 라벨 일반화(2026-08-21 운영자 확정 — 청소는 작업의 한 종목) ═══════
+//
+// 이 절이 못 박는 것은 둘이다. ① 트랙 레일 문구는 kindLabel 을 그대로 쓴다 — '청소'를
+// 화면이나 조립이 지어내 붙이면 종목이 늘 때 도배가 '도배 청소'로 읽힌다. ② 조립은
+// kindLabel 을 한 글자도 안 바꾼다 — 종류 문구의 주인은 종목의 공급자다.
+{
+  eq('라벨 · 레일 문구는 kindLabel 그대로(청소)', moveWorkRailLabel({ kindLabel: '퇴실 청소', status: 'planned' }), '퇴실 청소 예정')
+  eq('라벨 · 지연 낱말은 정본(예정일 경과)', moveWorkRailLabel({ kindLabel: '퇴실 청소', status: 'overdue' }), '퇴실 청소 예정일 경과')
+  eq('라벨 · 완료', moveWorkRailLabel({ kindLabel: '공사·도배 후 청소', status: 'done' }), '공사·도배 후 청소 완료')
+  eq('라벨 · 청소 아닌 종목에 청소를 붙이지 않는다', moveWorkRailLabel({ kindLabel: '도배', status: 'planned' }), '도배 예정')
+  eq('라벨 · 장판도 제 이름 그대로', moveWorkRailLabel({ kindLabel: '장판', status: 'done' }), '장판 완료')
+
+  const out = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [], context: [],
+    works: [work({ roomNo: '417', date: '2026-08-12', kindLabel: '도배' })],
+  })
+  eq('라벨 · 조립은 kindLabel 을 한 글자도 안 바꾼다', out.rows[0].works[0].kindLabel, '도배')
+  eq("라벨 · '도배 청소'는 어디에도 없다", JSON.stringify(out.rows).includes('도배 청소'), false)
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)

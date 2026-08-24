@@ -193,6 +193,20 @@ export const MOVE_WORK_STATUS_LABEL: Record<MoveWorkStatus, string> = {
   planned: '예정', overdue: '예정일 경과', done: '완료',
 }
 
+/**
+ * 트랙 레일에 세울 한 마디 — 종류와 상태를 잇는다.
+ *
+ * **'청소'를 여기서 지어내지 않는다.** 종전에는 화면이 `청소 ${상태}` 를 박아 놓아, 종목이
+ * 늘면 도배가 '청소 예정'으로 읽히게 되어 있었다. 종류를 말하는 것은 `kindLabel` 하나이고
+ * 그 값은 종목의 공급자가 낸다(청소는 `lib/moveCalendarData` 안에서).
+ *
+ * 조립이 이 함수를 부르지는 않는다 — 이건 화면이 쓰는 문구다. 그런데도 여기에 두는 이유는
+ * 회귀가 순수 함수만 딛기 때문이다. 컴포넌트 안에 두면 "종목이 늘어도 낱말이 안 갈린다"를
+ * 감지망이 한 글자도 못 본다.
+ */
+export const moveWorkRailLabel = (w: { kindLabel: string; status: MoveWorkStatus }): string =>
+  `${w.kindLabel} ${MOVE_WORK_STATUS_LABEL[w.status]}`.trim()
+
 export type MoveDaySpan = { startDay: number; endDay: number }
 export type MoveGap = MoveDaySpan & { days: number }
 /** 겹친 구간 — 확인된 겹침은 중립 톤으로 그린다(빨강은 아직 답하지 않은 것에만 쓴다). */

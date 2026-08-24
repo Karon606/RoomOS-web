@@ -159,17 +159,22 @@ export async function fetchMoveLeases(
 const MOVE_WORK_STATUSES = ['PLANNED', 'DONE'] as const
 
 /**
- * 캘린더에서 부를 종류 문구 — 사유 라벨에 **명사가 없으면 붙인다.**
+ * **청소 종목의** 종류 문구 — 사유 라벨에 명사가 없으면 '청소'를 잇는다.
  *
  * CLEANING_REASON_LABEL 은 청소 목록용이라 그 화면의 열이 이미 '청소'를 말하고 있다. 그래서
  * '공사·도배 후'·'입실 중 요청'·'기타' 처럼 명사가 없는 낱말이 섞여 있는데, 캘린더에는 그런
  * 열이 없다. 그대로 쓰면 소리로 "404호 공사·도배 후 완료" 가 되어 **무엇이 완료됐는지가
  * 문장에서 사라진다**(헤드리스 실측에서 열넷 중 다섯이 그 모양이었다).
  *
+ * **이 규칙은 청소 밖으로 나가면 안 된다.** 종전에는 이 함수가 export 된 채 이름도 'work…'
+ * 라, 종목이 늘면 도배 사유가 여기를 지나 '도배 청소'가 될 자리에 있었다. 청소 공급자 안에
+ * 가둬 두면 다음 종목은 자기 규칙으로 자기 kindLabel 을 내고, 조립·화면은 그 값을 그대로
+ * 쓴다(lib/moveCalendar moveWorkRailLabel).
+ *
  * 사유 어휘를 여기서 다시 적지 않는다 — 사본이 곧 두 번째 진실이 된다. 정본 라벨을 그대로
  * 쓰되 명사가 없을 때만 한 낱말을 잇는다.
  */
-export const workKindLabel = (reason: CleaningReason): string => {
+const cleaningKindLabel = (reason: CleaningReason): string => {
   const label = CLEANING_REASON_LABEL[reason] ?? CLEANING_REASON_LABEL.OTHER
   return label.includes('청소') ? label : `${label} 청소`
 }
@@ -234,7 +239,7 @@ export async function fetchMoveWorks(
       roomNo: room.roomNo,
       date,
       done,
-      kindLabel: workKindLabel(r.reason as CleaningReason),
+      kindLabel: cleaningKindLabel(r.reason as CleaningReason),
       performerLabel: (done ? r.performerName?.trim() : null)
         || (performer ? CLEANING_PERFORMER_LABEL[performer] : null),
       vacancyExcluded: isVacancyExcluded(room),

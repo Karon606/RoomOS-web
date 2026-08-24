@@ -26,7 +26,7 @@ import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
-import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
+import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, moveWorkRailLabel, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -400,14 +400,16 @@ function MoveCalendarView({ data, onViewMonthChange }: {
               막대와 달리 글자를 안 이고 있어 표면만으로 읽혀야 한다). */}
           <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2"
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
-            {/* 청소 두 칸은 트랙의 띠와 **같은 표면·같은 링**이다. 완료 표면은 트랙 바탕 대비
-                ΔE76 이 3.5 라 링이 없으면 스와치 자리가 비어 보인다. 320px 에서는 두 줄로
-                접힌다(gap-y-1 이 그 자리다) — 네 낱말을 줄여 한 줄에 우겨넣는 쪽이 더 나쁘다. */}
+            {/* 작업 두 칸은 트랙의 띠와 **같은 표면·같은 링**이다. 완료 표면은 트랙 바탕 대비
+                ΔE76 이 3.5 라 링이 없으면 스와치 자리가 비어 보인다.
+                **'청소'가 아니라 '작업'이다** — 종목이 몇으로 늘어도 이 범례는 네 칸에 머문다.
+                표면이 가르는 것은 종류가 아니라 상태이고, 종류는 옆 글자가 진다(그래서 종목이
+                늘어도 스와치가 안 늘어난다). 실측상 320px 에서 네 칸이 264.26px 로 한 줄이다. */}
             {([
               ['var(--band-paid-bg)', null, '거주'],
               ['var(--band-await-bg)', null, '입실 예약'],
-              ['var(--inspect-bg)', 'var(--inspect-ring)', '청소 예정'],
-              ['var(--neutral-bg)', 'var(--neutral-ring)', '청소 완료'],
+              ['var(--inspect-bg)', 'var(--inspect-ring)', '작업 예정'],
+              ['var(--neutral-bg)', 'var(--neutral-ring)', '작업 완료'],
             ] as const).map(([bg, ring, label]) => (
               <span key={label} className="inline-flex items-center gap-1.5 text-[0.65625rem]" style={{ color: 'var(--ink-m)' }}>
                 <span className="inline-block" style={{
@@ -419,7 +421,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
             ))}
           </div>
           {/* 가로 스크롤러는 포커스를 받아야 키보드로 오른쪽 날짜에 닿는다(WCAG 2.1.1). */}
-          <div ref={scrollRef} role="region" aria-label="입퇴실 캘린더 트랙" tabIndex={0}
+          <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
             className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
             style={{ overscrollBehaviorX: 'contain' }}>
             <div className="move-track" style={{ width: trackW }}>
@@ -686,12 +688,13 @@ function UpcomingRow({ items, works, todayInRange, onOpen, onOpenRoom }: {
         )}
       </div>
 
-      {/* ── 청소 ── **별도 줄**이다. 입퇴실과 같은 줄에 흘리면 '다가오는 14일 N건'이라는 한
-          덩어리로 읽혀 홈 타일의 입퇴실 건수와 눈으로 안 맞는다. 청소가 없으면 줄 자체가 없다.
-          창 밖이면 위 분기가 이미 말했으므로 여기서 같은 말을 두 번 하지 않는다. */}
+      {/* ── 작업 ── **별도 줄**이다. 입퇴실과 같은 줄에 흘리면 '다가오는 14일 N건'이라는 한
+          덩어리로 읽혀 홈 타일의 입퇴실 건수와 눈으로 안 맞는다. 작업이 없으면 줄 자체가 없다.
+          창 밖이면 위 분기가 이미 말했으므로 여기서 같은 말을 두 번 하지 않는다.
+          머리글이 '청소'가 아닌 이유는 범례와 같다 — 종목은 아래 각 칩의 kindLabel 이 말한다. */}
       {todayInRange && works.length > 0 && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>청소</p>
+          <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>작업</p>
           {shownWorks.map(w => (
             <button key={w.id} type="button" onClick={() => onOpenRoom(w.roomId)}
               className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
@@ -737,9 +740,10 @@ type Placed = {
  * 잘린 이름이라도 바 안에 두지만(색 띠 하나가 이름 없이 남는 것보다 낫다) 작업은 다르다 —
  * 하루짜리라 잘라 넣을 글자 자체가 없다.
  *
- * 라벨이 '청소 …' 로 짧은 이유. 사유(퇴실 청소·공사·도배 후)는 행 아래 줄·요약 줄·소리가
- * 전부 온전히 말한다. 트랙에서 세 칸을 넘기면 대부분의 청소가 트랙 밖으로 떨어져,
- * 정작 '언제'를 보여주려던 이 레일이 텅 빈다.
+ * 라벨은 정본(moveWorkRailLabel)이 낸다. 종전에는 여기서 '청소'를 박아 넣었는데, 종목이
+ * 늘면 도배가 '청소 예정'으로 읽힌다. 낱말이 길어지는 대가는 실측으로 확인했다 — 종류를
+ * 그대로 쓰면 '퇴실 청소 예정'이 4칸, '공사·도배 후 청소 완료'가 6칸이라 종전 3칸보다
+ * 넓지만, 실데이터 열세 건 중 트랙 밖으로 떨어지는 것은 여전히 0건이다.
  */
 type PlacedWork = {
   work: MoveWork
@@ -750,7 +754,7 @@ type PlacedWork = {
 }
 
 function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork {
-  const text = `청소 ${MOVE_WORK_STATUS_LABEL[work.status]}`
+  const text = moveWorkRailLabel(work)
   const need = Math.max(1, Math.ceil((estWidth(text) + 8) / DAY_W))
   const sameLane = works.filter(w => w.lane === work.lane && w.id !== work.id)
   const next = sameLane.filter(w => w.day > work.day).reduce((m, w) => Math.min(m, w.day), days + 1)
