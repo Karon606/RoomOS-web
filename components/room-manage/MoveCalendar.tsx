@@ -206,7 +206,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
    * 서든 함께 덮인다(호실 열이 코드 0줄로 같이 지켜진다). ② 이 파일은 스크롤 중 트랙
    * 재렌더를 피하려고 축 필터까지 URL 밖에 둔 자리다(위 axis 주석) — 막대마다 핸들러
    * 셋과 클로저 셋을 새로 배는 것은 그 방향의 반대다. 여기 걸면 핸들러가 통틀어 셋이고
-   * 참조도 고정이다. ③ 삼키는 문법이 이미 저장소에 있다 — `lib/useLongPress:27` 이 조상의
+   * 참조도 고정이다. ③ 삼키는 문법이 이미 저장소에 있다 — `lib/useLongPress:28` 이 조상의
    * `onClickCapture` 에서 자식 click 을 `stopPropagation` 으로 끊는다. 같은 길이다.
    *
    * `tapRef` 는 마지막 pointerdown 의 자리와 그때의 스크롤 눈금이다. 두 손가락이 얹히면
@@ -1007,7 +1007,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
             않네"). 목적지는 방 모달이고 계약 시드는 안 싣는다: 이 칸은 모든 레인을 가로질러
             서 있어 여러 막대 중 어느 계약을 고를지에 자의적이지 않은 답이 없고, 계약이 하나도
             없는 행(청소만 있는 공실 방)에도 이 칸은 선다. 형제 셋이 같은 호출이다
-            (요약 줄 :430 · 호실 카드 RoomManageClient:1075 · 청소 뷰 :1242).
+            (요약 줄 :448 · 호실 카드 RoomManageClient:1075 · 청소 뷰 :1242).
             aria-label 에 호실번호를 **그대로 다시 싣는다** — aria-label 은 접근명을 더하는 게
             아니라 대체하므로, 빼면 음성 제어 사용자가 부를 이름이 사라진다(WCAG 2.5.3).
             hover·focus 링은 globals.css 의 button.mc-room 이 진다. 여기에 outline 유틸을
