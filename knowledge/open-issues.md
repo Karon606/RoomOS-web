@@ -156,3 +156,30 @@ select)와 `batchUpdateTenants`(일괄 편집)는 안 부른다.** 그 두 경�
 요약 줄 칩이 방 모달로 보내는 것이 유일한 우회다. '날짜 변경' 버튼 자체는
 `components/cleaning/CleaningRowBody.tsx:336` 에 상시 있고 게이트는 `canEdit` 하나뿐이다.
 - 레일에 손닿을 것을 되돌리는 것은 위 신고 표면을 다시 여는 일이라 별도 설계가 필요하다.
+
+## 보증금 수납 경로 시공 후 남은 것 (2026-08-24, [[deposit-entry-paths]])
+
+**운영자 결정 대기.**
+- 자동 스탬프 **7건** 정정 여부(전부 결제수단 '기타', 그중 6건은 결제일 = 만든 날). 실입금일과
+  실제 수단은 **운영자만 안다** — 앱이 지어내면 이번 사고와 같은 클래스를 반복한다. 정정 경로는
+  보증금 패널의 '받은 내역' 수정 폼 하나면 되고 스크립트가 필요 없다. 세무 축 영향은 없다
+  (그 record 들은 `cashReceiptIssuedAt` 이 null 이다).
+- 현금영수증 스탬프를 **이용료 몫에만** 찍을지. `getMonthPaymentAggregates` 는 `isDeposit` 을
+  안 빼는데 매출은 뺀다 — 그 비대칭이 발행액 갭의 코드 근거다. 집계 축 변경이라 loop.md 4번.
+- `ExtraIncome.cashReceiptIssuedAt` 신설 여부(청소비 몫의 발행 표시를 앱이 못 남긴다). 스키마.
+- 입주자 수정 폼의 '보증금 실제로 받음' 체크 경로 존폐.
+
+**별건 시공 대기.**
+- **`/tenants` 의 수제 수납 폼**(`TenantClient.tsx` `handleSavePayment` 경로)이 정본
+  `PaymentEntryForm` 이 아니다. 초과분 3지선다·청소비 모드·귀속월 선택·자릿수 확인이 없고
+  3단 분해도 안 닿는다. **신고 98fb6fce 가 난 화면이 거기다**(1단 CTA 는 `DepositStatusPanel`
+  이라 닿는다). 정본 수렴이 loop.md 1번 ① 의 정면 사례다.
+- `saveCleaningFeePayment` 에 기수령 잔여 가드가 없다 — 같은 청소비를 두 번 받는 길.
+- `saveDepositPayment`·`saveCleaningFeePayment` 에 영업장 스코프 검증 부재(형제 `deletePayment`
+  에는 있다).
+- `DepositSection` 의 `hasNoInRecord` 가 인수일을 안 봐 승계 계약에도 '받음으로 기록'이 선다.
+  2단이 그 버튼을 쓰기 쉽게 만들어 위험이 커졌다. 어떤 행을 감출지는 운영자 판단.
+- 보증금 record 의 현금영수증 표시를 **끌 자리가 앱에 없다**(패널 수정 폼에 칸 없음, 수납 내역
+  원터치 토글은 서버가 보증금 행을 걸러 내려보내 못 만난다).
+- `MoneyInput` 42px·₩ prefix 부재(§12·§09) · `DepositSection` 서브탭 raw button(§25) ·
+  `TenantClient` 노출 문자열 화살표 2건(§29).
