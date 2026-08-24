@@ -14,19 +14,20 @@
 // 건다. 두 축에 걸면 세로로는 넘칠 일이 없는 '가짜 스크롤러'가 되어 Android Blink 가 터치를 래치하고
 // 페이지 세로 스크롤이 먹통이 된다(knowledge/mobile-scroll-viewport, 신고 d8554128).
 
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
 import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
-import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, moveWorkRailLabel, shiftMonth, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
+import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, filterMoveRows, moveWorkRailLabel, shiftMonth, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
 /** 호실 열 폭. sticky 로 붙어 있어 가로 스크롤 중에도 어느 방인지 안 잃는다(§23). */
 const ROOM_COL = 66
@@ -181,6 +182,22 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   const landedFromRef = useRef<string | null>(null)
   /** 착지가 만든 스크롤 위치. 여기서 한 픽셀도 안 움직였으면 URL 에 적지 않는다. */
   const landedLeftRef = useRef<number | null>(null)
+  /** 직전 렌더에 트랙 스크롤러가 있었는가 — 필터가 비웠다 되살리면 새 DOM 이라 다시 앉아야 한다. */
+  const hadTrackRef = useRef(false)
+  /**
+   * 축 필터 — 전체 / 입퇴실 / 작업 (운영자 확정 2026-08-21).
+   *
+   * 상태가 URL 이 아니라 여기 사는 이유는 성능이다. 이 컴포넌트는 useSearchParams 를
+   * 구독하지 않아 memo 가 산다(아래 memo 주석) — URL 로 들면 스크롤이 위치를 적을 때마다
+   * (180ms) 트랙 수백 칸이 다시 그려진다. 새로고침·탭 왕복에 값이 안 남는 것은 의도다:
+   * 필터는 잠깐 좁혀 보는 손이지 이 화면의 정체성이 아니다.
+   *
+   * 거르는 것은 **카드 안 트랙뿐**이다. 요약 줄(다가오는 14일)과 충돌 Status Row 는 축과
+   * 무관하게 선다 — 충돌은 사고 알림이라 필터 뒤에 숨으면 안 되고, 요약 줄은 "다음에 뭐가
+   * 있나"라는 다른 질문에 답한다. 월 밴드 '변동 없음'도 입퇴실 사건의 말이라 그대로다.
+   */
+  const [axis, setAxis] = useState<MoveAxis>('all')
+  const rows = useMemo(() => filterMoveRows(data.rows, axis), [data.rows, axis])
   const days = data.days
   const todayDay = data.todayDay
 
@@ -243,15 +260,22 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   // 다시 스크롤을 부르는 피드백 루프가 애초에 성립하지 않는다. 셀렉터 점프·홈 딥링크만 router.push 라
   // 여기에 닿고, 그때는 landedRef 가 이미 그 달이라 두 번 앉지 않는다.
   useLayoutEffect(() => {
-    if (landedRef.current !== data.focusMonth || landedFromRef.current !== data.from) {
-      landedRef.current = data.focusMonth
+    // 필터가 트랙을 비웠다 되살리면 스크롤러가 **새 DOM** 이라 위치가 0 에서 시작한다 —
+    // 달이 안 바뀌었어도 다시 앉는다(안 그러면 '전체'로 돌아온 트랙이 창 첫날에 서 있다).
+    const remounted = !!scrollRef.current && !hadTrackRef.current
+    const changedFocus = landedRef.current !== data.focusMonth || landedFromRef.current !== data.from
+    if (changedFocus || remounted) {
+      // 리마운트만이면(필터를 껐다 켰다) 사용자가 마지막으로 보던 달로 돌아간다 — 서버 착지
+      // 달로 끌려가면 보던 자리를 잃는다. landedRef 는 commitPosition 이 스크롤을 따라 갱신한다.
+      const target = changedFocus ? data.focusMonth : (landedRef.current ?? data.focusMonth)
+      landedRef.current = target
       landedFromRef.current = data.from
-      onViewMonthChange?.(data.focusMonth)
+      onViewMonthChange?.(target)
       const el = scrollRef.current
       // 변동이 없는 창에서는 트랙 자체가 없다(카드 대신 빈 상태). 그래도 위의 '보고 있는 달'은
       // 알려야 탭 접미가 그 달을 말한다.
       if (el) {
-        const focus = data.months.find(m => m.month === data.focusMonth)
+        const focus = data.months.find(m => m.month === target)
         const focusHasToday = !!focus && todayDay != null
           && todayDay >= focus.startDay && todayDay < focus.startDay + focus.days
         el.scrollLeft = focusHasToday && todayX != null
@@ -262,8 +286,10 @@ function MoveCalendarView({ data, onViewMonthChange }: {
         landedLeftRef.current = el.scrollLeft
       }
     }
+    hadTrackRef.current = !!scrollRef.current
     paintToday()
-  }, [data.months, data.focusMonth, data.from, todayDay, todayX, paintToday, onViewMonthChange])
+    // rows.length — 필터로 트랙이 사라졌다 돌아오는 리마운트를 이 효과가 봐야 한다.
+  }, [data.months, data.focusMonth, data.from, todayDay, todayX, paintToday, onViewMonthChange, rows.length])
 
   /**
    * 스크롤이 멎었을 때 — 보고 있는 달을 URL 과 위(탭 접미)로 알린다.
@@ -313,6 +339,8 @@ function MoveCalendarView({ data, onViewMonthChange }: {
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    // rows.length 가 deps 에 있는 이유 — 필터가 스크롤러를 내렸다 되살리면 el 이 새 DOM 이라
+    // 리스너를 다시 붙여야 한다(안 붙이면 스크롤해도 URL·탭 접미·'오늘로'가 침묵한다).
     let timer: ReturnType<typeof setTimeout> | null = null
     let raf: number | null = null
     let lastLeft = -1
@@ -334,7 +362,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => { el.removeEventListener('scroll', onScroll); if (timer) clearTimeout(timer); stopRaf() }
-  }, [commitPosition, paintToday])
+  }, [commitPosition, paintToday, rows.length])
 
   /**
    * '오늘로' — 오늘이 트랙 안이면 그 자리로 스크롤하고, 창 밖이면 이번 달로 다시 조회한다.
@@ -349,6 +377,15 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     el.scrollLeft = Math.max(0, todayX - Math.max(0, el.clientWidth - ROOM_COL) / 4)
     paintToday()
   }
+
+  /**
+   * 필터가 가린 건수 — §27.6 "다른 보기에 N건" 이 세는 값. 입퇴실 축이 가린 것은 작업
+   * 전부이고, 작업 축이 가린 것은 입퇴실 **사건 수**다(막대 수가 아니라 — 이 화면의 화폐
+   * 단위는 건수다: 탭 접미·홈 타일이 그 수를 쓴다).
+   */
+  const hiddenByAxis = axis === 'moves'
+    ? data.rows.reduce((s, r) => s + r.works.length, 0)
+    : axis === 'works' ? data.months.reduce((s, m) => s + m.eventCount, 0) : 0
 
   const cols = `${ROOM_COL}px repeat(${days}, ${DAY_W}px)`
   const trackW = ROOM_COL + days * DAY_W
@@ -381,25 +418,56 @@ function MoveCalendarView({ data, onViewMonthChange }: {
           때문이다. 자리는 종전과 같다(카드 오른쪽 아래). */}
       <div className="relative">
       {data.rows.length === 0 ? (
+        /* ① 데이터 자체가 없다 — 캘린더가 작업까지 담게 되면서 낱말이 넓어졌다(종전
+           "입퇴실 변동이 없습니다"는 작업만 있는 창에서 거짓이 된다 — 다만 그 창은 rows 가
+           서므로 여기 안 온다. 이 가지는 정말 아무것도 없는 창이다). */
         <EmptyState
-          title="이 기간에 입퇴실 변동이 없습니다"
-          description="입주·퇴실·입실 예약이 잡히면 이 달력에 나타납니다."
+          title="이 기간에 일정이 없습니다"
+          description="입주·퇴실·예약이 잡히거나 청소 같은 작업이 등록되면 이 달력에 나타납니다."
           // 트랙이 없는 창에서는 아래 부유 알약이 설명문 위에 앉는다(빈 상태 안쪽 여백 32px 대
           // 알약 윗변 54px = 세로 22px 겹침). 빈 상태의 CTA 자리가 곧 '여기서 나가는 길'이다(§17).
           action={todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
         />
+      ) : rows.length === 0 ? (
+        /* ② 필터가 가렸다 — 데이터 없음과 다른 상태다. §27.6 이 답할 자리: 스코프 밖은
+           "다른 보기에 N건 ›" 로 안내하고 **자동 해제는 금지**다(돌아가는 길은 손이 누른다).
+           CTA 는 최대 1(§17)이라 '오늘로'는 여기 안 세운다 — '전체'로 돌아가면 트랙과 부유
+           '오늘로'가 그 길을 다시 잇는다. 카드가 안 서므로 필터 컨트롤도 함께 내려가는데,
+           이 버튼이 곧 컨트롤로 돌아가는 문이다. */
+        <EmptyState
+          title={axis === 'moves' ? '이 기간에 입퇴실 변동이 없습니다' : '이 기간에 작업이 없습니다'}
+          description={axis === 'moves' ? '지금은 입퇴실만 보고 있습니다.' : '지금은 작업만 보고 있습니다.'}
+          action={hiddenByAxis > 0
+            ? <Btn variant="secondary" size="md" onClick={() => setAxis('all')}>다른 보기에 {hiddenByAxis}건 ›</Btn>
+            : todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
+        />
       ) : (
         /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
         <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          {/* 카드 머리 — 축 필터 + 범례. 필터가 여기인 이유: 거르는 대상이 이 카드의 트랙이라,
+              걸러지는 것 바로 위가 "현재 필터 안"(§27.6)을 눈으로 말하는 자리다. 정본은
+              SegmentedControl(§23 1차 필터 = 라디오·단일·'전체' — §25 판별: 좁힘 + 전체 있음).
+              다중 선택은 없다 — 다중선택 필터 컴포넌트는 저장소 미등재라 신설 자체가 승인 대상이다.
+              트랙 위 필터 배치는 저장소 전례가 없어 배포 전 디자이너 패스 대상. */}
           {/* 범례 — 거주와 예약이 색으로만 갈리고 있었다. 스크롤러 **밖**이라야 트랙과 함께 흘러가지
               않고, 카드 아래는 '오늘로' 버튼이 덮으므로 자리는 카드 머리다(§24 위젯 셸 헤더).
               공실은 넣지 않는다 — 공백은 색이 없고 'N일 공실' 캡션이 이미 글자로 말한다.
-              막대마다 aria-label 이 종류를 말하므로 스와치를 소리로 읽히면 같은 말이 두 번이다. */}
-          {/* 좌측 인셋은 바로 아래 호실 열(px-2)에 맞춘다 — 한 카드 안에서 세로로 겹쳐 서는 두 글자의
-              레일이 어긋나면 그 자체가 이질감이다. 스와치는 가로로 눕힌다(정사각 10px 은 트랙 위
-              막대와 달리 글자를 안 이고 있어 표면만으로 읽혀야 한다). */}
-          <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2"
+              막대마다 aria-label 이 종류를 말하므로 스와치를 소리로 읽히면 같은 말이 두 번이다.
+              범례만 aria-hidden 이고 필터는 아니다 — 하나는 장식이고 하나는 조작이다. */}
+          {/* 좁은 폭에서는 범례가 다음 줄로 접히며 좌측 인셋(px-2)이 호실 열과 다시 맞는다 — 한
+              카드 안에서 세로로 겹쳐 서는 두 글자의 레일이 어긋나면 그 자체가 이질감이다.
+              스와치는 가로로 눕힌다(정사각 10px 은 트랙 위 막대와 달리 글자를 안 이고 있어
+              표면만으로 읽혀야 한다). */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2 py-2"
             style={{ borderBottom: '1px solid var(--warm-border)' }}>
+            <SegmentedControl<MoveAxis> size="sm" ariaLabel="일정 종류 필터"
+              value={axis} onChange={setAxis}
+              options={[
+                { value: 'all', label: '전체' },
+                { value: 'moves', label: '입퇴실' },
+                { value: 'works', label: '작업' },
+              ]} />
+            <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {/* 작업 두 칸은 트랙의 띠와 **같은 표면·같은 링**이다. 완료 표면은 트랙 바탕 대비
                 ΔE76 이 3.5 라 링이 없으면 스와치 자리가 비어 보인다.
                 **'청소'가 아니라 '작업'이다** — 종목이 몇으로 늘어도 이 범례는 네 칸에 머문다.
@@ -419,6 +487,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
                 {label}
               </span>
             ))}
+            </div>
           </div>
           {/* 가로 스크롤러는 포커스를 받아야 키보드로 오른쪽 날짜에 닿는다(WCAG 2.1.1). */}
           <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
@@ -457,7 +526,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
                 ))}
               </div>
 
-              {data.rows.map((row, ri) => (
+              {rows.map((row, ri) => (
                 <GanttRow key={row.roomId} row={row} days={days} cols={cols}
                   todayDay={todayDay} monthStarts={monthStarts} first={ri === 0} onOpen={openLease} />
               ))}
@@ -471,7 +540,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
           첫 페인트는 숨김에서 시작하고 착지 직후 paintToday 가 정한다 — 오늘이 창 밖이면 곧 켜지고,
           그때 누르면 스크롤이 아니라 이번 달로 다시 조회한다(goToday).
           **트랙이 있을 때만 부유시킨다** — 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다. */}
-      {data.rows.length > 0 && (
+      {rows.length > 0 && (
       <button ref={todayBtnRef} type="button" onClick={goToday}
         className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
         style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>

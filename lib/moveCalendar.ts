@@ -531,7 +531,7 @@ function barLabels(bar: { startsInRange: boolean; endsInRange: boolean; openEnde
  * (자동 생성 퇴실 청소의 중복 방지는 CHECKOUT 사유만 보므로 도배 후 청소와 같은 날이 될 수 있다).
  * 안 가르면 하나가 다른 하나를 덮어 두 건이 한 건으로 보인다.
  */
-function packWorkLanes(works: MoveWork[]): number {
+export function packWorkLanes(works: MoveWork[]): number {
   const laneEnd: number[] = []
   for (const w of [...works].sort((x, y) => x.day - y.day)) {
     let lane = laneEnd.findIndex(end => end < w.day)
@@ -552,6 +552,42 @@ function packLanes(bars: MoveBar[]): number {
     b.lane = lane
   }
   return Math.max(laneEnd.length, 1)
+}
+
+/**
+ * 행 생존 술어 — 막대도 작업도 없으면 행이 아니다.
+ *
+ * 조립(assemble)과 화면 축 필터(filterMoveRows)가 **같은 술어**를 부른다. 화면이 "작업을
+ * 걷어낸 행이 남는가"를 자기 식으로 다시 적으면 그 식이 두 번째 진실이 되어, 행 생성
+ * 규칙이 바뀔 때 화면만 옛 규칙에 남는다.
+ */
+export const moveRowSurvives = (row: { bars: readonly unknown[]; works: readonly unknown[] }): boolean =>
+  row.bars.length > 0 || row.works.length > 0
+
+/** 축 필터 — 캘린더가 무엇을 보여줄지. 종목 필터(1단계)가 붙어도 이 축은 그대로다. */
+export type MoveAxis = 'all' | 'moves' | 'works'
+
+/**
+ * 축 필터 적용 — 클라이언트가 부른다(서버 왕복 없음 — 토글 한 번에 페이지 재조회 금지).
+ *
+ * '전체'는 원본 배열 그대로다(참조 안정 — memo 아래에서 불필요한 재렌더를 안 만든다).
+ * '입퇴실'은 작업을 걷어낸 뒤에도 서는 행만 남긴다 — 생존 판정은 조립과 같은 moveRowSurvives.
+ *   작업 레인 수는 팩을 다시 돌려 센다(서버가 센 workLaneCount 는 걷기 전의 수다).
+ * '작업'은 작업이 있는 행만 남긴다. **거주 막대는 그대로 둔다**(운영자 확정 2026-08-21) —
+ *   막대가 남아야 공실 캡션·겹침 밴드·꼬리가 근거를 잃지 않고, 그 작업이 공실 회전의
+ *   어느 자리에 서는지가 보인다.
+ * 남기는 행은 행 객체 참조를 그대로 쓴다 — 원본은 어느 축에서도 변조하지 않는다.
+ */
+export function filterMoveRows(rows: MoveCalendarRow[], axis: MoveAxis): MoveCalendarRow[] {
+  if (axis === 'all') return rows
+  if (axis === 'works') return rows.filter(r => r.works.length > 0)
+  return rows
+    .filter(r => moveRowSurvives({ bars: r.bars, works: [] }))
+    .map(r => {
+      if (r.works.length === 0) return r
+      const kept: MoveWork[] = []
+      return { ...r, works: kept, workLaneCount: packWorkLanes(kept) }
+    })
 }
 
 /** 날짜 번호 집합을 연속 구간으로 접는다. */
@@ -719,9 +755,10 @@ function assemble(input: {
     }
 
     // 막대도 작업도 없으면 행이 아니다. 작업만 있는 빈 방은 남긴다 — 그 방이 언제 다시
-    // 쓸 수 있게 되는지가 이 행이 답하는 유일한 질문이다.
+    // 쓸 수 있게 되는지가 이 행이 답하는 유일한 질문이다. 판정은 화면 축 필터와 같은
+    // 술어(moveRowSurvives)다 — 두 자리가 각자 적으면 규칙이 바뀔 때 한쪽만 남는다.
     const rowWorks = worksInRange.filter(w => w.roomId === g.roomId)
-    if (bars.length === 0 && rowWorks.length === 0) continue
+    if (!moveRowSurvives({ bars, works: rowWorks })) continue
 
     // ── 충돌 ── 방을 잡고 있는 계약끼리만 본다. 퇴실 완료 계약은 방을 잡지 않으므로
     // (lib/roomAssignment roomAssignmentBlockReason 의 같은 선) 같은 날 인수인계는 사고가 아니다.

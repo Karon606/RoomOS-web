@@ -13,7 +13,7 @@
 // 전후로 한 글자도 바뀌지 않았다 — 좌표가 '범위 첫날부터 며칠'로 일반화됐지만 한 달 창에서는
 // 그 값이 곧 '그 달 며칠'이라 같은 수가 나와야 하고, 이 무회귀가 개편의 성립 조건이다.
 
-import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, monthLastDay, moveRangeWindow, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
+import { RANGE_JUMP_MONTHS, beyondWindow, buildMoveCalendar, buildMoveRange, daysInMonth, filterMoveRows, monthLastDay, moveRangeWindow, moveRowSurvives, moveWorkRailLabel, shiftMonth, type MoveCalendarLease, type MoveStaySpan, type MoveWorkInput } from '../lib/moveCalendar'
 
 let pass = 0
 let fail = 0
@@ -811,6 +811,47 @@ function work(p: Partial<MoveWorkInput> & { roomNo: string; date: string }): Mov
   })
   eq('라벨 · 조립은 kindLabel 을 한 글자도 안 바꾼다', out.rows[0].works[0].kindLabel, '도배')
   eq("라벨 · '도배 청소'는 어디에도 없다", JSON.stringify(out.rows).includes('도배 청소'), false)
+}
+
+// ══ 축 필터(전체 / 입퇴실 / 작업, 2026-08-21 운영자 확정) ═══════════
+//
+// 이 절이 못 박는 것은 셋이다. ① '전체'는 원본 그대로다(참조까지 — memo 아래에서 헛
+// 재렌더를 안 만든다). ② '입퇴실'의 행 생존 판정은 조립과 **같은 술어**(moveRowSurvives)를
+// 지난다 — 화면이 규칙을 다시 적으면 두 번째 진실이 된다. ③ '작업'은 거주 막대를 지우지
+// 않는다(운영자 확정 — 막대가 남아야 공실 캡션·겹침 밴드가 근거를 잃지 않는다).
+{
+  const moved = lease({ id: 'x-mv', roomNo: '404', status: 'CHECKED_OUT', moveInDate: '2026-08-01', expectedMoveOut: '2026-08-06', moveOutDate: '2026-08-06', tenantName: '막대만' })
+  const both = lease({ id: 'x-bt', roomNo: '413', status: 'ACTIVE', moveInDate: '2026-08-10', expectedMoveOut: '2026-08-31', tenantName: '막대와작업' })
+  const out = buildMoveCalendar({
+    month: MONTH, today: TODAY, changed: [moved, both], context: [moved, both],
+    works: [
+      work({ id: 'x-w1', roomNo: '413', date: '2026-08-12', done: true }),
+      work({ id: 'x-w2', roomNo: '415', date: '2026-08-14' }),
+    ],
+  })
+  eq('축 · 전제(행 셋: 막대만·막대와작업·작업만)', out.rows.map(r => [r.roomNo, r.bars.length > 0, r.works.length > 0]),
+    [['404', true, false], ['413', true, true], ['415', false, true]])
+
+  eq('축 · 전체는 원본 배열 참조 그대로', filterMoveRows(out.rows, 'all') === out.rows, true)
+
+  const moves = filterMoveRows(out.rows, 'moves')
+  eq('축 · 입퇴실은 작업만 있는 행이 사라진다', moves.map(r => r.roomNo), ['404', '413'])
+  eq('축 · 입퇴실에서 작업이 걷힌다', moves.map(r => r.works.length), [0, 0])
+  eq('축 · 걷힌 행의 작업 레인도 0(팩을 다시 돈다)', moves.map(r => r.workLaneCount), [0, 0])
+  eq('축 · 작업이 없던 행은 행 객체 참조 그대로', moves[0] === out.rows[0], true)
+  eq('축 · 걷어도 막대는 같은 배열이다(재조립 없음)', moves[1].bars === out.rows[1].bars, true)
+  eq('축 · 공백·겹침·꼬리도 같은 값이다', [moves[1].gaps, moves[1].overlaps, moves[1].tail],
+    [out.rows[1].gaps, out.rows[1].overlaps, out.rows[1].tail])
+  eq('축 · 원본은 어느 축에서도 무변조', out.rows[1].works.length, 1)
+
+  const works = filterMoveRows(out.rows, 'works')
+  eq('축 · 작업은 작업 있는 행만', works.map(r => r.roomNo), ['413', '415'])
+  eq('축 · 거주 막대는 그대로 둔다(운영자 확정)', works[0].bars.length, out.rows[1].bars.length)
+  eq('축 · 작업 축의 행은 참조 그대로', works[0] === out.rows[1] && works[1] === out.rows[2], true)
+
+  eq('술어 · 막대도 작업도 없으면 행이 아니다', moveRowSurvives({ bars: [], works: [] }), false)
+  eq('술어 · 작업만 있어도 행이다', moveRowSurvives({ bars: [], works: [1] }), true)
+  eq('술어 · 막대만 있어도 행이다', moveRowSurvives({ bars: [1], works: [] }), true)
 }
 
 console.log(`\n입퇴실 캘린더 조립 회귀: ${pass} 통과 / ${fail} 실패`)
