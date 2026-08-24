@@ -490,9 +490,12 @@ function MoveCalendarView({ data, onViewMonthChange }: {
             </div>
           </div>
           {/* 가로 스크롤러는 포커스를 받아야 키보드로 오른쪽 날짜에 닿는다(WCAG 2.1.1). */}
+          {/* containerType — 행 아래 줄의 글자 폭을 트랙(수천 px)이 아니라 **보이는 창**으로
+              재기 위한 자(100cqw). 스크롤러는 이미 독립 포맷팅 컨텍스트(overflow)라 컨테인먼트가
+              레이아웃을 더 바꾸지 않고, sticky 는 스크롤포트 기준이라 영향이 없다(실측 확인). */}
           <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
             className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
-            style={{ overscrollBehaviorX: 'contain' }}>
+            style={{ overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
             <div className="move-track" style={{ width: trackW }}>
 
               {/* 눈금 두 줄 — 위는 월 밴드, 아래는 날짜. 호실 열이 둘을 가로질러 sticky 로 선다. */}
@@ -873,13 +876,15 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   // 좌측 코랄 팁은 **아직 답하지 않은** 충돌에만. 확인된 겹침만 남은 행은 팁을 끈다(중립).
   const attn = row.conflicts.some(c => !c.acked)
   const placed = row.bars.map(bar => place(bar, row, days))
-  // 작업 레일 — 라벨을 세울 자리가 나온 것만 트랙에 선다. 나머지는 아래 한 줄로 떨어진다.
+  // 작업 레일 — **표식은 전부 선다.** 라벨 자리가 안 나온 작업도 표식(띠)은 레일에 남는다.
+  // '언제'가 이 레일의 존재 이유라, 표식까지 내리면 그 날짜가 트랙에서 통째로 사라진다
+  // (2026-08-24 지시 — 종전에는 표식과 라벨이 한 몸으로 떨어졌다). 말은 행 아래 줄이 진다.
   const placedWorks = row.works.map(w => placeWork(w, row.works, days))
-  const railWorks = placedWorks.filter(p => p.text !== null)
+  const labeledWorks = placedWorks.filter(p => p.text !== null)
   const droppedWorks = placedWorks.filter(p => p.text === null).map(p => p.work)
-  // 레일 층수는 **실제로 선 것**에서 센다. 조립이 센 workLaneCount 를 그대로 쓰면 전부
-  // 떨어진 행에 빈 레일 20px 이 남는다.
-  const railCount = railWorks.length > 0 ? Math.max(...railWorks.map(p => p.work.lane)) + 1 : 0
+  // 레일 층수는 화면이 실제로 세울 것에서 다시 센다 — 표식이 전부 서므로 작업이 있으면 곧
+  // 그 레인이 있고, 축 필터가 작업을 걷은 행은 works 자체가 비어 0 이다(빈 레일 없음).
+  const railCount = placedWorks.length > 0 ? Math.max(...placedWorks.map(p => p.work.lane)) + 1 : 0
   // 캡션은 0층(gridRow 1)에 그리므로 0층의 바 밖 라벨과만 자리를 다툰다.
   const blocked = placed.filter(p => p.bar.lane === 0 && p.ink).map(p => p.ink!)
 
@@ -974,7 +979,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
             Android Blink 터치 래치(신고 d8554128)에 다시 표면을 내주게 된다. 청소로 들어가는
             길은 위 요약 줄과 방 모달이다.
             키는 RoomCleaning.id — 계약 id 로 쓰다 stale DOM 이 남았던 전례가 있다(신고 7007d2c1). */}
-        {railWorks.map(p => (
+        {placedWorks.map(p => (
           <span key={`wk-${p.work.id}`} role="img" aria-label={workAria(p.work, row.roomNo)}
             className="pointer-events-none self-center justify-self-stretch"
             style={{
@@ -986,7 +991,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
               borderRadius: 'var(--radius-xs)',
             }} />
         ))}
-        {railWorks.map(p => (
+        {labeledWorks.map(p => (
           <span key={`wl-${p.work.id}`} aria-hidden
             className="pointer-events-none self-center truncate text-[0.65625rem] font-medium tnum"
             style={{
@@ -1008,19 +1013,28 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
         )}
       </div>
 
-      {/* 트랙에 못 세운 청소 — 양옆이 다 막힌 자리다. 표면만 그리고 말을 안 붙이는 쪽이 아니라
-          아예 트랙에서 내리고 여기서 온전히 말한다(placeWork 머리 주석). 꼬리와 같은 문법이다. */}
+      {/* 라벨 자리가 안 나온 작업의 말 — 표식은 위 레일에 이미 섰고(2026-08-24 지시), 여기는
+          글자만 진다. 꼬리와 같은 문법이다. §11 병렬 패턴대로 두 건까지 펴고 나머지는 '외 N건'
+          으로 접는다 — 세 건이 넘으면 한 줄이 트랙 폭을 밀어내는 벽이 된다. 접힌 건의 온전한
+          문장은 요약 줄과 방 모달, 그리고 표식의 소리(aria)가 진다.
+          maxWidth 100cqw — 컨테이너(스크롤러)의 보이는 폭이 자다. max-w-full(트랙 폭)만으로는
+          긴 줄이 화면 밖까지 이어져 truncate 가 수천 px 뒤에서야 든다. cqw 를 모르는 엔진에서는
+          이 선언이 버려져 종전 max-w-full 로 물러난다. */}
       {droppedWorks.length > 0 && (
         <div className="grid" style={{ gridTemplateColumns: cols }}>
           <div className="mc-room sticky left-0 z-20" style={{ gridColumn: '1 / 2', background: 'var(--cream)' }} />
           <p className="min-w-0 pb-1.5 text-[0.65625rem] tnum" style={{ gridColumn: '2 / -1' }}>
-            <span className="sticky inline-block max-w-full truncate pl-1.5" style={{ left: ROOM_COL }}>
-              {droppedWorks.map((w, i) => (
+            <span className="sticky inline-block max-w-full truncate pl-1.5"
+              style={{ left: ROOM_COL, maxWidth: `calc(100cqw - ${ROOM_COL}px)` }}>
+              {droppedWorks.slice(0, 2).map((w, i) => (
                 <span key={w.id} style={{ color: workInkTrack(w) }}>
                   {i > 0 && <span style={{ color: 'var(--ink-m)' }}>{' · '}</span>}
                   {workLine(w)}
                 </span>
               ))}
+              {droppedWorks.length > 2 && (
+                <span style={{ color: 'var(--ink-m)' }}>{' · '}외 {droppedWorks.length - 2}건</span>
+              )}
             </span>
           </p>
         </div>
