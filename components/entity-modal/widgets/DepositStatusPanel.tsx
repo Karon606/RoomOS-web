@@ -9,7 +9,7 @@
 // 두 화면이 이 파일 하나를 쓴다. 지금까지 갈렸던 이유가 각자 손으로 그렸기 때문이라, 그게 재발 방지다.
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateDot } from '@/lib/fmtDate'
+import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
@@ -17,18 +17,19 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withSave, pushToast } from '@/lib/saveStatus'
-import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment } from '@/app/(app)/rooms/actions'
+import { getDepositPaymentsByLease, updatePayment, deletePayment, restorePayment, saveDepositPaymentForLease, getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
 import { getDepositRefundForLease, undoDepositReturn, getDepositCompositionForLease, recordDepositReturn } from '@/app/(app)/tenants/actions'
 import { kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason, CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
+// 보증금 수납 수단 정본 — 이름 없는 부분집합을 각 화면이 베끼면 그 자리들이 갈린다.
+import { MANUAL_PAY_METHODS as PAY_METHODS } from '@/lib/paymentMethods'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
 type Comp = Awaited<ReturnType<typeof getDepositCompositionForLease>>
 
-const PAY_METHODS = ['계좌이체', '현금', '신용카드', '결제선생', '기타']
 const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 
 export function DepositStatusPanel({
@@ -64,6 +65,21 @@ export function DepositStatusPanel({
   const [recDate, setRecDate] = useState('')
   const [recReason, setRecReason] = useState('')
   const [recEtc, setRecEtc] = useState('')
+  // 보증금 실입금 기록 미니폼 — 미수납·부분수납 상태의 1급 진입로(신고 98fb6fce·00c39371).
+  // 사실이 표시되는 자리에 그 사실을 고칠 길이 없어서, 운영자가 '입주자 정보 수정' 폼으로 우회했다.
+  const [recvOpen, setRecvOpen] = useState(false)
+  const [recvAmount, setRecvAmount] = useState(0)
+  const [recvDate, setRecvDate] = useState('')
+  // 결제수단 프리필은 이 고객의 직전 방식이 정본이다(수납 폼과 같은 규칙 — 고객마다 계좌·카드·현금이
+  // 고정적이다). 이 자리는 **실입금** 기록이라 '기타'가 아니다. 조회 실패·첫 수납이면 계좌이체.
+  const [recvMethod, setRecvMethod] = useState('계좌이체')
+  const [lastMethod, setLastMethod] = useState<string | null>(null)
+  useEffect(() => {
+    if (!tenantId) return
+    let alive = true
+    getTenantLastPayMethod(tenantId).then(m => { if (alive && m) setLastMethod(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [tenantId])
   const [pending, startTransition] = useTransition()
 
   const load = useCallback(async () => {
@@ -140,6 +156,56 @@ export function DepositStatusPanel({
     : effectiveShortfall <= 0 ? { tone: 'pale-green', label: '수납 완료' }
     : paid === 0 && coveredByCleaning === 0 ? { tone: 'pale-amber', label: '미수납' }
     : { tone: 'pale-amber', label: `부족 ${fmtWon(effectiveShortfall)}` }
+
+  // 수납 진입로 노출 술어. preAcquisition 을 통째로 뺀다 — carriedOver 가 아니다.
+  // carriedOver 는 '받은 게 0 인 승계'만 참이라, 일부를 받은 승계 계약(실측 3건)에서 거짓이 되고
+  // 그 계약에 record 를 만들면 퇴실 정산 기준액이 계약 보증금에서 실수납액으로 조용히 바뀐다
+  // (getDepositBasisForLease — received > 0 이면 basis 가 넘어간다). 정본은 "승계 보증금에
+  // 수납 record 를 만들지 않는다"(knowledge/money-display-feedback)다.
+  // RESERVED 는 예약금 폼(saveReservationDeposit)이 모드까지 확정하는 정본이라 여기서 열지 않는다.
+  const canRecordReceipt = canEdit && !settled && !exited && !notYet
+    && !data.preAcquisition && status !== 'RESERVED' && effectiveShortfall > 0
+  // 잔여를 넘는 입력은 막는다. 넘기면 초과분이 이용료 record 가 되는데, 이 폼은 조회월을 모르고
+  // 어댑터가 입주월을 넘기므로 운영자가 보고 있지도 않은 달에 이용료가 앉는다. 이용료가 섞인 입금은
+  // 수납 등록의 분해 블록이 맡는다.
+  const recvOver = recvAmount > effectiveShortfall
+
+  const openReceive = () => {
+    // 프리필은 계약액 전액이 아니라 잔여다 — 전액 프리필이 이중 입력의 공범이었다(신고 50a2a69b).
+    setRecvAmount(effectiveShortfall)
+    setRecvDate(kstYmdStr())
+    setRecvMethod(lastMethod ?? '계좌이체')
+    setRecvOpen(true)
+  }
+  const saveReceive = () => {
+    startTransition(async () => {
+      const res = await withSave(
+        () => saveDepositPaymentForLease({
+          leaseTermId, amount: recvAmount, payDate: recvDate || kstYmdStr(), payMethod: recvMethod,
+        }),
+        { success: '' },   // 금액·수납일을 실은 토스트를 아래에서 직접 띄운다
+      )
+      if (!res.ok) return
+      const ids = res.createdIds
+      let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
+      // 금액·수납일 명시(정본 money-display-feedback §2-a). 조회월 안내는 붙이지 않는다 —
+      // 보증금은 월 필터를 타지 않고 이 패널이 바로 위에서 그렇게 말하고 있다.
+      pushToast('success', `보증금 ${fmtWon(recvAmount)} 수납됨 · 수납일 ${fmtMD(recvDate)}`, {
+        action: {
+          label: '적용취소',
+          run: () => {
+            if (undone) return
+            undone = true
+            void Promise.all(ids.map(id => deletePayment(id)))
+              .then(() => { pushToast('info', '수납 기록을 취소했습니다'); void load(); onChanged?.() })
+              .catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
+          },
+        },
+      })
+      setRecvOpen(false)
+      await load(); onChanged?.()
+    })
+  }
 
   const startEdit = (r: Rec) => {
     setEditId(r.id); setEditAmount(r.actualAmount); setEditDate(ymd(r.payDate)); setEditMethod(r.payMethod ?? '')
@@ -225,7 +291,33 @@ export function DepositStatusPanel({
     })
   }
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  // 밀집 위젯 입력 정본 — 이 패널의 세 폼(수납 기록·환불 정산 기록·수납 수정)이 함께 쓴다.
+  // 종전 py-1.5 는 실측 34px 로 §12 높이(40 / 모바일 44)에도, §09 터치 타깃 44px 에도 못 미쳤다.
+  // 밀집 예외로 볼 근거가 없다 — §12 가 명문화한 유일한 높이 예외는 인라인 검색 36px 이고,
+  // 같은 파일의 형제(DepositSection 행 액션)는 이미 같은 이유로 RowActionBtn 정본으로 갈아탔다.
+  // min-h 만으로 44/40 을 만드는 문법은 inventory/assets 의 DATE_FIELD_CLS 가 쓰는 검증된 자다
+  // (inline-flex 를 얹으면 DatePicker 트리거의 truncate 가 죽는다).
+  // 포커스는 focus 가 아니라 focus-visible 이다 — 트리거가 button 이라 손가락으로 열고 닫은 뒤에도
+  // 링이 남는다. 보더 색과 링을 둘 다 거는 이유는 링(rgba 코랄 12%)이 다크 배경에서 안 보이기 때문이다.
+  // 보더 **색**은 베이스에 넣지 않는다. 같은 속성 유틸리티 둘을 한 className 에 나란히 두면
+  // 승자가 문자열 순서가 아니라 스타일시트 순서로 정해진다 — 빌드된 CSS 에서 warm-border 가
+  // tc 보다 뒤에 있어 오류 보더가 **항상** 졌다(§12 에러 표기가 죽은 코드였다).
+  const inputBase = 'w-full bg-[var(--canvas)] border rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
+  const inputCls = `${inputBase} border-[var(--warm-border)]`
+  const inputErrCls = `${inputBase} border-[var(--tc)]`
+  // 폼 라벨 정본(§12 — 12px / 500 / --ink-s). 종전 10.5px --warm-muted 는 크기·굵기·색 셋 다 어긋났다.
+  const labelCls = 'text-xs font-medium text-[var(--warm-mid)]'
+  // **세로 스택이다. 2열을 뷰포트 미디어 질의로 켜면 안 된다.**
+  // 이 패널은 폭이 잠긴 모달 안에 산다(EntityModal width="sm" = max-w-sm 384px, 바깥 여백 없음).
+  // 그래서 뷰포트가 아무리 넓어져도 칸은 넓어지지 않는다 — 384 − 40(body px-5) − 24(패널 px-3)
+  // − 20(폼박스 px-2.5) = 300, 2열이면 글자 자리 125px 인데 '2026년 12월 30일'은 130~134px 다.
+  // 즉 미디어 질의는 **넓은 기기에서만** 켜져서 거기서만 날짜를 자른다. 30일이 3일로 읽힌다.
+  const gridCls = 'space-y-2'
+  // 인라인 폼 껍데기 — 표면을 한 단 올린다. 종전 --canvas 는 안의 입력과 같은 토큰이라
+  // 다크에서 페이지·컨테이너·입력이 셋 다 #000 이고 보더 대비가 1.11:1 이었다(폼이 안 보인다).
+  // --cream-soft 는 토큰 쌍이 갖춰져 있어(라이트 #f5ede0 · 다크 #261C14) 양 모드에서 산다.
+  // 부수 효과로 라벨(--warm-mid) 대비가 4.12:1 에서 4.74:1 로 올라 §28 본문 기준을 넘긴다.
+  const formBoxCls = 'space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2'
 
   return (
     <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">
@@ -249,6 +341,55 @@ export function DepositStatusPanel({
       {/* 이 블록만 스코프가 다르다. 못박지 않으면 이번 달 수납으로 읽힌다.
           문구는 rent-receipts 의 정본과 같은 한 문장 — 두 문장은 반폭에서 접힌다(디자이너 패스). */}
       <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">보증금은 월과 무관합니다.</p>
+
+      {/* 미수납·부분수납의 1급 진입로. 라벨은 수납관리 보증금 탭의 행 액션과 같은 말이다 —
+          같은 행동을 두 화면이 다르게 부르면 그 순간 갈린다. '수납 기록'은 이 앱에서 이미 명사라
+          ('수납 기록 삭제됨'·'최근 3개월 수납 기록이 없습니다') 버튼에 쓰면 목록으로 읽힌다. */}
+      {canRecordReceipt && !recvOpen && (
+        <Btn variant="subtle" size="sm" disabled={pending} onClick={openReceive}>받음으로 기록</Btn>
+      )}
+      {recvOpen && (
+        <div className={formBoxCls}>
+          <div className={gridCls}>
+            <div className="space-y-1.5">
+              <label className={labelCls}>금액</label>
+              <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
+                onChange={e => setRecvAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                className={recvOver ? inputErrCls : inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label className={labelCls}>납부일</label>
+              {/* DatePicker 트리거는 껍데기가 없다 — 정본 inputCls 를 그대로 넘긴다(text-xs 만 넘기면 맨글자). */}
+              <DatePicker value={recvDate} onChange={setRecvDate} className={inputCls} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className={labelCls}>납부방법</label>
+            <select value={recvMethod} onChange={e => setRecvMethod(e.target.value)} className={inputCls}>
+              {PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          {recvOver ? (
+            <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
+              보증금 잔여 {fmtWon(effectiveShortfall)}보다 {fmtWon(recvAmount - effectiveShortfall)} 많습니다. 이용료도 함께 받았다면 수납 등록에서 나눠 적으세요.
+            </p>
+          ) : (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              보증금만 기록합니다. 이용료를 함께 받았다면 수납 등록에서 한 번에 나눠 적으세요.
+            </p>
+          )}
+          {/* 퇴실 예정 계약은 이 금액이 곧 환불 기준액이 된다(getDepositBasisForLease). 조용히 바뀌면 안 된다. */}
+          {status === 'CHECKOUT_PENDING' && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              이 금액이 곧 환불 정산 기준액이 됩니다.
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" disabled={pending} onClick={() => setRecvOpen(false)}>취소</Btn>
+            <Btn variant="primary" size="sm" disabled={pending || recvAmount <= 0 || recvOver} onClick={() => { void saveReceive() }}>기록</Btn>
+          </div>
+        </div>
+      )}
 
       {carriedOver && !settled && (
         <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">
@@ -286,21 +427,21 @@ export function DepositStatusPanel({
         <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 정산 기록</Btn>
       )}
       {recOpen && (
-        <div className="space-y-1.5 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-2.5 py-2">
-          <div className="grid grid-cols-2 gap-1.5">
-            <div>
-              <label className="text-[0.65625rem] text-[var(--warm-muted)]">반환액</label>
-              <input type="number" inputMode="numeric" value={recAmount}
-                onChange={e => setRecAmount(Math.max(0, Number(e.target.value) || 0))} className={inputCls} />
+        <div className={formBoxCls}>
+          <div className={gridCls}>
+            <div className="space-y-1.5">
+              <label className={labelCls}>반환액</label>
+              <input type="text" inputMode="numeric" value={recAmount.toLocaleString()}
+                onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={inputCls} />
             </div>
-            <div>
-              <label className="text-[0.65625rem] text-[var(--warm-muted)]">처리일</label>
+            <div className="space-y-1.5">
+              <label className={labelCls}>처리일</label>
               <DatePicker name="refundRecordDate" value={recDate} onChange={setRecDate} className={inputCls} />
             </div>
           </div>
           {Math.max(0, refundBase - recAmount) > 0 && (
-            <div className="space-y-1">
-              <p className="text-[0.65625rem] text-[var(--warm-muted)]">미환불 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
+            <div className="space-y-1.5">
+              <p className={labelCls}>미환불 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
               <select value={recReason} onChange={e => setRecReason(e.target.value)} className={inputCls}>
                 <option value="">사유 선택</option>
                 {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -310,9 +451,10 @@ export function DepositStatusPanel({
               )}
             </div>
           )}
-          <div className="flex gap-1.5">
+          {/* 취소 좌 · 확인 우(§13·§14). 종전 이 폼만 반대라 한 패널 안에 서로 반대인 두 폼이 서 있었다. */}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
             <Btn variant="primary" size="sm" disabled={pending} onClick={() => { void saveRecord() }}>기록</Btn>
-            <Btn variant="subtle" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
           </div>
         </div>
       )}
@@ -355,22 +497,26 @@ export function DepositStatusPanel({
           {open && (
             <ul className="mt-1.5 space-y-1.5">
               {data.records.map(r => editId === r.id ? (
-                <li key={r.id} className="rounded-lg bg-[var(--canvas)] border border-[var(--coral)] px-2.5 py-2 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">금액</p>
+                // 표면을 한 단 올린다 — 종전 --canvas 는 안의 입력과 같은 토큰이라 다크에서
+                // 컨테이너·입력이 둘 다 #000 이고 보더 합성 대비가 1.11:1 이었다. 코랄 보더가 카드는
+                // 보이게 하지만 안의 칸들은 안 보인다. 보더 색(코랄=편집 중)은 그대로 둔다.
+                <li key={r.id} className="rounded-lg bg-[var(--cream-soft)] border border-[var(--coral)] px-2.5 py-2 space-y-2">
+                  <div className={gridCls}>
+                    <div className="space-y-1.5">
+                      <p className={labelCls}>금액</p>
                       <input type="text" inputMode="numeric" value={editAmount.toLocaleString()}
                         onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={inputCls} />
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부일</p>
-                      <DatePicker value={editDate} onChange={setEditDate}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                    <div className="space-y-1.5">
+                      <p className={labelCls}>납부일</p>
+                      {/* DatePicker 트리거는 껍데기가 없다 — 배경·보더·패딩·글자색이 전부 호출부 책임이라
+                          정본 inputCls 를 그대로 넘긴다. text-xs 만 넘기면 맨글자로 렌더된다. */}
+                      <DatePicker value={editDate} onChange={setEditDate} className={inputCls} />
                     </div>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {/* 자유 입력 금지 — '카드' 등 변형 표기가 카드 수납 합계에서 누락된다(형제와 동일 select) */}
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부방법</p>
+                    <p className={labelCls}>납부방법</p>
                     <select value={editMethod} onChange={e => setEditMethod(e.target.value)} className={inputCls}>
                       {editMethod && !PAY_METHODS.includes(editMethod) && <option value={editMethod}>{editMethod}</option>}
                       {PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}

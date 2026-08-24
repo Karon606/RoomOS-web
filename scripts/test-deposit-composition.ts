@@ -6,7 +6,7 @@
 // 그만큼 채우고, 별도로 받는 영업장(별도형)에서는 보증금과 아무 상관이 없다.
 // 한쪽만 고정하면 반대쪽이 조용히 뒤집힌다 — 포함형에 맞춘 코드가 별도형의 실제 부족을 완납으로
 // 덮고, 별도형에 맞춘 코드가 포함형에 영원한 '부족 20,000'을 띄운다. 둘 다 실제로 일어났다.
-import { depositComposition, depositCompositionLabel, heldContractCleaningPortion, splitWithheldDeposit, withheldDestinationLabel, withheldPartsLabel } from '../lib/depositComposition'
+import { depositComposition, depositCompositionLabel, heldContractCleaningPortion, proposeDepositEntrySplit, splitWithheldDeposit, withheldDestinationLabel, withheldPartsLabel } from '../lib/depositComposition'
 import { cleaningFeeDeductible } from '../lib/depositWithholdReasons'
 import { fmtWon } from '../lib/fmtMoney'
 
@@ -125,6 +125,51 @@ eq('계약몫·청소비 약정 없음', heldContractCleaningPortion({ contractD
 eq('계약몫·약정 null', heldContractCleaningPortion({ contractDeposit: 50000, cleaningFee: null, depositPaid: 50000, cleaningPaid: 0 }), 0)
 eq('계약몫·보증금 0(서종희형)', heldContractCleaningPortion({ contractDeposit: 0, cleaningFee: 20000, depositPaid: 0, cleaningPaid: 20000 }), 0)
 eq('계약몫·청소비가 보증금 초과(비정상 입력)', heldContractCleaningPortion({ contractDeposit: 30000, cleaningFee: 50000, depositPaid: 30000, cleaningPaid: 0 }), 30000)
+
+
+// ── 수납 분해 제안 (운영자 확정 2026-08-24, 신고 9e6c7cb3) ─────────────────────────────
+// 제안일 뿐 저장 산식이 아니다. 그래도 고정하는 이유는 이 값이 화면의 **첫 값**이라, 사람이
+// 그대로 확인하고 넘기는 경로가 가장 잦기 때문이다. 첫 값이 틀리면 확인은 오히려 오답을 굳힌다.
+const propose = (
+  name: string,
+  input: { amount: number; depositRemaining: number; cleaningRemaining: number },
+  want: { deposit: number; cleaning: number; rent: number },
+) => {
+  const got = proposeDepositEntrySplit(input)
+  eq(name, got, want)
+  // 합 항등 — 화면의 저장 차단(합 불일치)이 기대는 불변식이다. 제안 자체가 이걸 깨면 안 된다.
+  eq(`${name}·합 항등`, got.deposit + got.cleaning + got.rent, Math.max(0, input.amount))
+}
+
+// 514호형(8/23 신규 입주, 보증금 5만·청소비 2만 포함형·월 35만). 보증금 먼저, 남은 것이 이용료다.
+propose('제안·미수납 첫 달 전액', { amount: 400000, depositRemaining: 50000, cleaningRemaining: 0 },
+  { deposit: 50000, cleaning: 0, rent: 350000 })
+// 보증금만 받은 날 — 이용료 몫 0. 이 경로가 신고 00c39371 의 "보증금 수납처리" 자리다.
+propose('제안·보증금만', { amount: 50000, depositRemaining: 50000, cleaningRemaining: 0 },
+  { deposit: 50000, cleaning: 0, rent: 0 })
+// 부분수납 계약 — 계약액이 아니라 **잔여**가 기준이다. 종전 화면 미리보기는 계약액으로 쪼개
+// 서버(잔여 기준)와 갈렸다.
+propose('제안·부분수납 잔여 기준', { amount: 50000, depositRemaining: 20000, cleaningRemaining: 0 },
+  { deposit: 20000, cleaning: 0, rent: 30000 })
+// 완납 계약은 제안이 전부 이용료다 — 보증금 칸이 서지 않는다.
+propose('제안·보증금 완납', { amount: 350000, depositRemaining: 0, cleaningRemaining: 0 },
+  { deposit: 0, cleaning: 0, rent: 350000 })
+// 별도 수령 영업장(청소비가 보증금 몫이 아님) — 보증금 다음이 청소비다.
+propose('제안·별도형 청소비', { amount: 400000, depositRemaining: 50000, cleaningRemaining: 20000 },
+  { deposit: 50000, cleaning: 20000, rent: 330000 })
+// 받은 돈이 보증금 잔여에도 못 미치면 전부 보증금이다(부분 수납).
+propose('제안·잔여 미만', { amount: 30000, depositRemaining: 50000, cleaningRemaining: 0 },
+  { deposit: 30000, cleaning: 0, rent: 0 })
+// 보증금을 채우고 청소비를 반만 채우는 금액 — 이용료 몫은 0 이어야 한다.
+propose('제안·청소비 부분', { amount: 60000, depositRemaining: 50000, cleaningRemaining: 20000 },
+  { deposit: 50000, cleaning: 10000, rent: 0 })
+// 인수 승계 계약에서 운영자가 보증금 몫을 0 으로 내리는 것은 **조정**이라 제안이 아니다.
+// 제안 자체는 잔여를 그대로 본다 — 승계 판정을 이 함수에 넣으면 판정 자리가 또 하나 늘어난다.
+propose('제안·금액 0', { amount: 0, depositRemaining: 50000, cleaningRemaining: 20000 },
+  { deposit: 0, cleaning: 0, rent: 0 })
+// 음수 방어 — 잔여가 음수로 들어와도 이용료로 흘리지 보증금을 마이너스로 적지 않는다.
+propose('제안·잔여 음수 방어', { amount: 50000, depositRemaining: -10000, cleaningRemaining: -5000 },
+  { deposit: 0, cleaning: 0, rent: 50000 })
 
 console.log(`\n보증금 구성 판정 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

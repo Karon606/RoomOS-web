@@ -6,16 +6,23 @@
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateDot } from '@/lib/fmtDate'
-import { recordDepositReceived } from './actions'
+import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
+import { recordDepositReceived, deletePayment } from './actions'
 import type { DepositPerTenant, DepositLedgerEntry } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { InfoHint } from '@/components/ui/InfoHint'
-import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
+import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
+import { kstYmdStr } from '@/lib/kstDate'
+
+// 행 인라인 미니폼 입력 — §12 전체 티어. DatePicker 트리거는 껍데기가 없어 이 클래스를 안 넘기면
+// 맨글자로 렌더된다. min-h 로 44/40 을 만든다(inline-flex 는 truncate 를 죽인다).
+const RECV_FIELD_CLS = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
 
 const DEPOSIT_STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
@@ -32,31 +39,52 @@ export function DepositSection({ summary, ledger, totalBalance }: {
   const router = useRouter()
   const [recPending, startRec] = useTransition()
 
-  // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 기록.
-  // 청소비를 이미 받은 계약이면 얼마를 기록할지 되묻는다 — 입주자 폼의 '보증금 실제로 받음'과 같은 선택창.
-  // 종전에는 버튼 한 번에 계약액 전액이 무확인으로 record 되어 청소비 몫이 두 번 잡혔다(2026-08-10).
-  const handleRecordReceived = async (leaseTermId: string, name: string, amount: number, cleaningPaid: number) => {
-    const cash = Math.max(0, amount - cleaningPaid)
-    let recordAmount: number | null = null
-    if (cleaningPaid > 0 && cash < amount) {
-      const choice = await choiceDialog({
-        title: `${name} 보증금을 얼마로 기록할까요?`,
-        message: `이 계약은 입실 때 청소비 ${fmtWon(cleaningPaid)}을 이미 받았습니다.\n`
-          + `보증금 ${fmtWon(amount)}에 청소비가 포함되는 방식이라면 현금으로 받은 몫은 ${fmtWon(cash)}입니다.`,
-        confirmLabel: `${fmtWon(cash)}으로 기록`,
-        altLabel: `${fmtWon(amount)} 전액`,
-        level: 'caution',
-      })
-      if (choice === null) return
-      recordAmount = choice === 'alt' ? null : cash
-    } else if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${fmtWon(amount)})으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) {
-      return
-    }
+  // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 **소급** 기록.
+  //
+  // 종전에는 확인창 둘(금액 3지선다 + 기록 확인)로 물었다. 그런데 금액을 칸으로 받으면 물을 것이
+  // 없어지고, 무엇보다 **입금일과 결제수단을 확인창으로는 못 받는다**(ConfirmDialog 에 입력 필드가
+  // 없다). 안 물으면 서버가 '오늘'과 '기타'를 박는데 그것은 버튼을 누른 날이지 돈이 들어온 날이
+  // 아니다 — 그렇게 쌓인 record 가 7건이다(신고 98fb6fce). 그래서 행 안에서 펴는 미니폼으로 바꿨다.
+  // 명시적 '기록' 버튼이 달린 폼 자체가 확인이고, 취소 버튼이 §27.5(취소는 무해)를 만족한다.
+  //
+  // 결제수단 기본값이 '기타'인 이유 — 이 경로는 소급 기록이라 앱이 수단을 모르는 것이 사실이다.
+  // 아는 값을 고를 수 있게 열어 두되, 모를 때 '계좌이체'를 지어내지 않는다.
+  const [recvFor, setRecvFor] = useState<string | null>(null)
+  const [recvAmount, setRecvAmount] = useState(0)
+  const [recvDate, setRecvDate] = useState(kstYmdStr())
+  const [recvMethod, setRecvMethod] = useState('기타')
+
+  const openRecv = (d: DepositPerTenant) => {
+    // 프리필은 계약액 전액이 아니라 **현금으로 받았을 몫**이다. 청소비가 보증금 안의 몫을 채운
+    // 계약에서 전액을 적으면 같은 청소비가 두 번 잡힌다(2026-08-10 사고).
+    setRecvAmount(Math.max(0, d.contractDeposit - d.coveredByCleaning))
+    setRecvDate(kstYmdStr())
+    setRecvMethod('기타')
+    setRecvFor(d.leaseTermId)
+  }
+  const saveRecv = (leaseTermId: string, name: string) => {
     startRec(async () => {
       const release = trackSave()
       try {
-        await recordDepositReceived(leaseTermId, recordAmount != null ? { amount: recordAmount } : undefined)
-        pushToast('success', '보증금 받음으로 기록됨')
+        const res = await recordDepositReceived(leaseTermId, {
+          amount: recvAmount, payDate: recvDate || kstYmdStr(), payMethod: recvMethod,
+        })
+        let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
+        // 대상·금액·수납일을 말한다(정본 money-display-feedback §2-a). 목록 화면이라 누구인지도 말해야 한다.
+        pushToast('success', `${name} 보증금 ${fmtWon(recvAmount)} 받음으로 기록됨 · 입금일 ${fmtMD(recvDate)}`, {
+          action: {
+            label: '적용취소',
+            run: () => {
+              if (undone) return
+              undone = true
+              void deletePayment(res.id).then(r => {
+                if (r.ok) { pushToast('info', '수납 기록을 취소했습니다'); router.refresh() }
+                else pushToast('error', r.error)
+              }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다'))
+            },
+          },
+        })
+        setRecvFor(null)
         router.refresh()
       } catch (e) {
         pushToast('error', (e as Error).message ?? '기록 실패')
@@ -114,7 +142,9 @@ export function DepositSection({ summary, ledger, totalBalance }: {
           ) : (
             <ul className="divide-y divide-[var(--warm-border)]/50">
               {summary.map(d => (
-                <li key={d.leaseTermId} className="px-5 py-3 flex items-start justify-between gap-3">
+                <li key={d.leaseTermId} className="px-5 py-3">
+                  {/* 미니폼은 행 전체 폭으로 편다. 오른쪽 칼럼은 잔고 숫자만큼 좁아 폼이 못 들어간다. */}
+                  <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--warm-dark)]">{d.tenantName}</span>
@@ -155,13 +185,51 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                     {/* 행 액션은 RowActionBtn 정본 — 맨 버튼은 히트영역이 글자 높이라 §09 터치 타깃
                         44px 에 못 미친다. 형제(수납 기록·보증금 패널·상태 이력·청소 행)와 같은 문법이다.
                         mt-3.5 는 정본이 히트영역용으로 먹는 -my-2 를 되갚아 종전 6px 간격을 지킨다. */}
-                    {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
+                    {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && recvFor !== d.leaseTermId && (
                       <RowActionBtn tone="success" disabled={recPending} className="mt-3.5 whitespace-nowrap"
-                        onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit, d.cleaningPaid)}>
+                        onClick={() => openRecv(d)}>
                         받음으로 기록
                       </RowActionBtn>
                     )}
                   </div>
+                  </div>
+                  {recvFor === d.leaseTermId && (
+                    <div className="mt-3 space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2">
+                      {/* 경계는 440 이다 — 이 화면은 페이지라 뷰포트 질의가 맞지만, 412px(Pixel 계열)에서
+                          날짜 칸 글자 자리가 130px 로 정확히 경계선이라 그 아래는 세로로 편다. */}
+                      <div className="grid grid-cols-1 min-[440px]:grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-[var(--warm-mid)]">금액</label>
+                          <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
+                            onChange={e => setRecvAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                            className={RECV_FIELD_CLS} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-[var(--warm-mid)]">입금일</label>
+                          <DatePicker value={recvDate} onChange={setRecvDate} className={RECV_FIELD_CLS} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
+                        <select value={recvMethod} onChange={e => setRecvMethod(e.target.value)} className={RECV_FIELD_CLS}>
+                          {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      {d.coveredByCleaning > 0 && (
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                          입실 때 받은 청소비 {fmtWon(d.coveredByCleaning)}이 계약 보증금의 일부를 채웁니다. 현금으로 받은 몫만 적으세요.
+                        </p>
+                      )}
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                        이미 받았지만 입금 기록이 없는 보증금을 소급으로 남기는 자리입니다. 결제수단을 모르면 기타 그대로 두세요.
+                      </p>
+                      <div className="flex gap-2 justify-end">
+                        <Btn variant="secondary" size="sm" disabled={recPending} onClick={() => setRecvFor(null)}>취소</Btn>
+                        <Btn variant="primary" size="sm" disabled={recPending || recvAmount <= 0}
+                          onClick={() => saveRecv(d.leaseTermId, d.tenantName)}>기록</Btn>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

@@ -31,8 +31,10 @@ if (roomsActions.includes('expected: lease.rentAmount')) {
   violations.push('[소스] rooms/actions 에 원가 직표시(expected: lease.rentAmount) 재등장 — 표시 정본 이탈')
 }
 const entryForm = readFileSync('components/entity-modal/widgets/PaymentEntryForm.tsx', 'utf8')
-if (/payDate[^\n]*moveInDate/.test(entryForm)) {
-  violations.push('[소스] PaymentEntryForm 수납일 기본값이 입주일 파생으로 회귀 의심 — 수납일 정본은 오늘(받은 날)')
+// 대소문자를 무시하지 않으면 실제 위반을 놓친다 — 호출 이름이 setPayDateVal 이라 종전 정규식이
+// 대문자 P 에서 빗나갔고, 그 사이 두 자리가 입주일을 프리필하고 있었다(2026-08-24 실측 확인).
+if (/set[Pp]ay[Dd]ate[^\n]*moveInDate/.test(entryForm)) {
+  violations.push('[소스] PaymentEntryForm 수납일 기본값이 입주일 파생으로 회귀 — 수납일 정본은 오늘(받은 날)')
 }
 // 수납 스트립 RESERVED 혼입 가드(신고 78ea0c3d) — 예약 행 expected는 표시용이라 스트립 청구·수납 합산에서 제외돼야 한다.
 // 단기 일할 가드(신고 2026-08-01) — 단기는 주 단위 정액이라 퇴실 일할 대상이 아니다.
@@ -1736,6 +1738,159 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   } else if (!/payDate:\s*\{\s*gte:/.test(aggFn[0])) {
     violations.push('[소스] getMonthPaymentAggregates 가 payDate 창으로 안 센다 — 화면 캡션의 \'입금일 기준\' 이 거짓이 된다')
   }
+}
+
+
+// 21. 보증금 수납 경로 (2026-08-24, 신고 98fb6fce·00c39371·9e6c7cb3).
+//
+//   8/23 514호에서 보증금 5만이 일반 수납으로 들어가 이용료 record 가 됐고, 우회로였던 '받음 기록'
+//   경로가 결제일 '오늘'과 결제수단 '기타'를 박았다. 세 축을 함께 본다 — 호출부가 날짜를 넘기는가,
+//   역할 경계가 살아 있는가, 그 지문을 가진 record 가 늘어나는가.
+{
+  // (a) 소스 — recordDepositReceived 호출부가 payDate 를 넘기는가.
+  //     거리로 근사하지 않고 괄호 깊이로 호출 인자 블록을 잘라 그 안만 본다.
+  const CALLERS = ['app/(app)/tenants/actions.ts', 'app/(app)/rooms/DepositSection.tsx']
+  const sliceCallArgs = (src, fnName) => {
+    const out = []
+    let i = 0
+    for (;;) {
+      const at = src.indexOf(`${fnName}(`, i)
+      if (at < 0) break
+      let d = 0, j = at + fnName.length
+      for (; j < src.length; j++) {
+        if (src[j] === '(') d++
+        else if (src[j] === ')') { d--; if (d === 0) { j++; break } }
+      }
+      out.push(src.slice(at, j))
+      i = j
+    }
+    return out
+  }
+  let calls = 0
+  for (const f of CALLERS) {
+    const src = readFileSync(f, 'utf8')
+    for (const args of sliceCallArgs(src, 'recordDepositReceived')) {
+      calls += 1
+      if (!/payDate\s*:/.test(args)) {
+        violations.push(`[소스] ${f} 의 recordDepositReceived 호출이 payDate 를 안 넘긴다 — 앱이 버튼 누른 날을 입금일로 박는다(514호 사고 경로)`)
+      }
+    }
+  }
+  // 못 읽으면 통과가 아니라 위반이다. 아무것도 안 보고 지나가는 그물이 가장 나쁘다.
+  if (calls < 3) violations.push(`[소스] recordDepositReceived 호출부를 ${calls}곳만 찾았다(3곳이어야 한다) — 그물이 대상을 놓쳤다`)
+
+  // (b) 소스 — 두 함수의 역할 경계. 사라지면 실입금이 다시 가드 없는 소급 경로로 샌다.
+  if (!roomsActions.includes('소급 기록 전용')) {
+    violations.push('[소스] recordDepositReceived 의 역할 경계 주석(소급 기록 전용)이 사라짐 — 가드 없는 경로로 실입금이 샌다')
+  }
+  if (!roomsActions.includes('export async function saveDepositPaymentForLease')) {
+    violations.push('[소스] 계약 단위 보증금 진입로(saveDepositPaymentForLease)가 사라짐 — 미수납 자리에 수납 CTA 가 없어진다')
+  }
+
+  // (c) 소스 — 화면이 보증금 잔여를 서버 정본에서 읽는가. 계약액으로 대신 세면 부분수납·청소비
+  //     포함형 계약에서 화면과 저장이 갈린다(서버는 depositComposition().shortfall 기준).
+  const panelSrc = readFileSync('components/entity-modal/widgets/DepositStatusPanel.tsx', 'utf8')
+  if (!entryForm.includes('getDepositCompositionForLease')) {
+    violations.push('[소스] PaymentEntryForm 이 보증금 잔여를 서버 정본에서 안 읽는다 — 화면이 자기 숫자를 만든다')
+  }
+  if (!entryForm.includes('proposeDepositEntrySplit')) {
+    violations.push('[소스] PaymentEntryForm 이 분해 제안 정본(proposeDepositEntrySplit)을 안 쓴다 — 제안 산식이 화면마다 갈린다')
+  }
+  // 이름만 보면 안 된다. 선언과 **저장 버튼 결선**을 함께 본다 — 변수만 남고 버튼에서 빠지면
+  // 그물은 통과하는데 화면은 합이 안 맞아도 저장된다.
+  if (!/const splitBlocked\s*=/.test(entryForm) || !/disabled=\{[^}]*splitBlocked\}/.test(entryForm)) {
+    violations.push('[소스] 분해 폼의 합 불일치 저장 차단이 없다(선언 또는 저장 버튼 결선) — 앱이 말없이 보정하면 안 된다(운영자 오더 2026-08-24)')
+  }
+  // 제출 경로에도 같은 차단이 걸려 있어야 한다. 버튼만 막으면 엔터 제출로 새어 나간다.
+  if (!entryForm.includes('if (splitBlocked) return')) {
+    violations.push('[소스] 분해 폼 제출 경로에 합 불일치 차단이 없다 — 버튼만 막으면 엔터 제출로 샌다')
+  }
+  if (!panelSrc.includes('saveDepositPaymentForLease')) {
+    violations.push('[소스] 보증금 패널이 실입금 정본 경로를 안 탄다 — 가드 없는 소급 경로로 되돌아갔다')
+  }
+  // 승계 계약에 수납 CTA 가 서면 안 된다. carriedOver 로 거르면 '일부를 받은 승계'가 새어 나간다.
+  if (!panelSrc.includes('!data.preAcquisition')) {
+    violations.push('[소스] 보증금 수납 CTA 가 인수 승계 계약을 안 거른다 — 승계 보증금에 record 를 만들면 퇴실 정산 기준액이 바뀐다')
+  }
+}
+
+// 20-2. 데이터 — 앱이 날짜와 수단을 묻지 않고 박은 지문. 존량은 운영자 정정 대기라 기준선 래칫이다.
+//   memo 는 recordDepositReceived 만 쓰는 문자열이라 경로 식별자로 쓴다.
+const AUTO_STAMP_BASELINE = 6   // 2026-08-24 실측. 정정이 끝나면 0 으로 내린다.
+{
+  const suspects = await prisma.paymentRecord.findMany({
+    where: { deletedAt: null, isDeposit: true, payMethod: '기타', memo: { contains: '받음 기록' } },
+    select: {
+      payDate: true, createdAt: true, actualAmount: true,
+      leaseTerm: { select: { room: { select: { roomNo: true } } } },
+    },
+  })
+  // 결제일이 만든 날과 같으면 '오늘'이 그대로 박힌 것이다. payDate 는 @db.Date(UTC 자정),
+  // createdAt 은 시각이라 KST 로 맞춰 비교한다.
+  const kstDay = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+  const hits = suspects.filter(r => r.payDate.toISOString().slice(0, 10) === kstDay(r.createdAt))
+  if (hits.length > AUTO_STAMP_BASELINE) {
+    for (const r of hits) {
+      violations.push(`[데이터] ${r.leaseTerm?.room?.roomNo ?? '-'}호 ${r.payDate.toISOString().slice(0, 10)} ${r.actualAmount.toLocaleString()}원 — 결제일이 만든 날과 같고 수단이 '기타'다(앱이 묻지 않고 박은 흔적). 기준선 ${AUTO_STAMP_BASELINE}건 초과`)
+    }
+  }
+}
+
+// 20-3. 데이터 — 인수 전 입주 계약에 보증금 record 가 늘었는가.
+//   정본: 승계 보증금에 수납 record 를 만들지 않는다(없는 입금을 만들면 증빙 없는 기록이 되고,
+//   코드가 승계를 인식하는 근거도 꺼진다). 존량은 기준선으로 두고 증가만 위반으로 센다.
+const PREACQ_WITH_RECORD_BASELINE = 3   // 2026-08-24 실측(405·418·519호)
+{
+  let preHits = []
+  for (const prop of await prisma.property.findMany({ select: { id: true, name: true, acquisitionDate: true, prevOwnerCutoffDate: true } })) {
+    const cutoff = prop.prevOwnerCutoffDate ?? prop.acquisitionDate ?? null
+    if (!cutoff) continue
+    const rows = await prisma.leaseTerm.findMany({
+      where: { propertyId: prop.id, moveInDate: { lt: cutoff } },
+      select: { room: { select: { roomNo: true } }, paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { id: true } } },
+    })
+    preHits = preHits.concat(rows.filter(l => l.paymentRecords.length > 0).map(l => `${prop.name} ${l.room?.roomNo ?? '-'}호`))
+  }
+  if (preHits.length > PREACQ_WITH_RECORD_BASELINE) {
+    violations.push(`[데이터] 인수 전 입주 계약에 보증금 수납 record 가 ${preHits.length}건(기준선 ${PREACQ_WITH_RECORD_BASELINE}) — 승계 보증금에 없는 입금을 만들면 퇴실 정산 기준액이 계약액에서 실수납액으로 바뀐다. ${preHits.join(' · ')}`)
+  }
+}
+
+// 20-4. 나열 — 보증금 미기록 의심(위반 아님). 진짜 미수납인지 무보증 합의인지는 운영자만 안다.
+//   게이트로 걸면 사람이 값을 넣기 전까지 배포가 막힌다. 그래서 세지 않고 보여만 준다.
+{
+  const rows = []
+  let examined = 0
+  for (const prop of await prisma.property.findMany({ select: { id: true, name: true, cleaningFeeInDeposit: true, acquisitionDate: true, prevOwnerCutoffDate: true } })) {
+    const cutoff = prop.prevOwnerCutoffDate ?? prop.acquisitionDate ?? null
+    const ls = await prisma.leaseTerm.findMany({
+      where: { propertyId: prop.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, depositAmount: { gt: 0 } },
+      select: {
+        depositAmount: true, moveInDate: true,
+        room: { select: { roomNo: true } },
+        paymentRecords: { where: { isDeposit: true, deletedAt: null }, select: { actualAmount: true } },
+        extraIncomes: { where: { ...CLEANING_RECEIVED_WHERE, deletedAt: null }, select: { amount: true } },
+        depositRefunds: { select: { id: true } },
+      },
+    })
+    examined += ls.length
+    for (const l of ls) {
+      // 인수 전 입주는 record 가 없는 것이 정상이다. 정산이 끝난 계약도 대상이 아니다.
+      if (cutoff && l.moveInDate && new Date(l.moveInDate) < new Date(cutoff)) continue
+      if (l.depositRefunds.length > 0) continue
+      const depositPaid = l.paymentRecords.reduce((s, r) => s + r.actualAmount, 0)
+      const cleaningPaid = l.extraIncomes.reduce((s, r) => s + r.amount, 0)
+      const credit = prop.cleaningFeeInDeposit ? Math.min(l.depositAmount, cleaningPaid) : 0
+      const raw = Math.max(0, l.depositAmount - depositPaid)
+      const shortfall = Math.max(0, raw - Math.min(raw, credit))
+      if (shortfall <= 0) continue
+      rows.push(`  ${l.room?.roomNo ?? '-'}호 계약 ${l.depositAmount.toLocaleString()}원 · 실수납 ${depositPaid.toLocaleString()}원`
+        + (credit > 0 ? ` · 청소비 몫 ${credit.toLocaleString()}원` : '')
+        + ` · 부족 ${shortfall.toLocaleString()}원`)
+    }
+  }
+  console.log(`\n[보증금 미기록 의심] 검사 ${examined}건 중 ${rows.length}건 (위반 아님 — 운영자 확인 대기)`)
+  for (const r of rows) console.log(r)
 }
 
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)

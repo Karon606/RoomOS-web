@@ -48,6 +48,7 @@ import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName, codeByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
@@ -504,6 +505,12 @@ function toDateInput(d: string | Date | null | undefined): string {
   if (!d) return ''
   return kstYmdStr(new Date(d))
 }
+
+// 보증금 '받음' 부속 입력(입금일·결제수단) — §12 전체 티어. DatePicker 트리거는 껍데기가 없어
+// 이 클래스를 안 넘기면 맨글자로 렌더된다. min-h 로 44/40 을 만든다(inline-flex 는 truncate 를 죽인다).
+// min-h 를 얹지 않는다. py-2.5 자연 높이가 42px 인데 min 44 를 걸면 **모바일에서만** 44 가 되어
+// 같은 폼의 다른 칸(MoneyInput 42px)과 2px 어긋난다 — §12 혼용을 줄이려다 늘리는 자리다.
+const DEPOSIT_RECV_FIELD_CLS = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
 
 // 'YYYY-MM-DD' → DatePicker 트리거가 보여 주는 그 문자열('2026년 8월 14일').
 // 잠긴 날짜 칸(메인 계약과 같음)이 이 표기를 쓴다 — '따로 정하기'를 눌러 달력으로 바뀌는 순간
@@ -2880,41 +2887,40 @@ export default function TenantClient({
                           const prevOwner = isPreAcq(p)
                           if (editingPayId === p.id) {
                             return (
-                              <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-[var(--info-ring)] bg-[var(--info-bg)]' : 'border-[var(--coral)] bg-[var(--canvas)]'}`}>
-                                <div className="grid grid-cols-2 gap-2">
+                              // 표면을 한 단 올린다 — 종전 --canvas 는 안의 입력과 같은 토큰이라
+                              // 다크에서 컨테이너·입력이 둘 다 #000 이고 칸이 안 보였다(형제 정본과 같은 처방).
+                              <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-[var(--info-ring)] bg-[var(--info-bg)]' : 'border-[var(--coral)] bg-[var(--cream-soft)]'}`}>
+                                <div className="space-y-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>금액</p>
+                                    <p className={`text-xs font-medium ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부일</p>
+                                    <p className={`text-xs font-medium ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
-                                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
+                                    <p className={`text-xs font-medium ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>납부방법</p>
                                     {/* 자유 입력이던 것을 정본 select로 통일 — '카드' 등 변형 표기가 카드 수납 합계에서 누락되는 것 방지(적대검증 필수) */}
                                     <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                                      {!['계좌이체', '현금', '신용카드', '결제선생', '기타'].includes(editPayMethod) && editPayMethod && (
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
+                                      {/* 옵션은 정본 하나에서 온다 — 손으로 적으면 자리마다 갈린다(lib/paymentMethods). */}
+                                      {editPayMethod && !MANUAL_PAY_METHODS.includes(editPayMethod) && (
                                         <option value={editPayMethod}>{editPayMethod}</option>
                                       )}
-                                      <option value="계좌이체">계좌이체</option>
-                                      <option value="현금">현금</option>
-                                      <option value="신용카드">신용카드</option>
-                                      <option value="결제선생">결제선생</option>
-                                      <option value="기타">기타</option>
+                                      {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>메모</p>
+                                    <p className={`text-xs font-medium ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                                   </div>
                                 </div>
                                 <div className="flex gap-2 justify-end">
@@ -3712,6 +3718,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [depoCleaningPaidForm, setDepoCleaningPaidForm] = useState(0)
   const [depositReceivedOn, setDepositReceivedOn] = useState(false)
   const [depositReceivedAmt, setDepositReceivedAmt] = useState<number | null>(null)
+  // 입금일·결제수단을 묻는다(2026-08-24, 신고 98fb6fce). 안 물으면 서버가 '오늘'과 '기타'를 박는데,
+  // 그것은 버튼을 누른 날이지 돈이 들어온 날이 아니다. 실제로 그렇게 7건이 쌓였다.
+  // 기본 결제수단이 '기타'인 이유 — 이 경로는 소급 기록이라 앱이 수단을 모르는 것이 사실이다.
+  // 아는 값을 고를 수 있게 열어 두되, 모를 때 '계좌이체'를 지어내지 않는다.
+  const [depositReceivedDate, setDepositReceivedDate] = useState(kstYmdStr())
+  const [depositReceivedMethod, setDepositReceivedMethod] = useState('기타')
   const [depositChoiceAsked, setDepositChoiceAsked] = useState(false)
   useEffect(() => {
     const id = lease?.id
@@ -4601,12 +4613,38 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </p>
           ) : null}
           {(depositAmountVal ?? 0) > 0 && (
-            <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
-              <input type="checkbox" name="depositReceived" value="1" checked={depositReceivedOn}
-                onChange={e => { void toggleDepositReceived(e.target.checked) }}
-                className="w-3.5 h-3.5 accent-[var(--coral)]" />
-              보증금 실제로 받음 — 실수납으로 기록 (이미 기록됐으면 자동 무시)
-            </label>
+            <>
+              <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
+                <input type="checkbox" name="depositReceived" value="1" checked={depositReceivedOn}
+                  onChange={e => { void toggleDepositReceived(e.target.checked) }}
+                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                보증금 실제로 받음 · 실수납으로 기록
+              </label>
+              {/* 박스를 씌우지 않고 pl-5 로 들여쓴다 — 긴 폼 안의 하위 공개라 박스가 서면 그 자리만 튄다.
+                  들여쓴 폭은 체크박스 라벨 글자 시작점과 같다(체크에 딸린 값이라는 뜻이 위치로 읽힌다). */}
+              {depositReceivedOn && (
+                <div className="pl-5 pt-1.5 space-y-1.5">
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
+                      <select name="depositReceivedMethod" value={depositReceivedMethod}
+                        onChange={e => setDepositReceivedMethod(e.target.value)} className={DEPOSIT_RECV_FIELD_CLS}>
+                        {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">입금일</label>
+                      {/* DatePicker 트리거는 껍데기가 없다 — 클래스를 안 넘기면 맨글자로 렌더된다. */}
+                      <DatePicker name="depositReceivedDate" value={depositReceivedDate}
+                        onChange={setDepositReceivedDate} className={DEPOSIT_RECV_FIELD_CLS} />
+                    </div>
+                  </div>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                    이미 기록된 보증금이 있으면 미기록분만 채웁니다. 지금 받은 돈이라면 수납 정보의 보증금에서 기록하는 편이 낫습니다.
+                  </p>
+                </div>
+              )}
+            </>
           )}
           {/* 선택한 기록 금액·직전 저장값·확인 이력 — 저장 경로가 같은 판단을 다시 하지 않게 폼이 실어 보낸다 */}
           {depositReceivedAmt != null && <input type="hidden" name="depositReceivedAmount" value={String(depositReceivedAmt)} />}
