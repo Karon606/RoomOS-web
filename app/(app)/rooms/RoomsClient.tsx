@@ -971,27 +971,35 @@ export default function RoomsClient({
             })} />
           </p>
         )}
-        {/* 현금영수증·카드 합계 — 이 달에 받은 금액, 세무 대사용(오류신고 c0936f89).
-            축 한정어를 **상시 텍스트**로 세운다(오류신고 8b9b6c43). 종전에는 InfoHint 안에만 있어서,
-            아래 목록(귀속월 축)을 눈으로 더한 값과 이 합계(입금일 축)가 왜 다른지 화면이 말하지 않았다.
-            실측 차액 470,000원은 7/31 에 받은 8월분 한 건이었는데, 신고 원문은 "합계가 틀렸다"였다.
-            집계 함수(getMonthPaymentAggregates)는 손대지 않았다 — 값은 그대로고 축 이름만 밖으로 나왔다.
+        {/* 현금영수증·카드 합계 — 세무 대사용(오류신고 c0936f89·8b9b6c43).
+            **축이 둘이라 줄도 둘이다**(2026-08-24 재판정). 현금영수증은 발행일, 카드는 입금일이다.
+            한 줄에 한정어 하나('입금일 기준')를 앞세우던 종전 문법은 축이 갈린 뒤로는 거짓이 된다.
+            한정어를 각 숫자의 **바로 앞**에 두는 이유는 뒤에 붙이면 좁은 폭에서 숫자와 갈라져
+            다른 줄로 떨어지기 때문이다 — 그러면 어느 축이 어느 숫자의 것인지 화면이 다시 안 말한다.
+            줄을 갈라 세우는 것은 위 형제 줄(예상 수입·실수납)과 같은 문법이다 — 한 줄에 한 사실.
+            한정어는 **상시 텍스트**여야 한다. InfoHint(접힌 물음표) 안으로 되숨으면 목록을 손으로
+            더한 값과 왜 다른지 화면이 말하지 않는 신고가 재발한다(감지망 규칙 20 이 지킨다).
             '납부일'은 쓰지 않는다. 이 화면에서 그 말은 LeaseTerm.dueDay(약정 지급일)의 이름이고
             (:103 colVis · :1018 필터 · :1121 정렬 · :1332 헤더 · 미납 배지) 그것이 곧 반대 축인
-            귀속월의 앵커라, payDate 축에 붙이면 신고가 겪은 오해를 문자로 굳힌다. '입금일'은
-            PaymentSummaryCards 와 발생주의 데이터 진단이 같은 payDate 축에 이미 쓰는 말이다. */}
+            귀속월의 앵커라, 붙이면 신고가 겪은 오해를 문자로 굳힌다. '입금일'은 PaymentSummaryCards
+            와 발생주의 데이터 진단이 같은 payDate 축에 이미 쓰는 말이다. */}
         {(payAggregates.cashReceiptSum !== 0 || payAggregates.cardSum !== 0) && (
-          <p className="text-[0.6875rem] text-[var(--warm-muted)]">
-            입금일 기준{' · '}현금영수증 발행 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cashReceiptSum)}</span>
-            <span className="num"> ({payAggregates.cashReceiptCount}건)</span>
-            {' · '}카드 수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cardSum)}</span>
-            <span className="num"> ({payAggregates.cardCount}건)</span>
-            <InfoHint title="현금영수증·카드 합계">
-              <span className="block">이 달에 받은 수납의 합계입니다. 아래 목록과 위의 청구액은 귀속월 기준이라 이 합계와 다를 수 있습니다. 지난달 말에 미리 받은 이번 달 이용료가 그런 경우이고, 받은 날이 속한 지난달 합계에 잡힙니다. 한 건씩 대조하려면 환경설정 &gt; 데이터 점검 &gt; 발생주의 데이터 진단을 보세요.</span>
-              <span className="block mt-1.5">카드 수납에는 신용카드와 결제선생 결제가 함께 잡힙니다. 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않아 두 값은 겹치지 않습니다. 보증금 결제도 포함됩니다.</span>
-              <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식돼도 합계에는 결제 전액이 잡힙니다. 발행 표시를 켜고 끌 때도 그 결제의 모든 달이 함께 바뀝니다.</span>
-            </InfoHint>
-          </p>
+          <>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+              발행일 기준 현금영수증 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cashReceiptSum)}</span>
+              <span className="num"> ({payAggregates.cashReceiptCount}건)</span>
+              <InfoHint title="현금영수증·카드 합계">
+                <span className="block">현금영수증은 발행한 날이 속한 달에 잡힙니다. 홈택스 자료와 맞추기 위한 축입니다. 받은 날과 다른 날 발행해도 되고, 그때는 발행한 달 합계에 들어갑니다.</span>
+                <span className="block mt-1.5">카드는 받은 날(입금일)이 속한 달에 잡힙니다. 매출전표가 결제 시점에 성립하기 때문입니다. 신용카드와 결제선생이 함께 잡히고, 카드는 매출전표가 증빙을 대신하므로 현금영수증 합계에 넣지 않아 두 값은 겹치지 않습니다. 보증금 결제도 포함됩니다.</span>
+                <span className="block mt-1.5">아래 목록과 위의 청구액은 귀속월 기준이라 이 두 합계와 다를 수 있습니다. 지난달 말에 받아 이번 달 이용료로 잡힌 돈이 그런 경우입니다. 한 건씩 대조하려면 환경설정 &gt; 데이터 점검 &gt; 발생주의 데이터 진단을 보세요.</span>
+                <span className="block mt-1.5">한 번의 결제가 여러 달로 나뉘어 인식돼도 합계에는 결제 전액이 잡힙니다. 발행 표시를 켜고 끌 때도 그 결제의 모든 달이 함께 바뀝니다.</span>
+              </InfoHint>
+            </p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+              입금일 기준 카드 수납 <span className="font-semibold text-[var(--warm-dark)] num">{fmtWon(payAggregates.cardSum)}</span>
+              <span className="num"> ({payAggregates.cardCount}건)</span>
+            </p>
+          </>
         )}
       </div>
 

@@ -109,6 +109,31 @@ export function dbDateMonthKey(d: Date | string): string {
   return dt.toISOString().slice(0, 7)
 }
 
+// ── 타임스탬프 칸의 월 창 정본 ──────────────────────────────────
+//
+// 위 monthDbRange 는 **@db.Date 전용**이다. 저장 정본이 UTC 자정이라 UTC 로 창을 잡는 것이 맞다.
+// 그런데 DateTime(시각까지 있는 칸)에 그 창을 쓰면 **KST 자정 경계에서 하루가 밀린다**.
+// 8월 창 [2026-08-01T00:00Z .. 2026-09-01T00:00Z) 는 KST 로 [8/1 09:00 .. 9/1 09:00) 이라,
+// KST 8/1 새벽 3시에 찍힌 값은 7월 창에 들어가고 KST 9/1 새벽 값은 8월로 샌다.
+//
+// 사람이 보는 달은 KST 달이므로 창의 양끝도 KST 자정이어야 한다. 오프셋을 명시해 만들면
+// 실행 환경 타임존이 결과에 섞이지 않는다(kstDateTimeToUtc 와 같은 관행).
+// 끝을 lt 다음 달 1일로 잡는 이유는 monthDbRange 주석과 같다.
+export function kstMonthTsRange(month: string): DbDateRange {
+  return {
+    gte: new Date(`${month}-01T00:00:00.000+09:00`),
+    lt: new Date(`${nextMonth(month)}-01T00:00:00.000+09:00`),
+  }
+}
+
+// 타임스탬프가 속한 **KST 달** 'YYYY-MM'. KST 는 DST 가 없어 +9h 고정 시프트 후
+// UTC 날짜부가 곧 KST 달력이다(splitKstDateTime 과 같은 관행).
+// toISOString().slice(0, 7) 을 그냥 쓰면 KST 새벽 값이 전달로 떨어진다.
+export function kstMonthKey(d: Date | string): string {
+  const dt = d instanceof Date ? d : new Date(d)
+  return new Date(dt.getTime() + 9 * 3600000).toISOString().slice(0, 7)
+}
+
 // ── 시각까지 있는 일시(날짜 + HH:mm) ────────────────────────────
 // 날짜만 다루는 위 함수들과 달리 '몇 시 몇 분'이 함께 있는 값이다.
 // 폼은 오프셋 없는 "2026-08-05T14:46"(= 사용자가 본 KST)을 보내는데, 서버(UTC)의
