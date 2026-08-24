@@ -450,9 +450,12 @@ function MoveCalendarView({ data, onViewMonthChange }: {
         <EmptyState
           title={axis === 'moves' ? '이 기간에 입퇴실 변동이 없습니다' : '이 기간에 작업이 없습니다'}
           description={axis === 'moves' ? '지금은 입퇴실만 보고 있습니다.' : '지금은 작업만 보고 있습니다.'}
-          action={hiddenByAxis > 0
-            ? <Btn variant="secondary" size="md" onClick={() => setAxis('all')}>다른 보기에 {hiddenByAxis}건 ›</Btn>
-            : todayX == null ? <Btn variant="primary" size="md" onClick={goToday}>오늘로</Btn> : undefined}
+          // CTA 는 **무조건** 선다. 필터가 트랙을 비우면 카드가 안 서고, 카드 머리에 사는 축
+          // 컨트롤도 함께 사라진다 — 이 버튼이 그 컨트롤로 돌아가는 유일한 문이다. 건수가
+          // 0 으로 셀 수 있는 창(관통 거주만 있어 eventCount 가 0)에서도 문이 없으면 갇힌다.
+          action={<Btn variant="secondary" size="md" onClick={() => setAxis('all')}>
+            {hiddenByAxis > 0 ? `다른 보기에 ${hiddenByAxis}건 ›` : '전체 보기 ›'}
+          </Btn>}
         />
       ) : (
         /* 카드 셸은 §24(cream · border · r-xl · 그림자 없음). */
@@ -840,9 +843,15 @@ type PlacedWork = {
 
 function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork {
   const text = moveWorkRailLabel(work)
-  // +4 는 라벨의 안쪽 패딩(paddingLeft/Right 4)이다 — 자에 넣지 않으면 그만큼 밀린 글자가
-  // 다음 표식 위로 넘친다(2026-08-24 지시). +8 은 종전 그대로의 안전 여유다.
-  const need = Math.max(1, Math.ceil((estWidth(text, RAIL_FONT) + 4 + 8) / DAY_W))
+  // +4 는 라벨의 안쪽 패딩(paddingLeft 또는 paddingRight 4 — 한쪽에만 붙는다)이다. 자에
+  // 넣지 않으면 그만큼 밀린 글자가 다음 표식 위로 넘친다(2026-08-24 지시).
+  //
+  // 종전의 +8 은 **여기서 걷는다.** 그것은 33% 과대한 옛 자 위에 또 얹은 눈대중 여유였다.
+  // 자가 실측으로 맞아진 지금(측정 대비 8~13% 여전히 넉넉하다 — 공백을 비전각 0.564em 으로
+  // 세는 덕이다) 그 위에 8px 을 더하면 한 칸이 통째로 더 필요해진다. 표준 연쇄
+  // (퇴실 청소 D · 도배 D+1 · 장판 D+4)에서 '도배 예정'이 정확히 그 한 칸 때문에 2칸에서
+  // 3칸이 되어 양옆이 막히고, 행마다 아래 줄이 하나씩 생겨 sticky 가 80 에서 104 로 뛴다.
+  const need = Math.max(1, Math.ceil((estWidth(text, RAIL_FONT) + 4) / DAY_W))
   const sameLane = works.filter(w => w.lane === work.lane && w.id !== work.id)
   const next = sameLane.filter(w => w.day > work.day).reduce((m, w) => Math.min(m, w.day), days + 1)
   const prev = sameLane.filter(w => w.day < work.day).reduce((m, w) => Math.max(m, w.day), 0)
