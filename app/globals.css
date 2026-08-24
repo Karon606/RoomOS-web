@@ -465,8 +465,9 @@ html.doc-scroll body {
    WCAG 1.4.11(비텍스트 3:1) 미달이다. --tc-text 는 라이트에서 var(--coral) 그대로라 라이트
    픽셀이 한 개도 안 바뀌고, 다크에서만 #C9614C 로 밝아져 4.63:1 이 된다(§19 페어).
    호실 열 버튼과 같은 자를 쓴다 — 한 행 안에서 포커스 링 색이 둘로 갈리면 안 된다.
-   hover 는 --coral 그대로다(WCAG 필수 지시자가 아니고, 색이 갈리는 덕에 hover 와 focus 가
-   오프셋뿐 아니라 색으로도 구분된다). */
+   hover 는 --coral 그대로다(WCAG 필수 지시자가 아니다). 다크에서는 색까지 갈리지만
+   라이트는 --tc-text 가 --coral 과 같은 값이라 두 상태의 색이 같다 — 거기서는 오프셋
+   (hover 안쪽 -2px 대 focus 바깥 +1px)이 그 몫을 혼자 진다. */
 .mc-bar:focus-visible { outline-color: var(--tc-text); outline-offset: 1px; }
 /* 히트 영역만 층 전체로 — 보이는 띠는 그대로 두고 손가락이 닿는 넓이만 44px 로 채운다(§09).
    막대 높이가 --mc-lane 에서 12px 을 빼고 가운데 정렬이라 위아래로 6px 씩 비어 있다.
@@ -491,9 +492,11 @@ html.doc-scroll body {
    포커스 링 색이 --coral 이 아닌 --tc-text 인 이유. --coral(#a03c2e)은 다크 카드 표면
    (#1A130E) 위에서 2.78:1 이라 WCAG 1.4.11 비텍스트 3:1 미달이다. --tc-text 는 라이트에서
    var(--coral) 그대로라 **라이트 픽셀이 한 개도 안 바뀌고**, 다크에서만 #C9614C 로 밝아져
-   4.63:1 이 된다(§19 페어). hover 는 --coral 그대로 둔다 — hover 는 WCAG 필수 지시자가
-   아니고, 색이 갈리는 덕에 .mc-bar 가 오프셋으로 얻으려던 "hover 와 focus 가 안 헷갈린다"를
-   여기서는 색으로 얻는다.
+   4.63:1 이 된다(§19 페어). hover 는 --coral 그대로 둔다(WCAG 필수 지시자가 아니다).
+   다만 .mc-bar 와 달리 **라이트에서는 hover 와 focus 가 같은 그림이다** — 두 색이 같은데
+   오프셋도 둘 다 -3px 이라 가를 것이 없다. 여기서 오프셋을 못 가르는 이유는 자리다.
+   바깥으로 밀면 sticky 스크롤포트에 잘리고, 안쪽 -1·-2 는 .attn 3px 팁과 겹친다.
+   다크에서만 focus 가 #C9614C 로 갈린다.
 
    링을 이 파일에 세우면 엘리먼트에 Tailwind outline 유틸을 함께 걸면 안 된다 — 여기 규칙은
    언레이어드라 utilities 레이어를 이겨서 아래 transparent 선언이 유틸을 통째로 지운다

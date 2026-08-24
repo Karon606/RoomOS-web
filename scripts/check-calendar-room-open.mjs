@@ -15,7 +15,7 @@
 //      번호를 빼면 음성 제어 사용자가 부를 이름이 사라진다(WCAG 2.5.3 Label in Name).
 //   ③ 스페이서 두 칸(행 아래 줄·꼬리)은 여전히 비인터랙티브인가. 그 자리에는 방이 없다 —
 //      버튼이 되면 누를 것 없는 칸이 탭 순서에 서고 hover 링이 켜진다.
-//   ④ 호실 버튼에 Tailwind outline 유틸이 붙지 않았는가. globals.css 의 규칙은 언레이어드라
+//   ④ 호실 버튼과 .mc-bar 에 Tailwind outline 유틸이 붙지 않았는가. globals.css 의 규칙은 언레이어드라
 //      utilities 를 이겨서, 둘을 섞으면 포커스 링이 **조용히** 사라진다(.mc-bar 전례).
 //   ⑤ 트랙 스크롤러가 스침 가드를 들고 있는가. 가드가 빠지면 신고 두 번째 증상이 그대로 돌아온다.
 //
@@ -104,6 +104,23 @@ for (const b of buttons) {
     violations.push(`${SRC} — mc-room 버튼에 Tailwind outline 유틸이 붙었다. `
       + `globals.css 의 button.mc-room 규칙은 언레이어드라 utilities 를 이겨서 이 유틸을 통째로 지운다 `
       + `(.mc-bar 가 이미 겪은 함정). 링은 globals.css 한 곳에서만 세운다.`)
+  }
+}
+
+// ── ④-2 같은 함정, .mc-bar ──
+// 규칙을 만든 당사자가 그 규칙의 유일한 위반자였다. 축 ④ 가 호실 버튼만 봐서 못 잡았다
+// (2026-08-24 디자이너 패스). 링을 globals.css 에서 세우는 자리는 전부 이 축을 지나야 한다.
+{
+  const barAt = src.indexOf('"mc-bar ')
+  if (barAt < 0) {
+    violations.push(`${SRC} — .mc-bar 엘리먼트를 못 찾았다. 검사가 건너뛰어졌으니 감지망을 고칠 것`)
+  } else {
+    const el = src.slice(barAt, src.indexOf('>', barAt) + 1)
+    if (/focus-visible:outline/.test(el)) {
+      violations.push(`${SRC} — .mc-bar 에 Tailwind outline 유틸이 붙었다. `
+        + `globals.css 의 .mc-bar:focus-visible 는 언레이어드라 utilities 를 이겨 이 유틸을 통째로 지운다. `
+        + `죽은 코드로 끝나지 않고, 엘리먼트가 말하는 색과 실제 렌더가 갈려 다음 사람이 색을 되돌리는 길이 된다.`)
+    }
   }
 }
 

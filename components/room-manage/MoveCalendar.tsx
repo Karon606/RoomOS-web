@@ -1169,7 +1169,7 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
           문자열이라 이름 없는 버튼이 되고, title 은 접근명의 최후 폴백이라 모바일에서 안 읽힌다.
           게다가 title 이 담는 문장에는 거주냐 예약이냐가 없다 — 그건 색만 아는 정보였다. */}
       <button type="button" onClick={onOpen} title={full} aria-label={barAria(bar, roomNo)}
-        className="mc-bar min-w-0 self-center flex items-center text-[0.6875rem] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+        className="mc-bar min-w-0 self-center flex items-center text-[0.6875rem] font-semibold"
         style={{
           gridColumn: `${bar.startDay + 1} / ${bar.endDay + 2}`,
           gridRow: `${bar.lane + 1} / span 1`,
