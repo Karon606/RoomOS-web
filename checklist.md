@@ -18,7 +18,7 @@
 - [x] 소급 경로 결제수단 기본값 '기타' 유지(모르는 것을 지어내지 않는다), 날짜 기본값 오늘
 - [x] 두 함수 역할 경계를 코드 주석에 명시
 - [x] `recordDepositReceived` 가 만든 record id 반환 → 적용취소
-- [x] `DEPOSIT_PAY_METHODS` 정본 신설(이름 없는 부분집합 사본 셋 수렴)
+- [x] `MANUAL_PAY_METHODS` 정본 신설(이름 없는 부분집합 사본 넷 수렴)
 
 ## 3단 — 배분 제안·확인형 (운영자 승인 2026-08-24)
 - [x] `proposeDepositEntrySplit` 순수 함수(lib/depositComposition) — 잔여 기준, 계약액 기준 아님
