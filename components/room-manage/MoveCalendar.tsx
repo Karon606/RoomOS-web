@@ -236,6 +236,15 @@ function MoveCalendarView({ data, onViewMonthChange }: {
     entityModal.open({ kind: 'room', roomId, leaseTermId: leaseId, tenantId })
 
   /**
+   * 방 모달 — 계약 시드 없이 방만. 요약 줄의 작업 칩과 트랙의 호실 열이 함께 쓴다.
+   *
+   * 열기 경로가 **이 컴포넌트 안**에 있어야 한다. 위(RoomManageClient)에서 prop 으로 내리면
+   * 그 컴포넌트가 useSearchParams 를 구독하므로 인라인 함수가 매 렌더 새 식별자가 되고,
+   * 아래 memo 가 죽어 스크롤이 URL 을 적는 180ms 마다 트랙 수백 칸이 다시 그려진다.
+   */
+  const openRoom = (roomId: string) => entityModal.open({ kind: 'room', roomId })
+
+  /**
    * 그 달로 다시 조회해 착지한다 — 범위 밖이면 서버가 창을 그쪽으로 미끄러뜨린다.
    *
    * 파라미터는 **발화 시점의 실제 URL** 에서 다시 읽는다. useSearchParams 스냅샷을 쓰면
@@ -436,7 +445,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
       <UpcomingRow items={data.upcoming} works={data.upcomingWorks} todayInRange={todayDay != null}
-        onOpen={openLease} onOpenRoom={roomId => entityModal.open({ kind: 'room', roomId })} />
+        onOpen={openLease} onOpenRoom={openRoom} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -585,7 +594,8 @@ function MoveCalendarView({ data, onViewMonthChange }: {
 
               {rows.map((row, ri) => (
                 <GanttRow key={row.roomId} row={row} days={days} cols={cols}
-                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0} onOpen={openLease} />
+                  todayDay={todayDay} monthStarts={monthStarts} first={ri === 0}
+                  onOpen={openLease} onOpenRoom={openRoom} />
               ))}
             </div>
           </div>
@@ -926,7 +936,7 @@ function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
   return { ...bare, mode: 'name' }
 }
 
-function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
+function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpenRoom }: {
   row: MoveCalendarRow
   days: number
   cols: string
@@ -934,6 +944,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
   monthStarts: number[]
   first: boolean
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+  onOpenRoom: (roomId: string) => void
 }) {
   // 좌측 코랄 팁은 **아직 답하지 않은** 충돌에만. 확인된 겹침만 남은 행은 팁을 끈다(중립).
   const attn = row.conflicts.some(c => !c.acked)
@@ -981,16 +992,42 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen }: {
           railCount > 0 ? `repeat(${railCount}, var(--mc-work))` : null,
         ].filter(Boolean).join(' ') || 'var(--mc-work)',
         borderTop: first ? 'none' : '1px solid var(--warm-border)',
-      }}>
-        {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn). */}
-        <div className="mc-room sticky left-0 z-20 flex items-center px-2 tnum text-xs font-bold"
+        // 거주 레인이 없는 행(청소만 있는 공실 방)은 레일만 있어 행이 20px 이다. 호실 열이
+        // 버튼이 된 지금 **그 20px 이 곧 터치 타겟 높이**라 §09 44px 을 깬다. 손가락 기기에서만
+        // 레일 자를 나눠 합이 44px 이 되게 한다(globals.css 의 --mc-work 갈아끼우기).
+        // 레인이 있는 행은 손대지 않는다 — coarse 에서 --mc-lane 이 이미 44px 이다.
+        // 히트영역 확장(.mc-bar::after 문법)은 여기서 못 쓴다: 호실 칸은 위아래 이웃 칸과
+        // 맞닿아 있고 셋 다 z-20 이라, 위로 뻗으면 이웃 행의 탭을 빼앗고 아래로 뻗으면 먹힌다.
+        ...(row.laneCount === 0 && railCount > 0
+          ? { '--mc-work-touch': `${Math.max(20, Math.ceil(44 / railCount))}px` }
+          : null),
+      } as React.CSSProperties}>
+        {/* 호실 열 — sticky(§23). 충돌 행은 좌 3px 코랄 팁(§18 .attn).
+            **버튼이다**(오류신고 16f691e1 — "가장 왼쪽 호실을 누르면 해당 호실로 이동되지는
+            않네"). 목적지는 방 모달이고 계약 시드는 안 싣는다: 이 칸은 모든 레인을 가로질러
+            서 있어 여러 막대 중 어느 계약을 고를지에 자의적이지 않은 답이 없고, 계약이 하나도
+            없는 행(청소만 있는 공실 방)에도 이 칸은 선다. 형제 셋이 같은 호출이다
+            (요약 줄 :430 · 호실 카드 RoomManageClient:1075 · 청소 뷰 :1242).
+            aria-label 에 호실번호를 **그대로 다시 싣는다** — aria-label 은 접근명을 더하는 게
+            아니라 대체하므로, 빼면 음성 제어 사용자가 부를 이름이 사라진다(WCAG 2.5.3).
+            hover·focus 링은 globals.css 의 button.mc-room 이 진다. 여기에 outline 유틸을
+            같이 걸면 안 된다 — 그 파일 규칙이 언레이어드라 유틸을 통째로 지운다(.mc-bar 전례). */}
+        {/* text-left·w-full·h-full 은 방어다. Tailwind 프리플라이트가 button 의 UA 값을 거의
+            다 중화하지만 text-align:center 는 안 건드리고, 그리드 아이템의 stretch 를 엔진이
+            어떻게 푸는지도 명세 밖 여지가 있다. 이 칸이 줄어들면 불투명 크림 배경이 막대를 못
+            덮어 sticky 열 아래로 막대가 비친다 — 그것이 이 칸의 존재 이유다. 크롬 실측으로는
+            셋 다 픽셀 변화 0(박스 66×행높이·글자 위치 dx11/dy21 전후 동일)이라 값이 아니라
+            보험이다. */}
+        <button type="button" onClick={() => onOpenRoom(row.roomId)}
+          aria-label={`${fmtRoomNo(row.roomNo)} 상세 열기`}
+          className="mc-room sticky left-0 z-20 flex h-full w-full items-center px-2 text-left tnum text-xs font-bold"
           style={{
             gridColumn: '1 / 2', gridRow: '1 / -1',
             background: 'var(--cream)', color: 'var(--ink-2)',
             borderLeft: `3px solid ${attn ? 'var(--coral)' : 'transparent'}`,
           }}>
           {fmtRoomNo(row.roomNo)}
-        </div>
+        </button>
 
         {/* 월 경계 — 트랙을 가로지르는 옅은 세로선. 오늘 선(--tc-text)보다 약해야 둘이 안 헷갈린다. */}
         {monthStarts.map(d => (
