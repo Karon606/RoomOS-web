@@ -50,6 +50,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
+import { defaultCashReceiptIssuedYmd } from '@/lib/cashReceipt'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
@@ -764,6 +765,16 @@ export default function TenantClient({
   // 합계가 발행일의 달로 잡힌다 — 지연 발행이면 이 값이 곧 세무 숫자의 축이다.
   const [cashReceiptOn, setCashReceiptOn] = useState(false)
   const [cashReceiptDateVal, setCashReceiptDateVal] = useState(kstYmdStr())
+  // 결제 수단 — 종전에는 비제어라 제출 때 FormData 로만 읽었는데, 발행일 기본값이 이 값을
+  // 따라가야 해서(카드=수납일) 상태로 쥔다. 제출은 여전히 name='payMethod' 로 읽는다.
+  const [payMethodVal, setPayMethodVal] = useState('계좌이체')
+  // 발행일 기본값은 lib/cashReceipt 정본이 정한다(형제 폼 PaymentEntryForm 과 같은 처방).
+  // 운영자가 칸을 직접 고치면 그 뒤로는 안 따라간다 — 손으로 넣은 값을 앱이 덮지 않는다.
+  const [crDateTouched, setCrDateTouched] = useState(false)
+  useEffect(() => {
+    if (crDateTouched) return
+    setCashReceiptDateVal(defaultCashReceiptIssuedYmd({ payMethod: payMethodVal, payYmd: payDateVal }))
+  }, [payMethodVal, payDateVal, crDateTouched])
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
@@ -1506,6 +1517,8 @@ export default function TenantClient({
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(kstYmdStr())
     setCashReceiptOn(false); setCashReceiptDateVal(kstYmdStr())
+    // 다음에 열 때 다시 기본값을 따라가야 한다 — 안 지우면 앞 건에서 손으로 고친 날짜가 그대로 선다.
+    setPayMethodVal('계좌이체'); setCrDateTouched(false)
   }
 
   const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -3267,7 +3280,7 @@ export default function TenantClient({
                     )}
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
-                      <select name="payMethod"
+                      <select name="payMethod" value={payMethodVal} onChange={e => setPayMethodVal(e.target.value)}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="계좌이체">계좌이체</option>
                         <option value="현금">현금</option>
@@ -3287,7 +3300,7 @@ export default function TenantClient({
                     {cashReceiptOn && (
                       <div className="space-y-1 pl-6">
                         <label className="text-xs text-[var(--warm-muted)]">발행일</label>
-                        <DatePicker value={cashReceiptDateVal} onChange={setCashReceiptDateVal} maxDate={kstYmdStr()}
+                        <DatePicker value={cashReceiptDateVal} onChange={v => { setCrDateTouched(true); setCashReceiptDateVal(v) }} maxDate={kstYmdStr()}
                           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                       </div>
                     )}

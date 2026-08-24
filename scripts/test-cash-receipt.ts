@@ -8,7 +8,7 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { paymentAggregateBucket, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
+import { defaultCashReceiptIssuedYmd, paymentAggregateBucket, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -141,6 +141,52 @@ eq('형식 깨진 값은 폴백',
 eq('빈 문자열은 폴백',
   iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '', existing: EXISTING, today: TODAY, now: NOW })),
   EXISTING.toISOString())
+
+// ── 발행일 기본값 — 카드는 수납일을 따라가고 그 외는 오늘 (운영자 확정 2026-08-24) ──
+//
+// 운영자 원문 — "카드는 수납일이 발행일로 자동으로 따라가는게 맞아. 하지만 계좌이체는 지난
+// 날짜에 수납을 뒤늦게 입력해도 발행일 기본값이 오늘로 하면 돼".
+// 카드는 결제 순간에 자동 발행되므로 수납일이 곧 발행일이고, 계좌이체·현금은 사람이 따로
+// 발행하므로 올리는 날이 발행일이다. 이 갈림이 뒤집히면 카드 건마다 손으로 고쳐야 한다.
+eq('신용카드는 수납일을 따라간다',
+  defaultCashReceiptIssuedYmd({ payMethod: '신용카드', payYmd: '2026-08-01', today: TODAY }), '2026-08-01')
+eq('결제선생도 카드 계열이다',
+  defaultCashReceiptIssuedYmd({ payMethod: '결제선생', payYmd: '2026-07-15', today: TODAY }), '2026-07-15')
+eq('계좌이체는 지난 날짜 수납이어도 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: '계좌이체', payYmd: '2026-08-01', today: TODAY }), TODAY)
+eq('현금도 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: '현금', payYmd: '2026-08-01', today: TODAY }), TODAY)
+eq('기타도 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: '기타', payYmd: '2026-08-01', today: TODAY }), TODAY)
+eq('수단이 없으면 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: null, payYmd: '2026-08-01', today: TODAY }), TODAY)
+// 카드라도 미래 수납일은 안 따라간다 — 그 날 발행은 아직 없다(resolve 의 미래 가드와 같은 선).
+eq('카드 + 미래 수납일은 오늘로 떨어진다',
+  defaultCashReceiptIssuedYmd({ payMethod: '신용카드', payYmd: '2026-09-01', today: TODAY }), TODAY)
+eq('카드 + 오늘 수납은 오늘(경계)',
+  defaultCashReceiptIssuedYmd({ payMethod: '신용카드', payYmd: TODAY, today: TODAY }), TODAY)
+eq('카드 + 형식 깨진 수납일은 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: '신용카드', payYmd: '2026-8-1', today: TODAY }), TODAY)
+eq('카드 + 빈 수납일은 오늘',
+  defaultCashReceiptIssuedYmd({ payMethod: '신용카드', payYmd: '', today: TODAY }), TODAY)
+
+// 같은 규칙이 서버 폴백에도 걸린다 — 화면이 날짜를 안 보내도 카드는 수납일이 박힌다.
+eq('폴백도 카드면 수납일',
+  iso(resolveCashReceiptIssuedAt({ issued: true, payMethod: '신용카드', payYmd: '2026-08-01', today: TODAY, now: NOW })),
+  kst('2026-08-01T00:00:00').toISOString())
+eq('폴백이 계좌이체면 지금 그대로(밀리초 보존 — 적용취소가 되돌릴 값)',
+  iso(resolveCashReceiptIssuedAt({ issued: true, payMethod: '계좌이체', payYmd: '2026-08-01', today: TODAY, now: NOW })),
+  NOW.toISOString())
+// 기존 값이 폴백보다 먼저다 — 재저장이 발행일을 옮기면 그 달 합계가 움직인다.
+eq('기존 값이 카드 폴백을 이긴다',
+  iso(resolveCashReceiptIssuedAt({ issued: true, existing: EXISTING, payMethod: '신용카드', payYmd: '2026-08-01', today: TODAY, now: NOW })),
+  EXISTING.toISOString())
+// 고른 날짜가 카드 폴백보다 먼저다 — 손으로 넣은 값을 앱이 덮지 않는다.
+eq('고른 날짜가 카드 폴백을 이긴다',
+  iso(resolveCashReceiptIssuedAt({ issued: true, issuedDate: '2026-08-20', payMethod: '신용카드', payYmd: '2026-08-01', today: TODAY, now: NOW })),
+  kst('2026-08-20T00:00:00').toISOString())
+eq('꺼져 있으면 카드라도 null',
+  resolveCashReceiptIssuedAt({ issued: false, payMethod: '신용카드', payYmd: '2026-08-01', today: TODAY, now: NOW }), null)
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
 if (fail > 0) process.exit(1)

@@ -30,6 +30,10 @@ export type CashReceiptStampInput = {
   today?: string
   /** '지금'. 테스트 주입용 — 안 주면 실제 지금. */
   now?: Date
+  /** 이 결제의 수단. 카드 계열이면 폴백이 수납일을 따라간다(규칙 5). */
+  payMethod?: string | null
+  /** 이 결제의 수납일 'YYYY-MM-DD'(KST). 규칙 5의 따라갈 값. */
+  payYmd?: string | null
 }
 
 /**
@@ -45,6 +49,9 @@ export type CashReceiptStampInput = {
  *      그 규칙을 전 경로로 넓힌다.
  *   4. **미래 날짜는 받지 않는다.** 아직 안 한 발행이라 국세청에 있을 수가 없다. 화면은
  *      DatePicker maxDate 로 애초에 못 고르게 막고, 여기서는 폴백으로 떨어뜨린다(마지막 방어선).
+ *   5. 날짜도 기존 값도 없는데 **카드 계열**이면 수납일을 따라간다. 카드는 결제 순간에 자동
+ *      발행되므로 수납일이 곧 발행일이다(운영자 확정 2026-08-24). 계좌이체·현금은 '지금'을
+ *      그대로 둔다 — 밀리초까지 남아야 원터치 토글의 적용취소가 원래 시각으로 되돌아간다.
  *
  * 발행일이 입금일과 다른 것은 **정상이다.** 운영자 원문 — "원칙은 입금된 날짜에 발행하는게
  * 맞아. 근데 업무특성상(누락 매출분도 있기 때문에) 날짜가 다르게 할 필요가 있거든".
@@ -58,7 +65,46 @@ export function resolveCashReceiptIssuedAt(input: CashReceiptStampInput): Date |
     const at = kstDateTimeToUtc(raw)
     if (at) return at
   }
-  return input.existing ?? input.now ?? new Date()
+  if (input.existing) return input.existing
+  const follow = cardFollowYmd(input.payMethod, input.payYmd, today)
+  if (follow) {
+    const at = kstDateTimeToUtc(follow)
+    if (at) return at
+  }
+  return input.now ?? new Date()
+}
+
+/**
+ * 카드 계열이면 따라갈 수납일 'YYYY-MM-DD', 아니면 null.
+ *
+ * 카드는 결제 순간에 자동 발행된다 — 지난 날짜 수납을 뒤늦게 입력해도 발행은 그 날 일어났다.
+ * 그래서 오늘을 기본값으로 두면 카드 건마다 손으로 고쳐야 하고, 안 고치면 그만큼 달이 어긋난다.
+ * 미래 수납일은 따라가지 않는다 — 그 날 발행은 아직 없다(위 규칙 4와 같은 방어선).
+ */
+function cardFollowYmd(payMethod: string | null | undefined, payYmd: string | null | undefined, today: string): string | null {
+  if (!payMethod || !CARD_LIKE_METHODS.includes(payMethod)) return null
+  const raw = (payYmd ?? '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
+  return raw <= today ? raw : null
+}
+
+/**
+ * 입력 화면의 **발행일 기본값** 'YYYY-MM-DD'(KST). 네 폼이 전부 이 함수를 지난다.
+ *
+ * 운영자 원문(2026-08-24) — "카드는 수납일이 발행일로 자동으로 따라가는게 맞아. 하지만
+ * 계좌이체는 지난 날짜에 수납을 뒤늦게 입력해도 발행일 기본값이 오늘로 하면 돼".
+ *
+ * 카드는 결제와 발행이 한 몸이라 수납일을 따라가고, 계좌이체·현금은 사람이 따로 발행하므로
+ * 오늘이다 — 누락분을 나중에 올리는 것이 정상 업무이고 그때 발행일은 올리는 날이다.
+ * **어디까지나 기본값이다.** 운영자가 칸을 직접 고치면 그 값이 이긴다(폼의 touched 플래그).
+ */
+export function defaultCashReceiptIssuedYmd(input: {
+  payMethod?: string | null
+  payYmd?: string | null
+  today?: string
+}): string {
+  const today = input.today ?? kstYmdStr()
+  return cardFollowYmd(input.payMethod, input.payYmd, today) ?? today
 }
 
 // ── 읽기 ────────────────────────────────────────────────────────

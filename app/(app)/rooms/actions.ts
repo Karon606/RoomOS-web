@@ -844,7 +844,10 @@ export async function savePayment(data: {
   const propertyId = await getPropertyId()
   // 스탬프는 루프 **밖에서 한 번** 정한다. 안에서 부르면 쪼개진 record 마다 밀리초가 갈려
   // '한 결제 = 한 발행'이라는 사실이 흐려진다(형제 묶음 판정도 createdAt 근사에 기댄다).
-  const crStamp = resolveCashReceiptIssuedAt({ issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate })
+  const crStamp = resolveCashReceiptIssuedAt({
+    issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
+    payMethod: data.payMethod, payYmd: data.payDate,
+  })
 
   // 월별 청구액을 서버에서 직접 계산(일할→락인→할인, lib/billing 공용 규칙).
   // 클라이언트가 보낸 expectedAmount(할인 미반영 원금일 수 있음)를 그대로 record 에 락인하면
@@ -1177,7 +1180,10 @@ export async function saveDepositPayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
   // 보증금 몫과 초과분(이용료) 몫은 한 결제다 — 스탬프도 하나를 나눠 쓴다.
-  const crStamp = resolveCashReceiptIssuedAt({ issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate })
+  const crStamp = resolveCashReceiptIssuedAt({
+    issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
+    payMethod: data.payMethod, payYmd: data.payDate,
+  })
 
   // 계약 보증금이 0이면 보증금 수납을 받지 않는다 (2026-08-02 조사).
   //
@@ -1419,7 +1425,10 @@ export async function saveCleaningFeePayment(data: {
           expectedAmount: monthBill, actualAmount: excess,
           payDate: new Date(data.payDate), payMethod: data.payMethod,
           memo: null, seqNo: existingCount + 1, isPaid: false, carryOver: 0,
-          cashReceiptIssuedAt: resolveCashReceiptIssuedAt({ issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate }),
+          cashReceiptIssuedAt: resolveCashReceiptIssuedAt({
+            issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
+            payMethod: data.payMethod, payYmd: data.payDate,
+          }),
         },
       })
       createdIds.push(excessRec.id)
@@ -1799,6 +1808,7 @@ export async function updatePayment(
             issued: data.cashReceiptIssued,
             issuedDate: data.cashReceiptIssuedDate,
             existing: record.cashReceiptIssuedAt,
+            payMethod: data.payMethod, payYmd: data.payDate,
           }),
         }),
       },
@@ -1857,7 +1867,10 @@ export async function setCashReceiptIssued(
       // 켜기·끄기는 lib/cashReceipt 정본을 지난다(기본 오늘 KST, 기존 값 보존).
       const next = restoreIssuedAt != null && issued
         ? new Date(restoreIssuedAt)
-        : resolveCashReceiptIssuedAt({ issued, existing: t.cashReceiptIssuedAt })
+        : resolveCashReceiptIssuedAt({
+            issued, existing: t.cashReceiptIssuedAt,
+            payMethod: record.payMethod, payYmd: kstYmdStr(record.payDate),
+          })
       await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })
     }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')

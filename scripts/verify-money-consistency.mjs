@@ -1827,6 +1827,38 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push(`[소스] ${f} 에 현금영수증 발행일 입력이 없다 — 체크만 하면 클릭한 날이 박히고 지연 발행이 다시 어긋난다`)
     }
   }
+
+  // 20-c. 발행일 **기본값**도 정본 하나가 정한다 (운영자 확정 2026-08-24).
+  //
+  //   "카드는 수납일이 발행일로 자동으로 따라가는게 맞아. 하지만 계좌이체는 지난 날짜에 수납을
+  //   뒤늦게 입력해도 발행일 기본값이 오늘로 하면 돼". 카드는 결제 순간에 자동 발행되므로
+  //   수납일이 곧 발행일이고, 계좌이체·현금은 사람이 따로 발행하므로 올리는 날이 발행일이다.
+  //
+  //   되돌아가는 길이 둘이다 — 폼이 `useState(kstYmdStr())` 로 굳어 정본을 안 부르거나,
+  //   정본에서 카드 분기가 빠지거나. 둘 다 조용하다(화면은 멀쩡하고 날짜만 틀리다).
+  if (!/CARD_LIKE_METHODS\.includes\(payMethod\)/.test(canon) || !/export function defaultCashReceiptIssuedYmd/.test(canon)) {
+    violations.push('[소스] lib/cashReceipt 의 발행일 기본값 정본(defaultCashReceiptIssuedYmd·카드 분기)이 사라졌다 — 카드 건 발행일이 수납일을 안 따라가 그만큼 달이 어긋난다')
+  }
+  // 네 폼이 전부 정본을 지나는가. 이름만 보면 한 곳만 고치고 나머지가 새는 것을 못 잡는다.
+  const DEFAULT_FORMS = [
+    ['components/entity-modal/widgets/PaymentEntryForm.tsx', 2],   // 수납 등록 · 예약금
+    ['app/(app)/tenants/TenantClient.tsx', 1],                      // 입주자 상세 수납
+    ['components/entity-modal/widgets/PaymentRecordList.tsx', 1],   // 수납 내역 수정
+  ]
+  for (const [f, want] of DEFAULT_FORMS) {
+    const src = readFileSync(f, 'utf8')
+    const got = (src.match(/defaultCashReceiptIssuedYmd\(/g) ?? []).length
+    if (got < want) {
+      violations.push(`[소스] ${f} 의 발행일 기본값 정본 호출이 ${got}곳뿐이다(${want}곳이어야 한다) — 빠진 폼은 카드 수납에도 오늘을 박는다`)
+    }
+  }
+  // 따라가기는 **기본값일 때만**이다. 운영자가 칸을 고친 뒤에도 덮으면 손으로 넣은 값이 사라진다.
+  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'app/(app)/tenants/TenantClient.tsx']) {
+    const src = readFileSync(f, 'utf8')
+    if (!/crDateTouched\b/.test(src)) {
+      violations.push(`[소스] ${f} 에 발행일 수동 편집 표시(crDateTouched)가 없다 — 수단·수납일을 바꾸면 운영자가 손으로 넣은 발행일을 앱이 덮는다`)
+    }
+  }
 }
 
 

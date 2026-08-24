@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr } from '@/lib/kstDate'
+import { defaultCashReceiptIssuedYmd } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 
@@ -89,8 +90,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     setEditMemo(p.memo ?? '')
     setEditTargetMonth(p.targetMonth)
     setEditCashReceipt(!!p.cashReceiptIssuedAt)
-    // 저장된 발행 시각을 KST 날짜로 되읽는다. 없으면 오늘 — 여기서 처음 켜는 경우다.
-    setEditCashReceiptDate(p.cashReceiptIssuedAt ? kstYmdStr(new Date(p.cashReceiptIssuedAt)) : kstYmdStr())
+    // 저장된 발행 시각이 있으면 그것이 사실이다 — 기본값 규칙으로 덮지 않는다.
+    // 없으면(여기서 처음 켜는 경우) 정본 기본값 — 카드는 이 건의 수납일, 그 외는 오늘.
+    setEditCashReceiptDate(p.cashReceiptIssuedAt
+      ? kstYmdStr(new Date(p.cashReceiptIssuedAt))
+      : defaultCashReceiptIssuedYmd({ payMethod: p.payMethod, payYmd: kstYmdStr(new Date(p.payDate)) }))
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
