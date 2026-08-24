@@ -16,6 +16,7 @@ import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { ymdToDbDate } from '@/lib/kstDate'
+import { splitWorkCost } from '@/lib/roomWorkCost'
 // 담당 어휘(직접·업체·제3자)는 청소와 같은 말이라 정본을 함께 쓴다. 사본을 만들면 한쪽만
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
@@ -39,6 +40,10 @@ export type RoomWorkRow = {
   memo: string | null
   /** 이 작업에 붙은 지출의 합. 여러 건이 붙을 수 있다(자재 여러 날 + 시공 하루). */
   cost: number
+  /** 그중 시공비 — 이번에 새로 나간 돈. */
+  laborCost: number
+  /** 그중 자재 몫 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
+  materialCost: number
   expenseCount: number
 }
 
@@ -55,18 +60,21 @@ export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { amount: true } },
+      expenses: { select: { amount: true, itemLabel: true, detail: true } },
     },
   })
-  return rows.map(r => ({
-    id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, kind: r.kind,
-    status: r.status as 'PLANNED' | 'DONE',
-    scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
-    performer: (r.performer as CleaningPerformer | null) ?? null,
-    performerName: r.performerName, memo: r.memo,
-    cost: r.expenses.reduce((a, e) => a + e.amount, 0),
-    expenseCount: r.expenses.length,
-  }))
+  return rows.map(r => {
+    const c = splitWorkCost(r.expenses)
+    return {
+      id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, kind: r.kind,
+      status: r.status as 'PLANNED' | 'DONE',
+      scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
+      performer: (r.performer as CleaningPerformer | null) ?? null,
+      performerName: r.performerName, memo: r.memo,
+      cost: c.total, laborCost: c.labor, materialCost: c.material,
+      expenseCount: r.expenses.length,
+    }
+  })
 }
 
 /** 영업장 전체 작업 이력 — 호실 관리 '작업' 뷰가 쓴다. 삭제분은 안 싣는다(복원 진입점이 토스트뿐). */
@@ -80,18 +88,21 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { amount: true } },
+      expenses: { select: { amount: true, itemLabel: true, detail: true } },
     },
   })
-  return rows.map(r => ({
-    id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, kind: r.kind,
-    status: r.status as 'PLANNED' | 'DONE',
-    scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
-    performer: (r.performer as CleaningPerformer | null) ?? null,
-    performerName: r.performerName, memo: r.memo,
-    cost: r.expenses.reduce((a, e) => a + e.amount, 0),
-    expenseCount: r.expenses.length,
-  }))
+  return rows.map(r => {
+    const c = splitWorkCost(r.expenses)
+    return {
+      id: r.id, roomId: r.roomId, roomNo: r.room.roomNo, kind: r.kind,
+      status: r.status as 'PLANNED' | 'DONE',
+      scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
+      performer: (r.performer as CleaningPerformer | null) ?? null,
+      performerName: r.performerName, memo: r.memo,
+      cost: c.total, laborCost: c.labor, materialCost: c.material,
+      expenseCount: r.expenses.length,
+    }
+  })
 }
 
 export async function createRoomWork(input: {
