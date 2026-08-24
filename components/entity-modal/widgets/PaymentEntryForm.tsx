@@ -4,7 +4,7 @@
 // 셸의 수납 full 모드와 RoomsClient 양쪽 재사용. RoomsClient 의 handleSavePayment·UI 그대로 이주.
 // FIFO 알고리즘은 savePayment 서버액션 내부 (변경 X). 위젯은 입력+호출+토스트.
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useId, useMemo, useState, useTransition } from 'react'
 import {
   savePayment, saveDepositPayment, saveCleaningFeePayment, saveReservationDeposit, getTargetMonthOptions, getTenantLastPayMethod, undoOverpayExtraIncome, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
+import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
@@ -47,7 +48,10 @@ const EXTRA_INCOME_CATEGORY = '기타 임대수입'
 
 // 분해 블록의 몫 입력 — MoneyInput(px-3 py-2.5, 약 42px)과 같은 스케일을 유지한다.
 // 한 폼 안에 입력 높이를 섞지 않는다(§12). 보더 색은 검증 상태에 따라 호출부가 붙인다.
-const SPLIT_INPUT_CLS = 'flex-1 min-w-0 text-right num bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
+// min-h 를 얹지 않는다. py-2.5 자연 높이가 42px 라 min 44 를 걸면 **모바일에서만** 44 가 되어
+// 바로 옆 MoneyInput(42px 고정)과 2px 어긋난다 — §12 '한 폼 안 입력 높이 혼용 금지'를 줄이려다
+// 늘리는 자리였다. §09 44px 은 MoneyInput 정본이 쥐고 있어 그쪽에서 한 번에 올릴 일이다.
+const SPLIT_INPUT_CLS = 'flex-1 min-w-0 text-right num bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
 
 // 자릿수 오입력(0 하나 더) 방지 — 추천액의 이 배수 이상이면 제출 전 확인. 저장 로직은 불변.
 const SUSPICIOUS_MULTIPLIER = 5
@@ -77,6 +81,8 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   onCancel?: () => void
 }) {
   const [pending, startTransition] = useTransition()
+  // 몫 칸 라벨 결선용 — 고정 문자열이면 같은 화면에 폼이 둘 설 때 id 가 겹친다.
+  const uid = useId()
   const [tmOptions, setTmOptions] = useState<TmOption[]>([])
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
   // 추천 납입액:
@@ -324,7 +330,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             rVal > 0 ? `이용료 ${fmtWon(rVal)}` : '',
           ].filter(Boolean)
           let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
-          pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}${fmtWon(payAmount)} 수납됨 · 수납일 ${payDateLabel(payDateVal)}`, {
+          pushToast('success', `${room.roomNo ? room.roomNo + ' ' : ''}${fmtWon(payAmount)} 수납됨 · 수납일 ${fmtMD(payDateVal)}`, {
             ...(parts.length > 1 ? { detail: parts.join(' · ') } : {}),
             action: {
               label: '적용취소',
@@ -472,7 +478,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           진입점은 안 보이고, 그래서 보증금이 일반 수납으로 들어가 이용료 record 가 됐다(신고 00c39371).
           경고색을 쓰지 않는다 — 신규 입주 첫 달의 보증금 미수납은 정상 상태라 노랗게 칠하면 상시 오탐이다. */}
       {splitMode && (
-        <p className="text-[0.65625rem] text-[var(--warm-dark)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed break-keep">
+        <p className="text-xs text-[var(--warm-dark)] bg-[var(--canvas)] rounded-lg px-2.5 py-2 leading-relaxed break-keep">
           {preAcq
             ? '인수 전 입주라 보증금은 앞선 원장이 받았습니다. 보증금 몫을 0으로 두었습니다. 이번에 실제로 받았다면 아래에서 금액을 올려 주세요.'
             : <>보증금 미수납 <span className="font-semibold num">{fmtWon(depositRemaining)}</span>. 받은 금액을 보증금부터 채워 나눕니다. 몫은 아래에서 고칠 수 있습니다.</>}
@@ -488,7 +494,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
             <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="auto">자동 · 오래 밀린 달부터 채움</option>
               {tmOptions.map(o => {
                 const [y, m] = o.month.split('-')
@@ -506,9 +512,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           </div>
         </>
       )}
-      {/* 320px 에서는 세로로 편다 — 그 폭에서 2열이면 날짜 칸 글자 자리가 좁아 '2026년 12월 30일'이
-          truncate 에 걸려 '2026년 12월 3…'으로 읽힌다(30일이 3일로 보인다). 패딩을 옆 MoneyInput 과
-          맞춘 이유는 §12 '한 폼 안 입력 높이 혼용 금지' 다 — 종전 38px 대 42px 로 갈려 있었다. */}
+      {/* 400px 미만에서는 세로로 편다 — 헤드리스 실측(320·360·390)에서 2열이면 날짜 칸 글자 자리가
+          모자라 '2026년 12월 30일'이 truncate 에 걸렸다. 잘리면 30일이 3일로 읽힌다. 패딩을 옆
+          MoneyInput 과 맞춘 이유는 §12 '한 폼 안 입력 높이 혼용 금지' 다 — 종전 38px 대 42px 였다. */}
       <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs text-[var(--warm-muted)]">날짜</label>
@@ -529,22 +535,24 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         <div className="space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2">
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">보증금·이용료 나누기</p>
           <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-[var(--warm-mid)] shrink-0" htmlFor="split-deposit">보증금</label>
-            <input id="split-deposit" type="text" inputMode="numeric" value={dVal.toLocaleString()}
+            <label className="text-xs font-medium text-[var(--warm-mid)] shrink-0" htmlFor={`${uid}-deposit`}>보증금</label>
+            <input id={`${uid}-deposit`} type="text" inputMode="numeric" value={dVal.toLocaleString()}
               onChange={e => { setDepositTouched(true); setSplitDeposit(Number(e.target.value.replace(/[^0-9]/g, ''))) }}
-              className={`${SPLIT_INPUT_CLS} ${depositOver ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
+              className={`${SPLIT_INPUT_CLS} ${(depositOver || splitOver) ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
           </div>
           {cleaningRemaining > 0 && (
             <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-medium text-[var(--warm-mid)] shrink-0" htmlFor="split-cleaning">청소비</label>
-              <input id="split-cleaning" type="text" inputMode="numeric" value={cVal.toLocaleString()}
+              <label className="text-xs font-medium text-[var(--warm-mid)] shrink-0" htmlFor={`${uid}-cleaning`}>청소비</label>
+              <input id={`${uid}-cleaning`} type="text" inputMode="numeric" value={cVal.toLocaleString()}
                 onChange={e => { setCleaningTouched(true); setSplitCleaning(Number(e.target.value.replace(/[^0-9]/g, ''))) }}
-                className={`${SPLIT_INPUT_CLS} border-[var(--warm-border)]`} />
+                className={`${SPLIT_INPUT_CLS} ${splitOver ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
             </div>
           )}
           <div className="flex items-center justify-between gap-2 border-t border-[var(--warm-border)] pt-2">
             <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">이용료</span>
-            <span className="flex-1 text-right num text-sm text-[var(--warm-dark)] bg-[var(--sand-s)] rounded-sm px-3 py-2.5 min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] flex items-center justify-end">
+            {/* §12 '자동 합산 읽기전용'은 보더 없음이 규격이라 투명 보더로 박스 모델만 맞춘다 —
+                안 맞추면 자연 높이가 40px 라 바로 위 몫 입력(42px)과 세로로 붙은 자리에서 어긋난다. */}
+            <span className="flex-1 text-right num text-sm text-[var(--warm-dark)] bg-[var(--sand-s)] border border-transparent rounded-sm px-3 py-2.5 flex items-center justify-end">
               {fmtWon(Math.max(0, rVal))}
             </span>
           </div>
@@ -659,7 +667,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
         <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
           {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
@@ -695,7 +703,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       <div className="space-y-1">
         <label className="text-xs text-[var(--warm-muted)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
       </div>
       {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
       <div className="flex gap-2">
@@ -717,8 +725,7 @@ const RESV_MODE_LABEL: Record<ResvMode, string> = {
   none:    '안 받음',
 }
 
-// 'YYYY-MM-DD' → '8/17' (토스트 수납일 표기)
-const payDateLabel = (ymd: string) => `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`
+
 
 function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, onCancel }: {
   room: Room
@@ -783,7 +790,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           pushToast('success', '예약금 없이 예약으로 저장했습니다')
         } else {
           // 금액·수납일 항상 명시 — '반응 없음'으로 오인한 재시도가 중복 수납을 만들었다(신고 50a2a69b).
-          pushToast('success', `예약금 ${fmtWon(amount)} 수납 기록됨 · 수납일 ${payDateLabel(payDateVal)}`)
+          pushToast('success', `예약금 ${fmtWon(amount)} 수납 기록됨 · 수납일 ${fmtMD(payDateVal)}`)
           if (payDateVal.slice(0, 7) !== targetMonth) {
             pushToast('info', `지금 보는 ${Number(targetMonth.slice(5, 7))}월 내역에는 표시되지 않습니다`)
           }
@@ -824,7 +831,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
 
       {mode !== 'none' && (
         <>
-          {/* 위 정본 폼과 같은 처방 — 하나만 고치면 두 폼이 갈린다. */}
+          {/* 위 정본 폼과 같은 처방(400px 경계 · 패딩 일치) — 하나만 고치면 두 폼이 갈린다. */}
           <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">날짜</label>
@@ -855,7 +862,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
             <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
@@ -867,7 +874,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">메모</label>
             <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="메모 (선택)"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
           </div>
         </>
       )}

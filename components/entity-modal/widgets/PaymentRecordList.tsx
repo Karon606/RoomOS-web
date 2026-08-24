@@ -6,7 +6,7 @@
 // 양도인 record 는 양도인 색 표시.
 
 import { useEffect, useState, useTransition } from 'react'
-import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { CARD_LIKE_METHODS, MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -140,46 +140,43 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         const displaySeq = idx + 1
         if (editingId === p.id) {
           return (
-            <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
+            <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--cream-soft)] px-3 py-2.5 space-y-2">
+              <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">금액</p>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">금액</p>
                   <input type="text" inputMode="numeric" value={editAmount.toLocaleString()}
                     onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부일</p>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">납부일</p>
                   <DatePicker value={editDate} onChange={setEditDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부방법</p>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">납부방법</p>
                   <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {!['계좌이체', '현금', '신용카드', '결제선생', '기타'].includes(editPayMethod) && editPayMethod && (
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
+                    {/* 옵션은 정본 하나에서 온다 — 손으로 적으면 자리마다 갈린다(lib/paymentMethods). */}
+                    {editPayMethod && !MANUAL_PAY_METHODS.includes(editPayMethod) && (
                       <option value={editPayMethod}>{editPayMethod}</option>
                     )}
-                    <option value="계좌이체">계좌이체</option>
-                    <option value="현금">현금</option>
-                    <option value="신용카드">신용카드</option>
-                    <option value="결제선생">결제선생</option>
-                    <option value="기타">기타</option>
+                    {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">메모</p>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">메모</p>
                   <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
                 </div>
               </div>
               {!p.isDeposit && (
                 <div className="space-y-1">
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">귀속월 (이 수납이 잡히는 달)</p>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">귀속월 (이 수납이 잡히는 달)</p>
                   <select value={editTargetMonth} onChange={e => setEditTargetMonth(e.target.value)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors">
                     {!tmOptions.some(o => o.month === p.targetMonth) && (
                       <option value={p.targetMonth}>
                         {Number(p.targetMonth.split('-')[0])}년 {Number(p.targetMonth.split('-')[1])}월분 (현재)

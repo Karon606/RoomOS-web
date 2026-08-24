@@ -6,7 +6,7 @@
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateDot } from '@/lib/fmtDate'
+import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
 import { recordDepositReceived, deletePayment } from './actions'
 import type { DepositPerTenant, DepositLedgerEntry } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -17,7 +17,7 @@ import { InfoHint } from '@/components/ui/InfoHint'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { DEPOSIT_PAY_METHODS } from '@/lib/paymentMethods'
+import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr } from '@/lib/kstDate'
 
 // 행 인라인 미니폼 입력 — §12 전체 티어. DatePicker 트리거는 껍데기가 없어 이 클래스를 안 넘기면
@@ -71,7 +71,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
         })
         let undone = false   // 연타 방지 — 두 번째 요청은 이미 지워진 걸 못 찾아 실패로 떨어진다
         // 대상·금액·수납일을 말한다(정본 money-display-feedback §2-a). 목록 화면이라 누구인지도 말해야 한다.
-        pushToast('success', `${name} 보증금 ${fmtWon(recvAmount)} 받음으로 기록됨 · 입금일 ${Number(recvDate.slice(5, 7))}/${Number(recvDate.slice(8, 10))}`, {
+        pushToast('success', `${name} 보증금 ${fmtWon(recvAmount)} 받음으로 기록됨 · 입금일 ${fmtMD(recvDate)}`, {
           action: {
             label: '적용취소',
             run: () => {
@@ -195,7 +195,9 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                   </div>
                   {recvFor === d.leaseTermId && (
                     <div className="mt-3 space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2">
-                      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2">
+                      {/* 경계는 440 이다 — 이 화면은 페이지라 뷰포트 질의가 맞지만, 412px(Pixel 계열)에서
+                          날짜 칸 글자 자리가 130px 로 정확히 경계선이라 그 아래는 세로로 편다. */}
+                      <div className="grid grid-cols-1 min-[440px]:grid-cols-2 gap-2">
                         <div className="space-y-1.5">
                           <label className="text-xs font-medium text-[var(--warm-mid)]">금액</label>
                           <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
@@ -210,7 +212,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
                         <select value={recvMethod} onChange={e => setRecvMethod(e.target.value)} className={RECV_FIELD_CLS}>
-                          {DEPOSIT_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                          {MANUAL_PAY_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
                       {d.coveredByCleaning > 0 && (
