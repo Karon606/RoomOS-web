@@ -181,18 +181,18 @@ eq('카드 건은 카드 버킷으로',
   paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-08-10'), cashReceiptIssuedAt: kst('2026-08-22T10:00:00') }),
   { bucket: 'card', month: '2026-08' })
 
-// ── 보증금·조정전표는 두 합계에서 뺀다 (운영자 확정 2026-08-24) ──
+// ── 조정전표만 뺀다. 보증금은 넣는다 (2026-08-24, 같은 날 뺐다가 되돌림) ──
 //
-// "보증금은 나중에 돌려줄거니까 제외". 두 합계는 이 달에 잡을 매출 증빙을 재는 자리라
-// 돌려줄 돈이 섞이면 그만큼 부풀어 보인다. 조정 전표는 애초에 받은 돈이 아니다.
+// 처음엔 "보증금은 나중에 돌려줄거니까 제외"로 뺐다. 그런데 카드로 낸 보증금은 카드사·홈택스에
+// **카드 매출로 그대로 남는다** — 앱에서만 빼면 대사가 안 된다(운영자 확인). 조정 전표는 다르다.
 // 오늘 전표 9건은 전부 금액 0에 수단이 없어 숫자에 안 나타나지만, 전표에 수단이 붙는 날
 // 카드 건수만 조용히 부푼다 — 값이 같을 때 규칙을 맞춰 두는 편이 갈릴 때 고치는 것보다 싸다.
-eq('보증금은 현금영수증 합계에서 빠진다',
+eq('보증금도 현금영수증 합계에 든다(발행했으면 홈택스에 있다)',
   paymentAggregateBucket({ payMethod: '계좌이체', payDate: day('2026-08-05'), cashReceiptIssuedAt: kst('2026-08-05T14:00:00'), isDeposit: true }),
-  { bucket: null, month: null })
-eq('카드로 낸 보증금도 카드 합계에서 빠진다',
+  { bucket: 'cashReceipt', month: '2026-08' })
+eq('카드로 낸 보증금도 카드 합계에 든다(카드사 명세에 남는다)',
   paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-04-10'), cashReceiptIssuedAt: null, isDeposit: true }),
-  { bucket: null, month: null })
+  { bucket: 'card', month: '2026-04' })
 eq('조정 전표는 어느 합계에도 안 간다',
   paymentAggregateBucket({ payMethod: '신용카드', payDate: day('2026-08-05'), cashReceiptIssuedAt: null, isBillingAdjust: true }),
   { bucket: null, month: null })
