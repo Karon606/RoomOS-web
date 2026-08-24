@@ -1686,6 +1686,58 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
 }
 
+// 20. 현금영수증·카드 합계의 **축 한정어는 상시 텍스트여야 한다** (오류신고 8b9b6c43, 2026-08-24).
+//
+//   신고 원문 "현금영수증 합계금액이 안맞아. 직접 계산해보면 764만원인데 상단 합계는717만원이야".
+//   계산은 정확했다. 상단은 payDate(입금일) 축 7,170,000 이고 운영자가 목록을 손으로 더한 값은
+//   targetMonth(귀속월) 축 7,640,000 이다. 차액 470,000 은 7/31 에 받은 8월분 한 건이 전부였다.
+//   축 설명이 InfoHint(접힌 물음표) 안에만 있어서 화면이 그 차이를 말하지 않은 것이 결함이었다.
+//
+//   **파일 전체 includes 는 그물이 못 된다.** 같은 낱말이 InfoHint 본문에도 있어서, 한정어가 다시
+//   InfoHint 안으로 되숨는 바로 그 회귀에서 통과해 버린다(위 7번 주석이 적은 '반쪽 감지망' 전례와
+//   같은 함정이다). 그래서 '<InfoHint 앞' 상시 텍스트 조각만 잘라서 본다.
+{
+  const AXIS = '입금일 기준'
+  // 상시 텍스트 조각 — 조건식부터 InfoHint 가 열리기 직전까지. JSX 주석은 화면에 안 뜨므로 걷어낸다.
+  const strip = roomsClient.match(/payAggregates\.cashReceiptSum !== 0[\s\S]*?<InfoHint/)
+  if (!strip) {
+    violations.push('[소스] RoomsClient 현금영수증·카드 합계 줄을 못 찾았다 — 대조가 통째로 건너뛰어졌다. 감지망을 고칠 것')
+  } else {
+    const visible = strip[0].replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    if (!visible.includes(AXIS)) {
+      violations.push(`[소스] RoomsClient 현금영수증·카드 합계에 축 한정어('${AXIS}')가 상시 텍스트로 없다 — InfoHint 안으로 되숨으면 목록을 귀속월로 손수 더한 값과 달라 보이는 신고가 재발한다`)
+    }
+    if (/납부일/.test(visible)) {
+      violations.push("[소스] RoomsClient 축 한정어가 '납부일' 로 되돌아갔다 — 이 화면의 '납부일' 은 LeaseTerm.dueDay(약정 지급일)라 반대 축(귀속월)의 앵커다. 정본은 '입금일'")
+    }
+  }
+  // 상시 한정어와 InfoHint 본문은 짝이다. 한쪽만 남으면 반쪽이라 각각 본다.
+  const hint = roomsClient.match(/<InfoHint title="현금영수증·카드 합계">[\s\S]*?<\/InfoHint>/)
+  if (!hint) {
+    violations.push('[소스] RoomsClient 현금영수증·카드 합계 InfoHint 를 못 찾았다 — 대조가 건너뛰어졌다. 감지망을 고칠 것')
+  } else {
+    if (/납부일/.test(hint[0])) {
+      violations.push("[소스] 현금영수증·카드 InfoHint 가 축을 '납부일' 로 부른다 — 같은 화면에서 한 숫자가 두 축 이름을 갖는다")
+    }
+    // 문구는 다듬어도 되지만 이 세 축은 설명이 살아 있다는 앵커다.
+    for (const [needle, why] of [
+      ['귀속월', '귀속월 축과 다를 수 있다는 설명이 사라졌다 — 손수 더한 값과의 차이를 아무도 설명하지 않는다'],
+      ['지난달', '월말 선납이 지난달 합계에 잡힌다는 설명이 사라졌다 — 이번 신고의 실제 원인(7/31 수납 470,000)이 다시 미설명이 된다'],
+      ['매출전표', '카드와 현금영수증이 겹치지 않는다는 설명이 사라졌다 — 두 값이 이중 계상으로 읽힌다(520호 172,000원 전례)'],
+    ]) {
+      if (!hint[0].includes(needle)) violations.push(`[소스] 현금영수증·카드 InfoHint: ${why}`)
+    }
+  }
+  // 캡션이 '입금일'이라 말하려면 서버가 실제로 payDate 축이어야 한다. 축이 바뀌면 캡션이 거짓이 된다.
+  const roomsActions = readFileSync('app/(app)/rooms/actions.ts', 'utf8')
+  const aggFn = roomsActions.match(/export async function getMonthPaymentAggregates[\s\S]*?\n}/)
+  if (!aggFn) {
+    violations.push('[소스] getMonthPaymentAggregates 를 못 찾았다 — 캡션이 말하는 축을 대조할 수 없다. 감지망을 고칠 것')
+  } else if (!/payDate:\s*\{\s*gte:/.test(aggFn[0])) {
+    violations.push('[소스] getMonthPaymentAggregates 가 payDate 창으로 안 센다 — 화면 캡션의 \'입금일 기준\' 이 거짓이 된다')
+  }
+}
+
 console.log(`\n[돈 정합] 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 console.log(`검사 lease ${leases.length}건`)
