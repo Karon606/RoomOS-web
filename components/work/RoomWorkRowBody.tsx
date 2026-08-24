@@ -90,7 +90,9 @@ export function RoomWorkRowBody({
             <span className="text-xs text-[var(--warm-muted)] num">기록된 지출 {fmtWon(r.cost)}</span>
           )
         )}
-        {/* 여러 건이 붙었으면 그 사실을 말한다. 자재를 여러 날 사면 합계만으로는 왜 이 금액인지 안 선다. */}
+        {/* 여러 건이 붙었으면 그 사실을 말한다. 자재를 여러 날 사면 합계만으로는 왜 이 금액인지 안 선다.
+            이 합계는 **시공비 + 그 방에 쓴 자재 몫**이다. 자재 몫은 새로 나간 돈이 아니라 살 때
+            이미 잡힌 지출을 방별로 쪼갠 것이다(운영자 확인 2026-08-25). */}
         {r.expenseCount > 1 && (
           <span className="text-xs text-[var(--warm-muted)] num">지출 {r.expenseCount}건</span>
         )}
@@ -136,12 +138,14 @@ export function RoomWorkRowBody({
           <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
             placeholder="업체·사람 이름 (선택)"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
-          {/* 비용 — 넣으면 지출이 한 줄 생기고 이 작업에 걸린다. 이미 걸린 지출이 있으면
-              새로 만들지 않는다(자재를 미리 붙여 둔 경우). 그 판단은 서버가 한다. */}
+          {/* 비용 — 넣으면 지출이 **새로** 한 줄 생기고 이 작업에 걸린다.
+              **여기 넣을 것은 시공비(이번에 새로 나간 돈)뿐이다.** 자재는 살 때 이미 지출로
+              잡혔고, 방별 몫은 그 지출을 쪼갠 행이다(allocationGroupId). 총액을 넣으면 이미
+              잡힌 자재값이 한 번 더 지출이 된다 — 운영자 지적 2026-08-25. */}
           {/* 형제 행과 같은 칸이다 — 폭 w-28 · 뒤에 '원'. MoneyInput 정본은 className 을 안 받고
               이 자리는 촘촘한 행이라 형제가 쓰는 문법을 그대로 쓴다. */}
           <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
-            비용
+            시공비
             <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(Number(e.target.value) || 0)}
               placeholder="0" min={0}
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
@@ -152,7 +156,7 @@ export function RoomWorkRowBody({
               이미 지출 {r.expenseCount}건이 걸려 있어 비용을 넣어도 새로 만들지 않습니다. 금액은 지출 화면에서 고칩니다.
             </p>
           ) : cost > 0 ? (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다.</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요. 살 때 이미 지출로 잡혔습니다.</p>
           ) : null}
           <div className="flex gap-1.5 flex-wrap items-center">
             <RowActionBtn tone="accent" disabled={pending}
