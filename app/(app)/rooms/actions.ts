@@ -1139,6 +1139,21 @@ export async function setPrevOwnerSettleMenu(
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)
+//
+// ── 역할 경계 ─ saveDepositPayment 대 recordDepositReceived (2026-08-24, 신고 98fb6fce·00c39371) ──
+//
+// **실제로 돈이 들어온 기록은 전부 이쪽이다.** 가드가 여기 다 있다 — 계약 보증금 미입력 차단,
+// 초과 수납 차단(잔여 기준, 청소비 몫 반영), 이용료 과납 차단, 초과분의 이용료 분리와 락인,
+// recalculatePayments 까지. 입금일·결제수단을 **호출부가 반드시 넘긴다**(옵셔널이 아니다).
+//
+// `recordDepositReceived`(아래)는 **소급 기록** 전용이다. 전 원장이 받았거나 앱 밖에서 이미 받아
+// 입금 기록만 없는 계약에 사실을 남기는 자리라 결제수단 기본값이 '기타'다. 그 '기타'는 정직한
+// 기록이므로 억지로 바꾸지 않는다. 다만 **날짜는 반드시 물어야 한다** — 안 물으면 버튼을 누른
+// 날이 입금일로 박혀, 실입금과 다른 날짜가 세무 대사 축(payDate)에 남는다. 실제로 그렇게 7건이
+// 쌓였다(2026-08-24 조사).
+//
+// 새 진입로를 만들 때 판단 기준은 하나다. **지금 돈을 받았으면 이쪽, 예전에 받은 사실을 적는
+// 것이면 저쪽.** 헷갈리면 이쪽이다 — 가드가 있는 편이 안전하다.
 export async function saveDepositPayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -1150,7 +1165,8 @@ export async function saveDepositPayment(data: {
   payMethod:   string
   memo?:       string
   cashReceiptIssued?: boolean   // 현금영수증 발행 표시 — 보증금·초과분 record 모두(한 결제 단위)
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 이 결제가 만든 record 를 되돌릴 수 있게 id 를 돌려준다(§16 적용취소). 금액 계산에는 관여하지 않는다.
+}): Promise<{ ok: true; createdIds: string[] } | { ok: false; error: string }> {
   await requireEdit()
   const propertyId = await getPropertyId()
 
@@ -1224,7 +1240,12 @@ export async function saveDepositPayment(data: {
   const alreadyRent = already._sum.actualAmount ?? 0
   // 이용료로 흘러갈 몫은 '계약 보증금'이 아니라 '잔여 보증금'을 뺀 나머지다 — 위 초과 수납 차단과 같은 기준.
   const incomingRent = Math.max(0, data.totalPaid - depositRemaining)
-  if (monthBillForGuard > 0 && alreadyRent > 0 && alreadyRent + incomingRent > monthBillForGuard) {
+  // incomingRent === 0 이면 이번 저장은 이용료 record 를 아예 안 만든다(아래 excess 분기를 안 탄다).
+  // 그 경우까지 막으면 "이미 과납인 달"이라는 이유로 순수 보증금 기록이 거절된다 — 막을 대상이 없는데
+  // 막는 것이고, 에러 문구("지금 입력한 금액까지 더하면")도 사실과 다르다. 그 달이 과납이 되는 경로는
+  // 실재한다(단기 입주월 흡수·예약 선납 재앵커·퇴실 일할·단기 감액 되쓰기). 신고 00c39371 "보증금
+  // 수납처리가 안되는데?" 가 닿는 자리라 조인다. 금액은 한 톨도 안 움직인다 — 거절 조건만 좁힌다.
+  if (monthBillForGuard > 0 && incomingRent > 0 && alreadyRent > 0 && alreadyRent + incomingRent > monthBillForGuard) {
     return {
       ok: false as const,
       error: `이 달에 이미 ${alreadyRent.toLocaleString()}원이 수납돼 있습니다. 지금 입력한 금액까지 더하면 청구액 ${monthBillForGuard.toLocaleString()}원을 넘습니다. 수납 내역을 확인하고 차액만 입력해 주세요.`,
@@ -1241,7 +1262,8 @@ export async function saveDepositPayment(data: {
     where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, deletedAt: undefined },
   })
 
-  await prisma.paymentRecord.create({
+  const createdIds: string[] = []
+  const depositRec = await prisma.paymentRecord.create({
     data: {
       leaseTermId:    data.leaseTermId,
       tenantId:       data.tenantId,
@@ -1259,12 +1281,13 @@ export async function saveDepositPayment(data: {
       cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
     },
   })
+  createdIds.push(depositRec.id)
 
   const excess = data.totalPaid - depositActual
   if (excess > 0) {
     // 초과분은 이용료 record — expectedAmount 는 그 달 실제 청구액(할인·일할 반영)으로 락인
     const monthBill = await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount)
-    await prisma.paymentRecord.create({
+    const excessRec = await prisma.paymentRecord.create({
       data: {
         leaseTermId:    data.leaseTermId,
         tenantId:       data.tenantId,
@@ -1281,6 +1304,7 @@ export async function saveDepositPayment(data: {
         cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
       },
     })
+    createdIds.push(excessRec.id)
   }
 
   await recalculatePayments(
@@ -1288,7 +1312,7 @@ export async function saveDepositPayment(data: {
     await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount),
   )
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-  return { ok: true as const }
+  return { ok: true as const, createdIds }
 }
 
 // 청소비 수납 — 입실 때 청소비를 **별도로** 받는 경우(주로 단기: 보증금 0 + 청소비 있음).
@@ -1356,18 +1380,20 @@ export async function saveCleaningFeePayment(data: {
   payMethod:   string
   memo?:       string
   cashReceiptIssued?: boolean
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  // 되돌리기용 id — 청소비 몫은 ExtraIncome, 초과분은 수납 record 다(§16 적용취소). 계산 비관여.
+}): Promise<{ ok: true; createdIds: string[]; extraIncomeId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const feeActual = Math.max(0, Math.min(data.totalPaid, data.cleaningFee))
     if (feeActual <= 0) return { ok: false, error: '청소비 금액이 올바르지 않습니다.' }
 
-    await createCleaningFeeIncome({
+    const extraIncomeId = await createCleaningFeeIncome({
       propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
       amount: feeActual, payDate: data.payDate, payMethod: data.payMethod,
       memo: data.memo, occasion: '입실',
     })
+    const createdIds: string[] = []
 
     // 초과분은 이용료 record — 기존 경로와 동일한 락인 규칙
     const excess = data.totalPaid - feeActual
@@ -1376,7 +1402,7 @@ export async function saveCleaningFeePayment(data: {
         where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, deletedAt: undefined },
       })
       const monthBill = await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount)
-      await prisma.paymentRecord.create({
+      const excessRec = await prisma.paymentRecord.create({
         data: {
           leaseTermId: data.leaseTermId, tenantId: data.tenantId, propertyId,
           targetMonth: data.targetMonth,
@@ -1386,10 +1412,11 @@ export async function saveCleaningFeePayment(data: {
           cashReceiptIssuedAt: data.cashReceiptIssued ? new Date() : null,
         },
       })
+      createdIds.push(excessRec.id)
       await recalculatePayments(data.leaseTermId, data.targetMonth, monthBill)
     }
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-    return { ok: true }
+    return { ok: true, createdIds, extraIncomeId }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '청소비 수납 중 오류가 발생했습니다.' }
@@ -1585,10 +1612,18 @@ export async function reanchorReservationPrepaid(leaseTermId: string): Promise<v
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
 }
 
-// 보증금 '받음(실수납)' 기록 — 전 원장 등으로 이미 받았으나 입금기록이 없는 보증금을
+// 보증금 '받음(실수납)' **소급** 기록 — 전 원장 등으로 이미 받았으나 입금기록이 없는 보증금을
 // 계약상 금액 기준으로 실수납 record(isDeposit=true)로 남긴다.
-// finance 보증금 요약의 '받음으로 기록' 버튼, 입주자/예약 폼의 '수납 완료' 체크에서 호출.
+// 수납관리 보증금 탭의 '받음으로 기록' 버튼, 입주자/예약 폼의 '보증금 실제로 받음' 체크에서 호출.
 // 이미 기록된 보증금이 있으면 미기록분(계약액 − 기존 입금)만 채운다.
+//
+// **지금 받은 돈은 이 함수로 적지 않는다.** 그 자리는 saveDepositPayment 정본이고, 초과 수납·
+// 이용료 과납 가드가 전부 거기 있다(위 '역할 경계' 주석). 여기는 이미 일어난 일을 적는 자리라
+// 가드가 얇고 결제수단 기본값이 '기타'다.
+//
+// opts.payDate 는 **호출부가 반드시 넘긴다.** 안 넘기면 아래 기본값(오늘)이 박히는데, 그것은
+// 버튼을 누른 날이지 돈이 들어온 날이 아니다. 종전에는 호출부 3곳 전부가 안 넘겨 7건이 그렇게
+// 쌓였다(신고 98fb6fce — 8/16 계좌이체가 8/24 기타로 남았다).
 export async function recordDepositReceived(leaseTermId: string, opts?: {
   payDate?: string
   payMethod?: string
@@ -1616,7 +1651,9 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
     ? `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
     : `${kst.year}-${String(kst.month).padStart(2, '0')}`
   // 기본 결제일 = 오늘(KST) — 로컬 자정 Date 는 @db.Date 쓰기에서 KST 런타임 시 하루 앞으로 박힌다(2026-08-19 전역 정정과 같은 클래스)
-  const payDate = opts?.payDate ? new Date(opts.payDate) : ymdToDbDate(kstYmdStr())
+  // 넘어온 날짜도 같은 자로 쓴다. 'YYYY-MM-DD' 에 대해 결과는 종전과 같지만, 문자열이 조금만
+  // 달라져도 로컬 자정으로 파싱되는 길이 열려 있었다 — 이제 이 값이 실입금일이라 그 길을 막는다.
+  const payDate = opts?.payDate ? ymdToDbDate(opts.payDate) : ymdToDbDate(kstYmdStr())
 
   const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth, deletedAt: undefined } })
   await prisma.paymentRecord.create({
@@ -1629,6 +1666,49 @@ export async function recordDepositReceived(leaseTermId: string, opts?: {
     },
   })
   revalidatePath('/finance'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+}
+
+// 계약 단위 보증금 실입금 기록 — 보증금 패널(DepositStatusPanel)의 '수납 기록' 인라인 폼 진입로.
+//
+// **새 산식은 없다.** 계약에서 tenantId·계약 보증금·이용료·귀속월을 채워 saveDepositPayment 정본에
+// 넘기는 것이 전부다. 형제 진입점 saveReservationDeposit 이 이미 같은 모양이다(모드 확정 후 위임).
+//
+// 패널이 조회월을 모르기 때문에 이 어댑터가 필요하다. 보증금은 월과 무관한 계약 단위 사실이라
+// 패널이 월을 모르는 것이 정상이고, 귀속월 규칙은 이미 두 자리가 쓰는 것과 같다 — 입주월,
+// 없으면 KST 이번 달(recordDepositReceived·saveReservationDeposit 과 글자 그대로 동일).
+//
+// 왜 이 진입로를 세웠나(신고 98fb6fce). 보증금 미수납 사실이 표시되는 자리에 수납 CTA 가 없어서,
+// 운영자가 '입주자 정보 수정' 폼의 체크박스로 우회했다. 사실을 보여주는 자리와 그 사실을 고치는
+// 자리가 갈려 있으면 사람은 반드시 딴 길을 찾는다.
+export async function saveDepositPaymentForLease(input: {
+  leaseTermId: string
+  amount:      number
+  payDate:     string
+  payMethod:   string
+  memo?:       string
+}): Promise<{ ok: true; createdIds: string[] } | { ok: false; error: string }> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: input.leaseTermId, propertyId },
+    select: { tenantId: true, depositAmount: true, rentAmount: true, moveInDate: true },
+  })
+  if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
+  const kst = kstYmd()
+  const targetMonth = lease.moveInDate
+    ? `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
+    : `${kst.year}-${String(kst.month).padStart(2, '0')}`
+  return saveDepositPayment({
+    leaseTermId:   input.leaseTermId,
+    tenantId:      lease.tenantId,
+    targetMonth,
+    depositAmount: lease.depositAmount,
+    rentAmount:    lease.rentAmount,
+    totalPaid:     input.amount,
+    payDate:       input.payDate,
+    payMethod:     input.payMethod,
+    memo:          input.memo,
+  })
 }
 
 // 그 달 서버 권위 청구액 — 일할→락인(기존 record 최대)→할인 (lib/billing 공용 규칙).
@@ -1957,14 +2037,18 @@ export async function batchDeletePayments(
 // 소프트삭제다. 조회 익스텐션이 자동 제외하고, 필요하면 restorePayment·restoreExtraIncome 로 되살린다.
 // intact 는 '아직 아무것도 안 건드렸다'는 뜻이다. 실패 화면 문구가 갈리므로 서버가 알려줘야 한다 —
 // 그대로면 사용자가 할 일이 없고, 아니면 수납 내역을 직접 봐야 한다.
+//
+// extraIncomeId 는 옵셔널이다(2026-08-24). 분해 수납은 부가수익 없이 수납 record 만 만드는 경우가
+// 대부분인데(청소비를 보증금 안의 몫으로 받는 영업장) 필수로 두면 그 경우에 이 정본을 못 쓴다.
+// 없으면 record 만 되돌린다 — 반쪽 취소가 아니라 애초에 부가수익이 없는 결제다.
 export async function undoOverpayExtraIncome(
   recordIds: string[],
-  extraIncomeId: string,
+  extraIncomeId?: string,
 ): Promise<{ ok: true } | { ok: false; error: string; intact?: boolean }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    if (!recordIds.length || !extraIncomeId) return { ok: false, error: '되돌릴 대상이 없습니다.', intact: true }
+    if (!recordIds.length) return { ok: false, error: '되돌릴 대상이 없습니다.', intact: true }
 
     // 소속 월을 먼저 확보한다 — 삭제 후에는 익스텐션이 걸러서 못 읽는다.
     // 이 조회들은 읽기라 자동 필터가 붙으므로, 이미 지워진 건은 여기서 걸러져 이중 취소도 막힌다.
@@ -1973,13 +2057,15 @@ export async function undoOverpayExtraIncome(
       select: { leaseTermId: true, targetMonth: true },
     })
     if (targets.length !== recordIds.length) return { ok: false, error: '수납 기록을 찾을 수 없습니다.', intact: true }
-    const inc = await prisma.extraIncome.findFirst({ where: { id: extraIncomeId, propertyId }, select: { id: true } })
-    if (!inc) return { ok: false, error: '부가수익 기록을 찾을 수 없습니다.', intact: true }
+    if (extraIncomeId) {
+      const inc = await prisma.extraIncome.findFirst({ where: { id: extraIncomeId, propertyId }, select: { id: true } })
+      if (!inc) return { ok: false, error: '부가수익 기록을 찾을 수 없습니다.', intact: true }
+    }
 
     const deletedAt = new Date()
     await prisma.$transaction([
       prisma.paymentRecord.updateMany({ where: { id: { in: recordIds }, propertyId }, data: { deletedAt } }),
-      prisma.extraIncome.updateMany({ where: { id: extraIncomeId, propertyId }, data: { deletedAt } }),
+      ...(extraIncomeId ? [prisma.extraIncome.updateMany({ where: { id: extraIncomeId, propertyId }, data: { deletedAt } })] : []),
     ])
 
     // 미수·완납 재계산 — deletePayment 와 같은 규칙. 월별로 격리돼 순서 의존성이 없다.

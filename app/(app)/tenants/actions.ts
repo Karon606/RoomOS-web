@@ -1738,7 +1738,13 @@ export async function getDepositBasisForLease(leaseTermId: string): Promise<{
 // 제시하고 서버가 3만으로 거절하는 실사고 지점이 됐다(설계 감사 2026-08-10).
 // 판정은 lib/depositComposition 정본이 하고 여기는 입력만 모은다.
 export async function getDepositCompositionForLease(leaseTermId: string): Promise<
-  DepositComposition & { basis: number; basisSource: 'received' | 'carriedOver' | 'none'; carriedOver: boolean }
+  DepositComposition & {
+    basis: number; basisSource: 'received' | 'carriedOver' | 'none'; carriedOver: boolean
+    // 인수 전 입주인가 — carriedOver 와 다르다. carriedOver 는 '받은 게 0 인 승계'만 참이라
+    // 승계인데 일부를 받은 계약(실측 3건)에서 거짓이 된다. 수납 진입로는 그 3건도 승계로 다뤄야
+    // 하므로(승계 보증금에 record 를 만들지 않는다) 원 사실을 따로 내려보낸다.
+    preAcquisition: boolean
+  }
 > {
   const { propertyId } = await getPropertyId()
   const [basis, cleaningPaid, property] = await Promise.all([
@@ -1752,7 +1758,10 @@ export async function getDepositCompositionForLease(leaseTermId: string): Promis
     cleaningPaid,
     cleaningFeeInDeposit: property?.cleaningFeeInDeposit ?? false,
   })
-  return { ...comp, basis: basis.basis, basisSource: basis.source, carriedOver: basis.source === 'carriedOver' }
+  return {
+    ...comp, basis: basis.basis, basisSource: basis.source,
+    carriedOver: basis.source === 'carriedOver', preAcquisition: basis.preAcquisition,
+  }
 }
 
 // 일괄 편집 확인창 근거 — 선택한 입주자 중 입실 청소비를 이미 받은 사람이 몇인가(2026-08-10).
