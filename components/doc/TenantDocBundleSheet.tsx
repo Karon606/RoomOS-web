@@ -43,6 +43,19 @@ import {
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
 } from '@/lib/docBundle'
 
+/** 행이 지금 보낼 파일 — 고른 판본이 있으면 그것, 없으면 대표본. 선택 키도 여기서 나온다. */
+function pickedOf(row: DocBundleRow, picked: Record<string, string>) {
+  const id = picked[row.key]
+  const v = id ? row.versions?.find(x => x.contractFileId === id) : undefined
+  return {
+    driveFileId: v?.driveFileId ?? row.driveFileId,
+    issuedAt: v?.at ?? row.issuedAt,
+    // 판본을 명시로 고른 행만 키에 접미가 붙는다(대표본은 종전 키 그대로).
+    key: v ? `${row.key}#${v.contractFileId}` : row.key,
+    label: v ? [v.purposeLabel, v.note].filter(Boolean).join(' · ') || '실계약' : null,
+  }
+}
+
 const MAX_SHARE = 10   // 브라우저 다중 공유 하드 리밋(형제 3화면과 같은 숫자)
 
 // 화면 이름과 파일명은 다르다 — 파일명은 형제 3화면이 이미 쓰고 있는 문자열 그대로여야
@@ -90,6 +103,11 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const [dest, setDest] = useState<'device' | 'mail'>('device')
   const [mode, setMode] = useState<'png' | 'pdf'>('png')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // 행마다 고른 계약서 판본(행 키 -> contractFileId). 비어 있으면 대표본이다 —
+  // **아무것도 안 고르면 종전과 같은 종이가 나간다**(419호 봉합의 무회귀 계약).
+  const [pickedVersion, setPickedVersion] = useState<Record<string, string>>({})
+  // 판본 고르는 창을 띄운 행.
+  const [versionRow, setVersionRow] = useState<DocBundleRow | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
 
   // 이 화면은 통째로 선택 모드다 — 열리자마자 변환기를 데운다(첫 탭의 제스처 만료 방어).
@@ -119,27 +137,38 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const hasAnyRow = rows.length > 0
 
   const toggle = (row: DocBundleRow) => {
-    if (!row.driveFileId) return
+    const cur = pickedOf(row, pickedVersion)
+    // 대표본이 없고 판본만 있는 행(419호처럼 제출용만 남은 계약)은 무엇을 보내는지 먼저 정해야 한다.
+    // 고르면 그 자리에서 체크가 확정되고, 취소하면 무변경이다(§27.5).
+    if (!cur.driveFileId) {
+      if (row.versions && row.versions.length > 0) setVersionRow(row)
+      return
+    }
     setSelected(prev => {
       const next = new Set(prev)
-      if (next.has(row.key)) next.delete(row.key)
+      if (next.has(cur.key)) next.delete(cur.key)
       else {
         if (next.size >= MAX_SHARE) { pushToast('info', `한 번에 최대 ${MAX_SHARE}건까지 보낼 수 있습니다.`); return prev }
-        next.add(row.key)
+        next.add(cur.key)
       }
       return next
     })
   }
 
   // 선택 항목을 표시 순서대로 — 첨부 순서·파일명 충돌 판정에 그대로 쓰인다.
+  // 기기 경로도 같은 선택을 쓴다 — 메일만 고치면 공유 시트에서 또 다른 판본이 나간다.
   const shareEntries: DocShareEntry[] = rows
-    .filter(r => r.driveFileId && selected.has(r.key))
-    .map(r => ({
-      id: r.driveFileId as string,
+    .map(r => ({ r, p: pickedOf(r, pickedVersion) }))
+    .filter(({ p }) => p.driveFileId && selected.has(p.key))
+    .map(({ r, p }) => ({
+      id: p.driveFileId as string,
       personName: bundle?.tenantName ?? '',
-      docLabel: FILE_LABEL[r.docType],
-      dateStr: fmtDateDot(r.issuedAt),
-      fetchBytes: fetchDocBytes(r.driveFileId as string),
+      docLabel: p.label && p.label !== '실계약' && r.versions
+        ? `${FILE_LABEL[r.docType]}(${r.versions.find(v => v.contractFileId === pickedVersion[r.key])?.purposeLabel ?? ''})`
+          .replace('()', '')
+        : FILE_LABEL[r.docType],
+      dateStr: fmtDateDot(p.issuedAt),
+      fetchBytes: fetchDocBytes(p.driveFileId as string),
     }))
   const share = useDocShare(shareEntries, mode)
 
@@ -234,7 +263,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             <ul className="space-y-1.5">
               {g.rows.map(r => (
                 <DocRow key={r.key} row={r} tenantId={tenantId}
-                  selected={selected.has(r.key)} onToggle={() => toggle(r)} />
+                  picked={pickedOf(r, pickedVersion)}
+                  selected={selected.has(pickedOf(r, pickedVersion).key)}
+                  onToggle={() => toggle(r)}
+                  onChangeVersion={() => setVersionRow(r)} />
               ))}
             </ul>
           </div>
@@ -268,6 +300,33 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             </PillButton>
           </SelectionPillBar>
         )}
+        {versionRow && (
+          <ContractVersionPicker
+            row={versionRow}
+            pickedId={pickedVersion[versionRow.key] ?? null}
+            onClose={() => setVersionRow(null)}
+            onPick={v => {
+              const row = versionRow
+              setVersionRow(null)
+              setPickedVersion(prev => {
+                const next = { ...prev }
+                if (v.representative) delete next[row.key]   // 대표본은 기본값이라 표식을 지운다
+                else next[row.key] = v.contractFileId
+                return next
+              })
+              // 판본이 바뀌면 키가 바뀐다 — 옛 키를 걷고 새 키로 체크를 옮긴다(선택이 사라지지 않게).
+              setSelected(prev => {
+                const next = new Set(prev)
+                const oldKey = pickedOf(row, pickedVersion).key
+                const had = next.has(oldKey) || next.has(row.key)
+                next.delete(oldKey); next.delete(row.key)
+                const newKey = v.representative ? row.key : `${row.key}#${v.contractFileId}`
+                if (had || next.size < MAX_SHARE) next.add(newKey)
+                return next
+              })
+            }}
+          />
+        )}
         {composeOpen && (
           <TenantDocMailComposeSheet
             tenantId={tenantId}
@@ -286,13 +345,22 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
 }
 
 // 행 하나 — 발급본이 있으면 체크할 수 있고 [보기]가 열린다. 없으면 체크가 잠기고 [작성]으로 나간다.
-function DocRow({ row, tenantId, selected, onToggle }: {
+// 계약서 판본이 여럿이거나 대표가 공석이면 보조줄 아래에 판본 줄이 하나 더 선다(419호 봉합).
+function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: {
   row: DocBundleRow
   tenantId: string
+  picked: { driveFileId: string | null; issuedAt: string | null; key: string; label: string | null }
   selected: boolean
   onToggle: () => void
+  onChangeVersion: () => void
 }) {
-  const issued = !!row.driveFileId
+  const issued = !!picked.driveFileId
+  const versions = row.versions ?? []
+  // 판본 줄은 고를 것이 둘 이상이거나, 대표가 없어 무엇을 보낼지 정해야 할 때만 선다.
+  // 1부짜리 계약(대다수)은 이 줄이 없어 픽셀이 종전과 같다.
+  const showVersions = versions.length > 1 || (versions.length === 1 && !row.driveFileId)
+  const cur = versions.find(v => v.driveFileId === picked.driveFileId)
+  const curLabel = cur ? ([cur.purposeLabel, cur.note].filter(Boolean).join(' · ') || '실계약') : null
   return (
     <li
       onClick={issued ? onToggle : undefined}
@@ -324,18 +392,85 @@ function DocRow({ row, tenantId, selected, onToggle }: {
           <p className="text-sm font-semibold text-[var(--warm-dark)]">{TITLE[row.docType]}</p>
           <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">
             {issued
-              ? `${fmtDateDot(row.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
+              ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
               : '아직 만든 서류가 없습니다'}
           </p>
           {row.note && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{row.note}</p>}
+          {/* 판본 줄 — 지금 무엇이 나가는지 적고 바꿀 길을 그 자리에 둔다.
+              히트 영역은 -my-2 로 넓혀 §09 44px 을 확보한다(줄 높이는 그대로). */}
+          {showVersions && (
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">
+                판본 · {curLabel ?? '고르지 않음'}
+              </span>
+              <button type="button"
+                onClick={e => { e.stopPropagation(); onChangeVersion() }}
+                className="-my-2 shrink-0 py-2 text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2">
+                판본 바꾸기
+              </button>
+            </div>
+          )}
         </div>
       </div>
       {/* 버튼은 행 선택을 가로채지 않는다 — 체크는 행 전체, 이동은 버튼 */}
       <div className="flex shrink-0 items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
         {issued
-          ? <ViewDocButton driveFileId={row.driveFileId as string} from="tenant" tenantId={tenantId} />
+          ? <ViewDocButton driveFileId={picked.driveFileId as string} from="tenant" tenantId={tenantId} />
           : <BtnLink href={writeHref(row, tenantId)} variant="secondary" size="sm">작성</BtnLink>}
       </div>
     </li>
   )
 }
+
+// 판본 고르기 — 같은 계약의 계약서가 여럿일 때 무엇을 보낼지 정한다.
+//
+// choiceDialog 를 안 쓰는 이유는 그 정본이 2~3지선다라서다(판본 수는 정해져 있지 않다).
+// 행 문법은 이 시트의 서류 행과 같은 축(§22 선택 행 · 22px r7 체크)이라 새 문법이 아니다.
+function ContractVersionPicker({ row, pickedId, onClose, onPick }: {
+  row: DocBundleRow
+  pickedId: string | null
+  onClose: () => void
+  onPick: (v: NonNullable<DocBundleRow['versions']>[number]) => void
+}) {
+  const versions = row.versions ?? []
+  // 현재 선택 — 고른 것이 없으면 대표본이다(기본값).
+  const currentId = pickedId ?? versions.find(v => v.representative)?.contractFileId ?? null
+  return (
+    <Modal open onClose={onClose} z={280} width="sm" title="어떤 계약서를 보낼까요">
+      <div className="space-y-2">
+        <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+          같은 계약에 보관된 계약서입니다. 고른 판본이 메일과 기기 공유 양쪽에 쓰입니다.
+        </p>
+        <ul className="space-y-1.5">
+          {versions.map(v => {
+            const on = v.contractFileId === currentId
+            const label = [v.purposeLabel, v.note].filter(Boolean).join(' · ') || '실계약'
+            return (
+              <li key={v.contractFileId}>
+                <button type="button" onClick={() => onPick(v)}
+                  className={[
+                    'flex w-full items-center gap-2.5 rounded-xl border bg-[var(--cream)] p-3 text-left transition-colors',
+                    on ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
+                  ].join(' ')}>
+                  <span className={[
+                    'grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border transition-colors',
+                    on ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] text-transparent',
+                  ].join(' ')} aria-hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L19 7" /></svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-[var(--warm-dark)]">{label}</span>
+                    <span className="mt-0.5 block text-[0.65625rem] text-[var(--warm-muted)]">
+                      {fmtDateDot(v.at)} 서명{v.representative ? ' · 현재 계약서' : ''}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </Modal>
+  )
+}
+

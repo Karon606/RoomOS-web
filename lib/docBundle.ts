@@ -48,6 +48,32 @@ export type DocBundleRow = {
   /** 파일 형식 추정(파일명 기준) — 첨부 표기·파일명 확장자의 기본값이다.
    *  실제로 내보낼 때는 바이트 스니핑(lib/docMime)이 최종 권위라, 이 추정이 틀려도 파일은 옳게 나간다. */
   mime: string
+  /** 이 행으로 보낼 수 있는 판본들(계약서 전용). 없거나 1부면 화면이 판본 줄을 안 세운다.
+   *  **기본 선택은 언제나 driveFileId(대표본)다** — 운영자가 안 만지면 종전과 같은 종이가 나간다. */
+  versions?: DocBundleContractVersion[]
+}
+
+/**
+ * 계약서 판본 하나 — 같은 계약에 실계약·스캔본·제출용·번역본이 함께 설 수 있다.
+ *
+ * 왜 필요한가(긴급 신고 2026-08-25, 419호). 스캔본을 지우자 남은 것이 '제출용'뿐이었는데,
+ * 대표 판정 정본이 파생 판본을 대표로 승격하지 않으므로 **보낼 계약서가 없다**가 됐다.
+ * 그 규칙은 옳다(근거 없는 표시본이 실계약 자리에 앉으면 안 된다) — 없던 것은 파생 판본을
+ * 명시적으로 골라 보내는 길이다. 승격이 아니라 선택이라 대표 판정은 한 글자도 안 바뀐다.
+ */
+export type DocBundleContractVersion = {
+  /** ContractFile.id — 선택 키의 접미가 된다(driveFileId 가 아니라 행 id 다). */
+  contractFileId: string
+  driveFileId: string
+  /** 서명일 ISO. */
+  at: string
+  /** '제출용'·'번역본' — 실계약이면 null(기본값이 대다수 행에 붙으면 소음이다). */
+  purposeLabel: string | null
+  /** '스캔본' · '구버전' 같은 파일 자체의 보조 표기. */
+  note: string | null
+  /** 이 부가 그 계약의 대표본인가 — 기본 선택이자 화면의 '현재' 표시. */
+  representative: boolean
+  mime: string
 }
 
 export type DocBundleGroup = {
@@ -91,6 +117,9 @@ export type DocBundleInput = {
   /** 발급 대상 상태(CONTRACT_ISSUE_STATUSES)로 이미 걸러진 계약들. 순서는 여기서 다시 잡는다. */
   leases: DocBundleLease[]
   contracts: DocBundleFile[]
+  /** 살아 있는 계약서 판본 전량(폐기본 제외). contracts 는 그중 대표 한 부라 기본 선택이 안 바뀐다.
+   *  행에 실릴 때 leaseTermId 는 떨어져 나간다(행이 이미 그 계약을 말한다). */
+  contractVersions?: (DocBundleContractVersion & { leaseTermId: string | null })[]
   rents: DocBundleFile[]
   deposits: DocBundleFile[]
   certs: DocBundleFile[]
@@ -103,7 +132,7 @@ const latestFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile |
   files.find(f => f.leaseTermId === leaseTermId)
 
 export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
-  const { tenantName, leases, contracts, rents, deposits, certs, now } = input
+  const { tenantName, leases, contracts, contractVersions = [], rents, deposits, certs, now } = input
   // 그룹 순서 정본 — 거주 · 예약 · 비거주(호실 면·프리즘과 같은 한 벌).
   const ordered = roomLeaseRowOrder(leases)
 
@@ -130,7 +159,21 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
 
     // 계약서는 **딸린 계약에 없다.** 그 계약의 종이는 부모 한 장이고 합본이 추가 호실을 이미 싣는다
     // (계약서 파일 칸의 extraLeases 와 문자 그대로 같은 규칙, 발급 자체도 서버가 막는다).
-    if (!l.parentLeaseTermId) rows.push(row('contract', l.id, latestFor(contracts, l.id)))
+    if (!l.parentLeaseTermId) {
+      const contractRow = row('contract', l.id, latestFor(contracts, l.id))
+      // 판본은 그 계약에 걸린 것만. 대표가 없어도(419호처럼 제출용만 남은 경우) 행은 서고,
+      // 화면이 '실계약 계약서가 없습니다'를 말한 뒤 판본을 고르게 한다.
+      const vs = contractVersions.filter(v => v.leaseTermId === l.id)
+      if (vs.length > 0) {
+        // leaseTermId 는 떼고 싣는다 — 행이 이미 그 계약을 말하고 있어 중복이다.
+        contractRow.versions = vs.map(v => ({
+          contractFileId: v.contractFileId, driveFileId: v.driveFileId, at: v.at,
+          purposeLabel: v.purposeLabel, note: v.note, representative: v.representative, mime: v.mime,
+        }))
+        if (!contractRow.driveFileId) contractRow.note = '실계약 계약서가 없습니다'
+      }
+      rows.push(contractRow)
+    }
 
     const rent = latestFor(rents, l.id)
     rows.push(row('rent', l.id, rent, rent ? staleNote(rent.at) : null))

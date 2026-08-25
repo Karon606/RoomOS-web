@@ -11,9 +11,10 @@ import prisma from '@/lib/prisma'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import {
   buildDocBundle, DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
-  type DocBundleFile, type TenantDocBundle,
+  type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
+import { contractPurposeLabel } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
 import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
@@ -92,6 +93,19 @@ export async function getTenantDocBundle(
       // 앱 발급본은 PDF 가 확실하고, 업로드본만 이름으로 추정한다(발송 때 바이트가 다시 판정한다).
       mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
     })),
+    // 판본 전량 — 폐기본은 뺀다(효력 없는 종이를 내보내는 길을 열지 않는다, 계약서함 다건 보내기와 같은 축).
+    // 구버전 도장(supersededAt)은 유효한 종이라 남기되 라벨로 말한다.
+    contractVersions: contractRows.filter(r => !r.voidedAt).map(r => ({
+      contractFileId: r.id,
+      driveFileId: r.driveFileId,
+      leaseTermId: r.leaseTermId,
+      at: r.signedAt.toISOString(),
+      purposeLabel: contractPurposeLabel(r.issuePurpose),
+      note: [r.source === 'UPLOADED' ? '스캔본' : null, r.supersededAt ? '구버전' : null]
+        .filter(Boolean).join(' · ') || null,
+      representative: representativeIds.has(r.id),
+      mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
+    })),
     rents: receipt('rent'),
     deposits: receipt('deposit'),
     certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null })),
@@ -154,15 +168,50 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
   if (!bundle.mail.enabled) return { ok: false as const, error: '메일 보내기가 켜져 있지 않습니다.' }
   if (!bundle.mail.to) return { ok: false as const, error: '입주자의 메일 주소가 없습니다. 입주자 정보에 먼저 넣어 주세요.' }
 
-  const wanted = new Set(keys)
-  const rows = bundle.groups.flatMap(g => g.rows).filter(r => r.driveFileId && wanted.has(r.key))
+  // 키는 두 꼴이다. 'contract:<leaseId>' 는 대표본(종전 그대로), '...#<contractFileId>' 는 명시 판본.
+  // **접미는 재조회한 행의 versions 안에서만 파일로 되바뀐다** — 후보 밖 id 는 조용히 거절되므로
+  // 임의 ID 를 끼워 넣을 자리가 없다는 멀티테넌트 방어가 문자 그대로 유지된다.
+  const picked = new Map<string, string | null>()   // 행 키 -> 고른 contractFileId(없으면 대표본)
+  for (const k of keys) {
+    const at = k.indexOf('#')
+    if (at < 0) picked.set(k, null)
+    else picked.set(k.slice(0, at), k.slice(at + 1))
+  }
+  const allRows = bundle.groups.flatMap(g => g.rows)
+  const rows: (DocBundleRow & { driveFileId: string })[] = []
+  for (const r of allRows) {
+    if (!picked.has(r.key)) continue
+    const wantId = picked.get(r.key) ?? null
+    if (!wantId) {
+      if (r.driveFileId) rows.push({ ...r, driveFileId: r.driveFileId })
+      continue
+    }
+    const v = r.versions?.find(x => x.contractFileId === wantId)
+    if (!v) return { ok: false as const, error: '고른 계약서 판본을 찾을 수 없습니다. 화면을 닫고 다시 열어 주세요.' }
+    // 판본을 고르면 그 판본의 파일·서명일·형식이 행을 대신한다. 파일명 접미도 여기서 갈린다.
+    rows.push({
+      ...r,
+      driveFileId: v.driveFileId,
+      issuedAt: v.at,
+      mime: v.mime,
+      note: [v.purposeLabel, v.note].filter(Boolean).join(' · ') || null,
+    })
+  }
   if (rows.length === 0) return { ok: false as const, error: '보낼 서류를 고르지 않았습니다.' }
   if (rows.length > MAIL_MAX_DOCS) return { ok: false as const, error: `한 번에 최대 ${MAIL_MAX_DOCS}건까지 보낼 수 있습니다.` }
 
   // 파일명은 공유 경로와 **같은 정본**이다 — 같은 서류가 어디로 나가든 같은 이름으로 도착해야 한다.
-  const entries = rows.map(r => ({
-    personName: bundle.tenantName, docLabel: DOC_TYPE_FILE_LABEL[r.docType], dateStr: fmtDateDot(r.issuedAt),
-  }))
+  const entries = rows.map(r => {
+    // 파생 판본은 이름에 그 사실을 적는다 — 받는 쪽이 제출용을 실계약으로 오인하지 않게.
+    // 실계약·스캔본은 접미가 없어 종전 이름 그대로다(무회귀).
+    const picked2 = picked.get(r.key) ?? null
+    const label = picked2 ? r.versions?.find(v => v.contractFileId === picked2)?.purposeLabel ?? null : null
+    return {
+      personName: bundle.tenantName,
+      docLabel: label ? `${DOC_TYPE_FILE_LABEL[r.docType]}(${label})` : DOC_TYPE_FILE_LABEL[r.docType],
+      dateStr: fmtDateDot(r.issuedAt),
+    }
+  })
   // 확장자는 항목별이다 — 스캔 JPEG 에 .pdf 를 붙여 보낸 것이 이번 사고였다(419호).
   // 여기 값은 추정이고, 실제 발송은 다운로드한 바이트로 다시 판정해 최종 이름을 짓는다.
   const names = shareFileNames(entries, rows.map(() => 1), rows.map(r => extForDocMime(r.mime)))

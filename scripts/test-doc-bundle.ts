@@ -7,7 +7,7 @@
 //   · 실거주 확인서는 거주 계약만. 비거주 계약에는 후보 자체가 없다(발급본이 이미 있을 때만 예외).
 //   · 계약을 말할 수 없는 파일은 중립 그룹 — 없는 계약에 갖다 붙이지 않는다.
 
-import { buildDocBundle, type DocBundleFile, type DocBundleLease, type TenantDocBundle } from '../lib/docBundle'
+import { buildDocBundle, type DocBundleFile, type DocBundleLease, type TenantDocBundle, type DocBundleContractVersion } from '../lib/docBundle'
 
 let pass = 0
 let fail = 0
@@ -132,6 +132,58 @@ const shape = (b: TenantDocBundle) => b.groups.map(g => ({ room: g.roomNo, kind:
 {
   const b = build([lease({ id: '509', roomNo: '509' })])
   eq('중립 · 떠도는 파일이 없으면 그룹도 없다', b.groups.length, 1)
+}
+
+// ── 계약서 판본(긴급 신고 2026-08-25, 419호) ──────────────────────────
+// 여기서 지키는 것 셋.
+//   · **기본 선택은 언제나 대표본** — 판본을 얹어도 행의 driveFileId 가 안 바뀐다(무회귀).
+//   · **대표가 공석이어도 행은 서고 판본이 후보로 남는다** — 제출용만 남은 계약을 보낼 길.
+//   · **폐기본은 후보가 아니다** — 조회부가 걸러 넘기는 것을 여기서 못 박는다.
+const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; leaseTermId: string | null }) => ({
+  driveFileId: `drive-${o.contractFileId}`, at: '2026-08-01T00:00:00.000Z',
+  purposeLabel: null, note: null, representative: false, mime: 'application/pdf', ...o,
+})
+{
+  // 실계약 대표 + 제출용 1부
+  const b = buildDocBundle({
+    tenantName: '테스트', ...empty, leases: [lease({ id: '419', roomNo: '419' })],
+    contracts: [file('419', '2026-05-11', '스캔본')],
+    contractVersions: [
+      ver({ contractFileId: 'scan', leaseTermId: '419', note: '스캔본', representative: true }),
+      ver({ contractFileId: 'sub', leaseTermId: '419', purposeLabel: '제출용', at: '2026-08-25T00:00:00.000Z' }),
+    ],
+    now: NOW,
+  })
+  const row = b.groups[0].rows.find(r => r.docType === 'contract')!
+  eq('판본 · 기본 선택은 대표본 그대로', row.driveFileId, 'drive-419-2026-05-11')
+  eq('판본 · 두 부가 후보로 실린다', row.versions?.length, 2)
+  eq('판본 · 파생 라벨', row.versions?.[1].purposeLabel, '제출용')
+  eq('판본 · 대표 표시', row.versions?.map(v => v.representative), [true, false])
+  eq('판본 · leaseTermId 는 행에 안 실린다', 'leaseTermId' in (row.versions?.[0] ?? {}), false)
+}
+{
+  // 419 실제 상황 — 스캔본을 지워 대표가 공석이고 제출용만 남았다
+  const b = buildDocBundle({
+    tenantName: '테스트', ...empty, leases: [lease({ id: '419', roomNo: '419' })],
+    contracts: [],
+    contractVersions: [ver({ contractFileId: 'sub', leaseTermId: '419', purposeLabel: '제출용' })],
+    now: NOW,
+  })
+  const row = b.groups[0].rows.find(r => r.docType === 'contract')!
+  eq('공석 · 행은 선다', !!row, true)
+  eq('공석 · 대표 파일은 없다', row.driveFileId, null)
+  eq('공석 · 판본은 후보로 남는다', row.versions?.length, 1)
+  eq('공석 · 사실을 말한다', row.note, '실계약 계약서가 없습니다')
+}
+{
+  // 무회귀 — 판본을 안 넘기면 행 모양이 종전과 완전히 같다
+  const b = buildDocBundle({
+    tenantName: '테스트', ...empty, leases: [lease({ id: '509', roomNo: '509' })],
+    contracts: [file('509', '2026-08-01')], now: NOW,
+  })
+  const row = b.groups[0].rows.find(r => r.docType === 'contract')!
+  eq('무회귀 · versions 없음', row.versions, undefined)
+  eq('무회귀 · 파일 그대로', row.driveFileId, 'drive-509-2026-08-01')
 }
 
 console.log(`\n서류 보내기 행 규칙 회귀: ${pass} 통과 / ${fail} 실패`)
