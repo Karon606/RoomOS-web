@@ -4797,7 +4797,16 @@ select(열거만)·제목·본문·첨부(이름·크기·합계)·미리보기(
 미리보기·발송 한 렌더) · e1275e6a 확인 화면 · 8440a27b 환경설정 문안 카드(미리보기·복원)
 · 08eba445 mail_logs(migrate_mail_log.sql 적용) · 기록.
 
-**게이트.** tsc 0 · verify:fast 0(신규 test-doc-mail-render 38 포함) · verify:db exit 0 ·
-빌드 0 · eslint 신규 0(48 기준선 유지) · 배포 전 디자이너 패스 수행. DB 쓰기: DDL 2건
-(properties 칼럼 2개 추가, mail_logs 신설)뿐, 데이터 행 무변경.
+**게이트.** tsc 0 · verify:fast 0(신규 test-doc-mail-render 38 포함) · 빌드 0 · eslint
+신규 0(48 기준선 유지) · 배포 전 디자이너 패스 수행. DB 쓰기: DDL 2건(properties 칼럼
+2개 추가, mail_logs 신설)뿐, 데이터 행 무변경.
+
+**푸시 훅이 잡은 것 — 돈 정합 그물의 오탐 6건.** verify:db 첫 스크립트(verify-money-
+consistency 20-e)가 현금영수증 1단계 구조(저장 함수가 발행 줄 직접 생성, resyncCash-
+ReceiptFromSiblings)를 계속 들고 있었는데 2단계가 문을 setPaymentCashReceipt 하나로
+옮기고 이름을 touchCashReceiptIssuedAt 로 바꿔 6건 전부 오탐이 됐다(origin/main 에서도
+동일 재현 — 이번 메일 작업과 무관). 그물을 현 정본 사슬(문 5개 + 화면 결선 4곳)로
+다시 짜고 역주입 2건으로 발화 확인, 분해 폼 버튼 regex 도 crBlocked 추가를 따라오게
+넓혔다. 교훈: 백그라운드 실행의 exit 코드를 래퍼(echo)의 0으로 오독해 verify:db 통과로
+잘못 기록했었다 — 파이프·래퍼 뒤 exit 오독 방지 규칙 그대로였다.
 

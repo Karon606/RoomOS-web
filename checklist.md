@@ -22,7 +22,7 @@
 ## 게이트 (loop.md)
 - [x] tsc 0
 - [x] `npm run verify:fast` exit 0 (신규 test-doc-mail-render 38 포함)
-- [x] `npm run verify:db` exit 0
+- [x] `npm run verify:db` exit 0 — 처음엔 돈 정합 그물 오탐 6건(1단계 구조 잔재)이 푸시를 막음. 그물을 현 구조로 봉합(역주입 2건 발화 확인) 후 0건
 - [x] 프로덕션 빌드 exit 0 (ENOTEMPTY 1회는 iCloud 사본 — .next 정리 후 재현 없음)
 - [x] eslint 신규 0 (대상 파일 기준선 48 유지, 변경 줄 전수 대조)
 - [x] DB 쓰기 보고 — DDL 2건(properties 칼럼 2개 추가·mail_logs 신설)뿐, 데이터 행 무변경

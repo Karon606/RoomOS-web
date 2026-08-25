@@ -1876,39 +1876,54 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       violations.push(`[소스] ${f} 가 수단이 카드로 바뀔 때 발행 표시를 끄지 않는다 — 체크박스만 사라지고 값은 남는다`)
     }
   }
-  // 20-e. 발행 줄을 만드는 길도 하나다. 저장 경로가 발행 줄을 안 만들면 그 수납은 합계에서
-  //       통째로 빠진다 — 화면은 발행 표시를 보여주는데 숫자만 안 는다(가장 알아채기 어려운 결함).
+  // 20-e. 발행 줄을 만드는 문은 하나다(2단계 개편 후 구조). 저장 함수는 발행 줄을 직접 만들지
+  //       않는다 — 화면이 저장 뒤 setPaymentCashReceipt 를 1회 부르고(수납 폼 세 갈래 + 수정 폼),
+  //       토글·수정은 touchCashReceiptIssuedAt(여부·날짜만)이며, 전부 syncCashReceiptLine 하나로
+  //       수렴한다. 어느 고리가 끊겨도 그 수납은 발행 표시만 뜨고 합계에서 빠진다.
+  // ※ 1단계에는 저장 함수(savePayment 등)가 직접 만들었고 resyncCashReceiptFromSiblings 가
+  //   있었다. 2단계가 문을 옮기고 이름을 바꿨는데 이 그물이 옛 구조를 계속 들고 있다가
+  //   오탐 6건으로 배포를 막았다(2026-08-25). 그물은 정본 구조를 따라와야 한다.
   // **함수별로 본다.** 개수만 세면 호출이 `if (false)` 로 죽어 있어도 통과한다(역주입이 그것을
-  // 잡았다). 저장 함수 본문을 잘라 그 안에 호출이 살아 있는지 확인한다.
-  // 본문을 자르는 두 함정. 괄호 깊이로 세면 **인자 타입의 `{` 가 먼저 닫혀** 서명만 잘리고,
-  // 열 0의 `}` 를 그냥 찾으면 그 인자 타입을 닫는 `\n})` 에 먼저 걸린다. 둘 다 실제로 겪었다.
-  // 그래서 서명이 끝나는 `): Promise` 를 지난 뒤부터 열 0의 `}` 를 찾는다.
+  // 잡았다). 본문을 자르는 두 함정. 괄호 깊이로 세면 **인자 타입의 `{` 가 먼저 닫혀** 서명만
+  // 잘리고, 열 0의 `}` 를 그냥 찾으면 인자 타입을 닫는 `\n})` 에 먼저 걸린다. 그래서 서명이
+  // 끝나는 `): Promise` 를 지난 뒤부터 열 0의 `}` 를 찾는다(export 없는 내부 함수도 잡는다).
   const sliceFn = (src, name) => {
-    const at = src.indexOf(`export async function ${name}(`)
+    let at = src.indexOf(`export async function ${name}(`)
+    if (at < 0) at = src.indexOf(`\nasync function ${name}(`)
     if (at < 0) return null
     const sigEnd = src.indexOf('): Promise', at)
     if (sigEnd < 0) return null
     const end = src.indexOf('\n}', sigEnd)
     return end < 0 ? src.slice(at) : src.slice(at, end + 2)
   }
-  const WRITERS = [
-    ['savePayment', 'syncCashReceiptLine'],
-    ['saveDepositPayment', 'syncCashReceiptLine'],
-    ['saveCleaningFeePayment', 'syncCashReceiptLine'],
-    ['updatePayment', 'resyncCashReceiptFromSiblings'],
-    ['setCashReceiptIssued', 'resyncCashReceiptFromSiblings'],
+  const RECEIPT_CHAIN = [
+    ['setPaymentCashReceipt', 'syncCashReceiptLine'],      // 화면의 문 — 저장 후 1회
+    ['touchCashReceiptIssuedAt', 'syncCashReceiptLine'],   // 토글·수정 — 여부·날짜만
+    ['batchSetCashReceipts', 'syncCashReceiptLine'],       // 일괄 발행
+    ['setCashReceiptIssued', 'touchCashReceiptIssuedAt'],  // 옛 토글 진입로가 정본 경유
+    ['updatePayment', 'touchCashReceiptIssuedAt'],         // 축 변경 시 옛 줄 정리 경유
   ]
-  for (const [fnName, call] of WRITERS) {
+  for (const [fnName, call] of RECEIPT_CHAIN) {
     const body = sliceFn(roomsActions, fnName)
     if (!body) {
-      violations.push(`[소스] ${fnName} 을 못 찾았다 — 발행 줄 대조가 건너뛰어졌다. 감지망을 고칠 것`)
+      violations.push(`[소스] ${fnName} 을 못 찾았다 — 발행 사슬 대조가 건너뛰어졌다. 감지망을 고칠 것`)
       continue
     }
     // 죽은 호출(`if (false) await ...`)도 없는 것과 같이 본다.
     const live = new RegExp(`(^|[^)])\\s*await ${call}\\(`, 'm').test(body)
     if (!live) {
-      violations.push(`[소스] ${fnName} 이 발행 줄(${call})을 안 만든다 — 그 경로로 받은 수납은 발행 표시만 뜨고 합계에는 안 잡힌다`)
+      violations.push(`[소스] ${fnName} 이 ${call} 를 안 부른다 — 발행 사슬이 끊겨 그 경로의 수납이 합계에서 빠진다`)
     }
+  }
+  // 화면 결선 — 문이 있어도 화면이 안 부르면 같은 결함이다. 수납 폼은 세 갈래(분해·일반·예약금),
+  // 수정 폼(PaymentRecordList)은 한 곳이 저장 뒤 문을 불러야 한다.
+  const entryDoorCalls = (entryForm.match(/await setPaymentCashReceipt\(/g) ?? []).length
+  if (entryDoorCalls < 3) {
+    violations.push(`[소스] 수납 폼의 발행 문 호출이 ${entryDoorCalls}곳(세 갈래여야 한다) — 빠진 갈래의 수납이 합계에서 빠진다`)
+  }
+  const recordListSrc = readFileSync('components/entity-modal/widgets/PaymentRecordList.tsx', 'utf8')
+  if (!/await setPaymentCashReceipt\(/.test(recordListSrc)) {
+    violations.push('[소스] 수정 폼(PaymentRecordList)이 발행 문을 안 부른다 — 수정으로 바꾼 발행 금액이 합계에 안 잡힌다')
   }
   // 발행 줄을 만드는 자리는 전부 봉인을 지난 issuedAt 을 넘겨야 한다. 직접 new Date() 를 박으면
   // 카드에도 줄이 생기고 발행일이 클릭 시각으로 되돌아간다.
@@ -1998,7 +2013,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   }
   // 이름만 보면 안 된다. 선언과 **저장 버튼 결선**을 함께 본다 — 변수만 남고 버튼에서 빠지면
   // 그물은 통과하는데 화면은 합이 안 맞아도 저장된다.
-  if (!/const splitBlocked\s*=/.test(entryForm) || !/disabled=\{[^}]*splitBlocked\}/.test(entryForm)) {
+  if (!/const splitBlocked\s*=/.test(entryForm) || !/disabled=\{[^}]*\bsplitBlocked\b/.test(entryForm)) {
     violations.push('[소스] 분해 폼의 합 불일치 저장 차단이 없다(선언 또는 저장 버튼 결선) — 앱이 말없이 보정하면 안 된다(운영자 오더 2026-08-24)')
   }
   // 제출 경로에도 같은 차단이 걸려 있어야 한다. 버튼만 막으면 엔터 제출로 새어 나간다.
