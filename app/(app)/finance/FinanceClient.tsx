@@ -6,7 +6,7 @@ import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
-import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
+import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, undoDeleteExpense, undoExpenseStockShift, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
@@ -50,7 +50,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
-import { recurringDueDateFor } from '@/lib/recurringDueDate'
+import { recurringDueDateFor, recurringCycleLabel } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -2512,12 +2512,17 @@ export default function FinanceClient({
 
   const activeRecs       = recurringExpensesWithStatus.filter(r => !r.isPending)
   const pendingRecs      = recurringExpensesWithStatus.filter(r => r.isPending)
-  const recUnrecordedCount = activeRecs.filter(r => !r.recordedExpenseId).length
+  // 이 달에 도래하는 것만 예정으로 센다(신고 7e7da5c4) — 연1회 지출이 매달 예정 행으로 서면
+  // 합계가 12배로 부푼다. interval 1(기존 전건)은 항상 참이라 숫자가 안 바뀐다.
+  const dueRecs          = activeRecs.filter(r => r.isDueThisMonth)
+  // 이번 달에 안 나가는 항목 — 사라진 것이 아니라는 사실을 아래 섹션이 말한다.
+  const offCycleRecs     = activeRecs.filter(r => !r.isDueThisMonth && !r.recordedExpenseId)
+  const recUnrecordedCount = dueRecs.filter(r => !r.recordedExpenseId).length
 
   // ── 상단 요약 위젯 계산 ──────────────────────────────────────
   const normalExpTotal   = expenses.filter(e => !e.recurringExpenseId).reduce((s, e) => s + e.amount, 0)
   const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
-  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
+  const recPendingTotal  = dueRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
 
   // ── 카테고리별 차트 데이터 ─────────────────────────────────
@@ -2853,7 +2858,7 @@ export default function FinanceClient({
 
           {(() => {
             // 미확인 고정 지출 — 필터 적용 후 납부일 기준 날짜 부여
-            const unconfirmedRecsFiltered = activeRecs.filter(r =>
+            const unconfirmedRecsFiltered = dueRecs.filter(r =>
               !r.recordedExpenseId &&
               (expFilter.category === 'all' || r.category === expFilter.category) &&
               (expFilter.method === 'all' || r.payMethod === expFilter.method) &&
@@ -3273,6 +3278,49 @@ export default function FinanceClient({
                   )}
                 </div>
 
+                {/* 이번 달 도래 없음 — 격월·분기·연1회 항목이 이 달에 안 나갈 때(신고 7e7da5c4).
+                    목록에서 통째로 감추면 운영자가 "이 지출이 사라졌나" 하고 놀란다. 예정 합계에는
+                    안 들어가되 다음 도래가 언제인지 여기서 말한다. 매월 항목만 있으면 이 줄이
+                    아예 안 서므로 종전 화면과 같다. */}
+                {offCycleRecs.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">이번 달 도래 없음 · 도래하는 달에 예정으로 표시</p>
+                    <div className="sm:hidden space-y-2">
+                      {offCycleRecs.map(rec => (
+                        <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs text-[var(--warm-mid)]">{recurringCycleLabel(rec)} {rec.dueDay}일</span>
+                            <span className="text-[0.65625rem] text-[var(--warm-mid)]">다음 도래 {fmtDateDot(recurringDueDateFor(rec, rec.nextDueMonth))}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <Badge tone="pale-coral">{rec.category}</Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
+                            <span className="text-sm font-bold text-[var(--warm-mid)]"><MoneyDisplay amount={effectiveRecurringAmount(rec)} prefix="-" /></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
+                      <table className="w-full">
+                        <tbody className="divide-y divide-[var(--warm-border)]/50">
+                          {offCycleRecs.map(rec => (
+                            <tr key={rec.id}>
+                              <td className="px-4 py-3 text-xs text-[var(--warm-mid)] w-32">{recurringCycleLabel(rec)} {rec.dueDay}일</td>
+                              <td className="px-4 py-3 text-xs text-[var(--warm-mid)] w-28">{rec.payMethod ?? '—'}</td>
+                              <td className="px-4 py-3 text-xs text-[var(--warm-mid)]">{rec.category}</td>
+                              <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{rec.title}</td>
+                              <td className="px-4 py-3 text-sm text-[var(--warm-mid)] text-right"><MoneyDisplay amount={effectiveRecurringAmount(rec)} prefix="-" /></td>
+                              <td className="px-4 py-3 text-right text-[0.65625rem] text-[var(--warm-mid)] w-36">다음 도래 {fmtDateDot(recurringDueDateFor(rec, rec.nextDueMonth))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* 활성화 예정 항목 (하단) */}
                 {pendingRecs.length > 0 && (
                   <div className="space-y-2 pt-2">
@@ -3281,7 +3329,7 @@ export default function FinanceClient({
                       {pendingRecs.map(rec => (
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 opacity-50">
                           <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일</span>
+                            <span className="text-xs text-[var(--warm-muted)]">{recurringCycleLabel(rec)} {rec.dueDay}일</span>
                             <Badge tone="pale-blue">{rec.activeSince?.slice(0, 7)} 활성화</Badge>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -3299,7 +3347,7 @@ export default function FinanceClient({
                         <tbody className="divide-y divide-[var(--warm-border)]/50">
                           {pendingRecs.map(rec => (
                             <tr key={rec.id} className="bg-[var(--canvas)]/30">
-                              <td className="px-4 py-3 text-xs text-[var(--warm-muted)] w-24">매월 {rec.dueDay}일</td>
+                              <td className="px-4 py-3 text-xs text-[var(--warm-muted)] w-32">{recurringCycleLabel(rec)} {rec.dueDay}일</td>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] w-28">{rec.payMethod ?? '—'}</td>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)]">{rec.category}</td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{rec.title}</td>
