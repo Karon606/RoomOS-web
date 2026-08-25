@@ -422,29 +422,35 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
                 className="text-[var(--danger-fg)]">
                 삭제
               </Btn>
+              {/* 서류를 **만들러 가는** 문 셋. 아래 '서류 보내기'와 목적이 달라 두 가지로 가른다
+                  (오류신고 62440a66 — "동일한 버튼이라서 구별이 잘 안되는 단점이 있어").
+                  ① 색 위계. 만드는 문은 subtle 로 한 단계 내리고 보내는 문만 secondary 를 지킨다.
+                  ② 배치. 보내는 문은 spacer 오른쪽으로 옮겨 '수정' 옆에 선다.
+                  색만으로 가르면 색각 조건에서 무너지므로 **둘이 함께** 가야 한다(접근성 조건).
+                  라벨에 동사를 다는 안(계약서 → 계약서 작성)은 어휘 정본 개정이라 별건으로 남긴다. */}
               {links?.tenantId && (
-                <Btn variant="secondary" size="md" onClick={handleContract}>
+                <Btn variant="subtle" size="md" onClick={handleContract}>
                   계약서
                 </Btn>
               )}
               {links?.tenantId && (
-                <Btn variant="secondary" size="md" onClick={handleResidenceCert}>
+                <Btn variant="subtle" size="md" onClick={handleResidenceCert}>
                   실거주 확인서
                 </Btn>
               )}
               {links?.tenantId && (
-                <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent')}>
+                <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('rent')}>
                   입실료 납부 확인서
                 </Btn>
               )}
-              {/* 위 셋은 서류를 만들러 가는 문이고, 이것은 이미 만들어진 서류를 보내는 문이다.
-                  종전에는 종류마다 목록 화면을 따로 열어 한 사람의 종이를 네 번에 걸쳐 보냈다. */}
+              <div className="flex-1" />
+              {/* 이미 만들어진 서류를 **보내는** 문. 종전에는 종류마다 목록 화면을 따로 열어
+                  한 사람의 종이를 네 번에 걸쳐 보냈다. */}
               {links?.tenantId && (canShare || mailOn) && (
                 <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(null)}>
                   서류 보내기
                 </Btn>
               )}
-              <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
                 수정
               </Btn>
@@ -455,12 +461,15 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               나가는 종이가 하나여야 한다(2026-08-13, 다호실 마무리). */}
           {kind === 'payment' && links?.tenantId && (
             <div className="flex flex-wrap gap-2 items-center">
-              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('rent', shownLeaseId)}>
+              {/* 입주자 면과 같은 처방 — 만드는 문은 subtle, 보내는 문만 secondary 로 오른쪽에.
+                  두 면이 갈리면 같은 일이 화면마다 다른 손놀림이 된다(오류신고 62440a66). */}
+              <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('rent', shownLeaseId)}>
                 입실료 납부 확인서
               </Btn>
-              <Btn variant="secondary" size="md" onClick={() => handleRentReceipt('deposit', shownLeaseId)}>
+              <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('deposit', shownLeaseId)}>
                 보증금 영수증
               </Btn>
+              <div className="flex-1" />
               {/* 여기서 연 시트는 이 면이 열어 둔 계약 분을 기본 체크한다 — 보고 있는 계약과
                   나가는 종이가 하나여야 한다(위 두 버튼의 지목과 같은 규칙). */}
               {(canShare || mailOn) && (
