@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import LoginButton from './LoginButton'
@@ -62,8 +63,14 @@ export default async function LoginPage({
           <LoginButton returnTo={returnTo} />
         </div>
 
+        {/* 이 문장이 가리킬 문서가 없던 상태를 봉합했다(2026-08-26) — 문서 없이 동의를 말하면
+            그 문장 자체가 사실이 아니고, 무엇에 동의했는지 나중에 아무도 답할 수 없다. */}
         <p className="text-center text-xs" style={{ color: 'var(--warm-muted)' }}>
-          로그인 시 서비스 이용약관 및 개인정보처리방침에 동의하게 됩니다.
+          로그인 시{' '}
+          <Link href="/terms" className="underline underline-offset-2" style={{ color: 'var(--warm-mid)' }}>서비스 이용약관</Link>
+          {' '}및{' '}
+          <Link href="/privacy" className="underline underline-offset-2" style={{ color: 'var(--warm-mid)' }}>개인정보 처리방침</Link>
+          에 동의하게 됩니다.
         </p>
       </div>
     </main>

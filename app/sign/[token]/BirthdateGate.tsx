@@ -67,6 +67,12 @@ export default function BirthdateGate({ token }: { token: string }) {
         >
           {pending ? '확인 중…' : '확인'}
         </button>
+        {/* 입주자가 자기 정보를 직접 넣는 유일한 화면이다 — 무엇에 쓰이는지 그 자리에서 말한다.
+            이 화면은 앱 셸 밖 단독 라우트라 스타일이 인라인이다(형제 문법 그대로). */}
+        <p style={{ fontSize: 11.5, color: '#6B5D4F', lineHeight: 1.6, margin: '14px 0 0' }}>
+          입력하신 생년월일은 본인 확인에만 쓰이고 따로 저장하지 않습니다. 계약서에 적힌 정보는
+          계약 체결과 이행을 위해 영업장이 보관합니다.
+        </p>
       </form>
     </div>
   )
