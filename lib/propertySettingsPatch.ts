@@ -16,6 +16,8 @@
 // 저장 범위 회귀는 scripts/test-settings-save-scope.ts 가 이 함수로 전수 대조한다.
 
 /** 임의처분 동의서는 칼럼 하나(JSON)라 네 칸이 한 벌로 움직인다. */
+import { normalizeMailFromLocal } from './mailFrom'
+
 export type DisposalConsentPatch = {
   enabled: boolean
   days: number
@@ -29,6 +31,7 @@ export type PropertySettingsPatch = {
   address?: string | null
   phone?: string | null
   replyToEmail?: string | null
+  mailFromLocal?: string | null
   acquisitionDate?: Date | null
   prevOwnerCutoffDate?: Date | null
   defaultDeposit?: number | null
@@ -79,6 +82,11 @@ export function buildPropertySettingsPatch(
   if (formData.has('phone')) patch.phone = str(formData, 'phone') || null
   // 서류 메일의 답장 받을 주소 — 형식 검증은 폼(type=email)이 하고 여기는 공백만 턴다.
   if (formData.has('replyToEmail')) patch.replyToEmail = str(formData, 'replyToEmail').trim() || null
+  // 발신 주소 앞부분 — 규칙은 lib/mailFrom 정본 하나다(저장·발송·표시가 같은 규칙을 지난다).
+  // 여기서 다시 적으면 저장된 값과 실제로 나가는 주소가 갈린다.
+  if (formData.has('mailFromLocal')) {
+    patch.mailFromLocal = normalizeMailFromLocal(str(formData, 'mailFromLocal')) || null
+  }
   if (formData.has('acquisitionDate')) {
     const v = str(formData, 'acquisitionDate')
     patch.acquisitionDate = v ? new Date(v) : null

@@ -76,6 +76,7 @@ type Property = {
   address: string | null
   phone: string | null
   replyToEmail?: string | null   // 서류 메일 답장 주소(2026-08-25)
+  mailFromLocal?: string | null  // 서류 메일 발신 주소 앞부분(2026-08-26)
   acquisitionDate: Date | null
   prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
@@ -293,6 +294,9 @@ export default function SettingsForm({
   const cutoffDate = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate).toISOString().slice(0, 10)
     : ''
+  // 발신 주소 앞부분 — 입력하는 동안 허용 문자만 남긴다(전용면적 칸과 같은 문법).
+  // '@' 는 치도록 두고 저장 때 정본이 잘라낸다 — 전체 주소를 붙여넣는 손을 막지 않는다.
+  const [mailFromLocal, setMailFromLocal]   = useState(property?.mailFromLocal ?? '')
   const [acqDateVal, setAcqDateVal]         = useState(acqDate)
   const [cutoffDateVal, setCutoffDateVal]   = useState(cutoffDate)
   // 전용면적·임의처분 동의서는 2026-08-19 IA 2단계에서 계약서·서류 탭으로 옮겼다 — 그 값들의
@@ -879,11 +883,27 @@ export default function SettingsForm({
               <label className="text-xs font-medium text-[var(--warm-mid)]">대표 연락처</label>
               <PhoneInput name="phone" defaultValue={property?.phone ?? ''} />
             </div>
-            {/* 서류 메일 답장 주소 — 발신 주소는 도메인 인증 때문에 no-reply@stayeum.com 고정이라
-                답장 주소가 영업장 몫이다(lib/mailSend). 문안은 계약서·서류 탭 '서류 메일 문안' 카드. */}
+            {/* 서류 메일 주소 두 칸 — 나가는 방향(보내는 주소) 다음 돌아오는 방향(답장 받을 주소)이다.
+                도메인은 인증 때문에 고정이고 앞부분만 영업장 몫이다(lib/mailFrom).
+                문안은 계약서·서류 탭의 '서류 메일 문안' 카드에서 고친다. */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">메일 주소</label>
-              <p className="text-xs text-[var(--warm-muted)]">서류를 메일로 보낼 때 답장을 받을 영업장 대표 주소입니다. 로그인 주소와 달라도 됩니다. 보낼 때 이 주소와 내 로그인 주소 중에서 고를 수 있습니다.</p>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">보내는 주소</label>
+              <p className="text-xs text-[var(--warm-muted)]">서류 메일이 나갈 때 받는 사람에게 표시되는 발신 주소의 앞부분입니다. 뒷부분은 도메인 인증 때문에 @stayeum.com 으로 고정됩니다. 비워 두면 no-reply 로 나갑니다.</p>
+              <div className="relative">
+                <input type="text" name="mailFromLocal"
+                  value={mailFromLocal}
+                  onChange={e => setMailFromLocal(e.target.value.toLowerCase().replace(/[^a-z0-9._@-]/g, ''))}
+                  placeholder="예: mygoshiwon"
+                  inputMode="email" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 pr-[7.2rem] text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                {/* 접미는 값이 없어도 늘 띄운다 — 단위 장식(㎡)과 달리 "뒤에 무엇이 붙는가"가 정보 그
+                    자체라, 빈 칸일 때야말로 형식을 말해 줘야 한다. */}
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">@stayeum.com</span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">답장 받을 주소</label>
+              <p className="text-xs text-[var(--warm-muted)]">받는 사람이 답장하면 이 주소로 옵니다. 로그인 주소와 달라도 되고 네이버·지메일 등 어떤 주소든 됩니다. 보낼 때 이 주소와 내 로그인 주소 중에서 고를 수 있습니다.</p>
               <input type="email" name="replyToEmail" defaultValue={property?.replyToEmail ?? ''}
                 placeholder="예: contact@example.com"
                 autoComplete="off"

@@ -25,7 +25,7 @@ const PATCH   = 'lib/propertySettingsPatch.ts'
 // 칸을 새로 만들면 여기에 먼저 적고 정본에 가드를 단다 — 축 ⓓ 가 순서를 강제한다.
 const GUARDED = [
   // 기본정보
-  'name', 'address', 'phone', 'replyToEmail', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays',
+  'name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays',
   // 요금·정책
   'defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct',
   'refundClauseInContract', 'cleaningFeeInDeposit',

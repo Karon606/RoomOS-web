@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
+import { isReservedMailLocal } from '@/lib/mailFrom'
 import { Prisma } from '@prisma/client'
 import {
   parseDocMailTemplate, findUnknownVars, sanitizeDocMailHtml, renderDocMail,
@@ -96,6 +97,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       address: true,
       phone: true,
       replyToEmail: true,   // 서류 메일 답장 주소(2026-08-25)
+      mailFromLocal: true,  // 서류 메일 발신 주소 앞부분(2026-08-26)
       acquisitionDate: true,
       prevOwnerCutoffDate: true,
       defaultDeposit: true,
@@ -789,10 +791,21 @@ export async function updatePropertySettings(formData: FormData) {
   const propertyId = await getPropertyId()
   const isOwner = (await getMyRole()) === 'OWNER'
 
-  await prisma.property.update({
-    where: { id: propertyId },
-    data: buildPropertySettingsPatch(formData, { isOwner }),
-  })
+  // 패치를 먼저 만들고 그것을 검사한다 — formData 를 여기서 다시 읽으면 "실려 온 필드만 쓴다"
+  // 규칙 밖의 두 번째 저장 경로가 생긴다(감지망 축 ⓕ).
+  const patch = buildPropertySettingsPatch(formData, { isOwner })
+  if (patch.mailFromLocal && isReservedMailLocal(patch.mailFromLocal)) {
+    throw new Error('시스템이 쓰는 이름이라 보내는 주소로 쓸 수 없습니다. 다른 이름을 넣어 주세요.')
+  }
+  try {
+    await prisma.property.update({ where: { id: propertyId }, data: patch })
+  } catch (err) {
+    // 발신 주소는 @unique 다. raw 메시지가 토스트에 그대로 찍히지 않게 사람 말로 옮긴다.
+    if ((err as { code?: string })?.code === 'P2002') {
+      throw new Error('이미 다른 영업장이 쓰고 있는 보내는 주소입니다. 다른 이름을 넣어 주세요.')
+    }
+    throw err
+  }
 
   revalidatePath('/settings')
   revalidatePath('/rooms')
