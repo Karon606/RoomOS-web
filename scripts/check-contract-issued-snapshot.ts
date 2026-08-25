@@ -30,7 +30,7 @@ const CUTOFF = new Date('2026-08-11T00:33:33+09:00')
 // 버전 폐기는 이 값을 건드리지 않는다. 폐기는 issuedSnapshot 을 읽지도 쓰지도 않고 voidedAt 만
 // 찍으므로, 폐기 뒤에도 박제 총량은 그대로여야 한다 — 줄면 그것이 곧 축 B 가 잡을 사고다.
 // 2026-08-19 재상향: 운영자 발급 증가분 1건(축 자체 안내에 따른 래칫 정비).
-const SNAPSHOT_BASELINE = 9
+const SNAPSHOT_BASELINE = 12
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
