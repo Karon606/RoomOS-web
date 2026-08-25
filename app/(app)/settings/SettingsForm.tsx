@@ -68,7 +68,7 @@ import {
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel } from '@/lib/recurringDueDate'
+import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
 
 type Property = {
   id: string
@@ -655,9 +655,7 @@ export default function SettingsForm({
     activeSince: recForm.activeSince || null,
     createdAt: new Date().toISOString(),
   }
-  const recCycleWord = recForm.intervalMonths === '1'
-    ? '매월'
-    : (recurringCycleLabel(recCycleSource).split(' (')[0])
+  const recCycleWord = recurringCycleWord(recCycleSource)
   const recCycleHint = recForm.anchorMonth
     ? `이 설정이면 ${recurringCycleLabel(recCycleSource).replace(/^[^(]*\(|\)$/g, '')}에 도래합니다.`
     : '자동이면 활성화 시작일(없으면 등록일)의 달이 기준이 됩니다.'
@@ -1348,7 +1346,7 @@ export default function SettingsForm({
                       <option value="">자동 (활성화 시작일 기준)</option>
                       {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
                     </select>
-                    <p className="text-xs text-[var(--warm-muted)]">{recCycleHint}</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recCycleHint}</p>
                   </div>
                 )}
                 {/* #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목을 나눠 적기 */}

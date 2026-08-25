@@ -97,6 +97,24 @@ export function recurringCycleLabel(rec: RecurringCycleSource): string {
   return `${interval}개월마다 (${months.join('·')}월)`
 }
 
+/**
+ * 주기의 짧은 말 — '매월'·'격월'·'분기마다'·'반기마다'·'해마다'.
+ *
+ * 라벨(recurringCycleLabel)은 도래 달을 열거해서 길다. 그 열거가 필요 없는 자리가 둘이다.
+ *   · 알림 detail — 오늘 나가는 건을 말하는 자리라 나머지 세 달은 군더더기다(320px 에서 줄이 접힌다).
+ *   · '납부일 (…)' 라벨 — '분기'는 명사라 "분기라는 납부일"로 읽힌다. 부사형이라야 문장이 된다.
+ * 세 자리(두 폼·알림)가 각자 문자열을 자르면 갈리므로 여기 하나로 둔다.
+ */
+export function recurringCycleWord(rec: RecurringCycleSource): string {
+  const interval = rec.intervalMonths
+  if (!Number.isFinite(interval) || interval <= 1) return '매월'
+  if (interval === 2) return '격월'
+  if (interval === 3) return '분기마다'
+  if (interval === 6) return '반기마다'
+  if (interval === 12) return '해마다'
+  return `${interval}개월마다`
+}
+
 /** 폼 select 선택지 정본 — 두 CRUD 폼(환경설정·재무 관리 모달)이 공유한다(사본 드리프트 방지). */
 export const RECURRING_INTERVAL_CHOICES: { value: number; label: string }[] = [
   { value: 1, label: '매월' },

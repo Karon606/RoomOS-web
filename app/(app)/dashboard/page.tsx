@@ -15,7 +15,7 @@ import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
-import { recurringCycleLabel } from '@/lib/recurringDueDate'
+import { recurringCycleWord } from '@/lib/recurringDueDate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
@@ -1755,7 +1755,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate:           fmtShortDate(effectiveDate),
       // 주기가 매월이 아니면 그 사실을 적는다 — 연 1회 항목이 이번 달에 뜬 것이 맞다는 말을
       // 알림 자체가 해야 한다(매월은 안 적는다, 대다수 행에 붙으면 소음이다).
-      detail:              `${fmtWon(expectedAmt)}${amountLabel ? ` · ${amountLabel}` : ''} · ${re.category}${re.intervalMonths > 1 ? ' · ' + recurringCycleLabel(re) : ''}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
+      detail:              `${fmtWon(expectedAmt)}${amountLabel ? ` · ${amountLabel}` : ''} · ${re.category}${re.intervalMonths > 1 ? ' · ' + recurringCycleWord(re) : ''}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
       recurringAmount:       expectedAmt,
       recurringDueDate:      effectiveDate.toISOString().slice(0, 10),

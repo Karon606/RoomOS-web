@@ -2,7 +2,7 @@
 // 목록 표시·D-3 필터·기록 모달 프리필이 한 함수를 쓰는지 지킨다(신고 1cfaabab).
 import {
   recurringDueDateFor, recurringDueToday,
-  isRecurringDueMonth, nextRecurringDueMonth, resolveRecurringAnchorMonth, recurringCycleLabel,
+  isRecurringDueMonth, nextRecurringDueMonth, resolveRecurringAnchorMonth, recurringCycleLabel, recurringCycleWord,
   type RecurringCycleSource,
 } from '../lib/recurringDueDate'
 import { kstDaysUntil } from '../lib/kstDate'
@@ -142,6 +142,13 @@ eq('표기: 분기 열거', recurringCycleLabel(cyc({ intervalMonths: 3, anchorM
 eq('표기: 반기 열거', recurringCycleLabel(cyc({ intervalMonths: 6, anchorMonth: 9 })), '반기 (3·9월)')
 eq('표기: 연 1회', recurringCycleLabel(cyc({ intervalMonths: 12, anchorMonth: 3 })), '연 1회 (3월)')
 
+
+// 짧은 말 — 알림 detail 과 '납부일 (…)' 라벨이 쓰는 정본. 열거 없이 부사형이라야 문장이 된다.
+eq('짧은 말: 매월', recurringCycleWord(cyc({ intervalMonths: 1 })), '매월')
+eq('짧은 말: 격월', recurringCycleWord(cyc({ intervalMonths: 2, anchorMonth: 3 })), '격월')
+eq('짧은 말: 분기마다', recurringCycleWord(cyc({ intervalMonths: 3, anchorMonth: 2 })), '분기마다')
+eq('짧은 말: 반기마다', recurringCycleWord(cyc({ intervalMonths: 6, anchorMonth: 3 })), '반기마다')
+eq('짧은 말: 해마다', recurringCycleWord(cyc({ intervalMonths: 12, anchorMonth: 3 })), '해마다')
 
 // 알림 게이트 — 비도래 달이면 날짜가 오늘이어도 침묵한다(푸시·인앱 종이 함께 걸러진다).
 eq('비도래 달이면 오늘이어도 발화 안 함', recurringDueToday(due({ ...manual(25), isDueThisMonth: false }), '2026-08-25'), false)
