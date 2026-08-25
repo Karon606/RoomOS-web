@@ -45,6 +45,8 @@ export async function sendMail(input: {
   to: string
   subject: string
   text: string
+  /** HTML 본문(lib/docMail renderDocMail 산출). text 는 항상 함께 싣는다(수신함 미리보기·접근성). */
+  html?: string
   /** 표시 이름(영업장 이름). 주소는 항상 no-reply@stayeum.com 이다. */
   fromName: string
   /** 답장이 갈 주소 — 보낸 운영자. 없으면 답장이 no-reply 로 사라진다. */
@@ -81,6 +83,7 @@ export async function sendMail(input: {
         ...(input.replyTo ? { reply_to: [input.replyTo] } : {}),
         subject: input.subject,
         text: input.text,
+        ...(input.html ? { html: input.html } : {}),
         attachments: attachments.map(a => ({
           filename: a.filename,
           content: Buffer.from(a.bytes).toString('base64'),

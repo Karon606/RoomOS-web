@@ -162,14 +162,25 @@ export type DocMailData = {
  * draft(발송 직전 1회성 수정)를 반영하려면 tpl 의 subject·bodyText 를 바꿔 넘긴다 —
  * 수정본도 같은 프레임·같은 치환을 지나므로 미리보기가 거짓말을 못 한다.
  */
-export function renderDocMail(tpl: DocMailTemplate, data: DocMailData): {
-  subject: string; text: string; html: string
-} {
-  const textVars = {
+function docMailVars(data: DocMailData): Record<string, string> {
+  return {
     '{영업장명}': data.propertyName,
     '{이름}': data.tenantName,
     '{서류목록}': data.docTitles.join(', '),
   }
+}
+
+/** 확인 화면 본문 칸 프리필 — 본문 블록(치환 완료)만. 렌더와 같은 치환을 지나므로
+ *  운영자가 보는 글자가 곧 나가는 글자다. HTML 모드는 편집을 잠그므로 빈 값. */
+export function renderDocMailBodyPrefill(tpl: DocMailTemplate, data: DocMailData): string {
+  if (tpl.mode === 'html') return ''
+  return fillVars(tpl.bodyText ?? DOC_MAIL_DEFAULT_BODY, docMailVars(data))
+}
+
+export function renderDocMail(tpl: DocMailTemplate, data: DocMailData): {
+  subject: string; text: string; html: string
+} {
+  const textVars = docMailVars(data)
   const htmlVars = Object.fromEntries(Object.entries(textVars).map(([k, v]) => [k, escapeHtml(v)]))
 
   // 제목 — CRLF 는 메일 헤더 주입 축이라 항상 걷어낸다. 제목 변수는 {영업장명} 뿐이다.
@@ -239,29 +250,3 @@ export function renderDocMail(tpl: DocMailTemplate, data: DocMailData): {
   return { subject, text, html }
 }
 
-// ── 종전 경로 (커밋 3 에서 renderDocMail 로 교체 예정) ──────────────────
-// 발송 서버(docBundle.ts)가 아직 이 둘을 쓴다 — 이 커밋은 개칭·확장만이라 거동을 안 바꾼다.
-
-/** 제목 — 영업장 이름만 붙는다. 사람·호실·금액은 들어가지 않는다. */
-export function docMailSubject(propertyName: string): string {
-  return `[${propertyName}] 서류를 보내 드립니다`
-}
-
-/** 본문(평문) — docTitles 는 화면에 선 이름 그대로(lib/docBundle 의 DOC_TYPE_TITLE). */
-export function docMailText(
-  propertyName: string, docTitles: string[], propertyPhone: string | null,
-): string {
-  const contact = propertyPhone?.trim()
-    ? `내용이 다르거나 문의사항이 있으시면 아래 번호로 연락 주세요.\n전화 ${propertyPhone.trim()}`
-    : '내용이 다르거나 문의사항이 있으시면 이 메일에 회신해 주세요.'
-  return [
-    `안녕하세요. ${propertyName}입니다.`,
-    '',
-    '요청하신 서류를 첨부해 보내 드립니다.',
-    '',
-    '첨부',
-    ...docTitles.map(t => `- ${t}`),
-    '',
-    contact,
-  ].join('\n')
-}

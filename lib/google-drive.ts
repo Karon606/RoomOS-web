@@ -146,6 +146,19 @@ export async function downloadDriveBytes(fileId: string): Promise<Buffer> {
   return Buffer.from(res.data as ArrayBuffer)
 }
 
+// 파일 크기(바이트) — 메일 첨부 용량을 내려받기 전에 합산하려는 용도(서류 메일 확인 화면).
+// 실패는 null 로 답한다 — 크기는 안내용이고, 실제 상한은 발송 직전 다운로드 합산이 다시 지킨다.
+export async function driveFileSize(fileId: string): Promise<number | null> {
+  try {
+    const drive = getDriveClient()
+    const res = await drive.files.get({ fileId, fields: 'size' })
+    const n = Number(res.data.size)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
 // 영수증 사진 열람 주소 — 공개 Drive URL 이 아니라 인증 프록시를 거친다(D페이즈 2026-08-03).
 // 저장 형태를 여기 한 곳에서 정한다. 업로드 경로가 둘(지출·대기)이라 각자 만들면 또 갈린다.
 export function buildReceiptImageUrl(fileId: string): string {
