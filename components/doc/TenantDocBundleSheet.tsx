@@ -11,6 +11,9 @@
 // 키가 없으면 이 화면은 1단계와 픽셀이 같다. 받는 주소는 저장된 이 사람의 주소 하나뿐이고
 // 여기서 고칠 수 없다. 오타 한 글자가 곧 남의 사서함에 신원번호를 배달하는 길이라서다.
 //
+// 메일은 여기서 바로 나가지 않는다 — '메일 쓰기'가 확인 화면(TenantDocMailComposeSheet)을 열고,
+// 제목·본문·답장 주소·첨부·미리보기를 모두 확인한 뒤에야 발송된다(운영자 요구 2026-08-25).
+//
 // **아무것도 발급하지 않는다.** 미발급 칸은 체크할 수 없고 '작성'이 기존 왕복(from=tenant)으로 보낸다.
 // 발행번호 원장과 서명이 걸려 있어 자동 발급은 금지다(패널 확정, 신고 44501308).
 
@@ -23,7 +26,6 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { DocMultiShareBar } from '@/components/ui/DocMultiShareBar'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { BtnLink } from '@/components/ui/Btn'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { fetchDocBytes } from '@/lib/docBytes'
@@ -34,7 +36,8 @@ import { fmtRoomNo } from '@/lib/roomNo'
 import { docFromQuery } from '@/lib/docNav'
 import { pushToast } from '@/lib/saveStatus'
 import { STATUS_LABEL } from '@/lib/statusColors'
-import { getTenantDocBundle, sendTenantDocBundleMail, type TenantDocBundleMail } from '@/app/(app)/tenants/docBundle'
+import { getTenantDocBundle, type TenantDocBundleMail } from '@/app/(app)/tenants/docBundle'
+import { TenantDocMailComposeSheet } from '@/components/doc/TenantDocMailComposeSheet'
 import {
   DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
@@ -87,7 +90,7 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const [dest, setDest] = useState<'device' | 'mail'>('device')
   const [mode, setMode] = useState<'png' | 'pdf'>('png')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [mailPending, setMailPending] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
 
   // 이 화면은 통째로 선택 모드다 — 열리자마자 변환기를 데운다(첫 탭의 제스처 만료 방어).
   useEffect(() => { prewarmPdfToPng() }, [])
@@ -151,39 +154,6 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const overLimit = effDest === 'device' && selected.size > 0 && share.fileCount > MAX_SHARE
   const groups = bundle?.groups ?? []
 
-  // 메일 보내기 — 되돌릴 수 없는 동작이라 보내기 전에 받는 사람과 목록을 한 번 되짚는다(§14·§16).
-  // 서버가 행 키를 파일로 되바꾸므로 여기서 넘기는 것은 키뿐이다(Drive 파일 ID 를 화면이 안 만진다).
-  const sendMailNow = async () => {
-    if (mailPending || !mailTo || selected.size === 0) return
-    const titles = rows.filter(r => selected.has(r.key)).map(r => TITLE[r.docType])
-    // level 은 danger 다. 아무것도 지우지 않지만 나간 메일은 되돌릴 수 없고, §16 이 되돌릴 수 없는
-    // 동작에 파괴적 다이얼로그를 요구한다. 저장소에도 삭제 아닌 비가역 동작에 danger 를 쓴 전례가
-    // 있다(캘린더 구독 주소 재발급 — CalendarSubscribeCard). 반대로 caution 을 쓴 두 자리는
-    // 되돌릴 수 있어서 danger 의 기본 문구가 거짓말이 되던 경우다(소프트삭제·납부일 임시 조정).
-    // 고지 문장은 irreversibleNote 로 넘긴다 — 본문에 손으로 적으면 §14 가 정한 강조를 잃는다.
-    // impact 는 안 넘긴다. 그 상자 머리글이 '함께 삭제되는 항목'이라 첨부 목록에 거짓이다.
-    // 제목에 이름을 부르는 것은 §14 Do 다. 주소는 본문으로 내린다 — 조사(으로·로)가 주소 끝
-    // 글자를 따라가야 하는데 로마자라 어느 쪽도 늘 맞지 않는다. 이름은 한글이라 '님의'가 늘 맞는다.
-    const ok = await confirmDialog({
-      title: `${bundle?.tenantName ?? ''} 님의 서류를 메일로 보냅니다`,
-      message: `받는 사람은 ${mailTo} 입니다.\n보낼 서류는 ${titles.join(' · ')} 입니다.`,
-      level: 'danger',
-      irreversibleNote: '보낸 메일은 되돌릴 수 없습니다.',
-      confirmLabel: '메일 보내기',
-    })
-    if (!ok) return
-    setMailPending(true)
-    try {
-      const r = await sendTenantDocBundleMail(tenantId, [...selected])
-      if (!r.ok) { pushToast('error', r.error); return }
-      pushToast('success', `서류 ${r.count}건을 메일로 보냈습니다`)
-      setSelected(new Set())
-    } catch {
-      pushToast('error', '메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.')
-    } finally {
-      setMailPending(false)
-    }
-  }
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
   const showGroupTitles = groups.length > 1
 
@@ -289,14 +259,26 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         )}
         {selected.size > 0 && effDest === 'mail' && (
           <SelectionPillBar aboveModal count={selected.size} unit="건" onClose={() => setSelected(new Set())}>
-            {/* 진행 표시는 버튼 안이다(§10 제출 중). 형제 알약이 문구를 밖에 두는 것은 그쪽이 제출이
-                아니라 준비 큐 진행이라서다. 요소가 하나 줄어 320px 폭 압력도 함께 사라진다.
-                §22 는 불가능한 액션을 숨기라고 하지만 여기서 숨기면 알약에 건수와 닫기만 남아
-                '왜 못 보내는지'를 말할 자리가 사라진다. 주소 없음은 위 안내 줄이 이미 말한다. */}
-            <PillButton primary disabled={!mailTo || mailPending} onClick={sendMailNow}>
-              {mailPending ? '보내는 중…' : '메일 보내기'}
+            {/* 버튼은 발송이 아니라 확인 화면 열기다 — 그래서 '보내기'가 아니라 '쓰기'다(누르는 순간
+                나가는 버튼이 아니라는 것을 이름이 말해야 한다). §22 는 불가능한 액션을 숨기라고
+                하지만 여기서 숨기면 알약에 건수와 닫기만 남아 '왜 못 보내는지'를 말할 자리가
+                사라진다. 주소 없음은 위 안내 줄이 이미 말한다. */}
+            <PillButton primary disabled={!mailTo} onClick={() => setComposeOpen(true)}>
+              메일 쓰기
             </PillButton>
           </SelectionPillBar>
+        )}
+        {composeOpen && (
+          <TenantDocMailComposeSheet
+            tenantId={tenantId}
+            keys={[...selected]}
+            onClose={() => setComposeOpen(false)}
+            onSent={count => {
+              setComposeOpen(false)
+              setSelected(new Set())
+              pushToast('success', `서류 ${count}건을 메일로 보냈습니다`)
+            }}
+          />
         )}
       </div>
     </Modal>
