@@ -16,6 +16,7 @@ import {
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
+import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
 import { isMailConfigured, sendMail, MAIL_MAX_TOTAL_BYTES } from '@/lib/mailSend'
 import { fmtDateDot } from '@/lib/fmtDate'
 import {
@@ -55,6 +56,8 @@ export async function getTenantDocBundle(
       select: {
         id: true, driveFileId: true, leaseTermId: true, signedAt: true, source: true,
         createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true,
+        // 스캔 업로드본은 PDF 가 아닐 수 있다 — 첨부 표기·파일명 확장자의 추정 근거다.
+        fileName: true,
       },
     }),
     prisma.rentReceiptFile.findMany({
@@ -86,6 +89,8 @@ export async function getTenantDocBundle(
     contracts: contractRows.filter(r => representativeIds.has(r.id)).map(r => ({
       driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.signedAt,
       note: r.source === 'UPLOADED' ? '스캔본' : null,
+      // 앱 발급본은 PDF 가 확실하고, 업로드본만 이름으로 추정한다(발송 때 바이트가 다시 판정한다).
+      mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
     })),
     rents: receipt('rent'),
     deposits: receipt('deposit'),
@@ -133,7 +138,7 @@ export type TenantDocMailDraftInfo = {
   bodyText: string
   /** 문안이 직접 HTML 모드 — 본문 편집을 잠그고 미리보기만 보여준다. */
   htmlLocked: boolean
-  attachments: { name: string; size: number | null }[]
+  attachments: { name: string; size: number | null; kind: string }[]
   /** 알려진 크기의 합 — 안내용. 실제 상한은 발송 직전 다운로드 합산이 다시 지킨다. */
   totalBytes: number
   maxBytes: number
@@ -158,7 +163,9 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
   const entries = rows.map(r => ({
     personName: bundle.tenantName, docLabel: DOC_TYPE_FILE_LABEL[r.docType], dateStr: fmtDateDot(r.issuedAt),
   }))
-  const names = shareFileNames(entries, rows.map(() => 1), 'pdf')
+  // 확장자는 항목별이다 — 스캔 JPEG 에 .pdf 를 붙여 보낸 것이 이번 사고였다(419호).
+  // 여기 값은 추정이고, 실제 발송은 다운로드한 바이트로 다시 판정해 최종 이름을 짓는다.
+  const names = shareFileNames(entries, rows.map(() => 1), rows.map(r => extForDocMime(r.mime)))
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -176,7 +183,7 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
   return {
     ok: true as const,
     propertyId, operatorEmail,
-    bundle, rows, names,
+    bundle, rows, names, entries,
     docTitles: rows.map(r => DOC_TYPE_TITLE[r.docType]),
     propertyName, propertyPhone: property?.phone ?? null, tpl,
     replyToOptions,
@@ -214,7 +221,7 @@ export async function getTenantDocMailDraft(
       subject: rendered.subject,
       bodyText: bodyPrefill,
       htmlLocked: ctx.tpl.mode === 'html',
-      attachments: ctx.names.map((name, i) => ({ name, size: sizes[i] })),
+      attachments: ctx.names.map((name, i) => ({ name, size: sizes[i], kind: docMimeLabel(ctx.rows[i].mime) })),
       totalBytes: sizes.reduce<number>((s, n) => s + (n ?? 0), 0),
       maxBytes: MAIL_MAX_TOTAL_BYTES,
       previewHtml: rendered.html,
@@ -294,10 +301,15 @@ export async function sendTenantDocBundleMail(
     return { ok: false, error: '첨부 용량이 커서 한 번에 보낼 수 없습니다. 몇 건을 빼고 보내 주세요.' }
   }
 
+  // **바이트가 최종 권위다.** 스캔본이 JPEG 인데 .pdf 이름·application/pdf 로 실려 받는 사람에게
+  // 깨진 계약서가 도착했다(긴급 신고 2026-08-25, 419호). 이름 추정과 실제가 갈리면 실제를 따른다.
+  const mimes = bytesList.map(b => sniffDocMime(b))
+  const names = shareFileNames(ctx.entries, ctx.rows.map(() => 1), mimes.map(extForDocMime))
+
   const tpl = draft ? applyDraftToTemplate(ctx.tpl, draft) : ctx.tpl
   const rendered = renderDocMail(tpl, {
     propertyName: ctx.propertyName, propertyPhone: ctx.propertyPhone,
-    tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: ctx.names,
+    tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: names,
   })
 
   const outcome = await sendMail({
@@ -308,7 +320,7 @@ export async function sendTenantDocBundleMail(
     text: rendered.text,
     html: rendered.html,
     attachments: bytesList.map((b, i) => ({
-      filename: ctx.names[i], bytes: new Uint8Array(b), contentType: 'application/pdf',
+      filename: names[i], bytes: new Uint8Array(b), contentType: mimes[i],
     })),
   })
 
@@ -324,7 +336,7 @@ export async function sendTenantDocBundleMail(
           replyTo: replyTo ?? null,
           subject: rendered.subject,
           docTitles: ctx.docTitles.join(' · '),
-          attachmentNames: ctx.names,
+          attachmentNames: names,
           attachmentCount: ctx.rows.length,
           totalBytes: total,
           resendId: outcome.id,

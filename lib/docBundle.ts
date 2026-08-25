@@ -13,6 +13,7 @@
 
 import { CURRENT_OCCUPANCY_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { kstMonthOf } from '@/lib/fmtDate'
+import { DOC_MIME_PDF } from '@/lib/docMime'
 
 export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence'
 
@@ -44,6 +45,9 @@ export type DocBundleRow = {
   issuedAt: string | null
   /** 회색 보조 문구 — '스캔본' · '계약 표시 없음' · '지난 계약' · '이번 달 발급본이 아닙니다'. */
   note: string | null
+  /** 파일 형식 추정(파일명 기준) — 첨부 표기·파일명 확장자의 기본값이다.
+   *  실제로 내보낼 때는 바이트 스니핑(lib/docMime)이 최종 권위라, 이 추정이 틀려도 파일은 옳게 나간다. */
+  mime: string
 }
 
 export type DocBundleGroup = {
@@ -78,6 +82,8 @@ export type DocBundleFile = {
   at: Date
   /** 파일 자체가 말하는 보조 표기 — 지금은 계약서 스캔본뿐이다. */
   note: string | null
+  /** 파일 형식 — 조회부가 파일명으로 추정해 넣는다. 없으면 PDF(앱 발급본 전부가 PDF). */
+  mime?: string | null
 }
 
 export type DocBundleInput = {
@@ -115,6 +121,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     driveFileId: file?.driveFileId ?? null,
     issuedAt: file ? file.at.toISOString() : null,
     note: [file?.note ?? null, extraNote ?? null].filter(Boolean).join(' · ') || null,
+    mime: file?.mime || DOC_MIME_PDF,
   })
 
   const residing: string[] = CURRENT_OCCUPANCY_STATUSES
@@ -156,6 +163,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
       driveFileId: f.driveFileId,
       issuedAt: f.at.toISOString(),
       note: [f.note, f.leaseTermId ? '지난 계약' : '계약 표시 없음'].filter(Boolean).join(' · '),
+      mime: f.mime || DOC_MIME_PDF,
     })
   }
   pushOther('contract', orphan(contracts))

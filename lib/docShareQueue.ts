@@ -101,11 +101,15 @@ export class DocShareQueue {
  *
  * pages 는 entries 와 같은 순서·길이여야 하고, 반환 배열은 항목 순서 안에서 장 순서로 평탄화된다 —
  * 호출부가 Blob 배열을 같은 순서로 평탄화해 짝지으면 된다.
+ *
+ * ext 는 문자열 하나(전부 같은 형식) 또는 항목별 배열이다. **배열이 필요한 이유는 스캔본이다** —
+ * 한 메일에 앱 발급 PDF 와 스캔 JPEG 이 함께 실리는데 확장자를 하나로 고정하면 그중 하나가
+ * 거짓 이름으로 도착한다(긴급 신고 2026-08-25, 419호). 문자열을 넘기면 종전과 결과가 같다.
  */
 export function shareFileNames(
   entries: { personName: string; docLabel: string; dateStr: string }[],
   pages: number[],
-  ext: string,
+  ext: string | string[],
 ): string[] {
   const baseCount = new Map<string, number>()
   for (const e of entries) {
@@ -117,7 +121,8 @@ export function shareFileNames(
     const base = `${e.personName}_${e.docLabel}`
     const stem = (baseCount.get(base) ?? 0) > 1 ? `${base}_${e.dateStr}` : base
     const n = Math.max(1, pages[i] ?? 1)
-    for (let p = 1; p <= n; p++) out.push(`${stem}${n > 1 ? `_${p}` : ''}.${ext}`)
+    const itemExt = Array.isArray(ext) ? (ext[i] ?? ext[0] ?? 'pdf') : ext
+    for (let p = 1; p <= n; p++) out.push(`${stem}${n > 1 ? `_${p}` : ''}.${itemExt}`)
   })
   return out
 }

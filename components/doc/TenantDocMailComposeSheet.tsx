@@ -184,7 +184,8 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
                 {draft.attachments.map(a => (
                   <li key={a.name} className="flex items-center justify-between gap-2 px-3 py-2">
                     <span className="min-w-0 break-all text-[0.75rem] text-[var(--warm-dark)]">{a.name}</span>
-                    <span className="shrink-0 text-[0.65625rem] tabular-nums text-[var(--warm-muted)]">PDF{a.size != null ? ` · ${fmtBytes(a.size)}` : ''}</span>
+                    {/* 종류는 항목별이다 — 스캔본이 섞이면 PDF 가 아니다(419호 사고). */}
+                    <span className="shrink-0 text-[0.65625rem] tabular-nums text-[var(--warm-muted)]">{a.kind}{a.size != null ? ` · ${fmtBytes(a.size)}` : ''}</span>
                   </li>
                 ))}
               </ul>

@@ -1,11 +1,17 @@
-// 저장된 서류(Drive PDF)를 같은 도메인으로 스트리밍 — 모바일 '공유'(첨부) 용.
+// 저장된 서류를 같은 도메인으로 스트리밍 — 모바일 '공유'(첨부) 용.
 // 클라이언트가 이 바이트를 Blob/File 로 받아 navigator.share({ files }) 로 메일/메시지에 첨부.
+//
+// Content-Type 은 **바이트가 정한다**(lib/docMime). 종전에는 application/pdf 를 박아서
+// 스캔 업로드본(JPEG)이 깨진 PDF 로 내려갔다(긴급 신고 2026-08-25, 419호). 판정 정본이
+// 화이트리스트 밖을 전부 octet-stream 으로 떨어뜨리므로 html·svg 헤더가 만들어지지 않는다 —
+// 저장 파일은 업로드된 것이라 내용이 신뢰 대상이 아니고, 인라인 렌더 면을 열면 안 된다.
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { downloadDriveBytes } from '@/lib/google-drive'
+import { sniffDocMime } from '@/lib/docMime'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,7 +39,7 @@ export async function GET(req: Request) {
     return new NextResponse(Buffer.from(bytes), {
       status: 200,
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': sniffDocMime(bytes),
         'Cache-Control': 'private, max-age=300',
       },
     })
