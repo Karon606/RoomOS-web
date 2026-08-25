@@ -143,7 +143,7 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
                   className={inputCls}>
                   {draft.replyToOptions.map(o => (
                     <option key={o.email} value={o.email}>
-                      {o.email}{o.kind === 'property' ? ' (영업장 메일 주소)' : ' (내 로그인 주소)'}
+                      {o.email}{o.kind === 'property' ? ' (영업장 답장 주소)' : ' (내 로그인 주소)'}
                     </option>
                   ))}
                 </select>
@@ -154,7 +154,9 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본정보의 답장 받을 주소를 등록하면 여기서 고를 수 있습니다.</p>
               )}
               {/* 사본의 목적지가 곧 이 셀렉트의 값이라 그 자리 밖에는 설 곳이 없다. */}
-              {draft.copyToReply && replyTo !== draft.to && (
+              {/* 조건은 서버(docBundle)와 문자 그대로 같아야 한다 — 화면만 "사본이 갑니다"라고
+                  말하고 서버는 안 보내면 화면이 발송 결과를 잘못 말하는 것이 된다. */}
+              {draft.copyToReply && !!replyTo && replyTo !== draft.to && (
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">보낸 메일 사본이 이 주소로 함께 갑니다.</p>
               )}
             </div>

@@ -69,6 +69,7 @@ import { trackSave, pushToast } from '@/lib/saveStatus'
 import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
+import { normalizeMailFromLocal, MAIL_FROM_LOCAL_MAX } from '@/lib/mailFrom'
 
 type Property = {
   id: string
@@ -888,24 +889,29 @@ export default function SettingsForm({
                 도메인은 인증 때문에 고정이고 앞부분만 영업장 몫이다(lib/mailFrom).
                 문안은 계약서·서류 탭의 '서류 메일 문안' 카드에서 고친다. */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">보내는 주소</label>
-              <p className="text-xs text-[var(--warm-muted)]">서류 메일이 나갈 때 받는 사람에게 표시되는 발신 주소의 앞부분입니다. 뒷부분은 도메인 인증 때문에 @stayeum.com 으로 고정됩니다. 비워 두면 no-reply 로 나갑니다.</p>
+              <label className="text-xs font-medium text-[var(--warm-mid)]" htmlFor="mailFromLocal">보내는 주소</label>
+              <p className="text-xs text-[var(--warm-muted)]">서류 메일을 보낼 때 표시되는 주소의 앞부분입니다. 비워 두면 답장을 받지 않는 기본 주소(no-reply@stayeum.com)로 나갑니다.</p>
               <div className="relative">
-                <input type="text" name="mailFromLocal"
+                {/* 칸을 떠날 때 저장 규칙을 화면에도 적용한다 — 안 그러면 the.stay@jegi 를 넣고
+                    저장했을 때 DB 는 the.stay 인데 칸은 옛 글자를 띄워, 정본이 없애려던
+                    '화면과 실제가 갈린다'를 이 화면이 되살린다. */}
+                <input type="text" name="mailFromLocal" id="mailFromLocal"
                   value={mailFromLocal}
+                  maxLength={MAIL_FROM_LOCAL_MAX}
                   onChange={e => setMailFromLocal(e.target.value.toLowerCase().replace(/[^a-z0-9._@-]/g, ''))}
-                  placeholder="예: mygoshiwon"
+                  onBlur={e => setMailFromLocal(normalizeMailFromLocal(e.target.value))}
+                  placeholder="예: mygoshiwon (영문 소문자·숫자)"
                   inputMode="email" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 pr-[7.2rem] text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 pr-[7.5rem] text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 {/* 접미는 값이 없어도 늘 띄운다 — 단위 장식(㎡)과 달리 "뒤에 무엇이 붙는가"가 정보 그
                     자체라, 빈 칸일 때야말로 형식을 말해 줘야 한다. */}
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">@stayeum.com</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-dark)] pointer-events-none">@stayeum.com</span>
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">답장 받을 주소</label>
-              <p className="text-xs text-[var(--warm-muted)]">받는 사람이 답장하면 이 주소로 옵니다. 로그인 주소와 달라도 되고 네이버·지메일 등 어떤 주소든 됩니다. 보낼 때 이 주소와 내 로그인 주소 중에서 고를 수 있습니다.</p>
-              <input type="email" name="replyToEmail" defaultValue={property?.replyToEmail ?? ''}
+              <label className="text-xs font-medium text-[var(--warm-mid)]" htmlFor="replyToEmail">답장 받을 주소</label>
+              <p className="text-xs text-[var(--warm-muted)]">받는 사람이 답장하면 이 주소로 옵니다. 네이버·지메일 등 어떤 주소든 됩니다.</p>
+              <input type="email" name="replyToEmail" id="replyToEmail" defaultValue={property?.replyToEmail ?? ''}
                 placeholder="예: contact@example.com"
                 autoComplete="off"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
@@ -913,8 +919,8 @@ export default function SettingsForm({
             {/* 사본 받기 — 이 폼과 함께 저장되는 체크박스다(§27.1: 같은 카드 안에서 즉시 저장과
                 폼 저장을 섞지 않는다). 앞의 hidden '0' 은 해제를 저장하기 위한 짝이다(감지망 축 ⓔ). */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">보낸 메일 사본</label>
-              <p className="text-xs text-[var(--warm-muted)]">서류 메일을 보낼 때 같은 메일이 답장 받을 주소로 함께 갑니다. 첨부까지 그대로 가서 무엇을 보냈는지 내 메일함에서 확인할 수 있습니다.</p>
+              <h4 className="text-xs font-semibold text-[var(--warm-dark)]">보낸 메일 사본</h4>
+              <p className="text-xs text-[var(--warm-muted)]">켜면 신원번호·계약서 첨부까지 그대로 내 메일함에 쌓입니다. 기본은 꺼짐입니다.</p>
               <input type="hidden" name="mailCopyToSelf" value="0" />
               <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
                 <input type="checkbox" name="mailCopyToSelf" value="1" defaultChecked={property?.mailCopyToSelf === true}
@@ -1265,7 +1271,7 @@ export default function SettingsForm({
                     defaultValue={property?.refundPenaltyPct ?? 10}
                     autoComplete="off"
                     className="w-full px-3 py-2.5 pr-8 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">%</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-dark)] pointer-events-none">%</span>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -2081,7 +2087,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
               autoComplete="off"
               className="w-full px-3 py-2.5 pr-10 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
             {areaVal.trim() !== '' && (
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-dark)] pointer-events-none">㎡</span>
             )}
           </div>
         </div>
