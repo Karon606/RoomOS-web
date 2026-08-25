@@ -12,6 +12,11 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
+import { Prisma } from '@prisma/client'
+import {
+  parseDocMailTemplate, findUnknownVars, sanitizeDocMailHtml, renderDocMail,
+  DOC_MAIL_LIMITS, DOC_MAIL_DEFAULT_SUBJECT, DOC_MAIL_DEFAULT_BODY, type DocMailTemplate,
+} from '@/lib/docMail'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { REQUEST_CATEGORIES, parseRequestCategories } from '@/lib/requestCategories'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -1675,6 +1680,115 @@ export async function deleteSmsTemplate(id: string): Promise<{ ok: true } | { ok
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+
+// ============================================================
+// 서류 메일 문안 (2026-08-25 운영자 승인) — Property.docMailTemplate
+//   프레임(헤더·첨부 상자·푸터)은 공유, 본문 영역만 영업장이 바꾼다(lib/docMail 정본).
+//   지원 변수: {영업장명} {이름} {서류목록} (제목은 {영업장명}만 — 잠금화면 원칙)
+// ============================================================
+
+export async function getDocMailSettings(): Promise<{
+  template: DocMailTemplate
+  customized: boolean
+  /** 내장 기본 문안 — 카드의 placeholder 가 이걸 그대로 쓴다(사본 금지: lib/docMail 이 정본). */
+  defaults: { subject: string; body: string }
+}> {
+  const propertyId = await getPropertyId()
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { docMailTemplate: true } })
+  return {
+    template: parseDocMailTemplate(p?.docMailTemplate),
+    customized: p?.docMailTemplate != null,
+    defaults: { subject: DOC_MAIL_DEFAULT_SUBJECT, body: DOC_MAIL_DEFAULT_BODY },
+  }
+}
+
+/**
+ * 문안 저장 — null 이면 기본으로(칼럼 null). 오타 변수·상한 초과는 인라인 에러로 저장을 막는다
+ * (§27.2 검증=인라인). HTML 은 여기서 새니타이즈해 저장하고, 렌더가 한 번 더 통과시킨다.
+ */
+export async function updateDocMailTemplate(
+  input: DocMailTemplate | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+
+    if (input !== null) {
+      const checks: [string | null, 'subject' | 'body', string][] = [
+        [input.subject, 'subject', '제목'],
+        [input.bodyText, 'body', '본문'],
+        [input.closingText, 'body', '맺음말'],
+        [input.bodyHtml, 'body', 'HTML 본문'],
+      ]
+      for (const [text, scope, label] of checks) {
+        if (!text) continue
+        const unknown = findUnknownVars(text, scope)
+        if (unknown.length > 0) {
+          const allowed = scope === 'subject' ? '{영업장명}' : '{영업장명} {이름} {서류목록}'
+          return { ok: false, error: `${label}에 알 수 없는 변수 ${unknown.join(' ')} 이(가) 있습니다. 사용 가능: ${allowed}` }
+        }
+      }
+      if ((input.subject?.length ?? 0) > DOC_MAIL_LIMITS.subject) return { ok: false, error: `제목은 ${DOC_MAIL_LIMITS.subject}자까지입니다.` }
+      if ((input.bodyText?.length ?? 0) > DOC_MAIL_LIMITS.bodyText) return { ok: false, error: `본문은 ${DOC_MAIL_LIMITS.bodyText}자까지입니다.` }
+      if ((input.closingText?.length ?? 0) > DOC_MAIL_LIMITS.closingText) return { ok: false, error: `맺음말은 ${DOC_MAIL_LIMITS.closingText}자까지입니다.` }
+      if ((input.bodyHtml?.length ?? 0) > DOC_MAIL_LIMITS.bodyHtml) return { ok: false, error: `HTML 본문은 ${DOC_MAIL_LIMITS.bodyHtml}자까지입니다.` }
+      if (input.mode === 'html' && !input.bodyHtml?.trim()) return { ok: false, error: '직접 HTML 본문을 입력해 주세요.' }
+      // 새니타이즈가 전부 걷어낸 HTML(예: script 뿐)은 소리 없이 기본으로 강등되지 않게 여기서 막는다.
+      if (input.mode === 'html' && input.bodyHtml?.trim() && !sanitizeDocMailHtml(input.bodyHtml).trim()) {
+        return { ok: false, error: '저장할 수 있는 내용이 없습니다. script·외부 이미지 등은 제거됩니다. 표와 문단 위주로 작성해 주세요.' }
+      }
+    }
+
+    // 전부 비운 기본 문안 저장은 칼럼 null 과 같다 — '기본 문안으로 복원' 후 저장이 이 길이다.
+    const normalized: DocMailTemplate | null = input && (
+      input.mode === 'html' || input.subject?.trim() || input.bodyText?.trim()
+      || input.closingText?.trim() || input.bodyHtml?.trim()
+    ) ? {
+        mode: input.mode,
+        subject: input.subject?.trim() || null,
+        bodyText: input.bodyText?.trim() ? input.bodyText : null,
+        closingText: input.closingText?.trim() ? input.closingText : null,
+        bodyHtml: input.bodyHtml?.trim() ? sanitizeDocMailHtml(input.bodyHtml) : null,
+      } : null
+
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { docMailTemplate: normalized === null ? Prisma.DbNull : normalized },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+/**
+ * 저장 전 미리보기 — 폼 값 그대로 받아 발송과 같은 renderDocMail 로 그린다(거짓말 불가 원칙).
+ * 예시 값(입주자 이름·서류 2종)으로 채우고, 영업장명·전화는 실제 값을 쓴다. 받은 HTML 은
+ * 새니타이즈를 지나 sandbox iframe 에만 들어간다 — 메일로 나가는 길이 아니다.
+ */
+export async function renderDocMailSample(
+  input: DocMailTemplate,
+): Promise<{ ok: true; subject: string; html: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, phone: true } })
+    const rendered = renderDocMail(parseDocMailTemplate(input), {
+      propertyName: p?.name ?? '스테이음',
+      propertyPhone: p?.phone ?? null,
+      tenantName: '홍길동',
+      docTitles: ['계약서', '입실료 납부 확인서'],
+      attachmentNames: ['홍길동 계약서 2026.01.15.pdf', '홍길동 입실료 납부 확인서 2026.01.15.pdf'],
+    })
+    return { ok: true, subject: rendered.subject, html: rendered.html }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '미리보기를 만들지 못했습니다.' }
   }
 }
 

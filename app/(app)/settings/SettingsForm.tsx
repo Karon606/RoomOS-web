@@ -33,10 +33,12 @@ import {
   getShortStayPolicy, updateShortStayPolicy,
   listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
   getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
+  getDocMailSettings, updateDocMailTemplate, renderDocMailSample,
   getAiSettings, saveAiSettings,
 } from './actions'
 import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
+import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
@@ -2068,6 +2070,10 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
           </div>
         </div>
       </form>
+
+      {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
+          그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
+      <DocMailTemplateCard />
     </div>
   )
 }
@@ -2582,6 +2588,173 @@ function AiSettingsCard() {
 //  'unpaid' 미납 안내: 대시보드 '누적 미납'의 [안내문자]가 사용. 변수는 발송 시점에 자동 치환.
 //  'notice' 단체 공지: 입주자 관리 [단체 공지]가 사용. 배치 전체가 한 본문을 공유해 치환이 구조적으로 없다.
 // 종전엔 'unpaid' 하드코딩이라 공지 템플릿은 목록조차 없어 수정도 삭제도 불가능했다(운영자 신고 2026-07-17).
+// 서류 메일 문안 카드 — Property.docMailTemplate(2026-08-25 운영자 승인). 메일 프레임(영업장명
+// 헤더·첨부 상자·푸터)은 모든 영업장이 공유하고 본문 영역만 여기서 바꾼다. 기본 모드는 텍스트
+// 세 칸, 직접 HTML 모드는 본문 영역 통째 교체(HTML 모르는 운영자가 마크업을 깨뜨릴 일이 없게
+// 모드를 가른다). 저장은 카드 우측 버튼 하나(§27.1 폼형), 검증 실패는 인라인(§27.2), 미리보기는
+// 발송과 같은 서버 렌더(renderDocMailSample)를 sandbox iframe 으로 띄운다. 복원은 로컬 되채움이라
+// 저장을 안 누르면 무해하다(§16 undo — 저장된 커스텀을 지우는 실수단은 복원 후 저장 = 칼럼 null).
+function DocMailTemplateCard() {
+  const [loaded, setLoaded] = useState(false)
+  const [mode, setMode] = useState<'text' | 'html'>('text')
+  const [subject, setSubject] = useState('')
+  const [bodyText, setBodyText] = useState('')
+  const [closingText, setClosingText] = useState('')
+  const [bodyHtml, setBodyHtml] = useState('')
+  const [defaults, setDefaults] = useState<{ subject: string; body: string }>({ subject: '', body: '' })
+  const [saving, setSaving] = useState(false)
+  const [inlineError, setInlineError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+
+  useEffect(() => {
+    getDocMailSettings()
+      .then(r => {
+        setMode(r.template.mode)
+        setSubject(r.template.subject ?? '')
+        setBodyText(r.template.bodyText ?? '')
+        setClosingText(r.template.closingText ?? '')
+        setBodyHtml(r.template.bodyHtml ?? '')
+        setDefaults(r.defaults)
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  // 폼 값 그대로 — 저장·미리보기가 같은 입력을 쓴다. 빈 칸 = null(그 칸만 내장 기본).
+  const currentInput = (): DocMailTemplate => ({
+    mode,
+    subject: subject.trim() ? subject : null,
+    bodyText: bodyText.trim() ? bodyText : null,
+    closingText: closingText.trim() ? closingText : null,
+    bodyHtml: bodyHtml.trim() ? bodyHtml : null,
+  })
+
+  const save = async () => {
+    setSaving(true)
+    setInlineError(null)
+    try {
+      const r = await updateDocMailTemplate(currentInput())
+      if (!r.ok) { setInlineError(r.error); return }
+      pushToast('success', '서류 메일 문안 저장됨')
+    } catch (e) {
+      pushToast('error', (e as Error).message ?? '저장에 실패했습니다.')
+    } finally { setSaving(false) }
+  }
+
+  const doPreview = async () => {
+    if (previewBusy) return
+    setPreviewBusy(true)
+    try {
+      const r = await renderDocMailSample(currentInput())
+      if (!r.ok) { pushToast('error', r.error); return }
+      setPreview({ subject: r.subject, html: r.html })
+    } catch {
+      pushToast('error', '미리보기를 만들지 못했습니다.')
+    } finally { setPreviewBusy(false) }
+  }
+
+  // 복원은 폼 값 되채움(로컬)이다 — 서버 쓰기는 여전히 저장 버튼 하나가 한다. 그래서 복원의
+  // 적용취소는 '저장 안 누르기'로 항상 성립한다(카테고리 초기화 정본과 같은 문형).
+  const restore = async () => {
+    const ok = await confirmDialog({
+      title: '메일 문안을 기본으로 되돌릴까요?',
+      message: '지금 적은 내용이 지워집니다. 저장을 눌러야 실제로 반영됩니다.',
+      level: 'caution', confirmLabel: '되돌리기',
+    })
+    if (!ok) return
+    setMode('text'); setSubject(''); setBodyText(''); setClosingText(''); setBodyHtml('')
+    setInlineError(null)
+  }
+
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
+
+  return (
+    <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">서류 메일 문안</h3>
+        <Btn type="button" variant="primary" size="sm" onClick={() => void save()} disabled={saving || !loaded}>
+          {saving ? '저장 중…' : '저장'}
+        </Btn>
+      </div>
+      <p className="text-xs text-[var(--warm-muted)] -mt-1 leading-relaxed">
+        서류를 메일로 보낼 때 쓰는 기본 문구입니다. 보내기 직전에 그때만 고칠 수도 있습니다.
+        변수는 보낼 때 자동으로 채워집니다: <span className="num text-[0.65625rem]">{'{영업장명} {이름} {서류목록}'}</span>
+      </p>
+      {!loaded ? (
+        <SkeletonRows rows={3} />
+      ) : (
+        <div className="space-y-3">
+          <SegmentedControl<'text' | 'html'> size="sm" ariaLabel="문안 방식"
+            options={[{ value: 'text', label: '기본 문안' }, { value: 'html', label: '직접 HTML' }]}
+            value={mode} onChange={setMode} />
+
+          {mode === 'text' ? (
+            <>
+              <div className="space-y-1">
+                <label className="text-[0.6875rem] text-[var(--warm-muted)]">제목</label>
+                <input type="text" value={subject} maxLength={150} placeholder={defaults.subject}
+                  onChange={e => setSubject(e.target.value)} className={inputCls} />
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">제목과 첫 줄은 받는 사람 잠금화면에 뜹니다. 이름 같은 개인정보는 본문 안쪽에 쓰는 것을 권합니다.</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[0.6875rem] text-[var(--warm-muted)]">본문 (첨부 목록 위)</label>
+                <textarea value={bodyText} rows={6} maxLength={4000} placeholder={defaults.body}
+                  onChange={e => setBodyText(e.target.value)}
+                  className={`${inputCls} leading-relaxed resize-y`} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[0.6875rem] text-[var(--warm-muted)]">맺음말 (첨부 목록 아래)</label>
+                <textarea value={closingText} rows={3} maxLength={1000}
+                  onChange={e => setClosingText(e.target.value)}
+                  className={`${inputCls} leading-relaxed resize-y`} />
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">비워 두면 연락처 안내가 자동으로 들어갑니다.</p>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              {/* 중첩 안내 상자는 --cream-soft — 카드(--cream) 안에서 --canvas 는 다크에서 검은 구멍(§28) */}
+              <div className="rounded-lg px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
+                메일 본문 영역의 HTML 을 직접 작성합니다. 영업장명 헤더·첨부 목록·하단 표기는 자동으로 붙습니다.
+                표와 인라인 스타일만 안정적으로 표시되며, script 와 외부 이미지·웹폰트는 저장할 때 제거됩니다.
+              </div>
+              <textarea value={bodyHtml} rows={12} maxLength={30000}
+                onChange={e => setBodyHtml(e.target.value)}
+                className={`${inputCls} num leading-relaxed resize-y`} />
+            </div>
+          )}
+
+          {/* 검증 실패는 인라인(§27.2) — 오타 변수·상한 초과가 여기 선다. */}
+          {inlineError && <p className="text-xs text-[var(--danger-fg)]">{inlineError}</p>}
+
+          <div className="flex gap-2">
+            <Btn type="button" variant="secondary" size="sm" onClick={() => void doPreview()} disabled={previewBusy}>
+              {previewBusy ? '만드는 중…' : '미리보기'}
+            </Btn>
+            <Btn type="button" variant="secondary" size="sm" onClick={() => void restore()}>기본 문안으로 복원</Btn>
+          </div>
+        </div>
+      )}
+
+      {preview && (
+        <Modal open onClose={() => setPreview(null)} width="md" title="메일 미리보기">
+          <div className="space-y-2">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">예시 값으로 채운 미리보기입니다. 실제 발송 때는 입주자 이름·서류 목록·첨부 파일명이 그대로 들어갑니다.</p>
+            <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
+              <p className="text-[0.65625rem] text-[var(--warm-mid)]">제목</p>
+              <p className="mt-0.5 text-sm text-[var(--warm-dark)]">{preview.subject}</p>
+            </div>
+            {/* 메일은 어느 테마에서든 흰 종이 — 배경을 흰색으로 못박는다(확인 화면과 같은 문법). */}
+            <iframe title="문안 미리보기" sandbox="" srcDoc={preview.html}
+              className="h-[420px] w-full rounded-lg border border-[var(--warm-border)]"
+              style={{ background: '#FFFFFF' }} />
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 function SmsTemplateCard({ kind, title, description, emptyExample, namePlaceholder, bodyLabel }: {
   kind: 'unpaid' | 'notice' | 'personal'
   title: string
