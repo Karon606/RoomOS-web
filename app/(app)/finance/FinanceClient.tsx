@@ -52,6 +52,7 @@ import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
 import { recurringDueDateFor } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
+import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
@@ -2965,9 +2966,27 @@ export default function FinanceClient({
               return bTime - aTime
             })
 
-            // 날짜별 '해당일 지출 합계' — 실제 지출만(예정/고정 미확인 제외). 병합 행(주문·방분배)은 이미 합계 금액이라 그대로 합산. (오류신고 f7b0292a)
+            // 날짜별 합계 — **두 축을 나눠 센다**(오류신고 6e358d34, 2026-08-25).
+            //
+            // 종전에는 실지출만 셌다(오류신고 f7b0292a 의 판정 — 추정을 장부 숫자에 섞지 않는다).
+            // 그 원칙은 그대로 옳지만, 예정 행만 있는 날에는 항목 다섯이 금액을 달고 서 있는데
+            // 머리가 **'합계 0원'** 이라 화면이 거짓을 말했다. 실측 2026-08-28 = 표시 0원 대
+            // 실제 예정 1,050,500원. 혼합일도 있었다(8/25 실지출 합계는 맞고 그날 예정 31,900원이
+            // 어느 합계에도 없었다).
+            //
+            // 그래서 섞지 않고 **나란히 적는다.** 실지출이 있으면 '합계', 예정이 있으면 '예정'.
+            // 예정 금액은 숨김 요약이 이미 쓰는 정본(effectiveRecurringAmount)을 그대로 쓴다 —
+            // 사본을 만들면 같은 화면 두 자리가 다른 숫자를 말한다.
+            // 병합 행(주문·방분배)은 이미 합계 금액이라 그대로 합산한다(f7b0292a 그대로).
             const dayTotals = new Map<string, number>()
-            for (const it of items) if (it.kind === 'expense') dayTotals.set(it.dateStr, (dayTotals.get(it.dateStr) ?? 0) + it.exp.amount)
+            const dayPlanned = new Map<string, number>()
+            for (const it of items) {
+              if (it.kind === 'expense') dayTotals.set(it.dateStr, (dayTotals.get(it.dateStr) ?? 0) + it.exp.amount)
+              else dayPlanned.set(it.dateStr, (dayPlanned.get(it.dateStr) ?? 0) + effectiveRecurringAmount(it.rec))
+            }
+            /** 그 날짜 머리 문구 — 판정은 lib/dayExpenseTotal 정본이 한다(모바일·데스크톱 공용). */
+            const dayTotalLabel = (dateStr: string, prefix: string): string =>
+              dayTotalText({ actual: dayTotals.get(dateStr) ?? 0, planned: dayPlanned.get(dateStr) ?? 0 }, prefix, fmtWon)
 
             const isEmpty = items.length === 0
 
@@ -3031,7 +3050,7 @@ export default function FinanceClient({
                         return (
                           <div className="flex items-baseline justify-between px-1 pt-2 pb-0.5">
                             <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</span>
-                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">합계 {fmtWon((dayTotals.get(item.dateStr) ?? 0))}</span>
+                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '합계')}</span>
                           </div>
                         )
                       })() : null
@@ -3151,7 +3170,7 @@ export default function FinanceClient({
                               <td colSpan={6} className="px-4 py-1.5">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{fmtDate(item.dateStr)}</span>
-                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">해당일 합계 {fmtWon((dayTotals.get(item.dateStr) ?? 0))}</span>
+                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">{dayTotalLabel(item.dateStr, '해당일 합계')}</span>
                                 </div>
                               </td>
                             </tr>
