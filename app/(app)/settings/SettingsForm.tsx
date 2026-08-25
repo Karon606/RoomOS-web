@@ -2679,7 +2679,7 @@ function DocMailTemplateCard() {
       </div>
       <p className="text-xs text-[var(--warm-muted)] -mt-1 leading-relaxed">
         서류를 메일로 보낼 때 쓰는 기본 문구입니다. 보내기 직전에 그때만 고칠 수도 있습니다.
-        변수는 보낼 때 자동으로 채워집니다: <span className="num text-[0.65625rem]">{'{영업장명} {이름} {서류목록}'}</span>
+        변수 <span className="num text-[0.65625rem]">{'{영업장명} {이름} {서류목록}'}</span> 은 보낼 때 자동으로 채워집니다.
       </p>
       {!loaded ? (
         <SkeletonRows rows={3} />
@@ -2714,7 +2714,7 @@ function DocMailTemplateCard() {
           ) : (
             <div className="space-y-1.5">
               {/* 중첩 안내 상자는 --cream-soft — 카드(--cream) 안에서 --canvas 는 다크에서 검은 구멍(§28) */}
-              <div className="rounded-lg px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
+              <div className="rounded-lg px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
                 메일 본문 영역의 HTML 을 직접 작성합니다. 영업장명 헤더·첨부 목록·하단 표기는 자동으로 붙습니다.
                 표와 인라인 스타일만 안정적으로 표시되며, script 와 외부 이미지·웹폰트는 저장할 때 제거됩니다.
               </div>

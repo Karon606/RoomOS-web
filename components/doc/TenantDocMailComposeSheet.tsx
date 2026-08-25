@@ -131,7 +131,7 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
             <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">보내는 사람</p>
               <p className="mt-0.5 break-all text-sm text-[var(--warm-dark)]">{draft.fromName} &lt;{draft.fromAddress}&gt;</p>
-              <p className="mt-1 text-[0.65625rem] leading-relaxed text-[var(--warm-muted)]">발신 주소는 도메인 인증 때문에 스테이음 주소로 고정됩니다. 답장은 아래 주소로 받습니다.</p>
+              <p className="mt-1 text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">발신 주소는 도메인 인증 때문에 스테이음 주소로 고정됩니다. 답장은 아래 주소로 받습니다.</p>
             </div>
 
             {/* 답장 주소 — 열거에서만 고른다. 후보가 하나면 스위치를 세우지 않는다(가를 것이 없는
@@ -164,7 +164,7 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
             {draft.htmlLocked ? (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.65625rem] text-[var(--warm-mid)]">본문</p>
-                <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]">본문은 환경설정의 서류 메일 문안(직접 HTML)을 씁니다. 아래 미리보기로 확인해 주세요.</p>
+                <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">본문은 환경설정의 서류 메일 문안(직접 HTML)을 씁니다. 아래 미리보기로 확인해 주세요.</p>
               </div>
             ) : (
               <div className="space-y-1.5">
