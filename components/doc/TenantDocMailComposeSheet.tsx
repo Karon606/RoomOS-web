@@ -151,7 +151,11 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
                 <p className="rounded-sm border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5 text-sm break-all text-[var(--warm-dark)]">{replyTo || '답장 주소가 없습니다'}</p>
               )}
               {draft.replyToOptions.length <= 1 && (
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본정보의 메일 주소를 등록하면 여기서 고를 수 있습니다.</p>
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">환경설정 기본정보의 답장 받을 주소를 등록하면 여기서 고를 수 있습니다.</p>
+              )}
+              {/* 사본의 목적지가 곧 이 셀렉트의 값이라 그 자리 밖에는 설 곳이 없다. */}
+              {draft.copyToReply && replyTo !== draft.to && (
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">보낸 메일 사본이 이 주소로 함께 갑니다.</p>
               )}
             </div>
 

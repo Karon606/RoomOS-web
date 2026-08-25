@@ -98,6 +98,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       phone: true,
       replyToEmail: true,   // 서류 메일 답장 주소(2026-08-25)
       mailFromLocal: true,  // 서류 메일 발신 주소 앞부분(2026-08-26)
+      mailCopyToSelf: true, // 보낸 메일 사본 받기(2026-08-26)
       acquisitionDate: true,
       prevOwnerCutoffDate: true,
       defaultDeposit: true,

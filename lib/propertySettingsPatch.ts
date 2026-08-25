@@ -32,6 +32,7 @@ export type PropertySettingsPatch = {
   phone?: string | null
   replyToEmail?: string | null
   mailFromLocal?: string | null
+  mailCopyToSelf?: boolean
   acquisitionDate?: Date | null
   prevOwnerCutoffDate?: Date | null
   defaultDeposit?: number | null
@@ -87,6 +88,8 @@ export function buildPropertySettingsPatch(
   if (formData.has('mailFromLocal')) {
     patch.mailFromLocal = normalizeMailFromLocal(str(formData, 'mailFromLocal')) || null
   }
+  // 사본 받기 — 체크박스라 hidden '0' 짝과 함께 읽는다(감지망 축 ⓔ).
+  if (formData.has('mailCopyToSelf')) patch.mailCopyToSelf = checkboxOn(formData, 'mailCopyToSelf')
   if (formData.has('acquisitionDate')) {
     const v = str(formData, 'acquisitionDate')
     patch.acquisitionDate = v ? new Date(v) : null

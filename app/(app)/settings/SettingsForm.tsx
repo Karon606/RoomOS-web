@@ -77,6 +77,7 @@ type Property = {
   phone: string | null
   replyToEmail?: string | null   // 서류 메일 답장 주소(2026-08-25)
   mailFromLocal?: string | null  // 서류 메일 발신 주소 앞부분(2026-08-26)
+  mailCopyToSelf?: boolean       // 보낸 메일 사본 받기(2026-08-26)
   acquisitionDate: Date | null
   prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
@@ -908,6 +909,18 @@ export default function SettingsForm({
                 placeholder="예: contact@example.com"
                 autoComplete="off"
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            </div>
+            {/* 사본 받기 — 이 폼과 함께 저장되는 체크박스다(§27.1: 같은 카드 안에서 즉시 저장과
+                폼 저장을 섞지 않는다). 앞의 hidden '0' 은 해제를 저장하기 위한 짝이다(감지망 축 ⓔ). */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">보낸 메일 사본</label>
+              <p className="text-xs text-[var(--warm-muted)]">서류 메일을 보낼 때 같은 메일이 답장 받을 주소로 함께 갑니다. 첨부까지 그대로 가서 무엇을 보냈는지 내 메일함에서 확인할 수 있습니다.</p>
+              <input type="hidden" name="mailCopyToSelf" value="0" />
+              <label className="flex items-start gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+                <input type="checkbox" name="mailCopyToSelf" value="1" defaultChecked={property?.mailCopyToSelf === true}
+                  className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+                <span className="break-keep">보낸 메일 사본을 답장 받을 주소로 함께 받는다</span>
+              </label>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">인수 날짜</label>

@@ -197,6 +197,10 @@ model Property {
   // 쓰면 받는 사람 메일함에서 두 사업장이 한 발신자로 묶이고, 한쪽 스팸 신고가 다른 쪽을 때린다
   // (publicSlug 와 같은 판정). nullable 유니크라 미설정 영업장 다수는 충돌하지 않는다.
   mailFromLocal    String?  @unique
+  // 보낸 메일 사본을 답장 받을 주소로 함께 보낼지(2026-08-26 운영자 요구). 기본 꺼짐 —
+  // 신원번호·계약서가 담긴 첨부가 외부 사서함에 쌓이는 일은 영업장의 명시적 선택이어야 하고,
+  // 켜면 메일 서비스의 발송 집계가 통당 2로 잡힌다.
+  mailCopyToSelf   Boolean  @default(false)
   // 서류 메일 문안 — null = 내장 기본(lib/docMail). shape: lib/docMail.DocMailTemplate
   // { mode: 'text'|'html', subject, bodyText, closingText, bodyHtml } — 칸별 null = 그 칸만 기본 유지.
   docMailTemplate  Json?
@@ -409,6 +413,9 @@ model MailLog {
   attachmentCount Int
   totalBytes      Int
   resendId        String?  // 메일 서버 발송 id — 배달 상태 조회 근거
+  // 사본을 실제로 실었을 때의 주소(BCC). null 이면 사본 없이 나갔다는 뜻이다 —
+  // "사본을 받았어야 하는데 없다"는 문의에 토글이 꺼져 있었는지 답할 근거다.
+  copyTo          String?
   sentBy          String?  // 보낸 운영자 로그인 주소
   createdAt       DateTime @default(now())
 

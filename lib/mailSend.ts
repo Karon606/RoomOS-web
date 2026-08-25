@@ -55,6 +55,13 @@ export async function sendMail(input: {
   fromLocal?: string | null
   /** 답장이 갈 주소 — 보낸 운영자. 없으면 답장이 no-reply 로 사라진다. */
   replyTo?: string
+  /**
+   * 보낸 메일 사본을 받을 주소(BCC) — 같은 메시지의 봉투 수신자라 첨부까지 바이트 동일하게 간다.
+   * CC 가 아닌 이유: 받는 사람 헤더에 운영자 주소가 노출되고 전체답장 사고를 부른다.
+   * **형식이 어긋나면 사본만 조용히 뺀다.** 사본 주소 오타 하나로 서류가 안 나가면 안 된다
+   * (한 요청에 to·bcc 가 함께 실려 통째로 거절될 수 있는 구조라 여기서 미리 거른다).
+   */
+  bcc?: string | null
   attachments?: MailAttachment[]
 }): Promise<MailSendOutcome> {
   // 테스트 사이트에서는 실제로 내보내지 않는다. 테스트 DB 는 운영 복사본이라 여기 to 가
@@ -85,6 +92,7 @@ export async function sendMail(input: {
         from: `${input.fromName.replace(/[<>"]/g, '').trim() || '스테이음'} <${buildMailFromAddress(input.fromLocal)}>`,
         to: [input.to],
         ...(input.replyTo ? { reply_to: [input.replyTo] } : {}),
+        ...(input.bcc && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.bcc) ? { bcc: [input.bcc] } : {}),
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),

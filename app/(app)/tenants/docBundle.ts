@@ -155,6 +155,8 @@ export type TenantDocMailDraftInfo = {
   bodyText: string
   /** 문안이 직접 HTML 모드 — 본문 편집을 잠그고 미리보기만 보여준다. */
   htmlLocked: boolean
+  /** 보낸 메일 사본이 답장 주소로 함께 가는가(영업장 설정) — 화면이 그 사실을 말한다. */
+  copyToReply: boolean
   attachments: { name: string; size: number | null; kind: string }[]
   /** 알려진 크기의 합 — 안내용. 실제 상한은 발송 직전 다운로드 합산이 다시 지킨다. */
   totalBytes: number
@@ -221,7 +223,10 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { name: true, phone: true, replyToEmail: true, docMailTemplate: true, mailFromLocal: true },
+    select: {
+      name: true, phone: true, replyToEmail: true, docMailTemplate: true,
+      mailFromLocal: true, mailCopyToSelf: true,
+    },
   })
   const propertyName = property?.name ?? '스테이음'
   const tpl = parseDocMailTemplate(property?.docMailTemplate)
@@ -239,6 +244,7 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     docTitles: rows.map(r => DOC_TYPE_TITLE[r.docType]),
     propertyName, propertyPhone: property?.phone ?? null, tpl,
     mailFromLocal: property?.mailFromLocal ?? null,
+    copyToSelf: property?.mailCopyToSelf === true,
     replyToOptions,
     replyToDefault: propReply ?? operatorEmail ?? '',
   }
@@ -275,6 +281,7 @@ export async function getTenantDocMailDraft(
       subject: rendered.subject,
       bodyText: bodyPrefill,
       htmlLocked: ctx.tpl.mode === 'html',
+      copyToReply: ctx.copyToSelf,
       attachments: ctx.names.map((name, i) => ({ name, size: sizes[i], kind: docMimeLabel(ctx.rows[i].mime) })),
       totalBytes: sizes.reduce<number>((s, n) => s + (n ?? 0), 0),
       maxBytes: MAIL_MAX_TOTAL_BYTES,
@@ -366,11 +373,17 @@ export async function sendTenantDocBundleMail(
     tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: names,
   })
 
+  // 사본은 **답장 받기로 한 주소**로 간다 — 사본이 가야 할 곳과 답장이 와야 할 곳은 같은
+  // 사서함("내가 확인하는 곳")이라 칸을 셋으로 늘리지 않는다. 그 값은 이미 열거 검증을 지났고,
+  // 받는 사람과 같으면 사본을 안 보낸다(같은 메일이 두 번 갈 이유가 없다).
+  const copyTo = ctx.copyToSelf && replyTo && replyTo !== ctx.bundle.mail.to ? replyTo : null
+
   const outcome = await sendMail({
     to: ctx.bundle.mail.to as string,
     fromName: ctx.propertyName,
     fromLocal: ctx.mailFromLocal,
     replyTo,
+    bcc: copyTo,
     subject: rendered.subject,
     text: rendered.text,
     html: rendered.html,
@@ -395,6 +408,7 @@ export async function sendTenantDocBundleMail(
           attachmentCount: ctx.rows.length,
           totalBytes: total,
           resendId: outcome.id,
+          copyTo,
           sentBy: ctx.operatorEmail ?? null,
         },
       })
