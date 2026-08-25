@@ -7,6 +7,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { moveRecordTargetMonth, bulkApplyLatePayments, undoTargetMonthMoves, type SuspectRecord, type SuspectCategory, type TargetMonthUndo } from './actions'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Result = {
@@ -138,32 +139,27 @@ export default function AccrualCheckClient({ initialResult, myRole }: { initialR
         </div>
       )}
 
+      {/* 1차 필터는 SegmentedControl 정본이다(§23). 종전에는 raw button 이 코랄 채움 알약을
+          손으로 그렸다 — 필터 상태는 CTA 가 아니라 코랄 솔리드를 쓸 자리가 아니고(§03),
+          그 알약이 'AI 가 만든 앱' 인상의 한 조각이었다(2026-08-25 정비 3/7). */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {([
-          { k: 'all',             label: '전체' },
-          { k: 'late-payment',    label: '지연 입금' },
-          { k: 'pre-payment',     label: '선납' },
-          { k: 'mismatch-other',  label: '월 불일치' },
-        ] as const).map(({ k, label }) => (
-          <button
-            key={k}
-            onClick={() => setFilter(k)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              filter === k ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        <SegmentedControl<'all' | SuspectCategory>
+          size="sm"
+          ariaLabel="재검토 분류 필터"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all',            label: '전체' },
+            { value: 'late-payment',   label: '지연 입금' },
+            { value: 'pre-payment',    label: '선납' },
+            { value: 'mismatch-other', label: '월 불일치' },
+          ]}
+        />
         {canEdit && counts['late-payment'] > 0 && (
-          <button
-            onClick={handleBulkLate}
-            disabled={isPending}
-            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-[var(--warning-solid)] text-[var(--on-solid)] hover:opacity-90 disabled:opacity-60 transition-opacity"
-            title="지연 입금 record 전체를 직전 월로 한 번에 이동"
-          >
+          <Btn variant="warning" size="sm" className="ml-auto" disabled={isPending} onClick={handleBulkLate}
+            title="지연 입금 record 전체를 직전 월로 한 번에 이동">
             {isPending ? '적용 중…' : `지연 입금 ${counts['late-payment']}건 일괄 적용`}
-          </button>
+          </Btn>
         )}
       </div>
 
@@ -192,7 +188,7 @@ export default function AccrualCheckClient({ initialResult, myRole }: { initialR
                     </>
                   )}
                 </div>
-                <span className={`text-[0.65625rem] px-2 py-0.5 rounded-full font-medium ${CATEGORY_COLOR[s.category]}`}>
+                <span className={`text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium ${CATEGORY_COLOR[s.category]}`}>
                   {CATEGORY_LABEL[s.category]}
                 </span>
               </div>

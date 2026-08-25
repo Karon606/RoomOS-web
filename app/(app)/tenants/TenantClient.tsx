@@ -1781,11 +1781,15 @@ export default function TenantClient({
       {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 스크롤 시 상단 고정(운영자 지시 2026-07-13) */}
       <div className="flex gap-2 sticky top-0 z-10 -mt-2 py-2 bg-[var(--canvas)]">
         <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" className="flex-1" />
+        {/* 필터 버튼에 코랄 솔리드 금지(§03) — 켜짐은 코랄 보더 + 코랄 텍스트로 말한다.
+            radius 는 이웃 SearchBar 와 정합을 지켜 rounded-xl 존치(배지가 아니라 입력 행 컨트롤).
+            2026-08-25 정비 3/7. */}
         <button type="button" onClick={() => setShowFilters(v => !v)}
-          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+          aria-expanded={showFilters}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5 ${
             showFilters || activeFilterCount > 0
-              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+              ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--tc-text)]'
+              : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-dark)]'
           }`}>
           필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
         </button>

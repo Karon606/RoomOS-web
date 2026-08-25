@@ -460,13 +460,16 @@ export default function RequestsClient({
 
         <span className="w-px self-stretch bg-[var(--warm-border)] mx-1" />
 
+        {/* 필터 상태에 코랄 솔리드 금지(§03 — CTA·연체에만). '긴급'은 의미색(danger)이 이미
+            있으므로 켜짐을 danger 트라이어드로 말한다 — 같은 화면 pale-red 칩과 같은 토큰 쌍이라
+            대비 전례가 있다(2026-08-25 정비 3/7). */}
         <button
           onClick={() => setFilterUrgent(v => !v)}
           aria-pressed={filterUrgent}
-          className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+          className={`px-2.5 py-1 text-xs font-medium rounded-sm ring-1 transition-colors ${
             filterUrgent
-              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-              : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
+              ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]'
+              : 'bg-[var(--canvas)] ring-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
           긴급만 {urgentCount}
@@ -532,7 +535,7 @@ export default function RequestsClient({
                     <Badge tone="pale-red">긴급</Badge>
                   )}
                   {c && (
-                    <span className={`text-[0.65625rem] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
+                    <span className={`text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
                       {r.category}
                     </span>
                   )}

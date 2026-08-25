@@ -18,9 +18,6 @@ const ALLOW = [
   ['app/(app)/dashboard/DashboardClient.tsx', 'min-w-4 h-4'],      // 숫자 카운터
   ['components/room-manage/MoveCalendar.tsx', 'shadow-lift'],      // '오늘로' 부유 알약
   ['components/entity-modal/widgets/PhotoStrip.tsx', 'bg-black/'], // 사진 위 오버레이 층
-  // TODO(정비 3/7 — 모조 필터 커밋에서 지운다)
-  ['app/(app)/accrual-check/AccrualCheckClient.tsx', ''],
-  ['app/(app)/requests/RequestsClient.tsx', ''],
   // TODO(정비 4/7 — 선택 칩 커밋에서 지운다. 파일 통째 허용은 임시다)
   ['app/(app)/inventory/InventoryClient.tsx', ''],
   ['app/(app)/tenants/TenantClient.tsx', ''],

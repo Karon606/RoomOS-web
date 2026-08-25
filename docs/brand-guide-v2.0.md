@@ -276,7 +276,7 @@
 
 ## §23 리스트·테이블 화면
 
-- ListPageShell 순서: 헤더(제목+우측 1~2 CTA/월선택) → 풀폭 SearchBar → 1차 필터(SegmentedControl) → (정렬·표시항목) → 본문(모바일 카드 / 768px 이상 sticky 테이블) → EmptyState. 섹션 간격 12px.
+- ListPageShell 순서: 헤더(제목+우측 1~2 CTA/월선택) → 풀폭 SearchBar → 1차 필터(SegmentedControl — **코랄 채움 알약으로 모조 금지**, 2026-08-25: 필터 상태는 CTA 가 아니라 §03 코랄 절제 대상이다) → (정렬·표시항목) → 본문(모바일 카드 / 768px 이상 sticky 테이블) → EmptyState. 섹션 간격 12px.
 - SearchBar: 좌 돋보기 SVG + cream + 우 지우기 + 풀폭 약 40px. 항상 노출.
 - 식별자: 호실번호·입주자명 = --ink bold tnum. 테라코타는 OVERDUE·.attn에만.
 - 1차 필터 = SegmentedControl(라디오·단일, '전체'=해제). 토글 칩 금지. 고급필터는 별도 패널.
