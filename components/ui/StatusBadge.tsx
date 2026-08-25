@@ -89,7 +89,11 @@ export function StatusBadge({
         )}
       </span>
       {sub && (
-        <span className="text-[0.65625rem] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
+        // pr-2.5 = 배지의 좌우 패딩과 같은 값. 상자 끝이 아니라 **글자 끝**을 맞춘다 —
+        // 상자 오른쪽 끝끼리는 정확히 맞아도 배지 글자는 10px 안쪽에 있어서, 아래 줄 글자가
+        // 그만큼 오른쪽으로 삐져나와 보였다(운영자 지적 2026-08-26 "묘하게 줄이 안 맞는다").
+        // 배지와 sub 는 gap-0.5 로 한 덩어리라, 정렬 기준도 아래 다른 행이 아니라 배지 글자다.
+        <span className="pr-2.5 text-[0.65625rem] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
           {sub}
         </span>
       )}
