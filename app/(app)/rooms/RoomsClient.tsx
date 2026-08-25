@@ -27,6 +27,16 @@ import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { CashReceiptTab } from '@/components/rooms/CashReceiptTab'
+
+type CashReceiptCandidate = {
+  leaseTermId: string; tenantId: string; roomNo: string; tenantName: string
+  payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number
+}
+type CashReceiptIssued = {
+  roomNo: string; tenantName: string; amount: number
+  issuedYmd: string; payYmd: string; payMethod: string | null
+}
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr, kstDaysUntil } from '@/lib/kstDate'
 import { checkoutSubText, isShortTermCheckoutDue } from '@/lib/leaseStatus'
@@ -35,7 +45,7 @@ import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/co
 import { fmtRoomNo } from '@/lib/roomNo'
 
 // 뷰 전환 탭(v2.0 §25) — URL ?tab= 값과 같은 문자열이다. 홈 KPI 딥링크가 이 값으로 들어온다.
-type ViewTabId = 'rooms' | 'income' | 'deposit'
+type ViewTabId = 'rooms' | 'income' | 'deposit' | 'receipt'
 
 type RoomStatus = {
   roomId: string
@@ -413,7 +423,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 
 export default function RoomsClient({
   roomStatus, targetMonth, isFutureMonth, myRole, incomes, incomeCategories, payAggregates,
-  reservedExpected, checkedOutRecognized, prepaidReceived, leaseOptions, depositSummary, depositLedger, initialTab,
+  reservedExpected, checkedOutRecognized, prepaidReceived, leaseOptions, depositSummary, depositLedger, receiptRows, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
@@ -433,6 +443,7 @@ export default function RoomsClient({
   // 보증금 원장 — 월 스코프가 없는 전체 조회(서버 정본 getDepositSummaryByTenant·getDepositLedger)
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
+  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[] }
   initialTab?: ViewTabId
 }) {
   const searchParams = useSearchParams()
@@ -877,6 +888,9 @@ export default function RoomsClient({
               { id: 'rooms',   label: '수납' },
               { id: 'income',  label: '부가수익', suffix: incomeSum > 0 ? `+${fmtKorMoney(incomeSum)}` : undefined },
               { id: 'deposit', label: '보증금',  suffix: fmtKorMoney(totalDepositBalance) },
+              // 접미를 안 단다 — 미발행 건수는 '해야 할 일'이 아니고(전부 발행 대상이 아니다),
+              // 탭 줄이 이미 320~390 전 대역에서 가로 스크롤 중이라 폭을 더 늘릴 이유가 없다.
+              { id: 'receipt', label: '현금영수증' },
             ]} />
         </div>
         <MonthSelector />
@@ -890,6 +904,17 @@ export default function RoomsClient({
       {/* 보증금 탭 — 원장 성격이라 월 셀렉터와 무관하다(종전 지출 관리 탭과 같은 중립). */}
       {viewTab === 'deposit' && (
         <DepositSection summary={depositSummary} ledger={depositLedger} totalBalance={totalDepositBalance} />
+      )}
+
+      {viewTab === 'receipt' && (
+        <CashReceiptTab
+          candidates={receiptRows.candidates}
+          issued={receiptRows.issued}
+          targetMonth={targetMonth}
+          issuedSum={payAggregates.cashReceiptSum}
+          issuedCount={payAggregates.cashReceiptCount}
+          onChanged={() => router.refresh()}
+        />
       )}
 
       {viewTab === 'rooms' && <>

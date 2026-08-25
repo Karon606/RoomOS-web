@@ -1,4 +1,4 @@
-import { getRoomPaymentStatus, getMonthPaymentAggregates } from './actions'
+import { getRoomPaymentStatus, getMonthPaymentAggregates, getCashReceiptTabRows } from './actions'
 import { getExtraIncomes, getExtraIncomeLeaseOptions, getDepositSummaryByTenant, getDepositLedger } from '@/app/(app)/finance/actions'
 import { getIncomeCategories, getMyRole } from '@/app/(app)/settings/actions'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -27,7 +27,7 @@ export default async function RoomsPage({
   // 부가수익 — /finance에서 이동(2026-07-02). 과납분·보증금 미반환분 등 수납 파생 수익이라 수납 흐름 옆에.
   // 보증금 — /finance에서 이동(2026-08-12). 받고 돌려주는 돈이라 지출이 아니다. 조회는 두 화면이 같은 정본을 쓰도록
   // finance/actions 에 그대로 두고 여기서 부른다(이 파일이 settings/actions 를 부르는 것과 같은 문법).
-  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized, paidRevenue, leaseOptions, depositSummary, depositLedger] = await Promise.all([
+  const [roomStatus, myRole, incomes, incomeCategories, payAggregates, reservedExpected, checkedOutRecognized, paidRevenue, leaseOptions, depositSummary, depositLedger, receiptRows] = await Promise.all([
     getRoomPaymentStatus(targetMonth),
     getMyRole(),
     getExtraIncomes(targetMonth),
@@ -43,6 +43,8 @@ export default async function RoomsPage({
     // 보증금은 원장 성격이라 월 스코프가 없다 — 종전 지출 관리 탭과 같은 무인자 조회 그대로.
     getDepositSummaryByTenant(),
     getDepositLedger(),
+    // 현금영수증 탭 — 후보(입금일 축)와 발행 기록(발행일 축). 탭 전환에 왕복이 없도록 함께 받는다.
+    getCashReceiptTabRows(targetMonth),
   ])
   // 아직 오지 않은 달인가 — KST 기준 서버 판정. 클라가 오늘을 다시 구하면 하이드레이션이 갈린다.
   const isFutureMonth = targetMonth > kstMonthStr()
@@ -61,7 +63,8 @@ export default async function RoomsPage({
       leaseOptions={leaseOptions}
       depositSummary={depositSummary}
       depositLedger={depositLedger}
-      initialTab={tab === 'income' || tab === 'deposit' ? tab : 'rooms'}
+      receiptRows={receiptRows}
+      initialTab={tab === 'income' || tab === 'deposit' || tab === 'receipt' ? tab : 'rooms'}
     />
   )
 }

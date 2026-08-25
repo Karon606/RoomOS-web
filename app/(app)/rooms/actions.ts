@@ -2172,6 +2172,159 @@ export async function setPaymentCashReceipt(input: {
   }
 }
 
+/**
+ * 현금영수증 탭 데이터 — 후보(미발행 입금)와 발행 기록 두 목록 (2026-08-25, 3단계).
+ *
+ * **축이 둘이다.** 후보는 입금일 축일 수밖에 없다(아직 발행 안 했으니 발행일이 없다).
+ * 발행 기록은 발행일 축이고 상단 합계와 같은 필터를 지난다. 그래서 화면이 각 목록에
+ * 축 이름을 상시 텍스트로 적는다.
+ *
+ * 후보에는 **ExtraIncome 청소비 행도 넣는다.** 단기 입실처럼 청소비만 따로 받은 입금은
+ * PaymentRecord 가 없어 한쪽만 보면 목록에서 통째로 빠진다(paymentCompositionFor 와 같은 이유).
+ */
+export async function getCashReceiptTabRows(targetMonth: string): Promise<{
+  candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }[]
+  issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null }[]
+}> {
+  const propertyId = await getPropertyId()
+  const [y, m] = targetMonth.split('-').map(Number)
+  const from = new Date(Date.UTC(y, m - 1, 1))
+  const to = new Date(Date.UTC(y, m, 1))
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+  })
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const payWindow = { gte: cutoff && cutoff > from ? cutoff : from, lt: to }
+  const issuedWindow = kstMonthTsRange(targetMonth)
+
+  const [records, incomes, lines] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: payWindow },
+      select: {
+        leaseTermId: true, tenantId: true, payDate: true, payMethod: true, actualAmount: true, isDeposit: true,
+        tenant: { select: { name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+    prisma.extraIncome.findMany({
+      where: { propertyId, category: CLEANING_FEE_CATEGORY, date: payWindow, leaseTermId: { not: null }, tenantId: { not: null } },
+      select: {
+        leaseTermId: true, tenantId: true, date: true, payMethod: true, amount: true,
+        tenant: { select: { name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+    prisma.cashReceipt.findMany({
+      where: { propertyId, deletedAt: null },
+      select: {
+        leaseTermId: true, payDate: true, payMethod: true, amount: true, issuedAt: true,
+        tenant: { select: { name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+  ])
+
+  // 입금 묶음 — 발행 줄이 찾는 키와 **같은 축**이어야 한다(계약·수납일·수단).
+  const key = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
+  type Cand = { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }
+  const byKey = new Map<string, Cand>()
+  const put = (lt: string, tid: string, room: string, name: string, d: Date, pm: string | null, amt: number, kind: 'deposit' | 'cleaning' | 'rent') => {
+    // 카드는 현금영수증 대상이 아니다 — 후보에 세우면 못 할 일을 목록이 시킨다.
+    if (!isCashReceiptEligible(pm)) return
+    const k = key(lt, d, pm)
+    const g = byKey.get(k) ?? { leaseTermId: lt, tenantId: tid, roomNo: room, tenantName: name, payYmd: kstYmdStr(d), payMethod: pm ?? '', amount: 0, deposit: 0, cleaning: 0 }
+    g.amount += amt
+    if (kind === 'deposit') g.deposit += amt
+    if (kind === 'cleaning') g.cleaning += amt
+    byKey.set(k, g)
+  }
+  // 방이 없는 계약은 화면에 세울 이름이 없다 — 지어내지 않고 건너뛴다.
+  for (const r of records) {
+    if (!r.leaseTerm.room) continue
+    put(r.leaseTermId, r.tenantId, r.leaseTerm.room.roomNo, r.tenant.name, r.payDate, r.payMethod, r.actualAmount, r.isDeposit ? 'deposit' : 'rent')
+  }
+  for (const e of incomes) {
+    const room = e.leaseTerm?.room
+    if (!room || !e.leaseTermId || !e.tenantId || !e.tenant) continue
+    put(e.leaseTermId, e.tenantId, room.roomNo, e.tenant.name, e.date, e.payMethod, e.amount, 'cleaning')
+  }
+
+  const issuedKeys = new Set(lines.map(l => key(l.leaseTermId, l.payDate, l.payMethod)))
+  const candidates = [...byKey.entries()]
+    .filter(([k, g]) => !issuedKeys.has(k) && g.amount > 0)
+    .map(([, g]) => g)
+    .sort((a, b) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
+
+  const issued = lines
+    .filter(l => l.issuedAt >= issuedWindow.gte && l.issuedAt < issuedWindow.lt && isCashReceiptEligible(l.payMethod) && !!l.leaseTerm.room)
+    .map(l => ({
+      roomNo: l.leaseTerm.room!.roomNo, tenantName: l.tenant.name, amount: l.amount,
+      issuedYmd: kstYmdStr(l.issuedAt), payYmd: kstYmdStr(l.payDate), payMethod: l.payMethod,
+    }))
+    .sort((a, b) => b.issuedYmd.localeCompare(a.issuedYmd))
+
+  return { candidates, issued }
+}
+
+/**
+ * 일괄 발행 기록 — 고른 입금 전액을 한 발행일로 적는다.
+ * 전액이 아닌 발행은 그 입금의 수납 내역에서 금액을 고친다(설계 판정 2026-08-25).
+ */
+export async function batchSetCashReceipts(input: {
+  items: { leaseTermId: string; tenantId: string; payYmd: string; payMethod: string }[]
+  issuedDate: string
+}): Promise<{ ok: true; done: number; skipped: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    let done = 0, skipped = 0
+    for (const it of input.items) {
+      const payDate = ymdToDbDate(it.payYmd)
+      const exists = await prisma.cashReceipt.findFirst({
+        where: { leaseTermId: it.leaseTermId, payDate, payMethod: it.payMethod, deletedAt: null },
+        select: { id: true },
+      })
+      if (exists) { skipped += 1; continue }
+      const issuedAt = resolveCashReceiptIssuedAt({ issued: true, issuedDate: input.issuedDate, payMethod: it.payMethod })
+      if (!issuedAt) { skipped += 1; continue }
+      const c = await paymentCompositionFor({ propertyId, leaseTermId: it.leaseTermId, payDate, payMethod: it.payMethod })
+      if (c.total <= 0) { skipped += 1; continue }
+      await syncCashReceiptLine({
+        propertyId, leaseTermId: it.leaseTermId, tenantId: it.tenantId,
+        payDate, payMethod: it.payMethod, issuedAt, amount: c.total,
+        incl: { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 },
+      })
+      done += 1
+    }
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true, done, skipped }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '일괄 발행 기록에 실패했습니다.' }
+  }
+}
+
+/** 일괄 적용취소 — 그 입금들의 발행 줄을 내린다(소프트삭제라 되살릴 수 있다). */
+export async function batchUnsetCashReceipts(items: { leaseTermId: string; payYmd: string; payMethod: string }[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    for (const it of items) {
+      const line = await prisma.cashReceipt.findFirst({
+        where: { leaseTermId: it.leaseTermId, payDate: ymdToDbDate(it.payYmd), payMethod: it.payMethod, deletedAt: null },
+        select: { id: true },
+      })
+      if (line) await prisma.cashReceipt.update({ where: { id: line.id }, data: { deletedAt: new Date() } })
+    }
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+  }
+}
+
 // 수납 기록 삭제
 export async function deletePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
