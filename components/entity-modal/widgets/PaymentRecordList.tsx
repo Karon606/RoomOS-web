@@ -12,8 +12,10 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment, restorePayment, setCashReceiptIssued,
+  setPaymentCashReceipt,
 } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -69,9 +71,16 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 토글은 한 번 눌러 켜는 자리라 날짜를 물으면 편의가 죽는다. 그래서 토글은 오늘로 켜고,
   // 실제 발행일이 달랐으면 이 수정 폼에서 고친다 — 새 인터랙션을 만들지 않고 기존 문법을 쓴다.
   const [editCashReceiptDate, setEditCashReceiptDate] = useState<string>('')
+  // 발행 금액 — **잘못 적었을 때 고칠 수 있는 유일한 자리다**(운영자 승인 2026-08-25).
+  // 여기가 없으면 틀린 국세청 숫자가 앱에 갇힌다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다.
+  const [editCrAmount, setEditCrAmount] = useState(0)
+  const [editCrIncl, setEditCrIncl] = useState({ deposit: false, cleaning: false, rent: true })
+  // 이 계약의 활성 발행 줄 — (수납일·수단)으로 그 행의 발행을 찾는다.
+  const [receipts, setReceipts] = useState<{ payDate: string | Date; payMethod: string | null; amount: number; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }[]>([])
 
   const reload = async () => {
-    const { records, windowRecords, acquisitionDate } = await getPaymentsByLease(leaseTermId, targetMonth)
+    const { records, windowRecords, acquisitionDate, receipts: rc } = await getPaymentsByLease(leaseTermId, targetMonth)
+    setReceipts(rc)
     // 청구 조정 전표(단기 연장·감액 마커)는 편집·삭제 대상이 아니다 — 목록에서 제외(회차 번호도 세지 않음).
     // 조회가 payDate 월 기준이라 전표는 입주월이 아닌 달에도 섞여 들어온다(마커 payDate=조작 시각).
     // window 는 서버가 전표·보증금을 이미 걸러 내려보낸다(보증금 정본은 DepositStatusPanel).
@@ -92,6 +101,13 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     setEditCashReceipt(!!p.cashReceiptIssuedAt)
     // 저장된 발행 시각을 KST 날짜로 되읽는다. 없으면 오늘 — 여기서 처음 켜는 경우다.
     setEditCashReceiptDate(p.cashReceiptIssuedAt ? kstYmdStr(new Date(p.cashReceiptIssuedAt)) : kstYmdStr())
+    // 저장된 발행 줄이 있으면 그 금액·구성을 그대로 연다. 없으면 이 record 금액이 기본값이다.
+    const line = receipts.find(r =>
+      kstYmdStr(new Date(r.payDate)) === kstYmdStr(new Date(p.payDate)) && (r.payMethod ?? '') === (p.payMethod ?? ''))
+    setEditCrAmount(line?.amount ?? p.actualAmount)
+    setEditCrIncl(line
+      ? { deposit: line.inclDeposit, cleaning: line.inclCleaning, rent: line.inclRent }
+      : { deposit: !!p.isDeposit, cleaning: false, rent: !p.isDeposit })
     if (!p.isDeposit) {
       getTargetMonthOptions(leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
     }
@@ -118,6 +134,20 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         cashReceiptIssuedDate: editCashReceiptDate,
       }), { success: '수납 기록 수정됨' })
       if (!res.ok) return
+      // 발행 금액은 전용 문으로 따로 보낸다 — updatePayment 은 발행 여부·날짜만 손대고
+      // 금액은 안 건드린다(그래야 손으로 넣은 값이 재저장에 안 덮인다).
+      if (editCashReceipt) {
+        const rec = (records ?? []).find(r => r.id === editingId)
+        if (rec) {
+          const crRes = await setPaymentCashReceipt({
+            leaseTermId, tenantId: rec.tenantId,
+            payDate: editDate, payMethod: editPayMethod,
+            issued: true, issuedDate: editCashReceiptDate,
+            amount: editCrAmount, incl: editCrIncl,
+          })
+          if (!crRes.ok) pushToast('error', crRes.error)
+        }
+      }
       await reload()
       setEditingId(null)
       onChange?.()
@@ -247,6 +277,14 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   <p className="text-xs font-medium text-[var(--warm-mid)]">발행일</p>
                   <DatePicker value={editCashReceiptDate} onChange={setEditCashReceiptDate} maxDate={kstYmdStr()}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors" />
+                  {/* 발행 금액 — 받은 금액과 다를 수 있다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다. */}
+                  <p className="text-xs font-medium text-[var(--warm-mid)] mt-2">발행 금액</p>
+                  <MoneyInput value={editCrAmount} onChange={setEditCrAmount} />
+                  {editCrAmount !== p.actualAmount && (
+                    <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">
+                      받은 금액 {fmtWon(p.actualAmount)}과 다릅니다.
+                    </p>
+                  )}
                 </div>
               )}
               <div className="flex gap-2 justify-end">

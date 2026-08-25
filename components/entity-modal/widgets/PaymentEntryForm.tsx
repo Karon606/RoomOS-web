@@ -17,7 +17,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
-import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -110,6 +110,14 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   const [cashReceiptIssued, setCashReceiptIssued] = useState(false)   // 현금영수증 발행 표시(메타데이터, 오류신고 2bd8befa)
   // 발행일 — 합계가 이 날짜의 달로 잡히므로 지연 발행이면 여기를 고쳐야 홈택스와 맞는다.
   const [cashReceiptIssuedDate, setCashReceiptIssuedDate] = useState<string>(kstYmdStr())
+  // 발행에 넣을 몫과 발행 금액 (운영자 확정 2026-08-24, 514호 예시).
+  // "총금액 40만원이 미리 입력되어 있고 보증금 v, 월이용료 v … 보증금 체크를 해제하면
+  //  금액은 35만원으로 바뀌고 월이용료에만 v 표시가 남는거지."
+  const [crIncl, setCrIncl] = useState({ deposit: true, cleaning: true, rent: true })
+  // 금액을 손으로 고쳤나. 손댄 뒤에는 체크를 바꿔도 **안 덮는다** — 분해 블록의
+  // depositTouched 와 같은 처방이다(effect 로 되쓰면 사람이 친 숫자를 앱이 한 틱 뒤에 덮는다).
+  const [crAmountTouched, setCrAmountTouched] = useState(false)
+  const [crAmount, setCrAmount] = useState(0)
   // 카드로 바꾸면 발행 표시를 **끈다**(운영자 확정 2026-08-24). 종전에는 체크박스만 감추고
   // 값을 남겨, 화면이 '대상 아님'이라 말한 값이 그대로 저장됐다. 카드는 현금이 아니라 현금영수증
   // 대상 자체가 아니고 그 금액은 카드 합계로 넘어간다.
@@ -195,6 +203,26 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
   // 못박는 동작까지 그대로). 판정은 UI 상태(고쳤는가)가 아니라 값으로 한다 — 고쳤다 되돌린
   // 사람과 안 건드린 사람이 같은 숫자로 다른 저장을 하면 그게 곧 다음 사고다.
   const splitIsCanonical = cVal === 0 && dVal === Math.min(payAmount, depositRemaining)
+
+  // 발행에 넣을 몫 — **폼이 확정한 값**을 쓴다(proposed 가 아니다). 사람이 배분을 고쳤으면
+  // 그 값이 저장 정본이고, 발행 금액도 실제로 적힌 몫과 같아야 한다.
+  // 분해가 안 서는 평범한 달에는 몫이 이용료 하나뿐이라 체크 줄을 세우지 않는다.
+  // 폴백 보증금 모드는 전액이 보증금이 아니다 — 서버가 min(총액, 계약 보증금)으로 쪼개고
+  // 나머지를 이용료로 적는다(saveDepositPayment). 화면이 전액을 보증금으로 치면 몫이 저장
+  // 사실과 갈리고, 그 갈림이 그대로 발행 금액이 된다(설계 검토 2026-08-25 지적).
+  const crParts = splitMode
+    ? { deposit: dVal, cleaning: cVal, rent: rVal }
+    : isDepositMode
+      ? { deposit: Math.min(payAmount, room.depositAmount), cleaning: 0, rent: Math.max(0, payAmount - room.depositAmount) }
+      : isCleaningFeeMode
+        ? { deposit: 0, cleaning: Math.min(payAmount, room.cleaningFee), rent: Math.max(0, payAmount - room.cleaningFee) }
+        : { deposit: 0, cleaning: 0, rent: payAmount }
+  const crPartCount = [crParts.deposit, crParts.cleaning, crParts.rent].filter(v => v > 0).length
+  const crDefaultAmount = cashReceiptDefaultAmount(crParts, crIncl)
+  const crShownAmount = crAmountTouched ? crAmount : crDefaultAmount
+  // 발행함을 켰는데 금액이 0이면 저장을 막는다. 서버가 0원 줄을 조용히 안 만들어서,
+  // 안 막으면 '체크는 켜져 있는데 아무것도 안 적힌' 침묵 실패가 된다.
+  const crBlocked = cashReceiptIssued && isCashReceiptEligible(payMethod) && crShownAmount <= 0
   // 옛 2단 옵트인이 서는 자리는 이제 둘뿐이다.
   //   ① 구성 조회가 실패했을 때의 폴백(그때는 잔여를 몰라 계약액으로 안내할 수밖에 없다)
   //   ② 보증금이 없는 계약의 청소비 수납(단기)
@@ -468,6 +496,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
             payDate: payDateVal, payMethod,
             issued: true, issuedDate: cashReceiptIssuedDate,
+            amount: crShownAmount, incl: crIncl,
           })
           if (!crRes.ok) pushToast('error', crRes.error)
         }
@@ -730,10 +759,73 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               maxDate 로 미래를 막는다 — 아직 안 한 발행이라 국세청에 있을 수가 없다. 과거는 안 막는다.
               운영자 원문 "업무특성상 누락 매출분도 있기 때문에 날짜가 다르게 할 필요가 있거든". */}
           {cashReceiptIssued && (
-            <div className="space-y-1 pl-6">
-              <label className="text-xs text-[var(--warm-muted)]">발행일</label>
-              <DatePicker value={cashReceiptIssuedDate} onChange={setCashReceiptIssuedDate} maxDate={kstYmdStr()}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            <div className="space-y-2 pl-6">
+              {/* 발행에 넣을 몫 — **세로로 쌓는다.** 한 줄에 세우면 361px 이 필요한데 320 화면의
+                  이 자리(모달 sm · 본문 px-5 · pl-6)는 224px 뿐이다. 세로면 행당 118px 로 든다
+                  (Pretendard 자 0.851em/0.564em, 설계 실측 2026-08-25).
+                  몫이 하나뿐이면 줄 자체를 안 세운다 — 고를 자유가 없는 선택지는 묻지 않는다.
+                  몫이 0인 항목은 감춘다(분해 블록이 청소비를 다루는 규칙과 같다). */}
+              {crPartCount >= 2 && (
+                <div className="space-y-1">
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">발행에 넣을 몫</p>
+                  {([
+                    ['deposit', '보증금', crParts.deposit],
+                    ['cleaning', '청소비', crParts.cleaning],
+                    ['rent', '이용료', crParts.rent],
+                  ] as const).filter(([, , v]) => v > 0).map(([key, label, v]) => (
+                    <label key={key} className="flex items-center justify-between gap-2 min-h-[44px] cursor-pointer">
+                      <span className="flex items-center gap-2">
+                        <input type="checkbox" checked={crIncl[key]}
+                          onChange={e => setCrIncl(prev => ({ ...prev, [key]: e.target.checked }))}
+                          className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                        <span className="text-xs text-[var(--warm-mid)]">{label}</span>
+                      </span>
+                      <span className="text-xs num text-[var(--warm-dark)]">{fmtWon(v)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* 발행 금액 — 체크한 몫의 합이 기본값이고 직접 고칠 수 있다(운영자 확정 2026-08-24).
+                  손댄 뒤에는 체크를 바꿔도 **안 덮는다** — effect 로 되쓰면 사람이 친 숫자를 앱이
+                  한 틱 뒤에 덮는다(분해 블록의 depositTouched 와 같은 처방). */}
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">발행 금액</label>
+                <MoneyInput value={crShownAmount}
+                  onChange={v => { setCrAmountTouched(true); setCrAmount(v) }} />
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  {crAmountTouched ? (
+                    <button type="button"
+                      onClick={() => { setCrAmountTouched(false); setCrAmount(0) }}
+                      className="-my-2 min-h-[44px] flex items-center text-[0.65625rem] text-[var(--warm-mid)] underline decoration-dotted underline-offset-2">
+                      몫의 합으로 되돌리기
+                    </button>
+                  ) : <span />}
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] num">
+                    {crAmountTouched ? '직접 입력' : '자동'} · 받은 금액 {fmtWon(payAmount)}
+                  </span>
+                </div>
+                {/* 받은 것보다 많아도 막지 않는다(운영자 확정 2026-08-25). 앱이 모르는 현금
+                    수령이 있을 수 있고, 정상 조작을 경고색으로 칠하면 상시 오탐이 된다. */}
+                {crShownAmount > payAmount && (
+                  <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep num">
+                    받은 금액 {fmtWon(payAmount)}보다 {fmtWon(crShownAmount - payAmount)} 많습니다.
+                  </p>
+                )}
+                {/* 0원은 막는다 — 서버가 0원 발행 줄을 조용히 안 만들어서, 안 막으면 '발행함이라
+                    체크했는데 아무것도 안 적힌' 침묵 실패가 된다(§27.2 검증은 인라인). */}
+                {crShownAmount <= 0 && (
+                  <p className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
+                    발행 금액이 0원입니다. 발행하지 않았다면 위 체크를 해제해 주세요.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">발행일</label>
+                <DatePicker value={cashReceiptIssuedDate} onChange={setCashReceiptIssuedDate} maxDate={kstYmdStr()}
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+              </div>
             </div>
           )}
           {/* 지금 서버가 하는 일을 그대로 말한다. 발행 표시는 이 결제가 만든 record 전부에 찍히고
@@ -741,14 +833,9 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               국세청에는 그대로 올라간다 — 그 사실을 여기서 말한다.
               (2026-08-24 한때 합계에서 뺐다가 되돌렸다. 카드로 낸 보증금이 카드사 명세에 남아
               앱에서만 빼면 대사가 안 된다.) */}
-          {cashReceiptIssued && splitMode && dVal > 0 && (
+          {cashReceiptIssued && crIncl.deposit && crParts.deposit > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              보증금 몫 {fmtWon(dVal)}은 돌려줄 돈이라 매출이 아닙니다. 함께 발행하면 국세청 발행액이 신고 매출보다 그만큼 커집니다.
-            </p>
-          )}
-          {cashReceiptIssued && splitMode && cVal > 0 && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              청소비 몫 {fmtWon(cVal)}도 발행 금액에 함께 듭니다.
+              보증금 몫 {fmtWon(crParts.deposit)}은 돌려줄 돈이라 매출이 아닙니다. 함께 발행하면 국세청 발행액이 신고 매출보다 그만큼 커집니다.
             </p>
           )}
         </>
@@ -761,7 +848,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
       {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
       <div className="flex gap-2">
         {onCancel && <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>}
-        <Btn type="submit" variant="primary" disabled={pending || !(payAmount > 0) || splitBlocked} fullWidth>
+        <Btn type="submit" variant="primary" disabled={pending || !(payAmount > 0) || splitBlocked || crBlocked} fullWidth>
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>

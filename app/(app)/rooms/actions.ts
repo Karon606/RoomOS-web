@@ -3010,7 +3010,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   // windowRecords 는 목록 렌더링 전용이며 어떤 합계에도 넣지 않는다(클라 재계산 금지 원칙).
   const winMonths = [0, 1, 2].map(i => shiftMonth(targetMonth, -i))
   const winWindow = monthsDbRange(shiftMonth(targetMonth, -2), targetMonth)
-  const [records, windowRecords, property, lastWithMethod] = await Promise.all([
+  const [records, windowRecords, property, lastWithMethod, receipts] = await Promise.all([
     prisma.paymentRecord.findMany({
       where: { leaseTermId, payDate: monthWindow },
       orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }],
@@ -3037,6 +3037,13 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
       orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
       select: { payMethod: true },
     }),
+    // 발행 줄 — 수정 폼이 **현재 발행 금액**을 프리필하려면 이것이 있어야 한다. 없으면 그 칸이
+    // 늘 자동값으로 열려, 안 건드리고 저장해도 손으로 넣었던 금액이 자동값으로 돌아간다.
+    // CashReceipt 는 소프트삭제 익스텐션 대상이 아니라 deletedAt 을 손으로 건다.
+    prisma.cashReceipt.findMany({
+      where: { leaseTermId, deletedAt: null },
+      select: { payDate: true, payMethod: true, amount: true, issuedAt: true, inclDeposit: true, inclCleaning: true, inclRent: true },
+    }),
   ])
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   // 보증금 실수납 합 — 조회월 무관 lease 전체("받은 돈은 사실", 신고 50a2a69b). 현황 줄·수납 모달 표시용.
@@ -3044,7 +3051,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
     where: { leaseTermId, isDeposit: true, deletedAt: null },
     _sum: { actualAmount: true },
   })
-  return { records, windowRecords, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0 }
+  return { records, windowRecords, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null, depositPaidTotal: depositAgg._sum.actualAmount ?? 0, receipts }
 }
 
 // 보증금 수납 내역 — 계약 단위. **조회월을 타지 않는다.**
