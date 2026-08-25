@@ -2091,7 +2091,7 @@ function FontSizePreview({ basePx }: { basePx: number }) {
         <span style={{ fontSize: `${0.875 * scale}rem` }} className="font-bold text-[var(--danger-fg)]">-58만원</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)]">통신비</span>
+        <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-sm bg-[var(--coral-pale)] text-[var(--coral)]">통신비</span>
         <span style={{ fontSize: `${0.75 * scale}rem` }} className="text-[var(--warm-dark)]">인터넷 요금</span>
       </div>
       <span style={{ fontSize: `${0.625 * scale}rem` }} className="text-[var(--warm-muted)]">계좌이체 · 하나은행</span>

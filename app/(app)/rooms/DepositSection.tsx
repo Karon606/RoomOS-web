@@ -148,7 +148,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--warm-dark)]">{d.tenantName}</span>
                       {d.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {d.roomNo}호</span>}
-                      <span className="text-[0.65625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
                       {d.hasNoInRecord && (

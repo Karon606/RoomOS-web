@@ -1035,13 +1035,13 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                 // 품목마다 창고가 다르므로(hubLocationId) row.locations 의 isHub 로 판정한다.
                 const isHubChip = row.locations.find(l => l.id === lb.locationId)?.isHub ?? false
                 return (
-                <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">
                   {lb.locationName}{isHubChip ? ' (창고)' : ''} {fmtQty(lb.qty, stockUnit)}
                 </span>
                 )
               })
             : row.locations.filter(loc => !hidden.has(loc.id)).map(loc => (
-                <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
+                <span key={loc.id} className="text-[0.65625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">{loc.name}</span>
               ))
           }
         </div>
@@ -1870,7 +1870,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
           <div className="min-w-0">
             <p className="text-xs text-[var(--warm-muted)]">
               {fmtDate(entry.date)} · {entry.isReconcile ? '전체 보정' : '점검'} · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span>
-              {entry.isReconcile && <span className="ml-1 text-[0.65625rem] bg-[var(--honey)]/15 text-[var(--honey)] border border-[var(--honey)]/40 rounded-full px-1.5 py-0.5">보정</span>}
+              {entry.isReconcile && <span className="ml-1 text-[0.65625rem] bg-[var(--honey)]/15 text-[var(--honey)] border border-[var(--honey)]/40 rounded-sm px-1.5 py-0.5">보정</span>}
             </p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
             {entry.locationBreakdown.length > 0 && (
@@ -1878,7 +1878,7 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                 {entry.locationBreakdown.map(lb => {
                   const restocked = lb.restockedQty ?? 0
                   return (
-                    <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                    <span key={lb.locationId} className="text-[0.65625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-sm px-2 py-0.5">
                       {lb.locationName} {fmtQty(lb.qty, stockUnit)}
                       {restocked > 0 && <span className="ml-1 text-[var(--coral)]">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</span>}
                     </span>

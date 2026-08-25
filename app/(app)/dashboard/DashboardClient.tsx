@@ -506,7 +506,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
-            <span className="inline-block mt-1.5 text-[0.65625rem] font-semibold rounded-full px-2 py-0.5"
+            <span className="inline-block mt-1.5 text-[0.65625rem] font-semibold rounded-sm px-2 py-0.5"
               style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
               {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
             </span>
@@ -751,9 +751,9 @@ function AlertsStrip({ alerts, onOpenAlert }: {
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
         <div className="flex items-center gap-2">
           <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>알림</h3>
-          <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
+          <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
-        <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
+        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
           {alerts.length}건
         </span>
       </div>
@@ -1389,7 +1389,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
-            <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{isAreaRange ? '납부일 기준' : '귀속월 기준'}</span>
+            <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{isAreaRange ? '납부일 기준' : '귀속월 기준'}</span>
           </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">
@@ -2717,10 +2717,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
                         <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.65625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부일 전 인원 포함</span></h3>
-                        <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
+                        <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
-                        <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
+                        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
                           {data.unpaidCount}건
                         </span>
                       )}
@@ -2754,19 +2754,19 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                         여기만 '납부일 전'(중립 회색)으로 남으면 한 사정을 두 화면이
                                         다른 라벨·다른 색으로 부른다(웹디자이너 지적 2026-08-02). */}
                                     {l.deferredDue ? (
-                                      <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-await-bg)', color: 'var(--badge-await-fg)' }}>
+                                      <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-await-bg)', color: 'var(--badge-await-fg)' }}>
                                         납부 유예
                                       </span>
                                     ) : l.daysOverdue != null && l.daysOverdue >= 7 ? (
-                                      <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
+                                      <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
                                         연체 D+{l.daysOverdue}
                                       </span>
                                     ) : l.daysOverdue != null && l.daysOverdue >= 1 ? (
-                                      <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>
+                                      <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>
                                         미납
                                       </span>
                                     ) : l.daysOverdue != null && l.daysOverdue < 0 ? (
-                                      <span className="rounded-full text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>
+                                      <span className="rounded-sm text-[0.65625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>
                                         납부일 전
                                       </span>
                                     ) : null}
@@ -2775,7 +2775,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                 </div>
                               </button>
                               <div className="flex flex-col items-end gap-1 shrink-0">
-                                <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
+                                <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
                                 {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지) */}
@@ -2812,10 +2812,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
                         <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>납입 완료</h3>
-                        <span className="rounded-full text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
+                        <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.activity.length > 0 && (
-                        <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
                           {data.activity.length}건
                         </span>
                       )}
@@ -2841,13 +2841,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
                                 <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
                               {item.badgeLabel && (
-                                <span className="rounded-full shrink-0 text-[0.65625rem] font-semibold px-2 py-0.5" style={item.badgeTone === 'late'
+                                <span className="rounded-sm shrink-0 text-[0.65625rem] font-semibold px-2 py-0.5" style={item.badgeTone === 'late'
                                   ? { background: 'var(--warning-bg)', color: 'var(--warning-fg)' }
                                   : { background: 'var(--info-bg)', color: 'var(--info-fg)' }}>
                                   {item.badgeLabel}
                                 </span>
                               )}
-                              <span className="rounded-full shrink-0 text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                              <span className="rounded-sm shrink-0 text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
                                 {fmtKorMoney(item.amount)}
                               </span>
                             </button>

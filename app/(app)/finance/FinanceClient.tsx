@@ -3241,7 +3241,7 @@ export default function FinanceClient({
                                 <span className="truncate block">{item.dateStr.slice(5).replace('-', '/')} 납부</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{r.payMethod ?? '—'}</span>
+                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-sm bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{r.payMethod ?? '—'}</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
@@ -3710,7 +3710,7 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--success-ring)]'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--success-ring)]'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
@@ -5251,7 +5251,7 @@ function ReserveTab({
                     <span className={`text-xs font-semibold ${typeColor(t.type)}`}>{typeLabel(t.type)}</span>
                     <span className="text-xs text-[var(--warm-muted)]">{new Date(t.date).toISOString().slice(0, 10)}</span>
                     {t.type === 'DEPOSIT' && t.sourceMonth && (
-                      <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         출처 {t.sourceMonth}
                       </span>
                     )}

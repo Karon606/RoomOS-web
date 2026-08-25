@@ -416,7 +416,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
               <li key={f.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)]">
                 <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
                   {/* 어휘는 §용어 정본을 따른다(docs/document-screens-spec.md) — '서명 / 스캔' 은 사전에 없는 말이었다. */}
-                  <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
+                  <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded-sm font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
                     {f.source === 'GENERATED' ? '앱 발급본' : '스캔본'}
                   </span>
                   {/* 지위 배지 — §11 트라이어드(-bg + -fg + inset ring) + pill 반경.
@@ -424,7 +424,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   {/* 배지를 띄울지는 표시 정책이다 — 1부뿐이면 비교 대상이 없어 세우지 않는다.
                       판정 자체(currentIds)는 부수를 안 본다. 서류 보내기가 1부짜리 계약의 대표도 물어보기 때문이다. */}
                   {needsName && currentIds.has(f.id) && (
-                    <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                    <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
                   )}
                   <div className="flex-1 min-w-0 basis-full sm:basis-auto">
                     <span className="block text-xs text-[var(--warm-dark)] truncate">
@@ -491,7 +491,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                       <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
                         {/* 지위 배지는 슬롯 하나의 배타값이다 — 폐기된 종이는 '현재' 도 '구버전' 도 아니다.
                             danger 트라이어드를 쓰는 것은 §04 의 무효 계열이고, 회색 계열과 색으로 갈린다. */}
-                        <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full font-medium bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">폐기됨</span>
+                        <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm font-medium bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">폐기됨</span>
                         <div className="flex-1 min-w-0 basis-full sm:basis-auto">
                           <span className="block text-xs text-[var(--warm-dark)] truncate line-through">
                             {tenantName} · {dateLabel}

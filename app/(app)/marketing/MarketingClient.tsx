@@ -121,10 +121,10 @@ function VisitRow({ v, showDate, open, onToggle, ipOpen, onToggleIp }: {
           <span className="num text-xs w-[82px] shrink-0" style={{ color: 'var(--warm-mid)' }}>
             {showDate ? `${v.dateLabel} ${v.timeLabel}` : v.timeLabel}
           </span>
-          <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full shrink-0 truncate max-w-[7rem]"
+          <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm shrink-0 truncate max-w-[7rem]"
             style={{ background: 'var(--cream-soft)', color: 'var(--warm-mid)' }}>{v.sourceLabel}</span>
           {v.visitNo != null && v.visitNo >= 2 && (
-            <span className="num text-[0.65625rem] px-1.5 py-0.5 rounded-full shrink-0"
+            <span className="num text-[0.65625rem] px-1.5 py-0.5 rounded-sm shrink-0"
               style={{ background: 'var(--coral-pale)', color: 'var(--tc-text)' }}>{v.visitNo}회차</span>
           )}
           {meta && (

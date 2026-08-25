@@ -251,7 +251,7 @@ function Card({ row, isPending, onQuickDone, onCheck, onEdit, muted }: { row: Ch
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>{row.title}</span>
             {row.isActive && (
-              <span className="text-[0.65625rem] font-medium px-2 py-0.5 rounded-full"
+              <span className="text-[0.65625rem] font-medium px-2 py-0.5 rounded-sm"
                 style={{ background: chip.bg, color: chip.color }}>
                 {chip.label}
               </span>

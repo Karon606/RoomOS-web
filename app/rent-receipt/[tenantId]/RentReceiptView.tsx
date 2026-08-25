@@ -242,7 +242,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <span className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>{isDeposit ? (data.nonResident ? '계약 시작일' : '입주 예정일') : '발급 대상월'}</span>
             <span className="truncate">{data.targetMonth}</span>
             {rel && (
-              <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0"
+              <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-sm leading-none shrink-0"
                 style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
             )}
           </div>

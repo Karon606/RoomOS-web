@@ -235,7 +235,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                       <p className="text-xs truncate mt-0.5" style={{ color: 'var(--warm-muted)' }}>{p.address}</p>
                     )}
                   </div>
-                  <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-full"
+                  <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-sm"
                         style={{ background: roleStyle.bg, color: roleStyle.color }}>
                     {ROLE_LABEL[p.role]}
                   </span>

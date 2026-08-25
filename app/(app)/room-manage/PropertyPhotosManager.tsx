@@ -145,7 +145,7 @@ export default function PropertyPhotosManager({ onClose }: { onClose: () => void
                           <img src={photo.storageUrl} alt={photo.fileName ?? ''} onClick={() => setViewPhoto(photo)}
                             className={`w-full h-full object-cover cursor-zoom-in transition-opacity ${shown ? '' : 'opacity-40'}`} />
                           {is360 && (
-                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
+                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-sm bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
                           )}
                           <button type="button" onClick={() => togglePhotoShow(cat.id, photo.id, !shown)}
                             aria-label={shown ? '소개 페이지에서 숨기기' : '소개 페이지에 표시'} title={shown ? '공개 중 · 눌러서 숨김' : '숨김 · 눌러서 공개'}

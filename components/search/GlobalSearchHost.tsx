@@ -221,7 +221,7 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
                       </span>
                       {h.right && <span className="shrink-0 text-xs tnum" style={{ color: 'var(--warm-mid)' }}>{h.right}</span>}
                       {h.badge && (
-                        <span className="shrink-0 text-[0.65625rem] font-semibold rounded-full px-2 py-0.5"
+                        <span className="shrink-0 text-[0.65625rem] font-semibold rounded-sm px-2 py-0.5"
                           style={{ background: BADGE_STYLE[h.badge.tone].bg, color: BADGE_STYLE[h.badge.tone].fg }}>
                           {h.badge.label}
                         </span>

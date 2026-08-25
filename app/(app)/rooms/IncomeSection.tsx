@@ -179,10 +179,10 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
               <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                 <Badge tone="pale-green">{i.category}</Badge>
                 {tenantLabel(i) && (
-                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] font-medium">{tenantLabel(i)}</span>
+                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-dark)] font-medium">{tenantLabel(i)}</span>
                 )}
                 {i.payMethod && (
-                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
+                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
                 )}
                 {i.financialAccount && (
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
@@ -219,7 +219,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   <td className="px-4 py-3 text-xs text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(i.date)}</td>
                   <td className="px-4 py-3 text-xs text-[var(--warm-dark)] whitespace-nowrap">{tenantLabel(i) ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{i.payMethod ?? '—'}</span>
+                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-sm bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{i.payMethod ?? '—'}</span>
                     {i.financialAccount && (
                       <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(i.financialAccount)}</div>
                     )}

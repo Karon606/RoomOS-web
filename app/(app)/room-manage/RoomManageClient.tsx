@@ -1122,14 +1122,14 @@ export default function RoomManageClient({
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
             {cardFields.floor && room.floor && (
-              <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+              <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                 {room.floor}층
               </span>
             )}
             {/* 입주 가능일 — 층 칩과 같은 메타 칩 문법이다. 상태 뱃지 앞에 두는 이유는 이것이
                 방을 가리키는 사실(호실번호·층)에 붙는 정보이지 상태가 아니기 때문이다. */}
             {availableFrom && (
-              <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+              <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                 {fmtMD(availableFrom)}부터
               </span>
             )}
@@ -1838,7 +1838,7 @@ export default function RoomManageClient({
                         className={`flex items-center gap-2 min-h-[44px] rounded-xl border bg-[var(--cream)] pl-1.5 pr-1 py-1 ${dragPhotoIdx === idx ? 'border-[var(--coral)] shadow-lift select-none' : 'border-[var(--warm-border)]'}`}>
                         <img src={photo.storageUrl} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
                         {idx === 0 && (
-                          <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold">대표</span>
+                          <span className="shrink-0 px-1.5 py-0.5 rounded-sm bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold">대표</span>
                         )}
                         <span className="min-w-0 flex-1 truncate text-xs text-[var(--warm-dark)]">{photo.fileName ?? '사진'}</span>
                         {/* 드래그는 오른쪽 44pt 손잡이에서만 — 행 몸통에 걸면 스크롤 터치가 순서를 바꿔버림(비품 정본과 동일) */}
@@ -1872,10 +1872,10 @@ export default function RoomManageClient({
                         className={`w-full h-full object-cover cursor-zoom-in transition-opacity ${shown ? '' : 'opacity-40'}`} />
                       {/* 대표 배지 — 공개·비360 첫 장 = 호실 카드 썸네일. 삭제(우상)·360°(좌하)·공개토글(우하)과 자리 안 겹침 */}
                       {photo.id === mainId && editPhotos.length > 1 && (
-                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold pointer-events-none">대표</span>
+                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded-sm bg-[var(--coral)] text-[var(--on-solid)] text-[0.65625rem] font-bold pointer-events-none">대표</span>
                       )}
                       {photoIs360 && (
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-sm bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
                       )}
                       {/* 공개/비공개 토글 — 눈 아이콘. 비공개면 눈 감김 + 사진 흐리게(dim). 방 공개가 켜졌을 때 노출 대상 */}
                       <button type="button" onClick={() => handleTogglePhotoShow(photo.id, !shown)}

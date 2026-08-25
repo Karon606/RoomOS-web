@@ -1603,7 +1603,7 @@ export default function RoomsClient({
                   {shown.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {shown.map((c, i) => (
-                        <span key={i} className="text-[0.65625rem] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>{c}</span>
+                        <span key={i} className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm" style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>{c}</span>
                       ))}
                     </div>
                   )}

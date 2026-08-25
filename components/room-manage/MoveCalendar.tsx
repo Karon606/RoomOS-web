@@ -574,7 +574,7 @@ function MoveCalendarView({ data, onViewMonthChange }: {
                 {/* '오늘' — 월 라벨과 겹치는 자리에서는 오늘이 이긴다(z-20 · 불투명). */}
                 {todayDay != null && (
                   // 10.5px 이 §05 하한이다. 같은 파일의 다른 작은 글자가 전부 그 값이다.
-                  <span className="z-20 self-center justify-self-start whitespace-nowrap rounded-full px-1.5 py-0.5 text-[0.65625rem] font-bold leading-none"
+                  <span className="z-20 self-center justify-self-start whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[0.65625rem] font-bold leading-none"
                     style={{ gridColumn: `${todayDay + 1} / span 1`, gridRow: '1 / 2', background: 'var(--coral)', color: 'var(--on-solid)' }}>
                     오늘
                   </span>

@@ -2215,7 +2215,7 @@ export default function TenantClient({
                           {fmtRoomNo(lease.room.roomNo)}
                           {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
                         </span>
-                        {lease.room.floor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
+                        {lease.room.floor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
                       </>
                     ) : (() => {
                       // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
@@ -3025,7 +3025,7 @@ export default function TenantClient({
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-semibold text-[var(--warning-fg)]">납부일 임시 조정</span>
                             {isOverrideActive && (
-                              <span className="text-xs bg-[var(--warning-solid)]/20 text-[var(--warning-fg)] px-1.5 py-0.5 rounded-full">
+                              <span className="text-xs bg-[var(--warning-solid)]/20 text-[var(--warning-fg)] px-1.5 py-0.5 rounded-sm">
                                 {targetMonth} · {fmtOvr(lease.overrideDueDay)}로 적용 중
                               </span>
                             )}

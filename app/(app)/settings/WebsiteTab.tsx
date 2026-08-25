@@ -140,7 +140,7 @@ export function WebsiteTab({
         <div className="flex items-center gap-2 mb-1">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)]">소개 페이지 반영 대기</h2>
           {total > 0 && (
-            <span className="rounded-full text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>
+            <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>
               <span className="tnum">{total}</span>건
             </span>
           )}

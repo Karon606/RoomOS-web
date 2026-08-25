@@ -26,7 +26,7 @@ export default async function PendingPage() {
         </div>
 
         <div
-          className="rounded-2xl p-7 space-y-4"
+          className="rounded-xl p-7 space-y-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--cream-3)' }}
         >
           <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>

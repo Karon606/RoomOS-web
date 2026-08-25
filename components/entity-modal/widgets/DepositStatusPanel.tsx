@@ -326,7 +326,7 @@ export function DepositStatusPanel({
         <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
         {/* 예약 단계라는 맥락은 라벨을 바꾸지 말고 메타 칩으로. 받은 돈은 그대로 보증금이지 '대체'가 아니다. */}
         {status === 'RESERVED' && (
-          <span className="text-[0.65625rem] rounded-full px-1.5 py-0.5 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">예약금으로 수납</span>
+          <span className="text-[0.65625rem] rounded-sm px-1.5 py-0.5 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">예약금으로 수납</span>
         )}
       </div>
 
