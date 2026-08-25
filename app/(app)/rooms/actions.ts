@@ -1900,6 +1900,9 @@ async function paymentCompositionFor(args: {
 
 export async function setCashReceiptIssued(
   paymentId: string, issued: boolean, restoreIssuedAt?: string | null,
+  // 토글이 켤 때 묻는 발행일 'YYYY-MM-DD'(운영자 지시 2026-08-25 — "응 물어봐줘").
+  // 종전에는 무조건 오늘로 켜져 실제 발행일이 다르면 수정 폼을 또 열어야 했다.
+  issuedDate?: string | null,
 ): Promise<{ ok: true; prevIssuedAt: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1933,7 +1936,7 @@ export async function setCashReceiptIssued(
       const next = restoreIssuedAt != null && issued
         ? new Date(restoreIssuedAt)
         : resolveCashReceiptIssuedAt({
-            issued, existing: t.cashReceiptIssuedAt,
+            issued, issuedDate, existing: t.cashReceiptIssuedAt,
             payMethod: record.payMethod,
           })
       await prisma.paymentRecord.update({ where: { id: t.id }, data: { cashReceiptIssuedAt: next } })

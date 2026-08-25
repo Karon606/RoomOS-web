@@ -41,13 +41,27 @@ if (projectId && !/^[a-z0-9]+$/i.test(projectId)) {
 
 if (!existsSync(MEMBERS_DIR)) process.exit(0)
 
+// 운영자 본인 제외 — ?nolog=1 표식(stayeumNoLog)을 Clarity 도 존중한다(운영자 지시 2026-08-25).
+// 종전에는 우리 추적(_track.js)만 멈추고 Clarity 는 계속 돌아 두 도구가 다른 숫자를 말했다 —
+// 운영자가 19:55 에 본 세션이 Clarity 에는 있고 방문 기록에는 없던 것이 그 갈림이다.
+// 표식 읽고 쓰기가 _track.js 와 중복인 이유: 이 스니펫은 head 에서, _track.js 는 body 끝에서
+// 돌므로 ?nolog=1 로 처음 들어온 방문에서 _track.js 가 표식을 새기기 전에 Clarity 가 이미
+// 로드된다. 그 첫 방문까지 막으려면 여기서도 URL 을 직접 봐야 한다.
 const snippet = id => `${BEGIN}
 <script type="text/javascript">
-(function(c,l,a,r,i,t,y){
-  c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-  t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-  y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-})(window, document, "clarity", "script", "${id}");
+(function(){
+  try {
+    var q = new URLSearchParams(location.search).get('nolog');
+    if (q === '1') localStorage.setItem('stayeumNoLog', '1');
+    else if (q === '0') localStorage.removeItem('stayeumNoLog');
+    if (localStorage.getItem('stayeumNoLog') === '1') return;
+  } catch (e) {}
+  (function(c,l,a,r,i,t,y){
+    c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+    t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+    y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+  })(window, document, "clarity", "script", "${id}");
+})();
 </script>
 ${END}`
 

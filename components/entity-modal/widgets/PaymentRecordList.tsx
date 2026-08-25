@@ -74,6 +74,9 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   // 발행 금액 — **잘못 적었을 때 고칠 수 있는 유일한 자리다**(운영자 승인 2026-08-25).
   // 여기가 없으면 틀린 국세청 숫자가 앱에 갇힌다. 프리필이 곧 현재값이라 안 건드리면 안 바뀐다.
   const [editCrAmount, setEditCrAmount] = useState(0)
+  // 원터치 토글이 켤 때 묻는 발행일(운영자 지시 2026-08-25 — "응 물어봐줘"). 끌 때는 안 묻는다.
+  const [crAskId, setCrAskId] = useState<string | null>(null)
+  const [crAskDate, setCrAskDate] = useState(kstYmdStr())
   const [editCrIncl, setEditCrIncl] = useState({ deposit: false, cleaning: false, rent: true })
   // 이 계약의 활성 발행 줄 — (수납일·수단)으로 그 행의 발행을 찾는다.
   const [receipts, setReceipts] = useState<{ payDate: string | Date; payMethod: string | null; amount: number; inclDeposit: boolean; inclCleaning: boolean; inclRent: boolean }[]>([])
@@ -173,12 +176,35 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   }
 
   // 현금영수증 원터치 토글 — 수정 폼에 들어가지 않고 발행 표시(오류신고 c0936f89). 적용취소는 원래 시각 복원.
+  // **켜기는 발행일을 먼저 묻는다**(운영자 지시 2026-08-25). 종전에는 무조건 오늘로 켜져 실제
+  // 발행일이 다르면 수정 폼을 또 열어야 했다. 끄기는 날짜가 필요 없어 종전처럼 한 번에 꺼진다.
   const handleToggleCashReceipt = (p: Record) => {
+    if (!p.cashReceiptIssuedAt) {
+      // 켜기 — 행 밑에 발행일 확인 줄을 편다(작업 행 완료 폼과 같은 인라인 문법).
+      setCrAskId(p.id)
+      setCrAskDate(kstYmdStr())
+      return
+    }
     startTransition(async () => {
-      const next = !p.cashReceiptIssuedAt
-      const res = await setCashReceiptIssued(p.id, next)
+      const res = await setCashReceiptIssued(p.id, false)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', next ? '현금영수증 발행으로 표시했습니다' : '현금영수증 발행 표시를 해제했습니다', {
+      pushToast('success', '현금영수증 발행 표시를 해제했습니다', {
+        action: { label: '적용취소', run: () => { void setCashReceiptIssued(p.id, res.prevIssuedAt != null, res.prevIssuedAt).then(r => {
+          if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+      })
+      await reload()
+      onChange?.()
+    })
+  }
+
+  // 켜기 확정 — 물은 발행일로 기록한다. 토스트·적용취소는 종전 토글과 같은 문법.
+  const confirmCashReceiptOn = (p: Record) => {
+    startTransition(async () => {
+      const res = await setCashReceiptIssued(p.id, true, null, crAskDate)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setCrAskId(null)
+      pushToast('success', `현금영수증 발행으로 표시했습니다 · 발행일 ${fmtMD(crAskDate)}`, {
         action: { label: '적용취소', run: () => { void setCashReceiptIssued(p.id, res.prevIssuedAt != null, res.prevIssuedAt).then(r => {
           if (r.ok) { reload(); onChange?.() } else pushToast('error', r.error)
         }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
@@ -370,6 +396,21 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 </div>
               )}
             </div>
+            {/* 켜기 확인 줄 — 체크를 누르면 바로 켜지 않고 발행일부터 받는다(운영자 지시 2026-08-25).
+                작업 행 완료 폼과 같은 인라인 문법이다. 끄기는 이 줄을 안 거친다. */}
+            {crAskId === p.id && (
+              <div className="mt-1.5 space-y-2">
+                <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+                  발행일
+                  <DatePicker value={crAskDate} onChange={setCrAskDate} maxDate={kstYmdStr()}
+                    className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+                </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  <RowActionBtn tone="accent" disabled={pending} onClick={() => confirmCashReceiptOn(p)}>발행 기록</RowActionBtn>
+                  <RowActionBtn onClick={() => setCrAskId(null)}>취소</RowActionBtn>
+                </div>
+              </div>
+            )}
           </div>
         )
       })}
