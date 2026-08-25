@@ -1361,8 +1361,20 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
   if (!/if \(!isPastMonth\) \{\s*\n\s*for \(const r of recurringWithStatus\)/.test(dash)) {
     violations.push('[소스] 홈 지출 카테고리 예정분에 과거월 가드(isPastMonth)가 없다 — 지난달 도넛 합계가 예상 지출보다 커진다')
   }
-  if (!/if \(r\.isPending \|\| r\.recordedExpenseId\) continue/.test(dash)) {
-    violations.push('[소스] 홈 지출 카테고리 예정분의 모집단이 projectedRecurringExpense 와 다르다 — 도넛 합계와 예상 지출이 갈린다')
+  // 모집단 대조는 **문자열이 아니라 조건 집합**으로 본다. 종전에는 옛 필터 문장을 통째로 찾아,
+  // 조건이 하나 늘면(주기 도래 게이트, 2026-08-26) 실제로는 여전히 일치하는데도 위반이 났다.
+  // 두 자리에서 각각 조건 이름을 뽑아 집합이 같은지 본다 — 한쪽에만 조건이 붙는 순간 발화한다.
+  const condsOf = (src) => new Set((src.match(/r\.(isPending|recordedExpenseId|isDueThisMonth)/g) ?? []).map(x => x.slice(2)))
+  const projLine = dash.match(/\.filter\(r => [^)]*recordedExpenseId[^)]*\)/)?.[0] ?? ''
+  const donutLine = dash.match(/if \(r\.isPending[^\n]*continue/)?.[0] ?? ''
+  if (!projLine || !donutLine) {
+    violations.push('[소스] 홈 지출 카테고리 예정분·예상지출의 필터를 못 찾았다 — 모집단 대조가 건너뛰어졌다. 감지망을 고칠 것')
+  } else {
+    const a = condsOf(projLine), b = condsOf(donutLine)
+    const same = a.size === b.size && [...a].every(k => b.has(k))
+    if (!same) {
+      violations.push(`[소스] 홈 지출 카테고리 예정분의 모집단이 projectedRecurringExpense 와 다르다(예상지출 ${[...a].join('·')} / 도넛 ${[...b].join('·')}) — 도넛 합계와 예상 지출이 갈린다`)
+    }
   }
   if (!/pendingByCategory\[r\.category\][\s\S]{0,80}effectiveRecurringAmount\(r\)/.test(dash)) {
     violations.push('[소스] 홈 지출 카테고리 예정분이 추정식 정본(effectiveRecurringAmount)을 안 쓴다')
