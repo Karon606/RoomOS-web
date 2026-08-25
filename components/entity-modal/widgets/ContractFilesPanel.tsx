@@ -220,6 +220,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         ? '실계약 계약서를 다른 용도로 내립니다. 이 계약의 대표 계약서 자리가 비게 되고, 서류 보내기에서 실계약 계약서가 없다고 표시됩니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남습니다.'
         : '이 계약서를 실제 계약서로 취급합니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남고, 바꾼 이력도 함께 남습니다.',
       level: demote ? 'danger' : 'caution',
+      // danger 는 irreversibleNote 를 무조건 찍는데(ConfirmDialog 정본) 기본 문구가 '되돌릴 수
+      // 없습니다'다. 이 동작은 바로 다음 토스트에서 되돌릴 수 있어 그 문장이 거짓이 된다(§16).
+      irreversibleNote: demote
+        ? '발급할 때의 용도는 기록에 그대로 남습니다.'
+        : undefined,
       confirmLabel: '바꾸기',
     })
     if (!ok) return
@@ -243,7 +248,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     const res = await restoreContractFile(id)
     if (!res.ok) { pushToast('error', res.error); return }
     await reload()
-    pushToast('success', '계약서를 되살렸습니다')
+    pushToast('success', '삭제를 되돌렸습니다')
   }
 
   const handleDelete = async (id: string) => {
@@ -507,7 +512,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                {/* 액션이 넷이라 한 줄을 고집하면 320px 에서 '내보내기'가 글자 중간에서 꺾인다 —
+                    형제 화면이 같은 4액션에서 이미 겪고 풀어 둔 클래스다(신고 71753b36). */}
+                <div className="flex items-center gap-1.5 flex-wrap sm:shrink-0 sm:justify-end">
                   <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
                   <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
                     className={btnClass('secondary', 'sm')} />
@@ -544,17 +551,20 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                 {deletedFiles.map(f => {
                   const left = 30 - Math.floor((Date.now() - new Date(f.deletedAt).getTime()) / 86400000)
                   return (
-                    <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1.5 opacity-70 sm:flex-row sm:items-center">
+                    // 행을 흐리게 하지 않는다 — 이 줄이 담은 '복구 가능 N일 남음'이 이 칸의
+                    // 유일한 결정 정보라, opacity 로 muted 티어와 겹치면 §28 대비 하한에 걸린다.
+                    <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1.5 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
                         <span className="block truncate text-xs text-[var(--warm-dark)]">
                           {f.contractNo ? `계약번호 ${f.contractNo}` : f.fileName}
                         </span>
-                        <span className="mt-0.5 block text-[0.6875rem] text-[var(--warm-muted)]">
+                        <span className="mt-0.5 block text-[0.6875rem] text-[var(--warm-mid)]">
                           {fmtDateDot(f.deletedAt)} 삭제{left > 0 ? ` · 복구 가능 ${left}일 남음` : ' · 영구 삭제되었을 수 있습니다'}
                         </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <Btn variant="secondary" size="sm" onClick={() => void handleRestoreFile(f.id)}>되살리기</Btn>
+                        {/* 라벨은 §16 정본 '적용취소' 한 벌이다 — 형제(폐기 적용취소)와 같은 문형으로 맞춘다. */}
+                        <Btn variant="secondary" size="sm" onClick={() => void handleRestoreFile(f.id)}>삭제 적용취소</Btn>
                       </div>
                     </li>
                   )

@@ -180,12 +180,15 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
                 실제 상한은 발송 직전 서버 합산이 지킨다. */}
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-[var(--warm-mid)]">첨부 파일</p>
-              <ul className="rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] divide-y divide-[var(--warm-border)]">
+              {/* 표면은 --cream-soft 다. --canvas 는 다크에서 #000 이라 --cream 모달 안에 검은 구멍이
+                  뚫리고, 라이트에서도 그 위 10.5px 보조 글자가 §28 하한(4.11:1)에 못 미친다.
+                  형제 시트가 같은 숫자로 이미 두 번 옮겨 간 자리다. */}
+              <ul className="rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] divide-y divide-[var(--warm-border)]">
                 {draft.attachments.map(a => (
                   <li key={a.name} className="flex items-center justify-between gap-2 px-3 py-2">
                     <span className="min-w-0 break-all text-[0.75rem] text-[var(--warm-dark)]">{a.name}</span>
                     {/* 종류는 항목별이다 — 스캔본이 섞이면 PDF 가 아니다(419호 사고). */}
-                    <span className="shrink-0 text-[0.65625rem] tabular-nums text-[var(--warm-muted)]">{a.kind}{a.size != null ? ` · ${fmtBytes(a.size)}` : ''}</span>
+                    <span className="shrink-0 text-[0.65625rem] tabular-nums text-[var(--warm-mid)]">{a.kind}{a.size != null ? ` · ${fmtBytes(a.size)}` : ''}</span>
                   </li>
                 ))}
               </ul>

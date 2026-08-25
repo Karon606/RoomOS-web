@@ -42,6 +42,7 @@ import {
   DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
 } from '@/lib/docBundle'
+import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
 
 /** 행이 지금 보낼 파일 — 고른 판본이 있으면 그것, 없으면 대표본. 선택 키도 여기서 나온다. */
 function pickedOf(row: DocBundleRow, picked: Record<string, string>) {
@@ -52,7 +53,9 @@ function pickedOf(row: DocBundleRow, picked: Record<string, string>) {
     issuedAt: v?.at ?? row.issuedAt,
     // 판본을 명시로 고른 행만 키에 접미가 붙는다(대표본은 종전 키 그대로).
     key: v ? `${row.key}#${v.contractFileId}` : row.key,
-    label: v ? [v.purposeLabel, v.note].filter(Boolean).join(' · ') || '실계약' : null,
+    // purposeLabel 은 실계약에서 null 이다(정본) — note 가 있으면 '실계약'이 통째로 사라지므로
+    // 여기서 기본값을 먼저 세운다. '스캔본'만 남으면 그 말이 출처 배지와 겹쳐 뜻이 흐려진다.
+    label: v ? [v.purposeLabel ?? DEFAULT_CONTRACT_PURPOSE, v.note].filter(Boolean).join(' · ') : null,
   }
 }
 
@@ -356,14 +359,18 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
 }) {
   const issued = !!picked.driveFileId
   const versions = row.versions ?? []
+  // 대표가 없어도 판본이 있으면 **고를 수 있는 행이다.** 종전에는 issued 만 보고 행 탭을 죽여,
+  // 419호처럼 제출용만 남은 행이 판본 창을 못 열고 잠긴 것처럼 보였다(디자이너 패스 차단 8).
+  const pickable = issued || versions.length > 0
+  // 보조줄도 같은 사실을 따른다 — 판본이 있는데 '만든 서류가 없다'고 하면 거짓이다.
   // 판본 줄은 고를 것이 둘 이상이거나, 대표가 없어 무엇을 보낼지 정해야 할 때만 선다.
   // 1부짜리 계약(대다수)은 이 줄이 없어 픽셀이 종전과 같다.
   const showVersions = versions.length > 1 || (versions.length === 1 && !row.driveFileId)
   const cur = versions.find(v => v.driveFileId === picked.driveFileId)
-  const curLabel = cur ? ([cur.purposeLabel, cur.note].filter(Boolean).join(' · ') || '실계약') : null
+  const curLabel = cur ? [cur.purposeLabel ?? DEFAULT_CONTRACT_PURPOSE, cur.note].filter(Boolean).join(' · ') : null
   return (
     <li
-      onClick={issued ? onToggle : undefined}
+      onClick={pickable ? onToggle : undefined}
       // 형제 목록 화면은 액션이 넷이라 좁은 폭에서 아래 줄로 내리지만, 여기는 행마다 버튼이 하나라
       // 내리면 320px 에서 한 화면에 세 행밖에 안 들어간다. 한 줄을 유지한다(실측 잘림 0).
       className={[
@@ -373,14 +380,14 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
         // (ContractFilesPanel)이 같은 숫자로 이미 옮겨 갔는데 이 시트만 안 따라왔다(디자이너 패스).
         // 선택 표시는 §22 .sel 그대로 테두리 + 링이고, 미발급은 잠긴 체크박스·회색 문구가 말한다.
         'flex items-center gap-2 rounded-xl border bg-[var(--cream)] p-3 transition-colors',
-        issued ? 'cursor-pointer select-none' : '',
+        pickable ? 'cursor-pointer select-none' : '',
         selected ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
       ].join(' ')}>
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
         {/* §22 InventoryCard 정본 체크박스(22px r7). 미발급 칸은 고를 것이 없어 잠근다. */}
         <span className={[
           'mt-0.5 grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border transition-colors',
-          !issued
+          !pickable
             ? 'border-[var(--warm-border)] bg-[var(--warm-border)]/30 text-transparent'
             : selected
               ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]'
@@ -393,19 +400,20 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
           <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">
             {issued
               ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
-              : '아직 만든 서류가 없습니다'}
+              : versions.length > 0 ? '보낼 판본을 고르세요' : '아직 만든 서류가 없습니다'}
           </p>
           {row.note && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{row.note}</p>}
           {/* 판본 줄 — 지금 무엇이 나가는지 적고 바꿀 길을 그 자리에 둔다.
-              히트 영역은 -my-2 로 넓혀 §09 44px 을 확보한다(줄 높이는 그대로). */}
+              값과 링크가 한 줄을 다투면 320px 에서 **값이** 잘린다. 값이 이 줄의 용건이라
+              링크를 아랫줄로 흘리고(flex-wrap), 히트는 정본대로 -my-2 + min-h-44 로 넓힌다. */}
           {showVersions && (
-            <div className="mt-0.5 flex items-center gap-2">
-              <span className="min-w-0 truncate text-[0.65625rem] text-[var(--warm-muted)]">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2">
+              <span className="min-w-0 text-[0.65625rem] text-[var(--warm-muted)]">
                 판본 · {curLabel ?? '고르지 않음'}
               </span>
               <button type="button"
                 onClick={e => { e.stopPropagation(); onChangeVersion() }}
-                className="-my-2 shrink-0 py-2 text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2">
+                className="-my-2 inline-flex min-h-[44px] shrink-0 items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
                 판본 바꾸기
               </button>
             </div>
@@ -444,7 +452,7 @@ function ContractVersionPicker({ row, pickedId, onClose, onPick }: {
         <ul className="space-y-1.5">
           {versions.map(v => {
             const on = v.contractFileId === currentId
-            const label = [v.purposeLabel, v.note].filter(Boolean).join(' · ') || '실계약'
+            const label = [v.purposeLabel ?? DEFAULT_CONTRACT_PURPOSE, v.note].filter(Boolean).join(' · ')
             return (
               <li key={v.contractFileId}>
                 <button type="button" onClick={() => onPick(v)}
