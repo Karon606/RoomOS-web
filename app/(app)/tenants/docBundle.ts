@@ -18,7 +18,7 @@ import { downloadDriveBytes } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
 import { isMailConfigured, sendMail, MAIL_MAX_TOTAL_BYTES } from '@/lib/mailSend'
 import { fmtDateDot } from '@/lib/fmtDate'
-import { docMailSubject, docMailText } from '@/lib/docMailText'
+import { docMailSubject, docMailText } from '@/lib/docMail'
 
 // 한 번에 보낼 수 있는 건수 — 시트의 선택 상한과 같은 숫자다. 메일은 브라우저 다중 공유의
 // 10개 하드 리밋과 무관하지만, 두 경로가 다른 수를 말하면 화면이 거짓말을 하게 된다.
