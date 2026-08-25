@@ -71,7 +71,11 @@ export function StatusBadge({
 }) {
   const s = BADGE[tone]
   return (
-    <span className={`inline-flex flex-col items-end gap-0.5 ${className ?? ''}`}>
+    // items-center — 보조줄은 배지 아래 **가운데**에 선다(운영자 확정 2026-08-26).
+    // 오른끝 맞춤(items-end)은 상자 끝은 맞아도 배지 글자가 패딩만큼 안쪽이라 삐져 보였고,
+    // 글자 끝 맞춤(pr-2.5)은 반대로 너무 안으로 들어가 보였다. 배지가 보조줄보다 넓은 보통의
+    // 경우 래퍼 폭 = 배지 폭이라, 오른쪽 정렬 맥락에서 배지의 바깥 정렬은 그대로다.
+    <span className={`inline-flex flex-col items-center gap-0.5 ${className ?? ''}`}>
       <span className="inline-flex items-center gap-1">
         <span
           className="inline-flex items-center px-2.5 py-1 rounded-sm text-[11px] font-semibold tracking-tight whitespace-nowrap"
@@ -89,11 +93,7 @@ export function StatusBadge({
         )}
       </span>
       {sub && (
-        // pr-2.5 = 배지의 좌우 패딩과 같은 값. 상자 끝이 아니라 **글자 끝**을 맞춘다 —
-        // 상자 오른쪽 끝끼리는 정확히 맞아도 배지 글자는 10px 안쪽에 있어서, 아래 줄 글자가
-        // 그만큼 오른쪽으로 삐져나와 보였다(운영자 지적 2026-08-26 "묘하게 줄이 안 맞는다").
-        // 배지와 sub 는 gap-0.5 로 한 덩어리라, 정렬 기준도 아래 다른 행이 아니라 배지 글자다.
-        <span className="pr-2.5 text-[0.65625rem] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
+        <span className="text-[0.65625rem] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
           {sub}
         </span>
       )}
