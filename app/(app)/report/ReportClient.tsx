@@ -145,7 +145,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {/* 탭 */}
-      {/* v2.0 §25 뷰 전환 탭 — rounded-2xl 변종(C) 폐기, 코랄 채움 정본 + flex-1 3등분 유지 */}
+      {/* v2.0 §25 뷰 전환 탭 — 밑줄 탭 정본(2026-08-25 개정) + flex-1 3등분 유지 */}
       <div className="max-w-xl no-print">
         <ViewTabs ariaLabel="보고서 탭" fill activeId={tab}
           onChange={id => setTab(id as 'past' | 'forecast' | 'ai')}
