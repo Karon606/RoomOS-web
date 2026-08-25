@@ -287,6 +287,8 @@
 
 ## §24 대시보드·위젯
 
+- 알림 행 글리프(2026-08-25 등재): 카테고리 아이콘은 **원 없이** 맨 글리프 + 카테고리색, 고정폭 span 으로 열 정렬. 색 배경 아이콘 원(icon in tinted circle)은 내용 바깥의 덧댐이라 금지 — 립·글자 알약과 같은 클래스다.
+
 - KpiCard: 수치 1개 + 보조 1줄. 타입 3종: 강조(bg --tc, 1~2장, 내부 cream 계열만, 음수 캡션 --sand) · 일반(cream+border) · 경고(.attn 좌 3px + --danger).
 - 등식 캡션: 수치가 여러 항의 합·차인 경우에 한해 수치 바로 아래 분해 등식 1줄을 추가할 수 있다. 등식은 진행바 위, 보조줄은 진행바 아래. 문장은 정본 MoneyEquation 이 만든다(화면이 자기 식을 조립하면 같은 이름의 숫자가 화면마다 갈린다).
 - 차트 색 매핑(lib/chartColors.ts 단일 출처): 수입 --tc · 지출 --ink-s · 기타수익 --camel · 보증금 --deposit-fg · 예비비 --reserve-fg · 완납 --success-fg · 예정 --info-fg · 미납 --warning-fg · 연체 --overdue-solid. raw hex 8종 치환.

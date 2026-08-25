@@ -440,7 +440,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   onStartRecord: (alert: AlertItem) => Promise<void>
 }) {
   const router = useRouter()
-  const avatarBg = hexToRgba(alert.dotColor, 0.15)
   const isRecurring = !!alert.recurringExpenseId
   const reservationDueLeaseId = alert.reservationDueLeaseId
   const moveOutLeaseId = alert.moveOutLeaseId
@@ -500,10 +499,11 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       bodyClassName=""
       title={
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: avatarBg, color: alert.dotColor }}>
-            <CategoryGlyph category={alert.category} size={18} />
-          </div>
+          {/* 틴트 원을 걷고 맨 글리프 — 아이콘을 원에 넣는 것은 내용 바깥의 덧댐이다
+              (립·알약과 같은 클래스, 2026-08-25 정비 6/7). 고정폭 span 이 정렬 열을 대신한다. */}
+          <span className="w-7 shrink-0 flex justify-center" style={{ color: alert.dotColor }}>
+            <CategoryGlyph category={alert.category} size={20} />
+          </span>
           <div className="min-w-0">
             <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
             <span className="inline-block mt-1.5 text-[0.65625rem] font-semibold rounded-sm px-2 py-0.5"
@@ -689,10 +689,10 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
     >
       <div className="flex items-center gap-3 px-5 py-3"
         style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
-        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: hexToRgba(item.dotColor, 0.12), color: item.dotColor }}>
-          <CategoryGlyph category={item.category} size={14} />
-        </div>
+        {/* 위 모달 헤더와 같은 처방 — 원 없이 글리프+색이 카테고리를 말한다(정비 6/7). */}
+        <span className="w-5 shrink-0 flex justify-center" style={{ color: item.dotColor }}>
+          <CategoryGlyph category={item.category} size={16} />
+        </span>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
           <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
