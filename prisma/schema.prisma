@@ -244,6 +244,7 @@ model Property {
   assetAssignmentLogs AssetAssignmentLog[]
   smsTemplates        SmsTemplate[]
   smsLogs             SmsLog[]
+  mailLogs            MailLog[]
   aiUsages            AiUsage[]
   photoCategories     PropertyPhotoCategory[]
   propertyPhotos      PropertyPhoto[]
@@ -383,6 +384,32 @@ model SmsLog {
   @@index([propertyId, createdAt])
   @@index([tenantId, createdAt])
   @@map("sms_logs")
+}
+
+// 서류 메일 발송 이력 — "보냈다/안 받았다"를 가릴 근거(운영자 승인 2026-08-25). 실발송 성공만
+// 적는다(staging·실패는 이력이 아니다). 본문은 안 남긴다 — 문자 이력(renderedBody)과 달리 메일
+// 본문은 길고 HTML 이라 저장 가치 대비 개인정보 부피가 크다. 제목·첨부 파일명·수신 주소까지가
+// 근거의 전부고, resendId 가 메일 서버 쪽 배달 조회의 열쇠다.
+model MailLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  propertyId      String   @db.Uuid
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenantId        String   @db.Uuid
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  toEmail         String
+  replyTo         String?
+  subject         String
+  docTitles       String   // 서류 종류 나열 ("계약서 · 입실료 납부 확인서")
+  attachmentNames Json     // 실제 첨부 파일명 배열 (발송 시점 스냅샷)
+  attachmentCount Int
+  totalBytes      Int
+  resendId        String?  // 메일 서버 발송 id — 배달 상태 조회 근거
+  sentBy          String?  // 보낸 운영자 로그인 주소
+  createdAt       DateTime @default(now())
+
+  @@index([propertyId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("mail_logs")
 }
 
 // ============================================================
@@ -629,6 +656,7 @@ model Tenant {
 
   contacts       TenantContact[]
   smsLogs        SmsLog[]
+  mailLogs       MailLog[]
   leaseTerms     LeaseTerm[]
   paymentRecords PaymentRecord[]
   cashReceipts   CashReceipt[]

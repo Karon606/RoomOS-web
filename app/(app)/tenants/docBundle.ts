@@ -175,6 +175,7 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
 
   return {
     ok: true as const,
+    propertyId, operatorEmail,
     bundle, rows, names,
     docTitles: rows.map(r => DOC_TYPE_TITLE[r.docType]),
     propertyName, propertyPhone: property?.phone ?? null, tpl,
@@ -311,7 +312,30 @@ export async function sendTenantDocBundleMail(
     })),
   })
 
-  if (outcome.result === 'sent') return { ok: true, count: ctx.rows.length }
+  if (outcome.result === 'sent') {
+    // 발송 이력 — "보냈다/안 받았다"의 근거(운영자 승인 2026-08-25). 메일은 이미 나갔으므로
+    // 기록 실패가 결과를 뒤집으면 안 된다(기록만 조용히 놓치고 발송은 성공으로 답한다).
+    try {
+      await prisma.mailLog.create({
+        data: {
+          propertyId: ctx.propertyId,
+          tenantId,
+          toEmail: ctx.bundle.mail.to as string,
+          replyTo: replyTo ?? null,
+          subject: rendered.subject,
+          docTitles: ctx.docTitles.join(' · '),
+          attachmentNames: ctx.names,
+          attachmentCount: ctx.rows.length,
+          totalBytes: total,
+          resendId: outcome.id,
+          sentBy: ctx.operatorEmail ?? null,
+        },
+      })
+    } catch {
+      console.error('[docMail] 발송 이력 기록 실패 — 발송 자체는 성공')
+    }
+    return { ok: true, count: ctx.rows.length }
+  }
   if (outcome.result === 'staging') return { ok: false, error: '테스트 사이트에서는 메일을 보내지 않습니다.' }
   if (outcome.result === 'disabled') return { ok: false, error: '메일 보내기가 켜져 있지 않습니다.' }
   return { ok: false, error: outcome.reason }
