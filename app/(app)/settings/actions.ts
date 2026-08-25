@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
+import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { Prisma } from '@prisma/client'
 import {
   parseDocMailTemplate, findUnknownVars, sanitizeDocMailHtml, renderDocMail,
@@ -1268,6 +1269,11 @@ export type RecurringExpenseRow = {
   alertDaysBefore: number
   isActive: boolean
   activeSince: string | null
+  // 주기(신고 7e7da5c4) — 1=매월 · 2=격월 · 3=분기 · 6=반기 · 12=연1회. anchorMonth null 이면
+  // activeSince(없으면 createdAt)의 달이 기준이다(판정 정본 lib/recurringDueDate).
+  intervalMonths: number
+  anchorMonth: number | null
+  createdAt: string
   priorYearAmount: number | null   // 운영자가 손으로 적어 둔 전년 동월 실적(추정 사다리에서 3개월 평균보다 우선)
   memo: string | null
   isGroup: boolean   // 묶기로 만든 부모 — '묶기 해제' 노출용
@@ -1289,6 +1295,7 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
       isActive: true, activeSince: true, priorYearAmount: true, memo: true, groupSourceIds: true,
+      intervalMonths: true, anchorMonth: true, createdAt: true,
       items: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, amount: true, isVariable: true, sortOrder: true } },
     },
   })
@@ -1301,7 +1308,18 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       : null,
     financialAccount: undefined,
     activeSince: r.activeSince ? new Date(r.activeSince).toISOString().slice(0, 10) : null,
+    createdAt: new Date(r.createdAt).toISOString(),
   }))
+}
+
+/** 주기 입력 정규화 — 화이트리스트 밖 값은 매월로, 매월이면 기준 달은 없다. */
+function normalizeCycle(
+  intervalMonths: number | undefined, anchorMonth: number | null | undefined,
+): { intervalMonths: number; anchorMonth: number | null } {
+  const iv = RECURRING_INTERVAL_CHOICES.some(c => c.value === intervalMonths) ? intervalMonths! : 1
+  if (iv <= 1) return { intervalMonths: 1, anchorMonth: null }
+  const am = anchorMonth != null && anchorMonth >= 1 && anchorMonth <= 12 ? anchorMonth : null
+  return { intervalMonths: iv, anchorMonth: am }
 }
 
 // #1: 세부항목으로부터 부모의 합계·변동여부 파생
@@ -1314,18 +1332,20 @@ function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVaria
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
   payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number | null; memo?: string
+  intervalMonths?: number; anchorMonth?: number | null
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { activeSince, items, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, ...rest } = data
     const hasItems = Array.isArray(items) && items.length > 0
     const derived = hasItems ? deriveFromItems(items!) : null
+    const cycle = normalizeCycle(intervalMonths, anchorMonth)
     const rec = await prisma.recurringExpense.create({
       data: {
-        propertyId, ...rest, isActive: true,
+        propertyId, ...rest, isActive: true, ...cycle,
         ...(derived ? { amount: derived.amount, isVariable: derived.isVariable } : {}),
         activeSince: activeSince ? new Date(activeSince) : null,
         ...(hasItems ? {
@@ -1343,13 +1363,19 @@ export async function addRecurringExpense(data: {
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
   payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
+  intervalMonths: number; anchorMonth: number | null
   // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
   items: RecurringItemInput[]
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { activeSince, items, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, ...rest } = data
     const updateData: Record<string, unknown> = { ...rest }
+    // 주기는 둘이 한 벌이다 — 매월로 되돌리면 기준 달을 null 로 정규화해 낡은 값이 유령으로
+    // 남지 않게 한다(다시 격월로 바꿨을 때 옛 기준 달이 살아나면 도래 달이 제멋대로다).
+    if ('intervalMonths' in data || 'anchorMonth' in data) {
+      Object.assign(updateData, normalizeCycle(intervalMonths, anchorMonth))
+    }
     if ('activeSince' in data) {
       updateData.activeSince = activeSince ? new Date(activeSince) : null
     }

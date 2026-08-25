@@ -50,7 +50,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor, expenseCategoryColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { formatBizNoInput, normalizeBizNo } from '@/lib/bizNo'
-import { recurringDueDateFor, recurringCycleLabel } from '@/lib/recurringDueDate'
+import { recurringDueDateFor, recurringCycleLabel, RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -1827,7 +1827,7 @@ export default function FinanceClient({
   const [recGroupMode, setRecGroupMode] = useState(false)
   const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
   const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
   // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
@@ -1852,7 +1852,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1866,10 +1866,24 @@ export default function FinanceClient({
   }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
+  // 주기 표기 — 환경설정 폼과 같은 파생(라벨 정본에서 앞말만 뗀다).
+  const recMgmtCycleSource = {
+    intervalMonths: Number(recMgmtForm.intervalMonths) || 1,
+    anchorMonth: recMgmtForm.anchorMonth ? Number(recMgmtForm.anchorMonth) : null,
+    activeSince: recMgmtForm.activeSince || null,
+    createdAt: new Date().toISOString(),
+  }
+  const recMgmtCycleWord = recMgmtForm.intervalMonths === '1'
+    ? '매월'
+    : recurringCycleLabel(recMgmtCycleSource).split(' (')[0]
+  const recMgmtCycleHint = recMgmtForm.anchorMonth
+    ? `이 설정이면 ${recurringCycleLabel(recMgmtCycleSource).replace(/^[^(]*\(|\)$/g, '')}에 도래합니다.`
+    : '자동이면 활성화 시작일(없으면 등록일)의 달이 기준이 됩니다.'
+
   const handleSaveRecMgmt = () => {
     const data = {
       title: recMgmtForm.title.trim(),
@@ -1881,6 +1895,8 @@ export default function FinanceClient({
       isAutoDebit: recMgmtForm.isAutoDebit,
       isVariable: recMgmtForm.isVariable,
       alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
+      intervalMonths: Number(recMgmtForm.intervalMonths) || 1,
+      anchorMonth: recMgmtForm.anchorMonth ? Number(recMgmtForm.anchorMonth) : null,
       activeSince: recMgmtForm.activeSince || undefined,
       // 비운 칸은 undefined 가 아니라 null 로 보낸다. undefined 는 Prisma 가 '변경 없음'으로 읽어
       // 한 번 적은 값을 지울 방법이 사라진다(적용에는 적용취소가 늘 붙어야 한다).
@@ -4601,12 +4617,33 @@ export default function FinanceClient({
                     <MoneyInput value={Number(recMgmtForm.amount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, amount: String(v) }))} placeholder="0원" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 ({recMgmtCycleWord})</label>
                     <input type="number" min={1} max={31} value={recMgmtForm.dueDay}
                       onChange={e => setRecMgmtForm(p => ({ ...p, dueDay: e.target.value }))}
                       className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
                 </div>
+                {/* 주기 — 환경설정 폼과 같은 칸이다. 한쪽만 두면 그 화면에서 만든 항목만 주기를 갖는다. */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">주기</label>
+                  <select value={recMgmtForm.intervalMonths}
+                    onChange={e => setRecMgmtForm(p => ({ ...p, intervalMonths: e.target.value, anchorMonth: e.target.value === '1' ? '' : p.anchorMonth }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    {RECURRING_INTERVAL_CHOICES.map(c => <option key={c.value} value={String(c.value)}>{c.label}</option>)}
+                  </select>
+                </div>
+                {recMgmtForm.intervalMonths !== '1' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">기준 달</label>
+                    <select value={recMgmtForm.anchorMonth}
+                      onChange={e => setRecMgmtForm(p => ({ ...p, anchorMonth: e.target.value }))}
+                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                      <option value="">자동 (활성화 시작일 기준)</option>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
+                    </select>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recMgmtCycleHint}</p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
                   <select value={recMgmtForm.category} onChange={e => setRecMgmtForm(p => ({ ...p, category: e.target.value }))}
@@ -4770,7 +4807,7 @@ export default function FinanceClient({
                         {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}
                       </div>
                       <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
-                        매월 {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
+                        {recurringCycleLabel(r)} {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
                         {r.payMethod && <> · {r.payMethod}</>}
                         {r.financialAccountName && <> ({r.financialAccountName})</>}
                       </p>

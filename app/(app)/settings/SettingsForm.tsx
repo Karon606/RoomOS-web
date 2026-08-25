@@ -68,6 +68,7 @@ import {
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel } from '@/lib/recurringDueDate'
 
 type Property = {
   id: string
@@ -628,7 +629,7 @@ export default function SettingsForm({
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
-  const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
+  const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '', intervalMonths: '1', anchorMonth: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
   // 행별 처리 중 잠금(전역 잠금 방지). 선례 RequestsClient:86 · admin UsersClient:100.
@@ -645,6 +646,21 @@ export default function SettingsForm({
   const updateRecItem = (i: number, patch: Partial<{ name: string; amount: string; isVariable: boolean }>) =>
     setRecItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it))
   const removeRecItem = (i: number) => setRecItems(prev => prev.filter((_, idx) => idx !== i))
+
+  // 주기 표기 — 라벨 정본이 만든 문자열에서 앞말만 뗀다('격월 (홀수달)' -> '격월').
+  // 기준 달을 안 고르면 활성화 시작일(없으면 등록일)의 달이 기준이라 그때는 열거를 못 적는다.
+  const recCycleSource = {
+    intervalMonths: Number(recForm.intervalMonths) || 1,
+    anchorMonth: recForm.anchorMonth ? Number(recForm.anchorMonth) : null,
+    activeSince: recForm.activeSince || null,
+    createdAt: new Date().toISOString(),
+  }
+  const recCycleWord = recForm.intervalMonths === '1'
+    ? '매월'
+    : (recurringCycleLabel(recCycleSource).split(' (')[0])
+  const recCycleHint = recForm.anchorMonth
+    ? `이 설정이면 ${recurringCycleLabel(recCycleSource).replace(/^[^(]*\(|\)$/g, '')}에 도래합니다.`
+    : '자동이면 활성화 시작일(없으면 등록일)의 달이 기준이 됩니다.'
 
   const fmtRecDueDay = (d: string) => {
     const n = parseInt(d, 10)
@@ -678,14 +694,14 @@ export default function SettingsForm({
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '' })
+    setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '', intervalMonths: '1', anchorMonth: '' })
     setRecItems([])
     setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`)
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
-    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
+    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '' })
     setRecItems(r.items.map(it => ({ name: it.name, amount: String(it.amount), isVariable: it.isVariable })))
     setRecDueDayDisp(fmtRecDueDay(r.dueDay.toString()))
     setShowRecForm(true)
@@ -709,6 +725,8 @@ export default function SettingsForm({
       isAutoDebit: recForm.isAutoDebit,
       isVariable: recItemsActive ? recItemsHasVariable : recForm.isVariable,
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
+      intervalMonths: Number(recForm.intervalMonths) || 1,
+      anchorMonth: recForm.anchorMonth ? Number(recForm.anchorMonth) : null,
       activeSince: recForm.activeSince || undefined,
       memo: recForm.memo || undefined,
       ...(itemsPayload !== undefined ? { items: itemsPayload } : {}),
@@ -1258,7 +1276,7 @@ export default function SettingsForm({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-[var(--warm-dark)]">고정 지출 관리</h2>
-                <p className="text-xs text-[var(--warm-muted)] mt-0.5">매월 반복되는 지출 항목. 납부일 전 대시보드에 알림이 표시됩니다.</p>
+                <p className="text-xs text-[var(--warm-muted)] mt-0.5">반복 주기에 맞춰 도래하는 지출 항목. 납부일 전 대시보드에 알림이 표시됩니다.</p>
               </div>
               <Btn onClick={openNewRec} variant="primary" size="sm">+ 추가</Btn>
             </div>
@@ -1291,7 +1309,7 @@ export default function SettingsForm({
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 ({recCycleWord})</label>
                     <input
                       type="text"
                       value={recDueDayDisp}
@@ -1311,6 +1329,28 @@ export default function SettingsForm({
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
                 </div>
+                {/* 주기 — 격월·분기·반기·연1회(신고 7e7da5c4). 매월이면 기준 달 칸을 안 세운다
+                    (스키마가 '매월은 이 값을 안 본다'고 적은 것과 화면이 같은 말을 하게). */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">주기</label>
+                  <select value={recForm.intervalMonths}
+                    onChange={e => setRecForm(p => ({ ...p, intervalMonths: e.target.value, anchorMonth: e.target.value === '1' ? '' : p.anchorMonth }))}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    {RECURRING_INTERVAL_CHOICES.map(c => <option key={c.value} value={String(c.value)}>{c.label}</option>)}
+                  </select>
+                </div>
+                {recForm.intervalMonths !== '1' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">기준 달</label>
+                    <select value={recForm.anchorMonth}
+                      onChange={e => setRecForm(p => ({ ...p, anchorMonth: e.target.value }))}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                      <option value="">자동 (활성화 시작일 기준)</option>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
+                    </select>
+                    <p className="text-xs text-[var(--warm-muted)]">{recCycleHint}</p>
+                  </div>
+                )}
                 {/* #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목을 나눠 적기 */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1443,7 +1483,7 @@ export default function SettingsForm({
                       {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                     </div>
                     <p className="num text-xs text-[var(--warm-muted)] mt-0.5 break-keep">
-                      매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
+                      {recurringCycleLabel(r)} {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
                     {r.items.length > 0 && (
                       <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">
