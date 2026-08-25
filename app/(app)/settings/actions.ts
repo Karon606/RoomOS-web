@@ -89,6 +89,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       name: true,
       address: true,
       phone: true,
+      replyToEmail: true,   // 서류 메일 답장 주소(2026-08-25)
       acquisitionDate: true,
       prevOwnerCutoffDate: true,
       defaultDeposit: true,

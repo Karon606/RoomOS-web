@@ -28,6 +28,7 @@ const BEFORE: Row = {
   name: '더스테이 제기역점',
   address: '서울시 동대문구 제기동 1-1',
   phone: '02-000-0000',
+  replyToEmail: 'contact@thestay.kr',
   acquisitionDate: new Date('2026-03-01'),
   prevOwnerCutoffDate: new Date('2026-02-28'),
   contactLeadDays: 14,
@@ -47,7 +48,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 
 /** 탭별 담당 칼럼 — 확정 재편 지도(2026-08-19 운영자 승인)를 그대로 옮긴 것. */
 const OWNED: Record<string, string[]> = {
-  기본정보:    ['name', 'address', 'phone', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays'],
+  기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
   '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate'],
   웹사이트:    ['publicSlug'],
@@ -61,6 +62,7 @@ const fd = (pairs: [string, string][]) => {
 }
 const BASIC_FORM: [string, string][] = [
   ['name', '더스테이 제기역점'], ['address', '서울시 동대문구 제기동 1-1'], ['phone', '02-000-0000'],
+  ['replyToEmail', 'contact@thestay.kr'],
   ['acquisitionDate', '2026-03-01'], ['prevOwnerCutoffDate', '2026-02-28'], ['contactLeadDays', '14'],
 ]
 const PRICING_FORM: [string, string][] = [
@@ -166,6 +168,9 @@ for (const [tab, form] of TAB_FORMS) {
   eq('빈 전용면적은 null', p([['defaultAreaM2', ' ']]).defaultAreaM2, null)
   eq('계좌번호는 앞뒤 공백을 턴다', p([['bankAccount', '  국민 123  ']]).bankAccount, '국민 123')
   eq('빈 계좌번호는 null', p([['bankAccount', '   ']]).bankAccount, null)
+  eq('메일 주소는 앞뒤 공백을 턴다', p([['replyToEmail', '  contact@thestay.kr  ']]).replyToEmail, 'contact@thestay.kr')
+  eq('빈 메일 주소는 null', p([['replyToEmail', '   ']]).replyToEmail, null)
+  eq('메일 주소 미포함이면 칼럼을 안 쓴다', 'replyToEmail' in p([['name', 'ㅇ']]), false)
   eq('동의서 칸이 한 칸이라도 빠지면 안 쓴다',
     'disposalConsentTemplate' in p([['disposalEnabled', '0'], ['disposalTitle', 'ㅇ'], ['disposalDays', '7']]), false)
   eq('동의서 제목이 비면 기본 제목',

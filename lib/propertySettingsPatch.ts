@@ -28,6 +28,7 @@ export type PropertySettingsPatch = {
   name?: string
   address?: string | null
   phone?: string | null
+  replyToEmail?: string | null
   acquisitionDate?: Date | null
   prevOwnerCutoffDate?: Date | null
   defaultDeposit?: number | null
@@ -76,6 +77,8 @@ export function buildPropertySettingsPatch(
   }
   if (formData.has('address')) patch.address = str(formData, 'address') || null
   if (formData.has('phone')) patch.phone = str(formData, 'phone') || null
+  // 서류 메일의 답장 받을 주소 — 형식 검증은 폼(type=email)이 하고 여기는 공백만 턴다.
+  if (formData.has('replyToEmail')) patch.replyToEmail = str(formData, 'replyToEmail').trim() || null
   if (formData.has('acquisitionDate')) {
     const v = str(formData, 'acquisitionDate')
     patch.acquisitionDate = v ? new Date(v) : null
