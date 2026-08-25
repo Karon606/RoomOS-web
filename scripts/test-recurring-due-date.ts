@@ -54,7 +54,7 @@ eq('먼 납부일은 임박 아님', isSoon(manual(30), '2026-09', '2026-09-22')
 // ── '오늘 출금·납부' 알림 모집단 판정(recurringDueToday) ────────
 // 푸시·인앱 종이 이 한 함수로 오늘 나가는 돈을 고른다(신고 568633fb).
 const due = (o: Partial<Parameters<typeof recurringDueToday>[0]> & { dueDay: number; isAutoDebit: boolean }) =>
-  ({ isPending: false, recordedExpenseId: null, ...o })
+  ({ isPending: false, recordedExpenseId: null, isDueThisMonth: true, ...o })
 
 // 실사례: 인터넷 요금 15일 자동이체 — 8/15 토 · 8/16 일 · 8/17 대체공휴일이라 실제 출금은 8/18.
 // 기준일(15일)만 보면 8/18 에는 안 잡히고, 8/15 에는 은행이 안 빼간 돈을 알린다.
@@ -142,6 +142,9 @@ eq('표기: 분기 열거', recurringCycleLabel(cyc({ intervalMonths: 3, anchorM
 eq('표기: 반기 열거', recurringCycleLabel(cyc({ intervalMonths: 6, anchorMonth: 9 })), '반기 (3·9월)')
 eq('표기: 연 1회', recurringCycleLabel(cyc({ intervalMonths: 12, anchorMonth: 3 })), '연 1회 (3월)')
 
+
+// 알림 게이트 — 비도래 달이면 날짜가 오늘이어도 침묵한다(푸시·인앱 종이 함께 걸러진다).
+eq('비도래 달이면 오늘이어도 발화 안 함', recurringDueToday(due({ ...manual(25), isDueThisMonth: false }), '2026-08-25'), false)
 
 console.log(`\n고정지출 예정일 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

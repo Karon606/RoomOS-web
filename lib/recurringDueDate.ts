@@ -110,6 +110,7 @@ export const RECURRING_INTERVAL_CHOICES: { value: number; label: string }[] = [
 export type RecurringDueTodaySource = RecurringDueSource & {
   isPending: boolean                  // activeSince 가 이번 달 이후 — 아직 활성화 전
   recordedExpenseId: string | null    // 이번 달 지출 기록(확인 처리된 예정 행)
+  isDueThisMonth: boolean             // 주기상 이번 달 도래(현황 정본이 계산) — 비도래 달은 알릴 일이 없다
 }
 
 /**
@@ -119,6 +120,9 @@ export type RecurringDueTodaySource = RecurringDueSource & {
  * (getRecurringExpensesWithStatus 의 recordedExpenseId)을 그대로 본다.
  */
 export function recurringDueToday(rec: RecurringDueTodaySource, todayYmd: string): boolean {
+  // 비도래 달이면 날짜가 맞아도 알릴 일이 아니다 — 게이트를 여기 두면 푸시 크론·인앱 종이
+  // 함수 하나로 함께 걸러진다(모집단 판정을 밖에서 손으로 다시 쓰면 다음 소비처가 빠뜨린다).
+  if (!rec.isDueThisMonth) return false
   if (rec.isPending) return false
   if (rec.recordedExpenseId) return false
   return recurringDueDateFor(rec, todayYmd.slice(0, 7)) === todayYmd

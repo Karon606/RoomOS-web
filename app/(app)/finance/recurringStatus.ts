@@ -8,6 +8,7 @@
 
 import prisma from '@/lib/prisma'
 import { dbDateMonthKey, monthDbRange, monthsDbRange } from '@/lib/kstDate'
+import { isRecurringDueMonth, nextRecurringDueMonth } from '@/lib/recurringDueDate'
 
 export type RecurringExpenseWithStatus = {
   id: string
@@ -22,6 +23,15 @@ export type RecurringExpenseWithStatus = {
   alertDaysBefore: number
   activeSince: string | null
   isPending: boolean        // activeSince가 이번 달 이후 → 아직 활성화 전
+  // 주기(신고 7e7da5c4) — 1=매월 · 2=격월 · 3=분기 · 6=반기 · 12=연1회.
+  intervalMonths: number
+  anchorMonth: number | null
+  createdAt: string
+  // 이 달에 도래하는가 — **판정은 여기 한 번뿐이다.** 화면·알림이 다시 계산하면 갈린다.
+  // interval 1(기존 전건)은 항상 true 라 얹어도 거동이 한 글자도 안 바뀐다.
+  isDueThisMonth: boolean
+  // 이 달에 안 나가면 다음은 언제인가 'YYYY-MM' — 재무 화면이 "사라진 게 아니다"를 말하는 근거.
+  nextDueMonth: string
   memo: string | null
   // 이번 달 기록 여부
   recordedExpenseId: string | null
@@ -147,6 +157,14 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       : null
     const as = (re as any).activeSince as Date | null
     const isPending = isPendingOf({ activeSince: as })
+    // 주기 판정 — lib/recurringDueDate 정본 하나가 답한다(화면·알림은 이 값을 읽기만 한다).
+    const row = re as { intervalMonths?: number | null; anchorMonth?: number | null; createdAt: Date }
+    const cycle = {
+      intervalMonths: row.intervalMonths ?? 1,
+      anchorMonth: row.anchorMonth ?? null,
+      activeSince: as,
+      createdAt: row.createdAt,
+    }
     return {
       id:                re.id,
       title:             re.title,
@@ -160,6 +178,11 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       alertDaysBefore:   re.alertDaysBefore,
       activeSince:       as ? new Date(as).toISOString().slice(0, 10) : null,
       isPending,
+      intervalMonths:    cycle.intervalMonths,
+      anchorMonth:       cycle.anchorMonth,
+      createdAt:         new Date(cycle.createdAt).toISOString(),
+      isDueThisMonth:    isRecurringDueMonth(cycle, month),
+      nextDueMonth:      nextRecurringDueMonth(cycle, month),
       memo:              re.memo,
       recordedExpenseId: isPending ? null : (recorded?.id ?? null),
       recordedAmount:    isPending ? null : (recorded?.amount ?? null),
