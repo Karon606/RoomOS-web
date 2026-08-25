@@ -3869,6 +3869,28 @@ export async function getContractIssuedSnapshot(id: string): Promise<
   }
 }
 
+/**
+ * 삭제한 계약서 목록 — 복구 진입점의 재료(2026-08-26).
+ *
+ * 왜 따로 있나. 삭제 복구는 삭제 직후 토스트의 [적용취소] 하나뿐이라, 그 토스트가 사라지면
+ * 되살릴 길이 화면에서 사라진다(§16 은 토스트 소멸 뒤에도 원위치·상세 경로를 요구한다).
+ * 419호에서 실제로 그랬다 — 지운 스캔본이 실제 서명 원본인데 복구 버튼이 어디에도 없었다.
+ *
+ * **Drive 휴지통은 30일 뒤 영구 삭제된다.** 그래서 목록에 삭제 시각을 함께 내려 화면이
+ * 남은 기간을 말할 수 있게 한다. 목록 자체는 기간과 무관하게 다 보여준다(우리 DB 는 안 지운다).
+ */
+export async function getDeletedContractFiles(tenantId: string): Promise<{
+  id: string; fileName: string; contractNo: string | null; signedAt: Date; deletedAt: Date
+}[]> {
+  const { propertyId } = await getPropertyId()
+  const rows = await prisma.contractFile.findMany({
+    where: { tenantId, propertyId, deletedAt: { not: null } },
+    orderBy: [{ deletedAt: 'desc' }],
+    select: { id: true, fileName: true, contractNo: true, signedAt: true, deletedAt: true },
+  })
+  return rows.map(r => ({ ...r, deletedAt: r.deletedAt as Date }))
+}
+
 export async function deleteContractFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()

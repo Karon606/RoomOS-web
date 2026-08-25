@@ -15,7 +15,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { IssuedContractSheet } from '@/components/doc/IssuedContractSheet'
 import {
-  getContractFiles, deleteContractFile, restoreContractFile, changeContractPurpose,
+  getContractFiles, deleteContractFile, restoreContractFile, changeContractPurpose, getDeletedContractFiles,
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
@@ -36,6 +36,7 @@ import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
 import { Modal } from '@/components/ui/Modal'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -107,7 +108,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
 
   const reload = async () => {
     setLoading(true)
-    try { setFiles(await getContractFiles(tenantId)) }
+    try {
+      setFiles(await getContractFiles(tenantId))
+      // 삭제본은 같은 왕복에서 함께 읽는다 — 따로 부르면 복구 직후 두 목록이 잠시 갈린다.
+      setDeletedFiles(await getDeletedContractFiles(tenantId).catch(() => []))
+    }
     finally { setLoading(false) }
   }
   const reloadShare = async () => {
@@ -233,6 +238,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     })
   }
 
+  // 되살리기 — 삭제의 역이라 확인창 없이 바로 한다(§27.4 비파괴). 실패만 말한다.
+  const handleRestoreFile = async (id: string) => {
+    const res = await restoreContractFile(id)
+    if (!res.ok) { pushToast('error', res.error); return }
+    await reload()
+    pushToast('success', '계약서를 되살렸습니다')
+  }
+
   const handleDelete = async (id: string) => {
     // 같은 계약에 여러 부가 있으면 무엇이 남는지 먼저 말한다. 한 부만 지웠는데 계약서가 통째로
     // 사라진 줄 알고 다시 발급하면 번호만 하나 더 늘어난다.
@@ -294,6 +307,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const liveFiles = useMemo(() => (files ?? []).filter(f => !f.voidedAt && !f.hidden), [files])
   const voidedFiles = useMemo(() => (files ?? []).filter(f => f.voidedAt && !f.hidden), [files])
   const [showVoided, setShowVoided] = useState(false)
+  // 삭제한 계약서 — 삭제 직후 토스트가 사라지면 되살릴 길이 없던 자리(§16). 419호가 그 사고였다.
+  const [deletedFiles, setDeletedFiles] = useState<{ id: string; fileName: string; contractNo: string | null; signedAt: Date; deletedAt: Date }[]>([])
+  const [showDeleted, setShowDeleted] = useState(false)
   // 삭제 안내의 '다른 발급본 N부' 는 **화면에 남는 부수**를 말해야 한다. 접힌 폐기본까지 세면
   // 아무것도 안 보이는데 "N부는 남습니다" 라고 하는 상태가 된다.
   const liveGroupCount = useMemo(() => {
@@ -510,6 +526,45 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           })}
         </ul>
       )}
+      {/* 삭제한 계약서 — 폐기 칸과 같은 접힘 문법이지만 다른 사실이다(폐기는 효력 상실, 삭제는 파일 정리).
+          삭제 직후 토스트가 사라진 뒤에도 되살릴 길이 여기 남는다(§16). 0부면 줄 자체를 안 그린다. */}
+      {!loading && deletedFiles.length > 0 && (
+        <div className="pt-1">
+          <button type="button" onClick={() => setShowDeleted(v => !v)}
+            className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+            {showDeleted ? '삭제한 계약서 숨기기' : `삭제한 계약서 ${deletedFiles.length}부 보기`}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showDeleted ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {showDeleted && (
+            <>
+              <p className="mt-2 text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]">
+                삭제한 계약서입니다. 원본은 Google Drive 휴지통에 있고 삭제한 날부터 30일이 지나면 영구 삭제됩니다. 그 전에는 여기서 되살릴 수 있습니다.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {deletedFiles.map(f => {
+                  const left = 30 - Math.floor((Date.now() - new Date(f.deletedAt).getTime()) / 86400000)
+                  return (
+                    <li key={f.id} className="flex flex-col gap-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1.5 opacity-70 sm:flex-row sm:items-center">
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-xs text-[var(--warm-dark)]">
+                          {f.contractNo ? `계약번호 ${f.contractNo}` : f.fileName}
+                        </span>
+                        <span className="mt-0.5 block text-[0.6875rem] text-[var(--warm-muted)]">
+                          {fmtDateDot(f.deletedAt)} 삭제{left > 0 ? ` · 복구 가능 ${left}일 남음` : ' · 영구 삭제되었을 수 있습니다'}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Btn variant="secondary" size="sm" onClick={() => void handleRestoreFile(f.id)}>되살리기</Btn>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
       {/* 용도 고르기 — 3지선다라 창 하나면 충분하다. 지금 값에 표시가 선다. */}
       {purposeFile && (
         <Modal open onClose={() => setPurposeFile(null)} z={280} width="sm" title="이 계약서의 용도">
