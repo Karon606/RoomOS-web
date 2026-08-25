@@ -964,16 +964,6 @@ export async function savePayment(data: {
     await recalculatePayments(data.leaseTermId, tm, monthBillByTm[tm] ?? data.expectedAmount)
   }
 
-  // 발행 줄 — 이 결제가 만든 record 의 합이 곧 발행 금액이다(오늘은 전액. 화면이 금액 칸을
-  // 갖는 날 달라진다). 쪼개진 달을 각각 세지 않고 한 줄로 모은다 — 한 결제는 한 발행이다.
-  await syncCashReceiptLine({
-    propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
-    payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
-    issuedAt: crStamp,
-    amount: allocations.reduce((a, x) => a + x.amount, 0),
-    incl: { deposit: false, cleaning: false, rent: true },
-  })
-
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
   return { inputMonth: data.targetMonth, startMonth: startTm, allocations, createdIds }
 }
@@ -1337,15 +1327,6 @@ export async function saveDepositPayment(data: {
     await serverBillForMonth(data.leaseTermId, data.targetMonth, data.rentAmount),
   )
   revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
-  // 발행 줄 — 보증금 몫과 초과분(이용료) 몫은 한 결제다. 한 줄로 모은다.
-  await syncCashReceiptLine({
-    propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
-    payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
-    issuedAt: crStamp,
-    amount: data.totalPaid,
-    incl: { deposit: true, cleaning: false, rent: excess > 0 },
-  })
-
   return { ok: true as const, createdIds }
 }
 
@@ -1453,21 +1434,6 @@ export async function saveCleaningFeePayment(data: {
       createdIds.push(excessRec.id)
       await recalculatePayments(data.leaseTermId, data.targetMonth, monthBill)
     }
-    // 발행 줄 — **청소비 몫까지 함께 든다.** 종전에는 청소비가 ExtraIncome(다른 표)에 있어
-    // 스탬프를 찍을 자리가 없었고, 그래서 그 몫은 합계에서 통째로 빠졌다. 발행은 이제 금액을
-    // 든 한 줄이라 몫이 어느 표에 있든 상관없다(운영자 확정 2026-08-24 — 단기는 보증금 대신
-    // 청소비를 받으니 그것도 발행할 수 있어야 한다).
-    await syncCashReceiptLine({
-      propertyId, leaseTermId: data.leaseTermId, tenantId: data.tenantId,
-      payDate: ymdToDbDate(data.payDate), payMethod: data.payMethod,
-      issuedAt: resolveCashReceiptIssuedAt({
-        issued: !!data.cashReceiptIssued, issuedDate: data.cashReceiptIssuedDate,
-        payMethod: data.payMethod,
-      }),
-      amount: data.totalPaid,
-      incl: { deposit: false, cleaning: true, rent: excess > 0 },
-    })
-
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true, createdIds, extraIncomeId }
   } catch (err) {
@@ -1870,7 +1836,7 @@ export async function updatePayment(
       where: { id: paymentId }, select: { cashReceiptIssuedAt: true, tenantId: true, payDate: true, payMethod: true },
     })
     if (after) {
-      await resyncCashReceiptFromSiblings({
+      await touchCashReceiptIssuedAt({
         propertyId, leaseTermId: record.leaseTermId, tenantId: after.tenantId,
         payDate: after.payDate, payMethod: after.payMethod, issuedAt: after.cashReceiptIssuedAt,
       })
@@ -1901,29 +1867,34 @@ export async function updatePayment(
 // updatePayment(재계산·인플레이션 가드 경유)를 태우지 않는 전용 경로(오류신고 c0936f89, 표준 트랙 2026-07-14).
 // restoreIssuedAt — 적용취소용: 원래 발행 시각 그대로 복원(감사 흔적 보존). 미지정 켬은 기존 시각 보존, 없으면 지금.
 // 소프트삭제 record는 findFirst 자동 필터로 걸러져 유령 수정이 성립하지 않는다(적대검증 필수 1).
-// 이 결제(형제 묶음)의 현재 총액으로 발행 줄을 다시 맞춘다. 수정·토글 뒤에 부른다.
-// 금액을 다시 세는 이유 — 수납액을 고치면 발행 금액도 따라가야 그 달 합계가 사실과 맞는다
-// (화면이 금액 칸을 갖는 날에는 운영자가 넣은 값이 이기고, 그때는 이 함수를 안 부른다).
-async function resyncCashReceiptFromSiblings(args: {
-  propertyId: string; leaseTermId: string; tenantId: string
-  payDate: Date; payMethod: string | null; issuedAt: Date | null
-}): Promise<void> {
-  const siblings = await prisma.paymentRecord.findMany({
-    where: {
-      propertyId: args.propertyId, leaseTermId: args.leaseTermId,
-      payDate: args.payDate, payMethod: args.payMethod, isBillingAdjust: false,
-    },
-    select: { actualAmount: true, isDeposit: true },
-  })
-  await syncCashReceiptLine({
-    ...args,
-    amount: siblings.reduce((a, r) => a + r.actualAmount, 0),
-    incl: {
-      deposit: siblings.some(r => r.isDeposit),
-      cleaning: false,
-      rent: siblings.some(r => !r.isDeposit),
-    },
-  })
+// 이 결제로 실제 들어온 돈과 그 구성 — 발행 금액의 **기본값**을 정할 때만 쓴다.
+//
+// 두 표를 함께 센다. 이용료·보증금 몫은 PaymentRecord 이고 **청소비 몫은 ExtraIncome** 이다
+// (분해 수납이 청소비를 그쪽으로 보낸다). 한쪽만 세면 단기 입실처럼 청소비를 따로 받는 건에서
+// 기본값이 그만큼 작게 뜬다.
+async function paymentCompositionFor(args: {
+  propertyId: string; leaseTermId: string; payDate: Date; payMethod: string | null
+}): Promise<{ deposit: number; cleaning: number; rent: number; total: number }> {
+  const [records, cleaningIncome] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId: args.propertyId, leaseTermId: args.leaseTermId,
+        payDate: args.payDate, payMethod: args.payMethod, isBillingAdjust: false,
+      },
+      select: { actualAmount: true, isDeposit: true },
+    }),
+    prisma.extraIncome.findMany({
+      where: {
+        propertyId: args.propertyId, leaseTermId: args.leaseTermId,
+        date: args.payDate, payMethod: args.payMethod, category: CLEANING_FEE_CATEGORY,
+      },
+      select: { amount: true },
+    }),
+  ])
+  const deposit = records.filter(r => r.isDeposit).reduce((a, r) => a + r.actualAmount, 0)
+  const rent = records.filter(r => !r.isDeposit).reduce((a, r) => a + r.actualAmount, 0)
+  const cleaning = cleaningIncome.reduce((a, r) => a + r.amount, 0)
+  return { deposit, cleaning, rent, total: deposit + cleaning + rent }
 }
 
 
@@ -1969,7 +1940,7 @@ export async function setCashReceiptIssued(
       lastNext = next
     }
     // 발행 줄 — 켜면 만들고 끄면 지운다(소프트삭제라 적용취소가 되살린다).
-    await resyncCashReceiptFromSiblings({
+    await touchCashReceiptIssuedAt({
       propertyId, leaseTermId: record.leaseTermId, tenantId: record.tenantId,
       payDate: record.payDate, payMethod: record.payMethod, issuedAt: issued ? lastNext : null,
     })
@@ -2110,6 +2081,95 @@ async function syncCashReceiptLine(args: {
       payDate: args.payDate, payMethod: args.payMethod, ...data,
     },
   })
+}
+
+/**
+ * 발행 여부·발행일만 손본다. **금액은 그대로 둔다.**
+ *
+ * 종전에는 수납을 수정하거나 토글을 껐다 켤 때마다 형제 record 합으로 금액을 다시 맞췄다.
+ * 그래서 40만 받고 35만만 끊어 둔 건에서 **메모 한 글자만 고쳐도 40만으로 돌아갔다**
+ * (패널 지적, 코드 경로로 확인). 발행 금액은 국세청에 올라간 사실이라 수납액을 고친다고
+ * 따라 움직이면 안 된다. 금액을 바꾸는 문은 setPaymentCashReceipt 하나뿐이다.
+ *
+ * 처음 켜는 건에는 줄이 없으므로 그때만 기본값(이 결제로 들어온 돈 전액)을 세운다.
+ */
+async function touchCashReceiptIssuedAt(args: {
+  propertyId: string; leaseTermId: string; tenantId: string
+  payDate: Date; payMethod: string | null; issuedAt: Date | null
+}): Promise<void> {
+  const found = await prisma.cashReceipt.findFirst({
+    where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  })
+  if (!args.issuedAt) {
+    if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data: { deletedAt: new Date() } })
+    return
+  }
+  if (found) {
+    // 금액·포함 항목은 손대지 않는다. 되살리기만 함께 한다.
+    await prisma.cashReceipt.update({ where: { id: found.id }, data: { issuedAt: args.issuedAt, deletedAt: null } })
+    return
+  }
+  const c = await paymentCompositionFor({ propertyId: args.propertyId, leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod })
+  if (c.total <= 0) return
+  await syncCashReceiptLine({
+    ...args,
+    amount: c.total,
+    incl: { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 },
+  })
+}
+
+/**
+ * 이 결제의 발행을 기록한다 — **발행을 쓰는 유일한 문**(2026-08-25).
+ *
+ * 왜 저장 경로에서 떼어냈나. 종전에는 savePayment·saveDepositPayment·saveCleaningFeePayment
+ * 셋이 각자 발행 줄을 썼다. 분해 수납에서 사람이 몫을 고치면 그 셋이 **차례로** 불리는데,
+ * 같은 (계약·수납일·수단)을 찾으므로 **마지막 호출이 앞을 덮었다** — 40만 결제의 발행이
+ * 마지막 몫인 이용료 35만만 남았다(디자인·회계 패널 지적, 코드 경로로 확인).
+ *
+ * 이제 결제를 저장한 뒤 화면이 이 문을 **한 번** 부른다. 금액은 화면이 정해 보낸다 —
+ * 체크한 몫의 합이 기본값이고 운영자가 직접 고칠 수 있다(운영자 확정 2026-08-24).
+ *
+ * **금액을 다시 세지 않는다.** 발행한 금액은 국세청에 올라간 사실이라, 나중에 수납액을
+ * 고친다고 따라 움직이면 안 된다. 종전 resync 가 그렇게 덮어써서 손으로 넣은 값이 사라졌다.
+ */
+export async function setPaymentCashReceipt(input: {
+  leaseTermId: string
+  tenantId: string
+  payDate: string
+  payMethod: string
+  issued: boolean
+  issuedDate?: string | null
+  /** 발행 금액. 안 넘기면 이 결제로 들어온 돈 전액(기본값). */
+  amount?: number | null
+  incl?: { deposit: boolean; cleaning: boolean; rent: boolean }
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const payDate = ymdToDbDate(input.payDate)
+    const issuedAt = resolveCashReceiptIssuedAt({
+      issued: input.issued, issuedDate: input.issuedDate, payMethod: input.payMethod,
+    })
+    let amount = input.amount ?? null
+    let incl = input.incl
+    if (issuedAt && (amount == null || amount <= 0 || !incl)) {
+      const c = await paymentCompositionFor({ propertyId, leaseTermId: input.leaseTermId, payDate, payMethod: input.payMethod })
+      amount = amount ?? c.total
+      incl = incl ?? { deposit: c.deposit > 0, cleaning: c.cleaning > 0, rent: c.rent > 0 }
+    }
+    await syncCashReceiptLine({
+      propertyId, leaseTermId: input.leaseTermId, tenantId: input.tenantId,
+      payDate, payMethod: input.payMethod,
+      issuedAt, amount: amount ?? 0, incl,
+    })
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '발행 기록에 실패했습니다.' }
+  }
 }
 
 // 수납 기록 삭제

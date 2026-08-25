@@ -23,7 +23,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
-import { savePayment, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -1576,6 +1576,17 @@ export default function TenantClient({
             setDistNotice(null)
           }
         }
+        // 발행은 저장 뒤 한 번 — 형제 폼(PaymentEntryForm)과 같은 문(2026-08-25).
+        // 종전에는 저장부가 각자 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다.
+        if (cashReceiptIssued) {
+          const crRes = await setPaymentCashReceipt({
+            leaseTermId: payTarget.lease.id, tenantId: payTarget.tenant.id,
+            payDate: payDateVal, payMethod,
+            issued: true, issuedDate: cashReceiptIssuedDate,
+          })
+          if (!crRes.ok) pushToast('error', crRes.error)
+        }
+
         setShowPayForm(false)
         const { records, windowRecords } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records.filter(r => !r.isBillingAdjust) as PayRecord[]); setPayWindow(windowRecords as PayRecord[]); setPayReloadKey(k => k + 1)

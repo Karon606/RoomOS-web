@@ -10,6 +10,7 @@ import {
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { getDepositCompositionForLease } from '@/app/(app)/tenants/actions'
+import { setPaymentCashReceipt } from '@/app/(app)/rooms/actions'
 import { proposeDepositEntrySplit } from '@/lib/depositComposition'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -336,6 +337,18 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               }
             }
           }
+          // 발행은 저장이 끝난 뒤 **한 번**만 기록한다(2026-08-25). 종전에는 세 저장부가 각자
+          // 발행 줄을 써서 분해 수납에서 마지막 몫만 남았다. 금액을 안 넘기면 서버가 이 결제로
+          // 들어온 돈 전액을 기본값으로 세운다 — 보증금·청소비·이용료 세 표를 함께 센다.
+          if (cashReceiptIssued) {
+            const crRes = await setPaymentCashReceipt({
+              leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
+              payDate: payDateVal, payMethod,
+              issued: true, issuedDate: cashReceiptIssuedDate,
+            })
+            if (!crRes.ok) pushToast('error', crRes.error)
+          }
+
           const parts = [
             dVal > 0 ? `보증금 ${fmtWon(dVal)}` : '',
             cVal > 0 ? `청소비 ${fmtWon(cVal)}` : '',
@@ -448,6 +461,17 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             }
           }
         }
+        // 발행은 저장이 끝난 뒤 한 번만 기록한다 — 위 분해 갈래와 같은 처방.
+        // 이 갈래는 저장부가 하나씩만 불리지만, 문을 하나로 두는 편이 두 갈래가 안 갈린다.
+        if (cashReceiptIssued) {
+          const crRes = await setPaymentCashReceipt({
+            leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
+            payDate: payDateVal, payMethod,
+            issued: true, issuedDate: cashReceiptIssuedDate,
+          })
+          if (!crRes.ok) pushToast('error', crRes.error)
+        }
+
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
         if (undo) {
           // 결과 1행 + 부가 사실 2행 — 형제 정본(RoomsClient 일괄 수납)과 같은 슬롯 문법.
@@ -724,7 +748,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
           )}
           {cashReceiptIssued && splitMode && cVal > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              청소비 몫 {fmtWon(cVal)}에는 발행 표시가 붙지 않습니다.
+              청소비 몫 {fmtWon(cVal)}도 발행 금액에 함께 듭니다.
             </p>
           )}
         </>
@@ -824,6 +848,15 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
           cashReceiptIssuedDate,
         })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        // 발행은 저장 뒤 한 번 — 형제 폼과 같은 문(2026-08-25).
+        if (cashReceiptIssued && mode !== 'none') {
+          const crRes = await setPaymentCashReceipt({
+            leaseTermId: room.leaseTermId, tenantId: room.tenantId!,
+            payDate: payDateVal, payMethod,
+            issued: true, issuedDate: cashReceiptIssuedDate,
+          })
+          if (!crRes.ok) pushToast('error', crRes.error)
+        }
         if (mode === 'none') {
           pushToast('success', '예약금 없이 예약으로 저장했습니다')
         } else {
