@@ -176,7 +176,7 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
                   <div className="flex flex-wrap gap-1.5">
                     {recents.map(r => (
                       <button key={r} type="button" onClick={() => setQ(r)}
-                        className="px-2.5 py-1.5 text-xs rounded-full border transition-colors min-h-[32px]"
+                        className="px-2.5 py-1.5 text-xs rounded-sm border transition-colors min-h-[32px]"
                         style={{ background: 'var(--cream)', borderColor: 'var(--warm-border)', color: 'var(--warm-dark)' }}>
                         {r}
                       </button>

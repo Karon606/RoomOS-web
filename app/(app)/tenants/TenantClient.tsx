@@ -3562,7 +3562,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {selected.map((roomNo, i) => (
-                <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
+                <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm ring-1 ring-[var(--warm-border)] bg-[var(--canvas)] text-xs font-medium text-[var(--warm-dark)]">
                   {WISH_RANK[i]} {fmtRoomNo(roomNo)}
                   <button type="button" onClick={() => remove(roomNo)}
                     className="leading-none hover:text-[var(--danger-fg)] transition-colors">×</button>

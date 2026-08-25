@@ -292,7 +292,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   }
 
   const valueChip = (active: boolean) => [
-    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+    'rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors',
     active
       ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)]'
       : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',
@@ -352,7 +352,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 ))}
                 {editing === null && addableDims.length > 0 && (
                   <button type="button" onClick={() => setEditing('pick-dim')}
-                    className="rounded-full border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
+                    className="rounded-sm border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
                     + 조건 추가
                   </button>
                 )}

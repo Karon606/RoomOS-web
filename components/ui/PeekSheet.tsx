@@ -46,7 +46,7 @@ export function PeekSheet({ open, onClose }: { open: boolean; onClose: () => voi
               {PAGES.map(p => (
                 <button key={p.href} type="button" onClick={() => pick(p.href)}
                   className={[
-                    'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    'shrink-0 rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors',
                     page === p.href
                       ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)]'
                       : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',

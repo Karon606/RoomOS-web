@@ -1164,7 +1164,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     {chips.map(r => (
                       <li key={r.roomId}>
                         <button type="button" disabled={pending} onClick={() => addRow('room:' + r.roomId)}
-                          className="inline-flex items-center gap-1 rounded-full border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1 text-xs text-[var(--warm-mid)] transition-colors hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)] disabled:opacity-40">
+                          className="inline-flex items-center gap-1 rounded-sm border border-[var(--warm-border)] bg-[var(--cream)] px-2.5 py-1 text-xs text-[var(--warm-mid)] transition-colors hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)] disabled:opacity-40">
                           {fmtRoomNo(r.roomNo)}
                         </button>
                       </li>
@@ -1403,7 +1403,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           <li key={pl.id}>
                             <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }}
                               className={[
-                                'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors',
+                                'inline-flex items-center gap-1 rounded-sm border px-2.5 py-1 text-xs transition-colors',
                                 isCur
                                   ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
                                   : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',

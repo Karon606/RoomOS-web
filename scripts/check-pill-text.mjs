@@ -18,13 +18,6 @@ const ALLOW = [
   ['app/(app)/dashboard/DashboardClient.tsx', 'min-w-4 h-4'],      // 숫자 카운터
   ['components/room-manage/MoveCalendar.tsx', 'shadow-lift'],      // '오늘로' 부유 알약
   ['components/entity-modal/widgets/PhotoStrip.tsx', 'bg-black/'], // 사진 위 오버레이 층
-  // TODO(정비 4/7 — 선택 칩 커밋에서 지운다. 파일 통째 허용은 임시다)
-  ['app/(app)/inventory/InventoryClient.tsx', ''],
-  ['app/(app)/tenants/TenantClient.tsx', ''],
-  ['app/(app)/inventory/assets/AssetsClient.tsx', ''],
-  ['components/ui/PeekSheet.tsx', ''],
-  ['components/NoticeSmsModal.tsx', ''],
-  ['components/search/GlobalSearchHost.tsx', ''],
 ]
 
 const files = execSync("grep -rln 'rounded-full' app components --include='*.tsx' 2>/dev/null || true", { encoding: 'utf8' })

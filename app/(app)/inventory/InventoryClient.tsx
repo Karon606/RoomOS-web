@@ -4852,12 +4852,16 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
         ) : (
           <>
             <p className="text-xs text-[var(--warm-muted)]">선택한 위치를 추가합니다. 기존 위치는 유지됩니다.</p>
+            {/* 선택 칩에 코랄 솔리드 금지(§03 — 정비 4/7). 선택은 보더 + 체크 글리프로
+                말한다 — 색 단독보다 색약 조건에서도 갈리는 이중 채널이다. */}
             <div className="flex flex-wrap gap-2">
               {allLocs.map(loc => (
                 <button key={loc.id} type="button" onClick={() => toggle(loc.id)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${chosen.has(loc.id)
-                    ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
+                  aria-pressed={chosen.has(loc.id)}
+                  className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-sm border transition-colors ${chosen.has(loc.id)
+                    ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
                     : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+                  {chosen.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
                   {loc.name}
                 </button>
               ))}
@@ -4942,9 +4946,11 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
             key={loc.id}
             type="button"
             onClick={() => toggle(loc.id)}
-            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${selected.has(loc.id)
-              ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
+            aria-pressed={selected.has(loc.id)}
+            className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-sm border transition-colors ${selected.has(loc.id)
+              ? 'bg-[var(--cream)] border-[var(--coral)] text-[var(--warm-dark)]'
               : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+            {selected.has(loc.id) && <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 6L9 17l-5-5" /></svg>}
             {loc.name}
           </button>
         ))}
