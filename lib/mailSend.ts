@@ -6,13 +6,15 @@
 // 그래서 문을 하나만 두고, 테스트 사이트 차단을 이 함수의 **첫 문장**으로 박는다.
 //
 // 발신 도메인은 stayeum.com 하나다(DKIM/SPF/DMARC 인증 완료, docs/email-templates/README.md).
-// 영업장마다 도메인을 갖는 구조가 아니므로 멀티테넌트 구분은 표시 이름과 회신 주소가 진다 —
-// 받는 사람에게는 '<영업장 이름> <no-reply@stayeum.com>' 으로 도착하고, 답장은 보낸 운영자에게 간다.
+// 영업장마다 도메인을 갖는 구조가 아니라 **주소 앞부분만** 영업장이 정한다(2026-08-26, lib/mailFrom).
+// 받는 사람에게는 '<영업장 이름> <앞부분@stayeum.com>' 으로 도착하고, 답장은 회신 주소로 간다.
+// 앞부분이 비었거나 이상하면 no-reply 로 떨어진다 — 발신 주소 때문에 서류가 안 나가면 안 된다.
 //
 // 키가 없으면 'disabled' 를 돌려준다. 던지지 않는다 — 부르는 화면이 안내를 띄우고 종전 경로로
 // 돌아갈 수 있어야 한다. 빌드도 이 키를 읽지 않는다.
 
 import { isStagingEnv } from './env'
+import { buildMailFromAddress } from './mailFrom'
 
 /** Resend 는 40MB(base64 인코딩 후)까지 받는다. 받는 쪽 사서함이 먼저 막히므로 원본 기준으로 더 좁게 건다. */
 export const MAIL_MAX_TOTAL_BYTES = 15 * 1024 * 1024
@@ -47,8 +49,10 @@ export async function sendMail(input: {
   text: string
   /** HTML 본문(lib/docMail renderDocMail 산출). text 는 항상 함께 싣는다(수신함 미리보기·접근성). */
   html?: string
-  /** 표시 이름(영업장 이름). 주소는 항상 no-reply@stayeum.com 이다. */
+  /** 표시 이름(영업장 이름). 주소의 도메인은 항상 stayeum.com 이다. */
   fromName: string
+  /** 발신 주소 앞부분(영업장 설정). 비거나 이상하면 no-reply 로 폴백한다(lib/mailFrom). */
+  fromLocal?: string | null
   /** 답장이 갈 주소 — 보낸 운영자. 없으면 답장이 no-reply 로 사라진다. */
   replyTo?: string
   attachments?: MailAttachment[]
@@ -78,7 +82,7 @@ export async function sendMail(input: {
       },
       body: JSON.stringify({
         // 표시 이름에 꺾쇠가 들어가면 주소 파싱이 깨진다. 영업장 이름은 자유 입력값이라 걸러 둔다.
-        from: `${input.fromName.replace(/[<>"]/g, '').trim() || '스테이음'} <no-reply@stayeum.com>`,
+        from: `${input.fromName.replace(/[<>"]/g, '').trim() || '스테이음'} <${buildMailFromAddress(input.fromLocal)}>`,
         to: [input.to],
         ...(input.replyTo ? { reply_to: [input.replyTo] } : {}),
         subject: input.subject,

@@ -19,6 +19,7 @@ import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
 import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
 import { isMailConfigured, sendMail, MAIL_MAX_TOTAL_BYTES } from '@/lib/mailSend'
+import { buildMailFromAddress } from '@/lib/mailFrom'
 import { fmtDateDot } from '@/lib/fmtDate'
 import {
   parseDocMailTemplate, renderDocMail, renderDocMailBodyPrefill, DOC_MAIL_LIMITS, type DocMailTemplate,
@@ -144,7 +145,7 @@ export async function getDocMailEnabled(): Promise<boolean> {
 export type TenantDocMailDraftInfo = {
   to: string
   tenantName: string
-  /** 표시용 발신 — 주소는 도메인 인증 때문에 no-reply@stayeum.com 고정(lib/mailSend). */
+  /** 표시용 발신 — 도메인은 인증 때문에 고정이고 앞부분은 영업장 설정을 따른다(lib/mailFrom). */
   fromName: string
   fromAddress: string
   /** 답장 후보 열거 — 이 밖의 주소로는 보낼 수 없다(자유 입력 금지). */
@@ -220,7 +221,7 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { name: true, phone: true, replyToEmail: true, docMailTemplate: true },
+    select: { name: true, phone: true, replyToEmail: true, docMailTemplate: true, mailFromLocal: true },
   })
   const propertyName = property?.name ?? '스테이음'
   const tpl = parseDocMailTemplate(property?.docMailTemplate)
@@ -237,6 +238,7 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     bundle, rows, names, entries,
     docTitles: rows.map(r => DOC_TYPE_TITLE[r.docType]),
     propertyName, propertyPhone: property?.phone ?? null, tpl,
+    mailFromLocal: property?.mailFromLocal ?? null,
     replyToOptions,
     replyToDefault: propReply ?? operatorEmail ?? '',
   }
@@ -266,7 +268,8 @@ export async function getTenantDocMailDraft(
       to: ctx.bundle.mail.to as string,
       tenantName: ctx.bundle.tenantName,
       fromName: ctx.propertyName,
-      fromAddress: 'no-reply@stayeum.com',
+      // 표시도 발송과 같은 조립 함수를 지난다 — 화면이 보여준 주소와 실제로 나간 주소가 갈릴 수 없다.
+      fromAddress: buildMailFromAddress(ctx.mailFromLocal),
       replyToOptions: ctx.replyToOptions,
       replyToDefault: ctx.replyToDefault,
       subject: rendered.subject,
@@ -366,6 +369,7 @@ export async function sendTenantDocBundleMail(
   const outcome = await sendMail({
     to: ctx.bundle.mail.to as string,
     fromName: ctx.propertyName,
+    fromLocal: ctx.mailFromLocal,
     replyTo,
     subject: rendered.subject,
     text: rendered.text,
