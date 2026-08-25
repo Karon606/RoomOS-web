@@ -49,6 +49,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pdfToPngBlobs } from '@/lib/pdfToPng'
+import { sniffDocMime, isImageDocMime } from '@/lib/docMime'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
@@ -99,7 +100,14 @@ export default function DocViewer({ fileId, from, tenantId, fileName, autoPrint 
       try {
         const res = await fetch(`/api/doc-file?id=${encodeURIComponent(fileId)}`)
         if (!res.ok) throw new Error('서류를 불러오지 못했습니다.')
-        const blobs = await pdfToPngBlobs(await res.arrayBuffer(), hiRes ? HI_SCALE : VIEW_SCALE)
+        const buf = await res.arrayBuffer()
+        // 스캔 업로드본은 PDF 가 아닐 수 있다 — 이미지 바이트를 pdfjs 에 넣으면 던져서
+        // **보기 자체가 실패했다**(419호 사고). 이미지는 원본 한 장이 곧 최대 해상도라
+        // 고배율 재굽기도 필요 없다(확대·인쇄·크롬은 종이가 DOM 이라 그대로 동작한다).
+        const mime = sniffDocMime(buf)
+        const blobs = isImageDocMime(mime)
+          ? [new Blob([buf], { type: mime })]
+          : await pdfToPngBlobs(buf, hiRes ? HI_SCALE : VIEW_SCALE)
         if (!alive) return
         const urls = blobs.map(b => URL.createObjectURL(b))
         setPages(urls)

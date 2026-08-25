@@ -85,6 +85,41 @@ async function queueTests() {
     eq('준비 전 · 완료 0', s.done, 0)
   }
 
+  // ── 스캔 이미지는 변환기를 거치지 않는다(419호 사고) ──
+  // pdfjs 에 이미지 바이트를 넣으면 던져서 준비가 통째로 실패하고(사진 모드), PDF 로 싸면
+  // 깨진 .pdf 가 나간다(PDF 모드). 원본 한 장이 이미 최종 형태다.
+  {
+    const jpeg = () => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]).buffer as ArrayBuffer
+    let calls = 0
+    const q = new DocShareQueue(async () => { calls++; return [png(3)] })
+    q.enqueue([{ id: 'scan', fetchBytes: async () => jpeg(), toPng: true }], () => {})
+    const s = await settle(q, ['scan'])
+    eq('이미지 · 사진 모드에서 변환기 미호출', calls, 0)
+    eq('이미지 · 원본 한 장', s.blobs.get('scan')?.length, 1)
+    eq('이미지 · mime 보존', s.blobs.get('scan')?.[0].type, 'image/jpeg')
+    eq('이미지 · 준비 성공', s.failed, [])
+
+    const q2 = new DocShareQueue(async () => [png(3)])
+    q2.enqueue([{ id: 'scan2', fetchBytes: async () => jpeg(), toPng: false }], () => {})
+    const s2 = await settle(q2, ['scan2'])
+    eq('이미지 · PDF 모드에서도 PDF 로 싸지 않는다', s2.blobs.get('scan2')?.[0].type, 'image/jpeg')
+  }
+  // 무회귀 — PDF 바이트는 종전 경로 그대로
+  {
+    const pdf = () => new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]).buffer as ArrayBuffer
+    let calls = 0
+    const q = new DocShareQueue(async () => { calls++; return [png(1), png(1)] })
+    q.enqueue([{ id: 'p1', fetchBytes: async () => pdf(), toPng: true }], () => {})
+    const s = await settle(q, ['p1'])
+    eq('무회귀 · PDF 사진 모드는 변환기 호출', calls, 1)
+    eq('무회귀 · PDF 사진 모드는 페이지 수만큼', s.blobs.get('p1')?.length, 2)
+
+    const q2 = new DocShareQueue(async () => [png(1)])
+    q2.enqueue([{ id: 'p2', fetchBytes: async () => pdf(), toPng: false }], () => {})
+    const s2 = await settle(q2, ['p2'])
+    eq('무회귀 · PDF 원본 모드 타입', s2.blobs.get('p2')?.[0].type, 'application/pdf')
+  }
+
   // ── 캐시·재시도 ──
   {
     let fetched = 0
@@ -134,6 +169,9 @@ function fileNameTests() {
     ['김상혁_실거주확인서.png', '박서준_입실료납부확인서.png'])
   eq('무회귀 · pages 가 비어도 한 장 취급', shareFileNames([김], [], 'pdf'), ['김상혁_실거주확인서.pdf'])
 
+  // ── 스캔 이미지는 변환기를 거치지 않는다(419호 사고) ──
+  // pdfjs 에 이미지 바이트를 넣으면 던져서 준비가 통째로 실패하고(사진 모드),
+  // PDF 로 싸면 깨진 .pdf 가 나간다(PDF 모드). 원본 한 장이 이미 최종 형태다.
   // ── 항목별 확장자(419호 사고) — 스캔 JPEG 과 앱 PDF 가 한 메일에 섞인다 ──
   // 확장자를 하나로 고정하면 그중 하나가 거짓 이름으로 도착한다. 문자열 하나를 넘기면 종전과 같다.
   eq('항목별 확장자 · 섞인 형식', shareFileNames([김, 박], [1, 1], ['jpg', 'pdf']),

@@ -23,6 +23,7 @@ import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
+import { sniffDocMime, extForDocMime, isImageDocMime } from '@/lib/docMime'
 
 // 빈 바이트로 PDF 를 만들면 0KB 파일이 조용히 공유돼 상대가 못 여는 사고가 된다(신고 5c99b5c8 —
 // pdf.js 버퍼 이관이 원본을 비우던 것. 근본은 pdfToPng 사본 전달로 봉합, 이건 그 클래스의 재발 감지망).
@@ -49,9 +50,11 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
   // 두 번 묻는다(§30.5). 형식을 먼저 정하고 그다음 어디로 보낼지 정한다.
   // 두 물음을 하나로 합치면 선택지가 넷이 되어 다이얼로그가 못 담고, 무엇보다
   // '사진으로 문자' 와 '사진으로 저장' 이 사용자 머릿속에서 다른 일인데 한 줄에 섞인다.
-  const ask = async (): Promise<{ asPng: boolean; toPhone: boolean } | null> => {
+  // isImage 면 형식 질문을 건너뛴다 — 스캔 사진은 이미 사진이고, 여기서 PDF 를 고르게 하면
+  // 앱이 없는 종이를 지어내야 한다(419호 사고 계열: 이미지를 PDF 로 싸면 깨진 파일이 나간다).
+  const ask = async (isImage: boolean): Promise<{ asPng: boolean; toPhone: boolean } | null> => {
     for (;;) {
-      const format = await choiceDialog({
+      const format = isImage ? 'confirm' as const : await choiceDialog({
         title: '어떤 형식으로 만들까요?',
         message: '문자메시지로 보낼 때는 사진이 가장 확실합니다. PDF는 일부 휴대폰·문자 앱에서 첨부가 안 될 수 있습니다. 서류가 여러 장이면 사진도 장수만큼 만들어집니다.',
         confirmLabel: '사진으로',
@@ -73,7 +76,8 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
         // 형식을 잘못 골랐을 때 되짚을 길. 취소는 흐름 전체를 무변경으로 닫는 것이라 이것과 다르다.
         backLabel: '형식 다시 고르기',
       })
-      if (dest === 'back') continue
+      // 이미지는 형식 질문이 없어 되짚을 앞 단계도 없다 — 되돌아가면 같은 창이 다시 뜬다.
+      if (dest === 'back') { if (isImage) return null; continue }
       if (!dest) return null
       return { asPng: format === 'confirm', toPhone: dest === 'alt' }
     }
@@ -83,16 +87,22 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
     // 탭할 때마다 캐시를 버린다 — 앞선 탭에서 만든 '서명 전' PDF 가 남아 있으면 서명하고 다시 눌러도
     // 옛 서류가 나간다. 선택창을 읽는 시간이 다시 받아오는 비용을 그대로 흡수한다.
     cache.current = {}
-    // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다
-    void ensurePngs().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
-    const pick = await ask()
+    // 선택창이 떠 있는 동안 미리 준비 — 사용자가 읽고 고르는 몇 초가 다운로드·변환 시간을 흡수한다.
+    // 형식을 묻기 전에 바이트를 봐야 한다(이미지면 질문 자체가 없다). 이미지는 변환기에 넣지 않는다.
+    const head = await ensureBytes().catch(() => null)
+    const srcMime = head ? sniffDocMime(head) : ''
+    const isImage = isImageDocMime(srcMime)
+    if (!isImage) void ensurePngs().catch(() => { /* 실패는 선택 후 본 흐름에서 처리 */ })
+    const pick = await ask(isImage)
     if (!pick) return
     const { asPng, toPhone } = pick
     setBusy(true)
     try {
-      const blobs = asPng ? await ensurePngs() : [pdfBlobOf(await ensureBytes())]
-      const mime = asPng ? 'image/png' : 'application/pdf'
-      const ext = asPng ? 'png' : 'pdf'
+      const blobs = isImage
+        ? [new Blob([await ensureBytes()], { type: srcMime })]
+        : asPng ? await ensurePngs() : [pdfBlobOf(await ensureBytes())]
+      const mime = isImage ? srcMime : asPng ? 'image/png' : 'application/pdf'
+      const ext = extForDocMime(mime)
       // 1장이면 종전과 완전히 같은 파일명 — 영수증·확인서는 아무것도 달라지지 않는다
       const nameAt = (i: number) => blobs.length === 1 ? `${fileName}.${ext}` : `${fileName}_${i + 1}.${ext}`
 

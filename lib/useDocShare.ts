@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DocShareQueue, shareFileNames } from './docShareQueue'
 import { shareFiles } from './shareFile'
+import { extForDocMime } from './docMime'
 import { pushToast } from './saveStatus'
 
 export type DocShareEntry = {
@@ -66,12 +67,13 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
     }
     if (s.done < es.length) return   // 아직 준비 중(버튼 비활성이지만 방어)
 
-    const ext = mode === 'png' ? 'png' : 'pdf'
-    const mime = mode === 'png' ? 'image/png' : 'application/pdf'
     // 첨부 순서 = 표시 순서 고정. 파일명 규칙은 shareFileNames 정본(한 장짜리는 종전과 같은 이름).
+    // **형식은 준비된 Blob 이 말한다** — mode 로 고정하면 스캔 이미지가 .pdf 로 나간다(419호 사고).
+    // PDF·PNG 기존 경로는 blob.type 이 종전 고정값과 같아 파일명·MIME 이 한 글자도 안 바뀐다.
     const blobLists = es.map(e => s.blobs.get(e.id) ?? [])
-    const names = shareFileNames(es, blobLists.map(b => b.length), ext)
-    const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: mime }))
+    const exts = blobLists.map(b => extForDocMime(b[0]?.type ?? (mode === 'png' ? 'image/png' : 'application/pdf')))
+    const names = shareFileNames(es, blobLists.map(b => b.length), exts)
+    const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: b.type }))
 
     const result = await shareFiles(files)
     // 'shared'·'cancelled' 은 무반응(정상). 'retry' 는 재탭 유도, 'unsupported' 는 안내.

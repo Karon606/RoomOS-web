@@ -14,6 +14,7 @@
 
 import { useCallback, useRef } from 'react'
 import { fetchDocBytes } from '@/lib/docBytes'
+import { sniffDocMime, extForDocMime } from '@/lib/docMime'
 import { sharePdfFile } from '@/lib/docPreview'
 import { photoSaveNeedsShareSheet } from '@/lib/shareFile'
 import { pushToast } from '@/lib/saveStatus'
@@ -48,7 +49,9 @@ export function useShareSheetPrint(driveFileId: string, fileName: string) {
       const buf = await bytes.current
       // 0바이트를 그대로 넘기면 상대가 못 여는 빈 PDF 가 조용히 나간다(신고 5c99b5c8 클래스)
       if (buf.byteLength === 0) throw new Error('서류 준비에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.')
-      const ok = await sharePdfFile(new Blob([buf], { type: 'application/pdf' }), `${fileName}.pdf`)
+      // 형식은 바이트가 정한다 — 스캔 이미지를 .pdf 로 싸면 시트의 프린트가 깨진 파일을 받는다.
+      const mime = sniffDocMime(buf)
+      const ok = await sharePdfFile(new Blob([buf], { type: mime }), `${fileName}.${extForDocMime(mime)}`)
       if (!ok) pushToast('info', '준비가 끝났습니다. 다시 한 번 눌러 주세요.')
     } catch (e) {
       bytes.current = null

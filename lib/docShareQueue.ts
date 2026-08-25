@@ -4,6 +4,7 @@
 // 체크 해제 시 취소는 하지 않는다 — 캐시를 유지해 재선택 시 즉시 준비됨.
 
 import { pdfToPngBlobs } from './pdfToPng'
+import { sniffDocMime, isImageDocMime, DOC_MIME_PDF } from './docMime'
 
 export type DocShareItem = {
   id: string                          // driveFileId (캐시 키)
@@ -64,12 +65,18 @@ export class DocShareQueue {
         await this.fetchSem.acquire()
         let bytes: ArrayBuffer
         try { bytes = await item.fetchBytes() } finally { this.fetchSem.release() }
+        // 형식은 바이트가 정한다 — 스캔 업로드본은 PDF 가 아닐 수 있다(419호 사고).
+        // 이미지면 변환기에 넣지 않는다. pdfjs 가 던져서 준비가 실패하고(사진 모드),
+        // PDF 로 싸면 깨진 .pdf 가 나간다(PDF 모드). 원본 한 장이 이미 최종 형태다.
+        const mime = sniffDocMime(bytes)
         let blobs: Blob[]
-        if (item.toPng) {
+        if (isImageDocMime(mime)) {
+          blobs = [new Blob([bytes], { type: mime })]
+        } else if (item.toPng) {
           await this.pngSem.acquire()
           try { blobs = await this.toPngBlobs(bytes) } finally { this.pngSem.release() }
         } else {
-          blobs = [new Blob([bytes], { type: 'application/pdf' })]
+          blobs = [new Blob([bytes], { type: DOC_MIME_PDF })]
         }
         this.blobs.set(item.id, blobs)
         onChange()
