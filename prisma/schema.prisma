@@ -192,6 +192,11 @@ model Property {
   // no-reply@stayeum.com 고정(lib/mailSend)이라, 멀티테넌트 구분은 표시 이름과 이 답장 주소가 진다.
   // null 이면 보낸 운영자의 로그인 주소만 답장 후보다.
   replyToEmail     String?
+  // 서류 메일 발신 주소의 앞부분(로컬파트). 도메인은 인증 때문에 stayeum.com 고정(lib/mailFrom).
+  // null = 기본 no-reply. @unique 인 이유: 발신 주소는 공개 정체성이라 두 영업장이 같은 주소를
+  // 쓰면 받는 사람 메일함에서 두 사업장이 한 발신자로 묶이고, 한쪽 스팸 신고가 다른 쪽을 때린다
+  // (publicSlug 와 같은 판정). nullable 유니크라 미설정 영업장 다수는 충돌하지 않는다.
+  mailFromLocal    String?  @unique
   // 서류 메일 문안 — null = 내장 기본(lib/docMail). shape: lib/docMail.DocMailTemplate
   // { mode: 'text'|'html', subject, bodyText, closingText, bodyHtml } — 칸별 null = 그 칸만 기본 유지.
   docMailTemplate  Json?
