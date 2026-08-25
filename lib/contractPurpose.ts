@@ -9,9 +9,15 @@
 // 규약 둘.
 //   · 저장값 null 이 곧 '실계약' 이다. 기존 발급본은 전부 실계약이라 백필이 없고, 문자열
 //     기본값을 박아 두면 '아직 안 고름' 과 '실계약을 골랐음' 이 구분되지 않는다.
-//   · 목적은 **발급 시점 증거**라 발급 트랜잭션에서 한 번만 쓴다. 고쳐야 하면 그 판본을
-//     폐기하고 다시 발급한다 — 사후 수정을 열면 '실계약' 을 나중에 '제출용' 으로 바꿔
-//     책임을 옮기는 길이 생긴다.
+//   · 목적은 **발급 시점 증거**라 발급 트랜잭션에서 한 번만 쓴다(issuePurpose 는 불변이다).
+//
+// 규약 개정 (운영자 승인 2026-08-26, 긴급 신고 419호)
+//   발급 때 고른 목적을 번복할 길이 아예 없어, 실수로 '제출용' 을 고른 계약서가 대표 자리에
+//   서지 못한 채 보낼 수도 고칠 수도 없는 상태가 됐다(폐기 후 재발급은 서명을 다시 받는 일이다).
+//   그래서 **증거와 지위를 가른다** — issuePurpose 는 "그때 무엇으로 발급했나" 로 불변이고,
+//   purposeOverride 가 "지금 무엇으로 취급하나" 를 든다. 판정은 override ?? issuePurpose 다.
+//   원 규약이 막으려던 것(실계약을 나중에 제출용으로 바꿔 책임을 옮기는 길)은 그대로 막힌다 —
+//   증거가 남고 이력(purposeLog)이 쌓이며, 마지막 실계약의 강등은 서버가 거부한다.
 //
 // 순수 함수만 담는다. 화면·발급 API·감지망이 같은 판정을 쓰게 하려는 것이고, 각자 짜면
 // '패널은 실계약이라는데 목록은 아니라고 하는' 상태가 된다(지금 [현재] 배지가 정확히 그 모양이다).
@@ -69,3 +75,49 @@ export function contractPurposeLabel(v: unknown): string | null {
   const p = contractPurposeOf(v)
   return p === DEFAULT_CONTRACT_PURPOSE ? null : p
 }
+
+// ── 번복 (2026-08-26 규약 개정) ─────────────────────────────────────────
+
+/** 번복 이력 한 줄 — purposeLog 배열의 항목. append 전용이고 지우지 않는다. */
+export type PurposeLogEntry = {
+  /** 바꾸기 직전의 유효 목적(표시값 '실계약'·'제출용'·'번역본'). */
+  from: ContractPurpose
+  to: ContractPurpose
+  at: string       // ISO
+  by: string | null   // 바꾼 사람의 로그인 주소
+}
+
+/**
+ * 지금 이 판본의 유효 목적 — **번복이 있으면 그것, 없으면 발급 시점 값**이다.
+ *
+ * 대표본 판정·파생 숨김·발급 게이트가 전부 이 값을 입력으로 받아야 한다. 한쪽만 issuePurpose 를
+ * 직접 읽으면 '패널은 실계약이라는데 목록은 아니라고 하는' 상태가 되돌아온다.
+ */
+export function effectiveIssuePurpose(
+  row: { issuePurpose?: string | null; purposeOverride?: string | null },
+): string | null {
+  const p = contractPurposeOf(row.purposeOverride ?? row.issuePurpose)
+  return p === DEFAULT_CONTRACT_PURPOSE ? null : p
+}
+
+/** 판정 입력 모양으로 바꾼다 — currentIssueIds 계열에 그대로 먹인다(판정 정본은 무변경). */
+export function withEffectivePurpose<T extends { issuePurpose?: string | null; purposeOverride?: string | null }>(
+  row: T,
+): T & { issuePurpose: string | null } {
+  return { ...row, issuePurpose: effectiveIssuePurpose(row) }
+}
+
+/** DB Json 을 이력 배열로 읽는다 — 깨진 값은 빈 배열(이력을 못 읽는다고 번복을 막지 않는다). */
+export function parsePurposeLog(raw: unknown): PurposeLogEntry[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap(v => {
+    if (!v || typeof v !== 'object') return []
+    const o = v as Record<string, unknown>
+    if (typeof o.at !== 'string') return []
+    return [{
+      from: contractPurposeOf(o.from), to: contractPurposeOf(o.to),
+      at: o.at, by: typeof o.by === 'string' ? o.by : null,
+    }]
+  })
+}
+

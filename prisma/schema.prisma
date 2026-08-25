@@ -1761,6 +1761,13 @@ model ContractFile {
   // null 을 기본으로 두는 이유: 기존 발급본은 전부 실계약이라 백필이 없고, 문자열 기본값을
   // 박으면 '아직 안 고름'과 '실계약을 골랐음'이 구분되지 않는다.
   issuePurpose String?
+  // 현재 용도 — 발급 뒤에 바뀐 지위(운영자 승인 2026-08-26, 긴급 신고 419호).
+  // **issuePurpose 는 그대로 둔다.** "그때 무엇으로 발급했나"(증거)와 "지금 무엇으로 취급하나"(지위)는
+  // 다른 사실이고, 증거를 덮으면 책임 이전을 다툴 근거가 사라진다. 판정은 override ?? issuePurpose.
+  // null = 번복 없음(기존 행 전부 null 이라 백필이 없다).
+  purposeOverride String?
+  // 번복 이력 — [{ from, to, at, by }] append 전용. 감사 흔적이자 적용취소의 근거다.
+  purposeLog   Json?
   createdAt    DateTime           @default(now())
 
   tenantId     String   @db.Uuid

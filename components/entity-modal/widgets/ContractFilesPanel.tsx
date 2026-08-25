@@ -15,14 +15,17 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { IssuedContractSheet } from '@/components/doc/IssuedContractSheet'
 import {
-  getContractFiles, deleteContractFile, restoreContractFile,
+  getContractFiles, deleteContractFile, restoreContractFile, changeContractPurpose,
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
 import { restoreContractVersion, getIssuePurposeContext } from '@/app/contract/[tenantId]/actions'
 import { issuedNextStepMessage } from '@/lib/contractLockMessage'
 import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
-import { contractPurposeLabel } from '@/lib/contractPurpose'
+import {
+  contractPurposeLabel, contractPurposeOf, CONTRACT_PURPOSES, DEFAULT_CONTRACT_PURPOSE,
+  type ContractPurpose,
+} from '@/lib/contractPurpose'
 import {
   issueContractShareLink, getContractShareState,
   closeContractShareLink, reopenContractShareLink,
@@ -32,6 +35,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
 import { ViewDocButton } from '@/components/ui/ViewDocButton'
+import { Modal } from '@/components/ui/Modal'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -94,6 +98,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 여러 판본 만들기 토글 — 안내 문구가 가리킬 길이 하나인지 둘인지 가른다.
   // 게이트가 아니라 문구용이다(진짜 게이트는 서버가 다시 본다). 못 읽으면 꺼진 것으로 본다.
   const [multiVersion, setMultiVersion] = useState(false)
+  // 용도를 바꾸려고 연 파일. 창은 3지선다(실계약·제출용·번역본)다.
+  const [purposeFile, setPurposeFile] = useState<{ id: string; issuePurpose: string | null } | null>(null)
   const [sharePending, setSharePending] = useState(false)
   const [restoring, setRestoring] = useState(false)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
@@ -190,6 +196,41 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     } catch (err) {
       pushToast('error', (err as Error).message ?? '업로드 실패')
     } finally { release(); setUploading(false) }
+  }
+
+  // 용도 바꾸기 — 방향에 따라 무게가 다르다(설계 승인 2026-08-26).
+  //   · 파생에서 실계약으로(승격) = caution. 이번 419 사고의 정정 경로다.
+  //   · 실계약에서 파생으로(강등) = danger. 원 규약이 막던 방향이라 서버가 마지막 실계약이면 거부한다.
+  // 성공 토스트에 적용취소를 단다(§16) — 되돌리기는 새 변경이 아니라 직전 값 복원이라 게이트를 안 탄다.
+  const handleChangePurpose = async (to: ContractPurpose) => {
+    const f = purposeFile
+    if (!f) return
+    const from = contractPurposeOf(f.issuePurpose)
+    setPurposeFile(null)
+    if (from === to) return
+    const demote = from === DEFAULT_CONTRACT_PURPOSE && to !== DEFAULT_CONTRACT_PURPOSE
+    const ok = await confirmDialog({
+      title: `이 계약서를 '${to}' 으로 바꿀까요?`,
+      message: demote
+        ? '실계약 계약서를 다른 용도로 내립니다. 이 계약의 대표 계약서 자리가 비게 되고, 서류 보내기에서 실계약 계약서가 없다고 표시됩니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남습니다.'
+        : '이 계약서를 실제 계약서로 취급합니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남고, 바꾼 이력도 함께 남습니다.',
+      level: demote ? 'danger' : 'caution',
+      confirmLabel: '바꾸기',
+    })
+    if (!ok) return
+    const res = await changeContractPurpose(f.id, to)
+    if (!res.ok) { pushToast('error', res.error); return }
+    reload()
+    pushToast('success', `용도를 '${to}' 으로 바꿨습니다`, {
+      action: {
+        label: '적용취소',
+        run: () => {
+          void changeContractPurpose(f.id, from, { undo: true }).then(r => {
+            if (r.ok) reload(); else pushToast('error', r.error)
+          })
+        },
+      },
+    })
   }
 
   const handleDelete = async (id: string) => {
@@ -454,6 +495,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   <ViewDocButton driveFileId={f.driveFileId} from="tenant" tenantId={tenantId} />
                   <SendDocButton getPdfBytes={fetchDocBytes(f.driveFileId)} fileName={`${tenantName}_계약서_${dateLabel}`}
                     className={btnClass('secondary', 'sm')} />
+                  {/* 용도 바꾸기 — 여러 판본 만들기가 켜진 영업장만. 꺼져 있으면 파생 개념 자체가 없다.
+                      발급 때 잘못 고른 목적을 되돌리는 유일한 문이다(2026-08-26 규약 개정). */}
+                  {multiVersion && (
+                    <Btn variant="ghost" size="sm" onClick={() => setPurposeFile(f)}>용도</Btn>
+                  )}
                   <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
                     className="text-[var(--danger-fg)]">
                     삭제
@@ -464,6 +510,44 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           })}
         </ul>
       )}
+      {/* 용도 고르기 — 3지선다라 창 하나면 충분하다. 지금 값에 표시가 선다. */}
+      {purposeFile && (
+        <Modal open onClose={() => setPurposeFile(null)} z={280} width="sm" title="이 계약서의 용도">
+          <div className="space-y-2">
+            <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+              발급할 때 고른 용도는 기록에 그대로 남고, 여기서 바꾼 사실도 함께 남습니다. 실계약으로 바꾸면 이 계약의 대표 계약서가 됩니다.
+            </p>
+            <ul className="space-y-1.5">
+              {CONTRACT_PURPOSES.map(pp => {
+                const on = contractPurposeOf(purposeFile.issuePurpose) === pp
+                return (
+                  <li key={pp}>
+                    <button type="button" onClick={() => void handleChangePurpose(pp)}
+                      className={[
+                        'flex w-full items-center gap-2.5 rounded-xl border bg-[var(--cream)] p-3 text-left transition-colors',
+                        on ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]' : 'border-[var(--warm-border)]',
+                      ].join(' ')}>
+                      <span className={[
+                        'grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] border transition-colors',
+                        on ? 'border-[var(--coral)] bg-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] text-transparent',
+                      ].join(' ')} aria-hidden>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L19 7" /></svg>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-[var(--warm-dark)]">{pp}</span>
+                        {pp === DEFAULT_CONTRACT_PURPOSE && (
+                          <span className="mt-0.5 block text-[0.65625rem] text-[var(--warm-muted)]">이 계약의 대표 계약서가 됩니다</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </Modal>
+      )}
+
       {/* 폐기한 계약서 — 접힘 칸(형제 정본: 같은 모달의 TenantWishRooms '더 보기'와 같은 문법).
           지운 것이 아니라 접어 둔 것이라, 토스트가 사라진 뒤에도 적용취소가 여기 남는다(§16).
           폐기본이 0부면 이 줄 자체를 안 그린다 — 지금 대부분의 계약이 그렇고 화면은 종전 그대로다. */}

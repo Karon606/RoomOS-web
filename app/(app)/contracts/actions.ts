@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
-import { isDerivedPurpose } from '@/lib/contractPurpose'
+import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -68,7 +68,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
     select: {
       id: true, fileName: true, source: true, signedAt: true, createdAt: true,
       driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
-      supersededAt: true, issuePurpose: true,
+      supersededAt: true, issuePurpose: true, purposeOverride: true,
       tenant: {
         select: {
           id: true, name: true,
@@ -101,8 +101,8 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       leaseTermId: r.leaseTermId,
       voidedAt: r.voidedAt,
       supersededAt: r.supersededAt,
-      issuePurpose: r.issuePurpose,
-      hidden: !multiVersion && isDerivedPurpose(r.issuePurpose),
+      issuePurpose: effectiveIssuePurpose(r),
+      hidden: !multiVersion && isDerivedPurpose(effectiveIssuePurpose(r)),
     }
   })
 }

@@ -22,6 +22,7 @@ import {
   restoredFieldsFrom, versionKind, type ContractVersionKind,
 } from '@/lib/contractVersion'
 import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
+import { withEffectivePurpose } from '@/lib/contractPurpose'
 import { bodyLockMessage, fieldLockMessage } from '@/lib/contractLockMessage'
 
 // ContractData 타입·조립 로직은 lib/contractData.ts 로 이동(원격 서명 링크 스냅샷과 공유).
@@ -263,9 +264,12 @@ export async function supersedeContractVersion(
     }
     const files = await prisma.contractFile.findMany({
       where: { tenantId: lease.tenantId, propertyId, deletedAt: null, driveFileId: { not: '' } },
-      select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
+      select: {
+        id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true,
+        issuePurpose: true, purposeOverride: true,
+      },
     })
-    if (!hasLiveRealContract(files, leaseTermId)) {
+    if (!hasLiveRealContract(files.map(withEffectivePurpose), leaseTermId)) {
       return { ok: false, error: '실계약 계약서를 먼저 발급해 주세요. 실계약 없이 다른 판본만 남을 수는 없습니다.' }
     }
     // 옮길 서명이 없다 — 이 계약서는 지금 그냥 작성 중이라 새 버전이라는 개념이 없다(멱등).

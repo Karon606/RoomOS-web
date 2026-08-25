@@ -14,7 +14,7 @@ import {
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
-import { contractPurposeLabel } from '@/lib/contractPurpose'
+import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
 import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
@@ -57,6 +57,8 @@ export async function getTenantDocBundle(
       select: {
         id: true, driveFileId: true, leaseTermId: true, signedAt: true, source: true,
         createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true,
+        // 번복이 있으면 지금 지위는 이쪽이다 — 대표 판정·판본 라벨이 같은 값을 본다.
+        purposeOverride: true,
         // 스캔 업로드본은 PDF 가 아닐 수 있다 — 첨부 표기·파일명 확장자의 추정 근거다.
         fileName: true,
       },
@@ -73,7 +75,7 @@ export async function getTenantDocBundle(
     }),
   ])
 
-  const representativeIds = new Set(currentIssueIds(contractRows).values())
+  const representativeIds = new Set(currentIssueIds(contractRows.map(withEffectivePurpose)).values())
 
   const receipt = (kind: 'rent' | 'deposit'): DocBundleFile[] => receiptRows
     .filter(r => (kind === 'deposit' ? r.kind === 'deposit' : r.kind !== 'deposit'))
@@ -100,7 +102,7 @@ export async function getTenantDocBundle(
       driveFileId: r.driveFileId,
       leaseTermId: r.leaseTermId,
       at: r.signedAt.toISOString(),
-      purposeLabel: contractPurposeLabel(r.issuePurpose),
+      purposeLabel: contractPurposeLabel(effectiveIssuePurpose(r)),
       note: [r.source === 'UPLOADED' ? '스캔본' : null, r.supersededAt ? '구버전' : null]
         .filter(Boolean).join(' · ') || null,
       representative: representativeIds.has(r.id),

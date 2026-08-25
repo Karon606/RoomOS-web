@@ -1,7 +1,11 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
-import { isDerivedPurpose } from '@/lib/contractPurpose'
+import {
+  isDerivedPurpose, effectiveIssuePurpose, withEffectivePurpose, contractPurposeOf,
+  parsePurposeLog, CONTRACT_PURPOSES, DEFAULT_CONTRACT_PURPOSE, type ContractPurpose,
+} from '@/lib/contractPurpose'
+import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -3785,11 +3789,17 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
       id: true, driveFileId: true, fileName: true, source: true,
       signedAt: true, createdAt: true, contractNo: true, leaseTermId: true, voidedAt: true,
       supersededAt: true, issuePurpose: true,
+      // 번복이 있으면 지금 지위는 이쪽이다(2026-08-26 규약 개정). 판정·표시가 같은 값을 본다.
+      purposeOverride: true, purposeLog: true,
     },
   })
   return rows.map(r => ({
     ...r,
-    hidden: !multiVersion && isDerivedPurpose(r.issuePurpose),
+    issuePurpose: effectiveIssuePurpose(r),
+    /** 발급 시점 증거 — 번복이 있으면 화면이 두 줄로 갈라 말한다. */
+    issuedPurposeOriginal: r.issuePurpose,
+    purposeChanged: r.purposeOverride != null,
+    hidden: !multiVersion && isDerivedPurpose(effectiveIssuePurpose(r)),
     viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
   }))
 }
@@ -3891,6 +3901,84 @@ export async function restoreContractFile(id: string): Promise<{ ok: true } | { 
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '복구에 실패했습니다.' }
+  }
+}
+
+/**
+ * 계약서 판본의 용도를 바꾼다 — 발급 때 잘못 고른 목적을 번복하는 유일한 문(2026-08-26 규약 개정).
+ *
+ * **발급 시점 증거(issuePurpose)는 건드리지 않는다.** purposeOverride 가 "지금 무엇으로
+ * 취급하나" 를 들고, 판정은 override ?? issuePurpose 다. 왜 이렇게 가르는지는 lib/contractPurpose
+ * 머리 주석에 있다 — 증거를 덮으면 책임 이전을 다툴 근거가 사라진다.
+ *
+ * 안전장치.
+ *   · 그 계약의 **마지막 실계약을 파생으로 내리는 것은 거부한다.** 원 규약이 막던 방향이고,
+ *     허용하면 발급 게이트가 금지하는 '실계약 없이 파생만 남은' 상태를 화면이 만들게 된다.
+ *   · 폐기본은 못 바꾼다 — 효력 없는 종이의 지위를 옮길 이유가 없다.
+ *   · 여러 판본 만들기가 꺼진 영업장은 파생 개념 자체가 없어 막는다.
+ *   · 이력(purposeLog)은 append 전용이다. 적용취소도 새 항목을 쌓는다(지우지 않는다).
+ *
+ * 서명·발행번호 원장·issuedSnapshot 은 무접촉이다. 이 액션은 분류만 옮긴다.
+ */
+export async function changeContractPurpose(
+  fileId: string, to: string, opts?: { undo?: boolean },
+): Promise<{ ok: true; from: string; to: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, email: operatorEmail } = await requirePropertyAccess()
+    if (!(CONTRACT_PURPOSES as readonly string[]).includes(to)) {
+      return { ok: false, error: '고를 수 없는 용도입니다.' }
+    }
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId }, select: { multiContractVersions: true },
+    })
+    if (!property?.multiContractVersions) {
+      return { ok: false, error: '이 영업장은 계약서를 한 부만 만들도록 설정돼 있습니다. 환경설정의 계약서·서류 탭에서 여러 판본 만들기를 켜 주세요.' }
+    }
+    const file = await prisma.contractFile.findFirst({
+      where: { id: fileId, propertyId, deletedAt: null },
+      select: {
+        id: true, tenantId: true, leaseTermId: true, issuePurpose: true,
+        purposeOverride: true, purposeLog: true, voidedAt: true,
+      },
+    })
+    if (!file) return { ok: false, error: '계약서를 찾을 수 없습니다.' }
+    if (file.voidedAt) return { ok: false, error: '폐기된 계약서는 용도를 바꿀 수 없습니다.' }
+
+    const from = contractPurposeOf(file.purposeOverride ?? file.issuePurpose)
+    if (from === to) return { ok: true, from, to }
+
+    // 마지막 실계약의 강등 거부 — 그 계약에 살아 있는 실계약이 이 부뿐이면 막는다.
+    // 적용취소는 예외다(직전 상태로 되돌리는 것이라 새 위험을 만들지 않는다).
+    if (from === DEFAULT_CONTRACT_PURPOSE && to !== DEFAULT_CONTRACT_PURPOSE && !opts?.undo && file.leaseTermId) {
+      const siblings = await prisma.contractFile.findMany({
+        where: { tenantId: file.tenantId, propertyId, deletedAt: null, driveFileId: { not: '' } },
+        select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, issuePurpose: true, purposeOverride: true },
+      })
+      const others = siblings
+        .filter(r => r.id !== file.id)
+        .map(withEffectivePurpose)
+      if (!hasLiveRealContract(others, file.leaseTermId)) {
+        return { ok: false, error: '이 계약의 마지막 실계약 계약서입니다. 다른 실계약 계약서를 먼저 만든 뒤에 바꿔 주세요.' }
+      }
+    }
+
+    const log = parsePurposeLog(file.purposeLog)
+    log.push({ from, to: to as ContractPurpose, at: new Date().toISOString(), by: operatorEmail ?? null })
+    await prisma.contractFile.update({
+      where: { id: file.id },
+      data: {
+        // 발급 시점 값과 같아지면 번복이 사라진 것이다 — null 로 되돌려 '번복 없음'이 된다.
+        purposeOverride: contractPurposeOf(file.issuePurpose) === to ? null : to,
+        purposeLog: log as unknown as Prisma.InputJsonValue,
+      },
+    })
+    revalidatePath('/tenants')
+    revalidatePath('/contracts')
+    return { ok: true, from, to }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '용도 변경에 실패했습니다.' }
   }
 }
 
