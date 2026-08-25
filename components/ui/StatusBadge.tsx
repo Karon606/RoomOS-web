@@ -74,14 +74,14 @@ export function StatusBadge({
     <span className={`inline-flex flex-col items-end gap-0.5 ${className ?? ''}`}>
       <span className="inline-flex items-center gap-1">
         <span
-          className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight whitespace-nowrap"
+          className="inline-flex items-center px-2.5 py-1 rounded-sm text-[11px] font-semibold tracking-tight whitespace-nowrap"
           style={{ background: s.bg, color: s.fg }}
         >
           {children}
         </span>
         {secondary && (
           <span
-            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight whitespace-nowrap"
+            className="inline-flex items-center px-2.5 py-1 rounded-sm text-[11px] font-semibold tracking-tight whitespace-nowrap"
             style={{ background: BADGE[secondary.tone].bg, color: BADGE[secondary.tone].fg }}
           >
             {secondary.label}

@@ -138,7 +138,7 @@
 ## §07 스페이싱 · Radius · 그림자
 
 - 4px 베이스 그리드. space-1 4 / 2 8 / 3 12 / 4 16 / 5 20 / 6 24 / 8 32 / 12 48.
-- radius: r-xs 4(칩·태그 내) · r-sm 6(뱃지·입력) · r-md 8(버튼 sm·status row) · r-lg 10(버튼 md·카드 sm) · r-xl 14(카드·KPI) · r-2xl 18(모달·앱아이콘) · r-pill 999.
+- radius: r-sm 6(뱃지·칩·태그·입력 — 2026-08-25 개정: 종전 r-xs 4 '칩'을 6 으로 통합. 10~11px 글자에서 4와 6 의 구분은 지각 실익이 없고 결정 피로만 늘린다) · r-md 8(버튼 sm·status row) · r-lg 10(버튼 md·카드 sm) · r-xl 14(카드·KPI) · r-2xl 18(모달·앱아이콘) · r-pill 999(**도형이 기능인 원형 전용** — 도트·스피너·아바타·토글·그립·숫자 카운터·부유 알약·진행바. **글자를 담는 배지·칩에 금지**, 2026-08-25 정비).
 - 그림자는 부유 요소(모달·드롭다운·팝오버·툴팁·토스트·하단 알약)에만: `0 16px 48px -16px rgba(61,36,24,.22)`. 카드·입력·버튼·사이드바는 border 1px --border.
 
 ## §08 레이어(z-index) 위계
@@ -170,7 +170,8 @@
 ## §11 배지 · Badge
 
 - 정본 범위: 의미색 토큰 쌍(success·warning·info·danger·coral pale) 표준 상태 배지만. 카테고리 동적 틴트·canvas 메타 칩·오버레이(absolute)·숫자 카운터·버튼형은 범위 밖(별도 패턴).
-- 틴트 배지 = -bg + -fg + inset 1px -ring, r-pill. 솔리드(b-overdue) = --overdue-solid + cream, 양 모드 동일. size sm 11px / md 12px.
+- 틴트 배지 = -bg + -fg + inset 1px -ring, **r-sm 6**(2026-08-25 개정 — 종전 r-pill 은 §07 radius 표의 'r-sm 6 = 뱃지'와 자기모순이었고, 글자를 담은 알약이 'AI 가 만든 앱' 인상의 큰 몫이라는 운영자 지목으로 폐기). 솔리드(b-overdue) = --overdue-solid + cream, 양 모드 동일. size sm 11px / md 12px.
+- 메타 칩 정본(2026-08-25 등재 — 층·결제수단·시간 칩 등 수제 다수파의 정본화): bg --canvas · text --warm-muted · ring 1px --warm-border · r-sm · 10.5px.
 - 병렬 패턴: 수납 상태 먼저, 일정 상태 뒤 ([미납] [퇴실 예정]) · 간격 4px · 최대 2개 · 3개 이상은 2개 + "+1" 뉴트럴 · 보조줄 10.5px --ink-m, 구분자 ' · ', 숫자 tnum ("12일 초과 · 6/13 퇴실 D-3").
 - 보증금 배지는 deposit 카멜 (파랑 금지).
 

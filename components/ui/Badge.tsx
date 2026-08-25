@@ -66,8 +66,10 @@ export function Badge({
   const fontCls = (isSolid || mono)
     ? 'mono tnum font-bold uppercase tracking-wider'
     : 'font-medium'
-  // 가이드 명시: 솔리드 뱃지는 r-sm(6px), 페일은 r-pill(999)도 OK.
-  const radiusCls = isSolid ? 'rounded-sm' : 'rounded-full'
+  // 배지는 전부 r-sm(6px)다 — §07 radius 표("r-sm 6 = 뱃지")의 정합 회복(2026-08-25 §11 개정).
+  // 종전에는 페일 톤만 알약(r-pill)이라 형제끼리도 갈렸고, 글자를 담은 알약이 화면마다 서서
+  // 운영자가 지목한 'AI 가 만든 앱' 인상의 큰 몫이었다. 원은 도형이 기능일 때만 쓴다.
+  const radiusCls = 'rounded-sm'
   return (
     <span className={`inline-flex items-center gap-1 ${radiusCls} ${ringCls} ${toneCls} ${sizeCls} ${fontCls} ${className}`}>
       {icon && <span className="leading-none">{icon}</span>}
