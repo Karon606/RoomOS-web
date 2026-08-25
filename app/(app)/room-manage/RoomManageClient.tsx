@@ -1104,9 +1104,9 @@ export default function RoomManageClient({
       : null
     // 그 방에 남은 청소 예정 중 가장 이른 것(서버가 골라 준다).
     const cleaning = openCleanings[room.id]
-    // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
-    // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
-    const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
+    // Status Row 팁/틴트 톤 — **예외 상태(배지가 서는 것)만**. 거주중·공실은 정상값이라
+    // 베이스가 말한다(2026-08-25 정비, lib/statusColors leaseTipTone 과 같은 판정).
+    const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : null
     const selected = selectMode && selectedIds.has(room.id)
     return (
       <RoomCard key={room.id}

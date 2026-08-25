@@ -51,11 +51,15 @@ export function statusException(
   }
 }
 
-/** 입주자/계약 상태 → Status Row 좌측 팁 톤.
- *  예외 상태는 그 톤, 거주중(resident)은 olive(paid),
- *  퇴실·입실취소(vacant)는 null — RoomCard vacant 기본(ink-mute 팁) 유지. */
+/** 입주자/계약 상태 → Status Row 좌측 팁 톤. **예외 상태 전용이다.**
+ *
+ *  거주중 올리브 팁은 2026-08-25 정비에서 걷었다(§18 개정). 거주중은 이 축의 정상값이라
+ *  베이스(--card-resident-bg)가 이미 말하는데 립까지 달면 사실상 전 카드에 색 줄이 서고,
+ *  RoomCard 머리말의 철학("정상 상태는 베이스만으로 충분")과도 어긋났다 — 운영자가 지목한
+ *  'AI 가 만든 앱' 인상의 실체가 이것이었다.
+ *  주의: 수납 관리의 5단계 립(완납 올리브 포함)은 **다른 축**(roomStatusTone)이라 그대로다.
+ *  그 화면의 축은 '걷혔는가'라 완납이 정보값이고, 이 축은 '누가 사는가'라 거주중이 정상값이다. */
 export function leaseTipTone(status: string | null | undefined): BadgeTone | null {
   const ex = statusException(status)
-  if (ex) return ex.tone
-  return leaseCardKind(status) === 'resident' ? 'paid' : null
+  return ex ? ex.tone : null
 }

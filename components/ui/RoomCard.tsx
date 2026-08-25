@@ -68,9 +68,9 @@ export function RoomCard({
       ? { background: 'color-mix(in srgb, var(--coral) 4.5%, transparent)', borderColor: 'var(--card-neutral-bd)', borderLeftColor: 'var(--coral)', borderLeftWidth: 3 }
       : tipColor
         ? { background: tipBg ?? k.bg, borderColor: k.bd, borderLeftColor: tipColor, borderLeftWidth: 3, opacity: k.opacity }
-        : kind === 'vacant'
-          ? { background: k.bg, borderColor: k.bd, borderLeftColor: 'var(--ink-mute)', borderLeftWidth: 3, opacity: k.opacity }
-          : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
+        // 공실 기본 ink-mute 립은 2026-08-25 정비에서 걷었다 — 공실은 이 축의 정상값이라
+        // opacity 0.6 + vacant 베이스 + 상태 텍스트가 이미 말한다(머리말 철학과 일치).
+        : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
   return (
     <div
       onClick={(onClick || onLongPress) ? () => {
