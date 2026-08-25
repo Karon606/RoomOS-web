@@ -10,6 +10,7 @@ import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
 import { recordDepositReceived, deletePayment } from './actions'
 import type { DepositPerTenant, DepositLedgerEntry } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
@@ -122,18 +123,16 @@ export function DepositSection({ summary, ledger, totalBalance }: {
         </div>
       </div>
 
-      {/* 서브 탭 */}
-      <div className="flex gap-1.5">
-        {(['tenant', 'ledger'] as SubTab[]).map(k => (
-          <button key={k} onClick={() => setSub(k)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              sub === k ? 'bg-[var(--coral)] text-[var(--on-solid)]'
-                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-            }`}>
-            {k === 'tenant' ? `입주자별 (${summary.length})` : `거래 이력 (${ledger.length})`}
-          </button>
-        ))}
-      </div>
+      {/* 서브 탭 — ViewTabs 정본 편입(2026-08-25 밑줄 탭 개정과 동시).
+          종전에는 raw button 이 옛 코랄 채움 외형을 손으로 베끼고 있었다(§25 위반으로
+          open-issues 등재). 정본이 밑줄 탭으로 바뀌는 이 시점에 안 고치면 이 모조품만
+          옛 디자인으로 남는다 — 뷰 전환·항상 1개 활성·건수 접미까지 §25 판별에 정확히 맞는 자리다. */}
+      <ViewTabs ariaLabel="보증금 보기" activeId={sub}
+        onChange={id => setSub(id as SubTab)}
+        tabs={[
+          { id: 'tenant', label: '입주자별', suffix: String(summary.length) },
+          { id: 'ledger', label: '거래 이력', suffix: String(ledger.length) },
+        ]} />
 
       {sub === 'tenant' && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">

@@ -9,9 +9,10 @@ export default function Loading() {
     <div className="delayed-fallback space-y-4">
       {/* v2.0 §25 탭 모형 — ViewTabs와 동일 치수 + 아랫줄 우측 월셀렉터 자리(v2.0 §25, 소모품과 동일) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
-        <div className="inline-flex rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold">
-          <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center text-[var(--warm-mid)]">소모품·부식</span>
-          <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center border-l border-[var(--warm-border)] bg-[var(--coral)] text-[var(--on-solid)]">비품·자재</span>
+        {/* 밑줄 탭 모형(2026-08-25 §25 개정) — 소모품 쪽과 같은 처방, 활성만 반대. */}
+        <div className="inline-flex gap-6 border-b border-[var(--warm-border)] text-sm font-semibold">
+          <span className="py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center text-[var(--warm-dark)]">소모품·부식</span>
+          <span className="py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center text-[var(--tc-text)] shadow-[inset_0_-2px_0_0_var(--tc-text)]">비품·자재</span>
         </div>
         <div className="self-end md:self-auto h-9 w-32 rounded-md bg-[var(--cream)] animate-pulse" />
       </div>

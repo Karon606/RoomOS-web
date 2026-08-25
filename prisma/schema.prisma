@@ -1333,6 +1333,12 @@ model RecurringExpense {
   amount          Int
   category        String
   dueDay          Int
+  // 주기(개월). 1=매월 · 2=격월 · 3=분기 · 6=반기 · 12=연1회 (2026-08-25, 신고 7e7da5c4).
+  // 정수 배수형이라 '4개월마다' 같은 것이 나와도 마이그레이션이 없다. 화면은 다섯 선택지로 제한한다.
+  intervalMonths  Int       @default(1)
+  // 도래 달의 기준점(1~12). null 이면 activeSince(없으면 createdAt)의 달을 기준으로 삼는다.
+  // 예: 연1회 + anchorMonth 3 이면 매년 3월. 매월(interval 1)은 이 값을 안 본다.
+  anchorMonth     Int?
   payMethod           String?
   vendor              String?   // 구매처(청구 기관 — 한전·수도 등). 기록 시 지출 vendor 로 전파(신고 6d1cf1ea)
   financialAccountId  String?   @db.Uuid

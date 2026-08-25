@@ -295,15 +295,15 @@
 
 ## §25 뷰 전환 탭 · ViewTabs
 
-- 판별: 필터(좁힘, '전체' 있음, SegmentedControl 트랙형) vs 뷰 전환(교체, 항상 1개 활성, ViewTabs 코랄 채움) vs 링크 탭(라우트 이동, ViewTabs 외형 + a href).
-- 정본 = A 코랄 채움 조인트 + role=tablist. B(트랙형)의 뷰 전환 용도·C(rounded-2xl) 폐기. SegmentedControl 자체는 필터 전용 존속.
-- 스펙: 컨테이너 inline-flex · r 10(r-md) · border 1px · overflow hidden · bg --cream · 세그 사이 1px 구분선. 세그 40px 이상(모바일 44pt: 세로 패딩 12px) · 10px 16px · 14/600 · radius 0. 활성 --coral + --on-solid 텍스트(#FBF6EF 고정 · white 금지 · --cream 금지: 다크에서 표면색으로 뒤집힘) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus outline 2px --coral offset 2 · disabled --warm-muted.
-- 라벨 접미: {라벨} ({값}) · 만 축약·부호·tnum · 정산·법적 금액 미부착 · 빈 괄호 금지.
-- 개수: 2~4 권장, max 5. 모바일 넘침은 가로 스크롤(nowrap+페이드 마스크), 축약·2줄 금지. scrollIntoView 금지(scrollLeft만).
+- 판별: 필터(좁힘, '전체' 있음, SegmentedControl 트랙형) vs 뷰 전환(교체, 항상 1개 활성, ViewTabs 밑줄 탭) vs 링크 탭(라우트 이동, ViewTabs 외형 + a href).
+- 정본 = **밑줄 탭** + role=tablist (2026-08-25 개정 — 운영자 지시. 종전 코랄 채움 조인트는 자연폭 칸이 들쭉날쭉해 보였고 세그 구분선이 채움 위에 그려져 전환 중 선이 비쳤다. 상자를 걷으면 셋이 함께 사라지고, 사이드바 좌측 바·하단 내비 상단 바와 세 내비 표면이 한 문법이 된다). SegmentedControl 자체는 필터 전용 존속.
+- 스펙: 트랙 inline-flex(fill 시 flex w-full) · gap 24px · **행 밑선 1px --warm-border** · 상자 배경·외곽선·라운드·구분선 없음. 탭 40px 이상(모바일 44pt) · 14/600 semibold 고정(웨이트가 바뀌면 탭 폭이 흔들린다) · 좌우 패딩 0(첫 라벨이 컨테이너 좌변 플러시), 터치 히트는 before 유사요소로 좌우 12px 확장. 활성 --tc-text 텍스트 + **라벨 밑 2px --tc-text 바(rounded-full, 글자 폭 기준, 200ms ease-out 슬라이드)** · 비활성 --warm-dark(상자가 없어 페이지 배경 위라 --warm-mid 는 AA 미달) · hover 는 중립색(--warm-border) 인셋 밑바 힌트(배경칠 금지 — 상자가 되돌아온다) · focus outline 2px --tc-text 인셋 −2(스크롤러 클리핑 회피) · disabled --warm-muted.
+- 라벨 접미: {라벨} ({값}) · 만 축약·부호·tnum · 정산·법적 금액 미부착 · 빈 괄호 금지 · suffixWidest 유령 포함 폭으로 바 폭 고정.
+- 개수: 2~4 권장, max 5. 모바일 넘침은 가로 스크롤(nowrap + data-fade 페이드 마스크 — globals.css §25, mask-image 라 배경색 무관). 축약·2줄 금지. scrollIntoView 금지(scrollLeft만).
 - 링크 탭: a role=tab + aria-selected/aria-current · SPA Link.
 - 배치: 제목 아래 한 줄. MonthSelector 동시엔 탭 좌/셀렉터 우.
-- API: SegmentedControl value: string|null vs ViewTabs activeId: string(null 불가) · suffix·href는 ViewTabs 전용.
-- 마이그레이션: 재고 탭(시맨틱 추가, r 12→10) · 수납 탭(동일) · 재무 TABS(B→A) · 리포트 탭(C→A, white→cream).
+- API: SegmentedControl value: string|null vs ViewTabs activeId: string(null 불가) · suffix·href는 ViewTabs 전용. equal 폐기(2026-08-25 — 균등 폭은 한글 라벨·접미 체계와 320px 에서 계산상 불성립).
+- 마이그레이션(2026-08-25): 전 소비처 12곳 동시 전환(정본이라 부분 적용 불가) · 보증금 서브탭 raw button 모조품 → ViewTabs 편입 · 재고 loading.tsx 탭 모형 2곳 동형 교체.
 
 ## §26 인쇄 서류
 

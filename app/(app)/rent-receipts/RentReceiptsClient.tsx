@@ -135,7 +135,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
               발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.
             </InfoHint>
           </h1>
-          <ViewTabs ariaLabel="서류 종류" activeId={kind} equal
+          <ViewTabs ariaLabel="서류 종류" activeId={kind}
             tabs={[
               { id: 'rent',    label: '입실료', href: '/rent-receipts' },
               { id: 'deposit', label: '보증금', href: '/rent-receipts?kind=deposit' },

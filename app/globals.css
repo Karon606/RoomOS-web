@@ -277,6 +277,24 @@
 /* §18.5 버튼 스피너 회전 (Tailwind v4 기본 keyframes 미보장 — 직접 정의) */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* §25 뷰 전환 탭 — 넘침 페이드 (2026-08-25 밑줄 탭 개정에서 시공).
+   가이드가 약속했으나 미시공이던 스펙이다 — 탭 트랙이 가로로 넘칠 때 잘리는 쪽 끝을 흐려
+   "더 있다"는 단서를 준다. ViewTabs 가 스크롤 위치로 data-fade 를 세팅한다.
+   mask 는 콘텐츠 자체를 투명화하므로 배경색(캔버스·모달 크림·다크)과 무관하게 동작한다 —
+   그라데이션 오버레이 방식은 배경마다 색을 맞춰야 해 기각했다. */
+[role="tablist"][data-fade="right"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+[role="tablist"][data-fade="left"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+[role="tablist"][data-fade="both"] {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
 /* §25.3 전환 모션 — 오버레이·패널 등장. 접근성: 모션 축소 설정이면 비활성(클래스가 no-op). */
 @media (prefers-reduced-motion: no-preference) {
   @keyframes overlay-in { from { opacity: 0; } }
