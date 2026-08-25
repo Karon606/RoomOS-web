@@ -1801,7 +1801,8 @@ export async function updatePayment(
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true },
+      // 옛 수납일·수단도 읽는다 — 그것이 바뀌면 그 축으로 걸려 있던 발행 줄이 고아가 된다.
+      select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true, payDate: true, payMethod: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
 
@@ -1873,6 +1874,19 @@ export async function updatePayment(
         propertyId, leaseTermId: record.leaseTermId, tenantId: after.tenantId,
         payDate: after.payDate, payMethod: after.payMethod, issuedAt: after.cashReceiptIssuedAt,
       })
+      // **수납일이나 수단이 바뀌었으면 옛 축의 발행 줄을 지운다.** 발행 줄은 (계약·수납일·수단)
+      // 으로 찾으므로, 그 축이 움직이면 새 줄이 서고 옛 줄은 아무도 안 가리키는 채 남아
+      // **합계에 계속 든다.** 실제로 그런 줄이 하나 생겨 8월 합계를 764만에서 811만으로
+      // 부풀렸다(운영자 신고 2026-08-25, 408호 수납일 없는 8/22 줄).
+      const moved = record.payDate.getTime() !== after.payDate.getTime()
+        || (record.payMethod ?? '') !== (after.payMethod ?? '')
+      if (moved) {
+        const stale = await prisma.cashReceipt.findFirst({
+          where: { leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod, deletedAt: null },
+          select: { id: true },
+        })
+        if (stale) await prisma.cashReceipt.update({ where: { id: stale.id }, data: { deletedAt: new Date() } })
+      }
     }
 
     revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
@@ -2017,6 +2031,12 @@ export async function getMonthPaymentAggregates(targetMonth: string): Promise<{ 
     prisma.cashReceipt.findMany({
       where: {
         propertyId,
+        // **직접 걸러야 한다.** CashReceipt 는 소프트삭제 익스텐션 대상이 아니다
+        // (lib/prisma SOFT_DELETE_MODELS 는 PaymentRecord·ExtraIncome 둘뿐). 이 줄이 없으면
+        // 발행을 껐다 켠 건이 두 번 세어진다 — 실제로 그랬다(운영자 신고 2026-08-25,
+        // 408호 47만원이 8월 합계를 764만에서 811만으로 부풀렸다).
+        // RoomCleaning·RoomWork 도 같은 처지라 조회마다 이 규율을 손으로 지킨다.
+        deletedAt: null,
         issuedAt: {
           gte: cutoffTs && cutoffTs > issuedWindow.gte ? cutoffTs : issuedWindow.gte,
           lt: issuedWindow.lt,
@@ -2062,8 +2082,11 @@ async function syncCashReceiptLine(args: {
   amount: number             // 실제 발행 금액. 오늘은 입금 전액이고, 화면이 금액 칸을 갖는 날 달라진다
   incl?: { deposit: boolean; cleaning: boolean; rent: boolean }
 }): Promise<void> {
+  // 삭제된 줄도 찾는다 — 껐다 켜면 그 줄을 **되살려야** 한다. 새로 만들면 같은 결제에
+  // 줄이 둘이 되고, 안 찾으면 삭제된 채로 값만 갱신돼 어느 쪽으로 세든 틀린다.
   const found = await prisma.cashReceipt.findFirst({
     where: { leaseTermId: args.leaseTermId, payDate: args.payDate, payMethod: args.payMethod },
+    orderBy: { createdAt: 'asc' },
     select: { id: true },
   })
   if (!args.issuedAt || args.amount <= 0) {
@@ -2077,6 +2100,8 @@ async function syncCashReceiptLine(args: {
     inclDeposit: incl.deposit,
     inclCleaning: incl.cleaning,
     inclRent: incl.rent,
+    // 되살리기 — 껐다 켠 줄은 삭제 표시를 지워야 합계에 다시 든다.
+    deletedAt: null,
   }
   if (found) await prisma.cashReceipt.update({ where: { id: found.id }, data })
   else await prisma.cashReceipt.create({
@@ -2095,12 +2120,27 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
     const propertyId = await getPropertyId()
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
-      select: { leaseTermId: true, targetMonth: true },
+      // 수납일·수단도 읽는다 — 그 축으로 걸린 발행 줄을 함께 내려야 한다.
+      select: { leaseTermId: true, targetMonth: true, payDate: true, payMethod: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
 
     // 소프트삭제 — 조회 익스텐션이 자동 제외. 재계산은 활성분만 보므로 미수·완납 자동 정정. 적용취소는 restorePayment.
     await prisma.paymentRecord.update({ where: { id: paymentId }, data: { deletedAt: new Date() } })
+    // 발행 줄도 함께 내린다 — 없는 수납의 발행이 합계에 남으면 안 된다. 형제 record 가 아직
+    // 살아 있으면(쪼개진 결제의 일부만 지운 경우) 그 결제는 여전히 발행된 것이라 건드리지 않는다.
+    {
+      const siblingsLeft = await prisma.paymentRecord.count({
+        where: { propertyId, leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod, isBillingAdjust: false },
+      })
+      if (siblingsLeft === 0) {
+        const line = await prisma.cashReceipt.findFirst({
+          where: { leaseTermId: record.leaseTermId, payDate: record.payDate, payMethod: record.payMethod, deletedAt: null },
+          select: { id: true },
+        })
+        if (line) await prisma.cashReceipt.update({ where: { id: line.id }, data: { deletedAt: new Date() } })
+      }
+    }
 
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: record.leaseTermId },

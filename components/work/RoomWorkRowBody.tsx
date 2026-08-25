@@ -19,7 +19,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
-  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork,
+  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork,
   type RoomWorkRow,
 } from '@/app/(app)/room-manage/workActions'
 import {
@@ -51,6 +51,9 @@ export function RoomWorkRowBody({
   const [performer, setPerformer] = useState<CleaningPerformer>('VENDOR')
   const [performerName, setPerformerName] = useState('')
   const [cost, setCost] = useState(0)
+  // 날짜 변경 — 청소 행과 같은 문법(오류신고 2026-08-25, 예정 건에 이 문이 아예 없었다).
+  const [reschedOpen, setReschedOpen] = useState(false)
+  const [reschedDate, setReschedDate] = useState('')
 
   const run = (
     fn: () => Promise<{ ok: true } | { ok: false; error: string }>,
@@ -131,6 +134,27 @@ export function RoomWorkRowBody({
             복원
           </RowActionBtn>
         </div>
+      ) : reschedOpen ? (
+        /* 날짜 변경 — 완료 입력과 같은 자리, 같은 문법. 고치는 날짜는 그 행에 보이는 날짜다.
+           완료 건은 지나간 일이라 오늘까지로 막고, 예정 건은 앞날을 잡는 자리라 안 막는다. */
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
+            {r.status === 'DONE' ? '완료일' : '예정일'}
+            <DatePicker value={reschedDate} onChange={setReschedDate}
+              maxDate={r.status === 'DONE' ? kstYmdStr() : undefined} className={DENSE_DATE_CLS} />
+          </div>
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <RowActionBtn tone="accent" disabled={pending || !reschedDate}
+              onClick={() => {
+                run(() => rescheduleRoomWork({ id: r.id, date: reschedDate }),
+                  r.status === 'DONE' ? '완료일 변경됨' : '예정일 변경됨')
+                setReschedOpen(false)
+              }}>
+              저장
+            </RowActionBtn>
+            <RowActionBtn onClick={() => setReschedOpen(false)}>취소</RowActionBtn>
+          </div>
+        </div>
       ) : doneOpen ? (
         /* 완료 입력 — 그 줄에서 바로 받는다. 별도 모달을 띄우면 창이 또 쌓인다(형제 행과 같다). */
         <div className="mt-2 space-y-2">
@@ -193,6 +217,16 @@ export function RoomWorkRowBody({
           {r.status === 'PLANNED' && (
             <RowActionBtn tone="accent" disabled={pending} onClick={() => setDoneOpen(true)}>완료 처리</RowActionBtn>
           )}
+          {/* 날짜 변경 — 예정·완료 둘 다에 선다. 청소 행에는 있는데 여기만 없어서 예정 날짜를
+              고칠 길이 아예 없었다(운영자 신고 2026-08-25). 여는 순간 그 행의 현재 날짜를 담는다. */}
+          <RowActionBtn disabled={pending}
+            onClick={() => {
+              setReschedDate((r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? kstYmdStr())
+              setDoneOpen(false)
+              setReschedOpen(true)
+            }}>
+            날짜 변경
+          </RowActionBtn>
           {r.status === 'DONE' && (
             <RowActionBtn disabled={pending}
               onClick={() => run(() => reopenRoomWork(r.id), '완료를 되돌렸습니다')}>

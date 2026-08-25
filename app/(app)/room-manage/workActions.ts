@@ -191,6 +191,34 @@ export async function completeRoomWork(input: {
   }
 }
 
+/**
+ * 날짜 변경 — 그 행에 보이는 날짜를 고친다. 예정 건이면 예정일, 완료 건이면 완료일이다.
+ * 청소의 rescheduleCleaning 과 같은 문법이되, **지출 날짜는 안 옮긴다** — 작업의 지출은
+ * 자재를 여러 날 나눠 산 것까지 걸려 있어(1:N) 한 날짜로 몰면 그 사실이 사라진다.
+ * 청소는 1:1 이라 함께 옮기는 것이 맞았다.
+ */
+export async function rescheduleRoomWork(input: { id: string; date: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomWork.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: { id: true, status: true },
+    })
+    if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
+    const date = ymdToDbDate(input.date)
+    if (Number.isNaN(date.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    await prisma.roomWork.update({
+      where: { id: cur.id },
+      data: cur.status === 'DONE' ? { doneDate: date } : { scheduledDate: date },
+    })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '날짜 변경에 실패했습니다.' }
+  }
+}
+
 /** 적용취소 — 완료를 되돌린다. 붙은 지출은 지우지 않는다(실제로 나간 돈이다). */
 export async function reopenRoomWork(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
