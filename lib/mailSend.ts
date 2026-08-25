@@ -33,7 +33,7 @@ export type MailSendOutcome =
 
 /** 메일 기능이 켜져 있는가. 화면이 진입점을 그릴지 가르는 데 쓴다(서버에서만 호출). */
 export function isMailConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY
+  return !!process.env.RESEND_API_KEY?.trim()
 }
 
 /**
@@ -56,7 +56,9 @@ export async function sendMail(input: {
   // 가드는 반드시 이 함수 첫 문장이다. 호출부에 두면 새 호출부가 생겼을 때 뚫린다.
   if (isStagingEnv()) return { result: 'staging' }
 
-  const key = process.env.RESEND_API_KEY
+  // trim — 환경변수에 붙여넣다 딸려온 공백·줄바꿈이 Bearer 헤더를 깨서 401 을 낸다.
+  // 실제로 그랬다(운영자 첫 키 등록 2026-08-25). 값이 공백뿐이면 미설정과 같다.
+  const key = process.env.RESEND_API_KEY?.trim()
   if (!key) return { result: 'disabled' }
 
   const attachments = input.attachments ?? []
