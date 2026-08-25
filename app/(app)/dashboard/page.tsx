@@ -15,6 +15,7 @@ import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
+import { recurringCycleLabel } from '@/lib/recurringDueDate'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
@@ -1027,8 +1028,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 지출 화면과 동일한 추정식으로 통일 — 예약금액, 비변동 계약액, 작년 같은 달, 최근 3개월 평균, 기본액 순.
   // (getRecurringExpensesWithStatus 재사용 — 두 화면이 같은 데이터·식을 써 금액이 일치)
   const recurringWithStatus = await pRecurringWithStatus
+  // 이 달에 도래하는 것만 예상에 넣는다(신고 7e7da5c4) — 연1회 지출을 매달 더하면 예상 지출·
+  // 예상 순이익이 그만큼 어긋난다. interval 1(기존 전건)은 항상 도래라 숫자가 안 바뀐다.
   const projectedRecurringExpense = recurringWithStatus
-    .filter(r => !r.isPending && !r.recordedExpenseId)
+    .filter(r => !r.isPending && !r.recordedExpenseId && r.isDueThisMonth)
     .reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const projectedRevenue = totalExpected + extraRevenue
   // 과거 조회월은 미기록 고정지출 추정을 가산하지 않는다 — 실제 지출만 반영해 결산보고서와 정합.
@@ -1040,8 +1043,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //   ① 불변 고정(월임대료 등 isVariable=false) — 못 줄임
   //   ② 변동 고정(전기·수도 등 isVariable=true) — 노력하면 줄임
   //   ③ 세이브 가능(비고정 지출) = 예상 지출 − 고정 합 — 가장 줄이기 쉬움
-  const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
-  const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
+  // 통제가능성 3단도 이 달 도래분만 센다 — 비도래 달의 연1회 항목이 그 달 고정 몫으로 잡히면
+  // '줄일 수 없는 돈'이 실제보다 커 보인다.
+  const dueRecurring  = recurringWithStatus.filter(r => r.isDueThisMonth)
+  const tierImmovable = dueRecurring.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
+  const tierVariable  = dueRecurring.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + effectiveRecurringAmount(r), 0)
   const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
 
   // ── 지출 카테고리 분해 — 기록된 지출 + 이 달 고정 지출 (예정) ──────────────
@@ -1058,7 +1064,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const pendingItemsByCategory: Record<string, { title: string; amount: number }[]> = {}
   if (!isPastMonth) {
     for (const r of recurringWithStatus) {
-      if (r.isPending || r.recordedExpenseId) continue
+      // 도넛의 예정 항도 예상 지출과 같은 필터를 써야 sum(카테고리) === 예상 지출 항등이 유지된다.
+      if (r.isPending || r.recordedExpenseId || !r.isDueThisMonth) continue
       pendingByCategory[r.category] = (pendingByCategory[r.category] ?? 0) + effectiveRecurringAmount(r)
       ;(pendingItemsByCategory[r.category] ??= []).push({ title: r.title, amount: effectiveRecurringAmount(r) })
     }
@@ -1721,6 +1728,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const re of recurringWithStatus) {
     if (re.recordedExpenseId) continue
     if (re.isPending) continue
+    // 이 달에 안 나가는 항목은 알릴 일이 없다 — 연1회 가스 안전 검사가 매달 알림으로 뜨면
+    // 알림 자체가 무의미해진다.
+    if (!re.isDueThisMonth) continue
 
     const [y, m] = targetMonth.split('-').map(Number)
     const nominalDate = new Date(y, m - 1, Math.min(re.dueDay, new Date(y, m, 0).getDate()))
@@ -1743,7 +1753,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       dotColor:            'var(--info-fg)',
       timeLabel:           dayLabel(daysLeft),
       exactDate:           fmtShortDate(effectiveDate),
-      detail:              `${fmtWon(expectedAmt)}${amountLabel ? ` · ${amountLabel}` : ''} · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
+      // 주기가 매월이 아니면 그 사실을 적는다 — 연 1회 항목이 이번 달에 뜬 것이 맞다는 말을
+      // 알림 자체가 해야 한다(매월은 안 적는다, 대다수 행에 붙으면 소음이다).
+      detail:              `${fmtWon(expectedAmt)}${amountLabel ? ` · ${amountLabel}` : ''} · ${re.category}${re.intervalMonths > 1 ? ' · ' + recurringCycleLabel(re) : ''}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
       recurringAmount:       expectedAmt,
       recurringDueDate:      effectiveDate.toISOString().slice(0, 10),
