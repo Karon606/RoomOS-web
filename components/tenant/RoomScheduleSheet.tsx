@@ -31,7 +31,7 @@ import {
   scheduleOpenFrom, validateRoomSchedule, roomScheduleText,
   type RoomScheduleEntry,
 } from '@/lib/roomSchedule'
-import { getRoomScheduleOptions, startLeaseWithRoomSchedule } from '@/app/(app)/tenants/actions'
+import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
 
 type Options = Extract<Awaited<ReturnType<typeof getRoomScheduleOptions>>, { ok: true }>
 /** 고른 방 — 이름을 함께 담는다. 목록은 다음 걸음에서 그 방을 빼므로 거기서 이름을 못 찾는다. */
@@ -46,14 +46,24 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000)
 }
 
-export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: {
+export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClose, onDone }: {
   leaseTermId: string
   tenantName: string
+  /**
+   * 'now' 는 오늘 실제로 들이는 것(입실 처리), 'plan' 은 **미리 잡아 두는 것**이다.
+   *
+   * 갈리는 곳은 둘뿐이다. 미리 잡기는 미래 날짜를 받고, 저장이 계약을 예약 상태 그대로 둔다.
+   * 계약서는 예약 상태에서도 일정을 인쇄하므로 서명 전에 뽑아도 일정이 들어간다.
+   */
+  mode?: 'now' | 'plan'
   onClose: () => void
   onDone: () => void
 }) {
+  const plan = mode === 'plan'
   const today = kstYmdStr(new Date())
   const [moveIn, setMoveIn] = useState(today)
+  // 미리 잡기는 예약 때 정한 입주 희망일에서 시작한다(오늘이 아니다).
+  const [inited, setInited] = useState(false)
   const [opts, setOpts] = useState<Options | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState<string | null>(null)
@@ -72,10 +82,12 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: 
         if (!r.ok) { setFailed(r.error); return }
         setOpts(r)
         setFailed(null)
+        if (plan && !inited) { setMoveIn(r.moveInDate); setInited(true) }
       })
       .catch(() => { if (alive) setFailed('정보를 불러오지 못했습니다.') })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaseTermId, openFrom])
 
   // 일정의 끝점 — 계약 호실이 비는 날. 그날 본 방으로 든다.
@@ -112,9 +124,11 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: 
     if (bad) { pushToast('error', bad); return }
     setPending(true)
     try {
-      const r = await startLeaseWithRoomSchedule({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
+      const r = plan
+        ? await saveRoomSchedulePlan({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
+        : await startLeaseWithRoomSchedule({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
       if (!r.ok) { pushToast('error', r.error); return }
-      pushToast('success', '입실 처리했습니다', { detail: r.notice })
+      pushToast('success', plan ? '입실 일정을 잡았습니다' : '입실 처리했습니다', { detail: r.notice })
       onDone()
     } catch (e) {
       pushToast('error', (e as Error).message ?? '처리에 실패했습니다.')
@@ -123,20 +137,20 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: 
     }
   }
 
-  const tooLate = moveIn > today
+  const tooLate = !plan && moveIn > today
   const canSubmit = !!opts && !loading && !pending && done && !tooLate
   // 목록을 다시 읽는 중 — 라벨은 이미 새 기간을 말하는데 목록은 옛 기간 것이라 그 사이 탭을 막는다.
   const refreshing = loading && !!opts
 
   return (
     <Modal open onClose={onClose} z={280} width="md"
-      title={`입실 처리 · ${tenantName}`}
+      title={`${plan ? '입실 일정' : '입실 처리'} · ${tenantName}`}
       dirty={picks.length > 0 || moveIn !== today}
       footer={
         <div className="flex gap-2">
           <Btn variant="secondary" size="md" onClick={onClose} disabled={pending} className="flex-1">닫기</Btn>
           <Btn variant="primary" size="md" onClick={() => void submit()} disabled={!canSubmit} className="flex-1">
-            {pending ? '처리 중…' : '입실 처리'}
+            {pending ? '처리 중…' : (plan ? '일정 잡기' : '입실 처리')}
           </Btn>
         </div>
       }>
@@ -167,13 +181,15 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: 
 
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-[var(--warm-mid)]">입주일</p>
-              <DatePicker value={moveIn} onChange={v => { setMoveIn(v); setPicks([]) }} maxDate={today}
+              <DatePicker value={moveIn} onChange={v => { setMoveIn(v); setPicks([]) }}
+                {...(plan ? {} : { maxDate: today })}
                 className={`${dateCls} ${tooLate ? 'border-[var(--tc)]' : 'border-[var(--warm-border)]'}`} />
               {tooLate ? (
                 <p className={errCls}>입주일은 오늘보다 뒤로 잡을 수 없습니다.</p>
               ) : (
                 <p className={capCls}>
-                  이 날짜부터 이용료가 청구됩니다. 예약 때 잡은 {fmtDateDot(opts.moveInDate)}과 달라도 됩니다.
+                  이 날짜부터 이용료가 청구됩니다.
+                  {!plan && ` 예약 때 잡은 ${fmtDateDot(opts.moveInDate)}과 달라도 됩니다.`}
                   {picks.length > 0 && ' 날짜를 바꾸면 정한 방이 지워집니다.'}
                 </p>
               )}
@@ -239,6 +255,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, onClose, onDone }: 
               <p className={capCls}>
                 {fmtDateDot(endAt)}에 계약 호실 {opts.mainRoomNo}호로 자동으로 옮겨집니다.
                 이 일정은 계약서에도 적힙니다.
+                {plan && ` ${fmtDateDot(moveIn)}에 입실 처리만 누르면 이대로 들어갑니다.`}
               </p>
             )}
           </>

@@ -9,7 +9,7 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
-  getRoomScheduleState, undoRoomSchedule } from '@/app/(app)/tenants/actions'
+  getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -241,28 +241,34 @@ function RoomScheduleRow({ leaseTermId, info, onDone }: {
   leaseTermId: string; info: RoomScheduleInfo; onDone: () => void
 }) {
   const [pending, startTransition] = useTransition()
+  // 아직 안 들어온 계획이면 지우는 것이고, 이미 살고 있으면 입실 처리를 무르는 것이다.
+  // 이름과 무르는 대상이 갈리면 안 된다(§16).
+  const isPlan = info.stage === 'plan'
   const handleUndo = async () => {
     const ok = await confirmDialog({
-      title: '입실 처리를 적용취소할까요?',
-      message: `예약 상태로 되돌리고 호실 일정과 거주 구간을 지웁니다. 입주일은 그대로 남습니다.`,
-      level: 'caution', confirmLabel: '적용취소',
+      title: isPlan ? '잡아 둔 입실 일정을 지울까요?' : '입실 처리를 적용취소할까요?',
+      message: isPlan
+        ? '호실 일정만 지웁니다. 예약과 입주 희망일은 그대로 남습니다.'
+        : '예약 상태로 되돌리고 호실 일정과 거주 구간을 지웁니다. 입주일은 그대로 남습니다.',
+      level: 'caution', confirmLabel: isPlan ? '지우기' : '적용취소',
     })
     if (!ok) return
     startTransition(async () => {
-      const r = await undoRoomSchedule(leaseTermId)
-      if (r.ok) { pushToast('info', '입실 처리를 적용취소했습니다.'); onDone() }
+      const r = isPlan ? await clearRoomSchedulePlan(leaseTermId) : await undoRoomSchedule(leaseTermId)
+      if (r.ok) { pushToast('info', isPlan ? '입실 일정을 지웠습니다.' : '입실 처리를 적용취소했습니다.'); onDone() }
       else pushToast('error', r.error)
     })
   }
   return (
     <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-      {/* 이름이 무르는 대상과 같아야 한다 — 버튼이 되돌리는 것은 일정이 아니라 입실 처리다(§16). */}
+      {/* 이름이 무르는 대상과 같아야 한다 — 계획은 지우는 것이고 실제는 입실 처리를 무르는 것이다(§16). */}
       <p className="min-w-0 text-[var(--warm-mid)]">
-        입실 처리 · 호실 일정 <span className="text-[var(--warm-dark)]">{info.text}</span>
+        {isPlan ? '잡아 둔 입실 일정 ' : '입실 처리 · 호실 일정 '}
+        <span className="text-[var(--warm-dark)]">{info.text}</span>
       </p>
       <button type="button" onClick={handleUndo} disabled={pending}
         className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
-        {pending ? '취소 중…' : '적용취소'}
+        {pending ? (isPlan ? '지우는 중…' : '취소 중…') : (isPlan ? '지우기' : '적용취소')}
       </button>
     </div>
   )

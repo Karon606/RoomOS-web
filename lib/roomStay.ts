@@ -71,12 +71,31 @@ export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promi
     await recordRoomChange(db, leaseTermId, open.roomId, targetRoomId, seg?.from ?? null)
     return
   }
+  // 일정이 있으면 **오늘까지의 구간을 다 만든다.** 미리 잡아 둔 일정을 며칠 늦게 처리해도
+  // 지나간 방들이 이력에서 빠지면 안 된다(하루 402호에서 잔 사실이 통째로 사라진다).
+  const schedule = parseRoomSchedule(lease.roomSchedule)
+  const past = schedule.filter(e => e.from <= today)
+  if (past.length > 0) {
+    for (const e of past) {
+      await db.roomStay.create({
+        data: {
+          leaseTermId,
+          roomId: e.roomId,
+          propertyId: lease.propertyId,
+          startDate: stayDate(e.from),
+          // 마지막(오늘의) 구간만 열어 둔다. 지나간 구간은 다음 방으로 넘어간 날 마감된다.
+          endDate: e === past[past.length - 1] ? null : stayDate(e.to as string),
+        },
+      })
+    }
+    return
+  }
   await db.roomStay.create({
     data: {
       leaseTermId,
       roomId: targetRoomId,
       propertyId: lease.propertyId,
-      startDate: seg?.from ? stayDate(seg.from) : (lease.moveInDate ?? stayDate()),
+      startDate: lease.moveInDate ?? stayDate(),
       endDate: null,
     },
   })

@@ -133,6 +133,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [active, setActive] = useState<ActiveTransition>(null)
   // 호실 일정 시트 — 입실 처리가 계약 호실 점유로 거절당했을 때만 연다.
   const [earlyOpen, setEarlyOpen] = useState(false)
+  // 같은 시트의 '미리 잡기' 모드 — 예약 상태에서 일정만 적어 둔다(상태는 안 바뀐다).
+  const [planOpen, setPlanOpen] = useState(false)
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
@@ -151,6 +153,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   if (transitions.length === 0) return null
 
   const handleClick = async (def: TransitionDef) => {
+    // 입실 일정은 상태를 안 바꾼다 — 창만 열고 계획을 계약에 적어 둔다.
+    if (def.key === 'plan') { setPlanOpen(true); return }
     // 단기 lease의 퇴실일 변경 — 날짜만 바꾸는 우회를 막고 누적 요금을 재계산하는 연장 모달로 보낸다. 장기는 기존 미니폼.
     if (def.key === 'changeMoveOut' && lease.isShortTerm) { setShortExtOpen(true); return }
     // 신고 9b974be0: 예약 확정 — 이용료·입주 희망일 필수(클라 선검증), 호실 미지정은 허용하되 확인 단계에 문구 표시.
@@ -572,6 +576,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         <RoomScheduleSheet leaseTermId={lease.id} tenantName={tenantName}
           onClose={() => setEarlyOpen(false)}
           onDone={() => { setEarlyOpen(false); onChange?.() }} />
+      )}
+      {planOpen && (
+        <RoomScheduleSheet leaseTermId={lease.id} tenantName={tenantName} mode="plan"
+          onClose={() => setPlanOpen(false)}
+          onDone={() => { setPlanOpen(false); onChange?.() }} />
       )}
 
       {/* 단기 연장 모달 — 퇴실일 변경 진입을 재계산 흐름으로 대체(뒷문 차단) */}
