@@ -29,6 +29,7 @@ import { CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { fmtRoomList } from '@/lib/roomNo'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
+import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -374,6 +375,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
         onChange?.()
+        // 예약 확정도 입주 희망일을 바꾼다 — 수정 폼과 같은 문답을 여기서도 세운다.
+        if (res.roomBusy) {
+          const pick = await askRoomBusy(res.roomBusy)
+          if (pick === 'plan') setPlanOpen(true)
+          else if (pick === 'occupant' && res.roomBusy.occupantTenantId) {
+            entityModal.open({ kind: 'tenant', tenantId: res.roomBusy.occupantTenantId })
+          }
+        }
         // 퇴실 예정일 입력/변경이고 납입일과 가까우면(일할 의미 有) '퇴실 정산?' 팝업.
         // 정산 자체는 자동 적용 안 함 — 예 선택 시에만 수납 모달의 퇴실 정산 위젯으로 이동.
         const mo = fields?.expectedMoveOut

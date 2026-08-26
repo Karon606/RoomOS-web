@@ -1505,10 +1505,7 @@ export async function updateTenant(formData: FormData): Promise<
   const finalNotice = [baseNotice, rentRewriteNotice].filter(Boolean).join(' ') || null
   // 날짜를 당겼는데 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
-  const roomBusy = await reservationRoomBusy(
-    propertyId, leaseTermId,
-    currentLease.moveInDate ? kstYmdStr(currentLease.moveInDate) : null,
-  )
+  const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),
@@ -2270,13 +2267,13 @@ async function mainRoomFreeFrom(
  * 당기면 원래 방이 아직 안 비는 것이 곧 드러나는데, 종전에는 앱이 아무 말도 안 하고 저장만 해서
  * 그 사실을 입주 당일에야 알았다. 그때 알면 이미 사람이 문 앞에 와 있다.
  *
+ * **상황이 그대로면 다시 묻는다**(운영자 확정 — "동일한 상황이 다시 발생하면 원점으로 돌아가야").
+ * 한때 '날짜를 앞당겼을 때만' 묻게 했다가 걷었다. 한 번 지나쳤다고 안 묻는 것이 더 나쁘고,
+ * 일정을 잡거나 날짜를 물리면 조건이 저절로 풀려 더는 안 뜬다.
+ *
  * **예약 확정자에 한한다.** 확정 전에는 방도 날짜도 아직 유동적이라 걸 말이 아니다.
  */
-async function reservationRoomBusy(
-  propertyId: string, leaseTermId: string,
-  /** 저장 전 입주 희망일. **앞당겨졌을 때만** 묻는다 — 전화번호만 고쳐도 뜨면 소음이다. */
-  prevMoveInYmd: string | null,
-): Promise<{
+async function reservationRoomBusy(propertyId: string, leaseTermId: string): Promise<{
   roomNo: string
   moveInYmd: string
   freeFrom: string | null
@@ -2298,9 +2295,6 @@ async function reservationRoomBusy(
   if (hasRoomSchedule(parseRoomSchedule(lease.roomSchedule))) return null
 
   const moveInYmd = kstYmdStr(lease.moveInDate)
-  // 날짜가 안 바뀌었거나 뒤로 밀렸으면 물을 것이 없다.
-  if (prevMoveInYmd !== null && moveInYmd >= prevMoveInYmd) return null
-
   const { freeFrom, occupantName, occupantTenantId, lastOutYmd } =
     await mainRoomFreeFrom(propertyId, lease.roomId, lease.id, moveInYmd)
   // 그날 이미 비어 있으면 아무 문제가 없다.
@@ -2839,7 +2833,14 @@ export async function applyStatusTransition(input: {
   // 전부 처리하고 호출부가 한 코드로 모든 전이를 넘기기 때문이다 — 퇴실 전용 값을 전 전이의
   // 필수로 만들면 예약 확정·투어 전환까지 더미를 채우게 되고 그 순간 규칙이 죽는다.
   cleaningDate?: string | null
-}): Promise<{ ok: true; notice?: string } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
+}): Promise<{
+  ok: true; notice?: string
+  /** 입주 희망일이 바뀌었는데 그날 계약 호실이 아직 차 있다 — 화면이 그때까지 지낼 방을 권한다. */
+  roomBusy?: {
+    roomNo: string; moveInYmd: string; freeFrom: string | null
+    occupantName: string | null; occupantTenantId: string | null; sameDayHandover: boolean
+  }
+} | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
@@ -3013,7 +3014,14 @@ export async function applyStatusTransition(input: {
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
     revalidatePath('/finance')
-    return notice ? { ok: true, notice } : { ok: true }
+    // 이 미니폼도 입주 희망일을 바꾼다(예약 확정). 날짜를 바꾸는 길이 둘인데 한쪽만 물으면
+    // 운영자는 어느 길로 갔느냐에 따라 물음을 못 본다 — 실측에서 그렇게 놓쳤다(2026-08-26).
+    const roomBusy = await reservationRoomBusy(propertyId, input.leaseTermId)
+    return {
+      ok: true,
+      ...(notice ? { notice } : {}),
+      ...(roomBusy ? { roomBusy } : {}),
+    }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
