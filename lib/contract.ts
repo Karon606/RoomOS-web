@@ -120,6 +120,22 @@ export function buildRefundClause(): string {
 // 문안은 전 영업장 공통 고정이다(운영자 위임 확정 2026-08-19). 영업장별 편집은 별도 백로그다.
 export type SubLeaseAddendum = { title: string; items: string[] }
 
+/**
+ * 조항 항목의 글머리를 벗긴다 — 기호와 **손으로 박은 번호**를 모두 걷는다.
+ *
+ * 번호는 자리에서 매긴다(CSS counter). 본문 글자 안에 번호가 박혀 있으면 두 가지가 어긋난다.
+ *   · 안 박힌 항목은 번호가 없다 — 추가 호실 특약 8개 전부, '[청소비]', '[강제 퇴실 시 정산 규정]'
+ *     이 그랬다. 운영자가 "몇 조 몇 항"으로 가리켜야 하는데 가리킬 번호가 없었다(2026-08-27).
+ *   · 운영자가 템플릿에서 항목을 끼워 넣으면 그 뒤 번호를 전부 손으로 고쳐야 한다.
+ *
+ * **화면과 인쇄본이 이 함수 하나를 쓴다.** 종전에는 규칙이 두 벌이었고 인쇄본만 번호를 벗겨서,
+ * 화면은 '· 1. 1인 1실을'로 이중 표기가 됐다. 화면 쪽 주석에는 "동일 규칙"이라고 적혀 있었지만
+ * 사실이 아니었다 — 손사본은 언젠가 갈린다.
+ */
+export function stripClauseBullet(s: string): string {
+  return s.replace(/^\s*(?:[-–•·]\s?|\d+[.)]\s*|[가-힣][.)]\s+)/, '')
+}
+
 export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
   title: '추가 호실 특약(보관 용도)',
   items: [

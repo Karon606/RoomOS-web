@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
@@ -117,11 +117,8 @@ const fmtRoom = roomLabel   // 호실 표기는 lib/tenantAddress 정본 하나 
 const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-// 항목 글머리 '-'·'•'·'·' 제거 (CSS 글머리로 대체)
-// 글머리 제거 — 기호뿐 아니라 '1.' '가.' 같은 수동 번호도 벗긴다.
-// 저장된 템플릿 항목이 수동 번호를 포함하는데 CSS 가 앞에 '·' 를 또 붙여
-// 인쇄물이 '· 1. [중도 퇴실 정산] ...' 로 나왔다(E페이즈 조사 2026-08-03).
-const stripBullet = (s: string) => s.replace(/^\s*(?:[-–•·]\s?|\d+[.)]\s*|[가-힣][.)]\s+)/, '')
+// 글머리 제거는 lib/contract 정본 하나다 — 화면(ContractView)도 같은 함수를 쓴다.
+const stripBullet = stripClauseBullet
 // **강조** → terracotta hl (escape 후 적용)
 const highlight = (s: string) => escape(s).replace(/\*\*(.+?)\*\*/g, '<span class="hl">$1</span>')
 
@@ -289,9 +286,11 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .clauses { column-count: 2; column-gap: 7mm; margin-bottom: 3mm; }
   .clause-group { margin-bottom: 2.2mm; }
   .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
-  .clause-list { list-style: none; }
-  .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; break-inside: avoid; }
-  .clause-list li::before { content: "·"; color: var(--p-muted); margin-right: 1.5mm; }
+  /* 번호는 자리에서 매긴다 — 본문에 박힌 번호는 stripClauseBullet 이 걷는다.
+     점(·)은 안 쓴다(운영자 확정 2026-08-27 — 번호가 곧 표시다). */
+  .clause-list { list-style: none; counter-reset: clause; }
+  .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 4.5mm; text-indent: -4.5mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; break-inside: avoid; }
+  .clause-list li::before { counter-increment: clause; content: counter(clause) "."; color: var(--p-muted); margin-right: 1.5mm; }
   .clause-list li .hl { color: var(--p-tc); font-weight: 600; }
 
   /* 서약 */

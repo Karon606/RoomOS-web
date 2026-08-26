@@ -32,6 +32,18 @@ PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초
 - `.clause-group` 에 `break-inside: avoid` 를 두면 안 된다 — 절이 단 경계에서 통째로 점프해 바닥 공백이 커진다. 절이 단을 넘어 이어지는 것이 옛 분배(title:null 이어짐)와 같은 규칙이다. `.clause-h` 의 `break-after: avoid`(고아 헤더 방지)와 `li` 의 `break-inside: avoid` 는 유지한다.
 - **계약서 레이아웃 바꿀 때 두 파일(ContractView·contractPrintHtml) CSS·구조를 항상 같이 수정**(드리프트 주의).
 
+#### 항목 번호는 자리에서 매긴다 (2026-08-27 운영자 확정)
+`.clause-list { counter-reset: clause }` + `li::before { content: counter(clause) "." }`. **점(·)은 안 쓴다** —
+번호가 곧 표시다. 본문 글자에 박힌 손 번호는 `lib/contract` 의 `stripClauseBullet` 이 걷는다.
+- 왜. 손 번호는 **박아 넣은 항목에만** 있었다. 추가 호실 특약 8개 전부, '[청소비]', '[강제 퇴실 시 정산 규정]'
+  이 번호가 없어 "몇 조 몇 항"으로 가리킬 수 없었다. 운영자가 템플릿에 항목을 끼워 넣을 때마다 뒤 번호를
+  손으로 고쳐야 하는 문제도 함께 사라진다.
+- **화면과 인쇄본이 `stripClauseBullet` 하나를 쓴다.** 종전에는 규칙이 두 벌이라 인쇄본만 번호를 벗겼고
+  화면은 '· 1. 1인 1실을'로 이중 표기가 났다. 화면 쪽 주석에는 "동일 규칙"이라 적혀 있었지만 사실이
+  아니었다 — 손사본은 언젠가 갈린다.
+- 번호 자리 확보로 `li` 의 들여쓰기를 3mm 에서 **4.5mm** 로 넓혔다(padding-left·text-indent 짝).
+- 감지망 `test-contract-clause-order` 가 점 복귀·본문 손 번호 잔존·counter 소실을 잡는다.
+
 #### 왜 바꿨나 — 옛 사실이 더 이상 참이 아니다
 2026-06-29 노트는 "**CSS 멀티컬럼은 Chrome 인쇄에서 1단으로 흐른다**"를 사실로 적고, 그 제약 때문에 명시적 2단(flex) + `splitClauseColumns`(글자 수로 높이를 추정해 좌우를 반반으로 가르는 함수)를 세웠다.
 

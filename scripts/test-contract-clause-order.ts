@@ -21,7 +21,7 @@ function ok(name: string, cond: boolean, detail = '') {
 }
 
 const SECTIONS = [
-  { title: '1. 입실 계약', items: ['가나다'.repeat(30), '라마바'.repeat(30)] },
+  { title: '1. 입실 계약', items: ['1. ' + '가나다'.repeat(30), '2. ' + '라마바'.repeat(30)] },
   { title: '2. 퇴실 및 환불', items: ['사아자'.repeat(30), '차카타'.repeat(30)] },
   { title: '3. 생활 수칙', items: ['파하가'.repeat(30), '나다라'.repeat(30)] },
   { title: '4. 강제 퇴실', items: ['마바사'.repeat(30)] },
@@ -65,6 +65,14 @@ ok('절 제목이 문서 순서 그대로 등장한다', at.every((v, i) => i ==
   at.map((v, i) => `${expected[i]}@${v}`).join(' '))
 ok('특약과 일정 절이 꼬리에 붙는다', expected.length === SECTIONS.length + 2, `절 ${expected.length}개`)
 ok('일정 문장이 본문에 있다', html.includes(SCHEDULE_TEXT))
+
+// ── 번호 ────────────────────────────────────────────────────────────
+// 번호는 자리에서 매긴다(CSS counter). 본문에 박힌 번호를 남기면 '1. 1. …' 이 된다.
+ok('번호를 자리에서 매긴다', /\.clause-list\s*\{[^}]*counter-reset:\s*clause/.test(html))
+ok('li::before 가 번호를 낸다', /\.clause-list li::before\s*\{[^}]*counter\(clause\)/.test(html))
+ok('점(·)을 글머리로 쓰지 않는다', !/\.clause-list li::before\s*\{[^}]*content:\s*"·"/.test(html))
+// 본문에 번호가 남으면 화면·종이 어느 쪽이든 이중 표기가 된다.
+ok('본문에서 손 번호를 걷었다', !html.includes('<li>1. '), '항목이 1. 로 시작한다')
 
 console.log(`\n계약서 조항 순서 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
