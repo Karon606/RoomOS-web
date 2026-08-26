@@ -305,7 +305,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
       ) : (
         <div>
         {/* 대기 섹션이 떠 있을 때만 본 목록에 이름표를 붙인다. 대기 0건이면 지금 화면과 픽셀 동일하다. */}
-        {pendingRows.length > 0 && <SectionHeader name="보관된 계약서" count={`${rows.length}건`} />}
+        {pendingRows.length > 0 && <SectionHeader name="등록된 계약서" count={`${rows.length}건`} />}
         <ul className="space-y-2">
           {rows.map(c => {
             const sel = selected.has(c.id)

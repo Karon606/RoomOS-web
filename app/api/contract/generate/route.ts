@@ -249,7 +249,7 @@ export async function POST(req: Request) {
     if (body_.blockIssue && !body.preview) {
       return NextResponse.json({
         ok: false,
-        error: '이 계약은 서명 시점 본문 기록이 없습니다. 보관된 계약서를 열어 보시고, 새 계약서가 필요하면 재서명을 받아 주세요.',
+        error: '이 계약은 서명 시점 본문 기록이 없습니다. 등록된 계약서를 열어 보시고, 새 계약서가 필요하면 재서명을 받아 주세요.',
       }, { status: 409 })
     }
 

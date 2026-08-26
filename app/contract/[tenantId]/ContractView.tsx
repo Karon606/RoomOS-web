@@ -3,6 +3,9 @@
 import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
 import { issueContractShareLink } from '@/app/(app)/tenants/contractShare'
 import { blockSmsIfStaging } from '@/lib/smsHref'
+import { ContractIssuePurposePicker, type IssuePurposePick } from '@/components/doc/ContractIssuePurposePicker'
+import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
+import { undoArchiveByIssue } from '@/app/(app)/tenants/actions'
 import Link from 'next/link'
 // 정적 import — 동적 import 시절에는 모듈이 도착하기 전에 그은 획이 조용히 버려졌다.
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
@@ -113,6 +116,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   // ── 모바일 횡스크롤 방지: 210mm 종이를 viewport 폭에 맞춰 scale ──
   // 인쇄 시에는 @media print 에서 scale 1로 리셋되므로 실제 출력은 영향 없음
+  // 발급 용도 피커 — 발급 흐름이 async 함수라, 창이 답을 돌려줄 때까지 그 함수를 세워 둔다.
+  // resolve 를 상태에 함께 담아 두는 것이 이 자리의 가장 짧은 다리다(확인창 정본과 같은 방식이고,
+  // 다만 고를 것이 셋이라 그 정본에 안 들어간다).
+  const [purposePick, setPurposePick] = useState<
+    { count: number; resolve: (v: IssuePurposePick | null) => void } | null
+  >(null)
+  const askIssuePurpose = (count: number) =>
+    new Promise<IssuePurposePick | null>(resolve => setPurposePick({ count, resolve }))
   const paperRef = useRef<HTMLElement>(null)
   const disposalRef = useRef<HTMLElement>(null)   // 동의서 종이(별도 cage) 높이 측정용
   const [scale, setScale]       = useState(1)
@@ -537,7 +548,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     if (!(await confirmDialog({
       title: '새 버전을 작성할까요?',
       message: '지금 계약서는 폐기되지 않고 구버전으로 남습니다. 이 화면의 잠금이 풀려 내용을 고칠 수 있고, '
-        + '새 판본을 발급하려면 서명을 다시 받아야 합니다. 발급할 때 제출용인지 번역본인지 고르게 됩니다.',
+        + '새 판본을 발급하려면 서명을 다시 받아야 합니다. 발급할 때 실계약·제출용·번역본 중에서 고르게 됩니다.',
       level: 'caution', confirmLabel: '새 버전 작성',
     }))) return
     setSuperseding(true)
@@ -874,17 +885,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     // 조회 실패는 실계약 발급으로 떨어뜨린다 — 그쪽이 되돌리기 쉬운 결과이고, 진짜 게이트는 서버다.
     let issuePurpose: string | null = null
     const purposeCtx = await getIssuePurposeContext(data.tenant.id, data.lease?.id ?? null)
-    const asksPurpose = purposeCtx.ok && purposeCtx.multiVersion && purposeCtx.hasRealContract
-    if (asksPurpose) {
-      const pick = await choiceDialog({
-        title: '이 계약서를 어떤 판본으로 발급할까요?',
-        message: '실계약 계약서가 이미 있습니다. 이번 발급본은 실계약이 아닌 판본으로 기록되고, 대표 계약서는 실계약 그대로 남습니다.',
+    const hasReal = purposeCtx.ok && purposeCtx.hasRealContract
+    const archiveCount = purposeCtx.ok ? purposeCtx.realContractCount : 0
+    if (hasReal && purposeCtx.ok && purposeCtx.multiVersion) {
+      // 고를 것이 셋이라 확인창에 안 들어간다 — 카드 피커가 열리고 그 안에서 확인 1회가 선다.
+      const pick = await askIssuePurpose(archiveCount)
+      if (!pick) return
+      issuePurpose = pick === DEFAULT_CONTRACT_PURPOSE ? null : pick
+    } else if (hasReal) {
+      // 판본 만들기가 꺼진 영업장 — 파생을 못 만들므로 고를 것이 없다. 다만 실계약이 하나 더
+      // 생기는 것은 같아서 무엇이 물러나는지는 말해야 한다(게이트는 토글과 무관하게 걸린다).
+      if (!(await confirmDialog({
+        title: '기존 계약서를 보관용으로 남길까요?',
+        message: `이 계약에는 실계약 계약서 ${archiveCount}부가 있습니다. 새 계약서가 대표가 되고, 기존 ${archiveCount}부는 보관용으로 남아 목록에서 계속 볼 수 있습니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남습니다.`,
         level: 'caution',
-        confirmLabel: '제출용',
-        altLabel: '번역본',
-      })
-      if (pick !== 'confirm' && pick !== 'alt') return
-      issuePurpose = pick === 'confirm' ? '제출용' : '번역본'
+        confirmLabel: '발급',
+      }))) return
     } else {
       if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
     }
@@ -909,17 +925,33 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           emergencyContactText,
           // null 이면 실계약이다. 서버가 화이트리스트로 다시 본다.
           issuePurpose,
+          // 실계약을 새로 만드는데 이미 있으면 이 승낙 없이는 서버가 막는다(물어봤다는 사실의 운반체).
+          archivePrevious: issuePurpose === null && hasReal,
         }),
       })
       const text = await res.text()
-      let json: { ok: boolean; error?: string } | null = null
+      let json: { ok: boolean; error?: string; archivedCount?: number; file?: { id: string } } | null = null
       try { json = JSON.parse(text) } catch { /* not JSON */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
         pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
         return
       }
-      pushToast('success', '계약서 발급됨. 입실자 정보로 이동합니다')
+      const archived = json.archivedCount ?? 0
+      const newFileId = json.file?.id
+      pushToast('success', '계약서 발급됨 · 입실자 정보로 이동', {
+        ...(archived > 0 ? { detail: `기존 실계약 ${archived}부는 보관용으로 바뀜` } : {}),
+        // 되돌릴 길은 토스트가 사라져도 남는다(각 계약서의 용도 창) — 여기는 그 첫 자리다.
+        ...(archived > 0 && newFileId ? {
+          action: {
+            label: '적용취소',
+            run: () => { void undoArchiveByIssue(newFileId).then(r => {
+              if (r.ok) pushToast('info', '보관용 전환을 되돌렸습니다', { detail: `이 계약에 실계약이 ${r.restored + 1}부입니다.` })
+              else pushToast('error', r.error)
+            }) },
+          },
+        } : {}),
+      })
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
@@ -1489,6 +1521,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       )}
       {/* 처분 동의서 서명란 아래 제출 CTA (어느 쪽을 마지막에 서명하든 그 자리에서 보이게) */}
       {data.disposalConsent.enabled && inflowSubmitCta}
+
+      {/* 발급 용도 고르기 — 실계약이 이미 있는 계약에서만 선다. 카드를 고르면 확인 1회가 잇는다. */}
+      {purposePick && (
+        <ContractIssuePurposePicker
+          archiveCount={purposePick.count}
+          onPick={p => { purposePick.resolve(p); setPurposePick(null) }}
+          onClose={() => { purposePick.resolve(null); setPurposePick(null) }}
+        />
+      )}
 
       {/* 하단 알약 — 비줌 상태 보조. 서명 오버레이(z 100) 열림 중엔 숨긴다(알약 z 120이 더 위). */}
       {remote && canSubmit && !signOpen && (

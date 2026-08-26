@@ -40,7 +40,7 @@ import { fmtDateDot } from '@/lib/fmtDate'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 
@@ -100,7 +100,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 게이트가 아니라 문구용이다(진짜 게이트는 서버가 다시 본다). 못 읽으면 꺼진 것으로 본다.
   const [multiVersion, setMultiVersion] = useState(false)
   // 용도를 바꾸려고 연 파일. 창은 3지선다(실계약·제출용·번역본)다.
-  const [purposeFile, setPurposeFile] = useState<{ id: string; issuePurpose: string | null } | null>(null)
+  const [purposeFile, setPurposeFile] = useState<{ id: string; issuePurpose: string | null; leaseTermId: string | null } | null>(null)
   const [sharePending, setSharePending] = useState(false)
   const [restoring, setRestoring] = useState(false)
   // 발급 상세 시트 — 계약번호를 눌러 연다. 읽기 전용이라 목록 상태를 건드리지 않는다.
@@ -185,6 +185,23 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    // 이 계약에 실계약이 이미 있으면 **올리기 전에** 묻는다. 업로드가 끝난 뒤에 물으면 취소가
+    // Drive 파일 삭제라는 실 동작을 부르고(§27.5 취소 무해), 수 초 기다린 끝에 불쑥 뜬 창은
+    // 반사적으로 눌린다. 그 반사 탭이 419호 사고(옛 스캔본이 대표를 뺏음)의 재료다.
+    // 기본은 보관용 등록이다 — 성급한 확정이 기존 계약서를 밀어내지 않는 쪽이 안전하다.
+    let decision: 'real' | 'archived' | undefined
+    const liveReal = (files ?? []).filter(f => !f.voidedAt && !purposeLabel(f)).length
+    if (liveReal > 0) {
+      const pick = await choiceDialog({
+        title: '이 스캔본을 어떤 계약서로 올릴까요?',
+        message: `이 계약에는 실계약 계약서가 이미 ${liveReal}부 있습니다. 실계약으로 올리면 기존 계약서는 보관용으로 바뀌고, 보관용으로 올리면 기존 계약서가 실계약으로 남습니다.`,
+        level: 'caution',
+        confirmLabel: '보관용 등록',
+        altLabel: '실계약 등록',
+      })
+      if (pick !== 'confirm' && pick !== 'alt') return
+      decision = pick === 'confirm' ? 'archived' : 'real'
+    }
     setUploading(true)
     const release = trackSave()
     try {
@@ -194,9 +211,23 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       })
       if (!session.ok) { pushToast('error', session.error); return }
       const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
-      const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name })
+      const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name, decision })
       if (!fin.ok) { pushToast('error', fin.error); return }
-      pushToast('success', '스캔본 등록됨')
+      // 화면이 낡아 못 물었을 때의 그물 — 서버가 안전한 쪽(보관용)으로 넣고 여기서 되묻는다.
+      if (fin.needsDecision) {
+        const promote = await confirmDialog({
+          title: '이 스캔본을 실계약으로 올릴까요?',
+          message: '올리는 사이에 이 계약에 실계약 계약서가 생겼습니다. 스캔본은 보관용으로 등록했습니다. 실계약으로 바꾸면 기존 계약서가 보관용으로 물러납니다.',
+          level: 'caution', confirmLabel: '실계약으로',
+        })
+        if (promote) {
+          const r = await changeContractPurpose(fin.id, DEFAULT_CONTRACT_PURPOSE)
+          if (!r.ok) pushToast('error', r.error)
+        }
+      }
+      pushToast('success', fin.archivedCount
+        ? '스캔본 등록됨'
+        : '스캔본 등록됨', fin.archivedCount ? { detail: `기존 실계약 ${fin.archivedCount}부는 보관용으로 바뀜` } : undefined)
       await reload()
     } catch (err) {
       pushToast('error', (err as Error).message ?? '업로드 실패')
@@ -268,7 +299,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         // 삭제를 '폐기'로 오해한 것이 신고 63cd1049 의 출발점이다. 삭제는 파일만 정리하고
         // 서명 잠금은 손대지 않는다 — 그 사실을 누르기 전에 말한다.
         + ' 삭제는 파일만 정리합니다. 서명이 남아 있으면 계약서는 여전히 잠겨 있으니,'
-        + " 내용을 바꿔 다시 작성하려면 계약서 화면에서 '이 계약서 폐기' 를 눌러 주세요.",
+        + " 내용을 바꿔 다시 작성하려면 계약서 화면에서 '이 계약서 폐기' 를 눌러 주세요."
+        // 이 발급으로 물러난 부가 있으면 그 사실을 말한다. 뒤에 창을 하나 더 세우면 확인 연쇄가
+        // 되고(§14), 삭제 토스트의 액션 자리는 삭제 자체의 적용취소가 이미 쓰고 있다.
+        + ' 이 계약서를 만들며 보관용으로 바뀐 계약서는 자동으로 돌아오지 않습니다. 각 계약서의'
+        + " '용도' 에서 되돌릴 수 있습니다.",
       level: 'danger', confirmLabel: '삭제',
     }))) return
     const release = trackSave()
@@ -322,6 +357,16 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     for (const f of liveFiles) m.set(issueGroupKey(f), (m.get(issueGroupKey(f)) ?? 0) + 1)
     return m
   }, [liveFiles])
+  // 용도 창을 연 계약서 말고, 같은 계약에 살아 있는 실계약이 몇 부인가 — 승격 캡션이 이 값으로
+  // 말을 가른다. 실계약이 둘이 되면 대표는 최신 발급본이라 승격한 부가 아니다.
+  const otherLiveReal = useMemo(() => {
+    if (!purposeFile) return 0
+    return liveFiles.filter(f =>
+      f.id !== purposeFile.id
+      && (f.leaseTermId ?? null) === purposeFile.leaseTermId
+      && !f.voidedAt
+      && !purposeLabel(f)).length
+  }, [liveFiles, purposeFile])
   // 폐기를 되돌릴 대상 계약 — 폐기는 파일 하나가 아니라 **버전 하나**를 옮기는 일이라
   // 되돌리기도 계약 단위다(restoreContractVersion). 행마다 달면 3부일 때 세 번 누를 수 있는
   // 것처럼 보이지만 실제로는 한 번의 동작이다.
@@ -457,7 +502,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       )}
       {/* 같은 계약에 2부 이상일 때만 머리를 세운다. 1부뿐인 계약에서는 이 줄이 없어 종전 골격 그대로다. */}
       {!loading && liveFiles.length > 0 && hasMultiIssue && (
-        <SectionHeader first name="보관된 계약서" count={`${liveFiles.length}부`} />
+        <SectionHeader first name="등록된 계약서" count={`${liveFiles.length}부`} />
       )}
       {!loading && liveFiles.length > 0 && (
         <ul className="space-y-1.5">
@@ -521,7 +566,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                   {/* 용도 바꾸기 — 여러 판본 만들기가 켜진 영업장만. 꺼져 있으면 파생 개념 자체가 없다.
                       발급 때 잘못 고른 목적을 되돌리는 유일한 문이다(2026-08-26 규약 개정). */}
                   {multiVersion && (
-                    <Btn variant="ghost" size="sm" onClick={() => setPurposeFile(f)}>용도</Btn>
+                    <Btn variant="ghost" size="sm"
+                      onClick={() => setPurposeFile({ id: f.id, issuePurpose: f.issuePurpose, leaseTermId: f.leaseTermId ?? null })}>용도</Btn>
                   )}
                   <Btn variant="ghost" size="sm" onClick={() => handleDelete(f.id)}
                     className="text-[var(--danger-fg)]">
@@ -575,7 +621,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         </div>
       )}
 
-      {/* 용도 고르기 — 3지선다라 창 하나면 충분하다. 지금 값에 표시가 선다. */}
+      {/* 용도 고르기 — 지금 값에 표시가 선다. '보관용'이 늘어 넷이 됐다(발급으로는 못 고르고
+          여기서만 오간다 — 새 실계약에 밀려난 부를 되돌리는 자리가 여기다). */}
       {purposeFile && (
         <Modal open onClose={() => setPurposeFile(null)} z={280} width="sm" title="이 계약서의 용도">
           <div className="space-y-2">
@@ -601,7 +648,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-[var(--warm-dark)]">{pp}</span>
                         {pp === DEFAULT_CONTRACT_PURPOSE && (
-                          <span className="mt-0.5 block text-[0.65625rem] text-[var(--warm-muted)]">이 계약의 대표 계약서가 됩니다</span>
+                          <span className="mt-0.5 block text-[0.65625rem] text-[var(--warm-muted)]">
+                            {/* 다른 실계약이 살아 있으면 대표는 최신 발급본이라 이 부가 아니다.
+                                단정하면 그 경로에서 화면이 거짓말을 한다(디자이너 패스). */}
+                            {otherLiveReal > 0
+                              ? `실계약이 ${otherLiveReal + 1}부가 됩니다. 대표는 가장 최근 발급본입니다`
+                              : '이 계약의 대표 계약서가 됩니다'}
+                          </span>
                         )}
                       </span>
                     </button>

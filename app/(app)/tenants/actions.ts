@@ -4226,8 +4226,10 @@ export type IssuedContractDetail = {
   signedAt: Date
   createdAt: Date
   tenantName: string
-  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본).
+  // 발급 목적 — null 이 곧 실계약이다(lib/contractPurpose 정본). 불변이다.
   issuePurpose: string | null
+  /** 번복이 있으면 지금 지위. null 이면 번복이 없다(발급 때 그대로다). */
+  purposeNow: string | null
   snapshot: IssuedContractSnapshot | null
 }
 
@@ -4244,7 +4246,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
       where: { id, propertyId },
       select: {
         contractNo: true, fileName: true, source: true, signedAt: true, createdAt: true,
-        issuePurpose: true, issuedSnapshot: true, tenant: { select: { name: true } },
+        issuePurpose: true, purposeOverride: true, issuedSnapshot: true, tenant: { select: { name: true } },
       },
     })
     if (!row) return { ok: false, error: '계약서 파일을 찾을 수 없습니다.' }
@@ -4253,6 +4255,9 @@ export async function getContractIssuedSnapshot(id: string): Promise<
       ok: true,
       detail: {
         contractNo: row.contractNo,
+        // 번복이 있으면 지금 지위는 이쪽이다. 이 화면이 발급 시점 값만 적으면, 보관용으로 물러난
+        // 계약서를 뜯어보는 자리에서 "용도 실계약"이라고 **적극적으로 거짓말한다**(디자이너 패스).
+        purposeNow: row.purposeOverride,
         fileName: row.fileName,
         source: row.source as 'GENERATED' | 'UPLOADED',
         signedAt: row.signedAt,
