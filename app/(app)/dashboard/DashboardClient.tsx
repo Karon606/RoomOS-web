@@ -146,7 +146,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -580,7 +580,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               {confirmPending ? '처리 중…' : '퇴실 처리'}
             </button>
           )}
-          {/* 일정대로 옮기는 원탭 — 떠나는 방 청소도 함께 잡는다(하루라도 사람이 잔 방이라
+          {/* 일정대로 이사하는 원탭 — 떠나는 방 청소도 함께 잡는다(하루라도 사람이 잔 방이라
               다음 사람 전에 치우는 것이 실무다). 자동으로 안 옮기는 이유는 서버 주석에 있다. */}
           {alert.scheduleMoveLeaseId && (
             <Btn
@@ -588,9 +588,9 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                 if (confirmPending) return
                 const ok = await confirmDialog({
                   level: 'caution',
-                  title: `${alert.scheduleMoveToRoomNo ?? ''}호로 옮길까요?`,
+                  title: `${alert.scheduleMoveTenantName ?? ''}님 · ${alert.scheduleMoveToRoomNo ?? ''}호로 이사할까요?`,
                   message: `${alert.scheduleMoveFromRoomNo ?? ''}호에서 나와 옮기고, ${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 함께 만듭니다.`,
-                  confirmLabel: '옮기기',
+                  confirmLabel: '이사 처리',
                 })
                 if (!ok) return
                 setConfirmPending(true); setConfirmError('')
@@ -600,7 +600,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   scheduleCleaning: true,
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
-                pushToast('success', `${alert.scheduleMoveToRoomNo ?? ''}호로 옮겼습니다`, {
+                pushToast('success', `${alert.scheduleMoveToRoomNo ?? ''}호로 이사 처리했습니다`, {
                   detail: [`${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
                 })
                 router.refresh()
@@ -608,7 +608,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               }}
               disabled={confirmPending}
               variant="primary" size="md" fullWidth>
-              {confirmPending ? '옮기는 중…' : `${alert.scheduleMoveToRoomNo ?? ''}호로 옮기기`}
+              {confirmPending ? '처리 중…' : `${alert.scheduleMoveToRoomNo ?? ''}호로 이사 처리`}
             </Btn>
           )}
           {isRecurring && (
@@ -668,7 +668,7 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },
-  move:      { label: '방 이동',      color: 'var(--info-fg)' },
+  move:      { label: '이사 예정',    color: 'var(--info-fg)' },
   tour:      { label: '문의·투어',    color: 'var(--ink)' },
   wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
   request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },

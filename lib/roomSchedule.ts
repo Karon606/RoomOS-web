@@ -161,3 +161,17 @@ export function spanOverlaps(
   const bEnd = b.end ?? '9999-12-31'
   return a.start < bEnd && b.start < aEnd
 }
+
+/**
+ * 그 방이 언제까지 차 있나 — 퇴실 예정일 **다음 날**부터 빈 것으로 본다.
+ *
+ * 이 앱의 다른 판정(방 배정·예약)은 당일 회전을 정상으로 본다. 앞사람이 나가는 날 뒷사람이
+ * 들어오는 것을 막을 이유가 없기 때문이다. **여기서 묻는 것은 다른 질문이다** — "그날 밤 잘
+ * 곳이 있나". 나가는 날 낮까지는 앞사람이 있고 그날 퇴실 청소도 잡힌다. 그래서 하루를 민다.
+ *
+ * 실측(2026-08-26). 404호 조성훈 님 퇴실 예정 8/31, 박정후 님 입주 8/31. 당일 회전으로 보면
+ * 앱이 "비어 있다"고 답해 아무것도 묻지 않았고, 정작 그날 잘 곳이 없었다.
+ */
+export function freeFromAfter(moveOutYmd: string): string {
+  return new Date(Date.parse(`${moveOutYmd}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+}

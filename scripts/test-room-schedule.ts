@@ -8,7 +8,7 @@
 //   · **깨진 값은 빈 배열이다** — 일정을 못 읽는다고 보통 계약까지 막으면 안 된다.
 import {
   parseRoomSchedule, hasRoomSchedule, validateRoomSchedule,
-  scheduledSegmentOn, nextRoomMove, scheduleOpenFrom, roomScheduleText,
+  scheduledSegmentOn, nextRoomMove, scheduleOpenFrom, roomScheduleText, freeFromAfter,
 } from '../lib/roomSchedule'
 
 let pass = 0
@@ -108,6 +108,12 @@ eq('하루 일정 문구', roomScheduleText(ONE_HOP, noOf),
 eq('두 번 옮기기 문구', roomScheduleText(TWO_HOP, noOf),
   '2026.08.31 ~ 2026.08.31 402호 · 2026.09.01 ~ 2026.09.02 409호 · 2026.09.03부터 404호')
 eq('일정이 없으면 문구도 없다', roomScheduleText([], noOf), null)
+
+// ── 언제부터 비나 ──────────────────────────────────────────────────
+// 이 판정만 당일 회전을 안 쓴다 — 묻는 것이 "배정할 수 있나"가 아니라 "그날 밤 잘 곳이 있나"다.
+eq('퇴실 다음 날부터 빈다', freeFromAfter('2026-08-31'), '2026-09-01')
+eq('월 경계를 넘어도 하루', freeFromAfter('2026-08-29'), '2026-08-30')
+eq('연 경계를 넘어도 하루', freeFromAfter('2026-12-31'), '2027-01-01')
 
 console.log(`\n호실 일정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

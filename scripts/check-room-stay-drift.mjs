@@ -5,24 +5,13 @@
 // 역방향 3종(자격 위반, 2026-07-28 오더 — 박의균 신고): ④ 비자격 상태 lease 의 열린 구간
 //            ⑤ 문의·투어·예약 단계 lease 에 구간 존재 ⑥ 열린 구간의 startDate 가 미래.
 // 날짜 정합 1종(2026-08-07 오더 — 507호 신헌석 사건): ⑦ 입주 구간의 startDate 가 lease.moveInDate 와 불일치.
-// 호실 일정(2026-08-26): ① 은 '오늘의 방'이 열린 구간과 같으면 예외다. 일정이 진실이고 구간은
-// 그 파생이라, 일정이 시킨 방에 있는 것은 드리프트가 아니다.
+// 호실 일정(2026-08-26): ① 은 '아직 안 옮긴 줄'에 있을 때만 예외다. 이사는 사람이 확인해야
+// 기록되므로 옮길 날이 지나도 옛 방에 있는 것이 정상이고, 그 늦음은 주의 축이 따로 센다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 
-// 그날 있어야 할 방 — lib/roomSchedule scheduledSegmentOn 과 같은 규약(반개구간 [from, to)).
-// .mjs 라 TS 정본을 못 불러 최소 판정만 옮겨 적는다. 규약이 바뀌면 두 곳을 함께 고쳐야 한다.
-function segmentOn(raw, ymd) {
-  if (!Array.isArray(raw) || raw.length < 2) return null
-  for (const e of raw) {
-    if (!e || typeof e.roomId !== 'string' || typeof e.from !== 'string') return null
-    if (ymd < e.from) continue
-    if (e.to == null || ymd < e.to) return e
-  }
-  return null
-}
 
 // 열린 구간(현재 거주 중)이어야 하는 상태 — lib/roomStay.ts STAY_ELIGIBLE_STATUSES·백필과 같은 정의를 쓴다.
 const OPEN_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT']
@@ -48,6 +37,9 @@ async function main() {
   })
 
   const mismatch = []
+  // 주의 축 — 옮길 날이 지났는데 아직 안 옮긴 사람. 정상 경로(사람이 확인해야 기록된다)로도
+  // 도달하므로 막지 않고 센다. 알림은 지나칠 수 있어도 이 줄은 못 지나친다.
+  const pendingMoves = []
   const duplicated = []
   const missing = []
   const moveInMismatch = []
@@ -59,12 +51,21 @@ async function main() {
       duplicated.push(`${who} — 열린 구간 ${openStays.length}개(${openStays.map(s => `${s.room.roomNo}호 ${s.startDate ? s.startDate.toISOString().slice(0, 10) : '시작일 미상'}`).join(', ')})`)
     }
     const open = openStays[0]
-    // 호실 일정 — **오늘의 방이 열린 구간의 방과 같을 때만** 예외로 본다. 일정이 진실이라
-    // 그 답과 다르면 여전히 드리프트다. 조건을 느슨하게 잡으면 진짜 드리프트가 이 예외로 샌다.
+    // 호실 일정 — **아직 안 옮긴 줄에 있을 때만** 예외로 본다(lib/roomStay 자가 치유와 같은 술어).
+    // 이사는 사람이 확인해야 기록되므로 옮길 날이 지나도록 옛 방에 있는 것은 정상이고, 그 늦음은
+    // 아래 주의 축이 따로 센다. 조건을 '일정 어딘가의 방'으로 넓히면 진짜 드리프트가 같이 샌다.
     const todayYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
-    const seg = segmentOn(l.roomSchedule, todayYmd)
-    const onSchedule = !!seg && open.roomId === seg.roomId
-    if (open.roomId !== l.roomId && !onSchedule) {
+    const sched = Array.isArray(l.roomSchedule) && l.roomSchedule.length >= 2 ? l.roomSchedule : []
+    const openIdx = sched.findIndex(e => e && e.roomId === open.roomId)
+    const waitingMove = openIdx >= 0 && openIdx < sched.length - 1 && sched[openIdx].from <= todayYmd
+    if (waitingMove) {
+      const next = sched[openIdx + 1]
+      if (next.from <= todayYmd) {
+        const late = Math.round((Date.parse(`${todayYmd}T00:00:00Z`) - Date.parse(`${next.from}T00:00:00Z`)) / 86400000)
+        pendingMoves.push(`${who} — ${next.from} 에 이사 예정인데 ${late}일째 ${open.room.roomNo}호에 있다`)
+      }
+    }
+    if (open.roomId !== l.roomId && !waitingMove) {
       mismatch.push(`${who} — 계약은 ${l.room?.roomNo ?? '?'}호, 열린 구간은 ${open.room.roomNo}호`)
     }
     // ⑦ 입주일·구간 불일치 — 열린 구간이 그 lease 의 최초 구간이면 입주 구간이라 startDate 가 입주일이어야 한다.
@@ -119,6 +120,11 @@ async function main() {
 
   const total = mismatch.length + duplicated.length + missing.length
     + openIneligible.length + preOccupancy.length + futureStart.length + moveInMismatch.length
+  if (pendingMoves.length > 0) {
+    console.log(`\n[이사 예정 경과] 주의 ${pendingMoves.length}건 (막지 않는다 — 확인해야 기록되는 구조다)`)
+    for (const m of pendingMoves) console.log('  - ' + m)
+  }
+
   console.log(`\n활성 계약 ${leases.length}건 · 전체 구간 ${allStays.length}건 검사 · 드리프트 ${total}건`)
   await prisma.$disconnect()
   if (total > 0) process.exit(1)

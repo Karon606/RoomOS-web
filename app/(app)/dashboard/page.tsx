@@ -1429,7 +1429,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 옮기는 날 — 일정이 다음 방을 가리키는데 아직 지금 방에 있는 사람. **자동으로 옮기지 않고
+  // 이사하는 날 — 일정이 다음 방을 가리키는데 아직 지금 방에 있는 사람. **자동으로 옮기지 않고
   // 여기서 묻는다.** 방을 옮기는 것은 실제로 짐을 나르는 일이라 하루 밀릴 수 있고, 앱이 일정만
   // 보고 옮기면 기록과 사실이 갈린다(운영자 확정 2026-08-26).
   const scheduleMoves = await prisma.leaseTerm.findMany({
@@ -1468,9 +1468,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  'var(--info-fg)',
         timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
         tenantId:  l.tenant.id,
-        detail:    `지금 ${l.roomStays[0]?.room?.roomNo ?? ''}호에 머물고 있습니다. 일정대로 ${roomNos.get(next.roomId) ?? ''}호로 옮기시겠어요?`,
+        detail:    `지금 ${l.roomStays[0]?.room?.roomNo ?? ''}호에 머물고 있습니다. 일정대로 ${roomNos.get(next.roomId) ?? ''}호로 이사할까요?`,
         exactDate: fmtShortDate(new Date(`${next.from}T00:00:00.000Z`)),
         scheduleMoveLeaseId: l.id,
+        scheduleMoveTenantName: l.tenant.name,
         scheduleMoveFromRoomNo: l.roomStays[0]?.room?.roomNo ?? null,
         scheduleMoveToRoomNo: roomNos.get(next.roomId) ?? null,
       })

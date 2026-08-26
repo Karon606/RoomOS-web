@@ -66,10 +66,14 @@ export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promi
   if (open?.roomId === targetRoomId) return
   // **일정이 있는 계약은 자가 치유가 방을 옮기지 않는다.** 옮기는 것은 실제로 짐을 나르는 일이라
   // 하루 밀릴 수 있는데, 앱이 일정만 보고 옮기면 기록은 9/1인데 사람은 9/2에 옮긴 상태가 된다.
-  // 그날이 오면 홈 알림이 "옮기겠습니까"를 묻고, 확인한 날이 기록이 된다(운영자 확정 2026-08-26).
-  // 지금 방이 일정에 있는 방이면 정상이므로 손대지 않는다.
+  // 그날이 오면 홈 알림이 "이사할까요"를 묻고, 확인한 날이 기록이 된다(운영자 확정 2026-08-26).
+  //
+  // 예외는 **아직 안 옮긴 줄에 있을 때만**이다. '일정 어딘가의 방'으로 넓히면, 일정을 다 소화한
+  // 뒤 계약 호실이 바뀌어도(진짜 이사) 그 계약이 영원히 치유 밖에 남는다.
   const scheduleAll = parseRoomSchedule(lease.roomSchedule)
-  if (open && hasRoomSchedule(scheduleAll) && scheduleAll.some(e => e.roomId === open.roomId)) return
+  const openIdx = open ? scheduleAll.findIndex(e => e.roomId === open.roomId) : -1
+  const waitingMove = openIdx >= 0 && openIdx < scheduleAll.length - 1 && scheduleAll[openIdx].from <= today
+  if (waitingMove) return
   if (open) {
     // 이사일은 '오늘'이 아니라 **그 구간이 시작된 날**이다. 며칠 뒤에 앱을 열어도 구간이
     // 일정대로 나뉘어야 이력이 사실과 같아진다(9/1에 옮기기로 한 것을 9/3에 열었다고 9/3으로
@@ -77,22 +81,19 @@ export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promi
     await recordRoomChange(db, leaseTermId, open.roomId, targetRoomId, seg?.from ?? null)
     return
   }
-  // 일정이 있으면 **오늘까지의 구간을 다 만든다.** 미리 잡아 둔 일정을 며칠 늦게 처리해도
-  // 지나간 방들이 이력에서 빠지면 안 된다(하루 402호에서 잔 사실이 통째로 사라진다).
-  const past = scheduleAll.filter(e => e.from <= today)
-  if (past.length > 0) {
-    for (const e of past) {
-      await db.roomStay.create({
-        data: {
-          leaseTermId,
-          roomId: e.roomId,
-          propertyId: lease.propertyId,
-          startDate: stayDate(e.from),
-          // 마지막(오늘의) 구간만 열어 둔다. 지나간 구간은 다음 방으로 넘어간 날 마감된다.
-          endDate: e === past[past.length - 1] ? null : stayDate(e.to as string),
-        },
-      })
-    }
+  // 일정이 있으면 **첫 줄에서 시작한다.** 며칠 늦게 처리해도 지나간 줄을 미리 만들지 않는다 —
+  // 이사는 사람이 확인해야 기록되기 때문이다(그 확인이 곧 실제 이사일이다).
+  const first = scheduleAll[0]
+  if (first) {
+    await db.roomStay.create({
+      data: {
+        leaseTermId,
+        roomId: first.roomId,
+        propertyId: lease.propertyId,
+        startDate: stayDate(first.from),
+        endDate: null,
+      },
+    })
     return
   }
   await db.roomStay.create({

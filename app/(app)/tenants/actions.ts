@@ -53,7 +53,7 @@ import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, recordRoomChange, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
 import { vacancyExcludedWhere } from '@/lib/vacancy'
 import {
-  parseRoomSchedule, validateRoomSchedule, hasRoomSchedule, spanOverlaps,
+  parseRoomSchedule, validateRoomSchedule, hasRoomSchedule, spanOverlaps, freeFromAfter,
   scheduledSegmentOn, nextRoomMove, roomScheduleText,
 } from '@/lib/roomSchedule'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
@@ -863,7 +863,10 @@ export async function updateTenant(formData: FormData): Promise<
        * 예약 확정자의 입주 희망일에 계약 호실이 아직 차 있다 — 화면이 그때까지 지낼 방을 권한다.
        * 날짜를 당기는 그 순간이 이 말을 할 자리다(운영자 요구 2026-08-26).
        */
-      roomBusy?: { roomNo: string; moveInYmd: string; freeFrom: string | null; occupantName: string | null }
+      roomBusy?: {
+        roomNo: string; moveInYmd: string; freeFrom: string | null
+        occupantName: string | null; occupantTenantId: string | null; sameDayHandover: boolean
+      }
     }
   | { ok: false; error: string }
 > {
@@ -1502,7 +1505,10 @@ export async function updateTenant(formData: FormData): Promise<
   const finalNotice = [baseNotice, rentRewriteNotice].filter(Boolean).join(' ') || null
   // 날짜를 당겼는데 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
-  const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
+  const roomBusy = await reservationRoomBusy(
+    propertyId, leaseTermId,
+    currentLease.moveInDate ? kstYmdStr(currentLease.moveInDate) : null,
+  )
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),
@@ -2169,6 +2175,59 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
 }
 
 /**
+ * 잠자리 기준 점유 구간 — 방마다 "언제부터 언제까지 사람이 자나"를 계약 단위로 편다.
+ *
+ * **점유 구간(RoomStay)만 보면 안 된다.** 지금 사는 사람의 구간은 끝이 없어서(endDate null)
+ * 퇴실 예정일이 잡혀 있어도 그 방이 영원히 차 있는 것으로 읽힌다. 실측(2026-08-26)에서 402호가
+ * 8/29 퇴실 예정인데 후보에서 통째로 빠졌다. 그래서 계약의 퇴실 예정일을 본다.
+ *
+ * **퇴실 예정일 다음 날부터 빈 것으로 본다**(lib/roomSchedule freeFromAfter). 이 앱의 다른
+ * 판정은 당일 회전을 정상으로 보지만 여기서 묻는 것은 "그날 밤 잘 곳이 있나"라 기준이 다르다.
+ *
+ * 예약은 두 갈래다. 일정을 미리 잡아 뒀으면 그 줄들이 답이고, 없으면 계약 호실을 입주
+ * 희망일부터 무기한 쓴다.
+ */
+async function roomOccupancySpans(
+  propertyId: string, exceptLeaseId: string,
+): Promise<{ roomId: string; start: string; end: string | null }[]> {
+  const leases = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId, id: { not: exceptLeaseId }, roomId: { not: null },
+      status: { in: ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING'] },
+    },
+    select: {
+      roomId: true, status: true, moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+      roomSchedule: true,
+    },
+  })
+  const out: { roomId: string; start: string; end: string | null }[] = []
+  for (const l of leases) {
+    const plan = parseRoomSchedule(l.roomSchedule)
+    if (hasRoomSchedule(plan)) {
+      // 일정의 마지막 줄만 퇴실 예정일이 붙는다(그 앞은 옮기는 날이 곧 비우는 날이다).
+      const outYmd = l.moveOutDate ?? l.expectedMoveOut
+      for (const e of plan) {
+        out.push({
+          roomId: e.roomId,
+          start: e.from,
+          end: e.to ?? (outYmd ? freeFromAfter(kstYmdStr(outYmd)) : null),
+        })
+      }
+      continue
+    }
+    if (!l.roomId) continue
+    const outYmd = l.moveOutDate ?? l.expectedMoveOut
+    out.push({
+      roomId: l.roomId,
+      // 입주일이 없으면 이미 시작된 점유로 읽는다(옛 데이터).
+      start: l.moveInDate ? kstYmdStr(l.moveInDate) : '0000-01-01',
+      end: outYmd ? freeFromAfter(kstYmdStr(outYmd)) : null,
+    })
+  }
+  return out
+}
+
+/**
  * 계약 호실이 언제 비는가 — 지금 사는 사람이 나가는 날. 아무도 없으면 그 날짜 자체가 답이다.
  *
  * 반개구간이라 '나가는 날'이 곧 다음 사람이 드는 날이다(당일 회전). 나가는 날이 하나라도
@@ -2176,23 +2235,32 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
  */
 async function mainRoomFreeFrom(
   propertyId: string, roomId: string, exceptLeaseId: string, fromYmd: string,
-): Promise<{ freeFrom: string | null; occupantName: string | null }> {
+): Promise<{
+  freeFrom: string | null; occupantName: string | null
+  occupantTenantId: string | null; lastOutYmd: string | null
+}> {
   const occupants = await prisma.leaseTerm.findMany({
     where: {
       propertyId, roomId, id: { not: exceptLeaseId },
       status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
     },
-    select: { expectedMoveOut: true, moveOutDate: true, tenant: { select: { name: true } } },
+    select: { expectedMoveOut: true, moveOutDate: true, tenant: { select: { id: true, name: true } } },
   })
-  if (occupants.length === 0) return { freeFrom: fromYmd, occupantName: null }
-  let freeFrom: string | null = null
+  const who = {
+    occupantName: occupants[0]?.tenant?.name ?? null,
+    occupantTenantId: occupants[0]?.tenant?.id ?? null,
+  }
+  if (occupants.length === 0) return { freeFrom: fromYmd, lastOutYmd: null, ...who }
+  let lastOutYmd: string | null = null
   for (const o of occupants) {
     const out = o.moveOutDate ?? o.expectedMoveOut
-    if (!out) return { freeFrom: null, occupantName: o.tenant?.name ?? null }
+    if (!out) return { freeFrom: null, lastOutYmd: null, ...who }
     const ymd = kstYmdStr(out)
-    if (freeFrom === null || ymd > freeFrom) freeFrom = ymd
+    if (lastOutYmd === null || ymd > lastOutYmd) lastOutYmd = ymd
   }
-  return { freeFrom, occupantName: occupants[0]?.tenant?.name ?? null }
+  // 나가는 날 낮까지는 그 사람이 있고 그날 퇴실 청소도 잡힌다 — 다음 날부터 빈 것으로 본다.
+  // 다만 '나가는 날에 바로 넘겨받기'도 정당한 답이라, 막지 않고 화면이 묻는다(운영자 확정).
+  return { freeFrom: lastOutYmd ? freeFromAfter(lastOutYmd) : null, lastOutYmd, ...who }
 }
 
 /**
@@ -2204,11 +2272,18 @@ async function mainRoomFreeFrom(
  *
  * **예약 확정자에 한한다.** 확정 전에는 방도 날짜도 아직 유동적이라 걸 말이 아니다.
  */
-async function reservationRoomBusy(propertyId: string, leaseTermId: string): Promise<{
+async function reservationRoomBusy(
+  propertyId: string, leaseTermId: string,
+  /** 저장 전 입주 희망일. **앞당겨졌을 때만** 묻는다 — 전화번호만 고쳐도 뜨면 소음이다. */
+  prevMoveInYmd: string | null,
+): Promise<{
   roomNo: string
   moveInYmd: string
   freeFrom: string | null
   occupantName: string | null
+  occupantTenantId: string | null
+  /** 앞사람이 나가는 바로 그날 들어오는가 — 그때는 '당일 넘겨받기'도 정당한 답이다. */
+  sameDayHandover: boolean
 } | null> {
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: leaseTermId, propertyId },
@@ -2223,10 +2298,18 @@ async function reservationRoomBusy(propertyId: string, leaseTermId: string): Pro
   if (hasRoomSchedule(parseRoomSchedule(lease.roomSchedule))) return null
 
   const moveInYmd = kstYmdStr(lease.moveInDate)
-  const { freeFrom, occupantName } = await mainRoomFreeFrom(propertyId, lease.roomId, lease.id, moveInYmd)
+  // 날짜가 안 바뀌었거나 뒤로 밀렸으면 물을 것이 없다.
+  if (prevMoveInYmd !== null && moveInYmd >= prevMoveInYmd) return null
+
+  const { freeFrom, occupantName, occupantTenantId, lastOutYmd } =
+    await mainRoomFreeFrom(propertyId, lease.roomId, lease.id, moveInYmd)
   // 그날 이미 비어 있으면 아무 문제가 없다.
   if (freeFrom !== null && freeFrom <= moveInYmd) return null
-  return { roomNo: lease.room?.roomNo ?? '', moveInYmd, freeFrom, occupantName }
+  return {
+    roomNo: lease.room?.roomNo ?? '', moveInYmd, freeFrom, occupantName, occupantTenantId,
+    // 앞사람이 나가는 날과 들어오는 날이 같다 — 청소만 되면 그날 넘겨받을 수 있다.
+    sameDayHandover: lastOutYmd === moveInYmd,
+  }
 }
 
 /**
@@ -2243,37 +2326,10 @@ async function roomScheduleClash(
   exceptLeaseId: string,
   schedule: readonly { roomId: string; from: string; to: string | null }[],
 ): Promise<string | null> {
-  const [stays, others] = await Promise.all([
-    prisma.roomStay.findMany({
-      where: { propertyId, leaseTermId: { not: exceptLeaseId } },
-      select: { roomId: true, startDate: true, endDate: true },
-    }),
-    prisma.leaseTerm.findMany({
-      where: {
-        propertyId, id: { not: exceptLeaseId },
-        status: { in: ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING'] },
-      },
-      select: { roomId: true, status: true, moveInDate: true, roomSchedule: true },
-    }),
-  ])
-
-  // 남의 계획을 구간 목록으로 편다. 계획이 없는 예약은 계약 호실을 입주 희망일부터 무기한 쓴다.
-  const planned: { roomId: string; start: string; end: string | null }[] = []
-  for (const o of others) {
-    const plan = parseRoomSchedule(o.roomSchedule)
-    if (hasRoomSchedule(plan)) {
-      for (const e of plan) planned.push({ roomId: e.roomId, start: e.from, end: e.to })
-    } else if (o.status === 'RESERVED' && o.roomId && o.moveInDate) {
-      planned.push({ roomId: o.roomId, start: kstYmdStr(o.moveInDate), end: null })
-    }
-  }
-
+  const spans = await roomOccupancySpans(propertyId, exceptLeaseId)
   for (const seg of schedule) {
     const want = { start: seg.from, end: seg.to }
-    const hit = stays.some(o => o.roomId === seg.roomId && spanOverlaps(want, {
-      start: kstYmdStr(o.startDate as Date),
-      end: o.endDate ? kstYmdStr(o.endDate as Date) : null,
-    })) || planned.some(o => o.roomId === seg.roomId && spanOverlaps(want, { start: o.start, end: o.end }))
+    const hit = spans.some(o => o.roomId === seg.roomId && spanOverlaps(want, { start: o.start, end: o.end }))
     if (hit) {
       const room = await prisma.room.findUnique({ where: { id: seg.roomId }, select: { roomNo: true } })
       return `${room?.roomNo ?? ''}호는 그 기간에 다른 입주자가 있습니다.`
@@ -2314,7 +2370,7 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
     })
     if (!lease?.roomId || !lease.moveInDate) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
-    const [rooms, stays, reserved, mainOccupants] = await Promise.all([
+    const [rooms, spans, mainOccupants] = await Promise.all([
       prisma.room.findMany({
         // 창고·사무실처럼 사람을 재울 수 없는 방은 후보가 아니다. 늘 비어 있어서 목록 위에
         // 상주하는데다, 재울 수 없는 방을 재울 방으로 내미는 것이 된다(공실 제외 정본 재사용).
@@ -2322,19 +2378,9 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
         select: { id: true, roomNo: true },
         orderBy: { roomNo: 'asc' },
       }),
-      prisma.roomStay.findMany({
-        where: { propertyId, leaseTermId: { not: leaseTermId } },
-        select: { roomId: true, startDate: true, endDate: true },
-      }),
-      // 아직 구간이 없는 예약과 **남이 미리 잡아 둔 일정** — 둘 다 그 방을 쓸 사람이다.
-      prisma.leaseTerm.findMany({
-        where: {
-          propertyId, id: { not: leaseTermId },
-          status: { in: ['RESERVED', 'ACTIVE', 'CHECKOUT_PENDING'] },
-        },
-        select: { roomId: true, status: true, moveInDate: true, roomSchedule: true },
-      }),
-      // 계약 호실이 언제 비는지 — 일정의 끝점이다. 판정은 정본 하나가 한다.
+      // 잠자리 기준 점유 — 겹침 판정과 같은 정본이다(두 벌이면 화면과 서버가 갈린다).
+      roomOccupancySpans(propertyId, leaseTermId),
+      // 계약 호실이 언제 비는지 — 일정의 끝점이다.
       mainRoomFreeFrom(propertyId, lease.roomId, leaseTermId, fromYmd),
     ])
 
@@ -2345,26 +2391,11 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
     // fromYmd 를 돌려주면 그날부터 이미 남이 쓰는 방이라 후보가 아니다.
     const nextBusyOf = (roomId: string): string | null => {
       const starts: string[] = []
-      for (const s of stays) {
-        if (s.roomId !== roomId) continue
-        const st = kstYmdStr(s.startDate as Date)
-        const en = s.endDate ? kstYmdStr(s.endDate as Date) : null
-        if (st <= fromYmd && (en === null || en > fromYmd)) return fromYmd
-        if (st > fromYmd) starts.push(st)
-      }
-      for (const r of reserved) {
-        const plan = parseRoomSchedule(r.roomSchedule)
-        // 계획이 있으면 그 구간들이 답이고, 없으면 예약이 계약 호실을 입주 희망일부터 무기한 쓴다.
-        const spans = hasRoomSchedule(plan)
-          ? plan.map(e => ({ roomId: e.roomId, start: e.from, end: e.to }))
-          : (r.status === 'RESERVED' && r.roomId && r.moveInDate
-              ? [{ roomId: r.roomId, start: kstYmdStr(r.moveInDate), end: null as string | null }]
-              : [])
-        for (const sp of spans) {
-          if (sp.roomId !== roomId) continue
-          if (sp.start <= fromYmd && (sp.end === null || sp.end > fromYmd)) return fromYmd
-          if (sp.start > fromYmd) starts.push(sp.start)
-        }
+      for (const sp of spans) {
+        if (sp.roomId !== roomId) continue
+        // 그날 이미 남이 자고 있으면 이 방은 후보가 아니다.
+        if (sp.start <= fromYmd && (sp.end === null || sp.end > fromYmd)) return fromYmd
+        if (sp.start > fromYmd) starts.push(sp.start)
       }
       if (starts.length === 0) return null
       return starts.sort()[0]
@@ -2445,7 +2476,7 @@ export async function startLeaseWithRoomSchedule(input: {
           ...(derivedDueDay ? { dueDay: derivedDueDay } : {}),
         },
       })
-      // 첫 구간은 **첫 방**에서 입주일로 시작한다. 이후 이동은 자가 치유가 일정대로 한다.
+      // 첫 구간은 **첫 방**에서 입주일로 시작한다. 이후 이사는 홈 알림에서 사람이 확인한다.
       await recordRoomChange(tx, lease.id, null, first.roomId, first.from)
       await tx.room.update({ where: { id: first.roomId }, data: { isVacant: false } })
       await tx.tenantStatusLog.create({
@@ -2466,7 +2497,7 @@ export async function startLeaseWithRoomSchedule(input: {
       : null
     return {
       ok: true,
-      notice: next ? `${fmtDateDot(next.at)}에 ${nextRoom?.roomNo ?? ''}호로 자동으로 옮겨집니다.` : undefined,
+      notice: next ? `${fmtDateDot(next.at)}에 ${nextRoom?.roomNo ?? ''}호로 옮기라고 홈에서 알립니다.` : undefined,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2486,7 +2517,7 @@ export async function startLeaseWithRoomSchedule(input: {
  * 계획은 계약(LeaseTerm)에만 산다. 그래서 감지망의 '미래 시작 구간' 축에도 안 걸린다.
  *
  * 그날이 오면 평소대로 [입실 처리]를 누르면 된다. 점유 가드가 계획을 읽어 거절하지 않고,
- * 자가 치유가 일정대로 첫 구간을 연다.
+ * 첫 구간이 일정의 첫 방에서 열린다. 이후 이사는 홈 알림에서 사람이 확인한다.
  */
 export async function saveRoomSchedulePlan(input: {
   leaseTermId: string

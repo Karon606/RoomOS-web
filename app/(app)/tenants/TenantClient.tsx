@@ -1310,23 +1310,45 @@ export default function TenantClient({
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
-      // 날짜를 당겼는데 그날 계약 호실이 아직 차 있다 — 그때까지 지낼 방을 여기서 권한다.
+      // 입주 희망일을 당겼는데 그날 계약 호실이 아직 차 있다 — 여기서 묻는다.
       // 입주 당일에 알면 이미 사람이 문 앞에 와 있다(운영자 요구 2026-08-26).
       if (res.roomBusy) {
         const b = res.roomBusy
-        const when = b.freeFrom ? `${fmtDate(b.freeFrom)}에 빕니다` : '언제 비는지 아직 정해지지 않았습니다'
-        const ok = await confirmDialog({
-          title: `${b.roomNo}호가 입주일에 아직 차 있습니다`,
-          message: b.freeFrom
-            ? `${b.occupantName ? `${b.occupantName}님이 살고 있고 ` : ''}${when}. 그때까지 지낼 방을 지금 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`
-            : `${b.occupantName ? `${b.occupantName}님이 살고 있는데 ` : ''}${when}. 그분의 퇴실 예정일을 먼저 정해 주세요.`,
-          level: 'caution',
-          confirmLabel: b.freeFrom ? '방 정하기' : '닫기',
-          ...(b.freeFrom ? {} : { cancelLabel: '' }),
-        })
         const lid = (fd.get('leaseTermId') as string) || ''
         const nm = (fd.get('name') as string) || ''
-        if (ok && b.freeFrom && lid) setPlanLease({ leaseTermId: lid, tenantName: nm })
+        const who = b.occupantName ? `${b.occupantName}님이 ` : ''
+
+        if (!b.freeFrom) {
+          // 앞사람 퇴실 예정일이 없으면 일정을 못 짠다. 이름만 알려주고 끝내지 않고 그 사람을 연다.
+          const go = await confirmDialog({
+            title: `${b.roomNo}호가 언제 비는지 정해지지 않았습니다`,
+            message: `입주일은 이미 저장했습니다. ${who}살고 있는데 퇴실 예정일이 없어 그때까지 지낼 방을 정할 수 없습니다. 퇴실 예정일을 먼저 정해 주세요.`,
+            level: 'caution',
+            confirmLabel: '퇴실 예정일 정하기',
+            cancelLabel: '나중에',
+          })
+          if (go && b.occupantTenantId) entityModal.open({ kind: 'tenant', tenantId: b.occupantTenantId })
+        } else if (b.sameDayHandover) {
+          // 앞사람이 나가는 바로 그날 들어온다 — 오전에 나가고 오후에 들어오는 것도 실제로 되는
+          // 일이라 앱이 정하지 않는다(운영자 확정 2026-08-26). 그대로 두는 쪽이 무변경이라 primary 다.
+          const pick = await choiceDialog({
+            title: `${b.roomNo}호를 ${fmtDate(b.moveInYmd)}에 넘겨받나요?`,
+            message: `입주일은 이미 저장했습니다. ${who}그날 나가고 같은 날 들어오게 됩니다. 오전에 비우고 청소한 뒤 들어오면 그대로 두시고, 그날 밤 잘 곳이 필요하면 다른 방을 정해 두시면 됩니다.`,
+            level: 'caution',
+            confirmLabel: '그대로 두기',
+            altLabel: '다른 방 정하기',
+          })
+          if (pick === 'alt' && lid) setPlanLease({ leaseTermId: lid, tenantName: nm })
+        } else {
+          const go = await confirmDialog({
+            title: `${b.roomNo}호가 ${fmtDate(b.freeFrom)}에 빕니다`,
+            message: `입주일은 이미 저장했습니다. ${who}그때까지 살고 있어서 ${fmtDate(b.moveInYmd)}에는 들어갈 수 없습니다. 그때까지 지낼 방을 지금 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`,
+            level: 'caution',
+            confirmLabel: '방 정하기',
+            cancelLabel: '나중에',
+          })
+          if (go && lid) setPlanLease({ leaseTermId: lid, tenantName: nm })
+        }
       }
     })
   }

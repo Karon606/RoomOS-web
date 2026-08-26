@@ -2,8 +2,8 @@
 
 // 호실 일정 짜기 — 계약 호실이 입주일에 아직 안 비었을 때, 그때까지 어디에 머물지 정한다.
 //
-// 여기로 오는 길은 하나다. 입주자 카드에서 입실 처리를 눌렀는데 계약 호실이 아직 차 있어
-// 거절당하는 자리에서, 그냥 막는 대신 "다른 방부터 재울까요"로 이어진다.
+// 여기로 오는 길은 셋이다. 입주 희망일을 당겼을 때 뜨는 물음, 예약 상태의 [입실 일정] 버튼,
+// 그리고 입실 처리가 계약 호실 점유로 거절당하는 자리.
 //
 // **이것은 '조기 입실'이 아니라 입주일이 바뀐 것이다**(운영자 정정 2026-08-26). 예약을 9/1로
 // 잡았어도 상황에 따라 날짜는 바뀔 수 있다. 그래서 이 화면에 하루치 요금 같은 칸이 없다 —
@@ -16,8 +16,8 @@
 // '9월 2일까지'만 적으면 운영자가 끝점과 빼기를 머릿속으로 해야 한다 — 운영자가 요구한 것은
 // 계산이 아니라 표시다("좀 더 심플하면서도 직관적이게").
 //
-// 정한 일정은 계약서에도 적힌다. 그래서 그날이 와도 운영자가 무엇을 누를 필요가 없다 —
-// 앱이 일정대로 방을 옮긴다.
+// 정한 일정은 계약서에도 적힌다. 옮기는 날이 오면 홈 알림이 '옮기시겠어요'를 묻는다 —
+// 방을 옮기는 것은 실제로 짐을 나르는 일이라 앱이 대신 정하지 않는다.
 
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
@@ -26,7 +26,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
-import { fmtDateDot } from '@/lib/fmtDate'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import {
   scheduleOpenFrom, validateRoomSchedule, roomScheduleText,
   type RoomScheduleEntry,
@@ -164,8 +164,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && endAt && (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-                  계약 호실 {opts.mainRoomNo}호는 {fmtDateDot(endAt)}에 빕니다.
-                  그때까지 머물 방을 정하면 그날 자동으로 옮겨집니다.
+                  계약 호실 {opts.mainRoomNo}호는 {fmtDate(endAt)}에 빕니다.
+                  그때까지 머물 방을 정해 두면 그날 홈에서 옮길지 확인합니다.
                 </p>
               </div>
             )}
@@ -189,7 +189,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
               ) : (
                 <p className={capCls}>
                   이 날짜부터 이용료가 청구됩니다.
-                  {!plan && ` 예약 때 잡은 ${fmtDateDot(opts.moveInDate)}과 달라도 됩니다.`}
+                  {!plan && ` 예약 때 잡은 ${fmtDate(opts.moveInDate)}과 달라도 됩니다.`}
                   {picks.length > 0 && ' 날짜를 바꾸면 정한 방이 지워집니다.'}
                 </p>
               )}
@@ -212,7 +212,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!done && !unknownEnd && endAt && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-[var(--warm-mid)]">
-                  {picks.length === 0 ? '어느 방부터 시작할까요' : `${fmtDateDot(openFrom)}부터는 어느 방으로 갈까요`}
+                  {picks.length === 0 ? '어느 방부터 시작할까요' : `${fmtDate(openFrom)}부터는 어느 방으로 갈까요`}
                 </p>
                 {/* 갱신 중에는 목록이 옛 기간 것이라 누르지 못하게 잠근다(§17 콘텐츠 유지 + 진행 표시). */}
                 {refreshing && (
@@ -234,7 +234,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                             <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">
                               {covers
                                 ? '이 방이면 끝'
-                                : `${fmtDateDot(r.availableUntil as string)}까지 · ${short}일 더 필요`}
+                                : `${fmtDate(r.availableUntil as string)}까지 · ${short}일 더 필요`}
                             </span>
                           </button>
                         </li>
@@ -253,9 +253,9 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
 
             {done && endAt && (
               <p className={capCls}>
-                {fmtDateDot(endAt)}에 계약 호실 {opts.mainRoomNo}호로 자동으로 옮겨집니다.
+                {fmtDate(endAt)}에 계약 호실 {opts.mainRoomNo}호로 옮기라고 홈에서 알립니다.
                 이 일정은 계약서에도 적힙니다.
-                {plan && ` ${fmtDateDot(moveIn)}에 입실 처리만 누르면 이대로 들어갑니다.`}
+                {plan && ` ${fmtDate(moveIn)}에 입실 처리만 누르면 이대로 들어갑니다.`}
               </p>
             )}
           </>
