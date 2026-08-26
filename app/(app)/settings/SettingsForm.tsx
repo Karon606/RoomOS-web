@@ -40,7 +40,7 @@ import { regenerateJoinCode, getOrCreateJoinCode, approveJoinRequest, rejectJoin
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { Btn, btnClass } from '@/components/ui/Btn'
+import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
@@ -1076,6 +1076,22 @@ export default function SettingsForm({
                 <p className="mt-1.5 text-xs leading-relaxed text-[var(--warm-mid)]">{h.a}</p>
               </details>
             ))}
+          </div>
+        </div>
+
+        {/* 법적 고지 — 로그인 화면에만 링크가 있으면 로그인한 뒤에는 찾을 길이 없다.
+            처리방침은 아무 때나 다시 볼 수 있어야 하는 문서라 앱 안에도 자리를 둔다(법 제30조). */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">약관과 개인정보</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+            스테이음이 어떤 정보를 받아 어떻게 다루는지, 영업장과 스테이음의 역할이 어떻게 나뉘는지 적어 두었습니다.
+            입주자 정보의 개인정보처리자는 영업장이고 스테이음은 위탁받아 보관합니다.
+          </p>
+          {/* 앱 안 라우트라 새 탭으로 열지 않는다 — 홈화면 앱에는 주소창도 뒤로가기도 없어
+              돌아올 길이 사라진다(§27.7). 문서 페이지 상단의 '돌아가기'가 복귀 경로다. */}
+          <div className="flex flex-wrap gap-2">
+            <BtnLink href="/privacy" variant="secondary" size="sm">개인정보 처리방침</BtnLink>
+            <BtnLink href="/terms" variant="secondary" size="sm">서비스 이용약관</BtnLink>
           </div>
         </div>
 

@@ -1,3 +1,5 @@
+'use client'
+
 // 법적 고지 문서(처리방침·약관)의 공통 셸 — 두 문서가 같은 문법으로 서게 한다.
 //
 // 왜 셸을 따로 두나. 처리방침과 약관은 로그인 전에도 열려야 하고(법 제30조는 홈페이지 게재를
@@ -6,8 +8,6 @@
 //
 // 인쇄를 염두에 둔다 — 개인정보위 상담이나 변호사 검토에 종이로 들고 갈 수 있어야 한다.
 // 화면 밖 장식을 두지 않고 본문 폭을 읽기 좋은 65자 안팎으로 묶는 이유다.
-
-import Link from 'next/link'
 
 export function LegalPage({ title, effectiveDate, intro, children }: {
   title: string
@@ -20,9 +20,13 @@ export function LegalPage({ title, effectiveDate, intro, children }: {
   return (
     <main className="min-h-screen bg-[var(--canvas)] px-5 py-10">
       <div className="mx-auto w-full max-w-[42rem]">
-        <Link href="/login" className="text-xs text-[var(--warm-mid)] underline underline-offset-2">
-          스테이음으로 돌아가기
-        </Link>
+        {/* 복귀 경로 — 로그인 전(로그인 화면에서 온 사람)과 로그인 후(환경설정에서 온 사람)가
+            같은 문서를 본다. 뒤로가기가 둘 다에게 맞는 유일한 답이라 브라우저 이력을 쓴다.
+            홈화면 앱에는 뒤로가기 버튼이 없어 이 줄이 곧 복귀 경로다(§27.7). */}
+        <button type="button" onClick={() => history.back()}
+          className="text-xs text-[var(--warm-mid)] underline underline-offset-2">
+          돌아가기
+        </button>
         <h1 className="mt-4 text-xl font-bold text-[var(--warm-dark)]">{title}</h1>
         <p className="mt-1 text-xs text-[var(--warm-mid)]">시행일 {effectiveDate}</p>
         <div className="mt-5 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-5 sm:p-6">

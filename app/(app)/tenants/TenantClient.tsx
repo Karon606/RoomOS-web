@@ -4080,7 +4080,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <CountrySelect name="nationality" defaultValue={tenant?.nationality} onChange={v => setNatVal(v ?? '')} />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">직업</label>
+            {/* 직업은 계약 이행에 꼭 필요한 항목이 아니다 — 안 적어도 계약이 성립한다는 사실을
+                라벨이 말해야 입력하는 사람이 판단할 수 있다(처리방침에도 선택 항목으로 적었다). */}
+            <label className="text-xs font-medium text-[var(--warm-mid)]">직업 <span className="font-normal text-[var(--warm-muted)]">(선택)</span></label>
             <JobSelect name="job" defaultValue={tenant?.job} />
           </div>
           <SelectField label="흡연 여부" name="smoking" defaultValue={tenant?.smoking ? 'true' : 'false'}>
