@@ -3,6 +3,7 @@
 // 세 연산(열린 구간 생성·호실 변경·퇴실 마감)과 종료 복귀용 재개방만 두고, 호출부의 기존 분기는 건드리지 않는다.
 // 드리프트(열린 구간 없음·중복·roomId 불일치)는 scripts/check-room-stay-drift.mjs 가 읽기 전용으로 감지한다.
 
+import { isEarlyCheckInActive } from './earlyCheckIn'
 import type { PrismaDb } from '@/lib/prisma'
 import { kstYmdStr } from '@/lib/kstDate'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
@@ -43,13 +44,22 @@ async function openStayOf(db: RoomStayDb, leaseTermId: string) {
 export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promise<void> {
   const lease = await db.leaseTerm.findUnique({
     where: { id: leaseTermId },
-    select: { roomId: true, propertyId: true, moveInDate: true, status: true },
+    select: {
+      roomId: true, propertyId: true, moveInDate: true, status: true,
+      // 조기 입실 판정용 — 임시 방에 있는 사람의 구간을 자가 치유가 부수면 안 된다.
+      earlyCheckInRoomId: true,
+    },
   })
   if (!lease?.roomId) return
   // 자격 게이트 — 예약·문의·투어 등 비점유 상태는 구간을 만들지 않는다(박의균 신고, 클래스 봉합).
   if (!STAY_ELIGIBLE_STATUSES.includes(lease.status)) return
   const open = await openStayOf(db, leaseTermId)
   if (open?.roomId === lease.roomId) return
+  // **조기 입실 중이면 손대지 않는다.** 계약의 roomId 는 본 방인데 몸은 임시 방에 있는 상태라,
+  // 이 함수의 "roomId 와 열린 구간이 다르면 이사"라는 전제가 여기서만 참이 아니다. 게이트가
+  // 없으면 아무 저장에서나 오늘 날짜로 본 방 구간이 열려 임시 방에 있었던 사실이 지워진다.
+  // 본 방으로 옮기는 것은 completeEarlyCheckInMove 가 이사 정본으로 명시적으로 한다.
+  if (isEarlyCheckInActive(lease, open?.roomId ?? null)) return
   if (open) {
     await recordRoomChange(db, leaseTermId, open.roomId, lease.roomId, null)
     return

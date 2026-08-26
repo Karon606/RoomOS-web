@@ -48,7 +48,8 @@ import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } fro
 import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
-import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
+import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, recordRoomChange, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
+import { spanOverlaps, EARLY_CHECK_IN_INCOME_CATEGORY } from '@/lib/earlyCheckIn'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -2130,6 +2131,222 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 조기 입실 — 본 계약 방이 비기 전, 임시 방에서 먼저 입실 처리한다(운영자 실무 2026-08-26).
+ *
+ * **계약의 진실은 손대지 않는다.** roomId·moveInDate 는 본계약 그대로다. 그래야 청구가
+ * 본 계약월부터 서고(입실일을 당기면 그 달 이용료가 통째로 미납으로 뜬다), 계약서에 본 방과
+ * 본 계약일이 찍힌다. 이 액션이 하는 일은 셋이다 — 상태를 ACTIVE 로 올리고, 임시 방의 점유
+ * 구간을 열고, 하루치를 부가수익으로 적는다.
+ *
+ * 일반 입실(confirmReservationToActive)과 다른 점은 방뿐이다. 납부일 파생·예약금 재앵커·
+ * 상태 이력은 그쪽과 같은 한 벌을 쓴다 — 두 경로가 다른 일을 하면 조기 입실한 사람만
+ * 납부일이나 예약금 처리가 달라진다.
+ */
+export async function earlyCheckInTenant(input: {
+  leaseTermId: string
+  tempRoomId: string
+  /** 실제 입실일 'YYYY-MM-DD'. 미래 금지, 본계약 시작일보다 이전이어야 한다. */
+  date: string
+  /** 하루치 추가 요금. 0 이면 안 받는다(운영자 재량). */
+  chargeAmount: number
+  payMethod?: string | null
+  financialAccountId?: string | null
+}): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, user } = await getPropertyId()
+
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: input.leaseTermId, propertyId },
+      select: {
+        id: true, status: true, tenantId: true, roomId: true, rentAmount: true,
+        moveInDate: true, dueDay: true, earlyCheckInRoomId: true,
+        room: { select: { roomNo: true } },
+      },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!lease.roomId) return { ok: false, error: '확정된 호실 정보가 없습니다.' }
+    if (lease.status !== 'RESERVED') return { ok: false, error: '예약 상태에서만 조기 입실 처리를 할 수 있습니다.' }
+    if (lease.earlyCheckInRoomId) return { ok: false, error: '이미 조기 입실 처리가 되어 있습니다.' }
+    if (input.tempRoomId === lease.roomId) return { ok: false, error: '본 계약 호실과 다른 방을 골라 주세요.' }
+    if (!lease.moveInDate) return { ok: false, error: '입주일을 입력해 주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
+
+    const moveIn = kstYmdStr(new Date(lease.moveInDate))
+    const today = kstYmdStr(new Date())
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return { ok: false, error: '입실일 형식이 올바르지 않습니다.' }
+    // 미래 시작 구간은 감지망이 사고로 부른다(점유 이력은 실제로 있었던 일만 담는다).
+    if (input.date > today) return { ok: false, error: '입실일은 오늘보다 뒤로 잡을 수 없습니다.' }
+    if (input.date >= moveIn) return { ok: false, error: '조기 입실일은 본 계약 시작일보다 앞이어야 합니다.' }
+
+    const tempRoom = await prisma.room.findFirst({
+      where: { id: input.tempRoomId, propertyId },
+      select: { id: true, roomNo: true },
+    })
+    if (!tempRoom) return { ok: false, error: '임시 호실을 찾을 수 없습니다.' }
+
+    // 임시 방이 그 구간에 실제로 비는가 — 하루 축(입주 가능)이 아니라 구간 겹침으로 본다.
+    // 뒤에 무기한 예약이 걸린 방도 그 시작 전이면 쓸 수 있다(실측 근거는 lib/earlyCheckIn 주석).
+    const occupants = await prisma.roomStay.findMany({
+      where: { roomId: input.tempRoomId, propertyId, leaseTermId: { not: input.leaseTermId } },
+      select: { startDate: true, endDate: true },
+    })
+    const want = { start: input.date, end: moveIn }
+    const clash = occupants.some(o => spanOverlaps(want, {
+      start: kstYmdStr(o.startDate as Date), end: o.endDate ? kstYmdStr(o.endDate as Date) : null,
+    }))
+    if (clash) return { ok: false, error: `${tempRoom.roomNo}호는 그 기간에 다른 입주자가 있습니다.` }
+
+    const derivedDueDay = lease.dueDay == null ? dueDayFromMoveIn(lease.moveInDate) : null
+
+    await prisma.$transaction(async tx => {
+      await tx.leaseTerm.update({
+        where: { id: lease.id },
+        data: {
+          status: 'ACTIVE', moveInFlexible: null,
+          earlyCheckInDate: new Date(`${input.date}T00:00:00.000Z`),
+          earlyCheckInRoomId: input.tempRoomId,
+          ...(derivedDueDay ? { dueDay: derivedDueDay } : {}),
+        },
+      })
+      // 점유 구간은 **임시 방**에서 조기 입실일로 시작한다. 본 방 구간은 이동할 때 열린다.
+      await recordRoomChange(tx, lease.id, null, input.tempRoomId, input.date)
+      await tx.room.update({ where: { id: input.tempRoomId }, data: { isVacant: false } })
+      await tx.tenantStatusLog.create({
+        data: {
+          tenantId: lease.tenantId, leaseTermId: lease.id, propertyId,
+          fromStatus: 'RESERVED', toStatus: 'ACTIVE', changedById: user.sub,
+        },
+      })
+      // 하루치는 부가수익이다 — 수납으로 넣으면 본 계약월 미납이 그만큼 깎이고, 본 계약 청구에
+      // 얹으면 계약서 정가와 청구가 갈라진다(할인은 계약서 정가 유지가 정본인 것의 역방향).
+      if (input.chargeAmount > 0) {
+        await tx.extraIncome.create({
+          data: {
+            propertyId, tenantId: lease.tenantId, leaseTermId: lease.id,
+            date: new Date(`${input.date}T00:00:00.000Z`),
+            amount: input.chargeAmount,
+            category: EARLY_CHECK_IN_INCOME_CATEGORY,
+            detail: `${tempRoom.roomNo}호 조기 입실 (${input.date} ~ ${moveIn} 전)`,
+            payMethod: input.payMethod || null,
+            financialAccountId: input.financialAccountId || null,
+          },
+        })
+      }
+    })
+
+    if (derivedDueDay) await propagateDueDayToSubLeases(prisma, lease.id, lease.dueDay, derivedDueDay)
+    await reanchorReservationPrepaid(lease.id)
+
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true, notice: `${moveIn}에 ${lease.room?.roomNo ?? ''}호로 옮기는 알림이 뜹니다.` }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 조기 입실한 사람을 본 계약 방으로 옮긴다 — 기존 이사 정본(recordRoomChange)을 그대로 쓴다.
+ * roomId 는 처음부터 본 방이라 계약을 저장하지 않고 구간 연산만 한다.
+ */
+export async function completeEarlyCheckInMove(input: {
+  leaseTermId: string
+  /** 실제 옮긴 날. 기본 오늘, 미래 금지(validateMoveDate 가 본다). */
+  moveDate: string
+  /** 임시 방 청소 예정을 만들지. */
+  scheduleCleaning: boolean
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: input.leaseTermId, propertyId },
+      select: {
+        id: true, roomId: true, moveInDate: true, moveOutDate: true,
+        earlyCheckInRoomId: true, room: { select: { roomNo: true } },
+      },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!lease.roomId || !lease.earlyCheckInRoomId) return { ok: false, error: '조기 입실 상태가 아닙니다.' }
+
+    const err = await validateMoveDate(prisma, lease.id, {
+      at: input.moveDate,
+      fromRoomId: lease.earlyCheckInRoomId,
+      today: kstYmdStr(new Date()),
+      moveInDate: lease.moveInDate ? kstYmdStr(lease.moveInDate) : null,
+      moveOutDate: lease.moveOutDate ? kstYmdStr(lease.moveOutDate) : null,
+    })
+    if (err) return { ok: false, error: err }
+
+    const tempRoomId = lease.earlyCheckInRoomId
+    await prisma.$transaction(async tx => {
+      await recordRoomChange(tx, lease.id, tempRoomId, lease.roomId, input.moveDate)
+      await tx.room.update({ where: { id: lease.roomId! }, data: { isVacant: false } })
+      // 임시 방은 이 사람이 나가면 빈다 — 다른 열린 구간이 없을 때만 공실로 돌린다.
+      const stillUsed = await tx.roomStay.count({ where: { roomId: tempRoomId, endDate: null } })
+      if (stillUsed === 0) await tx.room.update({ where: { id: tempRoomId }, data: { isVacant: true } })
+      if (input.scheduleCleaning) {
+        await tx.roomCleaning.create({
+          data: {
+            propertyId, roomId: tempRoomId, status: 'PLANNED', reason: 'CHECKOUT',
+            scheduledDate: new Date(`${input.moveDate}T00:00:00.000Z`),
+          },
+        })
+      }
+    })
+
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/** 조기 입실 적용취소 — 예약 상태로 되돌리고 구간·부가수익을 걷는다. */
+export async function undoEarlyCheckIn(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { id: true, roomId: true, earlyCheckInRoomId: true, earlyCheckInDate: true, status: true },
+    })
+    if (!lease?.earlyCheckInRoomId) return { ok: false, error: '조기 입실 상태가 아닙니다.' }
+
+    const openStay = await prisma.roomStay.findFirst({
+      where: { leaseTermId, endDate: null }, select: { roomId: true },
+    })
+    if (openStay && openStay.roomId !== lease.earlyCheckInRoomId) {
+      return { ok: false, error: '이미 본 계약 호실로 옮겼습니다. 되돌리려면 호실 이동을 먼저 되돌려 주세요.' }
+    }
+
+    const tempRoomId = lease.earlyCheckInRoomId
+    await prisma.$transaction(async tx => {
+      await tx.roomStay.deleteMany({ where: { leaseTermId } })
+      await tx.leaseTerm.update({
+        where: { id: leaseTermId },
+        data: { status: 'RESERVED', earlyCheckInDate: null, earlyCheckInRoomId: null },
+      })
+      const stillUsed = await tx.roomStay.count({ where: { roomId: tempRoomId, endDate: null } })
+      if (stillUsed === 0) await tx.room.update({ where: { id: tempRoomId }, data: { isVacant: true } })
+      // 부가수익은 소프트삭제 — 지운 사실이 남아야 나중에 "왜 사라졌나"에 답할 수 있다.
+      await tx.extraIncome.updateMany({
+        where: { leaseTermId, category: EARLY_CHECK_IN_INCOME_CATEGORY, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+    })
+
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 

@@ -20,6 +20,8 @@ async function main() {
     where: { status: { in: OPEN_STATUSES }, roomId: { not: null } },
     select: {
       id: true, status: true, roomId: true, moveInDate: true,
+      // 조기 입실(2026-08-26) — 임시 방에 있는 동안은 계약 방과 구간이 다른 것이 정상이다.
+      earlyCheckInDate: true, earlyCheckInRoomId: true,
       tenant: { select: { name: true } },
       room: { select: { roomNo: true } },
       // 마감 구간까지 다 읽는다 — ⑦ 의 '최초 구간' 판정에 이사 이력이 필요하다.
@@ -43,14 +45,25 @@ async function main() {
       duplicated.push(`${who} — 열린 구간 ${openStays.length}개(${openStays.map(s => `${s.room.roomNo}호 ${s.startDate ? s.startDate.toISOString().slice(0, 10) : '시작일 미상'}`).join(', ')})`)
     }
     const open = openStays[0]
-    if (open.roomId !== l.roomId) {
+    // 조기 입실 진행 중 — **두 등식이 다 맞을 때만** 예외로 본다. 임시 방이 맞고 시작일도
+    // 조기 입실일이어야 한다. 조건을 느슨하게 잡으면 진짜 드리프트가 이 예외로 새어 나간다.
+    const earlyYmd = l.earlyCheckInDate ? l.earlyCheckInDate.toISOString().slice(0, 10) : null
+    const openStartYmd = open.startDate ? open.startDate.toISOString().slice(0, 10) : null
+    const inEarlyStay = !!l.earlyCheckInRoomId
+      && open.roomId === l.earlyCheckInRoomId
+      && !!earlyYmd && openStartYmd === earlyYmd
+    if (open.roomId !== l.roomId && !inEarlyStay) {
       mismatch.push(`${who} — 계약은 ${l.room?.roomNo ?? '?'}호, 열린 구간은 ${open.room.roomNo}호`)
     }
     // ⑦ 입주일·구간 불일치 — 열린 구간이 그 lease 의 최초 구간이면 입주 구간이라 startDate 가 입주일이어야 한다.
     // 이후 구간은 이동 구간(startDate 가 이동일)이라 대상이 아니다. lib/roomStay.ts syncMoveInStart 의
     // 2차 가드와 같은 정의를 쓴다 — 전파가 빠지면 여기서 잡힌다.
-    if (l.moveInDate && open.startDate) {
-      const isFirstStay = !l.roomStays.some(s => s.id !== open.id && s.startDate && s.startDate < open.startDate)
+    // 조기 입실을 쓴 계약은 최초 구간이 '조기 구간'이라 시작일이 입주일보다 앞선 것이 정상이다.
+    // 그 구간을 뺀 나머지의 최초 구간이 입주 구간이 된다.
+    if (l.moveInDate && open.startDate && !inEarlyStay) {
+      const isFirstStay = !l.roomStays.some(s =>
+        s.id !== open.id && s.startDate && s.startDate < open.startDate
+        && !(l.earlyCheckInRoomId && s.roomId === l.earlyCheckInRoomId))
       const openYmd = open.startDate.toISOString().slice(0, 10)
       const moveInYmd = l.moveInDate.toISOString().slice(0, 10)
       if (isFirstStay && openYmd !== moveInYmd) {
