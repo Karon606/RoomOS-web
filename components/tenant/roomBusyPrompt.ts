@@ -36,10 +36,10 @@ export async function askRoomBusy(b: RoomBusyInfo): Promise<RoomBusyChoice> {
 
   if (!b.freeFrom) {
     const go = await confirmDialog({
-      title: `${b.roomNo}호가 언제 비는지 정해지지 않았습니다`,
-      message: `입주일은 이미 저장했습니다. ${who}살고 있는데 퇴실 예정일이 없어 그때까지 지낼 방을 정할 수 없습니다. 퇴실 예정일을 먼저 정해 주세요.`,
+      title: `${b.roomNo}호의 입주 가능일이 정해지지 않았습니다`,
+      message: `입주일은 저장했습니다. ${who}거주 중인데 퇴실 예정일이 없어 임시 호실을 정할 수 없습니다. 퇴실 예정일을 먼저 입력해 주세요.`,
       level: 'caution',
-      confirmLabel: '퇴실 예정일 정하기',
+      confirmLabel: '퇴실 예정일 입력',
       cancelLabel: '나중에',
     })
     return go && b.occupantTenantId ? 'occupant' : null
@@ -47,20 +47,20 @@ export async function askRoomBusy(b: RoomBusyInfo): Promise<RoomBusyChoice> {
 
   if (b.sameDayHandover) {
     const pick = await choiceDialog({
-      title: `${b.roomNo}호를 ${fmtDate(b.moveInYmd)}에 넘겨받나요?`,
-      message: `입주일은 이미 저장했습니다. ${who}그날 나가고 같은 날 들어오게 됩니다. 오전에 비우고 청소한 뒤 들어오면 그대로 두시고, 그날 밤 잘 곳이 필요하면 다른 방을 정해 두시면 됩니다.`,
+      title: `${b.roomNo}호 퇴실일과 입주일이 같습니다`,
+      message: `입주일은 저장했습니다. ${who}${fmtDate(b.moveInYmd)}에 퇴실하고 같은 날 입주합니다. 오전에 퇴실과 청소가 끝나 바로 입주할 수 있으면 그대로 진행하시고, 그날 밤 지낼 곳이 필요하면 임시 호실을 정해 두시면 됩니다.`,
       level: 'caution',
-      confirmLabel: '그대로 두기',
-      altLabel: '다른 방 정하기',
+      confirmLabel: '당일 입주',
+      altLabel: '임시 호실 정하기',
     })
     return pick === 'alt' ? 'plan' : null
   }
 
   const go = await confirmDialog({
-    title: `${b.roomNo}호가 ${fmtDate(b.freeFrom)}에 빕니다`,
-    message: `입주일은 이미 저장했습니다. ${who}그때까지 살고 있어서 ${fmtDate(b.moveInYmd)}에는 들어갈 수 없습니다. 그때까지 지낼 방을 지금 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`,
+    title: `${b.roomNo}호는 ${fmtDate(b.freeFrom)}부터 입주 가능합니다`,
+    message: `입주일은 저장했습니다. ${who}그때까지 거주해 ${fmtDate(b.moveInYmd)}에는 입주할 수 없습니다. 그 전까지 지낼 임시 호실을 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`,
     level: 'caution',
-    confirmLabel: '방 정하기',
+    confirmLabel: '임시 호실 정하기',
     cancelLabel: '나중에',
   })
   return go ? 'plan' : null

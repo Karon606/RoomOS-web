@@ -6,6 +6,7 @@
 // (액션 파일은 'use server' 라 async 함수만 내보낼 수 있고, 내보내는 순간 인증 없는 입구가 된다.)
 
 import type { PrismaDb } from '@/lib/prisma'
+import { parseRoomSchedule, hasRoomSchedule } from './roomSchedule'
 import { displayName } from '@/lib/displayName'
 import { ymdToDbDate } from '@/lib/kstDate'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
@@ -41,6 +42,9 @@ export const MOVE_LEASE_SELECT = {
     select: { id: true, roomId: true, startDate: true, endDate: true, room: { select: { roomNo: true } } },
     orderBy: { startDate: 'asc' },
   },
+  // 미리 잡아 둔 호실 일정 — 아직 입실 처리 전이라 구간이 없다. 계획도 캘린더에 서야
+  // 운영자가 "그날 402호에 사람이 온다"를 본다(운영자 지적 2026-08-26).
+  roomSchedule: true,
 } as const
 
 /** MOVE_LEASE_SELECT 가 뽑는 모양. 추론에 맡기면 select 가 두 곳에서 불릴 때 원본 모델로 넓어진다. */
@@ -55,6 +59,7 @@ export type MoveLeaseRow = {
   room: { roomNo: string } | null
   tenant: { id: string; name: string; englishName: string | null; nickname: string | null; displayNameStyle: string | null }
   roomStays: { id: string; roomId: string; startDate: Date | null; endDate: Date | null; room: { roomNo: string } }[]
+  roomSchedule?: unknown
 }
 
 /** 날짜는 'YYYY-MM-DD' 문자열로 고정 — getRooms·수납 관리와 같은 문법이라야 월 비교가 같은 값을 낸다. */
@@ -131,7 +136,12 @@ export async function fetchMoveLeases(
   })
   // 행이 될 수 있는 방 — 계약이 지금 있는 방과 그 계약이 거쳐 간 방 전부. 과대근사라도 좋다,
   // 어느 방이 실제로 행이 되는지는 조립이 다시 한 번 거른다.
-  const roomIds = [...new Set([...changed.flatMap(l => [l.roomId!, ...l.roomStays.map(s => s.roomId)]), ...workRoomIds])]
+  // 계획의 방도 창 조건에 든다 — 안 넣으면 임시 호실 행이 통째로 빠진다.
+  const plannedRoomIds = changed.flatMap(l => parseRoomSchedule(l.roomSchedule).map(e => e.roomId))
+  const roomIds = [...new Set([
+    ...changed.flatMap(l => [l.roomId!, ...l.roomStays.map(s => s.roomId)]),
+    ...plannedRoomIds, ...workRoomIds,
+  ])]
   const context = roomIds.length === 0 ? [] : await db.leaseTerm.findMany({
     where: {
       propertyId,
@@ -144,7 +154,34 @@ export async function fetchMoveLeases(
     select: MOVE_LEASE_SELECT,
   })
 
-  return { changed: changed.map(toMoveLease), context: context.map(toMoveLease) }
+  // 계획 구간에 방 이름을 붙여 실제 구간과 같은 모양으로 만든다 — 그래야 조립·화면이
+  // 계획인지 실제인지 몰라도 된다(막대를 내는 축은 구간 하나뿐이다).
+  const planRoomIds = [...new Set([...changed, ...context]
+    .flatMap(l => parseRoomSchedule(l.roomSchedule).map(e => e.roomId)))]
+  const planRooms = planRoomIds.length === 0 ? [] : await db.room.findMany({
+    where: { id: { in: planRoomIds } }, select: { id: true, roomNo: true },
+  })
+  const roomNoOf = new Map(planRooms.map(r => [r.id, r.roomNo]))
+  const withPlan = (l: MoveLeaseRow): MoveLeaseRow => {
+    // 실제 구간이 하나라도 있으면 그것이 진실이다. 계획은 아직 안 들어온 계약에만 쓴다.
+    if (l.roomStays.length > 0) return l
+    const plan = parseRoomSchedule(l.roomSchedule)
+    if (!hasRoomSchedule(plan)) return l
+    return {
+      ...l,
+      roomStays: plan.map((e, i) => ({
+        id: `plan-${l.id}-${i}`,
+        roomId: e.roomId,
+        startDate: new Date(`${e.from}T00:00:00.000Z`),
+        endDate: e.to ? new Date(`${e.to}T00:00:00.000Z`) : null,
+        room: { roomNo: roomNoOf.get(e.roomId) ?? '' },
+      })),
+    }
+  }
+  return {
+    changed: changed.map(withPlan).map(toMoveLease),
+    context: context.map(withPlan).map(toMoveLease),
+  }
 }
 
 // ── 작업(청소) 조회 ───────────────────────────────────────────────

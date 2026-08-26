@@ -131,6 +131,26 @@ export function scheduleOpenFrom(entries: readonly RoomScheduleEntry[]): string 
  * 종이에 이 줄이 있으면 서명 뒤에 앱 기록을 다시 손볼 일이 없다(운영자 확정 2026-08-26,
  * "아예 옮길 곳을 계약서에 다 적어둘테니라"). 마지막 줄만 '부터'로 적는 것은 기한이 없어서다.
  */
+/**
+ * 화면용 일정 — 구간마다 한 줄. 계약서는 한 문장이지만 화면은 줄로 나눠야 읽힌다
+ * (운영자 지적 2026-08-26 — "기간별로 줄바꿈을 하면 가독성이 좋을 것 같아").
+ */
+export function roomScheduleLines(
+  entries: readonly RoomScheduleEntry[],
+  roomNoOf: (roomId: string) => string | null,
+): string[] {
+  if (!hasRoomSchedule(entries)) return []
+  const dot = (ymd: string) => ymd.replaceAll('-', '.')
+  const dayBefore = (ymd: string) =>
+    dot(new Date(Date.parse(`${ymd}T00:00:00Z`) - 86400000).toISOString().slice(0, 10))
+  return entries.map(e => {
+    const no = roomNoOf(e.roomId) ?? '?'
+    return e.to === null
+      ? `${dot(e.from)}부터 ${no}호 (계약 호실)`
+      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no}호 (임시)`
+  })
+}
+
 export function roomScheduleText(
   entries: readonly RoomScheduleEntry[],
   roomNoOf: (roomId: string) => string | null,

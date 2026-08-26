@@ -28,7 +28,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import {
-  scheduleOpenFrom, validateRoomSchedule, roomScheduleText,
+  scheduleOpenFrom, validateRoomSchedule, roomScheduleLines,
   type RoomScheduleEntry,
 } from '@/lib/roomSchedule'
 import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
@@ -41,9 +41,9 @@ const dateCls = 'w-full bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm
 const capCls = 'text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]'
 const errCls = 'text-[0.6875rem] text-[var(--danger-fg)]'
 
-/** 두 날 사이 일수 — 'YYYY-MM-DD' 그대로 다룬다(시간대가 끼면 하루가 밀린다). */
-function daysBetween(a: string, b: string): number {
-  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000)
+/** 하루 앞 — 'YYYY-MM-DD' 그대로 다룬다(시간대가 끼면 하루가 밀린다). */
+function dayBefore(ymd: string): string {
+  return new Date(Date.parse(`${ymd}T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
 }
 
 export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClose, onDone }: {
@@ -104,11 +104,11 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
   }, [opts, picks, endAt])
 
   // 이름은 고를 때 담아 둔 것에서 읽는다 — 목록은 다음 걸음에서 그 방을 빼기 때문이다.
-  const scheduleText = useMemo(() => {
-    if (fullSchedule.length === 0 || !opts) return null
+  const scheduleLines = useMemo(() => {
+    if (fullSchedule.length === 0 || !opts) return []
     const names = new Map(picks.map(p => [p.roomId, p.roomNo]))
     names.set(opts.mainRoomId, opts.mainRoomNo)
-    return roomScheduleText(fullSchedule, id => names.get(id) ?? null)
+    return roomScheduleLines(fullSchedule, id => names.get(id) ?? null)
   }, [fullSchedule, picks, opts])
 
   const addRoom = (room: { id: string; roomNo: string; availableUntil: string | null }) => {
@@ -150,7 +150,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
         <div className="flex gap-2">
           <Btn variant="secondary" size="md" onClick={onClose} disabled={pending} className="flex-1">닫기</Btn>
           <Btn variant="primary" size="md" onClick={() => void submit()} disabled={!canSubmit} className="flex-1">
-            {pending ? '처리 중…' : (plan ? '일정 잡기' : '입실 처리')}
+            {pending ? '처리 중…' : (plan ? '일정 저장' : '입실 처리')}
           </Btn>
         </div>
       }>
@@ -164,8 +164,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && endAt && (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-                  계약 호실 {opts.mainRoomNo}호는 {fmtDate(endAt)}에 빕니다.
-                  그때까지 머물 방을 정해 두면 그날 홈에서 옮길지 확인합니다.
+                  계약 호실 {opts.mainRoomNo}호는 {fmtDate(endAt)}부터 입주 가능합니다.
+                  그 전까지 지낼 임시 호실을 정해 두면, {fmtDate(endAt)}에 홈 화면에서 이사 여부를 확인합니다.
                 </p>
               </div>
             )}
@@ -190,20 +190,24 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                 <p className={capCls}>
                   이 날짜부터 이용료가 청구됩니다.
                   {!plan && ` 예약 때 잡은 ${fmtDate(opts.moveInDate)}과 달라도 됩니다.`}
-                  {picks.length > 0 && ' 날짜를 바꾸면 정한 방이 지워집니다.'}
+                  {picks.length > 0 && ' 날짜를 바꾸면 정해 둔 임시 호실이 지워집니다.'}
                 </p>
               )}
             </div>
 
-            {/* 지금까지 짠 일정 — 계약서에 적힐 문장 그대로 보여 준다. */}
-            {scheduleText && (
+            {/* 지금까지 짠 일정 — 구간마다 한 줄. 한 문장으로 이으면 안 읽힌다(운영자 지적). */}
+            {scheduleLines.length > 0 && (
               <div className="rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2">
                 <p className="text-[0.65625rem] text-[var(--warm-mid)]">지금까지 정한 일정</p>
-                <p className="mt-0.5 text-sm leading-relaxed text-[var(--warm-dark)]">{scheduleText}</p>
-                <div className="mt-1.5">
+                <ul className="mt-1 space-y-1">
+                  {scheduleLines.map(line => (
+                    <li key={line} className="text-sm leading-relaxed text-[var(--warm-dark)]">{line}</li>
+                  ))}
+                </ul>
+                <div className="mt-2">
                   <Btn type="button" variant="subtle" size="sm"
                     onClick={() => setPicks(p => p.slice(0, -1))} disabled={pending}>
-                    마지막 방 다시 고르기
+                    마지막에 고른 호실 취소
                   </Btn>
                 </div>
               </div>
@@ -212,7 +216,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!done && !unknownEnd && endAt && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-[var(--warm-mid)]">
-                  {picks.length === 0 ? '어느 방부터 시작할까요' : `${fmtDate(openFrom)}부터는 어느 방으로 갈까요`}
+                  {picks.length === 0 ? '어느 호실에서 시작할까요' : `${fmtDate(openFrom)}부터는 어느 호실로 옮길까요`}
                 </p>
                 {/* 갱신 중에는 목록이 옛 기간 것이라 누르지 못하게 잠근다(§17 콘텐츠 유지 + 진행 표시). */}
                 {refreshing && (
@@ -223,9 +227,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                 {opts.rooms.length > 0 ? (
                   <ul className="space-y-1.5">
                     {opts.rooms.map(r => {
-                      // 결론을 적는다 — 이 방으로 끝나는가, 아니면 며칠이 더 남는가.
+                      // 계약 호실 입주일까지 덮으면 여기서 일정이 끝난다.
                       const covers = !r.availableUntil || r.availableUntil >= endAt
-                      const short = covers ? 0 : daysBetween(r.availableUntil as string, endAt)
                       return (
                         <li key={r.id}>
                           <button type="button" onClick={() => addRoom(r)} disabled={refreshing}
@@ -233,8 +236,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                             <span className="text-sm font-semibold text-[var(--warm-dark)]">{r.roomNo}호</span>
                             <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">
                               {covers
-                                ? '이 방이면 끝'
-                                : `${fmtDate(r.availableUntil as string)}까지 · ${short}일 더 필요`}
+                                ? '계약 호실 입주일까지 가능'
+                                : `${fmtDate(dayBefore(r.availableUntil as string))}까지 가능`}
                             </span>
                           </button>
                         </li>
@@ -244,8 +247,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                 ) : (
                   <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
                     {picks.length === 0
-                      ? '그날 비는 방이 없습니다. 입주일을 바꿔 보세요.'
-                      : '그 기간에 비는 방이 없습니다. 위에서 마지막 방을 다시 골라 보세요.'}
+                      ? '그날 지낼 수 있는 호실이 없습니다. 입주일을 바꿔 보세요.'
+                      : '그 기간에 지낼 수 있는 호실이 없습니다. 위에서 마지막에 고른 호실을 취소하고 다시 골라 보세요.'}
                   </p>
                 )}
               </div>
@@ -253,9 +256,9 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
 
             {done && endAt && (
               <p className={capCls}>
-                {fmtDate(endAt)}에 계약 호실 {opts.mainRoomNo}호로 옮기라고 홈에서 알립니다.
+                {fmtDate(endAt)}에 계약 호실 {opts.mainRoomNo}호로 이사하라고 홈 화면에서 알립니다.
                 이 일정은 계약서에도 적힙니다.
-                {plan && ` ${fmtDate(moveIn)}에 입실 처리만 누르면 이대로 들어갑니다.`}
+                {plan && ` ${fmtDate(moveIn)}에 입실 처리만 누르면 이 일정대로 진행됩니다.`}
               </p>
             )}
           </>
