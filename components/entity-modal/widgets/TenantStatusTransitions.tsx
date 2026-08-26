@@ -64,6 +64,10 @@ function transitionsFor(status: string, confirmed = false, isShortTerm = false):
         ? { key: 'unconfirm', label: '확정 해제', toStatus: 'RESERVED', tone: 'secondary', kind: 'unconfirm' }
         : { key: 'confirm',   label: '예약 확정', toStatus: 'RESERVED', tone: 'primary',   kind: 'confirm' },
       { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
+      // 입주일에 계약 호실이 아직 안 빌 때 머물 방을 미리 정해 두는 자리. 계약서를 서명 전에
+      // 뽑아도 일정이 찍히려면 이 길이 있어야 한다(운영자 지적 2026-08-26).
+      // 상태를 안 바꾸므로 toStatus 는 제자리다 — handleClick 이 key 로 가로채 창만 연다.
+      ...(confirmed ? [{ key: 'plan', label: '입실 일정', toStatus: 'RESERVED', tone: 'secondary' as const }] : []),
       { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
     ]
     case 'ACTIVE': return [
