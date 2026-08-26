@@ -315,8 +315,10 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 전환(startTransition) 중에는 React 가 이 창을 그대로 세워 두므로, 전환이 끝난 뒤에 닫으면
   // 화면이 끊기지 않는다. 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다.
   const navClosing = useRef(false)
+  const [opening, setOpening] = useState(false)
   const navigateThenClose = (href: string) => {
     navClosing.current = true
+    setOpening(true)
     startTransition(() => { navRouter.push(href) })
     // 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다. 정상 경로에서는 아래 effect 가
     // 먼저 닫으므로 이 타이머가 하는 일이 없다.
@@ -434,7 +436,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               </button>
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditRoom} disabled={isPending}>
-                수정
+                {opening ? '여는 중…' : '수정'}
               </Btn>
             </div>
           )}
@@ -474,7 +476,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
                 </Btn>
               )}
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
-                수정
+                {opening ? '여는 중…' : '수정'}
               </Btn>
             </div>
           )}

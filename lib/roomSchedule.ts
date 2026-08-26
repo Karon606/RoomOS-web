@@ -17,6 +17,8 @@
 //
 // 구간은 [from, to) 반개구간이다. 앞 구간의 to 와 뒤 구간의 from 이 같은 날이고, 그날 옮긴다.
 
+import { fmtRoomNo } from './roomNo'
+
 /** 일정 한 줄 — 이 기간에는 이 방에 있다. */
 export type RoomScheduleEntry = {
   roomId: string
@@ -144,10 +146,10 @@ export function roomScheduleLines(
   const dayBefore = (ymd: string) =>
     dot(new Date(Date.parse(`${ymd}T00:00:00Z`) - 86400000).toISOString().slice(0, 10))
   return entries.map(e => {
-    const no = roomNoOf(e.roomId) ?? '?'
+    const no = fmtRoomNo(roomNoOf(e.roomId), '?')
     return e.to === null
-      ? `${dot(e.from)}부터 ${no}호 (계약 호실)`
-      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no}호 (임시)`
+      ? `${dot(e.from)}부터 ${no} (계약 호실)`
+      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no} (임시)`
   })
 }
 
@@ -160,10 +162,10 @@ export function roomScheduleText(
   const dayBefore = (ymd: string) =>
     dot(new Date(Date.parse(`${ymd}T00:00:00Z`) - 86400000).toISOString().slice(0, 10))
   return entries.map(e => {
-    const no = roomNoOf(e.roomId) ?? '?'
+    const no = fmtRoomNo(roomNoOf(e.roomId), '?')
     return e.to === null
-      ? `${dot(e.from)}부터 ${no}호`
-      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no}호`
+      ? `${dot(e.from)}부터 ${no}`
+      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no}`
   }).join(' · ')
 }
 

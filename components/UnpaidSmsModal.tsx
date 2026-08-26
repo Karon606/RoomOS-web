@@ -11,6 +11,7 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { getUnpaidSmsContext, logSmsAttempt, type UnpaidSmsContext } from '@/app/(app)/dashboard/actions'
 import { blockSmsIfStaging } from '@/lib/smsHref'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 export type UnpaidSmsTarget = {
   leaseId: string
@@ -105,7 +106,7 @@ export function UnpaidSmsModal({ target, onClose, z = 200 }: { target: UnpaidSms
             미처 확인하지 못한 입금이 있을 수 있습니다. 지금 눌러도 문자는 나가지 않고, 다음 화면에서 내용을 보고 보냅니다.
           </p>
           <p className="text-xs text-[var(--warm-mid)]">
-            대상: <span className="font-semibold text-[var(--warm-dark)]">{target.roomNo && /^\d+$/.test(target.roomNo) ? `${target.roomNo}호 ` : ''}{target.tenantName}</span>
+            대상: <span className="font-semibold text-[var(--warm-dark)]">{target.roomNo && /^\d+$/.test(target.roomNo) ? `${fmtRoomNo(target.roomNo, '')} ` : ''}{target.tenantName}</span>
             {' · '}미납 {target.unpaidAmount.toLocaleString('ko-KR')}원
             {target.daysOverdue != null && target.daysOverdue > 0 ? ` · 납기 ${target.daysOverdue}일 경과` : ''}
           </p>

@@ -14,6 +14,7 @@ import { plannedStaysInRoom } from '@/lib/plannedStays'
 import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolutions = Record<string, string>  // conflictId → 'overwrite' | 'keep' | 'archive'
@@ -139,7 +140,7 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string, 
       }
       result.imported++
     } catch (e) {
-      result.errors.push(`${roomNo}호: ${(e as Error).message}`)
+      result.errors.push(`${fmtRoomNo(roomNo, '')}: ${(e as Error).message}`)
     }
   }
   return result
@@ -306,7 +307,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
     const blocked = await roomAssignmentBlock(room, propertyId, status, parseDate(moveInCell(row)), parseDate(row['퇴실 예정일']))
     if (blocked) {
       result.skipped++
-      result.errors.push(`${name} (${roomNo}호): ${blocked}`)
+      result.errors.push(`${name} (${fmtRoomNo(roomNo, '')}): ${blocked}`)
       return
     }
   }

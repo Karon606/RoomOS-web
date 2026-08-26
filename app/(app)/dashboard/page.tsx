@@ -30,6 +30,7 @@ import { displayName } from '@/lib/displayName'
 import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, depositCompositionLabel, heldContractCleaningPortion } from '@/lib/depositComposition'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1384,7 +1385,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (isConfirmed && isDue) {
       alertItems.push({
         category:  'movein',
-        text:      `${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}${l.tenant.name}님 입주 확정일 도래`,
+        text:      `${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo, '')} ` : ''}${l.tenant.name}님 입주 확정일 도래`,
         link:      `/tenants?tenantId=${l.tenant.id}`,
         dotColor:  'var(--success-fg)',
         timeLabel: days === 0 ? '오늘' : days < 0 ? `${Math.abs(days)}일 경과` : dayLabel(days),
@@ -1399,7 +1400,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
     alertItems.push({
       category:  'movein',
-      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망${isConfirmed ? ' (예약 확정)' : ' (입실 예약)'}`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo, '')} ` : ''}입실 희망${isConfirmed ? ' (예약 확정)' : ' (입실 예약)'}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  isConfirmed ? 'var(--success-fg)' : 'var(--info-fg)',
       timeLabel: dayLabel(days),
@@ -1417,7 +1418,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const days = daysUntil(l.moveInDate!)
     alertItems.push({
       category:  'movein',
-      text:      `${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}${l.tenant.name}님 입주 확정일 경과`,
+      text:      `${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo, '')} ` : ''}${l.tenant.name}님 입주 확정일 경과`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--success-fg)',
       timeLabel: `${Math.abs(days)}일 경과`,
@@ -1463,12 +1464,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         // 이미 살고 있는 사람의 이동이라 '입실 희망'이 아니다 — 제 묶음에 선다.
         category:  'move',
-        text:      `${l.tenant.name}님 ${roomNos.get(next.roomId) ?? ''}호 이사 예정`,
+        text:      `${l.tenant.name}님 ${fmtRoomNo(roomNos.get(next.roomId) ?? '', '')} 이사 예정`,
         link:      `/tenants?tenantId=${l.tenant.id}`,
         dotColor:  'var(--info-fg)',
         timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
         tenantId:  l.tenant.id,
-        detail:    `지금 ${l.roomStays[0]?.room?.roomNo ?? ''}호에 머물고 있습니다. 일정대로 ${roomNos.get(next.roomId) ?? ''}호로 이사할까요?`,
+        detail:    `지금 ${fmtRoomNo(l.roomStays[0]?.room?.roomNo ?? '', '')}에 머물고 있습니다. 일정대로 ${fmtRoomNo(roomNos.get(next.roomId) ?? '', '')}로 이사할까요?`,
         exactDate: fmtShortDate(new Date(`${next.from}T00:00:00.000Z`)),
         scheduleMoveLeaseId: l.id,
         scheduleMoveTenantName: l.tenant.name,
@@ -1493,7 +1494,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
     alertItems.push({
       category:  'moveout',
-      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}퇴실 예정`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${fmtRoomNo(l.room.roomNo, '')} ` : ''}퇴실 예정`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--warning-fg)',
       timeLabel,
@@ -1517,7 +1518,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const timeLabel = l.tourDate ? dayLabel(daysUntil(l.tourDate)) : '일정 미정'
     alertItems.push({
       category:  'tour',
-      text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} ${l.tourDate ? '투어 예정' : '문의'}`,
+      text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${fmtRoomNo(l.room.roomNo, '')}` : ''} ${l.tourDate ? '투어 예정' : '문의'}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--deposit-fg)',
       timeLabel,
@@ -1553,7 +1554,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const okRooms = wish?.rooms.filter(r => r.gate === 'ok') ?? []
       // 희망일에 맞는 방이 있으면 그 방을, 없으면 며칠만 미루면 되는지를 말한다(둘 다 아니면 침묵).
       const answer = okRooms.length > 0
-        ? `희망일에 맞는 방 ${okRooms.length}실(${okRooms.map(r => `${r.roomNo}호 ${wishRoomFromLabel(r.availability)}`).join(', ')})이 있습니다.`
+        ? `희망일에 맞는 방 ${okRooms.length}실(${okRooms.map(r => `${fmtRoomNo(r.roomNo, '')} ${wishRoomFromLabel(r.availability)}`).join(', ')})이 있습니다.`
         : wish ? wishDelayHint(wish.rooms) : ''
       alertItems.push({
         category:  'contact',
@@ -1577,11 +1578,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (g.candidates.length === 0) {
       alertItems.push({
         category:  'wish',
-        text:      `${g.roomNo}호 ${stateLabel} · 조건 맞는 대기자 없음`,
+        text:      `${fmtRoomNo(g.roomNo, '')} ${stateLabel} · 조건 맞는 대기자 없음`,
         link:      `/tenants`,
         dotColor:  'var(--success-fg)',
         timeLabel: `날짜 불가 ${g.excludedCount}명`,
-        detail:    `${g.roomNo}호를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
+        detail:    `${fmtRoomNo(g.roomNo, '')}를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
         wishRoomNo: g.roomNo,
       })
       continue
@@ -1589,11 +1590,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (g.candidates.length === 1) {
       const c = g.candidates[0]
       const text = c.matchedBy === 'conditions'
-        ? `${c.tenantName}님과 조건이 맞는 ${g.roomNo}호 ${stateLabel}`
-        : `${c.tenantName}님이 희망한 ${g.roomNo}호 ${stateLabel}`
+        ? `${c.tenantName}님과 조건이 맞는 ${fmtRoomNo(g.roomNo, '')} ${stateLabel}`
+        : `${c.tenantName}님이 희망한 ${fmtRoomNo(g.roomNo, '')} ${stateLabel}`
       const detail = c.matchedBy === 'conditions'
-        ? `${c.tenantName}님이 원하는 조건과 일치하는 ${g.roomNo}호가 ${stateLabel} 상태입니다.`
-        : `${c.tenantName}님이 입실을 희망한 ${g.roomNo}호가 ${stateLabel} 상태입니다.`
+        ? `${c.tenantName}님이 원하는 조건과 일치하는 ${fmtRoomNo(g.roomNo, '')}가 ${stateLabel} 상태입니다.`
+        : `${c.tenantName}님이 입실을 희망한 ${fmtRoomNo(g.roomNo, '')}가 ${stateLabel} 상태입니다.`
       alertItems.push({
         category:  'wish',
         text,
@@ -1607,7 +1608,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       continue
     }
 
-    const text = `${g.roomNo}호 ${stateLabel} · 매칭 후보 ${g.candidates.length}명`
+    const text = `${fmtRoomNo(g.roomNo, '')} ${stateLabel} · 매칭 후보 ${g.candidates.length}명`
     const detail = g.candidates
       .map(c => `${c.rank}순위 ${c.tenantName}님 · ${wishCandidateCaption(c)}`)
       .join('\n')
@@ -1640,7 +1641,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (l.overduePortion > 0 && days >= 1) {
       alertItems.push({
         category:  'unpaid',
-        text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
+        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} 미납 ${days}일 경과`,
         link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  'var(--danger-fg)',
         timeLabel: `${days}일 경과`,
@@ -1658,7 +1659,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const timeLabel = daysLeft === 0 ? '오늘 납부일' : `${daysLeft}일 남음`
       alertItems.push({
         category:  'upcoming',
-        text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
+        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} 납부 예정`,
         link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  'var(--inspect-fg)',
         timeLabel,
@@ -1673,7 +1674,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 오늘 도래·미회수 (드문 케이스)
       alertItems.push({
         category:  'unpaid',
-        text:      `${l.tenantName}님 ${l.roomNo}호 오늘 납부일`,
+        text:      `${l.tenantName}님 ${fmtRoomNo(l.roomNo, '')} 오늘 납부일`,
         link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  'var(--danger-fg)',
         timeLabel: '오늘',
@@ -1838,7 +1839,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       badgeLabel = `${tNum}월분 지연`; badgeTone = 'late'
     }
     return {
-      text:       `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
+      text:       `${p.tenant.name}님 ${fmtRoomNo(p.leaseTerm.room?.roomNo ?? '?', '')} 납입 완료`,
       timeLabel:  payLabel,
       dotColor:   'var(--success-fg)',
       link:       `/tenants?tenantId=${p.tenant.id}&tab=info`,
@@ -1859,7 +1860,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const dayNum = parseInt(l.dueDay, 10)
       if (isNaN(dayNum) || dayNum >= cutoffDay) continue
       activityItems.unshift({
-        text:       `${l.tenant.name}님 ${l.room?.roomNo ?? '?'}호 납입 완료`,
+        text:       `${l.tenant.name}님 ${fmtRoomNo(l.room?.roomNo ?? '?', '')} 납입 완료`,
         timeLabel:  '양도인 수납',
         dotColor:   'var(--warning-fg)',
         link:       `/tenants?tenantId=${l.tenant.id}&tab=info`,

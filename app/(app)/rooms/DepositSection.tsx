@@ -20,6 +20,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
 import { kstYmdStr } from '@/lib/kstDate'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // 행 인라인 미니폼 입력 — §12 전체 티어. DatePicker 트리거는 껍데기가 없어 이 클래스를 안 넘기면
 // 맨글자로 렌더된다. min-h 로 44/40 을 만든다(inline-flex 는 truncate 를 죽인다).
@@ -147,7 +148,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--warm-dark)]">{d.tenantName}</span>
-                      {d.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {d.roomNo}호</span>}
+                      {d.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {fmtRoomNo(d.roomNo, '')}</span>}
                       <span className="text-[0.65625rem] px-2 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
@@ -253,7 +254,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                           하루 앞선 날짜를 그렸고, 서버·기기가 갈려 하이드레이션도 어긋날 자리였다. */}
                       <span className="text-xs text-[var(--warm-muted)]">{fmtDateDot(e.date)}</span>
                       <span className="text-xs text-[var(--warm-dark)]">· {e.tenantName}</span>
-                      {e.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {e.roomNo}호</span>}
+                      {e.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {fmtRoomNo(e.roomNo, '')}</span>}
                     </div>
                     {e.type === 'REFUND' && (
                       <p className="text-xs text-[var(--warm-muted)]">

@@ -27,6 +27,7 @@ import CategorySelect from '@/components/ui/CategorySelect'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import MonthSelector from '@/components/layout/MonthSelector'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
@@ -335,7 +336,7 @@ export default function RequestsClient({
                 const roomNo = t.leaseTerms[0]?.room?.roomNo
                 return (
                   <option key={t.id} value={t.id}>
-                    {t.name}{roomNo ? ` · ${roomNo}호` : ''}
+                    {t.name}{roomNo ? ` · ${fmtRoomNo(roomNo, '')}` : ''}
                   </option>
                 )
               })}
@@ -551,7 +552,7 @@ export default function RequestsClient({
                       href={`/tenants?tenantId=${r.tenantId}&tab=requests`}
                       className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)]"
                     >
-                      {r.tenant?.name ?? '입주자 미상'}{shownRoom && ` · ${pastRoom ? '당시 ' : ''}${shownRoom}호`}
+                      {r.tenant?.name ?? '입주자 미상'}{shownRoom && ` · ${pastRoom ? '당시 ' : ''}${fmtRoomNo(shownRoom, '')}`}
                     </Link>
                   )}
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>

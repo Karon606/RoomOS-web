@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Result = {
   total: number
@@ -63,7 +64,7 @@ export default function AccrualCheckClient({ initialResult, myRole }: { initialR
     if (!(await confirmDialog({
       // 종전 문구는 '입금일·금액은 그대로'만 말해 안심시켰다 — 정작 두 달의 매출·미납이 함께 바뀐다는
       // 사실이 빠져 있었다(A페이즈, UX 라이터·웹디자이너 검토). 화살표는 가이드 금지라 문장으로 푼다.
-      title: `${record.roomNo ?? '?'}호 ${record.tenantName}님 수납을 ${monLabel(record.targetMonth)}에서 ${monLabel(newMonth)}으로 옮길까요?`,
+      title: `${fmtRoomNo(record.roomNo ?? '?', '')} ${record.tenantName}님 수납을 ${monLabel(record.targetMonth)}에서 ${monLabel(newMonth)}으로 옮길까요?`,
       message: `${record.payDate} 입금 ${fmtWon(record.actualAmount)}. 입금일과 금액은 그대로입니다.\n홈·리포트의 ${monShort(record.targetMonth)} 매출이 ${fmtWon(record.actualAmount)} 줄고 ${monShort(newMonth)} 매출이 그만큼 늘어납니다. 두 달의 미납도 함께 바뀝니다.\n실행 직후 뜨는 적용취소로 되돌릴 수 있습니다.`,
       level: 'caution', confirmLabel: '옮기기',
     }))) return
@@ -175,7 +176,7 @@ export default function AccrualCheckClient({ initialResult, myRole }: { initialR
             <div key={s.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-sm flex-wrap">
-                  <span className="font-bold text-[var(--coral)]">{s.roomNo ?? '?'}호</span>
+                  <span className="font-bold text-[var(--coral)]">{fmtRoomNo(s.roomNo, '?')}</span>
                   <span className="font-semibold text-[var(--warm-dark)]">{s.tenantName}</span>
                   <span className="text-[var(--warm-muted)]">·</span>
                   <span className="text-[var(--warm-mid)]">{s.payDate} 입금</span>

@@ -23,6 +23,7 @@ import {
 import { CLEANING_FEE_CATEGORY, DEPOSIT_SOURCED_PAY_METHOD } from '@/lib/incomeCategories'
 import { CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { ymdToDbDate } from '@/lib/kstDate'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const ymd = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : null)
 
@@ -231,7 +232,7 @@ export async function completeCleaning(input: {
           where: { id: expenseId },
           data: {
             date: doneDate, amount: cost,
-            detail: `${cur.room.roomNo}호 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
+            detail: `${fmtRoomNo(cur.room.roomNo, '')} 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
           },
         })
@@ -246,7 +247,7 @@ export async function completeCleaning(input: {
             propertyId, date: doneDate, amount: cost,
             category: CLEANING_EXPENSE_CATEGORY,
             roomId: cur.roomId,
-            detail: `${cur.room.roomNo}호 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
+            detail: `${fmtRoomNo(cur.room.roomNo, '')} 청소${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
             // 서비스·무형이라 재고 계산에서 뺀다. 방에 귀속돼 있어 방별 비용 집계에는 들어간다.
             excludeFromInventory: true,

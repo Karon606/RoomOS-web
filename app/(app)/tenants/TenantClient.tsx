@@ -2254,7 +2254,7 @@ export default function TenantClient({
                       if (minR !== 0 || maxR !== 400000) condParts.push(`${(minR/10000).toFixed(0)}~${(maxR/10000).toFixed(0)}만`)
                       let label: string
                       if (wishRoomList.length > 0) {
-                        label = `희망 ${wishRoomList[0]}호${wishRoomList.length > 1 ? ` 외 ${wishRoomList.length - 1}` : ''}`
+                        label = `희망 ${fmtRoomNo(wishRoomList[0], '')}${wishRoomList.length > 1 ? ` 외 ${wishRoomList.length - 1}` : ''}`
                       } else if (condParts.length > 0) {
                         label = condParts.join('·')
                       } else {

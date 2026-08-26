@@ -21,6 +21,7 @@ import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurringStatus'
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'autodebit' | 'manualpay'
 
@@ -131,7 +132,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
   const items: AlertItem[] = []
   const roomName = (roomNo: string | null | undefined, name: string) =>
-    roomNo ? `${/^\d+$/.test(roomNo) ? `${roomNo}호` : roomNo} ${name}` : name
+    roomNo ? `${/^\d+$/.test(roomNo) ? `${fmtRoomNo(roomNo, '')}` : roomNo} ${name}` : name
 
   // 미납 — 가장 급함. 경과 일수가 클수록 urgency↑
   for (const l of unpaidStatus.unpaidLeases) {

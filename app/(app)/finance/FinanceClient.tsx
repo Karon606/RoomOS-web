@@ -70,6 +70,7 @@ import {
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
 import { DonutChart } from '@/components/ui/DonutChart'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -227,7 +228,7 @@ function roomChipText(rows: { room: { roomNo: string } | null }[]): string {
 
 // 방별 분배 묶음의 방 목록 라벨 — '101·102·103호' / 많으면 '101호 외 N곳' / 미배정은 수량과 함께
 function roomsLabel(rows: { room: { roomNo: string } | null; qtyValue?: number | null; qtyUnit?: string | null }[]): string {
-  const fmt = (no: string) => /^\d+$/.test(no) ? `${no}호` : no
+  const fmt = (no: string) => fmtRoomNo(no, '')
   const named = [...new Set(rows.filter(r => r.room).map(r => r.room!.roomNo))]
   const parts = named.length <= 3 ? named.map(fmt) : [fmt(named[0]), `외 ${named.length - 1}곳`]
   const unassigned = rows.filter(r => !r.room)
@@ -882,7 +883,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                               onChange={e => editAllocRoom(idx, ai, e.target.value)}
                               className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] outline-none">
                               <option value="">방 선택…</option>
-                              {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                              {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                             </select>
                             {/* 자동 분배값은 흐린 글씨, 직접 고친 값은 진한 글씨 — 손댄 방은 되돌리기 아이콘으로 구분(색 의존 회피) */}
                             <input type="text" inputMode="decimal" value={a.qty} placeholder="수량"
@@ -2778,7 +2779,7 @@ export default function FinanceClient({
                           <select value={expFilter.roomId} onChange={e => setExpFilter(f => ({ ...f, roomId: e.target.value }))} className={selCls}>
                             <option value="all">전체</option>
                             <option value="none">미지정</option>
-                            {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                            {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                           </select>
                         </div>
                       )}
@@ -2859,7 +2860,7 @@ export default function FinanceClient({
                   {groups.map(g => (
                     <details key={g.roomNo} className="rounded-lg bg-[var(--canvas)] px-2 py-1">
                       <summary className="cursor-pointer flex items-center justify-between gap-2 text-[0.6875rem]">
-                        <span className="text-[var(--warm-mid)]">{g.roomNo}호 <span className="text-[var(--warm-muted)]">· {g.items.length}건</span></span>
+                        <span className="text-[var(--warm-mid)]">{fmtRoomNo(g.roomNo, '')} <span className="text-[var(--warm-muted)]">· {g.items.length}건</span></span>
                         <span className="tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={g.total} /></span>
                       </summary>
                       <ul className="mt-1.5 space-y-1 border-t border-[var(--warm-border)]/50 pt-1.5">
@@ -3611,7 +3612,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정')))}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${fmtRoomNo(r.room.roomNo, '')}` : r.room.roomNo) : (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정')))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{fmtWon(r.amount)}</span>
@@ -3776,7 +3777,7 @@ export default function FinanceClient({
                       </div>
                     )
                   })()}
-                  {detailExp.room && <DetailRow label="대상 호실" value={`${detailExp.room.roomNo}호`} />}
+                  {detailExp.room && <DetailRow label="대상 호실" value={`${fmtRoomNo(detailExp.room.roomNo, '')}`} />}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
@@ -4143,7 +4144,7 @@ export default function FinanceClient({
                         <select value={editExpRoomId} onChange={e => setEditExpRoomId(e.target.value)}
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                           <option value="">선택 안함</option>
-                          {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                          {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                         </select>
                         {/* 등록 폼과 동일한 상태 인지형 안내(오류신고 ad4256b0) */}
                         <p className="text-[0.65625rem] text-[var(--warm-muted)]">
@@ -4445,7 +4446,7 @@ export default function FinanceClient({
                       <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택 안함</option>
-                        {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                        {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')}</option>)}
                       </select>
                       {/* 안내는 화면 상태에 맞게 — 품목이 없으면 켤 토글 자체가 없어 길을 잘못 안내(오류신고 ad4256b0) */}
                       <p className="text-[0.65625rem] text-[var(--warm-muted)]">
@@ -4580,7 +4581,7 @@ export default function FinanceClient({
                               <span className="flex-1 min-w-0">
                                 <span className="block truncate text-xs text-[var(--warm-dark)]">{label}</span>
                                 <span className="block truncate text-[0.65625rem] text-[var(--warm-muted)]">
-                                  {r.category}{r.vendor ? ` · ${r.vendor}` : ''}{r.roomNo ? ` · ${r.roomNo}호` : ''}
+                                  {r.category}{r.vendor ? ` · ${r.vendor}` : ''}{r.roomNo ? ` · ${fmtRoomNo(r.roomNo, '')}` : ''}
                                 </span>
                               </span>
                               <span className="shrink-0 tabular-nums text-xs font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={r.amount} /></span>

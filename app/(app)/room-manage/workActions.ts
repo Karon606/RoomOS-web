@@ -21,6 +21,7 @@ import { splitWorkCost } from '@/lib/roomWorkCost'
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
 import { type CleaningPerformer } from './cleaningConstants'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 /** 작업 비용이 잡히는 지출 카테고리. 이미 쌓인 도배·장판 87건이 전부 이 값이다(실측 2026-08-25). */
 const WORK_EXPENSE_CATEGORY = '수선유지비'
@@ -178,7 +179,7 @@ export async function completeRoomWork(input: {
             category: WORK_EXPENSE_CATEGORY,
             roomId: cur.roomId,
             roomWorkId: cur.id,
-            detail: `${cur.room.roomNo}호 ${cur.kind}${input.performerName ? ` · ${input.performerName}` : ''}`,
+            detail: `${fmtRoomNo(cur.room.roomNo, '')} ${cur.kind}${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
           },
         })

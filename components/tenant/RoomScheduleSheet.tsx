@@ -32,6 +32,7 @@ import {
   type RoomScheduleEntry,
 } from '@/lib/roomSchedule'
 import { getRoomScheduleOptions, startLeaseWithRoomSchedule, saveRoomSchedulePlan } from '@/app/(app)/tenants/actions'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Options = Extract<Awaited<ReturnType<typeof getRoomScheduleOptions>>, { ok: true }>
 /** 고른 방 — 이름을 함께 담는다. 목록은 다음 걸음에서 그 방을 빼므로 거기서 이름을 못 찾는다. */
@@ -164,7 +165,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && endAt && (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-                  계약 호실 {opts.mainRoomNo}호는 {fmtDate(endAt)}부터 입주 가능합니다.
+                  계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}는 {fmtDate(endAt)}부터 입주 가능합니다.
                   그 전까지 지낼 임시 호실을 정해 두면, {fmtDate(endAt)}에 홈 화면에서 이사 여부를 확인합니다.
                 </p>
               </div>
@@ -172,7 +173,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
 
             {unknownEnd && (
               <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
-                계약 호실 {opts.mainRoomNo}호의 입주 가능일이 정해지지 않았습니다.
+                계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}의 입주 가능일이 정해지지 않았습니다.
                 {opts.mainOccupantName
                   ? ` 지금 사는 ${opts.mainOccupantName}님의 퇴실 예정일을 먼저 정해 주세요.`
                   : ' 지금 사는 분의 퇴실 예정일을 먼저 정해 주세요.'}
@@ -233,7 +234,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                         <li key={r.id}>
                           <button type="button" onClick={() => addRoom(r)} disabled={refreshing}
                             className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] disabled:opacity-50">
-                            <span className="text-sm font-semibold text-[var(--warm-dark)]">{r.roomNo}호</span>
+                            <span className="text-sm font-semibold text-[var(--warm-dark)]">{fmtRoomNo(r.roomNo, '')}</span>
                             <span className="shrink-0 text-[0.65625rem] text-[var(--warm-muted)]">
                               {covers
                                 ? '계약 호실 입주일까지 가능'
@@ -256,7 +257,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
 
             {done && endAt && (
               <p className={capCls}>
-                {fmtDate(endAt)}에 계약 호실 {opts.mainRoomNo}호로 이사하라고 홈 화면에서 알립니다.
+                {fmtDate(endAt)}에 계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}로 이사하라고 홈 화면에서 알립니다.
                 이 일정은 계약서에도 적힙니다.
                 {plan && ` ${fmtDate(moveIn)}에 입실 처리만 누르면 이 일정대로 진행됩니다.`}
               </p>

@@ -17,6 +17,7 @@ import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, saveNoticeT
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSmsTemplates, type SmsTemplateRow } from '@/app/(app)/settings/actions'
 import { blockSmsIfStaging } from '@/lib/smsHref'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성' }
@@ -407,7 +408,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                     <label className={`flex items-center gap-2.5 px-3 py-2 text-sm ${t.phone ? 'cursor-pointer' : 'opacity-45'}`}>
                       <input type="checkbox" className="accent-[var(--coral)]"
                         checked={checked.has(t.leaseTermId)} disabled={!t.phone} onChange={() => toggle(t)} />
-                      <span className="font-medium text-[var(--warm-dark)] shrink-0">{t.roomNo}호</span>
+                      <span className="font-medium text-[var(--warm-dark)] shrink-0">{fmtRoomNo(t.roomNo, '')}</span>
                       <span className="text-[var(--warm-mid)] truncate">{t.name}</span>
                       <span className="ml-auto text-xs text-[var(--warm-muted)] tabular-nums shrink-0">
                         {t.phone ?? '연락처 없음'}

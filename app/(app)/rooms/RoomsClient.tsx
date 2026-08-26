@@ -370,7 +370,7 @@ function unpaidSubText(
 // 유예 중이면 독촉이 아니라 기한 안내로 문구를 바꾼다.
 function buildReminderText(room: RoomStatus, targetMonth: string, unpaid: number): string {
   const monLabel = Number((room.firstUnpaidMonth ?? targetMonth).slice(5))
-  const head = `안녕하세요. ${room.roomNo}호 ${room.tenantName ?? ''}님,`
+  const head = `안녕하세요. ${fmtRoomNo(room.roomNo, '')} ${room.tenantName ?? ''}님,`
   const due = isDeferredNow(room, targetMonth) ? deferredDueLabel(room, targetMonth) : null
   if (due) {
     return `${head} ${monLabel}월분 이용료 ${fmtWon(unpaid)}은 ${due}까지 납부해 주시기로 했습니다. 기한 내 납부 부탁드립니다.`

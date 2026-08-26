@@ -6,6 +6,7 @@ import type { Conflict, PreviewResult } from '@/lib/import-types'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { resolveMonthParam } from '@/lib/monthParam'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolution = 'overwrite' | 'keep' | 'archive'
@@ -86,7 +87,7 @@ function ConflictRow({
   })()
 
   const label = (() => {
-    if (conflict.sheet === 'rooms') return `${conflict.roomNo}호`
+    if (conflict.sheet === 'rooms') return `${fmtRoomNo(conflict.roomNo, '')}`
     if (conflict.sheet === 'tenants') return conflict.name
     if (conflict.sheet === 'settings') return conflict.alias ? `${conflict.brand} (${conflict.alias})` : conflict.brand
     return `${conflict.date} ${conflict.category}`
@@ -282,7 +283,7 @@ export default function DataButtons() {
             <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] border border-[var(--danger-ring)] break-keep space-y-1">
               <p><span className="font-semibold">{step.preview.roomBlocked.length}명</span>은 호실 배정이 막혀 저장되지 않습니다. 시트의 호실이나 날짜를 고쳐 다시 올려 주세요.</p>
               {step.preview.roomBlocked.slice(0, 5).map((b, i) => (
-                <p key={i}>{b.name} ({b.roomNo}호) {b.reason}</p>
+                <p key={i}>{b.name} ({fmtRoomNo(b.roomNo, '')}) {b.reason}</p>
               ))}
               {step.preview.roomBlocked.length > 5 && <p>외 {step.preview.roomBlocked.length - 5}명</p>}
             </div>

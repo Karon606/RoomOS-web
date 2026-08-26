@@ -4,13 +4,14 @@ import prisma from '@/lib/prisma'
 import { isCheckoutNoBillingMonthFor, billForLeaseMonth } from '@/lib/billing'
 import { shouldShowTourEvent } from '@/lib/tourFeed'
 import { dueDateForMonth, isDeferredForMonth, resolveDueRaw } from '@/lib/dueDate'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
 const ymd = (y: number, m: number, d: number) => `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`
-const fmtRoom = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
+const fmtRoom = (no?: string | null) => (no ? (fmtRoomNo(no, '')) : '')
 // 금액을 만/억 단위 한글 표기 — 1,503,500 → '150만3500원', 1,500,000 → '150만원'
 const manWon = (n: number): string => {
   if (n < 10000) return `${n}원`

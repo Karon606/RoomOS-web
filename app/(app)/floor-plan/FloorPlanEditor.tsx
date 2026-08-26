@@ -13,6 +13,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -255,7 +256,7 @@ function PropertiesPanel({
           <select className={inputCls} value={el.roomNo ?? ''}
             onChange={e => { onChange({ roomNo: e.target.value || undefined }); onCommit() }}>
             <option value="">연결 없음</option>
-            {rooms.map(r => <option key={r.id} value={r.roomNo}>{r.roomNo}호</option>)}
+            {rooms.map(r => <option key={r.id} value={r.roomNo}>{fmtRoomNo(r.roomNo, '')}</option>)}
           </select>
         </div>
       )}
@@ -451,7 +452,7 @@ function AiImportModal({
               {preview.map((el, i) => (
                 <li key={i} className="flex items-center gap-2">
                   <span className="text-[var(--warm-muted)] w-12 shrink-0">{TYPE_LABEL[el.type]}</span>
-                  <span>{el.label}{el.roomNo ? ` (${el.roomNo}호)` : ''}</span>
+                  <span>{el.label}{el.roomNo ? ` (${fmtRoomNo(el.roomNo, '')})` : ''}</span>
                 </li>
               ))}
             </ul>

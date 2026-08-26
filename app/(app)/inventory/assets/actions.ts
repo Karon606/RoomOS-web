@@ -15,6 +15,7 @@ import { canReadScope } from '@/lib/auth/routeScope'
 import { getMyRole } from '@/lib/role'
 import { getTrackedCategories } from '../categoryConfig'
 import { canonicalUnit } from '@/lib/units'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
@@ -642,7 +643,7 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
   if (roomId) {
     const r = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { roomNo: true } })
     const no = r?.roomNo ?? ''
-    return { kind: 'room', label: no ? (/^\d+$/.test(no) ? `${no}호` : no) : '방' }
+    return { kind: 'room', label: no ? (fmtRoomNo(no, '')) : '방' }
   }
   if (locId) {
     const l = await prisma.storageLocation.findFirst({ where: { id: locId, propertyId }, select: { name: true } })

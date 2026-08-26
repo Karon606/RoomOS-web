@@ -67,6 +67,7 @@ import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR
 import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -2140,10 +2141,10 @@ async function moveInBlock(roomId: string, exceptLeaseId: string): Promise<{ roo
     select: { status: true },
   })
   if (others.some(o => o.status === 'ACTIVE')) {
-    return { roomNo: room.roomNo, error: `${room.roomNo}호는 아직 거주 중인 입주자가 있습니다.` }
+    return { roomNo: room.roomNo, error: `${fmtRoomNo(room.roomNo, '')}는 아직 거주 중인 입주자가 있습니다.` }
   }
   if (others.some(o => o.status === 'CHECKOUT_PENDING')) {
-    return { roomNo: room.roomNo, error: `${room.roomNo}호는 아직 퇴실 처리가 완료되지 않았습니다.` }
+    return { roomNo: room.roomNo, error: `${fmtRoomNo(room.roomNo, '')}는 아직 퇴실 처리가 완료되지 않았습니다.` }
   }
   return null
 }
@@ -2401,7 +2402,7 @@ async function roomScheduleClash(
     const hit = spans.some(o => o.roomId === seg.roomId && spanOverlaps(want, { start: o.start, end: o.end }))
     if (hit) {
       const room = await prisma.room.findUnique({ where: { id: seg.roomId }, select: { roomNo: true } })
-      return `${room?.roomNo ?? ''}호는 그 기간에 다른 입주자가 있습니다.`
+      return `${fmtRoomNo(room?.roomNo ?? '', '')}는 그 기간에 다른 입주자가 있습니다.`
     }
   }
   return null
@@ -2566,7 +2567,7 @@ export async function startLeaseWithRoomSchedule(input: {
       : null
     return {
       ok: true,
-      notice: next ? `${fmtDateDot(next.at)}에 ${nextRoom?.roomNo ?? ''}호로 옮기라고 홈에서 알립니다.` : undefined,
+      notice: next ? `${fmtDateDot(next.at)}에 ${fmtRoomNo(nextRoom?.roomNo ?? '', '')}로 옮기라고 홈에서 알립니다.` : undefined,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -2725,7 +2726,7 @@ export async function advanceRoomSchedule(input: {
     const room = await prisma.room.findUnique({ where: { id: next.roomId }, select: { roomNo: true } })
     return {
       ok: true,
-      notice: after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${room?.roomNo ?? ''}호가 계약 호실입니다.`,
+      notice: after ? `${fmtDateDot(after.from)}에 한 번 더 옮기는 일정입니다.` : `${fmtRoomNo(room?.roomNo ?? '', '')}가 계약 호실입니다.`,
     }
   } catch (e) {
     if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
@@ -3186,7 +3187,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
   const prompt = `당신은 공간 대여 관리 전문 AI입니다. 아래 입주자의 수납 데이터를 분석하고 한국어로 3~5문장으로 수납 패턴, 건전성, 관리 제안을 알려주세요.
 
 [입주자 정보]
-- 이름: ${tenant.name}, 호실: ${lease?.room?.roomNo ?? '미지정'}호
+- 이름: ${tenant.name}, 호실: ${fmtRoomNo(lease?.room?.roomNo ?? '미지정', '')}
 - 월 이용료: ${lease?.rentAmount.toLocaleString() ?? '—'}원, 납부일: ${lease?.dueDay ?? '미지정'}
 - 입주일: ${lease?.moveInDate ? new Date(lease.moveInDate).toLocaleDateString('ko-KR') : '—'}
 

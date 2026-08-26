@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { Section } from './Section'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type LeaseLite = {
   id: string
@@ -139,7 +140,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
                 return (
                   <li key={`${g.label}|${g.rent}`} className="flex items-baseline justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate text-[var(--warm-mid)]">
-                      {g.label} <span className="text-[var(--warm-muted)]">{manCompact(g.rent)}{wishCount > 0 ? ` · ${g.roomNos.join(', ')}호` : ''}</span>
+                      {g.label} <span className="text-[var(--warm-muted)]">{manCompact(g.rent)}{wishCount > 0 ? ` · ${fmtRoomNo(g.roomNos.join(', '), '')}` : ''}</span>
                     </span>
                     <span className="shrink-0 tabular-nums font-semibold text-[var(--warm-dark)]">{q ? fmtWon(q.baseAmount) : '기간 초과(월 단위)'}</span>
                   </li>

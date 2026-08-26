@@ -13,6 +13,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { fmtWon } from '@/lib/fmtMoney'
 import { pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 type Preview = Awaited<ReturnType<typeof previewShortStayExtension>>
 type Seg = 'w1' | 'w2' | 'custom'
@@ -83,7 +84,7 @@ export function ShortStayExtensionModal({
     if (ok.overlap) {
       const proceed = await confirmDialog({
         title: `${ok.overlap.tenantName}님 입주 예정일과 겹칩니다`,
-        message: `${ok.roomNo ? `${ok.roomNo}호는` : '이 방은'} ${fmtMD(ok.overlap.moveIn)}에 ${ok.overlap.tenantName}님이 들어올 예정입니다. ${fmtMD(ok.newOut)}까지 연장하면 겹치는데 이대로 확정할까요.`,
+        message: `${ok.roomNo ? `${fmtRoomNo(ok.roomNo, '')}는` : '이 방은'} ${fmtMD(ok.overlap.moveIn)}에 ${ok.overlap.tenantName}님이 들어올 예정입니다. ${fmtMD(ok.newOut)}까지 연장하면 겹치는데 이대로 확정할까요.`,
         level: 'caution',
         confirmLabel: '연장 확정',
         cancelLabel: '취소',
@@ -145,7 +146,7 @@ export function ShortStayExtensionModal({
             {ok && (
               <div className="space-y-1">
                 <p className="text-sm text-[var(--warm-dark)]">
-                  {ok.roomNo ? `${ok.roomNo}호` : '호실 미지정'}
+                  {ok.roomNo ? `${fmtRoomNo(ok.roomNo, '')}` : '호실 미지정'}
                   <span className="text-[var(--warm-muted)]"> · </span>
                   {fmtMD(ok.moveInDate)} ~ {fmtMD(ok.currentOut)}
                 </p>

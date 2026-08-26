@@ -22,6 +22,7 @@
 
 import type { PrismaDb } from '@/lib/prisma'
 import { availableFromLabel, roomAvailability, type RoomAvailability } from '@/lib/leaseStatus'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 /** 날짜 게이트를 적용하는 단계 — 아직 방이 확정되지 않은 리드. */
 export const WISH_LEAD_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as const
@@ -436,5 +437,5 @@ export function wishDelayHint(rooms: WishLeaseRoom[]): string {
   const soonest = rooms.reduce((m, r) => (r.waitDays < m.waitDays ? r : m), rooms[0])
   if (soonest.waitDays <= 0 || soonest.waitDays > DELAY_HINT_DAYS) return ''
   const detail = wishGateDetail(soonest)
-  return detail ? `${soonest.roomNo}호는 ${detail}` : ''
+  return detail ? `${fmtRoomNo(soonest.roomNo, '')}는 ${detail}` : ''
 }

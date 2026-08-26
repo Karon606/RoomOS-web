@@ -21,6 +21,7 @@ import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { beyondWindow, buildMoveCalendar, buildMoveRange, monthLastDay, moveRangeWindow, type MoveCalendarMonth, type MoveCalendarRange } from '@/lib/moveCalendar'
 import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases, fetchMoveWorks } from '@/lib/moveCalendarData'
 import { createOverlapAck, loadOverlapAcks, softDeleteOverlapAck } from '@/lib/overlapAck'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 async function getPropertyId() {
   const { userId, propertyId, role } = await requirePropertyAccess()
@@ -231,7 +232,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
   const existing = await prisma.room.findUnique({
     where: { propertyId_roomNo: { propertyId, roomNo: roomNo.trim() } },
   })
-  if (existing) return { ok: false, error: `${roomNo}호는 이미 존재합니다.` }
+  if (existing) return { ok: false, error: `${fmtRoomNo(roomNo, '')}는 이미 존재합니다.` }
 
   const floor      = (formData.get('floor') as string)?.trim() || null
   const windowType = (formData.get('windowType') as string) || null

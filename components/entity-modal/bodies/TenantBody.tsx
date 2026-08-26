@@ -37,6 +37,7 @@ import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy } from '@/lib/shortStay'
 import { primaryTenantLease, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
 import { withheldPartsLabel } from '@/lib/depositComposition'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
 type DepositRefundInfo = NonNullable<Awaited<ReturnType<typeof getDepositRefundForLease>>>
@@ -261,10 +262,10 @@ function RoomBusyRow({ leaseTermId, tenantName, info, onDone }: {
       <div className="flex items-center justify-between gap-2 bg-[var(--warning-bg)] rounded-lg px-3 py-2 text-xs">
         <p className="min-w-0 text-[var(--warning-fg)]">
           {info.sameDayHandover
-            ? <>{info.roomNo}호 퇴실일과 입주일이 같습니다 (<span className="font-semibold">{fmtDate(info.moveInYmd)}</span>{info.occupantName ? ` · ${info.occupantName}님 퇴실` : ''})</>
+            ? <>{fmtRoomNo(info.roomNo, '')} 퇴실일과 입주일이 같습니다 (<span className="font-semibold">{fmtDate(info.moveInYmd)}</span>{info.occupantName ? ` · ${info.occupantName}님 퇴실` : ''})</>
             : info.freeFrom
-              ? <>{info.roomNo}호는 <span className="font-semibold">{fmtDate(info.freeFrom)}</span>부터 입주 가능합니다. 입주일 {fmtDate(info.moveInYmd)}에는 들어갈 수 없습니다</>
-              : <>{info.roomNo}호의 입주 가능일이 정해지지 않았습니다{info.occupantName ? ` (${info.occupantName}님 퇴실 예정일 없음)` : ''}</>}
+              ? <>{fmtRoomNo(info.roomNo, '')}는 <span className="font-semibold">{fmtDate(info.freeFrom)}</span>부터 입주 가능합니다. 입주일 {fmtDate(info.moveInYmd)}에는 들어갈 수 없습니다</>
+              : <>{fmtRoomNo(info.roomNo, '')}의 입주 가능일이 정해지지 않았습니다{info.occupantName ? ` (${info.occupantName}님 퇴실 예정일 없음)` : ''}</>}
         </p>
         <button type="button" onClick={() => void ask()}
           className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warning-fg)]/40 text-[var(--warning-fg)] hover:bg-[var(--warning-fg)]/10 transition-colors">

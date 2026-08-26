@@ -9,6 +9,7 @@ import { getTenantMoveHistory } from '@/app/(app)/rooms/actions'
 import { Section } from './Section'
 
 import { fmtDateDot } from '@/lib/fmtDate'   // 날짜 표기 정본
+import { fmtRoomNo } from '@/lib/roomNo'
 
 const RECENT = 5   // 최근 N건만 펼침, 초과분은 '이전 이력' 뒤로
 
@@ -60,7 +61,7 @@ export function TenantMoveHistory({ tenantId }: { tenantId: string }) {
 function MoveRow({ item }: { item: MoveItem }) {
   return (
     <li className="flex items-baseline justify-between gap-2 text-xs">
-      <span className="min-w-0 truncate font-medium text-[var(--warm-dark)]">{item.roomNo}호</span>
+      <span className="min-w-0 truncate font-medium text-[var(--warm-dark)]">{fmtRoomNo(item.roomNo, '')}</span>
       <span className="shrink-0 tabular-nums text-[var(--warm-muted)]">
         {fmtDateDot(item.startDate)} ~ {item.endDate
           ? fmtDateDot(item.endDate)

@@ -14,6 +14,7 @@ import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth,
 import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { vacancyExcludedWhere, isVacancyExcluded } from '@/lib/vacancy'
 import { shiftMonth } from '@/lib/moveCalendar'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 async function getPropertyId() {
   const { userId, propertyId } = await requirePropertyAccess()
@@ -769,11 +770,11 @@ export async function analyzePropertyWithGemini(): Promise<{ ok: true; text: str
     ).join('\n')
 
     const scheduledLines = data.scheduledRentChanges.length > 0
-      ? data.scheduledRentChanges.map(s => `  - ${s.roomNo}호: ${s.from.toLocaleString()}원 → ${s.to.toLocaleString()}원 (${s.effectiveDate})`).join('\n')
+      ? data.scheduledRentChanges.map(s => `  - ${fmtRoomNo(s.roomNo, '')}: ${s.from.toLocaleString()}원 → ${s.to.toLocaleString()}원 (${s.effectiveDate})`).join('\n')
       : '  없음'
 
     const longVacantLines = data.vacantTooLong.length > 0
-      ? data.vacantTooLong.map(v => `  - ${v.roomNo}호 (마지막 퇴실: ${v.vacantSince ?? '미상'})`).join('\n')
+      ? data.vacantTooLong.map(v => `  - ${fmtRoomNo(v.roomNo, '')} (마지막 퇴실: ${v.vacantSince ?? '미상'})`).join('\n')
       : '  없음'
 
     const prompt = `당신은 한국의 공간 대여(고시원/셰어하우스) 운영 전문 컨설턴트 AI입니다. 아래 영업장 진단 데이터를 바탕으로 한국어로 진단 결과를 작성해주세요.

@@ -521,7 +521,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
         {alert.wishCandidates && alert.wishCandidates.length > 0 ? (
           <div className="px-5 py-4 space-y-2" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
             <p className="text-[0.6875rem] font-semibold" style={{ color: 'var(--warm-muted)' }}>
-              {alert.wishRoomNo ? `${alert.wishRoomNo}호 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (날짜·문의 순)
+              {alert.wishRoomNo ? `${fmtRoomNo(alert.wishRoomNo, '')} 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (날짜·문의 순)
             </p>
             <div className="space-y-1.5">
               {alert.wishCandidates.map(c => (
@@ -588,8 +588,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                 if (confirmPending) return
                 const ok = await confirmDialog({
                   level: 'caution',
-                  title: `${alert.scheduleMoveTenantName ?? ''}님 · ${alert.scheduleMoveToRoomNo ?? ''}호로 이사할까요?`,
-                  message: `${alert.scheduleMoveFromRoomNo ?? ''}호에서 나와 옮기고, ${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 함께 만듭니다.`,
+                  title: `${alert.scheduleMoveTenantName ?? ''}님 · ${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사할까요?`,
+                  message: `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')}에서 나와 옮기고, ${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 함께 만듭니다.`,
                   confirmLabel: '이사 처리',
                 })
                 if (!ok) return
@@ -600,15 +600,15 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   scheduleCleaning: true,
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
-                pushToast('success', `${alert.scheduleMoveToRoomNo ?? ''}호로 이사 처리했습니다`, {
-                  detail: [`${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
+                pushToast('success', `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리했습니다`, {
+                  detail: [`${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
                 })
                 router.refresh()
                 onClose()
               }}
               disabled={confirmPending}
               variant="primary" size="md" fullWidth>
-              {confirmPending ? '처리 중…' : `${alert.scheduleMoveToRoomNo ?? ''}호로 이사 처리`}
+              {confirmPending ? '처리 중…' : `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리`}
             </Btn>
           )}
           {isRecurring && (

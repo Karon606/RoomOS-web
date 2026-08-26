@@ -9,6 +9,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { calcStayQuote } from '@/lib/prorate'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { getRoomsForQuote } from '@/app/(app)/tenants/actions'
+import { fmtRoomNo } from '@/lib/roomNo'
 
 // ── 단기 입실 요금 시뮬레이션 — 등록 없이 견적(운영자 요청 2026-07-05) ──
 // 위치: 상담 도구 코너 안 + 전체 메뉴(2026-08-17, 오류신고 ce05bb74 — 홈 월 선택 줄에 홀로
@@ -57,7 +58,7 @@ export function StayQuoteModal({ open, onClose, z = 200 }: { open: boolean; onCl
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-60">
             <option value="">{loading ? '호실 불러오는 중...' : '직접 입력'}</option>
             {(rooms ?? []).map(r => (
-              <option key={r.id} value={r.id}>{r.roomNo}호 · {fmtWon(r.baseRent)}{r.occupied ? ' (사용중)' : ''}</option>
+              <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo, '')} · {fmtWon(r.baseRent)}{r.occupied ? ' (사용중)' : ''}</option>
             ))}
           </select>
           {loadFailed && (
