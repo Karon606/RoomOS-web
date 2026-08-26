@@ -19,7 +19,7 @@ import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
-import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum, buildRoomScheduleAddendum, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -63,9 +63,12 @@ const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `
 // 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
 const CELL_SELECT_STYLE = { font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' } as const
 
-// 조항 항목 렌더 — 글머리('-'·'•'·'·') 제거 + **강조** → terracotta hl. (contractPrintHtml 와 동일 규칙)
+// 조항 항목 렌더 — 글머리 제거는 lib/contract 정본(stripClauseBullet), 강조는 terracotta hl.
+//
+// 종전에는 여기서 기호만 벗기고 인쇄본은 번호까지 벗겨 규칙이 두 벌이었다. 주석에는 "동일 규칙"
+// 이라고 적혀 있었지만 사실이 아니어서, 화면만 '· 1. 1인 1실을'로 이중 표기가 됐다(2026-08-27).
 function renderClauseItem(text: string): React.ReactNode {
-  const stripped = text.replace(/^\s*[-–•·]\s?/, '')
+  const stripped = stripClauseBullet(text)
   const parts = stripped.split(/\*\*(.+?)\*\*/g) // 짝수 idx=일반, 홀수 idx=강조
   return parts.map((p, i) => (i % 2 === 1 ? <span key={i} className="hl">{p}</span> : p))
 }
@@ -1331,19 +1334,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
         {/* 조항 — 보기: 2단 / 편집: 단일 인라인 편집 */}
         {!editing ? (
+          // 문서 순서 그대로 한 흐름 — 2단 나눔은 CSS(column-count)가 한다.
+          // 인쇄본(lib/contractPrintHtml)과 **같은 구조·같은 규칙**이다. 갈리면 화면과 종이의
+          // 단 나뉨 지점이 다른 규칙으로 정해진다. 경위는 knowledge/domain-contracts.md 참조.
           <div className="clauses">
-            {splitClauseColumns(appendSubLeaseAddendum(view.sections, subLeaseAddendum, buildRoomScheduleAddendum(data.roomScheduleText))).map((col, ci) => (
-              <div key={ci} className="clause-col">
-                {col.map((frag, fi) => (
-                  <div key={fi} className="clause-group">
-                    {frag.title && <div className="clause-h">{renderContractText(frag.title, vars)}</div>}
-                    <ul className="clause-list">
-                      {frag.items.map((item, i) => (
-                        <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+            {appendSubLeaseAddendum(view.sections, subLeaseAddendum, buildRoomScheduleAddendum(data.roomScheduleText)).map((sec, si) => (
+              <div key={si} className="clause-group">
+                <div className="clause-h">{renderContractText(sec.title, vars)}</div>
+                <ul className="clause-list">
+                  {sec.items.map((item, i) => (
+                    <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
@@ -1763,14 +1765,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         /* 라벨 칸에 붙는 선택(성명 표기) — 라벨 글자와 같은 줄에 서고 줄바꿈되지 않는다. 인쇄에는 안 나간다. */
         .contract-paper .info th .th-picker { margin-left: 1.5mm; vertical-align: middle; white-space: nowrap; }
 
-        /* 조항 — 2단 */
-        .contract-paper .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
-        .contract-paper .clause-col { flex: 1 1 0; min-width: 0; }
-        .contract-paper .clause-group { margin-bottom: 2.6mm; break-inside: avoid; }
+        /* 조항 — 2단. 규칙은 인쇄본(lib/contractPrintHtml)과 같다. column-fill 은 기본값
+           balance 를 쓰고, .clause-group 에 break-inside: avoid 를 두지 않는다. */
+        .contract-paper .clauses { column-count: 2; column-gap: 7mm; margin-bottom: 3mm; }
+        .contract-paper .clause-group { margin-bottom: 2.6mm; }
         .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
-        .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; }
-        .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.8mm; word-break: keep-all; break-inside: avoid; }
-        .contract-paper .clause-list li::before { content: "·"; color: var(--p-muted); margin-right: 1.5mm; }
+        /* 번호는 자리에서 매긴다 — 규칙은 인쇄본(lib/contractPrintHtml)과 같다. */
+        .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; counter-reset: clause; }
+        .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 4.5mm; text-indent: -4.5mm; margin-bottom: 0.8mm; word-break: keep-all; break-inside: avoid; }
+        .contract-paper .clause-list li::before { counter-increment: clause; content: counter(clause) "."; color: var(--p-muted); margin-right: 1.5mm; }
         .contract-paper .clause-list li .hl { color: var(--p-tc); font-weight: 600; }
 
         /* 서약 */

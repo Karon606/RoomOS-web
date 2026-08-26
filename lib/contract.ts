@@ -120,6 +120,22 @@ export function buildRefundClause(): string {
 // 문안은 전 영업장 공통 고정이다(운영자 위임 확정 2026-08-19). 영업장별 편집은 별도 백로그다.
 export type SubLeaseAddendum = { title: string; items: string[] }
 
+/**
+ * 조항 항목의 글머리를 벗긴다 — 기호와 **손으로 박은 번호**를 모두 걷는다.
+ *
+ * 번호는 자리에서 매긴다(CSS counter). 본문 글자 안에 번호가 박혀 있으면 두 가지가 어긋난다.
+ *   · 안 박힌 항목은 번호가 없다 — 추가 호실 특약 8개 전부, '[청소비]', '[강제 퇴실 시 정산 규정]'
+ *     이 그랬다. 운영자가 "몇 조 몇 항"으로 가리켜야 하는데 가리킬 번호가 없었다(2026-08-27).
+ *   · 운영자가 템플릿에서 항목을 끼워 넣으면 그 뒤 번호를 전부 손으로 고쳐야 한다.
+ *
+ * **화면과 인쇄본이 이 함수 하나를 쓴다.** 종전에는 규칙이 두 벌이었고 인쇄본만 번호를 벗겨서,
+ * 화면은 '· 1. 1인 1실을'로 이중 표기가 됐다. 화면 쪽 주석에는 "동일 규칙"이라고 적혀 있었지만
+ * 사실이 아니었다 — 손사본은 언젠가 갈린다.
+ */
+export function stripClauseBullet(s: string): string {
+  return s.replace(/^\s*(?:[-–•·]\s?|\d+[.)]\s*|[가-힣][.)]\s+)/, '')
+}
+
 export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
   title: '추가 호실 특약(보관 용도)',
   items: [
@@ -171,50 +187,17 @@ export function appendSubLeaseAddendum<T extends { title: string; items: string[
   return out
 }
 
-// 조항을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).
-// 규칙(내용 무관·운영자가 바꿔도 동일 적용):
-//  1) 항목을 '순서대로' 흘려 담는다. 왼쪽 단을 위→아래로, 그다음 오른쪽 단을 위→아래로 읽으면 원래 순서.
-//  2) 누적 높이(글자수로 줄 수 추정)가 절반을 넘는 첫 항목에서 오른쪽 단으로 전환 → 좌/우 높이 균형(빈칸 최소).
-//  3) 한 섹션이 두 단에 걸치면 오른쪽엔 헤더 없이 이어진다(멀티컬럼과 동일). 단, 헤더만 덜렁 남는 건 방지
-//     (전환 직전 헤더에 항목이 하나도 안 들어갔으면 그 헤더를 오른쪽 단으로 옮긴다).
-// CSS 멀티컬럼(column-count)은 Chrome 인쇄(고정 페이지)에서 1단으로 흐르므로 명시적 2단(flex)으로 렌더.
-export type ClauseFragment = { title: string | null; items: string[] }
-export function splitClauseColumns<T extends { title: string; items: string[] }>(sections: T[]): [ClauseFragment[], ClauseFragment[]] {
-  const COL_CHARS = 28          // 한 단(≈87mm)의 한 줄 글자 수 추정(한글 8.7pt 기준)
-  const HEADER_LINES = 1.6      // 섹션 헤더 1개의 높이(줄 환산)
-  const estLines = (s: string) => Math.max(1, Math.ceil((s?.length ?? 0) / COL_CHARS))
-
-  let total = 0
-  for (const sec of sections) { total += HEADER_LINES; for (const it of sec.items) total += estLines(it) }
-  const target = total / 2
-
-  const left: ClauseFragment[] = []
-  const right: ClauseFragment[] = []
-  let acc = 0
-  let switched = false
-  for (const sec of sections) {
-    let frag: ClauseFragment = { title: sec.title, items: [] }
-    ;(switched ? right : left).push(frag)
-    acc += HEADER_LINES
-    for (const it of sec.items) {
-      if (!switched && acc >= target) {
-        switched = true
-        if (frag.items.length === 0) {
-          // 헤더만 들어간 채 전환 → 고아 헤더 방지: 그 헤더를 오른쪽 단으로 이동
-          left.pop()
-          frag = { title: frag.title, items: [] }
-        } else {
-          frag = { title: null, items: [] }   // 섹션이 이어짐(오른쪽엔 헤더 반복 안 함)
-        }
-        right.push(frag)
-      }
-      frag.items.push(it)
-      acc += estLines(it)
-    }
-  }
-  const clean = (arr: ClauseFragment[]) => arr.filter(f => f.title !== null || f.items.length > 0)
-  return [clean(left), clean(right)]
-}
+// 조항 2단은 CSS(column-count)가 나눈다 — 분배 함수는 2026-08-26 에 걷었다.
+//
+// ⚠️ **조항 순서 절대 불변**은 그대로다. 다만 이제 DOM 이 선형이라 **구조적으로 자동 충족된다** —
+// 순서를 뒤섞을 자리 자체가 없다.
+//
+// 종전에는 splitClauseColumns 가 글자 수로 높이를 추정해 좌우를 반반으로 갈랐다. 그 구조가
+// 필요했던 이유는 "CSS 멀티컬럼이 Chrome 인쇄에서 1단으로 흐른다"는 2026-06-29 실측이었는데,
+// **재실측에서 재현되지 않는다**(Chrome 151). 그 사이 flex 2단이 결함을 냈다 — 페이지 경계에서
+// 각 단이 독립적으로 이어 그려져, 조항이 한 장을 넘치면 3조가 2페이지·4조가 1페이지가 됐다.
+//
+// 새로 2단을 손으로 나누는 코드를 만들지 마라. 경위와 실측은 knowledge/domain-contracts.md 에 있다.
 
 // ── 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류 ──────────
 // body 는 {{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}} 등 변수 사용.
