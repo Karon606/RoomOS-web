@@ -21,7 +21,7 @@ import {
   buildVoidedVersion, hasVoidableVersion, parseContractVersionArchive, restoreTargetsFrom,
   restoredFieldsFrom, versionKind, type ContractVersionKind,
 } from '@/lib/contractVersion'
-import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
+import { hasLiveRealContract, liveRealContracts } from '@/lib/contractCurrentIssue'
 import { withEffectivePurpose } from '@/lib/contractPurpose'
 import { bodyLockMessage, fieldLockMessage } from '@/lib/contractLockMessage'
 
@@ -564,20 +564,30 @@ export async function resetContractOverride(leaseTermId: string): Promise<{ ok: 
 export async function getIssuePurposeContext(
   tenantId: string,
   leaseTermId: string | null,
-): Promise<{ ok: true; multiVersion: boolean; hasRealContract: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; multiVersion: boolean; hasRealContract: boolean; realContractCount: number } | { ok: false; error: string }> {
   try {
     const { propertyId } = await requireAuthAndProperty()
     const [property, files] = await Promise.all([
       prisma.property.findUnique({ where: { id: propertyId }, select: { multiContractVersions: true } }),
       prisma.contractFile.findMany({
         where: { tenantId, propertyId, deletedAt: null, driveFileId: { not: '' } },
-        select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
+        // 번복(purposeOverride)을 함께 읽는다. 종전에는 발급 시점 값만 봐서, 제출용으로 발급했다가
+        // 실계약으로 승격한 부를 이 화면이 못 세고(419호가 그 상태였다) 파생 발급이 잘못 막혔다.
+        // 형제 게이트(supersedeContractVersion·강등 검사)는 이미 유효 목적을 쓴다.
+        select: {
+          id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true,
+          issuePurpose: true, purposeOverride: true,
+        },
       }),
     ])
+    const effective = files.map(withEffectivePurpose)
+    const live = leaseTermId ? liveRealContracts(effective, leaseTermId) : []
     return {
       ok: true,
       multiVersion: property?.multiContractVersions === true,
-      hasRealContract: !!leaseTermId && hasLiveRealContract(files, leaseTermId),
+      hasRealContract: live.length > 0,
+      // 확인창이 "기존 N부"라고 적을 숫자 — 화면이 세지 않고 서버 실데이터를 받는다.
+      realContractCount: live.length,
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

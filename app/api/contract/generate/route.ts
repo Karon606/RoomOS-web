@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 import { pickCurrentSignatureLink } from '@/lib/contractVersion'
-import { normalizeIssuePurpose } from '@/lib/contractPurpose'
-import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
+import { normalizeIssuePurpose, withEffectivePurpose, archivePurposeLogEntry, contractPurposeOf,
+  ARCHIVED_CONTRACT_PURPOSE, parsePurposeLog } from '@/lib/contractPurpose'
+import { liveRealContracts } from '@/lib/contractCurrentIssue'
 import { resolveSignedBody } from '@/lib/contract'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
@@ -69,6 +70,14 @@ type Body = {
    * 보이는 판본을 만든다. 값은 발급 시점 증거라 발급 트랜잭션에서 한 번만 쓴다.
    */
   issuePurpose?: string | null
+  /**
+   * 이 계약에 이미 실계약본이 있는데도 새 실계약을 만들 때, 기존 것을 보관용으로 넘기겠다는 승낙.
+   *
+   * 없으면 서버가 409 로 막는다. 화면이 확인창으로 물었다는 사실을 서버까지 실어 오는 값이라,
+   * 없으면 API 를 직접 부른 요청이 아무 질문 없이 유효 실계약 2부를 만든다(파생 발급 게이트가
+   * 같은 규약으로 서 있는 자리다). 운영자 요구 2026-08-26 "물어는 봐야지".
+   */
+  archivePrevious?: boolean
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
@@ -256,6 +265,21 @@ export async function POST(req: Request) {
     if (!purpose.ok) {
       return NextResponse.json({ ok: false, error: '알 수 없는 발급 목적입니다.' }, { status: 400 })
     }
+    // 판정에 쓰는 목록은 **유효 목적**이다. 종전에는 발급 시점 값만 읽어서, 제출용으로 발급했다가
+    // 실계약으로 승격한 부를 실계약으로 안 세고 파생 발급이 잘못 막혔다(419호가 그 상태였다).
+    const liveReal = !body.preview && lease?.id
+      ? liveRealContracts(
+          (await prisma.contractFile.findMany({
+            where: { tenantId: tenant.id, propertyId, deletedAt: null, driveFileId: { not: '' } },
+            select: {
+              id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true,
+              issuePurpose: true, purposeOverride: true,
+            },
+          })).map(withEffectivePurpose),
+          lease.id,
+        )
+      : []
+
     if (!body.preview && purpose.value !== null) {
       if (!property?.multiContractVersions) {
         return NextResponse.json({
@@ -263,16 +287,26 @@ export async function POST(req: Request) {
           error: '이 영업장은 계약서를 한 부만 만들도록 설정돼 있습니다. 환경설정의 계약서·서류 탭에서 여러 판본 만들기를 켜 주세요.',
         }, { status: 409 })
       }
-      const issued = await prisma.contractFile.findMany({
-        where: { tenantId: tenant.id, propertyId, deletedAt: null, driveFileId: { not: '' } },
-        select: { id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true },
-      })
-      if (!lease?.id || !hasLiveRealContract(issued, lease.id)) {
+      if (liveReal.length === 0) {
         return NextResponse.json({
           ok: false,
           error: '실계약 계약서를 먼저 발급해 주세요. 실계약 없이 제출용이나 번역본만 남을 수는 없습니다.',
         }, { status: 409 })
       }
+    }
+
+    // 실계약을 새로 만드는데 이미 살아 있는 실계약이 있다 — 승낙 없이는 못 만든다.
+    //
+    // 종전에는 이 자리에 아무 검사가 없어, 실계약 2부가 한 계약에 조용히 공존했다. 그 상태는
+    // "분쟁에서 어느 종이가 계약인가"에 앱이 두 답을 갖는 것이라 표시 문제가 아니라 증빙 문제다.
+    // 여러 판본 토글과 무관하게 건다 — 토글이 꺼진 영업장이라고 2부를 허용할 이유가 없다.
+    if (!body.preview && purpose.value === null && liveReal.length > 0 && !body.archivePrevious) {
+      return NextResponse.json({
+        ok: false,
+        code: 'ARCHIVE_DECISION_REQUIRED',
+        archiveCount: liveReal.length,
+        error: `이 계약에는 실계약 계약서 ${liveReal.length}부가 있습니다. 기존 계약서를 보관용으로 남길지 정해 주세요.`,
+      }, { status: 409 })
     }
 
     if (!body.preview) {
@@ -501,13 +535,50 @@ export async function POST(req: Request) {
     // 3) 예약해 둔 자리를 채운다. 업로드가 실패하면 그 자리를 지운다(보상 삭제).
     // 박제는 파일 정보와 **같은 문**으로 넣는다 — 나중에 따로 쓰는 경로를 두면 그것이 곧 갱신 경로가 된다.
     let record
+    let archivedCount = 0
     try {
       const { fileId } = await step(timings, 'upload', () => uploadToDrive(pdfBuffer, fileName, 'application/pdf'))
-      record = await prisma.contractFile.update({
-        where: { id: reserved!.id },
-        data: { driveFileId: fileId, fileName, issuedSnapshot: issuedSnapshot as unknown as object },
-        select: { id: true, driveFileId: true, fileName: true, signedAt: true, contractNo: true },
+      // 새 실계약이 서는 것과 이전 실계약이 물러나는 것은 **한 문**이어야 한다.
+      //
+      // 예약 시점에 미리 강등하면 안 된다 — 예약 행은 driveFileId 가 비어 모든 판정 조회에서
+      // 걸러지므로, PDF 를 렌더하는 수 초 동안 그 계약에 살아 있는 실계약이 0부가 된다. 렌더가
+      // 실패하면 예약 행만 지워지고 강등은 그대로 남는다(보상은 best effort 라 침묵 실패한다).
+      // 그래서 파일정보를 채우는 이 문에 함께 싣는다. 실패하면 아무 일도 없었던 것이 된다.
+      const out = await prisma.$transaction(async tx => {
+        const row = await tx.contractFile.update({
+          where: { id: reserved!.id },
+          data: { driveFileId: fileId, fileName, issuedSnapshot: issuedSnapshot as unknown as object },
+          select: { id: true, driveFileId: true, fileName: true, signedAt: true, contractNo: true },
+        })
+        if (purpose.value !== null || !lease?.id) return { row, archived: 0 }
+        // 대상은 **이 문 안에서 다시 읽는다.** 게이트가 읽은 목록은 렌더 수 초 전의 것이다.
+        const siblings = (await tx.contractFile.findMany({
+          where: { tenantId: tenant.id, propertyId, deletedAt: null, driveFileId: { not: '' }, id: { not: row.id } },
+          select: {
+            id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true,
+            issuePurpose: true, purposeOverride: true, purposeLog: true,
+          },
+        })).map(r => ({ ...r, ...withEffectivePurpose(r) }))
+        const targets = liveRealContracts(siblings, lease.id)
+        const at = new Date()
+        for (const t of targets) {
+          const log = parsePurposeLog(t.purposeLog)
+          log.push(archivePurposeLogEntry({
+            from: contractPurposeOf(t.purposeOverride ?? t.issuePurpose),
+            by: user.email ?? null, at, sourceFileId: row.id,
+          }))
+          await tx.contractFile.update({
+            where: { id: t.id },
+            data: {
+              purposeOverride: ARCHIVED_CONTRACT_PURPOSE,
+              purposeLog: log as unknown as object,
+            },
+          })
+        }
+        return { row, archived: targets.length }
       })
+      record = out.row
+      archivedCount = out.archived
     } catch (e) {
       await prisma.contractFile.delete({ where: { id: reserved!.id } }).catch(() => {})
       throw e
@@ -574,6 +645,8 @@ export async function POST(req: Request) {
         signedAt: record.signedAt,
         viewUrl: `https://drive.google.com/file/d/${record.driveFileId}/view`,
       },
+      // 보관용으로 물러난 부수 — 화면이 토스트에 적고 적용취소를 단다(0 이면 아무 말도 안 한다).
+      archivedCount,
     })
   } catch (err) {
     // 예약한 번호 자리를 반드시 지운다. 종전에는 Drive 업로드 실패에만 보상 삭제가 있어,

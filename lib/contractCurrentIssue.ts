@@ -91,5 +91,18 @@ export function currentIssueFor<T extends IssueCopy>(
  * 폐기본은 세지 않는다 — 폐기된 실계약은 근거가 되지 못한다.
  */
 export function hasLiveRealContract(files: readonly IssueCopy[], leaseTermId: string): boolean {
-  return files.some(f => f.leaseTermId === leaseTermId && isRepresentativeCandidate(f))
+  return liveRealContracts(files, leaseTermId).length > 0
+}
+
+/**
+ * 이 계약의 살아 있는 실계약본 전부 — 새 실계약이 밀어낼 대상이 곧 이 목록이다.
+ *
+ * 셈이 필요한 자리와 있는지만 묻는 자리가 갈리면 두 답이 어긋난다(확인창은 "기존 N부"라고
+ * 적고 게이트는 다른 수를 세는 식). 판정을 여기 하나로 두고 hasLiveRealContract 가 이것을 쓴다.
+ */
+export function liveRealContracts<T extends IssueCopy>(
+  files: readonly T[],
+  leaseTermId: string,
+): T[] {
+  return files.filter(f => f.leaseTermId === leaseTermId && isRepresentativeCandidate(f))
 }

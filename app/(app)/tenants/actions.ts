@@ -4,8 +4,9 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import {
   isDerivedPurpose, effectiveIssuePurpose, withEffectivePurpose, contractPurposeOf,
   parsePurposeLog, CONTRACT_PURPOSES, DEFAULT_CONTRACT_PURPOSE, type ContractPurpose,
+  archivedBy, ARCHIVED_CONTRACT_PURPOSE, archivePurposeLogEntry,
 } from '@/lib/contractPurpose'
-import { hasLiveRealContract } from '@/lib/contractCurrentIssue'
+import { hasLiveRealContract, liveRealContracts } from '@/lib/contractCurrentIssue'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -4340,6 +4341,54 @@ export async function restoreContractFile(id: string): Promise<{ ok: true } | { 
  *
  * 서명·발행번호 원장·issuedSnapshot 은 무접촉이다. 이 액션은 분류만 옮긴다.
  */
+/**
+ * 자동 보관 전환 일괄 적용취소 — 이 계약서를 발급하며 물러난 부들을 원래 용도로 되돌린다.
+ *
+ * 되돌린 결과는 실계약 2부 공존이다. 그것이 **직전 상태**라 undo 의 정의에 맞고(§16), 대표는
+ * 여전히 최신 발급본이라 화면이 흔들리지도 않는다. 되돌리지 않는 편이 좋은 상태라는 판단은
+ * 운영자 몫이고, 남은 2부 상태는 감지망이 주의로 센다.
+ *
+ * 대상은 **마지막 이력이 이 발급이 찍은 auto 항목인 부**뿐이다(lib/contractPurpose archivedBy).
+ * 그 뒤에 사람이 한 번이라도 손댔으면 그 손을 덮지 않는다.
+ */
+export async function undoArchiveByIssue(
+  sourceFileId: string,
+): Promise<{ ok: true; restored: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const source = await prisma.contractFile.findFirst({
+      where: { id: sourceFileId, propertyId },
+      select: { tenantId: true },
+    })
+    if (!source) return { ok: false, error: '계약서를 찾을 수 없습니다.' }
+
+    const siblings = await prisma.contractFile.findMany({
+      where: { tenantId: source.tenantId, propertyId, deletedAt: null, id: { not: sourceFileId } },
+      select: { id: true, issuePurpose: true, purposeOverride: true, purposeLog: true },
+    })
+    const targets = siblings.filter(r => archivedBy(r, sourceFileId))
+    let restored = 0
+    const failed: string[] = []
+    for (const t of targets) {
+      const log = parsePurposeLog(t.purposeLog)
+      const from = log[log.length - 1]?.from ?? DEFAULT_CONTRACT_PURPOSE
+      const r = await changeContractPurpose(t.id, from, { undo: true })
+      if (r.ok) restored++
+      else failed.push(r.error)
+    }
+    if (restored === 0 && targets.length > 0) {
+      return { ok: false, error: failed[0] ?? '되돌리지 못했습니다.' }
+    }
+    revalidatePath('/tenants')
+    revalidatePath('/contracts')
+    return { ok: true, restored }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리지 못했습니다.' }
+  }
+}
+
 export async function changeContractPurpose(
   fileId: string, to: string, opts?: { undo?: boolean },
 ): Promise<{ ok: true; from: string; to: string } | { ok: false; error: string }> {
@@ -4352,7 +4401,11 @@ export async function changeContractPurpose(
     const property = await prisma.property.findUnique({
       where: { id: propertyId }, select: { multiContractVersions: true },
     })
-    if (!property?.multiContractVersions) {
+    // 토글은 **파생 판본을 새로 만드는 것**을 막는 스위치다. 실계약으로 되돌리는 길(보관용에서
+    // 승격·적용취소)까지 막으면, 토글이 꺼진 영업장에서 자동 보관 전환된 계약서가 영영 갇힌다
+    // (실계약 중복 발급 게이트는 토글과 무관하게 걸리므로 그 상태가 실제로 생긴다).
+    const returningToReal = opts?.undo === true || to === DEFAULT_CONTRACT_PURPOSE
+    if (!property?.multiContractVersions && !returningToReal) {
       return { ok: false, error: '이 영업장은 계약서를 한 부만 만들도록 설정돼 있습니다. 환경설정의 계약서·서류 탭에서 여러 판본 만들기를 켜 주세요.' }
     }
     const file = await prisma.contractFile.findFirst({
@@ -4438,7 +4491,16 @@ export async function finalizeContractScan(input: {
   driveFileId: string
   fileName: string
   signedAt?: string  // YYYY-MM-DD, 없으면 오늘
-}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  /**
+   * 이 계약에 이미 실계약본이 있을 때 스캔본을 무엇으로 등록할지.
+   *
+   * 'real' 이면 스캔본이 실계약이 되고 기존 실계약은 보관용으로 물러난다. 'archived' 면 스캔본이
+   * 보관용으로 들어온다(기존 실계약이 그대로 대표다). 안 실으면 **보관용**이다 — 종전에는
+   * 스캔본이 아무것도 묻지 않고 들어와 createdAt 최신으로 대표를 조용히 뺏었고, 419호의
+   * "옛 스캔본이 메일에 첨부됐다"가 정확히 그 모양이다. 기본은 안 뺏는 쪽이어야 한다.
+   */
+  decision?: 'real' | 'archived'
+}): Promise<{ ok: true; id: string; needsDecision?: boolean; archivedCount?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -4475,6 +4537,22 @@ export async function finalizeContractScan(input: {
     // 다만 **서명 이미지는 만들지 않는다** — 서명은 종이에 있고 없는 것을 지어내지 않는다.
     // 본문도 담지 않는다. 인쇄는 아무 기록을 안 남겨서 종이에 무엇이 인쇄됐는지 앱이 원리적으로 모른다.
     // 대신 증거가 어디 있는지만 가리키고, 그 계약은 앱이 새 발급본을 만들지 못한다(resolveSignedBody).
+    // 이 계약에 살아 있는 실계약본이 있는가 — 유효 목적으로 센다(승격·강등을 반영해야 한다).
+    const existingReal = lease?.id
+      ? liveRealContracts(
+          (await prisma.contractFile.findMany({
+            where: { tenantId: tenant.id, propertyId, deletedAt: null, driveFileId: { not: '' } },
+            select: {
+              id: true, leaseTermId: true, createdAt: true, voidedAt: true, supersededAt: true,
+              issuePurpose: true, purposeOverride: true, purposeLog: true,
+            },
+          })).map(r => ({ ...r, ...withEffectivePurpose(r) })),
+          lease.id,
+        )
+      : []
+    // 충돌이 없으면 종전 그대로 실계약이다(첫 스캔이 대다수라 이 흐름은 픽셀도 안 바뀐다).
+    // 충돌이 있는데 결정을 안 실어 왔으면 안 뺏는 쪽으로 들어오고, 화면이 그 사실을 알고 되묻는다.
+    const asReal = existingReal.length === 0 || input.decision === 'real'
     const created = await prisma.$transaction(async tx => {
       const file = await tx.contractFile.create({
         data: {
@@ -4485,9 +4563,30 @@ export async function finalizeContractScan(input: {
           fileName: input.fileName,
           source: 'UPLOADED',
           signedAt,
+          // 보관용으로 들어오는 스캔본은 **발급 시점 값 자체가 보관용**이다. 번복이 아니라
+          // 처음부터 그렇게 등록한 것이라 override 를 쓰면 없던 번복 이력이 생긴다.
+          ...(asReal ? {} : { issuePurpose: ARCHIVED_CONTRACT_PURPOSE }),
         },
         select: { id: true },
       })
+      // 스캔본을 실계약으로 올리기로 했으면 기존 실계약은 물러난다 — 발급 경로와 같은 규약이다.
+      if (asReal && existingReal.length > 0) {
+        const at = new Date()
+        for (const t of existingReal) {
+          const log = parsePurposeLog(t.purposeLog)
+          log.push(archivePurposeLogEntry({
+            from: contractPurposeOf(t.purposeOverride ?? t.issuePurpose),
+            by: null, at, sourceFileId: file.id,
+          }))
+          await tx.contractFile.update({
+            where: { id: t.id },
+            data: {
+              purposeOverride: ARCHIVED_CONTRACT_PURPOSE,
+              purposeLog: log as unknown as Prisma.InputJsonValue,
+            },
+          })
+        }
+      }
       // 이미 서명이 있는 계약에 스캔본을 덧붙이는 경우는 아무것도 덮지 않는다. 파일만 붙는다.
       if (lease && !lease.signatureSignedAt && !lease.signedContractSnapshot) {
         await tx.leaseTerm.update({
@@ -4503,7 +4602,12 @@ export async function finalizeContractScan(input: {
       return file
     })
     revalidatePath('/tenants')
-    return { ok: true, id: created.id }
+    return {
+      ok: true, id: created.id,
+      // 결정 없이 충돌을 만나 보관용으로 들어왔다 — 화면이 "실계약으로 올릴까요"를 되묻는다.
+      ...(existingReal.length > 0 && !input.decision ? { needsDecision: true } : {}),
+      ...(asReal && existingReal.length > 0 ? { archivedCount: existingReal.length } : {}),
+    }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     if (input.driveFileId) {

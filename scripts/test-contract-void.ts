@@ -15,9 +15,13 @@ import {
   type VoidableLease,
 } from '../lib/contractVersion'
 import {
-  currentIssueFor, currentIssueIds, hasLiveRealContract, issueGroupKey, type IssueCopy,
+  currentIssueFor, currentIssueIds, hasLiveRealContract, liveRealContracts, issueGroupKey, type IssueCopy,
 } from '../lib/contractCurrentIssue'
-import { contractPurposeLabel, normalizeIssuePurpose } from '../lib/contractPurpose'
+import {
+  contractPurposeLabel, normalizeIssuePurpose, contractPurposeOf, isDerivedPurpose,
+  withEffectivePurpose, parsePurposeLog, archivedBy,
+  CONTRACT_PURPOSES, ISSUABLE_CONTRACT_PURPOSES,
+} from '../lib/contractPurpose'
 import {
   bodyLockMessage, fieldLockMessage, signDateLockMessage, issuedNextStepMessage,
 } from '../lib/contractLockMessage'
@@ -275,6 +279,55 @@ const signedLease: VoidableLease = {
   eq('목적 · 실계약은 화면에 안 적는다', contractPurposeLabel(null), null)
   eq('목적 · 모르는 저장값은 실계약으로 읽는다', contractPurposeLabel('알수없음'), null)
   eq('목적 · 파생은 그대로 적는다', contractPurposeLabel('번역본'), '번역본')
+
+  // ── 보관용 (2026-08-26, 운영자 요구 "새 계약서가 작성되면 기존 계약서는 보관용으로") ──
+  //
+  // 여기서 고정하는 것 넷.
+  //   · **보관용은 발급 목록에 없다** — 밀려나는 자리이지 뽑는 자리가 아니다. 발급을 허용하면
+  //     아무것도 대표하지 않는 종이가 발급 한 번으로 생긴다.
+  //   · **인식은 한다** — 인식 목록에서 빠지면 contractPurposeOf 의 폴백이 보관용을 실계약으로
+  //     되돌려 읽어, 물러난 계약서가 다시 대표 후보가 되는 역폭발이 난다.
+  //   · **대표 후보가 아니다** — 판정 정본은 한 줄도 안 바뀌고 파생 판정이 알아서 뺀다.
+  //   · **이력의 모르는 칸을 지우지 않는다** — parsePurposeLog 는 되쓰기 경로의 일부라, 아는 칸만
+  //     골라 담으면 다음 번복 한 번에 자동 전환의 근거(cause·sourceFileId)가 통째로 사라진다.
+  eq('보관용 · 발급으로는 못 고른다', normalizeIssuePurpose('보관용'), { ok: false })
+  eq('보관용 · 발급 목록에는 없다',
+    (ISSUABLE_CONTRACT_PURPOSES as readonly string[]).includes('보관용'), false)
+  eq('보관용 · 인식 목록에는 있다',
+    (CONTRACT_PURPOSES as readonly string[]).includes('보관용'), true)
+  eq('보관용 · 저장값을 그대로 읽는다', contractPurposeOf('보관용'), '보관용')
+  eq('보관용 · 화면에 적는다', contractPurposeLabel('보관용'), '보관용')
+  eq('보관용 · 대표 후보가 아니다', isDerivedPurpose('보관용'), true)
+  eq('보관용 · 유효 목적이 보관용이면 실계약으로 안 센다',
+    hasLiveRealContract([{ ...real, purposeOverride: '보관용' }].map(withEffectivePurpose), 'lease-1'), false)
+  eq('보관용 · 살아 있는 실계약을 셀 수 있다',
+    liveRealContracts([real, trans].map(withEffectivePurpose), 'lease-1').length, 1)
+
+  // 이력 — 모르는 칸을 보존한다(클래스 봉합).
+  {
+    const raw = [{ from: '실계약', to: '보관용', at: '2026-08-26T00:00:00.000Z', by: 'a@b.c', cause: 'auto', sourceFileId: 'f-9', 미래칸: 1 }]
+    const parsed = parsePurposeLog(raw)
+    eq('이력 · cause 를 살린다', parsed[0]?.cause, 'auto')
+    eq('이력 · sourceFileId 를 살린다', parsed[0]?.sourceFileId, 'f-9')
+    eq('이력 · 모르는 칸도 살린다', (parsed[0] as Record<string, unknown>).미래칸, 1)
+    eq('이력 · cause 가 없으면 사람 손이다',
+      parsePurposeLog([{ from: '실계약', to: '제출용', at: '2026-08-01T00:00:00.000Z' }])[0]?.cause, 'manual')
+  }
+
+  // 되돌릴 대상 판정 — 마지막 항목만 본다.
+  {
+    const log = [{ from: '실계약', to: '보관용', at: '2026-08-26T00:00:00.000Z', by: null, cause: 'auto', sourceFileId: 'new-1' }]
+    eq('되돌림 · 그 발급이 밀어낸 부는 대상이다',
+      archivedBy({ purposeOverride: '보관용', issuePurpose: null, purposeLog: log }, 'new-1'), true)
+    eq('되돌림 · 다른 발급이 밀어낸 부는 아니다',
+      archivedBy({ purposeOverride: '보관용', issuePurpose: null, purposeLog: log }, 'new-2'), false)
+    // 사람이 뒤에 손댔으면 그 손을 덮지 않는다.
+    const touched = [...log, { from: '보관용', to: '실계약', at: '2026-08-27T00:00:00.000Z', by: 'a@b.c' }]
+    eq('되돌림 · 뒤에 사람 손이 있으면 아니다',
+      archivedBy({ purposeOverride: '실계약', issuePurpose: null, purposeLog: touched }, 'new-1'), false)
+    eq('되돌림 · 지금 보관용이 아니면 아니다',
+      archivedBy({ purposeOverride: null, issuePurpose: null, purposeLog: log }, 'new-1'), false)
+  }
 }
 
 // ── 안내가 토글과 어긋나지 않는가 ──
