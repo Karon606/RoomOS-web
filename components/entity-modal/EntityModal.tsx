@@ -306,11 +306,32 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       onClose(); router.refresh()
     })
   }
+  // 다른 페이지의 편집 폼으로 넘기는 문 — **목적지가 설 때까지 이 창을 닫지 않는다**.
+  //
+  // 종전에는 push 직후 바로 닫아서, 목적지 페이지가 그려지기 전까지 아무것도 없는 화면이
+  // 잠깐 보였다. 운영자 지적(2026-08-26) — "상세정보 창이 사라졌다가 조금 후에 수정 창이 떠.
+  // 잠깐 사라지는 창 때문에 뭔가 잘못 눌렀나? 싶은 불안감이 생겨."
+  //
+  // 전환(startTransition) 중에는 React 가 이 창을 그대로 세워 두므로, 전환이 끝난 뒤에 닫으면
+  // 화면이 끊기지 않는다. 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다.
+  const navClosing = useRef(false)
+  const navigateThenClose = (href: string) => {
+    navClosing.current = true
+    startTransition(() => { navRouter.push(href) })
+    // 전환이 끝나지 않아도 창이 갇히지 않게 상한을 둔다. 정상 경로에서는 아래 effect 가
+    // 먼저 닫으므로 이 타이머가 하는 일이 없다.
+    setTimeout(() => { if (navClosing.current) { navClosing.current = false; onClose() } }, 1500)
+  }
+  useEffect(() => {
+    if (!navClosing.current || isPending) return
+    navClosing.current = false
+    onClose()
+  }, [isPending, onClose])
+
   // 수정은 페이지 종속 편집 폼이 있는 /room-manage 로 위임 (Phase 2.5 에서 위젯 편집 모드로 대체 예정).
   const handleEditRoom = () => {
     if (!shownRoomId) return
-    navRouter.push(`/room-manage?roomId=${shownRoomId}&edit=1`)
-    onClose()
+    navigateThenClose(`/room-manage?roomId=${shownRoomId}&edit=1`)
   }
 
   // 입주자 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
@@ -345,8 +366,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   }
   const handleEditTenant = () => {
     if (!links?.tenantId) return
-    navRouter.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
-    onClose()
+    navigateThenClose(`/tenants?tenantId=${links.tenantId}&edit=1`)
   }
   // 종전 '계약서 출력' 버튼(handlePrintContract)은 제거했다 — 2026-08-01 용어·접점 정리.
   // 독자 기능이 0이었다. 파일이 없으면 /contract/[tenantId] 를 열었는데 그건 계약서 파일 섹션의
@@ -361,8 +381,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 목적지가 (app) 밖이라 어차피 셸을 다시 세우므로 잃는 것이 없다.
   const handleResidenceCert = () => {
     if (!links?.tenantId) return
+    // 창을 닫지 않는다 — 문서가 통째로 바뀔 때까지 이 창이 서 있어야 화면이 안 끊긴다.
     window.location.assign(`/residence-cert/${links.tenantId}${docFromQuery('tenant', links.tenantId)}`)
-    onClose()
   }
   // 계약서 — 규칙 1·§30.10. 하단은 서류를 만들고 발급하러 가는 문이고,
   // 위쪽 '계약서 파일' 칸은 이미 있는 파일의 보관함이다. 이름으로 갈린다 —
@@ -380,8 +400,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       // 화면에 갇혔다(502호 2026-08-10). 지금 서명이 남아 있을 때만 서명본으로 연다.
       if (res.ok && res.link?.signedAt && res.link.signatureLive) share = `&share=${encodeURIComponent(res.link.id)}`
     } catch { /* 조회 실패는 무시 — 일반 진입으로 간다. 문이 막히는 것보다 낫다 */ }
+    // 창을 닫지 않는다 — 위 handleResidenceCert 와 같은 이유다.
     window.location.assign(`/contract/${tenantId}${docFromQuery('tenant', tenantId)}${share}`)
-    onClose()
   }
   // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   //
@@ -393,8 +413,8 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent', namedLeaseTermId?: string | null) => {
     if (!links?.tenantId) return
     const named = namedLeaseTermId ? `leaseTermId=${encodeURIComponent(namedLeaseTermId)}&` : ''
+    // 창을 닫지 않는다 — 위 handleResidenceCert 와 같은 이유다.
     window.location.assign(`/rent-receipt/${links.tenantId}?${kindArg === 'deposit' ? 'kind=deposit&' : ''}${named}from=tenant&tenantId=${encodeURIComponent(links.tenantId)}`)
-    onClose()
   }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
