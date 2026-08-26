@@ -19,6 +19,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
   batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
+  getRoomScheduleState,
   type RentRefundTaxNotice,
 } from './actions'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
@@ -3719,6 +3720,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 라벨도 moveInLabel 하나를 공유한다 — 같은 칸을 두 이름으로 부르면 두 칸으로 읽힌다.
   const [shortOut, setShortOut] = useState(toDateInput(lease?.expectedMoveOut))
   const [contactAlertVal, setContactAlertVal] = useState(toDateInput(lease?.contactAlertDate ?? null))
+  // 거주 호실 일정 — 임시 호실을 거쳐 가는 계약이면 호실 칸 아래에 선다.
+  // 종전에는 이 폼이 계약 호실만 보여 줘서, 402호를 409호로 바꿀 길이 어디에도 없었다
+  // (운영자 지적 2026-08-26 — "수정할 방법이 없다는 뜻이지"). 목록 쿼리를 불리지 않고
+  // 폼이 직접 읽는다 — 한 번에 계약 하나라 payload 를 늘릴 이유가 없다(TenantBody 와 같은 문법).
+  const [roomPlan, setRoomPlan] = useState<Awaited<ReturnType<typeof getRoomScheduleState>>>(null)
+  const [roomPlanOpen, setRoomPlanOpen] = useState(false)
+  const [roomPlanTick, setRoomPlanTick] = useState(0)
+  useEffect(() => {
+    if (!lease?.id) { setRoomPlan(null); return }
+    let active = true
+    getRoomScheduleState(lease.id).then(r => { if (active) setRoomPlan(r) }).catch(() => { /* 일정은 부가 정보다 — 못 읽어도 폼은 선다 */ })
+    return () => { active = false }
+  }, [lease?.id, roomPlanTick])
   useEffect(() => {
     if (!isShortTerm || shortQuoteData) return
     getRoomsForQuote().then(setShortQuoteData).catch(() => { /* 정책 로드 실패 시 계산기만 미표시 */ })
@@ -4578,7 +4592,35 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               누구와 겹치는지까지 말한다 — 계약이 이어 붙은 방에서 '방의 마지막 퇴실일'은 앞을 막고 선 사람이 아니다.
               당일 회전만은 경고가 아니라 중립 캡션이다 — 앞사람이 나가는 그날 들어오는 것은 정상이라
               노랑으로 부르면 진짜 겹침과 구분이 안 된다(2026-08-19 겹침 판정 개정). */}
+          {/* 거주 호실 일정 — 있으면 아래 겹침 캡션을 **대체**한다.
+              일정이 이미 "그날 밤은 402호"라고 답해 뒀는데 캡션이 그걸 모른 채 당일 회전만
+              말하면 두 문장이 서로 다른 말을 한다(디자이너 지적). 조작은 시트가 하고
+              여기는 읽기 전용 줄과 문 하나만 둔다 — 폼 저장과 일정 저장이 한 화면에 겹치면 위험하다. */}
+          {roomPlan && lease && (
+            <div className="rounded-lg bg-[var(--canvas)] px-3 py-2 space-y-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[0.65625rem] text-[var(--warm-mid)]">거주 호실 일정</p>
+                  <ul className="mt-0.5 space-y-0.5 text-[0.6875rem] text-[var(--warm-dark)] tabular-nums">
+                    {roomPlan.lines.map(l => <li key={l}>{l}</li>)}
+                  </ul>
+                </div>
+                {roomPlan.stage === 'plan' && (
+                  <button type="button" onClick={() => setRoomPlanOpen(true)}
+                    className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors">
+                    다시 정하기
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {roomPlanOpen && lease && (
+            <RoomScheduleSheet leaseTermId={lease.id} tenantName={tenant?.name ?? ''} mode="plan"
+              onClose={() => setRoomPlanOpen(false)}
+              onDone={() => { setRoomPlanOpen(false); setRoomPlanTick(t => t + 1) }} />
+          )}
           {(() => {
+            if (roomPlan) return null   // 일정이 이미 답했다 — 두 문장이 갈리면 안 된다
             const sel = rooms.find(r => r.id === selectedRoomId)
             const hit = isWaitingTourStatus ? overlapOccupancy(sel, moveInVal, lease?.id) : null
             if (!hit) return null

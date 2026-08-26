@@ -128,7 +128,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
         ? await saveRoomSchedulePlan({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
         : await startLeaseWithRoomSchedule({ leaseTermId, moveInDate: moveIn, schedule: fullSchedule })
       if (!r.ok) { pushToast('error', r.error); return }
-      pushToast('success', plan ? '입실 일정을 잡았습니다' : '입실 처리했습니다', { detail: r.notice })
+      pushToast('success', plan ? '거주 호실 일정을 정했습니다' : '입실 처리했습니다', { detail: r.notice })
       onDone()
     } catch (e) {
       pushToast('error', (e as Error).message ?? '처리에 실패했습니다.')

@@ -143,7 +143,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
           <div className="space-y-1.5">
             {snap && <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />}
             {depoRefund && <DepositRefundUndoRow info={depoRefund} onDone={refresh} />}
-            {schedule && <RoomScheduleRow leaseTermId={lease.id} info={schedule} onDone={refresh} />}
+            {schedule && <RoomScheduleRow leaseTermId={lease.id} tenantName={tenant.name} info={schedule} onDone={refresh} />}
             {roomBusy && <RoomBusyRow leaseTermId={lease.id} tenantName={tenant.name} info={roomBusy} onDone={refresh} />}
           </div>
         )
@@ -287,10 +287,14 @@ function RoomBusyRow({ leaseTermId, tenantName, info, onDone }: {
 // 것**이고, 예약 상태로 돌아가 일정과 구간을 함께 걷는다.
 //
 // 형제 두 행(이용료·보증금 환불)과 같은 문법을 쓴다 — 성격이 같은 자리라 모양이 갈리면 안 된다.
-function RoomScheduleRow({ leaseTermId, info, onDone }: {
-  leaseTermId: string; info: RoomScheduleInfo; onDone: () => void
+function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
+  leaseTermId: string; tenantName: string; info: RoomScheduleInfo; onDone: () => void
 }) {
   const [pending, startTransition] = useTransition()
+  // 다시 정하기 — 임시 호실을 402호에서 409호로 바꿀 길이 없었다(운영자 지적 2026-08-26).
+  // 지우고 주황 줄에서 다시 짜는 우회로는 아무도 기억하지 못한다. 저장이 덮어쓰기라
+  // (saveRoomSchedulePlan) 시트를 그대로 다시 열면 되고, 편집기는 여전히 한 벌이다.
+  const [redoOpen, setRedoOpen] = useState(false)
   // 아직 안 들어온 계획이면 지우는 것이고, 이미 살고 있으면 입실 처리를 무르는 것이다.
   // 이름과 무르는 대상이 갈리면 안 된다(§16).
   const isPlan = info.stage === 'plan'
@@ -319,10 +323,23 @@ function RoomScheduleRow({ leaseTermId, info, onDone }: {
           {info.lines.map(l => <li key={l}>{l}</li>)}
         </ul>
       </div>
-      <button type="button" onClick={handleUndo} disabled={pending}
-        className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
-        {pending ? (isPlan ? '지우는 중…' : '취소 중…') : (isPlan ? '지우기' : '적용취소')}
-      </button>
+      <div className="shrink-0 flex items-center gap-1.5">
+        {isPlan && (
+          <button type="button" onClick={() => setRedoOpen(true)} disabled={pending}
+            className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+            다시 정하기
+          </button>
+        )}
+        <button type="button" onClick={handleUndo} disabled={pending}
+          className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+          {pending ? (isPlan ? '지우는 중…' : '취소 중…') : (isPlan ? '지우기' : '적용취소')}
+        </button>
+      </div>
+      {redoOpen && (
+        <RoomScheduleSheet leaseTermId={leaseTermId} tenantName={tenantName} mode="plan"
+          onClose={() => setRedoOpen(false)}
+          onDone={() => { setRedoOpen(false); onDone() }} />
+      )}
     </div>
   )
 }
