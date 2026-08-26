@@ -28,7 +28,7 @@ import { shouldOfferCheckoutProration } from '@/lib/prorate'
 import { CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { fmtRoomList } from '@/lib/roomNo'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
-import { EarlyCheckInSheet } from '@/components/tenant/EarlyCheckInSheet'
+import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -131,7 +131,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const entityModal = useEntityModal()
   const [pending, startTransition] = useTransition()
   const [active, setActive] = useState<ActiveTransition>(null)
-  // 조기 입실 시트 — 입실 처리가 본 방 점유로 거절당했을 때만 연다.
+  // 호실 일정 시트 — 입실 처리가 계약 호실 점유로 거절당했을 때만 연다.
   const [earlyOpen, setEarlyOpen] = useState(false)
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
@@ -354,8 +354,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (res.code === 'ROOM_OCCUPIED') {
             const go = await confirmDialog({
               title: res.error,
-              message: '다른 방에서 먼저 재울 수 있습니다. 계약 호실과 시작일은 그대로 두고, 본 계약 시작일에 옮기는 알림이 뜹니다.',
-              confirmLabel: '먼저 재우기',
+              message: '계약 호실이 빌 때까지 다른 방에서 지내게 할 수 있습니다. 그날이 오면 앱이 알아서 옮깁니다.',
+              confirmLabel: '다른 방부터',
             })
             if (go) { setActive(null); setEarlyOpen(true) }
             return
@@ -567,9 +567,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       </Modal>
       )}
 
-      {/* 조기 입실 — 입실 처리가 본 방 점유로 막힌 자리에서만 열린다(거절이 곧 진입점). */}
+      {/* 호실 일정 — 입실 처리가 계약 호실 점유로 막힌 자리에서만 열린다(거절이 곧 진입점). */}
       {earlyOpen && (
-        <EarlyCheckInSheet leaseTermId={lease.id} tenantName={tenantName}
+        <RoomScheduleSheet leaseTermId={lease.id} tenantName={tenantName}
           onClose={() => setEarlyOpen(false)}
           onDone={() => { setEarlyOpen(false); onChange?.() }} />
       )}

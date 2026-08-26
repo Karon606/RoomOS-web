@@ -3,7 +3,7 @@
 // 세 연산(열린 구간 생성·호실 변경·퇴실 마감)과 종료 복귀용 재개방만 두고, 호출부의 기존 분기는 건드리지 않는다.
 // 드리프트(열린 구간 없음·중복·roomId 불일치)는 scripts/check-room-stay-drift.mjs 가 읽기 전용으로 감지한다.
 
-import { isEarlyCheckInActive } from './earlyCheckIn'
+import { parseRoomSchedule, scheduledSegmentOn } from './roomSchedule'
 import type { PrismaDb } from '@/lib/prisma'
 import { kstYmdStr } from '@/lib/kstDate'
 import { OCCUPYING_STATUSES } from '@/lib/leaseStatus'
@@ -46,30 +46,37 @@ export async function ensureOpenStay(db: RoomStayDb, leaseTermId: string): Promi
     where: { id: leaseTermId },
     select: {
       roomId: true, propertyId: true, moveInDate: true, status: true,
-      // 조기 입실 판정용 — 임시 방에 있는 사람의 구간을 자가 치유가 부수면 안 된다.
-      earlyCheckInRoomId: true,
+      // 호실 일정 — 있으면 '오늘의 방'이 계약 호실이 아닐 수 있다.
+      roomSchedule: true,
     },
   })
   if (!lease?.roomId) return
   // 자격 게이트 — 예약·문의·투어 등 비점유 상태는 구간을 만들지 않는다(박의균 신고, 클래스 봉합).
   if (!STAY_ELIGIBLE_STATUSES.includes(lease.status)) return
+
+  // **오늘 있어야 할 방을 일정에서 읽는다.** 종전에는 계약 호실 하나가 진실이라, 임시 방에 있는
+  // 사람을 아무 저장에서나 계약 호실로 강제 이사시켰다. 그것을 막으려고 예외 게이트를 따로
+  // 세웠는데, 일정을 두면 그 예외 자체가 없어진다 — 자가 치유가 옳은 답을 알기 때문이다.
+  // 일정이 없는 계약(대다수)은 계약 호실이 곧 오늘의 방이라 종전과 완전히 같다.
+  const today = kstYmdStr()
+  const seg = scheduledSegmentOn(parseRoomSchedule(lease.roomSchedule), today)
+  const targetRoomId = seg?.roomId ?? lease.roomId
+
   const open = await openStayOf(db, leaseTermId)
-  if (open?.roomId === lease.roomId) return
-  // **조기 입실 중이면 손대지 않는다.** 계약의 roomId 는 본 방인데 몸은 임시 방에 있는 상태라,
-  // 이 함수의 "roomId 와 열린 구간이 다르면 이사"라는 전제가 여기서만 참이 아니다. 게이트가
-  // 없으면 아무 저장에서나 오늘 날짜로 본 방 구간이 열려 임시 방에 있었던 사실이 지워진다.
-  // 본 방으로 옮기는 것은 completeEarlyCheckInMove 가 이사 정본으로 명시적으로 한다.
-  if (isEarlyCheckInActive(lease, open?.roomId ?? null)) return
+  if (open?.roomId === targetRoomId) return
   if (open) {
-    await recordRoomChange(db, leaseTermId, open.roomId, lease.roomId, null)
+    // 이사일은 '오늘'이 아니라 **그 구간이 시작된 날**이다. 며칠 뒤에 앱을 열어도 구간이
+    // 일정대로 나뉘어야 이력이 사실과 같아진다(9/1에 옮기기로 한 것을 9/3에 열었다고 9/3으로
+    // 적으면 이틀이 엉뚱한 방에 붙는다).
+    await recordRoomChange(db, leaseTermId, open.roomId, targetRoomId, seg?.from ?? null)
     return
   }
   await db.roomStay.create({
     data: {
       leaseTermId,
-      roomId: lease.roomId,
+      roomId: targetRoomId,
       propertyId: lease.propertyId,
-      startDate: lease.moveInDate ?? stayDate(),
+      startDate: seg?.from ? stayDate(seg.from) : (lease.moveInDate ?? stayDate()),
       endDate: null,
     },
   })

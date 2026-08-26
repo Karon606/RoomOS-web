@@ -486,7 +486,6 @@ model Room {
   photos     RoomPhoto[]
   leaseTerms LeaseTerm[]
   // 조기 입실 임시 방으로 쓰인 이력 — 계약의 본 방(leaseTerms)과 다른 축이다.
-  earlyCheckInLeases LeaseTerm[] @relation("EarlyCheckInRoom")
   expenses   Expense[]
   roomStays  RoomStay[]
   cleanings  RoomCleaning[]
@@ -744,9 +743,13 @@ model LeaseTerm {
   // **roomId·moveInDate 는 끝까지 본계약의 진실이다.** 계약서·청구·납부일이 그 축을 쓰므로
   // 하루 일찍 몸이 들어왔다고 그것을 흔들면 8월분이 통째로 청구되고 계약서에 임시 방이 찍힌다.
   // 이 두 칸은 그 전사(前史)만 담고, 실제 점유는 RoomStay 구간이 진다.
-  earlyCheckInDate   DateTime?          @db.Date
-  earlyCheckInRoomId String?            @db.Uuid
-  earlyCheckInRoom   Room?              @relation("EarlyCheckInRoom", fields: [earlyCheckInRoomId], references: [id], onDelete: SetNull)
+  // 호실 일정 — 기간마다 다른 방에 머무는 계약의 계획. [{roomId, from, to}] 배열이고 마지막 줄이
+  // 계약 호실(무기한)이다. 판정 정본은 lib/roomSchedule.
+  //
+  // **일정이 진실이고 점유 구간(RoomStay)은 파생이다.** 자가 치유가 '오늘의 방'을 이 값에서
+  // 읽으므로, 계약 호실과 지금 방이 다른 것이 더는 예외가 아니다(예외 게이트를 없앤 자리다).
+  // 일정이 없는 계약(대다수)은 종전과 완전히 같게 굴러간다.
+  roomSchedule       Json?
   moveOutDate        DateTime?          @db.Date
   expectedMoveOut    DateTime?          @db.Date
   rentAmount         Int                @default(0)

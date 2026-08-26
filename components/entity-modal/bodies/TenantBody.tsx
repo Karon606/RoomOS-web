@@ -9,10 +9,11 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
-  getEarlyCheckInState, undoEarlyCheckIn, undoEarlyCheckInMove } from '@/app/(app)/tenants/actions'
+  getRoomScheduleState, undoRoomSchedule } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Btn } from '@/components/ui/Btn'
@@ -36,7 +37,7 @@ import { withheldPartsLabel } from '@/lib/depositComposition'
 
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
 type DepositRefundInfo = NonNullable<Awaited<ReturnType<typeof getDepositRefundForLease>>>
-type EarlyCheckInInfo = NonNullable<Awaited<ReturnType<typeof getEarlyCheckInState>>>
+type RoomScheduleInfo = NonNullable<Awaited<ReturnType<typeof getRoomScheduleState>>>
 
 type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
@@ -45,8 +46,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   // 보증금 환불 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
   // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
   const [depoRefund, setDepoRefund] = useState<DepositRefundInfo | null>(null)
-  // 조기 입실 현황 — 되돌릴 수 있는 상태일 때만 값이 온다(§16 상시 진입점).
-  const [early, setEarly] = useState<EarlyCheckInInfo | null>(null)
+  // 호실 일정 현황 — 일정을 쓰는 계약일 때만 값이 온다(§16 상시 진입점).
+  const [schedule, setSchedule] = useState<RoomScheduleInfo | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
@@ -58,7 +59,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
     if (!leaseIdForRefund) { setDepoRefund(null); return }
     let active = true
     getDepositRefundForLease(leaseIdForRefund).then(r => { if (active) setDepoRefund(r) })
-    getEarlyCheckInState(leaseIdForRefund).then(r => { if (active) setEarly(r) })
+    getRoomScheduleState(leaseIdForRefund).then(r => { if (active) setSchedule(r) })
     return () => { active = false }
   }, [leaseIdForRefund, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
@@ -130,12 +131,12 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && (() => {
         const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
         const snap = undoObj?.refund
-        if (!snap && !depoRefund && !early) return null
+        if (!snap && !depoRefund && !schedule) return null
         return (
           <div className="space-y-1.5">
             {snap && <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />}
             {depoRefund && <DepositRefundUndoRow info={depoRefund} onDone={refresh} />}
-            {early && <EarlyCheckInUndoRow leaseTermId={lease.id} info={early} onDone={refresh} />}
+            {schedule && <RoomScheduleRow leaseTermId={lease.id} info={schedule} onDone={refresh} />}
           </div>
         )
       })()}
@@ -230,38 +231,39 @@ function RentRefundUndoRow({ leaseTermId, refunded, month, onDone }: {
   )
 }
 
-// 조기 입실 현황 + 상시 적용취소 — 두 단계를 구분해 되돌린다.
-// 아직 임시 방이면 조기 입실 자체를(예약으로 복귀), 이미 옮겼으면 이동만 되돌린다.
+// 호실 일정 + 상시 적용취소 — 기간마다 다른 방에 머무는 계약에만 선다.
+//
+// 이동 자체에는 되돌릴 것이 없다. 일정이 진실이고 구간은 그 파생이라, 방이 옮겨진 것은
+// 사람이 한 일이 아니라 일정이 시킨 일이다. 그래서 되돌린다는 것은 곧 **입실 처리를 무르는
+// 것**이고, 예약 상태로 돌아가 일정과 구간을 함께 걷는다.
+//
 // 형제 두 행(이용료·보증금 환불)과 같은 문법을 쓴다 — 성격이 같은 자리라 모양이 갈리면 안 된다.
-function EarlyCheckInUndoRow({ leaseTermId, info, onDone }: {
-  leaseTermId: string; info: EarlyCheckInInfo; onDone: () => void
+function RoomScheduleRow({ leaseTermId, info, onDone }: {
+  leaseTermId: string; info: RoomScheduleInfo; onDone: () => void
 }) {
   const [pending, startTransition] = useTransition()
-  const temp = info.tempRoomNo ?? ''
-  const main = info.mainRoomNo ?? ''
-  const moved = info.stage === 'moved'
   const handleUndo = async () => {
     const ok = await confirmDialog({
-      title: moved ? '방 이동을 적용취소할까요?' : '조기 입실을 적용취소할까요?',
-      message: moved
-        ? `다시 ${temp}호에 머무는 상태로 되돌리고, 이동과 함께 만든 ${temp}호 청소 예정을 걷습니다.`
-        : `예약 상태로 되돌리고 ${temp}호 거주 구간을 지웁니다.`
-          + (info.charge > 0 ? ` 받기로 한 ${fmtWon(info.charge)} 기록도 함께 사라집니다.` : ''),
+      title: '입실 처리를 적용취소할까요?',
+      message: `예약 상태로 되돌리고 호실 일정과 거주 구간을 지웁니다. 입주일은 그대로 남습니다.`,
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
     startTransition(async () => {
-      const r = moved ? await undoEarlyCheckInMove(leaseTermId) : await undoEarlyCheckIn(leaseTermId)
-      if (r.ok) { pushToast('info', moved ? '방 이동을 적용취소했습니다.' : '조기 입실을 적용취소했습니다.'); onDone() }
+      const r = await undoRoomSchedule(leaseTermId)
+      if (r.ok) { pushToast('info', '입실 처리를 적용취소했습니다.'); onDone() }
       else pushToast('error', r.error)
     })
   }
   return (
     <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-      <p className="text-[var(--warm-mid)]">
-        {moved
-          ? <>조기 입실 · <span className="text-[var(--warm-dark)]">{temp}호</span>에서 <span className="text-[var(--warm-dark)]">{main}호</span>로 이동 완료</>
-          : <>조기 입실 · 지금 <span className="text-[var(--warm-dark)]">{temp}호</span>에 머무는 중 (계약 {main}호)</>}
+      <p className="min-w-0 text-[var(--warm-mid)]">
+        호실 일정 · <span className="text-[var(--warm-dark)]">{info.text}</span>
+        {info.nextAt && info.nextRoomNo && (
+          <span className="block mt-0.5 text-[var(--warm-muted)]">
+            {fmtDate(info.nextAt)}에 {info.nextRoomNo}호로 옮겨집니다
+          </span>
+        )}
       </p>
       <button type="button" onClick={handleUndo} disabled={pending}
         className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">

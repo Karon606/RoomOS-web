@@ -5,10 +5,24 @@
 // 역방향 3종(자격 위반, 2026-07-28 오더 — 박의균 신고): ④ 비자격 상태 lease 의 열린 구간
 //            ⑤ 문의·투어·예약 단계 lease 에 구간 존재 ⑥ 열린 구간의 startDate 가 미래.
 // 날짜 정합 1종(2026-08-07 오더 — 507호 신헌석 사건): ⑦ 입주 구간의 startDate 가 lease.moveInDate 와 불일치.
+// 호실 일정(2026-08-26): ① 은 '오늘의 방'이 열린 구간과 같으면 예외다. 일정이 진실이고 구간은
+// 그 파생이라, 일정이 시킨 방에 있는 것은 드리프트가 아니다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
+
+// 그날 있어야 할 방 — lib/roomSchedule scheduledSegmentOn 과 같은 규약(반개구간 [from, to)).
+// .mjs 라 TS 정본을 못 불러 최소 판정만 옮겨 적는다. 규약이 바뀌면 두 곳을 함께 고쳐야 한다.
+function segmentOn(raw, ymd) {
+  if (!Array.isArray(raw) || raw.length < 2) return null
+  for (const e of raw) {
+    if (!e || typeof e.roomId !== 'string' || typeof e.from !== 'string') return null
+    if (ymd < e.from) continue
+    if (e.to == null || ymd < e.to) return e
+  }
+  return null
+}
 
 // 열린 구간(현재 거주 중)이어야 하는 상태 — lib/roomStay.ts STAY_ELIGIBLE_STATUSES·백필과 같은 정의를 쓴다.
 const OPEN_STATUSES = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT']
@@ -20,8 +34,8 @@ async function main() {
     where: { status: { in: OPEN_STATUSES }, roomId: { not: null } },
     select: {
       id: true, status: true, roomId: true, moveInDate: true,
-      // 조기 입실(2026-08-26) — 임시 방에 있는 동안은 계약 방과 구간이 다른 것이 정상이다.
-      earlyCheckInDate: true, earlyCheckInRoomId: true,
+      // 호실 일정(2026-08-26) — 일정을 쓰는 계약은 오늘의 방이 계약 방과 다른 것이 정상이다.
+      roomSchedule: true,
       tenant: { select: { name: true } },
       room: { select: { roomNo: true } },
       // 마감 구간까지 다 읽는다 — ⑦ 의 '최초 구간' 판정에 이사 이력이 필요하다.
@@ -45,25 +59,23 @@ async function main() {
       duplicated.push(`${who} — 열린 구간 ${openStays.length}개(${openStays.map(s => `${s.room.roomNo}호 ${s.startDate ? s.startDate.toISOString().slice(0, 10) : '시작일 미상'}`).join(', ')})`)
     }
     const open = openStays[0]
-    // 조기 입실 진행 중 — **두 등식이 다 맞을 때만** 예외로 본다. 임시 방이 맞고 시작일도
-    // 조기 입실일이어야 한다. 조건을 느슨하게 잡으면 진짜 드리프트가 이 예외로 새어 나간다.
-    const earlyYmd = l.earlyCheckInDate ? l.earlyCheckInDate.toISOString().slice(0, 10) : null
-    const openStartYmd = open.startDate ? open.startDate.toISOString().slice(0, 10) : null
-    const inEarlyStay = !!l.earlyCheckInRoomId
-      && open.roomId === l.earlyCheckInRoomId
-      && !!earlyYmd && openStartYmd === earlyYmd
-    if (open.roomId !== l.roomId && !inEarlyStay) {
+    // 호실 일정 — **오늘의 방이 열린 구간의 방과 같을 때만** 예외로 본다. 일정이 진실이라
+    // 그 답과 다르면 여전히 드리프트다. 조건을 느슨하게 잡으면 진짜 드리프트가 이 예외로 샌다.
+    const todayYmd = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    const seg = segmentOn(l.roomSchedule, todayYmd)
+    const onSchedule = !!seg && open.roomId === seg.roomId
+    if (open.roomId !== l.roomId && !onSchedule) {
       mismatch.push(`${who} — 계약은 ${l.room?.roomNo ?? '?'}호, 열린 구간은 ${open.room.roomNo}호`)
     }
     // ⑦ 입주일·구간 불일치 — 열린 구간이 그 lease 의 최초 구간이면 입주 구간이라 startDate 가 입주일이어야 한다.
     // 이후 구간은 이동 구간(startDate 가 이동일)이라 대상이 아니다. lib/roomStay.ts syncMoveInStart 의
     // 2차 가드와 같은 정의를 쓴다 — 전파가 빠지면 여기서 잡힌다.
-    // 조기 입실을 쓴 계약은 최초 구간이 '조기 구간'이라 시작일이 입주일보다 앞선 것이 정상이다.
-    // 그 구간을 뺀 나머지의 최초 구간이 입주 구간이 된다.
-    if (l.moveInDate && open.startDate && !inEarlyStay) {
+    // 호실 일정을 쓰는 계약도 **최초 구간의 시작일은 입주일**이다(일정의 첫 줄이 입주일에서
+    // 시작하도록 lib/roomSchedule 이 강제한다). 그래서 이 축에는 예외가 필요 없다 —
+    // 지금 열린 구간이 두 번째 이후면 아래 isFirstStay 가 이미 거짓이다.
+    if (l.moveInDate && open.startDate) {
       const isFirstStay = !l.roomStays.some(s =>
-        s.id !== open.id && s.startDate && s.startDate < open.startDate
-        && !(l.earlyCheckInRoomId && s.roomId === l.earlyCheckInRoomId))
+        s.id !== open.id && s.startDate && s.startDate < open.startDate)
       const openYmd = open.startDate.toISOString().slice(0, 10)
       const moveInYmd = l.moveInDate.toISOString().slice(0, 10)
       if (isFirstStay && openYmd !== moveInYmd) {
