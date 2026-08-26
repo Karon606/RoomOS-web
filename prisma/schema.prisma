@@ -485,6 +485,8 @@ model Room {
 
   photos     RoomPhoto[]
   leaseTerms LeaseTerm[]
+  // 조기 입실 임시 방으로 쓰인 이력 — 계약의 본 방(leaseTerms)과 다른 축이다.
+  earlyCheckInLeases LeaseTerm[] @relation("EarlyCheckInRoom")
   expenses   Expense[]
   roomStays  RoomStay[]
   cleanings  RoomCleaning[]
@@ -738,6 +740,13 @@ model LeaseTerm {
   id                 String             @id @default(uuid()) @db.Uuid
   status             LeaseStatus        @default(ACTIVE)
   moveInDate         DateTime?          @db.Date
+  // 조기 입실 — 본 계약 방이 아직 비기 전에 임시 방에서 먼저 입실한 사실(2026-08-26 운영자 승인).
+  // **roomId·moveInDate 는 끝까지 본계약의 진실이다.** 계약서·청구·납부일이 그 축을 쓰므로
+  // 하루 일찍 몸이 들어왔다고 그것을 흔들면 8월분이 통째로 청구되고 계약서에 임시 방이 찍힌다.
+  // 이 두 칸은 그 전사(前史)만 담고, 실제 점유는 RoomStay 구간이 진다.
+  earlyCheckInDate   DateTime?          @db.Date
+  earlyCheckInRoomId String?            @db.Uuid
+  earlyCheckInRoom   Room?              @relation("EarlyCheckInRoom", fields: [earlyCheckInRoomId], references: [id], onDelete: SetNull)
   moveOutDate        DateTime?          @db.Date
   expectedMoveOut    DateTime?          @db.Date
   rentAmount         Int                @default(0)
