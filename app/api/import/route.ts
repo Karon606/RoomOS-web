@@ -10,6 +10,7 @@ import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES } from '@/lib/roomAssignment'
+import { plannedStaysInRoom } from '@/lib/plannedStays'
 import * as XLSX from 'xlsx'
 import { LeaseStatus } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
@@ -267,6 +268,7 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
  */
 async function roomAssignmentBlock(
   room: { id: string; nonResidentVacant: boolean; standaloneLeaseAllowed: boolean },
+  propertyId: string,
   status: string,
   moveIn: Date | null,
   moveOut: Date | null,
@@ -285,6 +287,8 @@ async function roomAssignmentBlock(
       moveOut: fmtDate(l.expectedMoveOut) || null,
       tenantName: l.tenant.name,
     })),
+    // 시트에는 호실 일정을 적을 자리가 없다 — 계획은 늘 DB 에서만 온다.
+    plannedStays: await plannedStaysInRoom(propertyId, room.id, null),
   })
 }
 
@@ -299,7 +303,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
   // 고객 정보만 남는다(덮어쓰기 갈래는 방을 옮기지 않으므로 이 가드의 대상이 아니다).
   if (room) {
     const status = (STATUS_MAP[str(row['계약상태'])] as string) ?? 'ACTIVE'
-    const blocked = await roomAssignmentBlock(room, status, parseDate(moveInCell(row)), parseDate(row['퇴실 예정일']))
+    const blocked = await roomAssignmentBlock(room, propertyId, status, parseDate(moveInCell(row)), parseDate(row['퇴실 예정일']))
     if (blocked) {
       result.skipped++
       result.errors.push(`${name} (${roomNo}호): ${blocked}`)

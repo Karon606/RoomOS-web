@@ -52,7 +52,7 @@
 //
 // 운영이 실제로 2실 거주를 하기로 하면 이 축은 오탐이 된다. 그때는 규칙을 바꾸는 것이 아니라
 // **기준선을 갱신**한다(BASELINE_TWO_RESIDENCES) — 지금 기준선은 0 이다.
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
@@ -94,6 +94,7 @@ async function main() {
   const rooms = await prisma.room.findMany({
     orderBy: { roomNo: 'asc' },
     select: {
+      id: true,
       roomNo: true,
       nonResidentVacant: true,
       property: { select: { name: true } },
@@ -103,6 +104,44 @@ async function main() {
       },
     },
   })
+
+  // 남이 임시 거처로 잡아 둔 구간 — 축 ②의 입력을 여기까지 편다.
+  //
+  // 왜 필요한가. 계획은 계약 안의 Json 이라 그 방을 roomId 로 잡은 계약이 없다. 위 rooms 조회만
+  // 보면 8/31 하루 402호에 자기로 한 사람이 402호 어디에도 안 보이고, 그 방에 다른 사람을
+  // 넣어도 감지망이 침묵한다(2026-08-26 봉합). 가드가 뚫려도 감지망이 이름을 부르게 한다.
+  //
+  // 판정식 사본 — lib/roomSchedule parseRoomSchedule 과 같은 선이다(YMD 형식·깨지면 통째로 버림).
+  const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
+  const readPlan = (raw) => {
+    if (!Array.isArray(raw)) return []
+    const out = []
+    for (const v of raw) {
+      if (!v || typeof v !== 'object') return []
+      if (typeof v.roomId !== 'string' || !v.roomId) return []
+      if (typeof v.from !== 'string' || !YMD_RE.test(v.from)) return []
+      const to = v.to == null ? null : (typeof v.to === 'string' && YMD_RE.test(v.to) ? v.to : undefined)
+      if (to === undefined) return []
+      out.push({ roomId: v.roomId, from: v.from, to })
+    }
+    return out.length >= 2 ? out : []
+  }
+  const planLeases = await prisma.leaseTerm.findMany({
+    where: { status: { in: OCCUPYING_STATUSES }, roomSchedule: { not: Prisma.DbNull } },
+    select: { id: true, roomId: true, roomSchedule: true, tenant: { select: { name: true } } },
+  })
+  /** 방 id 로 찾는 의사 점유 — 마지막 줄(계약 호실)은 이미 leaseTerms 에 있으므로 뺀다. */
+  const plansByRoomId = new Map()
+  for (const l of planLeases) {
+    for (const e of readPlan(l.roomSchedule)) {
+      if (e.to === null) continue
+      const list = plansByRoomId.get(e.roomId) ?? []
+      // 점유 모양으로 옮긴다 — to 는 아침에 옮기는 날이라 점유의 '퇴장일' 규약과 같다.
+      list.push({ id: l.id, status: 'RESERVED', moveInDate: e.from, expectedMoveOut: e.to, planned: true,
+        tenant: { name: l.tenant.name } })
+      plansByRoomId.set(e.roomId, list)
+    }
+  }
 
   // 유효한 확인(해제분 제외) — 축 ②가 위반에서 뺄 근거다.
   const acks = await prisma.leaseOverlapAck.findMany({
@@ -119,12 +158,17 @@ async function main() {
   let ackedPairs = 0
 
   const ymd = (d) => d ? new Date(d).toISOString().slice(0, 10) : null
-  const label = (l) => `${l.status}/${l.tenant?.name ?? '-'}/${ymd(l.moveInDate) ?? '미정'}~${ymd(l.expectedMoveOut) ?? '무기한'}`
+  const label = (l) => `${l.planned ? '일정' : l.status}/${l.tenant?.name ?? '-'}/${ymd(l.moveInDate) ?? '미정'}~${ymd(l.expectedMoveOut) ?? '무기한'}`
   const axis1 = []
   const axis2 = []
   const axis3 = []
   for (const r of rooms) {
-    const occ = r.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status))
+    // 계획 구간을 의사 점유로 더한다. 같은 계약의 본 줄과 자기 임시 구간이 서로 걸리지 않게
+    // 같은 id 쌍은 아래 루프가 건너뛴다.
+    const occ = [
+      ...r.leaseTerms.filter(l => OCCUPYING_STATUSES.includes(l.status)),
+      ...(plansByRoomId.get(r.id) ?? []),
+    ]
     const where = { property: r.property?.name ?? '?', roomNo: r.roomNo }
 
     // ── 축 ③ — 점유 계약 유무와 무관하게 방 단위 사실로 묻는다.
@@ -140,6 +184,7 @@ async function main() {
     for (let i = 0; i < occ.length; i++) {
       for (let j = i + 1; j < occ.length; j++) {
         const a = occ[i], b = occ[j]
+        if (a.id === b.id) continue   // 한 계약의 본 줄과 자기 임시 구간이다
         // 입주일이 없으면 이미 시작된 점유로, 퇴실 예정일이 없으면 무기한으로 읽는다.
         const sa = { moveIn: ymd(a.moveInDate), moveOut: ymd(a.expectedMoveOut) }
         const sb = { moveIn: ymd(b.moveInDate), moveOut: ymd(b.expectedMoveOut) }

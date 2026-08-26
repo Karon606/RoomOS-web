@@ -8,6 +8,8 @@
 // 여기 있는 것은 순수 판정뿐이다. 어떤 계약을 읽어 올지(본인 제외 여부 등)는 호출부가 정하고,
 // 이 파일은 '그 방에 이 상태로 들어갈 수 있는가'에만 답한다.
 
+import { spanOverlaps, freeFromAfter } from './roomSchedule'
+
 /** 거주계 상태 — 사람이 그 방을 실제로 쓰는(또는 쓰기로 한) 상태. 비거주는 명의라 구간을 차지하지 않는다. */
 export const RESIDENT_STATUSES: readonly string[] = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING']
 
@@ -111,6 +113,11 @@ export function roomAssignmentDenial(input: {
   incomingStatus: string
   nonResidentOccupied: boolean
   otherLeases: RoomAssignmentLease[]
+  /** 들어오는 배정의 기간 — 계획 구간과 겨루는 데만 쓴다. 없으면 열린 쪽으로 읽는다. */
+  moveIn: string | null
+  moveOut: string | null
+  /** 남이 이 방을 임시 거처로 잡아 둔 구간. **필수다** — 옵션이면 새 호출부가 조용히 빼먹는다. */
+  plannedStays: readonly PlannedStaySpan[]
 }): string | null {
   const { incomingStatus, nonResidentOccupied, otherLeases } = input
   const incomingIsResident = RESIDENT_STATUSES.includes(incomingStatus)
@@ -125,6 +132,12 @@ export function roomAssignmentDenial(input: {
 
   // 비거주 점유 방(창고·사무실) — 새 명의를 얹는 것 말고는 어느 단계도 받지 않는다.
   if (!incomingIsNonResident && nonResidentOccupied) return NON_RESIDENT_ROOM_ERROR
+
+  // 남이 임시로 잡아 둔 기간 — 상태별 분기보다 먼저 본다. 그 방은 그날 밤 이미 임자가 있다.
+  const planned = plannedStayDenial({
+    incomingStatus, moveIn: input.moveIn, moveOut: input.moveOut, plannedStays: input.plannedStays,
+  })
+  if (planned) return planned
 
   if (incomingStatus === 'RESERVED') {
     if (hasIndefiniteReservation) return '해당 호실에 퇴실 예정일이 없는 입실 예약이 있습니다. 그 예약의 퇴실 예정일을 먼저 입력해 주세요.'
@@ -275,6 +288,8 @@ export function roomAssignmentBlockReason(input: {
   /** 이 방만으로 계약이 되는가(Room.standaloneLeaseAllowed). 방을 못 찾았으면 호출부가 true 를 넘긴다. */
   roomStandaloneAllowed: boolean
   others: RoomAssignmentOccupant[]
+  /** 남이 이 방을 임시 거처로 잡아 둔 구간. 시트에는 일정 열이 없어 늘 DB 에서만 온다. */
+  plannedStays: readonly PlannedStaySpan[]
 }): string | null {
   const { status } = input.incoming
   const isResident = RESIDENT_STATUSES.includes(status)
@@ -286,6 +301,12 @@ export function roomAssignmentBlockReason(input: {
   // 축 ⑤ — 단독 계약 불가 방(다른 계약에 묶어야 하는 방). 시트에는 메인 계약을 적을 자리가
   // 없으므로 통째로 막고 앱의 '계약 추가'로 보낸다. 화면 경로는 메인 계약을 골라 통과할 수 있다.
   if (!input.roomStandaloneAllowed) return STANDALONE_LEASE_IMPORT_ERROR
+  // 축 ② 곁 — 남이 임시로 잡아 둔 기간. 화면 경로와 같은 판정 한 벌이다.
+  const planned = plannedStayDenial({
+    incomingStatus: status, moveIn: input.incoming.moveIn, moveOut: input.incoming.moveOut,
+    plannedStays: input.plannedStays,
+  })
+  if (planned) return planned
   if (isNonResident) {
     return input.others.some(o => o.status === 'NON_RESIDENT')
       ? '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.'
@@ -300,4 +321,57 @@ export function roomAssignmentBlockReason(input: {
     && occupancyOverlaps(input.incoming, o)
     && !isSameDayTurnover(input.incoming, o))
   return hit ? `해당 호실은 ${hit.tenantName}님의 체류 기간(${hit.moveIn ?? '미정'} ~ ${hit.moveOut ?? '무기한'})과 겹칩니다.` : null
+}
+
+/**
+ * 다른 계약이 이 방을 **임시 거처로 잡아 둔** 구간 — [from, to) 반개구간.
+ *
+ * 마지막 줄(계약 호실·무기한)은 담지 않는다. 그 계약은 그 방을 roomId 로 잡고 있어
+ * 기존 가드가 이미 본다 — 여기까지 담으면 같은 사실에 판정이 두 벌 선다.
+ */
+export type PlannedStaySpan = { tenantName: string; from: string; to: string }
+
+/** 표시용 구간 — 'from ~ to 전날'. to 를 그대로 찍으면 하루 더 머무는 것으로 읽힌다. */
+function plannedSpanText(p: PlannedStaySpan): string {
+  const dot = (ymd: string) => ymd.replaceAll('-', '.')
+  const last = new Date(Date.parse(`${p.to}T00:00:00Z`) - 86400000).toISOString().slice(0, 10)
+  return last === p.from ? `${dot(p.from)} 하루` : `${dot(p.from)} ~ ${dot(last)}`
+}
+
+/**
+ * 남이 임시로 잡아 둔 기간에 이 방을 배정하려 하는가 — 안 되면 거부 문구, 되면 null.
+ *
+ * **왜 여기만 하드인가.** 이 파일의 다른 겹침(퇴실 예정일끼리)은 화면이 확인창으로 묻는 운영
+ * 재량이다. 퇴실 예정일은 '더 일찍 나갈 수도 있는' 추정치라 재량이 성립한다. 계획 구간은 다르다 —
+ * 그날 밤 그 사람이 거기서 잔다는 확정 사실이고, 계약서에도 인쇄된다(lib/roomSchedule
+ * roomScheduleText). 통과시키면 만들어지는 상태가 정확히 막으라고 한 그 상태다.
+ *
+ * 그리고 **반대 방향이 이미 하드다**. 새 일정을 짤 때 남의 점유와 부딪히면 확인 없이 거절한다
+ * (tenants/actions roomScheduleClash). 순방향만 무르면 같은 두 사실이라도 어느 쪽을 먼저
+ * 저장했느냐로 답이 갈린다 — 이 파일 머리가 경계하는 '가장 느슨한 한 벌' 그 자체다.
+ *
+ * 겹침 선도 그 역방향과 같다. 들어오는 쪽 끝은 freeFromAfter(퇴실일 다음 날)다. 나가는 날
+ * 낮까지는 앞사람이 있고 퇴실 청소도 그날 잡히니, 그날 밤 잘 곳을 묻는 이 판정에서는 하루를 민다.
+ * 반대로 계획이 끝나는 날(to)에 들어오는 것은 통과한다 — 그날 아침 계획자가 방을 비운다.
+ */
+export function plannedStayDenial(input: {
+  incomingStatus: string
+  /** 'YYYY-MM-DD'. 없으면 이미 시작된 점유로 읽는다(이 파일의 기존 규약). */
+  moveIn: string | null
+  /** 없으면 무기한. */
+  moveOut: string | null
+  plannedStays: readonly PlannedStaySpan[]
+}): string | null {
+  if (!RESIDENT_STATUSES.includes(input.incomingStatus)) return null
+  if (input.plannedStays.length === 0) return null
+  const span = {
+    start: input.moveIn ?? '0000-01-01',
+    end: input.moveOut ? freeFromAfter(input.moveOut) : null,
+  }
+  const hit = input.plannedStays.find(p => spanOverlaps(span, { start: p.from, end: p.to }))
+  if (!hit) return null
+  const dot = (ymd: string) => ymd.replaceAll('-', '.')
+  return `해당 호실은 ${plannedSpanText(hit)} ${hit.tenantName}님이 임시 호실로 지내는 방입니다. `
+    + `${dot(hit.to)}부터 입주 가능합니다. `
+    + `그 기간에 배정하려면 ${hit.tenantName}님의 거주 호실 일정을 먼저 바꿔 주세요.`
 }

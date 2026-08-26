@@ -10,6 +10,7 @@ import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { roomAssignmentBlockReason, ROOM_GUARD_STATUSES, type RoomAssignmentOccupant } from '@/lib/roomAssignment'
+import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { LeaseStatus } from '@prisma/client'
 
 export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
@@ -192,6 +193,8 @@ async function previewRoomBlock(
     nonResidentOccupied: isVacancyExcluded(room),
     roomStandaloneAllowed: room.standaloneLeaseAllowed,
     others,
+    // 시트에는 호실 일정을 적을 자리가 없다 — 계획은 늘 DB 에서만 온다(적용 경로와 같은 선).
+    plannedStays: await plannedStaysInRoom(propertyId, room.id, null),
   })
   if (reason) return { roomNo, reason }
   pendingByRoom.set(room.id, [...pending, { ...incoming, tenantName: name }])

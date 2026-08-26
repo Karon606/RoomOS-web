@@ -62,7 +62,9 @@ import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
-import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR } from '@/lib/roomAssignment'
+import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
+  plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
+import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 
@@ -430,6 +432,23 @@ export async function getRoomsForSelect() {
     },
   })
   const ymd = (d: Date | null) => d ? new Date(d).toISOString().slice(0, 10) : null
+  // 남이 임시 거처로 잡아 둔 구간 — 방으로 역조회가 안 되는 Json 이라 한 번에 읽어 방별로 묶는다.
+  // 화면 캡션이 서버 가드(plannedStayDenial)와 **같은 재료·같은 함수**를 쓰게 하는 자리다.
+  const planLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: { in: ROOM_RESIDENT_STATUSES as LeaseStatus[] }, roomSchedule: { not: Prisma.DbNull } },
+    select: { id: true, roomSchedule: true, tenantId: true, tenant: { select: { name: true } } },
+  })
+  const plansByRoom = new Map<string, { leaseId: string; tenantId: string; tenantName: string; from: string; to: string }[]>()
+  for (const l of planLeases) {
+    const plan = parseRoomSchedule(l.roomSchedule)
+    if (!hasRoomSchedule(plan)) continue
+    for (const e of plan) {
+      if (e.to === null) continue   // 마지막 줄은 그 계약의 roomId 라 기존 판정이 이미 본다
+      const list = plansByRoom.get(e.roomId) ?? []
+      list.push({ leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenant.name, from: e.from, to: e.to })
+      plansByRoom.set(e.roomId, list)
+    }
+  }
   return rooms.map(({ leaseTerms, ...r }) => {
     // 그 방을 잡고 있는 계약 중 퇴실 예정일이 잡힌 건 — 단기 ACTIVE 도, 퇴실일 있는 예약도 여기 들어온다.
     // 예약을 빼면 '조성훈이 8/31 나가는 404호'가 언제 비는지 모르는 방으로 취급돼 고를 수 없었다.
@@ -460,6 +479,8 @@ export async function getRoomsForSelect() {
       reservations: leaseTerms
         .filter(l => l.status === 'RESERVED' && l.moveInDate)
         .map(l => ({ leaseId: l.id, tenantName: l.tenant.name, moveIn: ymd(l.moveInDate)!, moveOut: ymd(l.expectedMoveOut) })),
+      // 남이 임시 거처로 잡아 둔 구간 — leaseId 는 화면이 본인 것을 빼는 데 쓴다.
+      plannedStays: plansByRoom.get(r.id) ?? [],
     }
   })
 }
@@ -516,7 +537,7 @@ function readLeaseFields(formData: FormData) {
   const parentLeaseTermId = parentFieldPresent ? (String(parentRaw).trim() || null) : null
 
   return {
-    roomId, status, rentAmount, depositAmount, moveInDate,
+    roomId, status, rentAmount, depositAmount, moveInDate, expectedMoveOut,
     isReservedConfirmed, depositReceived, depositReceivedAmount,
     depositReceivedDate, depositReceivedMethod,
     parentFieldPresent, parentLeaseTermId,
@@ -615,6 +636,7 @@ async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: 
   const roomForGuard = f.roomId ? await prisma.room.findUnique({
     where: { id: f.roomId },
     select: {
+      propertyId: true,
       nonResidentVacant: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -622,12 +644,19 @@ async function leaseSaveDenial(f: ReturnType<typeof readLeaseFields>, tenantId: 
       },
     },
   }) : null
+  // 남이 임시로 잡아 둔 구간 — 계약은 아직 없으므로 제외할 것도 없다.
+  const plannedStays = roomForGuard && f.roomId
+    ? await plannedStaysInRoom(roomForGuard.propertyId, f.roomId, null)
+    : []
   // 점유 가드는 lib/roomAssignment 한 벌이다 — 종전에는 여기와 updateTenant 에 같은 판정이 두 벌 적혀
   // 있었고 엑셀 가져오기에는 0 개였다(2026-08-12 봉합). 문구·순서는 그 정본이 갖는다.
   const denial = roomAssignmentDenial({
     incomingStatus: f.status,
     nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
     otherLeases: roomForGuard?.leaseTerms ?? [],
+    moveIn: f.moveInDate || null,
+    moveOut: f.expectedMoveOut || null,
+    plannedStays,
   })
   if (denial) return denial
 
@@ -1006,6 +1035,11 @@ export async function updateTenant(formData: FormData): Promise<
   const climbingIntoResidence = RESIDENT_STATUSES.includes(status) && !RESIDENT_STATUSES.includes(prevStatus)
   // 무기한이던 계약에 퇴실일을 넣는 것은 '연장'이 아니라 축소다 — 없던 겹침을 만들 수 없으므로 묻지 않는다.
   const moveOutExtended = !!newMoveOutIso && !!prevMoveOutIso && newMoveOutIso > prevMoveOutIso
+  // 입주일 앞당김도 없던 겹침을 만든다 — 박정후 님 건이 정확히 그 모양이다(9/1 을 8/31 로).
+  // 미루는 것은 구간 축소라 못 만든다.
+  const prevMoveInIso = currentLease.moveInDate ? new Date(currentLease.moveInDate).toISOString().slice(0, 10) : null
+  const newMoveInIso = (moveInDate || '').slice(0, 10) || prevMoveInIso
+  const moveInAdvanced = !!newMoveInIso && !!prevMoveInIso && newMoveInIso < prevMoveInIso
   if (newRoomId && moveOutExtended && !allowRoomOverlap) {
     // 다음 예약자와 겹치면 거절한다. 화면은 저장 전에 확인창으로 묻고, 운영자가 그래도 하겠다면
     // allowRoomOverlap 을 실어 보낸다 — 화면과 서버가 같은 규칙 한 벌이다(confirmRoomOverlap 문법).
@@ -1035,8 +1069,24 @@ export async function updateTenant(formData: FormData): Promise<
       incomingStatus: status,
       nonResidentOccupied: nonResidentOccupiedRoom(roomForGuard),
       otherLeases,
+      moveIn: newMoveInIso,
+      moveOut: newMoveOutIso,
+      plannedStays: await plannedStaysInRoom(propertyId, newRoomId, leaseTermId),
     })
     if (denial) return { ok: false, error: denial }
+  }
+  // 방은 그대로인데 날짜만 바뀌는 저장 — 위 가드가 발화하지 않는 자리다. 조건 없이 걸면
+  // 이미 확정된 건의 재저장까지 막히므로(바로 아래 종속 재검증 주석의 그 회귀), 없던 겹침을
+  // 만들 수 있는 두 변화(입주일 앞당김·퇴실일 연장)일 때만 본다.
+  // allowRoomOverlap 으로 못 넘긴다 — 그 표식은 예약 겹침 재량용이고 계획 구간은 하드다.
+  if (newRoomId && !roomChanged && !climbingIntoResidence && (moveInAdvanced || moveOutExtended)) {
+    const planned = plannedStayDenial({
+      incomingStatus: status,
+      moveIn: newMoveInIso,
+      moveOut: newMoveOutIso,
+      plannedStays: await plannedStaysInRoom(propertyId, newRoomId, leaseTermId),
+    })
+    if (planned) return { ok: false, error: planned }
   }
 
   // 종속 재검증 — 방 배정 재검증과 같은 이유로 발화 조건을 좁힌다. 방이 바뀌어 단독 계약 불가 방으로

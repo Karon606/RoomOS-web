@@ -7,7 +7,7 @@ import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/short
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
-import { isSameDayTurnover } from '@/lib/roomAssignment'
+import { isSameDayTurnover, plannedStayDenial } from '@/lib/roomAssignment'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
@@ -89,6 +89,8 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
   occupancies: { leaseId: string; tenantName: string; status: string; moveIn: string | null; moveOut: string }[]
   // 이 방에 잡혀 있는 입실 예약들 — 퇴실일을 뒤로 미룰 때 다음 입주자를 밟는지 묻는 데 쓴다.
   reservations: { leaseId: string; tenantName: string; moveIn: string; moveOut: string | null }[]
+  // 남이 이 방을 임시 거처로 잡아 둔 구간 — 서버 가드(plannedStayDenial)와 같은 재료다.
+  plannedStays: { leaseId: string; tenantId: string; tenantName: string; from: string; to: string }[]
 }
 
 // 호실 선택 자격 — 폼 세 곳(선택 비활성·겹침 캡션·저장 확인창)이 같은 판정을 쓴다.
@@ -3727,6 +3729,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [roomPlan, setRoomPlan] = useState<Awaited<ReturnType<typeof getRoomScheduleState>>>(null)
   const [roomPlanOpen, setRoomPlanOpen] = useState(false)
   const [roomPlanTick, setRoomPlanTick] = useState(0)
+  const formEntityModal = useEntityModal()
   useEffect(() => {
     if (!lease?.id) { setRoomPlan(null); return }
     let active = true
@@ -4619,6 +4622,32 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               onClose={() => setRoomPlanOpen(false)}
               onDone={() => { setRoomPlanOpen(false); setRoomPlanTick(t => t + 1) }} />
           )}
+          {/* 남이 임시로 잡아 둔 기간과 겹치면 미리 말한다 — 저장 버튼까지 갔다가 거절당하면
+              좁은 화면에서 갇힌 느낌이 든다. 판정은 서버와 **같은 순수 함수** 한 벌이다
+              (lib/roomAssignment plannedStayDenial). 이 캡션은 예고이고 막는 것은 서버다. */}
+          {(() => {
+            const sel = rooms.find(r => r.id === selectedRoomId)
+            if (!sel) return null
+            const mine = new Set([lease?.id].filter(Boolean) as string[])
+            const stays = sel.plannedStays.filter(p => !mine.has(p.leaseId))
+            if (stays.length === 0) return null
+            const deny = plannedStayDenial({
+              incomingStatus: statusVal,
+              moveIn: moveInVal || null,
+              moveOut: (isShortTerm ? shortOut : '') || null,
+              plannedStays: stays,
+            })
+            if (!deny) return null
+            const hit = stays[0]
+            return (
+              <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
+                {deny}{' '}
+                <button type="button"
+                  onClick={() => formEntityModal.open({ kind: 'tenant', tenantId: hit.tenantId })}
+                  className="underline text-[var(--coral)] font-medium">{hit.tenantName}님 일정 보기</button>
+              </p>
+            )
+          })()}
           {(() => {
             if (roomPlan) return null   // 일정이 이미 답했다 — 두 문장이 갈리면 안 된다
             const sel = rooms.find(r => r.id === selectedRoomId)

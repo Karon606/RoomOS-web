@@ -87,6 +87,7 @@ const sheet = (patch: Partial<Parameters<typeof roomAssignmentBlockReason>[0]>) 
   nonResidentOccupied: false,
   roomStandaloneAllowed: true,
   others: [],
+  plannedStays: [],
   ...patch,
 })
 eq('시트 · 단독 가능 방은 종전대로 통과', sheet({}), null)
