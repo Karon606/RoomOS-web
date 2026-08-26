@@ -54,7 +54,7 @@ import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, va
 import { vacancyExcludedWhere } from '@/lib/vacancy'
 import {
   parseRoomSchedule, validateRoomSchedule, hasRoomSchedule, spanOverlaps, freeFromAfter,
-  scheduledSegmentOn, nextRoomMove, roomScheduleText,
+  scheduledSegmentOn, nextRoomMove, roomScheduleText, roomScheduleLines,
 } from '@/lib/roomSchedule'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
@@ -1508,7 +1508,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
   const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
   const finalNotice = [baseNotice, rentRewriteNotice,
-    staleCleared ? '입주일이 바뀌어 잡아 둔 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
+    staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),
@@ -2710,6 +2710,8 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   /** 'plan' 은 아직 안 들어온 계획, 'active' 는 이미 그 일정대로 살고 있는 것이다. */
   stage: 'plan' | 'active'
   text: string
+  /** 구간마다 한 줄. 한 문장으로 이으면 안 읽힌다(운영자 지적 2026-08-26). */
+  lines: string[]
   todayRoomNo: string | null
   nextAt: string | null
   nextRoomNo: string | null
@@ -2732,6 +2734,7 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   return {
     stage: lease?.status === 'RESERVED' ? 'plan' : 'active',
     text: roomScheduleText(schedule, noOf) ?? '',
+    lines: roomScheduleLines(schedule, noOf),
     todayRoomNo: noOf(scheduledSegmentOn(schedule, today)?.roomId ?? ''),
     nextAt: next?.at ?? null,
     nextRoomNo: next ? noOf(next.roomId) : null,
@@ -2918,7 +2921,7 @@ export async function applyStatusTransition(input: {
       if (hasRoomSchedule(plan)) {
         const wantMoveIn = input.moveInDate ?? (lease.moveInDate ? kstYmdStr(lease.moveInDate) : null)
         if (wantMoveIn && wantMoveIn !== plan[0].from) {
-          return { ok: false, error: `미리 잡아 둔 일정이 ${fmtDateDot(plan[0].from)}부터입니다. 입주일을 바꾸려면 일정을 다시 잡아 주세요.` }
+          return { ok: false, error: `거주 호실 일정이 ${fmtDateDot(plan[0].from)}부터입니다. 입주일을 바꾸려면 일정을 다시 정해 주세요.` }
         }
       }
       const planned = scheduledSegmentOn(plan, kstYmdStr())
@@ -3065,7 +3068,7 @@ export async function applyStatusTransition(input: {
     // 운영자는 어느 길로 갔느냐에 따라 물음을 못 본다 — 실측에서 그렇게 놓쳤다(2026-08-26).
     const staleCleared = await clearStaleRoomSchedule(propertyId, input.leaseTermId)
     const roomBusy = await reservationRoomBusy(propertyId, input.leaseTermId)
-    const finalNote = [notice, staleCleared ? '입주일이 바뀌어 잡아 둔 호실 일정을 지웠습니다.' : null]
+    const finalNote = [notice, staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null]
       .filter(Boolean).join(' ') || null
     return {
       ok: true,

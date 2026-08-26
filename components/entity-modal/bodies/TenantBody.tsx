@@ -261,10 +261,10 @@ function RoomBusyRow({ leaseTermId, tenantName, info, onDone }: {
       <div className="flex items-center justify-between gap-2 bg-[var(--warning-bg)] rounded-lg px-3 py-2 text-xs">
         <p className="min-w-0 text-[var(--warning-fg)]">
           {info.sameDayHandover
-            ? <>{info.roomNo}호를 <span className="font-semibold">{fmtDate(info.moveInYmd)}</span>에 넘겨받습니다{info.occupantName ? ` (${info.occupantName}님이 그날 퇴실)` : ''}</>
+            ? <>{info.roomNo}호 퇴실일과 입주일이 같습니다 (<span className="font-semibold">{fmtDate(info.moveInYmd)}</span>{info.occupantName ? ` · ${info.occupantName}님 퇴실` : ''})</>
             : info.freeFrom
-              ? <>{info.roomNo}호는 <span className="font-semibold">{fmtDate(info.freeFrom)}</span>에 빕니다. 입주일 {fmtDate(info.moveInYmd)}에는 들어갈 수 없습니다</>
-              : <>{info.roomNo}호가 언제 비는지 정해지지 않았습니다{info.occupantName ? ` (${info.occupantName}님 퇴실 예정일 없음)` : ''}</>}
+              ? <>{info.roomNo}호는 <span className="font-semibold">{fmtDate(info.freeFrom)}</span>부터 입주 가능합니다. 입주일 {fmtDate(info.moveInYmd)}에는 들어갈 수 없습니다</>
+              : <>{info.roomNo}호의 입주 가능일이 정해지지 않았습니다{info.occupantName ? ` (${info.occupantName}님 퇴실 예정일 없음)` : ''}</>}
         </p>
         <button type="button" onClick={() => void ask()}
           className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warning-fg)]/40 text-[var(--warning-fg)] hover:bg-[var(--warning-fg)]/10 transition-colors">
@@ -296,7 +296,7 @@ function RoomScheduleRow({ leaseTermId, info, onDone }: {
   const isPlan = info.stage === 'plan'
   const handleUndo = async () => {
     const ok = await confirmDialog({
-      title: isPlan ? '잡아 둔 입실 일정을 지울까요?' : '입실 처리를 적용취소할까요?',
+      title: isPlan ? '거주 호실 일정을 지울까요?' : '입실 처리를 적용취소할까요?',
       message: isPlan
         ? '호실 일정만 지웁니다. 예약과 입주 희망일은 그대로 남습니다.'
         : '예약 상태로 되돌리고 호실 일정과 거주 구간을 지웁니다. 입주일은 그대로 남습니다.',
@@ -305,17 +305,20 @@ function RoomScheduleRow({ leaseTermId, info, onDone }: {
     if (!ok) return
     startTransition(async () => {
       const r = isPlan ? await clearRoomSchedulePlan(leaseTermId) : await undoRoomSchedule(leaseTermId)
-      if (r.ok) { pushToast('info', isPlan ? '입실 일정을 지웠습니다.' : '입실 처리를 적용취소했습니다.'); onDone() }
+      if (r.ok) { pushToast('info', isPlan ? '거주 호실 일정을 지웠습니다.' : '입실 처리를 적용취소했습니다.'); onDone() }
       else pushToast('error', r.error)
     })
   }
   return (
-    <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-      {/* 이름이 무르는 대상과 같아야 한다 — 계획은 지우는 것이고 실제는 입실 처리를 무르는 것이다(§16). */}
-      <p className="min-w-0 text-[var(--warm-mid)]">
-        {isPlan ? '잡아 둔 입실 일정 ' : '입실 처리 · 호실 일정 '}
-        <span className="text-[var(--warm-dark)]">{info.text}</span>
-      </p>
+    <div className="flex items-start justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+      {/* 이름이 무르는 대상과 같아야 한다 — 계획은 지우는 것이고 실제는 입실 처리를 무르는 것이다(§16).
+          용어는 계약서 5절과 같은 '거주 호실 일정' 하나다. 화면과 종이가 다른 말을 쓰면 안 된다. */}
+      <div className="min-w-0">
+        <p className="text-[var(--warm-mid)]">{isPlan ? '거주 호실 일정' : '입실 처리 · 거주 호실 일정'}</p>
+        <ul className="mt-1 space-y-0.5 text-[var(--warm-dark)] tabular-nums">
+          {info.lines.map(l => <li key={l}>{l}</li>)}
+        </ul>
+      </div>
       <button type="button" onClick={handleUndo} disabled={pending}
         className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
         {pending ? (isPlan ? '지우는 중…' : '취소 중…') : (isPlan ? '지우기' : '적용취소')}

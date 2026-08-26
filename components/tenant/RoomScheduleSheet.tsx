@@ -172,7 +172,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
 
             {unknownEnd && (
               <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
-                계약 호실 {opts.mainRoomNo}호가 언제 비는지 정해지지 않았습니다.
+                계약 호실 {opts.mainRoomNo}호의 입주 가능일이 정해지지 않았습니다.
                 {opts.mainOccupantName
                   ? ` 지금 사는 ${opts.mainOccupantName}님의 퇴실 예정일을 먼저 정해 주세요.`
                   : ' 지금 사는 분의 퇴실 예정일을 먼저 정해 주세요.'}
