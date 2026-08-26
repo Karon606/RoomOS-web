@@ -427,8 +427,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       open onClose={onClose} onBack={onBack} width="sm" title={title} z={280}
       footer={
         <div className="space-y-2">
-          {/* 액션 행 — kind 마다 다른 액션. PrismNavBar 위. */}
-          {kind === 'room' && hasRoom && (
+          {/* 액션 행 — kind 마다 다른 액션. PrismNavBar 위.
+              **다른 화면으로 넘어가는 중(opening)에는 접는다.** 종전에는 버튼 글자를
+              '여는 중…'으로 바꿨는데 폭이 늘어 옆 버튼들이 밀렸다(운영자 지적 2026-08-26).
+              본문이 통째로 뼈대가 되므로 그 아래 살아 있는 버튼이 남으면 뭘 눌러야 할지 갈린다. */}
+          {kind === 'room' && hasRoom && !opening && (
             <div className="flex gap-2 items-center">
               <button type="button" onClick={handleDeleteRoom} disabled={isPending}
                 className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
@@ -436,11 +439,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               </button>
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditRoom} disabled={isPending}>
-                {opening ? '여는 중…' : '수정'}
+                수정
               </Btn>
             </div>
           )}
-          {kind === 'tenant' && hasTenant && (
+          {kind === 'tenant' && hasTenant && !opening && (
             <div className="flex flex-wrap gap-2 items-center">
               <Btn variant="ghost" size="md" onClick={handleDeleteTenant} disabled={isPending}
                 className="text-[var(--danger-fg)]">
@@ -476,7 +479,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
                 </Btn>
               )}
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
-                {opening ? '여는 중…' : '수정'}
+                수정
               </Btn>
             </div>
           )}
@@ -520,7 +523,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       <div>
         {/* 링크 해소 전에는 뼈대 — body 들이 자기 조회 중에 쓰는 것과 같은 SkeletonRows 정본이라
             셸이 열린 뒤 뼈대가 한 번도 끊기지 않고 내용으로 이어진다. */}
-        {links === undefined ? <SkeletonRows rows={5} className="py-4" /> : (<>
+        {links === undefined || opening ? <SkeletonRows rows={5} className="py-4" /> : (<>
           {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
               강조는 MonthSelector 알약 자체(과거면 amber)로 충분 — 별도 박스로 감싸면 '네모 안 네모'라 과함. */}
           {kind === 'payment' && hasPay && (
