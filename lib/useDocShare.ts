@@ -19,7 +19,7 @@ export type DocShareEntry = {
 }
 
 // entries 는 현재 선택 항목을 표시 순서대로. mode 는 png(사진)·pdf.
-export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
+export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', shareText?: string) {
   // 큐는 **형식마다 하나**다. 캐시 키가 driveFileId 뿐이라 한 큐를 공유하면 사진으로 준비해 둔
   // Blob 이 PDF 로 바꾼 뒤에도 그대로 나간다 — 형식 전환이 있는 화면(서류 묶음 보내기 시트)에서
   // PDF 를 골랐는데 PNG 가 첨부되는 길이다. 형식이 고정인 화면은 큐를 하나만 만들므로 종전과 같다.
@@ -35,6 +35,8 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
   // 최신 entries 를 ref 로 — send 클로저의 신선도 보장, 효과 의존성 최소화.
   const entriesRef = useRef(entries)
   entriesRef.current = entries
+  const shareTextRef = useRef(shareText)
+  shareTextRef.current = shareText
 
   const ids = entries.map(e => e.id)
   const idsKey = ids.join(',')
@@ -75,7 +77,8 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf') {
     const names = shareFileNames(es, blobLists.map(b => b.length), exts)
     const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: b.type }))
 
-    const result = await shareFiles(files)
+    // 본문은 실험이다 — 받는 앱이 무시할 수 있고, 무시되면 종전과 같은 결과(파일만)라 무해하다.
+    const result = await shareFiles(files, shareTextRef.current)
     // 'shared'·'cancelled' 은 무반응(정상). 'retry' 는 재탭 유도, 'unsupported' 는 안내.
     if (result === 'retry') {
       retryCount.current += 1

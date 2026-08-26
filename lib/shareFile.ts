@@ -38,11 +38,22 @@ export async function shareOrDownloadFile(
 // (캐시가 이미 준비돼 있어 두 번째 탭은 즉시 성공), 사용자가 취소하면 'cancelled'(무반응 처리).
 export async function shareFiles(
   files: File[],
+  /**
+   * 함께 넘길 본문 — 받는 앱이 채워진 채로 열리기를 기대하는 문구다(운영자 요구 2026-08-26).
+   *
+   * **되는지 안 되는지 우리가 정할 수 없다.** 파일이 함께 있으면 텍스트를 버리는 앱이 많고
+   * (특히 iOS), 카카오톡도 그런 것으로 알려져 있다. 그래서 넘기되 기대지 않는다 —
+   * 무시되면 지금까지와 같은 결과(파일만 첨부)라 잃는 것이 없다.
+   * canShare 가 text 를 거절하는 조합이면 파일만으로 다시 시도한다(실험이 발송을 막으면 안 된다).
+   */
+  text?: string,
 ): Promise<'shared' | 'cancelled' | 'retry' | 'unsupported'> {
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
   if (!nav.canShare?.({ files }) || typeof nav.share !== 'function') return 'unsupported'
+  // text 를 얹은 조합을 먼저 물어본다. 거절하면 파일만 — 본문 때문에 공유가 죽으면 안 된다.
+  const payload: ShareData = text && nav.canShare({ files, text }) ? { files, text } : { files }
   try {
-    await nav.share({ files })
+    await nav.share(payload)
     return 'shared'
   } catch (e) {
     const err = e as Error

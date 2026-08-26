@@ -173,7 +173,16 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
       dateStr: fmtDateDot(p.issuedAt),
       fetchBytes: fetchDocBytes(p.driveFileId as string),
     }))
-  const share = useDocShare(shareEntries, mode)
+  // 공유 시트에 함께 넘길 본문 — 받는 앱이 채워진 채로 열리는지 보는 실험이다(2026-08-26).
+  // 파일이 함께 있으면 텍스트를 버리는 앱이 많아 될지 안 될지는 실기로만 안다. 무시되면
+  // 종전과 같은 결과(파일만 첨부)라 잃는 것이 없다. 문구는 메일과 같은 축으로 짧게 짓는다 —
+  // 문자·메신저는 짧은 매체라 메일 본문을 그대로 옮기면 길다.
+  const shareText = useMemo(() => {
+    const titles = rows.filter(r => selected.has(pickedOf(r, pickedVersion).key)).map(r => TITLE[r.docType])
+    if (titles.length === 0) return undefined
+    return `${bundle?.tenantName ?? ''} 님, 요청하신 ${titles.join(', ')}을 보내 드립니다.`
+  }, [rows, selected, pickedVersion, bundle?.tenantName])
+  const share = useDocShare(shareEntries, mode, shareText)
 
   const mailOn = !!bundle?.mail.enabled
   const mailTo = bundle?.mail.to ?? null
