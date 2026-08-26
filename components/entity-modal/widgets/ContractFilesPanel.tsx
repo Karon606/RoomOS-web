@@ -41,6 +41,7 @@ import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 
@@ -128,6 +129,8 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     setMultiVersion(res.ok && res.multiVersion)
   }
   useEffect(() => { reload(); reloadShare(); reloadMultiVersion() }, [tenantId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 목록 밖에서 용도가 바뀌면 다시 읽는다 — 발급 토스트의 적용취소가 그 자리다(§27.1).
+  useEffect(() => subscribeContractFiles(() => { void reload() }), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
   const openSms = (url: string, phone: string, propertyName: string) => {
@@ -190,11 +193,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     // 반사적으로 눌린다. 그 반사 탭이 419호 사고(옛 스캔본이 대표를 뺏음)의 재료다.
     // 기본은 보관용 등록이다 — 성급한 확정이 기존 계약서를 밀어내지 않는 쪽이 안전하다.
     let decision: 'real' | 'archived' | undefined
-    const liveReal = (files ?? []).filter(f => !f.voidedAt && !purposeLabel(f)).length
+    // **서버와 같은 계약만 센다.** 사람 전체에서 세면 지난 계약의 실계약 때문에 없는 충돌로
+    // 창이 뜨고, 그 창이 적는 부수도 서버가 실제로 밀어낼 수와 다르다(§14 건수는 실데이터).
+    const liveReal = (files ?? []).filter(f =>
+      !f.voidedAt && !purposeLabel(f) && (f.leaseTermId ?? null) === (leaseTermId ?? null)).length
     if (liveReal > 0) {
       const pick = await choiceDialog({
         title: '이 스캔본을 어떤 계약서로 올릴까요?',
-        message: `이 계약에는 실계약 계약서가 이미 ${liveReal}부 있습니다. 실계약으로 올리면 기존 계약서는 보관용으로 바뀌고, 보관용으로 올리면 기존 계약서가 실계약으로 남습니다.`,
+        message: `이 계약에는 실계약 계약서가 이미 ${liveReal}부 있습니다. 실계약으로 올리면 기존 실계약 ${liveReal}부는 보관용으로 바뀌고, 보관용으로 올리면 기존 계약서가 실계약으로 남습니다.`,
         level: 'caution',
         confirmLabel: '보관용 등록',
         altLabel: '실계약 등록',
@@ -214,20 +220,24 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       const fin = await finalizeContractScan({ tenantId, driveFileId, fileName: file.name, decision })
       if (!fin.ok) { pushToast('error', fin.error); return }
       // 화면이 낡아 못 물었을 때의 그물 — 서버가 안전한 쪽(보관용)으로 넣고 여기서 되묻는다.
+      let promoted = false
       if (fin.needsDecision) {
         const promote = await confirmDialog({
           title: '이 스캔본을 실계약으로 올릴까요?',
-          message: '올리는 사이에 이 계약에 실계약 계약서가 생겼습니다. 스캔본은 보관용으로 등록했습니다. 실계약으로 바꾸면 기존 계약서가 보관용으로 물러납니다.',
+          message: '이 계약에는 실계약 계약서가 이미 있어서 스캔본을 보관용으로 등록했습니다. 실계약으로 바꾸면 기존 실계약이 보관용으로 바뀝니다.',
           level: 'caution', confirmLabel: '실계약으로',
         })
         if (promote) {
           const r = await changeContractPurpose(fin.id, DEFAULT_CONTRACT_PURPOSE)
-          if (!r.ok) pushToast('error', r.error)
+          if (r.ok) promoted = true
+          else pushToast('error', r.error)
         }
       }
-      pushToast('success', fin.archivedCount
-        ? '스캔본 등록됨'
-        : '스캔본 등록됨', fin.archivedCount ? { detail: `기존 실계약 ${fin.archivedCount}부는 보관용으로 바뀜` } : undefined)
+      const archived = fin.archivedCount ?? 0
+      pushToast('success', '스캔본 등록됨',
+        archived > 0 ? { detail: `기존 실계약 ${archived}부는 보관용으로 바뀜` }
+        : promoted ? { detail: '이 스캔본이 실계약이 됐습니다. 되돌리려면 각 계약서의 용도에서 바꾸세요.' }
+        : undefined)
       await reload()
     } catch (err) {
       pushToast('error', (err as Error).message ?? '업로드 실패')

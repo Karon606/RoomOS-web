@@ -14,7 +14,7 @@ import {
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
-import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose, ARCHIVED_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
+import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
 import { shareFileNames } from '@/lib/docShareQueue'
 import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
@@ -123,13 +123,11 @@ export async function getTenantDocBundle(
       leaseTermId: r.leaseTermId,
       at: r.signedAt.toISOString(),
       purposeLabel: contractPurposeLabel(effectiveIssuePurpose(r)),
-      // 보관용이면 '구버전'을 또 적지 않는다 — 라벨과 note 가 같은 말을 두 번 하면
-      // "보관용 · 구버전"이라는 겹말이 된다. 도장(supersededAt)은 서명 주인이 넘어갔다는
-      // 사실이고 보관용은 지금 지위라 축이 다르지만, 화면에서는 한 번만 말하면 된다.
-      note: [
-        r.source === 'UPLOADED' ? '스캔본' : null,
-        r.supersededAt && effectiveIssuePurpose(r) !== ARCHIVED_CONTRACT_PURPOSE ? '구버전' : null,
-      ].filter(Boolean).join(' · ') || null,
+      // '보관용 · 구버전'을 겹말로 보고 뒤를 지웠다가 되돌렸다(디자이너 패스). 축이 다르고 —
+      // 도장은 서명의 주인이 넘어갔다는 사실, 보관용은 지금 지위다 — 판본을 고르는 창에서
+      // 그 단서를 지우면 보관용 둘을 서명일 하나로만 갈라야 한다. 판본 고르기가 이 창의 용건이다.
+      note: [r.source === 'UPLOADED' ? '스캔본' : null, r.supersededAt ? '구버전' : null]
+        .filter(Boolean).join(' · ') || null,
       representative: representativeIds.has(r.id),
       mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
     })),

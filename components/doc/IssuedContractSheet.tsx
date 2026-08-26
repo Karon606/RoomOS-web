@@ -105,9 +105,10 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
           {/* 용도 — 발급 시점 증거다. 값은 발급 트랜잭션에서 한 번 쓰고 아무도 갱신하지 않는다.
               폐기·구버전 여부와는 다른 축이라 따로 적는다. 번복이 있으면 지금 지위를 한 줄 더
               적어 증거와 지위를 갈라 말한다 — 한 줄뿐이면 이 화면이 거짓을 진술한다. */}
-          <Row label={detail.purposeNow ? '발급 때 용도' : '용도'} value={contractPurposeOf(detail.issuePurpose)} />
+          <Row label={detail.purposeNow ? '발급 시 용도' : '용도'} value={contractPurposeOf(detail.issuePurpose)} />
           {detail.purposeNow && (
-            <Row label="지금 용도" value={contractPurposeOf(detail.purposeNow)} />
+            <Row label="지금 용도"
+              value={`${contractPurposeOf(detail.purposeNow)}${detail.purposeChangedBy === 'auto' ? ' (새 계약서에 밀려남)' : ' (직접 바꿈)'}`} />
           )}
           <Row label="계약일" value={fmtDateDot(detail.signedAt)} />
           <Row label="발급 시각" value={fmtDateTime(snap?.issuedAt ?? detail.createdAt)} />

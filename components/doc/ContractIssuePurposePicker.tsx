@@ -32,11 +32,14 @@ export function ContractIssuePurposePicker({ archiveCount, onPick, onClose }: {
           message: `기존 실계약 ${archiveCount}부는 보관용으로 바뀌고 바뀐 이력이 기록에 남습니다. 발급 뒤에도 각 계약서의 용도에서 되돌릴 수 있습니다.`,
           level: 'caution',
           confirmLabel: '발급',
+          // 이 취소는 흐름을 닫지 않고 피커로 돌아간다 — §14 가 '취소'와 가른 그 동작이다.
+          cancelLabel: '뒤로',
         })
       : await confirmDialog({
           title: `'${p}' 판본으로 발급할까요?`,
           message: `대표 계약서는 실계약 그대로 남고, 이번 발급본은 ${p}으로 기록됩니다.`,
           confirmLabel: '발급',
+          cancelLabel: '뒤로',
         })
     if (ok) onPick(p)
   }
@@ -51,7 +54,7 @@ export function ContractIssuePurposePicker({ archiveCount, onPick, onClose }: {
           {ISSUABLE_CONTRACT_PURPOSES.map(p => (
             <li key={p}>
               <button type="button" onClick={() => void choose(p)}
-                className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 text-left transition-colors hover:border-[var(--coral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
+                className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-[var(--warm-dark)]">{p}</span>
                   {/* 결과가 갈리는 카드에만 캡션을 둔다 — 형제 두 창과 같은 규칙이다. */}

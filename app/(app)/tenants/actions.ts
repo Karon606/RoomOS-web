@@ -4230,6 +4230,8 @@ export type IssuedContractDetail = {
   issuePurpose: string | null
   /** 번복이 있으면 지금 지위. null 이면 번복이 없다(발급 때 그대로다). */
   purposeNow: string | null
+  /** 무엇이 그 번복을 일으켰나 — 'auto'(새 실계약이 밀어냄) · 'manual'(사람이 바꿈). */
+  purposeChangedBy: 'auto' | 'manual' | null
   snapshot: IssuedContractSnapshot | null
 }
 
@@ -4246,7 +4248,7 @@ export async function getContractIssuedSnapshot(id: string): Promise<
       where: { id, propertyId },
       select: {
         contractNo: true, fileName: true, source: true, signedAt: true, createdAt: true,
-        issuePurpose: true, purposeOverride: true, issuedSnapshot: true, tenant: { select: { name: true } },
+        issuePurpose: true, purposeOverride: true, purposeLog: true, issuedSnapshot: true, tenant: { select: { name: true } },
       },
     })
     if (!row) return { ok: false, error: '계약서 파일을 찾을 수 없습니다.' }
@@ -4258,6 +4260,11 @@ export async function getContractIssuedSnapshot(id: string): Promise<
         // 번복이 있으면 지금 지위는 이쪽이다. 이 화면이 발급 시점 값만 적으면, 보관용으로 물러난
         // 계약서를 뜯어보는 자리에서 "용도 실계약"이라고 **적극적으로 거짓말한다**(디자이너 패스).
         purposeNow: row.purposeOverride,
+        // 왜 갈렸나 — 새 계약서에 밀려난 것인지 사람이 바꾼 것인지. 이력에 이미 있는 값이라
+        // 여기서 한 줄 꺼내면 이 화면의 진술이 완성된다.
+        purposeChangedBy: row.purposeOverride
+          ? (parsePurposeLog(row.purposeLog).at(-1)?.cause ?? 'manual')
+          : null,
         fileName: row.fileName,
         source: row.source as 'GENERATED' | 'UPLOADED',
         signedAt: row.signedAt,
@@ -4555,9 +4562,11 @@ export async function finalizeContractScan(input: {
           lease.id,
         )
       : []
-    // 충돌이 없으면 종전 그대로 실계약이다(첫 스캔이 대다수라 이 흐름은 픽셀도 안 바뀐다).
-    // 충돌이 있는데 결정을 안 실어 왔으면 안 뺏는 쪽으로 들어오고, 화면이 그 사실을 알고 되묻는다.
-    const asReal = existingReal.length === 0 || input.decision === 'real'
+    // 결정이 실려 왔으면 **그대로 따른다.** 종전에는 충돌이 없을 때 명시된 'archived' 를 무시하고
+    // 실계약으로 넣었다 — 물어놓고 답을 버리는 자리였다(디자이너 패스).
+    // 결정이 없으면 충돌 유무가 정한다. 첫 스캔이 대다수라 그 흐름은 종전과 같고, 충돌이 있으면
+    // 안 뺏는 쪽으로 들어온 뒤 화면이 되묻는다.
+    const asReal = input.decision ? input.decision === 'real' : existingReal.length === 0
     const created = await prisma.$transaction(async tx => {
       const file = await tx.contractFile.create({
         data: {

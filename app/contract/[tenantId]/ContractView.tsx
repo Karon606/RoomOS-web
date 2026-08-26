@@ -6,6 +6,7 @@ import { blockSmsIfStaging } from '@/lib/smsHref'
 import { ContractIssuePurposePicker, type IssuePurposePick } from '@/components/doc/ContractIssuePurposePicker'
 import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
 import { undoArchiveByIssue } from '@/app/(app)/tenants/actions'
+import { notifyContractFilesChanged } from '@/lib/contractFilesBus'
 import Link from 'next/link'
 // 정적 import — 동적 import 시절에는 모듈이 도착하기 전에 그은 획이 조용히 버려졌다.
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
@@ -897,9 +898,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       // 생기는 것은 같아서 무엇이 물러나는지는 말해야 한다(게이트는 토글과 무관하게 걸린다).
       if (!(await confirmDialog({
         title: '기존 계약서를 보관용으로 남길까요?',
-        message: `이 계약에는 실계약 계약서 ${archiveCount}부가 있습니다. 새 계약서가 대표가 되고, 기존 ${archiveCount}부는 보관용으로 남아 목록에서 계속 볼 수 있습니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남습니다.`,
+        message: `이 계약에는 실계약 계약서 ${archiveCount}부가 있습니다. 새 계약서가 대표가 되고, 기존 ${archiveCount}부는 보관용으로 바뀌어 목록에서 계속 볼 수 있습니다. 발급할 때 무엇으로 만들었는지는 기록에 그대로 남습니다.`,
         level: 'caution',
-        confirmLabel: '발급',
+        confirmLabel: '보관하고 발급',
       }))) return
     } else {
       if (!(await confirmDialog({ title: '이 계약서를 발급할까요?', message: "도장·로고·서명이 합성된 PDF가 보관되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '발급' }))) return
@@ -946,8 +947,15 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           action: {
             label: '적용취소',
             run: () => { void undoArchiveByIssue(newFileId).then(r => {
-              if (r.ok) pushToast('info', '보관용 전환을 되돌렸습니다', { detail: `이 계약에 실계약이 ${r.restored + 1}부입니다.` })
-              else pushToast('error', r.error)
+              if (!r.ok) { pushToast('error', r.error); return }
+              // 되돌릴 것이 없었다면 그렇게 말한다 — 다른 자리에서 이미 손댄 뒤일 수 있다.
+              if (r.restored === 0) {
+                pushToast('info', '되돌릴 것이 없습니다', { detail: '이미 다른 곳에서 용도를 바꾸셨습니다.' })
+              } else {
+                pushToast('info', '보관용으로 바뀐 것을 되돌렸습니다', { detail: `이 계약에 실계약이 ${r.restored + 1}부입니다.` })
+              }
+              // 발급 뒤 이미 열려 있는 계약서 파일 목록이 옛 값을 들고 있다 — 다시 읽게 한다(§27.1).
+              notifyContractFilesChanged()
             }) },
           },
         } : {}),

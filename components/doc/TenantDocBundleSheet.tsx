@@ -548,7 +548,7 @@ function ContractVersionPicker({ row, pickedId, onClose, onPick }: {
     <Modal open onClose={onClose} z={280} width="sm" title="어떤 계약서를 보낼까요">
       <div className="space-y-2">
         <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-          같은 계약에 보관된 계약서입니다. 고른 판본이 메일과 기기 공유 양쪽에 쓰입니다.
+          같은 계약에 등록된 계약서입니다. 고른 판본이 메일과 기기 공유 양쪽에 쓰입니다.
         </p>
         <ul className="space-y-1.5">
           {versions.map(v => {
