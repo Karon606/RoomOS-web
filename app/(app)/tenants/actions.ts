@@ -1502,10 +1502,13 @@ export async function updateTenant(formData: FormData): Promise<
   // 단기 동기화가 일할 패치를 건너뛰었으면 일할 안내는 사실과 달라 내보내지 않는다.
   // 단, 감액 하한(이미 받은 금액에서 멈춤) 안내는 동기화와 함께 나가야 하는 사실이라 유지.
   const baseNotice = shortPlan ? shortNotice : (shortNotice ?? prorationNotice)
-  const finalNotice = [baseNotice, rentRewriteNotice].filter(Boolean).join(' ') || null
-  // 날짜를 당겼는데 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
+  // 날짜가 바뀌어 못 쓰게 된 일정을 먼저 걷는다 — 남아 있으면 아래 물음이 안 뜬다.
+  const staleCleared = await clearStaleRoomSchedule(propertyId, leaseTermId)
+  // 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
   const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
+  const finalNotice = [baseNotice, rentRewriteNotice,
+    staleCleared ? '입주일이 바뀌어 잡아 둔 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
   return {
     ok: true,
     ...(finalNotice ? { notice: finalNotice } : {}),
@@ -2261,6 +2264,28 @@ async function mainRoomFreeFrom(
 }
 
 /**
+ * 입주일이 바뀌어 못 쓰게 된 호실 일정을 걷는다 — 예약 상태에서만.
+ *
+ * 일정의 첫 줄은 입주일부터 시작하는 것이 불변식이다(lib/roomSchedule). 날짜를 바꾸면 그 등식이
+ * 깨지고, 그대로 두면 입실 처리가 "미리 잡아 둔 일정이 8/31부터입니다"로 막혀 운영자가 갇힌다.
+ * 게다가 일정이 남아 있는 동안은 "방이 차 있다"는 물음도 안 뜬다(이미 정한 것으로 보므로).
+ *
+ * 날짜가 바뀌었으면 그 일정은 다른 날짜용으로 짠 것이라 살릴 수 없다. 걷고 다시 묻게 한다.
+ */
+async function clearStaleRoomSchedule(propertyId: string, leaseTermId: string): Promise<boolean> {
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId, status: 'RESERVED' },
+    select: { moveInDate: true, roomSchedule: true },
+  })
+  if (!lease?.moveInDate) return false
+  const plan = parseRoomSchedule(lease.roomSchedule)
+  if (!hasRoomSchedule(plan)) return false
+  if (plan[0].from === kstYmdStr(lease.moveInDate)) return false
+  await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { roomSchedule: Prisma.DbNull } })
+  return true
+}
+
+/**
  * 예약 확정자의 입주 희망일에 계약 호실이 아직 차 있는가 — 차 있으면 그 사실을 돌려준다.
  *
  * **날짜를 당기는 그 순간이 이 말을 할 자리다**(운영자 요구 2026-08-26). 일찍 오려고 날짜를
@@ -2658,6 +2683,28 @@ export async function advanceRoomSchedule(input: {
   }
 }
 
+/**
+ * 입주일에 계약 호실이 아직 차 있는가 — **상세 화면이 상시로 읽는다.**
+ *
+ * 저장 직후 팝업은 그 순간의 신호일 뿐이라 놓칠 수 있다(실측 2026-08-26 — 운영자가 한 번 보고
+ * 그 뒤로 못 봤고, 왜 안 떴는지 재현되지 않았다). 상황이 살아 있으면 **화면에 계속 서 있어야**
+ * 한다. 그래야 "동일한 상황이 다시 발생하면 원점으로 돌아간다"가 팝업 타이밍에 안 걸린다.
+ *
+ * 판정은 팝업과 같은 함수(reservationRoomBusy)다 — 두 벌이면 한쪽만 낡는다.
+ */
+export async function getRoomBusyNotice(leaseTermId: string): Promise<{
+  roomNo: string
+  moveInYmd: string
+  freeFrom: string | null
+  occupantName: string | null
+  occupantTenantId: string | null
+  sameDayHandover: boolean
+} | null> {
+  await requireEdit()
+  const { propertyId } = await getPropertyId()
+  return reservationRoomBusy(propertyId, leaseTermId)
+}
+
 /** 호실 일정 현황 — 상세 화면의 상시 적용취소 행이 읽는다(§16 우선순위 3). */
 export async function getRoomScheduleState(leaseTermId: string): Promise<{
   /** 'plan' 은 아직 안 들어온 계획, 'active' 는 이미 그 일정대로 살고 있는 것이다. */
@@ -3016,10 +3063,13 @@ export async function applyStatusTransition(input: {
     revalidatePath('/finance')
     // 이 미니폼도 입주 희망일을 바꾼다(예약 확정). 날짜를 바꾸는 길이 둘인데 한쪽만 물으면
     // 운영자는 어느 길로 갔느냐에 따라 물음을 못 본다 — 실측에서 그렇게 놓쳤다(2026-08-26).
+    const staleCleared = await clearStaleRoomSchedule(propertyId, input.leaseTermId)
     const roomBusy = await reservationRoomBusy(propertyId, input.leaseTermId)
+    const finalNote = [notice, staleCleared ? '입주일이 바뀌어 잡아 둔 호실 일정을 지웠습니다.' : null]
+      .filter(Boolean).join(' ') || null
     return {
       ok: true,
-      ...(notice ? { notice } : {}),
+      ...(finalNote ? { notice: finalNote } : {}),
       ...(roomBusy ? { roomBusy } : {}),
     }
   } catch (err) {

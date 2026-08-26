@@ -9,10 +9,14 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
-  getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan } from '@/app/(app)/tenants/actions'
+  getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
+import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Btn } from '@/components/ui/Btn'
@@ -37,6 +41,7 @@ import { withheldPartsLabel } from '@/lib/depositComposition'
 // 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
 type DepositRefundInfo = NonNullable<Awaited<ReturnType<typeof getDepositRefundForLease>>>
 type RoomScheduleInfo = NonNullable<Awaited<ReturnType<typeof getRoomScheduleState>>>
+type RoomBusyInfo = NonNullable<Awaited<ReturnType<typeof getRoomBusyNotice>>>
 
 type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
@@ -47,6 +52,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   const [depoRefund, setDepoRefund] = useState<DepositRefundInfo | null>(null)
   // 호실 일정 현황 — 일정을 쓰는 계약일 때만 값이 온다(§16 상시 진입점).
   const [schedule, setSchedule] = useState<RoomScheduleInfo | null>(null)
+  // 입주일에 계약 호실이 아직 차 있다 — 저장 직후 팝업은 놓칠 수 있어 여기 상시로 세운다.
+  const [roomBusy, setRoomBusy] = useState<RoomBusyInfo | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
@@ -59,6 +66,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
     let active = true
     getDepositRefundForLease(leaseIdForRefund).then(r => { if (active) setDepoRefund(r) })
     getRoomScheduleState(leaseIdForRefund).then(r => { if (active) setSchedule(r) })
+    getRoomBusyNotice(leaseIdForRefund).then(r => { if (active) setRoomBusy(r) })
     return () => { active = false }
   }, [leaseIdForRefund, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
@@ -130,12 +138,13 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && (() => {
         const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
         const snap = undoObj?.refund
-        if (!snap && !depoRefund && !schedule) return null
+        if (!snap && !depoRefund && !schedule && !roomBusy) return null
         return (
           <div className="space-y-1.5">
             {snap && <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />}
             {depoRefund && <DepositRefundUndoRow info={depoRefund} onDone={refresh} />}
             {schedule && <RoomScheduleRow leaseTermId={lease.id} info={schedule} onDone={refresh} />}
+            {roomBusy && <RoomBusyRow leaseTermId={lease.id} tenantName={tenant.name} info={roomBusy} onDone={refresh} />}
           </div>
         )
       })()}
@@ -227,6 +236,47 @@ function RentRefundUndoRow({ leaseTermId, refunded, month, onDone }: {
         {pending ? '취소 중…' : '적용취소'}
       </button>
     </div>
+  )
+}
+
+// 입주일에 계약 호실이 아직 차 있다 — 상황이 살아 있는 동안 상시로 선다.
+//
+// 저장 직후 팝업만 두면 놓친다. 실측(2026-08-26)에서 운영자가 한 번 보고 그 뒤로 못 봤고,
+// 왜 안 떴는지 재현되지 않았다. 화면에 계속 서 있으면 그 타이밍에 안 걸린다.
+// 일정을 잡거나 날짜를 물리면 조건이 풀려 이 행이 저절로 사라진다.
+function RoomBusyRow({ leaseTermId, tenantName, info, onDone }: {
+  leaseTermId: string; tenantName: string; info: RoomBusyInfo; onDone: () => void
+}) {
+  const entityModal = useEntityModal()
+  const [planOpen, setPlanOpen] = useState(false)
+  const ask = async () => {
+    const pick = await askRoomBusy(info)
+    if (pick === 'plan') setPlanOpen(true)
+    else if (pick === 'occupant' && info.occupantTenantId) {
+      entityModal.open({ kind: 'tenant', tenantId: info.occupantTenantId })
+    }
+  }
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2 bg-[var(--warning-bg)] rounded-lg px-3 py-2 text-xs">
+        <p className="min-w-0 text-[var(--warning-fg)]">
+          {info.sameDayHandover
+            ? <>{info.roomNo}호를 <span className="font-semibold">{fmtDate(info.moveInYmd)}</span>에 넘겨받습니다{info.occupantName ? ` (${info.occupantName}님이 그날 퇴실)` : ''}</>
+            : info.freeFrom
+              ? <>{info.roomNo}호는 <span className="font-semibold">{fmtDate(info.freeFrom)}</span>에 빕니다. 입주일 {fmtDate(info.moveInYmd)}에는 들어갈 수 없습니다</>
+              : <>{info.roomNo}호가 언제 비는지 정해지지 않았습니다{info.occupantName ? ` (${info.occupantName}님 퇴실 예정일 없음)` : ''}</>}
+        </p>
+        <button type="button" onClick={() => void ask()}
+          className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warning-fg)]/40 text-[var(--warning-fg)] hover:bg-[var(--warning-fg)]/10 transition-colors">
+          {info.freeFrom ? '방 정하기' : '퇴실일 정하기'}
+        </button>
+      </div>
+      {planOpen && (
+        <RoomScheduleSheet leaseTermId={leaseTermId} tenantName={tenantName} mode="plan"
+          onClose={() => setPlanOpen(false)}
+          onDone={() => { setPlanOpen(false); onDone() }} />
+      )}
+    </>
   )
 }
 
