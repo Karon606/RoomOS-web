@@ -54,7 +54,7 @@ export function ContractIssuePurposePicker({ archiveCount, onPick, onClose }: {
           {ISSUABLE_CONTRACT_PURPOSES.map(p => (
             <li key={p}>
               <button type="button" onClick={() => void choose(p)}
-                className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
+                className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-[var(--warm-dark)]">{p}</span>
                   {/* 결과가 갈리는 카드에만 캡션을 둔다 — 형제 두 창과 같은 규칙이다. */}

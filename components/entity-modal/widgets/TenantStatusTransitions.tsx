@@ -355,7 +355,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             const go = await confirmDialog({
               title: res.error,
               message: '계약 호실이 빌 때까지 다른 방에서 지내게 할 수 있습니다. 그날이 오면 앱이 알아서 옮깁니다.',
-              confirmLabel: '다른 방부터',
+              confirmLabel: '일정 짜기',
             })
             if (go) { setActive(null); setEarlyOpen(true) }
             return

@@ -13,7 +13,6 @@ import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositR
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Btn } from '@/components/ui/Btn'
@@ -257,13 +256,9 @@ function RoomScheduleRow({ leaseTermId, info, onDone }: {
   }
   return (
     <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+      {/* 이름이 무르는 대상과 같아야 한다 — 버튼이 되돌리는 것은 일정이 아니라 입실 처리다(§16). */}
       <p className="min-w-0 text-[var(--warm-mid)]">
-        호실 일정 · <span className="text-[var(--warm-dark)]">{info.text}</span>
-        {info.nextAt && info.nextRoomNo && (
-          <span className="block mt-0.5 text-[var(--warm-muted)]">
-            {fmtDate(info.nextAt)}에 {info.nextRoomNo}호로 옮겨집니다
-          </span>
-        )}
+        입실 처리 · 호실 일정 <span className="text-[var(--warm-dark)]">{info.text}</span>
       </p>
       <button type="button" onClick={handleUndo} disabled={pending}
         className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">

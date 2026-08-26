@@ -147,8 +147,8 @@ export function buildRoomScheduleAddendum(scheduleText: string | null | undefine
   return {
     title: '거주 호실 일정',
     items: [
-      `입실자는 아래 일정에 따라 호실에 거주합니다. ${scheduleText}`,
-      '계약 호실은 위 표에 적힌 호실이며, 그 전까지 머무는 호실은 임시로 제공되는 공간입니다. 이용료와 계약 조건은 호실이 바뀌어도 달라지지 않습니다.',
+      `입실자는 다음 일정에 따라 호실에 거주합니다. ${scheduleText}`,
+      '위 일정의 마지막 호실이 계약 호실이며, 그 전까지 머무는 호실은 임시로 제공되는 공간입니다. 이용료와 계약 조건은 호실이 바뀌어도 달라지지 않습니다.',
     ],
   }
 }
