@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum, buildRoomScheduleAddendum } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
@@ -159,18 +159,24 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     ...cleaningFeeVars(cln),
   }
 
-  // 화면(ContractView)과 동일하게 명시적 2단(flex) — CSS 멀티컬럼은 인쇄에서 1단으로 흐름.
-  // 항목 단위로 흘려 좌/우 균형(순서 보존). 이어진 단은 헤더 없음(title === null).
-  const renderFrag = (frag: { title: string | null; items: string[] }) => {
-    const lis = frag.items
+  // 조항은 **문서 순서 그대로 한 흐름**으로 뱉고, 2단 나눔은 CSS(column-count)가 한다.
+  //
+  // 종전에는 splitClauseColumns 가 글자 수로 높이를 추정해 좌우를 반반으로 갈랐고 CSS 는
+  // flex 2단이었다. 그런데 flex 는 **페이지 경계에서 각 단이 독립적으로 이어 그려진다** —
+  // 조항이 한 장을 넘치면 3조가 2페이지, 4조가 1페이지가 되어 읽는 순서가 페이지를 오갔다
+  // (김상혁 님 계약서, 운영자 발견 2026-08-26). multicol 은 페이지별로 좌우를 채우고 넘긴다.
+  //
+  // DOM 이 선형이라 '조항 순서 절대 불변'이 구조적으로 자동 충족되고, 높이 추정이라는 층도
+  // 통째로 사라진다. 자세한 경위와 실측은 knowledge/domain-contracts.md 참조.
+  const renderSection = (sec: { title: string; items: string[] }) => {
+    const lis = sec.items
       .map(it => `<li>${highlight(stripBullet(renderContractText(it, vars)))}</li>`)
       .join('')
-    const h = frag.title ? `<div class="clause-h">${escape(renderContractText(frag.title, vars))}</div>` : ''
-    return `<div class="clause-group">${h}<ul class="clause-list">${lis}</ul></div>`
+    return `<div class="clause-group"><div class="clause-h">${escape(renderContractText(sec.title, vars))}</div><ul class="clause-list">${lis}</ul></div>`
   }
-  // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거·2단 분배가 그대로 따라온다.
-  const [colL, colR] = splitClauseColumns(appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, buildRoomScheduleAddendum(d.roomScheduleText)))
-  const clausesHtml = `<div class="clause-col">${colL.map(renderFrag).join('')}</div><div class="clause-col">${colR.map(renderFrag).join('')}</div>`
+  // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거가 그대로 따라온다.
+  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, buildRoomScheduleAddendum(d.roomScheduleText))
+    .map(renderSection).join('')
 
   // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.
   // 정보 표의 네 칸(라벨·값·라벨·값) 문법을 그대로 쓴다. 표를 따로 세우면 열 폭이 안 맞아
@@ -276,10 +282,12 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .emerg th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); }
   .emerg td { font-size: 9pt; padding: 2mm 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
 
-  /* 조항 — 2단 */
-  .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
-  .clause-col { flex: 1 1 0; min-width: 0; }
-  .clause-group { margin-bottom: 2.2mm; break-inside: avoid; }
+  /* 조항 — 2단. column-fill 은 기본값 balance 를 쓴다(auto 는 마지막이 아닌 프래그먼트에서
+     단을 페이지 바닥까지 채워 한 장짜리 계약의 좌우가 비대칭이 되고 서약·서명이 밀린다).
+     .clause-group 에 break-inside: avoid 를 두면 절이 단 경계에서 통째로 점프해 바닥 공백이
+     커진다 — 절이 단을 넘어 이어지는 것이 옛 분배(헤더 없는 이어짐)와 같은 규칙이다. */
+  .clauses { column-count: 2; column-gap: 7mm; margin-bottom: 3mm; }
+  .clause-group { margin-bottom: 2.2mm; }
   .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
   .clause-list { list-style: none; }
   .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; break-inside: avoid; }
