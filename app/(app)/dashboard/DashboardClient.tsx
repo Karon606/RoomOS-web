@@ -34,7 +34,7 @@ import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExp
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { EarlyCheckInSheet } from '@/components/tenant/EarlyCheckInSheet'
-import { completeEarlyCheckInMove } from '@/app/(app)/tenants/actions'
+import { completeEarlyCheckInMove, undoEarlyCheckInMove } from '@/app/(app)/tenants/actions'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -147,7 +147,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; earlyMoveLeaseId?: string; earlyMoveFromRoomNo?: string | null; earlyMoveToRoomNo?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; reservationDueTenantName?: string; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; earlyMoveLeaseId?: string; earlyMoveFromRoomNo?: string | null; earlyMoveToRoomNo?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -464,13 +464,14 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     if (!res.ok) {
       // 본 방이 아직 안 비어 막힌 것이라면 그냥 막지 않는다 — 개강처럼 미룰 수 없는 사정으로
       // 하루 일찍 오는 일이 실제로 있다(운영자 실무 2026-08-26). 다른 방에서 먼저 재우는 길을 연다.
-      if (res.error.includes('아직')) {
+      // 판정은 서버가 준 code 로 한다 — 문구를 대조하면 안내 문장을 다듬는 날 조용히 끊긴다.
+      if (res.code === 'ROOM_OCCUPIED') {
         setConfirmPending(false)
+        // 이 확인은 시트를 열 뿐 아직 아무것도 바꾸지 않는다 — 경고 수위를 올리지 않는다(§14).
         const go = await confirmDialog({
-          level: 'caution',
-          title: '본 계약 호실이 아직 비지 않았습니다',
-          message: `${res.error}\n다른 방에서 먼저 입실 처리할까요? 계약 호실과 시작일은 그대로 두고, 본 계약 시작일에 옮기는 알림이 뜹니다.`,
-          confirmLabel: '다른 방에서 먼저',
+          title: res.error,
+          message: '다른 방에서 먼저 재울 수 있습니다. 계약 호실과 시작일은 그대로 두고, 본 계약 시작일에 옮기는 알림이 뜹니다.',
+          confirmLabel: '먼저 재우기',
         })
         if (go) setEarlyOpen(true)
         return
@@ -604,17 +605,29 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                 const ok = await confirmDialog({
                   level: 'caution',
                   title: `${alert.earlyMoveToRoomNo ?? ''}호로 옮길까요?`,
-                  message: `${alert.earlyMoveFromRoomNo ?? ''}호에서 나와 ${alert.earlyMoveToRoomNo ?? ''}호로 옮깁니다. ${alert.earlyMoveFromRoomNo ?? ''}호 청소 예정도 함께 만듭니다.`,
+                  message: `${alert.earlyMoveFromRoomNo ?? ''}호에서 나와 옮기고, ${alert.earlyMoveFromRoomNo ?? ''}호 청소 예정을 함께 만듭니다.`,
                   confirmLabel: '옮기기',
                 })
                 if (!ok) return
                 setConfirmPending(true); setConfirmError('')
+                const leaseId = alert.earlyMoveLeaseId!
                 const r = await completeEarlyCheckInMove({
-                  leaseTermId: alert.earlyMoveLeaseId!,
+                  leaseTermId: leaseId,
                   moveDate: kstYmdStr(new Date()),
                   scheduleCleaning: true,
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
+                // 무엇이 일어났는지 말하고 되돌릴 길을 함께 준다 — 청소 예정이 조용히 생기는 자리다.
+                pushToast('success', `${alert.earlyMoveToRoomNo ?? ''}호로 옮겼습니다`, {
+                  detail: `${alert.earlyMoveFromRoomNo ?? ''}호 청소 예정을 만들었습니다.`,
+                  action: {
+                    label: '적용취소',
+                    run: () => { void undoEarlyCheckInMove(leaseId).then(u => {
+                      if (u.ok) { pushToast('info', '방 이동을 적용취소했습니다.'); router.refresh() }
+                      else pushToast('error', u.error)
+                    }) },
+                  },
+                })
                 router.refresh()
                 onClose()
               }}
@@ -657,7 +670,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       {earlyOpen && reservationDueLeaseId && (
         <EarlyCheckInSheet
           leaseTermId={reservationDueLeaseId}
-          tenantName={alert.text.replace(/^입실 예정[·:]?\s*/, '')}
+          tenantName={alert.reservationDueTenantName ?? ''}
           onClose={() => setEarlyOpen(false)}
           onDone={() => { setEarlyOpen(false); router.refresh(); onClose() }}
         />
@@ -680,14 +693,15 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
+type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'move', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미납 (현 입주자)', color: 'var(--tc)' },
   contact:   { label: '연락할 때',    color: 'var(--coral)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },
+  move:      { label: '방 이동',      color: 'var(--info-fg)' },
   tour:      { label: '문의·투어',    color: 'var(--ink)' },
   wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
   request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
@@ -704,6 +718,7 @@ const CATEGORY_GLYPH_PATHS: Record<AlertCat, React.ReactNode> = {
   upcoming:  (<><rect x="5.5" y="6.5" width="13" height="12" rx="2" /><path d="M5.5 10.5h13" /><path d="M9 5v2.5M15 5v2.5" /></>),
   moveout:   (<><rect x="8" y="5" width="8" height="14" rx="1" /><path d="M13.5 11.5v3" /></>),
   movein:    (<><circle cx="12" cy="8" r="3" /><path d="M5.5 19a6.5 6.5 0 0 1 13 0" /></>),
+  move:      (<><rect x="4.5" y="6.5" width="6" height="11" rx="1" /><rect x="13.5" y="6.5" width="6" height="11" rx="1" /><path d="M10.5 12h3" /></>),
   tour:      (<><path d="M12 19c3.3-4 5-6.7 5-9a5 5 0 1 0-10 0c0 2.3 1.7 5 5 9z" /><circle cx="12" cy="10" r="1.8" /></>),
   contact:   (<path d="M16.5 14.2l-1.4 1.4a1 1 0 0 1-1.1.2 12.5 12.5 0 0 1-5.8-5.8 1 1 0 0 1 .2-1.1l1.4-1.4a1 1 0 0 0 .2-1L9.3 5.6A1 1 0 0 0 8.4 5H6.2A1.2 1.2 0 0 0 5 6.3 13 13 0 0 0 17.7 19a1.2 1.2 0 0 0 1.3-1.2v-2.2a1 1 0 0 0-.6-.9l-1.9-.8a1 1 0 0 0-1 .1z" />),
   wish:      (<path d="M12 5.2 13.98 9.25 18.47 9.9 15.24 13.05 16 17.5 12 15.4 8 17.5 8.76 13.05 5.53 9.9 10.02 9.25Z" />),

@@ -28,6 +28,7 @@ import { shouldOfferCheckoutProration } from '@/lib/prorate'
 import { CLOSED_STATUSES } from '@/lib/leaseStatus'
 import { fmtRoomList } from '@/lib/roomNo'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
+import { EarlyCheckInSheet } from '@/components/tenant/EarlyCheckInSheet'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -130,6 +131,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const entityModal = useEntityModal()
   const [pending, startTransition] = useTransition()
   const [active, setActive] = useState<ActiveTransition>(null)
+  // 조기 입실 시트 — 입실 처리가 본 방 점유로 거절당했을 때만 연다.
+  const [earlyOpen, setEarlyOpen] = useState(false)
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
@@ -345,7 +348,20 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           ...(reasonsForStatus(def.toStatus) && buildReason(transReason, transReasonEtc)
             ? { reason: buildReason(transReason, transReasonEtc) } : {}),
         })
-        if (!res.ok) { pushToast('error', res.error); return }
+        if (!res.ok) {
+          // 본 방이 아직 안 비어 막힌 것이라면 그냥 막지 않는다 — 개강처럼 미룰 수 없는 사정으로
+          // 하루 일찍 오는 일이 있다(운영자 실무 2026-08-26). 홈 알림 경로와 같은 문법으로 잇는다.
+          if (res.code === 'ROOM_OCCUPIED') {
+            const go = await confirmDialog({
+              title: res.error,
+              message: '다른 방에서 먼저 재울 수 있습니다. 계약 호실과 시작일은 그대로 두고, 본 계약 시작일에 옮기는 알림이 뜹니다.',
+              confirmLabel: '먼저 재우기',
+            })
+            if (go) { setActive(null); setEarlyOpen(true) }
+            return
+          }
+          pushToast('error', res.error); return
+        }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
@@ -549,6 +565,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               </p>
             </div>
       </Modal>
+      )}
+
+      {/* 조기 입실 — 입실 처리가 본 방 점유로 막힌 자리에서만 열린다(거절이 곧 진입점). */}
+      {earlyOpen && (
+        <EarlyCheckInSheet leaseTermId={lease.id} tenantName={tenantName}
+          onClose={() => setEarlyOpen(false)}
+          onDone={() => { setEarlyOpen(false); onChange?.() }} />
       )}
 
       {/* 단기 연장 모달 — 퇴실일 변경 진입을 재계산 흐름으로 대체(뒷문 차단) */}

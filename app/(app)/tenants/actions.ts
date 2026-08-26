@@ -2048,8 +2048,35 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   }
 }
 
+/**
+ * 예약을 거주중으로 올릴 때 본 방이 막혀 있는가 — 막혔으면 그 이유 문구를 준다.
+ *
+ * 규칙 자체는 원래 홈 알림 경로에만 있었다. 그래서 입주자 카드의 '입실 처리'로는 남이 사는
+ * 방에 그대로 들어갔고, 그 순간 열린 구간이 둘이 되어 공실·캘린더가 함께 틀어졌다. 전이표를
+ * 정본 하나로 모은 것과 같은 이유로 이 규칙도 한 곳에만 둔다(2026-08-26).
+ *
+ * RESERVED 는 세지 않는다 — 같은 방을 뒤이어 예약한 사람은 막을 이유가 없다(roomStillOccupied
+ * 와 다른 점이 여기다. 그쪽은 '공실로 되돌려도 되나'를 묻는 자리라 예약까지 센다).
+ */
+async function moveInBlock(roomId: string, exceptLeaseId: string): Promise<{ roomNo: string; error: string } | null> {
+  const room = await prisma.room.findUnique({ where: { id: roomId }, select: { roomNo: true, isVacant: true } })
+  if (!room || room.isVacant) return null
+  const others = await prisma.leaseTerm.findMany({
+    where: { roomId, id: { not: exceptLeaseId }, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
+    select: { status: true },
+  })
+  if (others.some(o => o.status === 'ACTIVE')) {
+    return { roomNo: room.roomNo, error: `${room.roomNo}호는 아직 거주 중인 입주자가 있습니다.` }
+  }
+  if (others.some(o => o.status === 'CHECKOUT_PENDING')) {
+    return { roomNo: room.roomNo, error: `${room.roomNo}호는 아직 퇴실 처리가 완료되지 않았습니다.` }
+  }
+  return null
+}
+
 // 예약 확정 → 거주중 전환 (대시보드 알림에서 사용). 호실이 공실이 아니면 거부.
-export async function confirmReservationToActive(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// code 를 함께 주는 것은 호출부가 '조기 입실로 이을 자리'를 문구 대조로 알아내지 않게 하려는 것이다.
+export async function confirmReservationToActive(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
@@ -2074,23 +2101,9 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
       return { ok: false, error: '입주일을 입력해주세요. 입주일이 없으면 미납이 잘못 계산됩니다.' }
     }
 
-    // 호실이 공실이 아니면 차단 (다른 거주자가 있는지 확인 — 본인 lease 제외)
-    if (!lease.room.isVacant) {
-      const others = await prisma.leaseTerm.findMany({
-        where: {
-          roomId: lease.roomId,
-          id: { not: leaseTermId },
-          status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
-        },
-        select: { status: true },
-      })
-      if (others.some(o => o.status === 'ACTIVE')) {
-        return { ok: false, error: `${lease.room.roomNo}호는 아직 거주 중인 입주자가 있습니다.` }
-      }
-      if (others.some(o => o.status === 'CHECKOUT_PENDING')) {
-        return { ok: false, error: `${lease.room.roomNo}호는 아직 퇴실 처리가 완료되지 않았습니다.` }
-      }
-    }
+    // 호실이 공실이 아니면 차단 (다른 거주자가 있는지 확인 — 본인 lease 제외). 판정은 정본 하나가 한다.
+    const blocked = await moveInBlock(lease.roomId, leaseTermId)
+    if (blocked) return { ok: false, error: blocked.error, code: 'ROOM_OCCUPIED' }
 
     // 청구 상태 진입인데 납부일이 없으면 입주일 기준 자동 파생(운영자 승인 2026-07-30)
     const derivedDueDay = lease.dueDay == null && lease.moveInDate ? dueDayFromMoveIn(lease.moveInDate) : null
@@ -2409,6 +2422,100 @@ export async function undoEarlyCheckIn(leaseTermId: string): Promise<{ ok: true 
   }
 }
 
+/**
+ * 본 계약 방으로 옮긴 것을 되돌린다 — 다시 임시 방에 머무는 상태로.
+ *
+ * 역방향으로 recordRoomChange 를 한 번 더 부르는 길도 있지만 그러면 이사 이력이 2건 남아
+ * "임시 방에서 나갔다가 다시 들어왔다"는 없던 일이 사실로 기록된다. 원탭 한 번의 실수를
+ * 되돌리는 자리라 진짜 원상복구를 한다 — 본 방 구간을 지우고 임시 구간을 다시 연다.
+ */
+export async function undoEarlyCheckInMove(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { id: true, roomId: true, earlyCheckInRoomId: true },
+    })
+    if (!lease?.roomId || !lease.earlyCheckInRoomId) return { ok: false, error: '조기 입실 기록이 없습니다.' }
+
+    const open = await prisma.roomStay.findFirst({
+      where: { leaseTermId, endDate: null }, select: { id: true, roomId: true, startDate: true },
+    })
+    if (!open || open.roomId !== lease.roomId) return { ok: false, error: '아직 본 계약 호실로 옮기지 않았습니다.' }
+
+    const temp = await prisma.roomStay.findFirst({
+      where: { leaseTermId, roomId: lease.earlyCheckInRoomId, endDate: { not: null } },
+      orderBy: { startDate: 'desc' }, select: { id: true },
+    })
+    if (!temp) return { ok: false, error: '임시 호실의 거주 구간을 찾을 수 없습니다.' }
+
+    const movedYmd = kstYmdStr(open.startDate as Date)
+    const tempRoomId = lease.earlyCheckInRoomId
+    const mainRoomId = lease.roomId
+    await prisma.$transaction(async tx => {
+      await tx.roomStay.delete({ where: { id: open.id } })
+      await tx.roomStay.update({ where: { id: temp.id }, data: { endDate: null } })
+      await tx.room.update({ where: { id: tempRoomId }, data: { isVacant: false } })
+      // 본 방은 이 사람이 물러나면 다시 빈다 — 다른 열린 구간이 없을 때만.
+      const stillUsed = await tx.roomStay.count({ where: { roomId: mainRoomId, endDate: null } })
+      if (stillUsed === 0) await tx.room.update({ where: { id: mainRoomId }, data: { isVacant: true } })
+      // 이동이 만든 청소 예정만 걷는다 — 아직 아무도 손대지 않은(PLANNED) 그 날짜 것만.
+      await tx.roomCleaning.deleteMany({
+        where: {
+          propertyId, roomId: tempRoomId, status: 'PLANNED', reason: 'CHECKOUT',
+          scheduledDate: new Date(`${movedYmd}T00:00:00.000Z`),
+        },
+      })
+    })
+
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 조기 입실 현황 — 상세 화면의 상시 적용취소 행이 읽는다(§16 우선순위 3).
+ * 두 단계를 구분해 준다. 아직 임시 방이면 조기 입실 자체를 되돌리고, 이미 옮겼으면 이동만 되돌린다.
+ */
+export async function getEarlyCheckInState(leaseTermId: string): Promise<{
+  stage: 'temp' | 'moved'
+  tempRoomNo: string | null
+  mainRoomNo: string | null
+  date: string | null
+  charge: number
+} | null> {
+  await requireEdit()
+  const { propertyId } = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId, earlyCheckInRoomId: { not: null } },
+    select: {
+      roomId: true, earlyCheckInDate: true,
+      room: { select: { roomNo: true } },
+      earlyCheckInRoom: { select: { roomNo: true } },
+      roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 },
+    },
+  })
+  if (!lease) return null
+  const openRoomId = lease.roomStays[0]?.roomId ?? null
+  // 퇴실 등으로 열린 구간이 아예 없으면 되돌릴 자리가 아니다.
+  if (!openRoomId) return null
+  const charged = await prisma.extraIncome.aggregate({
+    where: { leaseTermId, category: EARLY_CHECK_IN_INCOME_CATEGORY, deletedAt: null },
+    _sum: { amount: true },
+  })
+  return {
+    stage: openRoomId === lease.roomId ? 'moved' : 'temp',
+    tempRoomNo: lease.earlyCheckInRoom?.roomNo ?? null,
+    mainRoomNo: lease.room?.roomNo ?? null,
+    date: lease.earlyCheckInDate ? kstYmdStr(lease.earlyCheckInDate) : null,
+    charge: charged._sum.amount ?? 0,
+  }
+}
+
 // 퇴실 처리
 // cleaningDate = 퇴실 청소 예정일(퇴실 미니폼 입력). 안 보내면 퇴실일에서 기본값을 뽑고,
 // 빈 문자열·null 이면 '미정'이라 날짜 없이 만든다. 판정은 lib/checkoutCleaning 정본이 한다.
@@ -2515,7 +2622,7 @@ export async function applyStatusTransition(input: {
   // 전부 처리하고 호출부가 한 코드로 모든 전이를 넘기기 때문이다 — 퇴실 전용 값을 전 전이의
   // 필수로 만들면 예약 확정·투어 전환까지 더미를 채우게 되고 그 순간 규칙이 죽는다.
   cleaningDate?: string | null
-}): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+}): Promise<{ ok: true; notice?: string } | { ok: false; error: string; code?: 'ROOM_OCCUPIED' }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
@@ -2534,6 +2641,13 @@ export async function applyStatusTransition(input: {
     // 정본은 lib/leaseTransitions 하나다. 되돌리기는 운영상 필요해 막지 않는다 — 실측으로도 쓰인다.
     if (!canTransition(lease.status, input.toStatus)) {
       return { ok: false, error: transitionDeniedMessage(lease.status, input.toStatus) }
+    }
+
+    // 예약을 거주중으로 올리는 전이는 본 방이 비어야 한다 — 홈 알림 경로와 같은 규칙을 쓴다.
+    // 이 가드가 없던 동안 입주자 카드의 '입실 처리'는 남이 사는 방에 그대로 들어갔다(2026-08-26).
+    if (lease.status === 'RESERVED' && input.toStatus === 'ACTIVE' && lease.roomId) {
+      const blocked = await moveInBlock(lease.roomId, input.leaseTermId)
+      if (blocked) return { ok: false, error: blocked.error, code: 'ROOM_OCCUPIED' }
     }
 
     // 신고 9b974be0: 예약 확정 시 월 이용료·입주 희망일 필수(서버 방어). 확정 호출은 값을 새로 넘기지 않고

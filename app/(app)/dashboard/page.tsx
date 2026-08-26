@@ -1392,6 +1392,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         exactDate: fmtShortDate(l.moveInDate),
         reservationDueLeaseId: l.id,
         reservationDueRoomNo:  l.room?.roomNo ?? null,
+        reservationDueTenantName: l.tenant.name,
       })
       continue
     }
@@ -1425,6 +1426,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate: fmtShortDate(l.moveInDate),
       reservationDueLeaseId: l.id,
       reservationDueRoomNo:  l.room?.roomNo ?? null,
+      reservationDueTenantName: l.tenant.name,
     })
   }
 
@@ -1450,8 +1452,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (!isEarlyCheckInActive(l, l.roomStays[0]?.roomId ?? null)) continue
     const days = daysUntil(l.moveInDate!)
     alertItems.push({
-      category:  'movein',
-      text:      `${l.tenant.name}님을 ${l.room?.roomNo ?? ''}호로 옮기는 날입니다`,
+      // 이미 살고 있는 사람의 이동이라 '입실 희망'이 아니다 — 제 묶음에 선다.
+      category:  'move',
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ?? ''}호 이사 예정`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--info-fg)',
       timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
