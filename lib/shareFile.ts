@@ -39,21 +39,20 @@ export async function shareOrDownloadFile(
 export async function shareFiles(
   files: File[],
   /**
-   * 함께 넘길 본문 — 받는 앱이 채워진 채로 열리기를 기대하는 문구다(운영자 요구 2026-08-26).
-   *
-   * **되는지 안 되는지 우리가 정할 수 없다.** 파일이 함께 있으면 텍스트를 버리는 앱이 많고
-   * (특히 iOS), 카카오톡도 그런 것으로 알려져 있다. 그래서 넘기되 기대지 않는다 —
-   * 무시되면 지금까지와 같은 결과(파일만 첨부)라 잃는 것이 없다.
-   * canShare 가 text 를 거절하는 조합이면 파일만으로 다시 시도한다(실험이 발송을 막으면 안 된다).
+   * (미사용) 함께 넘기려 했던 본문 — 2026-08-26 실기에서 카카오톡 공유가 실패해 되돌렸다.
+   * 인자를 남긴 것은 호출부를 되돌리지 않기 위해서이고, 값은 쓰이지 않는다.
+   * 문자·메신저에 문구를 채우려면 첨부와 별개의 경로(sms: 프리필)를 써야 한다.
    */
   text?: string,
 ): Promise<'shared' | 'cancelled' | 'retry' | 'unsupported'> {
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
   if (!nav.canShare?.({ files }) || typeof nav.share !== 'function') return 'unsupported'
-  // text 를 얹은 조합을 먼저 물어본다. 거절하면 파일만 — 본문 때문에 공유가 죽으면 안 된다.
-  const payload: ShareData = text && nav.canShare({ files, text }) ? { files, text } : { files }
+  // **본문은 넘기지 않는다(2026-08-26 실기 실패로 되돌림).** canShare 가 { files, text } 를
+  // 받아들여도 카카오톡에서 실제 공유가 실패했다. 인자는 호출부 호환을 위해 남기되 무시한다 —
+  // 서류가 나가는 것이 본문보다 중요하고, 실패하는 실험을 켜 둘 이유가 없다.
+  void text
   try {
-    await nav.share(payload)
+    await nav.share({ files })
     return 'shared'
   } catch (e) {
     const err = e as Error
@@ -61,6 +60,38 @@ export async function shareFiles(
     if (err?.name === 'NotAllowedError') return 'retry'
     throw e
   }
+}
+
+/**
+ * 여러 파일을 이 기기에 저장한다 — '보내기'(상대에게)와 목적이 다른 별개의 문이다.
+ *
+ * 운영자 판정(2026-08-01, knowledge/doc-vocabulary): "보내기는 목적지가 상대방, 사진 저장은
+ * 목적지가 내 사진함. 목적이 달라." 그 원칙을 다건에도 적용한 것이 이 함수다.
+ *
+ * **아이폰만 공유 시트를 거친다.** iOS 는 다운로드가 '파일' 앱으로만 가서 사진첩에 넣는 길이
+ * 시트의 [이미지 저장]뿐이다(위 photoSaveNeedsShareSheet 주석의 실측). 그래서 저장 전용으로
+ * 만들어도 아이폰에서는 창이 뜬다 — 호출부가 그 사실을 **누르기 전에** 말해야 한다.
+ *
+ * 안드로이드·PC 는 순차 다운로드다. 연속 a[download] 는 두 번째부터 막는 브라우저가 있어
+ * 300ms 를 띄운다(SendDocButton 의 fallbackDownloadAll 과 같은 처방).
+ * 다운로드는 성패를 돌려주지 않으므로(a.click 은 결과가 없다) 성공을 지어내지 않는다.
+ */
+export async function saveFiles(
+  files: File[],
+): Promise<'saved-via-sheet' | 'downloaded' | 'cancelled' | 'retry' | 'unsupported'> {
+  if (files.length === 0) return 'unsupported'
+  if (photoSaveNeedsShareSheet() && canShareFiles()) {
+    const r = await shareFiles(files)
+    if (r === 'shared') return 'saved-via-sheet'
+    if (r === 'cancelled') return 'cancelled'
+    if (r === 'retry') return 'retry'
+    // unsupported 면 아래 다운로드로 떨어진다 — 파일 앱에라도 남는 것이 아무것도 안 되는 것보다 낫다.
+  }
+  for (let i = 0; i < files.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 300))
+    await shareOrDownloadFile(files[i], files[i].name, files[i].type, 'save')
+  }
+  return 'downloaded'
 }
 
 // 이 기기가 파일 공유(navigator.share files)를 지원하는지 — 인앱 브라우저·데스크톱 판정용.
