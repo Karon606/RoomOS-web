@@ -18,7 +18,7 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
-import { contractSubLeases, contractSubLeaseAddendum } from '@/lib/contractData'
+import { contractSubLeases, contractSubLeaseAddendum, contractRoomScheduleText } from '@/lib/contractData'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
@@ -367,6 +367,9 @@ export async function POST(req: Request) {
       // 종이와 화면이 다른 행을 그릴 수 없다. 종속이 없으면 빈 배열이고 인쇄물은 종전과 같다.
       subLeases,
       subLeaseAddendum,
+      // 거주 호실 일정 — 화면(buildContractData)이 만든 문장을 그대로 싣는다. 종이와 화면이
+      // 다른 일정을 적을 수 없다. 일정이 없으면 null 이라 인쇄물이 종전과 문자 단위로 같다.
+      roomScheduleText: await contractRoomScheduleText(lease, propertyId),
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -529,6 +532,7 @@ export async function POST(req: Request) {
         subLeases: printData.subLeases,
         template: printData.template,
         subLeaseAddendum: printData.subLeaseAddendum,
+        roomScheduleText: printData.roomScheduleText,
       }),
     }
 

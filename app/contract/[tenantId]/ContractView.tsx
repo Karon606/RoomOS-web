@@ -19,7 +19,7 @@ import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
-import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, cleaningFeeVars, buildRefundClause, splitClauseColumns, appendSubLeaseAddendum, buildRoomScheduleAddendum, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -1332,7 +1332,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         {/* 조항 — 보기: 2단 / 편집: 단일 인라인 편집 */}
         {!editing ? (
           <div className="clauses">
-            {splitClauseColumns(appendSubLeaseAddendum(view.sections, subLeaseAddendum)).map((col, ci) => (
+            {splitClauseColumns(appendSubLeaseAddendum(view.sections, subLeaseAddendum, buildRoomScheduleAddendum(data.roomScheduleText))).map((col, ci) => (
               <div key={ci} className="clause-col">
                 {col.map((frag, fi) => (
                   <div key={fi} className="clause-group">

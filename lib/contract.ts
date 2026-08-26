@@ -134,8 +134,27 @@ export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
   ],
 }
 
+// ── 거주 호실 일정 절 ────────────────────────────────────────────────
+//
+// 계약 호실이 빌 때까지 다른 방에 머무는 계약에만 붙는 절이다. 운영자 요구 그대로다 —
+// "계약서 어딘가에 몇일까지는 어느호실 그 다음부터는 어느호실이 다 적혀있으면 더 확실하고".
+//
+// 종이에 일정이 다 적혀 있으면 방이 옮겨질 때마다 계약서를 다시 뽑을 일이 없다("기록 갱신도
+// 필요없지"). 추가 호실 특약과 같은 방식으로 절 배열 뒤에 붙고, 일정이 없으면 null 이라
+// 그 계약서의 렌더가 이 기능 전과 문자 단위로 같다.
+export function buildRoomScheduleAddendum(scheduleText: string | null | undefined): SubLeaseAddendum | null {
+  if (!scheduleText) return null
+  return {
+    title: '거주 호실 일정',
+    items: [
+      `입실자는 아래 일정에 따라 호실에 거주합니다. ${scheduleText}`,
+      '계약 호실은 위 표에 적힌 호실이며, 그 전까지 머무는 호실은 임시로 제공되는 공간입니다. 이용료와 계약 조건은 호실이 바뀌어도 달라지지 않습니다.',
+    ],
+  }
+}
+
 /**
- * 절 배열 뒤에 추가 호실 특약을 붙인다. 화면·인쇄가 같은 함수를 쓴다.
+ * 절 배열 뒤에 특약을 붙인다. 화면·인쇄가 같은 함수를 쓴다.
  *
  * **null 이면 받은 배열을 그대로 돌려준다.** 특약이 없는 계약서의 렌더가 이 기능 전과
  * 문자 단위로 같아야 하고, 그 사실을 새 배열을 만들지 않는 것으로 보장한다.
@@ -143,10 +162,13 @@ export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
  */
 export function appendSubLeaseAddendum<T extends { title: string; items: string[] }>(
   sections: T[],
-  addendum: SubLeaseAddendum | null | undefined,
+  ...addenda: (SubLeaseAddendum | null | undefined)[]
 ): Array<T | { title: string; items: string[] }> {
-  if (!addendum) return sections
-  return [...sections, { title: `${sections.length + 1}. ${addendum.title}`, items: addendum.items }]
+  const live = addenda.filter((a): a is SubLeaseAddendum => !!a)
+  if (live.length === 0) return sections
+  const out: Array<T | { title: string; items: string[] }> = [...sections]
+  for (const a of live) out.push({ title: `${out.length + 1}. ${a.title}`, items: a.items })
+  return out
 }
 
 // 조항을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).

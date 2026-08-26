@@ -16,6 +16,7 @@ import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
+import { parseRoomSchedule, hasRoomSchedule, roomScheduleText } from '@/lib/roomSchedule'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -141,6 +142,9 @@ export type ContractData = {
   // 렌더가 절을 하나도 안 붙인다(그 경우의 종이는 이 기능 전과 문자 단위로 같다).
   // template 안에 넣지 않는 이유는 lib/contract 의 상수 주석에 있다(박제 축 드리프트).
   subLeaseAddendum: SubLeaseAddendum | null
+  // 거주 호실 일정 문장 — 기간마다 다른 방에 머무는 계약에만 채워진다(lib/roomSchedule).
+  // 없으면 null 이고 렌더가 절을 안 붙인다.
+  roomScheduleText: string | null
 }
 
 const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
@@ -155,6 +159,26 @@ const GENDER_LABEL: Record<string, string> = {
  *   계약이 둘인 사람(509호 거주 + 601호 창고)에게 추론은 늘 거주 계약을 고르므로, 창고 계약서를
  *   뽑을 길이 아예 없었다. 이 인자가 그 길이다.
  */
+/**
+ * 계약서에 적을 거주 호실 일정 문장 — 일정을 쓰는 계약에만 선다.
+ *
+ * 화면(buildContractData)과 발급 API 가 **같은 함수**를 쓴다. 종이와 화면이 다른 일정을
+ * 적으면 안 된다. 일정에 실린 방이 이 사람의 계약 목록 밖일 수 있어(임시 방은 남의 방이다)
+ * 방 이름을 따로 조회한다.
+ */
+export async function contractRoomScheduleText(
+  lease: { roomSchedule?: unknown } | null | undefined,
+  propertyId: string,
+): Promise<string | null> {
+  const schedule = parseRoomSchedule(lease?.roomSchedule)
+  if (!hasRoomSchedule(schedule)) return null
+  const rooms = await prisma.room.findMany({
+    where: { propertyId, id: { in: schedule.map(e => e.roomId) } },
+    select: { id: true, roomNo: true },
+  })
+  return roomScheduleText(schedule, id => rooms.find(r => r.id === id)?.roomNo ?? null)
+}
+
 export async function buildContractData(tenantId: string, propertyId: string, leaseTermId?: string | null): Promise<ContractData | null> {
   const [tenant, property] = await Promise.all([
     prisma.tenant.findFirst({
@@ -192,6 +216,9 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   // 지목이 있으면 그 계약. 위 where 안에서만 찾으므로 남의 계약 id 를 넣어도 통하지 않고,
   // 못 찾으면 조용히 종전 추론으로 떨어진다(막지 않는다 — 옛 URL 이 404 가 되면 그게 회귀다).
   const lease = pickDocumentLease(tenant.leaseTerms, leaseTermId)
+
+  const scheduleText = await contractRoomScheduleText(lease, propertyId)
+
   const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const emergencyContacts = tenant.contacts
@@ -264,5 +291,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
     // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
     subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body),
+    // 호실 일정 — 이 계약의 방 이름은 그 사람의 다른 계약 목록에서 찾는다(같은 영업장이라
+    // 일정에 실린 방이 그 목록 밖일 수 있어 방 조회를 따로 한다).
+    roomScheduleText: scheduleText,
   }
 }
