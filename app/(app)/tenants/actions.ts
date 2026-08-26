@@ -2451,6 +2451,11 @@ export async function undoEarlyCheckInMove(leaseTermId: string): Promise<{ ok: t
     if (!temp) return { ok: false, error: '임시 호실의 거주 구간을 찾을 수 없습니다.' }
 
     const movedYmd = kstYmdStr(open.startDate as Date)
+    // 되돌릴 수 있는 창은 그날 하루다. 몇 달 뒤에 누르면 "임시 방에서 몇 달을 살았다"는 없던
+    // 사실이 기록된다 — 원탭 실수를 무르는 자리이지 이사를 취소하는 자리가 아니다.
+    if (movedYmd !== kstYmdStr(new Date())) {
+      return { ok: false, error: '옮긴 날에만 되돌릴 수 있습니다. 호실을 바꾸려면 계약 수정에서 호실을 변경해 주세요.' }
+    }
     const tempRoomId = lease.earlyCheckInRoomId
     const mainRoomId = lease.roomId
     await prisma.$transaction(async tx => {
@@ -2496,13 +2501,16 @@ export async function getEarlyCheckInState(leaseTermId: string): Promise<{
       roomId: true, earlyCheckInDate: true,
       room: { select: { roomNo: true } },
       earlyCheckInRoom: { select: { roomNo: true } },
-      roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 },
+      roomStays: { where: { endDate: null }, select: { roomId: true, startDate: true }, take: 1 },
     },
   })
   if (!lease) return null
-  const openRoomId = lease.roomStays[0]?.roomId ?? null
+  const open = lease.roomStays[0] ?? null
+  const openRoomId = open?.roomId ?? null
   // 퇴실 등으로 열린 구간이 아예 없으면 되돌릴 자리가 아니다.
   if (!openRoomId) return null
+  // 이미 옮겼고 그날도 지났으면 되돌릴 것이 없다 — 그때부터는 이사 이력이 말한다.
+  if (openRoomId === lease.roomId && kstYmdStr(open!.startDate as Date) !== kstYmdStr(new Date())) return null
   const charged = await prisma.extraIncome.aggregate({
     where: { leaseTermId, category: EARLY_CHECK_IN_INCOME_CATEGORY, deletedAt: null },
     _sum: { amount: true },

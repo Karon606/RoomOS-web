@@ -1392,7 +1392,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         exactDate: fmtShortDate(l.moveInDate),
         reservationDueLeaseId: l.id,
         reservationDueRoomNo:  l.room?.roomNo ?? null,
-        reservationDueTenantName: l.tenant.name,
       })
       continue
     }
@@ -1426,7 +1425,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate: fmtShortDate(l.moveInDate),
       reservationDueLeaseId: l.id,
       reservationDueRoomNo:  l.room?.roomNo ?? null,
-      reservationDueTenantName: l.tenant.name,
     })
   }
 

@@ -33,7 +33,6 @@ import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
-import { EarlyCheckInSheet } from '@/components/tenant/EarlyCheckInSheet'
 import { completeEarlyCheckInMove, undoEarlyCheckInMove } from '@/app/(app)/tenants/actions'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
@@ -147,7 +146,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; reservationDueTenantName?: string; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; earlyMoveLeaseId?: string; earlyMoveFromRoomNo?: string | null; earlyMoveToRoomNo?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; earlyMoveLeaseId?: string; earlyMoveFromRoomNo?: string | null; earlyMoveToRoomNo?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -451,8 +450,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const [confirmPending, setConfirmPending] = useState(false)
   const [confirmError, setConfirmError]     = useState('')
   const [refundModalOpen, setRefundModalOpen] = useState(false)
-  // 조기 입실 — 본 방이 안 비어 입실 처리가 막혔을 때 여는 시트.
-  const [earlyOpen, setEarlyOpen] = useState(false)
   // 고정지출 기록 폼은 실제 항목·계좌를 서버에서 받아 열기 때문에 버튼에 로딩 상태가 필요하다.
   const [recordPending, setRecordPending]   = useState(false)
 
@@ -461,23 +458,10 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     if (!(await confirmDialog({ level: 'caution', title: '거주중으로 변경할까요?', message: '예약 상태를 실거주로 바꾸고 호실을 점유 처리합니다.', confirmLabel: '변경' }))) return
     setConfirmPending(true); setConfirmError('')
     const res = await confirmReservationToActive(reservationDueLeaseId)
-    if (!res.ok) {
-      // 본 방이 아직 안 비어 막힌 것이라면 그냥 막지 않는다 — 개강처럼 미룰 수 없는 사정으로
-      // 하루 일찍 오는 일이 실제로 있다(운영자 실무 2026-08-26). 다른 방에서 먼저 재우는 길을 연다.
-      // 판정은 서버가 준 code 로 한다 — 문구를 대조하면 안내 문장을 다듬는 날 조용히 끊긴다.
-      if (res.code === 'ROOM_OCCUPIED') {
-        setConfirmPending(false)
-        // 이 확인은 시트를 열 뿐 아직 아무것도 바꾸지 않는다 — 경고 수위를 올리지 않는다(§14).
-        const go = await confirmDialog({
-          title: res.error,
-          message: '다른 방에서 먼저 재울 수 있습니다. 계약 호실과 시작일은 그대로 두고, 본 계약 시작일에 옮기는 알림이 뜹니다.',
-          confirmLabel: '먼저 재우기',
-        })
-        if (go) setEarlyOpen(true)
-        return
-      }
-      setConfirmError(res.error); setConfirmPending(false); return
-    }
+    // 여기서 조기 입실로 잇지 않는 이유. 이 알림은 **계약 시작일이 지나야** 뜨는데 조기 입실은
+    // 그 전날까지만 성립한다. 그래서 이 자리에서 시트를 열면 언제나 못 넣는 폼을 보여 주게 된다.
+    // 조기 입실의 진입점은 입주자 카드의 '입실 처리'다(계약 시작일 전에 누르는 자리).
+    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     router.refresh()
     onClose()
   }
@@ -667,14 +651,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               : '입주자 관리에서 보기 ›'}
           </Link>
         </div>
-      {earlyOpen && reservationDueLeaseId && (
-        <EarlyCheckInSheet
-          leaseTermId={reservationDueLeaseId}
-          tenantName={alert.reservationDueTenantName ?? ''}
-          onClose={() => setEarlyOpen(false)}
-          onDone={() => { setEarlyOpen(false); router.refresh(); onClose() }}
-        />
-      )}
       {refundModalOpen && (
         <CheckoutRefundModal
           tenantName={moveOutTenantName}
