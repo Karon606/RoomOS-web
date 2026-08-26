@@ -371,7 +371,7 @@ export function plannedStayDenial(input: {
   const hit = input.plannedStays.find(p => spanOverlaps(span, { start: p.from, end: p.to }))
   if (!hit) return null
   const dot = (ymd: string) => ymd.replaceAll('-', '.')
-  return `해당 호실은 ${plannedSpanText(hit)} ${hit.tenantName}님이 임시 호실로 지내는 방입니다. `
+  return `해당 호실은 ${plannedSpanText(hit)} ${hit.tenantName}님의 임시 호실로 정해져 있습니다. `
     + `${dot(hit.to)}부터 입주 가능합니다. `
     + `그 기간에 배정하려면 ${hit.tenantName}님의 거주 호실 일정을 먼저 바꿔 주세요.`
 }

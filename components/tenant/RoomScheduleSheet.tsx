@@ -207,7 +207,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                 <div className="mt-2">
                   <Btn type="button" variant="subtle" size="sm"
                     onClick={() => setPicks(p => p.slice(0, -1))} disabled={pending}>
-                    마지막에 고른 호실 취소
+                    되돌리기
                   </Btn>
                 </div>
               </div>
@@ -248,7 +248,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                   <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
                     {picks.length === 0
                       ? '그날 지낼 수 있는 호실이 없습니다. 입주일을 바꿔 보세요.'
-                      : '그 기간에 지낼 수 있는 호실이 없습니다. 위에서 마지막에 고른 호실을 취소하고 다시 골라 보세요.'}
+                      : '그 기간에 지낼 수 있는 호실이 없습니다. 위에서 되돌리기를 누르고 다시 골라 보세요.'}
                   </p>
                 )}
               </div>

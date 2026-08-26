@@ -4583,10 +4583,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               // 입실·퇴실 예정: 지금 빈 방만(서버가 점유 방을 거부한다).
               const disableRoom = isWaitingTourStatus ? !pick.reservable : (activeOnlyStatus && !pick.residable)
               const showOpenDate = isWaitingTourStatus && !!pick.openDate
+              // 못 고르는 방은 **왜 못 고르는지 말한다**. 종전에는 회색으로 접기만 해서
+              // 운영자가 이유를 모른 채 막혔다(실기 2026-08-26 — "402호를 선택조차 할 수 없어").
+              // 원인이 넷인데 전부 말이 없었다. 케이스 하나가 아니라 클래스로 단다.
+              // 낱말은 서버 거부 문구와 같게 — 막힌 사람이 무엇을 채워야 하는지 바로 이어져야 한다.
+              const why = !disableRoom ? null
+                : r.vacancyExcluded ? '창고·사무실'
+                : r.hasIndefiniteReservation && !isCurrentRoom ? '퇴실 예정일 없는 예약'
+                : pick.openDate ? `${fmtMD(pick.openDate)} 퇴실`
+                : '거주 중'
               return (
                 <option key={r.id} value={r.id} disabled={disableRoom}
                   style={showOpenDate ? { fontWeight: 'bold' } : undefined}>
-                  {fmtRoomNo(r.roomNo)}{showOpenDate ? ` (${fmtMD(pick.openDate)} 퇴실)` : ''}
+                  {fmtRoomNo(r.roomNo)}
+                  {why ? ` (${why})` : showOpenDate ? ` (${fmtMD(pick.openDate)} 퇴실)` : ''}
                 </option>
               )
             })}

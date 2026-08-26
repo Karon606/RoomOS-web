@@ -2604,7 +2604,7 @@ export async function saveRoomSchedulePlan(input: {
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     if (!lease.roomId) return { ok: false, error: '확정된 호실 정보가 없습니다.' }
-    if (lease.status !== 'RESERVED') return { ok: false, error: '예약 상태에서만 일정을 미리 잡을 수 있습니다.' }
+    if (lease.status !== 'RESERVED') return { ok: false, error: '예약 상태에서만 거주 호실 일정을 미리 정할 수 있습니다.' }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.moveInDate)) return { ok: false, error: '입주일 형식이 올바르지 않습니다.' }
 
     const schedule = parseRoomSchedule(input.schedule)

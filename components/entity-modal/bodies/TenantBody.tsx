@@ -268,7 +268,7 @@ function RoomBusyRow({ leaseTermId, tenantName, info, onDone }: {
         </p>
         <button type="button" onClick={() => void ask()}
           className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warning-fg)]/40 text-[var(--warning-fg)] hover:bg-[var(--warning-fg)]/10 transition-colors">
-          {info.freeFrom ? '방 정하기' : '퇴실일 정하기'}
+          {info.freeFrom ? '임시 호실 정하기' : '퇴실일 정하기'}
         </button>
       </div>
       {planOpen && (
