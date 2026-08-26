@@ -29,7 +29,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { BtnLink } from '@/components/ui/Btn'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { fetchDocBytes } from '@/lib/docBytes'
-import { canShareFiles } from '@/lib/shareFile'
+import { canShareFiles, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 import { prewarmPdfToPng } from '@/lib/pdfToPng'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -103,7 +103,10 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   const [shareSupported, setShareSupported] = useState(true)
   useEffect(() => { setShareSupported(canShareFiles()) }, [])
   // 보낼 곳 — 기기(공유 시트) · 메일. 기본은 기기다. 1단계에 이미 있던 흐름이 기본값을 잃으면 안 된다.
-  const [dest, setDest] = useState<'device' | 'mail'>('device')
+  // 갈래 셋. 저장(내 기기) · 보내기(공유 시트로 카톡·문자 등) · 메일(앱이 직접 발송).
+  // 종전 '이 기기' 하나가 저장과 보내기를 겸해 이름과 동작이 어긋났다(운영자 지적 2026-08-26).
+  // 기본은 'share' 다 — 종전 첫 화면 동작과 같아야 한다(무회귀).
+  const [dest, setDest] = useState<'save' | 'share' | 'mail'>('share')
   const [mode, setMode] = useState<'png' | 'pdf'>('png')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // 행마다 고른 계약서 판본(행 키 -> contractFileId). 비어 있으면 대표본이다 —
@@ -190,9 +193,21 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   // 브라우저)에서는 메일뿐이다. 둘 중 하나뿐이면 컨트롤을 세우지 않는다. 무엇과 무엇을 가르는지가
   // 없는 스위치라서다(그룹이 하나면 머리를 안 세우는 것과 같은 규칙).
   // 이 세 갈래를 한 줄로 줄이면 '메일이 꺼졌는데 메일 탭'이 열린다(실측에서 실제로 열렸다).
-  const effDest: 'device' | 'mail' = !mailOn ? 'device' : !shareSupported ? 'mail' : dest
-  const showDestPicker = mailOn && shareSupported
-  const overLimit = effDest === 'device' && selected.size > 0 && share.fileCount > MAX_SHARE
+  // 저장은 공유 시트가 없어도 된다(다운로드 폴백) — PC·인앱 브라우저에서도 성립한다.
+  // 그래서 갈래가 하나뿐인 상황이 사라지고, 고를 수 있는 것만 세운다.
+  const destOptions: { value: 'save' | 'share' | 'mail'; label: string }[] = [
+    { value: 'save', label: '저장' },
+    ...(shareSupported ? [{ value: 'share' as const, label: '보내기' }] : []),
+    ...(mailOn ? [{ value: 'mail' as const, label: '메일' }] : []),
+  ]
+  const effDest = destOptions.some(o => o.value === dest)
+    ? dest
+    : (shareSupported ? 'share' : mailOn ? 'mail' : 'save')
+  const showDestPicker = destOptions.length > 1
+  const isFileDest = effDest === 'save' || effDest === 'share'
+  const overLimit = isFileDest && selected.size > 0 && share.fileCount > MAX_SHARE
+  // 아이폰은 저장도 공유 창을 거친다 — OS 가 정한 것이라 피할 수 없다. 누르기 전에 말한다.
+  const saveNeedsSheet = effDest === 'save' && photoSaveNeedsShareSheet() && shareSupported
   const groups = bundle?.groups ?? []
 
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
@@ -202,19 +217,18 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
     <Modal open onClose={onClose} z={260} width="md"
       title={bundle ? `서류 보내기 · ${bundle.tenantName}` : '서류 보내기'}>
       <div className="space-y-3">
-        {/* 보낼 곳 — 메일이 켜져 있을 때만 선다. 안 켜져 있으면 아래 형식 줄 하나로 1단계와 같다. */}
+        {/* 내보낼 곳 — 저장·보내기·메일. 종전 '이 기기' 하나가 저장과 보내기를 겸해 이름과
+            동작이 어긋났다(운영자 지적). '내보내기'는 문서를 앱 밖으로 빼내는 모든 길의 상위어라
+            셋을 다 덮고, '공유'는 어휘 정본상 금지어라 그 창을 여는 갈래는 '보내기'로 부른다. */}
         {showDestPicker && (
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-[var(--warm-muted)]">보낼 곳</p>
-            <SegmentedControl<'device' | 'mail'>
+            <p className="text-xs text-[var(--warm-muted)]">내보낼 곳</p>
+            <SegmentedControl<'save' | 'share' | 'mail'>
               size="sm"
-              ariaLabel="보낼 곳"
-              value={dest}
+              ariaLabel="내보낼 곳"
+              value={effDest}
               onChange={setDest}
-              // '기기'는 이 저장소에 없는 단독 명사다 — 늘 '기기에 저장'·'이 기기 알림'처럼 수식을 단다.
-              // 여기서 열리는 것은 저장이 아니라 공유 시트(문자·메신저·저장이 그 안에 다 있다)라
-              // '기기에 저장'으로 부르면 거짓이 된다. '공유'는 어휘 정본상 금지어다.
-              options={[{ value: 'device', label: '이 기기' }, { value: 'mail', label: '메일' }]}
+              options={destOptions}
             />
           </div>
         )}
@@ -223,19 +237,30 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             줄이 30px 에서 16px 로 주저앉고 아래 목록 전체가 14px 뛴다. 30px 은 SegmentedControl size sm 의
             실제 높이다(세그먼트 24 + 트랙 패딩 4 + 보더 2). 탭 접미 자리 예약(ViewTabs)과 같은 수법이다. */}
         <div className="flex min-h-[30px] items-center justify-between gap-2">
-          <p className="text-xs text-[var(--warm-muted)]">보낼 서류를 고르세요</p>
-          {/* 형식은 기기로 보낼 때만 고른다. 메일은 발급본 PDF 를 그대로 첨부한다 —
-              사진 변환은 브라우저에서만 되고, 메일에 넣을 이유도 없다. */}
-          {effDest === 'device' && (
+          <p className="text-xs text-[var(--warm-muted)]">내보낼 서류를 고르세요</p>
+          {/* 형식은 파일로 나가는 두 갈래(저장·보내기)에서 고른다. 메일은 발급본 PDF 를 그대로
+              첨부한다 — 사진 변환은 브라우저에서만 되고, 메일에 넣을 이유도 없다. */}
+          {isFileDest && (
             <SegmentedControl<'png' | 'pdf'>
               size="sm"
-              ariaLabel="보낼 형식"
+              ariaLabel="내보낼 형식"
               value={mode}
               onChange={setMode}
               options={[{ value: 'png', label: '사진' }, { value: 'pdf', label: 'PDF' }]}
             />
           )}
         </div>
+
+        {/* 아이폰 저장은 OS 가 공유 창을 강제한다 — 눌러서 창이 뜬 뒤에 알면 "왜 또 공유창이지"가
+            된다(단건 내보내기가 같은 이유로 고르기 전에 알린다). 안드로이드·PC 는 조용히 받으므로
+            이 줄이 안 선다. 표면·라벨 토큰은 아래 받는 사람 상자와 같은 문법이다. */}
+        {saveNeedsSheet && (
+          <p className="rounded-lg bg-[var(--cream-soft)] px-3 py-2 text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
+            {mode === 'png'
+              ? '저장을 누르면 공유 창이 열립니다. 공유 창에서 [이미지 저장]을 누르면 사진첩에 저장됩니다.'
+              : '저장을 누르면 공유 창이 열립니다. 공유 창에서 [파일에 저장]을 누르면 원하는 위치에 저장됩니다.'}
+          </p>
+        )}
 
         {/* 받는 사람 — 고칠 수 없는 표시다. 주소를 바꾸려면 입주자 정보에서 고치고 다시 연다. */}
         {effDest === 'mail' && (
@@ -259,7 +284,9 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
             자리가 있는 여기서 말한다. 사진은 페이지마다 한 장이라 계약서가 섞이면 금세 넘는다. */}
         {overLimit && (
           <p className="rounded-lg bg-[var(--warning-bg)] px-3 py-2 text-[0.6875rem] text-[var(--warning-fg)]">
-            사진은 한 번에 {MAX_SHARE}장까지 보낼 수 있습니다. 몇 건을 빼거나 PDF 로 보내세요.
+            {effDest === 'save'
+              ? `사진은 한 번에 ${MAX_SHARE}장까지 저장할 수 있습니다. 몇 건을 빼거나 PDF 로 저장하세요.`
+              : `사진은 한 번에 ${MAX_SHARE}장까지 보낼 수 있습니다. 몇 건을 빼거나 PDF 로 보내세요.`}
           </p>
         )}
 
@@ -287,17 +314,20 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
         {/* 하단 알약은 모달 안 선택 모드 축(§22 aboveModal) — 형제 3화면과 같은 셸이다.
             메일은 변환 큐가 없어(서버가 발급본 PDF 를 그대로 싣는다) 준비 상태 표시가 없다.
             그래서 DocMultiShareBar 를 억지로 재사용하지 않고 같은 셸(SelectionPillBar)만 공유한다. */}
-        {selected.size > 0 && effDest === 'device' && (
+        {selected.size > 0 && isFileDest && (
           <DocMultiShareBar
             aboveModal
             count={selected.size}
             done={share.done}
             failedCount={share.failedCount}
             mode={mode}
-            sendLabel={mode === 'png' ? '사진 보내기' : 'PDF 보내기'}
+            // 목적지가 이름을 정한다 — 저장은 내 기기, 보내기는 상대에게(§ 어휘 정본).
+            sendLabel={effDest === 'save'
+              ? (mode === 'png' ? '사진 저장' : 'PDF 저장')
+              : (mode === 'png' ? '사진 보내기' : 'PDF 보내기')}
             totalBytes={share.totalBytes}
             fileCount={share.fileCount}
-            onSend={share.send}
+            onSend={effDest === 'save' ? share.save : share.send}
             onClose={() => setSelected(new Set())}
           />
         )}

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DocShareQueue, shareFileNames } from './docShareQueue'
-import { shareFiles } from './shareFile'
+import { shareFiles, saveFiles } from './shareFile'
 import { extForDocMime } from './docMime'
 import { pushToast } from './saveStatus'
 
@@ -90,5 +90,37 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     }
   }, [mode, queue, onChange, toItems])
 
-  return { done: st.done, failedCount: st.failed.length, totalBytes, fileCount: st.fileCount, send }
+  /**
+   * 이 기기에 저장 — '보내기'(상대에게)와 목적이 다른 별개의 문이다.
+   * 준비·실패 처리는 send 와 같은 문법이고, 다른 것은 목적지뿐이다.
+   */
+  const save = useCallback(async () => {
+    const es = entriesRef.current
+    const s = queue.state(es.map(e => e.id))
+    if (s.failed.length > 0) {
+      queue.enqueue(toItems(), onChange)
+      const name = es.find(e => e.id === s.failed[0])?.personName ?? ''
+      pushToast('error', `${name}님 서류 변환에 실패했습니다. 다시 시도해 주세요.`)
+      return
+    }
+    if (s.done < es.length) return
+
+    const blobLists = es.map(e => s.blobs.get(e.id) ?? [])
+    const exts = blobLists.map(b => extForDocMime(b[0]?.type ?? (mode === 'png' ? 'image/png' : 'application/pdf')))
+    const names = shareFileNames(es, blobLists.map(b => b.length), exts)
+    const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: b.type }))
+
+    const result = await saveFiles(files)
+    // 다운로드는 성패를 돌려주지 않으므로 성공을 지어내지 않는다(브라우저 자체 UI 가 확인 역할).
+    if (result === 'retry') {
+      retryCount.current += 1
+      if (retryCount.current >= 2) pushToast('error', '이 기기에서는 저장 창을 열 수 없습니다. 휴대폰에서 이용해 주세요.')
+      else pushToast('info', '다시 한 번 눌러 주세요.')
+    } else {
+      retryCount.current = 0
+      if (result === 'unsupported') pushToast('error', '저장할 서류가 없습니다.')
+    }
+  }, [mode, queue, onChange, toItems])
+
+  return { done: st.done, failedCount: st.failed.length, totalBytes, fileCount: st.fileCount, send, save }
 }

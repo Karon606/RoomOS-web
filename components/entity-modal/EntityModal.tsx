@@ -232,7 +232,9 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   const [canShare, setCanShare] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setCanShare(canShareFiles()) }, [])
-  // 서류 보내기 진입 조건 — 공유 시트가 열리거나(기기) 메일이 켜져 있으면 보인다.
+  // 서류 보내기 진입 조건 — 저장 갈래가 생겨(2026-08-26) 어느 기기에서나 할 일이 있다.
+  // 종전에는 공유 시트가 안 열리는 기기(PC·인앱 브라우저)에서 메일까지 꺼져 있으면 진입점을
+  // 감췄는데, 이제 저장은 다운로드 폴백이 있어 항상 성립한다. 조건을 걷는다.
   // 종전에는 공유 시트만 봤다. 그래서 PC 에서는 보관 서류를 보낼 길이 아예 없었다(신고 44501308 2단계).
   // 메일 켜짐은 세션에 한 번만 묻고 모듈에 접어 둔다 — 프리즘은 자주 열리고 답은 배포 중에 안 바뀐다.
   const [mailOn, setMailOn] = useState(docMailEnabledCache ?? false)
@@ -446,7 +448,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               <div className="flex-1" />
               {/* 이미 만들어진 서류를 **보내는** 문. 종전에는 종류마다 목록 화면을 따로 열어
                   한 사람의 종이를 네 번에 걸쳐 보냈다. */}
-              {links?.tenantId && (canShare || mailOn) && (
+              {links?.tenantId && (
                 <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(null)}>
                   서류 보내기
                 </Btn>
