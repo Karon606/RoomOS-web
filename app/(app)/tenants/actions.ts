@@ -49,7 +49,7 @@ import { randomUUID } from 'node:crypto'
 import { parseRequestCategories } from '@/lib/requestCategories'
 import { getRoomNoSnapshot } from '@/lib/requestRoomSnapshot'
 import { ensureOpenStay, closeStay, syncRoomStayOnSave, isStayTerminalStatus, validateMoveDate, recordRoomChange, STAY_ELIGIBLE_STATUSES } from '@/lib/roomStay'
-import { spanOverlaps, EARLY_CHECK_IN_INCOME_CATEGORY } from '@/lib/earlyCheckIn'
+import { spanOverlaps, earlyStayDays, earlyChargeSuggest, EARLY_CHECK_IN_INCOME_CATEGORY } from '@/lib/earlyCheckIn'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
@@ -2131,6 +2131,65 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 조기 입실 화면이 필요한 재료 — 본 계약 정보와 그 기간에 쓸 수 있는 임시 방 목록.
+ *
+ * 임시 방 후보는 기존 '입주 가능' 판정을 안 쓴다. 그것은 하루 축이라 **뒤에 무기한 예약이
+ * 걸린 방을 통째로 뺀다** — 실측(2026-08-26)에서 402·409 둘 다 9/8 예약 때문에 빠졌다.
+ * 하루만 빌리는 자리라 "그 구간에 겹치는 사람이 있나"만 묻는다.
+ */
+export async function getEarlyCheckInOptions(leaseTermId: string, date: string): Promise<{
+  ok: true
+  roomNo: string
+  moveInDate: string
+  rentAmount: number
+  days: number
+  suggest: number
+  rooms: { id: string; roomNo: string }[]
+} | { ok: false; error: string }> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { id: true, roomId: true, moveInDate: true, rentAmount: true, room: { select: { roomNo: true } } },
+    })
+    if (!lease?.moveInDate || !lease.roomId) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    const moveIn = kstYmdStr(lease.moveInDate)
+    const days = earlyStayDays(date, moveIn)
+    const want = { start: date, end: moveIn }
+
+    const [rooms, stays] = await Promise.all([
+      prisma.room.findMany({
+        where: { propertyId, id: { not: lease.roomId } },
+        select: { id: true, roomNo: true },
+        orderBy: { roomNo: 'asc' },
+      }),
+      prisma.roomStay.findMany({
+        where: { propertyId, leaseTermId: { not: leaseTermId } },
+        select: { roomId: true, startDate: true, endDate: true },
+      }),
+    ])
+    const busy = new Set(
+      stays.filter(o => spanOverlaps(want, {
+        start: kstYmdStr(o.startDate as Date), end: o.endDate ? kstYmdStr(o.endDate as Date) : null,
+      })).map(o => o.roomId),
+    )
+    return {
+      ok: true,
+      roomNo: lease.room?.roomNo ?? '',
+      moveInDate: moveIn,
+      rentAmount: lease.rentAmount,
+      days,
+      suggest: earlyChargeSuggest(lease.rentAmount, days),
+      rooms: rooms.filter(r => !busy.has(r.id)),
+    }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 

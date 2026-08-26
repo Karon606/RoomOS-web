@@ -16,6 +16,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
+import { isEarlyCheckInActive } from '@/lib/earlyCheckIn'
 import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
@@ -1424,6 +1425,42 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate: fmtShortDate(l.moveInDate),
       reservationDueLeaseId: l.id,
       reservationDueRoomNo:  l.room?.roomNo ?? null,
+    })
+  }
+
+  // 조기 입실한 사람을 본 계약 방으로 옮기는 날 — 안 옮기면 임시 방이 계속 차 있는 것으로
+  // 남고 본 방은 비어 있어, 공실·캘린더가 둘 다 틀린 그림을 그린다(2026-08-26).
+  const earlyMoves = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId, status: 'ACTIVE',
+      earlyCheckInRoomId: { not: null },
+      moveInDate: { lte: ymdToDbDate(kstYmdStr()) },
+      roomStays: { some: { endDate: null, roomId: { not: undefined } } },
+    },
+    select: {
+      id: true, roomId: true, moveInDate: true, earlyCheckInRoomId: true,
+      tenant: { select: { id: true, name: true } },
+      room: { select: { roomNo: true } },
+      earlyCheckInRoom: { select: { roomNo: true } },
+      roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 },
+    },
+  })
+  for (const l of earlyMoves) {
+    // 이미 옮겼으면(열린 구간이 본 방) 알릴 일이 없다 — 판정은 정본 하나가 한다.
+    if (!isEarlyCheckInActive(l, l.roomStays[0]?.roomId ?? null)) continue
+    const days = daysUntil(l.moveInDate!)
+    alertItems.push({
+      category:  'movein',
+      text:      `${l.tenant.name}님을 ${l.room?.roomNo ?? ''}호로 옮기는 날입니다`,
+      link:      `/tenants?tenantId=${l.tenant.id}`,
+      dotColor:  'var(--info-fg)',
+      timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
+      tenantId:  l.tenant.id,
+      detail:    `지금 ${l.earlyCheckInRoom?.roomNo ?? ''}호에 머물고 있습니다. 계약 호실인 ${l.room?.roomNo ?? ''}호로 옮겨 주세요.`,
+      exactDate: fmtShortDate(l.moveInDate),
+      earlyMoveLeaseId: l.id,
+      earlyMoveFromRoomNo: l.earlyCheckInRoom?.roomNo ?? null,
+      earlyMoveToRoomNo: l.room?.roomNo ?? null,
     })
   }
 
