@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DocShareQueue, shareFileNames } from './docShareQueue'
 import { shareFiles, saveFiles } from './shareFile'
 import { extForDocMime } from './docMime'
-import { pushToast } from './saveStatus'
+import { pushToast, TOAST_DUR_LONG } from './saveStatus'
 
 export type DocShareEntry = {
   id: string                          // driveFileId
@@ -77,8 +77,16 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     const names = shareFileNames(es, blobLists.map(b => b.length), exts)
     const files = blobLists.flat().map((b, i) => new File([b], names[i], { type: b.type }))
 
-    // 본문은 실험이다 — 받는 앱이 무시할 수 있고, 무시되면 종전과 같은 결과(파일만)라 무해하다.
-    const result = await shareFiles(files, shareTextRef.current)
+    // 문구는 **클립보드로 건넨다.** 공유 창은 파일만 받고 본문을 못 받는다(2026-08-26 실기 확정:
+    // files 와 text 를 함께 넘기면 카카오톡에서 공유 자체가 실패했다). 문자 링크 방식은 본문을
+    // 채우지만 첨부를 못 붙인다. 둘을 동시에 하는 길이 없어, 붙여넣기 한 번으로 줄인다.
+    // 복사는 share() 앞에 둔다 — 뒤에 두면 시트가 제스처를 소비해 권한이 막힌다.
+    let copied = false
+    const text = shareTextRef.current
+    if (text) {
+      try { await navigator.clipboard.writeText(text); copied = true } catch { /* 막히면 조용히 넘어간다 */ }
+    }
+    const result = await shareFiles(files)
     // 'shared'·'cancelled' 은 무반응(정상). 'retry' 는 재탭 유도, 'unsupported' 는 안내.
     if (result === 'retry') {
       retryCount.current += 1
@@ -87,6 +95,8 @@ export function useDocShare(entries: DocShareEntry[], mode: 'png' | 'pdf', share
     } else {
       retryCount.current = 0
       if (result === 'unsupported') pushToast('error', '이 기기에서는 파일 공유를 지원하지 않습니다.')
+      // 창이 뜬 뒤에 알리면 그 창에 가려 안 보인다. 시트가 닫힌 뒤(shared·cancelled)에 말한다.
+      else if (copied) pushToast('info', '보낼 문구를 복사했습니다. 메시지 칸에 붙여넣기 하세요.', { duration: TOAST_DUR_LONG })
     }
   }, [mode, queue, onChange, toItems])
 
