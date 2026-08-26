@@ -10,6 +10,8 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { Prisma } from '@prisma/client'
+import { parseRoomSchedule, hasRoomSchedule } from '@/lib/roomSchedule'
 import { shiftMonth } from '@/lib/moveCalendar'
 import { resolveMonthParam } from '@/lib/monthParam'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
@@ -1427,8 +1429,53 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 호실 일정에 따른 이동은 알림을 세우지 않는다 — 자가 치유(lib/roomStay)가 그날 알아서
-  // 구간을 옮기므로 운영자가 누를 것이 없다. 지금 어느 방에 있는지는 입주자 상세가 적는다.
+  // 옮기는 날 — 일정이 다음 방을 가리키는데 아직 지금 방에 있는 사람. **자동으로 옮기지 않고
+  // 여기서 묻는다.** 방을 옮기는 것은 실제로 짐을 나르는 일이라 하루 밀릴 수 있고, 앱이 일정만
+  // 보고 옮기면 기록과 사실이 갈린다(운영자 확정 2026-08-26).
+  const scheduleMoves = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId, status: 'ACTIVE',
+      roomSchedule: { not: Prisma.DbNull },
+      roomStays: { some: { endDate: null } },
+    },
+    select: {
+      id: true, roomSchedule: true,
+      tenant: { select: { id: true, name: true } },
+      roomStays: { where: { endDate: null }, select: { roomId: true, room: { select: { roomNo: true } } }, take: 1 },
+    },
+  })
+  {
+    const todayYmd = kstYmdStr()
+    const roomNos = new Map(
+      (await prisma.room.findMany({ where: { propertyId }, select: { id: true, roomNo: true } }))
+        .map(r => [r.id, r.roomNo]),
+    )
+    for (const l of scheduleMoves) {
+      const schedule = parseRoomSchedule(l.roomSchedule)
+      if (!hasRoomSchedule(schedule)) continue
+      const openRoomId = l.roomStays[0]?.roomId ?? null
+      if (!openRoomId) continue
+      const idx = schedule.findIndex(e => e.roomId === openRoomId)
+      const next = idx >= 0 ? schedule[idx + 1] : null
+      // 아직 옮길 날이 안 왔으면 알릴 일이 없다.
+      if (!next || next.from > todayYmd) continue
+      const days = daysUntil(new Date(`${next.from}T00:00:00.000Z`))
+      alertItems.push({
+        // 이미 살고 있는 사람의 이동이라 '입실 희망'이 아니다 — 제 묶음에 선다.
+        category:  'move',
+        text:      `${l.tenant.name}님 ${roomNos.get(next.roomId) ?? ''}호 이사 예정`,
+        link:      `/tenants?tenantId=${l.tenant.id}`,
+        dotColor:  'var(--info-fg)',
+        timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
+        tenantId:  l.tenant.id,
+        detail:    `지금 ${l.roomStays[0]?.room?.roomNo ?? ''}호에 머물고 있습니다. 일정대로 ${roomNos.get(next.roomId) ?? ''}호로 옮기시겠어요?`,
+        exactDate: fmtShortDate(new Date(`${next.from}T00:00:00.000Z`)),
+        scheduleMoveLeaseId: l.id,
+        scheduleMoveFromRoomNo: l.roomStays[0]?.room?.roomNo ?? null,
+        scheduleMoveToRoomNo: roomNos.get(next.roomId) ?? null,
+      })
+    }
+  }
 
   for (const l of moveOutLeases) {
     const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'

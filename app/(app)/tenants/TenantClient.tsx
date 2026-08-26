@@ -30,6 +30,7 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Badge } from '@/components/ui/Badge'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
@@ -691,6 +692,8 @@ export default function TenantClient({
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
+  // 입주 희망일을 당겼더니 계약 호실이 아직 차 있을 때 여는 일정 시트(운영자 요구 2026-08-26).
+  const [planLease, setPlanLease] = useState<{ leaseTermId: string; tenantName: string } | null>(null)
   // 계약 추가 — 있는 입주자에게 계약만 하나 더(창고·사무실 명의 등). 사람 칸은 안 그리고 안 보낸다.
   const [addLeaseTenant, setAddLeaseTenant] = useState<Tenant | null>(null)
   const [addLeaseDirty, setAddLeaseDirty]   = useState(false)
@@ -1307,6 +1310,24 @@ export default function TenantClient({
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
+      // 날짜를 당겼는데 그날 계약 호실이 아직 차 있다 — 그때까지 지낼 방을 여기서 권한다.
+      // 입주 당일에 알면 이미 사람이 문 앞에 와 있다(운영자 요구 2026-08-26).
+      if (res.roomBusy) {
+        const b = res.roomBusy
+        const when = b.freeFrom ? `${fmtDate(b.freeFrom)}에 빕니다` : '언제 비는지 아직 정해지지 않았습니다'
+        const ok = await confirmDialog({
+          title: `${b.roomNo}호가 입주일에 아직 차 있습니다`,
+          message: b.freeFrom
+            ? `${b.occupantName ? `${b.occupantName}님이 살고 있고 ` : ''}${when}. 그때까지 지낼 방을 지금 정해 둘까요? 정해 두면 계약서에도 적히고, 입주일에는 입실 처리만 누르면 됩니다.`
+            : `${b.occupantName ? `${b.occupantName}님이 살고 있는데 ` : ''}${when}. 그분의 퇴실 예정일을 먼저 정해 주세요.`,
+          level: 'caution',
+          confirmLabel: b.freeFrom ? '방 정하기' : '닫기',
+          ...(b.freeFrom ? {} : { cancelLabel: '' }),
+        })
+        const lid = (fd.get('leaseTermId') as string) || ''
+        const nm = (fd.get('name') as string) || ''
+        if (ok && b.freeFrom && lid) setPlanLease({ leaseTermId: lid, tenantName: nm })
+      }
     })
   }
 
@@ -2628,6 +2649,17 @@ export default function TenantClient({
               </div>
             </form>
         </Modal>
+      )}
+
+      {/* 호실 일정 — 입주 희망일을 당겼더니 계약 호실이 아직 차 있을 때 이어서 연다. */}
+      {planLease && (
+        <RoomScheduleSheet
+          leaseTermId={planLease.leaseTermId}
+          tenantName={planLease.tenantName}
+          mode="plan"
+          onClose={() => setPlanLease(null)}
+          onDone={() => { setPlanLease(null); refresh() }}
+        />
       )}
 
       {/* ── 입주자 수정 모달 ────────────────────────────────────────── */}

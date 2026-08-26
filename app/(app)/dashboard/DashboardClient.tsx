@@ -36,6 +36,7 @@ import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund }
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { advanceRoomSchedule } from '@/app/(app)/tenants/actions'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
@@ -145,7 +146,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -579,6 +580,37 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               {confirmPending ? '처리 중…' : '퇴실 처리'}
             </button>
           )}
+          {/* 일정대로 옮기는 원탭 — 떠나는 방 청소도 함께 잡는다(하루라도 사람이 잔 방이라
+              다음 사람 전에 치우는 것이 실무다). 자동으로 안 옮기는 이유는 서버 주석에 있다. */}
+          {alert.scheduleMoveLeaseId && (
+            <Btn
+              onClick={async () => {
+                if (confirmPending) return
+                const ok = await confirmDialog({
+                  level: 'caution',
+                  title: `${alert.scheduleMoveToRoomNo ?? ''}호로 옮길까요?`,
+                  message: `${alert.scheduleMoveFromRoomNo ?? ''}호에서 나와 옮기고, ${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 함께 만듭니다.`,
+                  confirmLabel: '옮기기',
+                })
+                if (!ok) return
+                setConfirmPending(true); setConfirmError('')
+                const r = await advanceRoomSchedule({
+                  leaseTermId: alert.scheduleMoveLeaseId!,
+                  moveDate: kstYmdStr(new Date()),
+                  scheduleCleaning: true,
+                })
+                if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
+                pushToast('success', `${alert.scheduleMoveToRoomNo ?? ''}호로 옮겼습니다`, {
+                  detail: [`${alert.scheduleMoveFromRoomNo ?? ''}호 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
+                })
+                router.refresh()
+                onClose()
+              }}
+              disabled={confirmPending}
+              variant="primary" size="md" fullWidth>
+              {confirmPending ? '옮기는 중…' : `${alert.scheduleMoveToRoomNo ?? ''}호로 옮기기`}
+            </Btn>
+          )}
           {isRecurring && (
             <Btn
               onClick={async () => {
@@ -628,14 +660,15 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
+type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'move', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미납 (현 입주자)', color: 'var(--tc)' },
   contact:   { label: '연락할 때',    color: 'var(--coral)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },
+  move:      { label: '방 이동',      color: 'var(--info-fg)' },
   tour:      { label: '문의·투어',    color: 'var(--ink)' },
   wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
   request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
@@ -652,6 +685,7 @@ const CATEGORY_GLYPH_PATHS: Record<AlertCat, React.ReactNode> = {
   upcoming:  (<><rect x="5.5" y="6.5" width="13" height="12" rx="2" /><path d="M5.5 10.5h13" /><path d="M9 5v2.5M15 5v2.5" /></>),
   moveout:   (<><rect x="8" y="5" width="8" height="14" rx="1" /><path d="M13.5 11.5v3" /></>),
   movein:    (<><circle cx="12" cy="8" r="3" /><path d="M5.5 19a6.5 6.5 0 0 1 13 0" /></>),
+  move:      (<><rect x="4.5" y="6.5" width="6" height="11" rx="1" /><rect x="13.5" y="6.5" width="6" height="11" rx="1" /><path d="M10.5 12h3" /></>),
   tour:      (<><path d="M12 19c3.3-4 5-6.7 5-9a5 5 0 1 0-10 0c0 2.3 1.7 5 5 9z" /><circle cx="12" cy="10" r="1.8" /></>),
   contact:   (<path d="M16.5 14.2l-1.4 1.4a1 1 0 0 1-1.1.2 12.5 12.5 0 0 1-5.8-5.8 1 1 0 0 1 .2-1.1l1.4-1.4a1 1 0 0 0 .2-1L9.3 5.6A1 1 0 0 0 8.4 5H6.2A1.2 1.2 0 0 0 5 6.3 13 13 0 0 0 17.7 19a1.2 1.2 0 0 0 1.3-1.2v-2.2a1 1 0 0 0-.6-.9l-1.9-.8a1 1 0 0 0-1 .1z" />),
   wish:      (<path d="M12 5.2 13.98 9.25 18.47 9.9 15.24 13.05 16 17.5 12 15.4 8 17.5 8.76 13.05 5.53 9.9 10.02 9.25Z" />),
