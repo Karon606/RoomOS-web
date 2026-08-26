@@ -46,6 +46,20 @@ export function reasonLabel(toStatus: string): string | null {
   return null
 }
 
+/**
+ * '...을' / '...를' — 받침이 있으면 '을'.
+ *
+ * 서류 이름이 '계약서'(받침 없음)·'보증금 영수증'(ㅇ)으로 갈려서 하나로 박으면 "계약서을"이
+ * 그대로 입주자에게 나간다(디자이너 패스 2026-08-26). 메일 문안은 변수를 조사 앞에서 빼는
+ * 방식으로 피했는데, 문자는 무엇을 보내는지 이름으로 말해야 해서 조사가 필요하다.
+ */
+export function withEulReul(word: string): string {
+  const last = word.trim().slice(-1)
+  const code = last.charCodeAt(0)
+  if (code < 0xAC00 || code > 0xD7A3) return `${word}를`   // 한글 음절이 아니면 '를'
+  return (code - 0xAC00) % 28 === 0 ? `${word}를` : `${word}을`
+}
+
 /** '...으로' / '...로' — 받침이 없거나 ㄹ 받침이면 '로'.
  *  상태 라벨이 '퇴실'(ㄹ)·'문의'(받침 없음)·'거주중'(ㅇ)로 갈려서 붙여 쓰면 '퇴실으로'가 된다. */
 export function withRo(word: string): string {

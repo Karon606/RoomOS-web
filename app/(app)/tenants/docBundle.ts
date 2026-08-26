@@ -32,15 +32,34 @@ const MAIL_MAX_DOCS = 10
 /** 메일로 보내기가 이 화면에서 가능한지 — 켜짐 여부와 프리필 주소. 주소는 이 사람 것 하나뿐이다. */
 export type TenantDocBundleMail = { enabled: boolean; to: string | null }
 
+/**
+ * 문자로 보내기에 필요한 것 — 받는 번호와 문안에 넣을 영업장 이름.
+ *
+ * 메일과 달리 켜짐 여부가 없다. 문자는 서버가 보내지 않고 운영자 폰의 문자앱이 보내므로
+ * 켤 키도 끌 스위치도 없다(형제 문자 모달 셋이 기기를 가리지 않는 것과 같은 이유).
+ */
+export type TenantDocBundleSms = { to: string | null; propertyName: string }
+
 export async function getTenantDocBundle(
   tenantId: string,
-): Promise<(TenantDocBundle & { mail: TenantDocBundleMail }) | null> {
+): Promise<(TenantDocBundle & { mail: TenantDocBundleMail; sms: TenantDocBundleSms }) | null> {
   const { propertyId } = await requirePropertyAccess()
   const tenant = await prisma.tenant.findFirst({
     where: { id: tenantId, propertyId },
-    select: { name: true, email: true },
+    select: {
+      name: true, email: true,
+      // 문자 받을 번호 — 입주자 문자(getPersonalSmsContext)와 **같은 자를 쓴다**. 거기는 첫
+      // PHONE 연락처를 쓰고 여기만 다른 번호를 고르면 같은 사람에게 두 번호로 문자가 간다.
+      contacts: {
+        where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' },
+        select: { contactValue: true }, take: 1,
+      },
+    },
   })
   if (!tenant) return null
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { name: true },
+  })
 
   const [leases, contractRows, receiptRows, certRows] = await Promise.all([
     prisma.leaseTerm.findMany({
@@ -113,12 +132,18 @@ export async function getTenantDocBundle(
     deposits: receipt('deposit'),
     certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null })),
     now: new Date(),
-  }), tenant.email)
+  }), tenant.email, tenant.contacts[0]?.contactValue ?? null, property?.name ?? '')
 }
 
-/** 규칙 정본이 만든 묶음에 메일 정보만 얹는다 — lib/docBundle 은 발송을 모른다(순수 규칙). */
-function withMail(bundle: TenantDocBundle, email: string | null): TenantDocBundle & { mail: TenantDocBundleMail } {
-  return { ...bundle, mail: { enabled: isMailConfigured(), to: email?.trim() || null } }
+/** 규칙 정본이 만든 묶음에 보낼 곳 정보만 얹는다 — lib/docBundle 은 발송을 모른다(순수 규칙). */
+function withMail(
+  bundle: TenantDocBundle, email: string | null, phone: string | null, propertyName: string,
+): TenantDocBundle & { mail: TenantDocBundleMail; sms: TenantDocBundleSms } {
+  return {
+    ...bundle,
+    mail: { enabled: isMailConfigured(), to: email?.trim() || null },
+    sms: { to: phone?.trim() || null, propertyName },
+  }
 }
 
 /**
@@ -420,4 +445,33 @@ export async function sendTenantDocBundleMail(
   if (outcome.result === 'staging') return { ok: false, error: '테스트 사이트에서는 메일을 보내지 않습니다.' }
   if (outcome.result === 'disabled') return { ok: false, error: '메일 보내기가 켜져 있지 않습니다.' }
   return { ok: false, error: outcome.reason }
+}
+
+/**
+ * 서류 문자 발송 시도 기록 — 1행(kind 'doc').
+ *
+ * 실제 발송은 운영자 폰의 문자앱에서 끝난다. 그래서 이 기록은 '보냈다'가 아니라 '넘겼다'이고,
+ * 형제 셋(unpaid·notice·personal)과 같은 성격이다. kind 는 String 칼럼이라 값만 늘고 DDL 은 없다.
+ */
+export async function logDocSmsAttempt(input: {
+  tenantId: string
+  renderedBody: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const { propertyId } = await requirePropertyAccess()
+    if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    await prisma.smsLog.create({
+      data: {
+        propertyId,
+        tenantId: input.tenantId,
+        renderedBody: input.renderedBody,
+        sentVia: 'manual_sms',
+        kind: 'doc',
+      },
+    })
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '이력 기록에 실패했습니다.' }
+  }
 }
