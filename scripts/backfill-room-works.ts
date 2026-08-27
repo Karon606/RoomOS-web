@@ -32,11 +32,11 @@ const kindsOf = (s: string): string[] => {
 }
 // 시공(공임) 지출인가 — 그 날이 작업일이다.
 //
-// '시공'·'하리'(현장 용어)에 더해, 종류 이름이 **단독으로** 적힌 것도 공임으로 본다.
+// '시공'·'돌출부'(옛 용어 '하리'도 알아듣는다)에 더해, 종류 이름이 **단독으로** 적힌 것도 공임으로 본다.
 // '벽지도배' 14만원이 그렇다 — 자재를 따로 안 사고 한 줄로 적은 도배 공임인데, 종전 규칙이
 // '시공' 글자만 봐서 자재로 분류했고 그 결과 402·409·418호에 "자재 구매일로 기록했습니다"라는
 // **거짓 메모**가 붙었다(날짜는 맞았다). 운영자 확인 — "장판시공으로 되어있는게 장판 시공한 날짜야".
-const isLabor = (s: string): boolean => /시공|하리|벽지도배|도배\+장판/.test(s)
+const isLabor = (s: string): boolean => /시공|돌출부|하리|벽지도배|도배\+장판/.test(s)
 
 async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
