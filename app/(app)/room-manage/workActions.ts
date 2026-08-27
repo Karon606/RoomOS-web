@@ -41,9 +41,22 @@ export type RoomWorkRow = {
   performerName: string | null
   memo: string | null
   /** 이 작업에 붙은 지출의 합. 여러 건이 붙을 수 있다(자재 여러 날 + 시공 하루). */
+  /**
+   * 이 작업의 **시공비**. 자재는 안 센다(운영자 확정 2026-08-27).
+   *
+   * "작업 이력에는 사실 언제 시공할지 미리 계획하고 언제 했는지 등에 대한 이력 관리를
+   *  위한거니까 시공내역만 나오고 그 시공비가 얼마나 들었는지 참고 정도만 알면 될 것 같고…
+   *  이 방에 든 지출에 어차피 시공비와 자재비가 다 나오니까 비용은 그쪽을 참고하면 될 것 같아.
+   *  작업이력에는 세부 자재 비용이 필요하지는 않는듯 해."
+   *
+   * 자재가 작업에 걸려 있는 것 자체는 그대로 둔다(실측 10여 건). 데이터는 살아 있고
+   * 표시만 시공비로 좁힌다 — 나중에 지출 쪽에서 품목별로 가를 때 그 연결이 쓰인다.
+   */
   cost: number
   /** 그중 시공비 — 이번에 새로 나간 돈. */
   laborCost: number
+  /** 그중 시공으로 세는 줄 수 — 여럿이면 왜 그 금액인지 행이 말해야 한다. */
+  laborExpenseCount: number
   /** 걸린 지출 한 줄씩 — 화면이 줄마다 시공/자재 표식을 바꾼다(판정을 글자에서 떼는 자리). */
   linkedExpenses: { id: string; amount: number; label: string; isLabor: boolean; marked: boolean }[]
   /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
@@ -75,8 +88,9 @@ export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
       performerName: r.performerName, memo: r.memo,
-      cost: c.total, laborCost: c.labor, materialCost: c.material,
+      cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
+      laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
         isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
@@ -107,8 +121,9 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: ymd(r.scheduledDate), doneDate: ymd(r.doneDate),
       performer: (r.performer as CleaningPerformer | null) ?? null,
       performerName: r.performerName, memo: r.memo,
-      cost: c.total, laborCost: c.labor, materialCost: c.material,
+      cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
+      laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
         isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
