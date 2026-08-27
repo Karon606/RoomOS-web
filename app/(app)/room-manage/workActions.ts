@@ -21,6 +21,7 @@ import { splitWorkCost } from '@/lib/roomWorkCost'
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
 import { type CleaningPerformer } from './cleaningConstants'
+import { matchesWork } from '@/lib/roomWorkMatch'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 /** 작업 비용이 잡히는 지출 카테고리. 이미 쌓인 도배·장판 87건이 전부 이 값이다(실측 2026-08-25). */
@@ -138,13 +139,29 @@ export async function createRoomWork(input: {
   }
 }
 
+/** 이 작업에 걸릴 만한 미연결 지출 — 되묻기 화면이 그대로 그린다. */
+export type WorkLinkCandidate = { id: string; date: string; amount: number; label: string; vendor: string | null }
+
+/**
+ * 작업 완료.
+ *
+ * **mode 가 이 함수의 핵심이다**(2026-08-27 신설).
+ *   · 'ask'(기본) — 걸릴 만한 미연결 지출이 있으면 **아무것도 쓰지 않고** 후보를 돌려준다.
+ *     운영자가 고른 뒤에 다시 부른다. 자동으로 묶는 분기는 하나도 두지 않는다.
+ *   · 'link' — 그 후보들을 이 작업에 걸고 완료 처리한다. 새 지출을 안 만든다.
+ *   · 'create' — 종전 동작. 시공비로 지출을 새로 한 줄 만든다.
+ *
+ * 왜 필요한가. 종전 판정은 '**이 작업에** 걸린 지출이 있나'만 물어서, 지출을 방에만 걸고
+ * 작업에는 안 걸었으면 0 이라 못 막았다. 413호가 정확히 그 경우였고 같은 돈이 두 벌 적혔다.
+ */
 export async function completeRoomWork(input: {
   id: string
   doneDate: string
   performer: CleaningPerformer
   performerName?: string | null
   cost?: number | null
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  mode?: 'ask' | 'link' | 'create'
+}): Promise<{ ok: true } | { ok: false; error: string } | { ok: false; needsChoice: true; candidates: WorkLinkCandidate[] }> {
   try {
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
@@ -159,6 +176,26 @@ export async function completeRoomWork(input: {
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
     const doneDate = ymdToDbDate(input.doneDate)
     const cost = Math.max(0, Math.round(input.cost ?? 0))
+    const mode = input.mode ?? 'ask'
+
+    // 걸릴 만한 미연결 지출 — 판정은 lib/roomWorkMatch 정본 하나다.
+    // 같은 날 같은 방의 미연결 지출만 끌어와 JS 에서 거른다(공임 판정과 종류 포함은 SQL 로 못 쓴다).
+    const free = await prisma.expense.findMany({
+      where: { propertyId, roomId: cur.roomId, roomWorkId: null, date: doneDate },
+      select: { id: true, date: true, amount: true, itemLabel: true, detail: true, vendor: true, roomId: true, roomWorkId: true },
+    })
+    const matched = free.filter(e => matchesWork(e, { roomId: cur.roomId, kind: cur.kind, doneDate, scheduledDate: null }))
+
+    // 'ask' 는 아무것도 쓰지 않는다. 저장 전에 되묻는 것이 이 갈래의 전부다.
+    if (mode === 'ask' && matched.length > 0) {
+      return {
+        ok: false, needsChoice: true,
+        candidates: matched.map(e => ({
+          id: e.id, date: e.date.toISOString().slice(0, 10), amount: e.amount,
+          label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
+        })),
+      }
+    }
 
     await prisma.$transaction(async tx => {
       await tx.roomWork.update({
@@ -172,6 +209,11 @@ export async function completeRoomWork(input: {
       // 비용 0이면 지출을 만들지 않는다(직접 했으면 나간 돈이 없다). 이미 붙은 지출이 있으면
       // **건드리지 않는다** — 자재를 여러 날 사서 붙여 둔 것이 있을 수 있고, 그 판단은
       // 지출 화면에서 운영자가 한다. 여기서 만드는 것은 이번 완료가 만든 공임 한 줄뿐이다.
+      // 'link' — 이미 적어 둔 지출을 이 작업에 건다. 새로 만들지 않는다.
+      if (mode === 'link' && matched.length > 0) {
+        await tx.expense.updateMany({ where: { id: { in: matched.map(e => e.id) } }, data: { roomWorkId: cur.id } })
+        return
+      }
       if (cost > 0 && cur.expenses.length === 0) {
         await tx.expense.create({
           data: {
@@ -179,8 +221,16 @@ export async function completeRoomWork(input: {
             category: WORK_EXPENSE_CATEGORY,
             roomId: cur.roomId,
             roomWorkId: cur.id,
+            // 품목명을 '도배 시공' 처럼 적는다. 종전에는 detail 만 있고 itemLabel 이 비어서
+            // 공임 판정(lib/roomWorkCost)이 이 줄을 **자재로 셌다** — 그 방 투자금의 공임·자재
+            // 구성이 틀어진다. LABOR_RE 에 맨 '도배'를 더하면 자재까지 공임이 되므로,
+            // 만드는 쪽이 자기 이름을 공임으로 말하게 하는 편이 안전하다.
+            itemLabel: `${cur.kind} 시공`,
             detail: `${fmtRoomNo(cur.room.roomNo, '')} ${cur.kind}${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
+            // 시공비는 무형 서비스라 재고 계산에 들면 안 된다. 형제인 completeCleaning 은
+            // 원래 이 값을 세우는데 여기만 빠져 있었다(실측 2건이 false 였다).
+            excludeFromInventory: true,
           },
         })
       }
@@ -189,6 +239,20 @@ export async function completeRoomWork(input: {
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '완료 처리에 실패했습니다.' }
+  }
+}
+
+/** 지출 연결 적용취소 — roomWorkId 만 되돌린다. 지출 자체는 안 건드린다(§16). */
+export async function unlinkExpensesFromWork(expenseIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    if (expenseIds.length === 0) return { ok: true }
+    await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { roomWorkId: null } })
+    revalidatePath('/room-manage'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
   }
 }
 

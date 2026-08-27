@@ -10,6 +10,7 @@
 // (자재를 여러 날 나눠 사고 시공은 하루다 — Expense.roomWorkId 가 1:N 이다).
 
 import { useState, useTransition } from 'react'
+import { askWorkLink } from '@/components/work/workLinkPrompt'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -19,7 +20,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
-  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork,
+  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork,
   type RoomWorkRow,
 } from '@/app/(app)/room-manage/workActions'
 import {
@@ -207,14 +208,34 @@ export function RoomWorkRowBody({
           ) : null}
           <div className="flex gap-1.5 flex-wrap items-center">
             <RowActionBtn tone="accent" disabled={pending}
-              onClick={() => {
+              onClick={async () => {
+                const args = { id: r.id, doneDate, performer, performerName, cost: Number(cost || 0) }
+                // 먼저 묻는다(mode 기본 'ask'). 걸릴 만한 지출이 있으면 서버가 **아무것도 쓰지 않고**
+                // 후보를 돌려준다 — 자동으로 묶는 분기는 어디에도 없다.
+                const probe = await completeRoomWork(args)
+                let mode: 'link' | 'create' = 'create'
+                if (!probe.ok && 'needsChoice' in probe) {
+                  const pick = await askWorkLink({ roomNo: r.roomNo ?? '', kind: r.kind, candidates: probe.candidates })
+                  if (!pick) return                       // 그만두기 — 아무것도 안 바뀐다(§27.5)
+                  mode = pick
+                } else if (!probe.ok) { pushToast('error', probe.error); return }
+                else { setDoneOpen(false); setPerformerName(''); setCost(''); onChanged(); pushToast('success', '작업 완료됨'); return }
+
+                const linked = mode === 'link' ? probe.candidates.map(c => c.id) : []
                 run(
-                  () => completeRoomWork({ id: r.id, doneDate, performer, performerName, cost: Number(cost || 0) }),
-                  '작업 완료됨',
-                  { label: '적용취소', run: () => { void reopenRoomWork(r.id).then(res => {
+                  async () => {
+                    const res = await completeRoomWork({ ...args, mode })
+                    // mode 가 정해진 재호출이라 needsChoice 는 안 온다 — run() 의 계약에 맞춘다.
+                    return res.ok ? res : { ok: false as const, error: 'error' in res ? res.error : '완료 처리에 실패했습니다.' }
+                  },
+                  mode === 'link' ? '작업 완료됨 · 이미 있던 지출을 걸었습니다' : '작업 완료됨',
+                  { label: '적용취소', run: () => { void (async () => {
+                      // 연결부터 되돌리고 완료를 무른다 — 순서가 반대면 되돌린 작업에 지출이 남는다.
+                      if (linked.length > 0) await unlinkExpensesFromWork(linked)
+                      const res = await reopenRoomWork(r.id)
                       if (res.ok) { pushToast('info', '완료를 취소했습니다'); onChanged() }
                       else pushToast('error', res.error)
-                    }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
+                    })().catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
                 )
                 // 폼을 닫는다. 종전에는 이 줄이 없어 배지가 '완료'로 바뀐 뒤에도 저장 버튼이
                 // 그대로 살아 있었다(운영자 지적 2026-08-27). 형제인 청소 행은 원래 닫는다.
