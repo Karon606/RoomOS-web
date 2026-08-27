@@ -71,6 +71,9 @@ import {
 } from '@/lib/appConfig'
 import { DonutChart } from '@/components/ui/DonutChart'
 import { fmtRoomNo } from '@/lib/roomNo'
+// 지출을 저장한 뒤 작업에 걸지 묻는 자리 — 판정·문답 모두 정본 하나를 쓴다.
+import { findWorkLinkCandidates, linkExpensesToWork, unlinkExpensesFromWork } from '@/app/(app)/room-manage/workActions'
+import { askExpenseWorkLink } from '@/components/work/workLinkPrompt'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -2415,9 +2418,34 @@ export default function FinanceClient({
         pushToast('success', '지출 등록됨')
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
         if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
+        await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
       } finally { release() }
     })
   }
+  /**
+   * 지출을 저장한 **뒤** 작업에 걸지 묻는다 — 저장 트랜잭션 밖이다.
+   *
+   * 왜 뒤인가. addExpense 는 다품목·방별 분배·주문 묶음·배송비·OCR 학습이 얽힌 216줄
+   * 트랜잭션이다. 거기에 판정을 끼우면 저장이 그만큼 위험해진다. 그리고 **저장을 막지 않는다** —
+   * 지출을 적는 것은 언제나 정당하고 작업 연결은 그 다음 문제다.
+   *
+   * 두 저장 경로(등록·수정)가 이 함수 하나를 쓴다. 베끼면 한쪽만 낡는다.
+   */
+  const askLinkAfterExpenseSave = async (dateYmd: string) => {
+    try {
+      const groups = await findWorkLinkCandidates(dateYmd)
+      if (groups.length === 0) return
+      if (!(await askExpenseWorkLink(groups))) return
+      for (const g of groups) await linkExpensesToWork(g.workId, g.candidates.map(c => c.id))
+      router.refresh()
+      pushToast('success', groups.length === 1 ? '작업에 걸었습니다' : `작업 ${groups.length}건에 걸었습니다`, {
+        action: { label: '적용취소', run: () => { void unlinkExpensesFromWork(groups.flatMap(g => g.candidates.map(c => c.id)))
+          .then(() => { pushToast('info', '연결을 취소했습니다'); router.refresh() })
+          .catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
+      })
+    } catch { /* 후보 조회 실패는 저장을 무르지 않는다 — 지출은 이미 저장됐다 */ }
+  }
+
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     // #1·#3 세부항목 필수(품목 없는 서비스·무형 행). 임대료·세금 등 무형 카테고리는 면제.
@@ -2504,6 +2532,7 @@ export default function FinanceClient({
         } : undefined)
         // 항목 신설로 같은 구매처 과거 누락분을 소급 보정한 건이 있으면 안내(0건이면 무표시)
         if (res.backfilled) pushToast('info', `같은 구매처 과거 ${res.backfilled}건에도 사업자등록번호를 채웠습니다`)
+        await askLinkAfterExpenseSave(String(fd.get('date') ?? ''))
       } finally { release() }
     })
   }

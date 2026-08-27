@@ -12,7 +12,7 @@
 //
 // 갈래가 셋이라 확인창(2지)이 아니라 액션 시트(choiceDialog)를 쓴다(§14).
 
-import { choiceDialog } from '@/components/ui/ConfirmDialog'
+import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -42,4 +42,30 @@ export async function askWorkLink(o: {
     altLabel: '새로 만들기',
   })
   return pick === 'confirm' ? 'link' : pick === 'alt' ? 'create' : null
+}
+
+export type WorkLinkGroupView = { workId: string; roomNo: string; kind: string; candidates: WorkLinkCandidateView[] }
+
+/**
+ * 반대 방향 — 지출을 저장한 뒤 "이 작업에 걸까요"를 묻는다.
+ *
+ * 첫 줄이 "지출은 저장했습니다"로 시작한다. 그 말이 없으면 [따로 두기]가 방금 저장한 것을
+ * 되돌리는 것으로 읽힌다(roomBusyPrompt 가 세운 문법 그대로).
+ *
+ * **한 창에 목록으로 낸다.** 방별 분배는 한 번의 저장이 여러 방에 걸쳐 여러 줄을 만드는데
+ * (실측 07:30 한 번이 4개 후보), 창을 네 번 연달아 띄우면 아무거나 눌러 치우게 된다.
+ */
+export async function askExpenseWorkLink(groups: WorkLinkGroupView[]): Promise<boolean> {
+  if (groups.length === 0) return false
+  const lines = groups.map(g => {
+    const sum = g.candidates.reduce((s, c) => s + c.amount, 0)
+    return `${fmtRoomNo(g.roomNo, '')} ${g.kind} · ${fmtWon(sum)}`
+  }).join('\n')
+  return confirmDialog({
+    title: groups.length === 1 ? '이 지출을 작업에 걸까요' : `이 지출을 작업 ${groups.length}건에 걸까요`,
+    message: `지출은 저장했습니다.\n\n${lines}\n\n걸어 두면 그 작업의 금액으로 잡히고, 나중에 완료 처리할 때 같은 돈을 두 번 적지 않습니다.`,
+    level: 'caution',
+    confirmLabel: '걸기',
+    cancelLabel: '따로 두기',
+  })
 }

@@ -20,7 +20,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
-  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork,
+  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork, setExpenseCostKind,
   type RoomWorkRow,
 } from '@/app/(app)/room-manage/workActions'
 import {
@@ -56,6 +56,8 @@ export function RoomWorkRowBody({
   const [cost, setCost] = useState('')
   // 날짜 변경 — 청소 행과 같은 문법(오류신고 2026-08-25, 예정 건에 이 문이 아예 없었다).
   const [reschedOpen, setReschedOpen] = useState(false)
+  // 걸린 지출의 시공/자재 표식 — 대부분 손댈 일이 없어 접어 둔다.
+  const [kindOpen, setKindOpen] = useState(false)
   const [reschedDate, setReschedDate] = useState('')
 
   const run = (
@@ -117,6 +119,34 @@ export function RoomWorkRowBody({
         <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] num">
           시공비 {fmtWon(r.laborCost)} · 자재비 {fmtWon(r.materialCost)}
         </p>
+      )}
+      {/* 걸린 지출을 줄마다 시공/자재로 다시 정한다 — **판정을 글자에서 떼는 자리다**.
+          종전에는 품목 이름으로만 갈랐고, 새 작업 종류가 생기면 그 말을 판정어에 더해야 했다
+          ('실리콘 시공'은 걸리는데 '실리콘'은 자재로 세어졌다). 여기서 한 번 고르면 글자보다 강하다.
+          접어 두는 이유는 대부분의 행에서 손댈 일이 없어서다 — 눌러야 펴진다. */}
+      {r.linkedExpenses.length > 0 && (
+        kindOpen ? (
+          <div className="mt-1 space-y-1">
+            {r.linkedExpenses.map(e => (
+              <div key={e.id} className="flex items-center gap-1.5 text-[0.65625rem]">
+                <span className="min-w-0 flex-1 truncate text-[var(--warm-muted)]">{e.label}</span>
+                <span className="shrink-0 num text-[var(--warm-muted)]">{fmtWon(e.amount)}</span>
+                <RowActionBtn tone={e.isLabor ? 'accent' : 'neutral'} disabled={pending}
+                  onClick={() => run(() => setExpenseCostKind(e.id, e.isLabor ? 'MATERIAL' : 'LABOR'),
+                    e.isLabor ? '자재로 바꿨습니다' : '시공으로 바꿨습니다')}>
+                  {e.isLabor ? '시공' : '자재'}{e.marked ? '' : ' (자동)'}
+                </RowActionBtn>
+              </div>
+            ))}
+            <button type="button" onClick={() => setKindOpen(false)}
+              className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">접기</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setKindOpen(true)}
+            className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
+            걸린 지출 {r.linkedExpenses.length}건 · 시공/자재 정하기
+          </button>
+        )
       )}
 
       {/* 메모는 §11 보조줄. 길이를 모르는 자유 입력이라 칩 줄에 끼우면 줄이 무너진다. */}

@@ -21,19 +21,41 @@
 // 더 나쁜 거짓이다.
 const LABOR_RE = /시공|돌출부|하리|벽지도배|도배\+장판/
 
-export function isLaborItem(label: string | null | undefined, detail?: string | null): boolean {
+/**
+ * 이 지출이 공임(시공·서비스)인가.
+ *
+ * **작업에 걸린 지출은 글자를 안 보고 무조건 공임이다**(운영자 확정 2026-08-27).
+ *   "작업 캘린더로 들어오는건 말그대로 작업이니까 모두 시공, 서비스로 보면 돼. (…)
+ *    지출을 통해서 들어온다면 거기에 선택하면 이건 자재가 아니라 시공, 서비스인거야.
+ *    이러면 명확하지? 용어에 상관없이."
+ *
+ * 이 축이 위 글자 판정의 취약점을 없앤다. 종전에는 새 작업 종류가 생길 때마다 그 종류의
+ * 말을 LABOR_RE 에 더해야 했다 — '실리콘 시공'은 걸리는데 '실리콘'·'실리콘 작업'은 자재로
+ * 세어졌고, 종류가 자유 입력이라 말을 다 맞힐 수가 없었다. 작업에 건다는 것은 운영자가
+ * "이건 시공이다"라고 선언한 것이라, 그 선언이 글자보다 강한 근거다.
+ *
+ * 글자 판정은 **작업에 안 걸린 지출**에만 남는다(지출만 적고 작업을 안 만든 경우).
+ */
+export function isLaborItem(
+  label: string | null | undefined,
+  detail?: string | null,
+  costKind?: string | null,
+): boolean {
+  // 운영자가 표식을 세웠으면 글자를 안 본다. 이것이 '용어에 상관없이'의 실체다.
+  if (costKind === 'LABOR') return true
+  if (costKind === 'MATERIAL') return false
   return LABOR_RE.test(`${label ?? ''} ${detail ?? ''}`)
 }
 
 export type WorkCostSplit = { labor: number; material: number; total: number }
 
-/** 작업에 걸린 지출들을 시공비·자재비로 가른다. */
+/** 작업에 걸린 지출들을 시공비·자재비로 가른다. 표식(costKind)이 있으면 그것이 글자보다 강하다. */
 export function splitWorkCost(
-  expenses: readonly { amount: number; itemLabel?: string | null; detail?: string | null }[],
+  expenses: readonly { amount: number; itemLabel?: string | null; detail?: string | null; costKind?: string | null }[],
 ): WorkCostSplit {
   let labor = 0, material = 0
   for (const e of expenses) {
-    if (isLaborItem(e.itemLabel, e.detail)) labor += e.amount
+    if (isLaborItem(e.itemLabel, e.detail, e.costKind)) labor += e.amount
     else material += e.amount
   }
   return { labor, material, total: labor + material }

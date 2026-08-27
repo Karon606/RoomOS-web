@@ -16,7 +16,7 @@ import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { ymdToDbDate } from '@/lib/kstDate'
-import { splitWorkCost } from '@/lib/roomWorkCost'
+import { splitWorkCost, isLaborItem } from '@/lib/roomWorkCost'
 // 담당 어휘(직접·업체·제3자)는 청소와 같은 말이라 정본을 함께 쓴다. 사본을 만들면 한쪽만
 // 늘었을 때 두 화면이 다른 목록을 낸다. 이름이 CLEANING_ 으로 시작하는 것은 그 상수가
 // 청소에서 먼저 생겼기 때문이고, 옮기는 것은 이번 작업과 접점이 없어 하지 않는다.
@@ -44,6 +44,8 @@ export type RoomWorkRow = {
   cost: number
   /** 그중 시공비 — 이번에 새로 나간 돈. */
   laborCost: number
+  /** 걸린 지출 한 줄씩 — 화면이 줄마다 시공/자재 표식을 바꾼다(판정을 글자에서 떼는 자리). */
+  linkedExpenses: { id: string; amount: number; label: string; isLabor: boolean; marked: boolean }[]
   /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
   materialCost: number
   expenseCount: number
@@ -62,7 +64,7 @@ export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { amount: true, itemLabel: true, detail: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true } },
     },
   })
   return rows.map(r => {
@@ -75,6 +77,10 @@ export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
       performerName: r.performerName, memo: r.memo,
       cost: c.total, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
+      linkedExpenses: r.expenses.map(e => ({
+        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
+        isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
+      })),
     }
   })
 }
@@ -90,7 +96,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { amount: true, itemLabel: true, detail: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true } },
     },
   })
   return rows.map(r => {
@@ -103,6 +109,10 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       performerName: r.performerName, memo: r.memo,
       cost: c.total, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
+      linkedExpenses: r.expenses.map(e => ({
+        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
+        isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
+      })),
     }
   })
 }
@@ -211,7 +221,8 @@ export async function completeRoomWork(input: {
       // 지출 화면에서 운영자가 한다. 여기서 만드는 것은 이번 완료가 만든 공임 한 줄뿐이다.
       // 'link' — 이미 적어 둔 지출을 이 작업에 건다. 새로 만들지 않는다.
       if (mode === 'link' && matched.length > 0) {
-        await tx.expense.updateMany({ where: { id: { in: matched.map(e => e.id) } }, data: { roomWorkId: cur.id } })
+        // 후보 판정이 공임만 고르므로 표식도 시공이다. 자재를 걸고 싶으면 작업 행에서 바꾼다.
+        await tx.expense.updateMany({ where: { id: { in: matched.map(e => e.id) } }, data: { roomWorkId: cur.id, costKind: 'LABOR' } })
         return
       }
       if (cost > 0 && cur.expenses.length === 0) {
@@ -226,6 +237,8 @@ export async function completeRoomWork(input: {
             // 구성이 틀어진다. LABOR_RE 에 맨 '도배'를 더하면 자재까지 공임이 되므로,
             // 만드는 쪽이 자기 이름을 공임으로 말하게 하는 편이 안전하다.
             itemLabel: `${cur.kind} 시공`,
+            // 표식으로도 못 박는다 — 글자 판정에 기대지 않는다(운영자 확정 2026-08-27).
+            costKind: 'LABOR',
             detail: `${fmtRoomNo(cur.room.roomNo, '')} ${cur.kind}${input.performerName ? ` · ${input.performerName}` : ''}`,
             vendor: input.performerName?.trim() || null,
             // 시공비는 무형 서비스라 재고 계산에 들면 안 된다. 형제인 completeCleaning 은
@@ -239,6 +252,85 @@ export async function completeRoomWork(input: {
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '완료 처리에 실패했습니다.' }
+  }
+}
+
+/** 걸릴 만한 지출이 있는 작업 한 묶음 — 지출 저장 뒤 되묻기가 그대로 그린다. */
+export type WorkLinkGroup = { workId: string; roomNo: string; kind: string; candidates: WorkLinkCandidate[] }
+
+/**
+ * 그날 저장한 지출 중 작업에 걸릴 만한 것을 찾는다 — 지출 저장 **뒤에** 부른다.
+ *
+ * **addExpense 안에 넣지 않는 이유.** 그 함수는 216줄에 다품목·방별 분배·주문 묶음·배송비·
+ * OCR 학습이 얽힌 트랜잭션이다. 거기에 판정을 끼워 넣으면 저장이 그만큼 위험해진다.
+ * 지출을 적는 것은 언제나 정당하고 작업 연결은 그 다음 문제라, 저장을 막지도 않는다.
+ *
+ * 방별 분배는 한 번의 저장이 **여러 방**에 걸쳐 여러 줄을 만든다(실측 07:30 한 번이 4개 후보).
+ * 그래서 작업 단위로 묶어 돌려준다 — 화면이 창을 네 번 띄우지 않게.
+ */
+export async function findWorkLinkCandidates(dateYmd: string): Promise<WorkLinkGroup[]> {
+  await requireEdit()
+  const { propertyId } = await requirePropertyAccess()
+  const date = ymdToDbDate(dateYmd)
+  if (Number.isNaN(date.getTime())) return []
+  const [works, free] = await Promise.all([
+    prisma.roomWork.findMany({
+      where: { propertyId, deletedAt: null, OR: [{ doneDate: date }, { scheduledDate: date }] },
+      select: { id: true, roomId: true, kind: true, doneDate: true, scheduledDate: true, room: { select: { roomNo: true } } },
+    }),
+    prisma.expense.findMany({
+      where: { propertyId, roomWorkId: null, date },
+      select: { id: true, date: true, amount: true, itemLabel: true, detail: true, vendor: true, roomId: true, roomWorkId: true },
+    }),
+  ])
+  const out: WorkLinkGroup[] = []
+  for (const w of works) {
+    const hit = free.filter(e => matchesWork(e, w))
+    if (hit.length === 0) continue
+    out.push({
+      workId: w.id, roomNo: w.room.roomNo, kind: w.kind,
+      candidates: hit.map(e => ({
+        id: e.id, date: e.date.toISOString().slice(0, 10), amount: e.amount,
+        label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
+      })),
+    })
+  }
+  return out
+}
+
+/** 고른 지출을 그 작업에 건다 — 완료 처리는 하지 않는다(상태는 운영자가 따로 정한다). */
+export async function linkExpensesToWork(workId: string, expenseIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const w = await prisma.roomWork.findFirst({ where: { id: workId, propertyId, deletedAt: null }, select: { id: true } })
+    if (!w) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
+    if (expenseIds.length === 0) return { ok: true }
+    await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId, roomWorkId: null }, data: { roomWorkId: workId, costKind: 'LABOR' } })
+    revalidatePath('/room-manage'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '연결에 실패했습니다.' }
+  }
+}
+
+/**
+ * 걸린 지출의 시공/자재 표식을 바꾼다 — **판정을 글자에서 떼는 자리다**.
+ *
+ * 종전에는 품목 이름으로만 갈랐다. 새 작업 종류가 생길 때마다 그 종류의 말을 판정어에
+ * 더해야 했고, 자유 입력이라 다 맞힐 수가 없었다('실리콘 시공'은 걸리는데 '실리콘'은 자재).
+ * 운영자가 여기서 한 번 고르면 그 답이 글자보다 강하다.
+ */
+export async function setExpenseCostKind(expenseId: string, costKind: 'LABOR' | 'MATERIAL'): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const r = await prisma.expense.updateMany({ where: { id: expenseId, propertyId }, data: { costKind } })
+    if (r.count === 0) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+    revalidatePath('/room-manage'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
   }
 }
 
