@@ -18,7 +18,8 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
+import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
@@ -54,6 +55,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
   /** 부모(PaymentBody)에서 수납 등록 등으로 값이 바뀌면 증가 → 리스트 재fetch 트리거. */
   reloadSignal?: number
 }) {
+  // KST 이번 달 — 미래 귀속 판정의 기준. new Date() 로 뽑으면 매월 1일 00~09시에 서버·기기가
+  // 다른 달을 봐서 같은 줄이 한쪽에선 고쳐지고 한쪽에선 안 고쳐진다(MonthSelector 와 같은 이유).
+  const thisMonth = kstMonthStr()
+  const editableHere = (recordMonth: string) => canEditPaymentHere(recordMonth, targetMonth, thisMonth)
   const [records, setRecords] = useState<Record[] | null>(null)
   const [acqDate, setAcqDate] = useState<Date | null>(null)
   const [tmOptions, setTmOptions] = useState<TmOption[]>([])
@@ -385,11 +390,19 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">보증금은 맨 위 보증금 항목에서 수정합니다.</span>
               )}
               {/* 편집 접점은 그 record 의 귀속월 화면 하나다. 창을 넓혔다고 편집까지 넓히면
-                  지난달 매출이 어디서든 바뀔 수 있게 된다(영향 월 고지가 아직 없다). */}
-              {canEdit && !cashReceiptOnly && !p.isDeposit && p.targetMonth !== targetMonth && (
+                  지난달 매출이 어디서든 바뀔 수 있게 된다(영향 월 고지가 아직 없다).
+
+                  **미래 귀속만 예외다**(운영자 확정 2026-08-27). 선납은 이 사업의 원칙이라
+                  9월 귀속 건이 8월에 계속 생기는데, 종전에는 그 건을 고칠 길이 아예 없었다 —
+                  버튼은 9월 화면에만 서고 재무 화면은 미래 월로 못 간다(MonthSelector
+                  allowFuture=false). 두 잠금이 맞물려 막다른 길이 됐다(406호 실기).
+                  미래 귀속은 마감된 적도, 신고에 실린 적도, 과거 어느 합계에 들어간 적도
+                  없다 — 위 걱정('지난달 매출')이 성립하지 않으므로 입금일 화면에서 바로 다룬다.
+                  미래 월 화면을 여는 쪽이 아니라 이쪽인 이유는 접점이 작아서다. */}
+              {canEdit && !cashReceiptOnly && !p.isDeposit && !editableHere(p.targetMonth) && (
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">위 조회 월을 {Number(p.targetMonth.slice(5))}월로 바꾸면 수정할 수 있습니다.</span>
               )}
-              {canEdit && !cashReceiptOnly && !p.isDeposit && p.targetMonth === targetMonth && (
+              {canEdit && !cashReceiptOnly && !p.isDeposit && editableHere(p.targetMonth) && (
                 <div className="flex gap-1.5">
                   <RowActionBtn tone="neutral" onClick={() => startEdit(p)}>수정</RowActionBtn>
                   <RowActionBtn tone="danger" onClick={() => handleDelete(p)}>삭제</RowActionBtn>
