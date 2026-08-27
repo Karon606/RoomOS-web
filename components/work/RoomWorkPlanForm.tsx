@@ -20,6 +20,8 @@ import {
   CLEANING_PERFORMER_LABEL, type CleaningPerformer,
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { getRecentCleaningPerformers } from '@/app/(app)/room-manage/cleaningActions'
 
 // 형제 폼과 같은 링. §09 'focus-visible 링 전 컴포넌트 필수'.
 const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]'
@@ -45,11 +47,17 @@ export function RoomWorkPlanForm({
   const [kind, setKind] = useState('')
   const [pickedRoom, setPickedRoom] = useState('')
   const [scheduled, setScheduled] = useState(kstYmdStr())
+  // 맡길 업체·사람 — 담당을 '업체'로 골라도 어느 업체인지 적을 자리가 없었다(운영자 지적
+  // 2026-08-28 — 메모 칸에 업체명을 적고 있었다). 목록은 청소·작업 이력에서 함께 뽑는다.
+  const [performerName, setPerformerName] = useState('')
+  const [recentPerformers, setRecentPerformers] = useState<string[]>([])
   const [performer, setPerformer] = useState<CleaningPerformer | ''>('')
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
 
   useEffect(() => { getWorkKindOptions().then(setKinds).catch(console.error) }, [])
+  // 추천 목록은 실패를 삼킨다 — 편의값 하나 때문에 등록 폼이 안 서면 안 된다.
+  useEffect(() => { getRecentCleaningPerformers().then(setRecentPerformers).catch(() => {}) }, [])
 
   const targetRoomId = roomId ?? pickedRoom
   const inputCls = dense
@@ -71,7 +79,7 @@ export function RoomWorkPlanForm({
       try {
         const res = await createRoomWork({
           roomId: targetRoomId, kind, scheduledDate: scheduled,
-          performer: performer || null, memo,
+          performer: performer || null, performerName, memo,
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '작업 예정 등록됨')
@@ -133,6 +141,23 @@ export function RoomWorkPlanForm({
             </button>
           ))}
         </div>
+        {/* 맡긴 경우에만 이름을 묻는다 — 직접 하거나 미정이면 적을 것이 없다.
+            이력이 있으면 그 목록에서 고른다. 같은 업체를 매번 손으로 적으면 오타 한 번에
+            한 업체가 두 이름으로 갈린다('글로벌 코킹' 대 '글로벌코킹'이 실제로 그랬다). */}
+        {performer && performer !== 'SELF' && (
+          <div className="mt-1.5">
+            {recentPerformers.length > 0 ? (
+              <CategorySelect
+                value={performerName} onChange={setPerformerName}
+                options={recentPerformers} emptyLabel="업체·사람 이름 (선택)"
+                placeholder="업체·사람 이름" closeIconSize={dense ? 12 : 14}
+                className={inputCls} />
+            ) : (
+              <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
+                placeholder="업체·사람 이름 (선택)" className={inputCls} />
+            )}
+          </div>
+        )}
       </div>
 
       <div className={dense ? '' : 'space-y-1.5'}>

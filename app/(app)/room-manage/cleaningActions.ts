@@ -169,6 +169,8 @@ export async function createCleaning(input: {
   reason: CleaningReason
   scheduledDate?: string | null
   plannedPerformer?: CleaningPerformer | null
+  /** 맡길 업체·사람 이름 — 형제 작업 등록과 같은 칸이다. */
+  performerName?: string | null
   leaseTermId?: string | null
   memo?: string | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
@@ -184,6 +186,7 @@ export async function createCleaning(input: {
         reason: input.reason,
         scheduledDate: input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null,
         plannedPerformer: input.plannedPerformer ?? null,
+        performerName: input.plannedPerformer && input.plannedPerformer !== 'SELF' ? (input.performerName?.trim() || null) : null,
         memo: input.memo?.trim() || null,
       },
       select: { id: true },

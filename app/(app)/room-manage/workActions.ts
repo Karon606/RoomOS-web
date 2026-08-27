@@ -152,6 +152,11 @@ export async function createRoomWork(input: {
   kind: string
   scheduledDate?: string | null
   performer?: CleaningPerformer | null
+  /**
+   * 맡길 업체·사람 이름. 담당을 '업체'로 골라도 어느 업체인지 적을 자리가 없었다
+   * (운영자 지적 2026-08-28 — 메모 칸에 업체명을 적고 있었다).
+   */
+  performerName?: string | null
   memo?: string | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
@@ -168,6 +173,8 @@ export async function createRoomWork(input: {
         kind,
         scheduledDate: input.scheduledDate ? ymdToDbDate(input.scheduledDate) : null,
         performer: input.performer ?? null,
+        // 담당이 '직접'이거나 미정이면 이름을 안 남긴다 — 안 보이는 값이 저장되면 안 된다.
+        performerName: input.performer && input.performer !== 'SELF' ? (input.performerName?.trim() || null) : null,
         memo: input.memo?.trim() || null,
       },
       select: { id: true },

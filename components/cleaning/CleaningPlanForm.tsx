@@ -6,17 +6,18 @@
 // 화면마다 다른 것을 묻는다. 다른 것은 둘뿐이다 — 목록에서는 어느 방인지 먼저 고르고(방 상세는
 // 이미 그 방이다), 위젯 안에서는 칸을 촘촘하게 쓴다(dense).
 
-import { useId, useState, useTransition } from 'react'
+import { useEffect, useId, useState, useTransition } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
-import { createCleaning } from '@/app/(app)/room-manage/cleaningActions'
+import { createCleaning, getRecentCleaningPerformers } from '@/app/(app)/room-manage/cleaningActions'
 import {
   CLEANING_PERFORMER_LABEL, CLEANING_REASON_LABEL,
   type CleaningPerformer, type CleaningReason,
 } from '@/app/(app)/room-manage/cleaningConstants'
 import { fmtRoomNo } from '@/lib/roomNo'
+import CategorySelect from '@/components/ui/CategorySelect'
 
 // 배타 선택 칩의 포커스 링 — §09 'focus-visible 링 전 컴포넌트 필수'. 이 파일이 다른 자리에서
 // 이미 쓰던 문법을 상수로 올려 세 자리가 같은 링을 쓰게 한다.
@@ -46,9 +47,14 @@ export function CleaningPlanForm({
   // 일**을 적는 자리다. 계획 단계에서 기본값을 박으면 아직 안 정한 것이 '업체로 정함'으로
   // 저장되고, 그 거짓이 캘린더 요약 줄에 그대로 선다.
   const [plannedPerformer, setPlannedPerformer] = useState<CleaningPerformer | ''>('')
+  // 맡길 업체·사람 — 형제 작업 등록 폼과 같은 칸이다(운영자 지적 2026-08-28).
+  const [performerName, setPerformerName] = useState('')
+  const [recentPerformers, setRecentPerformers] = useState<string[]>([])
   // 사유 메모. '기타'를 고르면 라벨만으로는 무슨 청소인지 알 수 없어 설명할 자리가 필요하다.
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
+  // 추천 목록은 실패를 삼킨다 — 편의값 하나 때문에 등록 폼이 안 서면 안 된다.
+  useEffect(() => { getRecentCleaningPerformers().then(setRecentPerformers).catch(() => {}) }, [])
 
   const targetRoomId = roomId ?? pickedRoom
   const inputCls = dense
@@ -75,7 +81,7 @@ export function CleaningPlanForm({
       try {
         const res = await createCleaning({
           roomId: targetRoomId, reason, scheduledDate: scheduled,
-          plannedPerformer: plannedPerformer || null, memo,
+          plannedPerformer: plannedPerformer || null, performerName, memo,
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '청소 예정 등록됨')
@@ -147,6 +153,21 @@ export function CleaningPlanForm({
             </button>
           ))}
         </div>
+        {/* 맡긴 경우에만 이름을 묻는다 — 형제 작업 등록 폼과 같은 규칙·같은 컨트롤이다. */}
+        {plannedPerformer && plannedPerformer !== 'SELF' && (
+          <div className="mt-1.5">
+            {recentPerformers.length > 0 ? (
+              <CategorySelect
+                value={performerName} onChange={setPerformerName}
+                options={recentPerformers} emptyLabel="업체·사람 이름 (선택)"
+                placeholder="업체·사람 이름" closeIconSize={dense ? 12 : 14}
+                className={inputCls} />
+            ) : (
+              <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
+                placeholder="업체·사람 이름 (선택)" className={inputCls} />
+            )}
+          </div>
+        )}
       </div>
 
       {/* 사유 메모 — '기타'는 라벨만으로 뜻이 안 서고, 나머지 사유도 "왜 지금" 이 남아야 나중에 목록을 읽을 수 있다. */}
