@@ -366,6 +366,39 @@ export async function rescheduleCleaning(input: { id: string; date: string }): P
   }
 }
 
+/**
+ * 청소 사유 변경 — 잘못 고른 사유를 고친다.
+ *
+ * 왜 필요한가. 사유는 만들 때만 받고 그 뒤로는 못 바꿨다. 8/17 청소를 '공사·도배 후'로
+ * 만들어 뒀는데 실은 '퇴실 후'였고, 고칠 길이 없어 지우고 다시 만드는 수밖에 없었다.
+ * 그러면 **그 청소에 걸린 지출 연결이 끊긴다**(운영자 지적 2026-08-27).
+ *
+ * 사유는 회계에 관여한다. CHECKOUT 일 때만 '받아둔 청소비로 부담'이 성립하고(그 외에는
+ * 귀속시킬 퇴실 계약이 없다), 그 표식은 completeCleaning 이 남긴다. 그래서 **부담 표식이
+ * 붙은 건은 CHECKOUT 밖으로 못 나간다** — 나가면 없는 퇴실 건의 청소비에서 냈다는 기록이
+ * 남는다. 그 경우 운영자가 먼저 완료를 되돌려 표식을 걷어야 한다.
+ */
+export async function changeCleaningReason(input: { id: string; reason: CleaningReason }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const cur = await prisma.roomCleaning.findFirst({
+      where: { id: input.id, propertyId, deletedAt: null },
+      select: { id: true, reason: true, fromCleaningFund: true },
+    })
+    if (!cur) return { ok: false, error: '청소 기록을 찾을 수 없습니다.' }
+    if (cur.reason === input.reason) return { ok: true }
+    if (cur.fromCleaningFund && input.reason !== 'CHECKOUT') {
+      return { ok: false, error: '받아둔 청소비로 부담한 건입니다. 완료를 먼저 적용취소해 그 표식을 걷은 뒤 사유를 바꿔 주세요.' }
+    }
+    await prisma.roomCleaning.update({ where: { id: input.id }, data: { reason: input.reason } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
+  }
+}
+
 /** 안 하기로 함. 목록에서 지우지 않고 상태로 남긴다 — 지우면 왜 안 했는지가 사라진다. */
 export async function skipCleaning(id: string, memo?: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

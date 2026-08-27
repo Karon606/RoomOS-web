@@ -50,7 +50,9 @@ export function RoomWorkRowBody({
   const [doneDate, setDoneDate] = useState(kstYmdStr())
   const [performer, setPerformer] = useState<CleaningPerformer>('VENDOR')
   const [performerName, setPerformerName] = useState('')
-  const [cost, setCost] = useState(0)
+  // 빈 문자열이다. 숫자 0 으로 두면 칸에 '0' 이 찍혀 뒤에 이어 친 값이 '0140000' 이 된다
+  // (운영자 지적 2026-08-27). 형제인 청소 행이 이미 이 문법이다 — 0 은 placeholder 로만 보인다.
+  const [cost, setCost] = useState('')
   // 날짜 변경 — 청소 행과 같은 문법(오류신고 2026-08-25, 예정 건에 이 문이 아예 없었다).
   const [reschedOpen, setReschedOpen] = useState(false)
   const [reschedDate, setReschedDate] = useState('')
@@ -185,28 +187,39 @@ export function RoomWorkRowBody({
               이 자리는 촘촘한 행이라 형제가 쓰는 문법을 그대로 쓴다. */}
           <label className="flex items-center gap-2 text-xs text-[var(--ink-s)]">
             시공비
-            <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(Number(e.target.value) || 0)}
+            <input type="number" inputMode="numeric" value={cost} onChange={e => setCost(e.target.value)}
               placeholder="0" min={0}
               className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs num" />
             원
           </label>
           {r.expenseCount > 0 ? (
+            /* 금액은 지출 쪽이 정본이라 여기서 못 고친다. 그런데 종전에는 "지출 화면에서
+               고칩니다"라고만 하고 **거기까지 가는 길이 없었다**(운영자 지적 2026-08-27).
+               위 '이 방에 든 지출' 줄도 눌리지 않는다. 그 달 지출 화면으로 데려다준다. */
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-              이미 지출 {r.expenseCount}건이 걸려 있어 비용을 넣어도 새로 만들지 않습니다. 금액은 지출 화면에서 고칩니다.
+              이미 지출 {r.expenseCount}건이 걸려 있어 비용을 넣어도 새로 만들지 않습니다. 금액은 지출 화면에서 고칩니다.{' '}
+              <button type="button"
+                onClick={() => { window.location.assign(`/finance?month=${(r.doneDate ?? r.scheduledDate ?? kstYmdStr()).slice(0, 7)}`) }}
+                className="underline text-[var(--coral)] font-medium">지출 화면 열기</button>
             </p>
-          ) : cost > 0 ? (
+          ) : Number(cost || 0) > 0 ? (
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">지출 한 줄이 수선유지비로 기록되고 이 작업에 걸립니다. 이미 사둔 자재값은 넣지 마세요. 살 때 이미 지출로 잡혔습니다.</p>
           ) : null}
           <div className="flex gap-1.5 flex-wrap items-center">
             <RowActionBtn tone="accent" disabled={pending}
-              onClick={() => run(
-                () => completeRoomWork({ id: r.id, doneDate, performer, performerName, cost }),
-                '작업 완료됨',
-                { label: '적용취소', run: () => { void reopenRoomWork(r.id).then(res => {
-                    if (res.ok) { pushToast('info', '완료를 취소했습니다'); onChanged() }
-                    else pushToast('error', res.error)
-                  }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
-              )}>
+              onClick={() => {
+                run(
+                  () => completeRoomWork({ id: r.id, doneDate, performer, performerName, cost: Number(cost || 0) }),
+                  '작업 완료됨',
+                  { label: '적용취소', run: () => { void reopenRoomWork(r.id).then(res => {
+                      if (res.ok) { pushToast('info', '완료를 취소했습니다'); onChanged() }
+                      else pushToast('error', res.error)
+                    }).catch(() => pushToast('error', '처리 중 통신 오류가 발생했습니다')) } },
+                )
+                // 폼을 닫는다. 종전에는 이 줄이 없어 배지가 '완료'로 바뀐 뒤에도 저장 버튼이
+                // 그대로 살아 있었다(운영자 지적 2026-08-27). 형제인 청소 행은 원래 닫는다.
+                setDoneOpen(false); setPerformerName(''); setCost('')
+              }}>
               저장
             </RowActionBtn>
             <RowActionBtn onClick={() => setDoneOpen(false)}>취소</RowActionBtn>
