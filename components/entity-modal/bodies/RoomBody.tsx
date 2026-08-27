@@ -63,24 +63,30 @@ export function RoomBody({ roomId, month, onApplyScheduledNow, rooms, onSelectRo
       )}
       {/* 종속 안내 — '딸림' 관계를 스키마가 아직 모르므로 아는 사실만 적는다: 같은 사람의 추가 계약이다. */}
       {subLeaseNote && <p className="mb-2.5 text-xs text-[var(--warm-muted)]">{subLeaseNote}</p>}
-      <PhotoStrip photos={room.photos} />
-      <RoomBasicInfo room={room} onApplyScheduledNow={onApplyScheduledNow} />
-      <div className="mt-2.5" />
-      {/* 기본정보 바로 다음이 거주 이력 — 없어진 '예약자' 줄의 자리를 이 위젯이 받았다
-          (운영자 지시 2026-08-11). 방을 열고 가장 먼저 묻는 것이 "지금 누가 살고 다음은 누구인가" 다. */}
-      <RoomStayHistory roomId={roomId} />
-      <div className="mt-2.5" />
-      <RoomSpatialInfo room={room} />
-      <div className="mt-2.5" />
-      <MemoSection memo={room.memo} />
-      <div className="mt-2.5" />
-      <RoomExpenses roomId={roomId} />
-      <div className="mt-2.5" />
-      {/* 청소 이력은 지출 다음에 둔다 — 청소는 곧 돈이 나가는 일이라 지출과 붙는 편이 읽힌다.
-          거주 이력과 붙어 있던 종전 순서(신고 b21e4e98)는 그 위젯이 상단으로 올라가며 풀렸다. */}
-      <RoomCleaningPanel roomId={roomId} />
-      <div className="mt-2.5" />
-      <RoomRequests roomId={roomId} />
+      {/* 방을 열고 묻는 순서대로 세운다(운영자 지적 2026-08-27 — "정돈된 느낌이 아니야").
+          어떻게 생겼나(사진) -> 지금 쓸 수 있나(현재 상태) -> 다음은 누구인가(거주 이력)
+          -> 어떤 방이고 얼마인가(방 정보) -> 무슨 일이 있었나(메모·지출·작업·요청).
+
+          **2026-08-11 지시("기본정보 바로 다음이 거주 이력")는 그대로 지켜진다.** 그때의
+          '기본정보'가 지금 '현재 상태'이고, 거주 이력은 그 바로 다음이다. 오히려 위로 올라갔다 —
+          종전 상단 블록이 조건부 줄 넷 때문에 방마다 3~9줄로 흔들렸는데 이제 최대 셋이다.
+
+          정돈이 안 돼 보이던 진짜 원인은 순서가 아니라 **제목이 없던 것**이다. Section 은
+          저장소에서 13번 쓰이는데 전부 고객 면이고 호실 면은 0번이었다. 제목 없는 목록 사이에
+          제목 달린 카드가 끼어 있어 층·창문이 어느 덩어리 소속인지 화면이 답을 못 했다.
+
+          간격도 형제 면과 같은 space-y-5 로 맞춘다(수제 mt-2.5 스페이서 일곱을 걷었다). */}
+      <div className="space-y-5">
+        <PhotoStrip photos={room.photos} />
+        <RoomBasicInfo room={room} />
+        <RoomStayHistory roomId={roomId} />
+        <RoomSpatialInfo room={room} onApplyScheduledNow={onApplyScheduledNow} />
+        <MemoSection memo={room.memo} />
+        <RoomExpenses roomId={roomId} />
+        {/* 작업 이력은 지출 다음에 둔다 — 작업은 곧 돈이 나가는 일이라 지출과 붙는 편이 읽힌다. */}
+        <RoomCleaningPanel roomId={roomId} />
+        <RoomRequests roomId={roomId} />
+      </div>
     </>
   )
 }

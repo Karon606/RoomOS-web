@@ -22,7 +22,7 @@ export function RoomExpenses({ roomId }: { roomId: string }) {
   return (
     <section className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5">
       <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-[var(--warm-dark)]">이 방에 든 지출</span>
+        <span className="text-xs font-semibold text-[var(--warm-dark)]">지출 내역</span>
         <span className="text-xs">
           <strong className="text-[var(--coral)]">{won(data.total)}</strong>
           <span className="text-[var(--warm-muted)] inline-flex items-center gap-1"> · {data.items.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></span>

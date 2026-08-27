@@ -37,6 +37,16 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   const [works, setWorks] = useState<RoomWorkRow[] | null>(null)
   // 무엇을 등록할지 — null 이면 닫힘. 청소와 그 밖의 작업은 받는 칸이 달라 폼이 갈린다.
   const [adding, setAdding] = useState<null | 'cleaning' | 'work'>(null)
+  // 접힘 — 형제 카드(지출 내역·요청 내역)와 같은 A형이다. 운영자 지적 2026-08-27 —
+  // "작업이력은 그게 없어서 너무 길어보여. 통일감있게 수정 필요."
+  //
+  // **상태를 기억하지 않는다.** 이 저장소의 접힘 열다섯 곳 중 기억하는 곳이 하나도 없고,
+  // 기억하면 "방마다 따로인가 전 방 공통인가"라는 답 없는 물음이 따라온다.
+  //
+  // 대신 규칙으로 연다 — **예정이 남아 있으면 펴진다.** 작업 예정은 호실 목록 배지에도 안 떠서
+  // (§11 최대 2개를 이미 넘겼다) 이 위젯 말고는 앱 어디에도 안 뜬다. 접어서 숨기면 그 사실이
+  // 앱에서 사라진다. 손으로 접거나 편 것은 그 세션 동안 규칙보다 강하다.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
   // 최근에 맡긴 업체·사람 — 완료 폼 이름 칸 선택지. 없는 영업장은 손으로 적는다.
   const [recentPerformers, setRecentPerformers] = useState<string[]>([])
 
@@ -61,6 +71,12 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
 
   const open = rows?.find(r => r.status === 'PLANNED') ?? null
   const openWork = works?.find(w => w.status === 'PLANNED') ?? null
+  // 접힘 판정 — 예정이 하나라도 있으면 펴진다. 손으로 접거나 편 것이 규칙보다 강하다.
+  // 로딩 중에는 예정 수를 모르므로 접힘으로 열었다가 데이터가 오면 펴진다(reload 가 돌아도
+  // userOpen 은 안 지운다 — 그러면 완료 처리 한 번에 운영자가 접어 둔 것이 다시 펴진다).
+  const plannedCount = (rows?.filter(r => r.status === 'PLANNED').length ?? 0)
+    + (works?.filter(w => w.status === 'PLANNED').length ?? 0)
+  const panelOpen = userOpen ?? plannedCount > 0
 
   // 두 표를 **한 목록**으로 세운다. 정렬 축은 그 행이 화면에서 말하는 날짜다 — 완료 건은 완료일,
   // 예정 건은 예정일. 날짜가 없는 행(예정일 미정)은 맨 뒤로 민다. 날짜가 같으면 청소를 먼저 둔다
@@ -91,19 +107,37 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
     .filter((f): f is CleaningFundLease => !!f && f.fundedExpenseTotal > 0)
 
   return (
-    <div className="rounded-xl p-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">작업 이력</h3>
+    <section className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5">
+      {/* 껍데기·제목 크기를 형제 카드(지출 내역·요청 내역)와 맞춘다. 종전에는 rounded-xl p-3 에
+          인라인 style 이고 제목이 text-sm 이라, 셋이 세로로 붙어 있을 때 넷째만 살짝 크고
+          두툼했다. 토큰을 인라인 style 로 쓰는 것도 이 폴더에서 여기뿐이라 다크 모드 회귀
+          위험이 있었다.
+
+          **토글과 등록 버튼은 형제다.** 버튼 안에 버튼은 HTML 상 무효이고 hydration 경고가 난다. */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button type="button" onClick={() => setUserOpen(!panelOpen)}
+          className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left">
+          <span className="text-xs font-semibold text-[var(--warm-dark)]">작업 이력</span>
+          <span className="text-xs">
+            {plannedCount > 0 && <strong className="text-[var(--coral)]">예정 {plannedCount}</strong>}
+            <span className="text-[var(--warm-muted)] inline-flex items-center gap-1">
+              {plannedCount > 0 ? ' · ' : ''}{merged.length}건
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${panelOpen ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </span>
+          </span>
+        </button>
         {/* 버튼이 둘인 것은 받는 칸이 다르기 때문이다. 청소는 사유 4종·받은 청소비 부담을 더 묻고,
-            그 밖의 작업은 환경설정에서 만든 종류를 고른다. 하나로 합치면 고른 뒤에 폼이 통째로
-            갈아 끼워져 더 놀랍다. §23 은 헤더 CTA 1~2개를 허용한다. */}
-        {canEdit && !adding && (
+            그 밖의 작업은 환경설정에서 만든 종류를 고른다. §23 은 헤더 CTA 1~2개를 허용한다.
+            **접혀 있으면 감춘다** — 안 보이는 목록에 뭘 더하는 문만 서 있으면 안 된다. */}
+        {canEdit && !adding && panelOpen && (
           <div className="flex gap-1.5">
             <Btn variant="secondary" size="sm" onClick={() => setAdding('cleaning')}>청소 등록</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setAdding('work')}>작업 등록</Btn>
           </div>
         )}
       </div>
+
+      {panelOpen && (<div className="mt-2">
 
       {adding && (
         <div className="rounded-lg p-2.5 mb-2" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -159,6 +193,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
       {openWork && (
         <p className="mt-2 text-xs text-[var(--warning-fg)]">{openWork.kind} 예정이 남아 있습니다.</p>
       )}
-    </div>
+      </div>)}
+    </section>
   )
 }
