@@ -14,6 +14,7 @@ import { askWorkLink } from '@/components/work/workLinkPrompt'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { DatePicker } from '@/components/ui/DatePicker'
+import CategorySelect from '@/components/ui/CategorySelect'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast, trackSave, type ToastAction } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -38,10 +39,12 @@ const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 const workTone = (s: 'PLANNED' | 'DONE'): BadgeTone => (s === 'DONE' ? 'paid' : 'await')
 
 export function RoomWorkRowBody({
-  row: r, canEdit, deleted = false, showActions = true, onChanged,
+  row: r, canEdit, deleted = false, showActions = true, recentPerformers = [], onChanged,
 }: {
   row: RoomWorkRow
   canEdit: boolean
+  /** 최근에 맡긴 업체·사람 — 이름 칸 선택지. 비면 자유 입력으로 떨어진다(형제 청소 행과 같다). */
+  recentPerformers?: string[]
   /**
    * 조작 버튼을 세울 것인가. **기본은 true 다** — 호실 관리 목록 등 다른 호출부가 종전
    * 그대로 돌아야 한다. 기본을 false 로 두면 그 화면들의 조작이 통째로 사라진다.
@@ -171,9 +174,20 @@ export function RoomWorkRowBody({
             완료일
             <DatePicker value={doneDate} onChange={setDoneDate} className={DENSE_DATE_CLS} />
           </div>
-          <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
-            placeholder="업체·사람 이름 (선택)"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+          {/* 이름 칸 — 맡긴 이력이 있으면 그 목록에서 고른다. 같은 업체를 매번 손으로 적으면
+              오타 한 번에 한 업체가 두 이름으로 갈린다('글로벌 코킹' 대 '글로벌코킹'이 실제로 그랬다).
+              형제인 청소 행이 쓰는 그 목록·그 컨트롤을 그대로 쓴다. */}
+          {recentPerformers.length > 0 ? (
+            <CategorySelect
+              value={performerName} onChange={setPerformerName}
+              options={recentPerformers} emptyLabel="업체·사람 이름 (선택)"
+              placeholder="업체·사람 이름" closeIconSize={12}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+          ) : (
+            <input type="text" value={performerName} onChange={e => setPerformerName(e.target.value)}
+              placeholder="업체·사람 이름 (선택)"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
+          )}
           {/* 비용 — 넣으면 지출이 **새로** 한 줄 생기고 이 작업에 걸린다.
               **여기 넣을 것은 시공비(이번에 새로 나간 돈)뿐이다.** 자재는 살 때 이미 지출로
               잡혔고, 방별 몫은 그 지출을 쪼갠 행이다(allocationGroupId). 총액을 넣으면 이미
@@ -192,7 +206,9 @@ export function RoomWorkRowBody({
                고칩니다"라고만 하고 **거기까지 가는 길이 없었다**(운영자 지적 2026-08-27).
                위 '이 방에 든 지출' 줄도 눌리지 않는다. 그 달 지출 화면으로 데려다준다. */
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-              이미 지출 {r.expenseCount}건이 걸려 있어 비용을 넣어도 새로 만들지 않습니다. 금액은 지출 화면에서 고칩니다.{' '}
+              {r.expenseCount === 1
+                ? '이미 걸린 지출의 금액과 업체를 여기서 고칩니다. 새 지출을 만들지 않습니다.'
+                : `이미 지출 ${r.expenseCount}건이 걸려 있습니다. 어느 줄의 금액인지 앱이 모르므로 지출 화면에서 고칩니다.`}{' '}
               <button type="button"
                 onClick={() => { window.location.assign(`/finance?month=${(r.doneDate ?? r.scheduledDate ?? kstYmdStr()).slice(0, 7)}`) }}
                 className="underline text-[var(--coral)] font-medium">지출 화면 열기</button>
@@ -243,7 +259,16 @@ export function RoomWorkRowBody({
       ) : (
         <div className="mt-1.5 flex gap-1.5 flex-wrap items-center">
           {r.status === 'PLANNED' && (
-            <RowActionBtn tone="accent" disabled={pending} onClick={() => setDoneOpen(true)}>완료 처리</RowActionBtn>
+            <RowActionBtn tone="accent" disabled={pending} onClick={() => {
+              // 이미 걸린 지출이 있으면 그 값을 미리 채운다 — 아는 것을 다시 묻지 않는다
+              // (운영자 지적 2026-08-28). 한 건일 때만이다. 여러 건이면 어느 줄의 금액인지 모른다.
+              const only = r.linkedExpenses.length === 1 ? r.linkedExpenses[0] : null
+              if (only) {
+                setCost(String(only.amount))
+                if (only.vendor) { setPerformerName(only.vendor); setPerformer('VENDOR') }
+              }
+              setDoneOpen(true)
+            }}>완료 처리</RowActionBtn>
           )}
           {/* 여기부터는 편집 모드에서만 선다. 완료된 일 옆에 조작이 상시로 서 있으면
               겨눈 것 옆을 스쳐 눌린다 — 히트영역이 보이는 박스보다 위아래 9px 넓은데 간격이 6px 다.

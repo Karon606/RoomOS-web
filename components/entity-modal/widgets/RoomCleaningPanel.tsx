@@ -203,7 +203,8 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                 <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
                   canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
               ) : (
-                <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
+                <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing}
+                  recentPerformers={recentPerformers} onChanged={reload} />
               )}
             </li>
           ))}
@@ -257,7 +258,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
                         canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
                     ) : (
                       <RoomWorkRowBody row={m.work} canEdit={canEdit} deleted
-                        onChanged={() => { reload(); loadTrash() }} />
+                        recentPerformers={recentPerformers} onChanged={() => { reload(); loadTrash() }} />
                     )}
                   </li>
                 ))}

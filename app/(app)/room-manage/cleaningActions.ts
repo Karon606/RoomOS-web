@@ -135,13 +135,26 @@ export async function getRecentCleaningPerformers(): Promise<string[]> {
     take: 100,
     select: { performerName: true },
   })
+  // **작업(도배·장판·실리콘) 업체도 함께 센다.** 청소만 보면 대방도배사·글로벌코킹이 후보에
+  // 안 떠서, 작업 완료 폼에서 매번 손으로 적게 된다. 오타 한 번이면 한 업체가 두 이름으로
+  // 갈린다 — '글로벌 코킹' 대 '글로벌코킹'이 실제로 그랬다(2026-08-27 통일).
+  const workRows = await prisma.roomWork.findMany({
+    where: {
+      propertyId, deletedAt: null, status: 'DONE',
+      performer: { in: ['VENDOR', 'THIRD_PARTY'] },
+      performerName: { not: null },
+    },
+    orderBy: [{ doneDate: 'desc' }, { createdAt: 'desc' }],
+    take: 100,
+    select: { performerName: true, doneDate: true, createdAt: true },
+  })
   const out: string[] = []
-  for (const r of rows) {
+  for (const r of [...rows, ...workRows]) {
     const name = r.performerName?.trim()
     if (!name || out.includes(name)) continue
     out.push(name)
   }
-  return out.slice(0, 5)
+  return out.slice(0, 8)
 }
 
 /**

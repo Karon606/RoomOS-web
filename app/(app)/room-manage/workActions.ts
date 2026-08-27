@@ -60,7 +60,14 @@ export type RoomWorkRow = {
   /** 그중 시공으로 세는 줄 수 — 여럿이면 왜 그 금액인지 행이 말해야 한다. */
   laborExpenseCount: number
   /** 걸린 지출 한 줄씩 — 화면이 줄마다 시공/자재 표식을 바꾼다(판정을 글자에서 떼는 자리). */
-  linkedExpenses: { id: string; amount: number; label: string; isLabor: boolean; marked: boolean }[]
+  /**
+   * 걸린 지출 한 줄씩 — 완료 폼이 **이미 아는 값을 미리 채우는** 데 쓴다.
+   *
+   * 종전에는 지출이 걸려 있는데도 금액 칸이 0 이고 업체 칸이 빈 채로 물어봤다. 운영자 지적
+   * 2026-08-28 — "비용을 넣어도 새로 안만들거면 그냥 미리 금액을 넣어주고 업체나 사람도
+   * 미리 넣어주면 되는거 아냐?"
+   */
+  linkedExpenses: { id: string; amount: number; label: string; vendor: string | null }[]
   /** 그중 자재비 — 살 때 이미 나간 돈을 방별로 쪼갠 것. lib/roomWorkCost 참조. */
   materialCost: number
   expenseCount: number
@@ -86,7 +93,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true, deletedAt: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true } },
     },
   })
   return rows.map(r => {
@@ -102,8 +109,7 @@ export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boo
       deleted: !!r.deletedAt,
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
-        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
-        isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
+        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
       })),
     }
   })
@@ -120,7 +126,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       scheduledDate: true, doneDate: true,
       performer: true, performerName: true, memo: true,
       room: { select: { roomNo: true } },
-      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true } },
+      expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true, vendor: true } },
     },
   })
   return rows.map(r => {
@@ -135,8 +141,7 @@ export async function getPropertyRoomWorks(): Promise<RoomWorkRow[]> {
       expenseCount: r.expenses.length,
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
-        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',
-        isLabor: isLaborItem(e.itemLabel, e.detail, e.costKind), marked: e.costKind != null,
+        id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)', vendor: e.vendor,
       })),
     }
   })
@@ -205,7 +210,7 @@ export async function completeRoomWork(input: {
       select: {
         id: true, roomId: true, kind: true,
         room: { select: { roomNo: true } },
-        expenses: { select: { id: true } },
+        expenses: { select: { id: true, amount: true, vendor: true } },
       },
     })
     if (!cur) return { ok: false, error: '작업 기록을 찾을 수 없습니다.' }
@@ -249,6 +254,20 @@ export async function completeRoomWork(input: {
         // 후보 판정이 공임만 고르므로 표식도 시공이다. 자재를 걸고 싶으면 작업 행에서 바꾼다.
         await tx.expense.updateMany({ where: { id: { in: matched.map(e => e.id) } }, data: { roomWorkId: cur.id, costKind: 'LABOR' } })
         return
+      }
+      // 걸린 지출이 **한 건**이면 그 지출을 고친다. 종전에는 "새로 만들지 않습니다"라고만
+      // 하고 아무것도 안 해서, 금액이나 업체를 고치려면 지출 화면으로 가야 했다.
+      // 형제인 completeCleaning 이 원래 이 방식이다(1:1 이라 대상이 하나다).
+      //
+      // **여러 건이면 손대지 않는다.** 어느 줄의 금액인지 앱이 모른다 — 자재를 여러 날 사서
+      // 붙여 둔 경우가 있어 아무 줄이나 고치면 엉뚱한 돈이 바뀐다. 그때는 화면이 지출 쪽으로 보낸다.
+      if (cur.expenses.length === 1) {
+        const only = cur.expenses[0]
+        const next: { amount?: number; vendor?: string | null } = {}
+        if (cost > 0 && cost !== only.amount) next.amount = cost
+        const name = input.performerName?.trim() || null
+        if (name !== (only.vendor ?? null)) next.vendor = name
+        if (Object.keys(next).length > 0) await tx.expense.update({ where: { id: only.id }, data: next })
       }
       if (cost > 0 && cur.expenses.length === 0) {
         await tx.expense.create({
