@@ -378,6 +378,34 @@ export async function setExpenseCostKind(expenseId: string, costKind: 'LABOR' | 
   }
 }
 
+/**
+ * 걸린 지출 한 줄의 금액·업체를 고친다.
+ *
+ * 종전에는 걸린 지출이 여럿이면 "어느 줄인지 앱이 모른다"며 지출 화면으로 보냈다. 그런데
+ * **운영자는 안다** — 화면이 줄을 안 보여줬을 뿐이다(운영자 지적 2026-08-28 — "지출로 가보면
+ * 같은 업체에 묶여있기도 하거니와 방번호까지 다 지정되어있는데 왜 몰라?"). 줄을 보이고
+ * 그 줄에서 고치게 하면 모호할 것이 없다.
+ */
+export async function updateWorkExpense(
+  expenseId: string, patch: { amount?: number; vendor?: string | null },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const data: { amount?: number; vendor?: string | null } = {}
+    if (patch.amount != null && patch.amount >= 0) data.amount = Math.round(patch.amount)
+    if (patch.vendor !== undefined) data.vendor = patch.vendor?.trim() || null
+    if (Object.keys(data).length === 0) return { ok: true }
+    // roomWorkId 가 붙은 지출만 — 이 문으로 아무 지출이나 고칠 수 없어야 한다.
+    const r = await prisma.expense.updateMany({ where: { id: expenseId, propertyId, roomWorkId: { not: null } }, data })
+    if (r.count === 0) return { ok: false, error: '작업에 걸린 지출을 찾을 수 없습니다.' }
+    revalidatePath('/room-manage'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '변경에 실패했습니다.' }
+  }
+}
+
 /** 지출 연결 적용취소 — roomWorkId 만 되돌린다. 지출 자체는 안 건드린다(§16). */
 export async function unlinkExpensesFromWork(expenseIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

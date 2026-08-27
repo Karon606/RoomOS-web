@@ -21,7 +21,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { kstYmdStr } from '@/lib/kstDate'
 import {
-  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork,
+  completeRoomWork, reopenRoomWork, deleteRoomWork, restoreRoomWork, rescheduleRoomWork, unlinkExpensesFromWork, updateWorkExpense,
   type RoomWorkRow,
 } from '@/app/(app)/room-manage/workActions'
 import {
@@ -116,6 +116,38 @@ export function RoomWorkRowBody({
         )}
       </div>
 
+      {/* 걸린 지출 줄 — **무엇이 얼마이고 어느 업체인지** 여기서 보인다.
+          종전에는 '시공 2건'이라고만 하고 내용을 안 보여줬다(운영자 지적 2026-08-28 —
+          "시공 2건이 뭔지도 못보고 시공업체도 못봐"). 걸린 지출이 여럿일 때 "어느 줄인지
+          앱이 모른다"고 했던 것도 같은 원인이다 — 운영자는 안다. 화면이 안 보여줬을 뿐이다.
+          편집 모드에서는 그 줄에서 바로 금액을 고친다. */}
+      {r.linkedExpenses.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {r.linkedExpenses.map(e => (
+            <li key={e.id} className="flex items-center gap-1.5 text-[0.65625rem] text-[var(--warm-muted)]">
+              <span className="min-w-0 flex-1 truncate">
+                {e.label}{e.vendor ? ` · ${e.vendor}` : ''}
+              </span>
+              {showActions ? (
+                <>
+                  <input type="number" inputMode="numeric" min={0}
+                    defaultValue={e.amount}
+                    onBlur={ev => {
+                      const next = Number(ev.target.value || 0)
+                      if (next === e.amount || next < 0) return
+                      run(() => updateWorkExpense(e.id, { amount: next }), '금액을 고쳤습니다')
+                    }}
+                    className="w-24 shrink-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-0.5 text-right num text-[var(--warm-dark)]" />
+                  <span className="shrink-0">원</span>
+                </>
+              ) : (
+                <span className="shrink-0 num">{fmtWon(e.amount)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* 메모는 §11 보조줄. 길이를 모르는 자유 입력이라 칩 줄에 끼우면 줄이 무너진다. */}
       {r.memo && (
         <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words">{r.memo}</p>
@@ -208,7 +240,7 @@ export function RoomWorkRowBody({
             <p className="text-[0.65625rem] text-[var(--warm-muted)]">
               {r.expenseCount === 1
                 ? '이미 걸린 지출의 금액과 업체를 여기서 고칩니다. 새 지출을 만들지 않습니다.'
-                : `이미 지출 ${r.expenseCount}건이 걸려 있습니다. 어느 줄의 금액인지 앱이 모르므로 지출 화면에서 고칩니다.`}{' '}
+                : `이미 지출 ${r.expenseCount}건이 걸려 있어 새로 만들지 않습니다. 줄마다 고치려면 위 목록에서 편집을 켜세요.`}{' '}
               <button type="button"
                 onClick={() => { window.location.assign(`/finance?month=${(r.doneDate ?? r.scheduledDate ?? kstYmdStr()).slice(0, 7)}`) }}
                 className="underline text-[var(--coral)] font-medium">지출 화면 열기</button>
