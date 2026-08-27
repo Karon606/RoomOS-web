@@ -1088,6 +1088,17 @@ model Expense {
   // #1 관리비 묶음: 장부엔 1줄(합계)이지만 세부항목 내역을 보관. JSON [{name, amount, isVariable}]
   breakdownJson String?
   itemLabel    String?
+  // 브랜드·제조사와 상세제품명 (운영자 요구 2026-08-27 — "같은 라면이라도 진라면일지 삼양라면일지").
+  //
+  // **표시·검색 전용이다. 단가 계산과 재고 수학에 일절 관여하지 않는다.** specText 가 2026-07-03 에
+  // 들어온 방식과 같은 층위의 구매 시점 스냅샷 속성이다. 제품 카탈로그 테이블을 안 만드는 이유는
+  // 이 앱의 품목 정체성이 이미 품명 문자열 한 축으로 통일돼 있어서다(TrackedItem 유니크,
+  // inventory/ledgerShift 매칭 정본, OCR 어휘 사전). 카탈로그를 세우면 그 축이 둘로 갈라진다.
+  //
+  // 채움의 주 경로는 영수증 인식이다. 영수증 원문에는 이미 '오뚜기 진라면 매운맛'이 찍혀 있는데
+  // 통일 품명으로 접으면서 버리고 있었다 — 이 두 칸이 그 버려지던 자리다.
+  brand        String?   // 오뚜기, LG
+  productName  String?   // 진라면 매운맛, 룸앤 TV 27TQ600SW
   specValue    Float?
   specUnit     String?
   specText     String?   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여 (2026-07-03)

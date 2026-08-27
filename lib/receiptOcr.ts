@@ -48,6 +48,11 @@ export type ReceiptOcrItem = {
   rawLabel?: string   // 별칭 적용 전 원문(사용자 수정 학습 캡처용) — 호출부에서 채움
   specValue?: string; specUnit?: string
   specText?: string   // 서술형 규격(예: '싱글/그레이', '1200x600mm'). 없으면 undefined
+  // 브랜드·상세제품명 — 영수증 원문에 **보이는 표기만**. 추측 금지.
+  // label 은 어휘 사전으로 통일된 품명이고(모나리자 키친타올 -> 키친타월), 이 둘이 그때
+  // 버려지던 원문 정보를 담는다. 표시·검색 전용이라 계산·재고에 안 쓴다.
+  brand?: string
+  productName?: string
   qtyValue?: string;  qtyUnit?: string
   amount: number
   setHint?: SetHint   // 세트 상품 의심(주문 1=실물 N) — 호출부에서 채움
@@ -99,6 +104,8 @@ ${kindLines}  "date": "YYYY-MM-DD",          // 결제일·주문일만. '도착
       "specValue": "300",         // 용량/규격 숫자 (선택)
       "specUnit": "ml",           // 용량 단위 (선택)
       "specText": "싱글/그레이",    // 색상·사이즈·재질 등 서술형 규격(선택). 숫자 단위로 못 적는 규격만. 없으면 생략
+      "brand": "오뚜기",             // 브랜드·제조사(선택). 영수증에 보이는 표기만. 안 보이면 생략
+      "productName": "진라면 매운맛", // 상세제품명(선택). 영수증 원문 표기 그대로. 안 보이면 생략
       "qtyValue": "2",            // 개수 (선택)
       "qtyUnit": "개",             // 개수 단위 (선택)
       "amount": 5000              // 이 품목 가격 (정수)
@@ -110,6 +117,9 @@ ${kindLines}  "date": "YYYY-MM-DD",          // 결제일·주문일만. '도착
 - totalAmount는 반드시 부가세 포함 최종 결제 금액. 공급가액(과세금액)·부가세가 따로 표시된 영수증이면 그 합(=합계/총액)을 쓰고, 공급가액만 넣지 마세요
 - items의 amount도 부가세 포함 가격으로. 품목이 부가세 별도 단가로 표시돼 있으면 부가세를 각 품목에 비례 배분해 포함시키고, items 합계가 totalAmount와 일치하게 하세요
 - specText는 색상·사이즈·재질처럼 숫자 단위로 못 적는 서술형 규격만(예: '싱글/그레이', '1200x600mm', 'XL'). 용량·개수 같은 숫자 규격은 specValue/specUnit·qtyValue/qtyUnit에 넣으세요
+- brand·productName은 **영수증에 실제로 보이는 표기만** 넣으세요. 브랜드가 안 보이면 생략하고 **절대 추측해서 만들지 마세요**(품목명으로 제조사를 유추하는 것도 금지)
+- productName은 영수증 원문의 제품 표기 그대로(예: '진라면 매운맛', '룸앤 TV 27TQ600SW'). label은 통일 품명이므로 **label과 같은 값을 productName에 복사하지 마세요** — 원문이 통일 품명과 같으면 productName을 생략하세요
+- 색상·사이즈·용량은 productName이 아니라 specText·specValue에 넣으세요. 원문 제품 표기 안에 섞여 있으면 제품명 쪽에서는 빼도 됩니다
 - vendorBizNo는 숫자 10자리(하이픈 유무 무관 — 000-00-00000 형식으로). 안 보이면 생략
 - 부가세/할인/포인트 등 메타 행 자체는 items에 넣지 마세요
 - category 선택 시: 가구·집기·공구·가전처럼 여러 해 쓰는 내구재는 소모품·부식 성격 카테고리로 분류하지 마세요(수리·유지·비품 성격 카테고리가 후보에 있으면 그쪽). 세제·휴지·식자재처럼 써서 없어지는 물건만 소모품·부식류입니다
@@ -188,6 +198,8 @@ export function parseReceiptOcrText(text: string, opts?: { withKind?: boolean })
       specValue: it.specValue ? String(it.specValue) : undefined,
       specUnit:  cleanUnit(it.specUnit),
       specText:  typeof it.specText === 'string' && it.specText.trim() ? it.specText.trim() : undefined,
+      brand:       typeof it.brand === 'string' && it.brand.trim() ? it.brand.trim() : undefined,
+      productName: typeof it.productName === 'string' && it.productName.trim() ? it.productName.trim() : undefined,
       qtyValue:  it.qtyValue  ? String(it.qtyValue)  : undefined,
       qtyUnit:   cleanUnit(it.qtyUnit),
       amount:    Number(it.amount) || 0,

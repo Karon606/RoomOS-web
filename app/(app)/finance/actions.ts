@@ -159,6 +159,9 @@ export async function searchExpenses(query: string): Promise<ExpenseSearchResult
         { vendor:    { contains: q, mode: 'insensitive' } },
         { memo:      { contains: q, mode: 'insensitive' } },
         { category:  { contains: q, mode: 'insensitive' } },
+        // 브랜드·제품명 — "작년에 산 그 LG 모니터"를 찾는 축이다.
+        { brand:       { contains: q, mode: 'insensitive' } },
+        { productName: { contains: q, mode: 'insensitive' } },
       ],
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -257,6 +260,10 @@ export type LastItemContext = {
   specOptions: string[]               // 품목 세부스펙 사전 (색상·사이즈·치수 칩 — 신고 ba9feb6b)
   specValue: string | null            // 직전 규격 값 (예: '20')
   specText: string | null             // 직전 서술 규격 (예: '183cm x 10m x 1.8T')
+  // 직전 브랜드·제품명 — 화면이 채우되 **'지난번 값'이라고 표시한다**. 브랜드는 틀려도 눈에
+  // 안 띄고, 그 값이 나중에 재고 카드를 가르는 기준이 되면 진라면 산 것이 삼양 재고에 쌓인다.
+  brand: string | null
+  productName: string | null
   unitBasis: 'spec' | 'qty' | null    // 직전 단가 기준 — 규격당/완제품당 유지
   qtyValue: string | null             // 직전 수량
   unitPrice: number | null            // 직전 단가 (금액 ÷ 기준수량 역산)
@@ -265,7 +272,7 @@ export type LastItemContext = {
 
 export async function getLastItemUnits(itemLabel: string): Promise<LastItemContext | null> {
   const propertyId = await getPropertyId()
-  const sel = { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true } as const
+  const sel = { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true, brand: true, productName: true } as const
   const [row, priceRow, tracked] = await Promise.all([
     prisma.expense.findFirst({
       where: { propertyId, itemLabel },
@@ -308,6 +315,8 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     specOptions,
     specValue: row?.specValue != null ? String(row.specValue) : null,
     specText: row?.specText ?? null,
+    brand: row?.brand ?? null,
+    productName: row?.productName ?? null,
     unitBasis: basis,
     qtyValue: row?.qtyValue != null ? String(row.qtyValue) : null,
     unitPrice,
@@ -320,6 +329,8 @@ type ItemPick = {
   ocrRaw?: string   // OCR 인식 원문 — 최종 label 과 다르면 별칭 학습(다음 영수증 자동 치환)
   specValue?: string; specUnit?: string
   specText?: string          // 서술형 규격(계산 비관여, 표시·자재 구분용)
+  brand?: string             // 브랜드·제조사 — 표시·검색 전용(계산·재고 비관여)
+  productName?: string       // 상세제품명 — 표시·검색 전용
   unitBasis?: 'spec' | 'qty' // 입력 당시 단가 기준 — 재열람 시 보존
   qtyValue?: string;  qtyUnit?: string
   amount?: number
@@ -550,6 +561,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const qtyUnit   = formData.get('qtyUnit') as string
     const specValueRaw = formData.get('specValue') as string
     const specTextRaw  = formData.get('specText') as string
+    const brandRaw       = formData.get('brand') as string
+    const productNameRaw = formData.get('productName') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 품명 학습용 — itemsJson 품목 전체(단일/다품목 무관). 저장 후 ocrRaw≠label 인 것만 별칭 upsert.
@@ -683,6 +696,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
           qtyUnit:   cleanUnit(r.it.qtyUnit)  ?? null,
           specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
           specText:  r.it.specText || null,
+          brand:       r.it.brand || null,
+          productName: r.it.productName || null,
           unitBasis: r.it.unitBasis || null,
           qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
           allocationGroupId: r.groupId,
@@ -716,6 +731,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
         // 서술형 규격(색상·사이즈) — 다품목 경로만 저장하고 단일 품목은 유실되던 버그(오류신고 48376868)
         specText:           specTextRaw || null,
+        brand:              brandRaw || null,
+        productName:        productNameRaw || null,
         qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
       },
     })
@@ -786,6 +803,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const specTextRaw  = formData.get('specText') as string
+    const brandRaw       = formData.get('brand') as string
+    const productNameRaw = formData.get('productName') as string
     const unitBasisRaw = formData.get('unitBasis') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨 (addExpense 와 동일)
@@ -870,6 +889,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             qtyUnit:   cleanUnit(firstRow.it.qtyUnit)  ?? null,
             specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
             specText:  firstRow.it.specText || null,
+            brand:       firstRow.it.brand || null,
+            productName: firstRow.it.productName || null,
             unitBasis: firstRow.it.unitBasis || null,
             qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
             allocationGroupId: firstRow.groupId,
@@ -898,6 +919,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
             qtyUnit:   cleanUnit(r.it.qtyUnit)  ?? null,
             specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
             specText:  r.it.specText || null,
+          brand:       r.it.brand || null,
+          productName: r.it.productName || null,
             unitBasis: r.it.unitBasis || null,
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
             allocationGroupId: r.groupId,
@@ -1011,6 +1034,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         ...(formData.has('qtyValue') ? { qtyValue: qtyValueRaw ? parseFloat(qtyValueRaw) : null } : {}),
         // 서술형 규격·단가 기준 — 미전송 편집(카테고리만 수정 등)에선 기존 값 보존(위 5필드와 동일 가드)
         ...(formData.has('specText') ? { specText: specTextRaw || null } : {}),
+        ...(formData.has('brand') ? { brand: brandRaw || null } : {}),
+        ...(formData.has('productName') ? { productName: productNameRaw || null } : {}),
         ...(formData.has('unitBasis') ? { unitBasis: unitBasisRaw === 'spec' || unitBasisRaw === 'qty' ? unitBasisRaw : null } : {}),
         ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
     }
@@ -2617,6 +2642,35 @@ export async function getSettleableExpenses(targetMonth: string): Promise<{ id: 
       remaining: e.amount - (settleMap[e.id] ?? 0),
     }))
     .filter(e => e.remaining > 0)
+}
+
+/**
+ * 브랜드·제품명 자동완성 — 구매처(vendor)와 같은 방식이다. datalist 제안용.
+ *
+ * 품목을 알면 그 품목에서 산 것만 주고(라면 칸에 모니터 브랜드가 뜨면 안 된다), 모르면 전체를
+ * 최근순으로 준다. '진'만 쳐도 '진라면 매운맛'이 뜨게 하는 자리다.
+ *
+ * 브랜드 목록을 코드에 박지 않는다 — 멀티테넌트라 그 영업장 데이터에서만 나온다.
+ */
+export async function getBrandSuggestions(itemLabel?: string): Promise<{ brands: string[]; products: string[] }> {
+  const propertyId = await getPropertyId()
+  const label = itemLabel?.trim()
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      ...(label ? { itemLabel: label } : {}),
+      OR: [{ brand: { not: null } }, { productName: { not: null } }],
+    },
+    select: { brand: true, productName: true },
+    orderBy: { createdAt: 'desc' },
+    take: 400,
+  })
+  const pick = (get: (r: typeof rows[number]) => string | null) => {
+    const seen = new Set<string>(); const out: string[] = []
+    for (const r of rows) { const v = get(r)?.trim(); if (v && !seen.has(v)) { seen.add(v); out.push(v) } }
+    return out.slice(0, 60)
+  }
+  return { brands: pick(r => r.brand), products: pick(r => r.productName) }
 }
 
 // 구매처(vendor) 자동완성 — 과거 입력한 구매처 중복 제거(최근순). datalist 제안용.

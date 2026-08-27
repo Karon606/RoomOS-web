@@ -13,7 +13,7 @@ import {
   batchUpdateExpenses, undoBatchUpdateExpenses, type BatchExpensesUndo, getVendorBizMap,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
-  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
+  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks, getBrandSuggestions,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   getVendorUsage, renameVendor,
@@ -88,6 +88,7 @@ type Expense = {
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
   specText: string | null; unitBasis: string | null   // 서술형 규격·단가 기준 — 수정 프리필 보존용
+  brand: string | null; productName: string | null   // 브랜드·상세제품명 — 표시·검색 전용(계산·재고 비관여)
   qtyValue: number | null; qtyUnit: string | null
   orderId: string | null; isShipping: boolean
   allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
@@ -186,6 +187,8 @@ export type ItemPickState = {
   labelSimilarTo?: string
   specValue: string; specUnit: string
   specText?: string   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여
+  brand?: string        // 브랜드·제조사 — 표시·검색 전용(계산·재고 비관여)
+  productName?: string  // 상세제품명
   qtyValue: string; qtyUnit: string
   amount?: number   // 이 품목에 할당된 총 금액
   unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
@@ -324,6 +327,15 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
   const [specTextMode, setSpecTextMode] = useState(false)  // 서술형 규격(사이즈 등) — 계산 비관여, 개당 단가 강제
   const [specText, setSpecText]       = useState('')
+  // 브랜드·제품명 — 접힌 한 줄. 폼이 이미 길어서 항상 펴 두면 매번 스크롤이 는다.
+  const [brand, setBrand]             = useState('')
+  const [productName, setProductName] = useState('')
+  const [brandOpen, setBrandOpen]     = useState(false)
+  // 직전 구매에서 끌어온 값인가 — **채우되 그렇다고 말한다**. 브랜드는 틀려도 눈에 안 띄고,
+  // 그 값이 나중에 재고를 가르는 기준이 되면 진라면 산 것이 삼양 재고에 쌓인다.
+  const [brandFromLast, setBrandFromLast] = useState(false)
+  // 자동완성 후보 — 그 품목에서 산 브랜드·제품명만. 라면 칸에 모니터 브랜드가 뜨면 안 된다.
+  const [brandOptions, setBrandOptions] = useState<{ brands: string[]; products: string[] }>({ brands: [], products: [] })
   // 규격 단계별 입력(위저드) — 새 품목(과거 단위·프리셋 기본값 없음)이면 자동, 버튼으로 상시 호출
   const [wizardOpen, setWizardOpen]   = useState(false)
   const applyWizard = (r: SpecWizardResult) => {
@@ -400,6 +412,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     if (last.unitBasis) { setUnitBasis(last.unitBasis); setBasisTouched(true) }
     // 직전 단가 프리필 → 수량 입력만으로 금액 자동. 가격이 바뀌었으면 금액을 고치면 단가가 재역산된다.
     if (last.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(last.unitPrice)) }
+    // 브랜드·제품명도 따라오되 **'지난번 값'이라고 말한다**. 규격·수량은 틀리면 눈에 띄지만
+    // 브랜드는 조용히 틀린 채로 저장된다(운영자 확정 2026-08-27 — 채우되 표시를 남긴다).
+    if (last.brand || last.productName) {
+      setBrand(last.brand ?? '')
+      setProductName(last.productName ?? '')
+      setBrandFromLast(true)
+      setBrandOpen(true)
+    }
   }
 
   // '직접 입력'에서 기존 품목명을 타이핑/제안 선택한 경우에도 동일 프리필 — 칩 선택과 경로만 다를 뿐 같은 품목.
@@ -411,6 +431,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     lastFetchedRef.current = label
     const last = await getLastItemUnits(label)
     if (last) applyLastContext(last)
+    getBrandSuggestions(label).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 — 못 받아도 입력은 된다 */ })
   }
 
   async function openPreset(label: string) {
@@ -423,6 +444,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     try {
       const last = await getLastItemUnits(label)
       if (last) applyLastContext(last)
+      getBrandSuggestions(label).then(setBrandOptions).catch(() => { /* 후보는 부가 정보 */ })
       // 완전히 새로운 품목(과거 기록도 프리셋 기본값도 없음) → 단계별 입력 자동 안내
       if (!last && !def) setWizardOpen(true)
     } finally { setFetching(false) }
@@ -476,12 +498,16 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       specValue: specTextMode ? '' : specValue,
       specUnit:  specTextMode ? '' : specUnit,
       specText:  specTextMode && specText.trim() ? specText.trim() : undefined,
+      brand:       brand.trim() || undefined,
+      productName: productName.trim() || undefined,
       qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice,
       unitBasis: specTextMode ? 'qty' : unitBasis,   // 서술 규격은 계산 비관여 → 개당 단가
     }
     onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel('')
+    // 다음 품목으로 브랜드가 넘어가면 안 된다 — 진라면 담고 휴지 담는데 '오뚜기'가 남는다.
+    setBrand(''); setProductName(''); setBrandFromLast(false); setBrandOpen(false)
   }
 
   function removeItem(idx: number) {
@@ -679,6 +705,42 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">새로 입력한 세부스펙은 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.</p>
         </div>
         )}
+        {/* 브랜드·제품명 — 접힌 한 줄. 폼이 이미 길어 항상 펴 두면 매번 스크롤이 는다.
+            영수증 인식이 채우거나 직전값이 따라오면 저절로 펴진다(그때 값이 보여야 한다). */}
+        {!brandOpen && !brand && !productName ? (
+          <button type="button" onClick={() => setBrandOpen(true)}
+            className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
+            브랜드·제품명 입력
+          </button>
+        ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[0.65625rem] text-[var(--warm-muted)]">브랜드·제품명</label>
+            {brandFromLast && (
+              <span className="text-[0.65625rem] text-[var(--coral)]">지난번 값</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="text" placeholder="브랜드 (예: 오뚜기)" value={brand}
+              onChange={e => { setBrand(e.target.value); setBrandFromLast(false) }}
+              className={textCls} list="item-brand-suggestions" />
+            <input type="text" placeholder="제품명 (예: 진라면 매운맛)" value={productName}
+              onChange={e => { setProductName(e.target.value); setBrandFromLast(false) }}
+              className={textCls} list="item-product-suggestions" />
+          </div>
+          {brandOptions.brands.length > 0 && (
+            <datalist id="item-brand-suggestions">{brandOptions.brands.map(b => <option key={b} value={b} />)}</datalist>
+          )}
+          {brandOptions.products.length > 0 && (
+            <datalist id="item-product-suggestions">{brandOptions.products.map(b => <option key={b} value={b} />)}</datalist>
+          )}
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+            {brandFromLast
+              ? '지난번 구매에서 가져온 값입니다. 다르면 고쳐 주세요.'
+              : '비워도 됩니다. 규격은 위 칸에 그대로 적습니다.'}
+          </p>
+        </div>
+        )}
         {!noSpec && !specTextMode && (
         <div className="space-y-1">
           <label className="text-[0.65625rem] text-[var(--warm-muted)]">규격</label>
@@ -868,6 +930,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <button type="button" onClick={() => patchItem(idx, { specText: undefined })}
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">숫자 규격으로</button>
                   </div>
+                )}
+                {/* 담은 품목의 브랜드·제품명 — 값이 있을 때만 흐린 한 줄. 담기 전에 눈으로 대조하는
+                    자리라 카드 안에 줄을 늘리지 않고 한 줄로 붙인다. 제품명은 길어서 truncate. */}
+                {(it.brand || it.productName) && (
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">
+                    {[it.brand, it.productName].filter(Boolean).join(' · ')}
+                  </p>
                 )}
                 {allowMulti && rooms.length > 0 && (
                   <div>
@@ -1663,6 +1732,8 @@ export default function FinanceClient({
           specValue: it.specValue ?? '',
           specUnit:  (it.specUnit ?? '') || (fill?.specUnit ?? ''),
           specText:  hasTextSpec ? it.specText!.trim() : undefined,
+          brand:       it.brand?.trim() || undefined,
+          productName: it.productName?.trim() || undefined,
           unitBasis: basis,
           qtyValue: it.qtyValue ?? '', qtyUnit: (it.qtyUnit ?? '') || (fill?.qtyUnit ?? ''),
           amount: it.amount,
@@ -3777,6 +3848,9 @@ export default function FinanceClient({
                       </div>
                     )
                   })()}
+                  {/* 브랜드·제품명 — 값이 있을 때만. 제품명은 길어서 줄바꿈으로 흘린다. */}
+                  {detailExp.brand && <DetailRow label="브랜드" value={detailExp.brand} />}
+                  {detailExp.productName && <DetailRow label="제품명" value={detailExp.productName} />}
                   {detailExp.room && <DetailRow label="대상 호실" value={`${fmtRoomNo(detailExp.room.roomNo, '')}`} />}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
@@ -3891,6 +3965,9 @@ export default function FinanceClient({
                       specUnit:  detailExp.specUnit ?? '',
                       // 서술형 규격·단가 기준 복원 — 누락 시 수정 저장에서 specText가 소실되던 버그(오류신고 5f44f5df)
                       specText:  detailExp.specText ?? undefined,
+                      // 브랜드·제품명도 같은 이유로 반드시 복원한다(누락 시 수정 저장에서 소실).
+                      brand:       detailExp.brand ?? undefined,
+                      productName: detailExp.productName ?? undefined,
                       unitBasis: detailExp.unitBasis === 'qty' ? 'qty' : detailExp.unitBasis === 'spec' ? 'spec' : undefined,
                       // 수량 미입력 항목은 자동 1개로 (confirmAdd 와 동일 규칙) — 재저장 시 "x 1개" 일관 표기
                       qtyValue:  detailExp.qtyValue != null ? detailExp.qtyValue.toString() : '1',
@@ -4085,6 +4162,8 @@ export default function FinanceClient({
                           <input type="hidden" name="specValue" value={editItems[0].specValue} />
                           <input type="hidden" name="specUnit"  value={editItems[0].specUnit} />
                           <input type="hidden" name="specText"  value={editItems[0].specText ?? ''} />
+                          <input type="hidden" name="brand" value={editItems[0].brand ?? ''} />
+                          <input type="hidden" name="productName" value={editItems[0].productName ?? ''} />
                           <input type="hidden" name="unitBasis" value={editItems[0].unitBasis ?? ''} />
                           <input type="hidden" name="qtyValue"  value={editItems[0].qtyValue} />
                           <input type="hidden" name="qtyUnit"   value={editItems[0].qtyUnit} />
@@ -4388,6 +4467,8 @@ export default function FinanceClient({
                         <input type="hidden" name="specUnit"  value={addItems[0].specUnit} />
                         {/* 서술형 규격 — 빠지면 단일 품목만 색상·사이즈 유실(오류신고 48376868) */}
                         <input type="hidden" name="specText"  value={addItems[0].specText ?? ''} />
+                          <input type="hidden" name="brand" value={addItems[0].brand ?? ''} />
+                          <input type="hidden" name="productName" value={addItems[0].productName ?? ''} />
                         <input type="hidden" name="qtyValue"  value={addItems[0].qtyValue} />
                         <input type="hidden" name="qtyUnit"   value={addItems[0].qtyUnit} />
                       </>
