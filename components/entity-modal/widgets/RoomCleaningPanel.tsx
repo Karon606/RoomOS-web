@@ -62,8 +62,10 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   // 방을 바꾸면(방 전환 세그먼트) 편집·접힘을 원래대로 — 앞 방에서 켠 편집이 따라가면
   // 새 방이 열리자마자 조작이 서 있게 된다. effect 가 아니라 렌더 중 조정이다(React 권장 패턴,
   // MonthSelector 가 쓰는 그 문법) — effect 에서 setState 를 부르면 리렌더가 한 번 더 돈다.
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [trash, setTrash] = useState<Merged[] | null>(null)
   const [syncedRoom, setSyncedRoom] = useState(roomId)
-  if (syncedRoom !== roomId) { setSyncedRoom(roomId); setEditing(false); setUserOpen(null) }
+  if (syncedRoom !== roomId) { setSyncedRoom(roomId); setEditing(false); setUserOpen(null); setTrashOpen(false); setTrash(null) }
   // 최근에 맡긴 업체·사람 — 완료 폼 이름 칸 선택지. 없는 영업장은 손으로 적는다.
   const [recentPerformers, setRecentPerformers] = useState<string[]>([])
 
@@ -83,6 +85,18 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   }
   useEffect(reload, [roomId])
 
+  // 삭제분 — 편집 모드에서 '삭제된 N건 보기'를 눌렀을 때만 조회한다.
+  //
+  // **§16 의 2순위 진입점이다.** 종전에는 삭제를 되돌릴 길이 토스트(6초)뿐이라 놓치면
+  // 앱 어디에도 복원 진입점이 없었다. 코드 주석은 호실 관리 '청소' 뷰에 '삭제됨 보기'가
+  // 있다고 적어 뒀지만 **그 화면이 실재하지 않았다**(2026-08-28 전수 확인).
+  const loadTrash = () => {
+    setTrashOpen(true)
+    void Promise.all([getRoomCleanings(roomId, { includeDeleted: true }), listRoomWorks(roomId, { includeDeleted: true })])
+      .then(([cs, ws]) => setTrash(mergeRows(cs.filter(c => c.deletedAt), ws.filter(w => w.deleted))))
+      .catch(() => setTrash([]))
+  }
+
   const fundOf = (leaseTermId: string | null): CleaningFundLease | null =>
     (leaseTermId && fund?.leases.find(l => l.leaseTermId === leaseTermId)) || null
 
@@ -101,20 +115,24 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   type Merged =
     | { sort: 'c'; id: string; at: string; cleaning: CleaningRow; work?: undefined }
     | { sort: 'w'; id: string; at: string; work: RoomWorkRow; cleaning?: undefined }
-  const merged: Merged[] = [
-    ...(rows ?? []).map((r): Merged => ({
-      sort: 'c', id: r.id, at: (r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? '', cleaning: r,
-    })),
-    ...(works ?? []).map((w): Merged => ({
-      sort: 'w', id: w.id, at: (w.status === 'DONE' ? w.doneDate : w.scheduledDate) ?? '', work: w,
-    })),
-  ].sort((a, b) => {
-    if (!a.at && !b.at) return 0
-    if (!a.at) return 1
-    if (!b.at) return -1
-    if (a.at !== b.at) return a.at < b.at ? 1 : -1
-    return a.sort === b.sort ? 0 : a.sort === 'c' ? -1 : 1
-  })
+  // 삭제분 목록도 같은 정렬을 쓰게 함수로 뺀다 — 두 벌이면 한쪽만 순서가 달라진다.
+  function mergeRows(cs: CleaningRow[], ws: RoomWorkRow[]): Merged[] {
+    return [
+      ...cs.map((r): Merged => ({
+        sort: 'c', id: r.id, at: (r.status === 'DONE' ? r.doneDate : r.scheduledDate) ?? '', cleaning: r,
+      })),
+      ...ws.map((w): Merged => ({
+        sort: 'w', id: w.id, at: (w.status === 'DONE' ? w.doneDate : w.scheduledDate) ?? '', work: w,
+      })),
+    ].sort((a, b) => {
+      if (!a.at && !b.at) return 0
+      if (!a.at) return 1
+      if (!b.at) return -1
+      if (a.at !== b.at) return a.at < b.at ? 1 : -1
+      return a.sort === b.sort ? 0 : a.sort === 'c' ? -1 : 1
+    })
+  }
+  const merged: Merged[] = mergeRows(rows ?? [], works ?? [])
 
   // 받은 청소비로 부담한 건이 있는 계약만 잔고를 보여준다. 부담이 없으면 보여줄 잔고도 없다.
   const fundedLeases = [...new Set((rows ?? [])
@@ -219,6 +237,43 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
             {editing ? '편집 완료' : '편집'}
           </Btn>
         </div>
+      )}
+      {/* 삭제분 — 편집 모드에서만 연다. §16 의 2순위 진입점이고, 종전에는 없었다.
+          평소에는 목록을 늘리지 않으려고 조회조차 안 한다(누를 때 가져온다). */}
+      {canEdit && editing && (
+        trashOpen ? (
+          <div className="mt-2 border-t border-[var(--warm-border)] pt-2">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-1.5">삭제된 기록</p>
+            {trash === null ? (
+              <SkeletonRows rows={1} className="py-1" />
+            ) : trash.length === 0 ? (
+              <p className="text-xs text-[var(--warm-muted)]">삭제된 기록이 없습니다.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {trash.map(m => (
+                  <li key={`t-${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2 opacity-70" style={{ background: 'var(--cream)' }}>
+                    {m.sort === 'c' ? (
+                      <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
+                        canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
+                    ) : (
+                      <RoomWorkRowBody row={m.work} canEdit={canEdit} deleted
+                        onChanged={() => { reload(); loadTrash() }} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button type="button" onClick={() => setTrashOpen(false)}
+              className="mt-1.5 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">접기</button>
+          </div>
+        ) : (
+          <div className="mt-1.5 flex justify-end">
+            <button type="button" onClick={loadTrash}
+              className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
+              삭제된 기록 보기
+            </button>
+          </div>
+        )
       )}
       </div>)}
     </section>

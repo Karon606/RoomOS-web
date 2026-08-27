@@ -40,6 +40,8 @@ export type RoomWorkRow = {
   performer: CleaningPerformer | null
   performerName: string | null
   memo: string | null
+  /** 삭제된 행인가 — includeDeleted 로 실어 온 목록에서만 true 가 있다(복원만 할 수 있다). */
+  deleted?: boolean
   /** 이 작업에 붙은 지출의 합. 여러 건이 붙을 수 있다(자재 여러 날 + 시공 하루). */
   /**
    * 이 작업의 **시공비**. 자재는 안 센다(운영자 확정 2026-08-27).
@@ -65,17 +67,24 @@ export type RoomWorkRow = {
 }
 
 /** 한 방의 작업 이력. 방 상세 위젯이 쓴다. */
-export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
+/**
+ * 방 하나의 작업 이력.
+ *
+ * includeDeleted — 삭제분까지 싣는다. **§16 의 2순위 진입점을 위한 것이다.** 종전에는
+ * restoreRoomWork 를 부르는 곳이 삭제 토스트(6초) 하나뿐이라, 놓치면 복원할 길이 앱
+ * 어디에도 없었다(2026-08-28 확인). 방 모달의 편집 모드가 그 자리를 받는다.
+ */
+export async function listRoomWorks(roomId: string, opts: { includeDeleted?: boolean } = {}): Promise<RoomWorkRow[]> {
   const { propertyId } = await requirePropertyAccess()
   // RoomWork 는 소프트삭제 익스텐션 대상이 아니다(lib/prisma SOFT_DELETE_MODELS 는 둘뿐) —
   // deletedAt 을 손으로 적어야 한다. RoomCleaning 도 같은 처지다.
   const rows = await prisma.roomWork.findMany({
-    where: { propertyId, roomId, deletedAt: null },
+    where: { propertyId, roomId, ...(opts.includeDeleted ? {} : { deletedAt: null }) },
     orderBy: [{ doneDate: 'desc' }, { scheduledDate: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, roomId: true, kind: true, status: true,
       scheduledDate: true, doneDate: true,
-      performer: true, performerName: true, memo: true,
+      performer: true, performerName: true, memo: true, deletedAt: true,
       room: { select: { roomNo: true } },
       expenses: { select: { id: true, amount: true, itemLabel: true, detail: true, costKind: true } },
     },
@@ -90,6 +99,7 @@ export async function listRoomWorks(roomId: string): Promise<RoomWorkRow[]> {
       performerName: r.performerName, memo: r.memo,
       cost: c.labor, laborCost: c.labor, materialCost: c.material,
       expenseCount: r.expenses.length,
+      deleted: !!r.deletedAt,
       laborExpenseCount: r.expenses.filter(e => isLaborItem(e.itemLabel, e.detail, e.costKind)).length,
       linkedExpenses: r.expenses.map(e => ({
         id: e.id, amount: e.amount, label: e.itemLabel ?? e.detail ?? '(이름 없음)',

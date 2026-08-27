@@ -82,9 +82,17 @@ async function loadCleaningRows(
 }
 
 /** 그 방의 청소 이력 — 최근 것부터. */
-export async function getRoomCleanings(roomId: string): Promise<CleaningRow[]> {
+/**
+ * 방 하나의 청소 이력.
+ *
+ * includeDeleted — 삭제분까지 싣는다. **§16 의 2순위 진입점을 위한 것이다.** 종전에는
+ * 삭제를 되돌릴 길이 토스트(6초)뿐이라 놓치면 앱 어디에도 복원 진입점이 없었다. 코드 주석은
+ * "호실 관리 '청소' 뷰의 '삭제됨 보기'가 2순위"라고 적어 뒀지만 **그 화면이 실재하지 않았다**
+ * (2026-08-28 전수 확인). 방 모달의 편집 모드가 그 자리를 받는다.
+ */
+export async function getRoomCleanings(roomId: string, opts: { includeDeleted?: boolean } = {}): Promise<CleaningRow[]> {
   const { propertyId } = await requirePropertyAccess()
-  return loadCleaningRows({ propertyId, roomId })
+  return loadCleaningRows({ propertyId, roomId }, opts)
 }
 
 /**
