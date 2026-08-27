@@ -47,6 +47,23 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
   // (§11 최대 2개를 이미 넘겼다) 이 위젯 말고는 앱 어디에도 안 뜬다. 접어서 숨기면 그 사실이
   // 앱에서 사라진다. 손으로 접거나 편 것은 그 세션 동안 규칙보다 강하다.
   const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  // 편집 모드 — 끄면 행 조작이 안 보인다. 운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해".
+  //
+  // **[삭제]가 아니라 [완료 적용취소]가 진짜 위험했다.** 삭제는 확인창과 되돌리기 토스트를
+  // 둘 다 갖췄는데 완료 적용취소는 즉발이었다(같은 날 확인창을 달았다). 그래서 '삭제만 감추기'가
+  // 아니라 전부 감춘다 — 가르면 무엇이 감춰지는지를 운영자가 외워야 하고, 직관대로 가르면
+  // 정작 위험한 것만 남는다.
+  //
+  // 새 문법이 아니다. 선택 모드(계약서·입주자·재고 세 화면)가 같은 껍데기로 "모드 켜면
+  // 개별 액션 숨김"을 이미 한다(§23 — 숨김이지 비활성이 아니다).
+  //
+  // 기억하지 않는다. 켜진 채로 기억되면 다음에 열 때 운영자가 무서워한 그 화면이 그대로 뜬다.
+  const [editing, setEditing] = useState(false)
+  // 방을 바꾸면(방 전환 세그먼트) 편집·접힘을 원래대로 — 앞 방에서 켠 편집이 따라가면
+  // 새 방이 열리자마자 조작이 서 있게 된다. effect 가 아니라 렌더 중 조정이다(React 권장 패턴,
+  // MonthSelector 가 쓰는 그 문법) — effect 에서 setState 를 부르면 리렌더가 한 번 더 돈다.
+  const [syncedRoom, setSyncedRoom] = useState(roomId)
+  if (syncedRoom !== roomId) { setSyncedRoom(roomId); setEditing(false); setUserOpen(null) }
   // 최근에 맡긴 업체·사람 — 완료 폼 이름 칸 선택지. 없는 영업장은 손으로 적는다.
   const [recentPerformers, setRecentPerformers] = useState<string[]>([])
 
@@ -166,9 +183,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
             <li key={`${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
               {m.sort === 'c' ? (
                 <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
-                  canEdit={canEdit} onChanged={reload} />
+                  canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
               ) : (
-                <RoomWorkRowBody row={m.work} canEdit={canEdit} onChanged={reload} />
+                <RoomWorkRowBody row={m.work} canEdit={canEdit} showActions={canEdit && editing} onChanged={reload} />
               )}
             </li>
           ))}
@@ -192,6 +209,16 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
           (상태·전입신고 불가·청소 필요). 배지를 넷째로 더하는 것은 별건이라 여기서는 사실만 적는다. */}
       {openWork && (
         <p className="mt-2 text-xs text-[var(--warning-fg)]">{openWork.kind} 예정이 남아 있습니다.</p>
+      )}
+      {/* 편집 토글 — 헤더가 아니라 목록 아래다. 헤더에 넣으면 셰브론 + 등록 둘 + 편집으로 넷이 되어
+          §23 의 'CTA 1~2개'를 넘기고 320px 에서 접힌다. 접혀 있으면 이 버튼도 함께 숨어
+          버튼이 0개가 된다. 데이터가 오기 전에는 안 그린다 — 눌러도 아무 일이 없다. */}
+      {canEdit && rows !== null && works !== null && merged.length > 0 && (
+        <div className="mt-2 flex justify-end">
+          <Btn variant="secondary" size="sm" onClick={() => setEditing(e => !e)}>
+            {editing ? '편집 완료' : '편집'}
+          </Btn>
+        </div>
       )}
       </div>)}
     </section>

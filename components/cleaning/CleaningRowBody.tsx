@@ -60,9 +60,19 @@ export const cleaningTone = (s: CleaningStatus): BadgeTone =>
   (s === 'DONE' ? 'paid' : s === 'SKIPPED' ? 'info' : 'await')
 
 export function CleaningRowBody({
-  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, onOpenRoom, onChanged,
+  row: r, fund: fundProp, recentPerformers, canEdit, deleted = false, showActions = true, onOpenRoom, onChanged,
 }: {
   row: CleaningRow
+  /**
+   * 조작 버튼을 세울 것인가. **기본은 true 다** — 호실 관리 목록 등 다른 호출부가 종전
+   * 그대로 돌아야 한다. 기본을 false 로 두면 그 화면들의 조작이 통째로 사라진다.
+   *
+   * 호실 모달만 false 를 넘겨 보기 모드로 연다. 완료된 일 옆에 조작이 상시로 서 있으면
+   * 겨눈 것 옆을 스쳐 눌린다(운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해").
+   * **예정 행의 [완료 처리]는 이 값과 무관하게 선다** — 안 끝난 일은 바로 끝낼 수 있어야 한다.
+   */
+  showActions?: boolean
+
   /** 받은 청소비 잔고. undefined 면 완료 폼을 열 때 이 컴포넌트가 그 방 것을 직접 조회한다. */
   fund?: CleaningFundStatus | null
   recentPerformers: string[]
@@ -377,6 +387,9 @@ export function CleaningRowBody({
               완료 처리
             </RowActionBtn>
           )}
+          {/* 여기부터는 편집 모드에서만 선다(형제 작업 행과 같은 규칙).
+              **[완료 처리]는 위에 남는다** — 안 끝난 일은 바로 끝낼 수 있어야 한다. */}
+          {showActions && (<>
           {/* 날짜 변경은 상태를 안 가린다. 완료 건이면 완료일을 고친다. */}
           <RowActionBtn tone="neutral" disabled={pending}
             onClick={() => {
@@ -438,6 +451,7 @@ export function CleaningRowBody({
             }}>
             삭제
           </RowActionBtn>
+          </>)}
         </div>
       )}
     </>

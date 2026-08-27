@@ -38,10 +38,20 @@ const PERFORMERS: CleaningPerformer[] = ['SELF', 'VENDOR', 'THIRD_PARTY']
 const workTone = (s: 'PLANNED' | 'DONE'): BadgeTone => (s === 'DONE' ? 'paid' : 'await')
 
 export function RoomWorkRowBody({
-  row: r, canEdit, deleted = false, onChanged,
+  row: r, canEdit, deleted = false, showActions = true, onChanged,
 }: {
   row: RoomWorkRow
   canEdit: boolean
+  /**
+   * 조작 버튼을 세울 것인가. **기본은 true 다** — 호실 관리 목록 등 다른 호출부가 종전
+   * 그대로 돌아야 한다. 기본을 false 로 두면 그 화면들의 조작이 통째로 사라진다.
+   *
+   * 호실 모달만 false 를 넘겨 보기 모드로 연다. 완료된 일 옆에 조작이 상시로 서 있으면
+   * 겨눈 것 옆을 스쳐 눌린다(운영자 지적 2026-08-27 — "뭔가 눌릴까봐 불안해").
+   * **예정 행의 [완료 처리]는 이 값과 무관하게 선다** — 안 끝난 일은 바로 끝낼 수 있어야 한다.
+   */
+  showActions?: boolean
+
   /** 삭제된 행 — 복원만 할 수 있다. */
   deleted?: boolean
   onChanged: () => void
@@ -266,6 +276,10 @@ export function RoomWorkRowBody({
           {r.status === 'PLANNED' && (
             <RowActionBtn tone="accent" disabled={pending} onClick={() => setDoneOpen(true)}>완료 처리</RowActionBtn>
           )}
+          {/* 여기부터는 편집 모드에서만 선다. 완료된 일 옆에 조작이 상시로 서 있으면
+              겨눈 것 옆을 스쳐 눌린다 — 히트영역이 보이는 박스보다 위아래 9px 넓은데 간격이 6px 다.
+              **[완료 처리]는 위에 남는다**: 안 끝난 일은 바로 끝낼 수 있어야 한다. */}
+          {showActions && (<>
           {/* 날짜 변경 — 예정·완료 둘 다에 선다. 청소 행에는 있는데 여기만 없어서 예정 날짜를
               고칠 길이 아예 없었다(운영자 신고 2026-08-25). 여는 순간 그 행의 현재 날짜를 담는다. */}
           <RowActionBtn disabled={pending}
@@ -276,13 +290,30 @@ export function RoomWorkRowBody({
             }}>
             날짜 변경
           </RowActionBtn>
+          {/* 종전에는 확인창도 되돌리기도 없이 **즉발**했다. 한 번 스치면 완료가 예정으로
+              돌아가고 그 방이 다시 '할 일'로 뜬다 — 무엇을 눌렀는지 모른 채 데이터가 틀어진다.
+              되돌리기 토스트가 아니라 확인창인 이유는, 이 조작 자체가 이미 되돌리기라
+              그것을 또 되돌리는 것이 헷갈리기 때문이다.
+              라벨도 '완료 되돌리기'에서 형제 청소 행과 같은 '완료 적용취소'로 맞춘다(§16 단일). */}
           {r.status === 'DONE' && (
             <RowActionBtn disabled={pending}
-              onClick={() => run(() => reopenRoomWork(r.id), '완료를 되돌렸습니다')}>
-              완료 되돌리기
+              onClick={async () => {
+                if (!(await confirmDialog({
+                  title: `${r.kind} 완료를 적용취소할까요?`,
+                  message: r.expenseCount > 0
+                    ? `예정으로 되돌립니다. 걸린 지출 ${r.expenseCount}건은 그대로 남습니다 — 다시 완료해도 두 벌이 안 생깁니다.`
+                    : '예정으로 되돌립니다. 기록은 남습니다.',
+                  level: 'caution', confirmLabel: '적용취소',
+                }))) return
+                run(() => reopenRoomWork(r.id), '완료를 적용취소했습니다')
+              }}>
+              완료 적용취소
             </RowActionBtn>
           )}
-          <RowActionBtn tone="danger" disabled={pending}
+          {/* 삭제만 오른쪽 끝으로 민다 — 형제 청소 행에는 원래 있고 여기만 없었다.
+              버튼 히트영역이 보이는 박스보다 위아래 9px 씩 넓은데 간격이 6px 이라,
+              옆 버튼을 겨누다 스치는 것이 오탭의 직접 원인이었다. */}
+          <RowActionBtn tone="danger" disabled={pending} className="ml-auto"
             onClick={async () => {
               if (!(await confirmDialog({ title: `${r.kind} 기록을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
               run(() => deleteRoomWork(r.id), '작업 기록 삭제됨', {
@@ -295,6 +326,7 @@ export function RoomWorkRowBody({
             }}>
             삭제
           </RowActionBtn>
+          </>)}
         </div>
       )}
     </div>
