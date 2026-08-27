@@ -931,13 +931,30 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                       className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">숫자 규격으로</button>
                   </div>
                 )}
-                {/* 담은 품목의 브랜드·제품명 — 값이 있을 때만 흐린 한 줄. 담기 전에 눈으로 대조하는
-                    자리라 카드 안에 줄을 늘리지 않고 한 줄로 붙인다. 제품명은 길어서 truncate. */}
-                {(it.brand || it.productName) && (
-                  <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">
-                    {[it.brand, it.productName].filter(Boolean).join(' · ')}
-                  </p>
-                )}
+                {/* 담은 품목의 브랜드·제품명 — **여기서 바로 고칠 수 있어야 한다**.
+                    수정 화면은 이 카드만 보이므로 읽기 전용으로 두면 과거 지출에 브랜드를 넣을
+                    길이 없다(운영자 지적 2026-08-27). 문법은 바로 위 '규격(직접)' 줄과 같다.
+                    값이 없으면 접어 두고 점선 버튼으로 연다 — 카드가 이미 조밀하다. */}
+                {allowMulti && (it.brand != null || it.productName != null ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0">브랜드</span>
+                    <input type="text" value={it.brand ?? ''}
+                      onChange={e => patchItem(idx, { brand: e.target.value })}
+                      placeholder="예: 필립스"
+                      className={`w-20 shrink-0 ${smallNum} text-left`} />
+                    <input type="text" value={it.productName ?? ''}
+                      onChange={e => patchItem(idx, { productName: e.target.value })}
+                      placeholder="제품명 (예: 3000 시리즈 HD9318/00)"
+                      className={`flex-1 min-w-0 ${smallNum} text-left`} />
+                    <button type="button" onClick={() => patchItem(idx, { brand: undefined, productName: undefined })}
+                      className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 shrink-0">지우기</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => patchItem(idx, { brand: '', productName: '' })}
+                    className="text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 self-start">
+                    브랜드·제품명 입력
+                  </button>
+                ))}
                 {allowMulti && rooms.length > 0 && (
                   <div>
                     <button type="button" onClick={() => toggleAlloc(idx)}
