@@ -163,14 +163,6 @@ export function CleaningRowBody({
             담당 {CLEANING_PERFORMER_LABEL[r.plannedPerformer]}
           </span>
         )}
-        {/* 되돌린 건은 수행자 구분은 내려가도 이름은 남는다(재완료 때 다시 안 적게).
-            구분 없이 이름만 뜨면 무슨 이름인지 안 서니, 바로 옆 '기록된 지출' 과 같은 말을 붙여 가른다. */}
-        {(r.performer || r.performerName) && (
-          <span className="text-xs text-[var(--warm-muted)]">
-            {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
-            {r.performerName ? ` · ${r.performerName}` : ''}
-          </span>
-        )}
         {/* 되돌린 건은 예정인데도 지출이 그대로 걸려 있다(그래야 재완료가 두 건을 안 만든다).
             같은 금액을 완료 건과 똑같이 보여주면 '예정인데 얼마 나갔다'로 읽히니 말을 붙여 가른다. */}
         {r.cost != null && r.cost > 0 && (
@@ -186,6 +178,17 @@ export function CleaningRowBody({
           <span className="text-xs text-[var(--warm-muted)]">받은 청소비로 부담</span>
         )}
       </div>
+
+      {/* 수행자도 §11 보조줄 — 형제인 작업 행과 같은 자리다. 사람 이름은 길이를 모르는 자유
+          입력이라 칩 줄에 두면 뒤따르는 금액이 다음 줄로 밀려 행마다 모양이 갈린다
+          (운영자 지적 2026-08-28). 되돌린 건은 수행자 구분은 내려가도 이름은 남으므로
+          (재완료 때 다시 안 적게) 구분 없이 이름만 설 때가 있다 — '기록된 이름'으로 가른다. */}
+      {(r.performer || r.performerName) && (
+        <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)]${deleted ? ' opacity-60' : ''}`}>
+          {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
+          {r.performerName ? ` · ${r.performerName}` : ''}
+        </p>
+      )}
       {/* 사유 메모는 §11 보조줄. 길이를 모르는 자유 입력이라 칩 줄에 끼우면 줄이 무너진다. */}
       {r.memo && (
         <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words${deleted ? ' opacity-60' : ''}`}>{r.memo}</p>

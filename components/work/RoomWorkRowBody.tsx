@@ -94,12 +94,6 @@ export function RoomWorkRowBody({
         <StatusBadge tone={workTone(r.status)}>{r.status === 'DONE' ? '완료' : '예정'}</StatusBadge>
         <span className="text-xs font-medium text-[var(--warm-dark)]">{r.kind}</span>
         {shownDate && <span className="text-xs text-[var(--warm-muted)] num">{fmtDateDot(shownDate)}</span>}
-        {(r.performer || r.performerName) && (
-          <span className="text-xs text-[var(--warm-muted)]">
-            {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
-            {r.performerName ? ` · ${r.performerName}` : ''}
-          </span>
-        )}
         {/* 되돌린 건은 예정인데도 지출이 그대로 걸려 있다(그래야 재완료가 두 건을 안 만든다).
             형제 행과 같은 말로 가른다 — '예정인데 얼마 나갔다'로 읽히면 안 된다. */}
         {r.cost > 0 && (
@@ -115,6 +109,17 @@ export function RoomWorkRowBody({
           <span className="text-xs text-[var(--warm-muted)] num">시공 {r.laborExpenseCount}건</span>
         )}
       </div>
+
+      {/* 수행자는 §11 보조줄이다. 칩 줄에 두면 종류 이름이 긴 행에서 금액이 다음 줄로 밀려
+          형제 행과 모양이 갈린다 — '실리콘 시공 · 날짜 · 업체 · 글로벌코킹'까지 서면 150,000원이
+          내려간다(운영자 지적 2026-08-28). 시공비·자재비를 칩 줄에서 내렸던 것과 같은 이유이고,
+          그때 실측(437px, 320·360·390 전부 두 줄)으로 이미 한 번 겪은 자리다. */}
+      {(r.performer || r.performerName) && (
+        <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">
+          {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
+          {r.performerName ? ` · ${r.performerName}` : ''}
+        </p>
+      )}
 
       {/* 걸린 지출 줄 — **무엇이 얼마이고 어느 업체인지** 여기서 보인다.
           종전에는 '시공 2건'이라고만 하고 내용을 안 보여줬다(운영자 지적 2026-08-28 —
