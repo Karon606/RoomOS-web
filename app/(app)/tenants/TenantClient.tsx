@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
+import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
@@ -4495,8 +4496,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               단기를 켠 채 날짜만 지워도 값이 있을 때만 그리던 탓에 역시 빠져 12/20 이 계속 남았다.
               단기 해제 = 퇴실 예정일이 필요 없다는 뜻이므로 빈 값을 명시 전송해 함께 비운다.
               퇴실 예정·퇴실 확정(showExitDate)은 아래 '퇴실일' 필드가 정본이라 여기서 손대지 않는다 —
-              퇴실 예정 처리 경로와 무접점. */}
-          {!showExitDate && <input type="hidden" name="expectedMoveOut" value={isShortTerm ? shortOut : ''} />}
+              퇴실 예정 처리 경로와 무접점.
+              **다만 '단기가 아니다'와 '단기를 껐다'는 다른 말이다.** 원래부터 일반인 계약이
+              퇴실 예정일을 갖고 있으면 이 칸은 화면에 서지도 않는데, 빈 값을 보내던 탓에
+              연락처만 고쳐 저장해도 날짜가 지워졌다(실측 2026-08-28, 522호). 갈래는 lib/moveOutField. */}
+          {!showExitDate && (
+            <input type="hidden" name="expectedMoveOut"
+              value={moveOutFieldValue({ isShortTerm, wasShortTerm: !!lease?.isShortTerm, formMoveOut: shortOut })} />
+          )}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isShortTerm} onChange={e => setIsShortTerm(e.target.checked)}
               className="w-4 h-4 accent-[var(--coral)]" />
