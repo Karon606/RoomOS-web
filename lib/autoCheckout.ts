@@ -91,3 +91,42 @@ export function autoCheckoutDue(
   const flip = autoCheckoutFlipYmd(lease, policy)
   return flip != null && flip <= todayYmd
 }
+
+/** 운영자가 고른 전환 시점. 'now' 는 지금 바로 퇴실 예정, 'auto' 는 전환일까지 거주중. */
+export type CheckoutTiming = 'now' | 'auto'
+
+/**
+ * 지금 물어야 하는가 — 퇴실일을 정하거나 고쳤는데 **전환일이 아직 미래**일 때만.
+ *
+ * 전환일이 이미 지났으면 어느 쪽을 골라도 결과가 같다(거주중으로 둬도 다음 크론이 바꾼다).
+ * 그 자리에서 묻는 것은 답이 하나뿐인 물음이라 방해만 된다.
+ */
+export function needsCheckoutTimingChoice(args: {
+  lease: AutoCheckoutLease
+  /** 종전 퇴실일 — 안 바뀌었으면 묻지 않는다. */
+  prevMoveOut: string | null
+  todayYmd: string
+  policy?: CheckoutLeadPolicy
+}): boolean {
+  const { lease, prevMoveOut, todayYmd, policy } = args
+  if (!lease.expectedMoveOut) return false
+  if (lease.expectedMoveOut === prevMoveOut) return false
+  const flip = autoCheckoutFlipYmd(lease, policy)
+  return flip != null && flip > todayYmd
+}
+
+/**
+ * 고른 시점을 저장 조각으로 — 진입점 넷이 이 결과를 제 data 에 펼친다.
+ *
+ * **choice 가 없으면 종전 동작(지금 바로 퇴실 예정)이다.** 임포트·구버전 클라·서버 직접 호출이
+ * 그 길로 떨어지고, 안전 기본값이 곧 현행 동작이라 부분 배포에도 결과가 안 갈린다.
+ */
+export function resolveCheckoutTiming(choice: CheckoutTiming | undefined): {
+  status: 'ACTIVE' | 'CHECKOUT_PENDING'
+  autoCheckoutAt: null
+} {
+  // 'auto' 는 거주중으로 두고 표식을 비운다 — 표식이 비어 있어야 크론이 전환일에 집는다.
+  return choice === 'auto'
+    ? { status: 'ACTIVE', autoCheckoutAt: null }
+    : { status: 'CHECKOUT_PENDING', autoCheckoutAt: null }
+}

@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease,
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease,
   getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -30,6 +30,7 @@ import { fmtRoomList } from '@/lib/roomNo'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
+import { askCheckoutTiming } from '@/components/tenant/checkoutTimingPrompt'
 
 // 이 전이가 계약을 끝내는가 — 퇴실 완료·입실 취소. 명단은 lib/leaseStatus 정본을 그대로 넓혀 쓴다.
 // 딸린 계약이 '끊긴 부모'가 되는 지점이 정확히 이 둘이다(lib/roomAssignment PARENT_LEASE_STATUSES 의 여집합).
@@ -98,6 +99,8 @@ type Lease = {
   dueDay: string | null
   isShortTerm: boolean
   reservationConfirmedAt: Date | string | null
+  /** 앱이 자동으로 퇴실 예정으로 바꾼 시각 — 그 사실을 말하고 되돌릴 문을 여는 근거다. */
+  autoCheckoutAt?: Date | string | null
   roomId: string | null
   // 예약금 처리 모드 해석값 — 예약 취소 반환/몰취 경로 분기('deposit'|'prepaid'|'none')
   reservationDepositMode: string
@@ -350,8 +353,23 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           })
           if (!r.ok) { pushToast('error', r.error); return }
         }
+        // 퇴실 예정 처리 — 아직 한참 남았으면 지금 바꿀지 그날 바꿀지 고르게 한다.
+        // 저장할 상태만 갈아 끼운다(서버는 평범한 ACTIVE 전이로 받는다) — 퇴실일을 명시로
+        // 넘기므로 '거주중 복귀는 퇴실일을 지운다'는 분기를 안 타고, 퇴실일이 바뀌었으니
+        // autoCheckoutAt 재무장도 저장 경로가 알아서 한다.
+        let toStatus = def.toStatus
+        if (def.toStatus === 'CHECKOUT_PENDING' && fields?.expectedMoveOut) {
+          const info = await getCheckoutTimingInfo(lease.id, fields.expectedMoveOut)
+          if (info.ok && info.needsChoice && info.flipYmd) {
+            const pick = await askCheckoutTiming({
+              tenantName, moveOutYmd: fields.expectedMoveOut, flipYmd: info.flipYmd,
+            })
+            if (pick === null) return
+            if (pick === 'auto') toStatus = 'ACTIVE'
+          }
+        }
         const res = await applyStatusTransition({
-          leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
+          leaseTermId: lease.id, tenantId, toStatus, ...(fields ?? {}),
           // 사유를 받는 전이인지는 statusReasons 가 정한다 — 종전에는 여기서 def.key==='cancel' 로 따로 판정해
           // 폼과 저장이 각자 조건을 들고 있었다. 퇴실 사유를 받기 시작하면 그대로 갈린다.
           ...(reasonsForStatus(def.toStatus) && buildReason(transReason, transReasonEtc)
@@ -421,6 +439,28 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       {/* 신고 9b974be0: 확정된 예약은 확정일 표시 */}
       {lease.status === 'RESERVED' && lease.reservationConfirmedAt && (
         <p className="-mt-1 pb-1 text-[0.6875rem] text-[var(--warm-muted)]">예약 확정일 {fmtDate(lease.reservationConfirmedAt)}</p>
+      )}
+
+      {/* 앱이 바꾼 것은 앱이 되돌릴 문을 함께 낸다. '퇴실예정 취소' 버튼과 나란히 두지 않는 이유는
+          하는 일이 달라서다 — 그쪽은 계획을 접느라 퇴실일까지 지우고, 이쪽은 앞당겨 바뀐 상태만
+          되돌리고 퇴실일은 그대로 둔다. 같은 줄에 두면 둘을 같은 것으로 읽는다. */}
+      {lease.status === 'CHECKOUT_PENDING' && lease.autoCheckoutAt && (
+        <p className="-mt-1 pb-1 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-[var(--warm-muted)]">
+          <span>{fmtDate(lease.autoCheckoutAt)}에 앱이 퇴실 예정으로 바꿨습니다.</span>
+          <button type="button" disabled={pending}
+            className="font-semibold text-[var(--tc-text)] underline underline-offset-2 disabled:opacity-50"
+            onClick={() => startTransition(async () => {
+              const release = trackSave()
+              try {
+                const r = await undoAutoCheckout(lease.id)
+                if (!r.ok) { pushToast('error', r.error); return }
+                pushToast('success', '거주중으로 되돌렸습니다. 퇴실일은 그대로입니다')
+                onChange?.()
+              } finally { release() }
+            })}>
+            거주중으로 되돌리기
+          </button>
+        </p>
       )}
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}

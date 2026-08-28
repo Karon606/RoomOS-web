@@ -8,6 +8,7 @@
 //   · **퇴실일이 없으면 전환도 없다** — 언제 바꿀지 정할 근거가 없다.
 import {
   checkoutLeadKind, autoCheckoutFlipYmd, autoCheckoutDue, minusCalendarMonths,
+  needsCheckoutTimingChoice, resolveCheckoutTiming,
 } from '../lib/autoCheckout'
 
 let pass = 0
@@ -76,6 +77,31 @@ eq('전환일 당일은 대상이다', autoCheckoutDue(lee, '2026-09-19'), true)
 // 크론이 하루 결번해도 다음 날 잡힌다 — 창이 '이하'라 자동으로 성립한다.
 eq('전환일을 지나쳐도 잡힌다', autoCheckoutDue(lee, '2026-09-25'), true)
 eq('퇴실일이 없으면 대상이 아니다', autoCheckoutDue(L({ moveInDate: '2026-01-01' }), '2026-09-19'), false)
+
+// ── 언제 묻는가 ────────────────────────────────────────────────────
+const ask = (o: Parameters<typeof needsCheckoutTimingChoice>[0]) => needsCheckoutTimingChoice(o)
+eq('퇴실일을 새로 정했고 전환일이 미래면 묻는다',
+  ask({ lease: lee, prevMoveOut: null, todayYmd: '2026-08-28' }), true)
+eq('퇴실일이 그대로면 안 묻는다',
+  ask({ lease: lee, prevMoveOut: '2026-10-19', todayYmd: '2026-08-28' }), false)
+// 전환일이 이미 지났으면 어느 쪽을 골라도 결과가 같다 — 답이 하나뿐인 물음은 방해다.
+eq('전환일이 지났으면 안 묻는다',
+  ask({ lease: lee, prevMoveOut: null, todayYmd: '2026-09-20' }), false)
+eq('전환일 당일도 안 묻는다',
+  ask({ lease: lee, prevMoveOut: null, todayYmd: '2026-09-19' }), false)
+eq('퇴실일이 없으면 안 묻는다',
+  ask({ lease: L({ moveInDate: '2025-06-21' }), prevMoveOut: null, todayYmd: '2026-08-28' }), false)
+// 단기는 리드가 짧아 묻는 창도 좁다.
+eq('단기도 전환일이 미래면 묻는다',
+  ask({ lease: L({ isShortTerm: true, moveInDate: '2026-09-01', expectedMoveOut: '2026-09-20' }), prevMoveOut: null, todayYmd: '2026-09-05' }), true)
+eq('단기 전환일이 지났으면 안 묻는다',
+  ask({ lease: L({ isShortTerm: true, moveInDate: '2026-09-01', expectedMoveOut: '2026-09-20' }), prevMoveOut: null, todayYmd: '2026-09-15' }), false)
+
+// ── 고른 시점의 저장 조각 ──────────────────────────────────────────
+eq("'지금'은 퇴실 예정으로", resolveCheckoutTiming('now'), { status: 'CHECKOUT_PENDING', autoCheckoutAt: null })
+eq("'그날'은 거주중으로 두고 표식을 비운다", resolveCheckoutTiming('auto'), { status: 'ACTIVE', autoCheckoutAt: null })
+// 안전 기본값이 곧 현행 동작이라 부분 배포에도 결과가 안 갈린다.
+eq('안 고르면 종전 동작', resolveCheckoutTiming(undefined), { status: 'CHECKOUT_PENDING', autoCheckoutAt: null })
 
 console.log(`\n퇴실 자동 전환 판정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

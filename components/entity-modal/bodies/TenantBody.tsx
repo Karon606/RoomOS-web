@@ -90,7 +90,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
             dueDay: lease.dueDay, isShortTerm: lease.isShortTerm,
-            reservationConfirmedAt: lease.reservationConfirmedAt, roomId: lease.room?.id ?? null,
+            reservationConfirmedAt: lease.reservationConfirmedAt, autoCheckoutAt: lease.autoCheckoutAt ?? null,
+            roomId: lease.room?.id ?? null,
             reservationDepositMode: resolveReservationDepositMode(
               lease.reservationDepositMode, lease.property?.reservationDepositMode, lease.isShortTerm,
               parseShortStayPolicy(lease.property?.shortStayPolicy).reservationMode,

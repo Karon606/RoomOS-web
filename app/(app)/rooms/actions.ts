@@ -2691,6 +2691,7 @@ export async function getTenantDetail(tenantId: string) {
           tourDate: true,   // e1b81629: 투어일 유무로 '문의'/'투어 예정' 파생 라벨 분기
           tourTime: true,   // 투어 예정 시각 — 계약 정보 위젯이 날짜와 한 줄로 적는다(신고 91b72261)
           reservationConfirmedAt: true,   // 신고 9b974be0: 예약 확정 여부 — 상태 전환 위젯의 확정/해제 버튼 분기·확정일 표시
+          autoCheckoutAt: true,          // 앱이 자동으로 퇴실 예정으로 바꾼 시각 — 그 사실 표시와 되돌리기의 근거
 
           contactAlertDate: true,   // '연락할 때' 알림 시작일(지정) — 상세 표시용
           moveInFlexible: true,     // 입주 희망일 조절 가능 여부 — 매칭 날짜 게이트의 답을 상세에서도 보게(null=미확인)

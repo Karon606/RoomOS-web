@@ -26,6 +26,7 @@ import { recordDepositReceived, reanchorReservationPrepaid } from '@/app/(app)/r
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, clampPenaltyPct, isMoveOutNear, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import { kstYmdStr, kstDateTimeToUtc, ymdToDbDate } from '@/lib/kstDate'
+import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoCheckout'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
@@ -4283,6 +4284,98 @@ export async function undoRentRefund(leaseTermId: string): Promise<{ ok: true } 
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 이 퇴실일이면 언제 '퇴실 예정'으로 바뀌는가 — 되묻기 화면이 쓰는 답.
+ *
+ * 계산을 클라이언트가 하지 않는 이유. 리드는 영업장별 설정이라 화면이 제 기본값으로 재면
+ * "9/19 에 바뀝니다"라고 적어 놓고 다른 날 바뀐다. 크론과 화면이 **같은 함수·같은 설정**을
+ * 봐야 그 어긋남이 없다.
+ */
+export async function getCheckoutTimingInfo(
+  leaseTermId: string,
+  nextMoveOut: string,
+): Promise<{ ok: true; needsChoice: boolean; flipYmd: string | null } | { ok: false; error: string }> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { isShortTerm: true, moveInDate: true, expectedMoveOut: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    const prop = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { checkoutLeadShortDays: true, checkoutLeadMonths: true },
+    })
+    const policy = { shortDays: prop?.checkoutLeadShortDays, normalMonths: prop?.checkoutLeadMonths }
+    const ymd = (d: Date | null) => d ? d.toISOString().slice(0, 10) : null
+    const next = { isShortTerm: lease.isShortTerm, moveInDate: ymd(lease.moveInDate), expectedMoveOut: nextMoveOut }
+    return {
+      ok: true,
+      needsChoice: needsCheckoutTimingChoice({
+        lease: next, prevMoveOut: ymd(lease.expectedMoveOut), todayYmd: kstYmdStr(), policy,
+      }),
+      flipYmd: autoCheckoutFlipYmd(next, policy),
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '전환 시점을 확인하지 못했습니다.' }
+  }
+}
+
+/**
+ * 자동으로 바뀐 '퇴실 예정'을 거주중으로 되돌린다 — 앱이 한 일에 대한 적용취소.
+ *
+ * 기존 '퇴실예정 취소'와 무엇이 다른가. 그쪽은 **퇴실일까지 지운다**(신고 aae0ab38 의 처방이다 —
+ * 사람이 퇴실을 무르는 것은 계획 자체를 접는 일이라 그 규칙이 맞다). 여기서 무르는 것은 계획이
+ * 아니라 **앱이 상태를 앞당겨 바꾼 일**이므로 퇴실일은 그대로 둔다.
+ *
+ * autoCheckoutAt 도 지우지 않는다. 그 표식이 남아 있어야 다음 크론이 같은 계약을 다시 안 집는다 —
+ * 되돌린 뜻이 '아직 퇴실 예정으로 보고 싶지 않다'인데 내일 또 바뀌면 되돌린 것이 아니다.
+ * 퇴실일을 고치면 저장 경로가 표식을 비워 다시 무장한다.
+ */
+export async function undoAutoCheckout(
+  leaseTermId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, user } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { status: true, tenantId: true, autoCheckoutAt: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (lease.status !== 'CHECKOUT_PENDING' || !lease.autoCheckoutAt) {
+      return { ok: false, error: '자동으로 바뀐 건이 아닙니다.' }
+    }
+    // 그 뒤에 사람이 상태를 손댔으면 되돌릴 대상이 아니다 — 남의 결정을 덮는다.
+    const humanAfter = await prisma.tenantStatusLog.findFirst({
+      where: { leaseTermId, changedById: { not: null }, changedAt: { gt: lease.autoCheckoutAt } },
+      select: { id: true },
+    })
+    if (humanAfter) return { ok: false, error: '그 뒤에 상태를 직접 바꾼 기록이 있어 되돌릴 수 없습니다.' }
+
+    await prisma.leaseTerm.update({
+      where: { id: leaseTermId },
+      // expectedMoveOut·autoCheckoutAt 는 손대지 않는다(위 주석).
+      data: { status: 'ACTIVE' },
+    })
+    await syncRoomStayOnSave(prisma, leaseTermId, {
+      prevRoomId: null, nextRoomId: null,
+      prevStatus: 'CHECKOUT_PENDING', nextStatus: 'ACTIVE',
+    })
+    await prisma.tenantStatusLog.create({
+      data: {
+        tenantId: lease.tenantId, leaseTermId, propertyId,
+        fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE',
+        reason: '자동 전환 되돌림', changedById: user.sub,
+      },
+    })
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '되돌리는 중 오류가 발생했습니다.' }
   }
 }
 
