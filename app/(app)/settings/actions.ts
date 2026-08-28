@@ -14,6 +14,8 @@ import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
+import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, resolveUnitForSave } from '@/lib/unitOptions'
+import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
 import {
   parseDocMailTemplate, findUnknownVars, sanitizeDocMailHtml, renderDocMail,
@@ -380,6 +382,77 @@ export const getExpenseCategories = cache(async function getExpenseCategories():
   return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
 })
 
+/**
+ * 영업장 단위 목록 — 비면 코드 기본값(lib/unitOptions). getExpenseCategories 와 같은 문법이다.
+ *
+ * 값이 Property 행 안에 있으므로 다른 영업장으로 샐 경로가 구조적으로 없다. 전역인 것은
+ * 코드 기본값뿐이고, 그건 칼럼이 비었을 때의 폴백이지 다른 영업장 목록에 합쳐지지 않는다
+ * (운영자가 가장 걱정한 지점 — "한군데서 추가되었다고 앱 전체 추가되면 대참사").
+ */
+export const getSpecUnitOptions = cache(async function getSpecUnitOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { specUnitOptions: true },
+  })
+  return parseUnitOptions(property?.specUnitOptions, DEFAULT_SPEC_UNITS)
+})
+
+export const getQtyUnitOptions = cache(async function getQtyUnitOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId }, select: { qtyUnitOptions: true },
+  })
+  return parseUnitOptions(property?.qtyUnitOptions, DEFAULT_QTY_UNITS)
+})
+
+/**
+ * 저장 흐름 안에서 새 단위를 적립한다 — 목록에 없으면 끝에 붙이고, 있으면 아무것도 안 한다.
+ *
+ * **저장을 실제로 누른 시점에만 부른다.** 영수증 인식 시점에 적립하면 인식이 잘못 뽑은 말이
+ * 목록에 올라앉는다(실측 데이터의 '포인트' 가 그 경로로 들어올 뻔한 값이다).
+ * resolveCategoryForSave 를 쓰는 지출·요청 카테고리와 같은 계약이다.
+ */
+export async function noteUnitsUsed(kind: 'spec' | 'qty', units: (string | null | undefined)[]) {
+  const propertyId = await getPropertyId()
+  const current = kind === 'spec' ? await getSpecUnitOptions() : await getQtyUnitOptions()
+  let next = current
+  for (const u of units) {
+    const r = resolveUnitForSave(next, u)
+    if (r.nextList) next = r.nextList
+  }
+  if (next === current) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: kind === 'spec' ? { specUnitOptions: next.join(',') } : { qtyUnitOptions: next.join(',') },
+  })
+}
+
+/** 목록에 단위를 손으로 더한다 — 저장 흐름의 자동 적립과 같은 목록을 본다. */
+export async function addUnitOption(kind: 'spec' | 'qty', name: string) {
+  await requireEdit()
+  await noteUnitsUsed(kind, [name])
+  revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
+}
+
+/**
+ * 목록에서 단위를 뺀다 — **저장된 기록은 그대로 둔다.**
+ *
+ * 지출 카테고리 삭제와 같은 계약이다. 드롭다운에서만 사라진다. 지운 단위로 저장된 옛 지출이
+ * 갑자기 단위 없는 값이 되면 재고 매칭이 그 자리에서 깨진다.
+ */
+export async function deleteUnitOption(kind: 'spec' | 'qty', name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = kind === 'spec' ? await getSpecUnitOptions() : await getQtyUnitOptions()
+  const next = current.filter(u => u !== name)
+  if (next.length === current.length) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: kind === 'spec' ? { specUnitOptions: next.join(',') } : { qtyUnitOptions: next.join(',') },
+  })
+  revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
+}
+
 export async function addExpenseCategory(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()
@@ -443,7 +516,7 @@ export async function deleteRequestCategory(name: string) {
 
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories' | 'workKindOptions'
+type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods' | 'requestCategories' | 'workKindOptions' | 'specUnitOptions' | 'qtyUnitOptions'
 
 const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   roomTypeOptions:   '원룸,미니룸',
@@ -455,6 +528,8 @@ const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   paymentMethods:    '계좌이체,신용카드,체크카드,현금,네이버페이,카카오페이,토스,쿠팡캐시,서울페이,제로페이,페이코,SSG머니',
   requestCategories: REQUEST_CATEGORIES.join(','),
   workKindOptions:   '도배,장판',
+  specUnitOptions:   DEFAULT_SPEC_UNITS.join(','),
+  qtyUnitOptions:    DEFAULT_QTY_UNITS.join(','),
 }
 
 export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
@@ -506,6 +581,17 @@ const RENAME_CASCADE: Record<ReorderableField, { model: string; column: string }
   ],
   incomeCategories: [
     { model: 'extraIncome', column: 'category' },
+  ],
+  // 단위 이름 변경은 **표기를 고치는 도구**다('봉지'를 '봉'으로 한 번에 정리하는 자리).
+  // 저장된 숫자는 그대로 두고 글자만 바꾸므로, 뜻이 바뀌는 변경은 아래 renameOption 이 막는다
+  // ('g' 를 'kg' 로 바꾸면 값은 그대로인 채 단위만 커져 재고가 천 배로 틀린다).
+  specUnitOptions: [
+    { model: 'expense', column: 'specUnit' },
+    { model: 'trackedItem', column: 'specUnit' },
+  ],
+  qtyUnitOptions: [
+    { model: 'expense', column: 'qtyUnit' },
+    { model: 'trackedItem', column: 'qtyUnit' },
   ],
   paymentMethods: [
     { model: 'expense', column: 'payMethod' },
@@ -600,6 +686,14 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
   if (newValue === oldValue) return { ok: true, updated: 0 }
   if (!current.includes(oldValue)) return { ok: true, updated: 0 }
   if (current.includes(newValue)) return { ok: false, error: '이미 있는 이름입니다.' }
+  // 단위는 **표기만** 고치는 자리다. 뜻이 바뀌는 변경은 막는다 — 저장된 숫자는 그대로인 채
+  // 단위만 커지면 재고가 조용히 천 배로 틀린다. 값까지 환산하는 길은 재고 관리에 따로 있다.
+  if (field === 'specUnitOptions' || field === 'qtyUnitOptions') {
+    const a = canonicalUnit(oldValue), b = canonicalUnit(newValue)
+    if ((isConvertibleUnit(oldValue) || isConvertibleUnit(newValue)) && a !== b) {
+      return { ok: false, error: `'${oldValue}' 과 '${newValue}' 은 크기가 다른 단위라 이름만 바꾸면 저장된 수량이 틀어집니다. 재고 관리에서 품목별 단위 변환을 쓰면 값까지 함께 환산됩니다.` }
+    }
+  }
 
   const updated = current.map(v => v === oldValue ? newValue : v).join(',')
   const wishKey = RENAME_WISH_KEY[field]

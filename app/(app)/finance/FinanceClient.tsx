@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { getLabelCategoryHistory, getSpecTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
 import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
+import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '@/lib/unitOptions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
@@ -119,8 +120,11 @@ const DETAIL_OPTIONAL_CATEGORIES = ['공과금', '관리비', '임대료', '세�
 // ── 품목 선택기 설정 ─────────────────────────────────────────────
 
 
-const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', 'cm', 'mm', '장', '개', '회', '인분', '봉지', '알', '권']
-const QTY_UNITS  = ['개', '박스', '롤', '팩', '포대', '망', '단', '봉', '포기', '병', '통', '세트']
+// 어휘는 lib/unitOptions 정본. 종전에는 여기 배열 두 개가 정본 노릇을 했는데, 규격 마법사가
+// 따로 어휘를 들고 있어 이미 어긋나 있었고(마법사가 수량으로 저장하는 '장·매·알·권'이 이
+// 목록에 없어 다시 열면 '직접 입력'으로 떨어졌다) 실사용과도 갈렸다.
+const SPEC_UNITS = DEFAULT_SPEC_UNITS
+const QTY_UNITS  = DEFAULT_QTY_UNITS
 
 const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
   '쌀':         { specUnit: 'kg',  qtyUnit: '포대' },

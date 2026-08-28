@@ -18,17 +18,21 @@ export type SpecWizardResult = {
   unitBasis: 'spec' | 'qty'       // 단가 기준 제안: 내용량당 / 완제품 1개당
 }
 
+import { DEFAULT_SPEC_UNITS } from '@/lib/unitOptions'
+
 type Mode = 'spec' | 'piece' | 'free'
 type Group = { id: string; label: string; hint: string; units: string[]; specUnits: string[]; mode: Mode; basis: 'spec' | 'qty' }
 
-// 단위 어휘는 지출 폼(SPEC_UNITS/QTY_UNITS)과 동일 집합에서 — 새 표기를 만들지 않아 데이터 파편화 방지.
+// 단위 어휘는 lib/unitOptions 정본에서 온다. 종전에는 "지출 폼과 동일 집합에서"라고 적어 두고
+// 실제로는 한 낱말이 빠져 이미 어긋나 있었다 — 주석은 지켜지지 않으므로 상수를 직접 참조한다.
+// 그룹의 units·specUnits 는 '어떤 물건이냐'로 어휘를 좁힌 부분집합이라 여기 남는다.
 const GROUPS: Group[] = [
   { id: 'bottle', label: '통 · 병',    hint: '세제·락스 등 용기',        units: ['통', '병'],                        specUnits: ['ml', 'L', 'g', 'kg'],       mode: 'spec',  basis: 'spec' },
-  { id: 'bag',    label: '봉 · 팩',    hint: '봉지·팩 포장',             units: ['봉', '팩', '봉지', '포기'],         specUnits: ['g', 'kg', '매', '개', '인분'], mode: 'spec',  basis: 'spec' },
+  { id: 'bag',    label: '봉 · 팩',    hint: '봉지·팩 포장',             units: ['봉', '팩', '컵', '포기'],           specUnits: ['g', 'kg', '매', '개', '인분'], mode: 'spec',  basis: 'spec' },
   { id: 'box',    label: '박스 · 묶음', hint: '겉포장(개입 수 등)',       units: ['박스', '세트', '포대', '망', '단'], specUnits: ['개', '매', 'g', 'kg'],       mode: 'spec',  basis: 'spec' },
   { id: 'roll',   label: '롤',        hint: '감긴 자재(장판·랩 등)',     units: ['롤'],                              specUnits: ['m', '매', '장'],             mode: 'spec',  basis: 'spec' },
   { id: 'piece',  label: '낱개',      hint: '개별 물건(봉투·의자 등)',   units: ['개', '장', '매', '알', '권'],       specUnits: [],                            mode: 'piece', basis: 'qty'  },
-  { id: 'free',   label: '기타',      hint: '직접 입력',                units: [],                                  specUnits: ['kg', 'g', 'ml', 'L', '매', 'm', 'cm', 'mm', '장', '개', '회', '인분', '알', '권'], mode: 'free', basis: 'spec' },
+  { id: 'free',   label: '기타',      hint: '직접 입력',                units: [],                                  specUnits: DEFAULT_SPEC_UNITS, mode: 'free', basis: 'spec' },
 ]
 
 const chip = (on: boolean) =>

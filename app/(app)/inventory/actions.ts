@@ -16,6 +16,7 @@ const requireEdit = () => requireScopeEdit('inventory')
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, type DiffAttribution, suggestInventoryAlias, resolveDiffAttribution } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview, sumPurchases, sumAdditions, sumDisposals, resolveUnitHint } from './overview'
+import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { applyLocationCheck, detectHubShort, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
@@ -328,6 +329,10 @@ export async function createTrackedItem(data: {
       if (startCheck) await tx.stockCheck.create({ data: { trackedItemId: it.id, ...startCheck } })
       return it
     })
+    // 품목 카드에서 처음 쓰는 단위도 목록에 쌓는다 — 지출 폼과 어휘가 갈리면 안 된다.
+    // 트랜잭션 밖이다(목록 적립이 실패해도 품목 등록은 유효해야 한다).
+    await noteUnitsUsed('spec', [data.specUnit]).catch(() => {})
+    await noteUnitsUsed('qty', [data.qtyUnit]).catch(() => {})
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
   } catch (err) {

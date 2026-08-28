@@ -26,6 +26,7 @@ import { seedTrackedItemsFromExpenses, updateTrackedItem } from '@/app/(app)/inv
 import { buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, type LedgerShiftUndo } from '@/app/(app)/inventory/ledgerShift'
 import type { ShiftRow } from '@/lib/stockLedger'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, cleanUnit, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
+import { noteUnitsUsed } from '@/app/(app)/settings/actions'
 import { normalizeBizNo } from '@/lib/bizNo'
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { CLEANING_FEE_RECEIVED_WHERE } from '@/lib/incomeCategories'
@@ -540,6 +541,20 @@ async function resolveExpenseCategoryForSave(propertyId: string, raw: string | n
   return value
 }
 
+/**
+ * 저장에 실제로 쓰인 단위를 영업장 목록에 적립한다.
+ *
+ * **저장을 누른 뒤에만 부른다.** 영수증 인식 시점에 적립하면 인식이 잘못 뽑은 말이 목록에
+ * 올라앉는다. 실패는 삼킨다 — 목록은 다음 입력을 편하게 하려는 것이지 정합의 일부가 아니라,
+ * 목록을 못 썼다고 방금 저장한 지출을 무르는 것이 더 나쁘다.
+ */
+async function noteUnits(specUnits: (string | null | undefined)[], qtyUnits: (string | null | undefined)[]) {
+  try {
+    await noteUnitsUsed('spec', specUnits)
+    await noteUnitsUsed('qty', qtyUnits)
+  } catch { /* 목록 적립 실패가 지출 저장을 되돌리지 않는다 */ }
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true; backfilled?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -710,6 +725,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         data: { ...baseRow, amount: shippingIncluded, detail: '배송비', isShipping: true, excludeFromInventory: true },
       }))
       await prisma.$transaction(ops)
+      await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
@@ -744,6 +760,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
     if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel]).catch(() => {})
+    await noteUnits([specUnit], [qtyUnit])
     const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
     return { ok: true, backfilled }
@@ -948,6 +965,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         })] : []),
       ])
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
+      await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
       return { ok: true, backfilled }
@@ -1066,6 +1084,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         if (await propagateItemLabelRename(propertyId, category, existing.itemLabel, itemLabel)) revalidatePath('/inventory')
       } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
     }
+    await noteUnits([specUnit], [qtyUnit])
     const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
     return { ok: true, backfilled, ...(stockShift ? { stockShift } : {}) }

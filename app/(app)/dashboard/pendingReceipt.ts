@@ -10,7 +10,8 @@ import { requireEdit } from '@/lib/role'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
-import { getExpenseCategories } from '@/app/(app)/settings/actions'
+import { getExpenseCategories, noteUnitsUsed } from '@/app/(app)/settings/actions'
+import { cleanUnit } from '@/lib/receiptOcr'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { buildReceiptOcrPrompt, fetchGeminiOcr, parseReceiptOcrText, type ReceiptOcrItem, type ReceiptOcrResult } from '@/lib/receiptOcr'
@@ -291,8 +292,9 @@ export async function approvePendingReceipt(
           receiptUrl: row.imageUrl,
           settleStatus: 'SETTLED',
           itemLabel: final.itemLabel || null,
-          specUnit:  final.specUnit  || null,
-          qtyUnit:   final.qtyUnit   || null,
+          // 지출 저장 경로와 같은 정화 — 여기만 빠져 있었다(글자 없는 표기가 그대로 들어왔다).
+          specUnit:  cleanUnit(final.specUnit) ?? null,
+          qtyUnit:   cleanUnit(final.qtyUnit)  ?? null,
           specValue: final.specValue ? parseFloat(final.specValue) : null,
           specText:  final.specText?.trim() || null,
           qtyValue:  final.qtyValue  ? parseFloat(final.qtyValue)  : null,
@@ -303,6 +305,9 @@ export async function approvePendingReceipt(
       return e
     })
     if (!exp) return { ok: false, error: '이미 처리된 영수증입니다.' }
+    // 운영자가 승인을 누른 뒤에만 적립한다 — 인식 시점에 쌓으면 잘못 뽑힌 말이 목록에 올라앉는다.
+    await noteUnitsUsed('spec', [final.specUnit]).catch(() => {})
+    await noteUnitsUsed('qty', [final.qtyUnit]).catch(() => {})
     revalidatePath('/dashboard')
     revalidatePath('/finance')
     revalidatePath('/inventory')

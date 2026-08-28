@@ -19,6 +19,7 @@ import {
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   getRequestCategories, addRequestCategory, deleteRequestCategory,
+  getSpecUnitOptions, getQtyUnitOptions, addUnitOption, deleteUnitOption,
   reorderOptions, renameOption, countRenameTargets, resetOptionsToDefault,
   getWorkKindOptions, addWorkKindOption, deleteWorkKindOption,
   inviteMember, updateMemberRole, removeMember,
@@ -631,6 +632,60 @@ export default function SettingsForm({
   const handleResetRequestCategs = async () => {
     if (!(await confirmDialog({ title: '요청 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setRequestCategs(await resetOptionsToDefault('requestCategories'))
+  }
+
+  // ── 단위 어휘 ────────────────────────────────────────────────────
+  // 지출·재고 저장 때 처음 보는 단위가 들어오면 이 목록에 저절로 쌓인다. 여기는 그 목록을
+  // 정리하는 자리다 — 오타가 한 번 들어오면 지울 곳이 없어야 하는 것이 아니라 있어야 한다.
+  const [specUnits, setSpecUnits] = useState<string[]>([])
+  const [qtyUnits, setQtyUnits] = useState<string[]>([])
+  const [newSpecUnit, setNewSpecUnit] = useState('')
+  const [newQtyUnit, setNewQtyUnit] = useState('')
+  useEffect(() => {
+    getSpecUnitOptions().then(setSpecUnits).catch(console.error)
+    getQtyUnitOptions().then(setQtyUnits).catch(console.error)
+  }, [])
+  const handleAddSpecUnit = async () => {
+    const v = newSpecUnit.trim(); if (!v) return
+    await addUnitOption('spec', v)
+    setSpecUnits(prev => [...prev, v]); setNewSpecUnit('')
+  }
+  const handleDeleteSpecUnit = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return
+    await deleteUnitOption('spec', name)
+    setSpecUnits(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderSpecUnits = async (items: string[]) => {
+    setSpecUnits(items)
+    await reorderOptions('specUnitOptions', items)
+  }
+  const handleRenameSpecUnit = async (oldVal: string, newVal: string) => {
+    await runRename('specUnitOptions', oldVal, newVal, setSpecUnits)
+  }
+  const handleResetSpecUnits = async () => {
+    if (!(await confirmDialog({ title: '규격 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    setSpecUnits(await resetOptionsToDefault('specUnitOptions'))
+  }
+  const handleAddQtyUnit = async () => {
+    const v = newQtyUnit.trim(); if (!v) return
+    await addUnitOption('qty', v)
+    setQtyUnits(prev => [...prev, v]); setNewQtyUnit('')
+  }
+  const handleDeleteQtyUnit = async (name: string) => {
+    if (!(await confirmDialog({ title: `'${name}' 단위를 목록에서 뺄까요?`, message: '이미 저장된 지출과 재고는 그대로 있습니다. 앞으로 고를 때만 안 보입니다.', level: 'caution', confirmLabel: '빼기' }))) return
+    await deleteUnitOption('qty', name)
+    setQtyUnits(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderQtyUnits = async (items: string[]) => {
+    setQtyUnits(items)
+    await reorderOptions('qtyUnitOptions', items)
+  }
+  const handleRenameQtyUnit = async (oldVal: string, newVal: string) => {
+    await runRename('qtyUnitOptions', oldVal, newVal, setQtyUnits)
+  }
+  const handleResetQtyUnits = async () => {
+    if (!(await confirmDialog({ title: '수량 단위를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
+    setQtyUnits(await resetOptionsToDefault('qtyUnitOptions'))
   }
 
   // ── 고정 지출 ────────────────────────────────────────────────────
@@ -1257,6 +1312,37 @@ export default function SettingsForm({
             onRename={handleRenameRequestCateg}
             onReset={handleResetRequestCategs}
             placeholder="예: 인터넷, 주차, 택배…"
+          />
+          {/* 단위 어휘 — 저장할 때 새 단위가 저절로 쌓이므로, 여기는 쌓인 것을 정리하는 자리다.
+              규격과 수량을 가른 이유는 저장 칸이 둘이고 어휘도 다르기 때문이다('박스'가 규격에,
+              'kg'이 수량에 뜨면 안 된다). */}
+          <OptionSection
+            title="수량 단위 관리"
+            description="'몇 개 샀나'를 세는 단위입니다. 지출이나 재고를 저장할 때 목록에 없는 단위를 치면 저절로 여기 쌓입니다. 목록에서 빼도 이미 저장된 기록은 그대로 있고, 앞으로 고를 때만 안 보입니다."
+            items={qtyUnits}
+            getLabel={v => v}
+            newValue={newQtyUnit}
+            onNewValueChange={setNewQtyUnit}
+            onAdd={handleAddQtyUnit}
+            onDelete={handleDeleteQtyUnit}
+            onReorder={handleReorderQtyUnits}
+            onRename={handleRenameQtyUnit}
+            onReset={handleResetQtyUnits}
+            placeholder="예: 봉, 컵, 회…"
+          />
+          <OptionSection
+            title="규격 단위 관리"
+            description="'한 덩어리가 얼마짜리인가'를 재는 단위입니다. 120g 짜리, 30매 들이처럼 씁니다. 크기가 다른 단위끼리는 이름만 바꿀 수 없습니다(저장된 수량이 틀어지기 때문에, 값까지 바꾸려면 재고 관리의 단위 변환을 씁니다)."
+            items={specUnits}
+            getLabel={v => v}
+            newValue={newSpecUnit}
+            onNewValueChange={setNewSpecUnit}
+            onAdd={handleAddSpecUnit}
+            onDelete={handleDeleteSpecUnit}
+            onReorder={handleReorderSpecUnits}
+            onRename={handleRenameSpecUnit}
+            onReset={handleResetSpecUnits}
+            placeholder="예: 봉, 컵, 인분…"
           />
           {/* 품목 세부스펙 사전 — 데이터·도구 탭에서 옮겨 왔다(신고 ba9feb6b).
               적립된 게 없으면 카드 자체가 서지 않는다. */}
