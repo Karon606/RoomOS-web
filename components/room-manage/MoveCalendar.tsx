@@ -802,6 +802,7 @@ function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
  * 없습니다"라고 적는다. 없는 것과 여기서 셀 수 없는 것은 다른 말이다.
  */
 const UPCOMING_ROWS = 5   // 접힌 상태에서 보이는 행 수. 요약이 캘린더보다 커지면 요약이 아니다.
+const OVERDUE_ROWS = 3    // 지연 구역의 상한. 이 구역은 접힘 밖이라 제 상한이 따로 있어야 한다.
 
 function UpcomingRow({ items, works, todayInRange, todayYmd, onOpen, onOpenRoom, onGoWorks }: {
   items: MoveEvent[]
@@ -865,19 +866,32 @@ function UpcomingRow({ items, works, todayInRange, todayYmd, onOpen, onOpenRoom,
               한 건도 안 보인다(디자인 패널 실측 2026-08-28). 대시보드 알림의 '긴급' 존이
               같은 이유로 카테고리 그룹 밖에 있고 항상 펴져 있다 — 그 문법을 그대로 쓴다. */}
           {overdueWorks.length > 0 && (
-            <div>
-              <p className="px-4 pt-3 pb-1 text-[0.65625rem] font-semibold" style={{ color: 'var(--tc-text)' }}>예정일 경과</p>
+            <div className="border-b" style={{ borderColor: 'var(--warm-border)' }}>
+              <p className="px-4 pt-3 pb-1 text-[0.6875rem] font-bold" style={{ color: 'var(--tc-text)' }}>예정일 경과</p>
               <div className="divide-y divide-[var(--warm-border)]/50">
-                {overdueWorks.map(w => (
+                {overdueWorks.slice(0, OVERDUE_ROWS).map(w => (
                   <UpcomingWorkLine key={`w-${w.id}`} w={w} todayYmd={todayYmd} onOpenRoom={onOpenRoom} />
                 ))}
               </div>
+              {/* 접힘에서 뺀 구역이라 여기에도 상한이 있어야 한다. 없으면 '요약이 캘린더보다
+                  커지면 요약이 아니다'가 이 문으로 되돌아온다 — 지연은 창 왼쪽 끝까지 하한 없이
+                  들어오므로(lib/moveCalendar 967) 완료 표시를 한동안 안 남기면 열 건을 넘긴다. */}
+              {overdueWorks.length > OVERDUE_ROWS && (
+                <button type="button" onClick={onGoWorks}
+                  className="flex w-full items-center gap-1 px-4 pb-2 text-[0.65625rem] transition-colors hover:text-[var(--ink-2)]"
+                  style={{ color: 'var(--ink-m)' }}>
+                  <span>지연 {overdueWorks.length - OVERDUE_ROWS}건 더</span>
+                  <span className="flex-1" />
+                  <span>작업 탭에서 보기</span>
+                  <span aria-hidden="true">›</span>
+                </button>
+              )}
             </div>
           )}
 
           {items.length === 0 ? (
             /* 작업이 있으면 다른 줄이 그것을 말하므로 여기서 '없다'고 딱 잘라 말하지 않는다. */
-            <p className="px-4 pt-2 text-xs" style={{ color: 'var(--ink-m)' }}>
+            <p className="px-4 pt-4 text-xs" style={{ color: 'var(--ink-m)' }}>
               {works.length > 0 ? '예정된 입퇴실은 없습니다.' : '예정된 입퇴실이 없습니다.'}
             </p>
           ) : (
@@ -993,12 +1007,15 @@ function UpcomingWorkLine({ w, todayYmd, onOpenRoom }: {
   // §24 의 단계 규정을 그대로 따른다 — 1~6일은 warning 틴트, 7일 초과부터 솔리드.
   // 하루 늦은 청소가 한 달 밀린 임대료와 같은 색을 달면 그 색의 신호가 죽는다.
   const tone: BadgeTone = over > 6 ? 'overdue' : 'unpaid'
+  const badgeLabel = over > 0 ? `경과 ${over}일` : '경과'
   return (
     <UpcomingLineShell
       onClick={() => onOpenRoom(w.roomId)}
-      aria={workAria(w, w.roomNo)}
+      // 보이는 라벨이 접근 가능한 이름 안에 있어야 음성 입력이 눈에 보이는 말로 지목한다
+      // (WCAG 2.5.3 Label in Name). workAria 는 '예정일 경과'라 배지 글자와 달랐다.
+      aria={`${badgeLabel}. ${workAria(w, w.roomNo)}`}
       roomNo={fmtRoomNo(w.roomNo)} name={w.kindLabel}
-      badge={<StatusBadge tone={tone}>{over > 0 ? `경과 ${over}일` : '경과'}</StatusBadge>}
+      badge={<StatusBadge tone={tone}>{badgeLabel}</StatusBadge>}
     />
   )
 }
