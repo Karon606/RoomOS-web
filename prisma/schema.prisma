@@ -170,6 +170,11 @@ model Property {
   // 예약 폼 프리셋일 뿐 강제 아님(예약별 LeaseTerm.reservationDepositMode로 오버라이드).
   reservationDepositMode String?
   contactLeadDays  Int       @default(14)  // 잠재고객 연락 알림 — 입주 희망일 며칠 전부터(운영자별 기준, 기본 14)
+  // 퇴실 예정 자동 전환 리드 — 거주중에서 퇴실 예정으로 며칠(달) 전에 바꿀지. 판정은 lib/autoCheckout.
+  // 단기(한 달 이하 거주)는 일 단위, 그 밖은 **달력 개월**이다 — 30일로 못 박으면 윤달과
+  // 30/31 월에서 갈린다(운영자 확정 2026-08-28).
+  checkoutLeadShortDays Int  @default(7)
+  checkoutLeadMonths    Int  @default(1)
   // 퇴실 환불 규정 (영업장별) — 조기 퇴실 시 환불액 산정. 비면 위약금/고정 1일당 없음.
   refundPenaltyWithinDays Int?     // 입주 후 N일 이내 퇴실 시 위약금 적용 (null/0 = 위약금 없음)
   refundPenaltyPct        Int?     // 위약금율 — 잔 입실료의 P%

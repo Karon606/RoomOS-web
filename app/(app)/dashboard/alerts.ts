@@ -67,13 +67,15 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
-    // 퇴실 — 당일 + 경과(미처리) + 단기 자동 전환 D-1(내일): 처리 전까지 지속(운영자 확정 2026-07-11)
+    // 퇴실 — 당일 + 경과(미처리) + 내일 퇴실: 처리 전까지 지속(운영자 확정 2026-07-11)
     prisma.leaseTerm.findMany({
       where: {
         propertyId, status: 'CHECKOUT_PENDING',
         OR: [
           { expectedMoveOut: { lt: tomorrow } },
-          // 내일 퇴실은 단기 자동 전환 건만 — 전환 당일 '몰래 바뀌지 않게' 고지
+          // 내일 퇴실은 자동으로 바뀐 건만 — 사람이 직접 바꾼 것은 이미 알고 있는 일이다.
+          // 종전에는 이 조건이 곧 '단기'였다(자동 전환이 단기 전용이었다). 이제 일반 계약도
+          // 자동으로 바뀌므로 조건은 그대로 두되 문구에서 '단기'를 뺀다.
           { expectedMoveOut: { gte: tomorrow, lt: new Date(tomorrow.getTime() + 86400000) }, autoCheckoutAt: { not: null } },
         ],
       },
@@ -181,7 +183,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `checkout-${l.id}`, category: 'checkout',
       title: roomName(l.room?.roomNo, l.tenant.name),
       subtitle: overdueDays < 0
-        ? '내일 퇴실 — 단기 계약이라 퇴실 예정으로 자동 전환됨'
+        // 자동 전환은 이제 퇴실 하루 전이 아니라 리드에 따라 일주일·한 달 전에 끝난다.
+        // '단기 계약이라 자동 전환됨'은 일반 계약에도 뜨고 시점도 안 맞는 거짓말이 됐다.
+        ? '내일 퇴실 — 퇴실 처리 준비'
         : overdueDays > 0 ? `퇴실 예정일 경과 ${overdueDays}일 — 퇴실 처리 필요` : '오늘 퇴실 예정',
       tenantId: l.tenant.id, leaseTermId: l.id,
       roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,

@@ -118,9 +118,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   for (const l of leases) {
     const room = fmtRoom(l.room?.roomNo)
     const who = [room, l.tenant.name].filter(Boolean).join(' ')
-    // 퇴실 예정일 — 단기는 ACTIVE에도 발행(연장으로 거주중 복귀 시 D-1 자동 전환 전까지
-    // 새 퇴실일이 외부 캘린더에서 사라지는 공백 방지, 2026-07-20)
-    if ((l.status === 'CHECKOUT_PENDING' || (l.status === 'ACTIVE' && l.isShortTerm)) && l.expectedMoveOut) {
+    // 퇴실 예정일 — **퇴실일이 있으면 낸다.** 종전에는 퇴실 예정이거나 단기 거주중일 때만
+    // 발행해, 일반 계약의 퇴실일은 자동 전환 전까지 외부 캘린더에서 아예 안 보였다. 단기에
+    // 예외를 둔 이유(자동 전환 전 공백 방지, 2026-07-20)가 그대로 일반 계약에도 해당하고,
+    // 리드가 길어진 지금은 그 공백이 최대 한 달이다.
+    if ((l.status === 'CHECKOUT_PENDING' || l.status === 'ACTIVE') && l.expectedMoveOut) {
       const mo = new Date(l.expectedMoveOut)
       ev(`checkout-${l.id}`, mo.getFullYear(), mo.getMonth() + 1, mo.getDate(), `${who} 퇴실 예정`, '')
     }
