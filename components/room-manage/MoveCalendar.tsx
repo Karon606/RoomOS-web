@@ -951,24 +951,31 @@ function UpcomingRow({ items, works, todayInRange, todayYmd, onOpen, onOpenRoom,
  * 320px 에서 "402호 · Tagatova Aruzh…" 가 되어, 이사 두 건이 다시 호실 빼고 같은 글자가 된다
  * (디자인 패널 실측 2026-08-28 — 고치려던 바로 그 상태로 돌아간다). 줄어드는 것은 **이름뿐**이다.
  */
-function UpcomingLineShell({ roomNo, name, tail, badge, aria, onClick }: {
+function UpcomingLineShell({ roomNo, name, tail, sub, badge, aria, onClick }: {
   roomNo: string
   /** 유일하게 줄어드는 칸 */
   name: string
   /** 이사 목적지처럼 끝까지 살아야 하는 꼬리 */
   tail?: string | null
+  /** §11 보조줄 — 없으면 줄이 안 생긴다. 사람 이름은 길이를 몰라 주역 줄에 못 얹는다. */
+  sub?: string | null
   badge: React.ReactNode
   aria: string
   onClick: () => void
 }) {
   return (
     <button type="button" onClick={onClick} aria-label={aria}
-      className="flex w-full items-center gap-2 min-h-[44px] px-4 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]">
-      {/* §23 식별자 — 호실번호·이름이 이 행의 주어다. */}
-      <span className="flex min-w-0 flex-1 items-center text-sm font-semibold" style={{ color: 'var(--ink-2)' }}>
-        <span className="shrink-0 tnum">{roomNo}</span>
-        <span className="min-w-0 truncate">{' · '}{name}</span>
-        {tail && <span className="shrink-0 tnum">{' · '}{tail}</span>}
+      className="flex w-full items-center gap-2 min-h-[44px] px-4 py-1.5 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]">
+      <span className="flex min-w-0 flex-1 flex-col">
+        {/* §23 식별자 — 호실번호·이름이 이 행의 주어다. */}
+        <span className="flex items-center text-sm font-semibold" style={{ color: 'var(--ink-2)' }}>
+          <span className="shrink-0 tnum">{roomNo}</span>
+          <span className="min-w-0 truncate">{' · '}{name}</span>
+          {tail && <span className="shrink-0 tnum">{' · '}{tail}</span>}
+        </span>
+        {/* 밀린 일에서는 '누가 하기로 했나'가 정보다. 안 정했으면 아무 말도 안 한다 —
+            모든 줄에 '담당 미정'이 서면 그 말이 아무것도 뜻하지 않게 된다(형제 청소 행의 규칙). */}
+        {sub && <span className="truncate text-[0.65625rem]" style={{ color: 'var(--ink-m)' }}>{sub}</span>}
       </span>
       {badge}
       <span className="shrink-0 text-xs" style={{ color: 'var(--ink-m)' }} aria-hidden="true">›</span>
@@ -1014,7 +1021,7 @@ function UpcomingWorkLine({ w, todayYmd, onOpenRoom }: {
       // 보이는 라벨이 접근 가능한 이름 안에 있어야 음성 입력이 눈에 보이는 말로 지목한다
       // (WCAG 2.5.3 Label in Name). workAria 는 '예정일 경과'라 배지 글자와 달랐다.
       aria={`${badgeLabel}. ${workAria(w, w.roomNo)}`}
-      roomNo={fmtRoomNo(w.roomNo)} name={w.kindLabel}
+      roomNo={fmtRoomNo(w.roomNo)} name={w.kindLabel} sub={w.performerLabel ?? null}
       badge={<StatusBadge tone={tone}>{badgeLabel}</StatusBadge>}
     />
   )
