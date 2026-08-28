@@ -32,6 +32,9 @@
 import { useEffect, useRef } from 'react'
 
 const KBD_INSET = '--kbd-inset'
+// 키보드가 올라와 있는 동안 루트에 찍는 표식. **판정은 여기 한 곳에서만 한다**(§12) — 화면마다
+// 제 판정을 만들면 한쪽만 참인 구간에서 어긋난다. 읽는 쪽은 CSS 로만 읽는다(globals.css).
+const KBD_OPEN_ATTR = 'data-kbd-open'
 const KBD_OPEN_PX = 60      // 이만큼 가려지면 키보드가 올라온 것으로 본다
 // 겹침 크기의 물리적 상한(화면 높이 대비). 소프트 키보드는 액세서리 바를 포함해도 화면의
 // 절반을 크게 넘지 못한다. 이보다 큰 값은 잘못 찍힌 스냅샷이다 — 아래 onResize 주석 참조.
@@ -152,12 +155,16 @@ export default function ViewportOffsetGuard() {
       if (!keyboardOpenNow()) {
         lastInset = 0
         root.style.setProperty(KBD_INSET, '0px')
+        root.removeAttribute(KBD_OPEN_ATTR)
         restore()
         return
       }
       const raw = overlapNow()
       if (raw <= window.innerHeight * KBD_MAX_RATIO) lastInset = raw
       root.style.setProperty(KBD_INSET, `${lastInset}px`)
+      // 여백과 **같은 판정·같은 프레임**에 찍는다. 아래 scheduleReveal 은 rAF 라 이미 접힌
+      // 기하를 읽는다 — setState 로 접으면 그 순서가 깨져 과소 스크롤이 난다(신고 d0833496).
+      root.setAttribute(KBD_OPEN_ATTR, '')
       scheduleReveal()
     }
     const onScroll = () => { if (!keyboardOpenNow()) restore() }
@@ -201,6 +208,7 @@ export default function ViewportOffsetGuard() {
       window.removeEventListener('orientationchange', resync)
       document.removeEventListener('visibilitychange', onVisibility)
       root.style.removeProperty(KBD_INSET)
+      root.removeAttribute(KBD_OPEN_ATTR)
     }
   }, [])
   return null

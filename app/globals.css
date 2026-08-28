@@ -685,6 +685,17 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 /* ── 모바일 하단 탭바 영역 확보 ──────────────────────────────────
    BottomNav 높이(≈60px) + iOS home indicator safe area를 합산해
    마지막 콘텐츠가 탭바 뒤에 가려지지 않도록 함.             */
+/* 키보드가 올라와 있는 동안 접히는 띠. 판정은 --kbd-inset 과 **같은 단일 구독처**
+   (ViewportOffsetGuard)가 하고 여기서는 그 결과만 읽는다(v2.0 §12).
+
+   전역이 아니라 옵트인 클래스다. 모달 푸터 서른 곳 남짓이 저장·보내기 버튼을 거기 두므로
+   (TenantSmsModal 의 '문자앱으로 보내기' 등) 일괄 적용은 §27.1 '저장 버튼 상시 노출'을 깬다.
+
+   트랜지션을 걸지 않는다. 키보드가 올라오는 것과 같은 프레임에 사라져야 한 사건으로 읽힌다 —
+   따로 접히면 "무언가 일어났다"가 되어 §09 의 모션 절제에 걸린다. display 는 애초에 보간되지
+   않으므로 아무것도 안 걸면 된다. */
+html[data-kbd-open] .kbd-collapse { display: none; }
+
 /* --kbd-inset 은 ViewportOffsetGuard 가 키보드 겹침만큼 넣는 값(기본 0px).
    iOS 는 키보드가 떠도 dvh 를 안 줄여 셸에 스크롤 여유가 안 생긴다 — 하단 입력칸이
    키보드 뒤에 깔린 채 손가락으로 꺼낼 수 없다(신고 e1df22e9). 여백으로 여유만 만든다.

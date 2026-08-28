@@ -11,6 +11,7 @@ import {
 } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { Section } from './Section'
@@ -26,6 +27,18 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [pending, startTransition] = useTransition()
 
   const [newContent, setNewContent] = useState('')
+  // 쓰다 만 글이 있으면 셸에 알린다 — 배경을 탭해도 그냥 안 닫히고 확인창을 거친다(§12).
+  // 아이폰에서 키보드를 내리려고 칸 밖을 누르는 것이 관습이라 실수로 닿기 쉬운 자리였다.
+  // 렌더 중 조정 — effect 에서 setState 를 부르지 않는다는 이 저장소의 규칙을 따른다.
+  // markDirty 는 '비었나 아닌가'가 바뀔 때만 상태를 쓰므로 글자마다 다시 그려지지 않는다.
+  const { markDirty } = useEntityModal()
+  const contentDirty = newContent.trim().length > 0
+  const [syncedDirty, setSyncedDirty] = useState(false)
+  if (syncedDirty !== contentDirty) {
+    setSyncedDirty(contentDirty)
+    markDirty('tenant-request', contentDirty)
+  }
+  useEffect(() => () => markDirty('tenant-request', false), [markDirty])
   const [newReqDate, setNewReqDate] = useState(kstYmdStr())
   const [newTargetDate, setNewTargetDate] = useState('')
   // 카테고리·긴급 — /requests 등록 모달과 동일 항목(여기서만 빠져 미분류가 쌓이던 누락 봉합, 2026-07-27)

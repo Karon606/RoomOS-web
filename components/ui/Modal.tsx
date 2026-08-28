@@ -34,6 +34,7 @@ export function Modal({
   onBack,
   headerExtra,
   footer,
+  collapseFooterOnKeyboard = false,
   children,
   // 기본 = 헤더 정합 패딩(px-5 sm:px-6 py-4). 풀블리드가 필요하면 bodyClassName='' 을 명시하고 사유 주석을 남긴다.
   bodyClassName = 'px-5 sm:px-6 py-4',
@@ -48,6 +49,14 @@ export function Modal({
   onBack?: () => void
   headerExtra?: React.ReactNode      // 제목 옆 배지·태그용
   footer?: React.ReactNode
+  /**
+   * 키보드가 올라와 있는 동안 푸터를 접는다 — **옵트인이다.**
+   *
+   * 대부분의 모달은 푸터에 저장·보내기를 두므로 일괄로 접으면 §27.1 '저장 버튼 상시 노출'을
+   * 깬다(문자 모달은 문자를 쓰는 동안 보내기가 사라진다). 켜야 하는 것은 푸터가 **이동 표면**인
+   * 모달, 즉 거기 있는 버튼이 지금 쓰는 글을 버리기만 하는 경우다.
+   */
+  collapseFooterOnKeyboard?: boolean
   children: React.ReactNode
   bodyClassName?: string
   z?: 200 | 260 | 280 | 380          // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등). 380=시스템 오버레이(오류신고) — 모든 모달·컨펌 위
@@ -287,7 +296,8 @@ export function Modal({
           {children}
         </div>
         {footer && (
-          <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 shrink-0">
+          // 클래스는 이 래퍼에 붙인다. 안쪽에 붙이면 border-t 헤어라인과 py-3 24px 이 빈 띠로 남는다.
+          <div className={`border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 shrink-0${collapseFooterOnKeyboard ? ' kbd-collapse' : ''}`}>
             {footer}
           </div>
         )}

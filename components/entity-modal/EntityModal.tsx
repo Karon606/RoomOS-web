@@ -37,12 +37,27 @@ type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
 type Links = Awaited<ReturnType<typeof getEntityLinks>>
 
-type Ctx = { open: (seed: Seed) => void; close: () => void }
+/**
+ * markDirty — 이 셸 안의 위젯이 "지금 쓰다 만 글이 있다"를 알리는 자리.
+ *
+ * 왜 필요한가. Modal 은 §12 의 dirty 정책을 이미 완비하고 있다(배경 클릭 무시, Esc·X 는
+ * "작성 중인 내용이 있습니다" 1회 확인). 그런데 이 셸만 그 문을 안 썼다. 그래서 요청 내용을
+ * 쓰다 **배경을 탭하면 모달이 그냥 닫히고 글이 사라졌다.** 경고도 없다. 아이폰에서 키보드를
+ * 내리는 관습적 동작이 "칸 밖 탭하기"라 실수로 닿기 쉬운 자리다(실측 2026-08-29).
+ *
+ * key 로 가르는 이유는 이 셸 안에 글을 받는 위젯이 여럿이어서다. 한 위젯이 비웠다고 다른
+ * 위젯의 글까지 없는 것으로 치면 안 된다.
+ */
+type Ctx = {
+  open: (seed: Seed) => void
+  close: () => void
+  markDirty: (key: string, dirty: boolean) => void
+}
 const EntityModalContext = createContext<Ctx | null>(null)
 
 export function useEntityModal(): Ctx {
   const ctx = useContext(EntityModalContext)
-  if (!ctx) return { open: () => {}, close: () => {} }
+  if (!ctx) return { open: () => {}, close: () => {}, markDirty: () => {} }
   return ctx
 }
 
@@ -131,11 +146,34 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
     return () => { active = false }
   }, [top])
 
+  // 쓰다 만 글이 있는 위젯들. **바뀌지 않으면 같은 Set 을 그대로 돌려준다** — 글자마다
+  // 새 Set 을 만들면 그때마다 셸이 통째로 다시 그려진다.
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(() => new Set())
+  const markDirty = useCallback((key: string, dirty: boolean) => {
+    setDirtyKeys(prev => {
+      if (prev.has(key) === dirty) return prev
+      const next = new Set(prev)
+      if (dirty) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+  // 면이 바뀌거나 창이 닫히면 표식을 비운다 — 사라진 위젯의 글이 남아 있는 것으로 세면
+  // 그다음 창이 영영 "작성 중"이 된다. 렌더 중 조정이다(이 저장소의 effect-setState 회피 문법).
+  const dirtyScope = `${top?.seq ?? ''}-${top?.kind ?? ''}`
+  const [syncedScope, setSyncedScope] = useState(dirtyScope)
+  if (syncedScope !== dirtyScope) {
+    setSyncedScope(dirtyScope)
+    setDirtyKeys(prev => (prev.size > 0 ? new Set() : prev))
+  }
+  const anyDirty = dirtyKeys.size > 0
+
   return (
-    <EntityModalContext.Provider value={{ open, close }}>
+    <EntityModalContext.Provider value={{ open, close, markDirty }}>
       {children}
       {top && (
         <PrismShellView
+          dirty={anyDirty}
           // 면이 바뀌면 셸 내부 상태(퇴실 정산 시드 소진 등)를 새로 시작한다. 면 전환(setKind)은
           // seq 가 그대로라 리마운트되지 않는다 — 그 상태는 한 면 안에서 이어져야 한다.
           key={top.seq}
@@ -151,8 +189,10 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   )
 }
 
-function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, onClose }: {
+function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, onClose, dirty }: {
   kind: EntityKind; links: Links | undefined; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void
+  /** 이 셸 안에 쓰다 만 글이 있는가 — Modal 의 dirty 정책(§12)에 그대로 넘긴다. */
+  dirty?: boolean
   /** 셸에 쌓인 직전 면으로 — 스택이 한 장뿐이면 undefined 라 Modal 이 뒤로 버튼을 안 그린다. */
   onBack?: () => void
   onClose: () => void
@@ -424,7 +464,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
 
   return (
     <Modal
-      open onClose={onClose} onBack={onBack} width="sm" title={title} z={280}
+      open onClose={onClose} onBack={onBack} width="sm" title={title} z={280} dirty={dirty}
+      // 글을 쓰는 동안에는 이 푸터가 통째로 없는 편이 낫다. 액션 여섯과 탭 셋을 세어 보면
+      // **아홉 개 전부가 지금 쓰는 글을 버리는 버튼**이다 — 서류 셋과 수정은 페이지를 갈아
+      // 치우고, 탭 셋은 면을 바꿔 위젯을 언마운트한다. 경고도 없다. 도움이 되는 것은 0개다.
+      // 게다가 아이폰 폭에서 액션이 세 줄로 접혀 푸터가 226px, 남는 본문이 38px 이라
+      // 입력칸(96px)이 물리적으로 안 들어갔다(실측 2026-08-29).
+      //
+      // 액션만 접고 탭을 남기지 않는 이유. 탭도 같은 함정이고, 남기면 Modal 의 border-t 와
+      // 탭의 border-b 가 45px 간격으로 두 줄 서서 잘린 푸터처럼 읽힌다.
+      collapseFooterOnKeyboard
       footer={
         <div className="space-y-2">
           {/* 액션 행 — kind 마다 다른 액션. PrismNavBar 위.
