@@ -4,6 +4,7 @@ import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
 import { PeekSheet } from './PeekSheet'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
+import { overlayInsets, usableVvHeight } from '@/lib/modalViewport'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -100,12 +101,38 @@ export function Modal({
     const vv = window.visualViewport
     if (!vv) return
     let lastTop = '', lastBottom = ''
+    // 마지막으로 믿을 만했던 띠 높이. 0 이면 아직 한 번도 못 읽었다(그때는 100dvh 폴백).
+    let lastGoodH = 0
+
+    // **크기 갱신은 resize 에서만.** 716e7b0c 의 규칙이고 이 파일에도 그렇게 적혀 있었는데,
+    // 정작 코드는 팬(scroll) 프레임마다 --modal-vvh 를 다시 썼다. 값 자체는 팬 불변이라 평소에는
+    // 같은 문자열을 다시 쓰는 것뿐이지만, **오염 스냅샷이 한 장 끼면 그 값이 그대로 박히고
+    // 다음 이벤트까지 눌러앉는다.** 드래그를 반복하면 그 기회가 반복돼 패널이 점점 작아진다
+    // (운영자 실측 2026-08-29 — "스크롤을 했더니 창이 좁아진다").
+    //
+    // 불가능값은 버리고 직전 유효값을 유지한다 — ViewportOffsetGuard 가 --kbd-inset 에 이미 쓰는
+    // 문법 그대로다. 0 으로 떨구지 않는 이유도 같다. 한 프레임 값이 조금 낡는 것이 레이아웃이
+    // 통째로 흔들리는 것보다 낫다.
+    const syncSize = () => {
+      const h = usableVvHeight(vv.height, lastGoodH)
+      if (h == null) return                 // 아직 못 읽었다 — 100dvh 폴백 그대로
+      lastGoodH = h
+      panelRef.current?.style.setProperty('--modal-vvh', `${h}px`)
+    }
+
     const sync = () => {
-      panelRef.current?.style.setProperty('--modal-vvh', `${vv.height}px`)
       const ov = overlayRef.current
       if (!ov) return
-      const top = `${Math.max(0, Math.round(vv.offsetTop))}px`
-      const bottom = `${Math.max(0, Math.round(window.innerHeight - (vv.offsetTop + vv.height)))}px`
+      // **위 여백에도 상한을 건다.** 아래에는 0 하한이 있는데 위에는 짝이 없었다. 그래서
+      // offsetTop + vv.height 가 innerHeight 를 넘는 스냅샷이 오면 bottom 은 0 에 눌리고 top 만
+      // 자라, 오버레이 content box 가 그만큼 깎이며 maxHeight 의 100% 안전망이 calc 를 이긴다.
+      // 그 순간부터 패널이 내려가면서 작아진다. 여유가 2rem 뿐이라 32px 만 넘어도 발동한다.
+      //
+      // 정상 스냅샷에서는 top + bottom = innerHeight - vv.height 라 이 상한이 절대 안 걸린다.
+      // 즉 평시 픽셀은 하나도 안 바뀐다(8e6bbac0 이 주석으로만 적어 둔 불변식을 코드로 못박는다).
+      const ins = overlayInsets({ innerHeight: window.innerHeight, height: vv.height, offsetTop: vv.offsetTop })
+      const top = `${ins.top}px`
+      const bottom = `${ins.bottom}px`
       if (top !== lastTop) { ov.style.setProperty('--modal-vv-top', top); lastTop = top }
       if (bottom !== lastBottom) { ov.style.setProperty('--modal-vv-bottom', bottom); lastBottom = bottom }
     }
@@ -113,17 +140,20 @@ export function Modal({
     // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 어긋나게 찍힌 스냅샷을 씻을 기회가
     // 없어 세션 내내 남는다. 값이 안 바뀌면 위 lastTop/lastBottom 메모가 쓰기를 막으므로 비용이 없다.
     // rAF 한 박자를 더 도는 이유는 복귀·회전 직후 프레임의 vv 가 아직 옛 값을 낼 수 있어서다.
-    const resync = () => { sync(); requestAnimationFrame(sync) }
+    // 재동기는 크기·위치를 **둘 다** 다시 적는다 — 734ea211·e97f4b2b 의 절이 크기까지 씻는 것을
+    // 전제로 서 있다. 크기를 resize 전용으로 분리하면서 이 자리를 빼먹으면 그 절이 깨진다.
+    const both = () => { syncSize(); sync() }
+    const resync = () => { both(); requestAnimationFrame(both) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
-    sync()
-    vv.addEventListener('resize', sync)
+    both()
+    vv.addEventListener('resize', both)
     vv.addEventListener('scroll', sync)
     window.addEventListener('pageshow', resync)
     window.addEventListener('resize', resync)
     window.addEventListener('orientationchange', resync)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
-      vv.removeEventListener('resize', sync)
+      vv.removeEventListener('resize', both)
       vv.removeEventListener('scroll', sync)
       window.removeEventListener('pageshow', resync)
       window.removeEventListener('resize', resync)
