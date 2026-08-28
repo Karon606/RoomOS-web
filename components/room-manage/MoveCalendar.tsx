@@ -21,12 +21,14 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { kstDaysUntil } from '@/lib/kstDate'
+import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { acknowledgeOverlap, releaseOverlapAck } from '@/app/(app)/room-manage/actions'
 import { withSave } from '@/lib/saveStatus'
 import { suppressesTap, type TapOrigin } from '@/lib/tapGuard'
 import { fmtRoomNo, roomNoWithRo } from '@/lib/roomNo'
-import { fmtDateDot, fmtDateKor, fmtMD } from '@/lib/fmtDate'
+import { fmtDateDot, fmtDateKor, fmtMD, fmtMDDay } from '@/lib/fmtDate'
 import { TRACK_MONTH_KEY } from '@/lib/monthParam'
 import { MOVE_WORK_STATUS_LABEL, UPCOMING_DAYS, filterMoveRows, moveWorkRailLabel, shiftMonth, type MoveAxis, type MoveBar, type MoveCalendarRange, type MoveCalendarRow, type MoveConflict, type MoveDaySpan, type MoveEvent, type MoveGap, type MoveRangeMonth, type MoveWork, type MoveWorkEvent } from '@/lib/moveCalendar'
 
@@ -41,7 +43,6 @@ const DAY_W = 24
 /** 캡션 'N일 공실'을 세울 최소 폭. 이보다 좁으면 공백은 색 없는 빈 자리로만 말한다. */
 const GAP_CAPTION_MIN = 40
 /** 고정 요약 줄에 세울 최대 건수. 넘치면 '외 N건'으로 접는다(방 많은 영업장에서 벽이 되지 않게). */
-const UPCOMING_MAX = 8
 
 /**
  * 라벨 폭의 자 — 한글·전각 0.851em · 그 외 0.564em, 글자 크기(px)를 곱해 쓴다.
@@ -125,9 +126,6 @@ function workTone(w: MoveWork): { bg: string; ring: string } {
  * --tc-text 가 아니라 --overdue-fg 인 이유는 실측이다. --tc-text 는 다크에서 --inspect-bg 위
  * 3.51:1 로 AA 미달이고, --overdue-fg 는 두 모드 다 통과한다(라이트 #A03C2E = --tc 와 같은 값).
  */
-const workInk = (w: MoveWork): string =>
-  w.status === 'overdue' ? 'var(--overdue-fg)' : 'var(--ink-2)'
-
 /**
  * 트랙·행 아래 줄의 작업 글자색 — 요약 줄 칩과 자를 나눈다.
  *
@@ -180,10 +178,17 @@ function eventTone(e: MoveEvent): { tone: BadgeTone; label: string } {
         : { tone: 'movein', label: '입실' }
 }
 
-function MoveCalendarView({ data, onViewMonthChange }: {
+/** 창 첫날 기준 day(1-based)의 날짜 — 트랙 좌표계와 같은 UTC 축이라 자정 전후로 안 밀린다. */
+function ymdOfRangeDay(from: string, day: number): string {
+  return new Date(Date.parse(`${from}T00:00:00Z`) + (day - 1) * 86400000).toISOString().slice(0, 10)
+}
+
+function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
   data: MoveCalendarRange
   /** 트랙이 내려앉은·멎은 달을 위로 알린다. 탭 접미 N 이 이 값을 딛는다(서버 왕복 없음). */
   onViewMonthChange?: (month: string) => void
+  /** 형제 '작업' 탭으로 — 요약 카드의 정상 예정 작업이 거기로 간다. */
+  onGoWorks: () => void
 }) {
   const entityModal = useEntityModal()
   const router = useRouter()
@@ -445,7 +450,8 @@ function MoveCalendarView({ data, onViewMonthChange }: {
       {/* ── 다가오는 입퇴실 ── 스크롤 0 에서 '다음에 뭐가 있나'에 답하는 줄. 트랙은 넓고 이 질문은
           매일 있다 — 좁은 폭에서 리스트 편성을 걷어낸 자리를 이 줄이 받는다. */}
       <UpcomingRow items={data.upcoming} works={data.upcomingWorks} todayInRange={todayDay != null}
-        onOpen={openLease} onOpenRoom={openRoom} />
+        todayYmd={todayDay != null ? ymdOfRangeDay(data.from, todayDay) : null}
+        onOpen={openLease} onOpenRoom={openRoom} onGoWorks={onGoWorks} />
 
       {/* 충돌 요약 — §18 Status Row(좌 3px 팁 + danger-bg). 충돌이 없으면 이 줄 자체가 없다. */}
       {data.conflicts.length > 0 && (
@@ -769,85 +775,231 @@ function MonthLabel({ m, showYear }: { m: MoveRangeMonth; showYear: boolean }) {
 }
 
 /**
- * 고정 요약 줄 — 오늘부터 UPCOMING_DAYS 일 안의 변동. 항목은 그대로 계약으로 들어간다.
+ * 다가오는 일정 요약 — **한 건이 한 행이고, 날짜가 그 행들을 묶는다.**
+ *
+ * 종전에는 항목이 flex-wrap 의 직접 자식이라 목록이 아니라 문단처럼 흘렀다. 한 줄에 몇 건이
+ * 들어갈지는 그날 이름이 몇 글자냐가 정했고("송호준" 3자와 "Tagatova Aruzhan" 16자가 같은
+ * 목록에 있다), 그래서 줄마다 1건이거나 2건이 됐다. 정렬은 이미 옳은데(lib/moveCalendar 가
+ * 날짜순·같은 날 퇴실 먼저로 낸다) 조판이 그 순서를 지그재그로 흩어 놓았다. 고친 것은 데이터가
+ * 아니라 조판이다(운영자 지적 2026-08-28 — "누가 언제 뭘하려고하는지 전혀 모르겠어").
+ *
+ * 위계가 뒤집혀 있던 것도 같이 바로잡는다. §23 은 호실번호·입주자명을 식별자로 지정하는데
+ * 둘 다 굵기가 없었고 정작 날짜가 유일한 semibold 였다. 게다가 **라이트 모드에서 --ink-s 와
+ * --ink-m 은 같은 값**이라(globals.css 24~30 이 그 사실과 대책을 이미 적어 두었다) 이름이
+ * 머리글·"외 N건"과 한 픽셀도 안 달랐다. 다크에서는 세 티어가 갈려 살아 있었고, 그래서
+ * 이 드리프트가 검수를 통과했다. 여기서는 크기(§05)와 블록 순위(§20)로 위계를 진다.
+ *
+ * 배지는 행 끝이다(§20 "1행 좌 식별자 · 1행 우 상태 뱃지"). 종전처럼 이름 앞에 두면 배지가
+ * 칩 안에서 가장 진한 블록이라, 같은 건에 속한 이름을 **다음 건처럼** 떼어 놓는다.
+ *
+ * 정상 예정 작업은 여기 안 싣는다. 형제 '작업' 탭이 같은 목록을 조작까지 갖춰 그리는데
+ * 이 카드의 작업 칩은 방 모달만 여는 사본이라 150px 을 쓰고도 값을 못 했다. **지연만 남긴다** —
+ * 트랙 표면은 상태를 말하지 않기로 했으니(lib/moveCalendar 328~333) 예정일 경과가 글자로 설
+ * 자리는 앱에서 여기뿐이다.
  *
  * todayInRange 가 필요한 이유. upcoming 은 **창 안의** 변동에서만 걸러진다. 먼 달로 점프해
  * 창이 오늘을 안 물면 그 목록은 반드시 비고, 내일 퇴실이 있어도 이 줄이 "예정된 입퇴실이
  * 없습니다"라고 적는다. 없는 것과 여기서 셀 수 없는 것은 다른 말이다.
  */
-function UpcomingRow({ items, works, todayInRange, onOpen, onOpenRoom }: {
+const UPCOMING_ROWS = 5   // 접힌 상태에서 보이는 행 수. 요약이 캘린더보다 커지면 요약이 아니다.
+
+function UpcomingRow({ items, works, todayInRange, todayYmd, onOpen, onOpenRoom, onGoWorks }: {
   items: MoveEvent[]
-  /** 아직 안 끝난 청소 — 지난 예정(지연)도 들어 있다. 트랙에서 표면이 상태를 말하지 않기로 했으므로
-   *  지연이 글자로 서는 자리가 여기다. */
+  /** 아직 안 끝난 청소 — 지난 예정(지연)도 들어 있다. */
   works: MoveWorkEvent[]
   todayInRange: boolean
+  /** 창 안의 오늘 'YYYY-MM-DD'. 창이 오늘을 안 물면 null 이다. */
+  todayYmd: string | null
   onOpen: (roomId: string, leaseId: string, tenantId: string) => void
-  /** 청소는 계약이 아니라 방의 일이라 방 모달로 간다 — 그 안에 청소 이력 위젯이 있다. */
+  /** 청소는 계약이 아니라 방의 일이라 방 모달로 간다 — 그 안에 작업 이력 위젯이 있다. */
   onOpenRoom: (roomId: string) => void
+  /** 형제 '작업' 탭으로. 정상 예정 작업의 목적지다. */
+  onGoWorks: () => void
 }) {
-  const shown = items.slice(0, UPCOMING_MAX)
-  const rest = items.length - shown.length
-  const shownWorks = works.slice(0, UPCOMING_MAX)
-  const restWorks = works.length - shownWorks.length
+  const [expanded, setExpanded] = useState(false)
+
+  const overdueWorks = works.filter(w => w.status === 'overdue')
+  const plannedWorks = works.filter(w => w.status !== 'overdue')
+
+  // 날짜 그룹 — 정렬은 이미 옳다(items 는 날짜순·같은 날 퇴실 먼저·그다음 호실순으로 온다).
+  const groups: { date: string; items: MoveEvent[] }[] = []
+  for (const e of items) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === e.date) last.items.push(e)
+    else groups.push({ date: e.date, items: [e] })
+  }
+
+  const shownCount = expanded ? items.length : Math.min(UPCOMING_ROWS, items.length)
+  const shownGroups: { date: string; items: MoveEvent[] }[] = []
+  let room = shownCount
+  for (const g of groups) {
+    if (room <= 0) break
+    const take = g.items.slice(0, room)
+    shownGroups.push({ date: g.date, items: take })
+    room -= take.length
+  }
+  const rest = items.length - shownCount
+
+  const countText = [
+    items.length > 0 ? `입퇴실 ${items.length}건` : null,
+    overdueWorks.length > 0 ? `지연 ${overdueWorks.length}건` : null,
+  ].filter(Boolean).join(' · ')
+
   return (
-    <div className="rounded-xl px-3.5 py-2.5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>
-          다가오는 {UPCOMING_DAYS}일
-        </p>
-        {!todayInRange ? (
-          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>오늘이 이 기간 밖입니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
-        ) : items.length === 0 ? (
-          /* 청소가 있으면 아래 줄이 그것을 말하므로 여기서 '없다'고 딱 잘라 말하지 않는다 —
-             한 카드 안에서 위는 없다 하고 아래는 세 건을 세면 그 자체가 이질감이다. */
-          <p className="text-xs" style={{ color: 'var(--ink-s)' }}>
-            {works.length > 0 ? '예정된 입퇴실은 없습니다.' : '예정된 입퇴실이 없습니다.'}
-          </p>
-        ) : (
-          <>
-            {shown.map(e => {
-              const { tone, label } = eventTone(e)
-              return (
-                // 키는 막대 id 다 — 이사는 한 계약이 같은 날 두 방에서 변동을 내므로 계약 id 로는 겹친다.
-                <button key={`${e.barId}-${e.type}`} type="button"
-                  onClick={() => onOpen(e.roomId, e.leaseId, e.tenantId)}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
-                  <span className="tnum font-semibold" style={{ color: 'var(--ink-2)' }}>{fmtMD(e.date)}</span>
-                  <span className="tnum" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(e.roomNo)}</span>
-                  <StatusBadge tone={tone}>{label}</StatusBadge>
-                  <span style={{ color: 'var(--ink-s)' }}>{e.tenantName}</span>
-                </button>
-              )
-            })}
-            {rest > 0 && <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>외 {rest}건</p>}
-          </>
-        )}
+    <section className="rounded-xl py-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      {/* §22 SectionHeader 정본 — 종전 머리는 표 헤더 규격(10.5px 700 uppercase)을 카드 제목에
+          쓴 것이라 형제 위젯(13px·14px)과 티어가 갈렸다. 한국어에 uppercase 는 무효이기도 하다.
+          가로 여백은 카드가 아니라 줄마다 준다(§24 AlertsStrip 문법) — 카드에 p-4 를 걸고 행에만
+          px 를 더하면 글자 열이 제목보다 6px 안으로 들어가 매 행에 계단이 생긴다. */}
+      <div className="px-4">
+        <SectionHeader first name={`다가오는 ${UPCOMING_DAYS}일`} count={countText || undefined} />
       </div>
 
-      {/* ── 작업 ── **별도 줄**이다. 입퇴실과 같은 줄에 흘리면 '다가오는 14일 N건'이라는 한
-          덩어리로 읽혀 홈 타일의 입퇴실 건수와 눈으로 안 맞는다. 작업이 없으면 줄 자체가 없다.
-          창 밖이면 위 분기가 이미 말했으므로 여기서 같은 말을 두 번 하지 않는다.
-          머리글이 '청소'가 아닌 이유는 범례와 같다 — 종목은 아래 각 칩의 kindLabel 이 말한다. */}
-      {todayInRange && works.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <p className="shrink-0 text-[0.65625rem] font-bold uppercase" style={{ color: 'var(--ink-m)' }}>작업</p>
-          {shownWorks.map(w => (
-            <button key={w.id} type="button" onClick={() => onOpenRoom(w.roomId)}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
-              {/* 배지를 안 쓴다. StatusBadge 의 톤 일곱은 전부 입퇴실·돈의 어휘이고(연체·퇴실 예정·
-                  입실 예정…), 청소 상태를 거기 얹으려면 미등재 톤을 하나 새로 만들어야 한다.
-                  표면이 중립일 때 상태를 글자가 지는 것은 §18 이 이미 쓰는 문법이다. */}
-              <span className="tnum font-semibold" style={{ color: workInk(w) }}>{fmtMD(w.date)}</span>
-              <span className="tnum" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(w.roomNo)}</span>
-              <span style={{ color: 'var(--ink-2)' }}>{w.kindLabel}</span>
-              <span className="font-semibold" style={{ color: workInk(w) }}>{MOVE_WORK_STATUS_LABEL[w.status]}</span>
-              <span style={{ color: 'var(--ink-m)' }}>{w.performerLabel ?? '담당 미정'}</span>
+      {!todayInRange ? (
+        <p className="px-4 text-xs" style={{ color: 'var(--ink-m)' }}>오늘이 이 기간 밖입니다. 아래 [오늘로]를 누르면 돌아옵니다.</p>
+      ) : (
+        <>
+          {/* ── 지연 ── **날짜 그룹 밖의 제 구역**이고 접힘 계산에서 빠진다.
+              지연은 과거 날짜라 날짜순에 섞으면 언제나 맨 위로 정렬된다. 다섯 건이면 접힌
+              상태에서 "다가오는 14일" 아래 지난 날짜만 다섯 줄 서고 정작 다가오는 입퇴실이
+              한 건도 안 보인다(디자인 패널 실측 2026-08-28). 대시보드 알림의 '긴급' 존이
+              같은 이유로 카테고리 그룹 밖에 있고 항상 펴져 있다 — 그 문법을 그대로 쓴다. */}
+          {overdueWorks.length > 0 && (
+            <div>
+              <p className="px-4 pt-3 pb-1 text-[0.65625rem] font-semibold" style={{ color: 'var(--tc-text)' }}>예정일 경과</p>
+              <div className="divide-y divide-[var(--warm-border)]/50">
+                {overdueWorks.map(w => (
+                  <UpcomingWorkLine key={`w-${w.id}`} w={w} todayYmd={todayYmd} onOpenRoom={onOpenRoom} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {items.length === 0 ? (
+            /* 작업이 있으면 다른 줄이 그것을 말하므로 여기서 '없다'고 딱 잘라 말하지 않는다. */
+            <p className="px-4 pt-2 text-xs" style={{ color: 'var(--ink-m)' }}>
+              {works.length > 0 ? '예정된 입퇴실은 없습니다.' : '예정된 입퇴실이 없습니다.'}
+            </p>
+          ) : (
+            <div>
+              {shownGroups.map(g => (
+                <div key={g.date}>
+                  {/* 날짜가 행들을 묶는 축이다. 같은 날 세 건이면 그 날짜는 한 번만 선다 —
+                      종전에는 건마다 반복되면서 최상위 굵기로 호실번호와 경쟁했다. */}
+                  <p className="px-4 pt-4 pb-1 text-[0.65625rem] tnum" style={{ color: 'var(--ink-m)' }}>
+                    {fmtMDDay(g.date)}
+                    {/* --coral 은 다크에서 재매핑이 없어 2.78:1 로 떨어진다. 라이트에서 검수하면
+                        안 보이는 함정이라, 다크 대응을 갖춘 --tc-text 를 쓴다(globals.css 186). */}
+                    {g.date === todayYmd && <span className="ml-1.5 font-semibold" style={{ color: 'var(--tc-text)' }}>오늘</span>}
+                  </p>
+                  {/* divide 는 색 유틸과 짝지어야 한다. 부모에 인라인 borderColor 를 주면
+                      border-color 가 상속되지 않아 자식이 currentColor(본문 잉크)로 떨어지고,
+                      44px 행 사이에 근black 실선이 그어진다(컴파일 출력 실증 2026-08-28). */}
+                  <div className="divide-y divide-[var(--warm-border)]/50">
+                    {g.items.map(e => (
+                      <UpcomingMoveLine key={`${e.barId}-${e.type}`} e={e} onOpen={onOpen} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {(rest > 0 || expanded) && (
+                <button type="button" onClick={() => setExpanded(v => !v)}
+                  className="mt-1 w-full px-4 py-2 text-center text-[0.6875rem] transition-colors hover:text-[var(--ink-2)]"
+                  style={{ color: 'var(--ink-m)' }}>
+                  {expanded ? '접기' : `${rest}건 더 보기`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 정상 예정 작업은 세지 말고 어디 있는지만 말한다. 형제 탭이 그 목록의 정본이다. */}
+          {plannedWorks.length > 0 && (
+            <button type="button" onClick={onGoWorks}
+              className="mt-2 flex w-full items-center gap-1 border-t px-4 pt-2 text-[0.65625rem] transition-colors hover:text-[var(--ink-2)]"
+              style={{ color: 'var(--ink-m)', borderColor: 'var(--warm-border)' }}>
+              <span>작업 {plannedWorks.length}건 예정</span>
+              <span className="flex-1" />
+              <span>작업 탭에서 보기</span>
+              <span aria-hidden="true">›</span>
             </button>
-          ))}
-          {restWorks > 0 && <p className="text-xs tnum" style={{ color: 'var(--ink-m)' }}>외 {restWorks}건</p>}
-        </div>
+          )}
+        </>
       )}
-    </div>
+    </section>
+  )
+}
+
+/**
+ * 행 껍데기 — 입퇴실과 작업이 같은 기하를 쓴다. 한 목록에서 행마다 모양이 갈리면 안 된다.
+ *
+ * 본문을 통짜 문자열로 두지 않는 이유. truncate 는 꼬리부터 자른다. 이사 행의 꼬리는 갈 방이라
+ * 320px 에서 "402호 · Tagatova Aruzh…" 가 되어, 이사 두 건이 다시 호실 빼고 같은 글자가 된다
+ * (디자인 패널 실측 2026-08-28 — 고치려던 바로 그 상태로 돌아간다). 줄어드는 것은 **이름뿐**이다.
+ */
+function UpcomingLineShell({ roomNo, name, tail, badge, aria, onClick }: {
+  roomNo: string
+  /** 유일하게 줄어드는 칸 */
+  name: string
+  /** 이사 목적지처럼 끝까지 살아야 하는 꼬리 */
+  tail?: string | null
+  badge: React.ReactNode
+  aria: string
+  onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-label={aria}
+      className="flex w-full items-center gap-2 min-h-[44px] px-4 text-left transition-colors hover:bg-[var(--cream-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]">
+      {/* §23 식별자 — 호실번호·이름이 이 행의 주어다. */}
+      <span className="flex min-w-0 flex-1 items-center text-sm font-semibold" style={{ color: 'var(--ink-2)' }}>
+        <span className="shrink-0 tnum">{roomNo}</span>
+        <span className="min-w-0 truncate">{' · '}{name}</span>
+        {tail && <span className="shrink-0 tnum">{' · '}{tail}</span>}
+      </span>
+      {badge}
+      <span className="shrink-0 text-xs" style={{ color: 'var(--ink-m)' }} aria-hidden="true">›</span>
+    </button>
+  )
+}
+
+function UpcomingMoveLine({ e, onOpen }: {
+  e: MoveEvent
+  onOpen: (roomId: string, leaseId: string, tenantId: string) => void
+}) {
+  const { tone, label } = eventTone(e)
+  // 이사 두 건은 호실 빼고 글자가 같다. 상대 방을 적어야 어느 쪽이 떠난 방이고 어느 쪽이
+  // 든 방인지 선다(lib/moveCalendar 가 otherRoomNo 로 짝을 실어 준다).
+  const move = e.moved && e.otherRoomNo
+    ? (e.type === 'out' ? `${fmtRoomNo(e.otherRoomNo)}로` : `${fmtRoomNo(e.otherRoomNo)}에서`)
+    : null
+  return (
+    <UpcomingLineShell
+      onClick={() => onOpen(e.roomId, e.leaseId, e.tenantId)}
+      aria={`${fmtDateKor(e.date)} ${fmtRoomNo(e.roomNo)} ${label} ${e.tenantName}${move ? ` ${move}` : ''}`}
+      roomNo={fmtRoomNo(e.roomNo)} name={e.tenantName} tail={move}
+      badge={<StatusBadge tone={tone}>{label}</StatusBadge>}
+    />
+  )
+}
+
+function UpcomingWorkLine({ w, todayYmd, onOpenRoom }: {
+  w: MoveWorkEvent
+  todayYmd: string | null
+  onOpenRoom: (roomId: string) => void
+}) {
+  // 며칠 밀렸는지가 이 행의 상태다. '예정일 경과'는 구역 머리가 이미 말했으므로 여기서
+  // 되풀이하지 않는다 — 6글자 배지는 320px 에서 작업 종류를 잘라 먹기까지 했다.
+  const over = todayYmd ? -kstDaysUntil(w.date, todayYmd) : 0
+  // §24 의 단계 규정을 그대로 따른다 — 1~6일은 warning 틴트, 7일 초과부터 솔리드.
+  // 하루 늦은 청소가 한 달 밀린 임대료와 같은 색을 달면 그 색의 신호가 죽는다.
+  const tone: BadgeTone = over > 6 ? 'overdue' : 'unpaid'
+  return (
+    <UpcomingLineShell
+      onClick={() => onOpenRoom(w.roomId)}
+      aria={workAria(w, w.roomNo)}
+      roomNo={fmtRoomNo(w.roomNo)} name={w.kindLabel}
+      badge={<StatusBadge tone={tone}>{over > 0 ? `경과 ${over}일` : '경과'}</StatusBadge>}
+    />
   )
 }
 

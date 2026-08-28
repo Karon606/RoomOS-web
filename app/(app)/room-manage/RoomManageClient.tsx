@@ -1275,7 +1275,7 @@ export default function RoomManageClient({
       </div>
 
       {/* 입퇴실 뷰 — 여러 달을 잇는 연속 트랙. 조립·충돌 판정은 서버(lib/moveCalendar)가 끝냈다. */}
-      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} />}
+      {viewTab === 'moves' && <MoveCalendar data={moveCalendar} onViewMonthChange={setViewMonth} onGoWorks={() => setViewTab('cleaning')} />}
 
       {/* 청소 뷰 — 영업장 전체 청소 목록. 행 표시·조작은 방 상세 패널과 같은 정본 컴포넌트다. */}
       {viewTab === 'cleaning' && (

@@ -275,6 +275,14 @@ export type MoveEvent = {
    * 사람을 기준으로 하면 퇴실도 입실도 아니다. 문구를 가르는 것은 이 칸이다.
    */
   moved: boolean
+  /**
+   * 이사일 때 상대 방 번호 — 나가는 줄이면 갈 방, 드는 줄이면 온 방. 이사가 아니면 null.
+   *
+   * 없으면 요약 줄에서 이사 두 건이 호실 빼고 완전히 같은 글자가 된다("9/1 402호 이사 박정후"와
+   * "9/1 404호 이사 박정후"). 어느 쪽이 떠난 방이고 어느 쪽이 든 방인지 화면이 답을 못 한다.
+   * 짝은 여기 조립 단계에서 싣는다 — 화면이 out·in 쌍을 다시 세는 것은 이 파일이 금지한다.
+   */
+  otherRoomNo: string | null
   /** 이 변동을 낸 막대 — 한 계약이 같은 날 두 방에서 변동을 내므로 계약 id 는 유일 키가 아니다. */
   barId: string
   roomId: string
@@ -741,8 +749,8 @@ function assemble(input: {
       bars.push(bar)
       barLease.set(bar.id, l)
 
-      if (startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', moved: !!sl.movedFromRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
-      if (endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', moved: !!sl.movedToRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      if (startsInRange) events.push({ day: bar.startDay, date: ymdOfDay(bar.startDay), type: 'in', moved: !!sl.movedFromRoomNo, otherRoomNo: sl.movedFromRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
+      if (endsInRange) events.push({ day: bar.endDay, date: ymdOfDay(bar.endDay), type: 'out', moved: !!sl.movedToRoomNo, otherRoomNo: sl.movedToRoomNo, barId: bar.id, roomId: g.roomId, roomNo: g.roomNo, leaseId: l.id, tenantId: l.tenantId, tenantName: l.tenantName, kind: bar.kind, stayFrom: rawFrom, stayTo: rawTo })
 
       if (reversed) {
         bar.conflicted = true

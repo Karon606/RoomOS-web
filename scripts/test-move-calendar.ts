@@ -295,6 +295,7 @@ eq('빈 달 · 실제 퇴실이 다음 달이면 행이 아니다',
   const ev = build([incom, outgo]).events
   eq('리스트 · 같은 날 퇴실 먼저', ev.map(e => [e.day, e.type, e.roomNo]), [[9, 'out', '410'], [9, 'in', '411']])
   eq('리스트 · 예약은 예약 톤을 들고 간다', build([lease({ roomNo: '412', status: 'RESERVED', moveInDate: '2026-08-25' })]).events[0].kind, 'reserved')
+  eq('리스트 · 이사가 아니면 상대 방이 없다', ev.every(e => e.moved || e.otherRoomNo === null), true)
 }
 
 // ══ 연속 범위(횡스크롤 트랙) ══════════════════════════════════════
@@ -460,6 +461,9 @@ eq('monthLastDay · 윤년 2월', monthLastDay('2028-02'), '2028-02-29')
   eq('이사 · 같은 사람이 두 행에 선 것은 충돌이 아니다', out.conflicts.length, 0)
   eq('이사 · 건수는 둘(옛 방이 비고 새 방이 찬다)', out.eventCount, 2)
   eq('이사 · 두 변동 모두 이사로 표시된다', out.events.map(e => [e.roomNo, e.type, e.moved]), [['506', 'out', true], ['508', 'in', true]])
+  // 상대 방이 없으면 요약 줄에서 두 건이 호실 빼고 같은 글자가 된다 — 어느 쪽이 떠난 방인지 못 가린다.
+  eq('이사 · 두 변동이 서로를 가리킨다',
+    out.events.map(e => [e.roomNo, e.type, e.otherRoomNo]), [['506', 'out', '508'], ['508', 'in', '506']])
   eq('이사 · 막대 키는 구간 id 라 계약 id 로 겹치지 않는다', [old.bars[0].id, now.bars[0].id], ['mv-s1', 'mv-s2'])
 }
 
