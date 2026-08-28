@@ -190,7 +190,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true, receivedLocation: { select: { name: true } } },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, brand: true, productName: true, memo: true, receivedAt: true, receivedLocation: { select: { name: true } } },
     }),
     // 목록(overview)과 같은 헬퍼 한 벌 — 카드와 상세의 단위 표시가 갈라지지 않게.
     resolveUnitHint(propertyId, item.category, item.label, item.qtyUnit),
@@ -227,6 +227,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
       amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
+      brand: p.brand, productName: p.productName,
       receivedLocationName: p.receivedLocation?.name ?? null,
     })),
   ].sort((a, b) => {

@@ -2024,6 +2024,15 @@ function TimelineRow({ entry, trackedItemId, stockUnit, trackUnit, itemLocations
                 구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
               </p>
               <p className="text-sm font-medium text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${fmtWon(entry.amount)})` : ''}</p>
+              {/* 무엇을 샀나 — 재고 잔량은 브랜드로 안 갈린다(창고에 섞어 쌓으므로 셀 수가 없다).
+                  대신 **언제 바뀌었나**는 여기서 읽힌다. 라면을 오뚜기에서 삼양으로 바꿔 사도
+                  그 사실이 재고 화면 어디에도 안 뜨던 것을 메운다(운영자 2026-08-28).
+                  업체(어디서 샀나)보다 한 단 진하다 — 물건이 곳보다 앞선다. */}
+              {(entry.brand || entry.productName) && (
+                <p className="text-[0.65625rem] font-medium text-[var(--warm-mid)] mt-0.5 truncate">
+                  {[entry.brand, entry.productName].filter(Boolean).join(' · ')}
+                </p>
+              )}
               {isPendingReceipt ? (
                 <p className="text-[0.65625rem] text-[var(--honey)] mt-0.5">수령 대기 중</p>
               ) : entry.receivedAt ? (
