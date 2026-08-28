@@ -86,8 +86,22 @@ export function useTheme() {
       }
     }, 30 * 60 * 1000)
 
+    // 돌아온 첫 프레임에 다시 판정한다. 위 인터벌은 페이지가 백그라운드에 있는 동안 함께
+    // 멎으므로, 밤에 다크로 접힌 화면이 아침에 복원되면 인터벌이 다시 돌 때까지 어제의 밤을
+    // 들고 있다(최대 30분). 빠른 전환 오버라이드의 '기저가 바뀌면 만료' 규칙도 같은 이유로
+    // 늦게 풀렸다 — 규칙을 바꾸는 것이 아니라 제때 돌게 하는 것이다(운영자 확정 2026-07-18).
+    const resync = () => {
+      if (document.visibilityState !== 'visible') return
+      applyTheme(getStoredTheme())
+      setIsDark(document.documentElement.classList.contains('dark'))
+    }
+    document.addEventListener('visibilitychange', resync)
+    window.addEventListener('pageshow', resync)
+
     return () => {
       mq.removeEventListener('change', onSysChange)
+      document.removeEventListener('visibilitychange', resync)
+      window.removeEventListener('pageshow', resync)
       clearInterval(timeInterval)
     }
   }, [])

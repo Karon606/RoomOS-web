@@ -166,10 +166,32 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
     }
   }
 
+  /**
+   * 닫힘 — 페이드는 CSS transition 이고 언마운트는 setTimeout 이라 시계가 둘이다.
+   *
+   * 백그라운드로 갔다 오는 사이에 이 200ms 창이 걸리면 transition 은 타임라인째 멎고
+   * 타이머는 늦어, 검은 막이 중간 불투명도로 화면에 남는다. 시작 화면이 같은 구조로
+   * 크림색 막을 남겼고(운영자 실측 2026-08-28) 처방도 같다 — 마감을 벽시계로 두고
+   * 돌아온 첫 프레임에 다시 묻는다.
+   */
+  const closeAt = useRef(0)
   const handleClose = () => {
     setMounted(false)
+    closeAt.current = Date.now() + 200
     setTimeout(onClose, 200)
   }
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState !== 'visible') return
+      if (closeAt.current && Date.now() >= closeAt.current) { closeAt.current = 0; onClose() }
+    }
+    document.addEventListener('visibilitychange', resync)
+    window.addEventListener('pageshow', resync)
+    return () => {
+      document.removeEventListener('visibilitychange', resync)
+      window.removeEventListener('pageshow', resync)
+    }
+  }, [onClose])
 
   const trackTransform = `translate3d(calc(${-index * 100}% + ${drag}px), 0, 0)`
 

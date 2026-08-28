@@ -14,7 +14,9 @@ export function SplashStatic() {
       {/* 파싱 시점(하이드레이션 전)에 플래그 — 인트로가 '획은 이미 그려졌다'고 판단해 재드로잉 생략 */}
       <script dangerouslySetInnerHTML={{ __html: 'window.__sySplashStatic=1' }} />
       <style>{`
-        @media (prefers-color-scheme: dark) { [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; } }
+        /* 배경의 판정 주체는 html.dark 하나다. 종전에는 OS 미디어쿼리가 두 번째 주체로 얹혀 있어,
+           앱 테마가 라이트인데 기기 외관이 다크면 밝은 앱 위에 새까만 시작 화면이 떴다.
+           themeBootstrapScript 가 <head> 안에서 동기로 .dark 를 확정하므로 미디어쿼리가 지킬 창이 없다. */
         html.dark [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; }
 
         .sy-st-stroke {

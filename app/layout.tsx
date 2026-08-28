@@ -61,7 +61,10 @@ export default function RootLayout({
         {/* v2.0 §21 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
             다크는 CSS 미디어쿼리로 — JS 테마 감지 전 깜박임 원천 차단. */}
         <style dangerouslySetInnerHTML={{ __html:
-          'html{background:#E8DDD0}@media(prefers-color-scheme:dark){html{background:#000000}}html.dark{background:#000000}',
+          // 판정 주체는 html.dark 하나 — OS 외관을 같이 보면 라이트 앱이 검은 바탕 위에 그려진다.
+          // 이 CSS 는 themeBootstrapScript 보다 먼저 파싱되지만, 그 스크립트도 <head> 안에서
+          // 동기로 돌아 body 페인트 전에 .dark 를 확정하므로 되돌릴 규칙이 필요 없다.
+          'html{background:#E8DDD0}html.dark{background:#000000}',
         }} />
         {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN.
             Variable 버전 — 100~900 모든 weight를 한 파일로 안정 로딩. */}

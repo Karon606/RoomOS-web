@@ -65,12 +65,23 @@ export function SplashHost() {
   const introRef = useRef(false)
   const shownAt = useRef(0)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  /**
+   * 예약된 퇴장의 **벽시계 마감**. 0 이면 예약 없음.
+   *
+   * 퇴장이 서로 다른 두 시계 위에 있었다. setTimeout 은 백그라운드에서 늦춰지고 CSS transition 은
+   * 문서 애니메이션 타임라인째로 정지한다. 둘의 재개 시점이 400ms 페이드 창 안에서 갈리면
+   * 오버레이가 중간 불투명도로 얼어붙어 화면을 크림색 막으로 덮는다(운영자 실측 2026-08-28,
+   * "나갔다 돌아오거나 잠깐 기다리면 원래대로 돌아온다" — 막이 걷히는 시간 = 페이지 시계가
+   * 멈춰 있던 시간이다). 남은 시간으로 재면 그 어긋남을 되물을 수 없지만, 마감 시각으로 재면
+   * 돌아온 첫 프레임에 "이미 지났는가"를 한 번 물어 씻을 수 있다.
+   */
+  const exitAt = useRef(0)
   // 이 로드에서 인트로를 재생할 자격 — 마운트 시 1회 판정(하트비트 기록 전), 재생하면 소진
   const shouldPlayIntroOnce = useRef(false)
 
   useEffect(() => {
     const go = (p: Phase) => { phaseRef.current = p; setPhase(p) }
-    const clear = () => { timers.current.forEach(clearTimeout); timers.current = [] }
+    const clear = () => { timers.current.forEach(clearTimeout); timers.current = []; exitAt.current = 0 }
     const touch = () => { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())) } catch { /* ignore */ } }
     // 재접속 판정 — 마지막 활동 공백 > GAP 이면 인트로. OAuth 왕복은 마커로 제외.
     const shouldPlayIntro = () => {
@@ -91,13 +102,42 @@ export function SplashHost() {
     const staticShown = () =>
       typeof window !== 'undefined' && !!(window as { __sySplashStatic?: number }).__sySplashStatic
 
+    // 퇴장은 한 곳에서만 시작한다 — 두 자리에 흩어져 있으면 마감 기록이 한쪽에서만 선다.
+    const runExit = () => {
+      exitAt.current = 0
+      go('fading')
+      timers.current.push(setTimeout(() => go('off'), FADE))
+    }
+    const scheduleExit = (wait: number) => {
+      exitAt.current = Date.now() + wait
+      timers.current.push(setTimeout(runExit, wait))
+    }
+    /**
+     * 돌아온 첫 프레임의 재동기 — 이 저장소가 이미 쓰는 문법이다(Modal·ViewportOffsetGuard).
+     *
+     * 아직 로딩 신호가 살아 있으면 아무것도 안 한다. 리디렉트 갭을 잇는 OFF_GRACE 규약이
+     * 그 위에 서 있어서, 여기서 손대면 홉마다 스플래시가 깜빡인다.
+     * 백그라운드에 있는 동안 완주 시각이 지나간 연출은 복귀 즉시 정리한다 — 아무도 못 본
+     * 3.2초를 돌아온 사람에게 다시 재생하지 않는다.
+     */
+    const reconcile = () => {
+      if (document.visibilityState !== 'visible') return
+      if (lastSignal) return
+      if (phaseRef.current === 'fading') { clear(); go('off'); return }
+      if (phaseRef.current === 'visible' && exitAt.current && Date.now() >= exitAt.current) {
+        clear(); runExit()
+      }
+    }
+
     // 판정은 하트비트가 기록을 덮기 전에 1회만
     shouldPlayIntroOnce.current = shouldPlayIntro()
     // 활동 하트비트 — 가시성 변화·페이지 이탈·20s 주기로 갱신. 마지막 기록 = 떠난 시각.
     touch()
-    const onVis = () => touch()
+    const onVis = () => { touch(); reconcile() }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pagehide', onVis)
+    // bfcache 복원은 visibilitychange 없이 오기도 한다 — 그 경로가 정확히 이 결함이 사는 자리다.
+    window.addEventListener('pageshow', reconcile)
     const beat = setInterval(() => { if (document.visibilityState === 'visible') touch() }, 20_000)
 
     hostListener = (on) => {
@@ -129,10 +169,7 @@ export function SplashHost() {
         // 일반: 최소 유지 1000ms. + OFF_GRACE — 리디렉트 갭 동안 on 신호가 돌아오면 위 가드가 취소.
         const hold = introRef.current ? (reducedMotion() ? 0 : INTRO) : MIN
         const wait = Math.max(OFF_GRACE, hold - (Date.now() - shownAt.current))
-        timers.current.push(setTimeout(() => {
-          go('fading')
-          timers.current.push(setTimeout(() => go('off'), FADE))
-        }, wait))
+        scheduleExit(wait)
       }
     }
     // 콜드 부트 자가 발동 — 서버가 페이지를 suspend 없이 즉시 렌더하면 loading.tsx(Gate)가
@@ -144,11 +181,7 @@ export function SplashHost() {
       shownAt.current = Date.now()
       go('visible')
       if (!lastSignal) {
-        const hold = reducedMotion() ? 0 : INTRO
-        timers.current.push(setTimeout(() => {
-          go('fading')
-          timers.current.push(setTimeout(() => go('off'), FADE))
-        }, hold))
+        scheduleExit(reducedMotion() ? 0 : INTRO)
       }
       // lastSignal === true 면 Gate 의 off 신호가 INTRO 완주 기준으로 퇴장 처리
     } else if (lastSignal) {
@@ -158,6 +191,7 @@ export function SplashHost() {
       hostListener = null; clear()
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('pagehide', onVis)
+      window.removeEventListener('pageshow', reconcile)
       clearInterval(beat)
     }
   }, [])

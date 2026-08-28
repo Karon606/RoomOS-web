@@ -39,7 +39,9 @@ export function SplashIntro({ skipDraw = false }: { skipDraw?: boolean }) {
       aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
-        @media (prefers-color-scheme: dark) { [data-intro-bg] { background: var(--cold-bg-dark, #000000) !important; } }
+        /* 배경의 판정 주체는 html.dark 하나다. 종전에는 OS 미디어쿼리가 두 번째 주체로 얹혀 있어,
+           앱 테마가 라이트인데 기기 외관이 다크면 밝은 앱 위에 새까만 시작 화면이 떴다.
+           themeBootstrapScript 가 <head> 안에서 동기로 .dark 를 확정하므로 미디어쿼리가 지킬 창이 없다. */
         html.dark [data-intro-bg] { background: var(--cold-bg-dark, #000000) !important; }
 
         /* §3b draw — 중심선 한 획(stroke 20) 왼→오. pathLength=1 정규화 */
