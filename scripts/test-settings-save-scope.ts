@@ -34,6 +34,8 @@ const BEFORE: Row = {
   acquisitionDate: new Date('2026-03-01'),
   prevOwnerCutoffDate: new Date('2026-02-28'),
   contactLeadDays: 14,
+  checkoutLeadShortDays: 7,
+  checkoutLeadMonths: 1,
   defaultDeposit: 50000,
   defaultCleaningFee: 20000,
   reservationDepositMode: 'prepaid',
@@ -50,7 +52,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 
 /** 탭별 담당 칼럼 — 확정 재편 지도(2026-08-19 운영자 승인)를 그대로 옮긴 것. */
 const OWNED: Record<string, string[]> = {
-  기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays'],
+  기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
   '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate'],
   웹사이트:    ['publicSlug'],
@@ -66,7 +68,7 @@ const BASIC_FORM: [string, string][] = [
   ['name', '더스테이 제기역점'], ['address', '서울시 동대문구 제기동 1-1'], ['phone', '02-000-0000'],
   ['replyToEmail', 'contact@thestay.kr'], ['mailFromLocal', 'thestay.jegi'],
   ['mailCopyToSelf', '0'], ['mailCopyToSelf', '1'],
-  ['acquisitionDate', '2026-03-01'], ['prevOwnerCutoffDate', '2026-02-28'], ['contactLeadDays', '14'],
+  ['acquisitionDate', '2026-03-01'], ['prevOwnerCutoffDate', '2026-02-28'], ['contactLeadDays', '14'], ['checkoutLeadShortDays', '7'], ['checkoutLeadMonths', '1'],
 ]
 const PRICING_FORM: [string, string][] = [
   ['defaultDeposit', '50000'], ['defaultCleaningFee', '20000'], ['reservationDepositMode', 'prepaid'],

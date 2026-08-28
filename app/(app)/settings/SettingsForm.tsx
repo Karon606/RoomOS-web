@@ -88,6 +88,8 @@ type Property = {
   reservationDepositMode: string | null
   bankAccount: string | null
   contactLeadDays?: number | null
+  checkoutLeadShortDays?: number | null
+  checkoutLeadMonths?: number | null
   refundClauseInContract: boolean
   cleaningFeeInDeposit: boolean   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
   multiContractVersions: boolean  // 한 계약에 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
@@ -949,6 +951,24 @@ export default function SettingsForm({
                   className="w-24 px-3 py-2.5 rounded-sm text-sm tabular-nums outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
                 <span className="text-sm text-[var(--warm-mid)]">일 전부터</span>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 예정으로 바뀌는 시점</label>
+              <p className="text-xs text-[var(--warm-muted)]">거주중인 입주자를 퇴실일 며칠(몇 달) 전에 &lsquo;퇴실 예정&rsquo;으로 바꿀지 정합니다. 그때부터 새 입실자를 찾고 청소를 잡습니다. 한 달 이하로 지내는 분과 그보다 오래 지내는 분에게 다른 기준이 붙습니다. 0을 넣으면 퇴실 당일에 바뀝니다.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-[var(--warm-mid)]">한 달 이하</span>
+                <input type="text" name="checkoutLeadShortDays" inputMode="numeric"
+                  defaultValue={String(property?.checkoutLeadShortDays ?? 7)}
+                  className="w-20 px-3 py-2.5 rounded-sm text-sm tabular-nums outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                <span className="text-sm text-[var(--warm-mid)]">일 전</span>
+                <span className="text-sm text-[var(--warm-mid)] pl-2">그 밖</span>
+                <input type="text" name="checkoutLeadMonths" inputMode="numeric"
+                  defaultValue={String(property?.checkoutLeadMonths ?? 1)}
+                  className="w-20 px-3 py-2.5 rounded-sm text-sm tabular-nums outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                <span className="text-sm text-[var(--warm-mid)]">달 전</span>
+              </div>
+              {/* 달은 날수로 세지 않는다 — 30일로 못 박으면 윤달과 30/31 월에서 갈린다(운영자 확정 2026-08-28). */}
+              <p className="text-[0.6875rem] text-[var(--warm-muted)]">달은 달력으로 셉니다. 10월 19일 퇴실이면 한 달 전은 9월 19일입니다.</p>
             </div>
             {/* 이사 안내 — 기본정보 한 탭이 영업장 정보·요금·서류·분류를 모두 이고 있어 스크롤 끝까지
                 가야 찾던 칸이 나왔다. 네 갈래로 나눠 보냈으니 여기서 찾던 사람이 빈손으로 돌아가지

@@ -41,6 +41,8 @@ export type PropertySettingsPatch = {
   reservationDepositMode?: string
   bankAccount?: string | null
   contactLeadDays?: number
+  checkoutLeadShortDays?: number
+  checkoutLeadMonths?: number
   refundPenaltyPct?: number | null
   refundClauseInContract?: boolean
   cleaningFeeInDeposit?: boolean
@@ -100,6 +102,13 @@ export function buildPropertySettingsPatch(
   }
   if (formData.has('contactLeadDays')) {
     patch.contactLeadDays = Math.min(90, Math.max(1, Number(digits(str(formData, 'contactLeadDays'))) || 14))
+  }
+  // 퇴실 예정 자동 전환 리드 — 판정은 lib/autoCheckout. 0 은 '퇴실 당일에 바꾼다'는 뜻이라 허용한다.
+  if (formData.has('checkoutLeadShortDays')) {
+    patch.checkoutLeadShortDays = Math.min(60, Math.max(0, Number(digits(str(formData, 'checkoutLeadShortDays')))))
+  }
+  if (formData.has('checkoutLeadMonths')) {
+    patch.checkoutLeadMonths = Math.min(6, Math.max(0, Number(digits(str(formData, 'checkoutLeadMonths')))))
   }
 
   // ── 요금·정책 탭 ───────────────────────────────────────────────
