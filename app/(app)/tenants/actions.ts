@@ -3042,6 +3042,16 @@ export async function applyStatusTransition(input: {
       notice = pr.notice
     }
 
+    // 퇴실일이 실제로 바뀌면 자동 전환 기록을 리셋한다(재무장). updateTenant 는 이미 이 규칙을
+    // 갖고 있었는데 이 경로에만 없었다 — 단기가 '퇴실일 변경'을 연장 모달로 타서 안 드러났을 뿐이다.
+    // 일반 계약까지 자동 전환 대상이 되는 순간 "퇴실일을 바꿨는데 자동 전환이 안 온다"가 된다.
+    // data 조립이 다 끝난 자리에서 한 번만 본다 — 위 '퇴실예정 취소' 분기도 여기를 지난다.
+    if ('expectedMoveOut' in data) {
+      const nextOut = data.expectedMoveOut as Date | null
+      if ((nextOut?.getTime() ?? null) !== (lease.expectedMoveOut?.getTime() ?? null)) {
+        data.autoCheckoutAt = null
+      }
+    }
     await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
     // 딸린 계약도 같은 날로 — 위 자동 파생이 부모의 빈 납부일을 채운 경우다(운영자 오더 2026-08-13).
     if (typeof data.dueDay === 'string') {
@@ -4327,6 +4337,9 @@ export async function setCheckoutProration(
         checkoutProratedAmount: finalAmount,
         checkoutProratedMonth: calc.moveOutMonth,
         checkoutProrationUndo: undo,
+        // 퇴실일이 바뀌면 자동 전환도 재무장 — 저장 경로마다 이 규칙이 갈리면 안 된다.
+        ...(new Date(expectedMoveOut).getTime() !== (lease.expectedMoveOut?.getTime() ?? null)
+          ? { autoCheckoutAt: null } : {}),
       },
     })
     // 거주 구간 이력 — 종료 상태에서 퇴실 예정으로 되돌아오는 경우의 재개방(그 외에는 no-op, 추가 write).
@@ -4401,6 +4414,10 @@ export async function clearCheckoutProration(
           checkoutProratedAmount: undo.prevAmount,
           checkoutProratedMonth: undo.prevMonth,
           checkoutProrationUndo: Prisma.DbNull,
+          // 되돌린 퇴실일이 지금 값과 다르면 자동 전환도 재무장한다.
+          ...((undo.prevExpectedMoveOut ? new Date(undo.prevExpectedMoveOut).getTime() : null)
+              !== (lease.expectedMoveOut?.getTime() ?? null)
+            ? { autoCheckoutAt: null } : {}),
         },
       })
       // 거주 구간 이력 — 복원된 상태가 종료 상태면 마감(그 외에는 no-op, 추가 write).
