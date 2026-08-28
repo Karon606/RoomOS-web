@@ -38,7 +38,6 @@ import { Btn } from '@/components/ui/Btn'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { useCanEdit } from '@/components/RoleContext'
-import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
@@ -4909,7 +4908,7 @@ export default function FinanceClient({
 
             {/* 목록 */}
             {recMgmtLoading ? (
-              <Loading py={4} />
+              <SkeletonRows rows={3} />
             ) : recMgmtList.length === 0 && !showRecMgmtForm ? (
               <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
             ) : (

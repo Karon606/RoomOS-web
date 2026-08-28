@@ -12,7 +12,6 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
 import { overbookExcess } from '@/lib/stockLedger'
-import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -1394,7 +1393,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       {/* 렌더 오류가 모달을 조용히 닫던 문제 방지 — 안내+자취 기록(오류신고 0861b35f). resetKey=mode로 모드 전환 시 재시도 */}
       <ErrorBoundary label="재고 상세" resetKey={mode}>
       {!data ? (
-        <Loading />
+        <SkeletonRows rows={5} className="py-1" />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.currentLocationBreakdown} hiddenLocationIds={row.hiddenLocationIds}
           currentStock={row.currentStock} hasPriorCheck={row.lastCheckId != null} pendingCount={row.pendingPurchases.length}
@@ -4497,7 +4496,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} width="md" title="병합 적용취소·규칙"
       subtitle="잘못 합친 품목 되돌리기 · 자동등록 추천(연결)·거절(다시 안 물어봄) 관리">
       <div className="space-y-4">
-        {loading ? <Loading /> : isEmpty ? (
+        {loading ? <SkeletonRows rows={3} /> : isEmpty ? (
           <EmptyState title="병합 기록이 없습니다"
             description="품목을 병합하거나, 자동등록 확인에서 '새 품목으로'를 고르면 여기에 기록이 쌓입니다." />
         ) : (
@@ -4575,7 +4574,7 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="숨김 품목" subtitle="당분간 사용 안 함으로 숨긴 품목, 또는 병합으로 빠진 품목을 다시 활성화합니다." width="sm">
       {loading ? (
-        <Loading />
+        <SkeletonRows rows={3} />
       ) : items.length === 0 ? (
         <p className="text-sm text-[var(--warm-muted)] text-center py-8">숨겨진 품목이 없습니다.</p>
       ) : (

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect, type ReactNode } from 'react'
@@ -9,7 +10,6 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { ConsultToolsModal } from '@/components/ConsultToolsModal'
-import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -1902,7 +1902,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
     <Modal open onClose={onClose} width="sm"
       title={info?.name ?? '입주자 정보'}>
         {loading ? (
-          <Loading />
+          <SkeletonRows rows={4} />
         ) : !info ? (
           <div className="py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
         ) : (
