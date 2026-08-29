@@ -4035,6 +4035,17 @@ export type CheckoutRefundPreview =
       ok: true; refund: CheckoutRefundResult; prepaidAmount: number; defaultPenaltyPct: number
       // 퇴실 정산 위젯이 먼저 확정한 그 달 청구액 — 있으면 환불 창은 재계산 대신 이 값을 이어받는다(이중 수정 방지)
       appliedProration: number | null
+      /**
+       * 1개월을 못 채우고 나가는 계약의 단기 요금 견적 — 해당 없으면 null.
+       *
+       * 왜 여기서 함께 내려주나. 종전에는 운영자가 상담 도구를 따로 열어 방 월세와 날짜를 손으로
+       * 다시 넣고 두 숫자를 머릿속에서 비교했다. 그러다 청소비를 한쪽에만 세는 실수가 났다
+       * (2026-08-29 실측). 화면이 두 번 계산하면 두 답이 갈린다.
+       *
+       * 조건은 셋이 함께 참일 때다. 단기 계약이 아니고(단기는 이미 그 요금이다), 입주일을 알고,
+       * 입주일부터 퇴실일까지가 달력 한 달 안이다.
+       */
+      shortStay: { stayDays: number; units: number; contractDays: number; baseAmount: number; roundedUp: boolean } | null
     }
   | { ok: false; error: string }
 
@@ -4050,12 +4061,12 @@ export async function previewCheckoutRefund(
       prisma.leaseTerm.findFirst({
         where: { id: leaseTermId, propertyId },
         select: {
-          dueDay: true, rentAmount: true, moveInDate: true,
+          dueDay: true, rentAmount: true, moveInDate: true, isShortTerm: true,
           checkoutProratedAmount: true, checkoutProratedMonth: true,
           discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         },
       }),
-      prisma.property.findUnique({ where: { id: propertyId }, select: { refundPenaltyPct: true } }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { refundPenaltyPct: true, shortStayPolicy: true } }),
     ])
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     // 영업장 기본 위약금율(공정위 10% 캡) — 사람별 입력이 있으면 그 값을, 없으면 기본값을 캡 안에서 적용
@@ -4076,7 +4087,21 @@ export async function previewCheckoutRefund(
     const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct })
     const appliedProration = (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === settleMonth)
       ? lease.checkoutProratedAmount : null
-    return { ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration }
+    // 단기 견적 — 판정은 **전체 거주 기간**으로 한다(정산 기간의 사용 일수가 아니다).
+    // 7/1 에 들어와 8/10 에 나간 사람은 daysUsed 가 10일이지만 전체는 41일이라 1개월을 넘겼다.
+    // 요금도 전체 기간 기준이라 두 값을 섞으면 한 달 넘게 산 사람에게 단기 요금이 붙는다.
+    const moveInYmd = lease.moveInDate ? kstYmdStr(lease.moveInDate) : null
+    const shortStay = (() => {
+      if (lease.isShortTerm || !moveInYmd) return null
+      if (!isWithinOneCalendarMonth(moveInYmd, expectedMoveOut)) return null
+      const days = stayDaysOf(moveInYmd, expectedMoveOut)
+      if (days == null || days < 1) return null
+      const q = calcShortStay(parseShortStayPolicy(prop?.shortStayPolicy), monthlyRent, days,
+        { moveInYmd, moveOutYmd: expectedMoveOut })
+      if (!q) return null
+      return { stayDays: q.stayDays, units: q.units, contractDays: q.contractDays, baseAmount: q.baseAmount, roundedUp: q.roundedUp }
+    })()
+    return { ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

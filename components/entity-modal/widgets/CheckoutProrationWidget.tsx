@@ -22,6 +22,9 @@ import { trackSave, pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 const fmtMonth = (m: string) => { const [y, mm] = m.split('-'); return `${y}년 ${Number(mm)}월` }
 
+/** 화면의 정산 갈래 — 서버 모드 둘 + 단기 요금(적용 금액 기본값만 바꾸는 화면 전용). */
+type PickMode = RefundMode | 'shortStay'
+
 export function CheckoutProrationWidget({
   leaseTermId, currentDueDay, expectedMoveOut, checkoutProratedAmount, checkoutProratedMonth, autoOpen, onChange,
 }: {
@@ -44,8 +47,24 @@ export function CheckoutProrationWidget({
   const [calcErr, setCalcErr] = useState<string | null>(null)
   const [amountInput, setAmountInput] = useState('')   // 적용 금액(퇴실월 회사 귀속) — 모드별 기본, 운영자가 수정 가능
   const [refund, setRefund] = useState<{ refund: CheckoutRefundResult; prepaidAmount: number } | null>(null)
+  /**
+   * 1개월을 못 채우고 나가는 계약의 단기 요금 견적 — 서버가 함께 내려준다(해당 없으면 null).
+   *
+   * 종전에는 이 자리에 없어서, 운영자가 상담 도구를 따로 열어 방 월세와 날짜를 손으로 다시 넣고
+   * 두 숫자를 머릿속에서 비교했다. 그러다 청소비를 한쪽에만 세는 실수가 났다(2026-08-29).
+   */
+  const [shortQuote, setShortQuote] = useState<{ stayDays: number; units: number; contractDays: number; baseAmount: number; roundedUp: boolean } | null>(null)
+  /**
+   * 화면의 정산 갈래 — 서버 모드(RefundMode) 둘에 **화면 전용 갈래 하나**를 얹는다.
+   *
+   * 'shortStay' 를 서버 모드로 안 만든 이유. 그것은 새 산식이 아니라 **적용 금액의 기본값을
+   * 단기 요금으로 채우는 것**이다. 금액 칸은 그대로 열려 있어 운영자가 언제든 고친다
+   * (운영자 2026-08-29 — "상황에 따라 환불 금액이 언제든 다르게 가져갈 수 있으니").
+   * 산식을 서버에 박으면 그 재량이 닫히고, 계약서에 조항이 서기 전에 금액이 자동으로 바뀐다.
+   */
   // 환불 모드: 법정(공정위: 위약금 + 잔여 환불) / 선의(일할만, 위약금 없음). 기본=법정.
   const [refundMode, setRefundMode] = useState<RefundMode>('legal')
+  const [pick, setPick] = useState<PickMode>('legal')
   // 사람별 위약금율(%) — 빈 값이면 영업장 기본값. 공정위 10% 캡(운영자 결정 2026-07-20), 서버가 재클램프.
   const [penaltyPctInput, setPenaltyPctInput] = useState('')
   const [defaultPenaltyPct, setDefaultPenaltyPct] = useState(LEGAL_PENALTY_PCT)
@@ -53,8 +72,8 @@ export function CheckoutProrationWidget({
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
   // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액 + 모드·위약금율별 환불)
-  const handleDate = (v: string, mode: RefundMode = refundMode, pctStr: string = penaltyPctInput) => {
-    setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null)
+  const handleDate = (v: string, mode: RefundMode = refundMode, pctStr: string = penaltyPctInput, useShortStay = pick === 'shortStay') => {
+    setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null); setShortQuote(null)
     if (!v || v.length < 10) return
     const pctNum = pctStr.trim() === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(pctStr, 10) || 0))
     startTransition(async () => {
@@ -66,19 +85,28 @@ export function CheckoutProrationWidget({
       else { setCalc(null); setCalcErr(res.error) }
       if (refRes.ok) {
         setRefund({ refund: refRes.refund, prepaidAmount: refRes.prepaidAmount })
+        setShortQuote(refRes.shortStay)
         setDefaultPenaltyPct(refRes.defaultPenaltyPct)
         // 적용 금액 = 회사 귀속(사용분 + 위약금). 선납 없으면 일할 청구액.
-        setAmountInput(String(refRes.prepaidAmount > 0 ? refRes.refund.companyKeeps : (res.ok ? res.calc.amount : refRes.refund.usedAmount)))
+        // 단기 갈래는 그 자리를 단기 요금으로 덮는다 — 견적이 없으면(1개월을 채운 계약) 종전대로.
+        setAmountInput(String(useShortStay && refRes.shortStay
+          ? refRes.shortStay.baseAmount
+          : refRes.prepaidAmount > 0 ? refRes.refund.companyKeeps : (res.ok ? res.calc.amount : refRes.refund.usedAmount)))
       } else if (res.ok) {
         setAmountInput(String(res.calc.amount))
       }
     })
   }
 
-  // 모드 전환 → 같은 퇴실일로 환불 미리보기·적용 금액 재계산
-  const handleMode = (mode: RefundMode) => {
-    setRefundMode(mode)
-    if (date && date.length >= 10) handleDate(date, mode)
+  // 갈래 전환 → 같은 퇴실일로 환불 미리보기·적용 금액 재계산.
+  //
+  // 단기 요금은 위약금이 없으므로 서버에는 'goodwill' 로 묻고, 돌아온 뒤 적용 금액만
+  // 단기 요금으로 덮는다. 미리보기의 '총 결제금액'과 '환불액'은 그대로 이 값을 따라간다.
+  const handlePick = (next: PickMode) => {
+    setPick(next)
+    const serverMode: RefundMode = next === 'shortStay' ? 'goodwill' : next
+    setRefundMode(serverMode)
+    if (date && date.length >= 10) handleDate(date, serverMode, penaltyPctInput, next === 'shortStay')
   }
 
   // 위약금율 입력 — 숫자만, 두 자리까지. 값이 바뀌면 같은 퇴실일로 재계산.
@@ -190,23 +218,29 @@ export function CheckoutProrationWidget({
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
               <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
-              <SegmentedControl<RefundMode>
+              <SegmentedControl<PickMode>
                 ariaLabel="정산 방식"
                 size="sm"
-                value={refundMode}
-                onChange={handleMode}
+                value={pick}
+                onChange={handlePick}
                 options={[
                   { value: 'legal', label: '법정(공정위)' },
                   { value: 'goodwill', label: '선의(일할)' },
+                  // 1개월을 못 채운 계약에만 선다. 채운 계약에는 단기 요금이라는 것이 없다.
+                  ...(shortQuote ? [{ value: 'shortStay' as const, label: '단기 요금' }] : []),
                 ]}
               />
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-                {refundMode === 'legal'
+                {pick === 'legal'
                   ? '원칙(공정위). 위약금을 제하고 남은 일수를 환불합니다.'
-                  : '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
+                  : pick === 'goodwill'
+                  ? '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'
+                  : shortQuote
+                  ? `거주 ${shortQuote.stayDays}일${shortQuote.roundedUp ? ` (주 단위라 ${shortQuote.contractDays}일로 올림)` : ''} · ${shortQuote.units}주 계약 요금 ${fmtWon(shortQuote.baseAmount)}. 처음부터 단기로 계약했을 때와 같은 금액입니다.`
+                  : ''}
               </p>
               {/* 사람별 위약금율 — 영업장 기본값 이하가 아니라 공정위 캡(10%) 이하에서 자유 조정(운영자 결정 2026-07-20) */}
-              {refundMode === 'legal' && (
+              {pick === 'legal' && (
                 <div className="flex items-center gap-2 pt-0.5">
                   <label className="text-[0.6875rem] text-[var(--warm-mid)] shrink-0">위약금율</label>
                   <div className="relative w-20">
@@ -220,7 +254,7 @@ export function CheckoutProrationWidget({
               )}
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.65625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
+              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.65625rem]">(퇴실월 청구 = 사용분{pick === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
               <div className="flex items-center gap-1.5">
                 <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
                   onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
@@ -239,13 +273,27 @@ export function CheckoutProrationWidget({
           const applied = amountInput ? (parseInt(amountInput.replace(/[^0-9]/g, ''), 10) || 0) : refund.refund.companyKeeps
           const penalty = refund.refund.penalty   // 서버 계산값(적용 위약금율 반영)
           const refundAmt = Math.max(0, refund.prepaidAmount - applied)
+          // **식과 답이 갈리지 않게 한다.** 종전에는 위 세 줄이 서버 원값이고 환불액만 입력값을
+          // 따라가서, 금액을 고치면 420,000 − 168,000 = 126,000 같은 틀린 식이 화면에 남았다
+          // (운영자 실측 2026-08-29). 고친 순간부터 근거는 그 금액 하나이므로 내역을 한 줄로 접는다.
+          // 비교 대상은 **그 갈래가 채워 준 기본값**이다. 사용분과 비교하면 단기 갈래가 늘
+          // '직접 지정'으로 읽힌다 — 단기 요금은 사용분보다 크게 마련이라서다.
+          const base = pick === 'shortStay' && shortQuote ? shortQuote.baseAmount : refund.refund.companyKeeps
+          const edited = applied !== base
+          const label = pick === 'legal' ? '법정·공정위' : pick === 'goodwill' ? '선의·일할' : '단기 요금'
           return (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-              <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.65625rem] text-[var(--warm-muted)]">({refundMode === 'legal' ? '법정·공정위' : '선의·일할'})</span></p>
+              <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.65625rem] text-[var(--warm-muted)]">({label}{edited ? ' · 직접 지정' : ''})</span></p>
               <div className="space-y-0.5 text-[var(--warm-muted)]">
                 <div className="flex justify-between"><span>총 결제금액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
-                <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
-                {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {refund.refund.penaltyPct}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
+                {edited ? (
+                  <div className="flex justify-between"><span>− 적용 금액</span><span className="tabular-nums">{fmtWon(applied)}</span></div>
+                ) : pick === 'shortStay' && shortQuote ? (
+                  <div className="flex justify-between"><span>− 단기 요금 ({shortQuote.units}주 계약{shortQuote.roundedUp ? ` · 거주 ${shortQuote.stayDays}일` : ''})</span><span className="tabular-nums">{fmtWon(applied)}</span></div>
+                ) : (<>
+                  <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
+                  {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {refund.refund.penaltyPct}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
+                </>)}
               </div>
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
@@ -255,7 +303,7 @@ export function CheckoutProrationWidget({
           )
         })()}
         <div className="flex gap-2">
-          <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null); setRefund(null) }} className="flex-1">취소</Btn>
+          <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null); setRefund(null); setShortQuote(null) }} className="flex-1">취소</Btn>
           <Btn type="button" variant="primary" size="sm" disabled={pending || !calc} onClick={handleApply} className="flex-1 font-semibold">
             {pending ? '처리 중…' : '정산 적용'}
           </Btn>

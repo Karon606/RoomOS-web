@@ -620,5 +620,36 @@ const RENT = 300000
       && availableFromLabel('2026-08-30').endsWith('부터'), true)
 }
 
+// ── 단기 회피 격차 ── 월 계약 후 중도 퇴실이 단기 계약보다 싸지는 구간(2026-08-29 운영자 신고)
+//
+// 퇴실 정산 화면이 단기 요금을 나란히 세우는 근거다. 두 곡선이 어디서 만나고 어디서 벌어지는지를
+// 여기서 고정해 둔다 — 정책 수치(배율·주 단위·상한)를 손대면 이 표가 먼저 깨져야 한다.
+{
+  const P = { ...SHORT_STAY_DEFAULTS, enabled: true }
+  const M = 420000
+  const day = (d: number) => new Date(Date.UTC(2026, 7, 18 + d)).toISOString().slice(0, 10)
+  // 월 계약 부담 = 일할(30일 고정) + 위약금 10%. 단기 부담 = 그 기간의 단기 요금(청소비는 양쪽 다
+  // 보증금에서 나가므로 상쇄된다 — 한쪽에만 세면 격차가 2만원 부풀려진다).
+  const monthly = (d: number) => Math.floor(M * Math.min(d, 30) / 30) + Math.floor(M * 0.1)
+  const short = (d: number) => calcShortStay(P, M, d, { moveInYmd: '2026-08-19', moveOutYmd: day(d) })!.baseAmount
+  // 주 경계에서 계단이 뛴다 — 7일과 8일 사이가 가장 크다.
+  eq('격차: 7일은 근소', [monthly(7), short(7)], [140000, 147000])
+  eq('격차: 8일에 계단', [monthly(8), short(8)], [154000, 294000])
+  eq('격차: 12일(422호)', [monthly(12), short(12)], [210000, 294000])
+  // 3주 블록 첫날이 최대 격차다. 운영자가 걱정한 2주보다 크다.
+  eq('격차: 15일이 최대', [monthly(15), short(15)], [252000, 420000])
+  // 27일에 만나고 그 뒤로는 월 계약이 비싸다 — 단기가 30일치 상한에 걸려 더 안 오르기 때문이다.
+  eq('격차: 27일에 역전', [monthly(27), short(27)], [420000, 420000])
+  eq('격차: 28일부터는 월 계약이 비싸다', monthly(28) > short(28), true)
+  // 한 달을 넘기면 단기 정책 밖 — 견적 자체가 없다(화면도 그 갈래를 안 그린다).
+  // 경계는 일수가 아니라 **달력**이다. 8/19 에 들어와 9/18 에 나가면 31일이지만 아직 한 달 안이라
+  // 견적이 선다(31일 달 걸침이 '한 달 초과'로 거부되던 신고 f9803357 의 처방).
+  eq('31일이어도 달력 한 달 안이면 견적이 선다',
+    calcShortStay(P, M, 31, { moveInYmd: '2026-08-19', moveOutYmd: '2026-09-18' })?.baseAmount, 420000)
+  eq('달력 한 달을 넘기면 없다',
+    calcShortStay(P, M, 33, { moveInYmd: '2026-08-19', moveOutYmd: '2026-09-20' }), null)
+  eq('달력 한 달 판정', [isWithinOneCalendarMonth('2026-08-19', '2026-08-30'), isWithinOneCalendarMonth('2026-08-19', '2026-09-20')], [true, false])
+}
+
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)
