@@ -5,7 +5,7 @@
 //   · **위 여백에도 상한이 있다** — 아래에만 0 하한이 있고 위에 짝이 없어서, 어긋난 스냅샷 한 장에
 //     패널이 내려가며 작아졌다. 32px 만 넘어도 발동한다.
 //   · **불가능값은 버리고 직전 값을 유지한다** — 0 으로 떨구면 레이아웃이 통째로 흔들린다.
-import { overlayInsets, usableVvHeight, MIN_VV_HEIGHT } from '../lib/modalViewport'
+import { overlayInsets, usableVvHeight, shouldWriteVvHeight, MIN_VV_HEIGHT } from '../lib/modalViewport'
 
 let pass = 0
 const fails: string[] = []
@@ -54,6 +54,22 @@ eq('0 이 와도 직전 값 유지', usableVvHeight(0, 538), 538)
 eq('직전 값이 없으면 null', usableVvHeight(80, 0), null)
 eq('경계값은 받아들인다', usableVvHeight(MIN_VV_HEIGHT, 0), MIN_VV_HEIGHT)
 eq('경계 아래는 버린다', usableVvHeight(MIN_VV_HEIGHT - 1, 300), 300)
+
+// ── 크기 쓰기 방향 ─────────────────────────────────────────────────
+// 두 증상이 반대 방향이라 한쪽만 막으면 다른 쪽이 터진다. 이 비대칭을 여기서 고정한다.
+{
+  const w = shouldWriteVvHeight
+  // 팬 중 작아지는 값 — 오염이다. 드래그할수록 창이 작아지던 원인.
+  eq('팬에서 줄어드는 값은 안 쓴다', w(400, 538, false), false)
+  // 팬 중 커지는 값 — 복구다. 앱에서 돌아와 작게 찍힌 것이 여기서 씻긴다.
+  eq('팬에서 커지는 값은 쓴다', w(874, 400, false), true)
+  eq('팬에서 같은 값은 쓴다(무해)', w(538, 538, false), true)
+  // 키보드가 열려 띠가 진짜 줄 때는 resize 가 온다 — 그 길이 막히면 안 된다.
+  eq('resize 면 줄어드는 값도 쓴다', w(538, 874, true), true)
+  eq('resize 면 커지는 값도 쓴다', w(874, 538, true), true)
+  // 아직 한 번도 못 읽었으면 무엇이든 받는다(첫 프레임).
+  eq('첫 값은 무조건 쓴다', w(300, 0, false), true)
+}
 
 console.log(`\n모달 기하 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

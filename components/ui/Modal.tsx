@@ -4,7 +4,7 @@ import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
 import { PeekSheet } from './PeekSheet'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
-import { overlayInsets, usableVvHeight } from '@/lib/modalViewport'
+import { overlayInsets, usableVvHeight, shouldWriteVvHeight } from '@/lib/modalViewport'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -113,18 +113,24 @@ export function Modal({
     // 마지막으로 믿을 만했던 띠 높이. 0 이면 아직 한 번도 못 읽었다(그때는 100dvh 폴백).
     let lastGoodH = 0
 
-    // **크기 갱신은 resize 에서만.** 716e7b0c 의 규칙이고 이 파일에도 그렇게 적혀 있었는데,
-    // 정작 코드는 팬(scroll) 프레임마다 --modal-vvh 를 다시 썼다. 값 자체는 팬 불변이라 평소에는
-    // 같은 문자열을 다시 쓰는 것뿐이지만, **오염 스냅샷이 한 장 끼면 그 값이 그대로 박히고
-    // 다음 이벤트까지 눌러앉는다.** 드래그를 반복하면 그 기회가 반복돼 패널이 점점 작아진다
-    // (운영자 실측 2026-08-29 — "스크롤을 했더니 창이 좁아진다").
+    // **줄이는 것은 resize 에서만, 늘리는 것은 언제든.**
+    //
+    // 처음에는 크기 갱신을 resize 전용으로 못 박았다(716e7b0c 규칙). 팬 프레임마다 다시 쓰면
+    // 오염 스냅샷 한 장이 그대로 박히고 다음 이벤트까지 눌러앉아, 드래그를 반복할수록 패널이
+    // 작아졌기 때문이다. 그런데 그러자 반대쪽이 터졌다 — **앱을 나갔다 돌아오면 작게 찍힌 값이
+    // 스크롤로도 안 고쳐진다.** 짧은 창이 뜨고 한 번 건드려야 제 크기가 됐다(운영자 실측
+    // 2026-08-29, 이 파일이 만든 회귀다).
+    //
+    // 두 증상의 방향이 반대라는 것이 답이다. 오염은 늘 **너무 작은** 값이고 복구는 늘 커지는
+    // 쪽이다. 그래서 커지는 것은 어느 이벤트에서든 받고, 작아지는 것만 resize 로 제한한다.
+    // 키보드가 열려 띠가 진짜 줄 때는 resize 가 오므로 그 길이 막히지 않는다.
     //
     // 불가능값은 버리고 직전 유효값을 유지한다 — ViewportOffsetGuard 가 --kbd-inset 에 이미 쓰는
-    // 문법 그대로다. 0 으로 떨구지 않는 이유도 같다. 한 프레임 값이 조금 낡는 것이 레이아웃이
-    // 통째로 흔들리는 것보다 낫다.
-    const syncSize = () => {
+    // 문법 그대로다. 0 으로 떨구지 않는 이유도 같다.
+    const syncSize = (allowShrink: boolean) => {
       const h = usableVvHeight(vv.height, lastGoodH)
-      if (h == null) return                 // 아직 못 읽었다 — 100dvh 폴백 그대로
+      if (h == null) return                              // 아직 못 읽었다 — 100dvh 폴백 그대로
+      if (!shouldWriteVvHeight(h, lastGoodH, allowShrink)) return
       lastGoodH = h
       panelRef.current?.style.setProperty('--modal-vvh', `${h}px`)
     }
@@ -151,19 +157,21 @@ export function Modal({
     // rAF 한 박자를 더 도는 이유는 복귀·회전 직후 프레임의 vv 가 아직 옛 값을 낼 수 있어서다.
     // 재동기는 크기·위치를 **둘 다** 다시 적는다 — 734ea211·e97f4b2b 의 절이 크기까지 씻는 것을
     // 전제로 서 있다. 크기를 resize 전용으로 분리하면서 이 자리를 빼먹으면 그 절이 깨진다.
-    const both = () => { syncSize(); sync() }
+    const both = () => { syncSize(true); sync() }
+    // 팬은 위치만 옮긴다. 크기는 **커지는 쪽만** 받아 복귀 직후 작게 찍힌 값이 여기서 씻긴다.
+    const onPan = () => { syncSize(false); sync() }
     const resync = () => { both(); requestAnimationFrame(both) }
     const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
     both()
     vv.addEventListener('resize', both)
-    vv.addEventListener('scroll', sync)
+    vv.addEventListener('scroll', onPan)
     window.addEventListener('pageshow', resync)
     window.addEventListener('resize', resync)
     window.addEventListener('orientationchange', resync)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       vv.removeEventListener('resize', both)
-      vv.removeEventListener('scroll', sync)
+      vv.removeEventListener('scroll', onPan)
       window.removeEventListener('pageshow', resync)
       window.removeEventListener('resize', resync)
       window.removeEventListener('orientationchange', resync)

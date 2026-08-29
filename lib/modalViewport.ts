@@ -48,3 +48,19 @@ export function usableVvHeight(height: number, lastGood: number): number | null 
   if (h >= MIN_VV_HEIGHT) return h
   return lastGood > 0 ? lastGood : null
 }
+
+/**
+ * 이 프레임에 크기를 새로 써도 되는가 — **줄이는 것은 resize 에서만, 늘리는 것은 언제든.**
+ *
+ * 두 증상이 반대 방향이라 한쪽만 막으면 다른 쪽이 터진다.
+ *   · 팬 프레임마다 크기를 쓰면 오염 스냅샷 한 장이 박혀 드래그할수록 창이 **작아진다.**
+ *   · 그렇다고 resize 전용으로 못 박으면, 앱을 나갔다 돌아와 작게 찍힌 값이 스크롤로도 안 고쳐져
+ *     짧은 창이 뜬 채 남는다(실측 2026-08-29).
+ *
+ * 오염은 늘 너무 작은 값이고 복구는 늘 커지는 쪽이다. 그 비대칭이 답이다.
+ * 키보드가 열려 띠가 진짜 줄 때는 resize 가 오므로 그 길은 안 막힌다.
+ */
+export function shouldWriteVvHeight(next: number, lastGood: number, fromResize: boolean): boolean {
+  if (lastGood <= 0) return true
+  return fromResize || next >= lastGood
+}
