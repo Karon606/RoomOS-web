@@ -551,7 +551,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
           {/* 스침 가드는 이 표면이 진다(위 tapRef 주석). pointerdown 에서 preventDefault 를
               하지 않고 포인터 캡처도 걸지 않는다 — 여기서 시작하는 가로 드래그가 죽는다.
               `touch-action`·`overscrollBehaviorX` 무접점이라 신고 d8554128 봉합면을 안 건드린다. */}
-          <div ref={scrollRef} role="region" aria-label="작업 일정 트랙" tabIndex={0}
+          <div ref={scrollRef} role="region" aria-label="일정 트랙" tabIndex={0}
             onPointerDownCapture={e => { tapRef.current = { x: e.clientX, y: e.clientY, tick: scrollTickRef.current } }}
             onPointerCancelCapture={() => { tapRef.current = null }}
             onClickCapture={e => {
