@@ -3,6 +3,7 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { getMyRole, requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
+import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import prisma from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { redirect } from 'next/navigation'
@@ -212,6 +213,8 @@ export async function saveResidenceCertFieldOverride(
       create: { leaseTermId, propertyId, docType: RESIDENCE_CERT_DOC_TYPE, fields, updatedBy: userId },
       update: { fields, updatedBy: userId },
     })
+    // 표기를 골랐으면 계약에 남긴다 — 다음 서류가 이 값을 기본으로 연다(app/(app)/tenants/docNameStyle).
+    if (value.nameStyle) await noteDocNameStyle(leaseTermId, value.nameStyle)
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
