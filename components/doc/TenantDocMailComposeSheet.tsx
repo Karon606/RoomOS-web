@@ -217,7 +217,8 @@ export function TenantDocMailComposeSheet({ tenantId, keys, onClose, onSent }: {
               </div>
               <iframe title="메일 미리보기" sandbox="" srcDoc={previewHtml}
                 className="h-[360px] w-full rounded-lg border border-[var(--warm-border)]"
-                style={{ background: '#FFFFFF' }} />
+                /* 메일 프레임이 칠하는 바탕과 같은 색 — 로드 전 한 프레임 흰 판이 번쩍이지 않게. */
+                style={{ background: '#FBF6EF' }} />
             </div>
 
             <div className="flex justify-end gap-2 pt-1">

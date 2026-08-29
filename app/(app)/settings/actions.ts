@@ -15,6 +15,7 @@ import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { RECURRING_INTERVAL_CHOICES } from '@/lib/recurringDueDate'
 import { isReservedMailLocal } from '@/lib/mailFrom'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, parseUnitOptions, resolveUnitForSave } from '@/lib/unitOptions'
+import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
 import { canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { Prisma } from '@prisma/client'
 import {
@@ -1913,13 +1914,28 @@ export async function renderDocMailSample(
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, phone: true } })
+    const p = await prisma.property.findUnique({
+      where: { id: propertyId },
+      // 푸터 서명·로고까지 실제 값으로 — 운영자가 보는 그림이 곧 나가는 그림이어야 한다.
+      select: { name: true, phone: true, businessInfo: true, logoDriveFileId: true },
+    })
+    const biz = (p?.businessInfo && typeof p.businessInfo === 'object'
+      ? p.businessInfo as Record<string, unknown> : null)
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+    // 미리보기는 iframe 이라 cid: 를 못 그린다 — 같은 바이트를 data URI 로 넣는다.
+    const logoAsset = await fetchDocMailLogo(p?.logoDriveFileId ?? null)
     const rendered = renderDocMail(parseDocMailTemplate(input), {
       propertyName: p?.name ?? '스테이음',
       propertyPhone: p?.phone ?? null,
       tenantName: '홍길동',
       docTitles: ['계약서', '입실료 납부 확인서'],
       attachmentNames: ['홍길동 계약서 2026.01.15.pdf', '홍길동 입실료 납부 확인서 2026.01.15.pdf'],
+      signature: biz ? {
+        registrationNo: str(biz.registrationNo),
+        ceoName: str(biz.ceoName),
+        address: str(biz.address),
+      } : null,
+      logo: logoAsset ? { src: logoDataUri(logoAsset), px: DOC_MAIL_LOGO_PX } : null,
     })
     return { ok: true, subject: rendered.subject, html: rendered.html }
   } catch (err) {

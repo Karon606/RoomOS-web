@@ -20,6 +20,8 @@ import { shareFileNames } from '@/lib/docShareQueue'
 import { sniffDocMime, extForDocMime, guessDocMimeByName, docMimeLabel, DOC_MIME_PDF } from '@/lib/docMime'
 import { isMailConfigured, sendMail, MAIL_MAX_TOTAL_BYTES } from '@/lib/mailSend'
 import { buildMailFromAddress } from '@/lib/mailFrom'
+import { fetchDocMailLogo, logoDataUri, DOC_MAIL_LOGO_CID, DOC_MAIL_LOGO_PX } from '@/lib/docMailLogo'
+import type { DocMailSignature } from '@/lib/docMail'
 import { fmtDateDot } from '@/lib/fmtDate'
 import {
   parseDocMailTemplate, renderDocMail, renderDocMailBodyPrefill, DOC_MAIL_LIMITS, type DocMailTemplate,
@@ -193,6 +195,24 @@ export type TenantDocMailDraftInfo = {
 }
 
 /** 세 액션(초안·미리보기·발송)이 같은 해석을 지나게 하는 내부 헬퍼 — 키 검증·파일명·문안까지. */
+/**
+ * 사업자 정보 Json 을 푸터 서명으로 — 칸별로 느슨하게 읽는다.
+ *
+ * 아직 안 채운 영업장이 있고, 채웠어도 일부만 있을 수 있다. 값이 없으면 그 줄만 빠지고
+ * 상호 한 줄은 남는다 — 서명이 부실하다고 서류가 안 나가면 안 된다.
+ */
+function readMailSignature(raw: unknown): DocMailSignature | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+  const sig = {
+    registrationNo: str(o.registrationNo),
+    ceoName: str(o.ceoName),
+    address: str(o.address),
+  }
+  return sig.registrationNo || sig.ceoName || sig.address ? sig : null
+}
+
 async function resolveDocMailContext(tenantId: string, keys: string[]) {
   const { propertyId, email: operatorEmail } = await requirePropertyAccess()
 
@@ -254,6 +274,8 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     select: {
       name: true, phone: true, replyToEmail: true, docMailTemplate: true,
       mailFromLocal: true, mailCopyToSelf: true,
+      // 푸터 서명·로고 — 종이 푸터를 봉투로 옮긴 자리다(lib/docMail DocMailSignature).
+      businessInfo: true, logoDriveFileId: true,
     },
   })
   const propertyName = property?.name ?? '스테이음'
@@ -271,6 +293,8 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     bundle, rows, names, entries,
     docTitles: rows.map(r => DOC_TYPE_TITLE[r.docType]),
     propertyName, propertyPhone: property?.phone ?? null, tpl,
+    signature: readMailSignature(property?.businessInfo),
+    logoFileId: property?.logoDriveFileId ?? null,
     mailFromLocal: property?.mailFromLocal ?? null,
     copyToSelf: property?.mailCopyToSelf === true,
     replyToOptions,
@@ -286,10 +310,17 @@ export async function getTenantDocMailDraft(
   if (!ctx.ok) return ctx
 
   // 크기는 안내용이라 병렬 조회하고, 못 읽은 파일은 null 로 둔다(발송 직전 합산이 실상한).
-  const sizes = await Promise.all(ctx.rows.map(r => driveFileSize(r.driveFileId as string)))
+  // 크기와 로고를 함께 병렬로 — 로고는 실패해도 null 이라 발송을 안 막는다.
+  const [sizes, logoAsset] = await Promise.all([
+    Promise.all(ctx.rows.map(r => driveFileSize(r.driveFileId as string))),
+    fetchDocMailLogo(ctx.logoFileId),
+  ])
   const data = {
     propertyName: ctx.propertyName, propertyPhone: ctx.propertyPhone,
     tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: ctx.names,
+    signature: ctx.signature,
+    // 미리보기는 iframe 이라 cid: 를 못 그린다 — 같은 바이트를 data URI 로 넣어 그림을 맞춘다.
+    logo: logoAsset ? { src: logoDataUri(logoAsset), px: DOC_MAIL_LOGO_PX } : null,
   }
   const rendered = renderDocMail(ctx.tpl, data)
   // 본문 칸 프리필 — 텍스트 모드의 본문 블록(치환 완료). 맺음말·첨부 상자는 프레임 몫이라
@@ -325,9 +356,12 @@ export async function previewTenantDocMail(
   const ctx = await resolveDocMailContext(tenantId, keys)
   if (!ctx.ok) return ctx
   const tpl = applyDraftToTemplate(ctx.tpl, edit)
+  const logoAsset = await fetchDocMailLogo(ctx.logoFileId)
   const rendered = renderDocMail(tpl, {
     propertyName: ctx.propertyName, propertyPhone: ctx.propertyPhone,
     tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: ctx.names,
+    signature: ctx.signature,
+    logo: logoAsset ? { src: logoDataUri(logoAsset), px: DOC_MAIL_LOGO_PX } : null,
   })
   return { ok: true, subject: rendered.subject, html: rendered.html }
 }
@@ -396,9 +430,14 @@ export async function sendTenantDocBundleMail(
   const names = shareFileNames(ctx.entries, ctx.rows.map(() => 1), mimes.map(extForDocMime))
 
   const tpl = draft ? applyDraftToTemplate(ctx.tpl, draft) : ctx.tpl
+  // 로고는 **메일 안에 바이트로** 들어간다(cid). 주소를 심으면 나중에 로고를 바꿀 때
+  // 옛 파일이 휴지통으로 가면서 이미 보낸 메일이 전부 깨진다. 실패는 null 이라 발송을 안 막는다.
+  const logoAsset = await fetchDocMailLogo(ctx.logoFileId)
   const rendered = renderDocMail(tpl, {
     propertyName: ctx.propertyName, propertyPhone: ctx.propertyPhone,
     tenantName: ctx.bundle.tenantName, docTitles: ctx.docTitles, attachmentNames: names,
+    signature: ctx.signature,
+    logo: logoAsset ? { src: `cid:${DOC_MAIL_LOGO_CID}`, px: DOC_MAIL_LOGO_PX } : null,
   })
 
   // 사본은 **답장 받기로 한 주소**로 간다 — 사본이 가야 할 곳과 답장이 와야 할 곳은 같은
@@ -415,9 +454,18 @@ export async function sendTenantDocBundleMail(
     subject: rendered.subject,
     text: rendered.text,
     html: rendered.html,
-    attachments: bytesList.map((b, i) => ({
-      filename: names[i], bytes: new Uint8Array(b), contentType: mimes[i],
-    })),
+    attachments: [
+      ...bytesList.map((b, i) => ({
+        filename: names[i], bytes: new Uint8Array(b), contentType: mimes[i],
+      })),
+      // 로고는 contentId 가 붙어 용량 합산에서 빠진다 — 봉투가 아니라 편지지다(lib/mailSend).
+      ...(logoAsset ? [{
+        filename: 'logo.png',
+        bytes: new Uint8Array(logoAsset.bytes),
+        contentType: logoAsset.contentType,
+        contentId: DOC_MAIL_LOGO_CID,
+      }] : []),
+    ],
   })
 
   if (outcome.result === 'sent') {

@@ -2943,10 +2943,10 @@ function DocMailTemplateCard() {
               <p className="text-[0.65625rem] text-[var(--warm-mid)]">제목</p>
               <p className="mt-0.5 text-sm text-[var(--warm-dark)]">{preview.subject}</p>
             </div>
-            {/* 메일은 어느 테마에서든 흰 종이 — 배경을 흰색으로 못박는다(확인 화면과 같은 문법). */}
+            {/* 메일은 어느 테마에서든 같은 종이 — 프레임이 칠하는 바탕색으로 못박는다(확인 화면과 한 벌). */}
             <iframe title="문안 미리보기" sandbox="" srcDoc={preview.html}
               className="h-[420px] w-full rounded-lg border border-[var(--warm-border)]"
-              style={{ background: '#FFFFFF' }} />
+              style={{ background: '#FBF6EF' }} />
           </div>
         </Modal>
       )}

@@ -23,6 +23,24 @@ export type MailAttachment = {
   filename: string
   bytes: Uint8Array
   contentType: string
+  /**
+   * 본문이 cid: 로 참조하는 인라인 자산(푸터 로고). **봉투가 아니라 편지지다.**
+   *
+   * 이 값이 있으면 용량 합산에서 빠진다. 봉투 무게로 세면 확인 화면이 보여준 숫자와
+   * 발송 직전 판정이 어긋나, 상한 바로 아래 묶음이 화면을 통과하고 발송에서 떨어진다 —
+   * 화면이 거짓말을 하는 클래스다.
+   */
+  contentId?: string
+}
+
+/**
+ * 봉투 무게 — 상한 판정에 쓴다. 인라인 자산은 세지 않는다.
+ *
+ * 함수로 뺀 이유는 확인 화면(docBundle 이 서류 바이트만 센다)과 이 자리가 같은 답을 내야 하기
+ * 때문이다. 인라인으로 실린 것까지 세면 두 숫자가 갈린다.
+ */
+export function payloadBytes(attachments: readonly MailAttachment[]): number {
+  return attachments.filter(a => !a.contentId).reduce((s, a) => s + a.bytes.byteLength, 0)
 }
 
 export type MailSendOutcome =
@@ -75,7 +93,7 @@ export async function sendMail(input: {
   if (!key) return { result: 'disabled' }
 
   const attachments = input.attachments ?? []
-  const total = attachments.reduce((s, a) => s + a.bytes.byteLength, 0)
+  const total = payloadBytes(attachments)
   if (total > MAIL_MAX_TOTAL_BYTES) {
     return { result: 'failed', reason: '첨부 용량이 한도를 넘었습니다.' }
   }
@@ -100,6 +118,8 @@ export async function sendMail(input: {
           filename: a.filename,
           content: Buffer.from(a.bytes).toString('base64'),
           content_type: a.contentType,
+          // content_id 가 붙은 첨부는 본문의 cid: 참조와 짝이 된다(Resend 인라인 이미지).
+          ...(a.contentId ? { content_id: a.contentId } : {}),
         })),
       }),
     })
