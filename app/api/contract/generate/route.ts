@@ -14,7 +14,7 @@ import { requireEdit } from '@/lib/role'
 import { uploadToDrive, driveImageDataUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
-  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
+  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, resolveSubLeaseAddendum,
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
@@ -63,6 +63,17 @@ type Body = {
   disposalSignatureCapturedAt?: string
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
+  /**
+   * 이 종이에만 쓸 추가 호실 특약 문안 — 화면에서 고쳤을 때만 실려 온다.
+   *
+   * **계약에 저장하지 않는다.** 발급본(issuedSnapshot)과 서명 스냅샷에 이미 박제되므로 종이와
+   * 기록에는 그대로 남고, 다음 발급은 다시 영업장 문안에서 시작한다. 영구히 바꿀 것이면
+   * 환경설정에서 고치는 자리가 따로 있다(Property.subLeaseAddendum).
+   *
+   * 서명이 끝난 계약(SNAPSHOT)에는 안 먹는다 — 그때는 박제본이 정본이라, 클라이언트가 보낸
+   * 문안을 받으면 이미 서명한 종이의 본문을 사후에 바꾸는 길이 열린다.
+   */
+  subLeaseAddendum?: { title: string; items: string[] } | null
   /**
    * 이 발급본을 무엇으로 남길 것인가 — lib/contractPurpose 화이트리스트뿐이다.
    *
@@ -188,7 +199,13 @@ export async function POST(req: Request) {
     const subLeases = contractSubLeases(tenant.leaseTerms, lease?.id)
     // 추가 호실 특약도 화면과 같은 정본이 판정한다(lib/contractData). 서명이 끝난 계약은
     // 그때 박제된 것을 그대로 쓰므로, 이미 서명한 종이에 절이 새로 생기지 않는다.
-    const subLeaseAddendum = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body_, property?.subLeaseAddendum)
+    // 화면이 고친 문안이 있으면 그것을 쓴다. 붙일지 말지의 판정은 그대로 정본이 한다 —
+    // 창고가 안 딸린 계약에 문안만 실어 보낸다고 절이 서면 안 된다.
+    const subLeaseBase = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body_, property?.subLeaseAddendum)
+    const edited = body.subLeaseAddendum
+    const subLeaseAddendum = (subLeaseBase && body_.source !== 'SNAPSHOT' && edited && Array.isArray(edited.items))
+      ? resolveSubLeaseAddendum(edited)
+      : subLeaseBase
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)

@@ -194,8 +194,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const subLeases = data.subLeases ?? []
   // 추가 호실 특약(보관 용도) — 창고류 방이 딸린 계약서에만 서버가 채워 준다. 옛 링크 스냅샷에는
   // 이 칸이 없으므로 없으면 null 로 읽는다(subLeases 와 같은 하위 호환 규칙).
-  // 편집 목록(clauses-edit)에는 안 뜬다 — 영업장이 지울 수 있는 조항이 아니다(신원번호 동의문 전례).
   const subLeaseAddendum = data.subLeaseAddendum ?? null
+  /**
+   * 편집 중인 특약 문안 — **이 종이에만 적용된다.**
+   *
+   * 종전에는 편집 목록에서 아예 빠져 있었다(영업장이 지울 수 있는 조항이 아니라는 판단).
+   * 운영자 판단으로 연다(2026-08-29) — 창고 운영 방식이 영업장마다 다르고, 발행하는 자리에서도
+   * 상황에 맞게 손볼 수 있어야 한다.
+   *
+   * 계약에 저장하지 않는 이유. 발급본과 서명 스냅샷에 이미 박제되므로 종이와 기록에는 그대로
+   * 남는다. 영구히 바꿀 것이면 환경설정에 자리가 있다. 계약별 오버라이드를 또 만들면 같은 문안이
+   * 세 곳(영업장·계약·발급본)에 살게 되고, 어느 것이 정본인지 다음 사람이 못 찾는다.
+   */
+  const [subDraft, setSubDraft] = useState<string | null>(null)
+  const subLeaseView = subDraft == null
+    ? subLeaseAddendum
+    : subLeaseAddendum && { title: subLeaseAddendum.title, items: subDraft.split('\n').map(v => v.trim()).filter(Boolean) }
 
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
   // 종이에 찍는 성명. 서버가 이미 data.tenant.name 을 골라 내려주지만, 여기서는 폼의 선택으로
@@ -927,6 +941,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
           smoking,
           emergencyContactText,
+          // 화면에서 고친 특약 문안 — 안 고쳤으면 안 싣는다(서버가 영업장 문안을 쓴다).
+          subLeaseAddendum: subLeaseView,
           // null 이면 실계약이다. 서버가 화이트리스트로 다시 본다.
           issuePurpose,
           // 실계약을 새로 만드는데 이미 있으면 이 승낙 없이는 서버가 막는다(물어봤다는 사실의 운반체).
@@ -994,6 +1010,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
         smoking,
         emergencyContactText,
+        // 미리보기도 같은 문안을 봐야 한다 — 여기서 갈리면 보고 보낸 종이와 보관본이 다르다.
+        subLeaseAddendum: subLeaseView,
         preview: true,
       }),
     })
@@ -1338,7 +1356,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 인쇄본(lib/contractPrintHtml)과 **같은 구조·같은 규칙**이다. 갈리면 화면과 종이의
           // 단 나뉨 지점이 다른 규칙으로 정해진다. 경위는 knowledge/domain-contracts.md 참조.
           <div className="clauses">
-            {appendSubLeaseAddendum(view.sections, subLeaseAddendum, buildRoomScheduleAddendum(data.roomScheduleText)).map((sec, si) => (
+            {appendSubLeaseAddendum(view.sections, subLeaseView, buildRoomScheduleAddendum(data.roomScheduleText)).map((sec, si) => (
               <div key={si} className="clause-group">
                 <div className="clause-h">{renderContractText(sec.title, vars)}</div>
                 <ul className="clause-list">
@@ -1372,6 +1390,26 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               </div>
             ))}
             <button type="button" onClick={addSection} className="section-add-btn">+ 섹션 추가</button>
+            {/* 추가 호실 특약 — 조건이 맞는 계약에만 뜬다. 섹션과 달리 순서 이동·삭제가 없다:
+                붙는 자리가 본문 뒤로 정해져 있고, 이 계약에 안 붙일 것이면 항목을 비우면 된다.
+                고친 값은 이 종이에만 간다(계약에 저장하지 않는다 — subDraft 주석 참조). */}
+            {subLeaseAddendum && (
+              <div className="section-edit">
+                <div className="section-edit-toolbar">
+                  <span className="section-edit-title" style={{ display: 'flex', alignItems: 'center', paddingLeft: '0.5em' }}>{subLeaseAddendum.title}</span>
+                  <button type="button" onClick={() => setSubDraft(null)} disabled={subDraft == null} className="section-edit-btn">되돌리기</button>
+                </div>
+                <textarea
+                  value={subDraft ?? subLeaseAddendum.items.join('\n')}
+                  onChange={e => setSubDraft(e.target.value)}
+                  rows={Math.max(3, subLeaseAddendum.items.length)}
+                  className="section-edit-textarea"
+                />
+                <p className="no-print" style={{ fontSize: '0.7em', color: 'var(--warm-muted)', margin: '0.3em 0 0' }}>
+                  고친 문안은 이번에 발급하는 계약서에만 들어갑니다. 늘 바꾸려면 환경설정 계약서·서류 탭에서 고쳐 주세요.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
