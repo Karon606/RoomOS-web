@@ -72,7 +72,12 @@ export function CheckoutProrationWidget({
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
   // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액 + 모드·위약금율별 환불)
-  const handleDate = (v: string, mode: RefundMode = refundMode, pctStr: string = penaltyPctInput, useShortStay = pick === 'shortStay') => {
+  //
+  // useShortStay 를 안 주면 **날짜를 새로 고른 것**이다. 그때는 서버 견적이 있는지 보고 정한다 —
+  // 1개월을 못 채우고 중도 퇴실하는 계약은 단기 요금이 기본이어야 한다(운영자 2026-08-29 —
+  // "퇴실 예정일을 입력하면 거기에 맞춰 금액이 나오고 환불금액도 나오면 되는거야").
+  // 갈래를 손으로 바꾼 경우에는 그 선택이 인자로 실려 오므로 이 자동 판정이 덮지 않는다.
+  const handleDate = (v: string, mode: RefundMode = refundMode, pctStr: string = penaltyPctInput, useShortStay?: boolean) => {
     setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null); setShortQuote(null)
     if (!v || v.length < 10) return
     const pctNum = pctStr.trim() === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(pctStr, 10) || 0))
@@ -87,9 +92,13 @@ export function CheckoutProrationWidget({
         setRefund({ refund: refRes.refund, prepaidAmount: refRes.prepaidAmount })
         setShortQuote(refRes.shortStay)
         setDefaultPenaltyPct(refRes.defaultPenaltyPct)
+        const short = (useShortStay ?? true) && !!refRes.shortStay
+        // 갈래 표시도 함께 맞춘다. 여기서 refundMode 를 goodwill 로 내리는 것은 다음 서버 왕복을
+        // 위한 것이고, 지금 화면은 pick 으로 갈리므로 위약금 칸도 미리보기도 단기 쪽을 그린다.
+        if (short) { setPick('shortStay'); setRefundMode('goodwill') }
         // 적용 금액 = 회사 귀속(사용분 + 위약금). 선납 없으면 일할 청구액.
-        // 단기 갈래는 그 자리를 단기 요금으로 덮는다 — 견적이 없으면(1개월을 채운 계약) 종전대로.
-        setAmountInput(String(useShortStay && refRes.shortStay
+        // 단기 갈래는 그 자리를 단기 요금으로 덮는다 — 견적이 없으면(1개월을 채웠거나 만기 퇴실) 종전대로.
+        setAmountInput(String(short && refRes.shortStay
           ? refRes.shortStay.baseAmount
           : refRes.prepaidAmount > 0 ? refRes.refund.companyKeeps : (res.ok ? res.calc.amount : refRes.refund.usedAmount)))
       } else if (res.ok) {
@@ -113,7 +122,7 @@ export function CheckoutProrationWidget({
   const handlePct = (raw: string) => {
     const clean = raw.replace(/[^0-9]/g, '').slice(0, 2)
     setPenaltyPctInput(clean)
-    if (date && date.length >= 10) handleDate(date, refundMode, clean)
+    if (date && date.length >= 10) handleDate(date, refundMode, clean, pick === 'shortStay')
   }
 
   // autoOpen — 진입 직후 1회: 폼 펼치고 저장된 퇴실일로 미리보기 자동 실행

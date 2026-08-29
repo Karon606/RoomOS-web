@@ -649,6 +649,19 @@ const RENT = 300000
   eq('달력 한 달을 넘기면 없다',
     calcShortStay(P, M, 33, { moveInYmd: '2026-08-19', moveOutYmd: '2026-09-20' }), null)
   eq('달력 한 달 판정', [isWithinOneCalendarMonth('2026-08-19', '2026-08-30'), isWithinOneCalendarMonth('2026-08-19', '2026-09-20')], [true, false])
+
+  // 단기 갈래가 서는 조건 — 한 달 안 + **중도 퇴실**. 계약대로 다 살고 나가는 만기 퇴실은
+  // 한 달치를 내고 한 달을 산 것이라 단기 요금을 물릴 일이 아니다(운영자 정정 2026-08-29).
+  // 만기일은 그 정산 기간의 마지막 날(mustLeaveYmd = 다음 기간 시작 −1일)이다.
+  const gate = (out: string) => {
+    const c = calcCheckoutProration(M, '19', out, '2026-08-19')
+    if (!c || !isWithinOneCalendarMonth('2026-08-19', out) || out >= c.mustLeaveYmd) return null
+    return calcShortStay(P, M, stayDaysOf('2026-08-19', out)!, { moveInYmd: '2026-08-19', moveOutYmd: out })!.baseAmount
+  }
+  eq('중도 퇴실이면 선다', gate('2026-08-30'), 294000)
+  eq('만기 하루 전도 중도다', gate('2026-09-17'), 420000)   // 상한이 30일치라 정가와 같아진다
+  eq('만기일 퇴실은 안 선다', gate('2026-09-18'), null)
+  eq('한 달을 넘기면 안 선다', gate('2026-09-19'), null)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

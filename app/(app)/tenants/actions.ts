@@ -4094,6 +4094,11 @@ export async function previewCheckoutRefund(
     const shortStay = (() => {
       if (lease.isShortTerm || !moveInYmd) return null
       if (!isWithinOneCalendarMonth(moveInYmd, expectedMoveOut)) return null
+      // **중도 퇴실일 때만이다.** 계약 기간을 다 채우고 나가는 것은 만기 종료라 단기 요금을 물릴
+      // 일이 아니다 — 한 달치를 내고 한 달을 살았다. 8/19 입주자가 9/18 에 나가면 달력으로는
+      // 한 달 안이지만 그날이 곧 만기일이다(운영자 정정 2026-08-29 — "1개월 미만인 사람이
+      // 중도퇴실 시..잖아"). mustLeaveYmd 는 다음 기간 시작 하루 전, 곧 이 계약이 산 마지막 날이다.
+      if (!sc || expectedMoveOut >= sc.calc.mustLeaveYmd) return null
       const days = stayDaysOf(moveInYmd, expectedMoveOut)
       if (days == null || days < 1) return null
       const q = calcShortStay(parseShortStayPolicy(prop?.shortStayPolicy), monthlyRent, days,
