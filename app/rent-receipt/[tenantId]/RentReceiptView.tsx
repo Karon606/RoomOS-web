@@ -126,7 +126,11 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
   const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data), issueDate: kstYmdStr() }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
-  const rel = relMonthLabel(data.anchorMonth, data.todayMonth)
+  // 보증금은 월과 무관하다 — 이 자리가 말하는 것도 '대상월'이 아니라 입주 예정일이다.
+  // 그런데 상대월 배지가 그대로 붙어, 8/29 에 8/31 입주 예정을 열면 '지난달'이 떴다
+  // (운영자 실측 2026-08-29). 주기 계산이 오늘 기준으로 직전 주기를 잡아 anchorMonth 가
+  // 지난달이 된 것인데, 보증금에는 그 주기 자체가 뜻이 없다. 배지를 안 그린다.
+  const rel = isDeposit ? null : relMonthLabel(data.anchorMonth, data.todayMonth)
   // 계약서 §1-3 이 "입실료는 매월 선납을 원칙으로 하며, 반드시 입실일 기준 전일까지 납부" 를 약정한다.
   // 이번 달까지만 열어두면 선납을 받고도 그 달 확인서를 만들 수 없다(E페이즈 2026-08-03).
   // 다음 달까지 한 칸 연다 — 그보다 먼 미래는 증빙할 사실이 없다.
