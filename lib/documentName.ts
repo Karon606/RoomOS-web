@@ -142,3 +142,64 @@ export function documentName(src: DocumentNameSource, style: DocNameStyle | null
   }
   return src.name
 }
+
+// ── 표기 이어받기 ────────────────────────────────────────────────
+//
+// 한 사람의 서류는 같은 표기로 나가야 한다(운영자 확정 2026-08-29 — "계약서를 영어로 발급하면
+// 거주확인서도 영어로 발급을 해야하거든"). 계약서만 로마자이고 실거주 확인서가 한글이면 두
+// 종이가 같은 사람 것으로 안 읽힌다. 제출처에서 되돌려 보내는 일이 생긴다.
+//
+// 그래서 기본값을 이 순서로 정한다.
+//   1. 이 서류에 이미 저장된 표기
+//   2. 없으면 같은 계약의 다른 서류가 쓴 표기 중 가장 최근 것
+//   3. 그것도 없고 국적이 대한민국이 아니면 영문
+//   4. 나머지는 한글
+//
+// 3번이 2번보다 아래인 이유. 운영자가 한 번이라도 손으로 고른 것은 국적 추정보다 세다.
+// 외국인인데 한글 이름으로 내기로 정했으면 그 결정이 다음 서류에도 이어져야 한다.
+
+/** 한국 국적인가 — 표기 기본값을 가르는 데만 쓴다. 비어 있으면 내국인으로 본다(종전 거동 유지). */
+export function isKoreanNationality(nationality: string | null | undefined): boolean {
+  const v = (nationality ?? '').trim()
+  if (!v) return true
+  return v === '대한민국' || v === '한국' || /^(korea|republic of korea|south korea|kr)$/i.test(v)
+}
+
+export type DocNameStyleContext = {
+  /** 이 서류에 저장된 표기. 운영자가 이 서류에서 이미 고른 값이다. */
+  saved?: DocNameStyle | null
+  /**
+   * 같은 계약의 다른 서류가 쓴 표기 — **최근 순으로** 넘긴다. 첫 값이 이긴다.
+   * 값이 없는 서류는 빼고 넘긴다(안 고른 것과 한글을 고른 것은 다르다).
+   */
+  siblings?: readonly DocNameStyle[]
+  nationality?: string | null
+  /** 이 사람이 실제로 고를 수 있는 표기(docNameStyles). 후보에 없는 값은 안 고른다. */
+  available: readonly DocNameStyle[]
+}
+
+/** 이 서류를 열었을 때 처음 서 있어야 할 표기. */
+export function resolveDocNameStyle(ctx: DocNameStyleContext): DocNameStyle {
+  const can = (s: DocNameStyle | null | undefined): s is DocNameStyle =>
+    !!s && ctx.available.includes(s)
+  if (can(ctx.saved)) return ctx.saved
+  const sib = (ctx.siblings ?? []).find(can)
+  if (sib) return sib
+  // 영문 이름이 없으면 외국인이어도 영문을 고를 수 없다 — 후보에 없는 값을 기본으로 세우지 않는다.
+  if (!isKoreanNationality(ctx.nationality) && ctx.available.includes('en')) return 'en'
+  return DEFAULT_DOC_NAME_STYLE
+}
+
+/**
+ * 앞 서류와 다르게 고르는가 — 되묻기를 띄울지 가른다.
+ *
+ * 되묻는 것은 **앞이 있는데 다를 때**뿐이다. 처음 뽑는 서류에는 비교 대상이 없고, 같은 값을
+ * 고르는 것은 확인할 일이 아니다. 후보에 없는 값도 묻지 않는다(고를 수 없으니 상황이 아니다).
+ */
+export function docNameStyleConflict(
+  next: DocNameStyle,
+  siblings: readonly DocNameStyle[],
+): DocNameStyle | null {
+  const prev = siblings.find(Boolean)
+  return prev && prev !== next ? prev : null
+}

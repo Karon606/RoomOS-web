@@ -33,6 +33,34 @@ export const DOC_TYPE_FILE_LABEL: Record<DocBundleDocType, string> = {
   residence: '실거주확인서',
 }
 
+/**
+ * 영문 파일 이름 — 성명을 영문으로 뽑을 때 서류 이름도 함께 따라간다(운영자 확정 2026-08-29).
+ *
+ * 이름만 로마자이고 서류명이 한글이면 `John Smith_실거주확인서.pdf` 가 된다. 그 파일을 받아
+ * 출입국사무소나 학교에 내는 사람에게 절반은 못 읽는 이름이다.
+ *
+ * 낱말 고른 근거.
+ *   · contract  — 계약서 PDF 제목에 이미 찍히는 말이라 바꾸지 않는다. 종이와 파일명이 갈리면 안 된다.
+ *   · rent      — '확인서'는 certificate 다. 아래 영수증과 성격이 다르다(냈다는 증명 대 받았다는 증명).
+ *   · deposit   — '영수증'은 receipt.
+ *   · residence — Residence Certificate 로 하면 계약서(Residence Agreement)와 앞 낱말이 같아
+ *                 파일 목록에서 얼핏 갈리지 않는다. 제출처에서도 Proof of Residence 가 더 통한다.
+ *
+ * 한글 쪽은 공백을 뺐는데 여기는 살린다 — 성명이 이미 `John Smith` 처럼 공백을 갖고 있어
+ * 붙여 쓰면 오히려 한 덩어리로 읽힌다.
+ */
+export const DOC_TYPE_FILE_LABEL_EN: Record<DocBundleDocType, string> = {
+  contract: 'Residence Agreement',
+  rent: 'Rent Payment Certificate',
+  deposit: 'Deposit Receipt',
+  residence: 'Proof of Residence',
+}
+
+/** 표기에 맞는 파일용 서류 이름. 영문 표기일 때만 영문 이름을 쓴다(현지 표기는 한글 이름 그대로). */
+export function docFileLabel(docType: DocBundleDocType, nameStyle: 'ko' | 'en' | 'native'): string {
+  return nameStyle === 'en' ? DOC_TYPE_FILE_LABEL_EN[docType] : DOC_TYPE_FILE_LABEL[docType]
+}
+
 export type DocBundleRow = {
   /** 화면 선택 키 — 계약과 종류로 만든다(파일이 없어도 행은 존재한다). */
   key: string
