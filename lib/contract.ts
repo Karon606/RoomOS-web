@@ -150,6 +150,27 @@ export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
   ],
 }
 
+/**
+ * 저장된 JSON(부분·구버전 가능)을 특약으로 해석 — 폐기 동의서(resolveDisposalConsent)와 같은 문법.
+ *
+ * **null 과 빈 항목은 다른 말이다.**
+ *   · 저장값 자체가 없으면 아직 손댄 적 없는 영업장이라 기본 문안을 그대로 쓴다.
+ *   · 항목을 전부 지웠으면 운영자가 "이 영업장은 이 특약을 안 쓴다"고 정한 것이라 절을 안 붙인다.
+ * 이 둘을 같게 다루면, 문안을 지운 영업장에 기본값이 되살아나 지운 적 없는 조항이 종이에 실린다.
+ *
+ * 종전에는 문안이 코드 상수 하나였다. 지워지면 그 방을 주거로 쓰지 말라는 근거가 종이에서
+ * 사라진다는 이유였는데, 운영자 판단으로 연다(2026-08-29) — "영업장 관리 주체에 따라 운영방식이
+ * 다를 수도 있으니". 멀티테넌트에서 이 문안은 한 영업장의 운영 방식이지 법이 아니다.
+ */
+export function resolveSubLeaseAddendum(raw: unknown): SubLeaseAddendum | null {
+  if (raw == null) return DEFAULT_SUB_LEASE_ADDENDUM
+  const d = (typeof raw === 'object' ? raw : {}) as Partial<SubLeaseAddendum>
+  const items = Array.isArray(d.items) ? d.items.filter((x): x is string => typeof x === 'string' && !!x.trim()) : []
+  if (items.length === 0) return null
+  const title = typeof d.title === 'string' && d.title.trim() ? d.title : DEFAULT_SUB_LEASE_ADDENDUM.title
+  return { title, items }
+}
+
 // ── 거주 호실 일정 절 ────────────────────────────────────────────────
 //
 // 계약 호실이 빌 때까지 다른 방에 머무는 계약에만 붙는 절이다. 운영자 요구 그대로다 —

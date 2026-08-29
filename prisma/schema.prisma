@@ -196,6 +196,10 @@ model Property {
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   // 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류. shape: { enabled, days, title, body }
   disposalConsentTemplate Json?
+  // 추가 호실(창고·사무실) 특약 문안 — null=미설정(코드 기본 문안), items 빈 배열=이 영업장은 안 씀.
+  // 종전에는 코드 상수 고정이었다(지워지면 주거 금지 근거가 종이에서 사라진다는 이유).
+  // 운영자 판단으로 연다(2026-08-29) — 영업장마다 창고 운영 방식이 다르다. lib/contract resolveSubLeaseAddendum.
+  subLeaseAddendum Json?
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
   // 서류 메일의 답장 받을 주소(영업장 대표 메일). 발신 주소는 도메인 인증 때문에
   // no-reply@stayeum.com 고정(lib/mailSend)이라, 멀티테넌트 구분은 표시 이름과 이 답장 주소가 진다.

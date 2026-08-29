@@ -46,6 +46,7 @@ const BEFORE: Row = {
   defaultAreaM2: 13.2,
   bankAccount: '카카오뱅크 3333-01-2345678 (홍길동)',
   disposalConsentTemplate: { enabled: true, days: 7, title: '잔여 소지품 임의처분 동의서', body: '본문' },
+  subLeaseAddendum: { title: '추가 호실 특약(보관 용도)', items: ['가'] },
   publicSlug: 'thestayjegi',
 }
 const ALL_COLUMNS = Object.keys(BEFORE)
@@ -54,7 +55,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 const OWNED: Record<string, string[]> = {
   기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
-  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate'],
+  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum'],
   웹사이트:    ['publicSlug'],
 }
 
@@ -81,6 +82,7 @@ const DOC_FORM: [string, string][] = [
   ['defaultAreaM2', '13.2'], ['bankAccount', '카카오뱅크 3333-01-2345678 (홍길동)'],
   ['disposalEnabled', '0'], ['disposalEnabled', '1'],
   ['disposalTitle', '잔여 소지품 임의처분 동의서'], ['disposalDays', '7'], ['disposalBody', '본문'],
+  ['subLeaseTitle', '추가 호실 특약(보관 용도)'], ['subLeaseItems', '가'],
 ]
 
 const apply = (patch: PropertySettingsPatch): Row => ({ ...BEFORE, ...patch })
@@ -189,6 +191,15 @@ for (const [tab, form] of TAB_FORMS) {
   eq('동의서 제목이 비면 기본 제목',
     p([['disposalEnabled', '0'], ['disposalTitle', '  '], ['disposalDays', ''], ['disposalBody', '']])
       .disposalConsentTemplate, { enabled: false, days: 7, title: '잔여 소지품 임의처분 동의서', body: '' })
+  // 추가 호실 특약 — 미설정(칼럼 안 씀)·빈 항목(안 씀으로 저장)·정상 세 갈래가 갈려야 한다.
+  // 셋이 뭉개지면 문안을 지운 영업장에 기본값이 되살아나거나, 안 고친 영업장의 칸이 비어 버린다.
+  eq('특약 칸이 한 칸이라도 빠지면 안 쓴다',
+    'subLeaseAddendum' in p([['subLeaseTitle', 'ㅇ']]), false)
+  eq('항목을 전부 비우면 빈 배열로 저장한다(= 이 영업장은 안 쓴다)',
+    p([['subLeaseTitle', 'ㅇ'], ['subLeaseItems', '  \n \n']]).subLeaseAddendum, { title: 'ㅇ', items: [] })
+  eq('항목은 줄 단위로 나뉘고 빈 줄은 버린다',
+    p([['subLeaseTitle', '제목'], ['subLeaseItems', '가\n\n나\n  다  ']]).subLeaseAddendum,
+    { title: '제목', items: ['가', '나', '다'] })
   eq('슬러그 미포함이면 칼럼을 안 쓴다', 'publicSlug' in p([['name', 'ㅇ']]), false)
   eq('빈 슬러그는 null', p([['publicSlug', '']]).publicSlug, null)
 }

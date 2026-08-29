@@ -8,7 +8,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
-import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
+import { DEFAULT_DISPOSAL_CONSENT, DEFAULT_SUB_LEASE_ADDENDUM, resolveSubLeaseAddendum, type DisposalConsentTemplate } from '@/lib/contract'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
@@ -95,6 +95,7 @@ type Property = {
   cleaningFeeInDeposit: boolean   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
   multiContractVersions: boolean  // 한 계약에 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
   disposalConsentTemplate: unknown
+  subLeaseAddendum: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -1921,6 +1922,12 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
     body:    dcRaw?.body    ?? DEFAULT_DISPOSAL_CONSENT.body,
   }
 
+  // 추가 호실(창고) 특약 — 저장값(JSON) 폴백. resolveSubLeaseAddendum 이 정본이라
+  // 화면과 종이가 같은 규칙을 본다. null 이 오면 이 영업장은 특약을 안 쓰는 것이라 칸이 빈다.
+  const savedSub = resolveSubLeaseAddendum(property?.subLeaseAddendum)
+  const [subTitle, setSubTitle] = useState(savedSub?.title ?? DEFAULT_SUB_LEASE_ADDENDUM.title)
+  const [subItems, setSubItems] = useState((savedSub?.items ?? []).join('\n'))
+
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
       ...t,
@@ -2237,6 +2244,31 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
             </label>
           </div>
         )}
+        {/* 조건부 특약 — 계약서 **본문 뒤에 붙는 절**이라 아래 '동반 서류'와 다르다.
+            조건에 맞는 계약에만 붙고(창고 특약은 딸린 비거주 호실이 있을 때), 절 번호는 자리에서 매긴다.
+
+            종전에는 문안이 코드 상수라 아무도 못 고쳤다. 지워지면 그 방을 주거로 쓰지 말라는
+            근거가 종이에서 사라진다는 이유였는데, 운영자 판단으로 연다(2026-08-29) —
+            영업장 관리 주체에 따라 창고 운영 방식이 다르다. 대신 '기본 문안으로' 를 함께 둔다:
+            적용하는 것에는 적용취소가 있어야 하고, 지웠다 되돌릴 길이 없으면 아무도 못 고친다. */}
+        <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
+          <h4 className="text-xs font-semibold text-[var(--warm-dark)]">조건부 특약</h4>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">조건에 맞는 계약서에만 본문 뒤에 붙는 절입니다.</p>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">추가 호실 특약</label>
+            <button type="button"
+              onClick={() => { setSubTitle(DEFAULT_SUB_LEASE_ADDENDUM.title); setSubItems(DEFAULT_SUB_LEASE_ADDENDUM.items.join('\n')) }}
+              className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본 문안으로</button>
+          </div>
+          <p className="text-xs text-[var(--warm-muted)]">창고·사무실처럼 거주용이 아닌 방을 딸고 있는 계약서에만 붙습니다. 항목은 한 줄에 하나씩 적고, 번호는 인쇄할 때 자동으로 매겨집니다. 전부 비우면 이 영업장은 특약을 쓰지 않습니다.</p>
+          <input type="text" name="subLeaseTitle" value={subTitle} onChange={e => setSubTitle(e.target.value)}
+            placeholder={DEFAULT_SUB_LEASE_ADDENDUM.title}
+            className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+          <textarea name="subLeaseItems" value={subItems} onChange={e => setSubItems(e.target.value)} rows={9}
+            className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
+        </div>
         <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">계약서 동반 서류</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>

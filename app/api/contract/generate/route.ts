@@ -149,7 +149,7 @@ export async function POST(req: Request) {
           contractTemplate: true, businessInfo: true,
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
-          refundClauseInContract: true, disposalConsentTemplate: true,
+          refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
           // 파생 판본을 만들 수 있는 영업장인가 — 발급 목적 게이트가 이 값을 본다.
           multiContractVersions: true,
         },
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
     const subLeases = contractSubLeases(tenant.leaseTerms, lease?.id)
     // 추가 호실 특약도 화면과 같은 정본이 판정한다(lib/contractData). 서명이 끝난 계약은
     // 그때 박제된 것을 그대로 쓰므로, 이미 서명한 종이에 절이 새로 생기지 않는다.
-    const subLeaseAddendum = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body_)
+    const subLeaseAddendum = contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body_, property?.subLeaseAddendum)
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)

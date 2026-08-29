@@ -25,6 +25,18 @@ export type DisposalConsentPatch = {
   body: string
 }
 
+/**
+ * 추가 호실(창고) 특약 — 제목 한 줄과 항목 여러 줄이 칼럼 하나(JSON)로 간다.
+ *
+ * **항목을 비우는 것이 곧 '이 영업장은 이 특약을 안 쓴다'이다.** 그래서 빈 배열도 저장한다 —
+ * lib/contract resolveSubLeaseAddendum 이 null(미설정, 기본 문안)과 빈 배열(안 씀)을 가른다.
+ * 비었다고 저장을 건너뛰면 지운 문안이 다음 발급에서 되살아난다.
+ */
+export type SubLeaseAddendumPatch = {
+  title: string
+  items: string[]
+}
+
 /** 실려 온 필드만 담긴 부분 패치 — 없는 키는 prisma.update 가 건드리지 않는다. */
 export type PropertySettingsPatch = {
   name?: string
@@ -48,6 +60,7 @@ export type PropertySettingsPatch = {
   cleaningFeeInDeposit?: boolean
   multiContractVersions?: boolean
   disposalConsentTemplate?: DisposalConsentPatch
+  subLeaseAddendum?: SubLeaseAddendumPatch
   publicSlug?: string | null
 }
 
@@ -161,6 +174,16 @@ export function buildPropertySettingsPatch(
       days: daysRaw.trim() ? Number(digits(daysRaw)) || 7 : 7,
       title: str(formData, 'disposalTitle').trim() || '잔여 소지품 임의처분 동의서',
       body: str(formData, 'disposalBody'),
+    }
+  }
+
+  // 추가 호실 특약 — 두 칸이 칼럼 하나(JSON)라 둘 다 실려 왔을 때만 쓴다(위 동의서와 같은 규칙).
+  // 항목은 한 줄에 하나. 빈 줄은 버리고, 남는 것이 없으면 빈 배열로 저장한다 — 그것이
+  // "이 영업장은 이 특약을 안 쓴다"는 뜻이고, 미설정(null, 기본 문안)과 다른 상태다.
+  if (formData.has('subLeaseTitle') && formData.has('subLeaseItems')) {
+    patch.subLeaseAddendum = {
+      title: str(formData, 'subLeaseTitle').trim(),
+      items: str(formData, 'subLeaseItems').split('\n').map(v => v.trim()).filter(Boolean),
     }
   }
 

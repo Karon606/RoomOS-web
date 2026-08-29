@@ -7,7 +7,7 @@ import { driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   type SubLeaseAddendum, type ResolvedBody,
-  DEFAULT_CONTRACT_TEMPLATE, DEFAULT_SUB_LEASE_ADDENDUM, resolveDisposalConsent,
+  DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveDisposalConsent,
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
@@ -65,12 +65,14 @@ export function contractSubLeases<T extends ContractLeaseRow & { id: string; par
  */
 export function contractSubLeaseAddendum<
   T extends { parentLeaseTermId: string | null; status: string; room?: { nonResidentVacant: boolean } | null },
->(leases: T[], parentLeaseId: string | undefined, body: ResolvedBody): SubLeaseAddendum | null {
+>(leases: T[], parentLeaseId: string | undefined, body: ResolvedBody, saved?: unknown): SubLeaseAddendum | null {
   if (body.source === 'SNAPSHOT') return body.subLeaseAddendum
   if (!parentLeaseId) return null
   const storage = leases.some(l =>
     l.parentLeaseTermId === parentLeaseId && l.status === 'NON_RESIDENT' && l.room?.nonResidentVacant === false)
-  return storage ? DEFAULT_SUB_LEASE_ADDENDUM : null
+  // 문안은 영업장 저장값이 정한다(2026-08-29). 인자를 안 주면 종전대로 기본 문안 —
+  // 호출부가 늘 때 문안이 조용히 비는 것보다, 지금 문안이 그대로 나오는 쪽이 안전하다.
+  return storage ? resolveSubLeaseAddendum(saved) : null
 }
 
 export type ContractData = {
@@ -205,7 +207,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
         contractTemplate: true, businessInfo: true,
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
-        refundClauseInContract: true, disposalConsentTemplate: true,
+        refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
       },
     }),
   ])
@@ -290,7 +292,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
     // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
-    subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body),
+    subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body, property?.subLeaseAddendum),
     // 호실 일정 — 이 계약의 방 이름은 그 사람의 다른 계약 목록에서 찾는다(같은 영업장이라
     // 일정에 실린 방이 그 목록 밖일 수 있어 방 조회를 따로 한다).
     roomScheduleText: scheduleText,

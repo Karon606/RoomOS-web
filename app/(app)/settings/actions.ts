@@ -117,6 +117,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       cleaningFeeInDeposit: true,   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
       multiContractVersions: true,  // 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
       disposalConsentTemplate: true,
+      subLeaseAddendum: true,       // 추가 호실(창고) 특약 문안 — 영업장이 고칠 수 있다(2026-08-29)
       publicSlug: true,
       logoDriveFileId: true,
       appLogoDriveFileId: true,

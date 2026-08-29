@@ -32,6 +32,7 @@ const GUARDED = [
   // 계약서·서류
   'multiContractVersions',
   'defaultAreaM2', 'bankAccount', 'disposalEnabled', 'disposalDays', 'disposalTitle', 'disposalBody',
+  'subLeaseTitle', 'subLeaseItems',
   // 웹사이트(전용 출구가 정주소, 통짜 경로는 옛 번들 대비로만 남아 있다)
   'publicSlug',
 ]
