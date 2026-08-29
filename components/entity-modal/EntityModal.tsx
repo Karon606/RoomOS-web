@@ -10,8 +10,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
-import { docFromQuery } from '@/lib/docNav'
-import { getContractShareState } from '@/app/(app)/tenants/contractShare'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import { resolveMonthParam } from '@/lib/monthParam'
@@ -29,8 +27,6 @@ import { PaymentBody } from './bodies/PaymentBody'
 import { useNavRouter } from '@/lib/useNavRouter'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
-import { canShareFiles } from '@/lib/shareFile'
-import { getDocMailEnabled } from '@/app/(app)/tenants/docBundle'
 import { TenantDocBundleSheet } from '@/components/doc/TenantDocBundleSheet'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
@@ -65,9 +61,6 @@ export function useEntityModal(): Ctx {
 // 헤더(종·검색)는 AppShell 안, Provider 밖이라 useEntityModal 을 쓸 수 없다.
 let opener: ((seed: Seed) => void) | null = null
 
-// 메일 켜짐 여부는 배포 중에 안 바뀐다 — 프리즘이 열릴 때마다 다시 묻지 않게 모듈에 접어 둔다.
-// null = 아직 안 물어봄.
-let docMailEnabledCache: boolean | null = null
 /** Provider 밖에서 Prism 셸을 연다. 신호가 닿지 않으면 false — 호출부가 URL 딥링크로 폴백한다. */
 export function openEntityModal(seed: Seed): boolean {
   if (!opener) return false
@@ -267,23 +260,6 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 열면 그 사람의 보관 서류를 계약 축으로 세워 한 번의 공유 시트로 보낸다(신고 44501308).
   // 값은 '어느 계약 분을 기본 체크할지' — 사람 단위 진입은 null 이라 아무것도 안 고른다.
   const [docSheetLease, setDocSheetLease] = useState<string | null | undefined>(undefined)
-  // 다건 보내기는 공유 시트 말고 폴백이 없다 — 미지원 기기(데스크톱·인앱 브라우저)는 진입점을 숨긴다.
-  // 형제 3화면과 같은 정책이고, SSR 은 기기를 알 수 없어 마운트 후 1회 판정한다.
-  const [canShare, setCanShare] = useState(false)
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setCanShare(canShareFiles()) }, [])
-  // 서류 보내기 진입 조건 — 저장 갈래가 생겨(2026-08-26) 어느 기기에서나 할 일이 있다.
-  // 종전에는 공유 시트가 안 열리는 기기(PC·인앱 브라우저)에서 메일까지 꺼져 있으면 진입점을
-  // 감췄는데, 이제 저장은 다운로드 폴백이 있어 항상 성립한다. 조건을 걷는다.
-  // 종전에는 공유 시트만 봤다. 그래서 PC 에서는 보관 서류를 보낼 길이 아예 없었다(신고 44501308 2단계).
-  // 메일 켜짐은 세션에 한 번만 묻고 모듈에 접어 둔다 — 프리즘은 자주 열리고 답은 배포 중에 안 바뀐다.
-  const [mailOn, setMailOn] = useState(docMailEnabledCache ?? false)
-  useEffect(() => {
-    if (docMailEnabledCache !== null) return
-    void getDocMailEnabled()
-      .then(v => { docMailEnabledCache = v; setMailOn(v) })
-      .catch(() => { /* 못 물어봤으면 안 켜진 것으로 둔다 — 기존 공유 경로는 그대로다 */ })
-  }, [])
 
   // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
   // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
@@ -410,54 +386,6 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
     if (!links?.tenantId) return
     navigateThenClose(`/tenants?tenantId=${links.tenantId}&edit=1`)
   }
-  // 종전 '계약서 출력' 버튼(handlePrintContract)은 제거했다 — 2026-08-01 용어·접점 정리.
-  // 독자 기능이 0이었다. 파일이 없으면 /contract/[tenantId] 를 열었는데 그건 계약서 파일 섹션의
-  // '계약서 작성·서명'과 같고, 있으면 다이얼로그 뒤에서 같은 URL 또는 파일 행의 링크를 열었을 뿐이다.
-  // 게다가 files[0] 은 signedAt desc 첫 건이라 시스템 발급본일 수 있는데 무조건 '스캔본'이라 표기해
-  // 스캔본을 한 번도 올리지 않은 입실자에게도 '스캔본 출력'이 떴다(보관 35건 중 11건이 발급본).
-  // 하단 행이 스크롤 없이 닿는 이점은 계약서 파일 섹션을 계약 정보 바로 아래로 올려 대체한다.
-  // 이제 하단 행에는 부속 서류(실거주 확인서·입실료 납부 확인서)만 남는다.
-
-  // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
-  // 소프트 내비가 아니라 전체 페이지 이동이다. 라우트 viewport 가 새 문서 파싱 시점에 확실히 적용된다.
-  // 목적지가 (app) 밖이라 어차피 셸을 다시 세우므로 잃는 것이 없다.
-  const handleResidenceCert = () => {
-    if (!links?.tenantId) return
-    // 창을 닫지 않는다 — 문서가 통째로 바뀔 때까지 이 창이 서 있어야 화면이 안 끊긴다.
-    window.location.assign(`/residence-cert/${links.tenantId}${docFromQuery('tenant', links.tenantId)}`)
-  }
-  // 계약서 — 규칙 1·§30.10. 하단은 서류를 만들고 발급하러 가는 문이고,
-  // 위쪽 '계약서 파일' 칸은 이미 있는 파일의 보관함이다. 이름으로 갈린다 —
-  // 하단은 목적어 없는 '계약서', 파일 칸의 버튼에는 항상 '스캔본'이 붙는다.
-  const handleContract = async () => {
-    if (!links?.tenantId) return
-    // 서명이 들어온 계약은 **서명 시점 스냅샷**으로 연다. 그냥 열면 화면이 지금 DB 값을 보여주고,
-    // 거기서 발급을 누르면 입주자가 서명한 문서와 다른 계약서가 나간다.
-    // 계약서 파일 칸의 진입은 이미 이렇게 갈리는데 이 문만 안 갈려 있었다(2026-08-04 지적).
-    const tenantId = links.tenantId
-    let share = ''
-    try {
-      const res = await getContractShareState(tenantId)
-      // signedAt 만으로는 부족하다 — 서명을 지워도 남는 과거 사실이라, 깨끗한 계약이 옛 스냅샷
-      // 화면에 갇혔다(502호 2026-08-10). 지금 서명이 남아 있을 때만 서명본으로 연다.
-      if (res.ok && res.link?.signedAt && res.link.signatureLive) share = `&share=${encodeURIComponent(res.link.id)}`
-    } catch { /* 조회 실패는 무시 — 일반 진입으로 간다. 문이 막히는 것보다 낫다 */ }
-    // 창을 닫지 않는다 — 위 handleResidenceCert 와 같은 이유다.
-    window.location.assign(`/contract/${tenantId}${docFromQuery('tenant', tenantId)}${share}`)
-  }
-  // 납부 확인서·보증금 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
-  //
-  // namedLeaseTermId 는 계약 지목이다(2026-08-13, 다호실 마무리 — 계약서 축과 같은 ?leaseTermId= 문법).
-  // 수납 면에서 누른 버튼은 **그 면이 열어 둔 계약**의 서류를 뽑아야 한다. 601호 창고 계약을 보고
-  // 있는데 509호 거주 계약의 확인서가 나오면, 받지도 않은 돈의 종이가 나가거나 그 반대가 된다.
-  // 입주자 면의 버튼은 사람 단위라 지목 없이 종전대로 — 추론이 고르는 계약이 곧 메인이다
-  // (계약서 파일 칸의 주 버튼과 같은 규칙).
-  const handleRentReceipt = (kindArg: 'rent' | 'deposit' = 'rent', namedLeaseTermId?: string | null) => {
-    if (!links?.tenantId) return
-    const named = namedLeaseTermId ? `leaseTermId=${encodeURIComponent(namedLeaseTermId)}&` : ''
-    // 창을 닫지 않는다 — 위 handleResidenceCert 와 같은 이유다.
-    window.location.assign(`/rent-receipt/${links.tenantId}?${kindArg === 'deposit' ? 'kind=deposit&' : ''}${named}from=tenant&tenantId=${encodeURIComponent(links.tenantId)}`)
-  }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
@@ -476,16 +404,36 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
       collapseFooterOnKeyboard
       footer={
         <div className="space-y-2">
-          {/* 액션 행 — kind 마다 다른 액션. PrismNavBar 위.
-              **다른 화면으로 넘어가는 중(opening)에는 접는다.** 종전에는 버튼 글자를
-              '여는 중…'으로 바꿨는데 폭이 늘어 옆 버튼들이 밀렸다(운영자 지적 2026-08-26).
-              본문이 통째로 뼈대가 되므로 그 아래 살아 있는 버튼이 남으면 뭘 눌러야 할지 갈린다. */}
+          {/* 액션 행 — 세 면이 한 골격을 쓴다. **좌: 이 면의 파괴적 액션 · 우: 서류, 수정.**
+              우측 둘의 상대 위치는 어느 면에서도 안 바뀐다.
+
+              **flex-wrap 을 걷었다.** 종전에는 버튼이 늘면 조용히 접혔고, 접히면 기기마다 버튼
+              자리가 달라져 근육 기억이 안 섰다. 더 나쁜 것은 파괴적 버튼의 자리가 설계가 아니라
+              레이아웃 계산 결과가 된다는 점이다. wrap 은 안전망이 아니라 은폐 장치다 — 넘치면
+              바로 티가 나야 다음 사람이 네 번째 버튼을 무저항으로 더하지 않는다.
+
+              **서류 넷을 문 하나로 접었다**(운영자 승인 2026-08-29, 신고 2번).
+              종전에는 만드는 문 셋을 평평하게 깔았는데 그 행이 셋을 못 했다.
+                · 발급 가능 여부를 못 가렸다. 보증금 0원 계약에도 영수증 문이 열렸다.
+                · 어느 계약의 종이인지 몰랐다. 입주자 면은 지목 없이 추론에 맡겼는데, 그 추론은
+                  제목이 쓰는 규칙과 **반대 끝**을 집는다(제목은 입주일 오름차순 첫 건, 서류는
+                  내림차순 첫 건). 거주 계약이 둘이면 제목과 다른 계약의 종이가 나갔다.
+                · 아이폰 폭에서 세 줄로 접혀 푸터가 226px 이었다. 보증금 영수증까지 더하면
+                  320px 기기에서 다섯 줄 337px 이 된다.
+              시트(TenantDocBundleSheet)는 셋을 다 한다. 계약 축으로 세우고, 딸린 계약의 계약서·
+              보증금 0원·비거주 실거주 확인서를 걸러 내고, 미발급 행의 '작성'이 계약을 지목해
+              간다. 목적지 URL 은 이 행이 쓰던 것과 같아 잃는 경로가 없다.
+
+              라벨이 '서류 보내기'가 아니라 '서류'인 이유. 이제 그 문 뒤에서 만들기도 하므로
+              '보내기'는 절반만 말한다. '서류함'은 보관만 뜻해 작성을 감춘다. */}
           {kind === 'room' && hasRoom && !opening && (
             <div className="flex gap-2 items-center">
-              <button type="button" onClick={handleDeleteRoom} disabled={isPending}
-                className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+              {/* 형제 면과 같은 문법으로 — 종전에는 raw button 에 py-2 text-xs 라 실높이가 34px 이었다
+                  (§09 터치 타겟 44px, §10 raw button 금지 양쪽에 걸렸다). */}
+              <Btn variant="ghost" size="md" onClick={handleDeleteRoom} disabled={isPending}
+                className="text-[var(--danger-fg)]">
                 삭제
-              </button>
+              </Btn>
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditRoom} disabled={isPending}>
                 수정
@@ -493,38 +441,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
             </div>
           )}
           {kind === 'tenant' && hasTenant && !opening && (
-            <div className="flex flex-wrap gap-2 items-center">
+            <div className="flex gap-2 items-center">
               <Btn variant="ghost" size="md" onClick={handleDeleteTenant} disabled={isPending}
                 className="text-[var(--danger-fg)]">
                 삭제
               </Btn>
-              {/* 서류를 **만들러 가는** 문 셋. 아래 '서류 보내기'와 목적이 달라 두 가지로 가른다
-                  (오류신고 62440a66 — "동일한 버튼이라서 구별이 잘 안되는 단점이 있어").
-                  ① 색 위계. 만드는 문은 subtle 로 한 단계 내리고 보내는 문만 secondary 를 지킨다.
-                  ② 배치. 보내는 문은 spacer 오른쪽으로 옮겨 '수정' 옆에 선다.
-                  색만으로 가르면 색각 조건에서 무너지므로 **둘이 함께** 가야 한다(접근성 조건).
-                  라벨에 동사를 다는 안(계약서 → 계약서 작성)은 어휘 정본 개정이라 별건으로 남긴다. */}
-              {links?.tenantId && (
-                <Btn variant="subtle" size="md" onClick={handleContract}>
-                  계약서
-                </Btn>
-              )}
-              {links?.tenantId && (
-                <Btn variant="subtle" size="md" onClick={handleResidenceCert}>
-                  실거주 확인서
-                </Btn>
-              )}
-              {links?.tenantId && (
-                <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('rent')}>
-                  입실료 납부 확인서
-                </Btn>
-              )}
               <div className="flex-1" />
-              {/* 이미 만들어진 서류를 **보내는** 문. 종전에는 종류마다 목록 화면을 따로 열어
-                  한 사람의 종이를 네 번에 걸쳐 보냈다. */}
+              {/* null = 계약 지목 없는 사람 단위 진입. 시트가 그 사람의 계약을 전부 세운다. */}
               {links?.tenantId && (
                 <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(null)}>
-                  서류 보내기
+                  서류
                 </Btn>
               )}
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
@@ -532,27 +458,22 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
               </Btn>
             </div>
           )}
-          {/* 수납 관리(=payment 모달)에서 서류 발급 진입 — 돈을 기록한 자리에서 바로 뽑는 동선(신고 d68220bd).
-              계약 세그먼트가 열어 둔 계약(shownLeaseId)을 그대로 실어 보낸다 — 보고 있는 계약과
-              나가는 종이가 하나여야 한다(2026-08-13, 다호실 마무리). */}
-          {kind === 'payment' && links?.tenantId && (
-            <div className="flex flex-wrap gap-2 items-center">
-              {/* 입주자 면과 같은 처방 — 만드는 문은 subtle, 보내는 문만 secondary 로 오른쪽에.
-                  두 면이 갈리면 같은 일이 화면마다 다른 손놀림이 된다(오류신고 62440a66). */}
-              <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('rent', shownLeaseId)}>
-                입실료 납부 확인서
-              </Btn>
-              <Btn variant="subtle" size="md" onClick={() => handleRentReceipt('deposit', shownLeaseId)}>
-                보증금 영수증
-              </Btn>
+          {/* 수납 면 — 이 면이 열어 둔 계약(shownLeaseId)을 서류와 수정 양쪽에 실어 보낸다.
+              보고 있는 계약과 나가는 종이·열리는 폼이 하나여야 한다(2026-08-13, 다호실 마무리).
+
+              **hasPay 가드.** 본문이 "이 상태의 입주자는 수납 정보를 열 수 없습니다"를 띄우는데
+              그 아래 버튼이 살아 있으면, 지목이 빈 채로 문이 열려 엉뚱한 계약에 닿는다.
+              **!opening 가드.** 형제 두 면과 같다. 지금 이 면의 문은 시트를 열 뿐이라 opening 을
+              안 켜지만, 셋만 가드가 없는 채로 두면 다음에 이동 버튼이 서는 날 조용히 뚫린다. */}
+          {kind === 'payment' && hasPay && links?.tenantId && !opening && (
+            <div className="flex gap-2 items-center">
               <div className="flex-1" />
-              {/* 여기서 연 시트는 이 면이 열어 둔 계약 분을 기본 체크한다 — 보고 있는 계약과
-                  나가는 종이가 하나여야 한다(위 두 버튼의 지목과 같은 규칙). */}
-              {(canShare || mailOn) && (
-                <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(shownLeaseId)}>
-                  서류 보내기
-                </Btn>
-              )}
+              {/* 게이트를 걷었다. 종전에는 (canShare || mailOn) 이 걸려 공유·메일이 없는 기기에서
+                  이 문이 사라졌는데, 이제 그 문 뒤에 **발급**이 있어 서류를 아예 못 만들게 된다.
+                  입주자 면은 저장 갈래가 생기면서 이미 걷혔다. */}
+              <Btn variant="secondary" size="md" onClick={() => setDocSheetLease(shownLeaseId)}>
+                서류
+              </Btn>
             </div>
           )}
           {/* deepLink 행 — Phase 2.4a 에서 수납 딥링크 in-place 전환으로 대체됨. 다른 kind 에 필요시 부활. */}

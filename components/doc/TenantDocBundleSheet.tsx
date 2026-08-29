@@ -234,9 +234,12 @@ export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }
   // 계약이 하나뿐이면 그룹 제목을 세우지 않는다 — 무엇과 무엇을 가르는지가 없는 머리다.
   const showGroupTitles = groups.length > 1
 
+  // 제목이 '서류 보내기'가 아닌 이유. 이 시트는 보관본을 보내기만 하던 자리였는데, 프리즘 하단의
+  // 발급 버튼 셋을 여기로 접으면서(2026-08-29) 미발급 행의 '작성'이 유일한 발급 문이 됐다.
+  // 문 라벨이 '서류'인데 목적지가 '서류 보내기'면, 발급하러 온 사람이 잘못 왔다고 읽고 되돌아 나간다.
   return (
     <Modal open onClose={onClose} z={260} width="md"
-      title={bundle ? `서류 보내기 · ${bundle.tenantName}` : '서류 보내기'}>
+      title={bundle ? `서류 · ${bundle.tenantName}` : '서류'}>
       <div className="space-y-3">
         {/* 내보낼 곳 — 저장·공유·문자·메일. '내보내기'는 문서를 앱 밖으로 빼내는 모든 길의
             상위어라 넷을 다 덮고, OS 창을 여는 갈래는 그 창의 이름 그대로 '공유'다. */}
