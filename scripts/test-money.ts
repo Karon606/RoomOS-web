@@ -99,10 +99,23 @@ const RENT = 300000
 
 // ── calcCheckoutRefund ── 환불 = 선납 − 사용분 − 위약금(법정 0~10% 조정, 상한 캡 | 선의 0)
 // 위약금율 조정 가능(공정위 10% 캡)은 운영자 결정 2026-07-20 — 기대값 변경 승인분.
+//
+// **위약금 기준액은 잔여 이용금액이다**(2026-08-29 정정, 소비자분쟁해결기준 고시원운영업).
+// 종전 기대값은 총 결제금액의 %였다. 고시가 총액의 10% 를 말하는 것은 개시일 **이전** 해지,
+// 즉 하루도 안 산 경우이고, 개시일 이후는 「총액 − 일할 이용료 − 잔여이용금액의 10%」다.
 {
+  // 고시 예시와 같은 숫자다 — 30만 계약, 10일 사용, 잔여 20만, 위약금 2만, 환불 18만.
   eq('환불(법정): 30만 선납, 10일 사용', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal' }), {
-    mode: 'legal', penaltyPct: 10, daysUsed: 10, dailyRate: 10000, usedAmount: 100000, penalty: 30000, companyKeeps: 130000, refund: 170000,
+    mode: 'legal', penaltyPct: 10, daysUsed: 10, dailyRate: 10000, usedAmount: 100000, penalty: 20000, companyKeeps: 120000, refund: 180000,
   })
+  // 오래 살수록 위약금이 준다 — 잔여가 줄기 때문이다. 정액이던 종전과 갈리는 축이라 고정한다.
+  eq('환불: 20일 살면 위약금은 잔여 10만의 10%',
+    calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 20, mode: 'legal' }).penalty, 10000)
+  eq('환불: 다 살면 잔여가 0이라 위약금도 0',
+    calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 30, mode: 'legal' }).penalty, 0)
+  // 선납이 사용분보다 적으면(미납) 잔여가 음수가 될 수 있다 — 0 으로 눌러 위약금이 음수가 안 되게.
+  eq('환불: 미납이면 위약금 0',
+    calcCheckoutRefund({ prepaidAmount: 50000, monthlyRent: RENT, daysUsed: 10, mode: 'legal' }).penalty, 0)
   eq('환불(선의): 위약금 0', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill' }).refund, 200000)
   eq('환불: 음수 방지(선납 < 사용분)', calcCheckoutRefund({ prepaidAmount: 50000, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill' }).refund, 0)
   // 사용분 계산이 일할 청구(calcCheckoutProration.amount)와 항상 일치 — 매출-환불 정합
@@ -110,13 +123,13 @@ const RENT = 300000
   const ref = calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: pro!.daysUsed, mode: 'legal' })
   eq('환불: 사용분 = 일할 청구액 (정합)', ref.usedAmount, pro!.amount)
   // 위약금율 조정 — 5%면 절반, 0%면 선의와 동일, 10 초과·음수·비수치는 캡으로 클램프
-  eq('환불: 위약금 5%', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 5 }).penalty, 15000)
+  eq('환불: 위약금 5%', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 5 }).penalty, 10000)
   eq('환불: 위약금 0% = 선의와 동일', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 0 }).refund, 200000)
-  eq('환불: 15%는 10%로 캡', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 15 }).penalty, 30000)
+  eq('환불: 15%는 10%로 캡', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: 15 }).penalty, 20000)
   eq('환불: 음수·비수치는 상한값', [
     calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: -3 }).penalty,
     calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal', penaltyPct: NaN }).penalty,
-  ], [0, 30000])
+  ], [0, 20000])
   // 선의 모드는 penaltyPct를 무시(항상 0)
   eq('환불: 선의는 위약금율 무시', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill', penaltyPct: 10 }).penalty, 0)
 }

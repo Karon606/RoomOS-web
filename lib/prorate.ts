@@ -152,7 +152,21 @@ export function calcCheckoutRefund(input: {
   const dailyRate = Math.round(monthlyRent / PRORATE_BASE_DAYS)   // 표시용 1일요금
   // 사용분은 일할 청구(calcCheckoutProration.amount)와 동일하게 floor → '적용 금액'이 매출과 일치
   const usedAmount = Math.floor((monthlyRent * Math.max(0, daysUsed)) / PRORATE_BASE_DAYS)
-  const penalty = pct > 0 ? Math.round((Math.max(0, prepaidAmount) * pct) / 100) : 0
+  // **위약금은 잔여 이용금액의 %다. 총 결제금액이 아니다.**
+  //
+  // 소비자분쟁해결기준(공정거래위원회 고시, 고시원운영업)이 개시일 전후를 가른다.
+  //   · 개시일 이전 해지 — 총 이용요금의 10%. 서비스를 하나도 안 썼으므로 공실 리스크가 기준이다.
+  //   · 개시일 이후 해지 — 「총 이용금액 − 일할계산 이용료 − **잔여이용금액의 10%**」.
+  //     이미 제공한 몫은 사용분으로 받았으니, 위약금은 아직 제공하지 않은 기간에만 건다.
+  //
+  // 종전에는 총 결제금액의 %였다. 오래 살수록 격차가 커졌다 — 20일 살고 나가면 기준(14,000)의
+  // 세 배(42,000)를 뗐다. 게다가 계약서 §2 가 "소비자분쟁해결기준을 적용합니다"라고 스스로
+  // 약정한 상태였으므로, 종이와 계산이 서로 다른 말을 하고 있었다(2026-08-29 확인).
+  //
+  // 이 함수는 개시일 **이후** 해지만 다룬다. 개시일 이전(입주 전 취소)은 정산할 기간이 없어
+  // calcCheckoutProration 이 애초에 null 을 내고 이 경로에 오지 않는다.
+  const remaining = Math.max(0, Math.max(0, prepaidAmount) - usedAmount)
+  const penalty = pct > 0 ? Math.round((remaining * pct) / 100) : 0
   const companyKeeps = usedAmount + penalty
   const refund = Math.max(0, prepaidAmount - companyKeeps)
   return { mode, penaltyPct: pct, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund }

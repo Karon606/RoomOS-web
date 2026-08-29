@@ -1391,7 +1391,7 @@ export default function SettingsForm({
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">중도퇴실 위약금 기본값</label>
-                <p className="text-xs text-[var(--warm-muted)]">중도퇴실 환불 시 총 결제금액에서 공제하는 위약금율입니다. 공정위 기준(10%)을 넘길 수 없고, 퇴실 처리 때 사람별로 이 값 이하로 조정할 수 있습니다.</p>
+                <p className="text-xs text-[var(--warm-muted)]">중도퇴실 환불 시 잔여 이용금액에서 공제하는 위약금율입니다. 공정위 기준(10%)을 넘길 수 없고, 퇴실 처리 때 사람별로 이 값 이하로 조정할 수 있습니다.</p>
                 <div className="relative w-32">
                   <input type="text" inputMode="numeric" name="refundPenaltyPct"
                     defaultValue={property?.refundPenaltyPct ?? 10}
@@ -1402,7 +1402,7 @@ export default function SettingsForm({
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
-                <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
+                <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(잔여 이용금액의 10%). 1일 이용요금 = 월 이용료 ÷ 30, 잔여 이용금액 = 총 결제금액 − 이용일수분. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
                 {/* 체크박스 앞의 hidden '0' — 꺼진 체크박스는 FormData 에 안 실린다. 저장이 필드 단위로
                     쪼개진 뒤로는(2026-08-19) 그 부재가 "이 탭은 이 필드를 담당하지 않는다"로 읽혀
                     체크를 풀 길이 사라진다. 짝을 세워 두면 has 는 항상 참이고 값은 '1' 유무로 갈린다.

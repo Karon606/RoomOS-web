@@ -301,7 +301,7 @@ export function CheckoutProrationWidget({
                   <div className="flex justify-between"><span>− 단기 요금 ({shortQuote.units}주 계약{shortQuote.roundedUp ? ` · 거주 ${shortQuote.stayDays}일` : ''})</span><span className="tabular-nums">{fmtWon(applied)}</span></div>
                 ) : (<>
                   <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
-                  {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {refund.refund.penaltyPct}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
+                  {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (잔여 이용금액의 {refund.refund.penaltyPct}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
                 </>)}
               </div>
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
