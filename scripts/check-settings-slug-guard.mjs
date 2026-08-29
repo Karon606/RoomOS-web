@@ -32,7 +32,7 @@ const GUARDED = [
   // 계약서·서류
   'multiContractVersions',
   'defaultAreaM2', 'bankAccount', 'disposalEnabled', 'disposalDays', 'disposalTitle', 'disposalBody',
-  'subLeaseTitle', 'subLeaseItems',
+  'subLeaseTitle', 'subLeaseItems', 'shortStayTitle', 'shortStayItems', 'earlyCheckoutTitle', 'earlyCheckoutItems',
   // 웹사이트(전용 출구가 정주소, 통짜 경로는 옛 번들 대비로만 남아 있다)
   'publicSlug',
 ]
@@ -65,7 +65,18 @@ if (!patchRaw) {
     fail('ⓐ', `${PATCH} 에서 buildPropertySettingsPatch 를 못 찾았다`, '함수 이름이 바뀌었으면 이 스크립트도 함께 고친다.')
   } else {
     const body = src.slice(at)
-    const naked = GUARDED.filter(f => !body.includes(`formData.has('${f}')`))
+    // 가드는 두 모양이다.
+    //   · 직접 확인 — formData.has('필드')
+    //   · 헬퍼 경유 — 헬퍼가 formData.has(키인자) 를 하고 호출부가 필드 이름을 리터럴로 넘긴다.
+    //     특약 셋처럼 같은 규칙을 여러 벌 쓰는 자리는 손으로 베끼면 한 벌만 어긋나므로 헬퍼가 낫다.
+    //     그 헬퍼가 실제로 formData.has 를 하는지까지 확인해야 "이름만 넘기고 안 보는" 것을 안 놓친다.
+    const viaHelper = (f) => {
+      const call = body.match(new RegExp(`(\\w+)\\([^)]*'${f}'`))
+      if (!call) return false
+      const fn = body.match(new RegExp(`const ${call[1]} = [\\s\\S]{0,400}?formData\\.has\\(`))
+      return !!fn
+    }
+    const naked = GUARDED.filter(f => !body.includes(`formData.has('${f}')`) && !viaHelper(f))
     if (naked.length > 0) {
       fail('ⓐ', `${PATCH} 가 필드 존재 확인 없이 쓰는 칼럼 ${naked.length}개 — ${naked.join(', ')}`,
         "formData.has('<필드>') 일 때만 그 칼럼을 쓴다. 탭마다 폼이 달라 확인 없이 읽으면 옆 탭 값이 저장 한 번에 null 로 덮인다.")

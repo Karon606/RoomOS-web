@@ -132,3 +132,27 @@ export function calcShortStay(
     roundedUp: stayDays < contractDays,
   }
 }
+
+/**
+ * 계약서에 찍는 단기 요금표 한 줄 — 그 방 월세로 계산한 실제 금액이다.
+ *
+ * 왜 문장이 아니라 숫자인가. 조항이 "단기 입실 요금표를 적용합니다"라고만 하면 그 표가 어디
+ * 있는지 종이에 없다. 받는 사람이 얼마인지 모르는 조항은 설명한 것이 아니고, 나중에 그 금액을
+ * 들이댈 때 근거가 서지 않는다. 방마다 월세가 다르므로 계약서를 뽑는 순간 그 계약의 방으로 찍는다.
+ *
+ * 상한에 걸리는 주에서 멈추고 '이상'으로 묶는다. 3주(31.5일)부터는 1개월 요금과 같아서
+ * 4주·5주를 따로 적으면 같은 금액이 줄만 늘어난다.
+ */
+export function shortStayRateTable(policy: ShortStayPolicy, monthlyRent: number): string | null {
+  if (!policy.enabled || !monthlyRent || monthlyRent <= 0) return null
+  const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
+  const rows: string[] = []
+  // 6주면 42일이라 어떤 정책에서도 한 달을 넘는다 — 무한 루프 방지용 상한이지 뜻이 있는 수가 아니다.
+  for (let u = Math.max(1, policy.minUnits); u <= 6; u++) {
+    const q = calcShortStay(policy, monthlyRent, u * policy.unitDays)
+    if (!q) break
+    if (q.cappedAtMonth) { rows.push(`${u}주 이상 ${won(q.baseAmount)}`); break }
+    rows.push(`${u}주 ${won(q.baseAmount)}`)
+  }
+  return rows.length > 0 ? rows.join(' · ') : null
+}

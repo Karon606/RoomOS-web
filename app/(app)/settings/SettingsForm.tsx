@@ -8,7 +8,8 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
-import { DEFAULT_DISPOSAL_CONSENT, DEFAULT_SUB_LEASE_ADDENDUM, resolveSubLeaseAddendum, type DisposalConsentTemplate } from '@/lib/contract'
+import { DEFAULT_DISPOSAL_CONSENT, DEFAULT_SUB_LEASE_ADDENDUM, DEFAULT_SHORT_STAY_ADDENDUM, DEFAULT_EARLY_CHECKOUT_ADDENDUM,
+  resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, type DisposalConsentTemplate } from '@/lib/contract'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
@@ -96,6 +97,8 @@ type Property = {
   multiContractVersions: boolean  // 한 계약에 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
   disposalConsentTemplate: unknown
   subLeaseAddendum: unknown
+  shortStayAddendum: unknown
+  earlyCheckoutAddendum: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -1924,9 +1927,6 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
 
   // 추가 호실(창고) 특약 — 저장값(JSON) 폴백. resolveSubLeaseAddendum 이 정본이라
   // 화면과 종이가 같은 규칙을 본다. null 이 오면 이 영업장은 특약을 안 쓰는 것이라 칸이 빈다.
-  const savedSub = resolveSubLeaseAddendum(property?.subLeaseAddendum)
-  const [subTitle, setSubTitle] = useState(savedSub?.title ?? DEFAULT_SUB_LEASE_ADDENDUM.title)
-  const [subItems, setSubItems] = useState((savedSub?.items ?? []).join('\n'))
 
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
@@ -2255,20 +2255,15 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">조건부 특약</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">조건에 맞는 계약서에만 본문 뒤에 붙는 절입니다.</p>
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">추가 호실 특약</label>
-            <button type="button"
-              onClick={() => { setSubTitle(DEFAULT_SUB_LEASE_ADDENDUM.title); setSubItems(DEFAULT_SUB_LEASE_ADDENDUM.items.join('\n')) }}
-              className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본 문안으로</button>
-          </div>
-          <p className="text-xs text-[var(--warm-muted)]">창고·사무실처럼 거주용이 아닌 방을 딸고 있는 계약서에만 붙습니다. 항목은 한 줄에 하나씩 적고, 번호는 인쇄할 때 자동으로 매겨집니다. 전부 비우면 이 영업장은 특약을 쓰지 않습니다.</p>
-          <input type="text" name="subLeaseTitle" value={subTitle} onChange={e => setSubTitle(e.target.value)}
-            placeholder={DEFAULT_SUB_LEASE_ADDENDUM.title}
-            className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
-          <textarea name="subLeaseItems" value={subItems} onChange={e => setSubItems(e.target.value)} rows={9}
-            className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
-        </div>
+        <AddendumCard label="추가 호실 특약" field="subLease" rows={9}
+          fallback={DEFAULT_SUB_LEASE_ADDENDUM} saved={resolveSubLeaseAddendum(property?.subLeaseAddendum)}
+          hint="창고·사무실처럼 거주용이 아닌 방을 딸고 있는 계약서에만 붙습니다." />
+        <AddendumCard label="단기 입실 특약" field="shortStay" rows={5}
+          fallback={DEFAULT_SHORT_STAY_ADDENDUM} saved={resolveShortStayAddendum(property?.shortStayAddendum)}
+          hint="단기 입실로 등록한 계약서에만 붙습니다. 단기 입실 정책이 꺼져 있으면 안 붙습니다." />
+        <AddendumCard label="조기 퇴실 시 요금 적용" field="earlyCheckout" rows={4}
+          fallback={DEFAULT_EARLY_CHECKOUT_ADDENDUM} saved={resolveEarlyCheckoutAddendum(property?.earlyCheckoutAddendum)}
+          hint="일반 계약서에만 붙습니다(단기 특약과 함께 서지 않습니다). 1개월을 못 채우고 중도 퇴실할 때의 요금 기준입니다." />
         <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">계약서 동반 서류</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>
@@ -2305,6 +2300,44 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
       {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
           그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
       <DocMailTemplateCard />
+    </div>
+  )
+}
+
+/**
+ * 조건부 특약 한 벌 — 셋이 같은 문법을 쓴다(추가 호실 · 단기 입실 · 조기 퇴실).
+ *
+ * 카드마다 폼을 손으로 베끼면 필드 이름이나 폴백 규칙이 한 벌만 어긋나고, 그 절만 되살아나거나
+ * 사라진다. 저장 이름은 field 로 만든다 — `${field}Title` · `${field}Items` 가 규약이고
+ * lib/propertySettingsPatch 가 같은 이름으로 읽는다.
+ *
+ * **비우는 것이 곧 '이 영업장은 이 절을 안 쓴다'이다.** 그래서 saved 가 null 이면 칸이 빈 채로
+ * 열린다 — 기본 문안을 되살려 놓으면 지운 적 없는 조항이 다시 종이에 실린다.
+ */
+function AddendumCard({ label, field, rows, fallback, saved, hint }: {
+  label: string
+  field: 'subLease' | 'shortStay' | 'earlyCheckout'
+  rows: number
+  fallback: { title: string; items: string[] }
+  saved: { title: string; items: string[] } | null
+  hint: string
+}) {
+  const [title, setTitle] = useState(saved?.title ?? fallback.title)
+  const [items, setItems] = useState((saved?.items ?? []).join('\n'))
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+        <button type="button"
+          onClick={() => { setTitle(fallback.title); setItems(fallback.items.join('\n')) }}
+          className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본 문안으로</button>
+      </div>
+      <p className="text-xs text-[var(--warm-muted)]">{hint} 항목은 한 줄에 하나씩 적고, 번호는 인쇄할 때 자동으로 매겨집니다. 전부 비우면 이 영업장은 이 절을 쓰지 않습니다.</p>
+      <input type="text" name={`${field}Title`} value={title} onChange={e => setTitle(e.target.value)}
+        placeholder={fallback.title}
+        className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+      <textarea name={`${field}Items`} value={items} onChange={e => setItems(e.target.value)} rows={rows}
+        className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
     </div>
   )
 }

@@ -18,7 +18,8 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
-import { contractSubLeases, contractSubLeaseAddendum, contractRoomScheduleText } from '@/lib/contractData'
+import { contractSubLeases, contractSubLeaseAddendum, contractRateAddendum, contractRoomScheduleText } from '@/lib/contractData'
+import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
@@ -161,6 +162,7 @@ export async function POST(req: Request) {
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
           refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
+          shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
           // 파생 판본을 만들 수 있는 영업장인가 — 발급 목적 게이트가 이 값을 본다.
           multiContractVersions: true,
         },
@@ -206,6 +208,11 @@ export async function POST(req: Request) {
     const subLeaseAddendum = (subLeaseBase && body_.source !== 'SNAPSHOT' && edited && Array.isArray(edited.items))
       ? resolveSubLeaseAddendum(edited)
       : subLeaseBase
+    // 요금 절 — 화면(buildContractData)과 같은 정본이 판정한다. 갈리면 종이와 화면이 다른 절을 싣는다.
+    const shortPolicy = parseShortStayPolicy(property?.shortStayPolicy)
+    const rateAddendum = contractRateAddendum(lease, body_, shortPolicy.enabled,
+      { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum })
+    const shortRateTable = shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? ''
     const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
@@ -385,6 +392,8 @@ export async function POST(req: Request) {
       // 종이와 화면이 다른 행을 그릴 수 없다. 종속이 없으면 빈 배열이고 인쇄물은 종전과 같다.
       subLeases,
       subLeaseAddendum,
+      rateAddendum,
+      shortStayRateTable: shortRateTable,
       // 거주 호실 일정 — 화면(buildContractData)이 만든 문장을 그대로 싣는다. 종이와 화면이
       // 다른 일정을 적을 수 없다. 일정이 없으면 null 이라 인쇄물이 종전과 문자 단위로 같다.
       roomScheduleText: await contractRoomScheduleText(lease, propertyId),
@@ -550,6 +559,7 @@ export async function POST(req: Request) {
         subLeases: printData.subLeases,
         template: printData.template,
         subLeaseAddendum: printData.subLeaseAddendum,
+        rateAddendum: printData.rateAddendum,
         roomScheduleText: printData.roomScheduleText,
       }),
     }

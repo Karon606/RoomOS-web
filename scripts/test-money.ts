@@ -15,7 +15,7 @@ import {
   calcStayQuote,
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
-import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
+import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -662,6 +662,13 @@ const RENT = 300000
   eq('만기 하루 전도 중도다', gate('2026-09-17'), 420000)   // 상한이 30일치라 정가와 같아진다
   eq('만기일 퇴실은 안 선다', gate('2026-09-18'), null)
   eq('한 달을 넘기면 안 선다', gate('2026-09-19'), null)
+
+  // 계약서에 찍히는 요금표 — 방마다 제 숫자여야 한다(특정 영업장 금액 하드코딩 금지).
+  eq('요금표: 420,000원 방', shortStayRateTable(P, M), '1주 147,000원 · 2주 294,000원 · 3주 이상 420,000원')
+  eq('요금표: 350,000원 방', shortStayRateTable(P, 350000), '1주 123,000원 · 2주 245,000원 · 3주 이상 350,000원')
+  // 정책이 꺼졌거나 월세를 모르면 표가 없다 — 그 경우 조항 자체가 안 붙는다.
+  eq('요금표: 정책 꺼짐', shortStayRateTable({ ...P, enabled: false }, M), null)
+  eq('요금표: 월세 0', shortStayRateTable(P, 0), null)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

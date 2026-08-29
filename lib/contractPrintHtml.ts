@@ -92,6 +92,10 @@ export type PrintContractData = {
   // 추가 호실 특약(보관 용도). 없으면(null·미지정) 절이 하나도 안 붙고 조항 2단 분배도
   // 종전 입력 그대로라, 그 계약서의 HTML 은 이 기능 전과 문자 단위로 같다.
   subLeaseAddendum?: SubLeaseAddendum | null
+  /** 요금 절 — 단기 특약 또는 조기 퇴실(배타적). 화면(ContractData)과 같은 값이라야 종이가 안 갈린다. */
+  rateAddendum?: SubLeaseAddendum | null
+  /** 그 방 월세로 찍은 단기 요금표 — 절 안의 {{단기요금표}} 를 채운다. */
+  shortStayRateTable?: string
   // 거주 호실 일정 문장. 없으면(null·미지정) 절이 안 붙어 종전 계약서와 문자 단위로 같다.
   roomScheduleText?: string | null
   // 사용자가 입력한 화면 상태
@@ -154,6 +158,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     환불규정: d.refundClauseInContract ? ' ' + buildRefundClause() : '',
     // 청소비 치환은 정본 하나로 — 화면과 인쇄가 각자 규칙을 갖던 것이 비문의 원인이었다(2026-08-03)
     ...cleaningFeeVars(cln),
+    // 요금 절이 가리키는 표 — 그 방 월세로 찍힌다. 정책이 꺼진 영업장은 빈 문자열이라 문장만 남고,
+    // 애초에 그 경우 절 자체가 안 붙는다.
+    단기요금표: d.shortStayRateTable ?? '',
   }
 
   // 조항은 **문서 순서 그대로 한 흐름**으로 뱉고, 2단 나눔은 CSS(column-count)가 한다.
@@ -172,7 +179,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     return `<div class="clause-group"><div class="clause-h">${escape(renderContractText(sec.title, vars))}</div><ul class="clause-list">${lis}</ul></div>`
   }
   // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거가 그대로 따라온다.
-  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, buildRoomScheduleAddendum(d.roomScheduleText))
+  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, d.rateAddendum, buildRoomScheduleAddendum(d.roomScheduleText))
     .map(renderSection).join('')
 
   // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.

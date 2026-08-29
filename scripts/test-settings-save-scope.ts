@@ -47,6 +47,8 @@ const BEFORE: Row = {
   bankAccount: '카카오뱅크 3333-01-2345678 (홍길동)',
   disposalConsentTemplate: { enabled: true, days: 7, title: '잔여 소지품 임의처분 동의서', body: '본문' },
   subLeaseAddendum: { title: '추가 호실 특약(보관 용도)', items: ['가'] },
+  shortStayAddendum: { title: '단기 입실 특약', items: ['나'] },
+  earlyCheckoutAddendum: { title: '조기 퇴실 시 요금 적용', items: ['다'] },
   publicSlug: 'thestayjegi',
 }
 const ALL_COLUMNS = Object.keys(BEFORE)
@@ -55,7 +57,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 const OWNED: Record<string, string[]> = {
   기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
-  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum'],
+  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum'],
   웹사이트:    ['publicSlug'],
 }
 
@@ -83,6 +85,8 @@ const DOC_FORM: [string, string][] = [
   ['disposalEnabled', '0'], ['disposalEnabled', '1'],
   ['disposalTitle', '잔여 소지품 임의처분 동의서'], ['disposalDays', '7'], ['disposalBody', '본문'],
   ['subLeaseTitle', '추가 호실 특약(보관 용도)'], ['subLeaseItems', '가'],
+  ['shortStayTitle', '단기 입실 특약'], ['shortStayItems', '나'],
+  ['earlyCheckoutTitle', '조기 퇴실 시 요금 적용'], ['earlyCheckoutItems', '다'],
 ]
 
 const apply = (patch: PropertySettingsPatch): Row => ({ ...BEFORE, ...patch })
@@ -200,6 +204,13 @@ for (const [tab, form] of TAB_FORMS) {
   eq('항목은 줄 단위로 나뉘고 빈 줄은 버린다',
     p([['subLeaseTitle', '제목'], ['subLeaseItems', '가\n\n나\n  다  ']]).subLeaseAddendum,
     { title: '제목', items: ['가', '나', '다'] })
+  // 셋이 독립이다 — 한 벌만 실려 와도 나머지 둘은 안 건드린다.
+  eq('단기 특약만 실으면 그것만 쓴다',
+    [p([['shortStayTitle', 'ㅇ'], ['shortStayItems', '가']]).shortStayAddendum,
+     'subLeaseAddendum' in p([['shortStayTitle', 'ㅇ'], ['shortStayItems', '가']])],
+    [{ title: 'ㅇ', items: ['가'] }, false])
+  eq('조기 퇴실 절도 빈 항목을 저장한다',
+    p([['earlyCheckoutTitle', 'ㅇ'], ['earlyCheckoutItems', ' \n ']]).earlyCheckoutAddendum, { title: 'ㅇ', items: [] })
   eq('슬러그 미포함이면 칼럼을 안 쓴다', 'publicSlug' in p([['name', 'ㅇ']]), false)
   eq('빈 슬러그는 null', p([['publicSlug', '']]).publicSlug, null)
 }

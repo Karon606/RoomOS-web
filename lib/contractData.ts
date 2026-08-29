@@ -7,7 +7,7 @@ import { driveImageDataUrl } from '@/lib/google-drive'
 import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   type SubLeaseAddendum, type ResolvedBody,
-  DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveDisposalConsent,
+  DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, resolveDisposalConsent,
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
@@ -17,6 +17,7 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { parseRoomSchedule, hasRoomSchedule, roomScheduleText } from '@/lib/roomSchedule'
+import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -73,6 +74,31 @@ export function contractSubLeaseAddendum<
   // 문안은 영업장 저장값이 정한다(2026-08-29). 인자를 안 주면 종전대로 기본 문안 —
   // 호출부가 늘 때 문안이 조용히 비는 것보다, 지금 문안이 그대로 나오는 쪽이 안전하다.
   return storage ? resolveSubLeaseAddendum(saved) : null
+}
+
+/**
+ * 요금 절 — 단기 계약이면 단기 특약, 일반 계약이면 조기 퇴실 절. **둘은 배타적이다.**
+ *
+ * 함께 서면 같은 계약에 요금 규칙이 두 벌 있게 된다. 단기 계약에 "1개월 전에 나가면 단기
+ * 요금표를 적용한다"를 붙이면 이미 단기 요금인 계약에 같은 말을 또 하는 것이고, 일반 계약에
+ * 단기 특약을 붙이면 주 단위 계약이라고 선언하게 된다.
+ *
+ * 단기 정책이 꺼진 영업장에는 어느 것도 안 붙는다 — 적용할 요금표가 없는데 그것을 가리키는
+ * 조항만 종이에 남으면, 받는 사람이 확인할 길이 없는 문장이 된다.
+ *
+ * 서명이 끝난 계약은 그때 붙어 있던 것을 그대로 쓴다(추가 호실 특약과 같은 규칙).
+ */
+export function contractRateAddendum(
+  lease: { isShortTerm?: boolean } | null | undefined,
+  body: ResolvedBody,
+  policyEnabled: boolean,
+  saved: { shortStay?: unknown; earlyCheckout?: unknown },
+): SubLeaseAddendum | null {
+  if (body.source === 'SNAPSHOT') return body.rateAddendum
+  if (!lease || !policyEnabled) return null
+  return lease.isShortTerm
+    ? resolveShortStayAddendum(saved.shortStay)
+    : resolveEarlyCheckoutAddendum(saved.earlyCheckout)
 }
 
 export type ContractData = {
@@ -144,6 +170,10 @@ export type ContractData = {
   // 렌더가 절을 하나도 안 붙인다(그 경우의 종이는 이 기능 전과 문자 단위로 같다).
   // template 안에 넣지 않는 이유는 lib/contract 의 상수 주석에 있다(박제 축 드리프트).
   subLeaseAddendum: SubLeaseAddendum | null
+  /** 요금 절 — 단기 특약 또는 조기 퇴실(배타적). 단기 정책이 꺼진 영업장은 null. */
+  rateAddendum: SubLeaseAddendum | null
+  /** 그 방 월세로 찍은 단기 요금표 — 절 안의 {{단기요금표}} 를 채운다. 없으면 빈 문자열. */
+  shortStayRateTable: string
   // 거주 호실 일정 문장 — 기간마다 다른 방에 머무는 계약에만 채워진다(lib/roomSchedule).
   // 없으면 null 이고 렌더가 절을 안 붙인다.
   roomScheduleText: string | null
@@ -208,6 +238,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
         refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
+        shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
       },
     }),
   ])
@@ -238,6 +269,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   // 본문 선택은 resolveSignedBody 한 곳이 정한다. 서명이 끝난 계약은 박제본을 읽으므로
   // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 규칙을 여기서 복제하면 발급 API 와 갈린다.
   const body = resolveSignedBody(lease, property)
+  // 단기 정책 — 요금 절을 붙일지 가르고, 절 안의 요금표 숫자를 만든다.
+  const shortPolicy = parseShortStayPolicy(property?.shortStayPolicy)
   const override = lease?.contractOverride as ContractTemplate | null | undefined
   // 표시값은 오버라이드를 얹은 값 하나로만 내려간다. 화면·서명 링크 스냅샷·드리프트 비교·서명본이
   // 전부 이 값을 쓰므로 종이와 기록이 갈릴 수 없다(lib/contractFieldOverrides 가 정본).
@@ -293,6 +326,9 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
     // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
     subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body, property?.subLeaseAddendum),
+    rateAddendum: contractRateAddendum(lease, body, shortPolicy.enabled,
+      { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum }),
+    shortStayRateTable: shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? '',
     // 호실 일정 — 이 계약의 방 이름은 그 사람의 다른 계약 목록에서 찾는다(같은 영업장이라
     // 일정에 실린 방이 그 목록 밖일 수 있어 방 조회를 따로 한다).
     roomScheduleText: scheduleText,

@@ -52,6 +52,7 @@ export type PrintedFactsInput = {
    * 이 칸을 모르는 기존 발급본·링크 스냅샷이 여기서 무변동이어야 한다.
    */
   subLeaseAddendum?: { title: string; items: string[] } | null
+  rateAddendum?: { title: string; items: string[] } | null
   /** 거주 호실 일정 문장 — 서명 뒤 방이 바뀌면 종이와 사실이 갈리므로 축으로 센다. */
   roomScheduleText?: string | null
 }
@@ -66,6 +67,7 @@ export const PRINTED_FACT_KEYS = [
   'lease.subLeases',
   'template',
   'subLeaseAddendum',
+  'rateAddendum',
   'roomScheduleText',
 ] as const
 
@@ -91,6 +93,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'lease.subLeases': '추가 호실',
   template: '계약서 본문',
   subLeaseAddendum: '추가 호실 특약',
+  rateAddendum: '요금 특약',
   roomScheduleText: '거주 호실 일정',
 }
 
@@ -130,6 +133,8 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
     // 특약도 통비교 — 절 제목이든 항목 한 줄이든 바뀌면 그 종이와 지금이 다르다는 뜻이다.
     // 없으면 undefined 다(축 없음). 특약이 안 붙는 계약서 전건이 여기서 무변동이어야 한다.
     subLeaseAddendum: d.subLeaseAddendum ? JSON.stringify(d.subLeaseAddendum) : undefined,
+    // 요금 절도 같은 대접 — 문안이 바뀌면 그 종이와 지금이 다르다.
+    rateAddendum: d.rateAddendum ? JSON.stringify(d.rateAddendum) : undefined,
     roomScheduleText: d.roomScheduleText ?? undefined,
   }
 }

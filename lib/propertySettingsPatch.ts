@@ -61,6 +61,8 @@ export type PropertySettingsPatch = {
   multiContractVersions?: boolean
   disposalConsentTemplate?: DisposalConsentPatch
   subLeaseAddendum?: SubLeaseAddendumPatch
+  shortStayAddendum?: SubLeaseAddendumPatch
+  earlyCheckoutAddendum?: SubLeaseAddendumPatch
   publicSlug?: string | null
 }
 
@@ -180,12 +182,20 @@ export function buildPropertySettingsPatch(
   // 추가 호실 특약 — 두 칸이 칼럼 하나(JSON)라 둘 다 실려 왔을 때만 쓴다(위 동의서와 같은 규칙).
   // 항목은 한 줄에 하나. 빈 줄은 버리고, 남는 것이 없으면 빈 배열로 저장한다 — 그것이
   // "이 영업장은 이 특약을 안 쓴다"는 뜻이고, 미설정(null, 기본 문안)과 다른 상태다.
-  if (formData.has('subLeaseTitle') && formData.has('subLeaseItems')) {
-    patch.subLeaseAddendum = {
-      title: str(formData, 'subLeaseTitle').trim(),
-      items: str(formData, 'subLeaseItems').split('\n').map(v => v.trim()).filter(Boolean),
-    }
-  }
+  // 조건부 특약 셋이 같은 규칙을 쓴다 — 한 벌만 다르게 저장하면 그 절만 되살아나거나 사라진다.
+  const addendum = (titleKey: string, itemsKey: string): SubLeaseAddendumPatch | undefined =>
+    formData.has(titleKey) && formData.has(itemsKey)
+      ? {
+        title: str(formData, titleKey).trim(),
+        items: str(formData, itemsKey).split('\n').map(v => v.trim()).filter(Boolean),
+      }
+      : undefined
+  const sub = addendum('subLeaseTitle', 'subLeaseItems')
+  if (sub) patch.subLeaseAddendum = sub
+  const short = addendum('shortStayTitle', 'shortStayItems')
+  if (short) patch.shortStayAddendum = short
+  const early = addendum('earlyCheckoutTitle', 'earlyCheckoutItems')
+  if (early) patch.earlyCheckoutAddendum = early
 
   // ── 웹사이트 탭 ────────────────────────────────────────────────
   // 지금 이 폼에는 슬러그 입력이 없다(정주소는 웹사이트 탭의 updatePublicSlug). 옛 번들이 계속

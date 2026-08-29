@@ -118,6 +118,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       multiContractVersions: true,  // 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
       disposalConsentTemplate: true,
       subLeaseAddendum: true,       // 추가 호실(창고) 특약 문안 — 영업장이 고칠 수 있다(2026-08-29)
+      shortStayAddendum: true, earlyCheckoutAddendum: true,   // 요금 절 둘 — 단기·조기 퇴실(배타적)
       publicSlug: true,
       logoDriveFileId: true,
       appLogoDriveFileId: true,

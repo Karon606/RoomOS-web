@@ -163,12 +163,57 @@ export const DEFAULT_SUB_LEASE_ADDENDUM: SubLeaseAddendum = {
  * 다를 수도 있으니". 멀티테넌트에서 이 문안은 한 영업장의 운영 방식이지 법이 아니다.
  */
 export function resolveSubLeaseAddendum(raw: unknown): SubLeaseAddendum | null {
-  if (raw == null) return DEFAULT_SUB_LEASE_ADDENDUM
+  return resolveAddendum(raw, DEFAULT_SUB_LEASE_ADDENDUM)
+}
+
+/** 세 조건부 절이 같은 규칙을 쓴다 — 한 곳만 다르게 폴백하면 그 절만 되살아나거나 사라진다. */
+function resolveAddendum(raw: unknown, fallback: SubLeaseAddendum): SubLeaseAddendum | null {
+  if (raw == null) return fallback
   const d = (typeof raw === 'object' ? raw : {}) as Partial<SubLeaseAddendum>
   const items = Array.isArray(d.items) ? d.items.filter((x): x is string => typeof x === 'string' && !!x.trim()) : []
   if (items.length === 0) return null
-  const title = typeof d.title === 'string' && d.title.trim() ? d.title : DEFAULT_SUB_LEASE_ADDENDUM.title
+  const title = typeof d.title === 'string' && d.title.trim() ? d.title : fallback.title
   return { title, items }
+}
+
+// ── 단기·조기 퇴실 절 ────────────────────────────────────────────────
+//
+// 두 절은 **배타적**이다. 단기 계약에는 단기 특약이, 일반 계약에는 조기 퇴실 절이 붙는다.
+// 둘이 함께 서면 같은 계약에 요금 규칙이 두 벌 있게 된다.
+//
+// 왜 필요한가(운영자 오더 2026-08-29). 단기 곡선에는 최소 1주라는 바닥이 있는데 월 곡선의
+// 중도 퇴실 구간에는 바닥이 없었다. 그래서 2주 살 생각인 사람이 월 계약으로 들어와 2주차에
+// 나가면, 처음부터 단기로 계약한 사람보다 8만원 넘게 덜 냈다. 곡선을 고르는 시점(계약)과
+// 실현되는 시점(퇴실)이 달라 고르는 데 비용이 안 드는 것이 그 구멍의 정체다.
+//
+// **{{단기요금표}} 는 그 계약의 방 월세로 찍힌다.** 조항이 표를 가리키는데 표가 종이에 없으면
+// 받는 사람이 금액을 모른다. 정책이 꺼진 영업장에서는 빈 문자열이라 문장만 남는다.
+
+export const DEFAULT_SHORT_STAY_ADDENDUM: SubLeaseAddendum = {
+  title: '단기 입실 특약',
+  items: [
+    '본 계약은 1개월 미만의 단기 입실 계약이며, 계약 기간은 주 단위로 정합니다.',
+    '입실료는 단기 입실 요금표에 따라 산정합니다. {{단기요금표}}',
+    '계약 기간이 1개월에 이르는 경우 1개월 입실료를 상한으로 합니다.',
+    '계약한 기간을 채우지 못하고 퇴실하는 경우에도 계약한 기간의 입실료를 부담합니다.',
+  ],
+}
+
+export const DEFAULT_EARLY_CHECKOUT_ADDENDUM: SubLeaseAddendum = {
+  title: '조기 퇴실 시 요금 적용',
+  items: [
+    '입실일로부터 1개월이 지나기 전에 중도 퇴실하는 경우, 실제 거주 기간에 대해 단기 입실 요금표를 적용합니다. {{단기요금표}}',
+    '1개월이 지난 후의 중도 퇴실은 퇴실 및 환불 조항에 따릅니다.',
+  ],
+}
+
+/** 저장된 JSON을 단기 특약으로 — resolveSubLeaseAddendum 과 같은 규칙(null=기본, 빈 항목=안 씀). */
+export function resolveShortStayAddendum(raw: unknown): SubLeaseAddendum | null {
+  return resolveAddendum(raw, DEFAULT_SHORT_STAY_ADDENDUM)
+}
+/** 저장된 JSON을 조기 퇴실 절로 — 위와 같은 규칙. */
+export function resolveEarlyCheckoutAddendum(raw: unknown): SubLeaseAddendum | null {
+  return resolveAddendum(raw, DEFAULT_EARLY_CHECKOUT_ADDENDUM)
 }
 
 // ── 거주 호실 일정 절 ────────────────────────────────────────────────
@@ -301,6 +346,12 @@ export type SignedContractSnapshot = {
    * 종이에 없던 절이 재발급에서 튀어나오면 그건 서명 시점 본문 격리를 스스로 깨는 것이다.
    */
   subLeaseAddendum?: SubLeaseAddendum | null
+  /**
+   * 서명 당시 붙어 있던 요금 절(단기 특약 또는 조기 퇴실). 위 특약과 같은 규칙이다 —
+   * 이 칸이 없던 박제에는 undefined 이고 그때는 null 로 읽어, 이미 서명이 끝난 계약서에
+   * 요금 조항을 소급해 끼워 넣지 않는다.
+   */
+  rateAddendum?: SubLeaseAddendum | null
   // 서명 원본이 앱 밖에 있는 경우 그 증거 파일
   sourceContractFileId?: string
 }
@@ -317,6 +368,8 @@ export type ResolvedBody = {
    * lib/contractData 의 contractSubLeaseAddendum 이 한다(딸린 계약과 방 설정을 봐야 하기 때문).
    */
   subLeaseAddendum: SubLeaseAddendum | null
+  /** 박제본이 들고 있던 요금 절. 위와 같은 규칙 — SNAPSHOT 일 때만 의미가 있다. */
+  rateAddendum: SubLeaseAddendum | null
   /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
   blockIssue: boolean
 }
@@ -347,12 +400,13 @@ export function resolveSignedBody(
       disposalConsent: snap.disposalConsent ?? live.disposalConsent,
       businessInfo: snap.businessInfo ?? live.businessInfo,
       subLeaseAddendum: snap.subLeaseAddendum ?? null,
+      rateAddendum: snap.rateAddendum ?? null,
       blockIssue: false,
     }
   }
   // 본문 없는 박제본(종이 스캔·과거 발급본) — 앱은 그 본문을 모른다.
   // 미리보기는 현재값으로 그리되 **새 발급본은 만들지 않는다.** 그 계약의 원본은 앱 밖에 있다.
-  if (snap) return { source: 'ARCHIVED', ...live, subLeaseAddendum: null, blockIssue: true }
+  if (snap) return { source: 'ARCHIVED', ...live, subLeaseAddendum: null, rateAddendum: null, blockIssue: true }
 
   // 박제본이 없으면 지금까지와 완전히 같다 — 개별 수정본 우선, 없으면 공통 템플릿.
   return {
@@ -360,6 +414,7 @@ export function resolveSignedBody(
     ...live,
     template: (lease?.contractOverride as ContractTemplate | null) ?? live.template,
     subLeaseAddendum: null,
+    rateAddendum: null,
     blockIssue: false,
   }
 }

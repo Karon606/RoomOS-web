@@ -52,6 +52,41 @@ for (const f of CONSUMERS) {
   }
 }
 
+// ⓓ 요금 절 둘이 배타적인가 — 삼항 하나로 갈려야 한다.
+//    함께 서면 같은 계약에 요금 규칙이 두 벌 있게 된다. 단기 계약에 "1개월 전에 나가면 단기
+//    요금표를 적용한다"를 붙이면 이미 단기인 계약에 같은 말을 또 하는 것이고, 일반 계약에
+//    단기 특약을 붙이면 주 단위 계약이라고 선언하게 된다.
+{
+  const f = 'lib/contractData.ts'
+  const src = read(f)
+  const fn = src.match(/export function contractRateAddendum[\s\S]*?\n\}/)
+  if (!fn) {
+    violations.push(`${f} — contractRateAddendum 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  } else {
+    // 파라미터 선언(lease: { isShortTerm?: boolean })이 아니라 **몸통에서 실제로 갈리는지**를 본다.
+    // 종전 패턴은 타입 선언에 걸려, 갈래를 통째로 지워도 통과했다(역주입 실측).
+    if (!/lease\.isShortTerm\s*\n?\s*\?/.test(fn[0])) {
+      violations.push(`${f} — 요금 절이 isShortTerm 으로 안 갈린다. 두 절이 함께 설 수 있다.`)
+    }
+    if (!/source === 'SNAPSHOT'/.test(fn[0])) {
+      violations.push(`${f} — 서명본에도 지금 조건으로 다시 판정한다. 서명 뒤에 요금 조항이 생기거나 사라진다.`)
+    }
+    // 같은 이유로 이름 등장이 아니라 **가드로 쓰이는지**를 본다.
+    if (!/!policyEnabled/.test(fn[0])) {
+      violations.push(`${f} — 단기 정책이 꺼진 영업장에도 절이 붙는다. 가리킬 요금표가 없는 조항이 종이에 남는다.`)
+    }
+  }
+}
+
+// ⓔ 요금 절이 서명 스냅샷에 동결되는가 — 안 하면 서명 뒤 재발급에서 절이 새로 생긴다.
+{
+  const f = 'app/sign/[token]/actions.ts'
+  const src = read(f)
+  if (!/rateAddendum: \(snap\.rateAddendum \?\? null\)/.test(src)) {
+    violations.push(`${f} — 서명 시 요금 절을 동결하지 않는다. 서명한 종이에 없던 조항이 재발급본에 생긴다.`)
+  }
+}
+
 // ⓒ 문안이 계약에 저장되지 않는가.
 {
   const f = 'app/contract/[tenantId]/actions.ts'
@@ -61,7 +96,7 @@ for (const f of CONSUMERS) {
   }
 }
 
-console.log(`[특약 문안 출처] 소비자 ${CONSUMERS.length}곳 검사 · 축 ⓐ 해석 정본 · ⓑ 서명본 격리 · ⓒ 계약 저장 금지 / 위반 ${violations.length}건`)
+console.log(`[특약 문안 출처] 소비자 ${CONSUMERS.length}곳 검사 · 축 ⓐ 해석 정본 · ⓑ 서명본 격리 · ⓒ 계약 저장 금지 · ⓓ 요금 절 배타 · ⓔ 서명 동결 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

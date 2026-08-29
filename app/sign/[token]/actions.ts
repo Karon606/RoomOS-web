@@ -123,7 +123,7 @@ export async function submitRemoteSignature(
     const already = await prisma.leaseTerm.findUnique({
       where: { id: link.leaseTermId }, select: { signedContractSnapshot: true },
     })
-    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown } | null
+    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown; rateAddendum?: unknown } | null
     const newSnapshot = already?.signedContractSnapshot || !snap?.template ? null : {
       origin: 'REMOTE_LINK', capturedAt: now.toISOString(),
       template: snap.template as object,
@@ -134,6 +134,9 @@ export async function submitRemoteSignature(
       // 재발급된 종이에도 있어야 하고, 없었으면 나중에 생겨서도 안 된다.
       // 이 칸이 생기기 전 링크에는 없다(undefined) — 그때는 null 로 굳어 절이 안 붙는다.
       subLeaseAddendum: (snap.subLeaseAddendum ?? null) as object,
+      // 요금 절도 같은 이유로 동결한다. 서명한 화면에 있었으면 재발급본에도 있어야 하고,
+      // 없었으면 나중에 생겨서도 안 된다 — 요금 조항이 소급되면 서명 격리를 스스로 깨는 것이다.
+      rateAddendum: (snap.rateAddendum ?? null) as object,
     }
     await prisma.$transaction([
       prisma.leaseTerm.update({
