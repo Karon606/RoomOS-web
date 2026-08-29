@@ -8,12 +8,15 @@ import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { docFileLabel } from '@/lib/docBundle'
+import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import DocumentScroll from '@/components/layout/DocumentScroll'
 import {
   type DocNameStyle, DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL,
   asDocNameStyle, docNameStyles, documentName,
+  resolveDocNameStyle, docNameStyleConflict,
 } from '@/lib/documentName'
 
 type Fields = {
@@ -81,18 +84,35 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   // ── 성명 표기(한글/영문) ─────────────────────────────────────────
-  // 이 화면의 모든 값은 그 발급에만 쓰인다(저장 층이 없다). 표기 선택도 같은 층이라 저장하지 않는다 —
-  // 여기만 계약 단위로 남기면 '이 서류는 왜 기억하지'가 되고, 남길 자리(계약)도 영수증에는 없다.
+  // 이 화면의 값은 그 발급에만 쓰인다(저장 층이 없다). 표기도 여기 저장하지 않는다 — 다만
+  // **계약에 한 낱말은 남긴다.** 한 사람의 서류는 같은 표기로 나가야 하고(운영자 확정 2026-08-29),
+  // 이 영수증은 매달 새로 뽑으므로 그때마다 계약의 마지막 표기를 따라가면 저절로 일관된다.
   // 영문 이름이 없으면 아무것도 그리지 않는다 — 대다수 입주자의 화면은 종전과 완전히 같다.
   const nameSource = nameSourceOf(data)
   const nameStyles = docNameStyles(nameSource)
   const canPickName = nameStyles.length > 1
-  const [nameStyle, setNameStyle] = useState<DocNameStyle>(DEFAULT_DOC_NAME_STYLE)
-  const pickNameStyle = (raw: string) => {
-    const next = asDocNameStyle(raw)
-    if (!next || next === nameStyle) return
+  // 앞 서류가 있으면 그것, 없고 외국인이면 영문, 나머지는 한글(lib/documentName 정본).
+  const [nameStyle, setNameStyle] = useState<DocNameStyle>(() => resolveDocNameStyle({
+    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    nationality: data.nationality,
+    available: nameStyles,
+  }))
+  const applyNameStyle = (next: DocNameStyle) => {
     setNameStyle(next)
     setF(p => ({ ...p, name: documentName(nameSource, next) }))
+  }
+  const pickNameStyle = async (raw: string) => {
+    const next = asDocNameStyle(raw)
+    if (!next || next === nameStyle) return
+    // 앞 서류와 다르게 고르면 한 번 묻는다 — 두 종이가 다른 이름을 달면 제출처에서 되돌아온다.
+    const prev = docNameStyleConflict(next, data.lastNameStyle ? [data.lastNameStyle] : [])
+    if (prev && !(await confirmDialog({
+      title: `앞선 서류가 ${DOC_NAME_STYLE_LABEL[prev]}으로 발급되었습니다`,
+      message: `이 ${docLabel}만 ${DOC_NAME_STYLE_LABEL[next]}으로 바꿀까요? 한 사람의 서류는 같은 표기로 내는 편이 제출처에서 덜 막힙니다.`,
+      level: 'caution',
+      confirmLabel: `${DOC_NAME_STYLE_LABEL[next]}으로 바꾸기`,
+    }))) return
+    applyNameStyle(next)
   }
 
   // 서류 종류 — 보증금은 귀속 월이 없어 스테퍼를 숨기고 문구·라벨이 갈린다(신고 d68220bd)
@@ -169,7 +189,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   }
 
   // 내보내기가 쓰는 미리보기 바이트 — 손복사 대신 한 곳에서 만든다
-  const docFileName = `${data.name}_${isDeposit ? '보증금영수증' : '입실료납부확인서'}`
+  // 파일 이름도 표기를 따라간다 — 이름만 로마자이고 서류명이 한글이면 받는 사람이 절반을 못 읽는다.
+  // 이름은 data.name(원본)이 아니라 f.name(표기가 적용된 값)을 쓴다.
+  const docFileName = `${f.name}_${docFileLabel(isDeposit ? 'deposit' : 'rent', nameStyle)}`
   const previewBytes = async (): Promise<ArrayBuffer> => {
     const res = await fetch('/api/rent-receipt/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -196,6 +218,8 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
         const msg = json?.error ?? `서버 오류 (${res.status})`
         pushToast('error', msg); return
       }
+      // 이번에 쓴 표기를 계약에 남긴다 — 다음 서류가 이 값으로 열린다. 실패는 조용히 넘긴다.
+      if (data.leaseTermId) void noteDocNameStyle(data.leaseTermId, nameStyle)
       pushToast('success', `${docLabel} 발급됨. 발급 이력으로 이동합니다`)
       router.push(listHref)
     } catch (err) {

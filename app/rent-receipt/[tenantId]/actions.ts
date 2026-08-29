@@ -1,5 +1,6 @@
 'use server'
 
+import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { billForLeaseMonth } from '@/lib/billing'
 import { getMyRole } from '@/lib/role'
@@ -22,6 +23,11 @@ export type RentReceiptData = {
   name: string            // 수령인(입주자) 성명 — 고객 정보의 이름 그대로(표기 선택은 화면이 얹는다)
   englishName: string | null   // 영문 이름. 없으면 표기 선택 UI 자체를 안 그린다
   nativeName: string | null    // 현지 표기 이름. 서류가 못 그리는 글자면 선택지에서 빠진다
+  // 표기 기본값을 정하는 두 축(lib/documentName resolveDocNameStyle).
+  // 국적은 종이에 안 찍힌다 — 외국인이면 영문이 기본이라는 판정에만 쓴다.
+  nationality: string | null
+  /** 이 계약에서 앞서 쓴 표기. 계약이 없으면 null 이라 국적 기본값만 선다. */
+  lastNameStyle: DocNameStyle | null
   room: string            // 호실
   period: string          // 거주 기간 (예 '2026.01.15 ~ 2026.07.14')
   targetMonth: string     // 납부 대상월 (예 '2026년 6월분')
@@ -171,6 +177,8 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       name: tenant.name,
       englishName: tenant.englishName,
     nativeName: tenant.nativeName,
+      nationality: tenant.nationality,
+      lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
       room: fmtRoom(lease?.room?.roomNo),
       period: notMovedIn ? '' : `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
       targetMonth: moveInYmd ? kor(moveInYmd) : '',
@@ -269,6 +277,8 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     name: tenant.name,
     englishName: tenant.englishName,
     nativeName: tenant.nativeName,
+    nationality: tenant.nationality,
+    lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
     room: fmtRoom(lease?.room?.roomNo),
     period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
     targetMonth: `${cy}년 ${cm}월분`,

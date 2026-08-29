@@ -9,7 +9,7 @@ import {
   type ResidenceCertFieldValues, type ResidenceCertOverrideKey, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
-import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
+import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, resolveDocNameStyle, docNameStyleConflict } from '@/lib/documentName'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -134,13 +134,33 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   const nameSource = nameSourceOf(data)
   const nameStyles = docNameStyles(nameSource)
   const canPickName = nameStyles.length > 1
-  const savedNameStyle = mergeResidenceCertFields(data.autoFields, data.overrides).nameStyle
+  // 이 서류에 저장된 값이 있으면 그것, 없으면 앞 서류, 그것도 없고 외국인이면 영문(lib/documentName).
+  // 저장 여부는 오버라이드에 nameStyle 키가 실제로 있는가로 가른다 — 자동값과 같아진 키는
+  // 저장에서 빠지므로, 병합 결과만 보면 '안 고른 것'과 '한글을 골랐던 것'이 구분되지 않는다.
+  const storedNameStyle = asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle)
+  const savedNameStyle = resolveDocNameStyle({
+    saved: storedNameStyle,
+    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    nationality: data.tenantNationality,
+    available: nameStyles,
+  })
   const [nameStyle, setNameStyle] = useState(savedNameStyle)
   useEffect(() => { setNameStyle(savedNameStyle) }, [savedNameStyle])
 
-  const commitNameStyle = (raw: string) => {
+  const commitNameStyle = async (raw: string) => {
     const next = asDocNameStyle(raw)
     if (!next || next === nameStyle) return
+    // 앞 서류와 다르게 고르면 한 번 묻는다. 이 서류에 이미 저장된 값이 있으면 안 묻는다 —
+    // 그때는 '앞'이 이 서류 자신이고, 되묻기가 열 때마다 반복된다.
+    if (!storedNameStyle) {
+      const prev = docNameStyleConflict(next, data.lastNameStyle ? [data.lastNameStyle] : [])
+      if (prev && !(await confirmDialog({
+        title: `앞선 서류가 ${DOC_NAME_STYLE_LABEL[prev]}으로 발급되었습니다`,
+        message: `이 실거주 확인서만 ${DOC_NAME_STYLE_LABEL[next]}으로 바꿀까요? 한 사람의 서류는 같은 표기로 내는 편이 제출처에서 덜 막힙니다.`,
+        level: 'caution',
+        confirmLabel: `${DOC_NAME_STYLE_LABEL[next]}으로 바꾸기`,
+      }))) return
+    }
     setNameStyle(next)
     setF(p => ({ ...p, tenantName: documentName(nameSource, next) }))
     const leaseTermId = data.leaseTermId

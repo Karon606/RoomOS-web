@@ -1,5 +1,6 @@
 'use server'
 
+import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { getMyRole, requireEdit } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
@@ -33,6 +34,10 @@ export type ResidenceCertData = {
   areaM2: string             // 면적(㎡) — 문자열(편집 가능)
   tenantName: string         // 고객 정보의 이름 그대로. 종이에 찍을 성명은 아래 표기 선택과 함께 조립한다
   tenantEnglishName: string | null   // 영문 이름. 없으면 표기 선택 UI 자체를 안 그린다
+  // 표기 기본값을 정하는 두 축(lib/documentName resolveDocNameStyle). 종이에는 안 찍힌다.
+  tenantNationality: string | null
+  /** 이 계약에서 앞서 쓴 표기 — 이 서류에 저장된 값이 없을 때의 기본값이 된다. */
+  lastNameStyle: DocNameStyle | null
   tenantNativeName: string | null    // 현지 표기 이름. 서류가 못 그리는 글자면 선택지에서 빠진다
   tenantBirth: string        // YYYY-MM-DD (없으면 '')
   tenantPhone: string
@@ -144,6 +149,8 @@ export async function getResidenceCertData(tenantId: string, leaseTermId?: strin
     tenantName: tenant.name,
     tenantEnglishName: tenant.englishName,
     tenantNativeName: tenant.nativeName,
+    tenantNationality: tenant.nationality,
+    lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
     tenantBirth: ymd(tenant.birthdate),
     tenantPhone: primaryContact?.contactValue ?? '',
     autoFields,
