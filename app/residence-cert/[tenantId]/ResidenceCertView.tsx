@@ -10,6 +10,7 @@ import {
   RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
 import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, resolveDocNameStyle, docNameStyleConflict } from '@/lib/documentName'
+import { docFileLabel } from '@/lib/docBundle'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -213,7 +214,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     pushToast('info', '자동값으로 되돌렸습니다')
   }
 
-  const docFileName = `${data.tenantName}_실거주확인서`
+  // 파일 이름도 표기를 따라간다 — 이름만 로마자이고 서류명이 한글이면 받는 사람이 절반을 못 읽는다
+  // (납부 확인서와 같은 규칙). 이름은 표기가 적용된 값을 쓴다.
+  const docFileName = `${documentName(nameSource, nameStyle)}_${docFileLabel('residence', nameStyle)}`
 
   const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate } })
 

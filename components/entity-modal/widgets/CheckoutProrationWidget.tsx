@@ -226,24 +226,28 @@ export function CheckoutProrationWidget({
             {/* 정산 방식 — 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만) */}
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
-              <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
+              {/* 라벨은 **사실 서술**이다. 종전에는 '법정(공정위)' 과 '선의(일할)' 이었는데 둘 다 틀렸다.
+                  선의도 일할이고(둘의 계산은 위약금 한 줄만 다르다), 법정도 계약서가 약정한 산식일 뿐
+                  법이 강제하는 것이 아니다. 게다가 '법정 대 선의' 는 "법을 따르는 쪽 / 봐주는 쪽"이라는
+                  도덕적 프레임을 만들어, 운영자가 협의로 조정할 때 심리적 저항을 만든다. */}
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">셋 다 지낸 날짜만큼 일할로 받습니다. 위약금을 매기는지, 단기 요금표를 쓰는지가 다릅니다.</p>
               <SegmentedControl<PickMode>
                 ariaLabel="정산 방식"
                 size="sm"
                 value={pick}
                 onChange={handlePick}
                 options={[
-                  { value: 'legal', label: '법정(공정위)' },
-                  { value: 'goodwill', label: '선의(일할)' },
+                  { value: 'legal', label: '위약금 적용' },
+                  { value: 'goodwill', label: '위약금 면제' },
                   // 1개월을 못 채운 계약에만 선다. 채운 계약에는 단기 요금이라는 것이 없다.
                   ...(shortQuote ? [{ value: 'shortStay' as const, label: '단기 요금' }] : []),
                 ]}
               />
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                 {pick === 'legal'
-                  ? '원칙(공정위). 위약금을 제하고 남은 일수를 환불합니다.'
+                  ? '원칙. 사용한 일수에 잔여 이용금액의 위약금을 더해 청구합니다.'
                   : pick === 'goodwill'
-                  ? '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'
+                  ? '사용한 일수만 청구하고 위약금은 안 받습니다.'
                   : shortQuote
                   ? `거주 ${shortQuote.stayDays}일${shortQuote.roundedUp ? ` (주 단위라 ${shortQuote.contractDays}일로 올림)` : ''} · ${shortQuote.units}주 계약 요금 ${fmtWon(shortQuote.baseAmount)}. 처음부터 단기로 계약했을 때와 같은 금액입니다.`
                   : ''}
@@ -289,7 +293,7 @@ export function CheckoutProrationWidget({
           // '직접 지정'으로 읽힌다 — 단기 요금은 사용분보다 크게 마련이라서다.
           const base = pick === 'shortStay' && shortQuote ? shortQuote.baseAmount : refund.refund.companyKeeps
           const edited = applied !== base
-          const label = pick === 'legal' ? '법정·공정위' : pick === 'goodwill' ? '선의·일할' : '단기 요금'
+          const label = pick === 'legal' ? '일할 + 위약금' : pick === 'goodwill' ? '일할만' : '단기 요금'
           return (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
               <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.65625rem] text-[var(--warm-muted)]">({label}{edited ? ' · 직접 지정' : ''})</span></p>
