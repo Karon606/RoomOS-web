@@ -114,6 +114,12 @@ const RENT = 300000
   eq('환불: 다 살면 잔여가 0이라 위약금도 0',
     calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 30, mode: 'legal' }).penalty, 0)
   // 선납이 사용분보다 적으면(미납) 잔여가 음수가 될 수 있다 — 0 으로 눌러 위약금이 음수가 안 되게.
+  // 불변식 — 다 내고 다 산 사람에게서 **선납보다 많이 가져가지 않는다.**
+  // 종전(총액 정률)에는 27일부터 이것이 깨져 환불이 아니라 미납이 생겼다. 위약금 기준액을
+  // 잔여로 바꾸자 저절로 닫혔다 — 잔여가 줄면 위약금도 같이 줄기 때문이다. 그 성질을 고정한다.
+  const overrun = Array.from({ length: 30 }, (_, i) => i + 1)
+    .filter(d => calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: d, mode: 'legal' }).companyKeeps > RENT)
+  eq('회사 귀속이 선납을 넘는 날이 없다(1~30일)', overrun, [])
   eq('환불: 미납이면 위약금 0',
     calcCheckoutRefund({ prepaidAmount: 50000, monthlyRent: RENT, daysUsed: 10, mode: 'legal' }).penalty, 0)
   eq('환불(선의): 위약금 0', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'goodwill' }).refund, 200000)
