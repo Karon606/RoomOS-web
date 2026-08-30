@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease,
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning,
   getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -108,7 +108,9 @@ type Lease = {
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number
+  /** 이 방에 이미 열려 있는 퇴실 청소 예정 — 있으면 새로 만들지 않고 날짜도 안 덮는다(서버 skipped-open). */
+  openCleaning?: { id: string; scheduledYmd: string | null } | null } | null
 
 // 전이와 함께 보내는 값들. 종전에는 이 모양이 runTransition·submit 두 자리에 그대로 베껴져
 // 있었는데, 칸을 하나 늘릴 때마다 두 곳을 같이 고쳐야 하고 한쪽만 고치면 조용히 안 실린다.
@@ -138,6 +140,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 }) {
   const entityModal = useEntityModal()
   const [pending, startTransition] = useTransition()
+  /**
+   * 창을 여는 중 — **버튼을 누른 뒤 모달이 뜨기까지의 서버 왕복**을 덮는다.
+   *
+   * pending(useTransition)은 전이를 *실행*할 때만 켜진다. 그래서 퇴실 버튼을 누르고 보증금
+   * 구성·실수납액을 받아 오는 동안 화면에 아무 표시가 없었고, 운영자가 "안 눌린 것 같은
+   * 기분"이라고 신고했다(2026-08-30). 누른 것이 먹혔다는 사실은 즉시 보여야 한다.
+   */
+  const [opening, setOpening] = useState(false)
   const [active, setActive] = useState<ActiveTransition>(null)
   // 호실 일정 시트 — 입실 처리가 계약 호실 점유로 거절당했을 때만 연다.
   const [earlyOpen, setEarlyOpen] = useState(false)
@@ -162,6 +172,12 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   if (transitions.length === 0) return null
 
   const handleClick = async (def: TransitionDef) => {
+    if (opening || pending) return   // 두 번 눌러 두 창이 뜨는 것을 막는다.
+    setOpening(true)
+    try { await openTransition(def) } finally { setOpening(false) }
+  }
+
+  const openTransition = async (def: TransitionDef) => {
     // 입실 일정은 상태를 안 바꾼다 — 창만 열고 계획을 계약에 적어 둔다.
     if (def.key === 'plan') { setPlanOpen(true); return }
     // 단기 lease의 퇴실일 변경 — 날짜만 바꾸는 우회를 막고 누적 요금을 재계산하는 연장 모달로 보낸다. 장기는 기존 미니폼.
@@ -268,6 +284,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 두 기본 사유는 목록 정본의 상수를 그대로 쓴다. 문자열을 여기 베끼면 목록만 개명될 때
     // 셀렉트에 없는 값이 골라진 것처럼 되어 칸이 빈 채로 뜬다(어휘 중립화 2026-08-17).
     const comp = def.withDeposit ? await getDepositCompositionForLease(lease.id) : null
+    // 이미 열려 있는 퇴실 청소 예정 — 있으면 서버가 새로 안 만들고 날짜도 안 덮는다(skipped-open).
+    // 그 사실을 화면이 먼저 알아야 '미정'이라고 거짓말하지 않는다(2026-08-30, 404호).
+    const openCleaning = def.withDeposit && lease.roomId ? await getOpenCheckoutCleaning(lease.roomId) : null
     const depoBaseForForm = comp ? comp.basis : (lease.depositAmount || 0)
     // 기준액이 계약 보증금과 다를 때만 '받은 보증금'으로 못박는다(같으면 같은 말을 두 번 하는 셈).
     const depoFromReceived = !!comp && comp.basisSource === 'received' && comp.basis !== comp.contract
@@ -287,6 +306,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
       cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid,
       compositionLabel: comp ? depositCompositionLabel(comp) : null,
+      openCleaning,
       // 계약에는 보증금이 적혀 있는데 받은 기록이 없는 상태 — 서버가 환불·몰취 기록을 거절하는 자리다.
       // 기준액이 0 이라 환불 칸이 아예 안 뜨므로, 왜 없는지는 말해 줘야 한다(조용히 넘어가면 정산 누락).
       noBasisContract: !!comp && comp.basisSource === 'none' && comp.contract > 0 ? comp.contract : 0,
@@ -433,7 +453,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       <div className="flex flex-wrap gap-2 py-2">
         {transitions.map(def => (
           <Btn key={def.key} type="button" variant={def.tone ?? 'secondary'} size="sm"
-            disabled={pending} onClick={() => handleClick(def)} className="font-semibold">
+            disabled={pending || opening} onClick={() => handleClick(def)} className="font-semibold">
             {def.label}
           </Btn>
         ))}
@@ -528,7 +548,25 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   칸과 같은 시야에 있어야 따라 움직인 것이 보인다. 돈 블록 뒤에 두면 좁은 폭에서
                   접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
               {active.def.key === 'checkout' && lease.roomId && (
-                <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
+                active.openCleaning
+                  // 이미 잡힌 예정이 있으면 **칸을 안 연다.** 서버가 열린 건의 날짜를 안 덮으므로
+                  // (ensureCheckoutCleaning 의 skipped-open) 여기서 날짜를 받아도 아무 데도 안 간다.
+                  // 종전에는 빈 칸을 열고 '비워 두면 날짜 없이 만들어집니다'라고 약속했는데, 실제로는
+                  // 아무것도 안 만들어지고 기존 예정이 그대로였다. 화면이 하지 않을 일을 말했다.
+                  ? (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 청소</label>
+                      <div className="rounded-sm px-3 py-2.5 text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
+                        {active.openCleaning.scheduledYmd
+                          ? `${fmtDate(active.openCleaning.scheduledYmd)} 예정`
+                          : '날짜 미정으로 예정됨'}
+                      </div>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                        이미 잡혀 있어 새로 만들지 않습니다. 날짜를 바꾸시려면 호실 관리 &lsquo;청소&rsquo; 목록에서 바꿔 주세요.
+                      </p>
+                    </div>
+                  )
+                  : <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
               )}
               {active.def.field === 'rentAmount' && (
                 <div className="space-y-1.5">

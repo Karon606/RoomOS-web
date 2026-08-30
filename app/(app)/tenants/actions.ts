@@ -5943,3 +5943,32 @@ export async function undoMonthlyConversion(leaseTermId: string): Promise<{ ok: 
     return { ok: false, error: (err as Error).message ?? '되돌리지 못했습니다.' }
   }
 }
+
+/**
+ * 이 방에 이미 열려 있는 퇴실 청소 예정 — 없으면 null.
+ *
+ * 퇴실 처리 화면이 이것을 먼저 묻는다. 종전에는 안 물어서 **이미 9월 2일로 잡힌 예정이 있는데도
+ * 화면이 '미정'이라고 말했다**(404호, 운영자 실측 2026-08-30). 게다가 "비워 두면 날짜 없이
+ * 만들어집니다"라고 안내했는데, 서버는 열린 건이 있으면 아무것도 안 만들고 날짜도 안 덮는다
+ * (ensureCheckoutCleaning 의 skipped-open). 즉 화면이 하지 않을 일을 하겠다고 말하고 있었다.
+ *
+ * 데이터는 안전했다 — 중복이 생기지는 않는다. 깨진 것은 화면의 말이다.
+ *
+ * 방 기준으로 찾는 것은 ensureCheckoutCleaning 과 같은 축이다(그 함수가 roomId 로 겹침을 본다).
+ * 사유가 CHECKOUT 인 것만 — 입실 중 요청 청소가 열려 있다고 퇴실 청소를 갈음하지 않는다.
+ */
+export async function getOpenCheckoutCleaning(roomId: string): Promise<{ id: string; scheduledYmd: string | null } | null> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const row = await prisma.roomCleaning.findFirst({
+      where: { roomId, propertyId, deletedAt: null, status: 'PLANNED', reason: 'CHECKOUT' },
+      select: { id: true, scheduledDate: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!row) return null
+    return { id: row.id, scheduledYmd: row.scheduledDate ? kstYmdStr(row.scheduledDate) : null }
+  } catch {
+    // 조회 실패가 퇴실을 막지 않는다 — 못 물었으면 종전대로 빈 칸으로 연다.
+    return null
+  }
+}
