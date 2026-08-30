@@ -1,6 +1,7 @@
 'use client'
 
 import { InfoHint } from '@/components/ui/InfoHint'
+import { docFileLabel } from '@/lib/docBundle'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 // 서류 화면으로는 **전체 페이지 이동**으로 들어간다(next/link 아님).
@@ -240,11 +241,11 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                   <ViewDocButton driveFileId={c.driveFileId} from="residence-certs" />
                   {/* 보내기 = 사진/PDF 형식 선택 후 전달(일부 문자 앱 PDF 첨부 불가, 운영자 확인 2026-07-22).
                       조건 없이 띄운다 — 기기마다 행이 달라지면 학습이 안 되고, 데스크톱도 다운로드 폴백이 있다. */}
-                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_실거주확인서`}
+                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${docFileLabel('residence', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                   {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                       뷰어와 같은 순서로 둔다 — 두 화면에서 '내보내기 다음이 인쇄'가 같아야 손이 기억한다. */}
-                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_실거주확인서`}
+                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_${docFileLabel('residence', c.nameStyle ?? 'ko')}`}
                     from="residence-certs" />
                   {/* 계약도 그 행을 따른다(?leaseTermId=) — 다른 계약이 채워지면 종이와 기록이 갈린다.
                       계약이 끊긴 옛 발급본은 지목 없이 종전 추론으로 연다(무회귀). */}

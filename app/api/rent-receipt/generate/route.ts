@@ -15,6 +15,14 @@ type Body = {
   tenantId: string
   leaseTermId: string | null
   fields: RentReceiptFields
+  /**
+   * 이 종이에 찍힌 성명 표기 — 목록에서 다시 보낼 때 파일 이름을 같은 표기로 맞추는 데 쓴다.
+   *
+   * 화면이 이미 표기가 적용된 이름을 fields 에 담아 보내므로 서버는 그 선택을 알 길이 없었다.
+   * 그래서 목록 화면이 파일 이름을 늘 한글로 조립했고, 영문 발급본이 '이름만 로마자이고
+   * 서류명은 한글'로 다시 나갔다(2026-08-30). 안 실어 보내면 한글로 읽는다.
+   */
+  nameStyle?: 'ko' | 'en' | 'native' | null
   preview?: boolean
 }
 
@@ -100,6 +108,7 @@ export async function POST(req: Request) {
           leaseTermId,
           driveFileId: fileId,
           fileName,
+          nameStyle: body.nameStyle ?? null,
           kind: receiptKind,
           receiptNo,
           // 발급일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀 KST 기기에서

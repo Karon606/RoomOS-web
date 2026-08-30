@@ -8,6 +8,7 @@
 //   · **파일 이름도 표기를 따라간다** — 이름만 로마자이고 서류명이 한글이면 절반은 못 읽는 파일이 된다.
 import {
   resolveDocNameStyle, docNameStyleConflict, isKoreanNationality, DEFAULT_DOC_NAME_STYLE,
+  asDocNameStyle,
 } from '../lib/documentName'
 import { docFileLabel, DOC_TYPE_FILE_LABEL, DOC_TYPE_FILE_LABEL_EN } from '../lib/docBundle'
 
@@ -98,6 +99,27 @@ eq('한글 이름은 그대로다', DOC_TYPE_FILE_LABEL.rent, '입실료납부�
   // 서명 뒤 분기는 resolveDocNameStyle 을 아예 안 탄다 — 그 계약은 저장값(없으면 한글)이 그대로다.
   // 여기서는 그 값이 무엇인지만 고정한다.
   eq('계약서: 서명 뒤 저장값 없으면 한글', DEFAULT_DOC_NAME_STYLE, 'ko')
+}
+
+// ── 발급본 표기 저장 ── 목록에서 다시 보낼 때 파일 이름이 그 종이를 따라간다(2026-08-30)
+//
+// 종전에는 목록 화면이 파일 이름을 늘 한글로 조립했다. 발급본이 어떤 표기로 나갔는지 몰랐기
+// 때문이다 — 화면은 이미 표기가 적용된 이름만 서버에 보냈고, 서버는 선택 자체를 저장하지 않았다.
+// 그래서 영문으로 발급한 서류를 나중에 목록에서 보내면 '이름만 로마자, 서류명은 한글'이 됐다.
+//
+// 이제 세 발급본 테이블에 nameStyle 을 저장한다. **옛 발급본은 null 이고 한글로 읽는다** —
+// 그때 실제로 한글로 나갔으므로 그것이 사실이다. 소급해서 영문으로 바꾸면 종이와 이름이 갈린다.
+{
+  const asKo = (v: unknown) => asDocNameStyle(v) ?? 'ko'
+  eq('옛 발급본(null)은 한글', asKo(null), 'ko')
+  eq('옛 발급본(빈 문자열)도 한글', asKo(''), 'ko')
+  eq('알 수 없는 값도 한글', asKo('français'), 'ko')
+  eq('저장된 en 은 영문', asKo('en'), 'en')
+  eq('목록 파일명: 영문 발급본', docFileLabel('contract', asKo('en')), DOC_TYPE_FILE_LABEL_EN.contract)
+  eq('목록 파일명: 옛 발급본', docFileLabel('contract', asKo(null)), DOC_TYPE_FILE_LABEL.contract)
+  eq('목록 파일명: 보증금 영수증 영문', docFileLabel('deposit', asKo('en')), DOC_TYPE_FILE_LABEL_EN.deposit)
+  // 현지 표기는 한글 서류명을 쓴다 — 영문 이름이 아니므로 영문 서류명과 짝이 안 맞는다.
+  eq('목록 파일명: 현지 표기는 한글 이름', docFileLabel('residence', asKo('native')), DOC_TYPE_FILE_LABEL.residence)
 }
 console.log(`\n서류 성명 표기 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

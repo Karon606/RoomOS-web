@@ -345,6 +345,8 @@ export async function POST(req: Request) {
               driveFileId: '', fileName: '', source: 'GENERATED', contractNo: no,
               // 목적은 여기서 한 번만 쓴다 — 박제와 같은 규약이다. 실계약은 null 로 남긴다.
               issuePurpose: purpose.value,
+              // 이 종이의 성명 표기 — 목록에서 다시 보낼 때 파일 이름을 같은 표기로 맞춘다.
+              nameStyle: leaseFields?.nameStyle ?? null,
               // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀
               // KST 기기에서 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정).
               signedAt: ymdToDbDate(signDate),

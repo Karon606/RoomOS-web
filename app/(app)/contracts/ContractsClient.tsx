@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
+import { docFileLabel } from '@/lib/docBundle'
 import { fmtDateDot as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
@@ -391,13 +392,13 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     보내기는 그 밖에서는 조건 없이 띄운다(형제 2화면과 같게). canShare 로 숨기면 기기마다
                     행이 달라져 학습이 안 되고, 데스크톱에도 다운로드 폴백과 안내 토스트가 있다. */}
                 {!c.voidedAt && (
-                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_계약서`}
+                  <SendDocButton getPdfBytes={fetchDocBytes(c.driveFileId)} fileName={`${c.tenantName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`}
                     className={btnClass('secondary', 'sm')} />
                 )}
                 {/* 인쇄 = §30 이 등재한 여섯 번째 동사. 종전에는 뷰어 안에만 있었다(신고 71753b36).
                     계약서는 여러 장이라 뷰어를 거치는 비용이 특히 컸다. */}
                 {!c.voidedAt && (
-                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_계약서`} from="contracts" />
+                  <PrintDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_${docFileLabel('contract', c.nameStyle ?? 'ko')}`} from="contracts" />
                 )}
                 <Btn variant="ghost" size="sm" onClick={() => handleDelete(c.id, c.tenantName)}
                   disabled={pending && deletingId === c.id} className="text-[var(--danger-fg)]">

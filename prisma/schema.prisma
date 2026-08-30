@@ -1806,6 +1806,9 @@ model ContractFile {
   source       ContractFileSource @default(GENERATED)
   driveFileId  String                                       // Google Drive file ID
   fileName     String                                       // 표시용 파일명
+  /// 발급 당시 성명 표기 — 'ko' | 'en' | 'native'. null 은 이 칸이 생기기 전 발급본이라 한글로 읽는다.
+  /// 목록에서 다시 보낼 때 파일 이름을 그 종이와 같은 표기로 맞추는 데 쓴다(lib/docBundle docFileLabel).
+  nameStyle    String?
   // 계약번호 YYYYMMDD-NNN — 영수증 발행번호와 같은 이유로 저장한다. 스캔 업로드본은 null 이다
   // (종전에는 업로드본까지 세어 다음 앱 발급본의 번호가 건너뛰었다).
   contractNo   String?
@@ -1891,6 +1894,9 @@ model ResidenceCertFile {
   id           String   @id @default(uuid()) @db.Uuid
   driveFileId  String                            // Google Drive file ID
   fileName     String                            // 표시용 파일명
+  /// 발급 당시 성명 표기 — 'ko' | 'en' | 'native'. null 은 이 칸이 생기기 전 발급본이라 한글로 읽는다.
+  /// 목록에서 다시 보낼 때 파일 이름을 그 종이와 같은 표기로 맞추는 데 쓴다(lib/docBundle docFileLabel).
+  nameStyle    String?
   issuedAt     DateTime @default(now())          // 작성(발급)일 — 사용자가 입력한 작성일
   deletedAt    DateTime?                         // 소프트삭제 — null=활성, 값=삭제됨(적용취소).
   createdAt    DateTime @default(now())
@@ -1939,6 +1945,9 @@ model RentReceiptFile {
   id           String   @id @default(uuid()) @db.Uuid
   driveFileId  String
   fileName     String
+  /// 발급 당시 성명 표기 — 'ko' | 'en' | 'native'. null 은 이 칸이 생기기 전 발급본이라 한글로 읽는다.
+  /// 목록에서 다시 보낼 때 파일 이름을 그 종이와 같은 표기로 맞추는 데 쓴다(lib/docBundle docFileLabel).
+  nameStyle    String?
   kind         String   @default("rent")         // 'rent'=입실료 납부 확인서 | 'deposit'=보증금 영수증 (같은 서식 가족)
   // 발행번호 YYYYMMDD-NNN — 저장해야 원장이 된다. 종전에는 count+1 로 그 자리에서 만들어 PDF 에
   // 그리기만 했고, 미리보기·보내기에도 같은 번호가 찍혀 소비되지 않은 채 종이로 나갔다.

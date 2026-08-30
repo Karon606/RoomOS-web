@@ -218,7 +218,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   // (납부 확인서와 같은 규칙). 이름은 표기가 적용된 값을 쓴다.
   const docFileName = `${documentName(nameSource, nameStyle)}_${docFileLabel('residence', nameStyle)}`
 
-  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate } })
+  // nameStyle 을 함께 싣는다 — 발급본에 박아 두면 목록에서 다시 보낼 때 파일 이름이 이 종이와 같은
+  // 표기로 나온다. fields.name 에는 이미 적용된 이름만 들어 있어 서버가 선택 자체를 알 길이 없었다.
+  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, nameStyle, fields: { ...f, issueDate } })
 
 
   // 현재 입력값 그대로 '보내기' — 사진/PDF 형식 선택(SendDocButton 정본), preview PDF 바이트 사용.

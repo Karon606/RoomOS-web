@@ -1,0 +1,64 @@
+// 서류 파일 이름이 성명 표기를 따라가는지 보는 감지망 — 읽기 전용, 위반 시 exit 1.
+//
+// 왜 필요한가. 영문으로 발급한 서류를 목록에서 다시 보내면 파일 이름이 '이름만 로마자, 서류명은
+// 한글'로 나갔다. 받는 사람이 절반을 못 읽는다. 원인은 각 화면이 서류 이름을 손으로 조립한 것이고,
+// 그 자리가 여섯이었다(발급 화면 셋 · 목록 셋 · 계약서 파일 칸).
+//
+// 이제 이름은 lib/docBundle 의 docFileLabel(docType, nameStyle) 하나가 만든다. 손 조립이
+// 되살아나면 그 화면만 조용히 갈린다 — 손사본은 언젠가 갈린다는 것이 이 저장소가 반복해 배운 것이다.
+//
+// 무엇을 보는가. 파일 이름을 만드는 자리(fileName= · docFileName)에서 서류 이름을 한글 리터럴로
+// 박는 것을 잡는다. 표기와 무관하게 고정하기로 한 자리는 ALLOW 에 근거와 함께 적는다.
+//
+// 실행: node scripts/check-doc-file-label.mjs
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+// 서류 이름을 파일명에 박으면 안 되는 낱말 — DOC_TYPE_FILE_LABEL 의 한글 값들.
+const DOC_WORDS = ['계약서', '실거주확인서', '입실료납부확인서', '보증금영수증']
+
+// 표기와 무관하게 고정하기로 한 자리. 근거 없이 늘리지 마라.
+const ALLOW = new Map([
+  // 계약서 발급 화면 — 파일 이름을 보관·검색의 열쇠로 보고 표기와 분리한 판단(주석에 명시).
+  // 서버 발급본의 Drive 파일명도 같은 값이라 둘이 짝을 이룬다.
+  ['app/contract/[tenantId]/ContractView.tsx', '보관·검색 열쇠로 고정(코드 주석에 근거)'],
+])
+
+const roots = ['app', 'components']
+const files = []
+const walk = (dir) => {
+  for (const name of readdirSync(dir)) {
+    if (name === 'node_modules' || name.startsWith('.')) continue
+    const full = join(dir, name)
+    if (statSync(full).isDirectory()) { walk(full); continue }
+    if (/\.tsx$/.test(name)) files.push(full)
+  }
+}
+for (const r of roots) walk(r)
+
+const violations = []
+let scanned = 0
+for (const f of files) {
+  if (ALLOW.has(f)) continue
+  const src = readFileSync(f, 'utf8')
+  src.split('\n').forEach((line, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return
+    // 파일 이름을 만드는 줄만 본다. 화면에 보이는 라벨(서류 제목 등)은 대상이 아니다.
+    if (!/fileName\s*[=:]|docFileName\s*=/.test(line)) return
+    scanned++
+    const hit = DOC_WORDS.find(w => line.includes(w))
+    if (hit) {
+      violations.push(`${f}:${i + 1} — 파일 이름에 서류명 '${hit}' 을 손으로 박았다. docFileLabel(docType, nameStyle) 을 쓴다.`)
+    }
+  })
+}
+
+console.log(`[서류 파일명] 파일명 조립 ${scanned}줄 검사 · 예외 ${ALLOW.size}곳 / 위반 ${violations.length}건`)
+if (violations.length > 0) {
+  console.error('')
+  for (const v of violations) console.error(`  - ${v}`)
+  console.error('')
+  console.error('  서류 이름은 lib/docBundle 의 docFileLabel 하나가 만든다. 표기가 영문이면 이름도 영문이다.')
+  console.error('  표기와 무관하게 고정할 자리라면 이 스크립트의 ALLOW 에 근거와 함께 적는다.')
+  process.exit(1)
+}

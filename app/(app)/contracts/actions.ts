@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { asDocNameStyle } from '@/lib/documentName'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -23,6 +24,8 @@ export type ContractListRow = {
   driveFileId: string
   tenantId: string
   tenantName: string
+  /** 발급 당시 성명 표기 — 파일 이름을 그 종이와 같은 표기로 맞춘다. 옛 발급본은 null(한글). */
+  nameStyle: 'ko' | 'en' | 'native' | null
   roomNo: string | null
   status: string | null
   // 계약번호 — 사람이 부를 수 있는 유일한 이름. 스캔본과 번호 도입(2026-08-03) 이전 발급본은 null 이다.
@@ -66,7 +69,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
     // issuedSnapshot 은 여기서 읽지 않는다 — 서명 dataURL 두 장이 들어 있어 목록 응답이 통째로 무거워진다.
     // 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
     select: {
-      id: true, fileName: true, source: true, signedAt: true, createdAt: true,
+      id: true, fileName: true, source: true, signedAt: true, createdAt: true, nameStyle: true,
       driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
       supersededAt: true, issuePurpose: true, purposeOverride: true,
       tenant: {
@@ -95,6 +98,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       driveFileId: r.driveFileId,
       tenantId: r.tenant.id,
       tenantName: r.tenant.name,
+      nameStyle: asDocNameStyle(r.nameStyle) ?? null,
       roomNo: lease?.room?.roomNo ?? null,
       status: lease?.status ?? null,
       contractNo: r.contractNo,

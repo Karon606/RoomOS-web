@@ -4625,6 +4625,8 @@ export type ContractFileRow = {
   createdAt: Date
   // 계약번호 — 사람이 부를 수 있는 유일한 이름. 스캔본과 번호 도입(2026-08-03) 이전 발급본은 null 이다.
   contractNo: string | null
+  /** 발급 당시 성명 표기 — 다시 보낼 때 파일 이름을 그 종이와 같은 표기로 맞춘다. 옛 발급본은 null(한글). */
+  nameStyle: string | null
   // 같은 계약의 발급본을 묶는 축. 한 사람이 계약을 둘 가질 수 있으므로 사람이 아니라 계약이 기준이다.
   leaseTermId: string | null
   // 폐기된 버전의 발급본인가 — 삭제가 아니라 도장이라 목록에 계속 남고 [폐기됨] 배지가 붙는다.
@@ -4658,7 +4660,7 @@ export async function getContractFiles(tenantId: string): Promise<ContractFileRo
     select: {
       id: true, driveFileId: true, fileName: true, source: true,
       signedAt: true, createdAt: true, contractNo: true, leaseTermId: true, voidedAt: true,
-      supersededAt: true, issuePurpose: true,
+      supersededAt: true, issuePurpose: true, nameStyle: true,
       // 번복이 있으면 지금 지위는 이쪽이다(2026-08-26 규약 개정). 판정·표시가 같은 값을 본다.
       purposeOverride: true, purposeLog: true,
     },
