@@ -2095,6 +2095,13 @@ export async function checkoutWithDepositRefund(params: {
   moveOutDate?: string   // 실제 퇴실일 — 환불 기록 날짜도 같은 날로 맞춘다(정본 미니폼과 동일 규칙)
   reason?: string        // 미환불 사유 — 종전에는 이 경로에 전달 수단이 없어 홈 퇴실은 사유가 항상 비었다
   cleaningDate?: string | null   // 퇴실 청소 예정일 — 그대로 checkoutTenant 로 흘린다(판정은 그쪽 한 자리)
+  /**
+   * 함께 확정할 이용료 환불액 — 확정해 둔 퇴실 정산이 남아 있을 때만 넘어온다.
+   *
+   * 종전에는 이 경로에 이용료 환불이 아예 없어서 보증금만 정산되고 일할·단기 요금 환불이
+   * 조용히 남았다(2026-08-30 경로 통합). 화면이 미리 물어 본 값을 그대로 싣는다.
+   */
+  rentRefundAmount?: number
 }): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -2121,8 +2128,22 @@ export async function checkoutWithDepositRefund(params: {
       })
       if (!refundRes.ok) return refundRes
     }
+    // 이용료 환불 — **퇴실 전이 뒤에** 확정한다. 순서가 규칙이다(전이가 일할을 재계산하므로
+    // 먼저 확정하면 그 값이 덮인다). 실패해도 퇴실은 되돌리지 않고 사실만 알린다.
+    let rentNotice: string | null = null
+    if (params.rentRefundAmount && params.rentRefundAmount > 0) {
+      const rr = await finalizeRentRefund({
+        leaseTermId: params.leaseTermId,
+        moveOutYmd: params.moveOutDate || kstYmdStr(),
+        rentRefundAmount: params.rentRefundAmount,
+      })
+      if (!rr.ok && !rr.error.startsWith('이미 환불 처리된')) {
+        rentNotice = `퇴실은 처리했지만 이용료 환불이 실패했습니다. ${rr.error}`
+      }
+    }
     // 퇴실 쪽이 남긴 청소 안내를 그대로 물려준다 — 홈 경로도 같은 말을 듣는다.
-    return checkoutRes.notice ? { ok: true, notice: checkoutRes.notice } : { ok: true }
+    const notice = [checkoutRes.notice, rentNotice].filter(Boolean).join(' ') || null
+    return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

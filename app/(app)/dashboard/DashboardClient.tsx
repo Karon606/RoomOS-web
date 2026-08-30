@@ -350,10 +350,10 @@ function CheckoutRefundModal({
           {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
               경로 셋 중 이용료 환불은 입주자 관리 수정에만 있다(별건으로 통합 예정). */}
           {pendingRentRefund && (
-            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
-              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 아직 남아 있습니다.
-              <span className="block mt-0.5" style={{ color: 'var(--warm-mid)' }}>
-                여기서는 보증금만 정산됩니다. 이용료는 입주자 관리에서 그 사람을 열고 수정으로 퇴실 처리해야 함께 확정됩니다.
+            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
+              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 함께 확정됩니다.
+              <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
               </span>
             </div>
           )}
@@ -499,16 +499,19 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       setConfirmError('반환하지 않는 사유를 선택해 주세요.'); return
     }
     setConfirmPending(true); setConfirmError('')
-    const res = moveOutDeposit > 0
-      ? await checkoutWithDepositRefund({
-          leaseTermId:  moveOutLeaseId,
-          tenantId:     alert.tenantId,
-          refundAmount,
-          moveOutDate,
-          ...(reason ? { reason } : {}),
-          ...(cleaningDate !== undefined ? { cleaningDate } : {}),
-        })
-      : await checkoutTenant(moveOutLeaseId, alert.tenantId, moveOutDate, cleaningDate)
+    // 보증금 유무로 함수를 가르지 않는다 — 갈라 두었더니 보증금 0 인 계약은 이용료 환불을 실을
+    // 자리가 없었다(2026-08-30 경로 통합). 서버가 계약 보증금이 0 이면 반환 기록을 건너뛰므로
+    // 한 문으로 보내도 결과가 같다.
+    const res = await checkoutWithDepositRefund({
+      leaseTermId:  moveOutLeaseId,
+      tenantId:     alert.tenantId,
+      refundAmount,
+      moveOutDate,
+      ...(reason ? { reason } : {}),
+      ...(cleaningDate !== undefined ? { cleaningDate } : {}),
+      // 확정해 둔 정산이 남아 있으면 함께 확정한다. 종전에는 이 경로에 아예 없어서 조용히 빠졌다.
+      ...(pendingRentRefund ? { rentRefundAmount: pendingRentRefund.amount } : {}),
+    })
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     // 청소 예정을 못 만든 경우만 한 줄 남는다. 퇴실은 이미 끝났으니 창을 붙잡지 않는다.
     if (res.notice) pushToast('info', res.notice)

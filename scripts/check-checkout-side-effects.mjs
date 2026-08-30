@@ -69,7 +69,29 @@ for (const [name, re] of callers) {
   })
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 / 위반 ${violations.length}건`)
+// ⓓ 세 경로가 전부 이용료 환불을 확정하는가.
+//    종전에는 입주자 관리 수정 한 곳에만 있어서, 다른 경로로 나가면 확정해 둔 일할·단기 요금
+//    환불이 조용히 남았다. 422호처럼 단기 요금을 적용해 둔 계약도 그 경로로 나가면 안 잡혔다.
+{
+  const PATHS = [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx', /rentRefundAmount/],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx', /finalizeRentRefund\(/],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx', /finalizeRentRefund\(/],
+  ]
+  for (const [name, f, re] of PATHS) {
+    const src2 = readFileSync(f, 'utf8')
+    if (!re.test(src2)) {
+      violations.push(`${f} — '${name}' 경로가 이용료 환불을 확정하지 않는다. 보증금만 정산되고 일할 환불이 남는다.`)
+    }
+  }
+  // 서버 문도 그 인자를 받아야 한다 — 화면이 실어 보내도 서버가 버리면 같은 결과다.
+  const co = src.match(/export async function checkoutWithDepositRefund[\s\S]*?\n\}\n/)
+  if (co && !/rentRefundAmount/.test(co[0])) {
+    violations.push(`${FILE} — checkoutWithDepositRefund 가 이용료 환불 인자를 안 받는다.`)
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

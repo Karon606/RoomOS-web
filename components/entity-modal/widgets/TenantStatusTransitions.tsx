@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, getPendingRentRefundNotice,
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, getPendingRentRefundNotice, finalizeRentRefund,
   getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -417,6 +417,29 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           }
           pushToast('error', res.error); return
         }
+        /**
+         * 이용료 환불 — **상태 전이 뒤에** 확정한다(2026-08-30 경로 통합).
+         *
+         * 순서가 규칙이다. 전이가 일할을 재계산하므로 환불을 먼저 확정하면 그 값이 덮인다
+         * (입주자 관리 수정 경로가 같은 이유로 같은 순서를 쓴다, 적대검증 P0).
+         *
+         * 종전에는 이 경로에 환불이 아예 없어서, 확정해 둔 정산이 있어도 보증금만 처리되고
+         * 이용료는 조용히 남았다. 화면이 경고만 하던 자리를 실제 처리로 바꾼다.
+         * 이미 환불된 계약은 서버가 멱등으로 받아 넘긴다.
+         */
+        if (active?.pendingRentRefund && def.toStatus === 'CHECKED_OUT') {
+          const rr = await finalizeRentRefund({
+            leaseTermId: lease.id,
+            moveOutYmd: fields?.moveOutDate || kstYmdStr(),
+            rentRefundAmount: active.pendingRentRefund.amount,
+          })
+          if (!rr.ok && !rr.error.startsWith('이미 환불 처리된')) {
+            // 퇴실은 이미 끝났다. 환불만 못 했다는 사실을 알리고 어디서 마저 하는지 말한다.
+            pushToast('error', `퇴실은 됐지만 이용료 환불이 실패했습니다. ${rr.error}`, {
+              detail: '입주자 관리에서 그 사람을 열고 수정으로 다시 시도해 주세요.',
+            })
+          }
+        }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
@@ -554,11 +577,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
               {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
                   경로를 하나로 모으는 것이 근본이지만(별건), 그때까지 모르고 지나가면 돈이 샌다. */}
-              {active.pendingRentRefund && (
-                <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
-                  이용료 환불 {fmtWon(active.pendingRentRefund.amount)}이 아직 남아 있습니다.
-                  <span className="block mt-0.5" style={{ color: 'var(--warm-mid)' }}>
-                    여기서는 보증금만 정산됩니다. 이용료는 입주자 관리에서 그 사람을 열고 수정으로 퇴실 처리해야 함께 확정됩니다.
+              {active.pendingRentRefund && active.def.toStatus === 'CHECKED_OUT' && (
+                <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
+                  이용료 환불 {fmtWon(active.pendingRentRefund.amount)}이 함께 확정됩니다.
+                  <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                    퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
                   </span>
                 </div>
               )}
