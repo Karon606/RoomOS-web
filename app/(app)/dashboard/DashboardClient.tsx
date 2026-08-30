@@ -299,7 +299,7 @@ function CheckoutRefundModal({
 
   return (
     <Modal open onClose={onClose} z={260} width="sm"
-      title={depositAmount > 0 ? '보증금 환불' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
+      title={depositAmount > 0 ? '보증금 반환' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
       dirty={refund !== maxRefund || moveOutDate !== kstYmdStr() || reason !== '' || reasonEtc !== '' || cleaning.touched}
       footer={
         <div className="flex gap-2">
@@ -312,7 +312,8 @@ function CheckoutRefundModal({
             onClick={() => {
               const r = buildWithholdReason(reason, reasonEtc)
               // 오류를 부모 상태에 넣으면 이 창(z=260) 아래 모달에 그려져 안 보인다. 여기서 인라인으로 띄운다.
-              if (depositAmount - refund > 0 && !r) { setFormError('미환불 사유를 선택해 주세요.'); return }
+              // 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(형제 두 화면과 같은 축).
+              if (depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
               setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom ? (cleaning.value || null) : undefined)
@@ -361,11 +362,11 @@ function CheckoutRefundModal({
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>
-              보증금 환불 (최대 {fmtWon(maxRefund)})
+              보증금 반환 (최대 {fmtWon(maxRefund)})
             </label>
-            {/* 상태 전환 미니폼과 같은 세그먼트 문법. 이 경로에는 '환불 안 함' 선택지가 아예 없었다. */}
+            {/* 상태 전환 미니폼과 같은 세그먼트 문법. 이 경로에는 '반환 안 함' 선택지가 아예 없었다. */}
             <div className="grid grid-cols-2 gap-1.5">
-              {([['refund', '환불함'], ['none', '환불 안 함']] as const).map(([k, label]) => {
+              {([['refund', '반환함'], ['none', '반환 안 함']] as const).map(([k, label]) => {
                 const on = k === 'none' ? refund === 0 : refund !== 0
                 return (
                   <button key={k} type="button" onClick={() => setRefund(k === 'none' ? 0 : maxRefund)}
@@ -378,12 +379,14 @@ function CheckoutRefundModal({
             </div>
             <MoneyInput value={refund} onChange={setRefund} placeholder="0원" />
             {exceedsMax && (
-              <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
+              <p className="text-[0.6875rem] text-[var(--danger-fg)]">반환 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
             )}
             {formError && <p className="text-[0.6875rem] text-[var(--danger-fg)]">{formError}</p>}
-            {unreturned > 0 && (
+            {/* 청소비 몫을 넘을 때만 묻는다 — 형제 두 화면(프리즘 퇴실 폼·보증금 패널)과 같은 축이다.
+                청소비는 보증금 안에 든 돈이라 퇴실에서 당연히 빠지고, 고를 일이 아니다. */}
+            {unreturned > cleaningFee && (
               <div className="space-y-1.5 pt-0.5">
-                <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>미환불 사유 <span className="font-normal opacity-60">(필수)</span></label>
+                <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                 <select value={reason} onChange={e => setReason(e.target.value)}
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                   <option value="">선택하세요</option>
@@ -400,7 +403,7 @@ function CheckoutRefundModal({
 
           <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
             <div className="flex justify-between">
-              <span style={{ color: 'var(--warm-muted)' }}>환불</span>
+              <span style={{ color: 'var(--warm-muted)' }}>반환</span>
               <span className="font-medium">{fmtWon(refund)}</span>
             </div>
             {unreturned > 0 && (
@@ -410,7 +413,7 @@ function CheckoutRefundModal({
               </div>
             )}
             <p className="text-[0.65625rem] pt-1" style={{ color: 'var(--warm-muted)' }}>
-              미환불분은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFee, fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
+              반환하지 않은 몫은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFee, fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
             </p>
           </div>
           </>)}
@@ -476,7 +479,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
     // 미환불이 있는데 사유가 없으면 막는다 — 돈이 움직이는 결정이라 근거가 남아야 한다.
     if (moveOutDeposit > 0 && moveOutDeposit - refundAmount > 0 && !reason) {
-      setConfirmError('미환불 사유를 선택해 주세요.'); return
+      setConfirmError('반환하지 않는 사유를 선택해 주세요.'); return
     }
     setConfirmPending(true); setConfirmError('')
     const res = moveOutDeposit > 0

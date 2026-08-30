@@ -1431,11 +1431,11 @@ export default function TenantClient({
           else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
           else { setError(rr.error); pushToast('error', rr.error); return }
         }
-        // 미환불이 있으면 사유는 필수다. 종전에는 금액이 청소비와 정확히 같을 때만 자동 추론했고
-        // 나머지는 사유 없이 몰취가 기록됐다. 이제 운영자가 고른 값을 쓴다(청소비는 프리셀렉트).
+        // 청소비 몫을 넘게 떼면 사유는 필수다. 청소비까지는 안 묻는다 — 보증금 안에 든 돈이라
+        // 퇴실에서 당연히 빠지고 고를 일이 아니다(형제 두 화면과 같은 축, 2026-08-30).
         const withheld = Math.max(0, depositAmount - depositReturnAmt)
-        if (withheld > 0 && !buildWithholdReason(depoWithholdReason, depoWithholdEtc)) {
-          setError('미환불 사유를 선택해 주세요.'); pushToast('error', '미환불 사유를 선택해 주세요.'); return
+        if (withheld > cleaningFeeDeductible(cleaningFee, depoCleaningPaid) && !buildWithholdReason(depoWithholdReason, depoWithholdEtc)) {
+          setError('반환하지 않는 사유를 선택해 주세요.'); pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return
         }
         if (depositReturnAmt === 0 && depositAmount > 0) {
           const mon = kstYmdStr().slice(0, 7)
@@ -1443,7 +1443,7 @@ export default function TenantClient({
             title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
             // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
             message: `${fmtWon(depositAmount)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depositAmount, cleaningFeeDeductible(cleaningFee, depoCleaningPaid), fmtWon)} 기록됩니다.\n사유: ${buildWithholdReason(depoWithholdReason, depoWithholdEtc)}.`,
-            level: 'caution', confirmLabel: '전액 미환불로 처리',
+            level: 'caution', confirmLabel: '전액 미반환으로 처리',
           }))) return
         }
         const refundRes = await recordDepositReturn({
@@ -1479,7 +1479,7 @@ export default function TenantClient({
         }
         pushToast('success', `환불 + 퇴실 처리됨 · 총 ${fmtWon(totalRefunded)}`, {
           action: {
-            label: '환불기록 취소',
+            label: '반환기록 취소',
             run: () => {
               void (async () => {
                 if (rentRefunded) {
@@ -1487,7 +1487,7 @@ export default function TenantClient({
                   if (!ru.ok) { pushToast('error', ru.error); return }
                 }
                 const r = await undoDepositReturn(refundId, extraIncomeIds)
-                if (r.ok) { pushToast('info', '환불 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }
+                if (r.ok) { pushToast('info', '반환 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }
                 else pushToast('error', r.error)
               })()
             },
@@ -2019,7 +2019,7 @@ export default function TenantClient({
             onClose={() => setDepositRefundModal(null)}
             // 풀블리드 — 본문과 하단 버튼 행이 각자 여백을 갖는 구조라 기본 패딩을 쓰면 이중 여백이 된다.
             bodyClassName=""
-            title="환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
+            title="퇴실 정산" subtitle={`${depositRefundModal.tenantName}님`}>
 
               <div className="px-5 py-4 space-y-3">
                 {/* 이용료 정산 — 퇴실월 선납이 있을 때만. 계산은 참고 표시, 최종 금액은 운영자 확정(승인 2026-07-20).
@@ -2088,17 +2088,18 @@ export default function TenantClient({
                   </div>
                   <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">보증금 환불 (최대 {fmtWon(maxRefund)})</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">보증금 반환 (최대 {fmtWon(maxRefund)})</label>
                     </div>
                     {/* 세 경로가 같은 문법을 쓴다 — 상태 전환 미니폼·홈 알림과 동일한 SegmentedControl 정본. */}
                     <SegmentedControl size="sm" ariaLabel="보증금 환불 여부"
                       value={depositReturnAmt === 0 ? 'none' : 'refund'}
                       onChange={v => { if ((v === 'none') !== (depositReturnAmt === 0)) { setDepositReturnAmt(v === 'none' ? 0 : maxRefund); setDepositRefundDirty(true) } }}
-                      options={[{ value: 'refund', label: '환불함' }, { value: 'none', label: '환불 안 함' }]} />
+                      options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
                     <MoneyInput value={depositReturnAmt} onChange={v => { setDepositReturnAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
-                    {dep - depositReturnAmt > 0 && (
+                    {/* 청소비 몫을 넘을 때만 묻는다 — 형제 두 화면과 같은 축(2026-08-30). */}
+                    {dep - depositReturnAmt > cleaningFeeDeductible(fee, depoCleaningPaid) && (
                       <div className="space-y-1.5 pt-0.5">
-                        <label className="text-xs font-medium text-[var(--warm-mid)] block">미환불 사유 <span className="font-normal opacity-60">(필수)</span></label>
+                        <label className="text-xs font-medium text-[var(--warm-mid)] block">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                         <select value={depoWithholdReason} onChange={e => { setDepoWithholdReason(e.target.value); setDepositRefundDirty(true) }}
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                           <option value="">선택하세요</option>
@@ -2111,7 +2112,7 @@ export default function TenantClient({
                         )}
                       </div>
                     )}
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">미환불분은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFeeDeductible(fee, depoCleaningPaid), fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">반환하지 않은 몫은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFeeDeductible(fee, depoCleaningPaid), fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
                     {exceedsMax && (
                       <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                     )}
