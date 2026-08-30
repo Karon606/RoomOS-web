@@ -153,6 +153,27 @@ eq('짧은 말: 해마다', recurringCycleWord(cyc({ intervalMonths: 12, anchorM
 // 알림 게이트 — 비도래 달이면 날짜가 오늘이어도 침묵한다(푸시·인앱 종이 함께 걸러진다).
 eq('비도래 달이면 오늘이어도 발화 안 함', recurringDueToday(due({ ...manual(25), isDueThisMonth: false }), '2026-08-25'), false)
 
+
+// ── 간격 주기의 유연한 재기준 (2026-08-31 운영자 요구) ────────────────────
+//
+// 주기 판정은 달력 달 고정이라 6개월을 8월에 걸면 다음은 무조건 2월이다. 사정상 3월에 하면
+// 그 뒤로 계속 어긋난다. 그래서 **기록하는 순간 기준 달을 그 지출의 달로 옮긴다.**
+// 여기서는 옮긴 뒤의 도래 판정이 실제로 새 리듬을 따르는지를 고정한다.
+{
+  const base = { activeSince: null, createdAt: new Date('2026-08-25') }
+  // 8월에 걸어 둔 6개월 주기 — 다음은 2월이다.
+  const aug = { ...base, intervalMonths: 6, anchorMonth: 8 }
+  eq('6개월: 8월 기준이면 2월이 도래', isRecurringDueMonth(aug, '2027-02'), true)
+  eq('6개월: 8월 기준이면 3월은 아니다', isRecurringDueMonth(aug, '2027-03'), false)
+  // 3월에 실제로 해서 기준이 3월로 옮겨지면, 그 다음은 9월이다.
+  const mar = { ...base, intervalMonths: 6, anchorMonth: 3 }
+  eq('6개월: 기준이 3월로 옮겨지면 9월이 도래', isRecurringDueMonth(mar, '2027-09'), true)
+  eq('6개월: 그때 2월은 더 이상 도래가 아니다', isRecurringDueMonth(mar, '2027-02'), false)
+  // 매월 항목은 기준 달이라는 개념이 없다 — 어느 달이든 도래다.
+  const monthly = { ...base, intervalMonths: 1, anchorMonth: 8 }
+  eq('매월: 1월도 도래', isRecurringDueMonth(monthly, '2027-01'), true)
+  eq('매월: 7월도 도래', isRecurringDueMonth(monthly, '2027-07'), true)
+}
 console.log(`\n고정지출 예정일 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

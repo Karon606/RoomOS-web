@@ -34,6 +34,7 @@ import { depositComposition } from '@/lib/depositComposition'
 import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
 import { monthDbRange } from '@/lib/kstDate'
+import { kstMonthOf } from '@/lib/fmtDate'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 
 async function getPropertyId() {
@@ -1343,6 +1344,8 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
       let shift: LedgerShiftUndo | null = null
       if (shiftRows.length > 0 && shiftItemId) shift = await applyShiftRows(tx, shiftItemId, shiftRows)
       await tx.expense.delete({ where: { id } })
+      // 간격 주기의 기준 달은 마지막 기록에서 나온다 — 지웠으면 그 이전 기록이 다시 기준이 된다.
+      if (target.recurringExpenseId) await resyncRecurringAnchor(tx, target.recurringExpenseId, propertyId)
       // 주문 묶음 고아 정리 — 품목을 다 지워 배송비 라인만 남으면 배송비·주문도 정리,
       // 행이 하나만 남으면 묶음 의미가 없으므로 연결 해제 후 빈 주문 삭제.
       // (cleanupOrderIfOrphan과 동일 분기 — 스냅샷과 함께 한 트랜잭션으로 수행)
@@ -1427,6 +1430,8 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
         }
       }
       await tx.expense.create({ data })
+      // 기록이 되살아났으니 간격 주기의 기준 달도 그 기록 기준으로 다시 선다(삭제의 역).
+      if (data.recurringExpenseId) await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
       // 주문 정리로 함께 지워진 배송비 라인 복원(이미 있으면 건너뜀)
       for (const s of undo.shippingRows) {
         const row = { ...s } as ExpenseRowSnap
@@ -2117,6 +2122,46 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
   return computeRecurringExpensesWithStatus(await getPropertyId(), month)
 }
 
+/**
+ * 간격 주기(격월·분기·반기·연1회)의 기준 달을 **마지막 기록에서 다시 맞춘다** (2026-08-31 운영자 요구).
+ *
+ * 왜. 도래 판정은 달력 달 고정이다 — (월 − 기준달) mod interval == 0. 그래서 반기 항목을 8월에
+ * 걸어 두면 다음은 무조건 2월이고, 사정이 있어 3월에 하면 그 뒤로 계속 어긋난다. 운영자 원문 —
+ * "6개월이라고 하더라도 정확히 6개월 후에 진행이 안 될 수 있으므로 부과일정이 좀 더 flexable하게".
+ *
+ * 그래서 기준 달을 저장값으로 고정해 두지 않고 **가장 최근 기록의 달**로 다시 맞춘다. 3월에 했으면
+ * 다음은 9월이다. 기록이 하나도 안 남으면 null 로 되돌려 activeSince(없으면 createdAt) 폴백으로
+ * 돌아간다 — 판정 정본(resolveRecurringAnchorMonth)이 이미 그 규칙을 쥐고 있다.
+ *
+ * **되돌림이 저절로 된다는 것이 이 형태를 고른 이유다.** 기록할 때 기준 달을 그냥 덮어쓰면, 잘못
+ * 기록한 지출을 지워도 옮겨진 기준이 남아 주기가 조용히 밀린다. 파생값으로 두면 지우는 순간
+ * 이전 기록이 다시 기준이 된다. 그래서 기록·삭제·삭제취소 셋이 전부 이 한 자리를 지난다.
+ *
+ * **매월 항목은 안 건드린다.** interval 1 은 기준 달이라는 개념이 없고, 기존 행 대부분이 그
+ * 갈래라 이 조건이 거동을 한 글자도 안 바꾼다.
+ */
+// 트랜잭션 클라이언트 타입은 어댑터 확장을 거친 실제 클라이언트에서 뽑는다 —
+// Prisma.TransactionClient 를 그대로 쓰면 PrismaPg 확장분과 안 맞는다.
+type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+async function resyncRecurringAnchor(tx: TxClient, recurringExpenseId: string, propertyId: string) {
+  const rec = await tx.recurringExpense.findFirst({
+    where: { id: recurringExpenseId, propertyId },
+    select: { intervalMonths: true, anchorMonth: true },
+  })
+  if (!rec || rec.intervalMonths <= 1) return
+  const last = await tx.expense.findFirst({
+    where: { propertyId, recurringExpenseId },
+    orderBy: { date: 'desc' },
+    select: { date: true },
+  })
+  // 월 경계는 kstMonthOf 정본 경유 — @db.Date 의 UTC 자정을 KST 로 옮겨 어제 달로 새는 것을 막는다.
+  const next = last ? (Number(kstMonthOf(last.date).slice(5)) || null) : null
+  if (next !== rec.anchorMonth) {
+    await tx.recurringExpense.update({ where: { id: recurringExpenseId }, data: { anchorMonth: next } })
+  }
+}
+
 // ── 고정 지출 기록 ───────────────────────────────────────────────
 
 export async function recordRecurringExpense(data: {
@@ -2146,8 +2191,8 @@ export async function recordRecurringExpense(data: {
       ? data.breakdown!.reduce((s, it) => s + (Number(it.amount) || 0), 0)
       : data.amount
 
-    await prisma.$transaction([
-      prisma.expense.create({
+    await prisma.$transaction(async tx => {
+      await tx.expense.create({
         data: {
           propertyId,
           date:                new Date(data.date),
@@ -2162,13 +2207,14 @@ export async function recordRecurringExpense(data: {
           recurringExpenseId:  data.recurringExpenseId,
           breakdownJson:       hasBreakdown ? JSON.stringify(data.breakdown) : null,
         },
-      }),
+      })
       // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지
-      prisma.recurringExpense.update({
+      await tx.recurringExpense.update({
         where: { id: data.recurringExpenseId },
         data:  { pendingAmount: null },
-      }),
-    ])
+      })
+      await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
+    })
     revalidatePath('/finance')
     revalidatePath('/dashboard')
     return { ok: true }
