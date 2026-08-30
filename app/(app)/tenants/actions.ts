@@ -5286,11 +5286,19 @@ type ShortStayExtensionSnapshot = {
   markerRecordId: string
   undoneAt: string | null
   // 아래 둘은 감액 도입(2026-07-26) 이후 스냅샷에만 있다 — 구 스냅샷은 undefined(연장으로 간주 + 휴리스틱 복원).
-  kind?: 'increase' | 'decrease'
+  kind?: 'increase' | 'decrease' | 'toMonthly'
   lockRewrites?: LockRewrite[]   // 되쓰기 전 원값 — 적용취소의 정확 복원 근거
   // 운영자가 폼에서 직접 넣은 금액(협의가)을 락으로 쓴 저장인지. 협의가 이력을 영속 기록한다
   // (I8' — 마지막 저장이 manual 이면 그 금액이 새 기준선). 구 스냅샷은 undefined.
   manual?: boolean
+  /**
+   * 월 계약 전환(kind:'toMonthly')에서만 쓰는 되돌림 값들 — 연장·감액은 이 칸을 안 만든다.
+   *
+   * 전환은 퇴실 예정일·납부일을 사람이 정한 값으로 바꾸므로, 되돌리려면 그 전 값이 필요하다.
+   * prevExpectedMoveOut 은 위에 이미 있고 여기에는 나머지 둘을 담는다.
+   */
+  prevDueDay?: string | null
+  prevIsShortTerm?: boolean
 }
 
 // 트랜잭션 클라이언트 — lib/prisma 의 익스텐션(소프트삭제 자동필터)이 적용된 타입이라야 tx 안에서도 규칙이 같다.
@@ -5689,5 +5697,249 @@ export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok:
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+  }
+}
+
+// ── 월 계약 전환 (2026-08-30 운영자 오더, 520호 김민정 클래스) ────────────────
+//
+// 무엇을 푸는가. 주단위로 들어왔다가 눌러앉는 사람이 있다. 종전에는 운영자가 수정 폼의 단기
+// 체크박스를 끄는 것으로 처리했는데, 그 한 번이 다섯 칸을 말없이 움직였다 — 퇴실 예정일이
+// 지워지고, 보증금·청소비가 영업장 기본값으로 다시 채워지고, 이용료는 단기 누적액이 그대로
+// 월세로 승격되고, 납부일이 비어 있으면 빈 채로 남았다. 묻는 자리가 하나도 없었다.
+// 그래서 520호에서 운영자가 한 일이 "이미 낸 금액을 거꾸로 맞춰 나간" 것이 될 수밖에 없었다.
+//
+// **돈은 안 옮긴다.** 계약이 하나이고 수납은 처음부터 그 계약에 앉아 있다. 새 계약을 만들어
+// 이관하는 길은 PaymentRecord.leaseTermId 를 바꾸는 경로가 이 저장소에 없고, 억지로 하면
+// 현금영수증 신원 키·보증금 정산·거주 구간 감지망이 한꺼번에 운다. 바뀌는 것은 조건뿐이다.
+//
+// **보증금·청소비는 자동으로 안 건드린다**(운영자 확정). 이미 30,000 + 청소비 20,000 을 받은
+// 계약에 기본값 50,000 을 다시 박으면 없던 부족 20,000 이 새로 생긴다. 현 구성만 보여준다.
+
+export type MonthlyConversionPreview =
+  | {
+      ok: true
+      tenantName: string; roomNo: string | null
+      moveInDate: string
+      /** 지금 rentAmount — 단기에서는 '체류 전체 사용료'다. 월세가 아니다. */
+      currentRent: number
+      /** 방 표준가 — 새 월 이용료의 프리필. 없으면 null 이고 사람이 넣는다. */
+      suggestedRent: number | null
+      currentOut: string | null
+      currentDueDay: string | null
+      /** 입주일에서 파생한 납부일 — 지금 비어 있을 때만 제시한다. */
+      suggestedDueDay: string
+      /** 입주월과 그 달 청구·수납 현황. 되쓰기가 무엇을 건드리는지 사람이 보고 정한다. */
+      inMonth: string; lockedExpected: number; paidInMonth: number
+      /** 보증금 구성 — 자동으로 안 바꾼다. 보여주기만 한다. */
+      deposit: { contract: number; received: number; cleaningFee: number; coveredByCleaning: number; shortfall: number }
+    }
+  | { ok: false; error: string }
+
+/** 전환 대상 lease 로드 — preview·convert 공용(단일 계산 경로). */
+async function loadConversionTarget(propertyId: string, leaseTermId: string) {
+  return prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    select: {
+      id: true, tenantId: true, status: true, isShortTerm: true, rentAmount: true,
+      moveInDate: true, expectedMoveOut: true, autoCheckoutAt: true, dueDay: true,
+      depositAmount: true, cleaningFee: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
+      shortStayExtensions: true,
+      room: { select: { roomNo: true, scheduledRent: true } },
+      tenant: { select: { name: true } },
+    },
+  })
+}
+
+export async function previewMonthlyConversion(leaseTermId: string): Promise<MonthlyConversionPreview> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const lease = await loadConversionTarget(propertyId, leaseTermId)
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!lease.isShortTerm) return { ok: false, error: '이미 월 계약입니다.' }
+    if (!lease.moveInDate) return { ok: false, error: '입주일이 없어 전환할 수 없습니다.' }
+
+    const inMonth = kstYmdStr(lease.moveInDate).slice(0, 7)
+    // 락은 마커를 포함한 최댓값이다(schema isBillingAdjust 주석). 되쓰기도 같은 범위를 봐야
+    // 새 월세보다 큰 마커가 남아 허수 미납이 되지 않는다.
+    const recs = await prisma.paymentRecord.findMany({
+      where: { leaseTermId, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null },
+      select: { expectedAmount: true, actualAmount: true, isBillingAdjust: true },
+    })
+    const lockedExpected = recs.reduce((m, r) => Math.max(m, r.expectedAmount), 0)
+    const paidInMonth = recs.filter(r => !r.isBillingAdjust).reduce((s, r) => s + r.actualAmount, 0)
+
+    const depAgg = await prisma.paymentRecord.aggregate({
+      where: { leaseTermId, isDeposit: true, deletedAt: null },
+      _sum: { actualAmount: true },
+    })
+    const cleaningPaid = await prisma.extraIncome.aggregate({
+      where: { leaseTermId, category: '청소비' }, _sum: { amount: true },
+    })
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { cleaningFeeInDeposit: true } })
+    const comp = depositComposition({
+      contractDeposit: lease.depositAmount,
+      depositPaid: Math.max(0, depAgg._sum.actualAmount ?? 0),
+      cleaningPaid: Math.max(0, cleaningPaid._sum.amount ?? 0),
+      cleaningFeeInDeposit: prop?.cleaningFeeInDeposit ?? false,
+    })
+
+    return {
+      ok: true,
+      tenantName: lease.tenant?.name ?? '',
+      roomNo: lease.room?.roomNo ?? null,
+      moveInDate: kstYmdStr(lease.moveInDate),
+      currentRent: lease.rentAmount,
+      suggestedRent: lease.room?.scheduledRent ?? null,
+      currentOut: lease.expectedMoveOut ? kstYmdStr(lease.expectedMoveOut) : null,
+      currentDueDay: lease.dueDay,
+      suggestedDueDay: String(Number(kstYmdStr(lease.moveInDate).slice(8, 10))),
+      inMonth, lockedExpected, paidInMonth,
+      deposit: {
+        contract: comp.contract, received: comp.depositPaid,
+        cleaningFee: lease.cleaningFee, coveredByCleaning: comp.coveredByCleaning, shortfall: comp.shortfall,
+      },
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 월 계약으로 전환한다 — 한 트랜잭션, 조건부 선점, 적용취소 스냅샷.
+ *
+ * 되쓰기 범위가 **마커를 포함**한다. 락은 마커까지 세어 최댓값을 잡는데(schema isBillingAdjust
+ * 주석) 종전 되쓰기(paymentEngine.rewriteLockedExpectedForRentAmount)는 마커를 뺐다. 그래서
+ * 새 월세가 옛 단기 누적가보다 작으면 마커가 옛 값을 쥔 채 남아 허수 미납이 영구히 생겼다.
+ * 470,000 을 받고 380,000 월 계약으로 전환하면 90,000 이 미납으로 뜨는 모양이다.
+ *
+ * 과거 회계월은 안 건드린다 — 입주월 락을 되쓰는 것은 과거 달의 청구를 고치는 일이라
+ * checkSettlementMonth 를 먼저 지난다.
+ */
+export async function convertToMonthly(input: {
+  leaseTermId: string
+  rentAmount: number
+  /** 퇴실 예정일을 지울지 — 화면이 묻고 사람이 정한다. 종전에는 말없이 지웠다. */
+  clearExpectedMoveOut: boolean
+  /** 납부일 — 비어 있으면 안 건드린다(사람이 그대로 두기로 한 것). */
+  dueDay?: string | null
+}): Promise<{ ok: true; rewrote: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await loadConversionTarget(propertyId, input.leaseTermId)
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!lease.isShortTerm) return { ok: false, error: '이미 월 계약입니다.' }
+    if (!lease.moveInDate) return { ok: false, error: '입주일이 없어 전환할 수 없습니다.' }
+    const rent = Math.max(0, Math.floor(input.rentAmount))
+    if (rent <= 0) return { ok: false, error: '월 이용료를 넣어 주세요.' }
+
+    const inMonth = kstYmdStr(lease.moveInDate).slice(0, 7)
+    const settleProp = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true } })
+    const guard = checkSettlementMonth(inMonth, kstYmdStr(), settleProp?.acquisitionDate ?? null)
+    if (!guard.ok) return { ok: false, error: guard.reason }
+
+    const prevOut = lease.expectedMoveOut ? kstYmdStr(lease.expectedMoveOut) : null
+    let rewrote = 0
+    await prisma.$transaction(async (tx) => {
+      // 되쓰기 — 마커를 포함한다. 새 월세보다 큰 락만 내린다.
+      const actives = await tx.paymentRecord.findMany({
+        where: { leaseTermId: lease.id, targetMonth: inMonth, isDeposit: false, isPrevOwner: false, deletedAt: null },
+        select: { id: true, expectedAmount: true },
+      })
+      const rewrites = lockRewritesFor(actives, rent)
+      for (const w of rewrites) {
+        await tx.paymentRecord.update({ where: { id: w.recordId }, data: { expectedAmount: rent } })
+      }
+      rewrote = rewrites.length
+
+      const prevList = (Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
+      const snapshot: ShortStayExtensionSnapshot = {
+        at: new Date().toISOString(),
+        prevRentAmount: lease.rentAmount, newRentAmount: rent,
+        prevExpectedMoveOut: prevOut, newExpectedMoveOut: input.clearExpectedMoveOut ? '' : (prevOut ?? ''),
+        prevStatus: lease.status, prevAutoCheckoutAt: lease.autoCheckoutAt?.toISOString() ?? null,
+        prevProration: null, markerRecordId: '',
+        undoneAt: null, kind: 'toMonthly', lockRewrites: rewrites,
+        prevDueDay: lease.dueDay, prevIsShortTerm: true,
+      }
+
+      // 조건부 선점 — 읽은 시점 값이 그대로여야 쓴다. 두 사람이 같은 계약을 동시에 고치면 한쪽이 진다.
+      const res = await tx.leaseTerm.updateMany({
+        where: { id: lease.id, isShortTerm: true, rentAmount: lease.rentAmount },
+        data: {
+          isShortTerm: false,
+          rentAmount: rent,
+          ...(input.clearExpectedMoveOut ? { expectedMoveOut: null, autoCheckoutAt: null } : {}),
+          ...(input.dueDay?.trim() ? { dueDay: input.dueDay.trim() } : {}),
+          shortStayExtensions: [...prevList, snapshot] as Prisma.InputJsonValue[],
+        },
+      })
+      if (res.count !== 1) throw new Error('이 계약이 방금 다른 곳에서 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.')
+    })
+
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    return { ok: true, rewrote }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '전환에 실패했습니다.' }
+  }
+}
+
+/**
+ * 월 계약 전환 적용취소 — 조건·락·스냅샷을 전환 직전으로 되돌린다.
+ *
+ * **전환 뒤에 수납이 새로 들어왔으면 막는다.** 그 돈은 월 계약 조건으로 받은 것이라,
+ * 조건만 단기로 되돌리면 받은 돈과 계약이 서로 다른 말을 한다.
+ */
+export async function undoMonthlyConversion(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { id: true, isShortTerm: true, rentAmount: true, moveInDate: true, shortStayExtensions: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    const list = (Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []) as ShortStayExtensionSnapshot[]
+    const idx = list.map((e, i) => ({ e, i })).filter(x => x.e.kind === 'toMonthly' && !x.e.undoneAt).pop()?.i ?? -1
+    if (idx < 0) return { ok: false, error: '되돌릴 전환 기록이 없습니다.' }
+    const snap = list[idx]
+
+    if (lease.moveInDate) {
+      const since = new Date(snap.at)
+      const after = await prisma.paymentRecord.count({
+        where: { leaseTermId, isDeposit: false, deletedAt: null, createdAt: { gt: since }, actualAmount: { gt: 0 } },
+      })
+      if (after > 0) return { ok: false, error: '전환 뒤에 들어온 수납이 있어 되돌릴 수 없습니다. 그 수납을 먼저 정리해 주세요.' }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const w of snap.lockRewrites ?? []) {
+        await tx.paymentRecord.updateMany({ where: { id: w.recordId, deletedAt: null }, data: { expectedAmount: w.prevExpectedAmount } })
+      }
+      const res = await tx.leaseTerm.updateMany({
+        where: { id: leaseTermId, isShortTerm: false, rentAmount: snap.newRentAmount },
+        data: {
+          isShortTerm: snap.prevIsShortTerm ?? true,
+          rentAmount: snap.prevRentAmount,
+          expectedMoveOut: snap.prevExpectedMoveOut ? ymdToDbDate(snap.prevExpectedMoveOut) : null,
+          autoCheckoutAt: snap.prevAutoCheckoutAt ? new Date(snap.prevAutoCheckoutAt) : null,
+          ...(snap.prevDueDay !== undefined ? { dueDay: snap.prevDueDay } : {}),
+          // 스냅샷은 지우지 않고 도장을 찍는다 — append-only 라야 "언제 전환했다 되돌렸나"가 남는다.
+          shortStayExtensions: list.map((e, i) => i === idx ? { ...e, undoneAt: new Date().toISOString() } : e) as Prisma.InputJsonValue[],
+        },
+      })
+      if (res.count !== 1) throw new Error('이 계약이 방금 다른 곳에서 바뀌었습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.')
+    })
+
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리지 못했습니다.' }
   }
 }

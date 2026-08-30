@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { Section } from './Section'
 import { ShortStayExtensionModal } from './ShortStayExtensionModal'
+import { MonthlyConversionModal } from './MonthlyConversionModal'
 import { fmtRoomNo } from '@/lib/roomNo'
 
 type LeaseLite = {
@@ -59,6 +60,7 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
 
   // 연장 진입점(거주 중·퇴실 예정) + 마지막 미취소 연장 이력(상시 적용취소 진입점, v2.0 §16).
   const [extOpen, setExtOpen] = useState(false)
+  const [convOpen, setConvOpen] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const canExtend = lease.status === 'ACTIVE' || lease.status === 'CHECKOUT_PENDING'
   const exts = Array.isArray(lease.shortStayExtensions) ? (lease.shortStayExtensions as ShortExt[]) : []
@@ -182,13 +184,21 @@ export function ShortStayInfoWidget({ lease, tenantId, tenantName, onChange }: {
               </div>
             )}
             {canExtend && (
-              <Btn variant="subtle" size="sm" onClick={() => setExtOpen(true)} className="font-semibold">단기 연장</Btn>
+              <div className="flex gap-2 items-center">
+                <Btn variant="subtle" size="sm" onClick={() => setExtOpen(true)} className="font-semibold">단기 연장</Btn>
+                {/* 눌러앉는 사람의 문 — 종전에는 수정 폼의 체크박스를 끄는 것이 전부였고 그 한 번이
+                    다섯 칸을 말없이 움직였다(2026-08-30, 520호 클래스). 여기서는 묻고 바꾼다. */}
+                <Btn variant="subtle" size="sm" onClick={() => setConvOpen(true)}>월 계약 전환</Btn>
+              </div>
             )}
           </div>
         )}
       </div>
     </Section>
 
+    {convOpen && (
+      <MonthlyConversionModal open onClose={() => setConvOpen(false)} leaseTermId={lease.id} onDone={onChange} />
+    )}
     {extOpen && (
       <ShortStayExtensionModal open onClose={() => setExtOpen(false)}
         leaseTermId={lease.id} tenantId={tenantId} tenantName={tenantName}

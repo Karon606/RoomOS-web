@@ -16,6 +16,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
+import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -688,6 +689,22 @@ const RENT = 300000
   // 정책이 꺼졌거나 월세를 모르면 표가 없다 — 그 경우 조항 자체가 안 붙는다.
   eq('요금표: 정책 꺼짐', shortStayRateTable({ ...P, enabled: false }, M), null)
   eq('요금표: 월세 0', shortStayRateTable(P, 0), null)
+
+  // ── 월 계약 전환의 락 되쓰기 ──
+  //
+  // 락은 **마커를 포함한** 최댓값이다(schema isBillingAdjust 주석). 그래서 되쓰기도 같은 범위를
+  // 봐야 한다. 종전 되쓰기(paymentEngine)는 마커를 빼서, 새 월세가 옛 단기 누적가보다 작으면
+  // 마커가 옛 값을 쥔 채 남아 허수 미납이 영구히 생겼다. 그 셈을 여기서 고정한다.
+  const rec = (id: string, amount: number) => ({ id, expectedAmount: amount })
+  // 470,000 을 받고 380,000 월 계약으로 전환 — 마커까지 내려야 90,000 허수 미납이 안 생긴다.
+  eq('전환: 새 월세보다 큰 락만 내린다',
+    lockRewritesFor([rec('a', 470000), rec('b', 470000), rec('c', 300000)], 380000).map(w => w.recordId),
+    ['a', 'b'])
+  eq('전환: 되쓰기 전 원값을 남긴다',
+    lockRewritesFor([rec('a', 470000)], 380000)[0].prevExpectedAmount, 470000)
+  // 새 월세가 더 크면 내릴 것이 없다 — 락은 최댓값이라 올리는 것은 청구 엔진이 한다.
+  eq('전환: 새 월세가 크면 되쓰기 0', lockRewritesFor([rec('a', 300000)], 470000), [])
+  eq('전환: 같으면 되쓰기 0', lockRewritesFor([rec('a', 470000)], 470000), [])
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
