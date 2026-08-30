@@ -131,17 +131,24 @@ const clean = stripComments(src)
   eq('축1 · 미정이면 scheduledDate 가 null 이다', !!b && /scheduledDate:[^,\n]*null/.test(b), true)
 }
 
-// 축 2 — 호출부 **둘 다** 예정일을 넘긴다. 이 결함의 클래스가 바로 여기다.
+// 축 2 — 청소를 만드는 호출부는 **하나**다. 그 하나가 예정일을 넘긴다.
+//
+// 종전에는 둘이었고(checkoutTenant·applyStatusTransition) 이 축이 "둘 다 넘기는가"를 봤다.
+// 그런데 손사본이 둘이라는 것 자체가 결함이었다 — 입주자 관리 수정 경로는 아예 안 불러서
+// 8/4 이후 퇴실 9건 중 3건에 청소가 없었다. 2026-08-30 에 applyCheckoutSideEffects 정본
+// 하나로 모았고, 세 경로가 전부 그것을 부른다. 그래서 이 축의 기대값이 1로 내려간다.
+//
+// **'하나여야 한다'가 이제 규칙이다.** 둘로 늘면 그것이 곧 손사본이 되살아났다는 뜻이다
+// (check-checkout-side-effects 축 ⓒ 가 같은 것을 소스 쪽에서 본다).
 {
   const invocations = callArgsOf(clean, 'ensureCheckoutCleaning')
-  eq('축2 · 호출부가 둘이다', invocations.length, 2)
-  eq('축2 · 두 호출부 모두 청소 예정일을 넘긴다',
-    invocations.map(c => c.includes('cleaningYmd')), [true, true])
+  eq('축2 · 청소를 만드는 호출부는 하나다(정본)', invocations.length, 1)
+  eq('축2 · 그 호출부가 청소 예정일을 넘긴다',
+    invocations.map(c => c.includes('cleaningYmd')), [true])
   // 퇴실일은 더 이상 규칙의 입력이 아니다 — 앱이 날짜를 파생하지 않으므로 넘길 이유가 없다.
-  // 대신 그 자리에 '오늘'이 다시 기어들지 않는지를 본다. 규칙이 아무리 옳아도 호출부가
-  // kstYmdStr() 을 예정일로 먹이면 종전 결함이 그대로 돌아온다.
-  eq('축2 · 어느 호출부도 오늘을 예정일로 먹이지 않는다',
-    invocations.map(c => /cleaningYmd\s*:\s*kstYmdStr\(\)/.test(c)), [false, false])
+  // 대신 그 자리에 '오늘'이 다시 기어들지 않는지를 본다.
+  eq('축2 · 오늘을 예정일로 먹이지 않는다',
+    invocations.map(c => /cleaningYmd\s*:\s*kstYmdStr\(\)/.test(c)), [false])
 }
 
 // 축 3 — 되돌리기 대칭. 자동 생성분만 걷는 네 조건이 그대로 서 있어야 한다.

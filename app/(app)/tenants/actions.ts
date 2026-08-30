@@ -139,6 +139,45 @@ async function clearAutoCheckoutCleaning(propertyId: string, leaseTermId: string
   } catch { /* 청소 이력은 상태 전이를 막지 않는다 */ }
 }
 
+/**
+ * 퇴실의 **부수 처리 정본** — 상태 갱신을 뺀 나머지를 한 자리에 모은다.
+ *
+ * 퇴실이 건드리는 축은 다섯이다. 상태·공실·예약가 적용·청소 예정·거주 구간 마감.
+ * 그런데 경로가 셋으로 갈리면서 어느 경로도 다섯을 다 하지 않았다(2026-08-30 실측).
+ * 홈과 프리즘은 checkoutTenant 를 타서 넷을 하고 이용료 환불을 못 했고, 수정 폼은 이용료
+ * 환불은 하지만 청소 예정과 예약가 적용을 빠뜨렸다. 8/4 이후 퇴실 9건 중 3건에 퇴실 청소가
+ * 아예 없었던 것이 그 자국이다.
+ *
+ * 그래서 이 함수를 뺐다. **상태를 어디서 쓰든 부수 처리는 이 한 자리를 지난다.**
+ * checkoutTenant 도 이 함수를 부르므로 두 벌이 갈릴 자리가 없다.
+ *
+ * 실패해도 던지지 않는다 — 퇴실은 이미 끝났고 청소 이력이 퇴실을 되돌릴 이유가 없다.
+ * 못 만든 것이 있으면 한 문장으로 알린다.
+ */
+async function applyCheckoutSideEffects(
+  propertyId: string,
+  leaseTermId: string,
+  opts: { roomId: string | null; cleaningYmd: string | null | undefined },
+): Promise<string | null> {
+  // 예약가가 걸려 있으면 그 값이 이제 표준가다. 방은 비운다.
+  if (opts.roomId) {
+    try {
+      const room = await prisma.room.findUnique({ where: { id: opts.roomId }, select: { scheduledRent: true } })
+      await prisma.room.update({
+        where: { id: opts.roomId },
+        data: {
+          isVacant: true,
+          ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }),
+        },
+      })
+    } catch { /* 방 갱신 실패가 퇴실을 되돌리지 않는다 */ }
+  }
+  const cleaningRes = await ensureCheckoutCleaning(propertyId, opts.roomId, leaseTermId, { cleaningYmd: opts.cleaningYmd })
+  // 거주 구간 마감 — 열린 구간이 없으면 no-op.
+  try { await closeStay(prisma, leaseTermId) } catch { /* 구간 이력이 퇴실을 막지 않는다 */ }
+  return checkoutCleaningNotice(cleaningRes)
+}
+
 // 만든 결과. 종전에는 셋 다 조용했다 — 자동 생성이 뒤에서 도는 부수효과였고 운영자는 그것이
 // 생겼는지 약속받은 적이 없었다. **화면에 '청소 예정일' 칸을 세우는 순간 그건 약속이 된다.**
 // 고른 날짜가 어디에도 안 남는데 아무 말도 안 나가면, 화면과 서버가 다른 말을 하는 그 결함이다.
@@ -1544,6 +1583,26 @@ export async function updateTenant(formData: FormData): Promise<
     await reanchorReservationPrepaid(leaseTermId)
   }
 
+  /**
+   * 퇴실 전이면 **퇴실 정본이 하는 일을 여기서도 한다** (2026-08-30, 경로 통합).
+   *
+   * 퇴실 처리 경로가 셋인데(홈 알림·프리즘 위젯·이 수정 폼) 하는 일이 서로 달랐다.
+   * 이 경로는 이용료 환불은 하지만 **청소 예정과 예약가 적용을 안 했다.** 실측으로 8/4 이후
+   * 퇴실 9건 중 3건에 퇴실 청소가 아예 없었다(503·422·409호).
+   *
+   * 상태 갱신 자체를 checkoutTenant 로 옮기지 않는 이유. 이 경로는 한 폼에서 방·날짜·금액을
+   * 함께 고치고 그 전부가 한 update 로 나간다. 상태만 다른 함수로 빼면 두 쓰기가 갈리고,
+   * 그 사이에 다른 저장이 끼면 폼이 본 값과 저장된 값이 어긋난다. 그래서 **상태는 여기서 쓰고,
+   * 부수 처리(청소·공실·예약가·구간 마감)만 정본을 부른다.**
+   */
+  let checkoutSideNotice: string | null = null
+  if (status === 'CHECKED_OUT' && prevStatus !== 'CHECKED_OUT') {
+    checkoutSideNotice = await applyCheckoutSideEffects(propertyId, leaseTermId, {
+      roomId: newRoomId ?? prevRoomId ?? null,
+      cleaningYmd: (formData.get('cleaningDate') as string) || undefined,
+    })
+  }
+
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
 
@@ -1559,7 +1618,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 그날 계약 호실이 아직 차 있으면 그 사실을 함께 돌려준다. 저장은 막지 않는다 —
   // 날짜를 바꾸는 것 자체는 정당하고, 방은 그 다음 문제다.
   const roomBusy = await reservationRoomBusy(propertyId, leaseTermId)
-  const finalNotice = [baseNotice, rentRewriteNotice,
+  const finalNotice = [baseNotice, rentRewriteNotice, checkoutSideNotice,
     staleCleared ? '입주일이 바뀌어 거주 호실 일정을 지웠습니다.' : null].filter(Boolean).join(' ') || null
   return {
     ok: true,
@@ -2849,32 +2908,11 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
     data: { status: 'CHECKED_OUT', moveInFlexible: null, moveOutDate: moveOutDate ? new Date(moveOutDate) : new Date() },
   })
 
-  // [Trigger A] 퇴실 완료 시 예약된 가격이 있으면 baseRent에 적용하고 예약 필드 초기화
-  if (lease.roomId) {
-    const room = await prisma.room.findUnique({
-      where: { id: lease.roomId },
-      select: { scheduledRent: true },
-    })
-    await prisma.room.update({
-      where: { id: lease.roomId },
-      data: {
-        isVacant: true,
-        ...(room?.scheduledRent != null && {
-          baseRent:      room.scheduledRent,
-          scheduledRent: null,
-          rentUpdateDate: null,
-        }),
-      },
-    })
-  }
-
-  // 퇴실일은 바로 위 update 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘).
-  const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, leaseTermId, {
-    cleaningYmd: cleaningDate,
+  // 공실·예약가 적용·청소 예정·구간 마감은 부수 처리 정본 한 자리를 지난다(2026-08-30 경로 통합).
+  // 수정 폼 경로도 같은 함수를 부르므로 두 벌이 갈릴 자리가 없다.
+  const cleaningNoticeText = await applyCheckoutSideEffects(propertyId, leaseTermId, {
+    roomId: lease.roomId, cleaningYmd: cleaningDate,
   })
-
-  // 거주 구간 이력 — 퇴실 확정이면 열린 구간을 퇴실일로 마감(추가 write).
-  await closeStay(prisma, leaseTermId)
 
   await prisma.tenantStatusLog.create({
     data: {
@@ -2888,8 +2926,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
 
   revalidatePath('/tenants')
   // 청소 예정이 안 만들어졌으면 그 사실만 얹는다. 퇴실은 이미 끝났고 여기서 실패로 뒤집지 않는다.
-  const cleaningNotice = checkoutCleaningNotice(cleaningRes)
-  return cleaningNotice ? { ok: true, notice: cleaningNotice } : { ok: true }
+  return cleaningNoticeText ? { ok: true, notice: cleaningNoticeText } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -3084,18 +3121,13 @@ export async function applyStatusTransition(input: {
     if (vac === true && lease.roomId && await roomStillOccupied(lease.roomId, input.leaseTermId)) vac = null
     if (lease.roomId && vac !== null) {
       if (input.toStatus === 'CHECKED_OUT') {
-        // 퇴실 완료 — 예약 가격 있으면 baseRent 적용 (checkoutTenant 와 동일)
-        const room = await prisma.room.findUnique({ where: { id: lease.roomId }, select: { scheduledRent: true } })
-        await prisma.room.update({
-          where: { id: lease.roomId },
-          data: { isVacant: true, ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }) },
-        })
-        // 퇴실일은 위 data 가 쓴 값과 같은 규칙으로 읽는다(미전달이면 오늘로 보정된다).
-        const cleaningRes = await ensureCheckoutCleaning(propertyId, lease.roomId, input.leaseTermId, {
-          cleaningYmd: input.cleaningDate,
+        // 공실·예약가·청소·구간은 부수 처리 정본 한 자리를 지난다(2026-08-30 경로 통합).
+        // 종전에는 이 자리가 checkoutTenant 를 손으로 베낀 두 벌째였다 — 주석이 "동일"이라고
+        // 적어 두었지만 손사본은 언젠가 갈린다.
+        const cleaningNotice = await applyCheckoutSideEffects(propertyId, input.leaseTermId, {
+          roomId: lease.roomId, cleaningYmd: input.cleaningDate,
         })
         // 이미 서 있는 안내(일할 정산 해제 등)를 덮지 않고 잇는다. 둘 다 같은 저장에서 일어난 일이다.
-        const cleaningNotice = checkoutCleaningNotice(cleaningRes)
         if (cleaningNotice) notice = notice ? `${notice} ${cleaningNotice}` : cleaningNotice
       } else {
         // 퇴실이 아닌 상태로 되돌아왔다 — 자동 생성한 청소 예정을 걷는다
