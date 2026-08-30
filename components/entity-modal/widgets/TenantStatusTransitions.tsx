@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning,
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, getPendingRentRefundNotice,
   getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -110,7 +110,9 @@ type Lease = {
 // resvCancelPrepaid: prepaid 모드 예약 취소 — 이용료 선납 반환/몰취(depositAmount=선납 실수납 합).
 type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number
   /** 이 방에 이미 열려 있는 퇴실 청소 예정 — 있으면 새로 만들지 않고 날짜도 안 덮는다(서버 skipped-open). */
-  openCleaning?: { id: string; scheduledYmd: string | null } | null } | null
+  openCleaning?: { id: string; scheduledYmd: string | null } | null
+  /** 확정해 둔 퇴실 정산이 있는데 이 경로가 이용료 환불을 못 하는 경우 — 화면이 말이라도 한다. */
+  pendingRentRefund?: { amount: number; month: string } | null } | null
 
 // 전이와 함께 보내는 값들. 종전에는 이 모양이 runTransition·submit 두 자리에 그대로 베껴져
 // 있었는데, 칸을 하나 늘릴 때마다 두 곳을 같이 고쳐야 하고 한쪽만 고치면 조용히 안 실린다.
@@ -287,6 +289,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 이미 열려 있는 퇴실 청소 예정 — 있으면 서버가 새로 안 만들고 날짜도 안 덮는다(skipped-open).
     // 그 사실을 화면이 먼저 알아야 '미정'이라고 거짓말하지 않는다(2026-08-30, 404호).
     const openCleaning = def.withDeposit && lease.roomId ? await getOpenCheckoutCleaning(lease.roomId) : null
+    // 이 경로에는 이용료 환불이 없다(경로 셋 중 입주자 관리 수정에만 있다). 확정해 둔 정산이
+    // 남아 있으면 그 사실을 말한다 — 모르고 지나가면 돈이 새고 나중에 장부에서 찾아야 한다.
+    const pendingRentRefund = def.withDeposit ? await getPendingRentRefundNotice(lease.id) : null
     const depoBaseForForm = comp ? comp.basis : (lease.depositAmount || 0)
     // 기준액이 계약 보증금과 다를 때만 '받은 보증금'으로 못박는다(같으면 같은 말을 두 번 하는 셈).
     const depoFromReceived = !!comp && comp.basisSource === 'received' && comp.basis !== comp.contract
@@ -306,7 +311,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
       cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid,
       compositionLabel: comp ? depositCompositionLabel(comp) : null,
-      openCleaning,
+      openCleaning, pendingRentRefund,
       // 계약에는 보증금이 적혀 있는데 받은 기록이 없는 상태 — 서버가 환불·몰취 기록을 거절하는 자리다.
       // 기준액이 0 이라 환불 칸이 아예 안 뜨므로, 왜 없는지는 말해 줘야 한다(조용히 넘어가면 정산 누락).
       noBasisContract: !!comp && comp.basisSource === 'none' && comp.contract > 0 ? comp.contract : 0,
@@ -547,6 +552,16 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   칸이 된다. 자리는 퇴실일 바로 아래다 — 기본값이 퇴실일에서 파생되므로 원인
                   칸과 같은 시야에 있어야 따라 움직인 것이 보인다. 돈 블록 뒤에 두면 좁은 폭에서
                   접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
+              {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
+                  경로를 하나로 모으는 것이 근본이지만(별건), 그때까지 모르고 지나가면 돈이 샌다. */}
+              {active.pendingRentRefund && (
+                <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
+                  이용료 환불 {fmtWon(active.pendingRentRefund.amount)}이 아직 남아 있습니다.
+                  <span className="block mt-0.5" style={{ color: 'var(--warm-mid)' }}>
+                    여기서는 보증금만 정산됩니다. 이용료는 입주자 관리에서 그 사람을 열고 수정으로 퇴실 처리해야 함께 확정됩니다.
+                  </span>
+                </div>
+              )}
               {active.def.key === 'checkout' && lease.roomId && (
                 active.openCleaning
                   // 이미 잡힌 예정이 있으면 **칸을 안 연다.** 서버가 열린 건의 날짜를 안 덮으므로

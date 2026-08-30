@@ -32,7 +32,7 @@ import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
-import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getPendingRentRefundNotice } from '@/app/(app)/tenants/actions'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -270,7 +270,7 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, pendingRentRefund, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
@@ -279,6 +279,8 @@ function CheckoutRefundModal({
   compositionLabel: string | null
   /** 호실이 걸린 계약인가 — 아니면 서버가 청소를 아예 안 만드므로 예정일 칸을 세우지 않는다. */
   hasRoom: boolean
+  /** 확정해 둔 이용료 환불이 남아 있으면 그 값 — 이 경로는 보증금만 정산하므로 말이라도 해야 한다. */
+  pendingRentRefund: { amount: number; month: string } | null
   pending: boolean
   onClose: () => void
   onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined) => void
@@ -344,6 +346,16 @@ function CheckoutRefundModal({
           {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 세 정산 폼이 같은 한 줄을 쓴다. */}
           {compositionLabel && (
             <p className="text-[0.65625rem] break-keep" style={{ color: 'var(--warm-mid)' }}>{compositionLabel}</p>
+          )}
+          {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
+              경로 셋 중 이용료 환불은 입주자 관리 수정에만 있다(별건으로 통합 예정). */}
+          {pendingRentRefund && (
+            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-ring)', color: 'var(--warning-fg)' }}>
+              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 아직 남아 있습니다.
+              <span className="block mt-0.5" style={{ color: 'var(--warm-mid)' }}>
+                여기서는 보증금만 정산됩니다. 이용료는 입주자 관리에서 그 사람을 열고 수정으로 퇴실 처리해야 함께 확정됩니다.
+              </span>
+            </div>
           )}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
@@ -453,6 +465,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const [confirmPending, setConfirmPending] = useState(false)
   const [confirmError, setConfirmError]     = useState('')
   const [refundModalOpen, setRefundModalOpen] = useState(false)
+  // 확정해 둔 이용료 환불 — 이 경로가 못 하는 일이라 화면이 말이라도 하려고 담아 둔다.
+  const [pendingRentRefund, setPendingRentRefund] = useState<{ amount: number; month: string } | null>(null)
   // 고정지출 기록 폼은 실제 항목·계좌를 서버에서 받아 열기 때문에 버튼에 로딩 상태가 필요하다.
   const [recordPending, setRecordPending]   = useState(false)
 
@@ -472,6 +486,9 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   // 퇴실은 보증금 유무와 무관하게 항상 미니폼(퇴실일 입력)으로 — 날짜 없는 즉시 처리 직행 폐기(2026-07-28 오더).
   const handleCheckout = () => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
+    // 확정해 둔 이용료 환불이 남았는지 먼저 묻는다 — 이 경로는 보증금만 정산하므로 말이라도 해야 한다.
+    // 실패해도 창은 연다(안내가 없다고 퇴실을 막을 일은 아니다).
+    void getPendingRentRefundNotice(moveOutLeaseId).then(setPendingRentRefund).catch(() => setPendingRentRefund(null))
     setRefundModalOpen(true)
   }
 
@@ -652,6 +669,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           cleaningFee={moveOutCleaning}
           compositionLabel={alert.moveOutCompositionLabel ?? null}
           hasRoom={alert.moveOutHasRoom === true}
+          pendingRentRefund={pendingRentRefund}
           pending={confirmPending}
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}

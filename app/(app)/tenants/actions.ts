@@ -5972,3 +5972,39 @@ export async function getOpenCheckoutCleaning(roomId: string): Promise<{ id: str
     return null
   }
 }
+
+/**
+ * 이 계약에 **확정해 둔 퇴실 정산이 있는데 아직 이용료 환불이 안 됐는가** — 없으면 null.
+ *
+ * 퇴실 처리 경로가 셋인데 이용료 환불(finalizeRentRefund)은 입주자 관리 수정 한 곳에만 있다
+ * (knowledge/open-checkout-paths-split.md). 홈 알림이나 프리즘에서 퇴실 처리하면 보증금만
+ * 정산되고 일할·단기 요금 환불이 조용히 빠진다 — 422호처럼 단기 요금 294,000 을 적용해 둔
+ * 계약도 그 경로로 나가면 환불 126,000 이 안 잡힌다.
+ *
+ * 경로를 하나로 모으는 것이 근본이고 그건 설계가 필요한 별건이다. 그때까지 **화면이 이 사실을
+ * 말이라도 해야 한다.** 모르고 지나가면 돈이 새고, 나중에 장부에서 찾아야 한다.
+ *
+ * 이미 환불이 확정된 계약은 null 이다 — 그 경우 할 말이 없다.
+ */
+export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{ amount: number; month: string } | null> {
+  try {
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseTermId, propertyId },
+      select: { checkoutProratedAmount: true, checkoutProratedMonth: true },
+    })
+    if (!lease?.checkoutProratedMonth || lease.checkoutProratedAmount == null) return null
+    const mon = lease.checkoutProratedMonth
+    // 그 달에 받은 돈이 확정 청구보다 많으면 그 차액이 아직 안 돌려준 이용료다.
+    const agg = await prisma.paymentRecord.aggregate({
+      where: { leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false, isBillingAdjust: false, deletedAt: null },
+      _sum: { actualAmount: true },
+    })
+    const paid = Math.max(0, agg._sum.actualAmount ?? 0)
+    const refund = paid - lease.checkoutProratedAmount
+    return refund > 0 ? { amount: refund, month: mon } : null
+  } catch {
+    // 못 물었으면 조용히 넘긴다 — 안내가 없다고 퇴실을 막을 일은 아니다.
+    return null
+  }
+}
