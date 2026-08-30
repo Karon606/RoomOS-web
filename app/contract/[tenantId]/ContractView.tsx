@@ -14,6 +14,7 @@ import SignaturePad from 'signature_pad'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
+import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
@@ -961,6 +962,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       }
       const archived = json.archivedCount ?? 0
       const newFileId = json.file?.id
+      // 이번에 쓴 표기를 계약에 남긴다 — 다음 서류가 이 값으로 열린다(납부 확인서와 같은 규칙).
+      // 실패는 조용히 넘긴다. 힌트를 못 남겼다고 방금 발급한 계약서를 무르는 것이 훨씬 나쁘다.
+      if (data.lease?.id) void noteDocNameStyle(data.lease.id, asDocNameStyle(fields.nameStyle) ?? 'ko')
       pushToast('success', '계약서 발급됨 · 입실자 정보로 이동', {
         ...(archived > 0 ? { detail: `기존 실계약 ${archived}부는 보관용으로 바뀜` } : {}),
         // 되돌릴 길은 토스트가 사라져도 남는다(각 계약서의 용도 창) — 여기는 그 첫 자리다.

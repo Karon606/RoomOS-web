@@ -79,6 +79,26 @@ eq('네 서류 영문 이름이 서로 다르다',
   new Set(Object.values(DOC_TYPE_FILE_LABEL_EN)).size, 4)
 eq('한글 이름은 그대로다', DOC_TYPE_FILE_LABEL.rent, '입실료납부확인서')
 
+
+// ── 계약서 이어받기 ── 서명 전에는 앞 서류를 잇고, 서명 뒤에는 그때 값을 지킨다(2026-08-30)
+//
+// 계약서만 이어받기가 빠져 있었다. 발급 순서에서 두 번째라(보증금 영수증 → 계약서 →
+// 납부 확인서 → 실거주 확인서) 여기서 끊기면 뒤로도 안 간다.
+//
+// **서명 뒤에는 안 잇는다.** 표기를 안 고른 채 한글로 서명받은 계약에 나중에 이어받기가
+// 걸리면 입주자가 서명한 종이와 화면이 갈린다. lib/contractData 가 signatureSignedAt 으로 가른다.
+{
+  const both: DocNameStyle[] = ['ko', 'en']
+  // 서명 전 — 저장값이 없으면 앞 서류(en)를 잇는다.
+  eq('계약서: 서명 전에는 앞 서류를 잇는다',
+    resolveDocNameStyle({ saved: undefined, siblings: ['en'], nationality: '대한민국', available: both }), 'en')
+  // 저장값이 있으면 그것이 이긴다 — 운영자가 이 계약서에서 이미 골랐다는 뜻이다.
+  eq('계약서: 저장값이 앞 서류를 이긴다',
+    resolveDocNameStyle({ saved: 'ko', siblings: ['en'], nationality: '베트남', available: both }), 'ko')
+  // 서명 뒤 분기는 resolveDocNameStyle 을 아예 안 탄다 — 그 계약은 저장값(없으면 한글)이 그대로다.
+  // 여기서는 그 값이 무엇인지만 고정한다.
+  eq('계약서: 서명 뒤 저장값 없으면 한글', DEFAULT_DOC_NAME_STYLE, 'ko')
+}
 console.log(`\n서류 성명 표기 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

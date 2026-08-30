@@ -11,7 +11,7 @@ import {
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
-import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName } from '@/lib/documentName'
+import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName, asDocNameStyle, docNameStyles, resolveDocNameStyle } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
@@ -276,8 +276,32 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   // 전부 이 값을 쓰므로 종이와 기록이 갈릴 수 없다(lib/contractFieldOverrides 가 정본).
   const fields = lease ? contractLeaseFields(lease) : null
   const fieldOverrides = lease ? parseContractFieldOverrides(lease.contractFieldOverrides) : {}
-  // 계약이 없으면 선택을 담아 둘 자리가 없다 — 기본(한글)으로 그린다.
-  const nameStyle = fields?.nameStyle ?? DEFAULT_DOC_NAME_STYLE
+  /**
+   * 성명 표기 — 저장된 값이 있으면 그것, 없으면 **앞 서류가 고른 표기를 이어받는다.**
+   *
+   * 운영자 요구다(2026-08-29) — "계약서를 영어로 발급하면 거주확인서도 영어로 발급을 해야하거든".
+   * 납부 확인서·실거주 확인서는 이미 이어받는데 계약서만 빠져 있었다. 발급 순서에서 두 번째라
+   * (보증금 영수증 → 계약서 → 납부 확인서 → 실거주 확인서) 앞의 선택이 여기서 끊기면 뒤로도 안 간다.
+   *
+   * **서명이 끝난 계약은 이어받지 않는다.** 표기를 안 고른 채 한글로 서명받은 계약에 나중에
+   * 이어받기가 걸리면, 입주자가 서명한 종이와 화면이 갈린다. 그 계약은 저장된 값(없으면 한글)
+   * 그대로다 — 서명 시점의 사실을 나중 규칙이 덮지 않는다.
+   */
+  const nameStyleSource = {
+    name: tenant.name,
+    englishName: tenant.englishName ?? null,
+    nativeName: tenant.nativeName ?? null,
+  }
+  const signedAlready = !!(lease as { signatureSignedAt?: Date | null } | null)?.signatureSignedAt
+  const inherited = asDocNameStyle((lease as { lastDocNameStyle?: unknown } | null)?.lastDocNameStyle)
+  const nameStyle = signedAlready
+    ? (fields?.nameStyle ?? DEFAULT_DOC_NAME_STYLE)
+    : resolveDocNameStyle({
+      saved: fields?.nameStyle,
+      siblings: inherited ? [inherited] : [],
+      nationality: tenant.nationality,
+      available: docNameStyles(nameStyleSource),
+    })
 
   return {
     template: body.template,
