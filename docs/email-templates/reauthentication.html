@@ -1,49 +1,33 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
 </head>
-<body style="margin:0; padding:0; background-color:#f4efe6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4efe6;">
-    <tr>
-      <td align="center" style="padding:40px 16px;">
-        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%; background-color:#ffffff; border:1px solid #ebe1cf; border-radius:16px;">
-          <tr>
-            <td style="padding:32px 32px 8px 32px;">
-              <span style="font-size:24px; font-weight:700; letter-spacing:-0.5px; color:#1f1b16;">Stay<span style="color:#e84a1a;">eum</span></span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 32px 8px 32px;">
-              <h1 style="margin:0 0 12px 0; font-size:20px; font-weight:700; color:#1f1b16;">본인 확인 코드</h1>
-              <p style="margin:0; font-size:14px; line-height:1.7; color:#5c5246;">
-                요청하신 작업을 계속하려면 아래 인증 코드를 입력해 주세요.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px 32px;">
-              <div style="background-color:#f4efe6; border-radius:12px; padding:20px; text-align:center;">
-                <span style="font-size:34px; font-weight:700; letter-spacing:10px; color:#1f1b16; font-family:'SF Mono',Menlo,Consolas,monospace;">{{ .Token }}</span>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 32px 24px 32px;">
-              <p style="margin:0; font-size:12px; color:#8a7c68;">이 코드는 잠시 후 만료됩니다. 타인에게 절대 공유하지 마세요.</p>
-            </td>
-          </tr>
-          <tr><td style="padding:0 32px;"><div style="height:1px; background-color:#ebe1cf;"></div></td></tr>
-          <tr>
-            <td style="padding:20px 32px 32px 32px;">
-              <p style="margin:0 0 4px 0; font-size:12px; line-height:1.6; color:#8a7c68;">본인이 요청한 적이 없다면 이 메일을 무시하셔도 됩니다.</p>
-              <p style="margin:0; font-size:12px; color:#b3a78f;">© 2026 스테이음 · 고시원·원룸텔 스마트 관리 시스템</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+<body style="margin:0;padding:0;background-color:#FBF6EF;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FBF6EF;" bgcolor="#FBF6EF"><tr><td align="center" style="padding:32px 20px;">
+<!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+    <tr><td style="padding-bottom:10px;border-bottom:2px solid #A03C2E;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',AppleGothic,sans-serif;font-size:18px;font-weight:700;color:#1F1A17;word-break:keep-all;">본인 확인 코드</td></tr>
+    <tr><td style="padding:20px 0 0;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',AppleGothic,sans-serif;font-size:14px;line-height:1.7;color:#1F1A17;word-break:keep-all;">
+      요청하신 작업을 계속하려면 아래 코드를 입력해 주세요.
+    </td></tr>
+    <tr><td style="padding:18px 0 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F2ECE3;border-left:3px solid #A03C2E;"><tr>
+        <td align="center" style="padding:22px 16px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#1F1A17;">{{ .Token }}</td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="padding:14px 0 0;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',AppleGothic,sans-serif;font-size:12px;line-height:1.65;color:#6B5D4F;word-break:keep-all;">
+      이 코드는 잠시 후 만료됩니다. 누구에게도 알려주지 마세요.
+    </td></tr>
+    <tr><td style="padding-top:28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #D8CFC4;padding-top:14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="top" style="font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',AppleGothic,sans-serif;font-size:12px;line-height:1.65;color:#6B5D4F;word-break:keep-all;">본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.</td>
+        <td valign="bottom" align="right" style="padding-left:16px;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',AppleGothic,sans-serif;font-size:12px;line-height:1.65;color:#6B5D4F;white-space:nowrap;">made with <span style="color:#1F1A17;font-weight:600;">stay</span><span style="color:#A03C2E;font-weight:600;">eum</span></td>
+      </tr></table>
+    </td></tr></table></td></tr>
   </table>
-</body>
-</html>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr></table>
+</body></html>
