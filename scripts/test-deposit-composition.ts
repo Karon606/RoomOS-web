@@ -171,5 +171,30 @@ propose('제안·금액 0', { amount: 0, depositRemaining: 50000, cleaningRemain
 propose('제안·잔여 음수 방어', { amount: 50000, depositRemaining: -10000, cleaningRemaining: -5000 },
   { deposit: 0, cleaning: 0, rent: 50000 })
 
+// ── 반환하지 않는 사유를 묻는 경계 (2026-08-30 운영자 지적) ────────────────
+//
+// 청소비는 보증금 **안에 든 몫**이라 퇴실에서 당연히 빠진다. 돌려줄지 말지를 고르는 돈이 아니다.
+// 그런데 종전에는 그 2만원에도 사유를 필수로 물었다 — 앱이 이미 답을 알고 '청소비'를 자동으로
+// 골라 놓고는 그 칸을 필수로 세워 둔 꼴이었다. 운영자 원문: "반환한다 안한다에 대해 고민할
+// 이유가 없으니까".
+//
+// 그래서 경계는 **미반환액이 청소비 공제액을 넘는가**다. 파손·미납처럼 그것을 넘는 몫에만 묻는다.
+// 화면 둘(퇴실 처리 폼·보증금 패널)이 같은 축을 쓴다.
+{
+  const asks = (withheld: number, contractFee: number, receivedSeparately: number) =>
+    withheld > cleaningFeeDeductible(contractFee, receivedSeparately)
+  // 계약 청소비 2만, 따로 받은 적 없음 — 공제액 2만.
+  eq('청소비만 떼면 안 묻는다', asks(20000, 20000, 0), false)
+  eq('청소비보다 적게 떼도 안 묻는다', asks(10000, 20000, 0), false)
+  eq('청소비를 넘으면 묻는다', asks(30000, 20000, 0), true)
+  eq('전액 몰취는 묻는다', asks(50000, 20000, 0), true)
+  eq('안 떼면 물을 것이 없다', asks(0, 20000, 0), false)
+  // 입실 때 청소비를 따로 받았으면 퇴실 공제액이 0이라, 1원이라도 떼면 사유가 필요하다.
+  eq('입실 때 받았으면 공제액 0 — 떼는 즉시 묻는다', asks(1, 20000, 20000), true)
+  eq('입실 때 받았고 안 떼면 안 묻는다', asks(0, 20000, 20000), false)
+  // 계약 청소비가 0인 영업장은 종전과 같다 — 떼면 무조건 묻는다.
+  eq('청소비 없는 계약은 떼는 즉시 묻는다', asks(10000, 0, 0), true)
+}
+
 console.log(`\n보증금 구성 판정 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

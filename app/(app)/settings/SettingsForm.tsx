@@ -3181,7 +3181,7 @@ function ShortStayPolicyCard() {
                     예치금이 아니라 예약금 시드다. 라벨을 고정해 두면 정반대로 안내하게 된다. */}
                 <label className="block">
                   <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">
-                    {p.reservationMode === 'applyToRent' ? '예약금(원) · 수납 폼 기본값' : '보증금(원) · 퇴실 시 환불'}
+                    {p.reservationMode === 'applyToRent' ? '예약금(원) · 수납 폼 기본값' : '보증금(원) · 퇴실 시 반환'}
                   </span>
                   <input value={String(p.deposit)} inputMode="numeric" onChange={setNum('deposit')} className={numCls} />
                 </label>

@@ -224,7 +224,7 @@ export function DepositStatusPanel({
   const remove = async (r: Rec) => {
     if (!(await confirmDialog({
       title: `보증금 수납 ${r.actualAmount.toLocaleString()}원을 삭제할까요?`,
-      message: '보증금 잔액이 그만큼 줄어듭니다. 환불 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.',
+      message: '보증금 잔액이 그만큼 줄어듭니다. 반환 정산에도 그대로 반영됩니다.\n삭제 직후 뜨는 적용취소로 되살릴 수 있습니다.',
       level: 'caution', confirmLabel: '삭제',
     }))) return
     startTransition(async () => {
@@ -243,7 +243,7 @@ export function DepositStatusPanel({
       title: '환불 기록을 적용취소할까요?',
       // 미반환분은 성격대로 최대 2행(청소비 몫 / 몰취)이라 무엇이 사라지는지 카테고리까지 말한다(§14).
       message: r.withheld > 0
-        ? `미환불 ${fmtWon(r.withheld)}으로 잡힌 부가수익(${withheldPartsLabel(r.parts, fmtWon) ?? '보증금 몰취'})도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
+        ? `미반환 ${fmtWon(r.withheld)}으로 잡힌 부가수익(${withheldPartsLabel(r.parts, fmtWon) ?? '보증금 몰취'})도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
         : '환불 기록만 지웁니다. 퇴실 상태는 그대로 유지됩니다.',
       level: 'caution', confirmLabel: '적용취소',
     }))) return
@@ -266,13 +266,14 @@ export function DepositStatusPanel({
     if (!tenantId || !tenantName) return
     const withheldNow = Math.max(0, refundBase - recAmount)
     const reason = buildWithholdReason(recReason, recEtc)
-    if (withheldNow > 0 && !reason) { pushToast('error', '미환불 사유를 선택해 주세요.'); return }
-    // 전액 미환불 결정만 되묻는다 — 퇴실 처리 폼과 같은 방향(몰취에만 마찰).
+    // 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(퇴실 처리 폼과 같은 축).
+    if (withheldNow > effectiveFee && !reason) { pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return }
+    // 전액 미반환 결정만 되묻는다 — 퇴실 처리 폼과 같은 방향(몰취에만 마찰).
     if (recAmount === 0 && refundBase > 0) {
       if (!(await confirmDialog({
         title: '보증금을 전액 돌려주지 않은 것으로 기록할까요?',
-        message: `${fmtWon(refundBase)}이 미환불로 기록됩니다.\n사유: ${reason}.`,
-        level: 'caution', confirmLabel: '전액 미환불로 기록',
+        message: `${fmtWon(refundBase)}이 미반환으로 기록됩니다.\n사유: ${reason}.`,
+        level: 'caution', confirmLabel: '전액 미반환으로 기록',
       }))) return
     }
     startTransition(async () => {
@@ -400,7 +401,7 @@ export function DepositStatusPanel({
       {noContractAmount && (
         <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">
           {exited
-            ? '계약 보증금을 입력해야 환불 여부를 판정할 수 있습니다. 입주자 정보 수정에서 입력해 주세요.'
+            ? '계약 보증금을 입력해야 반환 여부를 판정할 수 있습니다. 입주자 정보 수정에서 입력해 주세요.'
             : '계약 보증금이 입력되지 않아 완납 여부를 판정하지 못합니다. 입주자 정보 수정에서 입력해 주세요.'}
         </p>
       )}
@@ -408,7 +409,7 @@ export function DepositStatusPanel({
       {settled && refund && (
         <p className="text-xs text-[var(--warm-dark)] break-keep">
           환불 <span className="font-semibold num">{fmtWon(refund.returned)}</span>
-          {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미환불 {fmtWon(refund.withheld)}{refund.reason ? ` (${refund.reason})` : ''}</span>}
+          {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미반환 {fmtWon(refund.withheld)}{refund.reason ? ` (${refund.reason})` : ''}</span>}
           <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {refund.date.replaceAll('-', '.')} 처리</span>
         </p>
       )}
@@ -439,9 +440,9 @@ export function DepositStatusPanel({
               <DatePicker name="refundRecordDate" value={recDate} onChange={setRecDate} className={inputCls} />
             </div>
           </div>
-          {Math.max(0, refundBase - recAmount) > 0 && (
+          {Math.max(0, refundBase - recAmount) > effectiveFee && (
             <div className="space-y-1.5">
-              <p className={labelCls}>미환불 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
+              <p className={labelCls}>반환하지 않는 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
               <select value={recReason} onChange={e => setRecReason(e.target.value)} className={inputCls}>
                 <option value="">사유 선택</option>
                 {WITHHOLD_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -481,7 +482,7 @@ export function DepositStatusPanel({
       {!settled && refundBase > 0 && cleaningFee > 0 && cleaningPaid > 0 && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
           {coveredByCleaning > 0
-            ? `입실 때 받은 청소비 ${fmtWon(cleaningPaid)}이 계약 보증금의 일부를 채웁니다. 환불 예상은 현금으로 받은 몫 기준이며 청소비는 다시 공제하지 않습니다.`
+            ? `입실 때 받은 청소비 ${fmtWon(cleaningPaid)}이 계약 보증금의 일부를 채웁니다. 반환 예상은 현금으로 받은 몫 기준이며 청소비는 다시 공제하지 않습니다.`
             : `청소비 ${fmtWon(cleaningPaid)}은 입실 때 이미 받아 공제하지 않습니다.`}
         </p>
       )}

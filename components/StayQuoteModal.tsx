@@ -120,7 +120,7 @@ export function StayQuoteModal({ open, onClose, z = 200 }: { open: boolean; onCl
             </div>
             {short.deposit > 0 && (
               <p className="text-[0.6875rem] text-[var(--warm-mid)] flex items-baseline justify-between">
-                <span>보증금 (요금과 별도 · 퇴실 시 환불)</span>
+                <span>보증금 (요금과 별도 · 퇴실 시 반환)</span>
                 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(short.deposit)}</span>
               </p>
             )}

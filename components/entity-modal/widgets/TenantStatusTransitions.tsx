@@ -146,7 +146,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
-  // 미환불 사유 — 돈이 움직이는 결정이라 필수다(입실 취소 사유가 선택인 것과 다르다).
+  // 반환하지 않는 사유 — 돈이 움직이는 결정이라 필수다(입실 취소 사유가 선택인 것과 다르다).
+  // 다만 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다.
   const [withholdReason, setWithholdReason] = useState('')
   const [withholdEtc, setWithholdEtc] = useState('')
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
@@ -329,9 +330,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         const withDeposit = def.withDeposit === true || active?.resvCancel === true
         if (withDeposit && depoBase > 0 && transRefund != null) {
           const withheldNow = Math.max(0, depoBase - transRefund)
-          const needReason = def.withDeposit === true   // 퇴실 경로만. 예약 취소 몰취는 라벨에 사유가 들어 있다
+          // 청소비 몫까지는 묻지 않는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(위 UI 와 같은 축).
+          const cleaningPortion = active?.cleaningFee ?? 0
+          const needReason = def.withDeposit === true && withheldNow > cleaningPortion
           const reason = buildWithholdReason(withholdReason, withholdEtc)
-          if (needReason && withheldNow > 0 && !reason) { pushToast('error', '미환불 사유를 선택해 주세요.'); return }
+          if (needReason && !reason) { pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return }
           // 전액을 돌려주지 않는 결정만 되묻는다. 청소비만 떼는 정상 퇴실에는 마찰을 만들지 않는다.
           // 이용료 전액 환불에는 이미 확인창이 있는데 몰취에는 없었다 — 방향이 반대였다.
           if (needReason && transRefund === 0 && depoBase > 0) {
@@ -537,13 +540,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   종전에는 계약액으로 칸을 열고 저장에서야 거절해, 화면과 서버가 다른 말을 했다. */}
               {active.def.withDeposit && (active.noBasisContract ?? 0) > 0 && (
                 <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">
-                  계약 보증금 {fmtWon(active.noBasisContract ?? 0)}이 있으나 받은 기록이 없어 환불·몰취를 기록할 수 없습니다. 수납 화면에서 보증금 수납을 먼저 등록해 주세요.
+                  계약 보증금 {fmtWon(active.noBasisContract ?? 0)}이 있으나 받은 기록이 없어 반환·몰취를 기록할 수 없습니다. 수납 화면에서 보증금 수납을 먼저 등록해 주세요.
                 </p>
               )}
               {(active.def.withDeposit || active.resvCancel || active.resvCancelPrepaid) && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)] block">
-                    {active.resvCancelPrepaid ? '선납 환불' : active.resvCancel ? '예약금 환불' : '보증금 환불'} <span className="text-[var(--warm-muted)] font-normal">({/* 분해 수납이면 이 금액은 선납만이 아니라 받은 예약금 전부다(청소비 몫 포함) — 아래 구성 줄이 내역을 편다 */}
+                    {active.resvCancelPrepaid ? '선납 반환' : active.resvCancel ? '예약금 반환' : '보증금 반환'} <span className="text-[var(--warm-muted)] font-normal">({/* 분해 수납이면 이 금액은 선납만이 아니라 받은 예약금 전부다(청소비 몫 포함) — 아래 구성 줄이 내역을 편다 */}
                       {active.resvCancelPrepaid ? (active.compositionLabel ? '받은 예약금' : '받은 선납금') : active.resvCancel ? '받은 예약금' : active.depoFromReceived ? '받은 보증금' : '보증금'} {fmtWon(active.depositAmount)})</span>
                   </label>
                   {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 현금만 보이면 '계약 5만인데 왜 3만인가'로 읽힌다.
@@ -553,18 +556,23 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   )}
                   {/* 종전에는 '환불 안 함'이 단방향 버튼이라 한 번 누르면 되돌아올 길이 금액 재입력뿐이었다.
                       상호배타 선택은 SegmentedControl 정본을 쓴다(§10 raw button 금지·§12). */}
-                  <SegmentedControl size="sm" ariaLabel="보증금 환불 여부"
+                  <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
                     value={transRefund === 0 ? 'none' : 'refund'}
                     onChange={v => { if ((v === 'none') !== (transRefund === 0)) setTransRefund(v === 'none' ? 0 : Math.max(0, active.depositAmount - active.cleaningFee)) }}
                     options={[
-                      { value: 'refund', label: (active.resvCancel || active.resvCancelPrepaid) ? '반환함' : '환불함' },
-                      { value: 'none', label: (active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '환불 안 함' },
+                      { value: 'refund', label: '반환함' },
+                      { value: 'none', label: (active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '반환 안 함' },
                     ]} />
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
-                  {/* 미환불이 있으면 사유를 받는다. 전액 환불이면 물을 것이 없다. */}
-                  {active.def.withDeposit === true && transRefund != null && active.depositAmount - transRefund > 0 && (
+                  {/* 미반환이 **청소비 몫을 넘을 때만** 사유를 받는다.
+                      청소비는 보증금 안에 든 몫이라 퇴실에서 당연히 빠진다 — 돌려줄지 말지를 고르는
+                      돈이 아니다. 그런데 종전에는 그 2만원에도 사유를 필수로 물었다. 앱이 이미 답을
+                      알고 자동으로 '청소비'를 골라 놓고는 그 칸을 필수로 세워 둔 꼴이었다
+                      (운영자 지적 2026-08-30 — "반환한다 안한다에 대해 고민할 이유가 없으니까").
+                      파손·미납처럼 청소비를 넘는 몫에는 그대로 묻는다. */}
+                  {active.def.withDeposit === true && transRefund != null && active.depositAmount - transRefund > active.cleaningFee && (
                     <div className="space-y-1.5 pt-0.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">미환불 사유 <span className="font-normal opacity-60">(필수)</span></label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                       <select value={withholdReason} onChange={e => setWithholdReason(e.target.value)}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택하세요</option>
@@ -586,8 +594,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                       : active.resvCancel
                       ? <>반환하지 않은 금액은 예약금 몰취로 기록됩니다.</>
                       : active.carriedOver
-                      ? <>인수 전 입주자라 이전 원장 원칙대로 승계받은 보증금을 돌려주지 않는 것이 기본입니다. 돌려주려면 위에서 &lsquo;환불함&rsquo;을 고르세요. 환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
-                      : <>환불하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>}
+                      ? <>인수 전 입주자라 이전 원장 원칙대로 승계받은 보증금을 돌려주지 않는 것이 기본입니다. 돌려주려면 위에서 &lsquo;반환함&rsquo;을 고르세요. 반환하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>
+                      : <>반환하지 않은 금액은 {withheldDestinationLabel(Math.max(0, active.depositAmount - (transRefund ?? 0)), active.cleaningFee, fmtWon)} 기록됩니다.</>}
                   </p>
                 </div>
               )}

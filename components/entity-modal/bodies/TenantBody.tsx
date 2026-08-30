@@ -48,7 +48,7 @@ type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
 export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
-  // 보증금 환불 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
+  // 보증금 반환 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
   // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
   const [depoRefund, setDepoRefund] = useState<DepositRefundInfo | null>(null)
   // 호실 일정 현황 — 일정을 쓰는 계약일 때만 값이 온다(§16 상시 진입점).
@@ -180,17 +180,17 @@ function DepositRefundUndoRow({ info, onDone }: {
   const partsLabel = withheldPartsLabel(info.parts, fmtWon)
   const handleUndo = async () => {
     const ok = await confirmDialog({
-      title: '보증금 환불 기록을 적용취소할까요?',
+      title: '보증금 반환 기록을 적용취소할까요?',
       // 미반환분은 성격대로 최대 2행이라 무엇이 사라지는지 카테고리까지 말한다(가이드 §14).
       message: info.withheld > 0
-        ? `환불 ${fmtWon(info.returned)} · 미환불 ${fmtWon(info.withheld)} 기록을 지웁니다. 미환불분으로 잡힌 부가수익(${partsLabel ?? '보증금 몰취'})도 함께 사라집니다.`
+        ? `반환 ${fmtWon(info.returned)} · 미반환 ${fmtWon(info.withheld)} 기록을 지웁니다. 미반환분으로 잡힌 부가수익(${partsLabel ?? '보증금 몰취'})도 함께 사라집니다.`
         : `환불 ${fmtWon(info.returned)} 기록을 지웁니다.`,
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
     startTransition(async () => {
       const r = await undoDepositReturn(info.refundId, info.extraIncomeIds)
-      if (r.ok) { pushToast('info', '보증금 환불을 적용취소했습니다.'); onDone() }
+      if (r.ok) { pushToast('info', '보증금 반환을 적용취소했습니다.'); onDone() }
       else pushToast('error', r.error)
     })
   }
@@ -198,9 +198,9 @@ function DepositRefundUndoRow({ info, onDone }: {
     <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
       <p className="text-[var(--warm-mid)]">
         {allWithheld
-          ? <>보증금 전액 미환불 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span>{info.reason ? ` (${info.reason})` : ''}</>
-          : <>보증금 환불 확정 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.returned)}</span> 환불
-              {info.withheld > 0 && <> · 미환불 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>}</>}
+          ? <>보증금 전액 미반환 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span>{info.reason ? ` (${info.reason})` : ''}</>
+          : <>보증금 반환 확정 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.returned)}</span> 반환
+              {info.withheld > 0 && <> · 미반환 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>}</>}
       </p>
       <button type="button" onClick={handleUndo} disabled={pending}
         className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
