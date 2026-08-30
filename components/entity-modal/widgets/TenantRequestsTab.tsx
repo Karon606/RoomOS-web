@@ -45,6 +45,8 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [newCategory, setNewCategory] = useState('')
   const [newUrgent, setNewUrgent] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  // 등록 폼은 접어 둔다 — 이 면은 '뭘 요청했나'를 보러 여는 자리이고 등록은 가끔이다.
+  const [showNewForm, setShowNewForm] = useState(false)
 
   const reload = async () => {
     const res = await getTenantRequests(tenantId)
@@ -77,9 +79,17 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   return (
     <Section title="요청·컴플레인">
       <div className="space-y-4">
-        {/* 새 요청 등록 */}
+        {/* 새 요청 등록 — **접어 둔다.** 이 면을 여는 대부분의 이유는 '이 사람이 뭘 요청했나'를
+            보는 것이고, 등록은 가끔이다. 펼쳐 두면 폼 여섯 칸이 목록을 화면 밖으로 밀어낸다.
+            형제 위젯(RoomRequests·처리 이력)이 이미 같은 문법으로 접혀 있어 손놀림도 같다. */}
         <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>새 요청 등록</p>
+          <button type="button" onClick={() => setShowNewForm(v => !v)}
+            className="w-full text-xs font-semibold flex items-center justify-between gap-1"
+            style={{ color: 'var(--warm-mid)' }} aria-expanded={showNewForm}>
+            새 요청 등록
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showNewForm ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {showNewForm && (<>
           {/* 카테고리 + 요청일 — /requests 등록 모달과 같은 구성·순서·라벨(조밀 문법만 유지) */}
           <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <div className="min-w-0">
@@ -120,6 +130,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
           <Btn onClick={handleCreate} disabled={pending || !newContent.trim()} variant="primary" size="md" fullWidth>
             {pending ? '등록 중…' : '등록'}
           </Btn>
+          </>)}
         </div>
 
         {/* 미처리 목록 */}
