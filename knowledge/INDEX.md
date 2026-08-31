@@ -11,6 +11,7 @@
 
 ## 도메인
 - [[domain-billing]] — 월 청구·임대료·할인·일할·예약 인상·락인(결제 핵심 엔진)
+- [[domain-recurring-cycle]] — 고정지출 주기: 위상 앵커·회차 지정·이번만 기록(기준 달은 파생값)
 - [[domain-inventory]] — 추적품목·수령배치·위치별 점검·단위 매칭(specMultiplier 정본)·평균 소모율(30일 합산)
 - [[domain-vacancy]] — 공실 집계 정본(lib/vacancy)·집계 제외(창고·사무실)·입실 파생식
 - [[domain-room-stay]] — 거주 구간(RoomStay)과 이사(지금 방 대 거쳐 간 방·이사일 검증 5축·이사 어휘·입퇴실 건수 포함·표시 감지망)
