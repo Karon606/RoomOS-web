@@ -306,7 +306,9 @@ function CheckoutRefundModal({
   // 떴다. 같은 방의 같은 청소가 어느 문으로 들어갔느냐로 다르게 보였다(2026-08-31 실기 지적).
   const [openCleaning, setOpenCleaning] = useState<{ id: string; scheduledYmd: string | null } | null>(null)
   useEffect(() => {
-    if (!roomId) { setOpenCleaning(null); return }
+    // 없을 때 상태를 동기로 비우지 않는다 — 이 창은 열릴 때마다 새로 마운트되므로 초기값이
+    // 이미 null 이고, 여기서 setState 를 부르면 연쇄 렌더가 된다(react-hooks 규칙).
+    if (!roomId) return
     let live = true
     void getOpenCheckoutCleaning(roomId).then(r => { if (live) setOpenCleaning(r) }).catch(() => {})
     return () => { live = false }
@@ -335,7 +337,7 @@ function CheckoutRefundModal({
               if (depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
-              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom && !openCleaning ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
+              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
             }}
             disabled={pending || exceedsMax || rentExceeds || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
@@ -354,7 +356,7 @@ function CheckoutRefundModal({
           {/* 청소 예정일 — 입주자 상세 퇴실 미니폼과 **같은 컴포넌트·같은 자리**(퇴실일 바로 아래,
               돈 블록 앞)다. 두 경로가 같은 퇴실을 다르게 묻기 시작하면 그때부터 갈린다. */}
           {hasRoom && (
-            openCleaning
+            roomId && openCleaning
               ? <CheckoutCleaningPlanned scheduledYmd={openCleaning.scheduledYmd} />
               : <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
           )}
