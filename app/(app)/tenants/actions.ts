@@ -2102,7 +2102,10 @@ export async function checkoutWithDepositRefund(params: {
    * 조용히 남았다(2026-08-30 경로 통합). 화면이 미리 물어 본 값을 그대로 싣는다.
    */
   rentRefundAmount?: number
-}): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+  // 환불 뒤 홈택스·카드사 조치 안내를 화면까지 물려준다. 종전에는 서버가 만들어 놓고 이 경로가
+  // 통째로 버려서, 현금영수증을 발행한 계약을 홈 알림에서 퇴실 처리하면 앱 매출만 조용히 줄고
+  // 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
+}): Promise<{ ok: true; notice?: string; taxNotice?: RentRefundTaxNotice } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const lease = await prisma.leaseTerm.findUnique({
@@ -2131,6 +2134,7 @@ export async function checkoutWithDepositRefund(params: {
     // 이용료 환불 — **퇴실 전이 뒤에** 확정한다. 순서가 규칙이다(전이가 일할을 재계산하므로
     // 먼저 확정하면 그 값이 덮인다). 실패해도 퇴실은 되돌리지 않고 사실만 알린다.
     let rentNotice: string | null = null
+    let taxNotice: RentRefundTaxNotice | undefined
     if (params.rentRefundAmount && params.rentRefundAmount > 0) {
       const rr = await finalizeRentRefund({
         leaseTermId: params.leaseTermId,
@@ -2140,10 +2144,11 @@ export async function checkoutWithDepositRefund(params: {
       if (!rr.ok && !rr.error.startsWith('이미 환불 처리된')) {
         rentNotice = `퇴실은 처리했지만 이용료 환불이 실패했습니다. ${rr.error}`
       }
+      if (rr.ok) taxNotice = rr.taxNotice
     }
     // 퇴실 쪽이 남긴 청소 안내를 그대로 물려준다 — 홈 경로도 같은 말을 듣는다.
     const notice = [checkoutRes.notice, rentNotice].filter(Boolean).join(' ') || null
-    return notice ? { ok: true, notice } : { ok: true }
+    return { ok: true, ...(notice ? { notice } : {}), ...(taxNotice ? { taxNotice } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

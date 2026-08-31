@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
+import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
@@ -1462,21 +1463,10 @@ export default function TenantClient({
         refresh()
         const { refundId, extraIncomeIds } = refundRes
         const totalRefunded = (rp ? rentRefundAmt : 0) + depositReturnAmt
-        // 홈택스 조치 안내 — 앱과 국세청은 연동되지 않아 앱이 대신 취소해 줄 수 없다.
-        // 확인창으로 막지 않는다(환불 확정은 이미 여러 단계를 거친 뒤라 습관적으로 넘기게 된다).
-        // 앱이 하지 않은 일을 완료형으로 쓰지 않는다 — 취소는 운영자가 홈택스에서 한다.
-        // 지난 달 장부가 바뀌는 경우 먼저 알린다 — 이 앱엔 월 마감이 없어 조용히 바뀌면 아무도 모른다
-        if (taxNotice?.pastMonth) pushToast('info', taxNotice.pastMonth)
-        if (taxNotice?.cashReceipt) {
-          const { amount, ymd } = taxNotice.cashReceipt
-          const full = taxNotice.companyKeeps === 0
-          pushToast('info', full
-            ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${ymd} 발행 ${fmtWon(amount)}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
-            : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${ymd} 발행 ${fmtWon(amount)}을 취소하고 확정액 ${fmtWon(taxNotice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
-        }
-        if (taxNotice?.card) {
-          pushToast('info', `카드로 받은 ${fmtWon(taxNotice.card.amount)}입니다. 카드 승인을 취소하면 카드 매출 자료도 함께 줄지만, 승인을 두고 계좌로 돌려주면 카드 매출은 그대로 남습니다. 어느 쪽으로 처리하셨는지 확인해 주세요.`)
-        }
+        // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다.
+        // 종전에는 이 화면에만 손으로 적혀 있어서, 같은 일을 하는 홈 알림·프리즘 위젯에서는
+        // 취소하라는 말이 통째로 사라졌다(2026-08-31 패널 조사).
+        for (const line of refundTaxNoticeLines(taxNotice)) pushToast('info', line)
         pushToast('success', `환불 + 퇴실 처리됨 · 총 ${fmtWon(totalRefunded)}`, {
           action: {
             label: '반환기록 취소',

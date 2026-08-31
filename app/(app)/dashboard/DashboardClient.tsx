@@ -33,6 +33,7 @@ import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getPendingRentRefundNotice } from '@/app/(app)/tenants/actions'
+import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -304,13 +305,11 @@ function CheckoutRefundModal({
       title={depositAmount > 0 ? '보증금 반환' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
       dirty={refund !== maxRefund || moveOutDate !== kstYmdStr() || reason !== '' || reasonEtc !== '' || cleaning.touched}
       footer={
+        // §10 — 돈이 걸린 확정 버튼일수록 정본 Btn 을 쓴다. 종전에는 raw button 에 시각화
+        // 팔레트(--viz-4)를 칠해서, 의미색 체계 밖의 색이 확정 버튼에 앉아 있었다.
         <div className="flex gap-2">
-          <button onClick={onClose} disabled={pending}
-            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            취소
-          </button>
-          <button
+          <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={pending}>취소</Btn>
+          <Btn variant="primary" size="md" className="flex-1 font-semibold"
             onClick={() => {
               const r = buildWithholdReason(reason, reasonEtc)
               // 오류를 부모 상태에 넣으면 이 창(z=260) 아래 모달에 그려져 안 보인다. 여기서 인라인으로 띄운다.
@@ -320,11 +319,9 @@ function CheckoutRefundModal({
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
               setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom ? (cleaning.value || null) : undefined)
             }}
-            disabled={pending || exceedsMax || !moveOutDate}
-            className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
+            disabled={pending || exceedsMax || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
-          </button>
+          </Btn>
         </div>
       }>
         <div className="space-y-3">
@@ -346,16 +343,6 @@ function CheckoutRefundModal({
           {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 세 정산 폼이 같은 한 줄을 쓴다. */}
           {compositionLabel && (
             <p className="text-[0.65625rem] break-keep" style={{ color: 'var(--warm-mid)' }}>{compositionLabel}</p>
-          )}
-          {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
-              경로 셋 중 이용료 환불은 입주자 관리 수정에만 있다(별건으로 통합 예정). */}
-          {pendingRentRefund && (
-            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
-              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 함께 확정됩니다.
-              <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
-              </span>
-            </div>
           )}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
@@ -432,6 +419,18 @@ function CheckoutRefundModal({
 
           {depositAmount === 0 && (
             <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>호실이 공실로 전환됩니다.</p>
+          )}
+
+          {/* 이용료 환불은 **보증금 게이트 밖**이다. 종전에는 이 블록이 `depositAmount > 0` 안에
+              있어서, 보증금 0 인 계약은 "호실이 공실로 전환됩니다" 한 줄만 보이는데 이용료 환불은
+              그대로 실려 나갔다. 돈이 움직이는데 화면이 침묵했다(2026-08-31 패널 조사). */}
+          {pendingRentRefund && (
+            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
+              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 함께 확정됩니다.
+              <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
+              </span>
+            </div>
           )}
         </div>
     </Modal>
@@ -515,6 +514,10 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     // 청소 예정을 못 만든 경우만 한 줄 남는다. 퇴실은 이미 끝났으니 창을 붙잡지 않는다.
     if (res.notice) pushToast('info', res.notice)
+    // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다. 종전에는 이 경로가
+    // 서버가 만들어 준 안내를 통째로 버려서, 현금영수증을 발행한 계약을 여기서 퇴실 처리하면
+    // 앱 매출만 조용히 줄고 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
+    for (const line of refundTaxNoticeLines(res.taxNotice)) pushToast('info', line)
     setRefundModalOpen(false)
     router.refresh()
     onClose()
@@ -595,13 +598,10 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             </button>
           )}
           {moveOutLeaseId && (
-            <button
-              onClick={handleCheckout}
-              disabled={confirmPending}
-              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
+            <Btn variant="primary" size="md" fullWidth className="font-semibold"
+              onClick={handleCheckout} disabled={confirmPending}>
               {confirmPending ? '처리 중…' : '퇴실 처리'}
-            </button>
+            </Btn>
           )}
           {/* 일정대로 이사하는 원탭 — 떠나는 방 청소도 함께 잡는다(하루라도 사람이 잔 방이라
               다음 사람 전에 치우는 것이 실무다). 자동으로 안 옮기는 이유는 서버 주석에 있다. */}

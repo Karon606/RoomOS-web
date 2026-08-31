@@ -13,6 +13,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
+import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
@@ -439,6 +440,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               detail: '입주자 관리에서 그 사람을 열고 수정으로 다시 시도해 주세요.',
             })
           }
+          // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다. 종전에는 이 경로가
+          // 서버가 돌려준 안내를 안 써서, 현금영수증 취소를 알리는 말이 여기서만 사라졌다.
+          if (rr.ok) for (const line of refundTaxNoticeLines(rr.taxNotice)) pushToast('info', line)
         }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
         if (res.notice) pushToast('info', res.notice)
@@ -522,7 +526,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           footer={
             <div className="flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
-              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : '확인'}</Btn>
+              {/* §10 — 확정 라벨은 항상 동사다. '확인'은 무엇이 일어나는지 말하지 않는다. */}
+              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : active.def.label}</Btn>
             </div>
           }>
             <div className="space-y-3">
