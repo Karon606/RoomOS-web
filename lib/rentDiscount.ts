@@ -8,6 +8,8 @@ export type RentDiscountInput = {
   scope: string          // 'permanent' | 'temporary'
   startMonth?: string | null  // 'YYYY-MM'
   endMonth?: string | null    // 'YYYY-MM'
+  /** 할인 사유 — 왜 깎아 주는지(프로모션·양곡지원 따위). 계산에는 안 쓰고 라벨에만 붙는다. */
+  memo?: string | null
 }
 
 // 특정 월(targetMonth='YYYY-MM')에 그 계약에 적용되는 할인 합계.
@@ -51,5 +53,7 @@ export function discountLabel(d: RentDiscountInput): string {
     : d.startMonth
       ? `${d.startMonth}${d.endMonth ? `~${d.endMonth}` : '~'}`
       : '기간 미정'
-  return `${v} 할인 · ${period}`
+  // 사유가 있으면 뒤에 붙인다 — 목록에서 왜 깎였는지가 바로 보여야 한다(운영자 요구 2026-08-31).
+  const reason = d.memo?.trim()
+  return `${v} 할인 · ${period}${reason ? ` · ${reason}` : ''}`
 }

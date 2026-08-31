@@ -486,6 +486,35 @@ export async function addJobOption(name: string) {
   revalidatePath('/settings')
 }
 
+// 월 이용료 할인 사유 — 직업 목록과 같은 문법이다.
+const DEFAULT_DISCOUNT_REASONS = '프로모션,양곡지원,공공요금,에너지바우처'
+
+export const getDiscountReasons = cache(async function getDiscountReasons(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { discountReasons: true } as any,
+  })
+  const raw = (property as any)?.discountReasons ?? DEFAULT_DISCOUNT_REASONS
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+})
+
+/** 할인 사유를 목록에 더한다 — 할인 적용에서 목록 밖 사유가 들어오면 자동으로 부른다. */
+export async function addDiscountReason(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const clean = name.trim()
+  if (!clean) return
+  const current = await getDiscountReasons()
+  if (current.includes(clean)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { discountReasons: [...current, clean].join(',') } as any,
+  })
+  revalidatePath('/payments')
+  revalidatePath('/settings')
+}
+
 export async function addExpenseCategory(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()

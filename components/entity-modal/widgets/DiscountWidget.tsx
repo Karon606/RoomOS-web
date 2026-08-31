@@ -5,6 +5,8 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { getRentDiscounts, addRentDiscount, deleteRentDiscount, type RentDiscountRow } from '@/app/(app)/rooms/actions'
+import { getDiscountReasons, addDiscountReason } from '@/app/(app)/settings/actions'
+import CategorySelect from '@/components/ui/CategorySelect'
 import { discountLabel } from '@/lib/rentDiscount'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -26,9 +28,18 @@ export function DiscountWidget({ leaseTermId, onChange }: {
   const [scope, setScope] = useState<'permanent' | 'temporary'>('permanent')
   const [start, setStart] = useState('')
   const [end, setEnd]     = useState('')
+  // 할인 사유 — 왜 깎아 주는지가 남아야 한다(운영자 요구 2026-08-31). 목록은 영업장 설정에 있고
+  // 직접 적은 사유는 저장할 때 그 목록에 쌓인다(직업 목록과 같은 문법).
+  const [reason, setReason] = useState('')
+  const [reasonOptions, setReasonOptions] = useState<string[]>([])
 
   const reload = async () => { setDiscs(await getRentDiscounts(leaseTermId)) }
   useEffect(() => { reload() /* eslint-disable-next-line */ }, [leaseTermId])
+  useEffect(() => {
+    let live = true
+    void getDiscountReasons().then(r => { if (live) setReasonOptions(r) }).catch(() => {})
+    return () => { live = false }
+  }, [])
 
   const handleAdd = () => {
     if (!(value > 0)) return
@@ -40,10 +51,16 @@ export function DiscountWidget({ leaseTermId, onChange }: {
         scope,
         startMonth: scope === 'temporary' && start ? start : null,
         endMonth:   scope === 'temporary' && end   ? end   : null,
+        ...(reason.trim() ? { memo: reason.trim() } : {}),
       }), { success: '할인 적용됨' })
       if (!res.ok) return
+      // 목록에 없는 사유를 적었으면 영업장 목록에 더한다 — 다음에도 고를 수 있게.
+      if (reason.trim() && !reasonOptions.includes(reason.trim())) {
+        await addDiscountReason(reason.trim()).catch(() => {})
+        setReasonOptions(await getDiscountReasons().catch(() => reasonOptions))
+      }
       await reload()
-      setShowForm(false); setValue(0); setStart(''); setEnd('')
+      setShowForm(false); setValue(0); setStart(''); setEnd(''); setReason('')
       onChange?.()
     })
   }
@@ -137,6 +154,16 @@ export function DiscountWidget({ leaseTermId, onChange }: {
               </div>
             </div>
           )}
+          {/* 사유 — 목록 끝 '기타(직접 입력)'로 전환되는 정본 문법(입주자 직업과 같다). */}
+          <CategorySelect
+            value={reason}
+            onChange={setReason}
+            options={reasonOptions}
+            emptyLabel="사유 선택 (선택)"
+            placeholder="할인 사유를 직접 입력하세요"
+            closeIconSize={12}
+            showAddHint
+            className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none" />
           <div className="flex gap-2">
             <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>
             <Btn variant="success" size="sm" className="flex-1" onClick={handleAdd} disabled={pending || !(value > 0)}>적용</Btn>
