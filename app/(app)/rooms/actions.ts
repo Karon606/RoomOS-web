@@ -2671,7 +2671,7 @@ export async function getTenantDetail(tenantId: string) {
         select: {
           id: true, contactType: true, contactValue: true,
           isPrimary: true, isEmergency: true, isHomeCountry: true,
-          emergencyRelation: true, countryCode: true,
+          emergencyName: true, emergencyRelation: true, countryCode: true,
         },
       },
       leaseTerms: {

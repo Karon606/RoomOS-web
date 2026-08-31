@@ -135,7 +135,7 @@ function overlapOccupancy(room: Room | undefined, moveIn: string, selfLeaseId?: 
 
 type Contact = {
   id: string; contactType: string; contactValue: string
-  isEmergency: boolean; emergencyRelation: string | null; isPrimary: boolean
+  isEmergency: boolean; emergencyName: string | null; emergencyRelation: string | null; isPrimary: boolean
   isHomeCountry?: boolean; countryCode?: string | null
 }
 
@@ -3980,6 +3980,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           setInputByName('job', data.job)
           setInputByName('contactValue', data.contactPhone)
           setInputByName('emergencyContact', data.emergencyPhone)
+          setInputByName('emergencyName', data.emergencyName)
           setInputByName('emergencyRelation', data.emergencyRelation)
         }}
         onIdCard={data => {
@@ -4090,12 +4091,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           </div>
         </div>
         <Field label="이메일" name="email" type="email" defaultValue={tenant?.email ?? ''} placeholder="example@email.com" />
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="비상연락 관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
-          <div className="col-span-2 space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">비상 연락처</label>
-            <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
-          </div>
+        {/* 비상연락처 — 이름·관계·번호가 한 묶음이다. 종전에는 이름 칸이 없어서, 계약서의
+            비상연락망 문구('이름/전화번호/관계')와 신분증 OCR 이 이름을 뽑아도 담을 데가
+            없었다(2026-08-31 운영자 요구). 라벨은 묶음 안이라 '관계' 하나로 족하다. */}
+        <p className="text-xs font-medium text-[var(--warm-mid)]">비상연락처</p>
+        <div className="grid grid-cols-2 gap-2 -mt-1">
+          <Field label="이름" name="emergencyName" defaultValue={emergency?.emergencyName ?? ''} placeholder="김철수" />
+          <Field label="관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
+        </div>
+        <div className="space-y-1.5 -mt-1">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
+          <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
         </div>
         {/* 해외 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
             낱말은 2026-08-24 운영자 확정. '본국'은 국적국을 뜻해 국적 미국·거주 일본 같은 경우와

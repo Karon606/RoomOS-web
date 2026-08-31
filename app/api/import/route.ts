@@ -338,6 +338,7 @@ async function createTenantAndLease(row: Record<string, unknown>, propertyId: st
       data: {
         tenantId: tenant.id, contactType: 'PHONE', contactValue: emergency,
         isPrimary: false, isEmergency: true,
+        emergencyName: str(row['비상연락처이름']) || null,
         emergencyRelation: str(row['비상연락처관계']) || null,
       },
     })

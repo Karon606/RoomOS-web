@@ -735,6 +735,14 @@ model TenantContact {
   contactType       ContactType @default(PHONE)
   contactValue      String
   isEmergency       Boolean     @default(false)
+  // 비상시 연락할 사람의 이름 (2026-08-31 운영자 요구 — 종전에는 관계만 있고 이름 칸이 없었다).
+  //
+  // 계약서의 비상연락망 문구는 처음부터 '이름/전화번호/관계'를 적게 돼 있었고, 신분증 OCR 도
+  // emergencyName 을 뽑고 있었다. 담을 자리가 없어 뽑아 놓고 버렸을 뿐이다.
+  emergencyName     String?
+  // 그 사람과 입주자의 관계. 라벨은 '관계' 하나로 통일한다(운영자 확정 2026-08-31) —
+  // 비상연락처 묶음 안에 이름·관계·번호가 나란히 서므로 맥락으로 충분하고, '비상 관계'는
+  // 비상이 관계를 수식하는 것처럼 읽혔다.
   emergencyRelation String?
   isPrimary         Boolean     @default(false)
   isHomeCountry     Boolean     @default(false)  // 본국 연락처 (국제 번호) — 외국인 입주자용

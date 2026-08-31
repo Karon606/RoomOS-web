@@ -357,7 +357,7 @@ export async function GET(request: NextRequest) {
   const contactSelect = {
     select: {
       contactType: true, contactValue: true,
-      isPrimary: true, isEmergency: true, emergencyRelation: true,
+      isPrimary: true, isEmergency: true, emergencyName: true, emergencyRelation: true,
     },
   }
 
@@ -387,6 +387,7 @@ export async function GET(request: NextRequest) {
       '이름':           t.name,
       '영문명':         t.englishName ?? '',
       '연락처':         primary?.contactValue ?? '',
+      '비상연락처이름': emergency?.emergencyName ?? '',
       '비상연락처':     emergency?.contactValue ?? '',
       '비상연락처관계': emergency?.emergencyRelation ?? '',
       '생년월일':       fmtDate(t.birthdate),

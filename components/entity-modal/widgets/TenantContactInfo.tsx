@@ -16,6 +16,7 @@ type Contact = {
   isPrimary: boolean
   isEmergency: boolean
   isHomeCountry?: boolean
+  emergencyName: string | null
   emergencyRelation: string | null
   countryCode?: string | null
 }
@@ -59,11 +60,13 @@ export function TenantContactInfo({ tenantId, contacts, email }: { tenantId: str
       <Grid>
         <Item label="주 연락처" value={primary?.contactValue ? formatPhone(primary.contactValue) : '—'} />
         {email && <Item label="이메일" value={email} />}
+        {/* 비상연락처는 한 줄로 붙인다 — 급할 때 이름·관계·번호를 한눈에 읽어야 한다
+            (운영자 확정 2026-08-31). 종전에는 관계와 번호가 따로 서고 이름은 아예 없었다. */}
         {emergency && (
-          <>
-            <Item label="비상 관계"   value={emergency.emergencyRelation ?? '—'} />
-            <Item label="비상 연락처" value={formatPhone(emergency.contactValue)} />
-          </>
+          <Item label="비상연락처" value={
+            [emergency.emergencyName, emergency.emergencyRelation ? `(${emergency.emergencyRelation})` : null, formatPhone(emergency.contactValue)]
+              .filter(Boolean).join(' ')
+          } />
         )}
         {home && (
           <Item label="해외 연락처" value={fmtIntlPhone(home.contactValue, home.countryCode ?? undefined) || home.contactValue} />

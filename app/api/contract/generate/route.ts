@@ -555,7 +555,8 @@ export async function POST(req: Request) {
           smoking: body.smoking === '흡연',
           emergencyContacts: tenant.contacts
             .filter(c => c.isEmergency)
-            .map(c => ({ name: '', phone: c.contactValue, relation: c.emergencyRelation ?? null })),
+            // 이름은 종전에 담을 칸이 없어 빈 문자열이었다 — 이제 실제 값을 쓴다(2026-08-31).
+            .map(c => ({ name: c.emergencyName ?? '', phone: c.contactValue, relation: c.emergencyRelation ?? null })),
         },
         lease: printData.lease,
         subLeases: printData.subLeases,

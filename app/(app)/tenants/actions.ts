@@ -829,6 +829,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const smoking = formData.get('smoking') === 'true'
   const contactType      = (formData.get('contactType') as ContactType) || 'PHONE'
   const contactValue     = formData.get('contactValue') as string
+  const emergencyName     = formData.get('emergencyName') as string
   const emergencyRelation = formData.get('emergencyRelation') as string
   const emergencyContact = formData.get('emergencyContact') as string
   const homeCountryContact = formData.get('homeCountryContact') as string
@@ -855,7 +856,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
-    isEmergency: boolean; emergencyRelation?: string
+    isEmergency: boolean; emergencyName?: string; emergencyRelation?: string
     isHomeCountry?: boolean; countryCode?: string | null
   }[] = []
   if (contactValue) {
@@ -867,6 +868,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       contactValue: emergencyContact,
       isPrimary: false,
       isEmergency: true,
+      emergencyName: emergencyName || undefined,
       emergencyRelation: emergencyRelation || undefined,
     })
   }
@@ -962,6 +964,7 @@ export async function updateTenant(formData: FormData): Promise<
   // 연락처
   const contactType       = (formData.get('contactType') as ContactType) || 'PHONE'
   const contactValue      = formData.get('contactValue') as string
+  const emergencyName     = formData.get('emergencyName') as string
   const emergencyRelation = formData.get('emergencyRelation') as string
   const emergencyContact  = formData.get('emergencyContact') as string
   const homeCountryContact = formData.get('homeCountryContact') as string
@@ -1227,6 +1230,7 @@ export async function updateTenant(formData: FormData): Promise<
         data: {
           contactType: 'PHONE',
           contactValue: emergencyContact,
+          emergencyName: emergencyName || null,
           emergencyRelation: emergencyRelation || null,
         },
       })
@@ -1238,6 +1242,7 @@ export async function updateTenant(formData: FormData): Promise<
           contactValue: emergencyContact,
           isPrimary: false,
           isEmergency: true,
+          emergencyName: emergencyName || null,
           emergencyRelation: emergencyRelation || null,
         },
       })
