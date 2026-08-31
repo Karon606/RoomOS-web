@@ -108,6 +108,7 @@ const RENT = 300000
   // 고시 예시와 같은 숫자다 — 30만 계약, 10일 사용, 잔여 20만, 위약금 2만, 환불 18만.
   eq('환불(법정): 30만 선납, 10일 사용', calcCheckoutRefund({ prepaidAmount: RENT, monthlyRent: RENT, daysUsed: 10, mode: 'legal' }), {
     mode: 'legal', penaltyPct: 10, daysUsed: 10, dailyRate: 10000, usedAmount: 100000, penalty: 20000, companyKeeps: 120000, refund: 180000,
+    futurePrepaid: 0,
   })
   // 오래 살수록 위약금이 준다 — 잔여가 줄기 때문이다. 정액이던 종전과 갈리는 축이라 고정한다.
   eq('환불: 20일 살면 위약금은 잔여 10만의 10%',
@@ -738,6 +739,43 @@ const RENT = 300000
 
   // 일시 할인은 시작월이 없으면 성립하지 않는다 — 어느 달인지 말한 적이 없다.
   eq('기간: 일시인데 시작월 없음', discountForMonth([{ discountType: 'amount', value: 50000, scope: 'temporary' }], '2026-07', base), 0)
+}
+
+// ── 미래 달 선납 (2026-08-31 운영자 지적, 513호 민경진 실측) ──────────────
+//
+// 9월분을 8월에 미리 낸 사람이 8/31 에 나가면 9월은 하루도 안 산다. 종전에는 정산이 귀속월
+// 한 달만 집계해서 그 돈이 통째로 안 돌아갔다. 315,000원이 조용히 회사에 남았다.
+//
+// 위약금을 그 선납분에도 물릴지는 사람이 고른다. 공정위 기준과 계약서 문언대로면 물지만,
+// 아직 살지도 않은 기간이라 안 무는 것이 도의에 맞다는 것이 운영자 판단이다(기본값).
+{
+  const RENT = 350000
+  const base = { monthlyRent: RENT, daysUsed: 27, mode: 'legal' as const }
+
+  // 실측 그대로 — 8월분 35만 + 9월분 선납 35만, 27일 사용.
+  const noPen = calcCheckoutRefund({ ...base, prepaidAmount: 700000, futurePrepaid: 350000 })
+  eq('선납: 사용분은 그 달 기준', noPen.usedAmount, 315000)
+  eq('선납: 위약금은 그 달 잔여만 (35,000의 10%)', noPen.penalty, 3500)
+  eq('선납: 환불에 선납이 통째로 들어간다', noPen.refund, 381500)
+
+  const withPen = calcCheckoutRefund({ ...base, prepaidAmount: 700000, futurePrepaid: 350000, penalizeFuture: true })
+  eq('선납: 물리면 잔여 385,000 의 10%', withPen.penalty, 38500)
+  eq('선납: 그때 환불', withPen.refund, 346500)
+
+  // 선납이 없으면 두 갈래가 같은 답이다 — 기존 계약의 거동이 한 글자도 안 바뀐다.
+  const solo = calcCheckoutRefund({ ...base, prepaidAmount: 350000 })
+  const soloPen = calcCheckoutRefund({ ...base, prepaidAmount: 350000, penalizeFuture: true })
+  eq('선납 없음: 두 갈래가 같다', [solo.refund, solo.penalty], [soloPen.refund, soloPen.penalty])
+  eq('선납 없음: 종전 값 그대로', solo.refund, 31500)
+
+  // 만기까지 살고 나가는데 다음 달 선납이 있는 경우 — 사용분이 한 달 전액이다.
+  const full = calcCheckoutRefund({ ...base, daysUsed: 30, prepaidAmount: 700000, futurePrepaid: 350000 })
+  eq('만기 + 선납: 사용분은 한 달치', full.usedAmount, 350000)
+  eq('만기 + 선납: 위약금 없이 선납 전액 환불', [full.penalty, full.refund], [0, 350000])
+
+  // 선납이 결제액보다 클 수 없다 — 깨진 입력은 결제액으로 클램프한다.
+  const over = calcCheckoutRefund({ ...base, prepaidAmount: 350000, futurePrepaid: 999999 })
+  eq('선납: 결제액을 넘으면 클램프', over.futurePrepaid, 350000)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

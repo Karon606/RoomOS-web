@@ -180,7 +180,34 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 / 위반 ${violations.length}건`)
+// ⓘ 퇴실 정산이 미래 달 선납을 세는가 (2026-08-31 실측 봉합, 513호).
+//
+//    종전에는 미리보기도 확정도 정산 귀속월 **한 달만** 봤다. 9월분을 8월에 미리 낸 사람이
+//    8/31 에 나가면 9월은 하루도 안 사는데 그 돈이 집계에 아예 안 들어와 통째로 안 돌아갔다.
+//    315,000원이 조용히 남았고, 미납으로도 과납으로도 안 뜨는데 매출로는 잡히는 상태였다.
+//
+//    어느 감지망도 못 잡았다. 그 record 가 스스로 청구를 세워 두고 그만큼 받았으니 차액이
+//    0이라 대조가 정상으로 본다. 그래서 소스에서 잡는다 — 재발 형태가 정확히 'gte 가 한 달
+//    비교로 되돌아가는 것'이다.
+{
+  for (const [name, re] of [
+    ['미리보기', /export async function previewCheckoutRefund[\s\S]*?\n\}\n/],
+    ['확정', /export async function finalizeRentRefund[\s\S]*?\n\}\n/],
+  ]) {
+    const fn = src.match(re)
+    if (!fn) { violations.push(`${FILE} — '${name}' 을 못 찾았다.`); continue }
+    if (!/targetMonth:\s*\{\s*gte:/.test(fn[0])) {
+      violations.push(`${FILE} — 퇴실 정산 '${name}' 이 귀속월 한 달만 센다. 미래 달 선납이 통째로 안 돌아가고 매출로 잡힌다.`)
+    }
+  }
+  // 계산 정본이 그 선납분을 따로 쥐는가 — 위약금을 물릴지 고르려면 갈라져 있어야 한다.
+  const pr = readFileSync('lib/prorate.ts', 'utf8')
+  if (!/futurePrepaid/.test(pr) || !/penalizeFuture/.test(pr)) {
+    violations.push('lib/prorate.ts — 미래 달 선납분을 따로 안 쥔다. 위약금을 물릴지 고를 수 없다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

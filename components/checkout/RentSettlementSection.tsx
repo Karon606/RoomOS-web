@@ -24,6 +24,10 @@ type Preview = {
   defaultPenaltyPct: number
   /** 퇴실 정산 위젯이 먼저 확정해 둔 이달 청구액. 있으면 이 창에서 재계산하지 않는다. */
   appliedProration: number | null
+  /** 아직 시작 안 한 기간의 선납분 — 0 이면 갈래를 안 세운다. */
+  futurePrepaid: number
+  /** 귀속월 이상 달별 결제액 — '8월분 + 9월분 선납' 구성 줄의 근거. */
+  prepaidMonths: { month: string; amount: number }[]
 }
 
 /** 정산이 성립하지 않는 계약에 세우는 한 줄 — 자리를 설명 없이 비우지 않는다. */
@@ -62,6 +66,14 @@ export function RentSettlementSection({
 }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [pctInput, setPctInput] = useState('')
+  /**
+   * 아직 시작 안 한 기간의 선납분에 위약금을 물릴 것인가 — 기본은 안 문다.
+   *
+   * 공정위 기준과 계약서 문언대로면 문다. 그런데 운영자 판단은 다르다 — "아직 살지도 않은
+   * 기간이고 원래 납부해야 할 기간 전에 납부한 거니까 위약금을 안 무는 게 도의상 맞다".
+   * 상황에 따라 다를 수 있어 여기서 고른다(운영자 확정 2026-08-31).
+   */
+  const [penalizeFuture, setPenalizeFuture] = useState(false)
   // 정산이 성립하지 않는 계약(단기)은 금액 대신 이유를 보여 준다 — 조용히 사라지면 왜 없는지 모른다.
   const [notApplicable, setNotApplicable] = useState<string | null>(null)
 
@@ -70,7 +82,7 @@ export function RentSettlementSection({
     if (!leaseTermId || !moveOutYmd) { setPreview(null); setNotApplicable(null); onChange(null); return }
     let live = true
     setPctInput('')
-    void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', null).then(r => {
+    void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', null, penalizeFuture).then(r => {
       if (!live) return
       setNotApplicable(r.ok && !r.settlementApplies ? (r.notApplicableReason ?? null) : null)
       // 정산이 성립하지 않는 계약(단기)은 금액을 만들지 않는다. 서버도 거부하므로 여기서 값을
@@ -78,7 +90,7 @@ export function RentSettlementSection({
       if (r.ok && !r.settlementApplies) { setPreview(null); onChange(null); return }
       // 그 기간 선납이 없으면 돌려줄 것이 없다 — 섹션을 세우지 않는다.
       if (!r.ok || r.prepaidAmount <= 0) { setPreview(null); onChange(null); return }
-      setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
+      setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration, futurePrepaid: r.futurePrepaid, prepaidMonths: r.prepaidMonths })
       // 퇴실 정산이 먼저 적용돼 있으면 그 확정값을 이어받는다(이중 수정 방지) —
       // 환불 기본값은 결제액에서 확정 청구를 뺀 나머지다.
       onChange({
@@ -91,7 +103,7 @@ export function RentSettlementSection({
     return () => { live = false }
     // onChange 는 부모가 매 렌더 새로 만들 수 있어 의존성에서 뺀다 — 넣으면 무한 루프가 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaseTermId, moveOutYmd])
+  }, [leaseTermId, moveOutYmd, penalizeFuture])
 
   // 위약금율 입력(0~10, 빈 값이면 영업장 기본) — 서버가 다시 계산하고 캡도 서버가 건다.
   const handlePct = (raw: string) => {
@@ -99,9 +111,9 @@ export function RentSettlementSection({
     setPctInput(clean); onDirty?.()
     if (!leaseTermId || !moveOutYmd) return
     const pctNum = clean === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(clean, 10) || 0))
-    void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', pctNum).then(r => {
+    void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', pctNum, penalizeFuture).then(r => {
       if (!r.ok || !r.settlementApplies || r.prepaidAmount <= 0) return
-      setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
+      setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration, futurePrepaid: r.futurePrepaid, prepaidMonths: r.prepaidMonths })
       if (r.appliedProration == null) onChange({ amount: r.refund.refund, max: r.prepaidAmount })
     }).catch(() => {})
   }
@@ -124,6 +136,14 @@ export function RentSettlementSection({
         <span className="font-semibold text-[var(--warm-mid)]">이용료 정산</span>
         <span className="tabular-nums text-[var(--warm-dark)]">결제액 {fmtWon(preview.prepaidAmount)}</span>
       </div>
+      {/* 여러 달이 걸릴 때만 구성을 편다 — 한 달짜리 정산은 종전과 한 글자도 다르지 않다.
+          '선납'은 귀속월보다 뒤, 곧 아직 시작도 안 한 기간의 결제에만 붙인다. */}
+      {preview.prepaidMonths.length > 1 && (
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums break-keep">
+          {preview.prepaidMonths.map((m, i) =>
+            `${i > 0 ? ' + ' : ''}${Number(m.month.slice(5, 7))}월분${i > 0 ? ' 선납' : ''} ${fmtWon(m.amount)}`).join('')}
+        </p>
+      )}
       {locked ? (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
           퇴실 정산 적용됨 · 이달 청구 {fmtWon(preview.appliedProration ?? 0)} · 변경은 상세의 퇴실 정산에서.
@@ -145,6 +165,20 @@ export function RentSettlementSection({
             <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(preview.refund.penalty)}</span>
           </div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">위약금율 기본 {preview.defaultPenaltyPct}% · 최대 {LEGAL_PENALTY_PCT}% (공정위 기준)</p>
+          {/* 아직 시작 안 한 기간의 선납분에 위약금을 물릴지 — 그런 달이 있을 때만 묻는다.
+              공정위 기준으로는 물리는 것이 맞지만, 살지도 않은 기간이라 안 무는 것이 도의에
+              맞다는 것이 운영자 판단이라 기본이 '안 문다'다(2026-08-31 확정). */}
+          {preview.futurePrepaid > 0 && (
+            <label className="flex items-start gap-2 pt-1 cursor-pointer">
+              <input type="checkbox" checked={penalizeFuture}
+                onChange={e => { setPenalizeFuture(e.target.checked); onDirty?.() }}
+                className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
+              <span className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                아직 지내지 않은 기간의 선납 {fmtWon(preview.futurePrepaid)}에도 위약금을 뗍니다.
+                <span className="block">공정위 기준으로는 떼는 것이 맞지만, 살지도 않은 기간이라 기본은 전액 돌려드립니다.</span>
+              </span>
+            </label>
+          )}
         </>
       )}
       <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">

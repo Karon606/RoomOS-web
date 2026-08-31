@@ -4263,6 +4263,10 @@ export type CheckoutRefundPreview =
        * 안 해서 화면이 환불액을 제안했고, 누르면 서버가 거부했다 — 화면이 못 할 일을 권한 것이다.
        */
       settlementApplies: boolean
+      /** 아직 시작 안 한 기간의 선납분 — 0 이면 그런 달이 없다(화면이 갈래를 안 세운다). */
+      futurePrepaid: number
+      /** 귀속월 이상 달별 결제액 — 화면이 '8월분 · 9월분 선납'을 적는 근거다. */
+      prepaidMonths: { month: string; amount: number }[]
       /** 성립하지 않는 이유 — 화면이 그대로 보여 준다(빈 자리를 설명 없이 두지 않는다). */
       notApplicableReason?: string
     }
@@ -4273,6 +4277,8 @@ export async function previewCheckoutRefund(
   expectedMoveOut: string,  // 'YYYY-MM-DD'
   mode: RefundMode = 'legal',
   penaltyPct?: number | null,  // 사람별 위약금율(%) — 미지정 시 영업장 기본값, 서버에서 0~10 캡
+  // 아직 시작 안 한 기간의 선납분에도 위약금을 물릴지. 기본은 안 문다(운영자 확정 2026-08-31).
+  penalizeFuture = false,
 ): Promise<CheckoutRefundPreview> {
   try {
     const { propertyId } = await getPropertyId()
@@ -4297,13 +4303,36 @@ export async function previewCheckoutRefund(
     const sc = settlementCalcFor(lease, expectedMoveOut)
     const settleMonth = sc ? sc.period.month : expectedMoveOut.slice(0, 7)
     const monthlyRent = sc ? sc.monthlyRent : discountedRent(lease.discounts, settleMonth, lease.rentAmount)
-    const paidAgg = await prisma.paymentRecord.aggregate({
-      where: { leaseTermId, targetMonth: settleMonth, isDeposit: false, isPrevOwner: false },
-      _sum: { actualAmount: true },
+    /**
+     * 선납은 **정산 귀속월 이상 전부**를 센다 (2026-08-31 실측 봉합, 513호).
+     *
+     * 종전에는 귀속월 한 달만 봤다. 9월분을 8월에 미리 낸 사람이 8/31 에 나가면 9월은 하루도
+     * 안 사는데 그 돈이 집계에 아예 안 들어와 통째로 안 돌아갔다. 315,000원이 조용히 남았고,
+     * 미납으로도 과납으로도 안 뜨는데 매출로는 잡히는 상태였다.
+     *
+     * targetMonth 는 서비스 기간의 이름이라, 귀속월보다 앞은 이미 소비된 기간이고 귀속월은
+     * 부분 사용, 그 뒤는 전부 미사용이다. 상한은 두지 않는다 — 두 달 뒤까지 선납했어도 돌려줄 돈이다.
+     */
+    const paidRows = await prisma.paymentRecord.findMany({
+      where: { leaseTermId, targetMonth: { gte: settleMonth }, isDeposit: false, isPrevOwner: false },
+      select: { targetMonth: true, actualAmount: true },
     })
-    const prepaidAmount = Math.max(0, paidAgg._sum.actualAmount ?? 0)
+    const prepaidAmount = Math.max(0, paidRows.reduce((sum, r) => sum + r.actualAmount, 0))
+    // 귀속월보다 뒤 = 아직 시작도 안 한 기간. 위약금을 물릴지 화면이 고른다.
+    const futurePrepaid = Math.max(0, paidRows
+      .filter(r => r.targetMonth > settleMonth)
+      .reduce((sum, r) => sum + r.actualAmount, 0))
+    // 화면이 '8월분 350,000 + 9월분 선납 350,000' 을 적을 근거 — 화면이 따로 세면 두 벌이 갈린다.
+    const prepaidMonths = [...paidRows
+      .reduce((m, r) => m.set(r.targetMonth, (m.get(r.targetMonth) ?? 0) + r.actualAmount), new Map<string, number>())]
+      .map(([month, amount]) => ({ month, amount }))
+      .filter(x => x.amount !== 0)
+      .sort((a, b) => a.month < b.month ? -1 : 1)
     const daysUsed = sc ? sc.calc.daysUsed : 0   // 정산할 기간이 없으면 미사용 = 0
-    const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct })
+    const refund = calcCheckoutRefund({
+      prepaidAmount, monthlyRent, daysUsed, mode, penaltyPct: effectivePct,
+      futurePrepaid, penalizeFuture,
+    })
     const appliedProration = (lease.checkoutProratedAmount != null && lease.checkoutProratedMonth === settleMonth)
       ? lease.checkoutProratedAmount : null
     // 단기 견적 — 판정은 **전체 거주 기간**으로 한다(정산 기간의 사용 일수가 아니다).
@@ -4332,6 +4361,8 @@ export async function previewCheckoutRefund(
     return {
       ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay,
       settlementApplies,
+      futurePrepaid,
+      prepaidMonths,
       ...(settlementApplies ? {} : {
         notApplicableReason: '단기 계약은 체류 기간 전체가 한 번의 사용료라 일할 정산이 없습니다. 금액을 조정하시려면 수납 기록에서 직접 고쳐 주세요.',
       }),
@@ -4392,8 +4423,17 @@ export async function finalizeRentRefund(input: {
     // 어긋나면 미리보기는 전월 선납으로 환불액을 계산하고 확정은 퇴실월 record 를 지운다.
     const refundPeriod = settlementPeriodFor({ dueDay: lease.dueDay, moveInDate: lease.moveInDate }, input.moveOutYmd)
     const mon = refundPeriod ? refundPeriod.month : input.moveOutYmd.slice(0, 7)
+    /**
+     * 정리 대상은 **귀속월 이상 전부**다 (2026-08-31 봉합). 미리보기가 그 범위로 세었으므로
+     * 확정도 같은 범위를 지워야 한다. 한 달만 지우면 미래 달 record 가 산 채로 남아, 하루도
+     * 안 산 달의 수납이 매출로 계속 잡힌다.
+     *
+     * 회사 귀속액 재기록은 종전대로 귀속월에 한 건이다. 미래 달은 안 산 기간이라 남길 청구가
+     * 없다. 한 달 안에 여러 결제가 있는 계약도 지금까지 첫 결제의 수단·날짜로 합쳐 재기록해
+     * 왔으므로, 달이 늘어도 새로운 종류의 왜곡이 생기지 않는다.
+     */
     const records = await prisma.paymentRecord.findMany({
-      where: { leaseTermId: input.leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false },
+      where: { leaseTermId: input.leaseTermId, targetMonth: { gte: mon }, isDeposit: false, isPrevOwner: false },
       orderBy: { payDate: 'asc' },
       // 증빙 메타를 함께 읽는다 — 재기록에 승계하지 않으면 그 결제일 달의 카드·현금영수증 합계에서
       // 금액이 통째로 사라진다(519호 임형진 사례, knowledge/cash-receipt-refund.md).

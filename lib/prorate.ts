@@ -136,16 +136,36 @@ export type CheckoutRefundResult = {
   daysUsed: number          // 사용일수 (납부일~퇴실일, 양끝 포함)
   dailyRate: number         // 1일요금 = 월 이용료 ÷ 30
   usedAmount: number        // 사용분 = daysUsed × dailyRate
-  penalty: number           // legal: 선납액 × 위약금율, goodwill: 0
+  penalty: number           // legal: 잔여액 × 위약금율, goodwill: 0
   companyKeeps: number      // 사용분 + 위약금 (= 퇴실월 적용 금액)
   refund: number            // max(0, 선납액 − companyKeeps)
+  /** 아직 시작도 안 한 기간의 선납분 — 위약금을 물릴지 사람이 고른다(0 이면 그런 달이 없다). */
+  futurePrepaid: number
 }
 export function calcCheckoutRefund(input: {
-  prepaidAmount: number      // 총 결제금액 (그 기간에 낸 금액)
+  prepaidAmount: number      // 총 결제금액 (정산 기간 + 그 뒤 선납을 합친 금액)
   monthlyRent: number        // 월 이용료 (1일요금 = ÷30)
   daysUsed: number           // 실제 이용일수
   mode: RefundMode
   penaltyPct?: number | null // 위약금율(%) — 미지정 시 공정위 상한 10. 0~10 클램프, goodwill이면 무시
+  /**
+   * prepaidAmount 중 **아직 시작도 안 한 기간**의 선납분 (2026-08-31 운영자 요구).
+   *
+   * 9월분을 8월에 미리 낸 사람이 8월에 나가면 9월은 하루도 안 산다. 종전에는 이 돈이 집계에
+   * 아예 안 들어와 통째로 안 돌아갔다.
+   */
+  futurePrepaid?: number
+  /**
+   * 그 선납분에도 위약금을 물릴 것인가 (기본 false = 안 문다).
+   *
+   * 공정위 기준과 계약서 §2 문언대로면 문다 — 잔여 이용금액에 들어가기 때문이다. 실제로 두
+   * 해석이 같은 답을 낸다(미래 달은 잔여 전액이 곧 그 기간 총액이라 항상 수렴한다).
+   *
+   * 그런데 운영자 판단은 다르다 — "아직 살지도 않은 기간이고 원래 납부해야 할 기간 전에
+   * 납부한 거니까 위약금을 안 무는 게 도의상 맞다". 상황에 따라 다를 수 있어 화면이 고르게
+   * 하고, 기본은 안 무는 쪽이다.
+   */
+  penalizeFuture?: boolean
 }): CheckoutRefundResult {
   const { prepaidAmount, monthlyRent, daysUsed, mode } = input
   const pct = mode === 'legal' ? clampPenaltyPct(input.penaltyPct) : 0
@@ -165,11 +185,16 @@ export function calcCheckoutRefund(input: {
   //
   // 이 함수는 개시일 **이후** 해지만 다룬다. 개시일 이전(입주 전 취소)은 정산할 기간이 없어
   // calcCheckoutProration 이 애초에 null 을 내고 이 경로에 오지 않는다.
-  const remaining = Math.max(0, Math.max(0, prepaidAmount) - usedAmount)
-  const penalty = pct > 0 ? Math.round((remaining * pct) / 100) : 0
+  //
+  // 아직 시작 안 한 기간의 선납분은 **고른 대로** 잔여에서 뺀다(운영자 확정 2026-08-31).
+  // 안 물리면 그 돈은 위약금 없이 통째로 돌아가고, 물리면 종전 계산과 같아진다.
+  const future = Math.max(0, Math.min(input.futurePrepaid ?? 0, Math.max(0, prepaidAmount)))
+  const remainingAll = Math.max(0, Math.max(0, prepaidAmount) - usedAmount)
+  const penaltyBase = input.penalizeFuture === true ? remainingAll : Math.max(0, remainingAll - future)
+  const penalty = pct > 0 ? Math.round((penaltyBase * pct) / 100) : 0
   const companyKeeps = usedAmount + penalty
   const refund = Math.max(0, prepaidAmount - companyKeeps)
-  return { mode, penaltyPct: pct, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund }
+  return { mode, penaltyPct: pct, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund, futurePrepaid: future }
 }
 
 // ── 단기 입실 요금 시뮬레이션 (2026-07-05, 운영자 요청) ─────────────────────
