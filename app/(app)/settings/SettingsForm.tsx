@@ -8,8 +8,8 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
-import { DEFAULT_DISPOSAL_CONSENT, DEFAULT_SUB_LEASE_ADDENDUM, DEFAULT_SHORT_STAY_ADDENDUM, DEFAULT_EARLY_CHECKOUT_ADDENDUM,
-  resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, type DisposalConsentTemplate } from '@/lib/contract'
+import { DEFAULT_DISPOSAL_CONSENT, DEFAULT_SUB_LEASE_ADDENDUM, DEFAULT_SHORT_STAY_ADDENDUM, DEFAULT_EARLY_CHECKOUT_ADDENDUM, DEFAULT_ROOM_SCHEDULE_ADDENDUM,
+  resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, resolveRoomScheduleAddendum, type DisposalConsentTemplate } from '@/lib/contract'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
@@ -99,6 +99,7 @@ type Property = {
   subLeaseAddendum: unknown
   shortStayAddendum: unknown
   earlyCheckoutAddendum: unknown
+  roomScheduleAddendum: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -2301,6 +2302,9 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
         <AddendumCard label="조기 퇴실 시 요금 적용" field="earlyCheckout" rows={4}
           fallback={DEFAULT_EARLY_CHECKOUT_ADDENDUM} saved={resolveEarlyCheckoutAddendum(property?.earlyCheckoutAddendum)}
           hint="일반 계약서에만 붙습니다(단기 특약과 함께 서지 않습니다). 1개월을 못 채우고 중도 퇴실할 때의 요금 기준입니다." />
+        <AddendumCard label="거주 호실 일정" field="roomSchedule" rows={4}
+          fallback={DEFAULT_ROOM_SCHEDULE_ADDENDUM} saved={resolveRoomScheduleAddendum(property?.roomScheduleAddendum)}
+          hint={'임시 호실을 거쳐 계약 호실로 옮기는 계약서에만 붙습니다. 문장 안 {{일정}} 자리에 그 계약의 호실 일정이 들어갑니다.'} />
         <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">계약서 동반 서류</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>
@@ -2353,7 +2357,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
  */
 function AddendumCard({ label, field, rows, fallback, saved, hint }: {
   label: string
-  field: 'subLease' | 'shortStay' | 'earlyCheckout'
+  field: 'subLease' | 'shortStay' | 'earlyCheckout' | 'roomSchedule'
   rows: number
   fallback: { title: string; items: string[] }
   saved: { title: string; items: string[] } | null

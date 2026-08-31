@@ -49,6 +49,7 @@ const BEFORE: Row = {
   subLeaseAddendum: { title: '추가 호실 특약(보관 용도)', items: ['가'] },
   shortStayAddendum: { title: '단기 입실 특약', items: ['나'] },
   earlyCheckoutAddendum: { title: '조기 퇴실 시 요금 적용', items: ['다'] },
+  roomScheduleAddendum: { title: '거주 호실 일정', items: ['라'] },
   publicSlug: 'thestayjegi',
 }
 const ALL_COLUMNS = Object.keys(BEFORE)
@@ -57,7 +58,7 @@ const ALL_COLUMNS = Object.keys(BEFORE)
 const OWNED: Record<string, string[]> = {
   기본정보:    ['name', 'address', 'phone', 'replyToEmail', 'mailFromLocal', 'mailCopyToSelf', 'acquisitionDate', 'prevOwnerCutoffDate', 'contactLeadDays', 'checkoutLeadShortDays', 'checkoutLeadMonths'],
   '요금·정책': ['defaultDeposit', 'defaultCleaningFee', 'reservationDepositMode', 'refundPenaltyPct', 'refundClauseInContract', 'cleaningFeeInDeposit'],
-  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum'],
+  '계약서·서류': ['multiContractVersions', 'defaultAreaM2', 'bankAccount', 'disposalConsentTemplate', 'subLeaseAddendum', 'shortStayAddendum', 'earlyCheckoutAddendum', 'roomScheduleAddendum'],
   웹사이트:    ['publicSlug'],
 }
 
@@ -87,6 +88,7 @@ const DOC_FORM: [string, string][] = [
   ['subLeaseTitle', '추가 호실 특약(보관 용도)'], ['subLeaseItems', '가'],
   ['shortStayTitle', '단기 입실 특약'], ['shortStayItems', '나'],
   ['earlyCheckoutTitle', '조기 퇴실 시 요금 적용'], ['earlyCheckoutItems', '다'],
+  ['roomScheduleTitle', '거주 호실 일정'], ['roomScheduleItems', '라'],
 ]
 
 const apply = (patch: PropertySettingsPatch): Row => ({ ...BEFORE, ...patch })
@@ -211,6 +213,9 @@ for (const [tab, form] of TAB_FORMS) {
     [{ title: 'ㅇ', items: ['가'] }, false])
   eq('조기 퇴실 절도 빈 항목을 저장한다',
     p([['earlyCheckoutTitle', 'ㅇ'], ['earlyCheckoutItems', ' \n ']]).earlyCheckoutAddendum, { title: 'ㅇ', items: [] })
+  // 거주 호실 일정도 같은 규칙이다 — 비우면 '이 영업장은 이 절을 안 쓴다'(2026-08-31).
+  eq('거주 호실 일정도 빈 항목을 저장한다',
+    p([['roomScheduleTitle', 'ㅇ'], ['roomScheduleItems', ' \n ']]).roomScheduleAddendum, { title: 'ㅇ', items: [] })
   eq('슬러그 미포함이면 칼럼을 안 쓴다', 'publicSlug' in p([['name', 'ㅇ']]), false)
   eq('빈 슬러그는 null', p([['publicSlug', '']]).publicSlug, null)
 }

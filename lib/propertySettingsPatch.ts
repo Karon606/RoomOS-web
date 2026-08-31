@@ -63,6 +63,7 @@ export type PropertySettingsPatch = {
   subLeaseAddendum?: SubLeaseAddendumPatch
   shortStayAddendum?: SubLeaseAddendumPatch
   earlyCheckoutAddendum?: SubLeaseAddendumPatch
+  roomScheduleAddendum?: SubLeaseAddendumPatch
   publicSlug?: string | null
 }
 
@@ -196,6 +197,8 @@ export function buildPropertySettingsPatch(
   if (short) patch.shortStayAddendum = short
   const early = addendum('earlyCheckoutTitle', 'earlyCheckoutItems')
   if (early) patch.earlyCheckoutAddendum = early
+  const roomSched = addendum('roomScheduleTitle', 'roomScheduleItems')
+  if (roomSched) patch.roomScheduleAddendum = roomSched
 
   // ── 웹사이트 탭 ────────────────────────────────────────────────
   // 지금 이 폼에는 슬러그 입력이 없다(정주소는 웹사이트 탭의 updatePublicSlug). 옛 번들이 계속

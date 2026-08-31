@@ -212,6 +212,10 @@ model Property {
   shortStayAddendum Json?
   // 조기 퇴실 시 요금 적용 절 — 일반 계약에만 붙는다(단기 특약과 배타적). 2026-08-29 운영자 오더.
   earlyCheckoutAddendum Json?
+  // 거주 호실 일정 절 — 임시 호실을 거쳐 계약 호실로 옮기는 계약에만 붙는다(2026-08-31).
+  // 형제 셋과 달리 코드 상수에 박혀 있어 영업장이 못 고쳤다. 운영자 요구 — "계약서의 모든
+  // 문구, 특히 가변형 문구는 환경설정에서 모두 관리할 수 있도록".
+  roomScheduleAddendum Json?
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
   // 서류 메일의 답장 받을 주소(영업장 대표 메일). 발신 주소는 도메인 인증 때문에
   // no-reply@stayeum.com 고정(lib/mailSend)이라, 멀티테넌트 구분은 표시 이름과 이 답장 주소가 진다.

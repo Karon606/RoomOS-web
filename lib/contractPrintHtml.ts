@@ -98,6 +98,8 @@ export type PrintContractData = {
   shortStayRateTable?: string
   // 거주 호실 일정 문장. 없으면(null·미지정) 절이 안 붙어 종전 계약서와 문자 단위로 같다.
   roomScheduleText?: string | null
+  /** 그 절의 문안 — 환경설정에서 고친 것. undefined 면 코드 기본 문안. */
+  roomScheduleAddendum?: SubLeaseAddendum | null
   // 사용자가 입력한 화면 상태
   smoking: string                 // '비흡연' | '흡연'
   emergencyContactText: string
@@ -179,7 +181,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     return `<div class="clause-group"><div class="clause-h">${escape(renderContractText(sec.title, vars))}</div><ul class="clause-list">${lis}</ul></div>`
   }
   // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거가 그대로 따라온다.
-  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, d.rateAddendum, buildRoomScheduleAddendum(d.roomScheduleText))
+  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, d.rateAddendum, buildRoomScheduleAddendum(d.roomScheduleText, d.roomScheduleAddendum))
     .map(renderSection).join('')
 
   // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.

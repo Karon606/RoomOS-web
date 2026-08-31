@@ -1364,7 +1364,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 인쇄본(lib/contractPrintHtml)과 **같은 구조·같은 규칙**이다. 갈리면 화면과 종이의
           // 단 나뉨 지점이 다른 규칙으로 정해진다. 경위는 knowledge/domain-contracts.md 참조.
           <div className="clauses">
-            {appendSubLeaseAddendum(view.sections, subLeaseView, data.rateAddendum, buildRoomScheduleAddendum(data.roomScheduleText)).map((sec, si) => (
+            {appendSubLeaseAddendum(view.sections, subLeaseView, data.rateAddendum, buildRoomScheduleAddendum(data.roomScheduleText, data.roomScheduleAddendum)).map((sec, si) => (
               <div key={si} className="clause-group">
                 <div className="clause-h">{renderContractText(sec.title, vars)}</div>
                 <ul className="clause-list">

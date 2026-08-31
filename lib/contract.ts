@@ -227,14 +227,36 @@ export function resolveEarlyCheckoutAddendum(raw: unknown): SubLeaseAddendum | n
 // 종이에 일정이 다 적혀 있으면 방이 옮겨질 때마다 계약서를 다시 뽑을 일이 없다("기록 갱신도
 // 필요없지"). 추가 호실 특약과 같은 방식으로 절 배열 뒤에 붙고, 일정이 없으면 null 이라
 // 그 계약서의 렌더가 이 기능 전과 문자 단위로 같다.
-export function buildRoomScheduleAddendum(scheduleText: string | null | undefined): SubLeaseAddendum | null {
+export const DEFAULT_ROOM_SCHEDULE_ADDENDUM: SubLeaseAddendum = {
+  title: '거주 호실 일정',
+  items: [
+    '입실자는 다음 일정에 따라 호실에 거주합니다. {{일정}}',
+    '위 일정의 마지막 호실이 계약 호실이며, 그 전까지 머무는 호실은 임시로 제공되는 공간입니다. 이용료와 계약 조건은 호실이 바뀌어도 달라지지 않습니다.',
+  ],
+}
+
+/** 저장된 JSON을 거주 호실 일정 절로 — 형제 셋과 같은 규칙(null=기본, 빈 항목=안 씀). */
+export function resolveRoomScheduleAddendum(raw: unknown): SubLeaseAddendum | null {
+  return resolveAddendum(raw, DEFAULT_ROOM_SCHEDULE_ADDENDUM)
+}
+
+/**
+ * 그 계약의 거주 호실 일정 절을 만든다.
+ *
+ * 문안은 영업장이 고칠 수 있다(2026-08-31 운영자 요구 — 형제 특약 셋은 이미 열려 있었는데
+ * 이 절만 코드 상수에 박혀 있었다). 일정 자체는 계약마다 다르므로 {{일정}} 자리에 넣는다.
+ * 변수를 안 쓴 문안이면 일정이 종이에 안 적히는데, 그것도 영업장의 선택이라 막지 않는다.
+ */
+export function buildRoomScheduleAddendum(
+  scheduleText: string | null | undefined,
+  template?: SubLeaseAddendum | null,
+): SubLeaseAddendum | null {
   if (!scheduleText) return null
+  const t = template === undefined ? DEFAULT_ROOM_SCHEDULE_ADDENDUM : template
+  if (!t) return null
   return {
-    title: '거주 호실 일정',
-    items: [
-      `입실자는 다음 일정에 따라 호실에 거주합니다. ${scheduleText}`,
-      '위 일정의 마지막 호실이 계약 호실이며, 그 전까지 머무는 호실은 임시로 제공되는 공간입니다. 이용료와 계약 조건은 호실이 바뀌어도 달라지지 않습니다.',
-    ],
+    title: t.title,
+    items: t.items.map(line => line.replaceAll('{{일정}}', scheduleText)),
   }
 }
 

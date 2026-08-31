@@ -15,6 +15,7 @@ import { uploadToDrive, driveImageDataUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent, resolveSubLeaseAddendum,
+  resolveRoomScheduleAddendum,
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
@@ -162,6 +163,7 @@ export async function POST(req: Request) {
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
           refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
+          roomScheduleAddendum: true,
           shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
           // 파생 판본을 만들 수 있는 영업장인가 — 발급 목적 게이트가 이 값을 본다.
           multiContractVersions: true,
@@ -399,6 +401,8 @@ export async function POST(req: Request) {
       // 거주 호실 일정 — 화면(buildContractData)이 만든 문장을 그대로 싣는다. 종이와 화면이
       // 다른 일정을 적을 수 없다. 일정이 없으면 null 이라 인쇄물이 종전과 문자 단위로 같다.
       roomScheduleText: await contractRoomScheduleText(lease, propertyId),
+      // 그 절의 문안도 함께 — 영업장이 고친 것을 종이가 그대로 쓴다(2026-08-31).
+      roomScheduleAddendum: resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum),
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,

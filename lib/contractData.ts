@@ -8,6 +8,7 @@ import {
   type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   type SubLeaseAddendum, type ResolvedBody,
   DEFAULT_CONTRACT_TEMPLATE, resolveSubLeaseAddendum, resolveShortStayAddendum, resolveEarlyCheckoutAddendum, resolveDisposalConsent,
+  resolveRoomScheduleAddendum,
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
@@ -177,6 +178,9 @@ export type ContractData = {
   // 거주 호실 일정 문장 — 기간마다 다른 방에 머무는 계약에만 채워진다(lib/roomSchedule).
   // 없으면 null 이고 렌더가 절을 안 붙인다.
   roomScheduleText: string | null
+  // 그 절의 문안 — 영업장이 환경설정에서 고친 것(2026-08-31). null 이면 이 영업장은 안 쓴다.
+  // 문장 자체는 위 roomScheduleText 가 {{일정}} 자리에 들어간다.
+  roomScheduleAddendum: SubLeaseAddendum | null
 }
 
 const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
@@ -238,6 +242,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
         refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
+        roomScheduleAddendum: true,
         shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
       },
     }),
@@ -350,6 +355,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),
     // 특약 판정도 같은 목록을 본다 — 행이 실리는 계약과 특약이 말하는 계약이 갈릴 수 없다.
     subLeaseAddendum: contractSubLeaseAddendum(tenant.leaseTerms, lease?.id, body, property?.subLeaseAddendum),
+    roomScheduleAddendum: resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum),
     rateAddendum: contractRateAddendum(lease, body, shortPolicy.enabled,
       { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum }),
     shortStayRateTable: shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? '',
