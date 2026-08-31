@@ -407,7 +407,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       </tbody>
     </table>
     ${d.emergencyContactText ? `<table class="emerg"><tbody><tr>
-      <th>비상 연락망<span class="en">Emergency Contact</span></th>
+      <th>비상연락처<span class="en">Emergency Contact</span></th>
       <td>${escape(d.emergencyContactText)}</td>
     </tr></tbody></table>` : ''}
 

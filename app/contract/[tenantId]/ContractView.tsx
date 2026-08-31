@@ -107,8 +107,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     })
   }
   // 자동값의 정본. 복원 버튼이 이 함수를 다시 부르므로 초기화와 복원이 절대 갈리지 않는다.
+  // 순서는 '이름 / 전화번호 / 관계' — 환경설정 기본 안내 문구와 아래 placeholder 가 그 순서다.
+  // 이름은 종전에 담을 칸이 없어 빠져 있었다(2026-08-31 비상연락처 이름 칸 신설로 이어짐).
   const initialEmergencyText = () => data.tenant.emergencyContacts
-    .map(c => [c.phone, c.relation].filter(Boolean).join(' / '))
+    .map(c => [c.name, c.phone, c.relation].filter(Boolean).join(' / '))
     .join(', ')
   const [emergencyContactText, setEmergencyContactText] = useState(initialEmergencyText)
 
@@ -1333,11 +1335,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           </tbody>
         </table>
 
-        {/* 비상 연락망 — 화면 입력 / 인쇄 텍스트 */}
+        {/* 비상연락처 — 화면 입력 / 인쇄 텍스트 */}
         <table className="emerg">
           <tbody>
             <tr>
-              <th>비상 연락망<span className="en">Emergency Contact</span></th>
+              <th>비상연락처<span className="en">Emergency Contact</span></th>
               <td>
                 {remote ? (
                   <span>{emergencyContactText}</span>

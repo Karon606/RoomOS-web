@@ -81,7 +81,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'tenant.gender': '성별',
   'tenant.primaryPhone': '연락처',
   'tenant.smoking': '흡연',
-  'tenant.emergencyContacts': '비상연락망',
+  'tenant.emergencyContacts': '비상연락처',
   'lease.roomNo': '호실',
   'lease.moveInDate': '입실일',
   'lease.expectedMoveOut': '퇴실 예정일',
