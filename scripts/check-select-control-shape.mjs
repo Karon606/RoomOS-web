@@ -75,7 +75,27 @@ const violations = []
   }
 }
 
-console.log(`[선택 컨트롤 폭] 축 ⓐ 모바일 3열 금지 · ⓑ 말줄임 · ⓒ 목록의 로컬 저장 금지 / 위반 ${violations.length}건`)
+// ⓓ 팝업이 트리거 폭에 묶여 있지 않은가 (2026-08-31).
+//    트리거의 형제로 absolute + w-full 로 그리면 두 가지가 깨진다. 좁은 칸에서는 팝업 안의
+//    검색칸·입력칸이 같이 눌리고, 모달 안에서는 아래쪽 칸에서 연 팝업이 바닥에서 잘린다.
+//    자리 산출은 usePopoverAnchor 정본 한 곳이 한다 — 사본을 만들면 언젠가 갈린다.
+{
+  for (const f of ['components/ui/CountrySelect.tsx', 'components/ui/DatePicker.tsx']) {
+    const src = readFileSync(f, 'utf8')
+    if (!/usePopoverAnchor\s*[<(]/.test(src)) {
+      violations.push(`${f} — 팝업 자리를 정본(usePopoverAnchor)으로 안 센다. 손으로 재면 두 벌이 갈린다.`)
+    }
+    if (!/createPortal\(/.test(src)) {
+      violations.push(`${f} — 팝업을 화면 기준으로 안 띄운다. 모달 안 아래쪽 칸에서 열면 바닥에서 잘린다.`)
+    }
+    // 폭을 트리거에 묶는 옛 문법이 남아 있으면 잡는다.
+    if (/absolute[^"']*z-\[var\(--z-dropdown\)\][^"']*w-full/.test(src)) {
+      violations.push(`${f} — 팝업 폭이 트리거에 묶여 있다. 좁은 칸에서 그 안 입력칸이 함께 눌린다.`)
+    }
+  }
+}
+
+console.log(`[선택 컨트롤 폭] 축 ⓐ 모바일 3열 금지 · ⓑ 말줄임 · ⓒ 목록의 로컬 저장 금지 · ⓓ 팝업 자리 정본 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

@@ -1,5 +1,7 @@
 'use client'
 
+import { createPortal } from 'react-dom'
+import { usePopoverAnchor } from './usePopoverAnchor'
 import { useState, useRef, useEffect } from 'react'
 
 // ISO 3166-1 alpha-2 → 국기 이모지 변환
@@ -264,6 +266,9 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
   const [query, setQuery]   = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  // 패널을 화면 기준으로 띄운다. 트리거의 형제로 두면 폭이 칸에 묶여 검색칸이 눌리고, 모달 안에서
+  // 아래쪽 칸에서 열면 바닥에서 잘린다(날짜 선택기가 먼저 이 방식으로 풀었다).
+  const { pos, triggerRef, measure } = usePopoverAnchor<HTMLButtonElement>({ estimatedHeight: 280 })
 
   // 열릴 때 검색창 포커스 — 데스크톱(정밀 포인터)에서만.
   // 터치 기기에서 자동 포커스하면 가상 키보드가 목록을 밀어 올려 탭 좌표가 어긋난다
@@ -280,10 +285,16 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      // 패널이 body 로 옮겨 갔으므로 트리거와 패널 둘 다 밖일 때만 닫는다.
+      if (panelRef.current?.contains(t)) return
+      if (triggerRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+    // triggerRef 는 훅이 만든 ref 객체라 정체성이 안 바뀐다 — 의존성에 넣어도 하는 일이 없다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const q = query.toLowerCase()
@@ -297,14 +308,15 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
   }
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative">
       {/* hidden input — 폼 전송용 */}
       <input type="hidden" name={name} value={selected?.name ?? ''} />
 
       {/* 선택 버튼 */}
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
+        ref={triggerRef}
+        onClick={() => { if (!open) measure(); setOpen(v => !v) }}
         className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
       >
         {selected ? (
@@ -322,10 +334,12 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
         </span>
       </button>
 
-      {/* 드롭다운 */}
-      {open && (
-        <div className="absolute z-[var(--z-dropdown)] mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
-          style={{ maxHeight: '280px' }}>
+      {/* 드롭다운 — body 로 옮겨 화면 기준으로 띄운다. 모달 안 스크롤 컨테이너에 두면 아래쪽
+          칸에서 열 때 바닥에서 잘리고, 폭이 트리거에 묶여 검색칸까지 눌린다. */}
+      {open && typeof window !== 'undefined' && createPortal(
+        <div ref={panelRef}
+          className="fixed z-[calc(var(--z-lightbox)+1)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: '280px' }}>
           {/* 검색창 */}
           <div className="px-3 pt-2.5 pb-2 border-b border-[var(--warm-border)] shrink-0">
             <input
@@ -375,7 +389,8 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
               </button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

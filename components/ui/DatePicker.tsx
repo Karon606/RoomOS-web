@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { usePopoverAnchor } from './usePopoverAnchor'
 import { createPortal } from 'react-dom'
 import { kstYmdStr } from '@/lib/kstDate'
 
@@ -50,8 +51,8 @@ export function DatePicker({
     const y = value ? parseInt(value.slice(0, 4)) : todayYear
     return Math.floor(y / 12) * 12
   })
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  // 자리 산출은 공용 정본이 한다 — 국적 선택도 같은 산수를 쓴다(사본을 만들면 언젠가 갈린다).
+  const { pos, triggerRef, measure } = usePopoverAnchor<HTMLButtonElement>()
 
   // 외부에서 value가 바뀌면 뷰 동기화
   useEffect(() => {
@@ -63,17 +64,7 @@ export function DatePicker({
 
   const handleOpen = () => {
     if (disabled) return
-    if (triggerRef.current) {
-      const r = triggerRef.current.getBoundingClientRect()
-      const popW = Math.max(r.width, 280)
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - popW - 8))
-      // 뷰포트 하단 잘림 방지: 공간이 부족하면 트리거 위쪽에 표시
-      const estimatedH = 340
-      const spaceBelow = window.innerHeight - r.bottom - 8
-      const topBelow   = r.bottom + 4
-      const topAbove   = Math.max(8, r.top - estimatedH - 4)
-      setPos({ top: spaceBelow >= estimatedH ? topBelow : topAbove, left, width: popW })
-    }
+    measure()
     setView(monthOnly ? 'month' : 'day')
     setOpen(true)
   }
