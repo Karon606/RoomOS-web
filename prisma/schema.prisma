@@ -158,6 +158,11 @@ model Property {
   incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
   expenseCategories  String?   // 지출 카테고리 (콤마 구분)
   requestCategories  String?   // 요청·컴플레인 카테고리 (콤마 구분, 비면 기본 5종 — 2026-07-27)
+  // 입주자 직업 목록 (콤마 구분, 비면 코드 기본값 — 2026-08-31).
+  //
+  // 종전에는 직접 추가한 직업이 브라우저 localStorage 에만 남았다. 기기를 바꾸면 없고,
+  // 브라우저 데이터를 지우면 사라졌다. 같은 성격의 요청·지출 카테고리는 처음부터 여기 있었다.
+  jobOptions         String?
   // 재고관리에 추적·표시할 카테고리 설정 (JSON: [{"cat":"부식비","alias":"식료품"},...]).
   // cat = 지출 카테고리(expenseCategories 중), alias = 재고관리 표시명. 순서 = 표시 순서.
   // null 이면 기본값(부식비→식료품·소모품비→소모품·폐기물 처리비→폐기물 처리용품).

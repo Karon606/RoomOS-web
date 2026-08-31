@@ -1,45 +1,24 @@
 'use client'
+// 입주자 직업 선택 — 목록 끝 '기타(직접 입력)'으로 전환되는 정본 문법(CategorySelect)을 쓴다.
+//
+// 종전에는 자체 드롭다운 패널이었고 두 가지가 문제였다.
+//
+// 첫째, 패널이 트리거 폭을 그대로 물려받아(w-full) 좁은 칸에서는 '직접 추가' 입력칸의 실제 폭이
+// 20px 남짓이었다. 글자를 쳐도 보이지 않는다는 운영자 지적이 그것이다(2026-08-31). 정본 문법은
+// 입력할 때 칸 전체가 입력칸이 되므로 그 문제가 구조적으로 없다.
+//
+// 둘째, 직접 추가한 직업이 브라우저 localStorage 에만 남았다. 기기를 바꾸면 없고 브라우저
+// 데이터를 지우면 사라졌다. 같은 성격의 요청·지출 카테고리는 처음부터 영업장 설정에 있었다.
+// 이제 목록도 서버가 쥔다.
+//
+// 바깥 계약(name·defaultValue·placeholder)은 그대로 두었다 — 쓰는 폼이 한 글자도 안 바뀐다.
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import CategorySelect from '@/components/ui/CategorySelect'
+import { getJobOptions, addJobOption } from '@/app/(app)/settings/actions'
 
-const STORAGE_KEY = 'stayeum_custom_jobs'
-
-const DEFAULT_JOBS = [
-  '직장인',
-  '학생',
-  '고시생',
-  '취업준비생',
-  '대학원생',
-  '프리랜서',
-  '자영업자',
-  '아르바이트',
-  '무직',
-  '의료인',
-  '교사 / 강사',
-  '군인',
-  '공무원',
-  '연구원',
-  '운전기사',
-  '기술직',
-  '서비스직',
-  '건설업',
-  '요식업',
-  '예술 / 창작',
-]
-
-function loadCustomJobs(): string[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as string[]) : []
-  } catch {
-    return []
-  }
-}
-
-function saveCustomJobs(jobs: string[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(jobs))
-}
+/** 옛 저장 자리 — 한 번 서버로 옮기고 지운다. */
+const LEGACY_KEY = 'stayeum_custom_jobs'
 
 interface JobSelectProps {
   name: string
@@ -48,169 +27,39 @@ interface JobSelectProps {
 }
 
 export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }: JobSelectProps) {
-  const [selected, setSelected]       = useState(defaultValue ?? '')
-  const [open, setOpen]               = useState(false)
-  const [query, setQuery]             = useState('')
-  const [customJobs, setCustomJobs]   = useState<string[]>([])
-  const [newJob, setNewJob]           = useState('')
-  const searchRef = useRef<HTMLInputElement>(null)
-  const panelRef  = useRef<HTMLDivElement>(null)
+  const [value, setValue] = useState(defaultValue ?? '')
+  const [options, setOptions] = useState<string[]>([])
 
-  // 마운트 시 localStorage에서 커스텀 직업 불러오기
   useEffect(() => {
-    setCustomJobs(loadCustomJobs())
+    let live = true
+    void (async () => {
+      // 브라우저에 남은 옛 목록을 한 번만 서버로 옮긴다. 운영자가 이미 추가해 둔 직업이
+      // 이 전환으로 사라지면 안 된다(실기에서 '프로그래머'·'봉제'가 확인됐다).
+      try {
+        const raw = localStorage.getItem(LEGACY_KEY)
+        if (raw) {
+          const legacy = JSON.parse(raw) as string[]
+          if (Array.isArray(legacy)) for (const j of legacy) await addJobOption(j)
+          localStorage.removeItem(LEGACY_KEY)
+        }
+      } catch { /* 옛 값이 깨져 있어도 목록 조회는 이어간다 */ }
+      const list = await getJobOptions()
+      if (live) setOptions(list)
+    })()
+    return () => { live = false }
   }, [])
 
-  // 열릴 때 검색창 포커스
-  useEffect(() => {
-    if (open) { setQuery(''); setTimeout(() => searchRef.current?.focus(), 50) }
-  }, [open])
-
-  // 바깥 클릭 닫기
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const allJobs = [...DEFAULT_JOBS, ...customJobs]
-  const q = query.toLowerCase()
-  const filtered = allJobs.filter(j => j.toLowerCase().includes(q))
-
-  const pick = (job: string) => {
-    setSelected(job)
-    setOpen(false)
-  }
-
-  const addCustomJob = () => {
-    const trimmed = newJob.trim()
-    if (!trimmed || allJobs.includes(trimmed)) return
-    const updated = [...customJobs, trimmed]
-    setCustomJobs(updated)
-    saveCustomJobs(updated)
-    setSelected(trimmed)
-    setNewJob('')
-    setOpen(false)
-  }
-
-  const handleAddKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); addCustomJob() }
-  }
-
+  // 저장된 값이 목록에 없으면 정본이 알아서 입력 모드로 연다(하위호환이 공짜로 딸려 온다).
   return (
-    <div className="relative" ref={panelRef}>
-      {/* hidden input — 폼 전송용 */}
-      <input type="hidden" name={name} value={selected} />
-
-      {/* 선택 버튼 */}
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors"
-      >
-        {selected ? (
-          <span className="text-[var(--warm-dark)] flex-1">{selected}</span>
-        ) : (
-          <span className="text-[var(--warm-muted)] flex-1">{placeholder}</span>
-        )}
-        <span className="text-[var(--warm-muted)]">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
-        </span>
-      </button>
-
-      {/* 드롭다운 */}
-      {open && (
-        <div
-          className="absolute z-[var(--z-dropdown)] mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift flex flex-col"
-          style={{ maxHeight: '280px' }}
-        >
-          {/* 검색창 */}
-          <div className="px-3 pt-2.5 pb-2 border-b border-[var(--warm-border)] shrink-0">
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="검색…"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
-            />
-          </div>
-
-          {/* 직업 목록 */}
-          <div className="overflow-y-auto overscroll-contain flex-1">
-            {/* 선택 안 함 — 맨 위 정식 항목(하단 초기화 링크는 발견 안 되던 문제, 신고 5ce9d3f8) */}
-            {selected && !query && (
-              <button type="button" onClick={() => { setSelected(''); setOpen(false) }}
-                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left text-[var(--warm-muted)] hover:bg-[var(--canvas)] transition-colors border-b border-[var(--warm-border)]">
-                선택 안 함 (비우기)
-              </button>
-            )}
-            {filtered.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-[var(--warm-muted)] text-center">검색 결과 없음</p>
-            ) : (
-              filtered.map(job => {
-                const isCustom = customJobs.includes(job)
-                return (
-                  <button
-                    key={job}
-                    type="button"
-                    onClick={() => pick(job)}
-                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left transition-colors ${
-                      selected === job
-                        ? 'bg-[var(--persimmon-l)] text-[var(--persimmon)]'
-                        : 'text-[var(--warm-dark)] hover:bg-[var(--canvas)]'
-                    }`}
-                  >
-                    <span className="flex-1">{job}</span>
-                    {isCustom && (
-                      <span className="text-xs text-[var(--warm-muted)] shrink-0">추가됨</span>
-                    )}
-                  </button>
-                )
-              })
-            )}
-          </div>
-
-          {/* 직접 추가 */}
-          <div className="border-t border-[var(--warm-border)] px-3 py-2.5 shrink-0">
-            <p className="text-xs text-[var(--warm-muted)] mb-2">직접 추가</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newJob}
-                onChange={e => setNewJob(e.target.value)}
-                onKeyDown={handleAddKeyDown}
-                placeholder="직업 입력 후 Enter"
-                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)]"
-              />
-              <button
-                type="button"
-                onClick={addCustomJob}
-                disabled={!newJob.trim()}
-                className="px-3 py-1.5 bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-[var(--on-solid)] text-xs rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              >
-                추가
-              </button>
-            </div>
-          </div>
-
-          {/* 선택 초기화 */}
-          {selected && (
-            <div className="border-t border-[var(--warm-border)] px-3 py-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => { setSelected(''); setOpen(false) }}
-                className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors"
-              >
-                선택 초기화
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    <CategorySelect
+      name={name}
+      value={value}
+      onChange={setValue}
+      options={options}
+      emptyLabel={placeholder}
+      placeholder="직업을 직접 입력하세요"
+      showAddHint
+      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-h-[var(--input-h-touch)] sm:min-h-0"
+    />
   )
 }

@@ -456,6 +456,36 @@ export async function deleteUnitOption(kind: 'spec' | 'qty', name: string) {
   revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
 }
 
+// 입주자 직업 목록 — getExpenseCategories 와 같은 문법이다(영업장 행 안에 있어 다른 영업장으로
+// 샐 경로가 구조적으로 없다). 기본값은 코드에 두고 칼럼이 비었을 때만 폴백한다.
+const DEFAULT_JOB_OPTIONS = '직장인,학생,고시생,취업준비생,대학원생,프리랜서,자영업자,아르바이트,무직,의료인,교사 / 강사,군인,공무원,연구원,운전기사,기술직,서비스직,건설업,요식업,예술 / 창작'
+
+export const getJobOptions = cache(async function getJobOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { jobOptions: true } as any,
+  })
+  const raw = (property as any)?.jobOptions ?? DEFAULT_JOB_OPTIONS
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+})
+
+/** 직업을 목록에 더한다 — 입주자 저장에서 목록 밖 값이 들어오면 자동으로 부른다. */
+export async function addJobOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const clean = name.trim()
+  if (!clean) return
+  const current = await getJobOptions()
+  if (current.includes(clean)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { jobOptions: [...current, clean].join(',') } as any,
+  })
+  revalidatePath('/tenants')
+  revalidatePath('/settings')
+}
+
 export async function addExpenseCategory(name: string) {
   await requireEdit()
   const propertyId = await getPropertyId()

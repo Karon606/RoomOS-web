@@ -310,10 +310,12 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
         {selected ? (
           <>
             <span className="text-lg leading-none">{flag(selected.code)}</span>
-            <span className="text-[var(--warm-dark)] flex-1">{selected.name}</span>
+            {/* truncate — 좁은 칸에서 넘칠 때 줄바꿈 대신 말줄임으로 받는다. 종전에는 글자 자리가
+                모자라면 한 글자씩 세로로 쪼개져 트리거 높이가 통째로 늘었다(2026-08-31 실측). */}
+            <span className="text-[var(--warm-dark)] flex-1 min-w-0 truncate text-left">{selected.name}</span>
           </>
         ) : (
-          <span className="text-[var(--warm-muted)] flex-1">{placeholder}</span>
+          <span className="text-[var(--warm-muted)] flex-1 min-w-0 truncate text-left">{placeholder}</span>
         )}
         <span className="text-[var(--warm-muted)]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>

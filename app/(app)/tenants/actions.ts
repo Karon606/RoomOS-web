@@ -69,6 +69,7 @@ import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { addJobOption } from '@/app/(app)/settings/actions'
 
 /**
  * 폼의 외국인등록번호를 저장값으로 옮긴다. AAD 가 입주자 id 라 신규 등록은 id 를 먼저 정하고 부른다.
@@ -916,6 +917,9 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   })
   if (newLease) await afterLeaseCreated(f, { propertyId, tenantId: tenant.id, leaseId: newLease.id })
   if (newLease) await recordOverlapAckIfAllowed(formData, newLease.id, user.sub)
+  // 목록에 없는 직업을 적었으면 영업장 목록에 더한다 — 다음 사람에게도 고를 수 있게(지출
+  // 카테고리와 같은 문법). 실패해도 입주자 저장은 이미 끝났으므로 삼킨다.
+  if (job) await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
   return { ok: true }
@@ -1610,6 +1614,8 @@ export async function updateTenant(formData: FormData): Promise<
 
   // 확인창을 지나온 저장이면 그 승인을 데이터로 적는다(겹침 판정 개정 2026-08-19).
   await recordOverlapAckIfAllowed(formData, leaseTermId, user.sub)
+  // 목록에 없는 직업을 적었으면 영업장 목록에 더한다(등록 경로와 같은 규칙).
+  if (job) await addJobOption(job).catch(() => {})
 
   revalidatePath('/tenants')
   revalidatePath('/rooms')

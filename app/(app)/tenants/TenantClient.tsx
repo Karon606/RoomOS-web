@@ -4038,7 +4038,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </SelectField>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        {/* 모바일은 2열이다. 3열이면 한 칸이 98px 이고 국적 트리거의 고정물(국기·화살표·여백)을
+            빼면 글자 자리가 26px 밖에 안 남아 '대한민국'이 네 줄로 쪼개진다(2026-08-31 실측).
+            2열이면 칸이 153px 라 실제로 쓰는 값이 전부 한 줄에 선다. 폭을 값에 맞춰 늘리는 안은
+            값을 고를 때마다 폼 배치가 바뀌어 기각했다(패널 만장일치). */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <Field label="생년월일" name="birthdate" type="birthdate" defaultValue={toDateInput(tenant?.birthdate)} />
           <SelectField label="성별" name="gender" defaultValue={tenant?.gender}>
             <option value="UNKNOWN">미기재</option>
@@ -4051,7 +4055,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="true">예/대상자</option>
           </SelectField>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
             <CountrySelect name="nationality" defaultValue={tenant?.nationality} onChange={v => setNatVal(v ?? '')} />
@@ -4075,7 +4079,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       </FormSection>
 
       <FormSection title="연락처">
-        <div className="grid grid-cols-3 gap-2">
+        {/* 같은 이유로 2열이다. 연락처는 col-span-2 라 모바일에서 한 줄을 통째로 쓴다. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <SelectField label="연락 수단" name="contactType" value={contactTypeVal} onChange={setContactTypeVal}>
             <option value="PHONE">휴대전화</option>
             <option value="LANDLINE">일반전화</option>
