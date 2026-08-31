@@ -115,6 +115,32 @@ eq('퇴실 다음 날부터 빈다', freeFromAfter('2026-08-31'), '2026-09-01')
 eq('월 경계를 넘어도 하루', freeFromAfter('2026-08-29'), '2026-08-30')
 eq('연 경계를 넘어도 하루', freeFromAfter('2026-12-31'), '2027-01-01')
 
+// ── 이사일을 뒤로 미룬 일정 (2026-08-31 운영자 요구) ──────────────────
+//
+// 종전에는 계약 호실이 비는 날이 곧 이사일이라 사람이 못 고쳤다. 404호처럼 앞사람이 8/31 퇴실이라
+// 9/1부터 비지만 청소가 9/2로 잡힌 방을 표현할 길이 없었다. 모델은 처음부터 담을 수 있었고
+// 없던 것은 입력 칸이었다 — 그 사실을 여기서 못박는다. (성립하면 null, 아니면 사유 문자열)
+{
+  const c = { moveInYmd: '2026-08-31', mainRoomId: 'r404' }
+
+  // 8/31 입주, 402호에 이틀 머물고 9/2에 404호로.
+  eq('이사일 미룸: 가능일보다 뒤여도 성립', validateRoomSchedule(
+    [{ roomId: 'r402', from: '2026-08-31', to: '2026-09-02' },
+     { roomId: 'r404', from: '2026-09-02', to: null }], c), null)
+
+  // 하루만 머무는 종전 형태도 그대로 선다.
+  eq('이사일 미룸: 종전 형태도 성립', validateRoomSchedule(
+    [{ roomId: 'r402', from: '2026-08-31', to: '2026-09-01' },
+     { roomId: 'r404', from: '2026-09-01', to: null }], c), null)
+
+  // 빈틈이 생기면 거절 — 9/1 하루를 아무도 안 맡는다.
+  const gap = validateRoomSchedule(
+    [{ roomId: 'r402', from: '2026-08-31', to: '2026-09-01' },
+     { roomId: 'r404', from: '2026-09-02', to: null }], c)
+  eq('이사일 미룸: 빈틈이 있으면 거절', gap !== null, true)
+}
+
+
 console.log(`\n호실 일정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

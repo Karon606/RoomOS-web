@@ -2386,29 +2386,47 @@ async function mainRoomFreeFrom(
 ): Promise<{
   freeFrom: string | null; occupantName: string | null
   occupantTenantId: string | null; lastOutYmd: string | null
+  /** 그 방에 열려 있는 퇴실 청소 예정일 — 막는 값이 아니라 알리는 값이다. */
+  cleaningYmd: string | null
 }> {
   const occupants = await prisma.leaseTerm.findMany({
     where: {
       propertyId, roomId, id: { not: exceptLeaseId },
-      status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
+      // **퇴실이 끝난 계약도 센다** (2026-08-31 운영자 지시). 종전에는 ACTIVE·CHECKOUT_PENDING 만
+      // 봐서, 앞사람을 퇴실 처리하는 순간 그 방이 '지금 입주 가능'으로 읽혔다. 그러면 이사일이
+      // 입주일과 같아져 임시 호실 구간이 사라지고 일정을 아예 못 짠다. 청소 때문에 하루 못 쓰는
+      // 방을 표현할 길이 없던 것이다.
+      status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'CHECKED_OUT'] },
     },
-    select: { expectedMoveOut: true, moveOutDate: true, tenant: { select: { id: true, name: true } } },
+    select: { status: true, expectedMoveOut: true, moveOutDate: true, tenant: { select: { id: true, name: true } } },
   })
+  // 열린 퇴실 청소 — 가능일을 막지는 않지만 화면이 "왜 미뤄야 하는지"를 말할 근거다.
+  // 청소가 입주를 기계적으로 막게 하지 않는 것은 운영자 확정이다(2026-08-21).
+  const cleaning = await prisma.roomCleaning.findFirst({
+    where: { roomId, propertyId, deletedAt: null, status: 'PLANNED', reason: 'CHECKOUT' },
+    select: { scheduledDate: true },
+    orderBy: { createdAt: 'desc' },
+  })
+  const cleaningYmd = cleaning?.scheduledDate ? kstYmdStr(cleaning.scheduledDate) : null
   const who = {
     occupantName: occupants[0]?.tenant?.name ?? null,
     occupantTenantId: occupants[0]?.tenant?.id ?? null,
   }
-  if (occupants.length === 0) return { freeFrom: fromYmd, lastOutYmd: null, ...who }
+  if (occupants.length === 0) return { freeFrom: fromYmd, lastOutYmd: null, cleaningYmd, ...who }
   let lastOutYmd: string | null = null
   for (const o of occupants) {
     const out = o.moveOutDate ?? o.expectedMoveOut
-    if (!out) return { freeFrom: null, lastOutYmd: null, ...who }
+    // 퇴실이 끝났는데 날짜가 없는 계약은 셀 근거가 없다 — 아직 사는 사람만 미정으로 본다.
+    if (!out) {
+      if (o.status === 'CHECKED_OUT') continue
+      return { freeFrom: null, lastOutYmd: null, cleaningYmd, ...who }
+    }
     const ymd = kstYmdStr(out)
     if (lastOutYmd === null || ymd > lastOutYmd) lastOutYmd = ymd
   }
   // 나가는 날 낮까지는 그 사람이 있고 그날 퇴실 청소도 잡힌다 — 다음 날부터 빈 것으로 본다.
   // 다만 '나가는 날에 바로 넘겨받기'도 정당한 답이라, 막지 않고 화면이 묻는다(운영자 확정).
-  return { freeFrom: lastOutYmd ? freeFromAfter(lastOutYmd) : null, lastOutYmd, ...who }
+  return { freeFrom: lastOutYmd ? freeFromAfter(lastOutYmd) : fromYmd, lastOutYmd, cleaningYmd, ...who }
 }
 
 /**
@@ -2527,6 +2545,15 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
   mainAvailableFrom: string | null
   /** 계약 호실에 지금 사는 사람 — 퇴실 예정일이 없을 때 누구를 찾아가야 하는지 말한다. */
   mainOccupantName: string | null
+  /**
+   * 이사일로 고를 수 있는 가장 이른 날 — 앞사람이 나가는 날 당일까지 연다(운영자 확정 2026-08-31).
+   *
+   * 오전 퇴실·오후 입실이 정당한 실무라 당일을 막지 않는다. 다만 기본값은 그 다음 날이고,
+   * 청소가 잡혀 있으면 청소 다음 날이다 — 막지는 않되 흔한 답을 미리 골라 둔다.
+   */
+  moveEarliest: string | null
+  /** 그 방에 잡힌 퇴실 청소 예정일 — 왜 미뤄야 하는지를 화면이 말할 근거다(막지 않는다). */
+  mainCleaningYmd: string | null
   rooms: { id: string; roomNo: string; availableUntil: string | null }[]
 } | { ok: false; error: string }> {
   try {
@@ -2551,7 +2578,13 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
       mainRoomFreeFrom(propertyId, lease.roomId, leaseTermId, fromYmd),
     ])
 
-    const mainAvailableFrom = mainOccupants.freeFrom
+    // 기본 이사일 — 청소가 잡혀 있으면 그 다음 날이다. 청소가 가능일보다 앞이면 가능일 그대로.
+    const cleanFrom = mainOccupants.cleaningYmd ? freeFromAfter(mainOccupants.cleaningYmd) : null
+    const mainAvailableFrom = cleanFrom && mainOccupants.freeFrom && cleanFrom > mainOccupants.freeFrom
+      ? cleanFrom
+      : mainOccupants.freeFrom
+    // 하한은 앞사람이 나가는 날 당일이다. 아무도 없으면 조회 시작일이 곧 하한이다.
+    const moveEarliest = mainOccupants.lastOutYmd ?? mainOccupants.freeFrom
 
     // 그 방을 언제까지 쓸 수 있나 — fromYmd 이후 처음 오는 남의 점유가 시작되는 날이다.
     // 그날 전까지 머물 수 있고, 아무도 없으면 null(기한 없음)이다.
@@ -2574,6 +2607,8 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
       mainRoomId: lease.roomId,
       moveInDate: kstYmdStr(lease.moveInDate),
       mainAvailableFrom,
+      moveEarliest,
+      mainCleaningYmd: mainOccupants.cleaningYmd,
       mainOccupantName: mainOccupants.occupantName,
       rooms: rooms
         .map(r => ({ id: r.id, roomNo: r.roomNo, availableUntil: nextBusyOf(r.id) }))

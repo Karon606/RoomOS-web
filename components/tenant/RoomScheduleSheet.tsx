@@ -92,7 +92,17 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
   }, [leaseTermId, openFrom])
 
   // 일정의 끝점 — 계약 호실이 비는 날. 그날 본 방으로 든다.
-  const endAt = opts?.mainAvailableFrom ?? null
+  /**
+   * 계약 호실로 드는 날. 종전에는 서버가 낸 '가능일'을 그대로 박아 사람이 못 고쳤다.
+   *
+   * 그래서 404호처럼 앞사람이 8/31 퇴실이라 9/1부터 비지만 청소가 9/2로 잡힌 방에서는, 9/2로
+   * 미룰 방법이 아예 없었다(운영자 실기 2026-08-31 — "수정할 방법이 없어").
+   *
+   * 이제 서버 제안이 기본값이고 사람이 뒤로 미룰 수 있다. 하한은 앞사람이 나가는 날 당일이다
+   * (오전 퇴실·오후 입실이 정당한 실무라 막지 않는다, 운영자 확정).
+   */
+  const [endEdit, setEndEdit] = useState<string | null>(null)
+  const endAt = endEdit ?? opts?.mainAvailableFrom ?? null
   const unknownEnd = !!opts && endAt === null
   // 다 채웠는가 — **방을 하나라도 골랐을 때만** 참이다. 아무것도 안 정했는데 "다 됐다"고
   // 말하면 거짓이 된다(퇴실 예정일이 이미 지난 방에서 실제로 그랬다).
@@ -165,8 +175,8 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
             {!unknownEnd && endAt && (
               <div className="rounded-lg bg-[var(--cream-soft)] px-3 py-2">
                 <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-                  계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}는 {fmtDate(endAt)}부터 입주 가능합니다.
-                  그 전까지 지낼 임시 호실을 정해 두면, {fmtDate(endAt)}에 홈 화면에서 이사 여부를 확인합니다.
+                  계약 호실 {fmtRoomNo(opts.mainRoomNo, '')}는 {fmtDate(opts.mainAvailableFrom ?? endAt)}부터 입주 가능합니다.
+                  이사일까지 지낼 임시 호실을 정해 두면, 이사일에 홈 화면에서 이사 여부를 확인합니다.
                 </p>
               </div>
             )}
@@ -195,6 +205,26 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                 </p>
               )}
             </div>
+
+            {/* 계약 호실 이사일 — 서버가 낸 가능일은 하한일 뿐이고 실제로 드는 날은 사람이 정한다.
+                청소 예정일은 막는 근거가 아니라 알리는 근거다(운영자 확정 2026-08-21). */}
+            {!unknownEnd && opts.moveEarliest && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-[var(--warm-mid)]">계약 호실 이사일</p>
+                <DatePicker value={endAt ?? ''} onChange={v => { setEndEdit(v || null); setPicks([]) }}
+                  minDate={opts.moveEarliest > moveIn ? opts.moveEarliest : moveIn}
+                  className={`${dateCls} border-[var(--warm-border)]`} />
+                <p className={capCls}>
+                  {fmtDate(opts.mainAvailableFrom ?? opts.moveEarliest)}부터 입주 가능합니다. 사정에 맞춰 뒤로 미뤄도 됩니다.
+                  {picks.length > 0 && ' 날짜를 바꾸면 정해 둔 임시 호실이 지워집니다.'}
+                </p>
+                {opts.mainCleaningYmd && (
+                  <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
+                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 잡혀 있습니다.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* 지금까지 짠 일정 — 구간마다 한 줄. 한 문장으로 이으면 안 읽힌다(운영자 지적). */}
             {scheduleLines.length > 0 && (
