@@ -3659,15 +3659,35 @@ export async function getTenantMoveHistory(tenantId: string): Promise<{
 export async function getTenantStatusHistory(tenantId: string): Promise<{
   canEdit: boolean
   items: { id: string; fromStatus: string; toStatus: string; reason: string | null; changedAt: string
-    isCreated: boolean; editable: boolean; canRecord: boolean; deleted: boolean }[]
+    isCreated: boolean; editable: boolean; canRecord: boolean; deleted: boolean
+    /**
+     * 실제로 그 일이 일어난 날 — 처리한 날과 다를 때만 채운다(2026-08-31 운영자 지적).
+     *
+     * 이력의 날짜는 버튼을 누른 날이다. 그런데 8/14 에 나간 사람을 8/15 에 처리하면 이력에
+     * 8/15 가 적혀 잘못 보면 헷갈린다. 축을 바꾸지는 않는다 — 정렬이 처리일이고, 형제 행마다
+     * 축이 몰래 갈리면 더 나쁘다. 대신 다른 날일 때만 아래에 한 줄로 사실을 적는다.
+     *
+     * 계약의 moveOutDate·moveInDate 는 계약당 하나라, 퇴실을 되돌리고 다시 한 계약의 **옛 행**에는
+     * 붙이면 안 된다(지금 값이 그 행의 사건일이 아니다). 그래서 각 전이의 최신 행에만 내린다.
+     */
+    eventYmd: string | null }[]
 }> {
   const propertyId = await getPropertyId()
   const role = await getMyRole()
   const rows = await prisma.tenantStatusLog.findMany({
     where: { propertyId, tenantId },
     orderBy: { changedAt: 'desc' },
-    select: { id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true, deletedAt: true },
+    select: {
+      id: true, fromStatus: true, toStatus: true, reason: true, changedAt: true, changedById: true, deletedAt: true,
+      // 사건일은 **돈이 읽는 그 칸**에서 읽는다. 사본을 만들면 언젠가 갈린다.
+      leaseTerm: { select: { moveOutDate: true, moveInDate: true } },
+    },
   })
+  // 각 전이의 최신 유효 행 — 그 행만 계약의 날짜를 제 사건일로 주장할 수 있다.
+  const latestOf = (to: string) => rows.find(r => !r.deletedAt && r.fromStatus !== r.toStatus && r.toStatus === to)?.id ?? null
+  const latestCheckedOutId = latestOf('CHECKED_OUT')
+  const latestActiveId = latestOf('ACTIVE')
+  const ymd = (d: Date | null | undefined) => d ? kstYmdStr(d) : null
   // 사유를 아직 안 적은 행이 여럿이면 '어디에 적어야 하나'가 화면에 안 나온다.
   // 실측으로 한 번의 퇴실에 퇴실 예정·퇴실 두 행이 생기는 입주자가 11명이다.
   // 기록 진입은 **가장 최근 종료 전이 한 행에만** 연다. 나머지는 이미 적힌 것만 읽고 고친다.
@@ -3688,6 +3708,13 @@ export async function getTenantStatusHistory(tenantId: string): Promise<{
         toStatus: r.toStatus,
         reason: r.reason,
         changedAt: r.changedAt.toISOString(),
+        eventYmd: (() => {
+          const ev = r.id === latestCheckedOutId ? ymd(r.leaseTerm?.moveOutDate)
+            : r.id === latestActiveId ? ymd(r.leaseTerm?.moveInDate)
+            : null
+          // 같은 날이면 적을 것이 없다 — 비어 있는 것이 정상 상태다.
+          return ev && ev !== kstYmdStr(r.changedAt) ? ev : null
+        })(),
         isCreated,
         editable,
         canRecord: editable && r.id === latestEndId,

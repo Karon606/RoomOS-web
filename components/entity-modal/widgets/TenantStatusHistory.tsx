@@ -168,6 +168,16 @@ function HistRow({ item, canEdit, pending, onEdit, onInvalidate, onRestore }: {
           <span className="block truncate text-[0.65625rem] text-[var(--warm-muted)]">{rLabel ? `${rLabel}: ` : ''}{item.reason}</span>
         </div>
       )}
+      {/* 실제로 그 일이 일어난 날 — 처리한 날과 다를 때만 선다(2026-08-31 운영자 지적).
+          오른쪽 날짜는 버튼을 누른 날 그대로 둔다. 정렬이 그 축이고, 행마다 축이 몰래 갈리면
+          더 나쁘다. 대신 어긋난 행에만 사실을 한 줄로 적는다. 사유 줄과 같은 문법이다. */}
+      {item.eventYmd && (
+        <div className="mt-0.5 pl-2">
+          <span className="block truncate text-[0.65625rem] text-[var(--warm-muted)]">
+            {item.toStatus === 'CHECKED_OUT' ? '실제 퇴실일' : '실제 입주일'} {fmtDateDot(item.eventYmd)}
+          </span>
+        </div>
+      )}
       {/* 행 액션은 한 줄에 모은다 — 사유 유무에 따라 버튼이 다른 줄에 놓이면 같은 목록에서 자리가 흔들린다.
           기록 진입은 가장 최근 종료 전이 한 행에만(서버가 canRecord 로 정한다) — 퇴실 예정·퇴실 두 행에
           다 뜨면 어느 쪽이 정본인지 화면에 단서가 없다. */}
