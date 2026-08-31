@@ -173,7 +173,7 @@ for (const [name, re] of callers) {
   // 안 돌아 화면이 고쳐져 있어도 '미정'으로 뜬다(2026-08-31 실기에서 실제로 그랬다).
   {
     const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
-    const block = page.match(/moveOutHasRoom:[\s\S]{0,400}?\}\)/)
+    const block = page.match(/moveOutHasRoom:[\s\S]{0,900}?\}\)/)
     if (!block || !/roomId:/.test(block[0])) {
       violations.push("app/(app)/dashboard/page.tsx — 퇴실 알림이 방 id 를 안 싣는다. 홈 퇴실 창이 이미 잡힌 청소를 물어볼 수 없다.")
     }
@@ -207,7 +207,30 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 / 위반 ${violations.length}건`)
+// ⓙ 퇴실일 기본값이 예정일인가 (2026-08-31 운영자 확정).
+//
+//    이 칸의 날짜가 일할 정산·환불·거주 구간 마감·보증금 반환일의 기준이다. 종전에는 기본값이
+//    항상 오늘이라, 하루 늦게 처리하고 안 고치면 하루가 더 붙었다. 운영자 원문 — "9월 10일에
+//    퇴실 처리를 하더라도 여기에 퇴실일이 8월 31일이면 퇴실은 8월 31일에 한 것이다".
+{
+  for (const [name, f] of [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx'],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+  ]) {
+    const src2 = readFileSync(f, 'utf8')
+    if (!/defaultCheckoutYmd\(/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 퇴실일 기본값 정본을 안 쓴다. 늦게 처리하면 퇴실일이 그날로 밀린다.`)
+    }
+  }
+  // 알림이 예정일을 안 실으면 홈은 정본을 불러도 늘 오늘로 떨어진다.
+  const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  if (!/moveOutExpectedYmd:/.test(page)) {
+    violations.push('app/(app)/dashboard/page.tsx — 퇴실 알림이 예정일을 안 싣는다. 홈 퇴실 창의 기본값이 늘 오늘이 된다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

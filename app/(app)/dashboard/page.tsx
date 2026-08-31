@@ -1514,6 +1514,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 실어서, 9/2 로 청소가 잡힌 방을 홈에서 열어도 조회가 아예 안 돌아 '미정'으로 떴다
       // (2026-08-31 실기 재지적 — 화면은 고쳤는데 값이 안 갔다).
       roomId: l.roomId ?? null,
+      // 퇴실 처리 폼의 기본 날짜 — 미리 적어 둔 예정일이다. 그날이 지나도 오늘로 안 바뀐다
+      // (운영자 확정 2026-08-31). 이 칸의 날짜가 일할·환불·구간 마감의 기준이다.
+      moveOutExpectedYmd: l.expectedMoveOut ? kstYmdStr(l.expectedMoveOut) : null,
     })
   }
 

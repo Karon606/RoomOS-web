@@ -14,6 +14,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -276,7 +277,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     cleaning.reset()
     setTransDate(
       def.field === 'expectedMoveOut' ? toDateInput(lease.expectedMoveOut)
-      : def.field === 'moveOutDate'   ? kstYmdStr()
+      // 기본값은 미리 적어 둔 예정일이다(lib/checkoutDate 정본, 운영자 확정 2026-08-31).
+      // 그날이 지나도 오늘로 안 바뀐다 — 늦게 처리한다고 퇴실일이 밀리면 안 된다.
+      : def.field === 'moveOutDate'   ? defaultCheckoutYmd(lease.expectedMoveOut, kstYmdStr())
       : def.field === 'moveInDate'    ? (toDateInput(lease.moveInDate) || kstYmdStr())
       : '',
     )

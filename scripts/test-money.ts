@@ -15,6 +15,7 @@ import {
   calcStayQuote,
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
+import { defaultCheckoutYmd } from '../lib/checkoutDate'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
@@ -776,6 +777,19 @@ const RENT = 300000
   // 선납이 결제액보다 클 수 없다 — 깨진 입력은 결제액으로 클램프한다.
   const over = calcCheckoutRefund({ ...base, prepaidAmount: 350000, futurePrepaid: 999999 })
   eq('선납: 결제액을 넘으면 클램프', over.futurePrepaid, 350000)
+}
+
+// ── 퇴실일 기본값 (2026-08-31 운영자 확정) ───────────────────────────────
+//
+// 미리 적어 둔 예정일이 기본이고 그날이 지나도 오늘로 안 바뀐다. 이 칸의 날짜가 일할·환불·
+// 구간 마감의 기준이라 기본값 하나가 돈을 움직인다. 운영자 원문 — "9월 10일에 퇴실 처리를
+// 하더라도 여기에 퇴실일이 8월 31일이면 퇴실은 8월 31일에 한 것이다".
+{
+  eq('퇴실일 기본: 예정일이 있으면 그날', defaultCheckoutYmd('2026-08-31', '2026-09-10'), '2026-08-31')
+  eq('퇴실일 기본: 예정일이 미래여도 그날', defaultCheckoutYmd('2026-09-05', '2026-08-31'), '2026-09-05')
+  eq('퇴실일 기본: 예정일이 없으면 오늘', defaultCheckoutYmd(null, '2026-08-31'), '2026-08-31')
+  eq('퇴실일 기본: 깨진 값이면 오늘', defaultCheckoutYmd('2026-8-3', '2026-08-31'), '2026-08-31')
+  eq('퇴실일 기본: Date 도 받는다', defaultCheckoutYmd(new Date('2026-08-31T00:00:00.000Z'), '2026-09-10'), '2026-08-31')
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

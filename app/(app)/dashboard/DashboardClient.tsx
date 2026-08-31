@@ -34,6 +34,7 @@ import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExp
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getOpenCheckoutCleaning } from '@/app/(app)/tenants/actions'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
@@ -148,7 +149,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -272,7 +273,7 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, roomId, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, roomId, expectedYmd, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
@@ -285,6 +286,8 @@ function CheckoutRefundModal({
   leaseTermId: string | null
   /** 이 방의 호실 id — 이미 잡힌 퇴실 청소가 있는지 묻는 데 쓴다. */
   roomId: string | null
+  /** 미리 적어 둔 퇴실 예정일 — 퇴실일 칸의 기본값이다. */
+  expectedYmd: string | null
   pending: boolean
   onClose: () => void
   onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => void
@@ -293,7 +296,8 @@ function CheckoutRefundModal({
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
   const [refund, setRefund] = useState(maxRefund)
   // 실제 퇴실일 — 정본 미니폼(상태 전환 위젯)과 같은 규칙: 기본 오늘, 뒤늦은 처리만 고친다(2026-07-28 오더).
-  const [moveOutDate, setMoveOutDate] = useState(kstYmdStr())
+  // 기본값은 미리 적어 둔 퇴실 예정일이다(lib/checkoutDate 정본). 그날이 지나도 오늘로 안 바뀐다.
+  const [moveOutDate, setMoveOutDate] = useState(() => defaultCheckoutYmd(expectedYmd, kstYmdStr()))
   // 미환불 사유 — 종전에는 이 경로에 전달 수단 자체가 없어 홈에서 퇴실하면 사유가 항상 비었다.
   const [reason, setReason] = useState(cleaningFee > 0 ? '청소비' : '')
   const [formError, setFormError] = useState('')
@@ -687,6 +691,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           hasRoom={alert.moveOutHasRoom === true}
           leaseTermId={moveOutLeaseId ?? null}
           roomId={alert.roomId ?? null}
+          expectedYmd={alert.moveOutExpectedYmd ?? null}
           pending={confirmPending}
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}

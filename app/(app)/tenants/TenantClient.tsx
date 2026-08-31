@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
@@ -4854,7 +4855,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           )}
           {statusVal === 'CHECKED_OUT' && (
             // 실제 퇴실일 — 계약상 21일이어도 19일에 일찍 나가면 그날. 퇴실 상태에서만 노출(사후 정정용).
-            <Field label="실제 퇴실일" name="actualMoveOut" type="date" value={actualOut || shortOut || kstYmdStr()} onChange={setActualOut} />
+            // 기본값은 예정일이다(lib/checkoutDate 정본과 같은 규칙) — 늦게 처리한다고 밀리지 않는다.
+            <Field label="실제 퇴실일" name="actualMoveOut" type="date" value={actualOut || defaultCheckoutYmd(shortOut, kstYmdStr())} onChange={setActualOut} />
           )}
         </div>
       </FormSection>
