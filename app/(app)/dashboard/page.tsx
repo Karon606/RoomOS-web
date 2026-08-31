@@ -1510,6 +1510,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 호실이 걸린 계약인가 — 퇴실 창의 '청소 예정일' 칸은 이때만 선다(호실이 없으면 서버가
       // 청소를 아예 안 만들어 묻고 버리는 칸이 된다).
       moveOutHasRoom: !!l.roomId,
+      // 방 id 자체도 실어야 창이 '이미 잡힌 퇴실 청소'를 물어볼 수 있다. 종전에는 있다·없다만
+      // 실어서, 9/2 로 청소가 잡힌 방을 홈에서 열어도 조회가 아예 안 돌아 '미정'으로 떴다
+      // (2026-08-31 실기 재지적 — 화면은 고쳤는데 값이 안 갔다).
+      roomId: l.roomId ?? null,
     })
   }
 

@@ -169,6 +169,15 @@ for (const [name, re] of callers) {
       violations.push(`${f} — '${name}' 이 이미 잡힌 청소를 안 알린다. 날짜가 있는데 미정으로 보이고, 적어 넣은 날짜는 아무 데도 안 간다.`)
     }
   }
+  // **화면만 봐서는 성글다.** 홈은 알림 데이터로 방 id 를 받는데, 그 값을 안 실으면 조회가 아예
+  // 안 돌아 화면이 고쳐져 있어도 '미정'으로 뜬다(2026-08-31 실기에서 실제로 그랬다).
+  {
+    const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+    const block = page.match(/moveOutHasRoom:[\s\S]{0,400}?\}\)/)
+    if (!block || !/roomId:/.test(block[0])) {
+      violations.push("app/(app)/dashboard/page.tsx — 퇴실 알림이 방 id 를 안 싣는다. 홈 퇴실 창이 이미 잡힌 청소를 물어볼 수 없다.")
+    }
+  }
 }
 
 console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 / 위반 ${violations.length}건`)
