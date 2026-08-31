@@ -305,7 +305,51 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 / 위반 ${violations.length}건`)
+// ⓜ 보증금 반환의 현금영수증 안내가 **조건부**인가 (2026-09-01 세무 패널).
+//
+//    보증금은 반환을 전제로 받는 예수금이라 애초에 발급 대상이 아니다. 그래서 안내는 그 계약에
+//    보증금 포함 발행(inclDeposit)이 실제로 있을 때만 서야 한다 — 반환마다 일률로 띄우면
+//    "보증금에도 세무 조치가 필요하다"는 잘못된 인식을 심는다. 반대로 조건 조회가 사라지면
+//    포함 발행이 있어도 아무도 확인을 못 듣는다. 켜기 전 경고(두 화면)와 반환 뒤 안내가 한 쌍이다.
+{
+  const rd = src.match(/export async function recordDepositReturn[\s\S]*?\n\}\n/)
+  if (!rd) {
+    violations.push(`${FILE} — recordDepositReturn 을 못 찾았다.`)
+  } else {
+    if (!/inclDeposit: true/.test(rd[0]) || !/depositReturnReceiptNoticeLine\(/.test(rd[0])) {
+      violations.push(`${FILE} — 보증금 반환이 포함 발행 여부를 안 본다. 보증금 포함 현금영수증이 있어도 확인을 권하지 못한다.`)
+    }
+    if (!/receiptNotice/.test(rd[0])) {
+      violations.push(`${FILE} — 보증금 반환이 안내를 화면에 안 물려준다.`)
+    }
+  }
+  // 홈 경로는 notice 문자열로 승계한다 — 서버가 만들어도 안 실으면 홈만 침묵한다(ⓕ에서 실제 있던 병).
+  // 이름 존재만 보면 성글다 — 선언과 조인이 남은 채 승계 대입만 끊겨도 값은 늘 null 이다
+  // (역주입에서 실제로 통과했다). **대입 자체**를 본다.
+  const co3 = src.match(/export async function checkoutWithDepositRefund[\s\S]*?\n\}\n/)
+  if (co3 && !/depositReceiptNotice\s*=\s*refundRes\.receiptNotice/.test(co3[0])) {
+    violations.push(`${FILE} — 홈 퇴실 경로가 보증금 발행 안내를 안 물려준다.`)
+  }
+  // 나머지 두 직접 호출 화면도 띄워야 한다.
+  for (const [name, f] of [
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+    ['보증금 패널', 'components/entity-modal/widgets/DepositStatusPanel.tsx'],
+    ['프리즘 상태 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+  ]) {
+    const src3 = readFileSync(f, 'utf8')
+    if (/recordDepositReturn\(/.test(src3) && !/receiptNotice/.test(src3)) {
+      violations.push(`${f} — '${name}' 이 보증금 발행 안내를 버린다.`)
+    }
+  }
+  // 켜기 전 경고 — 보증금 몫이 발행에 섞이는 두 화면이 같은 정본 문구를 쓴다.
+  for (const f of ['components/entity-modal/widgets/PaymentEntryForm.tsx', 'components/rooms/CashReceiptTab.tsx']) {
+    if (!/depositCashReceiptWarning\(/.test(readFileSync(f, 'utf8'))) {
+      violations.push(`${f} — 보증금 포함 발행 경고 정본을 안 쓴다. 화면마다 말이 갈리거나 없다.`)
+    }
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

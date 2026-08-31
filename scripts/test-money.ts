@@ -16,8 +16,8 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { defaultCheckoutYmd } from '../lib/checkoutDate'
-import { cashReceiptIssueLines, cashReceiptKey, receiptRowVerdict } from '../lib/cashReceipt'
-import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '../lib/refundTaxNotice'
+import { cashReceiptIssueLines, cashReceiptKey, receiptRowVerdict, cashReceiptDaysLeft, depositCashReceiptWarning } from '../lib/cashReceipt'
+import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNoticeLine } from '../lib/refundTaxNotice'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
@@ -930,6 +930,32 @@ const RENT = 300000
   eq('발행 줄 판정: 수단이 다르면 다른 줄',
     receiptRowVerdict(cashReceiptKey({ leaseTermId: 'L1', payDate: d('2026-08-05'), payMethod: '계좌이체' }), new Set(), new Set([k])),
     'ghost')
+}
+
+// ── 현금영수증 발급 기한·보증금 경고 (2026-09-01 세무 패널) ──────────────
+//
+// 고시원 운영업은 의무발행업종 — 10만원 이상 현금 수취를 5일 안에 발급, 미발급 가산세 20%.
+// 실측 33건 중 23건이 기한 초과였다(일괄 발행 관행). 판정이 어긋나면 알림이 늦거나 헛울린다.
+{
+  eq('발급 기한: 받은 날은 5일 남음', cashReceiptDaysLeft('2026-08-05', '2026-08-05'), 5)
+  eq('발급 기한: 사흘 지나면 2일 남음(알림 시작점)', cashReceiptDaysLeft('2026-08-05', '2026-08-08'), 2)
+  eq('발급 기한: 닷새째가 마감(0)', cashReceiptDaysLeft('2026-08-05', '2026-08-10'), 0)
+  eq('발급 기한: 지나면 음수', cashReceiptDaysLeft('2026-08-05', '2026-08-12'), -2)
+  eq('발급 기한: 오병용 님 실측(7/31 수취 8/22 발행)이면 17일 경과', cashReceiptDaysLeft('2026-07-31', '2026-08-22'), -17)
+  // 월 경계 — 문자열 산수로 하면 여기서 어긋난다
+  eq('발급 기한: 월을 넘겨도 달력대로', cashReceiptDaysLeft('2026-08-29', '2026-09-01'), 2)
+
+  eq('보증금 경고: 금액이 있으면 몫을 밝힌다',
+    depositCashReceiptWarning(100000),
+    '보증금 몫 100,000원은 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
+  eq('보증금 경고: 금액 없이도 선다',
+    depositCashReceiptWarning(),
+    '보증금은 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.')
+
+  eq('보증금 반환 안내: 포함 발행이 있으면 확인을 권한다',
+    depositReturnReceiptNoticeLine(2, 300000),
+    '이 계약에는 보증금이 포함된 현금영수증 2건(합계 300,000원)이 있습니다. 홈택스에서 해당 건의 취소 여부를 세무 담당자와 확인해 주세요.')
+  eq('보증금 반환 안내: 없으면 침묵(일률 안내 금지가 패널 결론)', depositReturnReceiptNoticeLine(0, 0), null)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

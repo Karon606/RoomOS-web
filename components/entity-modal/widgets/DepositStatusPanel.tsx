@@ -286,6 +286,7 @@ export function DepositStatusPanel({
         { success: '반환 정산을 기록했습니다' },
       )
       if (!res.ok) return
+      if (res.receiptNotice) pushToast('info', res.receiptNotice)
       setRecOpen(false)
       setRefund(await getDepositRefundForLease(leaseTermId))
       await load(); onChanged?.()

@@ -17,7 +17,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
-import { CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { depositCashReceiptWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -835,7 +835,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
               앱에서만 빼면 대사가 안 된다.) */}
           {cashReceiptIssued && crIncl.deposit && crParts.deposit > 0 && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              보증금 몫 {fmtWon(crParts.deposit)}은 돌려줄 돈이라 매출이 아닙니다. 함께 발행하면 국세청 발행액이 신고 매출보다 그만큼 커집니다.
+              {depositCashReceiptWarning(crParts.deposit)}
             </p>
           )}
         </>

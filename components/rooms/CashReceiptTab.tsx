@@ -21,6 +21,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
+import { depositCashReceiptWarning } from '@/lib/cashReceipt'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { batchSetCashReceipts, batchUnsetCashReceipts } from '@/app/(app)/rooms/actions'
 
@@ -218,6 +219,11 @@ export function CashReceiptTab({
             <DatePicker value={issuedDate} onChange={setIssuedDate} maxDate={kstYmdStr()}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/30" />
           </div>
+          {chosen.some(c => c.deposit > 0) && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              {depositCashReceiptWarning(chosen.reduce((a, c) => a + c.deposit, 0))}
+            </p>
+          )}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
             선택한 입금의 전액을 위 발행일로 기록합니다. 실제 발행은 홈택스나 결제 서비스에서 하고, 여기는 그 사실을 적는 자리입니다. 전액과 다르게 발행한 건은 그 입금의 수납 내역에서 금액을 고칠 수 있습니다. 처리 후 토스트의 적용취소로 되돌릴 수 있습니다.
           </p>

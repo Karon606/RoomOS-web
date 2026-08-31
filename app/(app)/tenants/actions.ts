@@ -61,7 +61,7 @@ import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
-import type { RefundTaxNotice } from '@/lib/refundTaxNotice'
+import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
@@ -1666,7 +1666,7 @@ export async function recordDepositReturn(params: {
   context?: 'checkout' | 'reservationCancel'
   // 미반환분은 성격대로 최대 2행(청소비 몫 / 몰취)이라 id 도 배열이다. 적용취소가 한 행만 지우면
   // 나머지가 원장에 유령 매출로 남는다(가이드 §16 '가짜 undo 금지').
-}): Promise<{ ok: true; refundId: string; extraIncomeIds: string[] } | { ok: false; error: string }> {
+}): Promise<{ ok: true; refundId: string; extraIncomeIds: string[]; receiptNotice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -1796,9 +1796,17 @@ export async function recordDepositReturn(params: {
         extraIncomeIds.push(inc.id)
       }
     }
+    // 보증금 포함 발행이 실제로 있을 때만 말한다 — 보증금은 애초에 발급 대상이 아니라(예수금)
+    // 반환마다 일률로 띄우면 없어도 될 발급·취소를 유도한다(세무 패널 2026-09-01). 문구 정본은
+    // lib/refundTaxNotice 다.
+    const depoLines = await prisma.cashReceipt.findMany({
+      where: { leaseTermId: params.leaseTermId, deletedAt: null, inclDeposit: true },
+      select: { amount: true },
+    })
+    const receiptNotice = depositReturnReceiptNoticeLine(depoLines.length, depoLines.reduce((a, l) => a + l.amount, 0))
     revalidatePath('/finance')
     revalidatePath('/dashboard')
-    return { ok: true, refundId: refund.id, extraIncomeIds }
+    return { ok: true, refundId: refund.id, extraIncomeIds, ...(receiptNotice ? { receiptNotice } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2130,6 +2138,7 @@ export async function checkoutWithDepositRefund(params: {
     const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId, params.moveOutDate, params.cleaningDate)
     if (!checkoutRes.ok) return checkoutRes
 
+    let depositReceiptNotice: string | null = null
     if (lease.depositAmount > 0) {
       // 퇴실일이 없으면 오늘 — 서버(UTC) 로컬로 만들면 KST 00~09 시에 환불 기록이 어제 날짜로 남는다.
       const dateStr = params.moveOutDate || kstYmdStr()
@@ -2143,6 +2152,7 @@ export async function checkoutWithDepositRefund(params: {
         ...(params.reason ? { reason: params.reason } : {}),
       })
       if (!refundRes.ok) return refundRes
+      depositReceiptNotice = refundRes.receiptNotice ?? null
     }
     // 이용료 환불 — **퇴실 전이 뒤에** 확정한다. 순서가 규칙이다(전이가 일할을 재계산하므로
     // 먼저 확정하면 그 값이 덮인다). 실패해도 퇴실은 되돌리지 않고 사실만 알린다.
@@ -2160,7 +2170,7 @@ export async function checkoutWithDepositRefund(params: {
       if (rr.ok) taxNotice = rr.taxNotice
     }
     // 퇴실 쪽이 남긴 청소 안내를 그대로 물려준다 — 홈 경로도 같은 말을 듣는다.
-    const notice = [checkoutRes.notice, rentNotice].filter(Boolean).join(' ') || null
+    const notice = [checkoutRes.notice, rentNotice, depositReceiptNotice].filter(Boolean).join(' ') || null
     return { ok: true, ...(notice ? { notice } : {}), ...(taxNotice ? { taxNotice } : {}) }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

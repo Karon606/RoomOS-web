@@ -1446,6 +1446,7 @@ export default function TenantClient({
         // 종전에는 이 화면에만 손으로 적혀 있어서, 같은 일을 하는 홈 알림·프리즘 위젯에서는
         // 취소하라는 말이 통째로 사라졌다(2026-08-31 패널 조사).
         for (const line of refundTaxNoticeLines(taxNotice)) pushToast('info', line)
+        if (refundRes.receiptNotice) pushToast('info', refundRes.receiptNotice)
         pushToast('success', `환불 + 퇴실 처리됨 · 총 ${fmtWon(totalRefunded)}`, {
           action: {
             label: '반환기록 취소',

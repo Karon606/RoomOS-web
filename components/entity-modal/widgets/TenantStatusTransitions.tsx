@@ -384,6 +384,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
             ...(active?.resvCancel ? { context: 'reservationCancel' as const } : {}),
           })
           if (!r.ok) { pushToast('error', r.error); return }
+          if (r.receiptNotice) pushToast('info', r.receiptNotice)
         }
         // 퇴실 예정 처리 — 아직 한참 남았으면 지금 바꿀지 그날 바꿀지 고르게 한다.
         // 저장할 상태만 갈아 끼운다(서버는 평범한 ACTIVE 전이로 받는다) — 퇴실일을 명시로

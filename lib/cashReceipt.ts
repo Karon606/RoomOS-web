@@ -15,6 +15,7 @@
 // 같은 날 발행하면 두 축이 같은 답을 낸다. 그래서 평소에는 숫자가 안 바뀌고 지연됐을 때만
 // 바로잡힌다. 카드는 매출전표가 결제 시점에 성립하므로 payDate 축 그대로다.
 import { CARD_LIKE_METHODS } from './paymentMethods'
+import { fmtWon } from './fmtMoney'
 import { dbDateMonthKey, kstMonthKey, kstYmdStr, kstDateTimeToUtc } from './kstDate'
 
 // ── 쓰기 ────────────────────────────────────────────────────────
@@ -230,6 +231,38 @@ export function cashReceiptDefaultAmount(
     + (incl.rent ? Math.max(0, parts.rent) : 0)
 }
 
+
+// ── 발급 기한 ────────────────────────────────────────────────
+//
+// 고시원 운영업은 현금영수증 의무발행업종이다(소득세법 시행령 별표 3의3, 2021-01-01 편입 —
+// 세무 패널 조사 2026-09-01). 건당 10만원 이상을 현금(계좌이체 포함)으로 받으면 요청이 없어도
+// **받은 날부터 5일 안에** 발급해야 하고, 미발급 가산세가 20%다(소득세법 §81의9).
+// 실측 발행 33건 중 23건이 이 기한을 넘겨 있었다(합계 952만원) — 모아서 일괄 발행하는 관행
+// 자체가 기한 초과를 만든다. 앱이 할 일은 기한이 다가올 때 미리 말하는 것이다.
+
+export const CASH_RECEIPT_DEADLINE_DAYS = 5
+/** 의무발행 하한(원). 이 미만은 상대가 요청할 때만 발급한다. */
+export const CASH_RECEIPT_OBLIGATION_MIN = 100000
+
+/**
+ * 발급 기한까지 남은 일수. 0 이면 오늘이 마감, 음수면 그만큼 지났다.
+ * 두 인자 모두 'YYYY-MM-DD'(KST 달력 날짜) — Date 로 받으면 타임존이 하루를 밀 수 있다.
+ */
+export function cashReceiptDaysLeft(payYmd: string, todayYmd: string): number {
+  return CASH_RECEIPT_DEADLINE_DAYS
+    - Math.round((Date.parse(`${todayYmd}T00:00:00Z`) - Date.parse(`${payYmd}T00:00:00Z`)) / 86400000)
+}
+
+// ── 보증금 포함 발행 경고 ─────────────────────────────────────
+//
+// 보증금은 반환을 전제로 받는 예수금이라 공급 대가가 아니고, 일반적으로 현금영수증 발급
+// 대상이 아니다(부가46015-1586·서삼46015-10652, 세무 패널 조사 2026-09-01). 앱이 세무 판단을
+// 단정하지는 않는다 — 켜는 것을 막지 않고, 켜기 전에 알린다. 문구가 두 화면(수납 등록 폼·
+// 발행 탭 일괄 모달)에 서므로 정본 한 벌이다.
+export function depositCashReceiptWarning(amount?: number): string {
+  const head = amount && amount > 0 ? `보증금 몫 ${fmtWon(amount)}은` : '보증금은'
+  return `${head} 돌려줄 돈이라 매출이 아니고, 일반적으로 현금영수증 발급 대상이 아닙니다. 포함해 발행하려면 세무 담당자에게 먼저 확인해 주세요.`
+}
 
 // ── 발행 줄이 살아 있는 수납을 가리키는가 ────────────────────────
 

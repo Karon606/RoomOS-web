@@ -10,6 +10,8 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
+import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptDaysLeft, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
 import { parseRoomSchedule, hasRoomSchedule } from '@/lib/roomSchedule'
 import { shiftMonth } from '@/lib/moveCalendar'
@@ -1774,6 +1776,69 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       })
     }
   } catch { /* StockCheckDraft 미지원 등 무시 */ }
+
+  // ── 현금영수증 발급 기한 ─────────────────────────────────────
+  //
+  // 고시원 운영업은 의무발행업종이라 10만원 이상 현금(계좌이체 포함) 수취를 5일 안에 발급해야
+  // 하고 미발급 가산세가 20%다(세무 패널 2026-09-01, lib/cashReceipt 머리말). 실측 33건 중
+  // 23건이 기한을 넘겨 있었다 — 모아서 일괄 발행하는 관행이 기한을 넘긴다. 마감 이틀 전부터
+  // 알려 몰아서 하더라도 기한 안에 하게 한다. 묶음 축은 발행 줄이 찾는 키와 같다(계약·수납일·
+  // 수단, getCashReceiptTabRows 와 동일) — 수납마다 세면 쪼개 저장된 한 결제가 여러 건으로 부푼다.
+  try {
+    const crTodayYmd = kstYmdStr()
+    const lookFrom = new Date(Date.parse(`${crTodayYmd}T00:00:00Z`) - 35 * 86400000)
+    const [crPays, crIncomes, crLines] = await Promise.all([
+      prisma.paymentRecord.findMany({
+        where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: { gte: lookFrom }, actualAmount: { gt: 0 } },
+        select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true,
+                  tenant: { select: { name: true } }, leaseTerm: { select: { room: { select: { roomNo: true } } } } },
+      }),
+      prisma.extraIncome.findMany({
+        where: { propertyId, category: CLEANING_FEE_CATEGORY, date: { gte: lookFrom }, leaseTermId: { not: null } },
+        select: { leaseTermId: true, date: true, payMethod: true, amount: true },
+      }),
+      prisma.cashReceipt.findMany({
+        where: { propertyId, deletedAt: null, payDate: { gte: lookFrom } },
+        select: { leaseTermId: true, payDate: true, payMethod: true },
+      }),
+    ])
+    const crKey = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
+    type CrGroup = { roomNo: string; name: string; payYmd: string; amount: number }
+    const crGroups = new Map<string, CrGroup>()
+    for (const r of crPays) {
+      if (!isCashReceiptEligible(r.payMethod)) continue
+      const k = crKey(r.leaseTermId, r.payDate, r.payMethod)
+      const g = crGroups.get(k) ?? { roomNo: r.leaseTerm.room?.roomNo ?? '', name: r.tenant.name, payYmd: kstYmdStr(r.payDate), amount: 0 }
+      g.amount += r.actualAmount
+      crGroups.set(k, g)
+    }
+    for (const e of crIncomes) {
+      if (!e.leaseTermId || !isCashReceiptEligible(e.payMethod)) continue
+      const g = crGroups.get(crKey(e.leaseTermId, e.date, e.payMethod))
+      if (g) g.amount += e.amount   // 발행 단위에 든 청소비 몫 — 홀로는 결제 단위를 못 이룬다
+    }
+    const crIssued = new Set(crLines.map(l => crKey(l.leaseTermId, l.payDate, l.payMethod)))
+    const due = [...crGroups.entries()]
+      .filter(([k, g]) => !crIssued.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
+      .map(([, g]) => ({ ...g, left: cashReceiptDaysLeft(g.payYmd, crTodayYmd) }))
+      .filter(g => g.left <= 2)
+      .sort((a, b) => a.left - b.left)
+    if (due.length > 0) {
+      const worst = due[0].left
+      const total = due.reduce((sum, g) => sum + g.amount, 0)
+      alertItems.push({
+        category:  'receipt',
+        text:      `현금영수증 발급 기한 ${due.length}건 (${fmtWon(total)})`,
+        link:      `/rooms?tab=receipt&month=${due[0].payYmd.slice(0, 7)}`,
+        dotColor:  'var(--danger-fg)',
+        timeLabel: worst < 0 ? `기한 ${-worst}일 경과` : worst === 0 ? '오늘 마감' : `기한 ${worst}일 남음`,
+        detail:    `10만원 이상 현금·계좌이체 수취는 받은 날부터 5일 안에 발급해야 합니다(미발급 가산세 20%).\n`
+          + due.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${g.left < 0 ? `${-g.left}일 경과` : g.left === 0 ? '오늘 마감' : `${g.left}일 남음`}`).join('\n')
+          + (due.length > 10 ? `\n외 ${due.length - 10}건` : ''),
+        sortKey:   worst,
+      })
+    }
+  } catch { /* 조회 실패 시 알림만 생략 — 홈 자체는 선다 */ }
 
   // (체크리스트 알림은 제거됨 — 체크리스트를 스테이음 Lab으로 이동, 대시보드 알림 비노출. 2026-05-26)
 

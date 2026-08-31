@@ -82,3 +82,15 @@ export function undoRefundTaxNoticeLines(issues: { ymd: string; amount: number }
   const what = issues.map(i => `${i.ymd} 발행 ${fmtWon(i.amount)}`).join(', ')
   return [`환불을 되돌렸습니다. 홈택스에서 이미 취소하셨다면 ${what}을 다시 발행해 주세요. 앱 매출은 되돌렸지만 현금영수증은 따로 하셔야 합니다.`]
 }
+
+
+/**
+ * 보증금 **반환** 때의 조건부 안내 — 그 계약에 보증금을 포함해 발행한 현금영수증이 실제로
+ * 있을 때만 말한다. 보증금은 애초에 발급 대상이 아니라(예수금) 반환마다 일률로 띄우면
+ * "보증금에도 세무 조치가 필요하다"는 잘못된 인식을 심고, 없어도 될 발급·취소를 유도한다
+ * (세무 패널 결론 2026-09-01). 취소할지 여부도 앱이 단정하지 않는다 — 확인을 권할 뿐이다.
+ */
+export function depositReturnReceiptNoticeLine(count: number, total: number): string | null {
+  if (count <= 0) return null
+  return `이 계약에는 보증금이 포함된 현금영수증 ${count}건(합계 ${fmtWon(total)})이 있습니다. 홈택스에서 해당 건의 취소 여부를 세무 담당자와 확인해 주세요.`
+}
