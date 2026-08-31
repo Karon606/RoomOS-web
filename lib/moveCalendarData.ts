@@ -162,20 +162,47 @@ export async function fetchMoveLeases(
     where: { id: { in: planRoomIds } }, select: { id: true, roomNo: true },
   })
   const roomNoOf = new Map(planRooms.map(r => [r.id, r.roomNo]))
+  const planStay = (l: MoveLeaseRow, e: { roomId: string; from: string; to: string | null }, i: number) => ({
+    id: `plan-${l.id}-${i}`,
+    roomId: e.roomId,
+    startDate: new Date(`${e.from}T00:00:00.000Z`),
+    endDate: e.to ? new Date(`${e.to}T00:00:00.000Z`) : null,
+    room: { roomNo: roomNoOf.get(e.roomId) ?? '' },
+  })
   const withPlan = (l: MoveLeaseRow): MoveLeaseRow => {
-    // 실제 구간이 하나라도 있으면 그것이 진실이다. 계획은 아직 안 들어온 계약에만 쓴다.
-    if (l.roomStays.length > 0) return l
     const plan = parseRoomSchedule(l.roomSchedule)
     if (!hasRoomSchedule(plan)) return l
+    // 아직 안 들어왔으면 계획이 그 사람의 전부다.
+    if (l.roomStays.length === 0) {
+      return { ...l, roomStays: plan.map((e, i) => planStay(l, e, i)) }
+    }
+    /**
+     * 이미 들어왔으면 **실제 구간이 진실이고, 아직 안 옮긴 뒷 구간은 예정으로 잇는다**
+     * (2026-08-31 운영자 지적).
+     *
+     * 종전에는 실제 구간이 하나라도 있으면 계획을 통째로 버렸다. 그래서 임시 호실에 입실
+     * 처리를 하는 순간 계약 호실 막대가 캘린더에서 사라졌다. 402호에 사람이 있는 것은 보이는데
+     * 그 사람이 며칠 뒤 404호로 온다는 사실이 방 기준 화면 어디에도 안 남았다.
+     *
+     * 운영자 원문 — "404호에도 9월2일에 이사를 할 예정이니까 404호의 거주 이력에 날짜가
+     * 8/31이 아니라 9/2이 되어야지... 이 날짜는 입주자 기준이 아니라 방 기준이니까".
+     *
+     * 실제로 산 방은 계획에서 빼고(실제가 이긴다), 아직 안 간 방만 예정으로 덧붙인다.
+     * 그리고 열린 실제 구간은 다음 이사일에서 닫는다 — 안 그러면 두 방이 같은 날 겹쳐 보인다.
+     * 이것은 화면용 파생일 뿐 RoomStay 자체는 손대지 않는다(이사는 그날 사람이 확인해 옮긴다).
+     */
+    const stayed = new Set(l.roomStays.map(s => s.roomId))
+    const rest = plan.filter(e => !stayed.has(e.roomId))
+    if (rest.length === 0) return l
+    const nextFrom = rest[0].from
     return {
       ...l,
-      roomStays: plan.map((e, i) => ({
-        id: `plan-${l.id}-${i}`,
-        roomId: e.roomId,
-        startDate: new Date(`${e.from}T00:00:00.000Z`),
-        endDate: e.to ? new Date(`${e.to}T00:00:00.000Z`) : null,
-        room: { roomNo: roomNoOf.get(e.roomId) ?? '' },
-      })),
+      roomStays: [
+        ...l.roomStays.map(s => s.endDate == null
+          ? { ...s, endDate: new Date(`${nextFrom}T00:00:00.000Z`) }
+          : s),
+        ...rest.map((e, i) => planStay(l, e, l.roomStays.length + i)),
+      ],
     }
   }
   return {

@@ -61,7 +61,22 @@ const violations = []
   }
 }
 
-console.log(`[이사일 수정] 축 ⓐ 예약 단계 · ⓑ 입실 단계 · ⓒ 겹침·연속성 검증 / 위반 ${violations.length}건`)
+// ⓓ 입실 처리 뒤에도 남은 이사 계획이 캘린더에 서는가 (2026-08-31 운영자 지적).
+//    종전에는 실제 거주 구간이 하나라도 생기면 계획을 통째로 버렸다. 그래서 임시 호실에 입실
+//    처리를 하는 순간 계약 호실 막대가 사라졌다. 402호에 사람이 있는 것은 보이는데 그 사람이
+//    며칠 뒤 404호로 온다는 사실이 방 기준 화면 어디에도 안 남았다.
+{
+  const f = 'lib/moveCalendarData.ts'
+  const src = readFileSync(f, 'utf8')
+  if (/roomStays\.length > 0\)\s*return l/.test(src)) {
+    violations.push(`${f} — 실제 구간이 있으면 계획을 통째로 버린다. 입실 처리하는 순간 앞으로 갈 방의 막대가 캘린더에서 사라진다.`)
+  }
+  if (!/const rest = plan\.filter/.test(src)) {
+    violations.push(`${f} — 아직 안 옮긴 구간을 예정으로 잇지 않는다.`)
+  }
+}
+
+console.log(`[이사일 수정] 축 ⓐ 예약 단계 · ⓑ 입실 단계 · ⓒ 겹침·연속성 검증 · ⓓ 입실 후 남은 계획 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
