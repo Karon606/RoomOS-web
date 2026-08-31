@@ -20,11 +20,11 @@ import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
   countTenantsWithCleaningFeeReceived,
-  batchUpdateTenants, previewCheckoutRefund, finalizeRentRefund, undoRentRefund,
+  batchUpdateTenants, finalizeRentRefund, undoRentRefund,
   getRoomScheduleState,
   type RentRefundTaxNotice,
 } from './actions'
-import { LEGAL_PENALTY_PCT, type CheckoutRefundResult } from '@/lib/prorate'
+import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
 import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
@@ -715,9 +715,9 @@ export default function TenantClient({
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositRefundDirty, setDepositRefundDirty] = useState(false)   // 환불 창 dirty — 금액·날짜를 만졌을 때만 닫기 확인(§12)
   // 이용료 환불(통합 환불 창, 운영자 승인 2026-07-20) — 계산은 서버 미리보기, 최종 금액은 운영자 확정
-  const [rentRefundPreview, setRentRefundPreview] = useState<{ prepaidAmount: number; refund: CheckoutRefundResult; defaultPenaltyPct: number; appliedProration: number | null } | null>(null)
-  const [rentRefundAmt, setRentRefundAmt] = useState(0)
-  const [rentPenaltyPctInput, setRentPenaltyPctInput] = useState('')   // 빈 값 = 영업장 기본 위약금율
+  // 이용료 정산 값 — 계산·표시는 정본 컴포넌트(RentSettlementSection)가 쥔다. 여기는 확정할
+  // 금액과 그 한도만 받는다. null 이면 정산할 것이 없다는 뜻이다.
+  const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
   const [rentMoveOutYmd, setRentMoveOutYmd] = useState('')
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
@@ -1215,32 +1215,9 @@ export default function TenantClient({
     const expectedOutYmd = ((fd.get('expectedMoveOut') as string) || '').slice(0, 10)
     const moveOutYmd = actualOutYmd || expectedOutYmd || kstYmdStr()
     setRentMoveOutYmd(moveOutYmd)
-    setRentRefundPreview(null); setRentRefundAmt(0); setRentPenaltyPctInput('')
-    if (leaseTermId) {
-      void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', null).then(r => {
-        if (r.ok && r.prepaidAmount > 0) {
-          setRentRefundPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
-          // 퇴실 정산이 먼저 적용돼 있으면 그 확정값을 이어받는다(이중 수정 방지) — 환불 기본값 = 결제액 − 확정 청구
-          setRentRefundAmt(r.appliedProration != null ? Math.max(0, r.prepaidAmount - r.appliedProration) : r.refund.refund)
-        }
-      }).catch(() => {})
-    }
+    // 계산은 정본 컴포넌트가 마운트되면서 스스로 한다 — 여기서 미리 부르면 두 벌이 된다.
+    setRentSettlement(null)
     setDepositRefundModal({ fd, tenantName, depositAmount: depoBase, cleaningFee, fromDetail, leaseTermId, tenantId, compositionLabel: comp ? depositCompositionLabel(comp) : null })
-  }
-
-  // 위약금율 입력(0~10, 빈 값 = 영업장 기본) — 서버 재계산 후 환불 기본값 갱신. 캡은 서버가 재클램프.
-  const handleRentPct = (raw: string) => {
-    const clean = raw.replace(/[^0-9]/g, '').slice(0, 2)
-    setRentPenaltyPctInput(clean); setDepositRefundDirty(true)
-    const m = depositRefundModal
-    if (!m?.leaseTermId || !rentMoveOutYmd) return
-    const pctNum = clean === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(clean, 10) || 0))
-    void previewCheckoutRefund(m.leaseTermId, rentMoveOutYmd, 'legal', pctNum).then(r => {
-      if (r.ok && r.prepaidAmount > 0) {
-        setRentRefundPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
-        if (r.appliedProration == null) setRentRefundAmt(r.refund.refund)
-      }
-    }).catch(() => {})
   }
 
   // 거주중→공실 변경 시 호실에 예정 가격이 있으면 가격 변동 팝업 표시
@@ -1405,12 +1382,13 @@ export default function TenantClient({
   const handleDepositRefundConfirm = async () => {
     if (!depositRefundModal) return
     const { fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId } = depositRefundModal
-    const rp = rentRefundPreview
+    const rs = rentSettlement
+    const rentAmt = rs?.amount ?? 0
     // 전액 환불(사용분·위약금까지 반환)은 명시적 확인(§14) — 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다
-    if (rp && rentRefundAmt > 0 && rentRefundAmt >= rp.prepaidAmount) {
+    if (rs && rentAmt > 0 && rentAmt >= rs.max) {
       const okAll = await confirmDialog({
         title: '이용료를 전액 환불할까요?',
-        message: `사용분까지 모두 돌려주는 금액입니다. 총 환불액 ${fmtWon(rentRefundAmt + depositReturnAmt)}.`,
+        message: `사용분까지 모두 돌려주는 금액입니다. 총 환불액 ${fmtWon(rentAmt + depositReturnAmt)}.`,
         confirmLabel: '전액 환불', cancelLabel: '다시 확인',
       })
       if (!okAll) return
@@ -1426,8 +1404,8 @@ export default function TenantClient({
         // 이용료 환불 — 퇴실월 수납 record를 회사 귀속액으로 재기록(매출에서 환불분 제외, 원 기록 소프트삭제 보존)
         let rentRefunded = false
         let taxNotice: RentRefundTaxNotice | undefined
-        if (rp && rentRefundAmt > 0) {
-          const rr = await finalizeRentRefund({ leaseTermId, moveOutYmd: rentMoveOutYmd, rentRefundAmount: rentRefundAmt })
+        if (rs && rentAmt > 0) {
+          const rr = await finalizeRentRefund({ leaseTermId, moveOutYmd: rentMoveOutYmd, rentRefundAmount: rentAmt })
           if (rr.ok) { rentRefunded = true; taxNotice = rr.taxNotice }
           else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
           else { setError(rr.error); pushToast('error', rr.error); return }
@@ -1462,7 +1440,7 @@ export default function TenantClient({
         else setEditTenant(null)
         refresh()
         const { refundId, extraIncomeIds } = refundRes
-        const totalRefunded = (rp ? rentRefundAmt : 0) + depositReturnAmt
+        const totalRefunded = rentAmt + depositReturnAmt
         // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다.
         // 종전에는 이 화면에만 손으로 적혀 있어서, 같은 일을 하는 홈 알림·프리즘 위젯에서는
         // 취소하라는 말이 통째로 사라졌다(2026-08-31 패널 조사).
@@ -1995,12 +1973,11 @@ export default function TenantClient({
         const maxRefund = Math.max(0, dep - fee)
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
-        const rp = rentRefundPreview
-        const rentLocked = rp?.appliedProration != null   // 퇴실 정산 위젯이 먼저 확정 — 창에서 재계산 금지
-        const rentCalcDefault = rp ? (rentLocked ? Math.max(0, rp.prepaidAmount - (rp.appliedProration ?? 0)) : rp.refund.refund) : 0
-        const rentDiff = rp ? rentRefundAmt - rentCalcDefault : 0
-        const rentExceeds = !!rp && rentRefundAmt > rp.prepaidAmount
-        const totalRefund = (rp ? rentRefundAmt : 0) + depositReturnAmt
+        // 표시·계산은 정본 컴포넌트가 한다. 여기는 합계와 저장 게이트만 센다 —
+        // 초과 판정을 컴포넌트 안에만 두면 부모가 저장을 못 막는다.
+        const rentAmtView = rentSettlement?.amount ?? 0
+        const rentExceeds = !!rentSettlement && rentSettlement.amount > rentSettlement.max
+        const totalRefund = rentAmtView + depositReturnAmt
         // z 280 — 상세 경유 '입주자 정보 수정' 창이 260이라 같은 층이면 이 창이 뒤에 깔려
         // 저장을 눌러도 아무 일도 없는 것처럼 보였다(운영자 신고 2026-07-20). 가격 변동 확인창과 동일 층.
         // dirty는 금액·날짜를 실제로 만졌을 때만(§12) — 종전 하드코딩은 그냥 닫아도 확인을 물었다.
@@ -2012,53 +1989,15 @@ export default function TenantClient({
             title="퇴실 정산" subtitle={`${depositRefundModal.tenantName}님`}>
 
               <div className="px-5 py-4 space-y-3">
-                {/* 이용료 정산 — 퇴실월 선납이 있을 때만. 계산은 참고 표시, 최종 금액은 운영자 확정(승인 2026-07-20).
-                    차감 행은 라벨 앞 −(U+2212) 세로 수식 문법 — 퇴실 정산 위젯 환불 미리보기와 동일. */}
-                {rp && (
-                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-[var(--warm-mid)]">이용료 정산</span>
-                      <span className="tabular-nums text-[var(--warm-dark)]">결제액 {fmtWon(rp.prepaidAmount)}</span>
-                    </div>
-                    {rentLocked ? (
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
-                        퇴실 정산 적용됨 · 이달 청구 {fmtWon(rp.appliedProration ?? 0)} · 변경은 상세의 퇴실 정산에서.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-[var(--warm-muted)]">− 사용분 ({rp.refund.daysUsed}일 × {fmtWon(rp.refund.dailyRate)})</span>
-                          <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(rp.refund.usedAmount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[var(--warm-muted)] flex items-center gap-1">
-                            − 위약금 (결제액의
-                            <input type="text" inputMode="numeric" value={rentPenaltyPctInput} placeholder={String(rp.defaultPenaltyPct)}
-                              onChange={e => handleRentPct(e.target.value)}
-                              className="w-11 bg-[var(--surface)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                            %)
-                          </span>
-                          <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(rp.refund.penalty)}</span>
-                        </div>
-                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">위약금율 기본 {rp.defaultPenaltyPct}% · 최대 {LEGAL_PENALTY_PCT}% (공정위 기준)</p>
-                      </>
-                    )}
-                    <div className="border-t border-[var(--warm-border)] pt-1.5 space-y-1">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">이용료 환불액</label>
-                      <MoneyInput value={rentRefundAmt} onChange={v => { setRentRefundAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">계산값 {fmtWon(rentCalcDefault)} · 필요시 수정</p>
-                      {rentExceeds && (
-                        <p className="text-[0.6875rem] text-[var(--danger-fg)]">결제액 {fmtWon(rp.prepaidAmount)}을 초과할 수 없습니다.</p>
-                      )}
-                      {!rentExceeds && rentDiff > 0 && (
-                        <p className="text-[0.6875rem] text-[var(--warning-fg)]">계산값보다 {fmtWon(rentDiff)} 많습니다.</p>
-                      )}
-                      {!rentExceeds && rentDiff < 0 && (
-                        <p className="text-[0.6875rem] text-[var(--warm-muted)]">계산값보다 {fmtWon(-rentDiff)} 적습니다. 차액은 회사 귀속으로 기록됩니다.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {/* 이용료 정산 — 정본은 components/checkout/RentSettlementSection 하나다.
+                    종전에는 이 화면에만 있어서, 같은 퇴실을 홈 알림이나 프리즘으로 처리하면
+                    정산을 안 해 둔 중도퇴실이 아무것도 안 묻고 지나갔다(2026-08-31 패널 조사). */}
+                <RentSettlementSection
+                  leaseTermId={depositRefundModal.leaseTermId ?? null}
+                  moveOutYmd={rentMoveOutYmd}
+                  value={rentSettlement}
+                  onChange={setRentSettlement}
+                  onDirty={() => setDepositRefundDirty(true)} />
 
                 {/* 보증금 — 이용료 섹션과 같은 카드·행 문법 */}
                 <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 space-y-1.5 text-xs">
@@ -2111,10 +2050,10 @@ export default function TenantClient({
 
                 {/* 합계 — 자동 합산 읽기전용(§12). 총 환불액만 bold·success 강조 */}
                 <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
-                  {rp && (
+                  {rentSettlement && (
                     <div className="flex justify-between">
                       <span className="text-[var(--warm-muted)]">이용료 환불</span>
-                      <span className="font-medium tabular-nums">{fmtWon(rentRefundAmt)}</span>
+                      <span className="font-medium tabular-nums">{fmtWon(rentAmtView)}</span>
                     </div>
                   )}
                   <div className="flex justify-between">

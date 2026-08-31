@@ -32,8 +32,9 @@ import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
-import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getPendingRentRefundNotice } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -271,7 +272,7 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, pendingRentRefund, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
@@ -280,11 +281,11 @@ function CheckoutRefundModal({
   compositionLabel: string | null
   /** 호실이 걸린 계약인가 — 아니면 서버가 청소를 아예 안 만드므로 예정일 칸을 세우지 않는다. */
   hasRoom: boolean
-  /** 확정해 둔 이용료 환불이 남아 있으면 그 값 — 이 경로는 보증금만 정산하므로 말이라도 해야 한다. */
-  pendingRentRefund: { amount: number; month: string } | null
+  /** 이용료 정산 정본이 이 계약의 환불액을 스스로 계산한다 — 미리 확정해 둔 값이 없어도 묻는다. */
+  leaseTermId: string | null
   pending: boolean
   onClose: () => void
-  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined) => void
+  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => void
 }) {
   // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
@@ -297,6 +298,10 @@ function CheckoutRefundModal({
   const [reasonEtc, setReasonEtc] = useState('')
   // 퇴실 청소 예정일 — 입주자 상세 미니폼과 같은 정본 훅·같은 칸을 쓴다(두 경로가 갈리지 않게).
   const cleaning = useCheckoutCleaningDate()
+  // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
+  // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
+  const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
+  const rentExceeds = !!rentSettlement && rentSettlement.amount > rentSettlement.max
   const unreturned = depositAmount - refund
   const exceedsMax = refund > maxRefund
 
@@ -317,9 +322,9 @@ function CheckoutRefundModal({
               if (depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
-              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom ? (cleaning.value || null) : undefined)
+              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
             }}
-            disabled={pending || exceedsMax || !moveOutDate}>
+            disabled={pending || exceedsMax || rentExceeds || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
           </Btn>
         </div>
@@ -421,17 +426,13 @@ function CheckoutRefundModal({
             <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>호실이 공실로 전환됩니다.</p>
           )}
 
-          {/* 이용료 환불은 **보증금 게이트 밖**이다. 종전에는 이 블록이 `depositAmount > 0` 안에
-              있어서, 보증금 0 인 계약은 "호실이 공실로 전환됩니다" 한 줄만 보이는데 이용료 환불은
-              그대로 실려 나갔다. 돈이 움직이는데 화면이 침묵했다(2026-08-31 패널 조사). */}
-          {pendingRentRefund && (
-            <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
-              이용료 환불 {fmtWon(pendingRentRefund.amount)}이 함께 확정됩니다.
-              <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
-              </span>
-            </div>
-          )}
+          {/* 이용료 정산은 **보증금 게이트 밖**이다. 종전에는 보증금이 있을 때만 그려서, 보증금 0 인
+              계약은 공실 전환 한 줄만 보이는데 환불은 그대로 실려 나갔다(2026-08-31 패널 조사). */}
+          <RentSettlementSection
+            leaseTermId={leaseTermId}
+            moveOutYmd={moveOutDate}
+            value={rentSettlement}
+            onChange={setRentSettlement} />
         </div>
     </Modal>
   )
@@ -464,8 +465,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const [confirmPending, setConfirmPending] = useState(false)
   const [confirmError, setConfirmError]     = useState('')
   const [refundModalOpen, setRefundModalOpen] = useState(false)
-  // 확정해 둔 이용료 환불 — 이 경로가 못 하는 일이라 화면이 말이라도 하려고 담아 둔다.
-  const [pendingRentRefund, setPendingRentRefund] = useState<{ amount: number; month: string } | null>(null)
   // 고정지출 기록 폼은 실제 항목·계좌를 서버에서 받아 열기 때문에 버튼에 로딩 상태가 필요하다.
   const [recordPending, setRecordPending]   = useState(false)
 
@@ -485,13 +484,10 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   // 퇴실은 보증금 유무와 무관하게 항상 미니폼(퇴실일 입력)으로 — 날짜 없는 즉시 처리 직행 폐기(2026-07-28 오더).
   const handleCheckout = () => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
-    // 확정해 둔 이용료 환불이 남았는지 먼저 묻는다 — 이 경로는 보증금만 정산하므로 말이라도 해야 한다.
-    // 실패해도 창은 연다(안내가 없다고 퇴실을 막을 일은 아니다).
-    void getPendingRentRefundNotice(moveOutLeaseId).then(setPendingRentRefund).catch(() => setPendingRentRefund(null))
     setRefundModalOpen(true)
   }
 
-  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined) => {
+  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
     // 미환불이 있는데 사유가 없으면 막는다 — 돈이 움직이는 결정이라 근거가 남아야 한다.
     if (moveOutDeposit > 0 && moveOutDeposit - refundAmount > 0 && !reason) {
@@ -508,8 +504,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       moveOutDate,
       ...(reason ? { reason } : {}),
       ...(cleaningDate !== undefined ? { cleaningDate } : {}),
-      // 확정해 둔 정산이 남아 있으면 함께 확정한다. 종전에는 이 경로에 아예 없어서 조용히 빠졌다.
-      ...(pendingRentRefund ? { rentRefundAmount: pendingRentRefund.amount } : {}),
+      // 창에서 확정한 이용료 환불을 함께 보낸다. 종전에는 미리 확정해 둔 값이 있을 때만 실렸다.
+      ...(rentRefundAmount > 0 ? { rentRefundAmount } : {}),
     })
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     // 청소 예정을 못 만든 경우만 한 줄 남는다. 퇴실은 이미 끝났으니 창을 붙잡지 않는다.
@@ -672,7 +668,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           cleaningFee={moveOutCleaning}
           compositionLabel={alert.moveOutCompositionLabel ?? null}
           hasRoom={alert.moveOutHasRoom === true}
-          pendingRentRefund={pendingRentRefund}
+          leaseTermId={moveOutLeaseId ?? null}
           pending={confirmPending}
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}

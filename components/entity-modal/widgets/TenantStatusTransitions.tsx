@@ -14,6 +14,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
@@ -165,6 +166,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [withholdEtc, setWithholdEtc] = useState('')
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
   const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
+  // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
+  // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
+  const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
   // 퇴실 청소 예정일 — 아직 안 건드렸으면 퇴실일(transDate)을 따라 움직인다(정본 훅).
@@ -428,11 +432,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
          * 이용료는 조용히 남았다. 화면이 경고만 하던 자리를 실제 처리로 바꾼다.
          * 이미 환불된 계약은 서버가 멱등으로 받아 넘긴다.
          */
-        if (active?.pendingRentRefund && def.toStatus === 'CHECKED_OUT') {
+        if (rentSettlement && rentSettlement.amount > 0 && def.toStatus === 'CHECKED_OUT') {
           const rr = await finalizeRentRefund({
             leaseTermId: lease.id,
             moveOutYmd: fields?.moveOutDate || kstYmdStr(),
-            rentRefundAmount: active.pendingRentRefund.amount,
+            rentRefundAmount: rentSettlement.amount,
           })
           if (!rr.ok && !rr.error.startsWith('이미 환불 처리된')) {
             // 퇴실은 이미 끝났다. 환불만 못 했다는 사실을 알리고 어디서 마저 하는지 말한다.
@@ -580,15 +584,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   칸이 된다. 자리는 퇴실일 바로 아래다 — 기본값이 퇴실일에서 파생되므로 원인
                   칸과 같은 시야에 있어야 따라 움직인 것이 보인다. 돈 블록 뒤에 두면 좁은 폭에서
                   접힌 선 아래로 내려가고, 바로 위 환불 안내문에 붙어 환불 기록일로 읽힌다. */}
-              {/* 이 경로는 보증금만 정산한다. 확정해 둔 이용료 환불이 남아 있으면 그 사실을 말한다 —
-                  경로를 하나로 모으는 것이 근본이지만(별건), 그때까지 모르고 지나가면 돈이 샌다. */}
-              {active.pendingRentRefund && active.def.toStatus === 'CHECKED_OUT' && (
-                <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
-                  이용료 환불 {fmtWon(active.pendingRentRefund.amount)}이 함께 확정됩니다.
-                  <span className="block mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                    퇴실 정산에서 확정한 청구액과 받은 금액의 차액입니다. 보증금과 별개로 처리됩니다.
-                  </span>
-                </div>
+              {/* 이용료 정산 — 세 화면이 쓰는 정본 하나다. 퇴실 확정에서만 세운다. */}
+              {active.def.toStatus === 'CHECKED_OUT' && (
+                <RentSettlementSection
+                  leaseTermId={lease.id}
+                  moveOutYmd={transDate || kstYmdStr()}
+                  value={rentSettlement}
+                  onChange={setRentSettlement} />
               )}
               {active.def.key === 'checkout' && lease.roomId && (
                 active.openCleaning

@@ -91,7 +91,51 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 / 위반 ${violations.length}건`)
+// ⓔ 세 경로가 **같은 정산 정본**을 쓰는가 (2026-08-31).
+//    확정만 하는 것으로는 부족했다. 홈·프리즘은 미리 확정해 둔 값이 있을 때만 환불했고, 정산을
+//    안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다. 납부일 1일인 사람이 15일에
+//    나가면 반 달치가 회사에 남고, 퇴실 상태라 미납 집계에서도 빠져 어느 화면에도 안 보인다.
+//    계산·표시 문법을 화면마다 복제하면 방금 통합한 축이 다시 세 벌이 된다.
+{
+  const SCREENS = [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx'],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+  ]
+  for (const [name, f] of SCREENS) {
+    const src2 = readFileSync(f, 'utf8')
+    if (!/<RentSettlementSection/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 정산 정본(RentSettlementSection)을 안 쓴다. 정산을 안 해 둔 중도퇴실이 그 화면에서만 조용히 지나간다.`)
+    }
+    // 일할·위약금 계산을 화면이 직접 부르면 그 순간 문법이 갈라진다. 정본 한 곳만 부른다.
+    if (/previewCheckoutRefund\(/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 환불 계산을 직접 부른다. 계산은 RentSettlementSection 정본이 한다.`)
+    }
+  }
+}
+
+// ⓕ 홈택스·카드사 조치 안내를 세 경로가 다 말하는가 (2026-08-31).
+//    서버는 만들어 주는데 받아 쓰는 곳이 수정 폼 하나뿐이었다. 현금영수증을 발행한 계약을 홈
+//    알림에서 퇴실 처리하면 앱 매출만 조용히 줄고 홈택스에는 원 금액이 살아 있었다(519호 클래스).
+{
+  for (const [name, f] of [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx'],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+  ]) {
+    const src2 = readFileSync(f, 'utf8')
+    if (!/refundTaxNoticeLines\(/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 홈택스 조치 안내를 안 띄운다. 앱 매출만 줄고 취소하라는 말을 아무도 못 듣는다.`)
+    }
+  }
+  // 서버가 화면까지 물려주지 않으면 화면이 띄우고 싶어도 값이 없다.
+  const co2 = src.match(/export async function checkoutWithDepositRefund[\s\S]*?\n\}\n/)
+  if (co2 && !/taxNotice/.test(co2[0])) {
+    violations.push(`${FILE} — checkoutWithDepositRefund 가 홈택스 안내를 화면에 안 물려준다.`)
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
