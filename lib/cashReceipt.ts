@@ -138,6 +138,60 @@ export function cashReceiptMonth(r: CashReceiptRow): string {
   return kstMonthKey(r.issuedAt)
 }
 
+// ── 취소 안내가 적을 발행 건 ──────────────────────────────────
+
+/** 취소할 발행 한 건 — 발행일과 발행액. */
+export type CashReceiptIssueLine = { ymd: string; amount: number }
+
+/** 발행 줄에서 이 판정이 보는 몫. Prisma select 와 그대로 맞물린다. */
+export type CashReceiptCancelRow = { issuedAt: Date; amount: number; payDate: Date; payMethod: string | null }
+/** 발행 표시가 켜진 수납. 줄을 못 찾았을 때의 폴백 재료다. */
+export type StampedPaymentRow = { cashReceiptIssuedAt: Date | null; actualAmount: number; payDate: Date; payMethod: string | null }
+
+/**
+ * 환불 안내가 "홈택스에서 취소하라"고 지목할 발행 건들을 만든다.
+ *
+ * 종전에는 안내가 **입금일과 수납액**을 적었다. 둘 다 발행 사실이 아니다.
+ *   날짜 — 운영자는 받은 날 바로 안 끊고 모아서 끊는다. 실측 33건 중 29건이 발행일 != 입금일이고
+ *          2026-08-22 하루에 18건이 몰려 있다. 홈택스는 발행일로 찾으므로 입금일을 적어 주면
+ *          없는 날짜를 뒤지게 된다. 두 날짜는 같을 필요가 없다는 것이 운영자 확정이다(2026-09-01).
+ *   금액 — 45만 받고 30만만 끊을 수 있다. 그것이 CashReceipt 표가 따로 생긴 이유인데(2026-08-24)
+ *          이 안내만 옛 방식으로 수납액을 세고 있었다. 오늘은 33건 전부 두 값이 같아 안 드러난다.
+ *
+ * 한 발행 줄이 여러 수납을 덮는다. 한 입금을 보증금·청소비·이용료 몫으로 쪼개 저장해도
+ * 발행은 (계약·수납일·수단) 하나에 한 줄이다. 그래서 수납마다 세면 금액이 부푼다.
+ *
+ * 발행 줄이 없는 옛 건은 **도장 날짜로라도 말한다.** 침묵이 가장 나쁘다 — 앱 매출만 조용히 줄고
+ * 홈택스에는 원 금액이 살아 있는 것이 이 안내가 생긴 이유다(519호 클래스). 도장 값 자체가
+ * 발행 시각이므로 폴백도 입금일이 아니다. 이 어긋남은 verify:db 의 발행 줄 감사가 따로 잡는다.
+ */
+export function cashReceiptIssueLines(
+  receipts: CashReceiptCancelRow[],
+  stamped: StampedPaymentRow[],
+): CashReceiptIssueLine[] {
+  // @db.Date 는 UTC 자정 저장이라 UTC 날짜부가 곧 달력 날짜다. 발행 시각은 타임스탬프라 KST 로 읽는다.
+  const key = (payDate: Date, payMethod: string | null) => `${payDate.toISOString().slice(0, 10)}|${payMethod ?? ''}`
+  const byKey = new Map<string, CashReceiptCancelRow>()
+  for (const r of receipts) byKey.set(key(r.payDate, r.payMethod), r)
+
+  const counted = new Set<string>()
+  const bucket = new Map<string, number>()
+  const add = (ymd: string, amount: number) => bucket.set(ymd, (bucket.get(ymd) ?? 0) + amount)
+
+  for (const p of stamped) {
+    if (!p.cashReceiptIssuedAt) continue
+    const k = key(p.payDate, p.payMethod)
+    const row = byKey.get(k)
+    if (!row) { add(kstYmdStr(p.cashReceiptIssuedAt), p.actualAmount); continue }
+    if (counted.has(k)) continue   // 같은 발행 줄을 덮는 형제 수납 — 한 번만 센다
+    counted.add(k)
+    add(kstYmdStr(row.issuedAt), row.amount)
+  }
+  return [...bucket]
+    .map(([ymd, amount]) => ({ ymd, amount }))
+    .sort((a, b) => a.ymd.localeCompare(b.ymd))
+}
+
 /**
  * 한 입금에 붙일 발행 금액의 기본값. 체크된 몫만 더한다(운영자 확정 2026-08-24).
  *

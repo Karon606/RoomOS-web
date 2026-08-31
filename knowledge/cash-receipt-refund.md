@@ -255,3 +255,22 @@
 판정 헬퍼는 `lib/depositWithholdReasons` 의 `cleaningFeeDeductible(contractFee, receivedSeparately)`
 이고, 수신액 조회는 `app/(app)/tenants/actions.ts` 의 `getCleaningFeeReceivedForLease` 가 정본이다
 (순환 import 때문에 조회는 그 자리에 둔다).
+
+**취소 안내는 발행일·발행액으로 말한다 (2026-09-01 운영자 재확인).**
+환불 뒤 "홈택스에서 취소하세요" 안내가 종전에는 **입금일과 수납액**을 적었다. 둘 다 발행 사실이
+아니다. 홈택스는 발행일로 찾고, 운영자는 받은 날 바로 안 끊고 모아서 끊는다 — 실측 발행 33건 중
+29건이 발행일 != 입금일이고 2026-08-22 하루에 18건이 몰려 있다. 이경호 님은 8/5 입금 8/22 발행이라
+안내대로 8/5 를 뒤지면 아무것도 없다. 운영자 원문 — "입금받은 날짜와 처리날짜가 다를 수 있어.
+굳이 동일하게 갈 필요가 없다". 두 날짜를 맞추려 들지 말고 각자 제 축을 쓰는 것이 정본이다.
+
+금액도 같은 병이다. 45만 받고 30만만 끊을 수 있어 [[cash-receipt-refund]] 의 `CashReceipt` 표를
+따로 세웠는데(2026-08-24) 이 안내만 옛 방식으로 `PaymentRecord.actualAmount` 를 세고 있었다.
+오늘은 33건 전부 두 값이 같아 안 드러난다.
+
+판정 정본은 `lib/cashReceipt` 의 `cashReceiptIssueLines(receipts, stamped)` 다. 한 발행 줄이 여러
+수납(보증금·청소비·이용료 몫)을 덮으므로 수납마다 세면 금액이 부푼다 — (계약·수납일·수단) 키로
+한 번만 센다. 발행일이 갈리면 줄도 갈라 적는다(한 날짜에 합계를 몰면 그중 하나도 못 찾는다).
+발행 줄이 없는 옛 건은 도장 날짜(`cashReceiptIssuedAt`, 그 자체가 발행 시각)로라도 말한다 —
+침묵이 가장 나쁘다. 안내 타입 사본이 `tenants/actions.ts` 에 손으로 적혀 있어 정본이 넓어질 때
+갈렸으므로 `RentRefundTaxNotice = RefundTaxNotice` 로 묶었다.
+감지망은 `check-checkout-side-effects` 축 ⓚ.

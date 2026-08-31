@@ -60,6 +60,8 @@ import {
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
+import { cashReceiptIssueLines } from '@/lib/cashReceipt'
+import type { RefundTaxNotice } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
@@ -4380,12 +4382,11 @@ export async function previewCheckoutRefund(
 // taxNotice — 환불 후 운영자가 **홈택스에서 따로 해야 하는 일**. 앱과 국세청은 연동되지 않으므로
 // 앱이 대신 취소해 줄 수 없고, 알려주는 것까지가 앱의 몫이다(운영자 확정 2026-08-01).
 //   "국세청이랑 이 앱은 연동이 안되니까 ... 홈택스에 취소하라고 알려주는 것 정도면 괜찮을 것 같은데"
-export type RentRefundTaxNotice = {
-  cashReceipt?: { amount: number; ymd: string }   // 발행 표시가 있던 금액과 그 결제일
-  card?: { amount: number }                       // 카드 계열로 받은 금액
-  pastMonth?: string                              // 지난 달 장부가 바뀐다는 고지(lib/accountingGuard)
-  companyKeeps: number                            // 재발행이 필요할 때 쓸 확정액
-}
+//
+// 모양은 **문구 정본과 같은 타입이다.** 종전에는 여기 사본을 손으로 적어 두어, 정본이 발행일별
+// 여러 줄로 넓어졌을 때 이 자리만 옛 모양으로 남았다. 화면 셋이 이 이름으로 받으므로 이름은
+// 남기고 속을 정본에 묶는다 — 갈릴 자리를 아예 없앤다.
+export type RentRefundTaxNotice = RefundTaxNotice
 
 export type RentRefundResult =
   | { ok: true; refunded: number; companyKeeps: number; taxNotice?: RentRefundTaxNotice }
@@ -4517,19 +4518,30 @@ export async function finalizeRentRefund(input: {
     })
 
     // 홈택스 조치 안내 — 해당할 때만 채운다. 없는데 매번 띄우면 진짜 경고도 안 읽힌다.
-    const receiptRec = records.find(r => r.cashReceiptIssuedAt)
+    //
+    // 취소할 건은 **발행 줄(CashReceipt)에서 읽는다.** 수납에 찍힌 도장은 '발행함' 표시일 뿐이고
+    // 홈택스가 찾는 발행일·발행액은 그 표에 있다. 종전에는 여기서 입금일과 수납액을 적었다
+    // (판정 근거는 lib/cashReceipt 의 cashReceiptIssueLines 주석).
+    const stampedRecs = records.filter(r => r.cashReceiptIssuedAt)
+    const receiptRows = stampedRecs.length > 0
+      ? await prisma.cashReceipt.findMany({
+          where: {
+            leaseTermId: input.leaseTermId, deletedAt: null,
+            payDate: { in: stampedRecs.map(r => r.payDate) },
+          },
+          select: { issuedAt: true, amount: true, payDate: true, payMethod: true },
+        })
+      : []
+    const issues = cashReceiptIssueLines(receiptRows, stampedRecs)
     const cardAmt = records
       .filter(r => r.payMethod && CARD_LIKE_METHODS.includes(r.payMethod))
       .reduce((sum, r) => sum + r.actualAmount, 0)
     const taxNotice: RentRefundTaxNotice | undefined =
-      (receiptRec || cardAmt > 0 || monthVerdict.warning)
+      (issues.length > 0 || cardAmt > 0 || monthVerdict.warning)
         ? {
             companyKeeps,
             ...(monthVerdict.warning ? { pastMonth: monthVerdict.warning } : {}),
-            ...(receiptRec ? { cashReceipt: {
-              amount: records.filter(r => r.cashReceiptIssuedAt).reduce((sum, r) => sum + r.actualAmount, 0),
-              ymd: receiptRec.payDate.toISOString().slice(0, 10),
-            } } : {}),
+            ...(issues.length > 0 ? { cashReceipt: issues } : {}),
             ...(cardAmt > 0 ? { card: { amount: cardAmt } } : {}),
           }
         : undefined

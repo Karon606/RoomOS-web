@@ -230,7 +230,44 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 / 위반 ${violations.length}건`)
+// ⓚ 홈택스 안내가 **발행일·발행액**을 말하는가 (2026-09-01 운영자 재확인).
+//
+//    홈택스는 발행일로 찾는데 안내는 입금일을 적고 있었다. 두 날짜가 같을 필요가 없다는 것이
+//    운영자 확정이다 — 받은 날 바로 안 끊고 모아서 끊는다(실측 33건 중 29건이 다르고
+//    2026-08-22 하루에 18건이 몰려 있다). 없는 날짜를 적어 주면 운영자가 그날을 뒤진다.
+//    금액도 같은 병이다. 발행액은 수납액과 다를 수 있어 표를 따로 세워 놓고(2026-08-24)
+//    이 안내만 옛 방식으로 수납액을 세고 있었다.
+{
+  const fin = src.match(/export async function finalizeRentRefund[\s\S]*?\n\}\n/)
+  if (!fin) {
+    violations.push(`${FILE} — finalizeRentRefund 를 못 찾았다.`)
+  } else {
+    // 존재만 보면 성글다 — 발행 줄을 읽어 놓고 날짜만 payDate 로 적어도 통과한다. 둘 다 본다.
+    if (!/cashReceiptIssueLines\(/.test(fin[0])) {
+      violations.push(`${FILE} — 홈택스 안내가 발행 건 산출 정본을 안 쓴다. 입금일·수납액을 발행 사실로 적게 된다.`)
+    }
+    // 정본을 부르기만 하고 값은 옛 자리에서 퍼 오면 통과해 버린다. **cashReceipt 에 실리는 것**을 본다.
+    // 발행 줄을 찾는 where 절에도 payDate 가 나오므로 창을 그 대목으로 좁힌다.
+    const put = (fin[0].match(/cashReceipt:[\s\S]{0,200}/) || [''])[0]
+    if (/payDate/.test(put)) {
+      violations.push(`${FILE} — 홈택스 안내가 입금일(payDate)을 발행일로 적는다. 홈택스에 없는 날짜다.`)
+    }
+    if (/actualAmount/.test(put)) {
+      violations.push(`${FILE} — 홈택스 안내가 수납액(actualAmount)을 발행액으로 적는다. 45만 받고 30만 끊은 건이 틀어진다.`)
+    }
+  }
+  // 안내 타입이 사본이면 정본이 넓어져도 이 자리만 옛 모양으로 남는다 — 실제로 그렇게 갈려 있었다.
+  if (!/export type RentRefundTaxNotice = RefundTaxNotice/.test(src)) {
+    violations.push(`${FILE} — 안내 타입이 문구 정본(RefundTaxNotice)에 묶여 있지 않다. 모양이 갈린다.`)
+  }
+  // 문구 정본이 발행 건을 **여럿** 받는가. 한 날짜에 합계를 몰아 적으면 그 중 하나도 못 찾는다.
+  const rn = readFileSync('lib/refundTaxNotice.ts', 'utf8')
+  if (!/cashReceipt\?: \{ ymd: string; amount: number \}\[\]/.test(rn)) {
+    violations.push('lib/refundTaxNotice.ts — 발행 건을 하나만 받는다. 여러 날에 걸쳐 끊은 건을 한 날짜로 뭉갠다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

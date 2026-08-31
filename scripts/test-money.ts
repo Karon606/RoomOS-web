@@ -16,6 +16,8 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { defaultCheckoutYmd } from '../lib/checkoutDate'
+import { cashReceiptIssueLines } from '../lib/cashReceipt'
+import { refundTaxNoticeLines } from '../lib/refundTaxNotice'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
@@ -790,6 +792,84 @@ const RENT = 300000
   eq('퇴실일 기본: 예정일이 없으면 오늘', defaultCheckoutYmd(null, '2026-08-31'), '2026-08-31')
   eq('퇴실일 기본: 깨진 값이면 오늘', defaultCheckoutYmd('2026-8-3', '2026-08-31'), '2026-08-31')
   eq('퇴실일 기본: Date 도 받는다', defaultCheckoutYmd(new Date('2026-08-31T00:00:00.000Z'), '2026-09-10'), '2026-08-31')
+}
+
+// ── 환불 안내가 지목할 발행 건 (2026-09-01 운영자 재확인) ────────────────
+//
+// 홈택스는 발행일로 찾는다. 운영자는 받은 날 바로 안 끊고 모아서 끊는다 — 실측 33건 중 29건이
+// 발행일 != 입금일이고 2026-08-22 하루에 18건이 몰려 있다. 두 날짜를 억지로 맞출 일이 아니다.
+// 종전 안내는 입금일과 수납액을 적었다. 둘 다 발행 사실이 아니다.
+{
+  const d = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`)
+  const kst = (ymd: string) => new Date(`${ymd}T00:00:00.000+09:00`)
+
+  // 이경호 님 실제 값 — 8/5 입금, 8/22 발행. 안내는 8/22 를 말해야 한다.
+  eq('발행 건: 입금일이 아니라 발행일',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 470000, payDate: d('2026-08-05'), payMethod: '계좌이체' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 470000, payDate: d('2026-08-05'), payMethod: '계좌이체' }]),
+    [{ ymd: '2026-08-22', amount: 470000 }])
+
+  // 45만 받고 30만만 끊은 경우 — 취소할 것은 30만이다.
+  eq('발행 건: 수납액이 아니라 발행액',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 300000, payDate: d('2026-08-05'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 450000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 300000 }])
+
+  // 한 입금을 보증금·이용료 몫으로 쪼개 저장해도 발행 줄은 하나다 — 두 번 세면 금액이 부푼다.
+  eq('발행 건: 형제 수납을 두 번 세지 않는다',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 100000, payDate: d('2026-08-05'), payMethod: '현금' },
+       { cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 370000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 470000 }])
+
+  // 김상혁 님처럼 같은 날 수단이 다르면 발행 줄도 둘이다. 발행일이 갈리면 줄도 갈린다.
+  eq('발행 건: 발행일이 다르면 날짜별로 나뉜다',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 440000, payDate: d('2026-08-14'), payMethod: '현금' },
+       { issuedAt: kst('2026-08-25'), amount: 50000, payDate: d('2026-08-14'), payMethod: '계좌이체' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 440000, payDate: d('2026-08-14'), payMethod: '현금' },
+       { cashReceiptIssuedAt: kst('2026-08-25'), actualAmount: 50000, payDate: d('2026-08-14'), payMethod: '계좌이체' }]),
+    [{ ymd: '2026-08-22', amount: 440000 }, { ymd: '2026-08-25', amount: 50000 }])
+
+  // 같은 날 발행한 둘은 한 줄로 합친다 — 홈택스에서도 그날 하루를 보면 된다.
+  eq('발행 건: 같은 발행일은 합친다',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 440000, payDate: d('2026-08-14'), payMethod: '현금' },
+       { issuedAt: kst('2026-08-22'), amount: 50000, payDate: d('2026-08-16'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 440000, payDate: d('2026-08-14'), payMethod: '현금' },
+       { cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 50000, payDate: d('2026-08-16'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 490000 }])
+
+  // 발행 줄이 없는 옛 건 — 침묵이 가장 나쁘다. 도장 날짜로라도 말하고, 그것도 입금일이 아니다.
+  eq('발행 건: 줄이 없으면 도장 날짜로라도 말한다',
+    cashReceiptIssueLines(
+      [],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 470000 }])
+
+  // 발행 표시가 없으면 지목할 것이 없다 — 없는데 띄우면 진짜 경고도 안 읽힌다.
+  eq('발행 건: 표시 없으면 빈 목록',
+    cashReceiptIssueLines([], [{ cashReceiptIssuedAt: null, actualAmount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [])
+
+  // 문구가 실제로 발행일을 말하는가. 전액 환불이면 재발행할 것이 없다.
+  eq('환불 안내: 전액 환불이면 취소만',
+    refundTaxNoticeLines({ companyKeeps: 0, cashReceipt: [{ ymd: '2026-08-22', amount: 470000 }] })[0],
+    '홈택스에서 현금영수증 발행을 취소해 주세요. 2026-08-22 발행 470,000원. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.')
+
+  eq('환불 안내: 여러 날이면 날짜별로 적고 합계를 붙인다',
+    refundTaxNoticeLines({ companyKeeps: 0, cashReceipt: [{ ymd: '2026-08-22', amount: 440000 }, { ymd: '2026-08-25', amount: 50000 }] })[0],
+    '홈택스에서 현금영수증 발행을 취소해 주세요. 2026-08-22 발행 440,000원, 2026-08-25 발행 50,000원 (합계 490,000원). 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.')
+
+  eq('환불 안내: 남는 금액이 있으면 재발행까지 말한다',
+    refundTaxNoticeLines({ companyKeeps: 155000, cashReceipt: [{ ymd: '2026-08-22', amount: 470000 }] })[0],
+    '현금영수증을 다시 발행해야 합니다. 홈택스에서 2026-08-22 발행 470,000원을 취소하고 확정액 155,000원으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.')
+
+  eq('환불 안내: 빈 목록이면 현금영수증 줄을 안 띄운다',
+    refundTaxNoticeLines({ companyKeeps: 0, cashReceipt: [] }).length, 0)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

@@ -16,7 +16,13 @@ import { fmtWon } from './fmtMoney'
 
 /** 환불 후 홈택스·카드사 조치 — 서버(finalizeRentRefund)가 만들어 준다. */
 export type RefundTaxNotice = {
-  cashReceipt?: { amount: number; ymd: string }   // 발행 표시가 있던 금액과 그 결제일
+  // 취소할 발행 건들. **입금일이 아니라 발행일이고, 수납액이 아니라 발행액이다.**
+  // 왜 날짜가 둘인가 — 운영자는 받은 날 바로 안 끊고 모아서 끊는다(실측 33건 중 29건이 다르다.
+  // 2026-08-22 하루에 18건이 몰려 있다). 홈택스는 발행일로 찾으므로 입금일을 적어 주면
+  // 없는 날짜를 뒤지게 된다. 두 날짜를 억지로 맞출 일이 아니라는 것이 운영자 확정이다(2026-09-01).
+  // 왜 금액도 따로인가 — 45만 받고 30만만 끊을 수 있다. 그것이 CashReceipt 표가 생긴 이유다.
+  // 여러 날에 걸쳐 끊었으면 줄도 여럿이다. 한 날짜에 합계를 몰아 적으면 그 중 하나도 못 찾는다.
+  cashReceipt?: { ymd: string; amount: number }[]
   card?: { amount: number }                       // 카드 계열로 받은 금액
   pastMonth?: string                              // 지난 달 장부가 바뀐다는 고지
   companyKeeps: number                            // 재발행이 필요할 때 쓸 확정액
@@ -36,12 +42,16 @@ export function refundTaxNoticeLines(notice: RefundTaxNotice | undefined): strin
   if (!notice) return []
   const out: string[] = []
   if (notice.pastMonth) out.push(notice.pastMonth)
-  if (notice.cashReceipt) {
-    const { amount, ymd } = notice.cashReceipt
+  if (notice.cashReceipt?.length) {
+    const issues = notice.cashReceipt
+    const total = issues.reduce((sum, i) => sum + i.amount, 0)
+    // 여러 날에 끊었으면 날짜별로 적고 합계를 덧붙인다 — 홈택스에서 한 건씩 찾아야 하기 때문이다.
+    const what = issues.map(i => `${i.ymd} 발행 ${fmtWon(i.amount)}`).join(', ')
+      + (issues.length > 1 ? ` (합계 ${fmtWon(total)})` : '')
     // 전액 환불이면 재발행할 것이 없다 — 취소만 하면 된다.
     out.push(notice.companyKeeps === 0
-      ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${ymd} 발행 ${fmtWon(amount)}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
-      : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${ymd} 발행 ${fmtWon(amount)}을 취소하고 확정액 ${fmtWon(notice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
+      ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${what}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
+      : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${what}을 취소하고 확정액 ${fmtWon(notice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
   }
   if (notice.card) {
     out.push(`카드로 받은 ${fmtWon(notice.card.amount)}입니다. 카드 승인을 취소하면 카드 매출 자료도 함께 줄지만, 승인을 두고 계좌로 돌려주면 카드 매출은 그대로 남습니다. 어느 쪽으로 처리하셨는지 확인해 주세요.`)
