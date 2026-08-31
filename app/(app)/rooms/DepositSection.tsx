@@ -248,7 +248,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'}`}>
-                        {e.type === 'IN' ? '입금' : '환불'}
+                        {e.type === 'IN' ? '입금' : '반환'}
                       </span>
                       {/* 날짜는 fmtDateDot 정본(감사 B5) — toISOString 은 UTC 라 KST 00~09시에
                           하루 앞선 날짜를 그렸고, 서버·기기가 갈려 하이드레이션도 어긋날 자리였다. */}

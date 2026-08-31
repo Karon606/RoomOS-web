@@ -143,15 +143,15 @@ export function DepositStatusPanel({
   // 종전에는 '환불 미처리'가 '계약액 미입력'과 '인수 승계'를 덮어, 한 패널이 세 가지 말을 동시에 했다.
   const badge: { tone: 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-neutral'; label: string } =
     settled && refund ? (
-      refund.returned > 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '일부 환불' }
-      : refund.returned === 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '환불 안 함' }
+      refund.returned > 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '일부 반환' }
+      : refund.returned === 0 && refund.withheld > 0 ? { tone: 'pale-green' as const, label: '반환 안 함' }
       : refund.returned === 0 && refund.withheld === 0 ? { tone: 'pale-neutral' as const, label: '정산 없음' }
-      : { tone: 'pale-green' as const, label: '환불 완료' }
+      : { tone: 'pale-green' as const, label: '반환 완료' }
     )
     : noContractAmount ? { tone: 'pale-neutral', label: '계약액 미입력' }
     : paid === 0 && notYet ? { tone: 'pale-neutral', label: '수납 전' }
     : paid === 0 && status === 'CANCELLED' ? { tone: 'pale-neutral', label: '수납 없음' }
-    : unsettledExit ? { tone: 'pale-amber', label: carriedOver ? '인수 승계 · 환불 미처리' : '환불 미처리' }
+    : unsettledExit ? { tone: 'pale-amber', label: carriedOver ? '인수 승계 · 반환 미처리' : '반환 미처리' }
     : carriedOver ? { tone: 'pale-blue', label: '인수 승계' }
     : effectiveShortfall <= 0 ? { tone: 'pale-green', label: '수납 완료' }
     : paid === 0 && coveredByCleaning === 0 ? { tone: 'pale-amber', label: '미수납' }
@@ -240,15 +240,15 @@ export function DepositStatusPanel({
   const undoRefund = async (r: NonNullable<Refund>) => {
     const mon = `${Number(r.date.slice(0, 4))}년 ${Number(r.date.slice(5, 7))}월`
     if (!(await confirmDialog({
-      title: '환불 기록을 적용취소할까요?',
+      title: '반환 기록을 적용취소할까요?',
       // 미반환분은 성격대로 최대 2행(청소비 몫 / 몰취)이라 무엇이 사라지는지 카테고리까지 말한다(§14).
       message: r.withheld > 0
         ? `미반환 ${fmtWon(r.withheld)}으로 잡힌 부가수익(${withheldPartsLabel(r.parts, fmtWon) ?? '보증금 몰취'})도 함께 사라집니다.\n${mon} 매출이 그만큼 줄어듭니다. 퇴실 상태는 그대로 유지됩니다.`
-        : '환불 기록만 지웁니다. 퇴실 상태는 그대로 유지됩니다.',
+        : '반환 기록만 지웁니다. 퇴실 상태는 그대로 유지됩니다.',
       level: 'caution', confirmLabel: '적용취소',
     }))) return
     startTransition(async () => {
-      const res = await withSave(() => undoDepositReturn(r.refundId, r.extraIncomeIds), { success: '환불 기록을 지웠습니다' })
+      const res = await withSave(() => undoDepositReturn(r.refundId, r.extraIncomeIds), { success: '반환 기록을 지웠습니다' })
       if (!res.ok) return
       setRefund(null); await load(); onChanged?.()
     })
@@ -283,7 +283,7 @@ export function DepositStatusPanel({
           returnedAmount: recAmount, date: recDate || kstYmdStr(), tenantName,
           ...(withheldNow > 0 && reason ? { reason } : {}),
         }),
-        { success: '환불 정산을 기록했습니다' },
+        { success: '반환 정산을 기록했습니다' },
       )
       if (!res.ok) return
       setRecOpen(false)
@@ -382,7 +382,7 @@ export function DepositStatusPanel({
           {/* 퇴실 예정 계약은 이 금액이 곧 환불 기준액이 된다(getDepositBasisForLease). 조용히 바뀌면 안 된다. */}
           {status === 'CHECKOUT_PENDING' && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              이 금액이 곧 환불 정산 기준액이 됩니다.
+              이 금액이 곧 반환 정산 기준액이 됩니다.
             </p>
           )}
           <div className="flex gap-2 justify-end">
@@ -408,7 +408,7 @@ export function DepositStatusPanel({
 
       {settled && refund && (
         <p className="text-xs text-[var(--warm-dark)] break-keep">
-          환불 <span className="font-semibold num">{fmtWon(refund.returned)}</span>
+          반환 <span className="font-semibold num">{fmtWon(refund.returned)}</span>
           {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미반환 {fmtWon(refund.withheld)}{refund.reason ? ` (${refund.reason})` : ''}</span>}
           <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {refund.date.replaceAll('-', '.')} 처리</span>
         </p>
@@ -421,11 +421,11 @@ export function DepositStatusPanel({
         </Btn>
       )}
       {unsettledExit && (
-        <p className="text-xs text-[var(--warning-fg)] break-keep">퇴실했으나 환불 처리가 기록되지 않았습니다.</p>
+        <p className="text-xs text-[var(--warning-fg)] break-keep">퇴실했으나 반환 처리가 기록되지 않았습니다.</p>
       )}
       {/* 재기록 입구 — 퇴실 완료 + 기록 없음(적용취소 직후 포함). 취소 계약은 예약 취소 경로가 정본이라 제외. */}
       {canEdit && unsettledExit && status === 'CHECKED_OUT' && tenantId && tenantName && !recOpen && (
-        <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 정산 기록</Btn>
+        <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>반환 정산 기록</Btn>
       )}
       {recOpen && (
         <div className={formBoxCls}>
@@ -464,7 +464,7 @@ export function DepositStatusPanel({
           근거는 항상 병기한다. 청소비가 0이면 괄호가 사라져 "받은 0원인데 30만원 환불"로 읽히던 구멍이 있었다. */}
       {!settled && refundBase > 0 && (
         <p className="text-xs text-[var(--warm-dark)] break-keep">
-          {exited ? '환불 예정액 ' : '퇴실 시 환불 예상 '}<span className="num">{fmtWon(expectedRefund)}</span>
+          {exited ? '반환 예정액 ' : '퇴실 시 반환 예상 '}<span className="num">{fmtWon(expectedRefund)}</span>
           {/* 근거는 값이 달라질 때만 병기한다. 무조건 붙이면 바로 위 '받은 보증금'과 같은 숫자를 두 번 말한다. */}
           {(carriedOver || effectiveFee > 0) && (
             <span className="text-[0.65625rem] text-[var(--warm-muted)]">

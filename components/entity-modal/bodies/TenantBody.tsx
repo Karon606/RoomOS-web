@@ -173,7 +173,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
 }
 
 // 보증금 환불 확정 표시 + 상시 적용취소 — 기록이 있을 때만 나타난다(B페이즈).
-// 용어는 화면 표면 기준 '환불'로 통일한다(서버 함수명은 recordDepositReturn 이지만 사용자 문구는 환불).
+// 용어는 화면 표면 기준 '반환'이다 — 보증금은 돌려주는 것이지 무른 것이 아니다(운영자 확정
+// 2026-08-30). 서버 함수명 recordDepositReturn 과도 같은 낱말이다.
 function DepositRefundUndoRow({ info, onDone }: {
   info: DepositRefundInfo
   onDone: () => void
@@ -187,7 +188,7 @@ function DepositRefundUndoRow({ info, onDone }: {
       // 미반환분은 성격대로 최대 2행이라 무엇이 사라지는지 카테고리까지 말한다(가이드 §14).
       message: info.withheld > 0
         ? `반환 ${fmtWon(info.returned)} · 미반환 ${fmtWon(info.withheld)} 기록을 지웁니다. 미반환분으로 잡힌 부가수익(${partsLabel ?? '보증금 몰취'})도 함께 사라집니다.`
-        : `환불 ${fmtWon(info.returned)} 기록을 지웁니다.`,
+        : `반환 ${fmtWon(info.returned)} 기록을 지웁니다.`,
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return

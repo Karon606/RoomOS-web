@@ -2020,7 +2020,7 @@ export default function TenantClient({
                       <label className="text-xs font-medium text-[var(--warm-mid)]">보증금 반환 (최대 {fmtWon(maxRefund)})</label>
                     </div>
                     {/* 세 경로가 같은 문법을 쓴다 — 상태 전환 미니폼·홈 알림과 동일한 SegmentedControl 정본. */}
-                    <SegmentedControl size="sm" ariaLabel="보증금 환불 여부"
+                    <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
                       value={depositReturnAmt === 0 ? 'none' : 'refund'}
                       onChange={v => { if ((v === 'none') !== (depositReturnAmt === 0)) { setDepositReturnAmt(v === 'none' ? 0 : maxRefund); setDepositRefundDirty(true) } }}
                       options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
@@ -2043,7 +2043,7 @@ export default function TenantClient({
                     )}
                     <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">반환하지 않은 몫은 {withheldDestinationLabel(Math.max(0, unreturned), cleaningFeeDeductible(fee, depoCleaningPaid), fmtWon)} 입금수단 &apos;보유 보증금&apos;으로 자동 기록됩니다.</p>
                     {exceedsMax && (
-                      <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
+                      <p className="text-[0.6875rem] text-[var(--danger-fg)]">반환 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                     )}
                   </div>
                 </div>
@@ -2057,7 +2057,7 @@ export default function TenantClient({
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-[var(--warm-muted)]">보증금 환불</span>
+                    <span className="text-[var(--warm-muted)]">보증금 반환</span>
                     <span className="font-medium tabular-nums">{fmtWon(depositReturnAmt)}</span>
                   </div>
                   {unreturned > 0 && (
@@ -2067,13 +2067,13 @@ export default function TenantClient({
                     </div>
                   )}
                   <div className="flex justify-between border-t pt-1" style={{ borderColor: 'var(--warm-border)' }}>
-                    <span className="font-semibold">총 환불액</span>
+                    <span className="font-semibold">총 돌려줄 금액</span>
                     <span className="font-bold tabular-nums text-[var(--success-fg)]">{fmtWon(totalRefund)}</span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">환불일</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
                   <DatePicker value={depositReturnDate} onChange={v => { setDepositReturnDate(v); setDepositRefundDirty(true) }}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
@@ -4492,7 +4492,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                           이용료로 충당하는 '예약금'이다 — '퇴실 시 환불'이라고 쓰면 반대로 안내하게 된다. */}
                       {short.deposit > 0 && (shortQuoteData?.shortStay.reservationMode === 'applyToRent'
                         ? <span className="text-[var(--warm-muted)]"> · 예약금 {fmtWon(short.deposit)}(청소비 차감 후 이용료 충당)</span>
-                        : <span className="text-[var(--warm-muted)]"> · 보증금 {fmtWon(short.deposit)} 별도(퇴실 시 환불)</span>)}
+                        : <span className="text-[var(--warm-muted)]"> · 보증금 {fmtWon(short.deposit)} 별도(퇴실 시 반환)</span>)}
                     </p>
                     <button type="button"
                       // applyToRent 는 보증금 record 를 만들지 않는 규칙이라 계약 보증금 칸도 채우지 않는다.

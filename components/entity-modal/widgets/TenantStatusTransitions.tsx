@@ -369,7 +369,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
               title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
               // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
               message: `${fmtWon(depoBase)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depoBase, active?.cleaningFee ?? 0, fmtWon)} 기록됩니다.\n사유: ${reason}.`,
-              level: 'caution', confirmLabel: '전액 미환불로 처리',
+              level: 'caution', confirmLabel: '전액 미반환으로 처리',
             }))) return
           }
           const r = await recordDepositReturn({
