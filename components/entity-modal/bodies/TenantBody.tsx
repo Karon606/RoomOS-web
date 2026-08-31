@@ -8,6 +8,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
+import { undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
   getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice,
   changeRoomMoveDate, undoChangeRoomMoveDate } from '@/app/(app)/tenants/actions'
@@ -228,7 +229,12 @@ function RentRefundUndoRow({ leaseTermId, refunded, month, onDone }: {
     if (!ok) return
     startTransition(async () => {
       const r = await undoRentRefund(leaseTermId)
-      if (r.ok) { pushToast('info', '이용료 환불을 적용취소했습니다.'); onDone() }
+      if (r.ok) {
+        pushToast('info', '이용료 환불을 적용취소했습니다.')
+        // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
+        for (const line of undoRefundTaxNoticeLines(r.taxNotice)) pushToast('info', line)
+        onDone()
+      }
       else pushToast('error', r.error)
     })
   }

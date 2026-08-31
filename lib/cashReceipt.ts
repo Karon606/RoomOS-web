@@ -140,8 +140,16 @@ export function cashReceiptMonth(r: CashReceiptRow): string {
 
 // ── 취소 안내가 적을 발행 건 ──────────────────────────────────
 
-/** 취소할 발행 한 건 — 발행일과 발행액. */
-export type CashReceiptIssueLine = { ymd: string; amount: number }
+/**
+ * 취소할 발행 한 건 — 발행일과 발행액, 그리고 그 중 **이번 환불과 무관한 몫**.
+ *
+ * outside 가 왜 필요한가. 발행은 (계약·수납일·수단) 하나에 한 줄인데 수납은 여럿일 수 있다.
+ * 한 입금을 보증금 몫과 이용료 몫으로 쪼개거나 두 달치를 한 번에 받으면 그렇다. 이용료만
+ * 환불해도 홈택스는 부분 취소가 안 되니 **줄 전체를 취소**하는 것이 맞다. 그런데 재발행액은
+ * 환불이 계산한 확정액만으로는 모자란다 — 딸려 취소된 몫을 도로 얹어야 한다.
+ * 그 몫을 앱이 대신 계산해 단정하지 않고 얼마가 딸려 있는지만 알린다.
+ */
+export type CashReceiptIssueLine = { ymd: string; amount: number; outside?: number }
 
 /** 발행 줄에서 이 판정이 보는 몫. Prisma select 와 그대로 맞물린다. */
 export type CashReceiptCancelRow = { issuedAt: Date; amount: number; payDate: Date; payMethod: string | null }
@@ -174,21 +182,33 @@ export function cashReceiptIssueLines(
   const byKey = new Map<string, CashReceiptCancelRow>()
   for (const r of receipts) byKey.set(key(r.payDate, r.payMethod), r)
 
+  // 이번 환불이 건드리는 수납이 그 발행 줄에서 차지하는 몫 — 나머지가 곧 딸려 취소되는 금액이다.
+  const inScope = new Map<string, number>()
+  for (const p of stamped) {
+    if (!p.cashReceiptIssuedAt) continue
+    const k = key(p.payDate, p.payMethod)
+    inScope.set(k, (inScope.get(k) ?? 0) + p.actualAmount)
+  }
+
   const counted = new Set<string>()
-  const bucket = new Map<string, number>()
-  const add = (ymd: string, amount: number) => bucket.set(ymd, (bucket.get(ymd) ?? 0) + amount)
+  const bucket = new Map<string, { amount: number; outside: number }>()
+  const add = (ymd: string, amount: number, outside: number) => {
+    const cur = bucket.get(ymd) ?? { amount: 0, outside: 0 }
+    bucket.set(ymd, { amount: cur.amount + amount, outside: cur.outside + outside })
+  }
 
   for (const p of stamped) {
     if (!p.cashReceiptIssuedAt) continue
     const k = key(p.payDate, p.payMethod)
     const row = byKey.get(k)
-    if (!row) { add(kstYmdStr(p.cashReceiptIssuedAt), p.actualAmount); continue }
+    if (!row) { add(kstYmdStr(p.cashReceiptIssuedAt), p.actualAmount, 0); continue }
     if (counted.has(k)) continue   // 같은 발행 줄을 덮는 형제 수납 — 한 번만 센다
     counted.add(k)
-    add(kstYmdStr(row.issuedAt), row.amount)
+    // 발행액이 환불 대상 수납보다 작을 수도 있다(45만 받고 30만만 끊은 경우). 그때 딸린 몫은 없다.
+    add(kstYmdStr(row.issuedAt), row.amount, Math.max(0, row.amount - (inScope.get(k) ?? 0)))
   }
   return [...bucket]
-    .map(([ymd, amount]) => ({ ymd, amount }))
+    .map(([ymd, v]) => (v.outside > 0 ? { ymd, amount: v.amount, outside: v.outside } : { ymd, amount: v.amount }))
     .sort((a, b) => a.ymd.localeCompare(b.ymd))
 }
 
@@ -210,3 +230,37 @@ export function cashReceiptDefaultAmount(
     + (incl.rent ? Math.max(0, parts.rent) : 0)
 }
 
+
+// ── 발행 줄이 살아 있는 수납을 가리키는가 ────────────────────────
+
+/** 발행 줄과 수납을 맞물리는 키 — 발행은 (계약·수납일·수단) 하나에 한 줄이다. */
+export function cashReceiptKey(r: { leaseTermId: string; payDate: Date; payMethod: string | null }): string {
+  return `${r.leaseTermId}|${r.payDate.toISOString().slice(0, 10)}|${r.payMethod ?? ''}`
+}
+
+/**
+ * 이 발행 줄의 상태.
+ *   ok            — 살아 있는 발행 표시 수납이 받치고 있다.
+ *   refundPending — 이용료 환불이 표시를 껐다. **정상 중간 상태다.**
+ *   ghost         — 아무도 안 가리키는데 합계에는 든다. 이 감지망의 표적이다(408호).
+ *
+ * 왜 가르는가. 환불은 원 수납을 소프트삭제하고 새 record 에는 발행 도장을 **일부러** 안 찍는다.
+ * 승계하면 앱 합계만 확정액으로 조용히 줄고 홈택스에는 원 금액이 살아 있어 아무도 취소를 안 한다
+ * (회계 패널 2026-08-01). 그래서 환불 직후에는 줄을 받치는 살아 있는 도장이 없다.
+ *
+ * 그 상태에서 합계가 원 금액을 드는 것은 **맞다** — 홈택스가 아직 그 금액이다. 운영자가 취소하고
+ * 재발행해 표시를 다시 켤 때까지의 정상 상태다. 이것을 유령으로 울면 첫 환불부터 매번 울고,
+ * 그러면 408호 같은 진짜 유령도 같이 안 읽힌다.
+ *
+ * 판별은 계약의 환불 스냅샷이다(checkoutProrationUndo.refund.deletedRecordIds). "이 수납은 환불이
+ * 지웠고 적용취소하면 되살아난다"는 뜻이라, 운영자가 그냥 지운 수납은 여기 없다 — 그것이 진짜
+ * 유령이다. 적용취소하면 스냅샷이 지워지고 도장이 돌아오므로 대기는 저절로 풀린다.
+ */
+export function receiptRowVerdict(
+  key: string,
+  liveStampedKeys: ReadonlySet<string>,
+  refundPendingKeys: ReadonlySet<string>,
+): 'ok' | 'refundPending' | 'ghost' {
+  if (liveStampedKeys.has(key)) return 'ok'
+  return refundPendingKeys.has(key) ? 'refundPending' : 'ghost'
+}

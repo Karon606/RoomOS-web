@@ -16,8 +16,8 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { defaultCheckoutYmd } from '../lib/checkoutDate'
-import { cashReceiptIssueLines } from '../lib/cashReceipt'
-import { refundTaxNoticeLines } from '../lib/refundTaxNotice'
+import { cashReceiptIssueLines, cashReceiptKey, receiptRowVerdict } from '../lib/cashReceipt'
+import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '../lib/refundTaxNotice'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
@@ -870,6 +870,66 @@ const RENT = 300000
 
   eq('환불 안내: 빈 목록이면 현금영수증 줄을 안 띄운다',
     refundTaxNoticeLines({ companyKeeps: 0, cashReceipt: [] }).length, 0)
+}
+
+// ── 환불이 남기는 구멍 셋 (2026-09-01 봉합) ──────────────────────────────
+{
+  const d = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`)
+  const kst = (ymd: string) => new Date(`${ymd}T00:00:00.000+09:00`)
+
+  // 구멍 2 — 발행 줄 하나가 환불 대상 밖 수납까지 덮는 경우.
+  // 보증금 10만 + 이용료 37만을 한 번에 받아 47만을 끊었다. 이용료만 환불하면 홈택스는 부분
+  // 취소가 안 되니 47만 전부를 취소해야 하고, 재발행액에 보증금 10만을 도로 얹어야 한다.
+  eq('딸린 몫: 환불 대상 밖 수납이 있으면 그 금액을 알린다',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 370000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 470000, outside: 100000 }])
+
+  // 전부가 환불 대상이면 딸린 몫이 없다 — 없는데 적으면 진짜 경고가 묻힌다.
+  eq('딸린 몫: 전부 환불 대상이면 안 적는다',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 470000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 470000 }])
+
+  // 45만 받고 30만만 끊은 건 — 발행액이 수납보다 작다. 딸린 몫은 음수가 아니라 0이다.
+  eq('딸린 몫: 발행액이 수납보다 작으면 0',
+    cashReceiptIssueLines(
+      [{ issuedAt: kst('2026-08-22'), amount: 300000, payDate: d('2026-08-05'), payMethod: '현금' }],
+      [{ cashReceiptIssuedAt: kst('2026-08-22'), actualAmount: 450000, payDate: d('2026-08-05'), payMethod: '현금' }]),
+    [{ ymd: '2026-08-22', amount: 300000 }])
+
+  eq('환불 안내: 딸린 몫이 있으면 줄을 하나 더 띄운다',
+    refundTaxNoticeLines({ companyKeeps: 155000, cashReceipt: [{ ymd: '2026-08-22', amount: 470000, outside: 100000 }] })[1],
+    '이 발행에는 이번 환불과 무관한 100,000원이 함께 들어 있습니다. 보증금 몫이거나 다른 달 몫입니다. 취소하면 그 금액도 같이 사라지니 재발행액에 더해 주세요.')
+
+  eq('환불 안내: 딸린 몫이 없으면 그 줄이 없다',
+    refundTaxNoticeLines({ companyKeeps: 155000, cashReceipt: [{ ymd: '2026-08-22', amount: 470000 }] }).length, 1)
+
+  // 구멍 3 — 적용취소는 반대 방향으로 말해야 한다. 앱 매출은 돌아오는데 홈택스는 안 돌아온다.
+  eq('적용취소 안내: 다시 발행하라고 말한다',
+    undoRefundTaxNoticeLines([{ ymd: '2026-08-22', amount: 470000 }])[0],
+    '환불을 되돌렸습니다. 홈택스에서 이미 취소하셨다면 2026-08-22 발행 470,000원을 다시 발행해 주세요. 앱 매출은 되돌렸지만 현금영수증은 따로 하셔야 합니다.')
+
+  eq('적용취소 안내: 발행 건이 없으면 조용하다', undoRefundTaxNoticeLines([]).length, 0)
+  eq('적용취소 안내: 값이 없어도 조용하다', undoRefundTaxNoticeLines(undefined).length, 0)
+
+  // 구멍 1 — 환불이 만드는 정상 중간 상태를 진짜 유령과 가른다.
+  const k = cashReceiptKey({ leaseTermId: 'L1', payDate: d('2026-08-05'), payMethod: '현금' })
+  eq('발행 줄 판정: 살아 있는 도장이 받치면 정상',
+    receiptRowVerdict(k, new Set([k]), new Set()), 'ok')
+  eq('발행 줄 판정: 환불이 껐으면 대기 (울지 않는다)',
+    receiptRowVerdict(k, new Set(), new Set([k])), 'refundPending')
+  eq('발행 줄 판정: 그냥 지운 수납은 유령 (408호 클래스)',
+    receiptRowVerdict(k, new Set(), new Set()), 'ghost')
+  // 스냅샷이 있어도 도장이 살아 있으면 정상이 먼저다 — 적용취소 직후가 그 자리다.
+  eq('발행 줄 판정: 도장이 돌아오면 대기가 풀린다',
+    receiptRowVerdict(k, new Set([k]), new Set([k])), 'ok')
+  // 수단이 다르면 다른 발행 줄이다 — 키가 성글면 남의 환불로 유령이 가려진다.
+  eq('발행 줄 판정: 수단이 다르면 다른 줄',
+    receiptRowVerdict(cashReceiptKey({ leaseTermId: 'L1', payDate: d('2026-08-05'), payMethod: '계좌이체' }), new Set(), new Set([k])),
+    'ghost')
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

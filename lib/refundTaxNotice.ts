@@ -22,7 +22,7 @@ export type RefundTaxNotice = {
   // 없는 날짜를 뒤지게 된다. 두 날짜를 억지로 맞출 일이 아니라는 것이 운영자 확정이다(2026-09-01).
   // 왜 금액도 따로인가 — 45만 받고 30만만 끊을 수 있다. 그것이 CashReceipt 표가 생긴 이유다.
   // 여러 날에 걸쳐 끊었으면 줄도 여럿이다. 한 날짜에 합계를 몰아 적으면 그 중 하나도 못 찾는다.
-  cashReceipt?: { ymd: string; amount: number }[]
+  cashReceipt?: { ymd: string; amount: number; outside?: number }[]
   card?: { amount: number }                       // 카드 계열로 받은 금액
   pastMonth?: string                              // 지난 달 장부가 바뀐다는 고지
   companyKeeps: number                            // 재발행이 필요할 때 쓸 확정액
@@ -52,9 +52,33 @@ export function refundTaxNoticeLines(notice: RefundTaxNotice | undefined): strin
     out.push(notice.companyKeeps === 0
       ? `홈택스에서 현금영수증 발행을 취소해 주세요. ${what}. 앱 매출에서는 뺐지만 현금영수증 취소는 따로 하셔야 합니다.`
       : `현금영수증을 다시 발행해야 합니다. 홈택스에서 ${what}을 취소하고 확정액 ${fmtWon(notice.companyKeeps)}으로 재발행한 뒤, 수납 기록에서 현금영수증 표시를 다시 켜 주세요.`)
+    // 한 발행 줄이 보증금 몫이나 지난 달 몫까지 덮고 있으면 그것도 함께 취소된다. 홈택스는
+    // 부분 취소가 안 되므로 줄 전체를 취소하는 것이 맞고, 재발행액에 그 몫을 도로 얹어야 한다.
+    // 얼마를 얹을지는 앱이 단정하지 않는다 — 딸린 금액만 알리고 판단은 운영자 몫이다.
+    const outside = issues.reduce((sum, i) => sum + (i.outside ?? 0), 0)
+    if (outside > 0) {
+      out.push(`이 발행에는 이번 환불과 무관한 ${fmtWon(outside)}이 함께 들어 있습니다. 보증금 몫이거나 다른 달 몫입니다. 취소하면 그 금액도 같이 사라지니 재발행액에 더해 주세요.`)
+    }
   }
   if (notice.card) {
     out.push(`카드로 받은 ${fmtWon(notice.card.amount)}입니다. 카드 승인을 취소하면 카드 매출 자료도 함께 줄지만, 승인을 두고 계좌로 돌려주면 카드 매출은 그대로 남습니다. 어느 쪽으로 처리하셨는지 확인해 주세요.`)
   }
   return out
+}
+
+
+/**
+ * 환불 **적용취소** 뒤 홈택스 조치 — 방향이 반대다.
+ *
+ * 왜 필요한가. 환불 안내를 보고 홈택스에서 이미 취소했는데 앱에서 적용취소를 누르면, 앱 매출은
+ * 돌아오고 홈택스에는 없다. 519호 클래스를 뒤집은 같은 병이다 — 앱만 조용히 맞고 국세청 쪽이
+ * 어긋난다. 되돌리기가 원 수납을 되살리므로 발행 표시도 함께 돌아와 앱 안에서는 아무 이상이
+ * 없어 보인다. 그래서 더 위험하다.
+ *
+ * 카드는 여기서 말하지 않는다. 취소한 승인을 되살리는 절차가 따로 없어 앱이 권할 말이 없다.
+ */
+export function undoRefundTaxNoticeLines(issues: { ymd: string; amount: number }[] | undefined): string[] {
+  if (!issues?.length) return []
+  const what = issues.map(i => `${i.ymd} 발행 ${fmtWon(i.amount)}`).join(', ')
+  return [`환불을 되돌렸습니다. 홈택스에서 이미 취소하셨다면 ${what}을 다시 발행해 주세요. 앱 매출은 되돌렸지만 현금영수증은 따로 하셔야 합니다.`]
 }

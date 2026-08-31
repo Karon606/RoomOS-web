@@ -60,7 +60,7 @@ import {
 import { resolveCategoryForSave } from '@/lib/categoryInput'
 import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
-import { cashReceiptIssueLines } from '@/lib/cashReceipt'
+import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
 import type { RefundTaxNotice } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
@@ -4556,7 +4556,12 @@ export async function finalizeRentRefund(input: {
 
 // 이용료 환불 적용취소 — DB에 영속된 스냅샷 기준으로 원 record 복원 + 재기록 소프트삭제 + 일할 필드 원복.
 // 클라 전달값을 신뢰하지 않는다(적대검증 P2 — id 위조·다른 사유 삭제분 복원 차단).
-export async function undoRentRefund(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 되돌리면 홈택스 쪽은 **따로 되돌려야 한다.** 안내를 보고 이미 취소했는데 여기서 적용취소하면
+// 앱 매출은 돌아오고 홈택스에는 없다 — 환불 안내가 막으려던 어긋남의 반대 방향이다. 게다가
+// 원 수납이 되살아나 발행 표시도 함께 돌아오므로 앱 안에서는 아무 이상이 없어 보인다.
+export async function undoRentRefund(leaseTermId: string): Promise<
+  { ok: true; taxNotice?: CashReceiptIssueLine[] } | { ok: false; error: string }
+> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -4591,8 +4596,22 @@ export async function undoRentRefund(leaseTermId: string): Promise<{ ok: true } 
         },
       })
     })
+    // 되살아난 수납에 발행 표시가 있으면 재발행을 알린다. 되살린 **뒤에** 읽는다 —
+    // 소프트삭제 조회는 자동으로 걸러지므로 트랜잭션 앞에서는 안 보인다.
+    const back = await prisma.paymentRecord.findMany({
+      where: { id: { in: snap.deletedRecordIds }, cashReceiptIssuedAt: { not: null } },
+      select: { cashReceiptIssuedAt: true, actualAmount: true, payDate: true, payMethod: true },
+    })
+    const rows = back.length > 0
+      ? await prisma.cashReceipt.findMany({
+          where: { leaseTermId, deletedAt: null, payDate: { in: back.map(r => r.payDate) } },
+          select: { issuedAt: true, amount: true, payDate: true, payMethod: true },
+        })
+      : []
+    const issues = cashReceiptIssueLines(rows, back)
+
     revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
-    return { ok: true }
+    return { ok: true, ...(issues.length > 0 ? { taxNotice: issues } : {}) }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
   }

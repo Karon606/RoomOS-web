@@ -262,12 +262,50 @@ for (const [name, re] of callers) {
   }
   // 문구 정본이 발행 건을 **여럿** 받는가. 한 날짜에 합계를 몰아 적으면 그 중 하나도 못 찾는다.
   const rn = readFileSync('lib/refundTaxNotice.ts', 'utf8')
-  if (!/cashReceipt\?: \{ ymd: string; amount: number \}\[\]/.test(rn)) {
+  if (!/cashReceipt\?: \{ ymd: string; amount: number;?[^}]*\}\[\]/.test(rn)) {
     violations.push('lib/refundTaxNotice.ts — 발행 건을 하나만 받는다. 여러 날에 걸쳐 끊은 건을 한 날짜로 뭉갠다.')
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 / 위반 ${violations.length}건`)
+// ⓛ 환불 **적용취소**도 홈택스 조치를 말하는가 (2026-09-01).
+//
+//    안내를 보고 홈택스에서 이미 취소했는데 적용취소를 누르면, 앱 매출은 돌아오고 홈택스에는
+//    없다. 519호 클래스를 뒤집은 같은 병이다. 게다가 원 수납이 되살아나 발행 표시도 함께
+//    돌아오므로 앱 안에서는 아무 이상이 없어 보인다 — 그래서 더 위험하다.
+{
+  const un = src.match(/export async function undoRentRefund[\s\S]*?\n\}\n/)
+  if (!un) {
+    violations.push(`${FILE} — undoRentRefund 를 못 찾았다.`)
+  } else if (!/cashReceiptIssueLines\(/.test(un[0]) || !/taxNotice/.test(un[0])) {
+    violations.push(`${FILE} — 환불 적용취소가 홈택스 안내를 안 만든다. 앱 매출만 돌아오고 홈택스는 취소된 채 남는다.`)
+  }
+  // 서버가 만들어 줘도 화면이 버리면 아무도 못 듣는다 — ⓕ 에서 실제로 그랬다.
+  for (const [name, f] of [
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+    ['프리즘 입주자 본문', 'components/entity-modal/bodies/TenantBody.tsx'],
+  ]) {
+    const src2 = readFileSync(f, 'utf8')
+    if (/undoRentRefund\(/.test(src2) && !/undoRefundTaxNoticeLines\(/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 적용취소 뒤 재발행 안내를 안 띄운다.`)
+    }
+  }
+  // 한 발행 줄이 환불 대상 밖 수납까지 덮으면 그 몫도 함께 취소된다 — 재발행액에 얹어야 한다.
+  const cr = readFileSync('lib/cashReceipt.ts', 'utf8')
+  if (!/outside\?: number/.test(cr)) {
+    violations.push('lib/cashReceipt.ts — 발행 줄에 딸린 환불 대상 밖 몫을 안 센다. 보증금·지난 달 몫이 말없이 취소된다.')
+  }
+  const rn2 = readFileSync('lib/refundTaxNotice.ts', 'utf8')
+  if (!/i\.outside/.test(rn2)) {
+    violations.push('lib/refundTaxNotice.ts — 딸려 취소되는 몫을 안 알린다.')
+  }
+  // 감지망이 정상 중간 상태를 유령으로 울면 진짜 유령도 같이 안 읽힌다.
+  const orph = readFileSync('scripts/check-cash-receipt-orphan.ts', 'utf8')
+  if (!/receiptRowVerdict\(/.test(orph)) {
+    violations.push('scripts/check-cash-receipt-orphan.ts — 발행 줄 판정 정본을 안 쓴다. 환불할 때마다 유령으로 운다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

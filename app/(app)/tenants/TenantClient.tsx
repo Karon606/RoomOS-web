@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId } from 'react'
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
-import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
@@ -1454,6 +1454,8 @@ export default function TenantClient({
                 if (rentRefunded) {
                   const ru = await undoRentRefund(leaseTermId)   // 스냅샷은 서버에 영속 — id 전달 불필요
                   if (!ru.ok) { pushToast('error', ru.error); return }
+                  // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
+                  for (const line of undoRefundTaxNoticeLines(ru.taxNotice)) pushToast('info', line)
                 }
                 const r = await undoDepositReturn(refundId, extraIncomeIds)
                 if (r.ok) { pushToast('info', '반환 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() }
