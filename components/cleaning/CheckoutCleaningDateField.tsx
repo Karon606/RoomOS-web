@@ -18,6 +18,7 @@
 
 import { useState } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 
 // 이 모달들의 입력 껍데기 문법 + §09 focus-visible 링. 링은 MoneyInput 정본과 같은 값이다
 // (--input-border-focus · --input-ring-focus). 트리거가 button 이라 focus 가 아니라
@@ -65,6 +66,31 @@ export function CheckoutCleaningDateField({ value, onChange }: {
         {value
           ? '이 날짜로 퇴실 청소 예정이 만들어집니다. 달력의 ‘초기화’를 누르면 날짜 없이 만들어집니다.'
           : '비워 두면 날짜 없이 만들어집니다. 호실 관리 ‘청소’ 목록에는 남지만 캘린더에는 서지 않습니다.'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * 이미 잡혀 있는 퇴실 청소를 알리는 칸 — 날짜를 묻지 않고 사실만 보여 준다.
+ *
+ * 서버는 열려 있는 퇴실 청소가 있으면 새로 만들지도, 날짜를 덮지도 않는다
+ * (ensureCheckoutCleaning 의 skipped-open). 그래서 그 상태에서 입력 칸을 열면 운영자가 적은
+ * 날짜가 아무 데도 안 간다 — 화면이 하지 않을 일을 약속하는 셈이다.
+ *
+ * 프리즘 위젯에만 있던 것을 정본으로 올린다. 홈 알림 경로는 이 판정을 안 해서, 9/2 로 잡힌
+ * 청소가 있는 404호를 홈에서 열면 '미정'이라고 떴다(2026-08-31 운영자 실기 지적). 같은 방의
+ * 같은 청소가 어느 문으로 들어갔느냐로 다르게 보였다.
+ */
+export function CheckoutCleaningPlanned({ scheduledYmd }: { scheduledYmd: string | null }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 청소</label>
+      <div className="rounded-sm px-3 py-2.5 text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
+        {scheduledYmd ? `${fmtDate(scheduledYmd)} 예정` : '날짜 미정으로 예정됨'}
+      </div>
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+        이미 잡혀 있어 새로 만들지 않습니다. 날짜를 바꾸시려면 호실 관리 ‘청소’ 목록에서 바꿔 주세요.
       </p>
     </div>
   )

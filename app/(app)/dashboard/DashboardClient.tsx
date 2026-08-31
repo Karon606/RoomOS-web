@@ -32,7 +32,7 @@ import { withheldDestinationLabel } from '@/lib/depositComposition'
 import { getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { getRecurringExpensesWithStatus, getFinancialAccounts, type RecurringExpenseWithStatus } from '@/app/(app)/finance/actions'
 import { RecurringExpenseRecordModal, type RecModalAccount } from '@/app/(app)/finance/RecurringExpenseRecordModal'
-import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, getOpenCheckoutCleaning } from '@/app/(app)/tenants/actions'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
@@ -40,7 +40,7 @@ import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReas
 import { DatePicker } from '@/components/ui/DatePicker'
 import { advanceRoomSchedule } from '@/app/(app)/tenants/actions'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { CheckoutCleaningDateField, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
+import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 import { availableFromLabel, checkoutDateLabel, moveInDateLabel } from '@/lib/leaseStatus'
@@ -272,7 +272,7 @@ function daysLabel(daysOverdue: number | null, deferredDue?: string | null): { t
 type AlertItem = DashboardData['alerts'][number]
 
 function CheckoutRefundModal({
-  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, pending, onClose, onConfirm,
+  tenantName, depositAmount, cleaningFee, compositionLabel, hasRoom, leaseTermId, roomId, pending, onClose, onConfirm,
 }: {
   tenantName: string
   depositAmount: number
@@ -283,6 +283,8 @@ function CheckoutRefundModal({
   hasRoom: boolean
   /** 이용료 정산 정본이 이 계약의 환불액을 스스로 계산한다 — 미리 확정해 둔 값이 없어도 묻는다. */
   leaseTermId: string | null
+  /** 이 방의 호실 id — 이미 잡힌 퇴실 청소가 있는지 묻는 데 쓴다. */
+  roomId: string | null
   pending: boolean
   onClose: () => void
   onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => void
@@ -298,6 +300,17 @@ function CheckoutRefundModal({
   const [reasonEtc, setReasonEtc] = useState('')
   // 퇴실 청소 예정일 — 입주자 상세 미니폼과 같은 정본 훅·같은 칸을 쓴다(두 경로가 갈리지 않게).
   const cleaning = useCheckoutCleaningDate()
+  // 이미 잡혀 있는 퇴실 청소 — 있으면 날짜를 묻지 않는다. 서버가 열린 건을 안 덮으므로
+  // (ensureCheckoutCleaning 의 skipped-open) 여기서 받은 날짜는 아무 데도 안 간다.
+  // 종전에는 이 경로만 이 판정을 안 해서, 9/2 로 잡힌 청소가 있는 방을 홈에서 열면 '미정'으로
+  // 떴다. 같은 방의 같은 청소가 어느 문으로 들어갔느냐로 다르게 보였다(2026-08-31 실기 지적).
+  const [openCleaning, setOpenCleaning] = useState<{ id: string; scheduledYmd: string | null } | null>(null)
+  useEffect(() => {
+    if (!roomId) { setOpenCleaning(null); return }
+    let live = true
+    void getOpenCheckoutCleaning(roomId).then(r => { if (live) setOpenCleaning(r) }).catch(() => {})
+    return () => { live = false }
+  }, [roomId])
   // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
   // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
   const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
@@ -322,7 +335,7 @@ function CheckoutRefundModal({
               if (depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
-              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
+              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom && !openCleaning ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
             }}
             disabled={pending || exceedsMax || rentExceeds || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
@@ -341,7 +354,9 @@ function CheckoutRefundModal({
           {/* 청소 예정일 — 입주자 상세 퇴실 미니폼과 **같은 컴포넌트·같은 자리**(퇴실일 바로 아래,
               돈 블록 앞)다. 두 경로가 같은 퇴실을 다르게 묻기 시작하면 그때부터 갈린다. */}
           {hasRoom && (
-            <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
+            openCleaning
+              ? <CheckoutCleaningPlanned scheduledYmd={openCleaning.scheduledYmd} />
+              : <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
           )}
 
           {depositAmount > 0 && (<>
@@ -669,6 +684,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           compositionLabel={alert.moveOutCompositionLabel ?? null}
           hasRoom={alert.moveOutHasRoom === true}
           leaseTermId={moveOutLeaseId ?? null}
+          roomId={alert.roomId ?? null}
           pending={confirmPending}
           onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
           onConfirm={handleRefundConfirm}

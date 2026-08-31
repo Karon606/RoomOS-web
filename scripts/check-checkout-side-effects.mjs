@@ -135,7 +135,43 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 / 위반 ${violations.length}건`)
+// ⓖ 단기 계약을 이용료 정산에서 걸러 내는가 (2026-08-31 실기 지적, 404호).
+//    단기의 rentAmount 는 월세가 아니라 체류 전체 사용료라 일할이라는 개념이 없다. 329,000 을
+//    내고 17일 지냈으면 그게 계약대로인데, 30일로 나눠 일할하면 128,310 을 돌려줘야 하는 것처럼
+//    보인다. 서버(finalizeRentRefund)는 이미 거부하고 있었고 미리보기만 그 판정을 안 했다 —
+//    화면이 서버가 거절할 금액을 제안하는 형태였다.
+{
+  const pv = src.match(/export async function previewCheckoutRefund[\s\S]*?\n\}\n/)
+  if (!pv) {
+    violations.push(`${FILE} — previewCheckoutRefund 를 못 찾았다.`)
+    // 존재만 보면 성글다 — isShortTerm 은 select 와 단기 요금 분기에도 나오므로, 판정을 true 로
+    // 고정해 놓아도 통과한다(역주입에서 실제로 통과했다). **파생 관계**를 본다.
+  } else if (!/settlementApplies\s*=\s*!\s*lease\.isShortTerm/.test(pv[0])) {
+    violations.push(`${FILE} — 미리보기의 정산 성립 판정이 단기 여부에서 나오지 않는다. 화면이 서버가 거절할 환불액을 제안한다.`)
+  }
+  const sec = readFileSync('components/checkout/RentSettlementSection.tsx', 'utf8')
+  if (!/settlementApplies/.test(sec)) {
+    violations.push(`components/checkout/RentSettlementSection.tsx — 정산 성립 여부를 안 본다. 단기 계약에 환불 칸이 선다.`)
+  }
+}
+
+// ⓗ 이미 잡힌 퇴실 청소를 두 경로가 같은 문법으로 말하는가 (2026-08-31 실기 지적).
+//    서버는 열린 건이 있으면 새로 만들지도 날짜를 덮지도 않는다. 그런데 홈 알림만 그 판정을
+//    안 해서, 9/2 로 잡힌 청소가 있는 방을 홈에서 열면 '미정'으로 떴다. 같은 방의 같은 청소가
+//    어느 문으로 들어갔느냐로 다르게 보였다.
+{
+  for (const [name, f] of [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx'],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+  ]) {
+    const src2 = readFileSync(f, 'utf8')
+    if (!/<CheckoutCleaningPlanned/.test(src2)) {
+      violations.push(`${f} — '${name}' 이 이미 잡힌 청소를 안 알린다. 날짜가 있는데 미정으로 보이고, 적어 넣은 날짜는 아무 데도 안 간다.`)
+    }
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

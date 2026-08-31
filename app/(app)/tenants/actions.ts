@@ -4109,6 +4109,19 @@ export type CheckoutRefundPreview =
        * 입주일부터 퇴실일까지가 달력 한 달 안이다.
        */
       shortStay: { stayDays: number; units: number; contractDays: number; baseAmount: number; roundedUp: boolean } | null
+      /**
+       * 이 계약에 이용료 정산이 성립하는가 (2026-08-31 운영자 실기 지적).
+       *
+       * **단기 계약은 성립하지 않는다.** 단기의 rentAmount 는 월세가 아니라 체류 전체 사용료라
+       * 일할이라는 개념이 없다. 329,000 을 내고 17일 지냈으면 그게 계약대로인데, 30일로 나눠
+       * 일할하면 하루 10,967 이 나오고 128,310 을 돌려줘야 하는 것처럼 보인다.
+       *
+       * 서버(finalizeRentRefund)는 이미 단기를 거부하고 있었다. 그런데 이 미리보기가 그 판정을
+       * 안 해서 화면이 환불액을 제안했고, 누르면 서버가 거부했다 — 화면이 못 할 일을 권한 것이다.
+       */
+      settlementApplies: boolean
+      /** 성립하지 않는 이유 — 화면이 그대로 보여 준다(빈 자리를 설명 없이 두지 않는다). */
+      notApplicableReason?: string
     }
   | { ok: false; error: string }
 
@@ -4169,7 +4182,17 @@ export async function previewCheckoutRefund(
       if (!q) return null
       return { stayDays: q.stayDays, units: q.units, contractDays: q.contractDays, baseAmount: q.baseAmount, roundedUp: q.roundedUp }
     })()
-    return { ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay }
+    // 단기 계약은 이용료 정산이 성립하지 않는다 — 체류 전체 사용료라 일할이라는 개념이 없다.
+    // finalizeRentRefund 가 이미 같은 판정으로 거부하므로, 여기서 안 걸러 내면 화면이 서버가
+    // 거절할 금액을 제안하게 된다(2026-08-31 실기 지적, 404호).
+    const settlementApplies = !lease.isShortTerm
+    return {
+      ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay,
+      settlementApplies,
+      ...(settlementApplies ? {} : {
+        notApplicableReason: '단기 계약은 체류 기간 전체가 한 번의 사용료라 일할 정산이 없습니다. 금액을 조정하시려면 수납 기록에서 직접 고쳐 주세요.',
+      }),
+    }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

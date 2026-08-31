@@ -23,7 +23,7 @@ import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
 import { reservationCompositionLabel } from '@/lib/reservationDeposit'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { CheckoutCleaningDateField, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
+import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { shouldOfferCheckoutProration } from '@/lib/prorate'
@@ -594,19 +594,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   // (ensureCheckoutCleaning 의 skipped-open) 여기서 날짜를 받아도 아무 데도 안 간다.
                   // 종전에는 빈 칸을 열고 '비워 두면 날짜 없이 만들어집니다'라고 약속했는데, 실제로는
                   // 아무것도 안 만들어지고 기존 예정이 그대로였다. 화면이 하지 않을 일을 말했다.
-                  ? (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 청소</label>
-                      <div className="rounded-sm px-3 py-2.5 text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
-                        {active.openCleaning.scheduledYmd
-                          ? `${fmtDate(active.openCleaning.scheduledYmd)} 예정`
-                          : '날짜 미정으로 예정됨'}
-                      </div>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-                        이미 잡혀 있어 새로 만들지 않습니다. 날짜를 바꾸시려면 호실 관리 &lsquo;청소&rsquo; 목록에서 바꿔 주세요.
-                      </p>
-                    </div>
-                  )
+                  ? <CheckoutCleaningPlanned scheduledYmd={active.openCleaning.scheduledYmd} />
                   : <CheckoutCleaningDateField value={cleaning.value} onChange={cleaning.setValue} />
               )}
               {active.def.field === 'rentAmount' && (

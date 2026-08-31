@@ -26,6 +26,16 @@ type Preview = {
   appliedProration: number | null
 }
 
+/** 정산이 성립하지 않는 계약에 세우는 한 줄 — 자리를 설명 없이 비우지 않는다. */
+function NotApplicable({ reason }: { reason: string }) {
+  return (
+    <div className="bg-[var(--canvas)] rounded-lg px-3 py-2.5 text-xs">
+      <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이용료 정산</p>
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">{reason}</p>
+    </div>
+  )
+}
+
 /**
  * 부모가 쥐는 값. null 이면 정산할 것이 없다는 뜻이고 섹션 자체가 안 선다.
  *
@@ -52,14 +62,20 @@ export function RentSettlementSection({
 }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [pctInput, setPctInput] = useState('')
+  // 정산이 성립하지 않는 계약(단기)은 금액 대신 이유를 보여 준다 — 조용히 사라지면 왜 없는지 모른다.
+  const [notApplicable, setNotApplicable] = useState<string | null>(null)
 
   // 퇴실일이 바뀌면 다시 계산한다 — 날짜가 곧 사용분이라 하루만 달라져도 환불액이 달라진다.
   useEffect(() => {
-    if (!leaseTermId || !moveOutYmd) { setPreview(null); onChange(null); return }
+    if (!leaseTermId || !moveOutYmd) { setPreview(null); setNotApplicable(null); onChange(null); return }
     let live = true
     setPctInput('')
     void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', null).then(r => {
       if (!live) return
+      setNotApplicable(r.ok && !r.settlementApplies ? (r.notApplicableReason ?? null) : null)
+      // 정산이 성립하지 않는 계약(단기)은 금액을 만들지 않는다. 서버도 거부하므로 여기서 값을
+      // 실어 보내면 화면이 못 할 일을 권하는 셈이 된다(2026-08-31 실기 지적).
+      if (r.ok && !r.settlementApplies) { setPreview(null); onChange(null); return }
       // 그 기간 선납이 없으면 돌려줄 것이 없다 — 섹션을 세우지 않는다.
       if (!r.ok || r.prepaidAmount <= 0) { setPreview(null); onChange(null); return }
       setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
@@ -71,7 +87,7 @@ export function RentSettlementSection({
           : r.refund.refund,
         max: r.prepaidAmount,
       })
-    }).catch(() => { if (live) { setPreview(null); onChange(null) } })
+    }).catch(() => { if (live) { setPreview(null); setNotApplicable(null); onChange(null) } })
     return () => { live = false }
     // onChange 는 부모가 매 렌더 새로 만들 수 있어 의존성에서 뺀다 — 넣으면 무한 루프가 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -84,12 +100,13 @@ export function RentSettlementSection({
     if (!leaseTermId || !moveOutYmd) return
     const pctNum = clean === '' ? null : Math.min(LEGAL_PENALTY_PCT, Math.max(0, parseInt(clean, 10) || 0))
     void previewCheckoutRefund(leaseTermId, moveOutYmd, 'legal', pctNum).then(r => {
-      if (!r.ok || r.prepaidAmount <= 0) return
+      if (!r.ok || !r.settlementApplies || r.prepaidAmount <= 0) return
       setPreview({ prepaidAmount: r.prepaidAmount, refund: r.refund, defaultPenaltyPct: r.defaultPenaltyPct, appliedProration: r.appliedProration })
       if (r.appliedProration == null) onChange({ amount: r.refund.refund, max: r.prepaidAmount })
     }).catch(() => {})
   }
 
+  if (notApplicable) return <NotApplicable reason={notApplicable} />
   if (!preview || value == null) return null
   const amount = value.amount
 
