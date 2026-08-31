@@ -9,7 +9,7 @@ import {
   type ResidenceCertFieldValues, type ResidenceCertOverrideKey, type ResidenceCertOverridePatch,
   RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
-import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, resolveDocNameStyle, docNameStyleConflict } from '@/lib/documentName'
+import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, resolveDocNameStyle, docNameStyleConflict, type DocNameStyle } from '@/lib/documentName'
 import { docFileLabel } from '@/lib/docBundle'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -62,6 +62,23 @@ const toViewFields = (v: ResidenceCertFieldValues): Record<OverrideViewKey, stri
 const nameSourceOf = (data: ResidenceCertData) =>
   ({ name: data.tenantName, englishName: data.tenantEnglishName, nativeName: data.tenantNativeName })
 
+/**
+ * 이 서류에 쓸 성명 표기 — 저장값, 앞 서류, 국적 순으로 정한다(lib/documentName 정본).
+ *
+ * **초기 조립과 셀렉트가 같은 답을 써야 한다.** 종전에는 성명 칸이 오버라이드의 nameStyle 만
+ * 보고(없으면 기본값 한글) 셀렉트만 이 폴백을 거쳤다. 그래서 외국인이 아직 아무것도 안 고른
+ * 상태로 열면 셀렉트는 영문인데 종이에는 한글 이름이 찍혔다. 한 번 골랐다 되돌리면 그때야
+ * 맞아졌다(2026-08-31 운영자 실기).
+ */
+function docNameStyleOf(data: ResidenceCertData): DocNameStyle {
+  return resolveDocNameStyle({
+    saved: asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle),
+    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    nationality: data.tenantNationality,
+    available: docNameStyles(nameSourceOf(data)),
+  })
+}
+
 /** withOverrides=false 면 저장값을 무시한 순수 자동값 — '자동값으로' 버튼이 쓴다. */
 function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
   const v = withOverrides ? mergeResidenceCertFields(data.autoFields, data.overrides) : data.autoFields
@@ -70,7 +87,8 @@ function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
     areaM2: data.areaM2,
     // 성명 칸은 여전히 저장 대상이 아니다(손으로 고치면 그 발급에만 쓰인다). 저장되는 것은
     // 한글·영문·현지 중 어느 쪽을 채울지의 **선택**뿐이라, 초기값을 여기서 그 선택으로 조립한다.
-    tenantName: documentName(nameSourceOf(data), v.nameStyle),
+    // 표기 판정은 셀렉트와 같은 자리를 지난다 — 두 벌이면 화면과 종이가 다른 이름을 단다.
+    tenantName: documentName(nameSourceOf(data), withOverrides ? docNameStyleOf(data) : v.nameStyle),
     tenantBirth: fmtCertDate(data.tenantBirth), tenantPhone: data.tenantPhone,
     landlordBusinessName: data.landlordBusinessName, landlordName: data.landlordName,
     landlordAddress: data.landlordAddress, landlordIdNo: data.landlordIdNo,
@@ -139,12 +157,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   // 저장 여부는 오버라이드에 nameStyle 키가 실제로 있는가로 가른다 — 자동값과 같아진 키는
   // 저장에서 빠지므로, 병합 결과만 보면 '안 고른 것'과 '한글을 골랐던 것'이 구분되지 않는다.
   const storedNameStyle = asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle)
-  const savedNameStyle = resolveDocNameStyle({
-    saved: storedNameStyle,
-    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
-    nationality: data.tenantNationality,
-    available: nameStyles,
-  })
+  const savedNameStyle = docNameStyleOf(data)
   const [nameStyle, setNameStyle] = useState(savedNameStyle)
   useEffect(() => { setNameStyle(savedNameStyle) }, [savedNameStyle])
 

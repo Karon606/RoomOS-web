@@ -1,7 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
-import { asDocNameStyle } from '@/lib/documentName'
+import { asDocNameStyle, documentName } from '@/lib/documentName'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -24,6 +24,8 @@ export type ContractListRow = {
   driveFileId: string
   tenantId: string
   tenantName: string
+  /** 그 종이에 찍힌 이름 — 파일 이름이 이 값을 쓴다(영문으로 낸 서류는 파일도 영문이어야 한다). */
+  docName: string
   /** 발급 당시 성명 표기 — 파일 이름을 그 종이와 같은 표기로 맞춘다. 옛 발급본은 null(한글). */
   nameStyle: 'ko' | 'en' | 'native' | null
   roomNo: string | null
@@ -74,7 +76,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       supersededAt: true, issuePurpose: true, purposeOverride: true,
       tenant: {
         select: {
-          id: true, name: true,
+          id: true, name: true, englishName: true, nativeName: true,
           // 파일이 lease에 연결 안 됐을 때(업로드본) 입주자 상태로 분류하기 위한 폴백.
           leaseTerms: {
             select: { status: true, room: { select: { roomNo: true } } },
@@ -98,6 +100,8 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       driveFileId: r.driveFileId,
       tenantId: r.tenant.id,
       tenantName: r.tenant.name,
+      // 파일 이름은 종이에 찍힌 그 이름을 쓴다 — 종전에는 서류 종류만 표기를 따랐다.
+      docName: documentName(r.tenant, asDocNameStyle(r.nameStyle)),
       nameStyle: asDocNameStyle(r.nameStyle) ?? null,
       roomNo: lease?.room?.roomNo ?? null,
       status: lease?.status ?? null,

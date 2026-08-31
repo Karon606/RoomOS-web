@@ -53,6 +53,23 @@ for (const f of files) {
   })
 }
 
+// 사람 이름도 표기를 따르는가 (2026-08-31 운영자 지적).
+//   종전에는 서류 종류만 영문으로 바뀌고 사람 이름은 늘 한글이라, 영문으로 낸 실거주 확인서가
+//   '아라파트 에야신_Proof of Residence.pdf' 로 나갔다. 반쪽 영문 파일명이다.
+{
+  const SCREENS = [
+    'app/(app)/residence-certs/ResidenceCertClient.tsx',
+    'app/(app)/contracts/ContractsClient.tsx',
+    'app/(app)/rent-receipts/RentReceiptsClient.tsx',
+  ]
+  for (const f of SCREENS) {
+    const src = readFileSync(f, 'utf8')
+    if (/\$\{c\.tenantName\}_\$\{docFileLabel/.test(src)) {
+      violations.push(`${f} — 파일 이름의 사람 이름이 표기를 안 따른다. 영문 서류에 한글 이름이 붙는다.`)
+    }
+  }
+}
+
 console.log(`[서류 파일명] 파일명 조립 ${scanned}줄 검사 · 예외 ${ALLOW.size}곳 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')

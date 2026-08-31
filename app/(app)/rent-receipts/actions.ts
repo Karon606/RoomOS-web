@@ -1,7 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
-import { asDocNameStyle } from '@/lib/documentName'
+import { asDocNameStyle, documentName } from '@/lib/documentName'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -23,6 +23,8 @@ export type RentReceiptListRow = {
   driveFileId: string
   tenantId: string
   tenantName: string
+  /** 그 종이에 찍힌 이름 — 파일 이름이 이 값을 쓴다(영문으로 낸 서류는 파일도 영문이어야 한다). */
+  docName: string
   /** 발급 당시 성명 표기 — 파일 이름을 그 종이와 같은 표기로 맞춘다. 옛 발급본은 null(한글). */
   nameStyle: 'ko' | 'en' | 'native' | null
   // 이 발급본이 어느 계약의 것인가 — '다시 작성'이 같은 계약으로 돌아가려면 필요하다.
@@ -40,7 +42,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, fileName: true, kind: true, issuedAt: true, driveFileId: true, leaseTermId: true, nameStyle: true,
-      tenant: { select: { id: true, name: true } },
+      tenant: { select: { id: true, name: true, englishName: true, nativeName: true } },
       leaseTerm: { select: { status: true, room: { select: { roomNo: true } } } },
     },
   })
@@ -52,6 +54,8 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     driveFileId: r.driveFileId,
     tenantId: r.tenant.id,
     tenantName: r.tenant.name,
+    // 파일 이름은 종이에 찍힌 그 이름을 쓴다 — 종전에는 서류 종류만 표기를 따랐다.
+    docName: documentName(r.tenant, asDocNameStyle(r.nameStyle)),
     nameStyle: asDocNameStyle(r.nameStyle) ?? null,
     leaseTermId: r.leaseTermId,
     roomNo: r.leaseTerm?.room?.roomNo ?? null,

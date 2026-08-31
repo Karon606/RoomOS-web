@@ -159,13 +159,19 @@ export function roomScheduleText(
 ): string | null {
   if (!hasRoomSchedule(entries)) return null
   const dot = (ymd: string) => ymd.replaceAll('-', '.')
-  const dayBefore = (ymd: string) =>
-    dot(new Date(Date.parse(`${ymd}T00:00:00Z`) - 86400000).toISOString().slice(0, 10))
   return entries.map(e => {
     const no = fmtRoomNo(roomNoOf(e.roomId), '?')
+    // 끝날은 **이사하는 그날**을 그대로 적는다 (2026-08-31 운영자 요구).
+    //
+    // 종전에는 하루를 빼서 '마지막으로 잔 날'을 보여 줬다. 잠자리 기준으로는 맞지만, 오전까지
+    // 그 방에 있다가 오후에 옮기는 실무에서는 그날 하루가 통째로 사라져 보인다. 402호에 9/2
+    // 낮까지 있었는데 '9/1까지'라고 적히는 것이다.
+    //
+    // 두 줄에 같은 날이 나오는 것은 겹침이 아니라 이사하는 날이라는 뜻이다. 구간 자체는 여전히
+    // 반개구간이라(to 는 다음 방으로 드는 날) 계산은 한 글자도 안 바뀐다 — 표시만 사실을 따른다.
     return e.to === null
       ? `${dot(e.from)}부터 ${no}`
-      : `${dot(e.from)} ~ ${dayBefore(e.to)} ${no}`
+      : `${dot(e.from)} ~ ${dot(e.to)} ${no}`
   }).join(' · ')
 }
 

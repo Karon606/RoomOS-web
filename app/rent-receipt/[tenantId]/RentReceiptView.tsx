@@ -79,7 +79,14 @@ function buildInitial(data: RentReceiptData, nameStyle: DocNameStyle = DEFAULT_D
 
 export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const router = useRouter()
-  const [f, setF] = useState<Fields>(() => buildInitial(data))
+  // 초기 이름도 셀렉트와 **같은 판정**을 지난다. 종전에는 기본값(한글)으로 지어 놓고 셀렉트만
+  // 폴백을 거쳐서, 외국인이 아직 아무것도 안 고른 상태로 열면 셀렉트는 영문인데 종이에는 한글
+  // 이름이 찍혔다(2026-08-31 운영자 실기, 실거주 확인서와 같은 클래스).
+  const [f, setF] = useState<Fields>(() => buildInitial(data, resolveDocNameStyle({
+    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    nationality: data.nationality,
+    available: docNameStyles(nameSourceOf(data)),
+  })))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
   const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
@@ -124,7 +131,11 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
 
   // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
-  const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data), issueDate: kstYmdStr() }))
+  const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data, resolveDocNameStyle({
+    siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    nationality: data.nationality,
+    available: docNameStyles(nameSourceOf(data)),
+  })), issueDate: kstYmdStr() }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot
   // 보증금은 월과 무관하다 — 이 자리가 말하는 것도 '대상월'이 아니라 입주 예정일이다.
   // 그런데 상대월 배지가 그대로 붙어, 8/29 에 8/31 입주 예정을 열면 '지난달'이 떴다
