@@ -38,8 +38,21 @@ export type RecurringCycleSource = {
   intervalMonths: number
   /** 도래 달 기준점(1~12). null 이면 activeSince(없으면 createdAt)의 KST 달. */
   anchorMonth: number | null
+  /**
+   * 다음 회차만 다른 달로 지정 'YYYY-MM'. null 이면 위상 판정 그대로.
+   *
+   * **선택이 아니라 필수 필드로 둔다.** 손으로 이 객체를 만드는 자리가 셋이라(현황 정본과 두 폼),
+   * 옵셔널로 두면 새 규칙을 안 실은 자리가 조용히 옛 판정을 쓴다. 필수면 컴파일이 잡는다.
+   */
+  nextDueOverrideMonth: string | null
   activeSince: Date | string | null
   createdAt: Date | string
+}
+
+/** 지정 달이 쓸 만한 'YYYY-MM' 인가 — 깨진 값은 지정이 없는 것으로 본다(항목이 숨는 것이 가장 나쁘다). */
+function validOverride(rec: RecurringCycleSource): string | null {
+  const v = rec.nextDueOverrideMonth
+  return v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : null
 }
 
 /** 기준 달 확정 — anchorMonth 가 있으면 그것, 없으면 activeSince(없으면 createdAt)의 KST 달.
@@ -60,7 +73,17 @@ export function isRecurringDueMonth(rec: RecurringCycleSource, month: string): b
   // 깨진 월 입력은 '보이는 쪽'으로 실패한다 — 항목이 소리 없이 숨는 것이 가장 나쁜 실패다.
   if (!m) return true
   const anchor = resolveRecurringAnchorMonth(rec)
-  return (((m - anchor) % interval) + interval) % interval === 0
+  const onPhase = (((m - anchor) % interval) + interval) % interval === 0
+  // ── 다음 회차 지정 (2026-08-31) ────────────────────────────────
+  // 지정한 달은 위상과 무관하게 도래한다. 그리고 **지정 달보다 앞의 위상 도래는 숨는다** —
+  // "2월 검사를 내년 3월로 미룬다"는 곧 "2월에는 안 한다"이기 때문이다.
+  //
+  // 지정 달보다 뒤의 위상 도래는 살려 둔다. 지정만 해 두고 그 달에 기록을 안 하면 다음 위상 달에
+  // 다시 떠올라야 잊히지 않는다. 지정이 영원히 도래를 삼키면 그 항목은 조용히 사라진다.
+  const ov = validOverride(rec)
+  if (!ov) return onPhase
+  if (month === ov) return true
+  return month > ov && onPhase
 }
 
 /** fromMonth('YYYY-MM') 이후(미포함) 첫 도래 달 — 최대 12회 전진이라 항상 끝난다. */
@@ -78,8 +101,11 @@ export function nextRecurringDueMonth(rec: RecurringCycleSource, fromMonth: stri
 /** 이 항목이 한 해에 도래하는 달들(1~12, 오름차순) — 표기와 판정이 같은 식에서 나온다. */
 function dueMonthsOfYear(rec: RecurringCycleSource): number[] {
   const out: number[] = []
+  // 지정은 빼고 본다 — 이 열거는 '이 항목의 리듬'을 말하는 자리라, 한 번뿐인 이동이 섞이면
+  // '반기 (3·9월)' 같은 항구적 표기가 거짓이 된다. 지정은 별도 문구가 말한다.
+  const rhythm = { ...rec, nextDueOverrideMonth: null }
   for (let m = 1; m <= 12; m++) {
-    if (isRecurringDueMonth(rec, `2001-${String(m).padStart(2, '0')}`)) out.push(m)
+    if (isRecurringDueMonth(rhythm, `2001-${String(m).padStart(2, '0')}`)) out.push(m)
   }
   return out
 }

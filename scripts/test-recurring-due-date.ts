@@ -160,7 +160,7 @@ eq('비도래 달이면 오늘이어도 발화 안 함', recurringDueToday(due({
 // 그 뒤로 계속 어긋난다. 그래서 **기록하는 순간 기준 달을 그 지출의 달로 옮긴다.**
 // 여기서는 옮긴 뒤의 도래 판정이 실제로 새 리듬을 따르는지를 고정한다.
 {
-  const base = { activeSince: null, createdAt: new Date('2026-08-25') }
+  const base = { activeSince: null, createdAt: new Date('2026-08-25'), nextDueOverrideMonth: null }
   // 8월에 걸어 둔 6개월 주기 — 다음은 2월이다.
   const aug = { ...base, intervalMonths: 6, anchorMonth: 8 }
   eq('6개월: 8월 기준이면 2월이 도래', isRecurringDueMonth(aug, '2027-02'), true)
@@ -173,6 +173,40 @@ eq('비도래 달이면 오늘이어도 발화 안 함', recurringDueToday(due({
   const monthly = { ...base, intervalMonths: 1, anchorMonth: 8 }
   eq('매월: 1월도 도래', isRecurringDueMonth(monthly, '2027-01'), true)
   eq('매월: 7월도 도래', isRecurringDueMonth(monthly, '2027-07'), true)
+}
+
+// ── 다음 회차 지정 (2026-08-31 운영자 승인) ───────────────────────────
+//
+// anchorMonth 는 달력 달의 위상만 담아서 "다음 한 번만 내년 3월로"를 적을 자리가 없다. 반기 항목의
+// 기준을 3월로 고치면 3·9월 짝이 통째로 옮겨져, 8월에 고치면 다음 도래가 내년 3월이 아니라 당장
+// 다음 달인 9월이 된다(2026-08-31 실측). 지정 칸이 그 자리다.
+{
+  const base = { activeSince: null, createdAt: new Date('2026-08-25') }
+  const rec = { ...base, intervalMonths: 6, anchorMonth: 8, nextDueOverrideMonth: '2027-03' }
+
+  eq('지정: 지정한 달은 위상과 무관하게 도래', isRecurringDueMonth(rec, '2027-03'), true)
+  // 미룬다는 것은 곧 "원래 달에는 안 한다"이다 — 지정보다 앞의 위상 도래는 숨어야 한다.
+  eq('지정: 지정보다 앞의 위상 달은 숨는다', isRecurringDueMonth(rec, '2027-02'), false)
+  eq('지정: 지정보다 앞이면 옛 위상 달도 숨는다', isRecurringDueMonth(rec, '2026-08'), false)
+  // 뒤의 위상은 살려 둔다 — 지정만 하고 기록을 안 하면 다시 떠올라야 잊히지 않는다.
+  eq('지정: 지정보다 뒤의 위상 달은 살아 있다', isRecurringDueMonth(rec, '2027-08'), true)
+  eq('지정: 지정보다 뒤여도 위상이 아니면 도래가 아니다', isRecurringDueMonth(rec, '2027-05'), false)
+  eq('지정: 다음 도래는 지정한 달', nextRecurringDueMonth(rec, '2026-08'), '2027-03')
+
+  // 리듬 표기는 지정을 빼고 본다 — 한 번뿐인 이동이 항구적 문구를 거짓으로 만들면 안 된다.
+  eq('지정: 주기 표기는 리듬 그대로', recurringCycleLabel(rec), '반기 (2·8월)')
+
+  // 당기기도 같은 규칙으로 선다.
+  const early = { ...base, intervalMonths: 6, anchorMonth: 8, nextDueOverrideMonth: '2027-01' }
+  eq('지정: 당긴 달이 도래', isRecurringDueMonth(early, '2027-01'), true)
+  eq('지정: 당긴 뒤의 원래 위상은 살아 있다', isRecurringDueMonth(early, '2027-02'), true)
+
+  // 깨진 값은 지정이 없는 것으로 본다 — 항목이 소리 없이 숨는 것이 가장 나쁜 실패다.
+  for (const bad of ['2027-13', '2027-1', 'x', '']) {
+    eq(`지정: 깨진 값('${bad}')은 무시하고 위상 판정`, isRecurringDueMonth({ ...base, intervalMonths: 6, anchorMonth: 8, nextDueOverrideMonth: bad }, '2027-02'), true)
+  }
+  // 매월 항목은 지정이 있어도 항상 도래다 — 거동 불변.
+  eq('지정: 매월 항목은 지정과 무관하게 도래', isRecurringDueMonth({ ...base, intervalMonths: 1, anchorMonth: null, nextDueOverrideMonth: '2027-03' }, '2027-05'), true)
 }
 console.log(`\n고정지출 예정일 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

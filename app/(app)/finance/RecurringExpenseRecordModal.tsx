@@ -11,6 +11,8 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmdStr } from '@/lib/kstDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
+import { isRecurringDueMonth, nextRecurringDueMonth, recurringCycleWord } from '@/lib/recurringDueDate'
+import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import {
   recordRecurringExpense, setRecurringPendingAmount, clearRecurringPendingAmount,
   type RecurringExpenseWithStatus,
@@ -213,6 +215,35 @@ export function RecurringExpenseRecordModal({
                 onClick={() => {
                   setError('')
                   startTransition(async () => {
+                    // ── 리듬을 옮길지 묻는다 (2026-08-31 운영자 확정) ──────────────────
+                    //
+                    // 간격 주기의 기준 달은 마지막 기록의 달에서 파생된다. 그래서 다음이 2월인
+                    // 검사를 사정상 1월에 한 번만 앞당겨 하면, 그대로 두면 리듬이 1·7월로 영구히
+                    // 바뀐다. 앱은 '이번만'인지 '이제부터'인지 알 수 없고 사람만 안다.
+                    //
+                    // 물음은 **리듬 밖의 달에 적을 때만** 세운다. 위상 달(반기의 2·8월)에 적는
+                    // 평범한 기록까지 물으면 매번 문이 하나 더 생긴다. 미리 지정해 둔 달도 이미
+                    // 의사를 밝힌 것이라 안 묻는다.
+                    const keep = await (async () => {
+                      const month = date.slice(0, 7)
+                      const onRhythm = isRecurringDueMonth({ ...rec, nextDueOverrideMonth: null }, month)
+                      if (onRhythm || rec.nextDueOverrideMonth === month) return false
+                      const after = nextRecurringDueMonth({ ...rec, anchorMonth: Number(month.slice(5, 7)), nextDueOverrideMonth: null }, month)
+                      const r = await choiceDialog({
+                        title: '주기를 이 날부터 다시 셀까요?',
+                        message: `기록한 달을 기준으로 ${recurringCycleWord(rec)} 주기가 다시 계산됩니다. 그러면 다음 도래는 ${after.slice(0, 4)}년 ${Number(after.slice(5, 7))}월입니다.`,
+                        confirmLabel: '이 날부터 다시 세기',
+                        altLabel: '이번만 기록',
+                        cancelLabel: '취소',
+                      })
+                      if (r === 'confirm') return false
+                      if (r === 'alt') return true
+                      throw new Error('__cancelled__')
+                    })().catch((e: Error) => {
+                      if (e.message === '__cancelled__') return null
+                      throw e
+                    })
+                    if (keep === null) return   // 취소 — 무변경으로 닫는다.
                     const res = await recordRecurringExpense({
                       recurringExpenseId: rec.id,
                       amount,
@@ -221,6 +252,7 @@ export function RecurringExpenseRecordModal({
                       financialAccountId: accId || undefined,
                       memo: memo || undefined,
                       breakdown: items.length > 0 ? items : undefined,
+                      keepCycle: keep,
                     })
                     if (!res.ok) { setError(res.error); return }
                     onDone()

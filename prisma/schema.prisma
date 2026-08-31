@@ -1141,6 +1141,13 @@ model Expense {
   qtyUnit      String?
   receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)
   excludeFromInventory Boolean @default(false) // true면 재고 계산에서 제외 (지출 기록은 유지)
+  // 이 기록을 간격 주기의 기준으로 삼지 않는다 (2026-08-31 운영자 승인).
+  //
+  // 간격 주기의 기준 달은 '마지막 기록의 달'에서 파생된다. 그런데 다음이 2월인 검사를 사정상
+  // 1월에 한 번만 앞당겨 한 경우, 그대로 두면 리듬이 1·7월로 영구히 바뀐다. 앱은 '이번만'인지
+  // '이제부터'인지 알 수 없고 사람만 안다. 그래서 기록할 때 물어보고, '이번만'을 고르면 여기에
+  // 표시를 남겨 파생이 이 행을 건너뛴다. 돈은 정상 지출이라 합계·차트에는 그대로 들어간다.
+  excludeFromAnchor    Boolean @default(false)
   // 한 품목을 방별로 분배해 여러 행으로 쪼갠 경우, 그 행들을 한 묶음으로 표시하기 위한 공통 ID.
   // null = 단일 행. 지출 목록에서 같은 값끼리 한 줄로 묶고 펼치면 방별 상세.
   allocationGroupId String? @db.Uuid
@@ -1443,6 +1450,16 @@ model RecurringExpense {
   // 도래 달의 기준점(1~12). null 이면 activeSince(없으면 createdAt)의 달을 기준으로 삼는다.
   // 예: 연1회 + anchorMonth 3 이면 매년 3월. 매월(interval 1)은 이 값을 안 본다.
   anchorMonth     Int?
+  // 다음 회차만 다른 달로 지정 'YYYY-MM' (2026-08-31 운영자 승인).
+  //
+  // anchorMonth 는 달력 달의 '위상'만 담는다. 그래서 반기 항목의 기준을 3월로 고치면 3·9월 짝이
+  // 통째로 옮겨져, 8월에 고치면 다음 도래가 내년 3월이 아니라 당장 다음 달인 9월이 된다. 연도가
+  // 없어서 '다음 한 번만 내년 3월로'를 적을 자리가 없기 때문이다.
+  //
+  // 이 칸이 그 자리다. 지정돼 있으면 그 달이 도래하고, 그보다 앞의 위상 도래는 숨는다. 뒤의 위상
+  // 도래는 살려 둔다 — 지정만 하고 기록을 안 하면 다음 위상 달에 다시 떠올라 잊히지 않는다.
+  // 기록이 되면 해제되고, 그 뒤로는 마지막 기록에서 파생되는 기존 규칙이 다시 센다.
+  nextDueOverrideMonth String?
   payMethod           String?
   vendor              String?   // 구매처(청구 기관 — 한전·수도 등). 기록 시 지출 vendor 로 전파(신고 6d1cf1ea)
   financialAccountId  String?   @db.Uuid

@@ -696,7 +696,7 @@ export default function SettingsForm({
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
-  const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '', intervalMonths: '1', anchorMonth: '' })
+  const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
   // 행별 처리 중 잠금(전역 잠금 방지). 선례 RequestsClient:86 · admin UsersClient:100.
@@ -719,6 +719,8 @@ export default function SettingsForm({
   const recCycleSource = {
     intervalMonths: Number(recForm.intervalMonths) || 1,
     anchorMonth: recForm.anchorMonth ? Number(recForm.anchorMonth) : null,
+    // 리듬 표기 전용 — 다음 회차 지정은 여기 안 싣는다(위 재무 관리 폼과 같은 이유).
+    nextDueOverrideMonth: null,
     activeSince: recForm.activeSince || null,
     createdAt: new Date().toISOString(),
   }
@@ -759,14 +761,14 @@ export default function SettingsForm({
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '', intervalMonths: '1', anchorMonth: '' })
+    setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', vendor: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
     setRecItems([])
     setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`)
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
-    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '' })
+    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', vendor: r.vendor ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
     setRecItems(r.items.map(it => ({ name: it.name, amount: String(it.amount), isVariable: it.isVariable })))
     setRecDueDayDisp(fmtRecDueDay(r.dueDay.toString()))
     setShowRecForm(true)
@@ -792,6 +794,7 @@ export default function SettingsForm({
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
       intervalMonths: Number(recForm.intervalMonths) || 1,
       anchorMonth: recForm.anchorMonth ? Number(recForm.anchorMonth) : null,
+      nextDueOverrideMonth: recForm.nextDueOverrideMonth || null,
       activeSince: recForm.activeSince || undefined,
       memo: recForm.memo || undefined,
       ...(itemsPayload !== undefined ? { items: itemsPayload } : {}),
@@ -1505,13 +1508,46 @@ export default function SettingsForm({
                 {recForm.intervalMonths !== '1' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">기준 달</label>
-                    <select value={recForm.anchorMonth}
-                      onChange={e => setRecForm(p => ({ ...p, anchorMonth: e.target.value }))}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                      <option value="">자동 (활성화 시작일 기준)</option>
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
-                    </select>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recCycleHint}</p>
+                    {/* 기록이 있으면 기준 달은 '마지막 기록의 달'에서 파생되는 값이다. 고를 수 있는
+                        것처럼 두면 고쳐 놓고도 다음 기록·삭제에 조용히 덮인다. 일정을 옮기는 일은
+                        아래 '다음 도래 지정'이 맡는다(패널 다수안, 운영자 확정 2026-08-31). */}
+                    {editingRec?.hasRecords ? (
+                      <>
+                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--cream)] border border-[var(--warm-border)]">
+                          {recForm.anchorMonth ? `${recForm.anchorMonth}월` : '자동'}
+                        </p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">마지막 기록의 달에서 자동으로 정해집니다. 일정을 옮기려면 아래 다음 도래 지정을 쓰세요.</p>
+                      </>
+                    ) : (
+                      <>
+                        <select value={recForm.anchorMonth}
+                          onChange={e => setRecForm(p => ({ ...p, anchorMonth: e.target.value }))}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                          <option value="">자동 (활성화 시작일 기준)</option>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
+                        </select>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recCycleHint}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+                {/* 다음 도래 지정 — 미루기·당기기의 자리. 기준 달을 고치면 여섯 달 짝이 통째로
+                    옮겨져 엉뚱한 달이 먼저 도래한다(반기 기준을 3월로 밀면 9월이 먼저 온다). */}
+                {recForm.intervalMonths !== '1' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">다음 도래 지정 (선택)</label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="month" value={recForm.nextDueOverrideMonth}
+                        onChange={e => setRecForm(p => ({ ...p, nextDueOverrideMonth: e.target.value }))}
+                        className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                      {recForm.nextDueOverrideMonth && (
+                        <button type="button" onClick={() => setRecForm(p => ({ ...p, nextDueOverrideMonth: '' }))}
+                          className="text-[0.6875rem] px-2 py-2 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/30 transition-colors whitespace-nowrap">지우기</button>
+                      )}
+                    </div>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                      이번 회차만 다른 달로 옮길 때 씁니다. 지정한 달에 한 번 도래하고, 기록하면 그 달부터 다시 셉니다. 비워 두면 {recCycleWord} 리듬 그대로입니다.
+                    </p>
                   </div>
                 )}
                 {/* #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목을 나눠 적기 */}

@@ -11,12 +11,13 @@
 //
 // 축은 셋이다.
 //   ⓐ 파생 정본이 존재하고 마지막 기록을 조회한다(매월 항목은 건드리지 않는다).
-//   ⓑ 지출 기록·삭제·삭제취소 셋이 그 정본을 지난다 — 하나만 빠져도 기준이 어긋난 채 남는다.
+//   ⓑ 지출의 기록·삭제·삭제취소·날짜 수정 넷이 그 정본을 지난다 — 하나만 빠져도 기준이 어긋난 채 남는다.
 //   ⓒ 재무 액션 안에서 그 정본 밖으로 anchorMonth 를 직접 쓰지 않는다(두 벌이 되면 갈린다).
 //     환경설정의 손 지정(normalizeCycle)은 기록이 하나도 없을 때의 출발점이라 대상이 아니다.
 //
 // 실행: node scripts/check-recurring-anchor-resync.mjs
 import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 
 const FILE = 'app/(app)/finance/actions.ts'
 const src = readFileSync(FILE, 'utf8')
@@ -44,6 +45,9 @@ const PATHS = [
   ['기록', /export async function recordRecurringExpense[\s\S]*?\n\}\n/],
   ['삭제', /export async function deleteExpense[\s\S]*?\n\}\n/],
   ['삭제취소', /export async function undoDeleteExpense[\s\S]*?\n\}\n/],
+  // 네 번째 문 — 기록의 날짜를 고치는 것도 '기록이 다른 달로 옮겨지는' 일이다. 종전에는 이 경로만
+  // 새서 8/25 기록을 9/2 로 고치면 실제 기록은 9월인데 기준은 8월에 남았다(2026-08-31 발견).
+  ['날짜 수정', /export async function updateExpense[\s\S]*?\n\}\n/],
 ]
 for (const [name, re] of PATHS) {
   const m = src.match(re)
@@ -63,12 +67,53 @@ for (const [name, re] of PATHS) {
     pos += line.length + 1
     if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
     if (!/anchorMonth\s*:/.test(line)) continue
+    // select 의 읽기는 대상이 아니다 — 이 축이 잡는 것은 기준 달을 '써 넣는' 자리다.
+    if (/anchorMonth\s*:\s*true\b/.test(line)) continue
     if (at >= 0 && here > at && here < end) continue
     violations.push(`${FILE}:${src.slice(0, here).split('\n').length} — 정본 밖에서 anchorMonth 를 쓴다. resyncRecurringAnchor 를 쓴다.`)
   }
 }
 
-console.log(`[주기 기준 달] 축 ⓐ 마지막 기록 파생 · ⓑ 기록·삭제·삭제취소 경유 · ⓒ 정본 밖 직접 쓰기 금지 / 위반 ${violations.length}건`)
+// ⓓ '이번만' 표시를 파생이 실제로 건너뛰는가 (2026-08-31).
+//    이 필터가 빠지면 일회성으로 적은 한 번이 리듬의 기준이 되어 '이번만'이 영구 변경이 된다.
+{
+  const fn2 = src.match(/async function resyncRecurringAnchor[\s\S]*?\n\}\n/)
+  if (fn2 && !/excludeFromAnchor:\s*false/.test(fn2[0])) {
+    violations.push(`${FILE} — 파생이 '이번만' 기록을 안 걸러낸다. 일회성 진행이 리듬을 영구히 옮긴다.`)
+  }
+  const rec = src.match(/export async function recordRecurringExpense[\s\S]*?\n\}\n/)
+  if (rec && !/excludeFromAnchor:\s*data\.keepCycle/.test(rec[0])) {
+    violations.push(`${FILE} — 기록이 '이번만' 선택을 저장하지 않는다. 물어봐 놓고 답을 버린다.`)
+  }
+}
+
+// ⓔ 회차 지정을 읽는 곳이 판정 정본 하나뿐인가.
+//    소비처가 각자 지정을 해석하기 시작하면 화면마다 도래 달이 갈린다(주기 판정이 밟은 길이다).
+{
+  const readers = execSync(
+    "grep -rln 'nextDueOverrideMonth' app lib components scripts --include='*.ts' --include='*.tsx' --include='*.mjs' || true",
+    { encoding: 'utf8' },
+  ).trim().split('\n').filter(Boolean)
+  // 판정 정본과, 값을 실어 나르기만 하는 자리(현황·행 타입·두 폼·기록/삭제 액션)는 허용한다.
+  const ALLOWED = new Set([
+    'lib/recurringDueDate.ts',
+    'app/(app)/finance/recurringStatus.ts',
+    'app/(app)/finance/actions.ts',
+    'app/(app)/finance/FinanceClient.tsx',
+    'app/(app)/finance/RecurringExpenseRecordModal.tsx',
+    'app/(app)/settings/actions.ts',
+    'app/(app)/settings/SettingsForm.tsx',
+    'scripts/check-recurring-anchor-resync.mjs',
+    'scripts/test-recurring-due-date.ts',
+  ])
+  for (const f of readers) {
+    if (!ALLOWED.has(f)) {
+      violations.push(`${f} — 회차 지정을 새로 읽는다. 도래 판정은 lib/recurringDueDate 한 곳이 답해야 한다.`)
+    }
+  }
+}
+
+console.log(`[주기 기준 달] 축 ⓐ 마지막 기록 파생 · ⓑ 네 경로 경유 · ⓒ 정본 밖 직접 쓰기 금지 · ⓓ 이번만 표시 · ⓔ 지정 소비처 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

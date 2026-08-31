@@ -1922,7 +1922,7 @@ export default function FinanceClient({
   const [recGroupMode, setRecGroupMode] = useState(false)
   const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
   const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
   // 행별 처리 중 잠금. recMgmtPending 은 폼·묶기 버튼에서만 읽혀 목록 화면에서는 아무 표시가 없었다
@@ -1947,7 +1947,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '', intervalMonths: '1', anchorMonth: '', nextDueOverrideMonth: '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1961,7 +1961,7 @@ export default function FinanceClient({
   }, [showRecMgmtForm, editingRecMgmt])
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '', intervalMonths: String(r.intervalMonths ?? 1), anchorMonth: r.anchorMonth ? String(r.anchorMonth) : '', nextDueOverrideMonth: r.nextDueOverrideMonth ?? '' })
     setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1969,6 +1969,9 @@ export default function FinanceClient({
   const recMgmtCycleSource = {
     intervalMonths: Number(recMgmtForm.intervalMonths) || 1,
     anchorMonth: recMgmtForm.anchorMonth ? Number(recMgmtForm.anchorMonth) : null,
+    // 이 자리는 '리듬' 표기를 만드는 곳이라 다음 회차 지정은 안 싣는다 — 한 번뿐인 이동이
+    // '반기 (3·9월)' 같은 항구적 문구를 거짓으로 만든다. 지정은 별도 줄이 말한다.
+    nextDueOverrideMonth: null,
     activeSince: recMgmtForm.activeSince || null,
     createdAt: new Date().toISOString(),
   }
@@ -1990,6 +1993,7 @@ export default function FinanceClient({
       alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
       intervalMonths: Number(recMgmtForm.intervalMonths) || 1,
       anchorMonth: recMgmtForm.anchorMonth ? Number(recMgmtForm.anchorMonth) : null,
+      nextDueOverrideMonth: recMgmtForm.nextDueOverrideMonth || null,
       activeSince: recMgmtForm.activeSince || undefined,
       // 비운 칸은 undefined 가 아니라 null 로 보낸다. undefined 는 Prisma 가 '변경 없음'으로 읽어
       // 한 번 적은 값을 지울 방법이 사라진다(적용에는 적용취소가 늘 붙어야 한다).
@@ -3428,6 +3432,10 @@ export default function FinanceClient({
                 {offCycleRecs.length > 0 && !isPastViewMonth && (
                   <div className="space-y-2 pt-2">
                     <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">이번 달 도래 없음 · 도래하는 달에 예정으로 표시</p>
+                    {/* 당겨서 진행한 회차를 적을 길 — 종전에는 이 섹션이 읽기 전용이라 도래 전에
+                        치른 검사를 고정지출로 적을 수단이 아예 없었다(일반 지출로 적으면 연결이
+                        끊겨 예정 행이 영영 미확인으로 남는다). 기록할 때 리듬을 옮길지 물어본다. */}
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] px-1 -mt-1">미리 진행했다면 기록할 수 있습니다. 주기를 옮길지는 기록할 때 물어봅니다.</p>
                     <div className="sm:hidden space-y-2">
                       {offCycleRecs.map(rec => (
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
@@ -3442,6 +3450,9 @@ export default function FinanceClient({
                             <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
                             <span className="text-sm font-bold text-[var(--warm-mid)]"><MoneyDisplay amount={effectiveRecurringAmount(rec)} prefix="-" /></span>
                           </div>
+                          <button type="button"
+                            onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth) })}
+                            className="mt-2 w-full px-3 py-2 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
                         </div>
                       ))}
                     </div>
@@ -3456,6 +3467,11 @@ export default function FinanceClient({
                               <td className="px-4 py-3 text-sm text-[var(--warm-dark)] max-w-0 truncate">{rec.title}</td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-mid)] text-right"><MoneyDisplay amount={effectiveRecurringAmount(rec)} prefix="-" /></td>
                               <td className="px-4 py-3 text-right text-[0.65625rem] text-[var(--warm-mid)] w-36 whitespace-nowrap">다음 도래 {fmtDateDot(recurringDueDateFor(rec, rec.nextDueMonth))}</td>
+                              <td className="px-4 py-3 text-right w-24 whitespace-nowrap">
+                                <button type="button"
+                                  onClick={() => setRecordingRec({ rec, dueDate: recurringDueDateFor(rec, targetMonth) })}
+                                  className="px-2.5 py-1.5 rounded-lg border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-[0.6875rem] font-medium hover:bg-[var(--coral)]/5 transition-colors">미리 기록</button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -4772,13 +4788,43 @@ export default function FinanceClient({
                 {recMgmtForm.intervalMonths !== '1' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">기준 달</label>
-                    <select value={recMgmtForm.anchorMonth}
-                      onChange={e => setRecMgmtForm(p => ({ ...p, anchorMonth: e.target.value }))}
-                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                      <option value="">자동 (활성화 시작일 기준)</option>
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
-                    </select>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recMgmtCycleHint}</p>
+                    {/* 환경설정 폼과 같은 갈래다 — 기록이 있으면 파생값이라 고를 수 있게 두지 않는다. */}
+                    {editingRecMgmt?.hasRecords ? (
+                      <>
+                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--canvas)] border border-[var(--warm-border)]">
+                          {recMgmtForm.anchorMonth ? `${recMgmtForm.anchorMonth}월` : '자동'}
+                        </p>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">마지막 기록의 달에서 자동으로 정해집니다. 일정을 옮기려면 아래 다음 도래 지정을 쓰세요.</p>
+                      </>
+                    ) : (
+                      <>
+                        <select value={recMgmtForm.anchorMonth}
+                          onChange={e => setRecMgmtForm(p => ({ ...p, anchorMonth: e.target.value }))}
+                          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                          <option value="">자동 (활성화 시작일 기준)</option>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>{m}월</option>)}
+                        </select>
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">{recMgmtCycleHint}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+                {/* 다음 도래 지정 — 환경설정 폼과 같은 칸이다(한쪽만 두면 그 화면에서만 일정을 옮길 수 있다). */}
+                {recMgmtForm.intervalMonths !== '1' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">다음 도래 지정 (선택)</label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="month" value={recMgmtForm.nextDueOverrideMonth}
+                        onChange={e => setRecMgmtForm(p => ({ ...p, nextDueOverrideMonth: e.target.value }))}
+                        className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                      {recMgmtForm.nextDueOverrideMonth && (
+                        <button type="button" onClick={() => setRecMgmtForm(p => ({ ...p, nextDueOverrideMonth: '' }))}
+                          className="text-[0.6875rem] px-2 py-2 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/30 transition-colors whitespace-nowrap">지우기</button>
+                      )}
+                    </div>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                      이번 회차만 다른 달로 옮길 때 씁니다. 지정한 달에 한 번 도래하고, 기록하면 그 달부터 다시 셉니다. 비워 두면 {recMgmtCycleWord} 리듬 그대로입니다.
+                    </p>
                   </div>
                 )}
                 <div className="space-y-1.5">

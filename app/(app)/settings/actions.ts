@@ -1386,6 +1386,12 @@ export type RecurringExpenseRow = {
   // activeSince(없으면 createdAt)의 달이 기준이다(판정 정본 lib/recurringDueDate).
   intervalMonths: number
   anchorMonth: number | null
+  // 다음 회차만 다른 달로 지정 'YYYY-MM'(2026-08-31). 미루기·당기기가 이 칸으로 표현된다 —
+  // anchorMonth 를 고치면 여섯 달 짝이 통째로 옮겨져 엉뚱한 달이 먼저 도래한다.
+  nextDueOverrideMonth: string | null
+  // 실제 기록이 하나라도 있는가 — 있으면 기준 달은 마지막 기록에서 파생되는 값이라 손으로
+  // 고를 수 있는 것처럼 보이면 안 된다(고쳐도 다음 기록·삭제에 덮인다).
+  hasRecords: boolean
   createdAt: string
   priorYearAmount: number | null   // 운영자가 손으로 적어 둔 전년 동월 실적(추정 사다리에서 3개월 평균보다 우선)
   memo: string | null
@@ -1408,13 +1414,15 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
       isActive: true, activeSince: true, priorYearAmount: true, memo: true, groupSourceIds: true,
-      intervalMonths: true, anchorMonth: true, createdAt: true,
+      intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true, createdAt: true,
+      _count: { select: { expenses: true } },
       items: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, amount: true, isVariable: true, sortOrder: true } },
     },
   })
   return list.map(r => ({
     ...r,
     isGroup: Array.isArray(r.groupSourceIds) && (r.groupSourceIds as unknown[]).length > 0,
+    hasRecords: r._count.expenses > 0,
     groupSourceIds: undefined,
     financialAccountName: r.financialAccount
       ? (r.financialAccount.alias || r.financialAccount.brand)
@@ -1425,14 +1433,17 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   }))
 }
 
-/** 주기 입력 정규화 — 화이트리스트 밖 값은 매월로, 매월이면 기준 달은 없다. */
+/** 주기 입력 정규화 — 화이트리스트 밖 값은 매월로, 매월이면 기준 달도 회차 지정도 없다. */
 function normalizeCycle(
   intervalMonths: number | undefined, anchorMonth: number | null | undefined,
-): { intervalMonths: number; anchorMonth: number | null } {
+  nextDueOverrideMonth?: string | null,
+): { intervalMonths: number; anchorMonth: number | null; nextDueOverrideMonth: string | null } {
   const iv = RECURRING_INTERVAL_CHOICES.some(c => c.value === intervalMonths) ? intervalMonths! : 1
-  if (iv <= 1) return { intervalMonths: 1, anchorMonth: null }
+  // 매월 항목은 도래 안 하는 달이 없어서 '다음 회차 지정'이라는 말 자체가 성립하지 않는다.
+  if (iv <= 1) return { intervalMonths: 1, anchorMonth: null, nextDueOverrideMonth: null }
   const am = anchorMonth != null && anchorMonth >= 1 && anchorMonth <= 12 ? anchorMonth : null
-  return { intervalMonths: iv, anchorMonth: am }
+  const ov = nextDueOverrideMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(nextDueOverrideMonth) ? nextDueOverrideMonth : null
+  return { intervalMonths: iv, anchorMonth: am, nextDueOverrideMonth: ov }
 }
 
 // #1: 세부항목으로부터 부모의 합계·변동여부 파생
@@ -1445,17 +1456,17 @@ function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVaria
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
   payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number | null; memo?: string
-  intervalMonths?: number; anchorMonth?: number | null
+  intervalMonths?: number; anchorMonth?: number | null; nextDueOverrideMonth?: string | null
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { activeSince, items, intervalMonths, anchorMonth, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, ...rest } = data
     const hasItems = Array.isArray(items) && items.length > 0
     const derived = hasItems ? deriveFromItems(items!) : null
-    const cycle = normalizeCycle(intervalMonths, anchorMonth)
+    const cycle = normalizeCycle(intervalMonths, anchorMonth, nextDueOverrideMonth)
     const rec = await prisma.recurringExpense.create({
       data: {
         propertyId, ...rest, isActive: true, ...cycle,
@@ -1476,18 +1487,29 @@ export async function addRecurringExpense(data: {
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
   payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
-  intervalMonths: number; anchorMonth: number | null
+  intervalMonths: number; anchorMonth: number | null; nextDueOverrideMonth: string | null
   // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
   items: RecurringItemInput[]
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { activeSince, items, intervalMonths, anchorMonth, ...rest } = data
+    const { activeSince, items, intervalMonths, anchorMonth, nextDueOverrideMonth, ...rest } = data
     const updateData: Record<string, unknown> = { ...rest }
     // 주기는 둘이 한 벌이다 — 매월로 되돌리면 기준 달을 null 로 정규화해 낡은 값이 유령으로
     // 남지 않게 한다(다시 격월로 바꿨을 때 옛 기준 달이 살아나면 도래 달이 제멋대로다).
-    if ('intervalMonths' in data || 'anchorMonth' in data) {
-      Object.assign(updateData, normalizeCycle(intervalMonths, anchorMonth))
+    if ('intervalMonths' in data || 'anchorMonth' in data || 'nextDueOverrideMonth' in data) {
+      // 세 값은 한 벌로 정규화한다 — 그래야 매월로 되돌릴 때 기준 달도 지정도 안 남는다.
+      // 다만 **안 실려 온 값은 현재 행에서 채운다.** 정규화가 빠진 값을 기본값으로 읽으면
+      // 회차 지정만 고쳤을 뿐인데 주기가 매월로 강등된다(intervalMonths undefined 는 1로 떨어진다).
+      const cur = await prisma.recurringExpense.findUnique({
+        where: { id },
+        select: { intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true },
+      })
+      Object.assign(updateData, normalizeCycle(
+        'intervalMonths' in data ? intervalMonths : cur?.intervalMonths,
+        'anchorMonth' in data ? anchorMonth : cur?.anchorMonth,
+        'nextDueOverrideMonth' in data ? nextDueOverrideMonth : cur?.nextDueOverrideMonth,
+      ))
     }
     if ('activeSince' in data) {
       updateData.activeSince = activeSince ? new Date(activeSince) : null

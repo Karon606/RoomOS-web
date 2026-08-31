@@ -26,6 +26,8 @@ export type RecurringExpenseWithStatus = {
   // 주기(신고 7e7da5c4) — 1=매월 · 2=격월 · 3=분기 · 6=반기 · 12=연1회.
   intervalMonths: number
   anchorMonth: number | null
+  // 다음 회차만 다른 달로 지정 'YYYY-MM' — 화면이 "이번 회차는 언제로 옮겨졌다"를 말하는 근거.
+  nextDueOverrideMonth: string | null
   createdAt: string
   // 이 달에 도래하는가 — **판정은 여기 한 번뿐이다.** 화면·알림이 다시 계산하면 갈린다.
   // interval 1(기존 전건)은 항상 true 라 얹어도 거동이 한 글자도 안 바뀐다.
@@ -158,10 +160,11 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
     const as = (re as any).activeSince as Date | null
     const isPending = isPendingOf({ activeSince: as })
     // 주기 판정 — lib/recurringDueDate 정본 하나가 답한다(화면·알림은 이 값을 읽기만 한다).
-    const row = re as { intervalMonths?: number | null; anchorMonth?: number | null; createdAt: Date }
+    const row = re as { intervalMonths?: number | null; anchorMonth?: number | null; nextDueOverrideMonth?: string | null; createdAt: Date }
     const cycle = {
       intervalMonths: row.intervalMonths ?? 1,
       anchorMonth: row.anchorMonth ?? null,
+      nextDueOverrideMonth: row.nextDueOverrideMonth ?? null,
       activeSince: as,
       createdAt: row.createdAt,
     }
@@ -180,6 +183,7 @@ export async function computeRecurringExpensesWithStatus(propertyId: string, mon
       isPending,
       intervalMonths:    cycle.intervalMonths,
       anchorMonth:       cycle.anchorMonth,
+      nextDueOverrideMonth: cycle.nextDueOverrideMonth,
       createdAt:         new Date(cycle.createdAt).toISOString(),
       isDueThisMonth:    isRecurringDueMonth(cycle, month),
       nextDueMonth:      nextRecurringDueMonth(cycle, month),

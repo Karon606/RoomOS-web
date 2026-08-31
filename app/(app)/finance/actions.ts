@@ -35,6 +35,7 @@ import { BILLABLE_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { statusLabel } from '@/lib/statusColors'
 import { monthDbRange } from '@/lib/kstDate'
 import { kstMonthOf } from '@/lib/fmtDate'
+import { isRecurringDueMonth } from '@/lib/recurringDueDate'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 
 async function getPropertyId() {
@@ -841,6 +842,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         isShipping: true, settleStatus: true, itemLabel: true, category: true, receivedAt: true,
         qtyValue: true, specValue: true, specUnit: true, qtyUnit: true,
         excludeFromInventory: true, receivedLocationId: true,
+        // 고정지출 기록의 날짜를 고치면 간격 주기의 기준 달도 따라 움직여야 한다 — 두 저장 경로가 쓴다.
+        recurringExpenseId: true,
       },
     })
 
@@ -967,6 +970,10 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       ])
       await captureItemSpecOptions(propertyId, multiItems).catch(() => {})
       await noteUnits(multiItems.map(i => i.specUnit), multiItems.map(i => i.qtyUnit))
+      // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다(기록·삭제·삭제취소와 같은 클래스).
+      if (existing?.recurringExpenseId) {
+        await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+      }
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
       return { ok: true, backfilled }
@@ -1086,6 +1093,11 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
       } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
     }
     await noteUnits([specUnit], [qtyUnit])
+    // 날짜가 움직였으면 간격 주기의 기준 달도 다시 맞춘다. 종전에는 이 경로만 새서, 8/25 기록을
+    // 9/2 로 고치면 실제 기록은 9월인데 기준은 8월에 남았다(2026-08-31 패널 조사에서 발견).
+    if (existing?.recurringExpenseId) {
+      await prisma.$transaction(tx => resyncRecurringAnchor(tx, existing.recurringExpenseId!, propertyId))
+    }
     const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
     return { ok: true, backfilled, ...(stockShift ? { stockShift } : {}) }
@@ -1292,6 +1304,9 @@ export type ExpenseDeleteUndo = {
   stockCheckIds: string[]                   // SetNull된 수령 자동 점검 — 복원 시 재링크
   reserveTxIds: string[]                    // SetNull된 예비비 정산 — 복원 시 재링크
   shift?: LedgerShiftUndo | null            // 삭제와 함께 되돌린 점검 조정(함께 조정을 고른 경우만)
+  // 이 기록이 치른 '다음 회차 지정' — 기록될 때 해제되므로 삭제로는 저절로 안 돌아온다.
+  // 기준 달은 파생이라 알아서 복귀하지만 지정은 저장값이라 여기 담아 복원한다.
+  clearedOverride?: string | null
 }
 
 export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }): Promise<{ ok: true; undo: ExpenseDeleteUndo } | { ok: false; error: string }> {
@@ -1345,7 +1360,31 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
       if (shiftRows.length > 0 && shiftItemId) shift = await applyShiftRows(tx, shiftItemId, shiftRows)
       await tx.expense.delete({ where: { id } })
       // 간격 주기의 기준 달은 마지막 기록에서 나온다 — 지웠으면 그 이전 기록이 다시 기준이 된다.
-      if (target.recurringExpenseId) await resyncRecurringAnchor(tx, target.recurringExpenseId, propertyId)
+      // 그 기록이 치른 회차 지정도 함께 되살린다(기록될 때 해제됐다). 지정 달과 이 지출의 달이
+      // 같을 때만이다 — 다른 달 기록을 지운 것은 그 회차를 안 치른 것과 무관하다.
+      let clearedOverride: string | null = null
+      if (target.recurringExpenseId) {
+        const dueMonth = kstMonthOf(target.date)
+        const rec = await tx.recurringExpense.findFirst({
+          where: { id: target.recurringExpenseId, propertyId },
+          select: { intervalMonths: true, anchorMonth: true, nextDueOverrideMonth: true, activeSince: true, createdAt: true },
+        })
+        // **위상 달이 아닌 기록만 지정을 치른 것이다.** 위상 달(예. 반기의 2·8월) 기록은 지워도
+        // 위상이 알아서 다시 도래하므로 되살릴 지정이 애초에 없다. 이 판정을 빼면 평범한 기록을
+        // 지웠다 되살리는 것만으로 없던 지정이 생긴다.
+        if (rec && rec.nextDueOverrideMonth == null
+            && !isRecurringDueMonth({ ...rec, nextDueOverrideMonth: null }, dueMonth)) {
+          clearedOverride = dueMonth
+          // 그 회차를 안 치른 셈이 되므로 지정을 도로 세운다. 안 그러면 위상 달로 돌아가
+          // 미뤄 둔 회차가 조용히 사라진다. 지정 달이 이미 지났어도 앞으로의 위상 도래는
+          // 안 막는다(판정이 지정보다 뒤의 위상을 살려 둔다).
+          await tx.recurringExpense.update({
+            where: { id: target.recurringExpenseId },
+            data:  { nextDueOverrideMonth: dueMonth },
+          })
+        }
+        await resyncRecurringAnchor(tx, target.recurringExpenseId, propertyId)
+      }
       // 주문 묶음 고아 정리 — 품목을 다 지워 배송비 라인만 남으면 배송비·주문도 정리,
       // 행이 하나만 남으면 묶음 의미가 없으므로 연결 해제 후 빈 주문 삭제.
       // (cleanupOrderIfOrphan과 동일 분기 — 스냅샷과 함께 한 트랜잭션으로 수행)
@@ -1369,6 +1408,7 @@ export async function deleteExpense(id: string, opts?: { adjustStock?: boolean }
         stockCheckIds: checks.map(c => c.id),
         reserveTxIds: reserves.map(r => r.id),
         shift,
+        clearedOverride,
       }
     })
     revalidatePath('/finance')
@@ -1431,7 +1471,16 @@ export async function undoDeleteExpense(undo: ExpenseDeleteUndo): Promise<{ ok: 
       }
       await tx.expense.create({ data })
       // 기록이 되살아났으니 간격 주기의 기준 달도 그 기록 기준으로 다시 선다(삭제의 역).
-      if (data.recurringExpenseId) await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
+      // 삭제가 되살려 둔 회차 지정도 함께 도로 해제한다 — 그 회차를 다시 치른 셈이다.
+      if (data.recurringExpenseId) {
+        if (undo.clearedOverride) {
+          await tx.recurringExpense.updateMany({
+            where: { id: data.recurringExpenseId, propertyId, nextDueOverrideMonth: undo.clearedOverride },
+            data:  { nextDueOverrideMonth: null },
+          })
+        }
+        await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
+      }
       // 주문 정리로 함께 지워진 배송비 라인 복원(이미 있으면 건너뜀)
       for (const s of undo.shippingRows) {
         const row = { ...s } as ExpenseRowSnap
@@ -2151,7 +2200,8 @@ async function resyncRecurringAnchor(tx: TxClient, recurringExpenseId: string, p
   })
   if (!rec || rec.intervalMonths <= 1) return
   const last = await tx.expense.findFirst({
-    where: { propertyId, recurringExpenseId },
+    // '이번만' 으로 적은 기록은 리듬의 근거가 아니다 — 그 한 번을 기준으로 삼으면 일회성이 영구가 된다.
+    where: { propertyId, recurringExpenseId, excludeFromAnchor: false },
     orderBy: { date: 'desc' },
     select: { date: true },
   })
@@ -2173,6 +2223,13 @@ export async function recordRecurringExpense(data: {
   memo?: string
   // #1 관리비 묶음: 세부항목별 실제 금액. 있으면 amount는 무시하고 합계로 기록 + breakdown 보관.
   breakdown?: { name: string; amount: number; isVariable: boolean }[]
+  /**
+   * 이 기록을 주기의 기준으로 삼지 않는다 — '이번만 기록'(2026-08-31 운영자 확정).
+   *
+   * 기본은 '이 날부터 다시 세기'다. 가스안전검사처럼 실제 진행일이 다음 회차를 정하는 항목이
+   * 주 사용례이기 때문이다. 청구 주기는 고정인데 납부만 옮긴 경우에만 이 갈래를 쓴다.
+   */
+  keepCycle?: boolean
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -2206,12 +2263,15 @@ export async function recordRecurringExpense(data: {
           settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
           recurringExpenseId:  data.recurringExpenseId,
           breakdownJson:       hasBreakdown ? JSON.stringify(data.breakdown) : null,
+          excludeFromAnchor:   data.keepCycle === true,
         },
       })
       // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지
       await tx.recurringExpense.update({
         where: { id: data.recurringExpenseId },
-        data:  { pendingAmount: null },
+        // 다음 회차 지정은 그 한 번을 위한 것이라 기록되면 해제한다. '이번만' 으로 적었어도
+        // 그 회차를 치른 것은 맞으므로 함께 푼다 — 안 그러면 지정 달이 영원히 도래로 남는다.
+        data:  { pendingAmount: null, nextDueOverrideMonth: null },
       })
       await resyncRecurringAnchor(tx, data.recurringExpenseId, propertyId)
     })
