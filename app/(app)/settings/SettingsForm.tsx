@@ -1513,7 +1513,10 @@ export default function SettingsForm({
                         아래 '다음 도래 지정'이 맡는다(패널 다수안, 운영자 확정 2026-08-31). */}
                     {editingRec?.hasRecords ? (
                       <>
-                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--cream)] border border-[var(--warm-border)]">
+                        {/* §12 '자동 합산 읽기전용' 규격 — 보더 없음이 규격이라 투명 보더로 박스
+                            모델만 맞춘다(정본 용례 PaymentEntryForm.tsx:623). 형제 입력칸과 같은
+                            테두리를 두면 눌러도 안 되는 칸으로 보인다(실기 지적 2026-08-31). */}
+                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--sand-s)] border border-transparent">
                           {recForm.anchorMonth ? `${recForm.anchorMonth}월` : '자동'}
                         </p>
                         <p className="text-[0.65625rem] text-[var(--warm-muted)]">마지막 기록의 달에서 자동으로 정해집니다. 일정을 옮기려면 아래 다음 도래 지정을 쓰세요.</p>
@@ -1536,15 +1539,13 @@ export default function SettingsForm({
                 {recForm.intervalMonths !== '1' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">다음 도래 지정 (선택)</label>
-                    <div className="flex items-center gap-1.5">
-                      <input type="month" value={recForm.nextDueOverrideMonth}
-                        onChange={e => setRecForm(p => ({ ...p, nextDueOverrideMonth: e.target.value }))}
-                        className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                      {recForm.nextDueOverrideMonth && (
-                        <button type="button" onClick={() => setRecForm(p => ({ ...p, nextDueOverrideMonth: '' }))}
-                          className="text-[0.6875rem] px-2 py-2 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/30 transition-colors whitespace-nowrap">지우기</button>
-                      )}
-                    </div>
+                    {/* 바로 위 활성화 시작일과 같은 DatePicker 정본이다. raw month 입력은 빈 상자로
+                        보여 무엇을 넣는 칸인지 단서가 없고, 기기마다 다르게 열린다. 값 비우기도
+                        정본이 안에서 한다('초기화') — 옆에 버튼을 따로 두면 두 벌이 된다. */}
+                    <DatePicker monthOnly placeholder="옮길 달 선택"
+                      value={recForm.nextDueOverrideMonth ? recForm.nextDueOverrideMonth + '-01' : ''}
+                      onChange={v => setRecForm(p => ({ ...p, nextDueOverrideMonth: v ? v.slice(0, 7) : '' }))}
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                       이번 회차만 다른 달로 옮길 때 씁니다. 지정한 달에 한 번 도래하고, 기록하면 그 달부터 다시 셉니다. 비워 두면 {recCycleWord} 리듬 그대로입니다.
                     </p>
@@ -1606,10 +1607,10 @@ export default function SettingsForm({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
                   <DatePicker value={recForm.activeSince} onChange={v => setRecForm(p => ({ ...p, activeSince: v }))}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 <strong>내 부담</strong>이 되는 첫 날짜입니다.<br />
-                    예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 양도인이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
+                    예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 양도인이 부담하는 마지막 청구가 4월이므로 내 부담은 <strong>5월 청구분(5월25일)</strong>부터입니다. 2026-05-25 를 넣으세요.<br />
                     입력하지 않으면 즉시 활성화됩니다.
                   </p>
                 </div>
@@ -3223,7 +3224,7 @@ function ShortStayPolicyCard() {
                 </label>
               </div>
               <p className="text-[0.65625rem] text-[var(--warm-muted)]">
-                계산: 거주일을 계약 단위로 올림 → 계약일수 × 배율 = 청구 일수(1개월 30일 상한) → 월 이용료의 일할을 절삭 단위로 반올림 + 청소비.
+                계산: 거주일을 계약 단위로 올려 계약일수를 내고, 거기에 배율을 곱해 청구 일수를 냅니다(1개월 30일 상한). 그 일수만큼 월 이용료를 일할해 절삭 단위로 반올림하고 청소비를 더합니다.
                 {p.reservationMode === 'applyToRent'
                   ? ' 예약금은 예약 수납 폼의 기본값으로만 쓰이며, 받을 때 청소비를 먼저 떼고 남은 금액이 입주월 이용료로 충당됩니다(0이면 프리필 없음).'
                   : ' 보증금은 요금에 포함되지 않는 별도 예치금이며 일반 입주자처럼 퇴실 때 환불합니다(0이면 없음).'}

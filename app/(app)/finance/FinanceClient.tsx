@@ -1124,7 +1124,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
     try {
       const res = await renameVendor(oldName, newName)
       if (res.ok) {
-        pushToast('success', newName ? `'${oldName}' → '${newName}' (${res.updated}건 반영)` : `'${oldName}' 구매처 비움 (${res.updated}건)`)
+        pushToast('success', newName ? `'${oldName}' 을 '${newName}' 으로 (${res.updated}건 반영)` : `'${oldName}' 구매처 비움 (${res.updated}건)`)
         setEdits(p => { const n = { ...p }; delete n[oldName]; return n })
         await load(); onChanged()
       } else pushToast('error', res.error)
@@ -4791,7 +4791,9 @@ export default function FinanceClient({
                     {/* 환경설정 폼과 같은 갈래다 — 기록이 있으면 파생값이라 고를 수 있게 두지 않는다. */}
                     {editingRecMgmt?.hasRecords ? (
                       <>
-                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--canvas)] border border-[var(--warm-border)]">
+                        {/* §12 '자동 합산 읽기전용' 규격 — 환경설정 폼과 같은 토큰을 쓴다.
+                            종전에는 두 화면이 배경을 서로 뒤바꿔 써서 어느 쪽도 읽기 전용으로 안 보였다. */}
+                        <p className="text-sm text-[var(--warm-dark)] px-3 py-2 rounded-sm bg-[var(--sand-s)] border border-transparent">
                           {recMgmtForm.anchorMonth ? `${recMgmtForm.anchorMonth}월` : '자동'}
                         </p>
                         <p className="text-[0.65625rem] text-[var(--warm-muted)]">마지막 기록의 달에서 자동으로 정해집니다. 일정을 옮기려면 아래 다음 도래 지정을 쓰세요.</p>
@@ -4813,15 +4815,11 @@ export default function FinanceClient({
                 {recMgmtForm.intervalMonths !== '1' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">다음 도래 지정 (선택)</label>
-                    <div className="flex items-center gap-1.5">
-                      <input type="month" value={recMgmtForm.nextDueOverrideMonth}
-                        onChange={e => setRecMgmtForm(p => ({ ...p, nextDueOverrideMonth: e.target.value }))}
-                        className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                      {recMgmtForm.nextDueOverrideMonth && (
-                        <button type="button" onClick={() => setRecMgmtForm(p => ({ ...p, nextDueOverrideMonth: '' }))}
-                          className="text-[0.6875rem] px-2 py-2 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/30 transition-colors whitespace-nowrap">지우기</button>
-                      )}
-                    </div>
+                    {/* 환경설정 폼과 같은 DatePicker 정본. 값 비우기는 정본 안의 '초기화'가 한다. */}
+                    <DatePicker monthOnly placeholder="옮길 달 선택"
+                      value={recMgmtForm.nextDueOverrideMonth ? recMgmtForm.nextDueOverrideMonth + '-01' : ''}
+                      onChange={v => setRecMgmtForm(p => ({ ...p, nextDueOverrideMonth: v ? v.slice(0, 7) : '' }))}
+                      className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                     <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                       이번 회차만 다른 달로 옮길 때 씁니다. 지정한 달에 한 번 도래하고, 기록하면 그 달부터 다시 셉니다. 비워 두면 {recMgmtCycleWord} 리듬 그대로입니다.
                     </p>
@@ -4847,7 +4845,7 @@ export default function FinanceClient({
                     className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 내 부담이 되는 첫 날짜입니다. 입력하지 않으면 즉시 활성화됩니다.<br />
-                    예) 인터넷 요금 결제일 25일이 양도인 부담이면, 다음 달부터 내 부담 → 다음달 25일 입력.
+                    예) 인터넷 요금 결제일 25일이 양도인 부담이면 다음 달부터 내 부담이므로, 다음달 25일을 넣으세요.
                   </p>
                 </div>
                 <div className="space-y-1.5">
