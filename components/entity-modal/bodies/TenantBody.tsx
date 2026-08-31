@@ -9,17 +9,20 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
-  getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice } from '@/app/(app)/tenants/actions'
+  getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice,
+  changeRoomMoveDate, undoChangeRoomMoveDate } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { fmtWon } from '@/lib/fmtMoney'
-import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
+import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
 import { RoomScheduleSheet } from '@/components/tenant/RoomScheduleSheet'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Btn } from '@/components/ui/Btn'
+import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { STATUS_LABEL, statusException } from '@/lib/statusColors'
 import { TenantBasicInfo } from '../widgets/TenantBasicInfo'
 import { ShortStayInfoWidget } from '../widgets/ShortStayInfoWidget'
@@ -297,6 +300,11 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
   // 지우고 주황 줄에서 다시 짜는 우회로는 아무도 기억하지 못한다. 저장이 덮어쓰기라
   // (saveRoomSchedulePlan) 시트를 그대로 다시 열면 되고, 편집기는 여전히 한 벌이다.
   const [redoOpen, setRedoOpen] = useState(false)
+  // 입실 후 이사일 바꾸기 — 예약 상태에서는 [다시 정하기]로 통째로 다시 짜지만, 입실 처리를
+  // 마치면 그 길이 막힌다. 종전에는 입실 처리를 적용취소하고 처음부터 다시 짜야 했다
+  // (운영자 급건 2026-08-31 — 청소 때문에 이사를 하루 미뤄야 하는데 고칠 자리가 없었다).
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveDate, setMoveDate] = useState('')
   // 아직 안 들어온 계획이면 지우는 것이고, 이미 살고 있으면 입실 처리를 무르는 것이다.
   // 이름과 무르는 대상이 갈리면 안 된다(§16).
   const isPlan = info.stage === 'plan'
@@ -326,6 +334,13 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
         </ul>
       </div>
       <div className="shrink-0 flex items-center gap-1.5">
+        {/* 아직 안 옮긴 이사가 남아 있을 때만 — 이미 지난 경계는 그 방에서 잔 날이라 못 뒤집는다. */}
+        {!isPlan && info.nextAt && (
+          <button type="button" onClick={() => { setMoveDate(info.nextAt ?? ''); setMoveOpen(true) }} disabled={pending}
+            className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+            이사일 바꾸기
+          </button>
+        )}
         {isPlan && (
           <button type="button" onClick={() => setRedoOpen(true)} disabled={pending}
             className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
@@ -341,6 +356,43 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
         <RoomScheduleSheet leaseTermId={leaseTermId} tenantName={tenantName} mode="plan"
           onClose={() => setRedoOpen(false)}
           onDone={() => { setRedoOpen(false); onDone() }} />
+      )}
+      {moveOpen && (
+        <Modal open z={280} width="sm" onClose={() => { if (!pending) setMoveOpen(false) }}
+          title="이사일 바꾸기" subtitle={`${tenantName}님 · ${info.nextRoomNo ? fmtRoomNo(info.nextRoomNo) : '계약 호실'}로 옮기는 날`}
+          footer={
+            <div className="flex gap-2">
+              <Btn variant="secondary" size="md" className="flex-1" onClick={() => setMoveOpen(false)} disabled={pending}>취소</Btn>
+              <Btn variant="primary" size="md" className="flex-1 font-semibold" disabled={pending || !moveDate}
+                onClick={() => startTransition(async () => {
+                  const r = await changeRoomMoveDate({ leaseTermId, moveYmd: moveDate })
+                  if (!r.ok) { pushToast('error', r.error); return }
+                  setMoveOpen(false)
+                  pushToast('success', `이사일을 ${fmtDateDot(moveDate)}로 바꿨습니다`, {
+                    action: {
+                      label: '적용취소',
+                      run: () => { void undoChangeRoomMoveDate(r.undo).then(u => {
+                        if (!u.ok) { pushToast('error', u.error); return }
+                        pushToast('info', '이사일을 되돌렸습니다'); onDone()
+                      }) },
+                    },
+                  })
+                  onDone()
+                })}>
+                {pending ? '바꾸는 중…' : '이사일 저장'}
+              </Btn>
+            </div>
+          }>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-[var(--warm-mid)]">이사일</p>
+            <DatePicker value={moveDate} onChange={setMoveDate}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]">
+              이 날에 홈 화면에서 이사 여부를 확인합니다. 지금 지내는 방에는 그날까지 머뭅니다.
+              이미 지나간 이사는 바꿀 수 없습니다.
+            </p>
+          </div>
+        </Modal>
       )}
     </div>
   )

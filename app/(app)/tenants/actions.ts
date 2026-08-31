@@ -2798,6 +2798,100 @@ export async function clearRoomSchedulePlan(leaseTermId: string): Promise<{ ok: 
  * 기존 이사 정본(recordRoomChange)을 그대로 쓴다. 계약의 roomId 는 처음부터 계약 호실이라
  * 계약을 저장하지 않고 구간 연산만 한다.
  */
+/**
+ * 아직 안 옮긴 이사일을 바꾼다 — 이미 입실한 계약용 (2026-08-31 운영자 요구, 급건).
+ *
+ * 예약 상태에서는 [다시 정하기]로 일정을 통째로 다시 짜면 되지만, 입실 처리를 마치면 그 길이
+ * 막힌다. 지금까지는 입실 처리를 적용취소하고 처음부터 다시 짜는 것이 유일한 길이었다.
+ *
+ * **인접한 두 줄의 경계 날짜 하나만 옮긴다.** 앞 줄의 to 와 뒷 줄의 from 은 같은 값이라
+ * 한 번에 바꾸면 연속성 불변식이 구조적으로 유지된다 — 구간을 갈아끼우는 편집을 안 만들기로 한
+ * 결정(knowledge/domain-room-schedule)의 안전한 하위 클래스다.
+ *
+ * 이미 지나간 경계는 못 옮긴다. 그 방에서 이미 잔 날을 뒤집는 일이라 거주 구간과 어긋난다.
+ * RoomStay 는 안 건드린다 — 이사는 여전히 홈 알림에서 사람이 확인해 옮긴다.
+ */
+export async function changeRoomMoveDate(input: {
+  leaseTermId: string
+  /** 새 이사일 'YYYY-MM-DD' — 아직 안 옮긴 경계 하나를 이 날로 옮긴다. */
+  moveYmd: string
+}): Promise<{ ok: true; undo: { leaseTermId: string; prevSchedule: unknown } } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: input.leaseTermId, propertyId },
+      select: { id: true, roomId: true, moveInDate: true, roomSchedule: true, status: true },
+    })
+    if (!lease?.roomId || !lease.moveInDate) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.moveYmd)) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+
+    const schedule = parseRoomSchedule(lease.roomSchedule)
+    if (!hasRoomSchedule(schedule)) return { ok: false, error: '바꿀 호실 일정이 없습니다.' }
+
+    // 아직 안 지난 경계를 찾는다 — 오늘 이후로 오는 첫 경계다. 이미 지난 경계는 그 방에서
+    // 이미 잔 날이라 뒤집으면 거주 구간과 어긋난다.
+    const today = kstYmdStr()
+    const idx = schedule.findIndex((seg, i) => i > 0 && seg.from > today)
+    if (idx < 0) return { ok: false, error: '아직 안 옮긴 이사가 없습니다. 이미 지난 일정은 바꿀 수 없습니다.' }
+
+    const prevSeg = schedule[idx - 1]
+    if (input.moveYmd <= prevSeg.from) {
+      return { ok: false, error: `이사일은 ${fmtDateDot(prevSeg.from)} 다음 날부터 고를 수 있습니다.` }
+    }
+    // 뒤 경계가 또 있으면 그것보다 앞이어야 한다 — 세 방을 도는 일정의 가운데 경계.
+    const nextSeg = schedule[idx + 1]
+    if (nextSeg && input.moveYmd >= nextSeg.from) {
+      return { ok: false, error: `다음 이사일(${fmtDateDot(nextSeg.from)})보다 앞이어야 합니다.` }
+    }
+
+    const next = schedule.map((seg, i) =>
+      i === idx - 1 ? { ...seg, to: input.moveYmd }
+      : i === idx   ? { ...seg, from: input.moveYmd }
+      : seg)
+
+    const moveInYmd = kstYmdStr(lease.moveInDate)
+    const bad = validateRoomSchedule(next, { moveInYmd, mainRoomId: lease.roomId })
+    if (bad) return { ok: false, error: bad }
+    const clash = await roomScheduleClash(propertyId, lease.id, next)
+    if (clash) return { ok: false, error: clash }
+
+    await prisma.leaseTerm.update({
+      where: { id: lease.id },
+      data: { roomSchedule: next as unknown as Prisma.InputJsonValue },
+    })
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true, undo: { leaseTermId: lease.id, prevSchedule: lease.roomSchedule } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/** 이사일 변경 적용취소 — 바꾸기 전 일정을 통째로 되돌린다. */
+export async function undoChangeRoomMoveDate(undo: { leaseTermId: string; prevSchedule: unknown }): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: undo.leaseTermId, propertyId },
+      select: { id: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    await prisma.leaseTerm.update({
+      where: { id: lease.id },
+      data: { roomSchedule: (undo.prevSchedule ?? null) as Prisma.InputJsonValue },
+    })
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function advanceRoomSchedule(input: {
   leaseTermId: string
   /** 실제 옮긴 날. 기본 오늘, 미래 금지(validateMoveDate 가 본다). */
