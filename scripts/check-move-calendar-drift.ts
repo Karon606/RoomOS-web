@@ -33,10 +33,13 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildMoveRange } from '@/lib/moveCalendar'
 import { MOVE_LEASE_STATUSES, dbYmd, fetchMoveLeases } from '@/lib/moveCalendarData'
+import { parseRoomSchedule } from '@/lib/roomSchedule'
 
-/** 오늘의 이사한 계약 수(2026-08-20 실측 1건 — 김태란 506호에서 508호로).
+/** 오늘의 이사한 계약 수. 2026-08-20 실측 1건(김태란 506호에서 508호로),
+ *  2026-09-01 박정후 402호 임시 입실로 2건(계약 호실 404, 실제 첫 구간 402 — 일정 입실은 정당한
+ *  새 구성원이다). 올릴 때 축 B 0건과 축 C 발화가 오탐(plan 막대 미인지)임을 확인했다.
  *  늘어난 것이 사실이면 이 수를 갱신하되, 그때 축 B·C 의 0 건을 반드시 다시 확인한다. */
-const BASELINE_MOVED_LEASES = 1
+const BASELINE_MOVED_LEASES = 2
 
 const DAY_MS = 86400000
 const addDays = (ymd: string, n: number): string => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10)
@@ -238,6 +241,13 @@ async function main() {
       where: { propertyId: p.id },
       select: { id: true, roomId: true, startDate: true },
     })
+
+    // 예정 막대의 근거 조회 — 화면 조립이 붙인 plan- 막대의 계약에서 일정·실제 구간을 읽는다.
+    const planLeaseIds = [...new Set(range.rows.flatMap(r => r.bars.filter(b => b.id.startsWith('plan-')).map(b => b.leaseId)))]
+    const planLeases = new Map(planLeaseIds.length === 0 ? [] : (await prisma.leaseTerm.findMany({
+      where: { id: { in: planLeaseIds } },
+      select: { id: true, roomSchedule: true, roomStays: { select: { roomId: true } } },
+    })).map(l => [l.id, l]))
     const anyStayById = new Map(allStays.map(s => [s.id, s]))
 
     for (const row of range.rows) {
@@ -257,6 +267,21 @@ async function main() {
       for (const b of row.bars) {
         barCount++
         if (b.kind === 'reserved') continue   // 예약은 구간을 안 만드는 것이 설계다
+        if (b.id.startsWith('plan-')) {
+          // 예정 막대 — 일정(roomSchedule)에서 파생된 것이라 구간이 없는 것이 정상이다(이사는
+          // 사람이 확인해야 기록된다, lib/roomStay). 이 그물(2026-08-20)이 그 출처(2026-08-31,
+          // 입실 후 남은 이사 계획 표시)보다 먼저 세워져 박정후 404호 막대를 유령으로 울었다.
+          // 건너뛰면 진짜 회귀가 plan- 모양 id 를 달고 지나가므로, **일정과 맞댄다** —
+          // 방·시작일이 일정 항목과 일치하고, 그 방에 실제 구간이 아직 없어야 예정이라 부를 수 있다.
+          const pl = planLeases.get(b.leaseId)
+          const entries = pl ? parseRoomSchedule(pl.roomSchedule) : []
+          const stayedRooms = new Set((pl?.roomStays ?? []).map(st => st.roomId))
+          const okPlan = entries.some(e => e.roomId === row.roomId && e.from === b.stayFrom && !stayedRooms.has(e.roomId))
+          if (!okPlan) {
+            sourceDrift.push(`${p.name} ${row.roomNo}호 ${b.tenantName} 예정 막대(${b.stayFrom ?? '?'}~)가 이 계약의 이사 일정과 맞지 않는다(id ${b.id})`)
+          }
+          continue
+        }
         const s = anyStayById.get(b.id) ?? stayById.get(b.id)
         if (!s) {
           sourceDrift.push(`${p.name} ${row.roomNo}호 ${b.tenantName} 막대가 구간이 아니라 계약에서 나왔다(id ${b.id})`)
