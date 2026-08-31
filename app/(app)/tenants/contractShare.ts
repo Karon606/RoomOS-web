@@ -59,8 +59,12 @@ export type ContractShareLinkInfo = {
   signatureLive: boolean
 }
 
-// lease 서명 4칸 중 하나라도 있으면 서명이 살아 있다. 판정 정본은 이 함수 하나다 —
-// 진입로마다 제 규칙을 두면 어떤 문은 서명본으로, 어떤 문은 일반 화면으로 갈린다.
+// lease 서명 4칸 중 하나라도 있으면 **볼 서명본이 있다**. 링크가 서명본을 가리킬지 일반 화면을
+// 가리킬지를 이 함수가 정한다 — 진입로마다 제 규칙을 두면 어떤 문은 서명본으로, 어떤 문은 일반
+// 화면으로 갈린다.
+//
+// **링크 재발급 차단은 이 판정을 쓰지 않는다**(2026-08-31). 그쪽은 계약서 서명만 본다. 동의서에만
+// 서명하고 계약서를 안 한 상태는 볼 종이는 있어도 서명이 끝난 계약은 아니기 때문이다.
 type LeaseSigCols = {
   signatureImageUrl: string | null
   signatureSignedAt: Date | null
@@ -116,12 +120,20 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     if (!snapshot) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 입주자 정보에서 먼저 입력해 주세요.' }
     if (!snapshot.lease) return { ok: false, error: '진행 중인 계약이 없어 링크를 발급할 수 없습니다.' }
-    // 서명이 이미 저장된 계약에는 새 링크를 안 내준다. 내주면 입주자가 새 스냅샷에 다시 서명하고,
-    // 계약 하나에 서로 다른 내용의 서명 두 벌이 생긴다. 어느 쪽이 진짜인지 화면도 서버도 말할 수 없다.
-    // 추가 조회 없이 스냅샷 값으로 판정한다 — buildContractData 가 서명 네 칸을 이미 담아 왔다.
+    /**
+     * 서명이 이미 저장된 계약에는 새 링크를 안 내준다. 내주면 입주자가 새 스냅샷에 다시 서명하고,
+     * 계약 하나에 서로 다른 내용의 서명 두 벌이 생긴다. 어느 쪽이 진짜인지 아무도 말할 수 없다.
+     *
+     * **판정은 계약서 서명만 본다** (2026-08-31 긴급 봉합). 종전에는 폐기 동의서 서명까지 네 칸을
+     * 함께 봐서, 입주자가 동의서에만 서명하고 계약서를 안 한 채 링크가 만료되면 다시 보낼 길이
+     * 통째로 막혔다. 화면은 '등록된 계약서가 없습니다'라고 하면서 동시에 '이미 서명이 저장된
+     * 계약입니다'라고 거절했다 — 지울 서명도, 발급할 서명본도 없는 막다른 상태다(404호 실측).
+     *
+     * 동의서는 계약서에 딸린 별개 종이다. 그것만 받아 둔 상태는 '서명이 끝난 계약'이 아니다.
+     * 새 링크로 다시 받으면 동의서 서명도 그 자리에서 함께 갱신되므로 두 벌이 생기지도 않는다.
+     */
     const snapLease = snapshot.lease
-    if (snapLease.signatureImageUrl || snapLease.signatureSignedDate
-      || snapLease.disposalSignatureImageUrl || snapLease.disposalSignatureSignedDate) {
+    if (snapLease.signatureImageUrl || snapLease.signatureSignedDate) {
       return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
     }
 
