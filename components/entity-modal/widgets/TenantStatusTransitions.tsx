@@ -7,7 +7,7 @@
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
-import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, getPendingRentRefundNotice, finalizeRentRefund,
+import { applyStatusTransition, getCheckoutTimingInfo, undoAutoCheckout, recordDepositReturn, getReceivedDepositTotal, getDepositCompositionForLease, getOpenCheckoutCleaning, finalizeRentRefund,
   getReservedPrepaidComposition, recordReservationPrepaidCancel, undoReservationPrepaidCancel } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -113,8 +113,7 @@ type Lease = {
 type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number; resvCancel?: boolean; resvCancelPrepaid?: boolean; depoFromReceived?: boolean; carriedOver?: boolean; cleaningPaid?: number; compositionLabel?: string | null; noBasisContract?: number
   /** 이 방에 이미 열려 있는 퇴실 청소 예정 — 있으면 새로 만들지 않고 날짜도 안 덮는다(서버 skipped-open). */
   openCleaning?: { id: string; scheduledYmd: string | null } | null
-  /** 확정해 둔 퇴실 정산이 있는데 이 경로가 이용료 환불을 못 하는 경우 — 화면이 말이라도 한다. */
-  pendingRentRefund?: { amount: number; month: string } | null } | null
+  } | null
 
 // 전이와 함께 보내는 값들. 종전에는 이 모양이 runTransition·submit 두 자리에 그대로 베껴져
 // 있었는데, 칸을 하나 늘릴 때마다 두 곳을 같이 고쳐야 하고 한쪽만 고치면 조용히 안 실린다.
@@ -294,9 +293,6 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 이미 열려 있는 퇴실 청소 예정 — 있으면 서버가 새로 안 만들고 날짜도 안 덮는다(skipped-open).
     // 그 사실을 화면이 먼저 알아야 '미정'이라고 거짓말하지 않는다(2026-08-30, 404호).
     const openCleaning = def.withDeposit && lease.roomId ? await getOpenCheckoutCleaning(lease.roomId) : null
-    // 이 경로에는 이용료 환불이 없다(경로 셋 중 입주자 관리 수정에만 있다). 확정해 둔 정산이
-    // 남아 있으면 그 사실을 말한다 — 모르고 지나가면 돈이 새고 나중에 장부에서 찾아야 한다.
-    const pendingRentRefund = def.withDeposit ? await getPendingRentRefundNotice(lease.id) : null
     const depoBaseForForm = comp ? comp.basis : (lease.depositAmount || 0)
     // 기준액이 계약 보증금과 다를 때만 '받은 보증금'으로 못박는다(같으면 같은 말을 두 번 하는 셈).
     const depoFromReceived = !!comp && comp.basisSource === 'received' && comp.basis !== comp.contract
@@ -316,7 +312,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
       def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: depoBaseForForm,
       cleaningFee: deductible, depoFromReceived, carriedOver, cleaningPaid,
       compositionLabel: comp ? depositCompositionLabel(comp) : null,
-      openCleaning, pendingRentRefund,
+      openCleaning,
       // 계약에는 보증금이 적혀 있는데 받은 기록이 없는 상태 — 서버가 환불·몰취 기록을 거절하는 자리다.
       // 기준액이 0 이라 환불 칸이 아예 안 뜨므로, 왜 없는지는 말해 줘야 한다(조용히 넘어가면 정산 누락).
       noBasisContract: !!comp && comp.basisSource === 'none' && comp.contract > 0 ? comp.contract : 0,
