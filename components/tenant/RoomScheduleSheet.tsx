@@ -102,7 +102,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
    * (오전 퇴실·오후 입실이 정당한 실무라 막지 않는다, 운영자 확정).
    */
   const [endEdit, setEndEdit] = useState<string | null>(null)
-  const endAt = endEdit ?? opts?.mainAvailableFrom ?? null
+  const endAt = endEdit ?? opts?.moveSuggested ?? opts?.mainAvailableFrom ?? null
   const unknownEnd = !!opts && endAt === null
   // 다 채웠는가 — **방을 하나라도 골랐을 때만** 참이다. 아무것도 안 정했는데 "다 됐다"고
   // 말하면 거짓이 된다(퇴실 예정일이 이미 지난 방에서 실제로 그랬다).
@@ -215,12 +215,12 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
                   minDate={opts.moveEarliest > moveIn ? opts.moveEarliest : moveIn}
                   className={`${dateCls} border-[var(--warm-border)]`} />
                 <p className={capCls}>
-                  {fmtDate(opts.mainAvailableFrom ?? opts.moveEarliest)}부터 입주 가능합니다. 사정에 맞춰 뒤로 미뤄도 됩니다.
+                  {fmtDate(opts.mainAvailableFrom ?? opts.moveEarliest)}부터 입주 가능합니다. 사정에 맞춰 앞뒤로 옮겨도 됩니다.
                   {picks.length > 0 && ' 날짜를 바꾸면 정해 둔 임시 호실이 지워집니다.'}
                 </p>
                 {opts.mainCleaningYmd && (
                   <p className="text-[0.6875rem] leading-relaxed text-[var(--warning-fg)]">
-                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 잡혀 있습니다.
+                    {fmtRoomNo(opts.mainRoomNo, '')} 퇴실 청소가 {fmtDate(opts.mainCleaningYmd)}로 잡혀 있어 그날로 잡았습니다.
                   </p>
                 )}
               </div>

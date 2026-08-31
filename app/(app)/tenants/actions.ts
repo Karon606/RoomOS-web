@@ -2552,7 +2552,9 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
    * 청소가 잡혀 있으면 청소 다음 날이다 — 막지는 않되 흔한 답을 미리 골라 둔다.
    */
   moveEarliest: string | null
-  /** 그 방에 잡힌 퇴실 청소 예정일 — 왜 미뤄야 하는지를 화면이 말할 근거다(막지 않는다). */
+  /** 이사일 칸의 기본값 — 청소가 잡혀 있으면 그날이다(청소 당일 오후 입실이 정당한 실무). */
+  moveSuggested: string | null
+  /** 그 방에 잡힌 퇴실 청소 예정일 — 왜 그날을 제안하는지 화면이 말할 근거다(막지 않는다). */
   mainCleaningYmd: string | null
   rooms: { id: string; roomNo: string; availableUntil: string | null }[]
 } | { ok: false; error: string }> {
@@ -2578,12 +2580,17 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
       mainRoomFreeFrom(propertyId, lease.roomId, leaseTermId, fromYmd),
     ])
 
-    // 기본 이사일 — 청소가 잡혀 있으면 그 다음 날이다. 청소가 가능일보다 앞이면 가능일 그대로.
-    const cleanFrom = mainOccupants.cleaningYmd ? freeFromAfter(mainOccupants.cleaningYmd) : null
-    const mainAvailableFrom = cleanFrom && mainOccupants.freeFrom && cleanFrom > mainOccupants.freeFrom
-      ? cleanFrom
-      : mainOccupants.freeFrom
-    // 하한은 앞사람이 나가는 날 당일이다. 아무도 없으면 조회 시작일이 곧 하한이다.
+    // 세 값을 섞지 않는다 (2026-08-31 운영자 지적으로 분리).
+    //
+    //   · mainAvailableFrom — 방이 실제로 비는 날. 앞사람 퇴실 다음 날이고 안내문이 이 값을 쓴다.
+    //   · moveSuggested     — 기본 제안. 청소가 잡혀 있으면 **그날**이다.
+    //   · moveEarliest      — 하한. 앞사람이 나가는 날 당일까지 연다.
+    //
+    // 청소 다음 날로 밀었더니 9/2 청소에 9/3 이사가 제안됐다. 오전에 청소하고 오후에 드는 것이
+    // 정당한 실무라 하루를 버리게 된다 — 퇴실 당일 넘겨받기를 막지 않기로 한 것과 같은 판단이다.
+    const mainAvailableFrom = mainOccupants.freeFrom
+    const clean = mainOccupants.cleaningYmd
+    const moveSuggested = clean && mainAvailableFrom && clean > mainAvailableFrom ? clean : mainAvailableFrom
     const moveEarliest = mainOccupants.lastOutYmd ?? mainOccupants.freeFrom
 
     // 그 방을 언제까지 쓸 수 있나 — fromYmd 이후 처음 오는 남의 점유가 시작되는 날이다.
@@ -2608,6 +2615,7 @@ export async function getRoomScheduleOptions(leaseTermId: string, fromYmd: strin
       moveInDate: kstYmdStr(lease.moveInDate),
       mainAvailableFrom,
       moveEarliest,
+      moveSuggested,
       mainCleaningYmd: mainOccupants.cleaningYmd,
       mainOccupantName: mainOccupants.occupantName,
       rooms: rooms
