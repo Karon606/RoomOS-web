@@ -3307,7 +3307,10 @@ export async function addRentDiscount(data: {
         discountType: data.discountType,
         value:        data.value,
         scope:        data.scope,
-        startMonth:   data.scope === 'temporary' ? (data.startMonth ?? null) : null,
+        // 영구 할인도 시작월을 싣는다 (2026-08-31 운영자 승인). 종전에는 null 로 밀어 넣어
+        // 무조건 전 기간 소급이었다. 시작월을 안 실어 보내면 종전대로 전 기간이라, 옛 호출부가
+        // 있어도 거동이 안 바뀐다. 소급 등록은 시작월을 과거로 골라서 한다(403호 같은 경우).
+        startMonth:   data.startMonth ?? null,
         endMonth:     data.scope === 'temporary' ? (data.endMonth ?? null) : null,
         memo:         data.memo ?? null,
       },
@@ -3320,6 +3323,125 @@ export async function addRentDiscount(data: {
     revalidatePath('/dashboard')
     revalidatePath('/tenants')
     revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 이 할인을 언제부터 끊을 수 있는가 — 아직 안 걷은 첫 달 (운영자 확정 2026-08-31).
+ *
+ * 운영자의 "과거는 과거"는 정확히는 "걷은 것은 과거"라는 뜻이다. 이번 달을 아직 안 받았으면
+ * 이번 달부터 정가가 실무 직관에 맞는다. 회계 관점은 "다음 달부터"(이번 달 불변)를 지지했지만
+ * 운영자가 실무 쪽을 골랐다.
+ *
+ * 판정은 그 계약의 수납 기록으로 한다. 실수납이 있는 달은 이미 걷은 달이므로 건드리지 않는다.
+ * 걷은 달이 하나도 없으면 이번 달이 경계다.
+ */
+async function firstUnbilledMonth(leaseTermId: string): Promise<string> {
+  const paid = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, isDeposit: false, isPrevOwner: false, deletedAt: null, actualAmount: { gt: 0 } },
+    select: { targetMonth: true },
+    orderBy: { targetMonth: 'desc' },
+    take: 1,
+  })
+  const thisMonth = kstYmdStr().slice(0, 7)
+  if (paid.length === 0) return thisMonth
+  // 걷은 마지막 달의 다음 달. 이번 달보다 앞이면 이번 달이 경계다(옛 달만 걷힌 경우).
+  const [y, m] = paid[0].targetMonth.split('-').map(Number)
+  const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+  return next > thisMonth ? next : thisMonth
+}
+
+/** 중단 미리보기 — 화면이 "몇 월부터 정가"를 말할 근거. */
+export async function previewDiscountEnd(id: string): Promise<
+  { ok: true; endMonth: string; effectiveFrom: string } | { ok: false; error: string }
+> {
+  try {
+    const propertyId = await getPropertyId()
+    const d = await prisma.rentDiscount.findUnique({
+      where: { id },
+      select: { leaseTermId: true, endMonth: true, leaseTerm: { select: { propertyId: true } } },
+    })
+    if (!d || d.leaseTerm.propertyId !== propertyId) return { ok: false, error: '할인을 찾을 수 없습니다.' }
+    const from = await firstUnbilledMonth(d.leaseTermId)
+    // 끝월은 정가가 시작되는 달의 한 달 전이다 — 그 달까지는 할인이 살아 있다.
+    const [y, m] = from.split('-').map(Number)
+    const end = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+    return { ok: true, endMonth: end, effectiveFrom: from }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 할인 중단 — 지우지 않고 끝월을 적는다 (2026-08-31 운영자 승인).
+ *
+ * 삭제에는 뜻이 둘이었다. "이제부터 안 준다"(종료)와 "애초에 잘못 넣었다"(정정). 종전에는 정정만
+ * 있어서, 끝내려고 지우면 이미 할인가로 받고 끝난 지난 달까지 정가로 되쓰여 없던 미수가 생겼다.
+ *
+ * 중단은 행을 남기므로 되돌릴 수 있고(끝월을 도로 비운다), 경계 이후 달의 락은 정가로 되써진다.
+ * 다음 달을 미리 냈는데 중단 경계가 그 앞이면 차액이 미수로 서는데, 그것은 의도된 결과다.
+ */
+export async function endRentDiscount(id: string, endMonth: string): Promise<
+  { ok: true; undo: { id: string; prevEndMonth: string | null } } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const d = await prisma.rentDiscount.findUnique({
+      where: { id },
+      select: {
+        leaseTermId: true, endMonth: true,
+        leaseTerm: { select: { propertyId: true, discounts: { select: { id: true, discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } } },
+      },
+    })
+    if (!d || d.leaseTerm.propertyId !== propertyId) return { ok: false, error: '할인을 찾을 수 없습니다.' }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(endMonth)) return { ok: false, error: '끝월 형식이 올바르지 않습니다.' }
+    const prev = d.leaseTerm.discounts.map(x => ({ discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth: x.endMonth }))
+    const next = d.leaseTerm.discounts.map(x => x.id === id
+      ? { discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth }
+      : { discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth: x.endMonth })
+    // 데이터 변경과 되쓰기를 한 트랜잭션으로 묶는다 — 중간에 끊기면 할인은 끝났는데 락은
+    // 할인가로 남고, 그 상태는 협의 락인과 구별되지 않아 어떤 감지망에도 안 걸린다.
+    await prisma.$transaction(async () => {
+      await prisma.rentDiscount.update({ where: { id }, data: { endMonth } })
+      await rewriteLockedExpectedForDiscountChange(d.leaseTermId, prev, next)
+    })
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true, undo: { id, prevEndMonth: d.endMonth } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/** 중단 적용취소 — 끝월을 원래대로 되돌리고 락도 역방향으로 되쓴다. */
+export async function undoEndRentDiscount(undo: { id: string; prevEndMonth: string | null }): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const d = await prisma.rentDiscount.findUnique({
+      where: { id: undo.id },
+      select: {
+        leaseTermId: true,
+        leaseTerm: { select: { propertyId: true, discounts: { select: { id: true, discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } } },
+      },
+    })
+    if (!d || d.leaseTerm.propertyId !== propertyId) return { ok: false, error: '할인을 찾을 수 없습니다.' }
+    const prev = d.leaseTerm.discounts.map(x => ({ discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth: x.endMonth }))
+    const next = d.leaseTerm.discounts.map(x => x.id === undo.id
+      ? { discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth: undo.prevEndMonth }
+      : { discountType: x.discountType, value: x.value, scope: x.scope, startMonth: x.startMonth, endMonth: x.endMonth })
+    await prisma.$transaction(async () => {
+      await prisma.rentDiscount.update({ where: { id: undo.id }, data: { endMonth: undo.prevEndMonth } })
+      await rewriteLockedExpectedForDiscountChange(d.leaseTermId, prev, next)
+    })
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err

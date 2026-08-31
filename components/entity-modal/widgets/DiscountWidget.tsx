@@ -4,15 +4,16 @@
 // 자체 fetch (getRentDiscounts) + 내부 state. 추가/삭제 후 부모에 onChange 콜백.
 
 import { useEffect, useState, useTransition } from 'react'
-import { getRentDiscounts, addRentDiscount, deleteRentDiscount, type RentDiscountRow } from '@/app/(app)/rooms/actions'
+import { getRentDiscounts, addRentDiscount, deleteRentDiscount, previewDiscountEnd, endRentDiscount, undoEndRentDiscount, type RentDiscountRow } from '@/app/(app)/rooms/actions'
 import { getDiscountReasons, addDiscountReason } from '@/app/(app)/settings/actions'
 import CategorySelect from '@/components/ui/CategorySelect'
 import { discountLabel } from '@/lib/rentDiscount'
+import { kstMonthStr } from '@/lib/kstDate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { withSave } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { withSave, pushToast } from '@/lib/saveStatus'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 
 export function DiscountWidget({ leaseTermId, onChange }: {
   leaseTermId: string
@@ -49,7 +50,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
         discountType: type,
         value,
         scope,
-        startMonth: scope === 'temporary' && start ? start : null,
+        startMonth: start || null,
         endMonth:   scope === 'temporary' && end   ? end   : null,
         ...(reason.trim() ? { memo: reason.trim() } : {}),
       }), { success: '할인 적용됨' })
@@ -65,9 +66,52 @@ export function DiscountWidget({ leaseTermId, onChange }: {
     })
   }
 
-  // 영구(매월) 할인은 과거 달까지 소급 재계산된다(락 되쓰기에 월 하한이 없다) — 그 사실이
-  // 어디에도 없었다(A페이즈). 기간 할인은 폼에 기간이 보이므로 그 범위만 말한다.
+  /**
+   * 할인을 정리한다 — 뜻이 둘이라 먼저 묻는다 (2026-08-31 운영자 승인).
+   *
+   * 종전에는 삭제 하나뿐이었고 그것이 늘 전 기간 소급이었다. 그래서 이미 할인가로 받고 끝난
+   * 지난 달까지 정가로 되쓰여 없던 미수가 생겼다("과거는 과거지" 운영자 지적).
+   *
+   * 이제 기본은 중단이다. 아직 안 걷은 첫 달부터 정가가 되고 그 앞은 그대로 둔다. 잘못 넣은
+   * 할인을 정말 없애야 할 때만 소급 삭제를 고른다.
+   */
   const handleDelete = async (d: { id: string; scope: string; startMonth: string | null; endMonth: string | null }) => {
+    const prev = await previewDiscountEnd(d.id)
+    // 경계를 못 구하면 중단을 제안할 수 없다 — 소급 삭제만 묻는다(옛 동선 그대로).
+    const canEnd = prev.ok && (!d.endMonth || d.endMonth > prev.endMonth)
+    const fromLabel = prev.ok ? `${Number(prev.effectiveFrom.split('-')[1])}월` : ''
+
+    if (canEnd && prev.ok) {
+      const pick = await choiceDialog({
+        title: '이 할인을 어떻게 정리할까요?',
+        message: `중단하면 지난 달까지는 그대로 두고 ${fromLabel}부터 정가로 청구합니다. 소급 삭제는 이 할인이 적용된 모든 달을 정가로 되돌립니다.`,
+        confirmLabel: `${fromLabel}부터 중단`,
+        altLabel: '소급 삭제',
+        cancelLabel: '취소',
+      })
+      if (pick === 'confirm') {
+        startTransition(async () => {
+          const res = await withSave(() => endRentDiscount(d.id, prev.endMonth), { success: `할인 중단됨 · ${fromLabel}부터 정가` })
+          if (!res.ok) return
+          // 적용취소 — 끝월을 도로 비우고 락도 역방향으로 되쓴다.
+          pushToast('success', `할인 중단됨 · ${fromLabel}부터 정가로 청구합니다`, {
+            action: {
+              label: '적용취소',
+              run: () => { void undoEndRentDiscount(res.undo).then(async u => {
+                if (!u.ok) { pushToast('error', u.error); return }
+                pushToast('info', '중단을 되돌렸습니다'); await reload(); onChange?.()
+              }) },
+            },
+          })
+          await reload()
+          onChange?.()
+        })
+        return
+      }
+      if (pick !== 'alt') return
+    }
+
+    // 소급 삭제 — 파괴적이라 한 번 더 묻는다.
     const isPermanent = d.scope === 'permanent'
     const range = d.startMonth
       ? (d.endMonth
@@ -75,12 +119,12 @@ export function DiscountWidget({ leaseTermId, onChange }: {
           : `${Number(d.startMonth.split('-')[1])}월분부터 모든 달의`)
       : '적용된'
     if (!(await confirmDialog({
-      level: 'danger', title: '이 할인을 삭제할까요?',
-      message: isPermanent
+      level: 'danger', title: '할인을 소급 삭제할까요?',
+      message: isPermanent && !d.startMonth
         ? '이 할인이 적용된 모든 달의 청구액이 정가로 다시 계산됩니다. 이미 수납이 기록된 지난 달도 포함되어 그 달의 미수가 늘어날 수 있습니다.'
         : `${range} 청구액이 정가로 다시 계산됩니다. 그 기간에 이미 수납이 기록돼 있으면 미수가 늘어날 수 있습니다.`,
       irreversibleNote: '삭제한 할인은 다시 등록해야 되돌아갑니다.',
-      confirmLabel: '삭제',
+      confirmLabel: '소급 삭제',
     }))) return
     const id = d.id
     startTransition(async () => {
@@ -96,7 +140,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-[var(--success-fg)]">월 이용료 할인</p>
         {!showForm && (
-          <button onClick={() => setShowForm(true)}
+          <button onClick={() => { setStart(kstMonthStr()); setShowForm(true) }}
             className="text-xs px-2.5 py-1 rounded-lg border border-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] transition-colors">+ 할인 추가</button>
         )}
       </div>
@@ -137,6 +181,20 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             <option value="permanent">영구(매월)</option>
             <option value="temporary">일시(기간)</option>
           </select>
+          {/* 영구 할인의 시작월 — 기본은 이번 달이다(2026-08-31 운영자 승인). 종전에는 시작이
+              없어 무조건 전 기간 소급이었다. 과거에 약속한 할인을 늦게 등록할 때만 시작월을
+              지난 달로 내린다(403호 같은 경우). */}
+          {scope === 'permanent' && (
+            <div className="space-y-1">
+              <DatePicker monthOnly placeholder="시작 월"
+                value={start ? start + '-01' : ''}
+                onChange={v => setStart(v ? v.slice(0, 7) : '')}
+                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)]" />
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+                이 달 청구부터 할인이 붙습니다. 지난 달로 내리면 그 달 청구도 다시 계산됩니다.
+              </p>
+            </div>
+          )}
           {scope === 'temporary' && (
             <div className="flex items-center gap-1.5">
               <div className="flex-1">
@@ -170,7 +228,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
           </div>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
             할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.
-            {scope === 'permanent' && ' 영구(매월)를 고르면 지난 달 청구액도 함께 다시 계산됩니다.'}
+            {scope === 'permanent' && ' 시작 월부터 매월 적용됩니다.'}
           </p>
         </div>
       )}

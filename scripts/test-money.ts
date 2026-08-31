@@ -707,5 +707,38 @@ const RENT = 300000
   eq('전환: 같으면 되쓰기 0', lockRewritesFor([rec('a', 470000)], 470000), [])
 }
 
+// ── 할인의 적용 기간 (2026-08-31 운영자 승인) ─────────────────────────
+//
+// 종전에는 permanent 가 시작·끝을 안 읽어 무조건 전 기간이었다. 그래서 할인을 지우면 이미
+// 할인가로 받고 끝난 달까지 정가로 되쓰여 없던 미수가 생겼다. 이제 기간이 범위를 정한다.
+{
+  const base = 300000
+  const perm = (extra: Record<string, unknown>) =>
+    [{ discountType: 'amount', value: 50000, scope: 'permanent', ...extra }]
+
+  // 기존 행(시작·끝 없음)은 거동 불변 — 마이그레이션 0건의 근거다.
+  eq('기간: 시작·끝 없으면 전 기간', discountForMonth(perm({}), '2020-01', base), 50000)
+
+  // 중단 = 끝월을 적는 것. 그 달까지는 할인, 다음 달부터 정가.
+  const ended = perm({ endMonth: '2026-09' })
+  eq('기간: 끝월 그 달은 할인', discountForMonth(ended, '2026-09', base), 50000)
+  eq('기간: 끝월 다음 달은 정가', discountForMonth(ended, '2026-10', base), 0)
+  eq('기간: 끝월 이전 과거는 그대로 할인', discountForMonth(ended, '2026-05', base), 50000)
+
+  // 추가는 시작월부터. 그 이전 달은 안 건드린다.
+  const started = perm({ startMonth: '2026-08' })
+  eq('기간: 시작월 이전은 정가', discountForMonth(started, '2026-07', base), 0)
+  eq('기간: 시작월 그 달부터 할인', discountForMonth(started, '2026-08', base), 50000)
+
+  // 양쪽이 다 있으면 그 구간만.
+  const window = perm({ startMonth: '2026-06', endMonth: '2026-08' })
+  eq('기간: 구간 안', discountForMonth(window, '2026-07', base), 50000)
+  eq('기간: 구간 앞', discountForMonth(window, '2026-05', base), 0)
+  eq('기간: 구간 뒤', discountForMonth(window, '2026-09', base), 0)
+
+  // 일시 할인은 시작월이 없으면 성립하지 않는다 — 어느 달인지 말한 적이 없다.
+  eq('기간: 일시인데 시작월 없음', discountForMonth([{ discountType: 'amount', value: 50000, scope: 'temporary' }], '2026-07', base), 0)
+}
+
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

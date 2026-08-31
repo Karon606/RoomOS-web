@@ -22,11 +22,22 @@ export function discountForMonth(
   if (!discounts || discounts.length === 0 || baseRent <= 0) return 0
   let total = 0
   for (const d of discounts) {
-    const applies =
-      d.scope === 'permanent'
-      || (d.scope === 'temporary' && !!d.startMonth && !!d.endMonth && d.startMonth <= targetMonth && targetMonth <= d.endMonth)
-      // 시작만 있고 끝이 없는 일시 할인 = 시작월부터 무기한
-      || (d.scope === 'temporary' && !!d.startMonth && !d.endMonth && d.startMonth <= targetMonth)
+    // 적용 범위는 **스코프가 아니라 기간이 정한다** (2026-08-31 운영자 승인).
+    //
+    // 종전에는 permanent 가 시작·끝을 아예 안 읽어서 무조건 전 기간이었다. 그래서 할인을 지우면
+    // 이미 할인가로 받고 끝난 지난 달까지 정가로 되쓰여 없던 미수가 생겼다("과거는 과거지").
+    //
+    // 이제 permanent 도 기간을 읽는다. 시작월이 있으면 그 달부터, 끝월이 있으면 그 달까지다.
+    // 둘 다 없으면 종전대로 전 기간이라 **기존에 저장된 할인은 거동이 한 글자도 안 바뀐다**
+    // (마이그레이션 0건). 무엇보다 이 규칙을 데이터가 쥐므로 되쓰기 엔진은 손댈 필요가 없다 —
+    // 적용 기간 밖의 달은 변경 전후 청구액이 같아 엔진이 알아서 건너뛴다. 엔진에 월 하한을
+    // 세우는 안은 신고 70cde9d6·50a2a69b 를 재발시켜 기각됐다.
+    const from = d.startMonth
+    const to   = d.endMonth
+    const applies = d.scope === 'permanent'
+      ? (!from || from <= targetMonth) && (!to || targetMonth <= to)
+      // 일시 할인은 시작월이 있어야 성립한다(없으면 어느 달인지 말한 적이 없다).
+      : !!from && from <= targetMonth && (!to || targetMonth <= to)
     if (!applies) continue
     const amt = d.discountType === 'percent'
       ? Math.round((baseRent * d.value) / 100)
