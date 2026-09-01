@@ -14,35 +14,34 @@
 //    ①만으로는 여유만 생기고 아무도 그 자리로 데려다주지 않는다. 아이폰만 그렇다 —
 //    **iOS 의 포커스 자동 스크롤은 문서·visual viewport 레벨까지만 닿고 중첩 스크롤 컨테이너에는
 //    안 닿는다.** 안드로이드는 키보드가 레이아웃을 실제로 줄여 Blink 가 재노출을 다시 돌린다.
-//    그래서 UA 로 가르지 않고 **측정된 겹침**으로 건다. 안드로이드는 겹침이 0 이라 진입 자체가 없고,
-//    설령 진입해도 이미 목표선 위라 델타가 0 이다. 두 겹이 서로 독립이라 이중 스크롤이 안 난다.
-//    정책은 "가려졌을 때만 최소 델타"에서 **"보이는 띠의 TARGET_RATIO 지점까지 올린다"** 로
-//    올렸다(신고 c12af2ba). 아래쪽 칸을 탭했을 때 키보드만 툭 올라오고 칸은 하단에 붙어 있는
-//    상태가 불편하다는 신고다. 다만 방향은 여전히 비대칭이다. 자세한 이유는 reveal() 주석에 있다.
+//    그래서 UA 로 가르지 않고 **측정된 겹침**으로 건다. 정책은 "보이는 띠의 TARGET_RATIO
+//    지점까지 올린다"(신고 c12af2ba)이고, 방향 비대칭·래치의 이유는 lib/keyboardViewport
+//    revealDelta 주석에 있다.
 //
 // ③ 키보드가 닫힌 시점 잔존 오프셋 복원.
 //    밀어 올린 채 복원하지 않으면 보이는 위치와 터치 히트 판정이 세션 내내 어긋난다
 //    (신고 6c196aeb: 생년월일 탭이 국적을 염). 레이아웃 무접점 — 모달 body 고정 방식은
 //    상·하단 바가 밀리는 회귀를 냈다(신고 d4cf82d5).
 //
+// **판정·기하는 lib/keyboardViewport 순수 정본이 한다**(키보드 패널 2026-09-02). 이 파일은
+// DOM 배선만 남는다 — 8월의 회귀들을 어느 것도 헤드리스로 못 잡았던 원인이 판정이 여기
+// 갇혀 있어서다. 이번에 함께 들어온 세 보강도 정본 쪽에 있다.
+//   · 줌 게이트 — 핀치 줌(vv.scale)을 키보드로 오판해 유령 패딩·스크롤 되감기가 나던 것.
+//   · 복원 엡실론 — 외장 키보드 단축바(문턱 미만)의 OS 팬을 복원이 되감던 스크롤 전쟁.
+//   · 상한 클램프 — 정당한 큰 겹침(가로·소형 창)을 기각해 인셋 0 으로 방치하던 것.
+//
 // 키보드 열림 판정을 여기 한 곳에 둔다. 두 곳에 생기면 한쪽만 참인 구간에서 어긋난다.
 //
 // 제약(knowledge/mobile-scroll-viewport.md) — 이 컴포넌트를 루트 layout 으로 승격하지 말 것.
-// B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 에만 둔다.
+// B 패턴(문서 스크롤) 페이지들이 맨 위로 튄다. app/(app)/layout.tsx 와 app/admin/layout.tsx
+// (같은 A 패턴 셸)에만 둔다.
 import { useEffect, useRef } from 'react'
+import { keyboardOpen, overlapInset, shouldRestore, revealDelta, type KbdSnapshot } from '@/lib/keyboardViewport'
 
 const KBD_INSET = '--kbd-inset'
 // 키보드가 올라와 있는 동안 루트에 찍는 표식. **판정은 여기 한 곳에서만 한다**(§12) — 화면마다
 // 제 판정을 만들면 한쪽만 참인 구간에서 어긋난다. 읽는 쪽은 CSS 로만 읽는다(globals.css).
 const KBD_OPEN_ATTR = 'data-kbd-open'
-const KBD_OPEN_PX = 60      // 이만큼 가려지면 키보드가 올라온 것으로 본다
-// 겹침 크기의 물리적 상한(화면 높이 대비). 소프트 키보드는 액세서리 바를 포함해도 화면의
-// 절반을 크게 넘지 못한다. 이보다 큰 값은 잘못 찍힌 스냅샷이다 — 아래 onResize 주석 참조.
-const KBD_MAX_RATIO = 0.7
-const REVEAL_GAP = 16       // 재노출 시 칸 아래로 남길 여백
-// 포커스한 칸을 놓을 목표선. 보이는 띠 위에서 35 퍼센트 지점이다.
-// 50 퍼센트가 아닌 이유는 입력칸 위 라벨이 항상 띠 안에 남도록 상부 여유를 두는 것이다.
-const TARGET_RATIO = 0.35
 
 // 포커스 요소를 실제로 감싸는 스크롤러 — 모달 안이면 모달 본문이, 그 밖이면 .app-main 이 자연히 잡힌다.
 // 그래서 모달 특례 코드가 필요 없다. window 는 절대 건드리지 않는다(B 패턴 페이지가 맨 위로 튄다).
@@ -70,7 +69,7 @@ function isEditable(t: EventTarget | null): t is HTMLElement {
 }
 
 export default function ViewportOffsetGuard() {
-  // aligned 는 음수(아래로 내리는) 정렬을 포커스당 1회로 제한하는 래치다. reveal() 주석 참조.
+  // aligned 는 음수(아래로 내리는) 정렬을 포커스당 1회로 제한하는 래치다. revealDelta 주석 참조.
   const pending = useRef<{ el: HTMLElement; aligned: boolean } | null>(null)
 
   useEffect(() => {
@@ -78,12 +77,11 @@ export default function ViewportOffsetGuard() {
     if (!vv) return
     const root = document.documentElement
 
-    // **열림 판정과 겹침 크기는 서로 다른 숫자다.** 하나로 합치면 안 된다(신고 716e7b0c).
-    // 판정은 팬 불변이어야 한다 — offsetTop 을 빼면 iOS 가 밀수록 값이 줄어 0까지 떨어지고,
-    // 키보드가 떠 있는데도 '닫혔다'로 오판해 아래 복원이 팬을 되감는다. 화면이 툭 떨어진다.
-    const keyboardOpenNow = () => window.innerHeight - vv.height > KBD_OPEN_PX
-    // 겹침 크기는 반대다 — 팬한 만큼 실제로 덜 가리므로 offsetTop 을 뺀다.
-    const overlapNow = () => Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)))
+    // 스냅샷 한 장으로 정본 함수들을 부른다 — 판정(팬 불변)과 크기(팬 차감)가 다른 숫자인 이유,
+    // 줌 게이트·엡실론·클램프의 근거는 전부 lib/keyboardViewport 에 있다.
+    const snapNow = (): KbdSnapshot => ({
+      innerHeight: window.innerHeight, vvHeight: vv.height, offsetTop: vv.offsetTop, scale: vv.scale,
+    })
 
     // 원샷·TTL 을 걷고 **focusout 까지 유지, resize 마다 재시도**한다(신고 d0833496).
     // iOS 키보드 리사이즈는 액세서리 바·본체로 나뉘어 오고, 모달의 자체 축소(--modal-vvh 반영)는
@@ -106,73 +104,49 @@ export default function ViewportOffsetGuard() {
       // 상단선도 같은 방식으로 스크롤러 상단과 visual viewport 상단 중 낮은 쪽을 쓴다.
       const boxRect = box.getBoundingClientRect()
       const kbLine = vv.offsetTop + vv.height
-      const bandTop = Math.max(boxRect.top, vv.offsetTop)
-      const bandBottom = Math.min(kbLine, boxRect.bottom)
-      const targetY = bandTop + TARGET_RATIO * (bandBottom - bandTop)
       const r = p.el.getBoundingClientRect()
-
-      // 올림(양수) 델타는 두 요구의 큰 쪽이다. 목표선까지 올리는 양과, 칸 아래 REVEAL_GAP 을
-      // 확보하는 양. 키가 큰 칸(textarea)에서는 뒤쪽이 이긴다.
-      // 상단 보호 클램프를 함께 건다. 목표선을 좇다 과대 스크롤하면 칸 위의 라벨이 띠 위로 밀려
-      // 무슨 칸인지 사라진다(위치별 점검은 라벨이 입력칸 위에 있는 2열 그리드다).
-      const rise = Math.min(
-        Math.max(r.top - targetY, r.bottom + REVEAL_GAP - bandBottom),
-        r.top - (bandTop + REVEAL_GAP),
-      )
-
-      // **방향은 비대칭이다.** 음수 금지의 소유자는 716e7b0c 가 아니라 **재시도 수렴**이다.
-      // 재노출 대기는 focusout 까지 살아 resize 마다 다시 도는데(d0833496), 양방향으로 열어두면
-      // 액세서리 바·모달 축소가 순서를 바꿔 올 때 올렸다 내렸다를 반복해 수렴하지 않는다.
-      // 그래서 음수는 **컨테이너 한정(box.scrollTop 만)·포커스당 1회 래치·상단 잘림 최소 노출**
-      // 세 조건으로만 연다. 이미 잘 보이는 상단 칸을 목표선까지 끌어내리는 공짜 모션은 없다.
-      // 이 조건 아래서 resize 재시도는 언제나 양수 단방향이라 수렴형이 유지된다.
-      if (rise > 0) box.scrollTop += rise
-      else if (!p.aligned && r.top < bandTop + REVEAL_GAP) box.scrollTop += r.top - (bandTop + REVEAL_GAP)
+      const delta = revealDelta({
+        bandTop: Math.max(boxRect.top, vv.offsetTop),
+        bandBottom: Math.min(kbLine, boxRect.bottom),
+        fieldTop: r.top, fieldBottom: r.bottom,
+        aligned: p.aligned,
+      })
+      if (delta !== 0) box.scrollTop += delta
       p.aligned = true
     }
 
     // 패딩이 실제로 반영된 다음 프레임에 잰다 — 그 전에는 스크롤 범위가 부족해 클램프된다
     const scheduleReveal = () => { if (pending.current) requestAnimationFrame(reveal) }
 
+    // 복원은 정본 판정을 지난다 — 진짜 닫힘(엡실론)일 때만. 외장 바·줌 팬은 되감지 않는다.
     const restore = () => {
-      if (window.scrollY !== 0 || vv.offsetTop > 0) window.scrollTo(0, 0)
+      const scrolled = window.scrollY !== 0 || vv.offsetTop > 0
+      if (shouldRestore(snapNow(), scrolled)) window.scrollTo(0, 0)
     }
-    // 직전에 채택한 겹침 값. 아래 상한 클램프가 값을 버릴 때 되쓴다.
-    let lastInset = 0
     // 크기 갱신은 resize 에서만. 팬 프레임마다 다시 쓰면 scrollHeight 가 오르내리며
     // scrollTop 이 계속 클램프돼 스크롤이 되감긴다. 팬 중 여유가 조금 넉넉한 것은 무해하다.
-    //
-    // **불가능한 값은 채택하지 않는다(오류신고 734ea211·e97f4b2b).** overlapNow() 에는 하한만 있고
-    // 상한이 없었다. 오류신고 창이 납작해진 실측에서 --kbd-inset 이 약 652px(화면의 74퍼센트)로
-    // 남아 있었는데, 그 값을 씻어낼 이벤트를 아무도 안 들어서 앱 재시작이 유일한 복구였다.
-    //
-    // 버릴 때 0 이 아니라 **직전 유효값을 유지**한다. 키보드가 열려 있는 세션 중 한 프레임만
-    // 잘못 찍혀도 0 을 쓰면 .app-main 의 scrollHeight 가 줄며 scrollTop 이 클램프돼 화면이
-    // 툭 떨어진다 — 716e7b0c 가 적어둔 붕괴 증상 그대로다. 유지하면 그 프레임만 값이 조금 낡을 뿐
-    // 레이아웃이 안 흔들린다. 초기값이 0 이고 닫힐 때마다 0 으로 되돌리므로, 열림 첫 프레임부터
-    // 오염된 경우에는 0(= 종전 기본값)이 되어 과보정 쪽으로는 실수하지 않는다.
+    // 불가능값 처리(상한)는 정본의 클램프가 맡는다 — 종전의 '기각 후 직전 값 유지'가 가로·소형
+    // 창의 정당한 큰 겹침까지 버리던 것을 바로잡았다(오류신고 734ea211·e97f4b2b 경위는 정본 주석).
     const onResize = () => {
-      if (!keyboardOpenNow()) {
-        lastInset = 0
+      const s = snapNow()
+      if (!keyboardOpen(s)) {
         root.style.setProperty(KBD_INSET, '0px')
         root.removeAttribute(KBD_OPEN_ATTR)
         restore()
         return
       }
-      const raw = overlapNow()
-      if (raw <= window.innerHeight * KBD_MAX_RATIO) lastInset = raw
-      root.style.setProperty(KBD_INSET, `${lastInset}px`)
+      root.style.setProperty(KBD_INSET, `${overlapInset(s)}px`)
       // 여백과 **같은 판정·같은 프레임**에 찍는다. 아래 scheduleReveal 은 rAF 라 이미 접힌
       // 기하를 읽는다 — setState 로 접으면 그 순서가 깨져 과소 스크롤이 난다(신고 d0833496).
       root.setAttribute(KBD_OPEN_ATTR, '')
       scheduleReveal()
     }
-    const onScroll = () => { if (!keyboardOpenNow()) restore() }
+    const onScroll = () => { if (!keyboardOpen(snapNow())) restore() }
 
-    // **복귀 재동기.** vv 의 resize·scroll 만 듣던 것이 위 오염을 영구화했다. 앱 전환·복귀,
+    // **복귀 재동기.** vv 의 resize·scroll 만 듣던 것이 오염을 영구화했다. 앱 전환·복귀,
     // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 값이 잘못 찍히면 씻을 기회가 없다.
-    // 여기서 같은 판정을 한 번 더 돌려 스냅샷을 다시 적는다. 값이 그대로면 같은 문자열을 다시
-    // 쓰는 것뿐이라 계산값이 안 바뀌고 레이아웃도 그대로다.
+    // 여기서 같은 판정을 한 번 더 돌려 스냅샷을 다시 적는다 — 스케일도 스냅샷에 실려 함께
+    // 재평가된다(줌 중 앱 전환 복귀가 낡은 배율로 남지 않게, 패널 조건부).
     // rAF 로 한 박자 더 도는 이유 — 복귀·회전 직후 프레임의 visualViewport 는 아직 옛 값을 낼 수
     // 있다. 그 자리에서 한 번만 읽고 끝내면 오염된 값을 그대로 다시 쓰게 된다.
     const resync = () => { onResize(); requestAnimationFrame(onResize) }
@@ -183,10 +157,10 @@ export default function ViewportOffsetGuard() {
       // 기억만 한다. 이 시점엔 키보드가 아직 안 올라와 겹침이 0 이라 지금 재면 엉뚱한 데로 간다.
       pending.current = { el: e.target, aligned: false }
       // 다만 키보드가 이미 열려 있으면(칸에서 칸으로 이동) resize 가 안 와서 영영 안 불린다.
-      // **여기 물음은 "열렸나"라 판정 함수를 쓴다(신고 716e7b0c).** 크기 함수(overlapNow)를 쓰면
-      // iOS 가 팬한 만큼 값이 줄어 0까지 떨어지므로, 팬이 끝난 뒤의 칸-대-칸 이동에서 조용히
-      // 아무 일도 안 하게 된다. 이 파일에서 크기로 열림을 묻던 마지막 자리였다.
-      if (keyboardOpenNow()) scheduleReveal()
+      // **여기 물음은 "열렸나"라 판정 함수를 쓴다(신고 716e7b0c).** 크기 함수를 쓰면 iOS 가
+      // 팬한 만큼 값이 줄어 0까지 떨어지므로, 팬이 끝난 뒤의 칸-대-칸 이동에서 조용히
+      // 아무 일도 안 하게 된다.
+      if (keyboardOpen(snapNow())) scheduleReveal()
     }
     const onFocusOut = () => { pending.current = null }
 
