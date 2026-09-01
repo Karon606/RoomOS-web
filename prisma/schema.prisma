@@ -292,6 +292,10 @@ model Property {
   documentFieldOverrides DocumentFieldOverride[]
   foreignRegNoViews  ForeignRegNoView[]
   overlapAcks        LeaseOverlapAck[]
+  // 현금영수증 발급 기한 알림에서 수동으로 끈 입금 키 목록 — [{ k: 'leaseTermId|payYmd|payMethod', at: 'YYYY-MM-DD' }].
+  // 발행 여부는 운영자 판단 영역이라 알림을 끌 수 있어야 한다(운영자 지시 2026-09-01). 끈 건은
+  // 현금영수증 탭의 접힌 목록에서 다시 켤 수 있다(적용취소 상시 보장).
+  receiptAlertMutes  Json?
   @@map("properties")
 }
 

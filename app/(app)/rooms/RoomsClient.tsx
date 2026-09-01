@@ -443,7 +443,7 @@ export default function RoomsClient({
   // 보증금 원장 — 월 스코프가 없는 전체 조회(서버 정본 getDepositSummaryByTenant·getDepositLedger)
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
-  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[] }
+  receiptRows: { candidates: CashReceiptCandidate[]; issued: CashReceiptIssued[]; muted: (CashReceiptCandidate & { mutedAt: string })[] }
   initialTab?: ViewTabId
 }) {
   const searchParams = useSearchParams()
@@ -910,6 +910,7 @@ export default function RoomsClient({
         <CashReceiptTab
           candidates={receiptRows.candidates}
           issued={receiptRows.issued}
+          muted={receiptRows.muted}
           targetMonth={targetMonth}
           issuedSum={payAggregates.cashReceiptSum}
           issuedCount={payAggregates.cashReceiptCount}

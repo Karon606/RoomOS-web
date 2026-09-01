@@ -2188,6 +2188,8 @@ export async function setPaymentCashReceipt(input: {
 export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   candidates: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number }[]
   issued: { roomNo: string; tenantName: string; amount: number; issuedYmd: string; payYmd: string; payMethod: string | null }[]
+  /** 알림을 수동으로 끈 입금 — 후보와 같은 모양에 끈 날짜가 붙는다. */
+  muted: { leaseTermId: string; tenantId: string; roomNo: string; tenantName: string; payYmd: string; payMethod: string; amount: number; deposit: number; cleaning: number; mutedAt: string }[]
 }> {
   const propertyId = await getPropertyId()
   const [y, m] = targetMonth.split('-').map(Number)
@@ -2195,7 +2197,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const to = new Date(Date.UTC(y, m, 1))
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true, receiptAlertMutes: true },
   })
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   const payWindow = { gte: cutoff && cutoff > from ? cutoff : from, lt: to }
@@ -2254,10 +2256,15 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   }
 
   const issuedKeys = new Set(lines.map(l => key(l.leaseTermId, l.payDate, l.payMethod)))
-  const candidates = [...byKey.entries()]
+  // 알림을 수동으로 끈 입금 — 발행 여부는 운영자 판단 영역이라 끌 수 있어야 한다(운영자 지시
+  // 2026-09-01). 끈 건은 후보에서 빠지되 사라지지 않는다 — 접힌 목록에서 언제든 다시 켠다(§16).
+  const muteRows = readReceiptAlertMutes(property?.receiptAlertMutes)
+  const mutedKeys = new Map(muteRows.map(m => [m.k, m.at]))
+  const all = [...byKey.entries()]
     .filter(([k, g]) => !issuedKeys.has(k) && g.amount > 0)
-    .map(([, g]) => g)
-    .sort((a, b) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
+    .sort(([, a], [, b]) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
+  const candidates = all.filter(([k]) => !mutedKeys.has(k)).map(([, g]) => g)
+  const muted = all.filter(([k]) => mutedKeys.has(k)).map(([k, g]) => ({ ...g, mutedAt: mutedKeys.get(k) ?? '' }))
 
   const issued = lines
     .filter(l => l.issuedAt >= issuedWindow.gte && l.issuedAt < issuedWindow.lt && isCashReceiptEligible(l.payMethod) && !!l.leaseTerm.room)
@@ -2267,7 +2274,54 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
     }))
     .sort((a, b) => b.issuedYmd.localeCompare(a.issuedYmd))
 
-  return { candidates, issued }
+  return { candidates, issued, muted }
+}
+
+/** 저장값(Json)을 끈 목록으로 읽는다 — 깨진 값은 빈 목록이다(알림이 죽는 것보다 낫다). */
+function readReceiptAlertMutes(raw: unknown): { k: string; at: string }[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((m): m is { k: string; at: string } =>
+    !!m && typeof (m as { k?: unknown }).k === 'string' && typeof (m as { at?: unknown }).at === 'string')
+}
+
+/**
+ * 현금영수증 발급 기한 알림 끄기 — 그 입금 건을 홈 알림·후보 목록에서 접는다.
+ *
+ * 발행할지 말지는 운영자 판단 영역이다(운영자 지시 2026-09-01 — "의도적으로 발행을 안 하는
+ * 경우도 있으므로 수동으로 꺼버릴 수도 있게"). 앱은 사실만 접는다 — 끈다고 발급 의무가
+ * 사라지는 것은 아니고, 끈 건은 현금영수증 탭의 접힌 목록에 남아 언제든 다시 켤 수 있다.
+ * 키는 발행 줄과 같은 축(계약·수납일·수단)이다.
+ */
+export async function muteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } })
+    const cur = readReceiptAlertMutes(p?.receiptAlertMutes)
+    if (!cur.some(m => m.k === k)) cur.push({ k, at: kstYmdStr() })
+    await prisma.property.update({ where: { id: propertyId }, data: { receiptAlertMutes: cur } })
+    revalidatePath('/rooms'); revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/** 알림 다시 켜기 — 끈 목록에서 그 건을 뺀다. */
+export async function unmuteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } })
+    const next = readReceiptAlertMutes(p?.receiptAlertMutes).filter(m => m.k !== k)
+    await prisma.property.update({ where: { id: propertyId }, data: { receiptAlertMutes: next } })
+    revalidatePath('/rooms'); revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 /**

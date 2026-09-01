@@ -1815,7 +1815,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   try {
     const crTodayYmd = kstYmdStr()
     const lookFrom = new Date(Date.parse(`${crTodayYmd}T00:00:00Z`) - 35 * 86400000)
-    const [crPays, crIncomes, crLines] = await Promise.all([
+    const [crPays, crIncomes, crLines, crMuteProp] = await Promise.all([
       prisma.paymentRecord.findMany({
         where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: { gte: lookFrom }, actualAmount: { gt: 0 } },
         select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true,
@@ -1829,7 +1829,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         where: { propertyId, deletedAt: null, payDate: { gte: lookFrom } },
         select: { leaseTermId: true, payDate: true, payMethod: true },
       }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } }),
     ])
+    // 수동으로 끈 건 — 발행 여부는 운영자 판단 영역이다(운영자 지시 2026-09-01). 끈 건은 조르지
+    // 않고, 현금영수증 탭의 접힌 목록에서 다시 켤 수 있다.
+    const crMuted = new Set(
+      (Array.isArray(crMuteProp?.receiptAlertMutes) ? crMuteProp.receiptAlertMutes : [])
+        .map(m => (m && typeof (m as { k?: unknown }).k === 'string' ? (m as { k: string }).k : null))
+        .filter((k): k is string => !!k),
+    )
     const crKey = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
     type CrGroup = { roomNo: string; name: string; payYmd: string; amount: number }
     const crGroups = new Map<string, CrGroup>()
@@ -1847,7 +1855,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
     const crIssued = new Set(crLines.map(l => crKey(l.leaseTermId, l.payDate, l.payMethod)))
     const due = [...crGroups.entries()]
-      .filter(([k, g]) => !crIssued.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
+      .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
       .map(([, g]) => ({ ...g, left: cashReceiptDaysLeft(g.payYmd, crTodayYmd) }))
       .filter(g => g.left <= 2)
       .sort((a, b) => a.left - b.left)
