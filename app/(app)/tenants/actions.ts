@@ -3026,7 +3026,7 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   const { propertyId } = await getPropertyId()
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: leaseTermId, propertyId },
-    select: { roomSchedule: true, status: true },
+    select: { roomSchedule: true, status: true, roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 } },
   })
   const schedule = parseRoomSchedule(lease?.roomSchedule)
   if (!hasRoomSchedule(schedule)) return null
@@ -3037,13 +3037,60 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   const noOf = (id: string) => rooms.find(r => r.id === id)?.roomNo ?? null
   const today = kstYmdStr()
   const next = nextRoomMove(schedule, today)
+  // 지금 사는 방 표시 — 호실 칸은 계약 호실(청구·계약서 축)이라, 임시 호실에 사는 동안
+  // "왜 404호로 나오나"로 읽힌다(운영자 지적 2026-09-01). 축을 바꾸지 않고 줄에 사실을 붙인다.
+  // 판정은 일정 추정이 아니라 실제 열린 구간이다 — 이사를 일찍·늦게 하면 둘이 갈린다.
+  const curRoomId = lease?.roomStays[0]?.roomId ?? null
+  const rawLines = roomScheduleLines(schedule, noOf)
+  const curIdx = curRoomId && lease?.status !== 'RESERVED' ? schedule.findIndex(e => e.roomId === curRoomId) : -1
   return {
     stage: lease?.status === 'RESERVED' ? 'plan' : 'active',
     text: roomScheduleText(schedule, noOf) ?? '',
-    lines: roomScheduleLines(schedule, noOf),
+    lines: rawLines.map((l, i) => i === curIdx ? `${l} · 지금 거주` : l),
     todayRoomNo: noOf(scheduledSegmentOn(schedule, today)?.roomId ?? ''),
     nextAt: next?.at ?? null,
     nextRoomNo: next ? noOf(next.roomId) : null,
+  }
+}
+
+/**
+ * 이사 기록 적용취소 — advanceRoomSchedule 이 만든 구간 변경 하나를 정확히 되돌린다.
+ *
+ * 이사 처리(홈 알림·오늘 이사 버튼)에는 되돌릴 길이 없었다 — 입실 처리 전체를 무르는
+ * undoRoomSchedule 뿐이라, 방 하나 잘못 옮긴 것을 무르려면 입실까지 무너뜨려야 했다(§16).
+ * 그날 만든 새 구간을 지우고 직전 구간을 다시 연다. 청소 예정은 남긴다 — 지우기엔 이미
+ * 사람이 봤을 수 있고, 남아도 해가 없다(호출부가 그렇게 안내한다).
+ */
+export async function undoRoomMove(input: { leaseTermId: string; moveYmd: string }): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const when = new Date(`${input.moveYmd}T00:00:00.000Z`)
+    const moved = await prisma.roomStay.findFirst({
+      where: { leaseTermId: input.leaseTermId, propertyId, endDate: null, startDate: when },
+      select: { id: true, roomId: true },
+    })
+    if (!moved) return { ok: false, error: '되돌릴 이사 기록을 찾을 수 없습니다. 이미 되돌렸거나 다른 날의 이사입니다.' }
+    const prev = await prisma.roomStay.findFirst({
+      where: { leaseTermId: input.leaseTermId, propertyId, endDate: when },
+      orderBy: { startDate: 'desc' },
+      select: { id: true, roomId: true },
+    })
+    if (!prev) return { ok: false, error: '이사 전 구간을 찾을 수 없습니다.' }
+    await prisma.$transaction(async tx => {
+      await tx.roomStay.delete({ where: { id: moved.id } })
+      await tx.roomStay.update({ where: { id: prev.id }, data: { endDate: null } })
+      await tx.room.update({ where: { id: prev.roomId }, data: { isVacant: false } })
+      const stillUsed = await tx.roomStay.count({ where: { roomId: moved.roomId, endDate: null } })
+      if (stillUsed === 0) await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
+    })
+    revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (e) {
+    if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message ?? '되돌리지 못했습니다.' }
   }
 }
 

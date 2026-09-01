@@ -39,7 +39,7 @@ import { RentSettlementSection, type RentSettlementValue } from '@/components/ch
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { advanceRoomSchedule } from '@/app/(app)/tenants/actions'
+import { advanceRoomSchedule, undoRoomMove } from '@/app/(app)/tenants/actions'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
@@ -648,8 +648,19 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   scheduleCleaning: true,
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
+                const movedYmd = kstYmdStr(new Date())
                 pushToast('success', `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리했습니다`, {
                   detail: [`${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
+                  // 이사 처리에는 되돌릴 길이 없었다 — 방 하나 잘못 옮긴 것을 무르려면 입실 전체를
+                  // 무너뜨려야 했다(§16). '오늘 이사' 버튼과 같은 정본(undoRoomMove)을 쓴다.
+                  action: {
+                    label: '적용취소',
+                    run: () => { void undoRoomMove({ leaseTermId: alert.scheduleMoveLeaseId!, moveYmd: movedYmd }).then(u => {
+                      if (!u.ok) { pushToast('error', u.error); return }
+                      pushToast('info', '이사를 되돌렸습니다. 만들어 둔 청소 예정은 남습니다.')
+                      router.refresh()
+                    }) },
+                  },
                 })
                 router.refresh()
                 onClose()

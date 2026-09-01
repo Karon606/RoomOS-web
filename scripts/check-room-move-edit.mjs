@@ -76,7 +76,47 @@ const violations = []
   }
 }
 
-console.log(`[이사일 수정] 축 ⓐ 예약 단계 · ⓑ 입실 단계 · ⓒ 겹침·연속성 검증 · ⓓ 입실 후 남은 계획 / 위반 ${violations.length}건`)
+
+// ⓔ 오늘 이사 — 일정보다 일찍 옮기는 길과 되돌리는 길 (2026-09-01 운영자 요청).
+//
+//    청소가 일찍 끝나 예정일 전에 옮기는 일은 실무에서 반복된다. 종전에는 이사일을 오늘로
+//    바꾸고 홈 알림에서 확인하는 두 단계 우회뿐이었고, 이사 처리 자체에는 되돌릴 길이 없어
+//    방 하나 잘못 옮기면 입실 전체를 물러야 했다(§16).
+{
+  const f = 'app/(app)/tenants/actions.ts'
+  const src = readFileSync(f, 'utf8')
+  if (!/export async function undoRoomMove\b/.test(src)) {
+    violations.push(`${f} — 이사 기록 적용취소(undoRoomMove)가 없다. 잘못 옮기면 입실 전체를 물러야 한다.`)
+  }
+  const btn = 'components/tenant/MoveRoomNowButton.tsx'
+  let bsrc = ''
+  try { bsrc = readFileSync(btn, 'utf8') } catch { /* 아래 위반으로 잡는다 */ }
+  if (!/changeRoomMoveDate\(/.test(bsrc) || !/advanceRoomSchedule\(/.test(bsrc) || !/undoRoomMove\(/.test(bsrc)) {
+    violations.push(`${btn} — 오늘 이사 정본이 경계 이동·이사 기록·적용취소를 다 갖추지 않았다.`)
+  }
+  // 실패 시 반쪽 상태 금지 — 경계만 당겨지고 이사가 안 되면 되돌려야 한다.
+  // 호출 이름만 찾으면 성글다 — 적용취소 쪽의 같은 호출이 검사를 가린다(역주입에서 실제로 통과했다).
+  // **실패 분기(!r.ok) 안**에 있는지를 본다.
+  const failBlock = bsrc.match(/if \(!r\.ok\) \{[\s\S]*?\n      \}/)
+  if (bsrc && !(failBlock && /undoChangeRoomMoveDate\(boundaryUndo\)/.test(failBlock[0]))) {
+    violations.push(`${btn} — 이사 실패 시 앞당긴 경계를 안 되돌린다. 일정만 오늘로 바뀐 반쪽 상태가 남는다.`)
+  }
+  // 두 표면이 정본을 쓴다 — 각자 적으면 문구·되돌리기가 갈린다.
+  for (const [name, sf] of [
+    ['프리즘 일정 행', 'components/entity-modal/bodies/TenantBody.tsx'],
+    ['입주자 수정 폼', 'app/(app)/tenants/TenantClient.tsx'],
+  ]) {
+    if (!/MoveRoomNowButton/.test(readFileSync(sf, 'utf8'))) {
+      violations.push(`${sf} — '${name}' 에 오늘 이사 정본 버튼이 없다.`)
+    }
+  }
+  // 홈 알림 이사 확인도 같은 되돌리기를 쓴다 — 이사 처리에 undo 없는 클래스가 되살아나면 안 된다.
+  if (!/undoRoomMove\(/.test(readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8'))) {
+    violations.push('app/(app)/dashboard/DashboardClient.tsx — 홈 이사 확인에 적용취소가 없다.')
+  }
+}
+
+console.log(`[이사일 수정] 축 ⓐ 예약 단계 · ⓑ 입실 단계 · ⓒ 겹침·연속성 검증 · ⓓ 입실 후 남은 계획 · ⓔ 오늘 이사 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

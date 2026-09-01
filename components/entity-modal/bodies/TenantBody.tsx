@@ -9,6 +9,7 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { MoveRoomNowButton } from '@/components/tenant/MoveRoomNowButton'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
   getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice,
   changeRoomMoveDate, undoChangeRoomMoveDate } from '@/app/(app)/tenants/actions'
@@ -342,6 +343,10 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
       </div>
       <div className="shrink-0 flex items-center gap-1.5">
         {/* 아직 안 옮긴 이사가 남아 있을 때만 — 이미 지난 경계는 그 방에서 잔 날이라 못 뒤집는다. */}
+        {!isPlan && info.nextAt && (
+          <MoveRoomNowButton leaseTermId={leaseTermId} tenantName={tenantName}
+            fromRoomNo={info.todayRoomNo} nextRoomNo={info.nextRoomNo} nextAt={info.nextAt} onDone={onDone} />
+        )}
         {!isPlan && info.nextAt && (
           <button type="button" onClick={() => { setMoveDate(info.nextAt ?? ''); setMoveOpen(true) }} disabled={pending}
             className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">

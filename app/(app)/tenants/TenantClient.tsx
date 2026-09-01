@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback, useMemo, useId
 import { fmtDateKor as fmtDate, fmtMD } from '@/lib/fmtDate'
 import { fmtWon, fmtNoBillCovered } from '@/lib/fmtMoney'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
+import { MoveRoomNowButton } from '@/components/tenant/MoveRoomNowButton'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
@@ -4600,6 +4601,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors">
                     다시 정하기
                   </button>
+                )}
+                {/* 일정보다 일찍 옮기는 날(청소가 일찍 끝남 등) — 정본 버튼 한 벌(프리즘 일정 행과 동일). */}
+                {roomPlan.stage === 'active' && roomPlan.nextAt && lease && (
+                  <div className="shrink-0">
+                    <MoveRoomNowButton leaseTermId={lease.id} tenantName={tenant?.name ?? ''}
+                      fromRoomNo={roomPlan.todayRoomNo} nextRoomNo={roomPlan.nextRoomNo} nextAt={roomPlan.nextAt}
+                      onDone={() => setRoomPlanTick(t => t + 1)} />
+                  </div>
                 )}
               </div>
             </div>
