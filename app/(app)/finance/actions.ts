@@ -2943,6 +2943,24 @@ export async function getSpecTrackedInfo(labels: string[]): Promise<Record<strin
 }
 
 
+// 수량 단위가 어긋난 저장을 지출 직전에 한 번 묻기 위한 조회(키친타월 사건, 운영자 승인 2026-09-01).
+// 재고 카드의 단위는 '롤'인데 지출을 '개'로 적으면, 수령 대기·잔량 매칭이 단위 비교에서 그 구매를
+// 조용히 걸러 낸다(overview pendingPurchases — 양쪽 단위가 다 있으면 같아야 잡힌다). 화면은 멀쩡해
+// 보이는데 수령 대기에만 안 뜨는 종류라, 위 용량 물음(getSpecTrackedInfo)과 같은 문법으로
+// 저장 직전에 한 번 묻는다. 카드가 없거나 카드 단위가 비어 있으면 침묵한다.
+export async function getUnitTrackedInfo(category: string, labels: string[]): Promise<Record<string, { qtyUnit: string }>> {
+  const { propertyId } = await requirePropertyAccess()
+  const names = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
+  if (!names.length) return {}
+  const rows = await prisma.trackedItem.findMany({
+    where: { propertyId, category, label: { in: names }, isArchived: false, NOT: { qtyUnit: null } },
+    select: { label: true, qtyUnit: true },
+  })
+  const out: Record<string, { qtyUnit: string }> = {}
+  for (const r of rows) if (r.qtyUnit && r.qtyUnit.trim()) out[r.label] = { qtyUnit: r.qtyUnit }
+  return out
+}
+
 // 품명 정체성 게이트용 이력 — 이 (카테고리, 품명) 카드가 지금까지 어떤 규격으로 등록됐는지.
 // 품목의 정체성은 품명 문자열 하나다(knowledge/domain-inventory.md). 규격 칸에 크기를 적어도
 // 시스템은 그것으로 카드를 나누지 않으므로, 10L 와 20L 이 한 카드에 섞이는 일이 조용히 일어난다.

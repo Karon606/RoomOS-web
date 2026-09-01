@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { getLabelCategoryHistory, getSpecTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
+import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
 import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '@/lib/unitOptions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
@@ -2401,6 +2401,38 @@ export default function FinanceClient({
               if (!ok) return
             }
           }
+        }
+        // 수량 단위가 재고 카드와 어긋나면 한 번 묻는다(키친타월 사건, 운영자 승인 2026-09-01).
+        // '개'로 적으면 수령 대기·잔량 매칭이 단위 비교에서 그 구매를 조용히 거른다(overview
+        // pendingPurchases). 화면은 멀쩡한데 수령 대기에만 안 뜨는 종류라 저장 직전에 묻는다.
+        // 막지 않는다 — 그대로 저장도 정당하다(단위를 정말 바꿔 파는 경우가 있다).
+        {
+          const cat = (fd.get('category') as string) || addExpCategory
+          const withUnit = finalItems.filter(it => it.label?.trim() && (it.qtyUnit ?? '').trim())
+          const uinfo = withUnit.length
+            ? await getUnitTrackedInfo(cat, withUnit.map(it => it.label.trim())).catch(() => ({} as Record<string, { qtyUnit: string }>))
+            : {}
+          let unitChanged = false
+          for (let i = 0; i < finalItems.length; i++) {
+            const it = finalItems[i]
+            const label = (it.label ?? '').trim()
+            const entered = (it.qtyUnit ?? '').trim()
+            const card = label ? uinfo[label] : undefined
+            if (!card || !entered || entered === card.qtyUnit) continue
+            const pick = await choiceDialog({
+              title: `'${label}' 단위가 재고와 다릅니다`,
+              message: `재고 관리의 이 품목은 '${card.qtyUnit}' 단위로 셉니다. '${entered}'로 저장하면 이 구매가 수령 대기와 잔량 집계에 잡히지 않습니다.`,
+              confirmLabel: `'${card.qtyUnit}'로 바꿔 저장`,
+              altLabel: '그대로 저장',
+            })
+            if (pick === null || pick === 'back') return
+            if (pick === 'confirm') {
+              finalItems = finalItems.map((x, xi) => xi === i ? { ...x, qtyUnit: card.qtyUnit } : x)
+              unitChanged = true
+            }
+          }
+          // 바꾼 단위가 저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 단위다(품명 게이트와 같은 처방).
+          if (unitChanged) fd.set('itemsJson', JSON.stringify(finalItems.map(x => ({ ...x, setHint: undefined, allocations: addIsDurable ? undefined : x.allocations }))))
         }
         // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
         // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.
