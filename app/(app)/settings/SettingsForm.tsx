@@ -2295,7 +2295,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving }: {
         </div>
         <AddendumCard label="추가 호실 특약" field="subLease" rows={9}
           fallback={DEFAULT_SUB_LEASE_ADDENDUM} saved={resolveSubLeaseAddendum(property?.subLeaseAddendum)}
-          hint="창고·사무실처럼 거주용이 아닌 방을 딸고 있는 계약서에만 붙습니다." />
+          hint="창고·사무실처럼 거주용이 아닌 방이 추가 호실로 딸린 계약서에만 붙습니다." />
         <AddendumCard label="단기 입실 특약" field="shortStay" rows={5}
           fallback={DEFAULT_SHORT_STAY_ADDENDUM} saved={resolveShortStayAddendum(property?.shortStayAddendum)}
           hint="단기 입실로 등록한 계약서에만 붙습니다. 단기 입실 정책이 꺼져 있으면 안 붙습니다." />
