@@ -98,6 +98,16 @@ try {
   if (!/<ViewportOffsetGuard\s*\/?>/.test(appLayout)) {
     violations.push('app/(app)/layout.tsx — ViewportOffsetGuard 마운트가 사라짐. 가드가 살아 있어도 셸에 안 붙어 무동작이다')
   }
+  // admin 셸도 같은 A 패턴 셸이다(키보드 패널 2026-09-02 3단계). 마운트가 빠지면 관리자
+  // 화면만 --kbd-inset 이 영영 0 이라 무증상으로 돌아간다 — (app) 축과 따로 지킨다.
+  const adminLayout = readFileSync('app/admin/layout.tsx', 'utf8')
+  if (!/<ViewportOffsetGuard\s*\/?>/.test(adminLayout)) {
+    violations.push('app/admin/layout.tsx — ViewportOffsetGuard 마운트가 사라짐. 관리자 화면은 키보드가 서도 여유가 안 생긴다')
+  }
+  // 여유는 main 자기 패딩이 만든다(.app-main 재사용 금지 — 그쪽 기본 여백 규칙까지 딸려 온다)
+  if (!/paddingBottom:\s*'var\(--kbd-inset/.test(adminLayout)) {
+    violations.push('app/admin/layout.tsx — main 의 --kbd-inset 패딩이 사라짐. 가드는 도는데 관리자 하단 입력칸이 키보드에 덮인다')
+  }
   // 두 규칙 양쪽에 있어야 한다. 한쪽만 남으면 그 화면 폭에서만 되살아난다.
   const css = readFileSync('app/globals.css', 'utf8')
   const appMainDecls = (css.match(/\.app-main\s*\{[^}]*padding-bottom:[^;]*;/g) ?? [])

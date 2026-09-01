@@ -40,7 +40,7 @@
 - [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등) + 사람을 부르는 말(입주자/입실자·입주/입실 경계)·다호실 종속(메인 계약)
 - [[open-issues]] — 미해결·후속 작업
 - [[open-checkout-paths-split]] — 퇴실 처리 경로 셋이 갈려 이용료 환불이 한 곳에만 있다(2026-08-30 발견, **최우선**)
-- [[open-keyboard-field-visibility]] — 키보드가 뜰 때 입력 칸이 가려지는 문제(2026-08-30 신고, 착수 대기 · 예약 실행 대상)
+- [[open-keyboard-field-visibility]] — 키보드가 뜰 때 입력 칸이 가려지는 문제(2026-08-30 신고, 2026-09-02 시공 완료 — 판정 정본 lib/keyboardViewport·띠 훅 useVisibleBand·가이드 §30)
 - [[soft-delete-pattern]] — deletedAt 소프트삭제·적용취소 인프라(2단계 마이그레이션·익스텐션·seqNo 함정)
 - [[auth-flow]] — 인증·세션·returnTo 흐름(proxy.ts가 미들웨어, layout이 가드, 공용 라우트, 오픈 리다이렉트 방어)
 - [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)

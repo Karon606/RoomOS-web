@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
+import ViewportOffsetGuard from '@/components/layout/ViewportOffsetGuard'
 import AdminNav from './AdminNav'
 import AdminProfile from './AdminProfile'
 
@@ -40,12 +41,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto"
+        // 키보드가 선 동안 겹침만큼 스크롤 여유를 더한다(가이드 §30). .app-main 은 (app) 셸
+        // 몫이라 재사용하지 않는다 — 그쪽 4rem/1.5rem 기본 여백 규칙까지 딸려 온다.
+        style={{ paddingBottom: 'var(--kbd-inset, 0px)' }}>
         <div className="max-w-5xl mx-auto px-4 py-5">{children}</div>
       </main>
-      {/* 토스트·상단 진행바·확인 다이얼로그 — (app) 셸 밖이라 여기에도 마운트 */}
+      {/* 토스트·확인 다이얼로그·키보드 가드 — (app) 셸 밖이라 여기에도 마운트 */}
       <SaveFeedback />
       <ConfirmHost />
+      <ViewportOffsetGuard />
     </div>
   )
 }

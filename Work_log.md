@@ -5008,3 +5008,26 @@ eslint 신규 0 · DB 쓰기 없음(스키마 무변경, purposeOverride·purpos
 조기 입실 회귀 23 폐기) · 빌드 0 · eslint 신규 0 · 드리프트 47계약 76구간 0건.
 
 **남은 것.** 배포 뒤 디자이너 패스, 그리고 8/31 실기(박정후 님).
+
+## 2026-09-02 (밤) — 키보드 가림, 클래스 봉합 (패널 9단계 시공)
+
+**신고 계열.** 2026-08-30 "키보드가 표시될 때 입력하려는 필드가 아래나 위쪽으로 숨겨지는 오류가
+곳곳에서". 패널 진단: 규칙(35% 목표선·모달 기하)은 이미 있었고, 문제는 규칙이 안 닿는 영토 —
+수제 오버레이 여섯이 --kbd-inset 하단 한 항만 밀어 위 겹침·시트 높이를 몰랐고, admin 셸 무보호,
+핀치 줌 오판, 외장 단축바 스크롤 전쟁, 겹침 70% 초과 기각.
+
+**시공 3커밋.**
+1. `lib/keyboardViewport.ts` 판정·기하 순수 정본 + 회귀 23건. 줌 게이트(scale>1.02)·복원
+   엡실론(2px)·상한 클램프(70%) 동봉. ViewportOffsetGuard 는 배선만 남김.
+2. `lib/useVisibleBand.ts` 띠 동기화 훅(Modal 에서 추출, 픽셀 무변화) + 수제 오버레이 여섯 편입
+   (확인창·살짝 보기·합치기+내부 스크롤러 신설·전역 검색·재고 허브 부족·위치별 점검).
+3. admin 셸 가드 마운트 + main 자체 --kbd-inset 패딩, viewport interactiveWidget
+   'resizes-content', 가이드 §30 신설·§12 정정, `check-kbd-canonical.mjs` 신설(+verify:fast
+   등록), check-standalone-scroll admin 축 2건, knowledge 노트 3건 갱신.
+
+**역주입.** admin 가드 제거·패딩 제거·훅 호출 제거 세 건 전부 감지망이 잡음(exit 1).
+
+**게이트.** tsc 0 · verify:fast 전부 통과(키보드 23 신설) · 빌드 0 · eslint 신규 0.
+
+**남은 것.** 실기 시나리오 8건(iPhone·Android 각각) — 보고서에 동봉. 명시적 비대응: iPad
+플로팅·분할 키보드, PeekSheet iframe 내부 재노출, 외장 단축바 최하단 24px.

@@ -32,6 +32,9 @@ export const viewport: Viewport = {
     { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
   viewportFit: 'cover',
+  // 키보드가 서면 뷰포트를 줄이는 쪽으로 고정(가이드 §30). Android 는 이 선언이 없으면
+  // overlays-content 로 갈리는 기기가 있어 --kbd-inset 산수의 전제(innerHeight 불변)가 흔들린다.
+  interactiveWidget: 'resizes-content',
 }
 
 export const metadata: Metadata = {

@@ -1,4 +1,4 @@
-# 키보드가 뜰 때 입력 칸이 가려지는 문제 (2026-08-30 운영자 신고, 착수 대기)
+# 키보드가 뜰 때 입력 칸이 가려지는 문제 (2026-08-30 신고, 2026-09-02 시공 완료)
 
 ## 무엇이 문제인가 (운영자 원문)
 
@@ -61,3 +61,23 @@
 ## 관련 노트
 
 [[domain-modal-shell]] · [[regression-nets]] · [[design-visual-identity]]
+
+
+## 시공 결과 (2026-09-02, 패널 승인 3결정 + 9단계 시공)
+
+운영자 승인 결정: 목표선 35% 유지(중앙 50%는 다음 칸 미리보기를 죽인다) · 스크롤 모션 보류 ·
+가이드 §30 신설. 정본 서술은 docs/brand-guide-v2.0.md §30.
+
+- `lib/keyboardViewport.ts` — 판정·기하 순수 정본 신설. 열림 문턱 60px, 줌 게이트 scale>1.02,
+  겹침 상한 70% 클램프(기각에서 클램프로 정정), 복원 엡실론 2px(외장 단축바 스크롤 전쟁 봉합),
+  재노출 목표선 35%. `scripts/test-keyboard-viewport.ts` 23건이 고정.
+- `lib/useVisibleBand.ts` — Modal 의 띠 동기화를 훅으로 뽑은 정본. Modal 은 종전 변수명으로
+  물려 픽셀 무변화. 수제 오버레이 여섯(확인창·살짝 보기·합치기(+내부 스크롤러 신설)·전역
+  검색·재고 허브 부족·위치별 점검)을 전부 편입 — 인셋 두 항 + 패널 상한을 띠로.
+- admin 셸에도 ViewportOffsetGuard 마운트 + main 자체 --kbd-inset 패딩(.app-main 재사용 금지).
+- viewport 메타 interactiveWidget 'resizes-content' (Android 동작 고정).
+- 감지망: `scripts/check-kbd-canonical.mjs` 신설(fixed inset-0 선언자는 훅 호출 또는 ALLOW
+  사유 필수 + 허용 목록 케케묵음 검사) · check-standalone-scroll.mjs 에 admin 축 2건.
+  역주입으로 실동작 확인.
+- 명시적 비대응(패널 합의): iPad 플로팅·분할 키보드, PeekSheet iframe 내부 재노출,
+  외장 단축바 아래 최하단 24px.

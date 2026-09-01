@@ -355,3 +355,11 @@ d0833496 까지의 정책은 **가려짐의 부정**이었다. 칸 아래 REVEAL
 
 스크롤은 즉시다. `smooth` 를 쓰면 재시도가 이전 애니메이션 위에 겹쳐 기하를 잘못 읽는다.
 안드로이드는 겹침이 0 이라 진입 자체가 없고, 데스크탑도 같다.
+
+
+## 키보드 · 보이는 띠 정본 (2026-09-02 이후)
+
+키보드 판정·기하는 `lib/keyboardViewport.ts`(순수 함수), 오버레이의 띠 인셋·높이는
+`lib/useVisibleBand.ts` 훅이 정본이다. fixed inset-0 오버레이는 공용 Modal 을 쓰거나 이 훅을
+불러야 하고, `scripts/check-kbd-canonical.mjs` 가 지킨다. 서술 정본은 브랜드 가이드 §30,
+경위는 [[open-keyboard-field-visibility]].
