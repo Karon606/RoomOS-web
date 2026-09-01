@@ -292,10 +292,13 @@ model Property {
   documentFieldOverrides DocumentFieldOverride[]
   foreignRegNoViews  ForeignRegNoView[]
   overlapAcks        LeaseOverlapAck[]
-  // 현금영수증 발급 기한 알림에서 수동으로 끈 입금 키 목록 — [{ k: 'leaseTermId|payYmd|payMethod', at: 'YYYY-MM-DD' }].
-  // 발행 여부는 운영자 판단 영역이라 알림을 끌 수 있어야 한다(운영자 지시 2026-09-01). 끈 건은
-  // 현금영수증 탭의 접힌 목록에서 다시 켤 수 있다(적용취소 상시 보장).
+  // 구 칸(2026-09-01 하루 사용) — 알림 끄기가 전 카테고리로 일반화되며 alertMutes 로 이주했다
+  // (2026-09-02). 더 이상 읽지 않는다. 지우는 것은 파괴적 변경이라 남겨 둔다.
   receiptAlertMutes  Json?
+  // 홈 알림에서 수동으로 끈 알림 키 목록 — [{ k: '카테고리:식별자', at: 'YYYY-MM-DD' }].
+  // "업무 처리와 무관하게 이 알림은 이제 필요없어"(운영자 지시 2026-09-02). 현금영수증 건별
+  // 키는 'receipt:계약|수납일|수단'. 끈 건은 홈 하단 '끈 알림' 목록에서 언제든 다시 켠다(§16).
+  alertMutes         Json?
   @@map("properties")
 }
 

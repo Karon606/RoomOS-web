@@ -2197,7 +2197,7 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const to = new Date(Date.UTC(y, m, 1))
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { acquisitionDate: true, prevOwnerCutoffDate: true, receiptAlertMutes: true },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true, alertMutes: true },
   })
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   const payWindow = { gte: cutoff && cutoff > from ? cutoff : from, lt: to }
@@ -2258,8 +2258,9 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
   const issuedKeys = new Set(lines.map(l => key(l.leaseTermId, l.payDate, l.payMethod)))
   // 알림을 수동으로 끈 입금 — 발행 여부는 운영자 판단 영역이라 끌 수 있어야 한다(운영자 지시
   // 2026-09-01). 끈 건은 후보에서 빠지되 사라지지 않는다 — 접힌 목록에서 언제든 다시 켠다(§16).
-  const muteRows = readReceiptAlertMutes(property?.receiptAlertMutes)
-  const mutedKeys = new Map(muteRows.map(m => [m.k, m.at]))
+  // 저장은 전 카테고리 공용 alertMutes 다(2026-09-02 일반화) — 이 탭 몫은 receipt: 접두어 키.
+  const muteRows = readAlertMuteRows(property?.alertMutes)
+  const mutedKeys = new Map(muteRows.filter(m => m.k.startsWith('receipt:')).map(m => [m.k.slice('receipt:'.length), m.at]))
   const all = [...byKey.entries()]
     .filter(([k, g]) => !issuedKeys.has(k) && g.amount > 0)
     .sort(([, a], [, b]) => a.payYmd === b.payYmd ? a.roomNo.localeCompare(b.roomNo) : a.payYmd.localeCompare(b.payYmd))
@@ -2278,28 +2279,26 @@ export async function getCashReceiptTabRows(targetMonth: string): Promise<{
 }
 
 /** 저장값(Json)을 끈 목록으로 읽는다 — 깨진 값은 빈 목록이다(알림이 죽는 것보다 낫다). */
-function readReceiptAlertMutes(raw: unknown): { k: string; at: string }[] {
+function readAlertMuteRows(raw: unknown): { k: string; at: string }[] {
   if (!Array.isArray(raw)) return []
   return raw.filter((m): m is { k: string; at: string } =>
     !!m && typeof (m as { k?: unknown }).k === 'string' && typeof (m as { at?: unknown }).at === 'string')
 }
 
 /**
- * 현금영수증 발급 기한 알림 끄기 — 그 입금 건을 홈 알림·후보 목록에서 접는다.
- *
- * 발행할지 말지는 운영자 판단 영역이다(운영자 지시 2026-09-01 — "의도적으로 발행을 안 하는
- * 경우도 있으므로 수동으로 꺼버릴 수도 있게"). 앱은 사실만 접는다 — 끈다고 발급 의무가
- * 사라지는 것은 아니고, 끈 건은 현금영수증 탭의 접힌 목록에 남아 언제든 다시 켤 수 있다.
- * 키는 발행 줄과 같은 축(계약·수납일·수단)이다.
+ * 홈 알림 끄기(전 카테고리 공용) — "업무 처리와 무관하게 이 알림은 이제 필요없어"
+ * (운영자 지시 2026-09-02, 현금영수증 건별 끄기를 일반화). 앱은 알림만 접는다 — 일 자체가
+ * 사라지는 것은 아니고, 끈 건은 홈 하단 '끈 알림' 목록에 남아 언제든 다시 켠다(§16).
+ * 키는 '카테고리:식별자' 한 줄이고 만드는 쪽(dashboard/page)이 정한다.
  */
-export async function muteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function muteHomeAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } })
-    const cur = readReceiptAlertMutes(p?.receiptAlertMutes)
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } })
+    const cur = readAlertMuteRows(p?.alertMutes)
     if (!cur.some(m => m.k === k)) cur.push({ k, at: kstYmdStr() })
-    await prisma.property.update({ where: { id: propertyId }, data: { receiptAlertMutes: cur } })
+    await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: cur } })
     revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
@@ -2308,20 +2307,29 @@ export async function muteReceiptAlert(k: string): Promise<{ ok: true } | { ok: 
   }
 }
 
-/** 알림 다시 켜기 — 끈 목록에서 그 건을 뺀다. */
-export async function unmuteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/** 홈 알림 다시 켜기 — 끈 목록에서 그 건을 뺀다. */
+export async function unmuteHomeAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } })
-    const next = readReceiptAlertMutes(p?.receiptAlertMutes).filter(m => m.k !== k)
-    await prisma.property.update({ where: { id: propertyId }, data: { receiptAlertMutes: next } })
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } })
+    const next = readAlertMuteRows(p?.alertMutes).filter(m => m.k !== k)
+    await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: next } })
     revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+/** 현금영수증 건별 끄기 — 공용 저장에 receipt: 접두어로 얹는 얇은 껍데기(탭 호출부 호환). */
+export async function muteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return muteHomeAlert(`receipt:${k}`)
+}
+
+export async function unmuteReceiptAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return unmuteHomeAlert(`receipt:${k}`)
 }
 
 /**

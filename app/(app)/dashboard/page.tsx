@@ -1424,6 +1424,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         exactDate: fmtShortDate(l.moveInDate),
         reservationDueLeaseId: l.id,
         reservationDueRoomNo:  l.room?.roomNo ?? null,
+        muteKey: `movein:${l.id}`,
       })
       continue
     }
@@ -1439,6 +1440,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         ? `입주 희망일: ${fmtKorDate(l.moveInDate)}${isConfirmed ? ' · 예약 확정' : ' · 입주 미확정 (입실 예약 단계)'}`
         : undefined,
       exactDate: fmtShortDate(l.moveInDate),
+      muteKey: `movein:${l.id}`,
     })
   }
 
@@ -1457,6 +1459,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       exactDate: fmtShortDate(l.moveInDate),
       reservationDueLeaseId: l.id,
       reservationDueRoomNo:  l.room?.roomNo ?? null,
+      muteKey: `movein:${l.id}`,
     })
   }
 
@@ -1495,6 +1498,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         // 이미 살고 있는 사람의 이동이라 '입실 희망'이 아니다 — 제 묶음에 선다.
         category:  'move',
         text:      `${l.tenant.name}님 ${fmtRoomNo(roomNos.get(next.roomId) ?? '', '')} 이사 예정`,
+        muteKey:   `move:${l.id}:${next.from}`,
         link:      `/tenants?tenantId=${l.tenant.id}`,
         dotColor:  'var(--info-fg)',
         timeLabel: days === 0 ? '오늘' : `${Math.abs(days)}일 경과`,
@@ -1547,6 +1551,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 퇴실 처리 폼의 기본 날짜 — 미리 적어 둔 예정일이다. 그날이 지나도 오늘로 안 바뀐다
       // (운영자 확정 2026-08-31). 이 칸의 날짜가 일할·환불·구간 마감의 기준이다.
       moveOutExpectedYmd: l.expectedMoveOut ? kstYmdStr(l.expectedMoveOut) : null,
+      muteKey: `moveout:${l.id}`,
     })
   }
 
@@ -1556,6 +1561,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     alertItems.push({
       category:  'tour',
       text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${fmtRoomNo(l.room.roomNo, '')}` : ''} ${l.tourDate ? '투어 예정' : '문의'}`,
+      muteKey:   `tour:${l.id}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  'var(--deposit-fg)',
       timeLabel,
@@ -1619,6 +1625,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         link:      `/tenants`,
         dotColor:  'var(--success-fg)',
         timeLabel: `날짜 불가 ${g.excludedCount}명`,
+        muteKey:   `wish:${g.roomNo}`,
         detail:    `${fmtRoomNo(g.roomNo, '')}를 희망한 ${g.excludedCount}명은 입주 희망일이 이 방이 비는 날과 맞지 않습니다. 방이 어렵다는 것을 미리 알려 주세요. 대상자는 입주자 목록 카드에 사유가 표시됩니다.`,
         wishRoomNo: g.roomNo,
       })
@@ -1638,6 +1645,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         link:      `/tenants?tenantId=${c.tenantId}`,
         dotColor:  'var(--success-fg)',
         timeLabel: '연락 가능',
+        muteKey:   `wish:${g.roomNo}`,
         tenantId:  c.tenantId,
         detail:    [detail, wishGateDetail(c)].filter(Boolean).join(' '),
         wishExcludedCount: g.excludedCount,
@@ -1655,6 +1663,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       link:      `/room-manage`,
       dotColor:  'var(--success-fg)',
       timeLabel: `후보 ${g.candidates.length}명`,
+      muteKey:   `wish:${g.roomNo}`,
       detail,
       wishCandidates: g.candidates.map(c => ({
         tenantId: c.tenantId,
@@ -1703,6 +1712,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:  l.tenantId,
         leaseTermId: l.leaseId,
         roomId:    l.roomId,
+        muteKey:   `upcoming:${l.leaseId}:${dueDate.toISOString().slice(0, 10)}`,
         detail:    `청구 예정액 ${fmtWon(l.upcomingPortion)}${daysLeft === 0 ? '. 오늘이 납부일입니다.' : `. ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
@@ -1735,6 +1745,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     alertItems.push({
       category:  'request',
       text:      r.tenant ? `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}` : `공용 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
+      muteKey:   `request:${r.id}`,
       link:      r.tenantId ? `/tenants?tenantId=${r.tenantId}&tab=requests` : '/requests',
       dotColor:  'var(--persimmon)',
       timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `${daysLeft}일 남음`) : '미처리',
@@ -1761,6 +1772,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'inventory',
         text:      `${r.label} 재고 부족 (${stockLabel} 남음)`,
+        muteKey:   `inventory:low:${r.id}`,
         link:      '/inventory',
         dotColor:  'var(--inspect-fg)',
         timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `${r.daysUntilEmpty}일 남음`,
@@ -1790,13 +1802,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         })
       }
     }
-    for (const v of draftMap.values()) {
+    for (const [draftItemId, v] of draftMap) {
       const sinceMs = Date.now() - v.latestUpdate.getTime()
       const sinceHr = Math.floor(sinceMs / (60 * 60 * 1000))
       const sinceTxt = sinceHr < 1 ? '방금 전' : sinceHr < 24 ? `${sinceHr}시간 전` : `${Math.floor(sinceHr / 24)}일 전`
       alertItems.push({
         category:  'inventory',
         text:      `${v.label} 점검 임시저장 중`,
+        muteKey:   `inventory:draft:${draftItemId}`,
         link:      '/inventory',
         dotColor:  'var(--inspect-fg)',
         timeLabel: '임시저장 보관 중',  // urgencyDaysOf=9999 → 긴급 아님(예정 그룹)
@@ -1829,14 +1842,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         where: { propertyId, deletedAt: null, payDate: { gte: lookFrom } },
         select: { leaseTermId: true, payDate: true, payMethod: true },
       }),
-      prisma.property.findUnique({ where: { id: propertyId }, select: { receiptAlertMutes: true } }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } }),
     ])
     // 수동으로 끈 건 — 발행 여부는 운영자 판단 영역이다(운영자 지시 2026-09-01). 끈 건은 조르지
     // 않고, 현금영수증 탭의 접힌 목록에서 다시 켤 수 있다.
     const crMuted = new Set(
-      (Array.isArray(crMuteProp?.receiptAlertMutes) ? crMuteProp.receiptAlertMutes : [])
+      (Array.isArray(crMuteProp?.alertMutes) ? crMuteProp.alertMutes : [])
         .map(m => (m && typeof (m as { k?: unknown }).k === 'string' ? (m as { k: string }).k : null))
-        .filter((k): k is string => !!k),
+        .filter((k): k is string => !!k && k.startsWith('receipt:'))
+        .map(k => k.slice('receipt:'.length)),
     )
     const crKey = (lt: string, d: Date, pm: string | null) => `${lt}|${kstYmdStr(d)}|${pm ?? ''}`
     type CrGroup = { roomNo: string; name: string; payYmd: string; amount: number }
@@ -1865,6 +1879,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'receipt',
         text:      `현금영수증 발급 기한 ${due.length}건 (${fmtWon(total)})`,
+        muteKey:   'receipt:summary',
         link:      `/rooms?tab=receipt&month=${due[0].payYmd.slice(0, 7)}`,
         dotColor:  'var(--danger-fg)',
         timeLabel: worst < 0 ? `기한 ${-worst}일 경과` : worst === 0 ? '오늘 마감' : `기한 ${worst}일 남음`,
@@ -2020,6 +2035,33 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   }
 
+  // ── 알림 끄기(전 카테고리) ───────────────────────────────────
+  //
+  // "업무가 실제로 처리되는 것과는 관계없이 이 알림은 이제 필요없어"(운영자 지시 2026-09-02).
+  // 끈 키는 Property.alertMutes 한 칸이고, 끈 건은 숨기지 않고 홈 하단 '끈 알림'으로 접는다 —
+  // 언제든 다시 켠다(§16). 키가 없는 알림(식별자 없는 종류)은 끄기 버튼 자체가 안 선다.
+  const muteKeyOf = (a: (typeof alertItems)[number]): string | null => {
+    if (a.muteKey) return a.muteKey
+    if (a.category === 'recurring' && a.recurringExpenseId) return `recurring:${a.recurringExpenseId}:${a.recurringDueDate ?? ''}`
+    if (a.leaseTermId) return `${a.category}:${a.leaseTermId}`
+    if (a.tenantId) return `${a.category}:${a.tenantId}`
+    return null
+  }
+  const alertMuteRaw = (await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } }))?.alertMutes
+  const alertMuteSet = new Set(
+    (Array.isArray(alertMuteRaw) ? alertMuteRaw : [])
+      .map(mm => (mm && typeof (mm as { k?: unknown }).k === 'string' ? (mm as { k: string }).k : null))
+      .filter((k): k is string => !!k),
+  )
+  const visibleAlerts: typeof alertItems = []
+  const mutedAlerts: typeof alertItems = []
+  for (const a of alertItems) {
+    const k = muteKeyOf(a)
+    const withKey = k ? { ...a, muteKey: k } : a
+    if (k && alertMuteSet.has(k)) mutedAlerts.push(withKey)
+    else visibleAlerts.push(withKey)
+  }
+
   const dashboardData: DashboardData = {
     totalRevenue,
     paidRevenue,
@@ -2091,7 +2133,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     nationalityDist: toDistribution(nationalityMap),
     jobDist:         toDistribution(jobMap),
     rooms:           roomsData,
-    alerts:          alertItems,
+    alerts:          visibleAlerts,
+    mutedAlerts,
     expectedExpense,
     hasExpenseHistory,
     activity:        activityItems,
