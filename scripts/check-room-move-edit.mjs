@@ -114,6 +114,50 @@ const violations = []
   if (!/undoRoomMove\(/.test(readFileSync('app/(app)/dashboard/DashboardClient.tsx', 'utf8'))) {
     violations.push('app/(app)/dashboard/DashboardClient.tsx — 홈 이사 확인에 적용취소가 없다.')
   }
+
+  // ── 검토 패널 후속 (2026-09-01) ──────────────────────────────
+  // 공실 반전 세 자리(이사·이사 적용취소·입실 적용취소)가 점유 정본을 지나는가.
+  // 구간 수만 보면 뒤이은 예약이나 자기 계약 호실이 '빈 방'으로 골라진다(402호 실사례).
+  {
+    for (const fname of ['advanceRoomSchedule', 'undoRoomMove', 'undoRoomSchedule']) {
+      const fn = src.match(new RegExp(`export async function ${fname}[\\s\\S]*?\\n\\}\\n`))
+      if (!fn || !/stillUsed === 0 && !\(await roomStillOccupied\(/.test(fn[0])) {
+        violations.push(`${f} — ${fname} 의 공실 반전이 점유 정본(roomStillOccupied)을 안 지난다. 예약 있는 방이 빈 방으로 골라진다.`)
+      }
+    }
+    // 청소 예정 재사용 — 같은 방의 PLANNED 가 있으면 날짜만 당긴다. 안 보면 카드가 쌓인다.
+    // 'PLANNED' 글자만 찾으면 생성 쪽의 같은 글자에 속는다(역주입에서 통과했다) — **조회**를 본다.
+    const adv = src.match(/export async function advanceRoomSchedule[\s\S]*?\n\}\n/)
+    if (adv && !/roomCleaning\.findFirst[\s\S]{0,200}status: 'PLANNED'/.test(adv[0])) {
+      violations.push(`${f} — 이사 청소 예정이 기존 PLANNED 를 안 본다. 처리·적용취소 반복마다 청소 카드가 쌓인다.`)
+    }
+    // 버튼 준비 판정은 서버 한 자리 — 화면 둘이 각자 재면 문구와 실행이 갈린다(밀린 이사·입실 당일·퇴실 완료).
+    if (!/moveNowReady/.test(src)) {
+      violations.push(`${f} — getRoomScheduleState 가 오늘 이사 준비 판정(moveNowReady)을 안 내려준다.`)
+    }
+    // 글자 존재만 보면 주석("getRoomScheduleState.moveNowReady")과 임포트 줄에 속는다
+    // (역주입에서 둘 다 실제로 통과했다). **값 접근**과 **JSX 사용**을 본다.
+    for (const [name, sf, readyRe] of [
+      ['프리즘 일정 행', 'components/entity-modal/bodies/TenantBody.tsx', /info\.moveNowReady/],
+      ['입주자 수정 폼', 'app/(app)/tenants/TenantClient.tsx', /roomPlan\.moveNowReady/],
+    ]) {
+      const ssrc = readFileSync(sf, 'utf8')
+      if (!readyRe.test(ssrc)) {
+        violations.push(`${sf} — '${name}' 이 서버 준비 판정을 안 쓴다. 밀린 이사·입실 당일·퇴실 완료에도 버튼이 선다.`)
+      }
+      // 상시 적용취소 — 토스트(6초)가 지나가도 되돌릴 길이 남아야 한다(§16).
+      if (!/<UndoRoomMoveButton/.test(ssrc)) {
+        violations.push(`${sf} — '${name}' 에 이사 상시 적용취소가 없다. 토스트가 지나가면 입실 전체를 물러야 한다.`)
+      }
+    }
+    // 경계 되돌림의 결과를 버리지 않는가 — 대입 없는 호출이 하나라도 있으면 침묵 실패다(§27.2).
+    const bsrc2 = readFileSync('components/tenant/MoveRoomNowButton.tsx', 'utf8')
+    const all = (bsrc2.match(/await undoChangeRoomMoveDate\(/g) ?? []).length
+    const assigned = (bsrc2.match(/= (?:boundaryUndo \? )?await undoChangeRoomMoveDate\(/g) ?? []).length
+    if (all !== assigned) {
+      violations.push('components/tenant/MoveRoomNowButton.tsx — 경계 되돌림 결과를 버리는 호출이 있다. 실패해도 침묵한다.')
+    }
+  }
 }
 
 console.log(`[이사일 수정] 축 ⓐ 예약 단계 · ⓑ 입실 단계 · ⓒ 겹침·연속성 검증 · ⓓ 입실 후 남은 계획 · ⓔ 오늘 이사 / 위반 ${violations.length}건`)

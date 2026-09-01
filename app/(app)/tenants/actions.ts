@@ -2964,15 +2964,33 @@ export async function advanceRoomSchedule(input: {
       await recordRoomChange(tx, lease.id, fromRoomId, next.roomId, input.moveDate)
       await tx.room.update({ where: { id: next.roomId }, data: { isVacant: false } })
       // 떠난 방은 다른 열린 구간이 없을 때만 공실로 돌린다.
+      // 공실 반전은 구간 수만으로 정하지 않는다 — 그 방을 잡은 예약·계약(roomStillOccupied 정본)이
+      // 있으면 비워도 공실이 아니다. 402호를 비우는 순간 뒤이은 예약(9/8)이 있는데도 '빈 방'으로
+      // 골라지던 결함(검토 패널 2026-09-01). 예외 계약 없음('') — 자기 계약 호실도 마찬가지다.
       const stillUsed = await tx.roomStay.count({ where: { roomId: fromRoomId, endDate: null } })
-      if (stillUsed === 0) await tx.room.update({ where: { id: fromRoomId }, data: { isVacant: true } })
+      if (stillUsed === 0 && !(await roomStillOccupied(fromRoomId, ''))) {
+        await tx.room.update({ where: { id: fromRoomId }, data: { isVacant: true } })
+      }
       if (input.scheduleCleaning) {
-        await tx.roomCleaning.create({
-          data: {
-            propertyId, roomId: fromRoomId, status: 'PLANNED', reason: 'CHECKOUT',
-            scheduledDate: new Date(`${input.moveDate}T00:00:00.000Z`),
-          },
+        // 같은 방의 열린 청소 예정이 이미 있으면 날짜만 당긴다 — 한 번의 퇴거에 청소 카드가
+        // 둘이 되고, 처리·적용취소를 반복하면 계속 쌓인다(검토 패널, 402호 9/2 예정 실측).
+        const openCleaning = await tx.roomCleaning.findFirst({
+          where: { propertyId, roomId: fromRoomId, status: 'PLANNED' },
+          select: { id: true },
         })
+        if (openCleaning) {
+          await tx.roomCleaning.update({
+            where: { id: openCleaning.id },
+            data: { scheduledDate: new Date(`${input.moveDate}T00:00:00.000Z`) },
+          })
+        } else {
+          await tx.roomCleaning.create({
+            data: {
+              propertyId, roomId: fromRoomId, status: 'PLANNED', reason: 'CHECKOUT',
+              scheduledDate: new Date(`${input.moveDate}T00:00:00.000Z`),
+            },
+          })
+        }
       }
     })
 
@@ -3021,12 +3039,16 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   todayRoomNo: string | null
   nextAt: string | null
   nextRoomNo: string | null
+  /** '오늘 이사 처리' 버튼을 세울 수 있는가 — 거주중·밀린 이사 없음·입실 당일 아님(판정 근거는 반환부 주석). */
+  moveNowReady: boolean
+  /** 오늘 이사한 흔적('YYYY-MM-DD') — 있으면 상시 '이사 적용취소'가 선다(§16). */
+  movedTodayYmd: string | null
 } | null> {
   await requireEdit()
   const { propertyId } = await getPropertyId()
   const lease = await prisma.leaseTerm.findFirst({
     where: { id: leaseTermId, propertyId },
-    select: { roomSchedule: true, status: true, roomStays: { where: { endDate: null }, select: { roomId: true }, take: 1 } },
+    select: { roomSchedule: true, status: true, roomStays: { where: { endDate: null }, select: { roomId: true, startDate: true }, take: 1 } },
   })
   const schedule = parseRoomSchedule(lease?.roomSchedule)
   if (!hasRoomSchedule(schedule)) return null
@@ -3042,14 +3064,39 @@ export async function getRoomScheduleState(leaseTermId: string): Promise<{
   // 판정은 일정 추정이 아니라 실제 열린 구간이다 — 이사를 일찍·늦게 하면 둘이 갈린다.
   const curRoomId = lease?.roomStays[0]?.roomId ?? null
   const rawLines = roomScheduleLines(schedule, noOf)
-  const curIdx = curRoomId && lease?.status !== 'RESERVED' ? schedule.findIndex(e => e.roomId === curRoomId) : -1
+  // 같은 방이 일정에 두 번 나오면 첫 등장이 아니라 **오늘을 덮는 구간**을 우선한다(검토 패널 잠재 지적).
+  const curIdx = curRoomId && lease?.status !== 'RESERVED'
+    ? (() => {
+        const covering = schedule.findIndex(e => e.roomId === curRoomId && e.from <= today && (e.to === null || today < e.to))
+        return covering >= 0 ? covering : schedule.findIndex(e => e.roomId === curRoomId)
+      })()
+    : -1
+  const todaySeg = scheduledSegmentOn(schedule, today)
+  const openStartYmd = lease?.roomStays[0]?.startDate ? kstYmdStr(lease.roomStays[0].startDate) : null
+  // 오늘 이사한 흔적 — 열린 구간이 오늘 시작했고 오늘 닫힌 구간이 있으면 undoRoomMove 대상이다.
+  // 적용취소 진입점이 6초 토스트뿐이면 §16 위반이라, 이 값으로 상시 버튼이 선다(검토 패널).
+  const movedToday = openStartYmd === today
+    ? (await prisma.roomStay.count({ where: { leaseTermId, endDate: new Date(`${today}T00:00:00.000Z`) } })) > 0
+    : false
   return {
     stage: lease?.status === 'RESERVED' ? 'plan' : 'active',
     text: roomScheduleText(schedule, noOf) ?? '',
     lines: rawLines.map((l, i) => i === curIdx ? `${l} · 지금 거주` : l),
-    todayRoomNo: noOf(scheduledSegmentOn(schedule, today)?.roomId ?? ''),
+    todayRoomNo: noOf(todaySeg?.roomId ?? ''),
     nextAt: next?.at ?? null,
     nextRoomNo: next ? noOf(next.roomId) : null,
+    /**
+     * '오늘 이사 처리' 버튼을 세울 수 있는가 — 판정을 서버 한 자리가 한다(화면 둘이 각자 재면 갈린다).
+     *   거주중(ACTIVE)이어야 한다 — 퇴실 완료 계약에 버튼이 서던 결함(검토 패널 9).
+     *   밀린 이사가 없어야 한다 — 일정 축과 실제 구간 축이 갈린 채 누르면 문구와 실행이 다른
+     *   방을 말한다(검토 패널 3). 그때는 홈 알림(실제 구간 축)이 맡는다.
+     *   들어온 당일은 닫는다 — 0박 구간은 만들 수 없고, 그날은 일정을 다시 짜는 것이 맞다(검토 패널 6).
+     */
+    moveNowReady: lease?.status === 'ACTIVE'
+      && next != null
+      && curRoomId != null && todaySeg?.roomId === curRoomId
+      && openStartYmd !== today,
+    movedTodayYmd: movedToday ? today : null,
   }
 }
 
@@ -3083,8 +3130,11 @@ export async function undoRoomMove(input: { leaseTermId: string; moveYmd: string
       await tx.roomStay.delete({ where: { id: moved.id } })
       await tx.roomStay.update({ where: { id: prev.id }, data: { endDate: null } })
       await tx.room.update({ where: { id: prev.roomId }, data: { isVacant: false } })
+      // 결함 1과 같은 클래스 — 되돌린 방(계약 호실)을 자기 계약이 잡고 있으면 공실이 아니다.
       const stillUsed = await tx.roomStay.count({ where: { roomId: moved.roomId, endDate: null } })
-      if (stillUsed === 0) await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
+      if (stillUsed === 0 && !(await roomStillOccupied(moved.roomId, ''))) {
+        await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
+      }
     })
     revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/room-manage')
     return { ok: true }
@@ -3118,7 +3168,10 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
       })
       for (const rid of roomIds) {
         const stillUsed = await tx.roomStay.count({ where: { roomId: rid, endDate: null } })
-        if (stillUsed === 0) await tx.room.update({ where: { id: rid }, data: { isVacant: true } })
+        // 같은 클래스 — 예약으로 돌아가는 자기 계약(RESERVED 도 점유)과 남의 계약을 함께 본다.
+        if (stillUsed === 0 && !(await roomStillOccupied(rid, ''))) {
+          await tx.room.update({ where: { id: rid }, data: { isVacant: true } })
+        }
       }
     })
 

@@ -52,8 +52,9 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
       const r = await advanceRoomSchedule({ leaseTermId, moveDate: today, scheduleCleaning: true })
       if (!r.ok) {
         // 반쪽 상태 금지 — 경계만 당겨지고 이사가 안 됐으면 경계를 되돌린다.
-        if (boundaryUndo) await undoChangeRoomMoveDate(boundaryUndo)
-        pushToast('error', r.error)
+        // 되돌림이 또 실패하면 침묵하지 않는다(§27.2) — 이사일만 오늘로 남은 상태를 사람이 알아야 고친다.
+        const bu = boundaryUndo ? await undoChangeRoomMoveDate(boundaryUndo) : { ok: true as const }
+        pushToast('error', bu.ok ? r.error : `${r.error} 이사일이 오늘로 당겨진 채 남았습니다. 이사일 바꾸기로 되돌려 주세요.`)
         return
       }
       pushToast('success', `${to}로 이사 처리했습니다`, {
@@ -63,8 +64,10 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
           run: () => { void (async () => {
             const u = await undoRoomMove({ leaseTermId, moveYmd: today })
             if (!u.ok) { pushToast('error', u.error); return }
-            if (boundaryUndo) await undoChangeRoomMoveDate(boundaryUndo)
-            pushToast('info', '이사를 되돌렸습니다. 만들어 둔 청소 예정은 남습니다 — 필요 없으면 청소 관리에서 지워 주세요.')
+            const bu = boundaryUndo ? await undoChangeRoomMoveDate(boundaryUndo) : { ok: true as const }
+            pushToast('info', bu.ok
+              ? '이사를 되돌렸습니다. 청소 예정은 남습니다. 필요 없으면 청소 관리에서 지워 주세요.'
+              : '이사는 되돌렸지만 이사일이 오늘로 남았습니다. 홈 알림에서 다시 확인하거나 이사일 바꾸기로 고쳐 주세요.')
             onDone()
           })() },
         },
@@ -76,6 +79,38 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
     <button type="button" onClick={run} disabled={pending}
       className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-50">
       {pending ? '옮기는 중…' : '오늘 이사 처리'}
+    </button>
+  )
+}
+
+/**
+ * 오늘 이사의 상시 적용취소 — 토스트(6초)가 지나가도 되돌릴 길이 남아야 한다(§16, 검토 패널).
+ * 일정 경계는 안 건드린다 — 경계는 이미 오늘이라 홈 알림이 그날 다시 확인을 묻는다.
+ */
+export function UndoRoomMoveButton({ leaseTermId, movedYmd, onDone }: {
+  leaseTermId: string
+  movedYmd: string
+  onDone: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const run = async () => {
+    const ok = await confirmDialog({
+      title: '오늘 한 이사를 적용취소할까요?',
+      message: '오늘 옮긴 구간을 지우고 이전 방으로 되돌립니다. 청소 예정은 남고, 이사 예정은 오늘로 남아 홈 알림에서 다시 확인할 수 있습니다.',
+      level: 'caution', confirmLabel: '적용취소',
+    })
+    if (!ok) return
+    startTransition(async () => {
+      const u = await undoRoomMove({ leaseTermId, moveYmd: movedYmd })
+      if (!u.ok) { pushToast('error', u.error); return }
+      pushToast('info', '이사를 되돌렸습니다. 청소 예정은 남습니다.')
+      onDone()
+    })
+  }
+  return (
+    <button type="button" onClick={run} disabled={pending}
+      className="text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
+      {pending ? '되돌리는 중…' : '이사 적용취소'}
     </button>
   )
 }

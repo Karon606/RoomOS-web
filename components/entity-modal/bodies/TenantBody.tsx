@@ -9,7 +9,7 @@ import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
-import { MoveRoomNowButton } from '@/components/tenant/MoveRoomNowButton'
+import { MoveRoomNowButton, UndoRoomMoveButton } from '@/components/tenant/MoveRoomNowButton'
 import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
   getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice,
   changeRoomMoveDate, undoChangeRoomMoveDate } from '@/app/(app)/tenants/actions'
@@ -342,10 +342,15 @@ function RoomScheduleRow({ leaseTermId, tenantName, info, onDone }: {
         </ul>
       </div>
       <div className="shrink-0 flex items-center gap-1.5">
-        {/* 아직 안 옮긴 이사가 남아 있을 때만 — 이미 지난 경계는 그 방에서 잔 날이라 못 뒤집는다. */}
-        {!isPlan && info.nextAt && (
+        {/* 준비 판정은 서버 한 자리(getRoomScheduleState.moveNowReady) — 거주중이고, 밀린 이사가
+            없고, 들어온 당일이 아닐 때만. 화면이 각자 재면 문구와 실행이 갈린다(검토 패널). */}
+        {!isPlan && info.moveNowReady && info.nextAt && (
           <MoveRoomNowButton leaseTermId={leaseTermId} tenantName={tenantName}
             fromRoomNo={info.todayRoomNo} nextRoomNo={info.nextRoomNo} nextAt={info.nextAt} onDone={onDone} />
+        )}
+        {/* 오늘 이사한 건의 상시 적용취소 — 토스트가 지나가도 이 길이 남는다(§16). */}
+        {!isPlan && info.movedTodayYmd && (
+          <UndoRoomMoveButton leaseTermId={leaseTermId} movedYmd={info.movedTodayYmd} onDone={onDone} />
         )}
         {!isPlan && info.nextAt && (
           <button type="button" onClick={() => { setMoveDate(info.nextAt ?? ''); setMoveOpen(true) }} disabled={pending}
