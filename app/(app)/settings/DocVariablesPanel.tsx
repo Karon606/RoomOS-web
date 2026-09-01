@@ -12,6 +12,8 @@ import { useCallback, useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { pushToast } from '@/lib/saveStatus'
 import { DOC_VARIABLES, DOC_TEMPLATES } from '@/lib/docVariables'
 import type { SettingsTab } from './tabs'
@@ -51,11 +53,11 @@ export function DocVariablesOverviewCard({ onJump }: { onJump: Jump }) {
     <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-[var(--warm-dark)]">서류 변수 한눈에</h3>
-        <Btn variant="secondary" size="sm" onClick={() => setHubOpen(true)}>모아 보기·수정</Btn>
+        <Btn variant="secondary" size="sm" onClick={() => setHubOpen(true)}>모아 보기</Btn>
       </div>
       <p className="text-xs text-[var(--warm-muted)] -mt-1 leading-relaxed break-keep">
-        계약서·동의서·문자·메일에 자동으로 채워지는 값의 목록입니다. 영업장 값은 여기서 바로 고칠 수
-        있고, 입주자·호실에 따라 달라지는 값은 계약을 골라 미리 볼 수 있습니다. 고친 값은 다음
+        계약서·동의서·문자·메일에 자동으로 채워지는 값의 목록입니다. 영업장 값은 여기서 고치고,
+        문안은 편집기로 건너갑니다. 계약별 값은 실제 계약으로 미리 봅니다. 고친 값은 다음
         발급부터 적용되며, 이미 서명한 계약서와 발급된 서류는 바뀌지 않습니다.
       </p>
       {hubOpen && (
@@ -110,7 +112,9 @@ const EDIT_ROWS: EditRow[] = [
   },
 ]
 
-const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors'
+// 형제(SettingsForm)의 입력 클래스에 최소 높이 토큰만 얹었다. 옆에 서는 Btn 이 44px 이라
+// py-2.5(42px)면 2px 어긋난다(§09 터치 타겟).
+const inputCls = 'w-full px-3 py-2.5 min-h-[var(--input-h-touch)] rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors'
 
 function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jump }) {
   const router = useRouter()
@@ -165,21 +169,39 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
       .finally(() => setPreviewLoading(false))
   }
 
+  // v2.0 §12 입력 유실 방지. 행 초안 열 개 중 하나라도 저장값과 다르면 dirty 다.
+  // Modal 이 배경클릭을 무시하고 Esc·X 에 확인을 붙인다.
+  const dirty = !!data && EDIT_ROWS.some(r => (drafts[r.id] ?? r.read(data)).trim() !== r.read(data).trim())
+
+  // 편집으로 이동은 onClose 가 먼저라 Modal 의 dirty 경로를 타지 않는다. 같은 문구·같은 방식으로
+  // 여기서 한 번 묻는다(Modal.requestClose 와 동일한 confirmDialog 호출).
+  const jumpToEdit = async (tab: SettingsTab, anchorId: string) => {
+    if (dirty) {
+      const ok = await confirmDialog({
+        title: '작성 중인 내용이 있습니다. 닫을까요?',
+        confirmLabel: '닫기', cancelLabel: '계속 작성',
+      })
+      if (!ok) return
+    }
+    onClose()
+    onJump(tab, anchorId)
+  }
+
   return (
-    <Modal open onClose={onClose} title="서류 변수" subtitle="영업장 값은 여기서, 문안은 원래 편집기에서">
+    <Modal open onClose={onClose} dirty={dirty} title="서류 변수" subtitle="영업장 값은 여기서, 문안은 원래 편집기에서">
       <div className="space-y-5">
         {/* 1. 영업장 값 — 같은 필드를 편집하는 또 하나의 문 */}
         <section className="space-y-2">
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">영업장 값</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">고친 값은 다음 발급부터 적용됩니다. 이미 서명한 계약서와 발급된 서류는 바뀌지 않습니다.</p>
           {!data ? (
-            <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+            <SkeletonRows rows={4} />
           ) : (
             <ul className="space-y-2.5">
               {EDIT_ROWS.map(row => {
                 const saved = row.read(data)
                 const cur = drafts[row.id] ?? saved
-                const dirty = cur.trim() !== saved.trim()
+                const rowDirty = cur.trim() !== saved.trim()
                 return (
                   <li key={row.id} className="space-y-1">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">{row.label}</label>
@@ -190,7 +212,9 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
                         inputMode={row.numeric ? 'decimal' : undefined}
                         onChange={e => setDrafts(p => ({ ...p, [row.id]: row.numeric ? e.target.value.replace(/[^0-9.]/g, '') : e.target.value }))}
                         className={inputCls} />
-                      <Btn variant="primary" size="sm" disabled={pending || !dirty || (row.required && !cur.trim())}
+                      {/* 고칠 것이 있는 행만 primary 로 세운다. 열 행 전부가 코랄이면 위계가 사라진다(§10). */}
+                      <Btn variant={rowDirty ? 'primary' : 'secondary'} size="sm"
+                        disabled={pending || !rowDirty || (row.required && !cur.trim())}
                         onClick={() => runSave(row, cur)}>저장</Btn>
                     </div>
                   </li>
@@ -208,11 +232,11 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
             {DOC_TEMPLATES.map(t => (
               <li key={t.key} className="flex items-center justify-between gap-2 text-xs text-[var(--warm-dark)]">
                 <span>{t.label}</span>
-                <button type="button"
-                  onClick={() => { onClose(); onJump(t.editTab, t.editAnchor) }}
-                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
-                  편집으로 이동
-                </button>
+                {/* 이동 손잡이는 정본 Btn(secondary sm = 44px). 라벨의 '›' 는 설정 형제 링크와 같은 문법이다. */}
+                <Btn variant="secondary" size="sm" className="shrink-0"
+                  onClick={() => void jumpToEdit(t.editTab, t.editAnchor)}>
+                  편집으로 이동 ›
+                </Btn>
               </li>
             ))}
           </ul>
@@ -231,17 +255,18 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
             <option value="">계약을 고르세요</option>
             {targets.map(t => <option key={t.leaseTermId} value={t.leaseTermId}>{t.label}</option>)}
           </select>
-          {previewLoading && <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>}
+          {previewLoading && <SkeletonRows rows={2} />}
+          {/* 묶음 바탕은 --cream-soft. 다크에서 --canvas 는 #000 이라 크림 모달에 검은 구멍이 뚫린다(§28). */}
           {preview && (
             <div className="space-y-3">
               {([['계약서 본문', 'doc'], ['임의처분 동의서', 'consent']] as const).map(([title, g]) => (
-                <div key={g} className="rounded-lg px-3 py-2 space-y-1" style={{ background: 'var(--canvas)' }}>
+                <div key={g} className="rounded-lg px-3 py-2 space-y-1" style={{ background: 'var(--cream-soft)' }}>
                   <p className="text-[0.65625rem] font-semibold text-[var(--warm-mid)]">{title}</p>
                   <ul className="space-y-0.5">
                     {DOC_VARIABLES.filter(v => v.grammar === g).map(v => (
                       <li key={`${v.grammar}|${v.key}`} className="flex items-baseline gap-2 text-[0.6875rem]">
                         <span className="mono shrink-0 text-[var(--warm-muted)]">{v.shown}</span>
-                        <span className="text-[var(--warm-dark)] break-all">{(g === 'doc' ? preview.doc : preview.consent)[v.key] || '(빈 값)'}</span>
+                        <span className="text-[var(--warm-dark)] break-all">{(g === 'doc' ? preview.doc : preview.consent)[v.key] || '(미입력)'}</span>
                       </li>
                     ))}
                   </ul>
@@ -262,18 +287,21 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
                   <li key={`${v.grammar}|${v.key}`} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[0.6875rem]">
                     <span className="mono shrink-0 text-[var(--warm-muted)]">{v.shown === '(직접 인쇄)' ? v.label : v.shown}</span>
                     <span className="text-[var(--warm-dark)]">{v.shown === '(직접 인쇄)' ? '' : v.label}</span>
+                    {/* 값(또는 그 자리를 대신하는 배지) 뒤에 원천을 잇는다. 계약별·파생은 배지만으로는
+                        "어디서 오나"를 말하지 못한다. */}
                     <span className="text-[var(--warm-muted)]">
                       {v.kind === 'perContract' ? '계약마다 다름'
                         : v.kind === 'derived' ? '보낼·뽑을 때 계산'
-                        : valueOf(v, data) || '(비어 있음)'}
+                        : valueOf(v, data) || '(미입력)'}
+                      {' · '}{v.source}
                     </span>
                     {v.editTab && v.editAnchor && (
-                      <button type="button" onClick={() => { onClose(); onJump(v.editTab!, v.editAnchor!) }}
-                        className="text-[0.65625rem] underline decoration-dotted underline-offset-2 text-[var(--warm-mid)] hover:text-[var(--warm-dark)]">
-                        {v.editLabel ?? '편집으로 이동'}
+                      <button type="button" onClick={() => void jumpToEdit(v.editTab!, v.editAnchor!)}
+                        className="-my-2 min-h-[44px] inline-flex items-center text-[0.65625rem] underline decoration-dotted underline-offset-2 text-[var(--warm-mid)] hover:text-[var(--warm-dark)]">
+                        {v.editLabel ?? '편집으로 이동'} ›
                       </button>
                     )}
-                    {v.note && <span className="w-full text-[0.625rem] text-[var(--warm-muted)] break-keep">{v.note}</span>}
+                    {v.note && <span className="w-full text-[0.65625rem] text-[var(--warm-muted)] break-keep">{v.note}</span>}
                   </li>
                 ))}
               </ul>

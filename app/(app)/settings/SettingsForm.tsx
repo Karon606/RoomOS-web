@@ -953,7 +953,7 @@ export default function SettingsForm({
               onCancel={closeCrop} onConfirm={handleAppLogoCropped} />
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" id="dv-basic-property">
+          <form onSubmit={handleSubmit} className="space-y-4 scroll-mt-4" id="dv-basic-property">
             <Field label="영업장명 *" name="name" defaultValue={property?.name ?? ''} />
             <Field label="주소" name="address" defaultValue={property?.address ?? ''} />
             <div className="space-y-1.5">
@@ -1120,7 +1120,7 @@ export default function SettingsForm({
           <p>품목 세부스펙은 <span className="font-semibold text-[var(--warm-dark)]">분류 관리 탭</span>으로 옮겼습니다.</p>
         </div>
 
-        <span id="dv-sms-unpaid" />
+        <span id="dv-sms-unpaid" className="scroll-mt-4" />
         <SmsTemplateCard
           kind="unpaid"
           title="미납 안내 문자 템플릿"
@@ -1132,7 +1132,7 @@ export default function SettingsForm({
         />
         {/* 단체 공지는 배치 전체가 한 본문을 공유해 개인별 치환이 구조적으로 없다 —
             가이드 §29(개인화 불가 맥락에서 변수 표기 노출 금지)에 따라 안내에 {'{이름}'} 같은 표기를 쓰지 않는다. */}
-        <span id="dv-sms-notice" />
+        <span id="dv-sms-notice" className="scroll-mt-4" />
         <SmsTemplateCard
           kind="notice"
           title="단체 공지 문자 템플릿"
@@ -1141,7 +1141,7 @@ export default function SettingsForm({
           namePlaceholder="예: 수도 점검 공지"
           bodyLabel="문자 내용"
         />
-        <span id="dv-sms-personal" />
+        <span id="dv-sms-personal" className="scroll-mt-4" />
         <SmsTemplateCard
           kind="personal"
           title="입주자 문자 템플릿"
@@ -1383,7 +1383,9 @@ export default function SettingsForm({
             &lsquo;수익·지출&rsquo; 탭은 <span className="font-semibold text-[var(--warm-dark)]">요금·정책</span>과 <span className="font-semibold text-[var(--warm-dark)]">분류 관리</span>로 나뉘었습니다. 고정 지출 관리는 이 탭 아래에 있습니다.
           </div>
 
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
+          {/* 앵커는 카드 최상단이다. 카드 중간(환불 규정 칸)에 두면 착지했을 때 카드 제목이 화면
+              위로 밀려 어디에 왔는지가 안 보인다. */}
+          <div id="dv-refund-policy" className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 scroll-mt-4">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">기본 요금·환불 규정</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -1418,7 +1420,7 @@ export default function SettingsForm({
                 </div>
               </div>
               <div className="space-y-1.5">
-                <span id="dv-refund-policy" /><label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
                 <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(잔여 이용금액의 10%). 1일 이용요금 = 월 이용료 ÷ 30, 잔여 이용금액 = 총 결제금액 − 이용일수분. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 위약금을 면제하거나, 1개월 미만 중도 퇴실이면 단기 요금표를 쓸 수 있습니다.</p>
                 {/* 체크박스 앞의 hidden '0' — 꺼진 체크박스는 FormData 에 안 실린다. 저장이 필드 단위로
                     쪼개진 뒤로는(2026-08-19) 그 부재가 "이 탭은 이 필드를 담당하지 않는다"로 읽혀
@@ -1449,7 +1451,7 @@ export default function SettingsForm({
           </div>
 
           {/* 단기 입실 정책 — 데이터·도구에서 옮겨 왔다. 오너 전용(§4 요금 기준). */}
-          {isOwner && <div id="dv-short-stay"><ShortStayPolicyCard /></div>}
+          {isOwner && <div id="dv-short-stay" className="scroll-mt-4"><ShortStayPolicyCard /></div>}
 
           {/* 고정 지출 관리 — 수익·지출 탭에서 옮겨 왔다(카드 내부는 무수정). */}
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 space-y-4">
@@ -2107,7 +2109,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
       <DocVariablesOverviewCard onJump={onJump} />
 
       {/* 사업자 정보 */}
-      <div id="dv-biz-info" className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div id="dv-biz-info" className="rounded-xl p-4 sm:p-5 space-y-3 scroll-mt-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자 정보</h3>
           <Btn variant="primary" size="sm" onClick={handleSaveBusinessInfo} disabled={savingBiz}>{savingBiz ? '저장 중…' : '저장'}</Btn>
@@ -2242,7 +2244,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           </button>
         </div>
 
-        <span id="dv-contract-template" />
+        <span id="dv-contract-template" className="scroll-mt-4" />
         <div className="rounded-lg px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
           본문에서 다음 변수를 사용하면 출력 시 입실자 정보로 자동 치환됩니다:
           <span className="block mt-1 num text-[0.65625rem]">
@@ -2256,7 +2258,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           카드 하나에 담고 안에서 border-t 소제목으로 확인서 축과 계약서 동반 축을 가른다 —
           기본정보 폼이 쓰던 그 소제목 문법 그대로다(형제 카드는 h3 + p-4 sm:p-5 를 쓴다).
           폼 자체가 카드다 — 사업자 정보 카드처럼 제목 줄 오른쪽에 저장이 붙는다. */}
-      <form id="dv-doc-defaults" onSubmit={onSubmitProperty} className="rounded-xl p-4 sm:p-5 space-y-3"
+      <form id="dv-doc-defaults" onSubmit={onSubmitProperty} className="rounded-xl p-4 sm:p-5 space-y-3 scroll-mt-4"
         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">서류 자동채움 값</h3>
@@ -2313,19 +2315,19 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           <h4 className="text-xs font-semibold text-[var(--warm-dark)]">조건부 특약</h4>
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">조건에 맞는 계약서에만 본문 뒤에 붙는 절입니다.</p>
         </div>
-        <span id="dv-addendum-subLease" />
+        <span id="dv-addendum-subLease" className="scroll-mt-4" />
         <AddendumCard label="추가 호실 특약" field="subLease" rows={9}
           fallback={DEFAULT_SUB_LEASE_ADDENDUM} saved={resolveSubLeaseAddendum(property?.subLeaseAddendum)}
           hint="창고·사무실처럼 거주용이 아닌 방이 추가 호실로 딸린 계약서에만 붙습니다." />
-        <span id="dv-addendum-shortStay" />
+        <span id="dv-addendum-shortStay" className="scroll-mt-4" />
         <AddendumCard label="단기 입실 특약" field="shortStay" rows={5}
           fallback={DEFAULT_SHORT_STAY_ADDENDUM} saved={resolveShortStayAddendum(property?.shortStayAddendum)}
           hint="단기 입실로 등록한 계약서에만 붙습니다. 단기 입실 정책이 꺼져 있으면 안 붙습니다." />
-        <span id="dv-addendum-earlyCheckout" />
+        <span id="dv-addendum-earlyCheckout" className="scroll-mt-4" />
         <AddendumCard label="조기 퇴실 시 요금 적용" field="earlyCheckout" rows={4}
           fallback={DEFAULT_EARLY_CHECKOUT_ADDENDUM} saved={resolveEarlyCheckoutAddendum(property?.earlyCheckoutAddendum)}
           hint="일반 계약서에만 붙습니다(단기 특약과 함께 서지 않습니다). 1개월을 못 채우고 중도 퇴실할 때의 요금 기준입니다." />
-        <span id="dv-addendum-roomSchedule" />
+        <span id="dv-addendum-roomSchedule" className="scroll-mt-4" />
         <AddendumCard label="거주 호실 일정" field="roomSchedule" rows={4}
           fallback={DEFAULT_ROOM_SCHEDULE_ADDENDUM} saved={resolveRoomScheduleAddendum(property?.roomScheduleAddendum)}
           hint={'임시 호실을 거쳐 계약 호실로 옮기는 계약서에만 붙습니다. 문장 안 {{일정}} 자리에 그 계약의 호실 일정이 들어갑니다.'} />
@@ -2334,7 +2336,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서를 뽑을 때 함께 나가는 별도 서류입니다.</p>
         </div>
         <div className="space-y-1.5">
-          <span id="dv-disposal" /><label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
+          <span id="dv-disposal" className="scroll-mt-4" /><label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
           <p className="text-xs text-[var(--warm-muted)]">계약서와 함께 출력되는 별도 서류. 입실자 정보·날짜·서명란은 자동입니다. 본문에 변수 사용 가능: <span className="num">{'{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}'}</span></p>
           {/* 체크박스 앞의 hidden '0' — 요금·정책 탭의 두 토글과 같은 이유다(감지망 축 ⓔ). */}
           <input type="hidden" name="disposalEnabled" value="0" />
@@ -2364,7 +2366,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
 
       {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
           그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
-      <span id="dv-doc-mail" />
+      <span id="dv-doc-mail" className="scroll-mt-4" />
       <DocMailTemplateCard />
     </div>
   )
