@@ -76,7 +76,9 @@ const RAIL_FONT = 10.5
  * 글자는 둘 다 --ink-2 다(§03 "밴드 위 글자는 다섯 종 모두 --ink-2"). 라이트 8.00:1 · 다크 7.25:1.
  */
 function barTone(bar: MoveBar): string {
-  return bar.kind === 'reserved' ? 'var(--band-await-bg)' : 'var(--band-paid-bg)'
+  // 예정 막대도 대기 톤 — '아직 확정 아님'이라는 공통 성질을 색이 말하고, 예약인지 이사인지는
+  // 글자가 가른다(운영자 승인 2026-09-01, 밴드 팔레트를 안 늘리는 방식 가).
+  return bar.kind === 'reserved' || bar.planned ? 'var(--band-await-bg)' : 'var(--band-paid-bg)'
 }
 
 /**
@@ -87,7 +89,7 @@ function barTone(bar: MoveBar): string {
  * 이사 문구의 '로'는 정본(roomNoWithRo)이 고른다 — 여기서 조사를 다시 고르면 사본이 된다.
  */
 function barAria(bar: MoveBar, roomNo: string): string {
-  const what = bar.kind === 'reserved' ? '입실 예약' : '거주'
+  const what = bar.planned ? '이사 예정' : bar.kind === 'reserved' ? '입실 예약' : '거주'
   const start = bar.stayFrom ? `시작 ${fmtDateKor(bar.stayFrom)}.` : '시작일 미상.'
   const end = bar.stayTo ? `종료 ${fmtDateKor(bar.stayTo)}.` : '퇴실일 미정.'
   const moved = bar.movedFromRoomNo ? ` ${fmtRoomNo(bar.movedFromRoomNo)}에서 이사.`
@@ -530,7 +532,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
                 늘어도 스와치가 안 늘어난다). 실측상 320px 에서 네 칸이 264.26px 로 한 줄이다. */}
             {([
               ['var(--band-paid-bg)', null, '거주'],
-              ['var(--band-await-bg)', null, '입실 예약'],
+              ['var(--band-await-bg)', null, '입실 예약 · 이사 예정'],
               ['var(--inspect-bg)', 'var(--inspect-ring)', '작업 예정'],
               ['var(--neutral-bg)', 'var(--neutral-ring)', '작업 완료'],
             ] as const).map(([bg, ring, label]) => (

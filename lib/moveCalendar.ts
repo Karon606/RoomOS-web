@@ -120,6 +120,12 @@ export type MoveBar = {
   stayTo: string | null
   /** 이 막대가 충돌에 걸려 있다 — 행 좌측 팁과 짝이다. */
   conflicted: boolean
+  /**
+   * 아직 확인 안 된 이사 계획에서 나온 막대(합성 구간 plan-). 확정 거주와 같은 색이면
+   * 이사 확인을 잊어도 화면이 이미 산 것처럼 보인다(운영자 승인 2026-09-01, 방식 가) —
+   * 색은 예약과 같은 대기 톤을 쓰고, 예약과의 구분은 글자('예정')가 진다.
+   */
+  planned: boolean
 }
 
 // ── 작업(청소) ────────────────────────────────────────────────────
@@ -727,6 +733,7 @@ function assemble(input: {
         tenantId: l.tenantId,
         tenantName: l.tenantName,
         kind: l.status === 'RESERVED' ? 'reserved' : 'resident',
+        planned: sl.id.startsWith('plan-'),
         movedFromRoomNo: sl.movedFromRoomNo,
         movedToRoomNo: sl.movedToRoomNo,
         lane: 0,
@@ -746,6 +753,12 @@ function assemble(input: {
         conflicted: false,
       }
       Object.assign(bar, barLabels({ ...bar, reversed }))
+      // 예정 막대는 글자에 '예정'을 단다 — 색(대기 톤)은 예약과 공유하므로 구분은 글자 몫이다.
+      if (bar.planned) {
+        if (bar.startLabel) bar.startLabel = `${bar.startLabel} 예정`
+        else if (bar.stateLabel) bar.stateLabel = `${bar.stateLabel} · 이사 예정`
+        else bar.stateLabel = '이사 예정'
+      }
       bars.push(bar)
       barLease.set(bar.id, l)
 
