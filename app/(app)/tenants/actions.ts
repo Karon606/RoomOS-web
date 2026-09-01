@@ -257,6 +257,9 @@ export async function getTenants() {
         // 정렬(createdAt desc)은 그 정본의 마지막 폴백이 종전과 같은 계약을 고르도록 유지한다.
         include: {
           room: { select: { id: true, roomNo: true, floor: true } },
+          // 지금 사는 방 — 임시 호실을 거치는 이사 중에만 계약 방과 갈리고, 그때 카드·표가
+          // 이 방을 먼저 말한다(프리즘 제목과 같은 규칙, 운영자 지시 2026-09-01).
+          roomStays: { where: { endDate: null }, select: { room: { select: { roomNo: true, floor: true } } }, take: 1 },
           // 환불 이력 유무 — 퇴실 재저장 시 환불 모달 재노출(중복 저장)을 막는 판정용(신고 13438ec9). 추가 왕복 없음.
           _count: { select: { depositRefunds: true } },
           // 취소 단계 부제(어느 단계에서 취소됐나) — 최근 CANCELLED 전이의 fromStatus·사유(e1b81629).

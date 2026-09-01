@@ -169,6 +169,8 @@ type LeaseTerm = {
   moveInFlexible: boolean | null   // 입주 희망일 조절 가능 여부 — null=미확인(매칭 날짜 게이트 입력)
   parentLeaseTermId: string | null // 딸려 있는 계약(2026-08-13 다호실 2단계). null=단독 계약
   room: { id: string; roomNo: string; floor: string | null } | null
+  /** 열린 거주 구간의 방 — 임시 호실 이사 중에만 계약 방과 갈린다(카드·표 표기용). */
+  roomStays?: { room: { roomNo: string; floor: string | null } | null }[]
   paymentRecords: PaymentRecord[]
   // 최근 CANCELLED 전이(fromStatus·사유) — 취소 단계 부제 파생용(e1b81629)
   statusLogs?: { fromStatus: string; toStatus: string; reason: string | null }[]
@@ -2196,11 +2198,23 @@ export default function TenantClient({
                     {lease?.room?.roomNo ? (
                       <>
                         {/* 표의 호실 칸과 같은 꼬리 — 카드에만 없으면 좁은 화면에서 그 사실이 사라진다. */}
-                        <span className="min-w-0 truncate text-sm font-bold tnum text-[var(--warm-dark)]">
-                          {fmtRoomNo(lease.room.roomNo)}
-                          {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
-                        </span>
-                        {lease.room.floor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
+                        {(() => {
+                          // 지금 사는 방이 먼저다 — 프리즘 제목과 같은 규칙(운영자 지시 2026-09-01).
+                          // 임시 호실 이사 중에만 갈리고, 이사를 마치면 꼬리는 저절로 사라진다.
+                          const stay = lease.roomStays?.[0]?.room ?? null
+                          const moved = !!stay && stay.roomNo !== lease.room!.roomNo
+                          const shownFloor = moved ? stay.floor : lease.room!.floor
+                          return (
+                            <>
+                              <span className="min-w-0 truncate text-sm font-bold tnum text-[var(--warm-dark)]">
+                                {fmtRoomNo(moved ? stay.roomNo : lease.room!.roomNo)}
+                                {moved && <span className="font-normal text-[var(--warm-muted)]"> (계약 {fmtRoomNo(lease.room!.roomNo)})</span>}
+                                {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
+                              </span>
+                              {shownFloor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-sm bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{shownFloor}층</span>}
+                            </>
+                          )
+                        })()}
                       </>
                     ) : (() => {
                       // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
@@ -2429,7 +2443,17 @@ export default function TenantClient({
                           말해 왔고, 그 사실이 표 어디에도 없었다(프리즘 '추가 계약' 줄과 같은 술어).
                           꼬리는 링크가 아니라 사실 표기라 코랄을 안 쓴다. 칸이 좁으면 종전대로 잘린다. */}
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
-                        {fmtRoomNo(lease?.room?.roomNo)}
+                        {(() => {
+                          // 지금 사는 방이 먼저다 — 카드·프리즘 제목과 같은 규칙(운영자 지시 2026-09-01).
+                          const stay = lease?.roomStays?.[0]?.room ?? null
+                          const moved = !!stay && !!lease?.room && stay.roomNo !== lease.room.roomNo
+                          return (
+                            <>
+                              {fmtRoomNo(moved ? stay.roomNo : lease?.room?.roomNo)}
+                              {moved && <span className="font-normal text-[var(--warm-muted)]"> (계약 {fmtRoomNo(lease!.room!.roomNo)})</span>}
+                            </>
+                          )
+                        })()}
                         {(() => { const s = extraRoomSuffix(tenant, lease); return s ? <span className="font-normal text-[var(--warm-muted)]">{s}</span> : null })()}
                       </span>
                     </td>

@@ -23,6 +23,9 @@ const ROOTS = ['app', 'components', 'lib']
 const ALLOW = [
   // 퇴실자 시트는 '마지막 퇴실 계약' 한 줄이 곧 그 시트의 정의다(메인 계약을 묻지 않는다).
   { file: 'app/api/export/route.ts', needle: "status: { in: ['CHECKED_OUT', 'CANCELLED'] }" },
+  // 목록의 '지금 사는 방' — 계약이 아니라 그 계약의 **열린 거주 구간**을 읽는다. 열린 구간은
+  // 계약당 하나가 불변식이라 take: 1 이 자르는 게 아니라 정의다(2026-09-01, 위치 표기 통일).
+  { file: 'app/(app)/tenants/actions.ts', needle: 'roomStays: { where: { endDate: null }, select: { room: { select: { roomNo: true, floor: true } } }, take: 1 }' },
 ]
 
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))

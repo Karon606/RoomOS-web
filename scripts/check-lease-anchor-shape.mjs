@@ -78,6 +78,21 @@ const SHELL = 'components/entity-modal/EntityModal.tsx'
   }
 }
 
+// ── 축 ⓒ 목록 위치 표기 ──────────────────────────────────────────────────
+//
+// 카드와 표의 호실 표기도 프리즘 제목과 같은 규칙(지금 사는 방 우선 + 계약 꼬리)을 쓴다
+// (운영자 지시 2026-09-01 — "이 둘이 다른데?"). 두 자리 중 한쪽만 고치면 같은 사람이 목록과
+// 프리즘에서 다른 방으로 불리는 갈림이 재발한다.
+{
+  const f = 'app/(app)/tenants/TenantClient.tsx'
+  const src = readFileSync(f, 'utf8')
+  const uses = (src.match(/roomStays\?\.\[0\]\?\.room/g) ?? []).length
+  if (uses < 2) {
+    fail('ⓒ', `${f} 의 호실 표기 ${uses}곳만 지금 사는 방을 읽는다(카드·표 두 곳이어야 한다)`,
+      '카드와 표가 같은 규칙을 잃으면 목록과 프리즘이 같은 사람을 다른 방으로 부른다.')
+  }
+}
+
 // ── 축 ⓑ 발급 경로 ───────────────────────────────────────────────────────
 const GEN = 'app/api/contract/generate/route.ts'
 const VIEW = 'app/contract/[tenantId]/ContractView.tsx'
@@ -192,4 +207,4 @@ if (violations.length > 0) {
   }
   process.exit(1)
 }
-console.log('[1인 다호실 형태] 축 ⓐ 프리즘 앵커 · 축 ⓑ 발급 경로 지목·손사본 / 위반 0건')
+console.log('[1인 다호실 형태] 축 ⓐ 프리즘 앵커 · 축 ⓑ 발급 경로 지목·손사본 · 축 ⓒ 목록 위치 표기 / 위반 0건')
