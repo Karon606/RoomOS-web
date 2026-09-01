@@ -2971,7 +2971,7 @@ export async function advanceRoomSchedule(input: {
       // 있으면 비워도 공실이 아니다. 402호를 비우는 순간 뒤이은 예약(9/8)이 있는데도 '빈 방'으로
       // 골라지던 결함(검토 패널 2026-09-01). 예외 계약 없음('') — 자기 계약 호실도 마찬가지다.
       const stillUsed = await tx.roomStay.count({ where: { roomId: fromRoomId, endDate: null } })
-      if (stillUsed === 0 && !(await roomStillOccupied(fromRoomId, ''))) {
+      if (stillUsed === 0 && !(await roomStillOccupied(fromRoomId))) {
         await tx.room.update({ where: { id: fromRoomId }, data: { isVacant: true } })
       }
       if (input.scheduleCleaning) {
@@ -3135,7 +3135,7 @@ export async function undoRoomMove(input: { leaseTermId: string; moveYmd: string
       await tx.room.update({ where: { id: prev.roomId }, data: { isVacant: false } })
       // 결함 1과 같은 클래스 — 되돌린 방(계약 호실)을 자기 계약이 잡고 있으면 공실이 아니다.
       const stillUsed = await tx.roomStay.count({ where: { roomId: moved.roomId, endDate: null } })
-      if (stillUsed === 0 && !(await roomStillOccupied(moved.roomId, ''))) {
+      if (stillUsed === 0 && !(await roomStillOccupied(moved.roomId))) {
         await tx.room.update({ where: { id: moved.roomId }, data: { isVacant: true } })
       }
     })
@@ -3172,7 +3172,7 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
       for (const rid of roomIds) {
         const stillUsed = await tx.roomStay.count({ where: { roomId: rid, endDate: null } })
         // 같은 클래스 — 예약으로 돌아가는 자기 계약(RESERVED 도 점유)과 남의 계약을 함께 본다.
-        if (stillUsed === 0 && !(await roomStillOccupied(rid, ''))) {
+        if (stillUsed === 0 && !(await roomStillOccupied(rid))) {
           await tx.room.update({ where: { id: rid }, data: { isVacant: true } })
         }
       }
@@ -3243,10 +3243,13 @@ function roomVacantForStatus(status: string): boolean | null {
 // 공실로 되돌리기 전에 반드시 본다. 종전에는 그 방의 다른 lease 를 보지 않고 isVacant 를 덮어써서,
 // 한 방에 비거주자와 거주자가 공존하는 상황에서 한쪽이 퇴실하면
 // **거주자가 있는 방이 공실로 표시**됐다(B페이즈 조사, 실측 0건이지만 열린 경로다).
-async function roomStillOccupied(roomId: string, exceptLeaseId: string): Promise<boolean> {
+// exceptLeaseId 는 선택이다 — '예외 없음'을 '' 로 표현하면 Postgres 가 uuid 캐스팅에서 터진다
+// (invalid input syntax for type uuid, 2026-09-01 오늘 이사 처리 실사고). 빈 값이면 조건을 아예 뺀다.
+async function roomStillOccupied(roomId: string, exceptLeaseId?: string): Promise<boolean> {
   const other = await prisma.leaseTerm.findFirst({
     where: {
-      roomId, id: { not: exceptLeaseId },
+      roomId,
+      ...(exceptLeaseId ? { id: { not: exceptLeaseId } } : {}),
       status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] },
     },
     select: { id: true },

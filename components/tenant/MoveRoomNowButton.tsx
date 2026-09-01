@@ -12,7 +12,7 @@
 
 import { useTransition } from 'react'
 import { changeRoomMoveDate, undoChangeRoomMoveDate, advanceRoomSchedule, undoRoomMove } from '@/app/(app)/tenants/actions'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtRoomNo } from '@/lib/roomNo'
@@ -33,15 +33,19 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
     const early = nextAt > today
     const from = fmtRoomNo(fromRoomNo, '지금 방')
     const to = fmtRoomNo(nextRoomNo, '다음 방')
-    const ok = await confirmDialog({
+    // 청소 예정은 강제하지 않는다 — 만들지 여부를 같이 묻는다(운영자 지적 2026-09-01,
+    // "옵션도 없이 만드는 것은 잘못된 것 같아"). §27 3지선다 정본이라 새 화면 문법이 없다.
+    const pick = await choiceDialog({
       level: 'caution',
       title: `${tenantName}님 · ${to}로 오늘 이사할까요?`,
       message: early
-        ? `예정일(${dot(nextAt)})을 오늘로 앞당기고, ${from}에서 나와 옮깁니다. ${from} 청소 예정을 함께 만듭니다.`
-        : `${from}에서 나와 옮기고, ${from} 청소 예정을 함께 만듭니다.`,
-      confirmLabel: '오늘 이사 처리',
+        ? `예정일(${dot(nextAt)})을 오늘로 앞당기고, ${from}에서 나와 옮깁니다.`
+        : `${from}에서 나와 옮깁니다.`,
+      confirmLabel: `이사 + ${from} 청소 예정`,
+      altLabel: '이사만',
     })
-    if (!ok) return
+    if (pick === null || pick === 'back') return
+    const withCleaning = pick === 'confirm'
     startTransition(async () => {
       let boundaryUndo: { leaseTermId: string; prevSchedule: unknown } | null = null
       if (early) {
@@ -49,7 +53,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
         if (!b.ok) { pushToast('error', b.error); return }
         boundaryUndo = b.undo
       }
-      const r = await advanceRoomSchedule({ leaseTermId, moveDate: today, scheduleCleaning: true })
+      const r = await advanceRoomSchedule({ leaseTermId, moveDate: today, scheduleCleaning: withCleaning })
       if (!r.ok) {
         // 반쪽 상태 금지 — 경계만 당겨지고 이사가 안 됐으면 경계를 되돌린다.
         // 되돌림이 또 실패하면 침묵하지 않는다(§27.2) — 이사일만 오늘로 남은 상태를 사람이 알아야 고친다.
@@ -58,7 +62,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
         return
       }
       pushToast('success', `${to}로 이사 처리했습니다`, {
-        detail: [`${from} 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
+        detail: [withCleaning ? `${from} 청소 예정을 만들었습니다.` : null, r.notice].filter(Boolean).join(' '),
         action: {
           label: '적용취소',
           run: () => { void (async () => {
@@ -66,7 +70,7 @@ export function MoveRoomNowButton({ leaseTermId, tenantName, fromRoomNo, nextRoo
             if (!u.ok) { pushToast('error', u.error); return }
             const bu = boundaryUndo ? await undoChangeRoomMoveDate(boundaryUndo) : { ok: true as const }
             pushToast('info', bu.ok
-              ? '이사를 되돌렸습니다. 청소 예정은 남습니다. 필요 없으면 청소 관리에서 지워 주세요.'
+              ? `이사를 되돌렸습니다.${withCleaning ? ' 만들어 둔 청소 예정은 남습니다. 필요 없으면 청소 관리에서 지워 주세요.' : ''}`
               : '이사는 되돌렸지만 이사일이 오늘로 남았습니다. 홈 알림에서 다시 확인하거나 이사일 바꾸기로 고쳐 주세요.')
             onDone()
           })() },
@@ -96,14 +100,14 @@ export function UndoRoomMoveButton({ leaseTermId, movedYmd, onDone }: {
   const run = async () => {
     const ok = await confirmDialog({
       title: '오늘 한 이사를 적용취소할까요?',
-      message: '오늘 옮긴 구간을 지우고 이전 방으로 되돌립니다. 청소 예정은 남고, 이사 예정은 오늘로 남아 홈 알림에서 다시 확인할 수 있습니다.',
+      message: '오늘 옮긴 구간을 지우고 이전 방으로 되돌립니다. 청소 예정을 만들었다면 남고, 이사 예정은 오늘로 남아 홈 알림에서 다시 확인할 수 있습니다.',
       level: 'caution', confirmLabel: '적용취소',
     })
     if (!ok) return
     startTransition(async () => {
       const u = await undoRoomMove({ leaseTermId, moveYmd: movedYmd })
       if (!u.ok) { pushToast('error', u.error); return }
-      pushToast('info', '이사를 되돌렸습니다. 청소 예정은 남습니다.')
+      pushToast('info', '이사를 되돌렸습니다. 청소 예정을 만들었다면 남습니다.')
       onDone()
     })
   }

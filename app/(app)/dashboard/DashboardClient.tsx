@@ -13,7 +13,7 @@ import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
 import nextDynamic from 'next/dynamic'
 // 추이 차트(recharts)는 지연 로드 — 홈 첫 페인트 번들에서 차트 라이브러리 제외
@@ -634,23 +634,26 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             <Btn
               onClick={async () => {
                 if (confirmPending) return
-                const ok = await confirmDialog({
+                // 청소 예정은 강제하지 않는다 — '오늘 이사' 버튼과 같은 3지선다(운영자 지적 2026-09-01).
+                const pick = await choiceDialog({
                   level: 'caution',
                   title: `${alert.scheduleMoveTenantName ?? ''}님 · ${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사할까요?`,
-                  message: `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')}에서 나와 옮기고, ${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 함께 만듭니다.`,
-                  confirmLabel: '이사 처리',
+                  message: `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')}에서 나와 옮깁니다.`,
+                  confirmLabel: `이사 + ${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정`,
+                  altLabel: '이사만',
                 })
-                if (!ok) return
+                if (pick === null || pick === 'back') return
+                const withCleaning = pick === 'confirm'
                 setConfirmPending(true); setConfirmError('')
                 const r = await advanceRoomSchedule({
                   leaseTermId: alert.scheduleMoveLeaseId!,
                   moveDate: kstYmdStr(new Date()),
-                  scheduleCleaning: true,
+                  scheduleCleaning: withCleaning,
                 })
                 if (!r.ok) { setConfirmError(r.error); setConfirmPending(false); return }
                 const movedYmd = kstYmdStr(new Date())
                 pushToast('success', `${fmtRoomNo(alert.scheduleMoveToRoomNo ?? '', '')}로 이사 처리했습니다`, {
-                  detail: [`${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 만들었습니다.`, r.notice].filter(Boolean).join(' '),
+                  detail: [withCleaning ? `${fmtRoomNo(alert.scheduleMoveFromRoomNo ?? '', '')} 청소 예정을 만들었습니다.` : null, r.notice].filter(Boolean).join(' '),
                   // 이사 처리에는 되돌릴 길이 없었다 — 방 하나 잘못 옮긴 것을 무르려면 입실 전체를
                   // 무너뜨려야 했다(§16). '오늘 이사' 버튼과 같은 정본(undoRoomMove)을 쓴다.
                   action: {
