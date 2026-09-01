@@ -529,10 +529,15 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
                 ΔE76 이 3.5 라 링이 없으면 스와치 자리가 비어 보인다.
                 **'청소'가 아니라 '작업'이다** — 종목이 몇으로 늘어도 이 범례는 네 칸에 머문다.
                 표면이 가르는 것은 종류가 아니라 상태이고, 종류는 옆 글자가 진다(그래서 종목이
-                늘어도 스와치가 안 늘어난다). 실측상 320px 에서 네 칸이 264.26px 로 한 줄이다. */}
+                늘어도 스와치가 안 늘어난다).
+                예정 칸의 라벨은 형제 대시보드 범례의 괄호 문법('고정 지출 (예정)')을 따른다.
+                가운뎃점으로 두 낱말을 잇는 꼴은 별개 두 칸으로 읽히는데, 이 스와치는 하나다.
+                실측 갱신(Pretendard Variable 헤드리스, 2026-09-02). 네 칸이 336.13px 이라
+                320px 에서는 한 줄에 안 들어가고 두 줄(row-gap 4px, 30px)로 접힌다. 종전 주석의
+                264.26px 한 줄은 둘째 라벨이 '입실 예약'이던 시절 값이다. */}
             {([
               ['var(--band-paid-bg)', null, '거주'],
-              ['var(--band-await-bg)', null, '입실 예약 · 이사 예정'],
+              ['var(--band-await-bg)', null, '입실 예약 (이사 예정 포함)'],
               ['var(--inspect-bg)', 'var(--inspect-ring)', '작업 예정'],
               ['var(--neutral-bg)', 'var(--neutral-ring)', '작업 완료'],
             ] as const).map(([bg, ring, label]) => (
@@ -1033,6 +1038,12 @@ function UpcomingWorkLine({ w, todayYmd, onOpenRoom }: {
 type Placed = {
   bar: MoveBar
   full: string
+  /**
+   * 'name' 모드에서 바 안에 세울 글자. 이름, 또는 폭이 허락하면 이름에 꼬리 '예정'을 단 것.
+   * 예정 막대는 색이 예약과 같은 대기 톤이라(barTone) 글자가 안 지면 좁은 폭에서 예약과
+   * 픽셀 하나 안 다르다. 꼬리가 안 들어가는 막대는 이름만 세우고 종류는 title·aria 가 맡는다.
+   */
+  name: string
   mode: 'full' | 'name' | 'outside'
   side: 'right' | 'left' | null
   /**
@@ -1092,11 +1103,17 @@ function placeWork(work: MoveWork, works: MoveWork[], days: number): PlacedWork 
 }
 
 function place(bar: MoveBar, row: MoveCalendarRow, days: number): Placed {
-  const full = `${bar.tenantName} · ${bar.label}`
+  // 예정 꼬리는 **여기서** 단다. lib 의 bar.label 은 안 건드린다(회귀 160 이 그 값을 딛는다).
+  // 종전에는 '예정'이 full 모드의 startLabel·stateLabel 에만 있어, title 툴팁이 aria 와 다른
+  // 말을 하고 name·outside 모드에서는 종류가 아예 사라졌다(디자이너 패스 2026-09-02).
+  const full = `${bar.tenantName} · ${bar.label}${bar.planned ? ' · 이사 예정' : ''}`
   const px = (bar.endDay - bar.startDay + 1) * DAY_W
+  // 폭 판정은 아래 모드 판정과 같은 자다(추정 폭 + 안쪽 여백 16). 새 기준을 만들지 않는다.
+  const nameTail = `${bar.tenantName} · 예정`
+  const name = bar.planned && px >= estWidth(nameTail, BAR_FONT) + 16 ? nameTail : bar.tenantName
   const fits: Placed['mode'] = px >= estWidth(full, BAR_FONT) + 16 ? 'full'
     : px >= estWidth(bar.tenantName, BAR_FONT) + 16 ? 'name' : 'outside'
-  const bare: Placed = { bar, full, mode: fits, side: null, ink: null }
+  const bare: Placed = { bar, full, name, mode: fits, side: null, ink: null }
   if (fits !== 'outside') return bare
 
   // 같은 층에서 다음 막대가 시작하는 날 — 바 밖 라벨이 그 위로 넘어가지 않게 끊는 자리.
@@ -1335,7 +1352,7 @@ function GanttRow({ row, days, cols, todayDay, monthStarts, first, onOpen, onOpe
 }
 
 function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => void }) {
-  const { bar, full, mode, side, ink } = p
+  const { bar, full, name, mode, side, ink } = p
 
   return (
     <>
@@ -1371,9 +1388,11 @@ function Bar({ p, roomNo, onOpen }: { p: Placed; roomNo: string; onOpen: () => v
         {/* tnum — 이 라벨에는 날짜뿐 아니라 호실번호도 들어온다(이사 문구). 옆 열의 같은 숫자와 자폭이 갈리면 안 된다. */}
         <span className="min-w-0 flex-1 flex">
           <span className="sticky min-w-0 max-w-full truncate px-2 tnum" style={{ left: ROOM_COL }}>
-            {mode === 'outside' ? '' : mode === 'full' && bar.stateLabel
-              ? `${bar.tenantName} · ${bar.stateLabel}`
-              : bar.tenantName}
+            {/* full 모드에서는 이름만 세운다. 예정 꼬리는 이미 startLabel·stateLabel 이 이고 있다.
+                꼬리를 여기서 또 달면 한 막대에 '예정'이 두 번 선다. */}
+            {mode === 'outside' ? ''
+              : mode === 'full' ? (bar.stateLabel ? `${bar.tenantName} · ${bar.stateLabel}` : bar.tenantName)
+                : name}
           </span>
         </span>
         {/* 끝 문구는 막대 **끝 지점**에. 9/30 퇴실은 9/30 칸에 있어야 하고, 7월을 보고 있을 때

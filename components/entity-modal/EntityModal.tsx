@@ -274,13 +274,18 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 다른 이름으로 불린다. 지금 보고 있는 방은 호실 면의 방 선택기가 말한다(2026-08-13, 1인 다호실).
   //
   // 임시 호실을 거치는 이사 중에는 **지금 사는 방이 먼저다**(운영자 지적 2026-09-01 — 402호에
-  // 사는 사람을 404호라 부르면 현장과 화면이 다른 말을 한다). 계약 방은 꼬리로 남긴다 —
-  // 청구·계약서가 그 축을 쓰다는 사실이 제목에서 사라지면 안 된다. 이사를 마치면 두 값이
-  // 같아져 꼬리가 저절로 사라진다.
+  // 사는 사람을 404호라 부르면 현장과 화면이 다른 말을 한다). 계약 방은 부제로 남긴다.
+  // 청구·계약서가 그 축을 쓰다는 사실이 헤더에서 사라지면 안 된다. 이사를 마치면 두 값이
+  // 같아져 부제가 저절로 사라진다.
+  //
+  // 꼬리가 아니라 부제인 이유(디자이너 패스 2026-09-02). 종전 제목 꼬리 '(계약 404호)'는
+  // 모바일 h2 truncate 에서 가장 먼저 잘려 사라졌고, 제목이 통째로 bold 라 방번호 둘이
+  // 같은 무게로 부딪혔다. 어휘도 형제(components/tenant/RoomScheduleSheet)의 '계약 호실'로
+  // 맞춘다. 같은 사실을 두 화면이 다른 낱말로 부르면 그 자체가 이질감이다.
   const titleRoomNo = links?.currentRoomNo ?? links?.anchorRoomNo ?? links?.roomNo
-  const titleContractTail = links?.currentRoomNo && links.anchorRoomNo && links.currentRoomNo !== links.anchorRoomNo
-    ? ` (계약 ${fmtRoomNo(links.anchorRoomNo)})` : ''
-  const title = links ? `${fmtRoomNo(titleRoomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}${titleContractTail}` : '…'
+  const titleContractSub = links?.currentRoomNo && links.anchorRoomNo && links.currentRoomNo !== links.anchorRoomNo
+    ? `계약 호실 ${fmtRoomNo(links.anchorRoomNo)}` : undefined
+  const title = links ? `${fmtRoomNo(titleRoomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
   const handleApplyScheduledNow = async () => {
@@ -400,7 +405,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
 
   return (
     <Modal
-      open onClose={onClose} onBack={onBack} width="sm" title={title} z={280} dirty={dirty}
+      open onClose={onClose} onBack={onBack} width="sm" title={title} subtitle={titleContractSub} z={280} dirty={dirty}
       // 글을 쓰는 동안에는 이 푸터가 통째로 없는 편이 낫다. 액션 여섯과 탭 셋을 세어 보면
       // **아홉 개 전부가 지금 쓰는 글을 버리는 버튼**이다 — 서류 셋과 수정은 페이지를 갈아
       // 치우고, 탭 셋은 면을 바꿔 위젯을 언마운트한다. 경고도 없다. 도움이 되는 것은 0개다.

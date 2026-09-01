@@ -55,18 +55,27 @@ export function MergeSheet({
       style={{ paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }} role="dialog" aria-modal="true">
       <div className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose} />
-      <div ref={panelRef} className={`relative flex w-full max-w-md flex-col rounded-t-[20px] bg-[var(--cream)] px-[18px] pb-5 pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}
+      <div ref={panelRef} className={`relative flex w-full max-w-md flex-col rounded-t-[20px] bg-[var(--cream)] px-[18px] pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}
         // 시트 상한 = 보이는 띠 — 키보드·피커가 서도 제목과 버튼줄이 화면 밖으로 안 나간다.
-        style={{ maxHeight: 'calc(var(--vv-h, 100dvh) - 1rem)' }}>
+        // 상단 인셋을 뺀다(형제 PeekSheet 와 같은 자). 안 빼면 노치·다이내믹 아일랜드 아래에서
+        // 시트가 그만큼 길어져 위가 잘린다.
+        // 하단은 홈 인디케이터 몫을 더한다. pb-5 만으로는 standalone 에서 버튼줄 아래가 겹친다.
+        style={{
+          maxHeight: 'calc(var(--vv-h, 100dvh) - env(safe-area-inset-top) - 1rem)',
+          paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))',
+        }}>
         <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[var(--warm-mid)]/40 shrink-0" />
+        {/* 제목·안내·주의는 스크롤러 **밖**이다(형제 정본 Modal 헤더와 같은 골격). 안에 두면
+            상한에 걸린 순간 제일 먼저 사라지는 것이 제목이 된다. */}
+        <div className="shrink-0">
+          <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
+          {description && <p className="mt-1 text-[0.78125rem] leading-relaxed text-[var(--warm-mid)]">{description}</p>}
+          {note && (
+            <p className="mt-2 rounded-lg border border-[var(--coral)]/30 bg-[var(--coral-pale)] px-3 py-2 text-[0.75rem] leading-relaxed text-[var(--warm-dark)]">{note}</p>
+          )}
+        </div>
         {/* 본문만 스크롤 — 버튼줄은 아래 shrink-0 로 항상 보인다 */}
         <div className="min-h-0 overflow-y-auto overscroll-contain">
-        <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
-        {description && <p className="mt-1 text-[0.78125rem] leading-relaxed text-[var(--warm-mid)]">{description}</p>}
-        {note && (
-          <p className="mt-2 rounded-lg border border-[var(--coral)]/30 bg-[var(--coral-pale)] px-3 py-2 text-[0.75rem] leading-relaxed text-[var(--warm-dark)]">{note}</p>
-        )}
-
         {/* 대상 선택 — 방향을 바꿀 수 있는 진입점에서는 '남을 쪽'을 단정하지 않는다 */}
         <label className="mt-4 block text-xs font-medium text-[var(--warm-mid)]">{canFlip ? '합칠 상대' : '합칠 대상 (남을 품목)'}</label>
         <select value={destId} onChange={e => setDestId(e.target.value)} disabled={pending}

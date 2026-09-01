@@ -70,9 +70,17 @@ const SHELL = 'components/entity-modal/EntityModal.tsx'
         fail('ⓐ', `${SHELL} 의 제목이 지금 사는 방(currentRoomNo, 앵커 폴백)을 안 읽는다`,
           '임시 호실 이사 중에는 지금 사는 방이 먼저다(운영자 지시 2026-09-01). 앵커 폴백을 빼면 진입 방 회귀가 되살아난다.')
       }
-      if (!/titleContractTail/.test(titleBlock) || !/계약 /.test(titleBlock)) {
-        fail('ⓐ', `${SHELL} 의 제목이 계약 방 꼬리를 잃었다`,
-          '두 방이 갈릴 때 계약 방이 제목에서 사라지면 청구·계약서 축이 안 보인다.')
+      // 2026-09-02 디자이너 패스. 계약 방은 제목 꼬리에서 **부제**로 내려갔다(h2 truncate 가
+      // 꼬리를 먼저 지우고, 굵기가 같아 방번호 둘이 부딪혔다). 규칙 자체는 그대로다.
+      // 두 방이 갈리면 계약 방 표기가 헤더 어딘가에 반드시 남는다. 그래서 두 가지를 본다.
+      // 조립이 있는가, 그리고 그 값이 실제로 헤더에 실리는가(만들어 놓고 안 쓰면 표기는 없다).
+      if (!/titleContractSub/.test(titleBlock) || !/계약 호실/.test(titleBlock)) {
+        fail('ⓐ', `${SHELL} 의 제목이 계약 방 표기를 잃었다`,
+          '두 방이 갈릴 때 계약 방이 헤더에서 사라지면 청구·계약서 축이 안 보인다. 어휘는 형제 RoomScheduleSheet 의 \'계약 호실\'로 맞춘다.')
+      }
+      if (!/subtitle=\{titleContractSub\}/.test(src)) {
+        fail('ⓐ', `${SHELL} 의 계약 방 표기가 Modal 헤더에 안 실린다`,
+          '조립만 남고 부제로 안 넘기면 화면에는 아무것도 안 뜬다. Modal 의 subtitle 로 넘길 것.')
       }
     }
   }

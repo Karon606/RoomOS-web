@@ -3855,7 +3855,8 @@ function HubShortDialog({ pending, onResolved, onExit }: {
       onClick={() => handleExit('back')}>
       <div ref={panelRef} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col"
         // 상한 85vh 를 '보이는 띠'로도 죈다 — 키보드가 서면 --vv-h 가 지배해 헤더가 위로 안 잘린다.
-        style={{ maxHeight: 'min(85vh, var(--vv-h, 100dvh))' }}
+        // 하단 패딩은 버튼줄의 py-4 가 낸다. 여기서는 홈 인디케이터 몫만 얹는다(형제 MergeSheet).
+        style={{ maxHeight: 'min(85vh, var(--vv-h, 100dvh))', paddingBottom: 'env(safe-area-inset-bottom)' }}
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] shrink-0 flex items-start gap-2.5">
           <svg className="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
