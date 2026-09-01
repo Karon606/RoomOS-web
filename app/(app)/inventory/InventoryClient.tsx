@@ -11,7 +11,7 @@ import { Btn } from '@/components/ui/Btn'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { askShiftRows, askShiftRowsRequired, type ShiftAskResult } from '@/lib/stockShiftAsk'
-import { overbookExcess } from '@/lib/stockLedger'
+import { overbookExcess, calcLocMove } from '@/lib/stockLedger'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -2743,11 +2743,9 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
-  // calcLocMove 단일 규칙(생성 폼과 동일). 단 기준선은 '그 점검의 원래 채우기 전'(역산값) —
-  // 현재 잔량을 기준으로 쓰면 과거 점검 수정이 오늘 값으로 오염된다(전문가 오더 2026-07-28).
-  const origBefore = (id: string) => initial[id] ? Number(initial[id].before) : null
+  // calcLocMove 단일 규칙(생성 폼과 동일) — 빈 '채우기 전'은 0 이다(운영자 확정 2026-09-01).
   const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) =>
-    s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', origBefore(l.id)).restocked, 0)
+    s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
 
   // 창고(허브) 행 — '이전 잔량'은 저장된 창고 잔량 + 이 점검의 원래 보충합계로 역산(편집 무관 상수).
   // '자동 차감 후' = 이전 잔량 − (현재 편집 중인) 보충합계. 사용자가 직접 보정 안 했으면 이 값으로 저장.
@@ -2779,7 +2777,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
           .map(l => {
             if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
             // calcLocMove 단일 규칙 — 화면 restockSum 과 같은 계산이라야 저장 후 숫자가 안 튄다
-            const { restocked } = calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', origBefore(l.id))
+            const { restocked } = calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '')
             return {
               storageLocationId: l.id, qty: Number(afterQtys[l.id] || '0'),
               ...(restocked > 0 ? { restockedQty: restocked } : {}),
@@ -2843,7 +2841,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
             // 비허브 위치 행 — 채우기 전 → 채운 후 (차이만큼 창고에서 이동). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[l.id] ?? ''
             const afterStr  = afterQtys[l.id] ?? ''
-            const { restocked } = calcLocMove(beforeStr, afterStr, origBefore(l.id))
+            const { restocked } = calcLocMove(beforeStr, afterStr)
             return (
               <div key={l.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
@@ -3062,20 +3060,6 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-// 창고에서 옮김(구 '보충') 계산 단일 규칙 — 화면 합계·배지·저장·수정 폼이 전부 이 함수를 쓴다(운영자 승인 2026-07-28).
-// '채운 후'만 입력해도 기준선(채우기 전 입력 ?? 직전 잔량)에서 늘어난 만큼 창고에서 옮긴 것으로 계산해 허브를 차감한다.
-// 종전엔 화면(전·후 모두 입력 요구)과 저장(직전 잔량 폴백)의 규칙이 갈라져, 후만 입력하면 허브 미차감으로
-// 총량이 부푸는 유령 재고 위험이 있었다(김치 20kg 후속 신고). 음수(후 < 기준)는 0 클램프 — 허브 환입 금지.
-function calcLocMove(beforeStr: string, afterStr: string, baseline: number | null): {
-  beforeN: number | null; afterN: number | null; restocked: number
-} {
-  const beforeN = beforeStr === '' ? null : Number(beforeStr)
-  const afterN  = afterStr === '' ? null : Number(afterStr)
-  const base = beforeN ?? baseline
-  const restocked = (base !== null && afterN !== null && afterN > base) ? afterN - base : 0
-  return { beforeN, afterN, restocked }
-}
-
 function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, hasPriorCheck, pendingCount, onCancel, onDone, onDraftChange, onGoDisposal }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; unitHint: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
@@ -3116,7 +3100,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, 
   // "보충 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
   // 동일하게, "보충 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
   // 현재 잔량은 빈칸으로 시작 — 직접 세어 입력(미리 채운 값 수정이 번거로움). 미변경 위치는 '직전값 유지'로 채움.
-  // 보충 후만 입력하고 현재 잔량을 비운 경우는 buildLocationData 가 직전 잔량을 보충 기준으로 삼아 허브 미차감(총량 변동) 버그를 막는다.
+  // 보충 후만 입력하고 현재 잔량을 비운 경우 빈칸은 0 이다(자리표시자 그대로, 운영자 확정 2026-09-01) — 옮김량 = 채운 후 전체.
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
   // 허브 사용자 보정 여부 — true 면 자동 차감값을 덮어쓰지 않음
@@ -3224,7 +3208,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, 
   const restockSum = restockMode
     ? chkLocations
         .filter(l => !l.isHub)
-        .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '', prevMap[l.id] ?? null).restocked, 0)
+        .reduce((s, l) => s + calcLocMove(beforeQtys[l.id] ?? '', afterQtys[l.id] ?? '').restocked, 0)
     : 0
 
   // 허브의 "보충 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
@@ -3246,8 +3230,8 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, 
         const beforeStr = beforeQtys[l.id] ?? ''
         const afterStr  = afterQtys[l.id] ?? ''
         // 전·후 모두 입력 → 옮김량 = max(0, 후-전) / 전만 입력 → 옮김 없이 잔량 = 전
-        // 후만 입력 → 직전 잔량 기준으로 옮김량 산출 / 모두 비움 → entered=false(저장 제외, carryOver 보존)
-        const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr, prevMap[l.id] ?? null)
+        // 후만 입력 → 빈 전은 0(옮김량 = 후 전체) / 모두 비움 → entered=false(저장 제외, carryOver 보존)
+        const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
         const finalQty = afterN ?? beforeN ?? 0
         return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked > 0 ? restocked : undefined, entered: beforeStr !== '' || afterStr !== '' }
       })
@@ -3417,7 +3401,7 @@ function CheckForm({ item, lastCheckBreakdown, hiddenLocationIds, currentStock, 
             // 비허브 위치 행 — 전 → 후 (grid 2cols, 라벨은 input 위). 배지도 calcLocMove 단일 규칙.
             const beforeStr = beforeQtys[loc.id] ?? ''
             const afterStr  = afterQtys[loc.id] ?? ''
-            const { restocked } = calcLocMove(beforeStr, afterStr, prevMap[loc.id] ?? null)
+            const { restocked } = calcLocMove(beforeStr, afterStr)
             const lastRestocked = prevRestockedMap[loc.id]
             return (
               <div key={loc.id} className="space-y-1">
@@ -3965,8 +3949,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   useEffect(() => {
     if (!locId) return
     // 현재 잔량(보충 전)은 빈칸으로 시작 — 직접 세어 입력(미리 채운 값 수정 번거로움 해소).
-    // 보충 후만 입력하고 현재 잔량을 비운 경우는 computeRow 가 직전 잔량을 보충 기준으로 삼아
-    // 허브 미차감(총량 변동) 버그를 막는다. CheckForm 과 동작 통일.
+    // 보충 후만 입력하고 현재 잔량을 비운 경우 빈칸은 0 이다(운영자 확정 2026-09-01). CheckForm 과 동작 통일.
     setBeforeQtys({})
     setAfterQtys({})
     setMergeChoice(null)
@@ -3991,8 +3974,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const computeRow = (r: InventoryRow) => {
     const beforeStr = beforeQtys[r.id] ?? ''
     const afterStr  = afterQtys[r.id] ?? ''
-    // calcLocMove 단일 규칙 — 채운 후만 입력하면 직전 잔량 기준으로 옮김량 산출(허브 미차감 방지)
-    const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr, r.currentLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
+    // calcLocMove 단일 규칙 — 채운 후만 입력하면 빈 '채우기 전'은 0(옮김량 = 채운 후 전체)
+    const { beforeN, afterN, restocked } = calcLocMove(beforeStr, afterStr)
     // 최종 잔량 = 채운 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
     const finalN = afterN ?? beforeN
     return { beforeStr, afterStr, beforeN, afterN, finalN, restocked }

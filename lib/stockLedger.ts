@@ -100,6 +100,29 @@ export function purchaseAfterCheck(
 // 자동 수정은 없다. 장부보다 많이 세어졌다는 것은 수령 확인·무상 입수 기록이 빠졌다는 신호다
 // (반대로 적게 세어진 것은 소모라서 정상). 허용 오차는 관용 오차(0.001)와 동일, 반환은
 // 표시용 2자리 반올림 초과분. null = 신호 없음.
+// ── 점검 입력 해석 — 위치 한 행의 '채우기 전 → 채운 후' ──────────────
+//
+// 화면 합계·배지·저장·과거 점검 수정·위치별 점검이 전부 이 한 함수를 쓴다(운영자 승인 2026-07-28).
+// 규칙이 두 벌이면 화면과 저장이 갈라져 유령 재고가 생긴다(김치 20kg 후속 신고).
+//
+// 빈칸 해석 (2026-09-01 운영자 확정 — "아무런 숫자를 입력하지 않으면 자동으로 0").
+//   · '채우기 전'이 비고 '채운 후'만 있으면 **전 = 0 이다.** 입력칸의 자리표시자가 0 이라
+//     말하는데 계산만 직전 잔량을 쓰면, 직전이 남아 있던 위치에서 옮김량이 조용히 줄어
+//     허브가 덜 차감된다(전 7 남았다 착각 - 실제로는 다 쓰고 0). 다 쓴 위치에 0 을 손으로
+//     쳐야 하는 것도 이 어긋남의 증상이었다.
+//   · 안 센 위치는 두 칸 다 빈칸이다 - 이 함수 밖(entered=false)에서 직전값이 보존되므로
+//     여기서 0 이 되지 않는다. '세지 않고 그대로'는 옮김 없음 버튼이 직전값을 채워 말한다.
+// 음수(후 < 전)는 0 클램프 - 허브 환입 금지(종전 규칙 유지). 직전 잔량(baseline)은 이제
+// 계산에 관여하지 않아 서명에서도 뺐다 - 남겨 두면 "무언가에 쓰이나" 하고 다시 잇게 된다.
+export function calcLocMove(beforeStr: string, afterStr: string): {
+  beforeN: number | null; afterN: number | null; restocked: number
+} {
+  const beforeN = beforeStr === '' ? null : Number(beforeStr)
+  const afterN  = afterStr === '' ? null : Number(afterStr)
+  const restocked = (afterN !== null && afterN > (beforeN ?? 0)) ? afterN - (beforeN ?? 0) : 0
+  return { beforeN, afterN, restocked }
+}
+
 export function overbookExcess(measured: number, book: number): number | null {
   if (!(measured > book + 1e-3)) return null
   const excess = Math.round((measured - book) * 100) / 100

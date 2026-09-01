@@ -1,7 +1,7 @@
 // 재고 원장 리플레이 정본(lib/stockLedger) 회귀 테스트 — DB 불필요, 순수 함수 케이스 고정.
 // 운영자 신고(2026-08-19 쌀 40kg)를 그대로 박제한다. 8/18 로 잘못 넣은 무상 입고를 8/10 으로
 // 정정하면 그 사이 점검들의 저장 절대값이 그대로라 40kg 이 증발하던 사건이다.
-import { planStockShift, deltaAfterCheck, purchaseAfterCheck, overbookExcess, type LedgerCheck, type LedgerDelta, type PurchaseDelta } from '../lib/stockLedger'
+import { planStockShift, deltaAfterCheck, purchaseAfterCheck, overbookExcess, calcLocMove, type LedgerCheck, type LedgerDelta, type PurchaseDelta } from '../lib/stockLedger'
 
 let pass = 0
 const fails: string[] = []
@@ -351,6 +351,23 @@ eq('과소 신호: 적게 세면(소모) 없음', overbookExcess(8, 10), null)
 eq('과소 신호: 많이 세면 초과분', overbookExcess(12, 10), 2)
 eq('과소 신호: 소수 초과분 2자리', overbookExcess(10.257, 10), 0.26)
 eq('과소 신호: 장부 0 에서 실측 존재', overbookExcess(3, 0), 3)
+
+// ── 점검 입력 해석 — 빈칸 규칙 (2026-09-01 운영자 확정) ─────────────────
+//
+// "현재 잔량 자리에 아무런 숫자를 입력하지 않으면 자동으로 0". 자리표시자가 0 이라 말하는데
+// 계산만 직전 잔량을 쓰면, 다 쓴 위치(실제 0)에서 옮김량이 직전만큼 줄어 허브가 덜 깎인다.
+const mv = (b: string, a: string) => calcLocMove(b, a)
+eq('점검 입력: 전 비우고 후만 넣으면 전은 0 — 옮김량 = 후 전체', mv('', '10').restocked, 10)
+eq('점검 입력: 직전 잔량이 0 이어도 같은 답(4층 주방 사례)', mv('', '10').restocked, 10)
+eq('점검 입력: 전·후 다 넣으면 차이', mv('4', '10').restocked, 6)
+eq('점검 입력: 전만 넣으면 옮김 없음', mv('3', '').restocked, 0)
+eq('점검 입력: 후 < 전이면 0 클램프(허브 환입 금지)', mv('10', '4').restocked, 0)
+eq('점검 입력: 후 < 0기준이어도 환입 없음', mv('', '0').restocked, 0)
+// 안 센 위치는 두 칸 다 빈칸 — 이 함수가 0 을 만들지 않아야 entered=false 보존이 성립한다.
+eq('점검 입력: 둘 다 빈칸이면 값 없음(carryOver 보존)', mv('', '').beforeN, null)
+eq('점검 입력: 둘 다 빈칸이면 후도 없음', mv('', '').afterN, null)
+eq('점검 입력: 둘 다 빈칸이면 옮김도 0', mv('', '').restocked, 0)
+eq('점검 입력: 명시한 0 은 값이다(0 저장 사건 재발 방지)', mv('0', '').beforeN, 0)
 
 console.log(`\n재고 원장 리플레이 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
