@@ -2289,15 +2289,19 @@ function readAlertMuteRows(raw: unknown): { k: string; at: string }[] {
  * 홈 알림 끄기(전 카테고리 공용) — "업무 처리와 무관하게 이 알림은 이제 필요없어"
  * (운영자 지시 2026-09-02, 현금영수증 건별 끄기를 일반화). 앱은 알림만 접는다 — 일 자체가
  * 사라지는 것은 아니고, 끈 건은 홈 하단 '끈 알림' 목록에 남아 언제든 다시 켠다(§16).
- * 키는 '카테고리:식별자' 한 줄이고 만드는 쪽(dashboard/page)이 정한다.
+ * 키는 '카테고리:식별자' 한 줄이고 만드는 쪽(dashboard/page)이 정한다. 요약 알림처럼 한 줄이
+ * 여러 건을 대표하는 자리가 있어 키 배열도 받는다 — 한 번 누르면 그 줄이 센 건이 다 꺼진다.
  */
-export async function muteHomeAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function muteHomeAlert(k: string | string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } })
     const cur = readAlertMuteRows(p?.alertMutes)
-    if (!cur.some(m => m.k === k)) cur.push({ k, at: kstYmdStr() })
+    const at = kstYmdStr()
+    for (const one of (Array.isArray(k) ? k : [k])) {
+      if (!cur.some(m => m.k === one)) cur.push({ k: one, at })
+    }
     await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: cur } })
     revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }
@@ -2308,12 +2312,13 @@ export async function muteHomeAlert(k: string): Promise<{ ok: true } | { ok: fal
 }
 
 /** 홈 알림 다시 켜기 — 끈 목록에서 그 건을 뺀다. */
-export async function unmuteHomeAlert(k: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function unmuteHomeAlert(k: string | string[]): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } })
-    const next = readAlertMuteRows(p?.alertMutes).filter(m => m.k !== k)
+    const drop = new Set(Array.isArray(k) ? k : [k])
+    const next = readAlertMuteRows(p?.alertMutes).filter(m => !drop.has(m.k))
     await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: next } })
     revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }

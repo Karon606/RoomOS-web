@@ -89,8 +89,9 @@ export function RoomWorkRowBody({
   const shownDate = r.status === 'DONE' ? r.doneDate : r.scheduledDate
 
   return (
-    <div className={deleted ? 'opacity-60' : ''}>
-      <div className="flex items-center gap-1.5 flex-wrap">
+    <div>
+      {/* 삭제된 건은 글만 흐린다. 감싸는 통째로 흐리면 '복원' 버튼까지 같이 죽는다(형제 CleaningRowBody 와 같은 문법). */}
+      <div className={`flex items-center gap-1.5 flex-wrap${deleted ? ' opacity-60' : ''}`}>
         <StatusBadge tone={workTone(r.status)}>{r.status === 'DONE' ? '완료' : '예정'}</StatusBadge>
         <span className="text-xs font-medium text-[var(--warm-dark)]">{r.kind}</span>
         {shownDate && <span className="text-xs text-[var(--warm-muted)] num">{fmtDateDot(shownDate)}</span>}
@@ -115,7 +116,7 @@ export function RoomWorkRowBody({
           내려간다(운영자 지적 2026-08-28). 시공비·자재비를 칩 줄에서 내렸던 것과 같은 이유이고,
           그때 실측(437px, 320·360·390 전부 두 줄)으로 이미 한 번 겪은 자리다. */}
       {(r.performer || r.performerName) && (
-        <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">
+        <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)]${deleted ? ' opacity-60' : ''}`}>
           {r.performer ? CLEANING_PERFORMER_LABEL[r.performer] : '기록된 이름'}
           {r.performerName ? ` · ${r.performerName}` : ''}
         </p>
@@ -127,7 +128,7 @@ export function RoomWorkRowBody({
           앱이 모른다"고 했던 것도 같은 원인이다 — 운영자는 안다. 화면이 안 보여줬을 뿐이다.
           편집 모드에서는 그 줄에서 바로 금액을 고친다. */}
       {r.linkedExpenses.length > 0 && (
-        <ul className="mt-1 space-y-0.5">
+        <ul className={`mt-1 space-y-0.5${deleted ? ' opacity-60' : ''}`}>
           {r.linkedExpenses.map(e => (
             <li key={e.id} className="flex items-center gap-1.5 text-[0.65625rem] text-[var(--warm-muted)]">
               <span className="min-w-0 flex-1 truncate">
@@ -155,7 +156,7 @@ export function RoomWorkRowBody({
 
       {/* 메모는 §11 보조줄. 길이를 모르는 자유 입력이라 칩 줄에 끼우면 줄이 무너진다. */}
       {r.memo && (
-        <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words">{r.memo}</p>
+        <p className={`mt-1 text-[0.65625rem] text-[var(--warm-muted)] break-words${deleted ? ' opacity-60' : ''}`}>{r.memo}</p>
       )}
 
       {!canEdit ? null : deleted ? (

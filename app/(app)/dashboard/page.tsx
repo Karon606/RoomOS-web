@@ -1825,6 +1825,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 23건이 기한을 넘겨 있었다 — 모아서 일괄 발행하는 관행이 기한을 넘긴다. 마감 이틀 전부터
   // 알려 몰아서 하더라도 기한 안에 하게 한다. 묶음 축은 발행 줄이 찾는 키와 같다(계약·수납일·
   // 수단, getCashReceiptTabRows 와 동일) — 수납마다 세면 쪼개 저장된 한 결제가 여러 건으로 부푼다.
+  //
+  // 끈 건은 홈 '끈 알림'에 건별로 늘어놓지 않는다 — 한 번에 수십 건을 끄는 자리라 목록이 벽이
+  // 된다. 합쳐 한 줄로 세우고 다시 켜는 자리는 탭으로 보낸다(디자이너 판정 2026-09-02).
+  let crMutedSummary: { count: number; link: string } | null = null
   try {
     const crTodayYmd = kstYmdStr()
     const lookFrom = new Date(Date.parse(`${crTodayYmd}T00:00:00Z`) - 35 * 86400000)
@@ -1870,16 +1874,24 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const crIssued = new Set(crLines.map(l => crKey(l.leaseTermId, l.payDate, l.payMethod)))
     const due = [...crGroups.entries()]
       .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
-      .map(([, g]) => ({ ...g, left: cashReceiptDaysLeft(g.payYmd, crTodayYmd) }))
+      .map(([k, g]) => ({ ...g, key: k, left: cashReceiptDaysLeft(g.payYmd, crTodayYmd) }))
       .filter(g => g.left <= 2)
       .sort((a, b) => a.left - b.left)
+    // 끈 건 합성 줄의 링크 — 가장 최근 입금이 속한 달로 보낸다(그 달 탭에 끈 목록이 선다).
+    if (crMuted.size > 0) {
+      const ymds = [...crMuted].map(k => k.split('|')[1] ?? '').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
+      const month = (ymds[ymds.length - 1] ?? crTodayYmd).slice(0, 7)
+      crMutedSummary = { count: crMuted.size, link: `/rooms?tab=receipt&month=${month}` }
+    }
     if (due.length > 0) {
       const worst = due[0].left
       const total = due.reduce((sum, g) => sum + g.amount, 0)
       alertItems.push({
         category:  'receipt',
         text:      `현금영수증 발급 기한 ${due.length}건 (${fmtWon(total)})`,
-        muteKey:   'receipt:summary',
+        // 요약 한 칸('receipt:summary')으로 끄면 다음 달 기한까지 영구 침묵한다 — 지금 센
+        // 건만 건별로 끈다(탭의 끄기와 같은 축, 디자이너 판정 2026-09-02).
+        muteKeys:  due.map(g => `receipt:${g.key}`),
         link:      `/rooms?tab=receipt&month=${due[0].payYmd.slice(0, 7)}`,
         dotColor:  'var(--danger-fg)',
         timeLabel: worst < 0 ? `기한 ${-worst}일 경과` : worst === 0 ? '오늘 마감' : `기한 ${worst}일 남음`,
@@ -2048,18 +2060,30 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return null
   }
   const alertMuteRaw = (await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } }))?.alertMutes
-  const alertMuteSet = new Set(
+  // 끈 날짜(at)까지 들고 온다 — 끈 줄은 "언제 껐는지"가 다시 켤지 판단하는 단서다.
+  const alertMuteAt = new Map<string, string>(
     (Array.isArray(alertMuteRaw) ? alertMuteRaw : [])
-      .map(mm => (mm && typeof (mm as { k?: unknown }).k === 'string' ? (mm as { k: string }).k : null))
-      .filter((k): k is string => !!k),
+      .map(mm => (mm && typeof (mm as { k?: unknown }).k === 'string'
+        ? [(mm as { k: string }).k, typeof (mm as { at?: unknown }).at === 'string' ? (mm as { at: string }).at : ''] as [string, string]
+        : null))
+      .filter((e): e is [string, string] => e !== null),
   )
   const visibleAlerts: typeof alertItems = []
   const mutedAlerts: typeof alertItems = []
   for (const a of alertItems) {
     const k = muteKeyOf(a)
-    const withKey = k ? { ...a, muteKey: k } : a
-    if (k && alertMuteSet.has(k)) mutedAlerts.push(withKey)
-    else visibleAlerts.push(withKey)
+    if (k && alertMuteAt.has(k)) mutedAlerts.push({ ...a, muteKey: k, mutedAt: alertMuteAt.get(k) || undefined })
+    else visibleAlerts.push(k ? { ...a, muteKey: k } : a)
+  }
+  // 현금영수증 끈 건은 합성 한 줄 — 건별 '다시 켜기' 대신 탭으로 보낸다(muteKey 가 없어 링크로 선다).
+  if (crMutedSummary) {
+    mutedAlerts.push({
+      category:  'receipt',
+      text:      `현금영수증 발급 기한 · ${crMutedSummary.count}건 끔`,
+      link:      crMutedSummary.link,
+      dotColor:  'var(--danger-fg)',
+      timeLabel: '발급 의무는 남습니다',
+    })
   }
 
   const dashboardData: DashboardData = {

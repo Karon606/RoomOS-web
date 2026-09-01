@@ -11,6 +11,7 @@
 
 import { useState, useTransition } from 'react'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { Modal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -21,7 +22,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
-import { depositCashReceiptWarning } from '@/lib/cashReceipt'
+import { depositCashReceiptWarning, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { batchSetCashReceipts, batchUnsetCashReceipts, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
 
@@ -52,6 +53,8 @@ export function CashReceiptTab({
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [issuedDate, setIssuedDate] = useState(kstYmdStr())
+  // 끈 입금은 기본 접힘 — 끈 것은 조용한 것이 정상이다(홈 '끈 알림'과 같은 처방).
+  const [mutedOpen, setMutedOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const keyOf = (c: Candidate) => `${c.leaseTermId}|${c.payYmd}|${c.payMethod}`
@@ -101,6 +104,7 @@ export function CashReceiptTab({
             <span className="block">합계는 발행한 날이 속한 달 기준입니다. 홈택스 자료와 맞추기 위한 축입니다.</span>
             <span className="block mt-1.5">아래 첫 목록은 이 달에 받은 입금 중 발행 기록이 없는 것입니다. 전부 발행 대상은 아니니 발행한 건만 골라 기록하세요.</span>
             <span className="block mt-1.5">카드 결제는 매출전표가 증빙을 대신해 여기 없습니다.</span>
+            <span className="block mt-1.5">끈 건은 발급 후보에서도 빠집니다.</span>
           </InfoHint>
         </p>
       </div>
@@ -152,25 +156,36 @@ export function CashReceiptTab({
                             <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                               입금 {fmtMD(c.payYmd)} · {c.payMethod}{extra.length > 0 ? ` · ${extra.join(' · ')}` : ''}
                             </span>
+                            {/* 알림 끄기 — 발행 여부는 운영자 판단 영역이라 끌 수 있어야 한다(운영자 지시
+                                2026-09-01). 끈 건은 아래 접힌 목록에 남아 언제든 다시 켠다.
+                                액션은 금액 앞이 아니라 텍스트 열 아래다 — 금액 열이 형제 목록과
+                                어긋나고 선택 모드 전환 때 튀었다(디자이너 지적 2026-09-02).
+                                홈 알림이 조르는 건(의무 기준액 이상)에만 선다 — 조르지도 않는 건에
+                                끄기 버튼이 서면 목록이 없는 일을 시킨다. */}
+                            {canEdit && !selectMode && c.amount >= CASH_RECEIPT_OBLIGATION_MIN && (
+                              <span className="flex gap-1.5">
+                                <RowActionBtn tone="neutral" disabled={pending}
+                                  onClick={() => startTransition(async () => {
+                                    const release = trackSave()
+                                    try {
+                                      const r = await muteReceiptAlert(keyOf(c))
+                                      if (!r.ok) { pushToast('error', r.error); return }
+                                      pushToast('success', `${fmtRoomNo(c.roomNo)} ${c.tenantName} 발급 알림을 껐습니다`, {
+                                        detail: '알림만 접습니다. 발급 의무가 사라지는 것은 아니고, 아래 목록에서 다시 켤 수 있습니다.',
+                                        action: { label: '적용취소', run: () => { void unmuteReceiptAlert(keyOf(c)).then(u => {
+                                          if (u.ok) { pushToast('info', '알림을 다시 켰습니다'); onChanged() }
+                                          else pushToast('error', u.error)
+                                        }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                                      })
+                                      onChanged()
+                                    } finally { release() }
+                                  })}>
+                                  알림 끄기
+                                </RowActionBtn>
+                              </span>
+                            )}
                           </span>
                           <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.amount)}</span>
-                          {/* 알림 끄기 — 발행 여부는 운영자 판단 영역이라 끌 수 있어야 한다(운영자 지시
-                              2026-09-01). 끈 건은 아래 접힌 목록에 남아 언제든 다시 켠다. */}
-                          {canEdit && !selectMode && (
-                            <button type="button" disabled={pending}
-                              onClick={() => startTransition(async () => {
-                                const r = await muteReceiptAlert(keyOf(c))
-                                if (!r.ok) { pushToast('error', r.error); return }
-                                pushToast('success', `${fmtRoomNo(c.roomNo)} ${c.tenantName} 발급 알림을 껐습니다`, {
-                                  detail: '알림만 접습니다. 발급 의무가 사라지는 것은 아니고, 아래 목록에서 다시 켤 수 있습니다.',
-                                  action: { label: '적용취소', run: () => { void unmuteReceiptAlert(keyOf(c)).then(u => { if (u.ok) { pushToast('info', '알림을 다시 켰습니다'); onChanged() } else pushToast('error', u.error) }) } },
-                                })
-                                onChanged()
-                              })}
-                              className="shrink-0 min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                              알림 끄기
-                            </button>
-                          )}
                         </label>
                       </li>
                     )
@@ -180,35 +195,54 @@ export function CashReceiptTab({
             )}
           </section>
 
+          {/* 끈 입금 — 기본 접힘. 목록을 늘리지 않으면서 다시 켤 문은 항상 남긴다(§16). */}
           {muted.length > 0 && (
             <section className="space-y-2">
-              <div>
-                <h2 className="text-xs font-semibold text-[var(--warm-mid)]">알림 끈 입금 ({muted.length}건)</h2>
-                <p className="text-[0.65625rem] text-[var(--warm-muted)]">발급 기한 알림에서 접어 둔 입금입니다. 발급 의무가 사라지는 것은 아니고, 다시 켜면 알림에 되살아납니다.</p>
-              </div>
-              <ul className="space-y-1.5">
-                {muted.map(c => (
-                  <li key={keyOf(c)} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)] opacity-80">
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate">{fmtRoomNo(c.roomNo)} {c.tenantName}</span>
-                      <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">입금 {fmtMD(c.payYmd)} · {c.payMethod} · {fmtMD(c.mutedAt)} 끔</span>
-                    </span>
-                    <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.amount)}</span>
-                    {canEdit && (
-                      <button type="button" disabled={pending}
-                        onClick={() => startTransition(async () => {
-                          const r = await unmuteReceiptAlert(keyOf(c))
-                          if (!r.ok) { pushToast('error', r.error); return }
-                          pushToast('info', '알림을 다시 켰습니다')
-                          onChanged()
-                        })}
-                        className="shrink-0 min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                        다시 켜기
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              {!mutedOpen ? (
+                <button type="button" onClick={() => setMutedOpen(true)}
+                  className="-my-2 min-h-[44px] flex items-center text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
+                  알림 끈 입금 {muted.length}건 보기
+                </button>
+              ) : (
+                <>
+                  <div>
+                    <h2 className="text-xs font-semibold text-[var(--warm-mid)]">알림 끈 입금 ({muted.length}건)</h2>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)]">입금일 기준 · 발급 의무는 남음</p>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {muted.map(c => (
+                      <li key={keyOf(c)} className="flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)]">
+                        <span className="min-w-0 flex-1">
+                          {/* 흐림은 텍스트에만 — 행 전체에 걸면 다시 켜는 버튼까지 흐려진다. */}
+                          <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate opacity-80">{fmtRoomNo(c.roomNo)} {c.tenantName}</span>
+                          <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep opacity-80">입금 {fmtMD(c.payYmd)} · {c.payMethod} · 알림 끔 {fmtMD(c.mutedAt)}</span>
+                          {canEdit && (
+                            <span className="flex gap-1.5">
+                              <RowActionBtn tone="accent" disabled={pending}
+                                onClick={() => startTransition(async () => {
+                                  const release = trackSave()
+                                  try {
+                                    const r = await unmuteReceiptAlert(keyOf(c))
+                                    if (!r.ok) { pushToast('error', r.error); return }
+                                    pushToast('info', '알림을 다시 켰습니다')
+                                    onChanged()
+                                  } finally { release() }
+                                })}>
+                                다시 켜기
+                              </RowActionBtn>
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm font-semibold num text-[var(--warm-dark)] shrink-0">{fmtWon(c.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" onClick={() => setMutedOpen(false)}
+                    className="-my-2 min-h-[44px] flex items-center text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
+                    접기
+                  </button>
+                </>
+              )}
             </section>
           )}
 

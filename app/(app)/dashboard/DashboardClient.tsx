@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { fmtDateDot } from '@/lib/fmtDate'
+import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
+import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { ConsultToolsModal } from '@/components/ConsultToolsModal'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
@@ -54,7 +55,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 // ── 타입 ────────────────────────────────────────────────────────
 
 // 홈 알림 한 건 — 보이는 목록과 '끈 알림'이 같은 모양을 쓴다(끄기 일반화 2026-09-02).
-type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string }
+type HomeAlert = { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null; muteKey?: string; muteKeys?: string[]; mutedAt?: string }
 
 export type DashboardData = {
   // 시작 체크리스트 — 3단계(호실·입주자·첫 수납) 모두 완료면 null
@@ -154,7 +155,7 @@ export type DashboardData = {
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
   alerts:            HomeAlert[]
-  /** 수동으로 끈 알림 — 홈 하단 접힌 목록으로 서고 언제든 다시 켠다(§16). */
+  /** 수동으로 끈 알림 — 알림 스트립 맨 아래 접힌 그룹으로 서고 언제든 다시 켠다(§16). */
   mutedAlerts:       HomeAlert[]
   expectedExpense:   number
   hasExpenseHistory: boolean
@@ -499,6 +500,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const [refundModalOpen, setRefundModalOpen] = useState(false)
   // 고정지출 기록 폼은 실제 항목·계좌를 서버에서 받아 열기 때문에 버튼에 로딩 상태가 필요하다.
   const [recordPending, setRecordPending]   = useState(false)
+  const [mutePending, setMutePending]       = useState(false)
 
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
@@ -700,26 +702,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               수납 관리 보기
             </Btn>
           )}
-          {/* 알림 끄기 — 일 처리와 무관하게 이 알림이 더 필요 없을 때(운영자 지시 2026-09-02).
-              끈 건은 홈 하단 '끈 알림'에 남아 언제든 다시 켠다. 키 없는 알림에는 안 선다. */}
-          {alert.muteKey && (
-            <button type="button"
-              onClick={() => { void (async () => {
-                const k = alert.muteKey!
-                const r = await muteHomeAlert(k)
-                if (!r.ok) { pushToast('error', r.error); return }
-                pushToast('success', '알림을 껐습니다', {
-                  detail: '일 자체가 사라지는 것은 아닙니다. 알림 아래 [끈 알림]에서 다시 켤 수 있습니다.',
-                  action: { label: '적용취소', run: () => { void unmuteHomeAlert(k).then(u => { if (u.ok) { pushToast('info', '알림을 다시 켰습니다'); router.refresh() } else pushToast('error', u.error) }) } },
-                })
-                router.refresh()
-                onClose()
-              })() }}
-              className="block w-full text-center text-xs font-medium py-2 rounded-lg border transition-opacity hover:opacity-70"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-muted)' }}>
-              이 알림 끄기
-            </button>
-          )}
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-lg border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
@@ -731,6 +713,35 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               : alert.wishCandidates && alert.wishCandidates.length > 0 ? '호실 관리로 이동 ›'
               : '입주자 관리에서 보기 ›'}
           </Link>
+          {/* 알림 끄기 — 일 처리와 무관하게 이 알림이 더 필요 없을 때(운영자 지시 2026-09-02).
+              일을 진행하는 버튼들 아래 마지막에 선다. 끈 건은 알림 맨 아래 '끈 알림'에 남아
+              언제든 다시 켠다. 키 없는 알림에는 안 선다. 요약 알림은 그 줄이 센 건을 다 끈다. */}
+          {(alert.muteKey || (alert.muteKeys?.length ?? 0) > 0) && (
+            <Btn variant="ghost" size="sm" fullWidth
+              disabled={confirmPending || mutePending}
+              onClick={() => {
+                const keys = alert.muteKeys ?? [alert.muteKey!]
+                setMutePending(true)
+                void (async () => {
+                  const release = trackSave()
+                  try {
+                    const r = await muteHomeAlert(keys)
+                    if (!r.ok) { pushToast('error', r.error); setMutePending(false); return }
+                    pushToast('success', '알림을 껐습니다', {
+                      detail: '처리할 일은 그대로 남습니다. 알림 맨 아래 [끈 알림]에서 다시 켤 수 있습니다.',
+                      action: { label: '적용취소', run: () => { void unmuteHomeAlert(keys).then(u => {
+                        if (u.ok) { pushToast('info', '알림을 다시 켰습니다'); router.refresh() }
+                        else pushToast('error', u.error)
+                      }).catch(() => pushToast('error', '되돌리기 중 통신 오류가 발생했습니다')) } },
+                    })
+                    router.refresh()
+                    onClose()
+                  } finally { release() }
+                })().catch(() => { setMutePending(false); pushToast('error', '처리 중 통신 오류가 발생했습니다') })
+              }}>
+              {mutePending ? '처리 중…' : '이 알림 끄기'}
+            </Btn>
+          )}
         </div>
       {refundModalOpen && (
         <CheckoutRefundModal
@@ -839,8 +850,10 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
   )
 }
 
-function AlertsStrip({ alerts, onOpenAlert }: {
+function AlertsStrip({ alerts, muted, onOpenAlert }: {
   alerts: DashboardData['alerts']
+  /** 끈 알림 — 별도 카드가 아니라 이 스트립 맨 아래 그룹으로 선다(디자이너 판정 2026-09-02). */
+  muted: DashboardData['mutedAlerts']
   onOpenAlert: (alert: AlertItem) => void
 }) {
   // 긴급도(D-N) 부여 후 '지금 급함'(경과 or 카테고리별 D-N 이내)과 '예정'으로 분리.
@@ -877,8 +890,11 @@ function AlertsStrip({ alerts, onOpenAlert }: {
   // 그룹 내 부분 펼침 (L 후속) — 그룹을 열어도 가장 급한 N개만 우선 보이고 나머지는 '+M건 더 보기' 뒤로.
   // 그룹 items 는 이미 긴급도 오름차순 정렬돼 있어 slice(0, LIMIT) = 가장 급한 N개.
   const [groupFullOpen, setGroupFullOpen] = useState<Record<string, boolean>>({})
+  // 끈 알림은 기본 접힘 — 끈 것은 조용한 것이 정상이다.
+  const [mutedOpen, setMutedOpen] = useState(false)
 
-  if (alerts.length === 0) return null
+  // 볼 알림이 없어도 끈 알림이 있으면 스트립이 선다 — 다시 켤 문이 사라지면 안 된다(§16).
+  if (alerts.length === 0 && muted.length === 0) return null
 
   return (
     <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -887,9 +903,11 @@ function AlertsStrip({ alerts, onOpenAlert }: {
           <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>알림</h3>
           <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
-        <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
-          {alerts.length}건
-        </span>
+        {alerts.length > 0 && (
+          <span className="rounded-sm text-[0.65625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
+            {alerts.length}건
+          </span>
+        )}
       </div>
 
       {/* ── 지금 급함 — 카테고리 무관, 항상 펼침 ── */}
@@ -915,7 +933,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
         const meta = CATEGORY_META[g.cat]
         const isOpen = expanded[g.cat] ?? false
         return (
-          <div key={g.cat} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+          <div key={g.cat} style={{ borderBottom: (gi < groups.length - 1 || muted.length > 0) ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
             <button
               type="button"
               onClick={() => setExpanded(prev => ({ ...prev, [g.cat]: !isOpen }))}
@@ -960,7 +978,68 @@ function AlertsStrip({ alerts, onOpenAlert }: {
           </div>
         )
       })}
+
+      {/* ── 끈 알림 — 맨 아래 그룹. 숨기지 않고 접는다(§16 상시 적용취소) ── */}
+      {muted.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setMutedOpen(o => !o)}
+            aria-expanded={mutedOpen}
+            className="w-full flex items-center gap-2 px-5 py-2.5 hover:opacity-80 transition-opacity"
+            style={{ background: 'rgba(0,0,0,0.015)' }}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--warm-muted)' }} />
+            <span className="text-[0.6875rem] font-semibold flex-1 text-left" style={{ color: 'var(--warm-muted)' }}>끈 알림</span>
+            <span className="text-[0.65625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>{muted.length}건</span>
+            <span className="text-[var(--warm-muted)] text-xs ml-1" style={{ transform: mutedOpen ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 150ms' }}>›</span>
+          </button>
+          {mutedOpen && <MutedAlertRows muted={muted} />}
+        </div>
+      )}
     </div>
+  )
+}
+
+// 끈 알림 줄 — 보이는 알림(AlertRow)과 같은 2줄이고, 둘째 줄에 언제 껐는지가 붙는다.
+// 건별 키가 있으면 그 자리에서 다시 켜고, 없는 합성 줄(현금영수증 묶음)은 탭으로 보낸다.
+function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  return (
+    <ul className="px-5 py-1" style={{ borderTop: `1px solid ${DIVIDER_COLOR}` }}>
+      {muted.map(a => (
+        <li key={a.muteKey ?? a.text} className="flex items-center gap-2 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold truncate" style={{ color: 'var(--warm-muted)' }}>{a.text}</p>
+            <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+              {[a.timeLabel, a.exactDate, a.mutedAt ? `알림 끔 ${fmtMD(a.mutedAt)}` : null].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          {a.muteKey ? (
+            <RowActionBtn tone="accent" disabled={pending} className="shrink-0"
+              onClick={() => startTransition(async () => {
+                const release = trackSave()
+                try {
+                  const r = await unmuteHomeAlert(a.muteKey!)
+                  if (!r.ok) { pushToast('error', r.error); return }
+                  pushToast('info', '알림을 다시 켰습니다')
+                  router.refresh()
+                } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') }
+                finally { release() }
+              })}>
+              다시 켜기
+            </RowActionBtn>
+          ) : (
+            <Link href={a.link}
+              className="shrink-0 -my-2 min-h-[44px] inline-flex items-center text-[0.65625rem] font-medium hover:opacity-70 transition-opacity"
+              style={{ color: 'var(--coral)' }}>
+              탭에서 다시 켜기 ›
+            </Link>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -2312,8 +2391,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       <ConsultToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} />
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
-      <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
-      <MutedAlertsStrip muted={data.mutedAlerts} />
+      <AlertsStrip alerts={data.alerts} muted={data.mutedAlerts} onOpenAlert={setSelectedAlert} />
 
       {/* 찍어 올리기 · 등록 대기 큐는 홈에서 제외 — 스테이음 Lab(/snap-upload)으로 이전(운영자 지시 2026-07-19).
           원래 비전(물건 사진 개수 인식 → 재고 반영)은 신뢰도 부족으로 보류, 아이디어 확정 시 Lab에서 재개. */}
@@ -3063,42 +3141,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
         />
       )}
       </>)}
-    </div>
-  )
-}
-
-// 끈 알림 — 숨기지 않고 접는다. "이 알림은 이제 필요없어"가 실수였을 때 되돌릴 길이
-// 항상 보여야 한다(§16 상시 적용취소). 기본 접힘 — 끈 것은 조용한 것이 정상이다.
-function MutedAlertsStrip({ muted }: { muted: DashboardData['mutedAlerts'] }) {
-  const router = useRouter()
-  const [open, setOpen] = useState(false)
-  const [pending, startTransition] = useTransition()
-  if (muted.length === 0) return null
-  return (
-    <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-      <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between px-5 py-3">
-        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--warm-muted)' }}>끈 알림</span>
-        <span className="rounded-sm text-[0.65625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{muted.length}건</span>
-      </button>
-      {open && (
-        <ul className="px-5 pb-3 space-y-2">
-          {muted.map(a => (
-            <li key={a.muteKey ?? a.text} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs" style={{ color: 'var(--warm-muted)' }}>{a.text}</span>
-              <button type="button" disabled={pending}
-                onClick={() => startTransition(async () => {
-                  const r = await unmuteHomeAlert(a.muteKey!)
-                  if (!r.ok) { pushToast('error', r.error); return }
-                  pushToast('info', '알림을 다시 켰습니다')
-                  router.refresh()
-                })}
-                className="shrink-0 min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                다시 켜기
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }

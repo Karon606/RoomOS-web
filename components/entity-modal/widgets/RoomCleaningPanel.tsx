@@ -251,8 +251,9 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
               <p className="text-xs text-[var(--warm-muted)]">삭제된 기록이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
+                {/* 흐림은 행 본문이 deleted 로 텍스트에만 건다 — 행 전체에 걸면 '복원' 버튼까지 흐려진다. */}
                 {trash.map(m => (
-                  <li key={`t-${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2 opacity-70" style={{ background: 'var(--cream)' }}>
+                  <li key={`t-${m.sort}-${m.id}`} className="rounded-lg px-2.5 py-2" style={{ background: 'var(--cream)' }}>
                     {m.sort === 'c' ? (
                       <CleaningRowBody row={m.cleaning} fund={fund} recentPerformers={recentPerformers}
                         canEdit={canEdit} deleted onChanged={() => { reload(); loadTrash() }} />
