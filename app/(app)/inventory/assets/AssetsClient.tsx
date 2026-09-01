@@ -1385,20 +1385,32 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </div>
               )}
               {(() => {
-                const places = allItems.filter(s => itemIdentity(s) === itemIdentity(it))
+                // 같은 **이름**(라벨·분류·유형)이면 배치 현황에 함께 세운다. 재구매는 규격 표기가
+                // 조금씩 달라져(빈 규격 → "2홀 무광 스텐", 개 → 세트) 엄격한 정체성으로는 남남이
+                // 되는데, 그 사이 옛 카드가 전부 배정돼 미배정 목록에서 사라지면 "이 제품이 지금
+                // 어디에 설치돼 있나"를 볼 자리가 없다(운영자 신고 2026-09-01, 샤워기 겸용 수전 —
+                // 설치 15곳이 수령 대기 카드에서 안 보였다). 정체성(itemIdentity)은 합치기·옮기기의
+                // 축으로 그대로 두고 이 **표시만** 이름 축으로 넓힌다. 규격이 다른 칩에는 규격을
+                // 병기해 규격 섞임(오류신고 5853a0ff)이 표시에서도 재발하지 않게 한다.
+                const nameKey = (x: AssetItem) => [x.itemLabel, x.category ?? '', x.isService ? 'S' : ''].join('|')
+                const specOf = (x: AssetItem) => x.specText || (x.specValue != null ? `${fmtQty(x.specValue)}${x.specUnit ?? ''}` : '')
+                const places = allItems.filter(s => nameKey(s) === nameKey(it))
                 if (places.length <= 1) return null
                 const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
                 const sorted = [...places].sort((a, b) => rank(a) - rank(b) || (a.roomNo ?? a.locationName ?? '').localeCompare(b.roomNo ?? b.locationName ?? ''))
                 const totalQ = sorted.reduce((s, x) => s + (x.qtyValue ?? 0), 0)
+                // 단위가 섞이면(개+세트) 합계 숫자가 거짓말이 된다 — 곳 수만 말한다.
+                const units = new Set(sorted.map(x => x.qtyUnit ?? '개'))
                 return (
                   <div>
                     <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배치 현황
-                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">총 {fmtQty(totalQ)}{it.qtyUnit ?? '개'} · {sorted.length}곳</span>
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">{units.size === 1 ? `총 ${fmtQty(totalQ)}${[...units][0]} · ` : ''}{sorted.length}곳</span>
                     </p>
                     <ul className="flex flex-wrap gap-1.5">
                       {sorted.map(pl => {
                         const isCur = pl.id === it.id
                         const isPending = data.pending.some(x => x.id === pl.id)
+                        const otherSpec = itemIdentity(pl) !== itemIdentity(it) ? specOf(pl) : ''
                         return (
                           <li key={pl.id}>
                             <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }}
@@ -1409,7 +1421,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                                   : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
                               ].join(' ')}>
                               {curPlace(pl)}{isPending ? ' (수령 대기)' : ''}
-                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.qtyValue ?? pl.count)}{it.qtyUnit ?? '개'}</span>
+                              {otherSpec && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{otherSpec}</span>}
+                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.qtyValue ?? pl.count)}{pl.qtyUnit ?? '개'}</span>
                             </button>
                           </li>
                         )
