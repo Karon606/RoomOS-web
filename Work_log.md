@@ -5031,3 +5031,33 @@ eslint 신규 0 · DB 쓰기 없음(스키마 무변경, purposeOverride·purpos
 
 **남은 것.** 실기 시나리오 8건(iPhone·Android 각각) — 보고서에 동봉. 명시적 비대응: iPad
 플로팅·분할 키보드, PeekSheet iframe 내부 재노출, 외장 단축바 최하단 24px.
+
+## 2026-09-02 (밤 2) — 오늘 배포 새 UI 디자이너 패스, 지적 34건 시공
+
+**대상.** 알림 끄기 일반화(홈·현금영수증 탭), 서류 변수 허브, 캘린더 이사 예정 막대, 프리즘 제목,
+MergeSheet 스크롤러. 패스를 안 거치고 배포된 것들이라 웹디자이너·UX 패널 둘을 돌렸다.
+
+**막힘 5.** 수제 30px 버튼 셋을 RowActionBtn 으로. 모달 '이 알림 끄기'에 pending 게이트가 없고
+confirmPending 도 안 봤다(Btn ghost, 이동 링크 아래). 홈 영수증 요약 끄기 키가 'receipt:summary'
+고정이라 한 번 끄면 다음 달 기한까지 영구 침묵. 그 시점 due 건별 키 배열로 바꾸고(탭과 같은 축)
+muteHomeAlert/unmuteHomeAlert 가 배열도 받는다. 끈 영수증은 홈에서 한 줄 합성 + 탭 링크(35건을
+건별로 늘어놓지 않는다). 변수 허브 Modal 에 dirty 가 없어 초안 10건이 소리 없이 사라졌다.
+사용자 노출 note 에 em dash 2건.
+
+**이질감·사소.** 끈 알림 띠를 AlertsStrip 맨 아래 그룹으로 흡수(꺾쇠·aria-expanded). 탭 끈
+목록 기본 접힘(RoomCleaningPanel 점선 토글 문법), 후보 행 액션을 텍스트 열 아래로(금액 열
+불변), 끄기는 의무 기준액 이상 행만. 변수 허브 저장은 dirty 행만 primary, 로딩 SkeletonRows,
+미리보기 배경 --cream-soft(다크 구멍), 앵커 scroll-mt-4 + 환불 규정 앵커 카드 상단. 프리즘 제목
+꼬리 '(계약 404호)'는 truncate 에서 먼저 잘려 부제 '계약 호실 404호'로(감지망 ⓐ 기대값 갱신,
+역주입 2건 exit 1). 캘린더 툴팁·name 모드에 '이사 예정', 범례 괄호 문법. MergeSheet 제목을
+스크롤러 밖으로, safe-area 상·하(허브 부족 시트도).
+
+**같은 클래스 전수.** 삭제 행 흐림이 버튼까지 흐리는 것: RoomCleaningPanel·RoomWorkRowBody 도
+텍스트에만. 변수 note 3건 합쇼체 통일.
+
+**커밋.** dd8c7955(알림) · 7b9217d3(변수 허브) · e29fd049(캘린더·프리즘·시트).
+게이트 tsc 0 · verify:fast 0 · 빌드 0 · eslint 신규 0(기준선 대조, 코드프레임 줄번호 제외).
+
+**남은 것.** 실기 확인(끈 알림 그룹·영수증 합성 줄·변수 허브 dirty 확인·다크 미리보기·프리즘 부제·
+시트 safe-area). 범례가 320px 에서 두 줄(336px, 깨지지는 않음). alertMutes 의 receipt: 키는
+정리 정책이 없어 홈 '끈' 건수가 누적된다(오더 밖, 보고만).
