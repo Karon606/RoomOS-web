@@ -2049,3 +2049,71 @@ export async function ungroupRecurringExpense(parentId: string): Promise<{ ok: t
     return { ok: false, error: (e as Error).message }
   }
 }
+
+// ── 서류 변수 허브 (운영자 승인 2026-09-01, 패널 설계) ─────────────────
+//
+// 허브는 같은 DB 필드를 편집하는 또 하나의 문이다 — 저장은 위 정본(updatePropertySettings
+// 부분 저장·saveBusinessInfo)을 그대로 쓰고, 여기는 조망·미리보기용 조회만 둔다.
+
+export type DocVariableHubData = {
+  name: string; address: string; phone: string; bankAccount: string; defaultAreaM2: string
+  refundClauseInContract: boolean
+  businessInfo: BusinessInfo
+  disposal: { enabled: boolean; days: number; title: string; body: string }
+}
+
+export async function getDocVariableHubData(): Promise<DocVariableHubData> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const p = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { name: true, address: true, phone: true, bankAccount: true, defaultAreaM2: true,
+              refundClauseInContract: true, businessInfo: true, disposalConsentTemplate: true },
+  })
+  const { DEFAULT_DISPOSAL_CONSENT } = await import('@/lib/contract')
+  const biz = (p?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO
+  const dc = (p?.disposalConsentTemplate as Partial<{ enabled: boolean; days: number; title: string; body: string }> | null) ?? null
+  return {
+    name: p?.name ?? '', address: p?.address ?? '', phone: p?.phone ?? '',
+    bankAccount: p?.bankAccount ?? '',
+    defaultAreaM2: p?.defaultAreaM2 != null ? String(p.defaultAreaM2) : '',
+    refundClauseInContract: p?.refundClauseInContract ?? true,
+    businessInfo: biz,
+    disposal: {
+      enabled: dc?.enabled ?? DEFAULT_DISPOSAL_CONSENT.enabled,
+      days: dc?.days ?? DEFAULT_DISPOSAL_CONSENT.days,
+      title: dc?.title ?? DEFAULT_DISPOSAL_CONSENT.title,
+      body: dc?.body ?? DEFAULT_DISPOSAL_CONSENT.body,
+    },
+  }
+}
+
+/** 미리보기 대상 — 발급이 있을 수 있는 계약(거주·퇴실예정·예약). */
+export async function getDocVariablePreviewTargets(): Promise<{ tenantId: string; leaseTermId: string; label: string }[]> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const leases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'] } },
+    select: { id: true, tenantId: true, status: true, tenant: { select: { name: true } }, room: { select: { roomNo: true } } },
+  })
+  const { fmtRoomNo } = await import('@/lib/roomNo')
+  return leases
+    .map(l => ({
+      tenantId: l.tenantId, leaseTermId: l.id,
+      label: `${fmtRoomNo(l.room?.roomNo, '호실 미정')} ${l.tenant.name}${l.status === 'RESERVED' ? ' (예약)' : ''}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+}
+
+/** 그 계약서에 실제로 채워질 값 — 외국인등록번호는 서버가 마스킹해 내려보낸다(lib/docVariables). */
+export async function getDocVariablePreview(tenantId: string, leaseTermId: string): Promise<
+  { doc: Record<string, string>; consent: Record<string, string> } | null
+> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const { buildContractData } = await import('@/lib/contractData')
+  const { previewDocVars, previewConsentVars } = await import('@/lib/docVariables')
+  const d = await buildContractData(tenantId, propertyId, leaseTermId)
+  if (!d) return null
+  return { doc: previewDocVars(d), consent: previewConsentVars(d) }
+}
