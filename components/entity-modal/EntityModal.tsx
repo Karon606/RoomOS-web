@@ -272,7 +272,15 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onBack, o
   // 제목은 **앵커**를 말한다 — 이 사람의 메인 계약이 걸린 방이다. 부계약 방(601호 창고)으로 들어와도
   // 제목은 '509 · 김상혁'이다. 종전처럼 진입 방을 적으면 같은 사람이 어느 문으로 들어왔느냐에 따라
   // 다른 이름으로 불린다. 지금 보고 있는 방은 호실 면의 방 선택기가 말한다(2026-08-13, 1인 다호실).
-  const title = links ? `${fmtRoomNo(links.anchorRoomNo ?? links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '…'
+  //
+  // 임시 호실을 거치는 이사 중에는 **지금 사는 방이 먼저다**(운영자 지적 2026-09-01 — 402호에
+  // 사는 사람을 404호라 부르면 현장과 화면이 다른 말을 한다). 계약 방은 꼬리로 남긴다 —
+  // 청구·계약서가 그 축을 쓰다는 사실이 제목에서 사라지면 안 된다. 이사를 마치면 두 값이
+  // 같아져 꼬리가 저절로 사라진다.
+  const titleRoomNo = links?.currentRoomNo ?? links?.anchorRoomNo ?? links?.roomNo
+  const titleContractTail = links?.currentRoomNo && links.anchorRoomNo && links.currentRoomNo !== links.anchorRoomNo
+    ? ` (계약 ${fmtRoomNo(links.anchorRoomNo)})` : ''
+  const title = links ? `${fmtRoomNo(titleRoomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}${titleContractTail}` : '…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
   const handleApplyScheduledNow = async () => {

@@ -3033,6 +3033,10 @@ export type EntityLinks = {
   leaseTermId: string | null
   /** 앵커 계약의 방 번호. 진입 방과 다를 수 있다(부계약 방으로 들어온 경우). */
   anchorRoomNo: string | null
+  /** 앵커 계약이 **지금 실제로 사는 방**(열린 거주 구간). 임시 호실을 거치는 이사 중에만
+   *  계약 방과 갈리고, 그때 제목이 이 방을 말한다(운영자 지적 2026-09-01 — "현재 거주지가
+   *  402호면 402호로 표기되게"). 구간이 없으면 null 이고 종전대로 계약 방이다. */
+  currentRoomNo: string | null
   /** 호출부가 계약을 이름으로 지목했을 때만 값이 있다. 수납 면의 초기 선택. */
   entryLeaseTermId: string | null
   /** 이 사람의 진행 중 계약 — 프리즘 순서(거주·예약·비거주, 그다음 투어 단계). 방 선택기·계약 세그먼트가 쓴다. */
@@ -3048,7 +3052,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
   type LeaseLink = { id: string; tenantId: string; roomId: string | null; room: { roomNo: string } | null; tenant: { name: string } | null }
   const emptyLinks: EntityLinks = {
     roomId: null, roomNo: null, tenantId: null, tenantName: null,
-    leaseTermId: null, anchorRoomNo: null, entryLeaseTermId: null, leases: [],
+    leaseTermId: null, anchorRoomNo: null, currentRoomNo: null, entryLeaseTermId: null, leases: [],
   }
 
   // 이 사람의 진행 중 계약과 그중 메인 — 세 갈래(계약·사람·방)가 **같은 앵커**를 쓰게 하는 한 자리.
@@ -3078,12 +3082,18 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
       tenantId, tenantName: lease?.tenant?.name ?? null,
       leaseTermId: lease?.id ?? null,
       anchorRoomNo: seedRoomNo,
+      currentRoomNo: null,
       entryLeaseTermId: opts.namedLease ? (lease?.id ?? null) : null,
       leases: [],
     }
     if (!tenantId) return base
     const { ordered, anchor } = await anchorOf(tenantId)
     if (!anchor) return base
+    // 지금 사는 방 — 판정은 일정 추정이 아니라 열린 거주 구간이다(일정 줄의 '지금 거주'와 같은 축).
+    const openStay = await prisma.roomStay.findFirst({
+      where: { leaseTermId: anchor.id, endDate: null },
+      select: { room: { select: { roomNo: true } } },
+    })
     return {
       // 방을 이름으로 지목하고 들어왔으면 그 방이 호실 면의 방이다(601호로 들어왔으면 601호를 그린다).
       // 사람으로 들어왔으면 지목한 방이 없으므로 앵커 계약의 방이다.
@@ -3092,6 +3102,7 @@ export async function getEntityLinks(input: { roomId?: string; tenantId?: string
       tenantId, tenantName: lease?.tenant?.name ?? null,
       leaseTermId: anchor.id,
       anchorRoomNo: anchor.room?.roomNo ?? null,
+      currentRoomNo: openStay?.room?.roomNo ?? null,
       entryLeaseTermId: opts.namedLease ? (lease?.id ?? null) : null,
       leases: ordered.map(l => ({ id: l.id, roomId: l.roomId, roomNo: l.room?.roomNo ?? null, status: l.status })),
     }

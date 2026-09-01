@@ -58,11 +58,22 @@ const SHELL = 'components/entity-modal/EntityModal.tsx'
   if (!shell) fail('ⓐ', `${SHELL} 를 읽을 수 없다`, '경로가 바뀌었으면 이 스크립트의 상수를 함께 옮긴다.')
   else {
     const src = strip(shell)
-    const title = src.split('\n').find(l => /const\s+title\s*=/.test(l))
-    if (!title) fail('ⓐ', `${SHELL} 에서 제목 조립(const title =)을 못 찾았다`, '제목 조립 자리가 바뀌었으면 이 스크립트도 함께 고친다.')
-    else if (!/anchorRoomNo/.test(title)) {
-      fail('ⓐ', `${SHELL} 의 제목이 anchorRoomNo 를 안 읽는다`,
-        '제목은 앵커(메인 계약의 방)를 말해야 한다. 진입 방을 적으면 같은 사람이 어느 문으로 들어왔느냐에 따라 다른 이름으로 불린다.')
+    // 2026-09-01 규칙 확장(운영자 지시) — 제목은 **지금 사는 방**(currentRoomNo, 앵커 계약의 열린
+    // 거주 구간)을 먼저 말하고 앵커 방으로 폴백한다. 임시 호실을 거치는 이사 중에 402호에 사는
+    // 사람을 404호라 부르면 현장과 화면이 갈린다. 앵커 축 자체는 그대로다 — 진입 방을 적는
+    // 회귀(같은 사람이 문에 따라 다른 이름)는 여전히 막는다.
+    const titleAt = src.indexOf('const titleRoomNo')
+    const titleBlock = titleAt >= 0 ? src.slice(titleAt, src.indexOf('const title =', titleAt) + 400) : null
+    if (!titleBlock) fail('ⓐ', `${SHELL} 에서 제목 조립(const titleRoomNo)을 못 찾았다`, '제목 조립 자리가 바뀌었으면 이 스크립트도 함께 고친다.')
+    else {
+      if (!/currentRoomNo \?\? links\?\.anchorRoomNo/.test(titleBlock)) {
+        fail('ⓐ', `${SHELL} 의 제목이 지금 사는 방(currentRoomNo, 앵커 폴백)을 안 읽는다`,
+          '임시 호실 이사 중에는 지금 사는 방이 먼저다(운영자 지시 2026-09-01). 앵커 폴백을 빼면 진입 방 회귀가 되살아난다.')
+      }
+      if (!/titleContractTail/.test(titleBlock) || !/계약 /.test(titleBlock)) {
+        fail('ⓐ', `${SHELL} 의 제목이 계약 방 꼬리를 잃었다`,
+          '두 방이 갈릴 때 계약 방이 제목에서 사라지면 청구·계약서 축이 안 보인다.')
+      }
     }
   }
 }
