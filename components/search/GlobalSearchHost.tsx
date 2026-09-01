@@ -11,6 +11,7 @@ import { bindGlobalSearch, getRecentSearches, addRecentSearch, clearRecentSearch
 import { normalizeSearchQuery } from '@/lib/searchQuery'
 import { globalSearch, type GlobalSearchResult, type SearchHit, type SearchGroupType } from '@/app/(app)/search/actions'
 import { useNavRouter } from '@/lib/useNavRouter'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 // 그룹 아이콘 — 하단 네비(BottomNav)와 동일 모티프 재사용(익숙한 형태로 유형 식별)
 const GROUP_ICON: Record<SearchGroupType, ReactNode> = {
@@ -42,6 +43,10 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
   const [recents, setRecents] = useState<string[]>([])
   const seq = useRef(0)
   const inputWrapRef = useRef<HTMLDivElement>(null)
+
+  // 보이는 띠 정본(useVisibleBand) — 인셋 두 항. 키보드 패널 2026-09-02 2단계.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: open, overlayRef })
 
   const openSearch = useCallback(() => {
     setOpen(true)
@@ -126,10 +131,11 @@ export function GlobalSearchHost({ propertyId }: { propertyId: string | null }) 
   const blurInput = () => inputWrapRef.current?.querySelector('input')?.blur()
 
   return (
-    // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 여기는 중앙 정렬이 아니라
-    // 모바일 풀스크린(h-full)이라 내려앉지는 않지만, 같은 패딩이 패널 높이를 보이는 띠로 맞춰
-    // 결과 목록의 끝이 키보드 뒤에 영영 남는 것을 막는다. md 이상은 --kbd-inset 이 0 이라 무변화.
-    <div className="fixed inset-0 z-[var(--z-modal)]" style={{ paddingBottom: 'var(--kbd-inset, 0px)' }}>
+    // 위·아래 패딩에 보이는 띠 인셋을 더한다(정본 useVisibleBand, 키보드 패널 2026-09-02
+    // 2단계). 여기는 중앙 정렬이 아니라 모바일 풀스크린(h-full)이라 내려앉지는 않지만, 이
+    // 패딩이 패널 높이를 보이는 띠로 맞춰 결과 목록의 끝이 키보드 뒤에 영영 남는 것을 막는다.
+    // 데스크탑은 인셋이 0 이라 무변화.
+    <div ref={overlayRef} className="fixed inset-0 z-[var(--z-modal)]" style={{ paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }}>
       {/* 배경 — 모바일은 풀스크린 캔버스, md 이상은 딤 배경 + 중앙 패널 */}
       <div className="absolute inset-0 md:bg-black/70 bg-[var(--canvas)]" onClick={close} aria-hidden="true" />
       <div

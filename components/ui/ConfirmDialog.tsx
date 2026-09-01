@@ -6,6 +6,7 @@
 // <ConfirmHost /> 를 셸(AppShell·admin layout)에 1회 마운트.
 
 import { useEffect, useRef, useState } from 'react'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
 
 export type ConfirmLevel = 'normal' | 'caution' | 'danger'
@@ -60,6 +61,11 @@ export function ConfirmHost() {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
 
+  // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 패널 상한. 키보드 패널 2026-09-02 2단계.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: !!pending, overlayRef, panelRef })
+
   useEffect(() => {
     listener = setPending
     if (queue.length > 0) { setPending(queue[0]); queue = [] }
@@ -101,15 +107,17 @@ export function ConfirmHost() {
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4 anim-overlay-in"
-      // 하단 패딩에 키보드 겹침을 더해 세로 중앙의 기준을 '키보드 위 보이는 띠'로 옮긴다
-      // (신고 e8a2c73e, 정본은 Modal). p-4 의 1rem 을 그대로 재현하므로 --kbd-inset 이 0 인
-      // 데스크탑에서는 계산 결과가 1rem 으로 같다.
-      style={{ background: 'var(--confirm-backdrop)', paddingBottom: 'calc(1rem + var(--kbd-inset, 0px))' }}
+      // 위·아래 패딩에 보이는 띠 인셋을 더해 세로 중앙의 기준을 '키보드 위 보이는 띠'로 옮긴다
+      // (정본 useVisibleBand, 키보드 패널 2026-09-02 2단계 — 종전 --kbd-inset 하단 한 항은
+      // 팬·위 겹침을 몰랐다). 인셋이 0 인 데스크탑에서는 계산 결과가 p-4 의 1rem 으로 같다.
+      style={{ background: 'var(--confirm-backdrop)', paddingTop: 'calc(1rem + var(--vv-top, 0px))', paddingBottom: 'calc(1rem + var(--vv-bottom, 0px))' }}
       // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (v2.0 §14)
       onClick={() => { if (level === 'normal') done('cancel') }}
     >
       <div
+        ref={panelRef}
         role="alertdialog" aria-modal="true" aria-label={opts.title}
         className="bg-[var(--cream)] rounded-2xl shadow-lift w-full anim-panel-in flex flex-col"
         style={{
@@ -117,7 +125,9 @@ export function ConfirmHost() {
           padding: 24,
           // 폭은 고정인데 글자 크기 설정(최대 1.25배)에 따라 세로로만 자란다. 상한이 없으면
           // 내용이 뷰포트를 넘는 순간 위아래가 동시에 잘리고 확인·취소 버튼에 닿을 수 없다(F페이즈).
-          maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)',
+          // 뷰포트와 '보이는 띠' 중 좁은 쪽 — 키보드가 서면 띠 높이(--vv-h)가 지배해
+          // 버튼줄이 키보드 뒤로 안 들어간다(빼는 2rem 은 위아래 1rem 패딩 몫).
+          maxHeight: 'min(calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem), calc(var(--vv-h, 100dvh) - 2rem))',
           animation: 'confirm-in 200ms var(--ease-sharp)',
         }}
         onClick={e => e.stopPropagation()}

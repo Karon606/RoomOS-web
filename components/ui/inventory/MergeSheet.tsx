@@ -3,7 +3,8 @@
 // v2.0 §22 MergeSheet — 합치기 단일 바텀시트. 카드 액션·상세·선택 알약 어디서 열어도 같은 컴포넌트.
 // 방향 고지 필수(v2.0 §14 파괴적 확인 정신): 무엇이 사라지고 무엇이 남는지 명시.
 // 적용취소는 실행 후 v2.0 §16 undo 토스트 — 환경설정에 숨기지 않음(호출부가 토스트로 처리).
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 export type MergeTarget = { id: string; label: string; meta?: string }
 
@@ -35,6 +36,10 @@ export function MergeSheet({
     if (open) { setDestId(''); setFlipped(false); const t = setTimeout(() => setShown(true), 10); return () => clearTimeout(t) }
     setShown(false)
   }, [open])
+  // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 시트 상한. 키보드 패널 2026-09-02 2단계.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: open, overlayRef, panelRef })
   if (!open) return null
   const dest = targets.find(t => t.id === destId)
   const canFlip = !!sourceId
@@ -43,14 +48,19 @@ export function MergeSheet({
   const keep = flipped ? { label: sourceLabel, meta: sourceMeta } : { label: dest?.label ?? '', meta: dest?.meta }
 
   return (
-    // 하단 시트라 패딩 합산이 시트를 키보드(대상 선택 select 의 iOS 피커) 위로 밀어 올린다
-    // (신고 e8a2c73e, 정본은 Modal). 딤 배경은 absolute inset-0 이라 패딩과 무관하게 전면을 덮는다.
-    <div className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`}
-      style={{ paddingBottom: 'var(--kbd-inset, 0px)' }} role="dialog" aria-modal="true">
+    // 하단 시트라 위·아래 인셋이 시트를 키보드(대상 선택 select 의 iOS 피커) 위 보이는 띠로
+    // 밀어 올린다(정본 useVisibleBand, 키보드 패널 2026-09-02 2단계). 딤 배경은 absolute
+    // inset-0 이라 패딩과 무관하게 전면을 덮는다.
+    <div ref={overlayRef} className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`}
+      style={{ paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }} role="dialog" aria-modal="true">
       <div className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose} />
-      <div className={`relative w-full max-w-md rounded-t-[20px] bg-[var(--cream)] px-[18px] pb-5 pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[var(--warm-mid)]/40" />
+      <div ref={panelRef} className={`relative flex w-full max-w-md flex-col rounded-t-[20px] bg-[var(--cream)] px-[18px] pb-5 pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}
+        // 시트 상한 = 보이는 띠 — 키보드·피커가 서도 제목과 버튼줄이 화면 밖으로 안 나간다.
+        style={{ maxHeight: 'calc(var(--vv-h, 100dvh) - 1rem)' }}>
+        <div className="mx-auto mb-3 h-1 w-[38px] rounded-full bg-[var(--warm-mid)]/40 shrink-0" />
+        {/* 본문만 스크롤 — 버튼줄은 아래 shrink-0 로 항상 보인다 */}
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
         <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
         {description && <p className="mt-1 text-[0.78125rem] leading-relaxed text-[var(--warm-mid)]">{description}</p>}
         {note && (
@@ -97,7 +107,9 @@ export function MergeSheet({
           </div>
         )}
 
-        <div className="mt-4 flex gap-2">
+        </div>
+
+        <div className="mt-4 flex gap-2 shrink-0">
           <button type="button" onClick={onClose} disabled={pending}
             className="h-[46px] flex-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--cream-2)] disabled:opacity-50">취소</button>
           <button type="button" onClick={() => { if (!dest) return; if (flipped && sourceId) onConfirm(sourceId, dest.id); else onConfirm(dest.id) }} disabled={pending || !dest}

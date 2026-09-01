@@ -5,7 +5,8 @@
 // 같은 오리진 iframe — 안의 앱은 window.top 감지(html[data-peek-frame])로 헤더·하단탭을 스스로 숨긴다.
 // 마지막으로 본 페이지를 기억해 다음에도 그 페이지부터 연다.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 const PAGES = [
   { href: '/dashboard', label: '홈' },
@@ -27,15 +28,21 @@ export function PeekSheet({ open, onClose }: { open: boolean; onClose: () => voi
     setPage(href)
     try { localStorage.setItem(LS_KEY, href) } catch { /* 무시 */ }
   }
+  // 보이는 띠 정본(useVisibleBand) — iframe 안 입력이 키보드를 세워도 시트가 띠 안에 앉는다.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: open, overlayRef, panelRef })
   if (!open) return null
   return (
-    // 하단 시트라 패딩 합산은 시트를 키보드 위로 밀어 올린다(신고 e8a2c73e, 정본은 Modal).
-    // iframe 안 페이지에서 키보드가 열려도 시트 하단이 키보드 뒤로 들어가지 않는다.
-    <div className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col justify-end bg-black/45 anim-overlay-in"
-      style={{ paddingBottom: 'var(--kbd-inset, 0px)' }} onClick={onClose}>
+    // 하단 시트라 위·아래 인셋이 시트를 '키보드 위 보이는 띠' 안으로 밀어 올린다(정본
+    // useVisibleBand, 키보드 패널 2026-09-02 2단계). iframe 안 페이지에서 키보드가 열려도
+    // 시트 하단이 키보드 뒤로 들어가지 않고, 높이(--vv-h)도 띠에 맞춰 준다.
+    <div ref={overlayRef} className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col justify-end bg-black/45 anim-overlay-in"
+      style={{ paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }} onClick={onClose}>
       <div
+        ref={panelRef}
         className="flex flex-col rounded-t-2xl border-t border-x border-[var(--warm-border)] bg-[var(--canvas)] shadow-lift anim-panel-in"
-        style={{ height: 'min(78dvh, 100dvh - env(safe-area-inset-top) - 3rem)' }}
+        style={{ height: 'min(78dvh, var(--vv-h, 100dvh) - env(safe-area-inset-top) - 3rem)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* 핸들 + 페이지 칩 + 닫기 */}

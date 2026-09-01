@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 import { fmtDateDot as fmtDate, fmtDateKor, fmtMonthDayKor, fmtMDYearIfOther } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -3737,6 +3738,10 @@ function HubShortDialog({ pending, onResolved, onExit }: {
   onResolved: () => void                          // 이 품목 저장 완료 — 다음(큐)로
   onExit: (reason: 'back' | 'reconcile') => void  // 보충으로 돌아가기 / 창고 재고 확인 (무저장)
 }) {
+  // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 패널 상한. 키보드 패널 2026-09-02 2단계.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: true, overlayRef, panelRef })
   const { info, unit, trackedItemId, itemLabel } = pending
   const hubId = info.hubLocationId
   const [hubQty, setHubQty] = useState(info.hubQty)
@@ -3842,12 +3847,15 @@ function HubShortDialog({ pending, onResolved, onExit }: {
          : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--persimmon)]'}`
 
   return (
-    // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 모바일은 하단 시트라 시트를
-    // 키보드 위로 밀고, sm 이상은 중앙 정렬의 기준을 보이는 띠로 옮긴다. 인라인 style 로 넣으면
-    // sm:p-4 의 1rem 을 덮어써 데스크탑이 달라지므로 분기별 유틸리티로 쓴다.
-    <div className="fixed inset-0 z-[var(--z-confirm)] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[var(--kbd-inset,0px)] sm:pb-[calc(1rem+var(--kbd-inset,0px))]"
+    // 위·아래 유틸리티에 보이는 띠 인셋을 더한다(정본 useVisibleBand, 키보드 패널 2026-09-02
+    // 2단계). 모바일은 하단 시트라 시트를 띠 안으로 밀고, sm 이상은 중앙 정렬의 기준을 띠로
+    // 옮긴다. 인라인 style 로 넣으면 sm:p-4 의 1rem 을 덮어써 데스크탑이 달라지므로 분기별
+    // 유틸리티로 쓴다.
+    <div ref={overlayRef} className="fixed inset-0 z-[var(--z-confirm)] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[var(--vv-top,0px)] pb-[var(--vv-bottom,0px)] sm:pt-[calc(1rem+var(--vv-top,0px))] sm:pb-[calc(1rem+var(--vv-bottom,0px))]"
       onClick={() => handleExit('back')}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
+      <div ref={panelRef} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col"
+        // 상한 85vh 를 '보이는 띠'로도 죈다 — 키보드가 서면 --vv-h 가 지배해 헤더가 위로 안 잘린다.
+        style={{ maxHeight: 'min(85vh, var(--vv-h, 100dvh))' }}
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] shrink-0 flex items-start gap-2.5">
           <svg className="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning-fg)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3913,6 +3921,10 @@ function HubShortDialog({ pending, onResolved, onExit }: {
 function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
   rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
+  // 보이는 띠 정본(useVisibleBand) — 인셋 두 항 + 패널 상한. 키보드 패널 2026-09-02 2단계.
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useVisibleBand({ active: !inline, overlayRef, panelRef })   // 인라인 모드는 오버레이가 없어 쉰다
   const [locs, setLocs] = useState<StorageLocationItem[]>([])
   const [locId, setLocId] = useState('')
   const [transferOpen, setTransferOpen] = useState(false)   // 위치 간 이동·맞바꿈(운영자 요청 2026-07-08)
@@ -4123,16 +4135,21 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
 
   return (
     <div
+      ref={overlayRef}
       className={inline ? undefined : 'fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-end sm:items-center justify-center'}
-      // 하단 패딩에 키보드 겹침을 더한다(신고 e8a2c73e, 정본은 Modal). 인라인 모드는 오버레이가
-      // 없으므로 붙이지 않는다. 그쪽 여유는 .app-main 의 --kbd-inset 패딩이 이미 맡는다.
-      style={inline ? undefined : { paddingBottom: 'var(--kbd-inset, 0px)' }}
+      // 위·아래 패딩에 보이는 띠 인셋을 더한다(정본 useVisibleBand, 키보드 패널 2026-09-02
+      // 2단계). 인라인 모드는 오버레이가 없으므로 붙이지 않는다. 그쪽 여유는 .app-main 의
+      // --kbd-inset 패딩이 이미 맡는다.
+      style={inline ? undefined : { paddingTop: 'var(--vv-top, 0px)', paddingBottom: 'var(--vv-bottom, 0px)' }}
       onClick={inline ? undefined : onClose}
     >
       <div
+        ref={panelRef}
         className={inline
           ? 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl w-full flex flex-col'
-          : 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]'}
+          : 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col'}
+        // 상한 85vh 를 '보이는 띠'로도 죈다 — 키보드가 서면 --vv-h 가 지배해 헤더가 위로 안 잘린다.
+        style={inline ? undefined : { maxHeight: 'min(85vh, var(--vv-h, 100dvh))' }}
         onClick={inline ? undefined : (e => e.stopPropagation())}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>

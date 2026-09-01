@@ -4,7 +4,7 @@ import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
 import { PeekSheet } from './PeekSheet'
 import { lockBackgroundScroll, unlockBackgroundScroll } from '@/lib/scrollLock'
-import { overlayInsets, usableVvHeight, shouldWriteVvHeight } from '@/lib/modalViewport'
+import { useVisibleBand } from '@/lib/useVisibleBand'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -105,82 +105,14 @@ export function Modal({
   // 그대로임을 헤드리스 실측으로 확인했다. `--kbd-inset` 은 손대지 않는다.
   const panelRef = React.useRef<HTMLDivElement>(null)
   const overlayRef = React.useRef<HTMLDivElement>(null)
-  React.useEffect(() => {
-    if (!open) return
-    const vv = window.visualViewport
-    if (!vv) return
-    let lastTop = '', lastBottom = ''
-    // 마지막으로 믿을 만했던 띠 높이. 0 이면 아직 한 번도 못 읽었다(그때는 100dvh 폴백).
-    let lastGoodH = 0
-
-    // **줄이는 것은 resize 에서만, 늘리는 것은 언제든.**
-    //
-    // 처음에는 크기 갱신을 resize 전용으로 못 박았다(716e7b0c 규칙). 팬 프레임마다 다시 쓰면
-    // 오염 스냅샷 한 장이 그대로 박히고 다음 이벤트까지 눌러앉아, 드래그를 반복할수록 패널이
-    // 작아졌기 때문이다. 그런데 그러자 반대쪽이 터졌다 — **앱을 나갔다 돌아오면 작게 찍힌 값이
-    // 스크롤로도 안 고쳐진다.** 짧은 창이 뜨고 한 번 건드려야 제 크기가 됐다(운영자 실측
-    // 2026-08-29, 이 파일이 만든 회귀다).
-    //
-    // 두 증상의 방향이 반대라는 것이 답이다. 오염은 늘 **너무 작은** 값이고 복구는 늘 커지는
-    // 쪽이다. 그래서 커지는 것은 어느 이벤트에서든 받고, 작아지는 것만 resize 로 제한한다.
-    // 키보드가 열려 띠가 진짜 줄 때는 resize 가 오므로 그 길이 막히지 않는다.
-    //
-    // 불가능값은 버리고 직전 유효값을 유지한다 — ViewportOffsetGuard 가 --kbd-inset 에 이미 쓰는
-    // 문법 그대로다. 0 으로 떨구지 않는 이유도 같다.
-    const syncSize = (allowShrink: boolean) => {
-      const h = usableVvHeight(vv.height, lastGoodH)
-      if (h == null) return                              // 아직 못 읽었다 — 100dvh 폴백 그대로
-      if (!shouldWriteVvHeight(h, lastGoodH, allowShrink)) return
-      lastGoodH = h
-      panelRef.current?.style.setProperty('--modal-vvh', `${h}px`)
-    }
-
-    const sync = () => {
-      const ov = overlayRef.current
-      if (!ov) return
-      // **위 여백에도 상한을 건다.** 아래에는 0 하한이 있는데 위에는 짝이 없었다. 그래서
-      // offsetTop + vv.height 가 innerHeight 를 넘는 스냅샷이 오면 bottom 은 0 에 눌리고 top 만
-      // 자라, 오버레이 content box 가 그만큼 깎이며 maxHeight 의 100% 안전망이 calc 를 이긴다.
-      // 그 순간부터 패널이 내려가면서 작아진다. 여유가 2rem 뿐이라 32px 만 넘어도 발동한다.
-      //
-      // 정상 스냅샷에서는 top + bottom = innerHeight - vv.height 라 이 상한이 절대 안 걸린다.
-      // 즉 평시 픽셀은 하나도 안 바뀐다(8e6bbac0 이 주석으로만 적어 둔 불변식을 코드로 못박는다).
-      const ins = overlayInsets({ innerHeight: window.innerHeight, height: vv.height, offsetTop: vv.offsetTop })
-      const top = `${ins.top}px`
-      const bottom = `${ins.bottom}px`
-      if (top !== lastTop) { ov.style.setProperty('--modal-vv-top', top); lastTop = top }
-      if (bottom !== lastBottom) { ov.style.setProperty('--modal-vv-bottom', bottom); lastBottom = bottom }
-    }
-    // 복귀 재동기(오류신고 734ea211·e97f4b2b). vv 의 resize·scroll 만 들으면 앱 전환·복귀,
-    // bfcache 복귀, 회전처럼 그 두 이벤트가 안 오는 경로에서 어긋나게 찍힌 스냅샷을 씻을 기회가
-    // 없어 세션 내내 남는다. 값이 안 바뀌면 위 lastTop/lastBottom 메모가 쓰기를 막으므로 비용이 없다.
-    // rAF 한 박자를 더 도는 이유는 복귀·회전 직후 프레임의 vv 가 아직 옛 값을 낼 수 있어서다.
-    // 재동기는 크기·위치를 **둘 다** 다시 적는다 — 734ea211·e97f4b2b 의 절이 크기까지 씻는 것을
-    // 전제로 서 있다. 크기를 resize 전용으로 분리하면서 이 자리를 빼먹으면 그 절이 깨진다.
-    const both = () => { syncSize(true); sync() }
-    // 팬은 위치만 옮긴다. 크기는 **커지는 쪽만** 받아 복귀 직후 작게 찍힌 값이 여기서 씻긴다.
-    const onPan = () => { syncSize(false); sync() }
-    const resync = () => { both(); requestAnimationFrame(both) }
-    const onVisibility = () => { if (document.visibilityState === 'visible') resync() }
-    both()
-    vv.addEventListener('resize', both)
-    vv.addEventListener('scroll', onPan)
-    window.addEventListener('pageshow', resync)
-    window.addEventListener('resize', resync)
-    window.addEventListener('orientationchange', resync)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      vv.removeEventListener('resize', both)
-      vv.removeEventListener('scroll', onPan)
-      window.removeEventListener('pageshow', resync)
-      window.removeEventListener('resize', resync)
-      window.removeEventListener('orientationchange', resync)
-      document.removeEventListener('visibilitychange', onVisibility)
-      panelRef.current?.style.removeProperty('--modal-vvh')
-      overlayRef.current?.style.removeProperty('--modal-vv-top')
-      overlayRef.current?.style.removeProperty('--modal-vv-bottom')
-    }
-  }, [open])
+  // 보이는 띠 동기화 — 정본 훅 한 벌(lib/useVisibleBand, 키보드 패널 2026-09-02 2단계).
+  // 이 파일이 검증해 온 기하를 훅으로 뽑아 수제 오버레이들이 같은 것을 쓴다. 변수 이름은
+  // 종전 그대로 물려 이 모달의 픽셀은 하나도 안 바뀐다. 규칙의 경위(팬 불변, 줄이기는
+  // resize 에서만, 복귀 재동기)는 훅과 lib/modalViewport 주석에 있다.
+  useVisibleBand({
+    active: open, overlayRef, panelRef,
+    vars: { top: '--modal-vv-top', bottom: '--modal-vv-bottom', height: '--modal-vvh' },
+  })
   const dirtyRef = React.useRef(dirty)
   dirtyRef.current = dirty
   const askingRef = React.useRef(false)
