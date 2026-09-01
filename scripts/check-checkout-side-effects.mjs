@@ -349,7 +349,54 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 / 위반 ${violations.length}건`)
+// ⓝ '나중에 반환'이 세 경로에 서고, 반환 대기가 잊히지 않는가 (2026-09-01 운영자 승인).
+//
+//    실무 순서는 [방 확인 - 퇴실 - 계좌 수령 - 반환]인데 종전에는 퇴실 순간 반환을 강제해,
+//    안 보낸 돈을 '반환함'으로 미리 찍는 길뿐이었다. 그 기록은 앱이 "끝났다"고 말해 어떤
+//    그물에도 안 걸린다. 미룸은 저장 없는 파생 상태(퇴실 완료 + 기록 없음 + 기준액)로 선다.
+{
+  // 서버 — 홈 경로가 미룸 인자를 실제로 지키는가(인자만 받고 무시하면 미뤄도 기록된다).
+  const co4 = src.match(/export async function checkoutWithDepositRefund[\s\S]*?\n\}\n/)
+  if (co4 && !/!params\.deferDeposit/.test(co4[0])) {
+    violations.push(`${FILE} — 홈 퇴실 경로가 deferDeposit 를 무시한다. '나중에 반환'을 골라도 기록된다.`)
+  }
+  // 세 화면 — 선택지가 실제로 서는가.
+  // 라벨 글자로 보면 주석("'나중에 반환'이 없어")에 속는다(역주입에서 실제로 통과했다).
+  // 세그먼트 **선택지 값**을 본다 — 이것이 지워지면 화면에서 고를 길이 없다.
+  for (const [name, f] of [
+    ['홈 정산 창', 'app/(app)/dashboard/DashboardClient.tsx'],
+    ['프리즘 상태 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx'],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+  ]) {
+    if (!/value:\s*'later',\s*label:\s*'나중에 반환'/.test(readFileSync(f, 'utf8'))) {
+      violations.push(`${f} — '${name}' 에 '나중에 반환' 선택지가 없다. 안 보낸 돈을 반환함으로 미리 찍게 된다.`)
+    }
+  }
+  // 프리즘 — 예약 취소 계열 제외. CANCELED 는 반환 대기 판정 밖이라 미루면 그대로 잊힌다.
+  const tst = readFileSync('components/entity-modal/widgets/TenantStatusTransitions.tsx', 'utf8')
+  if (!/deferNow = transDefer && def\.withDeposit === true && !active\?\.resvCancel && !active\?\.resvCancelPrepaid/.test(tst)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 미룸 판정이 예약 취소 계열을 제외하지 않는다. 취소 몰취가 조용히 잊힌다.')
+  }
+  // 홈 — 대기 알림과 KPI 합산. 이 둘이 없으면 미룸은 그냥 잊는 기능이다.
+  const page = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+  if (!/category:\s*'depositReturn'/.test(page) || !/pendingDepositReturns/.test(page)) {
+    violations.push("app/(app)/dashboard/page.tsx — 보증금 반환 대기 알림이 없다. '나중에'가 곧 '영영'이 된다.")
+  }
+  // [^)]* 는 화살표 인자 (sum, l) 의 닫는 괄호를 못 넘는다 — 합산이 있어도 없다고 읽었다(실제 오탐).
+  if (!/pendingDepositReturns\.reduce\([^;]*l\.basis/.test(page)) {
+    violations.push('app/(app)/dashboard/page.tsx — 보유 보증금 KPI 가 반환 대기분을 안 더한다. 부채가 집계에서 사라진다.')
+  }
+  // 판정 정본 공유 — 알림·감지망·서버가 같은 기준액 식을 써야 한 쪽만 우는 상태가 안 생긴다.
+  if (!/depositBasisOf\(/.test(page) || !/depositBasisOf\(/.test(src)) {
+    violations.push('보증금 기준액 판정이 정본(lib/depositPending)을 안 쓴다. 알림과 서버가 다른 답을 낸다.')
+  }
+  const net = readFileSync('scripts/check-deposit-settlement.ts', 'utf8')
+  if (!/depositBasisOf\(/.test(net) || !/DEPOSIT_RETURN_GRACE_DAYS/.test(net)) {
+    violations.push('scripts/check-deposit-settlement.ts — 그물이 기준액 정본·유예를 안 쓴다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

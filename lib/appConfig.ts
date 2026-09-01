@@ -29,6 +29,7 @@ export const ALERT_URGENT_CATEGORY_DAYS: Record<string, number> = {
   recurring: 2,  // 고정지출 — 며칠 전 알림 (전역과 동일)
   inventory: 5,  // 재고소진 — 발주 리드타임 고려해 더 일찍
   receipt:   2,  // 현금영수증 발급 기한(수취+5일) — 이틀 전부터 급함
+  depositReturn: 0,  // 보증금 반환 대기 — 돌려줄 돈이라 뜨는 즉시 급함(잊힘 방지가 존재 이유)
 }
 
 // ── 고정 지출(RecurringExpense) 신규 추가 폼 디폴트 ─────────

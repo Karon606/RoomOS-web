@@ -149,7 +149,7 @@ export type DashboardData = {
   // — 여기서 scheduledRent 를 다시 읽으면 rentUpdateDate 의 달을 서버·기기가 다르게 뽑아 하이드레이션이 갈린다.
   rooms:             { id: string; roomNo: string; isVacant: boolean; vacancyExcluded: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; occupants: { leaseId: string; tenantId: string; displayName: string; status: string; amount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null; moveInDate: string | null; expectedMoveOut: string | null }[]; occupantsMore: number; availability: { from: string; rent: number; ahead: { month: string; rent: number } | null } | null; offerRentAhead: { month: string; rent: number } | null; nonResidentName: string | null; nonResidentId: string | null; nonResidentAmount: number | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; offerRent: number }[]
   nonResidentItems:  { roomNo: string; tenantId: string; displayName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid'; daysOverdue: number | null }[]
-  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions'; caption: string }[]; wishRoomNo?: string; wishExcludedCount?: number; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; scheduleMoveLeaseId?: string; scheduleMoveTenantName?: string; scheduleMoveFromRoomNo?: string | null; scheduleMoveToRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutCompositionLabel?: string | null; moveOutTenantName?: string; moveOutHasRoom?: boolean; moveOutExpectedYmd?: string | null; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -290,7 +290,7 @@ function CheckoutRefundModal({
   expectedYmd: string | null
   pending: boolean
   onClose: () => void
-  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => void
+  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number, deferDeposit: boolean) => void
 }) {
   // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
@@ -300,6 +300,8 @@ function CheckoutRefundModal({
   const [moveOutDate, setMoveOutDate] = useState(() => defaultCheckoutYmd(expectedYmd, kstYmdStr()))
   // 미환불 사유 — 종전에는 이 경로에 전달 수단 자체가 없어 홈에서 퇴실하면 사유가 항상 비었다.
   const [reason, setReason] = useState(cleaningFee > 0 ? '청소비' : '')
+  // 반환 결정 — '나중에'는 아무것도 기록하지 않고 홈 알림(보증금 반환 대기)에 남긴다(2026-09-01).
+  const [depoChoice, setDepoChoice] = useState<'refund' | 'later' | 'none'>('refund')
   const [formError, setFormError] = useState('')
   const [reasonEtc, setReasonEtc] = useState('')
   // 퇴실 청소 예정일 — 입주자 상세 미니폼과 같은 정본 훅·같은 칸을 쓴다(두 경로가 갈리지 않게).
@@ -335,15 +337,16 @@ function CheckoutRefundModal({
           <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={pending}>취소</Btn>
           <Btn variant="primary" size="md" className="flex-1 font-semibold"
             onClick={() => {
-              const r = buildWithholdReason(reason, reasonEtc)
+              const later = depoChoice === 'later'
+              const r = later ? '' : buildWithholdReason(reason, reasonEtc)
               // 오류를 부모 상태에 넣으면 이 창(z=260) 아래 모달에 그려져 안 보인다. 여기서 인라인으로 띄운다.
               // 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(형제 두 화면과 같은 축).
-              if (depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
+              if (!later && depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
-              setFormError(''); onConfirm(refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0)
+              setFormError(''); onConfirm(later ? 0 : refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0, later)
             }}
-            disabled={pending || exceedsMax || rentExceeds || !moveOutDate}>
+            disabled={pending || (depoChoice !== 'later' && exceedsMax) || rentExceeds || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
           </Btn>
         </div>
@@ -389,27 +392,29 @@ function CheckoutRefundModal({
             <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>
               보증금 반환 (최대 {fmtWon(maxRefund)})
             </label>
-            {/* 상태 전환 미니폼과 같은 세그먼트 문법. 이 경로에는 '반환 안 함' 선택지가 아예 없었다. */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {([['refund', '반환함'], ['none', '반환 안 함']] as const).map(([k, label]) => {
-                const on = k === 'none' ? refund === 0 : refund !== 0
-                return (
-                  <button key={k} type="button" onClick={() => setRefund(k === 'none' ? 0 : maxRefund)}
-                    className={`min-h-[36px] text-xs font-medium rounded-lg border transition-colors ${
-                      on ? 'border-[var(--tc)] bg-[var(--cream)] text-[var(--warm-dark)]'
-                         : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
-                    }`}>{label}</button>
-                )
-              })}
-            </div>
+            {/* 정본 세그먼트 — 형제 두 화면(프리즘·입주자 수정)과 같은 문법. 종전에는 이 경로만
+                raw button 그리드였고 '나중에 반환'이 없어, 계좌를 아직 못 받은 실무 상황에서
+                안 보낸 돈을 '반환함'으로 미리 찍는 길뿐이었다(패널 설계 2026-09-01). */}
+            <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
+              value={depoChoice}
+              onChange={v => { setDepoChoice(v); if (v !== 'later') setRefund(v === 'none' ? 0 : maxRefund) }}
+              options={[
+                { value: 'refund', label: '반환함' },
+                { value: 'later', label: '나중에 반환' },
+                { value: 'none', label: '반환 안 함' },
+              ]} />
+            {depoChoice === 'later' ? (
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed break-keep">반환 정산은 기록되지 않습니다. 계좌를 받아 반환할 때까지 홈 알림에 보증금 반환 대기로 남습니다.</p>
+            ) : (<>
             <MoneyInput value={refund} onChange={setRefund} placeholder="0원" />
             {exceedsMax && (
               <p className="text-[0.6875rem] text-[var(--danger-fg)]">반환 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
             )}
+            </>)}
             {formError && <p className="text-[0.6875rem] text-[var(--danger-fg)]">{formError}</p>}
             {/* 청소비 몫을 넘을 때만 묻는다 — 형제 두 화면(프리즘 퇴실 폼·보증금 패널)과 같은 축이다.
                 청소비는 보증금 안에 든 돈이라 퇴실에서 당연히 빠지고, 고를 일이 아니다. */}
-            {unreturned > cleaningFee && (
+            {depoChoice !== 'later' && unreturned > cleaningFee && (
               <div className="space-y-1.5 pt-0.5">
                 <label className="text-xs font-medium block" style={{ color: 'var(--warm-mid)' }}>반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                 <select value={reason} onChange={e => setReason(e.target.value)}
@@ -508,10 +513,11 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     setRefundModalOpen(true)
   }
 
-  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number) => {
+  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number, deferDeposit: boolean) => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
     // 미환불이 있는데 사유가 없으면 막는다 — 돈이 움직이는 결정이라 근거가 남아야 한다.
-    if (moveOutDeposit > 0 && moveOutDeposit - refundAmount > 0 && !reason) {
+    // '나중에 반환'은 결정 자체를 미룬 것이라 사유가 없는 것이 정상이다.
+    if (!deferDeposit && moveOutDeposit > 0 && moveOutDeposit - refundAmount > 0 && !reason) {
       setConfirmError('반환하지 않는 사유를 선택해 주세요.'); return
     }
     setConfirmPending(true); setConfirmError('')
@@ -527,10 +533,12 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       ...(cleaningDate !== undefined ? { cleaningDate } : {}),
       // 창에서 확정한 이용료 환불을 함께 보낸다. 종전에는 미리 확정해 둔 값이 있을 때만 실렸다.
       ...(rentRefundAmount > 0 ? { rentRefundAmount } : {}),
+      ...(deferDeposit ? { deferDeposit: true } : {}),
     })
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     // 청소 예정을 못 만든 경우만 한 줄 남는다. 퇴실은 이미 끝났으니 창을 붙잡지 않는다.
     if (res.notice) pushToast('info', res.notice)
+    if (deferDeposit) pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
     // 홈택스·카드사 조치 안내 — 문구 정본은 lib/refundTaxNotice 하나다. 종전에는 이 경로가
     // 서버가 만들어 준 안내를 통째로 버려서, 현금영수증을 발행한 계약을 여기서 퇴실 처리하면
     // 앱 매출만 조용히 줄고 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
@@ -679,6 +687,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               : alert.category === 'inventory' ? '재고 관리에서 보기 ›'
               : alert.category === 'request' ? '요청·컴플레인에서 보기 ›'
               : alert.category === 'receipt' ? '현금영수증 탭에서 보기 ›'
+              : alert.category === 'depositReturn' ? '입주자 관리에서 보기 ›'
               : alert.wishCandidates && alert.wishCandidates.length > 0 ? '호실 관리로 이동 ›'
               : '입주자 관리에서 보기 ›'}
           </Link>
@@ -704,8 +713,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'receipt', 'contact', 'upcoming', 'moveout', 'movein', 'move', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
+type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'move' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'receipt' | 'depositReturn' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'depositReturn', 'receipt', 'contact', 'upcoming', 'moveout', 'movein', 'move', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미납 (현 입주자)', color: 'var(--tc)' },
   contact:   { label: '연락할 때',    color: 'var(--coral)' },
@@ -719,6 +728,7 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   recurring: { label: '고정 지출',    color: 'var(--viz-2)' },
   inventory: { label: '재고 부족',    color: 'var(--viz-4)' },
   receipt:   { label: '현금영수증 발급 기한', color: 'var(--danger-fg)' },
+  depositReturn: { label: '보증금 반환 대기', color: 'var(--deposit-fg)' },
   other:     { label: '기타',         color: 'var(--ink-m)' },
 }
 
@@ -738,6 +748,7 @@ const CATEGORY_GLYPH_PATHS: Record<AlertCat, React.ReactNode> = {
   recurring: (<><circle cx="12" cy="12" r="7" /><path d="M12 8v4l3.2 1.9" /></>),
   inventory: (<><rect x="6" y="8" width="12" height="10" rx="1" /><path d="M6 11h12" /><path d="M12 11v7" /></>),
   receipt:   (<><path d="M7 5h10v14l-2.5-1.5L12 19l-2.5-1.5L7 19z" /><path d="M9.5 9.5h5M9.5 12.5h5" /></>),
+  depositReturn: (<><rect x="4.5" y="7.5" width="15" height="9" rx="1.5" /><circle cx="12" cy="12" r="2.2" /></>),
   other:     (<><path d="M12 5a5 5 0 0 0-5 5c0 5-2 6-2 6h14s-2-1-2-6a5 5 0 0 0-5-5z" /><path d="M10.5 18a1.6 1.6 0 0 0 3 0" /></>),
 }
 

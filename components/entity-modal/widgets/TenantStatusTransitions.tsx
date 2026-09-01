@@ -160,6 +160,10 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
+  // '나중에 반환' — 아무것도 기록하지 않고 홈 알림(보증금 반환 대기)에 남긴다(운영자 승인 2026-09-01).
+  // 예약 취소 계열에는 안 연다 — 취소는 CANCELED 로 가서 반환 대기 파생 판정(CHECKED_OUT)에
+  // 안 걸리므로, 미루면 조르는 곳 없이 그대로 잊힌다.
+  const [transDefer, setTransDefer] = useState(false)
   // 반환하지 않는 사유 — 돈이 움직이는 결정이라 필수다(입실 취소 사유가 선택인 것과 다르다).
   // 다만 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다.
   const [withholdReason, setWithholdReason] = useState('')
@@ -230,6 +234,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         const received = comp.cleaning + comp.prepaid
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '전액 몰취'가 위약금 처리.
+          setTransDefer(false)
           setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
           setActive({
             def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0,
@@ -243,6 +248,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         const received = await getReceivedDepositTotal(lease.id)
         if (received > 0) {
           setTransRefund(received)   // 기본 전액 반환. '환불 안 함'이 전액 몰취.
+          setTransDefer(false)
           setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
           setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: received, cleaningFee: 0, resvCancel: true })
           return
@@ -254,6 +260,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // e1b81629: 입실 취소는 확인창 대신 미니폼 — 취소 사유(선택)를 함께 수집해 이력에 남긴다.
     if (def.key === 'cancel') {
       setTransRefund(undefined)
+      setTransDefer(false)
       setTransReason(''); setTransReasonEtc(''); setWithholdReason(''); setWithholdEtc('')
       setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: 0, cleaningFee: 0 })
       return
@@ -303,6 +310,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 입실 때 청소비를 이미 받았으면 퇴실에서 또 떼지 않는다(계약서 §2-4 either/or, 2026-08-03)
     const cleaningPaid = comp?.cleaningPaid ?? 0
     const deductible = cleaningFeeDeductible(lease.cleaningFee || 0, cleaningPaid)
+    setTransDefer(false)
     setTransRefund(def.withDeposit
       ? (carriedOver ? 0 : Math.max(0, depoBaseForForm - deductible))
       : undefined)
@@ -357,7 +365,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
         // active.depositAmount 는 진입 시 산정한 기준액(계약 0이면 실수납 폴백) — 화면과 저장이 같은 값을 쓴다
         const depoBase = active?.depositAmount ?? lease.depositAmount
         const withDeposit = def.withDeposit === true || active?.resvCancel === true
-        if (withDeposit && depoBase > 0 && transRefund != null) {
+        // '나중에 반환' — 일반 퇴실에서만 성립한다(예약 취소 계열은 선택지 자체가 없다).
+        const deferNow = transDefer && def.withDeposit === true && !active?.resvCancel && !active?.resvCancelPrepaid
+        if (!deferNow && withDeposit && depoBase > 0 && transRefund != null) {
           const withheldNow = Math.max(0, depoBase - transRefund)
           // 청소비 몫까지는 묻지 않는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(위 UI 와 같은 축).
           const cleaningPortion = active?.cleaningFee ?? 0
@@ -449,6 +459,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
           if (rr.ok) for (const line of refundTaxNoticeLines(rr.taxNotice)) pushToast('info', line)
         }
         pushToast('success', `${tenantName}님 · ${def.label} 완료`)
+        if (deferNow && depoBase > 0) pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
         onChange?.()
@@ -628,20 +639,30 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   {/* 종전에는 '환불 안 함'이 단방향 버튼이라 한 번 누르면 되돌아올 길이 금액 재입력뿐이었다.
                       상호배타 선택은 SegmentedControl 정본을 쓴다(§10 raw button 금지·§12). */}
                   <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
-                    value={transRefund === 0 ? 'none' : 'refund'}
-                    onChange={v => { if ((v === 'none') !== (transRefund === 0)) setTransRefund(v === 'none' ? 0 : Math.max(0, active.depositAmount - active.cleaningFee)) }}
+                    value={transDefer ? 'later' : transRefund === 0 ? 'none' : 'refund'}
+                    onChange={v => {
+                      if (v === 'later') { setTransDefer(true); return }
+                      setTransDefer(false)
+                      if ((v === 'none') !== (transRefund === 0)) setTransRefund(v === 'none' ? 0 : Math.max(0, active.depositAmount - active.cleaningFee))
+                    }}
                     options={[
                       { value: 'refund', label: '반환함' },
+                      // 예약 취소 계열에는 미룸이 없다 — CANCELED 는 반환 대기 판정 밖이라 잊힌다.
+                      ...(!active.resvCancel && !active.resvCancelPrepaid ? [{ value: 'later', label: '나중에 반환' }] : []),
                       { value: 'none', label: (active.resvCancel || active.resvCancelPrepaid) ? '전액 몰취' : '반환 안 함' },
                     ]} />
+                  {transDefer && !active.resvCancel && !active.resvCancelPrepaid ? (
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">반환 정산은 기록되지 않습니다. 계좌를 받아 반환할 때까지 홈 알림에 보증금 반환 대기로 남습니다.</p>
+                  ) : (
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
+                  )}
                   {/* 미반환이 **청소비 몫을 넘을 때만** 사유를 받는다.
                       청소비는 보증금 안에 든 몫이라 퇴실에서 당연히 빠진다 — 돌려줄지 말지를 고르는
                       돈이 아니다. 그런데 종전에는 그 2만원에도 사유를 필수로 물었다. 앱이 이미 답을
                       알고 자동으로 '청소비'를 골라 놓고는 그 칸을 필수로 세워 둔 꼴이었다
                       (운영자 지적 2026-08-30 — "반환한다 안한다에 대해 고민할 이유가 없으니까").
                       파손·미납처럼 청소비를 넘는 몫에는 그대로 묻는다. */}
-                  {active.def.withDeposit === true && transRefund != null && active.depositAmount - transRefund > active.cleaningFee && (
+                  {active.def.withDeposit === true && !transDefer && transRefund != null && active.depositAmount - transRefund > active.cleaningFee && (
                     <div className="space-y-1.5 pt-0.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                       <select value={withholdReason} onChange={e => setWithholdReason(e.target.value)}

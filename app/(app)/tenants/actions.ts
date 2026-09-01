@@ -62,6 +62,7 @@ import { FORFEIT_CATEGORY, PENALTY_CATEGORY } from '@/lib/incomeCategories'
 import { CARD_LIKE_METHODS } from '@/lib/paymentMethods'
 import { cashReceiptIssueLines, type CashReceiptIssueLine } from '@/lib/cashReceipt'
 import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refundTaxNotice'
+import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { isVacancyExcluded } from '@/lib/vacancy'
@@ -1908,9 +1909,8 @@ export async function getDepositBasisForLease(leaseTermId: string): Promise<{
   const contract = lease?.depositAmount ?? 0
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   const preAcquisition = !!(cutoff && lease?.moveInDate && new Date(lease.moveInDate) < cutoff)
-  if (received > 0) return { received, contract, preAcquisition, basis: received, source: 'received' }
-  if (preAcquisition && contract > 0) return { received, contract, preAcquisition, basis: contract, source: 'carriedOver' }
-  return { received, contract, preAcquisition, basis: 0, source: 'none' }
+  // 판단은 순수 정본이 한다 — 홈 알림·감지망이 같은 식을 쓴다(lib/depositPending).
+  return { received, contract, preAcquisition, ...depositBasisOf({ received, contract, preAcquisition }) }
 }
 
 // 계약 하나의 보증금 구성 + 정산 기준액을 한 번에 — 화면이 각자 조각을 모으지 않게 하는 자리.
@@ -2123,6 +2123,15 @@ export async function checkoutWithDepositRefund(params: {
    * 조용히 남았다(2026-08-30 경로 통합). 화면이 미리 물어 본 값을 그대로 싣는다.
    */
   rentRefundAmount?: number
+  /**
+   * 보증금 반환을 이번에 결정하지 않는다 — '나중에 반환'(운영자 승인 2026-09-01).
+   *
+   * 실무 순서는 [방 확인 - 퇴실 - 계좌 수령 - 반환]인데 종전에는 퇴실 순간 반환을 강제해,
+   * 아직 안 보낸 돈을 '반환함'으로 미리 찍는 길뿐이었다. 그 기록은 앱이 "끝났다"고 말해
+   * 어떤 그물에도 안 걸린다. 미룸은 아무것도 저장하지 않는다 — 반환 대기는 저장된 플래그가
+   * 아니라 파생 상태(퇴실 완료 + 기록 없음 + 기준액 > 0)라 되돌릴 것도 어긋날 것도 없다.
+   */
+  deferDeposit?: boolean
   // 환불 뒤 홈택스·카드사 조치 안내를 화면까지 물려준다. 종전에는 서버가 만들어 놓고 이 경로가
   // 통째로 버려서, 현금영수증을 발행한 계약을 홈 알림에서 퇴실 처리하면 앱 매출만 조용히 줄고
   // 취소하라는 말을 아무도 못 들었다(2026-08-31 패널 조사).
@@ -2139,7 +2148,7 @@ export async function checkoutWithDepositRefund(params: {
     if (!checkoutRes.ok) return checkoutRes
 
     let depositReceiptNotice: string | null = null
-    if (lease.depositAmount > 0) {
+    if (lease.depositAmount > 0 && !params.deferDeposit) {
       // 퇴실일이 없으면 오늘 — 서버(UTC) 로컬로 만들면 KST 00~09 시에 환불 기록이 어제 날짜로 남는다.
       const dateStr = params.moveOutDate || kstYmdStr()
       const refundRes = await recordDepositReturn({

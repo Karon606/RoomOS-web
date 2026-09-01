@@ -59,3 +59,4 @@
 ## 지침 문서 사본 (refs/ — 자동 미러)
 - [[refs/AGENTS(프로젝트 규칙)]] · [[refs/CLAUDE(전역 행동지침)]] · [[refs/loop(검증 규칙)]]
 - 원본은 저장소 루트(AGENTS.md·loop.md)와 ~/.claude/CLAUDE.md — 수정은 원본에서, 커밋 시 .githooks/pre-commit이 자동 갱신.
+- [[deposit-return-pending]] — 보증금 반환 대기: 나중에 반환은 저장 없는 파생 상태, 기준액 정본 depositBasisOf, 유예 14일

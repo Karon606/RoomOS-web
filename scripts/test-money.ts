@@ -18,6 +18,7 @@ import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { defaultCheckoutYmd } from '../lib/checkoutDate'
 import { cashReceiptIssueLines, cashReceiptKey, receiptRowVerdict, cashReceiptDaysLeft, depositCashReceiptWarning } from '../lib/cashReceipt'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNoticeLine } from '../lib/refundTaxNotice'
+import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
@@ -956,6 +957,19 @@ const RENT = 300000
     depositReturnReceiptNoticeLine(2, 300000),
     '이 계약에는 보증금이 포함된 현금영수증 2건(합계 300,000원)이 있습니다. 홈택스에서 해당 건의 취소 여부를 세무 담당자와 확인해 주세요.')
   eq('보증금 반환 안내: 없으면 침묵(일률 안내 금지가 패널 결론)', depositReturnReceiptNoticeLine(0, 0), null)
+}
+
+// ── 보증금 반환 기준액 정본 (2026-09-01, actions 에서 lib/depositPending 으로 이주) ────
+//
+// 반환 대기(나중에 반환)가 생기면서 홈 알림·감지망도 이 판정을 쓴다. 세 자리가 갈리면
+// 알림은 조용한데 그물만 우는(또는 그 반대) 상태가 된다.
+{
+  eq('반환 기준액: 실수납이 있으면 실수납', depositBasisOf({ received: 200000, contract: 300000, preAcquisition: false }).basis, 200000)
+  eq('반환 기준액: 실수납 우선은 인수 전에도', depositBasisOf({ received: 200000, contract: 300000, preAcquisition: true }).basis, 200000)
+  eq('반환 기준액: 실수납 0 + 인수 전이면 계약액(승계)', depositBasisOf({ received: 0, contract: 300000, preAcquisition: true }).source, 'carriedOver')
+  eq('반환 기준액: 실수납 0 + 인수 후면 정산할 돈 없음', depositBasisOf({ received: 0, contract: 300000, preAcquisition: false }).basis, 0)
+  eq('반환 기준액: 계약도 0 이면 none', depositBasisOf({ received: 0, contract: 0, preAcquisition: true }).source, 'none')
+  eq('반환 대기 유예: 14일', DEPOSIT_RETURN_GRACE_DAYS, 14)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

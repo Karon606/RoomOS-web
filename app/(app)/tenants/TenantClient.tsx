@@ -714,6 +714,8 @@ export default function TenantClient({
   const [error, setError]               = useState('')
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string; compositionLabel: string | null } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
+  // '나중에 반환' — 아무것도 기록하지 않고 홈 알림(보증금 반환 대기)에 남긴다(운영자 승인 2026-09-01).
+  const [depoLater, setDepoLater] = useState(false)
   const [depositRefundDirty, setDepositRefundDirty] = useState(false)   // 환불 창 dirty — 금액·날짜를 만졌을 때만 닫기 확인(§12)
   // 이용료 환불(통합 환불 창, 운영자 승인 2026-07-20) — 계산은 서버 미리보기, 최종 금액은 운영자 확정
   // 이용료 정산 값 — 계산·표시는 정본 컴포넌트(RentSettlementSection)가 쥔다. 여기는 확정할
@@ -1200,6 +1202,7 @@ export default function TenantClient({
     const depoBase = comp ? comp.basis : depositAmount
     const maxRefund = Math.max(0, depoBase - deductible)
     setDepositReturnAmt(maxRefund)
+    setDepoLater(false)
     setDepoCleaningPaid(cleaningPaid)
     // 청소비만 떼는 정상 퇴실은 답이 정해져 있다 — 프리셀렉트(변경 가능)
     setDepoWithholdReason(deductible > 0 ? '청소비' : '')
@@ -1413,11 +1416,12 @@ export default function TenantClient({
         }
         // 청소비 몫을 넘게 떼면 사유는 필수다. 청소비까지는 안 묻는다 — 보증금 안에 든 돈이라
         // 퇴실에서 당연히 빠지고 고를 일이 아니다(형제 두 화면과 같은 축, 2026-08-30).
+        // '나중에 반환'은 결정 자체를 미룬 것이라 사유도 확인창도 기록도 없다.
         const withheld = Math.max(0, depositAmount - depositReturnAmt)
-        if (withheld > cleaningFeeDeductible(cleaningFee, depoCleaningPaid) && !buildWithholdReason(depoWithholdReason, depoWithholdEtc)) {
+        if (!depoLater && withheld > cleaningFeeDeductible(cleaningFee, depoCleaningPaid) && !buildWithholdReason(depoWithholdReason, depoWithholdEtc)) {
           setError('반환하지 않는 사유를 선택해 주세요.'); pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return
         }
-        if (depositReturnAmt === 0 && depositAmount > 0) {
+        if (!depoLater && depositReturnAmt === 0 && depositAmount > 0) {
           const mon = kstYmdStr().slice(0, 7)
           if (!(await confirmDialog({
             title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
@@ -1425,6 +1429,18 @@ export default function TenantClient({
             message: `${fmtWon(depositAmount)}이 ${Number(mon.slice(0, 4))}년 ${Number(mon.slice(5))}월 ${withheldDestinationLabel(depositAmount, cleaningFeeDeductible(cleaningFee, depoCleaningPaid), fmtWon)} 기록됩니다.\n사유: ${buildWithholdReason(depoWithholdReason, depoWithholdEtc)}.`,
             level: 'caution', confirmLabel: '전액 미반환으로 처리',
           }))) return
+        }
+        if (depoLater) {
+          // 아무것도 저장하지 않는다 — 반환 대기는 파생 상태(퇴실 완료 + 기록 없음 + 기준액)라
+          // 홈 알림이 스스로 선다. 되돌릴 것이 없으니 적용취소도 필요 없다.
+          setDepositRefundModal(null)
+          if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
+          else setEditTenant(null)
+          refresh()
+          for (const line of refundTaxNoticeLines(taxNotice)) pushToast('info', line)
+          pushToast('success', rentRefunded ? `퇴실 처리됨 · 이용료 환불 ${fmtWon(rentAmt)}` : '퇴실 처리됨')
+          pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
+          return
         }
         const refundRes = await recordDepositReturn({
           leaseTermId,
@@ -2025,12 +2041,21 @@ export default function TenantClient({
                     </div>
                     {/* 세 경로가 같은 문법을 쓴다 — 상태 전환 미니폼·홈 알림과 동일한 SegmentedControl 정본. */}
                     <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
-                      value={depositReturnAmt === 0 ? 'none' : 'refund'}
-                      onChange={v => { if ((v === 'none') !== (depositReturnAmt === 0)) { setDepositReturnAmt(v === 'none' ? 0 : maxRefund); setDepositRefundDirty(true) } }}
-                      options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
+                      value={depoLater ? 'later' : depositReturnAmt === 0 ? 'none' : 'refund'}
+                      onChange={v => {
+                        setDepositRefundDirty(true)
+                        if (v === 'later') { setDepoLater(true); return }
+                        setDepoLater(false)
+                        setDepositReturnAmt(v === 'none' ? 0 : maxRefund)
+                      }}
+                      options={[{ value: 'refund', label: '반환함' }, { value: 'later', label: '나중에 반환' }, { value: 'none', label: '반환 안 함' }]} />
+                    {depoLater ? (
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">반환 정산은 기록되지 않습니다. 계좌를 받아 반환할 때까지 홈 알림에 보증금 반환 대기로 남습니다.</p>
+                    ) : (
                     <MoneyInput value={depositReturnAmt} onChange={v => { setDepositReturnAmt(v); setDepositRefundDirty(true) }} placeholder="0원" />
+                    )}
                     {/* 청소비 몫을 넘을 때만 묻는다 — 형제 두 화면과 같은 축(2026-08-30). */}
-                    {dep - depositReturnAmt > cleaningFeeDeductible(fee, depoCleaningPaid) && (
+                    {!depoLater && dep - depositReturnAmt > cleaningFeeDeductible(fee, depoCleaningPaid) && (
                       <div className="space-y-1.5 pt-0.5">
                         <label className="text-xs font-medium text-[var(--warm-mid)] block">반환하지 않는 사유 <span className="font-normal opacity-60">(필수)</span></label>
                         <select value={depoWithholdReason} onChange={e => { setDepoWithholdReason(e.target.value); setDepositRefundDirty(true) }}

@@ -11,6 +11,7 @@ import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
 import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptDaysLeft, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
 import { parseRoomSchedule, hasRoomSchedule } from '@/lib/roomSchedule'
@@ -476,7 +477,34 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   // RESERVED 실수납 예약금 — 총액·실수납 양쪽에 같은 값을 더해 미기록분(차이)은 불변으로 유지.
   const reservedDepositReceived = (await pReservedDepositReceivedAgg)._sum.actualAmount ?? 0
+  // 보증금 반환 대기 — 퇴실 완료됐는데 반환 기록이 없고 받은 보증금(기준액)이 있는 계약.
+  // 저장된 플래그가 아니라 파생 상태다(운영자 승인 2026-09-01, '나중에 반환'). 판정은
+  // lib/depositPending 정본이 하고, 여기 목록을 KPI 합산과 홈 알림이 함께 쓴다.
+  const pendingDepositReturns = await (async () => {
+    const leases = await prisma.leaseTerm.findMany({
+      where: { propertyId, status: 'CHECKED_OUT', depositRefunds: { none: {} } },
+      select: { id: true, depositAmount: true, moveInDate: true, moveOutDate: true,
+                tenant: { select: { id: true, name: true } }, room: { select: { roomNo: true } } },
+    })
+    if (leases.length === 0) return []
+    const paid = await prisma.paymentRecord.groupBy({
+      by: ['leaseTermId'], where: { leaseTermId: { in: leases.map(l => l.id) }, isDeposit: true },
+      _sum: { actualAmount: true },
+    })
+    const paidOf = new Map(paid.map(g => [g.leaseTermId, g._sum.actualAmount ?? 0]))
+    return leases.flatMap(l => {
+      const { basis } = depositBasisOf({
+        received: paidOf.get(l.id) ?? 0,
+        contract: l.depositAmount,
+        preAcquisition: !!(acquisitionDate && l.moveInDate && new Date(l.moveInDate) < acquisitionDate),
+      })
+      return basis > 0 ? [{ ...l, basis }] : []
+    })
+  })()
+  // 반환 전 보증금은 여전히 부채다 — 퇴실 완료로 상태 합산(ACTIVE·CHECKOUT_PENDING)에서 빠지는
+  // 순간 KPI 에서 사라지던 구멍을 대기분 합산으로 막는다(회계 패널 2026-09-01, 운영자 승인).
   const totalDeposit = (depositAgg._sum.depositAmount ?? 0) + reservedDepositReceived
+    + pendingDepositReturns.reduce((sum, l) => sum + l.basis, 0)
   // 보유 보증금 분해 — 받은 돈(실수취) vs 미기록(전 원장 등 계약상만). 총액(totalDeposit, 계약 기준) 유지.
   // 받은 돈 = 보증금 명목 수납 + 청소비 명목 수납이 보증금 부족분을 채운 몫(김민정형 역산 기록).
   // 청소비 몫은 **계약 축**이다(운영자 확정 2026-08-12) — 받은 돈 안에서 퇴실 때 청소비로 쓰일 몫.
@@ -1839,6 +1867,30 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       })
     }
   } catch { /* 조회 실패 시 알림만 생략 — 홈 자체는 선다 */ }
+
+  // ── 보증금 반환 대기 ─────────────────────────────────────────
+  //
+  // 실무 순서는 [방 확인 - 퇴실 - 계좌 수령 - 반환]이라 그 사이 며칠이 뜬다. 잊으면 남의 돈을
+  // 쥔 채 조용해지므로, 기록될 때까지 상시로 조른다(운영자 승인 2026-09-01). 반환을 적용취소해도
+  // 파생 판정이라 알림이 저절로 되살아난다.
+  const depoTodayYmd = kstYmdStr()
+  for (const l of pendingDepositReturns) {
+    const outYmd = l.moveOutDate ? kstYmdStr(l.moveOutDate) : null
+    const days = outYmd ? Math.max(0, Math.round((Date.parse(`${depoTodayYmd}T00:00:00Z`) - Date.parse(`${outYmd}T00:00:00Z`)) / 86400000)) : 0
+    alertItems.push({
+      category:  'depositReturn',
+      text:      `${l.tenant.name}님 ${fmtRoomNo(l.room?.roomNo)} 보증금 반환 대기`,
+      link:      '/tenants',
+      dotColor:  'var(--deposit-fg)',
+      timeLabel: days === 0 ? '오늘 퇴실' : `퇴실 ${days}일 경과`,
+      detail:    `반환할 보증금 ${fmtWon(l.basis)}
+퇴실일 ${outYmd ?? '미상'}
+계좌를 받으면 입주자를 열어 보증금 항목에서 반환 정산을 기록하세요. 기록하면 이 알림이 사라집니다.`,
+      tenantId:  l.tenant.id,
+      leaseTermId: l.id,
+      sortKey:   -days,
+    })
+  }
 
   // (체크리스트 알림은 제거됨 — 체크리스트를 스테이음 Lab으로 이동, 대시보드 알림 비노출. 2026-05-26)
 
