@@ -298,7 +298,8 @@ function CheckoutRefundModal({
   expectedYmd: string | null
   pending: boolean
   onClose: () => void
-  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number, deferDeposit: boolean) => void
+  // rentRefundAmount 는 정산 섹션이 섰을 때만 숫자다(0 도 '환불 없음' 확정으로 싣는다). 안 섰으면 null.
+  onConfirm: (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number | null, deferDeposit: boolean) => void
 }) {
   // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
   const maxRefund = Math.max(0, depositAmount - cleaningFee)
@@ -356,7 +357,7 @@ function CheckoutRefundModal({
               if (!(await confirmRentSettlement(rentSettlement, later || depositAmount <= 0 ? null : refund))) return
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
-              setFormError(''); onConfirm(later ? 0 : refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0, later)
+              setFormError(''); onConfirm(later ? 0 : refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement ? rentSettlement.amount : null, later)
             }}
             disabled={pending || (depoChoice !== 'later' && exceedsMax) || rentExceeds || !moveOutDate}>
             {pending ? '처리 중…' : '퇴실 처리'}
@@ -527,7 +528,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     setRefundModalOpen(true)
   }
 
-  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number, deferDeposit: boolean) => {
+  const handleRefundConfirm = async (refundAmount: number, moveOutDate: string, reason: string, cleaningDate: string | null | undefined, rentRefundAmount: number | null, deferDeposit: boolean) => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
     // 미환불이 있는데 사유가 없으면 막는다 — 돈이 움직이는 결정이라 근거가 남아야 한다.
     // '나중에 반환'은 결정 자체를 미룬 것이라 사유가 없는 것이 정상이다.
@@ -546,7 +547,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       ...(reason ? { reason } : {}),
       ...(cleaningDate !== undefined ? { cleaningDate } : {}),
       // 창에서 확정한 이용료 환불을 함께 보낸다. 종전에는 미리 확정해 둔 값이 있을 때만 실렸다.
-      ...(rentRefundAmount > 0 ? { rentRefundAmount } : {}),
+      // 0 도 싣는다. '환불 없음' 확정이라 서버가 스냅샷을 남긴다(2026-09-02).
+      ...(rentRefundAmount != null ? { rentRefundAmount } : {}),
       ...(deferDeposit ? { deferDeposit: true } : {}),
     })
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }

@@ -14,8 +14,8 @@
 - [x] integrityAudit 규칙 3 — refund-billing-drift
 
 ## 커밋 3 fix(퇴실 처리): 환불 0원도 확정으로 서버에 싣는다
-- [ ] TenantClient 1412·1441, TenantStatusTransitions 461, DashboardClient 301·359·549 — `> 0` 게이트 제거
-- [ ] actions.ts checkoutWithDepositRefund ~2206 — `rentRefundAmount != null`
+- [x] TenantClient 1412·1441, TenantStatusTransitions 461, DashboardClient 301·359·549 — `> 0` 게이트 제거
+- [x] actions.ts checkoutWithDepositRefund ~2206 — `rentRefundAmount != null`
 
 ## 커밋 4 chore(감지망)
 - [ ] check-rent-settlement-branch ⓕⓖⓗ, check-checkout-side-effects ⓓ·ⓟ 확장

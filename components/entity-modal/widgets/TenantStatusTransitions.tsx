@@ -453,8 +453,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
          * 종전에는 이 경로에 환불이 아예 없어서, 확정해 둔 정산이 있어도 보증금만 처리되고
          * 이용료는 조용히 남았다. 화면이 경고만 하던 자리를 실제 처리로 바꾼다.
          * 이미 환불된 계약은 서버가 멱등으로 받아 넘긴다.
+         * 0 도 싣는다. '환불 없음' 확정이라 서버가 스냅샷을 남기고, 남길 것이 없으면 noop 이다(2026-09-02).
          */
-        if (rentSettlement && rentSettlement.amount > 0 && def.toStatus === 'CHECKED_OUT') {
+        if (rentSettlement && def.toStatus === 'CHECKED_OUT') {
           const rr = await finalizeRentRefund({
             leaseTermId: lease.id,
             moveOutYmd: fields?.moveOutDate || kstYmdStr(),

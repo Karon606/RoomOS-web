@@ -1406,11 +1406,13 @@ export default function TenantClient({
         if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
         if (updateRes.notice) pushToast('info', updateRes.notice)
         // 이용료 환불 — 퇴실월 수납 record를 회사 귀속액으로 재기록(매출에서 환불분 제외, 원 기록 소프트삭제 보존)
+        // 0 도 싣는다. '환불 없음' 확정이라 서버가 스냅샷을 남기고, 남길 것이 없으면 noop 으로 답한다(2026-09-02).
+        // 종전에는 0 을 안 실어서 수납 정보 카드가 영영 '환불 미처리'로 섰다.
         let rentRefunded = false
         let taxNotice: RentRefundTaxNotice | undefined
-        if (rs && rentAmt > 0) {
+        if (rs) {
           const rr = await finalizeRentRefund({ leaseTermId, moveOutYmd: rentMoveOutYmd, rentRefundAmount: rentAmt })
-          if (rr.ok) { rentRefunded = true; taxNotice = rr.taxNotice }
+          if (rr.ok) { rentRefunded = !rr.noop; taxNotice = rr.taxNotice }
           else if (rr.error.startsWith('이미 환불 처리된')) rentRefunded = true   // 재시도(멱등) — 계속 진행
           else { setError(rr.error); pushToast('error', rr.error); return }
         }
@@ -1438,7 +1440,7 @@ export default function TenantClient({
           else setEditTenant(null)
           refresh()
           for (const line of refundTaxNoticeLines(taxNotice)) pushToast('info', line)
-          pushToast('success', rentRefunded ? `퇴실 처리됨 · 이용료 환불 ${fmtWon(rentAmt)}` : '퇴실 처리됨')
+          pushToast('success', rentRefunded ? `퇴실 처리됨 · ${rentAmt > 0 ? `이용료 환불 ${fmtWon(rentAmt)}` : '이용료 환불 없음'}` : '퇴실 처리됨')
           pushToast('info', '보증금 반환은 기록하지 않았습니다. 홈 알림에 반환 대기로 남습니다.')
           return
         }

@@ -2203,7 +2203,8 @@ export async function checkoutWithDepositRefund(params: {
     // 먼저 확정하면 그 값이 덮인다). 실패해도 퇴실은 되돌리지 않고 사실만 알린다.
     let rentNotice: string | null = null
     let taxNotice: RentRefundTaxNotice | undefined
-    if (params.rentRefundAmount && params.rentRefundAmount > 0) {
+    // 0 도 확정이다('환불 없음', 2026-09-02). 화면이 정산 섹션을 세웠을 때만 값을 싣는다.
+    if (params.rentRefundAmount != null) {
       const rr = await finalizeRentRefund({
         leaseTermId: params.leaseTermId,
         moveOutYmd: params.moveOutDate || kstYmdStr(),
