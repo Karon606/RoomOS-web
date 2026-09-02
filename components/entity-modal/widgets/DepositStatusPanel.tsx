@@ -7,7 +7,7 @@
 // 종전에는 조회월이 결제일의 달과 다르면 보증금이 화면에서 통째로 사라졌다.
 //
 // 두 화면이 이 파일 하나를 쓴다. 지금까지 갈렸던 이유가 각자 손으로 그렸기 때문이라, 그게 재발 방지다.
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useId, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -82,6 +82,7 @@ export function DepositStatusPanel({
     return () => { alive = false }
   }, [tenantId])
   const [pending, startTransition] = useTransition()
+  const uid = useId()
 
   const load = useCallback(async () => {
     // 두 값을 한 틱에 커밋한다. 순차로 넣으면 첫 페인트에 공제 전 숫자가 스쳤다가 바뀐다(로딩 점프).
@@ -317,7 +318,7 @@ export function DepositStatusPanel({
         )}
       </div>
 
-      <p className="text-sm text-[var(--warm-dark)]">
+      <p className="text-sm text-[var(--warm-dark)] break-keep">
         <span className="text-[var(--warm-muted)] text-xs">받은 보증금 </span>
         <span className="font-semibold num">{fmtWon(paid)}</span>
         {/* 청소비가 보증금 몫을 채운 계약은 구성을 병기한다 — 현금만 보이면 '어디에도 기록이 없다'로 읽힌다. */}
@@ -339,10 +340,11 @@ export function DepositStatusPanel({
         <div className={formBoxCls}>
           <div className={gridCls}>
             <div className="space-y-1.5">
-              <label className={labelCls}>금액</label>
-              <input type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
+              <label className={labelCls} htmlFor={`${uid}-recv-amount`}>금액</label>
+              <input id={`${uid}-recv-amount`} type="text" inputMode="numeric" value={recvAmount.toLocaleString()}
                 onChange={e => setRecvAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                className={recvOver ? inputErrCls : inputCls} />
+                aria-invalid={recvOver || undefined}
+                className={`${recvOver ? inputErrCls : inputCls} num`} />
             </div>
             <div className="space-y-1.5">
               <label className={labelCls}>납부일</label>
@@ -402,7 +404,7 @@ export function DepositStatusPanel({
       {/* §16 상시 적용취소 진입점 — 토스트는 사라지고, 이 패널이 정본이 되었으니 여기가 '원위치'다. */}
       {canEdit && settled && refund && (
         <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void undoRefund(refund) }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
           적용취소
         </Btn>
       )}
@@ -417,9 +419,9 @@ export function DepositStatusPanel({
         <div className={formBoxCls}>
           <div className={gridCls}>
             <div className="space-y-1.5">
-              <label className={labelCls}>반환액</label>
-              <input type="text" inputMode="numeric" value={recAmount.toLocaleString()}
-                onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={inputCls} />
+              <label className={labelCls} htmlFor={`${uid}-rec-amount`}>반환액</label>
+              <input id={`${uid}-rec-amount`} type="text" inputMode="numeric" value={recAmount.toLocaleString()}
+                onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={`${inputCls} num`} />
             </div>
             <div className="space-y-1.5">
               <label className={labelCls}>처리일</label>
@@ -490,9 +492,9 @@ export function DepositStatusPanel({
                 <li key={r.id} className="rounded-lg bg-[var(--cream-soft)] border border-[var(--coral)] px-2.5 py-2 space-y-2">
                   <div className={gridCls}>
                     <div className="space-y-1.5">
-                      <p className={labelCls}>금액</p>
-                      <input type="text" inputMode="numeric" value={editAmount.toLocaleString()}
-                        onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={inputCls} />
+                      <label className={labelCls} htmlFor={`${uid}-edit-amount`}>금액</label>
+                      <input id={`${uid}-edit-amount`} type="text" inputMode="numeric" value={editAmount.toLocaleString()}
+                        onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={`${inputCls} num`} />
                     </div>
                     <div className="space-y-1.5">
                       <p className={labelCls}>납부일</p>

@@ -7,7 +7,7 @@
 // Phase 2.4a (2026-05-30): 저~중 위험 4개 위젯 추출. 고위험(수납 등록·기록 편집·양도인 정산·보증금 분리)
 // 은 Phase 2.4b 에서.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Btn } from '@/components/ui/Btn'
@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DepositStatusPanel } from '../widgets/DepositStatusPanel'
+import { RentSettlementPanel } from '../widgets/RentSettlementPanel'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
@@ -57,6 +58,13 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
   const [showEntryForm, setShowEntryForm] = useState(false)
   const [adjOpen, setAdjOpen] = useState(false)   // 청구 조정 이력 펼침(접힘이 기본)
   const [reloadKey, setReloadKey] = useState(0)
+  // 이용료 정산 카드의 '정산 조정' — 위젯 autoOpen 은 ref 로 1회만 열리므로 카운터를 key 로 넘겨
+  // 위젯을 다시 세워 매번 펼친다. full 전환 뒤 위젯이 화면 밖이라 래퍼로 스크롤한다.
+  const [adjustKey, setAdjustKey] = useState(0)
+  const prorationRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (adjustKey > 0) prorationRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [adjustKey])
   const [, startTransition] = useTransition()
 
   useEffect(() => {
@@ -143,6 +151,17 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         onChanged={refresh}
         tenantId={settlement.tenantId}
         tenantName={settlement.tenantName}
+      />
+      {/* 이용료 정산 — 퇴실 예정·완료 계약에만 선다(단기·그 외는 카드 자체가 없다). 보증금 카드와 같은 문법. */}
+      <RentSettlementPanel
+        leaseTermId={leaseTermId}
+        status={settlement.status}
+        isShortTerm={settlement.isShortTerm}
+        expectedMoveOut={settlement.expectedMoveOut}
+        canEdit={canEdit}
+        reloadSignal={reloadKey}
+        onChanged={refresh}
+        onAdjust={() => { setMode('full'); setAdjustKey(k => k + 1) }}
       />
 
       {/* 입주월 전 조회 — 예정액이 이번 달 청구로 오독되지 않게 맥락 명시(운영자 지적 2026-07-30) */}
@@ -358,15 +377,18 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
 
           {/* 퇴실 정산(일할) — 거주중·퇴실예정 계약에서만 */}
           {canEdit && (settlement.status === 'ACTIVE' || settlement.status === 'CHECKOUT_PENDING') && (
-            <CheckoutProrationWidget
-              leaseTermId={leaseTermId}
-              currentDueDay={settlement.dueDay}
-              expectedMoveOut={settlement.expectedMoveOut}
-              checkoutProratedAmount={settlement.checkoutProratedAmount}
-              checkoutProratedMonth={settlement.checkoutProratedMonth}
-              autoOpen={openCheckoutProration}
-              onChange={refresh}
-            />
+            <div ref={prorationRef}>
+              <CheckoutProrationWidget
+                key={adjustKey}
+                leaseTermId={leaseTermId}
+                currentDueDay={settlement.dueDay}
+                expectedMoveOut={settlement.expectedMoveOut}
+                checkoutProratedAmount={settlement.checkoutProratedAmount}
+                checkoutProratedMonth={settlement.checkoutProratedMonth}
+                autoOpen={openCheckoutProration || adjustKey > 0}
+                onChange={refresh}
+              />
+            </div>
           )}
 
           <PrevOwnerSettleWidget

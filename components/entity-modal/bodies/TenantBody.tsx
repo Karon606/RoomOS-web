@@ -8,14 +8,12 @@ import { useEffect, useState, useTransition } from 'react'
 import { unpaidForLease, billedForLease } from '@/lib/billing'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
-import { undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { MoveRoomNowButton, UndoRoomMoveButton } from '@/components/tenant/MoveRoomNowButton'
-import { analyzeTenantWithGemini, undoRentRefund, undoDepositReturn, getDepositRefundForLease,
+import { analyzeTenantWithGemini,
   getRoomScheduleState, undoRoomSchedule, clearRoomSchedulePlan, getRoomBusyNotice,
   changeRoomMoveDate, undoChangeRoomMoveDate } from '@/app/(app)/tenants/actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pushToast } from '@/lib/saveStatus'
-import { fmtWon } from '@/lib/fmtMoney'
 import { fmtDateKor as fmtDate, fmtDateDot } from '@/lib/fmtDate'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { askRoomBusy } from '@/components/tenant/roomBusyPrompt'
@@ -42,11 +40,8 @@ import { Section } from '../widgets/Section'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
 import { parseShortStayPolicy } from '@/lib/shortStay'
 import { primaryTenantLease, CONTRACT_ISSUE_STATUSES, TENANT_LIST_STATUSES } from '@/lib/leaseStatus'
-import { withheldPartsLabel } from '@/lib/depositComposition'
 import { fmtRoomNo } from '@/lib/roomNo'
 
-// 보증금 환불 스냅샷 타입 — 서버 정본에서 파생한다(손으로 나열하면 분해 필드가 늘 때 갈린다).
-type DepositRefundInfo = NonNullable<Awaited<ReturnType<typeof getDepositRefundForLease>>>
 type RoomScheduleInfo = NonNullable<Awaited<ReturnType<typeof getRoomScheduleState>>>
 type RoomBusyInfo = NonNullable<Awaited<ReturnType<typeof getRoomBusyNotice>>>
 
@@ -54,9 +49,6 @@ type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
 export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
-  // 보증금 반환 스냅샷 — 형제(이용료 환불)처럼 첫 페인트에 함께 그려야 본문이 뒤늦게 밀리지 않고,
-  // refresh() 로도 재조회돼 '방금 기록한 환불을 바로 되돌리는' 주 시나리오가 막히지 않는다(디자이너 패스).
-  const [depoRefund, setDepoRefund] = useState<DepositRefundInfo | null>(null)
   // 호실 일정 현황 — 일정을 쓰는 계약일 때만 값이 온다(§16 상시 진입점).
   const [schedule, setSchedule] = useState<RoomScheduleInfo | null>(null)
   // 입주일에 계약 호실이 아직 차 있다 — 저장 직후 팝업은 놓칠 수 있어 여기 상시로 세운다.
@@ -69,9 +61,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   }, [tenantId, reloadKey])
   const leaseIdForRefund = (tenant ? primaryTenantLease(tenant.leaseTerms) : undefined)?.id ?? null
   useEffect(() => {
-    if (!leaseIdForRefund) { setDepoRefund(null); return }
+    if (!leaseIdForRefund) return
     let active = true
-    getDepositRefundForLease(leaseIdForRefund).then(r => { if (active) setDepoRefund(r) })
     getRoomScheduleState(leaseIdForRefund).then(r => { if (active) setSchedule(r) })
     getRoomBusyNotice(leaseIdForRefund).then(r => { if (active) setRoomBusy(r) })
     return () => { active = false }
@@ -143,16 +134,12 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {/* 상태 이력 — 언제 어디서 어디로 바뀌었나, 입실 취소·퇴실 사유(신고 ad517231).
           이사 이력 바로 아래에 둔다. 둘 다 이력이고, 아래 적용취소 행보다 먼저 "무슨 일이 있었나"를 읽는다. */}
       <TenantStatusHistory tenantId={tenant.id} />
-      {/* 환불 확정 적용취소 — 상시 진입점(§16, 토스트가 사라져도 여기서 항상 가능).
-          성격이 같은 두 행이라 한 래퍼로 묶는다(디자이너 패스). */}
+      {/* 호실 일정·호실 사용 중 — 상시 진입점(§16). 환불 적용취소 두 행은 수납 정보 탭의
+          보증금·이용료 정산 카드로 옮겼다(2026-09-02) — 같은 되돌리기가 두 화면에 서면 문구가 갈린다. */}
       {lease && (() => {
-        const undoObj = lease.checkoutProrationUndo as { refund?: { refunded: number; month: string } } | null
-        const snap = undoObj?.refund
-        if (!snap && !depoRefund && !schedule && !roomBusy) return null
+        if (!schedule && !roomBusy) return null
         return (
           <div className="space-y-1.5">
-            {snap && <RentRefundUndoRow leaseTermId={lease.id} refunded={snap.refunded} month={snap.month} onDone={refresh} />}
-            {depoRefund && <DepositRefundUndoRow info={depoRefund} onDone={refresh} />}
             {schedule && <RoomScheduleRow leaseTermId={lease.id} tenantName={tenant.name} info={schedule} onDone={refresh} />}
             {roomBusy && <RoomBusyRow leaseTermId={lease.id} tenantName={tenant.name} info={roomBusy} onDone={refresh} />}
           </div>
@@ -173,84 +160,6 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && lease.paymentRecords.length > 0 && (
         <PaymentSummaryWithAI tenantId={tenant.id} lease={lease} />
       )}
-    </div>
-  )
-}
-
-// 보증금 환불 확정 표시 + 상시 적용취소 — 기록이 있을 때만 나타난다(B페이즈).
-// 용어는 화면 표면 기준 '반환'이다 — 보증금은 돌려주는 것이지 무른 것이 아니다(운영자 확정
-// 2026-08-30). 서버 함수명 recordDepositReturn 과도 같은 낱말이다.
-function DepositRefundUndoRow({ info, onDone }: {
-  info: DepositRefundInfo
-  onDone: () => void
-}) {
-  const [pending, startTransition] = useTransition()
-  const allWithheld = info.returned === 0 && info.withheld > 0
-  const partsLabel = withheldPartsLabel(info.parts, fmtWon)
-  const handleUndo = async () => {
-    const ok = await confirmDialog({
-      title: '보증금 반환 기록을 적용취소할까요?',
-      // 미반환분은 성격대로 최대 2행이라 무엇이 사라지는지 카테고리까지 말한다(가이드 §14).
-      message: info.withheld > 0
-        ? `반환 ${fmtWon(info.returned)} · 미반환 ${fmtWon(info.withheld)} 기록을 지웁니다. 미반환분으로 잡힌 부가수익(${partsLabel ?? '보증금 몰취'})도 함께 사라집니다.`
-        : `반환 ${fmtWon(info.returned)} 기록을 지웁니다.`,
-      level: 'caution', confirmLabel: '적용취소',
-    })
-    if (!ok) return
-    startTransition(async () => {
-      const r = await undoDepositReturn(info.refundId, info.extraIncomeIds)
-      if (r.ok) { pushToast('info', '보증금 반환을 적용취소했습니다.'); onDone() }
-      else pushToast('error', r.error)
-    })
-  }
-  return (
-    <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-      <p className="text-[var(--warm-mid)]">
-        {allWithheld
-          ? <>보증금 전액 미반환 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span>{info.reason ? ` (${info.reason})` : ''}</>
-          : <>보증금 반환 확정 · <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.returned)}</span> 반환
-              {info.withheld > 0 && <> · 미반환 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(info.withheld)}</span></>}</>}
-      </p>
-      <button type="button" onClick={handleUndo} disabled={pending}
-        className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
-        {pending ? '취소 중…' : '적용취소'}
-      </button>
-    </div>
-  )
-}
-
-// 중도퇴실 환불 확정 표시 + 상시 적용취소 — 스냅샷은 서버(checkoutProrationUndo.refund)에 영속
-function RentRefundUndoRow({ leaseTermId, refunded, month, onDone }: {
-  leaseTermId: string; refunded: number; month: string; onDone: () => void
-}) {
-  const [pending, startTransition] = useTransition()
-  const handleUndo = async () => {
-    const ok = await confirmDialog({
-      title: '이용료 환불을 적용취소할까요?',
-      message: '원래 수납 기록을 복원하고 청구를 환불 전 상태로 되돌립니다.',
-      confirmLabel: '적용취소',
-    })
-    if (!ok) return
-    startTransition(async () => {
-      const r = await undoRentRefund(leaseTermId)
-      if (r.ok) {
-        pushToast('info', '이용료 환불을 적용취소했습니다.')
-        // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
-        for (const line of undoRefundTaxNoticeLines(r.taxNotice)) pushToast('info', line)
-        onDone()
-      }
-      else pushToast('error', r.error)
-    })
-  }
-  return (
-    <div className="flex items-center justify-between gap-2 bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-      <p className="text-[var(--warm-mid)]">
-        중도퇴실 환불 확정 · {Number(month.slice(5, 7))}월 이용료 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(refunded)}</span> 환불
-      </p>
-      <button type="button" onClick={handleUndo} disabled={pending}
-        className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40 transition-colors disabled:opacity-50">
-        {pending ? '취소 중…' : '적용취소'}
-      </button>
     </div>
   )
 }

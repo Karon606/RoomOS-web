@@ -67,6 +67,7 @@ import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refu
 import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
+import { RENT_REFUND_MEMO_PREFIX, isRentRefundRecord } from '@/lib/rentRefundRecord'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
   plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
@@ -1852,6 +1853,31 @@ export async function getDepositRefundForLease(leaseTermId: string): Promise<
     date: r.date.toISOString().slice(0, 10),
     extraIncomeIds: incs.map(i => i.id),
     parts: incs.map(i => ({ category: i.category, amount: i.amount })),
+  }
+}
+
+// 이용료 환불 확정 조회 — 수납 정보의 이용료 정산 카드가 그린다(보증금 반환 조회의 형제, 2026-09-02).
+// 스냅샷은 finalizeRentRefund 가 checkoutProrationUndo.refund 에 영속한 그 값이다. 입주자 정보 탭이
+// 같은 스냅샷을 lease 에서 읽어 적용취소 행을 세웠는데, 그 조회(getTenantDetail)가 CHECKED_OUT 계약을
+// 안 실어 정작 퇴실 완료자에게는 안 그려졌다. 계약 하나를 바로 묻는 이 문이 그 구멍을 메운다.
+export async function getRentRefundForLease(leaseTermId: string): Promise<
+  { at: string; month: string; refunded: number; prepaid: number; companyKeeps: number; reason: string | null } | null
+> {
+  const { propertyId } = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    select: { checkoutProrationUndo: true },
+  })
+  const undo = lease?.checkoutProrationUndo
+  const snap = (undo && typeof undo === 'object' && !Array.isArray(undo))
+    ? (undo as Record<string, unknown>).refund as Partial<RentRefundSnapshot> | undefined
+    : undefined
+  if (!snap || typeof snap.refunded !== 'number' || typeof snap.prepaid !== 'number' || typeof snap.month !== 'string') return null
+  return {
+    at: typeof snap.at === 'string' ? snap.at : '',
+    month: snap.month, refunded: snap.refunded, prepaid: snap.prepaid,
+    companyKeeps: snap.prepaid - snap.refunded,
+    reason: typeof snap.reason === 'string' && snap.reason ? snap.reason : null,
   }
 }
 
@@ -4546,12 +4572,16 @@ type RentRefundSnapshot = {
   newRecordId: string | null
   deletedRecordIds: string[]
   prevProration: { amount: number | null; month: string | null }
+  // 계산값과 다른 금액을 손으로 정했을 때 그 이유(2026-09-02 운영자 요청, 413호). 없으면 계산값 그대로 확정한 것.
+  // 감사 규칙 6 은 이 값이 있는 스냅샷을 건너뛴다 — 알고 고른 금액을 매일 다시 묻지 않는다.
+  reason?: string
 }
 
 export async function finalizeRentRefund(input: {
   leaseTermId: string
   moveOutYmd: string        // 'YYYY-MM-DD'
   rentRefundAmount: number  // 운영자 확정 이용료 환불액
+  reason?: string           // 수동 환불액의 사유 한 줄 — 수납 정보 카드의 금액 수정·환불 기록만 싣는다
 }): Promise<RentRefundResult> {
   try {
     await requireEdit()
@@ -4589,7 +4619,7 @@ export async function finalizeRentRefund(input: {
       },
     })
     // 멱등 가드 — 이미 이 달을 환불 재기록했으면 이중 환불 차단(적대검증 P2)
-    if (records.some(r => r.memo?.startsWith('[중도퇴실 환불]'))) {
+    if (records.some(r => isRentRefundRecord(r.memo))) {
       return { ok: false, error: '이미 환불 처리된 달입니다. 되돌리려면 환불 적용취소 후 다시 진행해 주세요.' }
     }
     // 과거 회계월 보호 — 이미 신고를 마친 달을 조용히 뒤집지 않는다(lib/accountingGuard 정본).
@@ -4608,6 +4638,7 @@ export async function finalizeRentRefund(input: {
     if (!Number.isFinite(refundAmt) || refundAmt <= 0) return { ok: false, error: '환불 금액이 올바르지 않습니다.' }
     if (refundAmt > prepaid) return { ok: false, error: `환불 금액이 그 기간 수납액(${prepaid.toLocaleString()}원)을 넘을 수 없습니다.` }
     const companyKeeps = prepaid - refundAmt
+    const reason = input.reason?.trim().slice(0, 200) || undefined
     const ids = records.map(r => r.id)
     const firstRecord = records[0]
     const firstPayDate = firstRecord?.payDate ?? new Date()
@@ -4638,7 +4669,7 @@ export async function finalizeRentRefund(input: {
             // 승계하면 앱 현금영수증 합계가 확정액으로 조용히 줄지만 홈택스에는 원 금액이 그대로 살아 있다.
             // 화면상 아무 이상이 없어 보여 운영자가 취소·재발행을 안 해도 앱이 침묵한다.
             // 표시를 지워 눈에 걸리게 하고, 재발행 후 수납 기록에서 다시 켜는 흐름이 맞다.
-            memo: `[중도퇴실 환불] 환불 ${refundAmt.toLocaleString()}원 · 원 수납 ${prepaid.toLocaleString()}원 · 청구 확정 ${companyKeeps.toLocaleString()}원`,
+            memo: `${RENT_REFUND_MEMO_PREFIX} 환불 ${refundAmt.toLocaleString()}원 · 원 수납 ${prepaid.toLocaleString()}원 · 청구 확정 ${companyKeeps.toLocaleString()}원${reason ? ` · 사유: ${reason}` : ''}`,
           },
         })
         newRecordId = created.id
@@ -4647,6 +4678,7 @@ export async function finalizeRentRefund(input: {
         at: new Date().toISOString(), month: mon, refunded: refundAmt, prepaid,
         newRecordId, deletedRecordIds: ids,
         prevProration: { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth },
+        ...(reason ? { reason } : {}),
       }
       const undoBase = (lease.checkoutProrationUndo && typeof lease.checkoutProrationUndo === 'object')
         ? lease.checkoutProrationUndo as Record<string, unknown> : {}
@@ -6430,7 +6462,7 @@ export async function getOpenCheckoutCleaning(roomId: string): Promise<{ id: str
  *
  * 이미 환불이 확정된 계약은 null 이다 — 그 경우 할 말이 없다.
  */
-export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{ amount: number; month: string } | null> {
+export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{ amount: number; month: string; paid: number; keeps: number } | null> {
   try {
     const { propertyId } = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
@@ -6446,7 +6478,8 @@ export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{
     })
     const paid = Math.max(0, agg._sum.actualAmount ?? 0)
     const refund = paid - lease.checkoutProratedAmount
-    return refund > 0 ? { amount: refund, month: mon } : null
+    // paid·keeps 는 수납 정보 카드의 '환불 기록' 폼이 상한과 청구 확정 파생값으로 쓴다(2026-09-02).
+    return refund > 0 ? { amount: refund, month: mon, paid, keeps: lease.checkoutProratedAmount } : null
   } catch {
     // 못 물었으면 조용히 넘긴다 — 안내가 없다고 퇴실을 막을 일은 아니다.
     return null
