@@ -3017,7 +3017,7 @@ export default function TenantClient({
                                   <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">이용료 정산에서 고칩니다</span>
                                 )}
                                 {canEdit && !isRentRefundRecord(p.memo) && (
-                                  <div className="flex gap-2 ml-1">
+                                  <div className="flex gap-1.5 ml-1">
                                     <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
                                     <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>
                                   </div>

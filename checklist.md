@@ -36,7 +36,7 @@
 - [x] panelFormStyles readonlyCls · RentSettlementPanel 343
 
 ## B4 design(버튼 행): gap 을 정본에 맞춘다
-- [ ] Btn 행 gap-2: RentSettlementPanel 257·289, RoomCleaningPanel 168, MarketClient 1018 · RowActionBtn 행 TenantClient 3020 gap-1.5
+- [x] Btn 행 gap-2: RentSettlementPanel 257·289, RoomCleaningPanel 168, MarketClient 1018 · RowActionBtn 행 TenantClient 3020 gap-1.5
 
 ## B5 chore(감지망): 장식 그라데이션 재발 감지
 - [ ] tsx gradient 문자열·css mask-image 밖 linear-gradient 금지 + verify:fast + 역주입

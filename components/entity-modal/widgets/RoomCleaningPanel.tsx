@@ -165,7 +165,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
             그 밖의 작업은 환경설정에서 만든 종류를 고른다. §23 은 헤더 CTA 1~2개를 허용한다.
             **접혀 있으면 감춘다** — 안 보이는 목록에 뭘 더하는 문만 서 있으면 안 된다. */}
         {canEdit && !adding && panelOpen && (
-          <div className="flex gap-1.5">
+          <div className="flex gap-2">
             <Btn variant="secondary" size="sm" onClick={() => setAdding('cleaning')}>청소 등록</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setAdding('work')}>작업 등록</Btn>
           </div>

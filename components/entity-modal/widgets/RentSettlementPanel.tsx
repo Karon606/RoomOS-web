@@ -254,7 +254,7 @@ export function RentSettlementPanel({
           </p>
           {/* §16 상시 적용취소 진입점 — 이 카드가 정본이라 여기가 '원위치'다. 금액 수정은 그 옆. */}
           {canEdit && formMode === null && (
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
               <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void undo(refund) }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
                 적용취소
@@ -286,7 +286,7 @@ export function RentSettlementPanel({
           {canEdit && formMode === null && (
             expectedMoveOut
               ? (
-                <div className="flex gap-1.5 flex-wrap">
+                <div className="flex gap-2 flex-wrap">
                   <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 기록</Btn>
                   <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void recordNone(pend) }}>{SETTLEMENT_PICK_LABEL.none}</Btn>
                 </div>
