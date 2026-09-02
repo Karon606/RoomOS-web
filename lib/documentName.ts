@@ -152,17 +152,36 @@ export function documentName(src: DocumentNameSource, style: DocNameStyle | null
 // 그래서 기본값을 이 순서로 정한다.
 //   1. 이 서류에 이미 저장된 표기
 //   2. 없으면 같은 계약의 다른 서류가 쓴 표기 중 가장 최근 것
-//   3. 그것도 없고 국적이 대한민국이 아니면 영문
-//   4. 나머지는 한글
+//   3. 없으면 고객 정보에 못박아 둔 사람 단위 표기(Tenant.docNameStyle)
+//   4. 그것도 없고 외국인이면 영문
+//   5. 나머지는 한글
 //
-// 3번이 2번보다 아래인 이유. 운영자가 한 번이라도 손으로 고른 것은 국적 추정보다 세다.
+// 4번이 2번보다 아래인 이유. 운영자가 한 번이라도 손으로 고른 것은 국적 추정보다 세다.
 // 외국인인데 한글 이름으로 내기로 정했으면 그 결정이 다음 서류에도 이어져야 한다.
+//
+// 3번(사람 단위)이 2번(형제 서류)보다 아래인 이유는 운영자 결정이다(2026-09-03). "한 사람의 서류는
+// 같은 표기로" 가 더 세다 — 영문 계약서가 이미 나간 계약에서 거주확인서만 한글로 나가면 제출처가
+// 되돌려 보낸다. 사람 단위 값은 **강제가 아니라 기본값 공급자**이고, 국적 추정의 자리를 대신한다.
 
 /** 한국 국적인가 — 표기 기본값을 가르는 데만 쓴다. 비어 있으면 내국인으로 본다(종전 거동 유지). */
 export function isKoreanNationality(nationality: string | null | undefined): boolean {
   const v = (nationality ?? '').trim()
   if (!v) return true
   return v === '대한민국' || v === '한국' || /^(korea|republic of korea|south korea|kr)$/i.test(v)
+}
+
+/**
+ * 이 사람이 외국인인가 — 서류 표기 기본값을 가르는 데만 쓴다.
+ *
+ * 국적만 보던 것에 외국인등록번호 보유를 OR 로 더한다(운영자 요청 2026-09-03 — "외국인등록번호가
+ * 입력되어 있거나 국적이 대한민국이 아닌 경우"). 실측 시점에 두 조건의 합집합은 국적 단독과 같아
+ * 바뀌는 사람이 없지만, 국적을 비운 채 번호부터 넣는 입력 순서가 실제로 가능하다.
+ *
+ * 번호는 **존재 비트만** 본다. 평문을 꺼내는 문(lib/pii readStoredForeignRegNo)과 열람 기록은
+ * 여기 오지 않는다 — 서류가 표기를 고르는 일에 사람의 번호를 읽을 이유가 없다.
+ */
+export function isForeignForDocuments(src: { nationality?: string | null; hasForeignRegNo?: boolean }): boolean {
+  return !!src.hasForeignRegNo || !isKoreanNationality(src.nationality)
 }
 
 /**
@@ -189,7 +208,14 @@ export type DocNameStyleContext = {
    * 값이 없는 서류는 빼고 넘긴다(안 고른 것과 한글을 고른 것은 다르다).
    */
   siblings?: readonly DocNameStyle[]
+  /**
+   * 고객 정보에 못박아 둔 사람 단위 표기(Tenant.docNameStyle). null·undefined 는 '자동'이라
+   * 아래 국적 추정으로 넘어간다. 후보에 없는 값은 여기서도 안 고른다.
+   */
+  tenant?: DocNameStyle | null
   nationality?: string | null
+  /** 외국인등록번호를 가지고 있는가 — 존재 비트만. 국적과 OR 로 외국인 판정에 든다. */
+  hasForeignRegNo?: boolean
   /** 이 사람이 실제로 고를 수 있는 표기(docNameStyles). 후보에 없는 값은 안 고른다. */
   available: readonly DocNameStyle[]
 }
@@ -201,8 +227,11 @@ export function resolveDocNameStyle(ctx: DocNameStyleContext): DocNameStyle {
   if (can(ctx.saved)) return ctx.saved
   const sib = (ctx.siblings ?? []).find(can)
   if (sib) return sib
+  // 사람 단위로 못박은 표기. 고객 정보에서 영문 이름을 지웠으면 후보에서 빠져 여기서도 안 선다.
+  if (can(ctx.tenant)) return ctx.tenant
   // 영문 이름이 없으면 외국인이어도 영문을 고를 수 없다 — 후보에 없는 값을 기본으로 세우지 않는다.
-  if (!isKoreanNationality(ctx.nationality) && ctx.available.includes('en')) return 'en'
+  const foreign = isForeignForDocuments({ nationality: ctx.nationality, hasForeignRegNo: ctx.hasForeignRegNo })
+  if (foreign && ctx.available.includes('en')) return 'en'
   return DEFAULT_DOC_NAME_STYLE
 }
 

@@ -8,9 +8,9 @@
 - [x] 서류 정본 isKoreanNationality 와 같은 답을 내는지 확인('한국'·'Korea'·'KR')
 
 ## 1 feat(서류성명): 사람 단위 기본 표기를 정본이 받는다
-- [ ] lib/documentName: DocNameStyleContext 에 tenant 축, 서열은 saved > siblings > tenant > 국적 > ko
-- [ ] 외국인 판정 정본 함수(국적 비한국 OR 외국인등록번호 보유)
-- [ ] scripts/test-doc-name-style 케이스 다섯(국적 추정을 이김·저장값과 형제에는 짐·NULL 은 종전·
+- [x] lib/documentName: DocNameStyleContext 에 tenant 축, 서열은 saved > siblings > tenant > 국적 > ko
+- [x] 외국인 판정 정본 함수(국적 비한국 OR 외국인등록번호 보유)
+- [x] scripts/test-doc-name-style 케이스 다섯(국적 추정을 이김·저장값과 형제에는 짐·NULL 은 종전·
       후보에서 빠진 값은 무시·화이트리스트 밖은 버림)
 
 ## 2 chore(스키마): Tenant.docNameStyle

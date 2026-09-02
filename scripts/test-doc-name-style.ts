@@ -7,7 +7,7 @@
 //   · **외국인은 영문이 기본** — 다만 영문 이름이 없으면 고를 수 없으니 한글로 떨어진다.
 //   · **파일 이름도 표기를 따라간다** — 이름만 로마자이고 서류명이 한글이면 절반은 못 읽는 파일이 된다.
 import {
-  resolveDocNameStyle, docNameStyleConflict, isKoreanNationality, showsForeignFields, DEFAULT_DOC_NAME_STYLE,
+  resolveDocNameStyle, docNameStyleConflict, isKoreanNationality, showsForeignFields, isForeignForDocuments, DEFAULT_DOC_NAME_STYLE,
   asDocNameStyle,
 } from '../lib/documentName'
 import { docFileLabel, DOC_TYPE_FILE_LABEL, DOC_TYPE_FILE_LABEL_EN } from '../lib/docBundle'
@@ -39,6 +39,36 @@ eq('폼: Korea 도 칸 숨김', showsForeignFields('Republic of Korea'), false)
 eq('폼: 베트남은 칸 노출', showsForeignFields('베트남'), true)
 eq('폼: 국적이 비면 칸 노출(서류와 반대, 아직 안 고른 것)', showsForeignFields(null), true)
 eq('폼: 공백만 있어도 칸 노출', showsForeignFields('   '), true)
+
+// ── 외국인 판정(국적 OR 외국인등록번호) ────────────────────────────
+eq('국적 비한국이면 외국인', isForeignForDocuments({ nationality: '중국' }), true)
+eq('국적이 한국이어도 등록번호가 있으면 외국인', isForeignForDocuments({ nationality: '대한민국', hasForeignRegNo: true }), true)
+eq('국적을 안 골랐어도 등록번호가 있으면 외국인', isForeignForDocuments({ hasForeignRegNo: true }), true)
+eq('국적 한국 + 번호 없음은 내국인', isForeignForDocuments({ nationality: '대한민국' }), false)
+eq('국적을 안 골랐고 번호도 없으면 내국인(종전 거동)', isForeignForDocuments({}), false)
+
+// ── 사람 단위 기본 표기(Tenant.docNameStyle) ──────────────────────
+// 자리는 형제 서류 아래, 국적 추정 위다(운영자 결정 2026-09-03).
+eq('사람 단위 값이 국적 추정을 이긴다',
+  resolveDocNameStyle({ tenant: 'ko', nationality: '중국', available: ALL }), 'ko')
+eq('사람 단위 값이 없으면 종전대로 국적 추정',
+  resolveDocNameStyle({ tenant: null, nationality: '중국', available: ALL }), 'en')
+eq('이 서류에 저장된 표기가 사람 단위 값을 이긴다',
+  resolveDocNameStyle({ saved: 'en', tenant: 'ko', nationality: '중국', available: ALL }), 'en')
+eq('앞 서류가 쓴 표기도 사람 단위 값을 이긴다',
+  resolveDocNameStyle({ siblings: ['en'], tenant: 'ko', nationality: '중국', available: ALL }), 'en')
+eq('후보에 없는 사람 단위 값은 무시하고 아래로 내려간다',
+  resolveDocNameStyle({ tenant: 'en', nationality: '중국', available: KO_ONLY }), 'ko')
+eq('사람 단위로 현지를 못박을 수도 있다',
+  resolveDocNameStyle({ tenant: 'native', nationality: '베트남', available: ALL }), 'native')
+eq('내국인도 사람 단위로 영문을 못박을 수 있다',
+  resolveDocNameStyle({ tenant: 'en', nationality: '대한민국', available: ALL }), 'en')
+eq('등록번호만으로 외국인이 되면 영문이 기본',
+  resolveDocNameStyle({ nationality: null, hasForeignRegNo: true, available: ALL }), 'en')
+eq('사람 단위 값이 그 외국인 기본을 덮는다',
+  resolveDocNameStyle({ tenant: 'ko', nationality: null, hasForeignRegNo: true, available: ALL }), 'ko')
+eq('화이트리스트 밖 값은 asDocNameStyle 가 버린다', asDocNameStyle('KO'), undefined)
+eq('빈 문자열도 버린다', asDocNameStyle(''), undefined)
 
 // ── 기본 표기 ──────────────────────────────────────────────────────
 // 1순위: 이 서류에 저장된 값. 국적이 무엇이든 이긴다.
