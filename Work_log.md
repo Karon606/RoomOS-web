@@ -5122,3 +5122,30 @@ checkout-reason-dropped(5건), dryRun + inspect-integrity-audit. 웹디자이너
 
 **남긴 것.** 원자적 reviseRentRefund, 환불 지급 수단·지급일, 단기 조기 퇴실 환불, getTenantDetail
 CHECKED_OUT 미적재, prev null 계약의 재확정 입구, 코랄 제목 다크 대비, 미납 집계 CHECKED_OUT 구멍.
+
+## 2026-09-02 (밤 4) - 이용료 정산 '환불 없음' 확정 갈래와 카드 0원 출구 (c75655d2 · 769fada4 · 428820cf · f904fae8)
+
+**발단.** 밤 3 에 남긴 운영자 결정 항목. 카드의 '환불 미처리'가 "아직 안 돌려줌"과 "안 돌려주기로
+함"을 구분 못 했고, 퇴실 처리 세 화면은 환불 0 이면 서버에 아무것도 안 실어(finalize 가 0 거부)
+적용취소 뒤에도 영영 미처리로 섰다. 설계 패널(Fable 5, 결제·UX/UI·웹디자이너) 후보 A·B·C 중 B
+(finalizeRentRefund 가 0 을 확정으로 받음) 승인. 운영자 수정 둘. (1) '환불 없음'의 뜻은 지낸 달
+이용료만 안 돌려주고 뒤 달 선납은 돌려준다, 선납이 있으면 알림. (2) 퇴실 처리 기본 갈래는 단기
+유무와 상관없이 '환불 없음'("환불이 없지만 필요에 따라 환불을 할 수 있게는 가능한거지?" 에 세그먼트·
+금액 편집으로 가능하다고 답함). 0원 확인창은 지금처럼 매번(패널의 "기본값이면 안 묻기" 기각).
+
+**시공.** 커밋 1 `settlementAmounts('none')` 이 futurePrepaid 만 환불, `defaultSettlementPick(shortStay,
+withNone)`, 미리보기 true·위젯 false, 섹션 none 박스 금액·캡션 셋·선납 미달 경고, `futureMonthsLabel`.
+커밋 2 서버 0 갈래(record 무접촉, 청구 확정을 받은 돈으로, refunded 0 스냅샷, later > 0 거부, 미처리
+없으면 noop, updateMany where 낙관적 잠금), 스냅샷 존재 가드를 메모 가드 앞에, `rentRefundPendingFor`
+공용 셈(paid·later·laterMonths), 카드 [환불 기록][환불 없음] 두 출구·선납 안내창·배지 '환불 없음'·
+적용취소 분기, 감사 규칙 3-b `refund-billing-drift`(예행 0건). 커밋 3 세 화면·checkoutWithDepositRefund
+`> 0` 게이트 제거(홈 알림은 섹션 없으면 null). 커밋 4 감지망 ⓕⓖⓗ·ⓓ·ⓟ 확장, 역주입 5건 exit 1.
+
+**게이트.** test-money 307/0 · tsc 0 · verify:fast · eslint 기준선 동일(actions 30/5 기존) · 빌드 · 웹디자이너 패스.
+
+**운영자 몫.** 422호 한희규(8월 받은 돈 420,000 · 청구 확정 294,000 · 선납 없음) 카드에서 [환불 없음]
+실기. 퇴실 처리 화면 기본 '환불 없음' 확인.
+
+**남긴 것.** setCheckoutProration 환불 가드(위젯이 확정 뒤 청구를 덮는 길, 지금은 감사 3-b 가 사후에
+잡음), prepaid === futurePrepaid 계약의 '전액 환불' 확인창 문구, 밤 3 의 백로그 그대로.
+

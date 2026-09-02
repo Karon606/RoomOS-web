@@ -29,3 +29,11 @@ later > 0 인 계약은 >0 확정(환불 기록)으로만 닫힌다(keeps = paid
 
 ## 감사 규칙 3 확장
 스냅샷이 있는데 checkoutProratedAmount !== prepaid − refunded 이면 refund-billing-drift. 0 갈래 뒤 누가 청구를 다시 손대면 잡힌다.
+
+## 0 갈래의 taxNotice 는 pastMonth 만
+>0 갈래는 record 삭제·재기록으로 수납이 바뀌어 홈택스 안내(companyKeeps 매출 + 지난달 장부 경고)를 싣는다. 0 갈래는 수납이 안 바뀌니 매출 안내는 뜻이 없고, checkSettlementMonth 의 지난달 장부 경고(청구 확정이 바뀌는 달이 마감 뒤인 경우)만 싣는다. 카드 토스트는 그래서 '기록했습니다' 한 줄이다.
+
+## 알려진 엣지 (보고만)
+- 결제액 전부가 뒤 달 선납인 계약(prepaid === futurePrepaid)은 'none' 기본에서 amount === max 라 confirmRentSettlement 가 '전액 환불' 확인창을 띄운다. "사용분까지 모두 돌려주는" 문구가 어색하지만 금액은 맞고(지낸 달 받은 돈이 0), 실제 계약에선 드물다. 운영자 확인 없이 문구를 갈래별로 늘리지 않았다.
+- 카드 [환불 없음]이 noop 응답을 받는 경우(같은 카드를 두 창에서 동시에 확정)는 토스트가 '기록했습니다' 로 나간다. 새로고침으로 상태가 맞춰지므로 레이스 전용 문구는 두지 않았다.
+
