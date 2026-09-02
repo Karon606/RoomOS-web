@@ -492,7 +492,43 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 / 위반 ${violations.length}건`)
+// ⓠ 환불 확정 뒤 청구 쓰기 거부 (2026-09-03).
+//
+//    finalizeRentRefund 가 확정한 청구(prepaid − refunded)는 고정값이다. 그런데 일할 위젯의
+//    setCheckoutProration 은 스냅샷을 안 보고 그 값을 일할값으로 덮었다. 수납이 과납으로 보여 정산이
+//    다시 '환불 가능'으로 서는 이중 환불 입구였다. 술어는 hasRentRefundSnapshot 하나다. 이름 하나로
+//    걸어야 세 자리(set·clear·prorationDataForChange)에 흩어진 `'refund' in undo` 관용구가 다시 안 생긴다.
+{
+  const guarded = [
+    ['setCheckoutProration', /export async function setCheckoutProration[\s\S]*?\n\}\n/],
+    ['clearCheckoutProration', /export async function clearCheckoutProration[\s\S]*?\n\}\n/],
+    ['prorationDataForChange', /function prorationDataForChange[\s\S]*?\n\}\n/],
+  ]
+  for (const [name, re] of guarded) {
+    const m = src.match(re)
+    if (!m) { violations.push(`${FILE} — ${name} 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`); continue }
+    if (!/hasRentRefundSnapshot\(/.test(m[0])) {
+      violations.push(`${FILE} — ${name} 에 환불 스냅샷 가드(hasRentRefundSnapshot)가 없다. 환불 확정 뒤 청구가 덮이거나 지워진다.`)
+    }
+    if (name === 'setCheckoutProration') {
+      const g = m[0].indexOf('hasRentRefundSnapshot(')
+      const c = m[0].indexOf('settlementCalcFor(')
+      if (g >= 0 && c >= 0 && g > c) {
+        violations.push(`${FILE} — setCheckoutProration 의 환불 가드가 정산 계산 뒤에 선다. 확정 계약도 일할 계산을 지나 버린다.`)
+      }
+    }
+  }
+  if (/'refund' in \(/.test(src)) {
+    violations.push(`${FILE} — 스냅샷 판정을 'refund' in 관용구로 직접 쓴다. hasRentRefundSnapshot 하나로 모은다.`)
+  }
+  const sentence = /이용료 환불이 확정된 계약입니다\. 환불 적용취소를 먼저 진행해 주세요\./g
+  const n = (src.match(sentence) || []).length
+  if (n !== 2) {
+    violations.push(`${FILE} — 환불 확정 거부 문장이 ${n}회다(기대 2회 set·clear). 자리가 늘었으면 이 수를, 문장이 갈렸으면 문장을 맞춘다.`)
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 · ⓠ 환불 확정 뒤 청구 쓰기 거부 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

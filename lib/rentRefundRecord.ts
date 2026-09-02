@@ -11,3 +11,16 @@ export const RENT_REFUND_MEMO_PREFIX = '[중도퇴실 환불]'
 export function isRentRefundRecord(memo: string | null | undefined): boolean {
   return (memo ?? '').startsWith(RENT_REFUND_MEMO_PREFIX)
 }
+
+/**
+ * 이 계약에 이용료 환불 확정 스냅샷(checkoutProrationUndo.refund)이 살아 있는가.
+ *
+ * 확정 뒤 그 달 청구는 prepaid − refunded 로 고정된 값이다. 이 값을 덮거나(일할 재적용) 스냅샷을
+ * 지우는(거주중 복귀·단기 연장) 쓰기는 record 와 청구를 어긋나게 하고 적용취소 길을 없앤다.
+ * 그래서 청구·스냅샷을 만지는 자리는 전부 이 술어로 먼저 거른다. 판정이 한 곳이어야 감지망이
+ * 이름 하나로 걸린다. 소유자인 finalizeRentRefund·undoRentRefund 는 스냅샷 안을 직접 읽는다.
+ */
+export function hasRentRefundSnapshot(undo: unknown): boolean {
+  return !!undo && typeof undo === 'object' && 'refund' in (undo as Record<string, unknown>)
+}
+

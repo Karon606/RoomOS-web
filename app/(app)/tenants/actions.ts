@@ -67,7 +67,7 @@ import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refu
 import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
-import { RENT_REFUND_MEMO_PREFIX, isRentRefundRecord } from '@/lib/rentRefundRecord'
+import { RENT_REFUND_MEMO_PREFIX, isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
   plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
@@ -4341,8 +4341,7 @@ function prorationDataForChange(
       notice: '단기 계약은 주 단위 정액이라 퇴실 일할 정산 대상이 아닙니다. 적용돼 있던 일할을 해제했습니다.',
     }
   }
-  const undoObj = lease.checkoutProrationUndo
-  if (undoObj && typeof undoObj === 'object' && 'refund' in (undoObj as Record<string, unknown>)) {
+  if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
     return { data: {}, notice: '이용료 환불이 확정된 계약이라 일할 정산을 재계산하지 않았습니다. 변경하려면 환불 적용취소 후 진행해 주세요.' }
   }
   const wasApplied = lease.checkoutProratedAmount != null
@@ -4960,6 +4959,13 @@ export async function setCheckoutProration(
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    // 환불 확정(finalizeRentRefund) 뒤의 청구는 prepaid − refunded 로 고정된 값이다. 여기서 일할값으로
+    // 덮으면 수납이 과납으로 보여 정산이 다시 '환불 가능'으로 서고(이중 환불 입구), 감사 3-b 가
+    // 다음 감사 때에야 잡는다. clearCheckoutProration 과 같은 사유·같은 문장으로 거부한다. 과거 회계월
+    // 보호보다 앞에 두는 것은 '환불 확정'이 더 앞선 사유라서다(2026-09-03).
+    if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
+      return { ok: false, error: '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.' }
+    }
     const sc = settlementCalcFor(lease, expectedMoveOut)
     if (!sc) return { ok: false, error: '정산할 기간을 찾을 수 없습니다. 납부일이 없거나 퇴실일이 입주일보다 앞선 경우입니다.' }
     const { calc } = sc
@@ -5044,8 +5050,7 @@ export async function clearCheckoutProration(
 
     // 환불 확정(finalizeRentRefund) 상태 — 일할 해제가 환불 스냅샷을 지우고 청구·record 정합을 깬다.
     // 되돌리려면 환불 적용취소(undoRentRefund)를 먼저(적대검증 P0 연쇄 방어).
-    const undoRaw = lease.checkoutProrationUndo
-    if (undoRaw && typeof undoRaw === 'object' && 'refund' in (undoRaw as Record<string, unknown>)) {
+    if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
       return { ok: false, error: '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.' }
     }
 
