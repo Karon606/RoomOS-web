@@ -1,54 +1,49 @@
-# 호실 일정 체크리스트 (2026-08-26, 운영자 정정으로 재설계)
+# 퇴실 정산 세 신고 (2026-09-02)
 
-'조기 입실'을 걷고 '호실 일정'으로 바꿨다. 입주일이 바뀐 것뿐이라 돈 쪽 장치가 통째로 사라졌다.
+## 사실 관계
+- [x] 신고 1: 퇴실 예정 때 적은 사유가 퇴실 처리 폼에 안 옴 (미니폼 열 때 setTransReason('') 로 비움, TenantStatusLog 에는 남아 있음)
+- [x] 신고 2: 506호 문정현, 퇴실 처리 화면(RentSettlementSection)이 'legal' 고정이라 단기 요금·환불 안 함 갈래가 없었고 79,800원이 환불로 확정됨
+- [x] 신고 3: 퇴실 정산 위젯(CheckoutProrationWidget)의 편집 칸이 '적용 금액'(청구액)이라 환불액을 직접 못 침
+- [x] 506호 단기 요금 baseAmount = 380,000 (할인 10,000 반영), 환불 0·미납 0 (회계 패널 inspect-shortstay-refund-class 확인)
 
-## 사실 관계 (운영자 확정)
-- [x] 입주일 8/31 → 8월분 470,000원이 8/31 청구, 다음 납부일 9/30
-- [x] 하루치는 받고 안 받고 중요하지 않다 — 부가수익 장치 폐기
-- [x] 계약서와 서류도 8/31로
-- [x] 옮길 곳을 계약서에 다 적어 두면 기록 갱신이 필요 없다
+## 시공 (신고 2·3)
+- [x] lib/checkoutSettlement.ts 순수함수 (SettlementPick, defaultSettlementPick, settlementAmounts, serverModeFor)
+- [x] scripts/test-money.ts 케이스 (단기 상한 23일, 할인가, 두 갈래 폭 79,800 vs 0, 반올림 역전, 갈래 기본값·none)
+- [x] previewCheckoutRefund 응답에 defaultPick
+- [x] RentSettlementSection 4갈래 세그먼트 (위약금 / 면제 / 단기 / 환불 없음), 단기 기본, 캡션, value 에 pick·suggested
+- [x] 공용 확인창 confirmRentSettlement (환불 0 또는 계산값과 다름, 전액 환불 흡수) 세 호출처 연결
+- [x] 위젯: lib 공용화 + 환불액 직접 입력(적용 금액은 읽기전용 파생), prepaid 0 이면 종전 유지
+- [x] 정적 검사 scripts/check-rent-settlement-branch.mjs (역주입으로 exit 1 확인) + verify:fast 등록
+- [x] integrityAudit 규칙 6 (단기 자격 퇴실인데 단기 갈래 환불보다 큰 환불 확정, 둘을 한 규칙으로) + 예행 스크립트 inspect-integrity-audit.ts, 실데이터 506호·413호 2건 검출 확인
 
-## 시공
-- [x] lib/roomSchedule 정본 + 회귀 38
-- [x] 스키마 — roomSchedule 추가, earlyCheckInDate·earlyCheckInRoomId 제거(사용 0건)
-- [x] 자가 치유가 일정을 읽는다 — 예외 게이트 폐기
-- [x] 서버 액션 4종(후보·입실 처리·현황·적용취소)
-- [x] 일정 짜는 시트 — 방마다 '언제까지', 다음 방 이어 묻기
-- [x] 상세 화면 상시 적용취소 행
-- [x] 계약서 '거주 호실 일정' 절 + 인쇄값 비교 축
-- [x] 감지망 축 ① 예외를 일정 기준으로
-- [x] 걷어낸 것 — 조기 입실 모듈·시트·회귀, 홈 이동 알림과 '방 이동' 카테고리
-- [x] 배포 뒤 디자이너 패스 반영 (차단 9 · 권고 12)
-  - [x] B1 여러 번 옮기면 일정에 '?호' — 고른 방 이름을 picks 에 담는다
-  - [x] B2 퇴실 예정일이 지난 방이면 막다른 길 + 거짓 확정 문장
-  - [x] B3 창고·사무실이 후보로 뜸 — 공실 제외 정본(vacancyExcludedWhere) 적용
-  - [x] B4 갱신 중 낡은 목록이 눌림 — 진행 바 + 잠금(§17)
-  - [x] B5 못 하는 경우에 안내 상자가 정반대 지시 — 숨기고 현 거주자 이름 표시
-  - [x] B6 상세 행 이름과 무르는 대상 불일치 — '입실 처리 · 호실 일정'(§16)
-  - [x] B7 적용취소가 납부일을 안 되돌림 — 예약 상태 불변식 복원(청구 접점, 운영자 보고)
-  - [x] B8 확인 라벨 '다른 방부터'가 동사가 아님 — '일정 짜기'(§10)
-  - [x] B9 다크 포커스 링 대비 미달 — --tc-text (형제 피커도 함께)
-  - [x] R1 목록이 결론을 준다 — '이 방이면 끝' · 'N일 더 필요'
-  - [x] R2 끝점을 맨 위로 · R3 '지금까지 정한 일정' · R4 날짜 변경 예고
-  - [x] R5 상세 행 중복 줄 · R6 '다음 일정에 따라' · R7 계약 호실 명시
-  - [x] R8 Btn subtle · R9 가리킬 대상 없는 label 제거 · R10 방 없을 때 문구 분기
-  - [ ] R11 적용취소 버튼 터치 타겟 22px — 형제 3행 공통, 클래스 전수 별건
-  - [ ] R12 z=280 토큰화 — 9곳 공통, 가이드 숙제
+## 시공 (신고 1)
+- [x] lib/checkoutReason.ts inheritableCheckoutReason(logs) 순수 판정 + latestCheckoutReasonFor(prisma, leaseTermId) (scripts/test-checkout-reason.ts 14 케이스, verify:fast 등록)
+- [x] getTenantDetail checkoutReason, TenantBody 전달, 프리즘 미니폼 프리필 + 캡션 "퇴실 예정 때 고른 사유 · 필요시 수정"
+- [x] 입주자 수정 폼(TenantClient) 프리필 — getTenants statusLogs 에 연장 복귀 행(예정에서 거주로) 포함해 옛 사유가 새 퇴실에 붙지 않게
+- [x] 화면 없는 경로(checkoutTenant) 서버에서 같은 판정으로 이어받기
+- [x] integrityAudit 규칙 7 checkout-reason-dropped (실데이터 5건 검출) + 정적 축 ⓞ (check-checkout-side-effects, 역주입 4종 exit 1)
+
+## 웹디자이너 패스 반영
+- [x] 라벨 '단기'·'환불 없음' (320px 실측), 전제문 settlementPremise·캡션 settlementPickCaption 정본화 + 감지망 축 ⓑ 에 두 호출 검사
+- [x] '환불 없음' 갈래 읽기전용 0원 박스(높이 유지), 위약금율 포커스 링, 위젯 환불액 칸 인라인 라벨·초과 시 danger·placeholder 기본값
+- [x] 확인창 셋 다 caution·기본 취소 라벨, 보증금 반환·총 환불액 본문
+- [x] 홈 알림·프리즘 Modal dirty 에 정산 섹션 편집 포함, 프리필 사유는 dirty 아님
 
 ## 게이트 (loop.md)
+- [x] iCloud 사본 제거
 - [x] tsc 0
-- [x] `npm run verify:fast` exit 0
-- [x] 프로덕션 빌드 exit 0
-- [x] eslint 신규 0 — 변경 줄 대조
-- [x] 거주 구간 드리프트 47계약 76구간 0건
-- [x] DB 쓰기 보고 — DDL 3건(칼럼 1 추가·2 제거), 데이터 행 무변경
-- [x] 커밋·푸시(=배포)
+- [x] verify:fast 통과
+- [x] 빌드
+- [x] eslint 신규 0 (기준선 대조)
+- [x] 웹디자이너 패스 (필수 14항 반영, 운영자 판단 항목은 보고)
+- [x] 커밋·푸시 (c52b2cf9 신고 2·3 · cbac5f8b 신고 1)
 
-## 8/31 운영자 몫 (박정후 님)
-- [ ] 입주자 관리에서 [입실 처리] → [다른 방부터]
-- [ ] 입주일 8/31, 방 고르기(목록에 '언제까지'가 적혀 있다), [입실 처리]
-- [ ] 9/1에는 아무것도 안 해도 된다 — 앱이 옮긴다
+## 운영자 몫
+- [ ] 506호 프리즘 '적용취소' 클릭 후 이력에서 CHECKED_OUT 사유 기록 (내가 inspect-checkout-case.mjs 로 확인)
+- [ ] 결제선생 79,800 부분취소 여부
+- [ ] 413호 수동 환불액·의도 (첫 줄 잘림)
 
-## 안 한 것(의도)
-- [ ] 일정을 나중에 고치는 길 — 지금은 입실 처리를 적용취소하고 다시 짠다. 실제 사례가 오면 만든다
-- [ ] 입주월 일할 — 첫 달을 입주일부터 한 달로 받는 구조라 필요가 없다
+## 안 한 것 (의도)
+- 폼 순서 재배치(UX/UI 제안) 보류
+- 퇴실 처리 화면에서 단기 요금 청구 확정(서버 세 번째 문) 보류
+- 미납 집계 CHECKED_OUT 제외 구멍 별건

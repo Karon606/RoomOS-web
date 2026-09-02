@@ -5061,3 +5061,34 @@ muteHomeAlert/unmuteHomeAlert 가 배열도 받는다. 끈 영수증은 홈에�
 **남은 것.** 실기 확인(끈 알림 그룹·영수증 합성 줄·변수 허브 dirty 확인·다크 미리보기·프리즘 부제·
 시트 safe-area). 범례가 320px 에서 두 줄(336px, 깨지지는 않음). alertMutes 의 receipt: 키는
 정리 정책이 없어 홈 '끈' 건수가 누적된다(오더 밖, 보고만).
+
+## 2026-09-02 (낮) - 퇴실 정산 신고 3건: 갈래 정본화·환불액 직접 입력·사유 승계 (c52b2cf9 · cbac5f8b)
+
+**신고.** ① 퇴실 예정 때 적은 사유가 퇴실 처리 폼에 안 옴. ② 506호 문정현 님 단기 자격 중도
+퇴실인데 퇴실 처리 화면이 위약금 갈래 고정이라 79,800원 환불 확정. ③ 퇴실 정산 위젯 편집 칸이
+청구액이라 환불액을 직접 못 침. 5단계(원문·분류·패널·계획·승인) 뒤 시공.
+
+**클래스.** 갈래 판단이 위젯 한 곳에만 있었다. `lib/checkoutSettlement.ts` 로 뽑아(SettlementPick
+넷, defaultSettlementPick 단기 우선, settlementAmounts 차액 미청구, 라벨·전제문·캡션 정본) 정본
+섹션과 위젯이 같이 쓴다. 확인창은 `confirmRentSettlement` 한 벌(계산값과 다름·환불 0·전액, 셋 다
+caution, 보증금 반환액과 총 환불액 본문). 위젯은 환불액 칸 + 적용 금액 읽기전용 파생, 선납 0 이면
+종전 칸. 사유는 `lib/checkoutReason.ts` 판정을 서버 checkoutTenant·프리즘 미니폼·수정 폼이
+같이 써서 이어받는다(연장 복귀 행을 만나면 멈춤, getTenants 조회 where 확장).
+
+**감지망.** test-money(단기 상한·할인가·두 갈래 폭·반올림 역전·기본값), test-checkout-reason 14,
+check-rent-settlement-branch(축 ⓑ 캡션·전제문 호출 검사, 역주입 exit 1), check-checkout-side-effects
+축 ⓞ(역주입 4종), integrityAudit 규칙 6 refund-over-short-stay(실데이터 506호·413호)·규칙 7
+checkout-reason-dropped(5건), dryRun + inspect-integrity-audit. 웹디자이너 패스 14항 반영(라벨
+'단기'·'환불 없음' 320px 실측, 환불 없음 읽기전용 0원 박스, Modal dirty 에 정산 섹션 포함).
+
+**게이트.** tsc 0 · verify:fast 0 · 빌드 0 · eslint 신규 0(기준선 대조). 두 커밋으로 분리해 푸시.
+노트 [[domain-checkout-settlement]] 신설, open-checkout-paths-split·short-stay-policy 후속 절.
+
+**운영자 몫(미보고 포함).** 506호 프리즘 '적용취소' 뒤 단기(환불 0) 재확정과 결제선생 79,800
+부분취소 여부. 413호 정은숙 같은 클래스(112,200 확정, 단기 기준 0) 수동 환불액 결정(신고 3 첫 줄
+잘림 되묻기). 규칙 7 검출 5건 사유 기록. 사람이 안 만진 계산값 0 도 caution 창을 띄울지.
+
+**남긴 것.** 환불 스냅샷에 갈래 기록, 퇴실 처리 화면에서 단기 요금 청구 확정(서버 세 번째 문),
+폼 순서 재배치, 미납 집계 CHECKED_OUT 제외 구멍, `.num` 대 `tabular-nums`·홈 캡션 10.5/11px·
+세그먼트 트랙 색 드리프트. 청소 완료 폼 '받아둔 청소비로 부담' 체크와 캡션이 헷갈린다는 운영자
+질문은 답만 하고 수정은 5단계로 올릴지 대기.
