@@ -74,7 +74,9 @@ function docNameStyleOf(data: ResidenceCertData): DocNameStyle {
   return resolveDocNameStyle({
     saved: asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle),
     siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    tenant: data.tenantDocNameStyle,
     nationality: data.tenantNationality,
+    hasForeignRegNo: data.tenantHasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
   })
 }

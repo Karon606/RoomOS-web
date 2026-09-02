@@ -24,11 +24,11 @@
 - [ ] 내국인 93명 화면 무변화 대조
 
 ## 4 feat(발급): 세 서류가 사람 단위 값을 읽는다
-- [ ] lib/contractData · residence-cert/actions · rent-receipt/actions 에 tenant 값 전달
-- [ ] 세 View 초기값만 달라지고 기존 셀렉트·되묻기는 그대로
+- [x] lib/contractData · residence-cert/actions · rent-receipt/actions 에 tenant 값 전달
+- [x] 세 View 초기값만 달라지고 기존 셀렉트·되묻기는 그대로
 
 ## 5 chore(감지망): 두 축 침범 금지
-- [ ] scripts/check-doc-name-axis.mjs(서류 경로에 displayNameStyle 금지, 카드 경로에 docNameStyle
+- [x] scripts/check-doc-name-axis.mjs(서류 경로에 displayNameStyle 금지, 카드 경로에 docNameStyle
       금지, resolveDocNameStyle 호출부 전원이 tenant 축을 넘김) + verify:fast + 역주입
 
 ## 게이트 (커밋마다)

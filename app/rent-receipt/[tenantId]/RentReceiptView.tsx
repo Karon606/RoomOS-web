@@ -84,7 +84,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 이름이 찍혔다(2026-08-31 운영자 실기, 실거주 확인서와 같은 클래스).
   const [f, setF] = useState<Fields>(() => buildInitial(data, resolveDocNameStyle({
     siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    tenant: data.tenantDocNameStyle,
     nationality: data.nationality,
+    hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
   })))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
@@ -101,7 +103,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 앞 서류가 있으면 그것, 없고 외국인이면 영문, 나머지는 한글(lib/documentName 정본).
   const [nameStyle, setNameStyle] = useState<DocNameStyle>(() => resolveDocNameStyle({
     siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    tenant: data.tenantDocNameStyle,
     nationality: data.nationality,
+    hasForeignRegNo: data.hasForeignRegNo,
     available: nameStyles,
   }))
   const applyNameStyle = (next: DocNameStyle) => {
@@ -133,7 +137,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
   const [initialSnapshot] = useState(() => JSON.stringify({ ...buildInitial(data, resolveDocNameStyle({
     siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
+    tenant: data.tenantDocNameStyle,
     nationality: data.nationality,
+    hasForeignRegNo: data.hasForeignRegNo,
     available: docNameStyles(nameSourceOf(data)),
   })), issueDate: kstYmdStr() }))
   const dirty = JSON.stringify({ ...f, issueDate }) !== initialSnapshot

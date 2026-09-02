@@ -26,6 +26,10 @@ export type RentReceiptData = {
   // 표기 기본값을 정하는 두 축(lib/documentName resolveDocNameStyle).
   // 국적은 종이에 안 찍힌다 — 외국인이면 영문이 기본이라는 판정에만 쓴다.
   nationality: string | null
+  /** 외국인등록번호 보유 — 존재 비트만. 국적과 OR 로 '외국인이면 영문' 판정에 든다. */
+  hasForeignRegNo: boolean
+  /** 고객 정보에 못박아 둔 사람 단위 표기. 형제 서류보다는 약하고 국적 추정보다는 세다. */
+  tenantDocNameStyle: DocNameStyle | null
   /** 이 계약에서 앞서 쓴 표기. 계약이 없으면 null 이라 국적 기본값만 선다. */
   lastNameStyle: DocNameStyle | null
   room: string            // 호실
@@ -178,6 +182,8 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
       englishName: tenant.englishName,
     nativeName: tenant.nativeName,
       nationality: tenant.nationality,
+    hasForeignRegNo: !!tenant.foreignRegNoEnc,
+    tenantDocNameStyle: asDocNameStyle(tenant.docNameStyle) ?? null,
       lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
       room: fmtRoom(lease?.room?.roomNo),
       period: notMovedIn ? '' : `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
@@ -278,6 +284,8 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     englishName: tenant.englishName,
     nativeName: tenant.nativeName,
     nationality: tenant.nationality,
+    hasForeignRegNo: !!tenant.foreignRegNoEnc,
+    tenantDocNameStyle: asDocNameStyle(tenant.docNameStyle) ?? null,
     lastNameStyle: asDocNameStyle(lease?.lastDocNameStyle) ?? null,
     room: fmtRoom(lease?.room?.roomNo),
     period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,

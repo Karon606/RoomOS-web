@@ -304,7 +304,9 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     : resolveDocNameStyle({
       saved: fields?.nameStyle,
       siblings: inherited ? [inherited] : [],
+      tenant: asDocNameStyle(tenant.docNameStyle),
       nationality: tenant.nationality,
+      hasForeignRegNo: !!tenant.foreignRegNoEnc,
       available: docNameStyles(nameStyleSource),
     })
 
