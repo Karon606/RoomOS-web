@@ -25,6 +25,7 @@ import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
 // 보증금 수납 수단 정본 — 이름 없는 부분집합을 각 화면이 베끼면 그 자리들이 갈린다.
 import { MANUAL_PAY_METHODS as PAY_METHODS } from '@/lib/paymentMethods'
+import { inputCls, inputErrCls, labelCls, formBoxCls } from './panelFormStyles'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
 type Refund = Awaited<ReturnType<typeof getDepositRefundForLease>>
@@ -297,29 +298,13 @@ export function DepositStatusPanel({
   // 종전 py-1.5 는 실측 34px 로 §12 높이(40 / 모바일 44)에도, §09 터치 타깃 44px 에도 못 미쳤다.
   // 밀집 예외로 볼 근거가 없다 — §12 가 명문화한 유일한 높이 예외는 인라인 검색 36px 이고,
   // 같은 파일의 형제(DepositSection 행 액션)는 이미 같은 이유로 RowActionBtn 정본으로 갈아탔다.
-  // min-h 만으로 44/40 을 만드는 문법은 inventory/assets 의 DATE_FIELD_CLS 가 쓰는 검증된 자다
-  // (inline-flex 를 얹으면 DatePicker 트리거의 truncate 가 죽는다).
-  // 포커스는 focus 가 아니라 focus-visible 이다 — 트리거가 button 이라 손가락으로 열고 닫은 뒤에도
-  // 링이 남는다. 보더 색과 링을 둘 다 거는 이유는 링(rgba 코랄 12%)이 다크 배경에서 안 보이기 때문이다.
-  // 보더 **색**은 베이스에 넣지 않는다. 같은 속성 유틸리티 둘을 한 className 에 나란히 두면
-  // 승자가 문자열 순서가 아니라 스타일시트 순서로 정해진다 — 빌드된 CSS 에서 warm-border 가
-  // tc 보다 뒤에 있어 오류 보더가 **항상** 졌다(§12 에러 표기가 죽은 코드였다).
-  const inputBase = 'w-full bg-[var(--canvas)] border rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
-  const inputCls = `${inputBase} border-[var(--warm-border)]`
-  const inputErrCls = `${inputBase} border-[var(--tc)]`
-  // 폼 라벨 정본(§12 — 12px / 500 / --ink-s). 종전 10.5px --warm-muted 는 크기·굵기·색 셋 다 어긋났다.
-  const labelCls = 'text-xs font-medium text-[var(--warm-mid)]'
+  // 입력·라벨 스타일은 panelFormStyles 정본이다 — 아래 이용료 정산 카드와 같은 문자열을 쓴다.
   // **세로 스택이다. 2열을 뷰포트 미디어 질의로 켜면 안 된다.**
   // 이 패널은 폭이 잠긴 모달 안에 산다(EntityModal width="sm" = max-w-sm 384px, 바깥 여백 없음).
   // 그래서 뷰포트가 아무리 넓어져도 칸은 넓어지지 않는다 — 384 − 40(body px-5) − 24(패널 px-3)
   // − 20(폼박스 px-2.5) = 300, 2열이면 글자 자리 125px 인데 '2026년 12월 30일'은 130~134px 다.
   // 즉 미디어 질의는 **넓은 기기에서만** 켜져서 거기서만 날짜를 자른다. 30일이 3일로 읽힌다.
   const gridCls = 'space-y-2'
-  // 인라인 폼 껍데기 — 표면을 한 단 올린다. 종전 --canvas 는 안의 입력과 같은 토큰이라
-  // 다크에서 페이지·컨테이너·입력이 셋 다 #000 이고 보더 대비가 1.11:1 이었다(폼이 안 보인다).
-  // --cream-soft 는 토큰 쌍이 갖춰져 있어(라이트 #f5ede0 · 다크 #261C14) 양 모드에서 산다.
-  // 부수 효과로 라벨(--warm-mid) 대비가 4.12:1 에서 4.74:1 로 올라 §28 본문 기준을 넘긴다.
-  const formBoxCls = 'space-y-2 rounded-lg border border-[var(--warm-border)] bg-[var(--cream-soft)] px-2.5 py-2'
 
   return (
     <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">

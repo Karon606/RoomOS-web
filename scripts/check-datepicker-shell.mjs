@@ -27,7 +27,7 @@
 //
 // 실행: node scripts/check-datepicker-shell.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 
 const ROOTS = ['app', 'components', 'lib']
 const violations = []
@@ -110,7 +110,7 @@ function propValue(el, prop) {
  * 객체가 흔해서, 첫 줄만 집으면 `dense` 만 읽고 껍데기를 못 본 채 위반으로 신고한다(실제로 겪었다).
  * 선언 들여쓰기보다 깊거나 이어짐 기호로 시작하는 줄까지를 한 선언으로 본다.
  */
-function resolve(expr, src, seen = new Set(), depth = 0) {
+function resolve(expr, src, seen = new Set(), depth = 0, file = null) {
   // **한 단계만 펼치면 안 된다.** 이 저장소의 껍데기 상수는 상수를 또 문다
   // (`const inputCls = `${inputBase} border-…`` 처럼). 한 겹만 보면 inputBase 안의 배경을
   // 못 읽고 멀쩡한 자리를 위반으로 신고한다(2026-08-24 오탐 3건, DepositStatusPanel).
@@ -121,10 +121,12 @@ function resolve(expr, src, seen = new Set(), depth = 0) {
   for (const name of new Set(expr.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])) {
     if (seen.has(name)) continue
     seen.add(name)
-    const head = new RegExp(`^(\\s*)(?:const|let)\\s+${name}\\b[^=]*=`)
+    const head = new RegExp(`^(\\s*)(?:export\\s+)?(?:const|let)\\s+${name}\\b[^=]*=`)
+    let found = false
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(head)
       if (!m) continue
+      found = true
       const indent = m[1].length
       out += ' ' + lines[i]
       for (let j = i + 1; j < lines.length && j < i + 40; j++) {
@@ -137,12 +139,31 @@ function resolve(expr, src, seen = new Set(), depth = 0) {
       }
       break
     }
+    // 같은 파일에 선언이 없으면 상대 경로 import 를 따라간다. 형제 카드가 같은 껍데기를 쓰도록
+    // 상수를 정본 파일로 옮기면(panelFormStyles.ts, 2026-09-02) 이 파일에는 이름만 남는다 —
+    // 그때 못 따라가면 멀쩡한 자리를 위반으로 신고한다. 펼치는 일은 그 파일 안에서 이어 간다.
+    if (!found && file) {
+      const imp = importSourceOf(src, name, file)
+      if (imp) out += ' ' + resolve(name, readFileSync(imp, 'utf8'), new Set([...seen].filter(n => n !== name)), depth + 1, imp)
+    }
   }
   // 붙인 선언 안에 아직 안 펼친 이름이 있으면 한 겹 더 들어간다.
   const again = new Set(out.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])
   const pending = [...again].filter(n => !seen.has(n))
   if (pending.length === 0) return out
-  return resolve(out, src, seen, depth + 1)
+  return resolve(out, src, seen, depth + 1, file)
+}
+
+/** `import { name } from './x'` 의 './x' 를 이 파일 기준 실제 경로로 — 상대 경로만 따라간다(.ts/.tsx). */
+function importSourceOf(src, name, file) {
+  for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+    if (!m[1].split(',').map(x => x.trim().split(/\s+as\s+/).pop()).includes(name)) continue
+    const base = join(dirname(file), m[2])
+    for (const cand of [base, `${base}.ts`, `${base}.tsx`]) {
+      try { if (statSync(cand).isFile()) return cand } catch { /* 다음 후보 */ }
+    }
+  }
+  return null
 }
 
 const files = ROOTS.flatMap(r => walk(r))
@@ -164,9 +185,9 @@ for (const file of files) {
       violations.push(`${file}:${line} DatePicker 에 껍데기가 전혀 없다 — 배경·보더 없는 맨글자로 그려진다(신고 c2ab5b83)`)
       continue
     }
-    const styleSrc = sty === null ? '' : resolve(sty, src)
+    const styleSrc = sty === null ? '' : resolve(sty, src, new Set(), 0, file)
     for (const branch of branches(cls ?? '')) {
-      const resolved = resolve(branch, src) + ' ' + styleSrc
+      const resolved = resolve(branch, src, new Set(), 0, file) + ' ' + styleSrc
       const hasBg = /\bbg-/.test(resolved) || /background\s*:/.test(resolved)
       const hasBorder = /\bborder(?:-|\b)/.test(resolved)
       const hasUnderline = /\bunderline\b|text-decoration/.test(resolved)   // 인라인 편집형 예외
