@@ -120,3 +120,65 @@ export function settlementPickOptions(hasShortStay: boolean, withNone: boolean):
   const picks: SettlementPick[] = ['legal', 'goodwill', ...(hasShortStay ? ['shortStay' as const] : []), ...(withNone ? ['none' as const] : [])]
   return picks.map(value => ({ value, label: SETTLEMENT_PICK_LABEL[value] }))
 }
+
+/**
+ * 퇴실 처리 세 화면(홈 알림·프리즘·입주자 수정)이 정본 섹션에서 부모로 올리는 정산 값.
+ * null 이면 정산할 것이 없다는 뜻이고 섹션 자체가 안 선다.
+ *
+ * `max`(그 기간 결제액)는 부모가 저장 버튼을 막는 근거다. 초과 판정을 섹션 안에만 두면 부모는
+ * 못 막고, 부모가 결제액을 따로 조회하면 두 벌이 된다. `pick`·`suggested`·`futurePrepaid` 는
+ * 확인창(rentSettlementConfirmSpec)의 근거다.
+ */
+export type RentSettlementValue = { amount: number; max: number; pick: SettlementPick; suggested: number; futurePrepaid: number }
+
+export type RentSettlementConfirmSpec = { title: string; message: string; confirmLabel: string }
+
+/**
+ * 확정 직전 확인창의 문장. null 이면 묻지 않는다. 화면이 confirmDialog 로 띄우고, 회귀 테스트가
+ * 여기 문장을 직접 본다.
+ *
+ * 묻는 조건은 셋이다. 계산값과 다른 금액, 환불 0, 지낸 달 사용분까지 돌려주는 전액.
+ * '전액'은 `amount >= max` 만으로는 모자란다. '환불 없음'이 뒤 달 선납을 돌려주게 된 뒤(2026-09-02)
+ * 지낸 달 받은 돈이 0 인 계약은 기본값이 선납 전부(= max)라서, 그 식으로는 기본값 그대로 확정하는
+ * 사람에게 '사용분까지 모두 돌려주는 금액입니다'가 떴다. 사용분은 뒤 달 선납 밖에 있으니
+ * `amount > futurePrepaid` 가 문장의 뜻이다. 그러면 기본값 그대로는 종전 규칙대로 안 묻는다(2026-09-03).
+ *
+ * `depositReturn` 은 같은 확정에 실리는 보증금 반환액이다. '나중에 반환'처럼 아직 정하지 않았으면
+ * null 을 넘긴다. 그때는 이용료만 말한다.
+ */
+export function rentSettlementConfirmSpec(rent: RentSettlementValue | null, depositReturn: number | null): RentSettlementConfirmSpec | null {
+  if (!rent) return null
+  const { amount, max, pick, suggested, futurePrepaid } = rent
+  const full = amount > 0 && amount >= max && amount > futurePrepaid
+  const differs = amount !== suggested
+  if (!full && !differs && amount > 0) return null
+
+  // 두 갈래가 같은 모양이다. 제목은 이용료 한 금액, 보증금 반환액과 총 환불액은 본문(§14 위계,
+  // 제목 16/700 에 두 금액을 실으면 375px 에서 두 줄을 꽉 채운다). 취소는 늘 무변경이라 기본 라벨.
+  const depositPart = depositReturn != null
+    ? ` 보증금 반환 ${fmtWon(depositReturn)} · 총 환불액 ${fmtWon(amount + depositReturn)}.`
+    : ''
+
+  // 전액 환불(사용분·위약금까지 반환)은 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다.
+  // 이 화면에서 가장 센 확정이라 caution 이다. 계산값과 조금 다른 갈래보다 약하면 위험도가 뒤집힌다.
+  if (full) {
+    return {
+      title: `이용료 ${fmtWon(amount)}을 전액 환불할까요?`,
+      message: `사용분까지 모두 돌려주는 금액입니다.${depositPart}`,
+      confirmLabel: '전액 환불',
+    }
+  }
+
+  const message = amount === 0
+    ? (pick === 'none'
+      ? `결제액 ${fmtWon(max)}은 회사 귀속으로 남고 수납 기록은 바뀌지 않습니다.`
+      : suggested === 0
+      ? `계산값이 0원이라 돌려줄 이용료가 없습니다. 수납 기록은 바뀌지 않습니다.`
+      : `계산값 ${fmtWon(suggested)} 대신 0원입니다. 수납 기록은 바뀌지 않습니다.`)
+    : `계산값 ${fmtWon(suggested)}과 다른 금액입니다.`
+  return {
+    title: amount === 0 ? '이용료를 환불하지 않고 처리할까요?' : `이용료 ${fmtWon(amount)}을 환불할까요?`,
+    message: `${message}${depositPart}`,
+    confirmLabel: '퇴실 처리',
+  }
+}

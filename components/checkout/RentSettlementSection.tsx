@@ -24,7 +24,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { LEGAL_PENALTY_PCT, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 import {
   settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor,
-  type SettlementPick, type ShortStayQuoteLite,
+  type SettlementPick, type ShortStayQuoteLite, type RentSettlementValue,
 } from '@/lib/checkoutSettlement'
 
 type Preview = {
@@ -52,15 +52,10 @@ function NotApplicable({ reason }: { reason: string }) {
 }
 
 /**
- * 부모가 쥐는 값. null 이면 정산할 것이 없다는 뜻이고 섹션 자체가 안 선다.
- *
- * `max`(그 기간 결제액)를 함께 올리는 이유는 부모가 **저장 버튼을 막아야 하기 때문**이다.
- * 초과 판정을 컴포넌트 안에만 두면 부모는 못 막고, 부모가 결제액을 따로 조회하면 두 벌이 된다.
- *
- * `pick`·`suggested` 는 확인창(confirmRentSettlement)의 근거다 — 계산값과 다른 금액이나 환불 0 을
- * 확정할 때 세 화면이 같은 문장으로 한 번 더 묻는다.
+ * 부모가 쥐는 값의 정의는 lib/checkoutSettlement 로 갔다(확인창 판정 rentSettlementConfirmSpec 이
+ * 같은 파일에서 이 값을 읽고, 회귀 테스트가 그 함수를 직접 본다). 세 화면은 종전처럼 여기서 가져간다.
  */
-export type RentSettlementValue = { amount: number; max: number; pick: SettlementPick; suggested: number }
+export type { RentSettlementValue }
 
 type PreviewResponse = Awaited<ReturnType<typeof previewCheckoutRefund>>
 type OkResponse = Extract<PreviewResponse, { ok: true }>
@@ -82,7 +77,7 @@ function suggestedFor(p: Basis, pick: SettlementPick): number {
 
 function valueFor(p: Basis, pick: SettlementPick): RentSettlementValue {
   const suggested = suggestedFor(p, pick)
-  return { amount: suggested, max: p.prepaidAmount, pick, suggested }
+  return { amount: suggested, max: p.prepaidAmount, pick, suggested, futurePrepaid: p.refund.futurePrepaid }
 }
 
 const parsePct = (s: string): number | null =>

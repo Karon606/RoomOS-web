@@ -15,10 +15,10 @@
 - [x] 웹디자이너 패스
 
 ## A3 fix(퇴실정산): 전액 환불 확인창은 지낸 달 사용분까지 돌려줄 때만 뜬다
-- [ ] RentSettlementValue 를 lib/checkoutSettlement 로, futurePrepaid 필드, 섹션 재수출·valueFor 채움
-- [ ] rentSettlementConfirmSpec 순수 함수, confirmRentSettlement 래퍼화(문장 무변경)
-- [ ] test-money 7 케이스
-- [ ] check-rent-settlement-branch ⓔ 확장 + 역주입
+- [x] RentSettlementValue 를 lib/checkoutSettlement 로, futurePrepaid 필드, 섹션 재수출·valueFor 채움
+- [x] rentSettlementConfirmSpec 순수 함수, confirmRentSettlement 래퍼화(문장 무변경)
+- [x] test-money 7 케이스
+- [x] check-rent-settlement-branch ⓔ 확장 + 역주입
 
 ## A4 fix(퇴실정산): 환불 확정 계약의 복귀·단기 연장은 환불 적용취소부터
 - [ ] updateTenant 1177 · applyStatusTransition 3405 · syncShortStayCharge 5944 가드(같은 문장)

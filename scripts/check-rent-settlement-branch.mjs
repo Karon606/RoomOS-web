@@ -11,7 +11,10 @@
 //   ⓒ 정본 섹션이 서버의 defaultPick 을 실제로 반영한다 — 받아만 두고 'legal' 로 시작하면 종전과 같다.
 //   ⓓ 이용료 환불을 확정하는 세 화면이 전부 공용 확인창(confirmRentSettlement)을 부른다.
 //      한 곳만 빠지면 환불 0·계산값과 다른 금액이 그 화면에서 조용히 확정된다.
-//   ⓔ 정본 밖에 '전액 환불' 확인 문장을 따로 두지 않는다. 두 벌이 되면 언젠가 갈린다.
+//   ⓔ 정본 밖에 '전액 환불' 확인 문장을 따로 두지 않는다. 두 벌이 되면 언젠가 갈린다. 문장과 판정은
+//      lib 의 rentSettlementConfirmSpec 이 쥐고 confirmRentSettlement 는 띄우기만 한다(2026-09-03). '전액'
+//      판정은 amount > futurePrepaid 를 봐야 한다. 안 보면 지낸 달 받은 돈이 0 인 계약의 '환불 없음'
+//      기본값이 '전액 환불할까요'로 뜬다. 섹션의 valueFor 가 futurePrepaid 를 안 채우면 판정이 0 과 비교된다.
 //   ⓕ '환불 없음' 갈래는 지낸 달 이용료만 안 돌려주고 뒤 달 선납(futurePrepaid)은 돌려준다(운영자 정의 2026-09-02).
 //      settlementAmounts 의 none 분기가 선납을 안 보면 이용하지 않은 달의 돈까지 회사에 남는다.
 //   ⓖ 기본 갈래는 자리마다 다르다. 퇴실 처리 화면(서버 미리보기)은 '환불 없음', 위젯은 단기 유무로 정한다.
@@ -86,6 +89,20 @@ for (const file of [SECTION, WIDGET]) {
     const src = stripComments(read(file))
     if (/이용료를 전액 환불할까요/.test(src)) violations.push(`${file} — ${name} 에 '전액 환불' 확인 문장이 따로 있다. confirmRentSettlement 한 벌로 묻는다.`)
   }
+
+  // ⓔ 문장과 판정은 lib 의 순수 함수에, 래퍼는 띄우기만.
+  const CONFIRM = 'components/checkout/confirmRentSettlement.ts'
+  const confirmSrc = stripComments(read(CONFIRM))
+  if (/전액 환불할까요/.test(confirmSrc)) violations.push(`${CONFIRM} — 확인 문장이 래퍼에 있다. lib/checkoutSettlement 의 rentSettlementConfirmSpec 이 쥔다(회귀 테스트가 문장을 본다).`)
+  if (!/rentSettlementConfirmSpec\(/.test(confirmSrc)) violations.push(`${CONFIRM} — rentSettlementConfirmSpec 을 안 부른다. 판정이 lib 정본과 갈린다.`)
+  const libSrc = stripComments(read('lib/checkoutSettlement.ts'))
+  const full = libSrc.match(/const full = [^\n]*/)
+  if (!full) violations.push(`lib/checkoutSettlement.ts — rentSettlementConfirmSpec 의 'const full = ' 판정 줄을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  else if (!/futurePrepaid/.test(full[0])) violations.push(`lib/checkoutSettlement.ts — '전액' 판정이 futurePrepaid 를 안 본다. 지낸 달 받은 돈 0 인 계약의 '환불 없음' 기본값이 전액 환불 확인창으로 뜬다.`)
+  const sectionSrc = stripComments(read(SECTION))
+  const valueFor = sectionSrc.match(/function valueFor[\s\S]*?\n\}\n/)
+  if (!valueFor) violations.push(`${SECTION} — valueFor 를 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  else if (!/futurePrepaid:\s*p\.refund\.futurePrepaid/.test(valueFor[0])) violations.push(`${SECTION} — valueFor 가 futurePrepaid 를 서버 값으로 안 채운다. 확인창 판정이 0 과 비교된다.`)
 }
 
 // ⓕ 정본의 none 분기가 뒤 달 선납을 돌려주는가.
@@ -157,4 +174,4 @@ if (violations.length) {
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금')
+console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·확인창 판정 정본·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금')

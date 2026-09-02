@@ -21,7 +21,7 @@ import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNot
 import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
-import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '../lib/checkoutSettlement'
+import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL, rentSettlementConfirmSpec, type SettlementPick } from '../lib/checkoutSettlement'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -1013,6 +1013,34 @@ const RENT = 300000
   eq('반환 기준액: 실수납 0 + 인수 후면 정산할 돈 없음', depositBasisOf({ received: 0, contract: 300000, preAcquisition: false }).basis, 0)
   eq('반환 기준액: 계약도 0 이면 none', depositBasisOf({ received: 0, contract: 0, preAcquisition: true }).source, 'none')
   eq('반환 대기 유예: 14일', DEPOSIT_RETURN_GRACE_DAYS, 14)
+}
+
+// ── 이용료 환불 확인창 판정 (2026-09-03) ──────────────────────────────────
+//
+// '환불 없음'이 뒤 달 선납을 돌려주게 된 뒤, 지낸 달 받은 돈이 0 인 계약(prepaid === futurePrepaid)은
+// 기본값이 선납 전부와 같아져 `amount >= max` 만 보는 판정이 '사용분까지 모두 돌려주는 금액'이라고
+// 물었다. 전액의 뜻은 사용분까지 돌려주는 것이니 `amount > futurePrepaid` 가 판정에 들어간다.
+// 기본값 그대로면 종전 규칙대로 안 묻고, 손으로 올린 금액은 종전 문장 그대로 묻는다.
+{
+  const v = (amount: number, max: number, pick: SettlementPick, suggested: number, futurePrepaid: number) => ({ amount, max, pick, suggested, futurePrepaid })
+  // 506호: 위약금 갈래 계산값 그대로. 뒤 달 선납 없음.
+  eq('확인창: 계산값 그대로면 안 묻는다', rentSettlementConfirmSpec(v(79800, 380000, 'legal', 79800, 0), null), null)
+  // 두 달 선납 680,000 중 뒤 달 340,000 만 돌려주는 '환불 없음' 기본값.
+  eq('확인창: 환불 없음 기본값(뒤 달 선납만)은 안 묻는다', rentSettlementConfirmSpec(v(340000, 680000, 'none', 340000, 340000), null), null)
+  // 지낸 달 받은 돈 0. 기본값이 선납 전부(= max)와 같지만 사용분은 안 돌려주므로 전액이 아니다.
+  eq('확인창: 지낸 달 받은 돈 0 이면 기본값 = max 라도 안 묻는다', rentSettlementConfirmSpec(v(340000, 340000, 'none', 340000, 340000), null), null)
+  // 같은 두 달 선납에서 손으로 680,000 을 넣으면 사용분까지 돌려주는 전액이다.
+  const full = rentSettlementConfirmSpec(v(680000, 680000, 'none', 340000, 340000), null)!
+  eq('확인창: 사용분까지 돌려주면 전액 창', [full.title, full.confirmLabel], ['이용료 680,000원을 전액 환불할까요?', '전액 환불'])
+  // 지낸 달 받은 돈 0 인 계약에서 위약금 갈래 계산값 200,000 을 손으로 340,000 으로. 전액이 아니라 '다른 금액'이다.
+  const differs = rentSettlementConfirmSpec(v(340000, 340000, 'legal', 200000, 340000), null)!
+  eq('확인창: 선납 전부라도 사용분이 없으면 다른 금액 창', [differs.title, differs.message], ['이용료 340,000원을 환불할까요?', '계산값 200,000원과 다른 금액입니다.'])
+  // 환불 0 확정은 갈래와 무관하게 묻는다.
+  const zero = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), null)!
+  eq('확인창: 환불 0 은 묻는다', [zero.title, zero.message.includes('회사 귀속')], ['이용료를 환불하지 않고 처리할까요?', true])
+  // 보증금 반환액이 같이 실리면 본문 꼬리에 총 환불액.
+  const withDeposit = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), 500000)!
+  eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith(' 보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
