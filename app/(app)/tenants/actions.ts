@@ -30,7 +30,7 @@ import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoChecko
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
-import { defaultSettlementPick, type SettlementPick } from '@/lib/checkoutSettlement'
+import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
@@ -4560,7 +4560,9 @@ export async function previewCheckoutRefund(
 export type RentRefundTaxNotice = RefundTaxNotice
 
 export type RentRefundResult =
-  | { ok: true; refunded: number; companyKeeps: number; taxNotice?: RentRefundTaxNotice }
+  // noop 은 환불 0 을 확정했는데 이 계약에 '환불 미처리'가 없어 남길 스냅샷이 없었다는 뜻.
+  // 화면은 성공으로 다루되 "기록했다"고 말하지 않는다.
+  | { ok: true; refunded: number; companyKeeps: number; taxNotice?: RentRefundTaxNotice; noop?: boolean }
   | { ok: false; error: string }
 
 // 환불 스냅샷 — checkoutProrationUndo JSON 안에 refund 키로 영속(적대검증 P1-2·P2).
@@ -4595,6 +4597,14 @@ export async function finalizeRentRefund(input: {
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     // 단기는 주 단위 계약이라 일할 환불 정책 밖(운영자 결정 2026-07-20 범위 제외) — 수납 기록에서 직접 조정
     if (lease.isShortTerm) return { ok: false, error: '단기 계약의 이용료 환불은 수납 기록에서 직접 조정해 주세요(주 단위 계약이라 일할 환불 정책 밖).' }
+    // 멱등 가드 1. 스냅샷이 살아 있으면 이 계약의 환불은 이미 확정된 것이다. 아래의 record 메모 가드는
+    // 재기록이 있는 달만 잡아서, 회사 귀속 0 인 전액 환불과 record 를 안 만지는 환불 없음(0 확정)을 못 본다.
+    // 접두어 '이미 환불 처리된' 은 세 화면과 checkoutWithDepositRefund 가 멱등 재시도 판단에 쓴다. 바꾸지 말 것.
+    const undoBase = (lease.checkoutProrationUndo && typeof lease.checkoutProrationUndo === 'object')
+      ? lease.checkoutProrationUndo as Record<string, unknown> : {}
+    if (undoBase.refund && typeof undoBase.refund === 'object') {
+      return { ok: false, error: '이미 환불 처리된 달입니다. 되돌리려면 환불 적용취소 후 다시 진행해 주세요.' }
+    }
     // 정산 귀속월 — 미리보기(previewCheckoutRefund)와 **같은 달**을 봐야 한다.
     // 어긋나면 미리보기는 전월 선납으로 환불액을 계산하고 확정은 퇴실월 record 를 지운다.
     const refundPeriod = settlementPeriodFor({ dueDay: lease.dueDay, moveInDate: lease.moveInDate }, input.moveOutYmd)
@@ -4636,8 +4646,55 @@ export async function finalizeRentRefund(input: {
 
     const prepaid = records.reduce((s, r) => s + r.actualAmount, 0)
     const refundAmt = Math.round(input.rentRefundAmount)
-    if (!Number.isFinite(refundAmt) || refundAmt <= 0) return { ok: false, error: '환불 금액이 올바르지 않습니다.' }
+    if (!Number.isFinite(refundAmt) || refundAmt < 0) return { ok: false, error: '환불 금액이 올바르지 않습니다.' }
     if (refundAmt > prepaid) return { ok: false, error: `환불 금액이 그 기간 수납액(${prepaid.toLocaleString()}원)을 넘을 수 없습니다.` }
+
+    /**
+     * 환불 0 은 '환불 없음' 확정이다(2026-09-02, 운영자 결정). 종전에는 거부해서 퇴실 처리 세 화면이
+     * 0 이면 서버에 아무것도 안 실었고, 그래서 수납 정보 카드의 '환불 미처리'가 "아직 안 돌려줌"과
+     * "안 돌려주기로 함"을 영영 구분 못 했다.
+     *
+     * 0 갈래는 record 를 한 건도 안 만진다. 받은 돈이 그대로 매출이니 지울 것도 재기록할 것도 없다.
+     * 대신 그 달 청구 확정(checkoutProratedAmount)을 받은 돈으로 올려 '받은 돈 > 확정 청구' 를 닫고,
+     * refunded 0 스냅샷을 남겨 카드가 '환불 없음'으로 서고 적용취소로 되돌아갈 수 있게 한다.
+     *
+     * 아직 지내지 않은 뒤 달 선납(later)이 있으면 0 으로 못 닫는다. '환불 없음'의 뜻은 지낸 달
+     * 이용료를 안 돌려주는 것이지 이용하지 않은 달까지 갖는 게 아니다(운영자 정의). 그 계약은
+     * 환불 기록(>0)으로만 닫힌다.
+     *
+     * '환불 미처리'가 애초에 없는 계약(청구 확정이 없거나 이미 받은 돈 이상)은 남길 스냅샷이 없다.
+     * 그때는 noop 성공이다. 퇴실 처리 화면이 기본 갈래 '환불 없음' 그대로 확정하는 보통 경로다.
+     */
+    if (refundAmt === 0) {
+      const pend = await rentRefundPendingFor(input.leaseTermId, mon)
+      if (pend.later > 0) {
+        return { ok: false, error: `아직 지내지 않은 ${futureMonthsLabel(pend.laterMonths)} 선납 ${pend.later.toLocaleString()}원은 이용하지 않은 달이라 환불 없음으로 확정할 수 없습니다. 환불 기록으로 처리해 주세요.` }
+      }
+      const keeps = lease.checkoutProratedMonth === mon ? lease.checkoutProratedAmount : null
+      if (keeps == null || pend.paid <= keeps) return { ok: true, refunded: 0, companyKeeps: pend.paid, noop: true }
+      const snapshot: RentRefundSnapshot = {
+        at: new Date().toISOString(), month: mon, refunded: 0, prepaid: pend.paid,
+        newRecordId: null, deletedRecordIds: [],
+        prevProration: { amount: keeps, month: mon },
+      }
+      // 낙관적 잠금. record 를 안 지우니 count 불일치 가드가 없다. 읽어 둔 청구 확정을 where 에 걸어
+      // 동시 확정(두 탭에서 [환불 없음])을 CONFLICT 로 막는다.
+      const upd = await prisma.leaseTerm.updateMany({
+        where: { id: input.leaseTermId, propertyId, checkoutProratedMonth: mon, checkoutProratedAmount: keeps },
+        data: {
+          checkoutProratedAmount: pend.paid,
+          checkoutProrationUndo: { ...undoBase, refund: snapshot } as Prisma.InputJsonValue,
+        },
+      })
+      if (upd.count !== 1) throw new Error('CONFLICT')
+      // 수납은 안 바뀌니 홈택스 조치는 없다. 지난 회계월의 청구가 바뀌는 것만 알린다.
+      const taxNotice: RentRefundTaxNotice | undefined = monthVerdict.warning
+        ? { companyKeeps: pend.paid, pastMonth: monthVerdict.warning }
+        : undefined
+      revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance'); revalidatePath('/')
+      return { ok: true, refunded: 0, companyKeeps: pend.paid, taxNotice }
+    }
+
     const companyKeeps = prepaid - refundAmt
     const reason = input.reason?.trim().slice(0, 200) || undefined
     const ids = records.map(r => r.id)
@@ -4681,8 +4738,6 @@ export async function finalizeRentRefund(input: {
         prevProration: { amount: lease.checkoutProratedAmount, month: lease.checkoutProratedMonth },
         ...(reason ? { reason } : {}),
       }
-      const undoBase = (lease.checkoutProrationUndo && typeof lease.checkoutProrationUndo === 'object')
-        ? lease.checkoutProrationUndo as Record<string, unknown> : {}
       // 그 달 청구를 회사 귀속액으로 고정(0도 유효 — 전액 환불이면 청구 0) — 발생주의 매출·미수와 record가 일치.
       // 스냅샷은 checkoutProrationUndo.refund 에 영속 — updateTenant 재계산이 이 키를 보고 보존한다(P0 방어 2중).
       await tx.leaseTerm.updateMany({
@@ -6463,7 +6518,40 @@ export async function getOpenCheckoutCleaning(roomId: string): Promise<{ id: str
  *
  * 이미 환불이 확정된 계약은 null 이다 — 그 경우 할 말이 없다.
  */
-export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{ amount: number; month: string; paid: number; keeps: number } | null> {
+export type PendingRentRefundNotice = {
+  amount: number   // 아직 안 돌려준 이용료 전부 = 귀속월 초과분 + 뒤 달 선납
+  month: string
+  paid: number     // 귀속월에 받은 돈
+  keeps: number    // 귀속월 청구 확정
+  later: number    // 귀속월보다 뒤 달의 선납 합. 환불 없음과 상관없이 돌려줄 돈
+  laterMonths: { month: string; amount: number }[]
+}
+
+/**
+ * 귀속월 이후 살아 있는 수납을 귀속월 몫(paid)과 뒤 달 몫(later)으로 나눠 센다.
+ * '환불 미처리' 판정(getPendingRentRefundNotice)과 환불 없음 확정(finalizeRentRefund 0 갈래)이
+ * 같은 셈을 써야 카드가 보여 준 숫자와 서버가 거부하는 기준이 안 갈린다.
+ */
+async function rentRefundPendingFor(leaseTermId: string, mon: string): Promise<{ paid: number; later: number; laterMonths: { month: string; amount: number }[] }> {
+  const rows = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, targetMonth: { gte: mon }, isDeposit: false, isPrevOwner: false, isBillingAdjust: false, deletedAt: null },
+    select: { targetMonth: true, actualAmount: true },
+  })
+  let paid = 0
+  const byMonth = new Map<string, number>()
+  for (const r of rows) {
+    if (r.targetMonth === mon) paid += r.actualAmount
+    else byMonth.set(r.targetMonth, (byMonth.get(r.targetMonth) ?? 0) + r.actualAmount)
+  }
+  const laterMonths = [...byMonth.entries()]
+    .filter(([, amount]) => amount > 0)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([month, amount]) => ({ month, amount }))
+  const later = laterMonths.reduce((s, m) => s + m.amount, 0)
+  return { paid: Math.max(0, paid), later, laterMonths }
+}
+
+export async function getPendingRentRefundNotice(leaseTermId: string): Promise<PendingRentRefundNotice | null> {
   try {
     const { propertyId } = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
@@ -6472,15 +6560,13 @@ export async function getPendingRentRefundNotice(leaseTermId: string): Promise<{
     })
     if (!lease?.checkoutProratedMonth || lease.checkoutProratedAmount == null) return null
     const mon = lease.checkoutProratedMonth
+    const keeps = lease.checkoutProratedAmount
     // 그 달에 받은 돈이 확정 청구보다 많으면 그 차액이 아직 안 돌려준 이용료다.
-    const agg = await prisma.paymentRecord.aggregate({
-      where: { leaseTermId, targetMonth: mon, isDeposit: false, isPrevOwner: false, isBillingAdjust: false, deletedAt: null },
-      _sum: { actualAmount: true },
-    })
-    const paid = Math.max(0, agg._sum.actualAmount ?? 0)
-    const refund = paid - lease.checkoutProratedAmount
-    // paid·keeps 는 수납 정보 카드의 '환불 기록' 폼이 상한과 청구 확정 파생값으로 쓴다(2026-09-02).
-    return refund > 0 ? { amount: refund, month: mon, paid, keeps: lease.checkoutProratedAmount } : null
+    // 뒤 달 선납(later)은 그 달을 하루도 안 지냈으니 전부 돌려줄 돈이다(2026-09-02).
+    const { paid, later, laterMonths } = await rentRefundPendingFor(leaseTermId, mon)
+    const amount = Math.max(0, paid - keeps) + later
+    // paid·keeps·later 는 수납 정보 카드의 '환불 기록'·'환불 없음' 이 상한과 안내 문구로 쓴다.
+    return (paid > keeps || later > 0) ? { amount, month: mon, paid, keeps, later, laterMonths } : null
   } catch {
     // 못 물었으면 조용히 넘긴다 — 안내가 없다고 퇴실을 막을 일은 아니다.
     return null

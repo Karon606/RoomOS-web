@@ -59,18 +59,32 @@ export async function runIntegrityAudit(
     })
   }
 
-  // 규칙 3 — 중도퇴실 환불 스냅샷 불일치 (finalizeRentRefund 스냅샷과 청구 고정 월이 어긋남)
+  // 규칙 3 — 중도퇴실 환불 스냅샷 불일치 (finalizeRentRefund 스냅샷과 청구 고정 월·금액이 어긋남)
   const withUndo = await prisma.leaseTerm.findMany({
     where: { checkoutProrationUndo: { not: Prisma.DbNull } },
-    select: { id: true, tenantId: true, propertyId: true, checkoutProratedMonth: true, checkoutProrationUndo: true, tenant: { select: { name: true } } },
+    select: { id: true, tenantId: true, propertyId: true, checkoutProratedMonth: true, checkoutProratedAmount: true, checkoutProrationUndo: true, tenant: { select: { name: true } } },
   })
   for (const l of withUndo) {
     const undoObj = l.checkoutProrationUndo as Record<string, unknown> | null
-    const snap = undoObj?.refund as { month?: string } | undefined
+    const snap = undoObj?.refund as { month?: string; refunded?: number; prepaid?: number } | undefined
     if (!snap?.month) continue
-    if (l.checkoutProratedMonth !== snap.month) violations.push({
-      signature: `[정합] refund-snapshot-mismatch · ${l.id}`,
-      note: `${l.tenant.name}: 중도퇴실 환불 스냅샷(${snap.month})과 청구 고정 월(${l.checkoutProratedMonth ?? '없음'})이 어긋납니다. 환불 이후 청구가 수정된 흔적 — 장부 확인이 필요합니다.`,
+    if (l.checkoutProratedMonth !== snap.month) {
+      violations.push({
+        signature: `[정합] refund-snapshot-mismatch · ${l.id}`,
+        note: `${l.tenant.name}: 중도퇴실 환불 스냅샷(${snap.month})과 청구 고정 월(${l.checkoutProratedMonth ?? '없음'})이 어긋납니다. 환불 이후 청구가 수정된 흔적 — 장부 확인이 필요합니다.`,
+        tenantId: l.tenantId, propertyId: l.propertyId,
+      })
+      continue
+    }
+    // 규칙 3-b. 청구 확정이 스냅샷의 원 수납 − 환불과 다름 (2026-09-02 환불 없음 0 확정과 함께).
+    // 확정은 청구를 이 값으로 고정한다. 그 뒤 퇴실 정산 위젯이나 스크립트가 청구를 다시 손대면 카드는
+    // '환불 완료'인데 장부는 다른 금액을 청구하는 상태가 된다. 되돌리기 전에 사람이 봐야 한다.
+    if (typeof snap.refunded !== 'number' || typeof snap.prepaid !== 'number') continue
+    const expectedKeeps = snap.prepaid - snap.refunded
+    if (l.checkoutProratedAmount === expectedKeeps) continue
+    violations.push({
+      signature: `[정합] refund-billing-drift · ${l.id}`,
+      note: `${l.tenant.name}: ${Number(snap.month.slice(5, 7))}월 청구 확정이 ${(l.checkoutProratedAmount ?? 0).toLocaleString()}원인데 환불 확정(원 수납 ${snap.prepaid.toLocaleString()}원 − 환불 ${snap.refunded.toLocaleString()}원)대로면 ${expectedKeeps.toLocaleString()}원이어야 합니다. 환불 뒤 청구가 다시 수정된 흔적입니다. 수납 정보의 이용료 정산에서 적용취소한 뒤 다시 확정해 주세요.`,
       tenantId: l.tenantId, propertyId: l.propertyId,
     })
   }

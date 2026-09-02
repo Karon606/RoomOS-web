@@ -6,7 +6,10 @@
 // 바로 고치기". 보증금은 DepositStatusPanel 이 그 자리인데 이용료 환불은 확정 뒤 볼 곳이 입주자 정보
 // 탭의 적용취소 한 줄뿐이었고, 그 조회가 퇴실 완료 계약을 안 실어 정작 퇴실자에게는 안 그려졌다.
 //
-// 상태는 넷이다. 예상(퇴실 예정) / 환불 완료(스냅샷) / 환불 미처리(청구 확정만 있고 돈이 남음) / 없음.
+// 상태는 넷이다. 예상(퇴실 예정) / 환불 완료·환불 없음(스냅샷) / 환불 미처리(청구 확정만 있고 돈이 남음) / 없음.
+// '환불 미처리'의 출구는 둘이다. 돌려줬으면 '환불 기록'(>0), 안 돌려주기로 했으면 '환불 없음'(0 확정, 2026-09-02).
+// 아직 지내지 않은 뒤 달 선납(later)이 있으면 환불 없음으로 못 닫는다. 그 돈은 환불 없음과 상관없이 돌려줄 돈이라
+// 안내창을 띄우고 환불 기록 폼에 그 금액을 채워 준다.
 // 예상 단계의 조정은 퇴실 정산 위젯이 정본이라 여기는 금액만 보이고 '정산 조정'으로 위젯을 연다.
 // 확정 뒤 금액 수정은 적용취소 + 재확정 두 호출이다(원자적 재확정 함수를 따로 세우면 스냅샷·홈택스
 // 안내 문법이 두 벌이 된다). 둘째가 실패하면 카드가 '환불 미처리'로 서서 다시 확정할 입구가 남는다.
@@ -23,7 +26,7 @@ import { withSave, pushToast } from '@/lib/saveStatus'
 import {
   previewCheckoutRefund, getRentRefundForLease, getPendingRentRefundNotice, finalizeRentRefund, undoRentRefund,
 } from '@/app/(app)/tenants/actions'
-import { settlementAmounts, settlementPickCaption } from '@/lib/checkoutSettlement'
+import { settlementAmounts, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '@/lib/checkoutSettlement'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { inputCls, inputErrCls, labelCls, formBoxCls } from './panelFormStyles'
@@ -91,8 +94,10 @@ export function RentSettlementPanel({
   const { refund, pending: pend, preview } = data
   if (!refund && status === 'CHECKED_OUT' && !pend && !reviseWarn) return null
 
-  // 폼의 상한(원 수납)과 청구 확정 파생값 — 수정이면 스냅샷, 기록이면 그 달 받은 돈.
-  const max = formMode === 'revise' ? (refund?.prepaid ?? 0) : (pend?.paid ?? 0)
+  // 폼의 상한(원 수납)과 청구 확정 파생값. 수정이면 스냅샷, 기록이면 그 달 받은 돈에 뒤 달 선납을 더한 값.
+  // 서버 확정이 귀속월 이상 수납 전부를 상한으로 재므로 폼도 같은 합을 상한으로 둔다.
+  const later = formMode === 'record' ? (pend?.later ?? 0) : 0
+  const max = formMode === 'revise' ? (refund?.prepaid ?? 0) : (pend?.paid ?? 0) + later
   const over = amount > max
   const keeps = Math.max(0, max - amount)
   // 상한의 이름 — 수정은 스냅샷의 '원 수납', 기록은 그 달 '받은 돈'(화면 위 줄과 같은 말).
@@ -109,14 +114,47 @@ export function RentSettlementPanel({
   }
   const closeForm = () => setFormMode(null)
 
-  const undo = async (r: NonNullable<Refund>) => {
+  // '환불 없음'은 지낸 달 받은 돈을 그대로 회사 귀속으로 확정한다(서버 finalizeRentRefund 0 갈래).
+  // 뒤 달 선납이 있으면 서버가 0 을 거부하므로 여기서 먼저 안내하고 환불 기록 폼에 그 금액을 채운다.
+  const recordNone = async (p: NonNullable<Pending>) => {
+    if (!expectedMoveOut) return
+    if (p.later > 0) {
+      if (!(await confirmDialog({
+        title: `미리 낸 ${futureMonthsLabel(p.laterMonths)} ${fmtWon(p.later)}은 먼저 돌려줘야 합니다.`,
+        message: `아직 지내지 않은 달의 선납은 환불 없음과 상관없이 돌려줍니다. ${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}은 회사 귀속으로 남습니다. 환불 기록 폼에 ${fmtWon(p.later)}을 채워 둡니다.`,
+        confirmLabel: '환불 기록 열기',
+      }))) return
+      setAmount(p.later); setReason(''); setReviseWarn(null); setFormMode('record')
+      return
+    }
     if (!(await confirmDialog({
-      title: '이용료 환불을 적용취소할까요?',
-      message: `원래 수납 기록을 복원하고 청구를 환불 전 상태로 되돌립니다. ${monthLabel(r.month)} 매출이 ${fmtWon(r.refunded)} 늘어납니다. 퇴실 상태는 그대로 유지됩니다.`,
+      title: `이용료 ${fmtWon(p.amount)}을 돌려주지 않은 것으로 기록할까요?`,
+      message: `${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}이 전액 회사 귀속으로 남습니다. 청구 확정도 같은 금액이 되고 수납 기록은 바뀌지 않습니다.`,
+      level: 'caution', confirmLabel: '환불 없음으로 기록',
+    }))) return
+    startTransition(async () => {
+      const res = await withSave(
+        () => finalizeRentRefund({ leaseTermId, moveOutYmd: expectedMoveOut, rentRefundAmount: 0 }),
+        { success: '이용료 환불 없음을 기록했습니다' },
+      )
+      if (!res.ok) return
+      for (const line of refundTaxNoticeLines(res.taxNotice)) pushToast('info', line)
+      setReviseWarn(null); setFormMode(null); reload(); onChanged?.()
+    })
+  }
+
+  const undo = async (r: NonNullable<Refund>) => {
+    // 환불 없음(0 확정)은 수납을 안 건드렸으니 되돌려도 매출은 안 움직인다. 청구 확정만 기록 전으로 돌아간다.
+    const none = r.refunded === 0
+    if (!(await confirmDialog({
+      title: none ? '이용료 환불 없음을 적용취소할까요?' : '이용료 환불을 적용취소할까요?',
+      message: none
+        ? `환불 없음 기록만 지웁니다. ${monthLabel(r.month)} 청구 확정이 기록 전으로 돌아가 이 카드가 다시 '환불 미처리'로 섭니다. 퇴실 상태는 그대로 유지됩니다.`
+        : `원래 수납 기록을 복원하고 청구를 환불 전 상태로 되돌립니다. ${monthLabel(r.month)} 매출이 ${fmtWon(r.refunded)} 늘어납니다. 퇴실 상태는 그대로 유지됩니다.`,
       level: 'caution', confirmLabel: '적용취소',
     }))) return
     startTransition(async () => {
-      const res = await withSave(() => undoRentRefund(leaseTermId), { success: '이용료 환불을 적용취소했습니다' })
+      const res = await withSave(() => undoRentRefund(leaseTermId), { success: none ? '이용료 환불 없음을 적용취소했습니다' : '이용료 환불을 적용취소했습니다' })
       if (!res.ok) return
       // 홈택스는 따로 되돌려야 한다 — 환불 안내의 반대 방향(문구 정본 lib/refundTaxNotice).
       for (const line of undoRefundTaxNoticeLines(res.taxNotice)) pushToast('info', line)
@@ -141,7 +179,7 @@ export function RentSettlementPanel({
     } else if (formMode === 'record' && pend) {
       if (!(await confirmDialog({
         title: `이용료 ${fmtWon(amount)}을 환불로 기록할까요?`,
-        message: `${monthLabel(pend.month)} 받은 돈 ${fmtWon(pend.paid)} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
+        message: `${monthLabel(pend.month)} 받은 돈 ${fmtWon(pend.paid)}${later > 0 ? `과 선납 ${fmtWon(later)}` : ''} 중 ${fmtWon(amount)}을 환불로 확정합니다. 청구 확정은 ${fmtWon(keeps)}이 됩니다.`,
         level: 'caution', confirmLabel: '환불 기록',
       }))) return
     }
@@ -182,7 +220,7 @@ export function RentSettlementPanel({
     : null
 
   const badge: { tone: 'pale-green' | 'pale-amber' | 'pale-neutral'; label: string } =
-    refund ? { tone: 'pale-green', label: '환불 완료' }
+    refund ? { tone: 'pale-green', label: refund.refunded === 0 ? SETTLEMENT_PICK_LABEL.none : '환불 완료' }
     : pend || status === 'CHECKED_OUT' ? { tone: 'pale-amber', label: '환불 미처리' }
     : !expectedMoveOut ? { tone: 'pale-neutral', label: '예정일 없음' }
     : { tone: 'pale-neutral', label: '예상' }
@@ -196,7 +234,7 @@ export function RentSettlementPanel({
 
       {reviseWarn && (
         <p className="text-xs text-[var(--warning-fg)] break-keep">
-          환불이 적용취소된 상태로 남았습니다. {reviseWarn}{pend ? " 아래 '환불 기록'으로 다시 확정해 주세요." : ''}
+          환불이 적용취소된 상태로 남았습니다. {reviseWarn}{pend ? " 아래 '환불 기록' 또는 '환불 없음'으로 다시 확정해 주세요." : ''}
         </p>
       )}
 
@@ -205,7 +243,11 @@ export function RentSettlementPanel({
           <p className="text-sm text-[var(--warm-dark)] break-keep">
             <span className="text-[var(--warm-muted)] text-xs">환불 </span>
             <span className="font-semibold num">{fmtWon(refund.refunded)}</span>
-            <span className="text-[var(--warm-muted)] text-xs"> / 원 수납 {fmtWon(refund.prepaid)} · 청구 확정 {fmtWon(refund.companyKeeps)}</span>
+            <span className="text-[var(--warm-muted)] text-xs">
+              {refund.refunded === 0
+                ? ` / 원 수납 ${fmtWon(refund.prepaid)} 전액 회사 귀속`
+                : ` / 원 수납 ${fmtWon(refund.prepaid)} · 청구 확정 ${fmtWon(refund.companyKeeps)}`}
+            </span>
           </p>
           <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
             {monthLabel(refund.month)}분{refund.at ? ` · ${kstYmdStr(new Date(refund.at)).replaceAll('-', '.')} 처리` : ''}{refund.reason ? ` · 사유: ${refund.reason}` : ''}
@@ -233,12 +275,22 @@ export function RentSettlementPanel({
             <span className="font-semibold num">{fmtWon(pend.amount)}</span>
             <span className="text-[var(--warm-muted)] text-xs"> / 받은 돈 {fmtWon(pend.paid)} · 청구 확정 {fmtWon(pend.keeps)}</span>
           </p>
+          {pend.later > 0 && (
+            <p className="text-xs text-[var(--warning-fg)] break-keep">
+              아직 지내지 않은 {futureMonthsLabel(pend.laterMonths)} 선납 {fmtWon(pend.later)}은 돌려줘야 합니다.
+            </p>
+          )}
           <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
-            {monthLabel(pend.month)} 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로 기록해 주세요.
+            {monthLabel(pend.month)} 받은 돈이 확정 청구보다 많습니다. 돌려줬다면 환불로, 안 돌려주기로 했다면 환불 없음으로 기록해 주세요.
           </p>
           {canEdit && formMode === null && (
             expectedMoveOut
-              ? <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 기록</Btn>
+              ? (
+                <div className="flex gap-1.5 flex-wrap">
+                  <Btn variant="subtle" size="sm" disabled={pending} onClick={openRecord}>환불 기록</Btn>
+                  <Btn variant="subtle" size="sm" disabled={pending} onClick={() => { void recordNone(pend) }}>{SETTLEMENT_PICK_LABEL.none}</Btn>
+                </div>
+              )
               : <p className="text-[0.65625rem] text-[var(--warm-mid)] break-keep">퇴실일이 없어 기록할 수 없습니다. 입주자 정보 수정에서 퇴실일을 넣어 주세요.</p>
           )}
         </>
@@ -258,7 +310,7 @@ export function RentSettlementPanel({
               <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                 {preview.appliedProration != null
                   ? `퇴실 정산에서 확정한 ${monthLabel(preview.prepaidMonths[0]?.month ?? expectedMoveOut)} 청구 ${fmtWon(preview.appliedProration)} 기준입니다.`
-                  : settlementPickCaption(preview.defaultPick, preview.shortStay, { prepaidAmount: preview.prepaidAmount })}
+                  : settlementPickCaption(preview.defaultPick, preview.shortStay, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid })}
                 {' '}퇴실 처리할 때 최종 확정합니다.
               </p>
             </>
@@ -292,7 +344,7 @@ export function RentSettlementPanel({
               {keeps.toLocaleString()}
             </span>
           </div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산 · {maxLabel} {fmtWon(max)}</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산 · {maxLabel} {fmtWon(max - later)}{later > 0 ? ` + 선납 ${fmtWon(later)}` : ''}</p>
           <div className="space-y-1.5">
             <label className={labelCls} htmlFor={`${uid}-reason`}>사유 <span className="font-normal text-[var(--warm-muted)]">(계산값과 다른 이유)</span></label>
             <input id={`${uid}-reason`} value={reason} onChange={e => setReason(e.target.value)} maxLength={200}
@@ -300,7 +352,9 @@ export function RentSettlementPanel({
           </div>
           {over ? (
             <p id={`${uid}-amount-err`} className="text-[0.6875rem] text-[var(--danger-fg)] break-keep">
-              {maxLabel} {fmtWon(max)}보다 {fmtWon(amount - max)} 많습니다. 환불은 {maxLabel}을 넘을 수 없습니다.
+              {later > 0
+                ? `받은 돈과 선납을 합한 ${fmtWon(max)}보다 ${fmtWon(amount - max)} 많습니다. 환불은 그 합을 넘을 수 없습니다.`
+                : `${maxLabel} ${fmtWon(max)}보다 ${fmtWon(amount - max)} 많습니다. 환불은 ${maxLabel}을 넘을 수 없습니다.`}
             </p>
           ) : (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
