@@ -14,8 +14,8 @@
       후보에서 빠진 값은 무시·화이트리스트 밖은 버림)
 
 ## 2 chore(스키마): Tenant.docNameStyle
-- [ ] 칼럼 String? + 대칭 주석(카드는 이 값을 절대 읽지 않는다 / 서류는 displayNameStyle 을 안 읽는다)
-- [ ] 마이그레이션. 백필 없음, NULL = 자동
+- [x] 칼럼 String? + 대칭 주석(카드는 이 값을 절대 읽지 않는다 / 서류는 displayNameStyle 을 안 읽는다)
+- [x] 마이그레이션. 백필 없음, NULL = 자동
 
 ## 3 feat(고객정보): 서류 성명 표기 칸
 - [ ] actions.ts has 가드 patch(칸 부재는 보존)

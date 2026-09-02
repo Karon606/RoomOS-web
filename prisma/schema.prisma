@@ -684,6 +684,12 @@ model Tenant {
   // 카드(홈 타일 등)에 보여줄 이름 — 'nickname' | 'en'. NULL = 기본(한글 이름 name).
   // 서류의 성명 표기 선택(lib/documentName)과 별개 축이다 — 서류는 이 값을 절대 읽지 않는다.
   displayNameStyle String?
+  // 발급 서류에 찍을 성명 표기의 **사람 단위 기본값** — 'ko' | 'en' | 'native'. NULL = 자동
+  // (외국인이면 영문, 아니면 한글). 서류를 열었을 때의 초기값만 정하고, 이미 나간 발급본에는
+  // 소급되지 않는다(찍힌 표기는 contract_files.nameStyle 등이 따로 갖는다).
+  // 바로 위 displayNameStyle 과 별개 축이다 — **카드는 이 값을 절대 읽지 않는다.**
+  // 이름이 비슷해 섞이기 쉬운 자리라 scripts/check-doc-name-axis.mjs 가 양방향 침범을 막는다.
+  docNameStyle     String?
   email            String?
   birthdate        DateTime? @db.Date
   gender           Gender    @default(UNKNOWN)

@@ -1,0 +1,14 @@
+-- 사람 단위 서류 성명 표기 (2026-09-03, 운영자 승인).
+--
+-- 'ko' | 'en' | 'native'. NULL 이면 '자동'이고, 그때의 기본값은 종전 규칙 그대로다
+-- (외국인이면 영문, 아니면 한글). 그래서 이 칼럼이 생겨도 117명 전원의 화면과 종이는 1비트도
+-- 안 바뀐다. 백필도 변환도 없다.
+--
+-- 이 값은 발급 서류 **기본값**만 정한다. 서류에 실제로 찍힌 표기는 각 발급본이 제 자리에
+-- 따로 갖고(contract_files.nameStyle 등), 이 칼럼을 나중에 바꿔도 이미 나간 종이는 안 바뀐다.
+-- 되돌림은 칼럼 DROP 하나로 끝난다.
+--
+-- 카드 표시용 displayNameStyle 과는 다른 축이다. 서류는 그 칸을 절대 읽지 않고,
+-- 카드는 이 칸을 절대 읽지 않는다(scripts/check-doc-name-axis.mjs 가 지킨다).
+-- 물리 테이블명은 tenants 다(@@map). 컬럼은 @map 이 없어 camelCase 그대로다.
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "docNameStyle" TEXT;
