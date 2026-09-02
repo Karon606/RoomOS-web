@@ -18,8 +18,8 @@
 - [x] actions.ts checkoutWithDepositRefund ~2206 — `rentRefundAmount != null`
 
 ## 커밋 4 chore(감지망)
-- [ ] check-rent-settlement-branch ⓕⓖⓗ, check-checkout-side-effects ⓓ·ⓟ 확장
-- [ ] 역주입 5건 exit 1 (none 분기 되돌리기 · preview 한 인자 · later 거부 삭제 · 상태전환 게이트 되돌리기 · 스냅샷 가드 삭제)
+- [x] check-rent-settlement-branch ⓕⓖⓗ, check-checkout-side-effects ⓓ·ⓟ 확장
+- [x] 역주입 5건 exit 1 (none 분기 되돌리기 · preview 한 인자 · later 거부 삭제 · 상태전환 게이트 되돌리기 · 스냅샷 가드 삭제)
 
 ## 커밋 5 docs
 - [ ] Work_log · knowledge/domain-checkout-settlement(백로그 해소) · INDEX

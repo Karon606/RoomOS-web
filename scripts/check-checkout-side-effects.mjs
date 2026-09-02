@@ -89,6 +89,20 @@ for (const [name, re] of callers) {
   if (co && !/rentRefundAmount/.test(co[0])) {
     violations.push(`${FILE} — checkoutWithDepositRefund 가 이용료 환불 인자를 안 받는다.`)
   }
+  // 환불 0 도 확정이다(2026-09-02 '환불 없음'). 화면이나 서버가 '> 0' 으로 거르면 0 확정이 서버에
+  // 안 실려 수납 정보 카드가 영영 '환불 미처리'로 선다. 그 게이트가 바로 미처리의 생성 경로였다.
+  const GATES = [
+    ['홈 알림', 'app/(app)/dashboard/DashboardClient.tsx', /rentRefundAmount\s*>\s*0/],
+    ['프리즘 위젯', 'components/entity-modal/widgets/TenantStatusTransitions.tsx', /rentSettlement\.amount\s*>\s*0/],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx', /rentAmt\s*>\s*0\s*\)\s*\{/],
+  ]
+  for (const [name, f, re] of GATES) {
+    const src2 = readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '')
+    if (re.test(src2)) violations.push(`${f} — '${name}' 경로가 이용료 환불 0 을 서버에 안 싣는다('> 0' 게이트). '환불 없음' 확정이 안 남는다.`)
+  }
+  if (co && /rentRefundAmount\s*>\s*0/.test(co[0])) {
+    violations.push(`${FILE} — checkoutWithDepositRefund 가 이용료 환불 0 을 버린다('> 0' 게이트). '환불 없음' 확정이 안 남는다.`)
+  }
 }
 
 // ⓔ 세 경로가 **같은 정산 정본**을 쓰는가 (2026-08-31).
@@ -455,6 +469,26 @@ for (const [name, re] of callers) {
   const audit2 = readFileSync('lib/integrityAudit.ts', 'utf8')
   if (!/rent-refund-record-drift/.test(audit2)) {
     violations.push('lib/integrityAudit.ts — 환불 스냅샷과 수납 기록의 어긋남 감사(규칙 8)가 없다.')
+  }
+  // '환불 없음' 출구(2026-09-02). 카드의 [환불 없음]과 서버의 0 확정이 같은 셈(rentRefundPendingFor)을
+  // 써야 카드가 보여 준 숫자와 서버가 거부하는 기준이 안 갈린다. 서버는 뒤 달 선납이 있으면 0 을 거부하고,
+  // 스냅샷이 살아 있으면 어떤 확정도 다시 받지 않는다. 확정 뒤 청구가 다시 손대지면 감사가 잡는다.
+  const fin = src.match(/export async function finalizeRentRefund[\s\S]*?\n\}\n/)
+  const pend = src.match(/export async function getPendingRentRefundNotice[\s\S]*?\n\}\n/)
+  if (!fin || !/rentRefundPendingFor\(/.test(fin[0]) || !pend || !/rentRefundPendingFor\(/.test(pend[0])) {
+    violations.push(`${FILE} — finalizeRentRefund 와 getPendingRentRefundNotice 가 같은 셈(rentRefundPendingFor)을 안 쓴다. 카드의 미처리액과 서버의 0 확정 기준이 갈린다.`)
+  }
+  if (fin && !/later\s*>\s*0/.test(fin[0])) {
+    violations.push(`${FILE} — finalizeRentRefund 의 0 갈래가 뒤 달 선납(later)을 거부하지 않는다. 이용하지 않은 달의 선납이 '환불 없음'으로 닫힌다.`)
+  }
+  if (fin && !/if \(undoBase\.refund/.test(fin[0])) {
+    violations.push(`${FILE} — finalizeRentRefund 에 스냅샷 존재 가드가 없다. 전액 환불·환불 없음 뒤 재확정이 이중으로 선다.`)
+  }
+  if (!/SETTLEMENT_PICK_LABEL\.none/.test(rp)) {
+    violations.push('components/entity-modal/widgets/RentSettlementPanel.tsx — 카드에 [환불 없음] 출구가 없다. 안 돌려주기로 한 계약이 영영 미처리로 선다.')
+  }
+  if (!/refund-billing-drift/.test(audit2)) {
+    violations.push('lib/integrityAudit.ts — 환불 확정 뒤 청구 재수정 감사(규칙 3-b refund-billing-drift)가 없다.')
   }
 }
 

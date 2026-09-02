@@ -12,6 +12,11 @@
 //   ⓓ 이용료 환불을 확정하는 세 화면이 전부 공용 확인창(confirmRentSettlement)을 부른다.
 //      한 곳만 빠지면 환불 0·계산값과 다른 금액이 그 화면에서 조용히 확정된다.
 //   ⓔ 정본 밖에 '전액 환불' 확인 문장을 따로 두지 않는다. 두 벌이 되면 언젠가 갈린다.
+//   ⓕ '환불 없음' 갈래는 지낸 달 이용료만 안 돌려주고 뒤 달 선납(futurePrepaid)은 돌려준다(운영자 정의 2026-09-02).
+//      settlementAmounts 의 none 분기가 선납을 안 보면 이용하지 않은 달의 돈까지 회사에 남는다.
+//   ⓖ 기본 갈래는 자리마다 다르다. 퇴실 처리 화면(서버 미리보기)은 '환불 없음', 위젯은 단기 유무로 정한다.
+//      한쪽이 두 번째 인자를 빠뜨리면 두 자리가 같은 계약을 다른 기본값으로 연다.
+//   ⓗ 정본 섹션의 none 분기 캡션이 선납을 말한다. 안 말하면 운영자가 선납 있는 계약을 0 으로 닫으려 한다.
 //
 // 실행: node scripts/check-rent-settlement-branch.mjs
 import { readFileSync } from 'node:fs'
@@ -80,9 +85,44 @@ for (const file of [SECTION, WIDGET]) {
   }
 }
 
+// ⓕ 정본의 none 분기가 뒤 달 선납을 돌려주는가.
+{
+  const LIB_FILE = 'lib/checkoutSettlement.ts'
+  const src = stripComments(read(LIB_FILE))
+  const fn = src.match(/export function settlementAmounts[\s\S]*?\n\}\n/)
+  if (!fn) violations.push(`${LIB_FILE} — settlementAmounts 를 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  else {
+    const none = fn[0].match(/if \(pick === 'none'\)\s*\{[\s\S]*?\n\s*\}/)
+    if (!none) violations.push(`${LIB_FILE} — settlementAmounts 에 'none' 분기가 없다.`)
+    else if (!/futurePrepaid/.test(none[0]) || /refund:\s*0\b/.test(none[0])) {
+      violations.push(`${LIB_FILE} — settlementAmounts 의 'none' 분기가 뒤 달 선납(futurePrepaid)을 안 돌려준다. 이용하지 않은 달의 돈까지 회사에 남는다.`)
+    }
+  }
+}
+
+// ⓖ 기본 갈래를 자리에 맞게 묻는가.
+{
+  const src = stripComments(read(ACTIONS))
+  const fn = src.match(/export async function previewCheckoutRefund[\s\S]*?\n\}\n/)
+  if (fn && !/defaultPick:\s*defaultSettlementPick\([a-zA-Z_]+,\s*true\)/.test(fn[0])) {
+    violations.push(`${ACTIONS} — previewCheckoutRefund 가 defaultSettlementPick(shortStay, true) 로 묻지 않는다. 퇴실 처리 화면의 기본 갈래는 '환불 없음'이다.`)
+  }
+  const w = stripComments(read(WIDGET))
+  if (!/defaultSettlementPick\([a-zA-Z_.]+,\s*false\)/.test(w)) {
+    violations.push(`${WIDGET} — 위젯이 defaultSettlementPick(shortStay, false) 로 묻지 않는다. 위젯에는 '환불 없음'이 없어 그 기본값을 받으면 갈 곳이 없다.`)
+  }
+}
+
+// ⓗ 정본 섹션의 none 분기가 선납을 말하는가.
+{
+  const src = stripComments(read(SECTION))
+  const none = src.match(/pick === 'none'[\s\S]*?futurePrepaid/)
+  if (!none) violations.push(`${SECTION} — none 분기가 뒤 달 선납(futurePrepaid)을 말하지 않는다. 선납 있는 계약을 0 으로 닫게 된다.`)
+}
+
 if (violations.length) {
   console.error('퇴실 정산 갈래 감지망 위반')
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결')
+console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·환불 없음 선납·자리별 기본 갈래')
