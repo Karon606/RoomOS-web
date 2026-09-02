@@ -15,6 +15,7 @@ import type { CheckoutProrationResult, CheckoutRefundResult, RefundMode } from '
 import { PRORATE_BASE_DAYS, LEGAL_PENALTY_PCT } from '@/lib/prorate'
 import { defaultSettlementPick, settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor, type SettlementPick, type ShortStayQuoteLite } from '@/lib/checkoutSettlement'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { inputCls, inputErrCls, readonlyCls } from './panelFormStyles'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
@@ -251,8 +252,7 @@ export function CheckoutProrationWidget({
         </p>
         <div className="space-y-1.5">
           <label className="text-xs text-[var(--warm-muted)]">퇴실 예정일</label>
-          <DatePicker value={date} onChange={handleDate}
-            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)]" />
+          <DatePicker value={date} onChange={handleDate} className={inputCls} />
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">
             납부일 {currentDueDay ? (currentDueDay.includes('말') ? '말일' : `${currentDueDay}일`) : '미정'} 부터 퇴실일까지(양끝 포함) 일수만큼 청구합니다.
           </p>
@@ -295,7 +295,7 @@ export function CheckoutProrationWidget({
                   <div className="relative w-20">
                     <input type="text" inputMode="numeric" value={penaltyPctInput} placeholder={String(defaultPenaltyPct)}
                       onChange={e => handlePct(e.target.value)}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 pr-7 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                      className={`${inputCls} pr-7 text-right tabular-nums`} />
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--warm-muted)] pointer-events-none">%</span>
                   </div>
                   <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 {defaultPenaltyPct}% · 최대 {LEGAL_PENALTY_PCT}%</span>
@@ -312,12 +312,12 @@ export function CheckoutProrationWidget({
                   <input type="text" inputMode="numeric" value={refundNum == null ? '' : refundNum.toLocaleString()}
                     placeholder={Math.max(0, prepaid - defaultApplied).toLocaleString()}
                     onChange={e => setRefundInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    className={`flex-1 min-w-0 bg-[var(--canvas)] border rounded-sm px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(160,60,46,0.12)] transition-colors ${refundOver ? 'border-[var(--danger-fg)]' : 'border-[var(--warm-border)]'}`} />
+                    className={`${refundOver ? inputErrCls : inputCls} flex-1 min-w-0 text-right tabular-nums placeholder-[var(--warm-muted)]`} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-[var(--warm-muted)] shrink-0">적용 금액 <span className="text-[0.65625rem]">(퇴실월 청구)</span></span>
-                  {/* §12 '자동 합산 읽기전용' — 보더 없음이 규격이라 투명 보더로 위 입력과 박스 모델만 맞춘다. */}
-                  <span className="flex-1 text-right text-sm tabular-nums text-[var(--warm-dark)] bg-[var(--sand-s)] border border-transparent rounded-sm px-2.5 py-1.5">
+                  {/* §12 '자동 합산 읽기전용' — 정본은 panelFormStyles.readonlyCls(입력과 같은 높이, 투명 보더). */}
+                  <span className={`${readonlyCls} flex-1`}>
                     {appliedNow.toLocaleString()}
                   </span>
                 </div>
@@ -334,7 +334,7 @@ export function CheckoutProrationWidget({
                 <div className="flex items-center gap-1.5">
                   <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
                     onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    className={`${inputCls} flex-1 text-right tabular-nums`} />
                   <span className="text-xs text-[var(--warm-muted)]">원</span>
                 </div>
                 <p className="text-[0.65625rem] text-[var(--warm-muted)]">하루 더 봐주기 등 예외는 이 금액을 직접 조정하세요.</p>

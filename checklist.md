@@ -23,7 +23,7 @@
 ## A4 fix(퇴실정산): 환불 확정 계약의 복귀·단기 연장은 환불 적용취소부터
 - [x] updateTenant 1177 · applyStatusTransition 3405 · syncShortStayCharge 5944 가드(같은 문장)
 - [x] ⓠ 일반화(DbNull 로 비우는 함수는 finalize·undo·clear 외엔 술어 필수) + 역주입
-- [ ] knowledge/domain-checkout-settlement 규칙 적립
+- [x] knowledge/domain-checkout-settlement 규칙 적립
 
 ## B1 design(칩): 글자 알약 마지막 한 곳을 걷고 감지망 패딩 구멍을 닫는다
 - [x] NoticeSmsModal 344 조건 칩(형제 357 골격, 코랄 채움 제거) · check-pill-text 정규식 \b(px|pl|pr|p)-
@@ -49,11 +49,12 @@
 - [x] 가이드 §18 문단 + §29 점검 "카테고리색 립 0" · DashboardClient 844 · check-card-rip 대상에 알림 행 + borderLeft 축약 + 역주입
 
 ## B8 design(퇴실 정산 위젯): 입력을 40/44 로 올린다 (§12)
-- [ ] CheckoutProrationWidget 입력 5 + DatePicker + 읽기전용 박스 · 320px 세로 실기
+- [x] CheckoutProrationWidget 입력 5 + DatePicker + 읽기전용 박스 (디자이너 통과. 320px 은 Modal 본문 스크롤이라 넘침 없음, 모바일 +40px)
+- [ ] 후속: 위젯 라벨을 labelCls 로 (디자이너 지적 8)
 
 ## 게이트 (커밋마다)
-- [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
-- [ ] 웹디자이너 패스: A2 위젯, B2/B6 배지, B7 알림 행, B8 위젯
+- [x] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드 · iCloud 사본 · push (B8 커밋에서 한 번 더)
+- [x] 웹디자이너 패스: A2 위젯, B2/B6 배지 · [ ] B7 알림 행, B8 위젯(진행 중)
 
 ## 문서
-- [ ] Work_log · knowledge(domain-checkout-settlement, design-visual-identity) · INDEX
+- [x] Work_log · knowledge(domain-checkout-settlement, design-visual-identity) · INDEX (B 후반 커밋은 마감 때 추가)
