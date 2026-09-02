@@ -21,6 +21,7 @@ import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNot
 import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
+import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, SETTLEMENT_PICK_LABEL } from '../lib/checkoutSettlement'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -710,6 +711,37 @@ const RENT = 300000
   // 새 월세가 더 크면 내릴 것이 없다 — 락은 최댓값이라 올리는 것은 청구 엔진이 한다.
   eq('전환: 새 월세가 크면 되쓰기 0', lockRewritesFor([rec('a', 300000)], 470000), [])
   eq('전환: 같으면 되쓰기 0', lockRewritesFor([rec('a', 470000)], 470000), [])
+}
+
+// ── 퇴실 정산 갈래 정본 (2026-09-02 신고, 506호) ─────────────────────────
+//
+// 정본 섹션이 '위약금' 고정이라 단기 견적을 버렸고, 위젯과 다른 답을 냈다. 갈래 판단을
+// lib/checkoutSettlement 한 벌로 뽑았으니 두 화면의 기본값과 금액이 여기 숫자를 따라야 한다.
+{
+  const P = { ...SHORT_STAY_DEFAULTS, enabled: true }
+  // 506호: 정가 390,000 에 임시 할인 10,000(2026-08~10). 8/9 입주, 8/31 퇴실, 거주 23일.
+  const rent = discountedRent([{ discountType: 'amount', value: 10000, scope: 'temporary', startMonth: '2026-08', endMonth: '2026-10' }], '2026-08', 390000)
+  eq('갈래: 할인 반영 월세', rent, 380000)
+  const q = calcShortStay(P, rent, 23, { moveInYmd: '2026-08-09', moveOutYmd: '2026-08-31' })!
+  // 23일은 4주 계약(28일) × 1.5 = 42일치인데 30일치 상한에 걸려 한 달 정가와 같아진다.
+  eq('갈래: 23일 단기 요금은 상한(한 달치)', [q.units, q.baseAmount, q.cappedAtMonth], [4, 380000, true])
+  const legal = calcCheckoutRefund({ prepaidAmount: 380000, monthlyRent: rent, daysUsed: 23, mode: 'legal' })
+  // 두 갈래의 폭 — 위약금 갈래는 79,800 을 돌려주고 단기 갈래는 0 이다. 506호가 이 틈으로 환불받았다.
+  eq('갈래: 위약금 환불 79,800', settlementAmounts('legal', { prepaidAmount: 380000, refund: legal, shortStay: q }).refund, 79800)
+  eq('갈래: 단기 요금 환불 0', settlementAmounts('shortStay', { prepaidAmount: 380000, refund: legal, shortStay: q }), { refund: 0, companyKeeps: 380000 })
+  eq('갈래: 환불 안 함은 결제액 전부 귀속', settlementAmounts('none', { prepaidAmount: 380000, refund: legal, shortStay: q }), { refund: 0, companyKeeps: 380000 })
+  // 반올림 역전 — 379,600 방은 단기 요금이 380,000 으로 올라 결제액을 넘는다. 환불은 0 에서 멈추고
+  // 차액 400 은 청구하지 않는다(companyKeeps 는 견적 그대로라 위젯의 청구액 표시는 종전과 같다).
+  const q2 = calcShortStay(P, 379600, 23, { moveInYmd: '2026-08-09', moveOutYmd: '2026-08-31' })!
+  eq('갈래: 견적이 결제액을 넘어도 환불은 0', settlementAmounts('shortStay', { prepaidAmount: 379600, refund: legal, shortStay: q2 }), { refund: 0, companyKeeps: 380000 })
+  // 기본 갈래 — 견적이 있으면 단기, 없으면 위약금. 견적 없이 단기를 고르면 위약금 산식으로 떨어진다.
+  eq('갈래: 기본값', [defaultSettlementPick(q), defaultSettlementPick(null)], ['shortStay', 'legal'])
+  eq('갈래: 견적 없는 단기 선택은 서버 산식', settlementAmounts('shortStay', { prepaidAmount: 380000, refund: legal, shortStay: null }).refund, 79800)
+  eq('갈래: 서버 모드', ['legal', 'goodwill', 'shortStay', 'none'].map(p => serverModeFor(p as never)), ['legal', 'goodwill', 'goodwill', 'goodwill'])
+  // 라벨은 두 화면이 한 글자도 다르면 안 된다 — 문자열째 잠근다.
+  eq('갈래: 라벨', SETTLEMENT_PICK_LABEL, { legal: '위약금', goodwill: '면제', shortStay: '단기', none: '환불 없음' })
+  eq('갈래: 선택지(정본 섹션)', settlementPickOptions(true, true).map(o => o.value), ['legal', 'goodwill', 'shortStay', 'none'])
+  eq('갈래: 선택지(위젯, 견적 없음)', settlementPickOptions(false, false).map(o => o.value), ['legal', 'goodwill'])
 }
 
 // ── 할인의 적용 기간 (2026-08-31 운영자 승인) ─────────────────────────

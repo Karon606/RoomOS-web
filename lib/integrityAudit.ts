@@ -5,10 +5,18 @@
 import { Prisma } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
 import { billForLeaseMonth } from '@/lib/billing'
+import { discountedRent } from '@/lib/rentDiscount'
+import { calcCheckoutProration } from '@/lib/prorate'
+import { settlementPeriodFor } from '@/lib/settlementPeriod'
+import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
 
-export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: number; created: number }> {
+export async function runIntegrityAudit(
+  prisma: PrismaDb,
+  // 예행: 위반만 모아 돌려주고 신고는 적재하지 않는다 — 새 규칙이 실제 데이터를 잡는지 확인하는 길.
+  opts: { dryRun?: boolean } = {},
+): Promise<{ found: number; created: number; violations: Violation[] }> {
   const violations: Violation[] = []
 
   // 규칙 1 — 퇴실 상태인데 퇴실일 없음 (파트쿨리나·임형진 패턴: 결산 미수가 허수로 무한 누적)
@@ -112,8 +120,49 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
     }
   }
 
+  // 규칙 6 — 단기 자격 퇴실인데 단기 요금 갈래보다 큰 환불이 확정됨 (506호 패턴, 2026-09-02 신고:
+  // 퇴실 처리 화면이 갈래 없이 '위약금' 고정이라 단기 요금 380,000 대신 79,800원이 환불됨).
+  // 자격 판정은 previewCheckoutRefund 와 같다 — 단기 계약이 아니고, 입주부터 퇴실까지 달력으로 1개월
+  // 안이며, 만기가 아닌 중도 퇴실. 그때 단기 갈래의 환불(결제액 − 단기 요금, 0 하한)보다 많이 돌려줬으면
+  // 잡는다. 화면에 갈래가 생긴 뒤에는 운영자가 일부러 면제를 고른 경우도 걸리는데, 그건 무시(dismiss)로
+  // 닫으면 재적재되지 않는다. 사후 그물이라 놓치는 쪽보다 한 번 더 묻는 쪽을 택했다.
+  const refundedShort = await prisma.leaseTerm.findMany({
+    where: { status: 'CHECKED_OUT', isShortTerm: false, moveInDate: { not: null }, moveOutDate: { not: null }, checkoutProrationUndo: { not: Prisma.DbNull } },
+    select: {
+      id: true, tenantId: true, propertyId: true, dueDay: true, rentAmount: true, moveInDate: true, moveOutDate: true, checkoutProrationUndo: true,
+      tenant: { select: { name: true } },
+      property: { select: { shortStayPolicy: true } },
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    },
+  })
+  for (const l of refundedShort) {
+    const snap = (l.checkoutProrationUndo as Record<string, unknown> | null)?.refund as { refunded?: number; prepaid?: number } | undefined
+    if (!snap || typeof snap.refunded !== 'number' || typeof snap.prepaid !== 'number' || snap.refunded <= 0) continue
+    // DB @db.Date 는 UTC 자정 저장이라 toISOString 슬라이스가 그 날짜다.
+    const moveInYmd = l.moveInDate!.toISOString().slice(0, 10)
+    const moveOutYmd = l.moveOutDate!.toISOString().slice(0, 10)
+    if (!isWithinOneCalendarMonth(moveInYmd, moveOutYmd)) continue
+    const period = settlementPeriodFor({ dueDay: l.dueDay, moveInDate: l.moveInDate }, moveOutYmd)
+    if (!period) continue
+    const monthlyRent = discountedRent(l.discounts, period.month, l.rentAmount)
+    const calc = calcCheckoutProration(monthlyRent, l.dueDay, moveOutYmd, moveInYmd)
+    if (!calc || moveOutYmd >= calc.mustLeaveYmd) continue
+    const days = stayDaysOf(moveInYmd, moveOutYmd)
+    if (days == null || days < 1) continue
+    const q = calcShortStay(parseShortStayPolicy(l.property.shortStayPolicy), monthlyRent, days, { moveInYmd, moveOutYmd })
+    if (!q) continue
+    const shortRefund = Math.max(0, snap.prepaid - q.baseAmount)
+    if (snap.refunded <= shortRefund) continue
+    violations.push({
+      signature: `[정합] refund-over-short-stay · ${l.id}`,
+      note: `${l.tenant.name}: 거주 ${days}일 중도 퇴실이라 단기 요금(${q.units}주 계약 ${q.baseAmount.toLocaleString()}원) 기준 환불은 ${shortRefund.toLocaleString()}원인데 ${snap.refunded.toLocaleString()}원을 환불했습니다. 위약금 갈래로 확정된 것이면 입주자 정보의 '적용취소'로 되돌린 뒤 단기 요금으로 다시 확정하고, 일부러 면제한 것이면 이 신고를 무시하세요.`,
+      tenantId: l.tenantId, propertyId: l.propertyId,
+    })
+  }
+
   // 적재 — 같은 서명의 open(아직 처리 전)·dismissed(운영자가 무시 선택) 신고가 있으면 건너뛴다.
   let created = 0
+  if (opts.dryRun) return { found: violations.length, created, violations }
   for (const v of violations) {
     const dup = await prisma.errorReport.findFirst({
       where: { errorText: v.signature, status: { in: ['open', 'dismissed'] } },
@@ -131,5 +180,5 @@ export async function runIntegrityAudit(prisma: PrismaDb): Promise<{ found: numb
     })
     created++
   }
-  return { found: violations.length, created }
+  return { found: violations.length, created, violations }
 }

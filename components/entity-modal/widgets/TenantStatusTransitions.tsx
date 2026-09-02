@@ -16,6 +16,7 @@ import { confirmDialog, alertDialog } from '@/components/ui/ConfirmDialog'
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
+import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
@@ -173,6 +174,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
   // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
   const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
+  // 갈래·금액을 손댔는지 — 값 자체는 미리보기가 들어오며 저절로 서서 dirty 판정에 못 쓴다.
+  const [rentTouched, setRentTouched] = useState(false)
   // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
   const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
   // 퇴실 청소 예정일 — 아직 안 건드렸으면 퇴실일(transDate)을 따라 움직인다(정본 훅).
@@ -280,6 +283,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     // 사유 상태 초기화 — 앞서 연 미니폼의 선택이 남으면 다음 전이에 엉뚱한 사유가 붙는다.
     // 종전에는 취소 분기에서만 비웠는데, 퇴실도 사유를 받게 되면서 이 경로에도 필요해졌다.
     setTransReason(''); setTransReasonEtc('')
+    setRentTouched(false)
     // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
     cleaning.reset()
     setTransDate(
@@ -482,8 +486,15 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     })
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!active) return
+    // 이용료 환불이 계산값과 다르거나 0이거나 전액이면 보증금 반환액과 묶어 한 번 더 묻는다 —
+    // 문장은 세 화면 공용 정본(confirmRentSettlement)이다. '나중에 반환'은 아직 정한 게 없어 이용료만 말한다.
+    if (active.def.toStatus === 'CHECKED_OUT') {
+      const depositNow = !transDefer && active.def.withDeposit === true && active.depositAmount > 0 && transRefund != null
+        ? transRefund : null
+      if (!(await confirmRentSettlement(rentSettlement, depositNow))) return
+    }
     const fields: TransitionFields = {}
     if (active.def.field === 'moveInDate')      fields.moveInDate = transDate
     if (active.def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
@@ -535,7 +546,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== '' || withholdReason !== '' || withholdEtc !== ''}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== '' || withholdReason !== '' || withholdEtc !== '' || rentTouched}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -601,7 +612,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                   leaseTermId={lease.id}
                   moveOutYmd={transDate || kstYmdStr()}
                   value={rentSettlement}
-                  onChange={setRentSettlement} />
+                  onChange={setRentSettlement}
+                  onDirty={() => setRentTouched(true)} />
               )}
               {active.def.key === 'checkout' && lease.roomId && (
                 active.openCleaning

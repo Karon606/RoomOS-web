@@ -27,6 +27,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
   type RentRefundTaxNotice,
 } from './actions'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
+import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { ContractFilesPanel } from '@/components/entity-modal/widgets/ContractFilesPanel'
 import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, restorePayment, updatePayment, getPaymentsByLease, getLeaseSettlementInfo, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
@@ -1391,15 +1392,8 @@ export default function TenantClient({
     const { fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId } = depositRefundModal
     const rs = rentSettlement
     const rentAmt = rs?.amount ?? 0
-    // 전액 환불(사용분·위약금까지 반환)은 명시적 확인(§14) — 계산값 초과 여부와 무관하게 결제액 전액이면 묻는다
-    if (rs && rentAmt > 0 && rentAmt >= rs.max) {
-      const okAll = await confirmDialog({
-        title: '이용료를 전액 환불할까요?',
-        message: `사용분까지 모두 돌려주는 금액입니다. 총 환불액 ${fmtWon(rentAmt + depositReturnAmt)}.`,
-        confirmLabel: '전액 환불', cancelLabel: '다시 확인',
-      })
-      if (!okAll) return
-    }
+    // 전액 환불·환불 0·계산값과 다른 금액은 한 번 더 묻는다 — 문장은 세 화면 공용 정본이다.
+    if (!(await confirmRentSettlement(rs, depoLater || depositAmount <= 0 ? null : depositReturnAmt))) return
     startTransition(async () => {
       const release = trackSave()
       try {

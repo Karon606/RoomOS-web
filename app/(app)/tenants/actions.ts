@@ -30,6 +30,7 @@ import { needsCheckoutTimingChoice, autoCheckoutFlipYmd } from '@/lib/autoChecko
 import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
+import { defaultSettlementPick, type SettlementPick } from '@/lib/checkoutSettlement'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { propagateMoveInDateToSubLeases } from '@/lib/moveInDate'
@@ -4380,6 +4381,13 @@ export type CheckoutRefundPreview =
        */
       shortStay: { stayDays: number; units: number; contractDays: number; baseAmount: number; roundedUp: boolean } | null
       /**
+       * 화면이 처음 골라 둘 갈래 — 단기 견적이 있으면 'shortStay', 없으면 'legal'.
+       *
+       * 판단은 lib/checkoutSettlement 한 벌이다. 종전에는 위젯만 이 판단을 했고 정본 섹션은
+       * 'legal' 고정이라 같은 계약을 두 화면이 다르게 답했다(2026-09-02 신고, 506호).
+       */
+      defaultPick: SettlementPick
+      /**
        * 이 계약에 이용료 정산이 성립하는가 (2026-08-31 운영자 실기 지적).
        *
        * **단기 계약은 성립하지 않는다.** 단기의 rentAmount 는 월세가 아니라 체류 전체 사용료라
@@ -4487,6 +4495,7 @@ export async function previewCheckoutRefund(
     const settlementApplies = !lease.isShortTerm
     return {
       ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay,
+      defaultPick: defaultSettlementPick(shortStay),
       settlementApplies,
       futurePrepaid,
       prepaidMonths,

@@ -37,6 +37,7 @@ import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, 
 import { refundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { RentSettlementSection, type RentSettlementValue } from '@/components/checkout/RentSettlementSection'
+import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -329,6 +330,8 @@ function CheckoutRefundModal({
   // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
   // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
   const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
+  // 갈래·금액을 손댔는지 — 값 자체는 미리보기가 들어오며 저절로 서서 dirty 판정에 못 쓴다.
+  const [rentTouched, setRentTouched] = useState(false)
   const rentExceeds = !!rentSettlement && rentSettlement.amount > rentSettlement.max
   const unreturned = depositAmount - refund
   const exceedsMax = refund > maxRefund
@@ -336,19 +339,21 @@ function CheckoutRefundModal({
   return (
     <Modal open onClose={onClose} z={260} width="sm"
       title={depositAmount > 0 ? '보증금 반환' : '퇴실 처리'} subtitle={`${tenantName}님 퇴실 정산`}
-      dirty={refund !== maxRefund || moveOutDate !== kstYmdStr() || reason !== '' || reasonEtc !== '' || cleaning.touched}
+      dirty={refund !== maxRefund || moveOutDate !== kstYmdStr() || reason !== '' || reasonEtc !== '' || cleaning.touched || rentTouched}
       footer={
         // §10 — 돈이 걸린 확정 버튼일수록 정본 Btn 을 쓴다. 종전에는 raw button 에 시각화
         // 팔레트(--viz-4)를 칠해서, 의미색 체계 밖의 색이 확정 버튼에 앉아 있었다.
         <div className="flex gap-2">
           <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={pending}>취소</Btn>
           <Btn variant="primary" size="md" className="flex-1 font-semibold"
-            onClick={() => {
+            onClick={async () => {
               const later = depoChoice === 'later'
               const r = later ? '' : buildWithholdReason(reason, reasonEtc)
               // 오류를 부모 상태에 넣으면 이 창(z=260) 아래 모달에 그려져 안 보인다. 여기서 인라인으로 띄운다.
               // 청소비 몫까지는 안 묻는다 — 보증금 안에 든 돈이라 퇴실에서 당연히 빠진다(형제 두 화면과 같은 축).
               if (!later && depositAmount - refund > cleaningFee && !r) { setFormError('반환하지 않는 사유를 선택해 주세요.'); return }
+              // 이용료 환불이 계산값과 다르거나 0이거나 전액이면 보증금 반환액과 묶어 한 번 더 묻는다 — 세 화면 공용 정본.
+              if (!(await confirmRentSettlement(rentSettlement, later || depositAmount <= 0 ? null : refund))) return
               // 칸을 안 그린 경우(호실 없음)는 undefined 로 보내 서버 기본값 규칙에 맡긴다 —
               // 빈 값을 실어 보내면 운영자가 '미정'을 고른 것으로 읽힌다.
               setFormError(''); onConfirm(later ? 0 : refund, moveOutDate, r, hasRoom && !(roomId && openCleaning) ? (cleaning.value || null) : undefined, rentSettlement?.amount ?? 0, later)
@@ -465,7 +470,8 @@ function CheckoutRefundModal({
             leaseTermId={leaseTermId}
             moveOutYmd={moveOutDate}
             value={rentSettlement}
-            onChange={setRentSettlement} />
+            onChange={setRentSettlement}
+            onDirty={() => setRentTouched(true)} />
         </div>
     </Modal>
   )
