@@ -142,7 +142,7 @@
   --deposit-fg:   #8A6843;  --deposit-bg: rgba(200,160,125,.16); --deposit-ring: rgba(200,160,125,.40);
   --reserve-fg:   #6E5C49;  --reserve-bg: rgba(140,122,102,.14); --reserve-ring: rgba(140,122,102,.32);
   --overdue-fg:   #A03C2E;  --overdue-solid: #A03C2E;            /* 배지 글자 cream */
-  --neutral-fg:   #7A6553;  --neutral-bg: rgba(61,36,24,.05);    --neutral-ring: rgba(61,36,24,.14);
+  --neutral-fg:   #7A6553;  --neutral-bg: rgba(61,36,24,.08);    --neutral-ring: rgba(61,36,24,.14);
   /* in-progress(점검·처리 중) — §14.4 / §21 재고 b-inspect. 카멜 계열, status 5단계와 별개. 틴트 전용(solid 없음) */
   --inspect-fg:   #7A5A32;  --inspect-bg: rgba(200,160,125,.18); --inspect-ring: rgba(200,160,125,.50);
 
@@ -601,7 +601,7 @@ html.dark {
   --status-await-fg:    var(--d-blue);
   --status-unpaid-bg:   rgba(217,166,72,.14);
   --status-unpaid-fg:   var(--d-amber);
-  --status-vacant-bg:   rgba(242,232,220,.06);
+  --status-vacant-bg:   rgba(242,232,220,.10);
   --status-vacant-fg:   var(--d-ink-m);
   --success:            var(--d-success);
   --success-bg:         rgba(163,191,123,.14);
@@ -637,7 +637,7 @@ html.dark {
   --deposit-fg: #D4B494; --deposit-bg: rgba(212,180,148,.14); --deposit-ring: rgba(212,180,148,.28);
   --reserve-fg: #BBA892; --reserve-bg: rgba(187,168,146,.12); --reserve-ring: rgba(187,168,146,.26);
   --overdue-fg: #E08A75; --overdue-solid: #A03C2E;
-  --neutral-fg: #C7B5A2; --neutral-bg: rgba(242,232,220,.06); --neutral-ring: rgba(242,232,220,.14);
+  --neutral-fg: #C7B5A2; --neutral-bg: rgba(242,232,220,.10); --neutral-ring: rgba(242,232,220,.14);
   --inspect-fg: #C8A07D; --inspect-bg: rgba(200,160,125,.16); --inspect-ring: rgba(200,160,125,.40);
 
   /* 강조 — §14.4 결정#4: deposit=카멜·reserve=토프 (정본 별칭) */

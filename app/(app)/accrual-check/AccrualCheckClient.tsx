@@ -29,9 +29,9 @@ const CATEGORY_LABEL: Record<SuspectCategory, string> = {
 }
 
 const CATEGORY_COLOR: Record<SuspectCategory, string> = {
-  'late-payment':   'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]',
-  'pre-payment':    'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]',
-  'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
+  'late-payment':   'bg-[var(--warning-bg)] text-[var(--warning-fg)]',
+  'pre-payment':    'bg-[var(--success-bg)] text-[var(--success-fg)]',
+  'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)]',
 }
 
 // 월 표기 — 'YYYY-MM' 은 모바일에서 읽기 나쁘다. 확인창은 'N월분'으로 말한다.

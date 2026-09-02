@@ -42,7 +42,8 @@
 - [x] tsx gradient 문자열·css mask-image 밖 linear-gradient 금지 + verify:fast + 역주입 (차트 SVG linearGradient 만 허용)
 
 ## B6 design(배지): 틴트 배지에서 ring 을 걷는다 (§11 개정)
-- [ ] 가이드 §11 문단 + 부록 A 개정 전 문장 · Badge.tsx ring-1 제거 · 다크 대비 실기
+- [x] 가이드 §11 문단 + 부록 A 개정 이력 · Badge.tsx ring-1 제거 · 손 배지 11곳 전수 · --neutral-bg 알파 상향(.05→.08, 다크 .06→.10, 디자이너 지적 6) · check-badge-tokens ⓓ
+- [ ] 다크 대비 실기(운영자)
 
 ## B7 design(홈 알림): 카테고리 립을 걷는다 (§18 개정)
 - [ ] 가이드 §18 문단 + §29 점검 "카테고리색 립 0" · DashboardClient 844 · check-card-rip 대상에 알림 행

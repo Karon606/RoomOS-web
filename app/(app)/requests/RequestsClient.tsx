@@ -33,12 +33,12 @@ type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
 
 // 기본 5종만 고정색 — 운영자가 추가한 이름이나 목록에서 지워진 값은 아래 NEUTRAL_COLOR(기타와 동일 톤).
-const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
-  시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]',  ring: 'ring-[var(--warning-ring)]'  },
-  소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
-  청결: { bg: 'bg-[var(--reserve-bg)]',   fg: 'text-[var(--reserve-fg)]',   ring: 'ring-[var(--reserve-ring)]'   },
-  편의: { bg: 'bg-[var(--deposit-bg)]', fg: 'text-[var(--deposit-fg)]', ring: 'ring-[var(--deposit-ring)]' },
-  기타: { bg: 'bg-[var(--neutral-bg)]',  fg: 'text-[var(--neutral-fg)]',  ring: 'ring-[var(--neutral-ring)]'  },
+const CATEGORY_COLORS: Record<string, { bg: string; fg: string }> = {
+  시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]'  },
+  소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]'   },
+  청결: { bg: 'bg-[var(--reserve-bg)]',   fg: 'text-[var(--reserve-fg)]'   },
+  편의: { bg: 'bg-[var(--deposit-bg)]', fg: 'text-[var(--deposit-fg)]' },
+  기타: { bg: 'bg-[var(--neutral-bg)]',  fg: 'text-[var(--neutral-fg)]'  },
 }
 
 const NEUTRAL_COLOR = CATEGORY_COLORS['기타']
@@ -536,7 +536,7 @@ export default function RequestsClient({
                     <Badge tone="pale-red">긴급</Badge>
                   )}
                   {c && (
-                    <span className={`text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
+                    <span className={`text-[0.65625rem] px-2 py-0.5 rounded-sm font-medium ${c.bg} ${c.fg}`}>
                       {r.category}
                     </span>
                   )}

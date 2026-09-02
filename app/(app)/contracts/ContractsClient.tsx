@@ -351,12 +351,12 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                   {/* 여러 부 중 어느 것이 지금 유효한지 — 입실자별에서만 띄운다. 최신순은 사람이 섞여
                       있어 옆 행과 비교할 대상이 아니라, 배지가 붙으면 무엇의 '현재'인지 알 수 없다. */}
                   {sort === 'tenant' && (groupCount.get(issueGroupKey(c)) ?? 1) > 1 && currentIds.has(c.id) && (
-                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">현재</span>
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--success-bg)] text-[var(--success-fg)]">현재</span>
                   )}
                   {/* 폐기본 — 파일은 그대로 남아 있고 이력으로만 존재한다는 표시(삭제와 다르다).
                       정렬과 무관하게 늘 띄운다: [현재] 와 달리 옆 행과 비교할 것 없이 그 자체로 사실이다. */}
                   {c.voidedAt && (
-                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">폐기됨</span>
+                    <span className="text-[0.65625rem] font-medium px-1.5 py-0.5 rounded-sm bg-[var(--danger-bg)] text-[var(--danger-fg)]">폐기됨</span>
                   )}
                   {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                 </div>

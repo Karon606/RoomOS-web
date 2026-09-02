@@ -28,7 +28,10 @@ const walk = (dir) => {
 }
 for (const r of ROOTS) walk(r)
 
-const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+// 줄번호를 그대로 쓰려면 줄 수를 보존해야 한다(`\s*` 는 m 플래그에서 줄바꿈을 먹는다).
+const stripComments = s => s
+  .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ''))
+  .replace(/^[^\S\n]*\/\/.*$/gm, '')
 const violations = []
 for (const f of files) {
   const lines = stripComments(readFileSync(f, 'utf8')).split('\n')

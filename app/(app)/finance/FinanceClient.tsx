@@ -3952,7 +3952,7 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--success-ring)]'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)]'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
