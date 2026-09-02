@@ -29,7 +29,7 @@ import {
 import { settlementAmounts, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '@/lib/checkoutSettlement'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines } from '@/lib/refundTaxNotice'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
-import { inputCls, inputErrCls, labelCls, formBoxCls } from './panelFormStyles'
+import { inputCls, inputErrCls, labelCls, formBoxCls, readonlyCls } from './panelFormStyles'
 
 type Refund = Awaited<ReturnType<typeof getRentRefundForLease>>
 type Pending = Awaited<ReturnType<typeof getPendingRentRefundNotice>>
@@ -340,7 +340,7 @@ export function RentSettlementPanel({
           {/* 청구 확정은 파생값이다(§12 자동 합산 읽기전용, 퇴실 정산 위젯과 같은 문법) — 두 칸을 다 열면 합이 상한과 어긋날 수 있다. */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-[var(--warm-muted)] shrink-0">청구 확정</span>
-            <span className="flex-1 text-right text-sm tabular-nums text-[var(--warm-dark)] bg-[var(--sand-s)] border border-transparent rounded-sm px-2.5 py-1.5">
+            <span className={`${readonlyCls} flex-1`}>
               {keeps.toLocaleString()}
             </span>
           </div>

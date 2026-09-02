@@ -33,7 +33,7 @@
 - [ ] scripts/check-badge-tokens.mjs(--viz-, hex, /NN 알파 금지) + verify:fast 등록 + 역주입
 
 ## B3 design(정산 카드): 읽기전용 박스 높이를 입력에 맞춘다
-- [ ] panelFormStyles readonlyCls · RentSettlementPanel 343
+- [x] panelFormStyles readonlyCls · RentSettlementPanel 343
 
 ## B4 design(버튼 행): gap 을 정본에 맞춘다
 - [ ] Btn 행 gap-2: RentSettlementPanel 257·289, RoomCleaningPanel 168, MarketClient 1018 · RowActionBtn 행 TenantClient 3020 gap-1.5

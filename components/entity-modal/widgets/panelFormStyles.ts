@@ -13,6 +13,10 @@
 export const inputBase = 'w-full bg-[var(--canvas)] border rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)] outline-none focus-visible:border-[var(--tc-text)] focus-visible:shadow-[var(--input-ring-focus)] transition-colors'
 export const inputCls = `${inputBase} border-[var(--warm-border)]`
 export const inputErrCls = `${inputBase} border-[var(--tc)]`
+// 읽기전용 파생값 박스(§12 자동 합산). 입력과 같은 높이(44/40)에 서서 옆 입력과 줄이 맞는다.
+// 종전 py-1.5 는 입력보다 8px 낮아 같은 폼 안에서 칸 높이가 둘이었다(2026-09-03 정비).
+// 배경은 --sand-s(입력의 --canvas 보다 한 단 가라앉음)로 "여기는 못 친다"를 말하고 보더는 투명으로 자리만 잡는다.
+export const readonlyCls = 'flex items-center justify-end text-sm tabular-nums text-[var(--warm-dark)] bg-[var(--sand-s)] border border-transparent rounded-sm px-2.5 min-h-[var(--input-h-touch)] sm:min-h-[var(--input-h)]'
 // 폼 라벨 정본(§12 — 12px / 500 / --ink-s). 종전 10.5px --warm-muted 는 크기·굵기·색 셋 다 어긋났다.
 export const labelCls = 'text-xs font-medium text-[var(--warm-mid)]'
 // 인라인 폼 껍데기 — 표면을 한 단 올린다. 종전 --canvas 는 안의 입력과 같은 토큰이라
