@@ -47,7 +47,7 @@ function dueDayFromMoveIn(moveIn: Date): string {
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
-import { sanitizeNativeName } from '@/lib/documentName'
+import { sanitizeNativeName, asDocNameStyle } from '@/lib/documentName'
 import { sanitizeNickname, toStoredDisplayNameStyle } from '@/lib/displayName'
 import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } from '@/lib/pii'
 import { randomUUID } from 'node:crypto'
@@ -112,6 +112,15 @@ function displayNamePatch(formData: FormData): { nickname?: string | null; displ
   if (formData.has('nickname')) patch.nickname = sanitizeNickname(formData.get('nickname'))
   if (formData.has('displayNameStyle')) patch.displayNameStyle = toStoredDisplayNameStyle(formData.get('displayNameStyle'))
   return patch
+}
+
+// 서류 성명 표기 패치 — 현지 표기와 같은 '칸이 왔을 때만 건드린다' 규칙.
+// 이 칸은 외국인에게만 그려지므로, 국적을 대한민국으로 고친 뒤 저장할 때 칸이 사라진다.
+// 그때 빈 값으로 덮으면 못박아 둔 표기가 조용히 지워진다.
+// 화이트리스트 밖 값('KO' 같은 것)은 asDocNameStyle 이 버리고 NULL(자동)로 떨어진다.
+function docNameStylePatch(formData: FormData): { docNameStyle?: string | null } {
+  if (!formData.has('docNameStyle')) return {}
+  return { docNameStyle: asDocNameStyle(formData.get('docNameStyle')) ?? null }
 }
 
 // 폼 생년월일(점 포맷 "1970.09.28" / ISO / 부분 입력) → 저장용 Date. 유효 8자리만 저장, 그 외 null.
@@ -912,6 +921,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       ...regNo.data,
       ...nativeNamePatch(formData),
       ...displayNamePatch(formData),
+      ...docNameStylePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),
@@ -1210,6 +1220,7 @@ export async function updateTenant(formData: FormData): Promise<
       name: name.trim(),
       ...nativeNamePatch(formData),
       ...displayNamePatch(formData),
+      ...docNameStylePatch(formData),
       englishName: englishName || null,
       email: email || null,
       birthdate: birthdateToDate(birthdate),

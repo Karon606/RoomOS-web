@@ -171,10 +171,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     if (!storedNameStyle) {
       const prev = docNameStyleConflict(next, data.lastNameStyle ? [data.lastNameStyle] : [])
       if (prev && !(await confirmDialog({
-        title: `앞선 서류가 ${DOC_NAME_STYLE_LABEL[prev]}으로 발급되었습니다`,
-        message: `이 실거주 확인서만 ${DOC_NAME_STYLE_LABEL[next]}으로 바꿀까요? 한 사람의 서류는 같은 표기로 내는 편이 제출처에서 덜 막힙니다.`,
+        title: `앞선 서류가 ${DOC_NAME_STYLE_LABEL[prev]} 표기로 발급되었습니다`,
+        message: `이 실거주 확인서만 ${DOC_NAME_STYLE_LABEL[next]} 표기로 바꿀까요? 한 사람의 서류는 같은 표기로 내는 편이 제출처에서 덜 막힙니다.`,
         level: 'caution',
-        confirmLabel: `${DOC_NAME_STYLE_LABEL[next]}으로 바꾸기`,
+        confirmLabel: `${DOC_NAME_STYLE_LABEL[next]} 표기로 바꾸기`,
       }))) return
     }
     setNameStyle(next)

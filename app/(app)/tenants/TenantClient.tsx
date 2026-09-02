@@ -18,7 +18,7 @@ import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
-import { NATIVE_NAME_MAX, showsForeignFields } from '@/lib/documentName'
+import { NATIVE_NAME_MAX, showsForeignFields, docNameStyles, asDocNameStyle, DOC_NAME_STYLE_LABEL, type DocNameStyle } from '@/lib/documentName'
 import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
@@ -164,6 +164,8 @@ type LeaseTerm = {
   expectedMoveOut: string | Date | null; contactAlertDate?: string | Date | null; tourDate: string | Date | null; tourTime?: string | null; inquiryAt: string | Date | null
   reservationConfirmedAt: string | Date | null
   isShortTerm: boolean
+  // 이 계약에서 마지막으로 발급한 서류의 성명 표기 — 사람 단위 기본값보다 세다(안내 문구 판정용).
+  lastDocNameStyle?: string | null
   reservationDepositMode?: string | null
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
@@ -187,6 +189,8 @@ type Tenant = {
   // 별칭과 카드 표시 이름 선택(lib/displayName). 서류 성명 표기(lib/documentName)와는 별개 축이다.
   nickname: string | null
   displayNameStyle: string | null
+  // 발급 서류 성명 표기의 사람 단위 기본값(lib/documentName). 위 카드 표시와 별개 축이다.
+  docNameStyle: string | null
   email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
@@ -3910,6 +3914,22 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const [displayStyleVal, setDisplayStyleVal] = useState<DisplayNameStyle>(asDisplayNameStyle(tenant?.displayNameStyle))
   const displayStyleOptions = displayNameStyles({ name: '', englishName: englishNameVal, nickname: nicknameVal })
 
+  // 서류 성명 표기 — 카드 표시와 같은 이유로 현지 표기 칸도 controlled 다. 지금 적어 넣은 현지
+  // 표기가 곧바로 선택지에 떠야 한다. 빈 문자열이 '자동'(저장은 NULL)이고, 그때 기본값은 종전
+  // 규칙 그대로다(외국인이면 영문, 아니면 한글).
+  const [nativeNameVal, setNativeNameVal] = useState(tenant?.nativeName ?? '')
+  const [docStyleVal, setDocStyleVal] = useState<DocNameStyle | ''>(asDocNameStyle(tenant?.docNameStyle) ?? '')
+  const docStyleOptions = docNameStyles({ name: '', englishName: englishNameVal, nativeName: nativeNameVal })
+  // 못박아 둔 값이 지금은 고를 수 없게 됐을 수 있다 — 영문으로 고정한 뒤 영문 이름을 지운 경우다.
+  // 그때 셀렉트가 빈 칸처럼 보이면 무엇이 저장돼 있는지 알 수 없다. 화면과 저장이 같은 답을
+  // 말하도록 '자동'으로 접고, 저장하면 실제로 자동이 된다(서류 쪽은 이미 후보 밖 값을 무시한다).
+  const docStyleShown: DocNameStyle | '' = docStyleVal && docStyleOptions.includes(docStyleVal) ? docStyleVal : ''
+  // 앞 서류가 이미 다른 표기로 나갔는가 — 그러면 다음 서류는 그것을 잇는다(운영자 결정 2026-09-03).
+  // 여기서 말해 주지 않으면 못박아 두고도 안 바뀌는 것이 고장으로 읽힌다. 자동일 때도 말해야 한다.
+  // 형제 서류가 사람 단위 값보다 위라(lib/documentName resolve 순서) 자동이면 더더욱 앞 서류를 잇는다.
+  const inheritedDocStyle = asDocNameStyle(lease?.lastDocNameStyle)
+  const docStyleInherits = !!inheritedDocStyle && inheritedDocStyle !== docStyleShown
+
   const applyDueDay = (input: string) => {
     const t = input.trim()
     if (!t) { setDueDayRaw(''); setDueDayDisp(''); return }
@@ -4052,9 +4072,21 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       />
 
       <FormSection title="기본 정보">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
-          <Field label="영어이름" name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
+        {/* 안내는 제 칸에 붙는다(형제: 아래 현지 표기 행). FormSection 직속이면 위아래 12px 등간격이라
+            어느 칸의 말인지 안 읽힌다. */}
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
+            <Field label="영어이름" name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
+          </div>
+          {/* 영문 이름을 받는 이유는 발급 서류에 찍을 **공식 성명**이 필요해서다(운영자 2026-09-03).
+              들리는 대로 적으면 관청에서 신분 대조가 안 된다. 외국인에게만 말한다 — 내국인의
+              영어이름은 서류가 아니라 카드 표시에 쓰는 값이라 같은 요구가 아니다. */}
+          {showsForeignFields(natVal) && (
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              영어이름은 외국인등록증에 적힌 그대로 적어 주세요. 발급 서류에 그 이름이 찍힙니다.
+            </p>
+          )}
         </div>
         {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·해외 연락처와 같은 조건).
             숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
@@ -4065,18 +4097,51 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             실제 현지 표기라 운영자가 거슬려 했다. 로마자를 피한 것은 이 칸이 위 '영어이름'과 다른
             값이라는 것을 예시 한 줄로 보이게 하려는 것이다. */}
         {showsForeignFields(natVal) && (
+        <>
+        {/* 안내가 아래 별칭 행이 아니라 이 행에 붙어야 한다 — FormSection 직속이면 위아래가
+            등간격이라 어느 칸의 말인지 안 읽힌다(형제: 입주일 승계 안내). */}
         <div className="space-y-1.5">
-          <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
-          <input
-            id={`nativeName-${formUid}`}
-            type="text"
-            name="nativeName"
-            defaultValue={tenant?.nativeName ?? ''}
-            maxLength={NATIVE_NAME_MAX}
-            placeholder="Иван Иванов"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로)</span></label>
+            <input
+              id={`nativeName-${formUid}`}
+              type="text"
+              name="nativeName"
+              value={nativeNameVal}
+              onChange={e => setNativeNameVal(e.target.value)}
+              maxLength={NATIVE_NAME_MAX}
+              placeholder="Иван Иванов"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors min-h-[var(--input-h-touch)] sm:min-h-0"
+            />
+          </div>
+          {/* 서류 성명 표기 — 계약서·확인서에 찍을 이름의 **사람 단위 기본값**이다. 이 칸이 없을 때는
+              외국인의 서류를 열 때마다 영문으로 서서, 한글로 낼 사람은 서류마다 다시 골라야 했다.
+              값은 이미 나간 서류에 소급되지 않는다(찍힌 표기는 발급본이 제 자리에 따로 갖는다). */}
+          <input type="hidden" name="docNameStyle" value={docStyleShown} />
+          <SelectField label="서류 성명 표기" value={docStyleShown}
+            onChange={v => setDocStyleVal(asDocNameStyle(v) ?? '')}>
+            <option value="">자동</option>
+            {docStyleOptions.map(st => <option key={st} value={st}>{DOC_NAME_STYLE_LABEL[st]}</option>)}
+          </SelectField>
         </div>
+        {/* 안내 셋은 서로 배타다. 위에서부터 더 구체적인 사실을 말한다. 첫째는 고른 값과 무관하게
+            뜬다 — 형제 서류가 사람 단위 값보다 세므로, 자동일 때야말로 앞 서류를 잇는다. */}
+        {docStyleInherits ? (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+            이 계약은 앞서 {DOC_NAME_STYLE_LABEL[inheritedDocStyle]} 표기로 발급했습니다. 다음 서류도 그 표기로 열립니다(발급 화면에서 바꿀 수 있습니다).
+          </p>
+        ) : !docStyleShown && !docStyleOptions.includes('en') ? (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+            영문 이름이 없어 자동이어도 서류에는 한글로 나갑니다.
+          </p>
+        ) : !docStyleShown ? (
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+            자동은 외국인이면 영문입니다. 한글로 낼 분은 여기서 고정하세요.
+          </p>
+        ) : null}
+        </div>
+        </>
         )}
         {/* 별칭과 카드 표시 이름 — 내국인·외국인 가리지 않는다(국적 가드 밖). '정다솜 (Sasha)'처럼
             이름 칸에 부르는 말을 욱여넣은 사례가 이미 있다. 서류 성명 표기(계약서·확인서)는 별개
