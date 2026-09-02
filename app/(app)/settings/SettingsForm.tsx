@@ -1694,7 +1694,7 @@ export default function SettingsForm({
                         가진다. 말줄임은 최후순위라 truncate 를 걷었다. */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
-                      {r.items.length > 0 && <Badge tone="pale-coral">묶음 {r.items.length}</Badge>}
+                      {r.items.length > 0 && <Badge tone="pale-neutral">묶음 {r.items.length}</Badge>}
                       {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
                       {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                     </div>

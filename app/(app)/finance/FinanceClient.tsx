@@ -3476,7 +3476,7 @@ export default function FinanceClient({
                             <span className="text-[0.65625rem] text-[var(--warm-mid)]">다음 도래 {fmtDateDot(recurringDueDateFor(rec, rec.nextDueMonth))}</span>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                            <Badge tone="pale-coral">{rec.category}</Badge>
+                            <Badge tone="pale-neutral">{rec.category}</Badge>
                           </div>
                           <div className="flex justify-between">
                             <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
@@ -3524,7 +3524,7 @@ export default function FinanceClient({
                             <Badge tone="pale-blue">{rec.activeSince?.slice(0, 7)} 활성화</Badge>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                            <Badge tone="pale-coral">{rec.category}</Badge>
+                            <Badge tone="pale-neutral">{rec.category}</Badge>
                           </div>
                           <div className="flex justify-between">
                             <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
@@ -5014,7 +5014,7 @@ export default function FinanceClient({
                       {/* flex-wrap + break-keep — 품명이 배지에 밀리지 않고 먼저 자리를 가진다. */}
                       <div className="flex flex-wrap items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{r.title}</p>
-                        {isParent && <Badge tone="pale-coral">묶음 {r.items.length}</Badge>}
+                        {isParent && <Badge tone="pale-neutral">묶음 {r.items.length}</Badge>}
                         {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
                         {!r.isActive && <Badge tone="pale-neutral">비활성</Badge>}
                         {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}

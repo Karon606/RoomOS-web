@@ -29,8 +29,8 @@
 - [x] NoticeSmsModal 344 조건 칩(형제 357 골격, 코랄 채움 제거) · check-pill-text 정규식 \b(px|pl|pr|p)-
 
 ## B2 design(배지): Badge ring·pale-coral 을 토큰 트라이어드로
-- [ ] Badge.tsx pale-green/green ring --success-ring, pale-coral/coral 을 --danger-* 트라이어드
-- [ ] scripts/check-badge-tokens.mjs(--viz-, hex, /NN 알파 금지) + verify:fast 등록 + 역주입
+- [x] Badge.tsx pale-green/green ring --success-ring, pale-coral/coral 을 --danger-* 트라이어드 · 호출 네 자리 pale-neutral · 폴백 pale-neutral (디자이너 지적 2~4)
+- [x] scripts/check-badge-tokens.mjs(--viz-, hex, /NN 알파 금지) + verify:fast 등록 + 역주입
 
 ## B3 design(정산 카드): 읽기전용 박스 높이를 입력에 맞춘다
 - [x] panelFormStyles readonlyCls · RentSettlementPanel 343
