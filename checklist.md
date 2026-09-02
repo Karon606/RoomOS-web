@@ -39,7 +39,7 @@
 - [x] Btn 행 gap-2: RentSettlementPanel 257·289, RoomCleaningPanel 168, MarketClient 1018 · RowActionBtn 행 TenantClient 3020 gap-1.5
 
 ## B5 chore(감지망): 장식 그라데이션 재발 감지
-- [ ] tsx gradient 문자열·css mask-image 밖 linear-gradient 금지 + verify:fast + 역주입
+- [x] tsx gradient 문자열·css mask-image 밖 linear-gradient 금지 + verify:fast + 역주입 (차트 SVG linearGradient 만 허용)
 
 ## B6 design(배지): 틴트 배지에서 ring 을 걷는다 (§11 개정)
 - [ ] 가이드 §11 문단 + 부록 A 개정 전 문장 · Badge.tsx ring-1 제거 · 다크 대비 실기
