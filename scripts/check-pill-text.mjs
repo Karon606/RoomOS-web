@@ -4,7 +4,8 @@
 // 토글·그립·숫자 카운터·부유 알약·진행바. **글자를 담는 배지·칩은 r-sm(6px)이다.**
 // 글자 알약이 화면마다 서는 것이 운영자가 지목한 'AI 가 만든 앱' 인상의 큰 몫이었다.
 //
-// 판정: 한 줄에 rounded-full + px-* + text-* 가 함께 있으면 '글자를 담는 알약'으로 본다.
+// 판정: 한 줄에 rounded-full + 가로 패딩(px·pl·pr·p) + text-* 가 함께 있으면 '글자를 담는 알약'으로 본다.
+// pl/pr 로 좌우를 따로 준 칩이 px 만 보는 그물을 지나갔다(NoticeSmsModal 조건 칩, 2026-09-03).
 // 허용 목록은 도형-기능 원형과, 정비가 아직 안 닿은 자리(TODO — 해당 커밋에서 지운다)다.
 import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
@@ -28,7 +29,7 @@ for (const f of files) {
   const lines = readFileSync(f, 'utf8').split('\n')
   lines.forEach((line, i) => {
     if (!line.includes('rounded-full')) return
-    if (!(/px-[0-9.[]/.test(line) && line.includes('text-'))) return
+    if (!(/\b(?:px|pl|pr|p)-[0-9.[]/.test(line) && line.includes('text-'))) return
     const allowed = ALLOW.some(([af, marker]) => f === af && (marker === '' || line.includes(marker)))
     if (!allowed) violations.push(`${f}:${i + 1}`)
   })

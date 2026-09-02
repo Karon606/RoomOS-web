@@ -26,7 +26,7 @@
 - [ ] knowledge/domain-checkout-settlement 규칙 적립
 
 ## B1 design(칩): 글자 알약 마지막 한 곳을 걷고 감지망 패딩 구멍을 닫는다
-- [ ] NoticeSmsModal 344 조건 칩(형제 357 골격, 코랄 채움 제거) · check-pill-text 정규식 \b(px|pl|pr|p)-
+- [x] NoticeSmsModal 344 조건 칩(형제 357 골격, 코랄 채움 제거) · check-pill-text 정규식 \b(px|pl|pr|p)-
 
 ## B2 design(배지): Badge ring·pale-coral 을 토큰 트라이어드로
 - [ ] Badge.tsx pale-green/green ring --success-ring, pale-coral/coral 을 --danger-* 트라이어드

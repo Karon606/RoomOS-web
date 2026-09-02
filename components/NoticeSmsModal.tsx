@@ -341,7 +341,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
               {/* 걸어둔 조건 칩 — 몸통 탭=수정, ×=삭제 */}
               <div className="flex flex-wrap items-center gap-1.5">
                 {activeDims.map(d => (
-                  <span key={d.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--coral)] bg-[var(--coral)]/10 pl-3 pr-1.5 py-1 text-xs font-medium text-[var(--warm-dark)]">
+                  <span key={d.key} className="inline-flex items-center gap-1 rounded-sm border border-[var(--coral)] bg-[var(--cream)] pl-3 pr-1.5 py-1.5 text-xs font-medium text-[var(--tc-text)]">
                     <button type="button" onClick={() => openDimEditor(d.key)}>
                       {d.label}: {[...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => fmtVal(d, v)).join('·')}
                     </button>
