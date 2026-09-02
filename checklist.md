@@ -1,60 +1,39 @@
-# 퇴실 정산 환불 가드 + AI 티 2차 정비 (2026-09-03, 운영자 "전부 권고대로")
+# 서류 성명 표기 사람 단위 기본값 (2026-09-03, 운영자 "전부 권고대로")
 
-## A1 fix(퇴실정산): 환불 확정 뒤 일할 재적용을 서버가 거부한다
-- [x] lib/rentRefundRecord.ts hasRentRefundSnapshot(undo)
-- [x] actions.ts setCheckoutProration 가드(lease 조회 직후, settlementCalcFor 앞, clear 와 같은 문장)
-- [x] clearCheckoutProration · prorationDataForChange 술어 교체(동작 동일)
-- [x] check-checkout-side-effects ⓠ(세 본문 술어, set 은 settlementCalcFor 앞, 문장 정확히 2회) + 역주입
+요청. 외국인(등록번호 보유 또는 국적 비한국)은 발급 서류 이름이 영문 기본.
+다만 사람 단위로 "이 사람은 한글" 을 못박을 수 있어야 한다.
 
-## A2 feat(퇴실정산): 환불 확정 계약은 일할 위젯이 잠긴 줄로 선다
-- [x] rooms/actions.ts RoomRow.rentRefundFinalized, select checkoutProrationUndo, 조립 두 곳
-- [x] PaymentBody prop 전달
-- [x] CheckoutProrationWidget prop, 잠금 한 줄(muted, 버튼 없음, 폼 안 열림) "이용료 정산 확정됨 · … · 변경은 위 이용료 정산에서." (디자이너 패스 반영, break-keep)
-- [x] PaymentRecordList 캡션 "맨 위" 를 "위" 로 (A-3) · 391 동사 "고칩니다" 로 통일
-- [x] check-rent-settlement-branch ⓘ + 역주입
-- [x] 웹디자이너 패스
+## 0 fix(고객정보): 외국인 판정을 정본 하나로 모은다
+- [ ] TenantClient 의 `natVal !== '대한민국'` 두 자리를 정본 판정으로
+- [ ] 서류 정본 isKoreanNationality 와 같은 답을 내는지 확인('한국'·'Korea'·'KR')
 
-## A3 fix(퇴실정산): 전액 환불 확인창은 지낸 달 사용분까지 돌려줄 때만 뜬다
-- [x] RentSettlementValue 를 lib/checkoutSettlement 로, futurePrepaid 필드, 섹션 재수출·valueFor 채움
-- [x] rentSettlementConfirmSpec 순수 함수, confirmRentSettlement 래퍼화(문장 무변경)
-- [x] test-money 7 케이스
-- [x] check-rent-settlement-branch ⓔ 확장 + 역주입
+## 1 feat(서류성명): 사람 단위 기본 표기를 정본이 받는다
+- [ ] lib/documentName: DocNameStyleContext 에 tenant 축, 서열은 saved > siblings > tenant > 국적 > ko
+- [ ] 외국인 판정 정본 함수(국적 비한국 OR 외국인등록번호 보유)
+- [ ] scripts/test-doc-name-style 케이스 다섯(국적 추정을 이김·저장값과 형제에는 짐·NULL 은 종전·
+      후보에서 빠진 값은 무시·화이트리스트 밖은 버림)
 
-## A4 fix(퇴실정산): 환불 확정 계약의 복귀·단기 연장은 환불 적용취소부터
-- [x] updateTenant 1177 · applyStatusTransition 3405 · syncShortStayCharge 5944 가드(같은 문장)
-- [x] ⓠ 일반화(DbNull 로 비우는 함수는 finalize·undo·clear 외엔 술어 필수) + 역주입
-- [x] knowledge/domain-checkout-settlement 규칙 적립
+## 2 chore(스키마): Tenant.docNameStyle
+- [ ] 칼럼 String? + 대칭 주석(카드는 이 값을 절대 읽지 않는다 / 서류는 displayNameStyle 을 안 읽는다)
+- [ ] 마이그레이션. 백필 없음, NULL = 자동
 
-## B1 design(칩): 글자 알약 마지막 한 곳을 걷고 감지망 패딩 구멍을 닫는다
-- [x] NoticeSmsModal 344 조건 칩(형제 357 골격, 코랄 채움 제거) · check-pill-text 정규식 \b(px|pl|pr|p)-
+## 3 feat(고객정보): 서류 성명 표기 칸
+- [ ] actions.ts has 가드 patch(칸 부재는 보존)
+- [ ] TenantClient 폼에 SelectField '서류 성명 표기'(자동·한글·영문·현지), 외국인에게만
+- [ ] 영문 이름 없는 사람 안내, 진행 중 계약에 다른 표기 힌트가 있으면 안내 한 줄
+- [ ] 내국인 93명 화면 무변화 대조
 
-## B2 design(배지): Badge ring·pale-coral 을 토큰 트라이어드로
-- [x] Badge.tsx pale-green/green ring --success-ring, pale-coral/coral 을 --danger-* 트라이어드 · 호출 네 자리 pale-neutral · 폴백 pale-neutral (디자이너 지적 2~4)
-- [x] scripts/check-badge-tokens.mjs(--viz-, hex, /NN 알파 금지) + verify:fast 등록 + 역주입
+## 4 feat(발급): 세 서류가 사람 단위 값을 읽는다
+- [ ] lib/contractData · residence-cert/actions · rent-receipt/actions 에 tenant 값 전달
+- [ ] 세 View 초기값만 달라지고 기존 셀렉트·되묻기는 그대로
 
-## B3 design(정산 카드): 읽기전용 박스 높이를 입력에 맞춘다
-- [x] panelFormStyles readonlyCls · RentSettlementPanel 343
-
-## B4 design(버튼 행): gap 을 정본에 맞춘다
-- [x] Btn 행 gap-2: RentSettlementPanel 257·289, RoomCleaningPanel 168, MarketClient 1018 · RowActionBtn 행 TenantClient 3020 gap-1.5
-
-## B5 chore(감지망): 장식 그라데이션 재발 감지
-- [x] tsx gradient 문자열·css mask-image 밖 linear-gradient 금지 + verify:fast + 역주입 (차트 SVG linearGradient 만 허용)
-
-## B6 design(배지): 틴트 배지에서 ring 을 걷는다 (§11 개정)
-- [x] 가이드 §11 문단 + 부록 A 개정 이력 · Badge.tsx ring-1 제거 · 손 배지 11곳 전수 · --neutral-bg 알파 상향(.05→.08, 다크 .06→.10, 디자이너 지적 6) · check-badge-tokens ⓓ
-- [ ] 다크 대비 실기(운영자)
-
-## B7 design(홈 알림): 카테고리 립을 걷는다 (§18 개정)
-- [x] 가이드 §18 문단 + §29 점검 "카테고리색 립 0" · DashboardClient 844 · check-card-rip 대상에 알림 행 + borderLeft 축약 + 역주입
-
-## B8 design(퇴실 정산 위젯): 입력을 40/44 로 올린다 (§12)
-- [x] CheckoutProrationWidget 입력 5 + DatePicker + 읽기전용 박스 (디자이너 통과. 320px 은 Modal 본문 스크롤이라 넘침 없음, 모바일 +40px)
-- [ ] 후속: 위젯 라벨을 labelCls 로 (디자이너 지적 8)
+## 5 chore(감지망): 두 축 침범 금지
+- [ ] scripts/check-doc-name-axis.mjs(서류 경로에 displayNameStyle 금지, 카드 경로에 docNameStyle
+      금지, resolveDocNameStyle 호출부 전원이 tenant 축을 넘김) + verify:fast + 역주입
 
 ## 게이트 (커밋마다)
-- [x] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드 · iCloud 사본 · push (B8 커밋에서 한 번 더)
-- [x] 웹디자이너 패스: A2 위젯, B2/B6 배지 · [ ] B7 알림 행, B8 위젯(진행 중)
+- [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
+- [ ] 웹디자이너 패스: 3번 폼 칸
 
 ## 문서
-- [x] Work_log · knowledge(domain-checkout-settlement, design-visual-identity) · INDEX (B 후반 커밋은 마감 때 추가)
+- [ ] Work_log · knowledge(domain-document-name 또는 기존 노트) · INDEX
