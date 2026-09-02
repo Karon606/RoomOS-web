@@ -25,14 +25,14 @@
 - [x] Work_log · knowledge/domain-checkout-settlement(백로그 해소) · INDEX
 
 ## 게이트 (loop.md)
-- [ ] iCloud 사본 제거
-- [ ] tsc 0
-- [ ] test-money
-- [ ] verify:fast
-- [ ] 빌드
-- [ ] eslint 신규 0 (기준선 대조)
-- [ ] 웹디자이너 패스(none 박스 선납액 320px · 카드 375px 두 버튼 · 다크)
-- [ ] 각 커밋 push --no-verify
+- [x] iCloud 사본 제거
+- [x] tsc 0
+- [x] test-money
+- [x] verify:fast
+- [x] 빌드
+- [x] eslint 신규 0 (기준선 대조)
+- [x] 웹디자이너 패스(none 박스 선납액 320px · 카드 375px 두 버튼 · 다크)
+- [x] 각 커밋 push --no-verify
 
 ## 운영자 실기 (배포 후)
 - [ ] 422호 [환불 없음] → 배지 '환불 없음' · 금액 줄 1회 표기 · [적용취소] 뒤 미처리 복귀
