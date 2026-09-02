@@ -19,7 +19,7 @@ import { RentSettlementSection, type RentSettlementValue } from '@/components/ch
 import { confirmRentSettlement } from '@/components/checkout/confirmRentSettlement'
 import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
-import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
+import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
 import { WITHHOLD_REASONS, buildWithholdReason, cleaningFeeDeductible,
   CARRIED_OVER_WITHHOLD_REASON, CLEANING_WITHHOLD_REASON } from '@/lib/depositWithholdReasons'
 import { depositCompositionLabel, withheldDestinationLabel } from '@/lib/depositComposition'
@@ -108,6 +108,8 @@ type Lease = {
   roomId: string | null
   // 예약금 처리 모드 해석값 — 예약 취소 반환/몰취 경로 분기('deposit'|'prepaid'|'none')
   reservationDepositMode: string
+  /** 퇴실 예정 때 고른 사유 — 퇴실 미니폼의 시작값. 없으면 '기록 안 함'으로 연다(lib/checkoutReason 정본). */
+  checkoutReason?: string | null
 }
 
 // resvCancel: 예약 취소 시 실수납 예약금 반환·몰취 미니폼(depositAmount=실수납 합).
@@ -171,6 +173,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
   const [withholdEtc, setWithholdEtc] = useState('')
   const [transReason, setTransReason] = useState('')   // 취소 사유(선택) — TenantStatusLog.reason 적재(e1b81629)
   const [transReasonEtc, setTransReasonEtc] = useState('')   // '기타' 선택 시 자유 입력 — '기타 · <내용>' 으로 저장(2026-07-27)
+  // 미니폼을 연 시점의 이어받은 사유 — 지금 값이 이것과 같을 때만 출처 캡션을 단다(고치면 캡션이 사라진다).
+  const [transReasonPrefill, setTransReasonPrefill] = useState<string | null>(null)
   // 이용료 정산 — 세 화면이 같은 정본을 쓴다. 종전에는 미리 확정해 둔 값이 있을 때만 말을 했고,
   // 정산을 안 해 둔 중도퇴실은 아무것도 안 묻고 만월 청구를 그대로 두었다(2026-08-31 패널).
   const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
@@ -282,7 +286,11 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
     }
     // 사유 상태 초기화 — 앞서 연 미니폼의 선택이 남으면 다음 전이에 엉뚱한 사유가 붙는다.
     // 종전에는 취소 분기에서만 비웠는데, 퇴실도 사유를 받게 되면서 이 경로에도 필요해졌다.
-    setTransReason(''); setTransReasonEtc('')
+    // 퇴실 처리는 비우지 않고 퇴실 예정 때 고른 사유로 시작한다 — 비우면 통보 때 적어 둔 사유가
+    // 예정 행에만 남고 퇴실 행은 빈 채 굳는다(506호 신고 2026-09-02). 판정은 lib/checkoutReason 정본.
+    const inherited = def.field === 'moveOutDate' ? (lease.checkoutReason ?? null) : null
+    const pre = parseReason(inherited)
+    setTransReason(pre.selected); setTransReasonEtc(pre.etcText); setTransReasonPrefill(inherited)
     setRentTouched(false)
     // 청소 예정일도 함께 비운다 — 앞서 연 퇴실 건에서 고른 날짜가 남으면 다음 사람에게 붙는다.
     cleaning.reset()
@@ -546,7 +554,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || transReason !== '' || transReasonEtc !== '' || withholdReason !== '' || withholdEtc !== '' || rentTouched}
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null || buildReason(transReason, transReasonEtc) !== (transReasonPrefill ?? '') || withholdReason !== '' || withholdEtc !== '' || rentTouched}
           onClose={() => { if (!pending) setActive(null) }}
           title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
@@ -588,6 +596,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, subLeases
                       <input type="text" value={transReasonEtc} onChange={e => setTransReasonEtc(e.target.value)}
                         placeholder="사유를 직접 입력하세요"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    )}
+                    {transReasonPrefill && buildReason(transReason, transReasonEtc) === transReasonPrefill && (
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
                     )}
                   </div>
                 )

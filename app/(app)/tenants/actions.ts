@@ -31,6 +31,7 @@ import { fmtDateDot } from '@/lib/fmtDate'
 import { resolveCheckoutCleaningYmd } from '@/lib/checkoutCleaning'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth, type ShortStayPolicy } from '@/lib/shortStay'
 import { defaultSettlementPick, type SettlementPick } from '@/lib/checkoutSettlement'
+import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
 import { propagateDueDayToSubLeases } from '@/lib/dueDay'
 import { propagateMoveInDateToSubLeases } from '@/lib/moveInDate'
@@ -274,7 +275,12 @@ export async function getTenants() {
             // deletedAt 은 손수 적는다 — 중첩 관계 조회는 소프트삭제 자동필터가 안 걸린다.
             // 여기가 무효 처리의 결정적 자리다(신고 e000c791): 잘못 적힌 퇴실 사유를 안 거르면
             // 그 사람이 실제로 퇴실하는 날 목록·카드의 퇴실 사유로 그대로 튀어나온다.
-            where: { deletedAt: null, toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } },
+            // 퇴실 예정에서 거주로 돌아간 행(연장)도 싣는다 — 수정 폼이 퇴실 처리 사유를 예정 때 값으로
+            // 채울 때(lib/checkoutReason) 그 행이 있어야 연장 전의 옛 사유가 새 퇴실에 붙지 않는다.
+            where: {
+              deletedAt: null,
+              OR: [{ toStatus: { in: ['CANCELLED', 'CHECKOUT_PENDING', 'CHECKED_OUT'] } }, { fromStatus: 'CHECKOUT_PENDING', toStatus: 'ACTIVE' }],
+            },
             orderBy: { changedAt: 'desc' },
             take: 5,
             select: { fromStatus: true, toStatus: true, reason: true },
@@ -3213,6 +3219,9 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
     roomId: lease.roomId, cleaningYmd: cleaningDate,
   })
 
+  // 이 경로(홈 알림)는 퇴실 사유를 묻지 않는다. 퇴실 예정 때 고른 사유가 있으면 그것이 이 퇴실의
+  // 사유다 — 안 이어받으면 예정 행에만 남고 퇴실 행은 비어, 표·카드의 퇴실 사유가 사라진다(506호).
+  const reason = lease.status === 'CHECKOUT_PENDING' ? await latestCheckoutReasonFor(prisma, leaseTermId) : null
   await prisma.tenantStatusLog.create({
     data: {
       tenantId,
@@ -3220,6 +3229,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string, move
       fromStatus: lease.status,
       toStatus:   'CHECKED_OUT',
       propertyId,
+      reason,
     },
   })
 

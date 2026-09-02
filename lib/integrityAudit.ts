@@ -9,6 +9,7 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration } from '@/lib/prorate'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
+import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
 
@@ -156,6 +157,35 @@ export async function runIntegrityAudit(
     violations.push({
       signature: `[정합] refund-over-short-stay · ${l.id}`,
       note: `${l.tenant.name}: 거주 ${days}일 중도 퇴실이라 단기 요금(${q.units}주 계약 ${q.baseAmount.toLocaleString()}원) 기준 환불은 ${shortRefund.toLocaleString()}원인데 ${snap.refunded.toLocaleString()}원을 환불했습니다. 위약금 갈래로 확정된 것이면 입주자 정보의 '적용취소'로 되돌린 뒤 단기 요금으로 다시 확정하고, 일부러 면제한 것이면 이 신고를 무시하세요.`,
+      tenantId: l.tenantId, propertyId: l.propertyId,
+    })
+  }
+
+  // 규칙 7 — 퇴실 예정 때 고른 사유가 퇴실 확정 기록에서 빠짐 (506호 패턴, 2026-09-02 신고: 예정 때 적은
+  // 사유를 퇴실 처리 폼이 비우고 열어 확정 행의 사유가 null). 이어받을 사유가 있었는지는 화면·서버가
+  // 쓰는 같은 판정(lib/checkoutReason)으로 본다 — 확정 행 직전 이력에서 판정이 사유를 돌려주는데
+  // 확정 행이 비어 있으면 잡는다. 확정 행에 무엇이든 적혀 있으면 운영자가 골라 적은 것이라 건드리지 않는다.
+  const checkedOut = await prisma.leaseTerm.findMany({
+    where: { status: 'CHECKED_OUT' },
+    select: {
+      id: true, tenantId: true, propertyId: true,
+      tenant: { select: { name: true } },
+      statusLogs: {
+        where: { deletedAt: null },
+        orderBy: { changedAt: 'desc' },
+        take: 10,
+        select: { fromStatus: true, toStatus: true, reason: true },
+      },
+    },
+  })
+  for (const l of checkedOut) {
+    const idx = l.statusLogs.findIndex(r => r.toStatus === 'CHECKED_OUT')
+    if (idx < 0 || (l.statusLogs[idx].reason ?? '').trim()) continue
+    const inherited = inheritableCheckoutReason(l.statusLogs.slice(idx + 1))
+    if (!inherited) continue
+    violations.push({
+      signature: `[정합] checkout-reason-dropped · ${l.id}`,
+      note: `${l.tenant.name}: 퇴실 예정 때 고른 사유는 '${inherited}'인데 퇴실 확정 기록에는 비어 있습니다. 입주자 정보의 상태 이력에서 퇴실 행의 사유를 적어 주세요.`,
       tenantId: l.tenantId, propertyId: l.propertyId,
     })
   }

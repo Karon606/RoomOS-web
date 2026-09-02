@@ -9,7 +9,8 @@ import { defaultCheckoutYmd } from '@/lib/checkoutDate'
 import { calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { moveOutFieldValue } from '@/lib/moveOutField'
 import { calendarMonthsBetween, fmtStayPeriod } from '@/lib/stayPeriod'
-import { buildReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
+import { buildReason, parseReason, reasonsForStatus, reasonLabel } from '@/lib/statusReasons'
+import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { WISH_LEAD_STATUSES } from '@/lib/wishMatch'
 import { isSameDayTurnover, plannedStayDenial } from '@/lib/roomAssignment'
 import { resolveReservationDepositMode } from '@/lib/reservationDeposit'
@@ -453,8 +454,9 @@ const ENDED_STATUSES = ['CANCELLED', 'CHECKED_OUT']
 
 // 이 계약의 종료 사유(입실 취소 또는 퇴실). 표·카드 캡션이 같은 값을 쓴다.
 // 사유가 적힌 최신 한 건을 고른다 — 퇴실 예정에서 적었든 퇴실 확정에서 적었든 같은 값으로 잡힌다.
+// 거주로 돌아간 행(연장)은 종료 사유가 아니다 — 수정 폼 프리필 때문에 목록에 실려 있을 뿐이다.
 function endReasonText(lease: LeaseTerm | undefined): string | undefined {
-  return lease?.statusLogs?.find(l => l.reason)?.reason ?? undefined
+  return lease?.statusLogs?.find(l => l.reason && l.toStatus !== 'ACTIVE')?.reason ?? undefined
 }
 
 // 취소 단계만 — 사유는 길이가 무제한이라 칩에 넣지 않는다(§20 1순위는 짧은 값 자리).
@@ -3665,6 +3667,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   // 수정 폼에서 입실 취소로 바꿀 때도 사유를 받는다 — 상태전환 미니폼과 같은 선택지(운영자 지시 2026-07-27)
   const [cancelReasonVal, setCancelReasonVal] = useState('')
   const [cancelReasonEtc, setCancelReasonEtc] = useState('')
+  // 퇴실 예정에서 퇴실 처리로 바꿀 때 이어받은 사유. 아직 그 값 그대로면 출처 캡션을 단다.
+  const [cancelReasonPrefill, setCancelReasonPrefill] = useState<string | null>(null)
   const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(해외 연락처 숨김)
   const [contactTypeVal, setContactTypeVal] = useState(primary?.contactType ?? 'PHONE')   // 연락수단 연동(연락처 예시·포맷 분기)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
@@ -4198,7 +4202,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 const v = e.target.value
                 if (v === 'INQUIRY')           { setStatusVal('WAITING_TOUR'); setUiWaitingKind('INQUIRY') }
                 else if (v === 'WAITING_TOUR') { setStatusVal('WAITING_TOUR'); setUiWaitingKind('TOUR') }
-                else                           setStatusVal(v)
+                else {
+                  setStatusVal(v)
+                  // 퇴실 예정에서 퇴실 처리로 바꾸면 예정 때 고른 사유로 시작한다 — 비우면 통보 때 적어 둔 사유가
+                  // 확정 기록에서 사라진다(신고 2026-09-02). 판정은 프리즘 미니폼과 같은 정본(lib/checkoutReason).
+                  const inherited = v === 'CHECKED_OUT' && lease?.status === 'CHECKOUT_PENDING'
+                    ? inheritableCheckoutReason(lease.statusLogs ?? [])
+                    : null
+                  if (inherited) {
+                    const pre = parseReason(inherited)
+                    setCancelReasonVal(pre.selected); setCancelReasonEtc(pre.etcText)
+                  }
+                  setCancelReasonPrefill(inherited)
+                }
               }}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <optgroup label="문의·예약">
@@ -4252,6 +4268,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   )}
                   <input type="hidden" name="cancelReason" value={buildReason(cancelReasonVal, cancelReasonEtc)} />
+                  {cancelReasonPrefill && buildReason(cancelReasonVal, cancelReasonEtc) === cancelReasonPrefill && (
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">퇴실 예정 때 고른 사유 · 필요시 수정</p>
+                  )}
                 </div>
               )
             })()}

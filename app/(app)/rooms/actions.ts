@@ -2768,6 +2768,14 @@ export async function getTenantDetail(tenantId: string) {
           property: { select: { contactLeadDays: true, reservationDepositMode: true, shortStayPolicy: true } },
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
           room: { select: { id: true, roomNo: true } },
+          // 퇴실 예정 때 고른 사유를 퇴실 처리 미니폼이 이어받을 근거(lib/checkoutReason 정본이 고른다).
+          // 최신 몇 행이면 된다 — 예정 구간 밖의 전이를 만나면 판정이 멈춘다. deletedAt 은 손수 적는다
+          // (중첩 관계 조회는 소프트삭제 자동필터가 안 걸린다).
+          statusLogs: {
+            orderBy: { changedAt: 'desc' },
+            take: 5,
+            select: { fromStatus: true, toStatus: true, reason: true, deletedAt: true },
+          },
           paymentRecords: {
             where: { deletedAt: null },
             // 세 플래그가 없으면 보증금이 월세 record 로 취급돼 미납액이 5만원 어긋난다(lib/billing.ts UnpaidRecord).

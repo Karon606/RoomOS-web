@@ -396,7 +396,45 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 / 위반 ${violations.length}건`)
+// ⓞ 퇴실 예정 때 고른 사유를 퇴실 처리가 이어받는가 (2026-09-02 신고, 506호).
+//
+//    사유를 말하는 시점은 통보를 받는 '퇴실 예정'인데, 퇴실 처리 폼은 사유 칸을 빈 채로 열었고
+//    홈 알림 경로는 아예 묻지 않았다. 예정 행에만 남고 확정 행은 비어, 표·카드의 퇴실 사유가
+//    사라졌다. 판정은 lib/checkoutReason 한 벌이다 — 화면(프리필)과 서버(이어받기)와 사후
+//    그물(감사)이 같은 함수를 봐야 어느 한 경로만 옛 사유를 붙이거나 빠뜨리지 않는다.
+{
+  // 서버 — 화면 없는 경로는 사유를 스스로 잇고, 그 값을 확정 행에 싣는다.
+  const co5 = src.match(/export async function checkoutTenant\([\s\S]*?\n\}\n/)
+  if (!co5) {
+    violations.push(`${FILE} — checkoutTenant 를 못 찾았다.`)
+  } else {
+    const logBlock = co5[0].match(/tenantStatusLog\.create\(\{[\s\S]*?\}\)/)
+    if (!/latestCheckoutReasonFor\(/.test(co5[0]) || !logBlock || !/\breason\b/.test(logBlock[0])) {
+      violations.push(`${FILE} — 홈 퇴실 경로가 퇴실 예정 사유를 안 잇는다. 확정 행의 사유가 빈 채 굳는다.`)
+    }
+  }
+  // 두 화면 — 퇴실 처리 사유를 정본 판정으로 채운다.
+  for (const [name, f] of [
+    ['프리즘 입주자 본문', 'components/entity-modal/bodies/TenantBody.tsx'],
+    ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
+  ]) {
+    if (!/inheritableCheckoutReason\(/.test(readFileSync(f, 'utf8'))) {
+      violations.push(`${f} — '${name}' 이 퇴실 예정 사유 판정 정본을 안 쓴다. 폼이 빈 채 열린다.`)
+    }
+  }
+  // 프리즘 미니폼 — 본문이 넘긴 값을 실제로 시작값으로 쓴다(넘기기만 하고 안 쓰면 같은 병).
+  const tst2 = readFileSync('components/entity-modal/widgets/TenantStatusTransitions.tsx', 'utf8')
+  if (!/lease\.checkoutReason/.test(tst2) || !/setTransReasonPrefill\(/.test(tst2)) {
+    violations.push('components/entity-modal/widgets/TenantStatusTransitions.tsx — 퇴실 미니폼이 예정 사유로 시작하지 않는다.')
+  }
+  // 사후 그물 — 확정 행이 비었는데 이어받을 사유가 있던 건을 같은 판정으로 잡는다.
+  const audit = readFileSync('lib/integrityAudit.ts', 'utf8')
+  if (!/checkout-reason-dropped/.test(audit) || !/inheritableCheckoutReason\(/.test(audit)) {
+    violations.push('lib/integrityAudit.ts — 퇴실 사유 누락 감사(규칙 7)가 없거나 판정 정본을 안 쓴다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)

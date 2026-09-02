@@ -34,6 +34,7 @@ import { TenantWishRooms } from '../widgets/TenantWishRooms'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
+import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
 import { TenantMoveHistory } from '../widgets/TenantMoveHistory'
 import { TenantStatusHistory } from '../widgets/TenantStatusHistory'
@@ -97,6 +98,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             dueDay: lease.dueDay, isShortTerm: lease.isShortTerm,
             reservationConfirmedAt: lease.reservationConfirmedAt, autoCheckoutAt: lease.autoCheckoutAt ?? null,
             roomId: lease.room?.id ?? null,
+            // 퇴실 예정 때 고른 사유 — 퇴실 미니폼이 이것으로 시작한다(506호 신고 2026-09-02).
+            checkoutReason: lease.status === 'CHECKOUT_PENDING' ? inheritableCheckoutReason(lease.statusLogs ?? []) : null,
             reservationDepositMode: resolveReservationDepositMode(
               lease.reservationDepositMode, lease.property?.reservationDepositMode, lease.isShortTerm,
               parseShortStayPolicy(lease.property?.shortStayPolicy).reservationMode,
