@@ -21,8 +21,8 @@
 - [x] check-rent-settlement-branch ⓔ 확장 + 역주입
 
 ## A4 fix(퇴실정산): 환불 확정 계약의 복귀·단기 연장은 환불 적용취소부터
-- [ ] updateTenant 1177 · applyStatusTransition 3405 · syncShortStayCharge 5944 가드(같은 문장)
-- [ ] ⓠ 일반화(DbNull 로 비우는 함수는 finalize·undo·clear 외엔 술어 필수) + 역주입
+- [x] updateTenant 1177 · applyStatusTransition 3405 · syncShortStayCharge 5944 가드(같은 문장)
+- [x] ⓠ 일반화(DbNull 로 비우는 함수는 finalize·undo·clear 외엔 술어 필수) + 역주입
 - [ ] knowledge/domain-checkout-settlement 규칙 적립
 
 ## B1 design(칩): 글자 알약 마지막 한 곳을 걷고 감지망 패딩 구멍을 닫는다

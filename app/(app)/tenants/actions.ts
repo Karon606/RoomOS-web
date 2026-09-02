@@ -67,7 +67,7 @@ import { depositReturnReceiptNoticeLine, type RefundTaxNotice } from '@/lib/refu
 import { depositBasisOf } from '@/lib/depositPending'
 import { checkSettlementMonth } from '@/lib/accountingGuard'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
-import { RENT_REFUND_MEMO_PREFIX, isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
+import { RENT_REFUND_MEMO_PREFIX, RENT_REFUND_LOCKED, isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 import { isVacancyExcluded } from '@/lib/vacancy'
 import { roomAssignmentDenial, leaseSubordinationDenial, NON_RESIDENT_ROOM_ERROR,
   plannedStayDenial, RESIDENT_STATUSES as ROOM_RESIDENT_STATUSES } from '@/lib/roomAssignment'
@@ -1173,6 +1173,9 @@ export async function updateTenant(formData: FormData): Promise<
   let prorationPatch: Record<string, unknown> = {}
   let prorationNotice: string | null = null
   if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING' && currentLease.checkoutProratedAmount != null) {
+    // 환불 확정 계약은 복귀 전에 환불 적용취소부터. 여기서 스냅샷을 지우면 환불 record 만 남고 적용취소
+    // 길이 없어진다. 전환 버튼·단기 연장과 같은 문장으로 거부한다(2026-09-03).
+    if (hasRentRefundSnapshot(currentLease.checkoutProrationUndo)) return { ok: false, error: RENT_REFUND_LOCKED }
     // 거주중 복귀 — 적용돼 있던 퇴실예정일·정산·스냅샷 정리 (전환 버튼과 동일)
     prorationPatch = { expectedMoveOut: null, checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull }
     prorationNotice = '거주중 복귀. 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
@@ -3402,6 +3405,8 @@ export async function applyStatusTransition(input: {
     // 신고 aae0ab38: CHECKOUT_PENDING발 복귀일 때만 초기화 — RESERVED발 입실 처리에서는
     // 단기 예약자가 미리 넣은 퇴실 예정일·정산이 지워지지 않도록 보존한다.
     if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined && lease.status === 'CHECKOUT_PENDING') {
+      // 환불 확정 계약은 복귀 전에 환불 적용취소부터(수정 폼·단기 연장과 같은 문장, 2026-09-03).
+      if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) return { ok: false, error: RENT_REFUND_LOCKED }
       data.expectedMoveOut = null
       data.checkoutProratedAmount = null
       data.checkoutProratedMonth = null
@@ -4334,15 +4339,16 @@ function prorationDataForChange(
   // 단기(주 단위 정액)는 일할 대상이 아니다 — 이미 그 기간 전액을 받았는데 퇴실월 일할을 얹으면
   // 이중 청구가 된다(520호 김민정: 2주 329,000 완납 + 8월 21,933 중복). 환불 쪽에는 같은 차단이
   // 이미 있었는데(finalizeRentRefund) 적용 쪽에만 빠져 있었다.
+  // 환불 가드가 단기 해제보다 앞이다. 확정 뒤 단기로 바뀐 계약이 아래 분기에서 스냅샷을 잃지 않게(2026-09-03).
+  if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
+    return { data: {}, notice: '이용료 환불이 확정된 계약이라 일할 정산을 재계산하지 않았습니다. 변경하려면 환불 적용취소 후 진행해 주세요.' }
+  }
   if (lease.isShortTerm) {
     if (lease.checkoutProratedAmount == null && lease.checkoutProratedMonth == null) return { data: {}, notice: null }
     return {
       data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
       notice: '단기 계약은 주 단위 정액이라 퇴실 일할 정산 대상이 아닙니다. 적용돼 있던 일할을 해제했습니다.',
     }
-  }
-  if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
-    return { data: {}, notice: '이용료 환불이 확정된 계약이라 일할 정산을 재계산하지 않았습니다. 변경하려면 환불 적용취소 후 진행해 주세요.' }
   }
   const wasApplied = lease.checkoutProratedAmount != null
   // 퇴실 예정 해제 — 적용분 있으면 정산도 함께 해제
@@ -4964,7 +4970,7 @@ export async function setCheckoutProration(
     // 다음 감사 때에야 잡는다. clearCheckoutProration 과 같은 사유·같은 문장으로 거부한다. 과거 회계월
     // 보호보다 앞에 두는 것은 '환불 확정'이 더 앞선 사유라서다(2026-09-03).
     if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
-      return { ok: false, error: '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.' }
+      return { ok: false, error: RENT_REFUND_LOCKED }
     }
     const sc = settlementCalcFor(lease, expectedMoveOut)
     if (!sc) return { ok: false, error: '정산할 기간을 찾을 수 없습니다. 납부일이 없거나 퇴실일이 입주일보다 앞선 경우입니다.' }
@@ -5051,7 +5057,7 @@ export async function clearCheckoutProration(
     // 환불 확정(finalizeRentRefund) 상태 — 일할 해제가 환불 스냅샷을 지우고 청구·record 정합을 깬다.
     // 되돌리려면 환불 적용취소(undoRentRefund)를 먼저(적대검증 P0 연쇄 방어).
     if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) {
-      return { ok: false, error: '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.' }
+      return { ok: false, error: RENT_REFUND_LOCKED }
     }
 
     const undo = lease.checkoutProrationUndo as CheckoutProrationUndo | null
@@ -5931,6 +5937,10 @@ async function syncShortStayCharge(
     manual: !!p.manual,
   }
   const prevList = Array.isArray(lease.shortStayExtensions) ? lease.shortStayExtensions : []
+
+  // 환불 확정 계약은 연장·감액 전에 환불 적용취소부터. 아래 갱신이 스냅샷을 지우면 적용취소 길이 없어진다.
+  // 호출자 둘(수정 폼·연장 모달)이 catch 에서 message 를 그대로 돌려준다(2026-09-03).
+  if (hasRentRefundSnapshot(lease.checkoutProrationUndo)) throw new Error(RENT_REFUND_LOCKED)
 
   // 조건부 선점 — 읽은 시점의 상태·퇴실일·요금 그대로일 때만 갱신(크론·동시 조작·이중 제출 차단)
   const updated = await tx.leaseTerm.updateMany({

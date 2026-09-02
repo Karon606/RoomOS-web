@@ -24,3 +24,9 @@ export function hasRentRefundSnapshot(undo: unknown): boolean {
   return !!undo && typeof undo === 'object' && 'refund' in (undo as Record<string, unknown>)
 }
 
+/**
+ * 위 술어에 걸린 쓰기가 돌려주는 한 문장. 일할 재적용·적용취소, 거주중 복귀, 단기 연장이 전부
+ * 같은 말을 해야 운영자가 어느 화면에서 막히든 다음 손이 같다(위 이용료 정산 카드의 적용취소).
+ */
+export const RENT_REFUND_LOCKED = '이용료 환불이 확정된 계약입니다. 환불 적용취소를 먼저 진행해 주세요.'
+

@@ -492,43 +492,57 @@ for (const [name, re] of callers) {
   }
 }
 
-// ⓠ 환불 확정 뒤 청구 쓰기 거부 (2026-09-03).
+// ⓠ 환불 확정 뒤 청구·스냅샷 쓰기 거부 (2026-09-03).
 //
-//    finalizeRentRefund 가 확정한 청구(prepaid − refunded)는 고정값이다. 그런데 일할 위젯의
-//    setCheckoutProration 은 스냅샷을 안 보고 그 값을 일할값으로 덮었다. 수납이 과납으로 보여 정산이
-//    다시 '환불 가능'으로 서는 이중 환불 입구였다. 술어는 hasRentRefundSnapshot 하나다. 이름 하나로
-//    걸어야 세 자리(set·clear·prorationDataForChange)에 흩어진 `'refund' in undo` 관용구가 다시 안 생긴다.
+//    finalizeRentRefund 가 확정한 청구(prepaid − refunded)와 스냅샷(checkoutProrationUndo.refund)은
+//    적용취소의 유일한 길이다. 그런데 일할 위젯의 setCheckoutProration 은 그 청구를 일할값으로 덮었고,
+//    거주중 복귀(수정 폼·전환 버튼)와 단기 연장은 스냅샷을 DbNull 로 지웠다. 덮이면 수납이 과납으로
+//    보여 정산이 다시 '환불 가능'으로 서고(이중 환불 입구), 지워지면 환불 record 만 남는다.
+//    술어는 hasRentRefundSnapshot 하나, 거부 문장은 RENT_REFUND_LOCKED 하나다. 스냅샷을 DbNull 로 쓰는
+//    함수는 소유자(finalize·undo)와 원복(undoChangeDueDay·undoShortStayExtension. 이전 값을 그대로 되돌리는
+//    자리라 새 스냅샷을 잃지 않는다) 말고는 전부 이 술어를 먼저 지나야 한다. 새 경로가 생겨도 빠뜨릴 수 없게.
 {
-  const guarded = [
-    ['setCheckoutProration', /export async function setCheckoutProration[\s\S]*?\n\}\n/],
-    ['clearCheckoutProration', /export async function clearCheckoutProration[\s\S]*?\n\}\n/],
-    ['prorationDataForChange', /function prorationDataForChange[\s\S]*?\n\}\n/],
-  ]
-  for (const [name, re] of guarded) {
-    const m = src.match(re)
-    if (!m) { violations.push(`${FILE} — ${name} 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`); continue }
-    if (!/hasRentRefundSnapshot\(/.test(m[0])) {
-      violations.push(`${FILE} — ${name} 에 환불 스냅샷 가드(hasRentRefundSnapshot)가 없다. 환불 확정 뒤 청구가 덮이거나 지워진다.`)
+  const fnRe = /(?:export )?(?:async )?function (\w+)[\s\S]*?\n\}\n/g
+  const clears = /checkoutProrationUndo(?:: | = )Prisma\.DbNull|\?\? Prisma\.DbNull/
+  const RESTORE = new Set(['finalizeRentRefund', 'undoRentRefund', 'undoChangeDueDay', 'undoShortStayExtension'])
+  const seen = new Set()
+  for (const m of src.matchAll(fnRe)) {
+    const [body, name] = m
+    if (!clears.test(body) || RESTORE.has(name)) continue
+    seen.add(name)
+    const g = body.indexOf('hasRentRefundSnapshot(')
+    if (g < 0) {
+      violations.push(`${FILE} — ${name} 이 환불 스냅샷(checkoutProrationUndo)을 지우는데 hasRentRefundSnapshot 가드가 없다. 환불 확정 계약의 적용취소 길이 사라진다.`)
+      continue
     }
-    if (name === 'setCheckoutProration') {
-      const g = m[0].indexOf('hasRentRefundSnapshot(')
-      const c = m[0].indexOf('settlementCalcFor(')
-      if (g >= 0 && c >= 0 && g > c) {
-        violations.push(`${FILE} — setCheckoutProration 의 환불 가드가 정산 계산 뒤에 선다. 확정 계약도 일할 계산을 지나 버린다.`)
-      }
-    }
+    const w = body.search(clears)
+    if (w >= 0 && g > w) violations.push(`${FILE} — ${name} 의 환불 가드가 스냅샷을 지우는 쓰기보다 뒤에 선다.`)
+  }
+  for (const name of ['updateTenant', 'applyStatusTransition', 'syncShortStayCharge', 'prorationDataForChange', 'clearCheckoutProration']) {
+    if (!seen.has(name)) violations.push(`${FILE} — ${name} 이 더는 스냅샷을 지우지 않거나 이름이 바뀌었다. 이 그물의 기대 목록을 같이 고친다.`)
+  }
+  // 일할 재적용은 스냅샷을 안 지우고 청구만 덮는다. 따로 본다.
+  const set = src.match(/export async function setCheckoutProration[\s\S]*?\n\}\n/)
+  if (!set) violations.push(`${FILE} — setCheckoutProration 을 못 찾았다. 이름이 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  else {
+    const g = set[0].indexOf('hasRentRefundSnapshot(')
+    const c = set[0].indexOf('settlementCalcFor(')
+    if (g < 0) violations.push(`${FILE} — setCheckoutProration 에 환불 스냅샷 가드(hasRentRefundSnapshot)가 없다. 환불 확정 뒤 청구가 일할값으로 덮인다.`)
+    else if (c >= 0 && g > c) violations.push(`${FILE} — setCheckoutProration 의 환불 가드가 정산 계산 뒤에 선다. 확정 계약도 일할 계산을 지나 버린다.`)
   }
   if (/'refund' in \(/.test(src)) {
     violations.push(`${FILE} — 스냅샷 판정을 'refund' in 관용구로 직접 쓴다. hasRentRefundSnapshot 하나로 모은다.`)
   }
-  const sentence = /이용료 환불이 확정된 계약입니다\. 환불 적용취소를 먼저 진행해 주세요\./g
-  const n = (src.match(sentence) || []).length
-  if (n !== 2) {
-    violations.push(`${FILE} — 환불 확정 거부 문장이 ${n}회다(기대 2회 set·clear). 자리가 늘었으면 이 수를, 문장이 갈렸으면 문장을 맞춘다.`)
+  if (/이용료 환불이 확정된 계약입니다\./.test(src)) {
+    violations.push(`${FILE} — 환불 확정 거부 문장을 리터럴로 쓴다. lib/rentRefundRecord 의 RENT_REFUND_LOCKED 하나로 모은다.`)
+  }
+  for (const name of ['setCheckoutProration', 'clearCheckoutProration', 'updateTenant', 'applyStatusTransition', 'syncShortStayCharge']) {
+    const m = src.match(new RegExp(`(?:export )?async function ${name}[\\s\\S]*?\\n\\}\\n`))
+    if (m && !/RENT_REFUND_LOCKED/.test(m[0])) violations.push(`${FILE} — ${name} 의 환불 거부가 RENT_REFUND_LOCKED 문장을 안 쓴다. 화면마다 다른 말이 된다.`)
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 · ⓠ 환불 확정 뒤 청구 쓰기 거부 / 위반 ${violations.length}건`)
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 · ⓠ 환불 확정 뒤 청구·스냅샷 쓰기 거부 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
