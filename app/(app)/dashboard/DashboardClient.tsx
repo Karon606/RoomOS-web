@@ -256,11 +256,12 @@ const ACTIVITY_LIMIT  = 5
 const ALERTS_LIMIT    = 3
 const DIVIDER_COLOR   = 'rgba(200,160,120,0.12)'
 
-function hexToRgba(hex: string, alpha: number) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
+// 카테고리색 틴트 — dotColor 는 hex 가 아니라 `var(--info-fg)` 같은 토큰 문자열이다(무지개 디톡스
+// 834ca9bd 에서 전부 토큰이 됐다). 종전 hex 파서는 그것을 잘라 rgba(10,NaN,NaN,α) 를 만들었고
+// 브라우저가 그 선언을 버려 틴트가 안 그려졌다. 팁이 있던 동안은 팁이 대신 서서 아무도 못 봤다.
+// color-mix 는 var() 를 그대로 받고 다크에서 밝아진 -fg 토큰을 따라간다(§28 투명 틴트는 color-mix).
+function tint(color: string, pct: number) {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`
 }
 
 // ── 미수납 days 표시 ────────────────────────────────────────────
@@ -578,7 +579,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           <div className="min-w-0">
             <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
             <span className="inline-block mt-1.5 text-[0.65625rem] font-semibold rounded-sm px-2 py-0.5"
-              style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
+              style={{ background: tint(alert.dotColor, 12), color: alert.dotColor }}>
               {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
             </span>
           </div>
@@ -845,7 +846,7 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
           같은 말을 두 번 하는 장식이고, 모든 행에 색 줄이 서면 정작 급한 행이 안 도드라진다
           (§29 '카테고리색 립 0', 2026-09-03 개정). 6% 틴트는 행 구분이라 남긴다. */}
       <div className="flex items-center gap-3 px-5 py-3"
-        style={{ background: hexToRgba(item.dotColor, 0.06) }}>
+        style={{ background: tint(item.dotColor, 6) }}>
         {/* 위 모달 헤더와 같은 처방 — 원 없이 글리프+색이 카테고리를 말한다(정비 6/7). */}
         <span className="w-5 shrink-0 flex justify-center" style={{ color: item.dotColor }}>
           <CategoryGlyph category={item.category} size={16} />
