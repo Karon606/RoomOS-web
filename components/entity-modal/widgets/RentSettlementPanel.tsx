@@ -121,7 +121,7 @@ export function RentSettlementPanel({
     if (p.later > 0) {
       if (!(await confirmDialog({
         title: `미리 낸 ${futureMonthsLabel(p.laterMonths)} ${fmtWon(p.later)}은 먼저 돌려줘야 합니다.`,
-        message: `아직 지내지 않은 달의 선납은 환불 없음과 상관없이 돌려줍니다. ${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}은 회사 귀속으로 남습니다. 환불 기록 폼에 ${fmtWon(p.later)}을 채워 둡니다.`,
+        message: `아직 지내지 않은 달의 선납은 환불 없음과 상관없이 돌려줍니다. ${monthLabel(p.month)} 받은 돈 ${fmtWon(p.paid)}은 회사 귀속으로 남습니다. 환불액 칸에 ${fmtWon(p.later)}을 채워 둡니다.`,
         confirmLabel: '환불 기록 열기',
       }))) return
       setAmount(p.later); setReason(''); setReviseWarn(null); setFormMode('record')
@@ -149,7 +149,7 @@ export function RentSettlementPanel({
     if (!(await confirmDialog({
       title: none ? '이용료 환불 없음을 적용취소할까요?' : '이용료 환불을 적용취소할까요?',
       message: none
-        ? `환불 없음 기록만 지웁니다. ${monthLabel(r.month)} 청구 확정이 기록 전으로 돌아가 이 카드가 다시 '환불 미처리'로 섭니다. 퇴실 상태는 그대로 유지됩니다.`
+        ? `환불 없음 기록만 지웁니다. ${monthLabel(r.month)} 청구 확정이 기록 전으로 돌아갑니다. 퇴실 상태는 그대로 유지됩니다.`
         : `원래 수납 기록을 복원하고 청구를 환불 전 상태로 되돌립니다. ${monthLabel(r.month)} 매출이 ${fmtWon(r.refunded)} 늘어납니다. 퇴실 상태는 그대로 유지됩니다.`,
       level: 'caution', confirmLabel: '적용취소',
     }))) return
@@ -245,7 +245,7 @@ export function RentSettlementPanel({
             <span className="font-semibold num">{fmtWon(refund.refunded)}</span>
             <span className="text-[var(--warm-muted)] text-xs">
               {refund.refunded === 0
-                ? ` / 원 수납 ${fmtWon(refund.prepaid)} 전액 회사 귀속`
+                ? ` / 원 수납 ${fmtWon(refund.prepaid)} · 전액 회사 귀속`
                 : ` / 원 수납 ${fmtWon(refund.prepaid)} · 청구 확정 ${fmtWon(refund.companyKeeps)}`}
             </span>
           </p>
@@ -299,7 +299,7 @@ export function RentSettlementPanel({
       {!refund && !pend && status === 'CHECKOUT_PENDING' && (
         <>
           {!expectedMoveOut ? (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">퇴실 예정일을 넣으면 환불 예상액이 섭니다.</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">퇴실 예정일을 넣으면 환불 예상액이 나옵니다.</p>
           ) : preview && preview.ok && expected != null ? (
             <>
               <p className="text-sm text-[var(--warm-dark)] break-keep">
@@ -344,7 +344,7 @@ export function RentSettlementPanel({
               {keeps.toLocaleString()}
             </span>
           </div>
-          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산 · {maxLabel} {fmtWon(max - later)}{later > 0 ? ` + 선납 ${fmtWon(later)}` : ''}</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right break-keep">자동 계산 · {maxLabel} {fmtWon(max - later)}{later > 0 ? ` + 선납 ${fmtWon(later)}` : ''}</p>
           <div className="space-y-1.5">
             <label className={labelCls} htmlFor={`${uid}-reason`}>사유 <span className="font-normal text-[var(--warm-muted)]">(계산값과 다른 이유)</span></label>
             <input id={`${uid}-reason`} value={reason} onChange={e => setReason(e.target.value)} maxLength={200}

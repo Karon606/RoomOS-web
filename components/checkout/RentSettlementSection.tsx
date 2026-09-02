@@ -247,7 +247,7 @@ export function RentSettlementSection({
                     className="w-4 h-4 accent-[var(--coral)] mt-0.5 shrink-0" />
                   <span className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
                     아직 지내지 않은 기간의 선납 {fmtWon(preview.futurePrepaid)}에도 위약금을 뗍니다.
-                    <span className="block">공정위 기준으로는 떼는 것이 맞지만, 살지도 않은 기간이라 기본은 전액 돌려드립니다.</span>
+                    <span className="block">공정위 기준으로는 떼는 것이 맞지만, 살지도 않은 기간이라 기본은 전액 돌려줍니다.</span>
                   </span>
                 </label>
               )}
@@ -268,13 +268,14 @@ export function RentSettlementSection({
             {/* §12 자동 합산 읽기전용 — MoneyInput 과 같은 박스 높이라 갈래를 오가도 카드가 안 출렁인다.
                 금액은 settlementAmounts('none') 그대로다. 지낸 달 결제액은 남고 아직 지내지 않은 달의
                 선납(futurePrepaid)만 돌려주니, 선납이 있으면 0원이 아니다(운영자 확정 2026-09-02). */}
-            <div className="bg-[var(--sand-s)] border border-transparent rounded-sm px-3 py-2.5 text-sm text-right tabular-nums text-[var(--warm-dark)]">{fmtWon(amount)}</div>
+            <div className="bg-[var(--sand-s)] border border-transparent rounded-sm px-3 py-2.5 text-sm tabular-nums text-[var(--warm-dark)]">{fmtWon(amount)}</div>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">자동 계산{preview.futurePrepaid > 0 ? ` · 선납 ${fmtWon(preview.futurePrepaid)}` : ''}</p>
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
               {preview.futurePrepaid <= 0
                 ? `결제액 ${fmtWon(preview.prepaidAmount)}은 그대로 회사 귀속으로 남습니다. 수납 기록은 바뀌지 않습니다.`
                 : preview.prepaidAmount > preview.futurePrepaid
-                ? `지낸 달 결제액 ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 회사 귀속으로 남습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}은 환불 없음과 상관없이 돌려드립니다.`
-                : `지낸 달에 받은 이용료가 없습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}을 전액 돌려드립니다.`}
+                ? `지낸 달 결제액 ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 회사 귀속으로 남습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}은 환불 없음과 상관없이 돌려줍니다.`
+                : `지낸 달에 받은 이용료가 없습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}을 전액 돌려줍니다.`}
             </p>
           </>
         ) : (
