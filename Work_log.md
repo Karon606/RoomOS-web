@@ -1,6 +1,6 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-07-23
+마지막 업데이트: 2026-09-02
 브랜치: main
 
 ## 2026-07-24 — 투어예정·예약 보증금/청소비 자동입력 (신고 2555362e) + 고객 상세 독촉 문자
@@ -5092,3 +5092,33 @@ checkout-reason-dropped(5건), dryRun + inspect-integrity-audit. 웹디자이너
 폼 순서 재배치, 미납 집계 CHECKED_OUT 제외 구멍, `.num` 대 `tabular-nums`·홈 캡션 10.5/11px·
 세그먼트 트랙 색 드리프트. 청소 완료 폼 '받아둔 청소비로 부담' 체크와 캡션이 헷갈린다는 운영자
 질문은 답만 하고 수정은 5단계로 올릴지 대기.
+
+## 2026-09-02 (밤 3) - 수납 정보 탭 이용료 정산 카드: 환불 예상·완료·미처리와 수동 금액 (978f3165 · a8a68070 · 87241683 · cbdc65d9)
+
+**요청.** "퇴실 예정·완료면 환불과 보증금 반환 메뉴가 자동으로 떠서 예상액을 보여주고, 다르면 여기서
+바로 수정" + "수동으로 환불금액을 입력할 수 있게". 506호 적용취소가 어디 있느냐는 질문이 발단 —
+입주자 정보 탭의 적용취소 행은 getTenantDetail 이 CHECKED_OUT 을 안 실어 퇴실자에게 안 그려졌다.
+패널(설계 Fable 5, UX/UI·웹디자이너) 설계안 A + 확인 항목 1~7 추천안 승인.
+
+**시공.** `RentSettlementPanel`(수납 정보, DepositStatusPanel 바로 아래). 예상(퇴실 예정, 위젯이
+먼저 확정한 청구 있으면 그 값) / 환불 완료(적용취소·금액 수정) / 환불 미처리(옛 퇴실자 '환불 기록')
+/ 단기·해당 없음이면 없음. 금액 수정은 적용취소 + 재확정 두 호출 — 확정만 과거 회계월 보호에
+걸리므로 카드가 `checkSettlementMonth` 를 먼저 물어 되돌리기만 남는 길을 막고, 둘째가 막히면 카드
+안 경고로 남긴다. 사유 한 줄(메모 꼬리 + 스냅샷 reason, 규칙 6 은 사유 있으면 건너뜀). 환불 확정이
+만든 record 는 잠금(`lib/rentRefundRecord`, updatePayment·deletePayment 거부, 두 목록 버튼 대신
+안내). 입주자 정보 탭 두 행 이관. '정산 조정'은 위젯을 key 로 다시 세워 매번 열림. 패널 폼 스타일은
+`panelFormStyles` 정본으로 추출(문자열 불변).
+
+**감지망.** integrityAudit 규칙 8 `rent-refund-record-drift`(예행 0건), check-checkout-side-effects
+축 ⓟ + ⓛ 목록 교체(역주입 3건 exit 1), check-datepicker-shell 이 상대 import 를 따라가도록(역주입
+3건 exit 1). 웹디자이너 패스 P2-1~4·P3-1~7 반영, 형제 DepositStatusPanel 3곳 동반.
+
+**게이트.** tsc 0 · verify:fast 0 · 빌드 0 · eslint 기준선 대조(신규 0, TenantBody 1 감소). 4 커밋 푸시.
+
+**운영자 몫.** 413호 카드에서 [금액 수정] 136,000 재확정(사유 기록). 506호 [적용취소] 1회(실제 지급은
+보증금 30,000 뿐) — prevProration 이 null 이라 적용취소 뒤 카드가 사라지는 것이 의도. 결정 둘: '환불
+미처리' 0원 출구(finalizeRentRefund 가 환불 0 거부 — 청구 확정을 받은 돈으로 맞추는 서버 액션이
+필요, 결제 로직), 413호 이름(앱 정은숙 / 실제 정희숙).
+
+**남긴 것.** 원자적 reviseRentRefund, 환불 지급 수단·지급일, 단기 조기 퇴실 환불, getTenantDetail
+CHECKED_OUT 미적재, prev null 계약의 재확정 입구, 코랄 제목 다크 대비, 미납 집계 CHECKED_OUT 구멍.
