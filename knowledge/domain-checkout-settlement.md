@@ -44,6 +44,17 @@
 보증금 반환액이 같은 확정에 실리면 "보증금 반환 M · 총 환불액 N" 을 본문에 붙인다.
 사람이 안 만진 계산값 0 도 caution 으로 묻는 것은 운영자 판단 항목으로 남겼다.
 
+묻는 조건과 문장은 `lib/checkoutSettlement.ts` 의 순수 함수 `rentSettlementConfirmSpec(rent,
+depositReturn)` 이 쥔다(2026-09-03). 회귀 테스트가 문장을 직접 보게 하려고 뽑았고,
+`confirmRentSettlement` 는 그것을 §14 다이얼로그 · §27.4 caution 으로 띄우기만 한다.
+
+'전액' 판정은 `amount > 0 && amount >= max && amount > futurePrepaid` 다. `amount >= max` 만
+보면 그것은 "선납 전부"이지 문장이 말하는 "사용분까지 모두"가 아니다. '환불 없음'이 뒤 달 선납을
+돌려주게 된 뒤 지낸 달 받은 돈이 0 인 계약(prepaid === futurePrepaid)은 기본값이 전액과 같아져
+"전액 환불할까요"가 떴다. 갈래별 예외를 두지 않고 판정식을 문장에 맞추면 기존 "계산값 그대로면
+안 묻기" 규칙 안으로 들어온다. 그래서 `RentSettlementValue` 에 `futurePrepaid` 가 있고
+정본 섹션의 `valueFor` 가 서버 값을 채운다.
+
 ## 위젯 환불액 직접 입력 (신고 3)
 
 `CheckoutProrationWidget` 의 편집 칸은 환불액이고 적용 금액(청구액)은 읽기전용 파생이다
@@ -69,7 +80,13 @@
 - `scripts/test-money.ts` 단기 상한 23일·할인가·두 갈래 폭(79,800 대 0)·반올림 역전·기본값·none.
 - `scripts/test-checkout-reason.ts` 14 케이스. 둘 다 verify:fast.
 - `scripts/check-rent-settlement-branch.mjs` 정적. 두 화면이 lib 갈래·라벨·전제문·캡션을 쓰는지.
-- `scripts/check-checkout-side-effects.mjs` 축 ⓞ 사유 승계.
+  축 ⓔ 는 확인창 문장·판정이 lib 정본에 있는지(래퍼에 문장 없음, `const full` 이 futurePrepaid 를
+  봄, `valueFor` 가 서버 값을 채움), 축 ⓘ 는 환불 확정 위젯 잠금(서버 판정·prop 전달·버튼 없는 줄).
+- `scripts/check-checkout-side-effects.mjs` 축 ⓞ 사유 승계, 축 ⓠ 환불 확정 뒤 쓰기 거부.
+  ⓠ 는 함수를 열거해 `checkoutProrationUndo` 를 DbNull 로 비우는 것이 RESTORE 넷 밖이면 술어를
+  요구하고, 술어가 쓰기보다 앞인지·다섯 자리가 상수를 쓰는지·리터럴 문장과 `'refund' in` 관용구가
+  없는지 본다.
+- `scripts/test-money.ts` 확인창 판정 7 케이스(전액·다른 금액·0·prepaid === futurePrepaid).
 - `lib/integrityAudit.ts` 규칙 6 `refund-over-short-stay`(단기 자격 퇴실인데 단기 갈래 환불보다 큰
   환불 확정), 규칙 7 `checkout-reason-dropped`. 예행은 `npx tsx --env-file=.env.local
   scripts/inspect-integrity-audit.ts <규칙>`. 운영자가 일부러 면제를 고른 건은 무시(dismiss)로 닫으면
@@ -138,11 +155,34 @@ updateMany where 에 걸어 동시 확정을 CONFLICT 로 막는다(낙관적 �
 - `getPendingRentRefundNotice` 와 0 갈래는 같은 셈(`rentRefundPendingFor`)을 쓴다. 카드가 보여 준
   숫자와 서버가 거부하는 기준이 갈리지 않게.
 - 0원 확인창("이용료를 환불하지 않고 처리할까요?")은 기본값 그대로여도 매번 묻는다(운영자 결정).
-  선납이 있으면 환불액이 0 이 아니라 어차피 안 뜬다. 알려진 엣지. 결제액 전부가 뒤 달 선납인 계약
-  (prepaid === futurePrepaid)은 'none' 기본에서 amount === max 라 '전액 환불' 확인창이 뜬다. 문구
-  "사용분까지"가 어색하지만 금액은 맞다.
+  선납이 있으면 환불액이 0 이 아니라 어차피 안 뜬다. 결제액 전부가 뒤 달 선납인 계약
+  (prepaid === futurePrepaid)이 'none' 기본에서 '전액 환불' 확인창을 띄우던 엣지는 판정식에
+  `amount > futurePrepaid` 를 더해 해소했다(2026-09-03, 위 확인창 절).
 - 감사 규칙 3-b `refund-billing-drift`. 스냅샷이 있는데 checkoutProratedAmount ≠ prepaid − refunded
   이면 신고(예행 0건). 확정 뒤 위젯이나 스크립트가 청구를 다시 손대면 잡힌다.
+
+## 환불 확정 뒤의 쓰기는 술어 하나로 막는다 (2026-09-03)
+
+환불을 확정하면 `checkoutProrationUndo.refund` 스냅샷이 남고 그것이 적용취소의 유일한 근거다.
+그 스냅샷을 지우거나 청구를 덮는 쓰기가 여섯 자리에 흩어져 있었고 `'refund' in undo` 관용구가
+두 곳에만 있었다. 술어를 `hasRentRefundSnapshot(undo)` 하나로 뽑고(`lib/rentRefundRecord.ts`)
+거부 문장도 상수 `RENT_REFUND_LOCKED` 하나로 모았다. "이용료 환불이 확정된 계약입니다. 환불
+적용취소를 먼저 진행해 주세요."
+
+막는 자리 다섯. `setCheckoutProration`(위젯 재적용), `clearCheckoutProration`,
+`prorationDataForChange`(퇴실일 변경), `updateTenant` 의 거주중 복귀, `applyStatusTransition` 의
+거주중 복귀, `syncShortStayCharge`(단기 연장). 앞 셋은 청구를 덮고 뒤 셋은 스냅샷을 지운다.
+그래서 **환불 확정 계약은 복귀·연장 전에 환불 적용취소부터**가 상태 전환 규칙이다.
+
+- `prorationDataForChange` 의 가드는 `isShortTerm` 해제 분기보다 **앞**에 선다. 뒤에 두면 확정 뒤
+  단기로 바뀐 계약이 그 분기에서 스냅샷을 잃는다.
+- 면제(RESTORE)는 넷. `finalizeRentRefund`(소유자), `undoRentRefund`(복원이 일), `undoChangeDueDay`
+  와 `undoShortStayExtension`(원복). 마지막은 `finalizeRentRefund` 가 단기를 거부해 도달할 수 없다.
+- `syncShortStayCharge` 만 throw 인데 호출자 둘(수정 폼·단기 연장 모달)의 catch 가
+  `(err as Error).message` 를 그대로 돌려주므로 화면에 닿는 문장은 다섯 자리가 같다.
+- 화면 쪽 짝은 잠긴 줄이다. `RoomRow.rentRefundFinalized` 를 서버가 계산해 내리고
+  `CheckoutProrationWidget` 이 버튼 슬롯을 비운 한 줄로 선다. 눌러야 거절되는 버튼을 두지 않는
+  것이 §22 이고, 적용취소 진입점은 같은 화면 위 이용료 정산 카드다(§16 원위치).
 
 ## 관련 노트
 

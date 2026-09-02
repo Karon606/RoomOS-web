@@ -5151,3 +5151,43 @@ withNone)`, 미리보기 true·위젯 false, 섹션 none 박스 금액·캡션 �
 **남긴 것.** setCheckoutProration 환불 가드(위젯이 확정 뒤 청구를 덮는 길, 지금은 감사 3-b 가 사후에
 잡음), prepaid === futurePrepaid 계약의 '전액 환불' 확인창 문구, 밤 3 의 백로그 그대로.
 
+
+## 2026-09-03 - 환불 확정 가드 다섯 자리와 AI 티 2차 정비 (88d4c899 · a41103b2 · f6d0f388 · 050f20d5 · b79c75b0 · 37b4f7f1 · 0f7479c4)
+
+**발단.** 밤 4 가 남긴 두 항목. `setCheckoutProration` 환불 가드(확정 뒤 위젯이 청구를 덮는 길,
+지금은 감사 3-b 가 사후에만 잡음)와 prepaid === futurePrepaid 계약의 '전액 환불' 확인창 문구.
+여기에 1차 정비(2026-08-25)의 잔여 시각 항목을 얹어 설계 패널(Fable 5, 결제·UX/UI·웹디자이너)에
+붙였고 운영자가 결정 6개 전부 권고대로 승인했다.
+
+**A 정산 가드.** A1 술어 `hasRentRefundSnapshot` 을 뽑아 `setCheckoutProration` 에 가드를 세우고
+흩어진 `'refund' in undo` 관용구를 갈음. A2 서버가 `RoomRow.rentRefundFinalized` 를 계산해 내리고
+일할 위젯이 버튼 슬롯을 비운 잠긴 줄로 선다(눌러야 거절되는 버튼 제거). A3 '전액' 판정에
+`amount > futurePrepaid` 를 더해 지낸 달 받은 돈이 0 인 계약의 기본값이 확인창을 안 띄운다.
+문장과 판정을 `rentSettlementConfirmSpec` 순수 함수로 뽑아 회귀 테스트가 문장을 직접 본다.
+A4 스냅샷을 지우던 세 경로(수정 폼·전환 버튼의 거주중 복귀, 단기 연장)를 같은 문장으로 거부하고
+거부 문장을 `RENT_REFUND_LOCKED` 상수 하나로 모았다. `prorationDataForChange` 의 가드는
+`isShortTerm` 해제 분기보다 앞으로(확정 뒤 단기로 바뀐 계약이 스냅샷을 잃던 구멍).
+**환불 확정 계약은 복귀·연장 전에 환불 적용취소부터**가 새 상태 전환 규칙이다.
+
+**B AI 티 2차.** B1 문자 발송 조건 칩이 마지막 글자 알약이었다(1차 그물이 `px-` 만 봐서 `pl-`/`pr-`
+칩을 지나쳤다, 판정을 넓힘). B3 이용료 정산 카드의 읽기전용 파생값 박스가 옆 입력보다 8px 낮아
+`panelFormStyles.readonlyCls` 로 정본화. B4 Btn 행 gap 다수파(80곳 gap-2)와 어긋난 넷,
+RowActionBtn 행의 반대 하나를 맞춤. B5 그라데이션은 위반 0 인 축이라 지금 그물을 걸었다
+(허용은 css mask-image 와 차트 SVG linearGradient).
+
+**감지망.** `check-checkout-side-effects` 축 ⓠ 는 함수를 열거해 `checkoutProrationUndo` 를 DbNull 로
+비우는 것이 RESTORE 넷 밖이면 술어를 요구한다(술어가 쓰기보다 앞인지, 다섯 자리가 상수를 쓰는지,
+리터럴 문장·관용구가 없는지). `check-rent-settlement-branch` 축 ⓔ·ⓘ 확장. 새 그물 둘
+`check-badge-tokens`(예정)·`check-gradient`. 역주입은 축마다 exit 1 확인했고, ⓠ 는 정규식
+과다 이스케이프로 검사가 조용히 통과한 것을 역주입 **건수**가 1 건뿐인 데서 잡았다.
+**역주입은 exit 1 뿐 아니라 걸린 건수까지 본다.**
+
+**게이트.** tsc 0 · verify:fast · test-money 314/0 · eslint 기준선 동일(actions 30/5, TenantClient 1/9,
+MarketClient 0/1) · 웹디자이너 패스(A2 지적 3건 반영: 문장 머리를 '이용료 정산 확정됨'으로,
+꼬리를 장소 조각으로, 캡션 break-keep).
+
+**남긴 것.** B2(배지 §04 트라이어드) 코드는 작성했고 디자이너 패스 대기. B6 §11 ring 폐지,
+B7 §18 홈 알림 립 제거, B8 퇴실 정산 위젯 입력 40/44 는 그 뒤. 첫 패스가 모델 세션 한도로
+중단됐고 운영자 지시로 Fable 로 재개.
+
+**운영자 몫.** 실기 목록은 마감 보고에 동봉.
