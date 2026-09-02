@@ -4531,7 +4531,8 @@ export async function previewCheckoutRefund(
     const settlementApplies = !lease.isShortTerm
     return {
       ok: true, refund, prepaidAmount, defaultPenaltyPct, appliedProration, shortStay,
-      defaultPick: defaultSettlementPick(shortStay),
+      // 퇴실 처리 화면(환불 없음이 서는 곳)의 기본 갈래. 위젯은 자기 자리에서 withNone=false 로 다시 묻는다.
+      defaultPick: defaultSettlementPick(shortStay, true),
       settlementApplies,
       futurePrepaid,
       prepaidMonths,

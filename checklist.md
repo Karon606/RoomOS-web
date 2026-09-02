@@ -1,35 +1,39 @@
-# 수납 정보 탭 이용료 정산 카드 (2026-09-02, 질문 B 승인)
+# 이용료 정산 '환불 없음' 확정 갈래 (2026-09-02, 운영자 승인 + 수정 2건 반영)
 
-## 시공
-- [x] lib/rentRefundRecord.ts — 환불 record memo 접두어 정본(isRentRefundRecord)
-- [x] components/entity-modal/widgets/panelFormStyles.ts — DepositStatusPanel 스타일 상수 추출(문자열 불변), DepositStatusPanel import 로 교체
-- [x] tenants/actions.ts — getRentRefundForLease(스냅샷 읽기), finalizeRentRefund reason 선택 인자(메모 꼬리 + 스냅샷 reason), RentRefundSnapshot.reason
-- [x] rooms/actions.ts — updatePayment·deletePayment 가 환불 record 를 거부(잠금)
-- [x] PaymentRecordList — 환불 record 는 수정·삭제 숨기고 안내 한 줄
-- [x] RentSettlementPanel.tsx 신설 — 예상(퇴실 예정) / 환불 완료(적용취소·금액 수정) / 환불 미처리(환불 기록) / 단기·해당 없음이면 카드 없음
-- [x] PaymentBody — DepositStatusPanel 아래 배치(모드 분기 밖), '정산 조정' 이 full 전환 + 위젯 자동 펼침 + 스크롤
-- [x] TenantBody — RentRefundUndoRow·DepositRefundUndoRow 제거(이관), 고아 import 정리
-- [x] integrityAudit — 규칙 8 rent-refund-record-drift, 규칙 6 은 스냅샷 reason 있으면 건너뜀
+## 커밋 1 feat(이용료 정산): 환불 없음은 선납분만 환불, 조기 퇴실 기본 갈래
+- [ ] lib/checkoutSettlement.ts — settlementAmounts('none') 이 futurePrepaid 만 돌려줌, 캡션·전제문에 선납 문장, defaultSettlementPick(shortStay, withNone), futureMonthsLabel
+- [ ] tenants/actions.ts previewCheckoutRefund — defaultPick: defaultSettlementPick(shortStay, true)
+- [ ] CheckoutProrationWidget:105 — defaultSettlementPick(refRes.shortStay, false)
+- [ ] RentSettlementSection — 전제문·캡션 opts·none 분기 박스 금액·캡션 셋·선납 미달 경고
+- [ ] scripts/test-money.ts — 기본값 4쌍, none 선납 케이스, 클램프
 
-## 감지망
-- [x] check-checkout-side-effects ⓛ 목록에 새 카드(적용취소 뒤 안내), 새 축 ⓟ(카드가 PaymentBody 에 서고 확정 뒤 안내·규칙 8 존재)
-- [x] check-deposit-vocab 통과
-- [x] 역주입 3건 exit 1 (undoRefundTaxNoticeLines 제거 · PaymentBody 카드 삭제 · 규칙 8 삭제)
+## 커밋 2 feat(이용료 환불): 환불 없음 확정 갈래와 카드 출구
+- [ ] actions.ts — rentRefundPendingFor 헬퍼(paid·keeps·later·laterMonths), getPendingRentRefundNotice 확장(amount = 초과분 + later)
+- [ ] actions.ts finalizeRentRefund — 스냅샷 존재 가드 공통화, 0 갈래(later > 0 거부, 비대기 noop, 대기면 record 무접촉 + 낙관적 잠금), `< 0` 거부
+- [ ] RentSettlementPanel — 배지·완료 금액 줄 꼬리·미처리 두 버튼·선납 경고 줄·안내창(later > 0)·확정창·undo 분기·폼 max/캡션/오류·reviseWarn·예상 캡션 futurePrepaid
+- [ ] integrityAudit 규칙 3 — refund-billing-drift
+
+## 커밋 3 fix(퇴실 처리): 환불 0원도 확정으로 서버에 싣는다
+- [ ] TenantClient 1412·1441, TenantStatusTransitions 461, DashboardClient 301·359·549 — `> 0` 게이트 제거
+- [ ] actions.ts checkoutWithDepositRefund ~2206 — `rentRefundAmount != null`
+
+## 커밋 4 chore(감지망)
+- [ ] check-rent-settlement-branch ⓕⓖⓗ, check-checkout-side-effects ⓓ·ⓟ 확장
+- [ ] 역주입 5건 exit 1 (none 분기 되돌리기 · preview 한 인자 · later 거부 삭제 · 상태전환 게이트 되돌리기 · 스냅샷 가드 삭제)
+
+## 커밋 5 docs
+- [ ] Work_log · knowledge/domain-checkout-settlement(백로그 해소) · INDEX
 
 ## 게이트 (loop.md)
-- [x] iCloud 사본 제거
-- [x] tsc 0
-- [x] verify:fast
-- [x] 빌드
-- [x] eslint 신규 0 (기준선 대조)
-- [x] 웹디자이너 패스(배포 전)
-- [ ] 커밋(의미 단위) · push --no-verify
+- [ ] iCloud 사본 제거
+- [ ] tsc 0
+- [ ] test-money
+- [ ] verify:fast
+- [ ] 빌드
+- [ ] eslint 신규 0 (기준선 대조)
+- [ ] 웹디자이너 패스(none 박스 선납액 320px · 카드 375px 두 버튼 · 다크)
+- [ ] 각 커밋 push --no-verify
 
-## 문서
-- [ ] Work_log · knowledge/domain-checkout-settlement 갱신
-- [ ] 운영자 보고(실기 확인 목록)
-
-## 운영자 몫(배포 후)
-- [ ] 413호 적용취소 뒤 136,000 재확정(사유 기록)
-- [ ] 506호 적용취소(돌려주지 않았다면)
-- [ ] 413호 이름(앱 정은숙 / 실제 정희숙) 답
+## 운영자 실기 (배포 후)
+- [ ] 422호 [환불 없음] → 배지 '환불 없음' · 금액 줄 1회 표기 · [적용취소] 뒤 미처리 복귀
+- [ ] 퇴실 처리 화면 기본 '환불 없음' · 선납 있는 계약 캡션

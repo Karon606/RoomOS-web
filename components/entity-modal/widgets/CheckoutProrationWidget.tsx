@@ -13,7 +13,7 @@ import {
 } from '@/app/(app)/tenants/actions'
 import type { CheckoutProrationResult, CheckoutRefundResult, RefundMode } from '@/lib/prorate'
 import { PRORATE_BASE_DAYS, LEGAL_PENALTY_PCT } from '@/lib/prorate'
-import { settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor, type SettlementPick, type ShortStayQuoteLite } from '@/lib/checkoutSettlement'
+import { defaultSettlementPick, settlementAmounts, settlementPickOptions, settlementPickCaption, settlementPremise, serverModeFor, type SettlementPick, type ShortStayQuoteLite } from '@/lib/checkoutSettlement'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -100,9 +100,10 @@ export function CheckoutProrationWidget({
         setRefund({ refund: refRes.refund, prepaidAmount: refRes.prepaidAmount })
         setShortQuote(refRes.shortStay)
         setDefaultPenaltyPct(refRes.defaultPenaltyPct)
-        // 날짜를 새로 고른 것이면 서버 기본 갈래(단기 견적이 있으면 단기)를 따르고, 손으로 고른
-        // 갈래가 실려 왔으면 그것을 지킨다 — 정본 섹션과 같은 판단(lib/checkoutSettlement).
-        const short = useShortStay === undefined ? refRes.defaultPick === 'shortStay' : useShortStay && !!refRes.shortStay
+        // 날짜를 새로 고른 것이면 위젯 기본 갈래(단기 견적이 있으면 단기)를 따르고, 손으로 고른
+        // 갈래가 실려 왔으면 그것을 지킨다. 서버의 defaultPick 은 퇴실 처리 화면 몫(환불 없음)이라
+        // 여기서는 같은 정본 함수에 withNone=false 로 다시 묻는다(lib/checkoutSettlement).
+        const short = useShortStay === undefined ? defaultSettlementPick(refRes.shortStay, false) === 'shortStay' : useShortStay && !!refRes.shortStay
         // 갈래 표시도 함께 맞춘다. 여기서 refundMode 를 goodwill 로 내리는 것은 다음 서버 왕복을
         // 위한 것이고, 지금 화면은 pick 으로 갈리므로 위약금 칸도 미리보기도 단기 쪽을 그린다.
         if (short) { setPick('shortStay'); setRefundMode('goodwill') }

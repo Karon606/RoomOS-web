@@ -208,7 +208,7 @@ export function RentSettlementSection({
               라벨 · 전제문 · 세그먼트 · 캡션 순서도 위젯과 같다(웹디자이너 패스 2026-09-02). */}
           <div className="space-y-1 pt-0.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">정산 방식</label>
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPremise(true)}</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPremise(true, preview.futurePrepaid > 0)}</p>
             <SegmentedControl<SettlementPick>
               ariaLabel="이용료 정산 방식"
               size="sm"
@@ -216,7 +216,7 @@ export function RentSettlementSection({
               onChange={handlePick}
               options={settlementPickOptions(!!short, true)}
             />
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPickCaption(pick, short, { prepaidAmount: preview.prepaidAmount })}</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">{settlementPickCaption(pick, short, { prepaidAmount: preview.prepaidAmount, futurePrepaid: preview.futurePrepaid })}</p>
           </div>
           {(pick === 'legal' || pick === 'goodwill') && (
             <div className="flex justify-between">
@@ -265,9 +265,17 @@ export function RentSettlementSection({
         {pick === 'none' && !locked ? (
           <>
             <label className="text-xs font-medium text-[var(--warm-mid)]">이용료 환불액</label>
-            {/* §12 자동 합산 읽기전용 — MoneyInput 과 같은 박스 높이라 갈래를 오가도 카드가 안 출렁인다. */}
-            <div className="bg-[var(--sand-s)] border border-transparent rounded-sm px-3 py-2.5 text-sm text-right tabular-nums text-[var(--warm-dark)]">0원</div>
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">결제액 {fmtWon(preview.prepaidAmount)}은 그대로 회사 귀속으로 남습니다. 수납 기록은 바뀌지 않습니다.</p>
+            {/* §12 자동 합산 읽기전용 — MoneyInput 과 같은 박스 높이라 갈래를 오가도 카드가 안 출렁인다.
+                금액은 settlementAmounts('none') 그대로다. 지낸 달 결제액은 남고 아직 지내지 않은 달의
+                선납(futurePrepaid)만 돌려주니, 선납이 있으면 0원이 아니다(운영자 확정 2026-09-02). */}
+            <div className="bg-[var(--sand-s)] border border-transparent rounded-sm px-3 py-2.5 text-sm text-right tabular-nums text-[var(--warm-dark)]">{fmtWon(amount)}</div>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              {preview.futurePrepaid <= 0
+                ? `결제액 ${fmtWon(preview.prepaidAmount)}은 그대로 회사 귀속으로 남습니다. 수납 기록은 바뀌지 않습니다.`
+                : preview.prepaidAmount > preview.futurePrepaid
+                ? `지낸 달 결제액 ${fmtWon(preview.prepaidAmount - preview.futurePrepaid)}은 회사 귀속으로 남습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}은 환불 없음과 상관없이 돌려드립니다.`
+                : `지낸 달에 받은 이용료가 없습니다. 아직 지내지 않은 기간의 선납 ${fmtWon(preview.futurePrepaid)}을 전액 돌려드립니다.`}
+            </p>
           </>
         ) : (
           <>
@@ -280,7 +288,11 @@ export function RentSettlementSection({
             {!exceeds && diff > 0 && (
               <p className="text-[0.6875rem] text-[var(--warning-fg)]">계산값보다 {fmtWon(diff)} 많습니다.</p>
             )}
-            {!exceeds && diff < 0 && (
+            {/* 아직 지내지 않은 달의 선납보다도 적으면 경고 톤이다. 그 돈은 어느 갈래든 돌려줘야 한다. */}
+            {!exceeds && diff < 0 && amount < preview.futurePrepaid && (
+              <p className="text-[0.6875rem] text-[var(--warning-fg)] break-keep">아직 지내지 않은 달의 선납 {fmtWon(preview.futurePrepaid)}보다도 적습니다. 이용하지 않은 달의 선납은 돌려줘야 합니다.</p>
+            )}
+            {!exceeds && diff < 0 && amount >= preview.futurePrepaid && (
               <p className="text-[0.6875rem] text-[var(--warm-muted)]">계산값보다 {fmtWon(-diff)} 적습니다. 차액은 회사 귀속으로 기록됩니다.</p>
             )}
           </>

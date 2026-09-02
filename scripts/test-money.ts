@@ -21,7 +21,7 @@ import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNot
 import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
 import { calcShortStay, parseShortStayPolicy, stayDaysOf, isWithinOneCalendarMonth, shortStayRateTable, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 import { lockRewritesFor } from '../lib/shortStayLock'
-import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, SETTLEMENT_PICK_LABEL } from '../lib/checkoutSettlement'
+import { defaultSettlementPick, settlementAmounts, serverModeFor, settlementPickOptions, settlementPickCaption, futureMonthsLabel, SETTLEMENT_PICK_LABEL } from '../lib/checkoutSettlement'
 import { reservationFeeSplit, reservationFeeSplitApplies, reservationCompositionLabel, resolveReservationDepositMode } from '../lib/reservationDeposit'
 import { billForLeaseMonth, offerRentChangeAfterMonth, offerRentForMonth } from '../lib/billing'
 import { availableFromLabel, availableFromText } from '../lib/leaseStatus'
@@ -734,8 +734,19 @@ const RENT = 300000
   // 차액 400 은 청구하지 않는다(companyKeeps 는 견적 그대로라 위젯의 청구액 표시는 종전과 같다).
   const q2 = calcShortStay(P, 379600, 23, { moveInYmd: '2026-08-09', moveOutYmd: '2026-08-31' })!
   eq('갈래: 견적이 결제액을 넘어도 환불은 0', settlementAmounts('shortStay', { prepaidAmount: 379600, refund: legal, shortStay: q2 }), { refund: 0, companyKeeps: 380000 })
-  // 기본 갈래 — 견적이 있으면 단기, 없으면 위약금. 견적 없이 단기를 고르면 위약금 산식으로 떨어진다.
-  eq('갈래: 기본값', [defaultSettlementPick(q), defaultSettlementPick(null)], ['shortStay', 'legal'])
+  // 기본 갈래. 위젯(withNone 없음)은 견적이 있으면 단기, 없으면 위약금. 퇴실 처리 화면(withNone)은
+  // 견적과 상관없이 환불 없음(운영자 확정 2026-09-02). 견적 없이 단기를 고르면 위약금 산식으로 떨어진다.
+  eq('갈래: 기본값', [defaultSettlementPick(q, false), defaultSettlementPick(null, false), defaultSettlementPick(q, true), defaultSettlementPick(null, true)], ['shortStay', 'legal', 'none', 'none'])
+  // 환불 없음은 지낸 달 이용료만 안 돌려준다. 아직 지내지 않은 달의 선납(futurePrepaid)은 이용 자체를
+  // 안 했으니 환불 없음과 상관없이 돌려준다(운영자 확정 2026-09-02). 8월분 34만 + 9월분 선납 34만, 20일 사용.
+  const withFuture = calcCheckoutRefund({ prepaidAmount: 680000, monthlyRent: 340000, daysUsed: 20, mode: 'legal', futurePrepaid: 340000 })
+  eq('갈래: 환불 없음도 선납은 돌려준다', settlementAmounts('none', { prepaidAmount: 680000, refund: withFuture, shortStay: null }), { refund: 340000, companyKeeps: 340000 })
+  // 선납이 결제액보다 크게 실려 와도(깨진 입력) 환불은 결제액에서 멈춘다.
+  const overFuture = { ...withFuture, futurePrepaid: 150000 }
+  eq('갈래: 환불 없음 선납 클램프', settlementAmounts('none', { prepaidAmount: 100000, refund: overFuture, shortStay: null }), { refund: 100000, companyKeeps: 0 })
+  eq('갈래: 환불 없음 캡션에 선납액', settlementPickCaption('none', null, { futurePrepaid: 340000 }).includes('340,000'), true)
+  eq('갈래: 환불 없음 캡션 선납 없음', settlementPickCaption('none', null).includes('돌려주지 않습니다'), true)
+  eq('갈래: 선납 달 라벨', futureMonthsLabel([{ month: '2026-10' }, { month: '2026-11' }]), '10월분 · 11월분')
   eq('갈래: 견적 없는 단기 선택은 서버 산식', settlementAmounts('shortStay', { prepaidAmount: 380000, refund: legal, shortStay: null }).refund, 79800)
   eq('갈래: 서버 모드', ['legal', 'goodwill', 'shortStay', 'none'].map(p => serverModeFor(p as never)), ['legal', 'goodwill', 'goodwill', 'goodwill'])
   // 라벨은 두 화면이 한 글자도 다르면 안 된다 — 문자열째 잠근다.

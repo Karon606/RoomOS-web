@@ -31,10 +31,9 @@ export const SETTLEMENT_PICK_LABEL: Record<SettlementPick, string> = {
  * 세그먼트 위 전제문. '면제'가 무엇의 면제인지 이 문장이 고정한다 — 옆에 '환불 없음'이 서는 화면에서는
  * 전제문 없이 '면제'만 보면 이용료 면제(전액 환불)로 거꾸로 읽힌다(웹디자이너 지적 2026-09-02).
  */
-export function settlementPremise(withNone: boolean): string {
-  return withNone
-    ? '환불 없음 말고는 지낸 날짜만큼 받고 나머지를 돌려줍니다. 위약금을 매기는지, 단기 요금표를 쓰는지가 다릅니다.'
-    : '셋 다 지낸 날짜만큼 일할로 받습니다. 위약금을 매기는지, 단기 요금표를 쓰는지가 다릅니다.'
+export function settlementPremise(withNone: boolean, hasFuturePrepaid = false): string {
+  if (!withNone) return '셋 다 지낸 날짜만큼 일할로 받습니다. 위약금을 매기는지, 단기 요금표를 쓰는지가 다릅니다.'
+  return `환불 없음은 지낸 달 이용료를 돌려주지 않고, 나머지 셋은 지낸 날짜만큼 받고 돌려줍니다.${hasFuturePrepaid ? ' 아직 지내지 않은 기간의 선납은 넷 다 돌려줍니다.' : ''}`
 }
 
 /**
@@ -45,25 +44,40 @@ export function settlementPremise(withNone: boolean): string {
 export function settlementPickCaption(
   pick: SettlementPick,
   shortStay: ShortStayQuoteLite | null | undefined,
-  opts: { prepaidAmount?: number } = {},
+  opts: { prepaidAmount?: number; futurePrepaid?: number } = {},
 ): string {
   if (pick === 'legal') return '원칙. 사용한 일수에 잔여 이용금액의 위약금을 더해 청구합니다.'
   if (pick === 'goodwill') return '사용한 일수만 청구하고 위약금은 안 받습니다.'
-  if (pick === 'none') return '이용료를 돌려주지 않고 퇴실 처리합니다.'
+  if (pick === 'none') {
+    const future = opts.futurePrepaid ?? 0
+    return future > 0
+      ? `지낸 달 이용료는 돌려주지 않고, 아직 지내지 않은 기간의 선납 ${fmtWon(future)}만 돌려줍니다.`
+      : '지낸 달 이용료는 돌려주지 않습니다.'
+  }
   if (!shortStay) return ''
   const over = opts.prepaidAmount != null ? shortStay.baseAmount - opts.prepaidAmount : 0
   return `거주 ${shortStay.stayDays}일${shortStay.roundedUp ? ` (주 단위라 ${shortStay.contractDays}일로 올림)` : ''} · ${shortStay.units}주 계약 요금 ${fmtWon(shortStay.baseAmount)}. 처음부터 단기로 계약했을 때와 같은 금액입니다.${over > 0 ? ` 결제액을 넘는 차액 ${fmtWon(over)}은 청구하지 않습니다.` : ''}`
 }
 
 /**
- * 기본 갈래. 단기 견적이 있으면 단기 요금, 없으면 위약금.
+ * 기본 갈래.
  *
- * 1개월을 못 채운 중도 퇴실은 처음부터 단기로 계약했을 때와 같은 금액을 받는 게 원칙이다
- * (운영자 확정 2026-08-29). 견적이 없다는 것은 한 달을 채웠거나 만기 퇴실이라 단기 요금이라는 것이
- * 없다는 뜻이고, 그때는 계약서 §2 산식(위약금)이 원칙이다.
+ * '환불 없음'이 서는 퇴실 처리 화면(withNone)은 무조건 환불 없음이 기본이다. 일찍 나가면서 환불받아
+ * 가는 쪽이 오히려 드물다는 운영 실태(운영자 확정 2026-09-02). 단기 견적이 서는 계약도 같다. '단기'는
+ * 세그먼트에 남아 한 번 누르면 된다.
+ *
+ * 위젯(withNone 없음)은 청구액을 확정하는 자리라 종전대로다. 1개월을 못 채운 중도 퇴실은 처음부터
+ * 단기로 계약했을 때와 같은 금액을 받는 게 원칙이고(운영자 확정 2026-08-29), 견적이 없다는 것은
+ * 한 달을 채웠거나 만기 퇴실이라 단기 요금이라는 것이 없다는 뜻이라 계약서 §2 산식(위약금)이 원칙이다.
  */
-export function defaultSettlementPick(shortStay: ShortStayQuoteLite | null | undefined): SettlementPick {
+export function defaultSettlementPick(shortStay: ShortStayQuoteLite | null | undefined, withNone = false): SettlementPick {
+  if (withNone) return 'none'
   return shortStay ? 'shortStay' : 'legal'
+}
+
+/** 아직 지내지 않은 달 목록을 '10월분 · 11월분' 꼴로. 카드와 안내창이 같은 꼴로 부른다. */
+export function futureMonthsLabel(months: { month: string }[]): string {
+  return months.map(m => `${Number(m.month.slice(5, 7))}월분`).join(' · ')
 }
 
 /** 서버(previewCheckoutRefund)에 물을 모드. 위약금은 '위약금' 갈래에만 붙는다. */
@@ -77,13 +91,20 @@ export function serverModeFor(pick: SettlementPick): RefundMode {
  * 단기 요금이 결제액을 넘으면 환불은 0 에서 멈춘다. 차액은 청구하지 않는다 — 한 달치를 내고 나가는
  * 사람에게 더 내라는 것은 정산이 아니다(설계 확정 2026-09-02). 위젯의 적용 금액(청구액)은 단기 요금
  * 그대로 두어 종전 동작을 지킨다.
+ *
+ * '환불 없음'은 지낸 달(귀속월) 이용료만 안 돌려준다. 귀속월보다 뒤 달의 선납(futurePrepaid)은 이용
+ * 자체를 안 했으니 환불 없음과 상관없이 돌려준다(운영자 확정 2026-09-02). 이 한 줄이 퇴실 처리 섹션·
+ * 카드 예상·확정을 같이 움직인다.
  */
 export function settlementAmounts(
   pick: SettlementPick,
   input: { prepaidAmount: number; refund: CheckoutRefundResult; shortStay: ShortStayQuoteLite | null | undefined },
 ): { refund: number; companyKeeps: number } {
   const prepaid = Math.max(0, input.prepaidAmount)
-  if (pick === 'none') return { refund: 0, companyKeeps: prepaid }
+  if (pick === 'none') {
+    const future = Math.max(0, Math.min(input.refund.futurePrepaid, prepaid))
+    return { refund: future, companyKeeps: prepaid - future }
+  }
   if (pick === 'shortStay' && input.shortStay) {
     const keeps = input.shortStay.baseAmount
     return { refund: Math.max(0, prepaid - keeps), companyKeeps: keeps }
