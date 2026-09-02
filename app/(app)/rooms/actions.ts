@@ -25,6 +25,7 @@ import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
 import { recalculatePayments, rewriteLockedExpectedForDiscountChange } from './paymentEngine'
+import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -1757,6 +1758,9 @@ async function serverBillForMonth(leaseTermId: string, mon: string, fallback: nu
 }
 
 // 수납 기록 수정
+// 환불 확정 record 를 직접 고치려 할 때의 거절 문구 — 수정·삭제 두 문이 같은 말을 한다.
+const RENT_REFUND_RECORD_LOCKED = '이용료 환불로 확정된 수납입니다. 수납 정보의 이용료 정산에서 적용취소한 뒤 다시 확정해 주세요.'
+
 export async function updatePayment(
   paymentId: string,
   data: { actualAmount: number; payDate: string; payMethod: string; memo?: string; targetMonth?: string; cashReceiptIssued?: boolean; cashReceiptIssuedDate?: string | null }
@@ -1768,9 +1772,12 @@ export async function updatePayment(
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
       // 옛 수납일·수단도 읽는다 — 그것이 바뀌면 그 축으로 걸려 있던 발행 줄이 고아가 된다.
-      select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true, payDate: true, payMethod: true },
+      select: { leaseTermId: true, targetMonth: true, isDeposit: true, cashReceiptIssuedAt: true, payDate: true, payMethod: true, memo: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    // 이용료 환불 확정이 만든 record 는 잠근다 — 여기서 고치면 환불 스냅샷과 어긋나 적용취소가 틀어진다.
+    // 고치는 자리는 수납 정보의 이용료 정산 카드(적용취소 뒤 재확정) 하나다(lib/rentRefundRecord).
+    if (isRentRefundRecord(record.memo)) return { ok: false, error: RENT_REFUND_RECORD_LOCKED }
 
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: record.leaseTermId },
@@ -2404,9 +2411,11 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
     const record = await prisma.paymentRecord.findFirst({
       where: { id: paymentId, propertyId },
       // 수납일·수단도 읽는다 — 그 축으로 걸린 발행 줄을 함께 내려야 한다.
-      select: { leaseTermId: true, targetMonth: true, payDate: true, payMethod: true },
+      select: { leaseTermId: true, targetMonth: true, payDate: true, payMethod: true, memo: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+    // 환불 확정 record 잠금 — updatePayment 와 같은 이유. 지우면 스냅샷이 가리키는 record 가 사라진다.
+    if (isRentRefundRecord(record.memo)) return { ok: false, error: RENT_REFUND_RECORD_LOCKED }
 
     // 소프트삭제 — 조회 익스텐션이 자동 제외. 재계산은 활성분만 보므로 미수·완납 자동 정정. 적용취소는 restorePayment.
     await prisma.paymentRecord.update({ where: { id: paymentId }, data: { deletedAt: new Date() } })

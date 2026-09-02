@@ -34,6 +34,7 @@ import { savePayment, setPaymentCashReceipt, saveDepositPayment, deletePayment, 
 import { PaymentEntryForm } from '@/components/entity-modal/widgets/PaymentEntryForm'
 import { Btn } from '@/components/ui/Btn'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
+import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 import { Badge } from '@/components/ui/Badge'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
@@ -3009,7 +3010,11 @@ export default function TenantClient({
                                     방금 등록한 수납이 자동 분배로 지난달에 귀속됐을 때 그 자리에서 고칠 방법이 사라진다.
                                     삭제 확인창이 이미 영향 월을 고지하므로(handleDeletePayRecord) 여기서는 열어 둔다. */}
                                 {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit 가 최종 방어(감사 D3) */}
-                                {canEdit && (
+                                {/* 이용료 환불 확정 record 는 어느 화면에서도 직접 안 고친다 — 수납 정보의 이용료 정산 카드가 정본(서버도 거부). */}
+                                {canEdit && isRentRefundRecord(p.memo) && (
+                                  <span className="text-[0.65625rem] text-[var(--warm-muted)] ml-1">이용료 정산에서 고칩니다</span>
+                                )}
+                                {canEdit && !isRentRefundRecord(p.memo) && (
                                   <div className="flex gap-2 ml-1">
                                     <RowActionBtn tone="neutral" onClick={() => handleUpdatePayRecord(p)}>수정</RowActionBtn>
                                     <RowActionBtn tone="danger" onClick={() => handleDeletePayRecord(p)}>삭제</RowActionBtn>

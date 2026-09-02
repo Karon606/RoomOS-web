@@ -23,6 +23,7 @@ import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
+import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 
@@ -399,10 +400,15 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   미래 귀속은 마감된 적도, 신고에 실린 적도, 과거 어느 합계에 들어간 적도
                   없다 — 위 걱정('지난달 매출')이 성립하지 않으므로 입금일 화면에서 바로 다룬다.
                   미래 월 화면을 여는 쪽이 아니라 이쪽인 이유는 접점이 작아서다. */}
-              {canEdit && !cashReceiptOnly && !p.isDeposit && !editableHere(p.targetMonth) && (
+              {/* 이용료 환불 확정이 만든 record 는 여기서 안 고친다 — 스냅샷과 어긋나면 적용취소가 틀어진다.
+                  서버(updatePayment·deletePayment)도 거부하므로 버튼을 두면 눌러야 거절되는 버튼이 된다. */}
+              {canEdit && !cashReceiptOnly && !p.isDeposit && isRentRefundRecord(p.memo) && (
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">환불 확정 수납은 맨 위 이용료 정산 항목에서 고칩니다.</span>
+              )}
+              {canEdit && !cashReceiptOnly && !p.isDeposit && !isRentRefundRecord(p.memo) && !editableHere(p.targetMonth) && (
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">위 조회 월을 {Number(p.targetMonth.slice(5))}월로 바꾸면 수정할 수 있습니다.</span>
               )}
-              {canEdit && !cashReceiptOnly && !p.isDeposit && editableHere(p.targetMonth) && (
+              {canEdit && !cashReceiptOnly && !p.isDeposit && !isRentRefundRecord(p.memo) && editableHere(p.targetMonth) && (
                 <div className="flex gap-1.5">
                   <RowActionBtn tone="neutral" onClick={() => startEdit(p)}>수정</RowActionBtn>
                   <RowActionBtn tone="danger" onClick={() => handleDelete(p)}>삭제</RowActionBtn>
