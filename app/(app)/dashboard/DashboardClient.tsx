@@ -840,8 +840,12 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
       className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
       onClick={() => onOpen(item)}
     >
+      {/* 좌측 3px 팁은 없다. §18 Status Row 의 팁은 **상태색**(연체·미납)일 때 서고, 이 행이 말하는
+          것은 상태가 아니라 카테고리다. 카테고리는 §24 글리프가 색으로 이미 말하므로 팁까지 달면
+          같은 말을 두 번 하는 장식이고, 모든 행에 색 줄이 서면 정작 급한 행이 안 도드라진다
+          (§29 '카테고리색 립 0', 2026-09-03 개정). 6% 틴트는 행 구분이라 남긴다. */}
       <div className="flex items-center gap-3 px-5 py-3"
-        style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
+        style={{ background: hexToRgba(item.dotColor, 0.06) }}>
         {/* 위 모달 헤더와 같은 처방 — 원 없이 글리프+색이 카테고리를 말한다(정비 6/7). */}
         <span className="w-5 shrink-0 flex justify-center" style={{ color: item.dotColor }}>
           <CategoryGlyph category={item.category} size={16} />

@@ -46,7 +46,7 @@
 - [ ] 다크 대비 실기(운영자)
 
 ## B7 design(홈 알림): 카테고리 립을 걷는다 (§18 개정)
-- [ ] 가이드 §18 문단 + §29 점검 "카테고리색 립 0" · DashboardClient 844 · check-card-rip 대상에 알림 행
+- [x] 가이드 §18 문단 + §29 점검 "카테고리색 립 0" · DashboardClient 844 · check-card-rip 대상에 알림 행 + borderLeft 축약 + 역주입
 
 ## B8 design(퇴실 정산 위젯): 입력을 40/44 로 올린다 (§12)
 - [ ] CheckoutProrationWidget 입력 5 + DatePicker + 읽기전용 박스 · 320px 세로 실기

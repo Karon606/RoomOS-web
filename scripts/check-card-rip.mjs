@@ -14,7 +14,10 @@
 // 조건부(삼항·&&)는 통과시킨다 — 주의 상태에만 서는 것이 규칙이고, 그 조건이 무엇인지까지
 // 코드로 판정하는 것은 이 그물의 일이 아니다(그건 디자이너 패스가 본다).
 //
-// 사이드바의 활성 메뉴 표시선은 카드가 아니다. 대상은 카드 컴포넌트뿐이다.
+// 사이드바의 활성 메뉴 표시선은 카드가 아니다. 대상은 카드와, 카드처럼 목록을 이루는 행이다.
+// 홈 알림 행(AlertRow)은 큰 클라이언트 파일 안에 살아 이름으로 안 걸리므로 EXTRA 로 지목한다.
+// 그 행의 좌측 팁은 2026-09-03 에 걷었다 — §18 팁은 상태색일 때 서고, 카테고리는 §24 글리프가
+// 색으로 이미 말한다(§29 '카테고리색 립 0'). style 의 borderLeft 축약도 같이 본다.
 //
 // 실행: node scripts/check-card-rip.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -32,6 +35,9 @@ const walk = (dir) => {
   }
 }
 for (const r of ROOTS) walk(r)
+// 이름으로 안 걸리는 행 컴포넌트의 집. 파일 전체를 보되 조건부는 그대로 통과한다.
+const EXTRA = ['app/(app)/dashboard/DashboardClient.tsx']
+for (const f of EXTRA) if (!files.includes(f)) files.push(f)
 
 const violations = []
 for (const f of files) {
@@ -48,10 +54,14 @@ for (const f of files) {
     if (/borderLeftWidth\s*:/.test(line)) {
       violations.push(`${f}:${i + 1} — 조건 없이 서는 borderLeftWidth. 주의 상태에만 세운다(§29).`)
     }
+    // style 축약 — borderLeft: `3px solid …` 는 위 두 정규식에 안 걸린다(홈 알림 행이 그 형태였다).
+    if (/borderLeft\s*:\s*[`'"][^`'"]*\d+px/.test(line)) {
+      violations.push(`${f}:${i + 1} — 조건 없이 서는 borderLeft 축약. 주의 상태에만 세운다(§29).`)
+    }
   })
 }
 
-console.log(`[카드 립] 카드 컴포넌트 ${files.length}개 검사 / 위반 ${violations.length}건`)
+console.log(`[카드 립] 카드·행 ${files.length}개 검사 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
