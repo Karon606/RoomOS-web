@@ -49,6 +49,23 @@ transition-all·hover:scale 0. 이 축들은 가이드 규율이 이미 지켰�
 - 읽기전용 파생값 박스가 옆 입력보다 8px 낮았다. 한 폼 안의 칸 높이는 하나다(§12 40/44).
   정본을 `panelFormStyles.readonlyCls` 로 뽑았다.
 
+## 다음 정비 후보 — 다크에서 안 읽히는 코랄 글자 (2026-09-03 접수)
+
+`--persimmon-d`(#7c2d26)와 `--persimmon`(#a03c2e)에는 다크 분기가 없다. 다크에서 밝아지는 짝은
+`--tc-text` 다(globals.css §19 페어). 그래서 이 둘을 페일 면 위 글자로 쓰면 다크 대비가
+1.6~2.3:1 로 사실상 안 읽힌다. 배지 정본은 2026-09-03 에 danger 트라이어드로 고쳤고(대비 5.9:1),
+손 코드는 남았다. 디자이너가 지목한 자리.
+
+`app/admin/users/UsersClient.tsx:122·176` · `app/admin/invites/InvitesClient.tsx:220` ·
+`app/(auth)/login/EmailLoginForm.tsx:188` · `components/ui/CountrySelect.tsx:412` ·
+`components/ui/AddressSearch.tsx:117` · `app/property-select/PropertyList.tsx:9`(OWNER 배지,
+color-mix 코랄 12% 면에 --persimmon-d 글자) · `app/(app)/contracts/ContractsClient.tsx:348`
+(생성본 라벨, `bg-[var(--coral)]/10` + `text-[var(--coral)]`).
+
+착수 전에 클래스를 먼저 센다 — `text-[var(--coral)]` 자체는 수십 곳이고 그중 **페일 면 위**만
+대상이다. `SettingsForm.tsx:2482·2515` 같은 선택 보더는 존치. check-badge-tokens 는 정본 두
+파일만 보므로 이 손 코드들은 아직 그물 밖이다.
+
 ## 존치 판정(바꾸지 말 것)
 
 숫자 카운터 원형(OS 배지 관습) · 부유 알약('오늘로' FAB·SelectionPillBar, §07 허용 목록) ·
