@@ -17,6 +17,9 @@
 //   ⓖ 기본 갈래는 자리마다 다르다. 퇴실 처리 화면(서버 미리보기)은 '환불 없음', 위젯은 단기 유무로 정한다.
 //      한쪽이 두 번째 인자를 빠뜨리면 두 자리가 같은 계약을 다른 기본값으로 연다.
 //   ⓗ 정본 섹션의 none 분기 캡션이 선납을 말한다. 안 말하면 운영자가 선납 있는 계약을 0 으로 닫으려 한다.
+//   ⓘ 환불 확정 계약은 일할 위젯이 잠긴 줄로 선다(2026-09-03). 서버(RoomRow.rentRefundFinalized)가 판정해
+//      내리고 위젯은 버튼 없이 한 줄만 그린다. 버튼을 두면 눌러야 거절되는 버튼이 된다. 위치 표현은
+//      '위 이용료 정산 항목'이다('맨 위'는 보증금 카드가 먼저라 거짓).
 //
 // 실행: node scripts/check-rent-settlement-branch.mjs
 import { readFileSync } from 'node:fs'
@@ -120,9 +123,38 @@ for (const file of [SECTION, WIDGET]) {
   if (!none) violations.push(`${SECTION} — none 분기가 뒤 달 선납(futurePrepaid)을 말하지 않는다. 선납 있는 계약을 0 으로 닫게 된다.`)
 }
 
+// ⓘ 환불 확정 계약의 일할 위젯 잠금.
+{
+  const ROOMS = 'app/(app)/rooms/actions.ts'
+  const BODY = 'components/entity-modal/bodies/PaymentBody.tsx'
+  const LIST = 'components/entity-modal/widgets/PaymentRecordList.tsx'
+  const rooms = stripComments(read(ROOMS))
+  if ((rooms.match(/rentRefundFinalized:\s*hasRentRefundSnapshot\(/g) || []).length < 2) {
+    violations.push(`${ROOMS} — RoomRow 조립 두 곳이 rentRefundFinalized 를 hasRentRefundSnapshot 으로 채우지 않는다. 위젯이 잠길 근거가 없다.`)
+  }
+  const body = stripComments(read(BODY))
+  if (!/rentRefundFinalized=\{settlement\.rentRefundFinalized\}/.test(body)) {
+    violations.push(`${BODY} — 일할 위젯에 rentRefundFinalized 를 안 넘긴다. 환불 확정 계약에 [다시 정산]이 선다.`)
+  }
+  const w = stripComments(read(WIDGET))
+  const lock = w.indexOf('if (rentRefundFinalized)')
+  const fold = w.indexOf('if (!showForm)')
+  if (lock < 0 || fold < 0 || lock > fold) {
+    violations.push(`${WIDGET} — 환불 확정 잠금 분기가 없거나 접힘 뷰보다 뒤에 선다. 잠긴 줄이 아니라 버튼이 먼저 그려진다.`)
+  } else if (/onClick=/.test(w.slice(lock, fold))) {
+    violations.push(`${WIDGET} — 환불 확정 잠금 줄에 버튼이 있다. 눌러야 거절되는 버튼이다.`)
+  }
+  if (!/if \(!autoOpen[^\n]*rentRefundFinalized/.test(w)) {
+    violations.push(`${WIDGET} — autoOpen 이 환불 확정 계약의 폼을 연다. 잠긴 줄을 건너뛰어 [적용]까지 간다.`)
+  }
+  for (const f of [WIDGET, LIST]) {
+    if (/맨 위 이용료 정산/.test(read(f))) violations.push(`${f} — 위치 표현이 '맨 위'다. 이용료 정산 카드는 보증금 카드 다음이라 '위 이용료 정산 항목'으로 쓴다.`)
+  }
+}
+
 if (violations.length) {
   console.error('퇴실 정산 갈래 감지망 위반')
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·환불 없음 선납·자리별 기본 갈래')
+console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금')

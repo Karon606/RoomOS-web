@@ -25,7 +25,7 @@ import { depositComposition } from '@/lib/depositComposition'
 import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
 import { recalculatePayments, rewriteLockedExpectedForDiscountChange } from './paymentEngine'
-import { isRentRefundRecord } from '@/lib/rentRefundRecord'
+import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -61,6 +61,9 @@ type RoomRow = {
   // 퇴실 일할 정산 — 설정 시 그 달(checkoutProratedMonth) 청구를 checkoutProratedAmount 로 덮어씀
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
+  // 이용료 환불이 확정된 계약인가(checkoutProrationUndo.refund 스냅샷). 참이면 위 일할값은 환불 확정이
+  // 고정한 청구라 일할 위젯이 잠긴다. 서버가 판정한 불리언 하나만 내려 스냅샷 JSON 은 서버에 머문다.
+  rentRefundFinalized?: boolean
   // 이 달에 청구가 없는 이유 — 0원을 '안 냄'이 아니라 '더 받을 게 없음'으로 읽히게 하는 표시 메타.
   // 계산에는 관여하지 않는다(집계·정렬·필터 전부 무변경).
   noBillReason?: 'shortTermPrepaid' | 'checkoutNoBilling' | null
@@ -632,6 +635,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
         checkoutProratedAmount: proratedAmt ?? null,
         checkoutProratedMonth: proratedMonth ?? null,
+        rentRefundFinalized: hasRentRefundSnapshot(l.checkoutProrationUndo),
         noBillReason: null, noBillCoveredAmount: null, noBillCoveredDate: null, noBillCoveredMonth: null,   // 미래월은 '아직 안 온 달'이라 무청구와 다르다
         billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
       }
@@ -663,6 +667,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       checkoutProratedAmount: proratedAmt ?? null,
       checkoutProratedMonth: proratedMonth ?? null,
+      rentRefundFinalized: hasRentRefundSnapshot(l.checkoutProrationUndo),
       noBillReason, noBillCoveredAmount, noBillCoveredDate, noBillCoveredMonth,
       billingAdjusts: billingAdjustsOf(lease.shortStayExtensions),
     }

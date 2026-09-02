@@ -27,7 +27,7 @@ const fmtMonth = (m: string) => { const [y, mm] = m.split('-'); return `${y}년 
 type PickMode = Exclude<SettlementPick, 'none'>
 
 export function CheckoutProrationWidget({
-  leaseTermId, currentDueDay, expectedMoveOut, checkoutProratedAmount, checkoutProratedMonth, autoOpen, onChange,
+  leaseTermId, currentDueDay, expectedMoveOut, checkoutProratedAmount, checkoutProratedMonth, rentRefundFinalized, autoOpen, onChange,
 }: {
   leaseTermId: string
   currentDueDay: string | null
@@ -36,6 +36,12 @@ export function CheckoutProrationWidget({
   /** 이미 확정된 일할 청구액 (없으면 null) */
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
+  /**
+   * 이용료 환불이 확정된 계약. 위 일할값은 환불 확정이 고정한 청구(prepaid − refunded)라 여기서
+   * 다시 정산하거나 적용취소하면 서버가 거부한다(setCheckoutProration·clearCheckoutProration).
+   * 눌러야 거절되는 버튼을 두지 않고 잠긴 한 줄로 선다. 서버(RoomRow)가 판정해 내려 첫 렌더부터 잠긴다.
+   */
+  rentRefundFinalized?: boolean
   /** 고객관리 '퇴실 정산?' 팝업의 '예'로 진입 — 폼 자동 펼침 + 날짜 프리필 + 미리보기. */
   autoOpen?: boolean
   /** 적용/해제 후 부모가 재조회. */
@@ -139,7 +145,7 @@ export function CheckoutProrationWidget({
   // autoOpen — 진입 직후 1회: 폼 펼치고 저장된 퇴실일로 미리보기 자동 실행
   const autoOpenedRef = useRef(false)
   useEffect(() => {
-    if (!autoOpen || autoOpenedRef.current) return
+    if (!autoOpen || autoOpenedRef.current || rentRefundFinalized) return
     autoOpenedRef.current = true
     setShowForm(true)
     if (expectedMoveOut) handleDate(expectedMoveOut)
@@ -191,6 +197,18 @@ export function CheckoutProrationWidget({
     })
   }
 
+  // 환불 확정 계약. 버튼 슬롯을 비운 잠긴 줄(정본 표현: RentSettlementSection 의 '퇴실 정산 적용됨' 줄).
+  if (rentRefundFinalized) {
+    return (
+      <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
+        <p className="text-xs font-medium text-[var(--warm-mid)]">퇴실 정산 (일할)</p>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 leading-relaxed break-keep">
+          이용료 정산 확정됨{isApplied ? ` · ${fmtMonth(checkoutProratedMonth!)} 청구 ${fmtWon(checkoutProratedAmount!)}` : ''} · 변경은 위 이용료 정산에서.
+        </p>
+      </div>
+    )
+  }
+
   // 접힘 상태 — 적용 여부에 따라 요약 표시
   if (!showForm) {
     return (
@@ -199,8 +217,8 @@ export function CheckoutProrationWidget({
           <div>
             <p className="text-xs font-medium text-[var(--warm-mid)]">퇴실 정산 (일할)</p>
             {isApplied ? (
-              <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--success-fg)' }}>
-                {fmtMonth(checkoutProratedMonth!)} 청구 {fmtWon(checkoutProratedAmount!)} 로 일할 적용됨
+              <p className="text-[0.65625rem] mt-0.5 leading-relaxed break-keep" style={{ color: 'var(--success-fg)' }}>
+                {fmtMonth(checkoutProratedMonth!)} 청구 {fmtWon(checkoutProratedAmount!)}으로 일할 적용됨
                 {expectedMoveOut ? ` · 퇴실 ${expectedMoveOut.slice(5).replace('-', '/')}` : ''}
               </p>
             ) : (

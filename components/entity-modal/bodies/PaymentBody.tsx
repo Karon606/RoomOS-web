@@ -385,6 +385,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
                 expectedMoveOut={settlement.expectedMoveOut}
                 checkoutProratedAmount={settlement.checkoutProratedAmount}
                 checkoutProratedMonth={settlement.checkoutProratedMonth}
+                rentRefundFinalized={settlement.rentRefundFinalized}
                 autoOpen={openCheckoutProration || adjustKey > 0}
                 onChange={refresh}
               />

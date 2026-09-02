@@ -7,12 +7,12 @@
 - [x] check-checkout-side-effects ⓠ(세 본문 술어, set 은 settlementCalcFor 앞, 문장 정확히 2회) + 역주입
 
 ## A2 feat(퇴실정산): 환불 확정 계약은 일할 위젯이 잠긴 줄로 선다
-- [ ] rooms/actions.ts RoomRow.rentRefundFinalized, select checkoutProrationUndo, 조립 두 곳
-- [ ] PaymentBody prop 전달
-- [ ] CheckoutProrationWidget prop, 잠금 한 줄(muted, 버튼 없음, 폼 안 열림) "변경은 위 이용료 정산 항목에서 적용취소 후."
-- [ ] PaymentRecordList 캡션 "맨 위" 를 "위" 로 (A-3)
-- [ ] check-rent-settlement-branch ⓘ + 역주입
-- [ ] 웹디자이너 패스
+- [x] rooms/actions.ts RoomRow.rentRefundFinalized, select checkoutProrationUndo, 조립 두 곳
+- [x] PaymentBody prop 전달
+- [x] CheckoutProrationWidget prop, 잠금 한 줄(muted, 버튼 없음, 폼 안 열림) "이용료 정산 확정됨 · … · 변경은 위 이용료 정산에서." (디자이너 패스 반영, break-keep)
+- [x] PaymentRecordList 캡션 "맨 위" 를 "위" 로 (A-3) · 391 동사 "고칩니다" 로 통일
+- [x] check-rent-settlement-branch ⓘ + 역주입
+- [x] 웹디자이너 패스
 
 ## A3 fix(퇴실정산): 전액 환불 확인창은 지낸 달 사용분까지 돌려줄 때만 뜬다
 - [ ] RentSettlementValue 를 lib/checkoutSettlement 로, futurePrepaid 필드, 섹션 재수출·valueFor 채움

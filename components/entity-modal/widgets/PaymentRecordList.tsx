@@ -388,7 +388,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               </div>
               {/* 보증금은 위 보증금 패널에서 관리한다. 여기에도 버튼을 두면 같은 record 에 편집 경로가 둘이 된다. */}
               {canEdit && p.isDeposit && (
-                <span className="text-[0.65625rem] text-[var(--warm-muted)]">보증금은 맨 위 보증금 항목에서 수정합니다.</span>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">보증금은 맨 위 보증금 항목에서 고칩니다.</span>
               )}
               {/* 편집 접점은 그 record 의 귀속월 화면 하나다. 창을 넓혔다고 편집까지 넓히면
                   지난달 매출이 어디서든 바뀔 수 있게 된다(영향 월 고지가 아직 없다).
@@ -403,7 +403,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               {/* 이용료 환불 확정이 만든 record 는 여기서 안 고친다 — 스냅샷과 어긋나면 적용취소가 틀어진다.
                   서버(updatePayment·deletePayment)도 거부하므로 버튼을 두면 눌러야 거절되는 버튼이 된다. */}
               {canEdit && !cashReceiptOnly && !p.isDeposit && isRentRefundRecord(p.memo) && (
-                <span className="text-[0.65625rem] text-[var(--warm-muted)]">환불 확정 수납은 맨 위 이용료 정산 항목에서 고칩니다.</span>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">환불 확정 수납은 위 이용료 정산 항목에서 고칩니다.</span>
               )}
               {canEdit && !cashReceiptOnly && !p.isDeposit && !isRentRefundRecord(p.memo) && !editableHere(p.targetMonth) && (
                 <span className="text-[0.65625rem] text-[var(--warm-muted)]">위 조회 월을 {Number(p.targetMonth.slice(5))}월로 바꾸면 수정할 수 있습니다.</span>
