@@ -137,8 +137,10 @@ export async function runIntegrityAudit(
     },
   })
   for (const l of refundedShort) {
-    const snap = (l.checkoutProrationUndo as Record<string, unknown> | null)?.refund as { refunded?: number; prepaid?: number } | undefined
+    const snap = (l.checkoutProrationUndo as Record<string, unknown> | null)?.refund as { refunded?: number; prepaid?: number; reason?: string } | undefined
     if (!snap || typeof snap.refunded !== 'number' || typeof snap.prepaid !== 'number' || snap.refunded <= 0) continue
+    // 사유가 적힌 스냅샷은 운영자가 계산값과 다른 줄 알고 고른 금액이다(수납 정보 카드의 수동 확정, 2026-09-02) — 건너뛴다.
+    if (typeof snap.reason === 'string' && snap.reason.trim()) continue
     // DB @db.Date 는 UTC 자정 저장이라 toISOString 슬라이스가 그 날짜다.
     const moveInYmd = l.moveInDate!.toISOString().slice(0, 10)
     const moveOutYmd = l.moveOutDate!.toISOString().slice(0, 10)
@@ -156,7 +158,7 @@ export async function runIntegrityAudit(
     if (snap.refunded <= shortRefund) continue
     violations.push({
       signature: `[정합] refund-over-short-stay · ${l.id}`,
-      note: `${l.tenant.name}: 거주 ${days}일 중도 퇴실이라 단기 요금(${q.units}주 계약 ${q.baseAmount.toLocaleString()}원) 기준 환불은 ${shortRefund.toLocaleString()}원인데 ${snap.refunded.toLocaleString()}원을 환불했습니다. 위약금 갈래로 확정된 것이면 입주자 정보의 '적용취소'로 되돌린 뒤 단기 요금으로 다시 확정하고, 일부러 면제한 것이면 이 신고를 무시하세요.`,
+      note: `${l.tenant.name}: 거주 ${days}일 중도 퇴실이라 단기 요금(${q.units}주 계약 ${q.baseAmount.toLocaleString()}원) 기준 환불은 ${shortRefund.toLocaleString()}원인데 ${snap.refunded.toLocaleString()}원을 환불했습니다. 위약금 갈래로 확정된 것이면 수납 정보의 이용료 정산에서 '적용취소'로 되돌린 뒤 단기 요금으로 다시 확정하고, 일부러 면제한 것이면 이 신고를 무시하세요.`,
       tenantId: l.tenantId, propertyId: l.propertyId,
     })
   }
@@ -186,6 +188,31 @@ export async function runIntegrityAudit(
     violations.push({
       signature: `[정합] checkout-reason-dropped · ${l.id}`,
       note: `${l.tenant.name}: 퇴실 예정 때 고른 사유는 '${inherited}'인데 퇴실 확정 기록에는 비어 있습니다. 입주자 정보의 상태 이력에서 퇴실 행의 사유를 적어 주세요.`,
+      tenantId: l.tenantId, propertyId: l.propertyId,
+    })
+  }
+
+  // 규칙 8 — 환불 확정 스냅샷과 그 달 수납 기록이 어긋남 (2026-09-02 수납 정보 카드 도입과 함께).
+  // 확정이 만든 record 는 화면·서버가 잠그지만(rooms/actions updatePayment·deletePayment 거부) 옛 화면이나
+  // 스크립트가 고치면 스냅샷의 prepaid − refunded 와 그 달 살아 있는 이용료 수납 합이 갈리고, 그때
+  // 적용취소가 엉뚱한 금액을 복원한다. 첫 실행에 기존 불일치가 나오면 정리는 운영자 판단이다.
+  const refundedAll = await prisma.leaseTerm.findMany({
+    where: { status: 'CHECKED_OUT', checkoutProrationUndo: { not: Prisma.DbNull } },
+    select: { id: true, tenantId: true, propertyId: true, checkoutProrationUndo: true, tenant: { select: { name: true } } },
+  })
+  for (const l of refundedAll) {
+    const snap = (l.checkoutProrationUndo as Record<string, unknown> | null)?.refund as { refunded?: number; prepaid?: number; month?: string } | undefined
+    if (!snap || typeof snap.refunded !== 'number' || typeof snap.prepaid !== 'number' || typeof snap.month !== 'string') continue
+    const agg = await prisma.paymentRecord.aggregate({
+      where: { leaseTermId: l.id, targetMonth: snap.month, isDeposit: false, isPrevOwner: false, isBillingAdjust: false, deletedAt: null },
+      _sum: { actualAmount: true },
+    })
+    const actual = agg._sum.actualAmount ?? 0
+    const expected = snap.prepaid - snap.refunded
+    if (actual === expected) continue
+    violations.push({
+      signature: `[정합] rent-refund-record-drift · ${l.id}`,
+      note: `${l.tenant.name}: ${Number(snap.month.slice(5, 7))}월 이용료 수납 합이 ${actual.toLocaleString()}원인데 환불 확정(원 수납 ${snap.prepaid.toLocaleString()}원 − 환불 ${snap.refunded.toLocaleString()}원)대로면 ${expected.toLocaleString()}원이어야 합니다. 수납 정보의 이용료 정산에서 적용취소한 뒤 다시 확정해 주세요.`,
       tenantId: l.tenantId, propertyId: l.propertyId,
     })
   }

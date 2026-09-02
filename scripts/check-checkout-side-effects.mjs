@@ -282,7 +282,7 @@ for (const [name, re] of callers) {
   // 서버가 만들어 줘도 화면이 버리면 아무도 못 듣는다 — ⓕ 에서 실제로 그랬다.
   for (const [name, f] of [
     ['입주자 관리 수정', 'app/(app)/tenants/TenantClient.tsx'],
-    ['프리즘 입주자 본문', 'components/entity-modal/bodies/TenantBody.tsx'],
+    ['수납 정보 이용료 정산', 'components/entity-modal/widgets/RentSettlementPanel.tsx'],
   ]) {
     const src2 = readFileSync(f, 'utf8')
     if (/undoRentRefund\(/.test(src2) && !/undoRefundTaxNoticeLines\(/.test(src2)) {
@@ -434,7 +434,31 @@ for (const [name, re] of callers) {
   }
 }
 
-console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 / 위반 ${violations.length}건`)
+// ⓟ 수납 정보의 이용료 정산 카드 (2026-09-02 운영자 요청).
+//
+//    퇴실 예정·완료 계약의 이용료 환불은 이 카드가 정본이다 — 예상액·확정 결과·적용취소·금액 수정이
+//    한 자리에 선다. 입주자 정보 탭의 적용취소 행은 퇴실 완료 계약을 안 실어 정작 퇴실자에게 안 그려졌다.
+//    그래서 세 가지를 본다. 카드가 실제로 수납 정보에 서는가, 카드의 확정(재확정·환불 기록)도 홈택스
+//    안내를 띄우는가, 확정이 만든 수납 기록이 스냅샷과 어긋나면 사후 그물이 잡는가.
+{
+  const pb = readFileSync('components/entity-modal/bodies/PaymentBody.tsx', 'utf8')
+  if (!/<RentSettlementPanel\b/.test(pb)) {
+    violations.push('components/entity-modal/bodies/PaymentBody.tsx — 수납 정보에 이용료 정산 카드가 없다. 퇴실자의 환불 결과·적용취소를 볼 자리가 사라진다.')
+  }
+  const rp = readFileSync('components/entity-modal/widgets/RentSettlementPanel.tsx', 'utf8')
+  if (!/finalizeRentRefund\(/.test(rp) || !/refundTaxNoticeLines\(/.test(rp)) {
+    violations.push('components/entity-modal/widgets/RentSettlementPanel.tsx — 카드의 환불 확정이 홈택스 안내(refundTaxNoticeLines)를 안 띄운다.')
+  }
+  if (!/undoRentRefund\(/.test(rp)) {
+    violations.push('components/entity-modal/widgets/RentSettlementPanel.tsx — 카드에 적용취소가 없다(§16 상시 진입점).')
+  }
+  const audit2 = readFileSync('lib/integrityAudit.ts', 'utf8')
+  if (!/rent-refund-record-drift/.test(audit2)) {
+    violations.push('lib/integrityAudit.ts — 환불 스냅샷과 수납 기록의 어긋남 감사(규칙 8)가 없다.')
+  }
+}
+
+console.log(`[퇴실 부수 처리] 축 ⓐ 정본 4축 · ⓑ 경로가 정본 호출 · ⓒ 정본 밖 직접 생성 금지 · ⓓ 세 경로 이용료 환불 · ⓔ 정산 정본 공유 · ⓕ 홈택스 안내 · ⓖ 단기 제외 · ⓗ 기존 청소 표시 · ⓘ 미래 선납 집계 · ⓙ 퇴실일 기본값 · ⓚ 발행일 축 · ⓛ 적용취소 안내 · ⓜ 보증금 발행 조건부 · ⓝ 나중에 반환 · ⓞ 퇴실 사유 승계 · ⓟ 수납 정보 정산 카드 / 위반 ${violations.length}건`)
 if (violations.length > 0) {
   console.error('')
   for (const v of violations) console.error(`  - ${v}`)
