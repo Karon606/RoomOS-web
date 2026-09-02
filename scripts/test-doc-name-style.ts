@@ -7,7 +7,7 @@
 //   · **외국인은 영문이 기본** — 다만 영문 이름이 없으면 고를 수 없으니 한글로 떨어진다.
 //   · **파일 이름도 표기를 따라간다** — 이름만 로마자이고 서류명이 한글이면 절반은 못 읽는 파일이 된다.
 import {
-  resolveDocNameStyle, docNameStyleConflict, isKoreanNationality, DEFAULT_DOC_NAME_STYLE,
+  resolveDocNameStyle, docNameStyleConflict, isKoreanNationality, showsForeignFields, DEFAULT_DOC_NAME_STYLE,
   asDocNameStyle,
 } from '../lib/documentName'
 import { docFileLabel, DOC_TYPE_FILE_LABEL, DOC_TYPE_FILE_LABEL_EN } from '../lib/docBundle'
@@ -31,6 +31,14 @@ eq('국적이 비면 내국인으로 본다', isKoreanNationality(null), true)
 eq('공백만 있어도 내국인', isKoreanNationality('   '), true)
 eq('베트남은 외국인', isKoreanNationality('베트남'), false)
 eq('우즈베키스탄도 외국인', isKoreanNationality('우즈베키스탄'), false)
+
+// 폼의 외국인 칸 노출 — 서류 판정과 이름 변형은 같은 답, 빈 값만 일부러 다르다.
+eq('폼: 대한민국은 칸 숨김', showsForeignFields('대한민국'), false)
+eq('폼: 한국도 칸 숨김', showsForeignFields('한국'), false)
+eq('폼: Korea 도 칸 숨김', showsForeignFields('Republic of Korea'), false)
+eq('폼: 베트남은 칸 노출', showsForeignFields('베트남'), true)
+eq('폼: 국적이 비면 칸 노출(서류와 반대, 아직 안 고른 것)', showsForeignFields(null), true)
+eq('폼: 공백만 있어도 칸 노출', showsForeignFields('   '), true)
 
 // ── 기본 표기 ──────────────────────────────────────────────────────
 // 1순위: 이 서류에 저장된 값. 국적이 무엇이든 이긴다.

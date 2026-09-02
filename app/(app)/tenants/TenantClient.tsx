@@ -18,7 +18,7 @@ import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
-import { NATIVE_NAME_MAX } from '@/lib/documentName'
+import { NATIVE_NAME_MAX, showsForeignFields } from '@/lib/documentName'
 import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
@@ -4064,7 +4064,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             예시는 실존 입주자와 무관한 가상 이름이다(신고 c170be72). 종전 예시가 지금 사는 분의
             실제 현지 표기라 운영자가 거슬려 했다. 로마자를 피한 것은 이 칸이 위 '영어이름'과 다른
             값이라는 것을 예시 한 줄로 보이게 하려는 것이다. */}
-        {natVal !== '대한민국' && (
+        {showsForeignFields(natVal) && (
         <div className="space-y-1.5">
           <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로 · 서류 성명 표기에서 고를 수 있습니다)</span></label>
           <input
@@ -4132,7 +4132,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         </div>
         {/* 외국인등록번호 — 해외 연락처와 같은 조건(국적이 대한민국이면 숨김).
             숨겨져도 저장 시 기존 값은 보존된다(빈 값 = 서버가 건드리지 않음). */}
-        {natVal !== '대한민국' && (
+        {showsForeignFields(natVal) && (
           <ForeignRegNoField tenantId={tenant?.id} masked={tenant?.foreignRegNoMasked ?? null} />
         )}
       </FormSection>
@@ -4178,7 +4178,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             저장된 행이 있으면 syncCountry 를 아예 안 넘긴다(자동이 끼어들 자리를 없앤다).
             새로 적는 칸에서만 국적을 따라가고, 그때도 손으로 고른 뒤에는 안 덮는다
             (lib/homeCountrySync 정본). */}
-        {natVal !== '대한민국' && (
+        {showsForeignFields(natVal) && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">해외 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput

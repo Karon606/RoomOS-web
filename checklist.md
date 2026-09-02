@@ -4,8 +4,8 @@
 다만 사람 단위로 "이 사람은 한글" 을 못박을 수 있어야 한다.
 
 ## 0 fix(고객정보): 외국인 판정을 정본 하나로 모은다
-- [ ] TenantClient 의 `natVal !== '대한민국'` 두 자리를 정본 판정으로
-- [ ] 서류 정본 isKoreanNationality 와 같은 답을 내는지 확인('한국'·'Korea'·'KR')
+- [x] TenantClient 의 `natVal !== '대한민국'` 세 자리를 정본 판정으로(현지 표기·등록번호·해외 연락처)
+- [x] 서류 정본 isKoreanNationality 와 같은 답을 내는지 확인('한국'·'Korea'·'KR')
 
 ## 1 feat(서류성명): 사람 단위 기본 표기를 정본이 받는다
 - [ ] lib/documentName: DocNameStyleContext 에 tenant 축, 서열은 saved > siblings > tenant > 국적 > ko

@@ -165,6 +165,22 @@ export function isKoreanNationality(nationality: string | null | undefined): boo
   return v === '대한민국' || v === '한국' || /^(korea|republic of korea|south korea|kr)$/i.test(v)
 }
 
+/**
+ * 고객 정보 폼에서 외국인 전용 칸(현지 표기 이름·외국인등록번호·해외 연락처)을 띄우는가.
+ *
+ * 폼이 `nationality !== '대한민국'` 을 직접 비교하고 있었다. 그러면 국적을 '한국'이나 'Korea' 로
+ * 적은 사람이 폼에서는 외국인, 서류 기본값에서는 내국인으로 갈린다. 판정을 여기 한 곳으로 모은다.
+ *
+ * **빈 값의 답은 위 함수와 일부러 다르다.** 서류는 안 고른 국적을 내국인으로 보고(종이에 찍히는
+ * 것이라 추정이 세면 안 된다), 폼은 아직 안 고른 것이니 칸을 숨기지 않는다. 국적을 나중에 고르는
+ * 입력 순서에서 칸이 사라지면 값을 넣을 자리가 없다.
+ */
+export function showsForeignFields(nationality: string | null | undefined): boolean {
+  const v = (nationality ?? '').trim()
+  if (!v) return true
+  return !isKoreanNationality(v)
+}
+
 export type DocNameStyleContext = {
   /** 이 서류에 저장된 표기. 운영자가 이 서류에서 이미 고른 값이다. */
   saved?: DocNameStyle | null
