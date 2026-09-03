@@ -25,6 +25,7 @@ import { cleaningFeeDeductible } from '@/lib/depositWithholdReasons'
 import { depositComposition, withheldPartsLabel } from '@/lib/depositComposition'
 // 보증금 수납 수단 정본 — 이름 없는 부분집합을 각 화면이 베끼면 그 자리들이 갈린다.
 import { MANUAL_PAY_METHODS as PAY_METHODS } from '@/lib/paymentMethods'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { inputCls, inputErrCls, labelCls, formBoxCls } from './panelFormStyles'
 
 type Rec = Awaited<ReturnType<typeof getDepositPaymentsByLease>>['records'][number]
@@ -128,6 +129,9 @@ export function DepositStatusPanel({
   // 다만 판정은 돈이 움직이는 3경로와 같아야 한다 — 입실 때 청소비를 따로 받았으면 공제 0(계약서 §2-4).
   const effectiveFee = cleaningFeeDeductible(cleaningFee, cleaningPaid)
   const expectedRefund = Math.max(0, refundBase - effectiveFee)
+  // 이 폼이 기록할 수 있는 최대 반환액. 청소비 몫은 보증금 안에 든 돈이라 퇴실에서 당연히 빠지고,
+  // '전액 반환'은 그 뒤 남은 전부를 뜻한다(퇴실 처리 폼의 maxRefund 와 같은 축).
+  const maxRecordable = expectedRefund
   // 청소비가 보증금 안의 몫인 영업장(설정 cleaningFeeInDeposit): 입실 때 받은 청소비가 계약 보증금의
   // 일부를 채운다. 현금만 세면 그 몫이 '부족'으로 보인다(520호 — 현금 3만 정정이 부족 2만으로 표시,
   // 청소비 2만이 화면 어디에도 연결되지 않았다). 별도 수령 영업장도 있으므로 조용히 흡수하지 않는다 —
@@ -417,6 +421,35 @@ export function DepositStatusPanel({
       )}
       {recOpen && (
         <div className={formBoxCls}>
+          {/* 왜 얼마가 기본값인지 폼 안에서 말한다 — 종전에는 반환액 칸에 숫자만 서 있어 청소비를
+              뺀 뒤라는 것이 안 보였다(운영자 2026-09-03 — "청소비가 보증금에서 별도라는 게 명확히
+              보이질 않아"). 아래 '반환 예정액' 줄이 같은 말을 하므로 폼이 열린 동안 그 줄을 접는다.
+              문법·문자열은 퇴실 처리 폼의 보증금 절과 같다. */}
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between">
+              <span className="font-semibold text-[var(--warm-mid)]">{carriedOver ? '계약 보증금' : '받은 보증금'}</span>
+              <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(refundBase)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">− 청소비</span>
+              {/* 실제로 깎이는 값은 감액 축 색을 입는다(§06) — 형제 폼과 같은 판정. */}
+              <span className={`tabular-nums ${effectiveFee > 0 && cleaningPaid === 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
+                {cleaningPaid > 0 ? '입실 때 받음 · 공제 안 함' : effectiveFee > 0 ? fmtWon(effectiveFee) : '없음'}
+              </span>
+            </div>
+          </div>
+          {/* 전액 미반환은 세그먼트 한 번으로 — 종전에는 0 을 직접 쳐야 했다(운영자 요청 2026-09-03).
+              두 갈래인 이유. 형제 두 폼은 '나중에 반환'을 셋째로 두는데 이 폼은 이미 퇴실한 계약의
+              **사후 기록**이라 미룸이 성립하지 않는다(그 상태가 곧 지금이다). 대신 '일부 반환'을
+              셋째로 두는 안은 탭해도 아무 일이 없는 죽은 조작면이 된다 — 일부는 금액칸이 말한다.
+              활성 세그먼트 재탭이 이미 친 금액을 최대치로 덮지 않게 가드를 둔다(형제 정본). */}
+          <div className="space-y-1.5 border-t border-[var(--warm-border)] pt-2">
+            <label className={labelCls}>보증금 반환 (최대 {fmtWon(maxRecordable)})</label>
+            <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
+              value={recAmount === 0 ? 'none' : 'refund'}
+              onChange={v => { if ((v === 'none') !== (recAmount === 0)) setRecAmount(v === 'none' ? 0 : maxRecordable) }}
+              options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
+          </div>
           <div className={gridCls}>
             <div className="space-y-1.5">
               <label className={labelCls} htmlFor={`${uid}-rec-amount`}>반환액</label>
@@ -428,6 +461,12 @@ export function DepositStatusPanel({
               <DatePicker name="refundRecordDate" value={recDate} onChange={setRecDate} className={inputCls} />
             </div>
           </div>
+          {/* 라벨이 최대를 약속했으면 화면이 그것을 지켜야 한다. 종전에는 초과 금액이 조용히
+              저장됐다 — 서버 기준액은 청소비를 빼기 전 값이라 통과시킨다(디자이너 지적 2026-09-03).
+              문구·잠금 문법은 퇴실 처리 폼과 같다. */}
+          {recAmount > maxRecordable && (
+            <p className="text-[0.6875rem] text-[var(--danger-fg)]">반환 금액은 최대 {fmtWon(maxRecordable)}입니다.</p>
+          )}
           {Math.max(0, refundBase - recAmount) > effectiveFee && (
             <div className="space-y-1.5">
               <p className={labelCls}>반환하지 않는 {fmtWon(Math.max(0, refundBase - recAmount))} · 사유</p>
@@ -443,14 +482,16 @@ export function DepositStatusPanel({
           {/* 취소 좌 · 확인 우(§13·§14). 종전 이 폼만 반대라 한 패널 안에 서로 반대인 두 폼이 서 있었다. */}
           <div className="flex gap-2 justify-end">
             <Btn variant="secondary" size="sm" disabled={pending} onClick={() => setRecOpen(false)}>취소</Btn>
-            <Btn variant="primary" size="sm" disabled={pending} onClick={() => { void saveRecord() }}>기록</Btn>
+            <Btn variant="primary" size="sm" disabled={pending || recAmount > maxRecordable} onClick={() => { void saveRecord() }}>기록</Btn>
           </div>
         </div>
       )}
 
       {/* 퇴실 시 환불 예상 — 굵기를 올리지 않는다. 확정액이 아니라 예상이고, 실제 환불은 이용료 정산까지 얽힌다.
-          근거는 항상 병기한다. 청소비가 0이면 괄호가 사라져 "받은 0원인데 30만원 환불"로 읽히던 구멍이 있었다. */}
-      {!settled && refundBase > 0 && (
+          근거는 항상 병기한다. 청소비가 0이면 괄호가 사라져 "받은 0원인데 30만원 환불"로 읽히던 구멍이 있었다.
+          반환 정산 기록 폼이 열려 있으면 접는다 — 그 폼이 같은 구성을 제 안에 세우므로 같은 숫자가
+          몇십 픽셀 간격으로 두 번 선다(디자이너 지적 2026-09-03). */}
+      {!settled && !recOpen && refundBase > 0 && (
         <p className="text-xs text-[var(--warm-dark)] break-keep">
           {exited ? '반환 예정액 ' : '퇴실 시 반환 예상 '}<span className="num">{fmtWon(expectedRefund)}</span>
           {/* 근거는 값이 달라질 때만 병기한다. 무조건 붙이면 바로 위 '받은 보증금'과 같은 숫자를 두 번 말한다. */}
@@ -467,7 +508,7 @@ export function DepositStatusPanel({
       {/* 왜 청소비를 안 뺐는지 — 계약에 청소비가 적혀 있는데 예상액에서 사라지면 누락으로 읽힌다.
           기본 문구는 퇴실 처리 폼의 정본과 같은 한 문장. 청소비가 보증금 몫을 채운 계약(coveredByCleaning)만
           구성 설명으로 분기한다 — 같은 문장으로는 '보증금 어디에도 청소비가 없다'는 혼란을 못 푼다(2026-08-10). */}
-      {!settled && refundBase > 0 && cleaningFee > 0 && cleaningPaid > 0 && (
+      {!settled && !recOpen && refundBase > 0 && cleaningFee > 0 && cleaningPaid > 0 && (
         <p className="text-[0.65625rem] text-[var(--warm-muted)] break-keep">
           {coveredByCleaning > 0
             ? `입실 때 받은 청소비 ${fmtWon(cleaningPaid)}이 계약 보증금의 일부를 채웁니다. 반환 예상은 현금으로 받은 몫 기준이며 청소비는 다시 공제하지 않습니다.`
