@@ -146,6 +146,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         depositAmount={settlement.depositAmount}
         cleaningFee={settlement.cleaningFee}
         reservationDepositMode={resvMode}
+        moveOutYmd={settlement.expectedMoveOut}
         canEdit={canEdit}
         reloadSignal={reloadKey}
         onChanged={refresh}

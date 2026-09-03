@@ -1724,6 +1724,13 @@ export async function recordDepositReturn(params: {
     }
     const returned  = Math.max(0, Math.min(params.returnedAmount, basisAmount))
     const withheld  = Math.max(0, basisAmount - returned)
+    // 정산일은 미래일 수 없다 — 아직 하지 않은 정산을 적을 수는 없다(현금영수증 발행일과 같은
+    // 규칙, 운영자 승인 2026-09-03). 화면 넷의 기본값을 퇴실일로 통일했지만 다섯째 경로가
+    // 생겨도 여기서 받친다. 클라이언트 가드는 편의고 서버가 마지막 방어선이다.
+    const settleYmd = (params.date || '').slice(0, 10)
+    if (settleYmd > kstYmdStr()) {
+      return { ok: false, error: '정산일이 미래입니다. 아직 하지 않은 정산은 기록할 수 없습니다.' }
+    }
     const refundDate = new Date(params.date)
 
     // 환불 이력 — 반환·미반환 양쪽 합쳐 한 건으로 기록

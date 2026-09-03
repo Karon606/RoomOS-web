@@ -36,10 +36,18 @@ const ymd = (d: Date | string) => new Date(d).toISOString().slice(0, 10)
 
 export function DepositStatusPanel({
   leaseTermId, status, depositAmount, cleaningFee, reservationDepositMode, canEdit, reloadSignal, onChanged,
-  tenantId, tenantName,
+  tenantId, tenantName, moveOutYmd,
 }: {
   leaseTermId: string
   status: string | null
+  /**
+   * 이 계약의 퇴실일 'YYYY-MM-DD' — 반환 정산 기록 폼의 **정산일 기본값**이다.
+   *
+   * 이 폼은 퇴실 완료 계약에서만 서고, 그때 RoomRow.expectedMoveOut 은 실제 퇴실일이다
+   * (getLeaseSettlementInfo 의 퇴실자 폴백이 lease.moveOutDate 로 채운다).
+   * 없으면 오늘로 떨어진다 — 종전 거동이다.
+   */
+  moveOutYmd?: string | null
   depositAmount: number
   cleaningFee: number
   reservationDepositMode?: string | null
@@ -263,7 +271,9 @@ export function DepositStatusPanel({
   const openRecord = () => {
     // 기본값은 화면이 이미 보여주는 환불 예상 그대로 — 다른 숫자로 시작하면 표시와 폼이 갈린다.
     setRecAmount(expectedRefund)
-    setRecDate(kstYmdStr())
+    // 기본값은 퇴실일이다(운영자 결정 2026-09-03). 종전 '오늘'은 정산일도 퇴실일도 아닌
+    // 클릭한 날이었고, 그 값이 그대로 기타수익의 귀속월이 됐다. 퇴실일을 모르면 오늘로 떨어진다.
+    setRecDate(moveOutYmd ?? kstYmdStr())
     setRecReason(carriedOver ? CARRIED_OVER_WITHHOLD_REASON : effectiveFee > 0 ? CLEANING_WITHHOLD_REASON : '')
     setRecEtc('')
     setRecOpen(true)
@@ -402,7 +412,7 @@ export function DepositStatusPanel({
         <p className="text-xs text-[var(--warm-dark)] break-keep">
           반환 <span className="font-semibold num">{fmtWon(refund.returned)}</span>
           {refund.withheld > 0 && <span className="text-[var(--warm-muted)]"> · 미반환 {fmtWon(refund.withheld)}{refund.reason ? ` (${refund.reason})` : ''}</span>}
-          <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {refund.date.replaceAll('-', '.')} 처리</span>
+          <span className="text-[0.65625rem] text-[var(--warm-muted)]"> · {refund.date.replaceAll('-', '.')} 정산</span>
         </p>
       )}
       {/* §16 상시 적용취소 진입점 — 토스트는 사라지고, 이 패널이 정본이 되었으니 여기가 '원위치'다. */}
@@ -457,7 +467,7 @@ export function DepositStatusPanel({
                 onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))} className={`${inputCls} num`} />
             </div>
             <div className="space-y-1.5">
-              <label className={labelCls}>처리일</label>
+              <label className={labelCls}>정산일</label>
               <DatePicker name="refundRecordDate" value={recDate} onChange={setRecDate} className={inputCls} />
             </div>
           </div>

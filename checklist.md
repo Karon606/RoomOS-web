@@ -27,11 +27,11 @@
 - [x] check-doc-write-gate.mjs(축 ⓐ~ⓓ, 역주입 6종)
 
 ## E 몰취 날짜 축 (운영자 승인, 패널 권고대로)
-- [ ] E1 recordDepositReturn 미래 날짜 가드
-- [ ] E1 두 폼 기본값을 퇴실일로, 라벨 '정산일' 통일, 카드 표시 '{날짜} 정산'
-- [ ] E1 TenantClient 확인창 귀속월 버그(오늘의 달로 계산하는데 저장은 고른 날짜)
-- [ ] E2 check-deposit-return-date-axis.mjs + verify:db 월 이탈 축
-- [ ] E3 backfill 예행 보고 → 운영자 승인 → 적용
+- [x] E1 recordDepositReturn 미래 날짜 가드
+- [x] E1 두 폼 기본값을 퇴실일로, 라벨 '정산일' 통일, 카드 표시 '{날짜} 정산'
+- [x] E1 TenantClient 확인창 귀속월 버그(오늘의 달로 계산하는데 저장은 고른 날짜)
+- [x] E2 check-deposit-return-date-axis.mjs + verify:db 월 이탈 축
+- [x] E3 backfill 적용(3건, 달 이동 0건이라 월 매출 무변동) + 되돌림 근거 파일
 
 ## 게이트 (커밋마다)
 - [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push

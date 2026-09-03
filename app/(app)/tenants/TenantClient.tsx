@@ -733,6 +733,11 @@ export default function TenantClient({
   // 금액과 그 한도만 받는다. null 이면 정산할 것이 없다는 뜻이다.
   const [rentSettlement, setRentSettlement] = useState<RentSettlementValue | null>(null)
   const [rentMoveOutYmd, setRentMoveOutYmd] = useState('')
+  // 보증금 정산일 — 기본값은 **퇴실일**이다(운영자 결정 2026-09-03). 종전 기본 '오늘'은 정산일도
+  // 퇴실일도 아닌 '클릭한 날'이었고, 현금영수증 발행일 사건과 같은 클래스다("클릭한 순간이지
+  // 발행한 날이 아니다"). 이 사업장에서 정산은 퇴실 처리의 일부라 기본이 퇴실일이면
+  // 노트의 '퇴실 정산일' 판정과 충돌하지 않는다. 칸은 남긴다 — 진짜로 늦게 확정한 정산을
+  // 사실대로 적을 길이 있어야 한다. 모달을 열 때 그 계약의 퇴실일로 다시 세운다.
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
@@ -1218,7 +1223,6 @@ export default function TenantClient({
     // 청소비만 떼는 정상 퇴실은 답이 정해져 있다 — 프리셀렉트(변경 가능)
     setDepoWithholdReason(deductible > 0 ? '청소비' : '')
     setDepoWithholdEtc('')
-    setDepositReturnDate(kstYmdStr())
     setDepositRefundDirty(false)
     // 이용료 환불 미리보기 — 그 기간 선납이 있으면 통합 환불 창에 이용료 섹션 표시.
     //
@@ -1230,6 +1234,8 @@ export default function TenantClient({
     const expectedOutYmd = ((fd.get('expectedMoveOut') as string) || '').slice(0, 10)
     const moveOutYmd = actualOutYmd || expectedOutYmd || kstYmdStr()
     setRentMoveOutYmd(moveOutYmd)
+    // 정산일 기본값은 퇴실일이다 — 위 이용료 환불 기준일과 같은 날을 본다.
+    setDepositReturnDate(moveOutYmd)
     // 계산은 정본 컴포넌트가 마운트되면서 스스로 한다 — 여기서 미리 부르면 두 벌이 된다.
     setRentSettlement(null)
     setDepositRefundModal({ fd, tenantName, depositAmount: depoBase, cleaningFee, fromDetail, leaseTermId, tenantId, compositionLabel: comp ? depositCompositionLabel(comp) : null })
@@ -1428,7 +1434,10 @@ export default function TenantClient({
           setError('반환하지 않는 사유를 선택해 주세요.'); pushToast('error', '반환하지 않는 사유를 선택해 주세요.'); return
         }
         if (!depoLater && depositReturnAmt === 0 && depositAmount > 0) {
-          const mon = kstYmdStr().slice(0, 7)
+          // 저장에 실리는 날짜 그대로 센다 — 종전에는 '오늘의 달'을 약속하고 고른 반환일로
+          // 저장해, 두 값이 갈리면 확인창이 틀린 달을 말했다(디자이너·패널 지적 2026-09-03).
+          // 형제(TenantStatusTransitions)는 넘기는 값으로 세고 있었다.
+          const mon = (depositReturnDate || kstYmdStr()).slice(0, 7)
           if (!(await confirmDialog({
             title: '보증금을 전액 돌려주지 않고 퇴실 처리할까요?',
             // 카테고리는 성격대로 갈린다 — 보증금 안의 청소비 몫은 청소비, 그 몫을 넘는 차감만 몰취다.
@@ -2108,7 +2117,10 @@ export default function TenantClient({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
+                  {/* '반환일'이 아니라 '정산일'이다 — 0원 반환(전액 미반환) 기록에서 '반환일'은
+                      이름 자체가 모순이고, 이 값은 **반환하지 않기로 확정한 날**이라 기타수익의
+                      귀속월을 정한다(패널 확정 2026-09-03). */}
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">정산일</label>
                   <DatePicker value={depositReturnDate} onChange={v => { setDepositReturnDate(v); setDepositRefundDirty(true) }}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
@@ -2872,6 +2884,7 @@ export default function TenantClient({
                         depositAmount={paySettlement.depositAmount}
                         cleaningFee={paySettlement.cleaningFee}
                         reservationDepositMode={paySettlement.reservationDepositMode}
+                        moveOutYmd={paySettlement.expectedMoveOut}
                         canEdit={canEdit}
                         reloadSignal={payReloadKey}
                         onChanged={reloadPay}
