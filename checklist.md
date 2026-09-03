@@ -1,41 +1,38 @@
-# 현금영수증 기한 알림 정리 + 보증금 반환 폼 정합 (2026-09-03, 운영자 승인)
+# 서류 작성 문 + 발급 이력 목록 + 몰취 날짜 축 (2026-09-03, 운영자 승인)
 
-요청. 기한 지난 미발행 알림이 7·8월 것으로 쌓여 소음이다. 접되 사라지지는 않게.
-+ 보증금 전액 미반환 버튼과 청소비 구성이 화면마다 다르다.
+## A 납부확인서 새 달 작성 문 (요청 1)
+- [ ] A1 lib/docBundle: 입력에 rentPaidLeaseIds, rent 행에 작성 가능 플래그 파생
+- [ ] A1 test-doc-bundle 케이스(stale+납부=문 열림 / stale+미납=닫힘 / 이번 달 발급본=stale 없음
+      / 보증금·계약서·실거주 행에는 플래그 없음 / 미발급 행 종전 그대로)
+- [ ] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
+- [ ] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
+- [ ] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시
+- [ ] A3 웹디자이너 패스
 
-## 정정된 사실 (운영자 전제와 다름)
-발급 기한은 '그 달 말일'이 아니라 건별 '받은 날부터 5일'(소득세법 시행령 별표 3의3,
-knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 발급은 가능하고
-운영자 본인이 2026-08-22 하루에 18건(7월 입금분 포함)을 일괄 발행한 실적이 있다.
-"처리를 못하는 것"이 아니라 "아직 안 한 것"이라 소멸이 아니라 접기로 간다.
+## B 선납 중복 발급 봉합 (운영자 승인, 스키마)
+- [ ] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
+- [ ] B1 발급 저장 경로가 귀속월을 적는다
+- [ ] B2 stale 판정을 발급일에서 귀속월로(NULL 이면 종전대로 발급일 폴백)
+- [ ] B2 test-doc-bundle 선납 케이스(8월에 9월분 발급 → 9월에 stale 아님)
 
-## A1 feat(현금영수증): 기한 경계를 정본 순수 함수로
-- [x] lib/cashReceipt 경계 판정 함수(임박 0..2 / 지남 / 감경 창 -1..-5)
-- [x] test-cash-receipt 경계 케이스(cashReceiptDaysLeft 를 아직 한 건도 안 건다)
+## C 입주자별 발급 이력 목록 (요청 2 최소판)
+- [ ] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts
+- [ ] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
+- [ ] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' 아래 · 행은 [보기]만
+- [ ] C3 웹디자이너 패스
 
-## A2 feat(홈 알림): 기한 지난 건은 요약 한 줄로 접는다
-- [x] due 를 임박(건별) · 감경 창(건별) · 지남(요약 한 줄) **세 줄**로 가름(디자이너 지적 1)
-- [x] 요약 줄 muteKeys 는 건별 키 전부(receipt:summary 합성 키 금지, 2026-09-02 판정)
-- [x] 조회창을 35일에서 인수 컷오프(prevOwnerCutoffDate ?? acquisitionDate)로 확대
-- [x] 건별 줄 제목에 '임박' 한정어 · 알림 끄기 라벨에 건수(디자이너 지적 7)
-- [x] crMutedSummary 는 무변경(다른 그룹에 서므로 나란히 안 보인다)
+## D 감지망
+- [ ] check-doc-write-gate.mjs(수납 술어 사본 금지 — 두 기능이 갈라지는 지점)
 
-## A3 design(현금영수증 탭): 기한 상태를 텍스트로
-- [x] 후보·끈 목록 둘째 줄에 기한 상태(의무 기준액 이상만)
-- [x] 배지 금지 · 색 문턱을 홈 알림과 같은 slot 으로(디자이너 지적 4)
-- [x] 웹디자이너 패스(지적 5건 반영)
-
-## A4 chore(감지망·지식)
-- [x] scripts/check-receipt-alert-axis 신설(verify:fast) + 역주입 5종
-- [x] knowledge/cash-receipt-refund 발급 기한 절에 이번 판정 적립
-
-## B1 fix(보증금): 반환 정산 기록 폼을 퇴실 처리 화면과 같은 문법으로
-- [x] 보증금 카드 폼에 SegmentedControl(반환함·반환 안 함) — 사후 기록이라 미룸 없음, 죽은 세그먼트 회피
-- [x] 폼 안에 구성 표시 + 상한 검증(인라인 문구·기록 잠금) + 폼 열린 동안 아래 중복 줄 접기
-- [x] 웹디자이너 패스(지적 4건 반영)
+## E 몰취 날짜 축 (운영자 승인, 패널 권고대로)
+- [ ] E1 recordDepositReturn 미래 날짜 가드
+- [ ] E1 두 폼 기본값을 퇴실일로, 라벨 '정산일' 통일, 카드 표시 '{날짜} 정산'
+- [ ] E1 TenantClient 확인창 귀속월 버그(오늘의 달로 계산하는데 저장은 고른 날짜)
+- [ ] E2 check-deposit-return-date-axis.mjs + verify:db 월 이탈 축
+- [ ] E3 backfill 예행 보고 → 운영자 승인 → 적용
 
 ## 게이트 (커밋마다)
 - [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
 
 ## 문서
-- [x] Work_log · knowledge(cash-receipt-refund) · INDEX
+- [ ] Work_log · knowledge · INDEX
