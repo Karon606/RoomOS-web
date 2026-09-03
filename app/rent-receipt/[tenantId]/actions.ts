@@ -3,6 +3,7 @@
 import { asDocNameStyle, type DocNameStyle } from '@/lib/documentName'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { billForLeaseMonth } from '@/lib/billing'
+import { isRealRentPayment } from '@/lib/rentPaid'
 import { getMyRole } from '@/lib/role'
 import { canReadScope } from '@/lib/auth/routeScope'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -226,8 +227,11 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
     })
     for (const r of recs) {
       lockMax = Math.max(lockMax, r.expectedAmount)   // 청구 락(조정 전표 포함) — 부분 납부 판정용
-      if (r.isBillingAdjust) continue                 // 조정 전표는 실입금 아님
-      if (r.actualAmount > 0) { paidSum += r.actualAmount; lastRec = { payDate: r.payDate, payMethod: r.payMethod } }
+      // 실입금 판정은 lib/rentPaid 정본이 쥔다 — 서류 시트의 '이번 달 확인서 작성' 문이 같은
+      // 술어로 열린다. 사본을 두면 문은 열렸는데 금액은 0 인 날이 온다.
+      if (!isRealRentPayment(r)) continue
+      paidSum += r.actualAmount
+      lastRec = { payDate: r.payDate, payMethod: r.payMethod }
     }
   }
 

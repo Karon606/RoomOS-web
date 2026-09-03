@@ -9,6 +9,8 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import prisma from '@/lib/prisma'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
+import { rentPaidWhere } from '@/lib/rentPaid'
+import { kstMonthStr } from '@/lib/kstDate'
 import {
   buildDocBundle, DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
@@ -99,6 +101,18 @@ export async function getTenantDocBundle(
 
   const representativeIds = new Set(currentIssueIds(contractRows.map(withEffectivePurpose)).values())
 
+  // 이번 달 실입금이 있는 계약 — 서류 시트의 '이번 달 확인서 작성' 문을 여는 유일한 근거다.
+  // 판정은 lib/rentPaid 정본이 쥔다(발급 화면·감사 규칙과 같은 술어). 계약 목록을 이미 읽은
+  // 뒤라 조회 한 번이 늘 뿐이고, id 만 받아 오므로 행을 통째로 끌어오지 않는다.
+  const paidRows = leases.length > 0
+    ? await prisma.paymentRecord.findMany({
+      where: { propertyId, ...rentPaidWhere(kstMonthStr(), leases.map(l => l.id)) },
+      select: { leaseTermId: true },
+      distinct: ['leaseTermId'],
+    })
+    : []
+  const rentPaidLeaseIds = paidRows.map(r => r.leaseTermId).filter((id): id is string => !!id)
+
   const receipt = (kind: 'rent' | 'deposit'): DocBundleFile[] => receiptRows
     .filter(r => (kind === 'deposit' ? r.kind === 'deposit' : r.kind !== 'deposit'))
     .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null }))
@@ -134,6 +148,7 @@ export async function getTenantDocBundle(
       mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
     })),
     rents: receipt('rent'),
+    rentPaidLeaseIds,
     deposits: receipt('deposit'),
     certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null })),
     now: new Date(),

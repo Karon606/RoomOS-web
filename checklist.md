@@ -4,8 +4,8 @@
 - [x] A1 lib/docBundle: 입력에 rentPaidLeaseIds, rent 행에 작성 가능 플래그 파생
 - [x] A1 test-doc-bundle 케이스(stale+납부=문 열림 / stale+미납=닫힘 / 이번 달 발급본=stale 없음
       / 보증금·계약서·실거주 행에는 플래그 없음 / 미발급 행 종전 그대로)
-- [ ] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
-- [ ] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
+- [x] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
+- [x] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
 - [ ] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시
 - [ ] A3 웹디자이너 패스
 
