@@ -22,6 +22,11 @@ const ALLOW = new Map([
   // 계약서 발급 화면 — 파일 이름을 보관·검색의 열쇠로 보고 표기와 분리한 판단(주석에 명시).
   // 서버 발급본의 Drive 파일명도 같은 값이라 둘이 짝을 이룬다.
   ['app/contract/[tenantId]/ContractView.tsx', '보관·검색 열쇠로 고정(코드 주석에 근거)'],
+  // Drive 보관 파일명 — 위 화면과 짝을 이루는 서버 쪽이다. **내보낼 때의 이름은 따로 짓는다**
+  // (lib/docShareQueue shareFileNames 가 표기를 따라 다시 짓고, 바이트로 확장자까지 재판정한다).
+  // 보관명을 표기에 맡기면 같은 사람의 종이가 Drive 에서 두 이름으로 흩어져 검색이 깨진다.
+  ['app/api/contract/generate/route.ts', 'Drive 보관명은 검색 열쇠로 고정(내보내기 이름은 별도)'],
+  ['app/api/residence-cert/generate/route.ts', 'Drive 보관명은 검색 열쇠로 고정(내보내기 이름은 별도)'],
 ])
 
 const roots = ['app', 'components']
@@ -31,7 +36,9 @@ const walk = (dir) => {
     if (name === 'node_modules' || name.startsWith('.')) continue
     const full = join(dir, name)
     if (statSync(full).isDirectory()) { walk(full); continue }
-    if (/\.tsx$/.test(name)) files.push(full)
+    // **.ts 도 본다.** 첫 판이 .tsx 만 봐서, 서버 쪽 조립부(tenants/docBundle.ts)가 사람 이름과
+    // 서류 이름을 둘 다 한글로 고정하고 있던 것을 놓쳤다(신고 2026-09-03).
+    if (/\.tsx?$/.test(name)) files.push(full)
   }
 }
 for (const r of roots) walk(r)
@@ -45,6 +52,9 @@ for (const f of files) {
     if (/^\s*(\/\/|\*|\/\*)/.test(line)) return
     // 파일 이름을 만드는 줄만 본다. 화면에 보이는 라벨(서류 제목 등)은 대상이 아니다.
     if (!/fileName\s*[=:]|docFileName\s*=/.test(line)) return
+    // 그냥 옮기는 줄은 뺀다 — `fileName: f.fileName` 이 있는 줄의 **다른 칸**(검색 결과의
+    // kindLabel)이 헛걸렸다. 이름을 조립하는 줄이면 fileName 바로 뒤가 따옴표나 중괄호다.
+    if (/fileName\s*:\s*[\w.[\]]+\s*[,}]/.test(line)) return
     scanned++
     const hit = DOC_WORDS.find(w => line.includes(w))
     if (hit) {
@@ -67,6 +77,29 @@ for (const f of files) {
     if (/\$\{c\.tenantName\}_\$\{docFileLabel/.test(src)) {
       violations.push(`${f} — 파일 이름의 사람 이름이 표기를 안 따른다. 영문 서류에 한글 이름이 붙는다.`)
     }
+  }
+}
+
+// 시트(입주자 상세 > 서류)의 파일명 조립도 표기를 따르는가 (신고 2026-09-03).
+//   여기가 **보내기의 유일한 입구**인데 사람 이름은 bundle.tenantName(한글 고정), 서류 이름은
+//   DOC_TYPE_FILE_LABEL(한글 고정)이었다. 영문으로 발급한 종이가 전부 한글 이름으로 나갔다.
+{
+  const f = 'app/(app)/tenants/docBundle.ts'
+  const src = readFileSync(f, 'utf8')
+  const block = src.match(/const entries = rows\.map\(r => \{[\s\S]*?\n  \}\)/)
+  if (!block) {
+    violations.push(`${f} — 파일명 조립부(entries)를 못 찾았다. 구조가 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  } else {
+    if (!/docFileLabel\(r\.docType/.test(block[0])) {
+      violations.push(`${f} — 서류 이름이 표기를 안 따른다. docFileLabel(docType, nameStyle) 을 쓴다.`)
+    }
+    if (!/documentName\(bundle\.nameSource/.test(block[0])) {
+      violations.push(`${f} — 사람 이름이 표기를 안 따른다. 영문 서류에 한글 이름이 붙는다.`)
+    }
+  }
+  // 발급본에 박제된 표기가 정본까지 실려야 위 둘이 판정할 값이 있다.
+  if (!/nameStyle: file\?\.nameStyle/.test(readFileSync('lib/docBundle.ts', 'utf8'))) {
+    violations.push(`lib/docBundle.ts — 발급 당시 표기가 행에 안 실린다. 파일 이름이 볼 값이 없어진다.`)
   }
 }
 

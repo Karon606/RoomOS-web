@@ -14,6 +14,7 @@
 import { CURRENT_OCCUPANCY_STATUSES, roomLeaseRowOrder } from '@/lib/leaseStatus'
 import { kstMonthOf } from '@/lib/fmtDate'
 import { DOC_MIME_PDF } from '@/lib/docMime'
+import type { DocumentNameSource } from '@/lib/documentName'
 
 export type DocBundleDocType = 'contract' | 'rent' | 'deposit' | 'residence'
 
@@ -73,6 +74,8 @@ export type DocBundleRow = {
   issuedAt: string | null
   /** 회색 보조 문구 — '스캔본' · '계약 표시 없음' · '지난 계약' · '이번 달 발급본이 아닙니다'. */
   note: string | null
+  /** 이 행이 지금 보낼 종이의 성명 표기 — 파일 이름이 그 종이를 따라간다(docFileLabel·documentName). */
+  nameStyle?: string | null
   /**
    * 이번 달 납부 확인서를 새로 쓸 수 있는가 — 납부 확인서 행에만 선다.
    *
@@ -126,6 +129,13 @@ export type DocBundleGroup = {
 
 export type TenantDocBundle = {
   tenantName: string
+  /**
+   * 파일 이름에 쓸 성명 원천 — 한글·영문·현지 세 칸.
+   *
+   * `tenantName` 하나만으로는 영문 발급본의 파일 이름을 지을 수 없다. 표기는 발급본마다 다르고
+   * (한 사람이 계약서는 한글, 확인서는 영문으로 받을 수 있다) 이름은 그 표기를 따라가야 한다.
+   */
+  nameSource: DocumentNameSource
   groups: DocBundleGroup[]
 }
 
@@ -156,6 +166,13 @@ export type DocBundleFile = {
   /** 파일 자체가 말하는 보조 표기 — 지금은 계약서 스캔본뿐이다. */
   note: string | null
   /**
+   * 발급 당시 성명 표기 — 파일 이름을 그 종이와 같은 표기로 맞춘다.
+   *
+   * 영문으로 발급한 종이가 `쩐 티 투 창_계약서.pdf` 로 나가면 받는 쪽이 같은 사람 것으로 안
+   * 읽는다(신고 2026-09-03). null 은 이 칸이 생기기 전 발급본이라 한글로 읽는다.
+   */
+  nameStyle?: string | null
+  /**
    * 납부 확인서의 귀속월 'YYYY-MM' — 이 종이가 **어느 달의 납부**를 증명하는가다.
    * 발행일(`at`)과 다른 축이라, 8월에 9월분을 선납 발급하면 둘이 갈린다.
    * null 이면 이 칸이 생기기 전(2026-09-03) 발급본이라 발행일로 읽는다.
@@ -167,6 +184,8 @@ export type DocBundleFile = {
 
 export type DocBundleInput = {
   tenantName: string
+  /** 파일 이름용 성명 원천(한글·영문·현지). 없으면 한글 이름만으로 짓는다(옛 호출부 보호). */
+  nameSource?: DocumentNameSource
   /** 발급 대상 상태(CONTRACT_ISSUE_STATUSES)로 이미 걸러진 계약들. 순서는 여기서 다시 잡는다. */
   leases: DocBundleLease[]
   contracts: DocBundleFile[]
@@ -226,6 +245,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     leaseTermId,
     driveFileId: file?.driveFileId ?? null,
     issuedAt: file ? file.at.toISOString() : null,
+    nameStyle: file?.nameStyle ?? null,
     note: [file?.note ?? null, extraNote ?? null].filter(Boolean).join(' · ') || null,
     mime: file?.mime || DOC_MIME_PDF,
   })
@@ -299,5 +319,5 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     groups.push({ kind: 'other', leaseTermId: null, roomNo: null, status: null, rows: otherRows })
   }
 
-  return { tenantName, groups }
+  return { tenantName, nameSource: input.nameSource ?? { name: tenantName }, groups }
 }

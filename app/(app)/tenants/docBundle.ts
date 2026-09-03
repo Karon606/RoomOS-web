@@ -12,9 +12,10 @@ import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { rentPaidWhere } from '@/lib/rentPaid'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
-  buildDocBundle, DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
+  buildDocBundle, DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, docFileLabel,
   type DocBundleFile, type TenantDocBundle, type DocBundleRow,
 } from '@/lib/docBundle'
+import { asDocNameStyle, documentName, DEFAULT_DOC_NAME_STYLE } from '@/lib/documentName'
 import { currentIssueIds } from '@/lib/contractCurrentIssue'
 import { contractPurposeLabel, effectiveIssuePurpose, withEffectivePurpose } from '@/lib/contractPurpose'
 import { downloadDriveBytes, driveFileSize } from '@/lib/google-drive'
@@ -52,6 +53,8 @@ export async function getTenantDocBundle(
     where: { id: tenantId, propertyId },
     select: {
       name: true, email: true,
+      // 파일 이름이 발급본의 표기를 따라가려면 세 칸이 다 필요하다(lib/documentName).
+      englishName: true, nativeName: true,
       // 문자 받을 번호 — 입주자 문자(getPersonalSmsContext)와 **같은 자를 쓴다**. 거기는 첫
       // PHONE 연락처를 쓰고 여기만 다른 번호를 고르면 같은 사람에게 두 번호로 문자가 간다.
       contacts: {
@@ -79,7 +82,7 @@ export async function getTenantDocBundle(
       // 폐기본·구버전·파생 판본을 가리려면 판정 축을 함께 읽어야 한다. 종전에는 voidedAt 을
       // select 조차 안 해서 **폐기된 계약서가 그 사람의 계약서로 발송 후보에 올랐다.**
       select: {
-        id: true, driveFileId: true, leaseTermId: true, signedAt: true, source: true,
+        id: true, driveFileId: true, leaseTermId: true, signedAt: true, source: true, nameStyle: true,
         createdAt: true, voidedAt: true, supersededAt: true, issuePurpose: true,
         // 번복이 있으면 지금 지위는 이쪽이다 — 대표 판정·판본 라벨이 같은 값을 본다.
         purposeOverride: true,
@@ -90,12 +93,12 @@ export async function getTenantDocBundle(
     prisma.rentReceiptFile.findMany({
       where: { tenantId, propertyId, deletedAt: null },
       orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
-      select: { driveFileId: true, leaseTermId: true, issuedAt: true, kind: true, targetMonth: true },
+      select: { driveFileId: true, leaseTermId: true, issuedAt: true, kind: true, targetMonth: true, nameStyle: true },
     }),
     prisma.residenceCertFile.findMany({
       where: { tenantId, propertyId, deletedAt: null },
       orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
-      select: { driveFileId: true, leaseTermId: true, issuedAt: true },
+      select: { driveFileId: true, leaseTermId: true, issuedAt: true, nameStyle: true },
     }),
   ])
 
@@ -115,10 +118,12 @@ export async function getTenantDocBundle(
 
   const receipt = (kind: 'rent' | 'deposit'): DocBundleFile[] => receiptRows
     .filter(r => (kind === 'deposit' ? r.kind === 'deposit' : r.kind !== 'deposit'))
-    .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, targetMonth: r.targetMonth }))
+    .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, targetMonth: r.targetMonth, nameStyle: r.nameStyle }))
 
   return withMail(buildDocBundle({
     tenantName: tenant.name,
+    // 파일 이름이 발급본의 표기를 따라가려면 세 칸이 다 있어야 한다(lib/documentName).
+    nameSource: { name: tenant.name, englishName: tenant.englishName, nativeName: tenant.nativeName },
     leases: leases.map(l => ({
       id: l.id, status: l.status, moveInDate: l.moveInDate, depositAmount: l.depositAmount,
       parentLeaseTermId: l.parentLeaseTermId, roomNo: l.room?.roomNo ?? null,
@@ -130,6 +135,7 @@ export async function getTenantDocBundle(
       note: r.source === 'UPLOADED' ? '스캔본' : null,
       // 앱 발급본은 PDF 가 확실하고, 업로드본만 이름으로 추정한다(발송 때 바이트가 다시 판정한다).
       mime: r.source === 'UPLOADED' ? guessDocMimeByName(r.fileName) : DOC_MIME_PDF,
+      nameStyle: r.nameStyle,
     })),
     // 판본 전량 — 폐기본은 뺀다(효력 없는 종이를 내보내는 길을 열지 않는다, 계약서함 다건 보내기와 같은 축).
     // 구버전 도장(supersededAt)은 유효한 종이라 남기되 라벨로 말한다.
@@ -150,7 +156,7 @@ export async function getTenantDocBundle(
     rents: receipt('rent'),
     rentPaidLeaseIds,
     deposits: receipt('deposit'),
-    certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null })),
+    certs: certRows.map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, nameStyle: r.nameStyle })),
     now: new Date(),
   }), tenant.email, tenant.contacts[0]?.contactValue ?? null, property?.name ?? '')
 }
@@ -274,9 +280,14 @@ async function resolveDocMailContext(tenantId: string, keys: string[]) {
     // 실계약·스캔본은 접미가 없어 종전 이름 그대로다(무회귀).
     const picked2 = picked.get(r.key) ?? null
     const label = picked2 ? r.versions?.find(v => v.contractFileId === picked2)?.purposeLabel ?? null : null
+    // **파일 이름은 그 종이를 따라간다.** 영문으로 발급한 계약서가 `쩐 티 투 창_계약서.pdf` 로
+    // 나가면 받는 쪽이 같은 사람 것으로 안 읽는다(신고 2026-09-03). 표기는 발급본에 박제된
+    // nameStyle 이고, 그 칸이 없는 옛 발급본은 한글로 읽는다(종전 거동).
+    const st = asDocNameStyle(r.nameStyle) ?? DEFAULT_DOC_NAME_STYLE
+    const docName = docFileLabel(r.docType, st)
     return {
-      personName: bundle.tenantName,
-      docLabel: label ? `${DOC_TYPE_FILE_LABEL[r.docType]}(${label})` : DOC_TYPE_FILE_LABEL[r.docType],
+      personName: documentName(bundle.nameSource, st),
+      docLabel: label ? `${docName}(${label})` : docName,
       dateStr: fmtDateDot(r.issuedAt),
     }
   })
