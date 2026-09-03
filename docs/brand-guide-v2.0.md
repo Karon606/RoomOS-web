@@ -182,6 +182,7 @@
 --input-radius:6px; --input-h:40px; --input-h-touch:44px; --input-pad:9px 13px;
 --input-border:1.5px solid var(--border-s); --input-border-focus:var(--tc);
 --input-ring-focus:0 0 0 3px rgba(160,60,46,.12);
+- **포커스 링 색은 `--tc-text` 다**(2026-09 전수 통일). 위 `--input-ring-focus` 는 입력 보더를 받치는 12% 글로우라 예외이고, WCAG 1.4.11 지시자 몫은 보더(`--input-border-focus: var(--tc)`, --canvas 위 3.18:1)가 진다. 그 밖의 `focus-visible:outline`·`focus-visible:ring`(그리고 같은 축인 `focus:ring`)에 `--coral`·`--persimmon` 을 쓰면 다크 카드 위 2.78:1 로 3:1 미달이다. `--tc-text` 는 라이트에서 `var(--coral)` 그대로라 라이트 픽셀이 안 바뀌고 다크에서만 #C9614C 로 밝아진다(§19 페어). 감지망 `scripts/check-focus-ring-token.mjs`.
 ```
 - radius 6px(r-sm) 전 입력 통일 (근거: 토큰표 규정 + 코드 다수파 176곳). 높이 40 / 모바일 44, textarea min 80. 13.5px Pretendard, 금액·숫자 tnum. bg --cream-2. placeholder --ink-m. 라벨 12px/500 --ink-s, 5px 간격. 에러: 보더 --tc + 11px --tc-d 메시지.
 - 모달 내 폼: dirty 후 배경클릭 무시 · Esc·X는 일반 확인 경유("작성 중인 내용이 있습니다. 닫을까요?" [계속 작성] primary / [닫기] ghost) · pristine은 즉시 닫힘.
@@ -402,3 +403,4 @@ addendum 2026-07 → v2.0: 다크모드 보강→§28(구코랄 금지는 §03�
 - §11 틴트 배지 (2026-09-03 개정 전) — "틴트 배지 = -bg + -fg + inset 1px -ring, **r-sm 6**(2026-08-25 개정 — 종전 r-pill 은 §07 radius 표의 'r-sm 6 = 뱃지'와 자기모순이었고, 글자를 담은 알약이 'AI 가 만든 앱' 인상의 큰 몫이라는 운영자 지목으로 폐기). 솔리드(b-overdue) = --overdue-solid + cream, 양 모드 동일. size sm 11px / md 12px."
 - §04 neutral 알파 (2026-09-03 개정 전) — 라이트 rgba(61,36,24,.05) · 다크 rgba(242,232,220,.06).
 - §18 (2026-09-03 신설) — 종전에는 카테고리 행의 팁을 금하는 문장이 없었고, 홈 알림 행이 카테고리색 3px 팁을 달고 있었다.
+- §12 포커스 링 (2026-09-03 신설) — 종전에는 §12 에 링 색 문장이 없었고 토큰 줄만 있었다. 그래서 앱 코드 51곳이 `--coral` 로 포커스 링을 세웠고(다크 2.78:1), 정본 판정은 globals.css 주석에만 있어 화면 코드가 그것을 못 봤다.
