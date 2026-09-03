@@ -102,6 +102,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
     </div>
   )
 
+  // 퇴실 맥락 — 우산 라벨과 그 묶음 간격이 같은 판정을 쓴다.
+  const isCheckoutCtx = settlement.status === 'CHECKOUT_PENDING' || settlement.status === 'CHECKED_OUT'
+
   // 청구 조정 전표(단기 연장·감액 마커)는 수납이 아니라 청구 락 조정용 — 납부 내역에 행으로 그리지 않는다.
   // getPaymentsByLease 는 payDate 월 기준이라 전표가 입주월이 아닌 달에도 섞여 들어온다(마커 payDate=조작 시각).
   const payRecords = (records ?? []).filter(r => !r.isBillingAdjust)
@@ -140,6 +143,18 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
             : <span className="text-[var(--warm-muted)]"> (입주월 이용료 충당 예정)</span>}
         </p>
       ) : null}
+      {/* 퇴실 맥락에서만 서는 우산 라벨 — 아래 보증금·이용료 정산 카드가 '퇴실 정산'의 두 몫이다.
+          운영자는 이 절차를 퇴실 처리 모달·팝업에서 '퇴실 정산'이라는 이름으로 배우는데, 정작
+          퇴실 완료자의 이 화면에는 그 단어가 한 글자도 없어 카드를 못 알아봤다(신고 B-1).
+          일할 위젯은 거주중·퇴실예정 전용이라 퇴실 완료 화면에서는 그 이름이 증발한다.
+          비퇴실 상태에서는 렌더 자체가 없어 다른 화면은 픽셀이 안 움직인다. */}
+      {/* 라벨과 두 카드를 한 덩이로 묶는다. 부모가 space-y-3 이라 라벨 위아래가 같은 간격이면
+          우산이 아니라 떠 있는 한 줄로 읽힌다(디자이너 지적). 비퇴실이면 안쪽 간격이 바깥과
+          같아 렌더 결과가 종전과 동일하다. */}
+      <div className={isCheckoutCtx ? 'space-y-2' : 'space-y-3'}>
+      {isCheckoutCtx && (
+        <p className="text-xs font-semibold text-[var(--warm-mid)]">퇴실 정산</p>
+      )}
       <DepositStatusPanel
         leaseTermId={leaseTermId}
         status={settlement.status}
@@ -164,6 +179,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, leases, onSel
         onChanged={refresh}
         onAdjust={() => { setMode('full'); setAdjustKey(k => k + 1) }}
       />
+      </div>
 
       {/* 입주월 전 조회 — 예정액이 이번 달 청구로 오독되지 않게 맥락 명시(운영자 지적 2026-07-30) */}
       {settlement.status === 'RESERVED' && settlement.moveInDate && month < settlement.moveInDate.slice(0, 7) && (

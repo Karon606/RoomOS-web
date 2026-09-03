@@ -80,14 +80,36 @@ export function RentSettlementPanel({
   const [tick, setTick] = useState(0)
   const reload = () => setTick(t => t + 1)
 
+  // 조회 실패를 상태로 든다. 종전에는 catch 가 없어 액션이 한 번이라도 거절되면 퇴실 완료 계약이
+  // 아래 `if (!data)` 에서 조용히 null 로 떨어졌다 — 에러도 재시도도 없는 **영구 미표시**다.
+  // 퇴실자에게 정산 카드가 통째로 사라지는 길이라 실패가 침묵하면 안 된다(신고 B-1).
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+
   useEffect(() => {
     if (!relevant) return
     let active = true
-    fetchPanelData(leaseTermId, status, expectedMoveOut).then(d => { if (active) setData(d) })
+    // 실패 표시는 성공했을 때 푼다. effect 안에서 동기로 setState 하면 연쇄 렌더를 부른다.
+    fetchPanelData(leaseTermId, status, expectedMoveOut)
+      .then(d => { if (active) { setData(d); setLoadFailed(false) } })
+      .catch(() => { if (active) setLoadFailed(true) })
+      .finally(() => { if (active) setRetrying(false) })
     return () => { active = false }
   }, [leaseTermId, status, expectedMoveOut, relevant, reloadSignal, tick])
 
   if (!relevant) return null
+  if (!data && loadFailed) return (
+    <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2.5 space-y-1.5">
+      <p className="text-xs font-semibold text-[var(--coral)]">이용료 정산</p>
+      <p className="text-xs text-[var(--danger-fg)] break-keep">정산 정보를 불러오지 못했습니다.</p>
+      {/* 재시도 중 표시가 없으면 눌러도 화면이 1픽셀도 안 움직여 무반응으로 읽힌다(§27.2).
+          data 를 null 로 되돌려 스켈레톤을 태우는 방식은 카드가 사라졌다 돌아오는 점프라 안 쓴다. */}
+      <Btn variant="secondary" size="sm" disabled={retrying}
+        onClick={() => { setRetrying(true); reload() }}>
+        {retrying ? '다시 시도 중…' : '다시 시도'}
+      </Btn>
+    </div>
+  )
   // 퇴실 완료는 대개 카드가 안 선다(스냅샷도 미처리도 없는 옛 계약) — 뼈대를 그렸다 지우면 그게 로딩 점프다.
   if (!data) return status === 'CHECKOUT_PENDING' ? <SkeletonRows rows={3} className="py-1" /> : null
 
@@ -323,7 +345,7 @@ export function RentSettlementPanel({
           )}
           {/* 예정 단계의 조정은 퇴실 정산 위젯이 정본 — 여기 편집 칸을 두면 같은 값을 두 자리가 다르게 저장한다. */}
           {canEdit && onAdjust && (
-            <Btn variant="subtle" size="sm" onClick={onAdjust}>{expectedMoveOut ? '정산 조정' : '퇴실 정산 열기'}</Btn>
+            <Btn variant="subtle" size="sm" onClick={onAdjust}>{expectedMoveOut ? '정산 조정' : '일할 정산 열기'}</Btn>
           )}
         </>
       )}
