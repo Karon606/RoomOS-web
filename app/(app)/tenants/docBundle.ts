@@ -90,7 +90,7 @@ export async function getTenantDocBundle(
     prisma.rentReceiptFile.findMany({
       where: { tenantId, propertyId, deletedAt: null },
       orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
-      select: { driveFileId: true, leaseTermId: true, issuedAt: true, kind: true },
+      select: { driveFileId: true, leaseTermId: true, issuedAt: true, kind: true, targetMonth: true },
     }),
     prisma.residenceCertFile.findMany({
       where: { tenantId, propertyId, deletedAt: null },
@@ -115,7 +115,7 @@ export async function getTenantDocBundle(
 
   const receipt = (kind: 'rent' | 'deposit'): DocBundleFile[] => receiptRows
     .filter(r => (kind === 'deposit' ? r.kind === 'deposit' : r.kind !== 'deposit'))
-    .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null }))
+    .map(r => ({ driveFileId: r.driveFileId, leaseTermId: r.leaseTermId, at: r.issuedAt, note: null, targetMonth: r.targetMonth }))
 
   return withMail(buildDocBundle({
     tenantName: tenant.name,

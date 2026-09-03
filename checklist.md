@@ -10,10 +10,10 @@
 - [ ] A3 웹디자이너 패스
 
 ## B 선납 중복 발급 봉합 (운영자 승인, 스키마)
-- [ ] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
-- [ ] B1 발급 저장 경로가 귀속월을 적는다
-- [ ] B2 stale 판정을 발급일에서 귀속월로(NULL 이면 종전대로 발급일 폴백)
-- [ ] B2 test-doc-bundle 선납 케이스(8월에 9월분 발급 → 9월에 stale 아님)
+- [x] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
+- [x] B1 발급 저장 경로가 귀속월을 적는다
+- [x] B2 stale 판정을 발급일에서 귀속월로(NULL 이면 종전대로 발급일 폴백)
+- [x] B2 test-doc-bundle 선납 케이스(8월에 9월분 발급 → 9월에 stale 아님)
 
 ## C 입주자별 발급 이력 목록 (요청 2 최소판)
 - [ ] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts

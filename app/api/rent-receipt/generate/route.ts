@@ -23,6 +23,13 @@ type Body = {
    * 서류명은 한글'로 다시 나갔다(2026-08-30). 안 실어 보내면 한글로 읽는다.
    */
   nameStyle?: 'ko' | 'en' | 'native' | null
+  /**
+   * 이 종이가 증명하는 납부의 귀속월 'YYYY-MM'(화면의 anchorMonth).
+   *
+   * `fields.targetMonth` 는 '2026년 9월분' 같은 **표시 문자열**이고 운영자가 고칠 수 있어
+   * 판정의 근거로 못 쓴다. 기계가 읽을 값을 따로 싣는다. 보증금 영수증은 월 축이 없어 안 싣는다.
+   */
+  targetMonth?: string | null
   preview?: boolean
 }
 
@@ -110,6 +117,9 @@ export async function POST(req: Request) {
           fileName,
           nameStyle: body.nameStyle ?? null,
           kind: receiptKind,
+          // 귀속월은 rent 만 — 보증금 영수증은 월 개념이 없다(화면도 스테퍼를 안 그린다).
+          // 형식이 어긋나면 안 적는다. 틀린 축이 박히면 stale 판정이 조용히 어긋난다.
+          targetMonth: receiptKind === 'rent' && /^\d{4}-\d{2}$/.test(body.targetMonth ?? '') ? body.targetMonth : null,
           receiptNo,
           // 발급일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀 KST 기기에서
           // 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정), 읽기는 lib/fmtDate 와 짝.

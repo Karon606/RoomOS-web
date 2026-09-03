@@ -1999,6 +1999,11 @@ model RentReceiptFile {
   /// 목록에서 다시 보낼 때 파일 이름을 그 종이와 같은 표기로 맞추는 데 쓴다(lib/docBundle docFileLabel).
   nameStyle    String?
   kind         String   @default("rent")         // 'rent'=입실료 납부 확인서 | 'deposit'=보증금 영수증 (같은 서식 가족)
+  /// 이 종이가 증명하는 납부의 귀속월 'YYYY-MM'(KST). 발행일(issuedAt)과 **다른 축**이다 —
+  /// 8월에 9월분을 선납받아 미리 발급하면 둘이 갈린다. 서류 시트의 '이번 달 발급본이 아닙니다'
+  /// 판정이 이 값을 본다(NULL 이면 이 칸이 생기기 전 발급본이라 발행일로 읽는다).
+  /// 보증금 영수증(kind='deposit')은 월 축이 없어 언제나 NULL 이다.
+  targetMonth  String?
   // 발행번호 YYYYMMDD-NNN — 저장해야 원장이 된다. 종전에는 count+1 로 그 자리에서 만들어 PDF 에
   // 그리기만 했고, 미리보기·보내기에도 같은 번호가 찍혀 소비되지 않은 채 종이로 나갔다.
   // 그 뒤 실제 발급본이 같은 번호를 갖고, 동시 발급이면 경합도 났다(E페이즈 조사 2026-08-03).

@@ -147,6 +147,12 @@ export type DocBundleFile = {
   at: Date
   /** 파일 자체가 말하는 보조 표기 — 지금은 계약서 스캔본뿐이다. */
   note: string | null
+  /**
+   * 납부 확인서의 귀속월 'YYYY-MM' — 이 종이가 **어느 달의 납부**를 증명하는가다.
+   * 발행일(`at`)과 다른 축이라, 8월에 9월분을 선납 발급하면 둘이 갈린다.
+   * null 이면 이 칸이 생기기 전(2026-09-03) 발급본이라 발행일로 읽는다.
+   */
+  targetMonth?: string | null
   /** 파일 형식 — 조회부가 파일명으로 추정해 넣는다. 없으면 PDF(앱 발급본 전부가 PDF). */
   mime?: string | null
 }
@@ -186,8 +192,14 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
 
   // 이번 달 발급본인가 — 납부 확인서에만 붙이는 보조 문구다. 그 서류만 '그 달의 사실'을 증명하고,
   // 계약서·보증금 영수증·실거주 확인서는 달과 무관해 오래됐다는 말 자체가 성립하지 않는다.
+  //
+  // **판정 축은 귀속월이지 발행일이 아니다**(2026-09-03). 8월에 9월분을 선납받아 미리 발급하면
+  // 발행일 기준으로는 9월에 그 종이가 stale 로 뜨고, 9월 납부 기록도 있어 '이번 달 확인서 작성'
+  // 문까지 열려 같은 달 확인서가 두 장 나간다. 귀속월이 없는 옛 발급본은 발행일로 폴백한다 —
+  // 그 종이들의 귀속월은 표시 문자열에만 있고 그것은 운영자가 고칠 수 있어 사실의 근거가 못 된다.
   const nowMonth = kstMonthOf(now)
-  const staleNote = (at: Date): string | null => (kstMonthOf(at) === nowMonth ? null : '이번 달 발급본이 아닙니다')
+  const staleNote = (f: DocBundleFile): string | null =>
+    ((f.targetMonth ?? kstMonthOf(f.at)) === nowMonth ? null : '이번 달 발급본이 아닙니다')
 
   const row = (
     docType: DocBundleDocType, leaseTermId: string | null, file: DocBundleFile | undefined, extraNote?: string | null,
@@ -224,7 +236,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     }
 
     const rent = latestFor(rents, l.id)
-    const rentStale = rent ? staleNote(rent.at) : null
+    const rentStale = rent ? staleNote(rent) : null
     const rentRow = row('rent', l.id, rent, rentStale)
     // 문은 '지난달 것뿐'이면서 '이번 달을 받았을' 때만 연다. 미발급 행은 이미 [작성]이 서므로
     // 여기서 다시 열 것이 없다(그 행은 rent 가 없어 rentStale 도 null 이다).

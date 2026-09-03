@@ -21,8 +21,8 @@ function eq(name: string, actual: unknown, expected: unknown) {
 
 const NOW = new Date('2026-08-17T03:00:00.000Z')   // KST 2026-08-17 정오
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`)
-const file = (leaseTermId: string | null, at: string, note: string | null = null): DocBundleFile =>
-  ({ driveFileId: `drive-${leaseTermId ?? 'none'}-${at}`, leaseTermId, at: D(at), note })
+const file = (leaseTermId: string | null, at: string, note: string | null = null, targetMonth?: string): DocBundleFile =>
+  ({ driveFileId: `drive-${leaseTermId ?? 'none'}-${at}`, leaseTermId, at: D(at), note, targetMonth })
 
 const lease = (p: Partial<DocBundleLease> & { id: string }): DocBundleLease => ({
   status: 'ACTIVE', moveInDate: D('2026-08-15'), depositAmount: 300000,
@@ -225,6 +225,31 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
     { rents: [file('402', '2026-07-20'), file('601', '2026-07-20')] }, ['402'])
   const rows = f.groups.flatMap(g => g.rows).filter(r => r.docType === 'rent')
   eq('작성 문 · 납부한 계약만 열린다', rows.map(r => r.canWriteNew), [true, false])
+}
+
+// ── 선납 발급 (귀속월 축, 2026-09-03) ────────────────────────────────
+//
+// 8월에 9월분을 선납받아 미리 발급한 종이가 있다. 발행일로 판정하면 9월에 그것이 stale 로 뜨고
+// 9월 납부 기록도 있어 문까지 열려 같은 달 확인서가 두 장 나간다. 귀속월로 판정하면 닫힌다.
+// NOW 는 KST 2026-08-17 이다.
+{
+  // 8/17 에 8월분을 발급했다 — 이번 달 것이다.
+  const a = build([lease({ id: '402' })], { rents: [file('402', '2026-08-17', null, '2026-08')] }, ['402'])
+  eq('선납 · 귀속월이 이번 달이면 stale 아님', rentRow(a).note, null)
+
+  // 8/17 에 9월분을 미리 발급했다 — 발행일은 이번 달이지만 귀속월은 다음 달이다.
+  const b = build([lease({ id: '402' })], { rents: [file('402', '2026-08-17', null, '2026-09')] }, ['402'])
+  eq('선납 · 귀속월이 다음 달이면 stale 로 본다(이번 달 것이 아니다)', rentRow(b).note, '이번 달 발급본이 아닙니다')
+
+  // 7/20 에 8월분을 미리 발급했다 — 발행일은 지난달인데 귀속월이 이번 달이라 stale 이 아니다.
+  // 종전 발행일 판정에서는 여기가 stale 로 떠서 문이 열리고 두 장이 나갔다.
+  const c = build([lease({ id: '402' })], { rents: [file('402', '2026-07-20', null, '2026-08')] }, ['402'])
+  eq('선납 · 발행일이 지난달이어도 귀속월이 이번 달이면 stale 아님', rentRow(c).note, null)
+  eq('선납 · 그러면 문도 안 열린다(중복 발급 봉합)', rentRow(c).canWriteNew, undefined)
+
+  // 귀속월이 없는 옛 발급본은 종전대로 발행일로 읽는다.
+  const d = build([lease({ id: '402' })], { rents: [file('402', '2026-07-20')] }, ['402'])
+  eq('선납 · 귀속월이 없으면 발행일 폴백', rentRow(d).note, '이번 달 발급본이 아닙니다')
 }
 
 console.log(`\n서류 보내기 행 규칙 회귀: ${pass} 통과 / ${fail} 실패`)

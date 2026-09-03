@@ -131,7 +131,14 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
   // 목록 복귀 경로 — 종류를 유지한다. 안 붙이면 보증금으로 발급하고도 입실료 탭으로 떨어진다(운영자 지적).
   const listHref = isDeposit ? '/rent-receipts?kind=deposit' : '/rent-receipts'
-  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence, nonResident: data.nonResident } })
+  // nameStyle 과 targetMonth 는 fields 밖이다 — 종이에 그리는 값이 아니라 **기록에 남길 사실**이다.
+  // fields.targetMonth 는 '2026년 9월분' 표시 문자열이고 운영자가 고칠 수 있어 판정의 근거로
+  // 못 쓴다. anchorMonth('YYYY-MM')가 이 화면이 실제로 여는 달이다.
+  const payload = () => ({
+    tenantId: data.tenantId, leaseTermId: data.leaseTermId, nameStyle,
+    targetMonth: data.kind === 'deposit' ? null : data.anchorMonth,
+    fields: { ...f, issueDate, kind: data.kind, preResidence: data.preResidence, nonResident: data.nonResident },
+  })
 
   // 대상월 스테퍼 — ?month 를 갈아끼우면 서버가 그 달 주기로 자동값을 다시 계산한다.
   // 작성 중인 수정값이 있으면 리마운트로 사라지므로 먼저 확인받는다.
