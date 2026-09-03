@@ -302,7 +302,11 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   const nameStyle = signedAlready
     ? (fields?.nameStyle ?? DEFAULT_DOC_NAME_STYLE)
     : resolveDocNameStyle({
-      saved: fields?.nameStyle,
+      // **병합값이 아니라 실제로 저장된 오버라이드다.** `fields.nameStyle` 은 자동값 'ko' 가 이미
+      // 깔린 병합 결과라, 그것을 saved 로 넘기면 1순위에서 늘 'ko' 로 끝나 이어받기·사람 단위
+      // 값·국적 추정이 **한 번도 도달하지 못한다**(413호 투창: 베트남 국적에 영문 이름이 있는데
+      // 계약서가 한글로 섰다, 신고 2026-09-03).
+      saved: asDocNameStyle(fieldOverrides.nameStyle),
       siblings: inherited ? [inherited] : [],
       tenant: asDocNameStyle(tenant.docNameStyle),
       nationality: tenant.nationality,
@@ -347,6 +351,9 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     lease: lease && fields ? {
       id: lease.id,
       ...fields,
+      // 해석된 표기를 얹는다 — `fields.nameStyle` 은 자동값 'ko' 라 화면·PDF 가 그것을 읽으면
+      // 위에서 계산한 답이 아무 데도 안 간다. 화면의 셀렉트·인쇄 성명이 전부 이 값을 본다.
+      nameStyle,
       signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
       disposalSignatureImageUrl: (lease as { disposalSignatureImageUrl?: string | null }).disposalSignatureImageUrl ?? null,
       // KST 로 자르는 것은 서버 몫이다. 클라이언트가 UTC 로 자르면 자정 근처에서 하루 어긋난다.

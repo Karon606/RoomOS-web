@@ -159,6 +159,25 @@ eq('한글 이름은 그대로다', DOC_TYPE_FILE_LABEL.rent, '입실료납부�
   // 현지 표기는 한글 서류명을 쓴다 — 영문 이름이 아니므로 영문 서류명과 짝이 안 맞는다.
   eq('목록 파일명: 현지 표기는 한글 이름', docFileLabel('residence', asKo('native')), DOC_TYPE_FILE_LABEL.residence)
 }
+// ── 계약서의 saved 는 '실제로 저장된 오버라이드'다 (긴급 신고 2026-09-03) ──────────
+//
+// 계약서 표시값은 자동값 위에 오버라이드를 얹은 **병합값**이고 nameStyle 의 자동값은 'ko' 다.
+// 그 병합값을 saved 로 넘기면 1순위에서 늘 'ko' 로 끝나 이어받기·사람 단위 값·국적 추정이
+// 한 번도 도달하지 못한다. 413호 투창(베트남·영문 이름 보유)의 계약서가 한글로 섰다.
+{
+  const ctx = { nationality: '베트남', available: ALL } as const
+  eq('계약서 · 저장된 오버라이드가 없으면 국적 추정까지 간다',
+    resolveDocNameStyle({ ...ctx, saved: undefined }), 'en')
+  eq('계약서 · 자동값 ko 를 saved 로 넘기면 1순위에서 끝난다(종전 버그의 재현)',
+    resolveDocNameStyle({ ...ctx, saved: 'ko' }), 'ko')
+  // 운영자가 실제로 '한글'을 고른 경우는 그대로 존중된다 — 위 두 줄이 같은 답을 내지만
+  // 입력이 다르다(안 고름 대 골랐음). 그래서 병합값을 넘기면 안 된다.
+  eq('계약서 · 앞 서류가 있으면 그것이 국적 추정보다 세다',
+    resolveDocNameStyle({ ...ctx, saved: undefined, siblings: ['ko'] }), 'ko')
+  eq('계약서 · 사람 단위 값도 국적 추정보다 세다',
+    resolveDocNameStyle({ ...ctx, saved: undefined, tenant: 'ko' }), 'ko')
+}
+
 console.log(`\n서류 성명 표기 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)
 if (fails.length > 0) process.exit(1)

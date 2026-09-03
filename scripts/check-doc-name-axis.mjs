@@ -64,6 +64,31 @@ for (const f of CARD_FILES) {
   })
 }
 
+// ⓓ 계약서는 **실제로 저장된 오버라이드**를 saved 로 넘긴다.
+//    표시값 병합본(contractLeaseFields)의 nameStyle 자동값은 'ko' 라, 그것을 넘기면 1순위에서
+//    늘 'ko' 로 끝나 이어받기·사람 단위·국적 추정이 한 번도 도달하지 못한다(긴급 신고 2026-09-03).
+{
+  const f = 'lib/contractData.ts'
+  const src = stripComments(read(f))
+  if (/saved: fields\?\.nameStyle/.test(src)) {
+    violations.push(`${f} — 계약서가 병합값을 saved 로 넘긴다. 자동값 'ko' 때문에 표기 해석이 1순위에서 끝난다.`)
+  }
+  if (!/saved: asDocNameStyle\(fieldOverrides\.nameStyle\)/.test(src)) {
+    violations.push(`${f} — 계약서의 saved 가 실제 저장된 오버라이드가 아니다.`)
+  }
+  // 해석한 값이 화면·PDF 가 읽는 자리(lease.nameStyle)까지 가는가.
+  const leasePayload = src.match(/lease: lease && fields \? \{[\s\S]*?\n    \} : null/)
+  if (!leasePayload) violations.push(`${f} — lease 페이로드를 못 찾았다. 구조가 바뀌었으면 이 그물도 같이 고쳐야 한다.`)
+  else if (!/\n      nameStyle,/.test(leasePayload[0])) {
+    violations.push(`${f} — 해석된 표기가 lease.nameStyle 에 안 실린다. 화면과 PDF 가 자동값 'ko' 를 읽는다.`)
+  }
+  // 고른 표기가 가지치기에 지워지지 않는가.
+  const ov = stripComments(read('lib/contractFieldOverrides.ts'))
+  if (!/if \(key === 'nameStyle'\) continue/.test(ov)) {
+    violations.push(`lib/contractFieldOverrides.ts — nameStyle 이 자동값 가지치기에 걸린다. 외국인에게 '한글'을 고르면 선택이 지워진다.`)
+  }
+}
+
 // ⓒ resolveDocNameStyle 호출부가 전원 tenant 축을 넘기는가.
 const callers = walk('app', walk('lib', []))
 let calls = 0

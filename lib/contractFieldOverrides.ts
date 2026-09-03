@@ -201,6 +201,12 @@ export function normalizeContractFieldOverrides(
 
   const autoMap = auto as unknown as Record<string, unknown>
   for (const key of CONTRACT_FIELD_KEYS) {
+    // **nameStyle 은 이 가지치기의 대상이 아니다.** 다른 칸의 '자동값'은 계약 행 하나에서 나오지만
+    // 성명 표기의 자동값은 앞 서류·사람 단위 설정·국적까지 봐야 나온다(lib/documentName). 여기
+    // deriveContractLeaseFields 가 아는 값은 'ko' 뿐이라, 외국인(자동 '영문')에게 운영자가 '한글'을
+    // 고르면 자동값과 같다고 판단해 **선택을 지워 버린다.** 그러면 화면이 다시 영문으로 돌아간다.
+    // 고른 표기는 언제나 남긴다 — 되돌리기는 '자동값 복원'(patch 를 null 로)이 맡는다.
+    if (key === 'nameStyle') continue
     if (parsed[key] !== undefined && parsed[key] === autoMap[key]) delete parsed[key]
   }
   const value = parsed as ContractFieldOverrides
