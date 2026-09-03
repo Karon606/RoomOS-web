@@ -6,6 +6,19 @@
 import prisma from '../lib/prisma'
 import { resolveDocNameStyle, docNameStyles, isKoreanNationality, type DocNameStyle } from '../lib/documentName'
 
+// **이 스크립트는 지금 쓰면 안 된다(2026-09-04).**
+//
+// 어제 계산한 방향이 반대일 가능성이 크다. 발급 API 도 화면과 같은 자동값 'ko' 를 쓰므로
+// (lib/contractFieldOverrides 의 deriveContractLeaseFields 가 nameStyle: DEFAULT_DOC_NAME_STYLE 을
+// 깔고, route.ts 가 그 병합값으로 종이를 인쇄한다), 태그가 null 인 발급본의 종이는 영문이 아니라
+// **한글로 인쇄됐을 가능성이 높다.** 그 상태에서 en 으로 백필하면 한글 종이에 영문 태그를 붙인다.
+//
+// 게다가 nameStyle 칼럼은 2026-09-03 마이그레이션으로 생겼다. 그 이전 발급본이 null 인 것은
+// 표기를 몰라서가 아니라 칼럼이 없었기 때문이다.
+//
+// 발급 시점 표기를 박제하는 구조를 먼저 세우고, 그때 이 스크립트의 계산을 다시 짠다.
+// 그때까지 --apply 를 막아 둔다.
+const BLOCKED = true
 const apply = process.argv.includes('--apply')
 
 async function main() {
@@ -65,6 +78,10 @@ async function main() {
   console.log('\n이동 요약')
   for (const [k, v] of byMove) console.log(`  ${k}: ${v}건`)
 
+  if (BLOCKED) {
+    console.log('\n이 백필은 잠겨 있다. 계산 방향이 반대일 수 있어 파일 머리의 사유를 먼저 읽을 것.')
+    return
+  }
   if (!apply) { console.log('\n예행이다. 적용하려면 --apply 를 붙인다.'); return }
   for (const p of plan) await prisma.contractFile.update({ where: { id: p.id }, data: { nameStyle: p.to } })
   console.log(`\n적용 완료 ${plan.length}건`)
