@@ -18,12 +18,12 @@
 
 ## C 입주자별 발급 이력 목록 (요청 2 최소판)
 - [x] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts (13 통과, 역주입 3종)
-- [ ] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
+- [x] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
 - [ ] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' 아래 · 행은 [보기]만
 - [ ] C3 웹디자이너 패스
 
 ## D 감지망
-- [ ] check-doc-write-gate.mjs(수납 술어 사본 금지 — 두 기능이 갈라지는 지점)
+- [x] check-doc-write-gate.mjs(축 ⓐ~ⓓ, 역주입 6종)
 
 ## E 몰취 날짜 축 (운영자 승인, 패널 권고대로)
 - [ ] E1 recordDepositReturn 미래 날짜 가드
