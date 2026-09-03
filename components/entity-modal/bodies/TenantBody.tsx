@@ -31,6 +31,7 @@ import { TenantContractInfo } from '../widgets/TenantContractInfo'
 import { TenantWishRooms } from '../widgets/TenantWishRooms'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
+import { TenantDocHistory } from '../widgets/TenantDocHistory'
 import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
 import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
@@ -129,6 +130,13 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
             .filter(l => l.id !== lease?.id && !l.parentLeaseTermId && (CONTRACT_ISSUE_STATUSES as string[]).includes(l.status))
             .map(l => ({ id: l.id, roomNo: l.room?.roomNo ?? null }))} />
       </Section>
+      {/* 발급 서류 이력 — 계약서 파일 **다음 형제**다. Section 안에 넣으면 셋이 어긋난다.
+          계약서를 설계상 제외하는 목록이 '계약서 파일' 제목 아래 서고, Section h3(12px)보다
+          카드 헤더(14px)가 커 위계가 뒤집히고, Section 이 자식 간 간격을 안 줘 두 카드가
+          0px 로 맞붙는다(디자이너 지적 2026-09-03). 정본 PaymentHistoryAll 도 Section 밖
+          본문 흐름에 제 발로 서고 카드 헤더가 곧 그 구획의 제목이다.
+          자리는 그대로 계약서 파일 아래이고, 이사·상태 이력과 이력 군집으로 이어진다. */}
+      <TenantDocHistory tenantId={tenant.id} />
       {/* 이사 이력 — 방을 옮긴 적이 있을 때만(구간 2개 이상) 나타난다 */}
       <TenantMoveHistory tenantId={tenant.id} />
       {/* 상태 이력 — 언제 어디서 어디로 바뀌었나, 입실 취소·퇴실 사유(신고 ad517231).

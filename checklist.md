@@ -19,8 +19,9 @@
 ## C 입주자별 발급 이력 목록 (요청 2 최소판)
 - [x] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts (13 통과, 역주입 3종)
 - [x] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
-- [ ] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' 아래 · 행은 [보기]만
-- [ ] C3 웹디자이너 패스
+- [x] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' **다음 형제** · 행은 [보기]만
+- [x] C3 웹디자이너 패스(자리 이동·발행번호 라벨)
+- [ ] 후속(백로그): 보조줄 숫자 tnum 3곳 · 접힘 헤더 aria-expanded 2곳
 
 ## D 감지망
 - [x] check-doc-write-gate.mjs(축 ⓐ~ⓓ, 역주입 6종)

@@ -70,6 +70,8 @@ export function docHistoryNote(f: DocHistoryFile, opts: { showRoom: boolean }): 
     const [y, m] = f.targetMonth.split('-')
     parts.push(`${Number(y)}년 ${Number(m)}월분`)
   }
-  if (f.receiptNo) parts.push(f.receiptNo)
+  // 맨숫자 12자는 무엇의 번호인지 말하지 않는다. 종이가 'No.' 로 찍고(lib/rentReceiptPdf)
+  // 형제 계약서 패널도 번호에 라벨을 붙인다(디자이너 지적 2026-09-03).
+  if (f.receiptNo) parts.push(`No. ${f.receiptNo}`)
   return parts.join(' · ') || null
 }

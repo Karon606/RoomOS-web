@@ -59,18 +59,18 @@ const f = (p: Partial<DocHistoryFile> & { id: string }): DocHistoryFile => ({
   const one = { showRoom: false }
   eq('문구 · 납부 확인서는 귀속월을 말한다',
     docHistoryNote(f({ id: 'a', targetMonth: '2026-09', receiptNo: '20260901-001' }), one),
-    '2026년 9월분 · 20260901-001')
+    '2026년 9월분 · No. 20260901-001')
   // 선납 — 발행일은 8월인데 귀속월은 9월이다. 문구가 그것을 말해야 두 장이 갈린다.
   eq('문구 · 선납 발급본도 귀속월 그대로',
     docHistoryNote(f({ id: 'a', issuedAt: D('2026-08-17'), targetMonth: '2026-09' }), one),
     '2026년 9월분')
   eq('문구 · 귀속월이 없는 옛 발급본은 침묵(추측 금지)',
-    docHistoryNote(f({ id: 'a', receiptNo: '20260701-002' }), one), '20260701-002')
+    docHistoryNote(f({ id: 'a', receiptNo: '20260701-002' }), one), 'No. 20260701-002')
   eq('문구 · 아무것도 없으면 null', docHistoryNote(f({ id: 'a', docType: 'residence' }), one), null)
   // 보증금 영수증은 월 축이 없다 — 귀속월이 실려도 말하지 않는다.
   eq('문구 · 보증금 영수증은 월을 말하지 않는다',
     docHistoryNote(f({ id: 'a', docType: 'deposit', targetMonth: '2026-09', receiptNo: '20260901-005' }), one),
-    '20260901-005')
+    'No. 20260901-005')
 }
 {
   // 계약이 둘 이상일 때만 방을 붙인다 — 하나뿐이면 겹말이다.
