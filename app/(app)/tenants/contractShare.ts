@@ -53,6 +53,10 @@ export type ContractShareLinkInfo = {
   closedAt: string | null
   lockedAt: string | null
   submittedAt: string | null   // 제출 확정 — 이후 링크는 서버가 막는다(getActiveLink)
+  // 이 링크가 나간 종이에 동의서 절이 붙는가(발급 시점 스냅샷 기준).
+  // 배지가 반쪽 서명을 '서명 완료'라고 부르지 않으려면 이 값이 있어야 한다(신고 2026-09-03, 413호).
+  // 판정 축이 라이브가 아니라 스냅샷인 이유는 제출 게이트와 같다 — 입주자가 본 화면이 기준이다.
+  disposalEnabled: boolean
   // 이 링크의 계약(leaseTerm)에 서명이 **지금도** 남아 있는가.
   // signedAt 은 '그때 서명이 들어왔다'는 과거 사실이라 서명을 지워도 영원히 남는다. 진입로가 그것만
   // 보고 ?share= 서명본 화면으로 보내면, 서명을 지운 계약이 옛 스냅샷에 영구히 갇힌다(502호 2026-08-10).
@@ -87,7 +91,9 @@ async function buildShareUrl(token: string): Promise<string> {
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
   disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
+  templateSnapshot?: unknown
 }, url: string, signatureLive: boolean): ContractShareLinkInfo {
+  const snapDc = (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)?.disposalConsent
   return {
     id: link.id,
     url,
@@ -98,6 +104,7 @@ function serializeLink(link: {
     lockedAt: link.lockedAt ? link.lockedAt.toISOString() : null,
     // 제출 시각을 안 내려보내서 운영자 배지가 죽은 링크를 '서명 완료 · 남은 시간'으로 표시했다
     submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
+    disposalEnabled: snapDc?.enabled === true,
     signatureLive,
   }
 }

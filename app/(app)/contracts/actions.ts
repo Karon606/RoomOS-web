@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
+import { disposalSignatureMissing } from '@/lib/disposalSignGate'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -127,6 +128,9 @@ export type PendingIssueRow = {
   // 이 계약에 서명이 **지금도** 남아 있는가(lease 서명 4칸 중 하나라도). signedAt 은 과거 사실이라
   // 서명을 지워도 남는다 — 그것만 보고 ?share= 로 보내면 옛 스냅샷에 갇힌다(502호 2026-08-10).
   signatureLive: boolean
+  // 계약서만 서명되고 동의서가 빈 반쪽 상태인가. 이 줄을 '완료'로 읽고 발급하면 동의서 장이
+  // 서명란이 빈 채로 나간다(신고 2026-09-03, 413호).
+  disposalMissing: boolean
 }
 
 // 서명은 받았는데 계약서 파일이 아직 없는 계약 — /contracts 의 '발급 대기' 섹션용.
@@ -139,6 +143,10 @@ export type PendingIssueRow = {
 // 종은 울리는데 목록은 침묵하는 어긋남이 안 생긴다. 규칙을 여기서 다시 짜면 그 순간 두 화면이 갈라진다.
 export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   const propertyId = await getPropertyId()
+  // 동의서를 쓰는 영업장인가. 홈 알림과 같은 라이브 축이다 — 두 화면이 갈리면 종은 울리는데
+  // 목록은 침묵하는 어긋남이 다시 생긴다(오류신고 d41eea8c 가 그 계열이었다).
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { disposalConsentTemplate: true } })
+  const disposalEnabled = (prop?.disposalConsentTemplate as { enabled?: boolean } | null)?.enabled === true
   const [links, files] = await Promise.all([
     // 만료(expiresAt) 조건은 절대 넣지 않는다. 링크 수명이 24시간이라 발급 시점엔 대개 이미 만료라,
     // 만료를 거르면 502호처럼 서명이 끝난 계약이 또 안 보인다(오류신고 d41eea8c 재발 지점).
@@ -192,6 +200,11 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       submitted: l.submittedAt != null,
       signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt
         || l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
+      disposalMissing: disposalSignatureMissing({
+        disposalEnabled,
+        hasContractSignature: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
+        hasDisposalSignature: !!(l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
+      }),
     })
   }
   return rows

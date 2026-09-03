@@ -22,6 +22,7 @@ import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurrin
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { signProgressLabel } from '@/lib/disposalSignGate'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'autodebit' | 'manualpay'
 
@@ -43,7 +44,7 @@ export type AlertItem = {
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
   unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
-  contact: '연락할 때', signed: '서명 완료',
+  contact: '연락할 때', signed: '서명 받음',
   // 운영자 어휘 그대로 — 자동이체는 계좌에서 '출금'되고, 직접 내는 건은 '납부'한다(신고 568633fb 원문).
   autodebit: '오늘 출금', manualpay: '오늘 납부',
 }
@@ -62,7 +63,12 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const { gte: today, lt: tomorrow } = dayDbRange(todayYmd)
   const thisMonth = todayYmd.slice(0, 7)
   const trackedCats = await getTrackedCategories(propertyId)
-  const contactLeadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true, disposalConsentTemplate: true } })
+  const contactLeadDays = prop?.contactLeadDays ?? 14
+  // 이 영업장이 동의서를 쓰는가. 판정 축이 라이브인 이유 — 알림은 "지금 무엇을 해야 하는가"를
+  // 말하는 자리다. 동의서를 끈 뒤라면 그 서명을 더 기다릴 이유가 없다. 제출 게이트가 발급 시점
+  // 스냅샷을 보는 것과 일부러 다르다(그쪽은 입주자가 본 화면이 기준이다).
+  const disposalEnabled = (prop?.disposalConsentTemplate as { enabled?: boolean } | null)?.enabled === true
 
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
     computeUnpaidStatus(propertyId),
@@ -112,7 +118,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     prisma.contractShareLink.findMany({
       where: { propertyId, signedAt: { not: null }, closedAt: null },
       select: {
-        id: true, tenantId: true, leaseTermId: true, signedAt: true,
+        id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true,
         // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
         leaseTerm: { select: { room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true } },
         tenant: { select: { id: true, name: true } },
@@ -270,10 +276,16 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     // 발급 대기 목록과 같은 한 값을 본다(lib/contractIssue issuingLeaseId).
     const issueLeaseId = issuingLeaseId(link.leaseTermId, link.leaseTerm.parentLeaseTermId)
     if (isContractIssued(link.signedAt, issueLeaseId, generatedFiles)) continue
+    // 반쪽 서명을 완료라고 부르지 않는다(신고 2026-09-03, 413호). 종전에는 signedAt 하나만 보고
+    // "원격 서명 완료"라고 점등했고, 운영자는 그것을 믿고 서명란이 빈 동의서를 발급했다.
     items.push({
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
-      subtitle: '원격 서명 완료 · 계약서 발급 필요',
+      subtitle: signProgressLabel({
+        disposalEnabled,
+        hasContractSignature: true,
+        hasDisposalSignature: !!link.disposalSignedAt,
+      }),
       // 할 일이 '계약서 발급'이라 목적지는 입주자 모달이 아니라 계약서함의 발급 대기 섹션이다.
       // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
       href: '/contracts?focus=contracts-pending-issue',

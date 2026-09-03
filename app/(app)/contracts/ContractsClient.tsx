@@ -266,7 +266,7 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
         <div id="contracts-pending-issue">
           <SectionHeader
             first
-            name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--coral)]">서명 완료</span></>}
+            name={<>발급 대기 <span className="text-[0.6875rem] font-medium text-[var(--coral)]">서명 받음</span></>}
             count={`${pendingRows.length}건`}
           />
           {/* 발급본을 지워도 서명은 남아 여기 다시 선다 — 그때 '발급'을 누르면 같은 내용이 또 나간다.
@@ -284,6 +284,11 @@ export default function ContractsClient({ contracts, pending: pendingIssues }: {
                     {p.roomNo ? `${fmtRoomNo(p.roomNo)} · ` : ''}{p.tenantName}
                   </button>
                   <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtMD(p.signedAt)} 서명{p.submitted ? ' · 제출 완료' : ''}</p>
+                  {/* 반쪽 서명은 이 자리에서 말한다. 종전에는 '서명 완료' 배지만 보고 발급해
+                      동의서 장이 서명란이 빈 채로 나갔다(신고 2026-09-03, 413호). */}
+                  {p.disposalMissing && (
+                    <p className="text-[0.65625rem] text-[var(--warning-fg)] mt-0.5">동의서 서명 대기</p>
+                  )}
                 </div>
                 {/* 보기·보내기·삭제는 두지 않는다 — 아직 대상 파일이 없어 셋 다 거짓 약속이 된다. */}
                 {/* 서명이 지워진 계약은 일반 화면으로 보낸다. 링크의 signedAt 은 과거 사실이라 서명을
