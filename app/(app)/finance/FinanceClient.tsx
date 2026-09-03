@@ -56,8 +56,8 @@ import { dayTotalText } from '@/lib/dayExpenseTotal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
-import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
-import { ocrFallbackAllowed } from '@/lib/ocrImage'
+import { trackSave, pushToast, withSave, humanError } from '@/lib/saveStatus'
+import { ocrFallbackAllowed, ocrForm } from '@/lib/ocrImage'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -1628,17 +1628,19 @@ export default function FinanceClient({
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
     } catch {
       const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+      // 크기 문이 먼저 선다. 종전에는 "첨부만 합니다"(info)를 띄운 뒤 "첨부할 수 없습니다"(error)를
+      // 또 띄워 두 토스트가 동시에 서서 서로 반대말을 했고, 첨부되지 않은 사진의 미리보기까지
+      // 폼에 남았다(디자이너 지적 2026-09-03).
+      if (!ocrFallbackAllowed(file.size)) {
+        pushToast('error', '사진이 너무 커서 첨부할 수 없습니다. 화면을 캡처해 다시 올려 주세요.')
+        return
+      }
       // 아무 말 없이 첨부만 하고 끝나면 "인식이 안 된다" 로 읽힌다 — 무슨 일이 일어났는지 말한다.
       pushToast('info', '이미지를 읽지 못해 자동 인식 없이 첨부만 합니다.')
       // 원본을 그대로 올리는 길 — 여기서 잡는 주소는 프록시라 저장 전에는 404 다.
       // 못 여는 형식이어도 브라우저가 img 로는 그리는 경우가 있으니(HEIC on Safari)
       // 원본 파일 자체를 미리보기로 건다. 여기 도달하면 이미지 파일임이 위에서 보장된다.
       setLocalPreview(target, URL.createObjectURL(file))
-      // 폴백이라도 무한정 큰 원본을 보내지는 않는다(lib/ocrImage 의 상한과 같은 자).
-      if (!ocrFallbackAllowed(file.size)) {
-        pushToast('error', '사진이 너무 커서 첨부할 수 없습니다. 화면을 캡처해 다시 올려 주세요.')
-        return
-      }
       await handleReceiptUpload(file, setter)
       return
     }
@@ -1782,7 +1784,7 @@ export default function FinanceClient({
     setScanOcrError('')
     let outcome: { itemCount: number; error: string | null } = { itemCount: 0, error: null }
     try {
-      const res = await analyzeReceiptWithGemini(cropped.base64, 'image/jpeg')
+      const res = await analyzeReceiptWithGemini(ocrForm(dataUrlToFile(cropped.dataUrl, 'receipt.jpg')))
       if (!res.ok) { setScanOcrError(res.error); outcome = { itemCount: 0, error: res.error } }
       else {
         void notifyAiQuota()
@@ -1792,7 +1794,7 @@ export default function FinanceClient({
       if (!opts?.skipUpload) await uploadCropped(cropped)   // 홈 큐 딥링크는 기존 이미지 재사용(재업로드 방지)
     } catch (err) {
       // 호출부가 `void ocrCropped(...)` 라 catch 가 없으면 전송 실패가 그대로 새어 침묵한다.
-      const msg = (err as Error).message || '영수증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+      const msg = humanError(err, '영수증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
       setScanOcrError(msg)
       outcome = { itemCount: 0, error: msg }
     } finally { setScanOcrPending(false) }
@@ -1950,7 +1952,7 @@ export default function FinanceClient({
     try {
       setRecMgmtList(await getRecurringExpenses())
     } catch (e) {
-      pushToast('error', (e as Error).message ?? '고정 지출을 불러오지 못했습니다.')
+      pushToast('error', humanError(e, '고정 지출을 불러오지 못했습니다.'))
     } finally { setRecMgmtLoading(false) }
   }
   const openNewRecMgmt = () => {
@@ -2239,7 +2241,7 @@ export default function FinanceClient({
       else setError(res.error)
     } catch (err) {
       // 종전에는 catch 가 없어 던지면 아래 플래그가 true 로 고착됐다(업로드 중 표시가 안 풀린다).
-      setError((err as Error).message || '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+      setError(humanError(err, '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally { setReceiptUploading(false) }
   }
 

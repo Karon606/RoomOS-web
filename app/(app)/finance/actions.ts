@@ -36,6 +36,7 @@ import { statusLabel } from '@/lib/statusColors'
 import { monthDbRange } from '@/lib/kstDate'
 import { kstMonthOf } from '@/lib/fmtDate'
 import { isRecurringDueMonth } from '@/lib/recurringDueDate'
+import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { computeRecurringExpensesWithStatus, type RecurringExpenseWithStatus } from './recurringStatus'
 
 async function getPropertyId() {
@@ -403,11 +404,12 @@ async function genOrderCode(propertyId: string): Promise<string> {
 // 정밀 프롬프트·응답 파싱·타입은 lib/receiptOcr 로 공유(홈 찍어올리기와 동일 인식). 여기선 vocab·별칭·setHint 결합.
 export type { ReceiptOcrItem, ReceiptOcrResult } from '@/lib/receiptOcr'
 
-export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
+export async function analyzeReceiptWithGemini(formData: FormData): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const ocrPropertyId = await getPropertyId()
-    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const img = await readOcrImageForm(formData)
+    if (!img.ok) return img
     const ai = await consumeGeminiAccess()
     if (!ai.ok) return { ok: false, error: ai.error }
     const apiKey = ai.apiKey
@@ -453,7 +455,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 
     const prompt = buildReceiptOcrPrompt({ categories: ocrCategories, vocabBlock })
 
-    const fetched = await fetchGeminiOcr({ apiKey, imageBase64, mimeType, prompt, maxOutputTokens: 4096 })
+    const fetched = await fetchGeminiOcr({ apiKey, imageBase64: img.b64, mimeType: img.mime, prompt, maxOutputTokens: 4096 })
     if (!fetched.ok) {
       if (fetched.status === 200) return { ok: false, error: fetched.errorText }   // 절단 안내(fetchGeminiOcr가 문구 생성)
       console.error('[receiptOcr] API 오류', fetched.status, fetched.errorText)

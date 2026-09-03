@@ -289,8 +289,8 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
 
   const handleConfirm = async () => {
     setProcessing(true)
+    const MAX = 1600
     try {
-      const MAX = 1600
       const compSc = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
       const cW = Math.round(bitmap.width * compSc), cH = Math.round(bitmap.height * compSc)
       const compCanvas = document.createElement('canvas')
@@ -301,8 +301,13 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
       compBitmap.close?.()
       onConfirm(result)
     } catch {
-      const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height
-      c.getContext('2d')!.drawImage(bitmap, 0, 0)
+      // 원근 보정이 실패해도 원본 해상도를 그대로 내보내지 않는다. 12MP 사진이면 base64 가
+      // 300만~500만 자라 서버 액션 인자 한도를 훨씬 넘고, 성공 경로에만 캡이 있어 실패 경로가
+      // 오히려 더 큰 것을 보내던 자리였다(2026-09-03). 성공 경로와 같은 MAX 로 줄여 내보낸다.
+      const sc = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(bitmap.width * sc); c.height = Math.round(bitmap.height * sc)
+      c.getContext('2d')!.drawImage(bitmap, 0, 0, c.width, c.height)
       const dataUrl = c.toDataURL('image/jpeg', 0.85)
       onConfirm({ dataUrl, base64: dataUrl.replace(/^data:image\/jpeg;base64,/, '') })
     } finally { setProcessing(false) }

@@ -9,12 +9,12 @@ import {
   type FloorPlanData, type FloorPlanElement, type FloorData,
   type ElementType, saveFloorPlan, swapFloorPlanWithPrev, parseFloorPlanImage, setFloorPlanDashboardVisibility,
 } from './actions'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { fileToOcrImage } from '@/lib/ocrImage'
+import { fileToOcrImage, ocrForm } from '@/lib/ocrImage'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -403,16 +403,18 @@ function AiImportModal({
     setPending(true); setError(''); setPreview(null)
     try {
       // 원본을 그대로 보내면 큰 도면 사진에서 서버 액션 상한에 걸리고 탭도 위험하다(lib/ocrImage).
-      const { b64, mime } = await fileToOcrImage(file, 'document')
-      setImgDataUrl(`data:${mime};base64,${b64}`)
-      const res = await parseFloorPlanImage(b64, mime, canvasWidth, canvasHeight)
+      const ocr = await fileToOcrImage(file, 'document')
+      // 배경 미리보기는 객체 URL 로 건다 — data URL 로 만들면 그 거대 문자열이 다시 생긴다.
+      // 저장본(saveFloorPlan)에는 배경이 안 실리고 층 전환 맵이 이 URL 을 재사용하므로 revoke 하지 않는다.
+      setImgDataUrl(URL.createObjectURL(ocr.file))
+      const res = await parseFloorPlanImage(ocrForm(ocr.file), canvasWidth, canvasHeight)
       if (!res.ok) { setError(res.error); return }
       void notifyAiQuota()
-      if (res.elements.length === 0) { setError('평면도 요소를 찾을 수 없습니다. 더 선명한 이미지를 사용해보세요.'); return }
+      if (res.elements.length === 0) { setError('평면도 요소를 찾지 못했습니다. 더 선명한 사진으로 다시 시도해 주세요.'); return }
       setPreview(res.elements)
     } catch (err) {
       // 종전에는 catch 가 없어 던지면 아래 setPending(false) 에 못 가 **스피너가 영원히 돌았다.**
-      setError((err as Error).message || '도면 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+      setError(humanError(err, '도면 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally { setPending(false) }
   }
 
@@ -432,7 +434,7 @@ function AiImportModal({
                 <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
                 <p className="text-xs font-medium text-[var(--warm-dark)]">AI 분석 중… {elapsed}초</p>
                 <p className="text-[0.6875rem] text-[var(--warm-muted)] text-center px-4">
-                  {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다. 거의 다 됐어요'}
+                  {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다. 거의 끝났습니다'}
                 </p>
               </div>
             ) : (

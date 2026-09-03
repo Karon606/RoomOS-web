@@ -104,9 +104,11 @@ export async function submitRemoteSignature(
     if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(dataUrl)) {
       return { ok: false, error: '서명 이미지가 올바르지 않습니다.' }
     }
-    // 서명 이미지 크기 상한(적대검증 P2) — 세션 보유자가 최대 10MB 임의 문자열을 저장·PDF 에 투입하는 것 차단.
-    // 손글씨 서명은 수백 KB 이내라 1MB 여유 상한. base64 는 원본의 약 1.37배.
-    if (dataUrl.length > 1_400_000) return { ok: false, error: '서명 이미지가 너무 큽니다. 다시 서명해 주세요.' }
+    // 서명 이미지 크기 상한(적대검증 P2) — 세션 보유자가 임의 대형 문자열을 저장·PDF 에 투입하는 것 차단.
+    // React 서버 액션 인자 디코더가 문자열 1,000,000 자에서 먼저 던지므로 그 아래에 사람 말 문을 둔다.
+    // 종전 1_400_000 은 그 문보다 높아 1.0M~1.4M 구간에서 사람 말 대신 프레임워크 영어 오류가 났다.
+    // 손글씨 서명은 수백 KB 이내라 여유가 크다(2026-09-03).
+    if (dataUrl.length > 900_000) return { ok: false, error: '서명 이미지가 너무 큽니다. 다시 서명해 주세요.' }
 
     // 잔여 소지품 동의서 서명은 그 영업장이 동의서를 켠 경우에만(적대검증 P2 — 서버 검사).
     // UI 는 이미 enabled 일 때만 패드를 그리지만, 액션 직접 호출로 비활성 영업장에 데이터가 쌓이는 것 차단.

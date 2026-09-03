@@ -9,8 +9,8 @@ import { useRef, useState } from 'react'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Btn } from '@/components/ui/Btn'
-import { pushToast } from '@/lib/saveStatus'
-import { fileToOcrImage } from '@/lib/ocrImage'
+import { pushToast, humanError } from '@/lib/saveStatus'
+import { fileToOcrImage, ocrForm } from '@/lib/ocrImage'
 import {
   analyzeContractWithGemini, analyzeIdCardWithGemini,
   type ContractOcrResult, type IdCardOcrResult,
@@ -38,6 +38,16 @@ export function setInputByName(name: string, value: string | undefined | null) {
   return true
 }
 
+// §10 제출 중 문법 — 라벨 교체만으로는 수 초짜리 분석이 멈춘 것처럼 보인다(디자이너 판정 2026-09-03).
+function Spinner() {
+  return (
+    <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>
+  )
+}
+
 export function OcrToolbar({ onContract, onIdCard }: {
   onContract: (data: ContractOcrResult) => void
   onIdCard: (data: IdCardOcrResult) => void
@@ -52,9 +62,9 @@ export function OcrToolbar({ onContract, onIdCard }: {
     if (!f) return
     setBusy('contract')
     try {
-      const { b64, mime } = await fileToOcrImage(f, 'document')
-      const res = await analyzeContractWithGemini(b64, mime)
-      if (!res.ok) { pushToast('error', res.error); return }
+      const ocr = await fileToOcrImage(f, 'document')
+      const res = await analyzeContractWithGemini(ocrForm(ocr.file))
+      if (!res.ok) { pushToast('error', humanError(res.error, '계약서 분석에 실패했습니다. 잠시 후 다시 시도해 주세요.')); return }
       void notifyAiQuota()
       const filled = Object.values(res.data).filter(v => v != null && v !== '').length
       if (filled === 0) { pushToast('error', '계약서에서 추출할 정보를 찾지 못했습니다.'); return }
@@ -63,8 +73,9 @@ export function OcrToolbar({ onContract, onIdCard }: {
     } catch (err) {
       // catch 가 없으면 전송 실패가 unhandled rejection 으로 새어 **아무 말도 안 나온다**
       // (긴급 신고 2026-09-03). 서버가 구분해 주는 오류는 위 res.error 가 이미 말하므로
-      // 여기는 전송·미상 실패 전담이다.
-      pushToast('error', (err as Error).message || '계약서 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+      // 여기는 전송·미상 실패 전담이다. humanError 를 거치는 이유는 프레임워크 영어 메시지가
+      // truthy 라 폴백을 이기기 때문이다 — 그것이 운영자 화면에 뜬 영어의 정체였다.
+      pushToast('error', humanError(err, '계약서 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally { setBusy(null) }
   }
 
@@ -74,17 +85,17 @@ export function OcrToolbar({ onContract, onIdCard }: {
     if (!f) return
     setBusy('id')
     try {
-      // 원본을 그대로 보내면 큰 사진에서 탭이 죽고 등록 폼 입력이 통째로 날아간다(lib/ocrImage).
-      const { b64, mime } = await fileToOcrImage(f, 'document')
-      const res = await analyzeIdCardWithGemini(b64, mime)
-      if (!res.ok) { pushToast('error', res.error); return }
+      // 사진 바이트를 문자열 인자로 실으면 서버 액션 디코더의 슬롯 한도에서 터진다(lib/ocrImage).
+      const ocr = await fileToOcrImage(f, 'document')
+      const res = await analyzeIdCardWithGemini(ocrForm(ocr.file))
+      if (!res.ok) { pushToast('error', humanError(res.error, '신분증 분석에 실패했습니다. 잠시 후 다시 시도해 주세요.')); return }
       void notifyAiQuota()
       const filled = Object.values(res.data).filter(v => v != null && v !== '').length
       if (filled === 0) { pushToast('error', '신분증에서 추출할 정보를 찾지 못했습니다.'); return }
       onIdCard(res.data)
       pushToast('success', `신분증에서 ${filled}개 항목 채움`)
     } catch (err) {
-      pushToast('error', (err as Error).message || '신분증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+      pushToast('error', humanError(err, '신분증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally { setBusy(null) }
   }
 
@@ -105,13 +116,13 @@ export function OcrToolbar({ onContract, onIdCard }: {
       </button>
       {open && (
         <div className="px-3 pb-3 flex items-center gap-2 flex-wrap">
-          <Btn variant="secondary" size="sm" disabled={busy !== null}
+          <Btn variant="secondary" size="sm" disabled={busy !== null} className="min-w-[6.25rem]"
             onClick={() => contractRef.current?.click()}>
-            {busy === 'contract' ? '분석 중…' : '계약서'}
+            {busy === 'contract' ? <><Spinner />분석 중…</> : '계약서'}
           </Btn>
-          <Btn variant="secondary" size="sm" disabled={busy !== null}
+          <Btn variant="secondary" size="sm" disabled={busy !== null} className="min-w-[6.25rem]"
             onClick={() => idRef.current?.click()}>
-            {busy === 'id' ? '분석 중…' : '신분증'}
+            {busy === 'id' ? <><Spinner />분석 중…</> : '신분증'}
           </Btn>
           <AiQuotaHint />
           {/* capture 미지정 — 촬영뿐 아니라 앨범/파일의 기존 스캔본도 올릴 수 있게(촬영 강제 X) */}

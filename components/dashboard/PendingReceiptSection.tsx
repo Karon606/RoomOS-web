@@ -23,7 +23,7 @@ import {
 import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
@@ -83,7 +83,8 @@ export function PendingReceiptSection() {
   const [scanFile, setScanFile]     = useState<File | null>(null)
 
   const doUpload = async (file: File) => {
-    // 원본을 그대로 보내는 길이라 상한을 먼저 본다 — 10MB 넘는 사진은 서버 액션이 받지 않는다.
+    // 원본을 그대로 보내는 길이라 상한을 먼저 본다. FormData 는 base64 팽창 없이 실리므로
+    // 6MB 는 본문 상한 10MB 아래의 보수 여유선이다(lib/ocrImage 와 같은 자).
     if (!ocrFallbackAllowed(file.size)) {
       pushToast('error', '사진이 너무 커서 올릴 수 없습니다. 화면을 캡처해 다시 올려 주세요.')
       return
@@ -99,7 +100,7 @@ export function PendingReceiptSection() {
       await reload()
     } catch (err) {
       // catch 가 없으면 전송 실패가 unhandled rejection 으로 새어 아무 말도 안 나온다.
-      pushToast('error', (err as Error).message || '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+      pushToast('error', humanError(err, '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally { setUploading(false) }
   }
 

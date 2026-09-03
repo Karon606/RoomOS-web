@@ -4,6 +4,7 @@ import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -161,13 +162,14 @@ function extractCompleteObjects(text: string): any[] {
 }
 
 export async function parseFloorPlanImage(
-  base64: string,
-  mimeType: string,
+  formData: FormData,
   canvasWidth: number,
   canvasHeight: number,
 ): Promise<{ ok: true; elements: FloorPlanElement[] } | { ok: false; error: string }> {
   try {
     await getPropertyId()
+    const img = await readOcrImageForm(formData)
+    if (!img.ok) return img
     const ai = await consumeGeminiAccess()
     if (!ai.ok) return { ok: false, error: ai.error }
     const apiKey = ai.apiKey
@@ -200,7 +202,7 @@ export async function parseFloorPlanImage(
     const reqBody = JSON.stringify({
       contents: [{ parts: [
         { text: prompt },
-        { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
+        { inline_data: { mime_type: img.mime, data: img.b64 } },
       ]}],
       generationConfig: {
         temperature: 0.1,

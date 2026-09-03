@@ -75,6 +75,7 @@ import { plannedStaysInRoom } from '@/lib/plannedStays'
 import { recordOverlapAcksForLease } from '@/lib/overlapAck'
 import { primaryTenantLease } from '@/lib/leaseStatus'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { readOcrImageForm } from '@/lib/ocrImageServer'
 import { addJobOption } from '@/app/(app)/settings/actions'
 
 /**
@@ -3647,11 +3648,12 @@ export type ContractOcrResult = {
   contractEnd?: string       // YYYY-MM-DD
 }
 
-export async function analyzeContractWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ContractOcrResult } | { ok: false; error: string }> {
+export async function analyzeContractWithGemini(formData: FormData): Promise<{ ok: true; data: ContractOcrResult } | { ok: false; error: string }> {
   try {
     await requireEdit()
     await getPropertyId()
-    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const img = await readOcrImageForm(formData)
+    if (!img.ok) return img
     const ai = await consumeGeminiAccess()
     if (!ai.ok) return { ok: false, error: ai.error }
     const apiKey = ai.apiKey
@@ -3694,7 +3696,7 @@ JSON 스키마 (모든 필드 선택. 추출 못 한 건 생략):
           contents: [{
             parts: [
               { text: prompt },
-              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
+              { inline_data: { mime_type: img.mime, data: img.b64 } },
             ],
           }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 1200, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },   // 사고 토큰 잠식 방지(신고 4b1f59e2 계열)
@@ -3750,11 +3752,12 @@ export type IdCardOcrResult = {
   nationality?: string      // '대한민국' | 'VIETNAM' 등 (가능하면 한글)
 }
 
-export async function analyzeIdCardWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: IdCardOcrResult } | { ok: false; error: string }> {
+export async function analyzeIdCardWithGemini(formData: FormData): Promise<{ ok: true; data: IdCardOcrResult } | { ok: false; error: string }> {
   try {
     await requireEdit()
     await getPropertyId()
-    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const img = await readOcrImageForm(formData)
+    if (!img.ok) return img
     const ai = await consumeGeminiAccess()
     if (!ai.ok) return { ok: false, error: ai.error }
     const apiKey = ai.apiKey
@@ -3784,7 +3787,7 @@ JSON 스키마 (모든 필드 선택, 추출 못 한 건 생략):
           contents: [{
             parts: [
               { text: prompt },
-              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
+              { inline_data: { mime_type: img.mime, data: img.b64 } },
             ],
           }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 600, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },   // 사고 토큰 잠식 방지(신고 4b1f59e2 계열)
