@@ -73,6 +73,17 @@ export type DocBundleRow = {
   issuedAt: string | null
   /** 회색 보조 문구 — '스캔본' · '계약 표시 없음' · '지난 계약' · '이번 달 발급본이 아닙니다'. */
   note: string | null
+  /**
+   * 이번 달 납부 확인서를 새로 쓸 수 있는가 — 납부 확인서 행에만 선다.
+   *
+   * 지난달 발급본이 있으면 행은 '발급됨'이라 종전에는 [보기]만 서고 새로 만들 길이 없었다.
+   * 이 시트가 발급의 유일한 입구가 된 뒤로(2026-08-29) 그 길이 곧 막힌 길이었다.
+   * 조건은 둘의 곱이다. 최신 발급본이 이번 달 것이 아니고, 그 계약에 이번 달 실입금이 있다.
+   * 납부 전에 확인서를 만들면 허위 서류라 문을 안 연다 — 다만 **발급 능력이 사라지는 것은
+   * 아니다.** 기록 없는 달의 수동 발급은 발급 화면의 월 스테퍼와 전역 발급 이력의 '다시 작성'이
+   * 그대로 감당한다. 이 문은 매월 반복되는 정상 흐름의 지름길이다(운영자 요청 2026-09-03).
+   */
+  canWriteNew?: boolean
   /** 파일 형식 추정(파일명 기준) — 첨부 표기·파일명 확장자의 기본값이다.
    *  실제로 내보낼 때는 바이트 스니핑(lib/docMime)이 최종 권위라, 이 추정이 틀려도 파일은 옳게 나간다. */
   mime: string
@@ -151,6 +162,14 @@ export type DocBundleInput = {
   rents: DocBundleFile[]
   deposits: DocBundleFile[]
   certs: DocBundleFile[]
+  /**
+   * 이번 달 귀속 실입금이 있는 계약 id 들 — 납부 확인서를 새로 쓸 문을 열지 가른다.
+   *
+   * **금액이 아니라 사실 하나다.** 금액을 받으면 이 시트가 언젠가 돈을 그리게 되고, 그 돈은
+   * 발급 화면의 청구 정본(billForLeaseMonth·청구 락)과 갈라진다. 시트의 용건은 "문을 열 수
+   * 있는가" 하나다. 판정 술어는 lib/rentPaid 정본이 쥔다.
+   */
+  rentPaidLeaseIds?: readonly string[]
   /** '이번 달' 판정 기준 — 호출부가 넘긴다(테스트가 시계를 고정할 수 있게). */
   now: Date
 }
@@ -161,6 +180,7 @@ const latestFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile |
 
 export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   const { tenantName, leases, contracts, contractVersions = [], rents, deposits, certs, now } = input
+  const paidThisMonth = new Set(input.rentPaidLeaseIds ?? [])
   // 그룹 순서 정본 — 거주 · 예약 · 비거주(호실 면·프리즘과 같은 한 벌).
   const ordered = roomLeaseRowOrder(leases)
 
@@ -204,7 +224,12 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     }
 
     const rent = latestFor(rents, l.id)
-    rows.push(row('rent', l.id, rent, rent ? staleNote(rent.at) : null))
+    const rentStale = rent ? staleNote(rent.at) : null
+    const rentRow = row('rent', l.id, rent, rentStale)
+    // 문은 '지난달 것뿐'이면서 '이번 달을 받았을' 때만 연다. 미발급 행은 이미 [작성]이 서므로
+    // 여기서 다시 열 것이 없다(그 행은 rent 가 없어 rentStale 도 null 이다).
+    if (rentStale) rentRow.canWriteNew = paidThisMonth.has(l.id)
+    rows.push(rentRow)
 
     // 보증금 영수증은 보증금 있는 계약만. 이미 발급된 건이 있으면 계약이 0원이 됐어도 남긴다 —
     // 존재하는 종이를 발송 화면에서 감추면 보낼 길이 사라진다.

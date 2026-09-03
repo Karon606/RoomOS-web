@@ -1,8 +1,8 @@
 # 서류 작성 문 + 발급 이력 목록 + 몰취 날짜 축 (2026-09-03, 운영자 승인)
 
 ## A 납부확인서 새 달 작성 문 (요청 1)
-- [ ] A1 lib/docBundle: 입력에 rentPaidLeaseIds, rent 행에 작성 가능 플래그 파생
-- [ ] A1 test-doc-bundle 케이스(stale+납부=문 열림 / stale+미납=닫힘 / 이번 달 발급본=stale 없음
+- [x] A1 lib/docBundle: 입력에 rentPaidLeaseIds, rent 행에 작성 가능 플래그 파생
+- [x] A1 test-doc-bundle 케이스(stale+납부=문 열림 / stale+미납=닫힘 / 이번 달 발급본=stale 없음
       / 보증금·계약서·실거주 행에는 플래그 없음 / 미발급 행 종전 그대로)
 - [ ] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
 - [ ] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달

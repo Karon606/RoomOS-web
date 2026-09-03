@@ -30,8 +30,11 @@ const lease = (p: Partial<DocBundleLease> & { id: string }): DocBundleLease => (
 })
 
 const empty = { contracts: [], rents: [], deposits: [], certs: [] }
-const build = (leases: DocBundleLease[], files: Partial<typeof empty> = {}): TenantDocBundle =>
-  buildDocBundle({ tenantName: '테스트', leases, ...empty, ...files, now: NOW })
+const build = (leases: DocBundleLease[], files: Partial<typeof empty> = {}, rentPaidLeaseIds: string[] = []): TenantDocBundle =>
+  buildDocBundle({ tenantName: '테스트', leases, ...empty, ...files, rentPaidLeaseIds, now: NOW })
+
+/** 그 그룹의 납부 확인서 행 — 아래 작성 문 케이스가 전부 이 한 줄을 본다. */
+const rentRow = (b: TenantDocBundle) => b.groups[0].rows.find(r => r.docType === 'rent')!
 
 /** 그룹별 행 종류 — 규칙 대조는 이 모양 하나로 충분하다(파일 유무는 따로 본다). */
 const shape = (b: TenantDocBundle) => b.groups.map(g => ({ room: g.roomNo, kind: g.kind, rows: g.rows.map(r => r.docType) }))
@@ -184,6 +187,44 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
   const row = b.groups[0].rows.find(r => r.docType === 'contract')!
   eq('무회귀 · versions 없음', row.versions, undefined)
   eq('무회귀 · 파일 그대로', row.driveFileId, 'drive-509-2026-08-01')
+}
+
+// ── 이번 달 납부 확인서를 새로 쓸 문 (2026-09-03 운영자 요청) ──────────
+//
+// 지난달 발급본이 있으면 행은 '발급됨'이라 종전에는 새로 만들 길이 없었다. 이 시트가 발급의
+// 유일한 입구가 된 뒤로(2026-08-29) 그 길이 곧 막힌 길이었다. 문은 둘의 곱으로만 연다.
+// NOW 는 KST 2026-08-17 이다.
+{
+  const paid = ['402']
+  const stale = { rents: [file('402', '2026-07-20')] }
+
+  const a = build([lease({ id: '402' })], stale, paid)
+  eq('작성 문 · 지난달 발급본 + 이번 달 납부면 열린다', rentRow(a).canWriteNew, true)
+  eq('작성 문 · 그때도 보조 문구는 그대로', rentRow(a).note, '이번 달 발급본이 아닙니다')
+
+  const b = build([lease({ id: '402' })], stale, [])
+  eq('작성 문 · 이번 달 납부가 없으면 안 열린다', rentRow(b).canWriteNew, false)
+
+  // 이번 달 발급본이면 stale 자체가 없다 — 문을 물을 상황이 아니다.
+  const c = build([lease({ id: '402' })], { rents: [file('402', '2026-08-05')] }, paid)
+  eq('작성 문 · 이번 달 발급본이면 보조 문구 없음', rentRow(c).note, null)
+  eq('작성 문 · 그때는 플래그도 안 선다', rentRow(c).canWriteNew, undefined)
+
+  // 미발급 행은 이미 [작성]이 서므로 여기서 다시 열 것이 없다.
+  const d = build([lease({ id: '402' })], {}, paid)
+  eq('작성 문 · 미발급 행에는 플래그가 없다', rentRow(d).canWriteNew, undefined)
+
+  // 다른 종류에는 절대 서지 않는다 — 그 서류들은 달과 무관하다.
+  const e = build([lease({ id: '402' })], { rents: [file('402', '2026-07-20')], deposits: [file('402', '2026-07-20')], certs: [file('402', '2026-07-20')], contracts: [file('402', '2026-07-20')] }, paid)
+  for (const t of ['contract', 'deposit', 'residence'] as const) {
+    eq(`작성 문 · ${t} 행에는 플래그가 없다`, e.groups[0].rows.find(r => r.docType === t)!.canWriteNew, undefined)
+  }
+
+  // 납부한 계약만 열린다 — 한 사람이 방을 둘 쓰면 계약마다 답이 다르다.
+  const f = build([lease({ id: '402' }), lease({ id: '601' })],
+    { rents: [file('402', '2026-07-20'), file('601', '2026-07-20')] }, ['402'])
+  const rows = f.groups.flatMap(g => g.rows).filter(r => r.docType === 'rent')
+  eq('작성 문 · 납부한 계약만 열린다', rows.map(r => r.canWriteNew), [true, false])
 }
 
 console.log(`\n서류 보내기 행 규칙 회귀: ${pass} 통과 / ${fail} 실패`)
