@@ -29,6 +29,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
 import { useNavRouter } from '@/lib/useNavRouter'
+import { ocrFallbackAllowed } from '@/lib/ocrImage'
 
 // 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
 const FALLBACK_EXPENSE_CATEGORIES = [
@@ -82,6 +83,11 @@ export function PendingReceiptSection() {
   const [scanFile, setScanFile]     = useState<File | null>(null)
 
   const doUpload = async (file: File) => {
+    // 원본을 그대로 보내는 길이라 상한을 먼저 본다 — 10MB 넘는 사진은 서버 액션이 받지 않는다.
+    if (!ocrFallbackAllowed(file.size)) {
+      pushToast('error', '사진이 너무 커서 올릴 수 없습니다. 화면을 캡처해 다시 올려 주세요.')
+      return
+    }
     setUploading(true)
     try {
       const fd = new FormData()
@@ -91,6 +97,9 @@ export function PendingReceiptSection() {
       pushToast('success', '업로드 + AI 분류 완료')
       void notifyAiQuota()
       await reload()
+    } catch (err) {
+      // catch 가 없으면 전송 실패가 unhandled rejection 으로 새어 아무 말도 안 나온다.
+      pushToast('error', (err as Error).message || '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
     } finally { setUploading(false) }
   }
 

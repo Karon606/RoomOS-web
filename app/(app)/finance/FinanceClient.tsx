@@ -57,6 +57,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr, kstMonthStr, kstMonthsAgoStr, kstDaysUntil } from '@/lib/kstDate'
 import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
+import { ocrFallbackAllowed } from '@/lib/ocrImage'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -1633,6 +1634,11 @@ export default function FinanceClient({
       // 못 여는 형식이어도 브라우저가 img 로는 그리는 경우가 있으니(HEIC on Safari)
       // 원본 파일 자체를 미리보기로 건다. 여기 도달하면 이미지 파일임이 위에서 보장된다.
       setLocalPreview(target, URL.createObjectURL(file))
+      // 폴백이라도 무한정 큰 원본을 보내지는 않는다(lib/ocrImage 의 상한과 같은 자).
+      if (!ocrFallbackAllowed(file.size)) {
+        pushToast('error', '사진이 너무 커서 첨부할 수 없습니다. 화면을 캡처해 다시 올려 주세요.')
+        return
+      }
       await handleReceiptUpload(file, setter)
       return
     }
@@ -1784,6 +1790,11 @@ export default function FinanceClient({
         outcome = { itemCount: res.data.items.length, error: null }
       }
       if (!opts?.skipUpload) await uploadCropped(cropped)   // 홈 큐 딥링크는 기존 이미지 재사용(재업로드 방지)
+    } catch (err) {
+      // 호출부가 `void ocrCropped(...)` 라 catch 가 없으면 전송 실패가 그대로 새어 침묵한다.
+      const msg = (err as Error).message || '영수증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+      setScanOcrError(msg)
+      outcome = { itemCount: 0, error: msg }
     } finally { setScanOcrPending(false) }
     return outcome
   }
@@ -2220,12 +2231,16 @@ export default function FinanceClient({
   const handleReceiptUpload = async (file: File, setter: (url: string) => void) => {
     setReceiptUploading(true)
     setError('')
-    const fd = new FormData()
-    fd.append('receipt', file)
-    const res = await uploadExpenseReceipt(fd)
-    if (res.ok) setter(res.url)
-    else setError(res.error)
-    setReceiptUploading(false)
+    try {
+      const fd = new FormData()
+      fd.append('receipt', file)
+      const res = await uploadExpenseReceipt(fd)
+      if (res.ok) setter(res.url)
+      else setError(res.error)
+    } catch (err) {
+      // 종전에는 catch 가 없어 던지면 아래 플래그가 true 로 고착됐다(업로드 중 표시가 안 풀린다).
+      setError((err as Error).message || '영수증 업로드 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally { setReceiptUploading(false) }
   }
 
   // 내구재 세트 확인(저장 게이트, 신고 91b812ce) — 칩에서 미승인·미거절인 채 남은 비품 세트 항목을

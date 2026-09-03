@@ -10,19 +10,12 @@ import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
+import { fileToOcrImage } from '@/lib/ocrImage'
 import {
   analyzeContractWithGemini, analyzeIdCardWithGemini,
   type ContractOcrResult, type IdCardOcrResult,
 } from '@/app/(app)/tenants/actions'
 
-// 파일 → base64 (data URL prefix 제거)
-async function fileToBase64(f: File): Promise<{ b64: string; mime: string }> {
-  const buf = await f.arrayBuffer()
-  let binary = ''
-  const bytes = new Uint8Array(buf)
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
-  return { b64: btoa(binary), mime: f.type || 'image/jpeg' }
-}
 
 // React controlled input 의 value 를 프로그래매틱하게 바꾸려면
 // 네이티브 setter 호출 + input/change 이벤트 디스패치가 필요.
@@ -59,7 +52,7 @@ export function OcrToolbar({ onContract, onIdCard }: {
     if (!f) return
     setBusy('contract')
     try {
-      const { b64, mime } = await fileToBase64(f)
+      const { b64, mime } = await fileToOcrImage(f, 'document')
       const res = await analyzeContractWithGemini(b64, mime)
       if (!res.ok) { pushToast('error', res.error); return }
       void notifyAiQuota()
@@ -67,6 +60,11 @@ export function OcrToolbar({ onContract, onIdCard }: {
       if (filled === 0) { pushToast('error', '계약서에서 추출할 정보를 찾지 못했습니다.'); return }
       onContract(res.data)
       pushToast('success', `계약서에서 ${filled}개 항목 채움`)
+    } catch (err) {
+      // catch 가 없으면 전송 실패가 unhandled rejection 으로 새어 **아무 말도 안 나온다**
+      // (긴급 신고 2026-09-03). 서버가 구분해 주는 오류는 위 res.error 가 이미 말하므로
+      // 여기는 전송·미상 실패 전담이다.
+      pushToast('error', (err as Error).message || '계약서 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
     } finally { setBusy(null) }
   }
 
@@ -76,7 +74,8 @@ export function OcrToolbar({ onContract, onIdCard }: {
     if (!f) return
     setBusy('id')
     try {
-      const { b64, mime } = await fileToBase64(f)
+      // 원본을 그대로 보내면 큰 사진에서 탭이 죽고 등록 폼 입력이 통째로 날아간다(lib/ocrImage).
+      const { b64, mime } = await fileToOcrImage(f, 'document')
       const res = await analyzeIdCardWithGemini(b64, mime)
       if (!res.ok) { pushToast('error', res.error); return }
       void notifyAiQuota()
@@ -84,6 +83,8 @@ export function OcrToolbar({ onContract, onIdCard }: {
       if (filled === 0) { pushToast('error', '신분증에서 추출할 정보를 찾지 못했습니다.'); return }
       onIdCard(res.data)
       pushToast('success', `신분증에서 ${filled}개 항목 채움`)
+    } catch (err) {
+      pushToast('error', (err as Error).message || '신분증 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
     } finally { setBusy(null) }
   }
 

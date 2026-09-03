@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { fileToOcrImage } from '@/lib/ocrImage'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -400,20 +401,19 @@ function AiImportModal({
 
   const handleFile = async (file: File) => {
     setPending(true); setError(''); setPreview(null)
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader()
-      r.onload = () => resolve(r.result as string)
-      r.onerror = reject
-      r.readAsDataURL(file)
-    })
-    setImgDataUrl(dataUrl)
-    const base64 = dataUrl.split(',')[1]
-    const res = await parseFloorPlanImage(base64, file.type || 'image/jpeg', canvasWidth, canvasHeight)
-    setPending(false)
-    if (!res.ok) { setError(res.error); return }
-    void notifyAiQuota()
-    if (res.elements.length === 0) { setError('평면도 요소를 찾을 수 없습니다. 더 선명한 이미지를 사용해보세요.'); return }
-    setPreview(res.elements)
+    try {
+      // 원본을 그대로 보내면 큰 도면 사진에서 서버 액션 상한에 걸리고 탭도 위험하다(lib/ocrImage).
+      const { b64, mime } = await fileToOcrImage(file, 'document')
+      setImgDataUrl(`data:${mime};base64,${b64}`)
+      const res = await parseFloorPlanImage(b64, mime, canvasWidth, canvasHeight)
+      if (!res.ok) { setError(res.error); return }
+      void notifyAiQuota()
+      if (res.elements.length === 0) { setError('평면도 요소를 찾을 수 없습니다. 더 선명한 이미지를 사용해보세요.'); return }
+      setPreview(res.elements)
+    } catch (err) {
+      // 종전에는 catch 가 없어 던지면 아래 setPending(false) 에 못 가 **스피너가 영원히 돌았다.**
+      setError((err as Error).message || '도면 분석 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally { setPending(false) }
   }
 
   return (
