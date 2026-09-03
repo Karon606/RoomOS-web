@@ -1,41 +1,41 @@
-# 서류 성명 표기 사람 단위 기본값 (2026-09-03, 운영자 "전부 권고대로")
+# 현금영수증 기한 알림 정리 + 보증금 반환 폼 정합 (2026-09-03, 운영자 승인)
 
-요청. 외국인(등록번호 보유 또는 국적 비한국)은 발급 서류 이름이 영문 기본.
-다만 사람 단위로 "이 사람은 한글" 을 못박을 수 있어야 한다.
+요청. 기한 지난 미발행 알림이 7·8월 것으로 쌓여 소음이다. 접되 사라지지는 않게.
++ 보증금 전액 미반환 버튼과 청소비 구성이 화면마다 다르다.
 
-## 0 fix(고객정보): 외국인 판정을 정본 하나로 모은다
-- [x] TenantClient 의 `natVal !== '대한민국'` 세 자리를 정본 판정으로(현지 표기·등록번호·해외 연락처)
-- [x] 서류 정본 isKoreanNationality 와 같은 답을 내는지 확인('한국'·'Korea'·'KR')
+## 정정된 사실 (운영자 전제와 다름)
+발급 기한은 '그 달 말일'이 아니라 건별 '받은 날부터 5일'(소득세법 시행령 별표 3의3,
+knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 발급은 가능하고
+운영자 본인이 2026-08-22 하루에 18건(7월 입금분 포함)을 일괄 발행한 실적이 있다.
+"처리를 못하는 것"이 아니라 "아직 안 한 것"이라 소멸이 아니라 접기로 간다.
 
-## 1 feat(서류성명): 사람 단위 기본 표기를 정본이 받는다
-- [x] lib/documentName: DocNameStyleContext 에 tenant 축, 서열은 saved > siblings > tenant > 국적 > ko
-- [x] 외국인 판정 정본 함수(국적 비한국 OR 외국인등록번호 보유)
-- [x] scripts/test-doc-name-style 케이스 다섯(국적 추정을 이김·저장값과 형제에는 짐·NULL 은 종전·
-      후보에서 빠진 값은 무시·화이트리스트 밖은 버림)
+## A1 feat(현금영수증): 기한 경계를 정본 순수 함수로
+- [ ] lib/cashReceipt 경계 판정 함수(임박 0..2 / 지남 / 감경 창 -1..-5)
+- [ ] test-cash-receipt 경계 케이스(cashReceiptDaysLeft 를 아직 한 건도 안 건다)
 
-## 2 chore(스키마): Tenant.docNameStyle
-- [x] 칼럼 String? + 대칭 주석(카드는 이 값을 절대 읽지 않는다 / 서류는 displayNameStyle 을 안 읽는다)
-- [x] 마이그레이션. 백필 없음, NULL = 자동
+## A2 feat(홈 알림): 기한 지난 건은 요약 한 줄로 접는다
+- [ ] due 를 임박(건별) · 감경 창(건별) · 지남(요약 한 줄)로 가름
+- [ ] 요약 줄 muteKeys 는 건별 키 전부(receipt:summary 합성 키 금지, 2026-09-02 판정)
+- [ ] 조회창을 35일에서 인수 컷오프(prevOwnerCutoffDate ?? acquisitionDate)로 확대
+- [ ] 건별 줄 제목에 '임박' 한정어(두 줄이 형제로 읽히게)
+- [ ] crMutedSummary 는 무변경(다른 그룹에 서므로 나란히 안 보인다)
 
-## 3 feat(고객정보): 서류 성명 표기 칸
-- [x] actions.ts has 가드 patch(칸 부재는 보존)
-- [x] TenantClient 폼에 SelectField '서류 성명 표기'(자동·한글·영문·현지), 외국인에게만
-- [x] 영문 이름 없는 사람 안내, 진행 중 계약에 다른 표기 힌트가 있으면 안내 한 줄
-- [x] 영어이름은 외국인등록증 표기 그대로 안내(운영자 추가 요청)
-- [x] 웹디자이너 패스 5건 반영(조사 오류 클래스 6자리·승계 안내 조건·간격·문구·후보 밖 값)
-- [x] 내국인 93명 화면 무변화 대조(국적 가드 종전과 동일)
+## A3 design(현금영수증 탭): 기한 상태를 텍스트로
+- [ ] 후보·끈 목록 둘째 줄에 '· 발급 기한 N일 지남'(의무 기준액 이상만)
+- [ ] 배지 금지(28/35 가 지남이라 목록이 도배된다) · 지남 --danger-fg, 임박 --warning-fg
+- [ ] 웹디자이너 패스
 
-## 4 feat(발급): 세 서류가 사람 단위 값을 읽는다
-- [x] lib/contractData · residence-cert/actions · rent-receipt/actions 에 tenant 값 전달
-- [x] 세 View 초기값만 달라지고 기존 셀렉트·되묻기는 그대로
+## A4 chore(감지망·지식)
+- [ ] verify-money-consistency 규칙 20 계열에 경계 정본·muteKeys·고정 창 금지
+- [ ] knowledge/cash-receipt-refund 발급 기한 절에 이번 판정 적립
 
-## 5 chore(감지망): 두 축 침범 금지
-- [x] scripts/check-doc-name-axis.mjs(서류 경로에 displayNameStyle 금지, 카드 경로에 docNameStyle
-      금지, resolveDocNameStyle 호출부 전원이 tenant 축을 넘김) + verify:fast + 역주입
+## B1 fix(보증금): 반환 정산 기록 폼을 퇴실 처리 화면과 같은 문법으로
+- [ ] 보증금 카드 폼에 SegmentedControl(반환함·나중에·반환 안 함) — 퇴실 폼 정본
+- [ ] 폼 안에 구성 표시(보증금 X − 청소비 Y = 최대 Z)
+- [ ] 웹디자이너 패스
 
 ## 게이트 (커밋마다)
 - [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
-- [ ] 웹디자이너 패스: 3번 폼 칸
 
 ## 문서
-- [ ] Work_log · knowledge(domain-document-name 또는 기존 노트) · INDEX
+- [ ] Work_log · knowledge(cash-receipt-refund) · INDEX
