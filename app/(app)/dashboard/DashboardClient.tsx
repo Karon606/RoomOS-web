@@ -43,7 +43,7 @@ import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReas
 import { DatePicker } from '@/components/ui/DatePicker'
 import { advanceRoomSchedule, undoRoomMove } from '@/app/(app)/tenants/actions'
 import { muteHomeAlert, unmuteHomeAlert } from '@/app/(app)/rooms/actions'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
@@ -1017,7 +1017,13 @@ function AlertsStrip({ alerts, muted, onOpenAlert }: {
 }
 
 // 끈 알림 줄 — 보이는 알림(AlertRow)과 같은 2줄이고, 둘째 줄에 언제 껐는지가 붙는다.
-// 건별 키가 있으면 그 자리에서 다시 켜고, 없는 합성 줄(현금영수증 묶음)은 탭으로 보낸다.
+//
+// 키가 있으면 **단수든 복수든** 그 자리에서 다시 켠다. 종전에는 단수 키만 버튼이고 복수(현금영수증
+// 묶음)는 탭 링크였는데, 끄기 버튼은 진작 양쪽을 다 처리하고 있어 이 자리만 비대칭이었다.
+// 그래서 8건을 한 번에 끄고도 한 번에 켜지 못했다(신고 C-1). 키가 아예 없는 줄만 링크로 남는다.
+// 끄기(muteHomeAlert)와 켜기가 같은 판정을 쓰게 한 자리에 둔다 — 갈리면 또 한쪽만 비대칭이 된다.
+const keysOf = (a: { muteKey?: string; muteKeys?: string[] }): string[] => a.muteKeys ?? (a.muteKey ? [a.muteKey] : [])
+
 function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -1031,21 +1037,32 @@ function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
               {[a.timeLabel, a.exactDate, a.mutedAt ? `알림 끔 ${fmtMD(a.mutedAt)}` : null].filter(Boolean).join(' · ')}
             </p>
           </div>
-          {a.muteKey ? (
+          {keysOf(a).length > 0 ? (() => {
+            const keys = keysOf(a)
+            return (
             <RowActionBtn tone="accent" disabled={pending} className="shrink-0"
               onClick={() => startTransition(async () => {
                 const release = trackSave()
                 try {
-                  const r = await unmuteHomeAlert(a.muteKey!)
-                  if (!r.ok) { pushToast('error', r.error); return }
-                  pushToast('info', '알림을 다시 켰습니다')
+                  const r = await unmuteHomeAlert(keys)
+                  if (!r.ok) { pushToast('error', humanError(r.error, '알림을 다시 켜지 못했습니다.')); return }
+                  // 되살리는 것도 되돌릴 수 있어야 한다(§16) — 묶음이면 실수의 폭이 그만큼 크다.
+                  pushToast('success', keys.length > 1 ? `알림 ${keys.length}건을 다시 켰습니다` : '알림을 다시 켰습니다', {
+                    action: { label: '적용취소', run: () => { void muteHomeAlert(keys).then(u => {
+                      if (u.ok) { pushToast('info', '알림을 다시 껐습니다'); router.refresh() }
+                      else pushToast('error', humanError(u.error, '되돌리지 못했습니다.'))
+                    }).catch(() => pushToast('error', '되돌리는 중 통신 오류가 발생했습니다')) } },
+                  })
                   router.refresh()
                 } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') }
                 finally { release() }
               })}>
-              다시 켜기
+              {keys.length > 1 ? `알림 ${keys.length}건 다시 켜기` : '다시 켜기'}
             </RowActionBtn>
-          ) : (
+            )
+          })() : (
+            /* 지금은 키 없는 줄이 안 만들어져 도달하지 않는다(감지망 check-alert-mute-symmetry ⓐ가
+               그것을 막는다). 그물 밖에서 그런 줄이 생겨도 켜는 문이 아예 없지는 않게 남겨 둔다. */
             <Link href={a.link}
               className="shrink-0 -my-2 min-h-[44px] inline-flex items-center text-[0.65625rem] font-medium hover:opacity-70 transition-opacity"
               style={{ color: 'var(--coral)' }}>

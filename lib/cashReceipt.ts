@@ -345,3 +345,23 @@ export function receiptRowVerdict(
   if (liveStampedKeys.has(key)) return 'ok'
   return refundPendingKeys.has(key) ? 'refundPending' : 'ghost'
 }
+
+/**
+ * 끈 키 중 **되살리면 실제로 알림줄로 돌아올** 키만 남긴다.
+ *
+ * 왜 필요한가(신고 C-1, 2026-09-03). 홈의 "현금영수증 발급 기한 · N건 끔"이 저장된 끈 키를 그냥
+ * 세고 있었다. 그런데 끈 뒤에 발행했거나 의무 기준액 미만인 건은 되살려도 알림줄로 안 돌아온다.
+ * 그래서 라벨의 숫자가 '다시 켜기'의 효과보다 부풀었다. 세는 규칙을 알림줄을 만드는 규칙(crAll
+ * 필터)과 같은 것으로 맞춘다 — 두 자리가 다른 셈을 하면 그 차이는 언젠가 사람이 발견한다.
+ */
+export function liveMutedReceiptKeys(
+  muted: Iterable<string>,
+  groups: ReadonlyMap<string, { amount: number }>,
+  issued: ReadonlySet<string>,
+  min: number = CASH_RECEIPT_OBLIGATION_MIN,
+): string[] {
+  return [...muted].filter(k => {
+    const g = groups.get(k)
+    return !!g && !issued.has(k) && g.amount >= min
+  })
+}

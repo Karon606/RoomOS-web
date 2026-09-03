@@ -10,7 +10,7 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible, liveMutedReceiptKeys } from '@/lib/cashReceipt'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -1827,8 +1827,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 수단, getCashReceiptTabRows 와 동일) — 수납마다 세면 쪼개 저장된 한 결제가 여러 건으로 부푼다.
   //
   // 끈 건은 홈 '끈 알림'에 건별로 늘어놓지 않는다 — 한 번에 수십 건을 끄는 자리라 목록이 벽이
-  // 된다. 합쳐 한 줄로 세우고 다시 켜는 자리는 탭으로 보낸다(디자이너 판정 2026-09-02).
-  let crMutedSummary: { count: number; link: string } | null = null
+  // 된다. 합쳐 한 줄로 세운다(디자이너 판정 2026-09-02).
+  //
+  // 다시 켜는 자리는 종전에 탭이었는데 그 전제가 틀렸다(신고 C-1, 2026-09-03). 탭은 월 단위
+  // 조회창이라 끈 건이 여러 달에 걸치면 링크가 보낸 달에서 나머지가 안 보이고, 끈 목록 자체가
+  // 후보 목록 아래 접힌 한 줄이다. 끄는 문은 요약 줄의 일괄인데 켜는 문만 월별 건별이라 축이
+  // 달랐다. 그래서 **끈 키 전부를 이 줄에 실어** 같은 자리에서 한 번에 켠다(§16 원위치).
+  let crMutedSummary: { count: number; link: string; keys: string[] } | null = null
   try {
     const crTodayYmd = kstYmdStr()
     // 조회창은 인수 컷오프까지 넓힌다(운영자 승인 2026-09-03). 종전 고정 35일은 건별로 나열하던
@@ -1894,11 +1899,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const crGrace = crAll.filter(g => g.slot === 'grace')
     // 접는 것 — 감경 창도 지난 건. 발급 의무가 사라지는 것은 아니라 요약 한 줄로 계속 조른다.
     const crOverdue = crAll.filter(g => g.slot === 'overdue')
-    // 끈 건 합성 줄의 링크 — 가장 최근 입금이 속한 달로 보낸다(그 달 탭에 끈 목록이 선다).
-    if (crMuted.size > 0) {
-      const ymds = [...crMuted].map(k => k.split('|')[1] ?? '').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
+    // 끈 건 합성 줄 — 되살리면 실제로 알림줄로 돌아올 키만 센다(발행분·기준액 미만은 죽은 키다).
+    // 세는 규칙이 위 crAll 필터와 같은 것이라야 라벨의 숫자와 '다시 켜기'의 효과가 일치한다.
+    // 링크는 건별로 골라 켤 때를 위해 남긴다 — 가장 최근 입금이 속한 달로 보낸다.
+    const crLive = liveMutedReceiptKeys(crMuted, crGroups, crIssued)
+    if (crLive.length > 0) {
+      const ymds = crLive.map(k => k.split('|')[1] ?? '').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
       const month = (ymds[ymds.length - 1] ?? crTodayYmd).slice(0, 7)
-      crMutedSummary = { count: crMuted.size, link: `/rooms?tab=receipt&month=${month}` }
+      crMutedSummary = { count: crLive.length, link: `/rooms?tab=receipt&month=${month}`, keys: crLive.map(k => `receipt:${k}`) }
     }
     if (due.length > 0) {
       const worst = due[0].left
@@ -2144,14 +2152,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if (k && alertMuteAt.has(k)) mutedAlerts.push({ ...a, muteKey: k, mutedAt: alertMuteAt.get(k) || undefined })
     else visibleAlerts.push(k ? { ...a, muteKey: k } : a)
   }
-  // 현금영수증 끈 건은 합성 한 줄 — 건별 '다시 켜기' 대신 탭으로 보낸다(muteKey 가 없어 링크로 선다).
+  // 현금영수증 끈 건은 합성 한 줄 — 건별로 늘어놓으면 목록이 벽이 된다(디자이너 판정 2026-09-02).
+  // 대신 끈 키 전부를 실어 이 줄에서 한 번에 다시 켠다(§16, 신고 C-1). 개별 선택은 탭 몫이다.
   if (crMutedSummary) {
+    const ats = crMutedSummary.keys.map(k => alertMuteAt.get(k) || '').filter(Boolean).sort()
     mutedAlerts.push({
       category:  'receipt',
       text:      `현금영수증 발급 기한 · ${crMutedSummary.count}건 끔`,
+      muteKeys:  crMutedSummary.keys,
       link:      crMutedSummary.link,
       dotColor:  'var(--danger-fg)',
       timeLabel: '발급 의무는 남습니다',
+      mutedAt:   ats[ats.length - 1] || undefined,
     })
   }
 
