@@ -1,90 +1,57 @@
-// 기존 ContractFile 의 nameStyle 태그를 실제 종이와 맞추는 백필 — 기본은 예행, --apply 로만 적용.
+// 발급본 태그를 종이에 찍힌 문자열에서 읽어 채우는 백필 — 기본은 예행, --apply 로만 적용.
 //
-// 왜 필요한가(운영자 확인 A-2, 2026-09-03). 발급 화면이 표기 해석값을 저장 payload 에 안 실어
-// 보내던 시절의 행들이 남아 있다. 외국인 다수가 null 이고, 한 건은 종이가 영문인데 ko 로 박제됐다.
-// 앞으로 발급되는 건은 358adb49 이후 맞게 저장된다.
+// **추정이 아니라 기록 낭독이다.** issuedSnapshot.facts['tenant.name'] 은 표기가 이미 적용된
+// 문자열이라 그 자체가 "이 종이에 무엇이 찍혔는가"의 기록이다. 고객 정보 세 칸과 대조해
+// **정확히 하나만 일치할 때만** 그 표기로 채운다. 0개거나 2개 이상이면 손대지 않는다.
+//
+// 어제 판(지금 시점 resolveDocNameStyle 재해석)은 방향이 반대였다. 발급 API 도 화면과 같은
+// 자동값 'ko' 를 썼으므로 태그가 null 인 발급본의 종이는 대개 한글이다. 그 상태에서 en 으로
+// 백필했으면 한글 종이에 영문 태그를 붙일 뻔했다(2026-09-04 정정).
+//
+// 박제가 없는 발급본은 채우지 않는다. 그것은 2026-08-11 이전이라 코드상 한글 확정이고,
+// null 이 읽는 쪽에서 이미 한글로 해석되므로 표시가 정확하다. 채우면 기록과 유추가 섞인다.
 import prisma from '../lib/prisma'
-import { resolveDocNameStyle, docNameStyles, isKoreanNationality, type DocNameStyle } from '../lib/documentName'
+import { issuedPrintedName } from '../lib/contractPrintedFacts'
+import { type DocNameStyle } from '../lib/documentName'
 
-// **이 스크립트는 지금 쓰면 안 된다(2026-09-04).**
-//
-// 어제 계산한 방향이 반대일 가능성이 크다. 발급 API 도 화면과 같은 자동값 'ko' 를 쓰므로
-// (lib/contractFieldOverrides 의 deriveContractLeaseFields 가 nameStyle: DEFAULT_DOC_NAME_STYLE 을
-// 깔고, route.ts 가 그 병합값으로 종이를 인쇄한다), 태그가 null 인 발급본의 종이는 영문이 아니라
-// **한글로 인쇄됐을 가능성이 높다.** 그 상태에서 en 으로 백필하면 한글 종이에 영문 태그를 붙인다.
-//
-// 게다가 nameStyle 칼럼은 2026-09-03 마이그레이션으로 생겼다. 그 이전 발급본이 null 인 것은
-// 표기를 몰라서가 아니라 칼럼이 없었기 때문이다.
-//
-// 발급 시점 표기를 박제하는 구조를 먼저 세우고, 그때 이 스크립트의 계산을 다시 짠다.
-// 그때까지 --apply 를 막아 둔다.
-const BLOCKED = true
 const apply = process.argv.includes('--apply')
 
 async function main() {
   const rows = await prisma.contractFile.findMany({
-    select: {
-      id: true, nameStyle: true, createdAt: true, leaseTermId: true, fileName: true, issuedSnapshot: true,
-      leaseTerm: {
-        select: {
-          tenant: {
-            select: {
-              id: true, name: true, englishName: true, nativeName: true,
-              nationality: true, foreignRegNoEnc: true, docNameStyle: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: { createdAt: 'asc' },
+    where: { source: 'GENERATED', nameStyle: null },
+    select: { id: true, fileName: true, issuedSnapshot: true, createdAt: true,
+      leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      tenant: { select: { name: true, englishName: true, nativeName: true } } },
+    orderBy: { createdAt: 'desc' },
   })
-
-  const plan: { id: string; who: string; from: string; to: DocNameStyle; why: string }[] = []
+  const plan: { id: string; who: string; style: DocNameStyle; printed: string }[] = []
+  const skipped: string[] = []
   for (const r of rows) {
-    const t = r.leaseTerm?.tenant
-    if (!t) continue
-    // 운영자가 종이를 찍어 올린 스캔본은 대상이 아니다. 우리가 인쇄한 것이 아니라서 어느 표기로
-    // 적힌 종이인지 우리가 모른다. 추정으로 태그를 붙이면 지금과 반대 방향의 오류가 된다.
-    if (!(/^계약서_/.test(r.fileName) && r.issuedSnapshot != null)) continue
-    // 내국인은 태그가 null 이어도 기본값(한글)으로 동작해 표시가 같다. 무변화 갱신은 하지 않는다.
-    const isForeign = !!t.foreignRegNoEnc || !isKoreanNationality(t.nationality)
-    if (!isForeign) continue
-    const available = docNameStyles({ name: t.name, englishName: t.englishName, nativeName: t.nativeName })
-    const want = resolveDocNameStyle({
-      saved: null,                       // 박제값을 근거로 쓰지 않는다 — 그것이 틀린 것이 문제다
-      siblings: [],
-      tenant: (t.docNameStyle as DocNameStyle | null) ?? null,
-      nationality: t.nationality,
-      hasForeignRegNo: !!t.foreignRegNoEnc,
-      available,
-    })
-    if (r.nameStyle === want) continue
-    const foreign = isForeign
-    plan.push({
-      id: r.id,
-      who: `${t.name}(${t.nationality ?? '국적없음'}${foreign ? ', 외국인' : ''})`,
-      from: r.nameStyle ?? 'null',
-      to: want,
-      why: t.docNameStyle ? `사람 단위 지정 ${t.docNameStyle}` : foreign ? '외국인 기본 영문' : '내국인 기본 한글',
-    })
+    const printed = issuedPrintedName(r.issuedSnapshot)
+    const t = r.tenant
+    if (!printed || !t) { skipped.push(`${r.fileName} — 박제 없음`); continue }
+    // 세 칸 중 정확히 하나만 맞아야 한다. 개명한 사람은 어느 것과도 안 맞고, 한글명과
+    // 영문명이 같은 사람은 둘이 맞는다. 둘 다 근거가 못 된다.
+    const hits: DocNameStyle[] = []
+    if (t.name === printed) hits.push('ko')
+    if (t.englishName && t.englishName === printed) hits.push('en')
+    if (t.nativeName && t.nativeName === printed) hits.push('native')
+    if (hits.length !== 1) { skipped.push(`${r.fileName} — 일치 ${hits.length}개(${printed})`); continue }
+    plan.push({ id: r.id, who: `${r.leaseTerm?.room?.roomNo ?? '-'}호 ${t.name}`, style: hits[0], printed })
   }
-
-  console.log(`\nContractFile ${rows.length}건 중 태그가 어긋난 것 ${plan.length}건\n`)
-  const byMove = new Map<string, number>()
+  console.log(`\n태그 없는 발급본 ${rows.length}건 중 기록으로 채울 수 있는 것 ${plan.length}건\n`)
+  const byStyle = new Map<string, number>()
   for (const p of plan) {
-    byMove.set(`${p.from} -> ${p.to}`, (byMove.get(`${p.from} -> ${p.to}`) ?? 0) + 1)
-    console.log(`  ${p.who.padEnd(28)} ${p.from.padEnd(5)} -> ${p.to.padEnd(6)} (${p.why})`)
+    byStyle.set(p.style, (byStyle.get(p.style) ?? 0) + 1)
+    console.log(`  ${p.who.padEnd(24)} -> ${p.style.padEnd(6)} (종이: ${p.printed})`)
   }
-  console.log('\n이동 요약')
-  for (const [k, v] of byMove) console.log(`  ${k}: ${v}건`)
-
-  if (BLOCKED) {
-    console.log('\n이 백필은 잠겨 있다. 계산 방향이 반대일 수 있어 파일 머리의 사유를 먼저 읽을 것.')
-    return
-  }
+  console.log('\n표기별')
+  for (const [k, v] of byStyle) console.log(`  ${k}: ${v}건`)
+  console.log(`\n건드리지 않는 것 ${skipped.length}건`)
+  for (const s of skipped.slice(0, 8)) console.log(`  ${s}`)
+  if (skipped.length > 8) console.log(`  ... 외 ${skipped.length - 8}건`)
   if (!apply) { console.log('\n예행이다. 적용하려면 --apply 를 붙인다.'); return }
-  for (const p of plan) await prisma.contractFile.update({ where: { id: p.id }, data: { nameStyle: p.to } })
+  for (const p of plan) await prisma.contractFile.update({ where: { id: p.id }, data: { nameStyle: p.style } })
   console.log(`\n적용 완료 ${plan.length}건`)
 }
-
 main().finally(() => prisma.$disconnect())
