@@ -137,6 +137,14 @@ export type DocBundleLease = {
   depositAmount: number
   parentLeaseTermId: string | null
   roomNo: string | null
+  /**
+   * 단기 계약인가 — '이번 달 확인서 작성' 문을 안 여는 유일한 예외다.
+   *
+   * 단기는 입주월 단일 청구라 발급 화면이 대상월을 무시하고 입주월로 고정한다(회계 오더
+   * 2026-07-27, 스테퍼도 안 그린다). 그러면 링크 라벨 '이번 달'과 도착 화면의 달이 어긋난다.
+   * 종이는 옳게 나오지만 화면이 거짓말을 하는 것이라 문을 안 연다.
+   */
+  isShortTerm?: boolean
 }
 
 /** 조회가 넘기는 보관 파일 한 건. 각 배열은 **최신순**이어야 한다(첫 건이 곧 그 계약의 최신). */
@@ -184,6 +192,15 @@ export type DocBundleInput = {
 const latestFor = (files: DocBundleFile[], leaseTermId: string): DocBundleFile | undefined =>
   files.find(f => f.leaseTermId === leaseTermId)
 
+/**
+ * 납부 확인서가 이번 달 것이 아닐 때의 보조 문구.
+ *
+ * 화면이 이 조각을 알아야 하는 자리가 하나 있다. 문이 닫혀 있을 때(이번 달 미납) 이 문장과
+ * '납부가 확인되면...'을 한 문단으로 합치는데, 그러려면 어느 조각을 걷어낼지 알아야 한다.
+ * 리터럴을 양쪽에 적으면 한쪽만 고쳐지는 날 문단이 겹말이 된다.
+ */
+export const DOC_STALE_NOTE = '이번 달 발급본이 아닙니다'
+
 export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   const { tenantName, leases, contracts, contractVersions = [], rents, deposits, certs, now } = input
   const paidThisMonth = new Set(input.rentPaidLeaseIds ?? [])
@@ -199,7 +216,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
   // 그 종이들의 귀속월은 표시 문자열에만 있고 그것은 운영자가 고칠 수 있어 사실의 근거가 못 된다.
   const nowMonth = kstMonthOf(now)
   const staleNote = (f: DocBundleFile): string | null =>
-    ((f.targetMonth ?? kstMonthOf(f.at)) === nowMonth ? null : '이번 달 발급본이 아닙니다')
+    ((f.targetMonth ?? kstMonthOf(f.at)) === nowMonth ? null : DOC_STALE_NOTE)
 
   const row = (
     docType: DocBundleDocType, leaseTermId: string | null, file: DocBundleFile | undefined, extraNote?: string | null,
@@ -240,7 +257,7 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     const rentRow = row('rent', l.id, rent, rentStale)
     // 문은 '지난달 것뿐'이면서 '이번 달을 받았을' 때만 연다. 미발급 행은 이미 [작성]이 서므로
     // 여기서 다시 열 것이 없다(그 행은 rent 가 없어 rentStale 도 null 이다).
-    if (rentStale) rentRow.canWriteNew = paidThisMonth.has(l.id)
+    if (rentStale && !l.isShortTerm) rentRow.canWriteNew = paidThisMonth.has(l.id)
     rows.push(rentRow)
 
     // 보증금 영수증은 보증금 있는 계약만. 이미 발급된 건이 있으면 계약이 0원이 됐어도 남긴다 —

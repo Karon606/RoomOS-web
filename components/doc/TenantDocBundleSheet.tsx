@@ -29,6 +29,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { BtnLink } from '@/components/ui/Btn'
 import { useDocShare, type DocShareEntry } from '@/lib/useDocShare'
 import { fetchDocBytes } from '@/lib/docBytes'
+import { kstMonthStr } from '@/lib/kstDate'
 import { canShareFiles, photoSaveNeedsShareSheet } from '@/lib/shareFile'
 import { prewarmPdfToPng } from '@/lib/pdfToPng'
 import { fmtDateDot } from '@/lib/fmtDate'
@@ -41,7 +42,7 @@ import { getTenantDocBundle, type TenantDocBundleMail, type TenantDocBundleSms }
 import { TenantDocMailComposeSheet } from '@/components/doc/TenantDocMailComposeSheet'
 import { TenantDocSmsComposeSheet } from '@/components/doc/TenantDocSmsComposeSheet'
 import {
-  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE,
+  DOC_TYPE_FILE_LABEL, DOC_TYPE_TITLE, DOC_STALE_NOTE,
   type DocBundleGroup, type DocBundleRow, type TenantDocBundle,
 } from '@/lib/docBundle'
 import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
@@ -91,7 +92,10 @@ function writeHref(row: DocBundleRow, tenantId: string): string {
     return `/residence-cert/${tenantId}${docFromQuery('tenant', tenantId)}${named ? `&${named}` : ''}`
   }
   const kind = row.docType === 'deposit' ? 'kind=deposit&' : ''
-  return `/rent-receipt/${tenantId}?${kind}${named ? `${named}&` : ''}from=tenant&tenantId=${encodeURIComponent(tenantId)}`
+  // 대상월을 명시한다 — 안 실으면 도착 화면이 주기 계산으로 앵커월을 다시 추론하고, 문을 연
+  // 근거(이번 달 납부)와 화면의 대상월이 어긋날 수 있다. 보증금 영수증은 월 축이 없어 뺀다.
+  const month = row.docType === 'rent' ? `month=${kstMonthStr()}&` : ''
+  return `/rent-receipt/${tenantId}?${kind}${month}${named ? `${named}&` : ''}from=tenant&tenantId=${encodeURIComponent(tenantId)}`
 }
 
 export function TenantDocBundleSheet({ tenantId, preselectLeaseTermId, onClose }: {
@@ -470,6 +474,11 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
   // 판본 줄은 고를 것이 둘 이상이거나, 대표가 없어 무엇을 보낼지 정해야 할 때만 선다.
   // 1부짜리 계약(대다수)은 이 줄이 없어 픽셀이 종전과 같다.
   const showVersions = versions.length > 1 || (versions.length === 1 && !row.driveFileId)
+  // 문이 닫힌 행은 아래 문단이 stale 조각을 제 문장으로 안는다 — 여기서 걷지 않으면 '이번 달'이
+  // 두 줄에 반복된다. note 에 다른 조각이 함께 실릴 수 있어 그 조각 하나만 뺀다.
+  const noteText = row.canWriteNew === false
+    ? (row.note?.split(' · ').filter(x => x !== DOC_STALE_NOTE).join(' · ') || null)
+    : row.note
   const cur = versions.find(v => v.driveFileId === picked.driveFileId)
   const curLabel = cur ? [cur.purposeLabel ?? DEFAULT_CONTRACT_PURPOSE, cur.note].filter(Boolean).join(' · ') : null
   return (
@@ -506,7 +515,30 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
               ? `${fmtDateDot(picked.issuedAt)} ${row.docType === 'contract' ? '서명' : '발급'}`
               : versions.length > 0 ? '보낼 판본을 고르세요' : '아직 만든 서류가 없습니다'}
           </p>
-          {row.note && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{row.note}</p>}
+          {noteText && <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">{noteText}</p>}
+          {/* 이번 달 확인서를 새로 쓰는 문 — 지난달 발급본이 있으면 행이 '발급됨'이라 [보기]만
+              서고 새로 만들 길이 없었다(운영자 2026-09-03). 버튼을 하나 더 두지 않는 이유는
+              위 [보기]와 다투면 320px 에서 제목이 먼저 잘리기 때문이다. 같은 시트의 '판본 바꾸기'가
+              쓰는 보조줄 링크 문법을 그대로 쓴다. [보기]는 남는다 — 지난달 종이도 계속 보고 보낸다.
+              **간격은 감싸는 div 가 준다.** 앵커에 `-my-2` 와 `mt-0.5` 를 함께 얹으면 둘이 같은
+              마진을 다퉈 위쪽 음수 마진이 죽고 링크가 제 보조줄에서 8px 떠 버린다(디자이너 실측
+              2026-09-03). 아래 판본 줄이 이미 그 문법이다. */}
+          {row.canWriteNew === true && (
+            <div className="mt-0.5">
+              <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
+                className="-my-2 inline-flex min-h-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
+                이번 달 확인서 작성
+              </a>
+            </div>
+          )}
+          {/* 문이 닫혀 있을 때 침묵하면 "왜 버튼이 안 뜨냐"가 된다. 부재 이유를 그 자리가 말한다.
+              위 stale 조각은 걷고 한 문단 두 문장으로 —— 안 그러면 '이번 달'이 두 줄에 반복된다.
+              가운뎃점으로 잇지 않는 것은 §29 다(완결 문장 둘은 마침표 두 문장). */}
+          {row.canWriteNew === false && (
+            <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+              {DOC_STALE_NOTE}. 납부가 확인되면 새로 작성할 수 있습니다.
+            </p>
+          )}
           {/* 판본 줄 — 지금 무엇이 나가는지 적고 바꿀 길을 그 자리에 둔다.
               값과 링크가 한 줄을 다투면 320px 에서 **값이** 잘린다. 값이 이 줄의 용건이라
               링크를 아랫줄로 흘리고(flex-wrap), 히트는 정본대로 -my-2 + min-h-44 로 넓힌다. */}

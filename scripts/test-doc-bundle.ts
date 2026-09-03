@@ -221,6 +221,10 @@ const ver = (o: Partial<DocBundleContractVersion> & { contractFileId: string; le
   }
 
   // 납부한 계약만 열린다 — 한 사람이 방을 둘 쓰면 계약마다 답이 다르다.
+  // 단기는 발급 화면이 대상월을 무시하고 입주월로 고정한다 — 라벨 '이번 달'이 거짓이 된다.
+  const sh = build([lease({ id: '402', isShortTerm: true })], stale, paid)
+  eq('작성 문 · 단기 계약에는 안 선다', rentRow(sh).canWriteNew, undefined)
+
   const f = build([lease({ id: '402' }), lease({ id: '601' })],
     { rents: [file('402', '2026-07-20'), file('601', '2026-07-20')] }, ['402'])
   const rows = f.groups.flatMap(g => g.rows).filter(r => r.docType === 'rent')

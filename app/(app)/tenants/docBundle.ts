@@ -69,7 +69,7 @@ export async function getTenantDocBundle(
     prisma.leaseTerm.findMany({
       where: { tenantId, propertyId, status: { in: CONTRACT_ISSUE_STATUSES } },
       select: {
-        id: true, status: true, moveInDate: true, depositAmount: true, parentLeaseTermId: true,
+        id: true, status: true, moveInDate: true, depositAmount: true, parentLeaseTermId: true, isShortTerm: true,
         room: { select: { roomNo: true } },
       },
     }),

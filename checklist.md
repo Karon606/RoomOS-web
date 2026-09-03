@@ -6,8 +6,9 @@
       / 보증금·계약서·실거주 행에는 플래그 없음 / 미발급 행 종전 그대로)
 - [x] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
 - [x] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
-- [ ] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시
-- [ ] A3 웹디자이너 패스
+- [x] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시 · 단기 제외
+- [x] A3 웹디자이너 패스(마진 충돌·문구 병합·단기 반영)
+- [ ] 후속: 두 링크의 focus ring 을 --coral 에서 --tc-text 로(다크 2.78:1, 판본 바꾸기와 한 커밋)
 
 ## B 선납 중복 발급 봉합 (운영자 승인, 스키마)
 - [x] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
