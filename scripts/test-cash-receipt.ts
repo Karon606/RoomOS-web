@@ -8,7 +8,7 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
+import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys } from '../lib/cashReceipt'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -193,6 +193,25 @@ eq('남은 날 라벨', cashReceiptDeadlineLabel(2), '기한 2일 남음')
 eq('오늘 마감 라벨', cashReceiptDeadlineLabel(0), '오늘 마감')
 // '경과'는 이 앱의 알림 어휘 정본이다 — urgencyDaysOf 가 이 낱말로 긴급 존을 가른다.
 eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
+
+// ── 끈 건 중 살아 있는 키 ───────────────────────────────────────
+// 홈의 "N건 끔"이 저장된 끈 키를 그냥 셌다. 발행했거나 기준액 미만인 건은 되살려도 알림줄로
+// 안 돌아오는데도 숫자에 들어 라벨이 '다시 켜기'의 효과보다 부풀었다(신고 C-1).
+{
+  const g = (amount: number) => ({ amount })
+  const groups = new Map([
+    ['a|2026-08-01|현금', g(500000)],
+    ['b|2026-08-02|현금', g(500000)],
+    ['c|2026-08-03|현금', g(1000)],
+  ])
+  const issued = new Set(['b|2026-08-02|현금'])
+  const muted = ['a|2026-08-01|현금', 'b|2026-08-02|현금', 'c|2026-08-03|현금', 'z|2026-07-01|현금']
+  eq('살아 있는 키만 남는다', liveMutedReceiptKeys(muted, groups, issued).join(','), 'a|2026-08-01|현금')
+  eq('발행된 키는 죽었다', liveMutedReceiptKeys(['b|2026-08-02|현금'], groups, issued).length, 0)
+  eq('기준액 미만은 죽었다', liveMutedReceiptKeys(['c|2026-08-03|현금'], groups, issued).length, 0)
+  // 조회창 밖이라 그룹에 없는 키 — 되살려도 그릴 줄이 없으니 세면 안 된다.
+  eq('조회창 밖 키는 죽었다', liveMutedReceiptKeys(['z|2026-07-01|현금'], groups, issued).length, 0)
+}
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
 if (fail > 0) process.exit(1)

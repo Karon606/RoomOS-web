@@ -169,9 +169,34 @@ for (const file of [SECTION, WIDGET]) {
   }
 }
 
+// ⓙ 수납 정보에 우산 라벨이 선다. 운영자는 이 절차를 '퇴실 정산'으로 배우는데(퇴실 처리 모달·
+//    팝업 제목) 퇴실 완료자의 수납 정보에는 그 단어가 한 글자도 없어 카드를 못 알아봤다(신고 B-1).
+//    일할 위젯이 거주중·퇴실예정 전용이라 퇴실 완료 화면에서 그 이름이 증발하는 것이 뿌리다.
+{
+  const BODY = 'components/entity-modal/bodies/PaymentBody.tsx'
+  const b = read(BODY)
+  if (!/>퇴실 정산</.test(b)) {
+    violations.push(`${BODY} — 퇴실 맥락 우산 라벨 '퇴실 정산'이 없다. 운영자가 배운 이름이 이 화면에서만 증발한다.`)
+  }
+}
+
+// ⓚ 정산 카드의 조회가 실패를 삼키지 않는다. catch 가 없으면 퇴실 완료 계약은 에러도 재시도도
+//    없이 영구 미표시가 된다 — 퇴실자에게 정산 카드가 통째로 사라지는 길이다.
+{
+  const PANEL = 'components/entity-modal/widgets/RentSettlementPanel.tsx'
+  const p = read(PANEL)
+  // 정의부(fetchPanelData(leaseTermId: string, …))가 아니라 호출부를 본다 — 타입이 없는 쪽이다.
+  const at = p.search(/fetchPanelData\(leaseTermId,/)
+  if (at < 0) {
+    violations.push(`${PANEL} — fetchPanelData 호출을 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다.`)
+  } else if (!/\.catch\s*\(/.test(p.slice(at, at + 400))) {
+    violations.push(`${PANEL} — 정산 조회에 catch 가 없다. 실패하면 퇴실 완료 계약의 카드가 조용히 사라진다.`)
+  }
+}
+
 if (violations.length) {
   console.error('퇴실 정산 갈래 감지망 위반')
   for (const v of violations) console.error('  ' + v)
   process.exit(1)
 }
-console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·확인창 판정 정본·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금')
+console.log('퇴실 정산 갈래 감지망 통과 — 서버 defaultPick·두 화면 정본 공유·세 화면 확인창 연결·확인창 판정 정본·환불 없음 선납·자리별 기본 갈래·환불 확정 위젯 잠금·수납 정보 우산 라벨·조회 실패 표시')
