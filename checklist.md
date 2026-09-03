@@ -17,7 +17,7 @@
 - [x] B2 test-doc-bundle 선납 케이스(8월에 9월분 발급 → 9월에 stale 아님)
 
 ## C 입주자별 발급 이력 목록 (요청 2 최소판)
-- [ ] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts
+- [x] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts (13 통과, 역주입 3종)
 - [ ] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
 - [ ] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' 아래 · 행은 [보기]만
 - [ ] C3 웹디자이너 패스
