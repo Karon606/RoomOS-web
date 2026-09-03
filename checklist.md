@@ -26,8 +26,8 @@ knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 
 - [x] 웹디자이너 패스(지적 5건 반영)
 
 ## A4 chore(감지망·지식)
-- [ ] verify-money-consistency 규칙 20 계열에 경계 정본·muteKeys·고정 창 금지
-- [ ] knowledge/cash-receipt-refund 발급 기한 절에 이번 판정 적립
+- [x] scripts/check-receipt-alert-axis 신설(verify:fast) + 역주입 5종
+- [x] knowledge/cash-receipt-refund 발급 기한 절에 이번 판정 적립
 
 ## B1 fix(보증금): 반환 정산 기록 폼을 퇴실 처리 화면과 같은 문법으로
 - [ ] 보증금 카드 폼에 SegmentedControl(반환함·나중에·반환 안 함) — 퇴실 폼 정본
@@ -38,4 +38,4 @@ knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 
 - [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
 
 ## 문서
-- [ ] Work_log · knowledge(cash-receipt-refund) · INDEX
+- [x] Work_log · knowledge(cash-receipt-refund) · INDEX
