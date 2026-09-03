@@ -1,40 +1,43 @@
-# 서류 작성 문 + 발급 이력 목록 + 몰취 날짜 축 (2026-09-03, 운영자 승인)
+# A-4 사진 인식 서버 액션 한도 봉합 (2026-09-03, 운영자 승인 "본체 + 곁가지 전부")
 
-## A 납부확인서 새 달 작성 문 (요청 1)
-- [x] A1 lib/docBundle: 입력에 rentPaidLeaseIds, rent 행에 작성 가능 플래그 파생
-- [x] A1 test-doc-bundle 케이스(stale+납부=문 열림 / stale+미납=닫힘 / 이번 달 발급본=stale 없음
-      / 보증금·계약서·실거주 행에는 플래그 없음 / 미발급 행 종전 그대로)
-- [x] A2 실입금 존재 술어를 공유 헬퍼로(actions.ts·integrityAudit·docBundle 조회가 같은 것 import)
-- [x] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
-- [x] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시 · 단기 제외
-- [x] A3 웹디자이너 패스(마진 충돌·문구 병합·단기 반영)
-- [x] 포커스 링 전수 51곳(--coral·--persimmon → --tc-text) + check-focus-ring-token 신설·등록
+원인. 서버 액션 인자를 되읽는 React 직렬화기(decodeReply)가 인자 전체의 직렬화 슬롯을
+1,000,000 개로 제한한다. 문자열은 1자가 1슬롯이라 base64 사진은 정확히 1,000,000 자,
+원본으로 약 730KB 에서 "Maximum array nesting exceeded" 로 터진다. 실측 999,023 통과 /
+1,000,000 실패. FormData 에 실은 File 은 슬롯을 그렇게 안 먹어 6MB 도 통과.
 
-## B 선납 중복 발급 봉합 (운영자 승인, 스키마)
-- [x] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
-- [x] B1 발급 저장 경로가 귀속월을 적는다
-- [x] B2 stale 판정을 발급일에서 귀속월로(NULL 이면 종전대로 발급일 폴백)
-- [x] B2 test-doc-bundle 선납 케이스(8월에 9월분 발급 → 9월에 stale 아님)
+## A 본체 — 이미지 바이트는 문자열 인자로 싣지 않는다
+- [ ] A1 lib/ocrImage: 반환 {b64,mime} -> {file,mime}, toDataURL -> toBlob, ocrForm() 신설
+- [ ] A2 lib/ocrImageServer 신설(readOcrImageForm, 'use server' 붙이지 않음)
+- [ ] A3 액션 4개 시그니처 FormData 로(tenants 2, floor-plan 1, finance 1)
+- [ ] A4 호출부 4곳 교체(OcrToolbar 2, FloorPlanEditor 1, FinanceClient 1)
+- [ ] A5 서명 상한 1_400_000 -> 900_000(프레임워크 문보다 낮춰 사람 말 오류 보장)
+- [ ] A6 fileToOcrImage catch 범위 축소(createImageBitmap 실패만 폴백으로)
+- [ ] A7 폴백 mime 확장자 추정(빈 file.type 이 HEIC 를 image/jpeg 로 라벨링하는 것 차단)
 
-## C 입주자별 발급 이력 목록 (요청 2 최소판)
-- [x] C1 lib/docHistory.ts 순수 병합·정렬 + test-doc-history.ts (13 통과, 역주입 3종)
-- [x] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
-- [x] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' **다음 형제** · 행은 [보기]만
-- [x] C3 웹디자이너 패스(자리 이동·발행번호 라벨)
-- [x] 보조줄 tnum 5곳 · 접힘 헤더 aria-expanded 11곳(클래스 전수) · maxRecordable 0 세그먼트 숨김
+## B 영어 유출 봉합 — 다섯 자리
+- [ ] B1 humanError() 한 벌(lib/saveStatus, 한글 음절 판정)
+- [ ] B2 적용 5곳(OcrToolbar 2, FloorPlanEditor 1, FinanceClient 1, PendingReceiptSection 1)
+- [ ] B3 withSave catch 도 같은 문(전 앱으로 새던 자리)
+
+## C 곁가지 (운영자 승인)
+- [ ] C1 FinanceClient 모순 토스트 쌍 + 첨부 안 된 사진 미리보기 잔류
+- [ ] C2 OcrToolbar 버튼 스피너 + 너비 고정(가이드 §10)
+- [ ] C3 FloorPlanEditor 문구 둘(§29 "~해보세요" · 구어체)
 
 ## D 감지망
-- [x] check-doc-write-gate.mjs(축 ⓐ~ⓓ, 역주입 6종)
+- [ ] D1 check-upload-hygiene 프롱 ⓓ 서버 시그니처 base64:string 금지
+- [ ] D2 프롱 ⓔ 호출부 첫 인자 ocrForm( 강제
+- [ ] D3 프롱 ⓕ lib/ocrImage 에 toDataURL·readAsDataURL 금지
+- [ ] D4 역주입 3종 exit 1 과 걸린 건수까지 확인
+- [ ] D5 test-ocr-image 핀 4개 추가
 
-## E 몰취 날짜 축 (운영자 승인, 패널 권고대로)
-- [x] E1 recordDepositReturn 미래 날짜 가드
-- [x] E1 두 폼 기본값을 퇴실일로, 라벨 '정산일' 통일, 카드 표시 '{날짜} 정산'
-- [x] E1 TenantClient 확인창 귀속월 버그(오늘의 달로 계산하는데 저장은 고른 날짜)
-- [x] E2 check-deposit-return-date-axis.mjs + verify:db 월 이탈 축
-- [x] E3 backfill 적용(3건, 달 이동 0건이라 월 매출 무변동) + 되돌림 근거 파일
+## E 주석 정정 (사실 오류)
+- [ ] E1 lib/ocrImage 머리 주석("10MB 가 원인" -> 슬롯 1,000,000)
+- [ ] E2 OCR_FALLBACK_MAX_BYTES 근거 문장
+- [ ] E3 PendingReceiptSection:86 주석
 
 ## 게이트 (커밋마다)
-- [x] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드 · iCloud 사본 · push
+- [ ] tsc 0 · verify:fast · eslint 신규 0 · 빌드 · iCloud 사본 · push
 
-## 문서
-- [x] Work_log · knowledge(doc-issue-history) · INDEX
+## 다음 (승인됨, 이번 작업 뒤)
+- [ ] A-2 계약서 nameStyle 태그 백필 예행 후 보고
