@@ -191,7 +191,8 @@ eq('임박 폭 0 에서 오늘 마감은 건별', cashReceiptAlertSlot(0, 0), 'd
 // 라벨 — 목록 둘째 줄과 알림 상세가 같은 말을 쓴다.
 eq('남은 날 라벨', cashReceiptDeadlineLabel(2), '기한 2일 남음')
 eq('오늘 마감 라벨', cashReceiptDeadlineLabel(0), '오늘 마감')
-eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 지남')
+// '경과'는 이 앱의 알림 어휘 정본이다 — urgencyDaysOf 가 이 낱말로 긴급 존을 가른다.
+eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
 if (fail > 0) process.exit(1)

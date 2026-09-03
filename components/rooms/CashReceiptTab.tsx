@@ -22,7 +22,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { kstYmdStr } from '@/lib/kstDate'
-import { depositCashReceiptWarning, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
+import { depositCashReceiptWarning, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, CASH_RECEIPT_OBLIGATION_MIN } from '@/lib/cashReceipt'
 import { pushToast, trackSave } from '@/lib/saveStatus'
 import { batchSetCashReceipts, batchUnsetCashReceipts, muteReceiptAlert, unmuteReceiptAlert } from '@/app/(app)/rooms/actions'
 
@@ -53,6 +53,9 @@ export function CashReceiptTab({
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [issuedDate, setIssuedDate] = useState(kstYmdStr())
+  // 발급 기한 표시 기준일. kstYmdStr 은 Intl Asia/Seoul 이라 서버·기기가 같은 값을 낸다
+  // (런타임 로컬 new Date() 는 KST 00~09 시에 하루가 갈린다, lib/kstDate 정본).
+  const todayYmd = kstYmdStr()
   // 끈 입금은 기본 접힘 — 끈 것은 조용한 것이 정상이다(홈 '끈 알림'과 같은 처방).
   const [mutedOpen, setMutedOpen] = useState(false)
   const [pending, startTransition] = useTransition()
@@ -142,6 +145,14 @@ export function CashReceiptTab({
                 <ul className="space-y-1.5">
                   {candidates.map(c => {
                     const extra = [c.deposit > 0 ? `보증금 ${fmtWon(c.deposit)} 포함` : '', c.cleaning > 0 ? `청소비 ${fmtWon(c.cleaning)} 포함` : ''].filter(Boolean)
+                    // 발급 기한 — 홈 알림이 조르는 건(의무 기준액 이상)에만 말한다. 의무가 없는 건에
+                    // 기한을 말하면 없는 일을 시킨다(끄기 버튼과 같은 게이트).
+                    // 배지가 아니라 메타 텍스트인 이유는 오늘 후보 대부분이 기한을 넘겨 있어서다 —
+                    // 목록 전체가 틴트 칩으로 도배되면 정작 급한 건이 안 도드라진다(디자이너 판정).
+                    const dLeft = c.amount >= CASH_RECEIPT_OBLIGATION_MIN ? cashReceiptDaysLeft(c.payYmd, todayYmd) : null
+                    // 색은 홈 알림과 같은 문턱에서 선다. 갓 들어온 입금(3일 이상 남음)까지 경고색을
+                    // 입히면 최근 입금이 많은 달이 amber 로 도배되고, 두 화면의 긴급 문턱도 어긋난다.
+                    const dSlot = dLeft === null ? null : cashReceiptAlertSlot(dLeft)
                     return (
                       <li key={keyOf(c)}>
                         <label className={`flex items-center gap-2.5 rounded-sm px-3 py-2.5 bg-[var(--canvas)] ${selectMode ? 'cursor-pointer' : ''}`}>
@@ -155,6 +166,9 @@ export function CashReceiptTab({
                             </span>
                             <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep">
                               입금 {fmtMD(c.payYmd)} · {c.payMethod}{extra.length > 0 ? ` · ${extra.join(' · ')}` : ''}
+                              {dLeft !== null && (
+                                <span style={dSlot === 'none' ? undefined : { color: dLeft < 0 ? 'var(--danger-fg)' : 'var(--warning-fg)' }}> · {cashReceiptDeadlineLabel(dLeft)}</span>
+                              )}
                             </span>
                             {/* 알림 끄기 — 발행 여부는 운영자 판단 영역이라 끌 수 있어야 한다(운영자 지시
                                 2026-09-01). 끈 건은 아래 접힌 목록에 남아 언제든 다시 켠다.
@@ -215,7 +229,7 @@ export function CashReceiptTab({
                         <span className="min-w-0 flex-1">
                           {/* 흐림은 텍스트에만 — 행 전체에 걸면 다시 켜는 버튼까지 흐려진다. */}
                           <span className="block text-sm font-semibold text-[var(--warm-dark)] truncate opacity-80">{fmtRoomNo(c.roomNo)} {c.tenantName}</span>
-                          <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep opacity-80">입금 {fmtMD(c.payYmd)} · {c.payMethod} · 알림 끔 {fmtMD(c.mutedAt)}</span>
+                          <span className="block text-[0.65625rem] text-[var(--warm-muted)] break-keep opacity-80">입금 {fmtMD(c.payYmd)} · {c.payMethod} · 알림 끔 {fmtMD(c.mutedAt)}{c.amount >= CASH_RECEIPT_OBLIGATION_MIN ? ` · ${cashReceiptDeadlineLabel(cashReceiptDaysLeft(c.payYmd, todayYmd))}` : ''}</span>
                           {canEdit && (
                             <span className="flex gap-1.5">
                               <RowActionBtn tone="accent" disabled={pending}

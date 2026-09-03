@@ -14,16 +14,16 @@ knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 
 - [x] test-cash-receipt 경계 케이스(cashReceiptDaysLeft 를 아직 한 건도 안 건다)
 
 ## A2 feat(홈 알림): 기한 지난 건은 요약 한 줄로 접는다
-- [ ] due 를 임박(건별) · 감경 창(건별) · 지남(요약 한 줄)로 가름
-- [ ] 요약 줄 muteKeys 는 건별 키 전부(receipt:summary 합성 키 금지, 2026-09-02 판정)
-- [ ] 조회창을 35일에서 인수 컷오프(prevOwnerCutoffDate ?? acquisitionDate)로 확대
-- [ ] 건별 줄 제목에 '임박' 한정어(두 줄이 형제로 읽히게)
-- [ ] crMutedSummary 는 무변경(다른 그룹에 서므로 나란히 안 보인다)
+- [x] due 를 임박(건별) · 감경 창(건별) · 지남(요약 한 줄) **세 줄**로 가름(디자이너 지적 1)
+- [x] 요약 줄 muteKeys 는 건별 키 전부(receipt:summary 합성 키 금지, 2026-09-02 판정)
+- [x] 조회창을 35일에서 인수 컷오프(prevOwnerCutoffDate ?? acquisitionDate)로 확대
+- [x] 건별 줄 제목에 '임박' 한정어 · 알림 끄기 라벨에 건수(디자이너 지적 7)
+- [x] crMutedSummary 는 무변경(다른 그룹에 서므로 나란히 안 보인다)
 
 ## A3 design(현금영수증 탭): 기한 상태를 텍스트로
-- [ ] 후보·끈 목록 둘째 줄에 '· 발급 기한 N일 지남'(의무 기준액 이상만)
-- [ ] 배지 금지(28/35 가 지남이라 목록이 도배된다) · 지남 --danger-fg, 임박 --warning-fg
-- [ ] 웹디자이너 패스
+- [x] 후보·끈 목록 둘째 줄에 기한 상태(의무 기준액 이상만)
+- [x] 배지 금지 · 색 문턱을 홈 알림과 같은 slot 으로(디자이너 지적 4)
+- [x] 웹디자이너 패스(지적 5건 반영)
 
 ## A4 chore(감지망·지식)
 - [ ] verify-money-consistency 규칙 20 계열에 경계 정본·muteKeys·고정 창 금지

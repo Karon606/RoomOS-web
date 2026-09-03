@@ -284,11 +284,21 @@ export function cashReceiptAlertSlot(daysLeft: number, dueWithin = 2): CashRecei
   return graceLeft >= 0 ? 'grace' : 'overdue'
 }
 
-/** 이 건의 기한 상태를 사람 말로. 목록 둘째 줄과 알림 상세가 같은 말을 쓴다. */
+/**
+ * 이 건의 기한 상태를 사람 말로. 목록 둘째 줄과 알림 상세가 같은 말을 쓴다.
+ *
+ * 지난 것을 '경과'라 부르는 것은 이 앱의 알림 어휘 정본이다(미납·퇴실·보증금 반환 대기가 전부
+ * 그 말을 쓰고, 홈의 긴급도 판정 urgencyDaysOf 가 그 낱말을 보고 긴급 존을 가른다). '지남'으로
+ * 쓰면 같은 사실이 화면마다 다른 말이 되고 긴급 판정에서도 빠진다.
+ *
+ * **문자열이 '기한'으로 시작하는 것은 의도다.** urgencyDaysOf 의 parseInt 가 선두에서 숫자를 못
+ * 찾아 긴급도가 −1 로 접히고, 그래서 이 줄은 긴급 존 안에서 미납(−N일)보다 아래에 선다.
+ * '퇴실 N일 경과'와 같은 클래스다. 숫자를 앞으로 옮기면 148일 경과 줄이 미납 위로 뛰어오른다.
+ */
 export function cashReceiptDeadlineLabel(daysLeft: number): string {
   if (daysLeft > 0) return `기한 ${daysLeft}일 남음`
   if (daysLeft === 0) return '오늘 마감'
-  return `기한 ${-daysLeft}일 지남`
+  return `기한 ${-daysLeft}일 경과`
 }
 
 // ── 보증금 포함 발행 경고 ─────────────────────────────────────

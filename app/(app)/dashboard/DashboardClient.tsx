@@ -748,7 +748,9 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   } finally { release() }
                 })().catch(() => { setMutePending(false); pushToast('error', '처리 중 통신 오류가 발생했습니다') })
               }}>
-              {mutePending ? '처리 중…' : '이 알림 끄기'}
+              {/* 합성 줄은 한 번에 여러 건을 끈다 — 규모를 라벨이 말한다(§14 영향 고지).
+                  현금영수증 요약 줄이 172건을 대표할 수 있어 '이 알림'만으로는 무엇이 꺼지는지 모른다. */}
+              {mutePending ? '처리 중…' : (alert.muteKeys && alert.muteKeys.length > 1 ? `알림 ${alert.muteKeys.length}건 끄기` : '이 알림 끄기')}
             </Btn>
           )}
         </div>

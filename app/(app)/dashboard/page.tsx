@@ -10,7 +10,7 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptDaysLeft, isCashReceiptEligible } from '@/lib/cashReceipt'
+import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -1831,19 +1831,24 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   let crMutedSummary: { count: number; link: string } | null = null
   try {
     const crTodayYmd = kstYmdStr()
-    const lookFrom = new Date(Date.parse(`${crTodayYmd}T00:00:00Z`) - 35 * 86400000)
+    // 조회창은 인수 컷오프까지 넓힌다(운영자 승인 2026-09-03). 종전 고정 35일은 건별로 나열하던
+    // 시절에는 목록 소음을 줄이는 무해한 상한이었다. 그런데 아래 요약 줄은 "기한 지난 미발행
+    // 전부"를 자칭하는 숫자라, 창이 있으면 **발급 없이도 시간이 지나면 숫자가 줄어든다.**
+    // 가장 오래 묵어 가산세 위험이 큰 건부터 화면에서 빠지는 구조라 과소 집계가 이 줄의 최악
+    // 실패 모드다. 실측으로 창 밖에 148건 5,181만원이 있었다.
+    const lookFrom = acquisitionDate ?? undefined
     const [crPays, crIncomes, crLines, crMuteProp] = await Promise.all([
       prisma.paymentRecord.findMany({
-        where: { propertyId, isPrevOwner: false, isBillingAdjust: false, payDate: { gte: lookFrom }, actualAmount: { gt: 0 } },
+        where: { propertyId, isPrevOwner: false, isBillingAdjust: false, ...(lookFrom ? { payDate: { gte: lookFrom } } : {}), actualAmount: { gt: 0 } },
         select: { leaseTermId: true, payDate: true, payMethod: true, actualAmount: true,
                   tenant: { select: { name: true } }, leaseTerm: { select: { room: { select: { roomNo: true } } } } },
       }),
       prisma.extraIncome.findMany({
-        where: { propertyId, category: CLEANING_FEE_CATEGORY, date: { gte: lookFrom }, leaseTermId: { not: null } },
+        where: { propertyId, category: CLEANING_FEE_CATEGORY, ...(lookFrom ? { date: { gte: lookFrom } } : {}), leaseTermId: { not: null } },
         select: { leaseTermId: true, date: true, payMethod: true, amount: true },
       }),
       prisma.cashReceipt.findMany({
-        where: { propertyId, deletedAt: null, payDate: { gte: lookFrom } },
+        where: { propertyId, deletedAt: null, ...(lookFrom ? { payDate: { gte: lookFrom } } : {}) },
         select: { leaseTermId: true, payDate: true, payMethod: true },
       }),
       prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } }),
@@ -1872,11 +1877,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (g) g.amount += e.amount   // 발행 단위에 든 청소비 몫 — 홀로는 결제 단위를 못 이룬다
     }
     const crIssued = new Set(crLines.map(l => crKey(l.leaseTermId, l.payDate, l.payMethod)))
-    const due = [...crGroups.entries()]
+    // 자리 판정은 lib/cashReceipt 의 순수 함수 하나다 — 종전 `left <= 2` 인라인이 자리 넷으로
+    // 늘면서 화면마다 갈릴 자리가 됐다.
+    const crAll = [...crGroups.entries()]
       .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
-      .map(([k, g]) => ({ ...g, key: k, left: cashReceiptDaysLeft(g.payYmd, crTodayYmd) }))
-      .filter(g => g.left <= 2)
+      .map(([k, g]) => {
+        const left = cashReceiptDaysLeft(g.payYmd, crTodayYmd)
+        return { ...g, key: k, left, slot: cashReceiptAlertSlot(left) }
+      })
       .sort((a, b) => a.left - b.left)
+    // 자리마다 줄이 하나다. 둘을 합쳐 보니 제목과 라벨이 서로 반대말을 했다 — 감경 건은 left 가
+    // 늘 음수라 정렬상 최악이 되어 '임박' 제목 아래 '경과' 라벨을 세웠다(디자이너 지적 2026-09-03).
+    const due = crAll.filter(g => g.slot === 'due')
+    // 지났어도 자진발급 감경 창(받은 날부터 10일) 안인 건. "이미 늦었다"가 아니라 "지금 하면
+    // 가산세가 절반"이라 아직 움직일 값어치가 있어 건별로 남긴다(운영자 결정 2026-09-03).
+    const crGrace = crAll.filter(g => g.slot === 'grace')
+    // 접는 것 — 감경 창도 지난 건. 발급 의무가 사라지는 것은 아니라 요약 한 줄로 계속 조른다.
+    const crOverdue = crAll.filter(g => g.slot === 'overdue')
     // 끈 건 합성 줄의 링크 — 가장 최근 입금이 속한 달로 보낸다(그 달 탭에 끈 목록이 선다).
     if (crMuted.size > 0) {
       const ymds = [...crMuted].map(k => k.split('|')[1] ?? '').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
@@ -1888,17 +1905,69 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const total = due.reduce((sum, g) => sum + g.amount, 0)
       alertItems.push({
         category:  'receipt',
-        text:      `현금영수증 발급 기한 ${due.length}건 (${fmtWon(total)})`,
+        // '임박' 한정어 — 아래 두 줄과 형제로 읽혀야 한다. 이 줄은 아직 기한 안이라 라벨에
+        // '경과'가 나올 수 없다(due 자리의 정의).
+        text:      `현금영수증 발급 기한 임박 ${due.length}건 (${fmtWon(total)})`,
         // 요약 한 칸('receipt:summary')으로 끄면 다음 달 기한까지 영구 침묵한다 — 지금 센
         // 건만 건별로 끈다(탭의 끄기와 같은 축, 디자이너 판정 2026-09-02).
         muteKeys:  due.map(g => `receipt:${g.key}`),
         link:      `/rooms?tab=receipt&month=${due[0].payYmd.slice(0, 7)}`,
         dotColor:  'var(--danger-fg)',
-        timeLabel: worst < 0 ? `기한 ${-worst}일 경과` : worst === 0 ? '오늘 마감' : `기한 ${worst}일 남음`,
+        timeLabel: cashReceiptDeadlineLabel(worst),
         detail:    `10만원 이상 현금·계좌이체 수취는 받은 날부터 5일 안에 발급해야 합니다(미발급 가산세 20%).\n`
-          + due.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${g.left < 0 ? `${-g.left}일 경과` : g.left === 0 ? '오늘 마감' : `${g.left}일 남음`}`).join('\n')
+          + due.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
           + (due.length > 10 ? `\n외 ${due.length - 10}건` : ''),
         sortKey:   worst,
+      })
+    }
+    // ── 자진발급 감경 창 (기한은 지났지만 아직 절반) ─────────────────
+    //
+    // 이 자리를 따로 세우는 이유는 제목이 사실과 맞아야 하기 때문이다. '임박'에 섞으면 제목은
+    // 임박인데 라벨은 경과가 되고, '기한 지남'에 섞으면 아직 움직일 값어치가 있는 건이 요약으로
+    // 접혀 안 보인다. 코드가 이미 세 자리로 갈라 놓은 것을 화면이 그대로 따른다.
+    if (crGrace.length > 0) {
+      const worst = crGrace[0].left
+      const total = crGrace.reduce((sum, g) => sum + g.amount, 0)
+      alertItems.push({
+        category:  'receipt',
+        text:      `현금영수증 자진발급 감경 창 ${crGrace.length}건 (${fmtWon(total)})`,
+        muteKeys:  crGrace.map(g => `receipt:${g.key}`),
+        link:      `/rooms?tab=receipt&month=${crGrace[0].payYmd.slice(0, 7)}`,
+        dotColor:  'var(--danger-fg)',
+        timeLabel: cashReceiptDeadlineLabel(worst),
+        detail:    `기한(받은 날부터 5일)은 지났지만 받은 날부터 10일 안에 자진 발급하면 가산세가 줄 수 있습니다(20%에서 10%, 소득세법 제81조의9).\n`
+          + crGrace.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
+          + (crGrace.length > 10 ? `\n외 ${crGrace.length - 10}건` : ''),
+        sortKey:   worst,
+      })
+    }
+    // ── 기한 지난 미발행 요약 한 줄 (운영자 결정 2026-09-03) ─────────
+    //
+    // 종전에는 이 건들이 전부 건별로 서서 긴급 존을 도배했다(오늘 28건). 그러면 미납·보증금
+    // 반환 대기 같은 다른 긴급이 묻힌다. 접되 **사라지지는 않는다** — 기한이 지나도 발급 의무는
+    // 그대로이고, 운영자 본인이 2026-08-22 하루에 18건(7월 입금분 포함)을 일괄 발행한 적이 있다.
+    // 그래서 제목에 건수와 합계를 늘 세우고, 묵을수록 timeLabel 의 숫자가 자란다.
+    if (crOverdue.length > 0) {
+      const oldest = -crOverdue[0].left
+      const total = crOverdue.reduce((sum, g) => sum + g.amount, 0)
+      const months = [...new Set(crOverdue.map(g => g.payYmd.slice(0, 7)))].sort()
+      alertItems.push({
+        category:  'receipt',
+        text:      `기한 지난 현금영수증 미발행 ${crOverdue.length}건 (${fmtWon(total)})`,
+        // 요약 한 칸으로 끄지 않는다 — 그러면 다음 달 기한까지 영구 침묵한다. 지금 센 건의
+        // 건별 키를 전부 실어 새로 넘어가는 건이 저절로 다시 뜨게 한다(디자이너 판정 2026-09-02).
+        muteKeys:  crOverdue.map(g => `receipt:${g.key}`),
+        link:      `/rooms?tab=receipt&month=${crOverdue[0].payYmd.slice(0, 7)}`,
+        dotColor:  'var(--danger-fg)',
+        timeLabel: `기한 최장 ${oldest}일 경과`,
+        // 앱이 단정하지 않는다. 지연발급의 실제 가산세 위험은 세무사 확인 대상으로 열려 있어
+        // 조문 사실까지만 말한다(knowledge/cash-receipt-refund).
+        detail:    `기한(받은 날부터 5일)이 지나도 발급 의무는 사라지지 않습니다.\n`
+          + `받은 날부터 10일 안에 자진 발급하면 가산세가 줄 수 있습니다(20%에서 10%, 소득세법 제81조의9).\n`
+          + (months.length > 1 ? `입금이 ${months[0].replace('-', '.')}부터 ${months[months.length - 1].replace('-', '.')}까지 걸쳐 있습니다. 탭은 달 단위라 달을 바꿔 확인해 주세요.\n` : '')
+          + crOverdue.slice(0, 10).map(g => `${fmtRoomNo(g.roomNo)} ${g.name} · 입금 ${g.payYmd.slice(5).replace('-', '/')} · ${fmtWon(g.amount)} · ${cashReceiptDeadlineLabel(g.left)}`).join('\n')
+          + (crOverdue.length > 10 ? `\n외 ${crOverdue.length - 10}건` : ''),
+        sortKey:   crOverdue[0].left,
       })
     }
   } catch { /* 조회 실패 시 알림만 생략 — 홈 자체는 선다 */ }
