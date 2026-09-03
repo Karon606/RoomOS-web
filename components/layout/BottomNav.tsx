@@ -121,7 +121,7 @@ export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?:
             href={linkHref}
             onClick={handleNavClick(href)}
             /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset active:bg-[var(--coral)]/10"
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset active:bg-[var(--coral)]/10"
             style={{
               color: showHighlight ? 'var(--coral)' : 'var(--warm-muted)',
               background: isPending ? 'var(--coral-pale, rgba(184,80,66,0.08))' : undefined,
@@ -139,7 +139,7 @@ export default function BottomNav({ onMenuOpen, role = 'OWNER' }: { onMenuOpen?:
         type="button"
         onClick={onMenuOpen}
         aria-label="전체 메뉴"
-        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
         style={{ color: menuActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
       >
         <svg {...ico}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>

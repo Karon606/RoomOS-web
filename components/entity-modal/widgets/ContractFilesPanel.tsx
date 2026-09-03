@@ -553,7 +553,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
                         번호가 없는 구본·스캔본은 형제 화면(/contracts)과 같은 규칙으로 파일명을 남긴다 —
                         2부가 나란히 서면 둘 다 "이름 · 날짜" 라 이 줄이 없으면 어느 것을 지우는지 알 수 없다. */}
                     {(needsName || purposeLabel(f)) && (
-                      <p className="mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
+                      <p className="num mt-0.5 flex max-w-full items-baseline gap-1 truncate text-[0.6875rem] text-[var(--warm-muted)]">
                         {f.contractNo ? (
                           <button type="button" onClick={() => setDetailId(f.id)}
                             className="max-w-full truncate hover:text-[var(--coral)] transition-colors">
@@ -595,7 +595,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
           삭제 직후 토스트가 사라진 뒤에도 되살릴 길이 여기 남는다(§16). 0부면 줄 자체를 안 그린다. */}
       {!loading && deletedFiles.length > 0 && (
         <div className="pt-1">
-          <button type="button" onClick={() => setShowDeleted(v => !v)}
+          <button type="button" onClick={() => setShowDeleted(v => !v)} aria-expanded={showDeleted}
             className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
             {showDeleted ? '삭제한 계약서 숨기기' : `삭제한 계약서 ${deletedFiles.length}부 보기`}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showDeleted ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
@@ -684,7 +684,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
       {!loading && voidedFiles.length > 0 && (
         <div className="pt-1">
           {/* -my-2 min-h-[44px] 는 보이는 크기를 그대로 두고 히트만 넓히는 정본 수법(RowActionBtn). */}
-          <button type="button" onClick={() => setShowVoided(v => !v)}
+          <button type="button" onClick={() => setShowVoided(v => !v)} aria-expanded={showVoided}
             className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
             {showVoided ? '폐기한 계약서 숨기기' : `폐기한 계약서 ${voidedFiles.length}부 보기`}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>

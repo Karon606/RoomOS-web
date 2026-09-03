@@ -167,7 +167,7 @@ export default function MonthSelector({
     >
       <button
         onClick={() => changeMonth(-1)}
-        className="w-11 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-11 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
         style={{ color: 'var(--warm-mid)' }}
         aria-label="이전 달"
       >
@@ -191,7 +191,7 @@ export default function MonthSelector({
       <button
         onClick={() => changeMonth(1)}
         disabled={atCurrentMonth}
-        className="w-11 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="w-11 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
         style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
         aria-label="다음 달"
       >
@@ -200,7 +200,7 @@ export default function MonthSelector({
       {!isCurrent && (
         <button
           onClick={jumpToday}
-          className="px-2.5 flex items-center text-xs font-bold transition-colors border-l focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/40 focus-visible:ring-inset"
+          className="px-2.5 flex items-center text-xs font-bold transition-colors border-l focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/40 focus-visible:ring-inset"
           style={{ color: 'var(--on-solid)', background: 'var(--persimmon)', borderColor: 'var(--persimmon)' }}
           aria-label="이번 달로"
         >
@@ -249,7 +249,7 @@ function MonthPicker({
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={() => setYear(y => y - 1)}
-          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
           style={{ color: 'var(--warm-mid)' }}
           aria-label="이전 연도"
         >
@@ -258,7 +258,7 @@ function MonthPicker({
         <span className="font-semibold text-sm" style={{ color: 'var(--warm-dark)' }}>{year}년</span>
         <button
           onClick={() => setYear(y => y + 1)}
-          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
           style={{ color: 'var(--warm-mid)' }}
           aria-label="다음 연도"
         >
@@ -277,7 +277,7 @@ function MonthPicker({
               key={i}
               disabled={disabled}
               onClick={() => onSelect(monthStr)}
-              className="py-3 text-sm rounded-lg transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+              className="py-3 text-sm rounded-lg transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
               style={isActive
                 ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                 : disabled
@@ -294,7 +294,7 @@ function MonthPicker({
       <div className="flex gap-2 mt-3">
         <button
           onClick={() => onSelect(todayMonth)}
-          className="flex-1 py-3 text-sm rounded-lg transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+          className="flex-1 py-3 text-sm rounded-lg transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
           style={current === todayMonth
             ? { background: 'var(--persimmon)', color: 'var(--on-solid)', cursor: 'default' }
             : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
@@ -303,7 +303,7 @@ function MonthPicker({
         </button>
         <button
           onClick={onClose}
-          className="flex-1 py-3 text-sm rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+          className="flex-1 py-3 text-sm rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
           style={{ color: 'var(--warm-muted)' }}
         >
           닫기

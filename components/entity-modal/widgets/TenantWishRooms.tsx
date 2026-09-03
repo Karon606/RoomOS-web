@@ -59,7 +59,7 @@ export function TenantWishRooms({ lease }: {
       </ul>
       {older.length > 0 && (
         <div className="mt-2">
-          <button type="button" onClick={() => setShowOlder(v => !v)}
+          <button type="button" onClick={() => setShowOlder(v => !v)} aria-expanded={showOlder}
             className="text-xs font-medium text-[var(--warm-muted)] flex items-center gap-1">
             {older.length}실 더 보기 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showOlder ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>

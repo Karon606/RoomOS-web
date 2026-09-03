@@ -639,7 +639,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
             <div className="flex items-center justify-between gap-2">
               {splitTouched ? (
                 <button type="button" onClick={resetSplit}
-                  className="-my-2 min-h-[44px] inline-flex items-center shrink-0 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)] rounded-sm">
+                  className="-my-2 min-h-[44px] inline-flex items-center shrink-0 text-[0.65625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 hover:text-[var(--coral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] rounded-sm">
                   제안값으로 되돌리기
                 </button>
               ) : <span />}

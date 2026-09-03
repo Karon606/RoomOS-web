@@ -38,7 +38,7 @@ type Options = Extract<Awaited<ReturnType<typeof getRoomScheduleOptions>>, { ok:
 /** 고른 방 — 이름을 함께 담는다. 목록은 다음 걸음에서 그 방을 빼므로 거기서 이름을 못 찾는다. */
 type Pick = RoomScheduleEntry & { roomNo: string }
 
-const dateCls = 'w-full bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/40 focus-visible:border-[var(--coral)]'
+const dateCls = 'w-full bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/40 focus-visible:border-[var(--tc-text)]'
 const capCls = 'text-[0.6875rem] leading-relaxed text-[var(--warm-muted)]'
 const errCls = 'text-[0.6875rem] text-[var(--danger-fg)]'
 

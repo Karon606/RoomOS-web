@@ -8,7 +8,7 @@
 - [x] A2 tenants/docBundle.ts 조회가 PaymentRecord 한 번 더 읽어 집합 전달
 - [x] A3 시트에 링크 문('판본 바꾸기' 문법) · 미납 안내 문구 · writeHref 에 month 명시 · 단기 제외
 - [x] A3 웹디자이너 패스(마진 충돌·문구 병합·단기 반영)
-- [ ] 후속: 두 링크의 focus ring 을 --coral 에서 --tc-text 로(다크 2.78:1, 판본 바꾸기와 한 커밋)
+- [x] 포커스 링 전수 51곳(--coral·--persimmon → --tc-text) + check-focus-ring-token 신설·등록
 
 ## B 선납 중복 발급 봉합 (운영자 승인, 스키마)
 - [x] B1 RentReceiptFile.targetMonth 칼럼 + 마이그레이션(기존 행 NULL)
@@ -21,7 +21,7 @@
 - [x] C2 조회 액션(rent·deposit·residence 세 모델, propertyId 스코프, 계약서 제외)
 - [x] C3 PaymentHistoryAll 접힘 문법 위젯 · TenantBody '계약서 파일' **다음 형제** · 행은 [보기]만
 - [x] C3 웹디자이너 패스(자리 이동·발행번호 라벨)
-- [ ] 후속(백로그): 보조줄 숫자 tnum 3곳 · 접힘 헤더 aria-expanded 2곳
+- [x] 보조줄 tnum 5곳 · 접힘 헤더 aria-expanded 11곳(클래스 전수) · maxRecordable 0 세그먼트 숨김
 
 ## D 감지망
 - [x] check-doc-write-gate.mjs(축 ⓐ~ⓓ, 역주입 6종)
@@ -34,7 +34,7 @@
 - [x] E3 backfill 적용(3건, 달 이동 0건이라 월 매출 무변동) + 되돌림 근거 파일
 
 ## 게이트 (커밋마다)
-- [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
+- [x] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드 · iCloud 사본 · push
 
 ## 문서
 - [x] Work_log · knowledge(doc-issue-history) · INDEX

@@ -526,7 +526,7 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
           {row.canWriteNew === true && (
             <div className="mt-0.5">
               <a href={writeHref(row, tenantId)} onClick={e => e.stopPropagation()}
-                className="-my-2 inline-flex min-h-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
+                className="-my-2 inline-flex min-h-[44px] items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                 이번 달 확인서 작성
               </a>
             </div>
@@ -549,7 +549,7 @@ function DocRow({ row, tenantId, picked, selected, onToggle, onChangeVersion }: 
               </span>
               <button type="button"
                 onClick={e => { e.stopPropagation(); onChangeVersion() }}
-                className="-my-2 inline-flex min-h-[44px] shrink-0 items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]">
+                className="-my-2 inline-flex min-h-[44px] shrink-0 items-center rounded-sm text-[0.65625rem] text-[var(--tc-text)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)]">
                 판본 바꾸기
               </button>
             </div>

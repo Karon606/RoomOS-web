@@ -36,6 +36,7 @@ export function TenantDocHistory({ tenantId }: { tenantId: string }) {
       <button
         type="button"
         onClick={toggle}
+        aria-expanded={open}
         className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-[var(--warm-dark)]"
       >
         <span>
@@ -63,7 +64,7 @@ export function TenantDocHistory({ tenantId }: { tenantId: string }) {
                   <li key={r.id} className="flex items-center gap-2 py-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{DOC_HISTORY_LABEL[r.docType]}</p>
-                      <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">
+                      <p className="num text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 break-keep">
                         {fmtDateDot(r.issuedAt)} 발급{note ? ` · ${note}` : ''}
                       </p>
                     </div>

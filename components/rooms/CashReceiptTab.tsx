@@ -317,7 +317,7 @@ export function CashReceiptTab({
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
             <DatePicker value={issuedDate} onChange={setIssuedDate} maxDate={kstYmdStr()}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/30" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30" />
           </div>
           {chosen.some(c => c.deposit > 0) && (
             <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">

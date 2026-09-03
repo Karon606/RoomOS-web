@@ -453,12 +453,20 @@ export function DepositStatusPanel({
               **사후 기록**이라 미룸이 성립하지 않는다(그 상태가 곧 지금이다). 대신 '일부 반환'을
               셋째로 두는 안은 탭해도 아무 일이 없는 죽은 조작면이 된다 — 일부는 금액칸이 말한다.
               활성 세그먼트 재탭이 이미 친 금액을 최대치로 덮지 않게 가드를 둔다(형제 정본). */}
+          {/* 돌려줄 것이 0 인 계약(보증금 전액이 청소비 몫)에서는 두 갈래가 같은 값이라 고를 것이
+              없다. 안 되는 선택지를 세우지 않는다(§22 가능한 액션만, 디자이너 후속 지적). */}
           <div className="space-y-1.5 border-t border-[var(--warm-border)] pt-2">
             <label className={labelCls}>보증금 반환 (최대 {fmtWon(maxRecordable)})</label>
-            <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
-              value={recAmount === 0 ? 'none' : 'refund'}
-              onChange={v => { if ((v === 'none') !== (recAmount === 0)) setRecAmount(v === 'none' ? 0 : maxRecordable) }}
-              options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
+            {maxRecordable > 0 ? (
+              <SegmentedControl size="sm" ariaLabel="보증금 반환 여부"
+                value={recAmount === 0 ? 'none' : 'refund'}
+                onChange={v => { if ((v === 'none') !== (recAmount === 0)) setRecAmount(v === 'none' ? 0 : maxRecordable) }}
+                options={[{ value: 'refund', label: '반환함' }, { value: 'none', label: '반환 안 함' }]} />
+            ) : (
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
+                청소비를 빼면 돌려줄 보증금이 없습니다. 전액이 부가수익으로 기록됩니다.
+              </p>
+            )}
           </div>
           <div className={gridCls}>
             <div className="space-y-1.5">
@@ -530,7 +538,7 @@ export function DepositStatusPanel({
         <div className="pt-0.5">
           <button type="button" onClick={() => setOpen(o => !o)}
             aria-expanded={open}
-            className="flex items-center gap-1 text-[0.65625rem] font-medium text-[var(--deposit-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)] rounded-sm">
+            className="flex items-center gap-1 text-[0.65625rem] font-medium text-[var(--deposit-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] rounded-sm">
             받은 내역 {data.records.length}건
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>

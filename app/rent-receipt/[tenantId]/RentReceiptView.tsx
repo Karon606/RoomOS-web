@@ -283,7 +283,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           {!data.isShortTerm && !isDeposit && (
           <button
             onClick={() => void stepMonth(-1)}
-            className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="w-11 shrink-0 flex items-center justify-center transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
             style={{ color: 'var(--warm-mid)' }}
             aria-label="이전 달"
           >
@@ -302,7 +302,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <button
             onClick={() => void stepMonth(1)}
             disabled={atCurrentMonth}
-            className="w-11 shrink-0 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="w-11 shrink-0 flex items-center justify-center transition-colors enabled:hover:bg-[var(--canvas)] active:bg-[var(--canvas)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
             style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
             aria-label="다음 달"
           >

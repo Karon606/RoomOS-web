@@ -383,7 +383,7 @@ function CleaningView({ rows, works, rooms, targetMonth, recentPerformers, canEd
                   {/* 어느 방인지 — 청소 행은 CleaningRowBody 가 안에서 낸다. 작업 행은 방 상세와
                       같은 컴포넌트를 쓰므로 호실을 여기서 붙인다. 누르면 그 방이 열린다. */}
                   <button type="button" onClick={() => onOpenRoom(w.roomId)}
-                    className="text-xs font-semibold text-[var(--warm-dark)] shrink-0 min-h-[44px] flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]">
+                    className="text-xs font-semibold text-[var(--warm-dark)] shrink-0 min-h-[44px] flex items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]">
                     {fmtRoomNo(w.roomNo)}
                   </button>
                   <div className="min-w-0 flex-1">
@@ -1580,7 +1580,7 @@ export default function RoomManageClient({
                     setAddRoomNoVal(val)
                     setAddFloorVal(deriveFloor(val))
                   }}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
               <div className="space-y-1.5">
@@ -1590,7 +1590,7 @@ export default function RoomManageClient({
                   placeholder="자동"
                   value={addFloorVal}
                   onChange={e => setAddFloorVal(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
             </div>
@@ -1702,7 +1702,7 @@ export default function RoomManageClient({
                 <input
                   name="roomNo"
                   defaultValue={editRoom.roomNo}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
               <div className="space-y-1.5">
@@ -1712,7 +1712,7 @@ export default function RoomManageClient({
                   placeholder="예: 1"
                   value={editFloorVal}
                   onChange={e => setEditFloorVal(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
             </div>

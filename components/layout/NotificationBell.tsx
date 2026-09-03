@@ -137,7 +137,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
     <div ref={ref} className="relative">
       <button
         onClick={toggle}
-        className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset relative"
+        className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset relative"
         style={{ color: 'var(--warm-mid)' }}
         aria-label={count > 0 ? `알림 ${count}건` : '알림'}
         aria-expanded={open}
@@ -164,7 +164,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
               <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>
               {count > 0 && (
                 <button onClick={() => markRead(visible.map(a => a.id))}
-                  className="text-[0.6875rem] font-medium hover:underline shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30" style={{ color: 'var(--warm-muted)' }}>
+                  className="text-[0.6875rem] font-medium hover:underline shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30" style={{ color: 'var(--warm-muted)' }}>
                   모두 확인 ({count})
                 </button>
               )}
@@ -189,7 +189,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
                   key={a.id}
                   type="button"
                   onClick={() => onItem(a)}
-                  className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+                  className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
                   style={{ borderBottom: '1px solid var(--warm-border)' }}
                 >
                   <span className="mt-1.5 w-2 h-2 rounded-full shrink-0" style={{ background: DOT[a.category] }} />
@@ -205,7 +205,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
 
           <button
             onClick={() => { setOpen(false); router.push('/dashboard') }}
-            className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
             style={{ color: 'var(--coral)', borderTop: '1px solid var(--warm-border)' }}
           >
             대시보드에서 보기

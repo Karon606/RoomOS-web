@@ -112,7 +112,7 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
       </ul>
       {older.length > 0 && (
         <div className="mt-2">
-          <button type="button" onClick={() => setShowOlder(v => !v)}
+          <button type="button" onClick={() => setShowOlder(v => !v)} aria-expanded={showOlder}
             className="text-xs font-medium text-[var(--warm-muted)] flex items-center gap-1">
             이전 이력 {older.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showOlder ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
@@ -127,7 +127,7 @@ export function TenantStatusHistory({ tenantId }: { tenantId: string }) {
           적용취소가 토스트가 사라진 뒤에도 여기 남는다(§16). */}
       {voided.length > 0 && (
         <div className="mt-2">
-          <button type="button" onClick={() => setShowVoided(v => !v)}
+          <button type="button" onClick={() => setShowVoided(v => !v)} aria-expanded={showVoided}
             className="text-xs font-medium text-[var(--warm-muted)] flex items-center gap-1">
             무효 처리한 이력 {voided.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showVoided ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>

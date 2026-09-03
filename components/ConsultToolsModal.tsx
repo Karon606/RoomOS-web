@@ -52,7 +52,7 @@ const ROW_CLS =
   'w-full text-left px-5 sm:px-6 py-3 min-h-[44px] transition-colors duration-[var(--dur-base)] ' +
   'hover:bg-[var(--cream-soft)] active:bg-[var(--sand)] ' +
   // ring-offset 은 풀블리드 행에서 모달 본문 밖으로 잘린다 — MonthSelector 와 같은 이유로 inset.
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset'
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset'
 
 function CopyRow({ label, value, valueClass, onCopy }: {
   label: string; value: string; valueClass: string; onCopy: () => void

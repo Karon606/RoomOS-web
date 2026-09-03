@@ -24,7 +24,7 @@ import CategorySelect from '@/components/ui/CategorySelect'
 import { getRecentCleaningPerformers } from '@/app/(app)/room-manage/cleaningActions'
 
 // 형제 폼과 같은 링. §09 'focus-visible 링 전 컴포넌트 필수'.
-const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]'
+const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]'
 
 /** 담당은 **선택**이라 '미정'이 먼저 서고 기본값이다. 빈 문자열이 곧 '아직 안 정함'이다. */
 const PLANNED_PERFORMERS: (CleaningPerformer | '')[] = ['', 'SELF', 'VENDOR', 'THIRD_PARTY']
@@ -62,14 +62,14 @@ export function RoomWorkPlanForm({
   const targetRoomId = roomId ?? pickedRoom
   const inputCls = dense
     ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
-    : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]'
+    : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]'
   const labelCls = dense
     ? 'text-xs text-[var(--ink-s)]'
     : 'text-xs font-medium text-[var(--warm-mid)]'
   // 형제 폼과 같은 껍데기·같은 이유(오류신고 c2ab5b83). 트리거가 button 이라 :focus 를 걸면
   // 손가락으로 눌러 연 달력이 닫힌 뒤에도 링이 남는다.
   const dateFieldCls =
-    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/30'
+    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30'
 
   const submit = () => {
     if (!targetRoomId) { pushToast('error', '호실을 골라 주세요.'); return }

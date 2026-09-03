@@ -6,7 +6,7 @@ import React from 'react'
 
 // 히트영역과 시각 크롬을 한 요소에 겹치면 -my-2 min-h-[44px] 가 보이는 테두리까지 44px 로 부풀린다.
 // button 은 배경·테두리 없는 히트 전용, span 이 실제로 보이는 박스다.
-const HIT_CLS = '-my-2 min-h-[44px] inline-flex items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)] disabled:opacity-50'
+const HIT_CLS = '-my-2 min-h-[44px] inline-flex items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--tc-text)] disabled:opacity-50'
 const CHROME_CLS = 'text-[0.65625rem] font-medium px-2.5 py-1 rounded-lg border'
 
 // 톤은 적용처의 기존 색 조합을 그대로 옮긴 것이다(수정=중립 계열, 삭제=위험 계열).

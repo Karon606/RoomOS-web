@@ -256,7 +256,7 @@ export default function RentReceiptsClient({ files, tenants, month, kind = 'rent
                       {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                     </div>
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
-                    <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
+                    <p className="num text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
                   </div>
                 </div>
                 {/* 선택 모드에선 개별 액션 숨김 — 하단 바로 일괄 전송 */}

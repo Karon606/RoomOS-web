@@ -150,7 +150,7 @@ export function RoomCleaningPanel({ roomId }: { roomId: string }) {
 
           **토글과 등록 버튼은 형제다.** 버튼 안에 버튼은 HTML 상 무효이고 hydration 경고가 난다. */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <button type="button" onClick={() => setUserOpen(!panelOpen)}
+        <button type="button" onClick={() => setUserOpen(!panelOpen)} aria-expanded={panelOpen}
           className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left">
           <span className="text-xs font-semibold text-[var(--warm-dark)]">작업 이력</span>
           <span className="text-xs">

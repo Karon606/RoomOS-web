@@ -79,7 +79,7 @@ export default function Header({
             onClick={() => setPropOpen(v => !v)}
             disabled={switching}
             aria-busy={switching}
-            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset disabled:opacity-55"
+            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset disabled:opacity-55"
             aria-label="영업장 선택"
             aria-expanded={propOpen}
           >
@@ -108,7 +108,7 @@ export default function Header({
                   const active = p.id === (currentProperty?.id ?? '')
                   return (
                     <button key={p.id} type="button" onClick={() => onSelectProperty(p.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset"
                       style={{ color: 'var(--warm-dark)', background: active ? 'color-mix(in srgb, var(--coral) 6%, transparent)' : undefined }}>
                       {p.appLogoUrl && (
                         <img src={p.appLogoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0"
@@ -138,7 +138,7 @@ export default function Header({
       {/* ── 우: 검색·알림 ── (프로필/계정은 전체 메뉴로 이동) */}
       <div className="flex items-center gap-0.5 shrink-0">
         <button type="button" onClick={openGlobalSearch} aria-label="통합 검색"
-          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset">
+          className="w-11 h-11 flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc-text)]/30 focus-visible:ring-inset">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--warm-dark)' }}>
             <circle cx="11" cy="11" r="7" /><path d="M16 16 L21 21" />

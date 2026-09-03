@@ -570,7 +570,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
                 detail: e.detail,
               })) { e.stopPropagation(); e.preventDefault() }
             }}
-            className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--coral)]"
+            className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--tc-text)]"
             style={{ overscrollBehaviorX: 'contain', containerType: 'inline-size' }}>
             <div className="move-track" style={{ width: trackW }}>
 
@@ -622,7 +622,7 @@ function MoveCalendarView({ data, onViewMonthChange, onGoWorks }: {
           **트랙이 있을 때만 부유시킨다** — 빈 상태에서는 위 EmptyState 의 CTA 자리가 그 길이다. */}
       {rows.length > 0 && (
       <button ref={todayBtnRef} type="button" onClick={goToday}
-        className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+        className="absolute bottom-2.5 right-2.5 z-40 min-h-[44px] inline-flex items-center rounded-full px-3.5 text-xs font-bold shadow-lift transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
         style={{ display: 'none', background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
         오늘로
       </button>
@@ -740,7 +740,7 @@ function ConflictBtn({ onClick, busy, acked, children }: {
 }) {
   return (
     <button type="button" onClick={onClick} disabled={busy}
-      className={`min-h-[44px] inline-flex items-center whitespace-nowrap text-[0.6875rem] font-semibold px-2.5 rounded-md border transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)] ${acked ? 'hover:bg-[var(--cream-soft)]' : 'hover:bg-[var(--coral)]/10'}`}
+      className={`min-h-[44px] inline-flex items-center whitespace-nowrap text-[0.6875rem] font-semibold px-2.5 rounded-md border transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)] ${acked ? 'hover:bg-[var(--cream-soft)]' : 'hover:bg-[var(--coral)]/10'}`}
       style={acked
         ? { borderColor: 'var(--warm-border)', color: 'var(--ink-2)' }
         : { borderColor: 'color-mix(in srgb, var(--coral) 45%, transparent)', color: 'var(--tc-text)' }}>

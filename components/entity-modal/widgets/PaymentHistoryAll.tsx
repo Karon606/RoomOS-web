@@ -39,6 +39,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
       <button
         type="button"
         onClick={toggle}
+        aria-expanded={open}
         className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-[var(--warm-dark)]"
       >
         <span>

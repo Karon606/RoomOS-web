@@ -21,7 +21,7 @@ import CategorySelect from '@/components/ui/CategorySelect'
 
 // 배타 선택 칩의 포커스 링 — §09 'focus-visible 링 전 컴포넌트 필수'. 이 파일이 다른 자리에서
 // 이미 쓰던 문법을 상수로 올려 세 자리가 같은 링을 쓰게 한다.
-const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]'
+const FOCUS_RING = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]'
 
 const REASONS: CleaningReason[] = ['CHECKOUT', 'AFTER_WORK', 'DURING_STAY', 'OTHER']
 /** 담당은 **선택**이라 '미정'이 먼저 서고 기본값이다. 빈 문자열이 곧 '아직 안 정함'이다. */
@@ -59,7 +59,7 @@ export function CleaningPlanForm({
   const targetRoomId = roomId ?? pickedRoom
   const inputCls = dense
     ? 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]'
-    : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]'
+    : 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--tc-text)]/30 placeholder:text-[var(--warm-muted)]'
   const labelCls = dense
     ? 'text-xs text-[var(--ink-s)]'
     : 'text-xs font-medium text-[var(--warm-mid)]'
@@ -72,7 +72,7 @@ export function CleaningPlanForm({
   // 이유로 같은 처방을 쓴다). `inputCls` 자체를 고치지 않는 것은 그 상수를 함께 쓰는 호실
   // select 때문이다 — 거기서는 마우스 클릭에도 링이 서야 한다. 나머지 값은 `inputCls` 와 같다.
   const dateFieldCls =
-    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--coral)]/30'
+    'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--tc-text)]/30'
 
   const submit = () => {
     if (!targetRoomId) { pushToast('error', '호실을 골라 주세요.'); return }

@@ -48,7 +48,7 @@ export function RoomStayHistory({ roomId }: { roomId: string }) {
         )}
         {past.length > 0 && (
           <div className={live.length > 0 ? 'mt-2' : ''}>
-            <button type="button" onClick={() => setShowPast(v => !v)}
+            <button type="button" onClick={() => setShowPast(v => !v)} aria-expanded={showPast}
               className="text-xs font-medium text-[var(--warm-muted)] flex items-center gap-1">
               이전 거주 {past.length}건 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showPast ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>

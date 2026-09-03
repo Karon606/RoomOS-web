@@ -223,7 +223,7 @@ export function CleaningRowBody({
                 // 맡긴 쪽으로 바꾸면 최근에 맡긴 곳을 채워 둔다. 이미 적어 둔 이름은 덮지 않는다.
                 else if (!performerName) setPerformerName(recentPerformers[0] ?? '')
               }}
-                className="px-2 py-1 rounded-lg text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--coral)]"
+                className="px-2 py-1 rounded-lg text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--tc-text)]"
                 style={performer === pf
                   ? { background: 'var(--coral)', color: 'var(--on-solid)', border: '1px solid transparent' }
                   : { background: 'var(--canvas)', color: 'var(--ink-s)', border: '1px solid var(--warm-border)' }}>
