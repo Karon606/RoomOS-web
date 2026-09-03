@@ -37,4 +37,4 @@
 - [ ] tsc 0 · verify:fast · eslint 신규 0 · 감지망 역주입 · 빌드(마지막) · iCloud 사본 · push
 
 ## 문서
-- [ ] Work_log · knowledge · INDEX
+- [x] Work_log · knowledge(doc-issue-history) · INDEX
