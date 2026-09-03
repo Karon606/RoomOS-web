@@ -4072,21 +4072,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       />
 
       <FormSection title="기본 정보">
-        {/* 안내는 제 칸에 붙는다(형제: 아래 현지 표기 행). FormSection 직속이면 위아래 12px 등간격이라
-            어느 칸의 말인지 안 읽힌다. */}
-        <div className="space-y-1.5">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
-            <Field label="영어이름" name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
-          </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" required />
           {/* 영문 이름을 받는 이유는 발급 서류에 찍을 **공식 성명**이 필요해서다(운영자 2026-09-03).
-              들리는 대로 적으면 관청에서 신분 대조가 안 된다. 외국인에게만 말한다 — 내국인의
-              영어이름은 서류가 아니라 카드 표시에 쓰는 값이라 같은 요구가 아니다. */}
-          {showsForeignFields(natVal) && (
-            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-              영어이름은 외국인등록증에 적힌 그대로 적어 주세요. 발급 서류에 그 이름이 찍힙니다.
-            </p>
-          )}
+              들리는 대로 적으면 관청에서 신분 대조가 안 된다. 별도 안내 줄이 아니라 라벨 옆 힌트인
+              것은 형제 칸('별칭'·'현지 표기 이름')과 같은 문법이고, 운영자가 짧게를 지목했다.
+              외국인에게만 붙는다 — 내국인의 영어이름은 서류가 아니라 카드 표시에 쓰는 값이다. */}
+          <Field label="영어이름" hint={showsForeignFields(natVal) ? '(외국인등록증과 동일하게)' : undefined}
+            name="englishName" value={englishNameVal} onChange={setEnglishNameVal} placeholder="Hong Gildong" />
         </div>
         {/* 현지 표기 이름 — 외국인 전용(국적이 대한민국이면 숨김, 외국인등록번호·해외 연락처와 같은 조건).
             숨겨져도 저장 시 기존 값은 보존된다(칸 부재 = 서버가 건드리지 않음).
@@ -4129,15 +4122,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             뜬다 — 형제 서류가 사람 단위 값보다 세므로, 자동일 때야말로 앞 서류를 잇는다. */}
         {docStyleInherits ? (
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            이 계약은 앞서 {DOC_NAME_STYLE_LABEL[inheritedDocStyle]} 표기로 발급했습니다. 다음 서류도 그 표기로 열립니다(발급 화면에서 바꿀 수 있습니다).
+            이 계약은 앞서 {DOC_NAME_STYLE_LABEL[inheritedDocStyle]} 표기로 발급했습니다. 다음 서류도 그 표기가 기본이며 발급 화면에서 바꿀 수 있습니다.
           </p>
         ) : !docStyleShown && !docStyleOptions.includes('en') ? (
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            영문 이름이 없어 자동이어도 서류에는 한글로 나갑니다.
+            영문 이름이 없어 자동이어도 서류에는 한글 이름이 표기됩니다.
           </p>
         ) : !docStyleShown ? (
           <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed break-keep">
-            자동은 외국인이면 영문입니다. 한글로 낼 분은 여기서 고정하세요.
+            자동은 외국인이면 영문으로 표기됩니다. 한글로 발급하려면 한글로 고정하세요.
           </p>
         ) : null}
         </div>
