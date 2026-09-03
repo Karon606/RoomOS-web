@@ -101,7 +101,7 @@ function buildInitial(data: ResidenceCertData, withOverrides = true): Fields {
 // PDF baseline(원점 좌하단) → CSS top(원점 좌상단, 디자인 단위 = pt). 베이스라인 근사 보정.
 const topOf = (y: number, size: number) => (RC_PAGE.h - y) - size * 1.04
 
-export default function ResidenceCertView({ data }: { data: ResidenceCertData }) {
+export default function ResidenceCertView({ data, back }: { data: ResidenceCertData; back: { label: string; href: string } }) {
   const router = useRouter()
   const [f, setF] = useState<Fields>(() => buildInitial(data))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
@@ -269,8 +269,9 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         const msg = json?.error ?? `서버 오류 (${res.status})`
         pushToast('error', msg); return
       }
-      pushToast('success', '실거주 확인서 발급됨. 발급 이력으로 이동합니다')
-      router.push('/residence-certs')
+      // 들어온 곳으로 돌아간다 — 목록에서 왔으면 목록, 입주자 상세에서 왔으면 그 사람이다.
+      pushToast('success', `실거주 확인서 발급됨. ${back.label}(으)로 돌아갑니다`)
+      router.push(back.href)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
       pushToast('error', msg)
@@ -292,7 +293,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap" />
 
       <div className="no-print rc-toolbar">
-        <Link href="/residence-certs" className="rc-link">‹ 실거주 확인서</Link>
+        <Link href={back.href} className="rc-link">‹ {back.label}</Link>
         {overrideCount > 0 && <span className="rc-badge">표시값 수정</span>}
         <div className="rc-spacer" />
         {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다. 문법은 옆의 작성일 칸과 같은 rc-field. */}

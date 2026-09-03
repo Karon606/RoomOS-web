@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getResidenceCertData } from './actions'
 import ResidenceCertView from './ResidenceCertView'
+import { resolveDocBack } from '@/lib/docNav'
 
 // ?leaseTermId=<id> 는 계약 지목이다(2026-08-13, 다호실 마무리 — /contract/[tenantId] 와 같은 문법).
 // 없으면 종전 추론 그대로라 기존 링크·발급 이력의 '다시 작성'은 불변이다.
@@ -9,10 +10,12 @@ export default async function ResidenceCertPage({
   searchParams,
 }: {
   params: Promise<{ tenantId: string }>
-  searchParams: Promise<{ leaseTermId?: string }>
+  // from·tenantId 는 **돌아갈 곳**이다(lib/docNav). 안 읽으면 발급 뒤 목록으로 튕겨,
+  // 입주자 상세의 서류 시트에서 들어온 사람이 제자리로 못 돌아온다(신고 2026-09-03).
+  searchParams: Promise<{ leaseTermId?: string; from?: string; tenantId?: string }>
 }) {
   const { tenantId } = await params
-  const { leaseTermId } = await searchParams
+  const { leaseTermId, from, tenantId: backTenantId } = await searchParams
   const data = await getResidenceCertData(tenantId, leaseTermId ?? null)
   if (!data) notFound()
   // 지자체별 서식 상이 — 현재 서울형만 지원, 그 외 지역은 발급 차단 안내(운영자 정정 2026-07-10)
@@ -29,5 +32,5 @@ export default async function ResidenceCertPage({
       </div>
     )
   }
-  return <ResidenceCertView data={data} />
+  return <ResidenceCertView data={data} back={resolveDocBack(from, backTenantId)} />
 }

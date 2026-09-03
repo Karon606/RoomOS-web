@@ -77,7 +77,7 @@ function buildInitial(data: RentReceiptData, nameStyle: DocNameStyle = DEFAULT_D
   }
 }
 
-export default function RentReceiptView({ data }: { data: RentReceiptData }) {
+export default function RentReceiptView({ data, back }: { data: RentReceiptData; back: { label: string; href: string } }) {
   const router = useRouter()
   // 초기 이름도 셀렉트와 **같은 판정**을 지난다. 종전에는 기본값(한글)으로 지어 놓고 셀렉트만
   // 폴백을 거쳐서, 외국인이 아직 아무것도 안 고른 상태로 열면 셀렉트는 영문인데 종이에는 한글
@@ -130,7 +130,6 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const isDeposit = data.kind === 'deposit'
   const docLabel = isDeposit ? '보증금 영수증' : '입실료 납부 확인서'
   // 목록 복귀 경로 — 종류를 유지한다. 안 붙이면 보증금으로 발급하고도 입실료 탭으로 떨어진다(운영자 지적).
-  const listHref = isDeposit ? '/rent-receipts?kind=deposit' : '/rent-receipts'
   // nameStyle 과 targetMonth 는 fields 밖이다 — 종이에 그리는 값이 아니라 **기록에 남길 사실**이다.
   // fields.targetMonth 는 '2026년 9월분' 표시 문자열이고 운영자가 고칠 수 있어 판정의 근거로
   // 못 쓴다. anchorMonth('YYYY-MM')가 이 화면이 실제로 여는 달이다.
@@ -248,8 +247,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       }
       // 이번에 쓴 표기를 계약에 남긴다 — 다음 서류가 이 값으로 열린다. 실패는 조용히 넘긴다.
       if (data.leaseTermId) void noteDocNameStyle(data.leaseTermId, nameStyle)
-      pushToast('success', `${docLabel} 발급됨. 발급 이력으로 이동합니다`)
-      router.push(listHref)
+      // 들어온 곳으로 돌아간다 — 목록에서 왔으면 목록, 입주자 상세에서 왔으면 그 사람이다.
+      pushToast('success', `${docLabel} 발급됨. ${back.label}(으)로 돌아갑니다`)
+      router.push(back.href)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
       pushToast('error', msg)
@@ -263,7 +263,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       <DocumentScroll />
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href={listHref} className="text-sm text-[var(--coral)]">‹ {docLabel}</Link>
+          <Link href={back.href} className="text-sm text-[var(--coral)]">‹ {back.label}</Link>
           <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)] active:bg-[var(--cream)] active:scale-[0.98]">자동값으로</button>
         </div>
 
