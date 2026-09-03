@@ -10,8 +10,8 @@ knowledge/cash-receipt-refund.md 세무 패널 2026-09-01). 기한이 지나도 
 "처리를 못하는 것"이 아니라 "아직 안 한 것"이라 소멸이 아니라 접기로 간다.
 
 ## A1 feat(현금영수증): 기한 경계를 정본 순수 함수로
-- [ ] lib/cashReceipt 경계 판정 함수(임박 0..2 / 지남 / 감경 창 -1..-5)
-- [ ] test-cash-receipt 경계 케이스(cashReceiptDaysLeft 를 아직 한 건도 안 건다)
+- [x] lib/cashReceipt 경계 판정 함수(임박 0..2 / 지남 / 감경 창 -1..-5)
+- [x] test-cash-receipt 경계 케이스(cashReceiptDaysLeft 를 아직 한 건도 안 건다)
 
 ## A2 feat(홈 알림): 기한 지난 건은 요약 한 줄로 접는다
 - [ ] due 를 임박(건별) · 감경 창(건별) · 지남(요약 한 줄)로 가름

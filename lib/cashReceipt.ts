@@ -253,6 +253,44 @@ export function cashReceiptDaysLeft(payYmd: string, todayYmd: string): number {
     - Math.round((Date.parse(`${todayYmd}T00:00:00Z`) - Date.parse(`${payYmd}T00:00:00Z`)) / 86400000)
 }
 
+/**
+ * 자진발급 감경 창(일). 받은 날부터 이 날수 안에 스스로 발급하면 가산세가 20%에서 10%로 준다
+ * (소득세법 §81의9, 세무 패널 조사 2026-09-01). 기한(5일)을 넘겨도 아직 절반인 구간이 있다는 뜻이다.
+ */
+export const CASH_RECEIPT_SELF_ISSUE_DAYS = 10
+
+/**
+ * 홈 알림에서 이 건이 설 자리.
+ *
+ *   due     — 기한 임박·오늘 마감. 건별로 나열한다.
+ *   grace   — 기한은 지났지만 자진발급 감경 창 안이다. **지금 하면 가산세가 절반**이라 아직
+ *             움직일 값어치가 있어 건별로 남긴다(운영자 결정 2026-09-03).
+ *   overdue — 감경 창도 지났다. 요약 한 줄로 접는다. 발급 의무가 사라지는 것은 아니다.
+ *   none    — 아직 여유가 있어 알림에 안 뜬다.
+ *
+ * 왜 순수 함수인가. 종전에는 대시보드 생성부가 `left <= 2` 인라인 하나로 전부를 갈랐다.
+ * 자리가 넷으로 늘면 그 인라인이 화면마다 갈리고, 갈려도 아무도 못 잡는다.
+ *
+ * `dueWithin` 기본값 2 는 ALERT_URGENT_CATEGORY_DAYS.receipt 과 같은 값이다. 두 곳이 갈리면
+ * 알림에 뜨는 날과 긴급 존에 오르는 날이 어긋난다.
+ */
+export type CashReceiptAlertSlot = 'due' | 'grace' | 'overdue' | 'none'
+
+export function cashReceiptAlertSlot(daysLeft: number, dueWithin = 2): CashReceiptAlertSlot {
+  if (daysLeft > dueWithin) return 'none'
+  if (daysLeft >= 0) return 'due'
+  // 기한(5일)에서 감경 창(10일)까지 남은 날수. 0 이면 오늘이 감경 창 마지막 날이다.
+  const graceLeft = daysLeft + (CASH_RECEIPT_SELF_ISSUE_DAYS - CASH_RECEIPT_DEADLINE_DAYS)
+  return graceLeft >= 0 ? 'grace' : 'overdue'
+}
+
+/** 이 건의 기한 상태를 사람 말로. 목록 둘째 줄과 알림 상세가 같은 말을 쓴다. */
+export function cashReceiptDeadlineLabel(daysLeft: number): string {
+  if (daysLeft > 0) return `기한 ${daysLeft}일 남음`
+  if (daysLeft === 0) return '오늘 마감'
+  return `기한 ${-daysLeft}일 지남`
+}
+
 // ── 보증금 포함 발행 경고 ─────────────────────────────────────
 //
 // 보증금은 반환을 전제로 받는 예수금이라 공급 대가가 아니고, 일반적으로 현금영수증 발급

@@ -8,7 +8,7 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
+import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt } from '../lib/cashReceipt'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -163,6 +163,35 @@ eq('수단을 안 넘기면 종전대로 동작한다(옛 호출부 보호)',
 // 금액은 카드 합계로 넘어간다 — 카드 축은 payDate 다.
 eq('카드 건은 카드 합계로',
   paymentCardMonth({ payMethod: '신용카드', payDate: day('2026-08-10') }), '2026-08')
+
+// ── 발급 기한과 알림 자리 (2026-09-03) ──────────────────────────
+//
+// 기한은 받은 날부터 5일, 자진발급 감경 창은 10일이다. 알림은 그 둘로 세 자리를 만든다.
+// 종전에는 대시보드가 `left <= 2` 인라인 하나로 갈랐고 이 파일은 기한을 한 건도 안 걸었다.
+
+// 날수 셈 — 인자 둘 다 KST 달력 문자열이다.
+eq('입금 당일이면 5일 남음', cashReceiptDaysLeft('2026-09-03', '2026-09-03'), 5)
+eq('닷새 뒤면 오늘 마감', cashReceiptDaysLeft('2026-08-29', '2026-09-03'), 0)
+eq('엿새 뒤면 하루 지남', cashReceiptDaysLeft('2026-08-28', '2026-09-03'), -1)
+eq('열흘 뒤면 닷새 지남(감경 창 마지막)', cashReceiptDaysLeft('2026-08-24', '2026-09-03'), -5)
+eq('열하루 뒤면 엿새 지남', cashReceiptDaysLeft('2026-08-23', '2026-09-03'), -6)
+
+// 자리 판정 — 경계 넷을 못 박는다.
+eq('3일 남으면 아직 안 뜬다', cashReceiptAlertSlot(3), 'none')
+eq('2일 남으면 건별로 뜬다', cashReceiptAlertSlot(2), 'due')
+eq('오늘 마감도 건별', cashReceiptAlertSlot(0), 'due')
+eq('하루 지나면 감경 창', cashReceiptAlertSlot(-1), 'grace')
+eq('닷새 지나도 아직 감경 창(받은 날부터 10일째)', cashReceiptAlertSlot(-5), 'grace')
+eq('엿새 지나면 요약으로 접힌다', cashReceiptAlertSlot(-6), 'overdue')
+eq('한참 지난 것도 요약', cashReceiptAlertSlot(-34), 'overdue')
+// 임박 폭은 부르는 쪽이 정할 수 있다(ALERT_URGENT_CATEGORY_DAYS 와 맞추는 자리).
+eq('임박 폭을 0 으로 주면 오늘 마감만 건별', cashReceiptAlertSlot(1, 0), 'none')
+eq('임박 폭 0 에서 오늘 마감은 건별', cashReceiptAlertSlot(0, 0), 'due')
+
+// 라벨 — 목록 둘째 줄과 알림 상세가 같은 말을 쓴다.
+eq('남은 날 라벨', cashReceiptDeadlineLabel(2), '기한 2일 남음')
+eq('오늘 마감 라벨', cashReceiptDeadlineLabel(0), '오늘 마감')
+eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 지남')
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
 if (fail > 0) process.exit(1)
