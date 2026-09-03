@@ -24,6 +24,7 @@ import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseA
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
+import { disposalSignatureMissing } from '@/lib/disposalSignGate'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -823,6 +824,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         pushToast('success', remaining
           ? (signTarget === 'disposal' ? '동의서 서명 저장됨 · 계약서 서명이 남았습니다' : '계약서 서명 저장됨 · 동의서 서명이 남았습니다')
           : (signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다'))
+      } catch (err) {
+        // catch 가 없으면 전송 실패가 통째로 침묵한다 — 서명 패드만 열린 채 남아 입주자는 저장된
+        // 줄 알고 창을 닫는다. 413호가 계약서만 서명하고 멈춘 경위로 이 길이 남아 있었다.
+        const msg = humanError(err, '서명 저장 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+        setSignError(msg); pushToast('error', msg)
       } finally {
         release()
         setRemoteSubmitting(false)
@@ -867,8 +873,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     const release = trackSave()
     try {
       const res = await finalizeRemoteSubmission(shareToken, nativeNameInput)
-      if (!res.ok) { pushToast('error', res.error); return }
+      if (!res.ok) { pushToast('error', humanError(res.error, '제출에 실패했습니다. 잠시 후 다시 시도해 주세요.')); return }
       setSubmitted(true)
+    } catch (err) {
+      // 서명 저장과 같은 이유로 catch 를 둔다 — 전송이 실패해도 아무 말이 없으면 입주자는 제출된
+      // 줄 알고 창을 닫고, 운영자 쪽에는 반쪽 상태만 남는다.
+      pushToast('error', humanError(err, '제출 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     } finally {
       release()
       setFinalizing(false)
@@ -906,6 +916,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     // 발급 목적 — 물어야 하는 발급인지 서버에 먼저 묻는다. 실계약이 아직 없으면 이번 발급이
     // 곧 그 실계약이라 물을 것이 없고, 토글이 꺼진 영업장에서는 목적 입력이 화면에 없어야 한다.
     // 조회 실패는 실계약 발급으로 떨어뜨린다 — 그쪽이 되돌리기 쉬운 결과이고, 진짜 게이트는 서버다.
+    // 동의서가 붙는 종이인데 동의서 서명만 비어 있으면 먼저 묻는다(신고 2026-09-03, 413호).
+    // 서버도 같은 판정으로 막고 있고, 이 승낙이 그 문을 여는 운반체다(archivePrevious 와 같은 관용구).
+    const disposalUnsigned = disposalSignatureMissing({
+      disposalEnabled: data.disposalConsent.enabled,
+      hasContractSignature: !!signatureDataUrl,
+      hasDisposalSignature: !!disposalSignatureDataUrl,
+    })
+    if (disposalUnsigned && !(await confirmDialog({
+      title: '동의서 서명 없이 발급할까요?',
+      message: '잔여 소지품 임의처분 동의서에 서명이 없습니다. 이대로 발급하면 그 장은 서명란이 빈 채로 나갑니다.\n원격 링크가 살아 있으면 같은 링크에서 동의서 서명만 이어 받을 수 있습니다.',
+      confirmLabel: '이대로 발급',
+      level: 'caution',
+    }))) return
+
     let issuePurpose: string | null = null
     const purposeCtx = await getIssuePurposeContext(data.tenant.id, data.lease?.id ?? null)
     const hasReal = purposeCtx.ok && purposeCtx.hasRealContract
@@ -952,6 +976,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           issuePurpose,
           // 실계약을 새로 만드는데 이미 있으면 이 승낙 없이는 서버가 막는다(물어봤다는 사실의 운반체).
           archivePrevious: issuePurpose === null && hasReal,
+          // 위 확인창을 통과했다는 사실. 서버가 이것 없이는 반쪽 서명 발급을 거절한다.
+          disposalUnsignedAck: disposalUnsigned,
         }),
       })
       const text = await res.text()

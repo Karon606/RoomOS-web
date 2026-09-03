@@ -7,6 +7,7 @@ import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
 import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
+import { disposalSignatureMissing } from '@/lib/disposalSignGate'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
 const INACTIVE_MSG = '링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.'
@@ -180,8 +181,19 @@ export async function finalizeRemoteSubmission(
     if (!cookieStore.get(shareCookieName(link.id))) {
       return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
     }
-    // 계약서 서명이 이미 저장돼 있어야 제출 가능(동의서 유무는 클라이언트 canSubmit 가 게이트).
+    // 계약서 서명이 이미 저장돼 있어야 제출 가능.
     if (!link.signedAt) return { ok: false, error: '먼저 서명을 완료해 주세요.' }
+    // 동의서도 서버가 본다. 종전에는 이 검사가 클라이언트 canSubmit 에만 있어서, 액션을 직접 부르면
+    // 반쪽 서명으로 제출이 통과했다. 판정 축은 canSubmit 과 같은 것(발급 시점 스냅샷)을 쓴다 —
+    // 라이브 설정을 보면 링크가 나간 뒤 영업장이 동의서를 끄고 켤 때 두 자리가 서로 물린다.
+    const snapDc = (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)?.disposalConsent
+    if (disposalSignatureMissing({
+      disposalEnabled: snapDc?.enabled === true,
+      hasContractSignature: true,
+      hasDisposalSignature: !!link.disposalSignedAt,
+    })) {
+      return { ok: false, error: '동의서 서명이 아직 없습니다. 동의서 서명란에 서명한 뒤 제출해 주세요.' }
+    }
 
     // 본국 표기 이름 — **비어 있을 때만** 채운다.
     //

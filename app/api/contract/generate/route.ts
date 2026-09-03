@@ -19,6 +19,7 @@ import {
 } from '@/lib/contract'
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
+import { disposalSignatureMissing } from '@/lib/disposalSignGate'
 import { contractSubLeases, contractSubLeaseAddendum, contractRateAddendum, contractRoomScheduleText } from '@/lib/contractData'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 import { documentName } from '@/lib/documentName'
@@ -92,6 +93,8 @@ type Body = {
    * 같은 규약으로 서 있는 자리다). 운영자 요구 2026-08-26 "물어는 봐야지".
    */
   archivePrevious?: boolean
+  /** 동의서 서명이 빈 채로 발급하는 것을 운영자가 승낙했다는 사실의 운반체(신고 2026-09-03). */
+  disposalUnsignedAck?: boolean
   preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
@@ -333,6 +336,26 @@ export async function POST(req: Request) {
         code: 'ARCHIVE_DECISION_REQUIRED',
         archiveCount: liveReal.length,
         error: `이 계약에는 실계약 계약서 ${liveReal.length}부가 있습니다. 기존 계약서를 보관용으로 남길지 정해 주세요.`,
+      }, { status: 409 })
+    }
+
+    // 동의서가 붙는 종이인데 계약서 서명만 있고 동의서 서명이 없다 — 승낙 없이는 못 만든다.
+    //
+    // 413호가 이 틈으로 나갔다(신고 2026-09-03). 입주자가 계약서에만 서명하고 멈췄는데 홈 알림이
+    // "원격 서명 완료"라고 점등했고, 운영자는 그것을 믿고 발급했다. 동의서 장은 서명란이 빈 채였다.
+    // 잔여 소지품 처분은 그 서명이 근거라 빈 칸으로 나가면 근거가 없는 종이가 된다.
+    //
+    // 막지는 않는다(운영자 결정 2026-09-04). 출력해서 손으로 받는 운용이 정당하고, 이미 반쪽으로
+    // 굳은 건도 있다. 다만 **물어보지 않고 지나가지는 않는다.**
+    if (!body.preview && disposalSignatureMissing({
+      disposalEnabled: resolveDisposalConsent(body_.disposalConsent).enabled,
+      hasContractSignature: body.signatureImageDataUrl?.startsWith('data:image/') === true,
+      hasDisposalSignature: body.disposalSignatureImageDataUrl?.startsWith('data:image/') === true,
+    }) && !body.disposalUnsignedAck) {
+      return NextResponse.json({
+        ok: false,
+        code: 'DISPOSAL_SIGNATURE_REQUIRED',
+        error: '잔여 소지품 동의서에 서명이 없습니다. 이대로 발급할지 정해 주세요.',
       }, { status: 409 })
     }
 
