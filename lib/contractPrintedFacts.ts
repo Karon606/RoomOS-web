@@ -138,3 +138,16 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
     roomScheduleText: d.roomScheduleText ?? undefined,
   }
 }
+
+/**
+ * 이 발급본이 종이에 실제로 찍은 성명. 박제가 없는 옛 발급본은 null 이다.
+ *
+ * 왜 필요한가. 목록이 지금 고객 정보로 이름을 다시 조립하면, 개명이나 오타 정정이 **이미 나간
+ * 부의 성명까지 소급해 바꾼다.** 그러면 그 목록은 증거가 아니라 지금 상태의 사영이 된다.
+ * facts['tenant.name'] 은 표기가 이미 적용된 문자열이라 그 자체가 종이의 기록이다.
+ */
+export function issuedPrintedName(issuedSnapshot: unknown): string | null {
+  const f = (issuedSnapshot as { facts?: Record<string, unknown> } | null)?.facts
+  const v = f?.['tenant.name']
+  return typeof v === 'string' && v ? v : null
+}

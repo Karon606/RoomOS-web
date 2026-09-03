@@ -143,6 +143,31 @@ export function documentName(src: DocumentNameSource, style: DocNameStyle | null
   return src.name
 }
 
+/**
+ * 서명이 끝난 계약이 서야 할 표기. **다시 해석하지 않는다.**
+ *
+ * 인자에 국적·형제 서류·사람 단위 값이 아예 없는 것이 이 함수의 계약 조건이다. 그 셋은 "지금
+ * 무엇이 맞는가"를 답하는데, 서명한 종이가 묻는 것은 "그때 무엇이었나"다. 시그니처로 봉인해
+ * 두면 다음 사람이 여기에 국적 추정을 얹을 자리 자체가 없다.
+ *
+ * 왜 생겼나(신고 2026-09-04, 413호). 서명 후 경로가 `contractLeaseFields` 의 병합값을 읽고
+ * 있었다. 그 값은 자동값 'ko' 가 깔려 있어 **"안 골랐음"과 "한글을 골랐음"이 같은 답**이 된다.
+ * 그래서 영문 화면에서 서명한 계약이 서명이 저장되는 순간 한글로 되돌아갔고, 그 상태로 발급됐다.
+ */
+export type SignedNameStyleContext = {
+  /**
+   * 이 계약서에 저장된 표기 오버라이드. 서명과 함께 잠기므로(saveContractFieldOverride 의
+   * isSignatureLocked) 값이 있다면 그것은 서명 전에 운영자가 고른 것이다.
+   */
+  saved?: DocNameStyle | null
+  /** 서명 시점 박제가 들고 있는 표기(LeaseTerm.signedContractSnapshot.nameStyle). */
+  signed?: DocNameStyle | null
+}
+
+export function signedDocNameStyle(ctx: SignedNameStyleContext): DocNameStyle {
+  return asDocNameStyle(ctx.saved) ?? asDocNameStyle(ctx.signed) ?? DEFAULT_DOC_NAME_STYLE
+}
+
 // ── 표기 이어받기 ────────────────────────────────────────────────
 //
 // 한 사람의 서류는 같은 표기로 나가야 한다(운영자 확정 2026-08-29 — "계약서를 영어로 발급하면

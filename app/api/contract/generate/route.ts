@@ -20,7 +20,7 @@ import {
 import { contractLeaseFields } from '@/lib/contractFieldOverrides'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { disposalSignatureMissing } from '@/lib/disposalSignGate'
-import { contractSubLeases, contractSubLeaseAddendum, contractRateAddendum, contractRoomScheduleText } from '@/lib/contractData'
+import { contractSubLeases, contractSubLeaseAddendum, contractRateAddendum, contractRoomScheduleText, contractNameStyle } from '@/lib/contractData'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
 import { documentName } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
@@ -218,7 +218,11 @@ export async function POST(req: Request) {
     const rateAddendum = contractRateAddendum(lease, body_, shortPolicy.enabled,
       { shortStay: property?.shortStayAddendum, earlyCheckout: property?.earlyCheckoutAddendum })
     const shortRateTable = shortStayRateTable(shortPolicy, lease?.rentAmount ?? 0) ?? ''
-    const printedTenantName = documentName(tenant, leaseFields?.nameStyle)
+    // 표기는 화면과 같은 정본이 정한다(lib/contractData). 종전에는 여기서 병합값으로 따로
+    // 계산해 화면이 영문인데 종이가 한글로 나갔다(신고 2026-09-04, 413호).
+    // 종이와 태그가 **같은 변수**에서 나와야 둘이 갈리지 않는다.
+    const printedNameStyle = contractNameStyle(lease, tenant)
+    const printedTenantName = documentName(tenant, printedNameStyle)
     // 외국인등록번호는 여기서 한 번 복호해 종이(대체 칸)와 박제(마스킹 + 지문) 둘 다에 쓴다.
     const foreignRegNo = readStoredForeignRegNo(tenant.foreignRegNoEnc, tenant.id)
 
@@ -371,7 +375,7 @@ export async function POST(req: Request) {
               // 목적은 여기서 한 번만 쓴다 — 박제와 같은 규약이다. 실계약은 null 로 남긴다.
               issuePurpose: purpose.value,
               // 이 종이의 성명 표기 — 목록에서 다시 보낼 때 파일 이름을 같은 표기로 맞춘다.
-              nameStyle: leaseFields?.nameStyle ?? null,
+              nameStyle: printedNameStyle,
               // 서명일은 '날짜'다 — 오프셋 없는 T00:00:00 은 실행 환경 타임존으로 읽혀
               // KST 기기에서 하루 앞선 값이 박혔다. 저장 정본은 ymdToDbDate(UTC 자정).
               signedAt: ymdToDbDate(signDate),
@@ -671,6 +675,10 @@ export async function POST(req: Request) {
               // 이 종이에 실제로 붙은 특약을 함께 동결한다. 안 담으면 서명 뒤 재발급에서
               // 박제본이 특약을 모르고(null) 절이 통째로 사라진다.
               subLeaseAddendum: (printData.subLeaseAddendum ?? null) as unknown as object,
+              // 이 종이에 찍은 성명 표기와 그 문자열. 표기 코드만으로는 나중에 이름 자체가
+              // 바뀌면(개명·오타 정정) 그때 무엇을 봤는지 못 되짚는다.
+              nameStyle: printedNameStyle,
+              printedName: printedTenantName,
             } } : {}),
           },
         })

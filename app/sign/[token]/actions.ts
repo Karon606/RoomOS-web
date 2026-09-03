@@ -8,6 +8,7 @@ import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCo
 import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
 import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { asDocNameStyle } from '@/lib/documentName'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
 const INACTIVE_MSG = '링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.'
@@ -140,6 +141,12 @@ export async function submitRemoteSignature(
       // 요금 절도 같은 이유로 동결한다. 서명한 화면에 있었으면 재발급본에도 있어야 하고,
       // 없었으면 나중에 생겨서도 안 된다 — 요금 조항이 소급되면 서명 격리를 스스로 깨는 것이다.
       rateAddendum: (snap.rateAddendum ?? null) as object,
+      // 이 사람이 눈으로 읽고 손으로 서명한 성명 표기. 근거는 링크 스냅샷이다 — 원격 화면은
+      // DB 를 다시 안 읽으므로 그 JSON 이 곧 그 사람이 본 종이다.
+      // 이 칸이 생기기 전 박제에는 없다(undefined). 그때는 오버라이드 또는 한글로 읽는다.
+      nameStyle: asDocNameStyle((snap as { lease?: { nameStyle?: unknown } }).lease?.nameStyle) ?? null,
+      printedName: typeof (snap as { tenant?: { name?: unknown } }).tenant?.name === 'string'
+        ? (snap as { tenant: { name: string } }).tenant.name : null,
     }
     await prisma.$transaction([
       prisma.leaseTerm.update({

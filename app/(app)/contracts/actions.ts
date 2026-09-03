@@ -9,6 +9,7 @@ import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
 import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { issuedPrintedName } from '@/lib/contractPrintedFacts'
 
 async function getPropertyId(): Promise<string> {
   const { propertyId } = await requirePropertyAccess()
@@ -72,7 +73,7 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
     // issuedSnapshot 은 여기서 읽지 않는다 — 서명 dataURL 두 장이 들어 있어 목록 응답이 통째로 무거워진다.
     // 발급 상세(getContractIssuedSnapshot)에서 한 건씩만 읽는다.
     select: {
-      id: true, fileName: true, source: true, signedAt: true, createdAt: true, nameStyle: true,
+      id: true, fileName: true, source: true, signedAt: true, createdAt: true, nameStyle: true, issuedSnapshot: true,
       driveFileId: true, contractNo: true, leaseTermId: true, voidedAt: true,
       supersededAt: true, issuePurpose: true, purposeOverride: true,
       tenant: {
@@ -102,7 +103,9 @@ export async function getAllContractFiles(): Promise<ContractListRow[]> {
       tenantId: r.tenant.id,
       tenantName: r.tenant.name,
       // 파일 이름은 종이에 찍힌 그 이름을 쓴다 — 종전에는 서류 종류만 표기를 따랐다.
-      docName: documentName(r.tenant, asDocNameStyle(r.nameStyle)),
+      // 박제가 있으면 그 문자열이 정본이다. 개명·오타 정정이 이미 나간 부의 성명을 소급해
+      // 바꾸면 그 목록은 증거가 아니라 지금 상태의 사영이 된다.
+      docName: issuedPrintedName(r.issuedSnapshot) ?? documentName(r.tenant, asDocNameStyle(r.nameStyle)),
       nameStyle: asDocNameStyle(r.nameStyle) ?? null,
       roomNo: lease?.room?.roomNo ?? null,
       status: lease?.status ?? null,

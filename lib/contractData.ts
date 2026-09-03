@@ -12,13 +12,50 @@ import {
   resolveSignedBody,
 } from '@/lib/contract'
 import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
-import { type DocNameStyle, DEFAULT_DOC_NAME_STYLE, documentName, asDocNameStyle, docNameStyles, resolveDocNameStyle } from '@/lib/documentName'
+import { type DocNameStyle, documentName, asDocNameStyle, docNameStyles, resolveDocNameStyle, signedDocNameStyle } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { parseRoomSchedule, hasRoomSchedule, roomScheduleText } from '@/lib/roomSchedule'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
+
+/**
+ * 이 계약서가 서야 할 성명 표기 — **화면과 발급 API 가 같은 함수를 쓴다.**
+ *
+ * 종전에는 뇌가 둘이었다. 화면은 buildContractData 의 해석값을 쓰고 종이는
+ * contractLeaseFields 의 병합값을 썼다. 그래서 화면이 영문인데 종이가 한글로 나갔다
+ * (신고 2026-09-04, 413호). 이 저장소가 특약·요금 절을 정본 공유로 이어 둔 것과 같은 방식이다.
+ */
+export function contractNameStyle(
+  lease: {
+    signatureSignedAt?: Date | null
+    signedContractSnapshot?: unknown
+    contractFieldOverrides?: unknown
+    lastDocNameStyle?: unknown
+  } | null | undefined,
+  tenant: {
+    name: string; englishName?: string | null; nativeName?: string | null
+    nationality?: string | null; docNameStyle?: unknown; foreignRegNoEnc?: unknown
+  },
+): DocNameStyle {
+  const ov = parseContractFieldOverrides(lease?.contractFieldOverrides)
+  if (lease?.signatureSignedAt) {
+    return signedDocNameStyle({
+      saved: asDocNameStyle(ov.nameStyle),
+      signed: asDocNameStyle((lease.signedContractSnapshot as { nameStyle?: unknown } | null)?.nameStyle),
+    })
+  }
+  const inherited = asDocNameStyle(lease?.lastDocNameStyle)
+  return resolveDocNameStyle({
+    saved: asDocNameStyle(ov.nameStyle),
+    siblings: inherited ? [inherited] : [],
+    tenant: asDocNameStyle(tenant.docNameStyle),
+    nationality: tenant.nationality,
+    hasForeignRegNo: !!tenant.foreignRegNoEnc,
+    available: docNameStyles(tenant),
+  })
+}
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
 
@@ -298,9 +335,17 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     nativeName: tenant.nativeName ?? null,
   }
   const signedAlready = !!(lease as { signatureSignedAt?: Date | null } | null)?.signatureSignedAt
+  const signedSnap = (lease as { signedContractSnapshot?: unknown } | null)
+    ?.signedContractSnapshot as { nameStyle?: unknown } | null
   const inherited = asDocNameStyle((lease as { lastDocNameStyle?: unknown } | null)?.lastDocNameStyle)
   const nameStyle = signedAlready
-    ? (fields?.nameStyle ?? DEFAULT_DOC_NAME_STYLE)
+    // 병합값(fields.nameStyle)을 읽지 않는다. 자동값 'ko' 가 깔려 있어 "안 골랐음"과 "한글을
+    // 골랐음"이 같은 답이 되고, 그 착각이 서명한 종이의 표기를 뒤엎었다 — 413호가 영문 화면에서
+    // 서명하고 한글로 발급됐다(신고 2026-09-04). 서명 뒤에는 재해석 자체를 안 한다.
+    ? signedDocNameStyle({
+      saved: asDocNameStyle(fieldOverrides.nameStyle),
+      signed: asDocNameStyle(signedSnap?.nameStyle),
+    })
     : resolveDocNameStyle({
       // **병합값이 아니라 실제로 저장된 오버라이드다.** `fields.nameStyle` 은 자동값 'ko' 가 이미
       // 깔린 병합 결과라, 그것을 saved 로 넘기면 1순위에서 늘 'ko' 로 끝나 이어받기·사람 단위
