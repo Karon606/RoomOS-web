@@ -41,7 +41,7 @@ import { Modal } from '@/components/ui/Modal'
 import { fmtDateDot } from '@/lib/fmtDate'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -242,7 +242,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         : undefined)
       await reload()
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '업로드 실패')
+      pushToast('error', humanError(err, '업로드 실패'))
     } finally { release(); setUploading(false) }
   }
 

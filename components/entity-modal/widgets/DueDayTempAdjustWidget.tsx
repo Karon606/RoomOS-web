@@ -11,7 +11,7 @@ import { setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/action
 import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 
 type Override = {
   overrideDueDay: string | null
@@ -122,7 +122,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
         pushToast('success', '납부일 임시 변경 해제됨')
         onChange?.()
       } catch (e) {
-        pushToast('error', (e as Error).message ?? '해제 실패')
+        pushToast('error', humanError(e, '해제 실패'))
       } finally { release() }
     })
   }
@@ -160,7 +160,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
         pushToast('success', `${monthLabel(overrideMonth)}분 납부일 임시 변경됨`)
         onChange?.()
       } catch (e) {
-        pushToast('error', (e as Error).message ?? '변경 실패')
+        pushToast('error', humanError(e, '변경 실패'))
       } finally { release() }
     })
   }

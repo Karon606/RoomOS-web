@@ -68,7 +68,7 @@ import {
   DEFAULT_RECURRING_CATEGORY,
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { calcShortStay, type ShortStayPolicy, type ShortStayReservationMode } from '@/lib/shortStay'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RECURRING_INTERVAL_CHOICES, recurringCycleLabel, recurringCycleWord } from '@/lib/recurringDueDate'
@@ -192,7 +192,7 @@ export default function SettingsForm({
       setLogoUrl(fin.thumbnailUrl)
       pushToast('success', '로고 업로드됨')
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
+      pushToast('error', humanError(err, '로고 업로드 실패'))
     } finally { release(); setLogoUploading(false) }
   }
   const handleLogoDelete = async () => {
@@ -236,7 +236,7 @@ export default function SettingsForm({
       setAppLogoUrl(fin.thumbnailUrl)
       pushToast('success', '영업장 로고 저장됨')
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
+      pushToast('error', humanError(err, '로고 업로드 실패'))
     } finally { release(); setAppLogoUploading(false); closeCrop() }
   }
   const handleAppLogoDelete = async () => {
@@ -2052,7 +2052,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
       setBizCert({ driveFileId, mimeType: fin.mimeType })
       pushToast('success', '사업자등록증 업로드됨')
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '사업자등록증 업로드 실패')
+      pushToast('error', humanError(err, '사업자등록증 업로드 실패'))
     } finally { release(); setCertUploading(false) }
   }
   const handleBizCertDelete = async () => {
@@ -2084,7 +2084,7 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
       setStampUrl(fin.thumbnailUrl)
       pushToast('success', '도장 업로드됨')
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '도장 업로드 실패')
+      pushToast('error', humanError(err, '도장 업로드 실패'))
     } finally { release(); setStampUploading(false) }
   }
   const handleStampDelete = async () => {
@@ -2753,7 +2753,7 @@ function BackupButton() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err) {
-      setError((err as Error).message ?? '백업 실패')
+      setError(humanError(err, '백업 실패'))
     } finally {
       setBusy(false)
     }
@@ -2970,7 +2970,7 @@ function DocMailTemplateCard() {
       if (!r.ok) { setInlineError(r.error); return }
       pushToast('success', '서류 메일 문안 저장됨')
     } catch (e) {
-      pushToast('error', (e as Error).message ?? '저장에 실패했습니다.')
+      pushToast('error', humanError(e, '저장에 실패했습니다.'))
     } finally { setSaving(false) }
   }
 

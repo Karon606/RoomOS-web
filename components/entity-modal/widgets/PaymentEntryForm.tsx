@@ -20,7 +20,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { depositCashReceiptWarning, CARD_NOT_CASH_RECEIPT_NOTE, cashReceiptDefaultAmount, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { fmtMD } from '@/lib/fmtDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
 import { confirmDepositCleaningOverlap } from '@/lib/depositEntryGuard'
 import { PAYMENT_METHODS } from '@/lib/paymentMethods'
@@ -533,7 +533,7 @@ function PaymentEntryFormInner({ room, targetMonth, onSaved, onCancel }: {
         setPayDateVal(kstYmdStr())
         onSaved?.()
       } catch (err) {
-        const msg = (err as Error).message ?? '저장 실패'
+        const msg = humanError(err, '저장 실패')
         setError(msg); pushToast('error', msg)
       } finally { release() }
     })
@@ -955,7 +955,7 @@ function ReservationDepositForm({ room, targetMonth, depositPaidTotal, onSaved, 
         }
         onSaved?.()
       } catch (err) {
-        const msg = (err as Error).message ?? '저장 실패'
+        const msg = humanError(err, '저장 실패')
         setError(msg); pushToast('error', msg)
       } finally { release() }
     })

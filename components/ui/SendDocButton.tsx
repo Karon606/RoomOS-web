@@ -19,7 +19,7 @@
 // 분기가 그것을 보장한다. 번호 접미는 2장 이상일 때만 붙는다.
 
 import { useEffect, useRef, useState } from 'react'
-import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
+import { pushToast, TOAST_DUR_LONG, humanError } from '@/lib/saveStatus'
 import { choiceDialog, confirmDialog } from '@/components/ui/ConfirmDialog'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { shareFiles, canShareFiles, shareOrDownloadFile, photoSaveNeedsShareSheet } from '@/lib/shareFile'
@@ -140,7 +140,7 @@ export function SendDocButton({ getPdfBytes, fileName, label = '내보내기', c
         await fallbackDownloadAll(blobs, nameAt, mime)
       }
     } catch (e) {
-      pushToast('error', (e as Error).message ?? '보내기에 실패했습니다.')
+      pushToast('error', humanError(e, '보내기에 실패했습니다.'))
     } finally {
       setBusy(false)
     }

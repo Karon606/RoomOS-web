@@ -23,7 +23,7 @@ import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -989,7 +989,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       })
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
-      const msg = (err as Error).message ?? 'PDF 생성 실패'
+      const msg = humanError(err, 'PDF 생성 실패')
       pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
     } finally {
       release()

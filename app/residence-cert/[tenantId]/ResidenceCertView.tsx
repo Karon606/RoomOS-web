@@ -13,7 +13,7 @@ import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, reso
 import { docFileLabel } from '@/lib/docBundle'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
@@ -273,7 +273,7 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
       pushToast('success', `실거주 확인서 발급됨. ${back.label}(으)로 돌아갑니다`)
       router.push(back.href)
     } catch (err) {
-      const msg = (err as Error).message ?? 'PDF 생성 실패'
+      const msg = humanError(err, 'PDF 생성 실패')
       pushToast('error', msg)
     } finally { release(); setIssuing(false) }
   }

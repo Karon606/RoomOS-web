@@ -53,6 +53,7 @@ import { sniffDocMime, isImageDocMime } from '@/lib/docMime'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { fetchDocBytes } from '@/lib/docBytes'
+import { humanError } from '@/lib/saveStatus'
 import { printNeedsShareSheet, useShareSheetPrint } from '@/lib/useDocPrint'
 import {
   DocBackLink, docChromeStyle, docHintStyle, docRailStyle, docShellVars,
@@ -114,7 +115,7 @@ export default function DocViewer({ fileId, from, tenantId, fileName, autoPrint 
         for (const u of liveUrls.current) URL.revokeObjectURL(u)
         liveUrls.current = urls
       } catch (e) {
-        if (alive) setError((e as Error).message || '서류를 여는 중 오류가 발생했습니다.')
+        if (alive) setError(humanError(e, '서류를 여는 중 오류가 발생했습니다.'))
       }
     })()
     return () => { alive = false }

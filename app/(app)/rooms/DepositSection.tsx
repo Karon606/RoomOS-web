@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { InfoHint } from '@/components/ui/InfoHint'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { MANUAL_PAY_METHODS } from '@/lib/paymentMethods'
@@ -89,7 +89,7 @@ export function DepositSection({ summary, ledger, totalBalance }: {
         setRecvFor(null)
         router.refresh()
       } catch (e) {
-        pushToast('error', (e as Error).message ?? '기록 실패')
+        pushToast('error', humanError(e, '기록 실패'))
       } finally { release() }
     })
   }

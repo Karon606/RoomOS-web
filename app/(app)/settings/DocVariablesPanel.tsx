@@ -14,7 +14,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { DOC_VARIABLES, DOC_TEMPLATES } from '@/lib/docVariables'
 import type { SettingsTab } from './tabs'
 import {
@@ -141,7 +141,7 @@ function DocVariablesHub({ onClose, onJump }: { onClose: () => void; onJump: Jum
       try {
         await row.save(data, value)
       } catch (e) {
-        pushToast('error', (e as Error).message ?? '저장에 실패했습니다.')
+        pushToast('error', humanError(e, '저장에 실패했습니다.'))
         return
       }
       router.refresh()

@@ -8,7 +8,7 @@ import { useEffect, useState, useTransition } from 'react'
 import {
   setPrevOwnerSettleMenu, getPrevOwnerSettleState, savePrevOwnerSettle,
 } from '@/app/(app)/rooms/actions'
-import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
+import { trackSave, pushToast, withSave, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { InfoHint } from '@/components/ui/InfoHint'
 
@@ -46,7 +46,7 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
         pushToast('success', '양도인 정산 메뉴 설정 변경됨')
       } catch (e) {
         setMenuMode(old)
-        pushToast('error', (e as Error).message ?? '설정 변경 실패')
+        pushToast('error', humanError(e, '설정 변경 실패'))
       } finally { release() }
     })
   }

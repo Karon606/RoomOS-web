@@ -21,7 +21,7 @@ import { RowActionBtn } from '@/components/ui/RowActionBtn'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { canEditPaymentHere } from '@/lib/paymentEditScope'
 import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
-import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDeletePayment } from '@/lib/paymentConfirm'
 import { isRentRefundRecord } from '@/lib/rentRefundRecord'
 
@@ -176,7 +176,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         await reload()
         onChange?.()
       } catch (err) {
-        pushToast('error', (err as Error).message ?? '삭제 실패')
+        pushToast('error', humanError(err, '삭제 실패'))
       } finally { release() }
     })
   }

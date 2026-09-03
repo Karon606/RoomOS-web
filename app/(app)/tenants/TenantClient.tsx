@@ -63,7 +63,7 @@ import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { CARD_NOT_CASH_RECEIPT_NOTE, isCashReceiptEligible } from '@/lib/cashReceipt'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
-import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { withSave, trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -1617,7 +1617,7 @@ export default function TenantClient({
         refresh()
         pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
-        const msg = (err as Error).message
+        const msg = humanError(err, '수납 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
         setError(msg); pushToast('error', msg)
       } finally { release() }
     })

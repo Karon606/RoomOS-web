@@ -5,6 +5,7 @@ import { AsYouType } from 'libphonenumber-js'
 import { AddressSearch } from '@/components/ui/AddressSearch'
 import { Btn } from '@/components/ui/Btn'
 import { saveProfileSetup, skipProfileSetup } from './actions'
+import { humanError } from '@/lib/saveStatus'
 
 export default function ProfileSetupForm({
   email,
@@ -35,7 +36,7 @@ export default function ProfileSetupForm({
         await saveProfileSetup({ realName, phone, address })
       } catch (e) {
         if ((e as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw e
-        setError((e as Error).message ?? '저장 실패')
+        setError(humanError(e, '저장 실패'))
       }
     })
   }

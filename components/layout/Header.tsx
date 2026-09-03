@@ -4,7 +4,7 @@ import { selectProperty } from '@/app/property-select/actions'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { openGlobalSearch } from '@/lib/globalSearch'
 import NotificationBell from '@/components/layout/NotificationBell'
 
@@ -56,7 +56,7 @@ export default function Header({
         if (res.ok) { router.push('/dashboard'); router.refresh() }
         else { pushToast('error', res.error); setSwitching(false) }
       } catch (e) {
-        pushToast('error', (e as Error).message ?? '영업장 전환에 실패했습니다.')
+        pushToast('error', humanError(e, '영업장 전환에 실패했습니다.'))
         setSwitching(false)
       }
       // 성공 시엔 라우트가 바뀌며 언마운트되므로 해제하지 않는다(깜빡임 방지)

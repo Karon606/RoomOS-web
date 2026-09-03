@@ -15,7 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn, btnClass } from '@/components/ui/Btn'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
-import { pushToast, TOAST_DUR_LONG } from '@/lib/saveStatus'
+import { pushToast, TOAST_DUR_LONG, humanError } from '@/lib/saveStatus'
 import { shareOrDownloadFile, shareFiles } from '@/lib/shareFile'
 import { pdfToPngBlobs, prewarmPdfToPng } from '@/lib/pdfToPng'
 import { choiceDialog } from '@/components/ui/ConfirmDialog'
@@ -202,7 +202,7 @@ export function ConsultToolsModal({ open, onClose }: { open: boolean; onClose: (
       }
     } catch (err) {
       certRef.current = null   // 다음 탭에서 다시 받는다
-      pushToast('error', (err as Error).message ?? '사업자등록증을 보내지 못했습니다.')
+      pushToast('error', humanError(err, '사업자등록증을 보내지 못했습니다.'))
     }
     // finally 로 묶지 않는다 — try/finally 안의 setState 를 보면 react-hooks 컴파일러 규칙이
     // 이 컴포넌트 전체 분석을 포기해, 위 useEffect 의 set-state-in-effect 검사까지 조용히 꺼졌다

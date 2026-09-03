@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { RentReceiptData } from './actions'
 import { canShareFiles, sharePdfFile, pdfFileName } from '@/lib/docPreview'
 import { kstYmdStr } from '@/lib/kstDate'
-import { trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { docFileLabel } from '@/lib/docBundle'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
@@ -211,7 +211,7 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
       win?.close()
-      pushToast('error', (err as Error).message ?? '미리보기 생성에 실패했습니다.')
+      pushToast('error', humanError(err, '미리보기 생성에 실패했습니다.'))
     } finally { setPreviewing(false) }
   }
 
@@ -251,7 +251,7 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
       pushToast('success', `${docLabel} 발급됨. ${back.label}(으)로 돌아갑니다`)
       router.push(back.href)
     } catch (err) {
-      const msg = (err as Error).message ?? 'PDF 생성 실패'
+      const msg = humanError(err, 'PDF 생성 실패')
       pushToast('error', msg)
     } finally { release(); setIssuing(false) }
   }

@@ -53,6 +53,23 @@ export function pushToast(
   toastListeners.forEach(l => l(t))
 }
 
+/**
+ * 사용자에게 보여도 되는 오류 문구만 통과시킨다.
+ *
+ * 왜 있는가(긴급 신고 2026-09-03). 여기저기서 `(err as Error).message || '한국어 폴백'` 을 썼는데,
+ * 프레임워크가 던지는 영어 메시지는 truthy 라 **항상 폴백을 이긴다.** 그래서 운영자 화면에
+ * "An error occurred in the Server Components render…" 가 그대로 떴다.
+ *
+ * 판정은 한글 음절 포함 여부다. 이 앱이 사람에게 내는 문구는 전부 한국어고, 프레임워크·통신·
+ * 외부 API 오류는 전부 영어다. 마커 클래스(instanceof)로는 못 가른다 — 서버 액션 경계를 넘으면
+ * 오류가 평범한 Error 로 강등돼 판정이 깨진다. 서버가 res.error 에 실어 보내는 영어도 이 문으로
+ * 함께 걸러지므로, 액션마다 catch 를 고치는 것보다 접점이 작다.
+ */
+export function humanError(err: unknown, fallback: string): string {
+  const msg = typeof err === 'string' ? err : (err as { message?: unknown })?.message
+  return typeof msg === 'string' && /[가-힣]/.test(msg) ? msg : fallback
+}
+
 export function subscribeToast(cb: (t: Toast) => void): () => void {
   toastListeners.add(cb)
   return () => { toastListeners.delete(cb) }
@@ -79,11 +96,11 @@ export async function withSave<T extends { ok: boolean; error?: string }>(
     if (res.ok) {
       if (opts.success) pushToast('success', opts.success)
     } else if (!opts.silentError) {
-      pushToast('error', res.error || '저장에 실패했습니다.')
+      pushToast('error', humanError(res.error, '저장에 실패했습니다.'))
     }
     return res
   } catch (err) {
-    if (!opts.silentError) pushToast('error', (err as Error).message ?? '오류가 발생했습니다.')
+    if (!opts.silentError) pushToast('error', humanError(err, '저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
     throw err
   } finally {
     release()

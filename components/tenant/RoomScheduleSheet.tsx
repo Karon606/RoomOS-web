@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { DatePicker } from '@/components/ui/DatePicker'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import {
@@ -142,7 +142,7 @@ export function RoomScheduleSheet({ leaseTermId, tenantName, mode = 'now', onClo
       pushToast('success', plan ? '거주 호실 일정을 정했습니다' : '입실 처리했습니다', { detail: r.notice })
       onDone()
     } catch (e) {
-      pushToast('error', (e as Error).message ?? '처리에 실패했습니다.')
+      pushToast('error', humanError(e, '처리에 실패했습니다.'))
     } finally {
       setPending(false)
     }

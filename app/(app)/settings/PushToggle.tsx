@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
-import { pushToast } from '@/lib/saveStatus'
+import { pushToast, humanError } from '@/lib/saveStatus'
 import { savePushSubscription, deletePushSubscription, sendTestPush } from './pushActions'
 import { PushHistoryList } from './PushHistoryList'
 
@@ -60,7 +60,7 @@ export function PushToggle() {
       setEnabled(true)
       pushToast('success', '알림이 켜졌습니다.')
     } catch (e) {
-      pushToast('error', (e as Error).message || '알림 켜기 실패')
+      pushToast('error', humanError(e, '알림 켜기 실패'))
     } finally { setBusy(false) }
   }
 
