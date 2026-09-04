@@ -59,7 +59,6 @@ type Body = {
    */
   leaseTermId?: string | null
   signDate: string                  // YYYY-MM-DD — 서명 전에만 신뢰한다. 서명 후에는 서버가 다시 확정한다(아래 resolveSignDates)
-  signatureName: string
   signatureImageDataUrl: string     // base64 PNG dataURL
   disposalSignatureImageDataUrl?: string  // 잔여 소지품 임의처분 동의서 별도 서명 (선택)
   signatureCapturedAt?: string      // 이번 화면에서 방금 받은 서명의 캡처 시각(ISO). 기존 서명 재사용이면 없다
@@ -434,7 +433,6 @@ export async function POST(req: Request) {
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
       disposalSignDate: disposalSignDateLabel,
-      signatureName: body.signatureName,
       // 동의서 서명(위)과 같은 규칙 — data:image/ 가 아니면 안 그린다. 종전에는 계약서 서명만
       // 무검증이라 임의 문자열이 src 로 들어갔고, 그것이 외부 URL 이면 헤드리스가 받으러 나간다.
       signatureImageDataUrl: body.signatureImageDataUrl?.startsWith('data:image/') ? body.signatureImageDataUrl : '',

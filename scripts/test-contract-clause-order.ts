@@ -39,7 +39,7 @@ const html = buildContractPrintHtml({
   subLeaseAddendum: DEFAULT_SUB_LEASE_ADDENDUM,
   roomScheduleText: SCHEDULE_TEXT,
   smoking: '비흡연', emergencyContactText: '', signDate: '2026년 8월 26일',
-  signatureName: '홍길동', signatureImageDataUrl: '', pretendardBase64: '',
+  signatureImageDataUrl: '', pretendardBase64: '',
 } as never)
 
 // ── 구조 ────────────────────────────────────────────────────────────

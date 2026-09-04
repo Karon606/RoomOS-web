@@ -43,7 +43,6 @@ const dummy: PrintContractData = {
   emergencyContactText: '검사보호자 / 010-0000-0000 / 부',
   signDate: '2026년 8월 10일',
   disposalSignDate: '2026년 8월 10일',
-  signatureName: '검사입실자',
   signatureImageDataUrl: DUMMY_PNG,
   pretendardBase64: 'ZHVtbXk=',   // 실제 폰트 바이트는 필요 없다. data URL 로 들어가는지만 본다
 }

@@ -18,6 +18,8 @@ import { driveImageDataUrl } from '@/lib/google-drive'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
+import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
+import { asDocNameStyle } from '@/lib/documentName'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -172,6 +174,22 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
         orderBy: { createdAt: 'desc' },
       })
       if (existing) return existing
+      // 링크가 나가는 순간 표기는 사실이 된다(2026-09-04). 자동 해석은 나중에 답이 바뀐다 —
+      // 같은 계약에서 다른 서류를 발급하면 lastDocNameStyle 이 덮어쓰고, 그 값은 서열에서
+      // 사람 단위 값과 국적 추정보다 위다. 그러면 **입주자가 보고 있는 링크는 영문인데
+      // 운영자 화면만 한글로 뒤집힌다.** 그 갈림이 "영문으로 보냈는데 한글이 됐다"의 정체다.
+      //
+      // **이미 고른 값이 있으면 안 건드린다** — 운영자의 선택을 자동값으로 덮지 않는다.
+      // saveContractFieldOverride 를 부르면 안 된다. 그 액션은 closeStaleUnsignedLinks 를
+      // 부르므로 방금 만든 링크를 자기가 닫는다.
+      const cur = await tx.leaseTerm.findUnique({ where: { id: leaseTermId }, select: { contractFieldOverrides: true } })
+      const curOv = parseContractFieldOverrides(cur?.contractFieldOverrides)
+      if (asDocNameStyle(curOv.nameStyle) === undefined && snapshot.lease?.nameStyle) {
+        await tx.leaseTerm.update({
+          where: { id: leaseTermId },
+          data: { contractFieldOverrides: { ...curOv, nameStyle: snapshot.lease.nameStyle } },
+        })
+      }
       return tx.contractShareLink.create({
         data: {
           token: randomBytes(32).toString('base64url'),
