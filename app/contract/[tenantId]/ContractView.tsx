@@ -24,7 +24,7 @@ import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseA
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
-import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { disposalSignatureMissing, signStage, missingSignatures } from '@/lib/disposalSignGate'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -97,7 +97,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 그때는 서버가 시각 컬럼을 안 건드린다 — 재발급이 과거 서명일을 오늘로 밀면 안 된다.
   const [signatureCapturedAt, setSignatureCapturedAt] = useState<string | null>(null)
   const [disposalSignatureCapturedAt, setDisposalSignatureCapturedAt] = useState<string | null>(null)
-  const [signatureName, setSignatureName] = useState(data.tenant.name ?? '')
   const [smoking, setSmoking]         = useState(data.tenant.smoking ? '흡연' : '비흡연')
   // 계약서에서 흡연 여부를 바꾸면 입실자(입주자 정보)에 즉시 저장 — 출력용 일회성이 아니라 영구 반영
   const handleSmokingChange = (v: string) => {
@@ -410,12 +409,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   // 성명 표기 변경 — 저장은 표시값과 같은 길(commitField)을 그대로 탄다. 서명 잠금·링크 닫힘·
   // 되돌리기가 그 길에 이미 걸려 있어 여기서 다시 배선할 것이 없다.
-  // 서명란 성명은 별도 입력칸이라 따로 맞춰 준다 — 다만 운영자가 손으로 고쳐 둔 값은 건드리지 않는다.
+  // 표기를 고르면 저장이 전부다. 서명란 성명도 같은 값을 읽으므로 따로 맞출 것이 없다
+  // (종전에는 서명란이 자유 입력이라 여기서 따로 맞췄고, 그것이 한 종이 두 표기의 원인이었다).
   const handleNameStyleChange = (raw: string) => {
     const next = asDocNameStyle(raw)
     if (!next) return
-    const before = documentName(nameSource, asDocNameStyle(fields.nameStyle))
-    if (signatureName === before) setSignatureName(documentName(nameSource, next))
     commitField('nameStyle', next)
   }
 
@@ -431,7 +429,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       confirmLabel: '되돌리기', level: 'caution',
     }))) return
     // 표시값을 통째로 지우면 성명 표기도 기본(한글)으로 돌아간다 — 서명란도 그 이름으로 맞춘다.
-    setSignatureName(nameSource.name)
     setEmergencyContactText(initialEmergencyText())
     let linkNote = ''
     if (data.hasFieldOverrides && !bodyLocked && data.lease?.id) {
@@ -660,7 +657,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 값 칸에 두면 이름 옆에 컨트롤이 서서, 종이에 찍힐 성명이 한 줄인지 두 줄인지 화면에서 읽히지
   // 않았다(운영자 지적 2026-08-11). 값 칸에는 이름만 남는다.
   // 원격 화면에는 안 그리고, 서명이 끝난 계약서는 다른 표시값 칸과 같은 cell-locked 로 이유를 말한다.
-  const nameStylePicker = !remote && canPickName ? (
+  // 표기 셀렉트는 서명본 화면(?share=)에 서면 안 된다. 거기서 고르면 commitField 가
+  // isSignatureLocked 로 거절하는데 로컬 state 는 이미 움직여 **화면의 이름만 바뀐다** —
+  // 고를 수 있는 것처럼 보이는데 저장은 안 되는 자리다(2026-09-04).
+  const nameStylePicker = !remote && !signedSnapshot && canPickName ? (
     bodyLocked ? (
       <button type="button" className="no-print cell-locked th-picker" onClick={notifyFieldsLocked}>
         {DOC_NAME_STYLE_LABEL[asDocNameStyle(fields.nameStyle) ?? DEFAULT_DOC_NAME_STYLE]}
@@ -687,7 +687,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const disposalDateLabel = ymdLabel(disposalDateEffective)
 
   // ── 서명 패드 모달 ──────────────────────────────────────────────
+  // 남은 서명란으로 데려가기 위한 자리표. 스크롤은 **사용자가 눌렀을 때만** 일어난다 —
+  // 서명 직후 저절로 움직이면 방금 한 것이 취소된 줄 알거나 당황한다.
+  const contractSignRef = useRef<HTMLDivElement | null>(null)
+  const disposalSignRef = useRef<HTMLDivElement | null>(null)
+  const [attn, setAttn] = useState<'contract' | 'disposal' | null>(null)
+  // 확인창이 500ms 뒤에 뜨는 사이 다른 서명란을 누르면 패드가 열려 있을 수 있다.
+  // setTimeout 클로저는 그때의 signOpen 옛 값을 잡으므로 ref 로 현재값을 본다.
+  const signOpenRef = useRef(false)
+  // 확인창은 세션당 한 번뿐이다. 재서명(1에서 1로)은 전이가 아니라 안 띄운다.
+  const askedRef = useRef(false)
   const [signOpen, setSignOpen]       = useState(false)
+  useEffect(() => { signOpenRef.current = signOpen }, [signOpen])
   // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시.
   // #8: 이전에 저장된 앱서명이 있으면 초기값으로 불러와 표시(출력 시 (인) 대신 서명 보이게).
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(data.lease?.signatureImageUrl ?? null)
@@ -818,12 +829,31 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         setSignOpen(false)
         if (signTarget === 'disposal') setDisposalSignatureDataUrl(url)
         else setSignatureDataUrl(url)
-        // 서명이 2개인 경우 첫 서명 직후엔 '무엇이 남았는지'를 토스트로 명시 (§15 가운뎃점 부연)
+        // 서류가 둘인데 아직 하나 남았으면 **확인창으로 막는다.** 종전에는 토스트뿐이었는데,
+        // 이 페이지는 핀치줌을 열어 둬서 fixed 토스트가 확대 중에는 시야 밖에서 떴다 사라진다
+        // (knowledge/mobile-scroll-viewport, 신고 d9f93bdd). 계약서를 확대해 읽은 사람에게는
+        // 안내가 아예 없었던 셈이다. 그것이 두 사람이 한쪽만 서명하고 나간 경위다(2026-09-04).
         const otherSigned = signTarget === 'disposal' ? !!signatureDataUrl : !!disposalSignatureDataUrl
-        const remaining = data.disposalConsent.enabled && !otherSigned
-        pushToast('success', remaining
-          ? (signTarget === 'disposal' ? '동의서 서명 저장됨 · 계약서 서명이 남았습니다' : '계약서 서명 저장됨 · 동의서 서명이 남았습니다')
-          : (signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다'))
+        const stillLeft = data.disposalConsent.enabled && !otherSigned
+        if (!stillLeft) {
+          pushToast('success', signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다')
+        } else if (!askedRef.current) {
+          askedRef.current = true
+          // 반 박자 뒤에 띄운다. 서명 모달이 닫히며 종이에 자기 글씨가 나타나는 순간이 이 화면의
+          // 유일한 보상인데, 그것을 확인창으로 덮으면 "서명이 취소됐나"로 읽힌다.
+          setTimeout(() => {
+            if (signOpenRef.current) return   // 서명 패드가 열려 있으면 덮지 않는다
+            void confirmDialog({
+              title: signTarget === 'disposal' ? '서명 1 / 2 · 입실계약서가 남았습니다' : '서명 1 / 2 · 동의서가 남았습니다',
+              // 두 언어를 빈 줄로 가른다. 한 문단으로 붙어 있으면 한국어를 못 읽는 사람이
+              // 자기가 읽을 줄이 어디서 시작하는지 곁눈으로 못 찾는다 — 이 확인창의 존재 이유가
+              // 그 사람이다. whitespace-pre-line 이 빈 줄을 그대로 그린다.
+              message: '이 링크에는 서류가 두 장 있습니다. 남은 한 장에 서명해야 제출할 수 있습니다.\n\n1 of 2 signed. This link has 2 documents. Sign the remaining one to submit.',
+              confirmLabel: '서명하러 가기',
+              cancelLabel: '',
+            }).then(() => goToRemaining())
+          }, 500)
+        }
       } catch (err) {
         // catch 가 없으면 전송 실패가 통째로 침묵한다 — 서명 패드만 열린 채 남아 입주자는 저장된
         // 줄 알고 창을 닫는다. 413호가 계약서만 서명하고 멈춘 경위로 이 길이 남아 있었다.
@@ -860,7 +890,37 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
   // 원격 '제출' — 확인 팝업 후 서버에서 링크를 닫고(재접속 차단) 운영자에게 푸시 발송, 완료 화면으로 전환.
   // 서명 저장은 서명 시점에 이미 끝났고, 이 단계는 최종 확정이다.
-  const canSubmit = !!signatureDataUrl && (!data.disposalConsent.enabled || !!disposalSignatureDataUrl)
+  // 서명 진행은 정본이 센다(lib/disposalSignGate). 화면이 따로 세면 알림·발급과 갈린다.
+  const signState = {
+    disposalEnabled: data.disposalConsent.enabled,
+    hasContractSignature: !!signatureDataUrl,
+    hasDisposalSignature: !!disposalSignatureDataUrl,
+  }
+  const stage = signStage(signState)
+  const canSubmit = stage === 'complete'
+  // 서류가 둘인 화면인가. 하나뿐이면 아래 안내 장치가 전부 꺼진다 — 내국인 단일 서명 계약자
+  // 전원이 없던 안내를 받으면 그것이 소음이다.
+  const twoDocs = remote && data.disposalConsent.enabled
+  const signedCount = (signatureDataUrl ? 1 : 0) + (disposalSignatureDataUrl ? 1 : 0)
+  const remaining = missingSignatures(signState)
+  /**
+   * 남은 서명란으로 데려간다. **사용자가 눌렀을 때만 부른다.**
+   *
+   * block: 'center' 여야 목표가 화면 가운데 오고 위아래 맥락이 같이 보인다. 'start' 는 종이
+   * 상단에 붙어 방향 감각을 잃는다. 움직임을 줄이는 설정이면 즉시 점프하고 하이라이트를 더
+   * 오래 세운다 — 순간이동은 하이라이트가 없으면 제일 혼란스럽다.
+   */
+  const goToRemaining = () => {
+    const target = remaining[0]
+    if (!target || signOpen) return
+    const el = target === 'contract' ? contractSignRef.current : disposalSignRef.current
+    if (!el) return
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    setAttn(target)
+    setTimeout(() => setAttn(null), reduce ? 2000 : 1200)
+  }
+
   const handleRemoteSubmit = async () => {
     if (finalizing) return
     if (!(await confirmDialog({
@@ -963,7 +1023,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 골라 화면과 다른 내용의 PDF 를 보관한다(2026-08-13, 1인 다호실).
           leaseTermId: data.lease?.id ?? null,
           signDate,
-          signatureName,
           signatureImageDataUrl: signatureDataUrl,
         signatureCapturedAt: signatureCapturedAt ?? undefined,
         disposalSignatureCapturedAt: disposalSignatureCapturedAt ?? undefined,
@@ -1037,7 +1096,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         // 미리보기·보내기도 같은 계약을 지목한다. 발급본과 다른 종이가 나가면 그게 더 나쁘다.
         leaseTermId: data.lease?.id ?? null,
         signDate,
-        signatureName,
         signatureImageDataUrl: signatureDataUrl,
         signatureCapturedAt: signatureCapturedAt ?? undefined,
         disposalSignatureCapturedAt: disposalSignatureCapturedAt ?? undefined,
@@ -1073,14 +1131,39 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 인플로우 제출 CTA — 마지막 서명이 끝나면 각 서명란 바로 아래(문서 흐름 안)에 노출한다.
   // 이 화면은 핀치줌이 열려 있어(layout.tsx viewport) fixed·sticky 는 확대 시 시야 밖으로 밀린다.
   // 방금 서명한 자리에서 바로 보이도록 계약서·동의서 두 문서 아래 모두 같은 블록을 둔다.
-  const inflowSubmitCta = remote && canSubmit ? (
+  // 제출 자리는 **항상 선다**(§27.1 조건부 등장 금지). 종전에는 둘 다 서명해야 나타나서,
+  // 첫 서명 뒤 화면에 새로 생기는 것이 하나도 없었다 — 그래서 "끝났나 보다"가 됐다(2026-09-04).
+  //
+  // 미완료라고 disabled 로 두지 않는다. 눌러도 아무 일이 없으면 한글을 못 읽는 사람에게는
+  // 화면이 고장난 증거로 읽힌다(같은 파일의 '잠긴 동작' 문법과 같은 이유). 대신 눌러서
+  // 남은 서명란으로 데려간다. 회색이던 버튼이 코랄로 켜지는 전환 자체가 텍스트 없는 신호다.
+  const inflowSubmitCta = !remote ? null : (
     <div className="no-print remote-cta">
-      <span className="remote-cta-text">모든 서명이 완료됐습니다</span>
-      <button onClick={handleRemoteSubmit} disabled={finalizing} className="toolbar-print remote-submit">
+      {twoDocs && (
+        <span className="sig-progress" aria-hidden="true">
+          <i className={signedCount >= 1 ? 'on' : ''} />
+          <i className={signedCount >= 2 ? 'on' : ''} />
+        </span>
+      )}
+      <span className="remote-cta-text" aria-live="polite">
+        {!twoDocs ? (canSubmit ? '서명이 완료됐습니다.' : '서명해 주세요.')
+          : canSubmit ? '서명 2 / 2 · 모두 완료됐습니다.'
+          : signedCount === 1 ? '서명 1 / 2 · 아직 하나 남았습니다.'
+          : '서명 0 / 2 · 두 곳에 서명해 주세요.'}
+        {twoDocs && (
+          <em className="en">
+            {canSubmit ? '2 of 2 signed.' : signedCount === 1 ? '1 of 2 signed. One signature left.' : '0 of 2 signed. Two signatures required.'}
+          </em>
+        )}
+      </span>
+      <button
+        onClick={canSubmit ? handleRemoteSubmit : goToRemaining}
+        disabled={finalizing}
+        className={canSubmit ? 'toolbar-print remote-submit' : 'remote-submit remote-submit-wait'}>
         {finalizing ? '제출 중…' : '제출하기'}
       </button>
     </div>
-  ) : null
+  )
 
   // 원격 제출 완료 — 계약서 대신 완료 안내 전면 표시(sign 페이지 독립 스타일과 동일 톤). 창 닫기는 위 effect 가 시도.
   if (remote && submitted) {
@@ -1125,12 +1208,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
           </span>
           <div className="toolbar-spacer" />
-          {!canSubmit && (
-            <span className="toolbar-hint">서명을 완료하면 제출할 수 있어요.</span>
-          )}
-          <button onClick={handleRemoteSubmit} disabled={!canSubmit || finalizing} className="toolbar-print remote-submit">
-            {finalizing ? '제출 중…' : '제출하기'}
-          </button>
+          {/* 제출은 흐름 안 CTA 하나로 모은다. 여기 disabled 버튼을 두면 서명자가 처음 보는
+              제출 버튼이 눌러도 아무 반응 없는 것이 되고, 아래 CTA 와 같은 라벨로 다르게
+              행동한다(디자이너 지적 2026-09-04). 힌트도 CTA 문구와 겹쳐 함께 걷는다(§27.2). */}
         </div>
       ) : (
       <div className="no-print toolbar">
@@ -1468,16 +1548,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               <div className="sign-role">임차인 (입실자)</div>
               <div className="sign-line">
                 <span className="lbl">성명</span>
-                {remote ? (
-                  <span className="val">{signatureName}</span>
-                ) : (
-                  <>
-                    <span className="signame-input no-print">
-                      <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
-                    </span>
-                    <span className="val only-print">{signatureName}</span>
-                  </>
-                )}
+                {/* 서명란 이름도 서버가 정한 한 값을 읽는다. 종전에는 여기만 자유 입력이라
+                    한 종이 안에서 상단은 한글, 서명란은 영문으로 갈렸다(413호 실측 2026-09-04).
+                    조정 수단은 표기 셀렉트와 고객 정보 세 칸이다 — 자유 입력은 무엇으로 고쳤는지
+                    기록이 안 남아(printedFacts 에 서명란 축이 없다) 법적 서류에 쓸 수 없다. */}
+                <span className="val">{printedName}</span>
                 <span className="seal-wrap">
                   {signatureDataUrl ? (
                     <>
@@ -1490,8 +1565,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={() => openSign('contract')} className="no-print"
-                        style={{ border: '1.5px dashed var(--coral, #a03c2e)', borderRadius: 6, padding: '6px 14px', color: 'var(--coral, #a03c2e)', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {/* 펜은 "여기 쓰라"는 전 세계 공용 픽토그램이다. 한국어를 못 읽는 서명자가
+                          많아 텍스트에만 기댈 수 없다(운영자 오더 2026-09-04). */}
+                      <button type="button" ref={contractSignRef as never} onClick={() => openSign('contract')}
+                        className={`no-print sign-cta${attn === 'contract' ? ' attn' : ''}${twoDocs && remaining.length === 1 && remaining[0] === 'contract' ? ' last' : ''}`}
+                        style={{ padding: '6px 14px', fontSize: 13 }}>
+                        <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                         여기를 눌러 서명
                       </button>
                       <span className="seal-mark only-print">(서명)</span>
@@ -1575,7 +1654,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="dc-date num">{disposalDateLabel}</div>
           <div className="dc-sign">
             <span className="dc-sign-lbl">동의자(입실자) 성명</span>
-            <span className="dc-sign-line">{signatureName || printedName}</span>
+            <span className="dc-sign-line">{printedName}</span>
             <span className="dc-sign-seal">
               {disposalSignatureDataUrl ? (
                 <>
@@ -1588,8 +1667,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                 </>
               ) : (
                 <>
-                  <button type="button" onClick={() => openSign('disposal')} className="no-print"
-                    style={{ border: '1.5px dashed var(--coral, #a03c2e)', borderRadius: 6, padding: '5px 12px', color: 'var(--coral, #a03c2e)', background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  <button type="button" ref={disposalSignRef as never} onClick={() => openSign('disposal')}
+                    className={`no-print sign-cta${attn === 'disposal' ? ' attn' : ''}${twoDocs && remaining.length === 1 && remaining[0] === 'disposal' ? ' last' : ''}`}
+                    style={{ padding: '5px 12px', fontSize: 12 }}>
+                    <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                     여기를 눌러 서명
                   </button>
                   <span className="only-print">(서명 또는 인)</span>
@@ -1732,13 +1813,80 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .remote-cta {
           width: min(210mm, 100% - 24px);
           margin: 12px auto 0;
-          display: flex; align-items: center; justify-content: space-between;
+          /* space-between 을 안 쓴다. 자식이 셋이라 넓은 화면에서 진행 막대가 제 설명문에서
+             200px 넘게 떨어져 나가고, 좁은 화면에서 줄바꿈되면 마지막 줄(버튼)이 왼쪽에
+             붙는다(디자이너 지적). 막대와 문장을 붙이고 버튼만 오른쪽으로 민다. */
+          display: flex; align-items: center; justify-content: flex-start;
           gap: 12px; flex-wrap: wrap;
-          padding: 12px 14px;
+          padding: 10px 14px;
           background: var(--cream);
           border: 1px solid var(--cream-3); border-radius: 10px;
+          /* 이 화면의 유일한 액션이 안내 띠(툴바)보다 눌려 보이면 위계가 뒤집힌다(§19). */
+          box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .remote-cta-text { font-size: 13px; font-weight: 600; color: var(--ink); }
+        .remote-cta > button { margin-left: auto; }
+        .remote-cta-text { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1 1 auto; min-width: 0; }
+
+        /* 남은 서명 안내 (2026-09-04). 서명자 다수가 한국어를 못 읽어 텍스트에만 기댈 수 없다.
+           아라비아 숫자와 형태로 같은 말을 한 번 더 한다 — 숫자는 이 앱의 서명자 국적
+           (베트남·방글라데시·러시아·우즈베키스탄·미얀마) 전부가 실생활에서 읽는 글자다. */
+        .remote-cta-text .en { display: block; font-size: 11px; font-weight: 500; font-style: normal; color: var(--ink-s); margin-top: 2px; }
+        /* 빈 칸이 보여야 화면이 "둘"이라고 말한다. --cream-3 은 --cream 위 1.42:1 이라 4px
+           두께에서 사실상 안 보였다 — 0/2 에서 아무것도 안 보이고 1/2 이 되어야 막대 하나가
+           허공에 나타나 '하나짜리 진행'으로 읽혔다(디자이너 지적). 채움과 빔을 색이 아니라
+           형태로 가른다. 색만으로 가르면 색각 이상에서 코랄과 웜 그레이가 붙는다. */
+        .sig-progress { display: inline-flex; gap: 6px; align-items: center; flex-shrink: 0; }
+        .sig-progress i {
+          width: 28px; height: 8px; border-radius: 999px; box-sizing: border-box;
+          background: transparent; border: 1.5px solid var(--ink-s);
+        }
+        .sig-progress i.on { background: var(--coral); border-color: var(--coral); }
+        /* 아직 못 누르는 버튼이 아니라 **아직 안 켜진 버튼**이다. disabled 로 두면 눌러도
+           아무 일이 없어 화면이 고장난 것으로 읽힌다 — 누르면 남은 서명란으로 데려간다. */
+        .remote-submit-wait {
+          background: var(--cream); color: var(--ink-s);
+          border: 1px solid var(--cream-3); border-radius: 8px;
+          padding: 10px 18px; min-height: 44px;
+          font-size: 14px; font-weight: 600; cursor: pointer;
+          transition: background-color var(--dur-base, 150ms) ease, color var(--dur-base, 150ms) ease;
+        }
+        /* opacity 를 안 쓴다. --ink-s 에 .75 를 얹으면 3.13:1 로 AA 미달이고, 회색으로 보이는
+           몫은 color 가 이미 진다. 그리고 이 파일의 .toolbar-print:disabled 가 opacity .6 이라
+           같은 문법이면 "안 켜진 버튼"이 아니라 "못 누르는 버튼"으로 읽힌다. */
+        .remote-submit-wait:hover  { background: var(--cream-soft); }
+        .remote-submit-wait:active { background: var(--cream-soft); transform: scale(0.98); }
+        /* 테두리·배경을 인라인 style 이 아니라 여기서 준다. 인라인 단축 속성(border/background)은
+           !important 없는 어떤 선택자보다 먼저라, 아래 .last·.attn 선언이 통째로 죽어 있었다 —
+           특히 움직임을 줄인 사용자에게는 신호가 하나도 안 남았다(디자이너 지적 2026-09-04). */
+        .sign-cta {
+          display: inline-flex; align-items: center; gap: 5px;
+          border: 1.5px dashed var(--coral); border-radius: 6px;
+          background: transparent; color: var(--coral);
+          font-weight: 600; white-space: nowrap; cursor: pointer;
+        }
+        /* 종이는 transform: scale 로 축소된다(390px 폰에서 0.46배). 그 안의 14px 아이콘은
+           6px 로 그려져 픽토그램 구실을 못 한다. 24 로 올려 실효 11px 을 만든다.
+           영문 병기는 이 안에 두지 않는다 — 10px 이 4.6px 이 되어 글자로 성립하지 않는다.
+           그 몫은 축소를 안 받는 .remote-cta 의 영문 줄이 진다. */
+        .sign-cta .pen { flex-shrink: 0; }
+        /* 마지막 하나 남았을 때만 켠다. 처음부터 양쪽이 다 뛰면 신호가 죽는다. */
+        .sign-cta.last { border-style: solid; background: color-mix(in srgb, var(--coral) 7%, transparent); }
+        @media (prefers-reduced-motion: no-preference) {
+          .sign-cta.last { animation: signBreathe 2s ease-in-out infinite; }
+          .sign-cta.attn { animation: signAttn 1.2s ease-out 1; }
+          @keyframes signBreathe {
+            0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--coral) 22%, transparent); }
+            50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--coral) 0%, transparent); }
+          }
+          @keyframes signAttn {
+            0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--coral) 45%, transparent); }
+            100% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--coral) 0%, transparent); }
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          /* 움직임 대신 두께로 말한다 — 순간이동 뒤에는 정지 표시가 더 오래 서야 한다. */
+          .sign-cta.last, .sign-cta.attn { border-width: 2.5px; border-style: solid; }
+        }
 
         /* 본국 표기 이름(선택) — 제출 CTA 와 같은 폭·같은 자리에 서되 강조는 하지 않는다.
            배경·테두리 없이 muted 글자만 두어 필수 칸으로 읽히지 않게 한다(§29). */
