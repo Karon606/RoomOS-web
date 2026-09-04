@@ -34,7 +34,9 @@ const WIRED = [
   ['app/api/contract/generate/route.ts', 'disposalSignatureMissing(', 'ⓑ 발급이 동의서 서명을 안 본다. 서명란이 빈 동의서가 아무 말 없이 나간다.'],
   ['app/(app)/dashboard/alerts.ts', 'signProgressLabel(', 'ⓒ 홈 알림이 반쪽 서명을 완료라고 부른다. 운영자가 그것을 믿고 발급한다.'],
   ['app/(app)/contracts/actions.ts', 'disposalSignatureMissing(', 'ⓓ 발급 대기 행이 반쪽 서명을 구분하지 않는다.'],
-  ['components/entity-modal/widgets/ContractFilesPanel.tsx', 'disposalSignatureMissing(', 'ⓕ 계약서 패널 배지가 반쪽 서명을 서명 완료라고 부른다.'],
+  // 배지는 signStage 로 옮겼다(2026-09-04). 반쪽이 양방향이라 발급 축(disposalSignatureMissing)
+  // 하나로는 동의서만 서명된 계약을 말할 수 없다. 정본을 부르는 것이 축이지 함수 이름이 축은 아니다.
+  ['components/entity-modal/widgets/ContractFilesPanel.tsx', 'signStage(', 'ⓕ 계약서 패널 배지가 반쪽 서명을 서명 완료라고 부른다.'],
 ]
 for (const [f, needle, msg] of WIRED) {
   if (!read(f).includes(needle)) violations.push(`${f} — ${msg}`)
@@ -56,10 +58,19 @@ for (const [f, needle, msg] of WIRED) {
 {
   const f = 'app/contract/[tenantId]/ContractView.tsx'
   const src = read(f)
+  // canSubmit 이 정본 판정을 거치는가. 종전에는 이 한 줄이 disposalConsent.enabled 와
+  // disposalSignature 를 직접 봤는데, 지금은 signStage 가 그 둘을 쥔다(2026-09-04).
+  // **정본을 부르는 것이 축이지 이 줄에 어떤 낱말이 있느냐가 축은 아니다.**
   const m = src.match(/const canSubmit = [^\n]*/)
   if (!m) violations.push(`${f} — canSubmit 을 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
-  else if (!/disposalConsent\.enabled/.test(m[0]) || !/disposalSignature/.test(m[0])) {
-    violations.push(`${f} — canSubmit 이 동의서 서명을 안 본다. 화면에서 반쪽으로 제출된다.`)
+  else if (/disposalConsent\.enabled/.test(m[0]) && /disposalSignature/.test(m[0])) {
+    // 옛 모양(직접 판정)도 통과시킨다 — 되돌아간 것이 아니라 아직 안 옮긴 상태일 수 있다.
+  } else if (!/signStage|stage === 'complete'/.test(m[0])) {
+    violations.push(`${f} — canSubmit 이 서명 진행 정본을 안 거친다. 화면이 알림·발급과 다른 답을 낸다.`)
+  }
+  // 그리고 화면이 정본을 실제로 부르는가(import 만으로는 통과 못 한다).
+  if (!/signStage\s*\(/.test(src)) {
+    violations.push(`${f} — 화면이 signStage 를 안 부른다. 서명 진행을 손으로 세면 다른 자리와 갈린다.`)
   }
   // 원격 서명·제출 호출이 실패를 삼키지 않는가. 침묵하면 입주자가 저장된 줄 알고 창을 닫는다.
   for (const fn of ['submitRemoteSignature', 'finalizeRemoteSubmission']) {

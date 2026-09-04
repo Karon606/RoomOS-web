@@ -1,0 +1,54 @@
+// 서명 진행 판정 회귀 — lib/disposalSignGate 의 signStage·missingSignatures. 실패 시 exit 1.
+//
+// 왜 고정하는가(2026-09-04). 어제 두 입주자가 각각 한쪽만 서명하고 끝났는데, 계약서만 서명한
+// 쪽에는 "원격 서명 완료" 알림이 뜨고 동의서만 서명한 쪽은 화면 어디에도 안 나왔다.
+// 판정이 계약서 서명 하나만 봤기 때문이다. 여덟 칸 진리표를 통째로 못박는다.
+import { signStage, missingSignatures, signProgressLabel, disposalSignatureMissing } from '../lib/disposalSignGate'
+
+let pass = 0
+const fails: string[] = []
+const eq = (name: string, got: unknown, want: unknown) => {
+  if (JSON.stringify(got) === JSON.stringify(want)) { pass++; return }
+  fails.push(`${name}: 기대 ${JSON.stringify(want)} / 실제 ${JSON.stringify(got)}`)
+}
+const S = (d: boolean, c: boolean, p: boolean) =>
+  ({ disposalEnabled: d, hasContractSignature: c, hasDisposalSignature: p })
+
+// ── 동의서를 쓰는 영업장 (네 칸) ──────────────────────────────────
+eq('둘 다 없으면 none', signStage(S(true, false, false)), 'none')
+eq('계약서만 = partial (413호)', signStage(S(true, true, false)), 'partial')
+eq('동의서만 = partial (506호)', signStage(S(true, false, true)), 'partial')
+eq('둘 다 있으면 complete', signStage(S(true, true, true)), 'complete')
+
+// ── 동의서를 안 쓰는 영업장 (네 칸) ───────────────────────────────
+// **여기가 멀티테넌트 축이다.** 계약서 하나로 완료여야 하고, 이 변경 전과 화면이 같아야 한다.
+eq('꺼짐 · 둘 다 없으면 none', signStage(S(false, false, false)), 'none')
+eq('꺼짐 · 계약서만으로 complete', signStage(S(false, true, false)), 'complete')
+eq('꺼짐 · 동의서만 = partial', signStage(S(false, false, true)), 'partial')
+eq('꺼짐 · 둘 다 있어도 complete', signStage(S(false, true, true)), 'complete')
+
+// ── 두 함수의 관계 (여덟 칸 전부) ─────────────────────────────────
+// disposalSignatureMissing 은 발급 축이고 signStage 는 알림 축이다. 갈라지면 한 화면이
+// 다른 화면과 다른 사실을 말하게 된다.
+for (const d of [true, false]) for (const c of [true, false]) for (const p of [true, false]) {
+  const s = S(d, c, p)
+  eq(`항등 d=${d} c=${c} p=${p}`,
+    disposalSignatureMissing(s), signStage(s) === 'partial' && s.hasContractSignature)
+}
+
+// ── 남은 서명 ─────────────────────────────────────────────────────
+eq('계약서만 서명 → 동의서가 남는다', missingSignatures(S(true, true, false)), ['disposal'])
+eq('동의서만 서명 → 계약서가 남는다', missingSignatures(S(true, false, true)), ['contract'])
+eq('아무것도 안 하면 둘 다', missingSignatures(S(true, false, false)), ['contract', 'disposal'])
+eq('꺼진 영업장은 동의서를 안 센다', missingSignatures(S(false, false, false)), ['contract'])
+eq('완료면 빈 배열', missingSignatures(S(true, true, true)), [])
+
+// ── 문구 ──────────────────────────────────────────────────────────
+eq('완료 문구', signProgressLabel(S(true, true, true)), '원격 서명 완료 · 계약서 발급 필요')
+eq('계약서만 문구', signProgressLabel(S(true, true, false)), '계약서만 서명됨 · 동의서 서명 대기')
+eq('동의서만 문구', signProgressLabel(S(true, false, true)), '동의서만 서명됨 · 계약서 서명 대기')
+eq('없음 문구', signProgressLabel(S(true, false, false)), '서명 대기')
+
+console.log(`\n서명 진행 판정 회귀: ${pass} 통과 / ${fails.length} 실패`)
+for (const m of fails) console.error(`  - ${m}`)
+if (fails.length) process.exit(1)
