@@ -25,6 +25,8 @@ const DOT: Record<AlertCategory, string> = {
   lowstock: 'var(--viz-4)',
   receipt:  'var(--ink-m)',
   signed:   'var(--success)',
+  // 반쪽 서명은 완료가 아니라 아직 안 된 상태다. 완료(초록)와 같은 점이면 종에서 구분이 안 된다.
+  signpartial: 'var(--warning-fg)',
   // 고정지출 출금·납부 — 홈 AlertsStrip 의 'recurring' 점과 같은 색(var(--info-fg))이라
   // 두 화면에서 같은 종류의 알림이 같은 색으로 보인다.
   autodebit: 'var(--info-fg)',

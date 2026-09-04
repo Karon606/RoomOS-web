@@ -86,7 +86,11 @@ async function closeStaleUnsignedLinks(leaseTermId: string): Promise<number> {
   const res = await prisma.contractShareLink.updateMany({
     where: {
       leaseTermId,
-      signedAt: null, submittedAt: null, closedAt: null,
+      // disposalSignedAt 도 본다(운영자 승인 2026-09-04). 동의서만 서명된 링크는 signedAt 이
+      // null 이라 '서명 전'으로 분류돼 조용히 닫혔다 — 임대료를 한 번 고치기만 해도 그랬고,
+      // 그러면 받아 둔 동의서 서명은 남는데 반쪽 알림은 뜨자마자 사라진다
+      // (506호가 화면에서 증발하는 두 번째 길). 그 링크의 스냅샷은 옛 값이라 드리프트 경고가 뒤를 받는다.
+      signedAt: null, disposalSignedAt: null, submittedAt: null, closedAt: null,
       expiresAt: { gt: new Date() },
     },
     data: { closedAt: new Date() },

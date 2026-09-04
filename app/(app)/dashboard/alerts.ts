@@ -22,9 +22,9 @@ import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurrin
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { signProgressLabel } from '@/lib/disposalSignGate'
+import { signProgressLabel, signStage } from '@/lib/disposalSignGate'
 
-export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'autodebit' | 'manualpay'
+export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
 
 export type AlertItem = {
   id: string            // 목록 key (고유)
@@ -44,7 +44,7 @@ export type AlertItem = {
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
   unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
-  contact: '연락할 때', signed: '서명 받음',
+  contact: '연락할 때', signed: '서명 받음', signpartial: '서명 미완',
   // 운영자 어휘 그대로 — 자동이체는 계좌에서 '출금'되고, 직접 내는 건은 '납부'한다(신고 568633fb 원문).
   autodebit: '오늘 출금', manualpay: '오늘 납부',
 }
@@ -116,7 +116,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     // 원격 서명 완료 — 서명 수신(signedAt) 후 정식 계약서가 아직 없는 링크. 발급본·스캔본이 생기면 자동 소멸.
     // closedAt: null — 운영자가 서명된 링크를 닫으면(계약 무산) 알림도 해소.
     prisma.contractShareLink.findMany({
-      where: { propertyId, signedAt: { not: null }, closedAt: null },
+      // 반쪽은 어느 쪽이 먼저 오든 반쪽이다. 계약서 서명만 보면 동의서만 서명한 계약(506호)이
+      // 이 목록에 아예 못 들어와, 운영자가 볼 화면이 한 곳도 없다(2026-09-04).
+      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
       select: {
         id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true,
         // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
@@ -271,21 +273,41 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   // 원격 서명 완료 — 서명본 수신 후 정식 계약서가 아직 없는 상태. 발급본·스캔본이 생기면 소멸, 파일 삭제 시 재출현.
   // 판정은 lib/contractIssue 정본을 쓴다 — 계약서 파일 패널이 같은 규칙으로 '계약서 발급'을 주 동작으로 올린다.
   for (const link of signedLinks) {
-    if (!link.signedAt) continue
+    // 해소 판정의 기준 시각. 계약서 서명이 있으면 종전 그대로이고, 동의서만 있는 링크에서만
+    // 새로 답이 생긴다.
+    const signalAt = link.signedAt ?? link.disposalSignedAt
+    if (!signalAt) continue
     // 딸린 계약의 종이는 부모 합본 한 장이다 — 그 종이가 생기면 이 알림도 함께 끝난다.
     // 발급 대기 목록과 같은 한 값을 본다(lib/contractIssue issuingLeaseId).
     const issueLeaseId = issuingLeaseId(link.leaseTermId, link.leaseTerm.parentLeaseTermId)
-    if (isContractIssued(link.signedAt, issueLeaseId, generatedFiles)) continue
+    if (isContractIssued(signalAt, issueLeaseId, generatedFiles)) continue
     // 반쪽 서명을 완료라고 부르지 않는다(신고 2026-09-03, 413호). 종전에는 signedAt 하나만 보고
     // "원격 서명 완료"라고 점등했고, 운영자는 그것을 믿고 서명란이 빈 동의서를 발급했다.
-    items.push({
+    //
+    // hasContractSignature 를 리터럴 true 로 넘기지 않는다. 위 쿼리를 넓힌 순간 그 리터럴은
+    // 거짓말이 된다 — 동의서만 서명된 링크가 '계약서만 서명됨'으로 뜬다(방향만 바뀐 같은 거짓말).
+    const state = {
+      disposalEnabled,
+      hasContractSignature: !!link.signedAt,
+      hasDisposalSignature: !!link.disposalSignedAt,
+    }
+    const stage = signStage(state)
+    if (stage === 'none') continue
+    // 완료와 반쪽은 다른 카테고리다. 같은 것으로 두면 푸시 요약이 반쪽을 '서명 받음'으로 세고,
+    // 그것이 운영자를 잘못된 발급으로 이끈 원래 경로다.
+    // 반쪽의 할 일은 발급이 아니라 남은 서명 받기라 목적지도 다르다(href 를 안 실어 고객 상세로).
+    items.push(stage === 'partial' ? {
+      id: `signpartial-${link.id}`, category: 'signpartial',
+      title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
+      subtitle: signProgressLabel(state),
+      tenantId: link.tenant.id, leaseTermId: issueLeaseId,
+      roomId: link.leaseTerm.room?.id ?? null, roomNo: link.leaseTerm.room?.roomNo, tenantName: link.tenant.name,
+      // 링크 수명이 24시간이라 반쪽은 시간이 급하다. 완료(820) 위, 퇴실 경과 최대치 아래.
+      urgency: 830,
+    } : {
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
-      subtitle: signProgressLabel({
-        disposalEnabled,
-        hasContractSignature: true,
-        hasDisposalSignature: !!link.disposalSignedAt,
-      }),
+      subtitle: signProgressLabel(state),
       // 할 일이 '계약서 발급'이라 목적지는 입주자 모달이 아니라 계약서함의 발급 대기 섹션이다.
       // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
       href: '/contracts?focus=contracts-pending-issue',
@@ -301,10 +323,15 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
 
 /** cron 메시지용 — 카테고리별 건수 + 합계. computeAlerts 와 같은 소스라 종 뱃지와 일치. */
 export function summarizeAlerts(items: AlertItem[]): { total: number; parts: string[]; byCategory: Record<AlertCategory, number> } {
-  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, signed: 0, autodebit: 0, manualpay: 0 } as Record<AlertCategory, number>
+  // contact 가 빠져 있었다(2026-09-04 새 그물이 발견). `as` 캐스트가 타입 검사를 우회해
+  // byCategory['contact']++ 가 undefined++ = NaN 이 되던 자리다. 화면에는 order 에도 없어
+  // 안 드러났지만, byCategory 를 소비하는 다른 자리가 생기면 NaN 이 샌다.
+  const byCategory = { unpaid: 0, checkout: 0, tour: 0, movein: 0, lowstock: 0, receipt: 0, contact: 0, signed: 0, signpartial: 0, autodebit: 0, manualpay: 0 } as Record<AlertCategory, number>
   for (const it of items) byCategory[it.category]++
   // 푸시 메시지 순서: 미납 → 퇴실 → 서명 완료 → 투어 → 입주 → 오늘 출금 → 오늘 납부 → 재고 → 수령
-  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'tour', 'movein', 'autodebit', 'manualpay', 'lowstock', 'receipt']
+  // **이 배열은 타입 검사에 안 걸린다.** 카테고리를 더하고 여기를 빠뜨리면 종은 울리는데
+  // 푸시 요약에서만 침묵한다. 새 그물(check-sign-progress-axis ⓔ)이 길이를 대조해 지킨다.
+  const order: AlertCategory[] = ['unpaid', 'checkout', 'signed', 'signpartial', 'tour', 'movein', 'autodebit', 'manualpay', 'lowstock', 'receipt']
   const parts = order.filter(c => byCategory[c] > 0).map(c => `${CATEGORY_LABEL[c]} ${byCategory[c]}`)
   return { total: items.length, parts, byCategory }
 }

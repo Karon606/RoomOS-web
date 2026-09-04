@@ -46,7 +46,7 @@ import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
-import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { signStage } from '@/lib/disposalSignGate'
 
 // 원격 서명 링크 상태 배지 — 활성(남은 시간)/서명 완료/만료/닫힘/잠김
 // closable: 닫기(=서명 완료 알림 해제) 가능 여부. 만료·잠김이어도 닫혀 있지만 않으면 닫을 수 있어야 한다 —
@@ -67,12 +67,16 @@ function shareBadge(link: ContractShareLinkInfo): { label: string; active: boole
     : `${Math.max(1, Math.floor(remainMs / (60 * 1000)))}분 남음`
   // 반쪽 서명을 '완료'라고 부르지 않는다(신고 2026-09-03, 413호). 이 배지를 보고 발급하면
   // 동의서 장이 서명란이 빈 채로 나간다. 판정은 lib/disposalSignGate 정본이 쥔다.
-  if (link.signedAt && disposalSignatureMissing({
+  // 반쪽은 양방향이라 signStage 를 쓴다 — 동의서만 서명된 계약(506호)도 여기서 말해야 한다.
+  const stage = signStage({
     disposalEnabled: link.disposalEnabled,
-    hasContractSignature: true,
+    hasContractSignature: !!link.signedAt,
     hasDisposalSignature: !!link.disposalSignedAt,
-  })) return { label: `계약서만 서명됨 · ${remain}`, active: true, closable: true }
-  if (link.signedAt) return { label: `서명 완료 · ${remain}`, active: true, closable: true }
+  })
+  if (stage === 'complete') return { label: `서명 완료 · ${remain}`, active: true, closable: true }
+  if (stage === 'partial') {
+    return { label: `${link.signedAt ? '계약서만 서명됨' : '동의서만 서명됨'} · ${remain}`, active: true, closable: true }
+  }
   return { label: `서명 대기 · ${remain}`, active: true, closable: true }
 }
 

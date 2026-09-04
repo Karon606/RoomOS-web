@@ -8,7 +8,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
-import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { disposalSignatureMissing, signStage, type SignStage } from '@/lib/disposalSignGate'
 import { issuedPrintedName } from '@/lib/contractPrintedFacts'
 
 async function getPropertyId(): Promise<string> {
@@ -134,6 +134,8 @@ export type PendingIssueRow = {
   // 계약서만 서명되고 동의서가 빈 반쪽 상태인가. 이 줄을 '완료'로 읽고 발급하면 동의서 장이
   // 서명란이 빈 채로 나간다(신고 2026-09-03, 413호).
   disposalMissing: boolean
+  // 서명이 어디까지 왔는가. 반쪽 줄에 '발급' 버튼이 서면 그것이 곧 413호 사고의 재료다.
+  stage: SignStage
 }
 
 // 서명은 받았는데 계약서 파일이 아직 없는 계약 — /contracts 의 '발급 대기' 섹션용.
@@ -155,10 +157,12 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
     // 만료를 거르면 502호처럼 서명이 끝난 계약이 또 안 보인다(오류신고 d41eea8c 재발 지점).
     // closedAt: null 만 본다 — 운영자가 링크를 닫은 것은 계약 무산이라 대기에서 빠지는 게 맞다.
     prisma.contractShareLink.findMany({
-      where: { propertyId, signedAt: { not: null }, closedAt: null },
+      // 반쪽은 어느 쪽이 먼저 오든 반쪽이다(2026-09-04). 계약서 서명만 보면 동의서만 서명한
+      // 계약이 이 목록에 못 들어와 화면 어디에도 안 나온다.
+      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
       orderBy: { signedAt: 'desc' },
       select: {
-        id: true, signedAt: true, submittedAt: true, leaseTermId: true,
+        id: true, signedAt: true, disposalSignedAt: true, submittedAt: true, leaseTermId: true,
         tenant: { select: { id: true, name: true } },
         leaseTerm: {
           select: {
@@ -180,14 +184,23 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
     }),
   ])
 
+  // 링크 축이 아니라 lease 축으로 본다 — 서명을 지우면 링크 기록은 남지만 종이는 없다.
+  const sigState = (l: { leaseTerm: { signatureImageUrl: string | null; signatureSignedAt: Date | null
+    disposalSignatureImageUrl: string | null; disposalSignatureSignedAt: Date | null } }) => ({
+    disposalEnabled,
+    hasContractSignature: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
+    hasDisposalSignature: !!(l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
+  })
+
   const rows: PendingIssueRow[] = []
   const seenLease = new Set<string>()
   for (const l of links) {
-    if (!l.signedAt) continue
+    const signalAt = l.signedAt ?? l.disposalSignedAt
+    if (!signalAt) continue
     // 딸린 계약의 대기는 부모 한 줄로 선다 — 그 계약의 종이가 부모 합본이기 때문이다.
     // 지목·해소 판정·중복 제거가 전부 이 한 값을 본다(lib/contractIssue 정본).
     const issueLeaseId = issuingLeaseId(l.leaseTermId, l.leaseTerm.parentLeaseTermId)
-    if (isContractIssued(l.signedAt, issueLeaseId, files)) continue
+    if (isContractIssued(signalAt, issueLeaseId, files)) continue
     // 같은 계약에 링크를 여러 번 냈으면 최신 하나만 — 목록에 같은 방이 두 줄로 서는 것을 막는다.
     // orderBy signedAt desc 라 먼저 만나는 것이 최신이다.
     if (seenLease.has(issueLeaseId)) continue
@@ -199,15 +212,12 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       leaseTermId: issueLeaseId,
       tenantName: l.tenant.name,
       roomNo: (l.leaseTerm.parentLeaseTermId ? l.leaseTerm.parentLeaseTerm?.room?.roomNo : l.leaseTerm.room?.roomNo) ?? null,
-      signedAt: l.signedAt,
+      signedAt: signalAt,
       submitted: l.submittedAt != null,
       signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt
         || l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
-      disposalMissing: disposalSignatureMissing({
-        disposalEnabled,
-        hasContractSignature: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
-        hasDisposalSignature: !!(l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
-      }),
+      disposalMissing: disposalSignatureMissing(sigState(l)),
+      stage: signStage(sigState(l)),
     })
   }
   return rows

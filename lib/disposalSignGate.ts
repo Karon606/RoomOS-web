@@ -35,8 +35,40 @@ export function disposalSignatureMissing(s: DisposalSignState): boolean {
   return s.disposalEnabled && s.hasContractSignature && !s.hasDisposalSignature
 }
 
+export type SignStage = 'none' | 'partial' | 'complete'
+
+/**
+ * 이 계약의 서명이 어디까지 왔는가. **동의서를 안 쓰는 영업장은 계약서 하나로 complete 다.**
+ *
+ * 왜 별도 함수인가(2026-09-04). disposalSignatureMissing 은 **발급 축**이라 계약서가 있는데
+ * 동의서가 없는 경우만 본다. 그래서 506호처럼 동의서만 서명된 반쪽이 어느 화면에도 안 나왔다.
+ * 표시 자리가 넷인데 각자 세면 어느 화면을 봤느냐에 따라 운영자가 다른 사실을 듣는다 —
+ * 그것이 이 사건의 원인 그대로다.
+ *
+ * 두 함수의 관계는 회귀 테스트가 항등으로 못박는다.
+ *   disposalSignatureMissing(s) === (signStage(s) === 'partial' && s.hasContractSignature)
+ */
+export function signStage(s: DisposalSignState): SignStage {
+  const disposalDone = !s.disposalEnabled || s.hasDisposalSignature
+  if (s.hasContractSignature && disposalDone) return 'complete'
+  if (!s.hasContractSignature && !s.hasDisposalSignature) return 'none'
+  return 'partial'
+}
+
+/** 아직 안 받은 서명. 무엇이 남았는지 사람 말로 옮기는 재료이자, 화면이 어디로 데려갈지의 근거다. */
+export function missingSignatures(s: DisposalSignState): Array<'contract' | 'disposal'> {
+  const out: Array<'contract' | 'disposal'> = []
+  if (!s.hasContractSignature) out.push('contract')
+  if (s.disposalEnabled && !s.hasDisposalSignature) out.push('disposal')
+  return out
+}
+
 /** 서명 진행 상태의 사람 말 — 표시 세 자리가 같은 문장을 쓴다. */
 export function signProgressLabel(s: DisposalSignState): string {
-  if (disposalSignatureMissing(s)) return '계약서만 서명됨 · 동의서 서명 대기'
-  return '원격 서명 완료 · 계약서 발급 필요'
+  const stage = signStage(s)
+  if (stage === 'complete') return '원격 서명 완료 · 계약서 발급 필요'
+  if (stage === 'none') return '서명 대기'
+  // 반쪽은 양방향이다. 종전에는 계약서만 서명된 쪽만 말했고 동의서만 서명된 쪽(506호)은
+  // 화면 어디에도 안 나왔다 — 링크 쿼리가 계약서 서명만 보고 그것을 통째로 걸렀다.
+  return s.hasContractSignature ? '계약서만 서명됨 · 동의서 서명 대기' : '동의서만 서명됨 · 계약서 서명 대기'
 }
