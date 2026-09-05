@@ -2148,9 +2148,11 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                 <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
                   <p className="text-[0.65625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">연락처</p>
                   {info.contacts.map((c, i) => (
-                    <div key={i} className="flex justify-between mb-1">
-                      <span className="text-[var(--warm-muted)]">{CONTACT_LABEL[c.contactType] ?? c.contactType}</span>
-                      <span className="text-[var(--warm-dark)] font-medium">{c.contactValue}</span>
+                    <div key={i} className="flex justify-between mb-1 gap-2">
+                      <span className="text-[var(--warm-muted)] shrink-0">{CONTACT_LABEL[c.contactType] ?? c.contactType}</span>
+                      {/* 정본(InfoRow)을 안 쓰는 자리라 같은 처방을 손으로 준다 — 긴 이메일이
+                          라벨을 밀거나 잘리던 클래스다(신고 d03a6c1f). */}
+                      <span className="text-[var(--warm-dark)] font-medium min-w-0 text-right [overflow-wrap:anywhere]">{c.contactValue}</span>
                     </div>
                   ))}
                 </div>
