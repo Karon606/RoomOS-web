@@ -42,3 +42,34 @@
 - [ ] 제목 + 문단 + 서명 구조의 서류 에디터
 - [ ] 사용 중지(발급본 보존 · 신규 생성만 차단)
 - loop.md §4 에 걸린다. 스키마 승인 전에는 손대지 않는다
+
+## 7. 제3 서류 D2 — 패널 설계 확정 (2026-09-06)
+
+### D2-1 스키마와 리졸버 (동작 0)
+- [ ] `lib/signDocuments.ts` 신설 — 리졸버·key 발급·병합·슬롯 조립 두 벌
+- [ ] `scripts/test-sign-documents.ts` 진리표
+- [ ] **운영 DB DDL 3줄 (승인 대기)** — properties.signDocuments ·
+      lease_terms.documentSignatures · contract_share_links.docSignedAt, 전부 nullable
+- [ ] schema.prisma 세 줄 + prisma generate
+
+### D2-2 축 통일 (커스텀 동작 0, 판정 축만 교정) — **승인 필요**
+- [ ] 홈 알림·패널 배지의 stage 입력을 링크 축에서 계약 축으로
+- [ ] 표시 자리의 `hasContractSignature:` 리터럴 조립 전폐
+- [ ] 실DB 전후 대조 — 노출 중인 건의 판정 변화 0건 증명
+- [ ] 백필 안 한다. 저장값은 두 축 다 참이고 거짓말은 읽는 자리에 있었다
+
+### D2-2b 기존 화면 결함 둘 — **승인 필요**(체크리스트 A와 충돌)
+- [ ] 영문 안내가 `twoDocs` 에 묶여 1장 영업장 외국인에게 안 뜬다 (ContractView:1165)
+- [ ] `.last` 강조가 `twoDocs` 에 묶여 1장 영업장에서 안 켜진다 (ContractView:1583,1683)
+- [ ] `askedRef` 세션 1회를 진행 단계별 1회로 (서류 셋이면 2번째 뒤 침묵 = 9/3 사고 재현)
+
+### D2-3 스냅샷·서명·발급 축 (화면 무변동)
+- [ ] ContractData.signDocuments · /sign N개 cage · target 일반화
+- [ ] 동결·printedFacts·issuedSnapshot·폐기/복원/지우기/이어받기 배선
+- [ ] 서류 없는 계약의 발급 HTML 이 문자 단위로 종전과 같음을 대조
+
+### D2-4 설정 에디터 (스위치 온)
+- [ ] '추가 서류' 카드 별도 신설 (동의서 카드와 통합하지 않는다)
+- [ ] 제목 + 본문 textarea + 사용 중지 · 접힌 '사용 중지된 서류(N)' 에 다시 사용
+- [ ] 삭제 버튼 없음 — 중지가 요구를 전부 덮는다. 서버 병합에 삭제 경로 자체가 없다
+- [ ] 웹디자이너 패스 필수
