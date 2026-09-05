@@ -29,6 +29,28 @@ const strip = s => s
 const read = f => strip(readFileSync(f, 'utf8')).replace(/^\s*import\s[^\n]*$/gm, '')
 const violations = []
 
+/**
+ * 그 위치가 catch 붙은 try 블록 **안에** 있는가. 구조로 본다.
+ *
+ * 종전에는 호출 지점에서 1400자 안에 `} catch (` 가 있는지로 봤다. 그 창은 주석 몇 줄만
+ * 늘어나도 밖으로 밀려 **멀쩡한 코드에 경보가 울리고**, 반대로 남의 try 의 catch 가 창에
+ * 들어오면 안 감싼 호출도 통과한다. 거리로 재는 그물은 어느 쪽으로든 거짓말을 한다.
+ */
+function wrappedInTryCatch(src, at) {
+  for (const m of src.matchAll(/\btry\s*\{/g)) {
+    if (m.index > at) break
+    let depth = 0, end = -1
+    for (let i = src.indexOf('{', m.index); i < src.length; i++) {
+      if (src[i] === '{') depth++
+      else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break } }
+    }
+    if (end < 0 || end < at) continue          // 이 try 는 호출 앞에서 이미 닫혔다
+    if (/^\s*catch\s*[({]/.test(src.slice(end + 1))) return true
+  }
+  return false
+}
+
+
 const WIRED = [
   ['app/sign/[token]/actions.ts', 'disposalSignatureMissing(', 'ⓐ 제출이 동의서 서명을 안 본다. 액션을 직접 부르면 반쪽 서명으로 제출이 통과한다.'],
   ['app/api/contract/generate/route.ts', 'disposalSignatureMissing(', 'ⓑ 발급이 동의서 서명을 안 본다. 서명란이 빈 동의서가 아무 말 없이 나간다.'],
@@ -73,11 +95,15 @@ for (const [f, needle, msg] of WIRED) {
     violations.push(`${f} — 화면이 signStage 를 안 부른다. 서명 진행을 손으로 세면 다른 자리와 갈린다.`)
   }
   // 원격 서명·제출 호출이 실패를 삼키지 않는가. 침묵하면 입주자가 저장된 줄 알고 창을 닫는다.
+  //    호출을 **전수로** 본다. 종전에는 indexOf 로 첫 호출만 봐서, 두 번째 호출을 안 감싸도
+  //    그물이 조용했다 — 첫 자리가 멀쩡하면 뒤는 안 보는 그물은 통과가 증거가 되지 않는다.
   for (const fn of ['submitRemoteSignature', 'finalizeRemoteSubmission']) {
-    const at = src.indexOf(`await ${fn}(`)
-    if (at < 0) { violations.push(`${f} — ${fn} 호출을 못 찾았다.`); continue }
-    if (!/\}\s*catch\s*\(/.test(src.slice(at, at + 1400))) {
-      violations.push(`${f} — ${fn} 호출이 catch 없이 돈다. 전송이 실패해도 입주자 화면에 아무 말이 없다.`)
+    const calls = [...src.matchAll(new RegExp(`await ${fn}\\(`, 'g'))]
+    if (calls.length === 0) { violations.push(`${f} — ${fn} 호출을 못 찾았다.`); continue }
+    for (const c of calls) {
+      if (!wrappedInTryCatch(src, c.index)) {
+        violations.push(`${f} — ${fn} 호출이 catch 없이 돈다(${src.slice(0, c.index).split('\n').length}번째 줄). 전송이 실패해도 입주자 화면에 아무 말이 없다.`)
+      }
     }
   }
 }

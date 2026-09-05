@@ -3,7 +3,7 @@
 // 왜 고정하는가(2026-09-04). 어제 두 입주자가 각각 한쪽만 서명하고 끝났는데, 계약서만 서명한
 // 쪽에는 "원격 서명 완료" 알림이 뜨고 동의서만 서명한 쪽은 화면 어디에도 안 나왔다.
 // 판정이 계약서 서명 하나만 봤기 때문이다. 여덟 칸 진리표를 통째로 못박는다.
-import { signStage, missingSignatures, signProgressLabel, disposalSignatureMissing, signAlertDue } from '../lib/disposalSignGate'
+import { signStage, missingSignatures, signProgressLabel, disposalSignatureMissing, signAlertDue, signProgressLabelSlots, toSlots, signStageSlots } from '../lib/disposalSignGate'
 
 let pass = 0
 const fails: string[] = []
@@ -74,6 +74,33 @@ eq('서명 전은 제출됐어도 침묵', signAlertDue(A(true, false, false, tr
 // 동의서를 안 쓰는 영업장 — 계약서 하나로 완료이고, 제출 전이면 역시 침묵한다.
 eq('꺼진 영업장의 완료도 제출 전이면 침묵', signAlertDue(A(false, true, false, false, false)), false)
 eq('꺼진 영업장도 제출하면 말한다', signAlertDue(A(false, true, false, true, false)), true)
+
+// ── 슬롯 배열 (제3 서류 1단계, 2026-09-06) ────────────────────────
+// **동작이 한 비트도 안 바뀌어야 한다.** 위 진리표가 그대로 통과하는 것이 그 증거이고,
+// 아래는 슬롯이 셋 이상일 때의 새 갈래만 못박는다.
+{
+  const S = (...signed: boolean[]) =>
+    ({ slots: signed.map((v, i) => ({ key: `d${i}`, title: `서류${i + 1}`, signed: v })) })
+  eq('슬롯 셋 전부 서명이면 complete', signStageSlots(S(true, true, true)), 'complete')
+  eq('슬롯 셋 하나도 없으면 none', signStageSlots(S(false, false, false)), 'none')
+  eq('슬롯 셋 중 하나만 있으면 partial', signStageSlots(S(true, false, false)), 'partial')
+  // 셋 이상이면 낱낱이 세지 않고 건수로 말한다 — 이름을 다 나열하면 문장이 못 읽게 길어진다.
+  eq('셋 중 하나 서명은 건수로 말한다', signProgressLabelSlots(S(true, false, false)), '1건 서명됨 · 남은 서명 2건')
+  eq('셋 중 둘 서명도 건수로', signProgressLabelSlots(S(true, true, false)), '2건 서명됨 · 남은 서명 1건')
+  // 둘일 때는 이름을 말한다(지금 화면 문법 유지).
+  eq('둘일 때는 이름으로 말한다',
+    signProgressLabelSlots({ slots: [{ key: 'contract', title: '입실계약서', signed: true }, { key: 'd', title: '동의서', signed: false }] }),
+    '입실계약서만 서명됨 · 동의서 서명 대기')
+  // 서류 이름은 코드가 아니라 슬롯에서 온다 — 이 값을 바꾸면 문구가 따라온다.
+  eq('서류 이름을 슬롯에서 읽는다',
+    signProgressLabelSlots({ slots: [{ key: 'contract', title: '입실계약서', signed: true }, { key: 'x', title: '차량 등록 동의서', signed: false }] }),
+    '입실계약서만 서명됨 · 차량 등록 동의서 서명 대기')
+  // 어댑터 — 꺼진 영업장이라도 받아 둔 서명이 있으면 슬롯을 세운다.
+  eq('꺼진 영업장의 기존 서명은 슬롯으로 남는다',
+    toSlots({ disposalEnabled: false, hasContractSignature: false, hasDisposalSignature: true }).length, 2)
+  eq('꺼졌고 서명도 없으면 계약서 하나',
+    toSlots({ disposalEnabled: false, hasContractSignature: true, hasDisposalSignature: false }).length, 1)
+}
 
 console.log(`\n서명 진행 판정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const m of fails) console.error(`  - ${m}`)

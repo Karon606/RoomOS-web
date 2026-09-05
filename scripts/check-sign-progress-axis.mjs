@@ -26,10 +26,25 @@ const violations = []
 // ⓐ
 {
   const src = read('lib/disposalSignGate.ts')
-  for (const fn of ['signStage', 'missingSignatures', 'disposalSignatureMissing']) {
+  // 슬롯 API 는 서류가 셋 이상이 될 때 판정이 서는 자리다(2026-09-06). 지금은 계약서·동의서
+  // 둘뿐이라 지워도 화면이 멀쩡해 보이는데, 그것이 정확히 조용히 사라지는 조건이다.
+  for (const fn of ['signStage', 'missingSignatures', 'disposalSignatureMissing', 'toSlots', 'signStageSlots', 'missingSlots', 'signProgressLabelSlots']) {
     if (!new RegExp(`export function ${fn}\\b`).test(src)) {
       violations.push(`lib/disposalSignGate.ts — ${fn} 이 없다. 판정 정본이 무너지면 표시 자리가 각자 센다.`)
     }
+  }
+}
+
+// ⓐ-2 어댑터가 꺼진 서류의 **이미 받아 둔 서명**을 버리지 않는가.
+//     `if (s.disposalEnabled)` 로만 슬롯을 세우면, 영업장이 서류를 끈 뒤 그 전에 받은 서명이
+//     판정에서 통째로 사라져 partial 이던 계약이 none 으로 내려앉는다(받은 서명이 있는데
+//     아무것도 안 받은 것으로 읽힌다). 회귀가 이 진리표를 지키지만 축도 못박아 둔다.
+{
+  const src = read('lib/disposalSignGate.ts')
+  const at = src.indexOf('export function toSlots')
+  const body = at < 0 ? '' : src.slice(at, src.indexOf('\n}', at))
+  if (!/disposalEnabled\s*\|\|\s*s\.hasDisposalSignature/.test(body)) {
+    violations.push('lib/disposalSignGate.ts toSlots — 꺼진 서류의 기존 서명을 버린다. 받아 둔 서명이 판정에서 사라진다.')
   }
 }
 

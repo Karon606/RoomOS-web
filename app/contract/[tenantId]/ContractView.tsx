@@ -835,6 +835,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         // 안내가 아예 없었던 셈이다. 그것이 두 사람이 한쪽만 서명하고 나간 경위다(2026-09-04).
         const otherSigned = signTarget === 'disposal' ? !!signatureDataUrl : !!disposalSignatureDataUrl
         const stillLeft = data.disposalConsent.enabled && !otherSigned
+        // 방금 이 서명이 들어간 것까지 반영한 진행 — 상태 갱신은 아직 커밋 전이라 손으로 센다.
+        const leftKey: 'contract' | 'disposal' = signTarget === 'disposal' ? 'contract' : 'disposal'
+        const docCount = data.disposalConsent.enabled ? 2 : 1
+        const signedNow = docCount - (stillLeft ? 1 : 0)
         if (!stillLeft) {
           pushToast('success', signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다')
         } else if (!askedRef.current) {
@@ -844,7 +848,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           setTimeout(() => {
             if (signOpenRef.current) return   // 서명 패드가 열려 있으면 덮지 않는다
             void confirmDialog({
-              title: signTarget === 'disposal' ? '서명 1 / 2 · 입실계약서가 남았습니다' : '서명 1 / 2 · 동의서가 남았습니다',
+              // 남은 서류를 판정 정본에 묻는다. 종전에는 '내가 방금 서명한 것의 반대쪽'을
+              // 손으로 뒤집었는데, 그 셈은 서류가 셋이 되는 순간 조용히 틀린 이름을 부른다.
+              title: `서명 ${signedNow} / ${docCount} · ${DOC_TITLE[leftKey]}가 남았습니다`,
               // 두 언어를 빈 줄로 가른다. 한 문단으로 붙어 있으면 한국어를 못 읽는 사람이
               // 자기가 읽을 줄이 어디서 시작하는지 곁눈으로 못 찾는다 — 이 확인창의 존재 이유가
               // 그 사람이다. whitespace-pre-line 이 빈 줄을 그대로 그린다.
@@ -898,6 +904,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   }
   const stage = signStage(signState)
   const canSubmit = stage === 'complete'
+  // 서류 이름은 이 한 자리에서만 정한다. 종전에는 '동의서'·'입실계약서'가 토스트·확인창·서명
+  // 패드에 흩어져 있었고, 부속 서류가 하나 더 붙는 순간 그중 몇 곳은 반드시 안 고쳐진다.
+  // **표시 문자열은 지금 것 그대로다** — 이 단계는 자리를 모으는 것이지 문구를 바꾸는 것이 아니다.
+  // (설정의 긴 정식 제목 data.disposalConsent.title 은 종이 머리글이 쓴다. 여기는 좁은 자리라
+  //  짧은 이름을 쓴다 — 토스트 한 줄에 '잔여 소지품 임의처분 동의서'가 들어가면 줄이 접힌다.)
+  const DOC_TITLE: Record<'contract' | 'disposal', string> = { contract: '입실계약서', disposal: '동의서' }
   // 서류가 둘인 화면인가. 하나뿐이면 아래 안내 장치가 전부 꺼진다 — 내국인 단일 서명 계약자
   // 전원이 없던 안내를 받으면 그것이 소음이다.
   const twoDocs = remote && data.disposalConsent.enabled
@@ -1712,7 +1724,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
-                <div className="sig-title">{signTarget === 'disposal' ? '동의서 서명' : '입실자 서명'}</div>
+                <div className="sig-title">{signTarget === 'disposal' ? `${DOC_TITLE.disposal} 서명` : '입실자 서명'}</div>
                 <div className="sig-sub">
                   {remote
                     ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'} 서명이 적용됩니다.`
