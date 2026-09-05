@@ -99,6 +99,46 @@ for (const f of walk('app', walk('components', []))) {
   }
 }
 
-console.log(`[알림 끄기 대칭] 축 ⓐ 끈 줄의 키 · ⓑ 묶음 되살리기 · ⓒ 끄기·켜기 짝 / 위반 ${violations.length}건`)
+// ⓓ 컷오프 키 문법의 집은 한 파일이다. 손으로 조립하는 병행 구현이 생기면 두 문법이 갈린다.
+for (const f of walk('app', walk('components', walk('lib', [])))) {
+  if (f === 'lib/alertCutoff.ts') continue
+  if (/['\`]cutoff:/.test(strip(readFileSync(f, 'utf8')))) {
+    violations.push(`${f} — 컷오프 키를 손으로 조립한다. lib/alertCutoff 의 cutoffKeyOf 를 쓴다.`)
+  }
+}
+
+// ⓔ 알림 조립이 컷오프를 실제로 태우는가. import 만으로는 통과 못 한다.
+{
+  const f = 'app/(app)/dashboard/page.tsx'
+  const src = strip(readFileSync(f, 'utf8')).replace(/^\s*import\s[^\n]*$/gm, '')
+  // **필터 블록만 떠서 본다.** 창을 넉넉히 잡았더니 아래 wouldRestoreCount 의 호출까지
+  // 들어와, 필터를 통째로 지운 역주입이 그 호출에 걸려 통과했다(2026-09-06 드릴에서 실제로 놓쳤다).
+  // 그물이 검사 대상을 헐겁게 잡으면 통과가 증거가 되지 않는다.
+  const at = src.indexOf('const crAll')
+  const filterEnd = at < 0 ? -1 : src.indexOf('.map(', at)
+  if (at < 0 || filterEnd < 0) {
+    violations.push(`${f} — crAll 필터 블록을 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+  } else if (!/isReceiptBeforeCutoff\s*\(/.test(src.slice(at, filterEnd))) {
+    violations.push(`${f} — crAll 필터가 컷오프를 안 본다. 지운 알림이 다시 뜬다.`)
+  }
+  if (!/readAlertCutoffYmd\s*\(/.test(src)) {
+    violations.push(`${f} — 컷오프 값을 안 읽는다.`)
+  }
+}
+
+// ⓕ 되돌릴 문이 있는가. 그리고 필수 인자에 기본값을 붙여 타입 강제를 무력화하지 않았는가.
+{
+  const f = 'app/(app)/dashboard/DashboardClient.tsx'
+  const src = strip(readFileSync(f, 'utf8')).replace(/^\s*import\s[^\n]*$/gm, '')
+  if (!/setAlertCutoff\s*\(\s*'receipt'\s*,\s*null\s*\)/.test(src)) {
+    violations.push(`${f} — 컷오프를 해제하는 문이 없다. 지운 알림을 되살릴 길이 사라진다(§16).`)
+  }
+  const sig = strip(readFileSync('lib/cashReceipt.ts', 'utf8')).match(/cutoffYmd\s*:\s*string \| null\s*(=)?/)
+  if (sig && sig[1]) {
+    violations.push(`lib/cashReceipt.ts — liveMutedReceiptKeys 의 cutoffYmd 에 기본값이 붙었다. 호출부가 조용히 컷오프를 빠뜨린다.`)
+  }
+}
+
+console.log(`[알림 끄기 대칭] 축 ⓐ 끈 줄의 키 · ⓑ 묶음 되살리기 · ⓒ 끄기·켜기 짝 · ⓓ 컷오프 문법 · ⓔ 배선 · ⓕ 되돌림 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)

@@ -26,6 +26,7 @@ import { effectiveDueRawForMonth } from '@/lib/dueDate'
 // 수납 재계산·락인 되쓰기는 서버 액션이 아니다 — 여기서 export 하면 그 자체가 무권한 엔드포인트가 된다.
 import { recalculatePayments, rewriteLockedExpectedForDiscountChange } from './paymentEngine'
 import { isRentRefundRecord, hasRentRefundSnapshot } from '@/lib/rentRefundRecord'
+import { cutoffKeyOf, readAlertCutoffYmd, type AlertCutoffCategory } from '@/lib/alertCutoff'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -2334,6 +2335,40 @@ export async function unmuteHomeAlert(k: string | string[]): Promise<{ ok: true 
     await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: next } })
     revalidatePath('/rooms'); revalidatePath('/dashboard')
     return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+/**
+ * 알림 컷오프 설정·해제 — 그 시점 이전 건을 통째로 안 보이게 한다(운영자 오더 2026-09-06).
+ *
+ * **끄기와 다르다.** 끄기는 지목한 건 하나를 접어 '끈 알림'에 쌓고, 컷오프는 시점 이전을
+ * 통째로 가리며 목록에 쌓지 않는다. 키 문법이 달라(cutoff: 접두어) 두 개념이 한 칸에 살아도
+ * 서로 안 섞인다 — 자세한 근거는 lib/alertCutoff 머리에 있다.
+ *
+ * 되돌리기를 위해 **이전 값을 돌려준다.** 끄기 짝(mute/unmute)과 달리 액션이 하나인 이유가
+ * 이것이다 — 해제가 곧 "이전 값 복원"이라 prev 를 알아야 적용취소가 성립한다.
+ * at 이 null 이면 해제다. 같은 날 다시 부르면 오늘로 전진한다(멱등 전진).
+ *
+ * **지우는 것은 알림 표시뿐이다.** 미발행 건과 발급 의무는 남고 현금영수증 탭에도 그대로 있다.
+ */
+export async function setAlertCutoff(
+  category: AlertCutoffCategory,
+  at: string | null,
+): Promise<{ ok: true; prevAt: string | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { alertMutes: true } })
+    const prevAt = readAlertCutoffYmd(p?.alertMutes, category)
+    const key = cutoffKeyOf(category)
+    const rest = readAlertMuteRows(p?.alertMutes).filter(m => m.k !== key)
+    const next = at ? [...rest, { k: key, at }] : rest
+    await prisma.property.update({ where: { id: propertyId }, data: { alertMutes: next } })
+    revalidatePath('/rooms'); revalidatePath('/dashboard')
+    return { ok: true, prevAt }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

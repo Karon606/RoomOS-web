@@ -358,10 +358,27 @@ export function liveMutedReceiptKeys(
   muted: Iterable<string>,
   groups: ReadonlyMap<string, { amount: number }>,
   issued: ReadonlySet<string>,
+  // **기본값을 주지 않는다.** 이 인자가 optional 이면 호출부가 조용히 컷오프를 빠뜨리고,
+  // 그러면 "N건 끔" 라벨과 다시 켜기 효과가 갈린다(신고 C-1 과 같은 클래스).
+  // 필수라 배선을 빠뜨리면 컴파일이 먼저 깨진다.
+  cutoffYmd: string | null,
   min: number = CASH_RECEIPT_OBLIGATION_MIN,
 ): string[] {
   return [...muted].filter(k => {
     const g = groups.get(k)
-    return !!g && !issued.has(k) && g.amount >= min
+    // 컷오프 이전이면서 끈 건은 되살려도 화면에 안 돌아온다 — 죽은 키다.
+    return !!g && !issued.has(k) && g.amount >= min && !isReceiptBeforeCutoff(k, cutoffYmd)
   })
+}
+
+/**
+ * 이 발행 줄의 입금일이 컷오프 이전인가. 컷오프가 없으면 아무것도 안 가린다.
+ *
+ * **당일 건은 남긴다(엄격 미만).** 새로 생긴 의무를 소리 없이 숨기는 쪽이, 이미 본 알림이
+ * 하루 더 보이는 쪽보다 나쁘다. 키의 둘째 조각이 입금일이다(dashboard/page 의 crKey).
+ */
+export function isReceiptBeforeCutoff(key: string, cutoffYmd: string | null): boolean {
+  if (!cutoffYmd) return false
+  const ymd = key.split('|')[1] ?? ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) && ymd < cutoffYmd
 }

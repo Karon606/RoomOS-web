@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { fmtDateDot, fmtMD } from '@/lib/fmtDate'
+import { fmtDateDot, fmtMDYearIfOther } from '@/lib/fmtDate'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
@@ -42,7 +42,7 @@ import { kstMonthStr, kstYmdStr } from '@/lib/kstDate'
 import { WITHHOLD_REASONS, buildWithholdReason } from '@/lib/depositWithholdReasons'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { advanceRoomSchedule, undoRoomMove } from '@/app/(app)/tenants/actions'
-import { muteHomeAlert, unmuteHomeAlert } from '@/app/(app)/rooms/actions'
+import { muteHomeAlert, unmuteHomeAlert, setAlertCutoff } from '@/app/(app)/rooms/actions'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { CheckoutCleaningDateField, CheckoutCleaningPlanned, useCheckoutCleaningDate } from '@/components/cleaning/CheckoutCleaningDateField'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
@@ -158,6 +158,9 @@ export type DashboardData = {
   alerts:            HomeAlert[]
   /** 수동으로 끈 알림 — 알림 스트립 맨 아래 접힌 그룹으로 서고 언제든 다시 켠다(§16). */
   mutedAlerts:       HomeAlert[]
+  // 현금영수증 알림 컷오프. activeYmd 가 있으면 그 이전 건이 지금 가려져 있고,
+  // wouldRestoreCount 는 해제하면 돌아올 건수, offerCount 는 지금 지우면 가려질 건수다.
+  receiptCutoff:     { activeYmd: string | null; wouldRestoreCount: number; offerCount: number }
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -490,11 +493,14 @@ function ExcludedByDateCaption({ count }: { count?: number }) {
   )
 }
 
-function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
+function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord, cutoffOffer, todayYmd }: {
   alert: AlertItem
   onClose: () => void
   onOpenPayment: (alert: AlertItem) => void
   onStartRecord: (alert: AlertItem) => Promise<void>
+  // 지금 지우면 가려질 건수. 0 이면 지우기 버튼이 안 선다(지울 것이 없다).
+  cutoffOffer: number
+  todayYmd: string
 }) {
   const router = useRouter()
   const isRecurring = !!alert.recurringExpenseId
@@ -509,6 +515,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   // 고정지출 기록 폼은 실제 항목·계좌를 서버에서 받아 열기 때문에 버튼에 로딩 상태가 필요하다.
   const [recordPending, setRecordPending]   = useState(false)
   const [mutePending, setMutePending]       = useState(false)
+  const [cutoffPending, setCutoffPending]   = useState(false)
 
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
@@ -753,6 +760,36 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               {mutePending ? '처리 중…' : (alert.muteKeys && alert.muteKeys.length > 1 ? `알림 ${alert.muteKeys.length}건 끄기` : '이 알림 끄기')}
             </Btn>
           )}
+          {/* 이전 알림 지우기 — 끄기와 **다른 것**이다(운영자 오더 2026-09-06).
+              끄기는 지목한 건 하나를 접어 '끈 알림'에 쌓고, 이것은 그 시점 이전을 통째로 가리며
+              목록에 쌓지 않는다. 두 버튼이 나란히 서는 것 자체가 그 차이를 화면이 말하는 구조다.
+              지우는 것은 알림 표시뿐이고 발급 의무와 탭 목록은 남는다 — 문구가 그것을 말한다. */}
+          {alert.category === 'receipt' && cutoffOffer > 0 && (
+            <Btn variant="ghost" size="sm" fullWidth
+              disabled={confirmPending || mutePending || cutoffPending}
+              onClick={() => {
+                setCutoffPending(true)
+                void (async () => {
+                  const release = trackSave()
+                  try {
+                    const r = await setAlertCutoff('receipt', todayYmd)
+                    if (!r.ok) { pushToast('error', humanError(r.error, '알림을 지우지 못했습니다.')); setCutoffPending(false); return }
+                    const prev = r.prevAt
+                    pushToast('success', `이전 알림 ${cutoffOffer}건을 지웠습니다`, {
+                      detail: '발급 의무와 현금영수증 탭 목록은 그대로 남습니다. 알림 맨 아래 [지운 알림] 줄에서 적용취소할 수 있습니다.',
+                      action: { label: '적용취소', run: () => { void setAlertCutoff('receipt', prev).then(u => {
+                        if (u.ok) { pushToast('info', '지운 알림을 되살렸습니다'); router.refresh() }
+                        else pushToast('error', humanError(u.error, '되돌리지 못했습니다.'))
+                      }).catch(() => pushToast('error', '되돌리는 중 통신 오류가 발생했습니다')) } },
+                    })
+                    router.refresh()
+                    onClose()
+                  } finally { release() }
+                })().catch(() => { setCutoffPending(false); pushToast('error', '처리 중 통신 오류가 발생했습니다') })
+              }}>
+              {cutoffPending ? '처리 중…' : `이전 알림 ${cutoffOffer}건 지우기`}
+            </Btn>
+          )}
         </div>
       {refundModalOpen && (
         <CheckoutRefundModal
@@ -865,10 +902,11 @@ function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) =>
   )
 }
 
-function AlertsStrip({ alerts, muted, onOpenAlert }: {
+function AlertsStrip({ alerts, muted, cutoff, onOpenAlert }: {
   alerts: DashboardData['alerts']
   /** 끈 알림 — 별도 카드가 아니라 이 스트립 맨 아래 그룹으로 선다(디자이너 판정 2026-09-02). */
   muted: DashboardData['mutedAlerts']
+  cutoff: DashboardData['receiptCutoff']
   onOpenAlert: (alert: AlertItem) => void
 }) {
   // 긴급도(D-N) 부여 후 '지금 급함'(경과 or 카테고리별 D-N 이내)과 '예정'으로 분리.
@@ -909,7 +947,12 @@ function AlertsStrip({ alerts, muted, onOpenAlert }: {
   const [mutedOpen, setMutedOpen] = useState(false)
 
   // 볼 알림이 없어도 끈 알림이 있으면 스트립이 선다 — 다시 켤 문이 사라지면 안 된다(§16).
-  if (alerts.length === 0 && muted.length === 0) return null
+  // 지운 알림 줄이 설 조건. 0건이면 안 세운다 — 운영자가 탭에서 발급을 끝내면 건수가 0으로
+  // 수렴하는데, 그때도 줄이 남으면 "0건 · 발급 의무는 남습니다"가 거짓이 되고 조용해지려고
+  // 만든 기능이 소음을 남긴다(디자이너 지적). 소급 기록이 생겨 건수가 살아나면 줄도 돌아온다.
+  const cutoffVisible = !!cutoff.activeYmd && cutoff.wouldRestoreCount > 0
+  // 컷오프만 걸려 있어도 스트립이 선다 — 되돌릴 문이 사라지면 안 된다(§16).
+  if (alerts.length === 0 && muted.length === 0 && !cutoffVisible) return null
 
   return (
     <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -948,7 +991,7 @@ function AlertsStrip({ alerts, muted, onOpenAlert }: {
         const meta = CATEGORY_META[g.cat]
         const isOpen = expanded[g.cat] ?? false
         return (
-          <div key={g.cat} style={{ borderBottom: (gi < groups.length - 1 || muted.length > 0) ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+          <div key={g.cat} style={{ borderBottom: (gi < groups.length - 1 || muted.length > 0 || cutoffVisible) ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
             <button
               type="button"
               onClick={() => setExpanded(prev => ({ ...prev, [g.cat]: !isOpen }))}
@@ -995,6 +1038,32 @@ function AlertsStrip({ alerts, muted, onOpenAlert }: {
       })}
 
       {/* ── 끈 알림 — 맨 아래 그룹. 숨기지 않고 접는다(§16 상시 적용취소) ── */}
+      {/* 지운 알림 — 건별 행이 아니라 **상태 줄 하나**다. 건별로 쌓이면 그것은 삭제가 아니라
+          끄기가 된다(운영자가 둘을 구분해 달라고 했다). 카테고리당 최대 한 줄이고, 여기가
+          컷오프의 원위치 적용취소 자리다(§16 진입점 2). */}
+      {cutoffVisible && (
+        // 경계는 위 섹션이 소유한다(이 스트립의 기존 문법). 여기서 borderTop 을 또 그리면
+        // 앞 그룹의 borderBottom 과 겹쳐 2px 이중선이 되고, 아래 끈 알림과는 무선으로 붙어
+        // 한 그룹의 두 행처럼 읽힌다 — 운영자가 구분해 달라고 한 것과 정확히 반대다.
+        <div style={{ borderBottom: muted.length > 0 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+          <div className="flex items-center gap-2 px-5 py-2.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--warm-muted)' }} />
+            <div className="min-w-0 flex-1">
+              {/* 이 줄의 이름을 먼저 말한다. 끈 알림 헤더와 같은 크기·같은 x 에 서서 두 이름이
+                  나란히 대조돼야 다른 것임이 읽힌다 — 종전에는 이 줄만 무명이었다. */}
+              <p className="text-[0.6875rem] font-semibold" style={{ color: 'var(--warm-muted)' }}>
+                지운 알림 · 현금영수증 발급 기한
+              </p>
+              {/* 건수를 날짜에 붙인다. "이전 알림 지움"은 전칭이라 당일 건이 남는 사실과
+                  어긋날 수 있는데, 건수가 붙으면 가려진 것에 대한 서술이 되어 정확해진다. */}
+              <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                {fmtMDYearIfOther(cutoff.activeYmd!)} 이전 {cutoff.wouldRestoreCount}건 · 발급 의무는 남습니다
+              </p>
+            </div>
+            <CutoffUndoBtn />
+          </div>
+        </div>
+      )}
       {muted.length > 0 && (
         <div>
           <button
@@ -1024,6 +1093,34 @@ function AlertsStrip({ alerts, muted, onOpenAlert }: {
 // 끄기(muteHomeAlert)와 켜기가 같은 판정을 쓰게 한 자리에 둔다 — 갈리면 또 한쪽만 비대칭이 된다.
 const keysOf = (a: { muteKey?: string; muteKeys?: string[] }): string[] => a.muteKeys ?? (a.muteKey ? [a.muteKey] : [])
 
+// 지운 알림 되돌리기 — 컷오프를 해제하면 가려졌던 건이 전부 돌아온다. 지운 것이 표시뿐이라
+// 복원이 무손실이다. 되돌리기의 되돌리기도 토스트 적용취소로 연다(§16 왕복).
+function CutoffUndoBtn() {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  return (
+    <RowActionBtn tone="accent" disabled={pending} className="shrink-0"
+      onClick={() => startTransition(async () => {
+        const release = trackSave()
+        try {
+          const r = await setAlertCutoff('receipt', null)
+          if (!r.ok) { pushToast('error', humanError(r.error, '되돌리지 못했습니다.')); return }
+          const prev = r.prevAt
+          pushToast('info', '지운 알림을 되살렸습니다', {
+            action: { label: '적용취소', run: () => { void setAlertCutoff('receipt', prev).then(u => {
+              if (u.ok) { pushToast('info', '다시 지웠습니다'); router.refresh() }
+              else pushToast('error', humanError(u.error, '되돌리지 못했습니다.'))
+            }).catch(() => pushToast('error', '되돌리는 중 통신 오류가 발생했습니다')) } },
+          })
+          router.refresh()
+        } catch { pushToast('error', '처리 중 통신 오류가 발생했습니다') }
+        finally { release() }
+      })}>
+      적용취소
+    </RowActionBtn>
+  )
+}
+
 function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -1034,7 +1131,8 @@ function MutedAlertRows({ muted }: { muted: DashboardData['mutedAlerts'] }) {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold truncate" style={{ color: 'var(--warm-muted)' }}>{a.text}</p>
             <p className="text-[0.65625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-              {[a.timeLabel, a.exactDate, a.mutedAt ? `알림 끔 ${fmtMD(a.mutedAt)}` : null].filter(Boolean).join(' · ')}
+              {/* 끈 날짜도 무기한 남는 자리라 해가 바뀌면 월일만으로는 어느 해인지 모른다. */}
+              {[a.timeLabel, a.exactDate, a.mutedAt ? `알림 끔 ${fmtMDYearIfOther(a.mutedAt)}` : null].filter(Boolean).join(' · ')}
             </p>
           </div>
           {keysOf(a).length > 0 ? (() => {
@@ -2425,7 +2523,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       <ConsultToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} />
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
-      <AlertsStrip alerts={data.alerts} muted={data.mutedAlerts} onOpenAlert={setSelectedAlert} />
+      <AlertsStrip alerts={data.alerts} muted={data.mutedAlerts} cutoff={data.receiptCutoff} onOpenAlert={setSelectedAlert} />
 
       {/* 찍어 올리기 · 등록 대기 큐는 홈에서 제외 — 스테이음 Lab(/snap-upload)으로 이전(운영자 지시 2026-07-19).
           원래 비전(물건 사진 개수 인식 → 재고 반영)은 신뢰도 부족으로 보류, 아이디어 확정 시 Lab에서 재개. */}
@@ -3143,6 +3241,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods, ini
       {selectedAlert && (
         <AlertDetailModal
           alert={selectedAlert}
+          cutoffOffer={data.receiptCutoff.offerCount}
+          todayYmd={kstYmdStr()}
           onClose={() => setSelectedAlert(null)}
           onOpenPayment={a => {
             setSelectedAlert(null)

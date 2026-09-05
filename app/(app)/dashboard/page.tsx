@@ -10,7 +10,8 @@ import { getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/ac
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { applyScheduledRents, getMoveCalendarMonth } from '@/app/(app)/room-manage/actions'
 import { dbDateMonthKey, kstMonthStr, kstYmd, kstYmdStr, monthDbRange, monthsDbRange, ymdToDbDate } from '@/lib/kstDate'
-import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible, liveMutedReceiptKeys } from '@/lib/cashReceipt'
+import { CASH_RECEIPT_OBLIGATION_MIN, cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, isCashReceiptEligible, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '@/lib/cashReceipt'
+import { readAlertCutoffYmd } from '@/lib/alertCutoff'
 import { depositBasisOf } from '@/lib/depositPending'
 import { CLEANING_FEE_CATEGORY } from '@/lib/incomeCategories'
 import { Prisma } from '@prisma/client'
@@ -1834,6 +1835,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 후보 목록 아래 접힌 한 줄이다. 끄는 문은 요약 줄의 일괄인데 켜는 문만 월별 건별이라 축이
   // 달랐다. 그래서 **끈 키 전부를 이 줄에 실어** 같은 자리에서 한 번에 켠다(§16 원위치).
   let crMutedSummary: { count: number; link: string; keys: string[] } | null = null
+  let receiptCutoff: { activeYmd: string | null; wouldRestoreCount: number; offerCount: number } =
+    { activeYmd: null, wouldRestoreCount: 0, offerCount: 0 }
   try {
     const crTodayYmd = kstYmdStr()
     // 조회창은 인수 컷오프까지 넓힌다(운영자 승인 2026-09-03). 종전 고정 35일은 건별로 나열하던
@@ -1860,6 +1863,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     ])
     // 수동으로 끈 건 — 발행 여부는 운영자 판단 영역이다(운영자 지시 2026-09-01). 끈 건은 조르지
     // 않고, 현금영수증 탭의 접힌 목록에서 다시 켤 수 있다.
+    // 컷오프 — 그 시점 이전 건은 통째로 안 보인다. 저장은 이미 읽어 둔 alertMutes 안에 있어
+    // 추가 쿼리가 없다. 끄기 키와 문법이 달라(cutoff: 접두어) 서로 섞이지 않는다.
+    const crCutoffYmd = readAlertCutoffYmd(crMuteProp?.alertMutes, 'receipt')
     const crMuted = new Set(
       (Array.isArray(crMuteProp?.alertMutes) ? crMuteProp.alertMutes : [])
         .map(m => (m && typeof (m as { k?: unknown }).k === 'string' ? (m as { k: string }).k : null))
@@ -1885,7 +1891,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 자리 판정은 lib/cashReceipt 의 순수 함수 하나다 — 종전 `left <= 2` 인라인이 자리 넷으로
     // 늘면서 화면마다 갈릴 자리가 됐다.
     const crAll = [...crGroups.entries()]
-      .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN)
+      // crAll 이 임박·감경·요약 세 줄의 단일 소스라 이 한 자리가 세 표면을 함께 거른다.
+      .filter(([k, g]) => !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN
+        && !isReceiptBeforeCutoff(k, crCutoffYmd))
       .map(([k, g]) => {
         const left = cashReceiptDaysLeft(g.payYmd, crTodayYmd)
         return { ...g, key: k, left, slot: cashReceiptAlertSlot(left) }
@@ -1902,7 +1910,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 끈 건 합성 줄 — 되살리면 실제로 알림줄로 돌아올 키만 센다(발행분·기준액 미만은 죽은 키다).
     // 세는 규칙이 위 crAll 필터와 같은 것이라야 라벨의 숫자와 '다시 켜기'의 효과가 일치한다.
     // 링크는 건별로 골라 켤 때를 위해 남긴다 — 가장 최근 입금이 속한 달로 보낸다.
-    const crLive = liveMutedReceiptKeys(crMuted, crGroups, crIssued)
+    const crLive = liveMutedReceiptKeys(crMuted, crGroups, crIssued, crCutoffYmd)
+    // 컷오프가 지금 가리고 있는 건수와, 오늘 컷오프하면 가려질 건수.
+    // 둘 다 **실제로 화면에서 오갈 건수**로 센다 — 저장된 키 수를 세면 라벨과 효과가 갈린다.
+    receiptCutoff = {
+      activeYmd: crCutoffYmd,
+      wouldRestoreCount: crCutoffYmd
+        ? [...crGroups.entries()].filter(([k, g]) =>
+            !crIssued.has(k) && !crMuted.has(k) && g.amount >= CASH_RECEIPT_OBLIGATION_MIN
+            && isReceiptBeforeCutoff(k, crCutoffYmd)).length
+        : 0,
+      // 오늘 이전 건만 센다(당일은 남긴다 — 새로 생긴 의무를 소리 없이 숨기지 않는다).
+      offerCount: crAll.filter(g => g.payYmd < crTodayYmd).length,
+    }
     if (crLive.length > 0) {
       const ymds = crLive.map(k => k.split('|')[1] ?? '').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
       const month = (ymds[ymds.length - 1] ?? crTodayYmd).slice(0, 7)
@@ -2168,6 +2188,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   const dashboardData: DashboardData = {
+    receiptCutoff,
     totalRevenue,
     paidRevenue,
     extraRevenue,

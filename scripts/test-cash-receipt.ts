@@ -8,7 +8,8 @@
 // 특히 **KST 자정 경계**를 반드시 건다. cashReceiptIssuedAt 은 @db.Date 가 아니라 타임스탬프라
 // UTC 달로 읽으면 KST 새벽 발행분이 전달로 떨어진다. 이 저장소가 2026-08-19 에 전역 정정한
 // 바로 그 클래스이고, 프로덕션(UTC)에서만 맞는 코드라 사람 눈으로는 안 보인다.
-import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys } from '../lib/cashReceipt'
+import { cashReceiptAlertSlot, cashReceiptDaysLeft, cashReceiptDeadlineLabel, cashReceiptDefaultAmount, cashReceiptMonth, isCashReceiptEligible, paymentCardMonth, resolveCashReceiptIssuedAt, liveMutedReceiptKeys, isReceiptBeforeCutoff } from '../lib/cashReceipt'
+import { readAlertCutoffYmd } from '../lib/alertCutoff'
 
 let pass = 0, fail = 0
 function eq(name: string, got: unknown, want: unknown) {
@@ -211,6 +212,43 @@ eq('지난 날 라벨', cashReceiptDeadlineLabel(-3), '기한 3일 경과')
   eq('기준액 미만은 죽었다', liveMutedReceiptKeys(['c|2026-08-03|현금'], groups, issued).length, 0)
   // 조회창 밖이라 그룹에 없는 키 — 되살려도 그릴 줄이 없으니 세면 안 된다.
   eq('조회창 밖 키는 죽었다', liveMutedReceiptKeys(['z|2026-07-01|현금'], groups, issued).length, 0)
+}
+
+// ── 알림 컷오프 (운영자 오더 2026-09-06) ─────────────────────────
+// "그 시점 기준으로 과거 알림을 삭제하고 더 안뜨게" — 끄기와 다른 축이다.
+{
+  const K = (ymd: string) => `lease1|${ymd}|현금`
+  eq('컷오프가 없으면 아무것도 안 가린다', isReceiptBeforeCutoff(K('2026-08-01'), null), false)
+  eq('컷오프 이전은 가린다', isReceiptBeforeCutoff(K('2026-08-31'), '2026-09-06'), true)
+  // **당일은 남긴다.** 새로 생긴 의무를 소리 없이 숨기는 쪽이, 이미 본 알림이 하루 더
+  // 보이는 쪽보다 나쁘다.
+  eq('컷오프 당일은 남긴다', isReceiptBeforeCutoff(K('2026-09-06'), '2026-09-06'), false)
+  eq('컷오프 이후는 남긴다', isReceiptBeforeCutoff(K('2026-09-07'), '2026-09-06'), false)
+  // 키가 깨졌으면 안 가린다(fail-open) — 알림이 조용히 죽는 것보다 낫다.
+  eq('입금일 조각이 없으면 안 가린다', isReceiptBeforeCutoff('lease1', '2026-09-06'), false)
+  eq('입금일이 형식 밖이면 안 가린다', isReceiptBeforeCutoff('lease1|8월1일|현금', '2026-09-06'), false)
+
+  // 끈 건 세기와 컷오프가 함께 걸린다 — 컷오프 이전이면서 끈 건은 되살려도 안 돌아오는 죽은 키다.
+  const groups = new Map([[K('2026-08-31'), { amount: 500000 }], [K('2026-09-07'), { amount: 500000 }]])
+  const issued = new Set<string>()
+  eq('컷오프 이전 끈 건은 안 센다',
+    liveMutedReceiptKeys([K('2026-08-31')], groups, issued, '2026-09-06').length, 0)
+  eq('컷오프 이후 끈 건은 센다',
+    liveMutedReceiptKeys([K('2026-09-07')], groups, issued, '2026-09-06').length, 1)
+  eq('컷오프가 없으면 둘 다 센다',
+    liveMutedReceiptKeys([K('2026-08-31'), K('2026-09-07')], groups, issued, null).length, 2)
+}
+
+// 컷오프 저장 리더 — 깨진 값은 fail-open 이다.
+{
+  const rows = (at: unknown) => [{ k: 'receipt:a|2026-08-01|현금', at: '2026-09-01' }, { k: 'cutoff:receipt', at }]
+  eq('정상 일자를 읽는다', readAlertCutoffYmd(rows('2026-09-06'), 'receipt'), '2026-09-06')
+  eq('형식 밖이면 null', readAlertCutoffYmd(rows('9월6일'), 'receipt'), null)
+  eq('값이 없으면 null', readAlertCutoffYmd(rows(null), 'receipt'), null)
+  eq('행이 없으면 null', readAlertCutoffYmd([{ k: 'receipt:a|2026-08-01|현금', at: '2026-09-01' }], 'receipt'), null)
+  eq('배열이 아니면 null', readAlertCutoffYmd(null, 'receipt'), null)
+  // 끄기 키와 컷오프 키는 문법이 달라 서로를 못 읽는다.
+  eq('끄기 행을 컷오프로 오독하지 않는다', readAlertCutoffYmd([{ k: 'receipt:x', at: '2026-09-06' }], 'receipt'), null)
 }
 
 console.log(`[현금영수증 발행일] 통과 ${pass} / 실패 ${fail}`)
