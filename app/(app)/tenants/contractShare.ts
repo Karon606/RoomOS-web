@@ -20,6 +20,7 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
+import { signStage } from '@/lib/disposalSignGate'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -90,6 +91,93 @@ async function buildShareUrl(token: string): Promise<string> {
   return `${proto}://${host}/sign/${token}`
 }
 
+/**
+ * 받던 서명을 이어서 새 링크로 보낸다 — 유효기간만 갱신한다(운영자 신고 09da7f29).
+ *
+ * **새 링크의 스냅샷은 옛 링크 것 그대로다.** 이것이 이 설계의 핵심이고 결함이 아니라 정의다.
+ * 입주자가 이미 서명한 종이가 그 JSON 이고, 서명 시점 격리본(signedContractSnapshot)도 그
+ * 내용으로 굳어 있다. 새로 조립하면 남은 서명이 다른 내용 위에 놓이는데, 격리본은 첫 서명에서
+ * 한 번만 굳고 재동결되지 않으므로 **증거와 화면이 갈린다.**
+ *
+ * "그 사이 바뀐 임대료가 반영 안 된다"는 이 갈래의 결함이 아니다. 바뀐 내용으로 받고 싶으면
+ * 그것이 곧 폐기 갈래이고, 화면이 내용 변경을 감지해 그쪽을 권한다.
+ *
+ * 서명 자국(signedAt·disposalSignedAt)도 승계한다. /sign 화면이 링크 자국을 보고 lease 의
+ * 서명 이미지를 끼워 그리므로, 입주자는 자기 서명이 이미 놓인 화면을 열고 남은 칸에만 서명한다.
+ * 화면 코드는 한 줄도 안 고친다.
+ *
+ * 옛 링크는 닫는다. **자기가 만든 링크를 닫는 것이 아니라 옛 링크를 닫는 것**이라 "만드는
+ * 트랜잭션이 닫는 액션을 부르지 않는다"는 규칙과 충돌하지 않는다. 표시값 편집의 부수효과로
+ * 반쪽 링크가 조용히 닫히던 것과도 다르다 — 여기는 운영자의 명시 조작이고 자국이 새 링크로
+ * 옮겨 가 가시성이 보존된다.
+ */
+export async function renewContractShareLink(tenantId: string, namedLeaseTermId?: string | null): Promise<
+  | { ok: true; link: ContractShareLinkInfo; phone: string | null; propertyName: string }
+  | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { userId, propertyId } = await requirePropertyAccess()
+    const old = await prisma.contractShareLink.findFirst({
+      where: {
+        tenantId, propertyId, closedAt: null, submittedAt: null,
+        ...(namedLeaseTermId ? { leaseTermId: namedLeaseTermId } : {}),
+        OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }],
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!old) return { ok: false, error: '이어받을 서명 링크가 없습니다. 새로 요청해 주세요.' }
+
+    const link = await prisma.$transaction(async tx => {
+      await tx.contractShareLink.update({ where: { id: old.id }, data: { closedAt: new Date() } })
+      return tx.contractShareLink.create({
+        data: {
+          token: randomBytes(32).toString('base64url'),
+          propertyId, tenantId, leaseTermId: old.leaseTermId,
+          // 스냅샷 통째 승계 — 새로 조립하지 않는다(위 주석).
+          templateSnapshot: old.templateSnapshot as object,
+          // 받아 둔 서명의 자국도 함께 옮긴다. 이것이 "이미 받은 서명을 새 링크에서 어떻게
+          // 보여줄지"의 답이다.
+          signedAt: old.signedAt, disposalSignedAt: old.disposalSignedAt,
+          expiresAt: new Date(Date.now() + SHARE_TTL_MS),
+          createdBy: userId,
+        },
+      })
+    }, { isolationLevel: 'Serializable' })
+
+    const [tenant, property] = await Promise.all([
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+      }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
+    ])
+    const primary = tenant?.contacts.find(c => c.isPrimary && !c.isEmergency) ?? tenant?.contacts.find(c => !c.isEmergency)
+    return {
+      ok: true,
+      link: serializeLink(link, await buildShareUrl(link.token), true),
+      phone: primary?.contactValue ?? null,
+      propertyName: property?.name ?? '',
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '링크를 다시 만들지 못했습니다.' }
+  }
+}
+
+/** 이 계약이 받아 둔 서명이 어디까지인가. 스냅샷의 서명 칸으로 정본 판정에 넘긴다. */
+function stageOf(l: {
+  signatureImageUrl?: string | null; signatureSignedDate?: string | null
+  disposalSignatureImageUrl?: string | null; disposalSignatureSignedDate?: string | null
+  disposalConsentEnabled?: boolean
+}) {
+  return signStage({
+    disposalEnabled: l.disposalConsentEnabled !== false,
+    hasContractSignature: !!(l.signatureImageUrl || l.signatureSignedDate),
+    hasDisposalSignature: !!(l.disposalSignatureImageUrl || l.disposalSignatureSignedDate),
+  })
+}
+
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
   disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
@@ -119,6 +207,8 @@ function serializeLink(link: {
 // 없으면 종전 추론 그대로다 — 기존 호출부(계약서 파일 칸의 주 버튼)는 글자 하나 안 바뀐다.
 export async function issueContractShareLink(tenantId: string, namedLeaseTermId?: string | null): Promise<
   | { ok: true; link: ContractShareLinkInfo; phone: string | null; propertyName: string }
+  // 받던 서명이 있어 화면이 선택창을 열어야 하는 상태. 거절이되 막다른 길이 아니다.
+  | { ok: false; code: 'SIGN_IN_PROGRESS'; error: string }
   | { ok: false; error: string }
 > {
   try {
@@ -142,8 +232,25 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
      * 새 링크로 다시 받으면 동의서 서명도 그 자리에서 함께 갱신되므로 두 벌이 생기지도 않는다.
      */
     const snapLease = snapshot.lease
-    if (snapLease.signatureImageUrl || snapLease.signatureSignedDate) {
-      return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
+    // 완료(모든 서류에 서명)면 종전대로 거절한다. 그 상태에서 새 링크를 내주면 계약 하나에
+    // 서로 다른 내용의 서명 두 벌이 생긴다.
+    //
+    // **반쪽이면 거절 대신 선택창을 연다**(운영자 신고 09da7f29, 2026-09-05).
+    // "기 진행중인 계약서를 유지하면서 링크를 새로 생성하고 유효기간을 갱신하는 방법과
+    // 작성중인 계약서를 폐기하고 완전 새로 작성하는 방법을 선택할 수 있게."
+    //
+    // 이 문이 잠복 결함도 함께 닫는다. 위 2026-08-31 봉합 이후 동의서만 서명된 계약은 이
+    // 가드를 그냥 통과해 **새 스냅샷** 링크가 나갔는데, signedContractSnapshot 은 첫 서명에서
+    // 굳어 재동결되지 않으므로 입주자가 새 내용에 서명해도 증거는 옛 내용으로 남았다.
+    if (stageOf(snapLease) !== 'none') {
+      if (stageOf(snapLease) === 'complete') {
+        return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
+      }
+      return {
+        ok: false,
+        code: 'SIGN_IN_PROGRESS',
+        error: '받던 서명이 있습니다. 이어서 받을지 폐기하고 새로 작성할지 정해 주세요.',
+      }
     }
 
     // 딸린 계약에는 제 서명 링크를 내주지 않는다(2026-08-13 다호실 2단계). 그 계약의 종이는 부모

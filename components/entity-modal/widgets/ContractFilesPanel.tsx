@@ -21,7 +21,7 @@ import {
   createContractScanUploadSession, finalizeContractScan,
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
-import { restoreContractVersion, getIssuePurposeContext } from '@/app/contract/[tenantId]/actions'
+import { restoreContractVersion, getIssuePurposeContext, clearContractSignature } from '@/app/contract/[tenantId]/actions'
 import { issuedNextStepMessage } from '@/lib/contractLockMessage'
 import { currentIssueIds, issueGroupKey as canonIssueGroupKey } from '@/lib/contractCurrentIssue'
 import {
@@ -29,7 +29,7 @@ import {
   type ContractPurpose,
 } from '@/lib/contractPurpose'
 import {
-  issueContractShareLink, getContractShareState,
+  issueContractShareLink, renewContractShareLink, getContractShareState,
   closeContractShareLink, reopenContractShareLink,
   type ContractShareLinkInfo,
 } from '@/app/(app)/tenants/contractShare'
@@ -163,8 +163,27 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     setSharePending(true)
     const release = trackSave()
     try {
-      const res = await issueContractShareLink(tenantId, leaseTermId ?? null)
-      if (!res.ok) { pushToast('error', res.error); return }
+      let res = await issueContractShareLink(tenantId, leaseTermId ?? null)
+      // 받던 서명이 있으면 막다른 거절이 아니라 선택창이다(운영자 신고 09da7f29).
+      // 이어받기는 옛 내용 그대로 보내고, 폐기는 받은 서명을 이력으로 옮긴 뒤 새로 시작한다.
+      if (!res.ok && 'code' in res && res.code === 'SIGN_IN_PROGRESS') {
+        const pick = await choiceDialog({
+          title: '받던 서명이 있습니다',
+          message: '이어서 받으면 입주자가 서명한 내용 그대로 유효기간만 새로 시작합니다.\n그 사이 계약 내용을 바꿨다면 폐기하고 새로 작성해야 바뀐 내용으로 받습니다. 받은 서명은 폐기 이력에 남습니다.',
+          confirmLabel: '이어서 받기',
+          altLabel: '폐기하고 새로 작성',
+          level: 'caution',
+        })
+        if (!pick || pick === 'back') return
+        if (pick === 'confirm') {
+          res = await renewContractShareLink(tenantId, leaseTermId ?? null)
+        } else {
+          const cleared = await clearContractSignature(leaseTermId ?? '', 'all')
+          if (!cleared.ok) { pushToast('error', humanError(cleared.error, '받던 서명을 정리하지 못했습니다.')); return }
+          res = await issueContractShareLink(tenantId, leaseTermId ?? null)
+        }
+      }
+      if (!res.ok) { pushToast('error', humanError(res.error, '서명 요청을 보내지 못했습니다.')); return }
       await reloadShare()
       if (!res.phone) { pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.'); return }
       openSms(res.link.url, res.phone, res.propertyName)

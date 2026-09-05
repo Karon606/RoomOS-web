@@ -22,7 +22,7 @@ import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurrin
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { signProgressLabel, signStage } from '@/lib/disposalSignGate'
+import { signProgressLabel, signStage, signAlertDue } from '@/lib/disposalSignGate'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
 
@@ -117,6 +117,8 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
       select: {
         id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true,
+        // 지금 말할 때인가를 가르는 셋 — 제출했는가, 링크가 죽었는가(만료·잠김).
+        submittedAt: true, expiresAt: true, lockedAt: true,
         // 이 링크가 나갈 때 동의서가 붙는 종이였는가. **라이브 설정을 보면 안 된다** —
         // 영업장이 서류를 새로 켜는 순간 과거 계약 전부가 소급으로 반쪽이 되어 알림이 도배된다.
         // 기준은 "그 사람이 무엇을 보고 서명했나"이고 그것은 링크 스냅샷에 박제돼 있다.
@@ -294,6 +296,14 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       hasDisposalSignature: !!link.disposalSignedAt,
     }
     const stage = signStage(state)
+    // 입주자가 스스로 마칠 수 있는 동안은 침묵한다(운영자 신고 09da7f29). 링크가 살아 있고
+    // 제출 전이면 알림을 만들지 않는다 — 그 사이 운영자가 개입할 수단도 없다(서명은 입주자
+    // 손에 있다). 반쪽 사실 자체는 발급 대기 목록과 계약서 패널 배지에 그대로 보인다.
+    if (!signAlertDue({
+      ...state,
+      submitted: !!link.submittedAt,
+      linkDead: !!link.lockedAt || link.expiresAt <= new Date(),
+    })) continue
     if (stage === 'none') continue
     // 완료와 반쪽은 다른 카테고리다. 같은 것으로 두면 푸시 요약이 반쪽을 '서명 받음'으로 세고,
     // 그것이 운영자를 잘못된 발급으로 이끈 원래 경로다.

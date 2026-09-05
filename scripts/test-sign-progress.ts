@@ -3,7 +3,7 @@
 // 왜 고정하는가(2026-09-04). 어제 두 입주자가 각각 한쪽만 서명하고 끝났는데, 계약서만 서명한
 // 쪽에는 "원격 서명 완료" 알림이 뜨고 동의서만 서명한 쪽은 화면 어디에도 안 나왔다.
 // 판정이 계약서 서명 하나만 봤기 때문이다. 여덟 칸 진리표를 통째로 못박는다.
-import { signStage, missingSignatures, signProgressLabel, disposalSignatureMissing } from '../lib/disposalSignGate'
+import { signStage, missingSignatures, signProgressLabel, disposalSignatureMissing, signAlertDue } from '../lib/disposalSignGate'
 
 let pass = 0
 const fails: string[] = []
@@ -48,6 +48,32 @@ eq('완료 문구', signProgressLabel(S(true, true, true)), '원격 서명 완�
 eq('계약서만 문구', signProgressLabel(S(true, true, false)), '계약서만 서명됨 · 동의서 서명 대기')
 eq('동의서만 문구', signProgressLabel(S(true, false, true)), '동의서만 서명됨 · 계약서 서명 대기')
 eq('없음 문구', signProgressLabel(S(true, false, false)), '서명 대기')
+
+// ── 언제 말할 때인가 (운영자 신고 09da7f29, 2026-09-05) ──────────
+// "하나만 서명되었을 때 알림이 오는 것은 사실 필요 없고 제출되었을 때만 와도 돼."
+// 판정 한 문장은 "입주자가 스스로 마칠 수 있는 동안은 침묵한다" 이다.
+const A = (d: boolean, c: boolean, p: boolean, submitted: boolean, linkDead: boolean) =>
+  ({ disposalEnabled: d, hasContractSignature: c, hasDisposalSignature: p, submitted, linkDead })
+
+// 살아 있는 미제출 링크 — 반쪽이든 완료든 침묵한다.
+eq('살아 있는 링크의 반쪽은 침묵', signAlertDue(A(true, true, false, false, false)), false)
+eq('살아 있는 링크의 반대쪽 반쪽도 침묵', signAlertDue(A(true, false, true, false, false)), false)
+eq('살아 있는 링크의 완료도 제출 전이면 침묵', signAlertDue(A(true, true, true, false, false)), false)
+
+// 제출했으면 말한다 — 운영자 문면("제출되었을 때만") 그대로.
+eq('제출하면 말한다', signAlertDue(A(true, true, true, true, false)), true)
+
+// 링크가 죽으면 말한다 — 입주자가 더는 스스로 못 마친다. 506호가 침묵하지 않는 자리다.
+eq('만료된 링크의 반쪽은 말한다', signAlertDue(A(true, true, false, false, true)), true)
+eq('만료된 링크의 동의서만 반쪽도 말한다', signAlertDue(A(true, false, true, false, true)), true)
+
+// 서명이 하나도 없으면 어느 경우에도 이 알림이 아니다.
+eq('서명 전은 죽은 링크여도 침묵', signAlertDue(A(true, false, false, false, true)), false)
+eq('서명 전은 제출됐어도 침묵', signAlertDue(A(true, false, false, true, false)), false)
+
+// 동의서를 안 쓰는 영업장 — 계약서 하나로 완료이고, 제출 전이면 역시 침묵한다.
+eq('꺼진 영업장의 완료도 제출 전이면 침묵', signAlertDue(A(false, true, false, false, false)), false)
+eq('꺼진 영업장도 제출하면 말한다', signAlertDue(A(false, true, false, true, false)), true)
 
 console.log(`\n서명 진행 판정 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const m of fails) console.error(`  - ${m}`)

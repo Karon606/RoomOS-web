@@ -127,6 +127,43 @@ for (const [f, msg] of [
   }
 }
 
+// ⓘ 알림이 "지금 말할 때인가"를 정본에 묻는가. import 만으로는 통과 못 한다.
+{
+  const f = 'app/(app)/dashboard/alerts.ts'
+  const src = read(f)
+  if (!/signAlertDue\s*\(/.test(src)) {
+    violations.push(`${f} — signAlertDue 를 안 부른다. 입주자가 아직 마칠 수 있는 건까지 알림이 뜬다(신고 09da7f29).`)
+  }
+  for (const need of ['submittedAt', 'expiresAt', 'lockedAt']) {
+    if (!new RegExp(`${need}:\\s*true`).test(src)) {
+      violations.push(`${f} — 링크 조회가 ${need} 를 안 읽는다. 살았는지 죽었는지 모르면 침묵 판정이 성립하지 않는다.`)
+    }
+  }
+}
+
+// ⓙ 재요청 유지 갈래가 옛 스냅샷을 그대로 승계하는가.
+//    새로 조립하면 남은 서명이 다른 내용 위에 놓이는데 서명 시점 격리본은 재동결되지 않아
+//    **증거와 화면이 갈린다.** 이 축이 그 클래스의 재발을 막는다.
+{
+  const f = 'app/(app)/tenants/contractShare.ts'
+  const src = read(f)
+  const at = src.indexOf('export async function renewContractShareLink')
+  if (at < 0) {
+    violations.push(`${f} — renewContractShareLink 를 못 찾았다. 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+  } else {
+    const body = src.slice(at, src.indexOf('\n}', at))
+    if (!/templateSnapshot:\s*old\.templateSnapshot/.test(body)) {
+      violations.push(`${f} — 유지 갈래가 옛 스냅샷을 승계하지 않는다. 서명한 내용과 다른 종이가 나간다.`)
+    }
+    if (/buildContractData\s*\(/.test(body)) {
+      violations.push(`${f} — 유지 갈래가 내용을 새로 조립한다. 그 순간 증거(격리본)와 화면이 갈린다.`)
+    }
+    if (!/signedAt:\s*old\.signedAt/.test(body)) {
+      violations.push(`${f} — 서명 자국을 승계하지 않는다. 입주자가 이미 한 서명이 새 링크에서 안 보인다.`)
+    }
+  }
+}
+
 // ⓕ 푸시가 정본 요약을 그대로 쓰는가.
 {
   const f = 'app/api/cron/push-alerts/route.ts'
@@ -135,6 +172,6 @@ for (const [f, msg] of [
   if (/byCategory\s*\[\s*'/.test(src)) violations.push(`${f} — 카테고리를 손으로 센다. 정본 요약을 그대로 써야 종과 갈리지 않는다.`)
 }
 
-console.log(`[서명 진행 축] ⓐ 정본 · ⓑ 배선 · ⓒ 링크 조회 · ⓓ 리터럴 가드 · ⓔ 카테고리 · ⓕ 푸시 · ⓖ 스냅샷 축 / 위반 ${violations.length}건`)
+console.log(`[서명 진행 축] ⓐ 정본 · ⓑ 배선 · ⓒ 링크 조회 · ⓓ 리터럴 가드 · ⓔ 카테고리 · ⓕ 푸시 · ⓖ 스냅샷 축 · ⓘ 알림 시점 · ⓙ 유지 승계 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
