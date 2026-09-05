@@ -63,12 +63,8 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const { gte: today, lt: tomorrow } = dayDbRange(todayYmd)
   const thisMonth = todayYmd.slice(0, 7)
   const trackedCats = await getTrackedCategories(propertyId)
-  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true, disposalConsentTemplate: true } })
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } })
   const contactLeadDays = prop?.contactLeadDays ?? 14
-  // 이 영업장이 동의서를 쓰는가. 판정 축이 라이브인 이유 — 알림은 "지금 무엇을 해야 하는가"를
-  // 말하는 자리다. 동의서를 끈 뒤라면 그 서명을 더 기다릴 이유가 없다. 제출 게이트가 발급 시점
-  // 스냅샷을 보는 것과 일부러 다르다(그쪽은 입주자가 본 화면이 기준이다).
-  const disposalEnabled = (prop?.disposalConsentTemplate as { enabled?: boolean } | null)?.enabled === true
 
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases, signedLinks, generatedFiles, recurringThisMonth] = await Promise.all([
     computeUnpaidStatus(propertyId),
@@ -121,6 +117,11 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
       select: {
         id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true,
+        // 이 링크가 나갈 때 동의서가 붙는 종이였는가. **라이브 설정을 보면 안 된다** —
+        // 영업장이 서류를 새로 켜는 순간 과거 계약 전부가 소급으로 반쪽이 되어 알림이 도배된다.
+        // 기준은 "그 사람이 무엇을 보고 서명했나"이고 그것은 링크 스냅샷에 박제돼 있다.
+        // 서명 dataURL 은 링크 발급 시점 이후에 들어오므로 이 스냅샷은 가볍다.
+        templateSnapshot: true,
         // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
         leaseTerm: { select: { room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true } },
         tenant: { select: { id: true, name: true } },
@@ -287,7 +288,8 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     // hasContractSignature 를 리터럴 true 로 넘기지 않는다. 위 쿼리를 넓힌 순간 그 리터럴은
     // 거짓말이 된다 — 동의서만 서명된 링크가 '계약서만 서명됨'으로 뜬다(방향만 바뀐 같은 거짓말).
     const state = {
-      disposalEnabled,
+      disposalEnabled: (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)
+        ?.disposalConsent?.enabled === true,
       hasContractSignature: !!link.signedAt,
       hasDisposalSignature: !!link.disposalSignedAt,
     }

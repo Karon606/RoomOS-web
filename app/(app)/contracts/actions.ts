@@ -148,10 +148,6 @@ export type PendingIssueRow = {
 // 종은 울리는데 목록은 침묵하는 어긋남이 안 생긴다. 규칙을 여기서 다시 짜면 그 순간 두 화면이 갈라진다.
 export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   const propertyId = await getPropertyId()
-  // 동의서를 쓰는 영업장인가. 홈 알림과 같은 라이브 축이다 — 두 화면이 갈리면 종은 울리는데
-  // 목록은 침묵하는 어긋남이 다시 생긴다(오류신고 d41eea8c 가 그 계열이었다).
-  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { disposalConsentTemplate: true } })
-  const disposalEnabled = (prop?.disposalConsentTemplate as { enabled?: boolean } | null)?.enabled === true
   const [links, files] = await Promise.all([
     // 만료(expiresAt) 조건은 절대 넣지 않는다. 링크 수명이 24시간이라 발급 시점엔 대개 이미 만료라,
     // 만료를 거르면 502호처럼 서명이 끝난 계약이 또 안 보인다(오류신고 d41eea8c 재발 지점).
@@ -163,6 +159,9 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       orderBy: { signedAt: 'desc' },
       select: {
         id: true, signedAt: true, disposalSignedAt: true, submittedAt: true, leaseTermId: true,
+        // 링크 스냅샷이 기준이다 — 라이브 설정을 보면 서류를 새로 켜는 순간 과거 계약 전부가
+        // 소급으로 반쪽이 된다. 홈 알림·계약서 패널과 같은 축이어야 세 화면이 한 답을 말한다.
+        templateSnapshot: true,
         tenant: { select: { id: true, name: true } },
         leaseTerm: {
           select: {
@@ -185,9 +184,10 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   ])
 
   // 링크 축이 아니라 lease 축으로 본다 — 서명을 지우면 링크 기록은 남지만 종이는 없다.
-  const sigState = (l: { leaseTerm: { signatureImageUrl: string | null; signatureSignedAt: Date | null
+  const sigState = (l: { templateSnapshot: unknown; leaseTerm: { signatureImageUrl: string | null; signatureSignedAt: Date | null
     disposalSignatureImageUrl: string | null; disposalSignatureSignedAt: Date | null } }) => ({
-    disposalEnabled,
+    disposalEnabled: (l.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)
+      ?.disposalConsent?.enabled === true,
     hasContractSignature: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
     hasDisposalSignature: !!(l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
   })

@@ -110,6 +110,23 @@ for (const f of ['app/(app)/dashboard/alerts.ts', 'app/(app)/contracts/actions.t
   }
 }
 
+// ⓖ 필수 판정의 축이 셋 다 링크 스냅샷인가.
+//    라이브 설정을 보면 영업장이 서류를 새로 켜는 순간 **과거 계약 전부가 소급으로 반쪽**이
+//    되어 알림이 도배된다. 기준은 "그 사람이 무엇을 보고 서명했나"이고 그것은 스냅샷에 있다.
+//    지금은 판정이 갈리는 링크가 0건이라 무변동이지만, 서류를 늘리는 순간 드러난다.
+for (const [f, msg] of [
+  ['app/(app)/dashboard/alerts.ts', '홈 알림'],
+  ['app/(app)/contracts/actions.ts', '발급 대기'],
+]) {
+  const src = read(f)
+  if (/disposalConsentTemplate/.test(src)) {
+    violations.push(`${f} — ${msg}이 라이브 영업장 설정으로 필수 여부를 판정한다. 서류를 켜면 과거가 소급으로 반쪽이 된다. 링크 templateSnapshot 을 본다.`)
+  }
+  if (!/templateSnapshot/.test(src)) {
+    violations.push(`${f} — ${msg}이 링크 스냅샷을 안 읽는다. 세 화면의 축이 갈리면 어느 것을 봤느냐에 따라 다른 사실을 듣는다.`)
+  }
+}
+
 // ⓕ 푸시가 정본 요약을 그대로 쓰는가.
 {
   const f = 'app/api/cron/push-alerts/route.ts'
@@ -118,6 +135,6 @@ for (const f of ['app/(app)/dashboard/alerts.ts', 'app/(app)/contracts/actions.t
   if (/byCategory\s*\[\s*'/.test(src)) violations.push(`${f} — 카테고리를 손으로 센다. 정본 요약을 그대로 써야 종과 갈리지 않는다.`)
 }
 
-console.log(`[서명 진행 축] ⓐ 정본 · ⓑ 배선 · ⓒ 링크 조회 · ⓓ 리터럴 가드 · ⓔ 카테고리 다섯 자리 · ⓕ 푸시 / 위반 ${violations.length}건`)
+console.log(`[서명 진행 축] ⓐ 정본 · ⓑ 배선 · ⓒ 링크 조회 · ⓓ 리터럴 가드 · ⓔ 카테고리 · ⓕ 푸시 · ⓖ 스냅샷 축 / 위반 ${violations.length}건`)
 for (const v of violations.slice(0, 15)) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
