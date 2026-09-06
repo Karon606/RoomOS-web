@@ -3958,13 +3958,28 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
     }
   }
 
-  const handleMoveInChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    if (!val) return
+  // 입주일의 날 → 납부일 표기(30일 이상이면 말일). 서버 dueDayFromMoveIn 과 같은 규칙.
+  const dueDayOfDate = (val: string): string => {
     const d = new Date(val)
     const day = d.getDate()
     const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-    applyDueDay(day >= lastDay ? '말일' : String(day))
+    return day >= lastDay ? '말일' : String(day)
+  }
+  /**
+   * 입주일이 바뀔 때 납부일을 따라 파생할지. **비었거나, 옛 입주일의 날과 같을 때만** 따라온다.
+   *
+   * 종전에는 무조건 덮었다. 납부일을 20일로 따로 정한 상태에서 입주일을 하루만 조정해도
+   * 20이 소리 없이 5로 돌아갔다 — 계약서에 20이 박힌 뒤라면 종이와 청구가 갈린다
+   * (운영자 오더 2026-09-06, 납부일 신설). 판정은 값끼리 견주기(sameDueDay) 한 벌이다.
+   */
+  const shouldFollowMoveIn = (oldMoveIn: string): boolean =>
+    !dueDayRaw || (!!oldMoveIn && sameDueDay(dueDayRaw, dueDayOfDate(oldMoveIn)))
+
+  const handleMoveInChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    if (!val) return
+    if (!shouldFollowMoveIn(moveInVal)) return
+    applyDueDay(dueDayOfDate(val))
   }
 
   // 신규 등록: 입주일 기준으로 납부일 자동 파생. 입주일 onChange 도 파생하지만 입주일을 손대지 않으면
@@ -4002,13 +4017,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       name="moveInDate"
       value={moveInVal}
       onChange={(v) => {
+        const prev = moveInVal
         setMoveIn(v)
-        // 거주 단계에서 입주일을 고르면 납부일을 그 날로 파생한다(종전 거동 그대로).
-        if (v && !roomIsOptional) {
-          const d = new Date(v)
-          const day = d.getDate()
-          const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-          applyDueDay(day >= lastDay ? '말일' : String(day))
+        // 거주 단계에서 입주일을 고르면 납부일을 파생하되, **손으로 정한 납부일은 안 덮는다**
+        // (비었거나 옛 입주일의 날과 같을 때만 따라온다 — shouldFollowMoveIn 주석).
+        if (v && !roomIsOptional && shouldFollowMoveIn(prev)) {
+          applyDueDay(dueDayOfDate(v))
         }
       }}
       placeholder={placeholder}
