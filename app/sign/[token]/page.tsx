@@ -87,7 +87,7 @@ export default async function SignPage({
   if (data.lease && (link.signedAt || link.disposalSignedAt || Object.keys(docMarks).length > 0)) {
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: link.leaseTermId },
-      select: { signatureImageUrl: true, disposalSignatureImageUrl: true, documentSignatures: true, nativeNameImageUrl: true },
+      select: { signatureImageUrl: true, disposalSignatureImageUrl: true, documentSignatures: true },
     })
     if (lease) {
       if (link.signedAt) data.lease.signatureImageUrl = lease.signatureImageUrl
@@ -95,14 +95,7 @@ export default async function SignPage({
       const sigs = parseDocumentSignatures(lease.documentSignatures)
       data.lease.documentSignatures = Object.fromEntries(
         Object.keys(docMarks).flatMap(k => sigs[k] ? [[k, sigs[k]]] : []))
-      // 자필 기명은 내용 의존이 아니라(그 사람의 이름 그 자체) 링크 자국 없이 그대로 얹는다.
-      data.lease.nativeNameImageUrl = lease.nativeNameImageUrl
     }
-  }
-  // 자필 기명만 있고 서명 자국이 없는 재접속도 있다 — 위 조건(서명 자국 존재)에 안 걸리므로 따로 얹는다.
-  if (data.lease && !data.lease.nativeNameImageUrl) {
-    const l2 = await prisma.leaseTerm.findUnique({ where: { id: link.leaseTermId }, select: { nativeNameImageUrl: true } })
-    if (l2?.nativeNameImageUrl) data.lease.nativeNameImageUrl = l2.nativeNameImageUrl
   }
   return <ContractView data={data} mode="remote" shareToken={token} signLang={lang} />
 }

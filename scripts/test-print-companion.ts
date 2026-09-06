@@ -158,15 +158,6 @@ const base = (over: Partial<PrintContractData> = {}): PrintContractData => ({
     resolveSignedBody({ signedContractSnapshot: { ...base_, nativeName: null } }, {}).nativeNameFrozen, null)
 }
 
-// ── 본국어 성명 자필 기명 인쇄 ──────────────────────────────
-{
-  const withInk = buildContractPrintHtml(base({ nativeNameImageDataUrl: 'data:image/png;base64,NATIVENAME' }))
-  eq('자필 기명이 서명 줄 아래 실린다', withInk.includes('data:image/png;base64,NATIVENAME'), true)
-  eq('라벨이 붙는다', withInk.includes('본국어 성명(자필)'), true)
-  const without = buildContractPrintHtml(base())
-  eq('없으면 라벨도 줄도 없다', without.includes('본국어 성명(자필)'), false)
-}
-
 console.log(`\n동반 서류 조판 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.error(`  - ${f}`)
 process.exit(fails.length > 0 ? 1 : 0)

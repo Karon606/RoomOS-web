@@ -216,38 +216,6 @@ export async function submitRemoteSignature(
   }
 }
 
-/**
- * 본국어 성명 자필 기명 저장 — 서명이 아니라 기명이다(오류신고 cdda7787 2단계).
- *
- * 서류 폰트가 못 그리는 문자권(미얀마·벵골·한자)의 성명을 이미지로 받는다. 서명 진행
- * 슬롯·제출 게이트에는 안 들어가고(선택 요소 — 넣으면 반쪽 판정 축이 흔들린다), 링크에
- * 자국도 안 남긴다. 검증은 서명 저장과 같은 규칙(래스터 두 종·크기 상한)이다.
- */
-export async function submitNativeNameSignature(
-  token: string,
-  dataUrl: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const link = await getActiveLink(token)
-    if (!link) return { ok: false, error: INACTIVE_MSG }
-    const cookieStore = await cookies()
-    if (!cookieStore.get(shareCookieName(link.id))) {
-      return { ok: false, error: bi(langOf(link), 'err.cookieExpired') }
-    }
-    if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(dataUrl)) {
-      return { ok: false, error: bi(langOf(link), 'err.badImage') }
-    }
-    if (dataUrl.length > 900_000) return { ok: false, error: bi(langOf(link), 'err.imageTooLarge') }
-    await prisma.leaseTerm.update({
-      where: { id: link.leaseTermId },
-      data: { nativeNameImageUrl: dataUrl, nativeNameImageSignedAt: new Date() },
-    })
-    return { ok: true }
-  } catch {
-    return { ok: false, error: bi('ko', 'err.saveFail') }
-  }
-}
-
 // 원격 서명 최종 제출 — 확인 팝업을 거친 뒤 호출된다. submittedAt 을 찍어 재접속 시 계약서가
 // 다시 열리지 않게 하고(page.tsx 가 '제출 완료'로 안내), 운영자에게 웹푸시를 발송한다(best-effort).
 // closedAt 이 아니라 submittedAt 을 쓰는 이유 — 종 알림의 '정식 계약서 발급' 리마인더는 closedAt: null

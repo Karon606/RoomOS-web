@@ -21,7 +21,7 @@ import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments, nativeNameSubOnPaper, sanitizeNativeName, showsForeignFields } from '@/lib/documentName'
-import { submitRemoteSignature, finalizeRemoteSubmission, submitNativeNameSignature } from '@/app/sign/[token]/actions'
+import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -842,9 +842,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 추가 서류 서명 — { [서류key]: dataURL }. 두 짝의 N개 판이고, 초기값도 같은 곳(lease 저장본)이다.
   const [customSigs, setCustomSigs] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(data.lease?.documentSignatures ?? {}).map(([k, v]) => [k, v.image])))
-  // 본국어 성명 자필 기명 — 서명이 아니라 기명(선택). 초기값은 lease 저장본.
-  const [nativeNameImage, setNativeNameImage] = useState<string | null>(data.lease?.nativeNameImageUrl ?? null)
-  const [nativeNameImageCapturedAt, setNativeNameImageCapturedAt] = useState<string | null>(null)
   const [customCapturedAt, setCustomCapturedAt] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(data.lease?.documentSignatures ?? {}).flatMap(([k, v]) => v.signedAt ? [[k, v.signedAt]] : [])))
   // 'contract' | 'disposal' | 추가 서류 key.
@@ -972,28 +969,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
     setSignError(null)
     const url = pad.toDataURL('image/png')
-    if (signTarget === 'nativename') {
-      // 기명은 서명 진행 밖이다 — 저장하고 조용히 닫는다(남은 서명 확인창을 안 띄운다).
-      if (remote) {
-        if (!shareToken || remoteSubmitting) return
-        setRemoteSubmitting(true)
-        const release = trackSave()
-        try {
-          const res = await submitNativeNameSignature(shareToken, url)
-          if (!res.ok) { setSignError(res.error); pushToast('error', res.error); return }
-          setSignOpen(false)
-          setNativeNameImage(url)
-        } catch (err) {
-          const msg = humanError(err, bi(signLang, 'pad.errComm'))
-          setSignError(msg); pushToast('error', msg)
-        } finally { release(); setRemoteSubmitting(false) }
-      } else {
-        setSignOpen(false)
-        setNativeNameImage(url)
-        setNativeNameImageCapturedAt(new Date().toISOString())
-      }
-      return
-    }
     if (remote) {
       if (!shareToken || remoteSubmitting) return
       setRemoteSubmitting(true)
@@ -1137,7 +1112,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const titleOf = (key: string): string =>
     key === 'contract' ? DOC_TITLE.contract
       : key === 'disposal' ? DOC_TITLE.disposal
-      : key === 'nativename' ? '본국어 성명(자필)'
       : (docSlots.find(x => x.key === key)?.title ?? '서류')
   /**
    * 남은 서명란으로 데려간다. **사용자가 눌렀을 때만 부른다.**
@@ -1299,8 +1273,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 추가 서류의 대면 서명 — 서버가 key·형식·크기를 검증해 인쇄하고 영구 저장한다.
           documentSignatures: Object.fromEntries(Object.entries(customSigs).map(([k, image]) =>
             [k, { image, capturedAt: customCapturedAt[k] }])),
-          nativeNameSignature: nativeNameImage
-            ? { image: nativeNameImage, capturedAt: nativeNameImageCapturedAt ?? undefined } : undefined,
         }),
       })
       const text = await res.text()
@@ -1852,36 +1824,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                   )}
                 </span>
               </div>
-              {/* 본국어 성명 자필 기명(오류신고 cdda7787 2단계) — 서류 폰트가 못 그리는 문자권
-                  (미얀마·벵골·한자)의 성명을 이미지로 받는다. 선택이고 서명 진행 슬롯 밖이다 —
-                  넣으면 반쪽 판정 축이 흔들린다(패널 합의). 외국인 서명자에게만 선다. */}
-              {showsForeignFields(snapTenant.nationality) && (
-                <div className="sign-line native-sign-line">
-                  {/* 종이 안은 한국어 전용 — 러시아어 병기는 317px 열을 310px 넘쳐 흘렀다(디자이너 실측).
-                      번역 몫은 축소를 안 받는 패드 제목이 진다(:2211 의 기존 문법). */}
-                  <span className="lbl">본국어 성명(자필)</span>
-                  <span className="seal-wrap">
-                    {nativeNameImage ? (
-                      <>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img className="sign-img" src={nativeNameImage} alt="본국어 성명 자필" onClick={() => openSign('nativename')} style={{ cursor: 'pointer', height: '9mm', maxWidth: '45mm' }} title="다시 쓰려면 클릭" />
-                        {!remote && (
-                          <button type="button" onClick={() => { setNativeNameImage(null); setNativeNameImageCapturedAt(null) }} className="signature-clear no-print" title="자필 기명 지우기" aria-label="자필 기명 지우기">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      // 선택 등급 — 코랄(필수 서명)이 아니라 종이 점선색으로 축을 가른다(.sign-cta-optional).
-                      <button type="button" onClick={() => openSign('nativename')}
-                        className="no-print sign-cta sign-cta-optional" style={{ padding: '4px 10px', fontSize: 11 }}>
-                        <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                        본국 문자로 성명 쓰기
-                      </button>
-                    )}
-                  </span>
-                </div>
-              )}
             </div>
             <div className="sign-col">
               <div className="sign-role">임대인 (사업자)</div>
@@ -2056,12 +1998,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             <div className="sig-head">
               <div>
                 <div className="sig-title" style={{ whiteSpace: 'pre-line' }}>{remote
-                  ? (signTarget === 'contract' ? bi(signLang, 'pad.titleContract')
-                    : signTarget === 'nativename'
-                      // 기명 제목은 언어별 제 문장 — 종이 안 라벨이 한국어 전용이라 번역은
-                      // 축소를 안 받는 이 패드가 진다(디자이너 패스 2026-09-07).
-                      ? `${t('ko', 'nativeSign.label')}\n${t(subLangOf(signLang), 'nativeSign.label')}`
-                      : bi(signLang, 'pad.titleDoc', { title: titleOf(signTarget) }))
+                  ? (signTarget === 'contract' ? bi(signLang, 'pad.titleContract') : bi(signLang, 'pad.titleDoc', { title: titleOf(signTarget) }))
                   : (signTarget === 'contract' ? '입실자 서명' : `${titleOf(signTarget)} 서명`)}</div>
                 <div className="sig-sub" style={{ whiteSpace: 'pre-line' }}>
                   {remote
@@ -2252,9 +2189,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           outline: none;
         }
         .native-name-input:focus { border-color: var(--coral); }
-        /* 선택 등급 CTA — 코랄(필수 서명)과 축을 가른다. 점선색은 종이 위 입력 칸 것 그대로. */
-        .sign-cta-optional { border-color: #b9ac9a; color: #6b6258; }
-        .sign-cta-optional .pen { stroke: #6b6258; }
         .native-name-error { font-size: 12px; line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-ring); border-radius: 8px; padding: 6px 10px; margin: 8px 0 0; }
         .native-name-hint { font-size: 11px; color: var(--ink-s); line-height: 1.5; margin: 5px 0 0; }
 

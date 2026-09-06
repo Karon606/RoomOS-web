@@ -70,8 +70,6 @@ type Body = {
    * key 가 이 종이의 서류 목록에 실제로 있는지·이미지 형식·크기를 검증한 것만 쓴다.
    */
   documentSignatures?: Record<string, { image: string; capturedAt?: string }>
-  /** 본국어 성명 자필 기명(대면) — 동의서 서명과 같은 검증·저장 규칙. */
-  nativeNameSignature?: { image: string; capturedAt?: string }
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
   /**
@@ -370,10 +368,6 @@ export async function POST(req: Request) {
       clientDocSigs[k] = { image: v.image, signedAt: parseCapturedAt(v.capturedAt)?.toISOString() ?? new Date().toISOString() }
     }
     const mergedDocumentSignatures = { ...parseDocumentSignatures(lease?.documentSignatures), ...clientDocSigs }
-    // 본국어 성명 자필 기명 — 같은 검증(래스터 두 종·크기 상한). 통과분만 인쇄·저장한다.
-    const nn = body.nativeNameSignature
-    const nativeNameSigValid = nn && typeof nn.image === 'string'
-      && /^data:image\/(png|jpeg);base64,/.test(nn.image) && nn.image.length <= 900_000 ? nn.image : null
 
     // 추가 서류도 같은 물음이다 — 서명이 빈 장이 있는데 승낙 없이 지나가지 않는다.
     // 승낙 운반체는 동의서와 같은 disposalUnsignedAck 하나다. 화면이 한 확인창으로 같이 묻는다.
@@ -444,7 +438,6 @@ export async function POST(req: Request) {
       // 목록은 body_ 를 탄다. 서명이 끝난 계약이면 박제의 그때 목록이고, 아니면 지금 목록이다.
       signDocuments: activeSignDocuments(body_.signDocuments),
       documentSignatures: mergedDocumentSignatures,
-      nativeNameImageDataUrl: nativeNameSigValid ?? lease?.nativeNameImageUrl ?? null,
       pretendardBase64,
       tenant: {
         name: printedTenantName,
@@ -749,20 +742,6 @@ export async function POST(req: Request) {
           })
         } catch (e) {
           console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)
-        }
-      }
-      // 본국어 성명 자필 기명 영구 저장(동의서와 같은 best-effort).
-      if (nativeNameSigValid) {
-        try {
-          await prisma.leaseTerm.update({
-            where: { id: lease.id },
-            data: {
-              nativeNameImageUrl: nativeNameSigValid,
-              ...(parseCapturedAt(body.nativeNameSignature?.capturedAt) ? { nativeNameImageSignedAt: parseCapturedAt(body.nativeNameSignature?.capturedAt)! } : { nativeNameImageSignedAt: new Date() }),
-            },
-          })
-        } catch (e) {
-          console.error('[contract/generate] 자필 기명 저장 실패 (SQL 미적용 가능):', e)
         }
       }
       // 추가 서류 서명도 같은 규칙으로 영구 저장한다. 유효한 것만, 저장본에 병합해서.
