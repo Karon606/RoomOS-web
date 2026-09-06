@@ -88,6 +88,7 @@ export const DOC_TEMPLATES: readonly DocTemplateEntry[] = [
   { key: 'earlyCheckout', label: '조기 퇴실 시 요금 적용', editTab: 'contract', editAnchor: 'dv-addendum-earlyCheckout' },
   { key: 'roomSchedule', label: '거주 호실 일정 특약', editTab: 'contract', editAnchor: 'dv-addendum-roomSchedule' },
   { key: 'consentBody', label: '임의처분 동의서 본문', editTab: 'contract', editAnchor: 'dv-disposal' },
+  { key: 'signDocuments', label: '추가 서류', editTab: 'contract', editAnchor: 'dv-sign-docs' },
   { key: 'docMail', label: '서류 메일 문안', editTab: 'contract', editAnchor: 'dv-doc-mail' },
   { key: 'smsUnpaid', label: '미납 안내 문자 템플릿', editTab: 'data', editAnchor: 'dv-sms-unpaid' },
   { key: 'smsNotice', label: '단체 공지 문자 템플릿', editTab: 'data', editAnchor: 'dv-sms-notice' },

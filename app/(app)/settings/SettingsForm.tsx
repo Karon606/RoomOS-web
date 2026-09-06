@@ -35,6 +35,7 @@ import {
   getShortStayPolicy, updateShortStayPolicy,
   listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
   getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
+  saveSignDocument, setSignDocumentRetired,
   getDocMailSettings, updateDocMailTemplate, renderDocMailSample,
   getAiSettings, saveAiSettings,
 } from './actions'
@@ -43,6 +44,7 @@ import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/cont
 import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
+import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
@@ -97,6 +99,7 @@ type Property = {
   cleaningFeeInDeposit: boolean   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
   multiContractVersions: boolean  // 한 계약에 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
   disposalConsentTemplate: unknown
+  signDocuments: unknown   // 영업장이 만든 추가 서류(제3 서류)
   subLeaseAddendum: unknown
   shortStayAddendum: unknown
   earlyCheckoutAddendum: unknown
@@ -2364,6 +2367,11 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
         </div>
       </form>
 
+      {/* 추가 서류 — 동의서(위 자동채움 폼 안)와 별도 카드다. 그쪽은 한 벌 폼형이고 여기는
+          여러 벌 목록형이라 §27.1 이 한 카드 안 혼용을 금한다. */}
+      <span id="dv-sign-docs" className="scroll-mt-4" />
+      <SignDocumentsCard initial={parseSignDocuments(property?.signDocuments)} />
+
       {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
           그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
       <span id="dv-doc-mail" className="scroll-mt-4" />
@@ -2926,6 +2934,139 @@ function AiSettingsCard() {
 // 모드를 가른다). 저장은 카드 우측 버튼 하나(§27.1 폼형), 검증 실패는 인라인(§27.2), 미리보기는
 // 발송과 같은 서버 렌더(renderDocMailSample)를 sandbox iframe 으로 띄운다. 복원은 로컬 되채움이라
 // 저장을 안 누르면 무해하다(§16 undo — 저장된 커스텀을 지우는 실수단은 복원 후 저장 = 칼럼 null).
+/**
+ * 추가 서류 카드 — 서명을 받는 제3의 서류를 영업장이 직접 만든다(제목 + 문단 + 서명).
+ *
+ * 동의서 카드와 합치지 않는다. 그쪽은 enabled·미납 기준일이라는 제 축이 있는 한 벌 폼형이고
+ * 여기는 여러 벌 목록형이다 — §27.1 이 한 카드 안 혼용을 금한다(문자 템플릿 카드와 같은 판정).
+ * 저장은 전용 출구(saveSignDocument·setSignDocumentRetired)로 나가고, 서버 병합에 삭제 경로가
+ * 없어 "발행한 서류는 지워지지 않는다"가 구조다. 삭제 버튼은 그래서 아예 없다 — 중지가 덮는다.
+ */
+function SignDocumentsCard({ initial }: { initial: SignDocument[] }) {
+  const [docs, setDocs] = useState<SignDocument[]>(initial)
+  const [editing, setEditing] = useState<{ key?: string; title: string; body: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const formRef = useRef<HTMLDivElement | null>(null)
+  const active = docs.filter(d => !d.retiredAt)
+  const retired = docs.filter(d => d.retiredAt)
+  const [showRetired, setShowRetired] = useState(false)
+
+  const openNew = () => { setEditing({ title: '', body: '' }); setTimeout(() => formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0) }
+
+  const save = async () => {
+    if (!editing || saving) return
+    setSaving(true)
+    const release = trackSave()
+    try {
+      const res = await saveSignDocument(editing)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setDocs(prev => {
+        const at = prev.findIndex(d => d.key === res.key)
+        const next = [...prev]
+        if (at >= 0) next[at] = { ...next[at], title: editing.title.trim(), body: editing.body.trim() }
+        else next.push({ key: res.key, title: editing.title.trim(), body: editing.body.trim(), createdAt: new Date().toISOString() })
+        return next
+      })
+      setEditing(null)
+      pushToast('success', '저장됨', { detail: '새 계약서부터 이 서류가 함께 나갑니다. 이미 보낸 링크와 발급본은 바뀌지 않습니다.' })
+    } finally {
+      release()
+      setSaving(false)
+    }
+  }
+
+  const setRetired = async (doc: SignDocument, retire: boolean, opts?: { silent?: boolean }) => {
+    const res = await setSignDocumentRetired(doc.key, retire)
+    if (!res.ok) { pushToast('error', res.error); return }
+    setDocs(prev => prev.map(d => d.key === doc.key
+      ? (retire
+        ? { ...d, retiredAt: new Date().toISOString() }
+        : (() => { const rest = { ...d }; delete rest.retiredAt; return rest })())
+      : d))
+    if (opts?.silent) { pushToast('info', retire ? '중지됨' : `'${doc.title}' 서류를 다시 사용합니다.`); return }
+    if (retire) {
+      pushToast('success', '중지됨', {
+        detail: '새 계약서에 안 붙습니다. 이미 보낸 서명 링크와 서명이 끝난 계약서에는 계속 실립니다.',
+        action: { label: '적용취소', run: () => void setRetired(doc, false, { silent: true }) },
+      })
+    } else {
+      pushToast('success', '다시 사용됨', { detail: '새 계약서부터 이 서류가 다시 함께 나갑니다.' })
+    }
+  }
+
+  const row = (d: SignDocument) => (
+    <div key={d.key}
+      className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 rounded-xl px-3 py-2.5 ${d.retiredAt ? 'bg-[var(--canvas)] opacity-50' : 'bg-[var(--canvas)]'} ${editing?.key === d.key ? 'ring-2 ring-[var(--coral)]/[0.16]' : ''}`}
+      style={{ border: `1px solid ${editing?.key === d.key ? 'var(--coral)' : 'var(--warm-border)'}` }}>
+      <div className="min-w-0 sm:flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="text-sm font-medium text-[var(--warm-dark)] break-keep">{d.title}</p>
+          {d.retiredAt && <Badge tone="pale-neutral">사용 안 함</Badge>}
+        </div>
+        <p className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{d.body.split('\n')[0]}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-4 shrink-0 sm:justify-end">
+        <RowActionBtn onClick={() => void setRetired(d, !d.retiredAt)}>{d.retiredAt ? '다시 사용' : '중지'}</RowActionBtn>
+        <RowActionBtn onClick={() => { setEditing({ key: d.key, title: d.title, body: d.body }); setTimeout(() => formRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0) }}>수정</RowActionBtn>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">추가 서류</h3>
+        <Btn variant="primary" size="sm" onClick={openNew}>+ 추가</Btn>
+      </div>
+      <p className="text-xs text-[var(--warm-muted)] -mt-1">
+        계약서와 함께 서명을 받는 서류를 직접 만듭니다. 잔여 소지품 임의처분 동의서와 같은 자리에 붙고,
+        입실자 정보·날짜·서명란은 자동입니다.
+      </p>
+      {editing && (
+        <div ref={formRef} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-[var(--warm-dark)]">{editing.key ? `'${docs.find(d => d.key === editing.key)?.title}' 서류 수정` : '서류 추가'}</p>
+          <div className="space-y-1">
+            <label className="text-[0.6875rem] text-[var(--warm-muted)]">서류 제목</label>
+            <input type="text" value={editing.title} onChange={e => setEditing(p => p && { ...p, title: e.target.value })}
+              placeholder="예: 차량 등록 동의서"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[0.6875rem] text-[var(--warm-muted)]">본문</label>
+            <textarea value={editing.body} onChange={e => setEditing(p => p && { ...p, body: e.target.value })} rows={8}
+              className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">
+              줄을 바꾸면 문단이 나뉩니다. 본문에 변수를 쓸 수 있습니다.
+              <span className="num"> {'{{성명}} {{호실}} {{연락처}} {{영업장명}} {{대표}}'}</span>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Btn variant="secondary" size="md" className="flex-1" onClick={() => setEditing(null)}>취소</Btn>
+            <Btn variant="primary" size="md" className="flex-1" onClick={() => void save()} disabled={saving || !editing.title.trim() || !editing.body.trim()}>저장</Btn>
+          </div>
+        </div>
+      )}
+      {docs.length === 0 && !editing ? (
+        <p className="text-sm text-[var(--warm-muted)] text-center py-3">아직 만든 서류가 없습니다. 오른쪽 위 [+ 추가]로 만듭니다.</p>
+      ) : (
+        <div className="space-y-2">{active.map(row)}</div>
+      )}
+      {retired.length > 0 && (
+        <div className="space-y-2 pt-1">
+          {/* 접힘 정본 문법(폐기본·끈 알림과 같은 결) — 44px 히트영역, aria-expanded, 회전 셰브론.
+              underline 은 이 앱에서 탈출구형 보조 액션 문법이라 접힘 토글에 안 쓴다(디자이너 패스). */}
+          <button type="button" onClick={() => setShowRetired(v => !v)} aria-expanded={showRetired}
+            className="-my-2 min-h-[44px] text-xs font-medium text-[var(--warm-muted)] inline-flex items-center gap-1">
+            {showRetired ? '사용 중지된 서류 숨기기' : `사용 중지된 서류 ${retired.length}건 보기`}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showRetired ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {showRetired && retired.map(row)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DocMailTemplateCard() {
   const [loaded, setLoaded] = useState(false)
   const [mode, setMode] = useState<'text' | 'html'>('text')

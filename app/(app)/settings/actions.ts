@@ -8,6 +8,7 @@ import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
+import { parseSignDocuments, mergeSignDocuments } from '@/lib/signDocuments'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
@@ -117,6 +118,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       cleaningFeeInDeposit: true,   // 청소비를 보증금 안의 몫으로 받는 영업장인지(2026-08-10)
       multiContractVersions: true,  // 여러 판본 계약서를 만들 수 있는 영업장인지(2026-08-20)
       disposalConsentTemplate: true,
+      signDocuments: true,   // 영업장이 만든 추가 서류(제3 서류, 2026-09-06)
       subLeaseAddendum: true,       // 추가 호실(창고) 특약 문안 — 영업장이 고칠 수 있다(2026-08-29)
       shortStayAddendum: true, earlyCheckoutAddendum: true,   // 요금 절 둘 — 단기·조기 퇴실(배타적)
       roomScheduleAddendum: true,   // 거주 호실 일정 절(2026-08-31)
@@ -994,6 +996,78 @@ export async function updatePublicSlug(raw: string): Promise<ActionResult> {
       return { ok: false, error: '이미 다른 영업장이 쓰고 있는 주소입니다. 다른 주소를 넣어 주세요.' }
     }
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 추가 서류(제3 서류) — 서명을 받는 서류를 영업장이 직접 만든다 ─────────
+// 전용 출구다(§27.1 목록형 = 행 단위 저장, updatePublicSlug 관용구). 저장은 어느 갈래든
+// mergeSignDocuments 정본만 지난다 — 삭제 경로가 그 함수에 아예 없어서 "발행한 서류는
+// 지워지지 않는다"가 화면 규칙이 아니라 구조다. key 는 서버가 여기서만 발급한다.
+
+export async function saveSignDocument(input: { key?: string; title: string; body: string }): Promise<
+  | { ok: true; key: string } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const title = input.title.trim()
+    const body = input.body.trim()
+    if (!title) return { ok: false, error: '서류 제목을 입력하세요.' }
+    if (!body) return { ok: false, error: '서류 본문을 입력하세요.' }
+    const saved = await prisma.$transaction(async tx => {
+      const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { signDocuments: true } })
+      const before = parseSignDocuments(cur?.signDocuments)
+      const merged = mergeSignDocuments(
+        cur?.signDocuments,
+        // 수정이면 중지 상태를 유지한다 — merge 는 retiredAt 이 없으면 지우므로 저장본 값을 되실어 보낸다.
+        [{ key: input.key, title, body, retiredAt: before.find(d => d.key === input.key)?.retiredAt }],
+        () => 'd' + randomBytes(4).toString('hex'),
+        new Date().toISOString(),
+      )
+      await tx.property.update({ where: { id: propertyId }, data: { signDocuments: merged as unknown as Prisma.InputJsonValue } })
+      // 발급된 key. 수정이면 그대로, 신설이면 merge 가 만든 새 항목이다.
+      const beforeKeys = new Set(before.map(d => d.key))
+      return input.key ?? merged.find(d => !beforeKeys.has(d.key))?.key ?? ''
+    }, { isolationLevel: 'Serializable' })
+    revalidatePath('/settings')
+    revalidatePath('/contract')
+    return { ok: true, key: saved }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+/**
+ * 사용 중지·다시 사용. 배열에서 빼지 않고 retiredAt 도장만 오간다.
+ *
+ * 중지해도 이미 보낸 서명 링크와 서명이 끝난 계약서에는 계속 실린다(스냅샷 축) — 새 계약서에만
+ * 안 붙는다. 그래서 되돌리기(다시 사용)가 완전하다. 데이터가 자리를 떠난 적이 없다.
+ */
+export async function setSignDocumentRetired(key: string, retired: boolean): Promise<
+  | { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.$transaction(async tx => {
+      const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { signDocuments: true } })
+      const doc = parseSignDocuments(cur?.signDocuments).find(d => d.key === key)
+      if (!doc) throw new Error('대상 서류를 찾을 수 없습니다.')
+      const merged = mergeSignDocuments(
+        cur?.signDocuments,
+        [{ ...doc, retiredAt: retired ? new Date().toISOString() : undefined }],
+        () => 'd' + randomBytes(4).toString('hex'),
+        new Date().toISOString(),
+      )
+      await tx.property.update({ where: { id: propertyId }, data: { signDocuments: merged as unknown as Prisma.InputJsonValue } })
+    }, { isolationLevel: 'Serializable' })
+    revalidatePath('/settings')
+    revalidatePath('/contract')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
   }
 }
 
