@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
+import { Fragment, useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
 import { issueContractShareLink } from '@/app/(app)/tenants/contractShare'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 import { ContractIssuePurposePicker, type IssuePurposePick } from '@/components/doc/ContractIssuePurposePicker'
@@ -24,7 +24,8 @@ import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseA
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
-import { disposalSignatureMissing, signStage, missingSignatures, toSlots } from '@/lib/disposalSignGate'
+import { toSlots, signStageSlots, missingSlots } from '@/lib/disposalSignGate'
+import { parseSignDocuments } from '@/lib/signDocuments'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -77,6 +78,98 @@ function renderClauseItem(text: string): React.ReactNode {
 
 // mode 미지정이면 100% 기존 운영자 경로. 'remote'면 입주자 원격 서명 화면 —
 // 편집·인쇄·저장 등 운영 기능을 숨기고, 서명 제출은 submitRemoteSignature(공개 액션)로 보낸다.
+/**
+ * 영업장이 만든 추가 서류 한 장 — 동의서 cage 와 같은 조판(dc-*)을 쓴다.
+ *
+ * 별도 컴포넌트인 이유는 높이 측정이다. cage 는 scale 축소 때문에 실제 높이를 측정해
+ * --paper-h 로 세워야 하는데(동의서와 같은 방식), 서류가 N개라 훅을 반복문 안에 둘 수 없다.
+ * 수신인 줄("○○ 대표 귀하")은 임의처분 서식 고유라 여기는 없다 — 인쇄(companionPage)와 같은 규칙.
+ */
+function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, dateLabel, signatureDataUrl, remote, attn, isLast, sigClearing, onSign, onClear, setRef }: {
+  doc: { key: string; title: string; body: string }
+  scale: number
+  printedName: string
+  roomNoLabel: string
+  phone: string
+  vars: Record<string, string>
+  dateLabel: string
+  signatureDataUrl: string | null
+  remote: boolean
+  attn: boolean
+  isLast: boolean
+  sigClearing: boolean
+  onSign: () => void
+  onClear: () => void
+  setRef: (el: HTMLButtonElement | null) => void
+}) {
+  const paperRef = useRef<HTMLElement | null>(null)
+  const [height, setHeight] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const node = paperRef.current
+    if (!node) return
+    // 초기 측정도 옵저버에 맡긴다 — observe() 는 관찰 시작 시 초기 크기를 한 번 배달한다(스펙).
+    // 효과 본문에서 동기로 setState 를 부르면 연쇄 렌더 lint 에 걸리고, 실제로도 불필요하다.
+    const ro = new ResizeObserver(() => setHeight(node.offsetHeight))
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [doc])
+  return (
+    <div
+      className="paper-cage disposal-cage"
+      style={{
+        ['--paper-scale' as string]: scale,
+        ['--paper-h' as string]: height != null ? `${height}px` : '297mm',
+      }}
+    >
+      <main ref={paperRef} className="contract-paper disposal-paper">
+        <div className="dc-title">{doc.title}</div>
+        <div className="dc-sec-h">1. 입실자 정보</div>
+        <table className="info dc-info"><tbody>
+          <tr><th>성명<span className="en">Name</span></th><td>{printedName}</td></tr>
+          <tr><th>호실<span className="en">Room</span></th><td className="num">{roomNoLabel}</td></tr>
+          <tr><th>연락처<span className="en">Phone</span></th><td className="num">{phone}</td></tr>
+        </tbody></table>
+        <div className="dc-sec-h">2. 동의 내용</div>
+        <div className="dc-body">
+          {doc.body.split('\n').map(x => x.trim()).filter(Boolean).map((x, i) => (
+            <p key={i} className="dc-p">{renderContractText(x, vars)}</p>
+          ))}
+        </div>
+        <div className="dc-date num">{dateLabel}</div>
+        <div className="dc-sign">
+          <span className="dc-sign-lbl">입실자 성명</span>
+          <span className="dc-sign-line">{printedName}</span>
+          <span className="dc-sign-seal">
+            {signatureDataUrl ? (
+              <>
+                {/* 서명은 dataURL 이라 next/image 최적화 대상이 아니다(형제 서명란 넷과 같은 자리). */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="sign-img" src={signatureDataUrl} alt={`${doc.title} 서명`} onClick={onSign} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
+                {!remote && (
+                  <button type="button" onClick={onClear} disabled={sigClearing} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button type="button" ref={setRef} onClick={onSign}
+                  className={`no-print sign-cta${attn ? ' attn' : ''}${isLast ? ' last' : ''}`}
+                  style={{ padding: '5px 12px', fontSize: 12 }}>
+                  <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  여기를 눌러 서명
+                </button>
+                <span className="only-print">(서명 또는 인)</span>
+              </>
+            )}
+          </span>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+
 export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
@@ -270,6 +363,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   }), [data, smoking, emergencyContactText, roomNoLabel, printedName, fields, fieldRent, fieldDeposit, fieldCleaning])
 
   // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)
+  // 추가 서류 치환값 — 인쇄(contractPrintHtml extraVars)와 같은 목록이어야 화면과 종이가 같다.
+  const customDocVars: Record<string, string> = {
+    성명: printedName, 호실: roomNoLabel, 연락처: data.tenant.primaryPhone ?? '',
+    영업장명: data.businessInfo.name || '', 대표: data.businessInfo.ceoName || '',
+  }
   const dcVars: Record<string, string> = {
     성명: printedName, 호실: roomNoLabel, 연락처: data.tenant.primaryPhone ?? '',
     미납일수: String(data.disposalConsent.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
@@ -482,18 +580,24 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 종전에는 로컬 state 만 지워서 새로고침 한 번이면 잘못 받은 서명이 그대로 되살아났다.
   // 캡처 시각도 함께 지운다. 이 값이 남으면 서명을 지운 뒤에도 계약일·본문이 잠긴 채 남는다.
   const [sigClearing, setSigClearing] = useState(false)
-  const clearSignatureLocal = (target: 'contract' | 'disposal') => {
+  const clearSignatureLocal = (target: string) => {
     if (target === 'disposal') {
       setDisposalSignatureDataUrl(null)
       setDisposalSignatureCapturedAt(null)
-    } else {
+    } else if (target === 'contract') {
       setSignatureDataUrl(null)
       setSignatureCapturedAt(null)
+    } else {
+      setCustomSigs(prev => { const rest = { ...prev }; delete rest[target]; return rest })
+      setCustomCapturedAt(prev => { const rest = { ...prev }; delete rest[target]; return rest })
     }
   }
-  const handleClearSignature = async (target: 'contract' | 'disposal') => {
+  // 'contract' | 'disposal' | 추가 서류 key. 서버(clearContractSignature)가 같은 문자열을 받는다.
+  const handleClearSignature = async (target: string) => {
     const leaseId = data.lease?.id
-    const stored = target === 'disposal' ? data.lease?.disposalSignatureImageUrl : data.lease?.signatureImageUrl
+    const stored = target === 'disposal' ? data.lease?.disposalSignatureImageUrl
+      : target === 'contract' ? data.lease?.signatureImageUrl
+      : data.lease?.documentSignatures?.[target]?.image
     // 화면에서 방금 그린 서명은 어디에도 저장되지 않았다 — 물어볼 것 없이 바로 지운다.
     if (!stored || !leaseId) { clearSignatureLocal(target); return }
     if (sigClearing) return
@@ -691,7 +795,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 서명 직후 저절로 움직이면 방금 한 것이 취소된 줄 알거나 당황한다.
   const contractSignRef = useRef<HTMLDivElement | null>(null)
   const disposalSignRef = useRef<HTMLDivElement | null>(null)
-  const [attn, setAttn] = useState<'contract' | 'disposal' | null>(null)
+  const customSignRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const [attn, setAttn] = useState<string | null>(null)
   // 확인창이 500ms 뒤에 뜨는 사이 다른 서명란을 누르면 패드가 열려 있을 수 있다.
   // setTimeout 클로저는 그때의 signOpen 옛 값을 잡으므로 ref 로 현재값을 본다.
   const signOpenRef = useRef(false)
@@ -711,11 +816,21 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 동의서(잔여 소지품 임의처분)는 별도 서명 — 같은 패드 모달을 target 으로 구분해 재사용.
   // 저장된 동의서 서명(disposalSignatureImageUrl)이 있으면 불러와 표시(입실계약서 서명과 동일하게 영구 보존).
   const [disposalSignatureDataUrl, setDisposalSignatureDataUrl] = useState<string | null>(data.lease?.disposalSignatureImageUrl ?? null)
-  const [signTarget, setSignTarget] = useState<'contract' | 'disposal'>('contract')
+  // 이 종이에 붙는 추가 서류 — **원본이 아니라 정규화를 거친다.** 원격 화면의 data 는 링크
+  // 스냅샷 JSON 그대로라, 이 칸이 생기기 전 링크(살아 있는 옛 링크 전부)에는 칸 자체가 없다.
+  // 그때 .map 을 직접 부르면 그 링크의 서명 화면이 통째로 죽는다.
+  const paperDocs = useMemo(() => parseSignDocuments(data.signDocuments), [data.signDocuments])
+  // 추가 서류 서명 — { [서류key]: dataURL }. 두 짝의 N개 판이고, 초기값도 같은 곳(lease 저장본)이다.
+  const [customSigs, setCustomSigs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(data.lease?.documentSignatures ?? {}).map(([k, v]) => [k, v.image])))
+  const [customCapturedAt, setCustomCapturedAt] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(data.lease?.documentSignatures ?? {}).flatMap(([k, v]) => v.signedAt ? [[k, v.signedAt]] : [])))
+  // 'contract' | 'disposal' | 추가 서류 key.
+  const [signTarget, setSignTarget] = useState<string>('contract')
   // 패드 안에서 보여줄 오류 — 토스트는 layout viewport 하단 고정이라 핀치줌 확대 중에는
   // 화면 밖으로 밀린다. 서명이 거부된 사실을 패드를 보는 눈이 그 자리에서 알아야 한다.
   const [signError, setSignError] = useState<string | null>(null)
-  const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignError(null); setSignOpen(true) }
+  const openSign = (target: string) => { setSignTarget(target); setSignError(null); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<SignaturePad | null>(null)
   // 핀치줌으로 확대한 상태에서도 패드가 보이는 화면(visual viewport) 안에 머물게 오버레이 기하를 직접 기입한다.
@@ -834,7 +949,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         if (!res.ok) { setSignError(res.error); pushToast('error', res.error); return }
         setSignOpen(false)
         if (signTarget === 'disposal') setDisposalSignatureDataUrl(url)
-        else setSignatureDataUrl(url)
+        else if (signTarget === 'contract') setSignatureDataUrl(url)
+        else setCustomSigs(prev => ({ ...prev, [signTarget]: url }))
         // 서류가 둘인데 아직 하나 남았으면 **확인창으로 막는다.** 종전에는 토스트뿐이었는데,
         // 이 페이지는 핀치줌을 열어 둬서 fixed 토스트가 확대 중에는 시야 밖에서 떴다 사라진다
         // (knowledge/mobile-scroll-viewport, 신고 d9f93bdd). 계약서를 확대해 읽은 사람에게는
@@ -842,17 +958,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         // 방금 이 서명이 들어간 것까지 반영한 진행. 상태 갱신이 아직 커밋 전이라 이번 서명만
         // 손으로 얹고, **세는 것은 정본에 맡긴다.** 종전 식은 `총계 - (남았으면 1)` 이라
         // 서류가 셋이면 하나만 서명해도 2 를 냈다 — 2 에 못박힌 산술이었다.
-        const afterSlots = toSlots({
-          disposalEnabled: data.disposalConsent.enabled,
-          hasContractSignature: signTarget === 'contract' ? true : !!signatureDataUrl,
-          hasDisposalSignature: signTarget === 'disposal' ? true : !!disposalSignatureDataUrl,
-        }, DOC_TITLE.disposal)
+        const afterCustom = signTarget !== 'contract' && signTarget !== 'disposal'
+          ? { ...customSigs, [signTarget]: url } : customSigs
+        const afterSlots = [
+          ...toSlots({
+            disposalEnabled: data.disposalConsent.enabled,
+            hasContractSignature: signTarget === 'contract' ? true : !!signatureDataUrl,
+            hasDisposalSignature: signTarget === 'disposal' ? true : !!disposalSignatureDataUrl,
+          }, DOC_TITLE.disposal),
+          ...paperDocs.map(sd => ({ key: sd.key, title: sd.title, signed: !!afterCustom[sd.key] })),
+        ]
         const leftSlots = afterSlots.filter(x => !x.signed)
         const stillLeft = leftSlots.length > 0
         const docCount = afterSlots.length
         const signedNow = docCount - leftSlots.length
         if (!stillLeft) {
-          pushToast('success', signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다')
+          pushToast('success', signTarget === 'contract' ? '서명이 입력되었습니다' : `${titleOf(signTarget)} 서명이 입력되었습니다`)
         } else if (askedAtRef.current !== signedNow) {
           askedAtRef.current = signedNow
           // 반 박자 뒤에 띄운다. 서명 모달이 닫히며 종이에 자기 글씨가 나타나는 순간이 이 화면의
@@ -892,6 +1013,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       setDisposalSignatureDataUrl(url)
       setDisposalSignatureCapturedAt(capturedAt)
       pushToast('info', '동의서 서명 적용됨 · 확인 후 \'계약서 발급\' 을 눌러주세요')
+    } else if (signTarget !== 'contract') {
+      // 추가 서류 대면 서명 — 동의서와 같은 규칙. 발급 때 서버가 검증해 영구 저장한다.
+      setCustomSigs(prev => ({ ...prev, [signTarget]: url }))
+      setCustomCapturedAt(prev => ({ ...prev, [signTarget]: capturedAt }))
+      pushToast('info', `${titleOf(signTarget)} 서명 적용됨 · 확인 후 '계약서 발급' 을 눌러주세요`)
     } else {
       setSignatureDataUrl(url)
       setSignatureCapturedAt(capturedAt)
@@ -917,8 +1043,6 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     hasContractSignature: !!signatureDataUrl,
     hasDisposalSignature: !!disposalSignatureDataUrl,
   }
-  const stage = signStage(signState)
-  const canSubmit = stage === 'complete'
   // 서류 이름은 이 한 자리에서만 정한다. 종전에는 '동의서'·'입실계약서'가 토스트·확인창·서명
   // 패드에 흩어져 있었고, 부속 서류가 하나 더 붙는 순간 그중 몇 곳은 반드시 안 고쳐진다.
   // **표시 문자열은 지금 것 그대로다** — 이 단계는 자리를 모으는 것이지 문구를 바꾸는 것이 아니다.
@@ -934,10 +1058,24 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   //
   // 종전의 twoDocs 는 '서류가 둘인가'였고 그 하나가 영문 안내·마지막 강조·진행 점을 전부
   // 쥐고 있었다. 개수와 무관한 것까지 묶여 있어 서류가 하나인 영업장에서 결함이 됐다.
-  const docSlots = toSlots(signState, DOC_TITLE.disposal)
+  const docSlots = [
+    ...toSlots(signState, DOC_TITLE.disposal),
+    // 추가 서류 — 이 종이(스냅샷 또는 라이브 조립)에 실린 목록 그대로, 만든 순.
+    ...paperDocs.map(sd => ({ key: sd.key, title: sd.title, signed: !!customSigs[sd.key] })),
+    // 목록에 없는데 서명이 있는 key(중지 뒤 남은 서명). 버리면 partial 이 none 으로 내려앉는다.
+    ...Object.keys(customSigs)
+      .filter(k => !paperDocs.some(sd => sd.key === k))
+      .map(k => ({ key: k, title: '서류', signed: true })),
+  ]
   const docTotal = docSlots.length
   const signedCount = docSlots.filter(x => x.signed).length
-  const remaining = missingSignatures(signState)
+  const remaining = missingSlots({ slots: docSlots })
+  const canSubmit = signStageSlots({ slots: docSlots }) === 'complete'
+  // 좁은 자리에서 부르는 이름. 계약서·동의서는 종전 문면 그대로, 추가 서류는 제 제목이다.
+  const titleOf = (key: string): string =>
+    key === 'contract' ? DOC_TITLE.contract
+      : key === 'disposal' ? DOC_TITLE.disposal
+      : (docSlots.find(x => x.key === key)?.title ?? '서류')
   /**
    * 남은 서명란으로 데려간다. **사용자가 눌렀을 때만 부른다.**
    *
@@ -946,9 +1084,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
    * 오래 세운다 — 순간이동은 하이라이트가 없으면 제일 혼란스럽다.
    */
   const goToRemaining = () => {
-    const target = remaining[0]
+    const target = remaining[0]?.key
     if (!target || signOpen) return
-    const el = target === 'contract' ? contractSignRef.current : disposalSignRef.current
+    const el = target === 'contract' ? contractSignRef.current
+      : target === 'disposal' ? disposalSignRef.current
+      : customSignRefs.current[target]
     if (!el) return
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
@@ -1013,17 +1153,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     // 조회 실패는 실계약 발급으로 떨어뜨린다 — 그쪽이 되돌리기 쉬운 결과이고, 진짜 게이트는 서버다.
     // 동의서가 붙는 종이인데 동의서 서명만 비어 있으면 먼저 묻는다(신고 2026-09-03, 413호).
     // 서버도 같은 판정으로 막고 있고, 이 승낙이 그 문을 여는 운반체다(archivePrevious 와 같은 관용구).
-    const disposalUnsigned = disposalSignatureMissing({
-      disposalEnabled: data.disposalConsent.enabled,
-      hasContractSignature: !!signatureDataUrl,
-      hasDisposalSignature: !!disposalSignatureDataUrl,
-    })
-    if (disposalUnsigned && !(await confirmDialog({
-      title: '동의서 서명 없이 발급할까요?',
-      message: '잔여 소지품 임의처분 동의서에 서명이 없습니다. 이대로 발급하면 그 장은 서명란이 빈 채로 나갑니다.\n원격 링크가 살아 있으면 같은 링크에서 동의서 서명만 이어 받을 수 있습니다.',
-      confirmLabel: '이대로 발급',
-      level: 'caution',
-    }))) return
+    // 동반 서류(동의서·추가 서류) 중 서명이 빈 장이 있으면 먼저 묻는다. 계약서는 위에서 이미
+    // 제 문구로 걸렀다. 동의서 하나만 빠진 경우의 문면은 종전(2026-09-03, 413호) 그대로다.
+    const unsignedDocs = docSlots.filter(x => !x.signed && x.key !== 'contract')
+    const disposalUnsigned = unsignedDocs.length > 0
+    if (unsignedDocs.length > 0) {
+      const onlyDisposal = unsignedDocs.length === 1 && unsignedDocs[0].key === 'disposal'
+      const names = unsignedDocs.map(x => x.key === 'disposal' ? '잔여 소지품 임의처분 동의서' : x.title).join(', ')
+      if (!(await confirmDialog({
+        title: onlyDisposal ? '동의서 서명 없이 발급할까요?' : `서명 없는 서류 ${unsignedDocs.length}장이 있습니다`,
+        message: onlyDisposal
+          ? '잔여 소지품 임의처분 동의서에 서명이 없습니다. 이대로 발급하면 그 장은 서명란이 빈 채로 나갑니다.\n원격 링크가 살아 있으면 같은 링크에서 동의서 서명만 이어 받을 수 있습니다.'
+          : `${names}에 서명이 없습니다. 이대로 발급하면 그 장들은 서명란이 빈 채로 나갑니다.\n원격 링크가 살아 있으면 같은 링크에서 남은 서명을 이어 받을 수 있습니다.`,
+        confirmLabel: '이대로 발급',
+        level: 'caution',
+      }))) return
+    }
 
     let issuePurpose: string | null = null
     const purposeCtx = await getIssuePurposeContext(data.tenant.id, data.lease?.id ?? null)
@@ -1072,6 +1217,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           archivePrevious: issuePurpose === null && hasReal,
           // 위 확인창을 통과했다는 사실. 서버가 이것 없이는 반쪽 서명 발급을 거절한다.
           disposalUnsignedAck: disposalUnsigned,
+          // 추가 서류의 대면 서명 — 서버가 key·형식·크기를 검증해 인쇄하고 영구 저장한다.
+          documentSignatures: Object.fromEntries(Object.entries(customSigs).map(([k, image]) =>
+            [k, { image, capturedAt: customCapturedAt[k] }])),
         }),
       })
       const text = await res.text()
@@ -1611,7 +1759,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                       {/* 펜은 "여기 쓰라"는 전 세계 공용 픽토그램이다. 한국어를 못 읽는 서명자가
                           많아 텍스트에만 기댈 수 없다(운영자 오더 2026-09-04). */}
                       <button type="button" ref={contractSignRef as never} onClick={() => openSign('contract')}
-                        className={`no-print sign-cta${attn === 'contract' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0] === 'contract' ? ' last' : ''}`}
+                        className={`no-print sign-cta${attn === 'contract' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0]?.key === 'contract' ? ' last' : ''}`}
                         style={{ padding: '6px 14px', fontSize: 13 }}>
                         <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                         여기를 눌러 서명
@@ -1711,7 +1859,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               ) : (
                 <>
                   <button type="button" ref={disposalSignRef as never} onClick={() => openSign('disposal')}
-                    className={`no-print sign-cta${attn === 'disposal' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0] === 'disposal' ? ' last' : ''}`}
+                    className={`no-print sign-cta${attn === 'disposal' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0]?.key === 'disposal' ? ' last' : ''}`}
                     style={{ padding: '5px 12px', fontSize: 12 }}>
                     <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                     여기를 눌러 서명
@@ -1727,6 +1875,31 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       )}
       {/* 처분 동의서 서명란 아래 제출 CTA (어느 쪽을 마지막에 서명하든 그 자리에서 보이게) */}
       {data.disposalConsent.enabled && inflowSubmitCta}
+
+      {/* 영업장이 만든 추가 서류 — 동의서 뒤에 한 장씩, 만든 순(인쇄와 같은 순서).
+          각 장 아래 제출 CTA 를 반복한다. 마지막에 어느 장을 서명하든 그 자리에서 보여야 한다. */}
+      {paperDocs.map(sd => (
+        <Fragment key={sd.key}>
+          <CompanionDocCage
+            doc={sd}
+            scale={scale}
+            printedName={printedName}
+            roomNoLabel={roomNoLabel}
+            phone={data.tenant.primaryPhone ?? ''}
+            vars={customDocVars}
+            dateLabel={customCapturedAt[sd.key] ? ymdLabel(kstYmdStr(new Date(customCapturedAt[sd.key]))) : signDateLabel}
+            signatureDataUrl={customSigs[sd.key] ?? null}
+            remote={remote}
+            attn={attn === sd.key}
+            isLast={remote && remaining.length === 1 && remaining[0]?.key === sd.key}
+            sigClearing={sigClearing}
+            onSign={() => openSign(sd.key)}
+            onClear={() => handleClearSignature(sd.key)}
+            setRef={el => { customSignRefs.current[sd.key] = el }}
+          />
+          {inflowSubmitCta}
+        </Fragment>
+      ))}
 
       {/* 발급 용도 고르기 — 실계약이 이미 있는 계약에서만 선다. 카드를 고르면 확인 1회가 잇는다. */}
       {purposePick && (
@@ -1755,11 +1928,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
-                <div className="sig-title">{signTarget === 'disposal' ? `${DOC_TITLE.disposal} 서명` : '입실자 서명'}</div>
+                <div className="sig-title">{signTarget === 'contract' ? '입실자 서명' : `${titleOf(signTarget)} 서명`}</div>
                 <div className="sig-sub">
                   {remote
-                    ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'} 서명이 적용됩니다.`
-                    : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (발급은 다음 단계).`}
+                    ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'contract' ? '계약서' : titleOf(signTarget)} 서명이 적용됩니다.`
+                    : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'contract' ? '계약서' : titleOf(signTarget)}에 서명이 표시됩니다 (발급은 다음 단계).`}
                 </div>
               </div>
               <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">

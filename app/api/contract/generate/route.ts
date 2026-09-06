@@ -64,6 +64,12 @@ type Body = {
   disposalSignatureImageDataUrl?: string  // 잔여 소지품 임의처분 동의서 별도 서명 (선택)
   signatureCapturedAt?: string      // 이번 화면에서 방금 받은 서명의 캡처 시각(ISO). 기존 서명 재사용이면 없다
   disposalSignatureCapturedAt?: string
+  /**
+   * 추가 서류의 대면 서명 — { [서류key]: { image(dataURL), capturedAt?(ISO) } }. 동의서와 **같은
+   * 규칙**이다. 이 라우트는 운영자 인증 뒤에 있고(대면 서명은 운영자 화면에서 받는다), 아래에서
+   * key 가 이 종이의 서류 목록에 실제로 있는지·이미지 형식·크기를 검증한 것만 쓴다.
+   */
+  documentSignatures?: Record<string, { image: string; capturedAt?: string }>
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
   /**
@@ -351,6 +357,28 @@ export async function POST(req: Request) {
     //
     // 막지는 않는다(운영자 결정 2026-09-04). 출력해서 손으로 받는 운용이 정당하고, 이미 반쪽으로
     // 굳은 건도 있다. 다만 **물어보지 않고 지나가지는 않는다.**
+    // 추가 서류의 대면 서명 검증 — 이 종이의 서류 목록에 있는 key, 손글씨 래스터 두 종, 크기 상한.
+    // 통과한 것만 인쇄에 얹고 아래에서 영구 저장한다(동의서 저장과 같은 자리·같은 규칙).
+    const paperDocKeys = new Set(activeSignDocuments(body_.signDocuments).map(d => d.key))
+    const clientDocSigs: Record<string, { image: string; signedAt: string }> = {}
+    for (const [k, v] of Object.entries(body.documentSignatures ?? {})) {
+      if (!paperDocKeys.has(k)) continue
+      if (typeof v?.image !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(v.image)) continue
+      if (v.image.length > 900_000) continue
+      clientDocSigs[k] = { image: v.image, signedAt: parseCapturedAt(v.capturedAt)?.toISOString() ?? new Date().toISOString() }
+    }
+    const mergedDocumentSignatures = { ...parseDocumentSignatures(lease?.documentSignatures), ...clientDocSigs }
+
+    // 추가 서류도 같은 물음이다 — 서명이 빈 장이 있는데 승낙 없이 지나가지 않는다.
+    // 승낙 운반체는 동의서와 같은 disposalUnsignedAck 하나다. 화면이 한 확인창으로 같이 묻는다.
+    const unsignedCustom = [...paperDocKeys].filter(k => !mergedDocumentSignatures[k])
+    if (!body.preview && unsignedCustom.length > 0 && !body.disposalUnsignedAck) {
+      return NextResponse.json({
+        ok: false,
+        code: 'DISPOSAL_SIGNATURE_REQUIRED',
+        error: '서명이 없는 추가 서류가 있습니다. 이대로 발급할지 정해 주세요.',
+      }, { status: 409 })
+    }
     if (!body.preview && disposalSignatureMissing({
       disposalEnabled: resolveDisposalConsent(body_.disposalConsent).enabled,
       hasContractSignature: body.signatureImageDataUrl?.startsWith('data:image/') === true,
@@ -409,7 +437,7 @@ export async function POST(req: Request) {
       // 종이에 찍으면 이 API 를 직접 불러 아무 그림이나 서명란에 넣을 수 있다(성명 봉인과 같은 이유).
       // 목록은 body_ 를 탄다. 서명이 끝난 계약이면 박제의 그때 목록이고, 아니면 지금 목록이다.
       signDocuments: activeSignDocuments(body_.signDocuments),
-      documentSignatures: parseDocumentSignatures(lease?.documentSignatures),
+      documentSignatures: mergedDocumentSignatures,
       pretendardBase64,
       tenant: {
         name: printedTenantName,
@@ -709,6 +737,20 @@ export async function POST(req: Request) {
           })
         } catch (e) {
           console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)
+        }
+      }
+      // 추가 서류 서명도 같은 규칙으로 영구 저장한다. 유효한 것만, 저장본에 병합해서.
+      // 읽고-병합-쓰기라 원격 서명과 겹치면 덮을 수 있지만, 이 라우트는 운영자 발급 순간이고
+      // 원격 링크는 발급 가드(stage none)와 별개 흐름이라 실제 겹칠 창이 없다.
+      if (Object.keys(clientDocSigs).length > 0) {
+        try {
+          const cur = await prisma.leaseTerm.findUnique({ where: { id: lease.id }, select: { documentSignatures: true } })
+          await prisma.leaseTerm.update({
+            where: { id: lease.id },
+            data: { documentSignatures: { ...parseDocumentSignatures(cur?.documentSignatures), ...clientDocSigs } },
+          })
+        } catch (e) {
+          console.error('[contract/generate] 추가 서류 서명 저장 실패 (SQL 미적용 가능):', e)
         }
       }
     }

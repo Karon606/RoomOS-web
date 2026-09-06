@@ -1,6 +1,7 @@
 // 계약서 원격 서명 페이지 — 토큰 검증 후 생년월일 게이트 또는 발급 시점 스냅샷 렌더 (공용, 운영자 인증 없음).
 // 비활성(없음·만료·닫힘·잠김)은 사유를 구분하지 않고 동일한 일반 안내만 보여준다.
 
+import { parseDocSignedAt, parseDocumentSignatures } from '@/lib/signDocuments'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import type { ContractData } from '@/lib/contractData'
@@ -75,14 +76,20 @@ export default async function SignPage({
     data.tenant.foreignRegNo = plain ? formatForeignRegNo(plain) : null
   }
   // 계약 내용은 발급 시점 스냅샷 고정. 단 서명은 이 링크로 들어온 최신 값을 보여준다(서명 후 재확인용).
-  if (data.lease && (link.signedAt || link.disposalSignedAt)) {
+  // 추가 서류 서명도 같은 규칙이다 — **이 링크에 자국(docSignedAt)이 있는 key 만** 얹는다.
+  // 다른 링크에서 받은 서명을 얹으면 이 종이가 안 받은 서명을 보여주게 된다(링크 축).
+  const docMarks = parseDocSignedAt(link.docSignedAt)
+  if (data.lease && (link.signedAt || link.disposalSignedAt || Object.keys(docMarks).length > 0)) {
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: link.leaseTermId },
-      select: { signatureImageUrl: true, disposalSignatureImageUrl: true },
+      select: { signatureImageUrl: true, disposalSignatureImageUrl: true, documentSignatures: true },
     })
     if (lease) {
       if (link.signedAt) data.lease.signatureImageUrl = lease.signatureImageUrl
       if (link.disposalSignedAt) data.lease.disposalSignatureImageUrl = lease.disposalSignatureImageUrl
+      const sigs = parseDocumentSignatures(lease.documentSignatures)
+      data.lease.documentSignatures = Object.fromEntries(
+        Object.keys(docMarks).flatMap(k => sigs[k] ? [[k, sigs[k]]] : []))
     }
   }
   return <ContractView data={data} mode="remote" shareToken={token} />

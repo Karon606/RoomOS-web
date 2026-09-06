@@ -95,8 +95,9 @@ for (const [f, needle, msg] of WIRED) {
     violations.push(`${f} — canSubmit 이 서명 진행 정본을 안 거친다. 화면이 알림·발급과 다른 답을 낸다.`)
   }
   // 그리고 화면이 정본을 실제로 부르는가(import 만으로는 통과 못 한다).
-  if (!/signStage\s*\(/.test(src)) {
-    violations.push(`${f} — 화면이 signStage 를 안 부른다. 서명 진행을 손으로 세면 다른 자리와 갈린다.`)
+  // 슬롯 정본으로 옮겼다(2026-09-06). needle 은 배선을 따라 옮긴다.
+  if (!/signStageSlots\s*\(/.test(src)) {
+    violations.push(`${f} — 화면이 signStageSlots 를 안 부른다. 서명 진행을 손으로 세면 다른 자리와 갈린다.`)
   }
   // 원격 서명·제출 호출이 실패를 삼키지 않는가. 침묵하면 입주자가 저장된 줄 알고 창을 닫는다.
   //    호출을 **전수로** 본다. 종전에는 indexOf 로 첫 호출만 봐서, 두 번째 호출을 안 감싸도
