@@ -24,7 +24,7 @@ import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { signProgressLabelSlots, signStageSlots, signAlertDue } from '@/lib/disposalSignGate'
-import { paperDocsOf, leaseSignSlots, linkSignSlots } from '@/lib/signDocuments'
+import { paperDocsOf, leaseSignSlots, linkSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
 
@@ -287,7 +287,8 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   for (const link of signedLinks) {
     // 해소 판정의 기준 시각. 계약서 서명이 있으면 종전 그대로이고, 동의서만 있는 링크에서만
     // 새로 답이 생긴다.
-    const signalAt = link.signedAt ?? link.disposalSignedAt
+    const docMarks = Object.values(parseDocSignedAt(link.docSignedAt))
+    const signalAt = link.signedAt ?? link.disposalSignedAt ?? (docMarks.length ? new Date(docMarks.sort()[0]) : null)
     if (!signalAt) continue
     // 딸린 계약의 종이는 부모 합본 한 장이다 — 그 종이가 생기면 이 알림도 함께 끝난다.
     // 발급 대기 목록과 같은 한 값을 본다(lib/contractIssue issuingLeaseId).

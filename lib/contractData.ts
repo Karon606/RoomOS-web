@@ -1,7 +1,7 @@
 // 계약서 렌더 데이터(ContractData) 조립 공유 헬퍼 — 운영자 출력 페이지와 원격 서명 링크 발급(스냅샷)이 공용.
 // 인증은 하지 않는다. 호출자가 검증된 propertyId 를 넘겨야 한다(운영자 경로 requirePropertyAccess 이후 호출).
 import 'server-only'
-import { activeSignDocuments, type SignDocument } from '@/lib/signDocuments'
+import { activeSignDocuments, parseDocumentSignatures, type SignDocument } from '@/lib/signDocuments'
 import { kstYmdStr } from '@/lib/kstDate'
 import prisma from '@/lib/prisma'
 import { driveImageDataUrl } from '@/lib/google-drive'
@@ -206,6 +206,10 @@ export type ContractData = {
     // 그 서명을 받은 날(KST, YYYY-MM-DD). 있으면 계약일이 이 값으로 고정된다.
     signatureSignedDate: string | null
     disposalSignatureSignedDate: string | null
+    // 추가 서류 서명({ [서류key]: { image, signedAt } }). 계약서·동의서 두 짝의 N개 판이다.
+    // 링크 발급 가드가 stage none 을 요구하므로 링크 스냅샷에 실릴 때는 항상 빈 맵이다 —
+    // 스냅샷이 서명 이미지로 무거워지는 일은 구조적으로 없다.
+    documentSignatures: Record<string, { image: string; signedAt: string }>
   } | null
   // 이 계약에 딸린 계약들(합본 계약서). 종속이 없으면 빈 배열이고 화면·인쇄는 아무 행도 안 그린다.
   subLeases: ContractSubLease[]
@@ -411,6 +415,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
       // KST 로 자르는 것은 서버 몫이다. 클라이언트가 UTC 로 자르면 자정 근처에서 하루 어긋난다.
       signatureSignedDate: kstOrNull((lease as { signatureSignedAt?: Date | null }).signatureSignedAt),
       disposalSignatureSignedDate: kstOrNull((lease as { disposalSignatureSignedAt?: Date | null }).disposalSignatureSignedAt),
+      documentSignatures: parseDocumentSignatures((lease as { documentSignatures?: unknown }).documentSignatures),
     } : null,
     // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),

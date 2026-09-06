@@ -6,6 +6,7 @@
 import { randomBytes } from 'crypto'
 import { kstYmdStr } from '@/lib/kstDate'
 import { headers } from 'next/headers'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
@@ -20,8 +21,8 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
-import { signStage, signStageSlots, type SignStage } from '@/lib/disposalSignGate'
-import { paperDocsOf, leaseSignSlots, badgeSignSummary } from '@/lib/signDocuments'
+import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
+import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -92,9 +93,11 @@ const EMPTY_LEASE_SIG = {
   disposalSignatureImageUrl: null, disposalSignatureSignedAt: null, documentSignatures: null,
 } as const
 
-function isSignatureLive(l: LeaseSigCols | null | undefined): boolean {
+function isSignatureLive(l: (LeaseSigCols & { documentSignatures?: unknown }) | null | undefined): boolean {
   if (!l) return false
   return !!(l.signatureImageUrl || l.signatureSignedAt || l.disposalSignatureImageUrl || l.disposalSignatureSignedAt)
+    // 추가 서류 서명도 '볼 서명본'이다 — 빼면 커스텀만 서명된 계약의 진입로가 일반 화면으로 간다.
+    || Object.keys(parseDocumentSignatures(l.documentSignatures)).length > 0
 }
 
 // 요청 헤더로 현재 origin 조립 — 프록시 뒤(Vercel)에서는 x-forwarded-* 우선
@@ -136,7 +139,7 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
       where: {
         tenantId, propertyId, closedAt: null, submittedAt: null,
         ...(namedLeaseTermId ? { leaseTermId: namedLeaseTermId } : {}),
-        OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }],
+        OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }, { docSignedAt: { not: Prisma.DbNull } }],
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -151,8 +154,10 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
           // 스냅샷 통째 승계 — 새로 조립하지 않는다(위 주석).
           templateSnapshot: old.templateSnapshot as object,
           // 받아 둔 서명의 자국도 함께 옮긴다. 이것이 "이미 받은 서명을 새 링크에서 어떻게
-          // 보여줄지"의 답이다.
+          // 보여줄지"의 답이다. 추가 서류 자국(docSignedAt)도 같은 이유로 승계한다 — 빠지면
+          // 그 서류만 서명한 반쪽 링크가 새 링크에서 '서명 전'으로 읽힌다.
           signedAt: old.signedAt, disposalSignedAt: old.disposalSignedAt,
+          docSignedAt: old.docSignedAt ?? undefined,
           expiresAt: new Date(Date.now() + SHARE_TTL_MS),
           createdBy: userId,
         },
@@ -188,16 +193,30 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
   }
 }
 
-/** 이 계약이 받아 둔 서명이 어디까지인가. 스냅샷의 서명 칸으로 정본 판정에 넘긴다. */
-function stageOf(l: {
-  signatureImageUrl?: string | null; signatureSignedDate?: string | null
-  disposalSignatureImageUrl?: string | null; disposalSignatureSignedDate?: string | null
-  disposalConsentEnabled?: boolean
+/**
+ * 이 계약이 받아 둔 서명이 어디까지인가 — 계약 축. 발급 직전에 조립한 ContractData 로 판정한다.
+ *
+ * 종전에는 계약서·동의서 두 칸을 손으로 조립했고 동의서 사용 여부는 모르면 켜진 것으로
+ * 봤다(보수적 기본). 정본 슬롯으로 옮기며 그 종이의 실제 서류 목록(disposalConsent·
+ * signDocuments)을 읽는다 — 추가 서류에만 서명이 있는 계약도 '받던 서명'이다. 안 세면
+ * 그 계약에 새 스냅샷 링크가 나가 증거(격리본)와 화면이 갈린다(2026-08-31 잠복 클래스).
+ */
+function stageOf(snapshot: {
+  disposalConsent?: { enabled?: boolean }
+  signDocuments?: unknown
+  lease: {
+    signatureImageUrl?: string | null; signatureSignedDate?: string | null
+    disposalSignatureImageUrl?: string | null; disposalSignatureSignedDate?: string | null
+    documentSignatures?: unknown
+  } | null
 }) {
-  return signStage({
-    disposalEnabled: l.disposalConsentEnabled !== false,
-    hasContractSignature: !!(l.signatureImageUrl || l.signatureSignedDate),
-    hasDisposalSignature: !!(l.disposalSignatureImageUrl || l.disposalSignatureSignedDate),
+  const l = snapshot.lease
+  return signStageSlots({
+    slots: leaseSignSlots(paperDocsOf(snapshot), {
+      signatureImageUrl: l?.signatureImageUrl, signatureSignedAt: l?.signatureSignedDate,
+      disposalSignatureImageUrl: l?.disposalSignatureImageUrl, disposalSignatureSignedAt: l?.disposalSignatureSignedDate,
+      documentSignatures: l?.documentSignatures,
+    }),
   })
 }
 
@@ -265,7 +284,6 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
      * 동의서는 계약서에 딸린 별개 종이다. 그것만 받아 둔 상태는 '서명이 끝난 계약'이 아니다.
      * 새 링크로 다시 받으면 동의서 서명도 그 자리에서 함께 갱신되므로 두 벌이 생기지도 않는다.
      */
-    const snapLease = snapshot.lease
     // 완료(모든 서류에 서명)면 종전대로 거절한다. 그 상태에서 새 링크를 내주면 계약 하나에
     // 서로 다른 내용의 서명 두 벌이 생긴다.
     //
@@ -276,8 +294,8 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     // 이 문이 잠복 결함도 함께 닫는다. 위 2026-08-31 봉합 이후 동의서만 서명된 계약은 이
     // 가드를 그냥 통과해 **새 스냅샷** 링크가 나갔는데, signedContractSnapshot 은 첫 서명에서
     // 굳어 재동결되지 않으므로 입주자가 새 내용에 서명해도 증거는 옛 내용으로 남았다.
-    if (stageOf(snapLease) !== 'none') {
-      if (stageOf(snapLease) === 'complete') {
+    if (stageOf(snapshot) !== 'none') {
+      if (stageOf(snapshot) === 'complete') {
         return { ok: false, error: '이미 서명이 저장된 계약입니다. 내용을 바꿔 다시 받으려면 계약서 화면에서 서명을 지운 뒤 요청해 주세요. 받은 서명으로 발급하려면 서명본 계약서 발급을 이용하세요.' }
       }
       return {

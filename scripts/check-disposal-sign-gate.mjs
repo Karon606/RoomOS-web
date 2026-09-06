@@ -52,7 +52,9 @@ function wrappedInTryCatch(src, at) {
 
 
 const WIRED = [
-  ['app/sign/[token]/actions.ts', 'disposalSignatureMissing(', 'ⓐ 제출이 동의서 서명을 안 본다. 액션을 직접 부르면 반쪽 서명으로 제출이 통과한다.'],
+  // 제출 게이트는 슬롯 정본으로 옮겼다(2026-09-06, 제3 서류 일반화). 링크 축이 맞는 자리다 —
+  // 입주자 앞의 종이는 그 링크의 스냅샷이고 그 위의 서명은 그 링크의 자국이다.
+  ['app/sign/[token]/actions.ts', 'linkSignSlots(', 'ⓐ 제출이 남은 서명을 안 본다. 액션을 직접 부르면 반쪽 서명으로 제출이 통과한다.'],
   ['app/api/contract/generate/route.ts', 'disposalSignatureMissing(', 'ⓑ 발급이 동의서 서명을 안 본다. 서명란이 빈 동의서가 아무 말 없이 나간다.'],
   // 아래 셋은 2026-09-06 에 슬롯 정본으로 옮겼다. **needle 은 배선을 따라 옮긴다** — 안 옮기면
   // 그물이 헛울리고, 헛울리는 그물은 곧 무시당해 진짜 결함도 못 잡는다.

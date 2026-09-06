@@ -17,6 +17,7 @@ import {
   type ContractFieldOverridePatch,
   CONTRACT_FIELD_ERROR, deriveContractLeaseFields, normalizeContractFieldOverrides,
 } from '@/lib/contractFieldOverrides'
+import { parseDocumentSignatures } from '@/lib/signDocuments'
 import {
   buildVoidedVersion, hasVoidableVersion, parseContractVersionArchive, restoreTargetsFrom,
   restoredFieldsFrom, versionKind, type ContractVersionKind,
@@ -73,9 +74,14 @@ type SigCols = {
   signatureSignedAt: Date | null
   disposalSignatureImageUrl: string | null
   disposalSignatureSignedAt: Date | null
+  // **기본값 없는 필수 칸**이다. 옵셔널로 두면 select 에서 빠져도 타입이 조용하고, 그 자리는
+  // 커스텀 서명만 있는 계약을 '서명 없음'으로 읽어 잠금이 뚫린다(serializeLink 와 같은 수법).
+  documentSignatures: unknown
 }
 const isSignatureLocked = (l: SigCols) =>
   !!l.signatureImageUrl || !!l.signatureSignedAt || !!l.disposalSignatureImageUrl || !!l.disposalSignatureSignedAt
+  // 추가 서류에만 서명이 있어도 잠금이다 — 그 종이도 서명된 종이고, 본문을 바꾸면 갈린다.
+  || Object.keys(parseDocumentSignatures(l.documentSignatures)).length > 0
 
 
 // 아직 서명이 안 들어온 활성 링크를 닫는다 — 계약서 내용을 고쳤으면 입주자가 보고 있는 것은
@@ -151,7 +157,7 @@ async function moveVersion(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         signedContractSnapshot: true, contractFieldOverrides: true, contractOverride: true,
         contractVersionArchive: true,
       },
@@ -183,6 +189,9 @@ async function moveVersion(
         signatureImageUrl: null, signatureSignedAt: null,
         disposalSignatureImageUrl: null, disposalSignatureSignedAt: null,
         // Json 칸 비우기는 Prisma.DbNull 이 정본이다({ set: null } 은 값으로 저장된다, 2026-08-05 실측).
+        // 추가 서류 서명도 함께 비운다 — 이력이 이미 담았다(buildVoidedVersion). 안 비우면 폐기 뒤
+        // 재서명에서 옛 커스텀 서명이 새 버전에 눌어붙는다.
+        documentSignatures: Prisma.DbNull,
         signedContractSnapshot: Prisma.DbNull,
         contractVersionArchive: archive as unknown as Prisma.InputJsonValue,
       },
@@ -216,7 +225,7 @@ export async function voidContractVersion(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         signedContractSnapshot: true,
       },
     })
@@ -255,7 +264,7 @@ export async function supersedeContractVersion(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, tenantId: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         signedContractSnapshot: true,
       },
     })
@@ -309,7 +318,7 @@ export async function restoreContractVersion(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         signedContractSnapshot: true, contractVersionArchive: true,
       },
     })
@@ -336,6 +345,8 @@ export async function restoreContractVersion(
           signatureSignedAt: f.signatureSignedAt,
           disposalSignatureImageUrl: f.disposalSignatureImageUrl,
           disposalSignatureSignedAt: f.disposalSignatureSignedAt,
+          documentSignatures: f.documentSignatures == null
+            ? Prisma.DbNull : (f.documentSignatures as Prisma.InputJsonValue),
           signedContractSnapshot: f.signedContractSnapshot == null
             ? Prisma.DbNull : (f.signedContractSnapshot as Prisma.InputJsonValue),
           contractFieldOverrides: f.contractFieldOverrides == null
@@ -381,7 +392,9 @@ export async function restoreContractVersion(
 // 서명이 하나도 안 남는 갈래는 전부 위 voidVersion 을 탄다(증거는 이력으로 남고 잠금만 풀린다).
 export async function clearContractSignature(
   leaseTermId: string,
-  target: 'contract' | 'disposal' | 'all',
+  // 'contract' | 'disposal' | 'all' | 추가 서류 key. 문자열로 넓혔지만 커스텀 key 는 아래에서
+  // **그 계약에 실제로 서명이 있는 key** 만 통과한다 — 아무 문자열로 남의 칸을 못 지운다.
+  target: string,
 ): Promise<{ ok: true; closedLinks: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -390,7 +403,7 @@ export async function clearContractSignature(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         signedContractSnapshot: true,
       },
     })
@@ -407,16 +420,30 @@ export async function clearContractSignature(
       return { ok: true, closedLinks }
     }
     const isContract = target === 'contract'
+    const isDisposal = target === 'disposal'
+    const customSigs = parseDocumentSignatures(lease.documentSignatures)
+    if (!isContract && !isDisposal && !customSigs[target]) {
+      return { ok: true, closedLinks: 0 }   // 그 서류에 지울 서명이 없다 — 멱등(잘못된 key 포함)
+    }
     const targetHas = isContract
       ? !!lease.signatureImageUrl || !!lease.signatureSignedAt
-      : !!lease.disposalSignatureImageUrl || !!lease.disposalSignatureSignedAt
+      : isDisposal
+        ? !!lease.disposalSignatureImageUrl || !!lease.disposalSignatureSignedAt
+        : true   // 커스텀은 위에서 존재를 이미 확인했다
     if (!targetHas) return { ok: true, closedLinks: 0 }   // 지울 것이 없다 — 멱등
     // 지운 뒤에도 남는 서명이 있는가. 하나도 안 남으면 그 버전 자체가 사라지는 것이라 폐기와 결과가
     // 같다 — 격리본까지 비우고 증거는 폐기 이력으로 옮긴다(voidVersion). 격리본만 남으면
     // 서명 없는 계약이 서명 시점 본문을 주장하게 되고, 그건 검사 축 G2 가 위반으로 잡는 상태다.
-    const otherRemains = isContract
+    // **추가 서류 서명도 남은 서명이다** — 빼면 계약서·동의서를 지울 때 커스텀 서명이 살아 있는
+    // 버전이 통째로 폐기된다(그 반대도 같다).
+    const remainCustomCount = Object.keys(customSigs).length - (isContract || isDisposal ? 0 : 1)
+    const otherRemains = (isContract
       ? !!lease.disposalSignatureImageUrl || !!lease.disposalSignatureSignedAt
-      : !!lease.signatureImageUrl || !!lease.signatureSignedAt
+      : isDisposal
+        ? !!lease.signatureImageUrl || !!lease.signatureSignedAt
+        : (!!lease.signatureImageUrl || !!lease.signatureSignedAt
+           || !!lease.disposalSignatureImageUrl || !!lease.disposalSignatureSignedAt))
+      || remainCustomCount > 0
     if (!otherRemains) {
       const { closedLinks } = await moveVersion(leaseTermId, propertyId, userId ?? null, '서명 지우기')
       revalidatePath('/contract')
@@ -424,12 +451,20 @@ export async function clearContractSignature(
       revalidatePath('/contracts')
       return { ok: true, closedLinks }
     }
-    await prisma.leaseTerm.update({
-      where: { id: leaseTermId },
-      data: isContract
-        ? { signatureImageUrl: null, signatureSignedAt: null }
-        : { disposalSignatureImageUrl: null, disposalSignatureSignedAt: null },
-    })
+    if (isContract || isDisposal) {
+      await prisma.leaseTerm.update({
+        where: { id: leaseTermId },
+        data: isContract
+          ? { signatureImageUrl: null, signatureSignedAt: null }
+          : { disposalSignatureImageUrl: null, disposalSignatureSignedAt: null },
+      })
+    } else {
+      // 커스텀 한 장만 뺀 맵을 다시 쓴다. 마지막 하나였으면 위 otherRemains 갈래가 이미
+      // voidVersion 으로 갔으므로 여기서 맵이 비는 일은 없다.
+      const rest = { ...customSigs }
+      delete rest[target]
+      await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { documentSignatures: rest } })
+    }
     // 남은 서명이 있으므로 2026-07-23 규칙대로 살아 있는 링크만 닫는다(제출본은 발급 리마인더가 산다).
     const closedLinks = await closeOpenLinks(leaseTermId)
     revalidatePath('/contract')
@@ -453,7 +488,7 @@ export async function saveContractFieldOverride(
       where: { id: leaseTermId, propertyId },
       select: {
         id: true, signatureImageUrl: true, signatureSignedAt: true,
-        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+        disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
         moveInDate: true, expectedMoveOut: true, rentAmount: true, depositAmount: true,
         cleaningFee: true, dueDay: true, registrationStatus: true,
         contractFieldOverrides: true, room: { select: { roomNo: true } },
@@ -489,7 +524,7 @@ export async function resetContractFieldOverrides(
     const { propertyId } = await requireAuthAndProperty()
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: leaseTermId, propertyId },
-      select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true },
+      select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true },
     })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     if (isSignatureLocked(lease)) return { ok: false, error: fieldLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
@@ -515,7 +550,7 @@ export async function saveContractOverride(
     const { propertyId } = await requireAuthAndProperty()
     if (!template?.title?.trim()) return { ok: false, error: '계약서 제목이 비어 있습니다.' }
     // 본인 영업장 lease만 허용
-    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true } })
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     if (isSignatureLocked(lease)) return { ok: false, error: bodyLockMessage(await multiVersionOn(propertyId), 'contractScreen') }
     await prisma.leaseTerm.update({
@@ -536,7 +571,7 @@ export async function resetContractOverride(leaseTermId: string): Promise<{ ok: 
   try {
     await requireEdit()
     const { propertyId } = await requireAuthAndProperty()
-    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true } })
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true, signatureImageUrl: true, signatureSignedAt: true, disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     // 공통 템플릿으로 되돌리는 것도 서명한 본문을 갈아치우는 행위다. 하나만 잠그면 다른 하나로 같은 일이 된다.
     if (isSignatureLocked(lease)) return { ok: false, error: bodyLockMessage(await multiVersionOn(propertyId), 'contractScreen') }

@@ -353,5 +353,36 @@ const signedLease: VoidableLease = {
   eq('안내 · 다른 화면은 자리를 말한다', bodyLockMessage(true, 'contractScreen').includes('계약서 화면 툴바'), true)
 }
 
+// ── 추가 서류 서명의 증거 사슬 (제3 서류 D2-3, 2026-09-06) ──────────────
+// 커스텀 서명도 계약서·동의서와 같은 등급으로 지킨다 — 폐기가 담고, 되돌리기가 살리고,
+// 판정이 센다. 빠진 자리 하나가 곧 "그 서명만 조용히 사라지는 문"이다.
+{
+  const customLease: VoidableLease = {
+    signatureImageUrl: null, signatureSignedAt: null,
+    disposalSignatureImageUrl: null, disposalSignatureSignedAt: null,
+    documentSignatures: { aa11: { image: 'data:image/png;base64,CCCC', signedAt: '2026-09-06T00:00:00.000Z' } },
+    signedContractSnapshot: null, contractFieldOverrides: null, contractOverride: null,
+  }
+  eq('커스텀 서명만 있어도 폐기할 버전이다', hasVoidableVersion(customLease), true)
+  eq('빈 맵은 폐기 대상이 아니다', hasVoidableVersion({ ...customLease, documentSignatures: {} }), false)
+  eq('칸이 없어도(옛 데이터) 폐기 대상이 아니다', hasVoidableVersion({ ...customLease, documentSignatures: null }), false)
+
+  const entry = buildVoidedVersion({
+    lease: customLease, fileIds: [], closedLinkIds: [],
+    voidedAt: new Date('2026-09-06T01:00:00Z'), voidedBy: null, reason: '테스트',
+  })
+  eq('이력이 커스텀 서명을 담는다', (entry.documentSignatures as Record<string, unknown>)?.aa11 !== undefined, true)
+  eq('커스텀 서명만 있는 이력도 증거가 있다', voidedVersionHasEvidence(entry), true)
+  eq('되돌리기가 커스텀 서명을 살린다',
+    (restoredFieldsFrom(entry).documentSignatures as Record<string, unknown>)?.aa11 !== undefined, true)
+  // 왕복 항등 — 폐기 직전과 복원 직후가 같아야 적용취소가 손실을 안 만든다.
+  eq('왕복이 항등이다', restoredFieldsFrom(entry).documentSignatures, customLease.documentSignatures)
+  // 옛 이력(칸 없음)은 증거 판정이 종전과 같다.
+  const legacy = { ...entry }
+  delete (legacy as { documentSignatures?: unknown }).documentSignatures
+  eq('옛 이력은 커스텀 없이도 종전 판정 그대로', voidedVersionHasEvidence(legacy), false)
+  eq('옛 이력 복원은 커스텀이 null', restoredFieldsFrom(legacy).documentSignatures, null)
+}
+
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

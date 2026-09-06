@@ -19,6 +19,8 @@
  *   supersede — 그때는 맞았고 지금 서명의 주인이 다음 판본으로 넘어갔다(구버전).
  * kind 가 없는 구항목은 전부 void 다 — 이 칸이 생기기 전 이력은 폐기뿐이었다.
  */
+import { parseDocumentSignatures } from '@/lib/signDocuments'
+
 export type ContractVersionKind = 'void' | 'supersede'
 
 /** 계약서 버전 이력 한 건 — append-only. 이 모양은 절대 파괴적으로 바뀌지 않는다(v 로 판별). */
@@ -43,6 +45,12 @@ export type VoidedContractVersion = {
     disposalImage: string | null
     disposalSignedAt: string | null
   }
+  /**
+   * 그때 lease 에 쌓여 있던 추가 서류 서명 맵({ [서류key]: { image, signedAt } }).
+   * **v 는 안 올린다**(kind 와 같은 규칙 — 올리면 파서가 새 항목을 통째로 버린다).
+   * 이 칸이 생기기 전 이력에는 없다(undefined). 그때 커스텀 서명은 존재하지 않았으니 참이다.
+   */
+  documentSignatures?: unknown
   /** 서명 시점 본문 격리본(lib/contract SignedContractSnapshot) 그대로 */
   signedContractSnapshot: unknown
   /** 그때의 표시값 오버라이드·본문 오버라이드 사본 — 되돌리기가 폐기 직전 상태를 정확히 복원한다 */
@@ -60,6 +68,9 @@ export type VoidableLease = {
   signatureSignedAt: Date | null
   disposalSignatureImageUrl: string | null
   disposalSignatureSignedAt: Date | null
+  // 필수 칸이다 — 옵셔널이면 select 에서 빠져도 조용히 {} 로 읽혀, 커스텀 서명만 있는 버전이
+  // '폐기할 것 없음'으로 새 나간다(증거 파괴가 침묵하는 정확히 그 길).
+  documentSignatures: unknown
   signedContractSnapshot?: unknown
   contractFieldOverrides?: unknown
   contractOverride?: unknown
@@ -77,6 +88,9 @@ export function hasVoidableVersion(lease: VoidableLease): boolean {
   return !!(lease.signatureImageUrl || lease.signatureSignedAt
     || lease.disposalSignatureImageUrl || lease.disposalSignatureSignedAt
     || lease.signedContractSnapshot)
+    // 추가 서류 서명만 있는 계약도 서명이 붙은 버전이다. 빼면 그 서명이 폐기 이력 없이
+    // 사라지는 길이 열린다(증거 파괴 — 계약서·동의서와 같은 등급으로 지킨다).
+    || Object.keys(parseDocumentSignatures(lease.documentSignatures)).length > 0
 }
 
 /** 저장된 JSON 을 폐기 이력 배열로 읽는다. 모양이 아니면 빈 배열이다(칸이 없던 계약이 그렇다). */
@@ -155,6 +169,8 @@ export function buildVoidedVersion(input: {
       disposalImage: l.disposalSignatureImageUrl,
       disposalSignedAt: l.disposalSignatureSignedAt ? l.disposalSignatureSignedAt.toISOString() : null,
     },
+    // 추가 서류 서명도 그대로 옮긴다. 빠지면 폐기가 이 서명들만 조용히 지우는 문이 된다.
+    documentSignatures: l.documentSignatures ?? null,
     signedContractSnapshot: l.signedContractSnapshot ?? null,
     contractFieldOverrides: l.contractFieldOverrides ?? null,
     contractOverride: l.contractOverride ?? null,
@@ -174,6 +190,7 @@ export function voidedVersionHasEvidence(e: VoidedContractVersion): boolean {
   const s = e.signature
   return !!(s?.contractImage || s?.contractSignedAt || s?.disposalImage || s?.disposalSignedAt
     || e.signedContractSnapshot)
+    || Object.keys(parseDocumentSignatures(e.documentSignatures)).length > 0
 }
 
 /** 되돌리기가 lease 에 다시 써 넣을 값. Date 로 되돌려 놓는다(컬럼 타입). */
@@ -182,6 +199,7 @@ export type RestoredVersionFields = {
   signatureSignedAt: Date | null
   disposalSignatureImageUrl: string | null
   disposalSignatureSignedAt: Date | null
+  documentSignatures: unknown
   signedContractSnapshot: unknown
   contractFieldOverrides: unknown
   contractOverride: unknown
@@ -199,6 +217,7 @@ export function restoredFieldsFrom(e: VoidedContractVersion): RestoredVersionFie
     signatureSignedAt: at(e.signature?.contractSignedAt ?? null),
     disposalSignatureImageUrl: e.signature?.disposalImage ?? null,
     disposalSignatureSignedAt: at(e.signature?.disposalSignedAt ?? null),
+    documentSignatures: e.documentSignatures ?? null,
     signedContractSnapshot: e.signedContractSnapshot ?? null,
     contractFieldOverrides: e.contractFieldOverrides ?? null,
     contractOverride: e.contractOverride ?? null,

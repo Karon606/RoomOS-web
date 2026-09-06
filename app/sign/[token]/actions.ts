@@ -7,7 +7,8 @@ import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
 import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
-import { disposalSignatureMissing } from '@/lib/disposalSignGate'
+import { missingSlots } from '@/lib/disposalSignGate'
+import { paperDocsOf, linkSignSlots, parseSignDocuments, parseDocumentSignatures, parseDocSignedAt, isValidDocKey } from '@/lib/signDocuments'
 import { asDocNameStyle } from '@/lib/documentName'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
@@ -89,7 +90,9 @@ export async function verifyShareBirthdate(
 
 export async function submitRemoteSignature(
   token: string,
-  target: 'contract' | 'disposal',
+  // 'contract' | 'disposal' | 추가 서류 key. 문자열로 넓혔지만 **화이트리스트는 서버가 쥔다** —
+  // 아래에서 링크 스냅샷에 실제로 실린 서류 key 만 통과한다.
+  target: string,
   dataUrl: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -100,7 +103,16 @@ export async function submitRemoteSignature(
     if (!cookieStore.get(shareCookieName(link.id))) {
       return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
     }
-    if (target !== 'contract' && target !== 'disposal') return { ok: false, error: '잘못된 요청입니다.' }
+    // 추가 서류 key 는 **이 링크의 스냅샷에 실린 것**만 받는다. 그 종이에 없는 서류의 서명을
+    // 받으면 어디에도 그릴 수 없는 고아 데이터가 쌓인다. 라이브 설정을 안 보는 이유 — 링크가
+    // 나간 뒤 영업장이 서류를 중지해도, 살아 있는 링크의 입주자는 자기가 보고 있는 장에 마저
+    // 서명할 수 있어야 한다(동의서의 라이브 검사와 일부러 다르다. 아래 주석 참조).
+    const snapDocKeys = new Set(
+      parseSignDocuments((link.templateSnapshot as { signDocuments?: unknown } | null)?.signDocuments).map(d => d.key))
+    const isCustomTarget = target !== 'contract' && target !== 'disposal'
+    if (isCustomTarget && !(isValidDocKey(target) && snapDocKeys.has(target))) {
+      return { ok: false, error: '잘못된 요청입니다.' }
+    }
     // 'data:image/' 접두만 보면 data:image/svg+xml 이 통과해 서명란에 임의 벡터(위조 도장 등)를
     // 심을 수 있다. 손글씨 서명 캔버스가 만드는 래스터 두 종만 허용한다(E페이즈 2026-08-03).
     if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(dataUrl)) {
@@ -127,7 +139,7 @@ export async function submitRemoteSignature(
     const already = await prisma.leaseTerm.findUnique({
       where: { id: link.leaseTermId }, select: { signedContractSnapshot: true },
     })
-    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown; rateAddendum?: unknown } | null
+    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown; rateAddendum?: unknown; signDocuments?: unknown } | null
     const newSnapshot = already?.signedContractSnapshot || !snap?.template ? null : {
       origin: 'REMOTE_LINK', capturedAt: now.toISOString(),
       template: snap.template as object,
@@ -141,12 +153,38 @@ export async function submitRemoteSignature(
       // 요금 절도 같은 이유로 동결한다. 서명한 화면에 있었으면 재발급본에도 있어야 하고,
       // 없었으면 나중에 생겨서도 안 된다 — 요금 조항이 소급되면 서명 격리를 스스로 깨는 것이다.
       rateAddendum: (snap.rateAddendum ?? null) as object,
+      // 추가 서류 목록도 동결한다. 서명한 화면에 있던 장은 재발급본에도 있어야 하고, 없던 장이
+      // 나중에 생겨서도 안 된다(특약 두 칸과 같은 규칙). 이 칸이 생기기 전 링크에는 없다 —
+      // 그때는 빈 배열로 굳는다.
+      signDocuments: (snap.signDocuments ?? []) as object,
       // 이 사람이 눈으로 읽고 손으로 서명한 성명 표기. 근거는 링크 스냅샷이다 — 원격 화면은
       // DB 를 다시 안 읽으므로 그 JSON 이 곧 그 사람이 본 종이다.
       // 이 칸이 생기기 전 박제에는 없다(undefined). 그때는 오버라이드 또는 한글로 읽는다.
       nameStyle: asDocNameStyle((snap as { lease?: { nameStyle?: unknown } }).lease?.nameStyle) ?? null,
       printedName: typeof (snap as { tenant?: { name?: unknown } }).tenant?.name === 'string'
         ? (snap as { tenant: { name: string } }).tenant.name : null,
+    }
+    if (isCustomTarget) {
+      // 추가 서류는 Json 맵이라 읽고-병합-쓰기다. 인터랙티브 트랜잭션이 아니면 두 서명이
+      // 동시에 들어올 때 나중 쓰기가 먼저 것을 통째로 덮는다(Json 병합 유실 클래스).
+      await prisma.$transaction(async tx => {
+        const cur = await tx.leaseTerm.findUnique({
+          where: { id: link.leaseTermId }, select: { documentSignatures: true },
+        })
+        const sigs = parseDocumentSignatures(cur?.documentSignatures)
+        sigs[target] = { image: dataUrl, signedAt: now.toISOString() }
+        await tx.leaseTerm.update({
+          where: { id: link.leaseTermId },
+          data: { documentSignatures: sigs, ...(newSnapshot ? { signedContractSnapshot: newSnapshot } : {}) },
+        })
+        const curLink = await tx.contractShareLink.findUnique({
+          where: { id: link.id }, select: { docSignedAt: true },
+        })
+        const marks = parseDocSignedAt(curLink?.docSignedAt)
+        marks[target] = now.toISOString()
+        await tx.contractShareLink.update({ where: { id: link.id }, data: { docSignedAt: marks } })
+      }, { isolationLevel: 'Serializable' })
+      return { ok: true }
     }
     await prisma.$transaction([
       prisma.leaseTerm.update({
@@ -193,13 +231,15 @@ export async function finalizeRemoteSubmission(
     // 동의서도 서버가 본다. 종전에는 이 검사가 클라이언트 canSubmit 에만 있어서, 액션을 직접 부르면
     // 반쪽 서명으로 제출이 통과했다. 판정 축은 canSubmit 과 같은 것(발급 시점 스냅샷)을 쓴다 —
     // 라이브 설정을 보면 링크가 나간 뒤 영업장이 동의서를 끄고 켤 때 두 자리가 서로 물린다.
-    const snapDc = (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)?.disposalConsent
-    if (disposalSignatureMissing({
-      disposalEnabled: snapDc?.enabled === true,
-      hasContractSignature: true,
-      hasDisposalSignature: !!link.disposalSignedAt,
-    })) {
+    // 이 링크의 종이에 실린 서류 전부가 이 링크에서 서명됐는가 — **링크 축**이다. 입주자 앞의
+    // 종이는 이 링크의 스냅샷이고 그 위의 서명은 이 링크의 자국이다(이어받기가 자국을 승계한다).
+    const left = missingSlots({ slots: linkSignSlots(paperDocsOf(link.templateSnapshot), link) })
+      .filter(x => x.key !== 'contract')   // 계약서는 위에서 이미 제 문구로 걸렀다
+    if (left.some(x => x.key === 'disposal')) {
       return { ok: false, error: '동의서 서명이 아직 없습니다. 동의서 서명란에 서명한 뒤 제출해 주세요.' }
+    }
+    if (left.length > 0) {
+      return { ok: false, error: `'${left[0].title}' 서명이 아직 없습니다. 그 서류의 서명란에 서명한 뒤 제출해 주세요.` }
     }
 
     // 본국 표기 이름 — **비어 있을 때만** 채운다.

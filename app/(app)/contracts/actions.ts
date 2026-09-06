@@ -5,11 +5,12 @@ import { asDocNameStyle, documentName } from '@/lib/documentName'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
-import { paperDocsOf, leaseSignSlots } from '@/lib/signDocuments'
+import { paperDocsOf, leaseSignSlots, parseDocSignedAt } from '@/lib/signDocuments'
 import { issuedPrintedName } from '@/lib/contractPrintedFacts'
 
 async function getPropertyId(): Promise<string> {
@@ -156,10 +157,11 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
     prisma.contractShareLink.findMany({
       // 반쪽은 어느 쪽이 먼저 오든 반쪽이다(2026-09-04). 계약서 서명만 보면 동의서만 서명한
       // 계약이 이 목록에 못 들어와 화면 어디에도 안 나온다.
-      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
+      // docSignedAt 도 본다 — 추가 서류만 먼저 서명된 링크도 같은 반쪽이다.
+      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }, { docSignedAt: { not: Prisma.DbNull } }] },
       orderBy: { signedAt: 'desc' },
       select: {
-        id: true, signedAt: true, disposalSignedAt: true, submittedAt: true, leaseTermId: true,
+        id: true, signedAt: true, disposalSignedAt: true, docSignedAt: true, submittedAt: true, leaseTermId: true,
         // 링크 스냅샷이 기준이다 — 라이브 설정을 보면 서류를 새로 켜는 순간 과거 계약 전부가
         // 소급으로 반쪽이 된다. 홈 알림·계약서 패널과 같은 축이어야 세 화면이 한 답을 말한다.
         templateSnapshot: true,
@@ -196,7 +198,8 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   const rows: PendingIssueRow[] = []
   const seenLease = new Set<string>()
   for (const l of links) {
-    const signalAt = l.signedAt ?? l.disposalSignedAt
+    const docMarks = Object.values(parseDocSignedAt(l.docSignedAt))
+    const signalAt = l.signedAt ?? l.disposalSignedAt ?? (docMarks.length ? new Date(docMarks.sort()[0]) : null)
     if (!signalAt) continue
     // 딸린 계약의 대기는 부모 한 줄로 선다 — 그 계약의 종이가 부모 합본이기 때문이다.
     // 지목·해소 판정·중복 제거가 전부 이 한 값을 본다(lib/contractIssue 정본).
