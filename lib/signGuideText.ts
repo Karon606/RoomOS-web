@@ -19,8 +19,8 @@
 
 import { isKoreanNationality } from '@/lib/documentName'
 
-export type SignLang = 'ko' | 'en' | 'vi' | 'bn' | 'ru' | 'ja' | 'zh'
-export const SIGN_LANGS: readonly SignLang[] = ['ko', 'en', 'vi', 'bn', 'ru', 'ja', 'zh']
+export type SignLang = 'ko' | 'en' | 'vi' | 'bn' | 'ru' | 'ja' | 'zh' | 'zht'
+export const SIGN_LANGS: readonly SignLang[] = ['ko', 'en', 'vi', 'bn', 'ru', 'ja', 'zh', 'zht']
 
 /** 발급 피커 라벨 — 한국어 이름 + 그 언어 자기 이름. */
 export const SIGN_LANG_LABEL: Record<SignLang, string> = {
@@ -30,7 +30,8 @@ export const SIGN_LANG_LABEL: Record<SignLang, string> = {
   bn: '벵골어(방글라데시) বাংলা',
   ru: '러시아어 Русский',
   ja: '일본어 日本語',
-  zh: '중국어(간체) 中文',
+  zh: '중국어(간체) 简体中文',
+  zht: '중국어(번체) 繁體中文',
 }
 
 /** 화이트리스트 파서 — 스냅샷에서 읽은 값은 외부 데이터다. */
@@ -53,7 +54,8 @@ export function signLangForNationality(nationality: string | null | undefined): 
   if (v === '방글라데시') return 'bn'
   if (v === '러시아' || v === '카자흐스탄' || v === '우즈베키스탄' || v === '벨라루스' || v === '키르기스스탄') return 'ru'
   if (v === '일본') return 'ja'
-  if (v === '중국' || v === '대만') return 'zh'
+  if (v === '중국') return 'zh'
+  if (v === '대만' || v === '홍콩') return 'zht'
   return 'en'
 }
 
@@ -536,7 +538,76 @@ const ZH: Record<SignKey, string> = {
   'sms.body': '[{biz}] 您的入住合同。请打开下方链接阅读并签名。验证需要输入出生日期。提交后链接将关闭,未提交也将在24小时后过期。',
 }
 
-const DICT: Record<SignLang, Record<SignKey, string>> = { ko: KO, en: EN, vi: VI, bn: BN, ru: RU, ja: JA, zh: ZH }
+
+const ZHT: Record<SignKey, string> = {
+  'gate.title': '入住合約確認',
+  'gate.hint': '請輸入出生日期以驗證身分。驗證後即可閱讀並簽署合約。',
+  'gate.birthLabel': '出生日期',
+  'gate.placeholder': '例: 19700928',
+  'gate.submit': '確認',
+  'gate.submitting': '驗證中…',
+  'gate.netFail': '驗證失敗。請稍後再試。',
+  'gate.privacy': '您輸入的出生日期僅用於身分驗證,不會被保存。合約中的資訊由經營方保管,用於簽訂與履行合約。',
+  'inactive.title': '連結無法使用',
+  'inactive.body': '連結已過期或無法使用。請聯絡管理員重新發送。',
+  'submitted.title': '合約已提交',
+  'submitted.body': '已完成提交,無法再次開啟。您可以關閉此視窗。',
+  'err.locked': '輸入錯誤{n}次,連結已鎖定。請聯絡管理員重新發送。',
+  'err.birthMismatch': '出生日期不一致。剩餘{n}次機會。',
+  'err.cookieExpired': '身分驗證已過期。請重新整理頁面並再次輸入出生日期。',
+  'err.badRequest': '無效的請求。',
+  'err.badImage': '簽名圖像無效。',
+  'err.imageTooLarge': '簽名圖像過大。請重新簽名。',
+  'err.disposalOff': '本店不使用遺留物品處理同意書。',
+  'err.saveFail': '簽名儲存失敗。請稍後再試。',
+  'err.signFirst': '請先完成簽名。',
+  'err.disposalLeft': '同意書尚未簽名。請先在同意書上簽名再提交。',
+  'err.docLeft': "'{title}'尚未簽名。請先在該文件上簽名再提交。",
+  'err.submitFail': '提交失敗。請稍後再試。',
+  'bar.readAndSign': '請閱讀合約內容,然後點擊底部的簽名欄進行簽名。',
+  'bar.allSaved': '所有簽名已儲存。請用下方按鈕提交。',
+  'cta.sign': '點擊此處簽名',
+  'progress.done1': '簽名已完成。',
+  'progress.doneN': '已簽 {total} / {total}。全部完成。',
+  'progress.none1': '請簽名。',
+  'progress.noneN': '已簽 0 / {total}。請在{total}處簽名。',
+  'progress.some': '已簽 {n} / {total}。還剩{left}處。',
+  'cta.submit': '提交',
+  'cta.submitting': '提交中…',
+  'pill.allDone': '所有簽名已完成',
+  'pad.titleContract': '入住人簽名',
+  'pad.titleDoc': '{title}簽名',
+  'pad.subRemote': '請在下方區域簽名。點擊確認後,簽名將套用到{title}。',
+  'pad.clear': '清除',
+  'pad.cancel': '取消',
+  'pad.confirm': '確認',
+  'pad.saving': '儲存中…',
+  'pad.close': '關閉',
+  'pad.errEmpty': '請簽名。',
+  'pad.errShort': '簽名太短。請連筆寫出您的姓名。',
+  'pad.errComm': '儲存簽名時發生網路錯誤。請稍後再試。',
+  'toast.signedContract': '簽名已錄入',
+  'toast.signedDoc': '{title}簽名已錄入',
+  'remain.title1': '已簽 {n} / {total}。還剩: {title}',
+  'remain.titleN': '已簽 {n} / {total}。還剩{left}份文件',
+  'remain.msg': '此連結共有{total}份文件。簽完剩餘{left}份即可提交。',
+  'remain.go': '前往簽名',
+  'submit.confirmTitle': '提交合約嗎?',
+  'submit.confirmMsg': '提交後此連結將關閉,無法再次開啟或修改。\n如需修改簽名,請在提交前重新簽名。',
+  'submit.confirmLabel': '提交',
+  'submit.errComm': '提交時發生網路錯誤。請稍後再試。',
+  'done.title': '合約已提交',
+  'done.body': '此連結已關閉,無法再次開啟。您可以關閉此視窗。',
+  'native.label': '母語姓名(可選)',
+  'native.hint': '請按照護照或本國證件上的寫法填寫。可以留空。',
+  'doc.contract': '入住合約',
+  'doc.disposal': '同意書',
+  'doc.generic': '文件',
+  'common.cancel': '取消',
+  'sms.body': '[{biz}] 您的入住合約。請開啟下方連結閱讀並簽名。驗證需要輸入出生日期。提交後連結將關閉,未提交也將於24小時後過期。',
+}
+
+const DICT: Record<SignLang, Record<SignKey, string>> = { ko: KO, en: EN, vi: VI, bn: BN, ru: RU, ja: JA, zh: ZH, zht: ZHT }
 
 function fill(s: string, vars?: Record<string, string | number>): string {
   if (!vars) return s
@@ -562,4 +633,20 @@ export function subLangOf(lang: SignLang): Exclude<SignLang, 'ko'> {
  */
 export function bi(lang: SignLang, key: SignKey, vars?: Record<string, string | number>): string {
   return `${t('ko', key, vars)}\n${t(subLangOf(lang), key, vars)}`
+}
+
+/**
+ * 서명 요청 문자 본문. 한국어를 골랐으면 종전 문자와 글자 하나까지 같다.
+ * 외국어면 그 언어 문장이 먼저 서고(받는 사람이 첫 줄에서 제 언어를 본다), 한국어 정본이
+ * 그 아래, URL 은 맨 끝에 한 번 붙는다.
+ */
+export function smsBodyFor(lang: SignLang, biz: string, url: string): string {
+  if (lang === 'ko') return `${t('ko', 'sms.body', { biz })} ${url}`
+  return `${t(lang, 'sms.body', { biz })}\n${t('ko', 'sms.body', { biz })}\n${url}`
+}
+
+/** 병기를 한 줄로 — 버튼처럼 줄바꿈이 안 어울리는 좁은 자리용. 한국어를 골랐으면 한국어만. */
+export function biLine(lang: SignLang, key: SignKey, vars?: Record<string, string | number>): string {
+  if (lang === 'ko') return t('ko', key, vars)
+  return `${t('ko', key, vars)} · ${t(lang, key, vars)}`
 }

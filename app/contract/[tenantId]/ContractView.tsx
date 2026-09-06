@@ -12,13 +12,15 @@ import Link from 'next/link'
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
 import SignaturePad from 'signature_pad'
 import { isSignatureInkEnough } from '@/lib/signatureInk'
+import { signLangForNationality, smsBodyFor, t, bi, biLine, subLangOf, type SignLang } from '@/lib/signGuideText'
+import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
-import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName } from '@/lib/documentName'
+import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
@@ -86,7 +88,7 @@ function renderClauseItem(text: string): React.ReactNode {
  * --paper-h 로 세워야 하는데(동의서와 같은 방식), 서류가 N개라 훅을 반복문 안에 둘 수 없다.
  * 수신인 줄("○○ 대표 귀하")은 임의처분 서식 고유라 여기는 없다 — 인쇄(companionPage)와 같은 규칙.
  */
-function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, dateLabel, signatureDataUrl, remote, attn, isLast, sigClearing, onSign, onClear, setRef }: {
+function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, dateLabel, signatureDataUrl, remote, attn, isLast, sigClearing, signCtaLabel, onSign, onClear, setRef }: {
   doc: { key: string; title: string; body: string }
   scale: number
   printedName: string
@@ -99,6 +101,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
   attn: boolean
   isLast: boolean
   sigClearing: boolean
+  signCtaLabel: string
   onSign: () => void
   onClear: () => void
   setRef: (el: HTMLButtonElement | null) => void
@@ -158,7 +161,7 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
                   className={`no-print sign-cta${attn ? ' attn' : ''}${isLast ? ' last' : ''}`}
                   style={{ padding: '5px 12px', fontSize: 12 }}>
                   <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                  여기를 눌러 서명
+                  {signCtaLabel}
                 </button>
                 <span className="only-print">(서명 또는 인)</span>
               </>
@@ -171,12 +174,14 @@ function CompanionDocCage({ doc, scale, printedName, roomNoLabel, phone, vars, d
 }
 
 
-export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased }: {
+export default function ContractView({ data, mode, shareToken, signedSnapshot, signatureErased, signLang = 'ko' }: {
   data: ContractData; mode?: 'remote'; shareToken?: string
   /** 서명 시점 스냅샷으로 열렸는가 — 화면에 그 사실을 밝힌다(운영자가 현재 계약으로 오인하면 안 된다). */
   signedSnapshot?: boolean
   /** 서명본으로 열렸는데 lease 서명 네 칸이 **전부** 비었는가 — 즉 서명이 지워진 계약의 기록 보기다. */
   signatureErased?: boolean
+  // 이 링크의 안내 언어(스냅샷 박제값). 원격 모드에서만 뜻이 있다 — 운영자 화면은 한국어다.
+  signLang?: SignLang
 }) {
   const remote = mode === 'remote'
   const router = useRouter()
@@ -225,6 +230,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   >(null)
   const askIssuePurpose = (count: number) =>
     new Promise<IssuePurposePick | null>(resolve => setPurposePick({ count, resolve }))
+  // 안내 언어 피커 — 외국인 발급에서만 선다(isForeignForDocuments, 본국 표기 칸과 같은 판정 축).
+  const [langPick, setLangPick] = useState<{ def: SignLang; resolve: (v: SignLang | null) => void } | null>(null)
+  const askSignLang = (def: SignLang) =>
+    new Promise<SignLang | null>(resolve => setLangPick({ def, resolve }))
   const paperRef = useRef<HTMLElement>(null)
   const disposalRef = useRef<HTMLElement>(null)   // 동의서 종이(별도 cage) 높이 측정용
   const [scale, setScale]       = useState(1)
@@ -554,19 +563,28 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const handleSignRequest = async () => {
     if (signReqPending) return
     if (!(await confirmForeignRegNoLink(data.tenant.hasForeignRegNo))) return
+    // 외국인 발급이면 안내 언어를 먼저 고른다. 국적 기본값이 미리 선택돼 있고 바꿀 수 있다
+    // (김명화님처럼 한국어가 편한 분은 한국어로). 내국인 발급 흐름은 이 기능 전과 같다.
+    let pickedLang: SignLang | undefined
+    if (isForeignForDocuments({ nationality: data.tenant.nationality, hasForeignRegNo: data.tenant.hasForeignRegNo })) {
+      const pick = await askSignLang(signLangForNationality(data.tenant.nationality))
+      if (!pick) return
+      pickedLang = pick
+    }
     setSignReqPending(true)
     const release = trackSave()
     try {
       // 화면이 그리고 있는 그 계약의 스냅샷을 보낸다 — 지목이 없으면 서버 추론이 다른 계약을 골라
       // 입주자가 보고 있다고 믿는 것과 다른 계약서에 서명하게 된다(2026-08-13, 1인 다호실).
-      const res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null)
+      const res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null, pickedLang)
       if (!res.ok) { pushToast('error', res.error); return }
       if (!res.phone) {
         pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.')
         return
       }
       if (blockSmsIfStaging()) return
-      const body = `[${res.propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. ${res.link.url}`
+      // 문자는 링크에 실제로 박제된 언어로 조립한다 — 화면 상태로 조립하면 언어와 문자가 갈릴 수 있다.
+      const body = smsBodyFor(res.link.lang, res.propertyName, res.link.url)
       const num = (res.phone ?? '').replace(/[^0-9+]/g, '')
       const enc = encodeURIComponent(body)
       // 애플은 sms://open?addresses= 형식이라야 본문이 실린다(NoticeSmsModal 과 같은 분기)
@@ -935,14 +953,16 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const handleSignConfirm = async () => {
     const pad = sigPadRef.current
     if (!pad || pad.isEmpty()) {
-      setSignError('서명을 입력해주세요.')
-      pushToast('error', '서명을 입력해주세요.')
+      const msg = remote ? bi(signLang, 'pad.errEmpty') : '서명을 입력해주세요.'
+      setSignError(msg)
+      pushToast('error', msg)
       return
     }
     // 점 몇 개로는 서명이 아니다(조정미님 동의서 실사례 — 점 2개가 서명으로 저장됐다).
     // isEmpty() 는 탭 한 번에도 false 라, 획의 총 길이를 정본(lib/signatureInk)으로 잰다.
     if (!isSignatureInkEnough(pad.toData())) {
-      const msg = '서명이 너무 짧습니다. 성함을 이어서 그려 주세요.\nSignature too short. Please draw your full signature.'
+      // 사전 병기 — 원격이면 링크에 박제된 언어, 운영자 화면이면 한국어 + 영어.
+      const msg = bi(signLang, 'pad.errShort')
       setSignError(msg)
       pushToast('error', msg)
       return
@@ -982,7 +1002,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         const docCount = afterSlots.length
         const signedNow = docCount - leftSlots.length
         if (!stillLeft) {
-          pushToast('success', signTarget === 'contract' ? '서명이 입력되었습니다' : `${titleOf(signTarget)} 서명이 입력되었습니다`)
+          pushToast('success', signTarget === 'contract'
+            ? bi(signLang, 'toast.signedContract')
+            : bi(signLang, 'toast.signedDoc', { title: titleOf(signTarget) }))
         } else if (askedAtRef.current !== signedNow) {
           askedAtRef.current = signedNow
           // 반 박자 뒤에 띄운다. 서명 모달이 닫히며 종이에 자기 글씨가 나타나는 순간이 이 화면의
@@ -994,13 +1016,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               // 손으로 뒤집었는데, 그 셈은 서류가 셋이 되는 순간 조용히 틀린 이름을 부른다.
               // 남은 것이 둘 이상이면 이름을 나열하지 않는다 — 제목 한 줄이 못 읽게 길어진다.
               title: leftSlots.length === 1
-                ? `서명 ${signedNow} / ${docCount} · ${leftSlots[0].title}가 남았습니다`
-                : `서명 ${signedNow} / ${docCount} · ${leftSlots.length}장 남았습니다`,
+                ? bi(signLang, 'remain.title1', { n: signedNow, total: docCount, title: leftSlots[0].title })
+                : bi(signLang, 'remain.titleN', { n: signedNow, total: docCount, left: leftSlots.length }),
               // 두 언어를 빈 줄로 가른다. 한 문단으로 붙어 있으면 한국어를 못 읽는 사람이
               // 자기가 읽을 줄이 어디서 시작하는지 곁눈으로 못 찾는다 — 이 확인창의 존재 이유가
               // 그 사람이다. whitespace-pre-line 이 빈 줄을 그대로 그린다.
-              message: `이 링크에는 서류가 ${docCount}장 있습니다. 남은 ${leftSlots.length}장에 서명해야 제출할 수 있습니다.\n\n${signedNow} of ${docCount} signed. This link has ${docCount} documents. Sign the remaining ${leftSlots.length} document${leftSlots.length > 1 ? 's' : ''} to submit.`,
-              confirmLabel: '서명하러 가기',
+              // 두 언어를 빈 줄로 가른다 — 한국어를 못 읽는 사람이 자기 줄의 시작을 곁눈으로 찾는다.
+              message: `${t('ko', 'remain.msg', { total: docCount, left: leftSlots.length })}\n\n${t(subLangOf(signLang), 'remain.msg', { total: docCount, left: leftSlots.length })}`,
+              confirmLabel: biLine(signLang, 'remain.go'),
               cancelLabel: '',
             }).then(() => goToRemaining())
           }, 500)
@@ -1008,7 +1031,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       } catch (err) {
         // catch 가 없으면 전송 실패가 통째로 침묵한다 — 서명 패드만 열린 채 남아 입주자는 저장된
         // 줄 알고 창을 닫는다. 413호가 계약서만 서명하고 멈춘 경위로 이 길이 남아 있었다.
-        const msg = humanError(err, '서명 저장 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+        const msg = humanError(err, bi(signLang, 'pad.errComm'))
         setSignError(msg); pushToast('error', msg)
       } finally {
         release()
@@ -1108,21 +1131,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const handleRemoteSubmit = async () => {
     if (finalizing) return
     if (!(await confirmDialog({
-      title: '계약서를 제출할까요?',
-      message: '제출하면 이 링크는 닫힙니다. 다시 열거나 수정할 수 없습니다.\n서명을 고치려면 제출 전에 다시 서명해 주세요.',
-      confirmLabel: '제출',
+      title: bi(signLang, 'submit.confirmTitle'),
+      message: `${t('ko', 'submit.confirmMsg')}\n\n${t(subLangOf(signLang), 'submit.confirmMsg')}`,
+      confirmLabel: biLine(signLang, 'submit.confirmLabel'),
+      cancelLabel: biLine(signLang, 'common.cancel'),
     }))) return
     if (!shareToken) return
     setFinalizing(true)
     const release = trackSave()
     try {
       const res = await finalizeRemoteSubmission(shareToken, nativeNameInput)
-      if (!res.ok) { pushToast('error', humanError(res.error, '제출에 실패했습니다. 잠시 후 다시 시도해 주세요.')); return }
+      if (!res.ok) { pushToast('error', humanError(res.error, bi(signLang, 'err.submitFail'))); return }
       setSubmitted(true)
     } catch (err) {
       // 서명 저장과 같은 이유로 catch 를 둔다 — 전송이 실패해도 아무 말이 없으면 입주자는 제출된
       // 줄 알고 창을 닫고, 운영자 쪽에는 반쪽 상태만 남는다.
-      pushToast('error', humanError(err, '제출 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'))
+      pushToast('error', humanError(err, bi(signLang, 'submit.errComm')))
     } finally {
       release()
       setFinalizing(false)
@@ -1340,19 +1364,21 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       )}
       <span className="remote-cta-text" aria-live="polite">
         {canSubmit
-          ? (docTotal === 1 ? '서명이 완료됐습니다.' : `서명 ${docTotal} / ${docTotal} · 모두 완료됐습니다.`)
+          ? (docTotal === 1 ? t('ko', 'progress.done1') : t('ko', 'progress.doneN', { total: docTotal }))
           : signedCount === 0
-            ? (docTotal === 1 ? '서명해 주세요.' : `서명 0 / ${docTotal} · ${docTotal}곳에 서명해 주세요.`)
-            : `서명 ${signedCount} / ${docTotal} · ${docTotal - signedCount}곳 더 서명해 주세요.`}
+            ? (docTotal === 1 ? t('ko', 'progress.none1') : t('ko', 'progress.noneN', { total: docTotal }))
+            : t('ko', 'progress.some', { n: signedCount, total: docTotal, left: docTotal - signedCount })}
         {/* 영문 안내는 **서류 개수와 무관하다.** 종전에는 twoDocs 에 묶여 있어 동의서를 안 쓰는
             영업장의 외국인 입주자가 이 화면에서 영어를 한 줄도 못 봤다(한국어 다섯 글자가 전부).
             서류가 하나여도 한글을 못 읽는 사람은 그대로 있다. 수사를 안 쓰고 숫자만 남겨
             서류가 몇 장이든 문법이 안 깨지게 한다. */}
         {remote && (
           <em className="en">
-            {canSubmit ? `${docTotal} of ${docTotal} signed.`
-              : signedCount === 0 ? `0 of ${docTotal} signed. ${docTotal} signature${docTotal > 1 ? 's' : ''} required.`
-              : `${signedCount} of ${docTotal} signed. ${docTotal - signedCount} signature${docTotal - signedCount > 1 ? 's' : ''} left.`}
+            {canSubmit
+              ? (docTotal === 1 ? t(subLangOf(signLang), 'progress.done1') : t(subLangOf(signLang), 'progress.doneN', { total: docTotal }))
+              : signedCount === 0
+                ? (docTotal === 1 ? t(subLangOf(signLang), 'progress.none1') : t(subLangOf(signLang), 'progress.noneN', { total: docTotal }))
+                : t(subLangOf(signLang), 'progress.some', { n: signedCount, total: docTotal, left: docTotal - signedCount })}
           </em>
         )}
       </span>
@@ -1360,7 +1386,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         onClick={canSubmit ? handleRemoteSubmit : goToRemaining}
         disabled={finalizing}
         className={canSubmit ? 'toolbar-print remote-submit' : 'remote-submit remote-submit-wait'}>
-        {finalizing ? '제출 중…' : '제출하기'}
+        {finalizing ? biLine(signLang, 'cta.submitting') : biLine(signLang, 'cta.submit')}
       </button>
     </div>
   )
@@ -1373,8 +1399,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: '#F1E6DA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A03C2E" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
           </div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8 }}>계약서가 제출되었습니다</div>
-          <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>이 링크는 닫혔습니다. 다시 열 수 없습니다.<br />이 창은 닫으셔도 됩니다.</p>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8, whiteSpace: 'pre-line' }}>{bi(signLang, 'done.title')}</div>
+          <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-line' }}>{bi(signLang, 'done.body')}</p>
         </div>
       </div>
     )
@@ -1402,10 +1428,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {/* 화면 전용 툴바 — 인쇄 시 숨김. 원격(remote)에선 운영 기능 없이 안내 문구만 */}
       {remote ? (
         <div className="no-print toolbar">
-          <span className="toolbar-status" style={{ color: 'var(--ink-s)', fontWeight: 400 }}>
-            {canSubmit
-              ? '서명이 모두 저장되었습니다. 아래 버튼으로 제출해 주세요.'
-              : '계약 내용을 확인한 뒤 하단 서명란을 눌러 서명해 주세요.'}
+          <span className="toolbar-status" style={{ color: 'var(--ink-s)', fontWeight: 400, whiteSpace: 'pre-line' }}>
+            {canSubmit ? bi(signLang, 'bar.allSaved') : bi(signLang, 'bar.readAndSign')}
           </span>
           <div className="toolbar-spacer" />
           {/* 제출은 흐름 안 CTA 하나로 모은다. 여기 disabled 버튼을 두면 서명자가 처음 보는
@@ -1812,7 +1836,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           §29 톤으로 조용히 선다(muted·작은 글씨·테두리 없음). 한 벌만 그려 라벨과 칸이 1대1로 묶인다. */}
       {canEnterNativeName && (
         <div className="no-print native-name">
-          <label htmlFor="native-name-input" className="native-name-lbl">본국 표기 이름 (선택)</label>
+          <label htmlFor="native-name-input" className="native-name-lbl" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'native.label')}</label>
           <input
             id="native-name-input"
             type="text"
@@ -1824,7 +1848,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             aria-describedby="native-name-hint"
             className="native-name-input"
           />
-          <p id="native-name-hint" className="native-name-hint">여권이나 본국 서류에 적힌 표기를 그대로 적어 주세요. 비워 두어도 됩니다.</p>
+          <p id="native-name-hint" className="native-name-hint" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'native.hint')}</p>
         </div>
       )}
       {/* 계약서 서명란 아래 제출 CTA */}
@@ -1902,6 +1926,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             attn={attn === sd.key}
             isLast={remote && remaining.length === 1 && remaining[0]?.key === sd.key}
             sigClearing={sigClearing}
+            // 종이 안 CTA 는 셋 다 한국어 단독이다. scale 0.46 에서 병기는 5.5px 라 글자로 성립하지
+            // 않는다. 언어 몫은 축소를 안 받는 진행 줄과 펜 픽토그램이 진다(디자이너 패스 2026-09-06).
+            signCtaLabel="여기를 눌러 서명"
             onSign={() => openSign(sd.key)}
             onClear={() => handleClearSignature(sd.key)}
             setRef={el => { customSignRefs.current[sd.key] = el }}
@@ -1911,6 +1938,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       ))}
 
       {/* 발급 용도 고르기 — 실계약이 이미 있는 계약에서만 선다. 카드를 고르면 확인 1회가 잇는다. */}
+      {langPick && (
+        <SignRequestLangPicker
+          defaultLang={langPick.def}
+          onPick={l => { langPick.resolve(l); setLangPick(null) }}
+          onClose={() => { langPick.resolve(null); setLangPick(null) }}
+        />
+      )}
       {purposePick && (
         <ContractIssuePurposePicker
           archiveCount={purposePick.count}
@@ -1923,9 +1957,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {remote && canSubmit && !signOpen && (
         <div className="no-print remote-pill anim-panel-in">
           <div className="remote-pill-inner">
-            <span className="remote-pill-text">모든 서명이 완료됐습니다</span>
+            <span className="remote-pill-text" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'pill.allDone')}</span>
             <button onClick={handleRemoteSubmit} disabled={finalizing} className="toolbar-print remote-submit">
-              {finalizing ? '제출 중…' : '제출하기'}
+              {finalizing ? biLine(signLang, 'cta.submitting') : biLine(signLang, 'cta.submit')}
             </button>
           </div>
         </div>
@@ -1937,10 +1971,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
-                <div className="sig-title">{signTarget === 'contract' ? '입실자 서명' : `${titleOf(signTarget)} 서명`}</div>
-                <div className="sig-sub">
+                <div className="sig-title" style={{ whiteSpace: 'pre-line' }}>{remote
+                  ? (signTarget === 'contract' ? bi(signLang, 'pad.titleContract') : bi(signLang, 'pad.titleDoc', { title: titleOf(signTarget) }))
+                  : (signTarget === 'contract' ? '입실자 서명' : `${titleOf(signTarget)} 서명`)}</div>
+                <div className="sig-sub" style={{ whiteSpace: 'pre-line' }}>
                   {remote
-                    ? `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'contract' ? '계약서' : titleOf(signTarget)} 서명이 적용됩니다.`
+                    ? bi(signLang, 'pad.subRemote', { title: signTarget === 'contract' ? t(subLangOf(signLang), 'doc.contract') : titleOf(signTarget) })
                     : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'contract' ? '계약서' : titleOf(signTarget)}에 서명이 표시됩니다 (발급은 다음 단계).`}
                 </div>
               </div>
@@ -1956,14 +1992,16 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             {signError && <div className="sig-error" role="alert">{signError}</div>}
             <div className="sig-actions">
               <button onClick={() => sigPadRef.current?.clear()} className="toolbar-btn-secondary">
-                지우기
+                {remote ? biLine(signLang, 'pad.clear') : '지우기'}
               </button>
               <div style={{ flex: 1 }} />
               <button onClick={() => setSignOpen(false)} className="toolbar-btn-secondary">
-                취소
+                {remote ? biLine(signLang, 'pad.cancel') : '취소'}
               </button>
               <button onClick={handleSignConfirm} disabled={remoteSubmitting} className="toolbar-print">
-                {remoteSubmitting ? '저장 중…' : '확인'}
+                {remoteSubmitting
+                  ? (remote ? biLine(signLang, 'pad.saving') : '저장 중…')
+                  : (remote ? biLine(signLang, 'pad.confirm') : '확인')}
               </button>
             </div>
           </div>

@@ -7,8 +7,10 @@ import { useRouter } from 'next/navigation'
 import { verifyShareBirthdate } from './actions'
 import { formatBirthdateDigits, digitsToIso, isValidBirthdate } from '@/lib/birthdate'
 import DocumentScroll from '@/components/layout/DocumentScroll'
+import { bi, biLine, type SignLang } from '@/lib/signGuideText'
 
-export default function BirthdateGate({ token }: { token: string }) {
+// lang: 링크 스냅샷에 박제된 안내 언어. 한국어 정본 줄 + 그 언어 부속 줄로 병기한다(bi 정본).
+export default function BirthdateGate({ token, lang = 'ko' }: { token: string; lang?: SignLang }) {
   const router = useRouter()
   // 화면에는 점 포맷("1970.09.28")을 보여주고, 서버에는 ISO("1970-09-28")를 보낸다.
   const [value, setValue] = useState('')
@@ -31,7 +33,7 @@ export default function BirthdateGate({ token }: { token: string }) {
       setError(res.error)
       setPending(false)
     } catch {
-      setError('확인에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      setError(bi(lang, 'gate.netFail'))
       setPending(false)
     }
   }
@@ -40,38 +42,37 @@ export default function BirthdateGate({ token }: { token: string }) {
     <div style={{ minHeight: '100dvh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <DocumentScroll />
       <form onSubmit={submit} style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: '28px 24px', boxShadow: '0 4px 24px -6px rgba(61,36,24,.28)', boxSizing: 'border-box' }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 6 }}>입실 계약서 확인</div>
-        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: '0 0 18px' }}>
-          본인 확인을 위해 생년월일을 입력해 주세요. 확인 후 계약 내용을 열람하고 서명할 수 있습니다.
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 6, whiteSpace: 'pre-line' }}>{bi(lang, 'gate.title')}</div>
+        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: '0 0 18px', whiteSpace: 'pre-line' }}>
+          {bi(lang, 'gate.hint')}
         </p>
-        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1F1A17', marginBottom: 6 }}>
-          생년월일
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1F1A17', marginBottom: 6, whiteSpace: 'pre-line' }}>
+          {bi(lang, 'gate.birthLabel')}
           <input
             type="text"
             inputMode="numeric"
             autoComplete="off"
             value={value}
             onChange={e => setValue(formatBirthdateDigits(e.target.value))}
-            placeholder="예: 19700928"
+            placeholder={biLine(lang, 'gate.placeholder')}
             required
             style={{ display: 'block', width: '100%', minWidth: 0, marginTop: 6, padding: '10px 12px', fontSize: 15, border: '1px solid #D8CFC4', borderRadius: 10, background: '#fff', color: '#1F1A17', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' }}
           />
         </label>
         {error && (
-          <p style={{ fontSize: 12.5, color: '#A03C2E', lineHeight: 1.5, margin: '10px 0 0' }}>{error}</p>
+          <p style={{ fontSize: 12.5, color: '#A03C2E', lineHeight: 1.5, margin: '10px 0 0', whiteSpace: 'pre-line' }}>{error}</p>
         )}
         <button
           type="submit"
           disabled={pending || !valid}
           style={{ width: '100%', marginTop: 16, padding: '11px 0', fontSize: 14, fontWeight: 600, color: '#fff', background: '#A03C2E', border: 0, borderRadius: 10, cursor: 'pointer', opacity: pending || !valid ? 0.6 : 1 }}
         >
-          {pending ? '확인 중…' : '확인'}
+          {pending ? biLine(lang, 'gate.submitting') : biLine(lang, 'gate.submit')}
         </button>
         {/* 입주자가 자기 정보를 직접 넣는 유일한 화면이다 — 무엇에 쓰이는지 그 자리에서 말한다.
             이 화면은 앱 셸 밖 단독 라우트라 스타일이 인라인이다(형제 문법 그대로). */}
-        <p style={{ fontSize: 11.5, color: '#6B5D4F', lineHeight: 1.6, margin: '14px 0 0' }}>
-          입력하신 생년월일은 본인 확인에만 쓰이고 따로 저장하지 않습니다. 계약서에 적힌 정보는
-          계약 체결과 이행을 위해 영업장이 보관합니다.
+        <p style={{ fontSize: 11.5, color: '#6B5D4F', lineHeight: 1.6, margin: '14px 0 0', whiteSpace: 'pre-line' }}>
+          {bi(lang, 'gate.privacy')}
         </p>
       </form>
     </div>

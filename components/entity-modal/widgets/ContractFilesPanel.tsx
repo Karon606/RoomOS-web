@@ -43,6 +43,8 @@ import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
+import { smsBodyFor, type SignLang } from '@/lib/signGuideText'
+import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
@@ -108,7 +110,7 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   // 원격 서명 링크 상태 (최신 링크 1건 + 문자 발송용 연락처·영업장명)
-  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean } | null>(null)
+  const [share, setShare] = useState<{ link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean; defaultSignLang: SignLang; foreignForDocuments: boolean } | null>(null)
   // 여러 판본 만들기 토글 — 안내 문구가 가리킬 길이 하나인지 둘인지 가른다.
   // 게이트가 아니라 문구용이다(진짜 게이트는 서버가 다시 본다). 못 읽으면 꺼진 것으로 본다.
   const [multiVersion, setMultiVersion] = useState(false)
@@ -130,9 +132,9 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   }
   const reloadShare = async () => {
     const res = await getContractShareState(tenantId)
-    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue, hasForeignRegNo: res.hasForeignRegNo })
+    if (res.ok) setShare({ link: res.link, phone: res.phone, propertyName: res.propertyName, needsIssue: res.needsIssue, hasForeignRegNo: res.hasForeignRegNo, defaultSignLang: res.defaultSignLang, foreignForDocuments: res.foreignForDocuments })
     // 실패해도 null 로 두지 않는다 — stage 가 판정을 못 해 주 버튼도 안내도 없는 회색 화면으로 굳는다
-    else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false }); pushToast('error', res.error) }
+    else { setShare({ link: null, phone: null, propertyName: '', needsIssue: false, hasForeignRegNo: false, defaultSignLang: 'ko', foreignForDocuments: false }); pushToast('error', res.error) }
   }
   // 토글은 영업장 값이라 입주자가 바뀌어도 같지만, 이 패널이 뜨는 시점에 한 번은 읽어야 한다.
   // 실패하면 꺼진 것으로 둔다 — 없는 버튼을 가리키는 안내보다 한 길만 말하는 안내가 낫다.
@@ -144,10 +146,16 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   // 목록 밖에서 용도가 바뀌면 다시 읽는다 — 발급 토스트의 적용취소가 그 자리다(§27.1).
   useEffect(() => subscribeContractFiles(() => { void reload() }), []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 안내 언어 피커 — 계약서 화면과 같은 프로미스 다리.
+  const [langPick, setLangPick] = useState<{ def: SignLang; resolve: (v: SignLang | null) => void } | null>(null)
+  const askSignLang = (def: SignLang) =>
+    new Promise<SignLang | null>(resolve => setLangPick({ def, resolve }))
+
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
-  const openSms = (url: string, phone: string, propertyName: string) => {
+  const openSms = (url: string, phone: string, propertyName: string, lang: SignLang) => {
     if (blockSmsIfStaging()) return
-    const body = `[${propertyName}] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. ${url}`
+    // 문자는 링크에 박제된 언어로 조립한다(smsBodyFor 정본). 한국어면 종전 문자와 글자까지 같다.
+    const body = smsBodyFor(lang, propertyName, url)
     const num = phone.replace(/[^0-9+]/g, '')
     const enc = encodeURIComponent(body)
     const isApple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
@@ -158,10 +166,17 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const handleShareSend = async () => {
     if (sharePending) return
     if (!(await confirmForeignRegNoLink(share?.hasForeignRegNo))) return
+    // 외국인 발급이면 안내 언어를 먼저 고른다(계약서 화면과 같은 판정 축·같은 피커).
+    let pickedLang: SignLang | undefined
+    if (share?.foreignForDocuments) {
+      const pick = await askSignLang(share.defaultSignLang)
+      if (!pick) return
+      pickedLang = pick
+    }
     setSharePending(true)
     const release = trackSave()
     try {
-      let res = await issueContractShareLink(tenantId, leaseTermId ?? null)
+      let res = await issueContractShareLink(tenantId, leaseTermId ?? null, pickedLang)
       // 받던 서명이 있으면 막다른 거절이 아니라 선택창이다(운영자 신고 09da7f29).
       // 이어받기는 옛 내용 그대로 보내고, 폐기는 받은 서명을 이력으로 옮긴 뒤 새로 시작한다.
       if (!res.ok && 'code' in res && res.code === 'SIGN_IN_PROGRESS') {
@@ -178,13 +193,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         } else {
           const cleared = await clearContractSignature(leaseTermId ?? '', 'all')
           if (!cleared.ok) { pushToast('error', humanError(cleared.error, '받던 서명을 정리하지 못했습니다.')); return }
-          res = await issueContractShareLink(tenantId, leaseTermId ?? null)
+          res = await issueContractShareLink(tenantId, leaseTermId ?? null, pickedLang)
         }
       }
       if (!res.ok) { pushToast('error', humanError(res.error, '서명 요청을 보내지 못했습니다.')); return }
       await reloadShare()
       if (!res.phone) { pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.'); return }
-      openSms(res.link.url, res.phone, res.propertyName)
+      openSms(res.link.url, res.phone, res.propertyName, res.link.lang)
     } finally { release(); setSharePending(false) }
   }
 
@@ -774,6 +789,13 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         </div>
       )}
       {detailId && <IssuedContractSheet fileId={detailId} onClose={() => setDetailId(null)} />}
+      {langPick && (
+        <SignRequestLangPicker
+          defaultLang={langPick.def}
+          onPick={l => { langPick.resolve(l); setLangPick(null) }}
+          onClose={() => { langPick.resolve(null); setLangPick(null) }}
+        />
+      )}
     </div>
   )
 }

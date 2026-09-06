@@ -11,17 +11,20 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import ContractView from '@/app/contract/[tenantId]/ContractView'
 import BirthdateGate from './BirthdateGate'
 import DocumentScroll from '@/components/layout/DocumentScroll'
+import { asSignLang, bi, type SignLang } from '@/lib/signGuideText'
 
 export const dynamic = 'force-dynamic'
 
-function InactiveNotice() {
+// lang: 링크 스냅샷의 안내 언어. 링크가 아예 없으면(행 없음) 알 수 없어 ko 기본 — 그때는
+// 한국어 + 영어 병기가 된다(bi 의 ko 부속 줄 규칙).
+function InactiveNotice({ lang = 'ko' }: { lang?: SignLang }) {
   return (
     <div style={{ minHeight: '100dvh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <DocumentScroll />
       <div style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 16, padding: '28px 24px', boxShadow: '0 4px 24px -6px rgba(61,36,24,.28)', boxSizing: 'border-box' }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 6 }}>사용할 수 없는 링크</div>
-        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>
-          링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 6, whiteSpace: 'pre-line' }}>{bi(lang, 'inactive.title')}</div>
+        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-line' }}>
+          {bi(lang, 'inactive.body')}
         </p>
       </div>
     </div>
@@ -29,7 +32,7 @@ function InactiveNotice() {
 }
 
 // 제출 완료(서명 후 링크 닫힘) — 재접속 시 계약서 대신 이 안내만 보인다.
-function SubmittedNotice() {
+function SubmittedNotice({ lang = 'ko' }: { lang?: SignLang }) {
   return (
     <div style={{ minHeight: '100dvh', background: '#E8DDD0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <DocumentScroll />
@@ -37,9 +40,9 @@ function SubmittedNotice() {
         <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: '#F1E6DA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A03C2E" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
         </div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8 }}>계약서가 제출되었습니다</div>
-        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0 }}>
-          이미 제출이 완료되어 더 이상 열 수 없습니다. 이 창은 닫으셔도 됩니다.
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#1F1A17', marginBottom: 8, whiteSpace: 'pre-line' }}>{bi(lang, 'submitted.title')}</div>
+        <p style={{ fontSize: 13, color: '#6B5D4F', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-line' }}>
+          {bi(lang, 'submitted.body')}
         </p>
       </div>
     </div>
@@ -54,14 +57,16 @@ export default async function SignPage({
   const { token } = await params
   const link = await prisma.contractShareLink.findUnique({ where: { token } })
   if (!link) return <InactiveNotice />
+  // 이 링크의 안내 언어 — 발급 때 스냅샷에 박제된 값이다. 옛 링크(키 없음)는 ko 로 읽는다.
+  const lang = asSignLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang) ?? 'ko'
   // 제출 확정으로 닫힌 링크 — '제출 완료' 안내.
   // 종전에는 `signedAt && (submittedAt || closedAt)` 이라, 서명만 하고 제출은 안 한 채 운영자가 닫은
   // 링크에도 "제출이 완료되어"라고 말했다(실데이터 07-20 건이 그 상태였다). 제출 여부로만 가른다.
-  if (link.submittedAt) return <SubmittedNotice />
-  if (link.closedAt || link.submittedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice />
+  if (link.submittedAt) return <SubmittedNotice lang={lang} />
+  if (link.closedAt || link.submittedAt || link.lockedAt || link.expiresAt <= new Date()) return <InactiveNotice lang={lang} />
 
   const cookieStore = await cookies()
-  if (!cookieStore.get(shareCookieName(link.id))) return <BirthdateGate token={token} />
+  if (!cookieStore.get(shareCookieName(link.id))) return <BirthdateGate token={token} lang={lang} />
 
   const data = link.templateSnapshot as unknown as ContractData
   // 외국인등록번호는 스냅샷에 없다. 24시간짜리 공개 링크가 여는 JSON 이라 평문을 담아 두지 않고
@@ -92,5 +97,5 @@ export default async function SignPage({
         Object.keys(docMarks).flatMap(k => sigs[k] ? [[k, sigs[k]]] : []))
     }
   }
-  return <ContractView data={data} mode="remote" shareToken={token} />
+  return <ContractView data={data} mode="remote" shareToken={token} signLang={lang} />
 }

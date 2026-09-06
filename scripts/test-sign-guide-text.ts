@@ -1,5 +1,5 @@
 // 안내 문안 사전 회귀 — 매핑·보간·병기·폴백을 진리표로 못박는다.
-import { SIGN_LANGS, asSignLang, signLangForNationality, t, bi, subLangOf } from '../lib/signGuideText'
+import { SIGN_LANGS, asSignLang, signLangForNationality, t, bi, subLangOf, smsBodyFor } from '../lib/signGuideText'
 
 let pass = 0
 const fails: string[] = []
@@ -21,7 +21,9 @@ eq('카자흐스탄은 ru(공용어)', signLangForNationality('카자흐스탄')
 eq('우즈베키스탄은 ru(공용어)', signLangForNationality('우즈베키스탄'), 'ru')
 eq('일본은 ja', signLangForNationality('일본'), 'ja')
 eq('중국은 zh', signLangForNationality('중국'), 'zh')
-eq('대만도 zh', signLangForNationality('대만'), 'zh')
+eq('대만은 번체', signLangForNationality('대만'), 'zht')
+eq('홍콩도 번체', signLangForNationality('홍콩'), 'zht')
+eq('번체 코드 통과', asSignLang('zht'), 'zht')
 eq('레바논은 en 폴백(RTL 미지원 결정)', signLangForNationality('레바논'), 'en')
 eq('모르는 외국 국적은 en', signLangForNationality('브라질'), 'en')
 
@@ -79,6 +81,19 @@ eq('그 밖은 제 언어', subLangOf('bn'), 'bn')
     }
   }
   if (ok) pass++
+}
+
+// ── 문자 본문. 한국어는 종전 문자와 글자 하나까지 같아야 한다 ──
+eq('한국어 문자는 종전 그대로',
+  smsBodyFor('ko', '더스테이', 'https://x/sign/t'),
+  '[더스테이] 입실 계약서입니다. 아래 링크에서 계약 내용을 확인하고 서명해 주세요. 확인을 위해 본인 생년월일 입력이 필요합니다. 제출하시면 링크는 닫히고, 제출 전이라도 24시간 뒤 만료됩니다. https://x/sign/t')
+{
+  const s = smsBodyFor('vi', '더스테이', 'https://x/sign/t')
+  const lines = s.split('\n')
+  eq('외국어 문자는 그 언어가 첫 줄', lines[0].startsWith('[더스테이] Hợp đồng'), true)
+  eq('한국어 정본이 둘째 줄', lines[1].startsWith('[더스테이] 입실 계약서입니다'), true)
+  eq('URL 은 맨 끝에 한 번', lines[2], 'https://x/sign/t')
+  eq('URL 이 본문에 중복되지 않는다', s.split('https://x/sign/t').length - 1, 1)
 }
 
 console.log(`\n안내 문안 사전 회귀: ${pass} 통과 / ${fails.length} 실패`)

@@ -9,10 +9,17 @@ import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
 import { missingSlots } from '@/lib/disposalSignGate'
 import { paperDocsOf, linkSignSlots, parseSignDocuments, parseDocumentSignatures, parseDocSignedAt, isValidDocKey } from '@/lib/signDocuments'
+import { asSignLang, bi, type SignLang } from '@/lib/signGuideText'
 import { asDocNameStyle } from '@/lib/documentName'
 
 // 비활성 사유(없음·만료·닫힘·잠김)는 열거 정보 노출 방지를 위해 동일한 일반 안내로 답한다.
-const INACTIVE_MSG = '링크가 만료되었거나 사용할 수 없습니다. 관리자에게 다시 요청해 주세요.'
+// 링크가 없거나 죽어 스냅샷을 못 읽는 자리라 언어를 모른다 — 한국어 + 영어 고정 병기다.
+const INACTIVE_MSG = bi('ko', 'inactive.body')
+
+/** 이 링크의 안내 언어 — 발급 때 스냅샷에 박제된 값. 옛 링크(키 없음)는 ko 다. */
+function langOf(link: { templateSnapshot: unknown }): SignLang {
+  return asSignLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang) ?? 'ko'
+}
 
 // 생년월일 확인 시도 한도. 기본은 5회지만, 외국인등록번호가 실린 계약서는 3회로 줄인다.
 // 게이트를 뚫었을 때 새는 것의 크기가 다르기 때문이다. 생년월일은 8자리이고 그중 앞자리는
@@ -51,7 +58,7 @@ export async function verifyShareBirthdate(
 
     if (!expected || expected !== input) {
       const maxAttempts = maxAttemptsFor(link.templateSnapshot)
-      const lockedMsg = `입력 오류가 ${maxAttempts}회가 되어 링크가 잠겼습니다. 관리자에게 다시 요청해 주세요.`
+      const lockedMsg = bi(langOf(link), 'err.locked', { n: maxAttempts })
       // 원자적 조건부 증가 — birthdateAttempts < MAX 인 행만 갱신(적대검증 P1: read-then-increment 경합으로
       // 동시 요청이 잠금 전에 한도를 넘겨 전수 대입하던 창을 없앤다). 갱신행 0 = 이미 한도 도달 = 잠금.
       const bumped = await prisma.contractShareLink.updateMany({
@@ -69,7 +76,7 @@ export async function verifyShareBirthdate(
         await prisma.contractShareLink.updateMany({ where: { id: link.id, lockedAt: null }, data: { lockedAt: new Date() } })
         return { ok: false, error: lockedMsg }
       }
-      return { ok: false, error: `생년월일이 일치하지 않습니다. 남은 시도 ${maxAttempts - used}회.` }
+      return { ok: false, error: bi(langOf(link), 'err.birthMismatch', { n: maxAttempts - used }) }
     }
 
     // 통과 — httpOnly HMAC 쿠키 발급. 유지시간 = min(2시간, 링크 남은 TTL)
@@ -84,7 +91,7 @@ export async function verifyShareBirthdate(
     })
     return { ok: true }
   } catch {
-    return { ok: false, error: '확인에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
+    return { ok: false, error: bi('ko', 'gate.netFail') }
   }
 }
 
@@ -101,7 +108,7 @@ export async function submitRemoteSignature(
 
     const cookieStore = await cookies()
     if (!cookieStore.get(shareCookieName(link.id))) {
-      return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
+      return { ok: false, error: bi(langOf(link), 'err.cookieExpired') }
     }
     // 추가 서류 key 는 **이 링크의 스냅샷에 실린 것**만 받는다. 그 종이에 없는 서류의 서명을
     // 받으면 어디에도 그릴 수 없는 고아 데이터가 쌓인다. 라이브 설정을 안 보는 이유 — 링크가
@@ -111,25 +118,25 @@ export async function submitRemoteSignature(
       parseSignDocuments((link.templateSnapshot as { signDocuments?: unknown } | null)?.signDocuments).map(d => d.key))
     const isCustomTarget = target !== 'contract' && target !== 'disposal'
     if (isCustomTarget && !(isValidDocKey(target) && snapDocKeys.has(target))) {
-      return { ok: false, error: '잘못된 요청입니다.' }
+      return { ok: false, error: bi(langOf(link), 'err.badRequest') }
     }
     // 'data:image/' 접두만 보면 data:image/svg+xml 이 통과해 서명란에 임의 벡터(위조 도장 등)를
     // 심을 수 있다. 손글씨 서명 캔버스가 만드는 래스터 두 종만 허용한다(E페이즈 2026-08-03).
     if (typeof dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(dataUrl)) {
-      return { ok: false, error: '서명 이미지가 올바르지 않습니다.' }
+      return { ok: false, error: bi(langOf(link), 'err.badImage') }
     }
     // 서명 이미지 크기 상한(적대검증 P2) — 세션 보유자가 임의 대형 문자열을 저장·PDF 에 투입하는 것 차단.
     // React 서버 액션 인자 디코더가 문자열 1,000,000 자에서 먼저 던지므로 그 아래에 사람 말 문을 둔다.
     // 종전 1_400_000 은 그 문보다 높아 1.0M~1.4M 구간에서 사람 말 대신 프레임워크 영어 오류가 났다.
     // 손글씨 서명은 수백 KB 이내라 여유가 크다(2026-09-03).
-    if (dataUrl.length > 900_000) return { ok: false, error: '서명 이미지가 너무 큽니다. 다시 서명해 주세요.' }
+    if (dataUrl.length > 900_000) return { ok: false, error: bi(langOf(link), 'err.imageTooLarge') }
 
     // 잔여 소지품 동의서 서명은 그 영업장이 동의서를 켠 경우에만(적대검증 P2 — 서버 검사).
     // UI 는 이미 enabled 일 때만 패드를 그리지만, 액션 직접 호출로 비활성 영업장에 데이터가 쌓이는 것 차단.
     if (target === 'disposal') {
       const prop = await prisma.property.findUnique({ where: { id: link.propertyId }, select: { disposalConsentTemplate: true } })
       const dc = prop?.disposalConsentTemplate as { enabled?: boolean } | null
-      if (!dc?.enabled) return { ok: false, error: '이 영업장은 잔여 소지품 동의서를 사용하지 않습니다.' }
+      if (!dc?.enabled) return { ok: false, error: bi(langOf(link), 'err.disposalOff') }
     }
 
     const now = new Date()
@@ -205,7 +212,7 @@ export async function submitRemoteSignature(
     ])
     return { ok: true }
   } catch {
-    return { ok: false, error: '서명 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
+    return { ok: false, error: bi('ko', 'err.saveFail') }
   }
 }
 
@@ -224,10 +231,10 @@ export async function finalizeRemoteSubmission(
 
     const cookieStore = await cookies()
     if (!cookieStore.get(shareCookieName(link.id))) {
-      return { ok: false, error: '본인 확인이 만료되었습니다. 페이지를 새로고침해 생년월일을 다시 입력해 주세요.' }
+      return { ok: false, error: bi(langOf(link), 'err.cookieExpired') }
     }
     // 계약서 서명이 이미 저장돼 있어야 제출 가능.
-    if (!link.signedAt) return { ok: false, error: '먼저 서명을 완료해 주세요.' }
+    if (!link.signedAt) return { ok: false, error: bi(langOf(link), 'err.signFirst') }
     // 동의서도 서버가 본다. 종전에는 이 검사가 클라이언트 canSubmit 에만 있어서, 액션을 직접 부르면
     // 반쪽 서명으로 제출이 통과했다. 판정 축은 canSubmit 과 같은 것(발급 시점 스냅샷)을 쓴다 —
     // 라이브 설정을 보면 링크가 나간 뒤 영업장이 동의서를 끄고 켤 때 두 자리가 서로 물린다.
@@ -236,10 +243,10 @@ export async function finalizeRemoteSubmission(
     const left = missingSlots({ slots: linkSignSlots(paperDocsOf(link.templateSnapshot), link) })
       .filter(x => x.key !== 'contract')   // 계약서는 위에서 이미 제 문구로 걸렀다
     if (left.some(x => x.key === 'disposal')) {
-      return { ok: false, error: '동의서 서명이 아직 없습니다. 동의서 서명란에 서명한 뒤 제출해 주세요.' }
+      return { ok: false, error: bi(langOf(link), 'err.disposalLeft') }
     }
     if (left.length > 0) {
-      return { ok: false, error: `'${left[0].title}' 서명이 아직 없습니다. 그 서류의 서명란에 서명한 뒤 제출해 주세요.` }
+      return { ok: false, error: bi(langOf(link), 'err.docLeft', { title: left[0].title }) }
     }
 
     // 본국 표기 이름 — **비어 있을 때만** 채운다.
@@ -275,6 +282,6 @@ export async function finalizeRemoteSubmission(
 
     return { ok: true }
   } catch {
-    return { ok: false, error: '제출에 실패했습니다. 잠시 후 다시 시도해 주세요.' }
+    return { ok: false, error: bi('ko', 'err.submitFail') }
   }
 }
