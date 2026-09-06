@@ -384,5 +384,27 @@ const signedLease: VoidableLease = {
   eq('옛 이력 복원은 커스텀이 null', restoredFieldsFrom(legacy).documentSignatures, null)
 }
 
+// ── 자필 기명 왕복 (오류신고 cdda7787 2단계) ────────────────
+{
+  const withName: VoidableLease = {
+    signatureImageUrl: 'data:image/png;base64,AA', signatureSignedAt: SIGNED_AT,
+    disposalSignatureImageUrl: null, disposalSignatureSignedAt: null,
+    documentSignatures: null,
+    nativeNameImageUrl: 'data:image/png;base64,NAME', nativeNameImageSignedAt: SIGNED_AT,
+    signedContractSnapshot: null, contractFieldOverrides: null, contractOverride: null,
+  }
+  const e = buildVoidedVersion({ lease: withName, fileIds: [], closedLinkIds: [], voidedAt: new Date('2026-09-07T01:00:00Z'), voidedBy: null, reason: 't' })
+  eq('이력이 자필 기명을 담는다', e.nativeNameImage?.image, 'data:image/png;base64,NAME')
+  const back = restoredFieldsFrom(e)
+  eq('되돌리기가 자필 기명을 살린다', back.nativeNameImageUrl, 'data:image/png;base64,NAME')
+  eq('시각도 왕복', back.nativeNameImageSignedAt?.toISOString(), SIGNED_AT.toISOString())
+  // 옛 이력(칸 없음)은 null 복원 — 없던 기명이 생겨나지 않는다.
+  const legacy = { ...e }
+  delete (legacy as { nativeNameImage?: unknown }).nativeNameImage
+  eq('옛 이력 복원은 기명 null', restoredFieldsFrom(legacy).nativeNameImageUrl, null)
+  // 기명만 있고 서명이 없으면 폐기 대상이 아니다 — 기명은 내용 의존이 아니라 잠금·폐기 사유가 아니다.
+  eq('기명만으로는 폐기 대상 아님', hasVoidableVersion({ ...withName, signatureImageUrl: null, signatureSignedAt: null }), false)
+}
+
 console.log(`\n계약서 버전 폐기 회귀: ${pass} 통과 / ${fail} 실패`)
 if (fail > 0) process.exit(1)

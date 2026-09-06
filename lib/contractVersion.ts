@@ -51,6 +51,8 @@ export type VoidedContractVersion = {
    * 이 칸이 생기기 전 이력에는 없다(undefined). 그때 커스텀 서명은 존재하지 않았으니 참이다.
    */
   documentSignatures?: unknown
+  /** 그때의 본국어 성명 자필 기명(dataURL·시각). v 안 올림 — kind 와 같은 규칙. */
+  nativeNameImage?: { image: string | null; signedAt: string | null }
   /** 서명 시점 본문 격리본(lib/contract SignedContractSnapshot) 그대로 */
   signedContractSnapshot: unknown
   /** 그때의 표시값 오버라이드·본문 오버라이드 사본 — 되돌리기가 폐기 직전 상태를 정확히 복원한다 */
@@ -71,6 +73,9 @@ export type VoidableLease = {
   // 필수 칸이다 — 옵셔널이면 select 에서 빠져도 조용히 {} 로 읽혀, 커스텀 서명만 있는 버전이
   // '폐기할 것 없음'으로 새 나간다(증거 파괴가 침묵하는 정확히 그 길).
   documentSignatures: unknown
+  // 자필 기명 둘도 필수 — 같은 이유(select 누락이 침묵하면 폐기가 기명을 이력 없이 지운다).
+  nativeNameImageUrl: string | null
+  nativeNameImageSignedAt: Date | null
   signedContractSnapshot?: unknown
   contractFieldOverrides?: unknown
   contractOverride?: unknown
@@ -171,6 +176,10 @@ export function buildVoidedVersion(input: {
     },
     // 추가 서류 서명도 그대로 옮긴다. 빠지면 폐기가 이 서명들만 조용히 지우는 문이 된다.
     documentSignatures: l.documentSignatures ?? null,
+    nativeNameImage: {
+      image: l.nativeNameImageUrl,
+      signedAt: l.nativeNameImageSignedAt ? l.nativeNameImageSignedAt.toISOString() : null,
+    },
     signedContractSnapshot: l.signedContractSnapshot ?? null,
     contractFieldOverrides: l.contractFieldOverrides ?? null,
     contractOverride: l.contractOverride ?? null,
@@ -200,6 +209,8 @@ export type RestoredVersionFields = {
   disposalSignatureImageUrl: string | null
   disposalSignatureSignedAt: Date | null
   documentSignatures: unknown
+  nativeNameImageUrl: string | null
+  nativeNameImageSignedAt: Date | null
   signedContractSnapshot: unknown
   contractFieldOverrides: unknown
   contractOverride: unknown
@@ -218,6 +229,8 @@ export function restoredFieldsFrom(e: VoidedContractVersion): RestoredVersionFie
     disposalSignatureImageUrl: e.signature?.disposalImage ?? null,
     disposalSignatureSignedAt: at(e.signature?.disposalSignedAt ?? null),
     documentSignatures: e.documentSignatures ?? null,
+    nativeNameImageUrl: e.nativeNameImage?.image ?? null,
+    nativeNameImageSignedAt: at(e.nativeNameImage?.signedAt ?? null),
     signedContractSnapshot: e.signedContractSnapshot ?? null,
     contractFieldOverrides: e.contractFieldOverrides ?? null,
     contractOverride: e.contractOverride ?? null,

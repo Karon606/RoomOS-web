@@ -210,6 +210,9 @@ export type ContractData = {
     // 링크 발급 가드가 stage none 을 요구하므로 링크 스냅샷에 실릴 때는 항상 빈 맵이다 —
     // 스냅샷이 서명 이미지로 무거워지는 일은 구조적으로 없다.
     documentSignatures: Record<string, { image: string; signedAt: string }>
+    // 본국어 성명 자필 기명(dataURL) — 서명란 아래 한 줄. 링크 스냅샷에 실릴 때는 발급 가드
+    // (stage none)로 항상 비어 있어 무겁지 않다.
+    nativeNameImageUrl: string | null
   } | null
   // 이 계약에 딸린 계약들(합본 계약서). 종속이 없으면 빈 배열이고 화면·인쇄는 아무 행도 안 그린다.
   subLeases: ContractSubLease[]
@@ -419,6 +422,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
       signatureSignedDate: kstOrNull((lease as { signatureSignedAt?: Date | null }).signatureSignedAt),
       disposalSignatureSignedDate: kstOrNull((lease as { disposalSignatureSignedAt?: Date | null }).disposalSignatureSignedAt),
       documentSignatures: parseDocumentSignatures((lease as { documentSignatures?: unknown }).documentSignatures),
+      nativeNameImageUrl: (lease as { nativeNameImageUrl?: string | null }).nativeNameImageUrl ?? null,
     } : null,
     // 발급 대상 상태(CONTRACT_ISSUE_STATUSES) 안에서만 찾는다 — 끝난 종속 계약은 종이에 안 실린다.
     subLeases: contractSubLeases(tenant.leaseTerms, lease?.id),

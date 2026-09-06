@@ -69,6 +69,8 @@ export type PrintContractData = {
   signDocuments?: Array<{ key: string; title: string; body: string }>
   documentSignatures?: Record<string, { image: string; signedAt: string }>
   disposalSignatureImageDataUrl?: string | null  // 동의서 별도 서명 (없으면 '(서명 또는 인)')
+  // 본국어 성명 자필 기명(dataURL) — 임차인 서명 줄 아래 한 줄. 없으면 문자 하나 안 붙는다.
+  nativeNameImageDataUrl?: string | null
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -470,6 +472,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
               ? `<img class="sign-img" src="${d.signatureImageDataUrl}" alt="서명" />`
               : `<span class="seal-mark">(서명)</span>`}</span>
           </div>
+          ${d.nativeNameImageDataUrl ? `<div class="sign-line native-sign-line">
+            <span class="lbl">본국어 성명(자필)</span>
+            <span class="seal-wrap"><img class="sign-img" src="${d.nativeNameImageDataUrl}" alt="본국어 성명 자필" style="height:9mm;max-width:45mm" /></span>
+          </div>` : ''}
         </div>
         <div class="sign-col">
           <div class="sign-role">임대인 (사업자)</div>
