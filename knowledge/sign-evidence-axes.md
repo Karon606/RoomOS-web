@@ -16,14 +16,25 @@
 **한 계약에 누적된다.** 다만 영속이 아니다 — 재서명 때 함께 null 이 된다
 (`signedContractSnapshot` 주석 참조, prisma/schema.prisma 서명 네 칸).
 
-## 어느 자리가 무엇을 읽는가 (2026-09-06 현재)
+## 어느 자리가 무엇을 읽는가 (2026-09-06 통일 후)
 
-| 자리 | 축 |
-|---|---|
-| 발급 대기 `app/(app)/contracts/actions.ts` `sigState` | 계약 축 |
-| 홈 알림 `app/(app)/dashboard/alerts.ts` | 링크 축 |
-| 계약서 패널 배지 `components/entity-modal/widgets/ContractFilesPanel.tsx` | 링크 축 |
-| 서명 화면 `app/contract/[tenantId]/ContractView.tsx` | 화면 상태(그 화면에서 받은 서명) |
+**원칙 한 줄. 서명 진행(stage)은 어디서든 계약 축으로 세고, 링크 축은 링크 수명과
+입주자 표면에만 쓴다.**
+
+| 자리 | 축 | 왜 |
+|---|---|---|
+| 발급 대기 `app/(app)/contracts/actions.ts` | 계약 축 | 발급하면 어떤 종이가 나오나 |
+| 홈 알림 `app/(app)/dashboard/alerts.ts` | 계약 축 | '발급 필요'는 계약에 대한 주장 |
+| 계약서 패널 배지 `ContractFilesPanel.tsx` | 계약 축 (서버가 판정해 내려줌) | 같은 이유 |
+| 홈 알림의 침묵 판정 `signAlertDue` | 링크 축 | 입주자 손에 있는 것은 그 링크다 |
+| /sign 제출 게이트 | 링크 축 | 입주자 앞의 종이는 그 링크의 스냅샷이다 |
+| 재발급 가드 `stageOf` | 계약 축 | 이 계약에 이미 받은 서명이 있나 |
+
+배지는 서버가 판정한다. 서명이 dataURL 이라 **클라이언트로 내려보내지 않는다.**
+`ContractShareLinkInfo.signStage` · `signSummary` 가 그 결과다.
+
+`serializeLink` 는 계약 서명 칸을 **기본값 없는 필수 인자**로 받는다. 타입이 호출부를
+강제해 "어느 호출부는 계약을 읽고 어느 호출부는 안 읽는" 갈림이 다시 안 생긴다.
 
 ## 실측 (운영 DB, 2026-09-06)
 
@@ -50,11 +61,40 @@
 제3 서류(D2)가 붙으면 이 분열이 그대로 N배가 된다. `documentSignatures`(계약 쪽)와
 `docSignedAt`(링크 쪽)을 둘 다 두는 원안이 정확히 이 두 축을 다시 만드는 모양이다.
 
-## 아직 안 정한 것
+## 정본 함수 (lib/signDocuments.ts)
 
-- 화면마다 어느 축이 맞는지. 물음이 다르면 정본 함수도 물음별로 나뉘어야 한다.
-- 갈리는 15건을 백필할 것인지. 데이터 수정은 운영자 승인 건만 한다.
-- `check-sign-progress-axis.mjs` 의 ⓖ 는 세 자리가 `templateSnapshot` 을 읽는지만 보고
-  **서명 출처가 같은지는 안 본다.** 그 그물을 세울 수 있는지.
+```
+paperDocsOf(templateSnapshot)   그 종이에 붙는 서류 목록. 라이브 설정이 아니라 스냅샷이다
+leaseSignSlots(docs, lease)     계약 축
+linkSignSlots(docs, link)       링크 축
+```
+
+단계·문구는 D1 의 `signStageSlots` · `missingSlots` · `signProgressLabelSlots` 가 받는다.
+배지 전용 짧은 요약은 `badgeSignSummary`(완료·대기는 null 을 주고 부르는 쪽이 말한다).
+
+## 백필은 안 했다
+
+저장값은 두 축 다 참이다. 링크 행은 그 링크의 사건을, 계약은 쌓인 서명을 정확히 적고 있었다.
+**거짓말은 데이터가 아니라 읽는 자리에 있었다.** 코드 교체로 잠복 10건의 해석이 그 자리에서
+바로잡혔다.
+
+배포 전에 실DB 로 전후를 대조해 **지금 화면에 뜨는 건의 판정 변화 0건**을 증명했다
+(`scripts/check-sign-axis-shift.ts`, `verify:db` 등록). 이 스크립트는 앞으로도 축을 건드릴 때
+같은 증명을 낸다.
+
+## 그물
+
+`check-sign-progress-axis.mjs` 에 축 봉인이 들어갔다. 표시 세 자리가 `leaseSignSlots` 를
+부르는가, 배지 함수 **본문 안**에 `link.signedAt`·`link.disposalSignedAt` 이 없는가.
+
+그물을 세우다 그물 자체의 결함을 둘 찾았다. 하나는 `catch` 유무를 거리(1400자)로 재던 것이고
+(주석 몇 줄에 밀려 헛경보), 다른 하나는 함수 본문을 뜬다면서 **반환 타입 주석**을 잡던 것이다
+(`function f(): { a: string } {` 에서 첫 `{` 는 본문이 아니다). 둘 다 구조 기반으로 고쳤다.
+
+## 아직 안 밝힌 것
+
+링크는 서명 완료인데 계약에 서명 이미지가 없는 3건(지한 모하마드 이스맘 호세인·한희규·김상혁).
+셋 다 발급본은 있다. **어느 경로에서 이미지가 비워지는지 확인하지 못했다.** 계약 축이 none 이라
+알림은 침묵하므로 급하지 않지만, 증거가 어디 있는지는 따로 확인할 일이다.
 
 관련: [[domain-contracts]], [[domain-contract-archive]]

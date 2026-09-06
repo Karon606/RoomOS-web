@@ -24,7 +24,7 @@ import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseA
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
-import { disposalSignatureMissing, signStage, missingSignatures } from '@/lib/disposalSignGate'
+import { disposalSignatureMissing, signStage, missingSignatures, toSlots } from '@/lib/disposalSignGate'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { bodyLockMessage, fieldLockMessage, signDateLockMessage } from '@/lib/contractLockMessage'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
@@ -696,7 +696,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // setTimeout 클로저는 그때의 signOpen 옛 값을 잡으므로 ref 로 현재값을 본다.
   const signOpenRef = useRef(false)
   // 확인창은 세션당 한 번뿐이다. 재서명(1에서 1로)은 전이가 아니라 안 띄운다.
-  const askedRef = useRef(false)
+  // 남은 서명 확인창을 **몇 건 서명한 시점에** 띄웠는지. boolean 이 아닌 이유가 있다.
+  //
+  // 세션당 한 번이면 서류가 둘일 때는 "남은 게 있을 때 딱 한 번"과 같은 뜻이었다. 셋이 되면
+  // 다르다 — 1번을 마치면 뜨고, 2번을 마치면 아직 하나 남았는데 침묵한다. 그 사람은
+  // "확인창도 안 뜨네, 끝났나 보다"가 된다. 2026-09-03 사고의 심리가 그대로 재현되는 길이다.
+  // 서명 수가 실제로 늘 때마다 한 번씩 띄우고, 재서명(수가 그대로)에는 안 띄운다.
+  const askedAtRef = useRef(-1)
   const [signOpen, setSignOpen]       = useState(false)
   useEffect(() => { signOpenRef.current = signOpen }, [signOpen])
   // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시.
@@ -833,16 +839,22 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         // 이 페이지는 핀치줌을 열어 둬서 fixed 토스트가 확대 중에는 시야 밖에서 떴다 사라진다
         // (knowledge/mobile-scroll-viewport, 신고 d9f93bdd). 계약서를 확대해 읽은 사람에게는
         // 안내가 아예 없었던 셈이다. 그것이 두 사람이 한쪽만 서명하고 나간 경위다(2026-09-04).
-        const otherSigned = signTarget === 'disposal' ? !!signatureDataUrl : !!disposalSignatureDataUrl
-        const stillLeft = data.disposalConsent.enabled && !otherSigned
-        // 방금 이 서명이 들어간 것까지 반영한 진행 — 상태 갱신은 아직 커밋 전이라 손으로 센다.
-        const leftKey: 'contract' | 'disposal' = signTarget === 'disposal' ? 'contract' : 'disposal'
-        const docCount = data.disposalConsent.enabled ? 2 : 1
-        const signedNow = docCount - (stillLeft ? 1 : 0)
+        // 방금 이 서명이 들어간 것까지 반영한 진행. 상태 갱신이 아직 커밋 전이라 이번 서명만
+        // 손으로 얹고, **세는 것은 정본에 맡긴다.** 종전 식은 `총계 - (남았으면 1)` 이라
+        // 서류가 셋이면 하나만 서명해도 2 를 냈다 — 2 에 못박힌 산술이었다.
+        const afterSlots = toSlots({
+          disposalEnabled: data.disposalConsent.enabled,
+          hasContractSignature: signTarget === 'contract' ? true : !!signatureDataUrl,
+          hasDisposalSignature: signTarget === 'disposal' ? true : !!disposalSignatureDataUrl,
+        }, DOC_TITLE.disposal)
+        const leftSlots = afterSlots.filter(x => !x.signed)
+        const stillLeft = leftSlots.length > 0
+        const docCount = afterSlots.length
+        const signedNow = docCount - leftSlots.length
         if (!stillLeft) {
           pushToast('success', signTarget === 'disposal' ? '동의서 서명이 입력되었습니다' : '서명이 입력되었습니다')
-        } else if (!askedRef.current) {
-          askedRef.current = true
+        } else if (askedAtRef.current !== signedNow) {
+          askedAtRef.current = signedNow
           // 반 박자 뒤에 띄운다. 서명 모달이 닫히며 종이에 자기 글씨가 나타나는 순간이 이 화면의
           // 유일한 보상인데, 그것을 확인창으로 덮으면 "서명이 취소됐나"로 읽힌다.
           setTimeout(() => {
@@ -850,11 +862,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             void confirmDialog({
               // 남은 서류를 판정 정본에 묻는다. 종전에는 '내가 방금 서명한 것의 반대쪽'을
               // 손으로 뒤집었는데, 그 셈은 서류가 셋이 되는 순간 조용히 틀린 이름을 부른다.
-              title: `서명 ${signedNow} / ${docCount} · ${DOC_TITLE[leftKey]}가 남았습니다`,
+              // 남은 것이 둘 이상이면 이름을 나열하지 않는다 — 제목 한 줄이 못 읽게 길어진다.
+              title: leftSlots.length === 1
+                ? `서명 ${signedNow} / ${docCount} · ${leftSlots[0].title}가 남았습니다`
+                : `서명 ${signedNow} / ${docCount} · ${leftSlots.length}장 남았습니다`,
               // 두 언어를 빈 줄로 가른다. 한 문단으로 붙어 있으면 한국어를 못 읽는 사람이
               // 자기가 읽을 줄이 어디서 시작하는지 곁눈으로 못 찾는다 — 이 확인창의 존재 이유가
               // 그 사람이다. whitespace-pre-line 이 빈 줄을 그대로 그린다.
-              message: '이 링크에는 서류가 두 장 있습니다. 남은 한 장에 서명해야 제출할 수 있습니다.\n\n1 of 2 signed. This link has 2 documents. Sign the remaining one to submit.',
+              message: `이 링크에는 서류가 ${docCount}장 있습니다. 남은 ${leftSlots.length}장에 서명해야 제출할 수 있습니다.\n\n${signedNow} of ${docCount} signed. This link has ${docCount} documents. Sign the remaining ${leftSlots.length} document${leftSlots.length > 1 ? 's' : ''} to submit.`,
               confirmLabel: '서명하러 가기',
               cancelLabel: '',
             }).then(() => goToRemaining())
@@ -912,8 +927,16 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const DOC_TITLE: Record<'contract' | 'disposal', string> = { contract: '입실계약서', disposal: '동의서' }
   // 서류가 둘인 화면인가. 하나뿐이면 아래 안내 장치가 전부 꺼진다 — 내국인 단일 서명 계약자
   // 전원이 없던 안내를 받으면 그것이 소음이다.
-  const twoDocs = remote && data.disposalConsent.enabled
-  const signedCount = (signatureDataUrl ? 1 : 0) + (disposalSignatureDataUrl ? 1 : 0)
+  // 이 화면에 선 서류와 그중 서명된 수. **정본이 센다.**
+  // 종전에는 화면이 `enabled ? 2 : 1` 로 따로 셌는데, toSlots 는 '꺼진 영업장이라도 이미 받아
+  // 둔 서명이 있으면 슬롯을 세운다'는 예외를 알고 그 식은 몰랐다. 두 계산이 갈리면 화면이
+  // '서명 1 / 1 · 남은 서명 0곳' 같은 거짓말을 한다.
+  //
+  // 종전의 twoDocs 는 '서류가 둘인가'였고 그 하나가 영문 안내·마지막 강조·진행 점을 전부
+  // 쥐고 있었다. 개수와 무관한 것까지 묶여 있어 서류가 하나인 영업장에서 결함이 됐다.
+  const docSlots = toSlots(signState, DOC_TITLE.disposal)
+  const docTotal = docSlots.length
+  const signedCount = docSlots.filter(x => x.signed).length
   const remaining = missingSignatures(signState)
   /**
    * 남은 서명란으로 데려간다. **사용자가 눌렀을 때만 부른다.**
@@ -1151,20 +1174,28 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 남은 서명란으로 데려간다. 회색이던 버튼이 코랄로 켜지는 전환 자체가 텍스트 없는 신호다.
   const inflowSubmitCta = !remote ? null : (
     <div className="no-print remote-cta">
-      {twoDocs && (
+      {/* 막대는 서류 장수만큼 그린다. 하나뿐이면 안 그린다 — 점 하나짜리 진행바는 진행이 아니라
+          장식이라 오히려 뜻을 흐린다. 채움과 빔은 색이 아니라 형태로 갈린다(색각 이상 대비). */}
+      {remote && docTotal > 1 && (
         <span className="sig-progress" aria-hidden="true">
-          <i className={signedCount >= 1 ? 'on' : ''} />
-          <i className={signedCount >= 2 ? 'on' : ''} />
+          {Array.from({ length: docTotal }, (_, i) => <i key={i} className={signedCount > i ? 'on' : ''} />)}
         </span>
       )}
       <span className="remote-cta-text" aria-live="polite">
-        {!twoDocs ? (canSubmit ? '서명이 완료됐습니다.' : '서명해 주세요.')
-          : canSubmit ? '서명 2 / 2 · 모두 완료됐습니다.'
-          : signedCount === 1 ? '서명 1 / 2 · 아직 하나 남았습니다.'
-          : '서명 0 / 2 · 두 곳에 서명해 주세요.'}
-        {twoDocs && (
+        {canSubmit
+          ? (docTotal === 1 ? '서명이 완료됐습니다.' : `서명 ${docTotal} / ${docTotal} · 모두 완료됐습니다.`)
+          : signedCount === 0
+            ? (docTotal === 1 ? '서명해 주세요.' : `서명 0 / ${docTotal} · ${docTotal}곳에 서명해 주세요.`)
+            : `서명 ${signedCount} / ${docTotal} · ${docTotal - signedCount}곳 더 서명해 주세요.`}
+        {/* 영문 안내는 **서류 개수와 무관하다.** 종전에는 twoDocs 에 묶여 있어 동의서를 안 쓰는
+            영업장의 외국인 입주자가 이 화면에서 영어를 한 줄도 못 봤다(한국어 다섯 글자가 전부).
+            서류가 하나여도 한글을 못 읽는 사람은 그대로 있다. 수사를 안 쓰고 숫자만 남겨
+            서류가 몇 장이든 문법이 안 깨지게 한다. */}
+        {remote && (
           <em className="en">
-            {canSubmit ? '2 of 2 signed.' : signedCount === 1 ? '1 of 2 signed. One signature left.' : '0 of 2 signed. Two signatures required.'}
+            {canSubmit ? `${docTotal} of ${docTotal} signed.`
+              : signedCount === 0 ? `0 of ${docTotal} signed. ${docTotal} signature${docTotal > 1 ? 's' : ''} required.`
+              : `${signedCount} of ${docTotal} signed. ${docTotal - signedCount} signature${docTotal - signedCount > 1 ? 's' : ''} left.`}
           </em>
         )}
       </span>
@@ -1580,7 +1611,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                       {/* 펜은 "여기 쓰라"는 전 세계 공용 픽토그램이다. 한국어를 못 읽는 서명자가
                           많아 텍스트에만 기댈 수 없다(운영자 오더 2026-09-04). */}
                       <button type="button" ref={contractSignRef as never} onClick={() => openSign('contract')}
-                        className={`no-print sign-cta${attn === 'contract' ? ' attn' : ''}${twoDocs && remaining.length === 1 && remaining[0] === 'contract' ? ' last' : ''}`}
+                        className={`no-print sign-cta${attn === 'contract' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0] === 'contract' ? ' last' : ''}`}
                         style={{ padding: '6px 14px', fontSize: 13 }}>
                         <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                         여기를 눌러 서명
@@ -1680,7 +1711,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               ) : (
                 <>
                   <button type="button" ref={disposalSignRef as never} onClick={() => openSign('disposal')}
-                    className={`no-print sign-cta${attn === 'disposal' ? ' attn' : ''}${twoDocs && remaining.length === 1 && remaining[0] === 'disposal' ? ' last' : ''}`}
+                    className={`no-print sign-cta${attn === 'disposal' ? ' attn' : ''}${remote && remaining.length === 1 && remaining[0] === 'disposal' ? ' last' : ''}`}
                     style={{ padding: '5px 12px', fontSize: 12 }}>
                     <svg className="pen" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                     여기를 눌러 서명
