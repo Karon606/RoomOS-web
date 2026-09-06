@@ -76,7 +76,7 @@ const asDate = (v: unknown): string | undefined => {
   return v
 }
 
-const asDueDay = (v: unknown): string | undefined => {
+export const asDueDay = (v: unknown): string | undefined => {
   if (typeof v !== 'string') return undefined
   const t = v.trim()
   // 형식을 여기서 막는다. 아무 문자열이나 통과시키면 계약서에 '매월 NaN일' 이 인쇄된다.

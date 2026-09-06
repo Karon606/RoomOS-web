@@ -1086,8 +1086,12 @@ export async function updateTenant(formData: FormData): Promise<
   const prevStatus = currentLease.status
   const newRoomId  = roomId || prevRoomId
   // 이 저장으로 확정될 납부일. 딸린 계약 전파가 같은 값을 봐야 해서 저장 데이터 밖으로 꺼내 둔다.
-  // 거주 전 상태는 강제로 비운다. 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
-  const nextDueDay = DUE_PENDING_STATUSES.includes(status) ? null
+  // 거주 전 상태는 **있는 값을 보존**한다(설계 D, 2026-09-07). 예약 단계에서도 계약서 문이
+  // 납부일을 원천에 채우므로(setDueDayForContract), 여기서 비우면 서명받은 종이의 납부일이
+  // 원천에서 사라진다. 종전의 강제 비움(2026-07-30)은 등록 폼 파생 잔존이 원인이었고, 그
+  // 오염 경로는 저장 시 비움이 아니라 등록 시 안 넣는 것으로 막혀 있다(:618).
+  // 거주 전에서 청구 상태로 전환하는데 미입력이면 입주일 기준 자동 파생(2026-07-30).
+  const nextDueDay = DUE_PENDING_STATUSES.includes(status) ? (currentLease.dueDay ?? null)
     : (dueDay || (DUE_PENDING_STATUSES.includes(prevStatus) && moveInDate ? dueDayFromMoveIn(new Date(moveInDate)) : null))
 
   // 퇴실 예정일 변경 판정 — 재검증 발화와 일할 정산 재계산이 같은 값을 봐야 한다.
@@ -3221,9 +3225,10 @@ export async function undoRoomSchedule(leaseTermId: string): Promise<{ ok: true 
       await tx.roomStay.deleteMany({ where: { leaseTermId } })
       await tx.leaseTerm.update({
         where: { id: leaseTermId },
-        // 납부일도 함께 비운다 — 예약 상태는 납부일이 null 이 불변식이다(DUE_PENDING_STATUSES).
-        // 안 비우면 다시 입실 처리할 때 입주일을 바꿔도 파생이 안 돌아 옛 납부일이 굳는다.
-        data: { status: 'RESERVED', roomSchedule: Prisma.DbNull, dueDay: null },
+        // 납부일은 걷지 않는다(설계 D, 2026-09-07) — 계약서 문이 예약 단계에 채운 납부일은
+        // 계약의 사실이라 일정 적용취소와 무관하다. 재입실 때 입주일이 바뀌면 화면 파생 가드
+        // (shouldFollowMoveIn)가 파생 패턴일 때만 따라가게 이미 지킨다.
+        data: { status: 'RESERVED', roomSchedule: Prisma.DbNull },
       })
       for (const rid of roomIds) {
         const stillUsed = await tx.roomStay.count({ where: { roomId: rid, endDate: null } })

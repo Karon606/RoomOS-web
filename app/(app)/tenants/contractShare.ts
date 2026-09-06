@@ -8,6 +8,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { headers } from 'next/headers'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
+import { revalidatePath } from 'next/cache'
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { requireEdit } from '@/lib/role'
 import { buildContractData, type ContractData } from '@/lib/contractData'
@@ -21,6 +22,7 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
+import { asDueDay } from '@/lib/contractFieldOverrides'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
 import { asSignLang, signLangForNationality, type SignLang } from '@/lib/signGuideText'
@@ -148,6 +150,14 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
       orderBy: { createdAt: 'desc' },
     })
     if (!old) return { ok: false, error: '이어받을 서명 링크가 없습니다. 새로 요청해 주세요.' }
+    // 납부일 게이트 — 승계는 스냅샷 통째 복사라 빈 납부일이 그대로 연장된다(설계 D 문 4).
+    // 옛 스냅샷(dueDaySource 칸 없음)은 병합값 폴백 — 종이에 날이 찍혀 있으면 승계를 막지 않는다.
+    const snapLease = (old.templateSnapshot as { lease?: { dueDay?: string | null; dueDaySource?: string | null; isShortTerm?: boolean } } | null)?.lease
+    if (!(snapLease?.dueDaySource ?? snapLease?.dueDay)) {
+      const short = snapLease?.isShortTerm
+        ?? (await prisma.leaseTerm.findUnique({ where: { id: old.leaseTermId }, select: { isShortTerm: true } }))?.isShortTerm
+      if (!short) return { ok: false, error: '이 서명 링크의 계약서에는 매월 납부일이 비어 있습니다. 폐기하고 새로 작성해야 납부일이 실립니다.' }
+    }
 
     const link = await prisma.$transaction(async tx => {
       await tx.contractShareLink.update({ where: { id: old.id }, data: { closedAt: new Date() } })
@@ -257,6 +267,40 @@ function serializeLink(link: {
   }
 }
 
+/**
+ * 계약서 문에서 납부일을 채운다(납부일 신설 설계 D, 운영자 승인 2026-09-07).
+ *
+ * 값은 표시값 오버라이드가 아니라 **계약 원천(lease.dueDay)**이다. 문에서 정한 날은 합의된
+ * 사실이고, 거주 전환 재파생 네 자리가 전부 "null 일 때만" 파생하므로 여기 값이 그대로
+ * 청구까지 흘러간다. 미서명 활성 링크는 닫는다 — 입주자가 보는 종이의 납부일이 낡는다
+ * (표시값 저장의 같은 규칙). 다시 비우면 문이 도로 막히므로 되돌리기도 안전하다.
+ */
+export async function setDueDayForContract(leaseTermId: string, dueDay: string): Promise<
+  | { ok: true; closedLinks: number } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requirePropertyAccess()
+    const v = asDueDay(dueDay)
+    if (!v) return { ok: false, error: '매월 납부일은 1부터 31 사이의 숫자 또는 말 로 입력해 주세요.' }
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
+    if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
+    await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { dueDay: v } })
+    // 닫힘 조건은 표시값 저장의 정본(closeStaleUnsignedLinks, app/contract/[tenantId]/actions.ts)과
+    // 같은 다섯이다 — 동의서만 서명된 링크를 '서명 전'으로 오인해 닫는 사고(506호)의 규칙 그대로.
+    const closed = await prisma.contractShareLink.updateMany({
+      where: { leaseTermId, closedAt: null, submittedAt: null, signedAt: null, disposalSignedAt: null, expiresAt: { gt: new Date() } },
+      data: { closedAt: new Date() },
+    })
+    revalidatePath('/contract')
+    revalidatePath('/tenants')
+    return { ok: true, closedLinks: closed.count }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
 // 발급 — 활성 링크가 있으면 재사용(getOrCreate, 중복 발급 방지). 재발급이 필요한 상태(만료·닫힘·잠김)면 새로 만든다.
 //
 // leaseTermId 는 계약 지목이다(2026-08-13, 1인 다호실). 화면이 601호 창고 계약서를 열어 놓고 서명
@@ -267,6 +311,9 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
   | { ok: true; link: ContractShareLinkInfo; phone: string | null; propertyName: string }
   // 받던 서명이 있어 화면이 선택창을 열어야 하는 상태. 거절이되 막다른 길이 아니다.
   | { ok: false; code: 'SIGN_IN_PROGRESS'; error: string }
+  // 납부일이 비어 화면이 채움 모달을 열어야 하는 상태 — 같은 문법. leaseTermId·defaultDay 는
+  // 채움 창의 저장 대상과 프리필(입주일의 날)이다 — 패널은 계약 지목 없이 부를 수 있어 서버가 알려 준다.
+  | { ok: false; code: 'DUE_DAY_REQUIRED'; error: string; leaseTermId: string; defaultDay: string }
   | { ok: false; error: string }
 > {
   try {
@@ -277,6 +324,20 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     if (!snapshot) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
     if (!snapshot.tenant.birthdate) return { ok: false, error: '생년월일이 등록되어 있지 않습니다. 입주자 정보에서 먼저 입력해 주세요.' }
     if (!snapshot.lease) return { ok: false, error: '진행 중인 계약이 없어 링크를 발급할 수 없습니다.' }
+    // 납부일 게이트(설계 D) — 계약서를 쓰는 순간부터는 납부일이 계약의 사실이어야 한다.
+    // **원천(dueDaySource)을 본다.** 병합값(dueDay)은 표시 오버라이드가 있으면 원천 빈 것을
+    // 가린다 — 종이에는 날이 찍히는데 청구 엔진은 납부일 없는 계약을 굴리는 갈림이다.
+    // 단기는 납부일 문법이 없어 예외. 거절이 아니라 선택창이다 — 화면이 이 코드를 받아
+    // 채움 모달을 열고 저장 후 자동 재시도한다(막다른 거절 금지, 신고 09da7f29).
+    if (!snapshot.lease.dueDaySource && !snapshot.lease.isShortTerm) {
+      return {
+        ok: false, code: 'DUE_DAY_REQUIRED',
+        error: '매월 납부일이 등록되어 있지 않습니다. 납부일을 정하면 이어서 진행됩니다.',
+        leaseTermId: snapshot.lease.id,
+        // 채움 창의 프리필 — 입주일의 날. 납부일=입주일이 파생 규칙의 기본값이라 대개 이대로 저장된다.
+        defaultDay: snapshot.lease.moveInDate ? String(parseInt(snapshot.lease.moveInDate.slice(8, 10), 10)) : '',
+      }
+    }
     /**
      * 서명이 이미 저장된 계약에는 새 링크를 안 내준다. 내주면 입주자가 새 스냅샷에 다시 서명하고,
      * 계약 하나에 서로 다른 내용의 서명 두 벌이 생긴다. 어느 쪽이 진짜인지 아무도 말할 수 없다.

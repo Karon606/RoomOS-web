@@ -187,6 +187,16 @@ export async function POST(req: Request) {
     // 본문 선택은 resolveSignedBody 한 곳이 정한다(lib/contract.ts). 서명이 끝난 계약은 박제본을 읽으므로
     // 영업장 공통 템플릿을 고쳐도 안 바뀐다. 화면(contractData)과 같은 함수를 쓴다.
     const body_ = resolveSignedBody(lease, property)
+    // 납부일 게이트(설계 D 문 3) — 새 내용의 종이는 납부일 없이 못 나간다. 미리보기도 같다
+    // (미리보기 PDF 를 그대로 보내면 그것이 곧 종이다). 서명 완료 박제본 재발급(SNAPSHOT)은
+    // 예외 — 증거 보존 경로를 막으면 막다른 길이 된다.
+    if (lease && !lease.isShortTerm && !lease.dueDay && body_.source !== 'SNAPSHOT') {
+      return NextResponse.json({
+        ok: false,
+        code: 'DUE_DAY_REQUIRED',
+        error: '매월 납부일이 등록되어 있지 않습니다. 납부일을 정하면 이어서 진행됩니다.',
+      }, { status: 409 })
+    }
     const template = body_.template
 
     const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)

@@ -45,6 +45,7 @@ import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { smsBodyFor, type SignLang } from '@/lib/signGuideText'
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
+import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { subscribeContractFiles } from '@/lib/contractFilesBus'
 import { confirmForeignRegNoLink } from '@/lib/foreignRegNoConfirm'
 import { blockSmsIfStaging } from '@/lib/smsHref'
@@ -151,6 +152,12 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
   const askSignLang = (def: SignLang) =>
     new Promise<SignLang | null>(resolve => setLangPick({ def, resolve }))
 
+  // 납부일 채움 창(설계 D) — 계약서 화면과 같은 프로미스 다리. 저장 대상 계약과 프리필은
+  // 서버 거절이 알려 준다(이 패널은 계약 지목 없이 부를 수 있어 화면이 스스로 못 정한다).
+  const [dueDayFill, setDueDayFill] = useState<{ leaseTermId: string; defaultDay: string; resolve: (v: boolean) => void } | null>(null)
+  const askDueDayFill = (leaseTermId: string, defaultDay: string) =>
+    new Promise<boolean>(resolve => setDueDayFill({ leaseTermId, defaultDay, resolve }))
+
   // sms: 링크 조립 — NoticeSmsModal 과 동일한 기기 분기(애플은 sms://open?addresses=, 그 외 sms:번호)
   const openSms = (url: string, phone: string, propertyName: string, lang: SignLang) => {
     if (blockSmsIfStaging()) return
@@ -177,6 +184,11 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
     const release = trackSave()
     try {
       let res = await issueContractShareLink(tenantId, leaseTermId ?? null, pickedLang)
+      // 납부일이 비면 막다른 거절이 아니라 채움 창이다(설계 D). 저장되면 이어서 다시 발급한다.
+      if (!res.ok && 'code' in res && res.code === 'DUE_DAY_REQUIRED') {
+        if (!(await askDueDayFill(res.leaseTermId, res.defaultDay))) return
+        res = await issueContractShareLink(tenantId, leaseTermId ?? null, pickedLang)
+      }
       // 받던 서명이 있으면 막다른 거절이 아니라 선택창이다(운영자 신고 09da7f29).
       // 이어받기는 옛 내용 그대로 보내고, 폐기는 받은 서명을 이력으로 옮긴 뒤 새로 시작한다.
       if (!res.ok && 'code' in res && res.code === 'SIGN_IN_PROGRESS') {
@@ -789,6 +801,14 @@ export function ContractFilesPanel({ tenantId, tenantName, hideSignRequest = fal
         </div>
       )}
       {detailId && <IssuedContractSheet fileId={detailId} onClose={() => setDetailId(null)} />}
+      {dueDayFill && (
+        <DueDayFillDialog
+          leaseTermId={dueDayFill.leaseTermId}
+          defaultDay={dueDayFill.defaultDay}
+          onDone={() => { dueDayFill.resolve(true); setDueDayFill(null) }}
+          onClose={() => { dueDayFill.resolve(false); setDueDayFill(null) }}
+        />
+      )}
       {langPick && (
         <SignRequestLangPicker
           defaultLang={langPick.def}

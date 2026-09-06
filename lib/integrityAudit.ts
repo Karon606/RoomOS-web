@@ -33,8 +33,15 @@ export async function runIntegrityAudit(
 
   // 규칙 1-b — 거주 전 상태인데 납부일이 남아 있음 (등록 폼 파생 잔존 패턴, 운영자 지적 2026-07-30:
   // 문의·예약 건에 '말일' 등이 박혀 확정 전 거짓 정보로 보임. 서버가 pending 저장 시 비우므로 재발 = 새 오염 경로)
+  // 예외(설계 D, 2026-09-07): 계약서 흔적(서명 링크·계약서 파일)이 있는 계약은 납부일이 있어도
+  // 정상이다 — 계약서 문이 예약 단계에 원천을 채우는 것이 이제 정식 경로다. 흔적 없이 남은
+  // 납부일만 옛 오염 패턴(등록 폼 파생 잔존)으로 잡는다.
   const pendingWithDueDay = await prisma.leaseTerm.findMany({
-    where: { status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] }, dueDay: { not: null } },
+    where: {
+      status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] }, dueDay: { not: null },
+      contractShareLinks: { none: {} },
+      contractFiles: { none: {} },
+    },
     select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, tenant: { select: { name: true } } },
   })
   for (const l of pendingWithDueDay) violations.push({

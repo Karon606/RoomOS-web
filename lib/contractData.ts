@@ -196,6 +196,11 @@ export type ContractData = {
     depositAmount: number
     cleaningFee: number
     dueDay: string | null               // 매월 납부일 ('14' | '말' 등)
+    // **원천** 납부일(lease.dueDay 그대로, 오버라이드 병합 전)과 단기 여부 — 납부일 게이트가
+    // 이 둘을 본다. 병합값(위 dueDay)을 보면 표시값만 있고 원천이 빈 계약이 게이트를 몰래
+    // 지나 서버 거절과 갈리고, 단기는 납부일 문법이 없어 게이트 제외다.
+    dueDaySource: string | null
+    isShortTerm: boolean
     roomNo: string | null
     registrationStatus: '신고' | '미신고' | '면제'
     // 성명 표기 선택. 표시값 오버라이드와 같은 칸에 살아서 서명 잠금·되돌리기·링크 닫힘이
@@ -410,6 +415,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     lease: lease && fields ? {
       id: lease.id,
       ...fields,
+      dueDaySource: (lease as { dueDay?: string | null }).dueDay ?? null,
+      isShortTerm: (lease as { isShortTerm?: boolean }).isShortTerm ?? false,
       // 해석된 표기를 얹는다 — `fields.nameStyle` 은 자동값 'ko' 라 화면·PDF 가 그것을 읽으면
       // 위에서 계산한 답이 아무 데도 안 간다. 화면의 셀렉트·인쇄 성명이 전부 이 값을 본다.
       nameStyle,

@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
-import { issueContractShareLink } from '@/app/(app)/tenants/contractShare'
+import { issueContractShareLink, setDueDayForContract } from '@/app/(app)/tenants/contractShare'
 import { blockSmsIfStaging } from '@/lib/smsHref'
 import { ContractIssuePurposePicker, type IssuePurposePick } from '@/components/doc/ContractIssuePurposePicker'
 import { DEFAULT_CONTRACT_PURPOSE } from '@/lib/contractPurpose'
@@ -14,6 +14,7 @@ import SignaturePad from 'signature_pad'
 import { isSignatureInkEnough } from '@/lib/signatureInk'
 import { signLangForNationality, smsBodyFor, t, bi, biLine, subLangOf, type SignLang } from '@/lib/signGuideText'
 import { SignRequestLangPicker } from '@/components/doc/SignRequestLangPicker'
+import { DueDayFillDialog } from '@/components/doc/DueDayFillDialog'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
@@ -234,6 +235,26 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const [langPick, setLangPick] = useState<{ def: SignLang; resolve: (v: SignLang | null) => void } | null>(null)
   const askSignLang = (def: SignLang) =>
     new Promise<SignLang | null>(resolve => setLangPick({ def, resolve }))
+
+  // ── 납부일 채움 창(설계 D) — 언어 피커와 같은 프로미스 다리 ──
+  // 원천(lease.dueDay)이 빈 계약은 서명 요청·발급·미리보기 어디서든 이 창이 먼저 선다.
+  // 서명이 끝난 계약은 예외 — 그 종이는 박제본이고, 옛 계약을 열 때마다 조르면 안 된다.
+  const [dueDayFill, setDueDayFill] = useState<{ leaseTermId: string; defaultDay: string; resolve: (v: boolean) => void } | null>(null)
+  // 방금 채웠다는 표시 — router.refresh() 가 서버 값을 다시 실어 오기 전에 연타해도 재차 안 묻는다.
+  const dueDayFilledRef = useRef(false)
+  const needsDueDayFill = () =>
+    !remote && !!data.lease && !data.lease.isShortTerm && !data.lease.dueDaySource
+    && !data.lease.signatureSignedDate && !dueDayFilledRef.current
+  const askDueDayFill = (leaseTermId?: string, defaultDay?: string) => {
+    const id = leaseTermId ?? data.lease?.id
+    if (!id) return Promise.resolve(false)
+    const def = defaultDay ?? (data.lease?.moveInDate ? String(parseInt(data.lease.moveInDate.slice(8, 10), 10)) : '')
+    return new Promise<boolean>(resolve => setDueDayFill({ leaseTermId: id, defaultDay: def, resolve }))
+  }
+  // 진입 시 한 번 — 문 앞에서 미리 채우게 한다. 닫으면 조르지 않는다(각 동작이 다시 묻는다).
+  useEffect(() => {
+    if (needsDueDayFill()) void askDueDayFill()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const paperRef = useRef<HTMLElement>(null)
   const disposalRef = useRef<HTMLElement>(null)   // 동의서 종이(별도 cage) 높이 측정용
   const [scale, setScale]       = useState(1)
@@ -489,6 +510,30 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const commitField = (key: ContractFieldOverrideKey, raw: string) => {
     const leaseId = data.lease?.id
     if (!leaseId || remote || bodyLocked) return
+    // 납부일 게이트(설계 D) — 원천(lease.dueDay)이 빈 동안 이 칸은 **원천 저장**이다. 표시값만
+    // 얹으면 종이에는 날이 찍히는데 청구는 납부일 없는 계약을 굴린다. 원천이 차고 나면 종전대로
+    // 표시값 오버라이드다(이 계약서에만 다르게 찍는 길은 그대로 남는다).
+    if (key === 'dueDay' && !data.lease?.dueDaySource) {
+      const nextDue = raw.trim()
+      setFields(f => ({ ...f, dueDay: nextDue }))
+      if (!nextDue || nextDue === toFieldForm(data.lease).dueDay) return
+      startTransition(async () => {
+        const release = trackSave()
+        try {
+          const res = await setDueDayForContract(leaseId, nextDue)
+          if (!res.ok) {
+            pushToast('error', res.error)
+            setFields(toFieldForm(data.lease))
+            return
+          }
+          dueDayFilledRef.current = true
+          pushToast('success', '매월 납부일 저장됨. 계약의 납부일로 저장되어 청구에도 적용됩니다.'
+            + (res.closedLinks > 0 ? ' 보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : ''))
+          router.refresh()
+        } finally { release() }
+      })
+      return
+    }
     const isAmount = AMOUNT_FIELDS.includes(key)
     const next = isAmount ? amtText(raw) : raw.trim()
     setFields(f => ({ ...f, [key]: next }))
@@ -576,7 +621,12 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     try {
       // 화면이 그리고 있는 그 계약의 스냅샷을 보낸다 — 지목이 없으면 서버 추론이 다른 계약을 골라
       // 입주자가 보고 있다고 믿는 것과 다른 계약서에 서명하게 된다(2026-08-13, 1인 다호실).
-      const res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null, pickedLang)
+      let res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null, pickedLang)
+      // 납부일이 비면 막다른 거절이 아니라 채움 창이다(설계 D). 저장되면 하던 일을 이어서 한다.
+      if (!res.ok && 'code' in res && res.code === 'DUE_DAY_REQUIRED') {
+        if (!(await askDueDayFill(res.leaseTermId, res.defaultDay))) return
+        res = await issueContractShareLink(data.tenant.id, data.lease?.id ?? null, pickedLang)
+      }
       if (!res.ok) { pushToast('error', res.error); return }
       if (!res.phone) {
         pushToast('error', '주 연락처가 없어 문자를 보낼 수 없습니다. 입주자 정보에서 연락처를 먼저 등록해 주세요.')
@@ -1180,6 +1230,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       pushToast('error', '먼저 서명을 받아주세요.')
       return
     }
+    // 납부일 게이트(설계 D) — 서버 409 를 기다리지 않고 문 앞에서 채운다. 확인창 셋을 다
+    // 지나고 나서 거절당하면 처음부터 다시 눌러야 하기 때문이다. 서버 게이트는 뒷그물로 남는다.
+    if (needsDueDayFill() && !(await askDueDayFill())) return
     // 원격 서명 이후 계약 내용이 바뀌었으면 경고 — 발급 자체는 실시간 데이터로 진행(경고만).
     // 갈래가 셋이다. 그대로 발급하거나, 서명을 지우고 다시 받거나, 아무것도 안 하거나(§27).
     // 비교 실패는 발급을 막지 않는다 — 경고만 생략하고 '그대로 발급'으로 본다.
@@ -1324,6 +1377,8 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 전달은 SendDocButton 정본이 맡는다 — 기기별로 버튼 수를 가르지 않는다(§30).
   // 서버 PDF 한 부 생성 -> Blob (실패 시 null + 토스트)
   const fetchPreviewPdf = async (): Promise<Blob | null> => {
+    // 납부일 게이트(설계 D) — 미리보기 PDF 도 그대로 보내면 종이다. 발급과 같은 문을 지난다.
+    if (needsDueDayFill() && !(await askDueDayFill())) return null
     const res = await fetch('/api/contract/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1964,6 +2019,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       ))}
 
       {/* 발급 용도 고르기 — 실계약이 이미 있는 계약에서만 선다. 카드를 고르면 확인 1회가 잇는다. */}
+      {dueDayFill && (
+        <DueDayFillDialog
+          leaseTermId={dueDayFill.leaseTermId}
+          defaultDay={dueDayFill.defaultDay}
+          onDone={() => { dueDayFilledRef.current = true; dueDayFill.resolve(true); setDueDayFill(null); router.refresh() }}
+          onClose={() => { dueDayFill.resolve(false); setDueDayFill(null) }}
+        />
+      )}
       {langPick && (
         <SignRequestLangPicker
           defaultLang={langPick.def}
