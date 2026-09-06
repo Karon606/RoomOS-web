@@ -273,3 +273,20 @@ export function docNameStyleConflict(
   const prev = siblings.find(Boolean)
   return prev && prev !== next ? prev : null
 }
+
+/**
+ * 종이 성명 칸에 병기할 본국 표기 이름 — 계약서 정보 표의 보조줄(.sub) 한 곳이 쓴다.
+ *
+ * 왜 있나(오류신고 cdda7787, 2026-09-07). 외국인 서명의 신원 특정력을 본국어 성명이 보강한다.
+ * 셋 중 하나면 병기하지 않는다(null).
+ *   - 값이 없다.
+ *   - 서류 폰트가 못 그린다(printableInDocuments — 미얀마·벵골·한자는 네모가 된다).
+ *   - 성명이 이미 그 표기다(표기 선택이 native 면 중복 병기가 된다).
+ * 없으면 보조줄이 아예 안 붙어, 값 없는 계약 전건과 기존 발급본이 문자 단위로 무변동이다.
+ */
+export function nativeNameSubOnPaper(printedName: string, nativeName: string | null | undefined): string | null {
+  const nv = (nativeName ?? '').trim()
+  if (!nv || !printableInDocuments(nv)) return null
+  if (nv === printedName.trim()) return null
+  return nv
+}

@@ -20,7 +20,7 @@ import type { ContractData } from './actions'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
 import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
-import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments } from '@/lib/documentName'
+import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments, nativeNameSubOnPaper, sanitizeNativeName, showsForeignFields } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
@@ -1058,14 +1058,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     }
   }
 
-  // 본국 표기 이름(선택) — 원격 서명 화면에서 입주자 본인이 적는다. 그 나라 이름의 발음은 그 나라
+  // 본국 표기 이름 — 원격 서명 화면에서 입주자 본인이 적는다. 그 나라 이름의 발음은 그 나라
   // 표기법이 가장 정확한데, 그 표기를 아는 사람은 운영자가 아니라 본인이다(운영자 승인 2026-08-11).
-  // **강제하지 않는다.** 비워 두어도 제출은 그대로 되고, 화면에서도 muted 로 조용히 서 있는다.
+  // 2026-09-07 부터 외국인은 **필수**다(오류신고 cdda7787 승인) — 성명 칸 병기의 원천이 된다.
+  // 제출 버튼을 잠그지 않고 제출 때 이 칸으로 데려간다.
   // 이미 등록된 표기가 있으면 칸 자체를 그리지 않는다 — 이 문은 덮어쓸 수 없기 때문이다(서버 주석).
   // 국적이 대한민국이면 물을 것이 없다. 입주자 정보 폼의 외국인 전용 칸들과 같은 기준을 쓴다 —
   // 내국인(실측 79명)의 서명 화면은 이 기능 전과 완전히 같다. 국적 미기재는 외국인 쪽으로 본다(폼과 동일).
   const [nativeNameInput, setNativeNameInput] = useState('')
-  const canEnterNativeName = remote && !snapTenant.nativeName && snapTenant.nationality !== '대한민국'
+  // 성명 칸 병기 — 저장값이 우선, 없으면 이 화면에서 방금 적은 값(제출 때 저장된다).
+  const nativeSubLive = nativeNameSubOnPaper(printedName, snapTenant.nativeName || nativeNameInput)
+  // 판정은 폼 정본(showsForeignFields)과 한 벌 — '한국'·'Korea' 표기 변형이 갈리면
+  // 폼에서는 내국인인데 여기서만 필수 대상이 된다(디자이너 지적 2026-09-07).
+  const canEnterNativeName = remote && !snapTenant.nativeName && showsForeignFields(snapTenant.nationality)
 
   // 원격 '제출' — 확인 팝업 후 서버에서 링크를 닫고(재접속 차단) 운영자에게 푸시 발송, 완료 화면으로 전환.
   // 서명 저장은 서명 시점에 이미 끝났고, 이 단계는 최종 확정이다.
@@ -1128,8 +1133,23 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     setTimeout(() => setAttn(null), reduce ? 2000 : 1200)
   }
 
+  const nativeNameRef = useRef<HTMLInputElement | null>(null)
+  // 필수 검증 오류 — 토스트가 아니라 칸 아래 인라인이다(§27.2). 토스트는 5초 뒤 단서가 사라진다.
+  const [nativeNameError, setNativeNameError] = useState<string | null>(null)
   const handleRemoteSubmit = async () => {
     if (finalizing) return
+    // 본국 표기 이름 필수(외국인, 오류신고 cdda7787 승인 2026-09-07). 버튼을 잠그지 않고
+    // 여기서 걸어 그 칸으로 데려간다 — 눌러도 아무 일 없는 버튼은 고장으로 읽힌다(§27.1).
+    if (canEnterNativeName && !sanitizeNativeName(nativeNameInput)) {
+      setNativeNameError(bi(signLang, 'native.required'))
+      const el = nativeNameRef.current
+      if (el) {
+        const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+        el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+        setTimeout(() => el.focus({ preventScroll: true }), reduce ? 0 : 350)
+      }
+      return
+    }
     if (!(await confirmDialog({
       title: bi(signLang, 'submit.confirmTitle'),
       message: `${t('ko', 'submit.confirmMsg')}\n\n${t(subLangOf(signLang), 'submit.confirmMsg')}`,
@@ -1565,7 +1585,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <tbody>
             <tr>
               <th>성명{nameStylePicker}<span className="en">Name</span></th>
-              <td>{printedName}</td>
+              {/* 본국 표기 이름 병기(오류신고 cdda7787). 저장값이 없으면 원격 화면의 입력값을
+                  실시간으로 얹는다 — 서명 전에 종이 위에서 보여야 "서명한 종이 = 발급된 종이"다. */}
+              <td>{printedName}{nativeSubLive && <span className="sub"> ({nativeSubLive})</span>}</td>
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
@@ -1839,15 +1861,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           <label htmlFor="native-name-input" className="native-name-lbl" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'native.label')}</label>
           <input
             id="native-name-input"
+            ref={nativeNameRef}
             type="text"
             value={nativeNameInput}
-            onChange={e => setNativeNameInput(e.target.value)}
+            onChange={e => { setNativeNameInput(e.target.value); setNativeNameError(null) }}
             maxLength={NATIVE_NAME_MAX}
             autoComplete="off"
             placeholder="Nguyễn Thị Thảo Anh"
             aria-describedby="native-name-hint"
             className="native-name-input"
           />
+          {nativeNameError && (
+            <p className="native-name-error" role="alert" style={{ whiteSpace: 'pre-line' }}>{nativeNameError}</p>
+          )}
           <p id="native-name-hint" className="native-name-hint" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'native.hint')}</p>
         </div>
       )}
@@ -2163,6 +2189,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           outline: none;
         }
         .native-name-input:focus { border-color: var(--coral); }
+        .native-name-error { font-size: 12px; line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: 1px solid var(--danger-ring); border-radius: 8px; padding: 6px 10px; margin: 8px 0 0; }
         .native-name-hint { font-size: 11px; color: var(--ink-s); line-height: 1.5; margin: 5px 0 0; }
 
         /* 하단 알약 — §22 SelectionPillBar 의 셸 문법(다크 표면·r15·부유 그림자·z-pill)만 차용한 별도 마크업.

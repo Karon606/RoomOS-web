@@ -378,6 +378,12 @@ export type SignedContractSnapshot = {
    */
   signDocuments?: unknown
   /**
+   * 서명 당시 성명 칸에 병기된(또는 될) 본국 표기 이름. 이 칸이 생기기 전 박제에는 없고
+   * (undefined) 그때는 라이브 값으로 읽는다 — 소급 오경보를 안 만들기 위해서다. 있으면
+   * 서명 뒤 고객 정보를 고쳐도 **서명본 재발급의 병기는 안 바뀐다**(격리 원칙 그대로).
+   */
+  nativeName?: string | null
+  /**
    * 서명 당시 붙어 있던 요금 절(단기 특약 또는 조기 퇴실). 위 특약과 같은 규칙이다 —
    * 이 칸이 없던 박제에는 undefined 이고 그때는 null 로 읽어, 이미 서명이 끝난 계약서에
    * 요금 조항을 소급해 끼워 넣지 않는다.
@@ -407,6 +413,8 @@ export type ResolvedBody = {
    * 서류를 소급해 끼우지 않는다.
    */
   signDocuments: unknown
+  /** SNAPSHOT 일 때만 뜻이 있다 — 서명 당시 병기 원천. undefined 면 이 칸이 없던 옛 박제다. */
+  nativeNameFrozen?: string | null
   /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
   blockIssue: boolean
 }
@@ -443,6 +451,7 @@ export function resolveSignedBody(
       // 박제에 이 칸이 없으면 **빈 배열**이다(live 로 폴백하지 않는다). 그때 종이에 없던
       // 서류가 재발급에서 튀어나오면 서명 시점 격리가 깨진다.
       signDocuments: snap.signDocuments ?? [],
+      nativeNameFrozen: snap.nativeName,
       blockIssue: false,
     }
   }

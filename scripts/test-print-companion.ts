@@ -6,6 +6,7 @@
 import { buildContractPrintHtml, type PrintContractData } from '../lib/contractPrintHtml'
 import { DEFAULT_CONTRACT_TEMPLATE, DEFAULT_DISPOSAL_CONSENT } from '../lib/contract'
 import { printedFacts, PRINTED_FACT_KEYS, PRINTED_FACT_LABEL } from '../lib/contractPrintedFacts'
+import { nativeNameSubOnPaper } from '../lib/documentName'
 import { resolveSignedBody } from '../lib/contract'
 
 let pass = 0
@@ -121,6 +122,40 @@ const base = (over: Partial<PrintContractData> = {}): PrintContractData => ({
   // 서명 전 계약은 지금 목록이다.
   const live = resolveSignedBody({}, prop)
   eq('서명 전이면 지금 목록', live.signDocuments, prop.signDocuments)
+}
+
+// ── 본국 표기 이름 병기 (오류신고 cdda7787) ──────────────────
+{
+  eq('값 있고 그릴 수 있으면 병기', nativeNameSubOnPaper('TRAN THI THU TRANG', 'Trần Thị Thu Trang'), 'Trần Thị Thu Trang')
+  eq('키릴도 병기', nativeNameSubOnPaper('KIM', 'Ким Мён Хва'), 'Ким Мён Хва')
+  eq('없으면 안 붙는다', nativeNameSubOnPaper('김입실', null), null)
+  eq('폰트가 못 그리면 안 붙는다(벵골 문자)', nativeNameSubOnPaper('RAHMAN', 'রহমান'), null)
+  eq('한자도 못 그린다', nativeNameSubOnPaper('김명화', '金明花'), null)
+  eq('성명이 이미 그 표기면 중복 병기 안 함', nativeNameSubOnPaper('Trần Thị Thu Trang', 'Trần Thị Thu Trang'), null)
+
+  const withNative = buildContractPrintHtml(base({ tenant: { name: 'TRAN THI THU TRANG', primaryPhone: '010', birthdate: '1990-01-01', foreignRegNo: null, gender: '여', job: null, nativeName: 'Trần Thị Thu Trang' } }))
+  eq('종이 성명 칸에 병기가 실린다', withNative.includes('Trần Thị Thu Trang'), true)
+  const noNative = buildContractPrintHtml(base())
+  const bengal = buildContractPrintHtml(base({ tenant: { name: 'RAHMAN', primaryPhone: '010', birthdate: '1990-01-01', foreignRegNo: null, gender: '남', job: null, nativeName: 'রহমান' } }))
+  eq('못 그리는 문자는 종이에 안 실린다(네모 방지)', bengal.includes('রহমান'), false)
+  eq('값 없으면 sub 스팬 자체가 없다', count(noNative, 'class="sub"'), 0)
+
+  // 인쇄 사실 축 — 종이에 실릴 때만 축이 선다.
+  eq('병기 축이 목록에 있다', PRINTED_FACT_KEYS.includes('tenant.nativeName'), true)
+  eq('병기가 실리면 축이 선다', printedFacts({ tenant: { name: 'A', nativeName: 'Ким' } })['tenant.nativeName'], 'Ким')
+  eq('못 그리면 축도 없다', printedFacts({ tenant: { name: 'A', nativeName: 'রহমান' } })['tenant.nativeName'], undefined)
+  eq('없으면 축도 없다', printedFacts({ tenant: { name: 'A' } })['tenant.nativeName'], undefined)
+}
+
+// ── 병기 원천 동결 (체크리스트 E) ───────────────────────────
+{
+  const base_ = { origin: 'REMOTE_LINK' as const, capturedAt: 'x', template: DEFAULT_CONTRACT_TEMPLATE }
+  eq('옛 박제(칸 없음)는 undefined — 라이브 폴백 신호',
+    resolveSignedBody({ signedContractSnapshot: base_ }, {}).nativeNameFrozen, undefined)
+  eq('동결값이 있으면 그대로',
+    resolveSignedBody({ signedContractSnapshot: { ...base_, nativeName: 'Trần Thị Thu Trang' } }, {}).nativeNameFrozen, 'Trần Thị Thu Trang')
+  eq('null 동결(서명 때 비어 있었음)도 그대로 — 라이브로 안 새어 나간다',
+    resolveSignedBody({ signedContractSnapshot: { ...base_, nativeName: null } }, {}).nativeNameFrozen, null)
 }
 
 console.log(`\n동반 서류 조판 회귀: ${pass} 통과 / ${fails.length} 실패`)

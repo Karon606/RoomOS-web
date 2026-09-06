@@ -441,6 +441,8 @@ export async function POST(req: Request) {
       pretendardBase64,
       tenant: {
         name: printedTenantName,
+        // 본국 표기 이름 병기(오류신고 cdda7787) — 값·폰트 판정은 조판 정본(nativeNameSubOnPaper)이 한다.
+        nativeName: tenant.nativeName ?? null,
         birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
         // 등록번호가 있으면 종이의 생년월일 칸을 이 번호가 대체한다. 값은 서버가 직접 복호한다 —
         // 클라이언트가 보낸 번호를 믿으면 이 API 를 직접 불러 아무 번호나 인쇄할 수 있다.
@@ -616,6 +618,7 @@ export async function POST(req: Request) {
           gender: printData.tenant.gender,
           primaryPhone: printData.tenant.primaryPhone,
           smoking: body.smoking === '흡연',
+        nativeName: tenant.nativeName ?? null,
           emergencyContacts: tenant.contacts
             .filter(c => c.isEmergency)
             // 이름은 종전에 담을 칸이 없어 빈 문자열이었다 — 이제 실제 값을 쓴다(2026-08-31).
@@ -715,6 +718,8 @@ export async function POST(req: Request) {
               // 바뀌면(개명·오타 정정) 그때 무엇을 봤는지 못 되짚는다.
               nameStyle: printedNameStyle,
               printedName: printedTenantName,
+              // 병기 원천도 동결 — 서명 뒤 고객 정보 수정이 서명본 병기를 못 바꾼다(원격과 같은 규칙).
+              nativeName: tenant.nativeName ?? null,
             } } : {}),
           },
         })

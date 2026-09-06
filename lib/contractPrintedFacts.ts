@@ -7,9 +7,14 @@
 // 값이 undefined 면 '이 데이터에 그 축이 없다'는 뜻이다(비교하는 쪽이 그 사실을 읽는다).
 
 /** printedFacts 가 읽는 최소 모양. lib/contractData 의 ContractData 가 구조적으로 이것을 만족한다. */
+import { nativeNameSubOnPaper } from '@/lib/documentName'
+
 export type PrintedFactsInput = {
   tenant?: {
     name?: string
+    // 본국 표기 이름(고객 정보 원본). 축 값은 **종이에 실제로 찍히는 병기**다 — 폰트가 못 그려
+    // 병기가 안 붙으면 축도 없다(undefined). 필터는 조판과 같은 정본(nativeNameSubOnPaper)이다.
+    nativeName?: string | null
     birthdate?: string | null
     /**
      * 외국인등록번호 축의 **이미 안전해진** 값. `900101-*******#<hmac8>` 모양이고 평문이 아니다.
@@ -61,7 +66,7 @@ export type PrintedFactsInput = {
 
 /** 축 순서 — 발급 상세 시트가 이 순서로 표를 그린다(종이의 위에서 아래 순서). */
 export const PRINTED_FACT_KEYS = [
-  'tenant.name', 'tenant.birthdate', 'tenant.foreignRegNo', 'tenant.gender', 'tenant.primaryPhone',
+  'tenant.name', 'tenant.nativeName', 'tenant.birthdate', 'tenant.foreignRegNo', 'tenant.gender', 'tenant.primaryPhone',
   'tenant.smoking', 'tenant.emergencyContacts',
   'lease.roomNo', 'lease.moveInDate', 'lease.expectedMoveOut',
   'lease.rentAmount', 'lease.depositAmount', 'lease.cleaningFee',
@@ -81,6 +86,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   'tenant.name': '성명',
   'tenant.birthdate': '생년월일',
   'tenant.foreignRegNo': '외국인등록번호',
+  'tenant.nativeName': '본국 표기 이름',
   'tenant.gender': '성별',
   'tenant.primaryPhone': '연락처',
   'tenant.smoking': '흡연',
@@ -110,6 +116,7 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
   const l = d.lease
   return {
     'tenant.name': t?.name,
+    'tenant.nativeName': t?.name != null ? (nativeNameSubOnPaper(t.name, t.nativeName) ?? undefined) : undefined,
     'tenant.birthdate': t?.birthdate,
     // 이미 마스킹 + 지문으로 굳은 값만 지나간다. 평문이 이 축에 들어오는 길은 없다(위 타입 주석).
     'tenant.foreignRegNo': t?.foreignRegNoFact,

@@ -5,7 +5,7 @@
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
-import { sanitizeNativeName } from '@/lib/documentName'
+import { sanitizeNativeName, showsForeignFields } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
 import { missingSlots } from '@/lib/disposalSignGate'
 import { paperDocsOf, linkSignSlots, parseSignDocuments, parseDocumentSignatures, parseDocSignedAt, isValidDocKey } from '@/lib/signDocuments'
@@ -259,11 +259,33 @@ export async function finalizeRemoteSubmission(
     // 화면도 스냅샷에 표기가 없을 때만 칸을 그리므로 정상 흐름에서는 이 경합 자체가 드물다.
     // 값을 지우거나 고치는 것은 이 문으로 못 한다 — 운영자만 고객 정보에서 한다.
     const native = sanitizeNativeName(nativeName)
+    // 외국인 필수(오류신고 cdda7787) — 클라이언트 검사와 같은 판정을 서버가 다시 본다.
+    // 액션을 직접 불러 빈 채로 지나가는 길을 닫는다(동의서 서버 검사와 같은 관례).
+    const snapNat = (link.templateSnapshot as { tenant?: { nationality?: string | null } } | null)?.tenant?.nationality
+    if (showsForeignFields(snapNat) && !native) {
+      const cur = await prisma.tenant.findUnique({ where: { id: link.tenantId }, select: { nativeName: true } })
+      if (!cur?.nativeName) return { ok: false, error: bi(langOf(link), 'native.required') }
+    }
     if (native) {
       await prisma.tenant.updateMany({
         where: { id: link.tenantId, OR: [{ nativeName: null }, { nativeName: '' }] },
         data: { nativeName: native },
       })
+    }
+    // 서명 박제에 병기 원천을 동결한다(체크리스트 E — 종이에 찍히는 값은 박제에 있어야 한다).
+    // 값 서열은 저장값 우선(운영자가 미리 적은 표기를 입주자 입력이 못 덮는 기존 규칙 그대로).
+    {
+      const lease = await prisma.leaseTerm.findUnique({
+        where: { id: link.leaseTermId }, select: { signedContractSnapshot: true },
+      })
+      const snap = lease?.signedContractSnapshot as { nativeName?: unknown } | null
+      if (snap && snap.nativeName === undefined) {
+        const t = await prisma.tenant.findUnique({ where: { id: link.tenantId }, select: { nativeName: true } })
+        await prisma.leaseTerm.update({
+          where: { id: link.leaseTermId },
+          data: { signedContractSnapshot: { ...snap, nativeName: t?.nativeName ?? null } as object },
+        })
+      }
     }
 
     // 제출 확정 — submittedAt 잠금(재접속 차단). 서명본은 LeaseTerm 에 이미 영속돼 운영자 화면에서 조회된다.

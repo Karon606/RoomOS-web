@@ -342,7 +342,10 @@ export async function buildContractData(tenantId: string, propertyId: string, le
   const nameStyleSource = {
     name: tenant.name,
     englishName: tenant.englishName ?? null,
-    nativeName: tenant.nativeName ?? null,
+    // 서명이 끝난 계약은 서명 당시 동결값을 읽는다(있을 때만 — 옛 박제는 라이브 폴백).
+    // 서명 뒤 고객 정보를 고쳐도 서명본 재발급의 병기가 조용히 바뀌지 않게 한다.
+    nativeName: body.source === 'SNAPSHOT' && body.nativeNameFrozen !== undefined
+      ? body.nativeNameFrozen : (tenant.nativeName ?? null),
   }
   const signedAlready = !!(lease as { signatureSignedAt?: Date | null } | null)?.signatureSignedAt
   const signedSnap = (lease as { signedContractSnapshot?: unknown } | null)
