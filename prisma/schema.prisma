@@ -299,6 +299,12 @@ model Property {
   // "업무 처리와 무관하게 이 알림은 이제 필요없어"(운영자 지시 2026-09-02). 현금영수증 건별
   // 키는 'receipt:계약|수납일|수단'. 끈 건은 홈 하단 '끈 알림' 목록에서 언제든 다시 켠다(§16).
   alertMutes         Json?
+  // 영업장이 직접 만든 서명 서류 목록 — [{ key, title, body, createdAt, retiredAt? }].
+  // 계약서·동의서 말고 서명을 더 받는 서류가 영업장마다 달라 연다(운영자 요구 2026-09-06).
+  // key 는 서버가 발급하는 무의미 난수이고 **생성 시 한 번, 이후 불변**이다 — 제목으로 만들면
+  // 제목을 고칠 때 다시 만들고 싶어지고 그 한 번이 받아 둔 서명 전부를 고아로 만든다.
+  // 중지는 retiredAt 도장이고 배열에서 빼지 않는다(발급본의 근거가 사라진다). lib/signDocuments 정본.
+  signDocuments      Json?
   @@map("properties")
 }
 
@@ -837,6 +843,10 @@ model LeaseTerm {
   // 계약일이 이 값으로 고정된다 — 없으면 발급 때마다 '오늘'이 찍혀 실제 서명일과 갈린다.
   signatureSignedAt         DateTime?
   disposalSignatureSignedAt DateTime?
+  // 추가 서류 서명 — { [서류key]: { image(dataURL), signedAt } }. 위 두 짝의 N개 판이다.
+  // 계약서·동의서는 전용 칸을 그대로 쓰고 추가 서류만 여기 쌓인다(이주하지 않는다 —
+  // 그 두 칸은 폐기 이력·발급 박제·감지망 다수에 박혀 있어 여는 순간 전부 다시 열어야 한다).
+  documentSignatures        Json?
   // 서명 시점 본문 격리. 서명 네 칸과 생사를 같이 한다 — 재서명 때 함께 null 이 된다.
   // 영업장 공통 템플릿이 바뀌어도 서명이 끝난 계약서는 절대 안 바뀌게 하는 칸이다(운영자 오더 2026-08-04).
   // 두 모양이 있다. 앱이 만든 본문을 서명받았으면 본문을 담고(origin REMOTE_LINK|IN_PERSON),
@@ -1920,6 +1930,10 @@ model ContractShareLink {
   submittedAt       DateTime? // 원격 제출 확정(자동 잠금) — closedAt(무산 닫기)과 구분해 '정식 계약서 발급' 리마인더가 발급 전까지 유지되게(운영자 승인 2026-07-23)
   signedAt          DateTime? // 원격 계약서 서명 수신 시각
   disposalSignedAt  DateTime? // 원격 동의서(잔여 소지품) 서명 수신 시각
+  // 추가 서류의 원격 서명 수신 시각 — { [서류key]: ISO }. 위 두 칸의 N개 판이다.
+  // **링크 축**이라 그 링크에서 벌어진 일만 적는다. 계약에 쌓인 서명은 LeaseTerm 쪽이다
+  // (둘은 다른 물음의 답이다 — knowledge/sign-evidence-axes.md).
+  docSignedAt       Json?
   birthdateAttempts Int       @default(0)
   lockedAt          DateTime? // 생년월일 오류 한도 도달로 잠김 — 재발급 필요
   createdBy         String?   @db.Uuid

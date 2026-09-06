@@ -1,7 +1,7 @@
 // 서명 서류 정본 회귀 — key 문법·병합 불멸·두 축의 갈림을 진리표로 못박는다.
 import {
   isValidDocKey, parseSignDocuments, activeSignDocuments, parseDocumentSignatures, parseDocSignedAt,
-  mergeSignDocuments, paperDocsOf, leaseSignSlots, linkSignSlots,
+  mergeSignDocuments, paperDocsOf, leaseSignSlots, linkSignSlots, badgeSignSummary, shortDocTitle,
 } from '../lib/signDocuments'
 import { signStageSlots, missingSlots, signProgressLabelSlots } from '../lib/disposalSignGate'
 
@@ -146,6 +146,25 @@ eq('옛 스냅샷은 종전 그대로', paperDocsOf({ disposalConsent: { enabled
   const slots = leaseSignSlots(docs, { documentSignatures: { aa11: { image: 'd', signedAt: 'x' } } })
   eq('그래도 받아 둔 서명은 슬롯으로 남는다', slots.length, 2)
   eq('그 상태는 none 이 아니라 partial', signStageSlots({ slots }), 'partial')
+}
+
+// ── 배지 요약. 서류 둘일 때 문면이 한 자도 안 바뀌어야 한다 ──
+{
+  const two = paperDocsOf({ disposalConsent: { enabled: true } })
+  eq('계약서만 서명됨(종전 문면 그대로)',
+    badgeSignSummary(leaseSignSlots(two, { signatureImageUrl: 'd' })), '계약서만 서명됨')
+  eq('동의서만 서명됨(종전 문면 그대로)',
+    badgeSignSummary(leaseSignSlots(two, { disposalSignatureImageUrl: 'd' })), '동의서만 서명됨')
+  eq('완료면 배지가 스스로 말한다', badgeSignSummary(leaseSignSlots(two, { signatureImageUrl: 'd', disposalSignatureImageUrl: 'd' })), null)
+  eq('대기도 마찬가지', badgeSignSummary(leaseSignSlots(two, {})), null)
+
+  const three = paperDocsOf({ disposalConsent: { enabled: true }, signDocuments: [{ key: 'aa11', title: '차량 등록 동의서', body: 'b' }] })
+  eq('셋이면 건수로', badgeSignSummary(leaseSignSlots(three, { signatureImageUrl: 'd' })), '1건 서명됨 · 남은 2건')
+  eq('셋 중 둘이면 건수로', badgeSignSummary(leaseSignSlots(three, { signatureImageUrl: 'd', disposalSignatureImageUrl: 'd' })), '2건 서명됨 · 남은 1건')
+
+  eq('짧은 이름 - 계약서', shortDocTitle({ key: 'contract', title: '입실계약서' }), '계약서')
+  eq('짧은 이름 - 동의서', shortDocTitle({ key: 'disposal', title: '동의서' }), '동의서')
+  eq('추가 서류는 제 제목', shortDocTitle({ key: 'aa11', title: '차량 등록 동의서' }), '차량 등록 동의서')
 }
 
 console.log(`\n서명 서류 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)

@@ -11,6 +11,7 @@
 //     여기(종·푸시)는 **오늘 실제로 돈이 나가는 건**만 센다(운영자 신고 568633fb: "출금되는 내용도 알림에
 //     있어야 될듯"). 오늘 아침 푸시에 그 항목이 아예 없던 것이 이 신고의 내용이다.
 
+import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { fmtWon } from '@/lib/fmtMoney'
 import { dayDbRange, kstYmd } from '@/lib/kstDate'
@@ -22,7 +23,8 @@ import { computeRecurringExpensesWithStatus } from '@/app/(app)/finance/recurrin
 import { recurringDueToday } from '@/lib/recurringDueDate'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { fmtRoomNo } from '@/lib/roomNo'
-import { signProgressLabel, signStage, signAlertDue } from '@/lib/disposalSignGate'
+import { signProgressLabelSlots, signStageSlots, signAlertDue } from '@/lib/disposalSignGate'
+import { paperDocsOf, leaseSignSlots, linkSignSlots } from '@/lib/signDocuments'
 
 export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact' | 'signed' | 'signpartial' | 'autodebit' | 'manualpay'
 
@@ -114,9 +116,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     prisma.contractShareLink.findMany({
       // 반쪽은 어느 쪽이 먼저 오든 반쪽이다. 계약서 서명만 보면 동의서만 서명한 계약(506호)이
       // 이 목록에 아예 못 들어와, 운영자가 볼 화면이 한 곳도 없다(2026-09-04).
-      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }] },
+      where: { propertyId, closedAt: null, OR: [{ signedAt: { not: null } }, { disposalSignedAt: { not: null } }, { docSignedAt: { not: Prisma.DbNull } }] },
       select: {
-        id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true,
+        id: true, tenantId: true, leaseTermId: true, signedAt: true, disposalSignedAt: true, docSignedAt: true,
         // 지금 말할 때인가를 가르는 셋 — 제출했는가, 링크가 죽었는가(만료·잠김).
         submittedAt: true, expiresAt: true, lockedAt: true,
         // 이 링크가 나갈 때 동의서가 붙는 종이였는가. **라이브 설정을 보면 안 된다** —
@@ -125,7 +127,14 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
         // 서명 dataURL 은 링크 발급 시점 이후에 들어오므로 이 스냅샷은 가볍다.
         templateSnapshot: true,
         // 딸린 계약이면 발급될 종이는 부모 것이다 — 해소 판정·지목이 그 계약을 봐야 종이 안 꺼지는 일이 없다.
-        leaseTerm: { select: { room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true } },
+        // 서명 진행은 **계약 축**으로 센다. 링크 행은 그 링크에서 벌어진 일만 적어서, 서명을 두
+        // 링크에 나눠 받은 계약(실측 15/37건)을 반쪽이라 부르게 된다. 이 알림의 문구는 계약에
+        // 대한 주장이므로 계약을 봐야 한다(knowledge/sign-evidence-axes.md).
+        leaseTerm: { select: {
+          room: { select: { id: true, roomNo: true } }, parentLeaseTermId: true,
+          signatureImageUrl: true, signatureSignedAt: true,
+          disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+        } },
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -289,18 +298,22 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     //
     // hasContractSignature 를 리터럴 true 로 넘기지 않는다. 위 쿼리를 넓힌 순간 그 리터럴은
     // 거짓말이 된다 — 동의서만 서명된 링크가 '계약서만 서명됨'으로 뜬다(방향만 바뀐 같은 거짓말).
-    const state = {
-      disposalEnabled: (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)
-        ?.disposalConsent?.enabled === true,
-      hasContractSignature: !!link.signedAt,
-      hasDisposalSignature: !!link.disposalSignedAt,
-    }
-    const stage = signStage(state)
+    // 그 종이에 붙은 서류 목록은 링크 스냅샷에서 읽는다. 라이브 설정을 보면 서류를 새로 켜는
+    // 순간 과거 계약 전부가 소급으로 반쪽이 된다.
+    const docs = paperDocsOf(link.templateSnapshot)
+    // 진행은 계약 축이다. "지금 발급하면 이 종이에 서명이 다 찍히는가"가 이 알림의 물음이다.
+    const slots = leaseSignSlots(docs, link.leaseTerm)
+    const stage = signStageSlots({ slots })
     // 입주자가 스스로 마칠 수 있는 동안은 침묵한다(운영자 신고 09da7f29). 링크가 살아 있고
     // 제출 전이면 알림을 만들지 않는다 — 그 사이 운영자가 개입할 수단도 없다(서명은 입주자
     // 손에 있다). 반쪽 사실 자체는 발급 대기 목록과 계약서 패널 배지에 그대로 보인다.
+    // 침묵 판정의 '아직 마칠 수 있나'는 **링크 축**이다. 입주자 손에 있는 것은 이 링크이고,
+    // 그 링크에서 아직 안 받은 장이 있는 동안만 기다릴 이유가 있다.
+    const linkStage = signStageSlots({ slots: linkSignSlots(docs, link) })
     if (!signAlertDue({
-      ...state,
+      disposalEnabled: docs.some(d => d.key === 'disposal'),
+      hasContractSignature: linkStage !== 'none',
+      hasDisposalSignature: linkStage === 'complete',
       submitted: !!link.submittedAt,
       linkDead: !!link.lockedAt || link.expiresAt <= new Date(),
     })) continue
@@ -311,7 +324,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push(stage === 'partial' ? {
       id: `signpartial-${link.id}`, category: 'signpartial',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
-      subtitle: signProgressLabel(state),
+      subtitle: signProgressLabelSlots({ slots }),
       tenantId: link.tenant.id, leaseTermId: issueLeaseId,
       roomId: link.leaseTerm.room?.id ?? null, roomNo: link.leaseTerm.room?.roomNo, tenantName: link.tenant.name,
       // 링크 수명이 24시간이라 반쪽은 시간이 급하다. 완료(820) 위, 퇴실 경과 최대치 아래.
@@ -319,7 +332,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     } : {
       id: `signed-${link.id}`, category: 'signed',
       title: roomName(link.leaseTerm.room?.roomNo, link.tenant.name),
-      subtitle: signProgressLabel(state),
+      subtitle: signProgressLabelSlots({ slots }),
       // 할 일이 '계약서 발급'이라 목적지는 입주자 모달이 아니라 계약서함의 발급 대기 섹션이다.
       // tenantId 도 유지한다 — 종은 아래 카테고리 예외로 href 를 먼저 보고, 다른 소비처는 종전대로 쓴다.
       href: '/contracts?focus=contracts-pending-issue',

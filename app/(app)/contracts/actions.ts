@@ -8,7 +8,8 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { isContractIssued, issuingLeaseId } from '@/lib/contractIssue'
 import { isDerivedPurpose, effectiveIssuePurpose } from '@/lib/contractPurpose'
-import { disposalSignatureMissing, signStage, type SignStage } from '@/lib/disposalSignGate'
+import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
+import { paperDocsOf, leaseSignSlots } from '@/lib/signDocuments'
 import { issuedPrintedName } from '@/lib/contractPrintedFacts'
 
 async function getPropertyId(): Promise<string> {
@@ -167,7 +168,7 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
           select: {
             room: { select: { roomNo: true } },
             signatureImageUrl: true, signatureSignedAt: true,
-            disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+            disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
             // 딸린 계약이면 발급할 종이는 부모 것이다 — 대기 한 줄이 부모를 가리켜야 발급이 된다.
             parentLeaseTermId: true,
             parentLeaseTerm: { select: { room: { select: { roomNo: true } } } },
@@ -184,13 +185,13 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
   ])
 
   // 링크 축이 아니라 lease 축으로 본다 — 서명을 지우면 링크 기록은 남지만 종이는 없다.
-  const sigState = (l: { templateSnapshot: unknown; leaseTerm: { signatureImageUrl: string | null; signatureSignedAt: Date | null
-    disposalSignatureImageUrl: string | null; disposalSignatureSignedAt: Date | null } }) => ({
-    disposalEnabled: (l.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)
-      ?.disposalConsent?.enabled === true,
-    hasContractSignature: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
-    hasDisposalSignature: !!(l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
-  })
+  // 발급 대기의 물음은 "지금 발급하면 이 종이에 서명이 다 찍히는가"라 **계약 축**이다.
+  // 여기는 처음부터 계약을 읽고 있었는데 손으로 조립했다. 정본으로 옮겨 세 화면이 같은
+  // 함수를 부르게 한다 — 조립이 흩어져 있으면 축이 다시 갈린다(knowledge/sign-evidence-axes.md).
+  const sigSlots = (l: { templateSnapshot: unknown; leaseTerm: {
+    signatureImageUrl: string | null; signatureSignedAt: Date | null
+    disposalSignatureImageUrl: string | null; disposalSignatureSignedAt: Date | null
+    documentSignatures?: unknown } }) => leaseSignSlots(paperDocsOf(l.templateSnapshot), l.leaseTerm)
 
   const rows: PendingIssueRow[] = []
   const seenLease = new Set<string>()
@@ -216,8 +217,8 @@ export async function getPendingIssueContracts(): Promise<PendingIssueRow[]> {
       submitted: l.submittedAt != null,
       signatureLive: !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt
         || l.leaseTerm.disposalSignatureImageUrl || l.leaseTerm.disposalSignatureSignedAt),
-      disposalMissing: disposalSignatureMissing(sigState(l)),
-      stage: signStage(sigState(l)),
+      disposalMissing: signStageSlots({ slots: sigSlots(l) }) === 'partial' && !!(l.leaseTerm.signatureImageUrl || l.leaseTerm.signatureSignedAt),
+      stage: signStageSlots({ slots: sigSlots(l) }),
     })
   }
   return rows

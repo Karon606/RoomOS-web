@@ -210,3 +210,27 @@ function withOrphans(
   }
   return slots
 }
+
+/**
+ * 운영자 배지가 쓰는 짧은 진행 요약. 서류가 둘일 때의 문면을 **한 자도 안 바꾼다.**
+ *
+ * `signProgressLabelSlots` 는 홈 알림용이라 완료를 '원격 서명 완료 · 계약서 발급 필요'로 말한다.
+ * 배지는 그 뒤에 남은 시간을 붙이는 자리라 문법이 다르다. 그래서 함수를 나눴다.
+ *
+ * 짧은 이름을 따로 쓰는 이유. 종이 머리글의 정식 제목('잔여 소지품 임의처분 동의서')이 배지
+ * 한 줄에 들어가면 줄이 접힌다. 계약서·동의서는 지금 쓰던 짧은 이름 그대로다.
+ */
+export function badgeSignSummary(slots: SignSlot[]): string | null {
+  const signed = slots.filter(x => x.signed)
+  const left = slots.filter(x => !x.signed)
+  if (left.length === 0 || signed.length === 0) return null   // 완료·대기는 부르는 쪽이 말한다
+  if (signed.length === 1 && left.length === 1) return `${shortDocTitle(signed[0])}만 서명됨`
+  return `${signed.length}건 서명됨 · 남은 ${left.length}건`
+}
+
+/** 좁은 자리에서 부르는 이름. 계약서·동의서는 종전 문면 그대로다. */
+export function shortDocTitle(slot: { key: string; title: string }): string {
+  if (slot.key === 'contract') return '계약서'
+  if (slot.key === 'disposal') return '동의서'
+  return slot.title
+}

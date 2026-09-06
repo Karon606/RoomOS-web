@@ -20,7 +20,8 @@ import { readStoredForeignRegNo } from '@/lib/pii'
 import { fmtRoomNo } from '@/lib/roomNo'
 import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
-import { signStage } from '@/lib/disposalSignGate'
+import { signStage, signStageSlots, type SignStage } from '@/lib/disposalSignGate'
+import { paperDocsOf, leaseSignSlots, badgeSignSummary } from '@/lib/signDocuments'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -60,6 +61,13 @@ export type ContractShareLinkInfo = {
   // 배지가 반쪽 서명을 '서명 완료'라고 부르지 않으려면 이 값이 있어야 한다(신고 2026-09-03, 413호).
   // 판정 축이 라이브가 아니라 스냅샷인 이유는 제출 게이트와 같다 — 입주자가 본 화면이 기준이다.
   disposalEnabled: boolean
+  // 서명 진행 — **계약 축**이다. "지금 발급하면 이 종이에 서명이 다 찍히는가"가 배지의 물음이다.
+  // 종전에는 배지가 링크 행(signedAt·disposalSignedAt)을 읽었는데, 그것은 그 링크에서 벌어진 일만
+  // 적어서 서명을 두 링크에 나눠 받은 계약을 반쪽이라 불렀다(실측 15/37건).
+  // 서명 이미지는 dataURL 이라 클라이언트로 안 내려보낸다 — 서버가 판정해 결과만 준다.
+  signStage: SignStage
+  // 반쪽일 때 무엇이 서명됐는지. 완료·대기면 null 이고 배지가 스스로 말한다.
+  signSummary: string | null
   // 이 링크의 계약(leaseTerm)에 서명이 **지금도** 남아 있는가.
   // signedAt 은 '그때 서명이 들어왔다'는 과거 사실이라 서명을 지워도 영원히 남는다. 진입로가 그것만
   // 보고 ?share= 서명본 화면으로 보내면, 서명을 지운 계약이 옛 스냅샷에 영구히 갇힌다(502호 2026-08-10).
@@ -78,6 +86,12 @@ type LeaseSigCols = {
   disposalSignatureImageUrl: string | null
   disposalSignatureSignedAt: Date | null
 }
+/** 서명이 하나도 없는 계약. '아직 안 읽었다'와 '읽었더니 비었다'를 코드에서 가른다. */
+const EMPTY_LEASE_SIG = {
+  signatureImageUrl: null, signatureSignedAt: null,
+  disposalSignatureImageUrl: null, disposalSignatureSignedAt: null, documentSignatures: null,
+} as const
+
 function isSignatureLive(l: LeaseSigCols | null | undefined): boolean {
   if (!l) return false
   return !!(l.signatureImageUrl || l.signatureSignedAt || l.disposalSignatureImageUrl || l.disposalSignatureSignedAt)
@@ -145,7 +159,16 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
       })
     }, { isolationLevel: 'Serializable' })
 
-    const [tenant, property] = await Promise.all([
+    // 배지 진행은 계약 축이라 lease 서명 칸이 필요하다. 이어받은 링크는 자국을 승계하지만
+    // **종이에 실제로 찍히는 것은 계약에 쌓인 이미지**라 그쪽을 읽어야 답이 맞다.
+    const [leaseSig, tenant, property] = await Promise.all([
+      prisma.leaseTerm.findUnique({
+        where: { id: old.leaseTermId },
+        select: {
+          signatureImageUrl: true, signatureSignedAt: true,
+          disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
+        },
+      }),
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
@@ -155,7 +178,7 @@ export async function renewContractShareLink(tenantId: string, namedLeaseTermId?
     const primary = tenant?.contacts.find(c => c.isPrimary && !c.isEmergency) ?? tenant?.contacts.find(c => !c.isEmergency)
     return {
       ok: true,
-      link: serializeLink(link, await buildShareUrl(link.token), true),
+      link: serializeLink(link, await buildShareUrl(link.token), true, leaseSig ?? EMPTY_LEASE_SIG),
       phone: primary?.contactValue ?? null,
       propertyName: property?.name ?? '',
     }
@@ -178,12 +201,21 @@ function stageOf(l: {
   })
 }
 
+/**
+ * 계약 축 판정에 필요한 서명 칸. **기본값 없는 필수 인자**라 호출부가 안 들여오면 타입이 막는다.
+ *
+ * 종전에는 배지가 링크 행만 보고 진행을 셌다. 그 축을 바꾸면서 "어느 호출부는 계약을 읽고
+ * 어느 호출부는 안 읽는" 갈림이 다시 생기지 않게, 인자를 옵셔널로 두지 않았다.
+ */
+type LeaseSignCols = LeaseSigCols & { documentSignatures?: unknown }
+
 function serializeLink(link: {
   id: string; token: string; expiresAt: Date; signedAt: Date | null
   disposalSignedAt: Date | null; closedAt: Date | null; lockedAt: Date | null; submittedAt: Date | null
   templateSnapshot?: unknown
-}, url: string, signatureLive: boolean): ContractShareLinkInfo {
+}, url: string, signatureLive: boolean, lease: LeaseSignCols): ContractShareLinkInfo {
   const snapDc = (link.templateSnapshot as { disposalConsent?: { enabled?: boolean } } | null)?.disposalConsent
+  const slots = leaseSignSlots(paperDocsOf(link.templateSnapshot), lease)
   return {
     id: link.id,
     url,
@@ -195,6 +227,8 @@ function serializeLink(link: {
     // 제출 시각을 안 내려보내서 운영자 배지가 죽은 링크를 '서명 완료 · 남은 시간'으로 표시했다
     submittedAt: link.submittedAt ? link.submittedAt.toISOString() : null,
     disposalEnabled: snapDc?.enabled === true,
+    signStage: signStageSlots({ slots }),
+    signSummary: badgeSignSummary(slots),
     signatureLive,
   }
 }
@@ -308,7 +342,9 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
       })
     }, { isolationLevel: 'Serializable' })
     // signatureLive 는 false 로 고정한다 — 바로 위 가드가 lease 서명 네 칸이 비어 있음을 이미 증명했다.
-    return { ok: true, link: serializeLink(link, await buildShareUrl(link.token), false), phone: snapshot.tenant.primaryPhone, propertyName }
+    // 서명 칸은 빈 것으로 넘긴다 — 바로 위 가드가 lease 서명 네 칸이 비어 있음을 이미 증명했다.
+    // 추측이 아니라 증명된 사실이라 EMPTY 상수를 쓴다(리터럴 true 를 금지하는 것과 같은 이유).
+    return { ok: true, link: serializeLink(link, await buildShareUrl(link.token), false, EMPTY_LEASE_SIG), phone: snapshot.tenant.primaryPhone, propertyName }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '링크 발급에 실패했습니다.' }
@@ -337,7 +373,7 @@ export async function getContractShareState(tenantId: string): Promise<
           leaseTerm: {
             select: {
               signatureImageUrl: true, signatureSignedAt: true,
-              disposalSignatureImageUrl: true, disposalSignatureSignedAt: true,
+              disposalSignatureImageUrl: true, disposalSignatureSignedAt: true, documentSignatures: true,
             },
           },
         },
@@ -363,7 +399,7 @@ export async function getContractShareState(tenantId: string): Promise<
     }
     return {
       ok: true,
-      link: link ? serializeLink(link, await buildShareUrl(link.token), isSignatureLive(link.leaseTerm)) : null,
+      link: link ? serializeLink(link, await buildShareUrl(link.token), isSignatureLive(link.leaseTerm), link.leaseTerm ?? EMPTY_LEASE_SIG) : null,
       phone: primaryContact?.contactValue ?? null,
       propertyName: property?.name ?? '',
       needsIssue,

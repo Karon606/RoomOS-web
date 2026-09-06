@@ -23,6 +23,28 @@ const read = f => strip(readFileSync(f, 'utf8')).replace(/^\s*import\s[^\n]*$/gm
 
 const violations = []
 
+/**
+ * 함수 본문만 떠서 돌려준다. **반환 타입 주석을 본문으로 착각하지 않는다.**
+ *
+ * `function f(x: T): { a: string } {` 에서 선언 뒤 첫 `{` 는 반환 타입이다. 그것을 잡으면 103자짜리
+ * 타입 리터럴을 본문이라 믿고 검사가 통째로 헛돈다(2026-09-06 역주입에서 실제로 뚫렸다).
+ * 본문 여는 괄호는 줄바꿈이 뒤따르는 `{` 다.
+ */
+function fnBody(src, at) {
+  if (at < 0) return ''
+  const m = /\{[^\S\n]*\n/g
+  m.lastIndex = at
+  const open = m.exec(src)
+  if (!open) return ''
+  let depth = 0
+  for (let i = open.index; i < src.length; i++) {
+    if (src[i] === '{') depth++
+    else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open.index, i + 1) }
+  }
+  return src.slice(open.index)
+}
+
+
 // ⓐ
 {
   const src = read('lib/disposalSignGate.ts')
@@ -52,9 +74,51 @@ const violations = []
 for (const [f, msg] of [
   ['app/(app)/dashboard/alerts.ts', '홈 알림이 서명 진행을 손으로 센다.'],
   ['app/(app)/contracts/actions.ts', '발급 대기가 서명 진행을 손으로 센다.'],
-  ['components/entity-modal/widgets/ContractFilesPanel.tsx', '계약서 패널 배지가 서명 진행을 손으로 센다.'],
 ]) {
-  if (!/signStage\s*\(/.test(read(f))) violations.push(`${f} — ${msg}`)
+  if (!/signStage\s*\(|signStageSlots\s*\(/.test(read(f))) violations.push(`${f} — ${msg}`)
+}
+// 배지는 서버가 계약 축으로 판정해 내려준 값을 쓴다(2026-09-06). 클라이언트는 서명 이미지를
+// 받지 않으므로 여기서 셀 수가 없다. 그래서 축은 '정본을 부르는가'가 아니라 '손으로 안 세는가'다.
+{
+  const f = 'components/entity-modal/widgets/ContractFilesPanel.tsx'
+  const src = read(f)
+  if (!/link\.signStage/.test(src)) {
+    violations.push(`${f} — 배지가 서버 판정(link.signStage)을 안 읽는다. 화면이 제 축으로 세면 알림과 갈린다.`)
+  }
+  if (/hasContractSignature\s*:/.test(src)) {
+    violations.push(`${f} — 배지가 서명 상태를 손으로 조립한다. 그 순간 링크 축으로 되돌아간다.`)
+  }
+  // **배지 함수 안**을 본다. 파일 어딘가에 link.signStage 가 있기만 하면 통과하는 검사는
+  // 한 갈래만 링크 행으로 되돌려도 침묵한다(역주입에서 실제로 뚫렸다, 2026-09-06).
+  // shareBadge 는 수명(lockedAt·closedAt·submittedAt·expiresAt)만 링크에서 읽는다. 서명 두 칸은
+  // 진행 판정용이라 이 함수 안에 있으면 그것이 곧 축이 갈린 것이다.
+  const at = src.indexOf('function shareBadge')
+  const body = fnBody(src, at)
+  // 본문을 못 떴으면 통과시키지 않는다. 검사 대상을 못 찾은 그물은 조용한 것이 아니라 눈이 먼 것이다.
+  if (at < 0 || body.length < 200) {
+    violations.push(`${f} — shareBadge 본문을 못 떴다(${body.length}자). 구조가 바뀌었으면 이 그물부터 고친다(침묵 통과 금지).`)
+  } else {
+    for (const bad of ['signedAt', 'disposalSignedAt']) {
+      if (new RegExp(`link\\.${bad}\\b`).test(body)) {
+        violations.push(`${f} — 배지가 link.${bad} 로 진행을 센다. 그 링크에서 벌어진 일과 종이에 찍힐 것은 다르다.`)
+      }
+    }
+  }
+}
+
+// ⓑ-2 축 봉인. 표시 자리가 **계약 축**으로 진행을 세는가.
+//     링크 행(signedAt·disposalSignedAt)은 그 링크에서 벌어진 일만 적는다. 서명을 두 링크에
+//     나눠 받은 계약은 종이에 둘 다 찍히는데 링크 축은 반쪽이라 부른다(실측 15/37건,
+//     knowledge/sign-evidence-axes.md). 이 자리들의 문구는 계약에 대한 주장이다.
+for (const [f, msg] of [
+  ['app/(app)/dashboard/alerts.ts', '홈 알림'],
+  ['app/(app)/contracts/actions.ts', '발급 대기'],
+  ['app/(app)/tenants/contractShare.ts', '배지 직렬화'],
+]) {
+  const src = read(f)
+  if (!/leaseSignSlots\s*\(/.test(src)) {
+    violations.push(`${f} — ${msg}이 leaseSignSlots 를 안 부른다. 계약 축을 안 보면 두 링크에 나눠 받은 서명을 반쪽이라 부른다.`)
+  }
 }
 
 // ⓒ 링크 조회가 동의서 서명도 보는가.

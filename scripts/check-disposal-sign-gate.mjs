@@ -54,11 +54,13 @@ function wrappedInTryCatch(src, at) {
 const WIRED = [
   ['app/sign/[token]/actions.ts', 'disposalSignatureMissing(', 'ⓐ 제출이 동의서 서명을 안 본다. 액션을 직접 부르면 반쪽 서명으로 제출이 통과한다.'],
   ['app/api/contract/generate/route.ts', 'disposalSignatureMissing(', 'ⓑ 발급이 동의서 서명을 안 본다. 서명란이 빈 동의서가 아무 말 없이 나간다.'],
-  ['app/(app)/dashboard/alerts.ts', 'signProgressLabel(', 'ⓒ 홈 알림이 반쪽 서명을 완료라고 부른다. 운영자가 그것을 믿고 발급한다.'],
-  ['app/(app)/contracts/actions.ts', 'disposalSignatureMissing(', 'ⓓ 발급 대기 행이 반쪽 서명을 구분하지 않는다.'],
-  // 배지는 signStage 로 옮겼다(2026-09-04). 반쪽이 양방향이라 발급 축(disposalSignatureMissing)
-  // 하나로는 동의서만 서명된 계약을 말할 수 없다. 정본을 부르는 것이 축이지 함수 이름이 축은 아니다.
-  ['components/entity-modal/widgets/ContractFilesPanel.tsx', 'signStage(', 'ⓕ 계약서 패널 배지가 반쪽 서명을 서명 완료라고 부른다.'],
+  // 아래 셋은 2026-09-06 에 슬롯 정본으로 옮겼다. **needle 은 배선을 따라 옮긴다** — 안 옮기면
+  // 그물이 헛울리고, 헛울리는 그물은 곧 무시당해 진짜 결함도 못 잡는다.
+  ['app/(app)/dashboard/alerts.ts', 'signProgressLabelSlots(', 'ⓒ 홈 알림이 반쪽 서명을 완료라고 부른다. 운영자가 그것을 믿고 발급한다.'],
+  ['app/(app)/contracts/actions.ts', 'signStageSlots(', 'ⓓ 발급 대기 행이 반쪽 서명을 구분하지 않는다.'],
+  // 배지는 서버가 계약 축으로 판정해 내려준 값을 쓴다. 클라이언트에 서명 이미지가 없어 여기서
+  // 셀 수가 없다 — 축은 '정본을 부르는가'가 아니라 '서버 판정을 읽는가'다.
+  ['components/entity-modal/widgets/ContractFilesPanel.tsx', 'link.signStage', 'ⓕ 계약서 패널 배지가 반쪽 서명을 서명 완료라고 부른다.'],
 ]
 for (const [f, needle, msg] of WIRED) {
   if (!read(f).includes(needle)) violations.push(`${f} — ${msg}`)
