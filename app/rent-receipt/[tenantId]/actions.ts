@@ -264,6 +264,7 @@ export async function getRentReceiptData(tenantId: string, month?: string, kind:
           {
             rentAmount: lease.rentAmount,
             status: lease.status,
+            dueDay: lease.dueDay ?? null,
             discounts: lease.discounts ?? [],
             checkoutProratedAmount: lease.checkoutProratedAmount ?? null,
             checkoutProratedMonth: lease.checkoutProratedMonth ?? null,

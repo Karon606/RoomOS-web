@@ -22,6 +22,10 @@ export type BillingLeaseFields = {
   // 둘 다 제공될 때만 발동 — 미제공 호출부는 기존 동작(회귀 0).
   isShortTerm?: boolean
   moveInDate?: Date | string | null
+  // 매월 납부일 — **필수**(값은 null 가능). 입주달 첫 달 규칙(아래 firstMonthGap)이 읽는다.
+  // 옵셔널로 두면 select 에서 빠뜨려도 컴파일이 통과하고, 납부일을 따로 정한 계약의 입주달이
+  // 조용히 만월로 청구된다. status 와 같은 관례 — 이 타입이 곧 감지망이다.
+  dueDay: string | null
   // 예약 인상(미래월 미리 반영) — 인상 적용월 이상의 달은 scheduledRent 로 청구한다.
   // "7/1부 인상"은 곧 "7월 이용료부터" 라서, 적용일 전에 7월분을 미리 납부해도 인상가가 맞다.
   // 둘 중 한 형태로 제공: 평탄화된 scheduledRent/rentUpdateMonth, 또는 room 객체(스케줄러가 baseRent로
@@ -75,7 +79,7 @@ export function offerRentForMonth(
   room: { baseRent: number; scheduledRent?: number | null; rentUpdateDate?: Date | string | null },
   mon: string,                  // 'YYYY-MM'
 ): number {
-  return effectiveBaseRent({ rentAmount: room.baseRent, status: 'ACTIVE', room }, mon)
+  return effectiveBaseRent({ rentAmount: room.baseRent, status: 'ACTIVE', dueDay: null, room }, mon)
 }
 
 // 아직 제시가에 반영되지 않은 예약 가격변경 — 홈 타일 가격 예고의 발화 판정. 없으면 null.
@@ -106,6 +110,41 @@ export function offerRentChangeAfterMonth(
   return { month: applyMon, rent }
 }
 
+/**
+ * 입주달 앞 구간 일수 — 입주일부터 첫 납부일 전날까지(운영자 승인 2026-09-07, 해석 1).
+ *
+ * 납부일이 입주일과 같으면(파생 등가 포함, sameDueDay) 0 이다 — 기존 계약 전부가 이 갈래라
+ * 청구가 한 글자도 안 바뀐다. 다르면 두 방향이 있다.
+ *   - 납부일이 입주일보다 뒤(9/5 입주·20일): 앞 구간 15일. 입주달 = 만월 + 일할 가산.
+ *   - 납부일이 입주일보다 앞(9/25 입주·5일): 첫 납부일이 다음 달로 넘어가 앞 구간 10일.
+ *     입주달 = 일할만(만월 몫은 다음 달 기간이라 다음 달에 청구된다).
+ * 상한 30 — "1일 이용요금은 월 이용료의 30분의 1" 규칙의 귀결(퇴실 정산과 같은 단가).
+ */
+export function firstMonthGap(moveInDate: Date | string, dueDay: string): { days: number; fullMonthToo: boolean } | null {
+  const d = new Date(moveInDate)
+  if (isNaN(d.getTime())) return null
+  const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate()
+  const lastOfMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  const derived = day >= lastOfMonth ? '말일' : String(day)
+  // 등가면 발동 안 함 — 30일 입주 + '말일' 같은 파생 등가 쌍 포함(sameDueDay 와 같은 판정).
+  const norm = (v: string) => (v.includes('말') ? '말일' : String(parseInt(v, 10)))
+  if (norm(dueDay) === norm(derived)) return null
+  const pIn = (yy: number, mm: number): number => {
+    const last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate()
+    if (dueDay.includes('말')) return last
+    const n = parseInt(dueDay, 10)
+    return isNaN(n) ? NaN : Math.min(n, last)
+  }
+  const pThis = pIn(y, m)
+  if (isNaN(pThis)) return null
+  const moveInUtc = Date.UTC(y, m, day)
+  const nextP = pThis > day ? Date.UTC(y, m, pThis) : Date.UTC(y, m + 1, pIn(y, m + 1))
+  const days = Math.min(30, Math.round((nextP - moveInUtc) / 86400000))
+  if (days <= 0) return null
+  // 첫 납부일이 입주달 안이면 그날부터 시작하는 만월 몫도 입주달 귀속이다(귀속월 = 기간 시작 달).
+  return { days, fullMonthToo: pThis > day }
+}
+
 export function billForLeaseMonth(
   l: BillingLeaseFields,
   mon: string,                  // 'YYYY-MM'
@@ -119,7 +158,17 @@ export function billForLeaseMonth(
     const inMonth = monthOfDate(l.moveInDate)
     if (inMonth && mon !== inMonth) return 0
   }
-  return discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
+  const base = discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
+  // 입주달 첫 달 규칙(운영자 승인 2026-09-07) — 납부일이 입주일과 다를 때만 발동한다.
+  // 락인(우선순위 ②)이 위에서 이미 이겼으므로 수납 기록이 있는 과거 입주달은 불변이다.
+  if (!l.isShortTerm && l.moveInDate && l.dueDay && monthOfDate(l.moveInDate) === mon) {
+    const gap = firstMonthGap(l.moveInDate, l.dueDay)
+    if (gap) {
+      const prorated = Math.floor(base * gap.days / 30)
+      return gap.fullMonthToo ? base + prorated : prorated
+    }
+  }
+  return base
 }
 
 // 예약 가격변경(scheduledRent/nonResidentScheduled)이 '오늘 적용되었는가'를 가르는 경계.
@@ -179,13 +228,32 @@ export function isCheckoutNoBillingMonth(
 // 퇴실일 = 납부일 같은 날(경계일) 케이스에서 무청구 스킵이 정산액을 덮어 과납이 허수로 잡히던 문제 방지
 // (중도퇴실 환불 통합, 운영자 승인 2026-07-20). 호출부는 기존 isCheckoutNoBillingMonth 대신 이걸 쓴다.
 export function isCheckoutNoBillingMonthFor(
-  l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth'>,
+  l: Pick<BillingLeaseFields, 'checkoutProratedAmount' | 'checkoutProratedMonth' | 'moveInDate' | 'dueDay'>,
   expectedMoveOut: Date | string | null | undefined,
   mon: string,
   dueDate: Date | null,
 ): boolean {
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return false
+  // 입주달 첫 달 규칙이 발동하는 달은 무청구가 아니다 — "퇴실예정일이 납부일 이전이면 0원"은
+  // 그 기간을 안 썼다는 뜻인데, 입주달은 앞 구간(입주일부터)을 실제로 쓴다(2026-09-07).
+  if (l.moveInDate && l.dueDay && monthOfDate(l.moveInDate) === mon && firstMonthGap(l.moveInDate, l.dueDay)) return false
   return isCheckoutNoBillingMonth(expectedMoveOut, mon, dueDate)
+}
+
+/**
+ * 입주달의 실효 만기(YYYY-MM-DD) — 첫 달 규칙이 발동하면 기한은 **입주일**이다
+ * (운영자 승인 2026-09-07, 질문 2 = 가. 선납 모델 — 입주하는 날 첫 달 몫을 낸다).
+ * 발동하지 않으면 null — 종전 만기(그 달 납부일)를 쓴다.
+ */
+export function firstMonthDueYmd(
+  l: Pick<BillingLeaseFields, 'moveInDate' | 'dueDay'>,
+  mon: string,
+): string | null {
+  if (!l.moveInDate || !l.dueDay) return null
+  if (monthOfDate(l.moveInDate) !== mon) return null
+  if (!firstMonthGap(l.moveInDate, l.dueDay)) return null
+  const d = new Date(l.moveInDate)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 // ── 계약 누적 미납액 정본 ────────────────────────────────────────────

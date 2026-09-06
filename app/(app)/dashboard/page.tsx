@@ -22,7 +22,7 @@ import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALER
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { effectiveRecurringAmount, recurringAmountLabel } from '@/lib/recurringEstimate'
 import { recurringCycleWord } from '@/lib/recurringDueDate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, monthOfDate, offerRentChangeAfterMonth, offerRentForMonth, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
 import { getCheckedOutRecognizedRevenue, getPaidRevenue, getPaidRevenueByMonths, getReservedFullMonthRevenue, roomAvailability, roomLeaseRowOrder, primaryRoomLease } from '@/lib/leaseStatus'
 import { loadWishMatch, wishCandidateCaption, wishDelayHint, wishGateDetail, wishRoomFromLabel, wishRoomStateLabel } from '@/lib/wishMatch'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
@@ -339,7 +339,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
             id: true, tenant: { select: { id: true, name: true, englishName: true, nickname: true, displayNameStyle: true } }, status: true, rentAmount: true,
             // 사람별 실제 청구액(lib/billing) — 할인·일할·단기·예약 인상을 수납 관리와 같은 식으로 읽는다.
             // expectedMoveOut — 타일 퇴실 예정일 줄("8/14 퇴실"). 청구 판정에는 쓰지 않는다.
-            isShortTerm: true, moveInDate: true, expectedMoveOut: true,
+            isShortTerm: true, moveInDate: true, dueDay: true, expectedMoveOut: true,
             checkoutProratedAmount: true, checkoutProratedMonth: true,
             discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
           },
@@ -622,10 +622,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // 특정 월의 dueDay(override 적용)를 반환
   function effectiveDueDayForMonth(
-    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): string | null {
     if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return l.overrideDueDay
+    // 입주달 첫 달 규칙이 발동하면 기한은 입주일이다(운영자 승인 2026-09-07, 선납 모델).
+    // 안 두면 9/25 입주·납부일 5일 계약이 입주 첫날부터 '20일 연체'로 뜬다.
+    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null }, monthStr)
+    if (fm) return fm
     return l.dueDay
   }
 

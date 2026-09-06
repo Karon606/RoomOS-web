@@ -13,7 +13,7 @@
 import prisma from '@/lib/prisma'
 import { dueDayForCutoff } from '@/lib/dueDate'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
-import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isCheckoutNoBillingMonthFor, resolveDueDateForMonth, firstMonthDueYmd } from '@/lib/billing'
 
 function monthRange(startMonth: string, endMonth: string): string[] {
   const result: string[] = []
@@ -156,10 +156,14 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
   }
 
   function effectiveDueDayForMonth(
-    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    l: { dueDay: string | null; moveInDate?: Date | string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
     monthStr: string,
   ): string | null {
     if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return l.overrideDueDay
+    // 입주달 첫 달 규칙이 발동하면 기한은 입주일이다(운영자 승인 2026-09-07, 선납 모델).
+    // 안 두면 9/25 입주·납부일 5일 계약이 입주 첫날부터 '20일 연체'로 뜬다.
+    const fm = firstMonthDueYmd(l as { moveInDate: Date | string | null; dueDay: string | null }, monthStr)
+    if (fm) return fm
     return l.dueDay
   }
 

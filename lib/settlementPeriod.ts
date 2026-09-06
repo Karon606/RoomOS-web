@@ -94,9 +94,16 @@ export function settlementPeriodFor(
   let startYmd = periodStartYmd(lease, sy, sm)
   if (!startYmd) return null
 
-  // 입주월 보정 — 기간 시작은 입주일보다 앞설 수 없다
+  // 입주월 보정 — 기간 시작은 입주일보다 앞설 수 없다.
+  // 달 일치 조건을 뗐다(2026-09-07, 납부일 신설). 납부일이 입주일과 다르면(9/5 입주·납부일 20)
+  // 첫 기간 시작이 전월 20일로 잡혀 11일 산 사람에게 27일치가 계산되고 귀속이 입주 전 달로
+  // 새 나갔다. 입주일이 시작보다 뒤면 항상 올리고, 그때 귀속월도 입주달로 세운다.
   const moveIn = asYmd(lease.moveInDate)
-  if (moveIn && moveIn.slice(0, 7) === `${sy}-${pad(sm)}` && moveIn > startYmd) startYmd = moveIn
+  if (moveIn && moveIn > startYmd) {
+    startYmd = moveIn
+    const [my, mm] = moveIn.split('-').map(Number)
+    sy = my; sm = mm
+  }
 
   // 다음 기간 시작 하루 전이 '퇴실해야 하는 날'
   let ny = sy, nm = sm + 1

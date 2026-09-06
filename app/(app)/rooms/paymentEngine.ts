@@ -49,6 +49,7 @@ export async function rewriteLockedExpectedForDiscountChange(
     where: { id: leaseTermId },
     select: {
       isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
+      dueDay: true, moveInDate: true,
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
   })
@@ -62,7 +63,7 @@ export async function rewriteLockedExpectedForDiscountChange(
   const months = [...new Set(recs.map(r => r.targetMonth))]
   for (const mon of months) {
     if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-    const base = { rentAmount: lease.rentAmount, status: lease.status, room: lease.room }
+    const base = { rentAmount: lease.rentAmount, status: lease.status, room: lease.room, dueDay: lease.dueDay, moveInDate: lease.moveInDate }
     const before = billForLeaseMonth({ ...base, discounts: prevDiscounts }, mon, null)
     const after  = billForLeaseMonth({ ...base, discounts: nextDiscounts }, mon, null)
     if (before === after) continue
@@ -101,6 +102,7 @@ export async function rewriteLockedExpectedForRentSchedule(
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
       id: true, isShortTerm: true, rentAmount: true, checkoutProratedMonth: true, status: true,
+      dueDay: true, moveInDate: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
   })
@@ -113,7 +115,7 @@ export async function rewriteLockedExpectedForRentSchedule(
     const months = [...new Set(recs.map(r => r.targetMonth))]
     for (const mon of months) {
       if (lease.checkoutProratedMonth === mon) continue   // 일할 정산 권위 월 — 불변
-      const base = { rentAmount: lease.rentAmount, status: lease.status, discounts: lease.discounts }
+      const base = { rentAmount: lease.rentAmount, status: lease.status, discounts: lease.discounts, dueDay: lease.dueDay, moveInDate: lease.moveInDate }
       const before = billForLeaseMonth({ ...base, room: beforeRoom }, mon, null)
       const after  = billForLeaseMonth({ ...base, room: afterRoom }, mon, null)
       if (before === after) continue
@@ -150,7 +152,7 @@ export async function rewriteLockedExpectedForRentAmount(
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
-      id: true, isShortTerm: true, moveInDate: true, checkoutProratedMonth: true, status: true,
+      id: true, isShortTerm: true, moveInDate: true, dueDay: true, checkoutProratedMonth: true, status: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
     },
@@ -170,7 +172,7 @@ export async function rewriteLockedExpectedForRentAmount(
     // 422호 파트쿨리나 6월(262,500 락인 · 242,500 허수 미납)이 만들어진 것과 같은 모양이다.
     const base = {
       discounts: lease.discounts, status: lease.status, room: lease.room,
-      isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate,
+      isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay,
     }
     const before = billForLeaseMonth({ ...base, rentAmount: prevRentAmount }, mon, null)
     const after  = billForLeaseMonth({ ...base, rentAmount: nextRentAmount }, mon, null)

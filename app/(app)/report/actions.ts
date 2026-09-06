@@ -374,7 +374,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: BILLABLE_STATUSES }, rentAmount: { gt: 0 } },
       select: {
-        id: true, status: true, rentAmount: true, isShortTerm: true,
+        id: true, status: true, rentAmount: true, isShortTerm: true, dueDay: true,
         moveInDate: true, expectedMoveOut: true, moveOutDate: true,
         checkoutProratedAmount: true, checkoutProratedMonth: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },

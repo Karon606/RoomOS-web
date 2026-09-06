@@ -371,7 +371,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
         { rentAmount: lease.rentAmount, status: lease.status, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
-          isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate,   // 단기 입주월 단일 청구
+          isShortTerm: lease.isShortTerm, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null,   // 단기 입주월 단일 청구
           room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate,
                   nonResidentScheduled: room.nonResidentScheduled, nonResidentRentDate: room.nonResidentRentDate } },
         ms,
@@ -440,7 +440,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // dashboard·unpaid.ts 와 동일 규칙(날짜 기준, 상태 무관).
     const skipByMoveOut = (ms: string): boolean =>
       isAfterMoveOutMonth(lease.expectedMoveOut, ms)
-      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth }, lease.expectedMoveOut, ms, effDueDateForMonth(ms))
+      || isCheckoutNoBillingMonthFor({ checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, moveInDate: lease.moveInDate, dueDay: lease.dueDay ?? null }, lease.expectedMoveOut, ms, effDueDateForMonth(ms))
 
     let pastBillable = 0
     let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
@@ -863,7 +863,7 @@ export async function savePayment(data: {
     where: { id: data.leaseTermId },
     select: {
       rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
-      isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
+      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영). 거주·비거주 두 축.
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },
@@ -1750,7 +1750,7 @@ async function serverBillForMonth(leaseTermId: string, mon: string, fallback: nu
     where: { id: leaseTermId },
     select: {
       rentAmount: true, status: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
-      isShortTerm: true, moveInDate: true,   // 단기 입주월 단일 청구(lib/billing)
+      isShortTerm: true, moveInDate: true, dueDay: true,   // 단기 입주월 단일 청구 + 입주달 첫 달 규칙(lib/billing)
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       room: { select: { scheduledRent: true, rentUpdateDate: true, nonResidentScheduled: true, nonResidentRentDate: true } },   // 예약 인상 — 미래월 청구 반영(거주·비거주 두 축)
     },

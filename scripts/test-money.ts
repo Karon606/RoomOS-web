@@ -4,7 +4,7 @@
 // ① 의도한 규칙 변경인지 운영자 확인 → 기대값 갱신, ② 아니면 회귀이므로 코드 수정.
 // 근거 케이스: 신고 6334bac4(입주 달 퇴실 일할), 공정위 환불 규칙, calcStayQuote 도입(2026-07-05).
 
-import { unpaidForLease, billedForLease, type UnpaidRecord } from '@/lib/billing'
+import { unpaidForLease, billedForLease, billForLeaseMonth, firstMonthGap, firstMonthDueYmd, isCheckoutNoBillingMonthFor, type UnpaidRecord } from '@/lib/billing'
 import { fmtManShort, fmtOfferRentAhead, fmtRentApplyFrom } from '../lib/fmtMoney'
 import {
   PRORATE_BASE_DAYS,
@@ -16,6 +16,7 @@ import {
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
 import { defaultCheckoutYmd } from '../lib/checkoutDate'
+import { settlementPeriodFor } from '../lib/settlementPeriod'
 import { cashReceiptIssueLines, cashReceiptKey, receiptRowVerdict, cashReceiptDaysLeft, depositCashReceiptWarning } from '../lib/cashReceipt'
 import { refundTaxNoticeLines, undoRefundTaxNoticeLines, depositReturnReceiptNoticeLine } from '../lib/refundTaxNotice'
 import { depositBasisOf, DEPOSIT_RETURN_GRACE_DAYS } from '../lib/depositPending'
@@ -1041,6 +1042,56 @@ const RENT = 300000
   // 보증금 반환액이 같이 실리면 본문 꼬리에 총 환불액.
   const withDeposit = rentSettlementConfirmSpec(v(0, 340000, 'none', 0, 0), 500000)!
   eq('확인창: 보증금 반환 꼬리', withDeposit.message.endsWith(' 보증금 반환 500,000원 · 총 환불액 500,000원.'), true)
+}
+
+// ── 입주달 첫 달 규칙 (운영자 승인 2026-09-07: 해석 1 합산 · 기한 = 입주일) ──
+{
+  const L = (moveIn: string, dueDay: string | null, over: Record<string, unknown> = {}) =>
+    ({ rentAmount: 500_000, status: 'ACTIVE', dueDay, moveInDate: new Date(moveIn + 'T00:00:00Z'), ...over })
+  // 항등 — 납부일 = 입주일의 날. 기존 계약 전부가 이 갈래라 청구가 한 글자도 안 바뀐다.
+  eq('납부일=입주일이면 만월 그대로', billForLeaseMonth(L('2026-09-05', '5'), '2026-09', null), 500_000)
+  eq('말일 파생 등가(9/30 입주·말일)도 만월', billForLeaseMonth(L('2026-09-30', '말일'), '2026-09', null), 500_000)
+  eq('납부일 없으면 종전 그대로', billForLeaseMonth(L('2026-09-05', null), '2026-09', null), 500_000)
+  // 가산 — 납부일이 입주일보다 뒤(9/5 입주·20일): 만월 + 15일 일할.
+  eq('가산: 9/5 입주·납부일 20 = 750,000', billForLeaseMonth(L('2026-09-05', '20'), '2026-09', null), 750_000)
+  eq('가산 뒤 다음 달은 만월', billForLeaseMonth(L('2026-09-05', '20'), '2026-10', null), 500_000)
+  eq('말일 가산: 9/1 입주·말일 = 만월 + 29일', billForLeaseMonth(L('2026-09-01', '말일'), '2026-09', null), 500_000 + Math.floor(500_000 * 29 / 30))
+  // 감액 — 납부일이 입주일보다 앞(9/25 입주·5일): 다음 납부일(10/5)까지 10일 일할만.
+  eq('감액: 9/25 입주·납부일 5 = 166,666', billForLeaseMonth(L('2026-09-25', '5'), '2026-09', null), 166_666)
+  eq('감액 뒤 다음 달은 만월', billForLeaseMonth(L('2026-09-25', '5'), '2026-10', null), 500_000)
+  // 우선순위 — 락인·단기가 먼저다.
+  eq('락인이 신규칙보다 먼저', billForLeaseMonth(L('2026-09-05', '20'), '2026-09', 480_000), 480_000)
+  eq('단기는 무발동', billForLeaseMonth(L('2026-09-05', '20', { isShortTerm: true }), '2026-09', null), 500_000)
+  // 할인 결합 — 기준액은 할인 지난 그 달 유효액.
+  eq('할인 10만이면 기준 40만으로 합산',
+    billForLeaseMonth(L('2026-09-05', '20', { discounts: [{ discountType: 'amount', value: 100_000, scope: 'permanent', startMonth: null, endMonth: null }] }), '2026-09', null),
+    400_000 + Math.floor(400_000 * 15 / 30))
+  // 입주달이 아니면 무발동.
+  eq('입주달 밖은 무발동', billForLeaseMonth(L('2026-08-05', '20'), '2026-09', null), 500_000)
+
+  // firstMonthGap 정본.
+  eq('gap: 등가면 null', firstMonthGap('2026-09-05', '5'), null)
+  eq('gap: 뒤면 일수·만월 포함', firstMonthGap('2026-09-05', '20'), { days: 15, fullMonthToo: true })
+  eq('gap: 앞이면 다음 달 납부일까지·만월 없음', firstMonthGap('2026-09-25', '5'), { days: 10, fullMonthToo: false })
+  eq('gap: 상한 30', firstMonthGap('2026-09-01', '31')?.days, 29)
+
+  // 기한 = 입주일 (질문 2 = 가).
+  eq('입주달 실효 만기 = 입주일', firstMonthDueYmd(L('2026-09-25', '5'), '2026-09'), '2026-09-25')
+  eq('등가면 만기 규칙 무발동', firstMonthDueYmd(L('2026-09-05', '5'), '2026-09'), null)
+  eq('다른 달은 무발동', firstMonthDueYmd(L('2026-09-25', '5'), '2026-10'), null)
+
+  // 무청구 입주달 예외 — 입주달은 앞 구간을 실제로 쓴다.
+  eq('입주달은 무청구 판정 제외',
+    isCheckoutNoBillingMonthFor(
+      { checkoutProratedAmount: null, checkoutProratedMonth: null, moveInDate: new Date('2026-09-05T00:00:00Z'), dueDay: '20' },
+      new Date('2026-09-15T00:00:00Z'), '2026-09', new Date(2026, 8, 20, 23, 59, 59)),
+    false)
+
+  // 퇴실 정산 입주월 보정 — 9/5 입주·납부일 20·9/15 퇴실이면 11일 사용, 귀속 9월.
+  const sp = settlementPeriodFor({ dueDay: '20', moveInDate: new Date('2026-09-05T00:00:00Z') }, '2026-09-15')
+  eq('정산 시작이 입주일로 오른다', sp?.startYmd, '2026-09-05')
+  eq('정산 사용일 11일', sp?.daysUsed, 11)
+  eq('정산 귀속이 입주달', sp?.month, '2026-09')
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)
