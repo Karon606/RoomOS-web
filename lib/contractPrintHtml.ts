@@ -63,6 +63,10 @@ export type PrintContractData = {
   stampImageUrl: string | null
   refundClauseInContract: boolean    // 계약서에 환불 조항(공정위 고정 문구) 자동 표시 여부
   disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서
+  // 영업장이 만든 추가 서류와 그 서명. 비면 종이에 문자 하나 안 붙는다(서류를 안 쓰는 영업장
+  // 전원의 발급 HTML 이 이 기능 전과 바이트 단위로 같아야 한다).
+  signDocuments?: Array<{ key: string; title: string; body: string }>
+  documentSignatures?: Record<string, { image: string; signedAt: string }>
   disposalSignatureImageDataUrl?: string | null  // 동의서 별도 서명 (없으면 '(서명 또는 인)')
   // 입실자 + 계약 정보
   tenant: {
@@ -211,9 +215,18 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   }
   const dcBodyHtml = dc.body.split('\n').map(p => p.trim()).filter(Boolean)
     .map(p => `<p class="dc-p">${escape(renderContractText(p, dcVars))}</p>`).join('')
-  const disposalHtml = dc.enabled ? `
+
+  // 동반 서류 한 장을 그린다. 동의서와 추가 서류가 **같은 조판**을 쓴다 — 두 벌로 두면 한쪽만
+  // 고쳐지고, 그 순간 같은 성격의 종이 둘이 다르게 생긴다.
+  //
+  // 다른 점은 둘뿐이다. 수신인 줄("○○ 대표 귀하")은 임의처분 서식 고유라 추가 서류에는 없고,
+  // 서명란 라벨도 동의서만 '동의자(입실자)'다. 추가 서류가 무슨 성격인지 앱은 모른다.
+  const companionPage = (o: {
+    title: string; bodyHtml: string; signLabel: string; signDate: string
+    signatureDataUrl?: string | null; toLine: boolean
+  }) => `
     <div class="paper disposal">
-      <div class="dc-title">${escape(dc.title)}</div>
+      <div class="dc-title">${escape(o.title)}</div>
       <div class="dc-sec-h">1. 입실자 정보</div>
       <table class="info dc-info"><tbody>
         <tr><th>성명<span class="en">Name</span></th><td>${escape(d.tenant.name)}</td></tr>
@@ -221,15 +234,38 @@ export function buildContractPrintHtml(d: PrintContractData): string {
         <tr><th>연락처<span class="en">Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td></tr>
       </tbody></table>
       <div class="dc-sec-h">2. 동의 내용</div>
-      <div class="dc-body">${dcBodyHtml}</div>
-      <div class="dc-date num">${escape(d.disposalSignDate ?? d.signDate)}</div>
-      <div class="dc-sign"><span class="dc-sign-lbl">동의자(입실자) 성명</span><span class="dc-sign-line">${escape(d.tenant.name)}</span><span class="dc-sign-seal">${d.disposalSignatureImageDataUrl ? `<img class="dc-sign-img" src="${d.disposalSignatureImageDataUrl}" alt="서명" />` : '(서명 또는 인)'}</span></div>
-      <div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>
+      <div class="dc-body">${o.bodyHtml}</div>
+      <div class="dc-date num">${escape(o.signDate)}</div>
+      <div class="dc-sign"><span class="dc-sign-lbl">${escape(o.signLabel)}</span><span class="dc-sign-line">${escape(d.tenant.name)}</span><span class="dc-sign-seal">${o.signatureDataUrl ? `<img class="dc-sign-img" src="${o.signatureDataUrl}" alt="서명" />` : '(서명 또는 인)'}</span></div>
+      ${o.toLine ? `<div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>` : ''}
       <div class="doc-footer">
         <div class="foot-biz"><span class="nm">${escape(biz.name || '')}</span>${biz.registrationNo ? ` · 사업자등록번호 ${escape(biz.registrationNo)}` : ''}${biz.ceoName ? ` · 대표 ${escape(biz.ceoName)}` : ''}${bizMeta2 ? `<br>${bizMeta2}` : ''}</div>
         <div class="wordmark">made with <span class="wm"><span class="wm-stay">stay</span><span class="wm-eum">eum</span></span></div>
       </div>
-    </div>` : ''
+    </div>`
+
+  const disposalHtml = dc.enabled ? companionPage({
+    title: dc.title, bodyHtml: dcBodyHtml, signLabel: '동의자(입실자) 성명',
+    signDate: d.disposalSignDate ?? d.signDate,
+    signatureDataUrl: d.disposalSignatureImageDataUrl, toLine: true,
+  }) : ''
+
+  // 영업장이 만든 추가 서류 — 동의서 뒤에 한 장씩. 목록이 비면 문자 하나 안 붙는다.
+  // {{미납일수}} 는 동의서 전용 값이라 안 넘긴다. 누가 적어도 renderContractText 가 원문을
+  // 그대로 두므로 종이가 깨지지는 않는다.
+  const extraVars: Record<string, string> = {
+    성명: d.tenant.name, 호실: fmtRoom(d.lease?.roomNo), 연락처: d.tenant.primaryPhone ?? '',
+    영업장명: biz.name || '', 대표: biz.ceoName || '',
+  }
+  const extraDocsHtml = (d.signDocuments ?? []).map(doc => companionPage({
+    title: doc.title,
+    bodyHtml: doc.body.split('\n').map(x => x.trim()).filter(Boolean)
+      .map(x => `<p class="dc-p">${escape(renderContractText(x, extraVars))}</p>`).join(''),
+    signLabel: '입실자 성명',
+    signDate: d.documentSignatures?.[doc.key]?.signedAt || d.signDate,
+    signatureDataUrl: d.documentSignatures?.[doc.key]?.image ?? null,
+    toLine: false,
+  })).join('')
 
   return `<!doctype html>
 <html lang="ko">
@@ -450,6 +486,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     </div>
   </div>
   ${disposalHtml}
+  ${extraDocsHtml}
 </body>
 </html>`
 }

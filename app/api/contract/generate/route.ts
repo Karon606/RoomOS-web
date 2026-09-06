@@ -5,6 +5,7 @@ import { normalizeIssuePurpose, withEffectivePurpose, archivePurposeLogEntry, co
   ARCHIVED_CONTRACT_PURPOSE, parsePurposeLog } from '@/lib/contractPurpose'
 import { liveRealContracts } from '@/lib/contractCurrentIssue'
 import { resolveSignedBody } from '@/lib/contract'
+import { activeSignDocuments, parseDocumentSignatures } from '@/lib/signDocuments'
 import { cookies } from 'next/headers'
 import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
@@ -404,6 +405,11 @@ export async function POST(req: Request) {
       refundClauseInContract: body_.refundClauseInContract,
       disposalConsent: resolveDisposalConsent(body_.disposalConsent),
       disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,
+      // 추가 서류와 그 서명. **서명은 서버가 계약에서 직접 읽는다** — 클라이언트가 보낸 이미지를
+      // 종이에 찍으면 이 API 를 직접 불러 아무 그림이나 서명란에 넣을 수 있다(성명 봉인과 같은 이유).
+      // 목록은 body_ 를 탄다. 서명이 끝난 계약이면 박제의 그때 목록이고, 아니면 지금 목록이다.
+      signDocuments: activeSignDocuments(body_.signDocuments),
+      documentSignatures: parseDocumentSignatures(lease?.documentSignatures),
       pretendardBase64,
       tenant: {
         name: printedTenantName,
@@ -593,6 +599,7 @@ export async function POST(req: Request) {
         subLeaseAddendum: printData.subLeaseAddendum,
         rateAddendum: printData.rateAddendum,
         roomScheduleText: printData.roomScheduleText,
+        signDocuments: printData.signDocuments,
       }),
     }
 
@@ -673,6 +680,9 @@ export async function POST(req: Request) {
               // 이 종이에 실제로 붙은 특약을 함께 동결한다. 안 담으면 서명 뒤 재발급에서
               // 박제본이 특약을 모르고(null) 절이 통째로 사라진다.
               subLeaseAddendum: (printData.subLeaseAddendum ?? null) as unknown as object,
+              // 이 종이에 붙은 추가 서류 목록도 동결한다. 안 담으면 서명 뒤 재발급에서 박제본이
+              // 서류를 모르고 그 장이 통째로 사라진다(특약과 같은 규칙).
+              signDocuments: (printData.signDocuments ?? []) as unknown as object,
               // 이 종이에 찍은 성명 표기와 그 문자열. 표기 코드만으로는 나중에 이름 자체가
               // 바뀌면(개명·오타 정정) 그때 무엇을 봤는지 못 되짚는다.
               nameStyle: printedNameStyle,

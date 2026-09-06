@@ -55,6 +55,8 @@ export type PrintedFactsInput = {
   rateAddendum?: { title: string; items: string[] } | null
   /** 거주 호실 일정 문장 — 서명 뒤 방이 바뀌면 종이와 사실이 갈리므로 축으로 센다. */
   roomScheduleText?: string | null
+  /** 이 종이에 붙은 추가 서류. 제목이든 문단 한 줄이든 바뀌면 그 종이와 지금이 다르다. */
+  signDocuments?: Array<{ key: string; title: string; body: string }> | null
 }
 
 /** 축 순서 — 발급 상세 시트가 이 순서로 표를 그린다(종이의 위에서 아래 순서). */
@@ -69,6 +71,7 @@ export const PRINTED_FACT_KEYS = [
   'subLeaseAddendum',
   'rateAddendum',
   'roomScheduleText',
+  'signDocuments',
 ] as const
 
 export type PrintedFactKey = (typeof PRINTED_FACT_KEYS)[number]
@@ -95,6 +98,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   subLeaseAddendum: '추가 호실 특약',
   rateAddendum: '요금 특약',
   roomScheduleText: '거주 호실 일정',
+  signDocuments: '추가 서류',
 }
 
 /**
@@ -136,6 +140,12 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
     // 요금 절도 같은 대접 — 문안이 바뀌면 그 종이와 지금이 다르다.
     rateAddendum: d.rateAddendum ? JSON.stringify(d.rateAddendum) : undefined,
     roomScheduleText: d.roomScheduleText ?? undefined,
+    // 추가 서류도 통비교 — 제목이든 문단 한 줄이든 바뀌면 그 종이와 지금이 다르다.
+    // **비면 undefined 다**(축 없음). 서류를 안 쓰는 계약 전건과 옛 박제가 여기서 무변동이어야
+    // 하고, 드리프트 비교의 undefined 생략 규칙이 그것을 지킨다.
+    signDocuments: d.signDocuments?.length
+      ? JSON.stringify(d.signDocuments.map(x => ({ key: x.key, title: x.title, body: x.body })))
+      : undefined,
   }
 }
 

@@ -1,6 +1,7 @@
 // 계약서 렌더 데이터(ContractData) 조립 공유 헬퍼 — 운영자 출력 페이지와 원격 서명 링크 발급(스냅샷)이 공용.
 // 인증은 하지 않는다. 호출자가 검증된 propertyId 를 넘겨야 한다(운영자 경로 requirePropertyAccess 이후 호출).
 import 'server-only'
+import { activeSignDocuments, type SignDocument } from '@/lib/signDocuments'
 import { kstYmdStr } from '@/lib/kstDate'
 import prisma from '@/lib/prisma'
 import { driveImageDataUrl } from '@/lib/google-drive'
@@ -151,6 +152,10 @@ export type ContractData = {
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   refundClauseInContract: boolean      // 계약서에 환불 조항(공정위 고정 문구) 자동 표시 여부
   disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서 (계약서와 함께 출력)
+  // 영업장이 직접 만든 추가 서류 — 계약서·동의서 뒤에 한 장씩 붙는다(제목 + 문단 + 서명).
+  // 서명 전이면 지금 쓰는 목록(중지 제외), 서명 후면 박제에 담긴 그때 목록이다.
+  // 링크 스냅샷이 ContractData 통째를 담으므로 이 칸이 곧 "그 사람이 무엇을 보고 서명했나"다.
+  signDocuments: SignDocument[]
   tenant: {
     id: string
     // **이 계약서에 실제로 찍히는 성명이다.** 표기 선택(lease.nameStyle)이 이미 적용돼 있으므로
@@ -279,6 +284,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
         refundClauseInContract: true, disposalConsentTemplate: true, subLeaseAddendum: true,
+        signDocuments: true,
         roomScheduleAddendum: true,
         shortStayPolicy: true, shortStayAddendum: true, earlyCheckoutAddendum: true,
       },
@@ -374,6 +380,7 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     logoImageUrl: property?.logoDriveFileId ? await driveImageDataUrl(property.logoDriveFileId) : null,
     refundClauseInContract: body.refundClauseInContract,
     disposalConsent: resolveDisposalConsent(body.disposalConsent),
+    signDocuments: activeSignDocuments(body.signDocuments),
     tenant: {
       id: tenant.id,
       // 성명 표기는 표시값과 같은 층에서 온다 — 화면·PDF·스냅샷이 한 값을 보게 하려는 것이고,

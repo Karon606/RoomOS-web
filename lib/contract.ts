@@ -372,6 +372,12 @@ export type SignedContractSnapshot = {
    */
   subLeaseAddendum?: SubLeaseAddendum | null
   /**
+   * 서명 당시 종이에 붙어 있던 추가 서류 목록. 위 특약과 **같은 규칙**이다 — 이 칸이 생기기 전
+   * 박제에는 없고(undefined), 그때는 빈 배열로 읽는다. 서명이 끝난 계약서에 새 서류를 소급해
+   * 끼워 넣지 않는다. 종이에 없던 장이 재발급에서 튀어나오면 서명 시점 격리를 스스로 깨는 것이다.
+   */
+  signDocuments?: unknown
+  /**
    * 서명 당시 붙어 있던 요금 절(단기 특약 또는 조기 퇴실). 위 특약과 같은 규칙이다 —
    * 이 칸이 없던 박제에는 undefined 이고 그때는 null 로 읽어, 이미 서명이 끝난 계약서에
    * 요금 조항을 소급해 끼워 넣지 않는다.
@@ -395,6 +401,12 @@ export type ResolvedBody = {
   subLeaseAddendum: SubLeaseAddendum | null
   /** 박제본이 들고 있던 요금 절. 위와 같은 규칙 — SNAPSHOT 일 때만 의미가 있다. */
   rateAddendum: SubLeaseAddendum | null
+  /**
+   * 이 종이에 붙는 추가 서류. SNAPSHOT 이면 서명 당시 목록 그대로이고, 그 밖에는 지금 영업장이
+   * 쓰는 목록(중지된 것 제외)이다. **박제에 이 칸이 없으면 빈 배열이다** — 옛 계약서에 새
+   * 서류를 소급해 끼우지 않는다.
+   */
+  signDocuments: unknown
   /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
   blockIssue: boolean
 }
@@ -406,6 +418,7 @@ export function resolveSignedBody(
     refundClauseInContract?: boolean | null
     disposalConsentTemplate?: unknown
     businessInfo?: unknown
+    signDocuments?: unknown
   } | null,
 ): ResolvedBody {
   const live = {
@@ -413,6 +426,7 @@ export function resolveSignedBody(
     refundClauseInContract: property?.refundClauseInContract ?? true,
     disposalConsent: property?.disposalConsentTemplate ?? null,
     businessInfo: (property?.businessInfo as BusinessInfo | null) ?? null,
+    signDocuments: property?.signDocuments ?? null,
   }
   const snap = lease?.signedContractSnapshot as SignedContractSnapshot | null | undefined
 
@@ -426,6 +440,9 @@ export function resolveSignedBody(
       businessInfo: snap.businessInfo ?? live.businessInfo,
       subLeaseAddendum: snap.subLeaseAddendum ?? null,
       rateAddendum: snap.rateAddendum ?? null,
+      // 박제에 이 칸이 없으면 **빈 배열**이다(live 로 폴백하지 않는다). 그때 종이에 없던
+      // 서류가 재발급에서 튀어나오면 서명 시점 격리가 깨진다.
+      signDocuments: snap.signDocuments ?? [],
       blockIssue: false,
     }
   }
