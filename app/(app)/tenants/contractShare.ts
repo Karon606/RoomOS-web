@@ -282,7 +282,7 @@ export async function setDueDayForContract(leaseTermId: string, dueDay: string):
     await requireEdit()
     const { propertyId } = await requirePropertyAccess()
     const v = asDueDay(dueDay)
-    if (!v) return { ok: false, error: '매월 납부일은 1부터 31 사이의 숫자 또는 말 로 입력해 주세요.' }
+    if (!v) return { ok: false, error: '매월 납부일은 1부터 31 사이의 숫자 또는 말일로 입력해 주세요.' }
     const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
     if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
     await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { dueDay: v } })

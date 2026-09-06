@@ -571,7 +571,9 @@ function readLeaseFields(formData: FormData) {
   const paymentTiming    = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const payMethod           = formData.get('payMethod') as string
   const cashReceipt         = formData.get('cashReceipt') as string
-  const registrationStatus  = (formData.get('registrationStatus') as RegistrationStatus) || 'NOT_REPORTED'
+  // 신규 기본값은 신고예정(운영자 오더 2026-09-07) — 계약 시점엔 재계약 외엔 신고 전이 정상이다.
+  // 수정 액션(:1023 부근)의 폴백은 그대로다 — 폼에 필드가 없는 저장이 기존 값을 덮지 않게.
+  const registrationStatus  = (formData.get('registrationStatus') as RegistrationStatus) || 'PLANNED'
   const contractUrl         = formData.get('contractUrl') as string
   const wishRooms           = formData.get('wishRooms') as string
   const wishConditions      = formData.get('wishConditions') as string

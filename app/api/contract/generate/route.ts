@@ -23,7 +23,7 @@ import { pickDocumentLease } from '@/lib/documentLease'
 import { disposalSignatureMissing } from '@/lib/disposalSignGate'
 import { contractSubLeases, contractSubLeaseAddendum, contractRateAddendum, contractRoomScheduleText, contractNameStyle } from '@/lib/contractData'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
-import { documentName } from '@/lib/documentName'
+import { documentName, isForeignForDocuments, registrationHeadPair } from '@/lib/documentName'
 // 인쇄 사실 사영(15축) 정본 — 드리프트 비교(contractShare)와 발급본 박제가 같은 축을 쓴다.
 import { printedFacts } from '@/lib/contractPrintedFacts'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
@@ -449,10 +449,12 @@ export async function POST(req: Request) {
       signDocuments: activeSignDocuments(body_.signDocuments),
       documentSignatures: mergedDocumentSignatures,
       pretendardBase64,
+      // 전입신고 칸 머리 — 외국인 판정은 서명 화면·폼과 같은 축(국적·등록번호)이다.
+      registrationHead: registrationHeadPair(isForeignForDocuments({
+        nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoEnc,
+      })),
       tenant: {
         name: printedTenantName,
-        // 본국 표기 이름 병기(오류신고 cdda7787) — 값·폰트 판정은 조판 정본(nativeNameSubOnPaper)이 한다.
-        nativeName: tenant.nativeName ?? null,
         birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
         // 등록번호가 있으면 종이의 생년월일 칸을 이 번호가 대체한다. 값은 서버가 직접 복호한다 —
         // 클라이언트가 보낸 번호를 믿으면 이 API 를 직접 불러 아무 번호나 인쇄할 수 있다.
@@ -628,7 +630,6 @@ export async function POST(req: Request) {
           gender: printData.tenant.gender,
           primaryPhone: printData.tenant.primaryPhone,
           smoking: body.smoking === '흡연',
-        nativeName: tenant.nativeName ?? null,
           emergencyContacts: tenant.contacts
             .filter(c => c.isEmergency)
             // 이름은 종전에 담을 칸이 없어 빈 문자열이었다 — 이제 실제 값을 쓴다(2026-08-31).

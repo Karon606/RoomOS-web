@@ -8,7 +8,6 @@
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
 import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet } from '@/lib/contract'
-import { nativeNameSubOnPaper } from '@/lib/documentName'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
@@ -69,6 +68,9 @@ export type PrintContractData = {
   signDocuments?: Array<{ key: string; title: string; body: string }>
   documentSignatures?: Record<string, { image: string; signedAt: string }>
   disposalSignatureImageDataUrl?: string | null  // 동의서 별도 서명 (없으면 '(서명 또는 인)')
+  // 전입신고 칸 머리(국문·영문). 외국인 계약서는 체류지 변경신고(운영자 오더 2026-09-07).
+  // 판정·문구는 registrationHeadPair 정본이고 여기는 받은 문자열만 찍는다. 없으면 내국인 표기.
+  registrationHead?: { ko: string; en: string }
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -77,8 +79,6 @@ export type PrintContractData = {
     // 종이에 칸을 하나 더 만들지 않는 이유는 두 값이 같은 사실을 말하기 때문이다.
     // 없으면 종전 그대로 생년월일이 찍힌다(등록번호 없는 발급본은 픽셀 단위로 무변화).
     foreignRegNo: string | null
-    // 본국 표기 이름(고객 정보) — 성명 칸 병기용. 없거나 폰트가 못 그리면 병기가 조용히 빠진다.
-    nativeName?: string | null
     gender: string
     job: string | null
     primaryPhone: string | null
@@ -211,8 +211,11 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   const bizMeta2 = [biz.address ? escape(biz.address) : '', d.phone ? escape(d.phone) : ''].filter(Boolean).join(' · ')
 
   // 잔여 소지품 임의처분 동의서 — enabled 일 때만 별도 페이지로 이어 출력
-  // 본국 표기 이름 병기 — 값이 있고 그릴 수 있을 때만 성명 칸 보조줄로(오류신고 cdda7787).
-  const nativeSub = nativeNameSubOnPaper(d.tenant.name, d.tenant.nativeName)
+  // 전입신고 칸 머리 — 서버 조립이 정본 함수로 정해 실어 준다. 안 실리면(옛 호출부) 내국인 표기.
+  const regHead = d.registrationHead ?? { ko: '전입신고', en: 'Resident Reg.' }
+  // 체류지 변경신고는 여덟 자라 좁은 머리칸에서 두 줄로 꺾인다 — 외국인등록번호 칸의 선례(th-long)로 푼다.
+  // 내국인 종이는 클래스가 안 붙어 이 기능 전과 문자 단위로 같다.
+  const regHeadCls = regHead.ko === '전입신고' ? '' : ' class="th-long"'
   const dc = d.disposalConsent
   const dcVars: Record<string, string> = {
     성명: d.tenant.name, 호실: fmtRoom(d.lease?.roomNo), 연락처: d.tenant.primaryPhone ?? '',
@@ -421,7 +424,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     <table class="info">
       <tbody>
         <tr>
-          <th>성명<span class="en">Name</span></th><td>${escape(d.tenant.name)}${nativeSub ? `<span class="sub"> (${escape(nativeSub)})</span>` : ''}</td>
+          <th>성명<span class="en">Name</span></th><td>${escape(d.tenant.name)}</td>
           <th>연락처<span class="en">Mobile Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td>
         </tr>
         <tr>
@@ -432,7 +435,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
         </tr>
         <tr>
           <th>흡연 여부<span class="en">Smoking</span></th><td>${escape(d.smoking)}</td>
-          <th>전입신고<span class="en">Resident Reg.</span></th><td>${escape(d.lease?.registrationStatus ?? '미신고')}</td>
+          <th${regHeadCls}>${escape(regHead.ko)}<span class="en">${escape(regHead.en)}</span></th><td>${escape(d.lease?.registrationStatus ?? '미신고')}</td>
         </tr>
         <tr>
           <th>호실<span class="en">Room Number</span></th><td class="num">${escape(fmtRoom(d.lease?.roomNo))}</td>

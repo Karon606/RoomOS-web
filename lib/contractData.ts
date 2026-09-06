@@ -12,7 +12,7 @@ import {
   resolveRoomScheduleAddendum,
   resolveSignedBody,
 } from '@/lib/contract'
-import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow } from '@/lib/contractFieldOverrides'
+import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow, type RegistrationStatusLabel } from '@/lib/contractFieldOverrides'
 import { type DocNameStyle, documentName, asDocNameStyle, docNameStyles, resolveDocNameStyle, signedDocNameStyle } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
@@ -202,7 +202,7 @@ export type ContractData = {
     dueDaySource: string | null
     isShortTerm: boolean
     roomNo: string | null
-    registrationStatus: '신고' | '미신고' | '면제'
+    registrationStatus: RegistrationStatusLabel
     // 성명 표기 선택. 표시값 오버라이드와 같은 칸에 살아서 서명 잠금·되돌리기·링크 닫힘이
     // 이미 걸려 있고, 이 스냅샷이 그대로 /sign 화면과 서명본 발급으로 간다.
     nameStyle: DocNameStyle

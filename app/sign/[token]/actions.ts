@@ -5,7 +5,7 @@
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { shareCookieName, SHARE_COOKIE_MAX_AGE_SEC } from '@/lib/contractShareCookie'
-import { sanitizeNativeName, showsForeignFields } from '@/lib/documentName'
+import { sanitizeNativeName } from '@/lib/documentName'
 import { notifyPropertyOperators } from '@/lib/pushSend'
 import { missingSlots } from '@/lib/disposalSignGate'
 import { paperDocsOf, linkSignSlots, parseSignDocuments, parseDocumentSignatures, parseDocSignedAt, isValidDocKey } from '@/lib/signDocuments'
@@ -258,14 +258,9 @@ export async function finalizeRemoteSubmission(
     // (있다/없다를 답으로 돌려주면 링크 소지자가 고객 정보의 상태를 캐낼 수 있다).
     // 화면도 스냅샷에 표기가 없을 때만 칸을 그리므로 정상 흐름에서는 이 경합 자체가 드물다.
     // 값을 지우거나 고치는 것은 이 문으로 못 한다 — 운영자만 고객 정보에서 한다.
+    // 선택 입력이다(운영자 오더 2026-09-07 — 병기 회수와 함께 필수 해제). 수집 목적은 종이가
+    // 아니라 고객 정보라, 비워도 제출을 막지 않는다.
     const native = sanitizeNativeName(nativeName)
-    // 외국인 필수(오류신고 cdda7787) — 클라이언트 검사와 같은 판정을 서버가 다시 본다.
-    // 액션을 직접 불러 빈 채로 지나가는 길을 닫는다(동의서 서버 검사와 같은 관례).
-    const snapNat = (link.templateSnapshot as { tenant?: { nationality?: string | null } } | null)?.tenant?.nationality
-    if (showsForeignFields(snapNat) && !native) {
-      const cur = await prisma.tenant.findUnique({ where: { id: link.tenantId }, select: { nativeName: true } })
-      if (!cur?.nativeName) return { ok: false, error: bi(langOf(link), 'native.required') }
-    }
     if (native) {
       await prisma.tenant.updateMany({
         where: { id: link.tenantId, OR: [{ nativeName: null }, { nativeName: '' }] },

@@ -13,7 +13,7 @@ type Lease = {
 }
 
 const REG_LABEL: Record<string, string> = {
-  NOT_REPORTED: '미신고', REGISTERED: '완료', EXEMPTED: '해당없음',
+  NOT_REPORTED: '미신고', REGISTERED: '신고완료', EXEMPTED: '면제', PLANNED: '신고예정',
 }
 const WISH_WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
 const WISH_DIR_LABEL: Record<string, string> = {

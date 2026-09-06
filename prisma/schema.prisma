@@ -76,7 +76,8 @@ enum PaymentTiming {
 enum RegistrationStatus {
   REGISTERED
   NOT_REPORTED
-  EXEMPTED
+  EXEMPTED // UI 선택지에서는 뺐다(2026-09-07, 전입신고는 면제 대상 아님). Postgres enum 값 삭제가 위험해 존치.
+  PLANNED // 신고예정 — 계약 시점 기본값(재계약 외엔 신고 전이 정상, 운영자 오더 2026-09-07)
 }
 
 enum FinancialAccountType {

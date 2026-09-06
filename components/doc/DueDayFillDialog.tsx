@@ -28,7 +28,7 @@ export function DueDayFillDialog({ leaseTermId, defaultDay, onDone, onClose }: {
     try {
       const res = await setDueDayForContract(leaseTermId, value.trim())
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '납부일 저장됨', {
+      pushToast('success', '매월 납부일 저장됨', {
         detail: res.closedLinks > 0 ? '보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : '이 계약의 매월 납부일로 저장됐습니다.',
       })
       onDone()
@@ -38,19 +38,20 @@ export function DueDayFillDialog({ leaseTermId, defaultDay, onDone, onClose }: {
     <Modal open onClose={onClose} z={280} width="sm" title="매월 납부일을 정해 주세요">
       <div className="space-y-3">
         <p className="text-[0.6875rem] leading-relaxed text-[var(--warm-mid)]">
-          계약서에 실리는 값이라 비워 둘 수 없습니다. 입주한 날이 기본이고, 다르면 고쳐 주세요.
-          입주일과 다른 날을 정하면 첫 달은 그 차이만큼 일할로 계산됩니다.
+          {defaultDay
+            ? '계약서에 실리는 값이라 비워 둘 수 없습니다. 입주한 날이 기본이고, 다르면 고쳐 주세요. 입주일과 다른 날을 정하면 첫 달은 그 차이만큼 일할로 계산됩니다.'
+            : '계약서에 실리는 값이라 비워 둘 수 없습니다. 입주일과 다른 날을 정하면 첫 달은 그 차이만큼 일할로 계산됩니다.'}
         </p>
         <div className="space-y-1">
           <label className="text-[0.6875rem] text-[var(--warm-muted)]">매월 납부일</label>
-          <input type="text" inputMode="numeric" value={value} onChange={e => setValue(e.target.value)}
+          <input type="text" value={value} onChange={e => setValue(e.target.value)}
             placeholder="예: 5 또는 말일"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors" />
           <p className="text-[0.65625rem] text-[var(--warm-muted)]">1부터 31 사이의 숫자 또는 말일.</p>
         </div>
         <div className="flex gap-2">
           <Btn variant="secondary" size="md" className="flex-1" onClick={onClose}>취소</Btn>
-          <Btn variant="primary" size="md" className="flex-1" onClick={() => void save()} disabled={saving || !value.trim()}>저장</Btn>
+          <Btn variant="primary" size="md" className="flex-1" onClick={() => void save()} disabled={saving || !value.trim()}>{saving ? '저장 중…' : '저장'}</Btn>
         </div>
       </div>
     </Modal>

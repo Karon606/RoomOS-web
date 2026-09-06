@@ -12,7 +12,10 @@ import {
   type DocNameStyle, DEFAULT_DOC_NAME_STYLE, asDocNameStyle,
 } from '@/lib/documentName'
 
-export type RegistrationStatusLabel = '신고' | '미신고' | '면제'
+// 표시 셋은 (신고예정·신고완료·미신고) — 운영자 오더 2026-09-07. '면제'는 전입신고가 면제
+// 대상이 아니라 UI 선택지에서 뺐지만, 옛 스냅샷·오버라이드가 그 글자를 들고 있을 수 있어
+// 파스는 계속 받는다(박제 원칙 — 저장된 종이의 글자는 코드가 바뀌어도 그대로 읽혀야 한다).
+export type RegistrationStatusLabel = '신고예정' | '신고완료' | '미신고' | '면제'
 
 /**
  * 오버라이드 가능한 9개 표시 필드. 전부 optional 이고, 없는 키는 자동값이 그대로 쓰인다.
@@ -51,7 +54,7 @@ export const CONTRACT_FIELD_ERROR: Record<ContractFieldOverrideKey, string> = {
   cleaningFee: '청소비는 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
   moveInDate: '입실일 날짜 형식이 올바르지 않습니다.',
   expectedMoveOut: '퇴실 예정일 날짜 형식이 올바르지 않습니다.',
-  dueDay: '매월 납부일은 1부터 31 사이의 숫자 또는 말 로 입력해 주세요.',
+  dueDay: '매월 납부일은 1부터 31 사이의 숫자 또는 말일로 입력해 주세요.',
   roomNo: '호실은 20자 이내로 입력해 주세요.',
   registrationStatus: '전입신고는 신고, 미신고, 면제 중에서 골라 주세요.',
   nameStyle: '성명 표기는 한글, 영문, 현지 중에서 골라 주세요.',
@@ -90,7 +93,14 @@ const asRoomNo = (v: unknown): string | undefined => {
 }
 
 const asRegistration = (v: unknown): RegistrationStatusLabel | undefined =>
-  v === '신고' || v === '미신고' || v === '면제' ? v : undefined
+  v === '신고예정' || v === '신고완료' || v === '미신고' || v === '면제' ? v
+  // 옛 라벨 '신고'는 지금 라벨로 흡수한다(라벨 전환 2026-09-07). 실DB 오버라이드 1건이 이 갈래다.
+  : v === '신고' ? '신고완료'
+  : undefined
+
+/** 옛 라벨을 지금 라벨로 — 드리프트 비교가 라벨 전환('신고' 가 '신고완료' 로)을 계약 변경으로
+ *  오인하지 않게, 스냅샷·라이브 양쪽이 이 함수를 지나서 견준다. 스냅샷 원문은 안 고친다. */
+export const normalizeRegistrationLabel = (v: unknown): unknown => (v === '신고' ? '신고완료' : v)
 
 /** 저장된 JSON 을 읽어 화이트리스트 키만, 타입·범위를 통과한 것만 남긴다. 불량 키는 버린다. */
 export function parseContractFieldOverrides(json: unknown): ContractFieldOverrides {
@@ -125,7 +135,7 @@ export type ContractLeaseFields = {
 }
 
 const REGISTRATION_LABEL: Record<string, RegistrationStatusLabel> = {
-  REGISTERED: '신고', NOT_REPORTED: '미신고', EXEMPTED: '면제',
+  REGISTERED: '신고완료', NOT_REPORTED: '미신고', EXEMPTED: '면제', PLANNED: '신고예정',
 }
 
 /** 계약서 표시값의 원천이 되는 LeaseTerm 행(방 조인 포함). */

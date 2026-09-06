@@ -485,7 +485,7 @@ const TENANT_CARD_FIELDS: FieldDef[] = [
   { key: 'deposit', label: '보증금·거주기간' },
 ]
 const REG_LABEL: Record<string, string> = {
-  NOT_REPORTED: '미신고', REGISTERED: '완료', EXEMPTED: '해당없음',
+  NOT_REPORTED: '미신고', REGISTERED: '신고완료', EXEMPTED: '면제', PLANNED: '신고예정',
 }
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '—',
@@ -5037,10 +5037,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
       <FormSection title="추가 정보">
         <div className="grid grid-cols-2 gap-3">
-          <SelectField label="전입신고" name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'NOT_REPORTED'}>
+          <SelectField label="전입신고" name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
+            <option value="PLANNED">신고예정</option>
+            <option value="REGISTERED">신고완료</option>
             <option value="NOT_REPORTED">미신고</option>
-            <option value="REGISTERED">완료</option>
-            <option value="EXEMPTED">해당없음</option>
           </SelectField>
           <SelectField label="결제 수단" name="payMethod" defaultValue={lease?.payMethod ?? ''}>
             <option value="">미선택</option>
