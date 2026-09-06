@@ -130,7 +130,7 @@ export default function SaveFeedback() {
               }}>
               <KindIcon kind={t.kind} />
               <div className="min-w-0 text-left">
-                <p className="text-[13px] font-semibold leading-snug">
+                <p className="text-[13px] font-semibold leading-snug whitespace-pre-line">
                   {t.message}
                   {t.count > 1 && (
                     <span className="ml-1.5 inline-flex items-center rounded-full px-1.5 text-[0.65625rem] font-bold"

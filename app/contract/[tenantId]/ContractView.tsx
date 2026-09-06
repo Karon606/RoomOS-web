@@ -1980,7 +1980,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
                     : `아래 영역에 서명해주세요. 확인을 누르면 ${signTarget === 'contract' ? '계약서' : titleOf(signTarget)}에 서명이 표시됩니다 (발급은 다음 단계).`}
                 </div>
               </div>
-              <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">
+              <button onClick={() => setSignOpen(false)} className="sig-close" aria-label={remote ? biLine(signLang, 'pad.close') : '닫기'}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
@@ -2339,7 +2339,7 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; border-radius: calc(12px * var(--sig-inv, 1)); touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
         .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: calc(1px * var(--sig-inv, 1)) dashed #d6cdbb; pointer-events: none; }
-        .sig-error { font-size: calc(12px * var(--sig-inv, 1)); line-height: 1.5; color: var(--danger-fg); background: var(--danger-bg); border: calc(1px * var(--sig-inv, 1)) solid var(--danger-ring); border-radius: calc(8px * var(--sig-inv, 1)); padding: calc(8px * var(--sig-inv, 1)) calc(10px * var(--sig-inv, 1)); }
+        .sig-error { font-size: calc(12px * var(--sig-inv, 1)); line-height: 1.5; white-space: pre-line; color: var(--danger-fg); background: var(--danger-bg); border: calc(1px * var(--sig-inv, 1)) solid var(--danger-ring); border-radius: calc(8px * var(--sig-inv, 1)); padding: calc(8px * var(--sig-inv, 1)) calc(10px * var(--sig-inv, 1)); }
         .sig-actions { display: flex; align-items: center; gap: calc(8px * var(--sig-inv, 1)); }
         /* 모달 안에서만 공용 버튼 치수를 역배율로 덮는다 — 공용 .toolbar-* 정의 자체는 손대지 않는다. */
         .sig-close svg { width: calc(16px * var(--sig-inv, 1)); height: calc(16px * var(--sig-inv, 1)); }
