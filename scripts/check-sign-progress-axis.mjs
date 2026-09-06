@@ -232,7 +232,7 @@ for (const [f, msg] of [
   } else {
     const body = src.slice(at, src.indexOf('\n}', at))
     if (!/templateSnapshot:\s*old\.templateSnapshot/.test(body)) {
-      violations.push(`${f} — 유지 갈래가 옛 스냅샷을 승계하지 않는다. 서명한 내용과 다른 종이가 나간다.`)
+      violations.push(`${f} — 유지 갈래가 옛 스냅샷을 승계하지 않는다. 서명한 내용과 다른 종이가 나간다(안내 언어 signLang 도 이 승계에 실려 있다).`)
     }
     if (/buildContractData\s*\(/.test(body)) {
       violations.push(`${f} — 유지 갈래가 내용을 새로 조립한다. 그 순간 증거(격리본)와 화면이 갈린다.`)

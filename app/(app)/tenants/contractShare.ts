@@ -23,6 +23,8 @@ import { parseContractFieldOverrides } from '@/lib/contractFieldOverrides'
 import { asDocNameStyle } from '@/lib/documentName'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
+import { asSignLang, signLangForNationality, type SignLang } from '@/lib/signGuideText'
+import { isForeignForDocuments } from '@/lib/documentName'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
 
@@ -69,6 +71,8 @@ export type ContractShareLinkInfo = {
   signStage: SignStage
   // 반쪽일 때 무엇이 서명됐는지. 완료·대기면 null 이고 배지가 스스로 말한다.
   signSummary: string | null
+  // 이 링크의 안내 언어(스냅샷 박제값). 문자 조립과 패널 표시가 읽는다. 옛 링크는 ko 로 읽힌다.
+  lang: SignLang
   // 이 링크의 계약(leaseTerm)에 서명이 **지금도** 남아 있는가.
   // signedAt 은 '그때 서명이 들어왔다'는 과거 사실이라 서명을 지워도 영원히 남는다. 진입로가 그것만
   // 보고 ?share= 서명본 화면으로 보내면, 서명을 지운 계약이 옛 스냅샷에 영구히 갇힌다(502호 2026-08-10).
@@ -248,6 +252,7 @@ function serializeLink(link: {
     disposalEnabled: snapDc?.enabled === true,
     signStage: signStageSlots({ slots }),
     signSummary: badgeSignSummary(slots),
+    lang: asSignLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang) ?? 'ko',
     signatureLive,
   }
 }
@@ -258,7 +263,7 @@ function serializeLink(link: {
 // 요청을 보내면 그 계약의 스냅샷이 나가야 한다. 종전에는 인자가 없어 서버가 제 추론으로 509호
 // 거주 계약을 골랐고, 입주자는 자기가 보고 있다고 믿는 것과 다른 계약서에 서명하게 됐다.
 // 없으면 종전 추론 그대로다 — 기존 호출부(계약서 파일 칸의 주 버튼)는 글자 하나 안 바뀐다.
-export async function issueContractShareLink(tenantId: string, namedLeaseTermId?: string | null): Promise<
+export async function issueContractShareLink(tenantId: string, namedLeaseTermId?: string | null, lang?: string): Promise<
   | { ok: true; link: ContractShareLinkInfo; phone: string | null; propertyName: string }
   // 받던 서명이 있어 화면이 선택창을 열어야 하는 상태. 거절이되 막다른 길이 아니다.
   | { ok: false; code: 'SIGN_IN_PROGRESS'; error: string }
@@ -320,6 +325,11 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
     const propertyName = property?.name ?? ''
 
+    // 안내 언어 확정 — 화이트리스트를 지난 운영자 선택이 먼저고, 없으면 국적 기본값이다.
+    // **여기서 확정해 스냅샷에 박제한다**(표기 박제와 같은 규칙 2026-09-04). 발급 후 무엇이
+    // 바뀌어도 이 링크의 안내 언어는 안 바뀌고, 이어받기는 스냅샷 통째 승계라 저절로 따라온다.
+    const signLang: SignLang = asSignLang(lang) ?? signLangForNationality(snapshot.tenant.nationality)
+
     // 활성 링크 재사용(getOrCreate) — 같은 계약(leaseTermId)만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
     // Serializable 트랜잭션으로 find+create 를 묶는다 — 발급 연타 시 둘 다 '없음'을 보고 활성 링크가
     // 2개 생기던 경합 차단(적대검증 P2). 부분 유니크 제약은 자연 만료 후 재발급을 막아 부적합.
@@ -332,7 +342,14 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
         where: { tenantId, propertyId, leaseTermId, closedAt: null, lockedAt: null, submittedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: 'desc' },
       })
-      if (existing) return existing
+      if (existing) {
+        const existingLang = asSignLang((existing.templateSnapshot as { signLang?: unknown } | null)?.signLang) ?? 'ko'
+        if (existingLang === signLang) return existing
+        // 다른 언어를 골랐으면 그 링크를 닫고 새 스냅샷으로 새로 만든다. 안 닫으면 운영자는
+        // 베트남어를 골라 보냈는데 입주자는 영어 화면을 보는, 표기 사고(413호)와 같은 클래스의
+        // 조용한 갈림이 된다. 이 갈래는 위 stageOf 가드를 지나 서명 0 상태라 닫아도 잃는 것이 없다.
+        await tx.contractShareLink.update({ where: { id: existing.id }, data: { closedAt: new Date() } })
+      }
       // 링크가 나가는 순간 표기는 사실이 된다(2026-09-04). 자동 해석은 나중에 답이 바뀐다 —
       // 같은 계약에서 다른 서류를 발급하면 lastDocNameStyle 이 덮어쓰고, 그 값은 서열에서
       // 사람 단위 값과 국적 추정보다 위다. 그러면 **입주자가 보고 있는 링크는 영문인데
@@ -353,7 +370,7 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
         data: {
           token: randomBytes(32).toString('base64url'),
           propertyId, tenantId, leaseTermId,
-          templateSnapshot: withoutPlainPii(snapshot) as unknown as object,
+          templateSnapshot: { ...(withoutPlainPii(snapshot) as unknown as Record<string, unknown>), signLang } as unknown as object,
           expiresAt: new Date(Date.now() + SHARE_TTL_MS),
           createdBy: userId,
         },
@@ -374,7 +391,9 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
 // 화면에서 다시 계산하지 않고 서버가 lib/contractIssue 정본으로 내려준다. 규칙을 두 곳에 두면
 // 홈 알림은 떠 있는데 패널은 아무 말도 안 하는 식으로 어긋난다.
 export async function getContractShareState(tenantId: string): Promise<
-  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean }
+  | { ok: true; link: ContractShareLinkInfo | null; phone: string | null; propertyName: string; needsIssue: boolean; hasForeignRegNo: boolean
+      // 발급 피커의 초기 선택. 서버가 국적으로 계산한다 — 화면마다 제 규칙을 두면 갈린다.
+      defaultSignLang: SignLang; foreignForDocuments: boolean }
   | { ok: false; error: string }
 > {
   try {
@@ -399,7 +418,7 @@ export async function getContractShareState(tenantId: string): Promise<
       prisma.tenant.findFirst({
         where: { id: tenantId, propertyId },
         // 등록 여부만 읽는다(암호문도 마스킹도 화면에 필요 없다) — 발급 확인창이 이 값을 본다.
-        select: { foreignRegNoEnc: true, contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+        select: { foreignRegNoEnc: true, nationality: true, contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
       }),
       prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
     ])
@@ -422,6 +441,8 @@ export async function getContractShareState(tenantId: string): Promise<
       propertyName: property?.name ?? '',
       needsIssue,
       hasForeignRegNo: !!tenant.foreignRegNoEnc,
+      defaultSignLang: signLangForNationality(tenant.nationality),
+      foreignForDocuments: isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoEnc }),
     }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
