@@ -11,6 +11,7 @@ import Link from 'next/link'
 // 정적 import — 동적 import 시절에는 모듈이 도착하기 전에 그은 획이 조용히 버려졌다.
 // 패드가 뜨자마자 서명하는 사용자가 정상이므로 경합 자체를 없앤다(소형 라이브러리, 이 화면 전용).
 import SignaturePad from 'signature_pad'
+import { isSignatureInkEnough } from '@/lib/signatureInk'
 import { SendDocButton } from '@/components/ui/SendDocButton'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
@@ -936,6 +937,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
     if (!pad || pad.isEmpty()) {
       setSignError('서명을 입력해주세요.')
       pushToast('error', '서명을 입력해주세요.')
+      return
+    }
+    // 점 몇 개로는 서명이 아니다(조정미님 동의서 실사례 — 점 2개가 서명으로 저장됐다).
+    // isEmpty() 는 탭 한 번에도 false 라, 획의 총 길이를 정본(lib/signatureInk)으로 잰다.
+    if (!isSignatureInkEnough(pad.toData())) {
+      const msg = '서명이 너무 짧습니다. 성함을 이어서 그려 주세요.\nSignature too short. Please draw your full signature.'
+      setSignError(msg)
+      pushToast('error', msg)
       return
     }
     setSignError(null)

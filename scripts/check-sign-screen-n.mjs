@@ -30,13 +30,16 @@ const violations = []
 //   봤는데, 그 이름을 지우는 순간 규칙이 영원히 초록이 됐다. 누가 `docTotal > 1 &&` 로 다시
 //   묶어도 통과한다. 막으려던 것은 이름이 아니라 **결합**이다(2026-09-06 디자이너 지적).
 {
-  const at = src.indexOf('className="en"')
+  // 앵커는 진행 줄의 <em className="en"> 이다. 'className="en"' 만 찾으면 종이 표 머리의
+  // <span className="en">Name</span> 이 먼저 걸려 조건 추출이 통째로 헛돈다(2026-09-06 실측 —
+  // CompanionDocCage 가 파일 앞에 서면서 첫 매치가 바뀌어 그물이 빈 조건으로 헛울렸다).
+  const at = src.indexOf('<em className="en"')
   if (at < 0) {
     violations.push(`${F} — 영문 안내(em.en)를 못 찾았다. 한글을 못 읽는 입주자에게 남는 것이 그 줄뿐이다.`)
   } else {
     // 그 JSX 를 여는 조건식만 떠서 본다. 바로 앞 `{` 부터 `&& (` 까지다.
-    const head = src.lastIndexOf('{', src.lastIndexOf('<em', at))
-    const cond = head < 0 ? '' : src.slice(head, src.lastIndexOf('<em', at))
+    const head = src.lastIndexOf('{', at)
+    const cond = head < 0 ? '' : src.slice(head, at)
     for (const bad of ['docTotal', 'docCount', 'disposalConsent', 'signedCount', 'twoDocs']) {
       if (new RegExp(`\\b${bad}\\b`).test(cond)) {
         violations.push(`${F} — 영문 안내를 여는 조건에 ${bad} 가 있다. 서류 개수와 안내 언어는 아무 관계가 없다. 동의서를 안 쓰는 영업장의 외국인이 영어를 한 줄도 못 본다.`)
@@ -87,6 +90,12 @@ for (const [re, what] of [
   if (re.test(src)) violations.push(`${F} — 진행 문구에 ${what} 이 남아 있다. 서류가 늘면 화면이 거짓말을 한다.`)
 }
 
-console.log(`[서명 화면 N] ⓐ 영문 안내 · ⓑ 마지막 강조 · ⓒ 확인창 반복 · ⓓ 고정 수사 / 위반 ${violations.length}건`)
+// ⓔ 서명 확인이 최소 획 정본을 부르는가. isEmpty() 만 보면 점 하나도 서명이 된다
+//   (조정미님 동의서 실사례 — 점 2개가 서명으로 저장됐다).
+if (!/isSignatureInkEnough\s*\(/.test(src)) {
+  violations.push(`${F} — 서명 확인이 최소 획 정본(isSignatureInkEnough)을 안 부른다. 점 두 개가 서명으로 저장된다.`)
+}
+
+console.log(`[서명 화면 N] ⓐ 영문 안내 · ⓑ 마지막 강조 · ⓒ 확인창 반복 · ⓓ 고정 수사 · ⓔ 최소 획 / 위반 ${violations.length}건`)
 for (const v of violations) console.error(`  - ${v}`)
 process.exit(violations.length > 0 ? 1 : 0)
