@@ -1,7 +1,5 @@
 // 안내 문안 사전 회귀 — 매핑·보간·병기·폴백을 진리표로 못박는다.
-import {
-  SIGN_LANGS, SIGN_LANG_LABEL, asSignLang, signLangForNationality, t, bi, subLangOf, type SignLang,
-} from '../lib/signGuideText'
+import { SIGN_LANGS, asSignLang, signLangForNationality, t, bi, subLangOf } from '../lib/signGuideText'
 
 let pass = 0
 const fails: string[] = []
