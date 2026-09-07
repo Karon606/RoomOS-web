@@ -11,9 +11,16 @@ export function roomLabel(roomNo: string | null | undefined): string {
   return /^\d+$/.test(t) ? `${t}호` : t
 }
 
+// 주소 꼬리의 층 표기 — '4,5층' '4~5층' ', 4~5층' '지하1층' 'B1층'. 방번호를 붙일 때만 걷는다.
+// 영업장 주소는 층까지가 소재지지만, 거기에 호를 이으면 '4~5층 418호'가 된다(운영자 지적
+// 2026-09-07 — 층과 호가 겹쳐 이상한 주소). 마지막 토큰일 때만 본다 — 중간의 층 표기는
+// 건물명 일부일 수 있어 손대지 않는다.
+const FLOOR_TAIL_RE = /[\s,]*(?:지하\s*\d+|[Bb]\d+|\d+(?:\s*[~\-,.]\s*\d+)?)\s*층$/
+
 /**
- * 입주자 실거주 주소 = 영업장 주소 + 방번호.
- * 방이 배정되지 않은 계약(비거주·호실 미지정)은 병기할 방번호가 없어 영업장 주소만 돌려준다.
+ * 입주자 실거주 주소 = 영업장 주소 + 방번호. 주소 끝의 층 표기는 방번호가 그 자리를 대신하므로
+ * 걷어낸다(위 FLOOR_TAIL_RE). 방이 배정되지 않은 계약(비거주·호실 미지정)은 병기할 방번호가
+ * 없어 영업장 주소를 **층 표기까지 그대로** 돌려준다 — 층은 호가 없을 때의 유효한 소재 표기다.
  * 영업장 주소가 비어 있으면 방번호만 돌려준다 — 어느 쪽도 빈 조각을 붙여 공백을 만들지 않는다.
  */
 export function tenantResidenceAddress(
@@ -24,5 +31,5 @@ export function tenantResidenceAddress(
   const room = roomLabel(roomNo)
   if (!base) return room
   if (!room) return base
-  return `${base} ${room}`
+  return `${base.replace(FLOOR_TAIL_RE, '').trim()} ${room}`
 }
