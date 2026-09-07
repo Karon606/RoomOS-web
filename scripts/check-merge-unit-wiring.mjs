@@ -47,6 +47,37 @@ need('재고 시드가 정본 품명을 쓴다',
   /if \(itemLabel\) await seedTrackedItemsFromExpenses\(\[itemLabel\]\)/.test(addExpense))
 need('단위 목록 적립이 정본 단위를 쓴다', /noteUnits\(\[specUnit\], \[qtyUnit\]\)/.test(addExpense))
 
+// ── ①-B 수정 저장도 같은 정본 ─────────────────────────────────────
+// 등록만 고치고 수정을 두면 같은 결함이 반쪽으로 남는다. 수정 폼에는 단위 게이트가 없어 김치는
+// 재현되지 않지만, 내구재 세트 환산 확인창이 고친 값이 itemsJson 에만 실려 1품목 수정에서 증발했다.
+// 진리표는 순수함수만 보므로 이 배선이 빠져도 초록이다 — 역주입이 안 잡히는 자리라 여기서 잡는다.
+const updateExpense = body(finance, 'export async function updateExpense(')
+need('updateExpense 를 찾음', updateExpense.length > 0)
+need('수정 저장도 resolveSingleItemFields 를 부른다',
+  /resolveSingleItemFields\(parsedItems, !!multiItems,/.test(updateExpense),
+  'itemsJson 이 단일 품목 수정 저장의 정본이어야 한다')
+// 수정 폼에만 있는 unitBasis 까지 아홉 칸 — 세트 환산이 바로 이 칸을 'qty' 로 바꾼다.
+for (const k of ['itemLabel', 'specUnit', 'qtyUnit', 'specValue', 'specText', 'brand', 'productName', 'qtyValue', 'unitBasis']) {
+  const cap = k[0].toUpperCase() + k.slice(1)
+  need(`수정 저장의 낱개 폼 필드 ${k} 는 폴백 이름으로 읽는다`,
+    new RegExp(`const form${cap}\\s+=\\s+formData\\.get\\('${k}'\\)`).test(updateExpense),
+    `form${cap} 이 아니면 환산 전 값이 저장으로 샌다`)
+}
+// 미전송 칸 보존(formData.has)은 그대로 두고 **값의 출처만** 정본으로 바꾼 모양이어야 한다.
+need('수정 저장이 정본 단위를 쓴다', /qtyUnit: cleanUnit\(qtyUnit\)/.test(updateExpense))
+need('수정 저장이 정본 규격단위를 쓴다', /specUnit: cleanUnit\(specUnit\)/.test(updateExpense))
+need('수정 저장이 보존 게이트를 지킨 채 정본 단가기준을 쓴다',
+  /formData\.has\('unitBasis'\) \? \{ unitBasis: unitBasisRaw ===/.test(updateExpense),
+  'has 게이트가 빠지면 카테고리만 수정할 때 단가 기준이 null 로 덮인다')
+need('수정 후처리가 정본 품명을 쓴다',
+  /propagateItemLabelRename\(propertyId, category, existing\.itemLabel, itemLabel\)/.test(updateExpense))
+need('수정 저장의 단위 적립이 정본 단위를 쓴다', /noteUnits\(\[specUnit\], \[qtyUnit\]\)/.test(updateExpense))
+// 화면 — 재고 미리보기도 환산 후 수량으로 물어야 한다(서버가 저장하는 값과 같은 값으로).
+const financeClient = readFileSync('app/(app)/finance/FinanceClient.tsx', 'utf8')
+need('수정 저장의 재고 미리보기가 환산 후 품목을 쓴다',
+  /savedItems = converted/.test(financeClient) && /detailExp\?\.receivedAt && savedItems\.length === 1/.test(financeClient),
+  '환산 전 수량으로 물으면 묻는 값과 저장되는 값이 갈린다')
+
 // ── ② 병합 갈래가 대상 카드를 단위 무시로 ──────────────────────────
 const applyMerge = body(inventory, 'export async function applyMergeDecision(')
 need('applyMergeDecision 을 찾음', applyMerge.length > 0)

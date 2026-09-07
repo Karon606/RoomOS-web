@@ -2514,15 +2514,19 @@ export default function FinanceClient({
       const release = trackSave()
       try {
         // 내구재 세트 확인 — 미승인 setHint가 남은 비품 항목은 개수 환산 여부를 저장 전 확답(신고 91b812ce)
+        let savedItems = editItems
         if (editIsDurable) {
           const converted = await confirmDurableSetItems(editItems)
           if (converted === null) return   // 취소 → 저장 중단
-          if (converted) fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+          if (converted) {
+            fd.set('itemsJson', JSON.stringify(converted.map(it => ({ ...it, setHint: undefined, allocations: undefined }))))
+            savedItems = converted   // 아래 재고 미리보기도 환산 후 수량으로 물어야 한다(서버가 그 값으로 저장한다)
+          }
         }
         // 수령완료 구매의 수량·규격 정정 — 이 수량을 이미 반영한 점검이 있으면 함께 조정할지 묻는다
         // (점보롤 백로그 1번, 무상 입수 정정과 같은 문법 — lib/stockShiftAsk 정본. 0건이면 침묵).
-        if (detailExp?.receivedAt && editItems.length === 1) {
-          const it = editItems[0]
+        if (detailExp?.receivedAt && savedItems.length === 1) {
+          const it = savedItems[0]
           const pre = await previewExpenseStockShift({
             expenseId: detailExp.id,
             next: {

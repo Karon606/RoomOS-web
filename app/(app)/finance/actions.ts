@@ -838,16 +838,22 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
     const receiptUrl         = formData.get('receiptUrl') as string
-    const itemLabel = formData.get('itemLabel') as string
-    const specUnit  = formData.get('specUnit') as string
-    const qtyUnit   = formData.get('qtyUnit') as string
-    const specValueRaw = formData.get('specValue') as string
-    const qtyValueRaw  = formData.get('qtyValue') as string
-    const specTextRaw  = formData.get('specText') as string
-    const brandRaw       = formData.get('brand') as string
-    const productNameRaw = formData.get('productName') as string
-    const unitBasisRaw = formData.get('unitBasis') as string
+    // 낱개 폼 필드 — itemsJson 에 없는 값만 채우는 폴백이다(아래 resolveSingleItemFields).
+    const formItemLabel   = formData.get('itemLabel') as string
+    const formSpecUnit    = formData.get('specUnit') as string
+    const formQtyUnit     = formData.get('qtyUnit') as string
+    const formSpecValue   = formData.get('specValue') as string
+    const formQtyValue    = formData.get('qtyValue') as string
+    const formSpecText    = formData.get('specText') as string
+    const formBrand       = formData.get('brand') as string
+    const formProductName = formData.get('productName') as string
+    const formUnitBasis   = formData.get('unitBasis') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
+    // 정본 판정에 쓰는 itemsJson 품목 전체(단일/다품목 무관) — 파싱 실패는 빈 배열이라 낱개로 폴백한다.
+    const parsedItems: ItemPick[] = (() => {
+      if (!itemsJsonRaw) return []
+      try { const p = JSON.parse(itemsJsonRaw); return Array.isArray(p) ? p : [] } catch { return [] }
+    })()
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨 (addExpense 와 동일)
     const shippingIncluded = parseAmount(formData.get('shippingIncluded')) || 0
     const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외 (수정 시 보존, 새 분할 행에도 전파)
@@ -893,6 +899,27 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true; bac
         }
       } catch { /* fallthrough */ }
     }
+
+    // 단일 품목 수정 저장의 정본도 itemsJson 이다 — 낱개 폼 필드는 itemsJson 에 없는 값만 채운다.
+    // 등록 저장과 같은 결함이었다(신고 85343c79). 수정 폼에는 단위 게이트가 없지만 내구재 세트 환산
+    // 확인창이 고친 값이 itemsJson 에만 실려 와, 1품목 수정 저장에서 환산이 통째로 증발했다.
+    // unitBasis 는 수정 폼에만 있는 칸이고 세트 환산이 바로 그 칸을 'qty' 로 바꾸므로 함께 넘긴다.
+    const {
+      itemLabel, specUnit, qtyUnit,
+      specValue: specValueRaw, specText: specTextRaw,
+      brand: brandRaw, productName: productNameRaw, qtyValue: qtyValueRaw,
+      unitBasis: unitBasisRaw,
+    } = resolveSingleItemFields(parsedItems, !!multiItems, {
+      itemLabel:   formItemLabel,
+      specValue:   formSpecValue,
+      specUnit:    formSpecUnit,
+      specText:    formSpecText,
+      brand:       formBrand,
+      productName: formProductName,
+      qtyValue:    formQtyValue,
+      qtyUnit:     formQtyUnit,
+      unitBasis:   formUnitBasis,
+    })
 
     if (multiItems) {
       // 수령완료 추적 구매의 다품목 재분할 — 첫 행 수량이 바뀌고 새 행들이 수령완료를 물려받아

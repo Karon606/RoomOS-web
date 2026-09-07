@@ -4,6 +4,11 @@
 import { readFileSync, readdirSync } from 'fs'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+// 할인 계산은 정본을 **그대로 부른다**. 종전에는 이 파일에 규칙을 베껴 뒀는데, 2026-08-31 에
+// permanent 도 기간을 읽도록 정본이 바뀔 때 사본만 안 따라와 거짓 양성이 났다(정금순 2026-09).
+// 첫 스크립트가 exit 1 로 죽으면 verify:db 의 나머지 검사가 아예 안 도는 자리라, 사본을 지운다.
+// (이 import 때문에 실행기가 node 에서 tsx 로 바뀌었다 — package.json verify:db 참고.)
+import { discountedRent } from '../lib/rentDiscount'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 const violations = []
@@ -67,18 +72,6 @@ if (/expectedSum\s*=\s*occupied\.reduce/.test(roomsClient)) {
 }
 
 // ── 데이터 대조 ────────────────────────────────────────────
-// 간이 할인 계산 — lib/rentDiscount 규칙(amount/percent, permanent/temporary 월 범위, 0 하한)과 동일
-function discounted(discounts, month, base) {
-  let total = 0
-  for (const d of discounts) {
-    const inRange = d.scope === 'permanent'
-      || ((d.startMonth == null || month >= d.startMonth) && (d.endMonth == null || month <= d.endMonth))
-    if (!inRange) continue
-    total += d.discountType === 'percent' ? Math.floor(base * d.value / 100) : d.value
-  }
-  return Math.max(0, base - total)
-}
-
 // 1. 보증금 중복 수납 — lease 별 isDeposit 실수납 합 > 계약 보증금
 const leases = await prisma.leaseTerm.findMany({
   where: { depositAmount: { gt: 0 } },
@@ -102,7 +95,7 @@ for (const l of leases) {
   }
   for (const [mon, lockedMax] of byMonth) {
     if (lockedMax <= 0 || mon === l.checkoutProratedMonth) continue
-    const want = discounted(l.discounts, mon, l.rentAmount)
+    const want = discountedRent(l.discounts, mon, l.rentAmount)
     if (want !== l.rentAmount && lockedMax === l.rentAmount) {
       violations.push(`[데이터] ${l.tenant.name} ${mon}: 락 ${lockedMax.toLocaleString()}원이 할인 미반영 원가 그대로 — 되쓰기 누락 의심(기준 ${want.toLocaleString()}원)`)
     }
@@ -1038,7 +1031,7 @@ for (const k of blockedKinds) violations.push(`[데이터] 실제로 쓰인 전�
       const im = monthOf(l.moveInDate)
       if (im && mon !== im) return 0
     }
-    return discounted(l.discounts, mon, effBase(l, mon))
+    return discountedRent(l.discounts, mon, effBase(l, mon))
   }
   const resolveDue = (raw, mon) => {
     if (!raw) return null

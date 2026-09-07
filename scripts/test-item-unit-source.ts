@@ -44,6 +44,69 @@ eq('다품목 경로는 손대지 않는다',
 eq('품목이 둘이면 낱개 필드 그대로',
   resolveSingleItemFields([{ label: '김치' }, { label: '두부' }], false, form), form)
 
+// ── 수정 저장(updateExpense)의 정본 ───────────────────────────────
+// 등록과 같은 결함이 수정에도 남아 있었다. 수정 폼에는 단위 게이트가 없어 김치 신고는 안 나지만,
+// **내구재 세트 환산 확인창**이 고친 값은 여기서도 itemsJson 에만 실린다. 낱개 필드가 이기면
+// '4개로 등록' 을 눌러도 '1세트' 로 들어간다. 수정 폼에만 있는 unitBasis 칸도 환산이 바꾼다.
+//
+// 낱개 hidden 은 확인창 **전** 값이다 — 폼은 다시 그려지지 않으므로 옛 값 그대로 실려 온다.
+const editForm: SingleItemFields = {
+  itemLabel: '의자', specValue: '4', specUnit: '개', specText: '',
+  brand: '', productName: '', qtyValue: '1', qtyUnit: '세트', unitBasis: 'spec',
+}
+// 환산 승인 — durableSetCountPatch 가 qty×N·'개'·규격 비움·unitBasis 'qty' 로 바꾼 한 벌.
+eq('세트 환산 승인이 아홉 칸 전부 정본으로 저장된다',
+  resolveSingleItemFields(
+    [{ label: '의자', qtyValue: '4', qtyUnit: '개', specValue: '', specUnit: '', unitBasis: 'qty' }],
+    false, editForm),
+  { itemLabel: '의자', specValue: '', specUnit: '', specText: '',
+    brand: '', productName: '', qtyValue: '4', qtyUnit: '개', unitBasis: 'qty' })
+// 규격 비움은 빈 문자열이라 '지웠다' 는 뜻이다 — 낱개의 옛 '4개' 가 되살아나면 안 된다.
+eq('환산이 비운 규격은 낱개 옛 값으로 되살아나지 않는다',
+  resolveSingleItemFields([{ label: '의자', specValue: '', specUnit: '' }], false, editForm).specValue, '')
+// '1개 그대로' — setHint 만 지우고 값은 그대로라 itemsJson 과 낱개가 같은 값이다(저장 결과 불변).
+eq("'1개 그대로' 는 저장 결과가 안 바뀐다",
+  resolveSingleItemFields(
+    [{ label: '의자', qtyValue: '1', qtyUnit: '세트', specValue: '4', specUnit: '개', unitBasis: 'spec' }],
+    false, editForm),
+  editForm)
+// 환산 대상 없음 — 확인창이 아예 안 뜨면 itemsJson 은 폼이 그린 그대로다.
+// 이때 JSON.stringify 가 undefined 키를 빼므로 선택 칸들이 아예 없이 오는데, 낱개 폴백으로 메워
+// **저장 결과가 종전과 한 글자도 달라지지 않아야 한다**(수정 저장 전체의 무회귀 근거).
+eq('환산 대상이 없으면 저장 결과가 종전과 같다',
+  resolveSingleItemFields([{ label: '의자', qtyValue: '1', qtyUnit: '세트', specValue: '4', specUnit: '개' }], false, editForm),
+  editForm)
+// JSON 에 없는 칸은 낱개로 — 세트 환산 patch 는 specText·brand·productName 을 안 건드린다.
+eq('JSON 에 없는 서술규격·브랜드·품명은 낱개로 채운다',
+  resolveSingleItemFields([{ label: '의자', qtyValue: '4', qtyUnit: '개', unitBasis: 'qty' }], false,
+    { ...editForm, specText: '접이식', brand: '한샘', productName: 'CH-100' }),
+  { itemLabel: '의자', specValue: '4', specUnit: '개', specText: '접이식',
+    brand: '한샘', productName: 'CH-100', qtyValue: '4', qtyUnit: '개', unitBasis: 'qty' })
+// 0품목(카테고리만 수정) — 정본이 없으니 resolver 는 아무것도 얹지 않는다.
+// 실제 보존은 서버의 formData.has() 게이트가 하고, 이 함수는 그 게이트에 값을 만들어 주지 않는다.
+eq('0품목 수정은 resolver 가 아무 값도 만들지 않는다',
+  resolveSingleItemFields([], false, editForm), editForm)
+// 다품목·방별 분배는 이미 itemsJson 정본 갈래다 — unitBasis 를 넘겨도 손대지 않는다.
+eq('다품목 수정 경로는 unitBasis 도 손대지 않는다',
+  resolveSingleItemFields([{ label: '의자', unitBasis: 'qty' }], true, editForm), editForm)
+// itemsJson 파싱 실패는 서버에서 빈 배열이 된다 — 낱개가 유일한 원천으로 남는다.
+eq('itemsJson 파싱 실패는 낱개 아홉 칸 그대로',
+  resolveSingleItemFields([], false, editForm), editForm)
+// 재고 전파 게이트(labelAfter·qtyUnitAfter·qtyValueAfter)가 보는 값도 정본이어야 한다 —
+// 추적 소모품의 수량 정정·단위 변경 판정이 환산 전 옛 값으로 내려지면 잔량이 어긋난다.
+{
+  const r = resolveSingleItemFields(
+    [{ label: '종량제봉투', qtyValue: '30', qtyUnit: '박스' }], false,
+    { ...editForm, itemLabel: '종량제봉투', qtyValue: '10', qtyUnit: '개' })
+  eq('게이트가 보는 수량이 정본값이다', r.qtyValue, '30')
+  eq('게이트가 보는 수량단위가 정본값이다', r.qtyUnit, '박스')
+  eq('게이트가 보는 품목명이 정본값이다', r.itemLabel, '종량제봉투')
+}
+// 등록 폼에는 unitBasis 칸이 없다 — 선택 짝이라 안 넘기면 결과에도 없어야 한다(addExpense 무회귀).
+eq('등록 폼 호출은 unitBasis 를 만들어 내지 않는다',
+  resolveSingleItemFields([{ label: '김치', qtyUnit: '박스', unitBasis: 'qty' }], false, form).unitBasis,
+  undefined)
+
 // ── 단위가 다른 병합 ──────────────────────────────────────────────
 eq("'개' 구매를 '박스' 카드에 합치면 카드를 연다", shouldLoosenTargetUnit('개', '박스'), true)
 eq('단위가 같으면 카드를 건드리지 않는다', shouldLoosenTargetUnit('박스', '박스'), false)

@@ -18,6 +18,8 @@ export type SoleItemSource = {
   productName?: string
   qtyValue?: string
   qtyUnit?: string
+  // 단가 기준('spec'|'qty') — 수정 폼에만 있는 칸이라 선택 짝이다(아래 SingleItemFields 주석 참고).
+  unitBasis?: string
 }
 
 // 서버가 낱개로 읽던 폼 필드들. 이름은 formData 키 그대로 둔다.
@@ -30,6 +32,9 @@ export type SingleItemFields = {
   productName: string
   qtyValue: string
   qtyUnit: string
+  // 선택 짝 — 등록 폼에는 이 hidden 칸이 아예 없다. 안 넘기면 결과에도 없어 종전 거동 그대로다.
+  // 수정 폼에는 있고, 내구재 세트 환산이 바로 이 칸을 'qty' 로 바꾸므로 정본 판정에 넣어야 한다.
+  unitBasis?: string
 }
 
 export function resolveSingleItemFields(
@@ -52,5 +57,9 @@ export function resolveSingleItemFields(
     productName: pick(it.productName, form.productName),
     qtyValue:    pick(it.qtyValue,    form.qtyValue),
     qtyUnit:     pick(it.qtyUnit,     form.qtyUnit),
+    // 선택 짝이라 폼이 그 칸을 안 넘겼으면 결과에도 없는 채로 둔다(등록 폼 거동 불변).
+    unitBasis: form.unitBasis === undefined
+      ? undefined
+      : (it.unitBasis === undefined ? form.unitBasis : it.unitBasis),
   }
 }
