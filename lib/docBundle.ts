@@ -285,10 +285,13 @@ export function buildDocBundle(input: DocBundleInput): TenantDocBundle {
     const deposit = latestFor(deposits, l.id)
     if (l.depositAmount > 0 || deposit) rows.push(row('deposit', l.id, deposit))
 
-    // 실거주 확인서는 거주 계약만이다 — 실거주 사실이 없는 계약의 확인서는 존재해선 안 된다.
-    // 다만 이미 발급된 건이 있으면 그것도 사실이라 행으로 세운다(보증금과 같은 이유).
+    // 실거주 확인서는 거주 계약 + **비거주(NON_RESIDENT)** 다(운영자 긴급 오더 2026-09-07,
+    // 이원빈 423호 오피스 — 비거주 계약의 확인서가 실무에서 필요하다). 실거주 확인서 메뉴의
+    // 발급 대상(app/(app)/residence-certs/actions.ts)이 이미 이 셋이라, 여기만 좁으면 같은
+    // 서류가 메뉴에서는 되고 입주자 시트에서는 안 되는 갈림이 된다.
+    // 이미 발급된 건이 있으면 상태와 무관하게 행으로 세운다(보증금과 같은 이유).
     const cert = latestFor(certs, l.id)
-    if (residing.includes(l.status) || cert) rows.push(row('residence', l.id, cert))
+    if (residing.includes(l.status) || l.status === 'NON_RESIDENT' || cert) rows.push(row('residence', l.id, cert))
 
     return { kind: 'lease' as const, leaseTermId: l.id, roomNo: l.roomNo, status: l.status, rows }
   })

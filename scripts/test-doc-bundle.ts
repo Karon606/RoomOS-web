@@ -4,7 +4,7 @@
 //   · **계약 1건 무회귀** — 방 하나짜리 입주자는 그룹이 하나이고 행 넷이다(화면이 머리를 안 세운다).
 //   · 계약서는 딸린 계약에 없다 — 합본이 추가 호실을 이미 싣는다. 한 사람에 계약서 한 줄.
 //   · 납부 확인서는 계약마다 한 행. 미발급이어도 행은 선다(작성 왕복으로 보내려면 자리가 있어야 한다).
-//   · 실거주 확인서는 거주 계약만. 비거주 계약에는 후보 자체가 없다(발급본이 이미 있을 때만 예외).
+//   · 실거주 확인서는 거주 + 비거주(NON_RESIDENT) 계약에 선다(운영자 오더 2026-09-07).
 //   · 계약을 말할 수 없는 파일은 중립 그룹 — 없는 계약에 갖다 붙이지 않는다.
 
 import { buildDocBundle, type DocBundleFile, type DocBundleLease, type TenantDocBundle, type DocBundleContractVersion } from '../lib/docBundle'
@@ -65,15 +65,16 @@ const shape = (b: TenantDocBundle) => b.groups.map(g => ({ room: g.roomNo, kind:
   eq('다호실 · 거주 계약이 먼저', b.groups.map(g => g.roomNo), ['509', '601'])
   eq('다호실 · 행 구성', shape(b), [
     { room: '509', kind: 'lease', rows: ['contract', 'rent', 'deposit', 'residence'] },
-    { room: '601', kind: 'lease', rows: ['rent'] },
+    { room: '601', kind: 'lease', rows: ['rent', 'residence'] },
   ])
   const all = b.groups.flatMap(g => g.rows)
   eq('다호실 · 계약서는 한 줄', all.filter(r => r.docType === 'contract').length, 1)
   eq('다호실 · 계약서는 메인 계약의 것', all.find(r => r.docType === 'contract')?.leaseTermId, '509')
   eq('다호실 · 납부 확인서는 계약마다 두 행', all.filter(r => r.docType === 'rent').map(r => r.leaseTermId), ['509', '601'])
-  eq('다호실 · 실거주 확인서는 509 만', all.filter(r => r.docType === 'residence').map(r => r.leaseTermId), ['509'])
-  eq('다호실 · 601 비거주에는 실거주 후보 없음',
-    b.groups[1].rows.some(r => r.docType === 'residence'), false)
+  // 비거주 601 에도 실거주 확인서 행이 선다(운영자 긴급 오더 2026-09-07, 이원빈 건).
+  eq('다호실 · 실거주 확인서는 509 와 비거주 601', all.filter(r => r.docType === 'residence').map(r => r.leaseTermId), ['509', '601'])
+  eq('다호실 · 601 비거주에도 실거주 후보가 선다',
+    b.groups[1].rows.some(r => r.docType === 'residence'), true)
 }
 {
   // 비거주 계약에 실거주 확인서가 이미 발급돼 있으면 그것은 사실이라 감추지 않는다.
