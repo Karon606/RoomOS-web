@@ -1,16 +1,20 @@
 // 단위 어휘 회귀 — 실행: npx tsx scripts/test-unit-options.ts
 //
-// 여기서 고정하는 것 넷.
+// 여기서 고정하는 것 다섯.
 //   · **접기는 비교에만, 저장은 운영자 표기로** — canonicalUnit 결과를 저장하면 '인치'가 'inch' 가 된다.
 //   · **뜻이 같으면 접고 오타는 안 접는다** — 'M'/'m' 은 접고 '개'/'게' 는 안 접는다. 오타를
 //     사전으로 잡으려 들면 정당한 새 단위까지 앱이 지운다.
 //   · **새 어휘가 환산을 안 건드린다** — '봉'·'컵'·'회' 는 물리 단위가 아니라 곱셈에 안 끼어든다.
 //   · **목록에 없으면 친 그대로 쌓인다** — 운영자 요구가 '자동 추가' 다.
+//   · **부피 규격 + 장수 단위는 크기 표시다** — 50L 20매의 단가 기준은 개당이지 리터당이 아니다.
 import {
   DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS, UNIT_LIST_MAX,
   normalizeUnitInput, unitFoldKey, resolveUnitForSave, parseUnitOptions,
 } from '../lib/unitOptions'
-import { isConvertibleUnit, specMultiplier, isSpecDimensionMismatch, listCompatibleUnits } from '../lib/units'
+import {
+  isConvertibleUnit, specMultiplier, isSpecDimensionMismatch, listCompatibleUnits,
+  isVolumeUnit, isVolumeSizeLabel, isLengthUnit,
+} from '../lib/units'
 
 let pass = 0
 const fails: string[] = []
@@ -83,6 +87,52 @@ eq('차원 불일치 판정 불변', isSpecDimensionMismatch('g', '개'), true)
 eq('새 어휘는 불일치로 안 센다', isSpecDimensionMismatch('컵', '봉'), false)
 eq('변환 목록에 새 어휘가 안 뜬다',
   listCompatibleUnits('ml').some(u => ['봉', '컵', '회'].includes(u)), false)
+
+// ── 부피 판정 ──────────────────────────────────────────────────────
+// 길이 판정과 같은 UNIT_DIMS 에서 나온다 — 별칭·대소문자가 전부 산다.
+eq('L 은 부피다', isVolumeUnit('L'), true)
+eq('소문자 l 도 부피다', isVolumeUnit('l'), true)
+eq('리터도 부피다', isVolumeUnit('리터'), true)
+eq('ℓ 도 부피다', isVolumeUnit('ℓ'), true)
+eq('ml 은 부피다', isVolumeUnit('ml'), true)
+eq('㎖ 도 부피다', isVolumeUnit('㎖'), true)
+eq('밀리리터도 부피다', isVolumeUnit('밀리리터'), true)
+eq('cc 는 부피다', isVolumeUnit('cc'), true)
+eq('시시도 부피다', isVolumeUnit('시시'), true)
+eq('oz 는 액량온스라 부피다', isVolumeUnit('oz'), true)
+eq('앞뒤 공백은 턴다', isVolumeUnit('  L  '), true)
+eq('대문자 ML 도 부피다', isVolumeUnit('ML'), true)
+eq('kg 은 무게라 부피가 아니다', isVolumeUnit('kg'), false)
+eq('m 는 길이라 부피가 아니다', isVolumeUnit('m'), false)
+eq('개는 물리 단위가 아니다', isVolumeUnit('개'), false)
+eq('빈 값은 부피가 아니다', isVolumeUnit(''), false)
+eq('null 은 부피가 아니다', isVolumeUnit(null), false)
+eq('모르는 표기는 부피가 아니다', isVolumeUnit('꾸러미'), false)
+
+// ── 부피 규격 = 크기 표시인가 ──────────────────────────────────────
+// 지출 화면의 단가 기준 기본값이 이 판정 하나로 선다. 종전에는 화면이 ['L','ml'] 를
+// 소문자로 다듬은 값과 비교해서 ml 일 때만 우연히 서 있었다.
+eq('50L 20매는 크기 표시다', isVolumeSizeLabel('L', '매'), true)
+eq('소문자 l 도 잡힌다', isVolumeSizeLabel('l', '장'), true)
+eq('리터도 잡힌다', isVolumeSizeLabel('리터', '매'), true)
+eq('ml 은 종전대로 잡힌다', isVolumeSizeLabel('ml', '장'), true)
+eq('㎖ 도 잡힌다', isVolumeSizeLabel('㎖', '매'), true)
+eq('cc 도 잡힌다', isVolumeSizeLabel('cc', '장'), true)
+eq('대소문자·공백이 섞여도 잡힌다', isVolumeSizeLabel(' L ', ' 매 '), true)
+eq('수량 단위 앞뒤 공백을 턴다', isVolumeSizeLabel('L', '장 '), true)
+// 부피가 진짜 양인 경우 — 세제 1.5L 는 리터당 단가가 맞다.
+eq('개는 크기 표시가 아니다', isVolumeSizeLabel('L', '개'), false)
+eq('통은 크기 표시가 아니다', isVolumeSizeLabel('L', '통'), false)
+eq('병은 크기 표시가 아니다', isVolumeSizeLabel('L', '병'), false)
+eq('무게 규격은 이 갈래가 아니다', isVolumeSizeLabel('kg', '매'), false)
+eq('모르는 표기는 이 갈래가 아니다', isVolumeSizeLabel('꾸러미', '매'), false)
+eq('규격이 비면 거짓', isVolumeSizeLabel('', '매'), false)
+eq('규격이 null 이면 거짓', isVolumeSizeLabel(null, '매'), false)
+eq('수량 단위가 비면 거짓', isVolumeSizeLabel('L', ''), false)
+eq('수량 단위가 null 이면 거짓', isVolumeSizeLabel('L', null), false)
+// 길이 규격은 이 갈래 앞에서 이미 걸러진다 — 화면이 isLengthUnit 을 먼저 본다.
+eq('cm 은 길이라 앞에서 걸린다', isLengthUnit('cm'), true)
+eq('길이 규격은 이 갈래에 안 온다', isVolumeSizeLabel('cm', '매'), false)
 
 console.log(`\n단위 어휘 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.log('  - ' + f)

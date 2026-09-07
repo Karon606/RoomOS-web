@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, renameTrackedItemLabel } from './actions'
-import { specMultiplier, convertUnit, splitSizeLabel, isLengthUnit } from '@/lib/units'
+import { specMultiplier, convertUnit, splitSizeLabel, isLengthUnit, isVolumeSizeLabel } from '@/lib/units'
 import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '@/lib/unitOptions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
@@ -382,7 +382,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     // 부피 규격 + 장수 단위 = 그 부피는 **물건의 크기 표시**다. 나눌 수 있는 양이 아니다.
     // 종량제봉투 50L 20매에 25,000원이면 1매당 1,250원이지 리터당 25원이 아니다(운영자 지적 2026-08-05).
     // 세제 1.5L 처럼 부피가 진짜 양인 경우는 수량 단위가 개·통·병이라 여기 안 걸린다.
-    if (['L', 'ml'].includes(u) && ['매', '장'].includes(qtyUnit)) { setUnitBasis('qty'); return }
+    // 이 판정도 lib/units 정본 하나 — 여기서 목록을 비교하면 소문자로 다듬은 u 에 'L' 이 안 걸리고
+    // 리터·cc·oz 도 함께 샌다(실제로 ml 일 때만 우연히 서 있었다).
+    if (isVolumeSizeLabel(u, qtyUnit)) { setUnitBasis('qty'); return }
     // 품목의 재고 추적 단위가 '수량'이면 개당 단가가 기본 — 봉투·장판 등(오류신고 c7cf6180)
     setUnitBasis(prevUnits?.trackUnit === 'qty' ? 'qty' : 'spec')
   }, [specUnit, qtyUnit, basisTouched, prevUnits])

@@ -79,6 +79,29 @@ export function isLengthUnit(unit: string | null | undefined): boolean {
   return dimsOf(canon)?.length != null
 }
 
+// 부피 차원 단위인가 — 길이 판정과 같은 꼴, 같은 UNIT_DIMS 하나에서 나온다.
+// ml·cc·L·oz 와 그 별칭(리터·ℓ·㎖·시시)까지 따라온다. 대문자 'L' 도 canonicalUnit 이 접는다.
+// 지출 화면이 이 함수 대신 ['L','ml'] 리터럴을 비교하던 동안 소문자로 다듬은 값에 'L' 이
+// 영영 안 걸려서 판정이 죽어 있었다 — 목록을 각자 베끼면 그렇게 된다.
+export function isVolumeUnit(unit: string | null | undefined): boolean {
+  const canon = canonicalUnit(unit)
+  if (canon == null) return false
+  return dimsOf(canon)?.volume != null
+}
+
+// 부피 규격이 '나눌 수 있는 양' 이 아니라 **물건의 크기 표시**인가 — 수량 단위가 장수(매·장)면 그렇다.
+//   · 종량제봉투 50L 20매에 25,000원이면 1매당 1,250원이지 리터당 25원이 아니다(운영자 지적 2026-08-05).
+//   · 세제 1.5L 처럼 부피가 진짜 양인 경우는 수량 단위가 개·통·병이라 여기 안 걸린다.
+// 지출 화면의 단가 기준 기본값이 이 판정을 쓴다. 화면에서 다시 쓰면 별칭·대소문자가 또 샌다.
+const SHEET_QTY_UNITS = ['매', '장']
+export function isVolumeSizeLabel(
+  specUnit: string | null | undefined,
+  qtyUnit: string | null | undefined,
+): boolean {
+  if (!isVolumeUnit(specUnit)) return false
+  return SHEET_QTY_UNITS.includes((qtyUnit ?? '').trim())
+}
+
 // value(from 단위)를 to 단위로 환산. 환산 불가(단위 모름·차원 다름)면 null.
 //   같은 단위면 그대로. oz↔ml 은 부피, oz↔g 은 무게로 자동.
 export function convertUnit(value: number, from: string | null | undefined, to: string | null | undefined): number | null {
