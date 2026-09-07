@@ -113,7 +113,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
 
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo tenantId={tenant.id} contacts={tenant.contacts} email={tenant.email} />
-      {lease && <TenantContractInfo lease={lease} />}
+      {lease && <TenantContractInfo lease={lease}
+        foreign={isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoMasked })} />}
       {/* 입주 가능한 방 — 아직 방이 없는 리드에게만. 조건(계약 정보) 바로 아래에 두는 것은
           "이 조건이면 어느 방이 되는가"가 그 조건을 읽은 다음의 질문이기 때문이다. */}
       {lease && <TenantWishRooms lease={lease} />}
@@ -156,8 +157,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       })()}
       {/* 단기 희망 입주자 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
       {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} tenantId={tenant.id} tenantName={tenant.name} onChange={refresh} />}
-      {lease && <TenantAdditionalInfo lease={lease}
-        foreign={isForeignForDocuments({ nationality: tenant.nationality, hasForeignRegNo: !!tenant.foreignRegNoMasked })} />}
+      {lease && <TenantAdditionalInfo lease={lease} />}
 
       {tenant.memo && (
         <Section title="메모">

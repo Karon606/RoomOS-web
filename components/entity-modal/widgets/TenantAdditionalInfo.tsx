@@ -1,9 +1,9 @@
-// 고객의 추가 정보 — 전입신고·결제수단·현금영수증·방문경로·희망 이동 호실·계약서 URL.
+// 고객의 추가 정보 — 결제수단·현금영수증·방문경로·희망 이동 호실·계약서 URL.
+// 전입신고는 계약 정보 카드(TenantContractInfo)로 옮겼다 — 2026-09-07.
 
 import { Section, Grid, Item } from './Section'
 
 type Lease = {
-  registrationStatus: string
   payMethod: string | null
   cashReceipt: string | null
   visitRoute: string | null
@@ -12,9 +12,6 @@ type Lease = {
   contractUrl: string | null
 }
 
-const REG_LABEL: Record<string, string> = {
-  NOT_REPORTED: '미신고', REGISTERED: '신고완료', EXEMPTED: '면제', PLANNED: '신고예정',
-}
 const WISH_WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
 const WISH_DIR_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
@@ -41,13 +38,10 @@ function wishDisplay(lease: Lease): string {
   return parts.length > 0 ? `조건: ${parts.join(' · ')}` : '—'
 }
 
-// foreign 은 부모가 정본(isForeignForDocuments)으로 판정해 내린다 — 위젯이 판정을 복제하면
-// 계약서 종이의 체류지 변경신고 라벨과 갈릴 수 있다(운영자 오더 2026-09-07).
-export function TenantAdditionalInfo({ lease, foreign = false }: { lease: Lease; foreign?: boolean }) {
+export function TenantAdditionalInfo({ lease }: { lease: Lease }) {
   return (
     <Section title="추가 정보">
       <Grid>
-        <Item label={foreign ? '체류지 변경신고' : '전입신고'} value={REG_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
         <Item label="결제 수단"      value={lease.payMethod ?? '—'} />
         <Item label="현금영수증"     value={lease.cashReceipt ?? '—'} />
         <Item label="방문 경로"      value={lease.visitRoute ?? '—'} />

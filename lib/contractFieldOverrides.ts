@@ -134,7 +134,13 @@ export type ContractLeaseFields = {
   nameStyle: DocNameStyle
 }
 
-const REGISTRATION_LABEL: Record<string, RegistrationStatusLabel> = {
+/**
+ * 전입신고(외국인은 체류지 변경신고) 상태 라벨 정본.
+ *
+ * 종이(계약서)와 화면이 같은 말을 해야 해서 한 벌만 둔다 — 종전에는 같은 맵이 세 군데 있었고,
+ * 한 곳만 고치면 종이와 상세가 갈렸다(운영자 오더 2026-09-07). export 는 화면 쪽에서 쓰라고 연 것이다.
+ */
+export const REGISTRATION_LABEL: Record<string, RegistrationStatusLabel> = {
   REGISTERED: '신고완료', NOT_REPORTED: '미신고', EXEMPTED: '면제', PLANNED: '신고예정',
 }
 

@@ -51,6 +51,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import BirthdateInput from '@/components/ui/BirthdateInput'
 import { dueDayBucketOf, DUE_DAY_BUCKET_OPTIONS, type DueDayBucket } from '@/lib/dueDayBucket'
 import { dueDayParts, sameDueDay } from '@/lib/dueDay'
+import { REGISTRATION_LABEL } from '@/lib/contractFieldOverrides'
 import { sameMoveInDate } from '@/lib/moveInDate'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
@@ -484,9 +485,9 @@ const TENANT_CARD_FIELDS: FieldDef[] = [
   { key: 'payment', label: '이용료·납부일' },
   { key: 'deposit', label: '보증금·거주기간' },
 ]
-const REG_LABEL: Record<string, string> = {
-  NOT_REPORTED: '미신고', REGISTERED: '신고완료', EXEMPTED: '면제', PLANNED: '신고예정',
-}
+// 소비처 0건인 죽은 맵이다(2026-09-07 확인). 지우지 않되 글자를 여기 다시 적지도 않는다 —
+// 같은 맵이 세 벌 돌던 드리프트를 끊는 것이 목적이라, 되살아나도 정본을 가리키게 둔다.
+const REG_LABEL: Record<string, string> = REGISTRATION_LABEL
 const GENDER_LABEL: Record<string, string> = {
   MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '—',
 }
@@ -4969,7 +4970,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </div>
           )}
         </div>
-        {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
+        {/* 납부일 | 전입신고 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
           {/* 거주 전 상태는 납부일 숨김(단기 문법과 동일) — 서버도 같은 기준으로 비운다 */}
           {!duePending && <div className="space-y-1.5">
@@ -5028,6 +5029,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             )}
             {!tenant && !dueSameAsParent && <p className="text-[0.65625rem] text-[var(--warm-muted)]">입주일과 같은 날로 자동 설정됩니다. 필요 시 변경하세요.</p>}
           </div>}
+          {/* 전입신고 — '추가 정보'에서 여기로 옮겼다(운영자 오더 2026-09-07). 국적을 고르는 자리에서
+              찾다가 "항목이 없어졌다"는 신고가 세 번 났다. 신고는 입주 뒤 14일 안의 행정 행위라
+              날짜 행 꼬리가 흐름에 맞다.
+              라벨도 양성 증거 축 — 계약서 종이(registrationHeadPair)와 같은 판정이라야 폼과
+              종이가 같은 말을 한다. 미기재 국적이 폼에서만 체류지 변경신고가 되면 갈린다.
+              계약만 추가(leaseOnly)에는 그리지 않는다 — 신고는 주소 하나에 사람 한 명의 사실이라
+              방을 둘 써도 한 건이고, 상세도 메인 계약만 읽는다(TenantBody). */}
+          {!leaseOnly && (
+            <SelectField label={isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) ? '체류지 변경신고' : '전입신고'} name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
+              <option value="PLANNED">신고예정</option>
+              <option value="REGISTERED">신고완료</option>
+              <option value="NOT_REPORTED">미신고</option>
+            </SelectField>
+          )}
           {showExitDate && (
             // 퇴실일의 진실 원천은 shortOut 하나. 단기 계산기(위)와 이 입력이 같은 state 를 공유해야
             // 어느 쪽을 고쳐도 같은 값이 저장되고 미리보기 금액도 따라온다(운영자 신고 2026-07-26).
@@ -5043,14 +5058,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
       </FormSection>
 
       <FormSection title="추가 정보">
+        {/* 전입신고는 계약 정보의 납부일 행으로 옮겼다(2026-09-07). 여기 남은 넷은 수납·영업 부가 사실이다. */}
         <div className="grid grid-cols-2 gap-3">
-          {/* 라벨도 양성 증거 축 — 계약서 종이(registrationHeadPair)와 같은 판정이라야 폼과
-              종이가 같은 말을 한다. 미기재 국적이 폼에서만 체류지 변경신고가 되면 갈린다. */}
-          <SelectField label={isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) ? '체류지 변경신고' : '전입신고'} name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
-            <option value="PLANNED">신고예정</option>
-            <option value="REGISTERED">신고완료</option>
-            <option value="NOT_REPORTED">미신고</option>
-          </SelectField>
           <SelectField label="결제 수단" name="payMethod" defaultValue={lease?.payMethod ?? ''}>
             <option value="">미선택</option>
             <option value="계좌이체">계좌이체</option>

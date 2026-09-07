@@ -30,6 +30,21 @@ export function sameDueDay(a: string | null | undefined, b: string | null | unde
 }
 
 /**
+ * 입주일 기준 납부일 파생 — 30일 이상이면 '말일'(등록 폼 applyDueDay 와 동일 규칙).
+ *
+ * 원래 app/(app)/tenants/actions.ts 안의 로컬 함수였다. 정합 감사(lib/integrityAudit)가 같은 규칙으로
+ * '희망일에서 파생한 값인가'를 견주어야 하는데, 서버 액션 파일('use server')은 async 함수만 내보낼 수
+ * 있어 거기서 가져올 길이 없다. 그래서 납부일 한 값을 다루는 이 정본으로 올린다 — 동작은 그대로다.
+ *
+ * UTC 로 읽는 이유는 moveInDate 가 @db.Date 이고 그 날의 UTC 자정으로 저장되기 때문이다(ymdToDbDate).
+ * 로컬 게터로 읽으면 KST 기기에서 하루 앞의 날이 나와 파생 납부일이 통째로 밀린다.
+ */
+export function dueDayFromMoveIn(moveIn: Date): string {
+  const day = moveIn.getUTCDate()
+  return day >= 30 ? '말일' : String(day)
+}
+
+/**
  * 부모 계약의 납부일이 바뀔 때 딸린 계약을 함께 옮긴다(운영자 오더 2026-08-13).
  *
  * 한 사람이 방을 둘 쓰면 돈은 대개 같은 날 한 번에 들어온다. 그래서 폼은 딸린 계약의 납부일을

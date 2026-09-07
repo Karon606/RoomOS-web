@@ -1,4 +1,4 @@
-// 고객의 계약(lease) 정보 — 월이용료·보증금·청소비·납부일·납부방식·입주일·거주기간 등.
+// 고객의 계약(lease) 정보 — 월이용료·보증금·청소비·납부일·납부방식·입주일·거주기간·전입신고 등.
 // 표시 전용. 납입일 변경·편집은 페이지(/tenants?tenantId=X) 에서.
 
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -6,9 +6,11 @@ import { Section, Grid, Item } from './Section'
 import { fmtStayPeriod } from '@/lib/stayPeriod'
 import { kstYmdStr, splitKstDateTime } from '@/lib/kstDate'
 import { fmtDateKor } from '@/lib/fmtDate'
+import { REGISTRATION_LABEL } from '@/lib/contractFieldOverrides'
 
 type Lease = {
   status: string
+  registrationStatus: string
   isShortTerm?: boolean   // 단기 — rentAmount가 월액이 아니라 체류 전체 사용료
   rentAmount: number
   depositAmount: number
@@ -65,7 +67,9 @@ const fmtTourAt = (d: Date | string | null | undefined, hm: string | null | unde
   return `${base} ${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`
 }
 
-export function TenantContractInfo({ lease }: { lease: Lease }) {
+// foreign 은 부모가 정본(isForeignForDocuments)으로 판정해 내린다 — 위젯이 판정을 복제하면
+// 계약서 종이의 체류지 변경신고 라벨과 갈릴 수 있다(운영자 오더 2026-09-07).
+export function TenantContractInfo({ lease, foreign = false }: { lease: Lease; foreign?: boolean }) {
   const isPending = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
   // 아직 들어오기 전(또는 끝난) 계약인가 — 문의 일시·투어 예정일이 뜨는 조건 한 벌.
   // 거주 단계에 투어 예정일을 남기면 이미 지난 약속이 앞으로의 일정처럼 읽힌다.
@@ -113,6 +117,12 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
         )}
         {!isPending && lease.expectedMoveOut && <Item label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
         {lease.moveOutDate && <Item label="퇴실일" value={fmtDate(lease.moveOutDate)} />}
+        {/* 전입신고 — '추가 정보'에서 여기로 옮겼다(운영자 오더 2026-09-07). 국적을 고르는 자리에서
+            찾다가 "항목이 없어졌다"는 신고가 세 번 났다. 신고는 입주 뒤 14일 안의 행정 행위라
+            계약 조건과 한 묶음이다. 목록 맨 끝인 것은 위 순서가 운영자 확정(2026-07-10)이라
+            중간에 끼우면 그 확정을 흔들기 때문이다. */}
+        <Item label={foreign ? '체류지 변경신고' : '전입신고'}
+          value={REGISTRATION_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
       </Grid>
     </Section>
   )

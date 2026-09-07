@@ -2,7 +2,7 @@
 // 원칙(운영자 2026-07-20, 데이터 땜빵 금지): 어긋난 데이터는 손으로 찾기 전에 시스템이 먼저 신고한다.
 // 규칙 추가는 아래에 블록 하나를 더하면 된다. 서명(errorText)이 같은 open·dismissed 신고가 있으면
 // 재적재하지 않는다 — done 처리 후 재발하면 다시 적재(해결 실패 감지).
-import { Prisma } from '@prisma/client'
+import { Prisma, type LeaseStatus } from '@prisma/client'
 import type { PrismaDb } from '@/lib/prisma'
 import { billForLeaseMonth } from '@/lib/billing'
 import { discountedRent } from '@/lib/rentDiscount'
@@ -10,8 +10,45 @@ import { calcCheckoutProration } from '@/lib/prorate'
 import { settlementPeriodFor } from '@/lib/settlementPeriod'
 import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMonth } from '@/lib/shortStay'
 import { inheritableCheckoutReason } from '@/lib/checkoutReason'
+import { sameDueDay, dueDayFromMoveIn } from '@/lib/dueDay'
 
 type Violation = { signature: string; note: string; tenantId: string | null; propertyId: string }
+
+/** 규칙 1-b 가 보는 거주 전 단계 — 아직 청구가 돌지 않는 상태. */
+export const PENDING_DUE_DAY_STATUSES: LeaseStatus[] = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED']
+
+/**
+ * 규칙 1-b 판정 정본 — 거주 전 계약에 남은 납부일이 오염인가.
+ *
+ * 아래 DB 질의는 이 판정의 앞거름(prefilter)일 뿐이고, 무엇이 위반인지는 여기가 말한다.
+ * 진리표(scripts/test-pending-dueday-audit.ts)가 견주는 것도 이 함수다.
+ *
+ * 잡으려는 원래 오염(2026-07-30 신고). 희망일과 **다른** 임의값이 거주 전에 박히면, 거주 전환 네 자리가
+ * dueDay 가 null 일 때만 파생하므로 파생이 안 돌고 그 옛 값이 그대로 청구일로 굳는다.
+ *
+ * 빼는 둘.
+ *  ㄱ. 계약서 흔적(서명 링크·계약서 파일)이 있는 계약 — 납부일 게이트(설계 D)가 예약 단계에 원천을
+ *      채우는 것이 이제 정식 경로다.
+ *  ㄴ. 입주 희망일 파생 등가값 — 전환이 어차피 만들 값과 같아 정보량이 0이다. 8일 입주에 '8',
+ *      30일 이후 입주에 '말일'이 여기다. 이것까지 신고하면 정상 건이 매일 오염으로 뜬다
+ *      (타가토바 아루잔, RESERVED, 희망일 2026-09-08 · dueDay '8').
+ *
+ * 희망일이 없는 계약은 견줄 기준이 없어 위반으로 남긴다. 파생 등가라고 말하려면 무엇에서 파생했는지가
+ * 있어야 하는데 그것이 없고, 그런 계약의 값은 거주 전환에서 파생이 안 도는 그 클래스 그대로다.
+ * 게이트가 채운 정상 건은 계약서 흔적이 있어 ㄱ에서 이미 빠진다.
+ */
+export function pendingDueDayViolation(lease: {
+  status: string
+  dueDay: string | null
+  moveInDate: Date | null
+  hasContractTrace: boolean
+}): boolean {
+  if (!(PENDING_DUE_DAY_STATUSES as string[]).includes(lease.status)) return false
+  if (!lease.dueDay) return false
+  if (lease.hasContractTrace) return false
+  if (lease.moveInDate && sameDueDay(lease.dueDay, dueDayFromMoveIn(lease.moveInDate))) return false
+  return true
+}
 
 export async function runIntegrityAudit(
   prisma: PrismaDb,
@@ -36,19 +73,29 @@ export async function runIntegrityAudit(
   // 예외(설계 D, 2026-09-07): 계약서 흔적(서명 링크·계약서 파일)이 있는 계약은 납부일이 있어도
   // 정상이다 — 계약서 문이 예약 단계에 원천을 채우는 것이 이제 정식 경로다. 흔적 없이 남은
   // 납부일만 옛 오염 패턴(등록 폼 파생 잔존)으로 잡는다.
+  // 질의는 앞거름이고 무엇이 위반인지는 pendingDueDayViolation 이 말한다 — 입주 희망일에서 파생한
+  // 등가값은 거기서 빠진다(2026-09-07). 흔적 두 조건은 질의에 남겨 판정 대상 자체를 줄인다.
   const pendingWithDueDay = await prisma.leaseTerm.findMany({
     where: {
-      status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] }, dueDay: { not: null },
+      status: { in: PENDING_DUE_DAY_STATUSES }, dueDay: { not: null },
       contractShareLinks: { none: {} },
       contractFiles: { none: {} },
     },
-    select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, tenant: { select: { name: true } } },
+    select: { id: true, tenantId: true, propertyId: true, status: true, dueDay: true, moveInDate: true, tenant: { select: { name: true } } },
   })
-  for (const l of pendingWithDueDay) violations.push({
-    signature: `[정합] pending-has-dueday · ${l.id}`,
-    note: `${l.tenant.name}: 거주 전 상태(${l.status})인데 납부일('${l.dueDay}')이 남아 있습니다. 입실 전에는 납부일이 없어야 합니다.`,
-    tenantId: l.tenantId, propertyId: l.propertyId,
-  })
+  for (const l of pendingWithDueDay) {
+    // hasContractTrace 는 위 질의가 흔적 없는 계약만 실어 오므로 false 로 고정한다.
+    if (!pendingDueDayViolation({ status: l.status, dueDay: l.dueDay, moveInDate: l.moveInDate, hasContractTrace: false })) continue
+    violations.push({
+      signature: `[정합] pending-has-dueday · ${l.id}`,
+      note: `${l.tenant.name}: 거주 전 상태(${l.status})인데 납부일이 '${l.dueDay}'로 박혀 있습니다. ${
+        l.moveInDate
+          ? `입주 희망일에서 나올 값('${dueDayFromMoveIn(l.moveInDate)}')과 달라, 입실 전환 때 희망일 기준으로 다시 잡히지 않고 이 값이 그대로 청구일이 됩니다.`
+          : '입주 희망일이 없어 이 값이 어디서 왔는지 견줄 수 없고, 입실 전환 때 그대로 청구일이 됩니다.'
+      } 계약서에서 정한 날이면 그대로 두어도 됩니다.`,
+      tenantId: l.tenantId, propertyId: l.propertyId,
+    })
+  }
 
   // 규칙 2 — 일할 정산 잔존인데 그 달 수납 기록 0건 (조원섭 패턴: 받기로 한 금액이 미수인 채 종결)
   const prorated = await prisma.leaseTerm.findMany({

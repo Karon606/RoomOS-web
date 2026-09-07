@@ -33,17 +33,14 @@ import { parseShortStayPolicy, calcShortStay, stayDaysOf, isWithinOneCalendarMon
 import { defaultSettlementPick, futureMonthsLabel, type SettlementPick } from '@/lib/checkoutSettlement'
 import { latestCheckoutReasonFor } from '@/lib/checkoutReason'
 import { loadWishMatch, WISH_LEAD_STATUSES, leavesWishLead, type WishLeaseMatch } from '@/lib/wishMatch'
-import { propagateDueDayToSubLeases } from '@/lib/dueDay'
+import { propagateDueDayToSubLeases, dueDayFromMoveIn } from '@/lib/dueDay'
 import { propagateMoveInDateToSubLeases } from '@/lib/moveInDate'
 
 // 거주 전(pending) 상태 — 납부일이 무의미한 단계라 저장 시 dueDay 를 비운다(운영자 지적 2026-07-30).
 // 등록 폼의 자동 파생 잔존이 문의·예약 건에 '말일'로 박히던 오염의 근본 봉합. 청구 상태 진입 시 재파생.
 const DUE_PENDING_STATUSES = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED']
-// 입주일 기준 납부일 파생 — 30일 이상이면 '말일'(등록 폼 applyDueDay 와 동일 규칙)
-function dueDayFromMoveIn(moveIn: Date): string {
-  const day = moveIn.getUTCDate()
-  return day >= 30 ? '말일' : String(day)
-}
+// 입주일 기준 납부일 파생(dueDayFromMoveIn)은 lib/dueDay 정본으로 올렸다 — 정합 감사가 같은 규칙으로
+// '희망일 파생 등가인가'를 견주는데, 'use server' 파일에서는 함수를 가져갈 수 없어서다.
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
