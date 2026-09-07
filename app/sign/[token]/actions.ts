@@ -146,7 +146,7 @@ export async function submitRemoteSignature(
     const already = await prisma.leaseTerm.findUnique({
       where: { id: link.leaseTermId }, select: { signedContractSnapshot: true },
     })
-    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown; rateAddendum?: unknown; signDocuments?: unknown } | null
+    const snap = link.templateSnapshot as { template?: unknown; refundClauseInContract?: boolean; disposalConsent?: unknown; businessInfo?: unknown; subLeaseAddendum?: unknown; rateAddendum?: unknown; signDocuments?: unknown; translation?: unknown } | null
     const newSnapshot = already?.signedContractSnapshot || !snap?.template ? null : {
       origin: 'REMOTE_LINK', capturedAt: now.toISOString(),
       template: snap.template as object,
@@ -164,6 +164,10 @@ export async function submitRemoteSignature(
       // 나중에 생겨서도 안 된다(특약 두 칸과 같은 규칙). 이 칸이 생기기 전 링크에는 없다 —
       // 그때는 빈 배열로 굳는다.
       signDocuments: (snap.signDocuments ?? []) as object,
+      // 참고용 번역본도 함께 동결한다(서류 목록과 같은 규칙). 서명에는 안 쓰이지만 입주자가
+      // 그것을 읽고 이해했다고 말할 것이라, "그때 화면에 뜬 번역 문안"이 증거로 얼어야 한다.
+      // 번역본이 없던 링크에는 칸이 없다(undefined) — 그때는 null 로 굳어 번역본 없음이 된다.
+      translation: (snap.translation ?? null) as object,
       // 이 사람이 눈으로 읽고 손으로 서명한 성명 표기. 근거는 링크 스냅샷이다 — 원격 화면은
       // DB 를 다시 안 읽으므로 그 JSON 이 곧 그 사람이 본 종이다.
       // 이 칸이 생기기 전 박제에는 없다(undefined). 그때는 오버라이드 또는 한글로 읽는다.

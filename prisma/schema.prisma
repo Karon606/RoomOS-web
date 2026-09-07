@@ -205,6 +205,13 @@ model Property {
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   // 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류. shape: { enabled, days, title, body }
   disposalConsentTemplate Json?
+  // 계약서 참고용 번역본 — 영업장이 직접 입력한다(운영자 오더 2026-09-07). null·꺼짐이면
+  // 이 기능 전과 문자 단위로 같다. 열쇠가 한국어 문장 자체라 항목 순서가 바뀌어도 안 흔들리고,
+  // 원문을 고치면 그 항목 번역이 저절로 '없음'이 된다(드리프트 감지가 곧 키 불일치).
+  // shape: { enabled, langs: { [lang]: { published, dict: { [한국어 문장]: 번역 } } } }
+  // 계약서 본문(contractTemplate) 안에 넣지 않는 이유는 printedFacts 의 template 통비교가
+  // 기존 서명 링크 전건을 드리프트로 띄우기 때문이다.
+  contractTranslations Json?
   // 추가 호실(창고·사무실) 특약 문안 — null=미설정(코드 기본 문안), items 빈 배열=이 영업장은 안 씀.
   // 종전에는 코드 상수 고정이었다(지워지면 주거 금지 근거가 종이에서 사라진다는 이유).
   // 운영자 판단으로 연다(2026-08-29) — 영업장마다 창고 운영 방식이 다르다. lib/contract resolveSubLeaseAddendum.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef } from 'react'
+import { useState, useTransition, useEffect, useRef, useMemo } from 'react'
 import { type SettingsTab } from './tabs'
 import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
@@ -36,6 +36,7 @@ import {
   listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
   getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
   saveSignDocument, setSignDocumentRetired,
+  getContractTranslationSettings, setContractTranslationEnabled, saveContractTranslationLang,
   getDocMailSettings, updateDocMailTemplate, renderDocMailSample,
   getAiSettings, saveAiSettings,
 } from './actions'
@@ -45,6 +46,11 @@ import type { DocMailTemplate } from '@/lib/docMail'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn, BtnLink, btnClass } from '@/components/ui/Btn'
 import { parseSignDocuments, type SignDocument } from '@/lib/signDocuments'
+import {
+  TRANSLATION_LANGS, translationSourceLines, orphanTranslationKeys, EMPTY_CONTRACT_TRANSLATIONS,
+  type TranslationLang, type TranslationLineKind, type ContractTranslations,
+} from '@/lib/contractTranslation'
+import { SIGN_LANG_LABEL } from '@/lib/signGuideText'
 import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
@@ -2372,6 +2378,12 @@ function ContractTab({ initial, property, isOwner, onSubmitProperty, saving, onJ
       <span id="dv-sign-docs" className="scroll-mt-4" />
       <SignDocumentsCard initial={parseSignDocuments(property?.signDocuments)} />
 
+      {/* 참고용 번역본 — 추가 서류 카드 바로 아래. 서명받는 서류가 무엇인지 정한 다음에
+          그 본문을 무슨 언어로 보여줄지를 정하는 순서다. 카드가 제 데이터를 직접 읽는다
+          (서류 메일 문안 카드와 같은 문법) — 본문 저장본이 필요한데 이 탭의 폼 상태는 편집 중일 수 있다. */}
+      <span id="dv-contract-translation" className="scroll-mt-4" />
+      <ContractTranslationCard />
+
       {/* 서류 메일 문안 — 자동채움 카드 바로 아래. 이 탭의 축("서류를 내보낼 때 저절로 붙는 값")
           그대로다. 문자 템플릿 카드(여러 벌 목록형)와 달리 한 벌 기본값 폼형이라 여기가 자리다. */}
       <span id="dv-doc-mail" className="scroll-mt-4" />
@@ -3061,6 +3073,199 @@ function SignDocumentsCard({ initial }: { initial: SignDocument[] }) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 transition-transform ${showRetired ? 'rotate-180' : ''}`} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {showRetired && retired.map(row)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 번역 입력 줄이 본문 어디에서 왔는지 — 운영자가 "몇 조 몇 항"을 짚을 수 있게 성격을 적어 준다. */
+const TRANSLATION_KIND_LABEL: Record<TranslationLineKind, string> = {
+  title: '계약서 제목',
+  sectionTitle: '절 제목',
+  item: '조항',
+  oath: '서약문',
+}
+
+/**
+ * 참고용 번역본 카드 — 계약서 본문을 언어별로 번역해 둔다(운영자 오더 2026-09-07).
+ *
+ * **서명은 한국어 정본에만 받는다.** 여기 넣는 것은 외국인이 내용을 이해하도록 보여 주는
+ * 참고용이고, 번역본이 실리는 계약서에는 '한국어 원본이 우선한다'는 조항이 코드로 붙는다.
+ *
+ * 두 축이 다른 저장을 쓴다(§27.1). 운영 스위치는 단일 값이라 즉시 저장(버튼 없음)이고, 번역
+ * 사전은 텍스트 여러 벌이라 폼 저장이다 — 추가 서류 카드가 행 즉시저장과 편집 폼을 나란히 두는
+ * 것과 같은 문법이라, 두 축이 한 면에서 섞이지 않는다.
+ *
+ * 언어 목록에 한국어가 없다. 정본이라 번역 대상이 아니다(TRANSLATION_LANGS).
+ * 본문은 **저장본**을 읽는다 — 종이에 실리는 그것이라야 사전의 열쇠(한국어 원문)가 맞는다.
+ */
+function ContractTranslationCard() {
+  const [loaded, setLoaded] = useState(false)
+  const [enabled, setEnabled] = useState(false)
+  const [template, setTemplate] = useState<ContractTemplate | null>(null)
+  const [stored, setStored] = useState<ContractTranslations>(EMPTY_CONTRACT_TRANSLATIONS)
+  const [lang, setLang] = useState<TranslationLang>('en')
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [published, setPublished] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    getContractTranslationSettings()
+      .then(r => {
+        setTemplate(r.template)
+        setStored(r.translations)
+        setEnabled(r.translations.enabled)
+        // 첫 언어는 영어다. 사전에 고아 열쇠가 있으면 그것도 함께 담긴다 — 화면에 칸이 없어도
+        // 저장 때 되실어 보내야 서버가 안 보이는 번역을 지우지 않는다.
+        setDraft({ ...(r.translations.langs.en?.dict ?? {}) })
+        setPublished(r.translations.langs.en?.published ?? false)
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const lines = useMemo(() => (template ? translationSourceLines(template) : []), [template])
+  const orphans = useMemo(
+    () => (template ? orphanTranslationKeys(stored, template, lang).length : 0),
+    [template, stored, lang])
+  const translated = lines.filter(l => (draft[l.text] ?? '').trim()).length
+
+  // 저장 안 한 입력이 있는가. 언어를 바꿀 때 그것을 조용히 버리지 않으려고 센다(§27.5).
+  const dirty = useMemo(() => {
+    const saved = stored.langs[lang]?.dict ?? {}
+    for (const k of new Set([...Object.keys(saved), ...Object.keys(draft)])) {
+      if ((saved[k] ?? '') !== (draft[k] ?? '')) return true
+    }
+    return (stored.langs[lang]?.published ?? false) !== published
+  }, [stored, lang, draft, published])
+
+  const pickLang = async (next: TranslationLang) => {
+    if (next === lang) return
+    if (dirty && !(await confirmDialog({
+      title: '저장하지 않고 언어를 바꿀까요?',
+      message: '지금 입력한 번역이 사라집니다. 남기려면 취소하고 저장을 먼저 눌러 주세요.',
+      level: 'caution', confirmLabel: '바꾸기',
+    }))) return
+    setLang(next)
+    setDraft({ ...(stored.langs[next]?.dict ?? {}) })
+    setPublished(stored.langs[next]?.published ?? false)
+  }
+
+  const toggleEnabled = async (on: boolean): Promise<void> => {
+    const prev = enabled
+    setEnabled(on)
+    const res = await setContractTranslationEnabled(on)
+    if (!res.ok) { setEnabled(prev); pushToast('error', res.error); return }
+    setStored(s => ({ ...s, enabled: on }))
+    pushToast('success', on ? '번역본을 사용합니다' : '번역본을 사용하지 않습니다', {
+      detail: on
+        ? '공개로 켠 언어부터 새 서명 링크에 번역본이 실립니다.'
+        : '새 서명 링크에 번역본이 실리지 않습니다. 입력해 둔 번역은 그대로 남습니다.',
+      action: { label: '적용취소', run: () => void toggleEnabled(prev) },
+    })
+  }
+
+  const save = async () => {
+    if (saving) return
+    setSaving(true)
+    const release = trackSave()
+    try {
+      const res = await saveContractTranslationLang({ lang, published, dict: draft })
+      if (!res.ok) { pushToast('error', res.error); return }
+      // 화면 저장본을 서버 병합과 같은 규칙으로 맞춘다 — 빈 칸은 그 열쇠를 걷는다(번역 취소).
+      const cleaned = Object.fromEntries(Object.entries(draft).filter(([, v]) => v.trim()))
+      setStored(prev => ({ ...prev, langs: { ...prev.langs, [lang]: { published, dict: cleaned } } }))
+      pushToast('success', '저장됨', {
+        detail: '새로 보내는 서명 링크부터 이 번역본이 실립니다. 이미 보낸 링크와 발급본은 바뀌지 않습니다.',
+      })
+    } finally {
+      release()
+      setSaving(false)
+    }
+  }
+
+  const taCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors resize-y'
+  const selCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <h3 className="text-sm font-semibold text-[var(--warm-dark)]">참고용 번역본</h3>
+      <p className="text-xs text-[var(--warm-muted)] -mt-1">
+        계약서 본문을 언어별로 번역해 둡니다. 서명은 한국어 원본에만 받고, 번역본은 내용을 이해하도록
+        보여 주는 참고용입니다. 번역본이 실리는 계약서에는 한국어 원본이 우선한다는 조항이 함께 붙습니다.
+      </p>
+      {!loaded ? (
+        <SkeletonRows rows={3} />
+      ) : (
+        <div className="space-y-3">
+          <SegmentedControl size="sm" ariaLabel="참고용 번역본 사용"
+            options={[{ value: 'on', label: '사용' }, { value: 'off', label: '사용 안 함' }]}
+            value={enabled ? 'on' : 'off'}
+            onChange={v => void toggleEnabled(v === 'on')} />
+          {enabled && (
+            <>
+              <label className="block max-w-xs">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">언어</span>
+                <select value={lang} onChange={e => void pickLang(e.target.value as TranslationLang)} className={selCls}>
+                  {TRANSLATION_LANGS.map(l => <option key={l} value={l}>{SIGN_LANG_LABEL[l]}</option>)}
+                </select>
+              </label>
+
+              {/* 편집 면. 위 '사용' 토글은 누르는 즉시 저장이고 이 안은 저장 버튼이 한다 —
+                  두 축이 한 면에 섞이면 어느 것이 즉시 반영인지 알 수 없다(§27.1, 추가 서류 카드
+                  편집 폼과 같은 문법). 그래서 테두리로 면을 갈라 둔다. */}
+              <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--cream-soft)', border: '1px solid var(--warm-border)' }}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="text-xs font-semibold text-[var(--warm-dark)]">{SIGN_LANG_LABEL[lang]} 번역</p>
+                  <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+                    번역 <span className="num">{translated}/{lines.length}</span>
+                    {orphans > 0 && <> · 고아 <span className="num">{orphans}</span>건</>}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="block text-[0.6875rem] text-[var(--warm-muted)] mb-1">공개</span>
+                  <SegmentedControl size="sm" ariaLabel="이 언어의 번역본 공개"
+                    options={[{ value: 'on', label: '공개' }, { value: 'off', label: '비공개' }]}
+                    value={published ? 'on' : 'off'}
+                    onChange={v => setPublished(v === 'on')} />
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">
+                    비공개면 이 언어의 번역본은 서명 링크에 실리지 않습니다. 번역이 끝날 때까지 비공개로 둡니다.
+                  </p>
+                </div>
+
+                {orphans > 0 && (
+                  // 지우지 않는다 — 조항을 되돌리면 그 번역이 저절로 되살아나야 한다(lib/contractTranslation).
+                  <p className="text-[0.65625rem] leading-relaxed text-[var(--warm-mid)]">
+                    본문에서 사라진 문장의 번역이 {orphans}건 남아 있습니다. 지우지 않고 두므로 그 조항을 되돌리면 다시 쓰입니다.
+                  </p>
+                )}
+
+                {lines.length === 0 ? (
+                  <p className="text-sm text-[var(--warm-muted)] text-center py-3">계약서 본문이 비어 있어 번역할 문장이 없습니다.</p>
+                ) : (
+                  <div className="divide-y divide-[var(--warm-border)]">
+                    {lines.map(l => (
+                      <div key={l.text} className="py-3 space-y-1.5 first:pt-0">
+                        <p className="text-[0.65625rem] text-[var(--warm-muted)]">{TRANSLATION_KIND_LABEL[l.kind]}</p>
+                        {/* 원문은 읽기 전용이다. 여기서 본문을 고치면 열쇠가 바뀌어 다른 언어의 번역까지 통째로 고아가 된다. */}
+                        <p className="text-xs text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap break-keep">{l.text}</p>
+                        <textarea value={draft[l.text] ?? ''} rows={2}
+                          onChange={e => setDraft(p => ({ ...p, [l.text]: e.target.value }))}
+                          placeholder="비워 두면 이 줄은 한국어 원문 그대로 보입니다."
+                          className={taCls} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Btn type="button" variant="primary" size="md" className="w-full" onClick={() => void save()} disabled={saving}>
+                  {saving ? '저장 중…' : '저장'}
+                </Btn>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

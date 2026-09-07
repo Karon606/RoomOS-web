@@ -59,6 +59,15 @@ export type PrintedFactsInput = {
   roomScheduleText?: string | null
   /** 이 종이에 붙은 추가 서류. 제목이든 문단 한 줄이든 바뀌면 그 종이와 지금이 다르다. */
   signDocuments?: Array<{ key: string; title: string; body: string }> | null
+  /**
+   * 이 종이에 실린 참고용 번역본(해석 완료본 한 언어분). 입주자가 그것을 읽고 서명했으므로
+   * 문장 하나가 바뀌면 그 종이와 지금이 다르다.
+   *
+   * **번역본이 없으면 축 자체가 없다(undefined).** 번역본을 안 쓰는 영업장의 계약 전건과
+   * 이 칸을 모르는 기존 링크 스냅샷·발급본이 여기서 무변동이어야 한다 — 위 두 특약·추가 서류와
+   * 같은 규칙이고, 드리프트 비교의 undefined 생략 규칙이 그것을 지킨다.
+   */
+  translation?: unknown
 }
 
 /** 축 순서 — 발급 상세 시트가 이 순서로 표를 그린다(종이의 위에서 아래 순서). */
@@ -74,6 +83,7 @@ export const PRINTED_FACT_KEYS = [
   'rateAddendum',
   'roomScheduleText',
   'signDocuments',
+  'translation',
 ] as const
 
 export type PrintedFactKey = (typeof PRINTED_FACT_KEYS)[number]
@@ -101,6 +111,7 @@ export const PRINTED_FACT_LABEL: Record<PrintedFactKey, string> = {
   rateAddendum: '요금 특약',
   roomScheduleText: '거주 호실 일정',
   signDocuments: '추가 서류',
+  translation: '참고용 번역본',
 }
 
 /**
@@ -149,6 +160,9 @@ export function printedFacts(d: PrintedFactsInput): Record<string, unknown> {
     signDocuments: d.signDocuments?.length
       ? JSON.stringify(d.signDocuments.map(x => ({ key: x.key, title: x.title, body: x.body })))
       : undefined,
+    // 번역본도 통비교 — 언어든 문장 한 줄이든 바뀌면 그 종이와 지금이 다르다.
+    // **없으면 undefined 다**(축 없음). 번역본을 안 쓰는 계약 전건과 옛 박제가 무변동이어야 한다.
+    translation: d.translation ? JSON.stringify(d.translation) : undefined,
   }
 }
 

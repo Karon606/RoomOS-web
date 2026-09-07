@@ -34,6 +34,10 @@ import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
 } from '@/lib/contract'
 import { buildPropertySettingsPatch, normalizePublicSlug } from '@/lib/propertySettingsPatch'
+import {
+  asTranslationLang, parseContractTranslations, withTranslationEnabled, mergeTranslationLang,
+  type ContractTranslations, type TranslationLang,
+} from '@/lib/contractTranslation'
 
 export { getMyRole }
 
@@ -1061,6 +1065,90 @@ export async function setSignDocumentRetired(key: string, retired: boolean): Pro
         new Date().toISOString(),
       )
       await tx.property.update({ where: { id: propertyId }, data: { signDocuments: merged as unknown as Prisma.InputJsonValue } })
+    }, { isolationLevel: 'Serializable' })
+    revalidatePath('/settings')
+    revalidatePath('/contract')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+// ── 참고용 번역본 — 계약서 본문의 언어별 번역을 영업장이 직접 넣는다 ─────
+//
+// 출구가 둘로 나뉜 이유는 §27.1 이다. 운영 스위치는 단일 값 즉시 저장이고 사전은 폼 저장이라,
+// 한 액션으로 묶으면 토글 한 번이 편집 중인 사전을 통째로 실어 보낸다.
+// 판정·병합은 lib/contractTranslation 정본만 지난다 — 사전 병합에 삭제 경로가 없어
+// "원문에서 사라진 번역(고아)은 안 지운다"가 화면 규칙이 아니라 구조다.
+
+/** 편집 카드가 마운트하며 한 번 읽는다. 계약서 본문은 **저장본**이다 — 종이에 실리는 그것이라야 열쇠가 맞는다. */
+export async function getContractTranslationSettings(): Promise<{
+  template: ContractTemplate
+  translations: ContractTranslations
+}> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { contractTemplate: true, contractTranslations: true },
+  })
+  return {
+    template: (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE,
+    translations: parseContractTranslations(property?.contractTranslations),
+  }
+}
+
+/** 운영 여부만 바꾼다(§27.1 즉시 저장). 언어 사전은 한 글자도 안 건드린다. */
+export async function setContractTranslationEnabled(enabled: boolean): Promise<
+  | { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.$transaction(async tx => {
+      const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } })
+      const next = withTranslationEnabled(cur?.contractTranslations, enabled)
+      await tx.property.update({
+        where: { id: propertyId },
+        data: { contractTranslations: next as unknown as Prisma.InputJsonValue },
+      })
+    }, { isolationLevel: 'Serializable' })
+    revalidatePath('/settings')
+    revalidatePath('/contract')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+/**
+ * 한 언어의 공개 여부와 번역 사전을 저장한다.
+ *
+ * 들어온 언어 하나만 덮는다 — 저장이 남의 언어를 건드리지 않는다. 화면이 안 보낸 열쇠(고아)는
+ * 그대로 남고, 빈 문자열로 온 것만 그 열쇠를 걷는다(운영자가 칸을 비운 것 = 번역 취소).
+ */
+export async function saveContractTranslationLang(input: { lang: string; published: boolean; dict: Record<string, string> }): Promise<
+  | { ok: true } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const lang: TranslationLang | undefined = asTranslationLang(input.lang)
+    // 한국어는 정본이라 번역 대상이 아니다. 화이트리스트 밖 언어도 여기서 막는다.
+    if (!lang) return { ok: false, error: '번역할 수 있는 언어가 아닙니다.' }
+    if (!input.dict || typeof input.dict !== 'object' || Array.isArray(input.dict)) {
+      return { ok: false, error: '번역 내용을 읽지 못했습니다.' }
+    }
+    await prisma.$transaction(async tx => {
+      const cur = await tx.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } })
+      const next = mergeTranslationLang(cur?.contractTranslations, lang, {
+        published: input.published, dict: input.dict,
+      })
+      await tx.property.update({
+        where: { id: propertyId },
+        data: { contractTranslations: next as unknown as Prisma.InputJsonValue },
+      })
     }, { isolationLevel: 'Serializable' })
     revalidatePath('/settings')
     revalidatePath('/contract')

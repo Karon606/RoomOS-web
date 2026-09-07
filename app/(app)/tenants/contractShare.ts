@@ -26,6 +26,7 @@ import { asDueDay } from '@/lib/contractFieldOverrides'
 import { signStageSlots, type SignStage } from '@/lib/disposalSignGate'
 import { paperDocsOf, leaseSignSlots, badgeSignSummary, parseDocumentSignatures } from '@/lib/signDocuments'
 import { asSignLang, signLangForNationality, type SignLang } from '@/lib/signGuideText'
+import { asTranslationLang, resolveContractTranslation } from '@/lib/contractTranslation'
 import { isForeignForDocuments } from '@/lib/documentName'
 
 const SHARE_TTL_MS = 24 * 60 * 60 * 1000   // 발급 후 24시간 만료
@@ -383,13 +384,22 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
       return { ok: false, error: `이 계약은 다른 계약의 추가 계약이라 따로 서명받지 않습니다. ${where}의 계약서에 이 호실이 함께 인쇄됩니다.` }
     }
 
-    const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
+    const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, contractTranslations: true } })
     const propertyName = property?.name ?? ''
 
     // 안내 언어 확정 — 화이트리스트를 지난 운영자 선택이 먼저고, 없으면 국적 기본값이다.
     // **여기서 확정해 스냅샷에 박제한다**(표기 박제와 같은 규칙 2026-09-04). 발급 후 무엇이
     // 바뀌어도 이 링크의 안내 언어는 안 바뀌고, 이어받기는 스냅샷 통째 승계라 저절로 따라온다.
     const signLang: SignLang = asSignLang(lang) ?? signLangForNationality(snapshot.tenant.nationality)
+
+    // 참고용 번역본 박제 — **그 링크의 언어 하나의 해석 완료본**만 담는다(사전 전체가 아니다).
+    // 전 언어를 담으면 스냅샷이 8배로 무거워지는데, 입주자가 안 본 언어는 증거도 아니다.
+    // 한국어 링크에는 번역본이 없다(asTranslationLang 이 ko 를 안 통과시킨다) — 정본을 읽는 사람에게
+    // 참고용 번역본은 뜻이 없고, 그 계약서의 종이는 이 기능 전과 문자 단위로 같아야 한다.
+    const translationLang = asTranslationLang(signLang)
+    const translation = translationLang
+      ? resolveContractTranslation(property?.contractTranslations, snapshot.template, translationLang)
+      : null
 
     // 활성 링크 재사용(getOrCreate) — 같은 계약(leaseTermId)만. 계약이 바뀌었으면 새 스냅샷으로 새 링크.
     // Serializable 트랜잭션으로 find+create 를 묶는다 — 발급 연타 시 둘 다 '없음'을 보고 활성 링크가
@@ -431,7 +441,14 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
         data: {
           token: randomBytes(32).toString('base64url'),
           propertyId, tenantId, leaseTermId,
-          templateSnapshot: { ...(withoutPlainPii(snapshot) as unknown as Record<string, unknown>), signLang } as unknown as object,
+          // 번역본이 없으면 **칸 자체를 안 만든다**(조건부 스프레드). null 을 박으면 번역본을
+          // 안 쓰는 영업장의 링크 스냅샷이 이 기능 전과 달라지고, printedFacts 의 '없으면 축도
+          // 없다' 규칙과도 어긋난다.
+          templateSnapshot: {
+            ...(withoutPlainPii(snapshot) as unknown as Record<string, unknown>),
+            signLang,
+            ...(translation ? { translation } : {}),
+          } as unknown as object,
           expiresAt: new Date(Date.now() + SHARE_TTL_MS),
           createdBy: userId,
         },
@@ -579,9 +596,19 @@ export async function checkContractShareDrift(tenantId: string, leaseTermId?: st
     const snap = link.templateSnapshot as unknown as ContractData
     if (!current || !current.lease || !snap.lease) return { ok: true, drift: true }
 
+    // 번역본 축은 **링크의 언어로 지금 다시 해석해** 견준다. 번역본은 링크 스냅샷에만 사는 값이라
+    // buildContractData 가 모르는데, 안 채우면 curFacts 쪽이 늘 undefined 라 번역본이 실린 링크
+    // 전건이 "번역이 사라졌다"로 뜬다. 링크 언어가 한국어면 번역본 자체가 없어 조회도 안 한다.
+    const translationLang = asTranslationLang((link.templateSnapshot as { signLang?: unknown } | null)?.signLang)
+    const currentTranslation = translationLang
+      ? resolveContractTranslation(
+        (await prisma.property.findUnique({ where: { id: propertyId }, select: { contractTranslations: true } }))?.contractTranslations,
+        current.template, translationLang)
+      : null
+
     // 인쇄 사실 사영끼리 통비교 — 계약서에 찍히는 값이 하나라도 다르면 드리프트다.
     const snapFacts = printedFacts(snap)
-    const curFacts = printedFacts(current)
+    const curFacts = printedFacts({ ...current, translation: currentTranslation })
     // **스냅샷 쪽 값이 undefined 인 축은 비교를 생략한다.** 이 사영이 생기기 전에 만들어진 스냅샷은
     // 나중에 추가된 축(전입신고 등)의 키가 아예 없다. 없는 값을 '달라졌다'로 읽으면 바뀐 적 없는
     // 계약에 경고가 뜨고, 경고는 한 번이라도 거짓이면 그 다음부터 아무도 안 읽는다.

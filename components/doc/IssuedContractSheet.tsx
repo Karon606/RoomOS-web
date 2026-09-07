@@ -16,6 +16,7 @@ import { roomLabel } from '@/lib/tenantAddress'
 import { PRINTED_FACT_KEYS, PRINTED_FACT_LABEL, type PrintedFactKey } from '@/lib/contractPrintedFacts'
 import { getContractIssuedSnapshot, type IssuedContractDetail } from '@/app/(app)/tenants/actions'
 import { contractPurposeOf } from '@/lib/contractPurpose'
+import { asSignLang, SIGN_LANG_LABEL } from '@/lib/signGuideText'
 
 const BODY_SOURCE_LABEL: Record<string, string> = {
   SNAPSHOT: '서명 시점 박제본',
@@ -57,6 +58,21 @@ function factText(key: PrintedFactKey, v: unknown): string {
   if (AMOUNT_KEYS.has(key) && typeof v === 'number') return fmtWon(v)
   if (key === 'lease.dueDay') return v === '말' || v === '말일' ? '매월 말일' : `매월 ${v}일`
   return String(v)
+}
+
+/**
+ * 박제된 참고용 번역본을 한 줄로. 축의 값은 통비교용 JSON 원문이라 그대로 그리면 시트가 밀린다.
+ * 여기서 말할 것은 "무슨 언어로 몇 줄을 번역해 보여줬나" 하나다.
+ */
+function translationFactText(v: unknown): string {
+  try {
+    const t = JSON.parse(String(v)) as { lang?: unknown; fallbackCount?: unknown; totalCount?: unknown }
+    const lang = asSignLang(t.lang)
+    const label = lang ? SIGN_LANG_LABEL[lang] : '알 수 없는 언어'
+    return typeof t.totalCount === 'number' && typeof t.fallbackCount === 'number'
+      ? `${label} · 번역 ${t.totalCount - t.fallbackCount}/${t.totalCount}`
+      : label
+  } catch { return '있음' }
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -140,8 +156,10 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
               {/* 추가 호실은 딸린 계약이 있는 발급본에만 있는 축이다 — 없는 발급본에 '기록 없음'
                   줄을 세우면 단독 계약 전건의 시트에 결함처럼 보이는 빈 줄이 하나 는다.
                   다른 축은 종전대로 늘 그린다(그쪽은 모든 계약서에 있는 칸이라 공백이 곧 사실이다). */}
-              {/* 특약은 표시값이 아니라 본문이다 — 본문 기록과 같은 자리(아래 '본문 출처')에 둔다. */}
-              {PRINTED_FACT_KEYS.filter(k => k !== 'template' && k !== 'subLeaseAddendum')
+              {/* 특약은 표시값이 아니라 본문이다 — 본문 기록과 같은 자리(아래 '본문 출처')에 둔다.
+                  참고용 번역본도 본문 쪽이라 같은 자리에 두고, **실린 발급본에만** 줄을 세운다.
+                  늘 그리면 번역본을 안 쓰는 발급본 전건의 시트에 '기록 없음' 빈 줄이 하나 는다. */}
+              {PRINTED_FACT_KEYS.filter(k => k !== 'template' && k !== 'subLeaseAddendum' && k !== 'translation')
                 .filter(k => k !== 'lease.subLeases' || snap.facts[k] !== undefined)
                 .map(k => (
                 <Row key={k} label={PRINTED_FACT_LABEL[k]} value={factText(k, snap.facts[k])} />
@@ -154,6 +172,9 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
                   이 기능 전과 같다(추가 호실 축과 같은 규칙). */}
               {snap.facts.subLeaseAddendum !== undefined && (
                 <Row label={PRINTED_FACT_LABEL.subLeaseAddendum} value="있음" />
+              )}
+              {snap.facts.translation !== undefined && (
+                <Row label={PRINTED_FACT_LABEL.translation} value={translationFactText(snap.facts.translation)} />
               )}
             </>
           )}
