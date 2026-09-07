@@ -20,7 +20,7 @@
 // 정식 동사가 되면서, 무효가 된 옛 링크를 기준으로 삼으면 정당한 재작성이 위반으로 뜬다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { contractLeaseFields, parseContractFieldOverrides } from '../lib/contractFieldOverrides'
+import { contractLeaseFields, parseContractFieldOverrides, normalizeRegistrationLabel } from '../lib/contractFieldOverrides'
 import {
   archiveOwnsEachFileOnce, isCurrentSignatureLink, parseContractVersionArchive,
   versionKind, voidedVersionHasEvidence,
@@ -166,7 +166,10 @@ async function main() {
           // 스냅샷은 키가 아예 없어서, 없는 값을 '달라졌다'로 읽으면 바뀐 적 없는 계약에 위반이 뜬다
           // (성명 표기 축 2026-08-11). 드리프트 비교(checkContractShareDrift)가 쓰는 규칙과 같다.
           if (snapLease[key] === undefined) continue
-          if (merged[key] !== snapLease[key]) {
+          // 라벨 전환('신고' 가 '신고완료' 로, 2026-09-07)은 편집이 아니다. 서명본에 박제된 옛
+          // 라벨과 지금 라벨은 같은 사실을 말한다 — 양쪽을 정본으로 정규화해 견준다.
+          // 드리프트 비교(lib/contractPrintedFacts)가 쓰는 규칙과 같은 함수다.
+          if (normalizeRegistrationLabel(merged[key]) !== normalizeRegistrationLabel(snapLease[key])) {
             violations.push(`${k.tenant?.name ?? '?'} 의 계약서 ${FIELD_LABEL[key] ?? key} 표시값이 서명본과 다르다 — 서명 후 표시값 편집이 일어났다`)
           }
         }
