@@ -47,7 +47,7 @@ function dueDayFromMoveIn(moveIn: Date): string {
 import { shortStayLockTarget, lockAdjustKind, lockRewritesFor, shortStayBasisChanged, negotiatedRecalcNotice, type LockRewrite } from '@/lib/shortStayLock'
 import { digitsToIso } from '@/lib/birthdate'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
-import { sanitizeNativeName, asDocNameStyle } from '@/lib/documentName'
+import { sanitizeNativeName, asDocNameStyle, isForeignForDocuments } from '@/lib/documentName'
 import { sanitizeNickname, toStoredDisplayNameStyle } from '@/lib/displayName'
 import { maskStoredForeignRegNo, readStoredForeignRegNo, storeForeignRegNo } from '@/lib/pii'
 import { randomUUID } from 'node:crypto'
@@ -852,7 +852,11 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const englishName      = formData.get('englishName') as string
   const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
-  const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
+  // 외국인은 기초생활수급 대상 자체가 아니다(운영자 오더 2026-09-07). 폼이 칸을 숨기지만
+  // 값 부재라는 우연에 안 기대고 여기서 false 를 못박는다 — 액션 직접 호출로도 못 지난다.
+  // 판정은 양성 증거 축(isForeignForDocuments — 미기재는 내국인). 폼 노출 축을 쓰면 국적
+  // 빈 내국인 수급자의 true 가 저장 한 번에 지워진다(디자이너 차단 2026-09-07).
+  const isBasicRecipient = isForeignForDocuments({ nationality: formData.get('nationality') as string }) ? false : formData.get('isBasicRecipient') === 'true'
   const smoking = formData.get('smoking') === 'true'
   const contactType      = (formData.get('contactType') as ContactType) || 'PHONE'
   const contactValue     = formData.get('contactValue') as string
@@ -985,7 +989,11 @@ export async function updateTenant(formData: FormData): Promise<
   const englishName      = formData.get('englishName') as string
   const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
-  const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
+  // 외국인은 기초생활수급 대상 자체가 아니다(운영자 오더 2026-09-07). 폼이 칸을 숨기지만
+  // 값 부재라는 우연에 안 기대고 여기서 false 를 못박는다 — 액션 직접 호출로도 못 지난다.
+  // 판정은 양성 증거 축(isForeignForDocuments — 미기재는 내국인). 폼 노출 축을 쓰면 국적
+  // 빈 내국인 수급자의 true 가 저장 한 번에 지워진다(디자이너 차단 2026-09-07).
+  const isBasicRecipient = isForeignForDocuments({ nationality: formData.get('nationality') as string }) ? false : formData.get('isBasicRecipient') === 'true'
   const smoking = formData.get('smoking') === 'true'
   const memo             = formData.get('memo') as string
   const nationality      = formData.get('nationality') as string

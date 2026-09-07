@@ -18,7 +18,7 @@ import type { ShortStayReservationMode } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants, undoShortStayExtension, revealForeignRegNo, addLeaseToTenant, findDuplicateTenant } from './actions'
 import { formatForeignRegNo, validateForeignRegNo } from '@/lib/foreignRegNo'
 import { digitsToIso } from '@/lib/birthdate'
-import { NATIVE_NAME_MAX, showsForeignFields, docNameStyles, asDocNameStyle, DOC_NAME_STYLE_LABEL, type DocNameStyle } from '@/lib/documentName'
+import { NATIVE_NAME_MAX, showsForeignFields, isForeignForDocuments, docNameStyles, asDocNameStyle, DOC_NAME_STYLE_LABEL, type DocNameStyle } from '@/lib/documentName'
 import { DISPLAY_NAME_STYLE_LABEL, NICKNAME_MAX, asDisplayNameStyle, displayName, displayNameStyles, type DisplayNameStyle } from '@/lib/displayName'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn, getDepositCompositionForLease,
@@ -4123,7 +4123,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         <div className="space-y-1.5">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">현지 표기 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로)</span></label>
+            <label htmlFor={`nativeName-${formUid}`} className="text-xs font-medium text-[var(--warm-mid)]">본국어 이름 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(본국 표기 그대로)</span></label>
             <input
               id={`nativeName-${formUid}`}
               type="text"
@@ -4194,10 +4194,17 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <option value="FEMALE">여성</option>
             <option value="OTHER">기타</option>
           </SelectField>
+          {/* 외국인은 기초생활수급 대상 자체가 아니다(운영자 오더 2026-09-07) — 칸을 숨기고
+              서버가 명시적으로 false 를 못박는다(폼 값 부재라는 우연에 안 기댄다).
+              판정은 **양성 증거 축**(isForeignForDocuments — 미기재는 내국인)이다. 폼 노출 축
+              (showsForeignFields — 미기재도 외국인 칸을 연다)을 쓰면 국적을 아직 안 고른 새
+              고객에서 칸이 숨고 저장이 수급자 true 를 지운다(디자이너 차단 2026-09-07). */}
+          {!isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) && (
           <SelectField label="기초수급자" name="isBasicRecipient" defaultValue={tenant?.isBasicRecipient ? 'true' : 'false'}>
             <option value="false">아니오/해당없음</option>
             <option value="true">예/대상자</option>
           </SelectField>
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="space-y-1.5">
@@ -5037,7 +5044,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
 
       <FormSection title="추가 정보">
         <div className="grid grid-cols-2 gap-3">
-          <SelectField label="전입신고" name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
+          {/* 라벨도 양성 증거 축 — 계약서 종이(registrationHeadPair)와 같은 판정이라야 폼과
+              종이가 같은 말을 한다. 미기재 국적이 폼에서만 체류지 변경신고가 되면 갈린다. */}
+          <SelectField label={isForeignForDocuments({ nationality: natVal, hasForeignRegNo: !!tenant?.foreignRegNoMasked }) ? '체류지 변경신고' : '전입신고'} name="registrationStatus" defaultValue={lease?.registrationStatus ?? 'PLANNED'}>
             <option value="PLANNED">신고예정</option>
             <option value="REGISTERED">신고완료</option>
             <option value="NOT_REPORTED">미신고</option>

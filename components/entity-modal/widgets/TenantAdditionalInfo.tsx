@@ -41,11 +41,13 @@ function wishDisplay(lease: Lease): string {
   return parts.length > 0 ? `조건: ${parts.join(' · ')}` : '—'
 }
 
-export function TenantAdditionalInfo({ lease }: { lease: Lease }) {
+// foreign 은 부모가 정본(isForeignForDocuments)으로 판정해 내린다 — 위젯이 판정을 복제하면
+// 계약서 종이의 체류지 변경신고 라벨과 갈릴 수 있다(운영자 오더 2026-09-07).
+export function TenantAdditionalInfo({ lease, foreign = false }: { lease: Lease; foreign?: boolean }) {
   return (
     <Section title="추가 정보">
       <Grid>
-        <Item label="전입신고"       value={REG_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
+        <Item label={foreign ? '체류지 변경신고' : '전입신고'} value={REG_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
         <Item label="결제 수단"      value={lease.payMethod ?? '—'} />
         <Item label="현금영수증"     value={lease.cashReceipt ?? '—'} />
         <Item label="방문 경로"      value={lease.visitRoute ?? '—'} />

@@ -118,10 +118,12 @@ export function sanitizeNativeName(v: unknown): string | null {
  * 현지 표기는 서류가 그릴 수 있을 때만 낀다(printableInDocuments).
  */
 export function docNameStyles(src: DocumentNameSource): DocNameStyle[] {
+  // 고를 수 있는 표기는 한글·영문 둘뿐이다(운영자 오더 2026-09-07 — 외국인 디폴트 영문,
+  // 한국인 디폴트 한글). 'native' 를 여기서 빼면 폼·계약서 셀렉트 양쪽에서 사라지고,
+  // 저장값이 native 인 고객은 resolveDocNameStyle 의 available 거름에 걸려 자동(외국인=영문)
+  // 으로 선다. 옛 서명 박제의 native 인쇄는 documentName 이 계속 그린다 — 찍힌 종이는 불변.
   const out: DocNameStyle[] = ['ko']
   if (src.englishName?.trim()) out.push('en')
-  const nv = src.nativeName?.trim()
-  if (nv && printableInDocuments(nv)) out.push('native')
   return out
 }
 
