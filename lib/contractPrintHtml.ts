@@ -8,6 +8,7 @@
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
 import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, type SubLeaseAddendum, renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet } from '@/lib/contract'
+import { asResolvedContractTranslation, contractTranslationAddendum } from '@/lib/contractTranslation'
 import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 import { roomLabel } from '@/lib/tenantAddress'
 
@@ -107,6 +108,12 @@ export type PrintContractData = {
   roomScheduleText?: string | null
   /** 그 절의 문안 — 환경설정에서 고친 것. undefined 면 코드 기본 문안. */
   roomScheduleAddendum?: SubLeaseAddendum | null
+  /**
+   * 이 종이에 실린 참고용 번역본(서명 박제본이 들고 있는 것). 있으면 '번역본과 언어' 절이 붙고
+   * 없으면(null·미지정) 절이 하나도 안 붙어 그 계약서의 HTML 이 이 기능 전과 문자 단위로 같다.
+   * **번역문 자체는 이 종이에 안 실린다** — 한국어 정본에만 서명받기 때문이다.
+   */
+  translation?: unknown
   // 사용자가 입력한 화면 상태
   smoking: string                 // '비흡연' | '흡연'
   emergencyContactText: string
@@ -187,7 +194,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     return `<div class="clause-group"><div class="clause-h">${escape(renderContractText(sec.title, vars))}</div><ul class="clause-list">${lis}</ul></div>`
   }
   // 특약은 화면과 같은 함수로 절 배열 뒤에 붙인다 — 변수 치환·글머리 제거가 그대로 따라온다.
-  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, d.rateAddendum, buildRoomScheduleAddendum(d.roomScheduleText, d.roomScheduleAddendum))
+  // 우선 조항('번역본과 언어')도 화면(ContractView)과 **같은 순서로 마지막**에 붙는다.
+  // 번역본이 없으면 판정이 null 이라 절이 하나도 안 붙고, 그 계약서의 HTML 은 이 기능 전과
+  // 문자 단위로 같다(형제 절 셋과 같은 규칙).
+  const clausesHtml = appendSubLeaseAddendum(d.template.sections, d.subLeaseAddendum, d.rateAddendum, buildRoomScheduleAddendum(d.roomScheduleText, d.roomScheduleAddendum), contractTranslationAddendum(asResolvedContractTranslation(d.translation)))
     .map(renderSection).join('')
 
   // 합본 계약서의 종속 호실 행 — 딸린 계약마다 한 줄, 그 아래 임료 합계 한 줄.

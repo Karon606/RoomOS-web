@@ -20,6 +20,7 @@ import { CONTRACT_ISSUE_STATUSES } from '@/lib/leaseStatus'
 import { pickDocumentLease } from '@/lib/documentLease'
 import { parseRoomSchedule, hasRoomSchedule, roomScheduleText } from '@/lib/roomSchedule'
 import { parseShortStayPolicy, shortStayRateTable } from '@/lib/shortStay'
+import { asResolvedContractTranslation, type ResolvedContractTranslation } from '@/lib/contractTranslation'
 
 /**
  * 이 계약서가 서야 할 성명 표기 — **화면과 발급 API 가 같은 함수를 쓴다.**
@@ -232,6 +233,19 @@ export type ContractData = {
   // 그 절의 문안 — 영업장이 환경설정에서 고친 것(2026-08-31). null 이면 이 영업장은 안 쓴다.
   // 문장 자체는 위 roomScheduleText 가 {{일정}} 자리에 들어간다.
   roomScheduleAddendum: SubLeaseAddendum | null
+  /**
+   * 이 종이에 실린 참고용 번역본(해석 완료본 한 언어분). 서명 화면의 번역본 카드와 우선 조항이
+   * 이것 하나를 본다.
+   *
+   * **없으면 칸 자체가 없다**(옵셔널, 아래 조립부의 조건부 스프레드). 형제 절 셋이 null 을 담는
+   * 것과 일부러 다르다 — 이 값은 링크 발급에서 그대로 templateSnapshot 으로 흘러가는데, null 을
+   * 담으면 번역본을 안 쓰는 영업장의 링크 스냅샷이 이 기능 전과 달라진다(contractShare 의
+   * 조건부 스프레드와 printedFacts 의 '없으면 축도 없다'가 같은 규칙이다).
+   *
+   * 값의 원천은 **서명 박제본뿐이다.** 서명 전 계약에는 아직 링크 언어가 없어 번역본이 없고,
+   * 원격 화면은 링크 스냅샷을 통째로 이 타입으로 읽으므로 그 자리에서 채워진다.
+   */
+  translation?: ResolvedContractTranslation
 }
 
 const kstOrNull = (d?: Date | null) => (d ? kstYmdStr(new Date(d)) : null)
@@ -352,6 +366,8 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     nativeName: body.source === 'SNAPSHOT' && body.nativeNameFrozen !== undefined
       ? body.nativeNameFrozen : (tenant.nativeName ?? null),
   }
+  // 서명 당시 화면에 뜬 번역본. 모양이 아닌 저장값은 null 이고 그때는 번역본이 없는 것으로 다뤄진다.
+  const translationFrozen = asResolvedContractTranslation(body.translation)
   const signedAlready = !!(lease as { signatureSignedAt?: Date | null } | null)?.signatureSignedAt
   const signedSnap = (lease as { signedContractSnapshot?: unknown } | null)
     ?.signedContractSnapshot as { nameStyle?: unknown } | null
@@ -438,5 +454,9 @@ export async function buildContractData(tenantId: string, propertyId: string, le
     // 호실 일정 — 이 계약의 방 이름은 그 사람의 다른 계약 목록에서 찾는다(같은 영업장이라
     // 일정에 실린 방이 그 목록 밖일 수 있어 방 조회를 따로 한다).
     roomScheduleText: scheduleText,
+    // 참고용 번역본 — **박제본이 들고 있는 것을 그대로 읽는다**(지금 사전을 다시 해석하지 않는다).
+    // 없으면 칸 자체를 안 만든다. 이 값이 링크 발급의 templateSnapshot 으로 그대로 흘러가므로,
+    // null 을 담으면 번역본을 안 쓰는 영업장의 링크 스냅샷이 이 기능 전과 달라진다(타입 주석).
+    ...(translationFrozen ? { translation: translationFrozen } : {}),
   }
 }

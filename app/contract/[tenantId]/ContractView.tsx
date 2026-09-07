@@ -25,6 +25,8 @@ import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNam
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
 import { renderContractText, cleaningFeeVars, buildRefundClause, appendSubLeaseAddendum, buildRoomScheduleAddendum, stripClauseBullet, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { asResolvedContractTranslation, contractTranslationAddendum } from '@/lib/contractTranslation'
+import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
@@ -1417,6 +1419,14 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
   const view = editing ? draft : data.template
 
+  // 참고용 번역본. **박제를 읽을 뿐 지금 사전을 다시 해석하지 않는다** — 입주자가 읽은 문안과
+  // 화면이 갈리면 그 순간 박제는 증거이기를 그만둔다.
+  // 파서를 한 번 태우는 이유는 원격 화면의 data 가 24시간짜리 공개 링크의 JSON 을 통째로
+  // 캐스팅한 것이기 때문이다(app/sign/[token]/page.tsx). 스냅샷에서 읽은 값은 외부 데이터라는
+  // 이 저장소 규칙 그대로다(asSignLang 과 같은 자리). 모양이 아니면 null 이고, 그때는
+  // 카드도 안 서고 우선 조항도 안 붙는다 — 번역본이 없는 것과 같은 착지다.
+  const translation = asResolvedContractTranslation(data.translation)
+
   // 인플로우 제출 CTA — 마지막 서명이 끝나면 각 서명란 바로 아래(문서 흐름 안)에 노출한다.
   // 이 화면은 핀치줌이 열려 있어(layout.tsx viewport) fixed·sticky 는 확대 시 시야 밖으로 밀린다.
   // 방금 서명한 자리에서 바로 보이도록 계약서·동의서 두 문서 아래 모두 같은 블록을 둔다.
@@ -1603,6 +1613,16 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       </div>
       )}
 
+      {/* 참고용 번역본 — 계약서 종이 **위**에 선다. 입주자가 종이를 읽기 전에 만나야 한다.
+          원격 화면에서만 그린다(운영자 화면은 한국어로 종이를 읽는 자리다).
+          원천은 링크 스냅샷에 박힌 해석 완료본 하나다 — 지금 사전을 다시 해석하지 않는다.
+          스냅샷에 그 칸이 없으면(한국어 링크·번역본 안 쓰는 영업장·이 칸 이전의 옛 링크)
+          카드를 아예 안 그린다. 그 화면은 이 기능 전과 문자 단위로 같다.
+          읽음 확인은 없다 — 서명 진행 슬롯·제출 게이트와 무관하다(ContractTranslationView 머리 주석). */}
+      {remote && translation && (
+        <ContractTranslationCard translation={translation} source={data.template} />
+      )}
+
       {/* 인쇄 영역. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
       <div
         className="paper-cage"
@@ -1770,7 +1790,11 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           // 인쇄본(lib/contractPrintHtml)과 **같은 구조·같은 규칙**이다. 갈리면 화면과 종이의
           // 단 나뉨 지점이 다른 규칙으로 정해진다. 경위는 knowledge/domain-contracts.md 참조.
           <div className="clauses">
-            {appendSubLeaseAddendum(view.sections, subLeaseView, data.rateAddendum, buildRoomScheduleAddendum(data.roomScheduleText, data.roomScheduleAddendum)).map((sec, si) => (
+            {/* 우선 조항('번역본과 언어')은 **번역본이 실린 계약서에만** 붙는다. 없으면 판정이
+                null 이라 appendSubLeaseAddendum 이 받은 배열을 그대로 돌려주고, 그 계약서의
+                렌더는 이 기능 전과 문자 단위로 같다. 인쇄(lib/contractPrintHtml)도 같은 자리에
+                같은 순서로 붙인다 — 화면과 종이가 다른 조건으로 붙이면 미리보기와 종이가 갈린다. */}
+            {appendSubLeaseAddendum(view.sections, subLeaseView, data.rateAddendum, buildRoomScheduleAddendum(data.roomScheduleText, data.roomScheduleAddendum), contractTranslationAddendum(translation)).map((sec, si) => (
               <div key={si} className="clause-group">
                 <div className="clause-h">{renderContractText(sec.title, vars)}</div>
                 <ul className="clause-list">

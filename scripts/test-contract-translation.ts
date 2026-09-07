@@ -3,6 +3,7 @@ import {
   TRANSLATION_LANGS, asTranslationLang, parseContractTranslations, translationSourceLines,
   resolveContractTranslation, orphanTranslationKeys, withTranslationEnabled, mergeTranslationLang,
   TRANSLATION_NOTICE, translationNoticeBi, TRANSLATION_NOTICE_ADDENDUM, contractTranslationAddendum,
+  asResolvedContractTranslation, translationProgress, TRANSLATION_LANG_ENDONYM,
 } from '../lib/contractTranslation'
 import { SIGN_LANGS } from '../lib/signGuideText'
 import { appendSubLeaseAddendum, type ContractTemplate } from '../lib/contract'
@@ -212,6 +213,127 @@ eq('언어가 바뀌어도 축이 바뀐다',
 // 실리므로, 번역본이 없는 발급본의 박제는 이 축이 생기기 전과 **바이트가 같다.**
 eq('축이 없으면 JSON 에 글자 하나도 안 남는다',
   JSON.stringify(printedFacts({ lease: { rentAmount: 1 } })).includes('translation'), false)
+
+// ── 2단계. 박제 읽기 — 화면이 사전을 다시 해석하지 않는다 ────
+//
+// 이 블록이 지키는 것 하나. **카드가 보여주는 것은 얼어 있는 문안이다.** 파서가 사전도
+// 템플릿도 안 받는다는 사실 자체가 재해석을 구조적으로 막는다(인자가 없어서 못 한다).
+{
+  // 지금 사전과 **다른** 문안을 얼려 둔 상태. 재해석이 섞이면 여기서 값이 바뀐다.
+  const frozen = {
+    lang: 'en',
+    title: 'FROZEN TITLE',
+    sections: [{ title: 'FROZEN SECTION', items: ['frozen item', '입실료는 매월 선납합니다.'] }],
+    oathText: 'FROZEN OATH',
+    fallbackCount: 1,
+    totalCount: 7,
+  }
+  const r = asResolvedContractTranslation(frozen)
+  eq('박제한 제목이 그대로 나온다', r?.title, 'FROZEN TITLE')
+  eq('박제한 절 제목도 그대로', r?.sections[0]?.title, 'FROZEN SECTION')
+  eq('박제한 항목도 그대로', r?.sections[0]?.items, ['frozen item', '입실료는 매월 선납합니다.'])
+  eq('박제한 서약문도 그대로', r?.oathText, 'FROZEN OATH')
+  eq('세어 둔 수도 그대로', [r?.fallbackCount, r?.totalCount], [1, 7])
+  eq('언어도 그대로', r?.lang, 'en')
+}
+
+// 스냅샷에 칸이 없으면 카드를 안 그린다 — 화면의 조건이 이 null 하나다.
+eq('칸이 없으면 null', asResolvedContractTranslation(undefined), null)
+eq('null 이면 null', asResolvedContractTranslation(null), null)
+eq('배열이면 null', asResolvedContractTranslation([1]), null)
+eq('문자열이면 null', asResolvedContractTranslation('en'), null)
+eq('언어가 없으면 null', asResolvedContractTranslation({ title: 'x' }), null)
+eq('모르는 언어면 null', asResolvedContractTranslation({ lang: 'xx', title: 'x' }), null)
+eq('한국어는 번역본이 아니라 null', asResolvedContractTranslation({ lang: 'ko', title: 'x' }), null)
+
+// 오염 방어. 모양이 아닌 조각은 빈 값으로 착지하되 **줄 수는 안 줄인다**(조항 번호 대응).
+{
+  const r = asResolvedContractTranslation({
+    lang: 'vi', title: 123, sections: [{ title: null, items: ['ok', 7, null] }, 'not-an-object'],
+    oathText: {}, fallbackCount: -3, totalCount: 'many',
+  })
+  eq('문자열 아닌 제목은 빈 문자열', r?.title, '')
+  eq('절이 객체가 아니어도 자리는 남는다', r?.sections.length, 2)
+  eq('항목 수가 안 줄어든다(번호 대응)', r?.sections[0]?.items, ['ok', '', ''])
+  eq('모양 아닌 절은 빈 절', r?.sections[1], { title: '', items: [] })
+  eq('음수 계수는 0', r?.fallbackCount, 0)
+  eq('숫자 아닌 총수도 0', r?.totalCount, 0)
+}
+
+// ── 원문 폴백 표식의 근거 ────────────────────────────────────
+//
+// 카드는 '번역문 === 그 자리의 한국어 원문' 일 때 회색 `원문` 표식을 단다. 그 판정이 옳다는
+// 근거가 이것이다 — 해석이 없는 줄에 원문을 **그대로** 두므로 두 문자열이 정확히 같고,
+// 같은 줄의 개수가 fallbackCount 와 일치한다. 감추지 않으니 줄 수는 언제나 그대로다.
+{
+  const raw = {
+    enabled: true,
+    langs: { en: { published: true, dict: { 단기숙소계약서: 'Contract', '1인 1실을 원칙으로 합니다.': 'One per room.' } } },
+  }
+  const r = resolveContractTranslation(raw, T, 'en')
+  const pairs: [string, string][] = [
+    [r?.title ?? '', T.title],
+    ...T.sections.flatMap((s, i): [string, string][] => [
+      [r?.sections[i]?.title ?? '', s.title],
+      ...s.items.map((it, j): [string, string] => [r?.sections[i]?.items[j] ?? '', it]),
+    ]),
+    [r?.oathText ?? '', T.oathText],
+  ]
+  eq('원문으로 남은 줄 수 = fallbackCount', pairs.filter(([a, b]) => a === b).length, r?.fallbackCount)
+  eq('번역된 줄은 원문과 다르다', pairs.filter(([a, b]) => a !== b).length, 2)
+  eq('표식을 달아도 줄은 하나도 안 사라진다', pairs.length, 7)
+}
+
+// ── 발급 피커의 번역 진행 ────────────────────────────────────
+//
+// 세는 집합이 해석과 **같아야** 한다. 갈리면 피커는 "26/26" 인데 종이에는 원문이 남는다.
+{
+  const raw = {
+    enabled: true,
+    langs: {
+      en: { published: true, dict: { 단기숙소계약서: 'Contract', '1인 1실을 원칙으로 합니다.': 'One per room.', 옛줄: 'orphan' } },
+      vi: { published: false, dict: { 단기숙소계약서: 'Hợp đồng' } },
+    },
+  }
+  const p = translationProgress(raw, T, 'en')
+  eq('총수는 해석과 같은 집합에서 나온다', p.total, translationSourceLines(T).length)
+  eq('센 것과 안 센 것을 더하면 총수', p.done + (resolveContractTranslation(raw, T, 'en')?.fallbackCount ?? -1), p.total)
+  eq('고아는 진행에 안 섞인다', p.done, 2)
+  eq('공개 여부가 그대로 나온다', p.published, true)
+  eq('비공개 언어도 진행은 센다(운영자에게 사실을 말한다)',
+    [translationProgress(raw, T, 'vi').done, translationProgress(raw, T, 'vi').published], [1, false])
+  eq('없는 언어는 hasEntry=false', translationProgress(raw, T, 'ja').hasEntry, false)
+  eq('없는 언어의 진행은 0', translationProgress(raw, T, 'ja').done, 0)
+  // 운영 스위치가 꺼져도 진행은 센다 — 캡션을 지울지는 화면이 enabled 로 정한다.
+  eq('꺼져 있어도 사전은 그대로 세어진다',
+    translationProgress({ ...raw, enabled: false }, T, 'en').done, 2)
+}
+
+// ── 우선 조항이 붙는 자리 ────────────────────────────────────
+//
+// 화면·인쇄가 같은 함수에 **같은 순서**로 넘긴다. 마지막에 붙어 앞 절 번호가 안 밀린다.
+{
+  const secs = [{ title: '1. 입실 계약', items: ['x'] }, { title: '2. 퇴실', items: ['y'] }]
+  const r = resolveContractTranslation({ enabled: true, langs: { en: { published: true, dict: {} } } }, T, 'en')
+  const out = appendSubLeaseAddendum(secs, null, null, null, contractTranslationAddendum(r))
+  eq('번역본이 있으면 절이 하나 는다', out.length, 3)
+  eq('번호는 앞 절 개수로 이어진다', out[2]?.title, '3. 번역본과 언어')
+  eq('앞 절은 한 글자도 안 바뀐다', [out[0], out[1]], secs)
+  eq('번역본이 없으면 배열 자체가 안 움직인다',
+    appendSubLeaseAddendum(secs, null, null, null, contractTranslationAddendum(null)) === secs, true)
+  // 형제 절이 함께 있어도 번역 절이 맨 뒤다 — 화면과 인쇄가 같은 순서라야 종이가 안 갈린다.
+  const withSibling = appendSubLeaseAddendum(secs, { title: '추가 호실 특약', items: ['a'] }, null, null, contractTranslationAddendum(r))
+  eq('형제 절이 먼저, 번역 절이 뒤', withSibling.map(s => s.title),
+    ['1. 입실 계약', '2. 퇴실', '3. 추가 호실 특약', '4. 번역본과 언어'])
+}
+
+// ── 언어의 자기 이름 ────────────────────────────────────────
+eq('자기 이름 사전은 번역 언어 전량', Object.keys(TRANSLATION_LANG_ENDONYM).length, TRANSLATION_LANGS.length)
+eq('빠진 언어가 없다', TRANSLATION_LANGS.filter(l => !TRANSLATION_LANG_ENDONYM[l]?.trim()), [])
+eq('한국어는 없다(정본이라 번역 대상이 아니다)',
+  Object.keys(TRANSLATION_LANG_ENDONYM).includes('ko'), false)
+// 운영자용 라벨을 쪼개 쓰지 않는다는 근거 — 자기 이름은 라벨의 부분 문자열일 뿐 규칙이 아니다.
+eq('베트남어 자기 이름', TRANSLATION_LANG_ENDONYM.vi, 'Tiếng Việt')
 
 console.log(`\n참고용 번역본 정본 회귀: ${pass} 통과 / ${fails.length} 실패`)
 for (const f of fails) console.error(`  - ${f}`)

@@ -130,9 +130,139 @@ function fnBody(src, at) {
   }
 }
 
+// ── 2단계 배선(화면·종이) ──────────────────────────────────────────
+//
+//   ⓗ 서명 화면 카드가 **박제**를 읽고 그 칸이 없으면 안 그린다. 지금 사전을 다시 해석하면
+//     입주자가 본 문안과 화면이 갈리고, 그 순간 박제는 증거이기를 그만둔다.
+//   ⓘ 그 카드에 읽음 확인 요소가 없다. 체크박스·입력·서명 어느 것도 두면 안 된다 —
+//     번역본에 효력을 준 것처럼 읽히면 안 된다는 것이 법률 관점의 판정이다.
+//   ⓙ 우선 조항이 화면과 인쇄 **양쪽에** 같은 판정으로 붙는다. 한쪽만 붙이면 미리보기와
+//     종이가 갈리고, 조건을 호출부마다 손으로 적으면 언젠가 다른 조건이 된다.
+//   ⓚ 박제본이 번역본을 물려준다(resolveSignedBody). 안 하면 서명 뒤 재발급에서 우선 조항이
+//     통째로 사라진다(형제 특약 둘과 같은 클래스).
+//   ⓛ ContractData 가 **없으면 칸 자체를 안 만든다**. null 을 담으면 그 값이 링크 발급의
+//     templateSnapshot 으로 흘러가 번역본을 안 쓰는 영업장의 스냅샷이 이 기능 전과 달라진다.
+//     이 단계 무회귀의 급소다.
+//   ⓜ 발급이 번역 축을 종이·박제 양쪽에 같은 값으로 싣는다.
+//   ⓝ 발급 상세가 박제 전문을 **같은 컴포넌트**로 연다. 두 벌을 만들면 운영자가 보는 문안과
+//     입주자가 본 문안이 언젠가 갈린다.
+//   ⓞ 발급 피커의 캡션이 고르는 것을 막지 않는다(운영자 오더 — 캡션만이다).
+
+// ⓗ·ⓙ — 서명 화면 카드와 화면 쪽 우선 조항
+{
+  const f = 'app/contract/[tenantId]/ContractView.tsx'
+  const src = read(f)
+  // 원천은 박제 하나다. 파서를 한 번 태운 값(translation)으로 카드와 절이 **같은 판정**을 쓴다 —
+  // 둘이 다른 값을 보면 카드는 떴는데 종이에 우선 조항이 없는 상태가 생긴다.
+  if (!/const translation = asResolvedContractTranslation\(data\.translation\)/.test(src)) {
+    violations.push(`${f} — ⓗ 박제를 파서 정본으로 안 읽는다. 원격 화면의 data 는 공개 링크 JSON 을 통째로 캐스팅한 것이라, 모양이 아닌 값에서 화면이 깨진다.`)
+  }
+  if (!/remote && translation &&/.test(src) || !/<ContractTranslationCard/.test(src)) {
+    violations.push(`${f} — ⓗ 번역본 카드가 원격 화면에서 박제를 조건으로 서지 않는다. 카드가 안 뜨거나 번역본 없는 링크에도 빈 카드가 선다.`)
+  }
+  if (/resolveContractTranslation\(/.test(src)) {
+    violations.push(`${f} — ⓗ 화면이 사전을 다시 해석한다. 표시 원천은 박제 하나여야 한다(입주자가 본 문안과 갈리면 증거가 무너진다).`)
+  }
+  if (!/appendSubLeaseAddendum\([^\n]*contractTranslationAddendum\(translation\)\)/.test(src)) {
+    violations.push(`${f} — ⓙ 화면 종이에 우선 조항 호출부가 없다. 입주자가 서명하는 종이에 '한국어 원본이 우선한다'는 근거가 안 실린다.`)
+  }
+}
+
+// ⓘ — 카드에 읽음 확인이 없다
+{
+  const f = 'components/doc/ContractTranslationView.tsx'
+  const raw = readFileSync(f, 'utf8')
+  const src = read(f)
+  for (const [pat, what] of [
+    [/type=["']checkbox["']/, '체크박스'],
+    [/<input/, '입력칸'],
+    [/onSubmit/, '제출 핸들러'],
+    [/SignaturePad/, '서명 패드'],
+  ]) {
+    if (pat.test(src)) {
+      violations.push(`${f} — ⓘ 번역본 카드에 읽음 확인 요소(${what})가 있다. 확인을 받으면 번역본에 효력을 준 것으로 읽힌다.`)
+    }
+  }
+  // 서명 진행 판정과 **무관**해야 한다 — 슬롯을 건드리면 번역본이 제출 게이트의 일부가 된다.
+  if (/disposalSignGate|signStageSlots|missingSlots|submitRemoteSignature/.test(raw)) {
+    violations.push(`${f} — ⓘ 카드가 서명 진행·제출 게이트를 참조한다. 번역본은 서명 슬롯과 무관해야 한다.`)
+  }
+  // 지금 사전을 다시 해석하지 않는다 — 파서만 쓴다.
+  if (/resolveContractTranslation\(|parseContractTranslations\(/.test(raw)) {
+    violations.push(`${f} — ⓘ 카드가 사전을 다시 해석한다. 박제된 해석 완료본만 읽어야 한다.`)
+  }
+}
+
+// ⓙ — 인쇄 쪽 우선 조항
+{
+  const f = 'lib/contractPrintHtml.ts'
+  const src = read(f)
+  if (!/appendSubLeaseAddendum\([^\n]*contractTranslationAddendum\(asResolvedContractTranslation\(d\.translation\)\)\)/.test(src)) {
+    violations.push(`${f} — ⓙ 인쇄 종이에 우선 조항 호출부가 없다. 화면에는 있고 발급 PDF 에는 없는 절이 생긴다.`)
+  }
+}
+
+// ⓚ — 박제본 승계
+{
+  const f = 'lib/contract.ts'
+  const src = read(f)
+  if (!/translation:\s*snap\.translation \?\? null/.test(src)) {
+    violations.push(`${f} — ⓚ resolveSignedBody 가 박제본의 번역본을 안 물려준다. 서명 뒤 재발급에서 우선 조항이 사라진다.`)
+  }
+}
+
+// ⓛ — ContractData 의 조건부 담기(무회귀 급소)
+{
+  const f = 'lib/contractData.ts'
+  const src = read(f)
+  if (!/asResolvedContractTranslation\(body\.translation\)/.test(src)) {
+    violations.push(`${f} — ⓛ 박제본의 번역본을 안 읽는다. 서명이 끝난 계약서의 화면과 종이가 갈린다.`)
+  }
+  // 조건부 스프레드여야 한다. `translation,` 이나 `translation: x ?? null` 은 칸을 만든다.
+  if (!/\.\.\.\(translationFrozen \? \{ translation: translationFrozen \} : \{\}\)/.test(src)) {
+    violations.push(`${f} — ⓛ 번역본을 조건부로 안 담는다. 이 값이 링크 스냅샷으로 흘러가므로, 번역본 없는 영업장의 스냅샷이 이 기능 전과 달라진다.`)
+  }
+}
+
+// ⓜ — 발급이 종이와 박제에 같은 값을 싣는다
+{
+  const f = 'app/api/contract/generate/route.ts'
+  const src = read(f)
+  if (!/translation: body_\.translation/.test(src)) {
+    violations.push(`${f} — ⓜ 인쇄 데이터에 번역본이 안 실린다. 발급 PDF 에만 우선 조항이 빠진다.`)
+  }
+  if (!/translation: printData\.translation/.test(src)) {
+    violations.push(`${f} — ⓜ 발급본 박제에 번역 축이 안 실린다. 발급 상세가 읽을 기록이 없어 '전문 보기'가 영영 안 뜬다.`)
+  }
+}
+
+// ⓝ — 발급 상세의 전문 열람
+{
+  const f = 'components/doc/IssuedContractSheet.tsx'
+  const src = read(f)
+  if (!/<ContractTranslationBody/.test(src)) {
+    violations.push(`${f} — ⓝ 전문 열람이 공용 본문 컴포넌트를 안 쓴다. 운영자가 보는 문안과 입주자가 본 문안이 갈린다.`)
+  }
+  if (!/asResolvedContractTranslation\(/.test(src)) {
+    violations.push(`${f} — ⓝ 박제를 파서 정본으로 안 읽는다. 모양이 아닌 옛 기록에서 화면이 깨진다.`)
+  }
+}
+
+// ⓞ — 피커 캡션은 막지 않는다
+{
+  const f = 'components/doc/SignRequestLangPicker.tsx'
+  const src = read(f)
+  if (!/translationProgress\(/.test(src)) {
+    violations.push(`${f} — ⓞ 언어별 번역 진행을 안 보여준다. 운영자가 반쯤 번역된 언어로 링크를 보내고도 모른다.`)
+  }
+  if (/disabled/.test(src)) {
+    violations.push(`${f} — ⓞ 피커가 언어를 막는다. 미완인 언어로 보낼지는 운영자가 정한다(캡션만이다).`)
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)
   process.exit(1)
 }
-console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본)')
+console.log('참고용 번역본 배선: 이상 없음 (발급 박제 · 조건부 · 서명 동결 · 드리프트 · 축 · 발급 시트 · 병합 정본 · 서명 화면 카드 · 읽음확인 0 · 우선 조항 화면/인쇄 · 박제 승계 · 조건부 담기 · 발급 축 · 전문 열람 · 피커 캡션)')

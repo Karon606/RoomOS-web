@@ -187,6 +187,66 @@ export function resolveContractTranslation(
 }
 
 /**
+ * 박제된 해석 완료본을 안전하게 읽는다. **다시 해석하지 않는다.**
+ *
+ * 링크 스냅샷·서명 동결본에 얼어 있는 JSON 이 입력이다. 여기서 사전을 다시 조회하면 입주자가
+ * 본 문안과 지금 화면이 갈리고, 그 순간 박제는 증거이기를 그만둔다. 그래서 이 함수가 하는 일은
+ * 모양 검사뿐이고, 값은 얼어 있는 그대로 나간다.
+ *
+ * 모양이 아닌 것은 null 이다(파서 정본 parseContractTranslations 와 같은 규칙) — 그때는
+ * 번역본이 없는 것으로 다뤄져 카드도 안 서고 우선 조항도 안 붙는다.
+ */
+export function asResolvedContractTranslation(raw: unknown): ResolvedContractTranslation | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const s = raw as {
+    lang?: unknown; title?: unknown; sections?: unknown; oathText?: unknown
+    fallbackCount?: unknown; totalCount?: unknown
+  }
+  const lang = asTranslationLang(s.lang)
+  if (!lang) return null
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+  const cnt = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0)
+  // 절·항목은 자리를 그대로 지킨다 — 빈 줄을 걷으면 조항 번호 대응이 깨진다(위 구조 규칙 2).
+  const sections = (Array.isArray(s.sections) ? s.sections : []).map(x => {
+    const sec = (x && typeof x === 'object' && !Array.isArray(x) ? x : {}) as { title?: unknown; items?: unknown }
+    return {
+      title: str(sec.title),
+      items: (Array.isArray(sec.items) ? sec.items : []).map(str),
+    }
+  })
+  return {
+    lang,
+    title: str(s.title),
+    sections,
+    oathText: str(s.oathText),
+    fallbackCount: cnt(s.fallbackCount),
+    totalCount: cnt(s.totalCount),
+  }
+}
+
+/**
+ * 그 언어의 번역 진행 — 발급 피커가 언어 옆에 적는 캡션의 원천이다.
+ *
+ * 세는 집합이 편집기·해석과 **같다**(translationSourceLines). 세 곳이 각자 세면 피커는
+ * "번역 26/26" 이라고 하는데 종이에는 원문이 넷 남는 상태가 된다.
+ *
+ * 고르는 것을 막는 데 쓰지 마라(운영자 오더 2026-09-08) — 미완인 언어로 보낼지는 운영자가
+ * 정한다. 이 값은 그 판단에 필요한 사실을 눈앞에 두는 것이 전부다.
+ */
+export function translationProgress(
+  raw: unknown,
+  template: ContractTemplate,
+  lang: TranslationLang,
+): { total: number; done: number; published: boolean; hasEntry: boolean } {
+  const entry = parseContractTranslations(raw).langs[lang]
+  const dict = entry?.dict ?? {}
+  const lines = translationSourceLines(template)
+  let done = 0
+  for (const l of lines) if (dict[l.text] !== undefined) done++
+  return { total: lines.length, done, published: entry?.published === true, hasEntry: !!entry }
+}
+
+/**
  * 원문에서 사라진 번역 열쇠. 운영자가 조항을 고치면 그 항목의 손번역이 여기로 떨어진다.
  *
  * **지우지 않는다.** 조항을 되돌리면 번역이 저절로 되살아나야 하고, 지우면 그 되돌림이
@@ -280,6 +340,26 @@ export const TRANSLATION_NOTICE: Record<SignLang, string> = {
   ja: '本翻訳は参考用です。韓国語原本が優先します。',
   zh: '本译文仅供参考，以韩文原本为准。',
   zht: '本譯文僅供參考，以韓文原本為準。',
+}
+
+/**
+ * 그 언어가 자기를 부르는 이름. 번역본 카드 머리에 이것을 단다.
+ *
+ * lib/signGuideText 의 SIGN_LANG_LABEL 을 쪼개 쓰지 않는다. 그쪽은 '벵골어(방글라데시) বাংলা'
+ * 처럼 한국어 설명이 앞서는 **운영자용** 라벨이라, 번역본을 읽는 사람에게는 자기 언어를 찾는
+ * 단서가 뒤에 숨는다. 쪼개는 규칙을 만들면 라벨 문구가 바뀔 때마다 조용히 어긋난다.
+ *
+ * Record 전량 선언이다(TRANSLATION_NOTICE 와 같은 이유) — 언어가 늘었는데 이름을 안 채우면
+ * tsc 가 컴파일을 막는다.
+ */
+export const TRANSLATION_LANG_ENDONYM: Record<TranslationLang, string> = {
+  en: 'English',
+  vi: 'Tiếng Việt',
+  bn: 'বাংলা',
+  ru: 'Русский',
+  ja: '日本語',
+  zh: '简体中文',
+  zht: '繁體中文',
 }
 
 /**

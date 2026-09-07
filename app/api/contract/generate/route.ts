@@ -477,6 +477,11 @@ export async function POST(req: Request) {
       roomScheduleText: await contractRoomScheduleText(lease, propertyId),
       // 그 절의 문안도 함께 — 영업장이 고친 것을 종이가 그대로 쓴다(2026-08-31).
       roomScheduleAddendum: resolveRoomScheduleAddendum((property as { roomScheduleAddendum?: unknown } | null)?.roomScheduleAddendum),
+      // 참고용 번역본 — **박제본이 들고 있는 것을 그대로 읽는다**(resolveSignedBody 가 정한다).
+      // 번역문 자체는 이 종이에 안 실린다. 우선 조항('번역본과 언어') 하나가 붙을지만 가른다 —
+      // 서명은 한국어 정본에만 받으므로 종이에 번역을 실으면 무엇에 서명한 것인지 흐려진다.
+      // 번역본이 없던 계약(전건)은 null 이라 이 종이가 이 기능 전과 문자 단위로 같다.
+      translation: body_.translation,
       smoking: body.smoking,
       emergencyContactText: body.emergencyContactText,
       signDate: signDateLabel,
@@ -642,6 +647,11 @@ export async function POST(req: Request) {
         rateAddendum: printData.rateAddendum,
         roomScheduleText: printData.roomScheduleText,
         signDocuments: printData.signDocuments,
+        // 번역 축도 이 종이가 실제로 근거로 삼은 값 그대로다. 발급 상세가 이 축을 읽어
+        // "무슨 언어로 몇 줄을 보여줬나"를 말하고, 전문 열람도 여기서 나온다.
+        // **번역본이 없으면 축 자체가 없다**(printedFacts 규칙) — 번역본을 안 쓰는 발급본의
+        // 박제는 이 축이 생기기 전과 바이트가 같다.
+        translation: printData.translation,
       }),
     }
 

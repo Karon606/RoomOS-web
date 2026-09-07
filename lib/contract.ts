@@ -419,6 +419,14 @@ export type ResolvedBody = {
    * 서류를 소급해 끼우지 않는다.
    */
   signDocuments: unknown
+  /**
+   * 박제본이 들고 있던 참고용 번역본(해석 완료본 한 언어분, 얼어 있는 JSON 그대로).
+   * 위 두 절과 같은 규칙 — **SNAPSHOT 일 때만 뜻이 있고** 그 밖에는 null 이다.
+   *
+   * 서명 전 계약(LIVE)에는 아직 링크 언어가 없어 번역본도 없다. 여기서 지금 사전을 다시
+   * 해석하지 않는 것이 규칙이다 — 입주자가 읽은 문안과 종이가 갈리면 증거가 무너진다.
+   */
+  translation: unknown
   /** SNAPSHOT 일 때만 뜻이 있다 — 서명 당시 병기 원천. undefined 면 이 칸이 없던 옛 박제다. */
   nativeNameFrozen?: string | null
   /** 앱이 서명 시점 본문을 모르는 계약. 새 발급본을 만들면 안 된다. */
@@ -454,6 +462,9 @@ export function resolveSignedBody(
       businessInfo: snap.businessInfo ?? live.businessInfo,
       subLeaseAddendum: snap.subLeaseAddendum ?? null,
       rateAddendum: snap.rateAddendum ?? null,
+      // 번역본이 없던 링크·이 칸이 생기기 전 박제는 null 이다 — 서명이 끝난 계약서에 번역본과
+      // 우선 조항이 소급해 생기지 않는다(형제 절 둘과 같은 규칙).
+      translation: snap.translation ?? null,
       // 박제에 이 칸이 없으면 **빈 배열**이다(live 로 폴백하지 않는다). 그때 종이에 없던
       // 서류가 재발급에서 튀어나오면 서명 시점 격리가 깨진다.
       signDocuments: snap.signDocuments ?? [],
@@ -463,7 +474,7 @@ export function resolveSignedBody(
   }
   // 본문 없는 박제본(종이 스캔·과거 발급본) — 앱은 그 본문을 모른다.
   // 미리보기는 현재값으로 그리되 **새 발급본은 만들지 않는다.** 그 계약의 원본은 앱 밖에 있다.
-  if (snap) return { source: 'ARCHIVED', ...live, subLeaseAddendum: null, rateAddendum: null, blockIssue: true }
+  if (snap) return { source: 'ARCHIVED', ...live, subLeaseAddendum: null, rateAddendum: null, translation: null, blockIssue: true }
 
   // 박제본이 없으면 지금까지와 완전히 같다 — 개별 수정본 우선, 없으면 공통 템플릿.
   return {
@@ -472,6 +483,7 @@ export function resolveSignedBody(
     template: (lease?.contractOverride as ContractTemplate | null) ?? live.template,
     subLeaseAddendum: null,
     rateAddendum: null,
+    translation: null,
     blockIssue: false,
   }
 }

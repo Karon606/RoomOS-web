@@ -17,6 +17,9 @@ import { PRINTED_FACT_KEYS, PRINTED_FACT_LABEL, type PrintedFactKey } from '@/li
 import { getContractIssuedSnapshot, type IssuedContractDetail } from '@/app/(app)/tenants/actions'
 import { contractPurposeOf } from '@/lib/contractPurpose'
 import { asSignLang, SIGN_LANG_LABEL } from '@/lib/signGuideText'
+import { asResolvedContractTranslation, type ResolvedContractTranslation } from '@/lib/contractTranslation'
+import type { ContractTemplate } from '@/lib/contract'
+import { ContractTranslationBody } from '@/components/doc/ContractTranslationView'
 
 const BODY_SOURCE_LABEL: Record<string, string> = {
   SNAPSHOT: '서명 시점 박제본',
@@ -75,6 +78,24 @@ function translationFactText(v: unknown): string {
   } catch { return '있음' }
 }
 
+/**
+ * 박제 축에서 그때의 번역본과 한국어 본문을 되꺼낸다. 두 축 다 통비교용 JSON 문자열이다.
+ *
+ * **다시 해석하지 않는다.** 지금 사전으로 새로 만들면 이 화면이 보여주는 것은 증거가 아니라
+ * 오늘의 번역이 된다. 모양이 아니면 null 이고, 그때는 여는 자리 자체가 안 선다.
+ * 한국어 본문은 원문으로 남은 줄에 표식을 다는 데만 쓴다(없으면 표식만 없다).
+ */
+function frozenTranslation(v: unknown): ResolvedContractTranslation | null {
+  try { return asResolvedContractTranslation(JSON.parse(String(v))) } catch { return null }
+}
+function frozenTemplate(v: unknown): ContractTemplate | null {
+  if (v === undefined) return null
+  try {
+    const t = JSON.parse(String(v)) as ContractTemplate
+    return t && typeof t === 'object' && !Array.isArray(t) ? t : null
+  } catch { return null }
+}
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 py-1">
@@ -95,6 +116,8 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
 }) {
   const [detail, setDetail] = useState<IssuedContractDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 번역본 전문 열람. 이 화면의 '편집 컨트롤 0개' 규칙과 어긋나지 않는다 — 읽기만 한다.
+  const [viewTranslation, setViewTranslation] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -107,6 +130,8 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
   }, [fileId])
 
   const snap = detail?.snapshot ?? null
+  // 박제에서 되꺼낸 그때의 번역본. 축이 없거나 모양이 아니면 null 이고 여는 자리도 안 선다.
+  const frozen = snap?.facts.translation !== undefined ? frozenTranslation(snap.facts.translation) : null
 
   return (
     <Modal open onClose={onClose} z={z} width="md"
@@ -174,11 +199,38 @@ export function IssuedContractSheet({ fileId, onClose, z = 260 }: {
                 <Row label={PRINTED_FACT_LABEL.subLeaseAddendum} value="있음" />
               )}
               {snap.facts.translation !== undefined && (
-                <Row label={PRINTED_FACT_LABEL.translation} value={translationFactText(snap.facts.translation)} />
+                <Row label={PRINTED_FACT_LABEL.translation} value={
+                  // 한 줄은 "무슨 언어로 몇 줄"까지만 말한다. 그 문안이 실제로 무엇이었는지는
+                  // 여는 자리를 따로 둔다 — 분쟁에서 물어보는 것이 바로 그 문장들이다.
+                  // 이 화면의 편집 컨트롤 0개 규칙은 그대로다(여는 것은 읽기다).
+                  <>
+                    {translationFactText(snap.facts.translation)}
+                    {/* 박제가 모양이 아니면(옛 기록·오염) 여는 자리를 안 세운다 — 눌러도 빈 화면이
+                        나오는 버튼은 이 화면이 고장난 증거로 읽힌다. 한 줄은 그대로 남는다. */}
+                    {frozen && (
+                      <button type="button" onClick={() => setViewTranslation(true)}
+                        className="ml-2 inline-flex items-center px-2 py-2.5 -my-2.5 align-baseline text-[0.6875rem] font-semibold text-[var(--tc-text)] underline underline-offset-2">
+                        전문 보기
+                      </button>
+                    )}
+                  </>
+                } />
               )}
             </>
           )}
         </div>
+      )}
+      {/* 번역본 전문 — 새 화면을 만들지 않고 이 저장소의 열람 문법(Modal)을 그대로 쓴다.
+          본문은 서명 화면의 카드와 **같은 컴포넌트**다. 두 벌을 만들면 운영자가 보는 문안과
+          입주자가 본 문안이 언젠가 갈린다.
+          z 는 이 시트(기본 260) 위다. 시트가 이미 280 이면 같은 층인데, 뒤에 마운트되는 이쪽이
+          위에 그려지고 Esc 도 최상단만 닫는다(Modal 의 esc 스택). */}
+      {viewTranslation && frozen && (
+        <Modal open onClose={() => setViewTranslation(false)} z={280} width="md"
+          title="참고용 번역본"
+          subtitle="이 발급본이 근거로 삼은 서명 시점 문안입니다. 계약 내용은 한국어 원본에 따릅니다.">
+          <ContractTranslationBody translation={frozen} source={frozenTemplate(snap?.facts.template)} />
+        </Modal>
       )}
     </Modal>
   )
