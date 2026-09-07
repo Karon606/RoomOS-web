@@ -4410,12 +4410,23 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
               choice: { kind: 'new', declinedItemIds: d.candidates.map(c => c.itemId) },
             })
           : await applyMergeDecision({
+              // 단위도 함께 보낸다 — 대상 카드와 다르면 서버가 카드를 단위 무시로 바꿔야 실제로 붙는다.
               category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
+              specUnit: d.specUnit, qtyUnit: d.qtyUnit,
               choice: { kind: 'merge', targetItemId: choice },
             })
         if (!res.ok) { pushToast('error', res.error); setPending(false); release(); return }
       }
-      pushToast('success', '병합 처리 완료')
+      // 적용 직후 재판정 — '완료' 라고 해놓고 실제로는 안 붙는 종류를 여기서 잡는다(신고 5ba35bfc).
+      // 판정은 배너와 같은 정본(getPendingMergeDecisions)을 그대로 쓴다. 규칙을 베끼면 화면과 갈린다.
+      const appliedIds = new Set(decisions.flatMap(d => d.expenseIds))
+      const stuck = (await getPendingMergeDecisions().catch(() => [] as MergeDecision[]))
+        .filter(d => d.expenseIds.some(id => appliedIds.has(id)))
+      if (stuck.length > 0) {
+        pushToast('error', `${stuck.map(d => d.newLabel).join(', ')} 는 아직 재고에 못 붙었습니다. '재고에 못 붙은 구매' 에서 한 번 더 확인해 주세요.`)
+      } else {
+        pushToast('success', '병합 처리 완료')
+      }
       onDone()
     } catch {
       setError('처리 중 오류가 발생했습니다.'); setPending(false)

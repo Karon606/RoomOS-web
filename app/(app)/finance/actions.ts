@@ -7,6 +7,7 @@ import { topCategoryForLabel } from '@/app/(app)/inventory/categoryConfig'
 import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { computeSetHint } from '@/lib/setHint'
+import { resolveSingleItemFields } from '@/lib/expenseItemSource'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
@@ -575,14 +576,15 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
     const receiptUrl         = formData.get('receiptUrl') as string
-    const itemLabel = formData.get('itemLabel') as string
-    const specUnit  = formData.get('specUnit') as string
-    const qtyUnit   = formData.get('qtyUnit') as string
-    const specValueRaw = formData.get('specValue') as string
-    const specTextRaw  = formData.get('specText') as string
-    const brandRaw       = formData.get('brand') as string
-    const productNameRaw = formData.get('productName') as string
-    const qtyValueRaw  = formData.get('qtyValue') as string
+    // 낱개 폼 필드 — itemsJson 에 없는 값만 채우는 폴백이다(아래 resolveSingleItemFields).
+    const formItemLabel   = formData.get('itemLabel') as string
+    const formSpecUnit    = formData.get('specUnit') as string
+    const formQtyUnit     = formData.get('qtyUnit') as string
+    const formSpecValue   = formData.get('specValue') as string
+    const formSpecText    = formData.get('specText') as string
+    const formBrand       = formData.get('brand') as string
+    const formProductName = formData.get('productName') as string
+    const formQtyValue    = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 품명 학습용 — itemsJson 품목 전체(단일/다품목 무관). 저장 후 ocrRaw≠label 인 것만 별칭 upsert.
     const ocrCaptureItems: ItemPick[] = (() => {
@@ -618,6 +620,24 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
         }
       } catch { /* fallthrough → 단일 row */ }
     }
+
+    // 단일 품목 저장의 정본도 itemsJson 이다 — 낱개 폼 필드는 itemsJson 에 없는 값만 채운다.
+    // 저장 직전 확인창(단위 게이트·품명 분리 게이트)이 고친 값은 itemsJson 에만 실려 온다.
+    // 예전엔 다품목일 때만 itemsJson 을 읽어 1품목 교정이 통째로 증발했다(신고 85343c79).
+    const {
+      itemLabel, specUnit, qtyUnit,
+      specValue: specValueRaw, specText: specTextRaw,
+      brand: brandRaw, productName: productNameRaw, qtyValue: qtyValueRaw,
+    } = resolveSingleItemFields(ocrCaptureItems, !!multiItems, {
+      itemLabel:   formItemLabel,
+      specValue:   formSpecValue,
+      specUnit:    formSpecUnit,
+      specText:    formSpecText,
+      brand:       formBrand,
+      productName: formProductName,
+      qtyValue:    formQtyValue,
+      qtyUnit:     formQtyUnit,
+    })
 
     const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
 

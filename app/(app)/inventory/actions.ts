@@ -22,6 +22,7 @@ import { type ShiftRow } from '@/lib/stockLedger'
 // 원장 조정 공용층 — 계산 정본은 lib/stockLedger, 조회·적용·되돌리기는 ledgerShift(서버 전용).
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
+import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 async function getPropertyId() {
@@ -2215,13 +2216,21 @@ export async function applyMergeDecision(input: {
       if (expenseIds.length > 0) {
         await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: target.label } })
       }
+      // 라벨만 고치면 끝이 아니다 — 부착 판정은 5튜플 동치라 수량단위가 다른 구매는 계속 어긋나
+      // 영원히 미부착으로 남는다(신고 5ba35bfc). 지출 단위를 카드 값으로 덮어쓰면 '개 30 = 박스 1'
+      // 에서 수량이 왜곡되므로, 카드끼리 병합이 쓰는 길 그대로 대상 카드를 단위 무시로 바꾼다.
+      const targetQtyUnitBefore = shouldLoosenTargetUnit(input.qtyUnit, target.qtyUnit) ? target.qtyUnit : null
+      if (targetQtyUnitBefore != null) {
+        await prisma.trackedItem.update({ where: { id: target.id }, data: { qtyUnit: null } })
+      }
       await prisma.trackedItemMergeRule.upsert({
         where: { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: target.id } },
         update: { kind: 'LINK', sourceLabel: newLabel },
         create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: target.id, kind: 'LINK' },
       })
-      // 되돌리기(병합 해제) 복원 정보 — 지출을 원래 라벨로 분리할 수 있게 기록
-      if (expenseIds.length > 0) {
+      // 되돌리기(병합 해제) 복원 정보 — 지출을 원래 라벨로 분리할 수 있게 기록.
+      // 단위 무시로 바꾼 것도 여기 실어야 원복된다(적용취소는 항상 있어야 한다).
+      if (expenseIds.length > 0 || targetQtyUnitBefore != null) {
         try {
           await prisma.trackedItemMergeUndo.create({
             data: {
@@ -2230,6 +2239,7 @@ export async function applyMergeDecision(input: {
               payload: {
                 kind: 'IMPORT', origLabel: newLabel, category,
                 specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null,
+                targetQtyUnitBefore,
                 expenseIds,
               },
             },
@@ -2356,6 +2366,10 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       // 2) 지출 라벨 원복
       if (Array.isArray(expenseIds) && expenseIds.length > 0) {
         await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: origLabel } })
+      }
+      // 2.5) 대상 카드 qtyUnit 원복 (부착시키려고 looseMatch 로 null 됐던 경우) — 카드 병합 원복과 동형.
+      if (p.targetQtyUnitBefore != null) {
+        await prisma.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
       }
       // 3) LINK 규칙 제거 (다시 자동 흡수 안 되게)
       await prisma.trackedItemMergeRule.deleteMany({
