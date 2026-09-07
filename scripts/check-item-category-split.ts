@@ -10,10 +10,9 @@
 // 축 셋이고 등급이 다르다. 판정 기준은 실제 사례가 잡히는가다.
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-
-// 길이 차원 — 소모품 잔량을 길이로 세는 정당한 경우가 없다. 규격이 '한 개의 크기'라는 신호다.
-// 봉투 50L 을 리터당으로 나눌 수 없는 것과 같다(운영자 지적 2026-08-04).
-const LENGTH_UNITS = new Set(['mm', 'cm', 'm', 'km', 'inch', 'in', 'ft', '인치'])
+// 길이 판정은 lib/units 의 정본 하나를 부른다. 종전에는 이 파일이 같은 목록을 따로 들고 있었다 —
+// 검증 스크립트가 규칙을 베껴 두면 정본 개정을 못 따라온다(이 저장소에서 5일짜리 사고를 낸 클래스).
+import { isLengthUnit } from '../lib/units'
 
 type Cat = { cat: string }
 
@@ -59,9 +58,11 @@ async function main() {
     })
     for (const c of cards) {
       if (c.trackUnit !== 'spec') continue
-      // (a) 규격 단위가 길이다 — 오류. 테프론 테이프가 15롤이 아니라 150m 로 잡힌 그 상태다.
-      if (c.specUnit && LENGTH_UNITS.has(c.specUnit.trim())) {
-        errors.push(`[단위] "${c.label}" 이 길이(${c.specUnit})로 잔량을 센다 — 그 규격은 한 개의 크기이지 나눌 수 있는 양이 아니다`)
+      // (a) 규격 단위가 길이다 — 명부(경고). 잘라 쓰는 품목이면 길이로 세는 것이 맞다(장판).
+      //     저장 직전에 "잘라서 쓰는 품목인가요" 를 묻는 자리가 생긴 뒤로 이 값은 운영자가
+      //     선언한 답이라 오류가 아니다. 눈으로 확인하는 목록이지 실패가 아니다.
+      if (isLengthUnit(c.specUnit)) {
+        warns.push(`[재단] "${c.label}" 이 ${c.specUnit} 로 셉니다`)
         continue
       }
       // (b) 규격 근거가 아예 없다 — 경고. 지금은 수량으로 대신 세어 맞게 보이지만,

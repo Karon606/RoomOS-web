@@ -591,6 +591,19 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       if (!itemsJsonRaw) return []
       try { const p = JSON.parse(itemsJsonRaw); return Array.isArray(p) ? p : [] } catch { return [] }
     })()
+    // 재단 여부 물음(FinanceClient 저장 직전 게이트)의 답 — { 품명: 'spec'|'qty' }.
+    // 새 재고 카드의 trackUnit 을 이 값으로 만든다. 답이 없으면 종전 규칙대로 정해진다.
+    const cutAxisRaw = formData.get('cutAxisJson') as string
+    const declaredTrackUnit: Record<string, 'spec' | 'qty'> = (() => {
+      if (!cutAxisRaw) return {}
+      try {
+        const p = JSON.parse(cutAxisRaw)
+        if (!p || typeof p !== 'object') return {}
+        const out: Record<string, 'spec' | 'qty'> = {}
+        for (const [k, v] of Object.entries(p)) if (v === 'spec' || v === 'qty') out[k] = v
+        return out
+      } catch { return {} }
+    })()
     const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외
     // 합배송(주문 묶음 + 배송비 별도 지출) 필드
     const orderShipping     = parseAmount(formData.get('orderShipping'))
@@ -753,7 +766,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
-      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
+      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean), { declaredTrackUnit }).catch(() => {})
       const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
       revalidatePath('/finance')
       return { ok: true, backfilled }
@@ -783,7 +796,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true; backfi
     await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
     // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
     // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
-    if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel]).catch(() => {})
+    if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel], { declaredTrackUnit }).catch(() => {})
     await noteUnits([specUnit], [qtyUnit])
     const backfilled = await backfillVendorBizNo(propertyId, vendor || null, vendorBizNo)
     revalidatePath('/finance')
@@ -3008,6 +3021,21 @@ export async function getUnitTrackedInfo(category: string, labels: string[]): Pr
   const out: Record<string, { qtyUnit: string }> = {}
   for (const r of rows) if (r.qtyUnit && r.qtyUnit.trim()) out[r.label] = { qtyUnit: r.qtyUnit }
   return out
+}
+
+
+// 재단 여부 물음("잘라서 쓰는 품목인가요")의 조건 하나 — 활성 재고 카드가 이미 있는 품명 목록.
+// 카드가 있으면 답이 이미 카드의 trackUnit 에 있으므로 다시 묻지 않는다. 위 두 조회와 달리
+// 카드의 값이 아니라 존재만 본다 — 단위가 비어 있는 카드도 '이미 답이 있는' 카드다.
+export async function getTrackedCardLabels(category: string, labels: string[]): Promise<string[]> {
+  const { propertyId } = await requirePropertyAccess()
+  const names = [...new Set(labels.map(l => l.trim()).filter(Boolean))]
+  if (!names.length) return []
+  const rows = await prisma.trackedItem.findMany({
+    where: { propertyId, category, label: { in: names }, isArchived: false },
+    select: { label: true },
+  })
+  return rows.map(r => r.label)
 }
 
 // 품명 정체성 게이트용 이력 — 이 (카테고리, 품명) 카드가 지금까지 어떤 규격으로 등록됐는지.

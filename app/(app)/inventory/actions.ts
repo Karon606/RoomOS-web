@@ -23,6 +23,7 @@ import { type ShiftRow } from '@/lib/stockLedger'
 import { buildAdditionShiftPlan, buildPurchaseShiftPlan, convertedPurchaseQty, matchedTrackedItemForExpense, applyShiftRows, revertShiftRows, resolveItemHubLocationId, type LedgerShiftUndo } from './ledgerShift'
 import { specMultiplier, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 import { shouldLoosenTargetUnit } from '@/lib/mergeUnitScope'
+import { resolveTrackUnitForNewCard } from '@/lib/trackUnitGate'
 import { kstYmdStr, ymdToDbDate } from '@/lib/kstDate'
 
 async function getPropertyId() {
@@ -2003,7 +2004,10 @@ function deriveSubLabel(base: string, specValue: number | null, specUnit: string
 // 미지정 = 전체 스캔(재고 화면의 '과거 지출 일괄 불러오기' 버튼). 병합 규칙(LINK/MUTE)·중복 판정은 동일 경로.
 // opts.dryRun 이면 아무것도 쓰지 않고 **결정 대기 목록만** 돌려준다. 판정 규칙을 복제하지 않으려고
 // 같은 함수를 읽기 전용으로 돌린다 — 규칙이 두 벌이 되면 화면과 실제 동작이 갈린다.
-export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?: { dryRun?: boolean }): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
+// opts.declaredTrackUnit 은 지출 저장 직전에 운영자가 답한 재단 여부({ 품명: 'spec'|'qty' }).
+// 영수증 없이 자동으로 들어오는 경로(대기 영수증 승인·과거 지출 일괄 불러오기)는 물을 수 없어
+// 이 값이 비고, 그때는 resolveTrackUnitForNewCard 가 안전한 쪽을 고른다.
+export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?: { dryRun?: boolean; declaredTrackUnit?: Record<string, 'spec' | 'qty'> }): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2161,7 +2165,15 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[], opts?:
               label,
               specUnit: g.specUnit,
               qtyUnit: g.qtyUnit,
-              trackUnit: defaultTrackUnitForCategory(g.category),
+              // 잔량을 길이로 셀지 개수로 셀지는 "잘라 쓰는 품목인가" 하나로 갈린다.
+              // 운영자가 저장 직전에 답했으면 그 값, 아니면 판정 정본이 정한다(lib/trackUnitGate).
+              // 답은 baseLabel 로 왔는데 규격이 갈려 sub-label 이 붙는 경우가 있어 둘 다 본다.
+              trackUnit: resolveTrackUnitForNewCard({
+                categoryDefault: defaultTrackUnitForCategory(g.category),
+                specUnit: g.specUnit,
+                qtyUnit: g.qtyUnit,
+                declared: opts?.declaredTrackUnit?.[label] ?? opts?.declaredTrackUnit?.[g.baseLabel] ?? null,
+              }),
             },
           })
         }

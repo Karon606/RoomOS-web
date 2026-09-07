@@ -43,8 +43,9 @@ for (const k of ['itemLabel', 'specUnit', 'qtyUnit', 'specValue', 'specText', 'b
 // 저장·후처리는 정본을 거친 이름을 쓴다(낱개 이름을 그대로 쓰면 교정이 증발한다).
 need('단일 저장이 정본 단위를 쓴다', /qtyUnit:\s+cleanUnit\(qtyUnit\)/.test(addExpense))
 need('단일 저장이 정본 규격단위를 쓴다', /specUnit:\s+cleanUnit\(specUnit\)/.test(addExpense))
+// 두 번째 인자(재단 여부 답)는 뒤에 붙을 수 있다 — 여기서 고정하는 것은 **품명의 출처**다.
 need('재고 시드가 정본 품명을 쓴다',
-  /if \(itemLabel\) await seedTrackedItemsFromExpenses\(\[itemLabel\]\)/.test(addExpense))
+  /if \(itemLabel\) await seedTrackedItemsFromExpenses\(\[itemLabel\][,)]/.test(addExpense))
 need('단위 목록 적립이 정본 단위를 쓴다', /noteUnits\(\[specUnit\], \[qtyUnit\]\)/.test(addExpense))
 
 // ── ①-B 수정 저장도 같은 정본 ─────────────────────────────────────

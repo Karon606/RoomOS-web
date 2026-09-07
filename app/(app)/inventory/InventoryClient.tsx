@@ -1719,6 +1719,7 @@ function SettingsForm({ row, onCancel, onDone, onGone }: {
           </button>
         </div>
         <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
+          잘라서 쓰는 품목인지로 갈립니다. 장판은 잘라 쓰니 m 로 세고, 빨래줄 10m 한 세트는 통으로 쓰니 세트로 셉니다.<br/>
           규격 단위: 쌀 1포대(20kg) 같이 규격으로 환산해서 추적 (kg, 매, ml).<br/>
           수량 단위: 종량제봉투 50L짜리 30매처럼 매(개) 단위로만 추적 (사이즈는 라벨에 적기).
         </p>

@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, renameTrackedItemLabel } from './actions'
-import { specMultiplier, convertUnit, splitSizeLabel } from '@/lib/units'
+import { getLabelCategoryHistory, getSpecTrackedInfo, getUnitTrackedInfo, getSizeIdentityInfo, getTrackedCardLabels, renameTrackedItemLabel } from './actions'
+import { specMultiplier, convertUnit, splitSizeLabel, isLengthUnit } from '@/lib/units'
+import { isCutAxisAmbiguous, shouldAskCutAxis, unitWithRo } from '@/lib/trackUnitGate'
 import { DEFAULT_SPEC_UNITS, DEFAULT_QTY_UNITS } from '@/lib/unitOptions'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
@@ -371,12 +372,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
   }, [category])
 
-  // 규격 단위가 치수(cm·mm·m·인치)면 규격당 단가가 무의미한 경우가 많아(장판 1cm당 가격 등)
+  // 규격 단위가 치수(길이)면 규격당 단가가 무의미한 경우가 많아(장판 1cm당 가격 등)
   // 기본 기준을 '완제품 1개당'으로. 사용자가 직접 전환했으면(basisTouched) 존중. (오류신고 4e2ffe04)
+  // 길이 판정은 lib/units 정본 하나 — 여기 목록을 따로 들고 있으면 별칭(센티·피트)이 새고 낡는다.
   useEffect(() => {
     if (basisTouched) return
     const u = specUnit.trim().toLowerCase()
-    if (['cm', 'mm', 'm', '인치'].includes(u)) { setUnitBasis('qty'); return }
+    if (isLengthUnit(u)) { setUnitBasis('qty'); return }
     // 부피 규격 + 장수 단위 = 그 부피는 **물건의 크기 표시**다. 나눌 수 있는 양이 아니다.
     // 종량제봉투 50L 20매에 25,000원이면 1매당 1,250원이지 리터당 25원이 아니다(운영자 지적 2026-08-05).
     // 세제 1.5L 처럼 부피가 진짜 양인 경우는 수량 단위가 개·통·병이라 여기 안 걸린다.
@@ -2450,6 +2452,40 @@ export default function FinanceClient({
           }
           // 바꾼 단위가 저장에 그대로 흐르게 — 폼의 hidden itemsJson 은 옛 단위다(품명 게이트와 같은 처방).
           if (unitChanged) fd.set('itemsJson', JSON.stringify(finalItems.map(x => ({ ...x, setHint: undefined, allocations: addIsDurable ? undefined : x.allocations }))))
+        }
+        // 잔량을 길이로 셀지 세트로 셀지 첫 구매 때 한 번 묻는다(빨래줄 사건, 운영자 승인 2026-09-06).
+        // trackUnit 은 사실 "잘라 쓰는 품목인가" 축인데 아무도 묻지 않아, 영수증에서 카드가 자동
+        // 생성될 때 카테고리 기본값이 그냥 굳었다. 빨래줄 10m 한 세트가 미터로 세어진 그 상태다.
+        // 활성 카드가 이미 있으면 답이 카드에 있으니 묻지 않는다 — 다음 구매부터는 침묵한다.
+        // 장판처럼 수량 자체를 m 로 적는 품목은 잘라 쓴다는 것이 자명해 판정에서 걸러진다.
+        {
+          const cat = (fd.get('category') as string) || addExpCategory
+          const cand = isTrackedCat(cat)
+            ? finalItems.filter(it => it.label?.trim() && isCutAxisAmbiguous(it.specUnit, it.qtyUnit))
+            : []
+          if (cand.length) {
+            const names = cand.map(it => it.label.trim())
+            // 조회 실패는 침묵으로 — 물음을 못 띄운다고 지출 저장을 막지 않는다(형제 게이트와 같다).
+            const carded = new Set(await getTrackedCardLabels(cat, names).catch(() => names))
+            const declared: Record<string, 'spec' | 'qty'> = {}
+            for (const it of cand) {
+              const label = it.label.trim()
+              const specUnit = (it.specUnit ?? '').trim()
+              const qtyUnit  = (it.qtyUnit ?? '').trim()
+              if (!shouldAskCutAxis({ tracked: true, hasCard: carded.has(label), specUnit, qtyUnit })) continue
+              const size = it.specValue ? `${it.specValue}${specUnit}` : specUnit
+              const pick = await choiceDialog({
+                title: `'${label}' 은 잘라서 쓰는 품목인가요?`,
+                message: `${size} 규격을 ${unitWithRo(qtyUnit)} 샀습니다. 잘라서 쓰면 잔량을 ${unitWithRo(specUnit)} 세고, 통째로 쓰면 ${unitWithRo(qtyUnit)} 셉니다. 재고 관리의 품목 설정에서 언제든 바꿀 수 있습니다.`,
+                confirmLabel: `잘라서 씀, ${unitWithRo(specUnit)} 세기`,
+                altLabel: `통으로 씀, ${unitWithRo(qtyUnit)} 세기`,
+              })
+              if (pick === null || pick === 'back') return   // 취소·X = 저장 중단(무변경)
+              declared[label] = pick === 'confirm' ? 'spec' : 'qty'
+            }
+            // 답을 카드 만드는 자리로 실어 보낸다 — 기억은 카드의 trackUnit 자체다.
+            if (Object.keys(declared).length) fd.set('cutAxisJson', JSON.stringify(declared))
+          }
         }
         // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
         // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.

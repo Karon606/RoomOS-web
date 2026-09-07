@@ -69,6 +69,16 @@ export function isConvertibleUnit(unit: string | null | undefined): boolean {
   return canon != null && dimsOf(canon) != null
 }
 
+// 길이 차원 단위인가 — '잘라 쓰는 양'으로 셀 수 있는 단위인지 가르는 정본.
+// mm·cm·m·km·inch·ft 와 그 별칭(센티·미터·인치·")까지 위 UNIT_DIMS 하나에서 나온다.
+// 지출 화면(단가 기준 추정)·재고 판정(lib/trackUnitGate)·정합 검사가 모두 이 함수를 부른다.
+// 목록을 각자 베껴 두면 한쪽만 낡는다 — 이 저장소에서 정본 복제가 낸 사고와 같은 클래스다.
+export function isLengthUnit(unit: string | null | undefined): boolean {
+  const canon = canonicalUnit(unit)
+  if (canon == null) return false
+  return dimsOf(canon)?.length != null
+}
+
 // value(from 단위)를 to 단위로 환산. 환산 불가(단위 모름·차원 다름)면 null.
 //   같은 단위면 그대로. oz↔ml 은 부피, oz↔g 은 무게로 자동.
 export function convertUnit(value: number, from: string | null | undefined, to: string | null | undefined): number | null {
