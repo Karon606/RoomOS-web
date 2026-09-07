@@ -1159,6 +1159,18 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
   const signedCount = docSlots.filter(x => x.signed).length
   const remaining = missingSlots({ slots: docSlots })
   const canSubmit = signStageSlots({ slots: docSlots }) === 'complete'
+
+  // 원어 성명 칸 — 마지막 서명이 끝나면 한 번 데려간다(운영자 오더 2026-09-07 "어디에서 뭘
+  // 입력해야 하는지 인지되게"). 문장 신설 대신 이동이다 — 제출 확인창은 이미 세 문장이고,
+  // 위치 인지는 글보다 이동이 빠르다(패널 확정). 이미 적었거나 한 번 갔으면 다시 안 끈다.
+  const nativeNameRef = useRef<HTMLDivElement | null>(null)
+  const nativeScrolledRef = useRef(false)
+  useEffect(() => {
+    if (!canSubmit || !canEnterNativeName || nativeScrolledRef.current || nativeNameInput.trim()) return
+    nativeScrolledRef.current = true
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    nativeNameRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+  }, [canSubmit]) // eslint-disable-line react-hooks/exhaustive-deps
   // 좁은 자리에서 부르는 이름. 계약서·동의서는 종전 문면 그대로, 추가 서류는 제 제목이다.
   const titleOf = (key: string): string =>
     key === 'contract' ? DOC_TITLE.contract
@@ -1899,8 +1911,13 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       {/* 본국 표기 이름(선택) — 방금 읽은 계약서의 성명 바로 아래, 제출 CTA 위. 흐름 안에 있되
           §29 톤으로 조용히 선다(muted·작은 글씨·테두리 없음). 한 벌만 그려 라벨과 칸이 1대1로 묶인다. */}
       {canEnterNativeName && (
-        <div className="no-print native-name">
-          <label htmlFor="native-name-input" className="native-name-lbl" style={{ whiteSpace: 'pre-line' }}>{bi(signLang, 'native.label')}</label>
+        <div ref={nativeNameRef} className="no-print native-name">
+          {/* 신분증 픽토그램 — 여권·신분증 표기를 옮겨 적는 칸이라는 것을 글보다 먼저 말한다.
+              색은 라벨과 같은 ink-s(선택 등급) — 코랄은 필수 문법이라 안 쓴다(패널 확정). */}
+          <label htmlFor="native-name-input" className="native-name-lbl" style={{ whiteSpace: 'pre-line' }}>
+            <svg className="native-name-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2" /><circle cx="8.2" cy="11" r="2" /><path d="M5.5 16c.5-1.6 1.5-2.4 2.7-2.4s2.2.8 2.7 2.4" /><path d="M14 9.5h5M14 12.5h5M14 15.5h3" /></svg>
+            {bi(signLang, 'native.label')}
+          </label>
           <input
             id="native-name-input"
             type="text"
@@ -2225,13 +2242,20 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
 
         /* 본국 표기 이름(선택) — 제출 CTA 와 같은 폭·같은 자리에 서되 강조는 하지 않는다.
            배경·테두리 없이 muted 글자만 두어 필수 칸으로 읽히지 않게 한다(§29). */
-        .native-name { width: min(210mm, 100% - 24px); margin: 12px auto 0; }
-        .native-name-lbl { display: block; font-size: 11px; color: var(--ink-s); margin-bottom: 5px; }
+        /* 점선 카드 — '점선=선택' 축(자필 기명 때 확립) 그대로, 종이색 배경이라 탠 바닥에서
+           확실히 선다(운영자 오더 2026-09-07 "눈에 띄게"). 코랄·attn 은 필수 문법이라 금지. */
+        .native-name {
+          width: min(210mm, 100% - 24px); margin: 14px auto 0;
+          padding: 12px 14px; box-sizing: border-box;
+          background: #fff; border: 1.5px dashed var(--cream-3); border-radius: 10px;
+        }
+        .native-name-lbl { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink-s); margin-bottom: 6px; }
+        .native-name-ico { flex: none; }
         .native-name-input {
           width: 100%; box-sizing: border-box;
           min-height: 44px; padding: 10px 12px;
           font-size: 14px; font-family: inherit; color: var(--ink);
-          background: #fff; border: 1px solid var(--cream-3); border-radius: 8px;
+          background: #fbf6ee; border: 1px solid var(--cream-3); border-radius: 8px;
           outline: none;
         }
         .native-name-input:focus { border-color: var(--coral); }
