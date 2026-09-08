@@ -47,6 +47,26 @@ export const CONTRACT_FIELD_KEYS: readonly ContractFieldOverrideKey[] = [
   'moveInDate', 'expectedMoveOut', 'dueDay', 'roomNo', 'registrationStatus', 'nameStyle',
 ]
 
+/**
+ * 화면이 이 칸을 부르는 사람 말 이름 — 목록 모달의 첫 열과 되돌리기 토스트가 같은 말을 쓴다.
+ *
+ * **아래 CONTRACT_FIELD_ERROR 가 쓰는 이름을 그대로 옮긴 것이다.** 같은 칸을 검증 문구는
+ * '입실료' 라 부르는데 목록은 '월 임대료' 라 부르면, 운영자는 두 화면에서 다른 칸 이야기를
+ * 듣는다. 실거주 확인서의 RESIDENCE_CERT_FIELD_LABEL 이 같은 이유로 이미 서 있다.
+ * 두 맵이 갈리지 않게 감지망이 각 이름이 짝 문구의 머리인지 본다(scripts/test-field-override-list).
+ */
+export const CONTRACT_FIELD_LABEL: Record<ContractFieldOverrideKey, string> = {
+  rentAmount: '입실료',
+  depositAmount: '보증금',
+  cleaningFee: '청소비',
+  moveInDate: '입실일',
+  expectedMoveOut: '퇴실 예정일',
+  dueDay: '매월 납부일',
+  roomNo: '호실',
+  registrationStatus: '전입신고',
+  nameStyle: '성명 표기',
+}
+
 /** 검증에 걸린 키를 운영자에게 설명하는 문구. 화면이 "저장 안 됨"만 말하면 이유를 끝내 못 알려준다. */
 export const CONTRACT_FIELD_ERROR: Record<ContractFieldOverrideKey, string> = {
   rentAmount: '입실료는 0원 이상 1억원 이하의 숫자로 입력해 주세요.',
@@ -227,4 +247,29 @@ export function normalizeContractFieldOverrides(
   }
   const value = parsed as ContractFieldOverrides
   return { value: Object.keys(value).length ? value : null, invalidKeys: [] }
+}
+
+/**
+ * 목록에 행으로 설 칸 — 툴바 배지의 N 과 모달의 행 수가 보는 **단 하나의 출처**다.
+ * 두 곳이 각자 세면 "직접 입력 3칸" 을 눌렀는데 두 줄이 뜨는 화면이 나온다.
+ *
+ * 여덟 칸은 '저장돼 있다' 가 곧 '고쳐졌다' 다 — 바로 위 normalizeContractFieldOverrides 가
+ * 자동값과 같아진 키를 저장에서 걷어내기 때문이다. **nameStyle 만 그 가지치기의 예외라**
+ * (그 함수의 `key === 'nameStyle'` 분기) 자동값과 같은 값도 그대로 남는다. 그것을 세면 지금 값과
+ * 자동값이 글자까지 같은 행이 서고 N 이 실제보다 커진다. 그래서 이 칸만 **종이의 표기를 실제로
+ * 바꾸고 있을 때**를 조건으로 둔다.
+ *
+ * @param nameStyle     이 계약서가 실제로 찍는 표기(저장값이 이긴 최종 해석).
+ * @param autoNameStyle 저장값을 뺐을 때 섰을 표기. 두 값이 같으면 그 오버라이드는 아무것도 안 바꾼다.
+ */
+export function overriddenContractFieldKeys(
+  overrides: ContractFieldOverrides,
+  nameStyle: DocNameStyle,
+  autoNameStyle: DocNameStyle,
+): ContractFieldOverrideKey[] {
+  return CONTRACT_FIELD_KEYS.filter(k => (
+    k === 'nameStyle'
+      ? overrides.nameStyle !== undefined && nameStyle !== autoNameStyle
+      : overrides[k] !== undefined
+  ))
 }

@@ -20,7 +20,8 @@ import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { noteDocNameStyle } from '@/app/(app)/tenants/docNameStyle'
 import { saveContractOverride, resetContractOverride, setTenantSmoking, saveContractFieldOverride, resetContractFieldOverrides, clearContractSignature, voidContractVersion, supersedeContractVersion, restoreContractVersion, getIssuePurposeContext } from './actions'
-import type { ContractFieldOverrideKey, ContractFieldOverridePatch } from '@/lib/contractFieldOverrides'
+import { CONTRACT_FIELD_LABEL, type ContractFieldOverrideKey, type ContractFieldOverridePatch, type ContractLeaseFields } from '@/lib/contractFieldOverrides'
+import { FieldOverrideListModal, fieldUndoneMessage, type FieldOverrideRow } from '@/components/doc/FieldOverrideListModal'
 import { DEFAULT_DOC_NAME_STYLE, DOC_NAME_STYLE_LABEL, NATIVE_NAME_MAX, asDocNameStyle, docNameStyles, documentName, isForeignForDocuments, registrationHeadPair, showsForeignFields } from '@/lib/documentName'
 import { submitRemoteSignature, finalizeRemoteSubmission } from '@/app/sign/[token]/actions'
 import { checkContractShareDrift } from '@/app/(app)/tenants/contractShare'
@@ -29,6 +30,7 @@ import { asResolvedContractTranslation, contractTranslationAddendum, translation
 import { ContractTranslationCard } from '@/components/doc/ContractTranslationView'
 import { kstYmdStr } from '@/lib/kstDate'
 import { roomLabel } from '@/lib/tenantAddress'
+import { fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast, humanError } from '@/lib/saveStatus'
 import { toSlots, signStageSlots, missingSlots } from '@/lib/disposalSignGate'
 import { parseSignDocuments } from '@/lib/signDocuments'
@@ -67,6 +69,26 @@ const amtText = (s: string) => {
   return d ? parseInt(d, 10).toLocaleString() : ''
 }
 const dueDayLabel = (v: string) => (v ? (v.includes('말') ? '매월 말일' : `매월 ${parseInt(v, 10)}일`) : '—')
+/**
+ * 표시값 한 칸을 사람이 읽는 문자열로 — '직접 입력 N칸' 목록의 '지금 값'·'자동값' 열이 쓴다.
+ *
+ * 병합값과 자동값이 **같은 함수**를 지나야 한다. 두 벌로 적으면 같은 금액이 한쪽은 '500,000원',
+ * 한쪽은 '500000' 으로 보여 고치지도 않은 칸이 달라 보인다.
+ * 빈 값은 '빈칸' 이라 적는다 — 아무것도 안 그리면 그 자리가 잘린 것인지 빈 것인지 알 수 없다.
+ */
+const fieldValueText = (key: ContractFieldOverrideKey, v: ContractLeaseFields): string => {
+  switch (key) {
+    // §06 — 인라인 toLocaleString()+'원' 금지, 포맷 유틸 단일 경유.
+    case 'rentAmount': case 'depositAmount': case 'cleaningFee':
+      return fmtWon(v[key])
+    case 'moveInDate': case 'expectedMoveOut':
+      return v[key] ? fmtDate(v[key]) : '빈칸'
+    case 'dueDay': return v.dueDay ? dueDayLabel(v.dueDay) : '빈칸'
+    case 'roomNo': return roomLabel(v.roomNo) || '빈칸'
+    case 'registrationStatus': return v.registrationStatus
+    case 'nameStyle': return DOC_NAME_STYLE_LABEL[v.nameStyle]
+  }
+}
 // 서버(app/contract/[tenantId]/actions.ts)와 **같은 문구**여야 한다. 화면이 막고 말하는 이유와
 // 서버가 거부하며 말하는 이유가 다르면, 운영자는 두 화면에서 서로 다른 해결책을 듣는다.
 // 화면 문법은 흡연 select 과 동일 — 정보 표 안에서 같은 크기·같은 테두리로 보여야 한다.
@@ -564,6 +586,59 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
           key === 'registrationStatus' ? '표시만 바뀝니다. 실제 신고 상태는 입실자 정보에서 관리합니다.' : '',
           res.closedLinks > 0 ? '보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : '',
         ].filter(Boolean).join(' '))
+        router.refresh()
+      } finally { release() }
+    })
+  }
+
+  // ── 직접 입력한 표시값 목록 ────────────────────────────────────────
+  // 배지가 "표시값 수정" 이라고만 말하던 시절에는 어느 칸이 고쳐졌는지 화면 어디에도 없었다.
+  // 손으로 고친 칸은 입실자 정보를 바꿔도 안 따라오므로(임대료를 올렸는데 계약서만 옛 금액으로
+  // 나가는 사고) 무엇이 그 상태인지 셀 수 있어야 한다. 판정은 서버 정본이 낸 목록 하나다.
+  const [fieldListOpen, setFieldListOpen] = useState(false)
+  const [undoingKey, setUndoingKey] = useState<string | null>(null)
+  const overriddenKeys = useMemo(() => data.overriddenFieldKeys ?? [], [data.overriddenFieldKeys])
+  const fieldRows = useMemo<FieldOverrideRow[]>(() => {
+    const auto = data.fieldAuto
+    const now = data.lease
+    if (!auto || !now) return []
+    return overriddenKeys.map(key => ({
+      key,
+      label: CONTRACT_FIELD_LABEL[key],
+      // 지금 값은 서버가 병합해 내려준 값이다 — 종이가 실제로 쓰는 값이고, 잠긴 계약서에서는 박제값이다.
+      current: fieldValueText(key, now),
+      auto: fieldValueText(key, auto),
+    }))
+  }, [data.fieldAuto, data.lease, overriddenKeys])
+  // 마지막 행이 사라지면 닫는다. 빈 목록은 막다른 창이고, 배지도 같은 수를 보므로 함께 내려간다.
+  useEffect(() => { if (fieldRows.length === 0) setFieldListOpen(false) }, [fieldRows.length])
+  // 서버 목록이 바뀌면(되돌리기 반영) 진행 표시를 푼다.
+  useEffect(() => { setUndoingKey(null) }, [overriddenKeys])
+
+  /**
+   * 칸 하나만 자동값으로 — **기존 정본 경로에 빈 값을 실어 보낸다**(필드 단위 적용취소).
+   * 서버 액션·잠금·링크 닫힘 규칙이 저장 경로와 같은 한 벌이라 여기서 다시 배선할 것이 없다.
+   *
+   * commitField 를 그대로 부르지 않는 이유는 하나다 — 그 함수의 납부일 분기(원천이 빈 계약)는
+   * 빈 값을 받으면 조용히 되돌아간다. 그 길로 보내면 납부일만 되돌리기가 아무 일도 안 하고
+   * 화면은 이유를 말하지 못한다. 확인창은 없다(§27.4 비파괴 단일 값), 결과는 토스트가 맡는다.
+   */
+  const undoField = (row: FieldOverrideRow) => {
+    const leaseId = data.lease?.id
+    if (!leaseId || remote || bodyLocked || undoingKey) return
+    const key = row.key as ContractFieldOverrideKey
+    setUndoingKey(key)
+    const patch: ContractFieldOverridePatch = { [key]: null }
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await saveContractFieldOverride(leaseId, patch)
+        if (!res.ok) { pushToast('error', res.error); setUndoingKey(null); return }
+        // 폼 값은 되맞추지 않는다 — 서버 값이 도착하면 위 useEffect(data.lease)가 전 칸을 다시 세운다.
+        // 여기서 손으로 쓰면 아직 옛 병합값인 props 를 도로 적어 되돌린 칸이 그대로 남는다.
+        pushToast('success', fieldUndoneMessage(row.label)
+          // 링크 닫힘 꼬리는 저장 경로와 같은 문장이다 — 같은 부작용을 두 말로 설명하면 안 된다.
+          + (res.closedLinks > 0 ? ' 보낸 서명 링크는 닫혔습니다. 서명 요청을 다시 보내 주세요.' : ''))
         router.refresh()
       } finally { release() }
     })
@@ -1583,6 +1658,21 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
       ) : (
       <div className="no-print toolbar">
         <Link href={`/tenants?tenantId=${data.tenant.id}`} className="toolbar-link">‹ 입실자 정보</Link>
+        {/* 상태·문은 뒤로가기 옆 왼쪽이다. 실거주 확인서가 같은 버튼을 여기 두므로 같은 문이
+            두 화면에서 반대편에 서면 안 되고, 끝자리는 주 CTA(발급·서명 요청)의 것이다. */}
+        {/* 둘이 나란히 설 때 조항(본문)과 칸(표시값)으로 갈려야 한다 — 종전 '개별 수정본' 은
+            무엇의 수정본인지 말하지 않아 옆의 표시값 배지와 같은 것을 가리키는 것으로 읽혔다. */}
+        {data.hasOverride && !editing && (
+          <span className="toolbar-badge">본문 수정본</span>
+        )}
+        {/* 상태 표시가 아니라 문이다 — 누르면 어느 칸이 고쳐졌는지 보이고 거기서 되돌린다.
+            개수가 붙어야 명령('표시값을 수정하라')으로 안 읽히고 목록이 있음을 암시한다.
+            §11 이 버튼형을 배지 범위 밖으로 두므로 배지가 아니라 버튼이다. */}
+        {fieldRows.length > 0 && !editing && (
+          <button type="button" className="toolbar-btn-info" onClick={() => setFieldListOpen(true)}>
+            직접 입력 {fieldRows.length}칸 ›
+          </button>
+        )}
         <div className="toolbar-spacer" />
         {!editing && (
           <>
@@ -1623,8 +1713,10 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
               )
             )}
             {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
+            {/* §16 라벨 '적용취소' 단일. 칸 하나씩 되돌리는 목록 행과 같은 동작이라 명사로만 가른다 —
+                한쪽이 '자동값 복원' 이면 같은 동작에 두 이름이 서고, 운영자는 둘을 다른 기능으로 읽는다. */}
             <button onClick={handleResetAuto} className="toolbar-btn-secondary">
-              자동값 복원
+              전체 적용취소
             </button>
             {/* 잠겨도 버튼을 없애지 않는다. 없애면 왜 없는지 아무도 모르고 다음 세션이
                 '버튼이 사라졌다'를 새 결함으로 신고한다. 누르면 이유와 길을 말한다. */}
@@ -1687,14 +1779,19 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
             </button>
           </>
         )}
-        {data.hasOverride && !editing && (
-          <span className="toolbar-badge">개별 수정본</span>
-        )}
-        {data.hasFieldOverrides && !editing && (
-          <span className="toolbar-badge">표시값 수정</span>
-        )}
       </div>
       )}
+
+      <FieldOverrideListModal
+        open={fieldListOpen}
+        onClose={() => setFieldListOpen(false)}
+        rows={fieldRows}
+        // 잠긴 계약서는 되돌리기 자리 자체가 없다. 아래 한 문장이 이유를 맡으므로 '버튼을 없애지
+        // 말라'(위 본문 편집 주석)와 어긋나지 않는다 — 이유가 같은 창 안에 있다.
+        onUndo={bodyLocked ? undefined : undoField}
+        undoingKey={undoingKey}
+        lockMessage={bodyLocked ? fieldLockMessage(versionCtx?.multiVersion === true, 'here') : undefined}
+      />
 
       {/* 참고용 번역본 — 계약서 종이 **위**에 선다. 입주자가 종이를 읽기 전에 만나야 한다.
           **원격·운영자 화면 둘 다 그린다**(운영자 지적 2026-09-08). 운영자가 제 기기를 건네
@@ -2282,9 +2379,17 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .toolbar-btn-secondary:hover { background: var(--cream-soft); }
         .toolbar-btn-secondary:active { background: var(--cream-soft); transform: scale(0.98); }
         .toolbar-btn-warn { color: var(--warning-fg); border-color: var(--warning-ring); }
+        /* 열리는 버튼 — 바로 위 .toolbar-btn-warn 과 같은 문법(색만 갈린다). info 인 이유는 §04 다:
+           고쳐진 칸이 있다는 것은 결함이 아니라 사실 고지다. warning 으로 세워 두었더니 운영자가
+           결함으로 읽었다(2026-09-08). */
+        .toolbar-btn-info { padding: 6px 12px; background: var(--cream); color: var(--info-fg); border: 1px solid var(--info-ring); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
+        .toolbar-btn-info:hover { background: var(--cream-soft); }
+        .toolbar-btn-info:active { background: var(--cream-soft); transform: scale(0.98); }
         .toolbar-status { font-size: 12px; color: var(--warning-fg); font-weight: 600; }
         .toolbar-hint { font-size: 11px; color: var(--ink-m); }
-        .toolbar-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
+        /* §11 틴트 배지 = -bg + -fg, ring 없음, §07 r-sm 6. 종전 999px + ring 1px 은 두 § 를 함께
+           어겼다(글자를 담은 배지에 r-pill, 틴트 면에 같은 색 테두리를 또 얹는 이중 강조). */
+        .toolbar-badge { padding: 3px 8px; background: var(--info-bg); color: var(--info-fg); border-radius: 6px; font-size: 11px; font-weight: 600; }
         /* 원격 '제출하기' — 44pt 터치타깃 */
         .remote-submit { min-height: 44px; padding: 10px 20px; font-size: 14px; }
 

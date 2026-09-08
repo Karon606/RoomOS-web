@@ -12,7 +12,11 @@ import {
   resolveRoomScheduleAddendum, rateAddendumFor,
   resolveSignedBody,
 } from '@/lib/contract'
-import { contractLeaseFields, parseContractFieldOverrides, type ContractLeaseRow, type RegistrationStatusLabel } from '@/lib/contractFieldOverrides'
+import {
+  contractLeaseFields, deriveContractLeaseFields, parseContractFieldOverrides,
+  overriddenContractFieldKeys,
+  type ContractFieldOverrideKey, type ContractLeaseFields, type ContractLeaseRow, type RegistrationStatusLabel,
+} from '@/lib/contractFieldOverrides'
 import { type DocNameStyle, documentName, asDocNameStyle, docNameStyles, isForeignForDocuments, resolveDocNameStyle, signedDocNameStyle } from '@/lib/documentName'
 import { formatForeignRegNo } from '@/lib/foreignRegNo'
 import { readStoredForeignRegNo } from '@/lib/pii'
@@ -150,6 +154,22 @@ export type ContractData = {
   // 표시값 오버라이드(금액·날짜·호실 등)를 쓰고 있는가 — 툴바 배지·자동값 복원 판단용.
   // 본문 오버라이드(hasOverride)와 별개다. 이쪽은 조항이 아니라 정보 표의 값이다.
   hasFieldOverrides: boolean
+  /**
+   * 오버라이드를 하나도 안 얹었을 때의 표시값 — 목록 모달이 '자동값' 열에 그린다.
+   *
+   * 화면이 직접 못 만든다. `lease` 는 이미 병합된 값이라 무엇이 덮였는지 그 안에 흔적이 없다.
+   * 규칙을 화면에 복제하면 파생 규칙이 두 벌이 되므로 정본(deriveContractLeaseFields)이 낸
+   * 값을 그대로 내려보낸다.
+   *
+   * **옵셔널인 이유** — 링크 스냅샷에는 이 칸이 실리지 않는다(contractShare 가 저장 전에
+   * 벗긴다). 원격 화면은 그 스냅샷을 이 타입으로 읽으므로 런타임에는 정말로 없다.
+   */
+  fieldAuto?: ContractLeaseFields | null
+  /**
+   * 목록에 행으로 설 칸 — 저장된 오버라이드 키를 CONTRACT_FIELD_KEYS 순서로 세운다.
+   * 배지의 N 과 모달의 행 수가 같은 값을 보게 하는 유일한 출처다. fieldAuto 와 같은 이유로 옵셔널.
+   */
+  overriddenFieldKeys?: ContractFieldOverrideKey[]
   businessInfo: BusinessInfo
   phone: string | null                 // 영업장 전화 — v2.0 §26 헤더/푸터 메타
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
@@ -434,11 +454,34 @@ export async function buildContractData(
       hasForeignRegNo: !!tenant.foreignRegNoEnc,
       available: docNameStyles(nameStyleSource),
     })
+  /**
+   * 표기를 안 골랐다면 섰을 값 — 목록의 '자동값' 열이자 '이 칸이 정말 고쳐졌는가'의 기준이다.
+   *
+   * **축을 위와 똑같이 손으로 적는다.** 공통 객체로 묶어 스프레드하면 감지망
+   * (scripts/check-doc-name-axis.mjs ⓒ)이 이 호출의 축을 못 본다 — 그 그물은 객체 리터럴 안의
+   * `tenant:` 를 눈으로 찾으므로, 변수로 감추면 축이 빠져도 조용히 통과한다. 축이 갈리는 것을
+   * 막는 일은 묶기가 아니라 그 그물이 맡는다.
+   */
+  const autoNameStyle = signedAlready
+    ? signedDocNameStyle({ signed: asDocNameStyle(signedSnap?.nameStyle) })
+    : resolveDocNameStyle({
+      siblings: inherited ? [inherited] : [],
+      tenant: asDocNameStyle(tenant.docNameStyle),
+      nationality: tenant.nationality,
+      hasForeignRegNo: !!tenant.foreignRegNoEnc,
+      available: docNameStyles(nameStyleSource),
+    })
+  // 무엇이 행으로 서는가의 규칙은 표시값 정본이 낸다(nameStyle 예외의 경위는 그 함수 주석).
+  const overriddenFieldKeys = overriddenContractFieldKeys(fieldOverrides, nameStyle, autoNameStyle)
 
   return {
     template: body.template,
     hasOverride: !!override,
     hasFieldOverrides: Object.keys(fieldOverrides).length > 0,
+    // 자동값은 파생 정본이 낸다. nameStyle 만 그 함수가 모르는 축(이어받기·사람 단위 값·국적)을
+    // 봐야 나오므로 위에서 해석한 값을 얹는다 — deriveContractLeaseFields 가 아는 값은 'ko' 뿐이다.
+    fieldAuto: lease ? { ...deriveContractLeaseFields(lease), nameStyle: autoNameStyle } : null,
+    overriddenFieldKeys,
     businessInfo: body.businessInfo ?? EMPTY_BUSINESS_INFO,
     phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain

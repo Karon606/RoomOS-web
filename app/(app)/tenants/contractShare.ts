@@ -43,6 +43,22 @@ function withoutPlainPii(d: ContractData): ContractData {
   return { ...d, tenant: { ...d.tenant, foreignRegNo: null } }
 }
 
+/**
+ * 운영자 화면 전용 칸을 벗긴다 — 링크 스냅샷은 이 기능 전과 **바이트로 같아야 한다.**
+ *
+ * fieldAuto·overriddenFieldKeys 는 '직접 입력 N칸' 목록이 쓰는 값이고 운영자 화면에서만 산다.
+ * 벗기지 않으면 두 가지가 깨진다. ① 표시값을 고친 계약의 templateSnapshot 바이트가 달라진다
+ * (`translation` 을 조건부 스프레드로 둔 것과 같은 급소). ② **운영자가 오버라이드로 덮어 감춘
+ * 자동값이 입주자가 여는 24시간 공개 JSON 에 실린다** — 관 제출용으로 다르게 적은 금액이 있다면
+ * 그 원값이 그대로 나간다. 화면이 필요로 하는 값과 종이가 지고 갈 값은 같지 않다.
+ */
+function withoutScreenOnly(d: ContractData): ContractData {
+  const rest = { ...d }
+  delete rest.fieldAuto
+  delete rest.overriddenFieldKeys
+  return rest
+}
+
 /** 스냅샷을 화면·인쇄에 쓰기 직전에 평문을 다시 끼운다. 저장된 값은 건드리지 않는다. */
 async function injectForeignRegNo(d: ContractData, tenantId: string): Promise<ContractData> {
   if (!d.tenant?.hasForeignRegNo) return d
@@ -450,7 +466,7 @@ export async function issueContractShareLink(tenantId: string, namedLeaseTermId?
           // 안 쓰는 영업장의 링크 스냅샷이 이 기능 전과 달라지고, printedFacts 의 '없으면 축도
           // 없다' 규칙과도 어긋난다.
           templateSnapshot: {
-            ...(withoutPlainPii(snapshot) as unknown as Record<string, unknown>),
+            ...(withoutScreenOnly(withoutPlainPii(snapshot)) as unknown as Record<string, unknown>),
             signLang,
             ...(translation ? { translation } : {}),
           } as unknown as object,

@@ -7,8 +7,9 @@ import type { ResidenceCertData } from './actions'
 import { saveResidenceCertFieldOverride, resetResidenceCertFieldOverrides } from './actions'
 import {
   type ResidenceCertFieldValues, type ResidenceCertOverrideKey, type ResidenceCertOverridePatch,
-  RESIDENCE_CERT_FIELD_LABEL, fmtCertDate, mergeResidenceCertFields,
+  RESIDENCE_CERT_FIELD_LABEL, RESIDENCE_CERT_KEYS, fmtCertDate, mergeResidenceCertFields,
 } from '@/lib/documentFieldOverrides'
+import { FieldOverrideListModal, fieldUndoneMessage, type FieldOverrideRow } from '@/components/doc/FieldOverrideListModal'
 import { DOC_NAME_STYLE_LABEL, asDocNameStyle, docNameStyles, documentName, resolveDocNameStyle, docNameStyleConflict, type DocNameStyle } from '@/lib/documentName'
 import { docFileLabel } from '@/lib/docBundle'
 import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
@@ -39,6 +40,11 @@ const OVERRIDE_OF: Record<OverrideViewKey, ResidenceCertOverrideKey> = {
   depositText: 'depositAmount',
 }
 const isOverrideViewKey = (k: string): k is OverrideViewKey => k in OVERRIDE_OF
+// 역방향 — 저장 키에서 화면 칸으로. 목록 모달은 저장 키 순서로 도므로 이쪽 방향이 필요하다.
+// 손으로 한 벌 더 적지 않고 뒤집는다: 두 벌이면 칸을 하나 더할 때 한쪽만 늘어 목록에서 빠진다.
+const VIEW_OF = Object.fromEntries(
+  (Object.keys(OVERRIDE_OF) as OverrideViewKey[]).map(v => [OVERRIDE_OF[v], v]),
+) as Record<Exclude<ResidenceCertOverrideKey, 'nameStyle'>, OverrideViewKey>
 const AMOUNT_KEYS: ResidenceCertOverrideKey[] = ['rentAmount', 'depositAmount']
 const amtNum = (s: string) => {
   const n = parseInt(s.replace(/[^0-9]/g, ''), 10)
@@ -70,9 +76,15 @@ const nameSourceOf = (data: ResidenceCertData) =>
  * 상태로 열면 셀렉트는 영문인데 종이에는 한글 이름이 찍혔다. 한 번 골랐다 되돌리면 그때야
  * 맞아졌다(2026-08-31 운영자 실기).
  */
-function docNameStyleOf(data: ResidenceCertData): DocNameStyle {
+/**
+ * @param withSaved false 면 **이 서류에 저장된 표기를 뺀** 해석 — 목록 모달의 '자동값' 열이자
+ *   '성명 표기를 되돌리면 무엇이 되는가'의 답이다. data.autoFields.nameStyle 로는 못 낸다.
+ *   그 값은 늘 '한글' 이라(계약 행에서 파생할 것이 없다) 외국인의 자동값을 '영문' 이 아니라
+ *   '한글' 이라고 말한다. 저장 키를 뺀 나머지 축은 아래 한 벌뿐이라 두 답이 갈릴 수 없다.
+ */
+function docNameStyleOf(data: ResidenceCertData, withSaved = true): DocNameStyle {
   return resolveDocNameStyle({
-    saved: asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle),
+    saved: withSaved ? asDocNameStyle((data.overrides as { nameStyle?: unknown } | null)?.nameStyle) : undefined,
     siblings: data.lastNameStyle ? [data.lastNameStyle] : [],
     tenant: data.tenantDocNameStyle,
     nationality: data.tenantNationality,
@@ -197,6 +209,59 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
       .finally(() => release())
   }
 
+  // ── 직접 입력한 표시값 목록 ────────────────────────────────────────
+  // 계약서와 같은 모달·같은 문구를 쓴다(components/doc/FieldOverrideListModal). 종전 배지는
+  // "표시값 수정" 이라고만 말해 **어느 칸이** 고쳐졌는지 알려주지 않았고, 그 칸들은 고객 정보를
+  // 고쳐도 안 따라온다. 같은 뜻이 두 화면에서 다르게 보이면 안 된다는 규칙이 그대로 이어진다.
+  const [fieldListOpen, setFieldListOpen] = useState(false)
+  const [undoingKey, setUndoingKey] = useState<string | null>(null)
+  const autoNameStyle = docNameStyleOf(data, false)
+  const fieldRows = useMemo<FieldOverrideRow[]>(() => {
+    const stored = data.overrides as Record<string, unknown>
+    // 저장된 키가 곧 고쳐진 칸이다 — normalizeResidenceCertOverrides 가 자동값과 같아진 키를
+    // (nameStyle 포함) 전부 걷어내므로 계약서 쪽 nameStyle 예외 같은 것이 여기엔 없다.
+    return RESIDENCE_CERT_KEYS.filter(k => stored[k] !== undefined).map(key => key === 'nameStyle'
+      ? {
+        key,
+        label: RESIDENCE_CERT_FIELD_LABEL.nameStyle,
+        current: DOC_NAME_STYLE_LABEL[savedNameStyle],
+        auto: DOC_NAME_STYLE_LABEL[autoNameStyle],
+      }
+      : {
+        key,
+        label: RESIDENCE_CERT_FIELD_LABEL[key],
+        current: savedView[VIEW_OF[key]] || '빈칸',
+        auto: autoView[VIEW_OF[key]] || '빈칸',
+      })
+  }, [data.overrides, savedNameStyle, autoNameStyle, savedView, autoView])
+  // 마지막 행이 사라지면 닫는다 — 빈 목록은 막다른 창이다. 배지(버튼)도 같은 수를 본다.
+  useEffect(() => { if (fieldRows.length === 0) setFieldListOpen(false) }, [fieldRows.length])
+  useEffect(() => { setUndoingKey(null) }, [data.overrides])
+
+  // 칸 하나만 자동값으로 — 저장 경로에 빈 값을 실어 보내는 필드 단위 적용취소(commit 과 같은 정본).
+  // 확인창은 없다(§27.4 비파괴 단일 값). 결과는 토스트가 맡는다.
+  const undoField = (row: FieldOverrideRow) => {
+    const leaseTermId = data.leaseTermId
+    if (!leaseTermId || undoingKey) return
+    const key = row.key as ResidenceCertOverrideKey
+    setUndoingKey(key)
+    const patch: ResidenceCertOverridePatch = { [key]: null }
+    const release = trackSave()
+    saveResidenceCertFieldOverride(leaseTermId, patch)
+      .then(res => {
+        if (!res.ok) { pushToast('error', res.error); setUndoingKey(null); return }
+        // 성명 표기만 화면 값을 손으로 맞춘다. 나머지 다섯 칸은 savedView 효과가 서버 값으로
+        // 되맞추지만, 종이의 성명은 그 효과의 대상이 아니라 여기서 안 맞추면 선택과 이름이 갈린다.
+        if (key === 'nameStyle') {
+          setNameStyle(autoNameStyle)
+          setF(p => ({ ...p, tenantName: documentName(nameSource, autoNameStyle) }))
+        }
+        pushToast('success', fieldUndoneMessage(row.label))
+        router.refresh()
+      })
+      .finally(() => release())
+  }
+
   // 디자인 폭(595.3pt)을 viewport 에 맞춰 scale.
   // 상한 4/3 은 '종이가 실물 A4 폭을 넘지 않는다' 는 뜻이다 — 793.7(A4 를 CSS px 로) / 595.3(pt) = 4/3.
   // 종전 1.4 는 실물의 1.05배였다. 계약서 상한 1 과 달라 보였지만 단위(px 대 pt)가 달랐을 뿐
@@ -294,7 +359,17 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
 
       <div className="no-print rc-toolbar">
         <Link href={back.href} className="rc-link">‹ {back.label}</Link>
-        {overrideCount > 0 && <span className="rc-badge">표시값 수정</span>}
+        {/* 상태 표시가 아니라 문이다 — 누르면 어느 칸이 고쳐졌는지 보이고 거기서 되돌린다.
+            계약서 툴바의 .toolbar-btn-info 와 같은 문구·같은 동작이다(§11 버튼형은 배지 밖). */}
+        {fieldRows.length > 0 && (
+          // 형제(전체 적용취소·보내기·발급)와 **같은 정본**을 탄다 — 이 툴바의 버튼은 전부 md 44px 다.
+          // 계약서 툴바의 28px 문법을 그대로 베끼면 같은 줄에서 혼자 작아진다(디자이너 지적).
+          // .rc-btn-info 는 색만 얹는다.
+          <button type="button" className={btnClass('secondary', 'md', 'rc-btn-info')}
+            onClick={() => setFieldListOpen(true)}>
+            직접 입력 {fieldRows.length}칸 ›
+          </button>
+        )}
         <div className="rc-spacer" />
         {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다. 문법은 옆의 작성일 칸과 같은 rc-field. */}
         {canPickName && (
@@ -310,12 +385,23 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
         {/* 사진 저장은 '내보내기'가 흡수했다(§30.4, 운영자 확정 6). 그쪽이 형식을 먼저 묻고
             사진을 고르면 전 페이지를 그리므로 기능이 줄지 않고 다페이지 유실만 사라진다.
             1단계 다음 커밋에서 이 툴바를 상단 크롬 + 하단 액션바로 나눈다. */}
-        <Btn variant="secondary" size="md" onClick={reset}>자동값으로</Btn>
+        {/* §16 라벨 '적용취소' 단일. 모달 행이 '적용취소' 인데 여기만 '자동값으로' 이면
+            같은 동작에 두 이름이 선다. 범위 차이는 명사('전체')가 진다. */}
+        <Btn variant="secondary" size="md" onClick={reset}>전체 적용취소</Btn>
         <SendDocButton getPdfBytes={fetchPreviewBytes} fileName={docFileName} className={btnClass('secondary', 'md')} />
         <Btn variant="primary" size="md" onClick={handleIssue} disabled={issuing}>
           {issuing ? '발급 중…' : '발급'}
         </Btn>
       </div>
+
+      {/* 잠금이 없는 서류다 — 실거주 확인서에는 서명 확정 개념이 없어 lockMessage 를 안 넘긴다. */}
+      <FieldOverrideListModal
+        open={fieldListOpen}
+        onClose={() => setFieldListOpen(false)}
+        rows={fieldRows}
+        onUndo={undoField}
+        undoingKey={undoingKey}
+      />
 
       <p className="no-print rc-hint">
         원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요. 보이는 그대로 발급됩니다.
@@ -429,8 +515,12 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
         .rc-issue:disabled { opacity: 0.6; }
         .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--warm-border); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .rc-btn-secondary:disabled { opacity: 0.6; }
-        /* 계약서 툴바 배지(.toolbar-badge)와 같은 토큰 — 같은 뜻이 두 화면에서 다르게 보이면 안 된다 */
-        .rc-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
+        /* 계약서 툴바의 .toolbar-btn-info 와 같은 뜻(§04 info = 예정·정보) — 같은 뜻이 두 화면에서
+           다르게 보이면 안 된다. 종전 .rc-badge(배지)는 이 버튼이 대신한다: 누를 수 있는 것을
+           배지로 세우면 §11 을 어기고, 운영자는 warning 색을 결함으로 읽었다.
+           **크기·모양·눌림은 여기서 안 정한다.** 이 툴바의 형제가 전부 Btn md 라 그 정본(btnClass)
+           을 타고, 이 규칙은 색만 얹는다 — 치수를 여기 적으면 형제와 갈린다. */
+        .rc-btn-info { color: var(--info-fg); border-color: var(--info-ring); }
         .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: var(--ink-m); margin: 0 0 12px; line-height: 1.5; }
         .rc-note { width: min(595px, 100% - 24px); font-size: 12px; color: var(--ink-m); margin: 0 0 12px; line-height: 1.5; }
         .rc-warn { width: min(595px, 100% - 24px); font-size: 12px; color: var(--warning-fg); background: var(--warning-bg); border: 1px solid var(--warning-ring); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; line-height: 1.5; }
