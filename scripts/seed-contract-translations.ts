@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { parseContractTranslations, mergeTranslationLang, asTranslationLang } from '../lib/contractTranslation'
+import { parseContractTranslations, mergeTranslationLang, asTranslationLang, refundTranslationKey } from '../lib/contractTranslation'
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL }) })
 const dir = process.argv[2]
@@ -41,17 +41,26 @@ async function main() {
       const bad = rows.filter(r => phSet(r.ko) !== phSet(r.t ?? ''))
       const empty = rows.filter(r => !(r.t ?? '').trim())
       const dict: Record<string, string> = {}
+      // 환불 규정 줄은 넣지 않는다. 그 칸은 '빈 칸 = 권장 번역' 규칙이라, 값을 넣으면
+      // 권장과 다른 직접 번역으로 표시돼 경고가 선다. 권장 문안이 정본이므로 비워 둔다.
+      const refundKey = refundTranslationKey()
+      let skippedRefund = 0
       for (const r of rows) {
         if (!r.ko || !(r.t ?? '').trim()) continue
         if (phSet(r.ko) !== phSet(r.t)) continue
+        if (r.ko === refundKey) { skippedRefund++; continue }
         dict[r.ko] = r.t.trim()
       }
+      if (skippedRefund) console.log(`   (환불 규정 ${skippedRefund}줄은 권장 문안을 쓰도록 비워 둔다)`)
       console.log(`${lang}: 파일 ${rows.length}줄 / 넣을 것 ${Object.keys(dict).length}줄`
         + (bad.length ? ` / 자리표시자 어긋남 ${bad.length}줄(제외)` : '')
         + (empty.length ? ` / 빈 번역 ${empty.length}줄(제외)` : ''))
       if (bad.length) for (const b of bad) console.log(`   [제외] ${b.ko.slice(0, 40)}…`)
 
-      stored = mergeTranslationLang(stored, lang, dict)
+      // 병합 정본은 자리표시자가 어긋나면 거부한다(ok:false). 여기서 조용히 넘기지 않는다.
+      const res = mergeTranslationLang(stored, lang, { dict })
+      if (!res.ok) { console.log(`   [거부] 자리표시자 누락 ${res.missing.length}건 — 이 언어는 건너뛴다.`); continue }
+      stored = res.next
       touched++
     }
 
