@@ -199,6 +199,24 @@ for (const file of files) {
   }
 }
 
+// 축 2 — 날것 `<input type="date">` 가 **폼 칸**으로 태어나는 것을 막는다.
+//
+// 브라우저 기본 date 입력은 제 표기 폭을 고집해 w-full 로도 안 줄고, 표기도 로케일 기본이라
+// 형제 칸이 '2026년 9월 8일'인 폼에 혼자 '2026. 9. 8.'로 뜬다. 실제로 보증금 영수증의 발행일이
+// 카드 밖으로 튀어나갔다(운영자 신고 2026-09-08).
+//
+// 툴바 칩(.toolbar-field·.rc-field)은 예외다 — 거기는 형제가 select 인 칩 문법이고, 넘침은
+// min-width: 0 · max-width: 100% 안전선이 막는다.
+for (const file of files) {
+  const src = readFileSync(file, 'utf8')
+  for (const m of src.matchAll(/<input[^>]*type="date"/g)) {
+    const before = src.slice(Math.max(0, m.index - 220), m.index)
+    if (/(toolbar-field|rc-field)/.test(before)) continue
+    const line = src.slice(0, m.index).split('\n').length
+    violations.push(`${file}:${line} 날것 <input type="date"> 가 폼 칸으로 서 있다 — 정본 DatePicker 를 형제와 같은 껍데기로 쓰라(칸이 넘치고 표기가 형제와 갈린다, 신고 2026-09-08)`)
+  }
+}
+
 console.log(`[날짜 칸 껍데기] 호출부 ${checked}곳 검사 / 위반 ${violations.length}건`)
 for (const v of violations) console.log('  - ' + v)
 if (violations.length > 0) {

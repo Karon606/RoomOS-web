@@ -421,7 +421,9 @@ export default function ResidenceCertView({ data, back }: { data: ResidenceCertD
         .rc-spacer { flex: 1; }
         .rc-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
         /* 작성일(input)과 성명 표기(select)가 같은 칸으로 보여야 한다 — 한 줄에 나란히 서는 형제다 */
-        .rc-field input, .rc-field select { padding: 4px 8px; border: 1px solid var(--warm-border); border-radius: 6px; font-size: 12px; background: #fff; color: inherit; font-family: inherit; }
+        /* min-width: 0 · max-width 는 안전선이다 — 브라우저 기본 date 입력이 제 표기 폭을
+           고집해 칸 밖으로 넘치는 것을 막는다(영수증 발행일 신고 2026-09-08 와 같은 클래스). */
+        .rc-field input, .rc-field select { padding: 4px 8px; border: 1px solid var(--warm-border); border-radius: 6px; font-size: 12px; background: #fff; color: inherit; font-family: inherit; min-width: 0; max-width: 100%; }
         .rc-field select { cursor: pointer; }
         .rc-issue { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .rc-issue:disabled { opacity: 0.6; }

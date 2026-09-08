@@ -2257,7 +2257,9 @@ export default function ContractView({ data, mode, shareToken, signedSnapshot, s
         .toolbar-link { color: var(--tc-text); display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; text-decoration: none; }
         .toolbar-spacer { flex: 1; }
         .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
-        .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }
+        /* min-width: 0 · max-width 는 안전선이다 — 브라우저 기본 date 입력은 제 표기 폭을
+           고집해 칸 밖으로 넘친다(영수증 발행일 신고 2026-09-08 와 같은 클래스). */
+        .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; min-width: 0; max-width: 100%; }
         /* 잠긴 계약일 — 입력칸 모양을 벗는다(§12 '고칠 수 없는 값' 문법). 테두리 없음, 포커스 링 없음.
            disabled input 으로 두면 눌러도 아무 일이 없고 화면이 이유를 안 말한다(§27.2). */
         .toolbar-locked {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { DatePicker } from '@/components/ui/DatePicker'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { RentReceiptData } from './actions'
@@ -327,7 +328,11 @@ export default function RentReceiptView({ data, back }: { data: RentReceiptData;
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
-            <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
+            {/* 정본 날짜 칸을 쓴다(운영자 신고 2026-09-08 — 이 칸만 카드 밖으로 튀어나갔다).
+                브라우저 기본 date 입력은 제 표기 폭을 고집해 w-full 로도 안 줄어든다. 게다가 이
+                화면의 형제 날짜 칸(수령일·입주 예정일)은 '2026년 9월 8일'로 읽히는데 이 칸만
+                '2026. 9. 8.'로 떠서 한 폼 안에 표기가 두 벌이었다. 껍데기는 형제와 같은 inputCls. */}
+            <DatePicker value={issueDate} onChange={setIssueDate} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             {/* 성명 표기 — 고를 표기가 둘 이상인 입주자에게만 붙는다(계약서·실거주 확인서와 같은 select). */}
