@@ -832,6 +832,29 @@ function fnBody(src, at) {
   }
 }
 
+
+// ㉶ 줄바꿈 규칙은 언어가 정한다 — 번역본 카드는 break-keep 을 쓰면 안 된다.
+//
+// word-break: keep-all 은 어절 사이에 띄어쓰기가 있는 언어에서만 옳다. 일본어·중국어는
+// 띄어쓰기가 없어 문장 하나가 통째로 끊을 수 없는 덩어리가 되고, 구두점에서만 끊겨 나머지가
+// 칸 밖으로 흘러 **글이 잘린다**(운영자 긴급 신고 2026-09-08, 일본어 조항). 잘린 계약 조항은
+// 읽을 수 없는 것과 같아서 이 카드가 존재하는 이유가 무너진다.
+{
+  const f = 'components/doc/ContractTranslationView.tsx'
+  const src = readFileSync(f, 'utf8')
+  // 주석 안의 언급은 봐준다 — 왜 안 쓰는지 적어 두는 것이 이 저장소의 관례다.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  if (/break-keep/.test(code)) {
+    violations.push(`${f} — 번역본 카드에 break-keep 이 되살아났다. 일본어·중국어 조항이 칸을 넘어 잘린다.`)
+  }
+  if (!/wordBreak:\s*noSpaceScript/.test(code)) {
+    violations.push(`${f} — 언어별 줄바꿈 판정(noSpaceScript)이 없다. ja·zh·zht 는 normal 이어야 한다.`)
+  }
+  if (!/overflowWrap:\s*'anywhere'/.test(code)) {
+    violations.push(`${f} — overflow-wrap 안전망이 없다. 넘칠 때 글이 잘리는 길이 다시 열린다.`)
+  }
+}
+
 if (violations.length) {
   console.error('참고용 번역본 배선 위반:')
   for (const v of violations) console.error(`  - ${v}`)

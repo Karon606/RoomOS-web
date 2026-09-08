@@ -92,6 +92,19 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
   // 저장 문안을 그대로 보인다 — 없는 값을 지어내지 않는다.
   const renderVars = vars || translation.vars ? { ...(vars ?? {}), ...(translation.vars ?? {}) } : null
   const render = (s: string): string => (renderVars ? renderContractText(s, renderVars) : s)
+
+  // 줄바꿈 규칙은 언어가 정한다(운영자 긴급 신고 2026-09-08 — 일본어 조항이 칸을 넘어 잘렸다).
+  //
+  // `break-keep`(word-break: keep-all)은 **어절 사이에 띄어쓰기가 있는 언어에서만** 옳다.
+  // 한국어는 그 규칙이 낱말을 지켜 주지만, 일본어·중국어는 띄어쓰기가 없어 문장 하나가 통째로
+  // 끊을 수 없는 한 덩어리가 된다. 그래서 구두점에서만 끊기고 나머지가 칸 밖으로 흘러 잘렸다.
+  // 그 셋은 글자 사이에서 끊는 것이 본래 조판이라 normal 이 맞다.
+  //
+  // 그리고 어느 언어든 `overflow-wrap: anywhere` 를 덧댄다. 넘칠 때만 발동하는 마지막 안전망이라
+  // 평소 조판을 안 건드리면서 **글이 잘려 안 보이는 일만은 구조적으로 못 생기게** 한다.
+  // 잘린 계약 조항은 읽을 수 없는 것과 같고, 그것이 이 카드가 존재하는 이유를 무너뜨린다.
+  const noSpaceScript = translation.lang === 'ja' || translation.lang === 'zh' || translation.lang === 'zht'
+  const wrapStyle = { wordBreak: noSpaceScript ? ('normal' as const) : ('keep-all' as const), overflowWrap: 'anywhere' as const }
   return (
     <div className="space-y-4">
       {/* 머리 — 무엇인지 먼저 말한다. 배지는 pale-neutral 고정이다(§11). 강조색을 쓰면
@@ -118,7 +131,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
       </p>
 
       {/* 계약서 제목. 번역이 없으면 한국어 원문이 그대로 서고 표식이 붙는다. */}
-      <h2 className="text-lg font-bold leading-snug tracking-[-0.02em] text-[var(--warm-dark)] break-keep">
+      <h2 style={wrapStyle} className="text-lg font-bold leading-snug tracking-[-0.02em] text-[var(--warm-dark)]">
         {translation.title}
         {sameAsSource(translation.title, source?.title) && <SourceMark />}
       </h2>
@@ -129,7 +142,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
           정본 함수를 쓴다(stripClauseBullet) — 규칙이 두 벌이면 언젠가 갈린다. */}
       {sections.map((sec, si) => (
         <section key={si} className="space-y-1.5">
-          <h3 className="text-sm font-bold leading-normal text-[var(--warm-dark)] break-keep">
+          <h3 style={wrapStyle} className="text-sm font-bold leading-normal text-[var(--warm-dark)]">
             {render(sec.title)}
             {/* 표식 판정은 **치환 전 문자열끼리** 견준다. 뜻이 "사전에 번역이 없어 원문이 남았다"
                 이고 그 사실은 치환과 무관하다 — 치환 후로 견주면 값이 같아진 두 문장이 우연히
@@ -138,7 +151,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
           </h3>
           <ol className="space-y-1.5">
             {sec.items.map((item, ii) => (
-              <li key={ii} className="flex gap-2 text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)] break-keep">
+              <li key={ii} style={wrapStyle} className="flex gap-2 text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)]">
                 <span className="num shrink-0 text-[var(--warm-muted)]">{ii + 1}.</span>
                 <span className="min-w-0 whitespace-pre-line">
                   {stripClauseBullet(render(item))}
@@ -151,7 +164,7 @@ export function ContractTranslationBody({ translation, source, sourceAddenda, va
       ))}
 
       {translation.oathText && (
-        <p className="text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)] break-keep">
+        <p style={wrapStyle} className="text-sm leading-relaxed tracking-[-0.01em] text-[var(--warm-dark)]">
           {render(translation.oathText)}
           {sameAsSource(translation.oathText, source?.oathText) && <SourceMark />}
         </p>
